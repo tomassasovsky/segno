@@ -20709,16 +20709,14 @@ static int oct_spread_any_offset(const int32_t* ph) {
   return 1;
 }
 
-/* The phase a running PV octaver in slot [s] of [fx] is on, read off its
- * counter against the chain clock: after the callback, the clock is the frame
- * of the last sample the engine processed and `hop_count` the value its next tick
+/* The phase a running PV octaver in slot [s] of a LIVE chain [fx] is on, read
+ * off its counter against the engine clock: between callbacks the clock is
+ * the frame the engine processes next, and `hop_count` the value that frame
  * runs at, which is 0 on the frames c with (c + phase) mod LE_PV_HOP == 0. */
 static int32_t oct_live_phase(const le_fx_state* fx, int s) {
   const uint32_t clock =
-      fx->clock_src != NULL
-          ? atomic_load_explicit(fx->clock_src, memory_order_relaxed)
-          : fx->clock;
-  return (int32_t)(((uint32_t)fx->oct[s][0].hop_count - clock - 1u) &
+      atomic_load_explicit(fx->clock_src, memory_order_relaxed);
+  return (int32_t)(((uint32_t)fx->oct[s][0].hop_count - clock) &
                    (uint32_t)(LE_PV_HOP - 1));
 }
 
@@ -21179,6 +21177,39 @@ static void test_octaver_hop_stagger_holds_for_late_adds(void) {
           gap == LE_PV_HOP - LE_PV_STAGGER_QUARTER);
     le_engine_destroy(e);
   }
+}
+
+/* A chain the engine skips (a monitor while its input is muted) stops its
+ * octavers' counters while the clock moves on. When it resumes, the octaver
+ * re-anchors to its own quarter rather than carrying the gap's length as a
+ * permanent offset. */
+static void test_octaver_hop_reanchors_after_a_gap(void) {
+  printf("test_octaver_hop_reanchors_after_a_gap\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, OCT_SR, 1, 1, OCT_SR * 4);
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_input_output(e, 0, 0x1);
+  le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_OCTAVER);
+  le_engine_set_monitor_input_fx_param(e, 0, 0, 3, 0.0f); /* PV */
+  le_engine_set_monitor_input_fx_count(e, 0, 1);
+  float in[64];
+  float out[64];
+  for (int i = 0; i < 64; ++i) in[i] = 0.3f * sinf((float)i * 0.2f);
+  for (int b = 0; b < 20; ++b) le_engine_process(e, out, in, 64);
+  const int32_t want = oct_slot_phase(le_fx_monitor_hop_seed(0), 0);
+  CHECK(oct_live_phase(&e->monitors[0].fx, 0) == want);
+  /* 1000 frames muted: not a multiple of the hop. */
+  CHECK(le_engine_set_monitor_input_mute(e, 0, 1) == LE_OK);
+  int left = 1000;
+  while (left > 0) {
+    const int n = left > 64 ? 64 : left;
+    le_engine_process(e, out, in, (uint32_t)n);
+    left -= n;
+  }
+  CHECK(le_engine_set_monitor_input_mute(e, 0, 0) == LE_OK);
+  for (int b = 0; b < 20; ++b) le_engine_process(e, out, in, 64);
+  CHECK(oct_live_phase(&e->monitors[0].fx, 0) == want);
+  le_engine_destroy(e);
 }
 
 /* The two octaver modes run one counter in opposite directions (PV up to its
@@ -37619,6 +37650,7 @@ int main(void) {
   test_octaver_hop_schedule_survives_mode_switch();
   test_octaver_hop_stagger_survives_chain_stomp();
   test_octaver_hop_stagger_holds_for_late_adds();
+  test_octaver_hop_reanchors_after_a_gap();
   test_fft_roundtrip();
 
   test_json_read_parses_nested_objects_and_arrays();

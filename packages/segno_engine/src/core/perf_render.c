@@ -1459,12 +1459,25 @@ static void le_pr_fx_chain_init_from_lane(le_pr_fx_chain* c,
  * fade its mode in over ~15 ms and sit at hop phase 0), its buffers, and for
  * an octaver its smoothers and mode already settled at [params], since a slot
  * carrying it at arm is not ramping. Returns 0 on an allocation failure. */
+static int le_pr_reset_slot(le_fx_state* fx, int s, int32_t type,
+                            int32_t sample_rate);
+
 static int le_pr_arm_slot(le_fx_state* fx, int s, int32_t type,
                           const float* params, int32_t sample_rate) {
-  le_fx_entry_reset(fx, s);
-  const int ok = le_fx_prepare(fx, s, type, sample_rate) == LE_OK;
+  const int ok = le_pr_reset_slot(fx, s, type, sample_rate);
   if (type == LE_FX_OCTAVER) le_fx_octaver_seed_settled(fx, s, params);
   return ok;
+}
+
+/* What the ring handler does to a live slot when a type lands on it: the
+ * reset, then (control side, earlier) its buffers. The one sequence the arm
+ * set-up and the logged type changes both replay. Returns 0 on an allocation
+ * failure. */
+static int le_pr_reset_slot(le_fx_state* fx, int s, int32_t type,
+                            int32_t sample_rate) {
+  le_fx_entry_reset(fx, s);
+  return type == LE_FX_NONE ||
+         le_fx_prepare(fx, s, type, sample_rate) == LE_OK;
 }
 
 /* This render's heap le_fx_state teardown is the shared offline-state one
@@ -1623,10 +1636,8 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
               chain.enabled[cmd->fx.index] = 1;
             }
             chain.type[cmd->fx.index] = cmd->fx.type;
-            le_fx_entry_reset(fx, cmd->fx.index);
-            if (cmd->fx.type != LE_FX_NONE &&
-                le_fx_prepare(fx, cmd->fx.index, cmd->fx.type,
-                             m->sample_rate) != LE_OK) {
+            if (!le_pr_reset_slot(fx, cmd->fx.index, cmd->fx.type,
+                                  m->sample_rate)) {
               prepare_failed = 1;
             }
           }
@@ -1834,8 +1845,7 @@ static int le_pr_render_master(const le_pr_manifest* m,
           chain.enabled[i] = 1;
         }
         chain.type[i] = cmd->fx.type;
-        le_fx_entry_reset(fx, i);
-        if (le_fx_prepare(fx, i, chain.type[i], m->sample_rate) != LE_OK) ok = 0;
+        if (!le_pr_reset_slot(fx, i, chain.type[i], m->sample_rate)) ok = 0;
       } else if (cmd->code == LE_CMD_SET_OUTPUT_FX_COUNT && cmd->fxcount.channel == m->arm_capture_bus) {
         int count = cmd->fxcount.count;
         if (count < 0 || count > LE_FX_MAX) { ok = 0; continue; }

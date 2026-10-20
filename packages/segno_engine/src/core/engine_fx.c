@@ -1307,12 +1307,34 @@ int le_fx_type_drains(int32_t type) {
  * A slot the chain does NOT process cannot advance this state machine; the
  * per-buffer snapshots settle such slots to bypass while their effective bit
  * is 0 (le_fx_enable_force_bypass), so gaps never strand a ramp. */
+/* A live chain the engine did not process for some frames resumes here: its
+ * octavers' hop counters stood still while the engine clock moved on, which
+ * would leave their heavy ticks off their quarters for good. Each octaver
+ * slot restarts its runtime on its own schedule, the same clean start a
+ * re-enable gives it; the slot was silent through the gap, so nothing that
+ * was sounding is cut. */
+static void le_fx_reanchor_after_gap(le_fx_state* fx, int count,
+                                     const int32_t* types) {
+  for (int s = 0; s < count; ++s) {
+    if (types[s] != LE_FX_OCTAVER) continue;
+    for (int chan = 0; chan < 2; ++chan) {
+      le_pv_reset_runtime(fx, s, chan, le_oct_seeded_ticks(fx, s));
+    }
+  }
+}
+
 void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float* r,
                     int count, const int32_t* types,
                     const float params[LE_FX_MAX][LE_FX_PARAMS],
                     const int32_t* enabled, int gain_at, float gain) {
   float xl = *l;
   float xr = *r;
+  if (fx->clock_src != NULL) {
+    const uint32_t now =
+        atomic_load_explicit(fx->clock_src, memory_order_relaxed);
+    if (now != fx->clock_next) le_fx_reanchor_after_gap(fx, count, types);
+    fx->clock_next = now + 1u;
+  }
   if (fx->enable_clear_cooldown > 0) fx->enable_clear_cooldown--;
   for (int s = 0; s < count; ++s) {
     if (s == gain_at) { xl *= gain; xr *= gain; }

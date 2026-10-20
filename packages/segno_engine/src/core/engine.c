@@ -1218,6 +1218,14 @@ void le_engine_mark_device_lost(le_engine* engine) {
   atomic_store_explicit(&engine->a_device_present, 0, memory_order_relaxed);
 }
 
+/* Gives a live chain owner's state its hop-stagger seed and the engine frame
+ * as its FX clock (#941), so each reset site sees the frame being
+ * processed. */
+static void le_fx_seed_owner(le_fx_state* fx, le_engine* engine, int32_t seed) {
+  fx->hop_seed = seed;
+  fx->clock_src = &engine->a_fx_frame;
+}
+
 le_engine* le_engine_create(void) {
   le_engine* engine = (le_engine*)calloc(1, sizeof(le_engine));
   if (engine == NULL) return NULL;
@@ -1324,34 +1332,20 @@ le_engine* le_engine_create(void) {
    * render recipe's mix print reproduces that instance. */
   for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) {
     for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
-      engine->tracks[t].lanes[l].fx.hop_seed = le_fx_lane_hop_seed(t, l);
+      le_fx_seed_owner(&engine->tracks[t].lanes[l].fx, engine,
+                       le_fx_lane_hop_seed(t, l));
     }
-    engine->tracks[t].bus.fx.hop_seed = le_fx_bus_hop_seed(t);
+    le_fx_seed_owner(&engine->tracks[t].bus.fx, engine, le_fx_bus_hop_seed(t));
   }
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    engine->monitors[c].fx.hop_seed = le_fx_monitor_hop_seed(c);
+    le_fx_seed_owner(&engine->monitors[c].fx, engine, le_fx_monitor_hop_seed(c));
   }
   for (int32_t k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
-    engine->all_tracks_fx[k].hop_seed = le_fx_all_tracks_hop_seed(k);
-    engine->outputs[k].fx.fx.hop_seed = le_fx_output_hop_seed(k);
+    le_fx_seed_owner(&engine->all_tracks_fx[k], engine,
+                     le_fx_all_tracks_hop_seed(k));
+    le_fx_seed_owner(&engine->outputs[k].fx.fx, engine, le_fx_output_hop_seed(k));
   }
-  engine->all_tracks.fx.hop_seed = le_fx_all_tracks_hop_seed(0);
-  /* ...and every live owner reads the engine's frame as its FX clock (#941),
-   * so each reset site sees the frame being processed. */
-  for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) {
-    for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
-      engine->tracks[t].lanes[l].fx.clock_src = &engine->a_fx_frame;
-    }
-    engine->tracks[t].bus.fx.clock_src = &engine->a_fx_frame;
-  }
-  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    engine->monitors[c].fx.clock_src = &engine->a_fx_frame;
-  }
-  for (int32_t k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
-    engine->all_tracks_fx[k].clock_src = &engine->a_fx_frame;
-    engine->outputs[k].fx.fx.clock_src = &engine->a_fx_frame;
-  }
-  engine->all_tracks.fx.clock_src = &engine->a_fx_frame;
+  le_fx_seed_owner(&engine->all_tracks.fx, engine, le_fx_all_tracks_hop_seed(0));
   return engine;
 }
 
