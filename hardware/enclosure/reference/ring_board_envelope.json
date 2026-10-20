@@ -1,0 +1,19 @@
+{
+  "source": "ring_board_asm:1 (PR #990 Ring24 board) in the populated Fusion document ('VAMP console (populated) - 1067 tabs + seat flanges', version 10), probed read-only 2026-09-18 for #1070. Every body whose bounding box reaches rearward of world y 248 mm, i.e. over or near the 7in tower's front wall (outer face at y 252.1).",
+  "frame": "World millimetres of the populated document: x = u, y = depth, z = up, floor top at z 2.0. Boxes are axis-aligned bounding boxes of parts that lie at SLOPE_ANGLE, so each part's underside runs from (y0, z0) rising rearward at tan(SLOPE_ANGLE).",
+  "tower_translation_mm": [119.575, 321.69668095881, 2.0],
+  "bodies": [
+    {"part": "segno_pedal_ring_PCB",  "x": [79.6, 159.6],  "y": [184.1, 262.6], "z": [44.51, 63.30]},
+    {"part": "NeoPixel Ring24 Board",  "x": [86.8, 152.4],  "y": [190.3, 254.6], "z": [50.12, 65.83]},
+    {"part": "DIP-14",                 "x": [111.5, 119.3], "y": [236.6, 256.7], "z": [52.54, 63.48]},
+    {"part": "D_DO-41",                "x": [136.0, 147.0], "y": [245.1, 249.0], "z": [54.85, 61.02]},
+    {"part": "R_Axial_DIN0207",        "x": [122.3, 133.1], "y": [249.0, 252.6], "z": [56.43, 62.35]},
+    {"part": "WS2812B-NARROW:3",       "x": [130.8, 137.6], "y": [243.3, 250.3], "z": [63.47, 66.32]},
+    {"part": "WS2812B-NARROW:23",      "x": [101.6, 108.4], "y": [243.3, 250.3], "z": [63.47, 66.32]},
+    {"part": "WS2812B-NARROW:2",       "x": [124.1, 130.2], "y": [246.5, 252.8], "z": [64.18, 66.87]},
+    {"part": "WS2812B-NARROW:24",      "x": [109.0, 115.1], "y": [246.5, 252.8], "z": [64.18, 66.87]},
+    {"part": "WS2812B-NARROW:1",       "x": [117.1, 122.1], "y": [248.1, 253.2], "z": [64.52, 66.97]},
+    {"part": "C0603:1",                "x": [130.7, 132.2], "y": [249.1, 251.2], "z": [64.73, 66.02]},
+    {"part": "0603-NO:1",              "x": [115.1, 116.3], "y": [250.5, 252.2], "z": [65.00, 65.48]}
+  ]
+}

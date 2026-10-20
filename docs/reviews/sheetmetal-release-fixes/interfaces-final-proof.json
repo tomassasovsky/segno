@@ -1,0 +1,457 @@
+{
+  "valid": true,
+  "solid_count": 1,
+  "volume_mm3": 4485.550371829448,
+  "angles_deg": [
+    7.5,
+    82.5,
+    112.5,
+    187.5,
+    232.5,
+    262.5,
+    292.5,
+    322.5
+  ],
+  "rib_width_mm": 1.2,
+  "rib_radial_range_mm": [
+    25.85,
+    32.8
+  ],
+  "rib_z_range_mm": [
+    -0.25,
+    1.35
+  ],
+  "minimum_upper_lens_inner_wall_mm": 0.5,
+  "minimum_lens_roof_mm": 1.05,
+  "minimum_shelf_height_mm": 0.25,
+  "contacts": [],
+  "clearances": [
+    {
+      "index": 0,
+      "body_volume_mm3": 243.60718271248146,
+      "minimum_clearance_mm": 16.02355953526938
+    },
+    {
+      "index": 1,
+      "body_volume_mm3": 31.838877892507334,
+      "minimum_clearance_mm": 16.57709629382941
+    },
+    {
+      "index": 2,
+      "body_volume_mm3": 296.12925289943604,
+      "minimum_clearance_mm": 16.17520187905773
+    },
+    {
+      "index": 3,
+      "body_volume_mm3": 292.89228000736523,
+      "minimum_clearance_mm": 18.459510946592236
+    },
+    {
+      "index": 4,
+      "body_volume_mm3": 278.2296528298442,
+      "minimum_clearance_mm": 22.657706045874516
+    },
+    {
+      "index": 5,
+      "body_volume_mm3": 2.8869904298484033e-05,
+      "minimum_clearance_mm": 18.33358329800768
+    },
+    {
+      "index": 6,
+      "body_volume_mm3": 3.9999737882809685e-05,
+      "minimum_clearance_mm": 18.30321667391146
+    },
+    {
+      "index": 7,
+      "body_volume_mm3": 4.318943858244499e-05,
+      "minimum_clearance_mm": 18.259257481341425
+    },
+    {
+      "index": 8,
+      "body_volume_mm3": 5.661853095551825e-05,
+      "minimum_clearance_mm": 18.175994531656638
+    },
+    {
+      "index": 9,
+      "body_volume_mm3": 4.9585565626514e-05,
+      "minimum_clearance_mm": 18.072447830691168
+    },
+    {
+      "index": 10,
+      "body_volume_mm3": 4.3189438582260715e-05,
+      "minimum_clearance_mm": 18.333917651073577
+    },
+    {
+      "index": 11,
+      "body_volume_mm3": 3.786847392272523e-05,
+      "minimum_clearance_mm": 18.3074361584636
+    },
+    {
+      "index": 12,
+      "body_volume_mm3": 2.842013788152538e-05,
+      "minimum_clearance_mm": 18.271563774138638
+    },
+    {
+      "index": 13,
+      "body_volume_mm3": 3.641146825002865e-05,
+      "minimum_clearance_mm": 18.214404433902285
+    },
+    {
+      "index": 14,
+      "body_volume_mm3": 4.318943858253203e-05,
+      "minimum_clearance_mm": 18.152361339964507
+    },
+    {
+      "index": 15,
+      "body_volume_mm3": 5.6618530955284993e-05,
+      "minimum_clearance_mm": 18.035657960585628
+    },
+    {
+      "index": 16,
+      "body_volume_mm3": 4.9585565627554994e-05,
+      "minimum_clearance_mm": 17.90462687733773
+    },
+    {
+      "index": 17,
+      "body_volume_mm3": 0.0009200465405871315,
+      "minimum_clearance_mm": 18.015561941593326
+    },
+    {
+      "index": 18,
+      "body_volume_mm3": 1890.1710407216285,
+      "minimum_clearance_mm": 0.13460105774812625
+    },
+    {
+      "index": 19,
+      "body_volume_mm3": 33.07577449967626,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 20,
+      "body_volume_mm3": 1.4261400000000044,
+      "minimum_clearance_mm": 0.44826876370731605
+    },
+    {
+      "index": 21,
+      "body_volume_mm3": 0.15845999999999974,
+      "minimum_clearance_mm": 1.3860855392172928
+    },
+    {
+      "index": 22,
+      "body_volume_mm3": 33.07577449967626,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 23,
+      "body_volume_mm3": 33.07577449967626,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 24,
+      "body_volume_mm3": 33.075774499676264,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 25,
+      "body_volume_mm3": 33.07577449967626,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 26,
+      "body_volume_mm3": 33.075774499676264,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 27,
+      "body_volume_mm3": 33.07577449967625,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 28,
+      "body_volume_mm3": 33.07577449967627,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 29,
+      "body_volume_mm3": 33.07577449967625,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 30,
+      "body_volume_mm3": 33.075774499676264,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 31,
+      "body_volume_mm3": 33.07577449967627,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 32,
+      "body_volume_mm3": 33.07577449967626,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 33,
+      "body_volume_mm3": 33.07577449967626,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 34,
+      "body_volume_mm3": 33.07577449967627,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 35,
+      "body_volume_mm3": 33.07577449967626,
+      "minimum_clearance_mm": 0.33280014458214396
+    },
+    {
+      "index": 36,
+      "body_volume_mm3": 33.07577449967627,
+      "minimum_clearance_mm": 0.3322424842005482
+    },
+    {
+      "index": 37,
+      "body_volume_mm3": 33.07577449967626,
+      "minimum_clearance_mm": 0.33314307319130954
+    },
+    {
+      "index": 38,
+      "body_volume_mm3": 33.07577449967627,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 39,
+      "body_volume_mm3": 33.07577449967626,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 40,
+      "body_volume_mm3": 33.07577449967627,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 41,
+      "body_volume_mm3": 33.07577449967626,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 42,
+      "body_volume_mm3": 33.075774499676264,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 43,
+      "body_volume_mm3": 33.07577449967627,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 44,
+      "body_volume_mm3": 33.07577449967626,
+      "minimum_clearance_mm": 0.334601057748126
+    },
+    {
+      "index": 45,
+      "body_volume_mm3": 1.4261400000000042,
+      "minimum_clearance_mm": 0.44675546643036296
+    },
+    {
+      "index": 46,
+      "body_volume_mm3": 1.4261400000000037,
+      "minimum_clearance_mm": 0.4469086479095321
+    },
+    {
+      "index": 47,
+      "body_volume_mm3": 1.4261400000000082,
+      "minimum_clearance_mm": 0.4642032651425991
+    },
+    {
+      "index": 48,
+      "body_volume_mm3": 1.4261400000000053,
+      "minimum_clearance_mm": 0.4789053285886931
+    },
+    {
+      "index": 49,
+      "body_volume_mm3": 1.4261400000000086,
+      "minimum_clearance_mm": 0.49175015544812095
+    },
+    {
+      "index": 50,
+      "body_volume_mm3": 1.4261400000000013,
+      "minimum_clearance_mm": 0.4487570970609494
+    },
+    {
+      "index": 51,
+      "body_volume_mm3": 1.42614000000001,
+      "minimum_clearance_mm": 0.45724626147166897
+    },
+    {
+      "index": 52,
+      "body_volume_mm3": 1.426140000000004,
+      "minimum_clearance_mm": 0.5011180032911904
+    },
+    {
+      "index": 53,
+      "body_volume_mm3": 1.4261400000000028,
+      "minimum_clearance_mm": 0.5029225567527369
+    },
+    {
+      "index": 54,
+      "body_volume_mm3": 1.426140000000001,
+      "minimum_clearance_mm": 0.5005922956197795
+    },
+    {
+      "index": 55,
+      "body_volume_mm3": 1.4261400000000095,
+      "minimum_clearance_mm": 0.49068649028384204
+    },
+    {
+      "index": 56,
+      "body_volume_mm3": 1.4261400000000095,
+      "minimum_clearance_mm": 0.4846812100774932
+    },
+    {
+      "index": 57,
+      "body_volume_mm3": 1.4261400000000042,
+      "minimum_clearance_mm": 0.4775891193726083
+    },
+    {
+      "index": 58,
+      "body_volume_mm3": 1.4261400000000048,
+      "minimum_clearance_mm": 0.47019574221900085
+    },
+    {
+      "index": 59,
+      "body_volume_mm3": 28.016644493935704,
+      "minimum_clearance_mm": 2.27530449554086
+    },
+    {
+      "index": 60,
+      "body_volume_mm3": 30.113453722678415,
+      "minimum_clearance_mm": 5.494349201566496
+    },
+    {
+      "index": 61,
+      "body_volume_mm3": 386.16998033940763,
+      "minimum_clearance_mm": 0.8746010577481274
+    },
+    {
+      "index": 62,
+      "body_volume_mm3": 389.5638535566112,
+      "minimum_clearance_mm": 2.1746010577481263
+    },
+    {
+      "index": 63,
+      "body_volume_mm3": 881.6031378268864,
+      "minimum_clearance_mm": 4.174601057748124
+    },
+    {
+      "index": 64,
+      "body_volume_mm3": 247.8634531973336,
+      "minimum_clearance_mm": 0.7746010577481264
+    },
+    {
+      "index": 65,
+      "body_volume_mm3": 36.404630715643734,
+      "minimum_clearance_mm": 1.6746010577481263
+    },
+    {
+      "index": 66,
+      "body_volume_mm3": 7527.007137302574,
+      "minimum_clearance_mm": 2.5796010577481265
+    },
+    {
+      "index": 67,
+      "body_volume_mm3": 28.016644493935694,
+      "minimum_clearance_mm": 2.1746010577481263
+    },
+    {
+      "index": 68,
+      "body_volume_mm3": 30.113453722678415,
+      "minimum_clearance_mm": 1.1746010577481263
+    },
+    {
+      "index": 69,
+      "body_volume_mm3": 30.113453722678415,
+      "minimum_clearance_mm": 2.818731411456436
+    },
+    {
+      "index": 70,
+      "body_volume_mm3": 30.113453722678436,
+      "minimum_clearance_mm": 2.1784874793578446
+    },
+    {
+      "index": 71,
+      "body_volume_mm3": 28.016644493935697,
+      "minimum_clearance_mm": 5.161756981105699
+    },
+    {
+      "index": 72,
+      "body_volume_mm3": 28.0166444939357,
+      "minimum_clearance_mm": 2.206978745140734
+    }
+  ],
+  "insertion": [
+    {
+      "translation_z_mm": 0,
+      "total_intersection_mm3": 0.0
+    },
+    {
+      "translation_z_mm": -0.1,
+      "total_intersection_mm3": 0.0
+    },
+    {
+      "translation_z_mm": -0.25,
+      "total_intersection_mm3": 0.0
+    },
+    {
+      "translation_z_mm": -0.5,
+      "total_intersection_mm3": 0.0
+    },
+    {
+      "translation_z_mm": -1,
+      "total_intersection_mm3": 0.0
+    },
+    {
+      "translation_z_mm": -2,
+      "total_intersection_mm3": 0.0
+    },
+    {
+      "translation_z_mm": -3,
+      "total_intersection_mm3": 0.0
+    },
+    {
+      "translation_z_mm": -5,
+      "total_intersection_mm3": 0.0
+    }
+  ],
+  "nominal_disc_contact_mm3": 0.0,
+  "upper_visible_geometry_removed_mm3": 0.0,
+  "upper_visible_geometry_added_mm3": 0.0,
+  "added_outside_original_envelope_mm3": 0.0,
+  "nominal_disc_seating_distance_mm": 0.0,
+  "minimum_outer_lens_wall_mm": 1.1,
+  "source_native_parity": {
+    "native_valid": true,
+    "native_solid_count": 1,
+    "source_volume_mm3": 4485.550371828379,
+    "native_volume_mm3": 4485.55037182941,
+    "native_extra_mm3": 0.0,
+    "native_missing_mm3": 0.0,
+    "source_extra_vs_reviewed_candidate_mm3": 0.0,
+    "source_missing_vs_reviewed_candidate_mm3": 0.0
+  },
+  "reviewed_sha256": {
+    "hardware/enclosure/segno_enclosure.py": "5d1c19ad481229e4023ff4fef9aa2d153902059bd1ae6176624d6a9c535390bc",
+    "hardware/enclosure/tests/test_manufacturing_fit.py": "0bc8b793a4d144ce25342fc5dcc9e4da82842d72fc84bffe50768aefc1b89328",
+    "hardware/enclosure/reference/ring24_interface.json": "4e8306a6598b7aa3ba80dfe26cb6af241999183f24fe0fbb22b7b351d2609174",
+    "hardware/enclosure/reference/ring24_orientation.svg": "21b3ef8cae6ae43f74a6c9908b107d6981d365717d26317398bc1c4924a3db2d",
+    "hardware/MANUFACTURING.md": "10716d3466c45a19ee3ed1078b90f6bb5b22e00552e71bc89abeb075c94ef4c5",
+    "hardware/enclosure/FUSION_MODELS.md": "751604007e6eb85559e31bf05ac9e7cdcf98d540b43b0be64a731c63510c1b17",
+    "hardware/enclosure/SHOP_REVIEW.md": "bc83f687ed28a7d21e5b4e368916c65de5382d193e10017d200e3b4d0a2b6949"
+  },
+  "native_step_sha256": "31ee09191072d6efd7f2f38d729b44881bbfe11d9ff42134453be26de5a44281",
+  "tests": "Both focused tests passed again on final test SHA after comment-spacing-only edit; no assertion changes since parent full26-test run.",
+  "orientation_svg_visual_review": "Rendered and visually inspected: all eight rib angles match numeric fixture; top view +X toward 15.6-inch screen, front at bottom, underside mirroring stated."
+}

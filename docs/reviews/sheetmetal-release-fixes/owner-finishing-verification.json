@@ -1,0 +1,37 @@
+{
+  "scope": "Process notes only: owner rivets before paint, cleans2.5mm body pilots/tapsM3 after paint; geometry unchanged.",
+  "source_sha256": "0c8f5b93107aaf34fdddb6de9f6af2e21f3ccf9a997980920e430df06ca6c8c1",
+  "base_flat_signature": "f88d58730e55598ab1e928f926c9dad6a3ab6438787cc8a38845022a73627564",
+  "source_native_flat_parity": "PASS",
+  "drawing_static_checks": "PASS; new base drawing+paint quote page counts and base tolerance block checked; unchanged PDFs retained",
+  "archives": {
+    "segno_3dprint.zip": {
+      "sha256": "065bf711852ffe9bcffead68c286737635c29c57761a073d8a4de79ee2d5216f",
+      "members": 36
+    },
+    "segno_pedal_tiles.zip": {
+      "sha256": "5ecdbfdd6be4b6bb8ea707a3540dbcc197fc56b39b41f73c4dde42659c257797",
+      "members": 22
+    },
+    "segno_pintura.zip": {
+      "sha256": "40305257904c635aeb8af3138c2e5e03cbca0b3370585fab045f26d2e3945f00",
+      "members": 8
+    },
+    "segno_sheetmetal.zip": {
+      "sha256": "ce8d8647a809e51502247c70b15319eb1fefe13c6b31f0ed3de7a66bed0b9ace",
+      "members": 14
+    },
+    "segno_sheetmetal_step.zip": {
+      "sha256": "6cfa6ee0f1d2f21cb9bd9d2eab5eff635ae0955b2de61240ad369583b8f26f3b",
+      "members": 8
+    }
+  },
+  "chamfer_removal": "Candidate only; actual retaining washer/nut needs checking. Existing chamfer geometry retained.",
+  "visual_review": {
+    "pdfs": 2,
+    "pages": 5,
+    "result": "PASS"
+  },
+  "geometry_changed": false,
+  "native_models_modified": false
+}
