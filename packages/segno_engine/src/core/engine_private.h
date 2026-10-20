@@ -1090,14 +1090,6 @@ typedef struct le_track {
   int32_t dub_vseg; /* the remaining trajectory from start + count */
   int32_t dub_draining;       /* post-punch-out bulk completion in progress */
   int32_t dub_retire_slot;    /* retired slot awaiting evt-ring space (-1 none) */
-  /* #730, rec/dub: a take that stopped short of its loop and continued into
-   * this session's dub keeps its tail unfaded in the live slot (the dub
-   * continues it), but the session's first undo layer is the take alone,
-   * followed by silence, so that layer's tail still needs the fade. One past
-   * the tail's last sample, or 0 for none. Set by finalize_new_track, applied
-   * when the first pass retires (or at a stop, or a reopen revert), and
-   * cleared by every new session. */
-  int32_t dub_tail_end;
   uint32_t dub_gen_audio; /* audio-side mirror of dub_generation: both sides
                            * bump exactly once per applied CLEAR, so they agree
                            * without sharing a variable */
@@ -1208,6 +1200,17 @@ typedef struct le_track {
   int32_t length_pending;
   int32_t length_op; /* 0 edit, 1 undo of a LENGTH entry, 2 its redo */
   int length_ack;
+  /* #730, rec/dub: a take that stopped short of its loop and continued into
+   * this session's dub keeps its tail unfaded in the live slot (the dub
+   * continues it), but the session's first undo layer is the take alone,
+   * followed by silence, so that layer's tail still needs the fade. One past
+   * the tail's last sample, or 0 for none. Set by finalize_new_track, applied
+   * when the first pass retires (or at a stop, or a reopen revert), and
+   * cleared by every new session. It sits here, in the padding before
+   * length_file, so adding it moved no other field: the mixer reads the
+   * fields after the dub block every frame, and the 8 x 8 lane benchmark is
+   * sensitive to where they fall (#1374). */
+  int32_t dub_tail_end;
   le_hist_entry length_file;
   _Atomic int32_t a_length_result; /* audio: the verdict, before the ack */
   /* Control: Undo/Redo taps on LENGTH entries that did nothing (published as
@@ -2316,10 +2319,12 @@ struct le_engine {
   uint32_t bypass_posted;
   int32_t bypass_pending;
   _Atomic uint32_t a_bypass_applied;
+  /* Callback-only: image publication invalidates the current frame snapshots.
+   * Beside the 32-bit fields above, so it fills their padding: that keeps
+   * the limiter's peak-hold state below from moving `tracks` (#1374). */
+  uint32_t capture_image_dirty;
   uint64_t commands_posted;
   uint64_t commands_applied;
-  /* Callback-only: image publication invalidates the current frame snapshots. */
-  uint32_t capture_image_dirty;
   _Atomic uint64_t a_commands_published;
 
   /* Primary track (B3, D18, published — see le_snapshot's trailing block).
