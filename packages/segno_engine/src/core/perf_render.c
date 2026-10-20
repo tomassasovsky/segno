@@ -1512,6 +1512,15 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
     *out_failed = 1;
     return NULL;
   }
+  /* The live lane's hop-stagger seed (#915; this render reconstructs lane 0
+   * of track [channel]), set BEFORE any octaver's hop counter is seeded from
+   * it. EXACT for an octaver that lands during the capture: the replay below
+   * runs le_fx_entry_reset at the logged frame the audio thread ran it, so
+   * both chains start the counter from this lane's phase at the same instant.
+   * An octaver already in the chain at arm is approximated, like every
+   * arm-time slot here (an empty delay ring, a cold reverb): its live counter
+   * is this phase plus an elapsed-frame count nothing records. */
+  fx->hop_seed = le_fx_lane_hop_seed(channel, 0);
   /* Seed the enable-crossfade runtime SETTLED at enabled, mirroring
    * le_lane_reset — a calloc'd zero state would fade the whole chain in over
    * the ramp window at frame 0 and break golden parity. */
@@ -1526,9 +1535,22 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
    * were bypassed. */
   int prepare_failed = 0;
   for (int s = 0; s < chain.count; ++s) {
-    if (chain.type[s] != LE_FX_NONE &&
-        le_fx_prepare(fx, s, chain.type[s], m->sample_rate) != LE_OK) {
+    if (chain.type[s] == LE_FX_NONE) continue;
+    /* Start the slot from the reset the live lane got when the type landed
+     * (the ring handler runs le_fx_entry_reset), as the wet cache does. A raw
+     * calloc zero is not that state: the octaver's shift smoother would ramp
+     * up from two octaves down, its mode crossfade would fade the wet in over
+     * ~15 ms, and its hop counter would sit at 0 instead of this lane's
+     * phase. */
+    le_fx_entry_reset(fx, s);
+    if (le_fx_prepare(fx, s, chain.type[s], m->sample_rate) != LE_OK) {
       prepare_failed = 1;
+    }
+    /* A lane already carrying an octaver at arm is not ramping its shift or
+     * crossfading its mode: settle those, as le_fx_enable_seed_settled does
+     * for the enable crossfade above. */
+    if (chain.type[s] == LE_FX_OCTAVER) {
+      le_fx_octaver_seed_settled(fx, s, chain.params[s]);
     }
   }
 
@@ -1760,11 +1782,18 @@ static int le_pr_render_master(const le_pr_manifest* m,
   }
   le_fx_state* fx = calloc(1, sizeof(*fx));
   if (!fx) return 0;
+  /* The captured output bus's hop-stagger seed (#915), and the reset each
+   * arm-time slot got when its type landed (see le_pr_render_wet_track). */
+  fx->hop_seed = le_fx_output_hop_seed(m->arm_capture_bus);
   int ok = 1;
   for (int i = 0; i < LE_FX_MAX; ++i) {
     le_fx_enable_seed_settled(fx, i);
-    if (chain.type[i] != LE_FX_NONE &&
-        le_fx_prepare(fx, i, chain.type[i], m->sample_rate) != LE_OK) ok = 0;
+    if (chain.type[i] == LE_FX_NONE) continue;
+    le_fx_entry_reset(fx, i);
+    if (le_fx_prepare(fx, i, chain.type[i], m->sample_rate) != LE_OK) ok = 0;
+    if (chain.type[i] == LE_FX_OCTAVER) {
+      le_fx_octaver_seed_settled(fx, i, chain.params[i]);
+    }
   }
   float level = m->arm_output_level;
   int muted = m->arm_output_muted;

@@ -88,6 +88,9 @@ typedef struct le_fx_frozen_chain {
   int32_t effective[LE_FX_MAX];
   int32_t chan_any;
   le_fx_chan chan[LE_FX_MAX];
+  /* The frozen owner's le_fx_state::hop_seed (#915): a render seeds its heap
+   * state with it so octavers render on the live owner's hop phases. */
+  int32_t hop_seed;
 } le_fx_frozen_chain;
 
 /* Fills a frozen chain from snapshotted locals (the cache schedulers'). */
@@ -99,13 +102,18 @@ void le_fx_frozen_fill(le_fx_frozen_chain* c, int32_t count, int32_t pre,
 
 /* Freezes a lane's or a bus's whole chain from its published atomics (the
  * two owners share the field names). */
-#define LE_FX_FROZEN_CAPTURE(out, owner)                                      \
-  le_fx_frozen_capture((out), &(owner)->a_fx_count, &(owner)->a_fx_pre_count, \
-                       &(owner)->a_fx_chain_enabled, (owner)->a_fx_type,      \
-                       (owner)->a_fx_enabled, (owner)->a_fx_param,            \
-                       (owner)->a_fx_chan_in, (owner)->a_fx_chan_out,         \
-                       (owner)->a_fx_chan_gl_bits, (owner)->a_fx_chan_gr_bits, \
-                       (owner)->a_fx_chan_level_bits)
+#define LE_FX_FROZEN_CAPTURE(out, owner)                                       \
+  do {                                                                         \
+    le_fx_frozen_capture((out), &(owner)->a_fx_count,                          \
+                         &(owner)->a_fx_pre_count,                             \
+                         &(owner)->a_fx_chain_enabled, (owner)->a_fx_type,     \
+                         (owner)->a_fx_enabled, (owner)->a_fx_param,           \
+                         (owner)->a_fx_chan_in, (owner)->a_fx_chan_out,        \
+                         (owner)->a_fx_chan_gl_bits,                           \
+                         (owner)->a_fx_chan_gr_bits,                           \
+                         (owner)->a_fx_chan_level_bits);                       \
+    (out)->hop_seed = (owner)->fx.hop_seed;                                    \
+  } while (0)
 void le_fx_frozen_capture(le_fx_frozen_chain* c, _Atomic int32_t* count,
                           _Atomic int32_t* pre, _Atomic int32_t* chain_on,
                           _Atomic int32_t* type, _Atomic int32_t* enabled,

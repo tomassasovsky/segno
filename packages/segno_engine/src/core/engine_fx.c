@@ -137,12 +137,59 @@ static float le_wrap_pi(float x) {
   return x - two_pi * roundf(x / two_pi);
 }
 
+/* The invariants the stagger arithmetic rests on (engine_fx.h describes the
+ * steps): the masks need LE_PV_HOP to be a power of two, and the steps were
+ * searched for this owner geometry, so a change to any dimension means
+ * re-running that search (test_octaver_hop_stagger_seeds pins the result). */
+_Static_assert((LE_PV_HOP & (LE_PV_HOP - 1)) == 0,
+               "LE_PV_HOP must be a power of two (hop-phase masks)");
+_Static_assert(LE_MAX_TRACKS == 8 && LE_MAX_LANES == 8 &&
+                   LE_MAX_MONITORED_INPUTS == 40 && LE_MAX_OUTPUT_BUSES == 16 &&
+                   LE_FX_MAX == 64,
+               "hop-stagger steps were searched for this owner geometry");
+_Static_assert((LE_PV_STAGGER_SLOT_STEP & 1) == 1,
+               "an odd slot step gives every slot of a chain its own phase");
+
+/* The analysis-hop PHASE of the octaver in chain slot [slot] of [fx]: what
+ * le_pv_reset_runtime seeds hop_count with, so N instances run their frames
+ * on N different sample indices instead of all hopping together. Spreading
+ * the phase does not reduce the work; it stops it arriving in one callback.
+ *
+ * WHY IT COSTS NO LATENCY: a PV frame runs at hop_count == 0 and writes the
+ * OLA accumulator so that out[j] is emitted j samples later; the emitted
+ * sample always corresponds to input index (head - LE_PV_N + 1), whatever the
+ * phase. So le_octaver_latency stays a flat LE_PV_N, fx_octaver's dry tap
+ * stays matched, and fx_apply_chain's warmup stays sufficient (le_pv_tick has
+ * the warmup argument).
+ *
+ * PER SLOT, NOT PER CHANNEL: mono coherence (test_octaver_mono_coherent)
+ * needs identical left and right in to give identical out, so both channels
+ * of one instance share a phase.
+ *
+ * MASKED, not %-ed: hop_count indexes o->out[] in le_pv_tick, so the phase
+ * must be in [0, LE_PV_HOP) for any seed a caller stores. */
+static int le_pv_hop_phase(const le_fx_state* fx, int slot) {
+  return le_fx_hop_mask((uint32_t)fx->hop_seed +
+                        (uint32_t)slot * (uint32_t)LE_PV_STAGGER_SLOT_STEP);
+}
+
 /* Zeros the octaver's per-mode DSP runtime (phase history, synthesis
  * accumulator, hop counter) without touching the heap-buffer allocation or the
  * smoothed params / current mode. Used on a mode switch and on entry reset; safe
- * with NULL buffers (a slot that is not an octaver). */
-static void le_pv_reset_runtime(le_octaver_state* o) {
-  o->hop_count = 0;
+ * with NULL buffers (a slot that is not an octaver). The hop counter starts at
+ * this instance's staggered phase (le_pv_hop_phase), not 0.
+ *
+ * The two modes read the counter in opposite directions: PV counts up and
+ * runs its frame on the wrap, PSOLA counts down and runs YIN when it reaches
+ * 0. Distinct phases therefore keep instances apart WITHIN a mode. A PV and a
+ * PSOLA instance are scheduled off mirrored ticks, and a PSOLA instance always
+ * flips into its mode ~15 ms after its reset (a slot resets into PV), so
+ * reflecting the seed for PSOLA would not line the modes up either; separate
+ * counters per mode would. A cross-mode collision costs one YIN pass beside
+ * one instance's four FFTs, not two piles of four. */
+static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan) {
+  le_octaver_state* o = &fx->oct[slot][chan];
+  o->hop_count = le_pv_hop_phase(fx, slot);
   o->out_pos = 0;
   o->in_epoch = 0;
   o->out_epoch = 0;
@@ -259,7 +306,25 @@ static void le_octaver_frame(le_octaver_state* o, const float* fifo, int head,
 
 /* Emits one phase-vocoder output sample (latency LE_PV_N), running a fresh frame
  * at each hop boundary and streaming the synthesis accumulator out by one sample
- * per call, shifting it down by a hop once a block is fully emitted. */
+ * per call, shifting it down by a hop once a block is fully emitted.
+ *
+ * HOP PHASE AND THE THREE THINGS IT MUST NOT MOVE. hop_count starts at a
+ * per-instance phase p in [0, LE_PV_HOP) (le_pv_hop_phase), so the first frame
+ * runs at tick (LE_PV_HOP - p) % LE_PV_HOP + 1 instead of tick 1:
+ *
+ *  1. Reported latency. A frame analysed with the FIFO head at H covers input
+ *     [H - N + 1, H] and lands at out[0 .. N-1]; out[j] is emitted j ticks
+ *     later, when the head is H + j. The emitted sample therefore corresponds
+ *     to input (head - N + 1) for every p: latency stays LE_PV_N.
+ *  2. The dry-delay match (fx_octaver's tap at head - latency + 1) is the same
+ *     index, so wet and dry stay aligned at every phase.
+ *  3. fx_apply_chain's warmup (LE_PV_N ticks, output discarded). Frames run at
+ *     ticks t1, t1 + HOP, t1 + 2 HOP, t1 + 3 HOP, and out[0] has all four
+ *     contributions at the fourth. The worst phase is p = 1 (t1 = LE_PV_HOP),
+ *     whose fourth frame lands on tick LE_PV_N exactly, so the first ramped
+ *     sample (tick LE_PV_N + 1) is complete at every phase, with no margin.
+ *     test_octaver_hop_stagger_alignment sweeps all LE_PV_HOP phases and
+ *     fails with a warmup one sample shorter. */
 static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int cap,
                         float ratio) {
   if (o->out == NULL) return 0.0f;
@@ -576,7 +641,7 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
     if (o->xfade <= 0.0f) {
       o->xfade = 0.0f;
       o->cur_mode = requested;
-      le_pv_reset_runtime(o);
+      le_pv_reset_runtime(fx, slot, chan);
     }
   } else if (o->xfade < 1.0f) {
     o->xfade += xstep;
@@ -698,13 +763,33 @@ void le_fx_entry_reset(le_fx_state* fx, int slot) {
     o->sm_mix = 0.0f; /* starts dry, so the param ramp-in is inaudible */
     o->cur_mode = 0;  /* phase vocoder */
     o->xfade = 1.0f;  /* steady (no gain dip) */
-    le_pv_reset_runtime(o);
+    le_pv_reset_runtime(fx, slot, chan);
   }
   le_fx_clear_reverb(fx, slot);
   /* A retyped slot has no tail to drain: a stale budget would let the next
    * re-enable edge skip its clean reset and read the old type's ring. */
   fx->enable_drain[slot] = 0;
   fx->enable_quiet[slot] = 0;
+}
+
+/* Seeds slot [slot]'s octaver runtime settled at [params] (engine_fx.h). */
+void le_fx_octaver_seed_settled(le_fx_state* fx, int slot,
+                                const float* params) {
+  if (fx == NULL || params == NULL || slot < 0 || slot >= LE_FX_MAX) return;
+  const int mode = params[3] >= 0.5f ? 1 : 0;
+  for (int chan = 0; chan < 2; ++chan) {
+    le_octaver_state* o = &fx->oct[slot][chan];
+    o->sm_shift = params[0];
+    o->sm_tone = params[1];
+    o->sm_mix = params[2];
+    o->xfade = 1.0f; /* steady: no gain dip on the first sample */
+    if (mode != o->cur_mode) {
+      /* Land on the requested mode without fx_octaver's ~15 ms dip, and
+       * re-seed the runtime as that switch would, hop phase included. */
+      o->cur_mode = mode;
+      le_pv_reset_runtime(fx, slot, chan);
+    }
+  }
 }
 
 /* Zeroes chain slot [slot]'s delay rings (both channels, [cap] floats each)

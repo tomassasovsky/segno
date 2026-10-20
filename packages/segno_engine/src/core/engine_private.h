@@ -313,7 +313,10 @@ typedef struct le_octaver_state {
   float* out;        /* synthesis overlap-add accumulator, length LE_PV_N */
   float* last_phase; /* previous analysis phase per bin, length LE_PV_BINS */
   float* sum_phase;  /* accumulated synthesis phase per bin, length LE_PV_BINS */
-  int32_t hop_count; /* samples emitted in the current hop block */
+  /* Samples into the current hop: PV counts up to LE_PV_HOP and runs a frame
+   * on wrap; PSOLA counts down to its next YIN pass. Seeded at this
+   * instance's staggered phase, not 0 (le_pv_hop_phase, engine_fx.c). */
+  int32_t hop_count;
   int32_t out_pos;   /* reserved read/write phase (PSOLA, part 4) */
   /* PSOLA (part 4; zero-initialized and unused here). */
   float period;
@@ -337,6 +340,16 @@ typedef struct le_octaver_state {
  * NULL), reading both banks from xl / xr — see fx_reverb. The rev_* arrays
  * already hold both banks (LE_REV_BANKS == 2) and stay per-slot. */
 typedef struct le_fx_state {
+  /* Octaver hop-stagger seed (#915): this CHAIN's base analysis-hop phase,
+   * in [0, LE_PV_HOP). le_engine_create gives every chain owner a distinct
+   * one (le_fx_*_hop_seed, engine_fx.h) and the octaver adds its slot's step
+   * (le_pv_hop_phase, engine_fx.c), so octaver instances do not run their FFT
+   * frames on the same sample index. 0, the calloc'd default, is a valid base
+   * for a standalone state that is not a copy of a live owner (the VST3
+   * processors; #940 covers giving a hosted instance its own). The offline
+   * renderers stand in for a live owner and copy its seed. Written once by
+   * the control thread before any audio runs; read-only afterwards. */
+  int32_t hop_seed;
   float svf_ic1[LE_FX_MAX][2];
   float svf_ic2[LE_FX_MAX][2];
   float lfo[LE_FX_MAX][2];
