@@ -39,6 +39,7 @@
 #include "segno_engine_api.h"
 #include "perf_drain.h"     /* le_perf_drain_start/stop (capture-to-disk thread) */
 #include "perf_log_ring.h"  /* le_perf_log_ring_push (control-side event log) */
+#include "rt_alloc.h"       /* le_rt_*: pool slots, bounce bundles (callback-written) */
 #include "tempo_grid.h"     /* le_grid_signature_valid, le_grid_div bounds */
 
 /* Whether the track's history is entirely erased-take material — i.e. its top
@@ -228,6 +229,36 @@ static int32_t le_layer_slot_frames(const le_engine* engine, int32_t len) {
   return want > engine->max_loop_frames ? engine->max_loop_frames : want;
 }
 
+/* Faults in every page of lane [ln]'s pool slot [slot] for writing, on this
+ * (control) thread, so the audio thread never takes a first-touch fault on it
+ * (rt_alloc.h). Pool slots are allocated untouched, so this is the moment a
+ * slot starts to cost memory: call it just before the command that lets the
+ * audio thread write the slot, never earlier. */
+static void le_lane_prefault_slot(le_lane* ln, int slot) {
+  if (slot < 0 || ln->pool[slot] == NULL) return;
+  le_rt_prefault(ln->pool[slot], (size_t)ln->pool_cap[slot] * sizeof(float));
+}
+
+/* Prefaults everything a capture about to start on [t] can write: the live
+ * slot of every active lane (a take writes it from the first frame, up to the
+ * recording cap) and every shadow slot already posted to the audio thread
+ * (an overdub backs up into them). le_post_record_image calls it before any
+ * RECORD or ARM it publishes, which covers every capture start: an immediate
+ * take or punch-in, and a quantized, sound-triggered or clock-launched one,
+ * whose start the callback fires later on its own. Shadows posted afterwards
+ * are prefaulted where they are posted (le_post_dub_shadows,
+ * le_prepare_image_punch_in). Pages already present cost a page-table walk. */
+static void le_track_prefault_capture(le_track* t) {
+  const int32_t lanes = le_lanes_active(t);
+  for (int32_t l = 0; l < lanes; ++l) {
+    le_lane* ln = &t->lanes[l];
+    le_lane_prefault_slot(ln, load_i32(&ln->a_live));
+    for (int i = 0; i < t->outstanding_count; ++i) {
+      le_lane_prefault_slot(ln, t->outstanding_slots[i]);
+    }
+  }
+}
+
 /* Tops the track's posted shadow slots up to `target` (control thread):
  * acquires a free pool slot, lazily allocates its buffer on every active lane,
  * and posts it via LE_CMD_DUB_SHADOW. Push-then-mutate: the slot only becomes
@@ -260,6 +291,8 @@ static void le_post_dub_shadows(le_engine* engine, int32_t channel,
       }
     }
     if (!ok) return;
+    /* The audio thread backs the pass up into it as soon as it arms it. */
+    for (int32_t l = 0; l < lanes; ++l) le_lane_prefault_slot(&t->lanes[l], slot);
     if (le_push_cmd(engine, (le_command){.code = LE_CMD_DUB_SHADOW,
                                          .lanei = {channel, 0, slot}}) !=
         LE_OK) {
@@ -1312,7 +1345,8 @@ static int le_prepare_image_capture(le_engine* e, int32_t channel) {
       if ((n == 0 && ln->pool[slot] == NULL) ||
           (ln->pool[slot] && ln->pool_cap[slot] >= e->max_loop_frames))
         continue;
-      allocated[n][l] = (float*)calloc((size_t)e->max_loop_frames, sizeof(float));
+      allocated[n][l] =
+          (float*)le_rt_alloc((size_t)e->max_loop_frames * sizeof(float));
       if (!allocated[n][l]) goto refused;
     }
   }
@@ -1320,7 +1354,7 @@ static int le_prepare_image_capture(le_engine* e, int32_t channel) {
     for (int l = 0; l < lanes; ++l) {
       if (!allocated[n][l]) continue;
       le_lane* ln = &t->lanes[l];
-      free(ln->pool[slots[n]]);
+      le_rt_free(ln->pool[slots[n]]);
       ln->pool[slots[n]] = allocated[n][l];
       ln->pool_cap[slots[n]] = e->max_loop_frames;
     }
@@ -1329,7 +1363,7 @@ static int le_prepare_image_capture(le_engine* e, int32_t channel) {
 
 refused:
   for (int n = 0; n < 2; ++n)
-    for (int l = 0; l < lanes; ++l) free(allocated[n][l]);
+    for (int l = 0; l < lanes; ++l) le_rt_free(allocated[n][l]);
   return -1;
 }
 
@@ -1375,7 +1409,7 @@ static int le_prepare_image_punch_in(le_engine* e, int32_t channel) {
     for (int l = 0; l < lanes; ++l) {
       const le_lane* ln = &t->lanes[l];
       if (ln->pool[slot] != NULL && ln->pool_cap[slot] >= want) continue;
-      allocated[n][l] = (float*)calloc((size_t)want, sizeof(float));
+      allocated[n][l] = (float*)le_rt_alloc((size_t)want * sizeof(float));
       if (!allocated[n][l]) goto refused;
     }
   }
@@ -1393,12 +1427,13 @@ static int le_prepare_image_punch_in(le_engine* e, int32_t channel) {
     for (int l = 0; l < lanes; ++l) {
       if (!allocated[n][l]) continue;
       le_lane* ln = &t->lanes[l];
-      free(ln->pool[slot]);
+      le_rt_free(ln->pool[slot]);
       ln->pool[slot] = allocated[n][l];
       ln->pool_cap[slot] = want;
     }
     /* Capacity for ALL shadows plus the final action was proven before any
      * mutation. Shadows precede capture, even if the callback drains now. */
+    for (int l = 0; l < lanes; ++l) le_lane_prefault_slot(&t->lanes[l], slot);
     t->outstanding_slots[t->outstanding_count++] = slot;
     (void)le_push_cmd(e, (le_command){.code = LE_CMD_DUB_SHADOW,
                                     .lanei = {channel, 0, slot}});
@@ -1408,7 +1443,7 @@ static int le_prepare_image_punch_in(le_engine* e, int32_t channel) {
 
 refused:
   for (int n = 0; n < LE_DUB_SHADOWS; ++n)
-    for (int l = 0; l < lanes; ++l) free(allocated[n][l]);
+    for (int l = 0; l < lanes; ++l) le_rt_free(allocated[n][l]);
   return 0;
 }
 
@@ -1503,8 +1538,14 @@ static int le_prepare_routing(le_engine* e, const le_mix_settings* mix) {
       for (int l = old_count; l < mix->lane_count[ch]; ++l) {
         le_lane* ln = &t->lanes[l];
         const int live = load_i32(&ln->a_live);
-        if (!le_lane_ensure_slot(ln, live, e->max_loop_frames)) return LE_ERR_INVALID;
-        if (!load_i32(&ln->a_recoverable))
+        const int got = le_lane_ensure_slot(ln, live, e->max_loop_frames);
+        if (got == LE_SLOT_FAILED) return LE_ERR_INVALID;
+        /* Only a REUSED slot can hold an old take; a FRESH one reads zeros
+         * and has no page touched, and clearing it would make the whole
+         * cap-sized buffer resident (#906: 623 MB for 8 tracks x 8 lanes
+         * with nothing recorded). A take on the lane prefaults it when it
+         * starts (le_track_prefault_capture). */
+        if (got == LE_SLOT_REUSED && !load_i32(&ln->a_recoverable))
           memset(ln->pool[live], 0, (size_t)e->max_loop_frames * sizeof(float));
       }
     }
@@ -1581,6 +1622,16 @@ static int32_t le_post_record_image(le_engine* e, int32_t channel,
                                      int32_t action, float trigger,
                                      int clocked, const le_record_image* image,
                                      int fresh_shadow, int clear_first) {
+  /* A capture start (not the press that finishes one): fault in what it will
+   * write before the command can reach the audio thread. */
+  le_track* const t = &e->tracks[channel];
+  const int32_t st = le_effective_state(t);
+  if (st != LE_TRACK_RECORDING && st != LE_TRACK_OVERDUBBING) {
+    le_track_prefault_capture(t);
+    for (int32_t l = 0; l < le_lanes_active(t); ++l) {
+      le_lane_prefault_slot(&t->lanes[l], fresh_shadow);
+    }
+  }
   if (!image) return clocked ? le_post_clock_command(e, action, channel)
                             : le_push(e, action, channel, trigger);
   uint32_t sequence = clocked ? e->clock_commands_posted + 1 : 0;
@@ -1613,7 +1664,6 @@ static int32_t le_post_record_image(le_engine* e, int32_t channel,
     if (fresh_shadow >= 0) {
       e->ring.buffer[(tail + count++) & e->ring.mask] = (le_command){
           .code = LE_CMD_DUB_SHADOW, .lanei = {channel, 0, fresh_shadow}};
-      le_track* t = &e->tracks[channel];
       t->outstanding_slots[t->outstanding_count++] = fresh_shadow;
     }
     e->commands_posted += (uint32_t)count;
@@ -3224,18 +3274,18 @@ int32_t le_engine_edit_length(le_engine* e, int32_t channel, int32_t edit,
     if (t->lanes[l].pool[slot] != NULL && t->lanes[l].pool_cap[slot] >= want) {
       continue;
     }
-    fresh[l] = (float*)calloc((size_t)want, sizeof(float));
+    fresh[l] = (float*)le_rt_alloc((size_t)want * sizeof(float));
     if (fresh[l] != NULL) continue;
-    for (int32_t k = 0; k < l; ++k) free(fresh[k]);
+    for (int32_t k = 0; k < l; ++k) le_rt_free(fresh[k]);
     return LE_ERR_INVALID;
   }
   if (track_acquire_slot(t) != slot) { /* the same pure selection, applied */
-    for (int32_t l = 0; l < lanes; ++l) free(fresh[l]);
+    for (int32_t l = 0; l < lanes; ++l) le_rt_free(fresh[l]);
     return LE_ERR_INVALID;
   }
   for (int32_t l = 0; l < lanes; ++l) {
     if (fresh[l] == NULL) continue;
-    free(t->lanes[l].pool[slot]);
+    le_rt_free(t->lanes[l].pool[slot]);
     t->lanes[l].pool[slot] = fresh[l];
     t->lanes[l].pool_cap[slot] = want;
   }
@@ -5634,7 +5684,7 @@ static int32_t le_bounce_post(le_engine* engine, le_bounce_bundle* b,
   if (rc != LE_OK) {
     le_fx_recipe_abandon(b->lane_fx);
     le_fx_recipe_abandon(b->track_fx);
-    free(b);
+    le_rt_free(b);
     return rc;
   }
   le_fx_recipe_admitted(engine, b->lane_fx, 0);
@@ -5718,7 +5768,7 @@ void le_bounce_collect(le_engine* engine) {
     }
     t->bounce_inflight = NULL;
     t->bounce_pin[0] = t->bounce_pin[1] = 0;
-    free(b);
+    le_rt_free(b);
   }
 }
 
@@ -5736,7 +5786,7 @@ void le_bounce_abandon_all(le_engine* engine) {
       le_bounce_collect(engine);
       continue;
     }
-    free(t->bounce_inflight);
+    le_rt_free(t->bounce_inflight);
     t->bounce_inflight = NULL;
     t->bounce_pin[0] = t->bounce_pin[1] = 0;
   }
@@ -5785,7 +5835,8 @@ int32_t le_engine_bounce(le_engine* engine, const le_bounce_request* request,
   const int32_t lanes_after =
       le_bounce_lanes_after(engine, ch, request->topology);
   if (lanes_after < 2 || lanes_after > LE_MAX_LANES) return LE_ERR_INVALID;
-  le_bounce_bundle* b = (le_bounce_bundle*)calloc(1, sizeof(*b));
+  le_bounce_bundle* b =
+      (le_bounce_bundle*)le_rt_alloc_prefaulted(sizeof(*b)); /* callback-written */
   if (b == NULL) return LE_ERR_CAPACITY;
   b->channel = ch;
   b->op = LE_BOUNCE_APPLY;
@@ -5794,7 +5845,7 @@ int32_t le_engine_bounce(le_engine* engine, const le_bounce_request* request,
                                  request->lane_fx, request->lane_fx_count,
                                  request->track_fx, lanes_after);
   if (rc != LE_OK) {
-    free(b);
+    le_rt_free(b);
     return rc;
   }
   /* The incoming image: one slot, the pair on lanes 0 and 1, silence on the
@@ -5836,7 +5887,7 @@ int32_t le_engine_bounce(le_engine* engine, const le_bounce_request* request,
   if (rc != LE_OK) {
     le_fx_recipe_abandon(b->lane_fx);
     le_fx_recipe_abandon(b->track_fx);
-    free(b);
+    le_rt_free(b);
     return rc;
   }
   if (engine->bounce_next_group == UINT32_MAX) engine->bounce_next_group = 0;
@@ -5897,7 +5948,8 @@ int32_t le_engine_bounce_recover(le_engine* engine,
   const int32_t lanes_after =
       le_bounce_lanes_after(engine, ch, request->topology);
   if (lanes_after < 1 || lanes_after > LE_MAX_LANES) return LE_ERR_INVALID;
-  le_bounce_bundle* b = (le_bounce_bundle*)calloc(1, sizeof(*b));
+  le_bounce_bundle* b =
+      (le_bounce_bundle*)le_rt_alloc_prefaulted(sizeof(*b)); /* callback-written */
   if (b == NULL) return LE_ERR_CAPACITY;
   b->channel = ch;
   b->op = redo ? LE_BOUNCE_REDO : LE_BOUNCE_UNDO;
@@ -5908,7 +5960,7 @@ int32_t le_engine_bounce_recover(le_engine* engine,
                                        request->lane_fx, request->lane_fx_count,
                                        request->track_fx, lanes_after);
   if (rc != LE_OK) {
-    free(b);
+    le_rt_free(b);
     return rc;
   }
   if (g.state != LE_TRACK_EMPTY && g.slot >= 0) {

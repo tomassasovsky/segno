@@ -137,6 +137,11 @@ void le_fx_enable_force_bypass(le_fx_state* fx, int slot);
  * nulls them. Control-thread only (lane/monitor reset, engine destroy). */
 void le_fx_free_octaver(le_fx_state* fx, int slot);
 
+/* Frees a chain slot's delay rings (both channels) and nulls them. Control-
+ * thread only, like le_fx_free_octaver. The rings are le_rt_alloc storage
+ * (rt_alloc.h), so every owner releases them here and never with free(). */
+void le_fx_free_delay(le_fx_state* fx, int slot);
+
 /* Frees EVERY heap buffer a standalone le_fx_state owns (both delay rings per
  * slot + the octaver heap) and nulls the pointers — the one teardown for
  * worker-private offline states (the wet-cache render, the perf_render

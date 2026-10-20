@@ -52,6 +52,7 @@
 #include "miniaudio.h"
 #include "perf_drain.h" /* le_perf_drain_stop (reconfigure/destroy teardown) */
 #include "perf_render.h" /* le_perf_render_cancel (reconfigure/destroy teardown) */
+#include "rt_alloc.h" /* le_rt_*: every buffer the audio thread writes */
 #include "tempo_grid.h" /* LE_GRID_DIV_OFF (grid-off quantize default) */
 
 /* All platform-specific behavior (CoreAudio channel labels, JACK port-pinning,
@@ -82,29 +83,59 @@ void le_track_set_len(le_track* t, int32_t len) {
  * engine_core.h). Undo layers are quantized to the loop length, so a reused
  * slot may need to grow before serving a longer track — or to the full
  * max_loop_frames before becoming a recording target. Replaces rather than
- * preserves: every consumer writes the slot whole before it is read. */
+ * preserves: every consumer writes the slot whole before it is read.
+ *
+ * The buffer is le_rt_alloc storage (rt_alloc.h): fork-shielded, zeroed, and
+ * with NO page touched, so a cap-sized slot costs nothing until a take is
+ * about to be written into it — the control thread prefaults it then
+ * (le_track_prefault_capture, engine_commands.c), never here. A REUSED slot
+ * keeps whatever it held; a FRESH one reads zeros, so a caller that needs a
+ * cleared slot clears only a REUSED one (#906: clearing fresh ones made every
+ * cap-sized page resident, 623 MB for 8 tracks x 8 lanes with nothing
+ * recorded).
+ *
+ * Map new, publish, then unmap old: a reader that loads pool[slot] at any
+ * instant gets a mapped buffer. That ordering is not what makes the regrow
+ * safe — the callers guarantee the audio thread is not dereferencing the slot
+ * (an EMPTY track's live slot, whose emptying command has published, or a
+ * slot outside live/stacks/outstanding) — but with mappings a violation of
+ * that invariant is a SIGSEGV rather than stale samples, so the window is not
+ * left open either. */
 int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames) {
-  if (frames <= 0) return 0;
-  if (ln->pool[slot] != NULL && ln->pool_cap[slot] >= frames) return 1;
-  free(ln->pool[slot]);
-  ln->pool[slot] = (float*)calloc((size_t)frames, sizeof(float));
-  ln->pool_cap[slot] = ln->pool[slot] != NULL ? frames : 0;
-  return ln->pool[slot] != NULL;
+  if (frames <= 0) return LE_SLOT_FAILED;
+  if (ln->pool[slot] != NULL && ln->pool_cap[slot] >= frames) {
+    return LE_SLOT_REUSED;
+  }
+  float* fresh = (float*)le_rt_alloc((size_t)frames * sizeof(float));
+  float* old = ln->pool[slot];
+  ln->pool[slot] = fresh;
+  ln->pool_cap[slot] = fresh != NULL ? frames : 0;
+  le_rt_free(old);
+  return fresh != NULL ? LE_SLOT_FRESH : LE_SLOT_FAILED;
 }
 
 /* Shrinks an over-allocated slot to `frames`, PRESERVING the leading `frames`
  * samples (the counterpart to le_lane_ensure_slot's grow-by-replace). Only the
  * control thread may call it, and only for a slot the audio thread no longer
  * holds — a retired undo layer, whose cap-sized buffer would otherwise pin the
- * whole recording cap for the session (see le_handle_retired). A failed realloc
- * keeps the oversized buffer: correct, just not yet reclaimed. */
+ * whole recording cap for the session (see le_handle_retired). A failed
+ * allocation keeps the oversized buffer: correct, just not yet reclaimed.
+ *
+ * Copy into a new mapping, not realloc: a mapping cannot be resized in place.
+ * The copy writes every page of the new buffer, so it is resident from here.
+ * The shorter cap is stored before the new pointer, so a plain interleaving
+ * never pairs the new short buffer with the old long cap. */
 void le_lane_shrink_slot(le_lane* ln, int32_t slot, int32_t frames) {
   if (frames <= 0 || ln->pool[slot] == NULL) return;
   if (ln->pool_cap[slot] <= frames) return;
-  float* p = (float*)realloc(ln->pool[slot], (size_t)frames * sizeof(float));
+  const size_t bytes = (size_t)frames * sizeof(float);
+  float* p = (float*)le_rt_alloc(bytes);
   if (p == NULL) return;
-  ln->pool[slot] = p;
+  float* old = ln->pool[slot];
+  memcpy(p, old, bytes);
   ln->pool_cap[slot] = frames;
+  ln->pool[slot] = p;
+  le_rt_free(old);
 }
 
 /* Lowest set bit of `mask` as a channel index, or -1 when no bit is set. Used to
@@ -203,10 +234,7 @@ void le_lane_reset_settings(le_lane* ln, int32_t input_channel) {
     store_f32(&ln->a_fx_chan_gr_bits[s], 1.0f);
     store_f32(&ln->a_fx_chan_level_bits[s], 1.0f);
     le_fx_enable_seed_settled(&ln->fx, s);
-    free(ln->fx.delay[s][0]);
-    ln->fx.delay[s][0] = NULL;
-    free(ln->fx.delay[s][1]);
-    ln->fx.delay[s][1] = NULL;
+    le_fx_free_delay(&ln->fx, s);
     le_fx_free_octaver(&ln->fx, s);
     le_fx_entry_reset(&ln->fx, s);
     /* Destroy any hosted plugin slot too. Reset runs from le_engine_configure
@@ -267,10 +295,7 @@ static void le_monitor_input_reset(le_monitor_input* m) {
     store_f32(&m->a_fx_chan_gr_bits[s], 1.0f);
     store_f32(&m->a_fx_chan_level_bits[s], 1.0f);
     le_fx_enable_seed_settled(&m->fx, s);
-    free(m->fx.delay[s][0]);
-    m->fx.delay[s][0] = NULL;
-    free(m->fx.delay[s][1]);
-    m->fx.delay[s][1] = NULL;
+    le_fx_free_delay(&m->fx, s);
     le_fx_free_octaver(&m->fx, s);
     le_fx_entry_reset(&m->fx, s);
     /* Destroy any hosted plugin slot too (see le_lane_reset) — otherwise a
@@ -311,10 +336,7 @@ static void le_fx_bus_reset(le_fx_bus* b) {
     store_f32(&b->a_fx_chan_gr_bits[s], 1.0f);
     store_f32(&b->a_fx_chan_level_bits[s], 1.0f);
     le_fx_enable_seed_settled(&b->fx, s);
-    free(b->fx.delay[s][0]);
-    b->fx.delay[s][0] = NULL;
-    free(b->fx.delay[s][1]);
-    b->fx.delay[s][1] = NULL;
+    le_fx_free_delay(&b->fx, s);
     le_fx_free_octaver(&b->fx, s);
     le_fx_entry_reset(&b->fx, s);
     /* No plugin-slot loading targets the bus owners yet (built-in effects
@@ -495,7 +517,7 @@ static int le_engine_reset_material(le_engine* engine,
       le_lane* ln = &tr->lanes[l];
       /* Free any buffers from a previous configuration. */
       for (int i = 0; i < LE_POOL_SLOTS; ++i) {
-        free(ln->pool[i]);
+        le_rt_free(ln->pool[i]);
         ln->pool[i] = NULL;
         ln->pool_cap[i] = 0;
       }
@@ -507,7 +529,8 @@ static int le_engine_reset_material(le_engine* engine,
     }
     /* Only lane 0 is active by default; allocate its live buffer now at the
      * full recording cap (further lanes' buffers and all undo snapshots
-     * allocate lazily, undo layers at the loop-length quantum). */
+     * allocate lazily, undo layers at the loop-length quantum). No page of it
+     * is touched until a take is about to start (le_track_prefault_capture). */
     if (!le_lane_ensure_slot(&tr->lanes[0], 0, max_loop_frames)) return 0;
     /* Free mode (B2b): each track's own clock resets alongside the master's —
      * a fresh configure/session must never carry a stale established length
@@ -752,9 +775,11 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
 
   /* Latency-measurement capture window (~100 ms): the audio thread fills it with
    * the input-magnitude envelope, the resolver cross-correlates it. */
-  free(engine->lat_buf);
+  le_rt_free(engine->lat_buf);
   engine->lat_buf_cap = sample_rate / LE_LATENCY_CAPTURE_DIV;
-  engine->lat_buf = (float*)calloc((size_t)engine->lat_buf_cap, sizeof(float));
+  /* Prefaulted: a latency capture writes it from the callback (rt_alloc.h). */
+  engine->lat_buf = (float*)le_rt_alloc_prefaulted(
+      (size_t)engine->lat_buf_cap * sizeof(float));
   engine->lat_buf_pos = 0;
   if (engine->lat_buf == NULL) engine->lat_buf_cap = 0;
   /* Transport POSITION only: the loop clock's length is material
@@ -903,11 +928,12 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   for (int c = 0; c < LE_MAX_CHANNELS; ++c) {
     le_cond_seed_defaults(&engine->cond[c], sample_rate);
   }
-  free(engine->cond_buf);
+  le_rt_free(engine->cond_buf);
   engine->cond_buf_cap =
       (int64_t)LE_COND_SCRATCH_FRAMES * (int64_t)input_channels;
-  engine->cond_buf =
-      (float*)calloc((size_t)engine->cond_buf_cap, sizeof(float));
+  /* Prefaulted: the callback copies every input block into it (rt_alloc.h). */
+  engine->cond_buf = (float*)le_rt_alloc_prefaulted(
+      (size_t)engine->cond_buf_cap * sizeof(float));
   if (engine->cond_buf == NULL) engine->cond_buf_cap = 0;
   /* Raw-fallback telemetry: per session, like a_xruns above. */
   atomic_store_explicit(&engine->a_cond_fallback_blocks, 0u,
@@ -937,16 +963,13 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
     for (int s = 0; s < LE_FX_MAX; ++s) {
       le_fx_entry_reset(&engine->all_tracks_fx[k], s);
       le_fx_enable_seed_settled(&engine->all_tracks_fx[k], s);
-      free(engine->all_tracks_fx[k].delay[s][0]);
-      engine->all_tracks_fx[k].delay[s][0] = NULL;
-      free(engine->all_tracks_fx[k].delay[s][1]);
-      engine->all_tracks_fx[k].delay[s][1] = NULL;
+      le_fx_free_delay(&engine->all_tracks_fx[k], s);
       le_fx_free_octaver(&engine->all_tracks_fx[k], s);
     }
     engine->all_tracks_fx[k].enable_clear_cooldown = 0;
   }
   /* a_perf_follow_output is a preference, not device state: it survives a
-   * (re)configure and is zero only from le_engine_create's calloc. */
+   * (re)configure and is zero only from le_engine_create's zeroed allocation. */
 
   /* Loop-stage wet cache (part 2): fresh state + worker for the new session.
    * The cap (a_fx_cache_cap) is a SETTING seeded in le_engine_create and
@@ -1219,10 +1242,17 @@ void le_engine_mark_device_lost(le_engine* engine) {
 }
 
 le_engine* le_engine_create(void) {
-  le_engine* engine = (le_engine*)calloc(1, sizeof(le_engine));
+  /* Before anything is allocated: lock the process's memory and count forks
+   * (engine_platform.h). Both are once per process. */
+  le_platform_lock_memory();
+  le_platform_watch_forks();
+  /* The struct itself is written by the callback every block — the command,
+   * event and perf-log rings live inside it — so it is fork-shielded and
+   * prefaulted like the buffers it owns (rt_alloc.h). */
+  le_engine* engine = (le_engine*)le_rt_alloc_prefaulted(sizeof(le_engine));
   if (engine == NULL) return NULL;
   if (!le_instruments_create(engine)) {
-    free(engine);
+    le_rt_free(engine);
     return NULL;
   }
   le_ring_init(&engine->ring, engine->ring_storage, LE_RING_CAPACITY);
@@ -1276,9 +1306,9 @@ le_engine* le_engine_create(void) {
   store_i32(&engine->a_record_start, 0);
   /* Looper mode SETTING (B2a, D4): same seeded-once persistence as the
    * tempo/click settings above. MULTI (0) is both the enum's zero value and
-   * calloc's zero-fill, so this store is redundant against the allocation —
+   * the allocation's zero-fill, so this store is redundant against it —
    * kept explicit anyway, matching every sibling setting here, so the
-   * default is legible at the seed site rather than implied by calloc. */
+   * default is legible at the seed site rather than implied by the zeroing. */
   store_i32(&engine->a_looper_mode, LE_LOOPER_MODE_MULTI);
   le_song_cancel(engine);
   le_song_forget(engine);
@@ -1287,7 +1317,7 @@ le_engine* le_engine_create(void) {
    * configure(): configure empties every track, and an empty rig has no
    * crown (le_engine_configure resets it alongside the tracks; the audio
    * thread's le_primary_reconcile keeps that invariant afterwards). -1 is
-   * NOT calloc's zero-fill, so this store is load-bearing. */
+   * NOT the allocation's zero-fill, so this store is load-bearing. */
   store_i32(&engine->a_primary_track, -1);
   /* MIDI clock send SETTING (Phase C, D15): same seeded-once persistence as
    * the looper mode / primary track above. Off (0), kept explicit for the
@@ -1346,11 +1376,10 @@ void le_engine_destroy(le_engine* engine) {
     for (int l = 0; l < LE_MAX_LANES; ++l) {
       le_lane* ln = &engine->tracks[t].lanes[l];
       for (int i = 0; i < LE_POOL_SLOTS; ++i) {
-        free(ln->pool[i]);
+        le_rt_free(ln->pool[i]);
       }
       for (int s = 0; s < LE_FX_MAX; ++s) {
-        free(ln->fx.delay[s][0]);
-        free(ln->fx.delay[s][1]);
+        le_fx_free_delay(&ln->fx, s);
         le_fx_free_octaver(&ln->fx, s);
         /* The device is already closed (no audio thread), so any hosted plugin
          * slot — including one left behind by a stalled-callback clear — can be
@@ -1361,8 +1390,7 @@ void le_engine_destroy(le_engine* engine) {
     }
     /* Track-stage chain (part 1b): same per-slot teardown as the lanes. */
     for (int s = 0; s < LE_FX_MAX; ++s) {
-      free(engine->tracks[t].bus.fx.delay[s][0]);
-      free(engine->tracks[t].bus.fx.delay[s][1]);
+      le_fx_free_delay(&engine->tracks[t].bus.fx, s);
       le_fx_free_octaver(&engine->tracks[t].bus.fx, s);
       le_plugin_slot_destroy(atomic_load_explicit(
           &engine->tracks[t].bus.fx.plugin[s], memory_order_relaxed));
@@ -1370,8 +1398,7 @@ void le_engine_destroy(le_engine* engine) {
   }
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     for (int s = 0; s < LE_FX_MAX; ++s) {
-      free(engine->monitors[c].fx.delay[s][0]);
-      free(engine->monitors[c].fx.delay[s][1]);
+      le_fx_free_delay(&engine->monitors[c].fx, s);
       le_fx_free_octaver(&engine->monitors[c].fx, s);
       le_plugin_slot_destroy(atomic_load_explicit(
           &engine->monitors[c].fx.plugin[s], memory_order_relaxed));
@@ -1380,11 +1407,9 @@ void le_engine_destroy(le_engine* engine) {
   /* Output bus chains (slice 3b) and the All tracks instances (slice 3e). */
   for (int s = 0; s < LE_FX_MAX; ++s) {
     for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
-      free(engine->outputs[k].fx.fx.delay[s][0]);
-      free(engine->outputs[k].fx.fx.delay[s][1]);
+      le_fx_free_delay(&engine->outputs[k].fx.fx, s);
       le_fx_free_octaver(&engine->outputs[k].fx.fx, s);
-      free(engine->all_tracks_fx[k].delay[s][0]);
-      free(engine->all_tracks_fx[k].delay[s][1]);
+      le_fx_free_delay(&engine->all_tracks_fx[k], s);
       le_fx_free_octaver(&engine->all_tracks_fx[k], s);
     }
     for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
@@ -1392,8 +1417,8 @@ void le_engine_destroy(le_engine* engine) {
           &engine->outputs[k].fx.fx.plugin[s], memory_order_relaxed));
     }
   }
-  free(engine->lat_buf);
-  free(engine->cond_buf); /* conditioned-copy scratch (input conditioning) */
+  le_rt_free(engine->lat_buf);
+  le_rt_free(engine->cond_buf); /* conditioned-copy scratch (input conditioning) */
   le_instruments_destroy(engine); /* the synth and its buses (#1197) */
   /* The device is already closed (no audio thread), so the performance-capture
    * rings — including any left retracted-but-allocated by a disarm that could
@@ -1416,7 +1441,7 @@ void le_engine_destroy(le_engine* engine) {
     le_audio_ring_release(&engine->perf.monitor_ring[c]);
   }
   le_platform_on_engine_teardown(); /* Linux restores PipeWire's dynamic quantum */
-  free(engine);
+  le_rt_free(engine);
 }
 
 static int32_t le_engine_publish_and_start(le_engine* engine,

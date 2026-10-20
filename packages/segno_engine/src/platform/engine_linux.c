@@ -14,14 +14,24 @@
 #if defined(__linux__)
 
 #include <dlfcn.h>
-#include <pthread.h>   /* pthread_setschedparam for the appliance RT audio thread */
+#include <errno.h>
+#include <pthread.h>   /* pthread_setschedparam, pthread_once, pthread_atfork */
 #include <sched.h>     /* SCHED_FIFO, struct sched_param */
+#include <stdatomic.h> /* the fork counter */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>     /* mlockall (le_platform_lock_memory) */
+#include <sys/resource.h> /* getrlimit(RLIMIT_MEMLOCK) */
 #include <sys/stat.h>  /* stat() — probe /proc/asound/cardN pcm direction */
+#include <unistd.h>    /* sysconf(_SC_PAGESIZE) */
 
+#ifndef MCL_ONFAULT
+#define MCL_ONFAULT 4 /* kernel ABI; older libc headers lack the name */
+#endif
+
+#include "engine_internal.h"  /* le_engine_process: a probe address in the engine */
 #include "engine_platform.h"  /* the seam */
 #include "engine_private.h"   /* struct le_engine, enumerate_devices, store_i32;
                                * le_config / le_device_info / LE_MAX_CHANNELS /
@@ -844,6 +854,8 @@ void le_platform_after_device_open(le_engine* engine) {
    * while it is still idle, so it never runs its deadline-critical first reads
    * at normal priority (which overruns the capture at tiny buffers). */
   le_alsa_set_rt_priority(engine);
+  /* And map in the code it is about to run (engine_platform.h). */
+  le_platform_prefault_audio_code();
 }
 
 void le_platform_after_device_start(le_engine* engine, const le_config* config) {
@@ -856,6 +868,162 @@ void le_platform_after_device_start(le_engine* engine, const le_config* config) 
 void le_platform_on_engine_teardown(void) {
   if (le_alsa_only()) return; /* no PipeWire quantum was forced */
   le_pipewire_force_quantum(0); /* restore PipeWire's dynamic quantum */
+}
+
+/* Whether this process holds CAP_IPC_LOCK in its effective set, which exempts
+ * it from RLIMIT_MEMLOCK. Read from /proc/self/status so no libcap is needed. */
+static int le_has_cap_ipc_lock(void) {
+  FILE* f = fopen("/proc/self/status", "r");
+  if (f == NULL) return 0;
+  char line[256];
+  unsigned long long eff = 0;
+  int found = 0;
+  while (fgets(line, sizeof(line), f) != NULL) {
+    if (sscanf(line, "CapEff: %llx", &eff) == 1) {
+      found = 1;
+      break;
+    }
+  }
+  fclose(f);
+  return found && (eff & (1ull << 14)) != 0; /* CAP_IPC_LOCK = 14 */
+}
+
+/* The two conditions under which MCL_FUTURE cannot make a later allocation
+ * fail: a later mapping is refused only when it would push the locked total
+ * past RLIMIT_MEMLOCK, and either there is no limit or the process is exempt
+ * from it. Anywhere else (a desktop's default 8 MB) the call is skipped; the
+ * engine runs exactly as it did before, without the lock. */
+static void le_lock_memory_once(void) {
+  struct rlimit lim;
+  const int unlimited =
+      getrlimit(RLIMIT_MEMLOCK, &lim) == 0 && lim.rlim_cur == RLIM_INFINITY;
+  if (!unlimited && !le_has_cap_ipc_lock()) {
+    fprintf(stderr,
+            "segno/rt: memory not locked: RLIMIT_MEMLOCK is limited and the "
+            "process lacks CAP_IPC_LOCK\n");
+    return;
+  }
+  /* MCL_ONFAULT is the difference between locking what is touched and
+   * committing every reservation in the address space (the Dart heap's, the
+   * untouched recording caps). Without it this is an OOM on the appliance, so
+   * a kernel that refuses it (pre-4.4) gets no lock rather than the
+   * pre-populating form. */
+  if (mlockall(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT) != 0) {
+    fprintf(stderr, "segno/rt: memory not locked: mlockall failed (errno %d)\n",
+            errno);
+    return;
+  }
+  fprintf(stderr,
+          "segno/rt: memory locked (mlockall MCL_CURRENT|MCL_FUTURE|"
+          "MCL_ONFAULT)\n");
+}
+
+void le_platform_lock_memory(void) {
+  static pthread_once_t once = PTHREAD_ONCE_INIT;
+  pthread_once(&once, le_lock_memory_once);
+}
+
+static _Atomic unsigned g_fork_count = 0;
+
+/* Runs in the parent, on the forking thread, just before fork(). An ordinary
+ * thread context, so stdio is fine; the count is what the bench and tests
+ * read. */
+static void le_on_fork_prepare(void) {
+  const unsigned n = atomic_fetch_add_explicit(&g_fork_count, 1u,
+                                               memory_order_relaxed) + 1u;
+  if (n <= 8u || (n & (n - 1u)) == 0u) {
+    fprintf(stderr,
+            "segno/rt: fork #%u from the app process; helpers must start with "
+            "posix_spawn (#1367)\n",
+            n);
+  }
+}
+
+static void le_watch_forks_once(void) {
+  if (pthread_atfork(le_on_fork_prepare, NULL, NULL) != 0) {
+    fprintf(stderr, "segno/rt: pthread_atfork failed; forks are not counted\n");
+  }
+}
+
+void le_platform_watch_forks(void) {
+  static pthread_once_t once = PTHREAD_ONCE_INIT;
+  pthread_once(&once, le_watch_forks_once);
+}
+
+unsigned le_platform_fork_count(void) {
+  return atomic_load_explicit(&g_fork_count, memory_order_relaxed);
+}
+
+#ifndef MADV_POPULATE_READ
+#define MADV_POPULATE_READ 22 /* kernel ABI (5.14+); older headers lack it */
+#endif
+#ifndef MADV_POPULATE_WRITE
+#define MADV_POPULATE_WRITE 23
+#endif
+
+/* Maps every page of [lo, hi) in: read access for code and read-only data,
+ * write access for a private writable segment (whose pages the callback may
+ * write, such as libasound's state). Content-preserving either way. */
+static void le_populate_range(uintptr_t lo, uintptr_t hi, int writable) {
+  if (madvise((void*)lo, hi - lo,
+              writable ? MADV_POPULATE_WRITE : MADV_POPULATE_READ) == 0) {
+    return;
+  }
+  const long page = sysconf(_SC_PAGESIZE);
+  const uintptr_t step = page > 0 ? (uintptr_t)page : 4096u;
+  for (uintptr_t a = lo; a < hi; a += step) { /* kernels before 5.14 */
+    if (writable) {
+      __atomic_fetch_add((unsigned char*)a, (unsigned char)0, __ATOMIC_RELAXED);
+    } else {
+      (void)*(volatile const unsigned char*)a;
+    }
+  }
+}
+
+/* The shared objects whose code the callback runs besides the engine itself,
+ * matched by file name: libc and libm (the DSP's memcpy, expf, sinf...), and
+ * libasound, which miniaudio dlopens at context init — which is why this runs
+ * at device start and not at engine create. */
+static int le_is_audio_library(const char* path) {
+  static const char* const names[] = {"/libc.so", "/libm.so", "/libasound.so"};
+  for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
+    if (strstr(path, names[i]) != NULL) return 1;
+  }
+  return 0;
+}
+
+void le_platform_prefault_audio_code(void) {
+  /* The engine is found by an address inside it, wherever it is linked: the
+   * app's plugin library, or a test binary. */
+  const uintptr_t probe = (uintptr_t)&le_engine_process;
+  char engine_path[256] = {0};
+  FILE* f = fopen("/proc/self/maps", "r");
+  if (f == NULL) return;
+  char line[512];
+  while (fgets(line, sizeof(line), f) != NULL) {
+    unsigned long lo = 0, hi = 0;
+    char path[256] = {0};
+    if (sscanf(line, "%lx-%lx %*s %*s %*s %*s %255s", &lo, &hi, path) == 3 &&
+        probe >= lo && probe < hi) {
+      snprintf(engine_path, sizeof(engine_path), "%s", path);
+      break;
+    }
+  }
+  rewind(f);
+  while (fgets(line, sizeof(line), f) != NULL) {
+    unsigned long lo = 0, hi = 0;
+    char perms[8] = {0};
+    char path[256] = {0};
+    if (sscanf(line, "%lx-%lx %7s %*s %*s %*s %255s", &lo, &hi, perms, path) !=
+        4) {
+      continue;
+    }
+    const int wanted = le_is_audio_library(path) ||
+                       (engine_path[0] != '\0' && strcmp(path, engine_path) == 0);
+    if (!wanted || perms[0] != 'r') continue; /* skip guard mappings */
+    le_populate_range(lo, hi, perms[1] == 'w' && perms[3] == 'p');
+  }
+  fclose(f);
 }
 
 uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count) {

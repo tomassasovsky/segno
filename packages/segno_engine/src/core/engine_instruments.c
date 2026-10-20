@@ -36,6 +36,7 @@
 #include <string.h>
 
 #include "engine_core.h"
+#include "rt_alloc.h" /* le_rt_alloc_prefaulted / le_rt_free */
 #include "segno_engine_api.h"
 #include "synth_voice.h"
 
@@ -110,9 +111,11 @@ static void ring_pop(le_inst_ring* r) {
 /* ---- lifecycle (no callback running) ---- */
 
 int le_instruments_create(le_engine* e) {
-  e->synth = (struct le_synth*)calloc(1, sizeof(le_synth));
-  e->inst_bus = (float*)calloc(
-      (size_t)LE_MAX_INSTRUMENTS * (size_t)LE_COND_SCRATCH_FRAMES, sizeof(float));
+  /* Both are written by the callback every block once a patch plays, so they
+   * are fork-shielded and prefaulted here, on the control thread (rt_alloc.h). */
+  e->synth = (struct le_synth*)le_rt_alloc_prefaulted(sizeof(le_synth));
+  e->inst_bus = (float*)le_rt_alloc_prefaulted(
+      (size_t)LE_MAX_INSTRUMENTS * (size_t)LE_COND_SCRATCH_FRAMES * sizeof(float));
   if (e->synth == NULL || e->inst_bus == NULL) {
     le_instruments_destroy(e);
     return 0;
@@ -130,8 +133,8 @@ int le_instruments_create(le_engine* e) {
 }
 
 void le_instruments_destroy(le_engine* e) {
-  free(e->synth);
-  free(e->inst_bus);
+  le_rt_free(e->synth);
+  le_rt_free(e->inst_bus);
   e->synth = NULL;
   e->inst_bus = NULL;
 }

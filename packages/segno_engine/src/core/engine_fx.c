@@ -20,6 +20,7 @@
 #include "engine_fx.h"
 #include "engine_internal.h" /* le_psola_detect prototype (defined below) */
 #include "fft.h" /* le_rfft_fwd / le_rfft_inv / le_fft / le_hann_init */
+#include "rt_alloc.h" /* le_rt_alloc_prefaulted / le_rt_free: the audio thread writes these */
 #include "../host/plugin_slot.h" /* le_plugin_slot_process (LE_FX_PLUGIN row) */
 
 #ifndef LE_PI
@@ -769,21 +770,25 @@ void le_fx_enable_force_bypass(le_fx_state* fx, int slot) {
 void le_fx_free_octaver(le_fx_state* fx, int slot) {
   for (int chan = 0; chan < 2; ++chan) {
     le_octaver_state* o = &fx->oct[slot][chan];
-    free(o->out);
+    le_rt_free(o->out);
     o->out = NULL;
-    free(o->last_phase);
+    le_rt_free(o->last_phase);
     o->last_phase = NULL;
-    free(o->sum_phase);
+    le_rt_free(o->sum_phase);
     o->sum_phase = NULL;
   }
 }
 
+void le_fx_free_delay(le_fx_state* fx, int slot) {
+  le_rt_free(fx->delay[slot][0]);
+  fx->delay[slot][0] = NULL;
+  le_rt_free(fx->delay[slot][1]);
+  fx->delay[slot][1] = NULL;
+}
+
 void le_fx_state_free_buffers(le_fx_state* fx) {
   for (int s = 0; s < LE_FX_MAX; ++s) {
-    free(fx->delay[s][0]);
-    fx->delay[s][0] = NULL;
-    free(fx->delay[s][1]);
-    fx->delay[s][1] = NULL;
+    le_fx_free_delay(fx, s);
     le_fx_free_octaver(fx, s);
   }
 }
@@ -933,13 +938,22 @@ static int fx_octaver_latency_vt(const le_fx_state* fx, int slot) {
  * Each ringed/buffered effect lazily allocates its heap state on first use and
  * keeps it for reuse (a reorder back to the type reuses it). All-or-nothing: on
  * OOM each helper frees only what THIS call allocated and leaves any pre-existing
- * buffer the slot already owned. */
+ * buffer the slot already owned.
+ *
+ * Every buffer here is written by the audio thread from the first frame the
+ * slot processes (and cleared whole on a re-enable), so it comes from
+ * le_rt_alloc_prefaulted: fork-shielded, and every page faulted in now, on
+ * this thread (rt_alloc.h). The offline renderers (wet cache, performance
+ * render) reach this too; they write the rings at once, so the prefault costs
+ * them nothing extra. Released through le_fx_free_delay / le_fx_free_octaver,
+ * never free(). */
 
 /* Allocates delay ring [slot][chan] if absent. 1 = newly allocated, 0 = already
  * present, -1 = OOM. */
 static int fx_alloc_ring(le_fx_state* fx, int slot, int chan, int cap) {
   if (fx->delay[slot][chan] != NULL) return 0;
-  fx->delay[slot][chan] = (float*)calloc((size_t)cap, sizeof(float));
+  fx->delay[slot][chan] =
+      (float*)le_rt_alloc_prefaulted((size_t)cap * sizeof(float));
   return fx->delay[slot][chan] != NULL ? 1 : -1;
 }
 
@@ -949,7 +963,7 @@ static int32_t fx_stereo_ring_prepare(le_fx_state* fx, int slot, int cap) {
   if (a0 < 0) return LE_ERR_INVALID;
   if (fx_alloc_ring(fx, slot, 1, cap) < 0) {
     if (a0 == 1) { /* free only the ring this call allocated */
-      free(fx->delay[slot][0]);
+      le_rt_free(fx->delay[slot][0]);
       fx->delay[slot][0] = NULL;
     }
     return LE_ERR_INVALID;
@@ -971,7 +985,8 @@ static int32_t fx_octaver_prepare(le_fx_state* fx, int slot, int cap) {
   int n = 0;
   for (int chan = 0; chan < 2; ++chan) {
     if (fx->delay[slot][chan] == NULL) {
-      fx->delay[slot][chan] = (float*)calloc((size_t)cap, sizeof(float));
+      fx->delay[slot][chan] =
+          (float*)le_rt_alloc_prefaulted((size_t)cap * sizeof(float));
       if (fx->delay[slot][chan] == NULL) goto oom;
       owned[n++] = &fx->delay[slot][chan];
     }
@@ -980,17 +995,19 @@ static int32_t fx_octaver_prepare(le_fx_state* fx, int slot, int cap) {
   for (int chan = 0; chan < 2; ++chan) {
     le_octaver_state* o = &fx->oct[slot][chan];
     if (o->out == NULL) {
-      o->out = (float*)calloc((size_t)LE_PV_N, sizeof(float));
+      o->out = (float*)le_rt_alloc_prefaulted((size_t)LE_PV_N * sizeof(float));
       if (o->out == NULL) goto oom;
       owned[n++] = &o->out;
     }
     if (o->last_phase == NULL) {
-      o->last_phase = (float*)calloc((size_t)LE_PV_BINS, sizeof(float));
+      o->last_phase =
+          (float*)le_rt_alloc_prefaulted((size_t)LE_PV_BINS * sizeof(float));
       if (o->last_phase == NULL) goto oom;
       owned[n++] = &o->last_phase;
     }
     if (o->sum_phase == NULL) {
-      o->sum_phase = (float*)calloc((size_t)LE_PV_BINS, sizeof(float));
+      o->sum_phase =
+          (float*)le_rt_alloc_prefaulted((size_t)LE_PV_BINS * sizeof(float));
       if (o->sum_phase == NULL) goto oom;
       owned[n++] = &o->sum_phase;
     }
@@ -998,7 +1015,7 @@ static int32_t fx_octaver_prepare(le_fx_state* fx, int slot, int cap) {
   return LE_OK;
 oom:
   for (int i = n - 1; i >= 0; --i) {
-    free(*owned[i]);
+    le_rt_free(*owned[i]);
     *owned[i] = NULL;
   }
   return LE_ERR_INVALID;
