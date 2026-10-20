@@ -25,6 +25,7 @@
  *   ./bench_fx_cpu.sh                      # 96 kHz / 64 frames, unpaced
  *   ./bench_fx_cpu.sh --paced              # paced to the period, like a device
  *   ./bench_fx_cpu.sh --smoke              # short runs (CI)
+ *   bench_fx_cpu --paced --cpu 3           # on the console, off the audio core
  *
  * On the console, run it pinned away from the app's audio core; the timed
  * loops raise themselves to SCHED_FIFO BENCH_RT_PRIO (below the app's 80).
@@ -125,10 +126,22 @@ int main(int argc, char** argv) {
       o.period = atoi(argv[++i]);
     } else if (!strcmp(argv[i], "--blocks") && i + 1 < argc) {
       blocks = atoi(argv[++i]);
+    } else if (!strcmp(argv[i], "--cpu") && i + 1 < argc) {
+      /* Pin to one core, so on the console the bench stays off the app's
+       * audio core. Linux only. */
+      const int cpu = atoi(argv[++i]);
+#if defined(__linux__)
+      cpu_set_t set;
+      CPU_ZERO(&set);
+      CPU_SET(cpu, &set);
+      if (sched_setaffinity(0, sizeof(set), &set) != 0) perror("sched_setaffinity");
+#else
+      (void)cpu;
+#endif
     } else {
       fprintf(stderr,
               "usage: %s [--smoke] [--paced] [--rate HZ] [--period FRAMES] "
-              "[--blocks N]\n",
+              "[--blocks N] [--cpu N]\n",
               argv[0]);
       return 2;
     }
