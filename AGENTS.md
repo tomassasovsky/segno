@@ -71,9 +71,9 @@ Run these before calling a change done:
   step, and it enforces rules `dart analyze` does not (a cubit method
   returning anything but void fails here and passes there).
 - Formatting is automatic: a PostToolUse hook runs `dart format` on every
-  edited `.dart` file whose package has `.dart_tool/package_config.json`
-  (it skips unresolved packages). Do not hand-format or commit format-only
-  churn.
+  edited `.dart` file that has a `.dart_tool/package_config.json` in its
+  directory or an ancestor (it skips unresolved checkouts). Do not
+  hand-format or commit format-only churn.
 - Push with `git -c credential.helper='!gh auth git-credential' push`. A
   PreToolUse hook denies a bare `git push`, which hangs on the macOS keychain
   credential helper in the agent sandbox.

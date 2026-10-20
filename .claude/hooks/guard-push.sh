@@ -61,18 +61,19 @@ CMD=$(jq -r '.tool_input.command // empty' 2>/dev/null) || exit 0
 case "$CMD" in *push*) ;; *) exit 0 ;; esac
 
 MARKER=credential.helper=GHSANCTIONED
-HOOK_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+HOOK_DIR=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 # 1 + 2 + 3. Two normalisations have to happen BEFORE the blanking, because
 # both markers live inside quotes and would otherwise be erased with them: the
-# heredoc delimiter (`<<'"'"'EOF'"'"'` -> `<<EOF`, so step 4 can still see where a body
-# starts) and the sanctioned credential helper. Blanking itself is a character
+# heredoc delimiter (`<<'EOF'` and `<< "END-DOC"` -> `<<EOF` and `<<END-DOC`,
+# so step 4 can still see where a body starts) and the sanctioned credential
+# helper. Blanking itself is a character
 # walk, so it lives in awk rather than a bash loop -- the bash version was
 # quadratic and cost seconds on a large heredoc; this is ~80 ms on 5 MB.
 SCAN=$(printf '%s' "$CMD" \
   | sed -e ':a' -e '/\\$/{N;s/\\\n//;ta' -e '}' \
   | sed -e "s/$MARKER/credential.helper=NOT_SANCTIONED/g" \
-  | sed -e "s/<<\(-\{0,1\}\)['\"]\([A-Za-z_][A-Za-z0-9_]*\)['\"]/<<\1\2/g" \
+  | sed -e "s/<<\(-\{0,1\}\)[[:space:]]*['\"]\([A-Za-z_][A-Za-z0-9_.-]*\)['\"]/<<\1\2/g" \
   | sed -e "s/credential\.helper=['\"]\{0,1\}!\{0,1\}[^'\" ]*gh auth git-credential['\"]\{0,1\}/$MARKER/g" \
   | awk -f "$HOOK_DIR/blank-quotes.awk") || exit 0
 
@@ -167,8 +168,10 @@ while IFS= read -r LINE; do
       REST=${REST#"${REST%%[![:space:]]*}"}
       CAND=${REST%%[[:space:];|&]*}
       case "$CAND" in
-        ""|*[!A-Za-z0-9_]*) CAND="" ;;
+        ""|*[!A-Za-z0-9_.-]*) CAND="" ;;
       esac
+      # `<<< word` is a herestring: the `<<` matched above is its last two `<`.
+      case "$PRE" in *"<") CAND="" ;; esac
       if [ -n "$CAND" ]; then
         DELIM=$CAND
         # Drop only the `<<DELIM` token. Anything after it on the opener line
