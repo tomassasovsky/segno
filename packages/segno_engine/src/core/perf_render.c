@@ -1453,18 +1453,6 @@ static void le_pr_fx_chain_init_from_lane(le_pr_fx_chain* c,
   }
 }
 
-/* Settles slot [s]'s enable crossfade at its EFFECTIVE arm bit, as the live
- * owner and the wet cache hold it (le_fx_frozen_state_init): a calloc'd zero
- * state would fade the chain in at frame 0, and an enabled seed on a slot the
- * arm marks disabled would fade out an effect that was never heard. */
-static void le_pr_settle_arm_bit(le_fx_state* fx, int s, int effective) {
-  if (effective) {
-    le_fx_enable_seed_settled(fx, s);
-  } else {
-    le_fx_enable_force_bypass(fx, s);
-  }
-}
-
 /* Puts arm-time slot [s] of [type] in the state the live owner's slot was in
  * when the type landed: the reset the ring handler ran (a raw calloc zero is
  * not that state; the octaver would ramp its shift up from two octaves down,
@@ -1552,9 +1540,10 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
    * from this lane's phase at the same instant. A lane chain published by
    * recipe is not in events.log at all; logging it is the rack plan's
    * applied-frame logging (#887, part 4).
-   * An octaver already in the chain at arm is approximated, like every
-   * arm-time slot here (an empty delay ring, a cold reverb): its live counter
-   * is this phase plus an elapsed-frame count nothing records. */
+   * An octaver already in the chain at arm keeps the live hop schedule (its
+   * heavy ticks follow the clock set below); its signal history is
+   * approximated, like every arm-time slot here (an empty delay ring, a cold
+   * reverb). */
   fx->hop_seed = le_fx_lane_hop_seed(channel, 0);
   /* ...and its FX clock at capture frame 0 (#941), so arm-time resets
    * anchor octaver hops where the live chain did. */
@@ -1565,7 +1554,7 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
    * an enabled seed on a slot the arm marks disabled would fade an effect out
    * that was never heard. */
   for (int s = 0; s < LE_FX_MAX; ++s) {
-    le_pr_settle_arm_bit(fx, s, chain.chain_enabled && chain.enabled[s]);
+    le_fx_enable_seed_at(fx, s, chain.chain_enabled && chain.enabled[s]);
   }
   /* A prepare failure (OOM on a delay ring / octaver's phase-vocoder heap)
    * is NOT let through as a silent dry-passthrough degradation: fx_delay/
@@ -1820,7 +1809,7 @@ static int le_pr_render_master(const le_pr_manifest* m,
   fx->clock = m->perf_arm_fx_clock; /* see le_pr_render_wet_track */
   int ok = 1;
   for (int i = 0; i < LE_FX_MAX; ++i) {
-    le_pr_settle_arm_bit(fx, i, chain.chain_enabled && chain.enabled[i]);
+    le_fx_enable_seed_at(fx, i, chain.chain_enabled && chain.enabled[i]);
     if (chain.type[i] == LE_FX_NONE) continue;
     if (!le_pr_arm_slot(fx, i, chain.type[i], chain.params[i],
                         m->sample_rate)) {

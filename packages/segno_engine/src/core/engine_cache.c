@@ -1553,11 +1553,7 @@ int32_t le_fx_frozen_state_init(le_fx_state* fx, const le_fx_frozen_chain* c,
    * frame 0), disabled slots settled bypass (no 5 ms fade-out the live chain
    * would not have). */
   for (int s = 0; s < LE_FX_MAX; ++s) {
-    if (bits[s]) {
-      le_fx_enable_seed_settled(fx, s);
-    } else {
-      le_fx_enable_force_bypass(fx, s);
-    }
+    le_fx_enable_seed_at(fx, s, bits[s]);
   }
   /* The channel cache the live chain reads per buffer, frozen with it. */
   fx->chan_any = c->chan_any;

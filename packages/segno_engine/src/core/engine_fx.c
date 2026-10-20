@@ -201,7 +201,11 @@ static void le_oct_set_ticks_to_work(le_octaver_state* o, int ticks) {
  * reset. */
 static int le_oct_seeded_ticks(const le_fx_state* fx, int slot) {
   const uint32_t phase = (uint32_t)le_pv_hop_phase(fx, slot);
-  const uint32_t to_go = (0u - (fx->clock + phase)) & (uint32_t)(LE_PV_HOP - 1);
+  const uint32_t clock =
+      fx->clock_src != NULL
+          ? atomic_load_explicit(fx->clock_src, memory_order_relaxed)
+          : fx->clock;
+  const uint32_t to_go = (0u - (clock + phase)) & (uint32_t)(LE_PV_HOP - 1);
   return (int)to_go + 1;
 }
 
@@ -334,8 +338,9 @@ static void le_octaver_frame(le_octaver_state* o, const float* fifo, int head,
  * at each hop boundary and streaming the synthesis accumulator out by one sample
  * per call, shifting it down by a hop once a block is fully emitted.
  *
- * HOP PHASE AND THE THREE THINGS IT MUST NOT MOVE. hop_count starts at a
- * per-instance phase p in [0, LE_PV_HOP) (le_pv_hop_phase), so the first frame
+ * HOP PHASE AND THE THREE THINGS IT MUST NOT MOVE. hop_count starts at any
+ * value p in [0, LE_PV_HOP) (le_oct_seeded_ticks: whatever puts the heavy
+ * ticks on the instance's frames of the engine clock), so the first frame
  * runs at tick (LE_PV_HOP - p) % LE_PV_HOP + 1 instead of tick 1:
  *
  *  1. Reported latency. A frame analysed with the FIFO head at H covers input
@@ -849,6 +854,14 @@ void le_fx_enable_seed_settled(le_fx_state* fx, int slot) {
   fx->enable_warmup[slot] = 0;
   fx->enable_drain[slot] = 0;
   fx->enable_quiet[slot] = 0;
+}
+
+void le_fx_enable_seed_at(le_fx_state* fx, int slot, int effective) {
+  if (effective) {
+    le_fx_enable_seed_settled(fx, slot);
+  } else {
+    le_fx_enable_force_bypass(fx, slot);
+  }
 }
 
 /* Settles chain slot [slot]'s enable-crossfade runtime at fully BYPASSED.
