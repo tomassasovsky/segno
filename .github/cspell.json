@@ -1075,16 +1075,31 @@
     "rbin",
     "rksd",
     "Rockchip",
-    "uncompiled"
+    "uncompiled",
+    "backfeed",
+    "fanout",
+    "fanouts",
+    "floorplan",
+    "idempotently",
+    "kilohm",
+    "Mbps"
   ],
   "overrides": [
     {
-      "filename": "**/hardware/kicad/screen_power/models/licenses/Package_DIP-CREDITS.md",
+      "filename": "**/hardware/kicad/screen_power/models/licenses/*-CREDITS.md",
       "words": [
         "dshapes",
         "easyw",
         "FCAD",
+        "Freecad",
+        "grob",
+        "jkriege",
+        "Kriege",
+        "modles",
+        "molex",
         "Olsson",
+        "poeschlr",
+        "Tantal",
         "Terje",
         "windwos"
       ]
