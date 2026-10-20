@@ -1559,6 +1559,7 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
   /* ...and its FX clock at capture frame 0 (#941), so arm-time resets
    * anchor octaver hops where the live chain did. */
   fx->clock = m->perf_arm_fx_clock;
+  fx->clocked = 1;
   /* Seed the enable-crossfade runtime SETTLED at each slot's effective arm
    * bit, as the wet cache does (le_fx_frozen_state_init): a calloc'd zero
    * state would fade the whole chain in over the ramp window at frame 0, and
@@ -1816,6 +1817,7 @@ static int le_pr_render_master(const le_pr_manifest* m,
    * arm-time slot got when its type landed (see le_pr_render_wet_track). */
   fx->hop_seed = le_fx_output_hop_seed(m->arm_capture_bus);
   fx->clock = m->perf_arm_fx_clock; /* see le_pr_render_wet_track */
+  fx->clocked = 1;
   int ok = 1;
   for (int i = 0; i < LE_FX_MAX; ++i) {
     le_fx_enable_seed_at(fx, i, chain.chain_enabled && chain.enabled[i]);

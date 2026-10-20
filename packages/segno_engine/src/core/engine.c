@@ -158,6 +158,7 @@ void le_lane_reset_settings(le_lane* ln, int32_t input_channel) {
   store_i32(&ln->a_cache_active, 0);
   ln->cache_fp_entry = NULL; /* audio-local fp-verdict cache dies with it */
   ln->cache_fp_gen = 0;
+  ln->cache_fp_hop = 0;
   le_lane_fx_gen_bump(ln); /* the reset rewrites the whole chain below */
   atomic_store_explicit(&ln->a_input_channel, input_channel,
                         memory_order_relaxed);
