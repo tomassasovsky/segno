@@ -84,8 +84,9 @@ class FxPreset {
   ///
   /// Derived by splitting each parameter name at its first space, which is how
   /// the design study grouped them to make the catalogue inspectable. It is a
-  /// READING of the data, not a recovered signal chain: the source does not
-  /// say which modules a rack holds or in what order they run.
+  /// READING of the data, not a signal chain: the preset does not say which
+  /// modules a rack holds or in what order they run. The measured order is
+  /// `kFxRackOrders`.
   List<String> get moduleNames {
     final seen = <String>{};
     final order = <String>[];
