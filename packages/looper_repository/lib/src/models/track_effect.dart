@@ -55,7 +55,8 @@ class FxChannels extends Equatable {
   /// Balance (stereo out) or Pan (mono out), `-1..1`, centre `0`.
   final double placement;
 
-  /// The entry's own level, applied last. Unity `1`.
+  /// The entry's own gain, applied last: `0..4` (about +12 dB), unity `1`.
+  /// A rack's level is its last entry's, set in dB (see `fxRackLevelGain`).
   final double level;
 
   /// Whether this is [defaults].
@@ -446,7 +447,10 @@ class BuiltInEffect extends TrackEffect {
     this.channels = FxChannels.defaults,
     this.rack,
     this.module,
-  }) : params = List<double>.unmodifiable(params ?? type.defaultParams);
+    this.presetId,
+    Map<String, double> source = const {},
+  }) : params = List<double>.unmodifiable(params ?? type.defaultParams),
+       source = Map<String, double>.unmodifiable(source);
 
   /// The effect type.
   final TrackEffectType type;
@@ -472,6 +476,18 @@ class BuiltInEffect extends TrackEffect {
   @override
   final String? module;
 
+  /// The id of the factory preset this entry was built from, or `null` when
+  /// it did not come from one.
+  final String? presetId;
+
+  /// The factory preset's own values for this entry's module, by the
+  /// preset's parameter names.
+  ///
+  /// Kept whatever this build could do with them: a module this build cannot
+  /// process, or can process only partly, still carries everything the player
+  /// loaded, so a later build can rebuild it from the same values.
+  final Map<String, double> source;
+
   @override
   int get typeCode => type.code;
 
@@ -485,6 +501,8 @@ class BuiltInEffect extends TrackEffect {
     FxChannels? channels,
     FxRack? rack,
     String? module,
+    String? presetId,
+    Map<String, double>? source,
   }) => BuiltInEffect(
     type: type ?? this.type,
     params: params ?? this.params,
@@ -494,6 +512,8 @@ class BuiltInEffect extends TrackEffect {
     channels: channels ?? this.channels,
     rack: rack ?? this.rack,
     module: module ?? this.module,
+    presetId: presetId ?? this.presetId,
+    source: source ?? this.source,
   );
 
   @override
@@ -506,6 +526,8 @@ class BuiltInEffect extends TrackEffect {
     channels,
     rack,
     module,
+    presetId,
+    source,
   ];
 }
 
@@ -747,6 +769,8 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
     :final channels,
     :final rack,
     :final module,
+    :final presetId,
+    :final source,
   ) =>
     engine.BuiltInEffect(
       type: trackEffectTypeToEngine(type),
@@ -757,6 +781,8 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
       channels: fxChannelsToEngine(channels),
       rack: _rackToEngine(rack),
       module: module,
+      presetId: presetId,
+      source: source,
     ),
   PluginEffect(
     :final ref,
@@ -825,6 +851,8 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
         :final channels,
         :final rack,
         :final module,
+        :final presetId,
+        :final source,
       ) =>
         BuiltInEffect(
           type: TrackEffectType.fromCode(type.code),
@@ -835,6 +863,8 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
           channels: _channelsFromEngine(channels),
           rack: _rackFromEngine(rack),
           module: module,
+          presetId: presetId,
+          source: source,
         ),
       engine.PluginEffect(
         :final ref,

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:equatable/equatable.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
 
 /// The whole remap: at most one [PedalBinding] per bindable control.
@@ -112,6 +113,25 @@ class PedalBindingSet extends Equatable {
   /// screen's "clear" action). Unknown keys are a no-op.
   PedalBindingSet without(PedalBindingKey key) =>
       PedalBindingSet(_byKey.values.where((b) => b.key != key));
+
+  /// Returns a copy without the assignments to the targets [removes]
+  /// accepts: a binding whose press target matches is removed, with its hold;
+  /// a binding whose hold target alone matches keeps its press and loses the
+  /// hold.
+  PedalBindingSet withoutTargets(
+    bool Function(FxBindingTarget target) removes,
+  ) {
+    bool matches(FxBindingTarget? target) => target != null && removes(target);
+    return PedalBindingSet([
+      for (final binding in _byKey.values)
+        // A matching press takes the whole binding with it.
+        if (!matches(binding.decodeTarget()))
+          if (matches(binding.decodeHoldTarget()))
+            binding.copyWith(clearHold: true)
+          else
+            binding,
+    ]);
+  }
 
   /// The set that actually applies, given this as the GLOBAL set and
   /// [session] as the loaded session's own (A12).

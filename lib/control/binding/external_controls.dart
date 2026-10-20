@@ -315,6 +315,20 @@ class ExternalControls extends Equatable {
         parameters: parameters,
       );
 
+  /// Returns a copy without every activation and parameter whose target
+  /// [removes] accepts.
+  ExternalControls withoutTargets(bool Function(Object target) removes) =>
+      ExternalControls(
+        activations: [
+          for (final a in activations)
+            if (!removes(a.target)) a,
+        ],
+        parameters: [
+          for (final p in parameters)
+            if (!removes(p.target)) p,
+        ],
+      );
+
   /// Returns a copy with [parameter] in place of the one on the same target,
   /// or appended when there is none.
   ExternalControls withParameter(ExternalParameter parameter) {

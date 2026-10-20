@@ -128,7 +128,7 @@ static int prepare_recipe(le_engine* e, struct le_prepared_fx* edit,
         r->input_mode[s] < 0 || r->input_mode[s] > 3 ||
         r->output_mode[s] < 0 || r->output_mode[s] > 1 ||
         !isfinite(r->placement[s]) || r->placement[s] < -1 || r->placement[s] > 1 ||
-        !isfinite(r->level[s]) || r->level[s] < 0 || r->level[s] > LE_MAX_GAIN) return 0;
+        !isfinite(r->level[s]) || r->level[s] < 0 || r->level[s] > LE_FX_LEVEL_MAX) return 0;
     for (int k = 0; k < LE_FX_PARAMS; ++k)
       if (!isfinite(r->params[s][k]) || r->params[s][k] < 0 || r->params[s][k] > 1) return 0;
     le_plugin_slot* slot = r->plugin[s];

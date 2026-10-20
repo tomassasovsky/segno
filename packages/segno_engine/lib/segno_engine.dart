@@ -177,6 +177,7 @@ export 'src/track_effect.dart'
         decodeTrackEffects,
         encodeTrackEffects,
         fxPreCount,
+        kFxLevelMax,
         kPluginFxCode,
         kTrackEffectMax,
         kTrackEffectParams;
