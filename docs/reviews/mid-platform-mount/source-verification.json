@@ -1,0 +1,24 @@
+{
+  "segno_platform_front_ring": {
+    "geometry_unchanged": true,
+    "stl_byte_identical": true
+  },
+  "segno_platform_sled": {
+    "geometry_unchanged": true,
+    "stl_byte_identical": true
+  },
+  "mid_collar": {
+    "only_mounting_bores_changed": true,
+    "solid": true,
+    "valid": true,
+    "added_mm3": 1391.1071901970781,
+    "removed_mm3": 467.7203142664499
+  },
+  "mid_sled": {
+    "only_lower_insert_pattern_changed": true,
+    "solid": true,
+    "valid": true,
+    "added_mm3": 381.7035074111598,
+    "removed_mm3": 381.70350741115993
+  }
+}
