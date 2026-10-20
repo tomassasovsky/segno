@@ -31,8 +31,12 @@
 /* Minimum samples between two ring-clearing re-enable edges on one chain
  * (fx_apply_chain's enable_clear_cooldown): bounds the per-callback clear
  * work to roughly one slot's rings while keeping the stagger inaudible
- * (~2.7 ms at 48 kHz between engages on a whole-chain stomp). */
-#define LE_FX_ENABLE_CLEAR_SPACING 128
+ * (~2.7 ms at 96 kHz between engages on a whole-chain stomp). Exactly one
+ * octaver hop, so slots a stomp resets one spacing apart keep their hop
+ * quarters (engine_fx.h): any spacing that is not a multiple of LE_PV_HOP
+ * shifts each later slot's schedule and can put two octavers back in one
+ * callback. */
+#define LE_FX_ENABLE_CLEAR_SPACING LE_PV_HOP
 
 static float le_hann[LE_PV_N];
 static int le_hann_ready;
@@ -146,6 +150,8 @@ _Static_assert((LE_PV_HOP & (LE_PV_HOP - 1)) == 0,
 _Static_assert(LE_PV_HOP % 4 == 0, "the stagger lattice is four quarters");
 _Static_assert(LE_PSOLA_AHOP == LE_PV_HOP,
                "PSOLA's YIN cadence must equal the PV hop to share its schedule");
+_Static_assert(LE_FX_ENABLE_CLEAR_SPACING % LE_PV_HOP == 0,
+               "a stomp's spaced resets must keep each slot's hop quarter");
 
 /* The analysis-hop PHASE of the octaver in chain slot [slot] of [fx], in
  * samples after the reset that seeds it: the owner's quarter plus the slot,

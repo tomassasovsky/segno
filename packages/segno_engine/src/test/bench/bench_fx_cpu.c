@@ -50,13 +50,14 @@
 #endif
 
 #include "segno_engine_api.h"
+#include "engine_fx.h" /* LE_PV_HOP, LE_PV_STAGGER_QUARTER */
 #include "bench_common.h"
 
-/* The octaver's hop (LE_PV_HOP, 256 samples) in quarters: each block is
- * counted in the quarter its first sample falls in, so the column shows where
- * the FFT work lands at any period. */
-#define HOP 256
-#define PHASES 4
+/* The octaver's hop in quarters: each block is counted in the quarter its
+ * first sample falls in, so the column shows where the FFT work lands at any
+ * period. */
+#define HOP LE_PV_HOP
+#define PHASES (LE_PV_HOP / LE_PV_STAGGER_QUARTER)
 
 static int g_paced;
 
@@ -185,8 +186,11 @@ int main(int argc, char** argv) {
         fprintf(stderr, "rig failed\n");
         return 1;
       }
-      le_engine_set_monitor_input(r.e, 0, 1);
-      le_engine_set_monitor_input_output(r.e, 0, 0x3);
+      if (le_engine_set_monitor_input(r.e, 0, 1) != LE_OK ||
+          le_engine_set_monitor_input_output(r.e, 0, 0x3) != LE_OK) {
+        fprintf(stderr, "monitor input 0 refused\n");
+        return 1;
+      }
       for (int32_t f = 0; f < o.period; ++f) {
         r.in[2 * f] = src[f];
         r.in[2 * f + 1] = src[f];

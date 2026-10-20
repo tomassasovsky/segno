@@ -87,7 +87,12 @@ static inline int32_t le_fx_quarter_seed(uint32_t q) {
  * Lane l of track t takes quarter t + l, so the same slot on consecutive
  * tracks and on consecutive lanes spreads. The bus takes t + 2: with nine
  * owners per track and four quarters something must share, and lane 0 and
- * the bus are the pair a track most often uses together.
+ * the bus are the pair a track most often uses together. The other kinds are
+ * offset so the first of each runs apart from track 0's lane 0 and bus:
+ * monitor c takes c + 1 (a live input's effects beside a loop's), output bus
+ * k takes k + 3. The all-tracks instances take k + 2, the one pairing left to
+ * share with a track bus, because a chain on every track at once and one on
+ * a single track's bus are the least likely to both hold pitch effects.
  *
  * Unsigned arithmetic, masked: perf_render's track index comes from a
  * manifest on disk and is only checked for being non-negative. */
@@ -97,10 +102,10 @@ static inline int32_t le_fx_lane_hop_seed(int32_t track, int32_t lane) {
                               : le_fx_quarter_seed(t + (uint32_t)lane);
 }
 static inline int32_t le_fx_monitor_hop_seed(int32_t source) {
-  return le_fx_quarter_seed((uint32_t)source);
+  return le_fx_quarter_seed((uint32_t)source + 1u);
 }
 static inline int32_t le_fx_output_hop_seed(int32_t bus) {
-  return le_fx_quarter_seed((uint32_t)bus);
+  return le_fx_quarter_seed((uint32_t)bus + 3u);
 }
 static inline int32_t le_fx_all_tracks_hop_seed(int32_t bus) {
   return le_fx_quarter_seed((uint32_t)bus + 2u);
