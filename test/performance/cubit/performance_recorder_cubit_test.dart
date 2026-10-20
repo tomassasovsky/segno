@@ -516,7 +516,7 @@ void main() {
       // Kick off a disarm directly on the repository so the cubit is driven
       // into finalizing/rendering without going through toggleArm's own
       // guard, then attempt an arm mid-flight.
-      unawaited(performance.disarmAndFinalize());
+      final disarming = performance.disarmAndFinalize();
       await cubit.stream.firstWhere(
         (s) => s is! PerformanceRecorderIdle && s is! PerformanceRecorderArmed,
       );
@@ -524,6 +524,11 @@ void main() {
 
       await cubit.toggleArm(); // refused: not idle
       expect(engine.perfArmCalls, 1, reason: 'no second arm went through');
+
+      // The empty take is discarded after the disarm returns: let that file
+      // work end before tear-down deletes its directory (#1366).
+      await disarming;
+      await waitForCompleted(cubit);
     });
 
     test(
@@ -1733,6 +1738,15 @@ void main() {
       writeManifest(dir, finalized: false);
     }
 
+    /// Ends the live take and waits for the cubit to finish with it. The
+    /// cubit discards or renders the take after `disarmAndFinalize` returns;
+    /// a test that ends first leaves that file work running against a
+    /// temporary directory its tear-down deletes (#1366).
+    Future<void> finishTake(PerformanceRecorderCubit cubit) async {
+      await performance.disarmAndFinalize();
+      await completedWithin(cubit);
+    }
+
     test('a take arms on the drive under a recording lease, and the armed '
         'readout names the drive', () async {
       final cubit = buildUsb();
@@ -1756,7 +1770,7 @@ void main() {
           'SEGNO USB',
         ),
       );
-      await performance.disarmAndFinalize();
+      await finishTake(cubit);
     });
 
     test('pulling the drive ends the take as volumeLost, once, and frees '
@@ -1793,7 +1807,7 @@ void main() {
       await cubit.toggleArm();
       await pumpEventQueue();
       expect(performance.armedDirectory, startsWith('${tempDir.path}/exports'));
-      await performance.disarmAndFinalize();
+      await finishTake(cubit);
     });
 
     test('a finished take releases the drive', () async {
@@ -1804,8 +1818,7 @@ void main() {
       await pumpEventQueue();
       seedLog(performance.armedDirectory!);
       clock = clock.add(const Duration(seconds: 5));
-      await performance.disarmAndFinalize();
-      await completedWithin(cubit);
+      await finishTake(cubit);
 
       expect(storage.leases, isEmpty);
     });
@@ -1855,7 +1868,7 @@ void main() {
       destination = const StorageDestination.internal();
       await cubit.toggleArm();
       expect(performance.armedDirectory, startsWith('${tempDir.path}/exports'));
-      await performance.disarmAndFinalize();
+      await finishTake(cubit);
     });
 
     test('a take that started on the drive but failed a later arm step '

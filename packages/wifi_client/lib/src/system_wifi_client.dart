@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:spawn_process/spawn_process.dart';
 import 'package:wifi_client/src/fake_wifi_client.dart';
 import 'package:wifi_client/src/unsupported_wifi_client.dart';
 import 'package:wifi_client/src/wifi_client.dart';
@@ -122,17 +123,13 @@ class SystemWifiClient implements WifiClient {
     String? stdin,
     String secret = '',
   }) async {
-    final process = await Process.start(helperPath, args);
-    final stdout = process.stdout.transform(utf8.decoder).join();
-    final stderr = process.stderr.transform(utf8.decoder).join();
-    if (stdin != null) process.stdin.write(stdin);
-    await process.stdin.close();
-    final exitCode = await process.exitCode;
-    if (exitCode == 0) return stdout;
-    var err = (await stderr).trim();
-    if (err.isEmpty) err = 'segno-wifi-ctl failed ($exitCode)';
+    final result = await runProcess(helperPath, args, stdin: stdin);
+    final stdout = result.stdout as String;
+    if (result.exitCode == 0) return stdout;
+    var err = (result.stderr as String).trim();
+    if (err.isEmpty) err = 'segno-wifi-ctl failed (${result.exitCode})';
     if (secret.isNotEmpty) err = err.replaceAll(secret, '***');
-    throw WifiHelperException(err, restored: _restored(await stdout));
+    throw WifiHelperException(err, restored: _restored(stdout));
   }
 
   /// The network a failed join printed as `{"restored":<ssid>}`, if any.
