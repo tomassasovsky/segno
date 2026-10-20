@@ -23,6 +23,52 @@ class SegnoEngineBindings {
     ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName) lookup,
   ) : _lookup = lookup;
 
+  /// The number of parameters built-in [type] uses (0 for LE_FX_NONE and
+  /// LE_FX_PLUGIN, whose parameters come from le_plugin_param_info_at), or
+  /// LE_ERR_INVALID for an unknown type.
+  int le_fx_param_count(
+    int type,
+  ) {
+    return _le_fx_param_count(
+      type,
+    );
+  }
+
+  late final _le_fx_param_countPtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Int32)>>(
+        'le_fx_param_count',
+      );
+  late final _le_fx_param_count = _le_fx_param_countPtr
+      .asFunction<int Function(int)>();
+
+  /// Fills *out with parameter [param] (0..count-1) of built-in [type]. Returns
+  /// LE_OK, or LE_ERR_INVALID for a NULL `out`, an unknown type or a parameter
+  /// out of range.
+  int le_fx_param_info(
+    int type,
+    int param,
+    ffi.Pointer<le_fx_param_desc> out,
+  ) {
+    return _le_fx_param_info(
+      type,
+      param,
+      out,
+    );
+  }
+
+  late final _le_fx_param_infoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<le_fx_param_desc>,
+          )
+        >
+      >('le_fx_param_info');
+  late final _le_fx_param_info = _le_fx_param_infoPtr
+      .asFunction<int Function(int, int, ffi.Pointer<le_fx_param_desc>)>();
+
   /// One bounded command; enqueue is not application. The full snapshot carries
   /// the coherent applied tuple and its even receipt revision/result.
   int le_engine_set_record_timing_settings(
@@ -8635,6 +8681,43 @@ enum le_command_code {
   };
 }
 
+/// One built-in parameter. `steps` is 0 for a continuous parameter, otherwise
+/// the number of positions a control snaps it to: position k of n stands for
+/// setting k / (n - 1) and the value at that setting. The kernel reads a
+/// LE_FX_UNIT_CHOICE parameter at its nearest position and every other one as
+/// set, so a setting between positions plays as set. `def` is the setting a
+/// freshly engaged effect starts at (le_fx_defaults).
+final class le_fx_param_desc extends ffi.Struct {
+  @ffi.Array.multi([24])
+  external ffi.Array<ffi.Char> key;
+
+  /// le_fx_param_unit
+  @ffi.Int32()
+  external int unit;
+
+  @ffi.Int32()
+  external int steps;
+
+  /// value at setting 0
+  @ffi.Float()
+  external double at_min;
+
+  /// value at setting 1
+  @ffi.Float()
+  external double at_max;
+
+  /// le_fx_param_curve
+  @ffi.Int32()
+  external int curve;
+
+  @ffi.Float()
+  external double def;
+
+  /// le_fx_param_flags
+  @ffi.Uint32()
+  external int flags;
+}
+
 /// A hardware audio device discovered by enumeration (le_enumerate_*).
 ///
 /// `id` is an opaque, backend-specific token suitable for pinning a device via
@@ -10291,7 +10374,13 @@ enum le_cache_reason {
 
   /// a Transpose source render does not fit the
   /// cap; the track plays dry (#1179)
-  LE_CACHE_REASON_BUDGET(4);
+  LE_CACHE_REASON_BUDGET(4),
+
+  /// the print holds an octaver and the loop is not a
+  /// whole number of octaver hops (256 frames): its
+  /// hop falls on other frames each lap, so no single
+  /// lap's render equals live (#941)
+  LE_CACHE_REASON_HOP(5);
 
   final int value;
   const le_cache_reason(this.value);
@@ -10302,6 +10391,7 @@ enum le_cache_reason {
     2 => LE_CACHE_REASON_RENDER_FAILED,
     3 => LE_CACHE_REASON_PART_POST,
     4 => LE_CACHE_REASON_BUDGET,
+    5 => LE_CACHE_REASON_HOP,
     _ => throw ArgumentError('Unknown value for le_cache_reason: $value'),
   };
 }
@@ -10745,6 +10835,8 @@ const int LE_LENGTH_PRESET_MAX_BARS = 64;
 const int LE_FX_MAX = 64;
 
 const int LE_FX_PARAMS = 4;
+
+const int LE_FX_PARAM_KEY_CHARS = 24;
 
 const int LE_MAX_TRACKS = 8;
 

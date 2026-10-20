@@ -254,6 +254,26 @@ uint64_t le_engine_lane_fx_fingerprint(le_engine* engine, int32_t channel,
                                  &ln->a_fx_chain_enabled);
 }
 
+/* Folds the track's loop-top position on the octaver hop (#941) into a print
+ * key when [types][0, n) holds an octaver: such a print is rendered against
+ * that position (the cache's clock0), so a stop and relaunch, or a held
+ * transport, that moves the loop against the engine clock changes the key and
+ * the print falls back live and re-renders instead of engaging off the live
+ * hop. A chain without an octaver is keyed as before. */
+static uint64_t le_fx_fold_hop_position(uint64_t h, int32_t n,
+                                        _Atomic int32_t* a_type,
+                                        const le_track* t) {
+  if (n > LE_FX_MAX) n = LE_FX_MAX;
+  for (int32_t i = 0; i < n; ++i) {
+    if (load_i32(&a_type[i]) == LE_FX_OCTAVER) {
+      const uint32_t top =
+          atomic_load_explicit(&t->a_top_clock, memory_order_relaxed);
+      return le_fx_fp_u32(h, top & (uint32_t)(LE_PV_HOP - 1));
+    }
+  }
+  return h;
+}
+
 uint64_t le_lane_pre_fx_fingerprint(le_engine* engine, int32_t channel,
                                     int32_t lane) {
   if (engine == NULL || channel < 0 || channel >= engine->track_count ||
@@ -277,7 +297,8 @@ uint64_t le_lane_pre_fx_fingerprint(le_engine* engine, int32_t channel,
                       ln->a_fx_chan_out, ln->a_fx_chan_gl_bits,
                       ln->a_fx_chan_gr_bits, ln->a_fx_chan_level_bits);
   for (int32_t s = 0; s < pre; ++s) h = le_fx_chan_fold(h, &chan[s]);
-  return h;
+  return le_fx_fold_hop_position(h, pre, ln->a_fx_type,
+                                 &engine->tracks[channel]);
 }
 
 /* Whether track [channel]'s Pre run can be rendered at all (slice 3e).
@@ -338,6 +359,7 @@ uint64_t le_track_pre_fingerprint(le_engine* engine, int32_t channel) {
                       b->a_fx_chan_gl_bits, b->a_fx_chan_gr_bits,
                       b->a_fx_chan_level_bits);
   for (int32_t s = 0; s < pre; ++s) h = le_fx_chan_fold(h, &chan[s]);
+  h = le_fx_fold_hop_position(h, pre, b->a_fx_type, t);
 
   const int32_t n = le_lanes_active(t);
   h = le_fx_fp_u32(h, (uint32_t)n);

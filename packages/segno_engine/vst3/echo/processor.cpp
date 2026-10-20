@@ -131,18 +131,20 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
 
 tresult PLUGIN_API Processor::setState(IBStream* state) {
   if (!state) return kInvalidArgument;
-  float saved[LE_FX_PARAMS];
+  float saved[kSegnoPluginStateParams];
   const int32 n = static_cast<int32>(sizeof(saved));
   int32 read = 0;
   if (state->read(saved, n, &read) != kResultOk || read != n) return kResultFalse;
-  for (int32 i = 0; i < LE_FX_PARAMS; ++i) params_[0][i] = saved[i];
+  for (int32 i = 0; i < kSegnoPluginStateParams; ++i) {
+    params_[0][i] = saved[i];
+  }
   return kResultOk;
 }
 
 tresult PLUGIN_API Processor::getState(IBStream* state) {
   if (!state) return kInvalidArgument;
   int32 written = 0;
-  const int32 n = static_cast<int32>(sizeof(params_[0]));
+  const int32 n = static_cast<int32>(kSegnoPluginStateParams * sizeof(float));
   if (state->write(params_[0], n, &written) != kResultOk || written != n) {
     return kResultFalse;
   }

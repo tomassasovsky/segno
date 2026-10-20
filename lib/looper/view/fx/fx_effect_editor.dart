@@ -200,16 +200,11 @@ class _Parameters extends StatelessWidget {
           runSpacing: 46,
           children: [
             for (var i = 0; i < params.length; i++)
-              FxParamControl(
+              FxBuiltInParamControl(
                 key: Key('fx_param_$i'),
-                label: params[i].label,
-                value: effect.params[i],
+                effect: effect,
+                index: i,
                 width: 493,
-                // The accepted design's own words: raw source values are
-                // shown WITHOUT invented physical units, and a control whose
-                // mapping was never recovered says so rather than printing a
-                // number in milliseconds nobody verified.
-                note: context.l10n.fxScaleUnverified,
                 onChanged: (value) {
                   final id = slotId;
                   if (id != null) edits.setParam(id, i, value);
