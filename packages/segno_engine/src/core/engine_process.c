@@ -1397,6 +1397,27 @@ static void le_seam_fold_dub_shadow(le_track* t, int32_t len, int32_t F) {
   }
 }
 
+/* A linear fade out over `f` frames that ends (weight 0) at position `last`,
+ * modulo `len`, on every active lane of pool slot `slot` (-1 = each lane's
+ * live slot). Lanes whose slot is missing or shorter than `len` are skipped,
+ * the same capacity rule as le_seam_fold. */
+static void le_lanes_fade_out_to(le_track* t, int32_t slot, int32_t last,
+                                 int32_t len, int32_t f) {
+  if (len <= 0 || f <= 0 || f > len || last < 0 || last >= len) return;
+  const int32_t n = le_lanes_active(t);
+  for (int32_t l = 0; l < n; ++l) {
+    le_lane* ln = &t->lanes[l];
+    const int32_t s = slot >= 0 ? slot : load_i32(&ln->a_live);
+    float* b = ln->pool[s];
+    if (b == NULL || ln->pool_cap[s] < len) continue;
+    for (int32_t i = 0; i < f; ++i) {
+      int32_t p = last - i;
+      if (p < 0) p += len;
+      b[p] *= (float)i / (float)f;
+    }
+  }
+}
+
 /* #730: the two joins a take that STOPPED EARLY leaves behind.
  *
  * Auto rounds the length UP to whole base loops, and everything the take did
@@ -1446,7 +1467,9 @@ static void le_seam_fold_dub_shadow(le_track* t, int32_t len, int32_t F) {
  *     that dub at full gain so the join is the continuous performance.
  *
  * Returns 1 when the take covers part of its loop but not all of it (whether
- * or not it was long enough to fade), 0 otherwise.
+ * or not it was long enough to fade), 0 otherwise. *out_tail_end is one past
+ * the tail's last sample when the take was long enough to fade (whether or
+ * not the tail was faded here), 0 otherwise.
  *
  * FOUR fades of room. Below 4F (~40 ms) the take is left exactly as recorded:
  * with only 2F, a short stab could be entirely envelope (the grid fixtures
@@ -1459,7 +1482,9 @@ static void le_seam_fold_dub_shadow(le_track* t, int32_t len, int32_t F) {
  * tapered live slot and needs no shadow twin (unlike #728's deferred fold).
  * Bounded: 2F multiplies per lane, once per take. */
 static int le_take_taper_ends(const le_engine* e, le_track* t, int32_t len,
-                              int32_t offset, int fade_tail) {
+                              int32_t offset, int fade_tail,
+                              int32_t* out_tail_end) {
+  *out_tail_end = 0;
   if (len <= 0) return 0;
   const int32_t ch = (int32_t)(t - e->tracks);
   /* The write head's wrap (mix_tracks_frame, le_truncate_capture_tail). A
@@ -1479,6 +1504,7 @@ static int le_take_taper_ends(const le_engine* e, le_track* t, int32_t len,
   if (f <= 0 || span < 4 * f) return 1;
   start %= len;
   const int32_t last = (end - 1) % len;
+  *out_tail_end = last + 1;
   const int32_t n = le_lanes_active(t);
   for (int32_t l = 0; l < n; ++l) {
     le_lane* ln = &t->lanes[l];
@@ -1492,14 +1518,63 @@ static int le_take_taper_ends(const le_engine* e, le_track* t, int32_t len,
       int32_t in = start + i;
       if (in >= len) in -= len;
       b[in] *= x; /* in, from the silence before it */
-      if (fade_tail) {
-        int32_t out = last - i;
-        if (out < 0) out += len;
-        b[out] *= x; /* out, into the silence after it */
-      }
     }
   }
+  if (fade_tail) le_lanes_fade_out_to(t, -1, last, len, f);
   return 1;
+}
+
+/* The take's undo image after a rec/dub continuation (#730): the first pass's
+ * shadow holds the take alone, followed by silence, so its tail gets the fade
+ * the live slot skipped. Called as that shadow retires, on the slot it
+ * retires, and by the reopen filer (engine_commands.c) for a frozen one. */
+void le_dub_fade_image_tail(const le_engine* e, le_track* t, int32_t slot) {
+  if (t->dub_tail_end <= 0) return;
+  const int32_t len = t->dub_len;
+  if (slot >= 0 && len > 0 && t->dub_tail_end <= len) {
+    le_lanes_fade_out_to(t, slot, t->dub_tail_end - 1, len,
+                         seam_xfade_frames(e));
+  }
+  t->dub_tail_end = 0;
+}
+
+/* A stop that ends a rec/dub continuation within F frames of the take's end
+ * (#730): the dub wrote only `k` < F frames past it and stops dead there
+ * (STOPPED has no punch-out tail), so without this the buffer cuts. Fades the
+ * take plus those k frames out, ending at the last one written, in the live
+ * slot, and gives the shadow the same k frames so the undo image matches
+ * (the drain copies the rest of it, faded tail included, from live). A longer
+ * continuation is left as the dub wrote it; its image tail is faded at
+ * retire as usual. */
+static void le_dub_stop_tail(const le_engine* e, le_track* t) {
+  if (t->dub_tail_end <= 0) return;
+  const int32_t len = t->dub_len;
+  const int32_t f = seam_xfade_frames(e);
+  if (t->dub_slot < 0 || len <= 0 || t->dub_tail_end > len || f <= 0) {
+    t->dub_tail_end = 0; /* no image to keep in step: leave it as written */
+    return;
+  }
+  const int32_t k = t->dub_count > 0 ? t->dub_count : 0;
+  if (k >= f) return;
+  const int32_t end = t->dub_tail_end % len; /* first continuation position */
+  le_lanes_fade_out_to(t, -1, (t->dub_tail_end - 1 + k) % len, len, f);
+  const int32_t n = le_lanes_active(t);
+  for (int32_t l = 0; l < n; ++l) {
+    le_lane* ln = &t->lanes[l];
+    const int32_t live = load_i32(&ln->a_live);
+    float* b = ln->pool[live];
+    float* sb = ln->pool[t->dub_slot];
+    if (b == NULL || sb == NULL || ln->pool_cap[live] < len ||
+        ln->pool_cap[t->dub_slot] < len) {
+      continue;
+    }
+    for (int32_t i = 0; i < k; ++i) {
+      int32_t p = end + i;
+      if (p >= len) p -= len;
+      sb[p] = b[p];
+    }
+  }
+  t->dub_tail_end = 0;
 }
 
 /* Requests finalize of the *defining master* at its current length. When the
@@ -1857,9 +1932,10 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
   }
   /* rec/dub: the dub continues the take from its end (#730). */
   const int dub_continues = end_state == LE_TRACK_OVERDUBBING;
+  int32_t tail_end = 0;
   const int partial =
       le_take_taper_ends(e, t, new_len, rec_off > 0 ? rec_off : 0,
-                         !tail_folds && !dub_continues);
+                         !tail_folds && !dub_continues, &tail_end);
   le_audio_rev_bump(t); /* [R1] record finalize: fresh content */
   store_i32(&t->a_state, end_state);
   /* A non-defining take is a completed take too: if the crown went with a
@@ -1874,6 +1950,7 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
                             .take = {.channel = ch, .take_id = t->take_seq}});
   store_i32(&t->a_settled_take_id, t->take_seq);
   if (dub_continues) {
+    const int fresh_session = !load_i32(&t->a_layer_in_flight);
     le_dub_session_start(e, t);
     /* A take that stopped short of its loop and continues into the dub: the
      * dub's first write lands on the position right after the take's last
@@ -1883,11 +1960,15 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
      * unfaded tail the buffer holds the performance as played. A take that
      * filled its loop keeps the ramp: its dub starts over the take's own head.
      *
-     * KNOWN GAP, the same shape as #728's: undoing this first pass restores
-     * the take with its tail as recorded (a raw cut into silence), because the
-     * undo image is the take before the dub, and the dub, not a fade, was what
-     * continued it. */
-    if (partial && !tail_folds) t->od_gain = 1.0f;
+     * The session's first undo layer is the take before the dub: the take
+     * followed by silence. dub_tail_end makes that layer's tail fade as it
+     * retires (le_dub_fade_image_tail), and a stop within F frames fades the
+     * live tail too (le_dub_stop_tail). Set after le_dub_session_start, which
+     * clears it for every new session. */
+    if (partial && !tail_folds) {
+      t->od_gain = 1.0f;
+      if (fresh_session) t->dub_tail_end = tail_end;
+    }
   }
 }
 /* ---- per-pass undo layer capture (audio thread) ----
@@ -1941,9 +2022,13 @@ static void le_dub_session_start(le_engine* e, le_track* t) {
       t->dub_draining = 0;
       t->dub_count = -1;
       t->dub_phase = 0;
+      /* The restarted capture's image includes the earlier partial dub after
+       * the take's end, so its tail is continued, not followed by silence. */
+      t->dub_tail_end = 0;
     }
     return;
   }
+  t->dub_tail_end = 0; /* a new session: finalize_new_track may set it */
   t->pass_key = pre_key; /* the first pass backs up this content */
   t->dub_len = len;
   t->dub_offset = load_i32(&e->a_record_offset);
@@ -2001,6 +2086,7 @@ static void le_dub_drop_armed(le_track* t) {
   t->dub_count = -1;
   t->dub_phase = 0;
   t->dub_draining = 0;
+  t->dub_tail_end = 0; /* #730: its image is gone with the slots */
   /* An in-flight seam overlap is indexed off the OLD length and lives in the
    * OLD live slot, so it is stale for exactly the same reasons (#728); the
    * next finalize arms a fresh one. */
@@ -2028,6 +2114,7 @@ static void le_dub_boundary(le_engine* e, le_track* t, uint64_t frame) {
     if (t->dub_retire_slot >= 0) return; /* frozen: retire is stuck */
     t->dub_retire_slot = t->dub_slot;
     t->dub_slot = -1;
+    le_dub_fade_image_tail(e, t, t->dub_retire_slot); /* #730 */
     le_file_pass_key(t);
     le_audio_rev_bump(t); /* [R1] a completed overdub pass retired */
     le_dub_try_retire(e, t, frame);
@@ -2153,6 +2240,7 @@ static void le_dub_block_update(le_engine* e, uint64_t frame) {
         t->dub_retire_slot < 0) {
       t->dub_retire_slot = t->dub_slot;
       t->dub_slot = -1;
+      le_dub_fade_image_tail(e, t, t->dub_retire_slot); /* #730 */
       le_file_pass_key(t);
       le_audio_rev_bump(t); /* [R1] the punch-out pass retired (post-drain) */
       le_dub_try_retire(e, t, frame);
@@ -2243,6 +2331,19 @@ void le_engine_reopen_settle(le_engine* e, uint32_t drop_mask) {
         }
         le_audio_rev_bump(t); /* [R1] reopen: the partial pass is reverted */
       }
+    }
+    /* #730: a rec/dub continuation whose first pass never completed. Live is
+     * the take before the dub again (reverted above, or never covered), and
+     * that take is followed by silence, so its tail gets the fade now. */
+    if (!drop && t->dub_tail_end > 0 && t->dub_count < t->dub_len) {
+      /* Only with a shadow: without one the dub's writes were never backed
+       * up or reverted, and they continue the tail in live. */
+      if (t->dub_slot >= 0 && t->dub_tail_end <= t->dub_len) {
+        le_lanes_fade_out_to(t, -1, t->dub_tail_end - 1, t->dub_len,
+                             seam_xfade_frames(e));
+        le_audio_rev_bump(t);
+      }
+      t->dub_tail_end = 0;
     }
 
     if (drop) {
@@ -2586,6 +2687,8 @@ static void handle_stop(le_engine* e, int32_t ch, uint64_t frame) {
       finalize_new_track(e, t, LE_TRACK_STOPPED, frame, 1); /* round up to whole loops */
     }
   } else if (st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING) {
+    /* A stop right after a rec/dub continuation began (#730). */
+    if (st == LE_TRACK_OVERDUBBING) le_dub_stop_tail(e, t);
     store_i32(&t->a_state, LE_TRACK_STOPPED);
     /* Stopping an overdub ends its capture: land any deferred mute. */
     le_consume_pending_mutes(e, t, LE_TRACK_STOPPED, 1, frame);
@@ -8894,6 +8997,14 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   const int limiter_on = load_i32(&e->a_limiter_enabled) != 0;
   const float limiter_ceiling = load_f32(&e->a_limiter_ceiling_bits);
   const float overdub_fb = load_f32(&e->a_overdub_fb_bits);
+  /* An off limiter holds no state, so switching it on starts from unity with
+   * an empty hold instead of a gain left over from the last time it ran. */
+  if (!limiter_on) {
+    e->lim_gain = 1.0f;
+    e->lim_hold_cur = 1.0f;
+    e->lim_hold_prev = 1.0f;
+    e->lim_hold_count = 0;
+  }
 
   /* Click bus settings, read once per block (same rationale; the click's
    * volume is its ONLY gain stage — deliberately outside the master bus). */

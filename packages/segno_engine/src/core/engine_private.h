@@ -1046,6 +1046,14 @@ typedef struct le_track {
   int32_t dub_vseg; /* the remaining trajectory from start + count */
   int32_t dub_draining;       /* post-punch-out bulk completion in progress */
   int32_t dub_retire_slot;    /* retired slot awaiting evt-ring space (-1 none) */
+  /* #730, rec/dub: a take that stopped short of its loop and continued into
+   * this session's dub keeps its tail unfaded in the live slot (the dub
+   * continues it), but the session's first undo layer is the take alone,
+   * followed by silence, so that layer's tail still needs the fade. One past
+   * the tail's last sample, or 0 for none. Set by finalize_new_track, applied
+   * when the first pass retires (or at a stop, or a reopen revert), and
+   * cleared by every new session. */
+  int32_t dub_tail_end;
   uint32_t dub_gen_audio; /* audio-side mirror of dub_generation: both sides
                            * bump exactly once per applied CLEAR, so they agree
                            * without sharing a variable */

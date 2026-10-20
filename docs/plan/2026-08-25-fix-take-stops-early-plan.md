@@ -124,12 +124,17 @@ Review of the port found two more:
   per lap. Such a take now keeps its tail as played, and its dub starts at
   full gain, so the buffer holds the performance continuously. Only the
   start is faded. `test_take_taper_rec_dub_continues_without_a_dip` pins it.
-  Known gap, the same shape as #728's: undoing that first pass restores the
-  take with a raw tail, because the dub, not a fade, continued it.
+  The dub's first undo layer is the take followed by silence, so that
+  layer's tail is faded as it retires, and on a reopen that reverts the
+  pass. A stop within 10 ms of the take's end (STOPPED has no punch-out
+  tail) fades the take plus the few continued frames instead.
+  `test_take_taper_rec_dub_undo_restores_a_faded_tail` and
+  `test_take_taper_rec_dub_stop_right_after_fades_the_tail` pin both.
 - **A frozen or cancelled take has no fold.** Clear-freeze and CANCEL_TAKE
   cleared the fold after the finalize, so a take ending exactly at the loop
   end got neither the fold nor the tail fade. They now tell the finalize no
-  fold will run, and the tail is faded.
+  fold will run, and the tail is faded. No test: a cancel landing on the
+  exact loop-end frame is hard to drive from the fixtures.
 
 The measured numbers above are unchanged on the trunk: cut 0.0, wrap 0.0,
 worst step 3.3x.

@@ -21,7 +21,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
 | #1367 | Start helper programs without forking the app | brainstorm | plan-gate | `claude/no-fork-spike-1367` |
-| #730, #725 | Fade an early-stopped take's ends; limiter peak hold + smoothed attack (owner listens on the console before merge) | in-review | blocked-verify | `claude/take-envelope-limiter-730-725` |
 | #1299 | Appliance slowdown profiler | in-review | merge-gate | `claude/appliance-responsiveness-08d39b` |
 | #1301 | Idle console redraws at 60 fps | build | merge-gate | `claude/idle-redraw-1301` |
 | #1337 | Retry Wi-Fi after a runtime drop, holding off while performing | in-review | blocked-verify | `claude/wifi-runtime-retry-1337` |
