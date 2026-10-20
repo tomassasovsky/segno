@@ -69,19 +69,13 @@ class FxModuleBuild {
 /// effects and the catalogue names twenty-six modules, so most of them are.
 const Map<String, FxModuleBuild> kFxModuleBuilds = {
   // p0 time, p1 feedback, p2 mix — the three the preset names, so nothing is
-  // dropped. Its mode, damping, resonance and ratio controls are Looper X's
-  // own shaping and have no engine parameter, which is what makes it partial.
+  // dropped. Its mode (and the Drum Rack's feedback filter frequency) are
+  // Looper X's own shaping and have no engine parameter, which is what makes
+  // it partial.
   'Delay': FxModuleBuild(
     type: TrackEffectType.delay,
     params: ['Del Time', 'Del Feedback', 'Del Mix'],
-    unmapped: [
-      'Del Damp',
-      'Del Freq',
-      'Del L/R Ratio',
-      'Del Mode',
-      'Del Res-Freq',
-      'Del Reso',
-    ],
+    unmapped: ['Del Freq', 'Del Mode'],
   ),
   // The Dub Rack's delay: p0 time and p1 feedback. It has no mix control, so
   // the mix keeps the engine default. Its damping, stereo ratio and resonance
@@ -136,15 +130,6 @@ const Map<String, FxModuleBuild> kFxModuleBuilds = {
     unmapped: ['Oct High Mode', 'Octave 1 Vol', 'Octave 2 Vol'],
   ),
 };
-
-/// Whether the chain entry [effect] processes sound on this build.
-///
-/// Read from the entry's engine type, never from its [BuiltInEffect.module]:
-/// an entry keeps the type it was built with, so a module that this build can
-/// process still plays nothing when its entry was saved as a passthrough, and
-/// only rebuilding it from its [BuiltInEffect.source] values changes that.
-bool fxEntryPlayable(BuiltInEffect effect) =>
-    effect.type != TrackEffectType.none;
 
 /// The source key that carries a rack's own level.
 const String kFxRackLevelKey = 'Master Vol';
