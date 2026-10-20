@@ -8,6 +8,8 @@ extern "C" {
 #include "engine_fx.h"
 }
 
+#include "../plugin_state.h"
+
 using namespace Steinberg;
 using namespace Steinberg::Vst;
 
@@ -58,11 +60,11 @@ tresult PLUGIN_API Controller::initialize(FUnknown* context) {
 
 tresult PLUGIN_API Controller::setComponentState(IBStream* state) {
   if (!state) return kInvalidArgument;
-  // Same wire format Processor::getState writes (LE_FX_PARAMS raw floats,
-  // already in the 0..1 normalized convention every parameter shares,
+  // Same wire format Processor::getState writes (kSegnoPluginStateParams
+  // raw floats, already in the 0..1 normalized convention every parameter shares,
   // Mode's StringListParameter included — see controller.cpp's initialize()
   // comment). No plain<->normalized conversion needed here.
-  float saved[LE_FX_PARAMS];
+  float saved[kSegnoPluginStateParams];
   const int32 n = static_cast<int32>(sizeof(saved));
   int32 read = 0;
   if (state->read(saved, n, &read) != kResultOk || read != n) return kResultFalse;
