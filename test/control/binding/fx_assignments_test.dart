@@ -122,6 +122,29 @@ void main() {
       expect(cleaned.session.isEmpty, isTrue);
     });
 
+    test('a binding whose press names the effects goes whole, and its '
+        'unrelated hold is counted', () {
+      const slotA = FxSlotTarget(address: _track, slotId: 'a');
+      const elsewhere = FxChainTarget(_other);
+      final state = ControlState(
+        globalBindings: PedalBindingSet([
+          PedalBinding(
+            key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+            target: slotA.canonicalString(),
+            holdTarget: elsewhere.canonicalString(),
+          ),
+        ]),
+      );
+
+      // A binding needs a press, so the hold cannot stay behind: both go,
+      // and the dialog's count says two.
+      expect(fxAssignmentsTo(state, _track, {'a'}), 2);
+      expect(
+        fxWithoutAssignmentsTo(state, _track, {'a'}).global.isEmpty,
+        isTrue,
+      );
+    });
+
     test('a binding whose hold alone names the effects keeps its press', () {
       const slotA = FxSlotTarget(address: _track, slotId: 'a');
       const chain = FxChainTarget(_track);

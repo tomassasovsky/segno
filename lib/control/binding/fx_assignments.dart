@@ -31,14 +31,16 @@ Object? _midiTarget(String key) =>
 bool fxMidiKeyNamesEffect(String key, FxAddress address, Set<String> slotIds) =>
     fxTargetNamesEffect(_midiTarget(key), address, slotIds);
 
-/// How many MIDI and pedal assignments in [control] point at one of the
-/// effects [slotIds] in the chain at [address].
+/// How many MIDI and pedal assignments removing the assignments to the
+/// effects [slotIds] in the chain at [address] takes out of [control]: the
+/// ones [fxWithoutAssignmentsTo] removes.
 ///
 /// Counts every stored assignment that names one of those effects or one of
 /// their parameters: each MIDI control, each console pedal binding's press
 /// and hold in both the global and the session set, and each external pedal
 /// activation, parameter and expression mapping, under every type a jack
-/// stores. These are exactly the assignments [fxWithoutAssignmentsTo] removes.
+/// stores. A console binding cannot keep a hold without a press, so when its
+/// press goes, its hold goes too and is counted whatever it targets.
 int fxAssignmentsTo(
   ControlState control,
   FxAddress address,
@@ -56,8 +58,16 @@ int fxAssignmentsTo(
   }
   for (final set in [control.globalBindings, control.sessionBindings]) {
     for (final binding in set.bindings) {
-      add(binding.decodeTarget());
-      add(binding.decodeHoldTarget());
+      final pressGoes = fxTargetNamesEffect(
+        binding.decodeTarget(),
+        address,
+        slotIds,
+      );
+      if (pressGoes) {
+        count += binding.hasHold ? 2 : 1;
+      } else {
+        add(binding.decodeHoldTarget());
+      }
     }
   }
   for (final jack in control.pedalSetup.external.jacks.values) {
@@ -80,7 +90,8 @@ int fxAssignmentsTo(
 /// [control] with every assignment [fxAssignmentsTo] counts removed.
 ///
 /// A console pedal binding whose press is removed goes whole, hold included,
-/// since a binding cannot keep a hold without a press.
+/// since a binding cannot keep a hold without a press (its press target is
+/// required); [fxAssignmentsTo] counts that hold.
 ({
   MidiMappingSet midi,
   PedalBindingSet global,
