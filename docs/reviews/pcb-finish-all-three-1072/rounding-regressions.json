@@ -1,0 +1,850 @@
+{
+  "scope": "Bounded shared rounding helper, regressions and three integration call sites; not a complete PR or release review",
+  "baseline_revision": "2b45a6adb804044baebfe6ecb7b225ac98c97ded",
+  "source_sha256": {
+    "hardware/kicad/round_routes.py": "0de2ded7f6c115f5465c98f6408e9514169ed63ffa6335a147ceea692bfd0a05",
+    "hardware/kicad/test_round_routes.py": "b0a1b93c21248f40ff5f2125b799a83e9da2e1026d68f88fae2116d846b63746",
+    "hardware/kicad/route_console_board.sh": "5f50e68233792ab050bf5eddbc1808f6473458ecb3887c3c37772bebe928c8a7",
+    "hardware/kicad/route_ring_board.sh": "8c5710ae75500797e5184e6837a4e73e4c35086c689b53a91761d3b10d5ee249",
+    "hardware/kicad/screen_power/build.sh": "58c506aaf72675b578f0ad8d7f533877cd2e77b72d9adecd32742643637a6424",
+    "hardware/kicad/screen_power/check.py": "606f16b80779c4362920c209bdcd1473acfb9b95b705500d4d3b9108fc0f7093",
+    "docs/reviews/screen-power-rev-l-1072/verify_fabrication.py": "c8476a670c4ff269025df60cc2cd0bbd4121c4abb46b3e5c297496b56c53f5a1",
+    "docs/reviews/pcb-finish-all-three-1072/verify_console_ring.py": "9d7308f5ada898553142e5c916261f7f317657e49463b845a5273a5ec13f4856"
+  },
+  "native_version": "10.0.4",
+  "fixtures": {
+    "source": "hardware/kicad/test_round_routes.py",
+    "count": 13,
+    "passed": true,
+    "results": {
+      "edge_contact_pad": {
+        "errors": [],
+        "before_keepout_hits": 0,
+        "after_keepout_hits": 0,
+        "before_components": {
+          "A": 1
+        },
+        "after_components": {
+          "A": 1
+        },
+        "before_clearance_mm": null,
+        "after_clearance_mm": null,
+        "before_track_count": 2,
+        "after_track_count": 2,
+        "geometry_changed": false,
+        "second_exit_code": 0,
+        "second_bytes_stable": true,
+        "second_geometry_stable": true
+      },
+      "track_keepout": {
+        "errors": [],
+        "before_keepout_hits": 0,
+        "after_keepout_hits": 0,
+        "before_components": {
+          "A": 1
+        },
+        "after_components": {
+          "A": 1
+        },
+        "before_clearance_mm": null,
+        "after_clearance_mm": null,
+        "before_track_count": 2,
+        "after_track_count": 17,
+        "geometry_changed": true,
+        "second_exit_code": 0,
+        "second_bytes_stable": true,
+        "second_geometry_stable": true
+      },
+      "footprint_track_keepout": {
+        "errors": [],
+        "before_keepout_hits": 0,
+        "after_keepout_hits": 0,
+        "before_components": {
+          "A": 1
+        },
+        "after_components": {
+          "A": 1
+        },
+        "before_clearance_mm": null,
+        "after_clearance_mm": null,
+        "before_track_count": 2,
+        "after_track_count": 17,
+        "geometry_changed": true,
+        "second_exit_code": 0,
+        "second_bytes_stable": true,
+        "second_geometry_stable": true
+      },
+      "simple_curve": {
+        "errors": [],
+        "before_keepout_hits": 0,
+        "after_keepout_hits": 0,
+        "before_components": {
+          "A": 1
+        },
+        "after_components": {
+          "A": 1
+        },
+        "before_clearance_mm": null,
+        "after_clearance_mm": null,
+        "before_track_count": 3,
+        "after_track_count": 19,
+        "geometry_changed": true,
+        "second_exit_code": 0,
+        "second_bytes_stable": true,
+        "second_geometry_stable": true
+      },
+      "internal_pad": {
+        "errors": [],
+        "before_keepout_hits": 0,
+        "after_keepout_hits": 0,
+        "before_components": {
+          "A": 1
+        },
+        "after_components": {
+          "A": 1
+        },
+        "before_clearance_mm": null,
+        "after_clearance_mm": null,
+        "before_track_count": 2,
+        "after_track_count": 2,
+        "geometry_changed": false,
+        "second_exit_code": 0,
+        "second_bytes_stable": true,
+        "second_geometry_stable": true
+      },
+      "internal_via": {
+        "errors": [],
+        "before_keepout_hits": 0,
+        "after_keepout_hits": 0,
+        "before_components": {
+          "A": 1
+        },
+        "after_components": {
+          "A": 1
+        },
+        "before_clearance_mm": null,
+        "after_clearance_mm": null,
+        "before_track_count": 4,
+        "after_track_count": 4,
+        "geometry_changed": false,
+        "second_exit_code": 0,
+        "second_bytes_stable": true,
+        "second_geometry_stable": true
+      },
+      "different_width_branch": {
+        "errors": [],
+        "before_keepout_hits": 0,
+        "after_keepout_hits": 0,
+        "before_components": {
+          "A": 1
+        },
+        "after_components": {
+          "A": 1
+        },
+        "before_clearance_mm": null,
+        "after_clearance_mm": null,
+        "before_track_count": 3,
+        "after_track_count": 3,
+        "geometry_changed": false,
+        "second_exit_code": 0,
+        "second_bytes_stable": true,
+        "second_geometry_stable": true
+      },
+      "locked_branch": {
+        "errors": [],
+        "before_keepout_hits": 0,
+        "after_keepout_hits": 0,
+        "before_components": {
+          "A": 1
+        },
+        "after_components": {
+          "A": 1
+        },
+        "before_clearance_mm": null,
+        "after_clearance_mm": null,
+        "before_track_count": 3,
+        "after_track_count": 3,
+        "geometry_changed": false,
+        "second_exit_code": 0,
+        "second_bytes_stable": true,
+        "second_geometry_stable": true
+      },
+      "segment_interior_branch": {
+        "errors": [],
+        "before_keepout_hits": 0,
+        "after_keepout_hits": 0,
+        "before_components": {
+          "A": 1
+        },
+        "after_components": {
+          "A": 1
+        },
+        "before_clearance_mm": null,
+        "after_clearance_mm": null,
+        "before_track_count": 3,
+        "after_track_count": 18,
+        "geometry_changed": true,
+        "second_exit_code": 0,
+        "second_bytes_stable": true,
+        "second_geometry_stable": true
+      },
+      "rotated_foreign_pad": {
+        "errors": [],
+        "before_keepout_hits": 0,
+        "after_keepout_hits": 0,
+        "before_components": {
+          "A": 1,
+          "B": 1
+        },
+        "after_components": {
+          "A": 1,
+          "B": 1
+        },
+        "before_clearance_mm": 0.400001,
+        "after_clearance_mm": 0.274571,
+        "before_track_count": 2,
+        "after_track_count": 17,
+        "geometry_changed": true,
+        "second_exit_code": 0,
+        "second_bytes_stable": true,
+        "second_geometry_stable": true
+      },
+      "custom_foreign_pad": {
+        "errors": [],
+        "before_keepout_hits": 0,
+        "after_keepout_hits": 0,
+        "before_components": {
+          "A": 1,
+          "B": 1
+        },
+        "after_components": {
+          "A": 1,
+          "B": 1
+        },
+        "before_clearance_mm": 0.400001,
+        "after_clearance_mm": 0.274571,
+        "before_track_count": 2,
+        "after_track_count": 17,
+        "geometry_changed": true,
+        "second_exit_code": 0,
+        "second_bytes_stable": true,
+        "second_geometry_stable": true
+      },
+      "two_new_chains": {
+        "errors": [],
+        "before_keepout_hits": 0,
+        "after_keepout_hits": 0,
+        "before_components": {
+          "A": 1,
+          "B": 1
+        },
+        "after_components": {
+          "A": 1,
+          "B": 1
+        },
+        "before_clearance_mm": 0.400001,
+        "after_clearance_mm": 0.400001,
+        "before_track_count": 4,
+        "after_track_count": 34,
+        "geometry_changed": true,
+        "second_exit_code": 0,
+        "second_bytes_stable": true,
+        "second_geometry_stable": true,
+        "nets_changed": {
+          "A": true,
+          "B": true
+        }
+      },
+      "usb_skip": {
+        "errors": [],
+        "before_keepout_hits": 0,
+        "after_keepout_hits": 0,
+        "before_components": {
+          "S1_UP_P": 1,
+          "S1_UP_N": 1,
+          "S1_DN_P": 1,
+          "S1_DN_N": 1,
+          "S2_UP_P": 1,
+          "S2_UP_N": 1,
+          "S2_DN_P": 1,
+          "S2_DN_N": 1
+        },
+        "after_components": {
+          "S1_UP_P": 1,
+          "S1_UP_N": 1,
+          "S1_DN_P": 1,
+          "S1_DN_N": 1,
+          "S2_UP_P": 1,
+          "S2_UP_N": 1,
+          "S2_DN_P": 1,
+          "S2_DN_N": 1
+        },
+        "before_clearance_mm": 0.160001,
+        "after_clearance_mm": 0.160001,
+        "before_track_count": 24,
+        "after_track_count": 24,
+        "geometry_changed": false,
+        "second_exit_code": 0,
+        "second_bytes_stable": true,
+        "second_geometry_stable": true
+      }
+    }
+  },
+  "negative_control": {
+    "simple_curve_on_uncorrected_f6feee11": "FAIL: unobstructed minimum-radius corners were not rounded",
+    "simple_curve_on_reviewed_helper": "PASS"
+  },
+  "syntax": {
+    "python_compile": true,
+    "three_shell_entrypoints_bash_n": true
+  },
+  "source_inventory": {
+    "screen_validation_includes_shared_helper": true,
+    "independent_screen_cam_includes_shared_helper": true,
+    "console_ring_inventory_includes_shared_helper_and_regression_runner": true
+  },
+  "boards": {
+    "screen": {
+      "source": "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
+      "status": "verified_imported_native",
+      "input_sha256": "2f48c7765c55c7fba7de75cfd792cf15042a2271f91769b41f4681dfc6e82b47",
+      "reviewed_native_sha256": "c06e6b35438b2fc7208cdc50feeebee92e6c01a56a00dadd280f697d1e49d79b",
+      "native_drc": {
+        "violations": 0,
+        "unconnected_items": 0,
+        "exit_code": 0
+      },
+      "second_run_byte_identical": true,
+      "metadata_footprints_pads_models_vias_zone_outlines_stack_and_outline_exact": true,
+      "locked_tracks_exact": true,
+      "locked_track_count": 990,
+      "all_tracks_at_least_1mm_exact": true,
+      "changed_widths_mm": [
+        0.25
+      ],
+      "remaining_reported_corners": [],
+      "power_guard_passed": true,
+      "usb_review": {
+        "baseline_sha256": "2f48c7765c55c7fba7de75cfd792cf15042a2271f91769b41f4681dfc6e82b47",
+        "final_sha256": "c06e6b35438b2fc7208cdc50feeebee92e6c01a56a00dadd280f697d1e49d79b",
+        "nets": {
+          "S1_DN_N": {
+            "exact_unchanged_geometry": true,
+            "segments": 37,
+            "baseline_length_mm": 26.178136397979593,
+            "length_mm": 26.178136397979593,
+            "terminal_coordinates_mm": {
+              "K101.4": [
+                30.8,
+                38.54
+              ],
+              "J102.2": [
+                56.0,
+                37.25
+              ]
+            }
+          },
+          "S1_DN_P": {
+            "exact_unchanged_geometry": true,
+            "segments": 37,
+            "baseline_length_mm": 26.1781363979796,
+            "length_mm": 26.1781363979796,
+            "terminal_coordinates_mm": {
+              "K101.5": [
+                30.8,
+                33.46
+              ],
+              "J102.3": [
+                56.0,
+                34.75
+              ]
+            }
+          },
+          "S1_UP_N": {
+            "exact_unchanged_geometry": true,
+            "segments": 36,
+            "baseline_length_mm": 23.526702576225986,
+            "length_mm": 23.526702576225986,
+            "terminal_coordinates_mm": {
+              "K101.3": [
+                28.6,
+                38.54
+              ],
+              "J101.2": [
+                7.0,
+                37.25
+              ]
+            }
+          },
+          "S1_UP_P": {
+            "exact_unchanged_geometry": true,
+            "segments": 36,
+            "baseline_length_mm": 23.52670162529889,
+            "length_mm": 23.52670162529889,
+            "terminal_coordinates_mm": {
+              "K101.6": [
+                28.6,
+                33.46
+              ],
+              "J101.3": [
+                7.0,
+                34.75
+              ]
+            }
+          },
+          "S2_DN_N": {
+            "exact_unchanged_geometry": true,
+            "segments": 37,
+            "baseline_length_mm": 26.178136397979593,
+            "length_mm": 26.178136397979593,
+            "terminal_coordinates_mm": {
+              "K201.4": [
+                30.8,
+                63.54
+              ],
+              "J202.2": [
+                56.0,
+                62.25
+              ]
+            }
+          },
+          "S2_DN_P": {
+            "exact_unchanged_geometry": true,
+            "segments": 37,
+            "baseline_length_mm": 26.1781363979796,
+            "length_mm": 26.1781363979796,
+            "terminal_coordinates_mm": {
+              "K201.5": [
+                30.8,
+                58.46
+              ],
+              "J202.3": [
+                56.0,
+                59.75
+              ]
+            }
+          },
+          "S2_UP_N": {
+            "exact_unchanged_geometry": true,
+            "segments": 36,
+            "baseline_length_mm": 23.526702576225986,
+            "length_mm": 23.526702576225986,
+            "terminal_coordinates_mm": {
+              "K201.3": [
+                28.6,
+                63.54
+              ],
+              "J201.2": [
+                7.0,
+                62.25
+              ]
+            }
+          },
+          "S2_UP_P": {
+            "exact_unchanged_geometry": true,
+            "segments": 36,
+            "baseline_length_mm": 23.52670162529889,
+            "length_mm": 23.52670162529889,
+            "terminal_coordinates_mm": {
+              "K201.6": [
+                28.6,
+                58.46
+              ],
+              "J201.3": [
+                7.0,
+                59.75
+              ]
+            }
+          }
+        },
+        "pairs": {
+          "S1_UP": {
+            "skew_mm": 9.509270952889892e-07,
+            "minimum_track_edge_gap_mm": 0.16000000000000514,
+            "baseline_minimum_track_edge_gap_mm": 0.16000000000000514,
+            "profiles": {
+              "S1_UP_P": {
+                "baseline": {
+                  "coupled_mm": 17.017614180305447,
+                  "uncoupled_mm": 6.509087444993446,
+                  "connector_fanout_mm": 4.129421067253907,
+                  "relay_fanout_mm": 2.3796663777395395,
+                  "interior_uncoupled_mm": 0.0,
+                  "coupled_runs": [
+                    [
+                      4.129421067253907,
+                      21.14703524755935
+                    ]
+                  ],
+                  "sampling_step_mm": 0.009998598225796384,
+                  "coupled_center_distance_min_mm": 1.010000000000005,
+                  "coupled_center_distance_max_mm": 1.0190970215552662
+                },
+                "final": {
+                  "coupled_mm": 17.017614180305447,
+                  "uncoupled_mm": 6.509087444993446,
+                  "connector_fanout_mm": 4.129421067253907,
+                  "relay_fanout_mm": 2.3796663777395395,
+                  "interior_uncoupled_mm": 0.0,
+                  "coupled_runs": [
+                    [
+                      4.129421067253907,
+                      21.14703524755935
+                    ]
+                  ],
+                  "sampling_step_mm": 0.009998598225796384,
+                  "coupled_center_distance_min_mm": 1.010000000000005,
+                  "coupled_center_distance_max_mm": 1.0190970215552662
+                }
+              },
+              "S1_UP_N": {
+                "baseline": {
+                  "coupled_mm": 17.017614868141365,
+                  "uncoupled_mm": 6.509087708084623,
+                  "connector_fanout_mm": 4.129421234161212,
+                  "relay_fanout_mm": 2.3796664739234106,
+                  "interior_uncoupled_mm": 0.0,
+                  "coupled_runs": [
+                    [
+                      4.129421234161212,
+                      21.147036102302575
+                    ]
+                  ],
+                  "sampling_step_mm": 0.009998598629930296,
+                  "coupled_center_distance_min_mm": 1.010000000000005,
+                  "coupled_center_distance_max_mm": 1.0190965248149404
+                },
+                "final": {
+                  "coupled_mm": 17.017614868141365,
+                  "uncoupled_mm": 6.509087708084623,
+                  "connector_fanout_mm": 4.129421234161212,
+                  "relay_fanout_mm": 2.3796664739234106,
+                  "interior_uncoupled_mm": 0.0,
+                  "coupled_runs": [
+                    [
+                      4.129421234161212,
+                      21.147036102302575
+                    ]
+                  ],
+                  "sampling_step_mm": 0.009998598629930296,
+                  "coupled_center_distance_min_mm": 1.010000000000005,
+                  "coupled_center_distance_max_mm": 1.0190965248149404
+                }
+              }
+            }
+          },
+          "S1_DN": {
+            "skew_mm": 7.105427357601002e-15,
+            "minimum_track_edge_gap_mm": 0.16000000000000514,
+            "baseline_minimum_track_edge_gap_mm": 0.16000000000000514,
+            "profiles": {
+              "S1_DN_P": {
+                "baseline": {
+                  "coupled_mm": 17.188776343822358,
+                  "uncoupled_mm": 8.989360054157242,
+                  "connector_fanout_mm": 4.129706009306942,
+                  "relay_fanout_mm": 4.8596540448503,
+                  "interior_uncoupled_mm": 0.0,
+                  "coupled_runs": [
+                    [
+                      4.129706009306942,
+                      21.3184823531293
+                    ]
+                  ],
+                  "sampling_step_mm": 0.00999928815812819,
+                  "coupled_center_distance_min_mm": 1.0100000000000051,
+                  "coupled_center_distance_max_mm": 1.0198972878717478
+                },
+                "final": {
+                  "coupled_mm": 17.188776343822358,
+                  "uncoupled_mm": 8.989360054157242,
+                  "connector_fanout_mm": 4.129706009306942,
+                  "relay_fanout_mm": 4.8596540448503,
+                  "interior_uncoupled_mm": 0.0,
+                  "coupled_runs": [
+                    [
+                      4.129706009306942,
+                      21.3184823531293
+                    ]
+                  ],
+                  "sampling_step_mm": 0.00999928815812819,
+                  "coupled_center_distance_min_mm": 1.0100000000000051,
+                  "coupled_center_distance_max_mm": 1.0198972878717478
+                }
+              },
+              "S1_DN_N": {
+                "baseline": {
+                  "coupled_mm": 17.18877634382235,
+                  "uncoupled_mm": 8.98936005415724,
+                  "connector_fanout_mm": 4.129706009306941,
+                  "relay_fanout_mm": 4.8596540448502985,
+                  "interior_uncoupled_mm": 0.0,
+                  "coupled_runs": [
+                    [
+                      4.129706009306941,
+                      21.318482353129294
+                    ]
+                  ],
+                  "sampling_step_mm": 0.009999288158128186,
+                  "coupled_center_distance_min_mm": 1.0100000000000051,
+                  "coupled_center_distance_max_mm": 1.0198968646820306
+                },
+                "final": {
+                  "coupled_mm": 17.18877634382235,
+                  "uncoupled_mm": 8.98936005415724,
+                  "connector_fanout_mm": 4.129706009306941,
+                  "relay_fanout_mm": 4.8596540448502985,
+                  "interior_uncoupled_mm": 0.0,
+                  "coupled_runs": [
+                    [
+                      4.129706009306941,
+                      21.318482353129294
+                    ]
+                  ],
+                  "sampling_step_mm": 0.009999288158128186,
+                  "coupled_center_distance_min_mm": 1.0100000000000051,
+                  "coupled_center_distance_max_mm": 1.0198968646820306
+                }
+              }
+            }
+          },
+          "S2_UP": {
+            "skew_mm": 9.509270952889892e-07,
+            "minimum_track_edge_gap_mm": 0.16000000000000514,
+            "baseline_minimum_track_edge_gap_mm": 0.16000000000000514,
+            "profiles": {
+              "S2_UP_P": {
+                "baseline": {
+                  "coupled_mm": 17.017614180305447,
+                  "uncoupled_mm": 6.509087444993446,
+                  "connector_fanout_mm": 4.129421067253907,
+                  "relay_fanout_mm": 2.3796663777395395,
+                  "interior_uncoupled_mm": 0.0,
+                  "coupled_runs": [
+                    [
+                      4.129421067253907,
+                      21.14703524755935
+                    ]
+                  ],
+                  "sampling_step_mm": 0.009998598225796384,
+                  "coupled_center_distance_min_mm": 1.010000000000005,
+                  "coupled_center_distance_max_mm": 1.0190970215552662
+                },
+                "final": {
+                  "coupled_mm": 17.017614180305447,
+                  "uncoupled_mm": 6.509087444993446,
+                  "connector_fanout_mm": 4.129421067253907,
+                  "relay_fanout_mm": 2.3796663777395395,
+                  "interior_uncoupled_mm": 0.0,
+                  "coupled_runs": [
+                    [
+                      4.129421067253907,
+                      21.14703524755935
+                    ]
+                  ],
+                  "sampling_step_mm": 0.009998598225796384,
+                  "coupled_center_distance_min_mm": 1.010000000000005,
+                  "coupled_center_distance_max_mm": 1.0190970215552662
+                }
+              },
+              "S2_UP_N": {
+                "baseline": {
+                  "coupled_mm": 17.017614868141365,
+                  "uncoupled_mm": 6.509087708084623,
+                  "connector_fanout_mm": 4.129421234161212,
+                  "relay_fanout_mm": 2.3796664739234106,
+                  "interior_uncoupled_mm": 0.0,
+                  "coupled_runs": [
+                    [
+                      4.129421234161212,
+                      21.147036102302575
+                    ]
+                  ],
+                  "sampling_step_mm": 0.009998598629930296,
+                  "coupled_center_distance_min_mm": 1.010000000000005,
+                  "coupled_center_distance_max_mm": 1.0190965248149404
+                },
+                "final": {
+                  "coupled_mm": 17.017614868141365,
+                  "uncoupled_mm": 6.509087708084623,
+                  "connector_fanout_mm": 4.129421234161212,
+                  "relay_fanout_mm": 2.3796664739234106,
+                  "interior_uncoupled_mm": 0.0,
+                  "coupled_runs": [
+                    [
+                      4.129421234161212,
+                      21.147036102302575
+                    ]
+                  ],
+                  "sampling_step_mm": 0.009998598629930296,
+                  "coupled_center_distance_min_mm": 1.010000000000005,
+                  "coupled_center_distance_max_mm": 1.0190965248149404
+                }
+              }
+            }
+          },
+          "S2_DN": {
+            "skew_mm": 7.105427357601002e-15,
+            "minimum_track_edge_gap_mm": 0.16000000000000514,
+            "baseline_minimum_track_edge_gap_mm": 0.16000000000000514,
+            "profiles": {
+              "S2_DN_P": {
+                "baseline": {
+                  "coupled_mm": 17.188776343822358,
+                  "uncoupled_mm": 8.989360054157242,
+                  "connector_fanout_mm": 4.129706009306942,
+                  "relay_fanout_mm": 4.8596540448503,
+                  "interior_uncoupled_mm": 0.0,
+                  "coupled_runs": [
+                    [
+                      4.129706009306942,
+                      21.3184823531293
+                    ]
+                  ],
+                  "sampling_step_mm": 0.00999928815812819,
+                  "coupled_center_distance_min_mm": 1.0100000000000051,
+                  "coupled_center_distance_max_mm": 1.0198972878717478
+                },
+                "final": {
+                  "coupled_mm": 17.188776343822358,
+                  "uncoupled_mm": 8.989360054157242,
+                  "connector_fanout_mm": 4.129706009306942,
+                  "relay_fanout_mm": 4.8596540448503,
+                  "interior_uncoupled_mm": 0.0,
+                  "coupled_runs": [
+                    [
+                      4.129706009306942,
+                      21.3184823531293
+                    ]
+                  ],
+                  "sampling_step_mm": 0.00999928815812819,
+                  "coupled_center_distance_min_mm": 1.0100000000000051,
+                  "coupled_center_distance_max_mm": 1.0198972878717478
+                }
+              },
+              "S2_DN_N": {
+                "baseline": {
+                  "coupled_mm": 17.18877634382235,
+                  "uncoupled_mm": 8.98936005415724,
+                  "connector_fanout_mm": 4.129706009306941,
+                  "relay_fanout_mm": 4.8596540448502985,
+                  "interior_uncoupled_mm": 0.0,
+                  "coupled_runs": [
+                    [
+                      4.129706009306941,
+                      21.318482353129294
+                    ]
+                  ],
+                  "sampling_step_mm": 0.009999288158128186,
+                  "coupled_center_distance_min_mm": 1.0100000000000051,
+                  "coupled_center_distance_max_mm": 1.0198968646820306
+                },
+                "final": {
+                  "coupled_mm": 17.18877634382235,
+                  "uncoupled_mm": 8.98936005415724,
+                  "connector_fanout_mm": 4.129706009306941,
+                  "relay_fanout_mm": 4.8596540448502985,
+                  "interior_uncoupled_mm": 0.0,
+                  "coupled_runs": [
+                    [
+                      4.129706009306941,
+                      21.318482353129294
+                    ]
+                  ],
+                  "sampling_step_mm": 0.009999288158128186,
+                  "coupled_center_distance_min_mm": 1.0100000000000051,
+                  "coupled_center_distance_max_mm": 1.0198968646820306
+                }
+              }
+            }
+          }
+        },
+        "errors": [],
+        "all_exact_unchanged": true,
+        "ground_reference": {
+          "interval_mm": 0.1,
+          "sample_offsets": "centerline and both copper edges",
+          "samples": 6268,
+          "terminal_exclusion_mm": 1.35
+        },
+        "status": "PASS"
+      },
+      "remaining_non_usb_degree_two_turns": "Within native pad/via landings; full front/back copper previews show no additional exposed routed corner."
+    },
+    "ring": {
+      "source": "hardware/kicad/segno_pedal_ring.kicad_pcb",
+      "status": "verified_imported_native",
+      "input_sha256": "e9410d054bf81afbc50477765aa6b90fd0fda2dc17c5ccf84d0b8cbe5d7ad2b4",
+      "reviewed_native_sha256": "188fd6ee4d395d1152fd5d840536ab0699a499cb50bf74539e2bb27273ddcbf2",
+      "native_drc": {
+        "violations": 0,
+        "unconnected_items": 0,
+        "exit_code": 0
+      },
+      "second_run_byte_identical": true,
+      "metadata_footprints_pads_models_vias_zone_outlines_stack_and_outline_exact": true,
+      "locked_tracks_exact": true,
+      "locked_track_count": 32,
+      "all_tracks_at_least_1mm_exact": true,
+      "changed_widths_mm": [
+        0.3,
+        0.55,
+        0.65
+      ],
+      "remaining_reported_corners": [],
+      "power_guard_passed": true,
+      "power_injected_faults_rejected": 7
+    },
+    "console": {
+      "source": "hardware/kicad/out_console/segno_console_board.kicad_pcb",
+      "status": "verified_imported_native",
+      "input_sha256": "e5cac9d98fd7d4bc1e6d2e4a6f4a4fb00dba5494fd4d142cbf451fcf42948b20",
+      "reviewed_native_sha256": "27e690947142c2a31af171c4e2fc82c74b66183d790098299b0fb33b412b75aa",
+      "native_drc": {
+        "violations": 0,
+        "unconnected_items": 0,
+        "exit_code": 0
+      },
+      "second_run_byte_identical": true,
+      "metadata_footprints_pads_models_vias_zone_outlines_stack_and_outline_exact": true,
+      "locked_tracks_exact": true,
+      "locked_track_count": 91,
+      "all_tracks_at_least_1mm_exact": true,
+      "changed_widths_mm": [
+        0.4,
+        0.6,
+        0.7
+      ],
+      "remaining_reported_corners": [],
+      "power_guard_passed": true,
+      "power_injected_faults_rejected": 11,
+      "source_native_parity": {
+        "source_native_zones_exact": true,
+        "source_native_C20_exact": true,
+        "source_native_references_exact": true,
+        "source_native_ground_stitch_exact": true
+      },
+      "reviewed_source_sha256": {
+        "hardware/kicad/console_board_pcb.py": "d38cc8ece46da3b2f1f57cde1c1fc1d9f3f2a731351c60ed692a658707308eb4",
+        "hardware/kicad/console_ring_power.py": "3c598c7a3985f66eb0a1d852745dea4babebf165d6f79945e5eec52dc73dad1e"
+      },
+      "old_slot_missing_copper_mm2": 0.0,
+      "bar_track_overlap_at_y117_mm": 0.21999999999999886,
+      "fillet_internal_holes": 0,
+      "fillet_max_chord_turn_degrees": 9.561045216583313,
+      "fillet_rejected_fixture_max_chord_turn_degrees": 48.12480024597712,
+      "minimum_bend_to_IND_DATA_OUT_clearance_mm": 0.27625182609533006,
+      "sampled_pad_annulus_union_max_missing_mm2": 4.3896693962955947e-17,
+      "front_and_back_filled_copper_visually_reviewed": true,
+      "pico_jog": "Introduced short down/up jog removed before rounding; direct diagonal join at (155.77,78.15), 0.6 mm, is now smooth."
+    }
+  },
+  "review_findings": [],
+  "limits": [
+    "No full Freerouting rebuild or manufacturing package verification was performed by this bounded helper review.",
+    "Native DRC, power guards and copper checks remain required after every geometry change. The helper is a two-copper-layer postprocessor; it is not a general custom-rule solver.",
+    "Second-run byte stability is observed for these thirteen fixtures and these three board inputs, not proven for arbitrary boards.",
+    "USB nets require the explicit skip list used by the screen pipeline. Matched-pair changes are separately authored and verified.",
+    "This record does not establish assembled electrical, thermal, startup or USB performance, nor whole-PR review approval."
+  ]
+}

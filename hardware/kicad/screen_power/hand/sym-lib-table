@@ -1,0 +1,5 @@
+(sym_lib_table
+      (version 7)
+      (lib (name "screen_symbols") (type "KiCad")
+        (uri "${KIPRJMOD}/screen_symbols.kicad_sym")
+        (options "") (descr "Project definitions generated from KiCad and manufacturer pin maps")))

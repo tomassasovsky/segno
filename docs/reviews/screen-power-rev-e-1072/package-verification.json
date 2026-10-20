@@ -1,0 +1,11 @@
+{
+  "generated_at": "2026-09-22T14:44:44.783661+00:00",
+  "package": "2026-09-22-screen-power-rev-e/hand",
+  "board_sha256": "7e6945bc12ae4bfd6896cca5e681d7dc1f6c30030c1ed014c0675416dadeacc7",
+  "verified_exported_files": 64,
+  "verified_source_hashes": 58,
+  "copied_package_matches_manifest": true,
+  "self_test_source_hashes_match": true,
+  "hand_only": true,
+  "physical_qualification": "not performed"
+}

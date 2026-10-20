@@ -1,3 +1,4 @@
+<!-- cspell:words EEUFR -->
 # Segno console — manufacturing package
 
 Current revision: 2026-09-30 integration of #1088 (base, rear I/O in the wall,
@@ -271,7 +272,7 @@ unchanged by these console paint allowances.
 | `segno_floor_rail_rear_2` / `_3` | 1 each | as above | **Their own prints** (#1088): the power group stands on the rail between them. Segment 2 has its screws at 21.75 and 64.75 mm from the low-u end, ahead of BUCK_AUX, and three blind Ø8.4 × 2.6 mm pockets in its floor face at 91.24, 145.14 and 162.94 mm; segment 3 keeps the standard screws and has one pocket at 14.55 mm. The pockets take the buck bolts' M4 button heads. **Bolt the bucks before fitting these two segments**, heads from below. Print floor face down, like the others; the pockets need no support. |
 | `segno_lid_prop` | 1 | **BLACK PETG**, ≥40% infill | Mid-field lid prop (issue #1019). A pure compression column, which is why it is printed rather than another shop part number. It stands in the one clear lane between BANK's pedestal and the 16in module body — 31.5 mm wide, so the 24 mm column has 3.7 mm each side and there is no room to improvise on the bench. Two M4 into the floor through the tongue; the top face is already cut to the 12.5° slope, so print it **tongue-down, flat on the bed** and let the sloped face be the top surface. Fit felt on that face to the measured gap after coating, the same rule as the steel beam. Its load qualification remains part of the independent #1019 hold. |
 | `segno_ring_diffuser` | 1 | **WHITE translucent** (exception to the all-black rule: it is a lens) | Ø67-window lens and disc holder for the selected PR #990 Ring 24 on its 2.54 mm pin strip. The open-bottom cavity has eight 1.2 mm ribs in verified component gaps, a 0.25 mm shelf and a 1.05 mm lens roof. Nominal minimum PCB clearance is **0.135 mm**, LED clearance 0.332 mm; qualify one actual print and its light diffusion before ordering a set. Orient and dry-fit it as described below before gluing. |
-| `console_ring_{diffuser,cup,encoder_retainer,encoder_spacer,centre_cap}` (#1075, `hardware/strip_ring/out_console/`) | 1 each | diffuser and cup **WHITE PLA**, the rest **BLACK** | **Alternative to `segno_ring_diffuser`, pending the owner's bench light test** of the strip ring. A 34-LED strip on the cup wall, LEDs facing in; the cup's roof is glued to the faceplate underside and the lens sits flush in the unchanged Ø67 window. Three snap arms on the cup click under the Ø80 carrier's edge (0.3 mm play; the encoder nut still sets its height), so the carrier needs no screws (#1090). The v3 carrier hangs 7 mm deeper than with the Ring 24 (J3 unfitted, strip on J2); since the ring moved to v 215.0 (#1090) it clears the printed 7-inch tower with 1.5 mm of air. The aluminium `segno_ring_disc` is glued on its printed centre cap (the cap sits 2 mm lower for it), so the centre matches the lid's coating; order the disc. Check the knob grips the shaft: it enters 8.0 mm. |
+| `console_ring_{diffuser,cup,encoder_retainer,encoder_spacer,centre_cap}` (#1075, `hardware/strip_ring/out_console/`) | 1 each | diffuser and cup **WHITE PLA**, the rest **BLACK** | **The selected ring** (owner, 2026-10-13; final count 35 LEDs, 2026-10-19, #1075), replacing `segno_ring_diffuser`. A 35-LED strip on the cup wall, LEDs facing in; the cup's roof is glued to the faceplate underside and the lens sits flush in the unchanged Ø67 window. Three snap arms on the cup click under the Ø80 carrier's edge (0.3 mm play; the encoder nut still sets its height), so the carrier needs no screws (#1090). The v3 carrier hangs 7 mm deeper than with the Ring 24 (J3 unfitted, strip on J2); since the ring moved to v 215.0 (#1090) it clears the printed 7-inch tower with 1.5 mm of air. The aluminium `segno_ring_disc` is glued on its printed centre cap (the cap sits 2 mm lower for it), so the centre matches the lid's coating; order the disc. Check the knob grips the shaft: it enters 8.0 mm. The cup in this package is still drawn for 34 LEDs; #1344 resizes it for 35, so print the cup from #1344 once it lands. |
 | `segno_screen7_tower` | 1 | **BLACK PETG**, ≥40% infill | 7-inch screen support tower (#762, closed deck #1070). One piece, closed wedge box, six M3 to the floor through Ø5.5 float holes. The deck is closed: four internal front-to-back ribs carry it, and each cell's ceiling is a 45° gable, so **print it flange-down with no support** (there is no way to get support out of a closed box). The openings are the connector notch on the edge facing the console centre, where the module's HDMI, micro-USB and backlight switch are. The strip-ring notch of #1075 is gone again: the ring moved 14.16 mm down the slope (#1090), so **the tower already printed is the current part**; a generator gate keeps the carrier clear of it. |
 | `segno_screen16_stand_L` | 1 | **BLACK PETG**, ≥40% infill | Left 15.6-inch stand (#1070). |
 | `segno_screen16_stand_R` | 1 | **BLACK PETG**, ≥40% infill | Right 15.6-inch stand: **the exact mirror of `_L`** (either print `_R`, or print `_L` mirrored in the slicer). The halves butt at the screen centre and the splice below joins them. |
@@ -402,9 +403,46 @@ by 2 mm.
 
 | Board | Files | Qty | Notes |
 |---|---|---|---|
-| **Console board v3** (`console_board.py`, #990) | `kicad/out_console/segno_console_board_gerbers.zip` (run `route_console_board.sh` to produce) + `kicad/fab/segno_console_board_bom.csv` | 1 | Hardware work in progress: Pico 2, MIDI front end, sensed CTRL jacks, ring-board link and PD header. The ring-link and PD firmware are unfinished; this is not the v2 board running release 137. See the [integration record](../docs/APPLIANCE_INTEGRATION.md). |
-| Encoder ring carrier (v3, #987) | the v3 XIAO ring carrier, Ø80, from `codex/console-v3-runtime-publication` (its `hardware/kicad/fab/segno_pedal_ring_gerbers.zip`, the September 24 export with the J1/J3/J4 hole allowances; see `kicad/RING_ASSEMBLY.md` there). **The zip of the same name in this checkout is the older #990 export; do not order from it** | 1 | The board the populated Fusion console carries (`ring_board_v3`). Fit the Ring 24 at J3 for the Ring 24 ring, or leave J3 empty and plug the 34-LED strip into J2 for the console strip ring. The Ø68 package on master is an older revision; do not order it for the console. |
+| **Console board v3** | `kicad/fab/segno_console_v3_gerbers.zip` + `kicad/fab/segno_console_board_bom.csv` | 1 | 99.5 × 99.5 mm, two layers, 1.6 mm FR4, 1 oz, purple mask / white silk, lead-free HASL. Solder Pico 2 by its castellations as specified in the assembly guide. Use the matching v3 runtime described below. |
+| **Encoder ring carrier** | `kicad/fab/segno_pedal_ring_gerbers.zip` + `kicad/fab/segno_combined_bom_lcsc.csv` | 1 | Ø80 mm, two layers, 1.6 mm FR4, 1 oz, white mask / black silk, lead-free HASL. Selected assembly: the #1075 console strip ring, one 35-LED strip with DIN at J2.3 and direct AUX power; J3/J4 empty (owner, 2026-10-19). The Ring 24 (J3) and 24/16-module footprints remain on the board as alternatives. The populated Fusion console carries this board (`ring_board_v3`). See [assembly](kicad/RING_ASSEMBLY.md). |
+| **Screen power Rev P** | `kicad/fab/segno_screen_power_rev_p_gerbers.zip` + `kicad/screen_power/hand/bom.csv` + `kicad/screen_power/external_bom.csv` | 1 | 68 × 76 mm, R3 corners, two layers, 1.6 mm FR4, 1 oz, purple mask / white silk, ENIG. Hand-soldered components. Four five-pin XH USB plugs include the shield on pin 5. F1 uses one replaceable 8 A cartridge in its onboard holder; four branch fuses are soldered. See [wiring and assembly](kicad/screen_power/README.md). |
 | LED puck (single WS2812B) | `led_strip/segno_led_strip_gerbers.zip` | 0 | **NOT ORDERED for the console.** Owner call 2026-08-28: the indicators are eight-LED segments cut from a **144 LEDs/m bare IP20 strip**, and the diffuser channel is sized for that (**12 mm wide, 0.53 thick**, 56.96 long), not for this 16×8 board. The design is kept because it is finished and the footprint may suit another build — but ordering it will not fit the current diffuser. |
+
+
+The quantities above are the one-unit assembly need; JLCPCB's order is five
+individual copies of each board. Use only the ZIP hashes in the
+[current manufacturing record](../docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json).
+Older exports in other directories are superseded. The
+[current adversarial review](../docs/reviews/screen-power-ground-cleanup-1072/review.md)
+records the completed corrections, review coverage and verification. No stencil or factory
+component assembly is required. The selected 35-LED strip uses the direct AUX
+star harness in [the ring assembly guide](kicad/RING_ASSEMBLY.md); J2 carries
+DIN only. Do not reuse the superseded straight-through console/ring power wiring.
+
+Console CTRL J20/J21 use four wires: T / R / S / **RN**, with the Neutrik
+NJ6FD-V's ring-normal terminal on pin 4. Leave TN/SN unconnected. This leaves
+the ADC tip unloaded while the jack is empty. R11/R12 bias the UART pair from
+the console Pico's own `+3V3_PICO`, retaining idle high with the Pi off. Follow
+the [current jack and ring wiring](segno_wiring.md).
+
+The new console and carrier runtime is in
+[PR #1082](https://github.com/tomassasovsky/segno/pull/1082), published at
+`53828fc4eae1c18af45abfc3ea7c31f19f9799d7`. It includes the A2 Pico E9 workaround,
+ring link and PD reader; the hardware branch's old firmware snapshot does not.
+Program the Pico before fitting it, or disconnect console J3/J6/J24 before
+connecting its USB cable; remove USB before reconnecting those headers. Use
+SWD for normal in-place programming. For XIAO USB programming, turn AUX off
+and unplug ring J1; keep the strip off until USB is removed and J1 is restored.
+
+The runtime remains an integration draft. Fabricating these boards does not complete
+runtime integration, device qualification or the enclosure work below.
+
+The enclosure (#1088) places this board behind CLEAR/BANK on M3 × 10
+standoffs at its four Revision P holes; see
+[the enclosure release review](enclosure/RELEASE_REVIEW.md). The original
+placement proposal is in
+[the enclosure clearance assessment](../docs/reviews/pcb-completion-1072/screen-power-placement.md).
+The bare PCB outline and mounting centers are fixed.
 
 
 ## 4. Pedal labels
@@ -420,6 +458,8 @@ parts are `kicad/fab/segno_console_board_bom.csv`. Headlines:
 
 - 10× Cherub WTB-006 footswitches; 15.6" 5V USB-C touch panel; APROTII 7" monitor
 - Raspberry Pi 5 + Active Cooler
+- Same Sky **ACZ11BR1E-20FD1-20C** encoder and separately sourced
+  **SJ5-43502PM-nut**, no washer; [ring fit contract](kicad/RING_ENCODER.md)
 - 5V bucks: **eleUniverse 8–36V→5V 10A IP67** (Amazon B0GGHN97TK) **×2** —
   BUCK_PI + BUCK_AUX, fed 20 V from the USB-C PD inlet (#754); the 9 V brick
   is gone
@@ -427,10 +467,15 @@ parts are `kicad/fab/segno_console_board_bom.csv`. Headlines:
   the ring window and `segno_ring_diffuser` are sized around this Ø50. `out/segno_encoder_knob.step`
   is a REFERENCE model of it for the assembly, deliberately **not** in the 3D-print pack.
   Check one thing with calipers before the faceplate is cut: the model assumes a Ø22 × 4.5
-  underside relief clearing the EC11 nut. If the real knob's underside is solid it will sit
+  underside relief clearing the encoder's M7 nut. If the real knob's underside is solid it will sit
   ~3 mm proud of where the model puts it.
-- 1× NeoPixel **Ring 24** — 65.5 mm OD / 52.3 mm ID / 3.2 mm thick (the ring the owner has;
-  the faceplate window and `segno_ring_diffuser` are cut for THESE numbers, not the Ring 16's 44.5 mm)
+- 1× existing **40-LED WS2812B strip**, connected to carrier J2 in its separate
+  [strip housing design](https://github.com/tomassasovsky/segno/pull/1083).
+  The older `segno_ring_diffuser` and enclosure window described above are the
+  24-LED mechanical variant; they are not a completed 40-strip enclosure release.
+- 1× **Panasonic EEUFR1A102**, 1000 µF / 10 V, fitted across the strip's
+  own power entry with insulated lead joints; allow its 10 × 16 mm body
+  beside the harness. See [polarity and assembly](kicad/RING_ASSEMBLY.md).
 - Cabling per **`segno_wiring.md`** (HDMI ×2, USB, the 20 V PD feed + 5 V buck
   runs, the 2×20 keyed ribbon, JST looms)
 

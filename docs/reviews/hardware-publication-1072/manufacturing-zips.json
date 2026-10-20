@@ -1,0 +1,17 @@
+{
+  "console-v3": {
+    "path": "hardware/kicad/fab/segno_console_v3_gerbers.zip",
+    "sha256": "93dc849e1950138fa5018f3916ef894e0d452159b3ce3764b68acfbc2437485e",
+    "members_checked": 14
+  },
+  "screen-power-rev-i": {
+    "path": "hardware/kicad/fab/segno_screen_power_rev_i_gerbers.zip",
+    "sha256": "25370578cbb1184f6d2bc1913c88746ff87ce91809779c7878d62f4af735a878",
+    "members_checked": 12
+  },
+  "ring-white": {
+    "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
+    "sha256": "e79e97d122088814b1ee34b1e33ecbe281fb9ee7a6f27c9b05a437ad16fccc74",
+    "members_checked": 10
+  }
+}
