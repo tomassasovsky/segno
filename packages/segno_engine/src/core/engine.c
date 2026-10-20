@@ -158,6 +158,7 @@ void le_lane_reset_settings(le_lane* ln, int32_t input_channel) {
   store_i32(&ln->a_cache_active, 0);
   ln->cache_fp_entry = NULL; /* audio-local fp-verdict cache dies with it */
   ln->cache_fp_gen = 0;
+  ln->cache_fp_hop = 0;
   le_lane_fx_gen_bump(ln); /* the reset rewrites the whole chain below */
   atomic_store_explicit(&ln->a_input_channel, input_channel,
                         memory_order_relaxed);
@@ -1137,6 +1138,9 @@ void le_engine_lane_fx_chain_for_test(le_engine* engine, int32_t channel,
   }
   fx_apply_chain(&ln->fx, engine->sample_rate, engine->fx_delay_frames, l, r,
                  count, types, params, enabled);
+  /* One sample processed: advance the engine frame the chain is clocked by
+   * (#941), as the callback's frame loop does. */
+  atomic_fetch_add_explicit(&engine->a_fx_frame, 1u, memory_order_relaxed);
 }
 
 /* Loopback detection, device enumeration / id resolution, and backend selection
@@ -1219,6 +1223,14 @@ void le_engine_mark_device_lost(le_engine* engine) {
    * sample-rate-change notifications so a driver reconfigured by another app
    * recovers instead of going silent. */
   atomic_store_explicit(&engine->a_device_present, 0, memory_order_relaxed);
+}
+
+/* Gives a live chain owner's state its hop-stagger seed and the engine frame
+ * as its FX clock (#941), so each reset site sees the frame being
+ * processed. */
+static void le_fx_seed_owner(le_fx_state* fx, le_engine* engine, int32_t seed) {
+  fx->hop_seed = seed;
+  fx->clock_src = &engine->a_fx_frame;
 }
 
 le_engine* le_engine_create(void) {
@@ -1320,6 +1332,30 @@ le_engine* le_engine_create(void) {
    * default; 0 disables caching outright (le_engine_set_fx_cache_cap). */
   atomic_store_explicit(&engine->a_fx_cache_cap, LE_CACHE_DEFAULT_CAP_BYTES,
                         memory_order_relaxed);
+  /* Octaver hop-stagger seeds (#915): every chain owner gets a distinct base
+   * phase, so octavers in different chains stagger as well as octavers in
+   * one chain (engine_fx.h). Seeded here, once, before anything can run: a
+   * seed is a fixed function of the owner's position, and no reset touches
+   * it, so every le_fx_entry_reset (including one from an FX command issued
+   * before the first configure) sees the final value. The all-tracks
+   * config's own state is never processed; it carries bus 0's seed so the
+   * render recipe's mix print reproduces that instance. */
+  for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) {
+    for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
+      le_fx_seed_owner(&engine->tracks[t].lanes[l].fx, engine,
+                       le_fx_lane_hop_seed(t, l));
+    }
+    le_fx_seed_owner(&engine->tracks[t].bus.fx, engine, le_fx_bus_hop_seed(t));
+  }
+  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    le_fx_seed_owner(&engine->monitors[c].fx, engine, le_fx_monitor_hop_seed(c));
+  }
+  for (int32_t k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+    le_fx_seed_owner(&engine->all_tracks_fx[k], engine,
+                     le_fx_all_tracks_hop_seed(k));
+    le_fx_seed_owner(&engine->outputs[k].fx.fx, engine, le_fx_output_hop_seed(k));
+  }
+  le_fx_seed_owner(&engine->all_tracks.fx, engine, le_fx_all_tracks_hop_seed(0));
   return engine;
 }
 
