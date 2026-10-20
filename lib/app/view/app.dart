@@ -27,6 +27,7 @@ import 'package:segno/appliance/idle_dim_cubit.dart';
 import 'package:segno/appliance/idle_dim_host.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/appliance/power_off/power_goodbye.dart';
+import 'package:segno/appliance/power_off/power_host.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/appliance/wifi_reconnect_hold_host.dart';
@@ -901,6 +902,12 @@ class _AppViewState extends State<_AppView> {
   StreamSubscription<RecoveryRefusal>? _recoverySub;
   bool _restoreNoticeScheduled = false;
 
+  /// "Not now" on the power-cycle banner holds until the next boot.
+  bool _powerCycleDismissed = false;
+
+  /// The weak-charger toast is said once per boot.
+  bool _weakChargerShown = false;
+
   /// Resolves localized strings from inside [MaterialApp] when this state
   /// sits above it in the tree.
   AppLocalizations get _l10n {
@@ -1191,6 +1198,62 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
+  /// The USB-C contract predates the console profile, so the console runs on
+  /// less than the charger offers until it is unplugged and plugged back in
+  /// (#1352). Nothing breaks meanwhile, so the banner can be put off; Power
+  /// off opens the normal Power options, whose Safe to switch off face says
+  /// to unplug. It clears itself once the new contract is in.
+  void _showPowerCycleBanner(PedalPowerSupply? supply) {
+    if (supply == null || !supply.needsPowerCycle || _powerCycleDismissed) {
+      dismissAppToast(AppToastId.powerCycle);
+      return;
+    }
+    final l10n = _l10n;
+    showAppToast(
+      id: AppToastId.powerCycle,
+      title: AppText(l10n.powerCycleBannerTitle),
+      description: AppText(
+        l10n.powerCycleBannerDescription(
+          wattsText(supply.watts),
+          wattsText(supply.offeredWatts),
+        ),
+      ),
+      icon: const Icon(Icons.power_outlined),
+      actions: [
+        TextButton(
+          key: const Key(AppToastId.powerCycleDismiss),
+          onPressed: () {
+            _powerCycleDismissed = true;
+            dismissAppToast(AppToastId.powerCycle);
+          },
+          child: AppText(l10n.powerCycleBannerDismiss),
+        ),
+        TextButton(
+          key: const Key(AppToastId.powerCyclePowerOff),
+          onPressed: () {
+            dismissAppToast(AppToastId.powerCycle);
+            if (mounted) requestPower(context);
+          },
+          child: AppText(l10n.powerCycleBannerPowerOff),
+        ),
+      ],
+    );
+  }
+
+  /// The charger itself offers too little for the console at full load.
+  /// Said once per boot and never in the way: the console runs, and may
+  /// only brown out at full brightness.
+  void _showWeakChargerNotice(PedalPowerSupply? supply) {
+    if (supply == null || _weakChargerShown || !chargerIsWeak(supply)) return;
+    _weakChargerShown = true;
+    showAppToast(
+      id: AppToastId.weakCharger,
+      type: ToastificationType.warning,
+      title: AppText(_l10n.weakChargerToast(wattsText(supply.offeredWatts))),
+      icon: const Icon(Icons.power_outlined),
+    );
+  }
+
   /// Startup notice that a newer build is available. Skipped when Updates is
   /// already open. "Not now" dismisses that version; "Update…" opens the
   /// Updates settings page.
@@ -1362,7 +1425,14 @@ class _AppViewState extends State<_AppView> {
                   children: [
                     dimmed,
                     if (face != ReadoutGoodbye.none)
-                      PowerGoodbye(face: face, action: power.action),
+                      PowerGoodbye(
+                        face: face,
+                        action: power.action,
+                        unplugToApply: context.select<PedalCubit, bool>(
+                          (pedal) =>
+                              pedal.state.powerSupply?.needsPowerCycle ?? false,
+                        ),
+                      ),
                   ],
                 );
               },
@@ -1462,6 +1532,14 @@ class _AppViewState extends State<_AppView> {
               current.fellBackFrom != null &&
               previous.fellBackFrom != current.fellBackFrom,
           listener: (_, state) => _showSaveToFellBack(state.fellBackFrom!),
+        ),
+        BlocListener<PedalCubit, PedalState>(
+          listenWhen: (previous, current) =>
+              previous.powerSupply != current.powerSupply,
+          listener: (_, state) {
+            _showPowerCycleBanner(state.powerSupply);
+            _showWeakChargerNotice(state.powerSupply);
+          },
         ),
         BlocListener<UpdateCubit, UpdateState>(
           listenWhen: (previous, current) =>

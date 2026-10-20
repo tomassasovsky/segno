@@ -28,7 +28,9 @@ extern "C" {
 #endif
 
 #define PEDAL_LINK_SYNC 0xA5u
-/* 11: STATE flags bit 4 is dimmed -- the console idled and the app dimmed the
+/* 12: PD_STATUS (0x06) -- the USB-C PD contract and whether the trigger's
+ * NVM holds the console profile (#1352).
+ * 11: STATE flags bit 4 is dimmed -- the console idled and the app dimmed the
  * screens, so the board dims its LEDs too (#1349).
  * 10: STATE53 -- the Song queue (#1077): which footswitch's pill fills, and
  * how far, while a section waits for the playing one's next lap edge.
@@ -44,7 +46,7 @@ extern "C" {
  * stopped tracking the loop. The board is flashed over SWD independently of
  * the app, so the two can drift; this is what makes that visible instead of
  * silent. */
-#define PEDAL_LINK_PROTOCOL_VERSION 11u
+#define PEDAL_LINK_PROTOCOL_VERSION 12u
 
 /* board -> segno */
 #define PEDAL_LINK_TYPE_BUTTON 0x01u   /* [button, pressed] */
@@ -56,6 +58,10 @@ extern "C" {
 #define PEDAL_LINK_TYPE_HELLO 0x03u    /* [protocol, fw major, fw minor] */
 #define PEDAL_LINK_TYPE_CTRL 0x04u     /* [jack, contact, kind, value] */
 #define PEDAL_LINK_TYPE_ENCODER_BUTTON 0x05u /* [pressed] */
+/* Once a second, after HELLO: [profile, mismatch, mV LE16, mA LE16,
+ * source max mA LE16]. profile is a PEDAL_PD_PROFILE_* value; the contract
+ * fields are zero when the trigger did not answer or holds no PD contract. */
+#define PEDAL_LINK_TYPE_PD_STATUS 0x06u
 /* segno -> board */
 #define PEDAL_LINK_TYPE_STATE 0x10u    /* [PEDAL_LINK_STATE_LEN bytes] */
 /* Pi -> board, from segno-ring-flash before the app starts, never from the
@@ -67,6 +73,7 @@ extern "C" {
 #define PEDAL_LINK_RING_BRIDGE_MAGIC0 0x52u
 #define PEDAL_LINK_RING_BRIDGE_MAGIC1 0x42u
 
+#define PEDAL_LINK_PD_STATUS_LEN 8u
 #define PEDAL_LINK_STATE_LEN 53u
 #define PEDAL_LINK_MAX_PAYLOAD PEDAL_LINK_STATE_LEN
 #define PEDAL_LINK_MAX_FRAME (4u + PEDAL_LINK_MAX_PAYLOAD)
@@ -154,6 +161,18 @@ enum {
 };
 enum { PEDAL_LED_OFF = 0, PEDAL_LED_GREEN, PEDAL_LED_RED, PEDAL_LED_BLUE, PEDAL_LED_COUNT };
 
+/* Whether the PD trigger's NVM holds the console profile, as the board found
+ * it at boot (pd_trigger.h). WRITTEN means it did not and the board wrote it
+ * and read it back; the new profile governs the next negotiation, after a
+ * power cycle. */
+enum {
+  PEDAL_PD_PROFILE_NOT_READ = 0, /* the trigger did not answer on J23 */
+  PEDAL_PD_PROFILE_MATCHES,
+  PEDAL_PD_PROFILE_WRITTEN,
+  PEDAL_PD_PROFILE_WRITE_FAILED,
+  PEDAL_PD_PROFILE_COUNT
+};
+
 /* The decoded STATE payload. Byte layout (see PedalLinkCodec):
  *   0      flags: bit0 clear_fade, bit1 goodbye, bit2 performance_armed,
  *          bit3 counting_in, bit4 dimmed (bits 5-7 reserved, must be zero)
@@ -205,6 +224,8 @@ size_t pedal_link_encode_ctrl(uint8_t jack, uint8_t contact, uint8_t kind, uint8
                               uint8_t *out);
 size_t pedal_link_encode_state(const pedal_state *state, uint8_t *out);
 size_t pedal_link_encode_ring_bridge(uint8_t *out);
+size_t pedal_link_encode_pd_status(uint8_t profile, uint8_t mismatch, uint16_t millivolts,
+                                   uint16_t milliamps, uint16_t max_milliamps, uint8_t *out);
 
 /* Decode a STATE payload. Returns 1 on success, 0 for a wrong length, an
  * out-of-range enum, a reserved flag bit, an active_bank > 1, a

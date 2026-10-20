@@ -2,6 +2,7 @@
 #include <cstdio>
 
 #include "../console_board/console_board.ino"
+#include "stusb4500_sim.h"
 
 static void at(uint32_t now) {
   fake_arduino::now = now;
@@ -113,6 +114,54 @@ static void ringStateForwarding() {
   assert(lastRingState().flags == ring_link::FLAG_LIVE);
   at(now += 5001);
   expectRingDark();
+}
+
+// Every HELLO is followed by the PD trigger's status (#1352). Nothing answers
+// on this bus, so the board reports the trigger as not read, with no contract.
+static void pdStatusFollowsHello() {
+  fake_arduino::sent.clear();
+  at(fake_arduino::now + PEDAL_LINK_HELLO_MS + 1);
+  uint8_t want[PEDAL_LINK_MAX_FRAME];
+  const size_t n = pedal_link_encode_pd_status(PEDAL_PD_PROFILE_NOT_READ, 0, 0, 0, 0, want);
+  bool found = false;
+  for (size_t i = 0; i + 1 < fake_arduino::sent.size(); ++i) {
+    if (fake_arduino::sent[i][1] != PEDAL_LINK_TYPE_HELLO) continue;
+    assert(fake_arduino::sent[i + 1] == std::vector<uint8_t>(want, want + n));
+    found = true;
+  }
+  assert(found);
+}
+
+// A trigger that was not answering is asked again only every tenth hello,
+// and provisioned and reported once it answers (J23 seated after boot).
+static int simWrite(uint8_t reg, const uint8_t *data, uint8_t len) {
+  return stusb_sim::busWrite(nullptr, reg, data, len);
+}
+static int simRead(uint8_t reg, uint8_t *data, uint8_t len) {
+  return stusb_sim::busRead(nullptr, reg, data, len);
+}
+
+static void lateTrigger() {
+  pd_trigger_nvm blank = {}, provisioned;
+  pd_trigger_apply_profile(blank, provisioned);
+  stusb_sim::attachContract(provisioned, 0x400759D6u, 200);
+  Wire.device = {simWrite, simRead};
+  uint8_t want[PEDAL_LINK_MAX_FRAME];
+  const size_t n = pedal_link_encode_pd_status(PEDAL_PD_PROFILE_MATCHES, 0, 20000, 4700, 4700, want);
+  bool reported = false;
+  unsigned hellos = 0;
+  for (; hellos < PD_RETRY_HELLOS && !reported; ++hellos) {
+    const int writesBefore = stusb_sim::chip.writes;
+    fake_arduino::sent.clear();
+    at(fake_arduino::now + PEDAL_LINK_HELLO_MS + 1);
+    for (const auto &frame : fake_arduino::sent)
+      if (frame == std::vector<uint8_t>(want, want + n)) reported = true;
+    // Between retries the bus is left alone.
+    if (!reported) assert(stusb_sim::chip.writes == writesBefore);
+  }
+  assert(reported && hellos <= PD_RETRY_HELLOS);
+  assert(stusb_sim::chip.erased == 0);  // it already held the profile
+  Wire.device = {};
 }
 
 // The Song queue (#1077): the queued switch's pill fills left to right by
@@ -283,5 +332,7 @@ int main() {
   for (unsigned group = 0; group < 10; ++group) assert(ind.shown[group*8+3]);
   songQueueFill();
   ringStateForwarding();
-  puts("Console v3 ten pills, Song queue fill and ring state: all physical groups, host activity, limits, dimming and lifecycle pass");
+  pdStatusFollowsHello();
+  lateTrigger();
+  puts("Console v3 ten pills, Song queue fill and ring state: all physical groups, host activity, limits, dimming, PD status and lifecycle pass");
 }

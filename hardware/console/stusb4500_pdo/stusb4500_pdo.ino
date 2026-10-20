@@ -3,6 +3,12 @@
   to take 20 V at the most current the source offers there (5 A at most, 3 A at
   least) from the USB-C PD inlet. See segno_wiring.md section 2.
 
+  RECOVERY ONLY. The console board writes this same profile over J23 at boot
+  (firmware/console_board/pd_trigger.c, #1352). This sketch is for a trigger the
+  console cannot reach: one whose NVM was left unusable (power cut during the
+  console's write, or a failed write) so that it no longer powers the console up.
+  It programs the NVM out of band, from an Arduino UNO over Qwiic.
+
   Shipped default asks 20 V at 1.0 A (20 W); the console draws ~59 W worst case.
 
   Upload to an Arduino UNO, wire Qwiic -> UNO (SDA=A4, SCL=A5, GND, 3.3V), open the
