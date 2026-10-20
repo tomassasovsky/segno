@@ -306,14 +306,16 @@ Signal order inside each rack, first to last. All slots run in series.
 - Mod in Guitar is three slots in series: Chorus, then Phaser, then Flanger.
   Mod Mode picks which of the three runs.
 - Studio's Mod is two slots: Chorus, then Tremolo.
-- "(?)" marks a slot placed by elimination.
-- The editor's pedal order matches the slot order in Guitar, Rhythmic,
-  Drum and Vocal. In Ed's rack it does not: the editor draws Delay before
-  Reverb, but the processor runs Reverb then Delay. Both are linear, so in
-  series the order does not change the sound.
+- "(?)" marks the one slot recorded at medium confidence, Vocal Tuner's
+  Master Vol. Every other slot is recorded at high confidence.
+- The editor's pedal order is recorded for two racks only, Ed's and Dub.
+  In Ed's Rack the editor draws Delay before Reverb, but the processor runs
+  Reverb then Delay. Both are linear, so in series the order does not change
+  the sound.
 - Dub-Verb before Amb-Verb comes from the Dub editor order only; the
   processor shows two reverb slots and no names. Again both are linear.
-- Vocal's editor shows one HP/Gate pedal for the highpass and gate slots.
+- The Vocal and Vocal Tuner presets power the highpass and gate slots with
+  one key, HP/Gate.
 
 - **Drum Rack**: Transient -> Delay -> Reverb -> EQ -> Comp -> Master Vol
 - **Vocal Rack**: Highpass -> Gate -> Pitch -> Doubler -> Delay -> Reverb -> Comp -> EQ -> Master Vol
