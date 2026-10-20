@@ -137,23 +137,20 @@ static float le_wrap_pi(float x) {
   return x - two_pi * roundf(x / two_pi);
 }
 
-/* The invariants the stagger arithmetic rests on (engine_fx.h describes the
- * steps): the masks need LE_PV_HOP to be a power of two, and the steps were
- * searched for this owner geometry, so a change to any dimension means
- * re-running that search (test_octaver_hop_stagger_seeds pins the result). */
+/* The invariants the stagger arithmetic rests on (engine_fx.h): the masks
+ * need LE_PV_HOP to be a power of two, the quarters need it to divide by 4,
+ * and the two modes share one schedule only because PSOLA re-analyses once
+ * per phase-vocoder hop. */
 _Static_assert((LE_PV_HOP & (LE_PV_HOP - 1)) == 0,
                "LE_PV_HOP must be a power of two (hop-phase masks)");
-_Static_assert(LE_MAX_TRACKS == 8 && LE_MAX_LANES == 8 &&
-                   LE_MAX_MONITORED_INPUTS == 40 && LE_MAX_OUTPUT_BUSES == 16 &&
-                   LE_FX_MAX == 64,
-               "hop-stagger steps were searched for this owner geometry");
-_Static_assert((LE_PV_STAGGER_SLOT_STEP & 1) == 1,
-               "an odd slot step gives every slot of a chain its own phase");
+_Static_assert(LE_PV_HOP % 4 == 0, "the stagger lattice is four quarters");
+_Static_assert(LE_PSOLA_AHOP == LE_PV_HOP,
+               "PSOLA's YIN cadence must equal the PV hop to share its schedule");
 
-/* The analysis-hop PHASE of the octaver in chain slot [slot] of [fx]: what
- * le_pv_reset_runtime seeds hop_count with, so N instances run their frames
- * on N different sample indices instead of all hopping together. Spreading
- * the phase does not reduce the work; it stops it arriving in one callback.
+/* The analysis-hop PHASE of the octaver in chain slot [slot] of [fx], in
+ * samples after the reset that seeds it: the owner's quarter plus the slot,
+ * mod 4, on the quarter lattice (engine_fx.h). Spreading the phase does not
+ * reduce the work; it stops it arriving in one callback.
  *
  * WHY IT COSTS NO LATENCY: a PV frame runs at hop_count == 0 and writes the
  * OLA accumulator so that out[j] is emitted j samples later; the emitted
@@ -170,26 +167,39 @@ _Static_assert((LE_PV_STAGGER_SLOT_STEP & 1) == 1,
  * must be in [0, LE_PV_HOP) for any seed a caller stores. */
 static int le_pv_hop_phase(const le_fx_state* fx, int slot) {
   return le_fx_hop_mask((uint32_t)fx->hop_seed +
-                        (uint32_t)slot * (uint32_t)LE_PV_STAGGER_SLOT_STEP);
+                        (uint32_t)slot * (uint32_t)LE_PV_STAGGER_QUARTER);
+}
+
+/* The two modes run one counter in opposite directions: PV counts up and runs
+ * its frame on the tick where hop_count is 0, PSOLA counts down and runs YIN on
+ * the tick that takes it to 0 or below. These two convert between the counter
+ * and "ticks until the next heavy tick" (1 = the coming tick), so a phase
+ * means the same schedule in both modes and a mode switch keeps the schedule
+ * it had instead of restarting it. */
+static int le_oct_ticks_to_work(const le_octaver_state* o) {
+  if (o->cur_mode == 0) {
+    return o->hop_count == 0 ? 1 : LE_PV_HOP - o->hop_count + 1;
+  }
+  return o->hop_count < 1 ? 1 : o->hop_count;
+}
+
+static void le_oct_set_ticks_to_work(le_octaver_state* o, int ticks) {
+  if (ticks < 1) ticks = 1;
+  if (ticks > LE_PV_HOP) ticks = LE_PV_HOP;
+  o->hop_count = o->cur_mode == 0 ? (ticks == 1 ? 0 : LE_PV_HOP - ticks + 1)
+                                  : ticks;
 }
 
 /* Zeros the octaver's per-mode DSP runtime (phase history, synthesis
  * accumulator, hop counter) without touching the heap-buffer allocation or the
  * smoothed params / current mode. Used on a mode switch and on entry reset; safe
  * with NULL buffers (a slot that is not an octaver). The hop counter starts at
- * this instance's staggered phase (le_pv_hop_phase), not 0.
- *
- * The two modes read the counter in opposite directions: PV counts up and
- * runs its frame on the wrap, PSOLA counts down and runs YIN when it reaches
- * 0. Distinct phases therefore keep instances apart WITHIN a mode. A PV and a
- * PSOLA instance are scheduled off mirrored ticks, and a PSOLA instance always
- * flips into its mode ~15 ms after its reset (a slot resets into PV), so
- * reflecting the seed for PSOLA would not line the modes up either; separate
- * counters per mode would. A cross-mode collision costs one YIN pass beside
- * one instance's four FFTs, not two piles of four. */
+ * this instance's staggered phase (le_pv_hop_phase) in the current mode's
+ * terms, not at 0. */
 static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan) {
   le_octaver_state* o = &fx->oct[slot][chan];
-  o->hop_count = le_pv_hop_phase(fx, slot);
+  const int phase = le_pv_hop_phase(fx, slot);
+  le_oct_set_ticks_to_work(o, phase == 0 ? 1 : LE_PV_HOP - phase + 1);
   o->out_pos = 0;
   o->in_epoch = 0;
   o->out_epoch = 0;
@@ -640,8 +650,14 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
     o->xfade -= xstep;
     if (o->xfade <= 0.0f) {
       o->xfade = 0.0f;
+      /* Keep the hop schedule across the switch: the new mode's heavy tick
+       * lands where the old mode's next one would have. Re-seeding from the
+       * phase here would anchor it to this instant, ~15 ms after the reset,
+       * and move it off the instance's quarter. */
+      const int ticks = le_oct_ticks_to_work(o);
       o->cur_mode = requested;
       le_pv_reset_runtime(fx, slot, chan);
+      le_oct_set_ticks_to_work(o, ticks);
     }
   } else if (o->xfade < 1.0f) {
     o->xfade += xstep;

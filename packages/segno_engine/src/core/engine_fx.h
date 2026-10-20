@@ -28,8 +28,8 @@ extern "C" {
 /* --- Phase-vocoder octaver (LE_FX_OCTAVER, mode p3 < 0.5) tuning ------------- */
 #define LE_PV_N 1024             /* STFT window (power of two) */
 #define LE_PV_HOP 256            /* 4x overlap (HOP = N/4: the clean-PV minimum);
-                                  * a POWER OF TWO: the hop-stagger seeds and
-                                  * le_pv_hop_phase mask with LE_PV_HOP - 1 */
+                                  * a POWER OF TWO: le_pv_hop_phase masks with
+                                  * LE_PV_HOP - 1 */
 #define LE_PV_BINS (LE_PV_N / 2 + 1)
 #define LE_PV_LIFTER (LE_PV_N / 24) /* ~42: cepstral envelope lifter cutoff */
 
@@ -38,46 +38,41 @@ extern "C" {
  * same sample index, forever: at 64-frame blocks one callback in four carried
  * the whole pile. Measured on the console at 96 kHz / 64 frames, two
  * synchronized stereo octavers missed the 667 us deadline on every heavy
- * block; staggered, two to four stay near 370 us.
+ * block.
  *
- * An instance's hop PHASE is its chain owner's base phase (the seed below)
- * plus its slot's step, masked into [0, LE_PV_HOP). The steps were chosen by
- * exhaustive search for this engine's geometry (64 slots; owners: 8 tracks x
- * 8 lanes, a bus per track, 40 monitored sources, 16 all-tracks instances and
- * 16 output buses). The criteria, in order:
+ * An instance's hop PHASE is one of four QUARTERS of the hop, 0, 64, 128 or
+ * 192 samples after the reset that seeded it:
  *
- *  - Along each axis that commonly holds octavers together (the slots of one
- *    chain, the same slot on each track, one track's lanes and bus, the
- *    monitor inputs, the buses), every prefix of up to 8 instances fills the
- *    64-frame and the 32-frame callback buckets as evenly as possible: the
- *    first four land in four different 64-frame callbacks, the first eight
- *    in eight different 32-frame ones.
- *  - All 144 owner base phases are distinct, and the first owner of each
- *    group (track 0 lane 0, monitor 0, output bus 0, all-tracks bus 0) lands
- *    in its own 64-frame and 32-frame callback.
- *  - The slot step is odd, so all 64 slots of one chain get distinct phases,
- *    and it differs from the owner steps, so slot s on track t+1 does not
- *    share a phase with slot s+1 on track t (all 64 {track, slot} pairs of
- *    lane 0, and all 64 {monitor, slot} pairs of the first 8 monitors, are
- *    distinct).
+ *     phase = LE_PV_STAGGER_QUARTER * ((owner quarter + slot) mod 4)
  *
- * The phase is a function of the owner's position, so a reset (a recipe
- * publish resets every active slot it carries, a re-enable resets its slot)
- * puts the instance back on its own phase rather than on 0: instances reset
- * together stay apart. Instances in different chains reset at different
- * times keep whatever relative phase their reset instants give them; anchoring
- * to an absolute clock is #941. */
-#define LE_PV_STAGGER_SLOT_STEP 95
-#define LE_PV_STAGGER_TRACK_STEP 94
-#define LE_PV_STAGGER_LANE_STEP 93 /* the track bus is lane LE_MAX_LANES */
-#define LE_PV_STAGGER_MONITOR_BASE 59
-#define LE_PV_STAGGER_MONITOR_STEP 93
-#define LE_PV_STAGGER_OUTPUT_BASE 125
-#define LE_PV_STAGGER_ALL_TRACKS_BASE 183
-#define LE_PV_STAGGER_BUS_STEP 93 /* all-tracks instances and output buses */
+ * Four points exactly a quarter apart land in four different callbacks of a
+ * quarter's length whatever their offset, so the spread holds at any reset
+ * offset, including a recipe applied inside a block. Any spread finer than
+ * the lattice would not: two phases closer than a quarter can share a
+ * callback once shifted. The guarantee, for instances reset at the same
+ * instant (one publish, one prepared edit, a session load):
+ *
+ *  - slots of one chain whose indexes differ mod 4 run in different 64-frame
+ *    callbacks, so any four consecutive slots use all four;
+ *  - the same slot on tracks t .. t+3 (lane 0), on lanes l .. l+3 of one
+ *    track, on monitors c .. c+3, on output buses k .. k+3, and on all-tracks
+ *    instances k .. k+3, runs in four different 64-frame callbacks.
+ *
+ * With four callbacks per hop, a fifth instance always shares one, and two
+ * axes cannot both be kept apart: slot s on track t + 1 shares a quarter
+ * with slot s + 1 on track t. Instances reset at different instants keep
+ * whatever relative phase those instants give them; anchoring to an absolute
+ * clock is #941. Spreading only the start does not reduce the work; the hop
+ * split in the rack plan (#887, part 9) removes the dependence on phase. */
+#define LE_PV_STAGGER_QUARTER (LE_PV_HOP / 4)
 
 static inline int32_t le_fx_hop_mask(uint32_t p) {
   return (int32_t)(p & (uint32_t)(LE_PV_HOP - 1));
+}
+
+/* The base phase of an owner whose quarter is [q] (taken mod 4). */
+static inline int32_t le_fx_quarter_seed(uint32_t q) {
+  return (int32_t)((q & 3u) * (uint32_t)LE_PV_STAGGER_QUARTER);
 }
 
 /* The hop-stagger seed (le_fx_state::hop_seed) of track [track]'s lane
@@ -89,24 +84,26 @@ static inline int32_t le_fx_hop_mask(uint32_t p) {
  * would swap in at a loop top as a step (a click), and which a stem would
  * export as something other than what was heard.
  *
- * Unsigned and masked, not signed-and-%: perf_render's track index comes from
- * a manifest on disk and is only checked for being non-negative, and a
- * negative phase would index outside the OLA accumulator. */
+ * Lane l of track t takes quarter t + l, so the same slot on consecutive
+ * tracks and on consecutive lanes spreads. The bus takes t + 2: with nine
+ * owners per track and four quarters something must share, and lane 0 and
+ * the bus are the pair a track most often uses together.
+ *
+ * Unsigned arithmetic, masked: perf_render's track index comes from a
+ * manifest on disk and is only checked for being non-negative. */
 static inline int32_t le_fx_lane_hop_seed(int32_t track, int32_t lane) {
-  return le_fx_hop_mask((uint32_t)track * (uint32_t)LE_PV_STAGGER_TRACK_STEP +
-                        (uint32_t)lane * (uint32_t)LE_PV_STAGGER_LANE_STEP);
+  const uint32_t t = (uint32_t)track;
+  return lane >= LE_MAX_LANES ? le_fx_quarter_seed(t + 2u)
+                              : le_fx_quarter_seed(t + (uint32_t)lane);
 }
 static inline int32_t le_fx_monitor_hop_seed(int32_t source) {
-  return le_fx_hop_mask((uint32_t)LE_PV_STAGGER_MONITOR_BASE +
-                        (uint32_t)source * (uint32_t)LE_PV_STAGGER_MONITOR_STEP);
-}
-static inline int32_t le_fx_all_tracks_hop_seed(int32_t bus) {
-  return le_fx_hop_mask((uint32_t)LE_PV_STAGGER_ALL_TRACKS_BASE +
-                        (uint32_t)bus * (uint32_t)LE_PV_STAGGER_BUS_STEP);
+  return le_fx_quarter_seed((uint32_t)source);
 }
 static inline int32_t le_fx_output_hop_seed(int32_t bus) {
-  return le_fx_hop_mask((uint32_t)LE_PV_STAGGER_OUTPUT_BASE +
-                        (uint32_t)bus * (uint32_t)LE_PV_STAGGER_BUS_STEP);
+  return le_fx_quarter_seed((uint32_t)bus);
+}
+static inline int32_t le_fx_all_tracks_hop_seed(int32_t bus) {
+  return le_fx_quarter_seed((uint32_t)bus + 2u);
 }
 
 /* --- PSOLA octaver (mode p3 >= 0.5) tuning ---------------------------------- */
