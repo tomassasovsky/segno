@@ -183,8 +183,8 @@ void main() {
           .presets
           .firstWhere((p) => p.name == 'Acoustic Rhythm 1');
 
-      // A reading of the data, not a recovered chain: the source never says
-      // which modules a rack holds or what order they run in.
+      // A reading of the data, not a chain: the preset never says which
+      // modules a rack holds or what order they run in.
       expect(preset.moduleNames, contains('EQ'));
       expect(preset.moduleNames, contains('Rev'));
       expect(preset.moduleNames.toSet(), hasLength(preset.moduleNames.length));
@@ -502,91 +502,104 @@ void main() {
   });
 
   group('every factory preset', () {
-    // What each rack's schema implies, in the order a rack builds its
-    // entries: the module table's order, because no source examined records
-    // the order the Looper X runs them in (see kFxModules).
+    // What each rack's schema implies, in the order the Looper X runs them:
+    // the measured chain orders under "Chain order" in
+    // docs/plan/2026-10-20-looperx-derived-tables.md, written out here
+    // independently of kFxRackOrders so a slip in either shows.
     const expected = <String, List<String>>{
       'Drum Rack': [
-        'Compressor',
-        'Four-band EQ',
+        'Transient',
         'Delay',
         'Reverb',
-        'Transient',
+        'Four-band EQ',
+        'Compressor',
       ],
       'Dub Rack': [
+        'Doubler',
+        'Dub delay',
+        'Dub reverb',
+        'Ambience',
         'Compressor',
         'Parametric EQ',
-        'Dub delay',
-        'Ambience',
-        'Dub reverb',
-        'Doubler',
       ],
       "Ed's Rack": [
-        'Amp',
+        'Octaver',
+        'Wah',
         'Compressor',
         'Overdrive',
-        'Four-band EQ',
-        'Wah',
+        'Amp',
         'Chorus',
-        'Octaver',
-        'Delay',
         'Reverb',
+        'Delay',
+        'Four-band EQ',
       ],
       'Guitar Rack': [
-        'Amp',
+        'Whammy',
         'Overdrive',
         'Wah',
+        'Amp',
         'Modulation',
-        'Whammy',
-        'Delay',
         'Spring reverb',
+        'Delay',
       ],
       'Lo-Fi Rack': [
-        'Distortion',
-        'Parametric EQ',
         'Low-pass filter',
-        'Delay',
         'Vinyl',
         'Degrade',
+        'Distortion',
+        'Parametric EQ',
+        'Delay',
       ],
       'Rhythmic Rack': [
-        'Parametric EQ',
         'Low-pass filter',
+        'Slicer',
+        'Pumper',
+        'Parametric EQ',
         'Delay',
         'Reverb',
-        'Pumper',
-        'Slicer',
       ],
       'Studio Rack': [
-        'Compressor',
-        'Distortion',
-        'Four-band EQ',
-        'Modulation',
         'Pitch shift',
+        'Distortion',
+        'Doubler',
+        'Modulation',
         'Delay',
         'Reverb',
-        'Doubler',
+        'Compressor',
+        'Four-band EQ',
       ],
       'Vocal Rack': [
-        'Compressor',
-        'Four-band EQ',
+        'High-pass gate',
         'Pitch shift',
+        'Doubler',
         'Delay',
         'Reverb',
-        'Doubler',
-        'High-pass gate',
+        'Compressor',
+        'Four-band EQ',
       ],
       'Vocal Tuner Rack': [
-        'Compressor',
-        'Four-band EQ',
+        'High-pass gate',
+        'Smart tune',
+        'Harmonizer',
+        'Doubler',
         'Delay',
         'Reverb',
-        'Doubler',
-        'High-pass gate',
-        'Harmonizer',
-        'Smart tune',
+        'Compressor',
+        'Four-band EQ',
       ],
     };
+
+    test('every family runs its modules in the measured order', () {
+      expect(kFxRackOrders.keys.toSet(), kFxFamilySlugs.keys.toSet());
+      for (final MapEntry(key: family, value: order) in expected.entries) {
+        expect(kFxRackOrders[family], order, reason: family);
+        for (final name in order) {
+          final module = fxModuleNamed(name);
+          expect(module, isNotNull, reason: '$family / $name');
+          expect(module!.appearsIn(family), isTrue, reason: '$family / $name');
+        }
+      }
+    });
 
     test('builds the modules its rack schema implies, in rack order', () {
       expect(catalogue.families.map((f) => f.name), expected.keys);
@@ -615,7 +628,8 @@ void main() {
           if (key == 'Master Vol') {
             expect(owners, isEmpty, reason: reason);
           } else if (shared.contains(key)) {
-            expect(owners, ['Harmonizer', 'Smart tune'], reason: reason);
+            // In rack order: Smart Tune runs before the Harmonizer.
+            expect(owners, ['Smart tune', 'Harmonizer'], reason: reason);
           } else {
             expect(owners, hasLength(1), reason: reason);
           }

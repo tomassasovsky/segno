@@ -319,14 +319,22 @@ void main() {
       expect(byParam.map((m) => m.name), ['Delay']);
     });
 
-    test('keeps the table order, which is not a processing order', () {
+    test("follows the rack's measured processing order", () {
       final modules = fxPresetModules(
-        _preset(const {'Reverb': 1, 'Comp': 1, 'Delay': 0}),
+        _preset(const {'Delay': 0, 'Comp': 1, 'Reverb': 1}),
       );
 
-      // The source does not say what order a rack runs its pedals in, so this
-      // is the table's order and the doc says so.
-      expect(modules.map((m) => m.name), ['Compressor', 'Delay', 'Reverb']);
+      // Ed's Rack runs Reverb before Delay, although its editor draws Delay
+      // first.
+      expect(modules.map((m) => m.name), ['Compressor', 'Reverb', 'Delay']);
+    });
+
+    test('keeps a module the order does not place, after the placed ones', () {
+      final modules = fxPresetModules(
+        _preset(const {'Pumper': 1, 'Delay': 1, 'Oct': 1}),
+      );
+
+      expect(modules.map((m) => m.name), ['Octaver', 'Delay', 'Pumper']);
     });
 
     test('names nothing for a preset carrying nothing it knows', () {
