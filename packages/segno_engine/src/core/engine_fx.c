@@ -31,12 +31,10 @@
 /* Minimum samples between two ring-clearing re-enable edges on one chain
  * (fx_apply_chain's enable_clear_cooldown): bounds the per-callback clear
  * work to roughly one slot's rings while keeping the stagger inaudible
- * (~2.7 ms at 96 kHz between engages on a whole-chain stomp). Exactly one
- * octaver hop, so slots a stomp resets one spacing apart keep their hop
- * quarters (engine_fx.h): any spacing that is not a multiple of LE_PV_HOP
- * shifts each later slot's schedule and can put two octavers back in one
- * callback. */
-#define LE_FX_ENABLE_CLEAR_SPACING LE_PV_HOP
+ * (~2.7 ms at 48 kHz between engages on a whole-chain stomp). The octaver's
+ * hop is anchored to the engine clock (#941), so the instant a slot resets at
+ * does not move its schedule and the spacing is free of the hop. */
+#define LE_FX_ENABLE_CLEAR_SPACING 128
 
 static float le_hann[LE_PV_N];
 static int le_hann_ready;
@@ -150,13 +148,12 @@ _Static_assert((LE_PV_HOP & (LE_PV_HOP - 1)) == 0,
 _Static_assert(LE_PV_HOP % 4 == 0, "the stagger lattice is four quarters");
 _Static_assert(LE_PSOLA_AHOP == LE_PV_HOP,
                "PSOLA's YIN cadence must equal the PV hop to share its schedule");
-_Static_assert(LE_FX_ENABLE_CLEAR_SPACING % LE_PV_HOP == 0,
-               "a stomp's spaced resets must keep each slot's hop quarter");
 
-/* The analysis-hop PHASE of the octaver in chain slot [slot] of [fx], in
- * samples after the reset that seeds it: the owner's quarter plus the slot,
- * mod 4, on the quarter lattice (engine_fx.h). Spreading the phase does not
- * reduce the work; it stops it arriving in one callback.
+/* The analysis-hop PHASE of the octaver in chain slot [slot] of [fx]: the
+ * owner's quarter plus the slot, mod 4, on the quarter lattice (engine_fx.h).
+ * Its heavy ticks fall on the engine frames c with (c + phase) mod LE_PV_HOP
+ * equal to 0 (le_oct_seeded_ticks). Spreading the phase does not reduce the
+ * work; it stops it arriving in one callback.
  *
  * WHY IT COSTS NO LATENCY: a PV frame runs at hop_count == 0 and writes the
  * OLA accumulator so that out[j] is emitted j samples later; the emitted
@@ -196,11 +193,16 @@ static void le_oct_set_ticks_to_work(le_octaver_state* o, int ticks) {
                                   : ticks;
 }
 
-/* The ticks until the first heavy tick of an instance seeded at its phase
- * (le_pv_hop_phase) at this instant. */
+/* The ticks until the first heavy tick of an instance reset now, at the
+ * chain's clock (le_fx_state::clock, the frame of the sample it processes
+ * next): heavy ticks fall on the frames c where (c + phase) mod LE_PV_HOP is
+ * 0, so instances keep their quarters apart whenever each was reset (#941).
+ * At clock 0 (a state nobody clocks) this is the phase counted from the
+ * reset. */
 static int le_oct_seeded_ticks(const le_fx_state* fx, int slot) {
-  const int phase = le_pv_hop_phase(fx, slot);
-  return phase == 0 ? 1 : LE_PV_HOP - phase + 1;
+  const uint32_t phase = (uint32_t)le_pv_hop_phase(fx, slot);
+  const uint32_t to_go = (0u - (fx->clock + phase)) & (uint32_t)(LE_PV_HOP - 1);
+  return (int)to_go + 1;
 }
 
 /* Zeros the octaver's per-mode DSP runtime (phase history, synthesis

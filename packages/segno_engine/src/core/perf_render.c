@@ -282,6 +282,10 @@ typedef struct le_pr_manifest {
   int32_t perf_arm_position;   /* master clock.position at the arm frame */
   int32_t perf_arm_master_len; /* master loop length at arm; 0 = no master */
   int32_t perf_arm_iteration;  /* loop_iteration at arm (multi-loop sub-cycle) */
+  /* The engine frame (mod 2^32) of capture frame 0 (events.log 13, #941): the
+   * live FX clock at frame f is perf_arm_fx_clock + f, so a render anchors
+   * its octaver hops where the live chain's were. 0 for an older capture. */
+  uint32_t perf_arm_fx_clock;
   const le_json_value* arm_tracks;    /* armSnapshot.tracks array, or NULL */
   const le_json_value* disarm_tracks; /* disarmSnapshot.tracks array, or NULL */
   const le_json_value* layers;        /* layers array, or NULL */
@@ -593,12 +597,14 @@ static void le_pr_fill_perf_armed(const le_pr_log_entry* log, int log_count,
   m->perf_arm_position = 0;
   m->perf_arm_master_len = 0;
   m->perf_arm_iteration = 0;
+  m->perf_arm_fx_clock = 0;
   for (int i = 0; i < log_count; ++i) {
     if (log[i].cmd.code == LE_PLOG_PERF_ARMED) {
       m->perf_arm_present = 1;
       m->perf_arm_position = log[i].cmd.perf_arm.position;
       m->perf_arm_master_len = log[i].cmd.perf_arm.master_len;
       m->perf_arm_iteration = log[i].cmd.perf_arm.iteration;
+      m->perf_arm_fx_clock = log[i].cmd.perf_arm.fx_clock;
       return;
     }
   }
@@ -1550,6 +1556,9 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
    * arm-time slot here (an empty delay ring, a cold reverb): its live counter
    * is this phase plus an elapsed-frame count nothing records. */
   fx->hop_seed = le_fx_lane_hop_seed(channel, 0);
+  /* ...and its FX clock at capture frame 0 (#941), so arm-time resets
+   * anchor octaver hops where the live chain did. */
+  fx->clock = m->perf_arm_fx_clock;
   /* Seed the enable-crossfade runtime SETTLED at each slot's effective arm
    * bit, as the wet cache does (le_fx_frozen_state_init): a calloc'd zero
    * state would fade the whole chain in over the ramp window at frame 0, and
@@ -1593,6 +1602,8 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
 
   int log_index = 0;
   for (uint64_t f = 0; f < m->capture_frames; ++f) {
+    /* The live frame this one stands for, before any logged reset below. */
+    fx->clock = m->perf_arm_fx_clock + (uint32_t)f;
     /* Apply every logged mutation for this channel's lane 0 at or before
      * this frame, in log order (already frame-sorted by le_pr_load_log),
      * before rendering it — mirrors mix_tracks_frame's per-frame (not
@@ -1806,6 +1817,7 @@ static int le_pr_render_master(const le_pr_manifest* m,
   /* The captured output bus's hop-stagger seed (#915), and the reset each
    * arm-time slot got when its type landed (see le_pr_render_wet_track). */
   fx->hop_seed = le_fx_output_hop_seed(m->arm_capture_bus);
+  fx->clock = m->perf_arm_fx_clock; /* see le_pr_render_wet_track */
   int ok = 1;
   for (int i = 0; i < LE_FX_MAX; ++i) {
     le_pr_settle_arm_bit(fx, i, chain.chain_enabled && chain.enabled[i]);
@@ -1819,6 +1831,7 @@ static int le_pr_render_master(const le_pr_manifest* m,
   int muted = m->arm_output_muted;
   int at = 0;
   for (uint64_t f = 0; f < m->capture_frames; ++f) {
+    fx->clock = m->perf_arm_fx_clock + (uint32_t)f; /* the live frame */
     while (at < log_count && log[at].frame <= f) {
       const le_log_command* cmd = &log[at++].cmd;
       if (cmd->code == LE_CMD_SET_OUTPUT_LEVEL && cmd->lanef.channel == m->arm_capture_bus)

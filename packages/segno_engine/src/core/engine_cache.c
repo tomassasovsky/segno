@@ -978,6 +978,10 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
    * read: the job must render exactly the chain its key names. */
   le_fx_frozen_fill(&job->chain, count, count, chain_on, types, raw_en, params,
                     chan, chan_any, ln->fx.hop_seed);
+  /* Rendered as the lap that began at the last loop top, the one before the
+   * top the print is expected to engage at (#941). */
+  job->chain.clock0 =
+      atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed);
   job->copy_pos = 0;
   job->dry = dry;
   job->wet = NULL;
@@ -1187,6 +1191,10 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   job->fx_cap = e->fx_delay_frames;
   le_fx_frozen_fill(&job->chain, count, count, chain_on, types, raw_en, params,
                     chan, chan_any, b->fx.hop_seed);
+  /* Rendered as the lap that began at the last loop top, the one before the
+   * top the print is expected to engage at (#941). */
+  job->chain.clock0 =
+      atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed);
   job->copy_pos = 0;
   job->dry = src;
   job->wet = NULL;
@@ -1537,6 +1545,7 @@ int32_t le_fx_frozen_state_init(le_fx_state* fx, const le_fx_frozen_chain* c,
    * laps sits (k - 1) * len samples further on, and unlike a tail a hop
    * phase never decays. */
   fx->hop_seed = c->hop_seed;
+  fx->clock = c->clock0;
   int32_t bits[LE_FX_MAX];
   le_fx_frozen_bits(c, from, to, bits);
   /* Seed the enable-crossfade runtime per EFFECTIVE bit, mirroring the live
@@ -1601,6 +1610,7 @@ int32_t le_fx_print(const le_fx_frozen_chain* c, int32_t count,
         l = src[f] * vol;
         r = l;
       }
+      fx->clock = c->clock0 + (uint32_t)(pass * len + f);
       fx_apply_chain(fx, sample_rate, cap, &l, &r, count, c->type, c->params,
                      bits);
       if (pass == 1) {

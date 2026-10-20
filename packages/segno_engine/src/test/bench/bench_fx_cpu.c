@@ -17,6 +17,8 @@
  *
  *   chain N   N octavers in one monitor chain, one publish.
  *   lanes N   one octaver on lane 0 of N tracks, N publishes in one block.
+ *   late N    the same N octavers added one at a time, three callbacks apart
+ *             (#941: an instance added later keeps its own quarter).
  *
  * Reported per scenario: p50 / p99 / p99.9 / max per callback, the callbacks
  * over the period's deadline, and the mean cost of the blocks starting in
@@ -50,14 +52,14 @@
 #endif
 
 #include "segno_engine_api.h"
-#include "engine_fx.h" /* LE_PV_HOP, LE_PV_STAGGER_QUARTER */
+#include "engine_fx.h" /* LE_PV_HOP */
 #include "bench_common.h"
 
 /* The octaver's hop in quarters: each block is counted in the quarter its
  * first sample falls in, so the column shows where the FFT work lands at any
  * period. */
 #define HOP LE_PV_HOP
-#define PHASES (LE_PV_HOP / LE_PV_STAGGER_QUARTER)
+#define PHASES 4 /* quarters of the hop */
 
 static int g_paced;
 
@@ -177,10 +179,10 @@ int main(int argc, char** argv) {
          "| phase 0..3 mean us               |\n");
   printf("|--------------------|---------|---------|----------|---------|------"
          "|-----------------------------------|\n");
-  for (int mode = 0; mode < 2; ++mode) {
+  for (int mode = 0; mode < 3; ++mode) {
     for (size_t k = 0; k < sizeof(counts) / sizeof(counts[0]); ++k) {
       const int n = counts[k];
-      if (mode == 1 && n == 0) continue;
+      if (mode > 0 && n == 0) continue;
       rig r;
       if (!rig_create_io(&r, &o, 1, src, frames, 2)) {
         fprintf(stderr, "rig failed\n");
@@ -216,13 +218,19 @@ int main(int argc, char** argv) {
               fprintf(stderr, "lane recipe refused\n");
               return 1;
             }
+            if (mode == 2) {
+              for (int b = 0; b < 3; ++b) {
+                le_engine_process(r.e, r.out, r.in, (uint32_t)r.period);
+              }
+            }
           }
         }
       }
       double ph[PHASES];
       const stats s = time_blocks(&r, blocks, warm, ph);
       char label[32];
-      snprintf(label, sizeof(label), "%s %d", mode == 0 ? "chain" : "lanes", n);
+      static const char* const names[] = {"chain", "lanes", "late"};
+      snprintf(label, sizeof(label), "%s %d", names[mode], n);
       report(label, s, ph);
       rig_destroy(&r);
     }

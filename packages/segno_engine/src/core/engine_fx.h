@@ -40,30 +40,30 @@ extern "C" {
  * synchronized stereo octavers missed the 667 us deadline on every heavy
  * block.
  *
- * An instance's hop PHASE is one of four QUARTERS of the hop, 0, 64, 128 or
- * 192 samples after the reset that seeded it:
+ * An instance's hop PHASE is one of four QUARTERS of the hop:
  *
  *     phase = LE_PV_STAGGER_QUARTER * ((owner quarter + slot) mod 4)
  *
- * Four points exactly a quarter apart land in four different callbacks of a
- * quarter's length whatever their offset, so the spread holds at any reset
- * offset, including a recipe applied inside a block. Any spread finer than
- * the lattice would not: two phases closer than a quarter can share a
- * callback once shifted. The guarantee, for instances reset at the same
- * instant (one publish, one prepared edit, a session load):
+ * and its heavy ticks (the PV frame, or PSOLA's YIN pass) fall on the engine
+ * frames c with (c + phase) mod LE_PV_HOP equal to 0 (#941). The hop is
+ * anchored to the engine's own frame count, not to the instant the instance
+ * was reset, so the spread holds for instances added at any time: one added
+ * to a second track long after the first keeps its quarter, and so does a
+ * slot a chain stomp re-enables late. With callbacks of a quarter's length
+ * (64 frames at the console's period), four instances on four quarters run
+ * their heavy ticks in four different callbacks:
  *
- *  - slots of one chain whose indexes differ mod 4 run in different 64-frame
- *    callbacks, so any four consecutive slots use all four;
+ *  - slots of one chain whose indexes differ mod 4, so any four consecutive
+ *    slots use all four;
  *  - the same slot on tracks t .. t+3 (lane 0), on lanes l .. l+3 of one
  *    track, on monitors c .. c+3, on output buses k .. k+3, and on all-tracks
- *    instances k .. k+3, runs in four different 64-frame callbacks.
+ *    instances k .. k+3.
  *
  * With four callbacks per hop, a fifth instance always shares one, and two
  * axes cannot both be kept apart: slot s on track t + 1 shares a quarter
- * with slot s + 1 on track t. Instances reset at different instants keep
- * whatever relative phase those instants give them; anchoring to an absolute
- * clock is #941. Spreading only the start does not reduce the work; the hop
- * split in the rack plan (#887, part 9) removes the dependence on phase. */
+ * with slot s + 1 on track t. Spreading the work does not reduce it; the hop
+ * split in the rack plan (#887, part 9) makes the cost independent of the
+ * phase. */
 #define LE_PV_STAGGER_QUARTER (LE_PV_HOP / 4)
 
 static inline int32_t le_fx_hop_mask(uint32_t p) {
