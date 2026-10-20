@@ -33,7 +33,7 @@ void main() {
         engine.setFxRecipe(owner: FxOwner.track, recipe: old, revision: 3),
         EngineResult.ok,
       );
-      for (final level in [double.nan, double.infinity, -0.1, 2.1]) {
+      for (final level in [double.nan, double.infinity, -0.1, 4.1]) {
         final bad = FxRecipe(
           slots: [
             FxRecipeSlot(
@@ -48,6 +48,25 @@ void main() {
         );
         expect(engine.fxRecipeRevision(owner: FxOwner.track), 3);
         expect(engine.fxRecipes[(FxOwner.track, 0, 0)], same(old));
+      }
+      // A rack level up to +12 dB (gain about 3.98) is admitted.
+      for (final level in [2.1, 3.388, kFxLevelMax]) {
+        expect(
+          engine.setFxRecipe(
+            owner: FxOwner.track,
+            recipe: FxRecipe(
+              slots: [
+                FxRecipeSlot(
+                  type: TrackEffectType.drive,
+                  channels: FxChannels(level: level),
+                ),
+              ],
+            ),
+            revision: 5,
+          ),
+          EngineResult.ok,
+          reason: '$level',
+        );
       }
     },
   );
