@@ -1,0 +1,119 @@
+{
+  "date": "2026-09-09",
+  "scope": "Console collar front and rear wall thickness; local verification only",
+  "old_wall_mm": 0.85,
+  "new_wall_mm": 2.4,
+  "old_depth_mm": 115.37,
+  "new_depth_mm": 118.47,
+  "unchanged": [
+    "113.67 x 79.15 mm collar bore",
+    "sled geometry and all eight insert pockets",
+    "four chassis screw axes and 3.7 mm clearance bores",
+    "populated pedal and sled placements",
+    "all metal geometry and outputs",
+    "standalone mini-console"
+  ],
+  "tests": {
+    "count": 49,
+    "passed": true,
+    "seconds": 67.425,
+    "new_tests": 4,
+    "negative_check": "Original 0.85 mm wall override fails both collar thickness checks"
+  },
+  "native": [
+    {
+      "document": "VAMP console (populated)",
+      "version": 353,
+      "modified": false,
+      "unchanged_occurrences": 442,
+      "total_occurrences": 452,
+      "warnings_unchanged": true,
+      "source_checks": [
+        {
+          "part": "front",
+          "instances": 8,
+          "native_minus_source_mm3": 0.0,
+          "source_minus_native_mm3": 0.0,
+          "volume_mm3": 52761.89113126764
+        },
+        {
+          "part": "mid",
+          "instances": 2,
+          "native_minus_source_mm3": 0.0,
+          "source_minus_native_mm3": 0.0,
+          "volume_mm3": 164196.19886402093
+        }
+      ]
+    },
+    {
+      "document": "VAMP sheet metal",
+      "version": 140,
+      "modified": false,
+      "unchanged_occurrences": 35,
+      "total_occurrences": 45,
+      "warnings_unchanged": true,
+      "source_checks": [
+        {
+          "part": "front",
+          "instances": 8,
+          "native_minus_source_mm3": 0.0,
+          "source_minus_native_mm3": 0.0,
+          "volume_mm3": 52761.89113126764
+        },
+        {
+          "part": "mid",
+          "instances": 2,
+          "native_minus_source_mm3": 0.0,
+          "source_minus_native_mm3": 0.0,
+          "volume_mm3": 164196.19886402093
+        }
+      ]
+    }
+  ],
+  "stl": [
+    {
+      "file": "segno_platform_front_ring.stl",
+      "triangles": 2108,
+      "closed_edges": true
+    },
+    {
+      "file": "segno_platform_mid_ring.stl",
+      "triangles": 4140,
+      "closed_edges": true
+    }
+  ],
+  "artifacts": {
+    "changed_output_files": [
+      "hardware/enclosure/out/segno_3dprint.zip",
+      "hardware/enclosure/out/segno_platform_front_ring.step",
+      "hardware/enclosure/out/segno_platform_front_ring.stl",
+      "hardware/enclosure/out/segno_platform_mid_ring.step",
+      "hardware/enclosure/out/segno_platform_mid_ring.stl"
+    ],
+    "print_zip_members": 36,
+    "zip_matches_current_files": true,
+    "other_output_files_unchanged": true,
+    "sheetmetal_zip_sha256": "d2329edf667586356f759a7ce9282a4ffc76195bff03da4c540ad787232829d9"
+  },
+  "limits": [
+    "First-print fit with actual M3 5 x 5 mm inserts remains unverified",
+    "Slicer settings and geometry checks do not establish stomp-load capacity",
+    "No supplier message or fabrication release",
+    "Full generator and remote CI were not rerun; this was a selective printed-part update"
+  ],
+  "native_empty_leaf_check": "Changed collars each have one body; all other occurrences and body counts match baseline",
+  "source_sha256": "ead07ed8a18804d5467232e67afbd85d3a7d99530f7aa74a56e5c7baac010f9f",
+  "test_sha256": "11baadc81f1e7722525a3475fc5ae8a3ba75c6f27de7f38a4731c9bdb81ee413",
+  "independent_review": {
+    "roles": [
+      "vgv",
+      "architecture",
+      "test-quality",
+      "simplicity",
+      "readiness"
+    ],
+    "complete": true,
+    "unresolved_findings": 0,
+    "scope": "Local collar-thickness unit, not entire branch or remote CI"
+  }
+}
