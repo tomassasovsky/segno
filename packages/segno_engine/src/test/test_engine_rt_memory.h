@@ -750,12 +750,12 @@ static void test_standbys_stay_in_budget(void) {
       held += (size_t)e->spares[t][l].standby_cap * sizeof(float);
   CHECK(held <= LE_STANDBY_BUDGET_BYTES);
   CHECK(e->spares[0][0].standby == NULL); /* over budget: none */
-  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in on the fresh path */
-  for (int k = 0; k < 4; ++k) {
-    le_engine_get_snapshot(e, &s);
-    le_prefault_tick(e);
-    rt_run(&a, sec_blocks, 0.2f);
-  }
+  rt_run(&a, 15 * sec_blocks, 0.0f); /* the playhead mid-loop */
+  le_engine_get_snapshot(e, &s);
+  /* Punch in on the fresh path: the second of its shadow at the playhead is
+   * faulted in on the press, the rest by the real thread, in real time. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  rt_run_paced(&a, 4 * sec_blocks, 0.2f, rate);
   CHECK(le_engine_record(e, 0) == LE_OK);
   rt_run(&a, sec_blocks, 0.0f);
   rt_audio_stop(&a);

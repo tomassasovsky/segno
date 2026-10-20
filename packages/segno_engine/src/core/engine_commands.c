@@ -417,10 +417,12 @@ static void le_prefault_shadow(le_engine* e, int32_t channel, int slot,
     le_lane* ln = &t->lanes[l];
     if (ln->pool[slot] == NULL || (standby_mask & (1u << l))) continue;
     const int32_t cap = ln->pool_cap[slot];
-    if (cap >= e->max_loop_frames) {
-      le_lane_prefault_capture_buffer(e, channel, ln, slot); /* pre-arm */
-    } else if (immediate && playing && len > 0 && len <= cap) {
+    /* A punch-in first, whatever the slot's size: a reused cap-sized slot
+     * (an earlier pre-arm) is written from the playhead too, not from 0. */
+    if (immediate && playing && len > 0 && len <= cap) {
       le_prefault_around(e, ln->pool[slot], len, at, reversed);
+    } else if (cap >= e->max_loop_frames) {
+      le_lane_prefault_capture_buffer(e, channel, ln, slot); /* pre-arm */
     } else if (immediate || urgent || cap <= le_head_frames(e)) {
       le_lane_prefault_slot(ln, slot, cap);
     } else {
