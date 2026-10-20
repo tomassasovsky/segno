@@ -23,10 +23,12 @@
  * into the audio.
  *
  * Wet pass + master reconstruction (part 8): mirrors what the live engine's
- * mix_tracks_frame/master_bus_frame (engine_process.c) actually computed —
+ * mix_tracks_frame/output_bus_frame (engine_process.c) actually computed —
  * lane-0 volume/mute gate the dry content *before* the logged FX chain (the
  * live mix order: `wl = audible ? loopsample*vol : 0`, then fx_apply_chain),
- * summed across channels, then the master gain + feed-forward limiter. This
+ * summed across channels, then the capture bus's output chain (and, under
+ * Follow output, its level and mute). The capture taps sit before the global
+ * master gain and the master limiter, so neither is replayed here. This
  * uses the engine's OWN fx_apply_chain/le_fx_prepare/le_fx_entry_reset
  * (engine_fx.h) rather than reimplementing per-effect DSP — a fresh, heap-
  * owned `le_fx_state` per channel, never touching any live engine state, so
@@ -1732,15 +1734,14 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
   return wet;
 }
 
-/* Replays the master gain + feed-forward limiter over `master` (in place,
- * `capture_frames` samples — already the sum of every channel's wet
- * contribution), mirroring master_bus_frame's mono-channel math exactly
- * (engine_process.c): instant-attack / smooth-release limiter, ~50 ms
- * release toward unity. Uses its own local `lim_gain`, seeded at 1.0 (the
- * golden-parity protocol arms from silence, so the live engine's own
- * lim_gain is 1.0 at that instant too — see engine.c's fresh-state init) —
- * never the live engine's `e->lim_gain`, which the audio thread may still be
- * mutating concurrently after disarm (this render has no live-engine
+/* Replays the capture bus's output chain over `master` (in place, stereo,
+ * `capture_frames` frames — already the sum of every channel's wet
+ * contribution), then, under Follow output, that bus's level and mute: the
+ * same stages output_bus_frame (engine_process.c) runs before the capture
+ * tap. Neither tap includes the global master gain or the master limiter
+ * (master_bus_frame runs after the buses), so neither is replayed here; an
+ * export carries no limiter, live or offline. Uses its own fresh
+ * `le_fx_state`, never the live engine's (this render has no live-engine
  * dependency, see the file header). */
 static int le_pr_render_master(const le_pr_manifest* m,
                                 const le_pr_log_entry* log, int log_count,
@@ -1853,9 +1854,9 @@ static void le_pr_worker_main(void* arg) {
       loaded ? le_pr_collect_channels(&manifest, log, log_count, channels, LE_MAX_TRACKS) : 0;
 
   /* Master accumulator: the sum of every channel's wet contribution, before
-   * the master gain + limiter pass runs over it once, after every channel
+   * the capture bus's output stages run over it once, after every channel
    * has been processed (le_pr_render_master, below) — mirrors
-   * mix_tracks_frame's additive per-lane sum feeding master_bus_frame. NULL
+   * mix_tracks_frame's additive per-lane sum feeding output_bus_frame. NULL
    * (rather than a zero-length calloc) when there is nothing to render, so
    * the write-out step below can use its presence as the gate. */
   float* master_accum =
