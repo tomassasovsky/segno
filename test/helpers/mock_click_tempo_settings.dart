@@ -1,0 +1,65 @@
+import 'dart:async';
+
+import 'package:looper_repository/looper_repository.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
+import 'package:segno/looper/model/click_mode.dart';
+import 'package:segno/looper/model/click_volume.dart';
+import 'package:segno/looper/model/record_start.dart';
+import 'package:segno/looper/model/tempo_state.dart';
+
+/// A coherent accepted owner used by controller and presentation fixtures; it
+/// also serves as both Click ports, as the owners' adapters do in production.
+class MockClickTempoSettings extends Mock
+    implements
+        TempoSettings,
+        ClickVolumeControl,
+        ClickModeControl,
+        RecordStartControl {
+  MockClickTempoSettings({double? clickVolume = 1}) {
+    when(() => recordStartSnapshot).thenReturn(null);
+    when(() => confirmedRecordStart).thenReturn(null);
+    when(
+      () => recordStartLifetime,
+    ).thenReturn((sessionRevision: 0, mixGeneration: 0));
+    when(() => recordStartRevision).thenReturn(0);
+    when(
+      () => ordinaryRecordStartChanges,
+    ).thenAnswer((_) => const Stream.empty());
+    when(() => clickModeSnapshot).thenReturn(null);
+    when(() => durableClickMode).thenReturn(ClickMode.off);
+    when(
+      () => clickModeLifetime,
+    ).thenReturn((sessionRevision: 0, mixGeneration: 0));
+    when(() => clickModeRevision).thenReturn(0);
+    when(
+      () => ordinaryClickModeChanges,
+    ).thenAnswer((_) => const Stream.empty());
+    when(() => this.clickVolume).thenReturn(clickVolume);
+    when(() => durableClickVolume).thenReturn(clickVolume ?? 1);
+    when(
+      () => clickVolumeLifetime,
+    ).thenReturn((sessionRevision: 0, mixGeneration: 0));
+    when(
+      () => ordinaryClickVolumeChanges,
+    ).thenAnswer((_) => const Stream.empty());
+    when(() => state).thenAnswer(
+      (_) => TempoState(
+        clickVolume: this.clickVolume ?? 1,
+        clickReady: this.clickVolume != null,
+        clickMode: clickModeSnapshot?.mode ?? ClickMode.off,
+        clickModeReady: clickModeSnapshot != null,
+        clickModeCaptureLocked: clickModeSnapshot?.captureLocked ?? false,
+      ),
+    );
+    when(() => stream).thenAnswer((_) => _states.stream);
+  }
+
+  final _states = StreamController<TempoState>.broadcast(sync: true);
+
+  /// Publishes an explicitly changed fixture, as the real owner does.
+  void publish() => _states.add(state);
+
+  @override
+  Future<void> close() => _states.close();
+}

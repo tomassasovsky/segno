@@ -1,14 +1,24 @@
 import 'package:flutter/foundation.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/input_monitor.dart';
+import 'package:looper_repository/src/models/input_setup.dart';
+import 'package:looper_repository/src/models/output_setup.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
-import 'package:segno_engine/segno_engine.dart' show LooperMode;
+import 'package:segno_engine/segno_engine.dart'
+    show
+        ClickMode,
+        GridDivision,
+        LooperMode,
+        PitchMode,
+        RecordTiming,
+        TempoSource,
+        TrackHistory;
 
 /// One lane's restored audio, routing, and mix inside a [SessionRigTrack].
 ///
-/// Carries the lane's ordered audio [layers] (part 1 restores one live buffer;
-/// the undo/redo layers are a later revision) plus its routing/mix. [liveIndex]
-/// (== [undoCount]) selects the currently playing buffer.
+/// Carries the lane's ordered audio [layers] and the track's [history] that
+/// names them, plus its routing/mix. [liveIndex] (== [undoCount]) selects the
+/// currently playing buffer.
 @immutable
 class SessionRigLane {
   /// Creates a [SessionRigLane].
@@ -19,14 +29,25 @@ class SessionRigLane {
     required this.muted,
     required this.outputMask,
     required this.inputChannel,
-    this.undoCount = 0,
-    this.redoCount = 0,
+    this.pan = 0,
+    this.balance = 1,
+    this.history = TrackHistory.none,
   });
+
+  /// The lane's recorded image (slice 3): where its input sat when the take
+  /// started, before the track's own pan (`Lane.imagePan`).
+  final double pan;
+
+  /// The gain the input pair's balance gave the lane's side when the take
+  /// started, `0..1` (`Lane.balance`); [volume] is the level.
+  final double balance;
 
   /// Lane index within the track.
   final int lane;
 
-  /// The lane's mono audio buffers, oldest undo → live → newest redo.
+  /// The lane's mono audio images, oldest undo → live → newest redo: one per
+  /// [history] entry except redo-side Peel markers, plus the live image
+  /// ([TrackHistory.imageCount]).
   final List<Float32List> layers;
 
   /// Playback gain in `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above unity).
@@ -41,11 +62,15 @@ class SessionRigLane {
   /// Hardware input channel this lane records (`-1` = none).
   final int inputChannel;
 
-  /// Number of leading [layers] that are undo snapshots.
-  final int undoCount;
+  /// The track's audio history in image-ordinal order (#1164), shared by
+  /// every lane of the track.
+  final TrackHistory history;
 
-  /// Number of trailing [layers] that are redo snapshots.
-  final int redoCount;
+  /// Number of leading [history] entries (and [layers]) on the undo side.
+  int get undoCount => history.undoCount;
+
+  /// Number of trailing [history] entries on the redo side.
+  int get redoCount => history.redoCount;
 
   /// Index into [layers] of the live (currently playing) buffer.
   int get liveIndex => undoCount;
@@ -60,28 +85,29 @@ class SessionRigTrack {
   /// Creates a [SessionRigTrack].
   const SessionRigTrack({
     required this.channel,
+    required this.fadeAmount,
     required this.lanes,
-    this.lengthPresetBars = 0,
-    this.oneShot = false,
+    required this.reversed,
+    this.spanFrames = 0,
   });
 
   /// Track channel index.
   final int channel;
 
+  /// Saved coefficient, installed stationary before Session commit.
+  final double fadeAmount;
+
+  /// Saved playback direction, installed before Session commit (#1162).
+  final bool reversed;
+
+  /// The master length the take was laid down against when that is not the
+  /// rig's recorded one (#1179); 0 on the recorded master. Imported with the
+  /// take, so it reads at its own ratio.
+  final int spanFrames;
+
   /// The track's lanes, each with its own audio, routing, and mix. Lane 0 is
   /// first — it is the primary import that resets the track's undo state.
   final List<SessionRigLane> lanes;
-
-  /// The track's length preset (A6): `0` = AUTO, `1..64` = a fixed bar count.
-  /// Restored on session load; it only governs a FUTURE defining recording on
-  /// this track, so restoring it here is inert for the audio the load just
-  /// imported — it only matters if the user re-records the track later.
-  final int lengthPresetBars;
-
-  /// The track's One Shot flag (song-mode-spec.md §2, B5c): `true` = plays
-  /// once then stops. Restored on session load — see
-  /// `LooperRepository.applySession`'s reset-then-restore handling.
-  final bool oneShot;
 }
 
 /// One hardware input's live-monitor configuration inside a [SessionRig] —
@@ -108,8 +134,7 @@ class SessionRigMonitor {
   /// Bitmask of output channels the monitor plays to.
   final int outputMask;
 
-  /// Monitor output gain in `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above
-  /// unity).
+  /// Monitor output gain from silence to unity (0–100%).
   final double volume;
 
   /// Whether the monitor is muted.
@@ -151,12 +176,172 @@ class SessionRig {
     this.tracks = const [],
     this.laneChains = const {},
     this.trackChains = const {},
-    this.masterChain = const FxChainEnvelope(),
+    this.outputChains = const {},
+    this.allTracksChain = const FxChainEnvelope(),
     this.monitors = const [],
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
-    this.oneShotChannels = const {},
+    this.recordTiming = RecordTiming.immediately,
+    this.overdubDecay = 0,
+    this.defaultOneShot = false,
+    this.defaultLengthPresetBars = 0,
+    this.defaultMultiple = 0,
+    this.trackRecordTimingOverrides = const {},
+    this.trackOverdubDecayOverrides = const {},
+    this.trackOneShotOverrides = const {},
+    this.trackLengthPresetOverrides = const {},
+    this.loopBars = 0,
+    this.loopBeats,
+    this.tempoBpm = 0,
+    this.tempoSource = TempoSource.none,
+    this.tsNum = 4,
+    this.tsDen = 4,
+    this.syncTempo = true,
+    this.quantizeDiv = GridDivision.off,
+    this.clickMode = ClickMode.off,
+    this.clickMask = 0,
+    this.clickVolume = 1,
+    this.countInBars = 0,
+    this.recDub = false,
+    this.autoRecord = false,
+    this.inputSetup = const InputSetup.empty(),
+    this.laneInputs = const {},
+    this.laneOutputs = const {},
+    this.laneCounts = const {},
+    this.trackLevels = const {},
+    this.trackPans = const {},
+    this.outputSetup = const OutputSetup(),
+    this.recordedTempoBpm = 0,
+    this.recordedLengthFrames = 0,
+    this.defaultFollowTempo = true,
+    this.trackFollowTempoOverrides = const {},
+    this.defaultPitchMode = PitchMode.unchanged,
+    this.trackPitchModeOverrides = const {},
   });
+
+  /// The tempo the takes were laid down at and the master length it
+  /// measured (#1179); 0/0 when the takes are at [tempoBpm] on
+  /// [baseLengthFrames]. A recall commits at this pair and retimes to
+  /// [tempoBpm].
+  final double recordedTempoBpm;
+
+  /// See [recordedTempoBpm].
+  final int recordedLengthFrames;
+
+  /// The Follow tempo default every track inherits (#1179).
+  final bool defaultFollowTempo;
+
+  /// Explicit Follow tempo choices; missing tracks inherit.
+  final Map<int, bool> trackFollowTempoOverrides;
+
+  /// The Pitch default every following track inherits (#1179).
+  final PitchMode defaultPitchMode;
+
+  /// Explicit Pitch choices; missing tracks inherit.
+  final Map<int, PitchMode> trackPitchModeOverrides;
+
+  /// Whether the takes sit on a retimed master: the recall commits them at
+  /// the recorded pair and retimes to [tempoBpm].
+  bool get retimed =>
+      tracks.isNotEmpty && recordedLengthFrames > 0 && recordedTempoBpm > 0;
+
+  /// Whole-track gain intent, including tracks without recorded audio.
+  final Map<int, double> trackLevels;
+
+  /// Track pan intent, including tracks without recorded audio.
+  final Map<int, double> trackPans;
+
+  /// Default recording timing, shared by tracks with no override.
+  final RecordTiming recordTiming;
+
+  /// Default decay percentage.
+  final int overdubDecay;
+
+  /// Default playback: Once when true, Loop when false.
+  final bool defaultOneShot;
+
+  /// Default length for future recordings: zero is Auto, otherwise bars.
+  final int defaultLengthPresetBars;
+
+  /// Default future recording length (`0` = Auto).
+  final int defaultMultiple;
+
+  /// Explicit timing overrides, independent of whether a track has audio.
+  final Map<int, RecordTiming> trackRecordTimingOverrides;
+
+  /// Explicit decay overrides; missing entries inherit the default.
+  final Map<int, int> trackOverdubDecayOverrides;
+
+  /// Explicit playback overrides; custom false values are retained.
+  final Map<int, bool> trackOneShotOverrides;
+
+  /// Future recording length presets, independent of recorded audio.
+  final Map<int, int> trackLengthPresetOverrides;
+
+  /// Saved musical tempo; zero means no tempo was established.
+  final double tempoBpm;
+
+  /// Exact musical grid span; zero means no established grid, or one that
+  /// is not whole bars ([loopBeats]).
+  final int loopBars;
+
+  /// Exact musical grid span in beats (denominator notes), or null when the
+  /// source carries only [loopBars] (#1168).
+  final int? loopBeats;
+
+  /// The grid the engine restores, in beats: [loopBeats], else [loopBars]
+  /// whole bars of [tsNum] beats.
+  int get gridBeats => loopBeats ?? loopBars * tsNum;
+
+  /// Origin of the saved musical tempo.
+  final TempoSource tempoSource;
+
+  /// Time-signature numerator.
+  final int tsNum;
+
+  /// Time-signature denominator.
+  final int tsDen;
+
+  /// Whether recorded loops follow the musical grid.
+  final bool syncTempo;
+
+  /// Grid subdivision retained even when quantization is disabled.
+  final GridDivision quantizeDiv;
+
+  /// Click playback condition.
+  final ClickMode clickMode;
+
+  /// Click destination channel mask.
+  final int clickMask;
+
+  /// Click gain.
+  final double clickVolume;
+
+  /// Count-in bars; exclusive with sound-activated start.
+  final int countInBars;
+
+  /// Whether completing a take enters overdub.
+  final bool recDub;
+
+  /// Whether an armed take waits for sound.
+  final bool autoRecord;
+
+  /// The per-input capture setup the session was saved with (slice 3):
+  /// trims, pans and pairs. Restored on apply; the monitors' pans follow it.
+  final InputSetup inputSetup;
+
+  /// Content-independent future source assignments, including empty tracks.
+  final Map<(int, int), int> laneInputs;
+
+  /// Content-independent playback routes, including future lane slots.
+  final Map<(int, int), int> laneOutputs;
+
+  /// Active source lane counts, including tracks without captured PCM.
+  final Map<int, int> laneCounts;
+
+  /// The output setup the session was saved with (slice 3b): every
+  /// destination's level, mute, Stereo/Mono and balance. Restored on apply.
+  final OutputSetup outputSetup;
 
   /// The base (master) loop length in frames; `0` for an empty session.
   final int baseLengthFrames;
@@ -175,9 +360,14 @@ class SessionRig {
   /// carrying the previous session's bus chain (R17).
   final Map<int, FxChainEnvelope> trackChains;
 
-  /// The session's single Master insert chain; the empty enabled envelope when
-  /// it defines none (a v4-or-earlier manifest always does).
-  final FxChainEnvelope masterChain;
+  /// Every output destination's post-sum chain the session defines, keyed by
+  /// bus (slice 3f). An absent destination is RESET on apply rather than left
+  /// carrying the previous session's chain, like [trackChains].
+  final Map<int, FxChainEnvelope> outputChains;
+
+  /// The session's single All tracks recorded-mix chain (slice 3e); the empty
+  /// enabled envelope when it defines none (every v7-or-earlier manifest).
+  final FxChainEnvelope allTracksChain;
 
   /// The per-input live monitors (Input stage) the session defines.
   final List<SessionRigMonitor> monitors;
@@ -187,18 +377,9 @@ class SessionRig {
   /// mode choice.
   final LooperMode looperMode;
 
-  /// The session's crowned primary track (Sync/Band, D18), or `-1` when none
-  /// was ever crowned. See `LooperRepository.applySession`'s doc for why this
-  /// cannot always be fully reset to `-1` on the LIVE engine (no "un-crown"
-  /// native call exists) even though it is captured/restored here.
+  /// The session's crowned primary track (D18), or `-1` when the session
+  /// saved none. Pushed as the explicit crown on apply; a session without one
+  /// gets the engine's own crown (its lowest recorded track) once the import
+  /// commits.
   final int primaryTrack;
-
-  /// Every channel with One Shot armed (post-B5c independent review fix),
-  /// independent of whether that channel has a [SessionRigTrack] entry — a
-  /// channel pre-armed with One Shot but never recorded onto has no track
-  /// entry at all (see `SessionRepository._capture`'s doc), so its flag only
-  /// round-trips through this session-level set, not through
-  /// [SessionRigTrack.oneShot]. Restored unconditionally on apply, like
-  /// [looperMode]/[primaryTrack] above.
-  final Set<int> oneShotChannels;
 }

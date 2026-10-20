@@ -8,9 +8,18 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/looper/model/audio_tempo.dart';
+import 'package:segno/looper/model/one_shot.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_start.dart';
+import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 import 'package:session_repository/session_repository.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 /// End-to-end overdub-layer round-trip against the REAL native engine
 /// (device-free pump): record a take, stack overdub passes (and undo some),
@@ -33,14 +42,21 @@ void main() {
   late LooperRepository looper;
   late SessionRepository session;
   late Directory tempDir;
+  late StreamController<void> ticker;
+  late StreamSubscription<LooperState> subscription;
   Timer? pumpDriver;
 
   const loopFrames = 256;
   const poll = Duration(milliseconds: 1);
 
-  setUp(() {
+  setUp(() async {
     engine = PumpedNativeEngine();
-    looper = LooperRepository(engine: engine)
+    final pollingStarted = Completer<void>();
+    ticker = StreamController<void>.broadcast(
+      sync: true,
+      onListen: pollingStarted.complete,
+    );
+    looper = LooperRepository(engine: engine, ticker: ticker.stream)
       ..startEngine(
         const EngineConfig(
           sampleRate: 48000,
@@ -49,14 +65,22 @@ void main() {
           maxLoopFrames: 48000,
         ),
       );
-    session = SessionRepository(engine: engine);
+    subscription = looper.looperState.listen((_) {});
+    // looperState yields its cached state before attaching the live stream.
+    await pollingStarted.future;
+    expect(looper.record(), EngineResult.notReady);
+    engine.pump(frames: 0);
+    expect(await looper.settleMixSettings(), EngineResult.ok);
+    session = SessionRepository(guards: GuardRegistry(), engine: engine);
     tempDir = Directory.systemTemp.createTempSync('segno_layers_session');
     pumpDriver = Timer.periodic(poll, (_) => engine.pump(frames: 0));
   });
 
   tearDown(() async {
     pumpDriver?.cancel();
+    await subscription.cancel();
     await looper.dispose();
+    await ticker.close();
     tempDir.deleteSync(recursive: true);
   });
 
@@ -84,15 +108,24 @@ void main() {
     required int undos,
     double step = 0.1,
   }) {
-    looper.record();
+    expect(looper.record(), EngineResult.ok);
     engine.pump(frames: loopFrames, input: base);
-    looper.record(); // finalize -> playing
+    expect(looper.record(), EngineResult.ok); // finalize -> playing
     engine.pump(frames: 0);
+    // Observe the already-published take image before starting another pass.
+    // A live subscription keeps repository polling active; the synchronous
+    // ticker confirms metadata without advancing native audio or wall time.
+    ticker.add(null);
     for (var p = 0; p < overdubs; p++) {
-      looper.record(); // punch in
+      expect(
+        looper.record(),
+        EngineResult.ok,
+        reason: 'punch-in pass $p from ${engine.snapshot().tracks.first.state}',
+      );
       engine.pump(frames: loopFrames, input: step);
-      looper.record(); // punch out
+      expect(looper.record(), EngineResult.ok); // punch out
       settle();
+      ticker.add(null); // acknowledge this pass's published image
     }
     for (var u = 0; u < undos; u++) {
       looper.undo();
@@ -108,7 +141,48 @@ void main() {
   }
 
   Future<void> saveThenLoad(String dir) async {
-    await session.save(dir, chains: chainsFromLooper(looper));
+    await session.save(
+      dir,
+      chains: chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      ),
+      settings: settingsFromLooper(
+        looper,
+        fade: FadeDurations.defaults,
+        recordStart: RecordStartSettings(countInBars: 0, soundStart: false),
+        clickMode: looper.sessionTransport.clickMode,
+        recordTiming: RecordTimingSnapshot(
+          defaultTiming: looper.defaultRecordTiming,
+          rememberedDivision: looper.sessionTransport.quantizeDiv,
+          trackOverrides: looper.trackRecordTimingOverrides,
+          captureLocked: false,
+        ),
+        recordLength: RecordLengthSnapshot(
+          defaultBars: looper.sessionTransport.defaultLengthPresetBars,
+          trackOverrides: looper.trackLengthPresetOverrides,
+          mode: looper.sessionTransport.looperMode,
+          captureLocked: false,
+        ),
+        clickVolume: 1,
+        decay: DecaySnapshot(
+          defaultPercent: looper.defaultOverdubDecay,
+          trackOverrides: looper.trackOverdubDecayOverrides,
+        ),
+        oneShot: OneShotSnapshot(
+          defaultOneShot: looper.defaultOneShot,
+          trackOverrides: looper.trackOneShotOverrides,
+        ),
+        followTempo: InheritSnapshot(
+          defaultValue: looper.defaultFollowTempo,
+          trackOverrides: looper.trackFollowTempoOverrides,
+        ),
+        pitchMode: InheritSnapshot(
+          defaultValue: looper.defaultPitchMode,
+          trackOverrides: looper.trackPitchModeOverrides,
+        ),
+      ),
+    );
     // Wipe to an empty rig so a failed load would be visible, then load back.
     await looper.applySession(const SessionRig(), clearPollInterval: poll);
     engine.pump(frames: 0);
@@ -212,6 +286,31 @@ void main() {
           );
         }
       }
+    },
+    skip: skip,
+  );
+  test(
+    'the session fingerprint follows every audio write on the real engine',
+    () async {
+      String fingerprint() =>
+          session.fingerprint(settings: const SessionSettings());
+
+      buildTake(base: 0.5, overdubs: 0, undos: 0);
+      settle();
+      final taken = fingerprint();
+      engine.pump(frames: loopFrames);
+      expect(fingerprint(), taken, reason: 'playing back writes nothing');
+
+      expect(looper.record(), EngineResult.ok);
+      engine.pump(frames: loopFrames, input: 0.1);
+      expect(looper.record(), EngineResult.ok);
+      settle();
+      final overdubbed = fingerprint();
+      expect(overdubbed, isNot(taken), reason: 'an overdub is a write');
+
+      looper.undo();
+      engine.pump(frames: 0);
+      expect(fingerprint(), isNot(overdubbed), reason: 'an undo is a write');
     },
     skip: skip,
   );

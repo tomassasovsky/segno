@@ -49,6 +49,38 @@ final class ButtonReleased extends PedalEvent {
   String toString() => 'ButtonReleased(${button.name}, $timestamp)';
 }
 
+/// The encoder's push switch went down.
+final class EncoderPressed extends PedalEvent {
+  /// Creates an [EncoderPressed] event.
+  const EncoderPressed({this.timestamp = Duration.zero});
+
+  /// When the press was observed, relative to an arbitrary epoch.
+  ///
+  /// Stamped by the repository's clock when the message arrived.
+  final Duration timestamp;
+
+  @override
+  List<Object?> get props => [timestamp];
+
+  @override
+  String toString() => 'EncoderPressed($timestamp)';
+}
+
+/// The encoder's push switch came up.
+final class EncoderReleased extends PedalEvent {
+  /// Creates an [EncoderReleased] event.
+  const EncoderReleased({this.timestamp = Duration.zero});
+
+  /// When the release was observed, relative to an arbitrary epoch.
+  final Duration timestamp;
+
+  @override
+  List<Object?> get props => [timestamp];
+
+  @override
+  String toString() => 'EncoderReleased($timestamp)';
+}
+
 /// A CTRL jack moved: a footswitch edge, or an expression pedal's travel.
 ///
 /// The board says which kind of pedal it decided is plugged in; the app binds
@@ -62,8 +94,7 @@ final class CtrlChanged extends PedalEvent {
     required this.kind,
     required this.value,
     this.contact = PedalCtrlContact.tip,
-    int? raw,
-  }) : raw = raw ?? value;
+  });
 
   /// Which jack reported.
   final PedalCtrlJack jack;
@@ -74,13 +105,11 @@ final class CtrlChanged extends PedalEvent {
   /// What the board decided is plugged into it.
   final PedalCtrlKind kind;
 
-  /// `0`..`255`: a switch reports the ends, an expression pedal its travel
-  /// between the ends `PedalRepository` knows for it.
+  /// The exact raw `0..255` sample. Calibration belongs to the application.
   final int value;
 
-  /// What the board actually read, `0`..`255`, before any calibration. Equal
-  /// to [value] for a switch. What a calibration is learned from.
-  final int raw;
+  /// The physical sample, before application calibration.
+  int get raw => value;
 
   /// The control this event is from.
   PedalCtrlInput get input => PedalCtrlInput(jack, contact);

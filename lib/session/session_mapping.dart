@@ -1,6 +1,14 @@
 import 'package:looper_repository/looper_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/looper/model/audio_tempo.dart';
+import 'package:segno/looper/model/one_shot.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_start.dart';
+import 'package:segno/looper/model/record_timing.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 /// Bloc-layer mapping between the session bundle (data) and the looper
 /// repository (domain) — the two never depend on each other, so the
@@ -17,13 +25,26 @@ import 'package:session_repository/session_repository.dart';
 /// the same envelope format settings use, so a saved chain round-trips exactly:
 /// entries, per-slot enabled bits, stable slot ids, the chain-enabled flag, and
 /// (for the Loop stage) inheritance provenance.
-SessionChains chainsFromLooper(LooperRepository looper) => SessionChains(
+SessionChains chainsFromLooper(
+  LooperRepository looper, {
+  required FxChainPersistence projection,
+  MixSettingsSnapshot? mix,
+}) => SessionChains(
   laneChains: [
     for (final entry in looper.allLaneChains().entries)
       SessionLaneChain(
         channel: entry.key.$1,
         lane: entry.key.$2,
-        encoded: encodeFxChain(entry.value),
+        encoded: encodeFxChain(
+          projection.project(
+            FxAddress(
+              stage: FxStage.loop,
+              index: entry.key.$1,
+              lane: entry.key.$2,
+            ),
+            entry.value,
+          ),
+        ),
       ),
   ],
   monitors: [
@@ -33,46 +54,171 @@ SessionChains chainsFromLooper(LooperRepository looper) => SessionChains(
     for (final monitor in looper.allMonitors().values)
       SessionMonitor(
         input: monitor.input,
-        // Both: the boolean is the gate every manifest has carried, and the
-        // name is which of the two non-off states it was. `auto` follows the
-        // record arm, `on` does not, and a boolean cannot tell them apart.
-        enabled: monitor.mode != MonitorMode.off,
         mode: monitor.mode.name,
         outputMask: monitor.outputMask,
-        volume: monitor.volume,
+        volume: mix?.monitorLevels[monitor.input] ?? monitor.volume,
         muted: monitor.muted,
+        // No pan: on load the monitors' pans are rebuilt from the session's
+        // input setup (`loopSettingsFromLooper`), which is what produced
+        // them, so a written copy would never be read back.
         encoded: encodeFxChain(
-          FxChainEnvelope(
-            chainEnabled: monitor.chainEnabled,
-            entries: monitor.effects,
+          projection.project(
+            FxAddress(stage: FxStage.input, index: monitor.input),
+            FxChainEnvelope(
+              chainEnabled: monitor.chainEnabled,
+              entries: monitor.effects,
+            ),
           ),
         ),
       ),
   ],
-  // The two bus stages (manifest v5). Both go through the same envelope codec
-  // as the stages above; the Master insert is a single chain, so it persists as
-  // one string rather than a keyed list.
+  // The bus stages. All go through the same envelope codec as the stages
+  // above; the output chains are keyed by destination (manifest v9).
   trackChains: [
     for (final entry in looper.allTrackChains().entries)
       SessionTrackChain(
         channel: entry.key,
-        encoded: encodeFxChain(entry.value),
+        encoded: encodeFxChain(
+          projection.project(
+            FxAddress(stage: FxStage.track, index: entry.key),
+            entry.value,
+          ),
+        ),
       ),
   ],
-  masterChain: _encodedMasterChain(looper),
+  outputChains: [
+    for (final entry in looper.allOutputChains().entries)
+      SessionOutputChain(
+        bus: entry.key,
+        encoded: encodeFxChain(
+          projection.project(
+            FxAddress(stage: FxStage.output, index: entry.key),
+            entry.value,
+          ),
+        ),
+      ),
+  ],
+  allTracksChain: _encodedAllTracksChain(looper, projection: projection),
 );
 
-/// The Master insert as an envelope string, or the manifest's own "no chain"
-/// spelling (`''`) when the rig has no Master state at all — so a default rig
-/// does not persist a redundant envelope, and the manifest has ONE way to say
-/// "empty". Both spellings decode to the same empty enabled envelope, and both
-/// reset a leftover Master chain on load.
-String _encodedMasterChain(LooperRepository looper) {
-  final master = looper.masterChainEnvelope();
-  return master == const FxChainEnvelope() ? '' : encodeFxChain(master);
+/// Captures repository-owned settings without depending on an engine report.
+SessionSettings settingsFromLooper(
+  LooperRepository looper, {
+  required double clickVolume,
+  required ClickMode clickMode,
+  required RecordStartSettings recordStart,
+  required DecaySnapshot decay,
+  required OneShotSnapshot oneShot,
+  required InheritSnapshot<bool> followTempo,
+  required InheritSnapshot<PitchMode> pitchMode,
+  required RecordLengthSnapshot recordLength,
+  required RecordTimingSnapshot recordTiming,
+  required FadeDurations fade,
+  MixSettingsSnapshot? mix,
+  SessionBacking backing = const SessionBacking(),
+  double clickPan = 0,
+}) {
+  final transport = looper.sessionTransport;
+  final snapshot = mix ?? looper.mixSettingsSnapshot;
+  return SessionSettings(
+    tempoBpm: transport.tempoBpm,
+    tempoSource: transport.tempoSource,
+    tsNum: transport.tsNum,
+    tsDen: transport.tsDen,
+    syncTempo: transport.syncTempo,
+    quantizeDiv: recordTiming.rememberedDivision,
+    loopBars: transport.loopBars,
+    loopBeats: transport.loopBeats > 0 || transport.loopBars == 0
+        ? transport.loopBeats
+        : transport.loopBars * transport.tsNum,
+    recordTiming: recordTiming.defaultTiming,
+    overdubDecay: decay.defaultPercent,
+    defaultOneShot: oneShot.defaultOneShot,
+    defaultFollowTempo: followTempo.defaultValue,
+    trackFollowTempoOverrides: followTempo.trackOverrides,
+    defaultPitchMode: pitchMode.defaultValue,
+    trackPitchModeOverrides: pitchMode.trackOverrides,
+    defaultFadeDurationMs: fade.defaultMs,
+    trackFadeDurationOverrides: fade.overrides,
+    defaultLengthPresetBars: recordLength.defaultBars,
+    trackRecordTimingOverrides: recordTiming.trackOverrides,
+    trackOverdubDecayOverrides: decay.trackOverrides,
+    trackOneShotOverrides: oneShot.trackOverrides,
+    trackLengthPresetOverrides: recordLength.trackOverrides,
+    trackLevels: snapshot.trackLevels,
+    trackPans: snapshot.trackPans,
+    laneInputs: snapshot.laneInputs,
+    laneOutputs: snapshot.laneOutputs,
+    laneCounts: snapshot.laneCounts,
+    laneMix: {
+      for (final track in looper.state.tracks)
+        for (var lane = 0; lane < track.lanes.length; lane++)
+          (track.channel, lane): (
+            level:
+                snapshot.laneLevels[(track.channel, lane)] ??
+                track.lanes[lane].volume,
+            imagePan: track.lanes[lane].imagePan,
+            balance: track.lanes[lane].balance,
+          ),
+    },
+    inputSetup: SessionInputSetup(
+      trimDb: snapshot.inputSetup.trimDb,
+      pan: snapshot.inputSetup.pan,
+      pairs: snapshot.inputSetup.pairs,
+    ),
+    outputSetup: _sessionOutputSetup(snapshot.outputSetup),
+    clickMode: clickMode,
+    clickMask: transport.clickMask,
+    clickVolume: clickVolume,
+    countInBars: recordStart.countInBars,
+    recDub: transport.recDub,
+    autoRecord: recordStart.soundStart,
+    defaultMultiple: transport.defaultMultiple,
+    looperMode: transport.looperMode,
+    primaryTrack: transport.primaryTrack,
+    backing: backing,
+    clickPan: clickPan,
+  );
 }
 
-/// Gathers the same live four-stage chains into the models a
+/// The manifest form of the looper domain's [setup].
+SessionOutputSetup _sessionOutputSetup(OutputSetup setup) {
+  final maps = setup.toMaps();
+  return SessionOutputSetup(
+    level: maps.level,
+    muted: maps.muted,
+    mono: maps.mono,
+    balance: maps.balance,
+  );
+}
+
+/// The looper-domain output setup of a manifest's [setup]: one [OutputBus]
+/// per destination any of its four maps names.
+OutputSetup outputSetupFromSession(SessionOutputSetup setup) =>
+    OutputSetup.fromMaps(
+      level: setup.level,
+      muted: setup.muted,
+      mono: setup.mono,
+      balance: setup.balance,
+    );
+
+/// The All tracks recorded-mix chain as an envelope string, or the manifest's
+/// own "no chain" spelling (`''`) when the rig has no All tracks state at all
+/// — so a default rig does not persist a redundant envelope, and the manifest
+/// has ONE way to say "empty". Both spellings decode to the same empty enabled
+/// envelope, and both reset a leftover chain on load.
+String _encodedAllTracksChain(
+  LooperRepository looper, {
+  FxChainPersistence? projection,
+}) {
+  final live = looper.allTracksChainEnvelope();
+  final chain =
+      projection?.project(const FxAddress(stage: FxStage.allTracks), live) ??
+      live;
+  return chain == const FxChainEnvelope() ? '' : encodeFxChain(chain);
+}
+
+/// Gathers the same live chains into the models a
 /// performance-capture arm snapshot records, plus the master-limiter state the
 /// engine snapshot cannot read back. The rig — not settings — is the truth
 /// being captured, exactly as in [chainsFromLooper]; the manifest keeps effects
@@ -81,10 +227,6 @@ String _encodedMasterChain(LooperRepository looper) {
 /// chain-enabled flag alongside, since a bypassed chain must replay bypassed
 /// (R3).
 PerformanceChains performanceChainsFromLooper(LooperRepository looper) {
-  // One read path for the Master stage, the same accessor [chainsFromLooper]
-  // uses — two ways to read one piece of state at one boundary would be free
-  // to drift.
-  final master = looper.masterChainEnvelope();
   return PerformanceChains(
     laneChains: [
       for (final entry in looper.allLaneChains().entries)
@@ -118,8 +260,17 @@ PerformanceChains performanceChainsFromLooper(LooperRepository looper) {
           chainEnabled: entry.value.chainEnabled,
         ),
     ],
-    masterEffects: trackEffectsToEngine(master.entries),
-    masterChainEnabled: master.chainEnabled,
+    // One read path for the output stage, the same accessor
+    // [chainsFromLooper] uses — two ways to read one piece of state at one
+    // boundary would be free to drift.
+    outputChains: [
+      for (final entry in looper.allOutputChains().entries)
+        PerformanceOutputChain(
+          bus: entry.key,
+          effects: trackEffectsToEngine(entry.value.entries),
+          chainEnabled: entry.value.chainEnabled,
+        ),
+    ],
     limiterEnabled: looper.limiterEnabled,
     limiterCeiling: looper.limiterCeiling,
   );
@@ -145,23 +296,79 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
     for (final monitor in bundle.session.monitors)
       _rigMonitor(monitor, decodeFxChain(monitor.encoded)),
   ],
-  // The bus stages (manifest v5). A v4-or-earlier bundle carries neither, so
-  // both arrive empty — and `applySession` resets whatever the live rig had.
+  // Current schema v9 carries every configured bus stage. An absent chain
+  // resets that destination when the session replaces the live rig.
   trackChains: {
     for (final chain in bundle.session.trackChains)
       chain.channel: decodeFxChain(chain.encoded),
   },
-  masterChain: decodeFxChain(bundle.session.masterChain),
+  outputChains: {
+    for (final chain in bundle.session.outputChains)
+      chain.bus: decodeFxChain(chain.encoded),
+  },
+  // The required All tracks field also resets any old live chain when empty.
+  allTracksChain: decodeFxChain(bundle.session.allTracksChain),
   // Looper mode + crown (schema v4, B5c) — session-level, so read straight
   // off the manifest rather than through `_rigTracks`.
   looperMode: bundle.session.looperMode,
   primaryTrack: bundle.session.primaryTrack,
-  // One Shot (post-B5c independent review fix) — also session-level and read
-  // straight off the manifest, so a channel armed with no content (and thus
-  // no `_rigTracks` entry) still restores; see `SessionRig.oneShotChannels`'s
-  // doc.
-  oneShotChannels: bundle.session.oneShotChannels.toSet(),
+  // Desired settings are independent of the audio tracks kept by _rigTracks.
+  tempoBpm: bundle.session.tempoBpm,
+  tempoSource: bundle.session.tempoSource,
+  tsNum: bundle.session.tsNum,
+  tsDen: bundle.session.tsDen,
+  syncTempo: bundle.session.syncTempo,
+  quantizeDiv: bundle.session.quantizeDiv,
+  loopBars: bundle.session.loopBars,
+  loopBeats: bundle.session.loopBeats,
+  defaultOneShot: bundle.session.defaultOneShot,
+  recordedTempoBpm: bundle.session.recordedTempoBpm,
+  recordedLengthFrames: bundle.session.recordedLengthFrames,
+  defaultFollowTempo: bundle.session.defaultFollowTempo,
+  trackFollowTempoOverrides: bundle.session.trackFollowTempoOverrides,
+  defaultPitchMode: bundle.session.defaultPitchMode,
+  trackPitchModeOverrides: bundle.session.trackPitchModeOverrides,
+  defaultLengthPresetBars: bundle.session.defaultLengthPresetBars,
+  trackRecordTimingOverrides: bundle.session.trackRecordTimingOverrides,
+  trackOverdubDecayOverrides: bundle.session.trackOverdubDecayOverrides,
+  trackOneShotOverrides: bundle.session.trackOneShotOverrides,
+  trackLengthPresetOverrides: bundle.session.trackLengthPresetOverrides,
+  trackLevels: bundle.session.trackLevels,
+  trackPans: bundle.session.trackPans,
+  laneInputs: bundle.session.laneInputs,
+  laneOutputs: bundle.session.laneOutputs,
+  laneCounts: bundle.session.laneCounts,
+  clickMode: bundle.session.clickMode,
+  clickMask: bundle.session.clickOutputMask,
+  clickVolume: bundle.session.clickVolume,
+  countInBars: bundle.session.countInBars,
+  recDub: bundle.session.recDub,
+  autoRecord: bundle.session.autoRecord,
+  defaultMultiple: bundle.session.defaultMultiple,
+  recordTiming: bundle.session.recordTiming,
+  overdubDecay: bundle.session.overdubDecay,
+  // The input setup (slice 3): trims, pans and pairs. The monitors' pans are
+  // not mapped from the manifest's monitors — the repository derives them
+  // from this on apply, the same way it did when the session was saved.
+  inputSetup: InputSetup(
+    trimDb: bundle.session.inputSetup.trimDb,
+    pan: bundle.session.inputSetup.pan,
+    pairs: bundle.session.inputSetup.pairs,
+  ),
+  // The output setup (slice 3b), session-owned like the input setup.
+  outputSetup: outputSetupFromSession(bundle.session.outputSetup),
 );
+
+/// The rig `New loop` applies (plan D9): [live]'s settings and chains with
+/// no tracks, no grid and no crown ([Session.forNewLoop]), mapped by the same
+/// [rigFromBundle] an Open uses, so the two cannot disagree about a setting.
+///
+/// The transforms reset with the clear inside the apply: lane mutes go with
+/// the tracks, and Fade and Reverse reset with the material
+/// (`LE_CMD_RESET_TRANSFORMS`). Speed and Transpose resets belong in that same
+/// apply path when they land, not here.
+SessionRig rigForNewLoop(Session live) =>
+    rigFromBundle((session: live.forNewLoop(), laneStems: const {}));
 
 /// Projects one manifest monitor + its decoded chain into the rig's Input-stage
 /// model. The monitor carries routing/mix of its own, so the envelope is
@@ -179,17 +386,10 @@ SessionRigMonitor _rigMonitor(SessionMonitor monitor, FxChainEnvelope chain) =>
 
 /// The gate a manifest monitor restores to.
 ///
-/// A v7 manifest says which one by name. Anything older only says whether the
-/// monitor was on at all, and the honest reading of that is `on`: it is what
-/// the bundle was heard as, and the alternative — guessing `auto` — would make
-/// a monitor that used to play unconditionally start following the arm.
-///
-/// A name this build does not know reads as "the manifest did not say" rather
-/// than as `off`, for the same reason the settings restore does: a gate
-/// written by a future build is not a deliberate disable.
+/// An unknown name is corrupt current-schema data, not an alternate gate.
 MonitorMode _monitorMode(SessionMonitor monitor) =>
     monitorModeFromName(monitor.mode) ??
-    (monitor.enabled ? MonitorMode.on : MonitorMode.off);
+    (throw FormatException('invalid monitor mode ${monitor.mode}'));
 
 /// Builds the rig's tracks from [bundle], zipping each manifest lane with its
 /// decoded PCM. A lane with no decoded audio is dropped; a track left with no
@@ -197,6 +397,11 @@ MonitorMode _monitorMode(SessionMonitor monitor) =>
 List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
   final tracks = <SessionRigTrack>[];
   for (final track in bundle.session.tracks) {
+    if (!track.fadeAmount.isFinite ||
+        track.fadeAmount < 0 ||
+        track.fadeAmount > 1) {
+      throw const FormatException('invalid track Fade amount');
+    }
     final lanes = <SessionRigLane>[];
     for (final lane in track.lanes) {
       final layers = bundle.laneStems[(track.channel, lane.lane)];
@@ -209,8 +414,9 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
           muted: lane.muted,
           outputMask: lane.outputMask,
           inputChannel: lane.inputChannel,
-          undoCount: lane.undoCount,
-          redoCount: lane.redoCount,
+          pan: lane.pan,
+          balance: lane.balance,
+          history: lane.history,
         ),
       );
     }
@@ -218,9 +424,10 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
       tracks.add(
         SessionRigTrack(
           channel: track.channel,
+          fadeAmount: track.fadeAmount,
+          reversed: track.reversed,
+          spanFrames: track.spanFrames,
           lanes: lanes,
-          lengthPresetBars: track.lengthPresetBars,
-          oneShot: track.oneShot,
         ),
       );
     }

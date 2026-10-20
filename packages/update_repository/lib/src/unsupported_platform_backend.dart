@@ -1,6 +1,7 @@
 import 'package:pub_semver/pub_semver.dart';
 import 'package:update_repository/src/platform_update_backend.dart';
 import 'package:update_repository/src/update_manifest.dart';
+import 'package:update_repository/src/update_recovery.dart';
 
 /// The inert backend for platforms that do not offer in-app updates (a generic
 /// dev Linux build, tests, or any host without an appliance/desktop backend
@@ -26,6 +27,12 @@ class UnsupportedPlatformBackend implements PlatformUpdateBackend {
   Future<Version> stagedVersion() async => Version.none;
 
   @override
+  Future<UpdateRecovery> recover() async => const UpdateRecovery();
+
+  @override
+  Future<void> clearInterrupted() async {}
+
+  @override
   Future<UpdateManifest?> fetchManifest() async => null;
 
   @override
@@ -33,8 +40,4 @@ class UnsupportedPlatformBackend implements PlatformUpdateBackend {
       Stream<double>.error(
         UnsupportedError('in-app updates are not supported on this platform'),
       );
-
-  @override
-  Future<void> applyAndRestart() async =>
-      throw UnsupportedError('in-app updates are unsupported on this platform');
 }
