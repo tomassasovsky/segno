@@ -273,9 +273,9 @@ void main() {
     // reading matches what is actually there — never that it is the source's
     // own grouping, which the source does not record.
 
-    test('no two modules claim the same power key or parameter group', () {
+    test('no two modules of one rack claim the same power key or parameter '
+        'group', () {
       final keys = <String, String>{};
-      final groups = <String, String>{};
       for (final module in kFxModules) {
         for (final key in module.enables) {
           expect(
@@ -285,15 +285,20 @@ void main() {
           );
           keys[key] = module.name;
         }
-        for (final group in module.groups) {
-          expect(
-            groups.containsKey(group),
-            isFalse,
-            reason:
-                '$group claimed by both ${groups[group]} and '
-                '${module.name}',
-          );
-          groups[group] = module.name;
+      }
+      for (final family in kFxFamilySlugs.keys) {
+        final groups = <String, String>{};
+        for (final module in kFxModules.where((m) => m.appearsIn(family))) {
+          for (final group in module.groups) {
+            expect(
+              groups.containsKey(group),
+              isFalse,
+              reason:
+                  '$group claimed by both ${groups[group]} and '
+                  '${module.name} in $family',
+            );
+            groups[group] = module.name;
+          }
         }
       }
     });
@@ -339,7 +344,7 @@ void main() {
         for (final key in preset.params.keys) {
           final prefix = key.split(' ').first;
           if (kFxUnclaimedGroups.contains(prefix)) continue;
-          if (fxModuleOwning(key) != null) continue;
+          if (fxModulesOwning(key, preset.family).isNotEmpty) continue;
           if (fxModuleFor(key) != null) continue;
           unaccounted.add(key);
         }
@@ -403,17 +408,204 @@ void main() {
       expect(delay.groups, ['Del']);
 
       expect(fxModuleFor('Delay')!.name, 'Delay');
-      expect(fxModuleOwning('Del Feedback')!.name, 'Delay');
+      expect(
+        fxModulesOwning('Del Feedback', "Ed's Rack").map((m) => m.name),
+        ['Delay'],
+      );
       // And the power key is not a parameter of its own module.
-      expect(fxModuleOwning('Delay'), isNull);
+      expect(fxModulesOwning('Delay', "Ed's Rack"), isEmpty);
     });
 
     test("the rack's own level belongs to no pedal", () {
       // The accepted design puts rack level AFTER the pedals and gives it to
       // the rack, so claiming it for a module would put it on the wrong
       // control.
-      expect(fxModuleOwning('Master Vol'), isNull);
-      expect(kFxUnclaimedGroups, contains('Master'));
+      for (final family in kFxFamilySlugs.keys) {
+        expect(fxModulesOwning('Master Vol', family), isEmpty);
+      }
+      expect(kFxUnclaimedGroups, {'Master'});
+    });
+
+    test("the Dub Rack's delay is the dub delay, powered by `Dub Delay`", () {
+      expect(fxModuleFor('Dub Delay')!.name, 'Dub delay');
+      expect(
+        fxModulesOwning('Del Feedback', 'Dub Rack').map((m) => m.name),
+        ['Dub delay'],
+      );
+      // The dub reverb no longer takes the delay's power key as a parameter.
+      expect(fxModulesOwning('Dub Delay', 'Dub Rack'), isEmpty);
+      expect(
+        fxModulesOwning('Dub-Verb Dec', 'Dub Rack').map((m) => m.name),
+        ['Dub reverb'],
+      );
+    });
+
+    test('`Para EQ` powers the parametric EQ of the Dub and Lo-Fi racks', () {
+      expect(fxModuleFor('Para EQ')!.name, 'Parametric EQ');
+      for (final family in ['Dub Rack', 'Lo-Fi Rack']) {
+        expect(
+          fxModulesOwning('EQ Mid Q', family).map((m) => m.name),
+          ['Parametric EQ'],
+        );
+      }
+      expect(
+        fxModulesOwning('EQ Mid Freq', 'Drum Rack').map((m) => m.name),
+        ['Four-band EQ'],
+      );
+    });
+
+    test('`Smart Tune` powers Smart Tune, and `Mode` is a parameter', () {
+      expect(fxModuleFor('Smart Tune')!.name, 'Smart tune');
+      expect(fxModuleFor('Mode'), isNull);
+    });
+
+    test('Smart Tune and the Harmonizer both read the shared Vocal Tuner '
+        'parameters', () {
+      for (final key in ['Mode', 'Auto Source', 'Key', 'Scale Type']) {
+        expect(
+          fxModulesOwning(key, 'Vocal Tuner Rack').map((m) => m.name),
+          ['Harmonizer', 'Smart tune'],
+          reason: key,
+        );
+      }
+    });
+  });
+
+  group('every factory preset', () {
+    // What each rack's schema implies, in the order a rack builds its
+    // entries: the module table's order, because no source examined records
+    // the order the Looper X runs them in (see kFxModules).
+    const expected = <String, List<String>>{
+      'Drum Rack': [
+        'Compressor',
+        'Four-band EQ',
+        'Delay',
+        'Reverb',
+        'Transient',
+      ],
+      'Dub Rack': [
+        'Compressor',
+        'Parametric EQ',
+        'Dub delay',
+        'Ambience',
+        'Dub reverb',
+        'Doubler',
+      ],
+      "Ed's Rack": [
+        'Amp',
+        'Compressor',
+        'Overdrive',
+        'Four-band EQ',
+        'Wah',
+        'Chorus',
+        'Octaver',
+        'Delay',
+        'Reverb',
+      ],
+      'Guitar Rack': [
+        'Amp',
+        'Overdrive',
+        'Wah',
+        'Modulation',
+        'Whammy',
+        'Delay',
+        'Spring reverb',
+      ],
+      'Lo-Fi Rack': [
+        'Distortion',
+        'Parametric EQ',
+        'Low-pass filter',
+        'Delay',
+        'Vinyl',
+        'Degrade',
+      ],
+      'Rhythmic Rack': [
+        'Four-band EQ',
+        'Low-pass filter',
+        'Delay',
+        'Reverb',
+        'Pumper',
+        'Slicer',
+      ],
+      'Studio Rack': [
+        'Compressor',
+        'Distortion',
+        'Four-band EQ',
+        'Modulation',
+        'Pitch shift',
+        'Delay',
+        'Reverb',
+        'Doubler',
+      ],
+      'Vocal Rack': [
+        'Compressor',
+        'Four-band EQ',
+        'Pitch shift',
+        'Delay',
+        'Reverb',
+        'Doubler',
+        'High-pass gate',
+      ],
+      'Vocal Tuner Rack': [
+        'Compressor',
+        'Four-band EQ',
+        'Delay',
+        'Reverb',
+        'Doubler',
+        'High-pass gate',
+        'Harmonizer',
+        'Smart tune',
+      ],
+    };
+
+    test('builds the modules its rack schema implies, in rack order', () {
+      expect(catalogue.families.map((f) => f.name), expected.keys);
+      for (final family in catalogue.families) {
+        for (final preset in family.presets) {
+          expect(
+            fxPresetModules(preset).map((m) => m.name),
+            expected[family.name],
+            reason: '${family.name} / ${preset.name}',
+          );
+        }
+      }
+    });
+
+    test('gives each key to the modules it builds: one owner per key, two '
+        'for a shared Vocal Tuner key, none for Master Vol', () {
+      const shared = {'Mode', 'Auto Source', 'Key', 'Scale Type'};
+      for (final preset in catalogue.presets) {
+        final modules = fxPresetModules(preset);
+        for (final key in preset.params.keys) {
+          final owners = [
+            for (final m in modules)
+              if (m.owns(key) || m.poweredBy(key)) m.name,
+          ];
+          final reason = '${preset.family} / ${preset.name} / $key';
+          if (key == 'Master Vol') {
+            expect(owners, isEmpty, reason: reason);
+          } else if (shared.contains(key)) {
+            expect(owners, ['Harmonizer', 'Smart tune'], reason: reason);
+          } else {
+            expect(owners, hasLength(1), reason: reason);
+          }
+        }
+      }
+    });
+
+    test('a Vocal Tuner preset with Smart Tune off still sets the shared '
+        'keys the Harmonizer reads', () {
+      final family = catalogue.family('Vocal Tuner Rack')!;
+      final midi = family.presets.firstWhere((p) => p.name == 'Midi Harm Mid');
+      final scale = family.presets.firstWhere(
+        (p) => p.name == 'Scale Harm Hi Dry',
+      );
+      expect(midi.params['Smart Tune'], 0);
+      expect(midi.params['Auto Source'], 1);
+      expect(scale.params['Smart Tune'], 0);
+      expect(scale.params['Mode'], 1);
+      expect(scale.params['Key'], closeTo(3 / 11, 1e-6));
+      expect(fxPresetModules(midi).map((m) => m.name), contains('Smart tune'));
     });
   });
 }
