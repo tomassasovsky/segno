@@ -1004,51 +1004,61 @@ oom:
   return LE_ERR_INVALID;
 }
 
-/* ---- per-type default normalized params (seeded on a type change) ----
- * p3 is inert for every type today and stays 0; the values match the musical
- * defaults the chain shipped with. */
-static void fx_drive_defaults(float out[LE_FX_PARAMS]) {
-  out[0] = 0.5f; /* drive */
-  out[1] = 0.8f; /* level */
-  out[2] = 0.0f;
-  out[3] = 0.0f;
-}
-static void fx_filter_defaults(float out[LE_FX_PARAMS]) {
-  out[0] = 0.5f; /* cutoff */
-  out[1] = 0.2f; /* resonance */
-  out[2] = 0.0f;
-  out[3] = 0.0f;
-}
-static void fx_delay_defaults(float out[LE_FX_PARAMS]) {
-  out[0] = 0.35f; /* time */
-  out[1] = 0.35f; /* feedback */
-  out[2] = 0.35f; /* wet mix */
-  out[3] = 0.0f;
-}
-static void fx_tremolo_defaults(float out[LE_FX_PARAMS]) {
-  out[0] = 0.3f; /* rate */
-  out[1] = 0.7f; /* depth */
-  out[2] = 0.0f;
-  out[3] = 0.0f;
-}
-static void fx_octaver_defaults(float out[LE_FX_PARAMS]) {
-  out[0] = 0.25f; /* shift: one octave down */
-  out[1] = 0.5f;  /* tone */
-  out[2] = 0.5f;  /* mix */
-  out[3] = 0.0f;  /* mode = phase vocoder */
-}
-static void fx_echo_defaults(float out[LE_FX_PARAMS]) {
-  out[0] = 0.45f; /* time */
-  out[1] = 0.5f;  /* feedback */
-  out[2] = 0.35f; /* wet mix */
-  out[3] = 0.0f;
-}
-static void fx_reverb_defaults(float out[LE_FX_PARAMS]) {
-  out[0] = 0.5f;  /* size */
-  out[1] = 0.5f;  /* damping */
-  out[2] = 0.35f; /* wet mix */
-  out[3] = 0.0f;
-}
+/* ---- per-type parameter descriptors (le_fx_param_info) ----
+ *
+ * One row per parameter, in parameter order. Each states what the kernel above
+ * does with the normalized setting: the mapping, the unit it reads in, and the
+ * setting a freshly engaged effect starts at (le_fx_defaults reads `def` from
+ * here, so the defaults have one home). test_fx_param_descriptors_match_kernels
+ * measures the kernels against these rows. The seven built-ins are segno's own
+ * effects, so none carries LE_FX_PARAM_TAPER_UNVERIFIED. */
+#define LE_FX_ROWS(t) t, (int32_t)(sizeof(t) / sizeof(t[0]))
+
+static const le_fx_param_desc LE_FX_DRIVE_PARAMS[] = {
+    /* tanh pre-gain 1 + 29 v */
+    {"drive", LE_FX_UNIT_TIMES, 0, 1.0f, 30.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"level", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.8f, 0},
+};
+static const le_fx_param_desc LE_FX_FILTER_PARAMS[] = {
+    /* 20 * 900^v Hz, clamped to 0.45 x the sample rate */
+    {"cutoff", LE_FX_UNIT_HZ, 0, 20.0f, 18000.0f, LE_FX_CURVE_EXPONENTIAL, 0.5f,
+     0},
+    {"resonance", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.2f,
+     0},
+};
+static const le_fx_param_desc LE_FX_DELAY_PARAMS[] = {
+    /* v x the one-second ring, at least one sample */
+    {"time", LE_FX_UNIT_MS, 0, 0.0f, 1000.0f, LE_FX_CURVE_LINEAR, 0.35f, 0},
+    {"feedback", LE_FX_UNIT_PERCENT, 0, 0.0f, 95.0f, LE_FX_CURVE_LINEAR, 0.35f,
+     0},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.35f, 0},
+};
+static const le_fx_param_desc LE_FX_TREMOLO_PARAMS[] = {
+    {"rate", LE_FX_UNIT_HZ, 0, 0.1f, 12.0f, LE_FX_CURVE_LINEAR, 0.3f, 0},
+    {"depth", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.7f, 0},
+};
+static const le_fx_param_desc LE_FX_OCTAVER_PARAMS[] = {
+    /* ratio 2^((v - 0.5) * 48 / 12); whole semitones across +-2 octaves */
+    {"shift", LE_FX_UNIT_SEMITONES, 49, -24.0f, 24.0f, LE_FX_CURVE_LINEAR,
+     0.25f, 0},
+    {"tone", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    /* position 0 = phase vocoder, 1 = PSOLA (fx_octaver: v >= 0.5) */
+    {"mode", LE_FX_UNIT_CHOICE, 2, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f, 0},
+};
+static const le_fx_param_desc LE_FX_ECHO_PARAMS[] = {
+    {"time", LE_FX_UNIT_MS, 0, 0.0f, 1000.0f, LE_FX_CURVE_LINEAR, 0.45f, 0},
+    {"feedback", LE_FX_UNIT_PERCENT, 0, 0.0f, 97.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     0},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.35f, 0},
+};
+static const le_fx_param_desc LE_FX_REVERB_PARAMS[] = {
+    /* comb feedback 0.70 + 0.28 v; feedback low-pass 0.4 v */
+    {"size", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"damping", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     0},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.35f, 0},
+};
 
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
  * published for this chain entry (NULL / not-ready => dry passthrough; the slot
@@ -1083,31 +1093,32 @@ typedef struct le_fx_vtable {
    * LE_ERR_INVALID on OOM (after freeing whatever it allocated this call). NULL =
    * the type needs no allocation. */
   int32_t (*prepare)(le_fx_state* fx, int slot, int cap);
-  /* Writes the type's default normalized params into out[LE_FX_PARAMS]; NULL =
-   * all-zero defaults. */
-  void (*defaults)(float out[LE_FX_PARAMS]);
+  /* The type's parameter descriptors (le_fx_param_info) and their count; NULL
+   * and 0 for a type without fixed params. Defaults come from here. */
+  const le_fx_param_desc* params;
+  int32_t param_count;
 } le_fx_vtable;
 
 /* Indexed by le_fx_type — one row per effect. Adding an effect is adding its
  * kernels above + one row here. LE_FX_NONE is the all-NULL no-op (the empty-chain
  * regression guard). */
 static const le_fx_vtable LE_FX[] = {
-    [LE_FX_NONE] = {NULL, NULL, NULL, NULL},
-    [LE_FX_DRIVE] = {fx_drive_process, NULL, NULL, fx_drive_defaults},
-    [LE_FX_FILTER] = {fx_filter_process, NULL, NULL, fx_filter_defaults},
+    [LE_FX_NONE] = {NULL, NULL, NULL, NULL, 0},
+    [LE_FX_DRIVE] = {fx_drive_process, NULL, NULL, LE_FX_ROWS(LE_FX_DRIVE_PARAMS)},
+    [LE_FX_FILTER] = {fx_filter_process, NULL, NULL, LE_FX_ROWS(LE_FX_FILTER_PARAMS)},
     [LE_FX_DELAY] =
-        {fx_delay_process, NULL, fx_stereo_ring_prepare, fx_delay_defaults},
-    [LE_FX_TREMOLO] = {fx_tremolo_process, NULL, NULL, fx_tremolo_defaults},
+        {fx_delay_process, NULL, fx_stereo_ring_prepare, LE_FX_ROWS(LE_FX_DELAY_PARAMS)},
+    [LE_FX_TREMOLO] = {fx_tremolo_process, NULL, NULL, LE_FX_ROWS(LE_FX_TREMOLO_PARAMS)},
     [LE_FX_OCTAVER] = {fx_octaver_process, fx_octaver_latency_vt,
-                       fx_octaver_prepare, fx_octaver_defaults},
+                       fx_octaver_prepare, LE_FX_ROWS(LE_FX_OCTAVER_PARAMS)},
     [LE_FX_ECHO] =
-        {fx_echo_process, NULL, fx_stereo_ring_prepare, fx_echo_defaults},
+        {fx_echo_process, NULL, fx_stereo_ring_prepare, LE_FX_ROWS(LE_FX_ECHO_PARAMS)},
     [LE_FX_REVERB] =
-        {fx_reverb_process, NULL, fx_reverb_prepare, fx_reverb_defaults},
+        {fx_reverb_process, NULL, fx_reverb_prepare, LE_FX_ROWS(LE_FX_REVERB_PARAMS)},
     /* A hosted plugin: process forwards to its slot; no params, no prepare, no
      * defaults (the host owns all state). Output is sanitized at the chain
      * boundary in fx_apply_chain. */
-    [LE_FX_PLUGIN] = {fx_plugin_process, NULL, NULL, NULL},
+    [LE_FX_PLUGIN] = {fx_plugin_process, NULL, NULL, NULL, 0},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -1376,9 +1387,23 @@ int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap) {
 }
 
 void le_fx_defaults(int32_t type, float out[LE_FX_PARAMS]) {
-  if (type > LE_FX_NONE && type < LE_FX_TYPE_COUNT && LE_FX[type].defaults) {
-    LE_FX[type].defaults(out);
-    return;
+  const int known = type > LE_FX_NONE && type < LE_FX_TYPE_COUNT;
+  const int32_t n = known ? LE_FX[type].param_count : 0;
+  for (int p = 0; p < LE_FX_PARAMS; ++p) {
+    out[p] = p < n ? LE_FX[type].params[p].def : 0.0f; /* NONE / unknown: 0 */
   }
-  for (int p = 0; p < LE_FX_PARAMS; ++p) out[p] = 0.0f; /* NONE / unknown */
+}
+
+int32_t le_fx_param_count(int32_t type) {
+  if (type < LE_FX_NONE || type >= LE_FX_TYPE_COUNT) return LE_ERR_INVALID;
+  return LE_FX[type].param_count;
+}
+
+int32_t le_fx_param_info(int32_t type, int32_t param, le_fx_param_desc* out) {
+  if (out == NULL || type < LE_FX_NONE || type >= LE_FX_TYPE_COUNT ||
+      param < 0 || param >= LE_FX[type].param_count) {
+    return LE_ERR_INVALID;
+  }
+  *out = LE_FX[type].params[param];
+  return LE_OK;
 }
