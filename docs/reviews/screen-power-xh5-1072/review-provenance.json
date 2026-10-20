@@ -1,0 +1,33 @@
+{
+  "date": "2026-09-28",
+  "model": "opencode-go/deepseek-v4-flash",
+  "final_board_sha256": "bf870faa7c5e1be2dd9843d1587c76888508ece7549b27b5013d0eb7a77c9fc2",
+  "final_zip_sha256": "4a84d3bd587cf5b7f11941c0d5f6c2bcbc0219a406542d2eb51f7922e8e3dfb2",
+  "runs": [
+    {
+      "reviewer": "deepseek",
+      "started": 1790629357.754914,
+      "finished": 1790629477.9357271,
+      "exit_code": 0,
+      "has_result": true,
+      "prompt_sha256": "a34e4ffb6db8891b74e783425097f5936ea23bca6165a6f952fc8295c10ec15b",
+      "scope": "Revision O delta from add2748e with retained baseline review",
+      "raw_log_sha256": "47840c2d0eaad3c850848c057b8e4af2409bad20f0aa4c5954bee438b3213c5b",
+      "response_sha256": "63b4c69d9d520d88dcbd90fa7ce7ffbaeae7c4e0da5dac9c0ce2834ee11a4655"
+    },
+    {
+      "reviewer": "deepseek-closeout",
+      "started": 1790629926.69286,
+      "finished": 1790629959.229676,
+      "exit_code": 0,
+      "has_result": true,
+      "prompt_sha256": "1fa22e776dfc05ee182ae0dee48c4b7b3040e72fa151ada986c97203b3ad7861",
+      "scope": "Revision O delta from add2748e with retained baseline review",
+      "raw_log_sha256": "833df9f1103741fce86049b75bf0c221fe4290585404df4be8e619e6248ad1ee",
+      "response_sha256": "54240ffbd3ab2eaf9cc05c871bcc9c78c8092ba66bdc4dfe84edaec25a910965"
+    }
+  ],
+  "claude_revision_o": "Initial authoring only; quota-limit error prevented completion. No fresh independent Claude approval. Existing completed Revision N reviews retained only for unchanged scope.",
+  "visual_coverage": "Coordinator and independent VGV role viewed populated final renders; DeepSeek has no image input.",
+  "verdict": "complete-clean-with-bounds"
+}

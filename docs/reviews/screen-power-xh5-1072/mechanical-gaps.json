@@ -1,0 +1,128 @@
+{
+  "board": "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
+  "sha256": "bf870faa7c5e1be2dd9843d1587c76888508ece7549b27b5013d0eb7a77c9fc2",
+  "units": "mm",
+  "method": "Nearest segment-to-segment distance between native F.Fab body outlines and F.CrtYd graphic centerlines, ignoring line-stroke thickness. All requested pairs overlap in X and are disjoint in Y, so nearest distances equal the verified vertical edge separation. No CAD or project was saved.",
+  "bounds": {
+    "J103": {
+      "body_edges_xyxy": [
+        52.3,
+        17.69,
+        60.8,
+        25.55
+      ],
+      "courtyard_edges_xyxy": [
+        51.8,
+        17.19,
+        61.3,
+        26.05
+      ]
+    },
+    "J102": {
+      "body_edges_xyxy": [
+        53.65,
+        27.3,
+        59.4,
+        42.2
+      ],
+      "courtyard_edges_xyxy": [
+        53.15,
+        26.8,
+        59.9,
+        42.7
+      ]
+    },
+    "J203": {
+      "body_edges_xyxy": [
+        52.3,
+        43.32,
+        60.8,
+        51.18
+      ],
+      "courtyard_edges_xyxy": [
+        51.8,
+        42.82,
+        61.3,
+        51.68
+      ]
+    },
+    "J202": {
+      "body_edges_xyxy": [
+        53.65,
+        52.3,
+        59.4,
+        67.2
+      ],
+      "courtyard_edges_xyxy": [
+        53.15,
+        51.8,
+        59.9,
+        67.7
+      ]
+    },
+    "Q5": {
+      "body_edges_xyxy": [
+        0.75,
+        21.5,
+        10.75,
+        25.9
+      ],
+      "courtyard_edges_xyxy": [
+        0.5,
+        21.25,
+        11.0,
+        26.15
+      ]
+    },
+    "J101": {
+      "body_edges_xyxy": [
+        4.65,
+        27.3,
+        10.4,
+        42.2
+      ],
+      "courtyard_edges_xyxy": [
+        4.15,
+        26.8,
+        10.9,
+        42.7
+      ]
+    }
+  },
+  "pairs": [
+    {
+      "pair": [
+        "J103",
+        "J102"
+      ],
+      "body_gap": 1.75,
+      "drawn_courtyard_centerline_gap": 0.75
+    },
+    {
+      "pair": [
+        "J102",
+        "J203"
+      ],
+      "body_gap": 1.12,
+      "drawn_courtyard_centerline_gap": 0.12
+    },
+    {
+      "pair": [
+        "J203",
+        "J202"
+      ],
+      "body_gap": 1.12,
+      "drawn_courtyard_centerline_gap": 0.12
+    },
+    {
+      "pair": [
+        "Q5",
+        "J101"
+      ],
+      "body_gap": 1.4,
+      "drawn_courtyard_centerline_gap": 0.65
+    }
+  ],
+  "limits": "Nominal unmated header/component plan-view outlines and library assembly courtyards only; not a measurement of finger room, cable bend/strain-relief room, soldering access or a built harness. Mechanical component tolerances and mated latch/service access remain separate.",
+  "courtyard_kernel_note": "KiCad GetCourtyard() returns each rectangular outline inset by 0.005 mm versus its F.CrtYd graphic centerline, so kernel polygon separations are 0.01 mm larger: 0.76, 0.13, 0.13, 0.66. Reported gaps use the conservative drawn centerlines: 0.75, 0.12, 0.12, 0.65."
+}

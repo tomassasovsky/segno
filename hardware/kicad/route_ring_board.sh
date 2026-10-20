@@ -17,17 +17,32 @@ WORK="$(mktemp -d)"
 
 # THE POINT OF THIS SCRIPT. KiCad exports every net in one 'kicad_default' class,
 # so a plain autoroute returns EVERYTHING at the default 0.30 mm -- including
-# +5V_LED, which carries ~1.44 A with 24 WS2812Bs at full white and wants 0.50 mm
+# the lower-current +5V_LED module/logic branches, which carry up to 1.44 A
+# with a 24-pixel module. The retained J1-to-J2 rail is hand-routed at
+# 1.5 mm before the router runs and checked again before export. The module wants 0.50 mm
 # by IPC-2221 (10 C rise, 1 oz external). DRC does not catch an undersized power
 # trace, so that mistake ships silently. Splitting the class in the DSN is what
 # makes the autorouter hand back the right width instead of it being reapplied by
 # hand afterwards and forgotten the next time the board is routed.
 #
-# 0.55 is a CEILING, not a preference: 0.65 and 0.80 each leave a clearance
-# violation on this board. If the layout changes, re-check before raising it.
+# 0.55 is what the ROUTER is asked for, and that is a different number from what
+# the board will take. This used to read "0.55 is a CEILING: 0.65 and 0.80 each
+# leave a clearance violation", which was true and misleading: raising the class
+# width does not widen this route, it poses Freerouting a different problem, and
+# the answers it returned at 0.65 and 0.80 had violations in them. Measured on
+# the route it actually produces at 0.55, +5V_LED clears 0.762 mm -- because the
+# DSN below is deliberately handed 0.3 mm of clearance while the board is checked
+# at 0.2 mm, and the 0.1 mm per side the router does not eat is 0.2 mm of track
+# width nobody was collecting.
+#
+# So the width is taken back in step 5b instead, on the finished geometry, by
+# widen_power.py. 0.65 mm is 1.75 A at a 10 C rise against the 1.44 A load: 21%
+# of margin where 0.55 mm had 7%. Leave POWER_UM alone -- it is the input to a
+# route that is known to come back clean, and changing it changes the route.
 POWER_NET="+5V_LED"
 POWER_UM=550
 SIGNAL_UM=300
+POWER_FINAL_MM=0.65             # step 5b; capped by measured clearance anyway
 
 echo "== 1. rip up existing routing (keeping the stitching vias on file) =="
 # The two GND pours are joined ONLY by hand-placed stitching vias, and the rip-up
@@ -54,6 +69,9 @@ for t in list(m.GetTracks()):
 m.Save(sys.argv[1])                    # unchanged and DRC then lies to you
 print("   ripped up %d segments, kept %d vias (%d grown to 0.8/0.4)" % (n, kept, grown))
 PY
+
+echo "== 1b. hand-route the retained carrier feed before the other nets =="
+"$KPY" ring_power.py "$PCB" --install
 
 echo "== 2. export Specctra DSN =="
 "$KPY" - "$PCB" "$WORK/board.dsn" <<'PY'
@@ -105,14 +123,44 @@ java -jar "$JAR" -de "$WORK/board.dsn" -do "$WORK/board.ses" -mp 12 2>&1 \
   | grep -iE "auto-routing|optimization|error" || true
 [ -f "$WORK/board.ses" ] || { echo "Freerouting produced no session file"; exit 1; }
 
-echo "== 5. import session + refill zones =="
+echo "== 5a. import session =="
 "$KPY" - "$PCB" "$WORK/board.ses" <<'PY'
 import pcbnew, sys
-from collections import Counter
 m = pcbnew.LoadBoard(sys.argv[1])
 assert pcbnew.ImportSpecctraSES(m, sys.argv[2]), "SES import failed"
 vias = sum(1 for t in m.GetTracks() if t.GetClass() == 'PCB_VIA')
 print("   %d vias on the board after import" % vias)
+m.Save(sys.argv[1])
+PY
+
+echo "== 5b. take back the unused width on the power net =="
+# BEFORE the refill, and that ordering is the whole reason this is its own step:
+# a wider track needs the pour to retreat from it, and the pour only retreats
+# when it is filled. Run after step 6 instead and DRC reports the clearance the
+# widening created. widen_power.py measures its own headroom against the routed
+# geometry, so it is safe on a route it has never seen -- it grows as far as the
+# layout allows and no further, and prints the ceiling it found.
+python3 widen_power.py "$PCB" --net "$POWER_NET" --target "$POWER_FINAL_MM"
+
+echo "== 5b2. round the routed signal corners =="
+# After the widening, so the arcs are measured against the final widths, and
+# before the refill, so the pours retreat from the geometry that ships. Locked
+# copper -- the hand-routed strip feed and its taps -- is left exactly as
+# ring_power.install drew it, and any chain that cannot hold its clearance with
+# an arc keeps its mitre. It runs under KiCad's Python: the clearance it accepts
+# an arc on is measured with pcbnew's own pad shapes and SHAPE::Collide, not with
+# arithmetic of ours.
+"$KPY" round_routes.py "$PCB"
+
+# Local zone-only exclusions remove unused ground fingers beside U2/J2;
+# routed tracks, wire-pad area and the retained power rail are unchanged.
+"$KPY" ring_power.py "$PCB" --finish-ground
+
+echo "== 5c. refill zones =="
+"$KPY" - "$PCB" <<'PY'
+import pcbnew, sys
+from collections import Counter
+m = pcbnew.LoadBoard(sys.argv[1])
 pcbnew.ZONE_FILLER(m).Fill(m.Zones())
 m.Save(sys.argv[1])
 w = Counter()
@@ -124,7 +172,8 @@ for (net, ww), c in sorted(w.items()):
 PY
 
 echo "== 6. DRC =="
-"$CLI" pcb drc --format json -o "$WORK/drc.json" "$PCB" >"$WORK/drc.log" 2>&1 || true
+"$CLI" pcb drc --format json --severity-all --all-track-errors \
+  -o "$WORK/drc.json" "$PCB" >"$WORK/drc.log" 2>&1 || true
 tail -2 "$WORK/drc.log"
 python3 - "$WORK/drc.json" <<'PY'
 import json, sys
@@ -134,10 +183,20 @@ for x in v:
     print("   [%s] %s" % (x['severity'], x['type']))
 errs = [x for x in v if x['severity'] == 'error']
 print("   violations %d (errors %d), unconnected %d" % (len(v), len(errs), len(u)))
-sys.exit(1 if errs or u else 0)
+sys.exit(1 if v or u else 0)
 PY
 
 echo "== 7. gerbers =="
+"$KPY" ring_power.py "$PCB"
+"$KPY" ring_encoder.py "$PCB"
+"$KPY" - "$PCB" <<'PY_CHECK_SILK'
+import sys
+import pcbnew
+from silkscreen import mask_clearance_problems
+problems = mask_clearance_problems(pcbnew.LoadBoard(sys.argv[1]))
+if problems:
+    raise SystemExit("Silkscreen mask clearance: " + "; ".join(problems))
+PY_CHECK_SILK
 "$CLI" pcb export gerbers --output "$WORK/gb" --no-protel-ext --layers "$FAB_LAYERS" "$PCB" >/dev/null
 "$CLI" pcb export drill --output "$WORK/gb" --format excellon --drill-origin absolute --excellon-separate-th "$PCB" >/dev/null
 ( cd "$WORK/gb" && zip -q -X segno_pedal_ring_gerbers.zip *.gbr *.gbrjob *.drl )

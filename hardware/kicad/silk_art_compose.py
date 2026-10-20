@@ -114,7 +114,11 @@ def _fits(size, cx, cy):
     return polys
 
 BIG, best, mark = None, None, None
-for size in range(32, 15, -2):
+# Down to 10 mm since the Pico footprint gained through-holes (#1062): 43 new
+# mask openings landed in the middle of the back, where the big mark used to
+# sit, and 16 mm no longer fits anywhere whole. The search still prefers the
+# largest size that clears every pad.
+for size in range(32, 9, -2):
     cands = sorted((math.dist((cx, cy), (BW / 2, 50.0)), cx, cy)
                    for cx in [x * 0.5 for x in range(2 * 20, 2 * 80)]
                    for cy in [y * 0.5 for y in range(2 * 26, 2 * 74)])

@@ -1,0 +1,28 @@
+diff --git a/hardware/kicad/screen_power/route_critical.py b/hardware/kicad/screen_power/route_critical.py
+index 46d35501..b4e7a1b1 100644
+--- a/hardware/kicad/screen_power/route_critical.py
++++ b/hardware/kicad/screen_power/route_critical.py
+@@ -76,10 +76,12 @@ def route(variant):
+         # The host side lands on the changeover commons 6/3, one terminal
+         # column further in than the unused breaks 7/2. The pair therefore
+         # stays coupled past those idle pads and separates across the row.
++        # Couple close to the terminals: long, widely separated fanouts add
++        # an avoidable impedance discontinuity without reducing route length.
+         pair([(host,3),(host,2)],[(relay,6),(relay,3)],
+-             [(11,y),(27.6,y)],breakout=True)
++             [(8.5,y),(27.6,y)],breakout=True)
+         pair([(relay,5),(relay,4)],[(touch,3),(touch,2)],
+-             [(35,y),(52,y)])
++             [(33.1,y),(54.5,y)])
+         # Keep the relay-drive return between contact columns, never beneath
+         # the USB fanouts. This narrow control channel is routed explicitly.
+         # The commons now carry the host pair, so the channel sits between the
+@@ -153,7 +155,7 @@ def route(variant):
+             v=point(*at);poly.Append(v.x,v.y)
+         board.Add(z)
+     for y in USB_ROWS[variant]:
+-        for left,right in [(9,22),(35,54)]:
++        for left,right in [(8.5,22),(33.1,54.5)]:
+             keepout(p.F_Cu,left,y-2.8,right,y+2.8,tracks=True)
+         keepout(p.F_Cu,22,y-1.4,25,y+1.4,tracks=True)
+         keepout(p.B_Cu,8.5,y-5,54.5,y+5,pours=True)
