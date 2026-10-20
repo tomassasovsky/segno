@@ -608,4 +608,114 @@ void main() {
       expect(fxPresetModules(midi).map((m) => m.name), contains('Smart tune'));
     });
   });
+
+  group('the add-an-effect rows', () {
+    /// The keys each rack family gives [module], one set per distinct
+    /// variant: two racks exposing the same keys are the same variant.
+    Map<String, Set<String>> variants(FxModule module) {
+      final byFamily = <String, Set<String>>{};
+      for (final preset in catalogue.presets) {
+        if (!fxPresetModules(preset).contains(module)) continue;
+        byFamily.putIfAbsent(preset.family, () => {}).addAll([
+          for (final key in preset.params.keys)
+            if (module.owns(key) || module.poweredBy(key)) key,
+        ]);
+      }
+      return byFamily;
+    }
+
+    test("are the pen's 26 rows, in the pen's order", () {
+      expect(kFxAddableEffects.map((e) => e.label), [
+        'Amp',
+        'Chorus',
+        'Compressor',
+        'Degrade',
+        'Delay',
+        'Distortion',
+        'Doubler',
+        'Dub Delay',
+        'Four-band EQ',
+        'Harmonize',
+        'HP / Gate',
+        'Low-pass Filter',
+        'Modulation',
+        'Octaver',
+        'Overdrive',
+        'Parametric EQ',
+        'Pitch Shift',
+        'Pumper',
+        'Reverb',
+        'Slicer',
+        'Smart Tune',
+        'Spring Reverb',
+        'Transient',
+        'Vinyl',
+        'Wah',
+        'Whammy',
+      ]);
+    });
+
+    test('each names a module of the table and a rack that holds it', () {
+      for (final row in kFxAddableEffects) {
+        final module = fxModuleNamed(row.module);
+        expect(module, isNotNull, reason: row.label);
+        final family = row.family;
+        if (family == null) continue;
+        expect(variants(module!), contains(family), reason: row.label);
+      }
+    });
+
+    test('a kind with one variant takes it; of the kinds with several, the '
+        'plan names the default for the EQs, delay and reverb only', () {
+      final undecided = <String>[];
+      final chosen = <String>[];
+      for (final row in kFxAddableEffects) {
+        final distinct = {
+          for (final keys in variants(fxModuleNamed(row.module)!).values)
+            (keys.toList()..sort()).join('|'),
+        };
+        if (distinct.length == 1) {
+          expect(row.family, isNotNull, reason: row.label);
+        } else if (row.family == null) {
+          undecided.add(row.label);
+        } else {
+          chosen.add(row.label);
+        }
+      }
+      expect(chosen, ['Delay', 'Four-band EQ', 'Reverb']);
+      expect(undecided, [
+        'Compressor',
+        'Distortion',
+        'Doubler',
+        'Low-pass Filter',
+        'Modulation',
+      ]);
+    });
+
+    test('the plan-named defaults are the variants it describes', () {
+      FxModule module(String name) => fxModuleNamed(name)!;
+
+      // Ed's four-band EQ: all fourteen controls and its power key.
+      expect(variants(module('Four-band EQ'))["Ed's Rack"], hasLength(15));
+      // The mode delay and the mode reverb with brightness.
+      expect(variants(module('Delay'))["Ed's Rack"], {
+        'Delay',
+        'Del Feedback',
+        'Del Mix',
+        'Del Mode',
+        'Del Time',
+      });
+      expect(variants(module('Reverb'))["Ed's Rack"], {
+        'Reverb',
+        'Rev Bright',
+        'Rev Length',
+        'Rev Mix',
+        'Rev Mode',
+      });
+      expect(
+        variants(module('Reverb'))['Vocal Rack'],
+        variants(module('Reverb'))["Ed's Rack"],
+      );
+    });
+  });
 }
