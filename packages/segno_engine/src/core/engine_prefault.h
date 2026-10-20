@@ -19,7 +19,12 @@
  *     if the thread is starved for seconds;
  *   - le_prefault_buffer faults a buffer in whole, in the background, for a
  *     spare that is not needed for a while (a standby shadow, a spare
- *     overdub shadow). Its optional `ready` flag is set when it is done.
+ *     overdub shadow). Its optional `ready` flag is set when it is done;
+ *   - le_prefault_range faults one range in, in the order a write head
+ *     entering it at one end reaches it (the rest of a buffer whose first
+ *     second around the playhead was faulted in on the press).
+ *
+ * A new job wakes the thread at once.
  *
  * Only where le_rt_prefault_can_run_concurrently() holds (Linux 5.14+, the
  * mapping path): the thread then never writes from user space, so a buffer
@@ -53,6 +58,12 @@ void le_prefault_follow(le_engine* e, int32_t channel, float* buf,
 void le_prefault_buffer(le_engine* e, float* buf, int32_t frames,
                         _Atomic int32_t* ready);
 
+/* Faults in frames [from, to) of `buf` in the background, from `from` up, or
+ * with `descending` from `to` down: the order a write head that enters the
+ * range at that end reaches it. */
+void le_prefault_range(le_engine* e, float* buf, int32_t from, int32_t to,
+                       int descending);
+
 /* Starts the thread ahead of the first job, so no take start pays for its
  * creation. le_engine_configure calls it. No-op where it would not run. */
 void le_prefault_start(le_engine* e);
@@ -65,8 +76,9 @@ void le_prefault_tick(le_engine* e);
  * which a buffer is faulted in. */
 void le_prefault_pass_for_test(le_engine* e);
 
-/* Drops every job whose buffer is `buf` (before the control thread frees a
- * buffer it may hand out again). */
+/* Drops every job whose buffer is `buf` and waits out a chunk of it being
+ * faulted: after it returns, nothing faults any part of `buf` again, so the
+ * caller may unmap it (le_free_audio_buffer). At most one chunk's wait. */
 void le_prefault_forget(le_engine* e, const float* buf);
 
 void le_prefault_clear(le_engine* e);

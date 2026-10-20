@@ -870,7 +870,10 @@ void le_platform_after_device_open(le_engine* engine) {
   /* And map in, and lock, the code it is about to run and the top of its
    * stack (engine_platform.h). */
   le_platform_prefault_audio_code();
-  if (engine->device_initialised) {
+  /* Only a backend miniaudio drives from its own worker thread has one: an
+   * asynchronous one (JACK) calls back on the server's thread and leaves
+   * device.thread zero, which pthread_getattr_np would dereference. */
+  if (engine->device_initialised && engine->device.thread != (ma_thread)0) {
     le_prepare_thread_stack(engine->device.thread, LE_RT_STACK_LOCK_BYTES);
   }
 }
