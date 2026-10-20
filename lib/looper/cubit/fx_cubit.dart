@@ -31,11 +31,22 @@ enum FxEditStatus {
 
 /// A chain edit's outcome, including the stable identity of an added group.
 final class FxEditResult {
-  /// Creates an [FxEditResult].
-  const FxEditResult(this.status, {this.groupId});
+  /// Creates an [FxEditResult]. An applied or unsaved edit is [committed];
+  /// a stale one is when [chainCommitted] says the chain was written and
+  /// confirmed before the destination moved on.
+  const FxEditResult(this.status, {this.groupId, bool chainCommitted = false})
+    : committed =
+          chainCommitted ||
+          status == FxEditStatus.applied ||
+          status == FxEditStatus.unsaved;
 
   /// The outcome of the edit.
   final FxEditStatus status;
+
+  /// Whether the new chain is live on the engine, whatever [status] the page
+  /// is told: a chain written and confirmed while the player moved to another
+  /// destination is [FxEditStatus.stale] for the page and still committed.
+  final bool committed;
 
   /// New group identity when this was an addition.
   final String? groupId;
@@ -179,7 +190,13 @@ class FxCubit extends Cubit<FxState> {
     } on Object {
       return FxEditResult(FxEditStatus.unsaved, groupId: proposed.groupId);
     }
-    if (stale()) return const FxEditResult(FxEditStatus.stale);
+    if (stale()) {
+      return FxEditResult(
+        FxEditStatus.stale,
+        groupId: proposed.groupId,
+        chainCommitted: true,
+      );
+    }
     return FxEditResult(FxEditStatus.applied, groupId: proposed.groupId);
   }
 

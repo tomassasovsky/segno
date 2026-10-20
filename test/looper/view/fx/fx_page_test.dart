@@ -581,7 +581,7 @@ void main() {
     when(() => control.state).thenReturn(controlState);
     when(
       () => control.removeFxAssignments(any(), any()),
-    ).thenAnswer((_) async {});
+    ).thenAnswer((_) async => true);
 
     await tester.pumpWidget(
       // Saving a preset confirms with a toast, which needs the app's own
@@ -2207,6 +2207,27 @@ void main() {
           {'old-0', 'old-1', 'old-2'},
         ),
       ).called(1);
+    });
+
+    testWidgets('an assignment store that cannot save shows the storage '
+        'notice', (tester) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: withRack,
+        controlState: bound,
+      );
+      when(
+        () => control.removeFxAssignments(any(), any()),
+      ).thenAnswer((_) async => false);
+      await chooseTheSameRack(tester);
+      await tapKey(tester, 'console_confirm_confirm');
+
+      expect(
+        find.text(l10nOf(tester).storageActionFailed),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 4));
     });
 
     testWidgets('with no assignments to it, it is replaced without asking', (

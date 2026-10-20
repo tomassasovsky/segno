@@ -523,6 +523,26 @@ void main() {
       expect(chain.last.slotId, trailing.groupId);
     });
 
+    test('a replacement saved while the player moves to another destination '
+        'is stale for the page and still committed', () async {
+      final first = await cubit.appendChoice(track, const FxRackChoice(preset));
+      when(() => persistence.saveConfirmed(any(), settings)).thenAnswer((
+        _,
+      ) async {
+        cubit.show(const FxDestination.recordedTrack(1));
+      });
+
+      final result = await cubit.replaceRack(
+        track,
+        first.groupId!,
+        const FxRackChoice(preset),
+      );
+
+      expect(result.status, FxEditStatus.stale);
+      expect(result.committed, isTrue);
+      expect(fxChainGroups(chain).last.rack!.id, result.groupId);
+    });
+
     test('a rack that is gone is not replaced', () async {
       final result = await cubit.replaceRack(
         track,
