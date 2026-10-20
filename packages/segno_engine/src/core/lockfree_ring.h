@@ -83,6 +83,9 @@ typedef struct le_command {
               * means the capture armed with no master loop (Free/Song, or from
               * silence), and `position`/`iteration` are then both 0. */
       int32_t position, master_len, iteration;
+      /* The engine frame (mod 2^32) of capture frame 0, the FX clock the
+       * offline renderer anchors octaver hops to (#941, version 13). */
+      uint32_t fx_clock;
     } perf_arm;
     struct { /* Mode/crown/defining RECORD: acknowledge typed producers. */
       int32_t value;

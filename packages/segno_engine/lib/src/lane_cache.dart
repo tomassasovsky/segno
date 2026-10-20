@@ -18,8 +18,10 @@ enum LaneCacheState {
   /// The last render failed (e.g. out of memory) and will be retried.
   failedRetrying,
 
-  /// The lane is permanently live: its chain can never be rendered offline
-  /// (it hosts a plugin slot), or renders failed repeatedly.
+  /// The lane is live until its chain or loop changes: its chain can never be
+  /// rendered offline (it hosts a plugin slot), renders failed repeatedly, or
+  /// it holds an octaver on a loop that is not a whole number of octaver hops
+  /// (256 frames), so no single lap's render equals live.
   gaveUp;
 
   /// Projects a native `le_cache_state` code, defaulting to [live] for a code

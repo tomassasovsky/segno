@@ -32,7 +32,9 @@
 /* Minimum samples between two ring-clearing re-enable edges on one chain
  * (fx_apply_chain's enable_clear_cooldown): bounds the per-callback clear
  * work to roughly one slot's rings while keeping the stagger inaudible
- * (~2.7 ms at 48 kHz between engages on a whole-chain stomp). */
+ * (~2.7 ms at 48 kHz between engages on a whole-chain stomp). The octaver's
+ * hop is anchored to the engine clock (#941), so the instant a slot resets at
+ * does not move its schedule and the spacing is free of the hop. */
 #define LE_FX_ENABLE_CLEAR_SPACING 128
 
 static float le_hann[LE_PV_N];
@@ -138,12 +140,87 @@ static float le_wrap_pi(float x) {
   return x - two_pi * roundf(x / two_pi);
 }
 
+/* The invariants the stagger arithmetic rests on (engine_fx.h): the masks
+ * need LE_PV_HOP to be a power of two, the quarters need it to divide by 4,
+ * and the two modes share one schedule only because PSOLA re-analyses once
+ * per phase-vocoder hop. */
+_Static_assert((LE_PV_HOP & (LE_PV_HOP - 1)) == 0,
+               "LE_PV_HOP must be a power of two (hop-phase masks)");
+_Static_assert(LE_PV_HOP % 4 == 0, "the stagger lattice is four quarters");
+_Static_assert(LE_PSOLA_AHOP == LE_PV_HOP,
+               "PSOLA's YIN cadence must equal the PV hop to share its schedule");
+
+/* The analysis-hop PHASE of the octaver in chain slot [slot] of [fx]: the
+ * owner's quarter plus the slot, mod 4, on the quarter lattice (engine_fx.h).
+ * Its heavy ticks fall on the engine frames c with (c + phase) mod LE_PV_HOP
+ * equal to 0 (le_oct_seeded_ticks). Spreading the phase does not reduce the
+ * work; it stops it arriving in one callback.
+ *
+ * WHY IT COSTS NO LATENCY: a PV frame runs at hop_count == 0 and writes the
+ * OLA accumulator so that out[j] is emitted j samples later; the emitted
+ * sample always corresponds to input index (head - LE_PV_N + 1), whatever the
+ * phase. So le_octaver_latency stays a flat LE_PV_N, fx_octaver's dry tap
+ * stays matched, and fx_apply_chain's warmup stays sufficient (le_pv_tick has
+ * the warmup argument).
+ *
+ * PER SLOT, NOT PER CHANNEL: mono coherence (test_octaver_mono_coherent)
+ * needs identical left and right in to give identical out, so both channels
+ * of one instance share a phase.
+ *
+ * MASKED, not %-ed: hop_count indexes o->out[] in le_pv_tick, so the phase
+ * must be in [0, LE_PV_HOP) for any seed a caller stores. */
+static int le_pv_hop_phase(const le_fx_state* fx, int slot) {
+  return le_fx_hop_mask((uint32_t)fx->hop_seed +
+                        (uint32_t)slot * (uint32_t)LE_PV_STAGGER_QUARTER);
+}
+
+/* The two modes run one counter in opposite directions: PV counts up and runs
+ * its frame on the tick where hop_count is 0, PSOLA counts down and runs YIN on
+ * the tick that takes it to 0 or below. These two convert between the counter
+ * and "ticks until the next heavy tick" (1 = the coming tick), so a phase
+ * means the same schedule in both modes and a mode switch keeps the schedule
+ * it had instead of restarting it. */
+static int le_oct_ticks_to_work(const le_octaver_state* o) {
+  if (o->cur_mode == 0) {
+    return o->hop_count == 0 ? 1 : LE_PV_HOP - o->hop_count + 1;
+  }
+  return o->hop_count < 1 ? 1 : o->hop_count;
+}
+
+static void le_oct_set_ticks_to_work(le_octaver_state* o, int ticks) {
+  if (ticks < 1) ticks = 1;
+  if (ticks > LE_PV_HOP) ticks = LE_PV_HOP;
+  o->hop_count = o->cur_mode == 0 ? (ticks == 1 ? 0 : LE_PV_HOP - ticks + 1)
+                                  : ticks;
+}
+
+/* The ticks until the first heavy tick of an instance reset now, at the
+ * chain's clock (le_fx_state::clock, the frame of the sample it processes
+ * next): heavy ticks fall on the frames c where (c + phase) mod LE_PV_HOP is
+ * 0, so instances keep their quarters apart whenever each was reset (#941).
+ * At clock 0 (a state nobody clocks) this is the phase counted from the
+ * reset. */
+static int le_oct_seeded_ticks(const le_fx_state* fx, int slot) {
+  const uint32_t phase = (uint32_t)le_pv_hop_phase(fx, slot);
+  const uint32_t clock =
+      fx->clock_src != NULL
+          ? atomic_load_explicit(fx->clock_src, memory_order_relaxed)
+          : fx->clock;
+  const uint32_t to_go = (0u - (clock + phase)) & (uint32_t)(LE_PV_HOP - 1);
+  return (int)to_go + 1;
+}
+
 /* Zeros the octaver's per-mode DSP runtime (phase history, synthesis
  * accumulator, hop counter) without touching the heap-buffer allocation or the
  * smoothed params / current mode. Used on a mode switch and on entry reset; safe
- * with NULL buffers (a slot that is not an octaver). */
-static void le_pv_reset_runtime(le_octaver_state* o) {
-  o->hop_count = 0;
+ * with NULL buffers (a slot that is not an octaver). The hop counter is set, in
+ * the current mode's terms, to run its first heavy tick [ticks] ticks from now:
+ * a reset passes le_oct_seeded_ticks (the instance's staggered phase), a mode
+ * switch the old mode's remaining ticks. */
+static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
+                                int ticks) {
+  le_octaver_state* o = &fx->oct[slot][chan];
+  le_oct_set_ticks_to_work(o, ticks);
   o->out_pos = 0;
   o->in_epoch = 0;
   o->out_epoch = 0;
@@ -260,7 +337,26 @@ static void le_octaver_frame(le_octaver_state* o, const float* fifo, int head,
 
 /* Emits one phase-vocoder output sample (latency LE_PV_N), running a fresh frame
  * at each hop boundary and streaming the synthesis accumulator out by one sample
- * per call, shifting it down by a hop once a block is fully emitted. */
+ * per call, shifting it down by a hop once a block is fully emitted.
+ *
+ * HOP PHASE AND THE THREE THINGS IT MUST NOT MOVE. hop_count starts at any
+ * value p in [0, LE_PV_HOP) (le_oct_seeded_ticks: whatever puts the heavy
+ * ticks on the instance's frames of the engine clock), so the first frame
+ * runs at tick (LE_PV_HOP - p) % LE_PV_HOP + 1 instead of tick 1:
+ *
+ *  1. Reported latency. A frame analysed with the FIFO head at H covers input
+ *     [H - N + 1, H] and lands at out[0 .. N-1]; out[j] is emitted j ticks
+ *     later, when the head is H + j. The emitted sample therefore corresponds
+ *     to input (head - N + 1) for every p: latency stays LE_PV_N.
+ *  2. The dry-delay match (fx_octaver's tap at head - latency + 1) is the same
+ *     index, so wet and dry stay aligned at every phase.
+ *  3. fx_apply_chain's warmup (LE_PV_N ticks, output discarded). Frames run at
+ *     ticks t1, t1 + HOP, t1 + 2 HOP, t1 + 3 HOP, and out[0] has all four
+ *     contributions at the fourth. The worst phase is p = 1 (t1 = LE_PV_HOP),
+ *     whose fourth frame lands on tick LE_PV_N exactly, so the first ramped
+ *     sample (tick LE_PV_N + 1) is complete at every phase, with no margin.
+ *     test_octaver_hop_stagger_alignment sweeps all LE_PV_HOP phases and
+ *     fails with a warmup one sample shorter. */
 static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int cap,
                         float ratio) {
   if (o->out == NULL) return 0.0f;
@@ -555,6 +651,22 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
   le_octaver_state* o = &fx->oct[slot][chan];
   if (buf == NULL || o->out == NULL || cap < LE_PV_N + 1) return x;
 
+  /* Keep the hop on the engine clock (#941). The counter advances one per
+   * tick, so it stays in step for as long as the slot is ticked every frame;
+   * a slot the engine did not tick for a while (a monitor whose input was
+   * muted, a slot beyond a chain count that later grew back) finds its
+   * counter off the clock here and restarts its runtime on its own schedule.
+   * The overlap-add starts empty, so the wet voice builds back over one
+   * window, as it does after any reset; the input ring is not cleared, as it
+   * is not on the trunk either. An offline render runs the same check, so it
+   * restarts on the same frame. */
+  if (fx->clock_src != NULL || fx->clocked) {
+    const int ticks = le_oct_seeded_ticks(fx, slot);
+    if (le_oct_ticks_to_work(o) != ticks) {
+      le_pv_reset_runtime(fx, slot, chan, ticks);
+    }
+  }
+
   /* Write the newest sample at the head, then advance. */
   const int head = fx->delay_pos[slot][chan];
   buf[head] = x;
@@ -576,8 +688,13 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
     o->xfade -= xstep;
     if (o->xfade <= 0.0f) {
       o->xfade = 0.0f;
+      /* Keep the hop schedule across the switch: the new mode's heavy tick
+       * lands where the old mode's next one would have. Re-seeding from the
+       * phase here would anchor it to this instant, ~15 ms after the reset,
+       * and move it off the instance's quarter. */
+      const int ticks = le_oct_ticks_to_work(o);
       o->cur_mode = requested;
-      le_pv_reset_runtime(o);
+      le_pv_reset_runtime(fx, slot, chan, ticks);
     }
   } else if (o->xfade < 1.0f) {
     o->xfade += xstep;
@@ -699,13 +816,33 @@ void le_fx_entry_reset(le_fx_state* fx, int slot) {
     o->sm_mix = 0.0f; /* starts dry, so the param ramp-in is inaudible */
     o->cur_mode = 0;  /* phase vocoder */
     o->xfade = 1.0f;  /* steady (no gain dip) */
-    le_pv_reset_runtime(o);
+    le_pv_reset_runtime(fx, slot, chan, le_oct_seeded_ticks(fx, slot));
   }
   le_fx_clear_reverb(fx, slot);
   /* A retyped slot has no tail to drain: a stale budget would let the next
    * re-enable edge skip its clean reset and read the old type's ring. */
   fx->enable_drain[slot] = 0;
   fx->enable_quiet[slot] = 0;
+}
+
+/* Seeds slot [slot]'s octaver runtime settled at [params] (engine_fx.h). */
+void le_fx_octaver_seed_settled(le_fx_state* fx, int slot,
+                                const float* params) {
+  if (fx == NULL || params == NULL || slot < 0 || slot >= LE_FX_MAX) return;
+  const int mode = params[3] >= 0.5f ? 1 : 0;
+  for (int chan = 0; chan < 2; ++chan) {
+    le_octaver_state* o = &fx->oct[slot][chan];
+    o->sm_shift = params[0];
+    o->sm_tone = params[1];
+    o->sm_mix = params[2];
+    o->xfade = 1.0f; /* steady: no gain dip on the first sample */
+    if (mode != o->cur_mode) {
+      /* Land on the requested mode without fx_octaver's ~15 ms dip, and
+       * re-seed the runtime as that switch would, hop phase included. */
+      o->cur_mode = mode;
+      le_pv_reset_runtime(fx, slot, chan, le_oct_seeded_ticks(fx, slot));
+    }
+  }
 }
 
 /* Zeroes chain slot [slot]'s delay rings (both channels, [cap] floats each)
@@ -724,8 +861,8 @@ void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap) {
  * freshly created (zeroed) le_fx_state does not read as a mid-ramp bypass and
  * fade in on first use. Every standalone le_fx_state owner calls this after
  * creating/zeroing its state: le_lane_reset / le_monitor_input_reset, the
- * offline render (perf_render), the VST3 plugin processors, and the test
- * harnesses. Deliberately NOT part of le_fx_entry_reset, which touches only
+ * offline renders (through le_fx_enable_seed_at), the VST3 plugin
+ * processors, and the test harnesses. Deliberately NOT part of le_fx_entry_reset, which touches only
  * the DRAIN half of the runtime (a retyped slot has no tail to drain) and
  * leaves an in-flight enable ramp alone. */
 void le_fx_enable_seed_settled(le_fx_state* fx, int slot) {
@@ -734,6 +871,14 @@ void le_fx_enable_seed_settled(le_fx_state* fx, int slot) {
   fx->enable_warmup[slot] = 0;
   fx->enable_drain[slot] = 0;
   fx->enable_quiet[slot] = 0;
+}
+
+void le_fx_enable_seed_at(le_fx_state* fx, int slot, int effective) {
+  if (effective) {
+    le_fx_enable_seed_settled(fx, slot);
+  } else {
+    le_fx_enable_force_bypass(fx, slot);
+  }
 }
 
 /* Settles chain slot [slot]'s enable-crossfade runtime at fully BYPASSED.
@@ -1021,51 +1166,73 @@ oom:
   return LE_ERR_INVALID;
 }
 
-/* ---- per-type default normalized params (seeded on a type change) ----
- * p3 is inert for every type today and stays 0; the values match the musical
- * defaults the chain shipped with. */
-static void fx_drive_defaults(float out[LE_FX_PARAMS]) {
-  out[0] = 0.5f; /* drive */
-  out[1] = 0.8f; /* level */
-  out[2] = 0.0f;
-  out[3] = 0.0f;
-}
-static void fx_filter_defaults(float out[LE_FX_PARAMS]) {
-  out[0] = 0.5f; /* cutoff */
-  out[1] = 0.2f; /* resonance */
-  out[2] = 0.0f;
-  out[3] = 0.0f;
-}
-static void fx_delay_defaults(float out[LE_FX_PARAMS]) {
-  out[0] = 0.35f; /* time */
-  out[1] = 0.35f; /* feedback */
-  out[2] = 0.35f; /* wet mix */
-  out[3] = 0.0f;
-}
-static void fx_tremolo_defaults(float out[LE_FX_PARAMS]) {
-  out[0] = 0.3f; /* rate */
-  out[1] = 0.7f; /* depth */
-  out[2] = 0.0f;
-  out[3] = 0.0f;
-}
-static void fx_octaver_defaults(float out[LE_FX_PARAMS]) {
-  out[0] = 0.25f; /* shift: one octave down */
-  out[1] = 0.5f;  /* tone */
-  out[2] = 0.5f;  /* mix */
-  out[3] = 0.0f;  /* mode = phase vocoder */
-}
-static void fx_echo_defaults(float out[LE_FX_PARAMS]) {
-  out[0] = 0.45f; /* time */
-  out[1] = 0.5f;  /* feedback */
-  out[2] = 0.35f; /* wet mix */
-  out[3] = 0.0f;
-}
-static void fx_reverb_defaults(float out[LE_FX_PARAMS]) {
-  out[0] = 0.5f;  /* size */
-  out[1] = 0.5f;  /* damping */
-  out[2] = 0.35f; /* wet mix */
-  out[3] = 0.0f;
-}
+/* ---- per-type parameter descriptors (le_fx_param_info) ----
+ *
+ * One row per parameter, in parameter order. Each states what the kernel above
+ * does with the normalized setting: the mapping, the unit it reads in, and the
+ * setting a freshly engaged effect starts at (le_fx_defaults reads `def` from
+ * here, so the defaults have one home). test_fx_param_descriptors_match_kernels
+ * measures the kernels against these rows. The seven built-ins are segno's own
+ * effects, so none carries LE_FX_PARAM_TAPER_UNVERIFIED. */
+#define LE_FX_ROWS(t) t, (int32_t)(sizeof(t) / sizeof(t[0]))
+
+static const le_fx_param_desc LE_FX_DRIVE_PARAMS[] = {
+    /* tanh pre-gain 1 + 29 v */
+    {"drive", LE_FX_UNIT_TIMES, 0, 1.0f, 30.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"level", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.8f, 0},
+};
+static const le_fx_param_desc LE_FX_FILTER_PARAMS[] = {
+    /* 20 * 900^v Hz, clamped to 0.45 x the sample rate */
+    {"cutoff", LE_FX_UNIT_HZ, 0, 20.0f, 18000.0f, LE_FX_CURVE_EXPONENTIAL, 0.5f,
+     0},
+    {"resonance", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.2f,
+     0},
+};
+static const le_fx_param_desc LE_FX_DELAY_PARAMS[] = {
+    /* v x the one-second ring, at least one sample */
+    {"time", LE_FX_UNIT_MS, 0, 0.0f, 1000.0f, LE_FX_CURVE_LINEAR, 0.35f, 0},
+    {"feedback", LE_FX_UNIT_PERCENT, 0, 0.0f, 95.0f, LE_FX_CURVE_LINEAR, 0.35f,
+     0},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.35f, 0},
+};
+static const le_fx_param_desc LE_FX_TREMOLO_PARAMS[] = {
+    {"rate", LE_FX_UNIT_HZ, 0, 0.1f, 12.0f, LE_FX_CURVE_LINEAR, 0.3f, 0},
+    {"depth", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.7f, 0},
+};
+static const le_fx_param_desc LE_FX_OCTAVER_PARAMS[] = {
+    /* ratio 2^((v - 0.5) * 48 / 12); whole semitones across +-2 octaves */
+    {"shift", LE_FX_UNIT_SEMITONES, 49, -24.0f, 24.0f, LE_FX_CURVE_LINEAR,
+     0.25f, 0},
+    {"tone", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    /* position 0 = phase vocoder, 1 = PSOLA (fx_octaver: v >= 0.5) */
+    {"mode", LE_FX_UNIT_CHOICE, 2, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f, 0},
+};
+static const le_fx_param_desc LE_FX_ECHO_PARAMS[] = {
+    {"time", LE_FX_UNIT_MS, 0, 0.0f, 1000.0f, LE_FX_CURVE_LINEAR, 0.45f, 0},
+    {"feedback", LE_FX_UNIT_PERCENT, 0, 0.0f, 97.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     0},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.35f, 0},
+};
+static const le_fx_param_desc LE_FX_REVERB_PARAMS[] = {
+    /* comb feedback 0.70 + 0.28 v; feedback low-pass 0.4 v */
+    {"size", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"damping", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     0},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.35f, 0},
+};
+
+/* A type's rows are the parameters an entry holds, so none may outgrow it. */
+#define LE_FX_ROWS_FIT(t)                                  \
+  _Static_assert(sizeof(t) / sizeof(t[0]) <= LE_FX_PARAMS, \
+                 #t " has more rows than LE_FX_PARAMS")
+LE_FX_ROWS_FIT(LE_FX_DRIVE_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_FILTER_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_DELAY_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_TREMOLO_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_OCTAVER_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_ECHO_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_REVERB_PARAMS);
 
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
  * published for this chain entry (NULL / not-ready => dry passthrough; the slot
@@ -1100,31 +1267,32 @@ typedef struct le_fx_vtable {
    * LE_ERR_INVALID on OOM (after freeing whatever it allocated this call). NULL =
    * the type needs no allocation. */
   int32_t (*prepare)(le_fx_state* fx, int slot, int cap);
-  /* Writes the type's default normalized params into out[LE_FX_PARAMS]; NULL =
-   * all-zero defaults. */
-  void (*defaults)(float out[LE_FX_PARAMS]);
+  /* The type's parameter descriptors (le_fx_param_info) and their count; NULL
+   * and 0 for a type without fixed params. Defaults come from here. */
+  const le_fx_param_desc* params;
+  int32_t param_count;
 } le_fx_vtable;
 
 /* Indexed by le_fx_type — one row per effect. Adding an effect is adding its
  * kernels above + one row here. LE_FX_NONE is the all-NULL no-op (the empty-chain
  * regression guard). */
 static const le_fx_vtable LE_FX[] = {
-    [LE_FX_NONE] = {NULL, NULL, NULL, NULL},
-    [LE_FX_DRIVE] = {fx_drive_process, NULL, NULL, fx_drive_defaults},
-    [LE_FX_FILTER] = {fx_filter_process, NULL, NULL, fx_filter_defaults},
+    [LE_FX_NONE] = {NULL, NULL, NULL, NULL, 0},
+    [LE_FX_DRIVE] = {fx_drive_process, NULL, NULL, LE_FX_ROWS(LE_FX_DRIVE_PARAMS)},
+    [LE_FX_FILTER] = {fx_filter_process, NULL, NULL, LE_FX_ROWS(LE_FX_FILTER_PARAMS)},
     [LE_FX_DELAY] =
-        {fx_delay_process, NULL, fx_stereo_ring_prepare, fx_delay_defaults},
-    [LE_FX_TREMOLO] = {fx_tremolo_process, NULL, NULL, fx_tremolo_defaults},
+        {fx_delay_process, NULL, fx_stereo_ring_prepare, LE_FX_ROWS(LE_FX_DELAY_PARAMS)},
+    [LE_FX_TREMOLO] = {fx_tremolo_process, NULL, NULL, LE_FX_ROWS(LE_FX_TREMOLO_PARAMS)},
     [LE_FX_OCTAVER] = {fx_octaver_process, fx_octaver_latency_vt,
-                       fx_octaver_prepare, fx_octaver_defaults},
+                       fx_octaver_prepare, LE_FX_ROWS(LE_FX_OCTAVER_PARAMS)},
     [LE_FX_ECHO] =
-        {fx_echo_process, NULL, fx_stereo_ring_prepare, fx_echo_defaults},
+        {fx_echo_process, NULL, fx_stereo_ring_prepare, LE_FX_ROWS(LE_FX_ECHO_PARAMS)},
     [LE_FX_REVERB] =
-        {fx_reverb_process, NULL, fx_reverb_prepare, fx_reverb_defaults},
+        {fx_reverb_process, NULL, fx_reverb_prepare, LE_FX_ROWS(LE_FX_REVERB_PARAMS)},
     /* A hosted plugin: process forwards to its slot; no params, no prepare, no
      * defaults (the host owns all state). Output is sanitized at the chain
      * boundary in fx_apply_chain. */
-    [LE_FX_PLUGIN] = {fx_plugin_process, NULL, NULL, NULL},
+    [LE_FX_PLUGIN] = {fx_plugin_process, NULL, NULL, NULL, 0},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -1393,9 +1561,23 @@ int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap) {
 }
 
 void le_fx_defaults(int32_t type, float out[LE_FX_PARAMS]) {
-  if (type > LE_FX_NONE && type < LE_FX_TYPE_COUNT && LE_FX[type].defaults) {
-    LE_FX[type].defaults(out);
-    return;
+  const int known = type > LE_FX_NONE && type < LE_FX_TYPE_COUNT;
+  const int32_t n = known ? LE_FX[type].param_count : 0;
+  for (int p = 0; p < LE_FX_PARAMS; ++p) {
+    out[p] = p < n ? LE_FX[type].params[p].def : 0.0f; /* NONE / unknown: 0 */
   }
-  for (int p = 0; p < LE_FX_PARAMS; ++p) out[p] = 0.0f; /* NONE / unknown */
+}
+
+int32_t le_fx_param_count(int32_t type) {
+  if (type < LE_FX_NONE || type >= LE_FX_TYPE_COUNT) return LE_ERR_INVALID;
+  return LE_FX[type].param_count;
+}
+
+int32_t le_fx_param_info(int32_t type, int32_t param, le_fx_param_desc* out) {
+  if (out == NULL || type < LE_FX_NONE || type >= LE_FX_TYPE_COUNT ||
+      param < 0 || param >= LE_FX[type].param_count) {
+    return LE_ERR_INVALID;
+  }
+  *out = LE_FX[type].params[param];
+  return LE_OK;
 }
