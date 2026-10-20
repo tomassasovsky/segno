@@ -21,6 +21,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>  /* stat() — probe /proc/asound/cardN pcm direction */
+#include <time.h>      /* clock_gettime for the fork watch's line */
+#include <unistd.h>    /* write for the fork watch's line */
 
 #include "engine_platform.h"  /* the seam */
 #include "engine_private.h"   /* struct le_engine, enumerate_devices, store_i32;
@@ -851,6 +853,43 @@ void le_platform_after_device_start(le_engine* engine, const le_config* config) 
    * to-every-physical-port default), so channels map to that device only. No-op
    * unless the JACK backend is active, so it does nothing on the ALSA appliance. */
   le_jack_pin_to_device(engine, config);
+}
+
+/* The fork watch (#1367). glibc runs pthread_atfork prepare handlers in the
+ * forking thread, before the page-table copy, for every fork() (Dart's
+ * Process.start included) and for none of posix_spawn, vfork or system(). The
+ * line is built on the stack and written with one write(2), so a fork from any
+ * thread costs only this and never takes a lock. */
+static _Atomic uint64_t g_le_forks;
+static pthread_once_t g_le_fork_watch_once = PTHREAD_ONCE_INIT;
+
+static void le_fork_prepare(void) {
+  const uint64_t n =
+      atomic_fetch_add_explicit(&g_le_forks, 1, memory_order_relaxed) + 1;
+  struct timespec now = {0, 0};
+  (void)clock_gettime(CLOCK_MONOTONIC, &now);
+  char line[192];
+  int len = snprintf(line, sizeof(line),
+                     "segno/fork n=%llu monotonic=%lld.%03lds: the app process "
+                     "forked, which stalls the audio thread (#1367)\n",
+                     (unsigned long long)n, (long long)now.tv_sec,
+                     (long)(now.tv_nsec / 1000000));
+  if (len <= 0) return;
+  if (len >= (int)sizeof(line)) len = (int)sizeof(line) - 1;
+  const ssize_t written = write(STDERR_FILENO, line, (size_t)len);
+  (void)written; /* nothing to do about a failed diagnostic line */
+}
+
+static void le_fork_watch_install(void) {
+  (void)pthread_atfork(le_fork_prepare, NULL, NULL);
+}
+
+void le_platform_watch_forks(void) {
+  (void)pthread_once(&g_le_fork_watch_once, le_fork_watch_install);
+}
+
+uint64_t le_platform_fork_count(void) {
+  return atomic_load_explicit(&g_le_forks, memory_order_relaxed);
 }
 
 void le_platform_on_engine_teardown(void) {

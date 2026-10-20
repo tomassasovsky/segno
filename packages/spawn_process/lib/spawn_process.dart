@@ -9,13 +9,23 @@
 /// table and stops only the calling thread until the child execs.
 ///
 /// `startProcess` and `runProcess` cover what the app uses of `Process`:
-/// stdin, streamed stdout and stderr, the exit code, kill and a timeout. Each
-/// call runs on its own worker isolate, which does every blocking call
-/// (`posix_spawnp`, `poll`, `read`, `write`, `waitid`), so the calling
-/// isolate never blocks. The child keeps only stdin, stdout and stderr: the
-/// app's other descriptors are closed in it
-/// (`posix_spawn_file_actions_addclosefrom_np` on Linux,
-/// `POSIX_SPAWN_CLOEXEC_DEFAULT` on macOS).
+/// stdin, streamed stdout and stderr, the exit code, kill and a timeout.
+///
+/// - Each call runs on its own worker isolate, which makes the calls that
+///   wait (`posix_spawnp`, `poll`) and polls the pipes, so the calling
+///   isolate never blocks. The worker wakes every 100 ms while the child
+///   runs.
+/// - The child keeps only stdin, stdout and stderr: the app's other
+///   descriptors are closed in it (`posix_spawn_file_actions_addclosefrom_np`
+///   on Linux, `POSIX_SPAWN_CLOEXEC_DEFAULT` on macOS).
+/// - The child runs in a process group of its own. `SpawnedProcess.kill`
+///   and a timeout signal the whole group, so what the child started (a
+///   helper's `ddcutil`) goes with it and releases the pipes.
+/// - After the child exits, the worker reads its pipes for at most a second
+///   more, so a program the child left running cannot keep the worker alive.
+/// - The worker's thread blocks SIGPIPE while it runs, so writing to a stdin
+///   the child closed fails with EPIPE whether or not the process ignores
+///   SIGPIPE.
 ///
 /// ## The invariant: nothing in the app uses `dart:io` `Process`
 ///
@@ -30,16 +40,19 @@
 /// So the app must start no process through `dart:io`: then the VM's thread
 /// never starts and only this package waits for children. A CI step
 /// (`tool/check_no_dart_process.sh`) fails on `Process.run`,
-/// `Process.start` and `Process.runSync` in `lib/` and `packages/*/lib`.
-/// Dependencies count too: `path_provider`'s documents and downloads
-/// lookups run `xdg-user-dir` on Linux, so the app resolves its documents
-/// directory itself there.
+/// `Process.start` and `Process.runSync` in `lib/`, `packages/*/lib` and the
+/// app's runtime dependencies, apart from an allowlist that names why each
+/// entry is never reached. `path_provider`'s documents and downloads lookups
+/// run `xdg-user-dir` on Linux, so the app resolves its documents directory
+/// itself there.
 ///
-/// This package never waits for any child but its own: the worker waits on
-/// the child's pid with `waitid(P_PID, pid, WEXITED | WNOWAIT)`, which does
-/// not reap, and the calling isolate then reaps it with `waitpid(pid)`. The
-/// pid stays reserved until then, so `SpawnedProcess.kill` cannot reach a
-/// recycled pid.
+/// This package never waits for any child but its own: the worker checks
+/// the child's pid with `waitid(P_PID, pid, WEXITED | WNOWAIT | WNOHANG)`,
+/// which does not reap, and the calling isolate then reaps it with
+/// `waitpid(pid)`. The pid stays reserved until then, so
+/// `SpawnedProcess.kill` cannot reach a recycled pid. When `SIGCHLD` is
+/// ignored in the process, the kernel reaps children itself and no exit
+/// status exists; the error says so.
 library;
 
 export 'src/spawned_process.dart' show SpawnedProcess, runProcess, startProcess;

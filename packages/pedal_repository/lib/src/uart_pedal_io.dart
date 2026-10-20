@@ -57,9 +57,19 @@ class NativeUartPedalIo implements UartPedalIo {
 
   /// Sets the line with `termios` calls, the settings `stty` applied before
   /// (see [configureRawUart]), so plugging a pedal in starts no process.
+  ///
+  /// The calls run on an isolate of their own: they are blocking FFI calls,
+  /// and on the caller's isolate a call stuck in the kernel would freeze it
+  /// and keep the link's timeout on this future from ever firing.
   @override
-  Future<void> configure(String device, int baud) async =>
-      configureRawUart(device, baud);
+  Future<void> configure(String device, int baud) =>
+      _configureOffIsolate(device, baud);
+
+  static Future<void> _configureOffIsolate(String device, int baud) =>
+      Isolate.run(
+        () => configureRawUart(device, baud),
+        debugName: 'pedal-link-configure',
+      );
 
   // coverage:ignore-start
   @override

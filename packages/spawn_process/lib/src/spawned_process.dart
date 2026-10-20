@@ -25,7 +25,7 @@ final class SpawnedProcess {
   final _stdout = StreamController<List<int>>();
   final _stderr = StreamController<List<int>>();
   final _exitCode = Completer<int>();
-  var _reaped = false;
+  var _finished = false;
 
   /// The child's stdout. It is read whether or not anything listens, so a
   /// child never blocks on a full pipe; what nobody reads is buffered.
@@ -42,15 +42,18 @@ final class SpawnedProcess {
   /// them.
   Future<int> get exitCode => _exitCode.future;
 
-  /// Sends [signal] to the child. Returns `false` once the child has been
-  /// reaped, or when the signal could not be sent.
+  /// Sends [signal] to the child's process group: the child and whatever it
+  /// started, such as a helper's `ddcutil`, which would otherwise hold its
+  /// pipes open. Returns `false` once the worker has finished with the
+  /// child, or when the signal could not be sent.
   ///
-  /// The child is reaped on this isolate, after the worker saw it exit, so
-  /// until then its pid cannot be reused and the signal cannot reach another
-  /// process.
+  /// The child runs in a group of its own, whose id is its pid. The child is
+  /// reaped on this isolate after the worker saw it exit, so until then the
+  /// pid is not reused; after that the group id stays reserved while a
+  /// member of the group lives, which is what keeps the pipes open.
   bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {
-    if (_reaped) return false;
-    return libc.kill(pid, signal.signalNumber) == 0;
+    if (_finished) return false;
+    return libc.kill(-pid, signal.signalNumber) == 0;
   }
 
   void _handle(List<Object?> message) {
@@ -79,30 +82,35 @@ final class SpawnedProcess {
         result = libc.waitpid(pid, status, libc.wnohang);
         error = result < 0 ? libc.errno : 0;
       } while (result < 0 && error == libc.eintr);
-      _reaped = true;
       if (result == pid) {
         _exitCode.complete(_decode(status.value));
         return;
       }
+      final String reason;
+      if (error != libc.echild) {
+        reason = 'waitpid failed: ${libc.describeError(error)}';
+      } else if (libc.childrenAutoReaped) {
+        reason =
+            'its exit status is lost: SIGCHLD is ignored in this process '
+            '(SIG_IGN or SA_NOCLDWAIT), so the kernel reaps children itself';
+      } else {
+        reason =
+            'its exit status was collected by another waiter: something in '
+            'this process started a child with dart:io Process while this '
+            'one ran';
+      }
       _exitCode.completeError(
-        ProcessException(
-          _executable,
-          _arguments,
-          error == libc.echild
-              ? 'its exit status was collected by another waiter: something '
-                    'in this process started a child with dart:io Process '
-                    'while this one ran'
-              : 'waitpid failed: ${libc.describeError(error)}',
-          error,
-        ),
+        ProcessException(_executable, _arguments, reason, error),
       );
     } finally {
       calloc.free(status);
     }
   }
 
-  /// The worker isolate stopped: everything it did not finish fails.
+  /// The worker isolate exited. After a normal run everything is complete
+  /// by now; whatever is not fails with [error].
   void _stopped(Object error) {
+    _finished = true;
     for (final pipe in [_stdout, _stderr]) {
       if (pipe.isClosed) continue;
       pipe.addError(error);
@@ -137,7 +145,9 @@ Future<SpawnedProcess> startProcess(
     if (message == null) {
       // The worker isolate exited (onExit).
       events.close();
-      final error = StateError('the spawn worker for $executable stopped');
+      final error = StateError(
+        'the spawn worker for $executable stopped before it finished',
+      );
       if (!started.isCompleted) started.completeError(error);
       process?._stopped(error);
       return;
@@ -190,14 +200,17 @@ Future<SpawnedProcess> startProcess(
 /// Runs [executable] with [arguments] to completion, like `Process.run`: the
 /// result carries the exit code and the stdout and stderr decoded as UTF-8.
 ///
-/// [stdin] is written to the child as UTF-8. With a [timeout], a child still
-/// running when it expires is killed with SIGKILL and the call throws a
-/// [TimeoutException] at once, without waiting for the child to go.
+/// [stdin] is written to the child as UTF-8. With a [timeout], the call
+/// throws a [TimeoutException] when it expires, without waiting for the
+/// child to go. A child still running then is killed with SIGKILL, with its
+/// process group, unless [killOnTimeout] is `false`: then it runs on to its
+/// own end, for a helper that must not stop halfway.
 Future<ProcessResult> runProcess(
   String executable,
   List<String> arguments, {
   String? stdin,
   Duration? timeout,
+  bool killOnTimeout = true,
 }) async {
   final process = await startProcess(
     executable,
@@ -216,7 +229,7 @@ Future<ProcessResult> runProcess(
   final result = Completer<ProcessResult>();
   final timer = Timer(timeout, () {
     if (result.isCompleted) return;
-    process.kill(ProcessSignal.sigkill);
+    if (killOnTimeout) process.kill(ProcessSignal.sigkill);
     result.completeError(
       TimeoutException('$executable did not finish', timeout),
     );

@@ -117,7 +117,9 @@ class SystemApplianceEnv implements ApplianceEnv {
         final running = process;
         if (running == null) return;
         running.kill();
-        await running.exitCode;
+        // Waits for the exit, not for its status: a status that could not be
+        // collected must not turn a cancel into an error.
+        await running.exitCode.then<void>((_) {}, onError: (Object _) {});
       },
     );
     return controller.stream;

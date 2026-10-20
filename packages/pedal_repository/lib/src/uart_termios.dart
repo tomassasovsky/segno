@@ -12,10 +12,20 @@ import 'package:ffi/ffi.dart';
 ///
 /// It follows stty step by step: open the device read-only and
 /// non-blocking, so a line with no carrier does not hold the open, clear
-/// `O_NONBLOCK`, read the settings, change them, write them back with
-/// `TCSADRAIN`, and read them again to check that the driver took every one
-/// of them, since `tcsetattr` succeeds when it applies any. Throws a
-/// [FileSystemException] naming [device] when a step fails.
+/// `O_NONBLOCK`, read the settings, change them, write them back, and read
+/// them again to check that the driver took every one of them, since
+/// `tcsetattr` succeeds when it applies any. Throws a [FileSystemException]
+/// naming [device] when a step fails.
+///
+/// One step differs: the settings are written with `TCSANOW` where stty uses
+/// `TCSADRAIN`, which waits for queued output to drain. The link writes
+/// nothing before it configures the line, so there is nothing to wait for,
+/// and a wait that never ends (a line held off by flow control) must not be
+/// possible here. The resulting settings are the same.
+///
+/// The calls can still block in the kernel (the final `close` of a serial
+/// line waits for its output), so `NativeUartPedalIo.configure` runs this on
+/// an isolate of its own.
 void configureRawUart(String device, int baud) {
   final speed = _speeds[baud];
   if (speed == null) {
@@ -58,7 +68,7 @@ void configureRawUart(String device, int baud) {
       ..cCc[_vmin] = 0
       ..cCc[_vtime] = 1;
 
-    if (_tcsetattr(fd, _tcsadrain, wanted) != 0) _fail('tcsetattr', device);
+    if (_tcsetattr(fd, _tcsanow, wanted) != 0) _fail('tcsetattr', device);
     if (_tcgetattr(fd, applied) != 0) _fail('tcgetattr', device);
     if (!_same(wanted, applied)) {
       throw FileSystemException(
@@ -145,7 +155,7 @@ const _cstopb = 0x40;
 const _parenb = 0x100;
 const _clocal = 0x800;
 const _crtscts = 0x80000000;
-const _tcsadrain = 1;
+const _tcsanow = 0;
 const _oRdonly = 0;
 const _oNoctty = 0x100;
 const _oNonblock = 0x800;

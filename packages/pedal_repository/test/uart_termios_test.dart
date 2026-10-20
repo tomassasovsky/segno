@@ -73,6 +73,17 @@ void main() {
     expect(mode.getUint8(17 + 5), 1, reason: 'VTIME');
   });
 
+  test('NativeUartPedalIo.configure reports a failure from its isolate', () {
+    expect(
+      const NativeUartPedalIo().configure('/dev/null', 115200),
+      throwsA(
+        isA<FileSystemException>()
+            .having((e) => e.path, 'path', '/dev/null')
+            .having((e) => e.message, 'message', 'tcgetattr failed'),
+      ),
+    );
+  });
+
   test('names the device when it cannot be opened', () {
     expect(
       () => configureRawUart('/dev/segno-no-such-uart', 115200),

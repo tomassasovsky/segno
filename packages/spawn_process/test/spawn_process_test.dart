@@ -108,6 +108,39 @@ void main() {
       expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
     });
 
+    test('kills the whole process group on a timeout', () async {
+      final dir = Directory.systemTemp.createTempSync('spawn-timeout');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final marker = File('${dir.path}/survived');
+      await expectLater(
+        runProcess('/bin/sh', [
+          '-c',
+          '(sleep 0.5; : > "${marker.path}") & wait',
+        ], timeout: const Duration(milliseconds: 100)),
+        throwsA(isA<TimeoutException>()),
+      );
+      await Future<void>.delayed(const Duration(seconds: 1));
+      expect(marker.existsSync(), isFalse);
+    });
+
+    test('leaves the child running when told not to kill it', () async {
+      final dir = Directory.systemTemp.createTempSync('spawn-no-kill');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final marker = File('${dir.path}/finished');
+      await expectLater(
+        runProcess(
+          '/bin/sh',
+          ['-c', 'sleep 0.3; : > "${marker.path}"'],
+          timeout: const Duration(milliseconds: 50),
+          killOnTimeout: false,
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(marker.existsSync(), isFalse);
+      await Future<void>.delayed(const Duration(seconds: 1));
+      expect(marker.existsSync(), isTrue);
+    });
+
     test('returns the result when the child beats the timeout', () async {
       final result = await runProcess('/bin/sh', [
         '-c',
@@ -193,6 +226,49 @@ void main() {
       expect(stdoutDone, isFalse);
     });
 
+    test('kill reaches what the child started, so the pipes close', () async {
+      // The background sleep holds stdout, as a helper's ddcutil holds its
+      // stderr. Killing only the shell would leave the pipe open.
+      final process = await startProcess('/bin/sh', [
+        '-c',
+        'sleep 30 & echo up; sleep 30',
+      ]);
+      final lines = process.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter());
+      final done = Completer<void>();
+      final watch = Stopwatch();
+      lines.listen((line) {
+        if (line == 'up') {
+          watch.start();
+          expect(process.kill(ProcessSignal.sigkill), isTrue);
+        }
+      }, onDone: done.complete);
+      await done.future.timeout(const Duration(seconds: 5));
+      // At its end at once, well inside the drain bound after the exit.
+      expect(watch.elapsed, lessThan(const Duration(milliseconds: 700)));
+      expect(await process.exitCode, -ProcessSignal.sigkill.signalNumber);
+    });
+
+    test('stops reading a second after the exit when a grandchild holds '
+        'the pipes', () async {
+      final process = await startProcess('/bin/sh', [
+        '-c',
+        'sleep 30 & exit 5',
+      ]);
+      try {
+        expect(await process.exitCode, 5);
+        final watch = Stopwatch()..start();
+        await process.stdout.drain<void>().timeout(const Duration(seconds: 5));
+        expect(watch.elapsed, lessThan(const Duration(seconds: 3)));
+        // The worker is done with it, so kill() no longer reaches the group.
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        expect(process.kill(), isFalse);
+      } finally {
+        _kill(-process.pid, ProcessSignal.sigkill.signalNumber);
+      }
+    });
+
     test('reports ECHILD when another waiter took the exit status', () async {
       // What the Dart VM's exit-code thread does while a dart:io child runs:
       // wait for a child and reap it. Here it is done on purpose, before this
@@ -241,6 +317,11 @@ final int Function(Pointer<Utf8>, int) _open = DynamicLibrary.process()
 
 final int Function(int) _close = DynamicLibrary.process()
     .lookupFunction<Int32 Function(Int32), int Function(int)>('close');
+
+final int Function(int, int) _kill = DynamicLibrary.process()
+    .lookupFunction<Int32 Function(Int32, Int32), int Function(int, int)>(
+      'kill',
+    );
 
 final int Function(int, Pointer<Int32>, int) _waitpid = DynamicLibrary.process()
     .lookupFunction<

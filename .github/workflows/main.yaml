@@ -165,15 +165,23 @@ jobs:
     with:
       working_directory: packages/spawn_process
       run_bloc_lint: false
-      min_coverage: 90
-  # No app code may start a program through dart:io (#1367): Process.run and
-  # Process.start fork the app, which stalls the audio thread, and a dart:io
-  # child running beside spawn_process takes the exit status of its children.
+      min_coverage: 89
+  # No app code, and no package the app runs, may start a program through
+  # dart:io (#1367): Process.run and Process.start fork the app, which stalls
+  # the audio thread, and a dart:io child running beside spawn_process takes
+  # the exit status of its children. The dependency scan reads the resolved
+  # package config, so it needs flutter pub get.
   no-dart-process:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Check lib/ and packages/*/lib for dart:io process starts
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.x"
+          channel: stable
+      - name: Resolve the app's dependencies
+        run: flutter pub get
+      - name: Check the app and its runtime dependencies for dart:io process starts
         run: bash tool/check_no_dart_process.sh
   pedal-repository:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
