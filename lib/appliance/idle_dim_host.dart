@@ -26,9 +26,7 @@ bool idleKeepsAwake(
   BackingCubitState backing,
 ) =>
     looper.transport.countingIn ||
-    looper.tracks.any(
-      (track) => track.state == TrackState.playing || track.isCapturing,
-    ) ||
+    looper.isPlaying ||
     backing.backing.player.transport == BackingTransport.playing ||
     performance is PerformanceRecorderArmed;
 
