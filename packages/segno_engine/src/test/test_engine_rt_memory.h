@@ -822,6 +822,125 @@ static void test_take_pressed_at_the_loop_end_wraps_faulted_in(void) {
   CHECK(prctl(PR_SET_THP_DISABLE, 0, 0, 0, 0) == 0);
 }
 
+/* Drops track [ch]'s standbys and its claim to one, so its next punch-in
+ * takes the fresh-shadow path. */
+static void rt_no_standby(le_engine* e, int ch) {
+  e->capture_seq[ch] = 0;
+  for (int l = 0; l < LE_MAX_LANES; ++l) {
+    le_lane_release_standby(e, &e->spares[ch][l]);
+  }
+}
+
+/* A punch-in on a K = 2 track with latency compensation, pressed just after
+ * a segment starts: the overdub's first writes are compensated back across
+ * the segment boundary, which comp_pos wraps inside the segment, so they
+ * land at the END of the segment it just entered, not just before the
+ * playhead. The shadow is a fresh mapping (an imported session has no
+ * standby and no leftover slots), THP is off, and the run is real time
+ * against the real prefaulter thread. Overdub on a reversed track is
+ * refused outright, so there is no reversed case to fault. */
+static void test_compensated_punch_in_after_a_segment_start(void) {
+  printf("test_compensated_punch_in_after_a_segment_start\n");
+  CHECK(prctl(PR_SET_THP_DISABLE, 1, 0, 0, 0) == 0);
+  const int32_t rate = 96000;
+  const int sec_blocks = rate / RT_BLOCK;
+  const int32_t base = 4 * rate;
+  const int32_t offset = 2400; /* 25 ms */
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, rate, 2, 2, rate * 60) == LE_OK);
+  CHECK(set_lane_count_and_publish(e, 1, 2) == LE_OK);
+  float* pcm = (float*)calloc((size_t)base * 2, sizeof(float));
+  CHECK(pcm != NULL);
+  for (int32_t i = 0; i < base * 2; ++i) pcm[i] = 0.01f;
+  CHECK(le_engine_import_track_lane(e, 0, 0, pcm, base) == LE_OK);
+  CHECK(le_engine_import_track_lane(e, 1, 0, pcm, base * 2) == LE_OK);
+  CHECK(le_engine_import_track_lane(e, 1, 1, pcm, base * 2) == LE_OK);
+  free(pcm);
+  CHECK(le_engine_commit_session(e, base, 0) == LE_OK);
+  CHECK(le_engine_set_record_offset(e, offset) == LE_OK);
+  rt_audio_thread a;
+  CHECK(rt_audio_start(&a, e));
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  rt_run(&a, sec_blocks, 0.0f);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(load_i32(&e->tracks[1].a_multiple) == 2);
+  rt_no_standby(e, 1);
+  /* to just past a loop top (a segment start of track 1) */
+  const int32_t p0 = load_i32(&e->a_master_pos);
+  rt_run(&a, (base - p0) / RT_BLOCK + 8, 0.0f);
+  const int32_t p = load_i32(&e->a_master_pos);
+  CHECK(p > 0 && p < offset / 2);
+  CHECK(le_engine_record(e, 1) == LE_OK); /* punch in, fresh shadow */
+  rt_run_paced(&a, 2 * sec_blocks, 0.25f, rate);
+  CHECK(le_engine_record(e, 1) == LE_OK); /* punch out */
+  rt_run(&a, sec_blocks, 0.0f);
+  le_engine_get_snapshot(e, &s);
+  uint64_t request = 0;
+  CHECK(le_engine_toggle_reverse(e, 1, &request) == LE_OK);
+  rt_run(&a, 4, 0.0f);
+  le_engine_get_snapshot(e, &s);
+  CHECK(le_engine_record(e, 1) == LE_ERR_REVERSED);
+  rt_audio_stop(&a);
+  printf("  pressed %d frames into a segment, offset %d: %ld blocks, %ld "
+         "faults on the audio thread (worst block %ld)\n", p, offset,
+         a.blocks_run, a.faults, a.worst_block);
+  CHECK(a.faults == 0);
+  le_engine_destroy(e);
+  CHECK(prctl(PR_SET_THP_DISABLE, 0, 0, 0, 0) == 0);
+}
+
+/* A punch-in on a STOPPED track whose shadow is cap-sized: its loop is as
+ * long as the recording cap, so the layer slot it needs is the cap (the
+ * pre-arm size). The stopped track restarts at its clock-derived position,
+ * 15 s into the 20 s loop while track 0 plays, and the shadow must be
+ * faulted in there, not only at frame 0 as a pre-arm is. An imported
+ * session: no standby, no leftover slot, so the shadow is a fresh mapping.
+ * THP off, real time, the real prefaulter thread. */
+static void test_stopped_punch_in_on_a_cap_sized_shadow(void) {
+  printf("test_stopped_punch_in_on_a_cap_sized_shadow\n");
+  CHECK(prctl(PR_SET_THP_DISABLE, 1, 0, 0, 0) == 0);
+  const int32_t rate = 96000;
+  const int sec_blocks = rate / RT_BLOCK;
+  const int32_t loop = 20 * rate;
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, rate, 2, 2, loop) == LE_OK); /* cap = loop */
+  CHECK(set_lane_count_and_publish(e, 1, 2) == LE_OK);
+  float* pcm = (float*)calloc((size_t)loop, sizeof(float));
+  CHECK(pcm != NULL);
+  for (int32_t i = 0; i < loop; ++i) pcm[i] = 0.01f;
+  CHECK(le_engine_import_track_lane(e, 0, 0, pcm, loop) == LE_OK);
+  CHECK(le_engine_import_track_lane(e, 1, 0, pcm, loop) == LE_OK);
+  CHECK(le_engine_import_track_lane(e, 1, 1, pcm, loop) == LE_OK);
+  free(pcm);
+  CHECK(le_engine_commit_session(e, loop, 0) == LE_OK);
+  rt_audio_thread a;
+  CHECK(rt_audio_start(&a, e));
+  CHECK(le_engine_play(e, 0) == LE_OK); /* resumes the parked loop */
+  rt_run(&a, 4, 0.0f);
+  CHECK(le_engine_stop_track(e, 1) == LE_OK); /* track 0 plays on alone */
+  rt_run(&a, 15 * sec_blocks, 0.0f);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+  CHECK(load_i32(&e->a_master_pos) > 14 * rate);
+  rt_no_standby(e, 1);
+  CHECK(le_engine_record(e, 1) == LE_OK); /* punch in from STOPPED */
+  const int sl = e->tracks[1].outstanding_slots[0];
+  CHECK(e->tracks[1].lanes[0].pool_cap[sl] == e->max_loop_frames);
+  rt_run_paced(&a, 2 * sec_blocks, 0.25f, rate);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  rt_run(&a, sec_blocks, 0.0f);
+  rt_audio_stop(&a);
+  printf("  %ld blocks, %ld faults on the audio thread (worst block %ld)\n",
+         a.blocks_run, a.faults, a.worst_block);
+  CHECK(a.faults == 0);
+  le_engine_destroy(e);
+  CHECK(prctl(PR_SET_THP_DISABLE, 0, 0, 0, 0) == 0);
+}
+
 /* A freed lane buffer is never faulted again: a slot with a background job
  * on it is regrown (le_lane_ensure_slot frees the old buffer) while the
  * thread works on it, and a new mapping placed where the old one was is
@@ -907,6 +1026,8 @@ static void run_rt_memory_tests(void) {
   test_late_take_is_walked_from_the_playhead();
   test_standbys_stay_in_budget();
   test_take_pressed_at_the_loop_end_wraps_faulted_in();
+  test_compensated_punch_in_after_a_segment_start();
+  test_stopped_punch_in_on_a_cap_sized_shadow();
   test_freed_buffer_is_never_faulted_again();
   test_device_open_skips_a_backend_without_a_thread();
   test_engine_counts_forks();

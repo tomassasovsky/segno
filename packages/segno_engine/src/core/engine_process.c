@@ -7709,6 +7709,16 @@ static inline void mix_tracks_frame(
   /* Each track's read index for THIS frame, kept for the block-end publish of
    * a_play_pos (le_track_snapshot.position_frames): the one place the mode's
    * position rule is already resolved, so the app never re-derives it. */
+  /* The coordinates every track would write an overdub at, playing or
+   * stopped (a stopped one restarts at its clock-derived position), taken
+   * once a block for the block-end publish of a_clock_at / a_clock_seg. */
+  if (f == 0) {
+    for (int t = 0; t < tc; ++t) {
+      e->trk_clock_base[t] = seg_base[t];
+      e->trk_clock_pos[t] = trk_pos[t];
+      e->trk_clock_len[t] = trk_len[t];
+    }
+  }
   for (int t = 0; t < tc; ++t) {
     if (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) {
       e->trk_play_pos[t] = seg_base[t] + trk_pos[t];
@@ -7871,7 +7881,8 @@ static inline void mix_tracks_frame(
     int32_t wdub = 0;
     int backing = 0;
     if (dub_writes) {
-      wdub = seg_base[t] + comp_pos(trk_pos[t], tr->dub_offset, trk_len[t]);
+      wdub = le_dub_write_index(seg_base[t], trk_pos[t], tr->dub_offset,
+                                trk_len[t]);
       backing = tr->dub_slot >= 0 && !tr->dub_draining && tr->dub_len > 0 &&
                 tr->dub_count < tr->dub_len;
       if (backing && tr->dub_count < 0) {
@@ -9259,6 +9270,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     /* The track's own playhead: the write head while its take is still being
      * defined (no length to play against yet), the mixer's read index
      * otherwise — see le_track_snapshot.position_frames. */
+    if (e->trk_clock_len[t] > 0) {
+      store_i32(&e->a_clock_at[t], e->trk_clock_base[t] + e->trk_clock_pos[t]);
+      store_i32(&e->a_clock_seg[t], e->trk_clock_len[t]);
+    }
     store_i32(&e->tracks[t].a_play_pos,
               tstate == LE_TRACK_EMPTY ? 0
               : recording              ? rp

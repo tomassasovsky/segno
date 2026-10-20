@@ -33,11 +33,9 @@
 #define LE_PREFAULT_IDLE_NS 2000000000LL
 #define LE_PREFAULT_PERIOD_NS 20000000L
 
-/* A job faults [start, cap) in, ascending from start, or with [desc]
- * descending from cap; [done] is the edge reached so far (ascending: the
- * first frame not yet in; descending: the last frame in, so cap until the
- * first chunk). A follow job (channel >= 0) is ascending, and its end moves
- * with the capture (le_follow_target), bounded by cap. */
+/* A job faults [start, cap) in, from start up; [done] is the first frame not
+ * yet in. A follow job (channel >= 0) has its end move with the capture
+ * (le_follow_target), bounded by cap. */
 typedef struct le_prefault_job {
   uint64_t id;
   float* buf;
@@ -45,7 +43,6 @@ typedef struct le_prefault_job {
   int32_t start;   /* frames */
   int32_t cap;     /* frames */
   int32_t done;    /* frames */
-  int32_t desc;
   int64_t idle_since; /* CLOCK_MONOTONIC ns its track stopped capturing, 0 */
   _Atomic int32_t* ready;
 } le_prefault_job;
@@ -105,10 +102,6 @@ static int64_t le_prefault_now_ns(void) {
   return (int64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
 }
 
-static int le_job_full(const le_prefault_job* j) {
-  return j->desc ? j->done <= j->start : j->done >= j->cap;
-}
-
 /* One pass, entered and left with the mutex held: one chunk per job. Each
  * chunk is faulted with the mutex released and its buffer named in busy_buf,
  * and only if its job is still queued when its turn comes, so a buffer
@@ -122,17 +115,6 @@ static int le_prefault_pass(le_engine* e, struct le_prefaulter* p) {
   const int64_t now = le_prefault_now_ns();
   for (int i = 0; i < p->njobs; ++i) {
     le_prefault_job* j = &p->jobs[i];
-    if (j->desc) {
-      if (j->done <= j->start) continue;
-      int32_t frames = j->done - j->start;
-      if (frames > max) {
-        frames = max;
-        more = 1;
-      }
-      work[nwork++] =
-          (le_prefault_work){j->id, j->buf, j->done - frames, frames};
-      continue;
-    }
     int32_t target = j->cap;
     if (j->channel >= 0) {
       target = le_follow_target(e, j);
@@ -160,16 +142,11 @@ static int le_prefault_pass(le_engine* e, struct le_prefaulter* p) {
     p->busy_buf = NULL;
     pthread_cond_broadcast(&p->idle_cv);
     le_prefault_job* j = le_prefault_find(p, work[k].id);
-    if (j == NULL) continue;
-    if (j->desc) {
-      j->done = work[k].from;
-    } else if (j->done == work[k].from) {
-      j->done += work[k].frames;
-    }
+    if (j != NULL && j->done == work[k].from) j->done += work[k].frames;
   }
   for (int i = 0; i < p->njobs;) {
     le_prefault_job* j = &p->jobs[i];
-    const int full = le_job_full(j);
+    const int full = j->done >= j->cap;
     if (full || (j->channel >= 0 && j->idle_since != 0 &&
                  now - j->idle_since > LE_PREFAULT_IDLE_NS)) {
       if (full && j->ready != NULL) {
@@ -259,7 +236,7 @@ static void le_prefault_add(le_engine* e, le_prefault_job job) {
     le_prefault_job_now(&job);
     return;
   }
-  job.done = job.desc ? job.cap : job.start;
+  job.done = job.start;
   pthread_mutex_lock(&p->mu);
   /* The same range of the same buffer queued twice keeps the first one's
    * progress. Different ranges of one buffer are separate jobs: a take over
@@ -270,7 +247,7 @@ static void le_prefault_add(le_engine* e, le_prefault_job job) {
   for (int i = 0; i < p->njobs; ++i) {
     const le_prefault_job* q = &p->jobs[i];
     if (q->buf == job.buf && q->channel == job.channel &&
-        q->start == job.start && q->cap == job.cap && q->desc == job.desc) {
+        q->start == job.start && q->cap == job.cap) {
       pthread_mutex_unlock(&p->mu);
       return;
     }
@@ -296,22 +273,20 @@ void le_prefault_follow(le_engine* e, int32_t channel, float* buf,
   if (e == NULL || buf == NULL || cap_frames <= 0) return;
   if (done_frames < 0) done_frames = 0;
   le_prefault_add(e, (le_prefault_job){0, buf, channel, done_frames,
-                                       cap_frames, 0, 0, 0, NULL});
+                                       cap_frames, 0, 0, NULL});
 }
 
-void le_prefault_range(le_engine* e, float* buf, int32_t from, int32_t to,
-                       int descending) {
+void le_prefault_range(le_engine* e, float* buf, int32_t from, int32_t to) {
   if (e == NULL || buf == NULL) return;
   if (from < 0) from = 0;
   if (to <= from) return;
-  le_prefault_add(e, (le_prefault_job){0, buf, -1, from, to, 0,
-                                       descending != 0, 0, NULL});
+  le_prefault_add(e, (le_prefault_job){0, buf, -1, from, to, 0, 0, NULL});
 }
 
 void le_prefault_buffer(le_engine* e, float* buf, int32_t frames,
                         _Atomic int32_t* ready) {
   if (e == NULL || buf == NULL || frames <= 0) return;
-  le_prefault_add(e, (le_prefault_job){0, buf, -1, 0, frames, 0, 0, 0, ready});
+  le_prefault_add(e, (le_prefault_job){0, buf, -1, 0, frames, 0, 0, ready});
 }
 
 void le_prefault_start(le_engine* e) {

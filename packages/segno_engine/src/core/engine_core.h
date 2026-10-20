@@ -65,6 +65,17 @@ static inline int32_t comp_pos(int32_t pos, int32_t offset, int32_t len) {
   return p;
 }
 
+/* Where an overdub on a track writes this frame: its segment base plus the
+ * latency-compensated position inside the segment (comp_pos wraps within the
+ * segment, not the whole multiple). The mixer writes there (wdub), and the
+ * control thread's prefault of a punch-in shadow maps the coming second of
+ * play positions through the same function (le_prefault_dub_second), so the
+ * two cannot drift apart. */
+static inline int32_t le_dub_write_index(int32_t seg_base, int32_t pos,
+                                         int32_t offset, int32_t len) {
+  return seg_base + comp_pos(pos, offset, len);
+}
+
 /* A track's active lane count, clamped to a usable range (a track always has at
  * least one lane). */
 static inline int32_t le_lanes_active(const le_track* t) {
