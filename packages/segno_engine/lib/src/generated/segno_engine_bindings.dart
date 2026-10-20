@@ -8682,9 +8682,11 @@ enum le_command_code {
 }
 
 /// One built-in parameter. `steps` is 0 for a continuous parameter, otherwise
-/// the number of positions it snaps to: position k of n stands for setting
-/// k / (n - 1) and the value at that setting. `def` is the setting a freshly
-/// engaged effect starts at (le_fx_defaults).
+/// the number of positions a control snaps it to: position k of n stands for
+/// setting k / (n - 1) and the value at that setting. The kernel reads a
+/// LE_FX_UNIT_CHOICE parameter at its nearest position and every other one as
+/// set, so a setting between positions plays as set. `def` is the setting a
+/// freshly engaged effect starts at (le_fx_defaults).
 final class le_fx_param_desc extends ffi.Struct {
   @ffi.Array.multi([24])
   external ffi.Array<ffi.Char> key;
@@ -10372,7 +10374,13 @@ enum le_cache_reason {
 
   /// a Transpose source render does not fit the
   /// cap; the track plays dry (#1179)
-  LE_CACHE_REASON_BUDGET(4);
+  LE_CACHE_REASON_BUDGET(4),
+
+  /// the print holds an octaver and the loop is not a
+  /// whole number of octaver hops (256 frames): its
+  /// hop falls on other frames each lap, so no single
+  /// lap's render equals live (#941)
+  LE_CACHE_REASON_HOP(5);
 
   final int value;
   const le_cache_reason(this.value);
@@ -10383,6 +10391,7 @@ enum le_cache_reason {
     2 => LE_CACHE_REASON_RENDER_FAILED,
     3 => LE_CACHE_REASON_PART_POST,
     4 => LE_CACHE_REASON_BUDGET,
+    5 => LE_CACHE_REASON_HOP,
     _ => throw ArgumentError('Unknown value for le_cache_reason: $value'),
   };
 }
