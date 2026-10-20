@@ -244,6 +244,30 @@ void main() {
     });
   });
 
+  group('an entry', () {
+    test('plays by its engine type, not by its module name', () {
+      // A Delay this build can process, saved as a passthrough: still a
+      // passthrough until it is rebuilt from its source values.
+      expect(
+        fxEntryPlayable(
+          BuiltInEffect(type: TrackEffectType.none, module: 'Delay'),
+        ),
+        isFalse,
+      );
+      // A module this build has no effect for, carried by a built-in type.
+      expect(
+        fxEntryPlayable(
+          BuiltInEffect(type: TrackEffectType.delay, module: 'Pumper'),
+        ),
+        isTrue,
+      );
+      expect(
+        fxEntryPlayable(BuiltInEffect(type: TrackEffectType.reverb)),
+        isTrue,
+      );
+    });
+  });
+
   group('building a whole rack', () {
     test('Master Vol becomes the rack level, on the last entry, and no '
         'module parameter', () {
