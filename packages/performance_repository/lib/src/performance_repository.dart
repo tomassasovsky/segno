@@ -764,10 +764,15 @@ class PerformanceRepository {
 
   /// Discards a crashed (unfinalized) capture at [directory] by deleting it
   /// outright — the counterpart to [recoverCapture] when the user chooses
-  /// not to salvage it. A no-op if [directory] no longer exists.
+  /// not to salvage it. A no-op if [directory] no longer exists, including
+  /// when it goes away during the delete: a USB drive pulled under the take
+  /// takes the directory with it, which is the end this asks for.
   Future<void> discardUnfinalized(String directory) async {
-    final dir = Directory(directory);
-    if (dir.existsSync()) await dir.delete(recursive: true);
+    try {
+      await Directory(directory).delete(recursive: true);
+    } on PathNotFoundException {
+      // Already gone.
+    }
   }
 
   /// Boot-time crash salvage, run silently (D-SALVAGE, #679): salvages —
