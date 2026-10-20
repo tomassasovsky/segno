@@ -828,6 +828,22 @@
             }
         }
     },
+    "pitchSemitonesFine": "{sign}{count} st",
+    "@pitchSemitonesFine": {
+        "description": "A pitch interval between whole semitones, with one decimal.",
+        "placeholders": {
+            "sign": {
+                "type": "String"
+            },
+            "count": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
     "defaultTrackName": "TRACK {trackNumber}",
     "@defaultTrackName": {
         "placeholders": {

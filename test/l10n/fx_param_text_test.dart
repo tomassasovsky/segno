@@ -104,9 +104,16 @@ void main() {
     test('reads a pitch interval as unison, semitones or octaves', () {
       final shift = TrackEffectType.octaver.params.first;
       expect(en.fxParamValueText(shift, 0.5), en.pitchUnison);
-      // 0.27 snaps to position 13 of 49: -11 semitones.
+      // 0.27 plays -11.04 semitones, within a twentieth of -11.
       expect(en.fxParamValueText(shift, 0.27), '-11 st');
       expect(en.fxParamValueText(shift, 0.75), '+1 oct');
+    });
+
+    test('reads a shift between semitones with one decimal', () {
+      final shift = TrackEffectType.octaver.params.first;
+      // 0.26 plays -11.52 semitones.
+      expect(en.fxParamValueText(shift, 0.26), '-11.5 st');
+      expect(es.fxParamValueText(shift, 0.26), '-11,5 st');
     });
 
     test('reads an unknown choice as its 1-based position', () {

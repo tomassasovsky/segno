@@ -87,7 +87,7 @@ void main() {
       final shift = TrackEffectType.octaver.params.first;
       expect(shift.isStepped, isTrue);
       expect(shift.positionOf(0.5), 24);
-      expect(shift.valueAt(0.26), closeTo(-12, 1e-9));
+      expect(shift.valueAt(0.26), closeTo(-11.52, 1e-9));
       final cutoff = TrackEffectType.filter.params.first;
       expect(cutoff.curve, FxParamCurve.exponential);
       expect(cutoff.valueAt(0.5), closeTo(600, 1e-9));

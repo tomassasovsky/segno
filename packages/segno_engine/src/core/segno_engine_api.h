@@ -696,9 +696,11 @@ typedef enum le_fx_param_flags {
 } le_fx_param_flags;
 
 /* One built-in parameter. `steps` is 0 for a continuous parameter, otherwise
- * the number of positions it snaps to: position k of n stands for setting
- * k / (n - 1) and the value at that setting. `def` is the setting a freshly
- * engaged effect starts at (le_fx_defaults). */
+ * the number of positions a control snaps it to: position k of n stands for
+ * setting k / (n - 1) and the value at that setting. The kernel reads a
+ * LE_FX_UNIT_CHOICE parameter at its nearest position and every other one as
+ * set, so a setting between positions plays as set. `def` is the setting a
+ * freshly engaged effect starts at (le_fx_defaults). */
 typedef struct le_fx_param_desc {
   char key[LE_FX_PARAM_KEY_CHARS];
   int32_t unit;  /* le_fx_param_unit */

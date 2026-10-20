@@ -1060,6 +1060,18 @@ static const le_fx_param_desc LE_FX_REVERB_PARAMS[] = {
     {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.35f, 0},
 };
 
+/* A type's rows are the parameters an entry holds, so none may outgrow it. */
+#define LE_FX_ROWS_FIT(t)                                  \
+  _Static_assert(sizeof(t) / sizeof(t[0]) <= LE_FX_PARAMS, \
+                 #t " has more rows than LE_FX_PARAMS")
+LE_FX_ROWS_FIT(LE_FX_DRIVE_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_FILTER_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_DELAY_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_TREMOLO_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_OCTAVER_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_ECHO_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_REVERB_PARAMS);
+
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
  * published for this chain entry (NULL / not-ready => dry passthrough; the slot
  * adapter handles the per-sample/block bridging). No DSP state lives in

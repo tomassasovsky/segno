@@ -498,10 +498,15 @@ enum TrackEffectType {
   /// the type is freshly engaged: each descriptor's
   /// [FxParamInfo.defaultValue], then 0 for the parameters the type does not
   /// use. The engine's `le_fx_defaults` reads the same table.
-  List<double> get defaultParams => List<double>.unmodifiable([
-    for (final p in params) p.defaultValue,
-    for (var i = params.length; i < kTrackEffectParams; i++) 0.0,
-  ]);
+  List<double> get defaultParams => _defaultParams[this]!;
+
+  static final Map<TrackEffectType, List<double>> _defaultParams = {
+    for (final t in values)
+      t: List<double>.unmodifiable([
+        for (final p in t.params) p.defaultValue,
+        for (var i = t.params.length; i < kTrackEffectParams; i++) 0.0,
+      ]),
+  };
 }
 
 /// The unit a built-in parameter's value is shown in. Mirrors the native
@@ -529,14 +534,6 @@ enum FxParamUnit {
 
   /// The native `le_fx_param_unit` value.
   final int code;
-
-  /// The unit for native [code], or `null` for an unknown code.
-  static FxParamUnit? fromCode(int code) {
-    for (final u in values) {
-      if (u.code == code) return u;
-    }
-    return null;
-  }
 }
 
 /// How a built-in parameter's value follows its normalized setting. Mirrors
@@ -552,14 +549,6 @@ enum FxParamCurve {
 
   /// The native `le_fx_param_curve` value.
   final int code;
-
-  /// The curve for native [code], or `null` for an unknown code.
-  static FxParamCurve? fromCode(int code) {
-    for (final c in values) {
-      if (c.code == code) return c;
-    }
-    return null;
-  }
 }
 
 /// One built-in effect parameter: what its normalized `0..1` setting means.
@@ -590,8 +579,11 @@ class FxParamInfo {
   /// The unit [valueAt] returns.
   final FxParamUnit unit;
 
-  /// 0 for a continuous parameter, otherwise the number of positions it snaps
-  /// to: position k of n stands for setting `k / (n - 1)`.
+  /// 0 for a continuous parameter, otherwise the number of positions a
+  /// control snaps it to: position k of n stands for setting `k / (n - 1)`.
+  /// The kernel reads a choice at its nearest position and every other
+  /// parameter as set, so a setting between positions (from a dragged slider
+  /// or an expression pedal) plays as set.
   final int steps;
 
   /// The value at setting 0.
@@ -614,11 +606,13 @@ class FxParamInfo {
   bool get isStepped => steps > 1;
 
   /// The value [setting] (clamped to `0..1`) stands for, mapped as the engine
-  /// maps it: a stepped parameter first snaps to its nearest position, then
-  /// [curve] runs from [atMin] to [atMax].
+  /// maps it: a choice first takes its nearest position, then [curve] runs
+  /// from [atMin] to [atMax].
   double valueAt(double setting) {
     var v = setting.isNaN ? 0.0 : setting.clamp(0.0, 1.0);
-    if (isStepped) v = positionOf(v) / (steps - 1);
+    if (unit == FxParamUnit.choice && isStepped) {
+      v = positionOf(v) / (steps - 1);
+    }
     return switch (curve) {
       FxParamCurve.exponential => atMin * math.pow(atMax / atMin, v),
       FxParamCurve.linear => atMin + (atMax - atMin) * v,

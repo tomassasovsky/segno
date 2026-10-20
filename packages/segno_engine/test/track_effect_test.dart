@@ -377,17 +377,6 @@ void main() {
       expect(FxParamCurve.linear.code, 0);
       expect(FxParamCurve.exponential.code, 1);
     });
-
-    test('fromCode maps known codes and returns null otherwise', () {
-      for (final u in FxParamUnit.values) {
-        expect(FxParamUnit.fromCode(u.code), u);
-      }
-      for (final c in FxParamCurve.values) {
-        expect(FxParamCurve.fromCode(c.code), c);
-      }
-      expect(FxParamUnit.fromCode(6), isNull);
-      expect(FxParamCurve.fromCode(-1), isNull);
-    });
   });
 
   group('FxParamInfo', () {
@@ -436,13 +425,13 @@ void main() {
       expect(exponential.valueAt(1), closeTo(18000, 1e-6));
     });
 
-    test('valueAt snaps a stepped parameter to its nearest position', () {
+    test('valueAt reads a stepped parameter as set, a choice at its '
+        'nearest position', () {
       expect(stepped.valueAt(0.25), closeTo(-12, 1e-9));
       expect(stepped.valueAt(0.5), closeTo(0, 1e-9));
-      // 0.26 x 48 = 12.48, which rounds to position 12: -12 semitones.
-      expect(stepped.valueAt(0.26), closeTo(-12, 1e-9));
-      // 0.27 x 48 = 12.96, which rounds to position 13: -11 semitones.
-      expect(stepped.valueAt(0.27), closeTo(-11, 1e-9));
+      // The kernel plays a setting between positions as set: 0.26 is
+      // (0.26 - 0.5) x 48 = -11.52 semitones.
+      expect(stepped.valueAt(0.26), closeTo(-11.52, 1e-9));
       expect(choice.valueAt(0.49), 0);
       expect(choice.valueAt(0.5), 1);
     });

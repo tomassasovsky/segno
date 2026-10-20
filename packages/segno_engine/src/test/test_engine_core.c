@@ -20620,10 +20620,10 @@ static void test_octaver_added_latency(void) {
 
 /* ---- built-in parameter descriptors (#1378) ---- */
 
-/* The value descriptor [d] gives normalized setting [v], snapped for a
- * stepped parameter: the reading a surface shows. */
+/* The value descriptor [d] gives normalized setting [v]: a choice at its
+ * nearest position, anything else as set, the way the kernels read them. */
 static double fxd_value(const le_fx_param_desc* d, double v) {
-  if (d->steps > 1) {
+  if (d->unit == LE_FX_UNIT_CHOICE && d->steps > 1) {
     const double k = floor(v * (double)(d->steps - 1) + 0.5);
     v = k / (double)(d->steps - 1);
   }
@@ -20833,20 +20833,66 @@ static void test_fx_param_descriptors_match_kernels(void) {
     }
   }
 
-  /* Octaver: shift snaps to whole semitones exactly where the kernel's ratio
-   * does, and the mode flips at 0.5 as fx_octaver reads it. */
+  /* Octaver: the wet pitch of a sine is the descriptor's shift, on the
+   * semitone grid and between it (0.26 plays -11.52 semitones, not -12: the
+   * kernel does not snap). Both modes take the one ratio fx_octaver computes
+   * from the shift, so the phase vocoder measures it (PSOLA falls back to dry
+   * on a pure tone). The mode flips at 0.5 as fx_octaver reads it. */
   {
     const le_fx_param_desc shift = fxd_get(LE_FX_OCTAVER, 0);
     const le_fx_param_desc mode = fxd_get(LE_FX_OCTAVER, 3);
-    CHECK(shift.steps == 49);
-    for (int k = 0; k <= 48; ++k) {
-      const double v = k / 48.0;
-      CHECK(fabs(fxd_value(&shift, v) - ((v - 0.5) * 48.0)) < 1e-9);
-    }
-    CHECK(fxd_value(&shift, 0.5) == 0.0);
+    CHECK(shift.unit == LE_FX_UNIT_SEMITONES && shift.steps == 49);
     CHECK(mode.unit == LE_FX_UNIT_CHOICE && mode.steps == 2);
     CHECK(fxd_value(&mode, 0.49) == 0.0);
     CHECK(fxd_value(&mode, 0.5) == 1.0);
+    const int n = 2 * sr;
+    float* sig = (float*)malloc((size_t)n * sizeof(float));
+    float* wet = (float*)malloc((size_t)n * sizeof(float));
+    CHECK(sig != NULL && wet != NULL);
+    if (sig == NULL || wet == NULL) {
+      free(sig);
+      free(wet);
+      return;
+    }
+    const double f0 = 220.0;
+    for (int i = 0; i < n; ++i) {
+      sig[i] = 0.5f * (float)sin(2.0 * 3.14159265358979 * f0 * i / sr);
+    }
+    const float settings[] = {0.25f, 0.26f, 0.75f};
+    {
+      for (int k = 0; k < 3; ++k) {
+        const float p[LE_FX_PARAMS] = {settings[k], 1.0f, 1.0f, 0.0f};
+        le_fx_state* fx = fxd_state(LE_FX_OCTAVER, sr);
+        if (fx == NULL) break;
+        fxd_run(fx, LE_FX_OCTAVER, p, sr, sig, wet, n);
+        le_fx_state_free_buffers(fx);
+        free(fx);
+        /* The frequency from the upward zero crossings of the second
+         * second, each placed between its two samples. */
+        double first = -1.0;
+        double last = -1.0;
+        int crossings = 0;
+        for (int i = sr; i < n - 1; ++i) {
+          if (wet[i] <= 0.0f && wet[i + 1] > 0.0f) {
+            const double t = i + wet[i] / (double)(wet[i] - wet[i + 1]);
+            if (first < 0.0) first = t;
+            last = t;
+            ++crossings;
+          }
+        }
+        const double got =
+            crossings > 1 ? (crossings - 1) * sr / (last - first) : 0.0;
+        const double want = f0 * pow(2.0, fxd_value(&shift, settings[k]) / 12.0);
+        if (fabs(got / want - 1.0) > 0.003) {
+          printf("  FAIL: octaver shift %.2f plays %.2f Hz, the descriptor "
+                 "says %.2f Hz (line %d)\n",
+                 (double)settings[k], got, want, __LINE__);
+          g_failures++;
+        }
+      }
+    }
+    free(sig);
+    free(wet);
   }
 }
 

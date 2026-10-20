@@ -206,19 +206,22 @@ class FxParamInfo extends Equatable {
     this.steps = 0,
     this.curve = FxParamCurve.linear,
     this.taperUnverified = false,
-  });
+  }) : _source = null;
 
   FxParamInfo._fromEngine(engine.FxParamInfo p)
-    : this(
-        key: p.key,
-        unit: _unitFromEngine(p.unit),
-        atMin: p.atMin,
-        atMax: p.atMax,
-        defaultValue: p.defaultValue,
-        steps: p.steps,
-        curve: _curveFromEngine(p.curve),
-        taperUnverified: p.taperUnverified,
-      );
+    : key = p.key,
+      unit = _unitFromEngine(p.unit),
+      atMin = p.atMin,
+      atMax = p.atMax,
+      defaultValue = p.defaultValue,
+      steps = p.steps,
+      curve = _curveFromEngine(p.curve),
+      taperUnverified = p.taperUnverified,
+      _source = p;
+
+  /// The engine descriptor this mirrors, kept so the mapping below does not
+  /// build one per call; `null` for one made with the public constructor.
+  final engine.FxParamInfo? _source;
 
   /// The stable parameter key (`drive`, `cutoff`, `shift`, ...).
   final String key;
@@ -226,8 +229,10 @@ class FxParamInfo extends Equatable {
   /// The unit [valueAt] returns.
   final FxParamUnit unit;
 
-  /// 0 for a continuous parameter, otherwise the number of positions it snaps
-  /// to: position k of n stands for setting `k / (n - 1)`.
+  /// 0 for a continuous parameter, otherwise the number of positions a
+  /// control snaps it to: position k of n stands for setting `k / (n - 1)`.
+  /// The kernel reads a choice at its nearest position and every other
+  /// parameter as set.
   final int steps;
 
   /// The value at setting 0.
@@ -250,13 +255,14 @@ class FxParamInfo extends Equatable {
   bool get isStepped => steps > 1;
 
   /// The value [setting] (clamped to `0..1`) stands for, mapped as the engine
-  /// maps it: a stepped parameter first snaps to its nearest position.
-  double valueAt(double setting) => _toEngine().valueAt(setting);
+  /// maps it: a choice first takes its nearest position.
+  double valueAt(double setting) => (_source ?? _toEngine()).valueAt(setting);
 
   /// The position (`0..steps-1`) [setting] (clamped to `0..1`) snaps to.
   ///
   /// Throws a [StateError] for a continuous parameter, which has no positions.
-  int positionOf(double setting) => _toEngine().positionOf(setting);
+  int positionOf(double setting) =>
+      (_source ?? _toEngine()).positionOf(setting);
 
   /// The engine descriptor, which holds the one implementation of the
   /// mapping.
@@ -342,9 +348,14 @@ enum TrackEffectType {
   String get label => _engine.label;
 
   /// This type's parameters, in order (length `<=` `kTrackEffectParams`).
-  List<FxParamInfo> get params => [
-    for (final p in _engine.params) FxParamInfo._fromEngine(p),
-  ];
+  List<FxParamInfo> get params => _params[this]!;
+
+  static final Map<TrackEffectType, List<FxParamInfo>> _params = {
+    for (final t in values)
+      t: List<FxParamInfo>.unmodifiable([
+        for (final p in t._engine.params) FxParamInfo._fromEngine(p),
+      ]),
+  };
 
   /// The setting each of the `kTrackEffectParams` parameters starts at when
   /// the type is freshly engaged: the descriptors' defaults, padded with 0.
