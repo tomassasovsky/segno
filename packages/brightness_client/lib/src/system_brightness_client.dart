@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:brightness_client/src/brightness_client.dart';
+import 'package:spawn_process/spawn_process.dart';
 
 /// Production [BrightnessClient]: shells out to `/usr/bin/segno-brightness-ctl`.
 class SystemBrightnessClient implements BrightnessClient {
@@ -15,6 +16,7 @@ class SystemBrightnessClient implements BrightnessClient {
 
   /// How long one helper call may take: a DDC transaction is well under a
   /// second, and a hung bus must not hold the panel's level back for ever.
+  /// A helper still running then is killed.
   static const timeout = Duration(seconds: 10);
 
   bool get _helperPresent => File(helperPath).existsSync();
@@ -41,7 +43,7 @@ class SystemBrightnessClient implements BrightnessClient {
   }
 
   Future<ProcessResult> _run(List<String> args) async {
-    final result = await Process.run(helperPath, args).timeout(timeout);
+    final result = await runProcess(helperPath, args, timeout: timeout);
     if (result.exitCode != 0) {
       throw ProcessException(
         helperPath,
