@@ -115,5 +115,25 @@ its position in the file:
   wrap (2.0 in the fixture). The taper now fades only the start when the fold
   is armed. `test_take_taper_leaves_a_folded_tail_to_the_seam_fold` pins it.
 
+Review of the port found two more:
+
+- **rec/dub continues the take.** With rec/dub on, an early stop finalizes
+  into OVERDUBBING while the player keeps playing, so the dub writes the
+  continuation from the take's end on. Fading the tail out there, with the
+  dub's punch envelope fading in after it, made a ~20 ms dip to zero once
+  per lap. Such a take now keeps its tail as played, and its dub starts at
+  full gain, so the buffer holds the performance continuously. Only the
+  start is faded. `test_take_taper_rec_dub_continues_without_a_dip` pins it.
+  Known gap, the same shape as #728's: undoing that first pass restores the
+  take with a raw tail, because the dub, not a fade, continued it.
+- **A frozen or cancelled take has no fold.** Clear-freeze and CANCEL_TAKE
+  cleared the fold after the finalize, so a take ending exactly at the loop
+  end got neither the fold nor the tail fade. They now tell the finalize no
+  fold will run, and the tail is faded.
+
 The measured numbers above are unchanged on the trunk: cut 0.0, wrap 0.0,
 worst step 3.3x.
+
+**One audible change to listen for.** A take that starts on the loop top
+and stops early now gets a 10 ms linear fade-in on its downbeat. That
+softens a percussive attack on the first beat.

@@ -2296,13 +2296,22 @@ struct le_engine {
 
   /* Master peak limiter, applied post-gain to the additive mix so the summed
    * output (many tracks + overdub layers + monitoring) cannot hard-clip in the
-   * driver. Feed-forward, no lookahead: ~2 ms smoothed attack with a brickwall
-   * clamp at the ceiling, ~50 ms release (#725; master_bus_frame). OFF by
+   * driver. Feed-forward, no lookahead: a ~50 ms peak hold, ~2 ms smoothed
+   * attack with a brickwall clamp at the ceiling, ~50 ms release (#725;
+   * master_bus_frame). OFF by
    * default so the deterministic native tests see the raw mix; the app
    * enables it. ceiling is float bits in (0,1]. */
   _Atomic int32_t a_limiter_enabled;
   _Atomic uint32_t a_limiter_ceiling_bits;
   float lim_gain; /* audio-thread-local smoothed gain reduction (1 = no cut) */
+  /* The limiter's peak hold (#725), audio-thread-local: the lowest target gain
+   * seen in the current hold window and in the previous one, and the frames
+   * counted into the current window. The gain follows the lower of the two,
+   * so it holds through the troughs between a waveform's peaks instead of
+   * releasing there. All three rest at 1 / 1 / 0. */
+  float lim_hold_cur;
+  float lim_hold_prev;
+  int32_t lim_hold_count;
 
   /* Overdub feedback: the existing loop content at the write head is scaled by
    * this before the new input is layered in, so stacked overdubs can't grow

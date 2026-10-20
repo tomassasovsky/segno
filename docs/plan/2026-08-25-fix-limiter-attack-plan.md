@@ -27,7 +27,8 @@ instant attack: worst delta on it   0.100983   (38.6x)
 
 ## The decision
 
-**Smoothed attack (~2 ms one-pole) plus a brickwall backstop at the ceiling.**
+**Smoothed attack (~2 ms one-pole) plus a brickwall backstop at the ceiling**,
+and on the trunk a ~50 ms peak hold under both (see "Review finding" below).
 
 The issue leans this way and is right, for a reason specific to this product:
 lookahead is the other way to remove the step, and it buys a clean attack at the
@@ -77,6 +78,36 @@ itself is the same; one thing about the trunk differs from what #813 assumed:
   and export still match. The two comments in perf_render.c that still
   described a limiter replay were corrected instead.
 
-The measured numbers above are unchanged on the trunk: instant attack 38.6x,
-~2 ms attack 1.0x, and the gain back to exactly 1.0 311 ms after a sustained
-loud passage.
+The measured numbers above are unchanged on the trunk: instant attack 38.6x
+and ~2 ms attack 1.0x.
+
+### Review finding: the smoothed attack needs a peak hold
+
+Review of the port found that #813's limiter flat-topped steady loud
+material. Its detector took each frame's own |x|. Between a waveform's peaks
+that falls toward zero, so the target rose in every trough, the release
+pulled the gain back up, and the 2 ms attack never caught up at the next
+peak. The brickwall backstop did the limiting: a sustained sine at twice the
+ceiling had 27-29% of its samples clamped (up to +0.8 dB). A 110 + 347 Hz
+two-tone had 11% clamped at 1.5x (+1.4 dB) and 25% at 6x (+3.6 dB). The old
+instant attack clamped none. The DC fixture could not see it, because a
+constant level is its own peak in every frame.
+
+The port adds a **peak hold**. The gain follows the lowest target over the
+last one to two ~50 ms windows. 50 ms is one period of 20 Hz, so every window
+of audible material contains a peak. Two windows rather than one running
+minimum, so a passage that gets quieter but stays over the ceiling releases
+to its new level within ~100 ms. Measured at 48 and 96 kHz:
+
+```
+sine     x1.5 / x2 / x6:  clamped 0%      (no hold: 26.7% at x2)
+two-tone x1.5 / x6:       clamped 0.03%, worst +0.004 dB
+largest one-frame gain change: one attack step (0.006 at x6, 48 kHz)
+```
+
+The hold also delays the release by up to ~100 ms: the gain is back at
+exactly 1.0 361 ms after a sustained loud passage ends (311 ms without the
+hold). `test_master_limiter_holds_through_a_steady_waveform` pins the steady
+behaviour. `test_master_limiter_through_process` runs the limiter through
+`le_engine_process` with the coefficients it computes, so swapping the attack
+and release fails it.

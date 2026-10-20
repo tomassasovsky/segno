@@ -1854,9 +1854,9 @@ static void le_pr_worker_main(void* arg) {
       loaded ? le_pr_collect_channels(&manifest, log, log_count, channels, LE_MAX_TRACKS) : 0;
 
   /* Master accumulator: the sum of every channel's wet contribution, before
-   * the master gain + limiter pass runs over it once, after every channel
+   * the capture bus's output stages run over it once, after every channel
    * has been processed (le_pr_render_master, below) — mirrors
-   * mix_tracks_frame's additive per-lane sum feeding master_bus_frame. NULL
+   * mix_tracks_frame's additive per-lane sum feeding output_bus_frame. NULL
    * (rather than a zero-length calloc) when there is nothing to render, so
    * the write-out step below can use its presence as the gate. */
   float* master_accum =
