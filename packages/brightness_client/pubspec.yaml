@@ -1,7 +1,8 @@
 name: brightness_client
 description: >-
   Data client for Segno appliance display brightness (`segno-brightness-ctl`).
-  Pure Dart — Process.run + JSON parse only; no Flutter dependency.
+  Pure Dart: it starts the helper with spawn_process (posix_spawn, never
+  fork) and parses its JSON; no Flutter dependency.
 version: 0.1.0
 publish_to: none
 
@@ -10,6 +11,8 @@ environment:
 
 dependencies:
   meta: ^1.16.0
+  spawn_process:
+    path: ../spawn_process
   toml: ^0.18.0
 
 dev_dependencies:
