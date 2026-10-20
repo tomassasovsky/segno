@@ -22,39 +22,68 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.reverb => effectReverb,
   };
 
-  String effectParamLabel(String englishLabel) => switch (englishLabel) {
-    'Drive' => paramDrive,
-    'Level' => paramLevel,
-    'Cutoff' => paramCutoff,
-    'Resonance' => paramResonance,
-    'Time' => paramTime,
-    'Feedback' => paramFeedback,
-    'Mix' => paramMix,
-    'Rate' => paramRate,
-    'Depth' => paramDepth,
-    'Shift' => paramShift,
-    'Tone' => paramTone,
-    'Size' => paramSize,
-    'Damping' => paramDamping,
-    'Mode' => paramMode,
-    _ => englishLabel,
+  /// The name of a built-in effect parameter, by its stable key. An unknown
+  /// key reads as the key itself rather than as nothing.
+  String fxParamName(FxParamInfo p) => switch (p.key) {
+    'drive' => paramDrive,
+    'level' => paramLevel,
+    'cutoff' => paramCutoff,
+    'resonance' => paramResonance,
+    'time' => paramTime,
+    'feedback' => paramFeedback,
+    'mix' => paramMix,
+    'rate' => paramRate,
+    'depth' => paramDepth,
+    'shift' => paramShift,
+    'tone' => paramTone,
+    'size' => paramSize,
+    'damping' => paramDamping,
+    'mode' => paramMode,
+    _ => p.key,
   };
 
-  /// The octaver's algorithm-mode readout: `< 0.5` selects the phase vocoder,
-  /// `>= 0.5` selects PSOLA.
-  String octaverModeLabel(double value) =>
-      value < 0.5 ? octaverModePhaseVocoder : octaverModePsola;
+  /// The value a built-in parameter's normalized [setting] stands for, with
+  /// its unit, as one string: `35%`, `350 ms`, `12.5 ms`, `440 Hz`,
+  /// `1.2 kHz`, `15.5x`, a pitch interval, or a named position.
+  ///
+  /// Times and frequencies drop the decimal from 100 up, where a tenth is
+  /// finer than a performer sets or hears; a frequency reads in kHz from
+  /// 1000 Hz.
+  String fxParamValueText(FxParamInfo p, double setting) {
+    final value = p.valueAt(setting);
+    final tenths = (value * 10).round() / 10;
+    return switch (p.unit) {
+      FxParamUnit.percent => fxValuePercent(value.round()),
+      FxParamUnit.ms =>
+        tenths >= 100 ? fxValueMs(value.round()) : fxValueMsFine(tenths),
+      FxParamUnit.hz =>
+        value.round() >= 1000
+            ? fxValueKhz(value / 1000)
+            : tenths >= 100
+            ? fxValueHz(value.round())
+            : fxValueHzFine(tenths),
+      FxParamUnit.semitones => _pitchInterval(value.round()),
+      FxParamUnit.times => fxValueTimes(value),
+      FxParamUnit.choice => _choiceName(p, p.positionOf(setting)),
+    };
+  }
 
-  String formatLocalizedPitchShift(double value) {
-    final semitones = ((value - 0.5) * 48).round();
+  String _pitchInterval(int semitones) {
     if (semitones == 0) return pitchUnison;
     final sign = semitones > 0 ? '+' : '-';
     final magnitude = semitones.abs();
-    if (magnitude % 12 == 0) {
-      return pitchOctaves(sign, magnitude ~/ 12);
-    }
+    if (magnitude % 12 == 0) return pitchOctaves(sign, magnitude ~/ 12);
     return pitchSemitones(sign, magnitude);
   }
+
+  /// The name of position [position] of choice parameter [p]. The octaver's
+  /// mode is the only built-in choice; any other reads as its 1-based number.
+  String _choiceName(FxParamInfo p, int position) =>
+      switch ((p.key, position)) {
+        ('mode', 0) => octaverModePhaseVocoder,
+        ('mode', 1) => octaverModePsola,
+        _ => '${position + 1}',
+      };
 
   String loopbackKindLabel(LoopbackKind kind) => switch (kind) {
     LoopbackKind.backendLoopback => loopbackKindBackend,

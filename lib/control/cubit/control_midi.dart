@@ -917,6 +917,8 @@ extension MidiControlEditing on ControlCubit {
     return clamped;
   }
 
+  /// The number of intervals between [target]'s positions (`steps - 1`), so
+  /// a MIDI value lands on a position, or `null` for a continuous parameter.
   int? _midiParamDivisions(FxParamTarget target) {
     for (final effect
         in _looper.chainEntriesAt(target.address) ?? <TrackEffect>[]) {
@@ -924,7 +926,8 @@ extension MidiControlEditing on ControlCubit {
           effect is BuiltInEffect &&
           target.param >= 0 &&
           target.param < effect.type.params.length) {
-        return effect.type.params[target.param].divisions;
+        final param = effect.type.params[target.param];
+        return param.isStepped ? param.steps - 1 : null;
       }
     }
     return null;
