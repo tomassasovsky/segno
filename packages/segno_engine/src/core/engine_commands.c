@@ -245,9 +245,9 @@ static int32_t le_layer_slot_frames(const le_engine* engine, int32_t len) {
  *     of [0, loop length), and the callback has been reading it since;
  *   - the shadow a punch-in arms at once: the lane's standby, faulted in in
  *     the background while the track played; on a track without one, the
- *     second at the playhead now and the rest of the loop in the background
- *     (le_prefault_around); the spare after it: in the background too, since
- *     it is first written a loop later;
+ *     second where the overdub writes first now and the rest of the loop in
+ *     the background (le_prefault_shadow); the spare after it: in the
+ *     background too, since it is first written a loop later;
  *   - the cap-sized shadow pre-armed during a take: like the take itself;
  *   - a shadow replenished during a running dub session: synchronously, on
  *     the drain (usually a recycled slot, already resident). */
@@ -281,44 +281,43 @@ static int32_t le_write_margin(le_engine* e) {
   return 4096 + (offset > 0 ? offset : 0);
 }
 
-/* For a write head about to start near [at] in [buf], wrapping at [wrap]:
- * faults in now the stretch it reaches within a second, [at - margin,
- * at + head) (mirrored when it runs [reversed]), wrapped into [0, wrap); and
- * hands the rest of [0, wrap) to the background prefaulter in the order the
- * head reaches it. */
-static void le_prefault_around(le_engine* e, float* buf, int32_t wrap,
-                               int32_t at, int reversed) {
-  if (buf == NULL || wrap <= 0) return;
-  const int32_t head = le_head_frames(e);
-  const int32_t margin = le_write_margin(e);
-  const int64_t n = (int64_t)head + margin;
+/* Faults in now, on this thread, the stretch of [buf] a write head about to
+ * start near [at] reaches within a second, [at - margin, at + head), wrapped
+ * into [0, wrap). Returns the window's start in [0, wrap), or -1 when the
+ * window was the whole of it. */
+static int32_t le_prefault_window(le_engine* e, float* buf, int32_t wrap,
+                                  int32_t at) {
+  const int64_t n = (int64_t)le_head_frames(e) + le_write_margin(e);
   if (n >= wrap) { /* the window is the whole loop */
     le_rt_prefault(buf, (size_t)wrap * sizeof(float));
-    return;
+    return -1;
   }
-  int64_t lo = (int64_t)at - (reversed ? head : margin);
-  lo %= wrap;
+  int64_t lo = ((int64_t)at - le_write_margin(e)) % wrap;
   if (lo < 0) lo += wrap;
   const int64_t hi = lo + n; /* may pass wrap: the part past it is [0, hi - wrap) */
   le_rt_prefault(buf + lo,
                  (size_t)((hi < wrap ? hi : wrap) - lo) * sizeof(float));
   if (hi > wrap) le_rt_prefault(buf, (size_t)(hi - wrap) * sizeof(float));
-  const int32_t end = (int32_t)(hi % wrap); /* the first frame past it */
-  const int32_t lo32 = (int32_t)lo;
-  if (!reversed) { /* on from the window's end, round to its start */
-    if (end <= lo32) {
-      le_prefault_range(e, buf, end, lo32, 0);
-    } else {
-      le_prefault_range(e, buf, end, wrap, 0);
-      le_prefault_range(e, buf, 0, lo32, 0);
-    }
-  } else { /* down from the window's start, round to its end */
-    if (end <= lo32) {
-      le_prefault_range(e, buf, end, lo32, 1);
-    } else {
-      le_prefault_range(e, buf, 0, lo32, 1);
-      le_prefault_range(e, buf, end, wrap, 1);
-    }
+  return (int32_t)lo;
+}
+
+/* The window around [at] now (le_prefault_window), and the rest of
+ * [0, wrap) in the background, on from the window's end and round to its
+ * start: the order a forward write head reaches it. Overdub and capture
+ * only ever run forward at 1x (le_engine_record refuses a punch-in on a
+ * reversed track, and any capture off 1x Speed). */
+static void le_prefault_around(le_engine* e, float* buf, int32_t wrap,
+                               int32_t at) {
+  if (buf == NULL || wrap <= 0) return;
+  const int32_t lo = le_prefault_window(e, buf, wrap, at);
+  if (lo < 0) return;
+  const int64_t n = (int64_t)le_head_frames(e) + le_write_margin(e);
+  const int32_t end = (int32_t)((lo + n) % wrap); /* the first frame past it */
+  if (end <= lo) {
+    le_prefault_range(e, buf, end, lo);
+  } else {
+    le_prefault_range(e, buf, end, wrap);
+    le_prefault_range(e, buf, 0, lo);
   }
 }
 
@@ -356,7 +355,7 @@ static void le_track_prefault_take(le_engine* e, int32_t channel,
     const int32_t cap = ln->pool_cap[live];
     if (buf == NULL) continue;
     if (wrap64 > 0 && wrap64 <= cap) {
-      le_prefault_around(e, buf, (int32_t)wrap64, at, 0);
+      le_prefault_around(e, buf, (int32_t)wrap64, at);
       continue;
     }
     if (from >= cap) continue;
@@ -364,7 +363,7 @@ static void le_track_prefault_take(le_engine* e, int32_t channel,
     if (frames > cap - from) frames = cap - from;
     le_rt_prefault(buf + from, (size_t)frames * sizeof(float));
     le_prefault_follow(e, channel, buf, cap, from + frames);
-    if (from > 0) le_prefault_range(e, buf, 0, from, 0);
+    if (from > 0) le_prefault_range(e, buf, 0, from);
   }
 }
 
@@ -386,6 +385,42 @@ static int le_lane_take_standby(le_engine* e, le_lane* ln, int slot,
   return 1;
 }
 
+/* Faults in now what an overdub on [channel] writes into [buf] (its loop of
+ * [len] frames) while its play position runs over the second from [at] (a
+ * block of lag back, for the published position's age): each stretch of
+ * play positions is mapped to its write position by the mixer's own
+ * le_dub_write_index, so a stretch compensated across a segment boundary
+ * lands at the end of that segment, as the callback writes it. The
+ * stretches break where le_dub_write_index's segment or wrap changes:
+ * every segment start, and [offset] past it. */
+static void le_prefault_dub_second(le_engine* e, int32_t channel, float* buf,
+                                   int32_t len, int32_t at) {
+  int32_t seg = load_i32(&e->a_clock_seg[channel]);
+  if (seg <= 0 || seg > len) seg = len;
+  int32_t offset = load_i32(&e->a_record_offset);
+  if (offset < 0) offset = 0;
+  if (offset >= seg) offset %= seg;
+  int64_t p = (int64_t)at - 4096;
+  const int64_t end = (int64_t)at + le_head_frames(e);
+  if (end - p >= len) { /* the second is the whole loop */
+    le_rt_prefault(buf, (size_t)len * sizeof(float));
+    return;
+  }
+  while (p < end) {
+    int64_t q = p % len;
+    if (q < 0) q += len;
+    const int32_t pos = (int32_t)(q % seg);
+    const int32_t base = (int32_t)q - pos;
+    /* this stretch runs to the next break in its segment */
+    int64_t run = (pos < offset ? offset : seg) - pos;
+    if (run > end - p) run = end - p;
+    if (base + seg > len && run > len - q) run = len - q; /* a short last segment */
+    const int32_t w = le_dub_write_index(base, pos, offset, seg);
+    le_rt_prefault(buf + w, (size_t)run * sizeof(float));
+    p += run;
+  }
+}
+
 /* Prefaults a shadow slot about to be posted. [immediate]: armed for a
  * punch-in now; [urgent]: replenished for a dub session already writing that
  * has no shadow posted, so the next pass boundary arms this one; any other
@@ -393,34 +428,40 @@ static int le_lane_take_standby(le_engine* e, le_lane* ln, int slot,
  * in the background. [standby_mask]: lanes whose buffer is a standby,
  * already faulted in.
  *
- * A punch-in's shadow is written where the overdub writes, from the track's
- * playhead on (backward when it plays reversed), wrapping at its length: the
- * second it reaches first is faulted in now, the rest of the loop in the
- * background (le_prefault_around). Faulting all of it in here cost a
- * punch-in on a long multi-lane loop tens of milliseconds before RECORD was
- * posted, and the press is applied when RECORD is, not back-dated. A
- * punch-in on a stopped track, whose playhead the transport sets, still
- * faults the whole loop in here. */
+ * A punch-in's shadow is written where the overdub writes. The callback
+ * publishes, for every track at each block end, where it plays or restarts
+ * from when stopped (a_clock_at) and its segment length; what the overdub
+ * writes in the second from there is faulted in now
+ * (le_prefault_dub_second, through the mixer's le_dub_write_index), and so
+ * is the second from the loop top on a stopped track (one that ended by
+ * itself restarts there). The rest of the loop is filled in the background,
+ * on from the playhead (le_prefault_around). This comes first, whatever the
+ * slot's size: a
+ * reused cap-sized slot (an earlier pre-arm) is written there too. Faulting
+ * all of a shadow in here cost a punch-in on a long multi-lane loop tens of
+ * milliseconds before RECORD was posted, and the press is applied when
+ * RECORD is, not back-dated. */
 static void le_prefault_shadow(le_engine* e, int32_t channel, int slot,
                                int immediate, int urgent,
                                uint32_t standby_mask) {
   le_track* t = &e->tracks[channel];
   const int32_t lanes = le_lanes_active(t);
   const int32_t len = le_track_settled_len(t);
-  const int32_t at = load_i32(&t->a_play_pos);
-  const int reversed = load_i32(&t->a_reversed) != 0;
-  /* Only a playing track's published playhead is where the overdub starts:
-   * a stopped one restarts wherever the transport puts it. */
   const int32_t st = le_effective_state(t);
-  const int playing = st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING;
+  const int punch = immediate && len > 0 &&
+                    (st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING ||
+                     st == LE_TRACK_STOPPED);
+  const int32_t at = load_i32(&e->a_clock_at[channel]);
   for (int32_t l = 0; l < lanes; ++l) {
     le_lane* ln = &t->lanes[l];
     if (ln->pool[slot] == NULL || (standby_mask & (1u << l))) continue;
     const int32_t cap = ln->pool_cap[slot];
-    /* A punch-in first, whatever the slot's size: a reused cap-sized slot
-     * (an earlier pre-arm) is written from the playhead too, not from 0. */
-    if (immediate && playing && len > 0 && len <= cap) {
-      le_prefault_around(e, ln->pool[slot], len, at, reversed);
+    if (punch && len <= cap) {
+      le_prefault_dub_second(e, channel, ln->pool[slot], len, at);
+      if (st == LE_TRACK_STOPPED) {
+        le_prefault_dub_second(e, channel, ln->pool[slot], len, 0);
+      }
+      le_prefault_around(e, ln->pool[slot], len, at);
     } else if (cap >= e->max_loop_frames) {
       le_lane_prefault_capture_buffer(e, channel, ln, slot); /* pre-arm */
     } else if (immediate || urgent || cap <= le_head_frames(e)) {

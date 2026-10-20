@@ -2775,6 +2775,19 @@ struct le_engine {
    *     kept on an EMPTY track's active lanes, so a take that needs a zeroed
    *     live slot swaps it in on the press instead of mapping one there. */
   le_lane_spares spares[LE_MAX_TRACKS][LE_MAX_LANES];
+  /* Audio thread: each track's segment base, position in the segment and
+   * segment length at the first frame of the block (mix_tracks_frame), for
+   * every track, playing or not. */
+  int32_t trk_clock_base[LE_MAX_TRACKS];
+  int32_t trk_clock_pos[LE_MAX_TRACKS];
+  int32_t trk_clock_len[LE_MAX_TRACKS];
+  /* Published from them at block end: where each track plays, or restarts
+   * from when stopped (a_clock_at: segment base plus position), and its
+   * segment length (a_clock_seg). The control thread maps the coming second
+   * of play positions to where an overdub writes them with the mixer's own
+   * le_dub_write_index to fault a punch-in's shadow in (le_prefault_shadow). */
+  _Atomic int32_t a_clock_at[LE_MAX_TRACKS];
+  _Atomic int32_t a_clock_seg[LE_MAX_TRACKS];
 };
 
 /* Fills `out` (room for `max`) with the host's playback or capture devices and
