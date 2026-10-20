@@ -137,6 +137,31 @@ const Map<String, FxModuleBuild> kFxModuleBuilds = {
   ),
 };
 
+/// The source key that carries a rack's own level.
+const String kFxRackLevelKey = 'Master Vol';
+
+/// Builds the chain entries for a whole factory rack out of [preset]: one
+/// entry per module the preset holds, in rack order (see [fxPresetModules]),
+/// with the preset's [kFxRackLevelKey] as the rack level.
+///
+/// The rack level is the last entry's [FxChannels.level], which is where
+/// `FxChainGroup.channels` reads a rack's level from. `Master Vol` belongs
+/// to no module, so it never becomes a module parameter. Its normalized value
+/// is the level as it stands: the Looper X's own taper for it is not known.
+/// A preset without it leaves the rack at unity.
+List<BuiltInEffect> fxRackEntries(FxPreset preset) {
+  final entries = [
+    for (final module in fxPresetModules(preset)) fxModuleEntry(module, preset),
+  ];
+  final level = preset.params[kFxRackLevelKey];
+  if (entries.isEmpty || level == null) return entries;
+  final last = entries.last;
+  entries[entries.length - 1] = last.copyWith(
+    channels: last.channels.copyWith(level: level.clamp(0.0, 1.0)),
+  );
+  return entries;
+}
+
 /// What this engine can build for [module].
 FxModuleBuild fxModuleBuild(FxModule module) =>
     kFxModuleBuilds[module.name] ?? const FxModuleBuild.unavailable();

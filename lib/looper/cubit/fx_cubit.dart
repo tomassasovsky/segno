@@ -560,8 +560,8 @@ class FxCubit extends Cubit<FxState> {
               art: kFxFamilySlugs[preset.family],
             );
         return [
-          for (final module in fxPresetModules(preset))
-            fxModuleEntry(module, preset).copyWith(
+          for (final entry in fxRackEntries(preset))
+            entry.copyWith(
               enabled: false,
               placement: placement,
               rack: rack,

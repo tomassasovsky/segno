@@ -223,6 +223,40 @@ void main() {
     });
   });
 
+  group('building a whole rack', () {
+    test('Master Vol becomes the rack level, on the last entry, and no '
+        'module parameter', () {
+      final entries = fxRackEntries(
+        _preset(const {
+          'Comp': 1,
+          'Delay': 1,
+          'Del Time': 0.4,
+          'Master Vol': 0.7083,
+        }),
+      );
+
+      expect(entries.map((e) => e.module), ['Compressor', 'Delay']);
+      // Read back the way the editor reads a rack's level.
+      final group = fxChainGroups([
+        for (final e in entries)
+          e.copyWith(
+            rack: const FxRack(id: 'r', name: 'Rack'),
+          ),
+      ]).single;
+      expect(group.channels.level, closeTo(0.7083, 1e-9));
+      expect(entries.first.channels, FxChannels.defaults);
+      for (final entry in entries) {
+        expect(entry.source.containsKey('Master Vol'), isFalse);
+      }
+    });
+
+    test('a preset without Master Vol leaves the rack at unity', () {
+      final entries = fxRackEntries(_preset(const {'Delay': 1}));
+
+      expect(entries.single.channels.level, 1);
+    });
+  });
+
   group('reading a preset', () {
     test('lists the modules it names, by power key or by parameter', () {
       // Some presets carry a module's controls without its power key and the
