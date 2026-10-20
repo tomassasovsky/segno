@@ -2987,6 +2987,7 @@ static void test_master_bus_frame_limiter(void) {
   printf("test_master_bus_frame_limiter\n");
   le_engine* e = make_configured_engine(); /* configure seeds lim_gain = 1.0 */
   const float attack = 1.0f / (0.002f * 48000.0f); /* the shipped ~2 ms */
+  const int32_t hold = 48000 / 20;                 /* the shipped ~50 ms */
   float out[2];
   float sumsq;
   float peak;
@@ -2996,8 +2997,8 @@ static void test_master_bus_frame_limiter(void) {
   out[1] = -0.5f;
   sumsq = 0.0f;
   peak = 0.0f;
-  le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, 0.99f, attack,
-                                      0.001f, &sumsq, &peak);
+  le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, 0.99f, hold,
+                                      attack, 0.001f, &sumsq, &peak);
   CHECK(fabsf(out[0] - 0.5f) < 1e-6f);
   CHECK(fabsf(out[1] + 0.5f) < 1e-6f);
   CHECK(fabsf(peak - 0.5f) < 1e-6f); /* metering reads the output */
@@ -3008,8 +3009,8 @@ static void test_master_bus_frame_limiter(void) {
   out[1] = 0.0f;
   sumsq = 0.0f;
   peak = 0.0f;
-  le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, 0.99f, attack,
-                                      0.001f, &sumsq, &peak);
+  le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, 0.99f, hold,
+                                      attack, 0.001f, &sumsq, &peak);
   CHECK(out[0] <= 0.99f + 1e-4f);
   CHECK(peak <= 0.99f + 1e-4f);
 
@@ -3018,8 +3019,8 @@ static void test_master_bus_frame_limiter(void) {
   out[1] = 1.0f;
   sumsq = 0.0f;
   peak = 0.0f;
-  le_engine_master_bus_frame_for_test(e, out, 0, 2, 0.5f, 0, 0.99f, attack,
-                                      0.001f, &sumsq, &peak);
+  le_engine_master_bus_frame_for_test(e, out, 0, 2, 0.5f, 0, 0.99f, hold,
+                                      attack, 0.001f, &sumsq, &peak);
   CHECK(fabsf(out[0] - 0.5f) < 1e-6f);
 
   le_engine_destroy(e);
@@ -3048,6 +3049,7 @@ static double limiter_quiet_channel_worst_delta(float lim_attack,
   const int burst_at = n / 2 + 120;
   const float ceiling = 0.99f;
   const float release = 1.0f / (0.05f * (float)sr);
+  const int32_t hold = sr / 20;
   const double inc = 2.0 * 3.14159265358979323846 * 100.0 / (double)sr;
 
   double worst_out = 0.0;
@@ -3064,7 +3066,7 @@ static double limiter_quiet_channel_worst_delta(float lim_attack,
     out[1] = loud;
     float sumsq = 0.0f;
     float peak = 0.0f;
-    le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, ceiling,
+    le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, ceiling, hold,
                                         lim_attack, release, &sumsq, &peak);
     if (i > 0) {
       const double d_out = fabs((double)out[0] - (double)prev_out);
@@ -3136,6 +3138,7 @@ static void test_master_limiter_settles_into_scaling_then_unity(void) {
   const float ceiling = 0.99f;
   const float attack = 1.0f / (0.002f * (float)sr);
   const float release = 1.0f / (0.05f * (float)sr);
+  const int32_t hold = sr / 20;
   /* Sustained constant levels, so the limiter's target is the same every frame
    * and the gain has something fixed to converge on. */
   const float loud = 2.0f;
@@ -3147,8 +3150,8 @@ static void test_master_limiter_settles_into_scaling_then_unity(void) {
     float out[2] = {loud, under};
     float sumsq = 0.0f;
     float peak = 0.0f;
-    le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, ceiling, attack,
-                                        release, &sumsq, &peak);
+    le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, ceiling, hold,
+                                        attack, release, &sumsq, &peak);
     CHECK(out[0] <= ceiling + 1e-6f);
     last0 = out[0];
     last1 = out[1];
@@ -3174,8 +3177,8 @@ static void test_master_limiter_settles_into_scaling_then_unity(void) {
     float out[2] = {quiet, quiet};
     float sumsq = 0.0f;
     float peak = 0.0f;
-    le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, ceiling, attack,
-                                        release, &sumsq, &peak);
+    le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, ceiling, hold,
+                                        attack, release, &sumsq, &peak);
     if (i > 0) {
       const double d = fabs((double)out[0] - (double)prev);
       if (d > worst_release_delta) worst_release_delta = d;
@@ -3191,6 +3194,107 @@ static void test_master_limiter_settles_into_scaling_then_unity(void) {
    * at most 1e-3 of gain on a 0.1 signal. */
   CHECK(worst_release_delta < (double)quiet * 2e-3);
   le_engine_destroy(e);
+}
+
+/* What one steady AC run through the limiter measured. */
+typedef struct {
+  double clamped;    /* steady-state share of samples the backstop clamped */
+  double over_db;    /* how far over the ceiling the worst of them was, dB */
+  double gain_step;  /* largest one-frame gain change anywhere in the run */
+  int over_ceiling;  /* samples that LEFT above the ceiling (must be 0) */
+} lim_ac_result;
+
+/* #725: steady AC material through the limiter at the constants the engine
+ * ships for `sr`, with the hold window `hold` (sr / 20 shipped, 1 = no hold).
+ * Channel 0 carries the loud signal: a 100 Hz sine, or the 110 + 347 Hz
+ * two-tone, peaking near `level` times the ceiling. Channel 1 carries a 0.1 DC
+ * probe that never nears the ceiling, so out[1] / 0.1 IS the frame's gain, and
+ * a channel-0 sample was clamped exactly when |in| * gain exceeds the ceiling.
+ *
+ * A DC fixture cannot see what this measures. With a constant level every
+ * frame's own |x| is the peak, so a detector without a hold reads it right. A
+ * waveform falls toward zero between its peaks, and a detector that follows
+ * each frame releases there. */
+static lim_ac_result limiter_steady_ac(int sr, int hold, int two_tone,
+                                       double level) {
+  le_engine* e = make_configured_engine();
+  const float ceiling = 0.99f;
+  const float attack = 1.0f / (0.002f * (float)sr);
+  const float release = 1.0f / (0.05f * (float)sr);
+  const double pi = 3.14159265358979323846;
+  const double amp = level * (double)ceiling;
+  const int n = sr; /* 1 s */
+  const int steady_from = sr / 5; /* judged after 200 ms */
+  lim_ac_result r = {0.0, 0.0, 0.0, 0};
+  int clamped = 0;
+  double prev_gain = 1.0;
+  for (int i = 0; i < n; ++i) {
+    const double ts = (double)i / (double)sr;
+    const double x = two_tone ? 0.5 * amp * (sin(2.0 * pi * 110.0 * ts) +
+                                             sin(2.0 * pi * 347.0 * ts))
+                              : amp * sin(2.0 * pi * 100.0 * ts);
+    float out[2] = {(float)x, 0.1f};
+    float sumsq = 0.0f;
+    float peak = 0.0f;
+    le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, ceiling, hold,
+                                        attack, release, &sumsq, &peak);
+    const double gain = (double)out[1] / 0.1;
+    if (fabs(gain - prev_gain) > r.gain_step) r.gain_step = fabs(gain - prev_gain);
+    prev_gain = gain;
+    if (fabsf(out[0]) > ceiling + 1e-6f) r.over_ceiling++;
+    if (i >= steady_from) {
+      const double want = fabs((double)(float)x) * gain;
+      if (want > (double)ceiling * (1.0 + 1e-4)) {
+        clamped++;
+        const double db = 20.0 * log10(want / (double)ceiling);
+        if (db > r.over_db) r.over_db = db;
+      }
+    }
+  }
+  r.clamped = (double)clamped / (double)(n - steady_from);
+  le_engine_destroy(e);
+  return r;
+}
+
+/* #725 review: the smoothed attack needs a PEAK HOLD, or the brickwall
+ * backstop does the limiting on any steady loud waveform. Without one the
+ * target rises in every trough between peaks, the release lifts the gain, and
+ * the 2 ms attack never catches up: a sustained sine at twice the ceiling had
+ * 27-29% of its samples clamped, and the two-tone at six times up to +3.6 dB
+ * flat-topped (the old instant attack clamped none).
+ *
+ * Every row runs at 48 and 96 kHz. With the shipped hold, steady material is
+ * scaled, not clamped, the gain never steps, and nothing leaves above the
+ * ceiling. The same sine with the hold removed (hold = 1) shows the defect, so
+ * this test cannot pass by measuring nothing. */
+static void test_master_limiter_holds_through_a_steady_waveform(void) {
+  printf("test_master_limiter_holds_through_a_steady_waveform\n");
+  const int rates[2] = {48000, 96000};
+  const struct {
+    int two_tone;
+    double level;
+  } rows[5] = {{0, 1.5}, {0, 2.0}, {0, 6.0}, {1, 1.5}, {1, 6.0}};
+  for (int ri = 0; ri < 2; ++ri) {
+    const int sr = rates[ri];
+    const double attack = 1.0 / (0.002 * (double)sr);
+    for (int k = 0; k < 5; ++k) {
+      const lim_ac_result r =
+          limiter_steady_ac(sr, sr / 20, rows[k].two_tone, rows[k].level);
+      printf("  %d Hz %s x%.1f: clamped %.4f%% (worst +%.3f dB), largest gain "
+             "step %.5f\n",
+             sr, rows[k].two_tone ? "two-tone" : "sine    ", rows[k].level,
+             100.0 * r.clamped, r.over_db, r.gain_step);
+      CHECK(r.over_ceiling == 0);
+      CHECK(r.clamped < 0.002);
+      CHECK(r.over_db < 0.01);
+      /* One frame of the one-pole at most, never a step to the target. */
+      CHECK(r.gain_step <= attack * 1.01);
+    }
+    const lim_ac_result none = limiter_steady_ac(sr, 1, 0, 2.0);
+    printf("  %d Hz sine x2.0 with NO hold: clamped %.2f%% (worst +%.3f dB)\n",
+           sr, 100.0 * none.clamped, none.over_db);
+    CHECK(none.clamped > 0.1);
+  }
 }
 
 static void test_looper_clear(void) {
@@ -3466,6 +3570,69 @@ static void feed_to_loop_top(le_engine* e) {
   }
 }
 
+/* One engine-level limiter run: a loop of a 100 Hz sine plays through
+ * le_engine_process with the limiter on and its ceiling at half the loop's
+ * peak, so the coefficients under test are the ones le_engine_process itself
+ * computes. Returns the share of output samples that sit AT the ceiling (the
+ * backstop's mark) over the first 300 ms after the limiter is switched on, and
+ * reports the steady peak and whether anything left above the ceiling. */
+static double limiter_engine_run(double* out_steady_peak, int* out_over) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800; /* 100 ms: exactly 10 cycles of 100 Hz */
+  le_test_osc osc = make_osc(100.0, 48000.0);
+  le_engine_record(e, 0);
+  feed_osc(e, &osc, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_osc(e, &osc, 512, NULL, NULL);
+  drain(e);
+
+  float* buf = (float*)malloc(sizeof(float) * (size_t)48000);
+  int n = 0;
+  feed_const(e, 0.0f, 2 * N, buf, &n);
+  double loop_peak = 0.0;
+  for (int i = 0; i < n; ++i) {
+    if (fabs((double)buf[i]) > loop_peak) loop_peak = fabs((double)buf[i]);
+  }
+  const float ceiling = (float)(loop_peak / 2.0);
+  CHECK(le_engine_set_limiter(e, 1, ceiling) == LE_OK);
+  n = 0;
+  feed_const(e, 0.0f, 24000, buf, &n); /* 500 ms */
+  int at_ceiling = 0;
+  int over = 0;
+  double steady_peak = 0.0;
+  for (int i = 0; i < n; ++i) {
+    const float a = fabsf(buf[i]);
+    if (a > ceiling + 1e-6f) over++;
+    if (i < 14400 && a >= ceiling - 1e-7f) at_ceiling++;
+    if (i >= 14400 && (double)a > steady_peak) steady_peak = (double)a;
+  }
+  *out_steady_peak = steady_peak / (double)ceiling;
+  *out_over = over;
+  free(buf);
+  le_engine_destroy(e);
+  return (double)at_ceiling / 14400.0;
+}
+
+/* #725 review: the limiter through le_engine_process, so the hold, attack and
+ * release le_engine_process computes are the ones measured. A loop at twice
+ * the ceiling must come out scaled to the ceiling: peaks at it, nothing over
+ * it, and the backstop's mark on only the onset and the samples at the sine's
+ * crest. Swapping the attack and release (a 50 ms attack) would keep the
+ * backstop clamping for most of the window and fail the first bound. */
+static void test_master_limiter_through_process(void) {
+  printf("test_master_limiter_through_process\n");
+  double steady_peak = 0.0;
+  int over = 0;
+  const double at_ceiling = limiter_engine_run(&steady_peak, &over);
+  printf("  at the ceiling over the first 300 ms: %.3f%%; steady peak %.4f of "
+         "the ceiling; samples over it: %d\n",
+         100.0 * at_ceiling, steady_peak, over);
+  CHECK(over == 0);
+  CHECK(at_ceiling < 0.03);
+  CHECK(steady_peak > 0.99); /* scaled to the ceiling, not below it */
+}
+
 static int cmp_float(const void* a, const void* b) {
   const float x = *(const float*)a;
   const float y = *(const float*)b;
@@ -3681,6 +3848,75 @@ static void test_take_taper_follows_a_wrapped_fixed_multiple_take(void) {
   CHECK(fabs((double)b[start + f] -
              0.5 * sin(osc.inc * (double)f + 3.14159265358979323846 / 2.0)) <
         1e-5); /* full amplitude past the fade-in */
+  CHECK(worst < 0.01);
+  free(b);
+  le_engine_destroy(e);
+}
+
+/* #730 with rec/dub: an early stop finalizes into OVERDUBBING and the player
+ * keeps playing, so the dub writes the take's continuation from its end on.
+ * Fading the tail out there, with the dub fading in after it, was a ~20 ms
+ * dip to zero once per lap. The tail must stay as played and the dub must
+ * start at full gain, so the buffer holds the performance continuously
+ * across the take's end; only the start (silence before it) is faded.
+ *
+ * Auto length: 6240 frames played round up to 9600; the dub then runs 1000
+ * more frames before the punch-out, whose own fade ends the layer. */
+static void test_take_taper_rec_dub_continues_without_a_dip(void) {
+  printf("test_take_taper_rec_dub_continues_without_a_dip\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  const int len = 2 * N;
+  const int stop = (13 * N) / 10; /* 6240 */
+  const int f = 48000 / 100;
+  const double phase0 = 3.14159265358979323846 / 2.0;
+  le_test_osc osc = make_osc(36.25, 48000.0);
+  osc.phase = phase0; /* start at the peak */
+
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  le_engine_set_rec_dub(e, 1);
+  feed_to_loop_top(e);
+
+  le_engine_record(e, 1);
+  drain(e);
+  feed_osc(e, &osc, stop, NULL, NULL);
+  le_engine_record(e, 1); /* stop early: into OVERDUBBING */
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_OVERDUBBING);
+  CHECK(s.tracks[1].length_frames == len);
+  feed_osc(e, &osc, 1000, NULL, NULL); /* the player keeps playing */
+  le_engine_record(e, 1);              /* punch out */
+  feed_osc(e, &osc, 512, NULL, NULL);  /* through the punch-out fade */
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  settle_layers(e);
+
+  float* b = (float*)calloc((size_t)len, sizeof(float));
+  CHECK(le_engine_export_track(e, 1, b, len) == len);
+  /* Across the take's end, sample for sample what was played. */
+  double dev = 0.0;
+  for (int j = stop - f; j < stop + f; ++j) {
+    const double want = 0.5 * sin(phase0 + osc.inc * (double)j);
+    const double d = fabs((double)b[j] - want);
+    if (d > dev) dev = d;
+  }
+  double worst = 0.0;
+  for (int i = 0; i < len; ++i) {
+    const double d = fabs((double)b[i] - (double)b[i == 0 ? len - 1 : i - 1]);
+    if (d > worst) worst = d;
+  }
+  printf("  across the take's end @%d: deviation from the performance %.7f; "
+         "worst step in the loop %.5f\n",
+         stop, dev, worst);
+  CHECK(dev < 1e-5);
+  CHECK(fabsf(b[0]) < 1e-6f); /* the start is still faded in */
   CHECK(worst < 0.01);
   free(b);
   le_engine_destroy(e);
@@ -36926,6 +37162,8 @@ int main(void) {
   test_master_bus_frame_limiter();
   test_master_limiter_attack_is_not_a_step();
   test_master_limiter_settles_into_scaling_then_unity();
+  test_master_limiter_holds_through_a_steady_waveform();
+  test_master_limiter_through_process();
   test_looper_clear();
   test_looper_requires_configure();
   test_looper_multitrack();
@@ -36934,6 +37172,7 @@ int main(void) {
   test_take_stops_early_no_silence_cut();
   test_take_taper_threshold_leaves_short_takes_alone();
   test_take_taper_follows_a_wrapped_fixed_multiple_take();
+  test_take_taper_rec_dub_continues_without_a_dip();
   test_loop_seam_master_take_no_splice();
   test_loop_seam_survives_whole_lap_overdub();
   test_loop_seam_on_punch_out_with_player_stopped();
