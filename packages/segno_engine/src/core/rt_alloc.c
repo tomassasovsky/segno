@@ -1,6 +1,7 @@
 #include "rt_alloc.h"
 
 #include <errno.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,17 +29,30 @@
  * channels), is how a mismatched unmap gets written. The size is stored twice,
  * once plain and once mixed with a constant, behind a magic word: an underflow
  * that scribbles over the header is caught by le_rt_free, which then leaks the
- * mapping and says so rather than unmapping a length it cannot trust. One
- * cache line, so the payload of a page-aligned mapping is 64-byte aligned. */
+ * mapping and says so rather than unmapping a length it cannot trust. The
+ * header is the cache line right below the payload, so the payload is 64-byte
+ * aligned.
+ *
+ * The payload does not start at the same offset in every mapping: big buffers
+ * start one of LE_RT_COLOURS cache lines further in, in turn. Fresh mappings
+ * of one size land on the same alignment (huge-page aligned, often), so
+ * without this the 64 lane buffers a mix reads at one position would all map
+ * to the same cache sets and evict each other every frame; that cost the
+ * 8 x 8 mixer bench 16 us a period. Costs at most a page per buffer. */
 #define LE_RT_HEADER 64u
+#define LE_RT_COLOURS 64u
+#define LE_RT_COLOUR_MIN_BYTES ((size_t)64 << 10) /* small buffers: no colour */
 #define LE_RT_MAGIC UINT64_C(0x5345474E4F525441) /* "SEGNORTA" */
 #define LE_RT_MIX UINT64_C(0x9E3779B97F4A7C15)
 
 typedef struct le_rt_header {
   uint64_t magic;
   uint64_t bytes;
-  uint64_t check; /* bytes ^ LE_RT_MIX */
+  uint64_t lead;  /* bytes from the start of the block to the payload */
+  uint64_t check; /* bytes ^ lead ^ LE_RT_MIX */
 } le_rt_header;
+
+static _Atomic unsigned g_colour = 0;
 
 static int g_shield_fail_for_test = 0;
 
@@ -105,8 +119,15 @@ static void le_rt_advise(void* base, size_t total) {
 }
 
 void* le_rt_alloc(size_t bytes) {
-  if (bytes == 0 || bytes > SIZE_MAX - 2u * LE_RT_HEADER) return NULL;
-  const size_t total = bytes + LE_RT_HEADER;
+  const size_t most_lead = LE_RT_HEADER * (LE_RT_COLOURS + 1u);
+  if (bytes == 0 || bytes > SIZE_MAX - 2u * most_lead) return NULL;
+  size_t lead = LE_RT_HEADER;
+  if (bytes >= LE_RT_COLOUR_MIN_BYTES) {
+    lead += LE_RT_HEADER *
+            (atomic_fetch_add_explicit(&g_colour, 1u, memory_order_relaxed) %
+             LE_RT_COLOURS);
+  }
+  const size_t total = bytes + lead;
   unsigned char* base;
 #if LE_RT_ALLOC_USES_HEAP
   /* A sanitized build keeps the heap so AddressSanitizer still puts redzones
@@ -123,10 +144,10 @@ void* le_rt_alloc(size_t bytes) {
 #endif
   /* The header write touches the first page only; the kernel zeroes the rest
    * the first time each page is faulted in. */
-  const le_rt_header h = {LE_RT_MAGIC, (uint64_t)bytes,
-                          (uint64_t)bytes ^ LE_RT_MIX};
-  memcpy(base, &h, sizeof(h));
-  return base + LE_RT_HEADER;
+  const le_rt_header h = {LE_RT_MAGIC, (uint64_t)bytes, (uint64_t)lead,
+                          (uint64_t)bytes ^ (uint64_t)lead ^ LE_RT_MIX};
+  memcpy(base + lead - LE_RT_HEADER, &h, sizeof(h));
+  return base + lead;
 }
 
 void* le_rt_alloc_prefaulted(size_t bytes) {
@@ -135,16 +156,21 @@ void* le_rt_alloc_prefaulted(size_t bytes) {
   return p;
 }
 
-/* The recorded size, or 0 when the header is not intact. */
-static size_t le_rt_header_bytes(const void* p) {
+/* The recorded size (and the lead, when [lead] is not NULL), or 0 when the
+ * header is not intact. */
+static size_t le_rt_header_bytes(const void* p, size_t* lead) {
   le_rt_header h;
   memcpy(&h, (const unsigned char*)p - LE_RT_HEADER, sizeof(h));
-  if (h.magic != LE_RT_MAGIC || (h.bytes ^ LE_RT_MIX) != h.check) return 0;
+  if (h.magic != LE_RT_MAGIC || (h.bytes ^ h.lead ^ LE_RT_MIX) != h.check ||
+      h.lead < LE_RT_HEADER || h.lead > LE_RT_HEADER * (LE_RT_COLOURS + 1u)) {
+    return 0;
+  }
+  if (lead != NULL) *lead = (size_t)h.lead;
   return (size_t)h.bytes;
 }
 
 size_t le_rt_size(const void* p) {
-  return p == NULL ? 0 : le_rt_header_bytes(p);
+  return p == NULL ? 0 : le_rt_header_bytes(p, NULL);
 }
 
 int le_rt_prefault_can_run_concurrently(void) {
@@ -210,17 +236,18 @@ void le_rt_prefault(const void* p, size_t bytes) {
 
 void le_rt_free(void* p) {
   if (p == NULL) return;
-  unsigned char* const base = (unsigned char*)p - LE_RT_HEADER;
-  const size_t bytes = le_rt_header_bytes(p);
+  size_t lead = 0;
+  const size_t bytes = le_rt_header_bytes(p, &lead);
   if (bytes == 0) {
     fprintf(stderr, "segno/rt_alloc: buffer %p has a damaged header; leaking "
                     "it rather than unmapping an unknown length\n", p);
     return;
   }
+  unsigned char* const base = (unsigned char*)p - lead;
 #if LE_RT_ALLOC_USES_HEAP
   free(base);
 #else
-  const size_t total = bytes + LE_RT_HEADER;
+  const size_t total = bytes + lead;
   /* A failed unmap leaks the only pointer that could free this mapping, so it
    * does not pass quietly. */
   if (munmap(base, total) != 0) {

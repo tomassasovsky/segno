@@ -61,6 +61,10 @@ void le_prefault_start(le_engine* e);
  * call it to stay ahead deterministically). */
 void le_prefault_tick(le_engine* e);
 
+/* Exactly one pass (one chunk per job), for tests that check the order in
+ * which a buffer is faulted in. */
+void le_prefault_pass_for_test(le_engine* e);
+
 /* Drops every job whose buffer is `buf` (before the control thread frees a
  * buffer it may hand out again). */
 void le_prefault_forget(le_engine* e, const float* buf);

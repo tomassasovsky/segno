@@ -168,6 +168,14 @@ extern "C" {
  * (the app offers up to 10 minutes). It bounds what a take can lock (#900). */
 #define LE_MAX_LOOP_SECONDS 600
 
+/* Retired pool buffers waiting for the callback to let go of them. */
+#define LE_RETIRED_MAX 512
+
+/* Locked memory the standby shadows may hold across all tracks (#900): a
+ * standby is kept for the most recently captured tracks while their sum fits,
+ * and a punch-in elsewhere takes the fresh-buffer path. */
+#define LE_STANDBY_BUDGET_BYTES ((size_t)64 << 20)
+
 /* SAMPLES of live->shadow copy per track per BLOCK FRAME while a partially
  * backed-up overdub layer drains after punch-out (#906).
  *
@@ -583,6 +591,12 @@ typedef struct le_lane {
   float* standby;
   int32_t standby_cap;
   _Atomic int32_t a_standby_ready;
+  /* Control-thread-owned: an untouched, cap-sized mapping (zeros, no page
+   * behind it) kept ready on an EMPTY track's active lanes, so a take that
+   * must start from a zeroed live slot swaps it in on the press instead of
+   * mapping one there (le_prepare_new_capture). Costs address space only. */
+  float* zero_spare;
+  int32_t zero_spare_cap;
   _Atomic int32_t a_live;     /* pool index the audio thread plays/records */
   _Atomic int32_t a_len;      /* recorded length (== the track's length) */
   /* #595: 1 once THIS lane captured real audio that could still come back —
@@ -1099,6 +1113,9 @@ typedef struct le_track {
   struct le_bounce_bundle* bounce_inflight;
   int32_t bounce_pin[2]; /* slot + 1; 0 = none */
   int outstanding_count;
+  /* Control thread: the engine's capture_seq_next when a capture last started
+   * on this track, 0 if never (le_keep_standbys). */
+  uint64_t capture_seq;
   int queued_undo;   /* undo taps deferred until the in-flight layer retires */
   /* An undo's overdub punch-out has been posted and not yet applied.
    *
@@ -1853,6 +1870,15 @@ struct le_engine {
   int rt_stack_ready;
   /* The background prefaulter (engine_prefault.c); NULL until its first job. */
   struct le_prefaulter* prefaulter;
+  /* Buffers the callback may still name, waiting to be freed until the
+   * command posted after them has published (le_retire_buffer, #900).
+   * Control thread. */
+  float* retired_buf[LE_RETIRED_MAX];
+  uint64_t retired_ticket[LE_RETIRED_MAX];
+  int32_t retired_count;
+  /* Capture recency for the standby budget (le_keep_standbys): bumped on
+   * every capture start this control thread posts. */
+  uint64_t capture_seq_next;
 
   /* Snapshot, published as independent atomics. */
   _Atomic int32_t a_running;

@@ -510,6 +510,22 @@ void le_lane_prefault_head(le_lane* ln, int32_t slot, int32_t sample_rate);
  * already cleared or shut down. Control thread. */
 void le_lane_release_standby(le_lane* ln);
 
+/* Frees the lane's untouched zero spare (engine_private.h). Control thread. */
+void le_lane_release_zero_spare(le_lane* ln);
+
+/* Frees [buf], a pool buffer the callback may still name (it can be inside a
+ * block that loaded it), once the next command this thread posts has
+ * published: the block that applies it starts after every block that could
+ * have loaded [buf] has ended. A take start replacing an EMPTY track's live
+ * slot uses this, so the munmap neither runs on the press nor can unmap a
+ * buffer an unfenced callback emptying is still reading (#1146's residual).
+ * Control thread. */
+void le_retire_buffer(le_engine* e, float* buf);
+
+/* Frees the retired buffers whose ticket has published, or all of them with
+ * [all] (the device closed). Drain cadence. */
+void le_collect_retired(le_engine* e, int all);
+
 /* Shrinks an over-allocated slot to `frames`, PRESERVING the leading `frames`
  * samples — the counterpart to le_lane_ensure_slot's grow-by-replace, for the
  * one case that must keep its content: a retired undo layer whose slot was
