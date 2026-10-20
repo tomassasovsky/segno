@@ -10860,6 +10860,8 @@ const int LE_CLIP_HOLD_MS = 1500;
 
 const double LE_MAX_GAIN = 2.0;
 
+const double LE_FX_LEVEL_MAX = 4.0;
+
 const double LE_MAX_INPUT_TRIM = 3.981071710586548;
 
 const int LE_VIZ_POINTS = 512;

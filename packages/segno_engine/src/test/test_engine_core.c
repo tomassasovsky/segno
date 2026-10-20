@@ -32559,6 +32559,12 @@ static void test_fx_channel_refusal_preserves_stereo(void) {
   CHECK(load_f32(&mon->a_fx_chan_pan_bits[0]) == .5f);
   CHECK(load_f32(&lane->a_fx_chan_level_bits[0]) == .75f);
   CHECK(load_f32(&mon->a_fx_chan_level_bits[0]) == .75f);
+  /* An entry level reaches +12 dB (a rack level from the top of the Looper
+   * X's Master Vol range) and clamps at LE_FX_LEVEL_MAX, not LE_MAX_GAIN. */
+  CHECK(le_engine_set_lane_fx_channels(e, 0, 0, 0, 2, 1, .5f, 3.98f) == LE_OK);
+  CHECK(load_f32(&lane->a_fx_chan_level_bits[0]) == 3.98f);
+  CHECK(le_engine_set_lane_fx_channels(e, 0, 0, 0, 2, 1, .5f, 99.0f) == LE_OK);
+  CHECK(load_f32(&lane->a_fx_chan_level_bits[0]) == LE_FX_LEVEL_MAX);
   le_engine_destroy(e);
 }
 

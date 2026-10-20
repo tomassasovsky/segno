@@ -861,6 +861,11 @@ typedef struct le_output_fx_snapshot {
  * unity (1.0 = 0 dB). The output limiter downstream still guards the bus. */
 #define LE_MAX_GAIN 2.0f
 
+/* Ceiling for a chain entry's own level (le_engine_set_*_fx_channels). 4.0 is
+ * +12.04 dB: room for a rack level at the top of the Looper X's Master Vol
+ * range, -12..+12 dB. */
+#define LE_FX_LEVEL_MAX 4.0f
+
 /* Ceiling of le_engine_set_input_trim's linear capture gain: +12 dB. The
  * accepted range is -24..+12 dB in half-decibel steps; the floor is 0. */
 #define LE_MAX_INPUT_TRIM 3.98107170553f
@@ -3569,7 +3574,7 @@ LE_EXPORT int32_t le_engine_set_all_tracks_fx_chain_enabled(le_engine* engine,
  *   placement -1..1, centre 0 (default). One unity-centre law, the same the
  *             lanes, monitors and output buses use, so centre is exactly
  *             unity and a hard side is exactly silent.
- *   level     0..LE_MAX_GAIN, unity 1 (default). Applied last.
+ *   level     0..LE_FX_LEVEL_MAX, unity 1 (default). Applied last.
  *
  * Set as one call, because the four values are one control surface and a
  * half-applied change would be audible. Direct atomic publishes: they change

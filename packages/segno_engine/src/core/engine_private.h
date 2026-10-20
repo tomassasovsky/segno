@@ -671,7 +671,7 @@ typedef struct le_lane {
   _Atomic uint32_t a_fx_chan_pan_bits[LE_FX_MAX]; /* -1..1 */
   _Atomic uint32_t a_fx_chan_gl_bits[LE_FX_MAX];  /* its gains */
   _Atomic uint32_t a_fx_chan_gr_bits[LE_FX_MAX];
-  _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_MAX_GAIN */
+  _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_FX_LEVEL_MAX */
   /* Control-thread-owned shadows of the last successfully PUSHED count/types.
    * a_fx_count / a_fx_type are published by the AUDIO thread when it drains
    * the ring, so the control thread must not read them to decide D-ENSEED
@@ -774,7 +774,7 @@ typedef struct le_monitor_input {
   _Atomic uint32_t a_fx_chan_pan_bits[LE_FX_MAX]; /* -1..1 */
   _Atomic uint32_t a_fx_chan_gl_bits[LE_FX_MAX];  /* its gains */
   _Atomic uint32_t a_fx_chan_gr_bits[LE_FX_MAX];
-  _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_MAX_GAIN */
+  _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_FX_LEVEL_MAX */
   /* Control-thread-owned pushed-count/type shadows (see le_lane). */
   int32_t fx_count_pushed;
   int32_t fx_type_pushed[LE_FX_MAX];
@@ -891,7 +891,7 @@ typedef struct le_fx_bus {
   _Atomic uint32_t a_fx_chan_pan_bits[LE_FX_MAX]; /* -1..1 */
   _Atomic uint32_t a_fx_chan_gl_bits[LE_FX_MAX];  /* its gains */
   _Atomic uint32_t a_fx_chan_gr_bits[LE_FX_MAX];
-  _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_MAX_GAIN */
+  _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_FX_LEVEL_MAX */
   /* Control-thread-owned pushed-count/type shadows (see le_lane). */
   int32_t fx_count_pushed;
   int32_t fx_type_pushed[LE_FX_MAX];

@@ -23,6 +23,11 @@ const int kTrackEffectMax = 64;
 /// the native `LE_FX_PARAMS`.
 const int kTrackEffectParams = 4;
 
+/// The ceiling of a chain entry's own level, [FxChannels.level]: `4.0`, about
+/// +12 dB, the top of a factory rack's level. Mirrors the native
+/// `LE_FX_LEVEL_MAX`.
+const double kFxLevelMax = 4;
+
 /// How one chain entry takes the pair it is handed (slice 3e) — the accepted
 /// design's rack input choice, and a single effect's "Effect input".
 enum FxChannelInput {
@@ -99,7 +104,10 @@ final class FxChannels {
                 placement < -1 ||
                 placement > 1)) ||
         (json.containsKey('level') &&
-            (level is! num || !level.isFinite || level < 0 || level > 2))) {
+            (level is! num ||
+                !level.isFinite ||
+                level < 0 ||
+                level > kFxLevelMax))) {
       throw const FormatException('invalid effect channels');
     }
     return FxChannels(
@@ -122,7 +130,7 @@ final class FxChannels {
   /// Balance (stereo out) or Pan (mono out), `-1..1`, centre `0`.
   final double placement;
 
-  /// The entry's own level, applied last. Unity `1`.
+  /// The entry's own gain, applied last: `0..kFxLevelMax`, unity `1`.
   final double level;
 
   /// Whether this is [defaults] — the shape the engine reads as "nothing to
@@ -773,7 +781,10 @@ final class BuiltInEffect extends TrackEffect {
     this.channels = FxChannels.defaults,
     this.rack,
     this.module,
-  }) : params = List<double>.unmodifiable(params ?? type.defaultParams);
+    this.presetId,
+    Map<String, double> source = const {},
+  }) : params = List<double>.unmodifiable(params ?? type.defaultParams),
+       source = Map<String, double>.unmodifiable(source);
 
   /// Rebuilds a [BuiltInEffect] from [toJson] output; unknown codes fall back
   /// to safe defaults. A legacy `stage` key (from the removed pre/post model)
@@ -809,6 +820,15 @@ final class BuiltInEffect extends TrackEffect {
     final rack = FxRack.fromJson(json['rack']);
     final rawModule = json['module'];
     final module = rawModule is String ? rawModule : null;
+    final rawPresetId = json['presetId'];
+    final presetId = rawPresetId is String ? rawPresetId : null;
+    final rawSource = json['source'];
+    final source = <String, double>{
+      if (rawSource is Map)
+        for (final e in rawSource.entries)
+          if (e.key is String && e.value is num)
+            e.key as String: (e.value as num).toDouble(),
+    };
     final rawParams = json['params'];
     if (rawParams is! List) {
       return BuiltInEffect(
@@ -819,6 +839,8 @@ final class BuiltInEffect extends TrackEffect {
         channels: channels,
         rack: rack,
         module: module,
+        presetId: presetId,
+        source: source,
       );
     }
     final decoded = [for (final v in rawParams) (v as num).toDouble()];
@@ -835,6 +857,8 @@ final class BuiltInEffect extends TrackEffect {
       channels: channels,
       rack: rack,
       module: module,
+      presetId: presetId,
+      source: source,
     );
   }
 
@@ -867,6 +891,15 @@ final class BuiltInEffect extends TrackEffect {
   @override
   final String? module;
 
+  /// The id of the factory preset this entry was built from, or `null` when
+  /// it did not come from one.
+  final String? presetId;
+
+  /// The factory preset's own values for this entry's module, by the
+  /// preset's parameter names. Kept whatever this build could do with them,
+  /// so a later build can rebuild the module from what the player loaded.
+  final Map<String, double> source;
+
   @override
   int get typeCode => type.code;
 
@@ -880,6 +913,8 @@ final class BuiltInEffect extends TrackEffect {
     FxChannels? channels,
     FxRack? rack,
     String? module,
+    String? presetId,
+    Map<String, double>? source,
   }) => BuiltInEffect(
     type: type ?? this.type,
     params: params ?? this.params,
@@ -889,6 +924,8 @@ final class BuiltInEffect extends TrackEffect {
     channels: channels ?? this.channels,
     rack: rack ?? this.rack,
     module: module ?? this.module,
+    presetId: presetId ?? this.presetId,
+    source: source ?? this.source,
   );
 
   @override
@@ -902,6 +939,8 @@ final class BuiltInEffect extends TrackEffect {
     if (!channels.isDefault) 'channels': channels.toJson(),
     if (rack != null) 'rack': rack!.toJson(),
     if (module != null) 'module': module,
+    if (presetId != null) 'presetId': presetId,
+    if (source.isNotEmpty) 'source': source,
   };
 
   @override
@@ -914,7 +953,9 @@ final class BuiltInEffect extends TrackEffect {
       other.channels == channels &&
       other.rack == rack &&
       other.module == module &&
-      _listEquals(other.params, params);
+      other.presetId == presetId &&
+      _listEquals(other.params, params) &&
+      _sourceEquals(other.source, source);
 
   @override
   int get hashCode => Object.hash(
@@ -925,8 +966,20 @@ final class BuiltInEffect extends TrackEffect {
     channels,
     rack,
     module,
+    presetId,
     Object.hashAll(params),
+    Object.hashAllUnordered([
+      for (final e in source.entries) Object.hash(e.key, e.value),
+    ]),
   );
+
+  static bool _sourceEquals(Map<String, double> a, Map<String, double> b) {
+    if (a.length != b.length) return false;
+    for (final e in a.entries) {
+      if (b[e.key] != e.value) return false;
+    }
+    return true;
+  }
 
   static bool _listEquals(List<double> a, List<double> b) {
     if (a.length != b.length) return false;
