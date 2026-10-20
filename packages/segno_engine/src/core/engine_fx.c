@@ -871,6 +871,11 @@ void le_fx_enable_seed_settled(le_fx_state* fx, int slot) {
   fx->enable_warmup[slot] = 0;
   fx->enable_drain[slot] = 0;
   fx->enable_quiet[slot] = 0;
+  le_fx_rack_reset(fx, slot);
+}
+
+void le_fx_rack_reset(le_fx_state* fx, int slot) {
+  fx->rack_primed[slot] = 0;
 }
 
 void le_fx_enable_seed_at(le_fx_state* fx, int slot, int effective) {
@@ -878,6 +883,9 @@ void le_fx_enable_seed_at(le_fx_state* fx, int slot, int effective) {
     le_fx_enable_seed_settled(fx, slot);
   } else {
     le_fx_enable_force_bypass(fx, slot);
+    /* A seed is a fresh start for the rack side too. force_bypass alone
+     * leaves it, because the live settle sweep calls it every buffer. */
+    le_fx_rack_reset(fx, slot);
   }
 }
 
@@ -1363,15 +1371,64 @@ int le_fx_type_drains(int32_t type) {
  * A slot the chain does NOT process cannot advance this state machine; the
  * per-buffer snapshots settle such slots to bypass while their effective bit
  * is 0 (le_fx_enable_force_bypass), so gaps never strand a ramp. */
+/* A rack's output side, applied after its LAST entry [s] to whatever that
+ * entry handed on (its effect's result, a passthrough, or its bypassed
+ * input). [on] is whether any entry of the rack wants to run. The side fades
+ * in and out with the enable ramp; settled off it touches nothing, so a rack
+ * with every entry off passes its input through bit-exact. Settled on it is
+ * the same arithmetic the per-entry path uses, so a rack whose last entry is
+ * an engaged effect sounds exactly as it did when that entry carried it. */
+static inline void fx_rack_output(le_fx_state* fx, int s, int on, int sr,
+                                  float* xl, float* xr) {
+  const float target = on ? 1.0f : 0.0f;
+  float m = fx->rack_mix[s];
+  if (!fx->rack_primed[s]) {
+    m = target;
+    fx->rack_primed[s] = 1;
+  } else if (m != target) {
+    const float step =
+        sr > 0 ? 1000.0f / ((float)LE_FX_ENABLE_RAMP_MS * (float)sr) : 1.0f;
+    m = on ? m + step : m - step;
+    if (m > 1.0f) m = 1.0f;
+    if (m < 0.0f) m = 0.0f;
+  }
+  fx->rack_mix[s] = m;
+  if (m <= 0.0f) return;
+  const le_fx_chan* c = &fx->chan[s];
+  float wl = *xl;
+  float wr = *xr;
+  if (c->out_mode == LE_FX_CHAN_OUT_MONO) {
+    const float mid = 0.5f * (wl + wr);
+    wl = mid;
+    wr = mid;
+  }
+  wl *= c->gl * c->level;
+  wr *= c->gr * c->level;
+  if (m >= 1.0f) {
+    *xl = wl;
+    *xr = wr;
+  } else {
+    *xl += (wl - *xl) * m;
+    *xr += (wr - *xr) * m;
+  }
+}
+
 void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float* r,
                     int count, const int32_t* types,
                     const float params[LE_FX_MAX][LE_FX_PARAMS],
                     const int32_t* enabled, int gain_at, float gain) {
   float xl = *l;
   float xr = *r;
+  /* Whether any entry of the rack being walked wants to run: reset at each
+   * rack's first entry, read at its last (fx_rack_output). */
+  int rack_on = 0;
   if (fx->enable_clear_cooldown > 0) fx->enable_clear_cooldown--;
   for (int s = 0; s < count; ++s) {
     if (s == gain_at) { xl *= gain; xr *= gain; }
+    if (fx->chan_any) {
+      if (fx->chan[s].rack & LE_FX_RACK_FIRST) rack_on = 0;
+      if (enabled == NULL || enabled[s] != 0) rack_on = 1;
+    }
     const int32_t ty = types[s];
     if (ty > LE_FX_NONE && ty < LE_FX_TYPE_COUNT && LE_FX[ty].process) {
       /* Plugin installation can replace a draining built-in without a ring
@@ -1395,7 +1452,7 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
           const int needs_clear =
               LE_FX[ty].prepare != NULL &&
               (fx->delay[s][0] != NULL || fx->delay[s][1] != NULL);
-          if (needs_clear && fx->enable_clear_cooldown > 0) continue;
+          if (needs_clear && fx->enable_clear_cooldown > 0) goto slot_done;
           le_fx_entry_reset(fx, s);
           if (needs_clear) {
             le_fx_entry_clear_rings(fx, s, cap);
@@ -1421,7 +1478,7 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
         float wr = xr;
         LE_FX[ty].process(fx, s, sr, cap, &wl, &wr, params[s]);
         fx->enable_warmup[s]--;
-        continue;
+        goto slot_done;
       }
       float mix = fx->enable_mix[s];
       if (want) {
@@ -1444,7 +1501,7 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
         if (mix < 0.0f) mix = 0.0f;
         fx->enable_mix[s] = mix;
       } else if (fx->enable_drain[s] <= 0) {
-        continue; /* settled bypassed, tail drained: skip (D-BITEXACT) */
+        goto slot_done; /* settled bypassed, tail drained: skip (D-BITEXACT) */
       }
       /* The feed: the whole dry signal while settled enabled (and always for
        * a crossfading type), a scaled copy while a draining type ramps,
@@ -1489,8 +1546,9 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
        * the gains are a balance; Mono averages them and the gains place the
        * result. Applied to the wet only, so the crossfade below still blends
        * against the untouched dry — and a tail draining out of a bypassed
-       * entry keeps the level it was heard at. */
-      if (fx->chan_any) {
+       * entry keeps the level it was heard at. A rack's last entry carries
+       * the RACK's output side instead, applied after the entry below. */
+      if (fx->chan_any && !(fx->chan[s].rack & LE_FX_RACK_LAST)) {
         const le_fx_chan* c = &fx->chan[s];
         if (c->out_mode == LE_FX_CHAN_OUT_MONO) {
           const float mid = 0.5f * (wl + wr);
@@ -1531,6 +1589,13 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
           }
         }
       }
+    }
+  slot_done:
+    /* Whatever the entry did — processed, passed through as LE_FX_NONE,
+     * skipped as a settled bypass — a rack's last entry hands on through the
+     * rack's output side. */
+    if (fx->chan_any && (fx->chan[s].rack & LE_FX_RACK_LAST)) {
+      fx_rack_output(fx, s, rack_on, sr, &xl, &xr);
     }
   }
   if (gain_at == count) { xl *= gain; xr *= gain; }

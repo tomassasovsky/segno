@@ -235,6 +235,11 @@ typedef struct le_fx_chan {
   float gl;         /* the balance's (or pan's) gains */
   float gr;
   float level; /* applied after the effects and after the output choice */
+  /* LE_FX_RACK_* bits: where the entry sits in a rack. An entry with
+   * LE_FX_RACK_LAST carries its RACK's output side (output choice, gains and
+   * level), which fx_apply_chain applies after the entry whatever the entry
+   * is, while any entry of the rack is on (see fx_rack_output). */
+  int32_t rack;
 } le_fx_chan;
 
 /* One output bus's per-block snapshot (slice 3b): its chain and facts, read
@@ -429,6 +434,14 @@ typedef struct le_fx_state {
    * of quiet settles the drain. These fields are callback-owned. */
   int32_t enable_drain[LE_FX_MAX];
   int32_t enable_quiet[LE_FX_MAX];
+  /* A rack's output-side crossfade, kept on its LAST entry (fx_rack_output):
+   * rack_mix is how much of the rack's output side applies (1 while any of
+   * its entries is on, 0 with all of them off), ramped at the enable rate.
+   * rack_primed 0 means the next use settles it at its target without a
+   * ramp: a zeroed state, a fresh structure (le_fx_rack_reset) and a print
+   * engaging all start there, so none of them fades. Callback-owned. */
+  float rack_mix[LE_FX_MAX];
+  int32_t rack_primed[LE_FX_MAX];
   /* For an LE_FX_PLUGIN slot: the hosted-plugin slot handle the audio thread
    * forwards to, or NULL. The control thread publishes/retracts it
    * (engine_plugin.c); the audio thread only loads it (fx_plugin_process). A
@@ -672,6 +685,7 @@ typedef struct le_lane {
   _Atomic uint32_t a_fx_chan_gl_bits[LE_FX_MAX];  /* its gains */
   _Atomic uint32_t a_fx_chan_gr_bits[LE_FX_MAX];
   _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_FX_LEVEL_MAX */
+  _Atomic int32_t a_fx_chan_rack[LE_FX_MAX]; /* LE_FX_RACK_* bits */
   /* Control-thread-owned shadows of the last successfully PUSHED count/types.
    * a_fx_count / a_fx_type are published by the AUDIO thread when it drains
    * the ring, so the control thread must not read them to decide D-ENSEED
@@ -775,6 +789,7 @@ typedef struct le_monitor_input {
   _Atomic uint32_t a_fx_chan_gl_bits[LE_FX_MAX];  /* its gains */
   _Atomic uint32_t a_fx_chan_gr_bits[LE_FX_MAX];
   _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_FX_LEVEL_MAX */
+  _Atomic int32_t a_fx_chan_rack[LE_FX_MAX]; /* LE_FX_RACK_* bits */
   /* Control-thread-owned pushed-count/type shadows (see le_lane). */
   int32_t fx_count_pushed;
   int32_t fx_type_pushed[LE_FX_MAX];
@@ -892,6 +907,7 @@ typedef struct le_fx_bus {
   _Atomic uint32_t a_fx_chan_gl_bits[LE_FX_MAX];  /* its gains */
   _Atomic uint32_t a_fx_chan_gr_bits[LE_FX_MAX];
   _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_FX_LEVEL_MAX */
+  _Atomic int32_t a_fx_chan_rack[LE_FX_MAX]; /* LE_FX_RACK_* bits */
   /* Control-thread-owned pushed-count/type shadows (see le_lane). */
   int32_t fx_count_pushed;
   int32_t fx_type_pushed[LE_FX_MAX];
@@ -3017,13 +3033,16 @@ static inline float load_f32(_Atomic uint32_t* slot) {
 /* Caches one chain's published channel handling into its DSP state, once per
  * buffer (slice 3e). Sets chan_any when any ACTIVE entry asks for something
  * other than stereo in, stereo out and unity level, so a chain at its defaults
- * costs one flag and fx_apply_chain never looks further. */
+ * costs one flag and fx_apply_chain never looks further. A rack edge alone
+ * does not set it: a rack whose output side is at its defaults has nothing to
+ * apply. */
 static inline void le_fx_chan_snapshot(le_fx_chan* chan, int32_t* out_any,
                                        int32_t count, _Atomic int32_t* a_in,
                                        _Atomic int32_t* a_out,
                                        _Atomic uint32_t* a_gl,
                                        _Atomic uint32_t* a_gr,
-                                       _Atomic uint32_t* a_level) {
+                                       _Atomic uint32_t* a_level,
+                                       _Atomic int32_t* a_rack) {
   int32_t any = 0;
   if (count < 0) count = 0;
   if (count > LE_FX_MAX) count = LE_FX_MAX;
@@ -3034,6 +3053,7 @@ static inline void le_fx_chan_snapshot(le_fx_chan* chan, int32_t* out_any,
     c->gl = load_f32(&a_gl[s]);
     c->gr = load_f32(&a_gr[s]);
     c->level = load_f32(&a_level[s]);
+    c->rack = load_i32(&a_rack[s]);
     if (c->in_mode != LE_FX_CHAN_IN_STEREO ||
         c->out_mode != LE_FX_CHAN_OUT_STEREO || c->gl != 1.0f ||
         c->gr != 1.0f || c->level != 1.0f) {

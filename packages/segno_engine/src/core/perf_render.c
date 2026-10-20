@@ -1477,6 +1477,71 @@ static int le_pr_arm_slot(le_fx_state* fx, int s, int32_t type,
   return ok;
 }
 
+/* The index of [value]'s wire name in [names], or 0 (the default) when it is
+ * absent or unknown — the Dart FxChannels wire names, in enum order. */
+static int32_t le_pr_wire_index(const le_json_value* value,
+                                const char* const* names, int count) {
+  char name[16];
+  if (!le_json_string(value, name, sizeof(name))) return 0;
+  for (int i = 0; i < count; ++i) {
+    if (strcmp(name, names[i]) == 0) return i;
+  }
+  return 0;
+}
+
+/* Seeds [fx]'s channel cache from a manifest chain's arm-time [effects]: each
+ * entry's `channels` (input, output, placement, level) and the rack edges its
+ * `rack` ids imply, exactly what the live owner's recipe published
+ * (le_fx_recipe.rack: a run of entries sharing one rack id is one rack). So a
+ * stem or master render applies per-entry channel handling and the rack rule
+ * the way the live chain did. Slots past [count] keep the defaults, so an
+ * entry a logged count change adds later renders as an untouched one. */
+static void le_pr_seed_channels(le_fx_state* fx, const le_json_value* effects,
+                                int count) {
+  static const char* const kIn[] = {"stereo", "left", "right", "monoSum"};
+  static const char* const kOut[] = {"stereo", "mono"};
+  char ids[LE_FX_MAX][128];
+  int racked[LE_FX_MAX] = {0};
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  int32_t any = 0;
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    le_fx_chan* c = &fx->chan[s];
+    *c = (le_fx_chan){LE_FX_CHAN_IN_STEREO, LE_FX_CHAN_OUT_STEREO, 1.0f, 1.0f,
+                      1.0f, 0};
+    if (s >= count) continue;
+    const le_json_value* entry = le_json_at(effects, s);
+    const le_json_value* ch = le_json_get(entry, "channels");
+    c->in_mode = le_pr_wire_index(le_json_get(ch, "input"), kIn, 4);
+    c->out_mode = le_pr_wire_index(le_json_get(ch, "output"), kOut, 2);
+    float placement = (float)le_json_number(le_json_get(ch, "placement"), 0);
+    /* NaN reads as centre, the setters' rule. */
+    if (!(placement >= -1.0f)) placement = placement < -1.0f ? -1.0f : 0.0f;
+    if (placement > 1.0f) placement = 1.0f;
+    le_pan_gains(placement, &c->gl, &c->gr);
+    float level = (float)le_json_number(le_json_get(ch, "level"), 1);
+    if (!(level >= 0.0f)) level = 0.0f;
+    if (level > LE_FX_LEVEL_MAX) level = LE_FX_LEVEL_MAX;
+    c->level = level;
+    racked[s] = le_json_string(le_json_get(le_json_get(entry, "rack"), "id"),
+                               ids[s], sizeof(ids[s]));
+    if (c->in_mode != LE_FX_CHAN_IN_STEREO ||
+        c->out_mode != LE_FX_CHAN_OUT_STEREO || c->gl != 1.0f ||
+        c->gr != 1.0f || c->level != 1.0f) {
+      any = 1;
+    }
+  }
+  for (int s = 0; s < count; ++s) {
+    if (!racked[s]) continue;
+    if (s == 0 || !racked[s - 1] || strcmp(ids[s - 1], ids[s]) != 0) {
+      fx->chan[s].rack |= LE_FX_RACK_FIRST;
+    }
+    if (s == count - 1 || !racked[s + 1] || strcmp(ids[s + 1], ids[s]) != 0) {
+      fx->chan[s].rack |= LE_FX_RACK_LAST;
+    }
+  }
+  fx->chan_any = any;
+}
+
 
 /* This render's heap le_fx_state teardown is the shared offline-state one
  * (le_fx_state_free_buffers, engine_fx.c) — a future heap-owning effect adds
@@ -1568,6 +1633,11 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
   for (int s = 0; s < LE_FX_MAX; ++s) {
     le_fx_enable_seed_at(fx, s, chain.chain_enabled && chain.enabled[s]);
   }
+  /* Each entry's channel handling and the rack edges, as the live lane had
+   * them at arm: a rack's level reaches the stem. */
+  le_pr_seed_channels(fx, arm_lane != NULL ? le_json_get(arm_lane, "effects")
+                                           : NULL,
+                      chain.count);
   /* A prepare failure (OOM on a delay ring / octaver's phase-vocoder heap)
    * is NOT let through as a silent dry-passthrough degradation: fx_delay/
    * fx_octaver already handle a NULL buffer gracefully at the DSP level
@@ -1818,6 +1888,7 @@ static int le_pr_render_master(const le_pr_manifest* m,
   fx->hop_seed = le_fx_output_hop_seed(m->arm_capture_bus);
   fx->clock = m->perf_arm_fx_clock; /* see le_pr_render_wet_track */
   fx->clocked = 1;
+  le_pr_seed_channels(fx, effects, chain.count); /* see le_pr_render_wet_track */
   int ok = 1;
   for (int i = 0; i < LE_FX_MAX; ++i) {
     le_fx_enable_seed_at(fx, i, chain.chain_enabled && chain.enabled[i]);

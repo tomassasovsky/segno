@@ -3,7 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:segno_engine/segno_engine.dart' show FxOwner, MockAudioEngine;
+import 'package:segno_engine/segno_engine.dart'
+    show FxOwner, FxRackEdge, MockAudioEngine;
 
 /// Guitar Rack / Rhythm Atmos, read from the catalogue's own file: its
 /// Master Vol is +10.6 dB, past the old x2 entry-level ceiling.
@@ -68,5 +69,33 @@ void main() {
       closeTo(level, 1e-6),
     );
     expect(engine.fxRecipes[(FxOwner.track, 0, 0)]!.slots, hasLength(7));
+  });
+
+  test("the recipe marks each rack's first and last entry, so the engine "
+      'applies the rack level whatever its last pedal is', () {
+    final rack = asRack(fxRackEntries(_rhythmAtmos()));
+    final effects = [
+      BuiltInEffect(type: TrackEffectType.delay, slotId: 'solo'),
+      ...rack,
+      BuiltInEffect(
+        type: TrackEffectType.reverb,
+        slotId: 'one',
+        rack: const FxRack(id: 'one', name: 'One'),
+      ),
+    ];
+
+    expect(repo.setTrackEffects(channel: 0, effects: effects), EngineResult.ok);
+
+    final slots = engine.fxRecipes[(FxOwner.track, 0, 0)]!.slots;
+    expect(slots.map((s) => s.rack), [
+      FxRackEdge.none, // a standalone entry belongs to no rack
+      FxRackEdge.first,
+      for (var i = 1; i < rack.length - 1; i++) FxRackEdge.none,
+      FxRackEdge.last,
+      FxRackEdge.only,
+    ]);
+    // The rack level rides the last entry, which the engine now applies after
+    // that entry even though its module is one the engine cannot build.
+    expect(slots[rack.length].channels.level, closeTo(3.388, 1e-3));
   });
 }

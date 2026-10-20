@@ -8,6 +8,7 @@ import 'package:looper_repository/src/models/audio_config.dart';
 import 'package:looper_repository/src/models/engine_reopened.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
+import 'package:looper_repository/src/models/fx_chain_group.dart';
 import 'package:looper_repository/src/models/fx_slot_ids.dart';
 import 'package:looper_repository/src/models/input_monitor.dart';
 import 'package:looper_repository/src/models/input_setup.dart';
@@ -3271,10 +3272,11 @@ class LooperRepository {
             if (fx != null) captured.add(fx);
           }
           final copied = withFreshSlotIds(captured);
+          final edges = fxRackEdges(copied);
           final slots = <FxRecipeSlot>[];
           final handles = <String, PluginSlotHandle>{};
           final loaded = <TrackEffect>[];
-          for (final fx in copied) {
+          for (final (index, fx) in copied.indexed) {
             if (fx is BuiltInEffect) {
               loaded.add(fx);
               slots.add(
@@ -3283,6 +3285,7 @@ class LooperRepository {
                   params: fx.params,
                   enabled: fx.enabled,
                   channels: fxChannelsToEngine(fx.channels),
+                  rack: edges[index],
                 ),
               );
             } else {
@@ -3296,9 +3299,14 @@ class LooperRepository {
                       ? plugin.copyWith(loading: false, unavailable: true)
                       : plugin,
                 );
+                // Inert, but still in its rack: a rack ending here keeps its
+                // output side.
                 slots.add(
                   FxRecipeSlot(
                     type: trackEffectTypeToEngine(TrackEffectType.none),
+                    enabled: plugin.enabled,
+                    channels: fxChannelsToEngine(plugin.channels),
+                    rack: edges[index],
                   ),
                 );
                 continue;
@@ -3317,6 +3325,7 @@ class LooperRepository {
                   plugin: handle,
                   enabled: plugin.enabled,
                   channels: fxChannelsToEngine(plugin.channels),
+                  rack: edges[index],
                 ),
               );
             }
@@ -7367,8 +7376,9 @@ class LooperRepository {
     final loaded = <TrackEffect>[];
     final slots = <FxRecipeSlot>[];
     var refusal = EngineResult.invalid;
+    final edges = fxRackEdges(effects);
     try {
-      for (final fx in effects) {
+      for (final (index, fx) in effects.indexed) {
         if (fx is BuiltInEffect) {
           loaded.add(fx);
           slots.add(
@@ -7377,6 +7387,7 @@ class LooperRepository {
               params: fx.params,
               enabled: fx.enabled,
               channels: fxChannelsToEngine(fx.channels),
+              rack: edges[index],
             ),
           );
           continue;
@@ -7395,8 +7406,15 @@ class LooperRepository {
               loading: false,
             ),
           );
+          // Inert, but still in its rack: a rack ending here keeps its
+          // output side.
           slots.add(
-            FxRecipeSlot(type: trackEffectTypeToEngine(TrackEffectType.none)),
+            FxRecipeSlot(
+              type: trackEffectTypeToEngine(TrackEffectType.none),
+              enabled: plugin.enabled,
+              channels: fxChannelsToEngine(plugin.channels),
+              rack: edges[index],
+            ),
           );
           continue;
         }
@@ -7429,6 +7447,7 @@ class LooperRepository {
             plugin: handle,
             enabled: plugin.enabled,
             channels: fxChannelsToEngine(plugin.channels),
+            rack: edges[index],
           ),
         );
       }

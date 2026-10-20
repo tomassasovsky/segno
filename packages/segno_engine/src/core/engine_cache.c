@@ -928,7 +928,8 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   memset(chan, 0, sizeof(chan));
   le_fx_chan_snapshot(chan, &chan_any, count, ln->a_fx_chan_in,
                       ln->a_fx_chan_out, ln->a_fx_chan_gl_bits,
-                      ln->a_fx_chan_gr_bits, ln->a_fx_chan_level_bits);
+                      ln->a_fx_chan_gr_bits, ln->a_fx_chan_level_bits,
+                      ln->a_fx_chan_rack);
   /* The loop top the print is rendered from (its clock0) and keyed by. */
   const uint32_t top =
       atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed);
@@ -1158,7 +1159,7 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   memset(chan, 0, sizeof(chan));
   le_fx_chan_snapshot(chan, &chan_any, count, b->a_fx_chan_in, b->a_fx_chan_out,
                       b->a_fx_chan_gl_bits, b->a_fx_chan_gr_bits,
-                      b->a_fx_chan_level_bits);
+                      b->a_fx_chan_level_bits, b->a_fx_chan_rack);
   /* The canonical key, not a snapshot fold: a track's key spans every part as
    * well as its own chain, so there is one reader of it and the cross-check
    * the part scheduler makes has nothing to compare against. A concurrent
@@ -1586,7 +1587,8 @@ void le_fx_frozen_capture(le_fx_frozen_chain* c, _Atomic int32_t* count,
                           _Atomic uint32_t (*param)[LE_FX_PARAMS],
                           _Atomic int32_t* chan_in, _Atomic int32_t* chan_out,
                           _Atomic uint32_t* gl, _Atomic uint32_t* gr,
-                          _Atomic uint32_t* level, int32_t hop_seed) {
+                          _Atomic uint32_t* level, _Atomic int32_t* rack,
+                          int32_t hop_seed) {
   int32_t n = load_i32(count);
   if (n < 0) n = 0;
   if (n > LE_FX_MAX) n = LE_FX_MAX;
@@ -1601,7 +1603,8 @@ void le_fx_frozen_capture(le_fx_frozen_chain* c, _Atomic int32_t* count,
   le_fx_chan chan[LE_FX_MAX];
   int32_t chan_any = 0;
   memset(chan, 0, sizeof(chan));
-  le_fx_chan_snapshot(chan, &chan_any, n, chan_in, chan_out, gl, gr, level);
+  le_fx_chan_snapshot(chan, &chan_any, n, chan_in, chan_out, gl, gr, level,
+                      rack);
   le_fx_frozen_fill(c, n, load_i32(pre), load_i32(chain_on), types, en, params,
                     chan, chan_any, hop_seed);
 }

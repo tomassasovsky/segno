@@ -6603,7 +6603,8 @@ static inline void snapshot_lane_fx(
       }
       le_fx_chan_snapshot(ln->fx.chan, &ln->fx.chan_any, n, ln->a_fx_chan_in,
                           ln->a_fx_chan_out, ln->a_fx_chan_gl_bits,
-                          ln->a_fx_chan_gr_bits, ln->a_fx_chan_level_bits);
+                          ln->a_fx_chan_gr_bits, ln->a_fx_chan_level_bits,
+                          ln->a_fx_chan_rack);
       /* A slot the chain will NOT process this buffer (chain skipped, beyond
        * the active count, or LE_FX_NONE) cannot advance its enable ramp; if
        * its effective bit is 0, settle it to bypass now so a processing gap
@@ -6670,7 +6671,8 @@ static inline void snapshot_monitor_fx(
     }
     le_fx_chan_snapshot(m->fx.chan, &m->fx.chan_any, n, m->a_fx_chan_in,
                         m->a_fx_chan_out, m->a_fx_chan_gl_bits,
-                        m->a_fx_chan_gr_bits, m->a_fx_chan_level_bits);
+                        m->a_fx_chan_gr_bits, m->a_fx_chan_level_bits,
+                        m->a_fx_chan_rack);
     /* Settle unprocessed disabled slots (see snapshot_lane_fx). The monitor
      * chain additionally stops running while the input is off or muted
      * (mix_monitors_frame), so those gaps are covered here too. */
@@ -6723,7 +6725,8 @@ static inline void snapshot_bus_fx(le_fx_bus* b, int32_t* bus_fx_count,
   }
   le_fx_chan_snapshot(b->fx.chan, &b->fx.chan_any, n, b->a_fx_chan_in,
                       b->a_fx_chan_out, b->a_fx_chan_gl_bits,
-                      b->a_fx_chan_gr_bits, b->a_fx_chan_level_bits);
+                      b->a_fx_chan_gr_bits, b->a_fx_chan_level_bits,
+                      b->a_fx_chan_rack);
   /* Settle unprocessed disabled slots (see snapshot_lane_fx): an empty bus
    * chain runs nothing at all, so every disabled slot's ramp settles here. */
   for (int s = 0; s < LE_FX_MAX; ++s) {
@@ -6751,7 +6754,7 @@ static inline void snapshot_all_tracks_instances(le_engine* e, int ch_out,
     le_fx_chan_snapshot(e->all_tracks_fx[k].chan, &e->all_tracks_fx[k].chan_any,
                         count, b->a_fx_chan_in, b->a_fx_chan_out,
                         b->a_fx_chan_gl_bits, b->a_fx_chan_gr_bits,
-                        b->a_fx_chan_level_bits);
+                        b->a_fx_chan_level_bits, b->a_fx_chan_rack);
     for (int s = 0; s < LE_FX_MAX; ++s) {
       const int unprocessed =
           !has_fx || s >= count || fx_type[s] == LE_FX_NONE;
@@ -7960,10 +7963,14 @@ static inline void mix_tracks_frame(
         le_lane* el = &e->tracks[t].lanes[l];
         for (int sfx = 0; sfx < fx_count[t][l]; ++sfx) {
           le_fx_enable_force_bypass(&el->fx, sfx);
+          /* The print carries the rack output sides: stop applying them at
+           * once rather than fading them out over audio that has them. */
+          le_fx_rack_reset(&el->fx, sfx);
         }
       }
       for (int sfx = 0; sfx < trk_fx_pre_count[t]; ++sfx) {
         le_fx_enable_force_bypass(&tr->bus.fx, sfx);
+        le_fx_rack_reset(&tr->bus.fx, sfx);
       }
     }
     const int track_printed =
@@ -8140,6 +8147,9 @@ static inline void mix_tracks_frame(
         store_i32(&ln->a_cache_active, 1);
         for (int s = 0; s < fx_pre_count[t][l]; ++s) {
           le_fx_enable_force_bypass(&ln->fx, s);
+          /* The print carries the Pre racks' output sides (see the track
+           * engage above). */
+          le_fx_rack_reset(&ln->fx, s);
         }
       }
       const int printed = wce != NULL && load_i32(&ln->a_cache_active);
