@@ -1,0 +1,134 @@
+{
+  "V": 5.25,
+  "C": 0.01,
+  "C_local": 0.00018,
+  "main_fuse_only_I2t": 9.914568345323742,
+  "main_fraction_typical": 0.138085910102002,
+  "main_half_resistance_fraction": 0.276171820204004,
+  "joined": [
+    {
+      "R_main": 0.02,
+      "R_touch": 0.129,
+      "panel_touch": 0.14339784610582174,
+      "local_touch": 0.019229651162790698,
+      "combined_upper": 0.2676511242886406,
+      "fraction_typical": 0.09627738283764051
+    },
+    {
+      "R_main": 0.05,
+      "R_touch": 0.129,
+      "panel_touch": 0.29841171885150064,
+      "local_touch": 0.019229651162790698,
+      "combined_upper": 0.4691452083340268,
+      "fraction_typical": 0.16875726918490172
+    },
+    {
+      "R_main": 0.1,
+      "R_touch": 0.129,
+      "panel_touch": 0.46651264344470394,
+      "local_touch": 0.019229651162790698,
+      "combined_upper": 0.6751717051695614,
+      "fraction_typical": 0.24286751984516597
+    },
+    {
+      "R_main": 0.2,
+      "R_touch": 0.129,
+      "panel_touch": 0.6494309747649678,
+      "local_touch": 0.019229651162790698,
+      "combined_upper": 0.8921630294856752,
+      "fraction_typical": 0.3209219530524012
+    }
+  ],
+  "voltage": {
+    "main_drop": 0.5759,
+    "touch_drop": 0.5705,
+    "main_at_J1_4_75": 4.1741,
+    "touch_at_J1_4_75": 4.1795
+  },
+  "wire": [
+    {
+      "wire": "28AWG",
+      "current": 1.68,
+      "seconds": 120,
+      "loop_R_at_60C": 0.14888155223880598,
+      "loop_power": 0.42020329303880594,
+      "adiabatic_rise_with_fixed_initial_R": 303.01537090666073
+    },
+    {
+      "wire": "28AWG",
+      "current": 2.2,
+      "seconds": 10,
+      "loop_R_at_60C": 0.14888155223880598,
+      "loop_power": 0.720586712835821,
+      "adiabatic_rise_with_fixed_initial_R": 43.30222491461871
+    },
+    {
+      "wire": "28AWG",
+      "current": 3.2,
+      "seconds": 3,
+      "loop_R_at_60C": 0.14888155223880598,
+      "loop_power": 1.5245470949253734,
+      "adiabatic_rise_with_fixed_initial_R": 27.48438738382411
+    },
+    {
+      "wire": "28AWG",
+      "current": 8,
+      "seconds": 0.3,
+      "loop_R_at_60C": 0.14888155223880598,
+      "loop_power": 9.528419343283582,
+      "adiabatic_rise_with_fixed_initial_R": 17.177742114890066
+    },
+    {
+      "wire": "20AWG",
+      "current": 8.4,
+      "seconds": 120,
+      "loop_R_at_60C": 0.023108256370656374,
+      "loop_power": 1.6305185695135138,
+      "adiabatic_rise_with_fixed_initial_R": 182.49763718489592
+    },
+    {
+      "wire": "20AWG",
+      "current": 11,
+      "seconds": 10,
+      "loop_R_at_60C": 0.023108256370656374,
+      "loop_power": 2.796099020849421,
+      "adiabatic_rise_with_fixed_initial_R": 26.07971241894889
+    },
+    {
+      "wire": "20AWG",
+      "current": 16,
+      "seconds": 3,
+      "loop_R_at_60C": 0.023108256370656374,
+      "loop_power": 5.915713630888032,
+      "adiabatic_rise_with_fixed_initial_R": 16.553073667564256
+    },
+    {
+      "wire": "20AWG",
+      "current": 40,
+      "seconds": 0.3,
+      "loop_R_at_60C": 0.023108256370656374,
+      "loop_power": 36.9732101930502,
+      "adiabatic_rise_with_fixed_initial_R": 10.345671042227659
+    }
+  ],
+  "practical_20cm": [
+    {
+      "path": "large",
+      "nominal_input_V": 5.0,
+      "loss_V": 0.47900373226666665,
+      "load_V_before_final_termination": 4.5209962677333335
+    },
+    {
+      "path": "small",
+      "nominal_input_V": 5.0,
+      "loss_V": 0.4200022393600001,
+      "load_V_before_final_termination": 4.5799977606399995
+    },
+    {
+      "path": "touch",
+      "nominal_input_V": 5.0,
+      "loss_V": 0.5457735760000001,
+      "load_V_before_final_termination": 4.454226424
+    }
+  ]
+}

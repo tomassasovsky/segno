@@ -1,0 +1,48 @@
+ref,value,footprint,mpn,group,quantity
+J1,AUX 5V INPUT,Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical,B2P-VH(LF)(SN),Control,1
+F1,8A time-lag,screen_power:Fuseholder_Schurter_OGN_0031.8201,0001.2513,Control,1
+J2,GPIO17 / GND,Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,B2B-XH-A(LF)(SN),Control,1
+R1,1k 1%,Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,MFR-25FBF52-1K,Control,1
+R2,4.7k 1%,Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,MFR-25FBF52-4K7,Control,1
+Q1,2N3904,Package_TO_SOT_THT:TO-92_Inline_Wide,2N3904BU,Control,1
+R5,5.6k 1%,Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,MFR-25FBF52-5K6,Control,1
+R6,100k 1%,Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,MFR-25FBF52-100K,Control,1
+R7,10k 1%,Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,MFR-25FBF52-10K,Control,1
+Q2,2N3906,Package_TO_SOT_THT:TO-92_Inline_Wide,2N3906BU,Control,1
+Q5,IRLZ44N,screen_power:TO-220-3_IRLZ44N,IRLZ44NPBF,Control,1
+D3,P6KE6.8CA,Diode_THT:D_DO-15_P10.16mm_Horizontal,P6KE6.8CA,Control,1
+K1,G6C-1117P-US,screen_power:Relay_Omron_G6C-1117P-US,G6C-1117P-US DC5,Control,1
+R8,100R 1W 1%,Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,PR01000101000FA100,Control,1
+C1,100nF 50V X7R,Capacitor_THT:C_Disc_D7.5mm_W4.4mm_P5.00mm,K104K10X7RF53H5,Control,1
+C2,220uF 10V,Capacitor_THT:CP_Radial_D6.3mm_P2.50mm,EEU-FR1A221,Control,1
+J101,PI USB / XH5,Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical,B5B-XH-A(LF)(SN),Screen 1,1
+J102,TOUCH / XH5,Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical,B5B-XH-A(LF)(SN),Screen 1,1
+J103,SCREEN 1 POWER,Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical,B2P-VH(LF)(SN),Screen 1,1
+F101,4A time-lag,screen_power:Fuse_Bel_0697H_P5.08mm,0697H4000-02,Screen 1,1
+F102,800mA time-lag,screen_power:Fuse_Bel_0697H_P5.08mm,0697H0800-02,Screen 1,1
+K101,IM02TS,screen_power:Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm_D0.90mm,1-1462037-3,Screen 1,1
+Q101,TN0702,Package_TO_SOT_THT:TO-92_Inline_Wide,TN0702N3-G,Screen 1,1
+Q102,TN0702,Package_TO_SOT_THT:TO-92_Inline_Wide,TN0702N3-G,Screen 1,1
+R101,10k 1%,Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,MFR-25FBF52-10K,Screen 1,1
+R102,100k 1%,Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,MFR-25FBF52-100K,Screen 1,1
+D101,1N4007,Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal,1N4007G,Screen 1,1
+C101,100nF 50V X7R,Capacitor_THT:C_Disc_D7.5mm_W4.4mm_P5.00mm,K104K10X7RF53H5,Screen 1,1
+C102,150uF 10V,Capacitor_THT:CP_Radial_D5.0mm_P2.00mm,EEU-FR1A151,Screen 1,1
+J201,PI USB / XH5,Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical,B5B-XH-A(LF)(SN),Screen 2,1
+J202,TOUCH / XH5,Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical,B5B-XH-A(LF)(SN),Screen 2,1
+J203,SCREEN 2 POWER,Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical,B2P-VH(LF)(SN),Screen 2,1
+F201,4A time-lag,screen_power:Fuse_Bel_0697H_P5.08mm,0697H4000-02,Screen 2,1
+F202,800mA time-lag,screen_power:Fuse_Bel_0697H_P5.08mm,0697H0800-02,Screen 2,1
+K201,IM02TS,screen_power:Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm_D0.90mm,1-1462037-3,Screen 2,1
+Q201,TN0702,Package_TO_SOT_THT:TO-92_Inline_Wide,TN0702N3-G,Screen 2,1
+Q202,TN0702,Package_TO_SOT_THT:TO-92_Inline_Wide,TN0702N3-G,Screen 2,1
+R201,10k 1%,Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,MFR-25FBF52-10K,Screen 2,1
+R202,100k 1%,Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,MFR-25FBF52-100K,Screen 2,1
+D201,1N4007,Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal,1N4007G,Screen 2,1
+C201,100nF 50V X7R,Capacitor_THT:C_Disc_D7.5mm_W4.4mm_P5.00mm,K104K10X7RF53H5,Screen 2,1
+C202,150uF 10V,Capacitor_THT:CP_Radial_D5.0mm_P2.00mm,EEU-FR1A151,Screen 2,1
+H1,M3,MountingHole:MountingHole_3.5mm,NPTH,Mechanical,1
+H2,M3,MountingHole:MountingHole_3.5mm,NPTH,Mechanical,1
+H3,M3,MountingHole:MountingHole_3.5mm,NPTH,Mechanical,1
+H4,M3,MountingHole:MountingHole_3.5mm,NPTH,Mechanical,1
+F1_HOLDER,5x20 input fuse holder,screen_power:Fuseholder_Schurter_OGN_0031.8201,0031.8201,Fuse holders,1

@@ -1,0 +1,31 @@
+{
+  "screen_power_hand.kicad_pcb": {
+    "old_sha256": "7e6945bc12ae4bfd6896cca5e681d7dc1f6c30030c1ed014c0675416dadeacc7",
+    "new_sha256": "b1a404b92166151ec2b43589d48c5fb3be94028b295cf2be9c71cd7ab7630e91",
+    "tracks_and_vias_unchanged": true,
+    "footprints_and_pads_unchanged": true,
+    "track_and_via_count": 137,
+    "footprints_including_holes": 41,
+    "corner_radii_mm": [
+      3.0,
+      3.0,
+      3.0,
+      3.0
+    ]
+  },
+  "screen_power_hand.placed.kicad_pcb": {
+    "old_sha256": "366e315cb4dbdf9b36c814e251412a756c1d493c66908227cd4178ea8add8051",
+    "new_sha256": "968e41d56c9ea18db166aea9781c0f9c2d66ceb3cb1af547c9c1f2b78ead83aa",
+    "tracks_and_vias_unchanged": true,
+    "footprints_and_pads_unchanged": true,
+    "track_and_via_count": 67,
+    "footprints_including_holes": 41,
+    "corner_radii_mm": [
+      3.0,
+      3.0,
+      3.0,
+      3.0
+    ]
+  },
+  "bom_component_records_and_netlist_unchanged": true
+}
