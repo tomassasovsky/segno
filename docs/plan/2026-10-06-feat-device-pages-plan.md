@@ -1,14 +1,67 @@
 # Device and appliance pages: Device, interface loss, Displays, Power, Updates, Network, About
 
-<!-- cspell:ignore dpwx yyqr Ulrb orpd pbdiy OZOP JEHXY Cksr Xyzrn devicetree EDID edid setvcp Licences -->
+<!-- cspell:ignore dpwx yyqr Ulrb orpd pbdiy OZOP JEHXY Cksr Xyzrn devicetree EDID edid setvcp Licences tmpfiles -->
 
-Tracking: #1270, `stage:plan`. This plan covers the Device, Network, Displays and Updates
+Tracking: #1270, `stage:build`. This plan covers the Device, Network, Displays and Updates
 tiles of the Settings home, the About page and the Power button. They replace the interim
 pages that `docs/plan/2026-10-06-feat-settings-destinations-plan.md` (#1199) put under
 `lib/settings/view` (that plan's §2 tile map, rows 6, 7, 8 and 10).
 
-Base: `origin/claude/segno-integration` at `c4b5cf909`. File and line references are to
-that tree.
+## 0. Status (refreshed 2026-10-19)
+
+The plan was written on 2026-10-06 against `c4b5cf909`. This refresh checks it against
+`origin/claude/segno-integration` at `99b8027c2`. File and line references in the sections
+for the open parts (1–5 and 8) are to that tree.
+
+**Shipped.** Five parts merged into `claude/segno-integration` on 2026-10-07. Their specs
+are replaced below by a short record of what shipped and where it differs from the plan;
+the original specs are in commit `43e4443ef`.
+
+| Part | PR | What shipped |
+|---|---|---|
+| 6 Power and Restart | #1284 | Power options with Restart and Shut down on one guarded path |
+| 7 Updates page | #1287 | Pen 33 page, cancellable download, interrupted and rolled-back notices |
+| 9 Displays | #1286 | Per-display brightness, idle dimming, Display options row |
+| 11 Network | #1285 | Pen 29 page, failed join restores the previous network |
+| 12 About and Controller | #1283 | Read facts only, Controller firmware page, flash record |
+
+**Replaced.** Part 10 (touch calibration) was built under #1330 instead, as #1335. See
+Part 10 below.
+
+**System changes since the plan was written:**
+
+- **The appliance runs ivi-homescreen only** (#1330: #1331, #1332, #1334). There is no
+  Weston, no GTK runner, no `weston.ini`, no `weston-touch-calibrator`, no
+  `97-segno-touch-output.rules`, no `WL_OUTPUT` rules and no desktop waveform window.
+  `segno-kiosk-launch` sets up the environment and then runs
+  `exec /usr/bin/segno --config /etc/segno/homescreen.toml`, so the app process is the
+  service's main process. One process runs two Flutter engines, one per screen
+  (`--segno-screen=main` and `--segno-screen=readout`), and the readout is fed over the
+  screen link.
+- **Screen roles and connectors come from `/etc/segno/homescreen.toml`.**
+  `parseHomescreenScreenConnectors` (`packages/brightness_client/lib/src/display_outputs.dart:98`)
+  reads each view's `--segno-screen` and `drm_connector`. The shipped file
+  (`deploy/yocto/meta-segno/recipes-segno/segno-bundle/files/homescreen.toml`, since
+  #1346) puts the main UI (15.6") on HDMI-A-2 and the readout (7") on HDMI-A-1, which is
+  how the assembled console is cabled. The panels are no longer crossed against the
+  shipped config.
+- **Touch calibration is in the app** (#1335): Settings > Displays > Calibrate touch.
+  `segno-touch-ctl` takes `get`, `try`, `set`, `reset` and `restore` per screen (`main` or
+  `readout`), plus `apply` at boot. The readout's touchscreen is matched by the
+  `touch_device` name in `homescreen.toml`; every other touchscreen is main.
+- **Idle dimming exists.** `IdleDimCubit` (`lib/appliance/idle_dim_cubit.dart`) shipped
+  with Part 9. #1350 dims the console's ring and pills with the screens (pedal link
+  protocol 11). #1355 stopped treating the open audio device as music, so dimming now
+  fires on the appliance; only a playing or recording track, the backing track or a
+  performance recording keeps the screens awake.
+- **The settings tray is gone** (#1199 Part 5). `DeviceSettingsPage` now hosts
+  `DeviceAudioTab` alone; `AudioTab`, `RecordingAudioTab` and `AudioTrayPanel` are
+  deleted. Parts 4, 9 and 11 no longer wait on #1199.
+
+**Open.** Parts 1–5 and 8 are still the plan and await the owner's review. None of them
+has started. Their direction is unchanged. Part 1's premise changed with the ivi launcher
+and is restated in its section; Part 4 and Part 8 have small corrections noted where they
+apply.
 
 Pen sources (`segno-ui.pen`, group `p0dpwx` "01 CURRENT UX"):
 
@@ -21,7 +74,8 @@ Pen sources (`segno-ui.pen`, group `p0dpwx` "01 CURRENT UX"):
 | 33 Updates | `b0n5kk` | Accepted |
 | PARITY REVIEW / About, controller and MIDI sync | `nBA56` | parity review; About, notices and Controller screens only |
 
-None of these frames has a `c/` rationale note. The written rationale is in the design
+When the plan was written none of these frames had a `c/` rationale note. #1335 added one
+to section 30 for the Track display calibration. The written rationale is in the design
 docs in the main checkout:
 
 - `docs/design/2026-09-07-audio-device-ux.md` (status: "Awaiting explicit acceptance").
@@ -30,160 +84,129 @@ docs in the main checkout:
 
 Engine numbers (ledger): commands 140–143 and perf-log facts 356–359. This plan uses 140
 and 141. 142, 143 and the facts 356–359 go back to the ledger, because nothing here
-changes recorded material.
+changes recorded material. On `99b8027c2` the highest command is 137, so 140 and 141 are
+still free.
 
 Standing owner decisions that apply:
 
-- The settings tray is retired (#1199 Parts 5–6).
+- The settings tray is retired (#1199 Parts 5–6). Done on the trunk.
 - Computer-facing USB gadget mode is out of scope.
 - Every Session schema bump adds a #1196 migration step. Nothing in this plan bumps the
   Session schema: every setting here is appliance state, which session recall and New
   loop do not touch.
 
-## 1. Current state (verified)
+## 1. Current state (verified on `99b8027c2`)
 
-### Interim pages and the tray
+### Settings pages
 
-- `SettingsDestination.open()` (`lib/settings/settings_destination.dart:61-72`) maps
-  Device, Network, Displays and Updates to interim pages. Those pages host tray bodies:
-  - `DeviceSettingsPage` (`lib/settings/view/device_settings_page.dart:15-62`):
-    `PillTabs<AudioTab>` over `DeviceAudioTab` and `RecordingAudioTab`.
-  - `NetworkSettingsPage` (`network_settings_page.dart:13-31`): `WifiTrayBody`.
-  - `DisplaysSettingsPage` (`displays_settings_page.dart:17-32`): one
-    `DisplayBrightnessRow` (42-119) plus `DisplaySystemTab`.
-  - `UpdatesSettingsPage` (`updates_settings_page.dart:16-45`): `UpdatesSystemTab` plus
-    an About row (31-37).
-  - `AboutSettingsPage` (`about_settings_page.dart:8-17`): `AboutSystemTab`.
-- The tray mounts the same bodies: `AudioTrayPanel` (`lib/looper/view/tray/tray_panel.dart:141`),
-  `SystemTrayPanel` and `NetworkTrayPanel`. #1199 Part 5 deletes those faces, the
-  Recording tab and `AudioTab`. Every page part below that deletes a tray body
-  therefore depends on #1199 Part 5.
-- Routes: `lib/app/segno_navigator.dart`. `openDeviceSettings` (179) is also called from
-  `connectivity_banners.dart:75`, `tracks_chrome.dart:24` and `app.dart:1040`.
+- `SettingsDestination.open()` (`lib/settings/settings_destination.dart:61-72`) opens
+  each page. Network, Displays, Updates and About are the accepted pages from Parts 9,
+  11, 7 and 12.
+- `DeviceSettingsPage` (`lib/settings/view/device_settings_page.dart`) is still interim:
+  it hosts `DeviceAudioTab` (`lib/audio_setup/view/console/device_audio_tab.dart`), which
+  still has the ASIO group (93-167, 477 on), the loopback note (153-156) and the latency
+  row (422-475).
+- Routes: `lib/app/segno_navigator.dart`. `openDeviceSettings` (195) is also called from
+  `connectivity_banners.dart:75`, `tracks_chrome.dart:24` and `app.dart:1194`.
 
 ### Device and latency
 
 - **Every Device chip applies at once and clears the loops.**
   - `setSampleRate` (`lib/audio_setup/cubit/audio_setup_cubit.dart:142`),
-    `setBufferFrames` (151) and `setDevice` (229-244) call `_persistAndApply` (273-382).
+    `setBufferFrames` (151) and `setDevice` (229-244) call `_persistAndApply` (273).
   - `_persistAndApply` saves first (274), then calls `stopEngine()` and
-    `startEngine(_engineConfig())` (295-298).
-  - `le_engine_start` clears all recorded material
-    (`packages/segno_engine/src/core/segno_engine_api.h:1646-1649`).
+    `startEngine(_engineConfig())` (296-298).
+  - `le_engine_start` opens the device fresh and clears the recorded material; the
+    `le_engine_reopen` comment says so (`packages/segno_engine/src/core/segno_engine_api.h:1925-1928`).
   - There is no draft, no confirmation and no capture guard. `GuardKind.deviceChange`
     (`packages/operation_guards/lib/src/guard_registry.dart:24`) is never entered.
 - **A refused configuration comes back at boot.** The config is saved before the open,
-  so a refused request stays on disk (274) while the screen shows the live values
-  (299-329).
-- **`le_engine_reopen` (`segno_engine_api.h:1665-1697`, #1140) keeps the material.** It
+  so a refused request stays on disk (274) while the screen shows the live values.
+- **`le_engine_reopen` (`segno_engine_api.h:1897-1940`, #1140) keeps the material.** It
   keeps loops, history and Fade, and brings tracks back STOPPED. It still clears the
   whole engine when the sample rate or the loop cap changes (`LE_REOPEN_CLEARED_RATE`,
-  `_CAP`). The repository reaches it only from the private `_reopenEngine`
-  (`packages/looper_repository/lib/src/looper_repository.dart:2454-2492`).
+  `_CAP`), and it now also reports `LE_REOPEN_RETAINED_PARTIAL` with a dropped-track
+  mask. The repository reaches it only from the private `_reopenEngine`
+  (`packages/looper_repository/lib/src/looper_repository.dart:2634`).
 - **The latency test is loud and plays on every output.**
-  - `LE_CMD_MEASURE_LATENCY` (`engine_process.c:2788-2805`) starts a 10 ms, 1 kHz burst
+  - `LE_CMD_MEASURE_LATENCY` (`engine_process.c:4085-4102`) starts a 10 ms, 1 kHz burst
     at amplitude 0.9 (`engine_core.h:34-38`).
-  - The pulse block (`engine_process.c:5520-5565`) writes it to every output channel.
+  - The pulse block in `process_input_frame` (`engine_process.c:7276-7307`) writes it to
+    every output channel.
   - It reads the return from the loopback channels when `excluded_input_mask != 0`,
-    otherwise from the maximum of all real inputs (5482-5493, 5525).
-  - `le_latency_resolve` (4099-4139) cross-correlates and writes `a_record_offset`.
+    otherwise from the maximum of all real inputs (7219-7226, 7267).
+  - `le_latency_resolve` (5648-5683) cross-correlates and writes `a_record_offset`.
   - No API selects an output, an input or a level.
 - **The app measures without asking.**
-  - At boot (`lib/app/audio_bootstrap.dart:289-301`) and after every apply
+  - At boot (`lib/app/audio_bootstrap.dart:306-321`) and after every apply
     (`_autoMeasureIfLoopback`, `audio_setup_cubit.dart:415-420`), the app measures
     whenever a loopback is detected. On the appliance, the Scarlett loop channels set
     `excluded_input_mask`, so this sends the 0.9 burst to every output.
   - `measureLatency()` (478) does not wait for or evaluate the result.
-  - Offsets persist per device|rate|buffer (`_syncLatencyPersistence`, 592-625;
-    `SettingsRepository.loadLatencyOffsetFrames` 365, `saveLatencyOffsetFrames` 383).
+  - Offsets persist per device|rate|buffer (`_syncLatencyPersistence`, 592;
+    `SettingsRepository.loadLatencyOffsetFrames` 388, `saveLatencyOffsetFrames` 406).
 - **Rate and buffer choices are fixed lists** (`audio_setup_state.dart:235-238`).
-  `le_device_info` (`segno_engine_api.h:609-630`) carries rate arrays only for ASIO, and
-  ASIO enumeration always returns 0 (1462).
+  `le_device_info` (`segno_engine_api.h:683-704`) carries rate arrays only for ASIO. No
+  ASIO backend is built any more, and its enumeration is always empty
+  (`engine_devices.c:464-479`).
 - **Health counters have no UI.** `EngineStatus.xrunCount`
   (`packages/looper_repository/lib/src/models/engine_status.dart:73`) is shown nowhere.
 
 ### Interface loss
 
-- The Stage shows a persistent red `_LostBanner` with "Open setup"
-  (`lib/looper/view/connectivity_banners.dart:48-106`). This was the 2026-08-26 owner
-  decision (`c/device-lost` in "02 EARLIER APPLICATION").
+- The Stage shows a persistent red `_LostBanner` (`lib/looper/view/connectivity_banners.dart:112`)
+  with "Open setup" (75). This was the 2026-08-26 owner decision (`c/device-lost` in
+  "02 EARLIER APPLICATION").
 - The supervisor reopens automatically when the pinned device returns:
-  `_superviseDevice` (`looper_repository.dart:2113-2120`), `_attemptReconnect`
-  (2170-2201), `_reopenEngine`.
-- At boot, `AudioRecoveryCubit` (`lib/looper/cubit/audio_recovery_cubit.dart:21-116`)
-  starts the engine on the absent→present edge.
+  `_superviseDevice` (`looper_repository.dart:2286`), `_attemptReconnect` (2343),
+  `_reopenEngine` (2634).
+- At boot, `AudioRecoveryCubit` (`lib/looper/cubit/audio_recovery_cubit.dart:21`) starts
+  the engine on the absent→present edge.
 
-### Displays
+### Displays (shipped by Part 9 and #1335)
 
-- There is one brightness value: `DisplayBrightnessCubit`
-  (`lib/appliance/display_brightness_cubit.dart:11-53`) and the key `ui.brightness`
-  (`settings_repository.dart:698-708`).
-- It is applied two ways:
-  - In software, to the main window only: `SoftwareBrightness`
-    (`lib/appliance/software_brightness.dart`, minimum 0.1, default 1.0), used at
-    `lib/app/view/app.dart:1183`.
-  - In hardware, through `segno-brightness-ctl`, which runs `ddcutil` VCP 0x10 against
-    the first display it finds, with no display selector.
-- There is no idle dimming. `weston.ini:6` sets `idle-time=0`.
-- **Touch calibration is one matrix for one device.**
-  - `segno-touch-ctl` stores one matrix at `/data/touch/calibration` and applies it to
-    the first touchscreen it finds.
-  - The measuring is done by `weston-touch-calibrator` (`weston.ini:124-126`).
-  - `97-segno-touch-output.rules` binds `1a86:e5e3` to HDMI-A-2. On the bench unit the
-    panels are crossed (memory: 7" on HDMI-A-1).
-- The two app windows are pinned by app-id. The main window is on `HDMI-A-1`
-  (`weston.ini:30-40`). The Track display window (`dev.aquiles.segno.waveform`,
-  `lib/visualizer/waveform_window.dart`) is on `HDMI-A-2` (42-108).
+- Brightness is per display: `DisplayBrightnessCubit`, keys `ui.brightness.track` and
+  `ui.brightness.main` (`settings_repository.dart:784-787`), migrated from `ui.brightness`.
+  `segno-brightness-ctl` takes `--connector`; a panel without a DDC bus is dimmed in
+  software over its own screen.
+- `DisplayRole` maps to `SegnoScreen` (`lib/appliance/display_role.dart`). The connector
+  comes from `homescreen.toml` and presence from `/sys/class/drm/card*-<connector>/status`.
+- Idle dimming: `IdleDimCubit` and `ui.idle_dim_seconds` (`settings_repository.dart:817`).
+- Touch calibration: `TouchCalibrationCubit` and `TouchCalibrationPage`
+  (`lib/settings/touch_calibration/`), `packages/touch_calibration_client`, and
+  `segno-touch-ctl` with one matrix per screen in `/data/touch/{main,readout}`.
 
 ### Power and updates
 
-- **Power off.**
-  - `PowerOffCubit` (`lib/appliance/power_off/power_off_cubit.dart:18-162`) has: `press`
-    37, `keepPlaying` 50, `saveAndPowerOff` 57, `powerOffWithoutSaving` 74,
-    `retryPowerOff` 80, `powerOffAnyway` 88 and `_halt` 127-157.
-  - `powerOffGate` (`power_off_gate.dart:83-89`) refuses during a take.
-  - There is no user Restart. `ApplianceEnv.reboot` (`lib/update/appliance/appliance_env.dart:41`)
-    is reached only from the update flow.
-- **The update restart skips the safety flow.** `UpdatesSystemTab._confirmRestart`
-  (`lib/system/view/updates_system_tab.dart:262-272`) calls `UpdateCubit.applyAndRestart`,
-  which calls `env.reboot()` directly. That bypasses the take refusal, the settings flush
-  and the session save.
-- **The update helper is network only.** `segno-update-ctl`
-  (`deploy/yocto/meta-segno/recipes-segno/segno-bundle/files/segno-update-ctl`):
-  - `do_install` (123-187) fetches the manifest, downloads the bundle to `/tmp`, checks
-    sha256, runs `rauc install`, then writes the staged marker and the boot id (182-184).
-  - `reboot` (239-252) passes the tryboot argument only when a marker is staged.
-  - `do_reconcile_staged` (196-234) returns a reason (`tryboot-not-taken`).
-    `AppliancePlatformBackend.stagedVersion` (`lib/update/appliance/appliance_platform_backend.dart:78-83`)
-    drops that reason silently.
-- **The boot health gate can commit a crash-looping build (#976, P0).**
-  - `segno-mark-good` checks `is-active` and `NRestarts` on `segno.service`.
-  - `segno.service` (`ExecStart=/usr/bin/segno-kiosk-launch`, `Restart=always`) runs a
-    wrapper that stays up while the app dies under it.
-  - #976 is labelled `stage:build`; its first listed option is an app readiness marker.
+- **Power** (shipped by Part 6): `PowerCubit` (`lib/appliance/power_off/power_cubit.dart`)
+  has `restart` (80) and `shutDown` (86). Install and restart on Updates goes through
+  `restart`. `applyAndRestart`, `powerOffWithoutSaving` and `powerOffAnyway` are gone.
+- **Updates** (shipped by Part 7): `segno-update-ctl`
+  (`deploy/yocto/meta-segno/recipes-segno/segno-bundle/files/segno-update-ctl`) records
+  the attempt marker, has the `attempt` and `clear-attempt` verbs, and passes the
+  reconcile reason through. It is still network only: `do_install` (164-238) fetches the
+  manifest, downloads to a work dir, checks sha256, and runs `rauc install` through a
+  fifo.
+- **The boot health gate.** `segno-mark-good` checks `is-active` and `NRestarts` on
+  `segno.service` over a 45 s window, and nothing else. #976 is open
+  (`stage:plan-review`, P0). Its failure, a wrapper that stayed up while the app died
+  under it, came from the GTK-era launcher. Today `segno-kiosk-launch` ends in `exec`, so
+  `segno.service`'s main process is `/usr/bin/segno` itself. Part 1 restates what is
+  still missing.
 
-### Network and About
+### Network and About (shipped by Parts 11 and 12)
 
-- **Wi-Fi.**
-  - `WifiCubit` (`lib/wifi/wifi_cubit.dart:9-293`) has: `load`, `scan`, `connect` with
-    retries, `cancelConnect`, `disconnect`, `forget` and `setEnabled`.
-  - `WifiClient` (`packages/wifi_client/lib/src/wifi_client.dart:4-24`) runs
-    `segno-wifi-ctl` per call (`system_wifi_client.dart:67`).
-  - There is no connectivity check, no autoconnect control and no password change.
-- **Console facts.**
-  - `LocalConsoleFactsClient.facts()` returns `ConsoleFacts.unknown`
-    (`packages/console_facts_client/lib/src/local_console_facts_client.dart:119`), so
-    About shows no serial, no system image and no panel.
-  - The controller's firmware is known only from HELLO (`PedalState.firmwareVersion`,
-    `lib/pedal/cubit/pedal_state.dart:12`).
-  - The boot-time SWD flasher (`recipes-segno/segno-console-board/files/segno-console-flash`)
-    records nothing the app can read.
+- `WifiCubit` and `segno-wifi-ctl` have the autoconnect, change-password and
+  connectivity operations and the lost and no-internet states.
+- `LocalConsoleFactsClient` reads the serial, `/etc/segno/build-version`, the EDID
+  panel names and `/data/segno/console-board/last-flashed`.
 
 ## 2. Decisions taken under the standing rules
 
-Each item names the rule it follows.
+Each item names the rule it follows. Decisions for shipped parts are kept as the record
+and marked with the PR that carried them out.
 
-- **D1. Apply reopens; it does not restart** (rules 1, 2).
+- **D1. Apply reopens; it does not restart** (rules 1, 2). Open (Part 3).
   - Apply goes through a new public `LooperRepository.applyAudioConfig`, which stops the
     engine and calls `le_engine_reopen`.
   - A buffer change, or a device change at the same rate, keeps the loops (stopped). That
@@ -191,11 +214,11 @@ Each item names the rule it follows.
   - The config is saved only after the open succeeds. A refused request leaves the
     previous config on disk and on screen. This fixes the refused-config-at-boot bug.
 - **D2. While any track holds material, the sample-rate chips are unavailable**, with the
-  reason "Clear the tracks to change the sample rate" (rules 2, 3). The engine would
-  clear the loops (`LE_REOPEN_CLEARED_RATE`), and the pen's copy promises they stay.
-  Resampling recorded material is open question Q3.
+  reason "Clear the tracks to change the sample rate" (rules 2, 3). Open (Parts 3, 4).
+  The engine would clear the loops (`LE_REOPEN_CLEARED_RATE`), and the pen's copy promises
+  they stay. Resampling recorded material is open question Q3.
 - **D3. Measurement never plays on an output nobody chose** (design doc §Latency; rule
-  2).
+  2). Open (Parts 2, 3).
   - Command 140 measures on exactly one output and one input (or the interface loopback
     channels), at -12 dBFS (amplitude 0.25).
   - Command 141 cancels.
@@ -207,129 +230,108 @@ Each item names the rule it follows.
     (`LE_LOOPBACK_BACKEND`, `_MONITOR`, `_VIRTUAL`). The Scarlett loop channels are not
     treated as isolated until Q2 is answered. On the appliance, Measure therefore goes on
     to the cable dialog (pen 28/03).
-- **D4. Interface loss keeps the #1140 take rules.** A take in progress is dropped,
-  committed layers stay, and tracks come back stopped. The design doc's "finishes the
-  available partial loop take" predates the binding #1140 decisions.
-- **D5. Restart and Install and restart use the shutdown flow** (rule 4). Both go through
-  the same `PowerOffCubit` path: take refusal, flush, session save, storage leases, then
-  `reboot` instead of `powerOff`.
-  - With an update staged, the Power card says "Segno 1.1.0 installs during the restart."
-    The helper's `reboot` verb boots the staged slot whenever a marker is staged (rule 3).
-- **D6. Power follows the accepted pen 32**, so a failed save offers only Stay on and
-  Retry. `powerOffWithoutSaving` and `powerOffAnyway` are removed. Staying on keeps the
-  audio and the work, and the physical switch remains available (rule 2). The existing
-  take refusal stays (rule 1).
-- **D7. #976 uses the readiness marker.**
-  - After the first frame and the first engine-start attempt, the app writes
-    `/run/segno/app-ready` containing the boot id and its own pid.
-  - `segno-mark-good` commits only if the marker belongs to this boot and the same pid is
-    alive at both ends of the window.
+- **D4. Interface loss keeps the #1140 take rules.** Open (Part 5). A take in progress is
+  dropped, committed layers stay, and tracks come back stopped. The design doc's "finishes
+  the available partial loop take" predates the binding #1140 decisions.
+- **D5. Restart and Install and restart use the shutdown flow** (rule 4). Shipped in
+  #1284.
+- **D6. Power follows the accepted pen 32**: a failed save offers only Stay on and Retry.
+  Shipped in #1284.
+- **D7. #976 uses a readiness marker written by the app.** Open (Part 1). Restated for the
+  ivi launcher:
+  - After the main screen's first frame and the first engine-start attempt, the app
+    writes `/run/segno/app-ready` containing the boot id and its own pid.
+  - `segno-mark-good` commits only if the marker belongs to this boot and its pid is
+    `segno.service`'s `MainPID` at both ends of the window.
   - This is #976's first listed option, and the only one that observes the app itself.
-- **D8. Update failures are visible.**
-  - A rolled-back update shows a persistent notice on Updates, "Segno 1.1.0 did not
-    start, so the console went back to 1.0.0", until it is dismissed.
-  - An install interrupted by a crash or power loss shows pen 33 "Update paused" after
-    the restart. The marker is `/data/segno/update-attempt` (rule 3).
+    #976's other two options were ways to see the app's own process behind the
+    launcher. `exec` in the launcher now gives that, so neither needs building.
+- **D8. Update failures are visible.** Shipped in #1287.
 - **D9. USB packages are RAUC bundles (`*.raucb`)**, read from the volume root and from
-  `segno-updates/`.
-  - The bundle is copied to `/data/segno/update-staging/` under a storage lease on the
-    source volume, so Eject waits. RAUC verifies the copy, so the stick is not needed
+  `segno-updates/`. Open (Part 8).
+  - The bundle is copied to `/data/segno/update-staging/` under a lease on the source
+    volume. While the lease is held, Eject is refused (`StorageRepository.eject` throws
+    `EjectRefused`) and shutdown waits. RAUC verifies the copy, so the stick is not needed
     during the install.
   - Packages that are not newer are refused with their version, the same rule as the
     network path.
   - The pen's ".update" names are mockups; the write-back list records the extension.
-- **D10. Brightness per display.**
-  - The range is 20–100% and the default 80% (accepted doc).
-  - An existing `ui.brightness` value migrates to both displays, clamped to 20% at the
-    bottom (rule 1: same value where it is in range).
-  - Hardware is used where `segno-brightness-ctl supported <connector>` says DDC/CI
-    works; otherwise a software filter is applied to that display's window.
-- **D11. Idle dimming.**
-  - Dimmed means 30% of each display's set brightness, with a 10% floor.
-  - Playing, backing playback, capture and performance recording keep both displays
-    awake.
-  - Touch, encoder, pedal and MIDI activity wake them. The touch that wakes a screen is
-    consumed, so it does not press a control.
-  - Neither display blanks. The default is Never (pen 30, and today's behaviour).
-- **D12. Touch calibration runs in the app, with one matrix per output.**
-  - Targets are drawn on the panel being calibrated. Calibrating the Track display draws
-    the targets in the waveform window on the 7". The main display shows the instruction,
-    the counter and Cancel, which the encoder can reach.
-  - The fit is an affine least-squares fit composed with the current matrix, because
-    Flutter sees coordinates the current matrix has already transformed.
-  - Matrices are stored per output at `/data/touch/<connector>.matrix`.
-  - The old single matrix migrates to the output its touchscreen is bound to now (rule 1).
-  - `weston-touch-calibrator` remains as the service fallback (rule 2).
-- **D13. Wi-Fi with one radio cannot hold the old link while it joins.** Pen 29/03 says
-  "Your current connection stays available until this one is ready." NetworkManager
-  drops the active link when a new one is activated on the same device. Instead, a
-  failed join reactivates the previous connection, and the copy says "If this fails,
-  Segno reconnects to The Studio" (rule 2).
-- **D14. "Connected · No internet" checks on demand.**
-  - A HEAD request to the configured update host (the same host the update check already
-    contacts) runs only while the Network page is open, at most once per 30 s.
-  - NetworkManager's periodic connectivity check is not enabled, so no new host or
-    background traffic is added.
-- **D15. About shows only facts that are read** (parity doc).
-  - Serial comes from `/sys/firmware/devicetree/base/serial-number`, the system image
-    from `/etc/segno/build-version`, and panel names from the EDID under
-    `/sys/class/drm/*/edid`. These are file reads, with no fork (#806).
-  - Controller firmware: HELLO when connected. Otherwise the flasher's new record
-    `/data/segno/console-board/last-flashed`, labelled "Last flashed by this console".
-    Otherwise "Not reported".
-  - The Controller firmware page is the pen's Unsupported state. In-app RP2350 updating
-    is not built (hardware gate, parity doc §176).
+- **D10. Brightness per display.** Shipped in #1286.
+- **D11. Idle dimming.** Shipped in #1286; corrected by #1355 (see Part 9).
+- **D12. Touch calibration runs in the app.** Replaced by #1335 (see Part 10).
+- **D13. A failed Wi-Fi join reactivates the previous connection.** Shipped in #1285.
+- **D14. "Connected · No internet" checks on demand.** Shipped in #1285.
+- **D15. About shows only facts that are read.** Shipped in #1283.
 - **D16. Recovery from a disconnected or failing state never needs touch alone.**
   Encoder focus reaches Cancel, Reconnect audio, Stay on and Retry on every page here
-  (rule 2).
+  (rule 2). Still applies to Parts 4 and 5.
 
 ## 3. Parts
 
 Sizes count production lines; tests are extra.
 
 ```
-P1 boot gate (#976)        independent
-P2 native latency + caps   independent
-P3 audio apply + measure   needs P2
-P4 Device page             needs P3, #1199 P5
-P5 interface loss          needs P4                (Q1)
-P6 Power + Restart         independent
-P7 Updates page            needs P6 (P1 recommended first)
-P8 USB packages            needs P7, USB storage P5
-P9 Displays brightness+dim needs #1199 P5
-P10 touch calibration      needs P9
-P11 Network                needs #1199 P5
-P12 About + Controller     independent (P7 links to it)
+P1 boot gate (#976)        independent                       open
+P2 native latency + caps   independent                       open
+P3 audio apply + measure   needs P2                          open
+P4 Device page             needs P3                          open
+P5 interface loss          needs P4                (Q1)      open
+P6 Power + Restart                                           shipped #1284
+P7 Updates page                                              shipped #1287
+P8 USB packages            needs USB storage (#1177)         open
+P9 Displays brightness+dim                                   shipped #1286
+P10 touch calibration                                        replaced by #1335 (#1330)
+P11 Network                                                  shipped #1285
+P12 About + Controller                                       shipped #1283
 ```
 
-### Part 1: boot health gate keyed on the app (#976) (about 120 lines; image and `lib/app`)
+### Part 1: boot health gate keyed on the app (#976) (about 100 lines; image and `lib/app`)
 
 This part lands under #976 (`Closes #976`, `Refs #1270`).
+
+**What changed since the plan was written.** #976's failure was a launcher that stayed
+up while the app died under it, so `is-active` stayed true and `NRestarts` stayed 0.
+`segno-kiosk-launch` now ends in `exec /usr/bin/segno`, so the process systemd watches is
+the app. A crash loop now changes `MainPID` and `NRestarts`, and the existing checks
+should refuse it. That has not been tested on hardware.
+
+**What Part 1 still solves.** The gate still only sees process state. A build whose
+process stays alive but never draws, or never reaches the engine start, passes it: for
+example a Dart exception before `runApp`, a hang during startup, or an engine that fails
+to load the bundle while the embedder stays up. Whether ivi-homescreen exits in each of
+those cases has not been checked. The readiness marker covers them all, because only an
+app that rendered writes it.
 
 - `lib/appliance/app_ready_marker.dart`:
   - After the first frame (`WidgetsBinding.instance.endOfFrame`) and after the first
     `startEngine` attempt has returned (success or refusal), the app writes
     `/run/segno/app-ready` once, containing `<boot_id> <pid>`.
+  - Only the main screen's engine writes it. The readout engine runs in the same process
+    and writes nothing.
   - The write is atomic: temp file plus rename.
   - It happens only when `isAppliance()` is true. A failed write is logged and ignored.
 - `segno-mark-good`:
   - Wait up to `WAIT_SECS` for a marker whose boot id matches
     `/proc/sys/kernel/random/boot_id`.
-  - Read its pid, wait `STABLE_SECS`, then require the same marker, the same pid and
-    `/proc/<pid>` present.
+  - Read its pid, and require it to equal `systemctl show -p MainPID --value
+    segno.service`. Wait `STABLE_SECS`, then require the same marker and the same
+    `MainPID` again.
   - The `is-active` and `NRestarts` checks stay as additional conditions.
-  - Paths are overridable through `SEGNO_APP_READY_FILE` and `SEGNO_PROC_ROOT`, following
-    the existing test pattern.
-- `segno.service`: add `RuntimeDirectory=segno` so `/run/segno` exists.
+  - Paths are overridable through `SEGNO_APP_READY_FILE` and `SEGNO_BOOT_ID_FILE`; the
+    existing `SEGNO_SYSTEMCTL` stub answers `MainPID`.
+- No unit change. `/run/segno` already exists: `segno-runtime.conf` creates it through
+  tmpfiles on every image. The plan's earlier `RuntimeDirectory=segno` is dropped,
+  because systemd would delete `/run/segno` (and with it `/run/segno/usb`) whenever
+  `segno.service` stops.
 
 ```success-criteria
 GOAL: A build whose app never renders, or that restarts during the window, is never committed.
 SUCCESS CRITERIA:
-- Marker for this boot and the same live pid at both ends of the window: commits (rauc mock called with "status mark-good booted"). | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_mark_good_tests.sh
-- No marker within WAIT_SECS, a marker from another boot id, a pid that changes during the window, or a pid whose /proc entry is gone: exits 1 with no rauc call (four cases, wrapper reported active with NRestarts 0 in each, which is the #976 shape). | verify: same
-- The app writes "<boot_id> <pid>" once, only on the appliance, after the first frame and the first start attempt; a write failure does not throw. | verify: /Users/Tomas/development/flutter/bin/flutter test test/appliance/app_ready_marker_test.dart
+- Marker for this boot whose pid equals MainPID at both ends of the window: commits (rauc mock called with "status mark-good booted"). | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_mark_good_tests.sh
+- No marker within WAIT_SECS, a marker from another boot id, a marker pid that differs from MainPID, or a MainPID that changes during the window: exits 1 with no rauc call (four cases, unit reported active with NRestarts 0 in each). | verify: same
+- The app writes "<boot_id> <pid>" once, only on the appliance and only from the main screen, after the first frame and the first start attempt; a write failure does not throw. | verify: /Users/Tomas/development/flutter/bin/flutter test test/appliance/app_ready_marker_test.dart
 - Analyzer and Bloc lint clean. | verify: dart analyze --fatal-infos && bloc lint lib test packages
-- HARDWARE: install a bundle whose app exits at startup; after two boots the console is back on the previous slot with no SSH. Then install a good bundle; it is committed after the window. | verify: manual on device
+- HARDWARE: install a bundle whose app throws before runApp; after two boots the console is back on the previous slot with no SSH. Then install a good bundle; it is committed after the window. | verify: manual on device
 ```
 
 ### Part 2: native measurement path and device rates (about 260 lines; engine and bindings)
@@ -399,7 +401,8 @@ SUCCESS CRITERIA:
 
 - `applyAudioConfig(AudioConfig) -> Future<AudioApplyResult>` makes the existing
   `_reopenEngine` path public. It stops, reopens, replays the rig and returns the outcome
-  plus the negotiated values. A cold engine falls back to `startEngine`.
+  (including `RETAINED_PARTIAL` with its dropped tracks) plus the negotiated values. A
+  cold engine falls back to `startEngine`.
 - `measureLatency({required int output, required int input}) -> Future<LatencyResult>`
   posts command 140 and completes on the first snapshot with DONE, TIMEOUT or CANCELLED,
   bounded at 2 s.
@@ -429,8 +432,8 @@ SUCCESS CRITERIA:
   - A result is saved under the existing device|rate|buffer key. noReturn keeps the
     previous value.
 - Removed: `_autoMeasureIfLoopback`, the auto-measure branch in
-  `lib/app/audio_bootstrap.dart:289-301` (the restore stays), `measureLatency()` and the
-  immediate-apply setters once Part 4 drops their last caller.
+  `lib/app/audio_bootstrap.dart:319-321` (the restore at 312 stays), `measureLatency()`
+  and the immediate-apply setters once Part 4 drops their last caller.
 - Native: delete `LE_CMD_MEASURE_LATENCY` (1) and `le_engine_measure_latency`, and
   update `test_engine_core.c` to use the path call.
 
@@ -443,7 +446,7 @@ SUCCESS CRITERIA:
 - Apply while a track is capturing: refused with GuardKind.capture as the blocker, nothing applied. | verify: same
 - Apply while playing: confirming; confirmApply stops transport, then applies; cancel leaves playback untouched. | verify: same
 - With material on track 2, editRate is ignored and rateLocked is true; with every track empty it edits. | verify: same
-- Repository: applyAudioConfig on a started engine calls reopen (not start) and returns retained with tracks STOPPED; mock outcome clearedRate is reported, not hidden. | verify: /Users/Tomas/development/flutter/bin/flutter test packages/looper_repository
+- Repository: applyAudioConfig on a started engine calls reopen (not start) and returns retained with tracks STOPPED; mock outcomes clearedRate and retainedPartial are reported, not hidden. | verify: /Users/Tomas/development/flutter/bin/flutter test packages/looper_repository
 - measure() with a backend loopback ends done with the engine's value; with Scarlett-style excluded channels it ends in cable without posting command 140. Cable test: noReturn keeps the saved offset; cancel posts 141 and keeps it. | verify: /Users/Tomas/development/flutter/bin/flutter test test/audio_setup
 - Boot with a saved offset restores it and never measures; boot without one measures nothing. | verify: /Users/Tomas/development/flutter/bin/flutter test test/app
 - Command 1 and le_engine_measure_latency are gone. | verify: ! grep -rn "LE_CMD_MEASURE_LATENCY\b\|le_engine_measure_latency\b" packages/segno_engine/src packages/segno_engine/lib && bash packages/segno_engine/src/test/run_native_tests.sh
@@ -456,10 +459,12 @@ SUCCESS CRITERIA:
 Pen 28: `Q3YCDg`/`hWDHw` (01 Audio settings), `NtHav`/`yyqrZ` (02), `viOWI`/`C2o3h` (03)
 and `btTbs`/`jUlrb` (04).
 
+The plan's dependency on #1199 Part 5 is met: the tray, `AudioTab` and the Recording tab
+are already gone, and `DeviceSettingsPage` hosts only `DeviceAudioTab`.
+
 **Page body**
 
-- `DevicePage` replaces `DeviceSettingsPage`, which no longer has tabs (#1199 Part 5
-  removes the Recording tab).
+- `DevicePage` replaces `DeviceSettingsPage`.
 - Header (`device-connected`): the interface name, "N inputs · M outputs", a status pill
   (Connected / Disconnected / Ready to reconnect) and "Change interface". The latter
   opens the existing chooser as a dialog, and a choice there edits the draft.
@@ -487,8 +492,9 @@ and `btTbs`/`jUlrb` (04).
 **Removed**
 
 - `DeviceAudioTab`, apart from pieces moved elsewhere.
-- The inert ASIO group.
-- The loopback note.
+- The inert ASIO group (`device_audio_tab.dart:93-167`, 477 on). No ASIO backend is
+  built.
+- The loopback note (153-156).
 - `MaxLoopLengthCard` and `AudioRoutingCard` stay as rows under the two columns.
   Max loop length has no other home; routing links to Audio routing.
 
@@ -500,7 +506,7 @@ SUCCESS CRITERIA:
 - Measure shows the automatic dialog, then the cable dialog with Output 1 and Input 1; changing ports with the encoder and Start test calls startCableTest(output, input); Cancel calls cancelMeasure. | verify: same
 - Locked rate chips are disabled and announce the reason to a screen reader. | verify: same
 - Health rows show the snapshot's xrun count and engine state. | verify: same
-- DeviceAudioTab and AudioTab are gone; the device-lost banner, engine-stopped banner and recovery toast still open this page. | verify: ! grep -rn "DeviceAudioTab\|enum AudioTab" lib test && /Users/Tomas/development/flutter/bin/flutter test test/settings test/looper/view
+- DeviceAudioTab is gone; the device-lost banner, engine-stopped banner and recovery toast still open this page. | verify: ! grep -rn "DeviceAudioTab" lib test && /Users/Tomas/development/flutter/bin/flutter test test/settings test/looper/view
 - Goldens for screens 01, 02, 03 and 04 regenerated on the author's machine and compared against the pen. | verify: /Users/Tomas/development/flutter/bin/flutter test test/screenshots --update-goldens (author machine)
 - Analyzer, Bloc lint, coverage. | verify: dart analyze --fatal-infos && bloc lint lib test packages && /Users/Tomas/development/flutter/bin/flutter test --coverage
 - HARDWARE: on the 15.6" with the encoder only, change the buffer, apply, measure with a cable, and return to Stage. | verify: manual on device
@@ -546,93 +552,47 @@ SUCCESS CRITERIA:
 - HARDWARE: pull the Scarlett USB cable mid-loop; the chip appears; replug; nothing is heard (monitoring included) until Reconnect audio; then loops are present and stopped. | verify: manual on device
 ```
 
-### Part 6: Power options and Restart (about 450 lines; `lib/appliance/power_off`, `lib/update`)
+### Part 6: Power options and Restart: shipped in #1284
 
-Pen 32: `QWWba`/`z3tkX` (Power options), `xD6Px`/`tUqCV` (Saving), `tBAZf`/`MFCYv`
-(Save failed), `Cu7cd`/`DHsYQ` (Safe to switch off) and `iR4p7`/`V7XVe` (Restarting).
+Shipped on 2026-10-07 as planned: Power options with Cancel, Restart and Shut down; one
+guarded path that stops transport, flushes settings, saves the session and waits for
+storage leases; "Segno is staying on" with Stay on and Retry; the staged-update line; and
+Install and restart through `PowerCubit.restart`.
 
-**`PowerOffCubit`** becomes `PowerCubit`; the file is renamed, with a re-export for one
-release of callers.
+Where it differs from the plan:
 
-- `press()` opens Power options. The card shows "Playback will stop and your session
-  will be saved.", the session name, and Cancel / Restart / Shut down.
-- `restart()` and `shutDown()` share `_halt(PowerAction)`. It enters `GuardKind.restart`
-  (refused under capture, with the existing refuse body), then stops transport, flushes
-  settings, saves the session and waits for storage leases. Finally it calls
-  `env.reboot()` or `env.powerOff()`.
-- Save failure: "Segno is staying on", with Stay on and Retry (D6).
-- Terminal faces: "Safe to switch off" and "Restarting".
-- Staged update: the card adds the D5 line.
+- No compatibility re-export for `PowerOffCubit` (AGENTS.md); `applyAndRestart`,
+  `confirmEmpty` and `confirmPowerOff` were removed as well.
+- The restart guard is entered after the save, because the guard table refuses a session
+  write while a restart is active.
+- An unnamed session is named first, through Save As.
+- A flush failure and a save failure share one "staying on" state.
+- Install and restart keeps its own confirm dialog instead of opening Power options.
+- Pen 32 goldens and the hardware restart checks were left for the author machine and
+  the device.
 
-**Updates**
+### Part 7: Updates page: shipped in #1287
 
-- `UpdatesSystemTab._confirmRestart` and `UpdateCubit.applyAndRestart` call
-  `PowerCubit.restart()`. `applyAndRestart` no longer calls `env.reboot()` itself.
+Shipped on 2026-10-07 as planned: the pen 33 states, the attempt marker and `attempt`
+verb, the rollback notice from the reconcile reason, `UpdatePhase.interrupted`,
+`cancelDownload()`, the manifest size, and the About and Controller rows.
 
-```success-criteria
-GOAL: Restart exists, and every restart (user or update) saves first through one guarded path.
-SUCCESS CRITERIA:
-- Restart: transport stopped, flush, session save, then env.reboot exactly once; Shut down: same order then env.powerOff. | verify: /Users/Tomas/development/flutter/bin/flutter test test/appliance/power_off
-- Save failure: phase saveFailed, neither reboot nor powerOff called; Retry repeats the save; Stay on returns to idle with audio running. | verify: same
-- Restart during a take: refused with the take reason; no save, no reboot. | verify: same
-- With a storage lease held, reboot waits until it is released (fake StorageRepository). | verify: same
-- Staged update: the card shows "Segno 1.1.0 installs during the restart."; without one it does not. | verify: same
-- Install and restart on Updates calls PowerCubit.restart and never env.reboot directly. | verify: /Users/Tomas/development/flutter/bin/flutter test test/update test/system
-- powerOffWithoutSaving and powerOffAnyway are gone. | verify: ! grep -rn "powerOffWithoutSaving\|powerOffAnyway" lib test
-- Goldens for the five pen 32 screens. | verify: /Users/Tomas/development/flutter/bin/flutter test test/screenshots --update-goldens (author machine)
-- Analyzer, Bloc lint. | verify: dart analyze --fatal-infos && bloc lint lib test packages
-- HARDWARE: Restart from Settings with a saved session reboots and reopens the session stopped; with an update staged, it boots the new slot. | verify: manual on device
-```
+Where it differs from the plan:
 
-### Part 7: Updates page (about 550 lines; helper, `lib/update`, `lib/settings/view`)
+- The helper also gained `clear-attempt`. The download runs in the background so SIGTERM
+  stops it at once; the cubit clears the attempt file that the kill leaves.
+- `UpdateRepository.recover()` reads the reconcile reason and the attempt once at
+  startup.
+- The page also has the channel control.
+- "Load from USB" is not on the page; Part 8 adds it.
+- Not verified on hardware: power loss mid-install, cancel during `rauc install`, a real
+  tryboot-not-taken notice.
 
-Pen 33: `kGlWv`/`T1igr`, `rWqZT`/`rHa2d`, `d4elG`/`tn7CZ`, `w4f0uG`/`g6y2R` and
-`Fv2zf`/`ic1C5`.
+### Part 8: update from USB (about 420 lines; helper, `lib/update`, `storage_repository`)
 
-**Helper**
-
-- `do_install` writes `/data/segno/update-attempt` (the version) before the download and
-  removes it after the marker is written or on any failure.
-- A killed install is handled by `_on_terminate`, which leaves the marker for D8.
-- New verb `attempt`, which prints `{"version":..}` or `{}`.
-- `reconcile-staged` is unchanged; the backend now passes its `reason` through.
-
-**Backend and cubit**
-
-- `UpdateInfo.sizeBytes` comes from the manifest's `size` field when present (the
-  release script adds it). Without it, the meta shows only the version.
-- `UpdateCubit.cancelDownload()` sends SIGTERM to the helper process.
-- `UpdatePhase.interrupted` (from the attempt marker at load) and the `rolledBack`
-  notice (from the reconcile reason) are new.
-
-**Page**
-
-- "Installed Segno x.y.z" with "Load from USB" (Part 8; hidden until then) and "Check for
-  updates".
-- Panel states: Software updates / Update available / Downloading (bar and Cancel) /
-  Ready to install ("Install and restart", which goes to Part 6) / Update paused (Retry,
-  Cancel).
-- The "Check automatically" toggle.
-- The rollback notice (D8).
-- The About and Controller links move here from the interim About row.
-
-```success-criteria
-GOAL: Settings > Updates matches pen 33, cancels downloads, and reports interrupted and rolled-back updates instead of hiding them.
-SUCCESS CRITERIA:
-- Helper: a successful install leaves no attempt marker; a curl failure removes it; SIGTERM during download leaves it and removes the work dir; `attempt` prints it. | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_update_attempt_tests.sh
-- Load with an attempt marker and nothing staged: phase interrupted with "Download interrupted. The current software is unchanged."; Retry starts a download. | verify: /Users/Tomas/development/flutter/bin/flutter test test/update
-- reconcile reason tryboot-not-taken: a persistent notice naming the staged and installed versions until dismissed; reason already-running: none. | verify: same
-- Cancel during download kills the helper and returns to available with nothing staged. | verify: same
-- Page states match the five pen screens; encoder focus lands where the pen draws it. | verify: /Users/Tomas/development/flutter/bin/flutter test test/settings test/system
-- New helper test suite wired into the CI shell-tests step. | verify: grep -n run_update_attempt_tests .github/workflows/main.yaml
-- Analyzer, Bloc lint, goldens on the author machine. | verify: dart analyze --fatal-infos && bloc lint lib test packages
-- HARDWARE: pull power during an online install; after boot the page shows Update paused on the old version; Retry completes and the update commits after Part 1's gate. | verify: manual on device
-```
-
-### Part 8: update from USB (about 420 lines; helper, `lib/update`)
-
-Pen 33: `w3lUKE`/`xlAif` (Load a USB package). Depends on Part 7 and on USB storage
-Parts 4–5 (`StorageRepository.volumes`, leases and the Eject guard).
+Pen 33: `w3lUKE`/`xlAif` (Load a USB package). Part 7 has shipped. The USB storage service
+(#1177) is on the trunk: `StorageRepository.volumes`, `acquire`/`HeldLease`, and `eject`,
+which refuses while any lease on the volume is held.
 
 **Helper**
 
@@ -642,14 +602,18 @@ Parts 4–5 (`StorageRepository.volumes`, leases and the Eject guard).
     reads the version.
   - Refuses a version that is not newer, with `{"error":"not-newer","version":..}`.
   - Refuses an unverified bundle with `{"error":"unverified"}`.
-  - Otherwise runs the same fifo install, markers and progress as `do_install`. The
-    shared part becomes `install_bundle`.
+  - Otherwise runs the same fifo install, attempt and staged markers, and progress as
+    `do_install`. The shared part becomes `install_bundle`.
   - The staging copy is removed on exit.
 
 **App**
 
 - `UsbUpdateSource` lists `*.raucb` on each mounted volume (the root and `segno-updates/`)
   with Dart directory reads; there is no fork.
+- Leases on the trunk are write leases: `WritePurpose` is a closed enum (recording, copy,
+  export, backup), and `copyFile` leases the destination. This part adds
+  `WritePurpose.update`, with its word on the Storage page, to hold the source volume
+  while the bundle is read.
 - Choosing a package:
   1. Acquire a lease on the source volume (purpose `update`).
   2. Copy the file to staging with `fsync`.
@@ -660,6 +624,7 @@ Parts 4–5 (`StorageRepository.volumes`, leases and the Eject guard).
   - "Segno 0.9.0 is not newer than the installed 1.0.0."
   - "The USB drive was removed before the package was copied."
 - Success lands in Ready to install (Part 7).
+- Updates gains the "Load from USB" button that Part 7 left out.
 
 ```success-criteria
 GOAL: A signed bundle on a USB stick installs to the inactive slot exactly as an online update does; anything else is refused with nothing changed.
@@ -667,245 +632,132 @@ SUCCESS CRITERIA:
 - install-file with a mock rauc reporting a newer version: same PROGRESS sequence and markers as install; staging emptied. | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_update_file_tests.sh
 - Not newer, signature failure, and a path outside staging: the JSON errors above, no markers, rauc install never called. | verify: same
 - Listing finds a.raucb at the root and segno-updates/b.raucb, ignores c.txt. | verify: /Users/Tomas/development/flutter/bin/flutter test test/update
-- Eject during the copy waits for the lease; volume loss during the copy shows the removed-drive message and leaves staging empty. | verify: same
+- Eject during the copy is refused with the update lease named; volume loss during the copy shows the removed-drive message and leaves staging empty. | verify: same
+- New helper suite wired into the CI shell-tests step. | verify: grep -n run_update_file_tests .github/workflows/main.yaml
 - Analyzer, Bloc lint. | verify: dart analyze --fatal-infos && bloc lint lib test packages
 - HARDWARE: a stick holding a signed release bundle and an edited copy of it: the first installs and commits after reboot; the second is refused as unverified. | verify: manual on device
 ```
 
-### Part 9: Displays, brightness per display and idle dimming (about 650 lines; helper, `lib/appliance`, `lib/settings/view`)
+### Part 9: Displays, brightness per display and idle dimming: shipped in #1286
 
-Pen 30: `hrXyj`/`UXiWk` (Display settings), `a7zTq`/`cWuvA` (Disconnected display) and
-`ppCdS`/`CXU4c` (Idle dimming).
+Shipped on 2026-10-07 as planned: two cards with the Track display first, per-display
+brightness 20–100% (5 points per encoder detent, double tap to 80%), the `ui.brightness`
+migration, Dim while idle (Never / 2 / 5 / 10 min, 30% with a 10% floor, the wake touch
+consumed), `segno-brightness-ctl --connector`, and the Display options row (the default
+answer to Q4).
 
-**Identity**
+Where it differs from the plan, including changes after it merged:
 
-- `DisplayRole {track, main}`. The role maps to a connector by reading the `[output]`
-  `app-ids` pins in `/etc/xdg/weston/weston.ini`, which is a file read.
-- Presence comes from `/sys/class/drm/card*-<connector>/status`.
+- The role→connector map first read `weston.ini`. #1334 moved it to
+  `/etc/segno/homescreen.toml` when Weston was removed, and `DisplayRole` now maps to
+  `SegnoScreen`.
+- The Track display has no window of its own any more: it is the readout engine, and
+  its software dim reaches it over the screen link (`WaveformDisplayController.brightness`).
+- `SoftwareBrightness` no longer rebuilds the navigator when its filter appears (a fix
+  made in the same PR).
+- #1355: idle dimming counted the open audio device as music and so never fired on the
+  appliance. It now counts a playing or recording track, the backing track or a
+  performance recording.
+- #1350: the console's ring and pills dim with the screens.
+- Not verified on hardware: per-panel DDC/CI, the software dim, the wake touch, "Not
+  connected" on unplug (#1334 later saw "Not connected" on unplug of the 7").
 
-**Helper**
+### Part 10: touch calibration: replaced by #1335
 
-- `segno-brightness-ctl supported|get|set` take `--connector <name>`. The connector maps
-  to `ddcutil --bus N` through `/sys/class/drm/card*-<connector>/ddc`.
-- Without the flag the old behaviour stays, for compatibility.
+Weston's calibrator went with Weston, so the in-app calibrator was built under #1330 as
+#1335 rather than from this part. It follows pen section 30 and keeps this part's goals:
+targets on the panel being calibrated, a test before keeping, and never leaving a panel
+worse than before.
 
-**Settings**
+How it differs from this part's spec:
 
-- Keys `ui.brightness.track` and `ui.brightness.main`, migrated from `ui.brightness`
-  (D10).
-- `ui.idle_dim_seconds`, with values 0, 120, 300 and 600.
+- Matrices are kept per screen (`/data/touch/main`, `/data/touch/readout`), not per
+  connector. The readout's touchscreen is matched by the `touch_device` name in
+  `homescreen.toml`, the same match ivi-homescreen uses; every other touchscreen is main.
+- Verbs: `get`, `try` (apply without storing), `set`, `reset`, `restore` and `apply`. A
+  fit is applied with `try` and stored only on Keep calibration within 30 s, so a power
+  cycle drops an unkept calibration.
+- Test targets pass within 4% of the screen, not 3% of the diagonal.
+- No `weston-touch-calibrator` fallback and no migration of a single legacy matrix.
+- The 7" targets are drawn on the 7" through two screen-link messages; the main screen
+  mirrors the target with the instruction, countdown and buttons. Section 30 of the pen
+  has a `c/` note for this.
 
-**Cubits**
+### Part 11: Network page: shipped in #1285
 
-- `DisplayBrightnessCubit` holds `Map<DisplayRole, double>`.
-- `IdleDimCubit` takes activity from:
-  - the pointer router,
-  - the encoder and pedal action streams,
-  - MIDI input,
-  - `LooperBloc` transport and capture, backing, and the performance recorder.
+Shipped on 2026-10-07 as planned: the connection card and its eight states, the networks
+list, the join sheet with Show, the Connecting dialog with Cancel, Network details
+(Connect automatically, Change password, Forget with confirmation, Disconnect), and the
+helper verbs `autoconnect`, `set-password` (stdin) and `connectivity`.
 
-  It emits `dimmed`. While dimmed, the first pointer down is consumed.
-- `SoftwareBrightness` is applied in both windows' roots (the waveform window through its
-  channel).
+Where it differs from the plan:
 
-**Page**
+- `status` also reports the last network used.
+- The Connecting dialog names the network it will return to.
+- A new shared `LoopSwitch` widget.
+- Copy and sizes came from the accepted network HTML study, because section 29 was not
+  in the local pen copy.
+- Not verified on hardware: the wrong-password recovery, the no-internet state, and the
+  sheets by encoder alone.
 
-- Two cards, Track display first: preview, role, brightness slider (20–100%; double tap
-  resets to 80%) and Calibrate touch (Part 10).
-- Dim while idle: Never / 2 / 5 / 10 min.
-- A disconnected display shows "Not connected" and disables Calibrate.
-- The existing waveform window, high contrast, refresh rate and shortcut controls move
-  to a "Display options" row below (Q4).
+### Part 12: About and Controller firmware: shipped in #1283
 
-```success-criteria
-GOAL: Each display has its own brightness, idle dimming follows the accepted rules, and the page matches pen 30's settings screens.
-SUCCESS CRITERIA:
-- Migration: ui.brightness 0.6 gives track 0.6 and main 0.6; 0.1 gives 0.2 each; absent gives 0.8 each; the old key is left in place for downgrade. | verify: /Users/Tomas/development/flutter/bin/flutter test packages/settings_repository test/appliance
-- Setting main to 0.5 calls the client with connector HDMI-A-1 only and leaves track unchanged. | verify: same
-- Helper: --connector HDMI-A-2 with a fake sysfs ddc link to i2c-7 runs ddcutil --bus 7 setvcp 10 50. | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_brightness_tests.sh
-- Idle 120 s with fake time: dimmed after 120 s of no activity; never while transport plays or a capture runs; the idle period restarts when playback stops; the touch that wakes it does not reach the control under it. | verify: /Users/Tomas/development/flutter/bin/flutter test test/appliance
-- Page: Track display card first; slider steps by 5% with the encoder, Back cancels the edit; disconnected track display disables its Calibrate button. | verify: /Users/Tomas/development/flutter/bin/flutter test test/settings
-- Analyzer, Bloc lint, goldens on the author machine. | verify: dart analyze --fatal-infos && bloc lint lib test packages
-- HARDWARE: each slider changes only its own panel; DDC/CI or the software filter (whichever the panel supports) visibly applies; after 2 min idle both dim and a touch wakes without pressing anything. | verify: manual on device
-```
+Shipped on 2026-10-07 as planned: About with This console, Controller and Licenses; the
+Controller firmware page in the Unsupported state; file-read facts; and the flasher's
+`last-flashed` record.
 
-### Part 10: touch calibration (about 650 lines; helper, `lib/appliance/touch`, both windows)
+Where it differs from the plan:
 
-Pen 30: `ESLal`/`q4OZOP` (Track display calibration), `ARj5B`/`c00LeS` (Main display
-calibration) and `hmuQG`/`xpmFC` (Test before keeping).
-
-**Helper**
-
-- `segno-touch-ctl` keys matrices by output:
-  - `set <connector> <6 floats>` and `reset <connector>`;
-  - `status` lists every touchscreen with its `WL_OUTPUT`.
-  - `apply` writes one rule per output into `98-segno-touch-calibration.rules`
-    (`ENV{WL_OUTPUT}=="<c>", ENV{LIBINPUT_CALIBRATION_MATRIX}="..."`) and re-triggers
-    the input devices.
-  - Migration: the single `/data/touch/calibration` moves to the output its touchscreen
-    is bound to now (D12).
-- Weston's helper path keeps working; it writes the matrix for the device it calibrated.
-
-**Math** (`touch_fit.dart`, pure)
-
-- A least-squares affine fit from 5 observed points to 5 targets, in the output's
-  normalized coordinates.
-- Contacts are degenerate when they are collinear or when the determinant is below 1e-3;
-  the flow then offers Restart.
-- The new matrix is the fit composed with the current one.
-
-**Flow**
-
-- `TouchCalibrationCubit`:
-  - enters `GuardKind.calibration` (unavailable during capture or for a disconnected
-    display);
-  - asks to stop loops when playing ("Stop loops and calibrate");
-  - takes 5 targets with a 60 s timeout per touch;
-  - then 3 test targets with a 30 s total timeout. A test passes within 3% of the
-    output's diagonal;
-  - "Keep calibration" calls the helper;
-  - Cancel, timeouts, disconnect and failed saves leave the previous matrix in place;
-  - a new transport or capture command cancels the calibration and keeps the music
-    running.
-- Targets are drawn on the display being calibrated. The 15.6" shows the instruction
-  page with Cancel focused for the encoder (D12). Test targets ignore the encoder.
-
-```success-criteria
-GOAL: Each panel's touch can be calibrated from Settings, verified before it is kept, and never left worse than before.
-SUCCESS CRITERIA:
-- Fit oracle: observed points equal to targets scaled by 0.9 and shifted by (+0.02, -0.01) yield the matrix "1.1111 0 -0.0222 0 1.1111 0.0111" to 1e-4; composed with current "1 0 0 0 1 0" gives the same; three collinear contacts report degenerate. | verify: /Users/Tomas/development/flutter/bin/flutter test test/appliance/touch
-- Flow: 5 touches then 3 tests in tolerance enables Keep; a test 5% off keeps Keep disabled and offers Restart; 60 s without a touch cancels with the previous matrix kept; Keep failure keeps the previous matrix and shows the error. | verify: same
-- Starting playback during calibration cancels it and playback continues. | verify: same
-- Helper: two touchscreens on HDMI-A-1 and HDMI-A-2 get two rules; reset of one leaves the other; the legacy single file migrates to the bound output and is removed. | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_touch_ctl_tests.sh
-- Analyzer, Bloc lint, goldens of the three pen screens on the author machine. | verify: dart analyze --fatal-infos && bloc lint lib test packages
-- HARDWARE: on the 7", tap targets drawn on the 7" itself; after Keep, taps land on controls across the panel; repeat on the 15.6" when its touch panel is fitted; encoder Cancel works with touch deliberately misaligned. | verify: manual on device
-```
-
-### Part 11: Network page (about 650 lines; helper, `wifi_client`, `wifi_repository`, `lib/wifi`, `lib/settings/view`)
-
-Pen 29: `wse91`/`cnZr7`, `O7zN9`/`X1daqW`, `brPO6`/`KSPNp`, `YU3gq`/`BqXq1`,
-`JEHXY`/`N2AGeo`, `EXgOI`/`qAxVl`, `m0cYo`/`m4Xh5` and `yL9W8`/`hu9Bf`.
-
-**Helper (`segno-wifi-ctl`)**
-
-- New verbs:
-  - `autoconnect <ssid> on|off` (`nmcli connection modify ... connection.autoconnect`);
-  - `set-password <ssid>`, which reads the password from stdin and never from argv;
-  - `connectivity`, a single HEAD request to the update host with a 3 s limit (D14).
-- `connect` records the active connection first. On failure it reactivates that
-  connection and reports `{"restored":"<ssid>"}` (D13).
-- `status` adds `autoconnect` per saved network.
-
-**Client, repository and cubit**
-
-- Matching methods: `setAutoConnect`, `changePassword` and `checkConnectivity`. The
-  connectivity check runs only while the page is open, with a 30 s minimum interval.
-- State gains `lost`, which means the previous SSID is saved but not connected and the
-  radio is on, and `noInternet`.
-
-**Page**
-
-- The switch in the title row and the connection card (name, status, IP chip, Manage or
-  Reconnect).
-- Networks with Scan; saved networks first.
-- The join sheet with the existing on-screen keyboard and Show; "Incorrect password. Try
-  again." on an auth failure.
-- The Connecting dialog with Cancel.
-- Network details: Connect automatically, Change password, Forget (with confirmation,
-  per `c/wifi-forget`) and Disconnect.
-- Off and empty states.
-
-`WifiTrayBody` and `showWifiJoinSheet` are deleted once the page no longer uses them.
-
-```success-criteria
-GOAL: Settings > Network matches pen 29, and a failed join never leaves the console with less connectivity than before.
-SUCCESS CRITERIA:
-- Helper: connect to a bad password while connected to "The Studio" reactivates The Studio and prints restored; set-password reads stdin (argv never contains it); autoconnect off sets connection.autoconnect no. | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_manage_tests.sh
-- Existing Wi-Fi shell suites still pass. | verify: for t in deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_*_tests.sh; do bash "$t" || exit 1; done
-- Cubit: connectivity false while connected gives "Connected · No internet"; the check is not called when the page is closed or more often than every 30 s. | verify: /Users/Tomas/development/flutter/bin/flutter test test/wifi packages/wifi_client packages/wifi_repository
-- Page states match the eight pen screens; Forget asks to confirm, Disconnect does not; Change password reopens the sheet for that network. | verify: /Users/Tomas/development/flutter/bin/flutter test test/settings test/wifi
-- WifiTrayBody is gone. | verify: ! grep -rn "WifiTrayBody\|showWifiJoinSheet" lib test
-- Analyzer, Bloc lint, goldens on the author machine. | verify: dart analyze --fatal-infos && bloc lint lib test packages
-- HARDWARE: join a network with a wrong password while connected; the console returns to the old network within 30 s; pull the router's uplink and see "Connected · No internet". | verify: manual on device
-```
-
-### Part 12: About and Controller firmware (about 420 lines; `console_facts_client`, flasher, `lib/system`)
-
-PARITY frame `nBA56`: About `g5owAP`, Reference notices `hpvGh` and Controller /
-Unsupported `IxFkH`. Controller / Updating `u5Cksr` and Recovery `Xyzrn` are not built
-(D15).
-
-**Facts**
-
-- `LocalConsoleFactsClient.facts()` reads the serial, the system image and the panel
-  EDID names (D15). Unreadable facts stay null and are omitted.
-
-**Flasher**
-
-- After a verified program, `segno-console-flash` writes
-  `/data/segno/console-board/last-flashed` containing `firmware=<v> protocol=<n>`.
-  The write is best-effort, and the exit status stays 0 (`segno-console-flash:14-16`).
-
-**`ControllerFacts`**
-
-- Firmware and protocol come from the live HELLO when connected (source `reported`).
-- Otherwise they come from the record (source `lastFlashed`, captioned "Last flashed by
-  this console").
-- Otherwise "Not reported", captioned "No device version was read".
-- `updateSupported` is false.
-
-**Pages**
-
-- About has three panels: This console (Name with rename, Segno version, System image,
-  Serial, Audio interface), Controller (Connection, Firmware, Wire protocol, "Controller
-  firmware") and Licenses ("Open-source notices", using the existing
-  `showConsoleLicences` registry).
-- Controller firmware: the Installed facts plus "Controller update support has not been
-  established for this hardware." and a "Software updates" button.
-- The preview line in the pen ("Appliance preview · ... simulated") is not shipped.
-
-```success-criteria
-GOAL: About shows only facts the console actually read, and the Controller page states plainly that in-app controller updates are not supported.
-SUCCESS CRITERIA:
-- Facts from a fake root: serial "10000000abcd1234", image "1.2.3", panel names from two EDID fixtures; a missing file omits that row. | verify: /Users/Tomas/development/flutter/bin/flutter test packages/console_facts_client
-- Flasher: a successful program writes "firmware=1.4 protocol=3"; a failed one writes nothing; exit status 0 in both. | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-console-board/test/run_flash_record_tests.sh
-- Controller facts: HELLO present gives the reported version with no caption; absent with a record gives the record with "Last flashed by this console"; neither gives "Not reported". | verify: /Users/Tomas/development/flutter/bin/flutter test test/system
-- About and Controller pages render the pen's rows and actions; no "simulated" text appears. | verify: /Users/Tomas/development/flutter/bin/flutter test test/system test/settings && ! grep -rn "simulated" lib/system
-- Analyzer, Bloc lint, goldens on the author machine. | verify: dart analyze --fatal-infos && bloc lint lib test packages
-- HARDWARE: About on the appliance shows the board serial matching `cat /sys/firmware/devicetree/base/serial-number`, the installed build-version, both panel names, and the controller firmware after a boot that flashed it. | verify: manual on device
-```
+- A Displays row was added to This console, for the two panel names.
+- The Name row shows only when a serial was read.
+- An incompatible board counts as reported, with Connection showing "Different link
+  protocol".
+- Not verified on hardware: the serial against devicetree, the EDID names, the flash
+  record after a real flash.
 
 ## 4. Hardware-only checks
 
 These checks need the appliance: Pi 5, Scarlett 4i4, the 7" and 15.6" panels, and the
 console board.
 
-- **P1:** rollback of a crashing build.
+Open parts:
+
+- **P1:** rollback of a build whose app never renders.
 - **P2:** a cable measurement on chosen jacks, with silence on the other outputs.
 - **P3:** loops kept through a buffer change.
 - **P5:** USB pull and replug with no sound before Reconnect audio.
-- **P6:** a Restart round trip, and a Restart into a staged slot.
-- **P7:** power pulled during an install.
 - **P8:** a signed bundle and a tampered bundle on a stick.
-- **P9:** brightness on each panel; DDC/CI support per panel is unknown until tried.
-- **P10:** calibration on each panel. The 15.6" touch panel is not fitted yet; the 7" and
-  15.6" connectors are crossed on the bench unit.
-- **P11:** recovery after a wrong password, and the no-internet state.
-- **P12:** serial and EDID facts, and the flasher record.
+
+Shipped parts, still unchecked on hardware according to their PRs:
+
+- **P6 (#1284):** a Restart round trip, and a Restart into a staged slot.
+- **P7 (#1287):** power pulled during an install.
+- **P9 (#1286):** brightness on each panel; DDC/CI support per panel; idle dimming.
+- **P11 (#1285):** recovery after a wrong password, and the no-internet state.
+- **P12 (#1283):** serial and EDID facts, and the flasher record.
 
 ## 5. Pen write-back list
 
 This list follows the memory rule that a shipped departure updates the pen. Planning did
 not edit the pen.
 
+For the open parts:
+
 - 28/04: the locked sample-rate reason (D2).
 - 28/02: on the appliance, the automatic attempt goes on to the cable dialog (D3).
+- 33: the `.raucb` names and the error rows for unverified and not-newer packages (D9).
+
+For the shipped parts:
+
 - 29/03: "If this fails, Segno reconnects to The Studio" (D13).
-- 30: the Track display calibration targets are drawn on the 7" (D12); the "Display
-  options" row (Q4).
+- 30: the Track display calibration targets drawn on the 7"; #1335 says it added this
+  note. The "Display options" row (Q4).
 - 32: the staged-update line on the Power card (D5).
-- 33: the rollback notice (D8), the `.raucb` names and the error rows for unverified and
-  not-newer packages (D9).
+- 33: the rollback notice (D8).
+
+Whether the shipped parts' items other than #1335's were written back was not checked in
+this refresh: the pen is not in the worktree, and the PRs say the frames were not in the
+repo's copy.
 
 ## 6. Open owner questions (each part proceeds on the default)
 
@@ -926,7 +778,5 @@ not edit the pen.
    production work. Default: the rate is locked while any track holds material (D2).
    Resampling every lane on reopen would be a separate native part, of about 400 lines,
    if wanted.
-4. **Q4. The accepted Displays screen has no place for four existing controls:** the
-   waveform window on/off switch, high contrast, refresh rate and the shortcuts legend.
-   Default: keep them in a "Display options" row under Dim while idle, and add them to
-   the pen write-back list.
+4. **Q4. The accepted Displays screen has no place for four existing controls.** Answered
+   by default in #1286: they are in a "Display options" row under Dim while idle.
