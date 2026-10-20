@@ -1,0 +1,46 @@
+{
+  "board_sha256": "e72850b26ae9076011bc368b69d3f1f1edce758be878bf5fb0decc4f415c5a2f",
+  "model_sha256": "cf609b252a0139638f99be15fe1b1e82e3e51e2a9051c8c49a869c60ee509528",
+  "copper_um_assumption": 30.0,
+  "plating_um_assumption": 15.0,
+  "copper_temperature_C": 60,
+  "board_thickness_mm": 1.6,
+  "results": [
+    {
+      "mesh_mm": 0.15,
+      "admitted_cells": 282791,
+      "connected_nodes": 282856,
+      "maximum_KCL_residual_A": 7.7301520389414e-11,
+      "omitted_subcell_terminal_faces": [],
+      "transfer_ohms_at_Q5": {
+        "Q5.3": 0.0022493832037420655,
+        "R8.2": 0.0009040318121930042,
+        "J103.2": 0.00047696564719644784,
+        "J203.2": 0.0008262206971858904,
+        "J102.4": 0.000971813285412151,
+        "J202.4": 0.0009713268547103723
+      },
+      "worst_screen_allocation_A": {
+        "J102.4": 0.5,
+        "J202.4": 0.5,
+        "J203.2": 3.0,
+        "J103.2": 0.25
+      },
+      "control_return_worst_node": "Q5.3",
+      "control_return_transfer_ohms": 0.0022493832037420655,
+      "ground_drop_V": 0.003961122962710935,
+      "bleeder_allowance_A": 0.06,
+      "total_input_allowance_A": 4.46,
+      "raw_feed_length_mm": 11.33552803834166,
+      "raw_feed_drop_V": 0.008405064579114772,
+      "coil_branch_sum_length_mm": 26.283954444081637,
+      "coil_branch_upper_drop_V": 0.0026218412775279878,
+      "coil_return_drop_V_at50mA": 0.0003782572722696998,
+      "total_copper_drop_V_model": 0.015366286091623396
+    }
+  ],
+  "scope": "Actual filled GND polygons and tracks plus annular pads/vias; only wholly covered cells, with no clearance-crossing mesh cells. Equipotential annular terminal approximation and specified material assumptions; no external ground-loop paths; not a fabrication guarantee.",
+  "coil_branch_scope": "Entire 1mm AUX branch sum at 150 mA, including low-load stubs; downstream 5 mm contact feed excluded.",
+  "load_scope": "Worst allocation with 4.25 A screens, 3 A per main and 0.5 A per touch, plus 150 mA worst observed control return and 60 mA bleeder; rounded total 4.46 A.",
+  "input_voltage_reference": "4.75 V at J1 before F1; fuse/holder/driver drops excluded from copper result"
+}
