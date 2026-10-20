@@ -950,6 +950,9 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   store_i32(&engine->a_limiter_enabled, 0);
   store_f32(&engine->a_limiter_ceiling_bits, 0.99f);
   engine->lim_gain = 1.0f;
+  engine->lim_hold_cur = 1.0f;
+  engine->lim_hold_prev = 1.0f;
+  engine->lim_hold_count = 0;
   store_f32(&engine->a_overdub_fb_bits, 1.0f);
 
   store_i32(&engine->a_sample_rate, sample_rate);
@@ -1428,6 +1431,9 @@ le_engine* le_engine_create(void) {
   store_i32(&engine->a_limiter_enabled, 0);     /* off until the app enables it */
   store_f32(&engine->a_limiter_ceiling_bits, 0.99f);
   engine->lim_gain = 1.0f;
+  engine->lim_hold_cur = 1.0f;
+  engine->lim_hold_prev = 1.0f;
+  engine->lim_hold_count = 0;
   store_f32(&engine->a_overdub_fb_bits, 1.0f); /* classic additive overdub */
   atomic_store_explicit(&engine->a_output_enabled_mask, 0xFFFFFFFFu,
                         memory_order_relaxed); /* all outputs on until set */
