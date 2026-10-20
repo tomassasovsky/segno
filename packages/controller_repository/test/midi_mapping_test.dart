@@ -116,4 +116,35 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test('withoutControls drops matching controls and any mapping left '
+      'with none', () {
+    final set = MidiMappingSet(
+      mappings: [
+        MidiMapping(
+          id: 'both',
+          source: cc(1),
+          behavior: MidiBehavior.continuous,
+          controls: [
+            MidiParameterControl(key: 'gone', low: 0, high: 1),
+            MidiParameterControl(key: 'kept', low: 0, high: 1),
+          ],
+        ),
+        MidiMapping(
+          id: 'only-gone',
+          source: cc(2),
+          behavior: MidiBehavior.continuous,
+          controls: [MidiParameterControl(key: 'gone-too', low: 0, high: 1)],
+        ),
+        mapping('untouched', cc(3)),
+      ],
+    );
+
+    final next = set.withoutControls((key) => key.startsWith('gone'));
+
+    expect(next.mappings.map((m) => m.id), ['both', 'untouched']);
+    expect(next.byId('both')!.controls.map((c) => c.key), ['kept']);
+    expect(next.byId('untouched'), set.byId('untouched'));
+    expect(set.withoutControls((_) => false), set);
+  });
 }

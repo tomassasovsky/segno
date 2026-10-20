@@ -1938,7 +1938,7 @@
     "fxRemoveRackTitle": "¿Quitar {name}?",
     "fxRemoveRackBody": "Los sonidos que guardaste desde él quedan en Mis presets.",
     "fxReAddRackTitle": "¿Reemplazar {name}?",
-    "fxReAddRackBody": "{count, plural, =1{Al agregarlo de nuevo, sus efectos reciben identidades nuevas, así que se pierde su asignación de MIDI o pedal.} other{Al agregarlo de nuevo, sus efectos reciben identidades nuevas, así que se pierden sus {count} asignaciones de MIDI y pedal.}}",
+    "fxReAddRackBody": "{count, plural, =1{Al agregarlo de nuevo, sus efectos reciben identidades nuevas, así que se quitará su asignación de MIDI o pedal.} other{Al agregarlo de nuevo, sus efectos reciben identidades nuevas, así que se quitarán sus {count} asignaciones de MIDI y pedal.}}",
     "fxReAddRack": "Reemplazar rack",
     "fxRemoveEffect": "Quitar {name}",
     "fxBypassRack": "Rack",

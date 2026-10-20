@@ -69,7 +69,7 @@ void main() {
             jacks: {
               PedalCtrlJack.ctrl1: ExternalJackSetup(
                 type: ExternalJackType.dualSwitch,
-                // Stored on a dual jack but not in use, so not counted.
+                // Stored on a dual jack but not in use: still an assignment.
                 single: ExternalSwitchSetup(
                   controls: ExternalControls(
                     activations: const [ExternalActivation(target: slotA)],
@@ -99,11 +99,50 @@ void main() {
         ),
       );
 
-      // MIDI 1, global pedal 1, session pedal 1, external switch 2,
+      // MIDI 1, global pedal 1, session pedal 1, external switches 3,
       // expression 1.
-      expect(fxAssignmentsTo(state, _track, {'a', 'b'}), 6);
-      expect(fxAssignmentsTo(state, _track, {'a'}), 3);
+      expect(fxAssignmentsTo(state, _track, {'a', 'b'}), 7);
+      expect(fxAssignmentsTo(state, _track, {'a'}), 4);
       expect(fxAssignmentsTo(state, _other, {'b'}), 1);
+
+      // Removing them leaves none, and leaves everything else alone.
+      final cleaned = fxWithoutAssignmentsTo(state, _track, {'a', 'b'});
+      final after = state.copyWith(
+        midiMappings: cleaned.midi,
+        globalBindings: cleaned.global,
+        sessionBindings: cleaned.session,
+        pedalSetup: state.pedalSetup.copyWith(external: cleaned.external),
+      );
+      expect(fxAssignmentsTo(after, _track, {'a', 'b'}), 0);
+      expect(cleaned.midi.mappings.map((m) => m.id), ['two']);
+      expect(fxAssignmentsTo(after, _other, {'b'}), 1);
+      expect(cleaned.global.bindings.map((b) => b.key.button), [
+        PedalButton.track2,
+      ]);
+      expect(cleaned.session.isEmpty, isTrue);
+    });
+
+    test('a binding whose hold alone names the effects keeps its press', () {
+      const slotA = FxSlotTarget(address: _track, slotId: 'a');
+      const chain = FxChainTarget(_track);
+      final state = ControlState(
+        globalBindings: PedalBindingSet([
+          PedalBinding(
+            key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+            target: chain.canonicalString(),
+            holdTarget: slotA.canonicalString(),
+          ),
+        ]),
+      );
+
+      expect(fxAssignmentsTo(state, _track, {'a'}), 1);
+      final binding = fxWithoutAssignmentsTo(
+        state,
+        _track,
+        {'a'},
+      ).global.bindings.single;
+      expect(binding.decodeTarget(), chain);
+      expect(binding.hasHold, isFalse);
     });
   });
 }
