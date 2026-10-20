@@ -4174,7 +4174,7 @@
             }
         }
     },
-    "fxReAddRackBody": "{count, plural, =1{Adding it again gives its effects new identities, so its 1 MIDI or pedal assignment will be removed.} other{Adding it again gives its effects new identities, so its {count} MIDI and pedal assignments will be removed.}}",
+    "fxReAddRackBody": "{count, plural, =1{Adding it again gives its effects new identities, so 1 MIDI or pedal assignment will be removed.} other{Adding it again gives its effects new identities, so {count} MIDI and pedal assignments will be removed.}}",
     "@fxReAddRackBody": {
         "description": "How many MIDI and pedal assignments re-adding a rack removes, and why.",
         "placeholders": {
