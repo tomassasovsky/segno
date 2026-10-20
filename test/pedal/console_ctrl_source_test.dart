@@ -26,7 +26,9 @@ void main() {
       List<PedalLinkMessage> messages,
     ) async {
       final seen = <RawControllerInput>[];
-      final sub = source.inputs.listen(seen.add);
+      final sub = source.inputs.listen((event) {
+        if (event is RawControllerInput) seen.add(event);
+      });
       messages.forEach(link.emit);
       await pumpEventQueue();
       await sub.cancel();
@@ -59,23 +61,26 @@ void main() {
       },
     );
 
-    test('the jack is the control number, and values land in 0..127', () async {
-      final seen = await collect(const [
-        CtrlMessage(
-          jack: PedalCtrlJack.ctrl2,
-          kind: PedalCtrlKind.expression,
-          value: 0,
-        ),
-        CtrlMessage(
-          jack: PedalCtrlJack.ctrl2,
-          kind: PedalCtrlKind.expression,
-          value: 255,
-        ),
-      ]);
+    test(
+      'the jack is the control number, and values keep all eight bits',
+      () async {
+        final seen = await collect(const [
+          CtrlMessage(
+            jack: PedalCtrlJack.ctrl2,
+            kind: PedalCtrlKind.expression,
+            value: 0,
+          ),
+          CtrlMessage(
+            jack: PedalCtrlJack.ctrl2,
+            kind: PedalCtrlKind.expression,
+            value: 255,
+          ),
+        ]);
 
-      expect(seen.map((i) => i.id), everyElement(1));
-      expect(seen.map((i) => i.value), [0, 127]);
-    });
+        expect(seen.map((i) => i.id), everyElement(1));
+        expect(seen.map((i) => i.value), [0, 255]);
+      },
+    );
 
     test('a press reads as a press and a release does not', () async {
       final seen = await collect(const [
@@ -150,20 +155,32 @@ void main() {
       expect(seen, hasLength(1));
     });
 
-    test('an expression pedal delivers its calibrated travel, not the raw '
-        'reading', () async {
-      pedal.setCtrlCalibration(
-        PedalCtrlJack.ctrl1,
-        const PedalCtrlCalibration(min: 24, max: 255),
-      );
-      final seen = await collect(const [
-        CtrlMessage(
-          jack: PedalCtrlJack.ctrl1,
-          kind: PedalCtrlKind.expression,
-          value: 24,
-        ),
+    test('kind changes invalidate old inputs without a fake release', () async {
+      final seen = <ControllerSourceEvent>[];
+      final sub = source.inputs.listen(seen.add);
+      link
+        ..emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.switchPedal,
+            value: 255,
+          ),
+        )
+        ..emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.expression,
+            value: 201,
+          ),
+        );
+      await pumpEventQueue();
+      expect(seen.whereType<RawControllerInput>().map((e) => e.value), [
+        255,
+        201,
       ]);
-      expect(seen.single.value, 0);
+      expect(seen.whereType<ControllerSourceUnavailable>(), hasLength(3));
+      expect(seen.last, isA<RawControllerInput>());
+      await sub.cancel();
     });
   });
 }

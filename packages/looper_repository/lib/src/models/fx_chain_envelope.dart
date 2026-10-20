@@ -89,8 +89,9 @@ String encodeFxChain(FxChainEnvelope envelope) {
 /// as `chainEnabled = true`, no meta ("migration defaults every level to
 /// enabled", R15). Entries missing `enabled` default true; entries missing
 /// `slotId` stay null for the repository write boundary to mint exactly once
-/// (A9). Unknown envelope keys are ignored (additive-only contract); malformed
-/// input yields an empty enabled envelope.
+/// (A9). Unknown envelope keys are ignored; malformed JSON yields an empty
+/// enabled envelope. Invalid explicit placement/channel metadata throws, so
+/// callers cannot publish a dry chain in place of a corrupted effect.
 FxChainEnvelope decodeFxChain(String? encoded) {
   if (encoded == null || encoded.isEmpty) return const FxChainEnvelope();
   final Object? raw;

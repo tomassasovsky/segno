@@ -1,10 +1,9 @@
-# Shared kas config for every Segno appliance image. Machine-specific projects
-# include this and add the bits that differ per board:
+# Shared kas config for the Segno appliance image. The board project includes
+# this and adds what is specific to the board:
 #
-#   kas-segno-rpi4.yml   raspberrypi4-64, boots from the SD card  (mmcblk0)
-#   kas-segno-rpi5.yml   raspberrypi5,    boots from NVMe         (nvme0n1)
+#   kas-segno-rpi5.yml   raspberrypi5, boots from NVMe (nvme0n1)
 #
-# Build one of those, never this file directly. See README.md for the flow.
+# Build that, never this file directly. See README.md for the flow.
 header:
   version: 14
 
@@ -82,26 +81,26 @@ local_conf_header:
     PACKAGE_CLASSES = "package_ipk"
     # Lean image: drop docs/dev/dbg splits for a spike.
     INHERIT += "rm_work"
-    # Accept the Pi 4/5 WiFi firmware's restricted license (meta-raspberrypi).
+    # Accept the Pi 5 WiFi firmware's restricted license (meta-raspberrypi).
     LICENSE_FLAGS_ACCEPTED = "synaptics-killswitch"
 
   init: |
-    # systemd so we can order the app after weston with a unit.
+    # systemd: the app and its helpers are ordered and supervised as units.
     INIT_MANAGER = "systemd"
 
   kiosk-console: |
     # Keep the kernel console OFF the HDMI framebuffer so it never paints over
-    # weston (on-device, audit + console spam covered the app). fbcon=map:9 moves
+    # the app (on-device, audit + console spam covered it). fbcon=map:9 moves
     # the framebuffer console away, audit=0 kills the audit flood, quiet/loglevel
     # trim kernel noise, and vt.global_cursor_default=0 hides the text cursor.
     #
-    # video=HDMI-A-*:1920x1080@60D forces both HDMI connectors to 1080p at boot
-    # (the firmware/EDID default is the TV's 4K preferred mode) AND force-enables
-    # them (modedb `D` = digital + on). Without `D`, a TV sleep/wake HPD blip
-    # looks like an unplug: weston disables HDMI-A-1, kiosk-shell never puts the
-    # main surface back, and the next click SIGSEGVs the compositor (#821).
-    # weston.ini uses mode=current to inherit the 1080p. Set on both ports so it
-    # holds whichever one the cable is in. Validated on a 4K LG TV -> 1080p60.
+    # video=HDMI-A-*:1920x1080@60D sets the console's boot mode on both HDMI
+    # connectors AND force-enables them (modedb `D` = digital + on). The app
+    # does its own modeset (each panel's EDID-preferred mode, homescreen.toml),
+    # so the `D` is the part that matters: a panel that drops HPD for a moment
+    # stays a connector the embedder drives, and a 7" absent at boot does not
+    # make ivi-homescreen exit for want of the connector it pins (#821, #1318).
+    # deploy/yocto/test/run_kernel_cmdline_tests.sh holds this line in place.
     #
     # Audio real-time tuning: cpufreq.default_governor=performance pins the CPUs at
     # max clock (the default ondemand governor idles at 1.1 GHz mid-loop -> xruns).
@@ -113,14 +112,26 @@ local_conf_header:
     # segno splash replaces it). `splash` above triggers plymouth despite `quiet`.
     RPI_EXTRA_CONFIG:append = "\ndisable_splash=1"
 
-  rpi-wayland: |
-    # Pi GPU + KMS so Mesa/Wayland/weston work. `pam` is required by systemd +
-    # packagegroup-core-weston; keep x11 in so the image GTK3 stays a close ABI
-    # match to our Ubuntu-built bundle (xwayland fallback also available).
-    DISTRO_FEATURES:append = " wayland opengl systemd pam"
+  rpi-graphics: |
+    # Pi GPU + KMS: Mesa's GBM/EGL is all ivi-homescreen draws through, straight
+    # to DRM/KMS. There is no compositor and no toolkit, so no x11 and no
+    # wayland: poky's defaults carry both, and they only pulled in display
+    # servers and client libraries nothing here uses (#1330). `pam` is
+    # required by systemd.
+    DISTRO_FEATURES:append = " opengl systemd pam"
+    DISTRO_FEATURES:remove = "x11 wayland"
+    # No Bluetooth (#1199). The machine and the default distro both carry the
+    # feature, and with both set packagegroup-base hard-depends on
+    # packagegroup-base-bluetooth, which pulls bluez5 and enables
+    # bluetooth.service. Removing it here is what keeps BlueZ out; the image's
+    # PACKAGE_EXCLUDE is the guard that fails the build if anything else
+    # brings it back. A DISTRO_FEATURES change invalidates most of sstate, so
+    # the first build after it is close to a full rebuild: check the runner's
+    # disk headroom (the 40 GB pre-flight) before starting it.
+    DISTRO_FEATURES:remove = "bluetooth"
 
   segno: |
-    # SEGNO_BOOT_DISK is set per board (kas-segno-rpi{4,5}.yml). The .wks.in is
+    # SEGNO_BOOT_DISK is set per board (kas-segno-rpi5.yml). The .wks.in is
     # expanded by bitbake's d.expand at image-recipe parse, which sees any
     # datastore variable — WICVARS is NOT what expands it (it only feeds wic's
     # .env for source plugins). Kept anyway as belt-and-braces: it costs

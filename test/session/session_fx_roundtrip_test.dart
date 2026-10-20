@@ -6,10 +6,19 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/looper/model/audio_tempo.dart';
+import 'package:segno/looper/model/one_shot.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_start.dart';
+import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:segno_engine/segno_engine.dart'
     show FxFingerprint, PumpedNativeEngine;
 import 'package:session_repository/session_repository.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 /// End-to-end FX-in-session round-trip against the REAL native engine
 /// (device-free pump): record a take, stage lane + monitor chains, SAVE, clear
@@ -31,7 +40,7 @@ void main() {
   late Directory tempDir;
   Timer? pumpDriver;
 
-  setUp(() {
+  setUp(() async {
     engine = PumpedNativeEngine();
     looper = LooperRepository(engine: engine)
       ..startEngine(
@@ -42,7 +51,10 @@ void main() {
           maxLoopFrames: 48000,
         ),
       );
-    session = SessionRepository(engine: engine);
+    expect(looper.record(), EngineResult.notReady);
+    engine.pump(frames: 0);
+    expect(await looper.settleMixSettings(), EngineResult.ok);
+    session = SessionRepository(guards: GuardRegistry(), engine: engine);
     tempDir = Directory.systemTemp.createTempSync('segno_fx_session');
     // The pump engine only advances (and drains ring commands) when pumped;
     // a background driver lets the repositories' async clear/settle waits make
@@ -66,25 +78,28 @@ void main() {
   test('a session with lane + monitor chains round-trips, engine and cache '
       'agree after load', () async {
     // Record a 256-frame take on track 0.
-    looper.record();
+    expect(looper.record(), EngineResult.ok);
     engine.pump(frames: 256, input: 0.5);
-    looper.record(); // finalize -> playing
+    expect(looper.record(), EngineResult.ok); // finalize -> playing
     engine.pump(frames: 0);
 
     // Stage a lane chain + mix, and a monitor chain.
+    looper.setLaneEffects(
+      channel: 0,
+      lane: 0,
+      effects: [
+        BuiltInEffect(
+          type: TrackEffectType.delay,
+          params: const [0.3, 0.4, 0.5, 0],
+        ),
+        BuiltInEffect(type: TrackEffectType.reverb),
+      ],
+    );
+    expect(
+      looper.setLaneVolume(0.6, channel: 0, lane: 0),
+      EngineResult.ok,
+    );
     looper
-      ..setLaneEffects(
-        channel: 0,
-        lane: 0,
-        effects: [
-          BuiltInEffect(
-            type: TrackEffectType.delay,
-            params: const [0.3, 0.4, 0.5, 0],
-          ),
-          BuiltInEffect(type: TrackEffectType.reverb),
-        ],
-      )
-      ..setLaneVolume(0.6, channel: 0, lane: 0)
       ..setLaneMute(muted: true, channel: 0, lane: 0)
       ..setMonitorEffects(
         input: 0,
@@ -96,9 +111,52 @@ void main() {
       ..setMonitorInputMode(input: 1, mode: MonitorMode.on)
       ..setMonitorOutput(input: 1, mask: 0x1);
     engine.pump(frames: 0);
+    // Match SessionCubit's save boundary: only confirmed mix is persisted.
+    expect(await looper.settleMixSettings(), EngineResult.ok);
 
     final dir = '${tempDir.path}/take';
-    final saved = await session.save(dir, chains: chainsFromLooper(looper));
+    final saved = await session.save(
+      dir,
+      chains: chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      ),
+      settings: settingsFromLooper(
+        looper,
+        fade: FadeDurations.defaults,
+        recordStart: RecordStartSettings(countInBars: 0, soundStart: false),
+        clickMode: looper.sessionTransport.clickMode,
+        recordTiming: RecordTimingSnapshot(
+          defaultTiming: looper.defaultRecordTiming,
+          rememberedDivision: looper.sessionTransport.quantizeDiv,
+          trackOverrides: looper.trackRecordTimingOverrides,
+          captureLocked: false,
+        ),
+        recordLength: RecordLengthSnapshot(
+          defaultBars: looper.sessionTransport.defaultLengthPresetBars,
+          trackOverrides: looper.trackLengthPresetOverrides,
+          mode: looper.sessionTransport.looperMode,
+          captureLocked: false,
+        ),
+        clickVolume: 1,
+        decay: DecaySnapshot(
+          defaultPercent: looper.defaultOverdubDecay,
+          trackOverrides: looper.trackOverdubDecayOverrides,
+        ),
+        oneShot: OneShotSnapshot(
+          defaultOneShot: looper.defaultOneShot,
+          trackOverrides: looper.trackOneShotOverrides,
+        ),
+        followTempo: InheritSnapshot(
+          defaultValue: looper.defaultFollowTempo,
+          trackOverrides: looper.trackFollowTempoOverrides,
+        ),
+        pitchMode: InheritSnapshot(
+          defaultValue: looper.defaultPitchMode,
+          trackOverrides: looper.trackPitchModeOverrides,
+        ),
+      ),
+    );
     expect(saved.laneChains, isNotEmpty);
     // BOTH monitors are captured: the FX chain on input 0 AND the dry monitor
     // on input 1 (the regression would have saved only input 0).

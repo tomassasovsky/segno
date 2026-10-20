@@ -63,20 +63,42 @@ class StorageUsage extends Equatable {
   ];
 }
 
+/// What the console board's boot-time flasher last wrote onto the board: the
+/// record `segno-console-flash` leaves after a verified program.
+///
+/// It is what this console *put* there, not what the board *says*: a board
+/// reflashed from a laptop since, or swapped for another, still reads as this
+/// record until it talks. The About face therefore captions it as such and
+/// prefers the board's own HELLO whenever the link is up.
+class ConsoleBoardFlash extends Equatable {
+  /// Creates a [ConsoleBoardFlash].
+  const ConsoleBoardFlash({required this.firmware, required this.protocol});
+
+  /// The firmware version flashed, `major.minor`.
+  final String firmware;
+
+  /// The link protocol that firmware speaks.
+  final int protocol;
+
+  @override
+  List<Object?> get props => [firmware, protocol];
+}
+
 /// What this console *is* — the facts printed on the box rather than compiled
 /// into the app.
 ///
-/// Every field is a string that is **empty when unknown**, and every face that
-/// reads one omits its row rather than drawing a dash. A desktop build is not
-/// a console, and a serial number that is not there is not a serial number
-/// that is blank.
+/// Every string is **empty when unknown**, every list empty and
+/// [lastFlashed] null, and every face that reads one omits its row rather than
+/// drawing a dash. A desktop build is not a console, and a serial number that
+/// is not there is not a serial number that is blank.
 class ConsoleFacts extends Equatable {
   /// Creates a [ConsoleFacts].
   const ConsoleFacts({
     this.name = '',
     this.serial = '',
     this.systemImage = '',
-    this.panel = '',
+    this.panels = const [],
+    this.lastFlashed,
   });
 
   /// What a build that is not a console reports.
@@ -90,12 +112,17 @@ class ConsoleFacts extends Equatable {
   /// settings follow.
   final String serial;
 
-  /// The running system image, e.g. `Yocto scarthgap · kernel 6.12-rt`.
+  /// The running system image's build, e.g. `1.2.3`.
   final String systemImage;
 
-  /// The attached panel, e.g. `16″ 1920×1080 · touch`.
-  final String panel;
+  /// The attached display panels' own names, as their EDID reports them, in
+  /// connector order.
+  final List<String> panels;
+
+  /// What the boot-time flasher last put on the console board, or null when
+  /// it has recorded nothing.
+  final ConsoleBoardFlash? lastFlashed;
 
   @override
-  List<Object?> get props => [name, serial, systemImage, panel];
+  List<Object?> get props => [name, serial, systemImage, panels, lastFlashed];
 }

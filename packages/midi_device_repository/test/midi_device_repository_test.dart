@@ -12,6 +12,13 @@ class _MockMidiSource extends Mock implements MidiControllerSource {}
 
 class _InMemoryStore implements KeyValueStore {
   final Map<String, Object> values = {};
+  String? refusedRemoval;
+  String? refusedWrite;
+  String? refusedRead;
+  String? failAfterWrite;
+  String? failAfterRemoval;
+  String? dropWrite;
+  Completer<void>? removalGate;
 
   @override
   Future<int?> getInt(String key) async => values[key] as int?;
@@ -20,10 +27,21 @@ class _InMemoryStore implements KeyValueStore {
   Future<void> setInt(String key, int value) async => values[key] = value;
 
   @override
-  Future<String?> getString(String key) async => values[key] as String?;
+  Future<String?> getString(String key) async {
+    if (key == refusedRead) throw StateError('storage read refused $key');
+    return values[key] as String?;
+  }
 
   @override
-  Future<void> setString(String key, String value) async => values[key] = value;
+  Future<void> setString(String key, String value) async {
+    if (key == refusedWrite) throw StateError('storage write refused $key');
+    if (key == dropWrite) return;
+    values[key] = value;
+    if (key == failAfterWrite) {
+      failAfterWrite = null;
+      throw StateError('storage failed after writing $key');
+    }
+  }
 
   @override
   Future<bool?> getBool(String key) async => values[key] as bool?;
@@ -39,7 +57,15 @@ class _InMemoryStore implements KeyValueStore {
   Future<void> setDouble(String key, double value) async => values[key] = value;
 
   @override
-  Future<void> remove(String key) async => values.remove(key);
+  Future<void> remove(String key) async {
+    await removalGate?.future;
+    if (key == refusedRemoval) throw StateError('storage refused $key');
+    values.remove(key);
+    if (key == failAfterRemoval) {
+      failAfterRemoval = null;
+      throw StateError('storage failed after removing $key');
+    }
+  }
 
   @override
   Future<void> clear() async => values.clear();
@@ -110,6 +136,39 @@ void main() {
       await repository.select('id-1'); // no-op, must not throw
       expect(repository.connection.selectedId, '');
     });
+
+    test(
+      'failed initial read reports uncertainty without an uncaught error',
+      () async {
+        store.refusedRead = 'midi.input_device';
+        final repository = await hydrated();
+        addTearDown(repository.dispose);
+
+        expect(repository.connection.pinUncertain, isTrue);
+        expect(repository.connection.selectedId, isEmpty);
+        store.refusedRead = null;
+        await repository.select('');
+        expect(repository.connection.pinUncertain, isFalse);
+        expect(repository.connection.status, MidiConnectionStatus.none);
+      },
+    );
+
+    test(
+      'malformed saved pair fails closed until explicitly cleared',
+      () async {
+        enumerated = const [dev1];
+        store.values['midi.input_device'] = '{"id":"id-1"}';
+        final repository = await hydrated();
+        addTearDown(repository.dispose);
+
+        expect(repository.connection.pinUncertain, isTrue);
+        expect(repository.connection.selectedId, isEmpty);
+        verifyNever(() => source.open(any()));
+        await repository.selectNone();
+        expect(repository.connection.pinUncertain, isFalse);
+        expect(await settings.loadMidiDevice(), isNull);
+      },
+    );
 
     test('republishes raw source activity for the indicator', () async {
       final repository = await hydrated();
@@ -195,6 +254,131 @@ void main() {
       verifyNever(() => source.open(any()));
       expect(repository.connection.status, MidiConnectionStatus.connected);
     });
+
+    for (final priorUncertainty in [false, true]) {
+      test(
+        'confirmed pin stays retryable after thrown open '
+        '(prior uncertainty: $priorUncertainty)',
+        () async {
+          enumerated = const [dev1];
+          final repository = await hydrated();
+          addTearDown(repository.dispose);
+          if (priorUncertainty) {
+            store.refusedWrite = 'midi.input_device';
+            await expectLater(repository.select('id-1'), throwsStateError);
+            expect(repository.connection.pinUncertain, isTrue);
+            verifyNever(() => source.open('id-1'));
+            store.refusedWrite = null;
+          }
+          var opens = 0;
+          when(() => source.open('id-1')).thenAnswer((_) {
+            opens++;
+            if (opens == 1) throw StateError('native open failed');
+            return 0;
+          });
+
+          await expectLater(repository.select('id-1'), throwsStateError);
+          expect(await settings.loadMidiDevice(), (
+            id: 'id-1',
+            name: 'FCB1010',
+          ));
+          expect(repository.connection.status, MidiConnectionStatus.error);
+          expect(repository.connection.errorDetail, contains('native open'));
+          expect(repository.connection.pinUncertain, isFalse);
+          expect(repository.connection.selectedId, 'id-1');
+          repository.refresh();
+          expect(opens, 2);
+          expect(repository.connection.status, MidiConnectionStatus.connected);
+          expect(repository.connection.errorDetail, isNull);
+        },
+      );
+    }
+
+    test(
+      'failed device write stays uncertain across refresh and retries',
+      () async {
+        enumerated = const [dev1, dev2];
+        final repository = await hydrated();
+        addTearDown(repository.dispose);
+        await repository.select('id-1');
+        clearInteractions(source);
+        store.refusedWrite = 'midi.input_device';
+
+        await expectLater(repository.select('id-2'), throwsStateError);
+        expect(repository.connection.selectedId, 'id-2');
+        expect(repository.connection.pinUncertain, isTrue);
+        expect(repository.connection.status, MidiConnectionStatus.error);
+        expect((await settings.loadMidiDevice())?.id, 'id-1');
+        repository.refresh();
+        expect(repository.connection.pinUncertain, isTrue);
+        verifyNever(() => source.open('id-2'));
+        enumerated = const [];
+        repository.refresh();
+        enumerated = const [dev1, dev2];
+        repository.refresh();
+        expect(repository.connection.connectivity, MidiConnectivity.none);
+
+        final relaunched = await hydrated();
+        addTearDown(relaunched.dispose);
+        expect(relaunched.connection.selectedId, 'id-1');
+        store.refusedWrite = null;
+        await repository.select('id-2');
+        expect(repository.connection.pinUncertain, isFalse);
+        expect(repository.connection.status, MidiConnectionStatus.connected);
+        expect((await settings.loadMidiDevice())?.id, 'id-2');
+        verify(() => source.open('id-2')).called(1);
+      },
+    );
+
+    test(
+      'write-then-throw retains uncertainty and a coherent pair on relaunch',
+      () async {
+        enumerated = const [dev1, dev2];
+        final repository = await hydrated();
+        addTearDown(repository.dispose);
+        await repository.select('id-1');
+        clearInteractions(source);
+        store.failAfterWrite = 'midi.input_device';
+
+        await expectLater(repository.select('id-2'), throwsStateError);
+        expect(repository.connection.pinUncertain, isTrue);
+        expect(await settings.loadMidiDevice(), (id: 'id-2', name: 'SoftStep'));
+        repository.refresh();
+        verifyNever(() => source.open('id-2'));
+
+        final relaunched = await hydrated();
+        addTearDown(relaunched.dispose);
+        expect(relaunched.connection.selectedId, 'id-2');
+        expect(relaunched.connection.selectedName, 'SoftStep');
+
+        await repository.select('id-2');
+        expect(repository.connection.pinUncertain, isFalse);
+        expect(await settings.loadMidiDevice(), (
+          id: 'id-2',
+          name: 'SoftStep',
+        ));
+      },
+    );
+
+    test('dropped write is not reported as a saved new selection', () async {
+      enumerated = const [dev1, dev2];
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+      await repository.select('id-1');
+      clearInteractions(source);
+      store.dropWrite = 'midi.input_device';
+
+      await expectLater(repository.select('id-2'), throwsStateError);
+      expect(repository.connection.pinUncertain, isTrue);
+      expect(await settings.loadMidiDevice(), (id: 'id-1', name: 'FCB1010'));
+      repository.refresh();
+      verifyNever(() => source.open('id-2'));
+
+      store.dropWrite = null;
+      await repository.select('id-2');
+      expect(repository.connection.pinUncertain, isFalse);
+      expect(await settings.loadMidiDevice(), (id: 'id-2', name: 'SoftStep'));
+    });
   });
 
   group('None', () {
@@ -208,9 +392,120 @@ void main() {
 
       expect(repository.connection.status, MidiConnectionStatus.none);
       expect(repository.connection.selectedId, '');
-      verify(source.close).called(1);
+      expect(repository.connection.pinUncertain, isFalse);
+      verify(source.close).called(2);
       expect(await settings.loadMidiDevice(), isNull);
     });
+
+    test('failed first removal stops ingress and stays retryable', () async {
+      enumerated = const [dev1];
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+      await repository.select('id-1');
+      clearInteractions(source);
+      store.refusedRemoval = 'midi.input_device';
+
+      final clearing = repository.selectNone();
+      expect(repository.connection.selectedId, '');
+      expect(repository.connection.status, MidiConnectionStatus.connecting);
+      verify(source.close).called(1);
+      await expectLater(clearing, throwsStateError);
+
+      expect(repository.connection.status, MidiConnectionStatus.error);
+      expect(repository.connection.selectedId, '');
+      expect(repository.connection.pinUncertain, isTrue);
+      expect(repository.connection.errorDetail, contains('storage refused'));
+      expect((await settings.loadMidiDevice())?.id, 'id-1');
+      repository.refresh();
+      verifyNever(() => source.open(any()));
+
+      // A restart still observes the old durable pin. Retry confirms None.
+      final relaunched = await hydrated();
+      addTearDown(relaunched.dispose);
+      expect(relaunched.connection.selectedId, 'id-1');
+      expect(relaunched.connection.status, MidiConnectionStatus.connected);
+      store.refusedRemoval = null;
+      await repository.selectNone();
+      expect(repository.connection.status, MidiConnectionStatus.none);
+      expect(repository.connection.pinUncertain, isFalse);
+      expect(await settings.loadMidiDevice(), isNull);
+    });
+
+    test(
+      'remove-then-throw remains uncertain and relaunch sees None',
+      () async {
+        enumerated = const [dev1];
+        final repository = await hydrated();
+        addTearDown(repository.dispose);
+        await repository.select('id-1');
+        store.failAfterRemoval = 'midi.input_device';
+
+        await expectLater(repository.selectNone(), throwsStateError);
+
+        expect(repository.connection.status, MidiConnectionStatus.error);
+        expect(repository.connection.selectedId, '');
+        expect(repository.connection.pinUncertain, isTrue);
+        expect(await settings.loadMidiDevice(), isNull);
+        expect(store.values.containsKey('midi.input_device'), isFalse);
+        clearInteractions(source);
+        final relaunched = await hydrated();
+        addTearDown(relaunched.dispose);
+        expect(relaunched.connection.status, MidiConnectionStatus.none);
+        verifyNever(() => source.open(any()));
+        await repository.selectNone();
+        expect(repository.connection.status, MidiConnectionStatus.none);
+        expect(store.values.containsKey('midi.input_device'), isFalse);
+      },
+    );
+
+    test('a newer selection outranks an old failed clear', () async {
+      enumerated = const [dev1, dev2];
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+      await repository.select('id-1');
+      store.refusedRemoval = 'midi.input_device';
+      final gate = Completer<void>();
+      store.removalGate = gate;
+
+      final clearing = repository.selectNone();
+      await pumpEventQueue(); // the old clear is inside the store
+      final selecting = repository.select('id-2');
+      gate.complete();
+      await expectLater(clearing, throwsStateError);
+      await selecting;
+
+      expect(repository.connection.selectedId, 'id-2');
+      expect(repository.connection.status, MidiConnectionStatus.connected);
+      expect((await settings.loadMidiDevice())?.id, 'id-2');
+    });
+  });
+
+  test(
+    'rapid A then B selection opens only the latest captured request',
+    () async {
+      enumerated = const [dev1, dev2];
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+      final a = repository.select('id-1');
+      final b = repository.select('id-2');
+      await Future.wait([a, b]);
+      verifyNever(() => source.open('id-1'));
+      verify(() => source.open('id-2')).called(1);
+      expect(repository.connection.selectedId, 'id-2');
+      expect((await settings.loadMidiDevice())?.id, 'id-2');
+    },
+  );
+
+  test('None invalidates an unfinished selection before it opens', () async {
+    enumerated = const [dev1];
+    final repository = await hydrated();
+    addTearDown(repository.dispose);
+    final selection = repository.select('id-1');
+    final none = repository.selectNone();
+    await Future.wait([selection, none]);
+    verifyNever(() => source.open(any()));
+    expect(repository.connection.status, MidiConnectionStatus.none);
+    expect(await settings.loadMidiDevice(), isNull);
   });
 
   group('launch auto-reconnect', () {
@@ -376,7 +671,7 @@ void main() {
       // The repository has no LooperRepository collaborator at all; its only
       // interactions are open/close/enumerate on the MIDI source.
       verify(() => source.open(any())).called(2);
-      verify(source.close).called(1);
+      verify(source.close).called(3);
       verify(() => source.enumerate()).called(greaterThanOrEqualTo(1));
       verifyNoMoreInteractions(source);
     });
@@ -391,6 +686,17 @@ void main() {
       // The source is owned by the ControllerRepository; the repository only
       // borrows it and must never tear it down.
       verifyNever(() => source.dispose());
+    });
+
+    test('a late None request does not start a write after disposal', () async {
+      final repository = await hydrated();
+      await repository.dispose();
+      clearInteractions(source);
+
+      await repository.select('');
+
+      verifyNever(source.close);
+      expect(store.values, isEmpty);
     });
   });
 
@@ -414,6 +720,7 @@ void main() {
       expect(updated.errorDetail, '5'); // retained without clearError
 
       expect(base.copyWith(clearError: true).errorDetail, isNull);
+      expect(base.copyWith(pinUncertain: true).pinUncertain, isTrue);
     });
 
     test('value equality is by props', () {

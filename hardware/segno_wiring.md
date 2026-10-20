@@ -20,7 +20,7 @@ longer applies to anything.
 ```
    POWER (#754)
      USB-C PD inlet -- rear panel, D punch, QIANRENON coupler (all 24 ways wired)
-              |   STUSB4500 trigger: ONE 20 V / 5 A contract
+              |   STUSB4500 trigger: ONE 20 V contract, at the source's full current (3-5 A)
               |   fuse, T5A slow-blow, in series with the 20 V feed
               +--> BUCK_PI  (20->5 V) --> Pi 5 via its USB-C  --> Pi USB + NVMe
               +--> BUCK_AUX (20->5 V) --+--> console J3 --> pills
@@ -74,21 +74,37 @@ state the remaining engineering assumptions.
   100 W, 10 Gbps). The 10 Gbps matters only because it means **all 24 ways are
   wired**, so CC reaches the trigger and PD can negotiate — a charge-only
   coupler drops CC and nothing powers up.
-- **Trigger:** SparkFun STUSB4500 board, programmed to request **20 V / 5 A**.
-  Its shipped default asks 20 V at only 1.0 A, which contracts 20 W — set the
-  PDO before first power-up.
-- **PD contract status:** console v3 J23 `PD` carries GND, SDA and SCL to
-  Pico GP0/GP1 at 100 kHz. Leave the trigger's external VDD and Qwiic VCC
-  unconnected. Its 2.2 kΩ I2C pull-ups use the low-voltage VDD net fed from
-  VREG_2V7 through D4/BAT60A, as shown in the
-  [SparkFun schematic](https://cdn.sparkfun.com/assets/9/2/6/8/6/SparkFun_PowerDeliveryBoardSchematic.pdf).
-  That net is separate from VIN/VBUS and the STUSB4500 chip's VDD pin; do not
-  connect console 3V3 to it. Firmware reads attachment, policy status and RDO
-  (`0x91`–`0x94`) without changing PDOs or NVM, and reports current and capability
-  mismatch through the pedal link. ST's published map reserves `0x21`, so it
-  is not used as a negotiated-voltage register. Voltage stays explicitly
-  unknown: verify 20 V with a meter/PD analyzer before claiming 100 W readiness.
-  Twist the approximately 250 mm I2C run with ground past the bucks.
+- **Trigger:** SparkFun STUSB4500 board, programmed by the console board over
+  J23 (`firmware/console_board/pd_trigger.c`, #1352) with two 20 V PDOs, 5 A
+  and 3 A, and `REQ_SRC_CURRENT` set: it takes 20 V
+  from any source that offers at least 3 A there, and requests all the current
+  the source offers at 20 V rather than the matched PDO's own. Without that bit
+  a 20 V / 4.7 A brick misses the 5 A PDO, matches the 3 A one, and contracts
+  only 3 A (60 W, against the console's ~59 W worst case; measured on the bench
+  unit, 2026-10-17). Its shipped default asks 20 V at only 1.0 A (20 W). The
+  console board writes the profile at its first boot and the app asks for one
+  unplug, after which every power-up negotiates the full current. A trigger
+  left unusable (power cut during that write) no longer powers the console;
+  reprogram it out of band with `hardware/console/stusb4500_pdo` from an
+  Arduino UNO over Qwiic.
+- **What did it actually get?** The chip is I2C-readable: its RDO
+  (`0x91`–`0x94`) carries the requested operating current, the source's maximum
+  and the source PDO it matched, plus a capability mismatch bit; `0x21` holds
+  the negotiated voltage in 100 mV steps. Mismatch is set only when no sink PDO
+  is met, so on its own it does not flag a short grant: read the operating
+  current. A 65 W brick gives 20 V / 3.25 A: everything boots, and the console
+  browns out only when 26 WS2812s go white under two lit screens. Console board **v3** has a 3-way
+  JST-XH for it, **J23 `PD`** (GND, SDA, SCL on the Pico's GP0/GP1, I2C0),
+  under the module's left end next to `5V IN`. Three wires on purpose: leave the
+  trigger's external VDD and Qwiic VCC unconnected. Its 2.2 kΩ I2C pull-ups use
+  the low-voltage VDD net fed from VREG_2V7 through D4/BAT60A, as shown in the
+  [SparkFun schematic](https://cdn.sparkfun.com/assets/9/2/6/8/6/SparkFun_PowerDeliveryBoardSchematic.pdf),
+  separate from VIN/VBUS and the STUSB4500 chip's VDD pin. The console's 3V3 is
+  downstream of the contract being measured, so it must not feed the trigger. ~250 mm unshielded past two bucks: 100 kHz,
+  twisted with the ground wire. On a v2 board the same read works from J22's
+  GP20/GP21 (I2C0) unless those pads carry the CTRL ring wires. Console
+  firmware 2.3 reads it once a second and reports it up the pedal link
+  (`PD_STATUS`); the Controller firmware page shows the contract.
 - **Fuse:** 5×20 **T5A slow-blow** in the 20 V feed, ahead of both bucks.
   The revised planning load is approximately 3.6–3.8 A at 20 V before startup
   transients; the PD contract ceiling is 5 A. The exact fuse/holder and its

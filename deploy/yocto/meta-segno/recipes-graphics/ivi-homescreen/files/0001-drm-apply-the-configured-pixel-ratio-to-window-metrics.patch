@@ -1,0 +1,77 @@
+From 755a4829c7206271f3d689bfa6e80991dc090793 Mon Sep 17 00:00:00 2001
+From: Segno <noreply@segno.invalid>
+Date: Tue, 13 Oct 2026 18:32:55 +0000
+Subject: [PATCH] drm: apply the configured pixel ratio to window metrics
+
+On backends with no Wayland window (drm-kms-egl, drm-kms-vulkan,
+software) FlutterView::Initialize sends the first window metrics
+through Engine::SetWindowSize, which reports m_prev_pixel_ratio. That
+field starts at 1.0 and only the Wayland window ever changes it, so
+the configured [view] pixel_ratio reached the engine through
+NotifyDisplayUpdate alone and never through the window metrics that
+Flutter lays out with. A view configured with pixel_ratio = 3.0 was
+therefore laid out at a device pixel ratio of 1.0.
+
+Add Engine::SetInitialPixelRatio, which stores the ratio without
+sending an event, and call it with the configured value before the
+non-Wayland SetWindowSize. SetPixelRatio cannot be used there: it
+re-sends the previous size and asserts that one was already set.
+Later SetWindowSize calls (the software backend's Resize) and the
+AddView calls for additional DRM outputs, which read GetPixelRatio,
+pick up the same value.
+
+Pointer and touch input need no change. DrmSeat scales touch to the
+region's viewport, which is the mode size in physical pixels, and
+hands the events straight to FlutterEngineSendPointerEvent, which
+expects physical pixels.
+
+Upstream-Status: Pending
+---
+ shell/engine.h             | 15 +++++++++++++++
+ shell/view/flutter_view.cc |  4 ++++
+ 2 files changed, 19 insertions(+)
+
+diff --git a/shell/engine.h b/shell/engine.h
+index 6cf99560..7388a34e 100644
+--- a/shell/engine.h
++++ b/shell/engine.h
+@@ -163,6 +163,21 @@ class Engine {
+    */
+   [[nodiscard]] double GetPixelRatio() const { return m_prev_pixel_ratio; };
+ 
++  /**
++   * @brief Record the pixel ratio that SetWindowSize() reports, without
++   * sending a window-metrics event
++   * @param[in] pixel_ratio Pixel ratio of flutter window
++   * @relation
++   * flutter
++   *
++   * For backends with no Wayland window (DRM, software), which send their
++   * first metrics through SetWindowSize(). SetPixelRatio() does not fit there:
++   * it re-sends the previous size and asserts one was set.
++   */
++  void SetInitialPixelRatio(const double pixel_ratio) {
++    m_prev_pixel_ratio = pixel_ratio;
++  }
++
+   // wl_output buffer scale applied to incoming pointer/touch coordinates.
+   // Wayland delivers surface-local (logical) coords; Flutter expects physical
+   // pixels. Only the output scale applies here — the config pixel_ratio part
+diff --git a/shell/view/flutter_view.cc b/shell/view/flutter_view.cc
+index b3f65ba8..f0af0242 100644
+--- a/shell/view/flutter_view.cc
++++ b/shell/view/flutter_view.cc
+@@ -685,6 +685,10 @@ bool FlutterView::Initialize() {
+   }
+ #endif
+   if (!handled_by_wayland) {
++    // The configured [view] pixel_ratio is otherwise only reported through
++    // NotifyDisplayUpdate; the window metrics are what Flutter lays out with.
++    m_flutter_engine->SetInitialPixelRatio(
++        m_config.view.pixel_ratio.value_or(kDefaultPixelRatio));
+     const auto result = m_flutter_engine->SetWindowSize(
+         static_cast<size_t>(extent.height), static_cast<size_t>(extent.width));
+     ihs::log::info("[FlutterView] SendWindowMetrics {}x{} result={}",
+-- 
+2.43.0
+

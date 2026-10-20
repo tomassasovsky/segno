@@ -1,0 +1,20 @@
+[Unit]
+Description=Put the ring carrier on this image's firmware
+# After the console board, whose firmware carries the bridge this needs, and
+# before the app, which must not share the link with an update. /data holds
+# the attempt count that stops a rejected image from slowing every boot.
+After=segno-console-flash.service local-fs.target
+Before=segno.service
+DefaultDependencies=no
+RequiresMountsFor=/data
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/segno-ring-flash
+# A current ring answers in well under a second; an update takes about ten.
+# This bounds a boot-blocking unit; it is not an expectation.
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

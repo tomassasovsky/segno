@@ -1,6 +1,6 @@
 [Unit]
 Description=Own the screen power enable GPIO
-Before=weston.service
+Before=segno.service
 
 [Service]
 Type=notify
@@ -11,4 +11,4 @@ ExecStopPost=/usr/bin/segno-screen-power force-off
 TimeoutStartSec=15
 TimeoutStopSec=20
 
-# Started by Weston; no independent boot enable or automatic re-enable.
+# Started by the app (segno.service); no independent boot enable or automatic re-enable.

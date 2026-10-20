@@ -165,7 +165,7 @@ class PowerTest(unittest.TestCase):
                 patch.object(power.time, "sleep", side_effect=wait):
             with self.assertRaises(SystemExit):
                 power.daemon()
-        self.assertEqual(events, [0, 5.0, 1, 1.0, 0, 5.0, "released"])
+        self.assertEqual(events, [0, 5.0, 1, 3.0, 0, 5.0, "released"])
 
     def test_missing_keeper_off_reclaims_but_on_never_bypasses_keeper(self):
         for action in ("on", "off"):
@@ -258,6 +258,26 @@ power.daemon()
                 if process.poll() is None:
                     process.kill()
                     process.communicate()
+
+
+
+class UnitWiringTest(unittest.TestCase):
+    """The app draws the HDMI outputs itself, so the power hooks must sit on
+    segno.service. Host tests of the script alone would not notice a drop-in
+    installed for a unit that no longer exists."""
+
+    def test_hooks_are_installed_on_the_app_unit(self):
+        recipe = (FILES.parent / "segno-bundle.bb").read_text()
+        self.assertIn("segno.service.d/30-segno-screen-power.conf", recipe)
+        self.assertNotIn("weston.service.d", recipe)
+        self.assertIn("python3-gpiod", recipe)
+        unit = (FILES / "segno-screen-power.service").read_text()
+        self.assertIn("Before=segno.service", unit)
+        dropin = (FILES / "30-segno-screen-power.conf").read_text()
+        for line in ("BindsTo=segno-screen-power.service",
+                     "ExecStartPre=+/usr/bin/segno-screen-power on",
+                     "ExecStop=+/usr/bin/segno-screen-power off"):
+            self.assertIn(line, dropin)
 
 
 if __name__ == "__main__":
