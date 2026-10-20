@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
@@ -209,10 +210,13 @@ void main() {
   setUpAll(() {
     registerFallbackValue(const LooperInputPanChanged(0, pan: 0));
     registerFallbackValue(MonitorMode.off);
+    registerFallbackValue(const FxAddress(stage: FxStage.track));
+    registerFallbackValue(<String>{});
   });
 
   late _MockLooperBloc bloc;
   late _MockLooperRepository repository;
+  late _MockControlCubit control;
   late SettingsRepository settings;
   late StreamController<int> monitorChanges;
   late StreamController<int> monitorParams;
@@ -342,6 +346,7 @@ void main() {
     LooperState? state,
     FxCatalogue? catalogue,
     Stream<LooperState>? updates,
+    ControlState controlState = const ControlState(),
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -572,8 +577,11 @@ void main() {
     await outputs.rename(0, 'Main output');
     await outputs.rename(1, 'Monitor output');
     await tracks.rename(0, 'drums');
-    final control = _MockControlCubit();
-    when(() => control.state).thenReturn(const ControlState());
+    control = _MockControlCubit();
+    when(() => control.state).thenReturn(controlState);
+    when(
+      () => control.removeFxAssignments(any(), any()),
+    ).thenAnswer((_) async => true);
 
     await tester.pumpWidget(
       // Saving a preset confirms with a toast, which needs the app's own
@@ -1274,15 +1282,32 @@ void main() {
       expect(find.byKey(const Key('fx_param_2')), findsOneWidget);
     });
 
-    testWidgets("says a control's scale was never recovered rather than "
-        'printing a unit nobody verified', (tester) async {
+    testWidgets('a plain built-in reads in its own units, without the '
+        'unverified note', (tester) async {
       await pump(tester, destination: const FxDestination.recordedTrack(0));
       await tapKey(tester, 'fx_card_t1');
 
+      // t1 is a filter at its defaults: cutoff 0.5 is 20 x 900^0.5 = 600 Hz,
+      // resonance 0.2 is 20%.
+      final cutoff = find.byKey(const Key('fx_param_0'));
+      final resonance = find.byKey(const Key('fx_param_1'));
       expect(
-        find.text(l10nOf(tester).fxScaleUnverified),
-        findsNWidgets(2),
+        find.descendant(of: cutoff, matching: find.text('600 Hz')),
+        findsOneWidget,
       );
+      expect(
+        find.descendant(of: resonance, matching: find.text('20%')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: cutoff,
+          matching: find.text(l10nOf(tester).paramCutoff),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('0.50'), findsNothing);
+      expect(find.text(l10nOf(tester).fxScaleUnverified), findsNothing);
     });
 
     group('the Pre/Post switch', () {
@@ -1479,6 +1504,32 @@ void main() {
         expect(find.byKey(const Key('fx_pedal_cable_2')), findsOneWidget);
       });
 
+      testWidgets('a factory module keeps the raw setting and says its scale '
+          'was never recovered', (tester) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_card_R1');
+
+        // r1a is the rack's Delay module at its defaults (0.35 each). Its
+        // preset values were written against the Looper X's own scales, so
+        // it does not read in this build's milliseconds and percent.
+        final pedal = find.byKey(const Key('fx_pedal_r1a'));
+        expect(
+          find.descendant(of: pedal, matching: find.text('0.35')),
+          findsNWidgets(3),
+        );
+        expect(
+          find.descendant(
+            of: pedal,
+            matching: find.text(l10nOf(tester).fxScaleUnverified),
+          ),
+          findsNWidgets(3),
+        );
+        expect(
+          find.descendant(of: pedal, matching: find.text('350 ms')),
+          findsNothing,
+        );
+      });
+
       testWidgets("a pedal this build cannot process keeps the catalogue's "
           'name and says so, rather than offering controls that reach '
           'nothing', (tester) async {
@@ -1506,6 +1557,32 @@ void main() {
             enabled: false,
           ),
         ).called(1);
+      });
+
+      testWidgets('the rack level reads in dB, unity at 0.0 dB, and reaches '
+          '+12 dB', (tester) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_card_R1');
+
+        final l10n = l10nOf(tester);
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('fx_rack_level')),
+            matching: find.text(l10n.fxValueDb(0)),
+          ),
+          findsOneWidget,
+        );
+        expect(l10n.fxValueDb(-1.3), '-1.3 dB');
+
+        await tester.drag(
+          find.byKey(const Key('fx_rack_level')),
+          const Offset(400, 0),
+        );
+        await tester.pumpAndSettle();
+
+        final level = lastTrackWrite()[3].channels.level;
+        expect(fxRackLevelDb(level), 12);
+        expect(level, greaterThan(2));
       });
 
       testWidgets('the footer writes the input to the first pedal and the '
@@ -2024,6 +2101,150 @@ void main() {
           effects: any(named: 'effects'),
         ),
       );
+    });
+  });
+
+  group('adding a factory rack again', () {
+    // Track 0 already holds the rack built from Acoustic Rhythm 1.
+    final withRack = LooperState(
+      tracks: [
+        Track(
+          state: _rig.tracks.first.state,
+          lanes: _rig.tracks.first.lanes,
+          effects: [
+            ..._rig.tracks.first.effects,
+            for (final (i, module) in ['Compressor', 'Delay', 'Reverb'].indexed)
+              BuiltInEffect(
+                type: TrackEffectType.none,
+                slotId: 'old-$i',
+                enabled: false,
+                rack: const FxRack(
+                  id: 'old-rack',
+                  name: 'Acoustic Rhythm 1',
+                  art: 'edsguitar',
+                ),
+                module: module,
+                presetId: 'ed53e7b8',
+              ),
+          ],
+        ),
+        _rig.tracks[1],
+      ],
+      status: _rig.status,
+      outputBusCount: 2,
+    );
+    final bound = ControlState(
+      globalBindings: PedalBindingSet([
+        PedalBinding(
+          key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+          target: const FxSlotTarget(
+            address: FxAddress(stage: FxStage.track),
+            slotId: 'old-1',
+          ).canonicalString(),
+        ),
+      ]),
+    );
+
+    Future<void> chooseTheSameRack(WidgetTester tester) async {
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'fx_library_family_edsguitar');
+      await tapKey(tester, 'fx_preset_ed53e7b8');
+    }
+
+    testWidgets('asks first when assignments point at it, and says how many', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: withRack,
+        controlState: bound,
+      );
+      await chooseTheSameRack(tester);
+
+      final l10n = l10nOf(tester);
+      expect(find.text(l10n.fxReAddRackTitle('Acoustic Rhythm 1')), findsOne);
+      expect(find.text(l10n.fxReAddRackBody(1)), findsOneWidget);
+      await tapKey(tester, 'console_confirm_cancel');
+
+      // Kept: nothing was written, and no assignment was touched.
+      verifyNever(
+        () => repository.setTrackEffects(
+          channel: 0,
+          effects: any(named: 'effects'),
+        ),
+      );
+      verifyNever(() => control.removeFxAssignments(any(), any()));
+    });
+
+    testWidgets('confirmed, it replaces the rack in place with new pedals', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: withRack,
+        controlState: bound,
+      );
+      await chooseTheSameRack(tester);
+      await tapKey(tester, 'console_confirm_confirm');
+
+      final written = lastTrackWrite();
+      expect(written, hasLength(withRack.tracks.first.effects.length));
+      final rack = fxChainGroups(written).last;
+      expect(rack.rack!.id, isNot('old-rack'));
+      expect(rack.entries.map((fx) => fx.slotId), isNot(contains('old-1')));
+      expect(
+        rack.entries.every(
+          (fx) => fx is BuiltInEffect && fx.presetId == 'ed53e7b8',
+        ),
+        isTrue,
+      );
+      // The old pedals' assignments are removed, as the dialog said.
+      verify(
+        () => control.removeFxAssignments(
+          const FxAddress(stage: FxStage.track),
+          {'old-0', 'old-1', 'old-2'},
+        ),
+      ).called(1);
+    });
+
+    testWidgets('an assignment store that cannot save shows the storage '
+        'notice', (tester) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: withRack,
+        controlState: bound,
+      );
+      when(
+        () => control.removeFxAssignments(any(), any()),
+      ).thenAnswer((_) async => false);
+      await chooseTheSameRack(tester);
+      await tapKey(tester, 'console_confirm_confirm');
+
+      expect(
+        find.text(l10nOf(tester).storageActionFailed),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 4));
+    });
+
+    testWidgets('with no assignments to it, it is replaced without asking', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: withRack,
+      );
+      await chooseTheSameRack(tester);
+
+      expect(find.byKey(const Key('console_confirm_confirm')), findsNothing);
+      final written = lastTrackWrite();
+      expect(written, hasLength(withRack.tracks.first.effects.length));
+      expect(fxChainGroups(written).last.rack!.id, isNot('old-rack'));
+      verifyNever(() => control.removeFxAssignments(any(), any()));
     });
   });
 }

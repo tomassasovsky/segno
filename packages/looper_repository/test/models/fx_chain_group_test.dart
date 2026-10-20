@@ -616,4 +616,21 @@ void main() {
       );
     });
   });
+
+  group('fxRackFromPreset', () {
+    test('finds the rack whose every module came from the preset', () {
+      final chain = [
+        _fx('single'),
+        _fx('a1', rackId: 'A').copyWith(presetId: 'p'),
+        _fx('a2', rackId: 'A').copyWith(presetId: 'p'),
+        // A rack with one module from elsewhere is not that preset's rack.
+        _fx('b1', rackId: 'B').copyWith(presetId: 'p'),
+        _fx('b2', rackId: 'B'),
+      ];
+
+      expect(fxRackFromPreset(chain, 'p')!.rack!.id, 'A');
+      expect(fxRackFromPreset(chain.sublist(3), 'p'), isNull);
+      expect(fxRackFromPreset(chain, 'other'), isNull);
+    });
+  });
 }

@@ -81,6 +81,7 @@ export 'src/models/fx_chain_envelope.dart'
 // applies before handing the chain back to a repository setter.
 export 'src/models/fx_chain_group.dart';
 export 'src/models/fx_module_build.dart';
+export 'src/models/fx_rack_level.dart';
 export 'src/models/fx_slot_ids.dart'
     show SlotIds, withFreshSlotIds, withMintedSlotIds;
 export 'src/models/fx_user_preset.dart';
@@ -107,13 +108,14 @@ export 'src/models/track_effect.dart'
         FxChannelInput,
         FxChannelOutput,
         FxChannels,
+        FxParamCurve,
+        FxParamInfo,
+        FxParamUnit,
         FxPlacement,
         FxRack,
-        ParamReadout,
         PluginEffect,
         PluginRef,
         TrackEffect,
-        TrackEffectParam,
         TrackEffectType,
         decodeTrackEffects,
         encodeTrackEffects,

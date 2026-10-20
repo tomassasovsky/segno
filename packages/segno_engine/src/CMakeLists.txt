@@ -26,6 +26,12 @@ project(segno_engine_core VERSION 0.1.0 LANGUAGES C CXX)
 # core/plugin_disabled.c when it's off) — parts 2/3 must link the stub too.
 add_library(segno_dsp_core STATIC
   core/engine_fx.c
+  # The audio-thread allocator (rt_alloc.h). It rides here, and only here,
+  # because engine_fx.c claims its rings from it, so every target linking
+  # segno_dsp_core (the VST3 plugin builds in ../vst3) needs it; segno_engine
+  # gets it by linking this library, and listing it there too would define it
+  # twice.
+  core/rt_alloc.c
 )
 
 # Matches segno_engine's own C_STANDARD/atomics configuration below: this
@@ -57,8 +63,9 @@ target_include_directories(segno_dsp_core PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/midi"
 )
 
-# Verified via `nm -u` on the built object: segno_dsp_core's only unresolved
-# symbols are libc/libm (calloc/free/sinf/cosf/tanf/tanhf/atan2f/expf/logf/
+# Verified via `nm -u` on the built objects: segno_dsp_core's only unresolved
+# symbols are libc/libm (rt_alloc.c's mmap/munmap/madvise/sysconf/fprintf,
+# and calloc/free/sinf/cosf/tanf/tanhf/atan2f/expf/logf/
 # powf, plus the compiler-inserted stack-protector/memcpy-check builtins) and
 # le_plugin_slot_process (the link-seam gotcha above). If a future change to
 # engine_fx.c (or a header it pulls in) adds a new external dependency, this
@@ -70,8 +77,8 @@ add_library(segno_engine SHARED
   core/engine.c              # residual control-thread core + shared helpers
   core/engine_convert.c      # pure sample-format conversion
   core/engine_digest.c       # SHA-256, file digests, directory fsync (engine-free)
-  # core/engine_fx.c lives in segno_dsp_core above (linked PRIVATE below) so a
-  # second target (future VST3 plugin builds) can link it too.
+  # core/engine_fx.c and core/rt_alloc.c live in segno_dsp_core above (linked
+  # PRIVATE below) so the VST3 plugin builds can link them too.
   core/engine_session.c      # session export / import / commit
   core/engine_devices.c      # device discovery, loopback, id resolution, backend
   core/engine_snapshot.c     # published-state snapshots + visualization reads
@@ -87,6 +94,7 @@ add_library(segno_engine SHARED
   core/engine_decode.c       # the audio-file decoder + offline resampler (#1200)
   core/engine_audition.c     # Library audition voice control API (#1178)
   core/engine_instruments.c  # instrument slots, note rings, synth in the callback (#1197)
+  core/engine_prefault.c    # background prefaulter ahead of the write head (#900)
   # Offline loop-close restoration DSP (#697 S8) — pure TUs, no engine state;
   # consumed by the restore worker (engine_restore.c, S9). NOT matched by
   # run_native_tests.sh's engine*.c glob — they are listed explicitly there;
@@ -189,6 +197,11 @@ if(UNIX AND NOT APPLE)
   # directly (unlike miniaudio, which dlopen()s it). Needs libasound2-dev.
   find_package(ALSA REQUIRED)
   target_link_libraries(segno_engine PRIVATE ALSA::ALSA)
+  # Resolve every external symbol at load (BIND_NOW), so the first call the
+  # audio thread makes to a libc or libm function never runs the lazy-binding
+  # resolver on the callback, which writes the GOT and runs code in ld.so that
+  # nothing has prefaulted (rt_alloc.h, engine_platform.h).
+  target_link_options(segno_engine PRIVATE "LINKER:-z,now")
 endif()
 
 # The CocoaPods (macOS/iOS) build compiles these sources via the podspec, not
