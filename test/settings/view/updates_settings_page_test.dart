@@ -274,7 +274,10 @@ void main() {
       await tester.pumpAndSettle();
       verify(
         () => power.restart(
-          const PowerSnapshot(currentSessionName: 'set'),
+          const PowerSnapshot(
+            currentSessionName: 'set',
+            sessionHasContent: false,
+          ),
           save: any(named: 'save'),
         ),
       ).called(1);

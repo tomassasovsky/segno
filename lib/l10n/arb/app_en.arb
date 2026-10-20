@@ -2404,6 +2404,10 @@
     "@powerSessionUnnamed": {
         "description": "Power options line in place of the session name when the open session is unnamed."
     },
+    "powerOptionsBodyEmpty": "Playback will stop. This session is empty, so there is nothing to save.",
+    "@powerOptionsBodyEmpty": {
+        "description": "Power options body in place of the save promise and the session line when the open session is unnamed and holds no recorded audio and no backing: Restart and Shut down write no session."
+    },
     "powerStagedUpdate": "Segno {version} installs during the restart.",
     "@powerStagedUpdate": {
         "description": "Power options line when an update is staged; the restart boots it.",

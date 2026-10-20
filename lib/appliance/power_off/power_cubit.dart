@@ -16,7 +16,9 @@ part 'power_state.dart';
 /// transfer is in flight; otherwise stop the transport, flush settings, save
 /// the session, hold [GuardKind.restart], wait for storage leases, then
 /// reboot or halt. A failed save keeps Segno on (Stay on / Retry); there is
-/// no way to halt without saving.
+/// no way to halt without saving. An unnamed session with nothing to lose
+/// ([PowerSnapshot.sessionHasContent] false) skips only the session write:
+/// there is nothing to name and nothing to write.
 ///
 /// Never calls another cubit. Every step is an injected closure, and the
 /// save is handed in at each commit by the host that owns the session.
@@ -76,13 +78,15 @@ class PowerCubit extends Cubit<PowerState> {
   }
 
   /// Saves, then reboots. From Power options, or straight from an update's
-  /// Install and restart (which has asked already).
+  /// Install and restart (which has asked already). An empty unnamed
+  /// session reboots without a save.
   void restart(
     PowerSnapshot snapshot, {
     required Future<void> Function() save,
   }) => _commit(PowerAction.restart, snapshot, save);
 
-  /// Saves, then halts. From Power options.
+  /// Saves, then halts. From Power options. An empty unnamed session halts
+  /// without a save.
   void shutDown(
     PowerSnapshot snapshot, {
     required Future<void> Function() save,
@@ -117,12 +121,21 @@ class PowerCubit extends Cubit<PowerState> {
     }
     if (_refused(snapshot)) return;
     if (snapshot.currentSessionName == null) {
-      emit(PowerState(phase: PowerPhase.saveAs, action: action));
-      return;
+      if (snapshot.sessionHasContent) {
+        emit(PowerState(phase: PowerPhase.saveAs, action: action));
+        return;
+      }
+      AppLog.info('power: unnamed session is empty, nothing to save');
+      _save = _nothingToSave;
+    } else {
+      _save = save;
     }
-    _save = save;
     unawaited(_run(action, retry: false));
   }
+
+  /// The session write of an empty unnamed session: none. Kept as the
+  /// commit's save so Retry works after a failed flush or storage settle.
+  static Future<void> _nothingToSave() async {}
 
   bool _refused(PowerSnapshot snapshot) {
     if (!powerRefused(snapshot)) return false;

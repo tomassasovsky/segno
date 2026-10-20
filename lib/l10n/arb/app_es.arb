@@ -1563,6 +1563,7 @@
     "powerOptionsTitle": "Opciones de encendido",
     "powerOptionsBody": "La reproducción se detendrá y tu sesión se guardará.",
     "powerSessionUnnamed": "Esta sesión todavía no tiene nombre. Vas a ponérselo antes de guardarla.",
+    "powerOptionsBodyEmpty": "La reproducción se detendrá. Esta sesión está vacía, así que no hay nada que guardar.",
     "powerStagedUpdate": "Segno {version} se instala durante el reinicio.",
     "powerCancel": "Cancelar",
     "powerRestart": "Reiniciar",

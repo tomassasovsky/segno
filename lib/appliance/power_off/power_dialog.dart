@@ -111,12 +111,20 @@ class PowerDialog extends StatelessWidget {
           case PowerPhase.saveAs:
           case PowerPhase.saving:
           case PowerPhase.goodbye:
-            final name = snapshot().currentSessionName;
+            final reading = snapshot();
+            final name = reading.currentSessionName;
+            // An unnamed session with nothing in it is not saved, so the
+            // save promise and the naming line would both be untrue.
+            final empty = name == null && !reading.sessionHasContent;
             body = _PowerBody(
               title: l10n.powerOptionsTitle,
               lines: [
-                l10n.powerOptionsBody,
-                name ?? l10n.powerSessionUnnamed,
+                if (empty)
+                  l10n.powerOptionsBodyEmpty
+                else ...[
+                  l10n.powerOptionsBody,
+                  name ?? l10n.powerSessionUnnamed,
+                ],
                 if (stagedUpdate case final version?)
                   l10n.powerStagedUpdate(version),
               ],
