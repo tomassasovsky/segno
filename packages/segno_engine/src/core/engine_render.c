@@ -885,6 +885,10 @@ static void le_render_window(le_render_job* j, int32_t from, int32_t n,
   const int32_t cap = j->cap;
   for (int32_t k = 0; k < n; ++k) {
     const int64_t f = (int64_t)from + k;
+    /* The octavers' clock (#941): it runs on across a WRAP render's second
+     * pass, so the kept pass continues the warm-up pass's hop instead of
+     * finding the clock moved back and restarting. */
+    const uint32_t clock = (uint32_t)((int64_t)j->pass * j->frames + f);
     float ml = 0.0f;
     float mr = 0.0f;
     for (int32_t i = 0; i < j->nsrc; ++i) {
@@ -930,6 +934,7 @@ static void le_render_window(le_render_job* j, int32_t from, int32_t n,
             }
           }
           if (ln->fx != NULL) {
+            ln->fx->clock = clock;
             fx_apply_chain(ln->fx, sr, cap, &a, &b, ln->chain.count,
                            ln->chain.type, ln->chain.params, ln->post_bits);
           }
@@ -945,6 +950,7 @@ static void le_render_window(le_render_job* j, int32_t from, int32_t n,
         }
       }
       if (s->track_has) {
+        s->tfx->clock = clock;
         fx_apply_chain_with_gain(s->tfx, sr, cap, &tl, &tr, s->track.count,
                                  s->track.type, s->track.params, s->track_bits,
                                  s->track.pre, g);
@@ -956,6 +962,7 @@ static void le_render_window(le_render_job* j, int32_t from, int32_t n,
       mr += tr;
     }
     if (j->mixfx != NULL) {
+      j->mixfx->clock = clock;
       fx_apply_chain(j->mixfx, sr, cap, &ml, &mr, j->mix.count, j->mix.type,
                      j->mix.params, j->mix_bits);
     }

@@ -10291,7 +10291,13 @@ enum le_cache_reason {
 
   /// a Transpose source render does not fit the
   /// cap; the track plays dry (#1179)
-  LE_CACHE_REASON_BUDGET(4);
+  LE_CACHE_REASON_BUDGET(4),
+
+  /// the print holds an octaver and the loop is not a
+  /// whole number of octaver hops (256 frames): its
+  /// hop falls on other frames each lap, so no single
+  /// lap's render equals live (#941)
+  LE_CACHE_REASON_HOP(5);
 
   final int value;
   const le_cache_reason(this.value);
@@ -10302,6 +10308,7 @@ enum le_cache_reason {
     2 => LE_CACHE_REASON_RENDER_FAILED,
     3 => LE_CACHE_REASON_PART_POST,
     4 => LE_CACHE_REASON_BUDGET,
+    5 => LE_CACHE_REASON_HOP,
     _ => throw ArgumentError('Unknown value for le_cache_reason: $value'),
   };
 }
