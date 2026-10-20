@@ -3922,6 +3922,145 @@ static void test_take_taper_rec_dub_continues_without_a_dip(void) {
   le_engine_destroy(e);
 }
 
+/* The #730 rec/dub fixture up to the early stop: a silent 4800-frame master,
+ * rec/dub on, and track 1 recorded from the loop top for 6240 frames from the
+ * oscillator's peak, then the stop press (queued, not yet drained). */
+static le_engine* rec_dub_early_stop_fixture(le_test_osc* osc) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  *osc = make_osc(36.25, 48000.0);
+  osc->phase = 3.14159265358979323846 / 2.0;
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  le_engine_set_rec_dub(e, 1);
+  feed_to_loop_top(e);
+  le_engine_record(e, 1);
+  drain(e);
+  feed_osc(e, osc, (13 * N) / 10, NULL, NULL);
+  le_engine_record(e, 1); /* stop early: into OVERDUBBING */
+  return e;
+}
+
+/* Checks a 9600-frame take buffer whose material ends at `end` with the
+ * standard 480-frame fade, followed by silence: the fade's own values, then
+ * nothing, and no step anywhere around the loop. */
+static void check_take_tail_faded(const float* b, int len, int end,
+                                  double phase0, double inc, const char* what) {
+  const int f = 48000 / 100;
+  double dev = 0.0;
+  for (int i = 0; i < f; ++i) {
+    const int p = end - 1 - i;
+    const double want =
+        0.5 * sin(phase0 + inc * (double)p) * ((double)i / (double)f);
+    if (fabs((double)b[p] - want) > dev) dev = fabs((double)b[p] - want);
+  }
+  double after = 0.0;
+  for (int p = end; p < end + 400; ++p) {
+    if (fabs((double)b[p]) > after) after = fabs((double)b[p]);
+  }
+  double worst = 0.0;
+  for (int i = 0; i < len; ++i) {
+    const double d = fabs((double)b[i] - (double)b[i == 0 ? len - 1 : i - 1]);
+    if (d > worst) worst = d;
+  }
+  printf("  %s: fade deviation %.7f, after the end %.7f, worst step %.5f\n",
+         what, dev, after, worst);
+  CHECK(dev < 1e-5);
+  CHECK(after < 1e-6);
+  CHECK(worst < 0.01);
+}
+
+/* #730 review: the rec/dub continuation's UNDO image. The first dub pass backs
+ * up the take with its tail unfaded (live skipped that fade because the dub
+ * continues it), and that image is the take followed by silence, so undoing
+ * the dub used to bring back a raw cut once per lap. Its tail is now faded as
+ * the layer retires. Both retire paths: a short dub punched out (the drain
+ * completes the image) and a dub that ran a whole pass (the pass boundary). */
+static void test_take_taper_rec_dub_undo_restores_a_faded_tail(void) {
+  printf("test_take_taper_rec_dub_undo_restores_a_faded_tail\n");
+  const int len = 9600;
+  const int stop = 6240;
+  const int dubs[2] = {1000, 10000};
+  for (int d = 0; d < 2; ++d) {
+    le_test_osc osc;
+    le_engine* e = rec_dub_early_stop_fixture(&osc);
+    const double phase0 = 3.14159265358979323846 / 2.0;
+    drain(e);
+    feed_osc(e, &osc, dubs[d], NULL, NULL); /* the player keeps playing */
+    le_engine_record(e, 1);                 /* punch out */
+    feed_osc(e, &osc, 512, NULL, NULL);
+    feed_const(e, 0.0f, 512, NULL, NULL);
+    drain(e);
+    settle_layers(e);
+    le_snapshot s;
+    for (int k = 0; k < 8; ++k) {
+      le_engine_get_snapshot(e, &s);
+      if (s.tracks[1].undo_depth <= 0) break;
+      le_engine_undo(e, 1);
+      drain(e);
+      settle_layers(e);
+    }
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[1].undo_depth == 0);
+    float* b = (float*)calloc((size_t)len, sizeof(float));
+    CHECK(le_engine_export_track(e, 1, b, len) == len);
+    check_take_tail_faded(b, len, stop, phase0, osc.inc,
+                          d == 0 ? "undone short dub" : "undone whole-pass dub");
+    free(b);
+    le_engine_destroy(e);
+  }
+}
+
+/* #730 review: a stop that ends the rec/dub continuation at once. STOPPED has
+ * no punch-out tail, so a tail left unfaded for a continuation that then never
+ * happens would be a raw cut. Stopped in the same drain as the finalize (k = 0
+ * frames continued) the take's own tail is faded; stopped 100 frames in, the
+ * fade ends at the last frame the dub wrote. */
+static void test_take_taper_rec_dub_stop_right_after_fades_the_tail(void) {
+  printf("test_take_taper_rec_dub_stop_right_after_fades_the_tail\n");
+  const int len = 9600;
+  const int stop = 6240;
+  const int ks[2] = {0, 100};
+  for (int d = 0; d < 2; ++d) {
+    le_test_osc osc;
+    le_engine* e = rec_dub_early_stop_fixture(&osc);
+    const double phase0 = 3.14159265358979323846 / 2.0;
+    if (ks[d] > 0) {
+      drain(e);
+      feed_osc(e, &osc, ks[d], NULL, NULL);
+    }
+    CHECK(le_engine_stop_track(e, 1) == LE_OK);
+    drain(e);
+    le_snapshot s;
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+    feed_const(e, 0.0f, 1024, NULL, NULL);
+    drain(e);
+    settle_layers(e);
+    float* b = (float*)calloc((size_t)len, sizeof(float));
+    CHECK(le_engine_export_track(e, 1, b, len) == len);
+    check_take_tail_faded(b, len, stop + ks[d], phase0, osc.inc,
+                          d == 0 ? "stopped in the same drain"
+                                 : "stopped 100 frames in");
+    /* And undoing that short pass, if it left a layer, changes nothing. */
+    le_engine_get_snapshot(e, &s);
+    if (s.tracks[1].undo_depth > 0) {
+      le_engine_undo(e, 1);
+      drain(e);
+      settle_layers(e);
+      CHECK(le_engine_export_track(e, 1, b, len) == len);
+      check_take_tail_faded(b, len, stop + ks[d], phase0, osc.inc,
+                            "and after undoing it");
+    }
+    free(b);
+    le_engine_destroy(e);
+  }
+}
+
 /* #728 control: the defining master's OWN take already wraps continuously —
  * finalize_master_xfade folds the captured overlap into the head. Pins both
  * the behaviour and the detector: if this one ever scores like a splice, the
@@ -37173,6 +37312,8 @@ int main(void) {
   test_take_taper_threshold_leaves_short_takes_alone();
   test_take_taper_follows_a_wrapped_fixed_multiple_take();
   test_take_taper_rec_dub_continues_without_a_dip();
+  test_take_taper_rec_dub_undo_restores_a_faded_tail();
+  test_take_taper_rec_dub_stop_right_after_fades_the_tail();
   test_loop_seam_master_take_no_splice();
   test_loop_seam_survives_whole_lap_overdub();
   test_loop_seam_on_punch_out_with_player_stopped();

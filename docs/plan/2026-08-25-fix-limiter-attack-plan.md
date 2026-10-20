@@ -110,4 +110,5 @@ exactly 1.0 361 ms after a sustained loud passage ends (311 ms without the
 hold). `test_master_limiter_holds_through_a_steady_waveform` pins the steady
 behaviour. `test_master_limiter_through_process` runs the limiter through
 `le_engine_process` with the coefficients it computes, so swapping the attack
-and release fails it.
+and release fails it. While the limiter is off its gain and hold rest at
+unity, so switching it on starts clean rather than from a stale gain.
