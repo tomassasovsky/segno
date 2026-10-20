@@ -19,6 +19,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
+| #1367 | Start helper programs without forking the app | brainstorm | plan-gate | `claude/no-fork-spike-1367` |
 | #1299 | Appliance slowdown profiler | in-review | merge-gate | `claude/appliance-responsiveness-08d39b` |
 | #1301 | Idle console redraws at 60 fps | build | merge-gate | `claude/idle-redraw-1301` |
 | #1337 | Retry Wi-Fi after a runtime drop, holding off while performing | in-review | blocked-verify | `claude/wifi-runtime-retry-1337` |
@@ -26,7 +27,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1352 | Console negotiates the charger's full 20 V current, with a power-cycle prompt | in-review | blocked-verify | `claude/pd-provisioning-1352` |
 | #1081 | Console v3 and ring carrier firmware on protocol 10 | in-review | merge-gate | `claude/console-v3-port-1081` |
 | #1072 | Screen power follows the app (runtime on integration) | in-review | blocked-verify | `claude/screen-power-runtime-1072` |
-| #1088 | Console base enclosure for fabrication | in-review | merge-gate | `claude/segno-pedal-manufacturability-5f08a2` |
 | #1077 | Song queue completion | in-review | blocked-verify | `claude/song-queue-comet-1077` |
 | #1140 | Keep recorded material across audio-engine reopen | in-review | merge-gate | `claude/engine-reopen-1140*` |
 | #1143 | Replay audio-history changes in performance stems | build | merge-gate | `claude/stem-history-replay-1143` |
