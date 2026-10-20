@@ -416,6 +416,7 @@
     "pitchUnison": "Unísono",
     "pitchOctaves": "{sign}{count} oct",
     "pitchSemitones": "{sign}{count} st",
+    "pitchSemitonesFine": "{sign}{count} st",
     "defaultTrackName": "PISTA {trackNumber}",
     "@deviceReconnectedSnackbar": {
         "placeholders": {
@@ -1917,6 +1918,13 @@
     "fxLeft": "Izquierda",
     "fxRight": "Derecha",
     "fxScaleUnverified": "Escala sin verificar",
+    "fxValuePercent": "{percent}%",
+    "fxValueMs": "{milliseconds} ms",
+    "fxValueMsFine": "{milliseconds} ms",
+    "fxValueHz": "{hertz} Hz",
+    "fxValueHzFine": "{hertz} Hz",
+    "fxValueKhz": "{kilohertz} kHz",
+    "fxValueTimes": "{factor}x",
     "fxPartOrdinal": "Parte {number}",
     "fxUnassigned": "Sin asignar",
     "fxModuleCount": "{count, plural, =1{1 efecto} other{{count} efectos}}",
