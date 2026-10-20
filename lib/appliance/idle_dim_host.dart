@@ -17,17 +17,16 @@ import 'package:segno/performance/performance.dart';
 /// a count-in, the backing track playing, or a performance recording
 /// running.
 ///
-/// Not `TransportState.isRunning`: that is the audio device being open, which
-/// on the appliance is always, so it held the panels awake forever (#1354).
+/// Not `TransportState.deviceRunning`: that is the audio device being open,
+/// which on the appliance is always, so it held the panels awake forever
+/// (#1354).
 bool idleKeepsAwake(
   LooperState looper,
   PerformanceRecorderState performance,
   BackingCubitState backing,
 ) =>
     looper.transport.countingIn ||
-    looper.tracks.any(
-      (track) => track.state == TrackState.playing || track.isCapturing,
-    ) ||
+    looper.isPlaying ||
     backing.backing.player.transport == BackingTransport.playing ||
     performance is PerformanceRecorderArmed;
 

@@ -20,7 +20,7 @@ typedef _TempoValues = ({
   int tsNum,
   int tsDen,
   int beat,
-  bool running,
+  bool playing,
 });
 
 _TempoValues _tempoValues(LooperState state) => (
@@ -28,7 +28,7 @@ _TempoValues _tempoValues(LooperState state) => (
   tsNum: state.transport.tsNum,
   tsDen: state.transport.tsDen,
   beat: state.transport.currentBeat,
-  running: state.transport.isRunning && state.hasContent,
+  playing: state.isPlaying,
 );
 
 /// The Tempo & click page: the tempo readout with its beat lights, the
@@ -132,7 +132,7 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
               top: 142,
               child: _BeatStrip(
                 beats: transport.tsNum,
-                lit: transport.running ? transport.beat : -1,
+                lit: transport.playing ? transport.beat : -1,
               ),
             ),
             // ---- tempo slider and tools
