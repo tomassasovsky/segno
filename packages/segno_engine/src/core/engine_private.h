@@ -481,6 +481,11 @@ typedef struct le_wet_entry {
   int32_t out_len;
   float* pcm;         /* print: interleaved stereo, 2*len; source: mono, out_len */
   uint64_t last_used; /* control-side LRU stamp (tick counter) */
+  /* 0 for a print whose key does not hold the hop position; else 1 + the
+   * hop position (mod LE_PV_HOP) of the loop top it was rendered from: an
+   * octaver in the printed chain (#941). The audio thread drops such a print
+   * at a lap top that starts elsewhere on the hop. */
+  uint32_t hop_tag;
 } le_wet_entry;
 
 /* THE wet-cache key predicate: whether [ent] was rendered for exactly the
@@ -1012,10 +1017,13 @@ typedef struct le_track {
    * RECORDING. Published once per block beside the level above. */
   _Atomic int32_t a_play_pos;
   /* The engine frame (mod 2^32) the track's current lap began at, published
-   * every frame by the audio thread while it plays or overdubs a forward lap
-   * at an integral rate. The wet cache renders and keys an octaver print
-   * against it, so the print reproduces the live octaver hop (#941). */
+   * by the audio thread while it plays or overdubs a forward lap at an
+   * integral rate, whenever it moves (a lap top, a launch, a relaunch). The
+   * wet cache renders and keys an octaver print against it, so the print
+   * reproduces the live octaver hop (#941). [top_clock] is the audio
+   * thread's own copy, so it stores only on a change. */
   _Atomic uint32_t a_top_clock;
+  uint32_t top_clock;
   _Atomic int32_t lane_count; /* Active lanes, release-published after prepared
                                * buffers and routing become callback-owned. */
 

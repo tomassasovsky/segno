@@ -620,13 +620,53 @@ static void le_cache_install_entry(le_engine* e, struct le_fx_cache* c,
                         memory_order_release);
 }
 
+/* Whether a Pre run [0, pre) of [a_type] holds an octaver. */
+static int le_ca_pre_has_octaver(_Atomic int32_t* a_type,
+                                 _Atomic int32_t* a_pre,
+                                 _Atomic int32_t* a_count) {
+  int32_t pre = load_i32(a_pre);
+  const int32_t count = load_i32(a_count);
+  if (pre > count) pre = count;
+  if (pre > LE_FX_MAX) pre = LE_FX_MAX;
+  for (int32_t s = 0; s < pre; ++s) {
+    if (load_i32(&a_type[s]) == LE_FX_OCTAVER) return 1;
+  }
+  return 0;
+}
+
+/* The finished print's le_wet_entry::hop_tag (#941): set when its key folds
+ * the hop position, which is when an octaver is in the printed chain: the
+ * lane's Pre run, or for a whole-track print the track's Pre run or any
+ * part's. The key was just checked against the current chain, so the chain
+ * read here is the one that was rendered. */
+static uint32_t le_ca_hop_tag(le_engine* e, const le_cache_job* job) {
+  le_track* tr = &e->tracks[job->channel];
+  int octaver = 0;
+  if (job->kind == LE_CACHE_KIND_TRACK) {
+    octaver = le_ca_pre_has_octaver(tr->bus.a_fx_type, &tr->bus.a_fx_pre_count,
+                                    &tr->bus.a_fx_count);
+    const int32_t lanes = le_lanes_active(tr);
+    for (int32_t l = 0; l < lanes && !octaver; ++l) {
+      le_lane* ln = &tr->lanes[l];
+      octaver = le_ca_pre_has_octaver(ln->a_fx_type, &ln->a_fx_pre_count,
+                                      &ln->a_fx_count);
+    }
+  } else {
+    le_lane* ln = &tr->lanes[job->lane];
+    octaver = le_ca_pre_has_octaver(ln->a_fx_type, &ln->a_fx_pre_count,
+                                    &ln->a_fx_count);
+  }
+  return octaver ? (job->chain.clock0 & (uint32_t)(LE_PV_HOP - 1)) + 1u : 0u;
+}
+
 static void le_cache_install(le_engine* e, struct le_fx_cache* c,
                              le_cache_job* job) {
   const le_wet_entry key = {.audio_rev = job->audio_rev,
                             .chain_fp = job->chain_fp,
                             .vol_bits = job->vol_bits,
                             .len = job->len,
-                            .out_len = job->len};
+                            .out_len = job->len,
+                            .hop_tag = le_ca_hop_tag(e, job)};
   le_cache_install_entry(e, c, job->kind, job->channel, job->lane, &key,
                          &job->wet);
 }
@@ -856,6 +896,10 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
     lc->state = LE_CACHE_GAVE_UP;
     lc->reason = LE_CACHE_REASON_HOP;
     lc->has_key = 0; /* any later printable chain re-arms, even the old key */
+    /* Withdraw an older print still published, so the track scheduler does
+     * not read it as a ready part and render a whole-track print it would
+     * then discard. The entry stays retained for its own key. */
+    atomic_store_explicit(&ln->a_wet, NULL, memory_order_release);
     return;
   }
   /* lc->reason is deliberately NOT cleared here: a RENDER_FAILED give-up
@@ -1080,6 +1124,7 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
     lc->state = LE_CACHE_GAVE_UP;
     lc->reason = LE_CACHE_REASON_HOP;
     lc->has_key = 0; /* any later printable chain re-arms, even the old key */
+    atomic_store_explicit(&tr->a_track_wet, NULL, memory_order_release);
     return;
   }
 
