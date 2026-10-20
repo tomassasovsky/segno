@@ -978,6 +978,8 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
    * read: the job must render exactly the chain its key names. */
   le_fx_frozen_fill(&job->chain, count, count, chain_on, types, raw_en, params,
                     chan, chan_any);
+  /* Render on the live lane's hop-stagger seed (#915). */
+  job->chain.hop_seed = ln->fx.hop_seed;
   job->copy_pos = 0;
   job->dry = dry;
   job->wet = NULL;
@@ -1187,6 +1189,8 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   job->fx_cap = e->fx_delay_frames;
   le_fx_frozen_fill(&job->chain, count, count, chain_on, types, raw_en, params,
                     chan, chan_any);
+  /* Render on the live bus's hop-stagger seed (#915). */
+  job->chain.hop_seed = b->fx.hop_seed;
   job->copy_pos = 0;
   job->dry = src;
   job->wet = NULL;
@@ -1525,6 +1529,16 @@ void le_fx_frozen_bits(const le_fx_frozen_chain* c, int32_t from, int32_t to,
 
 int32_t le_fx_frozen_state_init(le_fx_state* fx, const le_fx_frozen_chain* c,
                                 int32_t from, int32_t to, int32_t cap) {
+  /* The live owner's hop-stagger seed, BEFORE the resets below seed any
+   * octaver's hop counter from it (#915). A calloc'd 0 is one owner's seed;
+   * every other owner's print would be a different phase-vocoder
+   * realization than the live chain it replaces, swapped in at a loop top.
+   *
+   * What the seed cannot fix (#939): RENDER-TWICE-KEEP-SECOND reproduces a
+   * chain that engaged exactly one lap earlier. A live lane that has run k
+   * laps sits (k - 1) * len samples further on, and unlike a tail a hop
+   * phase never decays. */
+  fx->hop_seed = c->hop_seed;
   int32_t bits[LE_FX_MAX];
   le_fx_frozen_bits(c, from, to, bits);
   /* Seed the enable-crossfade runtime per EFFECTIVE bit, mirroring the live

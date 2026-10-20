@@ -1314,6 +1314,28 @@ le_engine* le_engine_create(void) {
    * default; 0 disables caching outright (le_engine_set_fx_cache_cap). */
   atomic_store_explicit(&engine->a_fx_cache_cap, LE_CACHE_DEFAULT_CAP_BYTES,
                         memory_order_relaxed);
+  /* Octaver hop-stagger seeds (#915): every chain owner gets a distinct base
+   * phase, so octavers in different chains stagger as well as octavers in
+   * one chain (engine_fx.h). Seeded here, once, before anything can run: a
+   * seed is a fixed function of the owner's position, and no reset touches
+   * it, so every le_fx_entry_reset (including one from an FX command issued
+   * before the first configure) sees the final value. The all-tracks
+   * config's own state is never processed; it carries bus 0's seed so the
+   * render recipe's mix print reproduces that instance. */
+  for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) {
+    for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
+      engine->tracks[t].lanes[l].fx.hop_seed = le_fx_lane_hop_seed(t, l);
+    }
+    engine->tracks[t].bus.fx.hop_seed = le_fx_lane_hop_seed(t, LE_MAX_LANES);
+  }
+  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    engine->monitors[c].fx.hop_seed = le_fx_monitor_hop_seed(c);
+  }
+  for (int32_t k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+    engine->all_tracks_fx[k].hop_seed = le_fx_all_tracks_hop_seed(k);
+    engine->outputs[k].fx.fx.hop_seed = le_fx_output_hop_seed(k);
+  }
+  engine->all_tracks.fx.hop_seed = le_fx_all_tracks_hop_seed(0);
   return engine;
 }
 
