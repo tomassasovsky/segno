@@ -8,7 +8,7 @@ Requires macOS 14 or later. The app is separate from the Segno instrument runtim
 ## Install
 
 Download the Apple Silicon disk image from
-[GitHub Releases](https://github.com/tomassasovsky/segno/releases/tag/transfer-v0.1.0)
+[GitHub Releases](https://github.com/tomassasovsky/segno/releases/tag/transfer-v0.2.0)
 and drag **Segno Transfer** into **Applications**. The image includes first-launch
 instructions and the project license.
 

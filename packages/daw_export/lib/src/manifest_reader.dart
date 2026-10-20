@@ -128,6 +128,19 @@ abstract final class DawManifestReader {
       }
     }
 
+    // Arm-time mute/solo per channel: the baseline the logged gestures are
+    // applied on top of (events.log is relative to arm), so the activator
+    // lane reflects each track's effective audibility — a solo on one track
+    // silences every unsoloed one — rather than its raw mute flag.
+    final mutedAtArm = <int>{};
+    final soloedAtArm = <int>{};
+    for (final t in armTracks) {
+      final channel = (t['channel'] as num?)?.toInt();
+      if (channel == null) continue;
+      if (t['muted'] as bool? ?? false) mutedAtArm.add(channel);
+      if (t['solo'] as bool? ?? false) soloedAtArm.add(channel);
+    }
+
     final logEntries = EventLogReader.readAll(captureDir);
 
     final tracks = <DawTrack>[];
@@ -200,6 +213,8 @@ abstract final class DawManifestReader {
           channel,
           sampleRate,
           effectiveTempoBpm,
+          initiallyMuted: mutedAtArm.contains(channel),
+          initiallySoloed: soloedAtArm,
         );
         if (raw.volume.isNotEmpty) {
           automationLanes.add(

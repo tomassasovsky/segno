@@ -1,0 +1,30 @@
+{
+  "final-source-review-v1.md": {
+    "originalSha256": "8a76172cf0e5b140832916db5b9dea89f88dbe2fc4e78523a00317771e08c5ab",
+    "publicSha256": "5abe9cc0fc381d4fd06ae7833cbabf901377b14a3b8e3e46d76912d56f676623"
+  },
+  "independent-execution-v1.md": {
+    "originalSha256": "34be3522e14f85a2075ef324b7a4d37b57ac9712b5049c3c46515868bbba6927",
+    "publicSha256": "bae5ff6d2505ec5b6e3aa2b17d9afbe5b42644cbca6b3dcc620f7ba6691d7ccb"
+  },
+  "ui-root-quality-review-v1.md": {
+    "originalSha256": "539376ada92cc75683ccb8c1955b6cfafc0ebcad9ee9e317a172703f8f41250c",
+    "publicSha256": "ba26aaa6a8a247bd68970163c5394f047a936aa38cfd81f4f3b38fc0bcea3c3d"
+  },
+  "ui-root-quality-review-v2.md": {
+    "originalSha256": "09b98c51cf2017bf150dbcc4a3ad14d22b5880fe0feb361737b6a04217c2f23b",
+    "publicSha256": "09b98c51cf2017bf150dbcc4a3ad14d22b5880fe0feb361737b6a04217c2f23b"
+  },
+  "fixture-delta-review-v1.md": {
+    "originalSha256": "9e6222c662f0627d1005e96dc34f33111dec1248c7f7326c5478ab5f42fdecf8",
+    "publicSha256": "4239469f925afceb47612150babc8dac5c97a393dda1d350cb92f241a35be1b8"
+  },
+  "once-aggregate-triage-v1.md": {
+    "originalSha256": "b62c182b6f94b8be424a7d38ddd547ea25290357af7b5f8d794dd9cf08d79ab8",
+    "publicSha256": "b62c182b6f94b8be424a7d38ddd547ea25290357af7b5f8d794dd9cf08d79ab8"
+  },
+  "pr-readiness-review-v1.md": {
+    "originalSha256": "33492a2f88f797723d58e9ba4c9b237f8084793e7f0932c421b3bcd120fa161a",
+    "publicSha256": "33492a2f88f797723d58e9ba4c9b237f8084793e7f0932c421b3bcd120fa161a"
+  }
+}
