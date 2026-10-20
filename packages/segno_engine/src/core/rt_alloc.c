@@ -243,6 +243,25 @@ void le_rt_prefault(const void* p, size_t bytes) {
   }
 }
 
+void le_rt_shrink(void* p, size_t bytes) {
+  if (p == NULL || bytes == 0) return;
+  size_t lead = 0;
+  const size_t old = le_rt_header_bytes(p, &lead);
+  if (old == 0 || bytes >= old) return;
+  unsigned char* const base = (unsigned char*)p - lead;
+#if !LE_RT_ALLOC_USES_HEAP
+  /* Whole pages past the new end go back now; the partial page holding the
+   * new end stays (le_rt_free unmaps bytes + lead, rounded up the same). */
+  const size_t page = le_rt_page_size();
+  const size_t keep = (lead + bytes + page - 1) & ~(page - 1);
+  const size_t had = (lead + old + page - 1) & ~(page - 1);
+  if (had > keep && munmap(base + keep, had - keep) != 0) return; /* unchanged */
+#endif
+  const le_rt_header h = {LE_RT_MAGIC, (uint64_t)bytes, (uint64_t)lead,
+                          (uint64_t)bytes ^ (uint64_t)lead ^ LE_RT_MIX};
+  memcpy(base + lead - LE_RT_HEADER, &h, sizeof(h));
+}
+
 void le_rt_free(void* p) {
   if (p == NULL) return;
   size_t lead = 0;
