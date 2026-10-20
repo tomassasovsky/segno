@@ -201,7 +201,9 @@ the owner. The singles library keeps the existing seven built-ins only.
 8. **Offline renders match live.** A new perf-log event records the tempo at
    the frame the audio thread applied it (events.log version 13) and
    `perf_render` reads it. Parameter changes are logged at the frame the
-   audio thread first applied them. Render and cache workers set
+   audio thread first applied them. An output-bus recipe logs only each
+   slot's described parameters and only those that changed, so a 64-slot
+   publish cannot fill the 4096-entry log ring. Render and cache workers set
    flush-to-zero as the audio thread does. Chains holding a free-running
    modulator or noise source (Chorus, Mod, Vinyl, Degrade, Doubler, the dub
    delay's wow) or a bar-locked one (Slicer, Pumper, synced LFO) are not
@@ -280,6 +282,9 @@ Each part is its own issue (area:fx) and PR against `claude/segno-integration`.
 | 10 | Transport context, tempo log event, ring sizing; Drum and Dub delay; LPF synced LFO | 4, division table from #891 | |
 | 11 | Dual Octaver (Ed's), mode 0 | 9 | |
 | W | Waiting kinds: Mode delay, Reverb (mode and Drum), Amp+Cab, Mod, Slicer and Pumper, Whammy, Dual Octaver mode 1, Smart Tune and Harmonizer | reference audio, 9, 10 | each becomes a part when its reference exists |
+
+Slicer and Pumper gain steps are ramped (the #813 lesson: a gain step is a
+click), whatever pattern the reference shows.
 
 Rack completeness is a milestone, not a part: a rack is complete when every
 kind it uses has landed. Dub completes first (after parts 5, 6, 8 and 10),
