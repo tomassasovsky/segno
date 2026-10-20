@@ -328,6 +328,11 @@ jobs:
       # asserted by native-bench-arm64.
       - name: Smoke-run the instrument voice bench
         run: bash packages/segno_engine/src/test/bench/bench_instruments.sh --smoke
+      # The #915 built-in effects bench (src/test/bench/bench_fx_cpu.{c,sh}),
+      # kept compiling and running the same way; its numbers come from the
+      # console, not from CI.
+      - name: Smoke-run the effects bench
+        run: bash packages/segno_engine/src/test/bench/bench_fx_cpu.sh --smoke
       - name: Check macOS RNNoise include/forwarder wiring
         run: bash packages/segno_engine/tool/test/run_macos_rnnoise_wiring_tests.sh
       - name: Build + run the pedal-link contract test (firmware C vs Dart fixtures)

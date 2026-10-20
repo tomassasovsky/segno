@@ -5505,6 +5505,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
                                     .position = e->clock.position,
                                     .master_len = e->clock.length,
                                     .iteration = (int32_t)e->loop_iteration,
+                                    /* the FX clock at capture frame 0
+                                     * (events.log version 13, #941) */
+                                    .fx_clock = e->fx_clock_base,
                                 }});
       for (int t = 0; t < e->track_count; ++t) {
         le_fade_log(e, t, frame);
@@ -6598,8 +6601,10 @@ static inline void snapshot_lane_fx(
        * its effective bit is 0, settle it to bypass now so a processing gap
        * never strands a ramp mid-fade — resumption then always re-enters
        * through fx_apply_chain's clean settled-edge reset [B7]. Enabled
-       * slots keep their state (engaged effects have always persisted
-       * across gaps). Audio-thread write to audio-owned DSP state. */
+       * slots keep their state across gaps, except that an octaver whose
+       * hop counter fell off the engine clock restarts on its own schedule
+       * when it is next ticked (fx_octaver, #941). Audio-thread write to
+       * audio-owned DSP state. */
       for (int s = 0; s < LE_FX_MAX; ++s) {
         if (le_fx_enable_settled_bypassed(&ln->fx, s)) continue;
         const int unprocessed =
@@ -6870,14 +6875,19 @@ static inline void snapshot_lane_cache(
         const int32_t len = load_i32(&ln->a_len);
         const uint32_t gen =
             atomic_load_explicit(&ln->a_fx_gen, memory_order_relaxed);
-        if (w == ln->cache_fp_entry && gen == ln->cache_fp_gen) {
+        const uint32_t hop =
+            atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed) &
+            (uint32_t)(LE_PV_HOP - 1);
+        if (w == ln->cache_fp_entry && gen == ln->cache_fp_gen &&
+            hop == ln->cache_fp_hop) {
           ok = le_wet_entry_key_matches(w, rev, w->chain_fp, vol, len);
         } else {
           ok = le_wet_entry_key_matches(
               w, rev, le_lane_pre_fx_fingerprint(e, t, l), vol, len);
-          if (ok) { /* remember the passed fp verdict for this {entry, gen} */
+          if (ok) { /* remember the verdict for this {entry, gen, hop} */
             ln->cache_fp_entry = w;
             ln->cache_fp_gen = gen;
+            ln->cache_fp_hop = hop;
           }
         }
       }
@@ -7895,6 +7905,32 @@ static inline void mix_tracks_frame(
      * They keep being read for metering. */
     const le_wet_entry* tce = track_cache_ent[t];
     const int32_t trk_rp = seg_base[t] + trk_pos[t];
+    /* The engine frame the current lap began at (#941), the clock a print
+     * is rendered and keyed against: this frame less the read index, on a
+     * forward lap at an integral rate. It moves only at a lap top (a wrap, a
+     * launch, a relaunch) or between blocks (a rate or direction change), so
+     * it is taken there and stored only when it changed. */
+    if ((trk_rp == 0 || f == 0) &&
+        (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
+        !tr->head.reversed && le_head_is_integral(&tr->head)) {
+      const uint32_t top = e->fx_clock_base + f - (uint32_t)trk_rp;
+      if (top != tr->top_clock) {
+        tr->top_clock = top;
+        atomic_store_explicit(&tr->a_top_clock, top, memory_order_relaxed);
+      }
+    }
+    /* A print keyed to the hop position (an octaver in it, #941) that does
+     * not match this lap's start is stale: the block-start check ran before
+     * a launch in this block moved the lap. Drop it at the lap top, as that
+     * check will from the next block. */
+    if (trk_rp == 0 && tce != NULL &&
+        !le_wet_entry_hop_matches(tce, e->fx_clock_base + f)) {
+      tce = NULL;
+      track_cache_ent[t] = NULL;
+      if (load_i32(&tr->a_track_cache_active)) {
+        store_i32(&tr->a_track_cache_active, 0);
+      }
+    }
     /* A print engages only at the FORWARD lap start (index 0, with or without
      * a relaunch origin) and never on a reversed track (#1162): reversing a
      * loop reverses the recording, not its effects, so the live chains run
@@ -8074,6 +8110,13 @@ static inline void mix_tracks_frame(
        * tail/LFO continuity) for playback nobody hears. */
       const le_wet_entry* wce = cache_ent[t][l];
       const int32_t rp = seg_base[t] + trk_pos[t];
+      /* The lane twin of the track's lap-top hop check above (#941). */
+      if (rp == 0 && wce != NULL &&
+          !le_wet_entry_hop_matches(wce, e->fx_clock_base + f)) {
+        wce = NULL;
+        cache_ent[t][l] = NULL;
+        if (load_i32(&ln->a_cache_active)) store_i32(&ln->a_cache_active, 0);
+      }
       if (wce != NULL && st[t] == LE_TRACK_PLAYING && !tr->head.reversed &&
           le_head_is_integral(&tr->head) &&
           (tr->transpose_st == 0 || e->transpose_bypass) &&
@@ -8312,6 +8355,7 @@ void le_engine_master_bus_frame_for_test(le_engine* e, float* out, uint32_t f,
   float out_peak_ch[LE_MAX_CHANNELS] = {0};
   master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
                    lim_release, out_sumsq, frame_out_peak, out_peak_ch);
+  atomic_fetch_add_explicit(&e->a_fx_frame, 1u, memory_order_relaxed);
 }
 
 /* ---- the real-time DSP core ---- */
@@ -8630,6 +8674,13 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * ordering ceremony: only this thread ever writes it. */
   const uint64_t perf_frame_base =
       atomic_load_explicit(&e->a_perf_frames, memory_order_relaxed);
+
+  /* The FX clock (#941): this callback's first frame, before any command
+   * can reset a slot, so a reset seeds the octaver's hop against the engine
+   * clock. The frame loop below advances it once per frame. */
+  e->fx_clock_base = (uint32_t)atomic_load_explicit(&e->a_frames,
+                                                    memory_order_relaxed);
+  atomic_store_explicit(&e->a_fx_frame, e->fx_clock_base, memory_order_relaxed);
 
   le_command cmd;
   while (le_ring_pop(&e->ring, &cmd)) {
@@ -8992,6 +9043,9 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     if (process_input_frame(e, in, in_c, out, f, ch_in, ch_out, tc, sr,
                             excluded, &in_sumsq, &in_peak, in_peak_ch,
                             &out_sumsq, perf_frame_base)) {
+      /* The FX clock still moves on to the next frame (#941). */
+      atomic_store_explicit(&e->a_fx_frame, e->fx_clock_base + f + 1u,
+                            memory_order_relaxed);
       continue;
     }
 
@@ -9102,6 +9156,13 @@ void le_engine_process(le_engine* e, float* output, const float* input,
 
     viz_tap_frame(e, pos, frame_out_peak);
     track_viz_tap_frame(e, tc, st, frame_trk_peak);
+    /* The FX clock's one store per frame (#941): the command drain set it
+     * to the block's first frame, and from here on it reads the next one,
+     * so the transport resets below (a quantized record start applying a
+     * capture image), the next iteration's chains and a block-end install
+     * (a bounce) all see the frame they first process. */
+    atomic_store_explicit(&e->a_fx_frame, e->fx_clock_base + f + 1u,
+                          memory_order_relaxed);
     advance_transport_frame(e, tc, st, perf_frame_base + f);
   }
 

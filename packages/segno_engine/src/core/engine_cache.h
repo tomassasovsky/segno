@@ -88,14 +88,26 @@ typedef struct le_fx_frozen_chain {
   int32_t effective[LE_FX_MAX];
   int32_t chan_any;
   le_fx_chan chan[LE_FX_MAX];
+  /* The frozen owner's le_fx_state::hop_seed (#915): a render seeds its heap
+   * state with it so octavers render on the live owner's hop phases. */
+  int32_t hop_seed;
+  /* The live FX clock (le_fx_state::clock) of the first rendered frame: a
+   * print's pass 1 runs at clock0 + f and the kept pass at clock0 + len + f,
+   * so its octaver hops land on the frames the live chain's will (#941).
+   * The cache schedulers set it from the track's last loop top, predicting
+   * the print engages at the next one; 0 for the render recipe. */
+  uint32_t clock0;
 } le_fx_frozen_chain;
 
-/* Fills a frozen chain from snapshotted locals (the cache schedulers'). */
+/* Fills a frozen chain from snapshotted locals (the cache schedulers').
+ * [hop_seed] is the frozen owner's le_fx_state::hop_seed, required so no
+ * producer can leave a render on another owner's octaver phases. */
 void le_fx_frozen_fill(le_fx_frozen_chain* c, int32_t count, int32_t pre,
                        int32_t chain_on, const int32_t* types,
                        const int32_t* enabled,
                        const float params[LE_FX_MAX][LE_FX_PARAMS],
-                       const le_fx_chan* chan, int32_t chan_any);
+                       const le_fx_chan* chan, int32_t chan_any,
+                       int32_t hop_seed);
 
 /* Freezes a lane's or a bus's whole chain from its published atomics (the
  * two owners share the field names). */
@@ -105,14 +117,14 @@ void le_fx_frozen_fill(le_fx_frozen_chain* c, int32_t count, int32_t pre,
                        (owner)->a_fx_enabled, (owner)->a_fx_param,            \
                        (owner)->a_fx_chan_in, (owner)->a_fx_chan_out,         \
                        (owner)->a_fx_chan_gl_bits, (owner)->a_fx_chan_gr_bits, \
-                       (owner)->a_fx_chan_level_bits)
+                       (owner)->a_fx_chan_level_bits, (owner)->fx.hop_seed)
 void le_fx_frozen_capture(le_fx_frozen_chain* c, _Atomic int32_t* count,
                           _Atomic int32_t* pre, _Atomic int32_t* chain_on,
                           _Atomic int32_t* type, _Atomic int32_t* enabled,
                           _Atomic uint32_t (*param)[LE_FX_PARAMS],
                           _Atomic int32_t* chan_in, _Atomic int32_t* chan_out,
                           _Atomic uint32_t* gl, _Atomic uint32_t* gr,
-                          _Atomic uint32_t* level);
+                          _Atomic uint32_t* level, int32_t hop_seed);
 
 /* 1 when any entry in [from, to) has `type` (LE_FX_NONE: any real entry). */
 int le_fx_frozen_has(const le_fx_frozen_chain* c, int32_t from, int32_t to,
