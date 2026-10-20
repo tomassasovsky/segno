@@ -859,9 +859,10 @@ void le_platform_after_device_start(le_engine* engine, const le_config* config) 
  * forking thread, before the page-table copy, for every fork() (Dart's
  * Process.start included) and for none of posix_spawn, vfork or system(). The
  * line is built on the stack and written with one write(2), so a fork from any
- * thread costs only this and never takes a lock. */
+ * thread costs only this and never takes a lock. The handler is installed when
+ * the library is loaded, before any engine exists, so a fork at startup is
+ * counted too. */
 static _Atomic uint64_t g_le_forks;
-static pthread_once_t g_le_fork_watch_once = PTHREAD_ONCE_INIT;
 
 static void le_fork_prepare(void) {
   const uint64_t n =
@@ -880,12 +881,8 @@ static void le_fork_prepare(void) {
   (void)written; /* nothing to do about a failed diagnostic line */
 }
 
-static void le_fork_watch_install(void) {
+__attribute__((constructor)) static void le_fork_watch_install(void) {
   (void)pthread_atfork(le_fork_prepare, NULL, NULL);
-}
-
-void le_platform_watch_forks(void) {
-  (void)pthread_once(&g_le_fork_watch_once, le_fork_watch_install);
 }
 
 uint64_t le_platform_fork_count(void) {

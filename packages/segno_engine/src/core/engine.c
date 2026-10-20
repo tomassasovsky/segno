@@ -1219,7 +1219,6 @@ void le_engine_mark_device_lost(le_engine* engine) {
 }
 
 le_engine* le_engine_create(void) {
-  le_platform_watch_forks(); /* Linux: log every fork of the app (#1367) */
   le_engine* engine = (le_engine*)calloc(1, sizeof(le_engine));
   if (engine == NULL) return NULL;
   if (!le_instruments_create(engine)) {

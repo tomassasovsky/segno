@@ -427,13 +427,11 @@ static void test_audio_ring_alloc_owns_fork_safe_storage(void) {
 }
 
 #if defined(__linux__)
-/* le_engine_create installs the fork watch (#1367): every fork() of the
+/* Loading the engine installs the fork watch (#1367): every fork() of the
  * process is counted, and posix_spawn, which does not copy the page tables,
  * is not. */
 static void test_fork_watch_counts_forks_not_spawns(void) {
   printf("test_fork_watch_counts_forks_not_spawns\n");
-  le_engine* engine = le_engine_create();
-  CHECK(engine != NULL);
   const uint64_t before = le_platform_fork_count();
 
   const pid_t child = fork();
@@ -448,8 +446,6 @@ static void test_fork_watch_counts_forks_not_spawns(void) {
   CHECK(posix_spawnp(&spawned, "true", NULL, NULL, argv, environ) == 0);
   CHECK(waitpid(spawned, &status, 0) == spawned);
   CHECK(le_platform_fork_count() == before + 1);
-
-  le_engine_destroy(engine);
 }
 #endif
 
