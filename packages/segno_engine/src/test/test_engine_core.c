@@ -33693,6 +33693,39 @@ static void test_cache_octaver_on_a_partial_hop_loop_stays_live(void) {
   le_engine_destroy(a);
 }
 
+/* An octaver print is rendered against the hop position of the loop top it
+ * engages at (#941). A stop and relaunch moves the loop against the engine
+ * clock without a chain edit, so the print's key changes: the old print falls
+ * back live by the next buffer (the per-buffer verdict memo notices the
+ * move), the lane re-renders, and the new print engages at the next top. */
+static void test_cache_octaver_relaunch_rerenders(void) {
+  printf("test_cache_octaver_relaunch_rerenders\n");
+  const int32_t type = LE_FX_OCTAVER;
+  le_engine* a;
+  le_engine* b;
+  cache_pair_prepare_chain(&a, &b, &type, 1);
+  le_engine_destroy(b);
+  pump_frames(a, 0.0f, CACHE_LOOP - CACHE_SETTLE + 64);
+  CHECK(cache_engaged(a, 0, 0) == 1);
+  CHECK(le_engine_stop_track(a, 0) == LE_OK);
+  drain(a);
+  pump_frames(a, 0.0f, 100); /* the relaunched top lands off the old hop */
+  CHECK(le_engine_play(a, 0) == LE_OK);
+  drain(a);
+  pump_frames(a, 0.0f, 128); /* the play buffer, then one more */
+  CHECK(cache_engaged(a, 0, 0) == 0);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info); /* registers the new key */
+  CHECK(info.state != LE_CACHE_CACHED);
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+  CHECK(cache_renders(a, 0, 0) == 2);
+  CHECK(cache_engaged(a, 0, 0) == 0);
+  pump_frames(a, 0.0f, CACHE_LOOP - 128 - CACHE_SETTLE + 64);
+  CHECK(cache_engaged(a, 0, 0) == 1); /* at the relaunched loop's next top */
+  le_engine_destroy(a);
+}
+
 static void test_cache_cached_matches_live_every_builtin(void) {
   printf("test_cache_cached_matches_live_every_builtin\n");
   const int32_t types[] = {LE_FX_DRIVE,   LE_FX_FILTER, LE_FX_DELAY,
@@ -37981,6 +38014,7 @@ int main(void) {
   test_a_pre_channel_edit_drops_the_print();
   test_cache_cached_matches_live_every_builtin();
   test_cache_octaver_on_a_partial_hop_loop_stays_live();
+  test_cache_octaver_relaunch_rerenders();
   test_cache_cached_matches_live_multi_slot_chain();
   test_cache_volume_move_invalidates();
   test_cache_param_edit_falls_back_within_one_buffer();

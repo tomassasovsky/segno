@@ -6875,14 +6875,19 @@ static inline void snapshot_lane_cache(
         const int32_t len = load_i32(&ln->a_len);
         const uint32_t gen =
             atomic_load_explicit(&ln->a_fx_gen, memory_order_relaxed);
-        if (w == ln->cache_fp_entry && gen == ln->cache_fp_gen) {
+        const uint32_t hop =
+            atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed) &
+            (uint32_t)(LE_PV_HOP - 1);
+        if (w == ln->cache_fp_entry && gen == ln->cache_fp_gen &&
+            hop == ln->cache_fp_hop) {
           ok = le_wet_entry_key_matches(w, rev, w->chain_fp, vol, len);
         } else {
           ok = le_wet_entry_key_matches(
               w, rev, le_lane_pre_fx_fingerprint(e, t, l), vol, len);
-          if (ok) { /* remember the passed fp verdict for this {entry, gen} */
+          if (ok) { /* remember the verdict for this {entry, gen, hop} */
             ln->cache_fp_entry = w;
             ln->cache_fp_gen = gen;
+            ln->cache_fp_hop = hop;
           }
         }
       }
@@ -7900,12 +7905,14 @@ static inline void mix_tracks_frame(
      * They keep being read for metering. */
     const le_wet_entry* tce = track_cache_ent[t];
     const int32_t trk_rp = seg_base[t] + trk_pos[t];
-    /* The track's loop top on the engine clock, for the wet cache's
-     * prediction of the lap a print will engage at (#941). */
-    if (trk_rp == 0 &&
-        (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
+    /* The engine frame the current lap began at (#941), the clock a print
+     * is rendered and keyed against: this frame less the read index, on a
+     * forward lap at an integral rate. Kept current every frame, so it is
+     * right from the first lap and straight after a relaunch. */
+    if ((st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
         !tr->head.reversed && le_head_is_integral(&tr->head)) {
-      atomic_store_explicit(&tr->a_top_clock, e->fx_clock_base + f,
+      atomic_store_explicit(&tr->a_top_clock,
+                            e->fx_clock_base + f - (uint32_t)trk_rp,
                             memory_order_relaxed);
     }
     /* A print engages only at the FORWARD lap start (index 0, with or without
@@ -9005,6 +9012,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * grid and count-in starts can publish another image inside this block. */
   e->capture_image_dirty = 0;
   for (uint32_t f = 0; f < frames; ++f) {
+    /* The frame being processed (#941): set here, not only after mixing,
+     * because an iteration the latency harness owns skips the rest. */
+    atomic_store_explicit(&e->a_fx_frame, e->fx_clock_base + f,
+                          memory_order_relaxed);
     e->perf.tap_frame = perf_frame_base + f;
     for (int t = 0; t < tc; ++t)
       e->tracks[t].fade_sample = le_fade_tick(&e->tracks[t].fade, sr);

@@ -361,6 +361,10 @@ typedef struct le_fx_state {
    * processors) stays at 0, and its phase then counts from its reset. */
   const _Atomic uint32_t* clock_src;
   uint32_t clock;
+  /* 1 when [clock] is set every frame (the offline renders), so the octaver
+   * checks its counter against it as a live chain does; 0 for a state
+   * nobody clocks. */
+  int32_t clocked;
   float svf_ic1[LE_FX_MAX][2];
   float svf_ic2[LE_FX_MAX][2];
   float lfo[LE_FX_MAX][2];
@@ -684,9 +688,12 @@ typedef struct le_lane {
    * fingerprint comparison last PASSED. While both still match (and the
    * cheap rev/vol/len fields do too), the per-buffer check skips the ~40
    * atomic loads + FNV refold — the standing cost of a cached steady state
-   * drops to one relaxed load. */
+   * drops to one relaxed load. The track's loop-top hop position is part
+   * of an octaver print's key (#941) and moves on a relaunch without a chain
+   * edit, so the verdict also records it and a change forces the refold. */
   const le_wet_entry* cache_fp_entry;
   uint32_t cache_fp_gen;
+  uint32_t cache_fp_hop;
 } le_lane;
 
 /* Bumps a lane's chain-edit generation (see a_fx_gen above). Both threads
@@ -1004,12 +1011,10 @@ typedef struct le_track {
    * read index for the last frame of the block, or the write head while
    * RECORDING. Published once per block beside the level above. */
   _Atomic int32_t a_play_pos;
-  /* The engine frame (mod 2^32) of this track's most recent loop top (read
-   * index 0 while playing), published by the audio thread at each top. The
-   * wet cache renders a print as the lap that starts there, so a print that
-   * engages at the next top reproduces the live octaver hop exactly (#941).
-   * Stored while playing or overdubbing, so the top a print is predicted
-   * from is never laps old after a punch-out. */
+  /* The engine frame (mod 2^32) the track's current lap began at, published
+   * every frame by the audio thread while it plays or overdubs a forward lap
+   * at an integral rate. The wet cache renders and keys an octaver print
+   * against it, so the print reproduces the live octaver hop (#941). */
   _Atomic uint32_t a_top_clock;
   _Atomic int32_t lane_count; /* Active lanes, release-published after prepared
                                * buffers and routing become callback-owned. */

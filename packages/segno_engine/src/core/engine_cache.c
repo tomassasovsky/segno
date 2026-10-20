@@ -305,7 +305,7 @@ struct le_fx_cache {
 static uint64_t le_ca_snapshot_fp(int32_t count, int32_t chain_on,
                                   const int32_t* types, const int32_t* enabled,
                                   const float params[LE_FX_MAX][LE_FX_PARAMS],
-                                  const le_fx_chan* chan) {
+                                  const le_fx_chan* chan, uint32_t top) {
   uint64_t h = 0xcbf29ce484222325ULL;
   if (count > 0) h = le_fx_fp_u32(h, chain_on ? 1u : 0u);
   for (int32_t i = 0; i < count; ++i) {
@@ -319,6 +319,15 @@ static uint64_t le_ca_snapshot_fp(int32_t count, int32_t chain_on,
   /* The channel handling, after the entries — the order
    * le_lane_pre_fx_fingerprint folds it in (slice 3e). */
   for (int32_t i = 0; i < count; ++i) h = le_fx_chan_fold(h, &chan[i]);
+  /* ...and, for a chain holding an octaver, the loop top's position on the
+   * hop the print is rendered against (#941), as le_lane_pre_fx_fingerprint
+   * folds it. */
+  for (int32_t i = 0; i < count; ++i) {
+    if (types[i] == LE_FX_OCTAVER) {
+      h = le_fx_fp_u32(h, top & (uint32_t)(LE_PV_HOP - 1));
+      break;
+    }
+  }
   return h;
 }
 
@@ -842,16 +851,17 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
     lc->reason = LE_CACHE_REASON_PLUGIN;
     return;
   }
-  if (le_cache_hop_unprintable(types, count, load_i32(&ln->a_len))) {
+  const int32_t len = load_i32(&ln->a_len);
+  if (le_cache_hop_unprintable(types, count, len)) {
     lc->state = LE_CACHE_GAVE_UP;
     lc->reason = LE_CACHE_REASON_HOP;
+    lc->has_key = 0; /* any later printable chain re-arms, even the old key */
     return;
   }
   /* lc->reason is deliberately NOT cleared here: a RENDER_FAILED give-up
    * keeps reporting its reason until the key-change re-arm below releases it
    * (the documented "reason meaningful while state == GAVE_UP" contract). */
 
-  const int32_t len = load_i32(&ln->a_len);
   if (len <= 0 || !has_builtin) {
     /* Nothing to cache: no content, or the chain is empty/dry (an empty
      * chain is already zero FX CPU). Content-less lanes free their retained
@@ -875,8 +885,11 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   le_fx_chan_snapshot(chan, &chan_any, count, ln->a_fx_chan_in,
                       ln->a_fx_chan_out, ln->a_fx_chan_gl_bits,
                       ln->a_fx_chan_gr_bits, ln->a_fx_chan_level_bits);
+  /* The loop top the print is rendered from (its clock0) and keyed by. */
+  const uint32_t top =
+      atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed);
   const uint64_t fp =
-      le_ca_snapshot_fp(count, chain_on, types, raw_en, params, chan);
+      le_ca_snapshot_fp(count, chain_on, types, raw_en, params, chan, top);
   /* Cross-check against the canonical atomic fold: a mismatch means the audio
    * thread published a type/count change mid-snapshot — skip this tick rather
    * than schedule a torn chain (the next tick reads it settled). */
@@ -1001,8 +1014,7 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
                     chan, chan_any, ln->fx.hop_seed);
   /* Rendered as the lap that began at the last loop top, the one before the
    * top the print is expected to engage at (#941). */
-  job->chain.clock0 =
-      atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed);
+  job->chain.clock0 = top; /* the top the key above was taken at */
   job->copy_pos = 0;
   job->dry = dry;
   job->wet = NULL;
@@ -1063,13 +1075,14 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
     lc->reason = LE_CACHE_REASON_PLUGIN;
     return;
   }
-  if (le_cache_hop_unprintable(types, count, load_i32(&tr->lanes[0].a_len))) {
+  const int32_t len = load_i32(&tr->lanes[0].a_len);
+  if (le_cache_hop_unprintable(types, count, len)) {
     lc->state = LE_CACHE_GAVE_UP;
     lc->reason = LE_CACHE_REASON_HOP;
+    lc->has_key = 0; /* any later printable chain re-arms, even the old key */
     return;
   }
 
-  const int32_t len = load_i32(&tr->lanes[0].a_len);
   /* Nothing to print: no Pre run, no content, or a part carrying a Post
    * entry. The last is a permanent state for as long as that entry lives, and
    * the track's Pre run simply runs live — the same signal, at live cost. */
@@ -1106,7 +1119,15 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
    * the part scheduler makes has nothing to compare against. A concurrent
    * publish moves the key and the [B5] check at collection discards the
    * render, which is the same protection by a different route. */
+  const uint32_t top =
+      atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed);
   const uint64_t fp = le_track_pre_fingerprint(e, t);
+  /* The key folds the loop top's hop position for an octaver chain (#941);
+   * a relaunch between the two reads would key the print to one top and
+   * render it from another, so skip this tick and take both again. */
+  if (atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed) != top) {
+    return;
+  }
   /* A whole-track job's source already carries every part's level, so unity
    * stands in for the part scheduler's volume term. */
   const uint32_t vol_bits = f32_to_bits(1.0f);
@@ -1219,8 +1240,7 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
                     chan, chan_any, b->fx.hop_seed);
   /* Rendered as the lap that began at the last loop top, the one before the
    * top the print is expected to engage at (#941). */
-  job->chain.clock0 =
-      atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed);
+  job->chain.clock0 = top; /* the top the key above was taken at */
   job->copy_pos = 0;
   job->dry = src;
   job->wet = NULL;
@@ -1572,6 +1592,7 @@ int32_t le_fx_frozen_state_init(le_fx_state* fx, const le_fx_frozen_chain* c,
    * phase never decays. */
   fx->hop_seed = c->hop_seed;
   fx->clock = c->clock0;
+  fx->clocked = 1;
   int32_t bits[LE_FX_MAX];
   le_fx_frozen_bits(c, from, to, bits);
   /* Seed the enable-crossfade runtime per EFFECTIVE bit, mirroring the live
