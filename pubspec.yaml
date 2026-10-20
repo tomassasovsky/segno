@@ -24,7 +24,7 @@ dependencies:
     path: packages/cpu_load_repository
   controller_repository:
     path: packages/controller_repository
-  cupertino_icons: ^1.0.9
+  cupertino_icons: ^2.0.0
   daw_export:
     path: packages/daw_export
   equatable: ^2.1.0
