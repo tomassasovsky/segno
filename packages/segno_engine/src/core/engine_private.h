@@ -361,11 +361,6 @@ typedef struct le_fx_state {
    * processors) stays at 0, and its phase then counts from its reset. */
   const _Atomic uint32_t* clock_src;
   uint32_t clock;
-  /* The engine frame this live chain expects to process next. A chain the
-   * engine skips (a monitor while its input is off or muted) stops its
-   * octavers' hop counters while the clock moves on; fx_apply_chain sees the
-   * jump here and re-anchors them. Audio-thread only. */
-  uint32_t clock_next;
   float svf_ic1[LE_FX_MAX][2];
   float svf_ic2[LE_FX_MAX][2];
   float lfo[LE_FX_MAX][2];

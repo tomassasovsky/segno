@@ -3404,6 +3404,10 @@ typedef enum le_cache_reason {
   LE_CACHE_REASON_PART_POST = 3, /* a part Post chain must keep live tails */
   LE_CACHE_REASON_BUDGET = 4, /* a Transpose source render does not fit the
                                * cap; the track plays dry (#1179) */
+  LE_CACHE_REASON_HOP = 5, /* the print holds an octaver and the loop is not a
+                            * whole number of octaver hops (256 frames): its
+                            * hop falls on other frames each lap, so no single
+                            * lap's render equals live (#941) */
 } le_cache_reason;
 
 /* Snapshot of one lane's cache state (le_engine_get_lane_cache). */

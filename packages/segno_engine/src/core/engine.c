@@ -1134,6 +1134,9 @@ void le_engine_lane_fx_chain_for_test(le_engine* engine, int32_t channel,
   }
   fx_apply_chain(&ln->fx, engine->sample_rate, engine->fx_delay_frames, l, r,
                  count, types, params, enabled);
+  /* One sample processed: advance the engine frame the chain is clocked by
+   * (#941), as the callback's frame loop does. */
+  atomic_fetch_add_explicit(&engine->a_fx_frame, 1u, memory_order_relaxed);
 }
 
 /* Loopback detection, device enumeration / id resolution, and backend selection

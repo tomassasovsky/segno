@@ -35,8 +35,8 @@ extern "C" {
 
 /* Analysis-hop stagger (#915). Every octaver instance used to start its hop
  * counter at 0, so all instances ran their four length-LE_PV_N FFTs on the
- * same sample index, forever: at 64-frame blocks one callback in four carried
- * the whole pile. Measured on the console at 96 kHz / 64 frames, two
+ * same sample index, forever: at 64-frame blocks one callback in four ran
+ * every instance's FFTs. Measured on the console at 96 kHz / 64 frames, two
  * synchronized stereo octavers missed the 667 us deadline on every heavy
  * block.
  *

@@ -230,6 +230,19 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   if (o->sum_phase != NULL) memset(o->sum_phase, 0, sizeof(float) * LE_PV_BINS);
 }
 
+/* Restarts a live octaver slot whose counter has fallen off the engine clock
+ * (fx_octaver): its runtime on [ticks], and, while it is engaged, the warmup
+ * and ramp a re-enable runs (fx_apply_chain), so it passes the dry signal
+ * until its delay-matched tap and overlap-add are full again and then fades
+ * the wet back in, instead of emitting a half-built frame. */
+static void le_oct_resync(le_fx_state* fx, int slot, int chan, int ticks) {
+  le_pv_reset_runtime(fx, slot, chan, ticks);
+  if (fx->enable_target[slot]) {
+    fx->enable_warmup[slot] = LE_PV_N;
+    fx->enable_mix[slot] = 0.0f;
+  }
+}
+
 /* Runs one STFT analysis/synthesis frame: windows the newest LE_PV_N FIFO
  * samples, shifts the harmonic structure by `ratio` while holding the cepstral
  * formant envelope fixed in frequency, and overlap-adds the result into o->out.
@@ -650,6 +663,16 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
   le_octaver_state* o = &fx->oct[slot][chan];
   if (buf == NULL || o->out == NULL || cap < LE_PV_N + 1) return x;
 
+  /* Keep the hop on the engine clock (#941). The counter advances one per
+   * tick, so it stays in step for as long as the slot is ticked every frame;
+   * a live slot the engine did not tick for a while (a monitor whose input
+   * was muted, a slot beyond a chain count that later grew back) finds its
+   * counter off the clock here and restarts on its own schedule. */
+  if (fx->clock_src != NULL) {
+    const int ticks = le_oct_seeded_ticks(fx, slot);
+    if (le_oct_ticks_to_work(o) != ticks) le_oct_resync(fx, slot, chan, ticks);
+  }
+
   /* Write the newest sample at the head, then advance. */
   const int head = fx->delay_pos[slot][chan];
   buf[head] = x;
@@ -844,8 +867,8 @@ void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap) {
  * freshly created (zeroed) le_fx_state does not read as a mid-ramp bypass and
  * fade in on first use. Every standalone le_fx_state owner calls this after
  * creating/zeroing its state: le_lane_reset / le_monitor_input_reset, the
- * offline render (perf_render), the VST3 plugin processors, and the test
- * harnesses. Deliberately NOT part of le_fx_entry_reset, which touches only
+ * offline renders (through le_fx_enable_seed_at), the VST3 plugin
+ * processors, and the test harnesses. Deliberately NOT part of le_fx_entry_reset, which touches only
  * the DRAIN half of the runtime (a retyped slot has no tail to drain) and
  * leaves an in-flight enable ramp alone. */
 void le_fx_enable_seed_settled(le_fx_state* fx, int slot) {
@@ -1307,34 +1330,12 @@ int le_fx_type_drains(int32_t type) {
  * A slot the chain does NOT process cannot advance this state machine; the
  * per-buffer snapshots settle such slots to bypass while their effective bit
  * is 0 (le_fx_enable_force_bypass), so gaps never strand a ramp. */
-/* A live chain the engine did not process for some frames resumes here: its
- * octavers' hop counters stood still while the engine clock moved on, which
- * would leave their heavy ticks off their quarters for good. Each octaver
- * slot restarts its runtime on its own schedule, the same clean start a
- * re-enable gives it; the slot was silent through the gap, so nothing that
- * was sounding is cut. */
-static void le_fx_reanchor_after_gap(le_fx_state* fx, int count,
-                                     const int32_t* types) {
-  for (int s = 0; s < count; ++s) {
-    if (types[s] != LE_FX_OCTAVER) continue;
-    for (int chan = 0; chan < 2; ++chan) {
-      le_pv_reset_runtime(fx, s, chan, le_oct_seeded_ticks(fx, s));
-    }
-  }
-}
-
 void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float* r,
                     int count, const int32_t* types,
                     const float params[LE_FX_MAX][LE_FX_PARAMS],
                     const int32_t* enabled, int gain_at, float gain) {
   float xl = *l;
   float xr = *r;
-  if (fx->clock_src != NULL) {
-    const uint32_t now =
-        atomic_load_explicit(fx->clock_src, memory_order_relaxed);
-    if (now != fx->clock_next) le_fx_reanchor_after_gap(fx, count, types);
-    fx->clock_next = now + 1u;
-  }
   if (fx->enable_clear_cooldown > 0) fx->enable_clear_cooldown--;
   for (int s = 0; s < count; ++s) {
     if (s == gain_at) { xl *= gain; xr *= gain; }
