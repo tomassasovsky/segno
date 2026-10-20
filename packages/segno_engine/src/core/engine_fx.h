@@ -214,6 +214,13 @@ void le_fx_enable_seed_settled(le_fx_state* fx, int slot);
  * seed on a disabled slot would fade out an effect that was never heard. */
 void le_fx_enable_seed_at(le_fx_state* fx, int slot, int effective);
 
+/* Makes slot [slot]'s rack output side (le_fx_state::rack_mix) settle at its
+ * rack's state on the next sample instead of ramping there. For a fresh
+ * structure (a recipe landing) and for a print engaging, where the rendered
+ * audio already carries the rack's output side and the live chain must stop
+ * applying it at once. le_fx_enable_seed_settled does it too. */
+void le_fx_rack_reset(le_fx_state* fx, int slot);
+
 /* Seeds slot [slot]'s OCTAVER runtime settled at [params]: the three param
  * smoothers already at their targets and the mode crossfade already resolved
  * onto the mode params[3] selects. The octaver's analogue of

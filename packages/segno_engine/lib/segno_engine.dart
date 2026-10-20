@@ -80,7 +80,7 @@ export 'src/engine_snapshot.dart'
         kMaxOutputBuses,
         kMaxTracks;
 export 'src/fx_fingerprint.dart' show FxFingerprint;
-export 'src/fx_recipe.dart' show FxOwner, FxRecipe, FxRecipeSlot;
+export 'src/fx_recipe.dart' show FxOwner, FxRackEdge, FxRecipe, FxRecipeSlot;
 export 'src/history_entry.dart' show HistoryEntry, HistoryKind, TrackHistory;
 export 'src/input_conditioning_param.dart' show InputConditioningParam;
 export 'src/instruments.dart'

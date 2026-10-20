@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
+import 'package:segno_engine/segno_engine.dart' show FxRackEdge;
 
 /// One thing the accepted FX surfaces draw: a rack with its modules, or a
 /// standalone single effect.
@@ -66,6 +67,12 @@ class FxChainGroup extends Equatable {
   /// the FIRST module and the output side of the LAST one. The modules in
   /// between stay at defaults, which is bit-identical to no channel handling
   /// at all, so the rack is transparent between its own pedals.
+  ///
+  /// The recipe marks that last entry ([fxRackEdges]), and the engine applies
+  /// its output side as the RACK's: after the entry whatever the entry is (a
+  /// module this engine cannot build, or a bypassed pedal), while any pedal of
+  /// the rack is on, fading with the enable ramp. With every pedal off, or
+  /// the chain off, the rack passes its input through untouched.
   FxChannels get channels => FxChannels(
     input: chain[start].channels.input,
     output: chain[end - 1].channels.output,
@@ -100,6 +107,25 @@ List<FxChainGroup> fxChainGroups(List<TrackEffect> chain) {
     i = j;
   }
   return groups;
+}
+
+/// Where each entry of [chain] sits in its rack, for the engine recipe: the
+/// first and last entries of every group [fxChainGroups] calls a rack, by
+/// index. The engine applies a rack's output side (what [FxChainGroup.channels]
+/// reads off the last entry) after that entry whatever the entry is, while any
+/// entry of the rack is on.
+List<FxRackEdge> fxRackEdges(List<TrackEffect> chain) {
+  final edges = List<FxRackEdge>.filled(chain.length, FxRackEdge.none);
+  for (final group in fxChainGroups(chain)) {
+    if (!group.isRack) continue;
+    if (group.length == 1) {
+      edges[group.start] = FxRackEdge.only;
+    } else {
+      edges[group.start] = FxRackEdge.first;
+      edges[group.end - 1] = FxRackEdge.last;
+    }
+  }
+  return edges;
 }
 
 /// A group's stable identity: its rack's id, or its single effect's slot id.
