@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
+import 'package:segno_engine/src/generated/segno_engine_bindings.dart'
+    show LE_FX_LEVEL_MAX;
 
 void main() {
   group('BuiltInEffect', () {
@@ -139,6 +141,48 @@ void main() {
       expect(a, isNot(equals(a.copyWith(type: TrackEffectType.drive))));
       expect(a, isNot(equals(a.copyWith(params: const [0.9, 0.2, 0.3]))));
     });
+
+    test('the preset id and source values round-trip and count in '
+        'equality', () {
+      final fx = BuiltInEffect(
+        type: TrackEffectType.none,
+        module: 'Smart tune',
+        presetId: 'preset-id',
+        source: const {'Smart Tune': 0, 'Mode': 1, 'Key': 3 / 11},
+      );
+
+      final decoded = BuiltInEffect.fromJson(
+        jsonDecode(jsonEncode(fx.toJson())) as Map<String, dynamic>,
+      );
+
+      expect(decoded, fx);
+      expect(decoded.hashCode, fx.hashCode);
+      expect(decoded.presetId, 'preset-id');
+      expect(decoded.source, {'Smart Tune': 0, 'Mode': 1, 'Key': 3 / 11});
+      expect(fx, isNot(equals(fx.copyWith(presetId: 'other'))));
+      expect(fx, isNot(equals(fx.copyWith(source: const {'Mode': 0}))));
+    });
+
+    test('an entry with no preset writes neither key and decodes to none', () {
+      final json = BuiltInEffect(type: TrackEffectType.drive).toJson();
+
+      expect(json.containsKey('presetId'), isFalse);
+      expect(json.containsKey('source'), isFalse);
+      final decoded = BuiltInEffect.fromJson(json);
+      expect(decoded.presetId, isNull);
+      expect(decoded.source, isEmpty);
+    });
+
+    test('a wrong-typed preset id or source value decodes to the default', () {
+      final decoded = BuiltInEffect.fromJson(const {
+        'type': 0,
+        'presetId': 7,
+        'source': {'Mode': 'one', 'Key': 0.5},
+      });
+
+      expect(decoded.presetId, isNull);
+      expect(decoded.source, {'Key': 0.5});
+    });
   });
 
   group('PluginEffect', () {
@@ -275,6 +319,10 @@ void main() {
   });
 
   group('TrackEffectType', () {
+    test('kFxLevelMax mirrors the native LE_FX_LEVEL_MAX', () {
+      expect(kFxLevelMax, LE_FX_LEVEL_MAX);
+    });
+
     test('kTrackEffectParams mirrors the native LE_FX_PARAMS width', () {
       // Pins the Dart side of the cross-language contract (the native test
       // asserts LE_FX_PARAMS == 4 in turn).
@@ -769,7 +817,7 @@ void main() {
         {'placement': 1.1},
         {'placement': 'left'},
         {'level': -0.1},
-        {'level': 2.1},
+        {'level': 4.1},
         {'level': 'loud'},
       ]) {
         expect(
@@ -778,8 +826,16 @@ void main() {
         );
       }
       expect(
-        () => decodeTrackEffects('[{"type":1,"channels":{"level":3}}]'),
+        () => decodeTrackEffects('[{"type":1,"channels":{"level":5}}]'),
         throwsFormatException,
+      );
+      // A rack level up to +12 dB is a valid saved level.
+      expect(
+        BuiltInEffect.fromJson(const {
+          'type': 1,
+          'channels': {'level': 3.98},
+        }).channels.level,
+        3.98,
       );
       expect(FxChannels.fromJson(const {}), FxChannels.defaults);
     });

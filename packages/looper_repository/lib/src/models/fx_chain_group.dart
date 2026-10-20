@@ -167,6 +167,23 @@ List<TrackEffect> fxOrderRackModules(
   );
 }
 
+/// The rack in [chain] built from the factory preset [presetId]: the first
+/// rack whose every module carries that preset id, or `null` when there is
+/// none.
+///
+/// Adding that preset again is a re-add of this rack, not a second copy of it.
+FxChainGroup? fxRackFromPreset(List<TrackEffect> chain, String presetId) {
+  for (final group in fxChainGroups(chain)) {
+    if (!group.isRack) continue;
+    if (group.entries.every(
+      (fx) => fx is BuiltInEffect && fx.presetId == presetId,
+    )) {
+      return group;
+    }
+  }
+  return null;
+}
+
 /// Returns [chain] with every module of the rack [rackId] renamed to [name].
 ///
 /// The name lives on each entry, so a rename rewrites the run. The rack's

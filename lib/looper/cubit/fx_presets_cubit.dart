@@ -125,6 +125,8 @@ class FxPresetsCubit extends Cubit<List<FxUserPreset>> {
           enabled: fx.enabled,
           channels: fx.channels,
           module: fx.module,
+          presetId: fx.presetId,
+          source: fx.source,
         ),
         PluginEffect() => PluginEffect(
           ref: fx.ref,

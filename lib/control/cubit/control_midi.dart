@@ -228,6 +228,17 @@ extension MidiControlEditing on ControlCubit {
     );
   });
 
+  /// Removes every control whose key [removes] accepts and saves the
+  /// result; a mapping left with no controls goes with them. Read from the
+  /// latest saved set, inside the write queue.
+  Future<MidiSaveResult> removeMidiControls(
+    bool Function(String key) removes,
+  ) => _serializeMidi(() async {
+    final next = state.midiMappings.withoutControls(removes);
+    if (next == state.midiMappings) return const MidiSaveResult.saved();
+    return _saveMidiConfiguration(next, state.midiControlEnabled);
+  });
+
   /// Confirms a mapping's enabled state while retaining its source reservation.
   Future<MidiSaveResult> setMidiMappingEnabled(
     String id, {
