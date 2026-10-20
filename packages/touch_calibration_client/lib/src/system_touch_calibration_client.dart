@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:spawn_process/spawn_process.dart';
 import 'package:touch_calibration_client/src/touch_calibration_client.dart';
 import 'package:touch_calibration_client/src/touch_matrix.dart';
 
@@ -17,7 +18,8 @@ class SystemTouchCalibrationClient implements TouchCalibrationClient {
 
   /// How long one helper call may take. A write re-adds the touchscreen and
   /// waits for udev to settle, which takes well under a second; a wedged udev
-  /// must not hold the calibration page for ever.
+  /// must not hold the calibration page for ever. A helper still running then
+  /// is killed.
   static const timeout = Duration(seconds: 20);
 
   @override
@@ -54,7 +56,7 @@ class SystemTouchCalibrationClient implements TouchCalibrationClient {
   }
 
   Future<ProcessResult> _run(List<String> args) async {
-    final result = await Process.run(helperPath, args).timeout(timeout);
+    final result = await runProcess(helperPath, args, timeout: timeout);
     if (result.exitCode != 0) {
       throw ProcessException(
         helperPath,

@@ -1,0 +1,7 @@
+# Run the suites from source. The tests start a real helper through
+# spawn_process, and the default kernel compiler keeps a frontend server
+# running as a dart:io child of the test runner, in whose process the suites
+# run. While that child runs, the Dart VM's exit-code thread waits for any
+# child and takes the helper's exit status (see
+# packages/spawn_process/lib/spawn_process.dart).
+compilers: [source]

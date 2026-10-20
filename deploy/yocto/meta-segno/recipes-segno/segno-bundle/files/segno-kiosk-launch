@@ -26,12 +26,11 @@ export XDG_CONFIG_HOME="$HOME/.config"
 # process-start line never races a missing directory.
 mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$HOME/log"
 
-# path_provider's getApplicationDocumentsDirectory shells out to `xdg-user-dir
-# DOCUMENTS` (xdg-user-dirs package). On this minimal image there is no
-# user-dirs.dirs, so without seeding one the lookup fails and the app throws
-# MissingPlatformDirectoryException on startup. Seed a default (idempotent) and
-# create the dirs so session import/export land under ~/Documents. Validated on
-# device: with the xdg-user-dir binary + this file the startup exception is gone.
+# The app reads XDG_DOCUMENTS_DIR from this file itself, as `xdg-user-dir
+# DOCUMENTS` would print it (lib/xdg_documents_directory.dart; it starts no
+# process, #1367). Without the file it falls back to $HOME, so seed a default
+# (idempotent) and create the dirs so sessions and exports land under
+# ~/Documents.
 if [ ! -f "$XDG_CONFIG_HOME/user-dirs.dirs" ]; then
   cat > "$XDG_CONFIG_HOME/user-dirs.dirs" <<'EOF'
 XDG_DESKTOP_DIR="$HOME/Desktop"

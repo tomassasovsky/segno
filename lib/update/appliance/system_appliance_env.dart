@@ -3,12 +3,15 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:segno/update/appliance/appliance_env.dart';
+import 'package:spawn_process/spawn_process.dart';
 
 /// The production [ApplianceEnv]: real files, HTTP, and the privileged helper.
 ///
 /// The helper (`segno-update-ctl`, shipped by the appliance image) does the
 /// RAUC work. On the single-purpose appliance the kiosk app runs as root, so
-/// the helper is invoked directly — no pkexec/polkit/setuid. This class is the
+/// the helper is invoked directly — no pkexec/polkit/setuid. It is started
+/// with `spawn_process` (posix_spawn), never `dart:io` `Process`, which forks
+/// the app and stalls the audio thread (#1367). This class is the
 /// I/O boundary and is excluded from coverage; the testable logic lives in
 /// `AppliancePlatformBackend` over a fake [ApplianceEnv].
 class SystemApplianceEnv implements ApplianceEnv {
@@ -63,13 +66,13 @@ class SystemApplianceEnv implements ApplianceEnv {
   /// it has exited, so whatever the helper leaves behind on a kill is in
   /// place by the time the caller goes on.
   Stream<double> _runHelper(List<String> args) {
-    Process? process;
+    SpawnedProcess? process;
     var cancelled = false;
     late final StreamController<double> controller;
 
     Future<void> run() async {
       try {
-        final started = process = await Process.start(helperPath, args);
+        final started = process = await startProcess(helperPath, args);
         if (cancelled) {
           started.kill();
           return;
@@ -130,7 +133,7 @@ class SystemApplianceEnv implements ApplianceEnv {
   @override
   Future<void> clearUpdateAttempt() async {
     try {
-      await Process.run(helperPath, const ['clear-attempt']);
+      await runProcess(helperPath, const ['clear-attempt']);
     } on Exception {
       // Helper missing / old image — there is no marker to clear.
     }
@@ -138,7 +141,7 @@ class SystemApplianceEnv implements ApplianceEnv {
 
   @override
   Future<void> reboot() async {
-    final result = await Process.run(helperPath, ['reboot']);
+    final result = await runProcess(helperPath, const ['reboot']);
     if (result.exitCode != 0) {
       throw ProcessException(
         helperPath,
@@ -151,7 +154,7 @@ class SystemApplianceEnv implements ApplianceEnv {
 
   @override
   Future<void> powerOff() async {
-    final result = await Process.run(helperPath, const ['poweroff']);
+    final result = await runProcess(helperPath, const ['poweroff']);
     if (result.exitCode != 0) {
       throw ProcessException(
         helperPath,
@@ -175,7 +178,7 @@ class SystemApplianceEnv implements ApplianceEnv {
   /// image without the verb).
   Future<Map<String, dynamic>?> _runJson(List<String> args) async {
     try {
-      final result = await Process.run(helperPath, args);
+      final result = await runProcess(helperPath, args);
       if (result.exitCode != 0) return null;
       final json = jsonDecode('${result.stdout}'.trim());
       return json is Map<String, dynamic> ? json : null;

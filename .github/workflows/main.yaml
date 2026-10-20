@@ -156,6 +156,25 @@ jobs:
       working_directory: packages/brightness_client
       run_bloc_lint: false
       min_coverage: 80
+  # spawn_process (#1367) starts the appliance helpers with posix_spawn
+  # through dart:ffi, so the app never forks. Pure Dart. Its tests start real
+  # programs on this Linux runner. What it cannot cover here are its macOS
+  # branches and the libc failures a test cannot provoke.
+  spawn-process:
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
+    with:
+      working_directory: packages/spawn_process
+      run_bloc_lint: false
+      min_coverage: 90
+  # No app code may start a program through dart:io (#1367): Process.run and
+  # Process.start fork the app, which stalls the audio thread, and a dart:io
+  # child running beside spawn_process takes the exit status of its children.
+  no-dart-process:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check lib/ and packages/*/lib for dart:io process starts
+        run: bash tool/check_no_dart_process.sh
   pedal-repository:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
     with:
