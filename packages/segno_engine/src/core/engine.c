@@ -183,24 +183,22 @@ void le_retire_buffer(le_engine* e, float* buf) {
  * control thread may call it, and only for a slot the audio thread no longer
  * holds — a retired undo layer, whose cap-sized buffer would otherwise pin the
  * whole recording cap for the session (see le_handle_retired). A failed
- * allocation keeps the oversized buffer: correct, just not yet reclaimed.
+ * call keeps the oversized buffer: correct, just not yet reclaimed.
  *
- * Copy into a new mapping, not realloc: a mapping cannot be resized in place.
- * The copy writes every page of the new buffer, so it is resident from here.
- * The shorter cap is stored before the new pointer, so a plain interleaving
- * never pairs the new short buffer with the old long cap. */
+ * In place (le_rt_shrink): the pages past the new end are unmapped and the
+ * content stays where it is, so nothing is copied. A copy into a new mapping
+ * cost the drain that retired an 8-lane, 30 s layer 15 ms, on a press when
+ * that press drained the event. The buffer's prefault jobs are dropped
+ * first: one may still be walking toward the old end. The shorter cap is
+ * stored before the tail goes, so a plain interleaving never pairs the
+ * buffer with a cap past its end. */
 void le_lane_shrink_slot(le_engine* e, le_lane* ln, int32_t slot,
                          int32_t frames) {
   if (frames <= 0 || ln->pool[slot] == NULL) return;
   if (ln->pool_cap[slot] <= frames) return;
-  const size_t bytes = (size_t)frames * sizeof(float);
-  float* p = (float*)le_rt_alloc(bytes);
-  if (p == NULL) return;
-  float* old = ln->pool[slot];
-  memcpy(p, old, bytes);
+  le_prefault_forget(e, ln->pool[slot]);
   ln->pool_cap[slot] = frames;
-  ln->pool[slot] = p;
-  le_free_audio_buffer(e, old);
+  le_rt_shrink(ln->pool[slot], (size_t)frames * sizeof(float));
 }
 
 /* Lowest set bit of `mask` as a channel index, or -1 when no bit is set. Used to

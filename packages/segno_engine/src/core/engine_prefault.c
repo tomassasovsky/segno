@@ -22,13 +22,15 @@
 
 #define LE_PREFAULT_JOBS (LE_MAX_TRACKS * LE_MAX_LANES * 4)
 /* At most this much per job per pass. Each chunk holds mmap_lock for read
- * while it populates, and a control thread's mmap or munmap (a take start
- * replacing a slot) queues behind it for write, so the chunk bounds that
- * wait: 1 MB populates in well under a millisecond. */
-#define LE_PREFAULT_CHUNK_BYTES ((size_t)1 << 20)
-/* A follow job outlives its capture by this many idle passes (2 s), so a
- * quantized or sound-triggered arm that has not fired yet keeps its job. */
-#define LE_PREFAULT_IDLE_PASSES 100
+ * while it populates, and a control thread's mmap or munmap (a press mapping
+ * its shadow slots) queues behind it for write, so the chunk bounds that
+ * wait, once per mapping: with 1 MB chunks a punch-in that mapped 16 shadow
+ * buffers while the thread filled a take waited about 5 ms in all. 64 KB is
+ * 16 pages, tens of microseconds, at a few percent of syscall overhead. */
+#define LE_PREFAULT_CHUNK_BYTES ((size_t)64 << 10)
+/* A follow job outlives its capture by this long, so a quantized or
+ * sound-triggered arm that has not fired yet keeps its job. */
+#define LE_PREFAULT_IDLE_NS 2000000000LL
 #define LE_PREFAULT_PERIOD_NS 20000000L
 
 /* A job faults [start, cap) in, ascending from start, or with [desc]
@@ -44,7 +46,7 @@ typedef struct le_prefault_job {
   int32_t cap;     /* frames */
   int32_t done;    /* frames */
   int32_t desc;
-  int32_t idle;    /* passes without a capture, for follow jobs */
+  int64_t idle_since; /* CLOCK_MONOTONIC ns its track stopped capturing, 0 */
   _Atomic int32_t* ready;
 } le_prefault_job;
 
@@ -97,6 +99,12 @@ static le_prefault_job* le_prefault_find(struct le_prefaulter* p,
   return NULL;
 }
 
+static int64_t le_prefault_now_ns(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (int64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+}
+
 static int le_job_full(const le_prefault_job* j) {
   return j->desc ? j->done <= j->start : j->done >= j->cap;
 }
@@ -111,6 +119,7 @@ static int le_prefault_pass(le_engine* e, struct le_prefaulter* p) {
   int nwork = 0;
   int more = 0;
   const int32_t max = (int32_t)(LE_PREFAULT_CHUNK_BYTES / sizeof(float));
+  const int64_t now = le_prefault_now_ns();
   for (int i = 0; i < p->njobs; ++i) {
     le_prefault_job* j = &p->jobs[i];
     if (j->desc) {
@@ -127,7 +136,11 @@ static int le_prefault_pass(le_engine* e, struct le_prefaulter* p) {
     int32_t target = j->cap;
     if (j->channel >= 0) {
       target = le_follow_target(e, j);
-      j->idle = le_track_capturing(&e->tracks[j->channel]) ? 0 : j->idle + 1;
+      if (le_track_capturing(&e->tracks[j->channel])) {
+        j->idle_since = 0;
+      } else if (j->idle_since == 0) {
+        j->idle_since = now;
+      }
     }
     if (target <= j->done) continue;
     int32_t frames = target - j->done;
@@ -157,7 +170,8 @@ static int le_prefault_pass(le_engine* e, struct le_prefaulter* p) {
   for (int i = 0; i < p->njobs;) {
     le_prefault_job* j = &p->jobs[i];
     const int full = le_job_full(j);
-    if (full || (j->channel >= 0 && j->idle > LE_PREFAULT_IDLE_PASSES)) {
+    if (full || (j->channel >= 0 && j->idle_since != 0 &&
+                 now - j->idle_since > LE_PREFAULT_IDLE_NS)) {
       if (full && j->ready != NULL) {
         atomic_store_explicit(j->ready, 1, memory_order_release);
       }

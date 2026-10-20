@@ -128,6 +128,13 @@ void le_rt_free(void* p);
  * damaged header). */
 size_t le_rt_size(const void* p);
 
+/* Shrinks a live le_rt_alloc buffer to its first `bytes` in place: the same
+ * pointer, the content kept, the pages past the new end unmapped (so their
+ * memory and lock are released at once, with no copy). No-op unless `bytes`
+ * is smaller than the current size and not zero. Nothing may be touching
+ * the range given back. */
+void le_rt_shrink(void* p, size_t bytes);
+
 /* Touches `bytes` of the CALLING thread's stack below the current frame, so
  * the deepest call the audio callback makes never faults in a stack page.
  * The audio thread calls this itself, once, on its first callback. */

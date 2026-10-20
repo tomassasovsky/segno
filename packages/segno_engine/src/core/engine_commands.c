@@ -387,8 +387,11 @@ static int le_lane_take_standby(le_engine* e, le_lane* ln, int slot,
 }
 
 /* Prefaults a shadow slot about to be posted. [immediate]: armed for a
- * punch-in now; [running]: replenished for a dub session already writing;
- * [standby_mask]: lanes whose buffer is a standby, already faulted in.
+ * punch-in now; [urgent]: replenished for a dub session already writing that
+ * has no shadow posted, so the next pass boundary arms this one; any other
+ * shadow is a spare, first written a whole pass from now, and is faulted in
+ * in the background. [standby_mask]: lanes whose buffer is a standby,
+ * already faulted in.
  *
  * A punch-in's shadow is written where the overdub writes, from the track's
  * playhead on (backward when it plays reversed), wrapping at its length: the
@@ -399,7 +402,7 @@ static int le_lane_take_standby(le_engine* e, le_lane* ln, int slot,
  * punch-in on a stopped track, whose playhead the transport sets, still
  * faults the whole loop in here. */
 static void le_prefault_shadow(le_engine* e, int32_t channel, int slot,
-                               int immediate, int running,
+                               int immediate, int urgent,
                                uint32_t standby_mask) {
   le_track* t = &e->tracks[channel];
   const int32_t lanes = le_lanes_active(t);
@@ -418,7 +421,7 @@ static void le_prefault_shadow(le_engine* e, int32_t channel, int slot,
       le_lane_prefault_capture_buffer(e, channel, ln, slot); /* pre-arm */
     } else if (immediate && playing && len > 0 && len <= cap) {
       le_prefault_around(e, ln->pool[slot], len, at, reversed);
-    } else if (immediate || running || cap <= le_head_frames(e)) {
+    } else if (immediate || urgent || cap <= le_head_frames(e)) {
       le_lane_prefault_slot(ln, slot, cap);
     } else {
       le_prefault_buffer(e, ln->pool[slot], cap, NULL); /* a loop away */
@@ -604,7 +607,8 @@ static void le_post_dub_shadows(le_engine* engine, int32_t channel,
       }
     }
     if (!ok) return;
-    le_prefault_shadow(engine, channel, slot, immediate, running, standby_mask);
+    le_prefault_shadow(engine, channel, slot, immediate,
+                       running && t->outstanding_count == 0, standby_mask);
     if (le_push_cmd(engine, (le_command){.code = LE_CMD_DUB_SHADOW,
                                          .lanei = {channel, 0, slot}}) !=
         LE_OK) {
@@ -1634,6 +1638,16 @@ static void le_begin_empty_capture(le_engine* engine, int32_t channel,
   t->outstanding_count = 0; /* reclaim; audio drops its armed slots at start */
 }
 
+/* How many shadows a punch-in on [t] posts on the press: the armed one, and
+ * the spare after it only when the loop is short. On a loop longer than a
+ * second the spare is first written a loop from now, so it is left to the
+ * next drain, whose dub-session top-up (le_engine_drain_events) maps and
+ * posts it once the pass has started: mapping 8 lanes of it on the press
+ * cost milliseconds while the prefaulter held mmap_lock. */
+static int32_t le_punch_in_shadows(le_engine* e, le_track* t) {
+  return le_track_settled_len(t) > le_head_frames(e) ? 1 : LE_DUB_SHADOWS;
+}
+
 /* One-time bookkeeping for an overdub punch-in (or arm) over existing content
  * (control thread): invalidates redo, cancels queued undo taps, and supplies
  * the audio thread's shadow slots for per-pass layer capture. No snapshot is
@@ -1657,7 +1671,9 @@ static void le_begin_punch_in(le_engine* engine, int32_t channel, int defer_shad
   if (!defer_shadows) le_engine_drain_events(engine);
   le_clear_redo(t);
   t->queued_undo = 0;
-  if (!defer_shadows) le_post_dub_shadows(engine, channel, LE_DUB_SHADOWS);
+  if (!defer_shadows) {
+    le_post_dub_shadows(engine, channel, le_punch_in_shadows(engine, t));
+  }
 }
 
 /* Sole producer: the consumer can only increase available capacity. Checking
@@ -1729,8 +1745,9 @@ refused:
  * it must not drain events or enqueue unrelated commands in between. */
 static int le_prepare_image_punch_in(le_engine* e, int32_t channel) {
   le_track* t = &e->tracks[channel];
-  const int missing = t->outstanding_count < LE_DUB_SHADOWS
-      ? LE_DUB_SHADOWS - t->outstanding_count : 0;
+  const int posted = le_punch_in_shadows(e, t); /* the spare: see there */
+  const int missing =
+      t->outstanding_count < posted ? posted - t->outstanding_count : 0;
   if (!le_record_capacity(e, (size_t)missing + 1)) return 0;
   const int lanes = le_lanes_active(t);
   const int want = le_layer_slot_frames(e, le_track_settled_len(t));

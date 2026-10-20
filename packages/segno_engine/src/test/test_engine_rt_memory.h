@@ -699,7 +699,7 @@ static void test_late_take_is_walked_from_the_playhead(void) {
   le_prefault_pass_for_test(e); /* one chunk per job */
   const float* b = e->tracks[1].lanes[0].pool[0];
   const size_t head = (size_t)rate * LE_PREFAULT_HEAD_SECONDS;
-  const size_t chunk = (size_t)1 << 20;
+  const size_t chunk = (size_t)64 << 10; /* LE_PREFAULT_CHUNK_BYTES */
   CHECK(rt_resident_pages(b + p, head * sizeof(float)) >=
         rt_pages(b + p, head * sizeof(float)) - 2); /* on the press */
   /* the walk's first chunk, which starts a second past the playhead (less
