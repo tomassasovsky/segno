@@ -1,0 +1,221 @@
+{
+  "scope": "Independent preservation and fixed purchased-hardware interfaces for the rear seam .05 mm update; read-only.",
+  "documents": {
+    "vsm": {
+      "inputs": {
+        "before-vsm.json": "0d6c3198445548ccfbb81c734c4aff34377e6c43bbbd18e62bbdfa0166e3e671",
+        "updated-vsm.json": "4bb5dc37aa95a72dd51774d144cc0f5662aa6eab8452f96e1ae1116b9811f361"
+      },
+      "occurrences": 27,
+      "bodies": 27,
+      "all_nonbase_occurrences_preserved": true,
+      "maximum_nonbase_numeric_difference": 0,
+      "screen7_records_exact": {},
+      "warnings_unchanged": true,
+      "warning_records": 0,
+      "nonbase_metal_records_exact": 6,
+      "base_features": 16,
+      "all_base_features_healthy": true,
+      "base_volume_increase_mm3": 183.37905179220252,
+      "base_faces_edges": [
+        704,
+        1965
+      ],
+      "full_cylindrical_holes_preserved": 107,
+      "maximum_full_hole_numeric_difference": 1.1102230246251565e-16,
+      "rivet_holes_exact": 10,
+      "all_cylindrical_axes_radii_preserved_except_two_rear_R2_contours": 391,
+      "old_rear_corner_axis_keys": [
+        [
+          1.0,
+          3e-08,
+          -0.0,
+          -2e-06,
+          85.711836,
+          416.3,
+          2.0
+        ],
+        [
+          1.0,
+          -3e-08,
+          0.0,
+          2e-06,
+          85.711858,
+          416.3,
+          2.0
+        ]
+      ],
+      "new_rear_corner_axis_keys": [
+        [
+          1.0,
+          3e-08,
+          -0.0,
+          -2e-06,
+          85.456908,
+          416.860841,
+          2.0
+        ],
+        [
+          1.0,
+          -3e-08,
+          0.0,
+          2e-06,
+          85.456931,
+          416.860841,
+          2.0
+        ]
+      ]
+    },
+    "pop": {
+      "inputs": {
+        "before-pop.json": "ac230708d9c7dbae12d99a265fd7457550c30d6497405aaf2874dc18136abae4",
+        "updated-pop.json": "858ca2b590814c041ec9052e071edc1652c16d43fd258c44da1acd6261790c32"
+      },
+      "occurrences": 423,
+      "bodies": 973,
+      "all_nonbase_occurrences_preserved": true,
+      "maximum_nonbase_numeric_difference": 2.2737367544323206e-13,
+      "screen7_records_exact": {
+        "screen7_module:1": true,
+        "screen7_tower:1": true
+      },
+      "warnings_unchanged": true,
+      "warning_records": 41,
+      "nonbase_metal_records_exact": 6,
+      "base_features": 16,
+      "all_base_features_healthy": true,
+      "base_volume_increase_mm3": 183.3790517920861,
+      "base_faces_edges": [
+        704,
+        1965
+      ],
+      "full_cylindrical_holes_preserved": 107,
+      "maximum_full_hole_numeric_difference": 1.1102230246251565e-16,
+      "rivet_holes_exact": 10,
+      "all_cylindrical_axes_radii_preserved_except_two_rear_R2_contours": 391,
+      "old_rear_corner_axis_keys": [
+        [
+          1.0,
+          0.0,
+          -3e-08,
+          2e-06,
+          416.3,
+          85.711858,
+          2.0
+        ],
+        [
+          1.0,
+          -0.0,
+          3e-08,
+          -2e-06,
+          416.3,
+          85.711836,
+          2.0
+        ]
+      ],
+      "new_rear_corner_axis_keys": [
+        [
+          1.0,
+          0.0,
+          -3e-08,
+          2e-06,
+          416.860841,
+          85.456931,
+          2.0
+        ],
+        [
+          1.0,
+          -0.0,
+          3e-08,
+          -2e-06,
+          416.860841,
+          85.456908,
+          2.0
+        ]
+      ]
+    }
+  },
+  "contacts": {
+    "old_base_lid_mm3": 5.519205387874085,
+    "current": {
+      "vsm": {
+        "input_sha256": "d8f9ca4f231e3453eadcbfc03ee37baeacc7179195d33d7a06fcfe7e38f5e39c",
+        "valid": true,
+        "solids": 1,
+        "lid_overlap_mm3": 5.519205388748265,
+        "rear_bracket_overlap_mm3": [
+          0.0,
+          0.0
+        ]
+      },
+      "pop": {
+        "input_sha256": "f40c15453e7765b5a1ff171a3e05a037e9559c125df7ea83ebbfe32b685fec74",
+        "valid": true,
+        "solids": 1,
+        "lid_overlap_mm3": 5.519205387699623,
+        "rear_bracket_overlap_mm3": [
+          0.0,
+          0.0
+        ]
+      }
+    }
+  },
+  "added_material": [
+    {
+      "side": "left",
+      "sha256": "793f409a7d8249d1f9d77791b1add30ca61783d731eb943f0ebc186809d1cf43",
+      "valid": true,
+      "volume_mm3": 91.68929210006186,
+      "bounds_mm": [
+        [
+          -1.9108408853630088,
+          417.1276058885994,
+          5.084561099874
+        ],
+        [
+          0.08915911463721016,
+          418.8608408853628,
+          87.53256860714825
+        ]
+      ],
+      "only_possible_nonbase_contact_by_all_972_body_bounds": [
+        [
+          "faceplate:1",
+          "Body1"
+        ]
+      ],
+      "lid_intersection_mm3": 0.0
+    },
+    {
+      "side": "right",
+      "sha256": "92e3f9181b67217c2e12b0c01aa79395d7e0ceee5b80e69d497e99e48b880f9d",
+      "valid": true,
+      "volume_mm3": 91.68929209992424,
+      "bounds_mm": [
+        [
+          845.91084088536,
+          417.1276058886,
+          5.084561099874688
+        ],
+        [
+          847.91084088536,
+          418.86084088536,
+          87.53256860715283
+        ]
+      ],
+      "only_possible_nonbase_contact_by_all_972_body_bounds": [
+        [
+          "faceplate:1",
+          "Body1"
+        ]
+      ],
+      "lid_intersection_mm3": 0.0
+    }
+  ],
+  "limits": [
+    "Snapshot/export review, not proof of save/reopen persistence; root handles that.",
+    "Bare dry-fit 0\u20130.10 mm before riveting remains physical shop acceptance; .05 mm CAD does not prove forming tolerance.",
+    "Existing base/lid tiny seating overlap is unchanged and is not reclassified here; zero new contact is checked independently.",
+    "Actual rivet SKU/grip range and setting process remain the pre-existing hardware qualification; no hole or bracket alteration introduced here."
+  ]
+}

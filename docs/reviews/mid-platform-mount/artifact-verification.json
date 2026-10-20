@@ -1,0 +1,47 @@
+{
+  "modified": [
+    "segno_3dprint.zip",
+    "segno_first_prints_STL.zip",
+    "segno_first_prints_STL/segno_platform_mid_ring.stl",
+    "segno_platform_mid_ring.step",
+    "segno_platform_mid_ring.stl"
+  ],
+  "added": [
+    "segno_first_prints_STL/segno_platform_mid_sled.stl",
+    "segno_platform_mid_sled.step",
+    "segno_platform_mid_sled.stl"
+  ],
+  "print_zip_members": 38,
+  "first_print_members": [
+    "segno_platform_front_ring.stl",
+    "segno_platform_sled.stl",
+    "segno_platform_mid_ring.stl",
+    "segno_platform_mid_sled.stl"
+  ],
+  "meshes": [
+    {
+      "part": "segno_platform_front_ring.stl",
+      "triangles": 2608,
+      "closed_mesh": true
+    },
+    {
+      "part": "segno_platform_sled.stl",
+      "triangles": 5084,
+      "closed_mesh": true
+    },
+    {
+      "part": "segno_platform_mid_ring.stl",
+      "triangles": 6656,
+      "closed_mesh": true
+    },
+    {
+      "part": "segno_platform_mid_sled.stl",
+      "triangles": 5084,
+      "closed_mesh": true
+    }
+  ],
+  "all_archived_parts_match_current": true,
+  "sheetmetal_zip_unchanged": true,
+  "sheetmetal_zip_sha256": "d2329edf667586356f759a7ce9282a4ffc76195bff03da4c540ad787232829d9",
+  "first_print_zip_sha256": "ae42a1c99a644d950df18729e049e9e52d5eb65b58fd6efb4325e87dd4c5a65a"
+}

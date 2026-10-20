@@ -1,0 +1,13 @@
+{
+  "date": "2026-09-07",
+  "status": "quotation and supplier confirmation; not production release",
+  "source_sha256": "d68decc6e4201e55181df3e895733504ce4d223d747b3182838e1ee6604a7bcf",
+  "unchanged_manufacturing_files": 22,
+  "dinacut_members": 26,
+  "archives": {
+    "segno_dinacut_2026-09-07.zip": "307cf50d418a18e3cbc4c297cb47fb2646ba69c4dece06c96faabcf25248569c",
+    "segno_archivos_completos_2026-09-07.zip": "a9ae9b509b8b547373825ff271b9872e908fd562f5380dd8d90cccf5d7ae4570"
+  },
+  "laser_drill_alternative": "requested confirmation only; DRILL unchanged",
+  "sent": false
+}
