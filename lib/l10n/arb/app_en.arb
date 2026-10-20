@@ -4045,6 +4045,19 @@
             }
         }
     },
+    "fxValueDb": "{decibels} dB",
+    "@fxValueDb": {
+        "description": "A level in decibels, with one decimal: the rack level, -12 to +12 dB.",
+        "placeholders": {
+            "decibels": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
     "fxValueHz": "{hertz} Hz",
     "@fxValueHz": {
         "description": "A built-in effect parameter's frequency in whole hertz, used from 100 Hz up to 1000 Hz.",
@@ -4151,6 +4164,28 @@
     "fxRemoveRackBody": "Sounds you saved from it stay in My presets.",
     "@fxRemoveRackBody": {
         "description": "What removing a rack from a chain does not do."
+    },
+    "fxReAddRackTitle": "Replace {name}?",
+    "@fxReAddRackTitle": {
+        "description": "Asked before a factory rack is added again in place of the one already built from the same preset, when assignments point at it.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "fxReAddRackBody": "{count, plural, =1{Adding it again gives its effects new identities, so 1 MIDI or pedal assignment will be removed.} other{Adding it again gives its effects new identities, so {count} MIDI and pedal assignments will be removed.}}",
+    "@fxReAddRackBody": {
+        "description": "How many MIDI and pedal assignments re-adding a rack removes, and why.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "fxReAddRack": "Replace rack",
+    "@fxReAddRack": {
+        "description": "Confirms re-adding a rack in place of the existing one."
     },
     "fxRemoveEffect": "Remove {name}",
     "@fxRemoveEffect": {

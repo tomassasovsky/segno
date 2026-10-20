@@ -54,7 +54,7 @@ class FxRecipeSlot {
       channels.placement <= 1 &&
       channels.level.isFinite &&
       channels.level >= 0 &&
-      channels.level <= 2;
+      channels.level <= kFxLevelMax;
 }
 
 /// One chain replacement, published atomically by the audio callback.

@@ -5261,7 +5261,7 @@ static int32_t le_fx_chan_set_level(_Atomic uint32_t* a_level, int32_t index,
                                     float level) {
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
   if (!(level >= 0.0f)) level = 0.0f; /* NaN reads as silence */
-  if (level > LE_MAX_GAIN) level = LE_MAX_GAIN;
+  if (level > LE_FX_LEVEL_MAX) level = LE_FX_LEVEL_MAX;
   store_f32(&a_level[index], level);
   return LE_OK;
 }

@@ -391,6 +391,25 @@ class MidiMappingSet extends Equatable {
     ],
   );
 
+  /// Returns a copy without every control whose key [removes] accepts. A
+  /// mapping left with no controls is removed with them, since a mapping
+  /// needs at least one; the rest keep their IDs, sources and order.
+  MidiMappingSet withoutControls(bool Function(String key) removes) {
+    final next = <MidiMapping>[];
+    for (final mapping in mappings) {
+      final kept = [
+        for (final control in mapping.controls)
+          if (!removes(control.key)) control,
+      ];
+      if (kept.length == mapping.controls.length) {
+        next.add(mapping);
+      } else if (kept.isNotEmpty) {
+        next.add(mapping.copyWith(controls: kept));
+      }
+    }
+    return MidiMappingSet(mappings: next);
+  }
+
   /// Canonical persistence form.
   List<Map<String, dynamic>> toJson() => [
     for (final mapping in mappings) mapping.toJson(),

@@ -14,6 +14,8 @@ import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
+import 'package:segno/control/binding/fx_assignments.dart';
+import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/fx_cubit.dart';
@@ -637,7 +639,49 @@ class _FxViewState extends State<FxView> {
         (route?.isCurrent ?? false) &&
         selection.state.destination == destination &&
         bloc.hasMixGeneration(generation);
-    final result = await selection.appendChoice(destination, choice);
+    FxEditResult result;
+    final sameRack = choice is FxRackChoice
+        ? fxRackFromPreset(_entriesOf(context, address), choice.preset.id)
+        : null;
+    if (choice is FxRackChoice && sameRack != null) {
+      // The same factory rack again replaces the one built from it. Its
+      // modules get new identities, so the assignments to the old ones are
+      // removed with them: asked first when there are any, and silent when
+      // there are none.
+      final control = context.read<ControlCubit>();
+      final oldSlots = {for (final fx in sameRack.entries) ?fx.slotId};
+      final count = fxAssignmentsTo(control.state, address, oldSlots);
+      if (count > 0) {
+        final l10n = context.l10n;
+        final confirmed = await showConsoleConfirmDialog(
+          context,
+          title: l10n.fxReAddRackTitle(sameRack.rack!.name),
+          body: l10n.fxReAddRackBody(count),
+          confirmLabel: l10n.fxReAddRack,
+        );
+        if (!confirmed || !stillHere()) return;
+      }
+      result = await selection.replaceRack(
+        destination,
+        sameRack.rack!.id,
+        choice,
+      );
+      // Whatever the page does next, the old effects are gone once the
+      // replacement is committed, even when the player has moved on, so
+      // their assignments go now. A store that cannot save is reported with
+      // the edit's own unsaved notice.
+      if (count > 0 && result.committed) {
+        final removed = await control.removeFxAssignments(address, oldSlots);
+        if (!removed && result.status == FxEditStatus.applied) {
+          result = FxEditResult(FxEditStatus.unsaved, groupId: result.groupId);
+        } else if (!removed && result.status == FxEditStatus.stale && mounted) {
+          // A stale result shows nothing below, so the failure is shown here.
+          _notifyEditResult(context, const FxEditResult(FxEditStatus.unsaved));
+        }
+      }
+    } else {
+      result = await selection.appendChoice(destination, choice);
+    }
     if (!mounted || !stillHere()) return;
     _notifyEditResult(context, result);
     if (!_committed(result)) {
