@@ -25,6 +25,14 @@
     "**/third_party/vst3sdk/**"
   ],
   "words": [
+    "RETIME",
+    "Fdbk",
+    "Reso",
+    "Lowcut",
+    "MADV",
+    "DONTFORK",
+    "prefaulted",
+    "crossfades",
     "looperx",
     "Slic",
     "Patt",
