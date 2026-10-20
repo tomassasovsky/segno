@@ -1,9 +1,6 @@
-import 'package:controller_repository/controller_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/control_value_target.dart';
-import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
-import 'package:segno/control/binding/pedal_binding_set.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 
 /// Whether [target] names one of the effects [slotIds] in the chain at
@@ -33,7 +30,7 @@ bool fxMidiKeyNamesEffect(String key, FxAddress address, Set<String> slotIds) =>
 
 /// How many MIDI and pedal assignments removing the assignments to the
 /// effects [slotIds] in the chain at [address] takes out of [control]: the
-/// ones [fxWithoutAssignmentsTo] removes.
+/// ones `ControlCubit.removeFxAssignments` removes.
 ///
 /// Counts every stored assignment that names one of those effects or one of
 /// their parameters: each MIDI control, each console pedal binding's press
@@ -84,32 +81,4 @@ int fxAssignmentsTo(
     }
   }
   return count;
-}
-
-/// The MIDI mappings, console pedal bindings and external pedal setup of
-/// [control] with every assignment [fxAssignmentsTo] counts removed.
-///
-/// A console pedal binding whose press is removed goes whole, hold included,
-/// since a binding cannot keep a hold without a press (its press target is
-/// required); [fxAssignmentsTo] counts that hold.
-({
-  MidiMappingSet midi,
-  PedalBindingSet global,
-  PedalBindingSet session,
-  ExternalPedalSetup external,
-})
-fxWithoutAssignmentsTo(
-  ControlState control,
-  FxAddress address,
-  Set<String> slotIds,
-) {
-  bool names(Object? target) => fxTargetNamesEffect(target, address, slotIds);
-  return (
-    midi: control.midiMappings.withoutControls(
-      (key) => fxMidiKeyNamesEffect(key, address, slotIds),
-    ),
-    global: control.globalBindings.withoutTargets(names),
-    session: control.sessionBindings.withoutTargets(names),
-    external: control.pedalSetup.external.withoutTargets(names),
-  );
 }
