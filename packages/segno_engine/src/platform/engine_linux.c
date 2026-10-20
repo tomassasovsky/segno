@@ -969,7 +969,7 @@ void le_platform_prefault_audio_code(void) {
   const uintptr_t probe = (uintptr_t)&le_engine_process;
   char engine_path[256] = {0};
   uintptr_t locked = 0;
-  int refused = 0;
+  int refused = 0; /* the errno of the first refusal, 0 if none */
   FILE* f = fopen("/proc/self/maps", "r");
   if (f == NULL) return;
   char line[512];
@@ -997,8 +997,8 @@ void le_platform_prefault_audio_code(void) {
     le_populate_range(lo, hi, perms[1] == 'w' && perms[3] == 'p');
     if (le_lock_range(lo, hi)) {
       locked += hi - lo;
-    } else {
-      refused = 1;
+    } else if (refused == 0) {
+      refused = errno != 0 ? errno : -1;
     }
   }
   fclose(f);
@@ -1007,7 +1007,7 @@ void le_platform_prefault_audio_code(void) {
     reported = 1;
     if (refused) {
       fprintf(stderr, "segno/rt: audio code not locked (mlock2 errno %d); it "
-                      "can be reclaimed under memory pressure\n", errno);
+                      "can be reclaimed under memory pressure\n", refused);
     } else {
       fprintf(stderr, "segno/rt: audio code and data locked (%lu KB of the "
                       "engine, libc, libm and libasound)\n",
