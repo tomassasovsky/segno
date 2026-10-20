@@ -228,6 +228,17 @@ extension MidiControlEditing on ControlCubit {
     );
   });
 
+  /// Removes every control whose key [removes] accepts and saves the
+  /// result; a mapping left with no controls goes with them. Read from the
+  /// latest saved set, inside the write queue.
+  Future<MidiSaveResult> removeMidiControls(
+    bool Function(String key) removes,
+  ) => _serializeMidi(() async {
+    final next = state.midiMappings.withoutControls(removes);
+    if (next == state.midiMappings) return const MidiSaveResult.saved();
+    return _saveMidiConfiguration(next, state.midiControlEnabled);
+  });
+
   /// Confirms a mapping's enabled state while retaining its source reservation.
   Future<MidiSaveResult> setMidiMappingEnabled(
     String id, {
@@ -542,8 +553,8 @@ extension MidiControlEditing on ControlCubit {
     if (target is MixValueTarget) return target.relativeStep;
     if (target is OwnedValueTarget) return target.relativeStep;
     if (target is FxParamTarget) {
-      final divisions = _midiParamDivisions(target);
-      if (divisions != null && divisions > 0) return 1 / divisions;
+      final param = _midiSteppedParam(target);
+      if (param != null) return 1 / (param.steps - 1);
     }
     return 0.01;
   }
@@ -909,22 +920,25 @@ extension MidiControlEditing on ControlCubit {
     if (target is OwnedValueTarget) return target.coerce(value);
     final clamped = value.clamp(0.0, 1.0);
     if (target is FxParamTarget) {
-      final divisions = _midiParamDivisions(target);
-      if (divisions != null && divisions > 0) {
-        return (clamped * divisions).round() / divisions;
+      final param = _midiSteppedParam(target);
+      if (param != null) {
+        return param.positionOf(clamped) / (param.steps - 1);
       }
     }
     return clamped;
   }
 
-  int? _midiParamDivisions(FxParamTarget target) {
+  /// [target]'s parameter when it snaps to positions, so a MIDI value lands
+  /// on one, or `null` for a continuous parameter.
+  FxParamInfo? _midiSteppedParam(FxParamTarget target) {
     for (final effect
         in _looper.chainEntriesAt(target.address) ?? <TrackEffect>[]) {
       if (effect.slotId == target.slotId &&
           effect is BuiltInEffect &&
           target.param >= 0 &&
           target.param < effect.type.params.length) {
-        return effect.type.params[target.param].divisions;
+        final param = effect.type.params[target.param];
+        return param.isStepped ? param : null;
       }
     }
     return null;

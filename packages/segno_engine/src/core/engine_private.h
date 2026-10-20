@@ -164,14 +164,41 @@ extern "C" {
  * max_loop_frames (see le_lane_ensure_slot). */
 #define LE_LAYER_QUANTUM 48000
 
-/* SAMPLES of live->shadow copy per track per le_engine_process call while a
- * partially backed-up overdub layer drains after punch-out. The per-track
- * budget is divided by the track's active lane count (the copy runs per
- * lane), so one draining track costs <= 128 KB of memcpy per callback
- * regardless of lanes; even all 8 tracks draining at once stay ~1 MB/block
- * (~0.1-0.5 ms — bounded on the Pi appliance target). A 30 s mono loop
- * completes in ~44 callbacks (~0.5 s at typical buffer sizes). */
-#define LE_DRAIN_CHUNK 32768
+/* The longest recording cap the engine accepts, in seconds at the device rate
+ * (the app offers up to 10 minutes). It bounds what a take can lock (#900). */
+#define LE_MAX_LOOP_SECONDS 600
+
+/* Retired pool buffers waiting for the callback to let go of them. */
+#define LE_RETIRED_MAX 512
+
+/* Locked memory the standby shadows may hold across all tracks (#900): a
+ * standby is kept for the most recently captured tracks while their sum fits,
+ * and a punch-in elsewhere takes the fresh-buffer path. */
+#define LE_STANDBY_BUDGET_BYTES ((size_t)64 << 20)
+
+/* SAMPLES of live->shadow copy per track per BLOCK FRAME while a partially
+ * backed-up overdub layer drains after punch-out (#906).
+ *
+ * Per frame, not per callback: a fixed per-callback chunk costs the same
+ * memcpy at every period, so it takes a growing share of a shrinking
+ * deadline. The old fixed 32768 samples was ~0.1-0.5 ms for 8 draining tracks,
+ * against 667 us at 64 frames / 96 kHz and 333 us at 32 frames. 512 per frame
+ * is exactly 32768 at 64 frames, and it keeps the drain RATE (512 x sample
+ * rate samples/s) the same at every period, so a drain takes the wall-clock
+ * time it always did (a 30 s mono loop in ~0.5 s) while its cost per callback
+ * scales with the deadline. The per-track budget is divided by the track's
+ * active lane count (the copy runs per lane). */
+#define LE_DRAIN_SAMPLES_PER_FRAME 512
+
+/* ...and never more per callback than the fixed chunk it replaced, so a
+ * desktop host's 512- or 1024-frame period cannot turn one callback into
+ * megabytes of memcpy. Identical to the old budget at 64 frames and longer;
+ * smaller below. */
+#define LE_DRAIN_CHUNK_MAX 32768
+
+/* A frames == 0 call (the host tests' drain pump) has no deadline; it drains
+ * what one 64-frame callback would. */
+#define LE_DRAIN_PUMP_FRAMES 64
 
 
 /* One looper track.
@@ -313,7 +340,11 @@ typedef struct le_octaver_state {
   float* out;        /* synthesis overlap-add accumulator, length LE_PV_N */
   float* last_phase; /* previous analysis phase per bin, length LE_PV_BINS */
   float* sum_phase;  /* accumulated synthesis phase per bin, length LE_PV_BINS */
-  int32_t hop_count; /* samples emitted in the current hop block */
+  /* Samples into the current hop: PV counts up to LE_PV_HOP and runs a frame
+   * on wrap; PSOLA counts down to its next YIN pass. Seeded so the heavy
+   * ticks land on this instance's frames of the engine clock, not at 0
+   * (le_oct_seeded_ticks, engine_fx.c). */
+  int32_t hop_count;
   int32_t out_pos;   /* reserved read/write phase (PSOLA, part 4) */
   /* PSOLA (part 4; zero-initialized and unused here). */
   float period;
@@ -337,6 +368,30 @@ typedef struct le_octaver_state {
  * NULL), reading both banks from xl / xr — see fx_reverb. The rev_* arrays
  * already hold both banks (LE_REV_BANKS == 2) and stay per-slot. */
 typedef struct le_fx_state {
+  /* Octaver hop-stagger seed (#915): this CHAIN's quarter of the octaver
+   * hop, in samples (0, 64, 128 or 192). le_engine_create gives each chain
+   * owner one (le_fx_*_hop_seed, engine_fx.h) and the octaver adds its slot
+   * (le_pv_hop_phase, engine_fx.c). 0, the calloc'd default, suits a
+   * standalone state that is not a copy of a live owner (the VST3
+   * processors; #940 covers giving a hosted instance its own). The offline
+   * renderers stand in for a live owner and copy its seed. Written once by
+   * the control thread before any audio runs; read-only afterwards. */
+  int32_t hop_seed;
+  /* The clock an octaver's hop is anchored to (#941): the engine frame
+   * (mod 2^32) of the sample being processed, so its heavy ticks fall on
+   * absolute frames whatever instant it was reset at. A live owner reads the
+   * engine's own frame through [clock_src] (le_engine::a_fx_frame, set by
+   * le_engine_create), which the audio thread advances once per frame, so
+   * every reset site sees the right frame without setting anything. An
+   * offline render leaves [clock_src] NULL and sets [clock] to the live frame
+   * it stands for before each sample. A state nobody clocks (the VST3
+   * processors) stays at 0, and its phase then counts from its reset. */
+  const _Atomic uint32_t* clock_src;
+  uint32_t clock;
+  /* 1 when [clock] is set every frame (the offline renders), so the octaver
+   * checks its counter against it as a live chain does; 0 for a state
+   * nobody clocks. */
+  int32_t clocked;
   float svf_ic1[LE_FX_MAX][2];
   float svf_ic2[LE_FX_MAX][2];
   float lfo[LE_FX_MAX][2];
@@ -453,6 +508,11 @@ typedef struct le_wet_entry {
   int32_t out_len;
   float* pcm;         /* print: interleaved stereo, 2*len; source: mono, out_len */
   uint64_t last_used; /* control-side LRU stamp (tick counter) */
+  /* 0 for a print whose key does not hold the hop position; else 1 + the
+   * hop position (mod LE_PV_HOP) of the loop top it was rendered from: an
+   * octaver in the printed chain (#941). The audio thread drops such a print
+   * at a lap top that starts elsewhere on the hop. */
+  uint32_t hop_tag;
 } le_wet_entry;
 
 /* THE wet-cache key predicate: whether [ent] was rendered for exactly the
@@ -611,7 +671,7 @@ typedef struct le_lane {
   _Atomic uint32_t a_fx_chan_pan_bits[LE_FX_MAX]; /* -1..1 */
   _Atomic uint32_t a_fx_chan_gl_bits[LE_FX_MAX];  /* its gains */
   _Atomic uint32_t a_fx_chan_gr_bits[LE_FX_MAX];
-  _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_MAX_GAIN */
+  _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_FX_LEVEL_MAX */
   /* Control-thread-owned shadows of the last successfully PUSHED count/types.
    * a_fx_count / a_fx_type are published by the AUDIO thread when it drains
    * the ring, so the control thread must not read them to decide D-ENSEED
@@ -660,9 +720,12 @@ typedef struct le_lane {
    * fingerprint comparison last PASSED. While both still match (and the
    * cheap rev/vol/len fields do too), the per-buffer check skips the ~40
    * atomic loads + FNV refold — the standing cost of a cached steady state
-   * drops to one relaxed load. */
+   * drops to one relaxed load. The track's loop-top hop position is part
+   * of an octaver print's key (#941) and moves on a relaunch without a chain
+   * edit, so the verdict also records it and a change forces the refold. */
   const le_wet_entry* cache_fp_entry;
   uint32_t cache_fp_gen;
+  uint32_t cache_fp_hop;
 } le_lane;
 
 /* Bumps a lane's chain-edit generation (see a_fx_gen above). Both threads
@@ -711,7 +774,7 @@ typedef struct le_monitor_input {
   _Atomic uint32_t a_fx_chan_pan_bits[LE_FX_MAX]; /* -1..1 */
   _Atomic uint32_t a_fx_chan_gl_bits[LE_FX_MAX];  /* its gains */
   _Atomic uint32_t a_fx_chan_gr_bits[LE_FX_MAX];
-  _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_MAX_GAIN */
+  _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_FX_LEVEL_MAX */
   /* Control-thread-owned pushed-count/type shadows (see le_lane). */
   int32_t fx_count_pushed;
   int32_t fx_type_pushed[LE_FX_MAX];
@@ -828,7 +891,7 @@ typedef struct le_fx_bus {
   _Atomic uint32_t a_fx_chan_pan_bits[LE_FX_MAX]; /* -1..1 */
   _Atomic uint32_t a_fx_chan_gl_bits[LE_FX_MAX];  /* its gains */
   _Atomic uint32_t a_fx_chan_gr_bits[LE_FX_MAX];
-  _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_MAX_GAIN */
+  _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_FX_LEVEL_MAX */
   /* Control-thread-owned pushed-count/type shadows (see le_lane). */
   int32_t fx_count_pushed;
   int32_t fx_type_pushed[LE_FX_MAX];
@@ -980,6 +1043,14 @@ typedef struct le_track {
    * read index for the last frame of the block, or the write head while
    * RECORDING. Published once per block beside the level above. */
   _Atomic int32_t a_play_pos;
+  /* The engine frame (mod 2^32) the track's current lap began at, published
+   * by the audio thread while it plays or overdubs a forward lap at an
+   * integral rate, whenever it moves (a lap top, a launch, a relaunch). The
+   * wet cache renders and keys an octaver print against it, so the print
+   * reproduces the live octaver hop (#941). [top_clock] is the audio
+   * thread's own copy, so it stores only on a change. */
+  _Atomic uint32_t a_top_clock;
+  uint32_t top_clock;
   _Atomic int32_t lane_count; /* Active lanes, release-published after prepared
                                * buffers and routing become callback-owned. */
 
@@ -1809,6 +1880,15 @@ typedef struct le_inst_ring {
 
 struct le_synth; /* synth_voice.h, owned by the audio thread after configure */
 
+/* One lane's spare buffers (le_engine.spares, #900). */
+typedef struct le_lane_spares {
+  float* standby;
+  int32_t standby_cap;
+  _Atomic int32_t a_standby_ready;
+  float* zero_spare;
+  int32_t zero_spare_cap;
+} le_lane_spares;
+
 struct le_engine {
   /* The device backend driving the lifecycle (le_select_backend's choice),
    * remembered so le_engine_stop / le_engine_destroy release the device through
@@ -2631,6 +2711,12 @@ struct le_engine {
    * applied). Published to a_play_pos once per block; stale (held) for a track
    * the mixer skipped, which is what a stopped track should show anyway. */
   int32_t trk_play_pos[LE_MAX_TRACKS];
+  /* The engine frame (mod 2^32) of this callback's first sample, and of the
+   * frame being processed (#941): every live owner's FX clock
+   * (le_fx_state::clock_src). The audio thread writes both; a control-thread
+   * reset reads the frame atomically. */
+  uint32_t fx_clock_base;
+  _Atomic uint32_t a_fx_frame;
 
   /* Latency harness (audio-thread-local + published state). The measurement
    * captures the input-magnitude envelope into lat_buf for a fixed window after
@@ -2655,6 +2741,53 @@ struct le_engine {
    * portable core can compute the loopback-excluded input mask from that device
    * UID after open. */
   int capture_id_set;
+
+  /* ---- #900: the audio-memory bookkeeping. At the END of the struct on
+   * purpose: le_engine, le_track and le_lane hold the callback's hot data,
+   * and a field added in the middle moves every offset after it, which has
+   * cost the mixer measurably before (#1374). Nothing here is touched by the
+   * callback except rt_stack_ready, once per device start. ---- */
+
+  /* Device-thread-owned once started: 0 until the device thread's first
+   * callback has prefaulted its stack (le_rt_prefault_stack). Cleared by the
+   * control thread before each device start, while the thread is idle. */
+  int rt_stack_ready;
+  /* The background prefaulter (engine_prefault.c); NULL until its first job. */
+  struct le_prefaulter* prefaulter;
+  /* Buffers the callback may still name, waiting to be freed until the
+   * command posted after them has published (le_retire_buffer). */
+  float* retired_buf[LE_RETIRED_MAX];
+  uint64_t retired_ticket[LE_RETIRED_MAX];
+  int32_t retired_count;
+  /* lane_growth_command as of the last pass that freed removed lanes'
+   * buffers (le_release_removed_lanes). */
+  uint64_t lanes_released_at;
+  /* Capture recency for the standby budget (le_keep_standbys): the counter,
+   * and its value when a capture last started on each track (0: never). */
+  uint64_t capture_seq_next;
+  uint64_t capture_seq[LE_MAX_TRACKS];
+  /* Per-lane spares, control-thread-owned (engine_commands.c):
+   *   - standby: a loop-length shadow kept faulted in by the prefaulter while
+   *     the track holds a take, so the shadow a punch-in arms at once is never
+   *     faulted in on the press; a_standby_ready is set by the prefaulter when
+   *     the whole buffer is in. Never seen by the callback until installed.
+   *   - zero_spare: an untouched cap-sized mapping (zeros, no page behind it)
+   *     kept on an EMPTY track's active lanes, so a take that needs a zeroed
+   *     live slot swaps it in on the press instead of mapping one there. */
+  le_lane_spares spares[LE_MAX_TRACKS][LE_MAX_LANES];
+  /* Audio thread: each track's segment base, position in the segment and
+   * segment length at the first frame of the block (mix_tracks_frame), for
+   * every track, playing or not. */
+  int32_t trk_clock_base[LE_MAX_TRACKS];
+  int32_t trk_clock_pos[LE_MAX_TRACKS];
+  int32_t trk_clock_len[LE_MAX_TRACKS];
+  /* Published from them at block end: where each track plays, or restarts
+   * from when stopped (a_clock_at: segment base plus position), and its
+   * segment length (a_clock_seg). The control thread maps the coming second
+   * of play positions to where an overdub writes them with the mixer's own
+   * le_dub_write_index to fault a punch-in's shadow in (le_prefault_shadow). */
+  _Atomic int32_t a_clock_at[LE_MAX_TRACKS];
+  _Atomic int32_t a_clock_seg[LE_MAX_TRACKS];
 };
 
 /* Fills `out` (room for `max`) with the host's playback or capture devices and

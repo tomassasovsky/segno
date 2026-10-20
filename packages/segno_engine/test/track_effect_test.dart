@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
+import 'package:segno_engine/src/generated/segno_engine_bindings.dart'
+    show LE_FX_LEVEL_MAX;
 
 void main() {
   group('BuiltInEffect', () {
@@ -139,6 +141,48 @@ void main() {
       expect(a, isNot(equals(a.copyWith(type: TrackEffectType.drive))));
       expect(a, isNot(equals(a.copyWith(params: const [0.9, 0.2, 0.3]))));
     });
+
+    test('the preset id and source values round-trip and count in '
+        'equality', () {
+      final fx = BuiltInEffect(
+        type: TrackEffectType.none,
+        module: 'Smart tune',
+        presetId: 'preset-id',
+        source: const {'Smart Tune': 0, 'Mode': 1, 'Key': 3 / 11},
+      );
+
+      final decoded = BuiltInEffect.fromJson(
+        jsonDecode(jsonEncode(fx.toJson())) as Map<String, dynamic>,
+      );
+
+      expect(decoded, fx);
+      expect(decoded.hashCode, fx.hashCode);
+      expect(decoded.presetId, 'preset-id');
+      expect(decoded.source, {'Smart Tune': 0, 'Mode': 1, 'Key': 3 / 11});
+      expect(fx, isNot(equals(fx.copyWith(presetId: 'other'))));
+      expect(fx, isNot(equals(fx.copyWith(source: const {'Mode': 0}))));
+    });
+
+    test('an entry with no preset writes neither key and decodes to none', () {
+      final json = BuiltInEffect(type: TrackEffectType.drive).toJson();
+
+      expect(json.containsKey('presetId'), isFalse);
+      expect(json.containsKey('source'), isFalse);
+      final decoded = BuiltInEffect.fromJson(json);
+      expect(decoded.presetId, isNull);
+      expect(decoded.source, isEmpty);
+    });
+
+    test('a wrong-typed preset id or source value decodes to the default', () {
+      final decoded = BuiltInEffect.fromJson(const {
+        'type': 0,
+        'presetId': 7,
+        'source': {'Mode': 'one', 'Key': 0.5},
+      });
+
+      expect(decoded.presetId, isNull);
+      expect(decoded.source, {'Key': 0.5});
+    });
   });
 
   group('PluginEffect', () {
@@ -275,6 +319,10 @@ void main() {
   });
 
   group('TrackEffectType', () {
+    test('kFxLevelMax mirrors the native LE_FX_LEVEL_MAX', () {
+      expect(kFxLevelMax, LE_FX_LEVEL_MAX);
+    });
+
     test('kTrackEffectParams mirrors the native LE_FX_PARAMS width', () {
       // Pins the Dart side of the cross-language contract (the native test
       // asserts LE_FX_PARAMS == 4 in turn).
@@ -288,9 +336,9 @@ void main() {
       expect(TrackEffectType.fromCode(999), TrackEffectType.none);
     });
 
-    test('paramLabels length never exceeds the param cap', () {
+    test('params never exceed the param cap', () {
       for (final type in TrackEffectType.values) {
-        expect(type.paramLabels.length, lessThanOrEqualTo(kTrackEffectParams));
+        expect(type.params.length, lessThanOrEqualTo(kTrackEffectParams));
         expect(type.defaultParams.length, kTrackEffectParams);
       }
     });
@@ -304,7 +352,11 @@ void main() {
     });
 
     test('reverb exposes size, damping and mix', () {
-      expect(TrackEffectType.reverb.paramLabels, ['Size', 'Damping', 'Mix']);
+      expect(TrackEffectType.reverb.params.map((p) => p.key), [
+        'size',
+        'damping',
+        'mix',
+      ]);
       // The fourth slot is the inert, shared trailing param.
       expect(TrackEffectType.reverb.defaultParams, [0.5, 0.5, 0.35, 0]);
     });
@@ -314,33 +366,166 @@ void main() {
       expect(codes.toSet(), hasLength(codes.length));
     });
 
-    test('paramLabels stay in sync with params', () {
+    test('keys are unique within a type', () {
       for (final type in TrackEffectType.values) {
-        expect(type.paramLabels, type.params.map((p) => p.label).toList());
+        final keys = type.params.map((p) => p.key).toList();
+        expect(keys.toSet(), hasLength(keys.length), reason: type.name);
       }
     });
 
-    test('the octaver Shift is a discrete, pitch-readout control', () {
-      final shift = TrackEffectType.octaver.params.first;
-      expect(shift.label, 'Shift');
-      expect(shift.divisions, 48); // one step per semitone across +-2 octaves
-      expect(shift.readout, ParamReadout.pitchShift);
-    });
-
-    test('the octaver exposes a discrete two-state Mode control', () {
-      final mode = TrackEffectType.octaver.params.last;
-      expect(mode.label, 'Mode');
-      expect(mode.divisions, 1); // two states: phase vocoder / PSOLA
-      expect(mode.readout, ParamReadout.octaverMode);
-    });
-
-    test('non-octaver params carry no readout', () {
+    test('defaultParams are the descriptor defaults, padded with 0', () {
+      // The settings a freshly engaged effect starts at. Saved chains and the
+      // wet-cache fingerprint depend on these, so they are pinned here.
+      const expected = {
+        TrackEffectType.none: [0.0, 0.0, 0.0, 0.0],
+        TrackEffectType.drive: [0.5, 0.8, 0.0, 0.0],
+        TrackEffectType.filter: [0.5, 0.2, 0.0, 0.0],
+        TrackEffectType.delay: [0.35, 0.35, 0.35, 0.0],
+        TrackEffectType.tremolo: [0.3, 0.7, 0.0, 0.0],
+        TrackEffectType.octaver: [0.25, 0.5, 0.5, 0.0],
+        TrackEffectType.echo: [0.45, 0.5, 0.35, 0.0],
+        TrackEffectType.reverb: [0.5, 0.5, 0.35, 0.0],
+      };
       for (final type in TrackEffectType.values) {
-        if (type == TrackEffectType.octaver) continue;
-        for (final p in type.params) {
-          expect(p.readout, ParamReadout.none);
+        expect(type.defaultParams, expected[type], reason: type.name);
+        for (var i = 0; i < type.params.length; i++) {
+          expect(type.defaultParams[i], type.params[i].defaultValue);
         }
       }
+    });
+
+    test('the octaver shift snaps to whole semitones across +-2 octaves', () {
+      final shift = TrackEffectType.octaver.params.first;
+      expect(shift.key, 'shift');
+      expect(shift.unit, FxParamUnit.semitones);
+      expect(shift.steps, 49);
+      expect((shift.atMin, shift.atMax), (-24.0, 24.0));
+    });
+
+    test('the octaver mode is a two-position choice', () {
+      final mode = TrackEffectType.octaver.params.last;
+      expect(mode.key, 'mode');
+      expect(mode.unit, FxParamUnit.choice);
+      expect(mode.steps, 2);
+    });
+
+    test('no built-in carries the taper-unverified flag', () {
+      for (final type in TrackEffectType.values) {
+        for (final p in type.params) {
+          expect(p.taperUnverified, isFalse, reason: '${type.name}.${p.key}');
+        }
+      }
+    });
+  });
+
+  group('FxParamUnit and FxParamCurve', () {
+    test('codes match the native enums', () {
+      expect([for (final u in FxParamUnit.values) u.code], [0, 1, 2, 3, 4, 5]);
+      expect(FxParamUnit.choice.code, 5);
+      expect(FxParamCurve.linear.code, 0);
+      expect(FxParamCurve.exponential.code, 1);
+    });
+  });
+
+  group('FxParamInfo', () {
+    const linear = FxParamInfo(
+      key: 'time',
+      unit: FxParamUnit.ms,
+      atMin: 0,
+      atMax: 1000,
+      defaultValue: 0.35,
+    );
+    const exponential = FxParamInfo(
+      key: 'cutoff',
+      unit: FxParamUnit.hz,
+      atMin: 20,
+      atMax: 18000,
+      curve: FxParamCurve.exponential,
+      defaultValue: 0.5,
+    );
+    const stepped = FxParamInfo(
+      key: 'shift',
+      unit: FxParamUnit.semitones,
+      steps: 49,
+      atMin: -24,
+      atMax: 24,
+      defaultValue: 0.25,
+    );
+    const choice = FxParamInfo(
+      key: 'mode',
+      unit: FxParamUnit.choice,
+      steps: 2,
+      atMin: 0,
+      atMax: 1,
+      defaultValue: 0,
+    );
+
+    test('valueAt maps a linear parameter', () {
+      expect(linear.valueAt(0), 0);
+      expect(linear.valueAt(0.35), closeTo(350, 1e-9));
+      expect(linear.valueAt(1), 1000);
+    });
+
+    test('valueAt maps an exponential parameter', () {
+      expect(exponential.valueAt(0), closeTo(20, 1e-9));
+      // 20 * 900^0.5 = 600.
+      expect(exponential.valueAt(0.5), closeTo(600, 1e-9));
+      expect(exponential.valueAt(1), closeTo(18000, 1e-6));
+    });
+
+    test('valueAt reads a stepped parameter as set, a choice at its '
+        'nearest position', () {
+      expect(stepped.valueAt(0.25), closeTo(-12, 1e-9));
+      expect(stepped.valueAt(0.5), closeTo(0, 1e-9));
+      // The kernel plays a setting between positions as set: 0.26 is
+      // (0.26 - 0.5) x 48 = -11.52 semitones.
+      expect(stepped.valueAt(0.26), closeTo(-11.52, 1e-9));
+      expect(choice.valueAt(0.49), 0);
+      expect(choice.valueAt(0.5), 1);
+    });
+
+    test('valueAt clamps the setting and reads NaN as 0', () {
+      expect(linear.valueAt(-1), 0);
+      expect(linear.valueAt(2), 1000);
+      expect(linear.valueAt(double.nan), 0);
+      expect(stepped.valueAt(1.5), closeTo(24, 1e-9));
+    });
+
+    test('positionOf returns the snapped position of a stepped parameter', () {
+      expect(stepped.positionOf(0), 0);
+      expect(stepped.positionOf(0.5), 24);
+      expect(stepped.positionOf(1), 48);
+      expect(stepped.positionOf(-0.5), 0);
+      expect(choice.positionOf(0.49), 0);
+      // The octaver kernel reads mode >= 0.5 as PSOLA, position 1.
+      expect(choice.positionOf(0.5), 1);
+    });
+
+    test('positionOf throws for a continuous parameter', () {
+      expect(linear.isStepped, isFalse);
+      expect(() => linear.positionOf(0.5), throwsStateError);
+    });
+
+    test('value equality covers every field', () {
+      const same = FxParamInfo(
+        key: 'time',
+        unit: FxParamUnit.ms,
+        atMin: 0,
+        atMax: 1000,
+        defaultValue: 0.35,
+      );
+      expect(linear, same);
+      expect(linear.hashCode, same.hashCode);
+      const flagged = FxParamInfo(
+        key: 'time',
+        unit: FxParamUnit.ms,
+        atMin: 0,
+        atMax: 1000,
+        defaultValue: 0.35,
+        taperUnverified: true,
+      );
+      expect(linear, isNot(flagged));
+      expect(linear, isNot(exponential));
     });
   });
 
@@ -632,7 +817,7 @@ void main() {
         {'placement': 1.1},
         {'placement': 'left'},
         {'level': -0.1},
-        {'level': 2.1},
+        {'level': 4.1},
         {'level': 'loud'},
       ]) {
         expect(
@@ -641,8 +826,16 @@ void main() {
         );
       }
       expect(
-        () => decodeTrackEffects('[{"type":1,"channels":{"level":3}}]'),
+        () => decodeTrackEffects('[{"type":1,"channels":{"level":5}}]'),
         throwsFormatException,
+      );
+      // A rack level up to +12 dB is a valid saved level.
+      expect(
+        BuiltInEffect.fromJson(const {
+          'type': 1,
+          'channels': {'level': 3.98},
+        }).channels.level,
+        3.98,
       );
       expect(FxChannels.fromJson(const {}), FxChannels.defaults);
     });

@@ -9,6 +9,7 @@
 #include <string.h>
 #include "engine_core.h"
 #include "engine_internal.h"
+#include "rt_alloc.h" /* recipes are callback-written (applied): le_rt_* */
 
 typedef struct le_recipe_target {
   le_fx_state* fx;
@@ -128,7 +129,7 @@ static int prepare_recipe(le_engine* e, struct le_prepared_fx* edit,
         r->input_mode[s] < 0 || r->input_mode[s] > 3 ||
         r->output_mode[s] < 0 || r->output_mode[s] > 1 ||
         !isfinite(r->placement[s]) || r->placement[s] < -1 || r->placement[s] > 1 ||
-        !isfinite(r->level[s]) || r->level[s] < 0 || r->level[s] > LE_MAX_GAIN) return 0;
+        !isfinite(r->level[s]) || r->level[s] < 0 || r->level[s] > LE_FX_LEVEL_MAX) return 0;
     for (int k = 0; k < LE_FX_PARAMS; ++k)
       if (!isfinite(r->params[s][k]) || r->params[s][k] < 0 || r->params[s][k] > 1) return 0;
     le_plugin_slot* slot = r->plugin[s];
@@ -167,12 +168,12 @@ struct le_prepared_fx* le_fx_prepare_capture(le_engine* e, int ch,
                                             const le_record_image* image) {
   if (!image->fx_lane_mask) return NULL;
   if (!image->lane_fx || (image->fx_lane_mask >> LE_MAX_LANES)) return NULL;
-  struct le_prepared_fx* p = calloc(1, sizeof(*p));
+  struct le_prepared_fx* p = le_rt_alloc_prefaulted(sizeof(*p));
   if (!p) return NULL;
   p->owner = LE_FX_OWNER_LANE; p->channel = ch; p->lane_mask = image->fx_lane_mask;
   for (int lane = 0; lane < LE_MAX_LANES; ++lane)
     if ((p->lane_mask & (1u << lane)) && !prepare_recipe(e, p, lane, &image->lane_fx[lane])) {
-      free(p); return NULL;
+      le_rt_free(p); return NULL;
     }
   for (int i = 0; i < p->added_count; ++i) le_plugin_slot_set_ready(p->added[i], 1);
   return p;
@@ -185,7 +186,7 @@ struct le_prepared_fx* le_fx_prepare_chains(le_engine* e, int owner,
   if (owner != LE_FX_OWNER_LANE && owner != LE_FX_OWNER_TRACK) return NULL;
   if (owner == LE_FX_OWNER_TRACK) count = 1;
   if (count < 1 || count > LE_MAX_LANES) return NULL;
-  struct le_prepared_fx* p = calloc(1, sizeof(*p));
+  struct le_prepared_fx* p = le_rt_alloc_prefaulted(sizeof(*p));
   if (!p) return NULL;
   p->owner = owner; p->channel = channel;
   le_fx_recipe empty;
@@ -196,7 +197,7 @@ struct le_prepared_fx* le_fx_prepare_chains(le_engine* e, int owner,
         recipes != NULL && lane < recipe_count ? &recipes[lane] : &empty;
     p->lane_mask |= 1u << lane;
     if (!prepare_recipe(e, p, lane, r)) {
-      free(p);
+      le_rt_free(p);
       return NULL;
     }
   }
@@ -207,7 +208,7 @@ struct le_prepared_fx* le_fx_prepare_chains(le_engine* e, int owner,
 void le_fx_recipe_abandon(struct le_prepared_fx* p) {
   if (!p) return;
   for (int i = 0; i < p->added_count; ++i) le_plugin_slot_set_ready(p->added[i], 0);
-  free(p);
+  le_rt_free(p);
 }
 
 void le_fx_recipe_admitted(le_engine* e, struct le_prepared_fx* p, uint32_t image) {
@@ -227,18 +228,18 @@ int32_t le_engine_set_fx_recipe(le_engine* e, int owner, int ch, int lane,
   if (!revision || lane < 0 || lane >= LE_MAX_LANES ||
       (owner != LE_FX_OWNER_LANE && lane != 0) ||
       (owner == LE_FX_OWNER_ALL_TRACKS && ch != 0)) return LE_ERR_INVALID;
-  struct le_prepared_fx* p = calloc(1, sizeof(*p));
+  struct le_prepared_fx* p = le_rt_alloc_prefaulted(sizeof(*p));
   if (!p) return LE_ERR_INVALID;
   p->owner = owner; p->channel = ch; p->lane = lane; p->lane_mask = 1u << lane;
   p->revision = revision;
-  if (!prepare_recipe(e, p, lane, r)) { free(p); return LE_ERR_INVALID; }
+  if (!prepare_recipe(e, p, lane, r)) { le_rt_free(p); return LE_ERR_INVALID; }
   /* Ready is atomic; no callback can see a detached pointer before the ring
    * release. Ownership transfers only if that release succeeds. */
   for (int i = 0; i < p->added_count; ++i) le_plugin_slot_set_ready(p->added[i], 1);
   const int rc = le_push_cmd(e, (le_command){.code = LE_CMD_SET_FX_RECIPE, .recipe = p});
   if (rc != LE_OK) {
     for (int i = 0; i < p->added_count; ++i) le_plugin_slot_set_ready(p->added[i], 0);
-    free(p); return rc;
+    le_rt_free(p); return rc;
   }
   le_fx_recipe_admitted(e, p, 0);
   return LE_OK;
@@ -314,7 +315,7 @@ void le_fx_recipe_collect(le_engine* e, int quiescent) {
         memcpy(t.pushed_type, p->recipes[lane].type, sizeof(p->recipes[lane].type));
       }
     }
-    *link = p->next; free(p);
+    *link = p->next; le_rt_free(p);
   }
   if (quiescent) for (int i = 0; i < LE_MAX_TRACKS * LE_MAX_LANES * LE_FX_MAX; ++i) {
     le_plugin_slot_destroy(e->prepared_plugins[i]); e->prepared_plugins[i] = NULL;

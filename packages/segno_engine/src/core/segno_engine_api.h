@@ -662,6 +662,67 @@ typedef enum le_fx_type {
   LE_FX_PLUGIN = 8,
 } le_fx_type;
 
+/* ---- Built-in effect parameter descriptors (#1378) ----
+ *
+ * What each built-in's normalized parameters mean, from the same table the
+ * effect's kernel is pinned against (test_fx_param_descriptors_match_kernels).
+ * Static data: any thread, no engine handle. The text a surface shows is
+ * formatted from these in the app's own language; `key` is the stable name
+ * it localizes by. */
+
+#define LE_FX_PARAM_KEY_CHARS 24 /* parameter key, NUL-terminated */
+
+/* The unit a parameter's value is shown in. */
+typedef enum le_fx_param_unit {
+  LE_FX_UNIT_PERCENT = 0,   /* 0..100 */
+  LE_FX_UNIT_MS = 1,        /* milliseconds */
+  LE_FX_UNIT_HZ = 2,        /* hertz */
+  LE_FX_UNIT_SEMITONES = 3, /* a pitch interval */
+  LE_FX_UNIT_TIMES = 4,     /* a gain factor, "x" */
+  LE_FX_UNIT_CHOICE = 5,    /* named positions; the value is the position */
+} le_fx_param_unit;
+
+/* How a parameter's value follows its normalized setting v in 0..1. */
+typedef enum le_fx_param_curve {
+  LE_FX_CURVE_LINEAR = 0,      /* at_min + (at_max - at_min) * v */
+  LE_FX_CURVE_EXPONENTIAL = 1, /* at_min * (at_max / at_min) ^ v */
+} le_fx_param_curve;
+
+/* Bit flags for le_fx_param_desc.flags. */
+typedef enum le_fx_param_flags {
+  /* The mapping was chosen, not measured against the effect it reproduces
+   * (the Looper X kinds until reference audio confirms them, #891). */
+  LE_FX_PARAM_TAPER_UNVERIFIED = 1 << 0,
+} le_fx_param_flags;
+
+/* One built-in parameter. `steps` is 0 for a continuous parameter, otherwise
+ * the number of positions a control snaps it to: position k of n stands for
+ * setting k / (n - 1) and the value at that setting. The kernel reads a
+ * LE_FX_UNIT_CHOICE parameter at its nearest position and every other one as
+ * set, so a setting between positions plays as set. `def` is the setting a
+ * freshly engaged effect starts at (le_fx_defaults). */
+typedef struct le_fx_param_desc {
+  char key[LE_FX_PARAM_KEY_CHARS];
+  int32_t unit;  /* le_fx_param_unit */
+  int32_t steps;
+  float at_min;  /* value at setting 0 */
+  float at_max;  /* value at setting 1 */
+  int32_t curve; /* le_fx_param_curve */
+  float def;
+  uint32_t flags; /* le_fx_param_flags */
+} le_fx_param_desc;
+
+/* The number of parameters built-in [type] uses (0 for LE_FX_NONE and
+ * LE_FX_PLUGIN, whose parameters come from le_plugin_param_info_at), or
+ * LE_ERR_INVALID for an unknown type. */
+LE_EXPORT int32_t le_fx_param_count(int32_t type);
+
+/* Fills *out with parameter [param] (0..count-1) of built-in [type]. Returns
+ * LE_OK, or LE_ERR_INVALID for a NULL `out`, an unknown type or a parameter
+ * out of range. */
+LE_EXPORT int32_t le_fx_param_info(int32_t type, int32_t param,
+                                   le_fx_param_desc* out);
+
 /* Which device backend to open. The default (0) opens miniaudio's default
  * backend for the platform (Core Audio on macOS, the Linux preference list) —
  * the only backend this engine ships. */
@@ -799,6 +860,11 @@ typedef struct le_output_fx_snapshot {
  * UI can boost a quiet take/input up to +6 dB rather than only attenuate from
  * unity (1.0 = 0 dB). The output limiter downstream still guards the bus. */
 #define LE_MAX_GAIN 2.0f
+
+/* Ceiling for a chain entry's own level (le_engine_set_*_fx_channels). 4.0 is
+ * +12.04 dB: room for a rack level at the top of the Looper X's Master Vol
+ * range, -12..+12 dB. */
+#define LE_FX_LEVEL_MAX 4.0f
 
 /* Ceiling of le_engine_set_input_trim's linear capture gain: +12 dB. The
  * accepted range is -24..+12 dB in half-decibel steps; the floor is 0. */
@@ -3404,6 +3470,10 @@ typedef enum le_cache_reason {
   LE_CACHE_REASON_PART_POST = 3, /* a part Post chain must keep live tails */
   LE_CACHE_REASON_BUDGET = 4, /* a Transpose source render does not fit the
                                * cap; the track plays dry (#1179) */
+  LE_CACHE_REASON_HOP = 5, /* the print holds an octaver and the loop is not a
+                            * whole number of octaver hops (256 frames): its
+                            * hop falls on other frames each lap, so no single
+                            * lap's render equals live (#941) */
 } le_cache_reason;
 
 /* Snapshot of one lane's cache state (le_engine_get_lane_cache). */
@@ -3504,7 +3574,7 @@ LE_EXPORT int32_t le_engine_set_all_tracks_fx_chain_enabled(le_engine* engine,
  *   placement -1..1, centre 0 (default). One unity-centre law, the same the
  *             lanes, monitors and output buses use, so centre is exactly
  *             unity and a hard side is exactly silent.
- *   level     0..LE_MAX_GAIN, unity 1 (default). Applied last.
+ *   level     0..LE_FX_LEVEL_MAX, unity 1 (default). Applied last.
  *
  * Set as one call, because the four values are one control surface and a
  * half-applied change would be audible. Direct atomic publishes: they change

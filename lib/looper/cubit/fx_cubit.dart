@@ -31,11 +31,22 @@ enum FxEditStatus {
 
 /// A chain edit's outcome, including the stable identity of an added group.
 final class FxEditResult {
-  /// Creates an [FxEditResult].
-  const FxEditResult(this.status, {this.groupId});
+  /// Creates an [FxEditResult]. An applied or unsaved edit is [committed];
+  /// a stale one is when [chainCommitted] says the chain was written and
+  /// confirmed before the destination moved on.
+  const FxEditResult(this.status, {this.groupId, bool chainCommitted = false})
+    : committed =
+          chainCommitted ||
+          status == FxEditStatus.applied ||
+          status == FxEditStatus.unsaved;
 
   /// The outcome of the edit.
   final FxEditStatus status;
+
+  /// Whether the new chain is live on the engine, whatever [status] the page
+  /// is told: a chain written and confirmed while the player moved to another
+  /// destination is [FxEditStatus.stale] for the page and still committed.
+  final bool committed;
 
   /// New group identity when this was an addition.
   final String? groupId;
@@ -179,7 +190,13 @@ class FxCubit extends Cubit<FxState> {
     } on Object {
       return FxEditResult(FxEditStatus.unsaved, groupId: proposed.groupId);
     }
-    if (stale()) return const FxEditResult(FxEditStatus.stale);
+    if (stale()) {
+      return FxEditResult(
+        FxEditStatus.stale,
+        groupId: proposed.groupId,
+        chainCommitted: true,
+      );
+    }
     return FxEditResult(FxEditStatus.applied, groupId: proposed.groupId);
   }
 
@@ -245,6 +262,45 @@ class FxCubit extends Cubit<FxState> {
       groupId: rackId,
     );
   });
+
+  /// Re-adds the factory rack [rackId] was built from: a fresh build of
+  /// [choice] takes the old rack's place and stage.
+  ///
+  /// The new modules get new identities, as any addition does, so bindings
+  /// to the old ones stop resolving. The page asks first when there are any.
+  // ignore: prefer_void_public_cubit_methods
+  Future<FxEditResult> replaceRack(
+    FxDestination destination,
+    String rackId,
+    FxRackChoice choice,
+  ) {
+    final address = destination.address;
+    if (address == null) {
+      return Future.value(const FxEditResult(FxEditStatus.refused));
+    }
+    return _editChain(
+      address,
+      (current) {
+        final group = fxChainGroups(
+          current,
+        ).where((entry) => entry.rack?.id == rackId).firstOrNull;
+        if (group == null) return null;
+        final added = withFreshSlotIds(
+          _entriesFor(choice, placement: group.placement),
+        );
+        if (added.isEmpty) return null;
+        return (
+          entries: [
+            ...current.sublist(0, group.start),
+            ...added,
+            ...current.sublist(group.end),
+          ],
+          groupId: added.first.rack?.id,
+        );
+      },
+      expectedDestination: destination,
+    );
+  }
 
   /// Renames the current rack without changing its stable identity.
   // ignore: prefer_void_public_cubit_methods
@@ -560,8 +616,8 @@ class FxCubit extends Cubit<FxState> {
               art: kFxFamilySlugs[preset.family],
             );
         return [
-          for (final module in fxPresetModules(preset))
-            fxModuleEntry(module, preset).copyWith(
+          for (final entry in fxRackEntries(preset))
+            entry.copyWith(
               enabled: false,
               placement: placement,
               rack: rack,

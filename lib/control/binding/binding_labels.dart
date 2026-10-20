@@ -128,7 +128,7 @@ String valueTargetLabel(
     l10n.midiLearnTargetParam(
       fxStageLabel(l10n, trackNames, address),
       slotId,
-      fxParamName(looper, target) ?? '#$param',
+      fxParamName(l10n, looper, target) ?? '#$param',
     ),
 };
 
@@ -165,8 +165,8 @@ String? fxSlotName(LooperRepository looper, FxSlotTarget target) {
   return null;
 }
 
-/// The live label of the parameter [target] names, or `null` when the chain,
-/// the slot, or the parameter index is gone.
+/// The live, localized name of the parameter [target] names, or `null` when
+/// the chain, the slot, or the parameter index is gone.
 ///
 /// The parameter's own name, without the chain or the effect around it — what
 /// a picker already inside one effect's section has room for.
@@ -175,7 +175,11 @@ String? fxSlotName(LooperRepository looper, FxSlotTarget target) {
 /// never describe a chain the mapping does not actually resolve against — a
 /// lane-less Loop address names nothing here exactly as it writes nothing
 /// there (A9).
-String? fxParamName(LooperRepository looper, FxParamTarget target) {
+String? fxParamName(
+  AppLocalizations l10n,
+  LooperRepository looper,
+  FxParamTarget target,
+) {
   final entries = looper.chainEntriesAt(target.address);
   if (entries == null) return null;
   for (final fx in entries) {
@@ -183,7 +187,7 @@ String? fxParamName(LooperRepository looper, FxParamTarget target) {
     if (fx is! BuiltInEffect) return null;
     final params = fx.type.params;
     if (target.param < 0 || target.param >= params.length) return null;
-    return params[target.param].label;
+    return l10n.fxParamName(params[target.param]);
   }
   return null;
 }

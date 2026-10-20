@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
@@ -420,5 +421,137 @@ void main() {
         settings,
       ),
     ).called(1);
+  });
+
+  group('a factory rack', () {
+    const track = FxDestination.recordedTrack(0);
+    const address = FxAddress(stage: FxStage.track);
+    const preset = FxPreset(
+      family: "Ed's Rack",
+      name: 'Acoustic Rhythm 1',
+      id: 'ed53e7b8',
+      type: 0,
+      params: {
+        'Compressor': 1,
+        'Delay': 1,
+        'Del Time': 0.42,
+        'Reverb': 1,
+        'Master Vol': 0.4,
+      },
+    );
+
+    FxChainGroup rackOf(String id) =>
+        fxChainGroups(chain).firstWhere((group) => group.rack?.id == id);
+
+    test('takes its rack level from Master Vol', () async {
+      final result = await cubit.appendChoice(
+        track,
+        const FxRackChoice(preset),
+      );
+
+      expect(result.status, FxEditStatus.applied);
+      final rack = rackOf(result.groupId!);
+      expect(rack.entries.map((fx) => fx.module), [
+        'Compressor',
+        'Delay',
+        'Reverb',
+      ]);
+      expect(fxRackLevelDb(rack.channels.level), -2.4);
+      expect(rack.entries.every((fx) => !fx.enabled), isTrue);
+    });
+
+    test('appended into an existing rack keeps that rack its own '
+        'level', () async {
+      final added = await cubit.appendChoice(
+        track,
+        const FxRackChoice(preset),
+      );
+      final rackId = added.groupId!;
+      await cubit.setGroupChannels(
+        address,
+        rackId,
+        const FxChannels(level: 0.8),
+      );
+
+      final result = await cubit.appendToRack(
+        address,
+        rackId,
+        const FxRackChoice(
+          FxPreset(
+            family: 'Guitar Rack',
+            name: 'Spring',
+            id: 'guitar-1',
+            type: 1,
+            params: {'Spring': 1, 'Spring Mix': 0.3, 'Master Vol': 0.2},
+          ),
+        ),
+      );
+
+      expect(result.status, FxEditStatus.applied);
+      final rack = rackOf(rackId);
+      expect(rack.length, 4);
+      expect(rack.entries.last.module, 'Spring reverb');
+      expect(rack.channels.level, 0.8);
+    });
+
+    test('added again replaces the rack built from it, in its place, with '
+        'new identities', () async {
+      final first = await cubit.appendChoice(track, const FxRackChoice(preset));
+      final oldIds = rackOf(first.groupId!).entries.map((fx) => fx.slotId);
+      final trailing = await cubit.appendChoice(
+        track,
+        const FxSingleChoice(TrackEffectType.drive),
+      );
+
+      final result = await cubit.replaceRack(
+        track,
+        first.groupId!,
+        const FxRackChoice(preset),
+      );
+
+      expect(result.status, FxEditStatus.applied);
+      expect(result.groupId, isNot(first.groupId));
+      expect(fxChainGroups(chain), hasLength(4));
+      final rack = fxChainGroups(chain)[2];
+      expect(rack.rack!.id, result.groupId);
+      expect(
+        rack.entries.map((fx) => fx.slotId),
+        isNot(contains(oldIds.first)),
+      );
+      expect(fxRackLevelDb(rackOf(result.groupId!).channels.level), -2.4);
+      // The single effect added after it is still after it.
+      expect(chain.last.slotId, trailing.groupId);
+    });
+
+    test('a replacement saved while the player moves to another destination '
+        'is stale for the page and still committed', () async {
+      final first = await cubit.appendChoice(track, const FxRackChoice(preset));
+      when(() => persistence.saveConfirmed(any(), settings)).thenAnswer((
+        _,
+      ) async {
+        cubit.show(const FxDestination.recordedTrack(1));
+      });
+
+      final result = await cubit.replaceRack(
+        track,
+        first.groupId!,
+        const FxRackChoice(preset),
+      );
+
+      expect(result.status, FxEditStatus.stale);
+      expect(result.committed, isTrue);
+      expect(fxChainGroups(chain).last.rack!.id, result.groupId);
+    });
+
+    test('a rack that is gone is not replaced', () async {
+      final result = await cubit.replaceRack(
+        track,
+        'missing',
+        const FxRackChoice(preset),
+      );
+
+      expect(result.status, FxEditStatus.refused);
+      expect(chain, hasLength(2));
+    });
   });
 }

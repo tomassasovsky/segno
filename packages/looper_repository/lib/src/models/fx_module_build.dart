@@ -1,4 +1,5 @@
 import 'package:fx_catalogue/fx_catalogue.dart';
+import 'package:looper_repository/src/models/fx_rack_level.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:segno_engine/segno_engine.dart' show kTrackEffectParams;
 
@@ -69,19 +70,21 @@ class FxModuleBuild {
 /// effects and the catalogue names twenty-six modules, so most of them are.
 const Map<String, FxModuleBuild> kFxModuleBuilds = {
   // p0 time, p1 feedback, p2 mix — the three the preset names, so nothing is
-  // dropped. Its mode, damping, resonance and ratio controls are Looper X's
-  // own shaping and have no engine parameter, which is what makes it partial.
+  // dropped. Its mode (and the Drum Rack's feedback filter frequency) are
+  // Looper X's own shaping and have no engine parameter, which is what makes
+  // it partial.
   'Delay': FxModuleBuild(
     type: TrackEffectType.delay,
     params: ['Del Time', 'Del Feedback', 'Del Mix'],
-    unmapped: [
-      'Del Damp',
-      'Del Freq',
-      'Del L/R Ratio',
-      'Del Mode',
-      'Del Res-Freq',
-      'Del Reso',
-    ],
+    unmapped: ['Del Freq', 'Del Mode'],
+  ),
+  // The Dub Rack's delay: p0 time and p1 feedback. It has no mix control, so
+  // the mix keeps the engine default. Its damping, stereo ratio and resonance
+  // are the dub delay's own shaping and have no engine parameter.
+  'Dub delay': FxModuleBuild(
+    type: TrackEffectType.delay,
+    params: ['Del Time', 'Del Feedback'],
+    unmapped: ['Del Damp', 'Del L/R Ratio', 'Del Res-Freq', 'Del Reso'],
   ),
   // p0 size, p1 damping, p2 mix. `Rev Bright` is brightness where the engine
   // wants damping, which is its complement, so it is NOT wired here: inverting
@@ -129,6 +132,33 @@ const Map<String, FxModuleBuild> kFxModuleBuilds = {
   ),
 };
 
+/// The source key that carries a rack's own level.
+const String kFxRackLevelKey = 'Master Vol';
+
+/// Builds the chain entries for a whole factory rack out of [preset]: one
+/// entry per module the preset holds, in rack order (see [fxPresetModules]),
+/// with the preset's [kFxRackLevelKey] as the rack level.
+///
+/// The rack level is the last entry's [FxChannels.level], which is where
+/// `FxChainGroup.channels` reads a rack's level from. `Master Vol` belongs
+/// to no module, so it never becomes a module parameter. The Looper X
+/// registers it in every rack as -12 to +12 dB in 0.1 dB steps through a
+/// linear mapper, so its normalized value v is `-12 + 24 * v` dB (see
+/// [fxRackLevelGainAt]), and every factory value lands on that 0.1 dB grid.
+/// A preset without it leaves the rack at unity.
+List<BuiltInEffect> fxRackEntries(FxPreset preset) {
+  final entries = [
+    for (final module in fxPresetModules(preset)) fxModuleEntry(module, preset),
+  ];
+  final level = preset.params[kFxRackLevelKey];
+  if (entries.isEmpty || level == null) return entries;
+  final last = entries.last;
+  entries[entries.length - 1] = last.copyWith(
+    channels: last.channels.copyWith(level: fxRackLevelGainAt(level)),
+  );
+  return entries;
+}
+
 /// What this engine can build for [module].
 FxModuleBuild fxModuleBuild(FxModule module) =>
     kFxModuleBuilds[module.name] ?? const FxModuleBuild.unavailable();
@@ -174,26 +204,13 @@ BuiltInEffect fxModuleEntry(FxModule module, FxPreset preset) {
     // build for it. A module with no engine effect becomes a passthrough
     // entry, and this is what still says which pedal it is.
     module: module.name,
+    presetId: preset.id,
+    // Every value the preset gives this module — its power key, its own
+    // parameters and the ones it shares with another module — so a later
+    // build can rebuild the module from what was loaded.
+    source: {
+      for (final e in preset.params.entries)
+        if (module.poweredBy(e.key) || module.owns(e.key)) e.key: e.value,
+    },
   );
-}
-
-/// The modules [preset] holds, in the table's order, keeping only those the
-/// preset actually names.
-///
-/// A preset names a module by carrying its power key or any of its
-/// parameters — some presets carry a module's controls without its power key
-/// and the other way round, so either is enough to say the rack has it.
-List<FxModule> fxPresetModules(FxPreset preset) => [
-  for (final module in kFxModules)
-    if (_names(preset, module)) module,
-];
-
-bool _names(FxPreset preset, FxModule module) {
-  for (final key in module.enables) {
-    if (preset.params.containsKey(key)) return true;
-  }
-  for (final key in preset.params.keys) {
-    if (module.owns(key)) return true;
-  }
-  return false;
 }

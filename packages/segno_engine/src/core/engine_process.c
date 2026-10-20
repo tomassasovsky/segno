@@ -1358,7 +1358,8 @@ static void le_seam_fold(le_track* t, int32_t len, int32_t F) {
  * plainer than it looks — no re-punch and no merge needed, just a PUNCH-OUT
  * inside the first F/2 frames after the finalize. od_fade_frames is the same
  * sr/100 as F, so a dub punched out at frame p has only ramped to p/F and
- * decays back to 0 by frame 2p; LE_DRAIN_CHUNK (32768 samples) then drains the
+ * decays back to 0 by frame 2p; the drain budget (32768 samples at a 64-frame
+ * block, LE_DRAIN_SAMPLES_PER_FRAME) then drains the
  * whole remaining pass in a single block, and the layer retires while the fold
  * is still counting down. Measured at 48 kHz (F = 480): punch-out at 64 or 192
  * leaves the raw seam (score 204x, step 0.352), at 240 or 600 the folded one
@@ -1943,11 +1944,13 @@ static int32_t le_dub_run_copy(le_track* t, int32_t base, int32_t k,
  * frames == 0 calls so the host tests' drain(e) pump advances it): retries
  * parked retires, and — once a punched-out session's fade tail has decayed —
  * drains the uncovered remainder of the in-flight layer live -> shadow in
- * LE_DRAIN_CHUNK-bounded runs, retires it, and clears the flight flag. The
- * retire event is pushed BEFORE the flag clears (the release pairs with the
- * control thread's acquire), so a control thread that sees flag == 0 after
- * draining the evt_ring is guaranteed to hold every layer. */
-static void le_dub_block_update(le_engine* e, uint64_t frame) {
+ * runs bounded by the block (LE_DRAIN_SAMPLES_PER_FRAME x block_frames per
+ * track, at most LE_DRAIN_CHUNK_MAX), retires it, and clears the flight flag.
+ * The retire event is pushed BEFORE the flag clears (the release pairs with
+ * the control thread's acquire), so a control thread that sees flag == 0
+ * after draining the evt_ring is guaranteed to hold every layer. */
+static void le_dub_block_update(le_engine* e, uint64_t frame,
+                                uint32_t block_frames, int free_mode) {
   /* Free/Song mode (B2b, adversarial-review BUG 1 fix; broadened to SONG by
    * B4): `base` moved INSIDE the loop and computed per-track (mirroring
    * mix_tracks_frame's trk_len[t]) instead of being read once from
@@ -1962,9 +1965,8 @@ static void le_dub_block_update(le_engine* e, uint64_t frame) {
    * throwaway repro: Free-mode track, punch in, overdub < 1 lap, punch out,
    * settle — layer_in_flight stuck at 1 forever). Pinned by
    * test_free_mode_dub_layer_retires_not_stuck (and its Song-mode twin,
-   * test_song_mode_dub_layer_retires_not_stuck). */
-  const int32_t mode = load_i32(&e->a_looper_mode);
-  const int free_mode = mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG;
+   * test_song_mode_dub_layer_retires_not_stuck). [free_mode] is the block's
+   * looper-mode test, read once by le_engine_process. */
   for (int32_t ti = 0; ti < e->track_count; ++ti) {
     le_track* t = &e->tracks[ti];
     le_dub_try_retire(e, t, frame);
@@ -1994,8 +1996,15 @@ static void le_dub_block_update(le_engine* e, uint64_t frame) {
       const int32_t lanes = le_lanes_active(t);
       /* The copy runs per lane, so the RT budget is frames x lanes — scale the
        * chunk down so a multi-lane track drains the same bytes per block as a
-       * mono one (LE_DRAIN_CHUNK samples per track per callback). */
-      int32_t budget = LE_DRAIN_CHUNK / lanes;
+       * mono one. The budget scales with this block's frame count and is
+       * clamped before the multiply (engine_private.h). */
+      const uint32_t bf_max =
+          (uint32_t)(LE_DRAIN_CHUNK_MAX / LE_DRAIN_SAMPLES_PER_FRAME);
+      uint32_t bf =
+          block_frames > 0 ? block_frames : (uint32_t)LE_DRAIN_PUMP_FRAMES;
+      if (bf > bf_max) bf = bf_max;
+      int32_t budget =
+          (int32_t)(bf * (uint32_t)LE_DRAIN_SAMPLES_PER_FRAME) / lanes;
       if (budget < 1) budget = 1;
       while (budget > 0 && t->dub_count < t->dub_len) {
         int32_t max_run = budget;
@@ -5505,6 +5514,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
                                     .position = e->clock.position,
                                     .master_len = e->clock.length,
                                     .iteration = (int32_t)e->loop_iteration,
+                                    /* the FX clock at capture frame 0
+                                     * (events.log version 13, #941) */
+                                    .fx_clock = e->fx_clock_base,
                                 }});
       for (int t = 0; t < e->track_count; ++t) {
         le_fade_log(e, t, frame);
@@ -6366,7 +6378,8 @@ static void le_fire_section_arm(le_engine* e, int32_t ch, uint64_t frame) {
  * with nothing active, holds the transport at the top. [st] is the frame's
  * per-track state snapshot. */
 static inline void advance_transport_frame(le_engine* e, int tc,
-                                           const int32_t* st, uint64_t frame) {
+                                           const int32_t* st, uint64_t frame,
+                                           int free_or_song) {
   for (int t = 0; t < tc; ++t) {
     if (st[t] != LE_TRACK_RECORDING) continue;
     le_track* tr = &e->tracks[t];
@@ -6529,13 +6542,11 @@ static inline void advance_transport_frame(le_engine* e, int tc,
    * above, which stays permanently dormant (e->clock.length == 0) in either
    * mode — a single guarded call so this diff stays inspectable at a
    * glance, and provably UNREACHABLE (not merely untested) when
-   * a_looper_mode is neither FREE nor SONG. */
-  {
-    const int32_t mode = load_i32(&e->a_looper_mode);
-    if (mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG) {
-      for (int t = 0; t < tc; ++t) {
-        advance_track_clock_frame(e, t, st[t], frame);
-      }
+   * a_looper_mode is neither FREE nor SONG. [free_or_song] is that mode
+   * test, read once per BLOCK by le_engine_process. */
+  if (free_or_song) {
+    for (int t = 0; t < tc; ++t) {
+      advance_track_clock_frame(e, t, st[t], frame);
     }
   }
 }
@@ -6598,8 +6609,10 @@ static inline void snapshot_lane_fx(
        * its effective bit is 0, settle it to bypass now so a processing gap
        * never strands a ramp mid-fade — resumption then always re-enters
        * through fx_apply_chain's clean settled-edge reset [B7]. Enabled
-       * slots keep their state (engaged effects have always persisted
-       * across gaps). Audio-thread write to audio-owned DSP state. */
+       * slots keep their state across gaps, except that an octaver whose
+       * hop counter fell off the engine clock restarts on its own schedule
+       * when it is next ticked (fx_octaver, #941). Audio-thread write to
+       * audio-owned DSP state. */
       for (int s = 0; s < LE_FX_MAX; ++s) {
         if (le_fx_enable_settled_bypassed(&ln->fx, s)) continue;
         const int unprocessed =
@@ -6870,14 +6883,19 @@ static inline void snapshot_lane_cache(
         const int32_t len = load_i32(&ln->a_len);
         const uint32_t gen =
             atomic_load_explicit(&ln->a_fx_gen, memory_order_relaxed);
-        if (w == ln->cache_fp_entry && gen == ln->cache_fp_gen) {
+        const uint32_t hop =
+            atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed) &
+            (uint32_t)(LE_PV_HOP - 1);
+        if (w == ln->cache_fp_entry && gen == ln->cache_fp_gen &&
+            hop == ln->cache_fp_hop) {
           ok = le_wet_entry_key_matches(w, rev, w->chain_fp, vol, len);
         } else {
           ok = le_wet_entry_key_matches(
               w, rev, le_lane_pre_fx_fingerprint(e, t, l), vol, len);
-          if (ok) { /* remember the passed fp verdict for this {entry, gen} */
+          if (ok) { /* remember the verdict for this {entry, gen, hop} */
             ln->cache_fp_entry = w;
             ln->cache_fp_gen = gen;
+            ln->cache_fp_hop = hop;
           }
         }
       }
@@ -7454,7 +7472,7 @@ static inline void sync_division_positions_frame(le_engine* e, int tc,
 static inline void mix_tracks_frame(
     le_engine* e, const float* in, float* out, uint32_t f, int ch_in,
     int ch_out, int tc, int sr, int fx_cap, uint32_t excluded,
-    uint32_t out_enabled, float overdub_fb,
+    uint32_t out_enabled, float overdub_fb, int free_or_song,
     float od_step, int32_t od_fade_frames, int32_t pos, const int32_t* lane_n,
     const int* lane_fx_any,
     int has_fx[][LE_MAX_LANES], int32_t fx_count[][LE_MAX_LANES],
@@ -7604,19 +7622,20 @@ static inline void mix_tracks_frame(
   const int32_t offset = load_i32(&e->a_record_offset);
 
   /* Per-track read base for this frame: a track of multiple k plays its k-th
-   * base-loop segment, cycling relative to where its recording began. k == 1
-   * (the common case) collapses to the master position. */
+   * base-loop segment, cycling relative to where its recording began. k <= 1
+   * (the common case) collapses to the master position, and is skipped rather
+   * than left to the modulo: with a runtime k the compiler cannot fold
+   * `x % k` away, and this runs per track per frame (8 tracks x 32 frames is
+   * 256 64-bit divides a block) for a value that only changes on a wrap. */
   int32_t seg_base[LE_MAX_TRACKS];
   for (int t = 0; t < tc; ++t) {
-    if (e->clock.length > 0) {
-      int32_t k = load_i32(&e->tracks[t].a_multiple);
-      if (k < 1) k = 1;
-      const uint64_t seg =
-          (e->loop_iteration - e->tracks[t].start_iter) % (uint64_t)k;
-      seg_base[t] = (int32_t)seg * e->clock.length;
-    } else {
-      seg_base[t] = 0;
-    }
+    seg_base[t] = 0;
+    if (e->clock.length <= 0) continue;
+    const int32_t k = load_i32(&e->tracks[t].a_multiple);
+    if (k <= 1) continue;
+    const uint64_t seg =
+        (e->loop_iteration - e->tracks[t].start_iter) % (uint64_t)k;
+    seg_base[t] = (int32_t)seg * e->clock.length;
   }
 
   /* Free/Song mode (B2b, broadened to SONG by B4): each track with its own
@@ -7634,12 +7653,8 @@ static inline void mix_tracks_frame(
     trk_pos[t] = pos;
     trk_len[t] = e->clock.length;
   }
-  {
-    const int32_t mode = load_i32(&e->a_looper_mode);
-    if (mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG) {
-      free_track_positions_frame(e, tc, trk_pos, trk_len);
-    }
-  }
+  /* [free_or_song] is the mode test, read once per BLOCK by the caller. */
+  if (free_or_song) free_track_positions_frame(e, tc, trk_pos, trk_len);
   /* Sync/Band divisions (B3): per-track, so this always runs (mutually
    * exclusive with Free mode's per-track override above by construction —
    * see sync_division_positions_frame's doc). */
@@ -7694,6 +7709,16 @@ static inline void mix_tracks_frame(
   /* Each track's read index for THIS frame, kept for the block-end publish of
    * a_play_pos (le_track_snapshot.position_frames): the one place the mode's
    * position rule is already resolved, so the app never re-derives it. */
+  /* The coordinates every track would write an overdub at, playing or
+   * stopped (a stopped one restarts at its clock-derived position), taken
+   * once a block for the block-end publish of a_clock_at / a_clock_seg. */
+  if (f == 0) {
+    for (int t = 0; t < tc; ++t) {
+      e->trk_clock_base[t] = seg_base[t];
+      e->trk_clock_pos[t] = trk_pos[t];
+      e->trk_clock_len[t] = trk_len[t];
+    }
+  }
   for (int t = 0; t < tc; ++t) {
     if (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) {
       e->trk_play_pos[t] = seg_base[t] + trk_pos[t];
@@ -7856,7 +7881,8 @@ static inline void mix_tracks_frame(
     int32_t wdub = 0;
     int backing = 0;
     if (dub_writes) {
-      wdub = seg_base[t] + comp_pos(trk_pos[t], tr->dub_offset, trk_len[t]);
+      wdub = le_dub_write_index(seg_base[t], trk_pos[t], tr->dub_offset,
+                                trk_len[t]);
       backing = tr->dub_slot >= 0 && !tr->dub_draining && tr->dub_len > 0 &&
                 tr->dub_count < tr->dub_len;
       if (backing && tr->dub_count < 0) {
@@ -7895,6 +7921,32 @@ static inline void mix_tracks_frame(
      * They keep being read for metering. */
     const le_wet_entry* tce = track_cache_ent[t];
     const int32_t trk_rp = seg_base[t] + trk_pos[t];
+    /* The engine frame the current lap began at (#941), the clock a print
+     * is rendered and keyed against: this frame less the read index, on a
+     * forward lap at an integral rate. It moves only at a lap top (a wrap, a
+     * launch, a relaunch) or between blocks (a rate or direction change), so
+     * it is taken there and stored only when it changed. */
+    if ((trk_rp == 0 || f == 0) &&
+        (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
+        !tr->head.reversed && le_head_is_integral(&tr->head)) {
+      const uint32_t top = e->fx_clock_base + f - (uint32_t)trk_rp;
+      if (top != tr->top_clock) {
+        tr->top_clock = top;
+        atomic_store_explicit(&tr->a_top_clock, top, memory_order_relaxed);
+      }
+    }
+    /* A print keyed to the hop position (an octaver in it, #941) that does
+     * not match this lap's start is stale: the block-start check ran before
+     * a launch in this block moved the lap. Drop it at the lap top, as that
+     * check will from the next block. */
+    if (trk_rp == 0 && tce != NULL &&
+        !le_wet_entry_hop_matches(tce, e->fx_clock_base + f)) {
+      tce = NULL;
+      track_cache_ent[t] = NULL;
+      if (load_i32(&tr->a_track_cache_active)) {
+        store_i32(&tr->a_track_cache_active, 0);
+      }
+    }
     /* A print engages only at the FORWARD lap start (index 0, with or without
      * a relaunch origin) and never on a reversed track (#1162): reversing a
      * loop reverses the recording, not its effects, so the live chains run
@@ -8074,6 +8126,13 @@ static inline void mix_tracks_frame(
        * tail/LFO continuity) for playback nobody hears. */
       const le_wet_entry* wce = cache_ent[t][l];
       const int32_t rp = seg_base[t] + trk_pos[t];
+      /* The lane twin of the track's lap-top hop check above (#941). */
+      if (rp == 0 && wce != NULL &&
+          !le_wet_entry_hop_matches(wce, e->fx_clock_base + f)) {
+        wce = NULL;
+        cache_ent[t][l] = NULL;
+        if (load_i32(&ln->a_cache_active)) store_i32(&ln->a_cache_active, 0);
+      }
       if (wce != NULL && st[t] == LE_TRACK_PLAYING && !tr->head.reversed &&
           le_head_is_integral(&tr->head) &&
           (tr->transpose_st == 0 || e->transpose_bypass) &&
@@ -8312,6 +8371,7 @@ void le_engine_master_bus_frame_for_test(le_engine* e, float* out, uint32_t f,
   float out_peak_ch[LE_MAX_CHANNELS] = {0};
   master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
                    lim_release, out_sumsq, frame_out_peak, out_peak_ch);
+  atomic_fetch_add_explicit(&e->a_fx_frame, 1u, memory_order_relaxed);
 }
 
 /* ---- the real-time DSP core ---- */
@@ -8631,6 +8691,13 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   const uint64_t perf_frame_base =
       atomic_load_explicit(&e->a_perf_frames, memory_order_relaxed);
 
+  /* The FX clock (#941): this callback's first frame, before any command
+   * can reset a slot, so a reset seeds the octaver's hop against the engine
+   * clock. The frame loop below advances it once per frame. */
+  e->fx_clock_base = (uint32_t)atomic_load_explicit(&e->a_frames,
+                                                    memory_order_relaxed);
+  atomic_store_explicit(&e->a_fx_frame, e->fx_clock_base, memory_order_relaxed);
+
   le_command cmd;
   while (le_ring_pop(&e->ring, &cmd)) {
     apply_command(e, &cmd, perf_frame_base);
@@ -8659,7 +8726,17 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   /* Per-pass undo layer maintenance: retry parked retires and advance the
    * post-punch-out drain. Runs every call — including frames == 0 pumps (the
    * host tests' drain helper) — so a completed layer always retires. */
-  le_dub_block_update(e, perf_frame_base);
+  /* Looper mode, read once per block: Free/Song changes how every track's
+   * position and clock advance, and it used to be two relaxed loads per
+   * FRAME (mix_tracks_frame's position override and advance_transport_frame's
+   * per-track clocks) plus one here. Its only writers are le_engine_create
+   * and the mode-switch command, which the ring drain above has already
+   * applied, so the value cannot move during the block and this read is
+   * exactly equivalent. */
+  const int32_t looper_mode = load_i32(&e->a_looper_mode);
+  const int free_or_song = looper_mode == LE_LOOPER_MODE_FREE ||
+                           looper_mode == LE_LOOPER_MODE_SONG;
+  le_dub_block_update(e, perf_frame_base, frames, free_or_song);
 
   /* Global master output gain, read once per block after draining the ring so a
    * mid-block change applies from the next block (no per-frame atomic load). */
@@ -8992,6 +9069,9 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     if (process_input_frame(e, in, in_c, out, f, ch_in, ch_out, tc, sr,
                             excluded, &in_sumsq, &in_peak, in_peak_ch,
                             &out_sumsq, perf_frame_base)) {
+      /* The FX clock still moves on to the next frame (#941). */
+      atomic_store_explicit(&e->a_fx_frame, e->fx_clock_base + f + 1u,
+                            memory_order_relaxed);
       continue;
     }
 
@@ -9035,7 +9115,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
      * Reads the CONDITIONED input (in_c): the conditioning stage sits
      * upstream of the lane write by design (WYSIWYG). */
     mix_tracks_frame(e, in_c, out, f, ch_in, ch_out, tc, sr, fx_cap, excluded,
-                     out_enabled, overdub_fb, od_step, od_fade_frames, pos,
+                     out_enabled, overdub_fb, free_or_song, od_step,
+                     od_fade_frames, pos,
                      lane_n, lane_fx_any, has_fx, fx_count, fx_pre_count,
                      fx_type, fx_params, fx_enabled,
                      trk_has_fx, trk_fx_count, trk_fx_type, trk_fx_params,
@@ -9102,7 +9183,14 @@ void le_engine_process(le_engine* e, float* output, const float* input,
 
     viz_tap_frame(e, pos, frame_out_peak);
     track_viz_tap_frame(e, tc, st, frame_trk_peak);
-    advance_transport_frame(e, tc, st, perf_frame_base + f);
+    /* The FX clock's one store per frame (#941): the command drain set it
+     * to the block's first frame, and from here on it reads the next one,
+     * so the transport resets below (a quantized record start applying a
+     * capture image), the next iteration's chains and a block-end install
+     * (a bounce) all see the frame they first process. */
+    atomic_store_explicit(&e->a_fx_frame, e->fx_clock_base + f + 1u,
+                          memory_order_relaxed);
+    advance_transport_frame(e, tc, st, perf_frame_base + f, free_or_song);
   }
 
   if (backing_ran) {
@@ -9182,6 +9270,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     /* The track's own playhead: the write head while its take is still being
      * defined (no length to play against yet), the mixer's read index
      * otherwise — see le_track_snapshot.position_frames. */
+    if (e->trk_clock_len[t] > 0) {
+      store_i32(&e->a_clock_at[t], e->trk_clock_base[t] + e->trk_clock_pos[t]);
+      store_i32(&e->a_clock_seg[t], e->trk_clock_len[t]);
+    }
     store_i32(&e->tracks[t].a_play_pos,
               tstate == LE_TRACK_EMPTY ? 0
               : recording              ? rp

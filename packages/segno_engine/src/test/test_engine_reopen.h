@@ -293,7 +293,7 @@ static void test_reopen_reverts_partial_pass_across_segments(void) {
 static void test_reopen_reverts_pass_mid_drain(void) {
   printf("test_reopen_reverts_pass_mid_drain\n");
   le_engine* e = le_engine_create();
-  const int32_t len = LE_DRAIN_CHUNK + 8000; /* > one drain block */
+  const int32_t len = LE_DRAIN_CHUNK_MAX + 8000; /* > one drain block */
   CHECK(le_engine_configure(e, 48000, 1, 1, len + 60000) == LE_OK);
   le_snapshot s;
   CHECK(le_engine_record(e, 0) == LE_OK);

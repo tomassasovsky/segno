@@ -273,27 +273,34 @@ void main() {
     // reading matches what is actually there — never that it is the source's
     // own grouping, which the source does not record.
 
-    test('no two modules claim the same power key or parameter group', () {
-      final keys = <String, String>{};
-      final groups = <String, String>{};
-      for (final module in kFxModules) {
-        for (final key in module.enables) {
-          expect(
-            keys.containsKey(key),
-            isFalse,
-            reason: '$key claimed by both ${keys[key]} and ${module.name}',
-          );
-          keys[key] = module.name;
+    test('no two modules of one rack claim the same power key or parameter '
+        'group', () {
+      for (final family in kFxFamilySlugs.keys) {
+        final keys = <String, String>{};
+        for (final module in kFxModules.where((m) => m.appearsIn(family))) {
+          for (final key in module.enables) {
+            expect(
+              keys.containsKey(key),
+              isFalse,
+              reason:
+                  '$key claimed by both ${keys[key]} and ${module.name} in '
+                  '$family',
+            );
+            keys[key] = module.name;
+          }
         }
-        for (final group in module.groups) {
-          expect(
-            groups.containsKey(group),
-            isFalse,
-            reason:
-                '$group claimed by both ${groups[group]} and '
-                '${module.name}',
-          );
-          groups[group] = module.name;
+        final groups = <String, String>{};
+        for (final module in kFxModules.where((m) => m.appearsIn(family))) {
+          for (final group in module.groups) {
+            expect(
+              groups.containsKey(group),
+              isFalse,
+              reason:
+                  '$group claimed by both ${groups[group]} and '
+                  '${module.name} in $family',
+            );
+            groups[group] = module.name;
+          }
         }
       }
     });
@@ -339,8 +346,8 @@ void main() {
         for (final key in preset.params.keys) {
           final prefix = key.split(' ').first;
           if (kFxUnclaimedGroups.contains(prefix)) continue;
-          if (fxModuleOwning(key) != null) continue;
-          if (fxModuleFor(key) != null) continue;
+          if (fxModulesOwning(key, preset.family).isNotEmpty) continue;
+          if (fxModuleFor(key, preset.family) != null) continue;
           unaccounted.add(key);
         }
       }
@@ -402,18 +409,392 @@ void main() {
       expect(delay.enables, ['Delay']);
       expect(delay.groups, ['Del']);
 
-      expect(fxModuleFor('Delay')!.name, 'Delay');
-      expect(fxModuleOwning('Del Feedback')!.name, 'Delay');
+      expect(fxModuleFor('Delay', "Ed's Rack")!.name, 'Delay');
+      expect(
+        fxModulesOwning('Del Feedback', "Ed's Rack").map((m) => m.name),
+        ['Delay'],
+      );
       // And the power key is not a parameter of its own module.
-      expect(fxModuleOwning('Delay'), isNull);
+      expect(fxModulesOwning('Delay', "Ed's Rack"), isEmpty);
     });
 
     test("the rack's own level belongs to no pedal", () {
       // The accepted design puts rack level AFTER the pedals and gives it to
       // the rack, so claiming it for a module would put it on the wrong
       // control.
-      expect(fxModuleOwning('Master Vol'), isNull);
-      expect(kFxUnclaimedGroups, contains('Master'));
+      for (final family in kFxFamilySlugs.keys) {
+        expect(fxModulesOwning('Master Vol', family), isEmpty);
+      }
+      expect(kFxUnclaimedGroups, {'Master'});
+    });
+
+    test("the Dub Rack's delay is the dub delay, powered by `Dub Delay`", () {
+      expect(fxModuleFor('Dub Delay', 'Dub Rack')!.name, 'Dub delay');
+      expect(
+        fxModulesOwning('Del Feedback', 'Dub Rack').map((m) => m.name),
+        ['Dub delay'],
+      );
+      // The dub reverb no longer takes the delay's power key as a parameter.
+      expect(fxModulesOwning('Dub Delay', 'Dub Rack'), isEmpty);
+      expect(
+        fxModulesOwning('Dub-Verb Dec', 'Dub Rack').map((m) => m.name),
+        ['Dub reverb'],
+      );
+    });
+
+    test('`Para EQ` powers the parametric EQ of the Dub and Lo-Fi racks', () {
+      for (final family in ['Dub Rack', 'Lo-Fi Rack']) {
+        expect(fxModuleFor('Para EQ', family)!.name, 'Parametric EQ');
+        expect(
+          fxModulesOwning('EQ Mid Q', family).map((m) => m.name),
+          ['Parametric EQ'],
+        );
+      }
+      expect(
+        fxModulesOwning('EQ Mid Freq', 'Drum Rack').map((m) => m.name),
+        ['Four-band EQ'],
+      );
+    });
+
+    test("the Rhythmic Rack's EQ is the parametric EQ, though `EQ` powers "
+        'it', () {
+      // Its controls are the parametric EQ's without the Q, and none of them
+      // is a four-band EQ's.
+      expect(fxModuleFor('EQ', 'Rhythmic Rack')!.name, 'Parametric EQ');
+      expect(
+        fxModulesOwning('EQ Mid Gain', 'Rhythmic Rack').map((m) => m.name),
+        ['Parametric EQ'],
+      );
+      expect(fxModuleFor('EQ', 'Drum Rack')!.name, 'Four-band EQ');
+    });
+
+    test('`Smart Tune` powers Smart Tune, and `Mode` is a parameter', () {
+      expect(fxModuleFor('Smart Tune', 'Vocal Tuner Rack')!.name, 'Smart tune');
+      expect(fxModuleFor('Mode', 'Vocal Tuner Rack'), isNull);
+    });
+
+    test(
+      'Smart Tune and the Harmonizer belong to the Vocal Tuner Rack only',
+      () {
+        for (final family in kFxFamilySlugs.keys) {
+          if (family == 'Vocal Tuner Rack') continue;
+          expect(fxModulesOwning('Mode', family), isEmpty, reason: family);
+          expect(
+            fxModulesOwning('Voice 1 Vol', family),
+            isEmpty,
+            reason: family,
+          );
+          expect(fxModuleFor('Smart Tune', family), isNull, reason: family);
+        }
+      },
+    );
+
+    test('Smart Tune and the Harmonizer both read the shared Vocal Tuner '
+        'parameters', () {
+      for (final key in ['Mode', 'Auto Source', 'Key', 'Scale Type']) {
+        expect(
+          fxModulesOwning(key, 'Vocal Tuner Rack').map((m) => m.name),
+          ['Harmonizer', 'Smart tune'],
+          reason: key,
+        );
+      }
+    });
+  });
+
+  group('every factory preset', () {
+    // What each rack's schema implies, in the order a rack builds its
+    // entries: the module table's order, because no source examined records
+    // the order the Looper X runs them in (see kFxModules).
+    const expected = <String, List<String>>{
+      'Drum Rack': [
+        'Compressor',
+        'Four-band EQ',
+        'Delay',
+        'Reverb',
+        'Transient',
+      ],
+      'Dub Rack': [
+        'Compressor',
+        'Parametric EQ',
+        'Dub delay',
+        'Ambience',
+        'Dub reverb',
+        'Doubler',
+      ],
+      "Ed's Rack": [
+        'Amp',
+        'Compressor',
+        'Overdrive',
+        'Four-band EQ',
+        'Wah',
+        'Chorus',
+        'Octaver',
+        'Delay',
+        'Reverb',
+      ],
+      'Guitar Rack': [
+        'Amp',
+        'Overdrive',
+        'Wah',
+        'Modulation',
+        'Whammy',
+        'Delay',
+        'Spring reverb',
+      ],
+      'Lo-Fi Rack': [
+        'Distortion',
+        'Parametric EQ',
+        'Low-pass filter',
+        'Delay',
+        'Vinyl',
+        'Degrade',
+      ],
+      'Rhythmic Rack': [
+        'Parametric EQ',
+        'Low-pass filter',
+        'Delay',
+        'Reverb',
+        'Pumper',
+        'Slicer',
+      ],
+      'Studio Rack': [
+        'Compressor',
+        'Distortion',
+        'Four-band EQ',
+        'Modulation',
+        'Pitch shift',
+        'Delay',
+        'Reverb',
+        'Doubler',
+      ],
+      'Vocal Rack': [
+        'Compressor',
+        'Four-band EQ',
+        'Pitch shift',
+        'Delay',
+        'Reverb',
+        'Doubler',
+        'High-pass gate',
+      ],
+      'Vocal Tuner Rack': [
+        'Compressor',
+        'Four-band EQ',
+        'Delay',
+        'Reverb',
+        'Doubler',
+        'High-pass gate',
+        'Harmonizer',
+        'Smart tune',
+      ],
+    };
+
+    test('builds the modules its rack schema implies, in rack order', () {
+      expect(catalogue.families.map((f) => f.name), expected.keys);
+      for (final family in catalogue.families) {
+        for (final preset in family.presets) {
+          expect(
+            fxPresetModules(preset).map((m) => m.name),
+            expected[family.name],
+            reason: '${family.name} / ${preset.name}',
+          );
+        }
+      }
+    });
+
+    test('gives each key to the modules it builds: one owner per key, two '
+        'for a shared Vocal Tuner key, none for Master Vol', () {
+      const shared = {'Mode', 'Auto Source', 'Key', 'Scale Type'};
+      for (final preset in catalogue.presets) {
+        final modules = fxPresetModules(preset);
+        for (final key in preset.params.keys) {
+          final owners = [
+            for (final m in modules)
+              if (m.owns(key) || m.poweredBy(key)) m.name,
+          ];
+          final reason = '${preset.family} / ${preset.name} / $key';
+          if (key == 'Master Vol') {
+            expect(owners, isEmpty, reason: reason);
+          } else if (shared.contains(key)) {
+            expect(owners, ['Harmonizer', 'Smart tune'], reason: reason);
+          } else {
+            expect(owners, hasLength(1), reason: reason);
+          }
+        }
+      }
+    });
+
+    test('stores Master Vol on the Looper X 0.1 dB grid of -12 to +12 dB', () {
+      // The binary registers Master Vol in every rack as -12..+12 dB, step
+      // 0.1, through a linear mapper: dB = -12 + 24 * value.
+      final above6 = <String>[];
+      for (final preset in catalogue.presets) {
+        final value = preset.params['Master Vol']!;
+        final db = -12 + 24 * value;
+        expect(
+          (db * 10 - (db * 10).round()).abs(),
+          lessThan(0.01),
+          reason: '${preset.family} / ${preset.name}: $db dB',
+        );
+        if (db > 6) above6.add(preset.name);
+      }
+      expect(above6, hasLength(9));
+      final atmos = catalogue
+          .family('Guitar Rack')!
+          .presets
+          .firstWhere((p) => p.name == 'Rhythm Atmos');
+      expect(-12 + 24 * atmos.params['Master Vol']!, closeTo(10.6, 0.01));
+    });
+
+    test('a Vocal Tuner preset with Smart Tune off still sets the shared '
+        'keys the Harmonizer reads', () {
+      final family = catalogue.family('Vocal Tuner Rack')!;
+      final midi = family.presets.firstWhere((p) => p.name == 'Midi Harm Mid');
+      final scale = family.presets.firstWhere(
+        (p) => p.name == 'Scale Harm Hi Dry',
+      );
+      expect(midi.params['Smart Tune'], 0);
+      expect(midi.params['Auto Source'], 1);
+      expect(scale.params['Smart Tune'], 0);
+      expect(scale.params['Mode'], 1);
+      expect(scale.params['Key'], closeTo(3 / 11, 1e-6));
+      expect(fxPresetModules(midi).map((m) => m.name), contains('Smart tune'));
+    });
+  });
+
+  group('the add-an-effect rows', () {
+    /// The keys each rack family gives [module], one set per distinct
+    /// variant: two racks exposing the same keys are the same variant.
+    Map<String, Set<String>> variants(FxModule module) {
+      final byFamily = <String, Set<String>>{};
+      for (final preset in catalogue.presets) {
+        if (!fxPresetModules(preset).contains(module)) continue;
+        byFamily.putIfAbsent(preset.family, () => {}).addAll([
+          for (final key in preset.params.keys)
+            if (module.owns(key) || module.poweredBy(key)) key,
+        ]);
+      }
+      return byFamily;
+    }
+
+    test("are the pen's 26 rows, in the pen's order", () {
+      expect(kFxAddableEffects.map((e) => e.label), [
+        'Amp',
+        'Chorus',
+        'Compressor',
+        'Degrade',
+        'Delay',
+        'Distortion',
+        'Doubler',
+        'Dub Delay',
+        'Four-band EQ',
+        'Harmonize',
+        'HP / Gate',
+        'Low-pass Filter',
+        'Modulation',
+        'Octaver',
+        'Overdrive',
+        'Parametric EQ',
+        'Pitch Shift',
+        'Pumper',
+        'Reverb',
+        'Slicer',
+        'Smart Tune',
+        'Spring Reverb',
+        'Transient',
+        'Vinyl',
+        'Wah',
+        'Whammy',
+      ]);
+    });
+
+    test('each names a module of the table and a rack that holds it', () {
+      for (final row in kFxAddableEffects) {
+        final module = fxModuleNamed(row.module);
+        expect(module, isNotNull, reason: row.label);
+        expect(variants(module!), contains(row.family), reason: row.label);
+      }
+    });
+
+    test('the pedals with several variants are the ones the plan and the '
+        'owner chose a default for', () {
+      final several = [
+        for (final row in kFxAddableEffects)
+          if ({
+                for (final keys in variants(fxModuleNamed(row.module)!).values)
+                  (keys.toList()..sort()).join('|'),
+              }.length >
+              1)
+            row.label,
+      ];
+      expect(several, [
+        'Compressor',
+        'Delay',
+        'Distortion',
+        'Doubler',
+        'Four-band EQ',
+        'Low-pass Filter',
+        'Modulation',
+        'Parametric EQ',
+        'Reverb',
+      ]);
+    });
+
+    test("the owner's five defaults expose the most controls of their "
+        'pedal', () {
+      for (final label in [
+        'Compressor',
+        'Distortion',
+        'Doubler',
+        'Low-pass Filter',
+        'Modulation',
+      ]) {
+        final row = kFxAddableEffects.firstWhere((r) => r.label == label);
+        final all = variants(fxModuleNamed(row.module)!);
+        final chosen = all[row.family]!.length;
+        for (final entry in all.entries) {
+          if (entry.key == row.family) continue;
+          expect(
+            chosen,
+            greaterThan(entry.value.length),
+            reason: '$label: ${row.family} against ${entry.key}',
+          );
+        }
+      }
+    });
+
+    test('the plan-named defaults are the variants it describes', () {
+      FxModule module(String name) => fxModuleNamed(name)!;
+
+      // Ed's four-band EQ: all fourteen controls and its power key.
+      expect(variants(module('Four-band EQ'))["Ed's Rack"], hasLength(15));
+      // The Dub Rack's parametric EQ, the same as the Lo-Fi Rack's.
+      expect(
+        variants(module('Parametric EQ'))['Dub Rack'],
+        variants(module('Parametric EQ'))['Lo-Fi Rack'],
+      );
+      expect(
+        variants(module('Parametric EQ'))['Dub Rack'],
+        contains('EQ Mid Q'),
+      );
+      // The mode delay and the mode reverb with brightness.
+      expect(variants(module('Delay'))["Ed's Rack"], {
+        'Delay',
+        'Del Feedback',
+        'Del Mix',
+        'Del Mode',
+        'Del Time',
+      });
+      expect(variants(module('Reverb'))["Ed's Rack"], {
+        'Reverb',
+        'Rev Bright',
+        'Rev Length',
+        'Rev Mix',
+        'Rev Mode',
+      });
+      expect(
+        variants(module('Reverb'))['Vocal Rack'],
+        variants(module('Reverb'))["Ed's Rack"],
+      );
     });
   });
 }
