@@ -44,7 +44,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1200 | Backing player | plan | merge-gate | `claude/backing-1200-*` |
 | #1202 | Shared render recipe, Bounce, Save selected | plan | merge-gate | `claude/render-1202-*` |
 | #1228 | MIDI clock | plan | merge-gate | `claude/midi-clock-1228-*` |
-| #1270 | Device and appliance pages (Parts 6, 7, 9, 11, 12 shipped; plan for 1-5 and 8 in review) | build | merge-gate | `claude/device-pages-plan-1270` |
+| #1270 | Device and appliance pages (Parts 6, 7, 9, 11, 12 shipped; revised plan for 1, 2, 3a, 3b, 4, 5 and 8 in review) | build | merge-gate | `claude/device-pages-plan-1270` |
 | #1342 | Ring carrier firmware updates from the console | in-review | blocked-verify | `claude/ring-update-1342` |
 
 ---
