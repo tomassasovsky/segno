@@ -33,19 +33,19 @@ $INSBASE
   9
 $EXTMIN
  10
-1e+20
+-25.5
  20
-1e+20
+-25.5
  30
-1e+20
+0.0
   9
 $EXTMAX
  10
--1e+20
+25.5
  20
--1e+20
+61.13175573018631
  30
--1e+20
+0.0
   9
 $LIMMIN
  10
@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461288.781597222
+2461314.6338310186
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461288.781597222
+2461314.6338310186
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-A0
+A5
   9
 $SURFTAB1
  70
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{92EEB61E-94C6-4066-B719-EB54F3C966B0}
+{C45FD225-8481-47B8-94F7-B30FA4AAC29A}
   9
 $VERSIONGUID
   2
-{2B098B8F-5835-41A3-AEB5-FF5CA7157402}
+{3388EC3C-1049-40BD-8582-ABB6DCAFD660}
   9
 $EXTNAMES
 290
@@ -1327,9 +1327,9 @@ ISM
   0
 CLASS
   1
-ACDBPLACEHOLDER
+LAYOUT
   2
-AcDbPlaceHolder
+AcDbLayout
   3
 ObjectDBX Classes
  90
@@ -1343,9 +1343,9 @@ ObjectDBX Classes
   0
 CLASS
   1
-LAYOUT
+ACDBPLACEHOLDER
   2
-AcDbLayout
+AcDbPlaceHolder
   3
 ObjectDBX Classes
  90
@@ -2291,7 +2291,7 @@ Continuous
   0
 LAYER
   5
-8B
+8A
 330
 1
 100
@@ -2315,7 +2315,7 @@ Continuous
   0
 LAYER
   5
-8C
+8B
 330
 1
 100
@@ -2330,6 +2330,30 @@ BEND
 4
   6
 DASHED
+370
+-3
+390
+13
+347
+21
+  0
+LAYER
+  5
+8C
+330
+1
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+DRILL
+ 70
+0
+ 62
+6
+  6
+DASHDOT
 370
 -3
 390
@@ -2419,30 +2443,6 @@ AcDbSymbolTableRecord
 100
 AcDbLayerTableRecord
   2
-SILK
- 70
-0
- 62
-5
-  6
-Continuous
-370
--3
-390
-13
-347
-21
-  0
-LAYER
-  5
-91
-330
-1
-100
-AcDbSymbolTableRecord
-100
-AcDbLayerTableRecord
-  2
 MASK
  70
 0
@@ -2469,7 +2469,7 @@ STYLE
 100
 AcDbSymbolTable
  70
-27
+26
   0
 STYLE
   5
@@ -3199,34 +3199,6 @@ LiberationMono-Italic.ttf
   4
 
   0
-STYLE
-  5
-8A
-330
-5
-100
-AcDbSymbolTableRecord
-100
-AcDbTextStyleTableRecord
-  2
-SILKBOLD
- 70
-0
- 40
-0.0
- 41
-1.0
- 50
-0.0
- 71
-0
- 42
-2.5
-  3
-arialbd.ttf
-  4
-
-  0
 ENDTAB
   0
 TABLE
@@ -3285,7 +3257,7 @@ ACAD
   0
 APPID
   5
-9D
+A2
 330
 3
 100
@@ -3299,7 +3271,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-9E
+A3
 330
 3
 100
@@ -5411,6 +5383,26 @@ ENTITIES
   0
 CIRCLE
   5
+91
+330
+17
+100
+AcDbEntity
+  8
+CUT
+100
+AcDbCircle
+ 10
+0.0
+ 20
+0.0
+ 30
+0.0
+ 40
+25.5
+  0
+CIRCLE
+  5
 92
 330
 17
@@ -5427,7 +5419,7 @@ AcDbCircle
  30
 0.0
  40
-25.75
+4.35
   0
 CIRCLE
   5
@@ -5441,15 +5433,15 @@ CUT
 100
 AcDbCircle
  10
-0.0
+-18.0
  20
 0.0
  30
 0.0
  40
-3.6
+4.0
   0
-TEXT
+CIRCLE
   5
 94
 330
@@ -5457,27 +5449,17 @@ TEXT
 100
 AcDbEntity
   8
-NOTE
+CUT
 100
-AcDbText
+AcDbCircle
  10
--25.75
+18.0
  20
-64.65023567159325
+0.0
  30
 0.0
  40
-2.5703309118432225
-  1
-Segno DISCO CENTRAL DEL
- 11
--25.75
- 21
-64.65023567159325
- 31
-0.0
-100
-AcDbText
+4.0
   0
 TEXT
   5
@@ -5491,19 +5473,19 @@ NOTE
 100
 AcDbText
  10
--25.75
+-25.5
  20
-60.537706212644096
+59.66483712968204
  30
 0.0
  40
-2.5703309118432225
+1.466918600504273
   1
-ARO DE LEDS
+Segno DISCO CENTRAL (segno_ring_disc),
  11
--25.75
+-25.5
  21
-60.537706212644096
+59.66483712968204
  31
 0.0
 100
@@ -5521,19 +5503,19 @@ NOTE
 100
 AcDbText
  10
--25.75
+-25.5
  20
-56.42517675369494
+57.3177673688752
  30
 0.0
  40
-2.5703309118432225
+1.466918600504273
   1
-(segno_ring_disc)  chapa
+aluminio 1100-H14 2.0 mm, CANT. 1. PIEZA
  11
--25.75
+-25.5
  21
-56.42517675369494
+57.3177673688752
  31
 0.0
 100
@@ -5551,19 +5533,19 @@ NOTE
 100
 AcDbText
  10
--25.75
+-25.5
  20
-52.31264729474578
+54.97069760806836
  30
 0.0
  40
-2.5703309118432225
+1.466918600504273
   1
-2.0 mm  CANT. 1  PIEZA
+PLANA. Cotas SIN PINTAR: Ø exterior 51.00
  11
--25.75
+-25.5
  21
-52.31264729474578
+54.97069760806836
  31
 0.0
 100
@@ -5581,19 +5563,19 @@ NOTE
 100
 AcDbText
  10
--25.75
+-25.5
  20
-48.200117835796625
+52.62362784726153
  30
 0.0
  40
-2.5703309118432225
+1.466918600504273
   1
-PLANA, sin plegados (queda
+±0.20; paso Ø8.70 ±0.20 pasante recto por
  11
--25.75
+-25.5
  21
-48.200117835796625
+52.62362784726153
  31
 0.0
 100
@@ -5611,19 +5593,19 @@ NOTE
 100
 AcDbText
  10
--25.75
+-25.5
  20
-44.08758837684747
+50.2765580864547
  30
 0.0
  40
-2.5703309118432225
+1.466918600504273
   1
-sujeto por la tuerca del
+láser; SIN BISEL. Centro del paso: X e Y ±0.20
  11
--25.75
+-25.5
  21
-44.08758837684747
+50.2765580864547
  31
 0.0
 100
@@ -5641,19 +5623,19 @@ NOTE
 100
 AcDbText
  10
--25.75
+-25.5
  20
-39.97505891789831
+47.92948832564785
  30
 0.0
  40
-2.5703309118432225
+1.466918600504273
   1
-encoder; el agujero
+respecto del centro del Ø exterior. Pintar
  11
--25.75
+-25.5
  21
-39.97505891789831
+47.92948832564785
  31
 0.0
 100
@@ -5671,19 +5653,19 @@ NOTE
 100
 AcDbText
  10
--25.75
+-25.5
  20
-35.862529458949155
+45.58241856484102
  30
 0.0
  40
-2.5703309118432225
+1.466918600504273
   1
-central es el paso del
+todas las superficies. Final Ø50.92-51.40 y
  11
--25.75
+-25.5
  21
-35.862529458949155
+45.58241856484102
  31
 0.0
 100
@@ -5701,19 +5683,169 @@ NOTE
 100
 AcDbText
  10
--25.75
+-25.5
  20
-31.75
+43.23534880403418
  30
 0.0
  40
-2.5703309118432225
+1.466918600504273
   1
-buje)
+paso Ø8.30-8.78. Dos pasos Ø8.00 ±0.20 a ±18.0
  11
--25.75
+-25.5
  21
-31.75
+43.23534880403418
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+9D
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+-25.5
+ 20
+40.88827904322735
+ 30
+0.0
+ 40
+1.466918600504273
+  1
+del centro, sobre un mismo diámetro. El
+ 11
+-25.5
+ 21
+40.88827904322735
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+9E
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+-25.5
+ 20
+38.54120928242051
+ 30
+0.0
+ 40
+1.466918600504273
+  1
+propietario lo pega sobre la tapa central
+ 11
+-25.5
+ 21
+38.54120928242051
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+9F
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+-25.5
+ 20
+36.19413952161367
+ 30
+0.0
+ 40
+1.466918600504273
+  1
+impresa; los pasos dan acceso a sus dos
+ 11
+-25.5
+ 21
+36.19413952161367
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+A0
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+-25.5
+ 20
+33.84706976080684
+ 30
+0.0
+ 40
+1.466918600504273
+  1
+tornillos. El propietario debe comprobar el
+ 11
+-25.5
+ 21
+33.84706976080684
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+A1
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+-25.5
+ 20
+31.5
+ 30
+0.0
+ 40
+1.466918600504273
+  1
+encaje impreso y la sujeción. SIN PLEGADOS.
+ 11
+-25.5
+ 21
+31.5
  31
 0.0
 100
@@ -6123,17 +6255,17 @@ Model
  32
 0.0
  14
-1e+20
+-25.5
  24
-1e+20
+-25.5
  34
-1e+20
+0.0
  15
--1e+20
+25.5
  25
--1e+20
+61.13175573018631
  35
--1e+20
+0.0
 146
 0.0
  13
@@ -6809,7 +6941,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-9F
+A4
   0
 DICTIONARYVAR
   5
@@ -6821,7 +6953,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T21:45:30.530277+00:00
+1.4.4 @ 2026-09-30T18:12:43.005907+00:00
   0
 VISUALSTYLE
   5
@@ -13375,7 +13507,7 @@ strokes_ogs.tif
   0
 DICTIONARYVAR
   5
-9F
+A4
 330
 2D
 100
@@ -13383,7 +13515,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T21:45:30.532806+00:00
+1.4.4 @ 2026-09-30T18:12:43.010665+00:00
   0
 ENDSEC
   0

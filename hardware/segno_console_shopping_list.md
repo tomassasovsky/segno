@@ -56,9 +56,13 @@ Terminated by the **console board v3** (`hardware/kicad/console_board.py`, #747)
 - [ ] **Panasonic EEUFR1A102**, 1000 µF / 10 V radial ×1 for the external
       strip power-entry harness; separate from carrier C1
 - [ ] JST-XH pre-crimped 2-pin leads for the footswitch looms ×10
-- [ ] **Neutrik NJ6FD-V switched CTRL jacks ×2** — rear-mounted through
-      Ø12 mm holes in the 1.5 mm panel. Four wires per jack: T, R, S and RN
-      to console J20/J21. TN/SN remain unused. These are not D-punch parts.
+- [ ] **Neutrik NJ6FD-V switched CTRL jacks ×2** — 6-pole switching 1/4" jack,
+      vertical PCB pins. Four wires per jack: T, R, S and RN to console
+      J20/J21. TN/SN remain unused. Mouser/TME stock it; the Amazon listing is
+      B09ZNHVYG8 (25-pack).
+- [ ] **CTRL flange plates ×2: MEIRIYFA D-size zinc flange (B0G5FZNH49)** — each
+      NJ6FD-V fits in one (owner fit check, 2026-09-29); the plate screws to the
+      2.0 mm rear wall with two M3 on the Ø24 D punch (#1088).
 
 ## LEDs
 
@@ -135,7 +139,8 @@ are on the respective board BOMs.
 > A MercadoLibre comparison was run and is in git history at `d5295b69` /
 > `1621f676` if local sourcing ever comes back up; the one finding worth keeping
 > is that a plain local 6.35 chassis jack will NOT fit a D punch. Moot since
-> 2026-09-04: the CTRL jacks are Neutrik NJ6FD-V in a plain Ø12 hole (#993).
+> 2026-09-04: the CTRL jacks are Neutrik NJ6FD-V (#993), mounted since #1088 in
+> D-size flange plates on a D punch.
 
 - The power budget is [`segno_wiring.md` §2](segno_wiring.md) — canonical since
   #754.
