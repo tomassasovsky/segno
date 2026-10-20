@@ -123,7 +123,7 @@ seven built-ins stay unchanged; new kinds take codes from 9.
 | Pumper | rate, depth | Rhythmic | waits (pump shapes) |
 | Whammy | pedal, range | Guitar | waits for the range table |
 | Dual Octaver | high mode, octave 1 level, octave 2 level, mix | Ed's | proceed for high mode 0 (every preset); mode 1 waits |
-| Smart Tune | mode, auto source, key, scale root, scale type, speed, tightness, tracking, audio type, reference, stereo | Vocal Tuner | waits (tracking and audio-type steps) and needs owner input on sources |
+| Smart Tune | mode, auto source, key, scale root, scale type, speed, tightness, tracking, audio type, reference, stereo | Vocal Tuner | waits (tracking and audio-type steps) |
 | Harmonizer | lead and harmony levels, voice EQ (3 bands), two voices x (on, pitch, gender, pan, delay, level), shared mode, auto source, key, scale | Vocal Tuner | as Smart Tune |
 
 "Proceed" kinds still choose their continuous tapers; each such parameter
@@ -195,9 +195,9 @@ the owner. The singles library keeps the existing seven built-ins only.
    tapped, derived or external clock); 120 BPM applies only while the tempo
    source is NONE, and the editor says so inline. A tempo change under a
    running synced delay crossfades from the old tap to the new over 20 ms.
-   Delay rings are sized for the longest division at the slowest tempo and
-   decoupled from the sample rate; if that exceeds 4 s, the cap is put to the
-   owner with the Delay part.
+   Delay rings are decoupled from the sample rate and capped at 4 s (owner,
+   2026-10-20): a synced time longer than 4 s clamps to 4 s and the time
+   readout says so.
 8. **Offline renders match live.** A new perf-log event records the tempo at
    the frame the audio thread applied it (events.log version 13) and
    `perf_render` reads it. Parameter changes are logged at the frame the
@@ -217,10 +217,10 @@ the owner. The singles library keeps the existing seven built-ins only.
    a module; slice YIN (#913) and decimate by two before detection so a low
    voice is still in range at 96 kHz. Chord detection for the Harmonizer runs
    off the audio thread, like the binary's own `ChordDetectorThread`.
-10. **Admission control.** The control thread keeps a per-kind worst-block
-    cost table (from the console benches) and refuses an edit that would put
-    the engine's worst block over budget, with an inline notice like
-    `fxRackTooLong`.
+10. **Admission control** (owner, 2026-10-20). The control thread keeps a
+    per-kind worst-block cost table (from the console benches) and refuses an
+    add or edit that would put the engine's worst block over budget, inline on
+    the rack like `fxRackTooLong`. Audio never glitches to make room.
 11. **Persistence.** From the catalogue part on, a rack entry persists its
     preset id and every source value, so a later part can build what an
     earlier one could not. Racks saved before that part stay as they were (no
@@ -300,13 +300,15 @@ then the racks that only lack the waiting kinds.
 - A partial or unavailable module: the existing `fxModulePartial` and
   `fxModuleUnavailable` lines, now actually shown.
 
-## Decisions still for the owner
+## Owner answers, 2026-10-20 (recorded on #887)
 
-- **Vocal Tuner sources** (before its part): Auto Source offers Input 1-4 or
-  MIDI. Which segno inputs and which MIDI source those become.
-- **Delay length cap**, if the longest division at 30 BPM exceeds 4 s.
-- **Admission control** refusing an edit on CPU grounds (default: refuse
-  with an inline notice).
+- **Vocal Tuner source:** a source picker offers any live input or MIDI.
+  Factory presets that say MIDI use the MIDI input; presets that say Input 1-4
+  map to inputs 1-4.
+- **Synced delay length:** capped at 4 s; longer synced times clamp and the
+  time readout says so (Architecture 7).
+- **CPU budget:** the add or edit is refused inline on the rack, like
+  `fxRackTooLong`; audio never glitches (Architecture 10).
 
 ## Risks
 
