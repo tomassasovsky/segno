@@ -359,14 +359,14 @@ const Set<String> kFxUnclaimedGroups = {'Master'};
 ///   Flanger, of which Mod Mode runs one.
 /// - Studio's Modulation is two slots, Chorus then Tremolo.
 /// - The High-pass gate is the highpass and gate slots of the Vocal and Vocal
-///   Tuner racks, which the editor shows as one HP/Gate pedal.
+///   Tuner racks, which their presets power with one key, `HP/Gate`.
 /// - Studio's Distortion is the processor's amp simulator, which the editor
 ///   labels Dist.
 ///
-/// Ed's Rack is the one rack whose editor disagrees with its processor: the
-/// editor draws Delay before Reverb, and the processor runs Reverb then
-/// Delay. This table follows the processor. Both are linear, so in series the
-/// order does not change the sound.
+/// The measurement records the editor's pedal order for two racks only, Ed's
+/// and Dub. Ed's editor draws Delay before Reverb, and its processor runs
+/// Reverb then Delay. This table follows the processor. Both are linear, so in
+/// series the order does not change the sound.
 const Map<String, List<String>> kFxRackOrders = {
   'Drum Rack': [
     'Transient',
@@ -442,8 +442,8 @@ const Map<String, List<String>> kFxRackOrders = {
     'Compressor',
     'Four-band EQ',
   ],
-  // The measurement places this rack's Master Vol slot by elimination. It is
-  // the rack level, after every module, either way.
+  // The measurement records this rack's Master Vol slot at medium confidence.
+  // It is the rack level, after every module, either way.
   'Vocal Tuner Rack': [
     'High-pass gate',
     'Smart tune',

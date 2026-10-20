@@ -329,12 +329,44 @@ void main() {
       expect(modules.map((m) => m.name), ['Compressor', 'Reverb', 'Delay']);
     });
 
-    test('keeps a module the order does not place, after the placed ones', () {
+    test('keeps the modules the order does not place, after the placed ones '
+        'and in table order', () {
       final modules = fxPresetModules(
-        _preset(const {'Pumper': 1, 'Delay': 1, 'Oct': 1}),
+        _preset(const {
+          'Vinyl': 1,
+          'Pumper': 1,
+          'Delay': 1,
+          'Slicer': 1,
+          'Oct': 1,
+        }),
       );
 
-      expect(modules.map((m) => m.name), ['Octaver', 'Delay', 'Pumper']);
+      expect(modules.map((m) => m.name), [
+        'Octaver',
+        'Delay',
+        'Pumper',
+        'Slicer',
+        'Vinyl',
+      ]);
+    });
+
+    test('keeps every module, in table order, for a family with no '
+        'order', () {
+      const preset = FxPreset(
+        family: 'Unknown Rack',
+        name: 'Unknown',
+        id: 'unknown',
+        type: 0,
+        params: {'Reverb': 1, 'Wah': 1, 'Comp': 1, 'Amp': 1},
+      );
+
+      expect(kFxRackOrders.containsKey(preset.family), isFalse);
+      expect(fxPresetModules(preset).map((m) => m.name), [
+        'Amp',
+        'Compressor',
+        'Wah',
+        'Reverb',
+      ]);
     });
 
     test('names nothing for a preset carrying nothing it knows', () {
