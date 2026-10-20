@@ -127,7 +127,7 @@ void main() {
         'audio device (#1354)', (tester) async {
       await pump(tester);
       looperStates.add(
-        const LooperState(transport: TransportState(isRunning: true)),
+        const LooperState(transport: TransportState(deviceRunning: true)),
       );
       await tester.pump();
       expect(holds, [false]);

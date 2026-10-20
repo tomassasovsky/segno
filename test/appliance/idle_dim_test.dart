@@ -157,7 +157,7 @@ void main() {
       // The appliance's device is always open: it is not music.
       expect(
         idleKeepsAwake(
-          const LooperState(transport: TransportState(isRunning: true)),
+          const LooperState(transport: TransportState(deviceRunning: true)),
           idle,
           _noBacking,
         ),
@@ -360,7 +360,7 @@ void main() {
     ) async {
       await pump(tester);
       looperStates.add(
-        const LooperState(transport: TransportState(isRunning: true)),
+        const LooperState(transport: TransportState(deviceRunning: true)),
       );
       await tester.pump();
       await tester.pump(const Duration(seconds: 120));

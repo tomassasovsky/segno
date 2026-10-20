@@ -285,7 +285,7 @@ void main() {
         EngineResult.notReady,
       );
       expect(engine.calls, isNot(contains('stop')));
-      expect(repo.sessionTransport.isRunning, isTrue);
+      expect(repo.sessionTransport.deviceRunning, isTrue);
       expect(repo.mixRecoveryRequired, isTrue);
       expect(repo.trackPan(0), .25);
       // A new edit waits for the owed vector instead of replacing it.

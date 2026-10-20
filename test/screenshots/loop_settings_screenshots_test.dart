@@ -49,7 +49,7 @@ const _rig = LooperState(
     Track(channel: 3),
   ],
   transport: TransportState(
-    isRunning: true,
+    deviceRunning: true,
     tempoBpm: 84,
     tempoSource: TempoSource.manual,
     masterLengthFrames: 96000,
@@ -483,7 +483,7 @@ void main() {
       page: LoopSettingsPageId.recording,
       state: const LooperState(
         tracks: [Track(state: TrackState.recording, lengthFrames: 10)],
-        transport: TransportState(isRunning: true, tempoBpm: 84),
+        transport: TransportState(deviceRunning: true, tempoBpm: 84),
       ),
     );
     await expectLater(

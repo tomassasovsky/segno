@@ -25,7 +25,7 @@ class _Tracks extends MockCubit<TracksState> implements TracksCubit {}
 /// Two bars over 48000 frames: 24000 frames a bar.
 const _rig = LooperState(
   transport: TransportState(
-    isRunning: true,
+    deviceRunning: true,
     masterLengthFrames: 48000,
     loopBars: 2,
   ),
