@@ -1,6 +1,8 @@
 @TestOn('linux || mac-os')
 library;
 
+import 'dart:async';
+
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -106,6 +108,57 @@ void main() {
             .having((e) => e.errorCode, 'errorCode', 2),
       ),
     );
+  });
+
+  group('a helper that outlives its timeout', () {
+    late Directory dir;
+    late File marker;
+
+    /// A helper that takes 600 ms over [verb], as a slow udev settle would,
+    /// and records whether it got to its end.
+    SystemTouchCalibrationClient slowHelper() {
+      dir = Directory.systemTemp.createTempSync('touch-client-slow');
+      marker = File('${dir.path}/finished');
+      final helper = File('${dir.path}/helper')
+        ..writeAsStringSync(
+          '#!/bin/sh\nsleep 0.6\n: > "${marker.path}"\n'
+          'echo \'{"calibrated":false}\'\n',
+        );
+      Process.runSync('chmod', ['+x', helper.path]);
+      return SystemTouchCalibrationClient(
+        helperPath: helper.path,
+        readTimeout: const Duration(milliseconds: 100),
+        changeTimeout: const Duration(milliseconds: 100),
+      );
+    }
+
+    tearDown(() => dir.deleteSync(recursive: true));
+
+    Future<bool> finishes() async {
+      for (var i = 0; i < 40; i++) {
+        if (marker.existsSync()) return true;
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      return false;
+    }
+
+    test('is left to finish a change it started', () async {
+      final client = slowHelper();
+      await expectLater(
+        client.write(TouchScreen.main, TouchMatrix.identity),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(await finishes(), isTrue);
+    });
+
+    test('is killed when it only reads', () async {
+      final client = slowHelper();
+      await expectLater(
+        client.read(TouchScreen.main),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(await finishes(), isFalse);
+    });
   });
 
   test('the unsupported client does nothing', () async {

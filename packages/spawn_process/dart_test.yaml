@@ -1,0 +1,6 @@
+# Run the suites from source. The default kernel compiler keeps a frontend
+# server running as a dart:io child of the test runner, and the suites run as
+# isolates in the runner's process. While that child runs, the Dart VM's
+# exit-code thread waits for any child and collects the exit status of the
+# programs these tests start (see lib/spawn_process.dart).
+compilers: [source]

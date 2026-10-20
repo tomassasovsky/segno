@@ -55,6 +55,8 @@ dependencies:
     path: packages/routing_graph
   session_repository:
     path: packages/session_repository
+  spawn_process:
+    path: packages/spawn_process
   settings_repository:
     path: packages/settings_repository
   storage_repository:

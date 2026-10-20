@@ -1,8 +1,9 @@
 name: touch_calibration_client
 description: >-
   Data client for Segno appliance touch calibration (`segno-touch-ctl`): the
-  libinput matrix per screen, and the fit that measures one. Pure Dart —
-  Process.run + JSON parse only; no Flutter dependency.
+  libinput matrix per screen, and the fit that measures one. Pure Dart: it
+  starts the helper with spawn_process (posix_spawn, never fork) and parses
+  its JSON; no Flutter dependency.
 version: 0.1.0
 publish_to: none
 
@@ -11,6 +12,8 @@ environment:
 
 dependencies:
   equatable: ^2.1.0
+  spawn_process:
+    path: ../spawn_process
 
 dev_dependencies:
   test: ^1.25.0
