@@ -4152,6 +4152,28 @@
     "@fxRemoveRackBody": {
         "description": "What removing a rack from a chain does not do."
     },
+    "fxReAddRackTitle": "Replace {name}?",
+    "@fxReAddRackTitle": {
+        "description": "Asked before a factory rack is added again in place of the one already built from the same preset, when assignments point at it.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "fxReAddRackBody": "{count, plural, =1{Adding it again gives its effects new identities, so its 1 MIDI or pedal assignment is lost.} other{Adding it again gives its effects new identities, so its {count} MIDI and pedal assignments are lost.}}",
+    "@fxReAddRackBody": {
+        "description": "How many MIDI and pedal assignments re-adding a rack loses, and why.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "fxReAddRack": "Replace rack",
+    "@fxReAddRack": {
+        "description": "Confirms re-adding a rack in place of the existing one."
+    },
     "fxRemoveEffect": "Remove {name}",
     "@fxRemoveEffect": {
         "description": "Takes one named pedal out of a rack.",
