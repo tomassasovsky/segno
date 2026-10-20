@@ -40,8 +40,7 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& newSetup) {
     // first call) — free and let le_fx_prepare below reallocate at the new
     // size. fx_alloc_ring only allocates when the pointer is NULL, so
     // without this the ring would silently stay sized to the OLD rate.
-    free(fx_.delay[0][0]);
-    fx_.delay[0][0] = nullptr;
+    le_fx_free_delay(&fx_, 0);
     cap_ = newCap;
   }
   if (le_fx_prepare(&fx_, 0, LE_FX_REVERB, cap_) != LE_OK) return kResultFalse;
@@ -53,8 +52,7 @@ tresult PLUGIN_API Processor::terminate() {
   // never allocated for LE_FX_REVERB — engine_fx.c's fx_reverb comment; no
   // octaver buffers for this type either), so only delay[0][0] needs
   // freeing here.
-  free(fx_.delay[0][0]);
-  fx_.delay[0][0] = nullptr;
+  le_fx_free_delay(&fx_, 0);
   return AudioEffect::terminate();
 }
 

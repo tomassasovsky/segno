@@ -65,6 +65,7 @@
 #include "loop_clock.h"
 #include "restore_declip.h"   /* offline de-clip DSP (#697 S8) */
 #include "restore_halfband.h" /* 2:1 half-band resampler (#697 S8) */
+#include "rt_alloc.h"          /* LE_RT_ALLOC_USES_HEAP (fork-shield checks) */
 #include "rnnoise.h" /* vendored third_party/rnnoise (#697 S7 smoke test) */
 #include "segno_engine_api.h"
 #include "../stretch/le_stretch.h" /* C shim over Signalsmith Stretch (#1179) */
@@ -401,7 +402,7 @@ static void test_audio_ring_alloc_owns_fork_safe_storage(void) {
   CHECK(ring.buffer[0] == 0.0f);
   CHECK(ring.buffer[cap - 1] == 0.0f);
 
-#if defined(__linux__)
+#if defined(__linux__) && !LE_RT_ALLOC_USES_HEAP
   const int dc = smaps_mapping_is_dontcopy(ring.buffer);
   CHECK(dc == 1 || dc == -1); /* 1 = VM_DONTCOPY set; -1 = no procfs at all.
                                * 0 (present, unset) and -2 (never located) both
@@ -3953,8 +3954,9 @@ static void test_loop_seam_folds_partially_backed_up_dub_shadow(void) {
  * Reachable by a plain punch-out inside the first F/2 frames after the
  * finalize — no re-punch and no merge needed. od_fade_frames == F, so a dub
  * punched out at frame p has only ramped to p/F and decays back to 0 by frame
- * 2p; LE_DRAIN_CHUNK (32768) then drains the whole remainder in a single
- * block, retiring the layer while the fold is still counting down.
+ * 2p; the drain budget (32768 samples at a 64-frame block) then drains the
+ * whole remainder in a single block, retiring the layer while the fold is
+ * still counting down.
  *
  * Severity is low and the numbers say so: the peeled head is the honest raw
  * seam of the take, peak 0.5 like every other case here — a step, not garbage,
@@ -37472,8 +37474,11 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_render.h"
 #include "test_engine_bounce.h"
 #include "test_engine_clock.h"
+#include "test_engine_rt_memory.h"
 
 int main(void) {
+  run_rt_memory_tests();
+  if (getenv("SEGNO_RT_MEMORY_TESTS_ONLY")) return g_failures ? 1 : 0;
   if (getenv("SEGNO_FADE_STAGING_TESTS_ONLY")) {
     test_fade_restore_staging_and_manifest_capacity();
     return g_failures ? 1 : 0;

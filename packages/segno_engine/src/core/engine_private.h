@@ -164,14 +164,41 @@ extern "C" {
  * max_loop_frames (see le_lane_ensure_slot). */
 #define LE_LAYER_QUANTUM 48000
 
-/* SAMPLES of live->shadow copy per track per le_engine_process call while a
- * partially backed-up overdub layer drains after punch-out. The per-track
- * budget is divided by the track's active lane count (the copy runs per
- * lane), so one draining track costs <= 128 KB of memcpy per callback
- * regardless of lanes; even all 8 tracks draining at once stay ~1 MB/block
- * (~0.1-0.5 ms — bounded on the Pi appliance target). A 30 s mono loop
- * completes in ~44 callbacks (~0.5 s at typical buffer sizes). */
-#define LE_DRAIN_CHUNK 32768
+/* The longest recording cap the engine accepts, in seconds at the device rate
+ * (the app offers up to 10 minutes). It bounds what a take can lock (#900). */
+#define LE_MAX_LOOP_SECONDS 600
+
+/* Retired pool buffers waiting for the callback to let go of them. */
+#define LE_RETIRED_MAX 512
+
+/* Locked memory the standby shadows may hold across all tracks (#900): a
+ * standby is kept for the most recently captured tracks while their sum fits,
+ * and a punch-in elsewhere takes the fresh-buffer path. */
+#define LE_STANDBY_BUDGET_BYTES ((size_t)64 << 20)
+
+/* SAMPLES of live->shadow copy per track per BLOCK FRAME while a partially
+ * backed-up overdub layer drains after punch-out (#906).
+ *
+ * Per frame, not per callback: a fixed per-callback chunk costs the same
+ * memcpy at every period, so it takes a growing share of a shrinking
+ * deadline. The old fixed 32768 samples was ~0.1-0.5 ms for 8 draining tracks,
+ * against 667 us at 64 frames / 96 kHz and 333 us at 32 frames. 512 per frame
+ * is exactly 32768 at 64 frames, and it keeps the drain RATE (512 x sample
+ * rate samples/s) the same at every period, so a drain takes the wall-clock
+ * time it always did (a 30 s mono loop in ~0.5 s) while its cost per callback
+ * scales with the deadline. The per-track budget is divided by the track's
+ * active lane count (the copy runs per lane). */
+#define LE_DRAIN_SAMPLES_PER_FRAME 512
+
+/* ...and never more per callback than the fixed chunk it replaced, so a
+ * desktop host's 512- or 1024-frame period cannot turn one callback into
+ * megabytes of memcpy. Identical to the old budget at 64 frames and longer;
+ * smaller below. */
+#define LE_DRAIN_CHUNK_MAX 32768
+
+/* A frames == 0 call (the host tests' drain pump) has no deadline; it drains
+ * what one 64-frame callback would. */
+#define LE_DRAIN_PUMP_FRAMES 64
 
 
 /* One looper track.
@@ -1853,6 +1880,15 @@ typedef struct le_inst_ring {
 
 struct le_synth; /* synth_voice.h, owned by the audio thread after configure */
 
+/* One lane's spare buffers (le_engine.spares, #900). */
+typedef struct le_lane_spares {
+  float* standby;
+  int32_t standby_cap;
+  _Atomic int32_t a_standby_ready;
+  float* zero_spare;
+  int32_t zero_spare_cap;
+} le_lane_spares;
+
 struct le_engine {
   /* The device backend driving the lifecycle (le_select_backend's choice),
    * remembered so le_engine_stop / le_engine_destroy release the device through
@@ -2705,6 +2741,53 @@ struct le_engine {
    * portable core can compute the loopback-excluded input mask from that device
    * UID after open. */
   int capture_id_set;
+
+  /* ---- #900: the audio-memory bookkeeping. At the END of the struct on
+   * purpose: le_engine, le_track and le_lane hold the callback's hot data,
+   * and a field added in the middle moves every offset after it, which has
+   * cost the mixer measurably before (#1374). Nothing here is touched by the
+   * callback except rt_stack_ready, once per device start. ---- */
+
+  /* Device-thread-owned once started: 0 until the device thread's first
+   * callback has prefaulted its stack (le_rt_prefault_stack). Cleared by the
+   * control thread before each device start, while the thread is idle. */
+  int rt_stack_ready;
+  /* The background prefaulter (engine_prefault.c); NULL until its first job. */
+  struct le_prefaulter* prefaulter;
+  /* Buffers the callback may still name, waiting to be freed until the
+   * command posted after them has published (le_retire_buffer). */
+  float* retired_buf[LE_RETIRED_MAX];
+  uint64_t retired_ticket[LE_RETIRED_MAX];
+  int32_t retired_count;
+  /* lane_growth_command as of the last pass that freed removed lanes'
+   * buffers (le_release_removed_lanes). */
+  uint64_t lanes_released_at;
+  /* Capture recency for the standby budget (le_keep_standbys): the counter,
+   * and its value when a capture last started on each track (0: never). */
+  uint64_t capture_seq_next;
+  uint64_t capture_seq[LE_MAX_TRACKS];
+  /* Per-lane spares, control-thread-owned (engine_commands.c):
+   *   - standby: a loop-length shadow kept faulted in by the prefaulter while
+   *     the track holds a take, so the shadow a punch-in arms at once is never
+   *     faulted in on the press; a_standby_ready is set by the prefaulter when
+   *     the whole buffer is in. Never seen by the callback until installed.
+   *   - zero_spare: an untouched cap-sized mapping (zeros, no page behind it)
+   *     kept on an EMPTY track's active lanes, so a take that needs a zeroed
+   *     live slot swaps it in on the press instead of mapping one there. */
+  le_lane_spares spares[LE_MAX_TRACKS][LE_MAX_LANES];
+  /* Audio thread: each track's segment base, position in the segment and
+   * segment length at the first frame of the block (mix_tracks_frame), for
+   * every track, playing or not. */
+  int32_t trk_clock_base[LE_MAX_TRACKS];
+  int32_t trk_clock_pos[LE_MAX_TRACKS];
+  int32_t trk_clock_len[LE_MAX_TRACKS];
+  /* Published from them at block end: where each track plays, or restarts
+   * from when stopped (a_clock_at: segment base plus position), and its
+   * segment length (a_clock_seg). The control thread maps the coming second
+   * of play positions to where an overdub writes them with the mixer's own
+   * le_dub_write_index to fault a punch-in's shadow in (le_prefault_shadow). */
+  _Atomic int32_t a_clock_at[LE_MAX_TRACKS];
+  _Atomic int32_t a_clock_seg[LE_MAX_TRACKS];
 };
 
 /* Fills `out` (room for `max`) with the host's playback or capture devices and
