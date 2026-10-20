@@ -23,6 +23,11 @@ const int kTrackEffectMax = 64;
 /// the native `LE_FX_PARAMS`.
 const int kTrackEffectParams = 4;
 
+/// The ceiling of a chain entry's own level, [FxChannels.level]: `4.0`, about
+/// +12 dB, the top of a factory rack's level. Mirrors the native
+/// `LE_FX_LEVEL_MAX`.
+const double kFxLevelMax = 4;
+
 /// How one chain entry takes the pair it is handed (slice 3e) — the accepted
 /// design's rack input choice, and a single effect's "Effect input".
 enum FxChannelInput {
@@ -99,7 +104,10 @@ final class FxChannels {
                 placement < -1 ||
                 placement > 1)) ||
         (json.containsKey('level') &&
-            (level is! num || !level.isFinite || level < 0 || level > 2))) {
+            (level is! num ||
+                !level.isFinite ||
+                level < 0 ||
+                level > kFxLevelMax))) {
       throw const FormatException('invalid effect channels');
     }
     return FxChannels(
@@ -122,7 +130,7 @@ final class FxChannels {
   /// Balance (stereo out) or Pan (mono out), `-1..1`, centre `0`.
   final double placement;
 
-  /// The entry's own level, applied last. Unity `1`.
+  /// The entry's own gain, applied last: `0..kFxLevelMax`, unity `1`.
   final double level;
 
   /// Whether this is [defaults] — the shape the engine reads as "nothing to

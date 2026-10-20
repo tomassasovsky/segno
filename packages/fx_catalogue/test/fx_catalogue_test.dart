@@ -623,6 +623,28 @@ void main() {
       }
     });
 
+    test('stores Master Vol on the Looper X 0.1 dB grid of -12 to +12 dB', () {
+      // The binary registers Master Vol in every rack as -12..+12 dB, step
+      // 0.1, through a linear mapper: dB = -12 + 24 * value.
+      final above6 = <String>[];
+      for (final preset in catalogue.presets) {
+        final value = preset.params['Master Vol']!;
+        final db = -12 + 24 * value;
+        expect(
+          (db * 10 - (db * 10).round()).abs(),
+          lessThan(0.01),
+          reason: '${preset.family} / ${preset.name}: $db dB',
+        );
+        if (db > 6) above6.add(preset.name);
+      }
+      expect(above6, hasLength(9));
+      final atmos = catalogue
+          .family('Guitar Rack')!
+          .presets
+          .firstWhere((p) => p.name == 'Rhythm Atmos');
+      expect(-12 + 24 * atmos.params['Master Vol']!, closeTo(10.6, 0.01));
+    });
+
     test('a Vocal Tuner preset with Smart Tune off still sets the shared '
         'keys the Harmonizer reads', () {
       final family = catalogue.family('Vocal Tuner Rack')!;

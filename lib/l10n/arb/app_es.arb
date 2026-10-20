@@ -1920,6 +1920,7 @@
     "fxScaleUnverified": "Escala sin verificar",
     "fxValuePercent": "{percent}%",
     "fxValueMs": "{milliseconds} ms",
+    "fxValueDb": "{decibels} dB",
     "fxValueMsFine": "{milliseconds} ms",
     "fxValueHz": "{hertz} Hz",
     "fxValueHzFine": "{hertz} Hz",

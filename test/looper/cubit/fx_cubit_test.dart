@@ -456,7 +456,7 @@ void main() {
         'Delay',
         'Reverb',
       ]);
-      expect(rack.channels.level, closeTo(0.4, 1e-9));
+      expect(fxRackLevelDb(rack.channels.level), -2.4);
       expect(rack.entries.every((fx) => !fx.enabled), isTrue);
     });
 
@@ -518,7 +518,7 @@ void main() {
         rack.entries.map((fx) => fx.slotId),
         isNot(contains(oldIds.first)),
       );
-      expect(rackOf(result.groupId!).channels.level, closeTo(0.4, 1e-9));
+      expect(fxRackLevelDb(rackOf(result.groupId!).channels.level), -2.4);
       // The single effect added after it is still after it.
       expect(chain.last.slotId, trailing.groupId);
     });

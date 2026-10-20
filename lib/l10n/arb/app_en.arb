@@ -4045,6 +4045,19 @@
             }
         }
     },
+    "fxValueDb": "{decibels} dB",
+    "@fxValueDb": {
+        "description": "A level in decibels, with one decimal: the rack level, -12 to +12 dB.",
+        "placeholders": {
+            "decibels": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
     "fxValueHz": "{hertz} Hz",
     "@fxValueHz": {
         "description": "A built-in effect parameter's frequency in whole hertz, used from 100 Hz up to 1000 Hz.",

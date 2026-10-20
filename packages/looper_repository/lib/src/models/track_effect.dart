@@ -55,7 +55,8 @@ class FxChannels extends Equatable {
   /// Balance (stereo out) or Pan (mono out), `-1..1`, centre `0`.
   final double placement;
 
-  /// The entry's own level, applied last. Unity `1`.
+  /// The entry's own gain, applied last: `0..4` (about +12 dB), unity `1`.
+  /// A rack's level is its last entry's, set in dB (see `fxRackLevelGain`).
   final double level;
 
   /// Whether this is [defaults].

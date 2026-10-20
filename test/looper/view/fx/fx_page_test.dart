@@ -1553,6 +1553,32 @@ void main() {
         ).called(1);
       });
 
+      testWidgets('the rack level reads in dB, unity at 0.0 dB, and reaches '
+          '+12 dB', (tester) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_card_R1');
+
+        final l10n = l10nOf(tester);
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('fx_rack_level')),
+            matching: find.text(l10n.fxValueDb(0)),
+          ),
+          findsOneWidget,
+        );
+        expect(l10n.fxValueDb(-1.3), '-1.3 dB');
+
+        await tester.drag(
+          find.byKey(const Key('fx_rack_level')),
+          const Offset(400, 0),
+        );
+        await tester.pumpAndSettle();
+
+        final level = lastTrackWrite()[3].channels.level;
+        expect(fxRackLevelDb(level), 12);
+        expect(level, greaterThan(2));
+      });
+
       testWidgets('the footer writes the input to the first pedal and the '
           'level to the last', (tester) async {
         await pumpRack(tester);

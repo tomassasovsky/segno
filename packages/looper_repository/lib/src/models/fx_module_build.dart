@@ -1,4 +1,5 @@
 import 'package:fx_catalogue/fx_catalogue.dart';
+import 'package:looper_repository/src/models/fx_rack_level.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:segno_engine/segno_engine.dart' show kTrackEffectParams;
 
@@ -140,8 +141,10 @@ const String kFxRackLevelKey = 'Master Vol';
 ///
 /// The rack level is the last entry's [FxChannels.level], which is where
 /// `FxChainGroup.channels` reads a rack's level from. `Master Vol` belongs
-/// to no module, so it never becomes a module parameter. Its normalized value
-/// is the level as it stands: the Looper X's own taper for it is not known.
+/// to no module, so it never becomes a module parameter. The Looper X
+/// registers it in every rack as -12 to +12 dB in 0.1 dB steps through a
+/// linear mapper, so its normalized value v is `-12 + 24 * v` dB (see
+/// [fxRackLevelGainAt]), and every factory value lands on that 0.1 dB grid.
 /// A preset without it leaves the rack at unity.
 List<BuiltInEffect> fxRackEntries(FxPreset preset) {
   final entries = [
@@ -151,7 +154,7 @@ List<BuiltInEffect> fxRackEntries(FxPreset preset) {
   if (entries.isEmpty || level == null) return entries;
   final last = entries.last;
   entries[entries.length - 1] = last.copyWith(
-    channels: last.channels.copyWith(level: level.clamp(0.0, 1.0)),
+    channels: last.channels.copyWith(level: fxRackLevelGainAt(level)),
   );
   return entries;
 }

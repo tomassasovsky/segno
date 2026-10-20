@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
+import 'package:segno_engine/src/generated/segno_engine_bindings.dart'
+    show LE_FX_LEVEL_MAX;
 
 void main() {
   group('BuiltInEffect', () {
@@ -317,6 +319,10 @@ void main() {
   });
 
   group('TrackEffectType', () {
+    test('kFxLevelMax mirrors the native LE_FX_LEVEL_MAX', () {
+      expect(kFxLevelMax, LE_FX_LEVEL_MAX);
+    });
+
     test('kTrackEffectParams mirrors the native LE_FX_PARAMS width', () {
       // Pins the Dart side of the cross-language contract (the native test
       // asserts LE_FX_PARAMS == 4 in turn).
@@ -811,7 +817,7 @@ void main() {
         {'placement': 1.1},
         {'placement': 'left'},
         {'level': -0.1},
-        {'level': 2.1},
+        {'level': 4.1},
         {'level': 'loud'},
       ]) {
         expect(
@@ -820,8 +826,16 @@ void main() {
         );
       }
       expect(
-        () => decodeTrackEffects('[{"type":1,"channels":{"level":3}}]'),
+        () => decodeTrackEffects('[{"type":1,"channels":{"level":5}}]'),
         throwsFormatException,
+      );
+      // A rack level up to +12 dB is a valid saved level.
+      expect(
+        BuiltInEffect.fromJson(const {
+          'type': 1,
+          'channels': {'level': 3.98},
+        }).channels.level,
+        3.98,
       );
       expect(FxChannels.fromJson(const {}), FxChannels.defaults);
     });

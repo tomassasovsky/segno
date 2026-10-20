@@ -263,7 +263,9 @@ void main() {
             rack: const FxRack(id: 'r', name: 'Rack'),
           ),
       ]).single;
-      expect(group.channels.level, closeTo(0.7083, 1e-9));
+      // 0.7083 is -12 + 24 * 0.7083 = 5.0 dB on the Looper X's scale.
+      expect(fxRackLevelDb(group.channels.level), 5.0);
+      expect(group.channels.level, closeTo(1.7783, 1e-4));
       expect(entries.first.channels, FxChannels.defaults);
       for (final entry in entries) {
         expect(entry.source.containsKey('Master Vol'), isFalse);
@@ -276,19 +278,33 @@ void main() {
       expect(entries.single.channels.level, 1);
     });
 
-    test('a Master Vol outside 0..1 is clamped to the rack level range', () {
+    test('Master Vol 0.5 is unity, and a level above +6 dB plays as set', () {
       expect(
         fxRackEntries(
-          _preset(const {'Delay': 1, 'Master Vol': -0.2}),
-        ).single.channels.level,
-        0,
-      );
-      expect(
-        fxRackEntries(
-          _preset(const {'Delay': 1, 'Master Vol': 1.3}),
+          _preset(const {'Delay': 1, 'Master Vol': 0.5}),
         ).single.channels.level,
         1,
       );
+      // Guitar Rack / Rhythm Atmos: +10.6 dB, past the old ceiling of x2.
+      final loud = fxRackEntries(
+        _preset(const {'Delay': 1, 'Master Vol': 0.94166667}),
+      ).single.channels.level;
+      expect(fxRackLevelDb(loud), 10.6);
+      expect(loud, closeTo(3.3884, 1e-4));
+    });
+
+    test('a Master Vol outside 0..1 is clamped to -12 and +12 dB', () {
+      final low = fxRackEntries(
+        _preset(const {'Delay': 1, 'Master Vol': -0.2}),
+      ).single.channels.level;
+      final high = fxRackEntries(
+        _preset(const {'Delay': 1, 'Master Vol': 1.3}),
+      ).single.channels.level;
+
+      expect(fxRackLevelDb(low), -12);
+      expect(low, closeTo(0.2512, 1e-4));
+      expect(fxRackLevelDb(high), 12);
+      expect(high, closeTo(3.9811, 1e-4));
     });
   });
 

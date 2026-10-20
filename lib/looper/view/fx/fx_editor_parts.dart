@@ -310,10 +310,14 @@ class FxChannelFooter extends StatelessWidget {
             child: FxParamControl(
               key: const Key('fx_rack_level'),
               label: l10n.fxRackLevel,
-              value: channels.level,
-              valueText: channels.level.toStringAsFixed(2),
+              // The Looper X's Master Vol scale: -12 to +12 dB in 0.1 dB
+              // steps, unity in the middle. Stored as a gain.
+              value: fxRackLevelSetting(channels.level),
+              valueText: l10n.fxValueDb(fxRackLevelDb(channels.level)),
               width: 250,
-              onChanged: (value) => onChannels(channels.copyWith(level: value)),
+              onChanged: (setting) => onChannels(
+                channels.copyWith(level: fxRackLevelGainAt(setting)),
+              ),
             ),
           ),
         ],
