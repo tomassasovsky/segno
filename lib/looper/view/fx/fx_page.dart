@@ -14,6 +14,8 @@ import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
+import 'package:segno/control/binding/fx_assignments.dart';
+import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/fx_cubit.dart';
@@ -637,7 +639,38 @@ class _FxViewState extends State<FxView> {
         (route?.isCurrent ?? false) &&
         selection.state.destination == destination &&
         bloc.hasMixGeneration(generation);
-    final result = await selection.appendChoice(destination, choice);
+    final FxEditResult result;
+    final sameRack = choice is FxRackChoice
+        ? fxRackFromPreset(_entriesOf(context, address), choice.preset.id)
+        : null;
+    if (choice is FxRackChoice && sameRack != null) {
+      // The same factory rack again replaces the one built from it. Its
+      // modules get new identities, so an assignment to the old ones stops
+      // working: asked first when there are any, and silent when there are
+      // none.
+      final count = fxAssignmentsTo(
+        context.read<ControlCubit>().state,
+        address,
+        {for (final fx in sameRack.entries) ?fx.slotId},
+      );
+      if (count > 0) {
+        final l10n = context.l10n;
+        final confirmed = await showConsoleConfirmDialog(
+          context,
+          title: l10n.fxReAddRackTitle(sameRack.rack!.name),
+          body: l10n.fxReAddRackBody(count),
+          confirmLabel: l10n.fxReAddRack,
+        );
+        if (!confirmed || !stillHere()) return;
+      }
+      result = await selection.replaceRack(
+        destination,
+        sameRack.rack!.id,
+        choice,
+      );
+    } else {
+      result = await selection.appendChoice(destination, choice);
+    }
     if (!mounted || !stillHere()) return;
     _notifyEditResult(context, result);
     if (!_committed(result)) {

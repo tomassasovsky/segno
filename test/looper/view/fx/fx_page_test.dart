@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
@@ -342,6 +343,7 @@ void main() {
     LooperState? state,
     FxCatalogue? catalogue,
     Stream<LooperState>? updates,
+    ControlState controlState = const ControlState(),
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -573,7 +575,7 @@ void main() {
     await outputs.rename(1, 'Monitor output');
     await tracks.rename(0, 'drums');
     final control = _MockControlCubit();
-    when(() => control.state).thenReturn(const ControlState());
+    when(() => control.state).thenReturn(controlState);
 
     await tester.pumpWidget(
       // Saving a preset confirms with a toast, which needs the app's own
@@ -2067,6 +2069,120 @@ void main() {
           effects: any(named: 'effects'),
         ),
       );
+    });
+  });
+
+  group('adding a factory rack again', () {
+    // Track 0 already holds the rack built from Acoustic Rhythm 1.
+    final withRack = LooperState(
+      tracks: [
+        Track(
+          state: _rig.tracks.first.state,
+          lanes: _rig.tracks.first.lanes,
+          effects: [
+            ..._rig.tracks.first.effects,
+            for (final (i, module) in ['Compressor', 'Delay', 'Reverb'].indexed)
+              BuiltInEffect(
+                type: TrackEffectType.none,
+                slotId: 'old-$i',
+                enabled: false,
+                rack: const FxRack(
+                  id: 'old-rack',
+                  name: 'Acoustic Rhythm 1',
+                  art: 'edsguitar',
+                ),
+                module: module,
+                presetId: 'ed53e7b8',
+              ),
+          ],
+        ),
+        _rig.tracks[1],
+      ],
+      status: _rig.status,
+      outputBusCount: 2,
+    );
+    final bound = ControlState(
+      globalBindings: PedalBindingSet([
+        PedalBinding(
+          key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+          target: const FxSlotTarget(
+            address: FxAddress(stage: FxStage.track),
+            slotId: 'old-1',
+          ).canonicalString(),
+        ),
+      ]),
+    );
+
+    Future<void> chooseTheSameRack(WidgetTester tester) async {
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'fx_library_family_edsguitar');
+      await tapKey(tester, 'fx_preset_ed53e7b8');
+    }
+
+    testWidgets('asks first when assignments point at it, and says how many', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: withRack,
+        controlState: bound,
+      );
+      await chooseTheSameRack(tester);
+
+      final l10n = l10nOf(tester);
+      expect(find.text(l10n.fxReAddRackTitle('Acoustic Rhythm 1')), findsOne);
+      expect(find.text(l10n.fxReAddRackBody(1)), findsOneWidget);
+      await tapKey(tester, 'console_confirm_cancel');
+
+      // Kept: nothing was written.
+      verifyNever(
+        () => repository.setTrackEffects(
+          channel: 0,
+          effects: any(named: 'effects'),
+        ),
+      );
+    });
+
+    testWidgets('confirmed, it replaces the rack in place with new pedals', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: withRack,
+        controlState: bound,
+      );
+      await chooseTheSameRack(tester);
+      await tapKey(tester, 'console_confirm_confirm');
+
+      final written = lastTrackWrite();
+      expect(written, hasLength(withRack.tracks.first.effects.length));
+      final rack = fxChainGroups(written).last;
+      expect(rack.rack!.id, isNot('old-rack'));
+      expect(rack.entries.map((fx) => fx.slotId), isNot(contains('old-1')));
+      expect(
+        rack.entries.every(
+          (fx) => fx is BuiltInEffect && fx.presetId == 'ed53e7b8',
+        ),
+        isTrue,
+      );
+    });
+
+    testWidgets('with no assignments to it, it is replaced without asking', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: withRack,
+      );
+      await chooseTheSameRack(tester);
+
+      expect(find.byKey(const Key('console_confirm_confirm')), findsNothing);
+      final written = lastTrackWrite();
+      expect(written, hasLength(withRack.tracks.first.effects.length));
+      expect(fxChainGroups(written).last.rack!.id, isNot('old-rack'));
     });
   });
 }

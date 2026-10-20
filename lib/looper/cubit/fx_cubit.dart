@@ -246,6 +246,45 @@ class FxCubit extends Cubit<FxState> {
     );
   });
 
+  /// Re-adds the factory rack [rackId] was built from: a fresh build of
+  /// [choice] takes the old rack's place and stage.
+  ///
+  /// The new modules get new identities, as any addition does, so bindings
+  /// to the old ones stop resolving. The page asks first when there are any.
+  // ignore: prefer_void_public_cubit_methods
+  Future<FxEditResult> replaceRack(
+    FxDestination destination,
+    String rackId,
+    FxRackChoice choice,
+  ) {
+    final address = destination.address;
+    if (address == null) {
+      return Future.value(const FxEditResult(FxEditStatus.refused));
+    }
+    return _editChain(
+      address,
+      (current) {
+        final group = fxChainGroups(
+          current,
+        ).where((entry) => entry.rack?.id == rackId).firstOrNull;
+        if (group == null) return null;
+        final added = withFreshSlotIds(
+          _entriesFor(choice, placement: group.placement),
+        );
+        if (added.isEmpty) return null;
+        return (
+          entries: [
+            ...current.sublist(0, group.start),
+            ...added,
+            ...current.sublist(group.end),
+          ],
+          groupId: added.first.rack?.id,
+        );
+      },
+      expectedDestination: destination,
+    );
+  }
+
   /// Renames the current rack without changing its stable identity.
   // ignore: prefer_void_public_cubit_methods
   Future<FxEditResult> renameRack(
