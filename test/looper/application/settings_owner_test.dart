@@ -681,7 +681,7 @@ void main() {
         r.expire();
         expect(outcome?.status, SettingStatus.recoveryRequired);
         expect(r.engine.stopCalls, 0);
-        expect(r.looper.sessionTransport.isRunning, isTrue);
+        expect(r.looper.sessionTransport.deviceRunning, isTrue);
         // Storage keeps the value Retry and a restart owe.
         expect(c.read(r.store), c.encode(c.next));
         expect(c.restart(r.looper), c.next);
@@ -749,7 +749,7 @@ void main() {
         r.engine.commandsAreSettled = true;
         r.pump();
         expect(r.engine.onSnapshot, isNull);
-        expect(r.looper.sessionTransport.isRunning, isFalse);
+        expect(r.looper.sessionTransport.deviceRunning, isFalse);
         expect(outcome?.status, SettingStatus.applied);
         expect(c.restart(r.looper), c.next);
         expect(c.read(r.store), c.encode(c.next));
@@ -880,7 +880,7 @@ void main() {
       'proceeds, and Retry repairs the stored data',
       (r) {
         final owner = c.owner(r);
-        expect(r.looper.sessionTransport.isRunning, isTrue);
+        expect(r.looper.sessionTransport.deviceRunning, isTrue);
         expect(r.engine.stopCalls, 0);
         expect(owner.ready, isFalse);
         expect(owner.value, isNull);
@@ -983,7 +983,7 @@ void main() {
         expect(_audibleDecay(r.engine), _decay.repairedValue);
         expect(r.looper.defaultOverdubDecay, 0);
         expect(r.engine.stopCalls, 0);
-        expect(r.looper.sessionTransport.isRunning, isTrue);
+        expect(r.looper.sessionTransport.deviceRunning, isTrue);
         r.engine.refuseDecayTrack = null;
         expect(r.run(owner.recover())?.status, SettingStatus.applied);
         expect(
@@ -1574,7 +1574,7 @@ void main() {
       expect(outcome?.status, SettingStatus.rejected);
       expect(r.store.values['tempo.click_mode'], 0);
       expect(owner.value, ClickMode.off);
-      expect(r.looper.sessionTransport.isRunning, isTrue);
+      expect(r.looper.sessionTransport.deviceRunning, isTrue);
     });
 
     check('an active take refuses the edit before storage', (r) {

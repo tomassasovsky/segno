@@ -10,7 +10,7 @@ import 'package:segno_engine/segno_engine.dart';
 class TransportState extends Equatable {
   /// Creates a [TransportState].
   const TransportState({
-    this.isRunning = false,
+    this.deviceRunning = false,
     this.masterLengthFrames = 0,
     this.masterPositionFrames = 0,
     this.tempoBpm = 0,
@@ -20,6 +20,7 @@ class TransportState extends Equatable {
     this.syncTempo = true,
     this.quantizeDiv = GridDivision.off,
     this.loopBars = 0,
+    this.loopBeats = 0,
     this.currentBeat = 0,
     this.clickMode = ClickMode.off,
     this.clickMask = 0,
@@ -29,7 +30,9 @@ class TransportState extends Equatable {
     this.countInBeatsLeft = 0,
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
-    this.outputPeak = 0,
+    this.songQueuedTrack = -1,
+    this.songQueueProgress = 0,
+    this.songLastSection = -1,
     this.recDub = false,
     this.quantize = false,
     this.autoRecord = false,
@@ -41,7 +44,11 @@ class TransportState extends Equatable {
   });
 
   /// Whether the audio device is open and processing.
-  final bool isRunning;
+  ///
+  /// Not whether music is playing: the appliance opens the device at boot
+  /// and keeps it open, so this holds for its whole uptime. For playing,
+  /// read the tracks (`LooperState.isPlaying`).
+  final bool deviceRunning;
 
   /// Master loop length in frames; `0` before the first loop is finalized.
   final int masterLengthFrames;
@@ -68,8 +75,14 @@ class TransportState extends Equatable {
   /// Musical quantization granularity (default [GridDivision.off]).
   final GridDivision quantizeDiv;
 
-  /// Whole bars in the master loop, or `0` when no grid relationship exists.
+  /// Whole bars in the master loop, or `0` when no grid relationship exists
+  /// or its beats do not make whole bars ([loopBeats]).
   final int loopBars;
+
+  /// Whole beats (denominator notes) in the master loop, the grid's own
+  /// count, or `0` with no grid. A Divide of a sole 1- or 3-bar loop keeps
+  /// the tempo and leaves 2 or 6 beats with [loopBars] `0` (#1168).
+  final int loopBeats;
 
   /// Beat index (`0..tsNum-1`) within the bar; `0` when idle.
   final int currentBeat;
@@ -94,9 +107,8 @@ class TransportState extends Equatable {
   /// Beat countdown while counting in; `0` when idle.
   final int countInBeatsLeft;
 
-  /// The five-mode axis (default [LooperMode.multi]). Locked (rejected,
-  /// no-op) while any track has content (D4). No semantics beyond the field
-  /// exist yet for the non-multi values (B2a — see [LooperMode]'s class doc).
+  /// The five-mode axis (default [LooperMode.multi]). The Song queue is
+  /// carried separately by [songQueuedTrack] and [songQueueProgress].
   final LooperMode looperMode;
 
   /// The crowned track every surface draws, or `-1` for an empty session.
@@ -108,10 +120,17 @@ class TransportState extends Equatable {
   /// `resolvedPrimaryTrack`.
   final int primaryTrack;
 
-  /// Master-bus absolute peak for the most recent block, in `0..1`, after the
-  /// master gain and limiter — what reaches the outputs. Moves at the poll
-  /// rate while audio flows, like [masterPositionFrames].
-  final double outputPeak;
+  /// The Song section waiting for the playing section's next lap edge
+  /// (#1077), or `-1` with none ([EngineSnapshot.songQueuedTrack]).
+  final int songQueuedTrack;
+
+  /// How much of that wait has played, `0`..`1`, straight from the audio
+  /// engine; `0` with none.
+  final double songQueueProgress;
+
+  /// The Song section that sounded most recently, or `-1`
+  /// ([EngineSnapshot.songLastSection]). Song's Play All starts it again.
+  final int songLastSection;
 
   /// The rec/dub second-press setting the repository holds and re-applies to
   /// the engine: with it on, a take's end lands the track OVERDUBBING rather
@@ -160,7 +179,7 @@ class TransportState extends Equatable {
 
   @override
   List<Object?> get props => [
-    isRunning,
+    deviceRunning,
     masterLengthFrames,
     masterPositionFrames,
     tempoBpm,
@@ -170,6 +189,7 @@ class TransportState extends Equatable {
     syncTempo,
     quantizeDiv,
     loopBars,
+    loopBeats,
     currentBeat,
     clickMode,
     clickMask,
@@ -179,7 +199,9 @@ class TransportState extends Equatable {
     countInBeatsLeft,
     looperMode,
     primaryTrack,
-    outputPeak,
+    songQueuedTrack,
+    songQueueProgress,
+    songLastSection,
     recDub,
     quantize,
     autoRecord,

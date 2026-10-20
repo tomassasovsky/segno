@@ -108,6 +108,8 @@ budget is the appliance's 667 µs period; loops of `--loop-seconds`, default
 | scenario | what is timed | reported |
 |---|---|---|
 | `baseline` | `le_engine_process` per 64-frame period, 8 tracks × 1 and × 8 lanes of 30 s content PLAYING, snapshot polled every 64 periods | p50 / p99 / max / mean µs and % of budget |
+| `baseline` at a Speed (Part 2a) | the same mixer with every track read through its head after `le_engine_set_speed` at 1/2, 4/1 and 8/1, past the turn window — the real mixer path the Part 2a gate names; asserted at 8 tracks × 1 lane and × 8 lanes: p50 ≤ 25 % (proxy), p99 ≤ 50 % (Pi 5) | the same |
+| `baseline` with Pre chains (Part 2a review) | 8 tracks × 8 lanes, a two-entry Pre chain (filter, drive) on every lane, at 8/1: off 1x no print engages, so every chain runs live on the callback, the appliance's worst case for this part | the same; judged on the Pi only, p99 ≤ 50 % |
 | `head` | the `engine_read_head.h` kernel over 8 and 64 lanes in a loop shaped like the mixer's lane loop, at ½×, 2×, 4×, 8× and the tempo ratios 0.75 and 4/3; ≥ 2× uses the box decimation. The control is the mixer's integer read (`position % len` per track, one `lbuf[seg_base + trk_pos]` load per lane), which Part 2a keeps for identity heads; the identity head is timed as a row of its own | the same, plus the worst ADDED cost (rate minus the integer control) |
 | `render` | `le_stretch_render_offline` on one 30 s mono lane, both presets, ±12 st at ratio 1 and stretches at 0.75 and 4/3; idle, then under load (a second engine paced at the period on a real-time thread). The renders run on their own SCHED_OTHER thread at nice +10, the cache worker's priority | × real time, the peak C++ heap during the render, and the render's scratch (that peak minus one stretcher) |
 | `inline` | streaming `le_stretch_process` at 64 output frames per call for 1 / 8 / 64 streams, hop-aligned and hop-staggered, plus one `seek` re-prime | per-period stats (informational) |
@@ -236,6 +238,65 @@ chmod +x bench_pitch_time
 
 When both this and the proxy table exist, the proxy/Pi ratio is recorded here
 and becomes the scaling note for later runs.
+
+What the owner measures on the appliance before Part 3a (Transpose) merges
+(plan E11; none of it can run here):
+
+1. `./bench_pitch_time --budget-us 667 --assert` with the app running: the
+   `render` rows must stay >= 20x real time per mono lane under load with
+   `presetCheaper` (a 30 s lap in <= 1.5 s), and the mixer rows at 1/2x, 4x
+   and 8x within 50 % of the period at p99. That includes the two rows the
+   Part 3a review added (M3): 8 x 8 with a Pre chain on every lane at 8x,
+   and the same rig with every track transposed +7 st, timed once all
+   eight sound it (a transposed track never engages a print, decision 7, so
+   every chain runs live on the callback). The bench prints how many tracks
+   sounded the pitch, how long the 64 renders took, and the peak RSS after
+   them; record all three here.
+2. Eight single-lane 30 s tracks, each transposed (+7 st) while playing:
+   `le_engine_get_callback_telemetry` read before and after the eight renders
+   land shows `late_periods` unchanged (the worker runs at nice +10 on Linux
+   and must not disturb the callback).
+3. A listening check at +12 and -12 st on a sustained and a percussive take,
+   with the 8 kHz tonality limit (as shipped) and without it, and at the
+   loop point (the 20 ms fold) on a sustained chord, recorded here with the
+   verdict. The fold's level now follows the two signals' local
+   correlation (review L1; within 1.5 dB of their blended level in the
+   native test, against -5.2 to +4.6 dB with the fixed equal-power law), so
+   the check listens for a swell or dip once per lap.
+4. The app's peak RSS (`VmHWM` in `/proc/self/status`) during eight 30 s
+   renders at 96 kHz with the eight tracks playing, against the memory
+   table below.
+5. The joint CPU scenario below, in the same session as the instruments
+   bench (#1197), once its Part 1 exists.
+
+### Joint budgets with backing (#1200) and instruments (#1197)
+
+**Memory.** The appliance budget is #1200's D11 table (8 GB, no swap, one
+process). Part 3a's review asked whether the wet-cache cap still fits it.
+It did not at 384 MiB: that table already lists 1.5 GiB of backing buffers,
+a 1 GB decode, 264 MiB of capture rings and loops that grow with use, and
+counts the wet cache at 64 MiB. The cap is now 192 MiB:
+
+- 64 MiB is the Pre prints' old share, kept;
+- 128 MiB is Transpose's: eight transposed single-lane 30 s tracks at
+  96 kHz (8 x 11.5 MiB = 92 MiB) plus the one source job in flight (its
+  dry copy and render, 2 x 11.5 MiB);
+- a denser rig (more lanes per transposed track) is refused per track with
+  `LE_CACHE_REASON_BUDGET` and plays dry, reported, as the plan says.
+
+#1200's D11 row "Loop-stage wet cache: 64 MiB" becomes 192 MiB.
+
+**CPU.** #1197's D2 defines the joint worst case on the Pi 5 (96 kHz,
+64-frame period, 667 µs, SCHED_FIFO, the app running), judged on p99.9 with
+no late period over the run: the 8 x 8 baseline, eight monitored inputs
+through one reverb each, the read head at 8x over the 64 lanes, and 32
+voices of the costliest patch, p99.9 at most 75 %. Pitch/time's share of
+that scenario is now the worst row above, not the chain-free baseline: 8 x 8
+with a Pre chain on every lane, every track transposed, at 8x. The
+instruments bench's `joint` scenario should build its pitch/time part the
+same way (chains on, prints off, renders engaged), and this document records
+the pitch/time rows from the same appliance session so the two add up on
+one machine.
 
 ## Reading the dev-machine numbers
 

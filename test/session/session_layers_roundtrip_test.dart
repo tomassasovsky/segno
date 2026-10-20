@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/looper/model/audio_tempo.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
@@ -172,6 +173,14 @@ void main() {
           defaultOneShot: looper.defaultOneShot,
           trackOverrides: looper.trackOneShotOverrides,
         ),
+        followTempo: InheritSnapshot(
+          defaultValue: looper.defaultFollowTempo,
+          trackOverrides: looper.trackFollowTempoOverrides,
+        ),
+        pitchMode: InheritSnapshot(
+          defaultValue: looper.defaultPitchMode,
+          trackOverrides: looper.trackPitchModeOverrides,
+        ),
       ),
     );
     // Wipe to an empty rig so a failed load would be visible, then load back.
@@ -277,6 +286,31 @@ void main() {
           );
         }
       }
+    },
+    skip: skip,
+  );
+  test(
+    'the session fingerprint follows every audio write on the real engine',
+    () async {
+      String fingerprint() =>
+          session.fingerprint(settings: const SessionSettings());
+
+      buildTake(base: 0.5, overdubs: 0, undos: 0);
+      settle();
+      final taken = fingerprint();
+      engine.pump(frames: loopFrames);
+      expect(fingerprint(), taken, reason: 'playing back writes nothing');
+
+      expect(looper.record(), EngineResult.ok);
+      engine.pump(frames: loopFrames, input: 0.1);
+      expect(looper.record(), EngineResult.ok);
+      settle();
+      final overdubbed = fingerprint();
+      expect(overdubbed, isNot(taken), reason: 'an overdub is a write');
+
+      looper.undo();
+      engine.pump(frames: 0);
+      expect(fingerprint(), isNot(overdubbed), reason: 'an undo is a write');
     },
     skip: skip,
   );

@@ -191,7 +191,7 @@ void main() {
           expect(family.live(repository), family.prior);
           expect(family.restart(repository), family.next);
           expect(count(engine, 'stop'), 0);
-          expect(repository.sessionTransport.isRunning, isTrue);
+          expect(repository.sessionTransport.deviceRunning, isTrue);
 
           // The device is gone; supervision is still armed and reopens it.
           engine.nextSnapshot = engine.nextSnapshot.copyWith(
@@ -359,7 +359,7 @@ void main() {
       expect(repository.clickModeSettled, isFalse);
       clock.elapse(const Duration(milliseconds: 20));
       expect(repository.clickModeRecoveryRequired, isTrue);
-      expect(repository.sessionTransport.isRunning, isTrue);
+      expect(repository.sessionTransport.deviceRunning, isTrue);
     });
 
     check('callback refusal with exact prior mode keeps audio running', (
@@ -379,7 +379,7 @@ void main() {
       clock.flushMicrotasks();
       expect(result, EngineResult.invalid);
       expect(repository.clickModeRecoveryRequired, isFalse);
-      expect(repository.sessionTransport.isRunning, isTrue);
+      expect(repository.sessionTransport.deviceRunning, isTrue);
       expect(repository.sessionTransport.clickMode, ClickMode.off);
     });
 
@@ -464,7 +464,7 @@ void main() {
       expect(repository.clickVolumeSettled, isTrue);
       expect(repository.clickVolumeRecoveryRequired, isTrue);
       expect(repository.clickVolumeRestartIntent, 1.5);
-      expect(repository.sessionTransport.isRunning, isTrue);
+      expect(repository.sessionTransport.deviceRunning, isTrue);
       expect(repository.sessionTransport.clickVolume, 1);
       expect(count(engine, 'stop'), 0);
     });

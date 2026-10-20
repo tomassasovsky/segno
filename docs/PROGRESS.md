@@ -1,12 +1,50 @@
 # Segno — Progress & Roadmap
 
-<!-- cspell:words hashlib -->
+<!-- cspell:words hashlib manufacturability -->
 
 Living status doc for the Flutter desktop loopstation. Pairs with the original
 plan in `docs/plan/2026-06-08-feat-flutter-desktop-loopstation-plan.md`.
 Update this as work lands so any session (human or agent) can resume cold.
 
 Repo: https://github.com/tomassasovsky/segno · branch `master`.
+
+---
+
+## Active threads
+
+Issues with a live branch. Agents add a row when a thread starts, update it
+when its stage changes, and remove it in the PR that closes the issue or when
+the work is parked (rules in `AGENTS.md`). Stage and autonomy are copied from
+the issue labels, which are authoritative; if a row disagrees, fix the row.
+
+| Issue | Thread | Stage | Autonomy | Branch |
+|-------|--------|-------|----------|--------|
+| #1299 | Appliance slowdown profiler | in-review | merge-gate | `claude/appliance-responsiveness-08d39b` |
+| #1301 | Idle console redraws at 60 fps | build | merge-gate | `claude/idle-redraw-1301` |
+| #1337 | Retry Wi-Fi after a runtime drop, holding off while performing | in-review | blocked-verify | `claude/wifi-runtime-retry-1337` |
+| #1349 | Console LEDs dim with the screens (protocol 11, console 2.2, ring 1.1) | build | blocked-verify | `claude/idle-dim-leds-1349` |
+| #1352 | Console negotiates the charger's full 20 V current, with a power-cycle prompt | in-review | blocked-verify | `claude/pd-provisioning-1352` |
+| #1081 | Console v3 and ring carrier firmware on protocol 10 | in-review | merge-gate | `claude/console-v3-port-1081` |
+| #1072 | Screen power follows the app (runtime on integration) | in-review | blocked-verify | `claude/screen-power-runtime-1072` |
+| #1088 | Console base enclosure for fabrication | in-review | merge-gate | `claude/segno-pedal-manufacturability-5f08a2` |
+| #1077 | Song queue completion | in-review | blocked-verify | `claude/song-queue-comet-1077` |
+| #1140 | Keep recorded material across audio-engine reopen | in-review | merge-gate | `claude/engine-reopen-1140*` |
+| #1143 | Replay audio-history changes in performance stems | build | merge-gate | `claude/stem-history-replay-1143` |
+| #1144 | Report render manifest failures | in-review | merge-gate | `claude/manifest-failure-1144` |
+| #1146 | Guard fresh capture preparation | in-review | merge-gate | `claude/capture-prep-guard-1146` |
+| #1159 | One settings-transaction owner | (none) | merge-gate | `claude/settings-owner-1159-*` |
+| #1164 | Foot Peel | plan-review | merge-gate | `claude/peel-plan-1164` |
+| #1168 | Foot Multiply and Divide | plan-review | merge-gate | `claude/multiply-divide-1168-*` |
+| #1177 | Appliance USB storage service | build | merge-gate | `claude/usb-storage-1177-*` |
+| #1178 | Library and Sessions redesign | build | merge-gate | `claude/library-1178-*` |
+| #1179 | Pitch and time DSP core | build | merge-gate | `claude/pitch-time-1179-*` |
+| #1197 | Instruments | plan | merge-gate | `claude/instruments-1197-*` |
+| #1198 | Recording to USB and long recordings | plan | merge-gate | `claude/recording-1198-*` |
+| #1200 | Backing player | plan | merge-gate | `claude/backing-1200-*` |
+| #1202 | Shared render recipe, Bounce, Save selected | plan | merge-gate | `claude/render-1202-*` |
+| #1228 | MIDI clock | plan | merge-gate | `claude/midi-clock-1228-*` |
+| #1270 | Device and appliance pages | plan | merge-gate | `claude/device-pages-plan-1270` |
+| #1342 | Ring carrier firmware updates from the console | in-review | blocked-verify | `claude/ring-update-1342` |
 
 ---
 
@@ -396,12 +434,11 @@ check remains pending; this source change does not install an update.
 
 ## Startup readiness and bundle inspection (#980 / #982)
 
-The remaining startup work from #982 now follows the current appliance stack:
-the launcher waits for a stable Wayland socket and stops if that wait fails,
-restarts pause for three seconds, and the secondary native window opens after
-a 750 ms startup delay. Preference changes cannot bypass that delay, and
-unmounting cancels it. These timings mitigate #970; they do not establish that
-EGL is ready or replace compositor-restart verification on the appliance.
+The startup mitigations from #982 for #970 (the launcher's wait for a stable
+Wayland socket and the 750 ms delay before the second window opened) were
+removed with the GTK runner (#1330): ivi-homescreen opens both screens itself,
+with no compositor to wait for. Restarts still pause for three seconds
+(`segno.service`).
 
 The bundle build inspects the actual RAUC artifact for the selected board and
 version, its rootfs and boot archive, and the firmware install hook. The boot
@@ -522,9 +559,9 @@ install hook remain unchanged. A failed inspection stops the release build.
   ```sh
   packages/segno_engine/tool/check_ffi_symbols.sh <path-to-libsegno_engine.so>
   ```
-  Both Linux CI jobs run it against the bundle they just built, and
-  `build-arm64-bundle.sh` runs it before the bundle can be deployed or staged
-  for Yocto, so ordinary work should never see it fail. It is worth running by
+  CI's `appliance-bundle` job and the release build run it against the bundle
+  they just built, and `build-arm64-bundle.sh` runs it before the bundle can be
+  deployed or staged for Yocto, so ordinary work should never see it fail. It is worth running by
   hand after a regen if you are about to hand-stage a bundle. The check is
   itself tested (`bash packages/segno_engine/tool/test/run_check_ffi_symbols_tests.sh`),
   including that it **fails closed**: if ffigen's emitted call shape ever drifts
@@ -532,6 +569,13 @@ install hook remain unchanged. A failed inspection stops the release build.
 - **macOS app run/build:** flavor schemes required.
   `flutter build macos --debug --flavor development -t lib/main_development.dart`
   Run: `flutter run -d macos --flavor development -t lib/main_development.dart`
+- **Appliance bundle:** `deploy/rpi/build/build-arm64-bundle.sh` builds what
+  the console runs (`build/appliance/bundle`) in an arm64 container, on the
+  Flutter release the image's engine is (`FLUTTER_ENGINE_VERSION` in
+  `deploy/yocto/meta-segno/recipes-graphics/flutter-engine/flutter-engine-version.inc`).
+  There is no `linux/` and no Linux desktop build: the app is built with
+  `flutter assemble` and the engine with its own CMake project, and the
+  console runs it on ivi-homescreen (#1330). macOS is the dev host.
 - **Driving the Network page off the appliance:** Wi-Fi is a Linux-only
   helper (`segno-wifi-ctl`), so on macOS every path past "no WiFi on this
   build" is unreachable — including the ones with the most
@@ -797,9 +841,9 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   a white playhead bar. Fed by a new RT-safe native **loop-indexed viz tap**
   (`le_engine_read_visual` + `read_track_visual`: peak per loop bucket, master
   + per-track, refreshed as the playhead sweeps). `KeyValueStore` now stores
-  string/bool/double. (Two-window runtime is build-verified only; needs an
-  on-machine run to confirm visually.) `desktop_multi_window` is pinned to
-  pub.dev `^0.2.0` (the SPM-fork branch was dropped; CocoaPods builds fine).
+  string/bool/double. _(The second window and `desktop_multi_window` were
+  later removed: the readout is the console's 7″ screen, a second engine
+  under ivi-homescreen, #1330.)_
 - **Auto-start audio + first-run flow:** the last-used audio config (sample
   rate / buffer / monitor) is persisted on a successful start
   (`SettingsRepository.save/loadAudioConfig`). On launch, `tryAutoStartEngine`
@@ -893,7 +937,9 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   build jobs. Per-channel label exclusion is **unchanged** (`return 0` off macOS;
   ASIO/PipeWire are PR2/PR3). *Hardware-gated, not yet run on real interfaces:
   end-to-end record/loop/play/monitor/FX, the `desktop_multi_window` waveform window
-  on GTK, device-name classification, and the latency harness.*
+  on GTK, device-name classification, and the latency harness.* _(`linux/` and
+  the Linux desktop build were later deleted; the appliance bundle is built
+  with `flutter assemble`, #1330.)_
 - **Windows bring-up fixes (real-hardware run).** Two blockers found running the
   app on a real Windows interface, both fixed + verified (build + app launch +
   native tests green via MSVC):
@@ -1191,9 +1237,9 @@ remains open — see "On-hardware validations" below.
 - **VST3/CLAP plugin hosting — Linux (X11) port.** See the "Effects chain"
   Done entry above for macOS/Windows status; Linux needs an X11 embedding
   target, deferred to on-platform work.
-- Secondary-window **visualizer** (`desktop_multi_window`) — wired end-to-end in
-  code (`runWaveformWindow`, `WaveformWindowService`, frame IPC); needs a 2nd
-  display for a live visual confirmation.
+- **Readout screen** — the console's 7″ runs as the second Flutter engine under
+  ivi-homescreen, fed over the screen link (`lib/visualizer/screen_link.dart`,
+  #1318, #1330); the on-device check is in `docs/HARDWARE_VALIDATION.md`.
 - **Device hot-plug / reconnect — SHIPPED** (PR #41-era `feat/audio-device-a2`):
   `LooperRepository` reconnect supervisor (`_intendRunning` guard,
   `_attemptReconnect`, `_pinnedDevicesPresent`) + `devicePresent` UI banner.

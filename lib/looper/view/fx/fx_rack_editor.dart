@@ -80,6 +80,13 @@ class FxRackEditor extends StatelessWidget {
         onBack: onBack,
         onStage: onStage,
         children: [
+          // The pen's Track Solo chip, at the left end of the titlebar's row
+          // and centred on its 64-high buttons.
+          Positioned(
+            left: 926,
+            top: 52,
+            child: FxTrackSolo(destination: destination),
+          ),
           Positioned(
             // The pen's row is right-aligned inside the titlebar, with the
             // rack's pedal assignment ahead of these four. That chip belongs

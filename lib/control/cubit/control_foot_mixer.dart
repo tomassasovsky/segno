@@ -22,9 +22,7 @@ extension _FootMixerControl on ControlCubit {
     }
     if (!_mixerEditable) return;
     if (role.immediate) {
-      if (_dispatchMixerAction(role.press, role.slot)) {
-        _acceptedContacts.add(button);
-      }
+      _dispatchMixerAction(role.press, role.slot);
       return;
     }
     final session = _looper.sessionRevision;
@@ -42,6 +40,7 @@ extension _FootMixerControl on ControlCubit {
     _armGesture(
       _systemGesture(button) ??
           _trackHoldGestures.putIfAbsent(button, _HoldGesture.new),
+      cue: button,
       onTap: () => dispatch(role.press),
       onHold: () => dispatch(role.hold!),
     );

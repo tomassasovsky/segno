@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:backing_repository/backing_repository.dart';
 import 'package:controller_repository/controller_repository.dart';
+import 'package:instrument_repository/instrument_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
@@ -10,8 +12,14 @@ import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
-import 'package:segno/appliance/power_off/power_off_cubit.dart';
+import 'package:segno/appliance/power_off/power_cubit.dart';
+import 'package:segno/backing/application/backing_player.dart';
+import 'package:segno/backing/application/session_backing.dart';
+import 'package:segno/backing/cubit/backing_cubit.dart';
+import 'package:segno/backing/cubit/backing_mix_cubit.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/instruments/application/instrument_settings.dart';
+import 'package:segno/looper/application/backing_settings.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
@@ -21,8 +29,11 @@ import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/session/application/session_settings_coordinator.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/storage/cubit/storage_cubit.dart';
+import 'package:segno/tuner/application/tuner_settings.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 /// Owns the running rig's transaction actors and their disposal order.
 ///
@@ -39,8 +50,13 @@ class AppRuntime {
     required PedalRepository pedal,
     required PerformanceRepository performance,
     required SessionRepository sessions,
+    required StorageRepository storage,
+    required BackingRepository backing,
     required Future<void> Function() powerOff,
+    required Future<void> Function() reboot,
+    required Future<void> Function() storageSettled,
     required GuardRegistry guards,
+    InstrumentRepository? instruments,
   }) {
     fxPersistence = FxChainPersistence(looper: repository);
     mixPersistence = SettingsMixPersistence(settings);
@@ -54,17 +70,49 @@ class AppRuntime {
       sessionBlocked: () => fxPersistence.sessionTransitionActive,
     );
     timing = RecordTimingSettings(repository: repository, settings: settings);
+    tuner = TunerSettings(settings: settings);
+    backingSettings = BackingSettings(
+      repository: repository,
+      settings: settings,
+      backing: backing,
+    );
+    backingPlayer = BackingPlayer(
+      repository: backing,
+      settings: backingSettings,
+    );
+    this.instruments = instruments == null
+        ? null
+        : InstrumentSettings(
+            looper: repository,
+            instruments: instruments,
+            settings: settings,
+          );
     owners = SettingsOwners([
       ...tempo.owners,
       ...playback.owners,
       ...record.owners,
       ...timing.owners,
       ...fade.owners,
+      ...backingSettings.owners,
+      ...?this.instruments?.owners,
     ]);
-    power = PowerOffCubit(
+    // App-wide: shutdown asks it about transfers outside the Storage page.
+    this.storage = StorageCubit(
+      repository: storage,
+      sampleRate: () => repository.state.status.sampleRate,
+    );
+    power = PowerCubit(
+      stopTransport: () {
+        for (final track in repository.state.tracks) {
+          repository.stopTrack(channel: track.channel);
+        }
+      },
       flush: prepareShutdown,
+      storageSettled: storageSettled,
+      guards: guards,
       pedalGoodbye: pedal.goodbye,
       powerOff: powerOff,
+      reboot: reboot,
     );
     looper = LooperBloc(
       repository: repository,
@@ -88,8 +136,11 @@ class AppRuntime {
         recordLength: record,
         recordTiming: timing,
         fade: fade,
+        backing: backingSettings,
       ),
       fadeSettings: fade,
+      tunerSettings: tuner,
+      seedTunerDefault: true,
       pedal: pedal,
       performance: performance,
       controller: controllers,
@@ -115,6 +166,10 @@ class AppRuntime {
         record: record,
         timing: timing,
         fade: fade,
+        backing: SessionBackingPort(
+          player: backingPlayer,
+          settings: backingSettings,
+        ),
       ),
       currentPedalBindings: () => control.state.bindings.encode(),
       onPedalBindings: (encoded) =>
@@ -122,6 +177,8 @@ class AppRuntime {
       releaseHeldBindings: control.releaseAllMomentary,
       guards: guards,
     );
+    backingView = BackingCubit(player: backingPlayer);
+    backingMixView = BackingMixCubit(settings: backingSettings);
   }
 
   /// Shared durable mix owner supplied by bootstrap.
@@ -140,6 +197,21 @@ class AppRuntime {
   late final RecordTimingSettings timing;
   late final FadeSettings fade;
 
+  /// The tuner's appliance preferences, read by the reading and the foot
+  /// Tuner.
+  late final TunerSettings tuner;
+
+  /// The backing mix and click pan owners, and the player's one owner
+  /// (#1200), with the cubit that presents it.
+  late final BackingSettings backingSettings;
+  late final BackingPlayer backingPlayer;
+  late final BackingCubit backingView;
+  late final BackingMixCubit backingMixView;
+
+  /// The instruments' edits and their owner (#1197); null without an
+  /// instrument repository.
+  late final InstrumentSettings? instruments;
+
   /// The owned settings that run on the shared owner, in their fixed order.
   late final SettingsOwners owners;
 
@@ -147,7 +219,10 @@ class AppRuntime {
   late final LooperBloc looper;
   late final ControlCubit control;
   late final SessionCubit session;
-  late final PowerOffCubit power;
+  late final PowerCubit power;
+
+  /// Volumes, capacity, eject, and whether a transfer is in flight.
+  late final StorageCubit storage;
 
   bool _closing = false;
   Future<void>? _startFuture;
@@ -166,8 +241,12 @@ class AppRuntime {
       record.load(),
       timing.load(),
       fade.load(),
+      tuner.load(),
+      backingSettings.load(),
+      backingPlayer.start(),
+      ?instruments?.load(),
       control.load(),
-    ]).then((_) {});
+    ]).then((_) => session.recordBaseline());
   }
 
   /// Retires controls, recovers on explicit retry, and confirms durable writes.
@@ -231,10 +310,17 @@ class AppRuntime {
       () => sessionClosed,
       control.close,
       looper.close,
+      storage.close,
       // UI teardown starts debounced saves; confirm them while their owners
       // and the repository still live. A failure must not skip disposal.
       fxPersistence.flush,
+      backingView.close,
+      backingMixView.close,
+      backingPlayer.close,
+      backingSettings.close,
       fade.close,
+      tuner.close,
+      ?instruments?.close,
       timing.close,
       record.close,
       playback.close,

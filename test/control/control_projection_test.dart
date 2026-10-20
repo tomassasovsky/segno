@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
-import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
@@ -11,7 +10,7 @@ LooperState _stateWith(
   int sampleRate = 48000,
 }) => LooperState(
   transport: TransportState(
-    isRunning: true,
+    deviceRunning: true,
     masterLengthFrames: masterLengthFrames,
   ),
   tracks: tracks,
@@ -286,87 +285,6 @@ void main() {
       expect(modes.values.toSet(), hasLength(4)); // no two modes collide
     });
 
-    test('physical ten-button state is separate from logical track LEDs', () {
-      final looper = _stateWith(_tracksWith(const []), masterLengthFrames: 0);
-      final frame = projectFrame(
-        looper,
-        const ControlState(),
-        acceptedContacts: const {PedalButton.stop, PedalButton.undo},
-      );
-      expect(frame.trackLeds[0], PedalTrackLed.red);
-      expect(frame.isLit(PedalButton.track1), isTrue);
-      expect(frame.isLit(PedalButton.stop), isTrue);
-      expect(frame.isLit(PedalButton.undo), isTrue);
-      expect(frame.isLit(PedalButton.mode), isFalse);
-      expect(frame.isLit(PedalButton.bank), isFalse);
-
-      final fx = projectFrame(
-        looper,
-        const ControlState(mode: InteractionMode.fx),
-        acceptedContacts: const {
-          PedalButton.recPlay,
-          PedalButton.undo,
-          PedalButton.clear,
-        },
-      );
-      expect(fx.isLit(PedalButton.mode), isTrue);
-      expect(fx.isLit(PedalButton.recPlay), isFalse);
-      expect(fx.isLit(PedalButton.undo), isFalse);
-      expect(fx.isLit(PedalButton.clear), isFalse);
-    });
-
-    test('Custom physical transport state and RGB do not recolor activity', () {
-      final looper = _stateWith(_tracksWith(const []), masterLengthFrames: 0);
-      final setup = const PedalSetup().withCustom(
-        PedalButton.stop,
-        bank: 0,
-        pair: const ControlGesturePair(
-          press: CommandAction(ControlCommand.recordPerformance),
-        ),
-      );
-      final colors = List<PedalColor>.filled(
-        PedalButton.values.length,
-        PedalColor.defaultColor,
-      )..[PedalButton.stop.index] = const PedalColor(3, 19, 212);
-      final frame = projectFrame(
-        looper,
-        ControlState(mode: InteractionMode.custom, pedalSetup: setup),
-        physicalCustomStates: const {PedalButton.stop: true},
-        pedalColors: colors,
-      );
-      expect(frame.isLit(PedalButton.stop), isTrue);
-      expect(frame.colorFor(PedalButton.stop), const PedalColor(3, 19, 212));
-      expect(frame.isLit(PedalButton.undo), isFalse);
-      expect(frame.globalColor, GlobalColor.off);
-      expect(frame.trackLeds[0], PedalTrackLed.off);
-      expect(frame.isLit(PedalButton.mode), isTrue); // fixed Exit
-
-      final stopped = frame.copyWith(isGoodbye: true);
-      expect(stopped.isLit(PedalButton.stop), isFalse);
-    });
-
-    test(
-      'confirmed palette changes hue without changing physical activity',
-      () {
-        final looper = _stateWith(_tracksWith(const []), masterLengthFrames: 0);
-        final before = projectFrame(looper, const ControlState());
-        final palette = const PedalPalette().withChoice(
-          PedalButton.stop,
-          const BuiltInPaletteEntry(PedalPaletteColor.red),
-        );
-        final after = projectFrame(
-          looper,
-          ControlState(
-            pedalSetup: const PedalSetup().copyWith(palette: palette),
-          ),
-        );
-        expect(before.colorFor(PedalButton.stop), PedalColor.defaultColor);
-        expect(after.colorFor(PedalButton.stop), PedalPaletteColor.red.color);
-        expect(after.activeButtonMask, before.activeButtonMask);
-        expect(after.isLit(PedalButton.stop), isFalse);
-      },
-    );
-
     test('global color: recording red, overdub amber, playing green', () {
       const overlay = ControlState();
       expect(
@@ -478,6 +396,106 @@ void main() {
         ),
         throwsA(isA<Error>()),
       );
+    });
+  });
+
+  group('Song queue (#1077)', () {
+    LooperState song({
+      int queued = 1,
+      double progress = 0.5,
+      LooperMode mode = LooperMode.song,
+      List<Track>? tracks,
+    }) => LooperState(
+      transport: TransportState(
+        deviceRunning: true,
+        looperMode: mode,
+        songQueuedTrack: queued,
+        songQueueProgress: progress,
+      ),
+      tracks:
+          tracks ??
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 96000),
+            Track(channel: 5, state: TrackState.stopped, lengthFrames: 96000),
+          ]),
+      status: const EngineStatus(sampleRate: 48000),
+    );
+    const mute = ControlState(mode: InteractionMode.mute);
+
+    test('the waiting section reads green and its pill fills', () {
+      final frame = projectFrame(song(), mute);
+      expect(frame.trackLeds[0], PedalTrackLed.green); // playing
+      expect(frame.trackLeds[1], PedalTrackLed.green); // waiting
+      expect(frame.trackLeds[5], PedalTrackLed.off);
+      expect(frame.queuedButton, PedalButton.track2);
+      expect(frame.queuedProgress, 127);
+      expect(frame.isLit(PedalButton.track2), isTrue);
+      expect(frame.colorFor(PedalButton.track2), ledGreen);
+    });
+
+    test('the fill never reaches a full pill', () {
+      expect(projectFrame(song(progress: 0), mute).queuedProgress, 0);
+      expect(projectFrame(song(progress: 0.999999), mute).queuedProgress, 254);
+      expect(projectFrame(song(progress: 1), mute).queuedProgress, 254);
+    });
+
+    test('a section on the other bank has no pill on the plate', () {
+      final a = projectFrame(song(queued: 5), mute);
+      expect(a.trackLeds[5], PedalTrackLed.green);
+      expect(a.queuedButton, isNull);
+      expect(a.queuedProgress, 0);
+      final b = projectFrame(
+        song(queued: 5),
+        const ControlState(mode: InteractionMode.mute, activeBank: 1),
+      );
+      expect(b.queuedButton, PedalButton.track2);
+    });
+
+    test('Record mode fills the waiting section too', () {
+      // The cursor sits elsewhere; the waiting section still reads green.
+      final frame = projectFrame(song(), const ControlState(cursor: 5));
+      expect(frame.trackLeds[1], PedalTrackLed.green);
+      expect(frame.trackLeds[5], PedalTrackLed.red);
+      expect(frame.queuedButton, PedalButton.track2);
+      expect(frame.queuedProgress, 127);
+      expect(frame.isLit(PedalButton.track2), isTrue);
+      expect(frame.colorFor(PedalButton.track2), ledGreen);
+      // On the cursor itself the wait wins until the section starts.
+      final onCursor = projectFrame(song(), const ControlState(cursor: 1));
+      expect(onCursor.trackLeds[1], PedalTrackLed.green);
+      expect(onCursor.queuedButton, PedalButton.track2);
+    });
+
+    test('nothing waits outside Song, outside Mute and Record or without a '
+        'take', () {
+      for (final (looper, overlay) in [
+        (song(mode: LooperMode.multi), mute),
+        (song(), const ControlState(mode: InteractionMode.fx)),
+        (song(queued: 3), mute),
+        (song(queued: -1), mute),
+      ]) {
+        final frame = projectFrame(looper, overlay);
+        expect(frame.queuedButton, isNull);
+        expect(frame.queuedProgress, 0);
+      }
+    });
+
+    test('Song shows sounding sections, not a parked preview', () {
+      final parked = song(
+        queued: -1,
+        progress: 0,
+        tracks: _tracksWith(const [
+          Track(state: TrackState.stopped, lengthFrames: 48000),
+          Track(channel: 1, state: TrackState.stopped, lengthFrames: 96000),
+        ]),
+      );
+      final frame = projectFrame(
+        parked,
+        const ControlState(mode: InteractionMode.mute, parkedResume: {0}),
+      );
+      expect(frame.trackLeds[0], PedalTrackLed.off);
+      expect(frame.trackLeds[1], PedalTrackLed.off);
     });
   });
 }

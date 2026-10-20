@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/common/pedal_color_display.dart';
-import 'package:segno/control/binding/pedal_palette.dart';
+import 'package:segno/control/binding/pedal_led_map.dart';
 import 'package:segno/control/view/pedal_setup/pedal_color_dialog.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -18,8 +18,15 @@ void main() {
   PedalColor roundTrip(PedalColor color) =>
       pedalColorFromHsv(HSVColor.fromColor(color.display));
 
-  test('every built-in colour survives the editor untouched', () {
-    for (final entry in PedalPaletteColor.values.map((item) => item.color)) {
+  test('every default LED colour survives the editor untouched', () {
+    for (final entry in [
+      ledRed,
+      ledGreen,
+      ledBlue,
+      ledYellow,
+      ledBankB,
+      ledWhite,
+    ]) {
       expect(roundTrip(entry), entry, reason: entry.toString());
     }
   });
@@ -67,7 +74,6 @@ void main() {
                 showPedalColorDialog(
                   context,
                   initial: const PedalColor(255, 0, 0),
-                  editing: false,
                 ).then((value) => result = value),
               ),
               child: const Text('Open'),

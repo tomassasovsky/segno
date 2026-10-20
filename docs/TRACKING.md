@@ -28,7 +28,9 @@ produce — no separate status update needed:
 | (closed)           | PR merges                      | merged PR auto-closes the issue    |
 
 **Rule:** PR bodies must contain `Closes #N` so merges auto-close the issue. The
-agent writes that line, not the human.
+agent writes that line, not the human. When an issue ships as stacked part PRs,
+the parts that leave work behind say `Refs #N` and only the PR that completes
+the issue says `Closes #N`. One issue never has two open PRs that both close it.
 
 ## The autonomy criteria — which gate needs a human
 
@@ -72,7 +74,13 @@ enough — the code-review skill must also be clean.
 
 ## Keeping it current (agent responsibilities each session)
 
-- Starting a thread? Find or open its issue; set `stage:*` + `autonomy:*`.
+- Starting a session? Run the session bootstrap in `AGENTS.md`. It lists open
+  issues and PRs before anything is opened.
+- Starting a thread? Find its issue first; open one only when no open issue
+  covers the scope. Set `stage:*` + `autonomy:*`, and add the thread to
+  **Active threads** in `docs/PROGRESS.md`.
+- Stage changed, merged, or parked? Update the issue label and the thread's
+  **Active threads** row. The PR that closes the issue removes its row.
 - Opening a PR? Add `stage:in-review`, `Closes #N`, `ci:*` + `review:pending`.
 - After running `/code-review` on a PR: set `review:clean` (or leave `pending` if
   it has findings). If `ci:green` too, add `ready-to-merge`.

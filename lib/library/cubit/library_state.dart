@@ -1,5 +1,14 @@
 part of 'library_cubit.dart';
 
+/// The Library's two sections, the topbar's crumb tabs.
+enum LibrarySection {
+  /// Saved sessions (pen 19/01).
+  sessions,
+
+  /// Recordings and session mixdowns (pen 18/01, #1178 Part 7).
+  audio,
+}
+
 /// Which storage the Library is browsing.
 enum LibraryLocation {
   /// The appliance's own sessions root.
@@ -69,6 +78,161 @@ enum LibraryPreviewError {
   unreadable,
 }
 
+/// A preview playing through Listen (plan D10).
+class LibraryListen extends Equatable {
+  /// Creates the Listen state for session [id].
+  const LibraryListen({
+    required this.id,
+    required this.frames,
+    this.position = 0,
+    this.truncated = false,
+    this.sampleRate = 0,
+    this.starting = false,
+  });
+
+  /// The session whose preview plays.
+  final SessionId id;
+
+  /// The preview's length in frames.
+  final int frames;
+
+  /// Frames of it played.
+  final int position;
+
+  /// Whether only the first [kAuditionMaxSeconds] of a longer preview play.
+  final bool truncated;
+
+  /// The engine's rate, which [frames] and [position] count at (the decoder
+  /// converts the session's own rate to it).
+  final int sampleRate;
+
+  /// Whether the preview is still decoding: Listen was pressed and the start
+  /// has not landed. Pressing again withdraws it.
+  final bool starting;
+
+  @override
+  List<Object?> get props => [
+    id,
+    frames,
+    position,
+    truncated,
+    sampleRate,
+    starting,
+  ];
+}
+
+/// Why Listen did not start.
+enum LibraryListenRefusal {
+  /// The session has no preview, or it does not decode.
+  unplayable,
+
+  /// No audio device is running.
+  noDevice,
+
+  /// A performance capture is armed.
+  performanceArmed,
+
+  /// The preview before last is still being handed back.
+  busy,
+}
+
+/// Why a backup stopped or could not start (pen 34 `Retry an interrupted
+/// copy`). Every one of them leaves the drive and the session as they were.
+enum LibraryBackupProblem {
+  /// No writable drive is plugged in.
+  noDrive,
+
+  /// The drive went away during the copy.
+  driveLost,
+
+  /// The drive has too little room for the session.
+  full,
+
+  /// The drive is mounted read-only.
+  readOnly,
+
+  /// Another operation forbids a copy now (the guard table).
+  busy,
+
+  /// Another write error.
+  failed,
+}
+
+/// A `Back up to USB` in front of the player (pen section 34).
+sealed class LibraryBackup extends Equatable {
+  const LibraryBackup({required this.id, required this.name});
+
+  /// The session being backed up.
+  final SessionId id;
+
+  /// Its name.
+  final String name;
+}
+
+/// Copying: the inline progress with `Cancel`.
+final class LibraryBackupRunning extends LibraryBackup {
+  /// Creates the running backup of [id].
+  const LibraryBackupRunning({
+    required super.id,
+    required super.name,
+    this.fraction = 0,
+  });
+
+  /// The share of its bytes copied.
+  final double fraction;
+
+  @override
+  List<Object?> get props => [id, name, fraction];
+}
+
+/// The drive already holds a backup of this session: `Keep both` or
+/// `Replace`.
+final class LibraryBackupConflict extends LibraryBackup {
+  /// Creates the conflict for [id].
+  const LibraryBackupConflict({required super.id, required super.name});
+
+  @override
+  List<Object?> get props => [id, name];
+}
+
+/// Stopped or refused, with nothing changed: `Cancel` or `Retry`.
+final class LibraryBackupInterrupted extends LibraryBackup {
+  /// Creates the interruption of [id] for [problem].
+  const LibraryBackupInterrupted({
+    required super.id,
+    required super.name,
+    required this.problem,
+    this.blockedBy,
+  });
+
+  /// What stopped it.
+  final LibraryBackupProblem problem;
+
+  /// For [LibraryBackupProblem.busy]: what refused it.
+  final GuardKind? blockedBy;
+
+  @override
+  List<Object?> get props => [id, name, problem, blockedBy];
+}
+
+/// The backup landed on the drive.
+final class LibraryBackupDone extends LibraryBackup {
+  /// Creates the done state for [id].
+  const LibraryBackupDone({required super.id, required super.name});
+
+  @override
+  List<Object?> get props => [id, name];
+}
+
+/// Why `Restore to Library` failed.
+enum LibraryRestoreError {
+  /// Another operation forbids a write now.
+  busy,
+
+  /// The backup could not be read or copied; nothing was added.
+  failed,
+}
+
 /// The Library's browsing state: location, search, folder chip, selection and
 /// the selected session's preview, the drives the port reports, and the
 /// footswitch's return-to-Tracks request.
@@ -78,6 +242,7 @@ enum LibraryPreviewError {
 class LibraryState extends Equatable {
   /// Creates a [LibraryState].
   const LibraryState({
+    this.section = LibrarySection.sessions,
     this.location = LibraryLocation.internal,
     this.query = '',
     this.folderFilter = const AllSessions(),
@@ -86,7 +251,18 @@ class LibraryState extends Equatable {
     this.previewError,
     this.volumes = const [],
     this.dismissalRequested = false,
+    this.listen,
+    this.listenRefusal,
+    this.peaks = const {},
+    this.backup,
+    this.backups = const [],
+    this.selectedBackup,
+    this.restoreError,
+    this.restoredId,
   });
+
+  /// The section on screen.
+  final LibrarySection section;
 
   /// Internal or USB.
   final LibraryLocation location;
@@ -111,6 +287,35 @@ class LibraryState extends Equatable {
 
   /// A footswitch asked the Library to return to Tracks; set once.
   final bool dismissalRequested;
+
+  /// The preview playing through Listen, or null.
+  final LibraryListen? listen;
+
+  /// Why the last Listen did not start, until the next Listen or selection.
+  final LibraryListenRefusal? listenRefusal;
+
+  /// The selected session's lane peaks by channel, for the tracks whose live
+  /// layer read (plan D11); a track missing here draws its length only.
+  final Map<int, List<double>> peaks;
+
+  /// This state without Listen, for a view that does not draw its progress:
+  /// selecting it keeps the 100 ms progress ticks from rebuilding that view.
+  LibraryState get withoutListen => copyWith(clearListen: true);
+
+  /// The `Back up to USB` in front of the player, or null.
+  final LibraryBackup? backup;
+
+  /// The backups on the readable drive, newest first.
+  final List<SessionSummary> backups;
+
+  /// The selected backup's directory name on the drive.
+  final String? selectedBackup;
+
+  /// Why the last `Restore to Library` failed.
+  final LibraryRestoreError? restoreError;
+
+  /// The session the last `Restore to Library` added.
+  final SessionId? restoredId;
 
   /// Whether a drive is mounted and readable.
   bool get hasReadableVolume => volumes.any((v) => v.readable);
@@ -141,6 +346,7 @@ class LibraryState extends Equatable {
   /// fields as a set, so they are passed together; [clearPreview] drops
   /// them while a read is in flight.
   LibraryState copyWith({
+    LibrarySection? section,
     LibraryLocation? location,
     String? query,
     LibraryFolderFilter? folderFilter,
@@ -149,8 +355,22 @@ class LibraryState extends Equatable {
     LibraryPreviewError? previewError,
     List<RemovableVolume>? volumes,
     bool? dismissalRequested,
+    LibraryListen? listen,
+    LibraryListenRefusal? listenRefusal,
+    Map<int, List<double>>? peaks,
+    LibraryBackup? backup,
+    List<SessionSummary>? backups,
+    String? selectedBackup,
+    LibraryRestoreError? restoreError,
+    SessionId? restoredId,
+    bool clearBackup = false,
+    bool clearSelectedBackup = false,
+    bool clearRestoreError = false,
     bool clearPreview = false,
+    bool clearListen = false,
+    bool clearListenRefusal = false,
   }) => LibraryState(
+    section: section ?? this.section,
     location: location ?? this.location,
     query: query ?? this.query,
     folderFilter: folderFilter ?? this.folderFilter,
@@ -159,10 +379,25 @@ class LibraryState extends Equatable {
     previewError: clearPreview ? null : (previewError ?? this.previewError),
     volumes: volumes ?? this.volumes,
     dismissalRequested: dismissalRequested ?? this.dismissalRequested,
+    listen: clearListen ? null : (listen ?? this.listen),
+    listenRefusal: clearListenRefusal
+        ? null
+        : (listenRefusal ?? this.listenRefusal),
+    peaks: clearPreview ? const {} : (peaks ?? this.peaks),
+    backup: clearBackup ? null : (backup ?? this.backup),
+    backups: backups ?? this.backups,
+    selectedBackup: clearSelectedBackup
+        ? null
+        : (selectedBackup ?? this.selectedBackup),
+    restoreError: clearRestoreError
+        ? null
+        : (restoreError ?? this.restoreError),
+    restoredId: restoredId ?? this.restoredId,
   );
 
   @override
   List<Object?> get props => [
+    section,
     location,
     query,
     folderFilter,
@@ -171,5 +406,13 @@ class LibraryState extends Equatable {
     previewError,
     volumes,
     dismissalRequested,
+    listen,
+    listenRefusal,
+    peaks,
+    backup,
+    backups,
+    selectedBackup,
+    restoreError,
+    restoredId,
   ];
 }

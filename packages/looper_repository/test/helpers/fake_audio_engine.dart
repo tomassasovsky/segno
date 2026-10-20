@@ -3,7 +3,24 @@ import 'dart:typed_data';
 import 'package:segno_engine/segno_engine.dart';
 
 /// A controllable in-memory [AudioEngine] for repository tests.
-class FakeAudioEngine implements AudioEngine {
+class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
+  // The audition voice (#1178): inert here.
+  @override
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    bool Function()? stillWanted,
+  }) async => const AuditionStart(result: EngineResult.ok);
+
+  @override
+  EngineResult auditionStop() => EngineResult.ok;
+
+  @override
+  AuditionState auditionState() => const AuditionState();
+
+  @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async =>
+      null;
+
   /// Snapshot returned by [snapshot] (mutate between ticks in tests).
   EngineSnapshot _nextSnapshot = const EngineSnapshot.initial().copyWith(
     tracks: List.generate(8, (_) => const TrackSnapshot.empty()),
@@ -173,11 +190,38 @@ class FakeAudioEngine implements AudioEngine {
   RecordImage? lastRecordImage;
   final Map<int, int> imageRevisions = {};
 
+  /// What [toggleFade], [toggleReverse] and [editLength] admit (refused by
+  /// default) and the receipt an admitted request answers later.
+  EngineResult editAdmission = EngineResult.invalid;
+  EngineResult editResult = EngineResult.ok;
+
+  /// Every admitted Fade toggle, Reverse toggle and length edit, in order.
+  final List<({String kind, int channel, Object? value})> editCalls = [];
+
+  /// Requests whose receipt the callback has not answered yet: they read as
+  /// unsettled until [answerWithheld] releases them.
+  final Set<int> withheldRequests = {};
+
+  /// Whether new admissions are withheld (see [withheldRequests]).
+  bool withholdReceipts = false;
+
+  /// Answers every withheld request with its queued result.
+  void answerWithheld() => withheldRequests.clear();
+
+  RequestAdmission _admitEdit(String kind, int channel, Object? value) {
+    if (!editAdmission.isOk) return (result: editAdmission, request: 0);
+    editCalls.add((kind: kind, channel: channel, value: value));
+    final request = ++_fadeRequest;
+    _fadeResults[request] = editResult;
+    if (withholdReceipts) withheldRequests.add(request);
+    return (result: EngineResult.ok, request: request);
+  }
+
   @override
   RequestAdmission toggleFade({
     required int channel,
     required double seconds,
-  }) => (result: EngineResult.invalid, request: 0);
+  }) => _admitEdit('fade', channel, seconds);
 
   final Map<int, FadeImage> installedFades = {};
   final Map<int, EngineResult> _fadeResults = {};
@@ -196,7 +240,7 @@ class FakeAudioEngine implements AudioEngine {
 
   @override
   RequestAdmission toggleReverse({required int channel}) =>
-      (result: EngineResult.invalid, request: 0);
+      _admitEdit('reverse', channel, null);
 
   /// Directions accepted by [installReverse], keyed by channel; the next
   /// [commitSession] publishes them, and a clear drops them with the material.
@@ -204,6 +248,12 @@ class FakeAudioEngine implements AudioEngine {
 
   /// Result [installReverse] admits with; `ok` posts and settles a receipt.
   EngineResult installReverseResult = EngineResult.ok;
+
+  @override
+  RequestAdmission editLength({
+    required int channel,
+    required LengthEdit edit,
+  }) => _admitEdit('length', channel, edit);
 
   @override
   RequestAdmission installReverse({
@@ -219,8 +269,85 @@ class FakeAudioEngine implements AudioEngine {
     return (result: EngineResult.ok, request: request);
   }
 
+  /// What [setSpeed] admits and the receipt it answers later (#1179).
+  EngineResult speedAdmission = EngineResult.ok;
+  EngineResult speedResult = EngineResult.ok;
+
+  /// The last factor [setSpeed] admitted.
+  SpeedFactor? lastSpeed;
+
   @override
-  EngineResult? readRequestResult(int request) => _fadeResults.remove(request);
+  RequestAdmission setSpeed(SpeedFactor factor) {
+    if (!speedAdmission.isOk) return (result: speedAdmission, request: 0);
+    lastSpeed = factor;
+    final request = ++_fadeRequest;
+    _fadeResults[request] = speedResult;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  /// What the Transpose requests admit and the receipt they answer later
+  /// (#1179).
+  EngineResult transposeAdmission = EngineResult.ok;
+  EngineResult transposeResult = EngineResult.ok;
+
+  /// The last Transpose step, install and bypass admitted.
+  ({int channel, int delta})? lastTransposeStep;
+  ({int channel, int semitones})? lastTransposeInstall;
+  bool? lastTransposeBypass;
+
+  RequestAdmission _admitTranspose(void Function() record) {
+    if (!transposeAdmission.isOk) {
+      return (result: transposeAdmission, request: 0);
+    }
+    record();
+    final request = ++_fadeRequest;
+    _fadeResults[request] = transposeResult;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  @override
+  RequestAdmission transposeStep({required int channel, required int delta}) =>
+      _admitTranspose(
+        () => lastTransposeStep = (channel: channel, delta: delta),
+      );
+
+  @override
+  RequestAdmission installTranspose({
+    required int channel,
+    required int semitones,
+  }) => _admitTranspose(
+    () => lastTransposeInstall = (channel: channel, semitones: semitones),
+  );
+
+  /// What the Follow tempo and Pitch settings admit and the receipt each
+  /// answers later (#1179), and every admitted call, in order.
+  EngineResult settingAdmission = EngineResult.ok;
+  EngineResult settingResult = EngineResult.ok;
+  final List<({String kind, int? channel, Object? value})> settingCalls = [];
+
+  RequestAdmission _admitSetting(String kind, int? channel, Object? value) {
+    if (!settingAdmission.isOk) return (result: settingAdmission, request: 0);
+    settingCalls.add((kind: kind, channel: channel, value: value));
+    final request = ++_fadeRequest;
+    _fadeResults[request] = settingResult;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  @override
+  RequestAdmission setFollowTempo({int? channel, bool? follow}) =>
+      _admitSetting('follow', channel, follow);
+
+  @override
+  RequestAdmission setPitchMode({int? channel, PitchMode? mode}) =>
+      _admitSetting('pitch', channel, mode);
+
+  @override
+  RequestAdmission setTransposeBypass({required bool bypassed}) =>
+      _admitTranspose(() => lastTransposeBypass = bypassed);
+
+  @override
+  EngineResult? readRequestResult(int request) =>
+      withheldRequests.contains(request) ? null : _fadeResults.remove(request);
 
   @override
   EngineResult setMix(EngineMixSettings settings) {
@@ -318,6 +445,7 @@ class FakeAudioEngine implements AudioEngine {
       importedLanes.removeWhere((key, _) => key.$1 == channel);
       importedLayers.removeWhere((key, _) => key.$1 == channel);
       finalizedHistory.remove(channel);
+      finalizedLengths.remove(channel);
       final tracks = [..._nextSnapshot.tracks];
       tracks[channel] = const TrackSnapshot.empty();
       _nextSnapshot = _nextSnapshot.copyWith(
@@ -740,6 +868,46 @@ class FakeAudioEngine implements AudioEngine {
     calls.add('setClickOutput');
     return EngineResult.ok;
   }
+
+  // The backing player (#1200) is not this fake's concern: every call is
+  // accepted and nothing is loaded.
+  @override
+  EngineResult backingLoad(
+    DecodedAudio audio, {
+    required int item,
+    required bool play,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult backingStageNext(DecodedAudio? audio, {required int item}) =>
+      EngineResult.ok;
+
+  @override
+  EngineResult backingClear() => EngineResult.ok;
+
+  @override
+  EngineResult backingTransport(BackingTransportOp op) => EngineResult.ok;
+
+  @override
+  EngineResult backingSeek(int frame) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingEnd(BackingEnd mode) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingOutput(int mask) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingLevel(double gain) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingPan(double pan) => EngineResult.ok;
+
+  @override
+  EngineResult setClickPan(double pan) => EngineResult.ok;
+
+  @override
+  BackingState backingState() => const BackingState();
 
   @override
   EngineResult setClickVolume(double volume) {
@@ -1491,6 +1659,9 @@ class FakeAudioEngine implements AudioEngine {
   /// The history passed to [finalizeHistory], keyed by channel.
   final Map<int, TrackHistory> finalizedHistory = {};
 
+  /// The image lengths passed to [finalizeHistory], keyed by channel.
+  final Map<int, List<int>> finalizedLengths = {};
+
   /// Result returned by [importLayer] once any [importFailCountdown] is spent.
   EngineResult importResult = EngineResult.ok;
 
@@ -1503,9 +1674,23 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult importTrack(int channel, Float32List pcm) =>
       importTrackLane(channel, 0, pcm);
 
+  /// Spans [importSpan] gave, by channel (#1179 Part 4b); the commit puts
+  /// them on the tracks' snapshots.
+  final Map<int, int> importedSpans = {};
+
+  @override
+  EngineResult importSpan(int channel, int spanFrames) {
+    calls.add('importSpan');
+    importedSpans[channel] = spanFrames;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult importTrackLane(int channel, int lane, Float32List pcm) =>
       importLayer(channel, lane, 0, pcm);
+
+  @override
+  int trackAudioRev(int channel) => 0;
 
   @override
   Float32List exportLayer(int channel, int lane, int ordinal) {
@@ -1543,19 +1728,28 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult finalizeHistory(int channel, TrackHistory history) {
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  }) {
     calls.add('finalizeHistory');
     finalizedHistory[channel] = history;
+    finalizedLengths[channel] = imageLengths;
     return EngineResult.ok;
   }
 
   /// Base frames passed to the last [commitSession].
   int? committedBaseFrames;
 
+  /// Grid beats passed to the last [commitSession].
+  int? committedLoopBeats;
+
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) {
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) {
     calls.add('commitSession');
     committedBaseFrames = baseFrames;
+    committedLoopBeats = loopBeats;
     final tracks = [..._nextSnapshot.tracks];
     for (final entry in importedTracks.entries) {
       final finalized = finalizedHistory[entry.key];
@@ -1566,11 +1760,15 @@ class FakeAudioEngine implements AudioEngine {
         reversed: installedReverses[entry.key] ?? false,
         volume: 1,
         muted: false,
-        lengthFrames: entry.value.length,
+        // The live image's length: a length edit's images differ (#1168).
+        lengthFrames:
+            importedLayers[(entry.key, 0, finalized.undoCount)]?.length ??
+            entry.value.length,
         undoDepth: finalized.undoCount,
         redoDepth: finalized.redoCount,
         rms: 0,
         peak: 0,
+        spanFrames: importedSpans[entry.key] ?? 0,
       );
     }
     _nextSnapshot = _nextSnapshot.copyWith(
@@ -1599,8 +1797,13 @@ class FakeAudioEngine implements AudioEngine {
   /// The `captureDir` passed to the most recent [perfArm] call.
   String? lastPerfCaptureDir;
 
+  /// The target of the most recent perfArm.
+  PerfTarget? lastPerfTarget;
+
   @override
-  EngineResult perfArm(String captureDir) {
+  EngineResult perfArm(PerfTarget target) {
+    final captureDir = target.captureDir;
+    lastPerfTarget = target;
     calls.add('perfArm');
     lastPerfCaptureDir = captureDir;
     return perfArmResult;
@@ -1627,6 +1830,71 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult renderCancel() {
     calls.add('renderCancel');
+    return EngineResult.ok;
+  }
+
+  // ---- shared render recipe (#1202): scripted by the tests ----
+
+  /// Answer of [measureRender].
+  RenderMeasurement measureRenderAnswer = (
+    result: EngineResult.ok,
+    plan: const RenderPlan(
+      frames: 48,
+      method: RenderMethod.commonCycle,
+      beatsMilli: 0,
+      tempoSet: false,
+    ),
+  );
+
+  /// Answer of [beginRender].
+  RenderAdmission beginRenderAnswer = (result: EngineResult.ok, job: 1);
+
+  /// Statuses [pollRender] returns in order; the last one repeats. An empty
+  /// list (or `null` in it) reads as an unknown job.
+  List<RenderJobStatus?> renderStatuses = const [
+    RenderJobStatus(state: RenderJobState.done, permille: 1000),
+  ];
+
+  /// Samples [copyRender] returns.
+  Float32List? renderSamples;
+
+  /// Requests passed to [measureRender] and [beginRender], in order.
+  final List<RenderRequest> renderRequests = [];
+
+  /// Jobs passed to [cancelRender], in order.
+  final List<int> cancelledRenders = [];
+
+  int _renderPolls = 0;
+
+  @override
+  RenderMeasurement measureRender(RenderRequest request) {
+    renderRequests.add(request);
+    return measureRenderAnswer;
+  }
+
+  @override
+  RenderAdmission beginRender(RenderRequest request) {
+    renderRequests.add(request);
+    _renderPolls = 0;
+    return beginRenderAnswer;
+  }
+
+  @override
+  RenderJobStatus? pollRender(int job) {
+    if (renderStatuses.isEmpty) return null;
+    final i = _renderPolls < renderStatuses.length
+        ? _renderPolls
+        : renderStatuses.length - 1;
+    _renderPolls++;
+    return renderStatuses[i];
+  }
+
+  @override
+  Float32List? copyRender(int job, {required int maxFrames}) => renderSamples;
+
+  @override
+  EngineResult cancelRender(int job) {
+    cancelledRenders.add(job);
     return EngineResult.ok;
   }
 
@@ -1916,9 +2184,6 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  bool syncDirectory(String path) => path.isNotEmpty;
-
-  @override
   VolumeSpace? volumeSpace(String path) => freeBytes == null
       ? null
       : VolumeSpace(totalBytes: totalBytes, freeBytes: freeBytes!);
@@ -1987,6 +2252,10 @@ class _LengthSnapshot extends EngineSnapshot {
         perfOverruns: source.perfOverruns,
         perfZeroFilledFrames: source.perfZeroFilledFrames,
         perfStopped: source.perfStopped,
+        perfStopReason: source.perfStopReason,
+        perfOvers: source.perfOvers,
+        perfCaptureStreams: source.perfCaptureStreams,
+        perfCaptureFrameBytes: source.perfCaptureFrameBytes,
         tempoBpm: source.tempoBpm,
         tempoSource: source.tempoSource,
         tsNum: source.tsNum,
@@ -1994,6 +2263,7 @@ class _LengthSnapshot extends EngineSnapshot {
         syncTempo: source.syncTempo,
         quantizeDiv: engine.lastQuantizeDiv ?? source.quantizeDiv,
         loopBars: source.loopBars,
+        loopBeats: source.loopBeats,
         currentBeat: source.currentBeat,
         clickMode: source.clickMode,
         clickModeRevision: source.clickModeRevision,
@@ -2007,6 +2277,16 @@ class _LengthSnapshot extends EngineSnapshot {
         countInBeatsLeft: source.countInBeatsLeft,
         looperMode: mode ?? source.looperMode,
         primaryTrack: source.primaryTrack,
+        speed: source.speed,
+        transposeBypass: source.transposeBypass,
+        recordedTempoBpm: source.recordedTempoBpm,
+        recordedLengthFrames: source.recordedLengthFrames,
+        songQueuedTrack: source.songQueuedTrack,
+        songQueueProgress: source.songQueueProgress,
+        songLastSection: source.songLastSection,
+        followTempo: source.followTempo,
+        tempoFollow: source.tempoFollow,
+        pitchMode: source.pitchMode,
         quantize: engine.lastQuantize ?? source.quantize,
         recordTimingRevision: engine.recordTimingRevision,
         recordTimingResult: engine.recordTimingResult,
@@ -2038,6 +2318,12 @@ class _LengthTrack extends TrackSnapshot {
         state: source.state,
         fade: source.fade,
         reversed: source.reversed,
+        headRate: source.headRate,
+        transpose: source.transpose,
+        followTempoOverride: source.followTempoOverride,
+        pitchModeOverride: source.pitchModeOverride,
+        pitchEffectiveCents: source.pitchEffectiveCents,
+        spanFrames: source.spanFrames,
         volume: engine.trackLevels[channel] ?? source.volume,
         muted: source.muted,
         lengthFrames: source.lengthFrames,
@@ -2047,6 +2333,8 @@ class _LengthTrack extends TrackSnapshot {
         clearRestore: source.clearRestore,
         redoDepth: source.redoDepth,
         multiple: source.multiple,
+        syncDivisor: source.syncDivisor,
+        lengthHistoryRefusals: source.lengthHistoryRefusals,
         inputMask: source.inputMask,
         outputMask: source.outputMask,
         layerInFlight: source.layerInFlight,

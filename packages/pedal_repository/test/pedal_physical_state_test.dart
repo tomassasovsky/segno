@@ -66,14 +66,16 @@ void main() {
     252,
     1,
     2,
+    0,
+    0,
   ];
-  test('v8 literal layout has ten raw RGB triples then little-endian mask', () {
+  test('literal layout has ten raw RGB triples then little-endian mask', () {
     final frame = PedalStateFrame.blank().copyWith(
       mode: PedalMode.custom,
       pedalColors: colors,
       activeButtonMask: 0x201,
     );
-    expect(PedalLinkCodec.protocolVersion, 8);
+    expect(PedalLinkCodec.protocolVersion, 12);
     expect(PedalLinkCodec.encodeStatePayload(frame), payload);
     expect(PedalLinkCodec.decodeStatePayload(payload), frame);
     expect(frame.isLit(PedalButton.recPlay), isTrue);
@@ -125,7 +127,7 @@ void main() {
     expect(frame.copyWith(pedalColors: hues), isNot(frame));
   });
   test('rejects historical sizes, reserved mask bits and non-byte inputs', () {
-    for (final size in [0, 19, 21, 49, 50, 52, 255]) {
+    for (final size in [0, 19, 21, 49, 50, 51, 52, 54, 255]) {
       expect(PedalLinkCodec.decodeStatePayload(List.filled(size, 0)), isNull);
     }
     for (final mask in [4, 8, 16, 32, 64, 128, 255]) {

@@ -51,6 +51,47 @@ final goldenMessages = <String, PedalLinkMessage>{
       activeButtonMask: 0x201,
     ),
   ),
+  // A Song section waiting on track 2 of bank A, half way through the wait.
+  'song_queue_track2_127': StateMessage(
+    PedalStateFrame.blank().copyWith(
+      globalColor: GlobalColor.green,
+      mode: PedalMode.play,
+      looperMode: PedalLooperMode.song,
+      trackLeds: const [
+        PedalTrackLed.green,
+        PedalTrackLed.green,
+        PedalTrackLed.off,
+        PedalTrackLed.off,
+        PedalTrackLed.off,
+        PedalTrackLed.off,
+        PedalTrackLed.off,
+        PedalTrackLed.off,
+      ],
+      activeButtonMask:
+          1 << PedalButton.track1.index |
+          1 << PedalButton.track2.index |
+          1 << PedalButton.mode.index,
+      queuedButton: PedalButton.track2,
+      queuedProgress: 127,
+    ),
+  ),
+  // The last step before the handoff, on bank B's fourth switch.
+  'song_queue_track4_254': StateMessage(
+    PedalStateFrame.blank().copyWith(
+      mode: PedalMode.play,
+      looperMode: PedalLooperMode.song,
+      activeBank: 1,
+      queuedButton: PedalButton.track4,
+      queuedProgress: 254,
+    ),
+  ),
+  // Song with nothing waiting.
+  'song_queue_none': StateMessage(
+    PedalStateFrame.blank().copyWith(
+      mode: PedalMode.play,
+      looperMode: PedalLooperMode.song,
+    ),
+  ),
   'blank_goodbye': StateMessage(PedalStateFrame.blank(goodbye: true)),
   'idle_rec': StateMessage(
     PedalStateFrame.blank().copyWith(globalColor: GlobalColor.green),
@@ -116,6 +157,13 @@ final goldenMessages = <String, PedalLinkMessage>{
       countingIn: true,
     ),
   ),
+  'dimmed': StateMessage(
+    PedalStateFrame.blank().copyWith(
+      globalColor: GlobalColor.green,
+      activeButtonMask: 1,
+      dimmed: true,
+    ),
+  ),
   'fx_mode': StateMessage(
     PedalStateFrame(
       globalColor: GlobalColor.green,
@@ -164,6 +212,8 @@ final goldenMessages = <String, PedalLinkMessage>{
   'button_bank_up': const ButtonMessage(PedalButton.bank, pressed: false),
   'encoder_plus1': const EncoderMessage(1),
   'encoder_minus3': const EncoderMessage(-3),
+  'encoder_button_down': const EncoderButtonMessage(pressed: true),
+  'encoder_button_up': const EncoderButtonMessage(pressed: false),
   'ctrl1_switch_down': const CtrlMessage(
     jack: PedalCtrlJack.ctrl1,
     kind: PedalCtrlKind.switchPedal,
@@ -191,6 +241,19 @@ final goldenMessages = <String, PedalLinkMessage>{
     contact: PedalCtrlContact.ring,
     kind: PedalCtrlKind.switchPedal,
     value: 255,
+  ),
+  // The bench unit before its power cycle (#1352): the profile is in, the
+  // contract still takes 3 A of the 4.7 A on offer.
+  'pd_status_stale': const PdStatusMessage(
+    PedalPowerSupply(
+      profile: PedalPowerProfile.matches,
+      millivolts: 20000,
+      milliamps: 3000,
+      maxMilliamps: 4700,
+    ),
+  ),
+  'pd_status_not_read': const PdStatusMessage(
+    PedalPowerSupply(profile: PedalPowerProfile.notRead),
   ),
   'hello': const HelloMessage(
     protocolVersion: PedalLinkCodec.protocolVersion,

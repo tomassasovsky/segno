@@ -22,6 +22,10 @@ const _live = SessionSettings(
   defaultMultiple: 4,
   recordTiming: RecordTiming.loopStart,
   trackRecordTimingOverrides: {3: RecordTiming.bar},
+  defaultFollowTempo: false,
+  trackFollowTempoOverrides: {2: true},
+  defaultPitchMode: PitchMode.followsSpeed,
+  trackPitchModeOverrides: {4: PitchMode.unchanged},
 );
 
 void main() {
@@ -292,8 +296,164 @@ void main() {
       });
     }
 
-    test('the current schema opens with no conversion', () async {
+    test('schema 13 opens with its beats counted from its bars and every '
+        'direction kept (#1168)', () async {
       final dir = copyFixture('v13_reverse_576826cfa');
+      final original = manifestOf(dir);
+      final (:bundle, :conversion) = await repo().open(dir);
+      expect(conversion!.fromVersion, 13);
+      final session = bundle.session;
+      expect(session.loopBars, original['loopBars']);
+      expect(
+        session.loopBeats,
+        (original['loopBars'] as int) * (original['tsNum'] as int),
+      );
+      expect(
+        conversion.notes,
+        contains('loopBeats: counted from 0 bars of 3 beats'),
+      );
+      expect(session.tracks.map((t) => t.reversed), [
+        false,
+        true,
+        false,
+        false,
+      ]);
+      // Every older grid was whole bars: 2 bars of 3/4 are 6 beats.
+      final barred = jsonEncode({...original, 'loopBars': 2});
+      expect(decodeSessionManifest(barred).session.loopBeats, 6);
+    });
+
+    test('v13_reverse_576826cfa keeps the live backing setup and click pan '
+        '(schema 15, #1200)', () async {
+      const item = SessionBackingItem(
+        digest:
+            'sha256:0123456789abcdef0123456789abcdef'
+            '0123456789abcdef0123456789abcdef',
+        name: 'Evening lights.wav',
+      );
+      const live = SessionSettings(
+        backing: SessionBacking(
+          prepared: [item],
+          loaded: item,
+          endMode: BackingEnd.repeat,
+          level: 0.6,
+          pan: 0.2,
+          outputMask: 0x3,
+        ),
+        clickPan: -0.5,
+      );
+      final (:bundle, :conversion) = await repo().open(
+        copyFixture('v13_reverse_576826cfa'),
+        liveSettings: () => live,
+      );
+      expect(conversion!.fromVersion, 13);
+      expect(bundle.session.backing, live.backing);
+      expect(bundle.session.clickPan, -0.5);
+      expect(
+        conversion.notes,
+        containsAll([
+          'backing: taken from the live setting',
+          'clickPan: taken from the live setting',
+        ]),
+      );
+      // Its own values are untouched.
+      expect(bundle.session.tracks.map((t) => t.reversed), [
+        false,
+        true,
+        false,
+        false,
+      ]);
+      // Without a live player: an empty, silent backing and a centred click.
+      final (bundle: plain, conversion: _) = await repo().open(
+        copyFixture('v13_reverse_576826cfa'),
+      );
+      expect(plain.session.backing, const SessionBacking());
+      expect(plain.session.clickPan, 0);
+    });
+
+    test('schema 14 opens with its length edits kept and the live backing '
+        'setup filled in (#1200)', () async {
+      final dir = copyFixture('v14_length_1168');
+      final (:bundle, :conversion) = await repo().open(dir);
+      expect(conversion!.fromVersion, 14);
+      expect(
+        conversion.notes,
+        containsAll([
+          'backing: taken from the live setting',
+          'clickPan: taken from the live setting',
+        ]),
+      );
+      expect(bundle.session.loopBeats, 2);
+      expect(bundle.session.backing, const SessionBacking());
+      expect(bundle.session.clickPan, 0);
+      expect(bundle.session.tracks.last.lanes.single.history.entries, const [
+        HistoryEntry(HistoryKind.length),
+        HistoryEntry(HistoryKind.length, start: 2400),
+      ]);
+    });
+
+    test('v13_reverse_576826cfa keeps its directions and takes the live '
+        'Audio & tempo settings (#1179)', () async {
+      final dir = copyFixture('v13_reverse_576826cfa');
+      final (:bundle, :conversion) = await repo().open(
+        dir,
+        liveSettings: () => _live,
+      );
+      final session = bundle.session;
+      expect(conversion!.fromVersion, 13);
+      expect(session.tracks.map((t) => t.reversed), [
+        false,
+        true,
+        false,
+        false,
+      ]);
+      // Global preferences before this schema: opening kept the live ones.
+      expect(session.defaultFollowTempo, isFalse);
+      expect(session.trackFollowTempoOverrides, {2: true});
+      expect(session.defaultPitchMode, PitchMode.followsSpeed);
+      expect(session.trackPitchModeOverrides, {4: PitchMode.unchanged});
+      // Nothing could retime before it: the takes are on their own master.
+      expect(session.recordedTempoBpm, 0);
+      expect(session.recordedLengthFrames, 0);
+      expect(session.tracks.map((t) => t.spanFrames), everyElement(0));
+      expect(
+        conversion.notes,
+        containsAll([
+          'defaultFollowTempo: taken from the live setting',
+          'trackPitchModeOverrides: taken from the live setting',
+          'recordedTempoBpm: defaulted',
+          'tracks[1].spanFrames: its own master',
+        ]),
+      );
+    });
+
+    test('schema 15 opens with its length edits and backing kept and the '
+        'live Audio & tempo settings filled in (#1179)', () async {
+      final dir = copyFixture('v15_length_backing');
+      final (:bundle, :conversion) = await repo().open(
+        dir,
+        liveSettings: () => _live,
+      );
+      expect(conversion!.fromVersion, 15);
+      final session = bundle.session;
+      expect(session.loopBeats, 2);
+      expect(session.backing.endMode, BackingEnd.next);
+      expect(session.clickPan, 0.4);
+      expect(session.defaultFollowTempo, isFalse);
+      expect(session.recordedTempoBpm, 0);
+      expect(session.tracks.map((t) => t.spanFrames), everyElement(0));
+      expect(
+        conversion.notes,
+        containsAll([
+          'defaultFollowTempo: taken from the live setting',
+          'recordedTempoBpm: defaulted',
+          'tracks[4].spanFrames: its own master',
+        ]),
+      );
+    });
+
+    test('the current schema opens with no conversion', () async {
+      final dir = copyFixture('v16_audio_tempo');
       final before = snapshotOf(dir);
       final (:bundle, :conversion) = await repo().open(dir);
       expect(conversion, isNull);
@@ -306,18 +466,54 @@ void main() {
         true,
         false,
         false,
+        false,
       ]);
+      // A sub-bar grid of 2 beats, and a track whose length edits keep
+      // their images at their own lengths.
+      expect(bundle.session.loopBars, 0);
+      expect(bundle.session.loopBeats, 2);
+      final lane = bundle.session.tracks.last.lanes.single;
+      expect(lane.history.entries, const [
+        HistoryEntry(HistoryKind.length),
+        HistoryEntry(HistoryKind.length, start: 2400),
+      ]);
+      expect(
+        [for (final pcm in bundle.laneStems[(4, 0)]!) pcm.length],
+        [2400, 4800, 2400],
+      );
+      // The backing setup and the click pan (#1200).
+      expect(bundle.session.backing.endMode, BackingEnd.next);
+      expect(bundle.session.backing.prepared, hasLength(2));
+      expect(bundle.session.backing.loaded?.name, 'Count-in.mp3');
+      expect(bundle.session.clickPan, 0.4);
+      // The retimed rig and the Audio & tempo settings (#1179).
+      expect(
+        bundle.session.tracks.map((t) => t.spanFrames),
+        [0, 0, 0, 2400, 2400],
+      );
+      expect(bundle.session.recordedTempoBpm, 120);
+      expect(bundle.session.recordedLengthFrames, 1200);
+      expect(bundle.session.defaultFollowTempo, isFalse);
       expect(snapshotOf(dir), before);
     });
 
-    test('the current schema stays strict: a track without a direction is '
-        'refused, not defaulted', () {
-      final manifest = manifestOf(copyFixture('v13_reverse_576826cfa'));
-      ((manifest['tracks'] as List)[1] as Map).remove('reversed');
-      expect(
-        () => decodeSessionManifest(jsonEncode(manifest)),
-        throwsFormatException,
-      );
+    test('the current schema stays strict: a track without a direction or a '
+        'span, a grid without its beats, or a manifest without its Audio & '
+        'tempo settings, is refused, not defaulted', () {
+      for (final edit in <void Function(Map<String, dynamic>)>[
+        (m) => ((m['tracks'] as List)[1] as Map).remove('reversed'),
+        (m) => ((m['tracks'] as List)[1] as Map).remove('spanFrames'),
+        (m) => m.remove('loopBeats'),
+        (m) => m.remove('defaultFollowTempo'),
+        (m) => m.remove('recordedTempoBpm'),
+      ]) {
+        final manifest = manifestOf(copyFixture('v16_audio_tempo'));
+        edit(manifest);
+        expect(
+          () => decodeSessionManifest(jsonEncode(manifest)),
+          throwsA(anyOf(isFormatException, isA<TypeError>())),
+        );
+      }
     });
   });
 
@@ -412,7 +608,7 @@ void main() {
     }
 
     test('newer than this build', () async {
-      final dir = copyFixture('v13_reverse_576826cfa');
+      final dir = copyFixture('v16_audio_tempo');
       rewrite(dir, (m) => m['version'] = Session.formatVersion + 1);
       await expectRefused(dir, isA<SessionUnsupportedVersion>());
     });

@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
-import 'package:segno/control/binding/pedal_palette.dart';
+import 'package:segno/control/binding/pedal_led_map.dart';
 import 'package:segno/control/binding/pedal_setup.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
@@ -20,7 +20,7 @@ void main() {
       expect(setup.trackHold, TrackHold.armOverdub);
       expect(setup.custom, isEmpty);
       expect(setup.hasCustomAssignments, isFalse);
-      expect(setup.palette, const PedalPalette());
+      expect(setup.leds, const PedalLedMap());
     });
   });
 
@@ -107,38 +107,71 @@ void main() {
       expect(cleared.hasCustomAssignments, isFalse);
       expect(cleared.modePress, InteractionMode.fx);
       expect(cleared.trackHold, TrackHold.clearTrack);
-      expect(cleared.palette, setup.palette);
+      expect(cleared.leds, setup.leds);
     });
   });
 
   group('encoding', () {
-    test('palette saves with gestures, round-trips, and keeps equal bytes', () {
-      final palette = const PedalPalette()
-          .withCustom(1, const PedalColor(0, 0, 0))
-          .withChoice(PedalButton.stop, const CustomPaletteEntry(1));
+    test('LED colours save with gestures, round-trip, keep equal bytes', () {
+      final leds = const PedalLedMap()
+          .withColor(
+            InteractionMode.mute,
+            PedalLedGroup.tracks,
+            PedalLedState.armed,
+            const PedalColor(0, 0, 0),
+          )
+          .withCustomColor(
+            const PedalBindingKey(button: PedalButton.track2, bank: 1),
+            PedalLedState.pressed,
+            const PedalColor(1, 2, 3),
+          );
       final setup = const PedalSetup(
         trackHold: TrackHold.clearTrack,
-      ).copyWith(palette: palette);
-      expect(PedalSetup.decode(setup.encode()), setup);
+      ).copyWith(leds: leds);
+      final decoded = PedalSetup.decode(setup.encode());
+      expect(decoded, setup);
+      expect(decoded.encode(), setup.encode());
       expect(
-        PedalSetup.decode(
-          setup.encode(),
-        ).palette.colorFor(PedalButton.stop).rgb,
+        decoded.leds
+            .colorFor(
+              InteractionMode.mute,
+              PedalLedGroup.tracks,
+              PedalLedState.armed,
+            )
+            .rgb,
         0,
       );
       expect(
-        PedalSetup.decode(const PedalSetup().encode()).palette.isEmpty,
+        PedalSetup.decode(const PedalSetup().encode()).leds.isEmpty,
         isTrue,
       );
     });
 
-    test('an explicit invalid palette rejects the entire setup', () {
+    test('a stored setup from the retired palette resets its colours', () {
+      final decoded = PedalSetup.decode(
+        '{"modePress":"fx","palette":{"leds":{"stop":"violet"}}}',
+      );
+      expect(decoded.modePress, InteractionMode.fx);
+      expect(decoded.leds, const PedalLedMap());
+    });
+
+    test('an explicit invalid LED map rejects the entire setup', () {
+      const duplicate =
+          '{"leds":{"custom":[{"button":"undo","lit":0},'
+          '{"button":"undo","lit":1}]}}';
       for (final blob in [
-        '{"palette":null}',
-        '{"palette":42}',
-        '{"palette":{"leds":{"mode":"custom:1"}}}',
-        '{"palette":{"leds":{"futureButton":"white"}}}',
-        '{"palette":{"customs":[{"number":1,"rgb":0},{"number":1,"rgb":1}]}}',
+        '{"leds":null}',
+        '{"leds":42}',
+        '{"leds":{"future":{}}}',
+        '{"leds":{"modes":{"record":{"tracks":{"armed":0}}}}}',
+        '{"leds":{"modes":{"record":{"tracks":{"playing":"red"}}}}}',
+        '{"leds":{"modes":{"record":{"tracks":{"playing":16777216}}}}}',
+        '{"leds":{"modes":{"future":{}}}}',
+        '{"leds":{"modes":{"custom":{"tracks":{"pressed":0}}}}}',
+        '{"leds":{"custom":[{"button":"mode","lit":0}]}}',
+        '{"leds":{"custom":[{"button":"track1","lit":0}]}}',
+        '{"leds":{"custom":[{"button":"stop","glow":0}]}}',
+        duplicate,
       ]) {
         expect(
           () => PedalSetup.decode(blob),

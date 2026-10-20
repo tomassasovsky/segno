@@ -6,13 +6,11 @@ import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
-/// Mixes one reusable LED colour: Hue, Saturation and Brightness over a live
-/// preview of the hue itself.
+/// Mixes one LED colour: Hue, Saturation and Brightness over a live preview
+/// of the hue itself.
 ///
 /// Returns the chosen colour, or `null` when the editor is dismissed. The
-/// caller decides what the colour becomes — a new palette entry, or a change
-/// to one every footswitch using it follows — because only the caller knows
-/// which.
+/// caller decides which state of which pedal the colour lands on.
 ///
 /// HSV rather than three RGB channels: the thing a performer is choosing is a
 /// hue, and "more red" is not how anyone asks for one. Brightness is a real
@@ -20,25 +18,20 @@ import 'package:segno/theme/theme.dart';
 Future<PedalColor?> showPedalColorDialog(
   BuildContext context, {
   required PedalColor initial,
-  required bool editing,
 }) async {
   final surface = context.surface;
   return showDialog<PedalColor>(
     context: context,
     barrierColor: surface.scrim.withValues(alpha: 0.86),
-    builder: (context) => _PedalColorDialog(initial: initial, editing: editing),
+    builder: (context) => _PedalColorDialog(initial: initial),
   );
 }
 
 class _PedalColorDialog extends StatefulWidget {
-  const _PedalColorDialog({required this.initial, required this.editing});
+  const _PedalColorDialog({required this.initial});
 
   /// The colour the editor opens on.
   final PedalColor initial;
-
-  /// Whether this is a change to a colour the palette already has, which is
-  /// the only thing that differs: what the title and the commit are called.
-  final bool editing;
 
   @override
   State<_PedalColorDialog> createState() => _PedalColorDialogState();
@@ -94,9 +87,7 @@ class _PedalColorDialogState extends State<_PedalColorDialog> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         AppText(
-                          widget.editing
-                              ? l10n.pedalColorEditTitle
-                              : l10n.pedalColorAddTitle,
+                          l10n.pedalColorEditTitle,
                           style: TextStyle(
                             color: surface.textPrimary,
                             fontSize: 32,
@@ -269,9 +260,7 @@ class _PedalColorDialogState extends State<_PedalColorDialog> {
           key: const Key('pedal_color_done'),
           width: 200,
           tone: LoopButtonTone.accent,
-          label: widget.editing
-              ? l10n.pedalColorEditConfirm
-              : l10n.pedalColorAddConfirm,
+          label: l10n.pedalColorEditConfirm,
           onTap: () => Navigator.of(context).pop(_chosen),
         ),
       ],

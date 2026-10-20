@@ -33,6 +33,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.onAccent,
     required this.accentSurface,
     required this.accentAlt,
+    required this.holdTrack,
+    required this.holdProgress,
+    required this.holdPendingText,
     required this.fx,
     required this.fxSurface,
     required this.warning,
@@ -65,6 +68,15 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.menuArtLine,
     required this.menuPowerLine,
     required this.encoderFocus,
+    required this.frameBackground,
+    required this.frameRule,
+    required this.frameControlLine,
+    required this.frameControlFill,
+    required this.frameText,
+    required this.frameCrumb,
+    required this.frameIcon,
+    required this.touchTarget,
+    required this.touchTargetLine,
     required this.knobFaceTop,
     required this.knobFaceBottom,
     required this.disabledOpacity,
@@ -144,6 +156,13 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// without brightening [accent] with it will fail there.
   final Color accentSurface;
   final Color accentAlt;
+
+  /// The Pending Hold cue (#1229, pen 10 `PRSrG`): [holdProgress] fills the
+  /// 3 px bar under a pedal whose hold is pending, over [holdTrack];
+  /// [holdPendingText] is that pedal's brightened `Hold · …` line.
+  final Color holdTrack;
+  final Color holdProgress;
+  final Color holdPendingText;
 
   /// The FX-mode accent family (DS `fx`, `fx-surface`, `fx-wash`) — the purple
   /// the performance stage and its chrome adopt in FX mode (owner's call,
@@ -243,7 +262,10 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
         InteractionMode.mixer ||
         InteractionMode.fade ||
         InteractionMode.reverse ||
-        InteractionMode.peel => (outline: ledAmber, fill: cardHigh),
+        InteractionMode.peel ||
+        InteractionMode.tuner => (outline: ledAmber, fill: cardHigh),
+        InteractionMode.multiply ||
+        InteractionMode.divide => (outline: ledAmber, fill: cardHigh),
       };
 
   /// Pedal LED palette — the on-screen pedal faceplate renders the firmware's
@@ -291,6 +313,32 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// control (`#f2bf70`), distinct from the blue of a selection.
   final Color encoderFocus;
 
+  /// The settings frame every Loop settings and Settings page is drawn in,
+  /// as the pen draws it on all of them (`05 Loop setup / 01 Settings` and
+  /// the section 05 to 08 screens).
+  ///
+  /// [frameBackground] is the page, `#111215`; [frameRule] the line under the
+  /// top bar, `#3d3d3d`; [frameControlLine] the line around Back and Stage,
+  /// `#515d6e`; [frameControlFill] Stage's fill, `#202735`; [frameText] the
+  /// title and Stage's label, `#e7edf6`; [frameCrumb] the breadcrumb,
+  /// `#b5b5b5`; [frameIcon] Back's chevron, `#f5f1e9`. Those are the dark
+  /// flavour's; high contrast strengthens them (WCAG 1.4.11).
+  final Color frameBackground;
+  final Color frameRule;
+  final Color frameControlLine;
+  final Color frameControlFill;
+  final Color frameText;
+  final Color frameCrumb;
+  final Color frameIcon;
+
+  /// Touch calibration's target (pen 30, "Displays & touch calibration"): the
+  /// ring, `#d8e8fa`, and [touchTargetLine] its crosshair, `#afc8e8`. Bright
+  /// and cool on the calibration area so the eye finds the centre at once.
+  final Color touchTarget;
+
+  /// Touch calibration target's crosshair; see [touchTarget].
+  final Color touchTargetLine;
+
   final Color knobFaceTop;
   final Color knobFaceBottom;
 
@@ -310,6 +358,11 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
 
   /// The UI typeface (DS `font-ui`, bundled under `assets/fonts/`).
   static const String displayFont = 'Inter';
+
+  /// The settings frame's typeface: the pen sets the top bar's breadcrumb and
+  /// Stage, and the page title, in Arimo (bundled under `assets/fonts/`,
+  /// Apache 2.0).
+  static const String frameFont = 'Arimo';
 
   /// Bold Helvetica legend face from the Segno printed overlay — pedal silk
   /// labels and the main looper screen.
@@ -341,6 +394,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? onAccent,
     Color? accentSurface,
     Color? accentAlt,
+    Color? holdTrack,
+    Color? holdProgress,
+    Color? holdPendingText,
     Color? fx,
     Color? fxSurface,
     Color? warning,
@@ -373,6 +429,15 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? menuArtLine,
     Color? menuPowerLine,
     Color? encoderFocus,
+    Color? frameBackground,
+    Color? frameRule,
+    Color? frameControlLine,
+    Color? frameControlFill,
+    Color? frameText,
+    Color? frameCrumb,
+    Color? frameIcon,
+    Color? touchTarget,
+    Color? touchTargetLine,
     Color? knobFaceTop,
     Color? knobFaceBottom,
     double? disabledOpacity,
@@ -394,6 +459,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     onAccent: onAccent ?? this.onAccent,
     accentSurface: accentSurface ?? this.accentSurface,
     accentAlt: accentAlt ?? this.accentAlt,
+    holdTrack: holdTrack ?? this.holdTrack,
+    holdProgress: holdProgress ?? this.holdProgress,
+    holdPendingText: holdPendingText ?? this.holdPendingText,
     fx: fx ?? this.fx,
     fxSurface: fxSurface ?? this.fxSurface,
     warning: warning ?? this.warning,
@@ -426,6 +494,15 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     menuArtLine: menuArtLine ?? this.menuArtLine,
     menuPowerLine: menuPowerLine ?? this.menuPowerLine,
     encoderFocus: encoderFocus ?? this.encoderFocus,
+    frameBackground: frameBackground ?? this.frameBackground,
+    frameRule: frameRule ?? this.frameRule,
+    frameControlLine: frameControlLine ?? this.frameControlLine,
+    frameControlFill: frameControlFill ?? this.frameControlFill,
+    frameText: frameText ?? this.frameText,
+    frameCrumb: frameCrumb ?? this.frameCrumb,
+    frameIcon: frameIcon ?? this.frameIcon,
+    touchTarget: touchTarget ?? this.touchTarget,
+    touchTargetLine: touchTargetLine ?? this.touchTargetLine,
     knobFaceTop: knobFaceTop ?? this.knobFaceTop,
     knobFaceBottom: knobFaceBottom ?? this.knobFaceBottom,
     disabledOpacity: disabledOpacity ?? this.disabledOpacity,
@@ -453,6 +530,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       onAccent: c(onAccent, other.onAccent),
       accentSurface: c(accentSurface, other.accentSurface),
       accentAlt: c(accentAlt, other.accentAlt),
+      holdTrack: c(holdTrack, other.holdTrack),
+      holdProgress: c(holdProgress, other.holdProgress),
+      holdPendingText: c(holdPendingText, other.holdPendingText),
       fx: c(fx, other.fx),
       fxSurface: c(fxSurface, other.fxSurface),
       warning: c(warning, other.warning),
@@ -487,6 +567,15 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       menuArtLine: c(menuArtLine, other.menuArtLine),
       menuPowerLine: c(menuPowerLine, other.menuPowerLine),
       encoderFocus: c(encoderFocus, other.encoderFocus),
+      frameBackground: c(frameBackground, other.frameBackground),
+      frameRule: c(frameRule, other.frameRule),
+      frameControlLine: c(frameControlLine, other.frameControlLine),
+      frameControlFill: c(frameControlFill, other.frameControlFill),
+      frameText: c(frameText, other.frameText),
+      frameCrumb: c(frameCrumb, other.frameCrumb),
+      frameIcon: c(frameIcon, other.frameIcon),
+      touchTarget: c(touchTarget, other.touchTarget),
+      touchTargetLine: c(touchTargetLine, other.touchTargetLine),
       knobFaceTop: c(knobFaceTop, other.knobFaceTop),
       knobFaceBottom: c(knobFaceBottom, other.knobFaceBottom),
       disabledOpacity:
@@ -534,6 +623,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     // the FX chip's label — see the token's doc (#768).
     accentSurface: Color(0xFF121C31),
     accentAlt: Color(0xFF738CF2),
+    holdTrack: Color(0xFF303B4B),
+    holdProgress: Color(0xFFA8C7FA),
+    holdPendingText: Color(0xFFD2E3FF),
     // #692: FX mode = purple. `fx` on the flat `fxSurface` measures 4.74:1
     // (>= AA for the 14px w700 chip label); on bg-base 5.32:1. Both pinned in
     // app_theme_test.dart.
@@ -578,6 +670,15 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     menuArtLine: Color(0xFF556881),
     menuPowerLine: Color(0xFF5F5F5F),
     encoderFocus: Color(0xFFF2BF70),
+    frameBackground: Color(0xFF111215),
+    frameRule: Color(0xFF3D3D3D),
+    frameControlLine: Color(0xFF515D6E),
+    frameControlFill: Color(0xFF202735),
+    frameText: Color(0xFFE7EDF6),
+    frameCrumb: Color(0xFFB5B5B5),
+    frameIcon: Color(0xFFF5F1E9),
+    touchTarget: Color(0xFFD8E8FA),
+    touchTargetLine: Color(0xFFAFC8E8),
     knobFaceTop: Color(0xFF232325),
     knobFaceBottom: Color(0xFF121214),
     disabledOpacity: 0.4,
@@ -612,6 +713,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     // that exists for contrast) so the FX chip's label clears 4.5:1 (#768).
     accentSurface: Color(0xFF203A5E),
     accentAlt: Color(0xFF9AB4FF),
+    holdTrack: Color(0xFF4A586C),
+    holdProgress: Color(0xFFC6DAFF),
+    holdPendingText: Color(0xFFFFFFFF),
     // #692: the FX purple, lifted for the high-contrast flavor — `fx` on
     // `fxSurface` measures 6.83:1, on black 10.53:1 (this is the flavor where
     // FX slipped under AA before, #768/#770, so it is checked explicitly).
@@ -656,6 +760,19 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     menuArtLine: Color(0xFF556881),
     menuPowerLine: Color(0xFF5F5F5F),
     encoderFocus: Color(0xFFF2BF70),
+    // The pen's frame at high contrast: the page goes to this flavour's
+    // black, the rule and the control lines to its `line` and `borderStrong`
+    // (Back has no fill, so its line is its only edge and must clear 3:1),
+    // and the text to its white and `textSecondary`.
+    frameBackground: Color(0xFF000000),
+    frameRule: Color(0xFF6E6E6E),
+    frameControlLine: Color(0xFF8A8A8A),
+    frameControlFill: Color(0xFF202735),
+    frameText: Color(0xFFFFFFFF),
+    frameCrumb: Color(0xFFD8D8D8),
+    frameIcon: Color(0xFFFFFFFF),
+    touchTarget: Color(0xFFFFFFFF),
+    touchTargetLine: Color(0xFFFFFFFF),
     knobFaceTop: Color(0xFF2E2E30),
     knobFaceBottom: Color(0xFF171719),
     // Dim less than [dark]: a disabled control must still clear the contrast

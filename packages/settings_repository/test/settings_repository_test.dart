@@ -157,6 +157,26 @@ void main() {
     });
   });
 
+  group('instruments record', () {
+    test('restores exact bytes or absence', () async {
+      expect(await repository.readInstrumentsCheckpoint(), isNull);
+      const record = '{"version":1,"instruments":[]}';
+      await repository.restoreInstrumentsCheckpoint(record);
+      expect(await repository.readInstrumentsCheckpoint(), record);
+      await repository.restoreInstrumentsCheckpoint(null);
+      expect(await repository.readInstrumentsCheckpoint(), isNull);
+    });
+
+    test('reports a lost write', () async {
+      store.discardNextWriteKey = 'instruments.working_copy';
+      await expectLater(
+        repository.restoreInstrumentsCheckpoint('{}'),
+        throwsStateError,
+      );
+      expect(await repository.readInstrumentsCheckpoint(), isNull);
+    });
+  });
+
   group('lane mute scalar', () {
     test(
       'orders a rapid pair of writes and reads behind blocked storage',
@@ -262,6 +282,40 @@ void main() {
       }
       await repository.saveMonitorVolume(0, 1);
       expect(await repository.loadMonitorVolume(0), isNull);
+    });
+  });
+
+  group('backing checkpoints (#1200)', () {
+    test('the mix record restores exact bytes or absence', () async {
+      expect(await repository.readBackingMixCheckpoint(), isNull);
+      const record =
+          '{ "level": 0.5, "pan": 0, "outputMask": 3, "end": "next" }';
+      await repository.restoreBackingMixCheckpoint(record);
+      expect(await repository.readBackingMixCheckpoint(), record);
+      await repository.restoreBackingMixCheckpoint(null);
+      expect(store.values.containsKey('backing.mix'), isFalse);
+      store.discardNextWriteKey = 'backing.mix';
+      await expectLater(
+        repository.restoreBackingMixCheckpoint(record),
+        throwsStateError,
+      );
+      expect(await repository.readBackingMixCheckpoint(), isNull);
+    });
+
+    test('click pan keeps absence distinct from centre', () async {
+      expect(await repository.readClickPanCheckpoint(), isNull);
+      await repository.restoreClickPanCheckpoint(-0.5);
+      expect(await repository.readClickPanCheckpoint(), -0.5);
+      await repository.restoreClickPanCheckpoint(0);
+      expect(store.values['tempo.click_pan'], 0);
+      await repository.restoreClickPanCheckpoint(null);
+      expect(store.values.containsKey('tempo.click_pan'), isFalse);
+      store.discardNextWriteKey = 'tempo.click_pan';
+      await expectLater(
+        repository.restoreClickPanCheckpoint(1),
+        throwsStateError,
+      );
+      expect(await repository.readClickPanCheckpoint(), isNull);
     });
   });
 
@@ -1407,6 +1461,43 @@ void main() {
     );
   });
 
+  group('tuner preferences (#1229)', () {
+    test('the Hold · Tuner default is unattempted until marked', () async {
+      expect(await repository.loadTunerDefaultSeeded(), isFalse);
+      await repository.saveTunerDefaultSeeded();
+      expect(await repository.loadTunerDefaultSeeded(), isTrue);
+    });
+
+    test('the A4 reference defaults to 440 Hz, round-trips and clamps to '
+        '420-460', () async {
+      expect(await repository.loadTunerReferenceHz(), 440);
+      await repository.saveTunerReferenceHz(432);
+      expect(await repository.loadTunerReferenceHz(), 432);
+      await repository.saveTunerReferenceHz(500);
+      expect(await repository.loadTunerReferenceHz(), 460);
+      await repository.saveTunerReferenceHz(300);
+      expect(await repository.loadTunerReferenceHz(), 420);
+    });
+
+    test('a stored reference outside the range reads clamped', () async {
+      await store.setInt('tuner.reference_hz', 1000);
+      expect(await repository.loadTunerReferenceHz(), 460);
+    });
+
+    test(
+      'the input defaults to the first available (-1) and round-trips',
+      () async {
+        expect(await repository.loadTunerInput(), -1);
+        await repository.saveTunerInput(3);
+        expect(await repository.loadTunerInput(), 3);
+        await repository.saveTunerInput(-7);
+        expect(await repository.loadTunerInput(), -1);
+        await store.setInt('tuner.input', -4);
+        expect(await repository.loadTunerInput(), -1);
+      },
+    );
+  });
+
   group('pedal timing', () {
     test('long-press defaults to 800 ms and round-trips', () async {
       expect(await repository.loadPedalLongPressMs(), 800);
@@ -1435,6 +1526,17 @@ void main() {
     });
   });
 
+  group('FX Stop change notice', () {
+    test('is not shown yet when unset', () async {
+      expect(await repository.loadFxStopChangeNoticeShown(), isFalse);
+    });
+
+    test('stays shown once saved', () async {
+      await repository.saveFxStopChangeNoticeShown();
+      expect(await repository.loadFxStopChangeNoticeShown(), isTrue);
+    });
+  });
+
   group('high contrast', () {
     test('defaults to off when unset', () async {
       expect(await repository.loadHighContrast(), isFalse);
@@ -1446,16 +1548,61 @@ void main() {
     });
   });
 
-  group('brightness', () {
-    test('defaults to full brightness (1.0) when unset', () async {
-      expect(await repository.loadBrightness(), 1.0);
+  group('display brightness', () {
+    test('defaults to 80% on each panel when nothing was ever set', () async {
+      expect(await repository.loadDisplayBrightness(DisplayRole.track), 0.8);
+      expect(await repository.loadDisplayBrightness(DisplayRole.main), 0.8);
     });
 
-    test('round-trips a saved preference and clamps', () async {
-      await repository.saveBrightness(0.42);
-      expect(await repository.loadBrightness(), 0.42);
-      await repository.saveBrightness(2);
-      expect(await repository.loadBrightness(), 1);
+    test('a panel never set starts from the one older brightness', () async {
+      await store.setDouble('ui.brightness', 0.6);
+      expect(await repository.loadDisplayBrightness(DisplayRole.track), 0.6);
+      expect(await repository.loadDisplayBrightness(DisplayRole.main), 0.6);
+    });
+
+    test('an older brightness below the range lands on its floor', () async {
+      await store.setDouble('ui.brightness', 0.1);
+      expect(await repository.loadDisplayBrightness(DisplayRole.track), 0.2);
+      expect(await repository.loadDisplayBrightness(DisplayRole.main), 0.2);
+    });
+
+    test('each panel keeps its own; the older key is left in place for a '
+        'downgrade', () async {
+      await store.setDouble('ui.brightness', 0.6);
+      await repository.saveDisplayBrightness(DisplayRole.main, 0.5);
+      expect(await repository.loadDisplayBrightness(DisplayRole.main), 0.5);
+      expect(await repository.loadDisplayBrightness(DisplayRole.track), 0.6);
+      expect(await store.getDouble('ui.brightness'), 0.6);
+      expect(await store.getDouble('ui.brightness.main'), 0.5);
+    });
+
+    test('saves clamped into the range', () async {
+      await repository.saveDisplayBrightness(DisplayRole.track, 2);
+      expect(await repository.loadDisplayBrightness(DisplayRole.track), 1);
+      await repository.saveDisplayBrightness(DisplayRole.track, 0);
+      expect(await repository.loadDisplayBrightness(DisplayRole.track), 0.2);
+    });
+  });
+
+  group('idle dimming', () {
+    test('defaults to never', () async {
+      expect(await repository.loadIdleDimSeconds(), 0);
+    });
+
+    test('round-trips each choice', () async {
+      for (final seconds in SettingsRepository.idleDimChoices) {
+        await repository.saveIdleDimSeconds(seconds);
+        expect(await repository.loadIdleDimSeconds(), seconds);
+      }
+    });
+
+    test('an unknown stored value reads as never', () async {
+      await store.setInt('ui.idle_dim_seconds', 45);
+      expect(await repository.loadIdleDimSeconds(), 0);
+    });
+
+    test('refuses a value that is not a choice', () {
+      expect(() => repository.saveIdleDimSeconds(45), throwsArgumentError);
     });
   });
 
@@ -1972,6 +2119,34 @@ void main() {
       await repository.saveUpdateChannel('experimental');
       expect(await repository.loadUpdateChannel(), 'experimental');
       expect(store.values['updates.channel'], 'experimental');
+    });
+  });
+
+  group('update rollback', () {
+    test('defaults to none', () async {
+      expect(await repository.loadUpdateRollback(), isNull);
+    });
+
+    test('round-trips the pair, and clearing forgets it', () async {
+      await repository.saveUpdateRollback(
+        attempted: Version.parse('1.1.0'),
+        restored: Version.parse('1.0.0'),
+      );
+      expect(store.values['updates.rollback'], '1.1.0,1.0.0');
+      expect(
+        await repository.loadUpdateRollback(),
+        (attempted: Version.parse('1.1.0'), restored: Version.parse('1.0.0')),
+      );
+
+      await repository.clearUpdateRollback();
+      expect(await repository.loadUpdateRollback(), isNull);
+    });
+
+    test('reads an unparseable value as none', () async {
+      await store.setString('updates.rollback', '1.1.0');
+      expect(await repository.loadUpdateRollback(), isNull);
+      await store.setString('updates.rollback', 'x,1.0.0');
+      expect(await repository.loadUpdateRollback(), isNull);
     });
   });
 

@@ -67,14 +67,17 @@ esac
 # src/midi/le_midi_clock.c (C1, D15), which IS an engine dependency
 # (engine_process.c calls le_midi_clock_advance every block) despite living in
 # midi/ per the plan's file placement; keep it in sync with CMakeLists.txt.
-# src/core/restore_*.c (offline loop-close restoration DSP, #697 S8) sit
+# src/core/restore_*.c (offline loop-close restoration DSP, #697 S8) and
+# src/core/synth_*.c (the instrument voices and patch table, #1197) sit
 # outside the engine*.c glob on purpose (pure DSP TUs, not engine state) and
 # are listed explicitly — keep in sync with CMakeLists.txt.
 ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
   src/core/tempo_grid.c \
   src/core/restore_declip.c src/core/restore_halfband.c \
-  src/core/audio_ring.c src/core/perf_drain.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
-  src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c"
+  src/core/synth_voice.c src/core/synth_patch.c \
+  src/core/audio_ring.c src/core/perf_drain.c src/core/perf_checkpoint.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
+  src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c \
+  src/midi/le_clock_follow.c"
 
 # Vendored RNNoise (third_party/rnnoise, BSD-3-Clause — offline loop-close
 # denoise, #697). Listed explicitly, NOT globbed: the vendored src/ dir also
@@ -136,6 +139,15 @@ $CC $STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS src/test/test_fx_recipe_plugins.c \
   $RECIPE_SRC "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_fx_recipe_tests.exe"
 "$OUT/segno_fx_recipe_tests.exe"
 
+echo "== building instrument ring race tests =="
+# A control thread posting note pairs against a hot-looping drain (#1197):
+# a note-off must never apply before its own note-on. Before the races-only
+# exit so the ThreadSanitizer job covers it too.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_instrument_races.c $ENGINE_SRC \
+  "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_instrument_race_tests.exe"
+"$OUT/segno_instrument_race_tests.exe"
+
 echo "== building MIDI sink race tests =="
 # The native MIDI input sink (#1228 Part 1, le_midi_port.h): a producer, an
 # audio thread and the control thread attaching/detaching/destroying, against
@@ -147,6 +159,23 @@ $CC $STD $EXTRA_CFLAGS src/test/test_midi_sink_races.c \
   $ENGINE_SRC "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_midi_sink_race_tests.exe"
 "$OUT/segno_midi_sink_race_tests.exe"
 
+echo "== building capture drain race tests =="
+# The drain thread rolling parts against a running callback and a snapshot
+# reader (#1198). Production engine, no test hooks: before the races-only exit
+# so the TSAN job covers it.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_perf_drain_races.c $ENGINE_SRC \
+  "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_perf_drain_race_tests.exe"
+"$OUT/segno_perf_drain_race_tests.exe"
+echo "== building backing handoff race tests =="
+# The backing player's buffer handoff (#1200): the audio thread advances End =
+# Next inside blocks while the control thread loads, stages and clears. Before
+# the races-only exit so the TSAN job covers it; ASan covers it in its job.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_backing_races.c $ENGINE_SRC \
+  "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_backing_race_tests.exe"
+"$OUT/segno_backing_race_tests.exe"
+
 if [ "${NATIVE_TESTS_ONLY:-}" = "races" ]; then
   exit 0
 fi
@@ -157,10 +186,21 @@ $CC $STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS src/test/test_engine_core.c $ENGINE_SRC
   -o "$OUT/segno_core_tests.exe"
 "$OUT/segno_core_tests.exe"
 
+echo "== building the decoder fuzz driver =="
+# The app's audio-file decoder over whole-file mutations of every accepted and
+# refused format (#1200): a bounded, fixed-seed run in every configuration, so
+# the ASan job fuzzes it on every push. FUZZ_CFLAGS adds flags for this binary
+# only (the ASan job passes UBSan here); SEGNO_FUZZ_ITERATIONS and
+# SEGNO_FUZZ_SEED widen a local run.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS ${FUZZ_CFLAGS:-} src/test/fuzz_backing_decode.c $ENGINE_SRC "$STRETCH_OBJ" \
+  $ENGINE_LIBS -o "$OUT/segno_fuzz_decode.exe"
+TMPDIR="$OUT" "$OUT/segno_fuzz_decode.exe"
+
 echo "== building midi tests =="
 # shellcheck disable=SC2086
 $CC $STD $EXTRA_CFLAGS src/test/test_midi_core.c src/midi/midi.c src/midi/midi_backend_linux.c \
-  src/midi/midi_backend_apple.c src/midi/le_midi_clock.c \
+  src/midi/midi_backend_apple.c src/midi/le_midi_clock.c src/midi/le_clock_follow.c \
   src/core/tempo_grid.c $MIDI_LIBS \
   -o "$OUT/segno_midi_tests.exe"
 "$OUT/segno_midi_tests.exe"

@@ -82,6 +82,11 @@ const Map<int, SessionMigrationStep> sessionMigrationSteps = {
   10: _v10ToV11,
   11: _v11ToV12,
   12: _v12ToV13,
+  13: _v13ToV14,
+  // #1200's backing setup and click pan; landed after #1168's 14.
+  14: _v14ToV15,
+  // #1179's Audio & tempo; landed after #1168's 14 and #1200's 15.
+  15: _addAudioTempo,
 };
 
 /// A manifest written by an older schema, converted in memory: the exact
@@ -404,6 +409,57 @@ void _v12ToV13(Map<String, dynamic> m, SessionMigrationContext c) {
   for (final track in _list(m, 'tracks').cast<Map<String, dynamic>>()) {
     track['reversed'] = false;
     c.note('tracks[${track['channel']}].reversed', 'defaulted to forward');
+  }
+}
+
+/// Schema 14 (#1168) counts the grid in beats beside the bars, so a Divide
+/// of a sole loop can keep the tempo with a sub-bar loop. Every older
+/// manifest's grid was whole bars: its beats are the bars times the saved
+/// numerator. Length edits and their playhead maps are new in 14 and absent
+/// before it, so nothing else changes.
+void _v13ToV14(Map<String, dynamic> m, SessionMigrationContext c) {
+  final bars = (m['loopBars'] as num).toInt();
+  final beatsPerBar = (m['tsNum'] as num).toInt();
+  m['loopBeats'] = bars * beatsPerBar;
+  c.note('loopBeats', 'counted from $bars bars of $beatsPerBar beats');
+}
+
+/// 14 → 15: the backing player's setup and the click's pan (#1200). A session
+/// written before them said nothing about either, and opening it on the build
+/// that had no backing changed nothing there; so the conversion keeps the
+/// player's live setup (its prepared list, loaded file, End, level, pan,
+/// outputs and the click pan) the way schema 8 kept the former global
+/// preferences. Without a live player they are an empty, silent backing and
+/// a centred click.
+void _v14ToV15(Map<String, dynamic> m, SessionMigrationContext c) {
+  _fill(m, c, 'backing', c.live.backing.toJson(), live: true);
+  _fill(m, c, 'clickPan', c.live.clickPan, live: true);
+}
+
+/// 15 → 16: the Audio & tempo settings and the recorded
+/// tempo (#1179). Follow tempo and Pitch were the player's global
+/// preferences before (rule 1, the schema-8 precedent), so a session that
+/// never carried them keeps the live values, as opening it did. Nothing
+/// could retime a rig before this schema, so its takes are at its own tempo
+/// on its own master: no recorded pair, no spans.
+void _addAudioTempo(Map<String, dynamic> m, SessionMigrationContext c) {
+  final live = c.live;
+  _fill(m, c, 'defaultFollowTempo', live.defaultFollowTempo, live: true);
+  _fill(m, c, 'trackFollowTempoOverrides', <String, dynamic>{
+    for (final entry in live.trackFollowTempoOverrides.entries)
+      '${entry.key}': entry.value,
+  }, live: true);
+  _fill(m, c, 'defaultPitchMode', live.defaultPitchMode.name, live: true);
+  _fill(m, c, 'trackPitchModeOverrides', <String, dynamic>{
+    for (final entry in live.trackPitchModeOverrides.entries)
+      '${entry.key}': entry.value.name,
+  }, live: true);
+  _fill(m, c, 'recordedTempoBpm', 0.0);
+  _fill(m, c, 'recordedLengthFrames', 0);
+  for (final track in _list(m, 'tracks').cast<Map<String, dynamic>>()) {
+    if (track.containsKey('spanFrames')) continue;
+    track['spanFrames'] = 0;
+    c.note('tracks[${track['channel']}].spanFrames', 'its own master');
   }
 }
 

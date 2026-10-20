@@ -1,6 +1,7 @@
 import 'package:looper_repository/looper_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/looper/model/audio_tempo.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
@@ -108,10 +109,14 @@ SessionSettings settingsFromLooper(
   required RecordStartSettings recordStart,
   required DecaySnapshot decay,
   required OneShotSnapshot oneShot,
+  required InheritSnapshot<bool> followTempo,
+  required InheritSnapshot<PitchMode> pitchMode,
   required RecordLengthSnapshot recordLength,
   required RecordTimingSnapshot recordTiming,
   required FadeDurations fade,
   MixSettingsSnapshot? mix,
+  SessionBacking backing = const SessionBacking(),
+  double clickPan = 0,
 }) {
   final transport = looper.sessionTransport;
   final snapshot = mix ?? looper.mixSettingsSnapshot;
@@ -123,9 +128,16 @@ SessionSettings settingsFromLooper(
     syncTempo: transport.syncTempo,
     quantizeDiv: recordTiming.rememberedDivision,
     loopBars: transport.loopBars,
+    loopBeats: transport.loopBeats > 0 || transport.loopBars == 0
+        ? transport.loopBeats
+        : transport.loopBars * transport.tsNum,
     recordTiming: recordTiming.defaultTiming,
     overdubDecay: decay.defaultPercent,
     defaultOneShot: oneShot.defaultOneShot,
+    defaultFollowTempo: followTempo.defaultValue,
+    trackFollowTempoOverrides: followTempo.trackOverrides,
+    defaultPitchMode: pitchMode.defaultValue,
+    trackPitchModeOverrides: pitchMode.trackOverrides,
     defaultFadeDurationMs: fade.defaultMs,
     trackFadeDurationOverrides: fade.overrides,
     defaultLengthPresetBars: recordLength.defaultBars,
@@ -164,6 +176,8 @@ SessionSettings settingsFromLooper(
     defaultMultiple: transport.defaultMultiple,
     looperMode: transport.looperMode,
     primaryTrack: transport.primaryTrack,
+    backing: backing,
+    clickPan: clickPan,
   );
 }
 
@@ -306,7 +320,14 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
   syncTempo: bundle.session.syncTempo,
   quantizeDiv: bundle.session.quantizeDiv,
   loopBars: bundle.session.loopBars,
+  loopBeats: bundle.session.loopBeats,
   defaultOneShot: bundle.session.defaultOneShot,
+  recordedTempoBpm: bundle.session.recordedTempoBpm,
+  recordedLengthFrames: bundle.session.recordedLengthFrames,
+  defaultFollowTempo: bundle.session.defaultFollowTempo,
+  trackFollowTempoOverrides: bundle.session.trackFollowTempoOverrides,
+  defaultPitchMode: bundle.session.defaultPitchMode,
+  trackPitchModeOverrides: bundle.session.trackPitchModeOverrides,
   defaultLengthPresetBars: bundle.session.defaultLengthPresetBars,
   trackRecordTimingOverrides: bundle.session.trackRecordTimingOverrides,
   trackOverdubDecayOverrides: bundle.session.trackOverdubDecayOverrides,
@@ -337,6 +358,17 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
   // The output setup (slice 3b), session-owned like the input setup.
   outputSetup: outputSetupFromSession(bundle.session.outputSetup),
 );
+
+/// The rig `New loop` applies (plan D9): [live]'s settings and chains with
+/// no tracks, no grid and no crown ([Session.forNewLoop]), mapped by the same
+/// [rigFromBundle] an Open uses, so the two cannot disagree about a setting.
+///
+/// The transforms reset with the clear inside the apply: lane mutes go with
+/// the tracks, and Fade and Reverse reset with the material
+/// (`LE_CMD_RESET_TRANSFORMS`). Speed and Transpose resets belong in that same
+/// apply path when they land, not here.
+SessionRig rigForNewLoop(Session live) =>
+    rigFromBundle((session: live.forNewLoop(), laneStems: const {}));
 
 /// Projects one manifest monitor + its decoded chain into the rig's Input-stage
 /// model. The monitor carries routing/mix of its own, so the envelope is
@@ -394,6 +426,7 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
           channel: track.channel,
           fadeAmount: track.fadeAmount,
           reversed: track.reversed,
+          spanFrames: track.spanFrames,
           lanes: lanes,
         ),
       );

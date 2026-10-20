@@ -15,16 +15,6 @@ const _allowed = <String, String>{
   'lib/control/view/pedal_setup/pedal_hardware_face.dart':
       'Fusion pedal artwork — hardware replica',
 
-  // Performer-selected LED hues are saved hardware RGB values. They must not
-  // change with the screen theme; the palette editor's surfaces and focus
-  // indicators still resolve their colors from theme tokens.
-  'lib/control/binding/pedal_palette.dart':
-      'saved physical LED palette — independent of the screen theme',
-
-  // Gate decision on #499: the prototype is a 1920x1080 appliance view with no
-  // title bar, so there is no design to adopt here — only one to invent.
-  'lib/window/window_chrome.dart': 'desktop window chrome — no DS counterpart',
-
   // Drop shadows. The design system has no shadow tokens at all; these are not
   // palette drift, they are a gap on the DS side.
   'lib/app/app_toasts.dart': 'drop shadow — DS defines no shadow tokens',
@@ -35,12 +25,9 @@ const _allowed = <String, String>{
   'lib/visualizer/widgets/waveform_view.dart':
       'themeless-context fallbacks + the white playhead',
 
-  // An OS window option set before runApp, so it cannot read a theme.
-  'lib/visualizer/waveform_window.dart': 'pre-runApp OS window background',
-
   // Must match the Plymouth splash field (#08080A), not a theme token —
   // the goodbye mark is the same pixel the unit booted with.
-  'lib/appliance/power_off/power_off_goodbye.dart':
+  'lib/appliance/power_off/power_goodbye.dart':
       'Plymouth goodbye field — must match the boot splash hex',
 };
 

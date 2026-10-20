@@ -307,7 +307,7 @@ void main() {
           ..publishLengthCommands = false
           ..corruptLength = true;
         expect((await hold()).status, RecordLengthStatus.recoveryRequired);
-        expect(repository.sessionTransport.isRunning, isTrue);
+        expect(repository.sessionTransport.deviceRunning, isTrue);
         expect(engine.stopCalls, 0);
         // Storage keeps the Released value the receipt owes.
         expect(store.values['tempo.length_preset.0'], 4);

@@ -8,6 +8,7 @@ import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/model/audio_tempo.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/playback_options.dart';
@@ -127,10 +128,12 @@ void main() {
       await poll();
       expect(
         playback.state,
-        const PlaybackOptions(
-          overdubDecay: 35,
-          decayReady: true,
-          oneShotReady: true,
+        _withAudioTempo(
+          const PlaybackOptions(
+            overdubDecay: 35,
+            decayReady: true,
+            oneShotReady: true,
+          ),
         ),
       );
       expect(quantize.state.defaultTiming, RecordTiming.immediately);
@@ -154,10 +157,12 @@ void main() {
       await poll();
       expect(
         playback.state,
-        const PlaybackOptions(
-          overdubDecay: 35,
-          decayReady: true,
-          oneShotReady: true,
+        _withAudioTempo(
+          const PlaybackOptions(
+            overdubDecay: 35,
+            decayReady: true,
+            oneShotReady: true,
+          ),
         ),
       );
       expect(quantize.state.defaultTiming, RecordTiming.immediately);
@@ -232,10 +237,12 @@ void main() {
       // An ordinary Once edit does not discard the independent saved Decay.
       expect(
         playback.state,
-        const PlaybackOptions(
-          overdubDecay: 80,
-          decayReady: true,
-          oneShotReady: true,
+        _withAudioTempo(
+          const PlaybackOptions(
+            overdubDecay: 80,
+            decayReady: true,
+            oneShotReady: true,
+          ),
         ),
       );
       expect(quantize.state.defaultTiming, RecordTiming.immediately);
@@ -387,11 +394,13 @@ void main() {
         await poll();
         expect(
           cubit.state,
-          const PlaybackOptions(
-            overdubDecay: 40,
-            defaultOneShot: true,
-            decayReady: true,
-            oneShotReady: true,
+          _withAudioTempo(
+            const PlaybackOptions(
+              overdubDecay: 40,
+              defaultOneShot: true,
+              decayReady: true,
+              oneShotReady: true,
+            ),
           ),
         );
 
@@ -399,19 +408,23 @@ void main() {
         await poll();
         expect(
           cubit.state,
-          const PlaybackOptions(
-            overdubDecay: 75,
-            decayReady: true,
-            oneShotReady: true,
+          _withAudioTempo(
+            const PlaybackOptions(
+              overdubDecay: 75,
+              decayReady: true,
+              oneShotReady: true,
+            ),
           ),
         );
         await cubit.load();
         expect(
           cubit.state,
-          const PlaybackOptions(
-            overdubDecay: 75,
-            decayReady: true,
-            oneShotReady: true,
+          _withAudioTempo(
+            const PlaybackOptions(
+              overdubDecay: 75,
+              decayReady: true,
+              oneShotReady: true,
+            ),
           ),
         );
         expect(await settings.readDecayCheckpoint(channel: null), 40);
@@ -424,7 +437,9 @@ void main() {
       await owner.close();
       ((PlaybackSettings cubit) => expect(
         cubit.state,
-        const PlaybackOptions(decayReady: true, oneShotReady: true),
+        _withAudioTempo(
+          const PlaybackOptions(decayReady: true, oneShotReady: true),
+        ),
       ))(owner);
     },
   );
@@ -605,3 +620,13 @@ void main() {
     },
   );
 }
+
+/// The Audio & tempo owners' restored defaults (#1179): Follow on, Pitch
+/// unchanged, ready beside the others once their stored keys are read.
+PlaybackOptions _withAudioTempo(PlaybackOptions options) => options.copyWith(
+  followTempo: InheritSnapshot(defaultValue: true, trackOverrides: const {}),
+  pitchMode: InheritSnapshot(
+    defaultValue: PitchMode.unchanged,
+    trackOverrides: const {},
+  ),
+);

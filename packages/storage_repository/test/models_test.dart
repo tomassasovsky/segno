@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:storage_repository/storage_repository.dart';
 
 /// Every pair in [values] is equal exactly when the indices are, and equal
@@ -95,21 +96,42 @@ void main() {
     );
     expect('${const StorageFailure.io('EIO')}', 'storage I/O failed: EIO');
     expect(
+      '${const StorageFailure.busy(GuardKind.restart)}',
+      'busy: restart is in flight',
+    );
+    expect(
+      const StorageFailure.busy(GuardKind.capture),
+      isNot(const StorageFailure.busy(GuardKind.restart)),
+    );
+    expect(
+      '${const StorageFailure.io('EIO', writtenTo: '/media/1/take.wav')}',
+      'copied to /media/1/take.wav, but the drive did not confirm it: EIO',
+    );
+    expect(
       '${const NameConflict('/m/a.wav')}',
       'a file already exists at /m/a.wav',
     );
   });
 
   test('a write lease is a const value: target and purpose', () {
-    const a = WriteLease(target: StorageDestination.internal(), purpose: 'x');
+    const a = WriteLease(
+      target: StorageDestination.internal(),
+      purpose: WritePurpose.copy,
+    );
     expect(
       a,
-      const WriteLease(target: StorageDestination.internal(), purpose: 'x'),
+      const WriteLease(
+        target: StorageDestination.internal(),
+        purpose: WritePurpose.copy,
+      ),
     );
     expect(
       a,
       isNot(
-        const WriteLease(target: StorageDestination.removable(1), purpose: 'x'),
+        const WriteLease(
+          target: StorageDestination.removable(1),
+          purpose: WritePurpose.copy,
+        ),
       ),
     );
   });

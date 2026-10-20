@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -5,19 +6,24 @@ import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/control/binding/mix_value_scale.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/audio_routing/input_setup_tab.dart'
     show routingPlacementLabel;
+import 'package:segno/looper/view/loop_count_words.dart';
 import 'package:segno/looper/view/rename_track_dialog.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
+import 'package:segno/looper/view/slot_row.dart';
 import 'package:segno/looper/view/track_column.dart'
-    show PrimaryCrown, ShrinkToWidth;
+    show PrimaryCrown, SlotFigure;
 import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/looper/view/tracks_commands.dart';
 import 'package:segno/theme/theme.dart';
@@ -43,6 +49,7 @@ class MixerColumn extends StatelessWidget {
     required this.mode,
     this.isPrimary = false,
     this.bars,
+    this.beats,
     super.key,
   });
 
@@ -65,6 +72,10 @@ class MixerColumn extends StatelessWidget {
   /// The track's length in bars, when the grid knows it.
   final int? bars;
 
+  /// The track's length in whole beats when its bars are not whole (a Divide
+  /// of a sole loop, #1168), else null.
+  final int? beats;
+
   /// The pen's strip padding, and the height of every fixed part between the
   /// meter and the edges. A COLUMN, not absolute offsets: the pen's strip is
   /// 858 tall and a desktop window is not, and a strip laid out by `top:`
@@ -84,6 +95,14 @@ class MixerColumn extends StatelessWidget {
   static const double buttonHeight = _buttonsHeight;
   static const double panHeight = 54;
   static const double markerHeight = 4;
+
+  /// The pan word's fixed slot (#1308): `Paneo` at 22; the readout takes
+  /// the rest of the row.
+  static const double panLabelWidth = 64;
+
+  /// The gain readout's fixed slot (#1308): eight JetBrains Mono characters
+  /// at 22, `−60.0 dB`.
+  static const double gainReadoutWidth = 108;
 
   /// What the stage's dB scale aligns to, the same contract `TrackColumn`
   /// publishes: the scale lines up with the meter, not with the strip.
@@ -142,6 +161,7 @@ class MixerColumn extends StatelessWidget {
               name: name,
               isPrimary: isPrimary,
               bars: bars,
+              beats: beats,
             ),
           ),
           const SizedBox(height: _gap),
@@ -209,12 +229,17 @@ class _StripInfo extends StatelessWidget {
     required this.name,
     required this.isPrimary,
     required this.bars,
+    required this.beats,
   });
 
   final Track track;
   final String name;
   final bool isPrimary;
   final int? bars;
+
+  /// The track's length in whole beats when its bars are not whole (a Divide
+  /// of a sole loop, #1168), else null.
+  final int? beats;
 
   @override
   Widget build(BuildContext context) {
@@ -275,6 +300,7 @@ class _StripInfo extends StatelessWidget {
             channel: track.channel,
             layers: track.layers,
             bars: bars,
+            beats: beats,
           ),
         ),
       ],
@@ -289,11 +315,16 @@ class _StripMeta extends StatelessWidget {
     required this.channel,
     required this.layers,
     required this.bars,
+    required this.beats,
   });
 
   final int channel;
   final int layers;
   final int? bars;
+
+  /// The track's length in whole beats when its bars are not whole (a Divide
+  /// of a sole loop, #1168), else null.
+  final int? beats;
 
   @override
   Widget build(BuildContext context) {
@@ -311,97 +342,128 @@ class _StripMeta extends StatelessWidget {
       fontSize: 17,
       height: 1,
     );
-    final barsCount = bars;
+    final count = loopCountWords(l10n, bars: bars, beats: beats);
     return Semantics(
       label: l10n.a11yStageTrackMeta(
         channel + 1,
-        barsCount == null
-            ? l10n.stageNoBarsFigure
-            : l10n.stageBarsFigure(barsCount),
+        count.spoken,
         l10n.stageLayersFigure(layers),
       ),
       child: ExcludeSemantics(
-        child: ShrinkToWidth(
-          child: Row(
-            key: Key('mixer_meta_$channel'),
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              AppText(
+        // Fixed slots (#1308), as the Track view's meta row.
+        child: SlotRow(
+          key: Key('mixer_meta_$channel'),
+          minWidth: 200,
+          spacing: 12,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          slots: [
+            RowSlot(
+              width: 30,
+              child: AppText(
                 '${channel + 1}',
+                maxLines: 1,
+                overflow: TextOverflow.clip,
                 style: TextStyle(
                   fontFamily: SurfaceTheme.displayFont,
                   color: surface.textTertiary,
                   fontSize: 22,
                   fontWeight: FontWeight.w700,
+                  fontFeatures: const [FontFeature.tabularFigures()],
                   height: 1,
                 ),
               ),
-              _MetaFigure(
-                figure: barsCount == null ? l10n.stageNoBars : '$barsCount',
-                unit: l10n.stageBarsUnit(barsCount ?? 0),
+            ),
+            RowSlot(
+              child: SlotFigure(
+                figure: count.figure,
+                unit: count.unit,
                 figureStyle: figure,
                 unitStyle: unit,
+                gap: 6,
               ),
-              _MetaFigure(
+            ),
+            RowSlot(
+              child: SlotFigure(
                 figure: '$layers',
                 unit: l10n.stageLayersUnit(layers),
                 figureStyle: figure,
                 unitStyle: unit,
+                gap: 6,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _MetaFigure extends StatelessWidget {
-  const _MetaFigure({
-    required this.figure,
-    required this.unit,
-    required this.figureStyle,
-    required this.unitStyle,
-  });
-
-  final String figure;
-  final String unit;
-  final TextStyle figureStyle;
-  final TextStyle unitStyle;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.baseline,
-    textBaseline: TextBaseline.alphabetic,
-    children: [
-      AppText(figure, style: figureStyle),
-      const SizedBox(width: 6),
-      AppText(unit, style: unitStyle),
-    ],
-  );
-}
-
 /// Mute, Solo and the FX pair. Mute and Solo are independent facts: a soloed
 /// track that is also muted stays silent, which is why neither button reads
 /// the other's state.
+///
+/// The pen's widths (`Mixer / Tile`): Mute and Solo 102 each, the FX pair
+/// 147 (edit 97 + bypass 50), 9 apart. Flex keeps those proportions in any
+/// strip width.
 class _StripButtons extends StatelessWidget {
   const _StripButtons({required this.track});
 
   final Track track;
 
+  /// The pen's flex units: Mute, Solo, FX edit and bypass, and their gaps.
+  static const double _mute = 102;
+  static const double _edit = 97;
+  static const double _bypass = 50;
+  static const double _units = 2 * _mute + _edit + _bypass;
+  static const double _gaps = 18;
+
+  /// Room a label or glyph keeps from its button's edges.
+  static const double _inset = 12;
+
+  /// One scale for every label and glyph in the row, so a narrow strip
+  /// shrinks them together instead of each by its own word length.
+  double _scale(BuildContext context, double width) {
+    final l10n = context.l10n;
+    final unit = math.max(0, width - _gaps) / _units;
+    double fit(String text, double units) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: _StripButton.labelStyle(1)),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+        maxLines: 1,
+      )..layout();
+      final room = units * unit - _inset;
+      final width = painter.width;
+      painter.dispose();
+      return width <= 0 ? 1 : room / width;
+    }
+
+    return [
+      1.0,
+      fit(l10n.mixerMute, _mute),
+      fit(l10n.mixerSolo, _mute),
+      fit(l10n.stageFxMarker, _edit),
+      (_bypass * unit - _inset) / _StripButton.iconSize,
+    ].reduce(math.min).clamp(0.1, 1.0);
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) =>
+        _row(context, _scale(context, constraints.maxWidth)),
+  );
+
+  Widget _row(BuildContext context, double scale) {
     final l10n = context.l10n;
     final bloc = context.read<LooperBloc>();
     final channel = track.channel;
     return Row(
       children: [
         Expanded(
+          flex: 102,
           child: _StripButton(
             key: Key('mixer_mute_$channel'),
+            scale: scale,
             label: l10n.mixerMute,
             on: track.muted,
             semanticLabel: track.muted
@@ -412,8 +474,10 @@ class _StripButtons extends StatelessWidget {
         ),
         const SizedBox(width: 9),
         Expanded(
+          flex: 102,
           child: _StripButton(
             key: Key('mixer_solo_$channel'),
+            scale: scale,
             label: l10n.mixerSolo,
             on: track.solo,
             semanticLabel: track.solo
@@ -429,35 +493,61 @@ class _StripButtons extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 9),
-        Expanded(child: _StripFxPair(track: track)),
+        Expanded(
+          flex: 147,
+          child: _StripFxPair(track: track, scale: scale),
+        ),
       ],
     );
   }
 }
 
-/// One of the strip's small state buttons: lit when [on].
+/// One of the strip's small state buttons: lit when [on], dimmed and inert
+/// without an [onTap]. Shows [label], or [icon] when there is no label, at
+/// the row's shared [scale].
 class _StripButton extends StatelessWidget {
   const _StripButton({
-    required this.label,
     required this.on,
     required this.semanticLabel,
     required this.onTap,
+    required this.scale,
+    this.label,
+    this.icon,
+    this.radius = const BorderRadius.all(Radius.circular(10)),
     this.onLongPress,
     this.longPressLabel,
     super.key,
   });
 
-  final String label;
+  /// The pen's label size and glyph size.
+  static const double fontSize = 22;
+  static const double iconSize = 28;
+
+  /// The label style at [scale]; [color] is left to the caller.
+  static TextStyle labelStyle(double scale, [Color? color]) => TextStyle(
+    fontFamily: SurfaceTheme.displayFont,
+    color: color,
+    fontSize: fontSize * scale,
+    fontWeight: FontWeight.w600,
+    height: 1,
+  );
+
+  final String? label;
+  final IconData? icon;
+  final double scale;
   final bool on;
   final String semanticLabel;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final BorderRadius radius;
   final VoidCallback? onLongPress;
   final String? longPressLabel;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    return FocusableTapTarget(
+    final color = on ? surface.textPrimary : surface.textSecondary;
+    final label = this.label;
+    final button = FocusableTapTarget(
       semanticLabel: semanticLabel,
       selected: on,
       onTap: onTap,
@@ -475,57 +565,81 @@ class _StripButton extends StatelessWidget {
           border: Border.all(
             color: on ? surface.borderStrong : surface.borderSubtle,
           ),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: radius,
         ),
-        child: AppText(
-          label,
-          style: TextStyle(
-            fontFamily: SurfaceTheme.displayFont,
-            color: on ? surface.textPrimary : surface.textSecondary,
-            fontSize: 22,
-            fontWeight: FontWeight.w600,
-            height: 1,
-          ),
-        ),
+        child: label != null
+            ? AppText(label, maxLines: 1, style: labelStyle(scale, color))
+            : Icon(icon, size: iconSize * scale, color: color),
       ),
     );
+    if (onTap != null) return button;
+    return Opacity(opacity: surface.disabledOpacity, child: button);
   }
 }
 
-/// The track's FX bypass.
+/// The track's FX pair (pen `Mixer / Tile`, `stage-fx-control`): FX opens the
+/// Effects editor at this track's whole-track chain; the power button beside
+/// it bypasses that chain.
 ///
-/// The pen draws a PAIR here — an edit button beside this one — but the FX
-/// editor is slice 3f and does not exist yet, so that button would open
-/// nothing. The bypass has a real owner today and ships on its own; the edit
-/// button lands with the surface it opens.
+/// The pair is on every strip, as the pen draws it: an empty chain is where
+/// an effect gets added, so FX always opens the editor. The bypass only has
+/// something to switch while the chain holds an effect; without one it is
+/// dimmed and inert, as the pen draws it on a strip with no effects.
 ///
-/// Absent entirely when the track has no chain, which is the accepted
-/// design's own rule for the Track view's FX marker: a control over nothing
-/// is a promise the rig cannot keep.
-///
-/// A TOGGLE event, never a computed set: `track` here is the polled snapshot,
-/// a poll behind any flip another surface just made.
+/// The bypass is a TOGGLE event, never a computed set: `track` here is the
+/// polled snapshot, a poll behind any flip another surface just made.
 class _StripFxPair extends StatelessWidget {
-  const _StripFxPair({required this.track});
+  const _StripFxPair({required this.track, required this.scale});
 
   final Track track;
+
+  /// The row's shared label scale.
+  final double scale;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    if (track.effects.isEmpty) return const SizedBox.shrink();
-    final on = track.chainEnabled;
-    return _StripButton(
-      key: Key('mixer_fx_${track.channel}'),
-      label: l10n.stageFxMarker,
-      on: on,
-      semanticLabel: on
-          ? l10n.a11yMixerBypassFx(track.channel + 1)
-          : l10n.a11yMixerEnableFx(track.channel + 1),
-      onTap: () {
-        TracksCommands(context).announceFxChainToggle(track.channel);
-        context.read<LooperBloc>().add(LooperTrackChainToggled(track.channel));
-      },
+    final channel = track.channel;
+    final hasChain = track.effects.isNotEmpty;
+    final on = hasChain && track.chainEnabled;
+    return Row(
+      children: [
+        Expanded(
+          flex: 97,
+          child: _StripButton(
+            key: Key('mixer_fx_edit_$channel'),
+            scale: scale,
+            label: l10n.stageFxMarker,
+            on: false,
+            semanticLabel: l10n.a11yMixerEditFx(channel + 1),
+            radius: const BorderRadius.horizontal(left: Radius.circular(10)),
+            onTap: () => unawaited(
+              openFx(destination: FxDestination.recordedTrack(channel)),
+            ),
+          ),
+        ),
+        Expanded(
+          flex: 50,
+          child: _StripButton(
+            key: Key('mixer_fx_$channel'),
+            scale: scale,
+            icon: LucideIcons.power,
+            on: on,
+            semanticLabel: on
+                ? l10n.a11yMixerBypassFx(channel + 1)
+                : l10n.a11yMixerEnableFx(channel + 1),
+            radius: const BorderRadius.horizontal(right: Radius.circular(10)),
+            onTap: hasChain
+                ? () {
+                    TracksCommands(context).announceFxChainToggle(channel);
+                    context.read<LooperBloc>().add(
+                      LooperTrackChainToggled(channel),
+                    );
+                  }
+                : null,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -580,12 +694,19 @@ class _StripPanState extends State<_StripPan> {
         // add up to 89 does not.
         SizedBox(
           height: _labelHeight,
-          child: ShrinkToWidth(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                AppText(
+          // Fixed slots (#1308): `Center`, `5% left` and `100% right` leave
+          // the word put.
+          child: SlotRow(
+            key: Key('mixer_pan_row_${widget.track.channel}'),
+            minWidth: 160,
+            spacing: 8,
+            slots: [
+              RowSlot(
+                width: MixerColumn.panLabelWidth,
+                child: AppText(
                   l10n.routingPan,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: SurfaceTheme.displayFont,
                     color: surface.textSecondary,
@@ -593,18 +714,24 @@ class _StripPanState extends State<_StripPan> {
                     height: 1,
                   ),
                 ),
-                AppText(
+              ),
+              RowSlot(
+                alignment: AlignmentDirectional.centerEnd,
+                child: AppText(
                   routingPlacementLabel(l10n, pan),
                   key: Key('mixer_pan_readout_${widget.track.channel}'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: SurfaceTheme.displayFont,
                     color: surface.textPrimary,
                     fontSize: 22,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                     height: 1,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 10),
@@ -796,7 +923,15 @@ class _StripPanBarState extends State<_StripPanBar> {
                         child: DecoratedBox(
                           decoration: BoxDecoration(
                             color: surface.controlStrong,
-                            borderRadius: BorderRadius.circular(8),
+                            // Only the extended end is rounded; the edge at
+                            // the centre stays square against the tick.
+                            borderRadius: widget.pan < 0
+                                ? const BorderRadius.horizontal(
+                                    left: Radius.circular(8),
+                                  )
+                                : const BorderRadius.horizontal(
+                                    right: Radius.circular(8),
+                                  ),
                           ),
                         ),
                       ),
@@ -859,13 +994,19 @@ class _StripGainCaption extends StatelessWidget {
         : fade.amount < 1
         ? l10n.mixerFadeLevel((fade.amount * 100).round())
         : null;
-    return ShrinkToWidth(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          AppText(
+    // Fixed slots (#1308): the cue changing from `Level` to `Fade 40%` or
+    // the gain from `−∞` to `−60.0 dB` moves neither.
+    return SlotRow(
+      key: Key('mixer_gain_row_$channel'),
+      minWidth: 160,
+      spacing: 8,
+      slots: [
+        RowSlot(
+          child: AppText(
             cue ?? l10n.mixerLevel,
             key: Key('mixer_gain_caption_$channel'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontFamily: SurfaceTheme.displayFont,
               color: cue == null ? surface.textSecondary : surface.warning,
@@ -873,13 +1014,21 @@ class _StripGainCaption extends StatelessWidget {
               height: 1,
             ),
           ),
-          AppText(
+        ),
+        RowSlot(
+          width: MixerColumn.gainReadoutWidth,
+          alignment: AlignmentDirectional.centerEnd,
+          child: AppText(
             signalGainReadout(volume),
             key: Key('mixer_gain_readout_$channel'),
-            style: signalMono(color: surface.textPrimary, size: 22),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: signalMono(color: surface.textPrimary, size: 22).copyWith(
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

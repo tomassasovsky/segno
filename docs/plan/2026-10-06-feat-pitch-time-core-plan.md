@@ -1,6 +1,6 @@
 # Pitch and time core: Speed, Transpose, Audio & tempo follow, import Adapt
 
-<!-- cspell:ignore varispeed lerp lbuf wdub Signalsmith signalsmith numer SCHED untransposed sidelobe retiming Retiming retimes retimed retime regrid halfband Neoverse milli fmod crossfades hujm YMPRG Bmpo -->
+<!-- cspell:ignore varispeed lerp lbuf wdub Signalsmith signalsmith numer SCHED untransposed sidelobe retiming Retiming retimes retimed retime reclock regrid halfband Neoverse milli fmod crossfades hujm YMPRG Bmpo -->
 
 Status: approved with required review edits E1-E15, which are applied in this
 text (the review is kept at the owner's evidence store,
@@ -350,6 +350,12 @@ control-side pool free or slot reuse (undo slot recycling, lane shrink,
 import) that would hit a track's turn source snaps that track's window
 (`turn_left = 0`) before the free, through the existing quiescent handshake. A
 Part 2a ASAN test steps a rate, retracts and frees inside the window.
+As built in Part 2a: a rate step and a direction turn read the SAME lane's
+live buffer through both heads, so the window has no previous source to
+pin; `a_turn_source` and the collector's deferral arrive with Part 3a's
+source swaps, the first window whose old head reads another buffer. The
+Part 2a test steps the rate on a printed track and retracts and frees the
+print inside the window under ASAN.
 
 Lap edges follow the head: Once's lap end (`:4486-4510`) and Free/Song's
 (`:4454-4463`) use `le_head_wrapped` on the track's consecutive indices instead
@@ -441,6 +447,12 @@ by construction).
   322/323 integer and exact under Part 4a, where a source-space phase could
   exceed the image length and fail `perf_render.c:924`. A Part 2a test asserts
   zero 323 facts over a two-lap ½× run and an 8× run.
+  As built in Part 2a: the phase stays in SOURCE-index space (`floor` of
+  the head's index, which is always inside the image, so `perf_render.c:924`
+  cannot fail on it), and the tracker's expected next phase is the integral
+  index the head reads on the next song frame. Song space would have changed
+  the phases Reverse already logs at rate 1 (they step -1); the renderer
+  keeps its own exact fraction where a logged integral index agrees with it.
 - Material resets (`le_fade_reset` sites, `:184-199` and callers; Reverse's
   `le_transform_reset`, whose import-time command is `LE_CMD_RESET_TRANSFORMS`
   at the value of today's `LE_CMD_RESET_FADE` 82) reset the head to identity.
@@ -481,9 +493,11 @@ would play dry, a silent pitch change, rule 3); Pre prints are evicted first
 (optional: the live chain computes the same function); a kind-1 job that
 still does not fit is refused with the reason in `le_lane_cache_info` (the Pre
 print's existing rule) and the track stays dry, reported. Default cap: Part 3a
-raises `LE_CACHE_DEFAULT_CAP_BYTES` from 64 MiB to 384 MiB (a 30 s mono lane
-at 96 kHz is 11.5 MiB; eight transposed single-lane tracks are 92 MiB; the Pi
-5 has 8 GiB and the bench records peak RSS). A fully populated 8-track ×
+raises `LE_CACHE_DEFAULT_CAP_BYTES` from 64 MiB to 192 MiB (a 30 s mono lane
+at 96 kHz is 11.5 MiB; eight transposed single-lane tracks are 92 MiB, plus
+one job in flight; the prints keep their 64 MiB; as built, after the Part 3a
+review weighed it against the joint memory table of #1200's D11, recorded
+in the findings document). A fully populated 8-track ×
 8-lane 30 s rig at 96 kHz would need 737 MiB of kind-1 entries and is refused
 per track, so the Transpose face must expect "pending / refused" on dense
 rigs. Worker priority (E9): the cache worker runs `SCHED_OTHER` at nice +10 on
@@ -864,7 +878,8 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
 (`test/helpers/fake_audio_engine.dart`, the three package fakes),
 `LooperRepository.setSpeed` through `_requestReceipt` (the renamed
 `_requestFade`, `looper_repository.dart:1972-2018`), `LooperState.speed`
-projection, the record-refusal notice path for `transformed`. One
+projection (the record-refusal notice for `transformed` moved to Part 6a,
+which draws it; review of #1213, L1). One
 actual-native repository case (`packages/looper_repository/test/
 speed_native_test.dart`, fixture of `fade_native_test.dart:13-45`) confirms
 the receipt, the projection and the record refusal; mock and fake cases cover
@@ -927,6 +942,49 @@ NON-GOALS:
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
+As built in Part 3a (numbers from the central ledger: commands 86-87, fact
+328, events.log version 9):
+
+- **The loop fold.** A pitch shift's phase does not come back round over a
+  lap, so the plain cyclic render (W of tail, the lap, W of head, keep the
+  centre) steps audibly at the wrap (measured: 0.46 -> -0.11 on a +12 st
+  sine whose lap is a whole number of cycles). The shim's
+  `le_stretch_render_loop` renders `len + fold` frames cyclically, the last
+  `fold` continuing past the lap into its head, and folds them over the head
+  with a 20 ms crossfade, so the loop point continues the stretcher's own
+  output. The two signals are renders of the same input, so a fixed law
+  swells or dips with their correlation (the review measured -5.2 to
+  +4.6 dB with equal-power); the fold is linear and scaled so its power is
+  the blend of the two signals' local powers, from 2.5 ms sliding sums,
+  capped at +12 dB where they cancel (review L1; within 1.5 dB of that blend
+  on chords and noise across pitches and lap lengths). The cache worker and
+  the offline renderer call the one function with one preset, seed and fold
+  (`engine_cache.h`).
+- **Undo, Redo and Peel are cache-hot (review M1).** Source renders key on
+  a content key, `a_src_key`, instead of the shared revision: it follows
+  `a_audio_rev` except at an Undo, Redo or Peel swap, which brings back the
+  key the slot's PCM had when it last sounded (`a_slot_key`, recorded when
+  a slot is swapped out of live and, for a first overdub pass's pre-image,
+  at its retire; cleared whenever a slot is handed out for new PCM or a
+  session is imported). Keys come from the monotonic revision, so a key
+  names one content. Every retained render of a lane is published to the
+  callback (`a_src[]`, the cache's pair), so the verdict finds the render
+  for the swapped-in content in the same block, with no dry block and no
+  re-render; prints keep keying on the revision. Clear Undo and Redo from
+  empty take a fresh key (their pitch resets with the material anyway).
+- **Pins.** The collector defers the free of a render a turn window's old
+  head reads (`a_turn_src`) AND of the render a lane still selects
+  (`a_src_pin`) until the callback's next verdict lets go, with or without a
+  device (a device-free host drives the same callback); a shrinking cap
+  sheds everything it may evict, never the current render of a transposed
+  track that holds material, PLAYING or STOPPED (review L2: a stopped
+  track's next Play would otherwise sound dry); a job that needs its room
+  is refused instead. The graveyard holds the pinned stragglers on top of
+  every entry (review L3).
+- **A source swap starts its own window.** A Speed step or a Reverse turn
+  inside a window carries it (decision 24); a swap between sources changes
+  what the head reads, so it restarts the window over the source in force.
+
 ### Part 3b. Transpose Dart seam and repository (about 250 production lines)
 
 `AudioEngine.transposeStep/installTranspose/setTransposeBypass`,
@@ -949,6 +1007,23 @@ NON-GOALS:
 - Mode entry, UI, mappings, Session persistence.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
+
+As built in Part 3b:
+
+- `TrackSnapshot.transpose` and `Track.transpose` are one value,
+  `TransposePitch = ({int stored, int effective})`, so the pair is compared
+  and carried together and never published half-updated.
+- The record refusal is the return value of `record`
+  (`EngineResult.transformed`), as it is for Speed.
+- The projection does not distinguish a pending render from one the cap
+  refused (`LE_CACHE_REASON_BUDGET`): both read `effective` 0.
+  `le_engine_get_transpose_cache` carries the difference. Part 6b adds the
+  Dart query and shows a cap refusal distinctly from "pending" (its first
+  and second success criteria), so a refused track never sits at
+  "pending" with no reason.
+- The record-refusal notice moves to Part 6b, as Speed's moved to 6a: a
+  record or punch-in refused with `EngineResult.transformed` on a
+  transposed track shows one notice (6b's first success criterion).
 
 ### Part 4a. Native Audio & tempo follow (about 450 production lines)
 
@@ -989,6 +1064,151 @@ NON-GOALS:
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages
 ```
 
+As built in Part 4a (native only so far; numbers from the central ledger:
+command 120, facts 329 and 330, events.log version 11; 10 is Multiply/Divide's):
+
+- **What landed.** The recorded tempo (latched at a defining finalize, a
+  commit and a tempo restore; 0 with no material), the Follow tempo default
+  (0 until Part 4b's page) and per-track override (-1/0/1) through
+  `le_engine_set_follow_tempo` with a receipt, the lock relaxation for
+  `set_tempo` and tap pairs, retiming with divisor rounding and phase
+  scaling, the span model (`le_head_rate`: speed x take length / span), the
+  detached head for a track that keeps its recorded speed, the punch-in
+  guard on a take off its span (control and callback), history fit against
+  the recorded master after a retime (Clear Undo of an old take), a mode
+  switch returning the song to its recorded tempo, the snapshot fields
+  (`recorded_tempo_bpm`, `follow_tempo`, `tempo_follow` with its reason,
+  per-track `follow_override`), the facts and renderer parity.
+- **The span is per take.** A take remembers the clock it was laid down
+  against (`span_clock`, filled at the first retime), so takes recorded at
+  different tempi each read at their own ratio with no per-layer table: a
+  new take at the new tempo reads at rate 1 while the old one stretches,
+  and they swap roles when the tempo returns.
+- **Free and Song have no bar grid,** so they never retime: the snapshot
+  reports "no grid" (the plan's "Free/Song private clocks scale" has
+  nothing to apply to).
+- **Not in this part yet, proposed as its own part.** Pitch Unchanged
+  (the stretch render with `out_len = play_len` on the cache worker, the
+  dry-through-varispeed pending rule, `pitch_effective`, the 0.5 %
+  re-render tolerance, the pitch-mode command 121) and the Dart seam with
+  the settings receipts. Until then a following track's pitch follows the
+  tempo ratio, the "Follows speed" behaviour; Follow tempo stays off by
+  default, so no rig changes behaviour.
+- **The new length (review M2).** It is the plan's
+  `round(bars x frames_per_bar(new))`, so an external clock (#1228) finds
+  the loop on its bars; a master played off its bars (8010 frames for one
+  bar at 120) retimes to the bar (10667 at 90), not to its own length
+  scaled (10680). Rounded up to the largest active Sync division as above.
+- **Back to the recorded tempo (review M1).** A tempo within
+  `LE_TEMPO_SNAP_BPM` (0.05 BPM, the MIDI clock plan's real-change
+  threshold) of the recorded one returns the song to the recorded tempo
+  and length exactly: a display-rounded value, a tap pair or a MIDI tempo
+  brings every take back on its span, and overdub with it. The snapshot's
+  `recorded_tempo_bpm` is what Part 4b's page offers as the way back.
+- **Clear Undo of the last take (review H1).** With no master left after a
+  retime, the history gate fits the restored take against the kept
+  recorded master as well as the saved retimed base; the restore
+  re-establishes the retimed clock, the take at its ratio, and publishes
+  the kept recorded tempo again rather than latching the tempo in force.
+- **No click, no drift (review L1).** A following track that sounds opens
+  the turn window at a retime: the old head reads on from its own index
+  while the new rate's index (locked to the whole-frame clock, up to a
+  sample away) fades in. The clock's position carries its fractional part
+  from one retime to the next, so fifty 90/120 pairs leave the song where
+  it would have been.
+- **Departures from 4.2, labelled (review L2).** A track that keeps its
+  recorded speed re-origins on the shared position at the retime (its
+  index continuous, its lap its own) rather than running a private
+  counter; it re-anchors at its next Stop/Play like any head. A retime
+  whose length leaves `1..max_loop_frames` changes nothing and is not yet
+  reported (review L3): the tempo stays and `tempo_follow` reads RETIMES;
+  Part 4b's page shows the tempo the snapshot holds, so the refusal is
+  visible as the tempo not moving. A fact or reason for it is a follow-up.
+- **Multiply/Divide (#1212) lands second and owns the interaction (review
+  M3).** Its master re-clock (`le_length_apply` with `reclock > 0`) sets
+  the clock to the new take length in take frames; on a retimed rig that
+  drops the retime for the master while every other follower keeps a
+  `span_clock` measured against the old clock, so their ratios go wrong.
+  Whichever of #1212 and this part lands second must either refuse a
+  length edit on a rig or track off its span (`LE_ERR_TRANSFORMED`, the
+  punch-in rule) or scale `len` and `span_clock` together through the
+  edit, and add the test (a 4-bar rig retimed to 90, then a x2 on one
+  track: every follower's `head_rate_milli` unchanged). #1212 also stores
+  `a_live` directly rather than through `le_track_publish_live`, which is
+  safe for the content key (a fresh revision) but not cache-hot.
+- **Mode switch.** A mode switch returns a retimed song to its recorded
+  tempo, resetting a tempo the player chose; Part 4b's page says so.
+
+As built in Part 4a-ii (Pitch across a retime; command 121, fact 331,
+events.log version 12):
+
+- **One render, two jobs.** A source render now has its own length: the
+  take time-stretched to the span it plays over (Pitch Unchanged) and
+  shifted by its Transpose pitch, one render. The shim's
+  `le_stretch_render_loop` takes the output length (ratio out / take, the
+  fold scaled with it). The callback wants a render when the track is
+  transposed and not bypassed, or plays over another span with Pitch
+  Unchanged; bypass keeps the stretch and drops only the pitch.
+- **Reading a render of another length.** The head stays in the take's
+  frames (its rate speed x take / span); a render's read maps the index by
+  out_len / take and runs at the head's rate in the render's frames
+  (`le_head_read_scaled`), in the callback and the renderer alike. A track
+  sounding any render always reads through the head.
+- **Pending rule.** Until the render lands, the dry take plays through the
+  varispeed head: timing exact, the pitch off by the ratio, reported as
+  `pitch_effective_cents` (1200 log2 of the sounding source's length over
+  the span; 0 at its own span or once the render plays).
+- **Tolerance.** A render within 0.5 % of the span serves it (about 9
+  cents, reported); a tempo move past that renders again, dry meanwhile. A
+  span within 0.5 % of the take itself wants no stretch (review M1): a
+  transposed track stays on its plain transpose render and an untransposed
+  one on its dry take, the head absorbing the residual, so a small tempo
+  move (a MIDI clock's 0.05 BPM steps, #1228) neither drops a transposed
+  track to its true pitch nor re-renders every follower.
+- **Memory and CPU for retimes (review M2), an owner-visible gate like
+  3a's.** With Pitch Unchanged the default and Follow On from Part 4b, every
+  tempo change past 0.5 % on a populated rig asks for a stretch render per
+  following lane, and slowing down makes them longer. The joint table gains
+  the retime rows (96 kHz, 30 s takes, 120 to 90 BPM, so 40 s renders of
+  15.4 MiB each):
+
+  | Rig | Stretch renders | Worker time at the 20x Pi floor |
+  |---|---|---|
+  | 8 followers x 1 lane | 123 MiB (fits the 128 MiB beside the prints) | 16 s |
+  | 8 followers x 8 lanes | 983 MiB (most refused, those tracks stay at the varispeed pitch, reported) | 128 s |
+
+  The Pi 5 measurement list (Part 1's `render` scenario, E11) adds the case:
+  eight followers x 8 lanes retimed 120 to 90, renders landed, peak RSS and
+  late periods while the worker runs. On those numbers the owner decides
+  whether Unchanged renders get their own share of the cap or a per-retime
+  priority (sounding tracks first, then by lane count); until then a
+  refused render is reported (`pitch_effective_cents` stays the ratio's)
+  and Part 6b shows it as refused, not pending.
+- **Setting.** The default (0 Unchanged, the plan's) and per-track
+  overrides through `le_engine_set_pitch_mode` with a receipt; a change only
+  re-selects the source (an equal-power swap), the head is untouched.
+
+As built in Part 4a-iii (the Dart seam):
+
+- `AudioEngine.setFollowTempo` / `setPitchMode` (the default with channel
+  null, an override per track, null inherits) through the receipt table;
+  `EngineSnapshot.recordedTempoBpm`, `followTempo`, `tempoFollow`
+  (`TempoFollowState`) and `pitchMode` (`PitchMode`);
+  `TrackSnapshot.followTempoOverride`, `pitchModeOverride` and
+  `pitchEffectiveCents`; the native and mock engines and the four fakes.
+- `LooperRepository.setFollowTempoSettings` / `setPitchModeSettings` are
+  two `SettingsReceipt` families with the inherit grammar, like One Shot:
+  the whole vector (default plus eight slots) is the intent, only the
+  parts the engine does not hold are sent, the vector is accepted once
+  every request's callback result is OK, a failure leaves it owed until
+  Retry, a stopped engine stages it and every start replays it. The
+  restart intents are what Part 4b's Session fields capture.
+- `LooperState.recordedTempoBpm`, `tempoFollow`, `defaultFollowTempo`,
+  `defaultPitchMode`; `Track.followTempoOverride`, `pitchModeOverride`
+  (the accepted settings) and `pitchEffectiveCents` (the engine's).
+- A session load clears an owed vector but keeps the settings; whether a
+  session carries them (and so replaces them) is Part 4b's.
+
 ### Part 4b. Audio & tempo page and Session fields (about 300 production lines)
 
 Section 4.4: the Follow tempo default flips to On together with the page
@@ -1011,6 +1231,67 @@ NON-GOALS:
 - Screen 07/07 (MIDI tempo), new owners, legacy schema decode.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
+
+As built in Part 4b (schema number assigned at landing: 14 on this base, 16
+on the trunk after Multiply/Divide's 14 and the backing player's 15):
+
+- **Owners.** `FollowTempoFamily` and `PitchModeFamily`
+  (`lib/looper/application/audio_tempo_families.dart`) on the shared
+  settings owner, built and projected by `PlaybackSettings` into
+  `PlaybackOptions.followTempo` / `pitchMode` (null while the owner is not
+  ready, so an owed vector is never shown as applied: the 4a-iii review's
+  L1). One stored nullable bool per address, nine addresses each, Pitch
+  stored as "follows speed". Staged before audio opens and settled after
+  start like Loop/Once; refusal and recovery notices like every owned
+  family. **Follow tempo restores On when nothing is stored (E15)**: the
+  engine's own default stays 0, so a bare engine, the renderer and the
+  native suites are unchanged, and the app turns it on with the page that
+  turns it off.
+- **Page.** Screens 07/04 to 07/06: the scope selector, Follow tempo and
+  Pitch with Default/Custom tags and Use default on a track override, the
+  On/Off and Unchanged/Follows speed notes, and a scope that keeps its
+  recorded speed shows Pitch as the readout "Unchanged" with "Pitch stays
+  unchanged at the recorded speed." (06). The "unavailable" line is gone.
+  The hub reads "Follow tempo · Same pitch", "Recorded speed · Same pitch"
+  or "Follow tempo · Pitch follows speed" from the defaults. 07/07 (MIDI
+  clock) waits for #1228's receive. Not drawn, because the pen does not
+  draw them: the mode-switch note (a switch returns a retimed song to its
+  recorded tempo, the 4a review) and a "back to recorded tempo" control
+  (the snapshot exposes `recordedTempoBpm` for it). Adding either is a pen
+  change first. The Pitch readout uses the primary text color; the pen's
+  #c1d4ef has no theme token.
+- **Session.** `recordedTempoBpm` and `recordedLengthFrames` (both or
+  neither), `tracks[].spanFrames`, `defaultFollowTempo`,
+  `trackFollowTempoOverrides`, `defaultPitchMode`,
+  `trackPitchModeOverrides`; strict decode. A rig saves the recorded pair
+  only when its master was retimed or a take sits on another span; a take's
+  span is the engine's `span_frames`, or the master in force for a take
+  laid down after the last retime, and 0 on the recorded master. The
+  conversion from the previous schema fills Follow tempo and Pitch from the
+  live settings (rule 1, schema 8's precedent) and no recorded pair or
+  spans, since nothing could retime before.
+- **Recall of a retimed rig (the coordinator's decision: in 4b).** Native:
+  `le_engine_import_span` gives an imported take its span (kept apart from
+  the live span, which the import's transform reset clears, and cleared by
+  the next lane-0 import), the commit parks the take at length / span laps
+  and keeps the span, and the snapshot carries `recorded_length_frames` and
+  per-track `span_frames`. Repository: Pitch and a temporary all-follow
+  vector before the takes, the tempo restored to the recorded one, the
+  takes committed on the recorded master, then `setTempo` to the session
+  tempo (the retime lands exactly on `baseLengthFrames`, checked), then the
+  session's own Follow vector. The retime needs a follower, and a song
+  retimed and then set to keep its recorded speed has none: hence the
+  temporary vector. After recall the tempo source reads manual (the retime
+  is a `set_tempo`), whatever source the session saved.
+- **Cap policy (coordinator decision, 4a-ii M2).** Stretch renders share the
+  cache cap with the prints; no separate share. A render a track with
+  material uses is never evicted (E7, stopped tracks included per 3a's L2);
+  renders no track wants go first among source renders, after the prints,
+  which the live chain recomputes without an audible change. The Pi 5
+  measurement in 4a-ii's table remains the owner's gate for revisiting it.
+- **Session load keeps storage as it is.** Like Loop/Once, a loaded
+  session's vectors are live and durable for the session; the stored
+  preferences change only by an edit.
 
 ### Part 5. Session for Speed and Transpose, reopen, import Adapt seam (about 300 production lines)
 
@@ -1048,16 +1329,20 @@ Mode = Exit, Rec/Play and Stop as in Fade, Undo/Clear inert; `TrackOperation`
 gains `speedHalf/Normal/Double/Quad/Octuple` as direct actions (the catalogue
 rule at `control_action.dart:10-20`: an entry exists only once the engine does);
 the face shows the factor, the derived pitch ("−12 st", "+36 st") and the loop
-duration ("2×", "1/8"), "No recorded audio" when every track is empty (15/04);
+duration ("2×", "1/8"), "No recorded audio" when every track is empty (15/04)
+with the five factor pedals unavailable (decision 26: the engine refuses
+them with `invalid`);
 the Tracks marker "Loop speed 2×" (15/05) reads `LooperState.speed` and holds
 its width at 1×; LEDs: the lit position is the current factor; refusal toast
-once per visit; EN/ES strings. Tests as the Reverse Part 3 lists: dispatch,
+once per visit; a record or punch-in refused with `EngineResult.transformed`
+while Speed is not 1× shows a notice, so the refusal is never silent (moved
+here from Part 2b, which only returns the result); EN/ES strings. Tests as the Reverse Part 3 lists: dispatch,
 projection truthfulness, view goldens, marker, ingress parity.
 
 ```success-criteria
 GOAL: The accepted Speed face sets the global factor by foot or assignment, shows the derived pitch and duration, and leaves a truthful marker on Tracks.
 SUCCESS CRITERIA:
-- Pedals set the five factors against the real receipt, Exit keeps the factor, Normal restores only the factor, a refused change shows one notice. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
+- Pedals set the five factors against the real receipt, Exit keeps the factor, Normal restores only the factor, a refused change shows one notice, a record refused with `transformed` shows one notice, and the empty-loop face shows the factor pedals unavailable. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
 - Face and marker goldens match screens 15/01–05 in EN and ES; the marker holds width at 1×. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view
 - Direct Speed actions reach the same adapter from pedal, CTRL and MIDI ingress; static gates and the suite pass. | verify: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 - HARDWARE: footswitch and LED proof on the appliance at each factor during playback and stopped, with a running Fade and with a record refusal. | verify: manual appliance session per docs/PROGRESS.md hardware evidence rules
@@ -1077,13 +1362,18 @@ reset" at ±12 (11/04), Bank pages, Exit retains changes; the face lists every
 track's stored semitones and "Stored" while bypassed (FJ8Ys); a Tracks marker
 ("+2 st") per track reading `Track.transpose.effective` with the pending state
 distinguishable; `TrackOperation.transposeUp/Down` direct actions;
-`pitch_effective`-aware LEDs; EN/ES. Tests as 6a.
+`pitch_effective`-aware LEDs; one notice for a record or punch-in refused
+with `EngineResult.transformed` on a transposed track (moved from Part 3b);
+a render the cache cap refused (`LE_CACHE_REASON_BUDGET`, through a Dart
+query of `le_engine_get_transpose_cache`) shown distinctly from one still
+pending, so a refused track does not read "pending" for good; EN/ES. Tests
+as 6a.
 
 ```success-criteria
 GOAL: The accepted Transpose face steps selected tracks by semitone with hold-reset and a global bypass that keeps stored pitches, and Tracks shows what is sounding.
 SUCCESS CRITERIA:
-- Selection across banks, ±1 steps, limit reporting, hold resets, bypass/enable and Exit behave against the real receipts; a refused step shows one notice. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
-- Face, bypass tile and marker goldens match screens 11/01–04 and the bypass tile in EN and ES; the marker distinguishes stored from effective. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view
+- Selection across banks, ±1 steps, limit reporting, hold resets, bypass/enable and Exit behave against the real receipts; a refused step shows one notice; a record or punch-in refused with `transformed` on a transposed track shows one notice. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
+- Face, bypass tile and marker goldens match screens 11/01–04 and the bypass tile in EN and ES; the marker distinguishes stored from effective, and a render the cap refused from one still pending. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view
 - Static gates and the suite pass. | verify: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 - HARDWARE: footswitch, hold timing and LED proof on the appliance including the pending window after a step and the overdub refusal. | verify: manual appliance session per docs/PROGRESS.md hardware evidence rules
 NON-GOALS:
@@ -1152,9 +1442,11 @@ song clock's advance.
 10. Not undoable, no history entry, not an owned setting family for Speed and
     Transpose; Follow tempo and Pitch ARE Loop settings on the shared owner
     with inherit. Rule 4.
-11. The cache cap default rises to 384 MiB on the strength of the Part 1 memory
-    figures, and a render that does not fit leaves the track dry with the
-    reason. Rule 2.
+11. The cache cap default rises to 192 MiB (64 MiB of prints plus eight
+    transposed single-lane 30 s tracks at 96 kHz and a job in flight), sized
+    against the joint appliance memory table with backing and instruments
+    (Part 3a review, M3), and a render that does not fit leaves the track
+    dry with the reason. Rule 2.
 12. One recorded tempo per master; later takes' ratios derive from lengths.
     Rule 4 (no per-layer tempo table) without losing recording at a new tempo.
 13. The library is vendored once, into the real build, from the bench snapshot
@@ -1174,6 +1466,44 @@ song clock's advance.
     close on the arm64 proxy (E10, E11). Rule 2: the number D2 rests on is
     measured where it matters, without making a part impossible to close.
 21. Follow tempo ships Off until its page exists (E15). Rule 1.
+22. An empty loop has no speed (Part 2a review, M2): when the last track
+    becomes empty (Clear, Undo to empty, a void take, a reopen that drops
+    every take) Speed returns to 1x, published so the host shows it, and the
+    next loop records. The pen's "04 / Speed / Empty loop" shows no factor,
+    and keeping one would refuse the first take with nothing on screen to
+    explain it (rule 3). Clear Undo of the last take therefore returns it at
+    1x; Speed is not an audio edit (decision 10).
+23. An integral rate lands on a whole sample (review H1): Normal (or 2x, 4x,
+    8x) after 1/2x on an odd song frame rounds the new head's index to the
+    nearest sample inside the turn window, so playback is bit-exact again and
+    prints re-engage; the rounded index is the one logged.
+24. A head change inside a turn window still mixing keeps that window and the
+    head it fades out (review L1); the new head is value-continuous with the
+    one it replaces, so the blend carries on instead of dropping a head
+    mid-fade. The renderer carries the window over the same way.
+25. Wherever the log's anchor is integral (322/323 phases) and the head reads
+    off whole samples, a 327 with the exact index follows at the same frame
+    (review M1, completing E3 for material that returns after a reset).
+26. An empty loop has no speed on the way up either (Part 2a delta review,
+    M-D1): with no track holding material, `le_engine_set_speed` refuses
+    every factor with `LE_ERR_INVALID` (and the receipt says the same when
+    the rig empties before the request lands), as Reverse and Transpose
+    refuse an empty track. The pen's "04 / Speed / Empty loop" (YMPRG) draws
+    the five factor pedals dimmed beside "No recorded audio", with only
+    Record / Play, Stop and Exit lit, so the face shows them unavailable
+    and the refusal matches it. The other reading (accept a factor on an
+    empty rig and drop it at the first capture) would change a setting the
+    player chose without asking (rule 3).
+27. An integral-rate step inside a window still mixing (Part 2a delta, L-D1)
+    continues from the exact index, so the carried blend is continuous, and
+    lands on the whole sample when that window ends, at the top of the next
+    block, through a window of its own with its own 327; decision 23's
+    landing therefore applies after the carry instead of at the change. The
+    bench judges the 8 x 8 rows at every factor too (L-D2), and prints an
+    8 x 8 row with a Pre chain on every lane at 8x (no print engages off 1x,
+    so every chain runs live); that row is judged on the Pi only (p99 at
+    most 50 % of the period), because the arm64 proxy's runner is not the
+    appliance's CPU.
 14. `presetCheaper` with the 8 kHz tonality limit is the starting recipe; the
     listening check on the appliance may swap either without an API change.
 

@@ -5,14 +5,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart'
-    show EngineReopened, EngineStatus, ReopenOutcome;
+    show EngineReopened, EngineStatus, LooperState, ReopenOutcome;
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/view/library_page.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -27,6 +29,9 @@ class _MockSessionCubit extends MockCubit<SessionState>
     implements SessionCubit {}
 
 class _MockPedalRepository extends Mock implements PedalRepository {}
+
+class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
+    implements LooperBloc {}
 
 class _MockSessionRepository extends Mock implements SessionRepository {}
 
@@ -162,6 +167,12 @@ void main() {
         );
         when(audioSetup.dismissReopenNotice).thenReturn(null);
         final session = _MockSessionCubit();
+        final looper = _MockLooperBloc();
+        whenListen(
+          looper,
+          const Stream<LooperState>.empty(),
+          initialState: const LooperState(),
+        );
         whenListen(
           session,
           const Stream<SessionState>.empty(),
@@ -181,6 +192,7 @@ void main() {
             providers: [
               RepositoryProvider<PedalRepository>.value(value: pedal),
               RepositoryProvider<SessionRepository>.value(value: sessions),
+              RepositoryProvider<GuardRegistry>.value(value: GuardRegistry()),
               RepositoryProvider<RemovableVolumes>.value(
                 value: const InternalOnlyVolumes(),
               ),
@@ -189,6 +201,9 @@ void main() {
               providers: [
                 BlocProvider<AudioSetupCubit>.value(value: audioSetup),
                 BlocProvider<SessionCubit>.value(value: session),
+                // The app provides the looper above every route, the
+                // Library's included.
+                BlocProvider<LooperBloc>.value(value: looper),
               ],
               child: MaterialApp(
                 navigatorKey: segnoNavigatorKey,

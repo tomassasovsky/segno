@@ -79,14 +79,25 @@ add_library(segno_engine SHARED
   core/engine_commands.c     # control-thread command producers
   core/engine_fx_recipe.c    # prepared FX publication and resource retirement
   core/engine_cache.c        # Loop-stage wet cache (scheduler + render worker)
+  core/engine_render.c       # shared render recipe: Bounce + Save selected audio
+  core/engine_wav.c          # the one native streaming float WAV writer
   core/engine_restore.c      # Offline loop-close restoration worker (#697 S9)
   core/engine_cond.c         # per-input conditioning stage (input conditioning)
+  core/engine_backing.c      # backing player buffers + control API (#1200)
+  core/engine_decode.c       # the audio-file decoder + offline resampler (#1200)
+  core/engine_audition.c     # Library audition voice control API (#1178)
+  core/engine_instruments.c  # instrument slots, note rings, synth in the callback (#1197)
   # Offline loop-close restoration DSP (#697 S8) — pure TUs, no engine state;
   # consumed by the restore worker (engine_restore.c, S9). NOT matched by
   # run_native_tests.sh's engine*.c glob — they are listed explicitly there;
   # keep the two lists in sync.
   core/restore_declip.c      # de-clip: flat-run detect + spline/Burg-AR repair
   core/restore_halfband.c    # 2:1 half-band resample (RNNoise's 48 k leg)
+  # Instrument synthesis (#1197) — pure TUs like the restore DSP: the voice
+  # pool and the patch table (whose catalogue reads are exported). Listed
+  # explicitly in run_native_tests.sh and tool/build_test_lib.sh too.
+  core/synth_voice.c         # instrument voice pool (synth_voice.h)
+  core/synth_patch.c         # the 19 patches + le_synth_patch_info & co.
   # The miniaudio device backend (le_device_backend.h), compiled unconditionally
   # — the only device backend this build ships; another backend slots in behind
   # le_select_backend.
@@ -98,6 +109,7 @@ add_library(segno_engine SHARED
   core/perf_log_ring.c       # perf event log: SPSC ring of frame-tagged le_command entries
   core/layer_staging_ring.c  # retired-layer PCM staging ring (persist before pool eviction)
   core/perf_drain.c          # perf-capture drain thread: rings -> raw PCM + sidecar
+  core/perf_checkpoint.c     # durable two-slot take checkpoints (#1198 D4)
   core/json_read.c           # minimal read-only JSON parser (performance.json)
   core/perf_render.c         # offline renderer: replay capture dir -> dry stems
   # Control-thread plugin-slot lifecycle (load/clear + quiescent handshake).
@@ -126,6 +138,10 @@ add_library(segno_engine SHARED
   # placement) but is a portable ENGINE dependency (engine_process.c calls
   # le_midi_clock_advance every block), not an OS MIDI backend.
   midi/le_midi_clock.c
+  # le_clock_follow.c (#1228) is the pure-value MIDI clock follower the
+  # audio thread drives from the source port's pulses; an engine dependency
+  # like le_midi_clock.c, not an OS MIDI backend.
+  midi/le_clock_follow.c
   # ---- miniaudio/: the vendored backend ----
   miniaudio/miniaudio_impl.c
   # ---- stretch/: the C ABI over the vendored Signalsmith Stretch (#1179) ----

@@ -47,6 +47,7 @@ class ControlContext {
     this.boundChains = const {},
     this.customFunctions = const {},
     this.physicalCustomStates = const {},
+    this.pressed = const {},
   });
 
   /// Engine truth (the polled snapshot projection).
@@ -68,6 +69,10 @@ class ControlContext {
 
   /// Current function-state facts for all ten physical switches in Custom.
   final Map<PedalButton, bool> physicalCustomStates;
+
+  /// The switches held right now. A held switch lights whatever its function
+  /// state, so the press shows at once.
+  final Set<PedalButton> pressed;
 }
 
 /// One named rule whose check returns `null` when satisfied, or a description
@@ -93,6 +98,19 @@ bool _sounding(Track t) =>
     t.hasContent &&
     !t.muted &&
     (t.state == TrackState.playing || t.state == TrackState.overdubbing);
+
+/// The waiting Song section the pedal shows in Mute and Record mode: the
+/// model's own fact (`songWaitingSection`), gated by mode and the wire.
+int? _queuedSong(ControlContext c) {
+  final queued = c.looper.songWaitingSection;
+  if ((c.overlay.mode != InteractionMode.mute &&
+          c.overlay.mode != InteractionMode.record) ||
+      queued == null ||
+      queued >= PedalStateFrame.trackCount) {
+    return null;
+  }
+  return queued;
+}
 
 bool _parked(LooperState s) =>
     s.tracks.any((t) => t.hasContent) &&
@@ -157,7 +175,9 @@ final List<ControlInvariant> controlInvariants = [
       InteractionMode.mixer ||
       InteractionMode.fade ||
       InteractionMode.reverse ||
-      InteractionMode.peel => PedalMode.custom,
+      InteractionMode.peel ||
+      InteractionMode.tuner => PedalMode.custom,
+      InteractionMode.multiply || InteractionMode.divide => PedalMode.custom,
     };
     if (c.frame.mode != want) {
       return 'frame mode ${c.frame.mode} != overlay mode ${c.overlay.mode}';
@@ -230,7 +250,9 @@ final List<ControlInvariant> controlInvariants = [
         bank: c.overlay.activeBank,
       );
       final available = pair.press != null || pair.hold != null;
-      final active = available && (c.physicalCustomStates[button] ?? false);
+      final active =
+          (available && (c.physicalCustomStates[button] ?? false)) ||
+          c.pressed.contains(button);
       if (c.frame.isLit(button) != active) {
         return 'custom ${button.name} physical LED disagrees with its '
             'current function state';
@@ -238,9 +260,39 @@ final List<ControlInvariant> controlInvariants = [
     }
     return null;
   }),
+  // The Song queue the pedal shows is the engine's (#1077): the waiting
+  // section reads green and its pill fills by the engine's own progress,
+  // and nothing waits on the plate that the engine is not holding.
+  ControlInvariant('song-queue-mirrors-engine', (c) {
+    final queued = _queuedSong(c);
+    const perBank = ControlState.tracksPerBank;
+    final base = c.overlay.activeBank * perBank;
+    final onPlate = queued != null && queued >= base && queued < base + perBank;
+    final button = onPlate
+        ? PedalButton.values[PedalButton.track1.index + queued - base]
+        : null;
+    if (c.frame.queuedButton != button) {
+      return 'queued pill ${c.frame.queuedButton} != engine queue $button';
+    }
+    final progress = onPlate
+        ? (c.looper.transport.songQueueProgress * 255).floor().clamp(0, 254)
+        : 0;
+    if (c.frame.queuedProgress != progress) {
+      return 'queued fill ${c.frame.queuedProgress} != engine wait $progress';
+    }
+    if (queued != null && c.frame.trackLeds[queued] != PedalTrackLed.green) {
+      return 'queued Song section $queued is not green';
+    }
+    if (button != null && !c.frame.isLit(button)) {
+      return 'queued pill $button is dark';
+    }
+    return null;
+  }),
   ControlInvariant('muted-dark-in-mute', (c) {
     if (c.overlay.mode != InteractionMode.mute) return null;
+    final queued = _queuedSong(c);
     for (final t in c.looper.tracks) {
+      if (t.channel == queued) continue; // lit to say it is waiting
       if (t.muted &&
           t.channel < c.frame.trackLeds.length &&
           c.frame.trackLeds[t.channel] != PedalTrackLed.off) {
@@ -268,8 +320,11 @@ final List<ControlInvariant> controlInvariants = [
     return null;
   }),
   // While parked, the LEDs preview exactly what Rec/Play resumes.
+  // Song previews nothing while parked: its Rec/Play starts one section.
   ControlInvariant('parked-preview-matches-resume', (c) {
-    if (c.overlay.mode != InteractionMode.mute || !_parked(c.looper)) {
+    if (c.overlay.mode != InteractionMode.mute ||
+        c.looper.transport.looperMode == LooperMode.song ||
+        !_parked(c.looper)) {
       return null;
     }
     for (var ch = 0; ch < c.frame.trackLeds.length; ch++) {
@@ -398,8 +453,10 @@ final List<ControlTransitionRule> controlTransitionRules = [
   // is held resumes the ENTIRE loop — after the settle, no content track may
   // still sit frozen. (Mutes are preserved: unparking un-freezes, it does not
   // un-silence.) Holds for every surface and every start path: pedal, bloc,
-  // record punch-ins, plain plays, and redo-from-empty resurrection.
+  // record punch-ins, plain plays, and redo-from-empty resurrection. Song is
+  // the exception: it plays one section at a time (#1077).
   ControlTransitionRule('unpark-on-start', (t) {
+    if (t.post.transport.looperMode == LooperMode.song) return null;
     if (!_transportHeld(t.pre)) return null;
     if (!t.pre.tracks.any((tr) => tr.hasContent)) return null;
     final started = t.post.tracks.any((tr) {
@@ -416,6 +473,21 @@ final List<ControlTransitionRule> controlTransitionRules = [
       }
     }
     return null;
+  }),
+  // Song's side of the same moment: a start from a held rig (a take, a
+  // punch-in, a Play) wakes only the section it starts (#1077).
+  // Captures are not counted: a Count-in launch can commit a take beside
+  // the section it plays ('section exclusion changes playback, not capture
+  // ownership').
+  ControlTransitionRule('song-start-one-section', (t) {
+    if (t.post.transport.looperMode != LooperMode.song) return null;
+    if (!_transportHeld(t.pre)) return null;
+    final playing = t.post.tracks
+        .where((tr) => tr.state == TrackState.playing)
+        .length;
+    return playing > 1
+        ? '$playing sections play after one start from a held rig'
+        : null;
   }),
 ];
 

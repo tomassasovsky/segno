@@ -215,7 +215,7 @@ static void test_tuner_mute_not_logged(void) {
   CHECK(le_engine_set_monitor_input_output(e, 0, 0x1) == LE_OK);
   drain(e);
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   CHECK(le_engine_set_tuner_input(e, 0) == LE_OK);
   CHECK(le_engine_set_tuner_mute(e, 0x1u) == LE_OK);

@@ -684,7 +684,7 @@ void main() {
     }, skip: skip);
 
     test('FX mode: track stomps carry chain state into the trackLeds, and '
-        'Stop panics every chain dark (part 5b)', () {
+        'Stop is inert (part 5b, #1229)', () {
       _inHarness((h, fa) {
         h
           ..run(const [_Tap(PedalButton.recPlay)], fa)
@@ -716,23 +716,19 @@ void main() {
             channel: 2,
             effects: [BuiltInEffect(type: TrackEffectType.reverb)],
           );
-        // Stop is FX panic: every chain that EXISTS goes off and dark.
+        // Stop is inert in FX mode now (pen 10/03, #1229): the former panic
+        // is the Track FX off command. No chain changes, no LED goes dark.
         h
           ..settle(fa)
           ..run(const [_Tap(PedalButton.stop)], fa)
           ..settle(fa);
-        for (final channel in [1, 2]) {
-          expect(h.repo.trackChainEnabled(channel), isFalse);
-          expect(h.frame.trackLeds[channel], PedalTrackLed.off);
-        }
-        // A chain-less track keeps its (meaningless) enabled flag rather than
-        // acquiring a persisted bypass that would mute the effects the user
-        // adds to it later.
-        for (final channel in [3, 4, 5, 6, 7]) {
+        for (final channel in [1, 2, 3, 4, 5, 6, 7]) {
           expect(h.repo.trackChainEnabled(channel), isTrue);
         }
-        // ...and the loop is untouched: panic bypasses FX, it never stops
-        // the transport.
+        for (final channel in [1, 2]) {
+          expect(h.frame.trackLeds[channel], PedalTrackLed.blue);
+        }
+        // ...and the loop is untouched: Stop never stops the transport here.
         expect(h.looper.tracks[0].state, TrackState.playing);
       });
     }, skip: skip);
@@ -892,6 +888,9 @@ class _Harness {
   late final PerformanceRepository performance;
   late final ControlCubit control;
   late final PedalCubit cubit;
+
+  /// The switches physically down, as the board last reported them: the
+  /// oracle the held-pedal light is checked against.
   final Set<PedalButton> _held = {};
 
   LooperState get looper => repo.state;
@@ -901,6 +900,7 @@ class _Harness {
     looper: looper,
     overlay: control.state,
     frame: frame,
+    pressed: _held,
   );
 
   /// The FX-state invariant, checked only while the engine is running (a
@@ -916,7 +916,7 @@ class _Harness {
   /// (test/session/session_fx_roundtrip_test.dart), which asserts this same
   /// cache == engine equality after a save → clear → load.
   String? fxFingerprintViolation() {
-    if (!looper.transport.isRunning) return null;
+    if (!looper.transport.deviceRunning) return null;
     for (var channel = 0; channel < looper.tracks.length; channel++) {
       final lanes = looper.tracks[channel].lanes.length;
       for (var lane = 0; lane < (lanes < 1 ? 1 : lanes); lane++) {
@@ -999,6 +999,10 @@ class _Tap extends _FuzzAction {
   final PedalButton button;
   @override
   void apply(_Harness h, FakeAsync fa) {
+    // A tap ends with the switch up, even one a _Hold left down: the oracle
+    // of what is physically held must say so, or a held light it expects
+    // outlives the release the board already sent.
+    h._held.remove(button);
     h.sim
       ..press(button, down: true)
       ..press(button, down: false);
@@ -1036,6 +1040,7 @@ class _LongPressUndo extends _FuzzAction {
   const _LongPressUndo();
   @override
   void apply(_Harness h, FakeAsync fa) {
+    h._held.remove(PedalButton.undo);
     h.sim.press(PedalButton.undo, down: true);
     fa
       // Cross the accepted 800 ms default without deriving the oracle from
@@ -1053,7 +1058,8 @@ class _Encoder extends _FuzzAction {
   const _Encoder(this.delta);
   final int delta;
   @override
-  void apply(_Harness h, FakeAsync fa) => h.sim.turn(delta);
+  // A stage turn as EncoderNavigation routes it (#1276).
+  void apply(_Harness h, FakeAsync fa) => h.control.encoderTurned(delta);
   @override
   String describe() => '_Encoder($delta)';
 }

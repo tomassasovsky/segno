@@ -1,3 +1,4 @@
+import 'package:segno/backing/model/backing_mix.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
@@ -25,6 +26,9 @@ final List<OwnedValueTarget> ownedValueTargets = List.unmodifiable([
     TrackRecordTimingTarget(channel),
   const DefaultFadeTarget(),
   for (var channel = 0; channel < 8; channel++) TrackFadeTarget(channel),
+  const BackingLevelTarget(),
+  const BackingPanTarget(),
+  const ClickPanTarget(),
 ]);
 
 /// What an owned value holds now and whether it can be offered.
@@ -105,6 +109,8 @@ final class OwnedValueSnapshots implements OwnedValueReadout {
     this.recordLengthSnapshot,
     this.recordTimingSnapshot,
     this.fadeDurations,
+    this.backingMix,
+    this.clickPan,
   });
 
   /// Accepted Click volume gain.
@@ -131,6 +137,12 @@ final class OwnedValueSnapshots implements OwnedValueReadout {
   /// Live Fade durations.
   final FadeDurations? fadeDurations;
 
+  /// The live backing level, pan, outputs and End (#1200).
+  final BackingMix? backingMix;
+
+  /// The live click pan (#1200).
+  final double? clickPan;
+
   @override
   bool resolves(OwnedValueTarget target) => switch (target) {
     ClickVolumeTarget() => clickVolume != null,
@@ -144,6 +156,8 @@ final class OwnedValueSnapshots implements OwnedValueReadout {
     RecordTimingValueTarget() =>
       recordTimingSnapshot != null && target.isStructurallyValid,
     FadeValueTarget() => fadeDurations != null && target.isStructurallyValid,
+    BackingLevelTarget() || BackingPanTarget() => backingMix != null,
+    ClickPanTarget() => clickPan != null,
   };
 
   @override
@@ -172,6 +186,9 @@ final class OwnedValueSnapshots implements OwnedValueReadout {
             ? fadeDurations!.defaultMs
             : fadeDurations!.effectiveMs(channel),
       ),
+      BackingLevelTarget() => target.fromDomain(backingMix!.level),
+      BackingPanTarget() => target.fromDomain(backingMix!.pan),
+      ClickPanTarget() => target.fromDomain(clickPan!),
     };
   }
 }

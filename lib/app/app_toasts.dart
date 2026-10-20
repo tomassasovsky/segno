@@ -21,12 +21,17 @@ abstract final class AppToastId {
   static const sessionBootRecovery = 'app_sessionBootRecovery_error';
   static const monitorRestore = 'app_monitorRestore_error';
   static const audioRecovery = 'app_audioRecovery_banner';
+  static const powerCycle = 'app_powerCycle_banner';
+  static const powerCycleDismiss = 'app_powerCycle_banner_dismiss';
+  static const powerCyclePowerOff = 'app_powerCycle_banner_powerOff';
+  static const weakCharger = 'app_weakCharger_toast';
   static const update = 'app_update_banner';
   static const updateDismiss = 'app_update_banner_dismiss';
   static const updateAction = 'app_update_banner_update';
   static const waveformFailed = 'app_waveformWindowFailed_banner';
-  static const singleDisplay = 'app_singleDisplay_banner';
   static const bootModeRetired = 'app_bootModeRetired_toast';
+  static const fxStopChanged = 'app_fxStopChanged_toast';
+  static const saveToFellBack = 'app_saveToFellBack_toast';
   static const bluetoothRetired = 'app_bluetoothRetired_toast';
   static const recoveryRefused = 'app_recoveryRefused_toast';
   static const undoClearAll = 'app_undoClearAll_snackbar';
@@ -35,15 +40,34 @@ abstract final class AppToastId {
   static const footFadeFailure = 'app_footFadeFailure_error';
   static const footReverseFailure = 'app_footReverseFailure_error';
   static const footPeelRefused = 'app_footPeelRefused_toast';
+  static const assignedActionRefused = 'app_assignedActionRefused_toast';
+  static const footTunerRefused = 'app_footTunerRefused_toast';
+  static const tunerSeeded = 'app_tunerSeeded_toast';
+  static const footFxFailure = 'app_footFxFailure_error';
+  static const footLengthRefused = 'app_footLengthRefused_toast';
+  static const lengthHistoryRefused = 'app_lengthHistoryRefused_toast';
   static const mixSettings = 'app_mixSettings_error';
   static const clickSettings = 'app_clickSettings_error';
   static const decaySettings = 'app_decaySettings_error';
   static const oneShotSettings = 'app_oneShotSettings_error';
+
+  /// Follow tempo transaction failures (#1179).
+  static const followTempoSettings = 'app_followTempoSettings_error';
+
+  /// Pitch transaction failures (#1179).
+  static const pitchModeSettings = 'app_pitchModeSettings_error';
   static const recordLengthSettings = 'app_recordLengthSettings_error';
   static const recordTimingSettings = 'app_recordTimingSettings_error';
 
   /// Persistent Fade duration storage recovery.
   static const fadeSettings = 'app_fadeSettings_error';
+
+  /// Persistent backing mix and click pan storage recovery (#1200).
+  static const backingMixSettings = 'app_backingMixSettings_error';
+  static const clickPanSettings = 'app_clickPanSettings_error';
+
+  /// Persistent instrument definitions storage recovery (#1197).
+  static const instrumentsSettings = 'app_instrumentsSettings_error';
 }
 
 final Map<String, ToastificationItem> _active = {};

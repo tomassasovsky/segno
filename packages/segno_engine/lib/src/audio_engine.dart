@@ -1,17 +1,23 @@
 import 'dart:typed_data';
 
 import 'package:segno_engine/src/audio_device.dart';
+import 'package:segno_engine/src/audition.dart';
+import 'package:segno_engine/src/backing.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/history_entry.dart';
 import 'package:segno_engine/src/input_conditioning_param.dart';
+import 'package:segno_engine/src/instruments.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/mix_settings.dart';
 import 'package:segno_engine/src/output_fx_snapshot.dart';
+import 'package:segno_engine/src/perf_target.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
+import 'package:segno_engine/src/selected_render.dart';
+import 'package:segno_engine/src/synth_catalogue.dart';
 import 'package:segno_engine/src/track_effect.dart';
 import 'package:segno_engine/src/volume_space.dart';
 
@@ -53,7 +59,32 @@ enum EngineResult {
 
   /// A punch-in on a reversed track: overdub is unavailable while Reverse is
   /// on (`LE_ERR_REVERSED`). Play, Stop, Mute, Fade and history stay available.
-  reversed;
+  reversed,
+
+  /// A record or punch-in while Speed is not 1x, or a punch-in on a
+  /// transposed track (`LE_ERR_TRANSFORMED`, #1179): capture never writes
+  /// under playback it does not hear. Play, Stop, Mute, Fade and history stay
+  /// available.
+  transformed,
+
+  /// An audio file over the 15-minute backing cap (`LE_ERR_TOO_LONG`, #1200).
+  tooLong,
+
+  /// The tracks selected for a render share no common cycle within the cap
+  /// (`LE_ERR_NO_COMMON_CYCLE`); a chosen length is required.
+  noCommonCycle,
+
+  /// A render source's material changed after the render froze it
+  /// (`LE_ERR_TRACKS_CHANGED`).
+  tracksChanged,
+
+  /// A note or sustain for an instrument slot with no patch
+  /// (`LE_ERR_NO_INSTRUMENT`).
+  noInstrument,
+
+  /// A patch index this engine build does not define
+  /// (`LE_ERR_UNKNOWN_PATCH`).
+  unknownPatch;
 
   /// Maps a native `le_result` integer to an [EngineResult].
   ///
@@ -69,6 +100,12 @@ enum EngineResult {
     -7 => EngineResult.modeMismatch,
     -8 => EngineResult.notReady,
     -9 => EngineResult.reversed,
+    -10 => EngineResult.transformed,
+    -12 => EngineResult.tooLong,
+    -16 => EngineResult.noCommonCycle,
+    -17 => EngineResult.tracksChanged,
+    -14 => EngineResult.noInstrument,
+    -15 => EngineResult.unknownPatch,
     _ => EngineResult.invalid,
   };
 
@@ -76,10 +113,24 @@ enum EngineResult {
   bool get isOk => this == EngineResult.ok;
 }
 
-/// Queue admission of a checked per-track request (Fade, Reverse), distinct
+/// Queue admission of a checked request (Fade, Reverse, Speed, Transpose),
+/// distinct
 /// from the callback result of this exact request, read back with
 /// [LooperTransport.readRequestResult].
 typedef RequestAdmission = ({EngineResult result, int request});
+
+/// One length edit of a track's material (#1168).
+enum LengthEdit {
+  /// Repeats the material: twice the length.
+  doubled,
+
+  /// Keeps the first half, `ceil(length / 2)` frames.
+  firstHalf,
+
+  /// Keeps the last half, `ceil(length / 2)` frames; an odd length's halves
+  /// share the middle frame.
+  lastHalf,
+}
 
 /// What [EngineLifecycle.reopen] did with the recorded material.
 ///
@@ -319,8 +370,63 @@ abstract interface class LooperTransport {
     required bool reversed,
   });
 
-  /// Consumes a completed Fade or Reverse callback result; null means still
-  /// pending.
+  /// Queues the global Speed (#1179): every recorded track reads at
+  /// [factor] through its head, its pitch following; a request equal to the
+  /// factor in force is accepted and changes nothing. [EngineResult.notReady]
+  /// while any track records, overdubs, is armed or launching, or a count-in
+  /// runs. While not [SpeedFactor.normal], [record] refuses a record or
+  /// punch-in with [EngineResult.transformed].
+  RequestAdmission setSpeed(SpeedFactor factor);
+
+  /// Queues a Transpose step of track [channel] by [delta] semitones (+1 or
+  /// -1, #1179): the track plays a pitch-shifted render of its own takes at
+  /// unchanged timing. The render lands after a short settle plus its
+  /// build time; until then the track plays dry and its
+  /// [TrackSnapshot.transpose] reads `effective` 0. At +-12 the receipt is
+  /// [EngineResult.capacity] and nothing changes. Refused like
+  /// [toggleReverse]. While a track's pitch is not 0 and Transpose is not
+  /// bypassed, [record] refuses a punch-in on it with
+  /// [EngineResult.transformed].
+  RequestAdmission transposeStep({required int channel, required int delta});
+
+  /// Installs an explicit pitch, -12..12 semitones (Session recall). Accepts
+  /// an empty track that already holds imported material, before the commit.
+  RequestAdmission installTranspose({
+    required int channel,
+    required int semitones,
+  });
+
+  /// Bypasses every track's Transpose (dry, stored pitches kept) or restores
+  /// it; admitted whenever the engine is configured.
+  RequestAdmission setTransposeBypass({required bool bypassed});
+
+  /// Queues a length edit of track [channel] (#1168): one recoverable history
+  /// entry, applied by the callback with its image, length and clock in one
+  /// block; the playhead keeps its phase. Refused before any change with
+  /// [EngineResult.modeMismatch] when the length would not fit the looper
+  /// mode (a track holding the rig's only content re-clocks it instead, at
+  /// the same tempo, refused when that would leave a fractional bar count),
+  /// [EngineResult.capacity] past the loop cap, [EngineResult.invalid] for a
+  /// track that is not playing or stopped and [EngineResult.notReady] while
+  /// it captures, drains or has an arm, launch or pending command.
+  RequestAdmission editLength({required int channel, required LengthEdit edit});
+
+  /// Sets the Follow tempo default every track inherits ([channel] null,
+  /// [follow] required) or track [channel]'s override ([follow] null
+  /// inherits), #1179. With content on a bar grid and a following track, a
+  /// song-tempo change retimes the recorded tracks
+  /// ([EngineSnapshot.tempoFollow]). Admitted whenever the engine is
+  /// configured; [EngineResult.invalid] for a bad channel or a default
+  /// without a value.
+  RequestAdmission setFollowTempo({int? channel, bool? follow});
+
+  /// Sets the Pitch default ([channel] null, [mode] required) or track
+  /// [channel]'s override ([mode] null inherits), #1179: what a retime does
+  /// to a following track's pitch. Admitted like [setFollowTempo].
+  RequestAdmission setPitchMode({int? channel, PitchMode? mode});
+
+  /// Consumes a completed Fade, Reverse, Speed, Transpose, length, Follow
+  /// tempo or Pitch callback result; null means still pending.
   EngineResult? readRequestResult(int request);
 
   /// Halts track [channel]'s playback, retaining the loop buffer.
@@ -1289,8 +1395,9 @@ abstract interface class SessionIo {
   /// argument. Ordinals run oldest→newest: `[0, undoCount)` are the undo
   /// snapshots, `undoCount` is the live buffer, then the redo snapshots; a
   /// redo-side Peel marker holds no image and takes no ordinal
-  /// ([exportHistory], [TrackHistory.imageCount]). Read-only — call when not
-  /// capturing.
+  /// ([exportHistory], [TrackHistory.imageCount]). Each image comes back at
+  /// its own length: a length edit's images differ from the live one
+  /// (#1168). Read-only — call when not capturing.
   Float32List exportLayer(int channel, int lane, int ordinal);
 
   /// Lists track [channel]'s history in image-ordinal order with its raw
@@ -1298,6 +1405,13 @@ abstract interface class SessionIo {
   /// by the snapshot's `undoDepth`, which reads 0 while a Clear restore is in
   /// flight. [TrackHistory.none] for an out-of-range [channel]. Read-only.
   TrackHistory exportHistory(int channel);
+
+  /// Track [channel]'s content revision: it changes on every write to the
+  /// track's audio (record, overdub, undo, redo, clear, import), on either
+  /// thread, and on nothing else. 0 for an out-of-range [channel]. Cheap and
+  /// copy-free, so the session layer can tell an unchanged rig from a changed
+  /// one without exporting any audio.
+  int trackAudioRev(int channel);
 
   /// Stages [pcm] as track [channel]'s lane [lane] image at [ordinal] into an
   /// EMPTY track (the ordinal is the pool slot). Call once per `(lane,
@@ -1308,17 +1422,38 @@ abstract interface class SessionIo {
 
   /// Publishes a track reconstructed via [importLayer] with its [history]
   /// ([exportHistory] order): rebuilds the undo/redo stacks with their kinds
-  /// and points playback at the live image (ordinal
-  /// [TrackHistory.undoCount]), every active lane in lockstep.
-  /// [TrackHistory.imageCount] images must already be staged on every active
-  /// lane at one length. Returns [EngineResult.invalid] for a non-empty
-  /// track, a history the engine could not hold ([TrackHistory.malformation]),
-  /// or a torn (missing-image or mismatched-length) reconstruction.
-  EngineResult finalizeHistory(int channel, TrackHistory history);
+  /// and playhead maps and points playback at the live image (ordinal
+  /// [TrackHistory.undoCount]) at its length, every active lane in lockstep.
+  /// [imageLengths] gives each image's length in frames by ordinal (#1168);
+  /// [TrackHistory.imageCount] images must already be staged at those
+  /// lengths on every active lane. Returns [EngineResult.invalid] for a
+  /// non-empty track, a history the engine could not hold
+  /// ([TrackHistory.malformation]), lengths its lineage does not give
+  /// ([TrackHistory.lengthMalformation]), or a torn (missing or short image)
+  /// reconstruction.
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  });
+
+  /// Gives imported track [channel] the span its take was laid down against
+  /// (#1179 Part 4b), as a Session saved it ([TrackSnapshot.spanFrames], or
+  /// the master length in force when that was 0): [commitSession] parks it at
+  /// its length over that span and keeps the span, so a take recorded after
+  /// a retime reads at its own ratio on the recorded clock. Call after the
+  /// track's lane-0 import and before the commit; 0 clears it.
+  /// [EngineResult.invalid] for a track that is not EMPTY with a take, or a
+  /// span past the buffer cap.
+  EngineResult importSpan(int channel, int spanFrames);
 
   /// Establishes the master loop at [baseFrames] and leaves every imported
-  /// track stopped at its whole-loop multiple. Launch with [AudioEngine.play].
-  EngineResult commitSession(int baseFrames, {required int loopBars});
+  /// track stopped at its whole-loop multiple (or its length over its
+  /// [importSpan]). Restores exactly [loopBeats] beats (denominator notes)
+  /// over the loop, `0` for a grid-free loop; a whole-bar loop passes its
+  /// bars times the signature's numerator (#1168). Launch with
+  /// [AudioEngine.play].
+  EngineResult commitSession(int baseFrames, {required int loopBeats});
 }
 
 /// Discovery of installed VST3 / CLAP plugins (umbrella D-SCAN).
@@ -1430,32 +1565,32 @@ abstract interface class EnginePluginHosting {
 }
 
 /// Performance-recording capture (parts 1-2 of the DAW-export stack): arming
-/// and disarming the RT-safe audio-thread taps that copy the post-limiter
-/// master output and each actively-monitored input into lock-free capture
-/// rings, and the background drain thread that empties those rings into raw
-/// PCM files plus a `performance.json` sidecar under [perfArm]'s capture
-/// directory.
+/// and disarming the RT-safe audio-thread taps that copy the master capture
+/// (before the master gain and limiter) and each actively-monitored input
+/// into lock-free capture rings, and the background drain thread that writes
+/// each stream as ordered 32-bit float WAV parts (`master-001.wav`, …,
+/// `input-<n>-001.wav`) plus a `performance.json` sidecar (#1198).
 ///
 /// Status is read back via [EngineSnapshot] ([EngineSnapshot.isPerfArmed] /
 /// [EngineSnapshot.perfFrames] / [EngineSnapshot.perfOverruns]), the same way
-/// every other engine status surfaces. WAV headers are written only at
-/// finalize (a later part) — the raw PCM + sidecar left on disk here are
-/// already crash-salvageable.
+/// every other engine status surfaces. A part's header carries zero sizes
+/// until it is sealed, so whatever a crash leaves is still whole frames after
+/// a fixed 84-byte header.
 abstract interface class EnginePerformanceCapture {
   /// Arms performance-recording capture: allocates the master + per-monitor
   /// rings, freezes the set of captured inputs to whichever are currently
   /// monitored, publishes them to the audio thread, and starts the drain
-  /// thread writing into [captureDir] (created if it does not already exist).
+  /// thread writing [target] (its capture directory is created if missing).
   /// Idempotent — calling this while already armed is a no-op success (the
-  /// armed session's original [captureDir] keeps draining; a non-empty
-  /// [captureDir] is still required on the repeat call, but otherwise
-  /// unused). Returns [EngineResult.notRunning] if the engine is not
-  /// configured, [EngineResult.invalid] when [captureDir] is empty, nothing
-  /// is enabled to capture (every output disabled), or the rings could not
-  /// be allocated, or [EngineResult.device] if the drain thread could not be
-  /// started (e.g. the directory could not be created) or a previous
-  /// disarm's quiescent wait bailed out and left a stale drain session live.
-  EngineResult perfArm(String captureDir);
+  /// armed take keeps its original target). Returns [EngineResult.notRunning]
+  /// if the engine is not configured, [EngineResult.invalid] when the capture
+  /// directory is empty, the part size has no room for a frame or exceeds the
+  /// RIFF limit, the ring seconds are negative, nothing is enabled to capture
+  /// (every output disabled), or the rings could not be allocated, or
+  /// [EngineResult.device] if the drain thread could not be started (e.g. a
+  /// directory could not be created) or a previous disarm's quiescent wait
+  /// bailed out and left a stale drain session live.
+  EngineResult perfArm(PerfTarget target);
 
   /// Sets the capture policy the NEXT [perfArm] freezes for its take (slice
   /// 3b). `false` (the initial value) taps the captured destination after
@@ -1496,17 +1631,6 @@ abstract interface class EnginePerformanceCapture {
   /// on the Pi 5 bench landed within 3 ms of one (#806).
   VolumeSpace? volumeSpace(String path);
 
-  /// Makes the entries of the directory at [path] durable (fsync(2) on the
-  /// directory): a file renamed into it, a file created in it. Returns whether
-  /// it was synced; false for a path that is not a directory or a sync the
-  /// device refused.
-  ///
-  /// A file's own flush makes its bytes durable but not its name, and Dart
-  /// cannot open a directory to sync it. The storage repository calls this
-  /// after every copy's rename (#1177, #1195). Synchronous, and as slow as the
-  /// device's flush; never on the audio thread.
-  bool syncDirectory(String path);
-
   /// Starts an offline render of the finalized capture at [captureDir]: a
   /// worker thread reconstructs each non-empty track's full-length DRY stem
   /// (part 7 — wet stems are part 8) by replaying `events.log` against the
@@ -1539,6 +1663,239 @@ abstract interface class EnginePerformanceCapture {
   EngineResult renderCancel();
 }
 
+/// The backing player's voice (#1200): one engine-owned stereo file played
+/// from RAM, routed like the click (before the output buses), never part of
+/// stems or loop takes. Files come from an `AudioDecoder`; a successful
+/// [backingLoad] or [backingStageNext] transfers the samples to the engine
+/// (`DecodedAudio.ownership` reads `transferred`), any refusal leaves them
+/// the caller's. See `segno_engine_api.h` for the native contract.
+abstract interface class BackingControl {
+  /// Replaces the loaded file at the next block, fading out a sounding one.
+  /// [item] is the caller's token, reported back in [backingState]; [play]
+  /// starts it at frame 0. [EngineResult.invalid] for audio that is not the
+  /// caller's, decoded for another rate, or a full command ring;
+  /// [EngineResult.notReady] while a replaced buffer is still on its way back
+  /// (retry after one block); [EngineResult.capacity] past the backing
+  /// memory budget; [EngineResult.notRunning] when not configured.
+  EngineResult backingLoad(
+    DecodedAudio audio, {
+    required int item,
+    required bool play,
+  });
+
+  /// Stages the file End = Next continues into; null clears the stage. Same
+  /// ownership and refusals as [backingLoad].
+  EngineResult backingStageNext(DecodedAudio? audio, {required int item});
+
+  /// Unloads the loaded and staged files (fading out a sounding one).
+  EngineResult backingClear();
+
+  /// Play, pause or stop the loaded file; nothing loaded is a no-op.
+  EngineResult backingTransport(BackingTransportOp op);
+
+  /// Moves the loaded file to [frame], clamped; playing or paused is kept.
+  EngineResult backingSeek(int frame);
+
+  /// The End setting (persists across configure).
+  EngineResult setBackingEnd(BackingEnd mode);
+
+  /// The backing output channel mask (persists across configure).
+  EngineResult setBackingOutput(int mask);
+
+  /// The backing gain, clamped to 0..2 (persists across configure).
+  EngineResult setBackingLevel(double gain);
+
+  /// The backing balance, clamped to -1..1 (persists across configure).
+  EngineResult setBackingPan(double pan);
+
+  /// The click pan, clamped to -1..1 (persists across configure).
+  EngineResult setClickPan(double pan);
+
+  /// The voice as of the last processed block; also frees the buffers the
+  /// audio thread has finished with.
+  BackingState backingState();
+}
+
+/// The Library's audition voice (#1178): one preview, isolated from the rig.
+///
+/// It plays an audio file once into one output pair, summed after the output
+/// buses and before the master bus, so no destination's chain, level or mute
+/// touches it, no performance capture, stem or loop take contains it, and
+/// only the master gain and the limiter shape it. The file is decoded by the
+/// engine's one decoder (WAV and MP3, converted to the engine's rate; FLAC
+/// is compiled out until the vendored miniaudio carries the fix for
+/// CVE-2024-41147, and reads as [EngineResult.invalid]), at
+/// most [kAuditionMaxSeconds] of it, off the calling isolate.
+abstract interface class EngineAudition {
+  /// Decodes the audio file at [path] off the calling isolate and starts it
+  /// on every enabled output pair at the next block (#1305), replacing a
+  /// preview already playing. A channel the output gate disables stays
+  /// silent; with no output enabled the start is refused with
+  /// [EngineResult.invalid] before anything decodes. Retries
+  /// once, a block later, when the voice is still handing back the preview
+  /// before last ([EngineResult.notReady]).
+  ///
+  /// [stillWanted] is asked once the decode is done and before each start:
+  /// when it answers false the decoded preview is dropped, nothing reaches
+  /// the voice, and the answer is [AuditionStart.cancelled]. A caller whose
+  /// request was superseded while the file decoded so never replaces the
+  /// preview that superseded it.
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    bool Function()? stillWanted,
+  });
+
+  /// Silences the preview at the next block; a no-op when none plays.
+  EngineResult auditionStop();
+
+  /// The voice as of the last processed block. Also the point where the
+  /// engine frees the previews the audio thread has finished with.
+  AuditionState auditionState();
+
+  /// [buckets] absolute peaks (the louder side of each bucket) over the whole
+  /// audio file at [path], streamed through the same decoder off the calling
+  /// isolate with no PCM kept (`le_backing_probe_file`); null when the file
+  /// does not decode. For the Library's preview lanes.
+  Future<Float32List?> filePeaks(String path, {required int buckets});
+}
+
+/// The shared render recipe (#1202) behind Bounce and Save selected audio:
+/// the selected recorded tracks rendered offline over their common cycle or a
+/// chosen bar length, regardless of transport, Mute and Solo, with their
+/// levels, Pre (as printed) and Post processing, optionally the All tracks
+/// chain, and never live inputs, click, outputs or the master. One job at a
+/// time; [pollRender] is also the job's staging heartbeat, so a caller polls
+/// it until the job ends.
+abstract interface class EngineSelectedRender {
+  /// The verdict and plan for [request], with no job: [EngineResult.ok] with
+  /// the plan, or [EngineResult.noCommonCycle], [EngineResult.capacity],
+  /// [EngineResult.invalid], [EngineResult.notReady] or
+  /// [EngineResult.notRunning] with none.
+  RenderMeasurement measureRender(RenderRequest request);
+
+  /// Starts a job: any [measureRender] refusal, [EngineResult.alreadyRunning]
+  /// while a job runs, [EngineResult.capacity] when its bytes do not fit,
+  /// [EngineResult.unsupported] without a render worker, or [EngineResult.ok]
+  /// with the job id.
+  RenderAdmission beginRender(RenderRequest request);
+
+  /// The job's status, or `null` for a job the engine no longer holds
+  /// (cancelled, or replaced by a newer job).
+  RenderJobStatus? pollRender(int job);
+
+  /// A finished memory job's interleaved stereo result (at most [maxFrames]
+  /// frames), or `null` when the job is unknown, not finished or not a memory
+  /// job.
+  Float32List? copyRender(int job, {required int maxFrames});
+
+  /// Cancels and releases [job]. A file job leaves no partial file.
+  EngineResult cancelRender(int job);
+}
+
+/// Instrument slots (#1197): up to [kMaxInstruments] synthesized mono
+/// sources, slot `k` being source `kInstrumentSourceBase + k` wherever a
+/// source is named. Notes and patch changes reach the audio thread in the
+/// order they were posted, and a release can never be crowded out by notes.
+/// Control-thread calls, like every other command.
+abstract interface class InstrumentHost {
+  /// The engine's synthesis catalogue: every patch and every family's
+  /// parameters. A pure read; the same for the life of the build.
+  SynthCatalogue synthCatalogue();
+
+  /// Gives instrument [slot] patch [patch] (an index into [synthCatalogue],
+  /// or `null` for none) with [params] (three 0..100 settings, or `null` for
+  /// the patch's defaults). A changed patch fades the slot's voices out.
+  /// Returns [EngineResult.unknownPatch] for an index the build does not
+  /// define, [EngineResult.capacity] when the event ring is full (nothing
+  /// changed: retry), [EngineResult.notRunning] before the engine is
+  /// configured.
+  EngineResult setInstrument({
+    required int slot,
+    required int? patch,
+    List<double>? params,
+  });
+
+  /// Sets family parameter [param] (`0..2`) of [slot] to [value] (0..100,
+  /// clamped), applied from the next block. [EngineResult.noInstrument] when
+  /// the slot has no patch.
+  EngineResult setInstrumentParam({
+    required int slot,
+    required int param,
+    required double value,
+  });
+
+  /// Limits the sounding voices of all instruments together to [limit]
+  /// (`1..kMaxVoiceLimit`); lowering it fades the excess. 32 after configure.
+  EngineResult setVoiceLimit(int limit);
+
+  /// Fades every voice of [slot] out: its definition was removed.
+  EngineResult resetInstrument(int slot);
+
+  /// Starts [note] (`0..127`) at [velocity] (`1..127`) on [slot] for
+  /// [origin], the caller's identity for the note: [instrumentRelease] with
+  /// the same origin ends it. One origin, one sounding note: a note-on for
+  /// an origin still held on [slot] replaces that voice (a voice held on
+  /// only by sustain rings on); a chord uses [instrumentChordOn].
+  /// [EngineResult.noInstrument] for an empty slot; [EngineResult.capacity]
+  /// when the event ring is full (the note is not played and is counted in
+  /// `InstrumentsSnapshot.eventsRefused`). Control-thread origins never
+  /// collide with MIDI notes.
+  EngineResult instrumentNoteOn({
+    required int slot,
+    required int origin,
+    required int note,
+    required int velocity,
+  });
+
+  /// Starts [notes] (1..`kMaxChordNotes`, each `0..127`) together on [slot]
+  /// for one [origin]: a chord with one identity, ended together by
+  /// [instrumentRelease]. All or nothing: [EngineResult.capacity] when the
+  /// ring cannot take every note (nothing plays).
+  EngineResult instrumentChordOn({
+    required int slot,
+    required int origin,
+    required List<int> notes,
+    required int velocity,
+  });
+
+  /// Releases every voice started for [origin], on every instrument.
+  /// [EngineResult.capacity] only when the release lane is full: the caller
+  /// must retry, never drop a release.
+  EngineResult instrumentRelease(int origin);
+
+  /// Adds ([on]) or removes a sustain contributor [origin] on [slot] (a pedal
+  /// or switch holding sustain). Released notes ring until every contributor,
+  /// these and each MIDI port's CC64, lets go. Removing has the same
+  /// never-drop rule as [instrumentRelease].
+  EngineResult instrumentSustain({
+    required int slot,
+    required int origin,
+    required bool on,
+  });
+
+  /// Publishes which MIDI every slot plays: [routes] has one entry per slot
+  /// (missing entries play no MIDI). The engine switches tables at a block
+  /// boundary; a second publish before the first was picked up returns
+  /// [EngineResult.notReady] (retry on the next snapshot, latest wins).
+  /// [EngineResult.invalid] when a field is out of range or there are more
+  /// than [kMaxInstruments] entries.
+  EngineResult setInstrumentRoutes(List<InstrumentRoute> routes);
+}
+
+/// The engine's MIDI input ports, shared by instrument routing and clock
+/// sync (#1197, #1228): an open capture attached to a port is read by the
+/// audio thread directly, without passing through Dart.
+abstract interface class MidiInputSink {
+  /// Attaches [capture] to engine MIDI input [port]
+  /// (`0..kMaxMidiPorts-1`). A capture attached elsewhere moves; whatever was
+  /// on [port] is detached first, and its notes end.
+  EngineResult attachMidiInput(MidiCaptureHandle capture, {required int port});
+
+  /// Detaches whatever capture is on [port]; its notes end. [EngineResult.ok]
+  /// also when nothing was attached.
+  EngineResult detachMidiInput(int port);
+}
+
 /// The data-layer boundary over the native audio engine, composed from the
 /// role interfaces above (interface-segregation: a consumer can depend on the
 /// slice it needs — [SessionIo], [EngineMetering], … — instead of the whole
@@ -1549,6 +1906,7 @@ abstract interface class EnginePerformanceCapture {
 /// the native engine over FFI.
 abstract interface class AudioEngine
     implements
+        EngineAudition,
         EngineLifecycle,
         EngineMetering,
         LooperTransport,
@@ -1559,6 +1917,10 @@ abstract interface class AudioEngine
         EffectsControl,
         MonitorControl,
         InputConditioningControl,
+        InstrumentHost,
+        MidiInputSink,
         EnginePluginHosting,
         EnginePerformanceCapture,
-        SessionIo {}
+        EngineSelectedRender,
+        SessionIo,
+        BackingControl {}

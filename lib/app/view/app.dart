@@ -1,12 +1,15 @@
 import 'dart:async';
 
+import 'package:backing_repository/backing_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
+import 'package:cpu_load_repository/cpu_load_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:instrument_repository/instrument_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
@@ -18,12 +21,19 @@ import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/app/view/control_settings_notices.dart';
+import 'package:segno/app/view/encoder_navigation.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
+import 'package:segno/appliance/idle_dim_cubit.dart';
+import 'package:segno/appliance/idle_dim_host.dart';
+import 'package:segno/appliance/power_off/power_cubit.dart';
+import 'package:segno/appliance/power_off/power_goodbye.dart';
+import 'package:segno/appliance/power_off/power_host.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
-import 'package:segno/appliance/power_off/power_off_cubit.dart';
-import 'package:segno/appliance/power_off/power_off_goodbye.dart';
 import 'package:segno/appliance/software_brightness.dart';
+import 'package:segno/appliance/wifi_reconnect_hold_host.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/backing/cubit/backing_cubit.dart';
+import 'package:segno/backing/cubit/backing_mix_cubit.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -35,19 +45,23 @@ import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/storage/cubit/storage_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/tuner/application/tuner_settings.dart';
 import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:segno/update/appliance/appliance_env.dart';
 import 'package:segno/update/appliance/system_appliance_env.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/visualizer/application/waveform_display_controller.dart';
 import 'package:segno/visualizer/visualizer.dart';
-import 'package:segno/window/window_chrome.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 import 'package:toastification/toastification.dart';
+import 'package:touch_calibration_client/touch_calibration_client.dart';
 import 'package:update_repository/update_repository.dart';
+import 'package:usb_storage_client/usb_storage_client.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 /// The root application widget.
@@ -55,9 +69,9 @@ class App extends StatefulWidget {
   /// Creates an [App] driven by the injected repositories.
   ///
   /// The repositories and [waveformWindow] are injected so tests can supply
-  /// fakes / a no-op window service instead of the native device and a real
-  /// second OS window. [initialAsioDrivers] is the ASIO driver list enumerated
-  /// at startup, cached by the audio-setup cubit for the picker.
+  /// fakes / a no-op window service instead of the native device and the
+  /// link to the Track display. [initialAsioDrivers] is the ASIO driver list
+  /// enumerated at startup, cached by the audio-setup cubit for the picker.
   const App({
     required this.repository,
     required this.controllerRepository,
@@ -68,9 +82,9 @@ class App extends StatefulWidget {
     required this.sessionRepository,
     required this.performanceRepository,
     required this.guards,
+    required this.backingRepository,
+    this.instrumentRepository,
     this.pedalRepository,
-    this.displayCount,
-    this.waveformWindowOpenDelay = Duration.zero,
     this.audioRecoveryConfig,
     this.initialAsioDrivers = const [],
     this.updates = const UpdateRepository(
@@ -78,10 +92,15 @@ class App extends StatefulWidget {
     ),
     this.wifi = const WifiRepository(client: UnsupportedWifiClient()),
     this.brightness = const UnsupportedBrightnessClient(),
+    this.displayOutputs = const UnknownDisplayOutputs(),
+    this.touchCalibration = const UnsupportedTouchCalibrationClient(),
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
+    this.cpuLoad = const CpuLoadRepository.unsupported(),
     this.removableVolumes = const InternalOnlyVolumes(),
+    this.storage,
     this.powerKeySource,
     this.powerOff,
+    this.reboot,
     super.key,
   });
 
@@ -93,18 +112,38 @@ class App extends StatefulWidget {
   /// Appliance WiFi repository (Control Center). Defaults unsupported.
   final WifiRepository wifi;
 
-  /// Appliance brightness client (Control Center slider). Defaults unsupported.
+  /// Appliance brightness client (per-panel DDC/CI). Defaults unsupported.
   final BrightnessClient brightness;
+
+  /// Which connector each window is shown on and whether a panel is plugged
+  /// in. Defaults unknown (a desktop).
+  final DisplayOutputs displayOutputs;
+
+  /// Reads and sets each panel's touch calibration. Defaults unsupported,
+  /// which leaves Calibrate touch off the Displays page.
+  final TouchCalibrationClient touchCalibration;
 
   /// Reads what the appliance knows about itself — the disk, the box, and
   /// where it can export to. Defaults to the client that answers "unknown",
   /// which is what every non-appliance build gets.
   final ConsoleFactsClient consoleFacts;
 
+  /// The console's CPU load for the stage top bar (#1307). Defaults to the
+  /// unsupported repository, which hides the readout; the entrypoint injects
+  /// the `/proc/stat` one.
+  final CpuLoadRepository cpuLoad;
+
   /// The removable drives the Library browses and copies to. Defaults to
   /// [InternalOnlyVolumes] (no drive, every removable write refused) until
   /// the storage service (#1177) stands behind the port.
   final RemovableVolumes removableVolumes;
+
+  /// Where a write may go: Internal and the USB volumes. Null (the default)
+  /// builds one over no USB at all, measuring Internal through
+  /// [performanceRepository]; the entrypoint injects the appliance's.
+  /// Restart and shutdown refuse while it holds a lease and wait for leases
+  /// taken after the save.
+  final StorageRepository? storage;
 
   /// Injected power-button source. Null (the default) starts an evdev
   /// listener on Linux when `segno-update-ctl` exists, and nothing elsewhere.
@@ -112,6 +151,10 @@ class App extends StatefulWidget {
 
   /// Injected halt. Null (the default) runs `segno-update-ctl poweroff`.
   final Future<void> Function()? powerOff;
+
+  /// Injected reboot. Null (the default) runs `segno-update-ctl reboot`,
+  /// which boots a staged update slot when one is staged.
+  final Future<void> Function()? reboot;
 
   /// The app's one guard table (accepted behaviour 6.12), shared with the
   /// session and performance repositories it was built with. Required: an
@@ -134,15 +177,6 @@ class App extends StatefulWidget {
   /// cubit always exists and its settings picker shows an empty state. Owned by
   /// the [PedalCubit], which disposes it.
   final PedalRepository? pedalRepository;
-
-  /// Reports the number of connected displays, for the dual-display console's
-  /// single-display fallback. `null` (the default) disables the fallback
-  /// (assumes the usual multi-window desktop); the Pi entrypoint wires the real
-  /// platform display count.
-  final int Function()? displayCount;
-
-  /// Startup spacing before the second native view opens under Weston.
-  final Duration waveformWindowOpenDelay;
 
   /// The pinned audio config a boot auto-start could not open, handed to the
   /// [AudioRecoveryCubit] so the engine auto-starts when that device reappears.
@@ -168,6 +202,14 @@ class App extends StatefulWidget {
   /// The shared performance-recording repository, sharing the engine.
   final PerformanceRepository performanceRepository;
 
+  /// The backing player's repository and managed store (#1200), sharing the
+  /// engine.
+  final BackingRepository backingRepository;
+
+  /// The instruments' engine side (#1197), sharing the engine; null runs
+  /// the app without instruments (tests that do not need them).
+  final InstrumentRepository? instrumentRepository;
+
   @override
   State<App> createState() => _AppState();
 }
@@ -175,8 +217,9 @@ class App extends StatefulWidget {
 /// Resolves the optional pedal pair once so a replacement [App] keeps
 /// [ControlCubit], [PedalCubit], and dialog routes on one repository.
 class _AppState extends State<App> {
-  StreamSubscription<PowerOffState>? _powerNoticeSubscription;
+  StreamSubscription<PowerState>? _powerNoticeSubscription;
   late final PedalRepository _pedal;
+  late final StorageRepository _storage;
   late final AppRuntime _runtime;
   late final RecordOptionsCubit _recordView;
   StreamSubscription<MixSettingsOutcome>? _mixFailureSubscription;
@@ -187,6 +230,7 @@ class _AppState extends State<App> {
   StreamSubscription<int>? _recordingInputRequiredSubscription;
   StreamSubscription<int>? _recordRefusedSubscription;
   StreamSubscription<int>? _overdubRefusedSubscription;
+  StreamSubscription<int>? _lengthHistoryRefusedSubscription;
   late final PlaybackOptionsCubit _playbackView;
   late final RecordTimingCubit _timingView;
 
@@ -194,6 +238,14 @@ class _AppState extends State<App> {
   void initState() {
     super.initState();
     _pedal = widget.pedalRepository ?? PedalRepository(NoopPedalLink());
+    _storage =
+        widget.storage ??
+        StorageRepository(
+          client: const UnsupportedUsbStorageClient(),
+          exportsRoot: widget.performanceRepository.exportsRoot,
+          volumeSpace: widget.performanceRepository.volumeSpace,
+          guards: widget.guards,
+        );
     _runtime = AppRuntime(
       repository: widget.repository,
       settings: widget.settings,
@@ -203,7 +255,12 @@ class _AppState extends State<App> {
       pedal: _pedal,
       performance: widget.performanceRepository,
       sessions: widget.sessionRepository,
+      storage: _storage,
+      backing: widget.backingRepository,
+      instruments: widget.instrumentRepository,
       powerOff: widget.powerOff ?? const SystemApplianceEnv().powerOff,
+      reboot: widget.reboot ?? const SystemApplianceEnv().reboot,
+      storageSettled: _storage.settled,
       guards: widget.guards,
     );
     _powerNoticeSubscription = _runtime.power.stream.listen(
@@ -232,6 +289,17 @@ class _AppState extends State<App> {
       (channel) =>
           _showRecordRefused(channel, (l10n) => l10n.footReverseOverdubRefused),
     );
+    // An Undo or Redo of a length edit that did nothing (#1168): refused at
+    // the tap or after it was posted, or queued taps that stopped at the
+    // edit. From any surface, so a tap that did nothing is never silent.
+    _lengthHistoryRefusedSubscription = widget.repository.lengthHistoryRefusals
+        .listen(
+          (channel) => _showRecordRefused(
+            channel,
+            (l10n) => l10n.lengthHistoryRefused,
+            id: AppToastId.lengthHistoryRefused,
+          ),
+        );
     _playbackView = PlaybackOptionsCubit(settings: _runtime.playback);
     _recordView = RecordOptionsCubit(settings: _runtime.record);
     _timingView = RecordTimingCubit(settings: _runtime.timing);
@@ -256,6 +324,7 @@ class _AppState extends State<App> {
     unawaited(_recordingInputRequiredSubscription?.cancel());
     unawaited(_recordRefusedSubscription?.cancel());
     unawaited(_overdubRefusedSubscription?.cancel());
+    unawaited(_lengthHistoryRefusedSubscription?.cancel());
     _controlNotices.dispose();
     unawaited(
       _closeControlOwners().catchError((Object error, StackTrace stack) {
@@ -269,6 +338,9 @@ class _AppState extends State<App> {
     // Runtime close stops control ingress synchronously, before adapters close.
     final closed = _runtime.close();
     await Future.wait([
+      // Only the repository this widget built; an injected one is its
+      // owner's.
+      if (widget.storage == null) closed.then((_) => _storage.dispose()),
       _timingView.close(),
       _recordView.close(),
       _playbackView.close(),
@@ -354,6 +426,36 @@ class _AppState extends State<App> {
       refused: (context) => context.l10n.fadeSettingsRefusedTitle,
       body: (context) => context.l10n.fadeSettingsRecoveryBody,
     ),
+    OwnedSetting.backingMix => (
+      id: AppToastId.backingMixSettings,
+      recovery: (context) => context.l10n.backingMixSettingsRecoveryTitle,
+      refused: (context) => context.l10n.backingMixSettingsRefusedTitle,
+      body: (context) => context.l10n.backingMixSettingsRecoveryBody,
+    ),
+    OwnedSetting.clickPan => (
+      id: AppToastId.clickPanSettings,
+      recovery: (context) => context.l10n.clickPanSettingsRecoveryTitle,
+      refused: (context) => context.l10n.clickPanSettingsRefusedTitle,
+      body: (context) => context.l10n.clickPanSettingsRecoveryBody,
+    ),
+    OwnedSetting.followTempo => (
+      id: AppToastId.followTempoSettings,
+      recovery: (context) => context.l10n.followTempoSettingsRecoveryTitle,
+      refused: (context) => context.l10n.followTempoSettingsRefusedTitle,
+      body: (context) => context.l10n.followTempoSettingsRecoveryBody,
+    ),
+    OwnedSetting.pitchMode => (
+      id: AppToastId.pitchModeSettings,
+      recovery: (context) => context.l10n.pitchModeSettingsRecoveryTitle,
+      refused: (context) => context.l10n.pitchModeSettingsRefusedTitle,
+      body: (context) => context.l10n.pitchModeSettingsRecoveryBody,
+    ),
+    OwnedSetting.instruments => (
+      id: AppToastId.instrumentsSettings,
+      recovery: (context) => context.l10n.instrumentsSettingsRecoveryTitle,
+      refused: (context) => context.l10n.instrumentsSettingsRefusedTitle,
+      body: (context) => context.l10n.instrumentsSettingsRecoveryBody,
+    ),
   };
 
   void _showRecordingInputRequired(int channel) {
@@ -381,11 +483,12 @@ class _AppState extends State<App> {
   /// why. Low stakes — a toast, like the input notice above.
   void _showRecordRefused(
     int channel,
-    String Function(AppLocalizations l10n) title,
-  ) {
+    String Function(AppLocalizations l10n) title, {
+    String id = AppToastId.recordRefused,
+  }) {
     if (!mounted || _runtime.power.state.isUiUp) return;
     showAppToast(
-      id: AppToastId.recordRefused,
+      id: id,
       type: ToastificationType.warning,
       autoCloseDuration: const Duration(seconds: 5),
       title: Builder(
@@ -431,7 +534,7 @@ class _AppState extends State<App> {
     );
   }
 
-  void _syncControlNoticesWithPower(PowerOffState state) {
+  void _syncControlNoticesWithPower(PowerState state) {
     if (!mounted) return;
     _controlNotices.setPowerVisible(visible: state.isUiUp);
     if (state.isUiUp) dismissAppToast(AppToastId.recordingInputRequired);
@@ -444,6 +547,7 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: widget.repository),
         RepositoryProvider.value(value: _runtime.timing),
         RepositoryProvider.value(value: _runtime.fade),
+        RepositoryProvider.value(value: _runtime.tuner),
         RepositoryProvider.value(value: _runtime.record),
         RepositoryProvider.value(value: widget.controllerRepository),
         RepositoryProvider.value(value: widget.midiDeviceRepository),
@@ -452,6 +556,8 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: _runtime.fxPersistence),
         RepositoryProvider.value(value: _runtime.tempo),
         RepositoryProvider.value(value: _runtime.playback),
+        RepositoryProvider.value(value: _runtime.backingSettings),
+        RepositoryProvider.value(value: _runtime.backingPlayer),
         RepositoryProvider<MixSettingsPersistence>.value(
           value: _runtime.mixPersistence,
         ),
@@ -461,10 +567,19 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: widget.updates),
         RepositoryProvider.value(value: widget.wifi),
         RepositoryProvider.value(value: widget.brightness),
+        RepositoryProvider.value(value: widget.displayOutputs),
+        RepositoryProvider.value(value: widget.touchCalibration),
+        RepositoryProvider.value(value: widget.waveformWindow),
         RepositoryProvider.value(value: widget.consoleFacts),
+        RepositoryProvider.value(value: widget.cpuLoad),
         RepositoryProvider<RemovableVolumes>.value(
           value: widget.removableVolumes,
         ),
+        RepositoryProvider.value(value: _storage),
+        // The one guard table (#1198), for the owners the views build: the
+        // Library's exports and backups enter transfer guards on what
+        // they read.
+        RepositoryProvider<GuardRegistry>.value(value: widget.guards),
         if (_powerKeySource != null)
           RepositoryProvider<PowerKeySource>.value(value: _powerKeySource!),
       ],
@@ -484,14 +599,29 @@ class _AppState extends State<App> {
               return cubit;
             },
           ),
-          // App-wide brightness: software dim in [MaterialApp.builder] + DDC
-          // when the host helper supports it (LG TVs often do not).
+          // Each panel's brightness: DDC/CI on a panel that answers it (LG
+          // TVs often do not), else a software dim over its window — the
+          // main window in [MaterialApp.builder], the Track display window
+          // through its readout.
           BlocProvider(
             lazy: false,
             create: (context) {
               final cubit = DisplayBrightnessCubit(
                 settings: context.read<SettingsRepository>(),
                 client: context.read<BrightnessClient>(),
+                outputs: context.read<DisplayOutputs>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
+          // Dims both panels after the chosen idle period; IdleDimHost in
+          // [MaterialApp.builder] feeds it and carries the dim to the panels.
+          BlocProvider(
+            lazy: false,
+            create: (context) {
+              final cubit = IdleDimCubit(
+                settings: context.read<SettingsRepository>(),
               );
               unawaited(cubit.load());
               return cubit;
@@ -504,6 +634,8 @@ class _AppState extends State<App> {
           // Remote and console controls are interpreted by ControlCubit.
           BlocProvider<LooperBloc>.value(value: _runtime.looper),
           BlocProvider<SessionCubit>.value(value: _runtime.session),
+          BlocProvider<BackingCubit>.value(value: _runtime.backingView),
+          BlocProvider<BackingMixCubit>.value(value: _runtime.backingMixView),
           BlocProvider(
             create: (context) {
               final cubit = TracksCubit(
@@ -538,6 +670,13 @@ class _AppState extends State<App> {
               repository: context.read<LooperRepository>(),
             ),
           ),
+          // The stage footer's `OUT` readout, refreshed four times a second
+          // rather than on every 16 ms engine poll (#1301).
+          BlocProvider(
+            create: (context) => OutputLevelCubit(
+              repository: context.read<LooperRepository>(),
+            ),
+          ),
           // Beside the track names and for the same reason: an input is called
           // what the player calls it on every surface that shows one — the
           // Audio face's input list, the Tracks routing summary, and the
@@ -566,8 +705,10 @@ class _AppState extends State<App> {
           // to the looper stream and arms the engine, and a console that never
           // opens the Tuner face should pay for neither.
           BlocProvider(
-            create: (context) =>
-                TunerCubit(repository: context.read<LooperRepository>()),
+            create: (context) => TunerCubit(
+              repository: context.read<LooperRepository>(),
+              settings: context.read<TunerSettings>(),
+            ),
           ),
           BlocProvider(
             create: (context) {
@@ -619,6 +760,7 @@ class _AppState extends State<App> {
               return cubit;
             },
           ),
+          BlocProvider<StorageCubit>.value(value: _runtime.storage),
           BlocProvider<RecordTimingCubit>.value(value: _timingView),
           BlocProvider<TempoCubit>.value(value: _tempoView),
           BlocProvider<PlaybackOptionsCubit>.value(value: _playbackView),
@@ -675,7 +817,7 @@ class _AppState extends State<App> {
               repository: context.read<MidiDeviceRepository>(),
             ),
           ),
-          BlocProvider<PowerOffCubit>.value(value: _runtime.power),
+          BlocProvider<PowerCubit>.value(value: _runtime.power),
           BlocProvider<ControlCubit>.value(value: _runtime.control),
           // Eager (not lazy): the pedal LINK feature owns the repository's
           // lifecycle and mirrors the board's status. It shares the
@@ -706,14 +848,24 @@ class _AppState extends State<App> {
           // must start the moment the app composes, not whenever a widget
           // first reads this cubit — a crashed capture recovers in the
           // background whether or not the tracks view ever mounts.
+          // The recorder's Save to (#1177): read by the recorder at each arm.
+          BlocProvider(
+            create: (_) => RecordingDestinationCubit(
+              repository: _storage,
+              sampleRate: () => widget.repository.state.status.sampleRate,
+            ),
+          ),
           BlocProvider(
             lazy: false,
             create: (context) {
               final cubit = PerformanceRecorderCubit(
                 performance: context.read<PerformanceRepository>(),
                 takeLocked: () =>
-                    context.read<PowerOffCubit>().state.isUiUp ||
+                    context.read<PowerCubit>().state.isUiUp ||
                     _runtime.fxPersistence.sessionTransitionActive,
+                storage: _storage,
+                destination: () =>
+                    context.read<RecordingDestinationCubit>().state.destination,
               );
               unawaited(cubit.load());
               return cubit;
@@ -723,8 +875,6 @@ class _AppState extends State<App> {
         child: _AppView(
           controlNotices: _controlNotices,
           waveformWindow: widget.waveformWindow,
-          displayCount: widget.displayCount,
-          waveformWindowOpenDelay: widget.waveformWindowOpenDelay,
         ),
       ),
     );
@@ -737,14 +887,10 @@ class _AppView extends StatefulWidget {
   const _AppView({
     required this.controlNotices,
     required this.waveformWindow,
-    required this.waveformWindowOpenDelay,
-    this.displayCount,
   });
 
   final ControlSettingsNotices controlNotices;
   final WaveformWindowService waveformWindow;
-  final int Function()? displayCount;
-  final Duration waveformWindowOpenDelay;
 
   @override
   State<_AppView> createState() => _AppViewState();
@@ -755,6 +901,12 @@ class _AppViewState extends State<_AppView> {
   StreamSubscription<WaveformDisplayFailure>? _displayFailures;
   StreamSubscription<RecoveryRefusal>? _recoverySub;
   bool _restoreNoticeScheduled = false;
+
+  /// "Not now" on the power-cycle banner holds until the next boot.
+  bool _powerCycleDismissed = false;
+
+  /// The weak-charger toast is said once per boot.
+  bool _weakChargerShown = false;
 
   /// Resolves localized strings from inside [MaterialApp] when this state
   /// sits above it in the tree.
@@ -773,18 +925,18 @@ class _AppViewState extends State<_AppView> {
     _recoverySub = context.read<LooperRepository>().recoveryRefusals.listen(
       _showRecoveryRefusal,
     );
+    // A touch on the Track display wakes an idle-dimmed console.
+    widget.waveformWindow.onWindowActivity = () {
+      if (mounted) context.read<IdleDimCubit>().activity();
+    };
     _display = WaveformDisplayController(
       repository: context.read<LooperRepository>(),
       window: widget.waveformWindow,
       context: _displayContext(),
-      displayCount: widget.displayCount,
-      openDelay: widget.waveformWindowOpenDelay,
     );
     _displayFailures = _display.failures.listen((failure) {
       if (!mounted) return;
       switch (failure) {
-        case WaveformDisplayFailure.singleDisplay:
-          _showSingleDisplayNotice();
         case WaveformDisplayFailure.openFailed:
           context.read<WaveformWindowCubit>().reportOpenFailed();
           _showWaveformWindowFailedBanner();
@@ -880,7 +1032,10 @@ class _AppViewState extends State<_AppView> {
       deviceLost:
           context.read<AudioSetupCubit>().state.deviceConnectivity ==
           DeviceConnectivity.lost,
-      goodbye: readoutGoodbyeOf(context.read<PowerOffCubit>().state.phase),
+      goodbye: readoutGoodbyeOf(context.read<PowerCubit>().state.phase),
+      brightness: context.read<DisplayBrightnessCubit>().state.softwareOf(
+        DisplayRole.track,
+      ),
     );
   }
 
@@ -891,17 +1046,16 @@ class _AppViewState extends State<_AppView> {
     if (!mounted) return;
     _display.start(
       enabled: context.read<WaveformWindowCubit>().state.enabled,
-      title: _l10n.outputWaveformWindowTitle,
     );
   }
 
   void _syncWindow() => _display.setEnabled(
     enabled: context.read<WaveformWindowCubit>().state.enabled,
-    title: _l10n.outputWaveformWindowTitle,
   );
 
   @override
   void dispose() {
+    widget.waveformWindow.onWindowActivity = null;
     unawaited(_displayFailures?.cancel());
     unawaited(
       _display.close().catchError((Object error, StackTrace stack) {
@@ -1044,6 +1198,62 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
+  /// The USB-C contract predates the console profile, so the console runs on
+  /// less than the charger offers until it is unplugged and plugged back in
+  /// (#1352). Nothing breaks meanwhile, so the banner can be put off; Power
+  /// off opens the normal Power options, whose Safe to switch off face says
+  /// to unplug. It clears itself once the new contract is in.
+  void _showPowerCycleBanner(PedalPowerSupply? supply) {
+    if (supply == null || !supply.needsPowerCycle || _powerCycleDismissed) {
+      dismissAppToast(AppToastId.powerCycle);
+      return;
+    }
+    final l10n = _l10n;
+    showAppToast(
+      id: AppToastId.powerCycle,
+      title: AppText(l10n.powerCycleBannerTitle),
+      description: AppText(
+        l10n.powerCycleBannerDescription(
+          wattsText(supply.watts),
+          wattsText(supply.offeredWatts),
+        ),
+      ),
+      icon: const Icon(Icons.power_outlined),
+      actions: [
+        TextButton(
+          key: const Key(AppToastId.powerCycleDismiss),
+          onPressed: () {
+            _powerCycleDismissed = true;
+            dismissAppToast(AppToastId.powerCycle);
+          },
+          child: AppText(l10n.powerCycleBannerDismiss),
+        ),
+        TextButton(
+          key: const Key(AppToastId.powerCyclePowerOff),
+          onPressed: () {
+            dismissAppToast(AppToastId.powerCycle);
+            if (mounted) requestPower(context);
+          },
+          child: AppText(l10n.powerCycleBannerPowerOff),
+        ),
+      ],
+    );
+  }
+
+  /// The charger itself offers too little for the console at full load.
+  /// Said once per boot and never in the way: the console runs, and may
+  /// only brown out at full brightness.
+  void _showWeakChargerNotice(PedalPowerSupply? supply) {
+    if (supply == null || _weakChargerShown || !chargerIsWeak(supply)) return;
+    _weakChargerShown = true;
+    showAppToast(
+      id: AppToastId.weakCharger,
+      type: ToastificationType.warning,
+      title: AppText(_l10n.weakChargerToast(wattsText(supply.offeredWatts))),
+      icon: const Icon(Icons.power_outlined),
+    );
+  }
+
   /// Startup notice that a newer build is available. Skipped when Updates is
   /// already open. "Not now" dismisses that version; "Update…" opens the
   /// Updates settings page.
@@ -1095,8 +1305,35 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
+  /// FX mode's Stop no longer switches every track's effects off, and MODE
+  /// there now leaves FX instead of running its assigned modes (#1229, D13);
+  /// said once, together, at the first FX entry after the update. Nothing to
+  /// act on here: a toast.
+  void _showFxStopChangedNotice(PedalSetup setup) {
+    final l10n = _l10n;
+    showAppToast(
+      id: AppToastId.fxStopChanged,
+      title: AppText(l10n.footFxStopChanged),
+      description: AppText(footFxModeChangedText(l10n, setup)),
+      icon: const Icon(Icons.info_outline),
+    );
+  }
+
   /// The console now always starts in Record; said once to an install whose
   /// retired boot default was Mute. Low stakes, nothing to act on: a toast.
+  void _showSaveToFellBack(String label) {
+    final l10n = _l10n;
+    showAppToast(
+      id: AppToastId.saveToFellBack,
+      type: ToastificationType.warning,
+      title: AppText(
+        l10n.saveToFellBack(label.isEmpty ? l10n.storageUsbUnnamed : label),
+      ),
+      icon: const Icon(Icons.usb_off),
+      autoCloseDuration: const Duration(seconds: 6),
+    );
+  }
+
   void _showBootModeRetiredNotice() {
     final l10n = _l10n;
     showAppToast(
@@ -1106,14 +1343,13 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
-  /// Only one display on the dual-display console.
-  void _showSingleDisplayNotice() {
-    final l10n = _l10n;
+  /// Where the Tuner went once the tray stopped carrying it (#1229, D11):
+  /// said once, the boot `Hold · Tuner` was added to Custom pedal 2.
+  void _showTunerSeededNotice() {
     showAppToast(
-      id: AppToastId.singleDisplay,
-      type: ToastificationType.warning,
-      title: AppText(l10n.singleDisplayNotice),
-      icon: const Icon(Icons.monitor_outlined),
+      id: AppToastId.tunerSeeded,
+      title: AppText(_l10n.footTunerSeeded),
+      icon: const Icon(Icons.info_outline),
     );
   }
 
@@ -1154,46 +1390,49 @@ class _AppViewState extends State<_AppView> {
       highContrastTheme: AppTheme.highContrast,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: Builder(
-        builder: (context) {
-          const Widget page = LooperPage();
-          if (!segnoUsesFlutterTitleBar && !segnoUsesCursorAutoHide) {
-            return page;
-          }
-          return SegnoWindowChromeShell(
-            title: context.l10n.appMenuLabel,
-            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-            body: page,
-          );
-        },
-      ),
+      home: const LooperPage(),
       debugShowCheckedModeBanner: false,
       builder: (context, child) {
-        // Console only: weston's kiosk-shell spawns no input panel and the
-        // image ships no IME, so without this every TextField on the
-        // appliance is dead — including this branch's own Wi-Fi password
+        // Console only: the appliance has no input method (ivi-homescreen
+        // brings no text-input panel and the image ships no IME), so without
+        // this every TextField on it is dead — including the Wi-Fi password
         // field. Inside the brightness wrapper so the keys dim with
         // everything else.
-        final typed = OnScreenKeyboardHost(
-          child: AppTextDefaults(child: child ?? const SizedBox.shrink()),
+        final typed = EncoderNavigation(
+          child: OnScreenKeyboardHost(
+            child: AppTextDefaults(child: child ?? const SizedBox.shrink()),
+          ),
         );
-        return BlocBuilder<DisplayBrightnessCubit, double>(
-          buildWhen: (previous, current) => previous != current,
+        return BlocBuilder<DisplayBrightnessCubit, DisplayBrightnessState>(
+          buildWhen: (previous, current) =>
+              previous.softwareOf(DisplayRole.main) !=
+              current.softwareOf(DisplayRole.main),
           builder: (context, brightness) {
             final dimmed = SoftwareBrightness(
-              brightness: brightness,
-              child: typed,
+              brightness: brightness.softwareOf(DisplayRole.main),
+              child: IdleDimHost(
+                child: WifiReconnectHoldHost(child: typed),
+              ),
             );
-            return BlocBuilder<PowerOffCubit, PowerOffState>(
-              buildWhen: (previous, current) => previous.phase != current.phase,
-              builder: (context, powerOff) {
-                final face = readoutGoodbyeOf(powerOff.phase);
-                if (face == ReadoutGoodbye.none) return dimmed;
+            return BlocBuilder<PowerCubit, PowerState>(
+              buildWhen: (previous, current) => previous != current,
+              builder: (context, power) {
+                final face = readoutGoodbyeOf(power.phase);
+                // Always the Stack: moving the app in and out of one
+                // would remount it, routes and all, as power-off begins.
                 return Stack(
                   fit: StackFit.expand,
                   children: [
                     dimmed,
-                    PowerOffGoodbye(face: face),
+                    if (face != ReadoutGoodbye.none)
+                      PowerGoodbye(
+                        face: face,
+                        action: power.action,
+                        unplugToApply: context.select<PedalCubit, bool>(
+                          (pedal) =>
+                              pedal.state.powerSupply?.needsPowerCycle ?? false,
+                        ),
+                      ),
                   ],
                 );
               },
@@ -1232,10 +1471,26 @@ class _AppViewState extends State<_AppView> {
               current.retiredBootMode != null,
           listener: (_, _) => _showBootModeRetiredNotice(),
         ),
+        BlocListener<ControlCubit, ControlState>(
+          listenWhen: (previous, current) =>
+              !previous.tunerDefaultSeeded && current.tunerDefaultSeeded,
+          listener: (_, _) => _showTunerSeededNotice(),
+        ),
+        BlocListener<ControlCubit, ControlState>(
+          listenWhen: (previous, current) =>
+              !previous.fxStopChangeNotice && current.fxStopChangeNotice,
+          listener: (_, state) => _showFxStopChangedNotice(state.pedalSetup),
+        ),
         BlocListener<TracksCubit, TracksState>(
           listener: (_, _) => _updateDisplayContext(),
         ),
-        BlocListener<PowerOffCubit, PowerOffState>(
+        BlocListener<PowerCubit, PowerState>(
+          listener: (_, _) => _updateDisplayContext(),
+        ),
+        BlocListener<DisplayBrightnessCubit, DisplayBrightnessState>(
+          listenWhen: (previous, current) =>
+              previous.softwareOf(DisplayRole.track) !=
+              current.softwareOf(DisplayRole.track),
           listener: (_, _) => _updateDisplayContext(),
         ),
         BlocListener<WaveformWindowCubit, WaveformWindowState>(
@@ -1269,6 +1524,22 @@ class _AppViewState extends State<_AppView> {
         BlocListener<AudioRecoveryCubit, AudioRecoveryState>(
           listenWhen: (previous, current) => previous.status != current.status,
           listener: (_, state) => _showAudioRecoveryBanner(state),
+        ),
+        // The drive chosen in Save to went: the next take goes to Internal,
+        // and the player is told rather than finding out afterwards.
+        BlocListener<RecordingDestinationCubit, RecordingDestinationState>(
+          listenWhen: (previous, current) =>
+              current.fellBackFrom != null &&
+              previous.fellBackFrom != current.fellBackFrom,
+          listener: (_, state) => _showSaveToFellBack(state.fellBackFrom!),
+        ),
+        BlocListener<PedalCubit, PedalState>(
+          listenWhen: (previous, current) =>
+              previous.powerSupply != current.powerSupply,
+          listener: (_, state) {
+            _showPowerCycleBanner(state.powerSupply);
+            _showWeakChargerNotice(state.powerSupply);
+          },
         ),
         BlocListener<UpdateCubit, UpdateState>(
           listenWhen: (previous, current) =>

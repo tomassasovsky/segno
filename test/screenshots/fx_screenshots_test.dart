@@ -150,8 +150,6 @@ final _rig = LooperState(
     inputChannels: 4,
     outputChannels: 4,
   ),
-  inputPeaks: const [0.5, 0.12, 0, 0],
-  outputPeaks: const [0.35, 0.28, 0, 0],
   outputBusCount: 2,
 );
 
@@ -185,6 +183,7 @@ void main() {
       'assets/fonts/Inter-SemiBold.ttf',
       'assets/fonts/Inter-Bold.ttf',
     ]);
+    await loadScreenshotFont('Arimo', ['assets/fonts/Arimo-Regular.ttf']);
     await loadScreenshotFont('JetBrains Mono', [
       'assets/fonts/JetBrainsMono-Regular.ttf',
       'assets/fonts/JetBrainsMono-Medium.ttf',

@@ -9,6 +9,7 @@
  * type/count atomics (the only race-free seam; see its comment). Behaviour
  * unchanged.
  */
+#include <math.h>   /* log2, lround — the tempo ratio in cents (#1179) */
 #include <stdint.h>
 #include <string.h> /* memset — the NULL-engine telemetry read */
 
@@ -80,7 +81,8 @@ static void le_timing_track_fields(le_track_snapshot* out, int code) {
  * when lane 0 records no input). */
 static uint32_t le_lane_input_bits(le_lane* ln) {
   const int32_t ic = load_i32(&ln->a_input_channel);
-  return ic >= 0 ? (1u << ic) : 0u;
+  /* An instrument source (#1197) has no bit in this legacy 32-bit mask. */
+  return ic >= 0 && ic < LE_MAX_CHANNELS ? (1u << ic) : 0u;
 }
 
 /* Fills a track snapshot from the track's transport plus lane 0's content (the
@@ -121,6 +123,26 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->sync_divisor = load_i32(&tr->a_sync_divisor);
   out->one_shot = load_i32(&tr->a_one_shot);
   out->reversed = load_i32(&tr->a_reversed); /* #1162 */
+  out->head_rate_milli = load_i32(&tr->a_head_rate_milli); /* #1179 */
+  out->transpose_st = load_i32(&tr->a_transpose_st);
+  out->follow_override = load_i32(&tr->a_follow_override);
+  out->pitch_override = load_i32(&tr->a_pitch_override);
+  out->span_frames = load_i32(&tr->a_span_clock); /* #1179 Part 4b */
+  {
+    /* The tempo ratio's pitch on what sounds: the source's length over the
+     * span it plays across (the take's own while dry). */
+    const int32_t len = load_i32(&tr->lanes[0].a_len);
+    const int32_t play = le_track_play_span(engine, tr);
+    const int32_t src = load_i32(&tr->a_src_out);
+    const int32_t sounding = src > 0 ? src : len;
+    out->pitch_effective_cents =
+        len > 0 && play > 0 && sounding != play
+            ? (int32_t)lround(1200.0 * log2((double)sounding / (double)play))
+            : 0;
+  }
+  out->transpose_effective_st = load_i32(&tr->a_transpose_eff);
+  out->length_history_refusals = atomic_load_explicit(
+      &tr->a_length_history_refusals, memory_order_relaxed); /* #1168 */
   /* Timing fields are filled below from one coherent callback tuple. */
   /* The caller fills timing from one coherent family tuple. */
   out->overdub_feedback_override = load_f32(&tr->a_overdub_fb_bits);
@@ -344,6 +366,31 @@ uint64_t le_engine_monitor_fx_fingerprint(le_engine* engine, int32_t input) {
                                  &m->a_fx_chain_enabled);
 }
 
+/* What a song-tempo change does now (#1179 Part 4a), from the published
+ * state: the callback's le_tempo_follow_open, which also waits out a punch
+ * tail or a seam deferral this view cannot see. */
+static int32_t le_tempo_follow_now(le_engine* e) {
+  const int counting_in = load_i32(&e->a_counting_in) != 0;
+  int content = 0, follower = 0, busy = counting_in;
+  const int32_t fallback = load_i32(&e->a_follow_tempo);
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    le_track* t = &e->tracks[c];
+    const int32_t st = load_i32(&t->a_state);
+    if (load_i32(&t->a_pending) || load_i32(&t->a_pending_launch)) busy = 1;
+    if (st == LE_TRACK_EMPTY) continue;
+    content = 1;
+    if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) busy = 1;
+    const int32_t override = load_i32(&t->a_follow_override);
+    if (override >= 0 ? override : fallback) follower = 1;
+  }
+  if (!content) return counting_in ? LE_TEMPO_FOLLOW_BUSY : LE_TEMPO_FOLLOW_FREE;
+  if (load_i32(&e->a_master_len) <= 0 || load_i32(&e->a_loop_bars) <= 0) {
+    return LE_TEMPO_FOLLOW_NO_GRID;
+  }
+  if (!follower) return LE_TEMPO_FOLLOW_NO_FOLLOWER;
+  return busy ? LE_TEMPO_FOLLOW_BUSY : LE_TEMPO_FOLLOW_RETIMES;
+}
+
 void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   if (engine == NULL || out == NULL) return;
   /* Collect retired per-pass undo layers (and replenish shadow spares) on the
@@ -352,6 +399,25 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   const le_record_timing_readback timing = le_record_timing_read(engine, 1);
   out->record_timing_revision = timing.revision;
   out->record_timing_result = timing.result;
+  /* Instruments (#1197). */
+  for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
+    out->instrument_patch[k] = load_i32(&engine->a_inst_patch[k]);
+    out->instrument_voices[k] = load_i32(&engine->a_inst_voices[k]);
+    out->instrument_peaks[k] = load_f32(&engine->a_inst_peak_bits[k]);
+  }
+  out->voice_limit = load_i32(&engine->a_voice_limit);
+  out->voices_stolen =
+      atomic_load_explicit(&engine->a_voices_stolen, memory_order_relaxed);
+  out->voices_stolen_hard =
+      atomic_load_explicit(&engine->a_voices_stolen_hard, memory_order_relaxed);
+  out->synth_epoch =
+      atomic_load_explicit(&engine->a_synth_epoch, memory_order_acquire);
+  out->instrument_events_refused =
+      atomic_load_explicit(&engine->a_inst_events_refused, memory_order_relaxed);
+  out->instrument_fallback_blocks =
+      atomic_load_explicit(&engine->a_inst_fallback_blocks, memory_order_relaxed);
+  out->instrument_sustain_refused =
+      atomic_load_explicit(&engine->a_inst_sustain_refused, memory_order_relaxed);
   out->running = atomic_load_explicit(&engine->a_running, memory_order_acquire);
   out->device_present =
       atomic_load_explicit(&engine->a_device_present, memory_order_acquire);
@@ -394,6 +460,59 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
    * flag describes a live capture that died, not the absence of one. */
   out->perf_stopped =
       engine->perf.drain ? le_perf_drain_self_stopped(engine->perf.drain) : 0;
+  out->perf_ring_seconds = atomic_load_explicit(&engine->a_perf_ring_seconds,
+                                                memory_order_relaxed);
+  out->perf_stop_reason = atomic_load_explicit(&engine->a_perf_stop_reason,
+                                               memory_order_relaxed);
+  out->perf_bytes_written = atomic_load_explicit(
+      &engine->a_perf_bytes_written, memory_order_relaxed);
+  out->perf_first_drop_frame = atomic_load_explicit(
+      &engine->a_perf_first_drop_frame, memory_order_relaxed);
+  out->perf_overs =
+      atomic_load_explicit(&engine->a_perf_overs, memory_order_relaxed);
+  {
+    int32_t streams = 0;
+    uint32_t frame_bytes = 0;
+    if (atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
+      streams = 1;
+      frame_bytes = (uint32_t)engine->perf.master_channels * 4u;
+      for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+        if (engine->perf.input_mask & (UINT64_C(1) << c)) {
+          streams++;
+          frame_bytes += 8u;
+        }
+      }
+    } else {
+      int32_t out_ch[2];
+      const int found = le_perf_first_enabled_pair(engine, out_ch);
+      if (found > 0) {
+        streams = 1;
+        frame_bytes = (uint32_t)found * 4u;
+        /* The sources le_perf_arm would capture: monitored, and present on
+         * the device, or an instrument slot with a patch (#1197). */
+        const int32_t in_ch = load_i32(&engine->a_in_channels);
+        const int32_t limit = in_ch > 0 && in_ch < LE_MAX_CHANNELS
+                                  ? in_ch
+                                  : LE_MAX_CHANNELS;
+        for (int32_t c = 0; c < LE_MAX_SOURCES; ++c) {
+          if (c < LE_INSTRUMENT_SOURCE_BASE
+                  ? c >= limit
+                  : engine->inst_patch_requested
+                            [c - LE_INSTRUMENT_SOURCE_BASE] < 0) {
+            continue;
+          }
+          if (load_i32(&engine->monitors[c].a_enabled)) {
+            streams++;
+            frame_bytes += 8u;
+          }
+        }
+      }
+    }
+    out->perf_capture_streams = streams;
+    out->perf_capture_frame_bytes = frame_bytes;
+  }
+  out->perf_checkpoint_failures = atomic_load_explicit(
+      &engine->a_perf_checkpoint_failures, memory_order_relaxed);
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_fill_track_snapshot(engine, t, t < engine->track_count,
@@ -409,6 +528,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->quantize_div = timing.remembered_division;
   out->tempo_source = load_i32(&engine->a_tempo_source);
   out->loop_bars = load_i32(&engine->a_loop_bars);
+  out->loop_beats = load_i32(&engine->a_loop_beats); /* #1168 */
   out->current_beat = load_i32(&engine->a_current_beat);
   /* Click + count-in (trailing block; click-off defaults read 0/0/1/0/0/0). */
   /* A command receipt is sampled only after commands_settled acquired the
@@ -433,8 +553,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->looper_mode = load_i32(&engine->a_looper_mode);
   /* Primary track (B3, D18; trailing block; default reads -1 = none). */
   out->primary_track = load_i32(&engine->a_primary_track);
-  /* MIDI clock (Phase C, D15; trailing block; default reads 0 = OFF). */
-  out->clock_mode = load_i32(&engine->a_clock_mode);
+  /* MIDI clock send (Phase C, D15; trailing block; default reads 0). */
+  out->clock_send = load_i32(&engine->a_clock_send);
   /* Native MIDI input sink totals (#1228 Part 1; trailing block). */
   out->midi_in_events =
       atomic_load_explicit(&engine->a_midi_in_events, memory_order_relaxed);
@@ -454,6 +574,20 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->midi_in_attached_mask = attached;
   out->midi_in_rebinds =
       atomic_load_explicit(&engine->a_midi_in_rebinds, memory_order_relaxed);
+  /* MIDI clock sync (#1228 Part 2; trailing block). */
+  out->clock_state = load_i32(&engine->a_clock_state);
+  out->clock_source_port = load_i32(&engine->a_clock_source);
+  out->clock_follow_transport = load_i32(&engine->a_clock_follow_transport);
+  out->clock_loss_policy = load_i32(&engine->a_clock_loss_policy);
+  out->clock_bpm = load_f32(&engine->a_clock_bpm_bits);
+  out->clock_out_of_range = load_i32(&engine->a_clock_out_of_range);
+  out->clock_pulses =
+      atomic_load_explicit(&engine->a_clock_pulses, memory_order_relaxed);
+  out->clock_receipt =
+      atomic_load_explicit(&engine->a_clock_receipt, memory_order_acquire);
+  out->clock_result = load_i32(&engine->a_clock_result);
+  out->clock_losses =
+      atomic_load_explicit(&engine->a_clock_losses, memory_order_relaxed);
   /* Input clip + conditioning activity (input clip, S2; trailing block).
    * The clip mask is the audio thread's published verdict; the cond mask is
    * derived here from the published per-input enables intersected with the
@@ -462,7 +596,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->input_clip_mask =
       atomic_load_explicit(&engine->a_input_clip_mask, memory_order_relaxed);
   uint32_t cond_mask = 0u;
-  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+  for (int32_t c = 0; c < LE_MAX_CHANNELS; ++c) {
     if (load_i32(&engine->cond[c].a_enabled) &&
         !(out->excluded_input_mask & (1u << c))) {
       cond_mask |= 1u << c;
@@ -482,6 +616,21 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
     out->output_mono[k] = load_i32(&engine->outputs[k].a_mono);
     out->output_balance[k] = load_f32(&engine->outputs[k].a_balance_bits);
   }
+  /* #1179: one load, so the pair is always one factor the callback set. */
+  const int32_t speed = load_i32(&engine->a_speed_ratio);
+  out->speed_numer = le_speed_numer_of(speed);
+  out->speed_denom = le_speed_denom_of(speed);
+  out->transpose_bypass = load_i32(&engine->a_transpose_bypass);
+  out->recorded_tempo_bpm = load_f32(&engine->a_recorded_tempo_bits);
+  out->follow_tempo = load_i32(&engine->a_follow_tempo);
+  out->tempo_follow = le_tempo_follow_now(engine);
+  out->pitch_follows_speed = load_i32(&engine->a_pitch_follows);
+  out->recorded_length_frames = load_i32(&engine->a_rec_master_len);
+  const uint32_t song = atomic_load_explicit(&engine->a_song_queue,
+                                            memory_order_relaxed);
+  out->song_queued_track = (int32_t)(song & 255u) - 1;
+  out->song_queue_progress = (float)(song >> 8) / 16777215.0f;
+  out->song_last_section = load_i32(&engine->a_song_last);
   out->tail_reset_rev =
       atomic_load_explicit(&engine->a_tail_reset_rev, memory_order_relaxed);
   const int perf_armed =
@@ -510,9 +659,15 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
     out->input_peaks[c] = load_f32(&engine->a_in_peak_ch_bits[c]);
     out->output_peaks[c] = load_f32(&engine->a_out_peak_ch_bits[c]);
     out->input_trim[c] = load_f32(&engine->a_in_trim_bits[c]);
-    out->monitor_peaks[c] =
-        c < LE_MAX_MONITORED_INPUTS ? load_f32(&engine->monitors[c].a_peak_bits)
-                                    : 0.0f;
+  }
+  for (int32_t c = 0; c < LE_MAX_SOURCES; ++c) {
+    out->monitor_peaks[c] = load_f32(&engine->monitors[c].a_peak_bits);
+  }
+  /* Instrument sources (#1197): the bus's block peak, trim 1. */
+  for (int32_t k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
+    out->input_peaks[LE_INSTRUMENT_SOURCE_BASE + k] =
+        load_f32(&engine->a_inst_peak_bits[k]);
+    out->input_trim[LE_INSTRUMENT_SOURCE_BASE + k] = 1.0f;
   }
   /* The audio-callback telemetry (#722) is deliberately NOT read here — it has
    * its own entry point below. Anything on this struct is projected into the
@@ -546,6 +701,7 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->clear_restore = 0;
     out->redo_depth = 0;
     out->peel_depth = 0;
+    out->length_history_refusals = 0;
     out->rms = 0.0f;
     out->peak = 0.0f;
     out->input_mask = 0x1u;

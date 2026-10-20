@@ -161,7 +161,9 @@ class InputConditioningCubit extends Cubit<InputConditioningState> {
 
   Future<void> _restore() async {
     final restored = <int, InputConditioning>{};
-    for (var input = 0; input < kMaxMonitoredInputs; input++) {
+    // Conditioning is a hardware-input stage: instrument sources (#1197)
+    // have none.
+    for (var input = 0; input < kMaxChannels; input++) {
       final config = await _restoreInput(input);
       if (config != null) restored[input] = config;
     }

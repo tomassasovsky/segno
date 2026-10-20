@@ -20,16 +20,21 @@ export 'package:segno_engine/segno_engine.dart'
         HistoryKind,
         InputConditioningParam,
         LaneCacheState,
+        LengthEdit,
         LooperMode,
         LooperModeGate,
         PendingLaunchAction,
+        PitchMode,
         PluginScanProgress,
         RecordStartEditKind,
         RecordTiming,
         ReopenOutcome,
+        SpeedFactor,
+        TempoFollowState,
         TempoSource,
         TrackHistory,
         TrackState,
+        TransposePitch,
         inputTrimGainOfDb,
         kInputTrimStepDb,
         kMaxChannels,
@@ -83,10 +88,12 @@ export 'src/models/input_monitor.dart';
 export 'src/models/input_setup.dart';
 export 'src/models/lane.dart';
 export 'src/models/looper_state.dart';
+export 'src/models/meter_levels.dart';
 export 'src/models/mix_settings_snapshot.dart';
 export 'src/models/output_setup.dart';
 export 'src/models/plugin_descriptor.dart'
     show PluginDescriptor, PluginFormat, PluginParamInfo;
+export 'src/models/selected_render.dart';
 export 'src/models/session_rig.dart';
 export 'src/models/track.dart';
 // Domain effect models replace the engine's raw effect types in the UI. The
@@ -121,6 +128,7 @@ export 'src/models/tuner_reading.dart';
 // is exported above with the other domain models.
 export 'src/plugin_catalog.dart'
     show PluginCacheKey, PluginCatalog, PluginCatalogCache, PluginFileStat;
+export 'src/render_job.dart';
 
 /// The iteration ceiling for the structural output gate's bootstrap reapply
 /// scan.
@@ -129,8 +137,8 @@ export 'src/plugin_catalog.dart'
 /// is default-on (only explicitly-disabled outputs are persisted), so no exact
 /// bound is needed for correctness. This is only how far the bootstrap reapply
 /// scans the `output_enabled.$out` keys. It is its own number: the monitor
-/// reapply scans `[0, kMaxMonitoredInputs)`, which is every hardware input
-/// (32) since slice 3, and outputs have nothing to do with what the monitor
+/// reapply scans every hardware input (32, `kMaxChannels`) since slice 3, and
+/// outputs have nothing to do with what the monitor
 /// path covers. A stored off-state for an output beyond the current device's
 /// channel count is ignored by the engine and never corrupts routing.
 const int kMaxOutputs = 8;

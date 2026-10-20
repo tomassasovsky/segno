@@ -156,6 +156,63 @@ void main() {
     },
   );
 
+  testWidgets(
+    'a StoppedEarly/volumeLost result says the USB drive went (#1177)',
+    (tester) async {
+      await pump(
+        tester,
+        const PerformanceRecorderCompleted(
+          PerformanceRecordStoppedEarly(
+            '/media/1-SEGNO_USB/Segno/Performances/perf-5',
+            PerformanceStopReason.volumeLost,
+          ),
+        ),
+      );
+      final strings = await l10n();
+
+      expect(find.text(strings.perfStoppedVolumeLost), findsOneWidget);
+    },
+  );
+
+  testWidgets('a take stopped at the reserve says the recorded part is kept '
+      '(#1198)', (tester) async {
+    await pump(
+      tester,
+      const PerformanceRecorderCompleted(
+        PerformanceRecordStoppedEarly(
+          '/exports/perf-5',
+          PerformanceStopReason.reserveReached,
+        ),
+      ),
+    );
+    final strings = await l10n();
+
+    expect(
+      find.text(
+        'Storage reserve reached. The recorded part of this take is kept.',
+      ),
+      findsOneWidget,
+    );
+    expect(strings.perfStoppedReserve, isNot(strings.perfStoppedSlowStorage));
+  });
+
+  testWidgets('a take the storage could not keep up with says so (#1198)', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      const PerformanceRecorderCompleted(
+        PerformanceRecordStoppedEarly(
+          '/exports/perf-6',
+          PerformanceStopReason.slowStorage,
+        ),
+      ),
+    );
+    final strings = await l10n();
+
+    expect(find.text(strings.perfStoppedSlowStorage), findsOneWidget);
+  });
+
   testWidgets('the reveal button is present with a non-empty label', (
     tester,
   ) async {
@@ -347,56 +404,6 @@ void main() {
       );
     },
   );
-
-  testWidgets('the re-export button calls cubit.reExport when tapped', (
-    tester,
-  ) async {
-    when(() => cubit.reExport()).thenAnswer((_) async {});
-    await pump(
-      tester,
-      const PerformanceRecorderCompleted(
-        PerformanceRecordDone('/exports/perf-1'),
-      ),
-    );
-
-    await tester.tap(find.byKey(const Key('perfCompletion_reExport')));
-    await tester.pumpAndSettle();
-
-    verify(() => cubit.reExport()).called(1);
-  });
-
-  testWidgets(
-    'the re-export button is disabled while a re-export is in progress',
-    (tester) async {
-      await pump(
-        tester,
-        const PerformanceRecorderCompleted(
-          PerformanceRecordDone('/exports/perf-1'),
-          isReExporting: true,
-        ),
-      );
-
-      final button = tester.widget<ConsoleSmallButton>(
-        find.byKey(const Key('perfCompletion_reExport')),
-      );
-      expect(button.onPressed, isNull);
-    },
-  );
-
-  testWidgets('a failed re-export shows the failure message', (
-    tester,
-  ) async {
-    await pump(
-      tester,
-      const PerformanceRecorderCompleted(
-        PerformanceRecordDone('/exports/perf-1'),
-        reExportFailed: true,
-      ),
-    );
-    final strings = await l10n();
-
-    expect(find.text(strings.perfExportReExportFailed), findsOneWidget);
-  });
 
   testWidgets('a glitched Done capture shows the dropped-frames banner', (
     tester,

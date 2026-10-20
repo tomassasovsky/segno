@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:segno/appliance/power_off/power_off_host.dart';
+import 'package:segno/appliance/power_off/power_host.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -53,7 +53,7 @@ class SettingsHomePage extends StatelessWidget {
                 borderColor: context.surface.menuPowerLine,
                 icon: LucideIcons.power,
                 semanticLabel: l10n.settingsPower,
-                onTap: () => requestPowerOff(context),
+                onTap: () => requestPower(context),
               )
             : null,
         children: [

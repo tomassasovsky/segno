@@ -1,12 +1,15 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:cpu_load_repository/cpu_load_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
@@ -25,11 +28,11 @@ import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/foot_mixer_view.dart';
+import 'package:segno/looper/view/fx/fx_page.dart';
 import 'package:segno/looper/view/mixer_column.dart';
-import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/stage_db_scale.dart';
 import 'package:segno/looper/view/stage_top_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
@@ -39,6 +42,8 @@ import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/tuner/application/tuner_settings.dart';
+import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:segno/visualizer/widgets/waveform_view.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:toastification/toastification.dart';
@@ -53,6 +58,9 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 class _MockTransportClockCubit extends MockCubit<TransportClockState>
     implements TransportClockCubit {}
 
+class _MockOutputLevelCubit extends MockCubit<OutputLevelState>
+    implements OutputLevelCubit {}
+
 class _MockSessionCubit extends MockCubit<SessionState>
     implements SessionCubit {}
 
@@ -61,18 +69,6 @@ class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
 
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
     implements AudioSetupCubit {}
-
-class _BrightnessStore extends FakeKeyValueStore {
-  bool refuse = true;
-
-  @override
-  Future<void> setDouble(String key, double value) async {
-    if (key == 'ui.brightness' && refuse) {
-      throw StateError('brightness storage unavailable');
-    }
-    await super.setDouble(key, value);
-  }
-}
 
 /// The rebuild probe for the `rebuild scope` group: a widget `TracksView.build`
 /// creates unconditionally, in console and desktop layouts alike.
@@ -90,7 +86,10 @@ Finder _column(int channel) => find.byWidgetPredicate(
 void main() {
   late MixSettingsCoordinator mixSettings;
   late FxChainPersistence fxPersistence;
-  setUpAll(() => registerFallbackValue(const LooperRecordPressed(0)));
+  setUpAll(() {
+    registerFallbackValue(const LooperRecordPressed(0));
+    registerFallbackValue(LengthEdit.doubled);
+  });
 
   late LooperBloc bloc;
   late TracksCubit tracks;
@@ -99,14 +98,22 @@ void main() {
   late SettingsRepository settings;
   late SessionCubit session;
   late PerformanceRepository performance;
+  late FakeAudioEngine performanceEngine;
+  // The free room an assigned Record performance sees; null is unknown.
+  int? freeBytes;
   late PerformanceRecorderCubit performanceRecorder;
   late TransportClockCubit transportClock;
+  late OutputLevelCubit outputLevel;
+  late StreamController<MeterLevels> meterLevels;
   late AudioSetupCubit audioSetup;
   late PedalRepository pedalRepo;
+  // The top bar's CPU readout; hidden unless a test gives it a figure.
+  late CpuLoadRepository cpuLoad;
   late FakePedalLink pedalLink;
 
   setUp(() {
     resetSegnoNavigatorForTest();
+    cpuLoad = const CpuLoadRepository.unsupported();
     // The toast registry is module-level and survives between tests; a stale
     // entry would make the next identical toast a silent duplicate. The
     // `toastification` singleton leaks too, across files, under
@@ -125,6 +132,12 @@ void main() {
     );
     tracks = TracksCubit(settings: settings);
     repository = _MockLooperRepository();
+    // Live levels reach the meters apart from the state (#1301): silence
+    // unless a test sets them with [setLevels].
+    meterLevels = StreamController<MeterLevels>.broadcast();
+    addTearDown(meterLevels.close);
+    when(() => repository.meters).thenReturn(const MeterLevels());
+    when(() => repository.meterLevels).thenAnswer((_) => meterLevels.stream);
     when(() => repository.fxReplayConfirmed).thenAnswer(
       (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
     );
@@ -172,10 +185,12 @@ void main() {
     pedalLink = FakePedalLink();
     pedalRepo = PedalRepository(pedalLink);
     addTearDown(pedalRepo.dispose);
+    performanceEngine = FakeAudioEngine();
+    freeBytes = null;
     performance = PerformanceRepository(
       guards: GuardRegistry(),
-      engine: FakeAudioEngine(),
-      exportsRoot: () async => '.',
+      engine: performanceEngine,
+      exportsRoot: () async => Directory.systemTemp.path,
     );
     // The stage status bar is unconditional now; its tempo/clock readout
     // selects a TransportClockCubit. Mocked so no tick timer outlives a pump.
@@ -184,6 +199,14 @@ void main() {
       transportClock,
       const Stream<TransportClockState>.empty(),
       initialState: const TransportClockState(),
+    );
+    // The footer's OUT readout. Mocked like the clock; a footer test sets its
+    // reading directly.
+    outputLevel = _MockOutputLevelCubit();
+    whenListen(
+      outputLevel,
+      const Stream<OutputLevelState>.empty(),
+      initialState: const OutputLevelState(),
     );
     fxPersistence = FxChainPersistence(looper: repository);
     mixSettings = testMixSettings(repository, settings: settings);
@@ -197,6 +220,7 @@ void main() {
       settings: settings,
       performance: performance,
       fadeSettings: ownedFade,
+      freeSpaceBytes: (_) async => freeBytes,
       ownedValues: OwnedValuePort(
         looper: repository,
         clickVolume: FakeClickVolumeControl(),
@@ -225,6 +249,13 @@ void main() {
     ).thenAnswer((_) async {});
   });
 
+  /// Sets the live levels the meters read: the starting levels for a pump,
+  /// and a tick for a meter already on screen.
+  void setLevels(MeterLevels levels) {
+    when(() => repository.meters).thenReturn(levels);
+    meterLevels.add(levels);
+  }
+
   void seed(LooperState state) {
     when(() => bloc.state).thenReturn(state);
     // Keep the repository snapshot (what ControlIntents reads) in step with
@@ -236,15 +267,17 @@ void main() {
   // The post-clear-all toast renders into a toastification overlay, which
   // needs the app's Navigator above it (hence wrapping MaterialApp, not its
   // child). Inert for the tests that never raise a toast.
-  Future<void> pump(
+  Future<void> pumpStage(
     WidgetTester tester, {
     KeyEventResult Function(FocusNode, KeyEvent)? onAncestorKey,
     Locale? locale,
+    List<NavigatorObserver> navigatorObservers = const [],
   }) => tester.pumpWidget(
     ToastificationWrapper(
       child: MaterialApp(
         // The root key, so Settings and its destinations push over the stage.
         navigatorKey: segnoNavigatorKey,
+        navigatorObservers: navigatorObservers,
         theme: AppTheme.neon,
         locale: locale,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -253,6 +286,7 @@ void main() {
           providers: [
             RepositoryProvider<LooperRepository>.value(value: repository),
             RepositoryProvider<PerformanceRepository>.value(value: performance),
+            RepositoryProvider<CpuLoadRepository>.value(value: cpuLoad),
             RepositoryProvider<SettingsRepository>.value(value: settings),
             RepositoryProvider<PedalRepository>.value(value: pedalRepo),
           ],
@@ -263,14 +297,20 @@ void main() {
               ),
               BlocProvider<LooperBloc>.value(value: bloc),
               BlocProvider<TransportClockCubit>.value(value: transportClock),
+              BlocProvider<OutputLevelCubit>.value(value: outputLevel),
               BlocProvider<TracksCubit>.value(value: tracks),
               BlocProvider<ControlCubit>.value(value: control),
               BlocProvider<SessionCubit>.value(value: session),
               BlocProvider<PerformanceRecorderCubit>.value(
                 value: performanceRecorder,
               ),
-              // The tray's Signal domain draws input cards, so opening it needs
-              // the same cubits the app provides around it.
+              // The foot Tuner face reads the same cubits the app provides.
+              BlocProvider<TunerCubit>(
+                create: (_) => TunerCubit(
+                  repository: repository,
+                  settings: TunerSettings(settings: settings),
+                ),
+              ),
               BlocProvider<InputsCubit>(
                 create: (_) =>
                     InputsCubit(settings: settings, repository: repository),
@@ -286,6 +326,12 @@ void main() {
               // The device-lost banner and the not-running gate read the
               // audio setup cubit (#453).
               BlocProvider<AudioSetupCubit>.value(value: audioSetup),
+              BlocProvider<TunerCubit>(
+                create: (_) => TunerCubit(
+                  repository: repository,
+                  settings: TunerSettings(settings: settings),
+                ),
+              ),
             ],
             child: onAncestorKey == null
                 ? const TracksView()
@@ -295,6 +341,28 @@ void main() {
       ),
     ),
   );
+
+  Future<void> pump(
+    WidgetTester tester, {
+    KeyEventResult Function(FocusNode, KeyEvent)? onAncestorKey,
+    Locale? locale,
+    Size size = const Size(1920, 1080),
+    List<NavigatorObserver> navigatorObservers = const [],
+  }) {
+    // The appliance's 1920 x 1080 page: the Mixer's top bar holds Backing &
+    // click, Reset mixer and the Tuner together, wider than the default
+    // 800 px test surface.
+    tester.view
+      ..physicalSize = size
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    return pumpStage(
+      tester,
+      onAncestorKey: onAncestorKey,
+      locale: locale,
+      navigatorObservers: navigatorObservers,
+    );
+  }
 
   // A clear-all on a rig with content now raises the undo toast, which mounts a
   // frame late and, once shown, holds a ~6s auto-close timer plus toast
@@ -365,21 +433,13 @@ void main() {
     },
   );
 
-  group('Settings opens over the stage, never the tray', () {
-    // The stage is under the Settings route, so its tray is offstage.
-    double scrim(WidgetTester tester) => tester
-        .widget<AnimatedOpacity>(
-          find.byKey(const Key('settingsTray_scrim'), skipOffstage: false),
-        )
-        .opacity;
-
+  group('Settings opens as a route over the stage', () {
     testWidgets('from the header icon', (tester) async {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
       await tester.tap(find.byKey(const Key('stage_settings')));
       await tester.pumpAndSettle();
       expect(find.byType(SettingsHomePage), findsOneWidget);
-      expect(scrim(tester), 0);
     });
 
     testWidgets('from the foot Mixer', (tester) async {
@@ -395,7 +455,6 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byType(SettingsHomePage), findsOneWidget);
-      expect(scrim(tester), 0);
     });
   });
 
@@ -430,18 +489,6 @@ void main() {
         await tester.sendKeyEvent(activation);
         await tester.pumpAndSettle();
         expect(find.byType(SettingsHomePage), findsOneWidget);
-        // Settings opens over the stage; the tray stays shut.
-        expect(
-          tester
-              .widget<AnimatedOpacity>(
-                find.byKey(
-                  const Key('settingsTray_scrim'),
-                  skipOffstage: false,
-                ),
-              )
-              .opacity,
-          0,
-        );
         verifyNever(() => bloc.add(const LooperPlayAllPressed()));
       },
     );
@@ -506,6 +553,9 @@ void main() {
     when(
       () => repository.setMute(muted: true),
     ).thenReturn(EngineResult.invalid);
+    when(
+      () => repository.setTunerInput(input: any(named: 'input')),
+    ).thenReturn(EngineResult.ok);
     when(() => repository.laneMuted(any(), any())).thenReturn(false);
     when(() => repository.fxRecipesSettled).thenReturn(true);
     when(() => repository.laneEffects(any(), any())).thenReturn(const []);
@@ -516,8 +566,6 @@ void main() {
     await pump(tester);
     control.setMode(InteractionMode.mixer);
     await tester.pump();
-    tester.element(find.byType(SettingsTray)).read<SettingsTrayCubit>().open();
-    await tester.pumpAndSettle();
     await control.toggleFootMixerMute();
     await tester.pumpAndSettle();
     expect(
@@ -566,7 +614,7 @@ void main() {
       control.setMode(InteractionMode.record);
       await tester.pump();
       await tester.pump();
-      expect(find.text('REV'), findsOneWidget);
+      // A forward track holds REV's slot with an invisible, unkeyed marker.
       expect(find.byKey(const Key('tracks_reverse_0')), findsOneWidget);
       expect(find.byKey(const Key('tracks_reverse_1')), findsNothing);
       expect(find.byKey(const Key('tracks_meta_2')), findsOneWidget);
@@ -577,31 +625,33 @@ void main() {
       );
     });
 
-    testWidgets('a forward meta row is the pen row: evenly spread, no REV', (
+    testWidgets('reversing a track moves nothing in its meta row (#1308)', (
       tester,
     ) async {
       pin(tester);
-      seed(
-        const LooperState(
-          tracks: [
-            Track(state: TrackState.playing, lengthFrames: 48000),
-            Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
-          ],
-        ),
+      LooperState rig({required bool reversed}) => LooperState(
+        tracks: [
+          Track(
+            state: TrackState.playing,
+            lengthFrames: 48000,
+            reversed: reversed,
+          ),
+        ],
       );
+      List<Rect> slots() => slotRects(find.byKey(const Key('tracks_meta_0')));
+      seed(rig(reversed: false));
       await pump(tester);
-      for (final channel in [0, 1]) {
-        Rect box(String part) =>
-            tester.getRect(find.byKey(Key('tracks_${part}_$channel')));
-        expect(find.byKey(Key('tracks_reverse_$channel')), findsNothing);
-        final gapBarsLayers = box('layers').left - box('bars').right;
-        final gapLayersFx = box('fx').left - box('layers').right;
-        expect(
-          gapLayersFx,
-          closeTo(gapBarsLayers, 1),
-          reason: 'track $channel',
-        );
-      }
+      expect(find.byKey(const Key('tracks_reverse_0')), findsNothing);
+      final forward = slots();
+      final fx = tester.getRect(find.byKey(const Key('tracks_fx_0')));
+      expect(forward, hasLength(4));
+
+      seed(rig(reversed: true));
+      await tester.pumpWidget(const SizedBox());
+      await pump(tester);
+      expect(find.byKey(const Key('tracks_reverse_0')), findsOneWidget);
+      expect(slots(), forward);
+      expect(tester.getRect(find.byKey(const Key('tracks_fx_0'))), fx);
     });
 
     for (final locale in const [Locale('en'), Locale('es')]) {
@@ -745,17 +795,17 @@ void main() {
   for (final (operation, notice, toast) in [
     (
       TrackOperation.fade,
-      'The fade could not be started. Try again.',
+      'The track is empty: there is nothing to fade.',
       AppToastId.footFadeFailure,
     ),
     (
       TrackOperation.reverse,
-      'The track could not be turned around. Try again.',
+      'The track is empty: there is nothing to turn around.',
       AppToastId.footReverseFailure,
     ),
   ]) {
-    testWidgets('an assigned ${operation.name} that reaches no track says so '
-        'outside its surface', (tester) async {
+    testWidgets('an assigned ${operation.name} aimed at an empty track says '
+        'so outside its surface', (tester) async {
       tester.view
         ..physicalSize = const Size(1920, 1080)
         ..devicePixelRatio = 1;
@@ -792,6 +842,188 @@ void main() {
     });
   }
 
+  testWidgets('Custom shows its face, and an on-screen press on an '
+      'assignment this build cannot run says so', (tester) async {
+    tester.view
+      ..physicalSize = const Size(1920, 1080)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    seed(const LooperState(tracks: [Track()]));
+    pedalLink.hello();
+    await tester.runAsync(
+      () => control.setPedalSetup(
+        const PedalSetup().withCustom(
+          PedalButton.clear,
+          bank: 0,
+          pair: const ControlGesturePair(
+            press: UnavailableAction('future:thing'),
+          ),
+        ),
+      ),
+    );
+    await pump(tester);
+    control.setMode(InteractionMode.custom);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('foot_custom_view')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('foot_custom_pedal_clear')));
+    await tester.pumpAndSettle();
+    expect(
+      find
+          .text(
+            "This control's action isn't available in this version. "
+            'Reassign it.',
+          )
+          .hitTestable(),
+      findsOneWidget,
+    );
+    expect(control.state.assignedActionFailure, 1);
+    dismissAppToast(AppToastId.assignedActionRefused);
+    await tester.pump(const Duration(seconds: 10));
+  });
+
+  for (final lowDisk in [false, true]) {
+    testWidgets('an assigned Record performance the rig refuses says why '
+        '(lowDisk: $lowDisk)', (tester) async {
+      tester.view
+        ..physicalSize = const Size(1920, 1080)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      seed(const LooperState(tracks: [Track()]));
+      if (lowDisk) {
+        freeBytes = 1;
+      } else {
+        performanceEngine.perfArmResult = EngineResult.invalid;
+      }
+      pedalLink.hello();
+      await tester.runAsync(
+        () => control.setPedalSetup(
+          const PedalSetup().withCustom(
+            PedalButton.stop,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: CommandAction(ControlCommand.recordPerformance),
+            ),
+          ),
+        ),
+      );
+      await pump(tester);
+      control.setMode(InteractionMode.custom);
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        pedalLink.press(PedalButton.stop, down: true);
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        pedalLink.press(PedalButton.stop, down: false);
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      });
+      await tester.pumpAndSettle();
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(
+        find
+            .text(
+              lowDisk
+                  ? l10n.perfLowDiskBlocked
+                  : l10n.assignedActionRefused(l10n.actionRecordPerformance),
+            )
+            .hitTestable(),
+        findsOneWidget,
+      );
+      expect(control.state.assignedActionFailure, 1);
+      expect(performanceEngine.perfArmCalls, lowDisk ? 0 : 1);
+      dismissAppToast(AppToastId.assignedActionRefused);
+      await tester.pump(const Duration(seconds: 10));
+    });
+  }
+
+  testWidgets('a refused assignment is named in its notice', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(1920, 1080)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    seed(
+      const LooperState(
+        tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
+      ),
+    );
+    when(
+      () => repository.undo(channel: any(named: 'channel')),
+    ).thenReturn(EngineResult.invalid);
+    const undo = TrackOperationAction(
+      operation: TrackOperation.undo,
+      scope: FixedTrackScope(0),
+    );
+    pedalLink.hello();
+    await tester.runAsync(
+      () => control.setPedalSetup(
+        const PedalSetup().withCustom(
+          PedalButton.clear,
+          bank: 0,
+          pair: const ControlGesturePair(press: undo),
+        ),
+      ),
+    );
+    await pump(tester);
+    control.setMode(InteractionMode.custom);
+    await tester.pumpAndSettle();
+    pedalLink.press(PedalButton.clear, down: true);
+    await tester.pump(const Duration(milliseconds: 50));
+    pedalLink.press(PedalButton.clear, down: false);
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pumpAndSettle();
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    expect(
+      find
+          .text(
+            l10n.assignedActionRefused(
+              controlActionLabel(l10n, const [], undo),
+            ),
+          )
+          .hitTestable(),
+      findsOneWidget,
+    );
+    expect(control.state.assignedActionFailure, 1);
+    dismissAppToast(AppToastId.assignedActionRefused);
+    await tester.pump(const Duration(seconds: 10));
+  });
+
+  testWidgets('the foot Tuner shows its face, and an arm the engine '
+      'refuses says so (#1229)', (tester) async {
+    tester.view
+      ..physicalSize = const Size(1920, 1080)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    seed(
+      const LooperState(
+        status: EngineStatus(inputChannels: 2),
+        tracks: [Track()],
+      ),
+    );
+    when(
+      () => repository.setTunerInput(input: any(named: 'input')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setTunerMute(any()),
+    ).thenReturn(EngineResult.invalid);
+    await pump(tester);
+    control.setMode(InteractionMode.tuner);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('foot_tuner_view')), findsOneWidget);
+    expect(
+      find.text('The tuner could not start. Try again.').hitTestable(),
+      findsOneWidget,
+    );
+    control.setMode(InteractionMode.record);
+    await tester.pumpAndSettle();
+    verify(() => repository.setTunerInput(input: -1)).called(1);
+    dismissAppToast(AppToastId.footTunerRefused);
+    await tester.pump(const Duration(seconds: 10));
+  });
+
   testWidgets('the layer badge drops by one when a Peel removes a layer', (
     tester,
   ) async {
@@ -819,6 +1051,74 @@ void main() {
     expect(layers('2'), findsOneWidget);
   });
 
+  group('Multiply / Divide (#1168)', () {
+    testWidgets('a sub-bar loop reads its beats on the stage', (
+      tester,
+    ) async {
+      tester.view
+        ..physicalSize = const Size(1920, 1080)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      // A sole 1-bar loop of 4/4 halved: 2 beats, no whole bar.
+      seed(
+        const LooperState(
+          transport: TransportState(
+            deviceRunning: true,
+            masterLengthFrames: 48000,
+            loopBeats: 2,
+          ),
+          status: EngineStatus(sampleRate: 48000),
+          tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
+        ),
+      );
+      await pump(tester);
+      expect(
+        find.bySemanticsLabel(RegExp('Track 1, 2 beats, 1 layer')),
+        findsWidgets,
+      );
+    });
+
+    testWidgets('the surface replaces the columns, and a refused edit shows '
+        'its own notice once', (tester) async {
+      tester.view
+        ..physicalSize = const Size(1920, 1080)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      seed(
+        const LooperState(
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ],
+        ),
+      );
+      when(
+        () => repository.editLength(
+          channel: any(named: 'channel'),
+          edit: any(named: 'edit'),
+        ),
+      ).thenAnswer((_) async => EngineResult.modeMismatch);
+      await pump(tester);
+      control.setMode(InteractionMode.divide);
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const Key('foot_length_view')), findsOneWidget);
+      control.activateFootLengthPedal(PedalButton.clear); // Last half
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'That length does not fit the other loops, or would leave half a '
+          'beat.',
+        ),
+        findsOneWidget,
+      );
+      expect(control.state.footLengthFailure, 1);
+      dismissAppToast(AppToastId.footLengthRefused);
+      await tester.pump(const Duration(seconds: 10));
+    });
+  });
+
   testWidgets('renders a tile per track', (tester) async {
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
     await pump(tester);
@@ -827,59 +1127,30 @@ void main() {
     expect(find.byKey(const Key('tracks_tile_1')), findsOneWidget);
   });
 
-  testWidgets('mounts the settings tray with its always-visible handle', (
+  testWidgets('the top bar Tuner button enters the Tuner by touch', (
+    tester,
+  ) async {
+    when(
+      () => repository.setTunerInput(input: any(named: 'input')),
+    ).thenReturn(EngineResult.ok);
+    when(() => repository.setTunerMute(any())).thenReturn(EngineResult.ok);
+    seed(const LooperState(tracks: [Track()]));
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('stage_tuner')));
+    await tester.pump();
+    expect(control.state.mode, InteractionMode.tuner);
+  });
+
+  testWidgets('the stage has no settings tray or pull handle', (
     tester,
   ) async {
     seed(const LooperState(tracks: [Track()]));
     await pump(tester);
 
-    expect(find.byKey(const Key('settingsTray_handle')), findsOneWidget);
+    expect(find.byKey(const Key('settingsTray_handle')), findsNothing);
   });
 
-  /// The tray's own state, read from inside the provider it lives under.
-  SettingsTrayState trayState(WidgetTester tester) =>
-      BlocProvider.of<SettingsTrayCubit>(
-        tester.element(find.byType(SettingsTray)),
-      ).state;
-
-  testWidgets('brightness failure stays visible above the real tray and '
-      'another adjustment saves', (tester) async {
-    tester.view
-      ..physicalSize = const Size(1920, 1080)
-      ..devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final store = _BrightnessStore();
-    settings = SettingsRepository(store: store);
-    seed(const LooperState(tracks: [Track()]));
-    await pump(tester);
-    tester.element(find.byType(SettingsTray)).read<SettingsTrayCubit>().open();
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('settingsTrayRail_brightness')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('settingsTray_brightness')));
-    await tester.pumpAndSettle();
-    final context = tester.element(find.byType(SettingsTray));
-    final title = context.l10n.powerOffSaveFailedTitle;
-    // A SnackBar can exist but be painted and hit-tested behind the opaque
-    // SettingsTray sibling. The failure must be reachable above that sibling.
-    expect(find.text(title).hitTestable(), findsOneWidget);
-    expect(store.values['ui.brightness'], isNull);
-    expect(tester.takeException(), isNull);
-    store.refuse = false;
-    await tester.drag(
-      find.byKey(const Key('settingsTray_brightness')),
-      const Offset(0, -80),
-    );
-    await tester.pumpAndSettle();
-    expect(
-      await settings.loadBrightness(),
-      context.read<DisplayBrightnessCubit>().state,
-    );
-    await tester.pump(const Duration(seconds: 10));
-  });
-
-  testWidgets('G reaches the Effects route, and no longer opens the tray', (
+  testWidgets('G reaches the Effects route', (
     tester,
   ) async {
     seed(const LooperState(tracks: [Track()]));
@@ -888,22 +1159,22 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
     await tester.pumpAndSettle();
 
-    // Effects is a full-screen route now, not a tray domain. The route itself
-    // needs the app's root navigator, which this harness does not install, so
-    // what this pins is that the handler runs cleanly and leaves the tray
-    // alone — the shortcut used to open it.
+    // Effects is a full-screen route. The route itself needs the app's root
+    // navigator, which this harness does not install, so what this pins is
+    // that the handler runs cleanly.
     expect(tester.takeException(), isNull);
-    expect(trayState(tester).dragProgress, 0);
   });
 
-  testWidgets('tapping a tile records that channel in record mode', (
+  testWidgets('tapping a tile only selects that channel in record mode', (
     tester,
   ) async {
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
     await pump(tester);
 
     await tester.tap(find.byKey(const Key('tracks_tile_1')));
-    verify(() => bloc.add(const LooperRecordPressed(1))).called(1);
+    // Record/Play operates the selected track; the tap arms it, never records.
+    verifyNever(() => bloc.add(const LooperRecordPressed(1)));
+    expect(control.state.cursor, 1);
   });
 
   testWidgets('tapping a tile mutes/unmutes that channel in mute mode', (
@@ -921,19 +1192,44 @@ void main() {
     expect(control.state.cursor, 1);
   });
 
-  testWidgets('tapping a tile toggles that track FX chain in FX mode', (
+  testWidgets('FX mode draws the FX face instead of the track tiles', (
     tester,
   ) async {
     control.setMode(InteractionMode.fx);
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
     await pump(tester);
 
-    await tester.tap(find.byKey(const Key('tracks_tile_1')));
-    // One interaction mode for every surface: touch does what the pedal's
-    // track stomp and the number keys do.
-    verify(() => bloc.add(const LooperTrackChainToggled(1))).called(1);
-    verifyNever(() => bloc.add(const LooperRecordPressed(1)));
-    verifyNever(() => bloc.add(const LooperMuteToggled(1)));
+    // The pen's pedal-map face (10/03) replaces the stage; no tile is drawn
+    // to tap (#1229).
+    expect(find.byKey(const Key('foot_fx_view')), findsOneWidget);
+    expect(find.byKey(const Key('tracks_tile_1')), findsNothing);
+  });
+
+  testWidgets('a refused FX stomp says why, once (#1229)', (tester) async {
+    seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+    await control.setGlobalBindings(
+      PedalBindingSet([
+        PedalBinding(
+          key: const PedalBindingKey(button: PedalButton.undo),
+          target: const FxChainTarget(
+            FxAddress(stage: FxStage.input, index: 9),
+          ).canonicalString(),
+        ),
+      ]),
+    );
+    control.setMode(InteractionMode.fx);
+    await pump(tester);
+    control.activateFootFxPedal(PedalButton.undo);
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        "This pedal's effect is no longer available. Reassign it.",
+      ),
+      findsOneWidget,
+    );
+    expect(control.state.footFxFailure, 1);
+    dismissAppToast(AppToastId.footFxFailure);
+    await tester.pump(const Duration(seconds: 10));
   });
 
   testWidgets('the number keys toggle FX chains in FX mode', (tester) async {
@@ -947,6 +1243,49 @@ void main() {
     verify(() => bloc.add(const LooperTrackChainToggled(1))).called(1);
     verifyNever(() => bloc.add(const LooperMuteToggled(1)));
     expect(control.state.cursor, 1); // the digit still selects
+  });
+
+  testWidgets('a number key runs its track switch binding in FX mode, bank '
+      'B on 5 to 8 (#1229 review L2)', (tester) async {
+    seed(
+      const LooperState(
+        tracks: [
+          Track(),
+          Track(channel: 1),
+          Track(channel: 2),
+          Track(channel: 3),
+          Track(channel: 4),
+          Track(channel: 5),
+        ],
+      ),
+    );
+    // Track switch 2 on bank B is bound to an input that is gone: running
+    // it is refused with the face's notice, which is how the test sees it.
+    await control.setGlobalBindings(
+      PedalBindingSet([
+        PedalBinding(
+          key: const PedalBindingKey(button: PedalButton.track2, bank: 1),
+          target: const FxChainTarget(
+            FxAddress(stage: FxStage.input, index: 9),
+          ).canonicalString(),
+        ),
+      ]),
+    );
+    control.setMode(InteractionMode.fx);
+    await pump(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit6);
+    await tester.pumpAndSettle();
+    expect(control.state.footFxFailure, 1);
+    verifyNever(() => bloc.add(const LooperTrackChainToggled(5)));
+    expect(control.state.cursor, 5);
+    // Switch 2 on bank A is unbound: its key toggles the track's own chain.
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+    await tester.pump();
+    verify(() => bloc.add(const LooperTrackChainToggled(1))).called(1);
+    expect(control.state.footFxFailure, 1);
+    dismissAppToast(AppToastId.footFxFailure);
+    await tester.pump(const Duration(seconds: 10));
   });
 
   testWidgets('M cycles the mode chip through every mode, announcing each '
@@ -1037,176 +1376,14 @@ void main() {
     expect(l10n.a11yTrackFxChainOn, 'Track FX chain on');
   });
 
-  testWidgets('an FX-mode track tile reads its chain state to a screen '
-      'reader', (tester) async {
-    final handle = tester.ensureSemantics();
-    try {
-      control.setMode(InteractionMode.fx);
-      seed(
-        const LooperState(
-          tracks: [Track(), Track(channel: 1, chainEnabled: false)],
-        ),
-      );
-      await pump(tester);
-
-      // The tile carries no other cue for chain state, so the label must:
-      // one track engaged, one bypassed.
-      expect(find.bySemanticsLabel(RegExp('FX chain on')), findsOneWidget);
-      expect(find.bySemanticsLabel(RegExp('FX chain off')), findsOneWidget);
-    } finally {
-      handle.dispose();
-    }
-  });
-
-  group('FX-mode stage transform (#692)', () {
-    // A track with a real two-entry chain, so the entry run has chips to draw.
-    // Not const: BuiltInEffect is not a const constructor.
-    final chainedTrack = Track(
-      effects: [
-        BuiltInEffect(type: TrackEffectType.drive),
-        BuiltInEffect(type: TrackEffectType.reverb),
-      ],
-    );
-
-    testWidgets('an engaged chain re-dresses the tile with an ON power pill '
-        'and its entries in signal order', (tester) async {
-      control.setMode(InteractionMode.fx);
-      seed(LooperState(tracks: [chainedTrack]));
-      await pump(tester);
-
-      // The cell is named CHAIN-FIRST (#692): its bound chain's target and the
-      // chain itself — TRACK 1 (its own Track-stage chain, the default target)
-      // and the head effect — never the track's own name as the cell identity.
-      expect(find.byKey(const Key('tracks_tileFxTarget')), findsOneWidget);
-      expect(find.text('TRACK 1 · DRIVE'), findsOneWidget);
-      // The dominant power pill states the whole chain's on/off…
-      expect(find.byKey(const Key('tracks_tileFxPower')), findsOneWidget);
-      expect(find.text('ON'), findsOneWidget);
-      // …and the entries read as chips in processing order.
-      expect(find.byKey(const Key('tracks_tileFxEntryRun')), findsOneWidget);
-      expect(find.text('Drive'), findsOneWidget);
-      expect(find.text('Reverb'), findsOneWidget);
-    });
-
-    testWidgets('a bypassed chain shows an OFF pill and dims its entry run', (
-      tester,
-    ) async {
-      control.setMode(InteractionMode.fx);
-      seed(
-        LooperState(
-          tracks: [
-            Track(
-              chainEnabled: false,
-              effects: [BuiltInEffect(type: TrackEffectType.drive)],
-            ),
-          ],
-        ),
-      );
-      await pump(tester);
-
-      expect(find.text('OFF'), findsOneWidget);
-      // A switched-off chain is still named, but dimmed (R26) rather than
-      // hidden — the entries stay on the tile so the player sees what is out.
-      final runOpacity = tester.widget<Opacity>(
-        find
-            .ancestor(
-              of: find.byKey(const Key('tracks_tileFxEntryRun')),
-              matching: find.byType(Opacity),
-            )
-            .first,
-      );
-      expect(runOpacity.opacity, lessThan(1));
-      expect(find.text('Drive'), findsOneWidget);
-    });
-
-    testWidgets('an empty track says NO CHAIN and shows no power pill', (
-      tester,
-    ) async {
-      control.setMode(InteractionMode.fx);
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-
-      expect(find.byKey(const Key('tracks_tileFxNoChain')), findsOneWidget);
-      expect(find.text('NO CHAIN'), findsOneWidget);
-      // Nothing to power and no chain to name: the whole centered group is
-      // replaced by NO CHAIN, so neither the pill, the entry run, nor the
-      // TARGET · CHAIN identity is drawn.
-      expect(find.byKey(const Key('tracks_tileFxTarget')), findsNothing);
-      expect(find.byKey(const Key('tracks_tileFxPower')), findsNothing);
-      expect(find.byKey(const Key('tracks_tileFxEntryRun')), findsNothing);
-    });
-
-    testWidgets('the stage takes the FX surface only in FX mode', (
-      tester,
-    ) async {
-      final fxSurface = AppTheme.neon.extension<SurfaceTheme>()!.fxSurface;
-      Iterable<Color?> scaffoldBackgrounds() => tester
-          .widgetList<Scaffold>(find.byType(Scaffold))
-          .map((s) => s.backgroundColor);
-
-      seed(LooperState(tracks: [chainedTrack]));
-      await pump(tester);
-      // Record mode: no stage takes the FX surface.
-      expect(scaffoldBackgrounds(), isNot(contains(fxSurface)));
-
-      control.setMode(InteractionMode.fx);
-      await tester.pump();
-      // FX mode: the stage does.
-      expect(scaffoldBackgrounds(), contains(fxSurface));
-    });
-
-    testWidgets('leaving FX mode restores the tile exactly', (tester) async {
-      control.setMode(InteractionMode.fx);
-      seed(LooperState(tracks: [chainedTrack]));
-      await pump(tester);
-      expect(find.byKey(const Key('tracks_tileFxPower')), findsOneWidget);
-
-      // Back to record: the dressing is gone and the tile is its plain self —
-      // the geometry and keys never moved, only the dressing came and went.
-      control.setMode(InteractionMode.record);
-      await tester.pump();
-      expect(find.byKey(const Key('tracks_tileFxPower')), findsNothing);
-      expect(find.byKey(const Key('tracks_tileFxEntryRun')), findsNothing);
-      expect(find.text('ON'), findsNothing);
-      // The chain-first identity is an FX-mode dressing too: gone with the
-      // rest, and the track name label returns to identify the column.
-      expect(find.byKey(const Key('tracks_tileFxTarget')), findsNothing);
-      // The tile itself — its key, its tap target — is untouched.
-      expect(find.byKey(const Key('tracks_tile_0')), findsOneWidget);
-    });
-
-    testWidgets('the FX-mode tap still toggles the chain past the dressing', (
-      tester,
-    ) async {
-      // The dressing is an IgnorePointer overlay, so the tile tap that toggles
-      // the chain must still land — the footswitch/tap map is frozen (#692).
-      control.setMode(InteractionMode.fx);
-      seed(LooperState(tracks: [chainedTrack]));
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('tracks_tile_0')));
-      verify(() => bloc.add(const LooperTrackChainToggled(0))).called(1);
-    });
-  });
-
-  group('FX-mode cell identity is chain-first, never the track (#692)', () {
-    /// The cell's identity line — the FX-mode dressing's own text, which the
-    /// always-visible track name above the meter is not part of.
-    String fxIdentity(WidgetTester tester) => tester
-        .widget<AppText>(find.byKey(const Key('tracks_tileFxTarget')))
-        .data!;
-
-    // These pump a TrackColumn DIRECTLY so the bound chain's FX target can be
-    // injected — the on-screen stage wires every column to its own Track
-    // chain, so a non-track target (e.g. Master) cannot reach the cell through
-    // TracksView, but the cell must still name it and never the column's track.
+  group('a track column is a live view of the bloc', () {
+    // These pump a TrackColumn DIRECTLY, so the track it is handed and the
+    // track the bloc holds can be made to differ on purpose.
     Future<void> pumpColumn(
       WidgetTester tester, {
       required Track track,
       required String name,
       required InteractionMode mode,
-      FxAddress? fxTarget,
-      Map<int, String> inputNames = const {},
       Track? liveTrack,
     }) {
       // [track] is seeded as the bloc's OWN track for its channel, not just
@@ -1229,6 +1406,7 @@ void main() {
               providers: [
                 BlocProvider<LooperBloc>.value(value: bloc),
                 BlocProvider<TransportClockCubit>.value(value: transportClock),
+                BlocProvider<OutputLevelCubit>.value(value: outputLevel),
                 BlocProvider<TracksCubit>.value(value: tracks),
                 BlocProvider<ControlCubit>.value(value: control),
               ],
@@ -1242,8 +1420,6 @@ void main() {
                       name: name,
                       selected: false,
                       mode: mode,
-                      fxTarget: fxTarget,
-                      inputNames: inputNames,
                     ),
                   ),
                 ),
@@ -1253,26 +1429,6 @@ void main() {
         ),
       );
     }
-
-    testWidgets("a chain on the column's own track reads TRACK n · CHAIN, "
-        'not the track name', (tester) async {
-      await pumpColumn(
-        tester,
-        // A custom name distinct from its stage label, so borrowing it as the
-        // identity would be visible — the default name is itself "TRACK n".
-        name: 'GUITAR',
-        mode: InteractionMode.fx,
-        track: Track(
-          channel: 2,
-          effects: [BuiltInEffect(type: TrackEffectType.filter)],
-        ),
-      );
-
-      // Chain-first: the default Track-stage target (TRACK 3, 1-based) and the
-      // chain's head effect — never GUITAR as the cell identity.
-      expect(find.text('TRACK 3 · FILTER'), findsOneWidget);
-      expect(fxIdentity(tester), isNot(contains('GUITAR')));
-    });
 
     testWidgets('a value-equal Track from an EARLIER poll is accepted', (
       tester,
@@ -1287,8 +1443,8 @@ void main() {
       // `List.of`, not a literal: a const literal would be canonicalised into
       // the same instance both times and make this test vacuous, which is
       // exactly what the analyzer would rather have here.
-      Track projected({required double peak}) => Track(
-        peak: peak,
+      Track projected({required int position}) => Track(
+        positionFrames: position,
         lanes: List.of(const [Lane(inputChannel: 0)]),
         effects: List.of([BuiltInEffect(type: TrackEffectType.drive)]),
       );
@@ -1297,10 +1453,10 @@ void main() {
         tester,
         name: 'DRUMS',
         mode: InteractionMode.record,
-        track: projected(peak: 0),
-        // Same facts, new lists, and a level that has moved since — exactly
-        // what the rig looks like one poll later.
-        liveTrack: projected(peak: 0.9),
+        track: projected(position: 0),
+        // Same facts, new lists, and a playhead that has moved since —
+        // exactly what the rig looks like one poll later.
+        liveTrack: projected(position: 480),
       );
 
       expect(tester.takeException(), isNull);
@@ -1341,80 +1497,6 @@ void main() {
 
       expect(tester.takeException(), isA<AssertionError>());
     });
-
-    testWidgets('a bound chain targeting a NON-track stage reads that stage, '
-        'not the column track', (tester) async {
-      await pumpColumn(
-        tester,
-        name: 'GUITAR',
-        mode: InteractionMode.fx,
-        // The footswitch over the GUITAR column is bound to the FIRST OUTPUT
-        // destination's chain: the cell must say OUT 1, never TRACK 1 /
-        // GUITAR.
-        fxTarget: const FxAddress(stage: FxStage.output),
-        track: Track(effects: [BuiltInEffect(type: TrackEffectType.reverb)]),
-      );
-
-      expect(find.text('OUT 1 · REVERB'), findsOneWidget);
-      expect(fxIdentity(tester), isNot(contains('GUITAR')));
-      expect(fxIdentity(tester), isNot(contains('TRACK')));
-    });
-
-    testWidgets('a NAMED input reads its name over a smaller INPUT n, chain '
-        'in the chips', (tester) async {
-      await pumpColumn(
-        tester,
-        name: 'TRACK 5',
-        mode: InteractionMode.fx,
-        // A footswitch bound to input socket 0's monitor chain, and the player
-        // has named that socket "Guitar".
-        fxTarget: const FxAddress(stage: FxStage.input),
-        inputNames: const {0: 'Guitar'},
-        track: Track(effects: [BuiltInEffect(type: TrackEffectType.filter)]),
-      );
-
-      // Two tiers: the socket's own name on the primary line, a smaller
-      // INPUT 1 beneath it. The chain is NOT jammed into the identity — it
-      // reads from the entry-run chip.
-      expect(find.text('GUITAR'), findsOneWidget); // primary, uppercased
-      expect(find.byKey(const Key('tracks_tileFxTargetSub')), findsOneWidget);
-      expect(find.text('INPUT 1'), findsOneWidget); // sub-label
-      expect(find.text('Filter'), findsOneWidget); // chain, in the chips
-      // The identity line carries no "· CHAIN" for a named input.
-      expect(find.textContaining('·'), findsNothing);
-    });
-
-    testWidgets('an UNNAMED input reads a single INPUT n line', (tester) async {
-      await pumpColumn(
-        tester,
-        name: 'TRACK 5',
-        mode: InteractionMode.fx,
-        fxTarget: const FxAddress(stage: FxStage.input, index: 1),
-        // No name for socket 1.
-        track: Track(effects: [BuiltInEffect(type: TrackEffectType.filter)]),
-      );
-
-      // Single line, the generic stage label — no name, no second tier.
-      expect(find.text('INPUT 2'), findsOneWidget);
-      expect(find.byKey(const Key('tracks_tileFxTargetSub')), findsNothing);
-      expect(find.text('Filter'), findsOneWidget); // chain, in the chips
-    });
-
-    testWidgets('leaving FX mode brings the track name back as the identity', (
-      tester,
-    ) async {
-      await pumpColumn(
-        tester,
-        name: 'GUITAR',
-        mode: InteractionMode.record,
-        track: Track(effects: [BuiltInEffect(type: TrackEffectType.reverb)]),
-      );
-
-      // Outside FX mode the column is the track again: its name identifies it,
-      // and no chain-first identity is drawn.
-      expect(find.text('GUITAR'), findsOneWidget);
-      expect(find.byKey(const Key('tracks_tileFxTarget')), findsNothing);
-    });
   });
 
   testWidgets('long-pressing a tile stops that channel', (tester) async {
@@ -1444,6 +1526,45 @@ void main() {
   });
 
   group('queued cue', () {
+    testWidgets('a waiting Song section reads Play · Loop start (#1077)', (
+      tester,
+    ) async {
+      seed(
+        const LooperState(
+          transport: TransportState(
+            looperMode: LooperMode.song,
+            songQueuedTrack: 1,
+            songQueueProgress: 0.4,
+          ),
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 1000),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 1000),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.byKey(const Key('tracks_queued_1')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_queued_0')), findsNothing);
+      expect(find.text('Play'), findsOneWidget);
+      expect(find.text('Loop start'), findsOneWidget);
+    });
+
+    testWidgets('outside Song the engine queue shows no cue', (tester) async {
+      seed(
+        const LooperState(
+          transport: TransportState(songQueuedTrack: 1),
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 1000),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 1000),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.byKey(const Key('tracks_queued_1')), findsNothing);
+    });
+
     testWidgets('a pending arm on an empty track reads Record · Loop start', (
       tester,
     ) async {
@@ -1588,12 +1709,15 @@ void main() {
     testWidgets('the cue is a readout: the tap still reaches the tile', (
       tester,
     ) async {
-      seed(const LooperState(tracks: [Track(pending: true)]));
+      seed(
+        const LooperState(tracks: [Track(), Track(channel: 1, pending: true)]),
+      );
       await pump(tester);
 
-      await tester.tap(find.byKey(const Key('tracks_queued_0')));
-      // A second press cancels the arm — the tile's record path, not a cue.
-      verify(() => bloc.add(const LooperRecordPressed(0))).called(1);
+      await tester.tap(find.byKey(const Key('tracks_queued_1')));
+      // The tap reaches the tile underneath, which selects; it never records.
+      expect(control.state.cursor, 1);
+      verifyNever(() => bloc.add(const LooperRecordPressed(1)));
     });
   });
 
@@ -1752,13 +1876,6 @@ void main() {
       verify(() => repository.setMute(muted: false)).called(1);
       await settleToasts(tester); // clearing content raises the undo toast
     });
-
-    testWidgets('F toggles fullscreen without error', (tester) async {
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
-      await tester.pump();
-    });
   });
 
   testWidgets('renaming a track updates its label', (tester) async {
@@ -1815,10 +1932,9 @@ void main() {
       tester,
     ) async {
       const playing = LooperState(
-        tracks: [
-          Track(state: TrackState.playing, lengthFrames: 1000, peak: 0.81),
-        ],
+        tracks: [Track(state: TrackState.playing, lengthFrames: 1000)],
       );
+      setLevels(const MeterLevels(tracks: [TrackLevels(peak: 0.81)]));
       const stopped = LooperState(
         tracks: [Track(state: TrackState.stopped, lengthFrames: 1000)],
       );
@@ -1836,6 +1952,8 @@ void main() {
       // instead of collapsing.
       current = stopped;
       controller.add(stopped);
+      setLevels(const MeterLevels(tracks: [TrackLevels.silent]));
+      await tester.pump();
       await tester.pump();
       expect(fillOf(tester, 0), live);
     });
@@ -1843,30 +1961,19 @@ void main() {
     testWidgets('a rising level moves the bar', (tester) async {
       // The companion to the freeze test above, and the guard #646 needs: that
       // one asserts the fill STAYS PUT, so it passes whether or not updates
-      // reach the column. Since the track now arrives through a selector in
-      // `_TrackSlot` rather than being handed down directly, a selector that
-      // stopped yielding new values would freeze every meter on the console
-      // with the rest of the suite still green.
-      const low = LooperState(
-        tracks: [
-          Track(state: TrackState.playing, lengthFrames: 1000, peak: 0.2),
-        ],
+      // reach the column. The level now arrives on the repository's meter
+      // stream (#1301), so a meter that stopped following it would freeze
+      // every meter on the console with the rest of the suite still green.
+      const playing = LooperState(
+        tracks: [Track(state: TrackState.playing, lengthFrames: 1000)],
       );
-      const high = LooperState(
-        tracks: [
-          Track(state: TrackState.playing, lengthFrames: 1000, peak: 0.9),
-        ],
-      );
-      final controller = StreamController<LooperState>();
-      addTearDown(controller.close);
-      var current = low;
-      when(() => bloc.state).thenAnswer((_) => current);
-      whenListen(bloc, controller.stream, initialState: low);
+      seed(playing);
+      setLevels(const MeterLevels(tracks: [TrackLevels(peak: 0.2)]));
       await pump(tester);
 
       final before = fillOf(tester, 0);
-      current = high;
-      controller.add(high);
+      setLevels(const MeterLevels(tracks: [TrackLevels(peak: 0.9)]));
+      await tester.pump();
       await tester.pump();
 
       expect(
@@ -2128,6 +2235,93 @@ void main() {
       await tester.longPress(find.byKey(const Key('mixer_solo_0')));
       await tester.pump();
       verify(() => bloc.add(const LooperSoloCleared())).called(1);
+    });
+
+    testWidgets('every strip carries the FX pair; its bypass switches a '
+        'chain only when the track has one', (tester) async {
+      seed(
+        LooperState(
+          tracks: [
+            Track(
+              state: TrackState.playing,
+              lengthFrames: 1000,
+              effects: [BuiltInEffect(type: TrackEffectType.delay)],
+            ),
+            const Track(
+              channel: 1,
+              state: TrackState.playing,
+              lengthFrames: 1000,
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+      await showMixer(tester);
+
+      for (final channel in [0, 1]) {
+        expect(find.byKey(Key('mixer_fx_edit_$channel')), findsOneWidget);
+        expect(find.byKey(Key('mixer_fx_$channel')), findsOneWidget);
+      }
+      // The pen's proportions: edit 97, bypass 50, beside Mute's 102.
+      final mute = tester.getSize(find.byKey(const Key('mixer_mute_0'))).width;
+      final edit = tester
+          .getSize(find.byKey(const Key('mixer_fx_edit_0')))
+          .width;
+      final bypass = tester.getSize(find.byKey(const Key('mixer_fx_0'))).width;
+      expect(edit / mute, closeTo(97 / 102, 0.02));
+      expect(bypass / mute, closeTo(50 / 102, 0.02));
+
+      await tester.tap(find.byKey(const Key('mixer_fx_0')));
+      await tester.pump();
+      verify(() => bloc.add(const LooperTrackChainToggled(0))).called(1);
+      // Track 2 has no chain: its bypass is dimmed and switches nothing.
+      await tester.tap(find.byKey(const Key('mixer_fx_1')));
+      await tester.pump();
+      verifyNever(() => bloc.add(const LooperTrackChainToggled(1)));
+      Finder dim(String key) => find.descendant(
+        of: find.byKey(Key(key)),
+        matching: find.byType(Opacity),
+      );
+      expect(dim('mixer_fx_1'), findsOneWidget);
+      expect(dim('mixer_fx_0'), findsNothing);
+      expect(dim('mixer_fx_edit_1'), findsNothing, reason: 'edit is always on');
+    });
+
+    testWidgets('FX opens the Effects editor at that track', (tester) async {
+      setSegnoFxCatalogueForTest(FxCatalogue.empty);
+      addTearDown(() => setSegnoFxCatalogueForTest(null));
+      seed(
+        const LooperState(
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 1000),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 1000),
+          ],
+        ),
+      );
+      final pushed = <Route<dynamic>>[];
+      await pump(
+        tester,
+        navigatorObservers: [_PushObserver(pushed.add)],
+      );
+      await showMixer(tester);
+      pushed.clear();
+
+      await tester.tap(find.byKey(const Key('mixer_fx_edit_1')));
+      expect(pushed, hasLength(1));
+      final route = pushed.single as PageRouteBuilder<void>;
+      expect(route.settings.name, segnoFxRouteName);
+      final page =
+          route.pageBuilder(
+                tester.element(find.byType(TracksView)),
+                kAlwaysCompleteAnimation,
+                kAlwaysCompleteAnimation,
+              )
+              as FxPage;
+      expect(page.initial, const FxDestination.recordedTrack(1));
+      // The editor itself is covered by its own tests; take the route down
+      // before it builds against this test's providers.
+      segnoNavigatorKey.currentState!.removeRoute(route);
+      await tester.pumpAndSettle();
     });
 
     testWidgets('the pan bar previews under the finger and commits once, and '
@@ -2459,15 +2653,11 @@ void main() {
     testWidgets('the strip meters the two sides separately', (tester) async {
       seed(
         const LooperState(
-          tracks: [
-            Track(
-              state: TrackState.playing,
-              lengthFrames: 1000,
-              peakL: 1,
-              peakR: 0.001,
-            ),
-          ],
+          tracks: [Track(state: TrackState.playing, lengthFrames: 1000)],
         ),
+      );
+      setLevels(
+        const MeterLevels(tracks: [TrackLevels(peakL: 1, peakR: 0.001)]),
       );
       await pump(tester);
       await showMixer(tester);
@@ -2500,7 +2690,8 @@ void main() {
         ),
       );
       await tracks.rename(0, 'GUITAR');
-      await pump(tester);
+      // Wide enough for the Mixer's top bar, short enough to reduce it.
+      await pump(tester, size: const Size(1920, 600));
       await showMixer(tester);
       final scale = tester.getRect(find.byType(StageDbScale).first);
       final meter = tester.getRect(find.byKey(const Key('mixer_level_0')));
@@ -2525,15 +2716,25 @@ void main() {
         tester.getSize(find.byKey(const Key('mixer_mute_0'))).width,
         greaterThan(35),
       );
-      for (final key in ['mixer_mute_0', 'mixer_solo_0']) {
-        final label = tester.renderObject<RenderParagraph>(
-          find.descendant(
-            of: find.byKey(Key(key)),
-            matching: find.byType(Text),
-          ),
+      final sizes = <double>{};
+      for (final key in ['mixer_mute_0', 'mixer_solo_0', 'mixer_fx_edit_0']) {
+        final text = find.descendant(
+          of: find.byKey(Key(key)),
+          matching: find.byType(Text),
         );
+        final label = tester.renderObject<RenderParagraph>(text);
         expect(label.size.height, lessThan(35));
+        // Every label fits on one line inside its button, at one shared
+        // size: a narrow strip shrinks the row together.
+        expect(label.didExceedMaxLines, isFalse, reason: key);
+        expect(
+          label.size.width,
+          lessThanOrEqualTo(tester.getSize(find.byKey(Key(key))).width),
+          reason: key,
+        );
+        sizes.add(tester.widget<Text>(text).style!.fontSize!);
       }
+      expect(sizes, hasLength(1));
       expect(
         meter.top,
         closeTo(scale.top + MixerColumn.meterTopInset * factor, 0.05),
@@ -2558,6 +2759,21 @@ void main() {
         );
         expect(upper.bottom, lessThanOrEqualTo(lower.top));
       }
+    });
+
+    testWidgets('Backing & click belongs to the Mixer (#1200)', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      expect(find.byKey(const Key('stage_backing_click')), findsNothing);
+      await showMixer(tester);
+      expect(find.byKey(const Key('stage_backing_click')), findsOneWidget);
+      // Beside Reset mixer, before it.
+      expect(
+        tester.getRect(find.byKey(const Key('stage_backing_click'))).right,
+        lessThan(
+          tester.getRect(find.byKey(const Key('stage_reset_mixer'))).left,
+        ),
+      );
     });
 
     testWidgets('Reset mixer belongs to the Mixer, and resets the mix', (
@@ -2611,11 +2827,11 @@ void main() {
             tempoBpm: 84,
             tempoSource: TempoSource.manual,
             looperMode: LooperMode.sync,
-            outputPeak: 0.5,
           ),
           tracks: [Track()],
         ),
       );
+      when(() => outputLevel.state).thenReturn(OutputLevelState.of(0.5));
       await pump(tester);
 
       expect(find.text('84.0'), findsOneWidget);
@@ -2645,12 +2861,8 @@ void main() {
     });
 
     testWidgets('the footer flags output clipping in red', (tester) async {
-      seed(
-        const LooperState(
-          transport: TransportState(outputPeak: 1),
-          tracks: [Track()],
-        ),
-      );
+      seed(const LooperState(tracks: [Track()]));
+      when(() => outputLevel.state).thenReturn(OutputLevelState.of(1));
       await pump(tester);
 
       final output = tester.widget<AppText>(
@@ -2686,7 +2898,7 @@ void main() {
         await tester.tap(row);
         await tester.pump();
         expect(control.state.cursor, channel);
-        verify(() => bloc.add(LooperRecordPressed(channel))).called(1);
+        verifyNever(() => bloc.add(LooperRecordPressed(channel)));
         expect(tester.takeException(), isNull);
       }
     });
@@ -2774,6 +2986,392 @@ void main() {
     });
   });
 
+  group('fixed slot geometry (#1308)', () {
+    const sizes = [Size(1024, 600), Size(1920, 1080)];
+
+    /// Mounts the stage afresh, so every const readout re-reads its mocked
+    /// state.
+    Future<void> remount(WidgetTester tester, Size size) async {
+      await tester.pumpWidget(const SizedBox());
+      await pump(tester, size: size);
+    }
+
+    Rect rectOf(WidgetTester tester, String key) =>
+        tester.getRect(find.byKey(Key(key)));
+
+    void name(String? value) => when(
+      () => session.state,
+    ).thenReturn(SessionState(currentSessionName: value));
+
+    for (final size in sizes) {
+      final at = '${size.width.toInt()}x${size.height.toInt()}';
+
+      testWidgets('the title is centred on the whole bar ($at)', (
+        tester,
+      ) async {
+        seed(const LooperState(tracks: [Track()]));
+        name('Set');
+        await pump(tester, size: size);
+        final bar = rectOf(tester, 'stage_top_bar');
+        final leading = rectOf(tester, 'stage_record_slot').right - bar.left;
+        final trailing = bar.right - rectOf(tester, 'stage_bank_button').left;
+        // The groups really are unequal, so centring between them would
+        // put the title off the bar's centre.
+        expect((trailing - leading).abs(), greaterThan(50));
+        final title = rectOf(tester, 'stage_session_name');
+        expect(title.center.dx, closeTo(bar.center.dx, 0.5));
+        expect(title.center.dy, closeTo(bar.center.dy, 1));
+      });
+
+      testWidgets('a long title is ellipsized, centred and clear of both '
+          'groups ($at)', (tester) async {
+        seed(const LooperState(tracks: [Track()]));
+        name('An extremely long session name that cannot fit ' * 4);
+        await pump(tester, size: size);
+        expect(tester.takeException(), isNull);
+        final bar = rectOf(tester, 'stage_top_bar');
+        final title = rectOf(tester, 'stage_session_name');
+        expect(title.center.dx, closeTo(bar.center.dx, 0.5));
+        expect(
+          title.left,
+          greaterThanOrEqualTo(rectOf(tester, 'stage_record_slot').right + 24),
+        );
+        expect(
+          title.right,
+          lessThanOrEqualTo(rectOf(tester, 'stage_bank_button').left - 24),
+        );
+        final paragraph = tester.renderObject<RenderParagraph>(
+          find.descendant(
+            of: find.byKey(const Key('stage_session_name')),
+            matching: find.byType(RichText),
+          ),
+        );
+        expect(paragraph.didExceedMaxLines, isTrue);
+      });
+
+      testWidgets('the Mixer keeps the title clear of its wider trailing '
+          'group ($at)', (tester) async {
+        seed(const LooperState(tracks: [Track()]));
+        name('An extremely long session name that cannot fit ' * 4);
+        tracks.showView(StageView.mixer);
+        await pump(tester, size: size);
+        expect(tester.takeException(), isNull);
+        final title = rectOf(tester, 'stage_session_name');
+        expect(
+          title.left,
+          greaterThanOrEqualTo(rectOf(tester, 'stage_record_slot').right),
+        );
+        expect(
+          title.right,
+          lessThanOrEqualTo(rectOf(tester, 'stage_backing_click').left),
+        );
+        if (size.width >= 1920) {
+          final bar = rectOf(tester, 'stage_top_bar');
+          expect(title.center.dx, closeTo(bar.center.dx, 0.5));
+        }
+      });
+
+      testWidgets('arming moves nothing in the top bar ($at)', (tester) async {
+        seed(const LooperState(tracks: [Track()]));
+        name('Set');
+        const keys = [
+          'stage_library',
+          'stage_record_slot',
+          'stage_record_light',
+          'stage_session_name',
+          'stage_bank_button',
+          'stage_settings',
+        ];
+        await pump(tester, size: size);
+        final idle = [for (final key in keys) rectOf(tester, key)];
+        for (final elapsed in const [
+          Duration.zero,
+          Duration(minutes: 99, seconds: 59),
+          Duration(minutes: 140),
+        ]) {
+          when(() => performanceRecorder.state).thenReturn(
+            PerformanceRecorderArmed(elapsed: elapsed, overrun: false),
+          );
+          await remount(tester, size);
+          expect(find.byKey(const Key('stage_record_elapsed')), findsOne);
+          expect([for (final key in keys) rectOf(tester, key)], idle);
+          expect(tester.takeException(), isNull);
+        }
+      });
+
+      testWidgets('footer readouts changing move nothing in the strip ($at)', (
+        tester,
+      ) async {
+        const keys = [
+          'stage_footer_bpm',
+          'stage_footer_clock',
+          'stage_footer_output',
+        ];
+        final variants = <(LooperState, OutputLevelState, Duration)>[
+          (
+            const LooperState(tracks: [Track()]),
+            const OutputLevelState(),
+            Duration.zero,
+          ),
+          (
+            const LooperState(
+              transport: TransportState(
+                tempoBpm: 120,
+                tempoSource: TempoSource.manual,
+                countingIn: true,
+                countInBeatsLeft: 3,
+                looperMode: LooperMode.band,
+              ),
+              tracks: [Track()],
+            ),
+            const OutputLevelState(tenths: -600),
+            const Duration(hours: 9, minutes: 59, seconds: 59),
+          ),
+          (
+            const LooperState(
+              transport: TransportState(
+                tempoBpm: 84,
+                tempoSource: TempoSource.manual,
+                looperMode: LooperMode.sync,
+              ),
+              tracks: [Track()],
+            ),
+            const OutputLevelState(tenths: 0, clip: true),
+            const Duration(seconds: 7),
+          ),
+          (
+            const LooperState(
+              transport: TransportState(
+                tempoBpm: 7.5,
+                tempoSource: TempoSource.manual,
+              ),
+              tracks: [Track()],
+            ),
+            const OutputLevelState(tenths: -32),
+            const Duration(minutes: 3),
+          ),
+        ];
+        List<Rect>? first;
+        for (final (looper, output, elapsed) in variants) {
+          seed(looper);
+          when(() => outputLevel.state).thenReturn(output);
+          when(
+            () => transportClock.state,
+          ).thenReturn(TransportClockState(elapsed: elapsed));
+          await remount(tester, size);
+          expect(tester.takeException(), isNull);
+          final rects = [
+            ...slotRects(find.byKey(const Key('stage_footer'))),
+            for (final key in keys) rectOf(tester, key),
+          ];
+          expect(rects, hasLength(7));
+          first ??= rects;
+          expect(rects, first);
+        }
+      });
+
+      testWidgets('track meta counts changing move nothing in the row ($at)', (
+        tester,
+      ) async {
+        LooperState rig({
+          required int lengthFrames,
+          required int peelDepth,
+          required bool reversed,
+        }) => LooperState(
+          status: const EngineStatus(sampleRate: 48000),
+          transport: const TransportState(
+            masterLengthFrames: 1000,
+            loopBars: 1,
+          ),
+          tracks: [
+            Track(
+              state: TrackState.playing,
+              lengthFrames: lengthFrames,
+              peelDepth: peelDepth,
+              reversed: reversed,
+            ),
+            const Track(
+              channel: 1,
+              state: TrackState.playing,
+              lengthFrames: 1000,
+            ),
+          ],
+        );
+        List<Rect>? first;
+        for (final looper in [
+          rig(lengthFrames: 1000, peelDepth: 0, reversed: false),
+          rig(lengthFrames: 128000, peelDepth: 11, reversed: true),
+          rig(lengthFrames: 16000, peelDepth: 3, reversed: false),
+        ]) {
+          seed(looper);
+          await remount(tester, size);
+          expect(tester.takeException(), isNull);
+          final rects = [
+            for (final channel in [0, 1])
+              ...slotRects(find.byKey(Key('tracks_meta_$channel'))),
+          ];
+          expect(rects, hasLength(8));
+          first ??= rects;
+          expect(rects, first);
+        }
+      });
+
+      testWidgets('Wave meta counts changing move nothing in the row ($at)', (
+        tester,
+      ) async {
+        tracks.showView(StageView.wave);
+        List<Rect>? first;
+        for (final lengthFrames in const [1000, 128000]) {
+          seed(
+            LooperState(
+              status: const EngineStatus(sampleRate: 48000),
+              transport: const TransportState(
+                masterLengthFrames: 1000,
+                loopBars: 1,
+              ),
+              tracks: [
+                Track(state: TrackState.playing, lengthFrames: lengthFrames),
+              ],
+            ),
+          );
+          await remount(tester, size);
+          expect(tester.takeException(), isNull);
+          final rects = slotRects(find.byKey(const Key('wave_meta_0')));
+          expect(rects, hasLength(3));
+          first ??= rects;
+          expect(rects, first);
+        }
+      });
+
+      testWidgets('Mixer readouts changing move nothing in their rows ($at)', (
+        tester,
+      ) async {
+        tracks.showView(StageView.mixer);
+        List<Rect>? first;
+        for (final (volume, pan, lengthFrames) in const [
+          (1.0, 0.0, 1000),
+          (0.0, -1.0, 128000),
+          (0.001, 0.05, 16000),
+          (2.0, 1.0, 1000),
+        ]) {
+          seed(
+            LooperState(
+              status: const EngineStatus(sampleRate: 48000),
+              transport: const TransportState(
+                masterLengthFrames: 1000,
+                loopBars: 1,
+              ),
+              tracks: [
+                Track(
+                  state: TrackState.playing,
+                  lengthFrames: lengthFrames,
+                  volume: volume,
+                  pan: pan,
+                ),
+              ],
+            ),
+          );
+          await remount(tester, size);
+          expect(tester.takeException(), isNull);
+          final rects = [
+            for (final row in const [
+              'mixer_meta_0',
+              'mixer_pan_row_0',
+              'mixer_gain_row_0',
+            ])
+              ...slotRects(find.byKey(Key(row))),
+          ];
+          expect(rects, hasLength(7));
+          first ??= rects;
+          expect(rects, first);
+        }
+      });
+    }
+  });
+
+  group('CPU load (#1307)', () {
+    Rect rectOf(WidgetTester tester, String key) =>
+        tester.getRect(find.byKey(Key(key)));
+
+    for (final size in const [Size(1024, 600), Size(1920, 1080)]) {
+      final at = '${size.width.toInt()}x${size.height.toInt()}';
+
+      testWidgets('the figure sits right of the record light ($at)', (
+        tester,
+      ) async {
+        cpuLoad = const FixedCpuLoadRepository(23);
+        seed(const LooperState(tracks: [Track()]));
+        await pump(tester, size: size);
+        await tester.pump();
+        expect(find.text('CPU 23%'), findsOneWidget);
+        final record = rectOf(tester, 'stage_record_slot');
+        final cpu = rectOf(tester, 'stage_cpu_load');
+        expect(cpu.left, record.right + 24);
+        expect(cpu.center.dy, closeTo(record.center.dy, 1));
+        expect(
+          cpu.right,
+          lessThan(rectOf(tester, 'stage_session_name').left),
+        );
+        // The title stays centred on the bar with the readout beside it.
+        expect(
+          rectOf(tester, 'stage_session_name').center.dx,
+          closeTo(rectOf(tester, 'stage_top_bar').center.dx, 0.5),
+        );
+      });
+    }
+
+    testWidgets('reads as a load for a screen reader', (tester) async {
+      final handle = tester.ensureSemantics();
+      cpuLoad = const FixedCpuLoadRepository(64);
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+      expect(
+        find.bySemanticsLabel(RegExp('Processor load 64 percent')),
+        findsOne,
+      );
+      handle.dispose();
+    });
+
+    testWidgets('shows a dash until the first reading', (tester) async {
+      cpuLoad = const _SilentCpuLoad();
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+      expect(find.text('CPU —'), findsOneWidget);
+    });
+
+    testWidgets('is absent where the load cannot be measured', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      expect(find.byKey(const Key('stage_cpu_load')), findsNothing);
+      expect(find.textContaining('CPU'), findsNothing);
+    });
+
+    testWidgets('no figure moves anything in the top bar', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      const keys = [
+        'stage_record_slot',
+        'stage_cpu_load',
+        'stage_session_name',
+        'stage_bank_button',
+      ];
+      List<Rect>? first;
+      for (final load in const [0, 7, 42, 100]) {
+        cpuLoad = FixedCpuLoadRepository(load);
+        await tester.pumpWidget(const SizedBox());
+        await pump(tester, size: const Size(1024, 600));
+        await tester.pump();
+        expect(find.text('CPU $load%'), findsOneWidget);
+        final rects = [for (final key in keys) rectOf(tester, key)];
+        first ??= rects;
+        expect(rects, first);
+      }
+    });
+  });
+
   group('accessibility', () {
     testWidgets('track tile is a labelled button naming its state', (
       tester,
@@ -2856,6 +3454,27 @@ void main() {
   });
 
   group('performance recorder', () {
+    testWidgets('a take the salvage could not recover is announced (#1198)', (
+      tester,
+    ) async {
+      whenListen(
+        performanceRecorder,
+        Stream.fromIterable(const [
+          PerformanceRecorderIdle(recovering: true),
+          PerformanceRecorderIdle(notRecovered: 1),
+        ]),
+        initialState: const PerformanceRecorderIdle(),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+
+      expect(
+        find.text('This take could not be recovered. Its files are kept.'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('A toggles arm', (tester) async {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
@@ -2965,6 +3584,17 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byKey(lowDisk), findsOneWidget);
+      await tester.pumpAndSettle(const Duration(seconds: 10));
+
+      // The USB drive in Save to went between the choice and the press.
+      controller.add(
+        const PerformanceRecorderIdle(driveUnavailable: true, refusal: 4),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('tracks_perfArmDriveUnavailable_snackbar')),
+        findsOneWidget,
+      );
     });
 
     testWidgets(
@@ -3238,10 +3868,18 @@ void main() {
         rate: 48000,
         bars: '—',
       ),
+      // A bar and a half reads in its whole beats (#1168): 6 of 24000.
+      (
+        name: 'whole beats, fractional bars',
+        transport: barTempo,
+        length: 144000,
+        rate: 48000,
+        bars: '6',
+      ),
       (
         name: 'fractional duration',
         transport: barTempo,
-        length: 144000,
+        length: 150000,
         rate: 48000,
         bars: '—',
       ),
@@ -3340,17 +3978,13 @@ void main() {
 
       final before = tester.widget<GestureDetector>(_chromeProbe);
 
-      // Exactly what a moving meter emits: same structure, new levels.
-      // Nothing the chrome renders depends on any of it.
-      const loud = LooperState(
-        tracks: [
-          Track(peak: 0.9),
-          Track(channel: 1, peak: 0.6),
-        ],
-        status: EngineStatus(isConnected: true),
+      // Exactly what a moving meter emits: new levels on the meter stream,
+      // and nothing at all on the looper state (#1301).
+      setLevels(
+        const MeterLevels(
+          tracks: [TrackLevels(peak: 0.9), TrackLevels(peak: 0.6)],
+        ),
       );
-      when(() => bloc.state).thenReturn(loud);
-      states.add(loud);
       await tester.pump();
 
       expect(
@@ -3383,15 +4017,8 @@ void main() {
       final before = tester.widget<TrackColumn>(_column(0));
       final other = tester.widget<TrackColumn>(_column(1));
 
-      const loud = LooperState(
-        tracks: [
-          Track(state: TrackState.playing, lengthFrames: 96000, peak: 0.9),
-          Track(channel: 1, state: TrackState.playing, lengthFrames: 96000),
-        ],
-        status: EngineStatus(isConnected: true),
-      );
-      when(() => bloc.state).thenReturn(loud);
-      states.add(loud);
+      setLevels(const MeterLevels(tracks: [TrackLevels(peak: 0.9)]));
+      await tester.pump();
       await tester.pump();
 
       expect(
@@ -3418,7 +4045,7 @@ void main() {
               ),
             )
             .peak,
-        0.9,
+        closeTo(0.9, 0.01),
       );
     });
 
@@ -3519,3 +4146,24 @@ void main() {
     });
   });
 }
+
+/// Records every route pushed onto the navigator it observes.
+class _PushObserver extends NavigatorObserver {
+  _PushObserver(this.onPush);
+
+  final void Function(Route<dynamic> route) onPush;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      onPush(route);
+}
+
+/// A supported CPU load that never reports a figure.
+class _SilentCpuLoad extends CpuLoadRepository {
+  const _SilentCpuLoad() : super(readStat: _neverRead);
+
+  @override
+  Stream<int> watch() => const Stream<int>.empty();
+}
+
+Future<String> _neverRead() => throw UnimplementedError();

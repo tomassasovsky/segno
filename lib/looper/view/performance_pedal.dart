@@ -30,6 +30,10 @@ class PerformancePedal extends StatefulWidget {
     this.level,
     this.detailIcon,
     this.detailHighlighted = false,
+    this.titleMuted = false,
+    this.titleMaxLines = 1,
+    this.holdPending = false,
+    this.holdThreshold = const Duration(milliseconds: 800),
     super.key,
   });
 
@@ -73,6 +77,23 @@ class PerformancePedal extends StatefulWidget {
   /// departs from the default (a reversed track).
   final bool detailHighlighted;
 
+  /// Whether [title] reads muted while the pedal stays enabled, for an
+  /// assignment this build cannot run (Custom).
+  final bool titleMuted;
+
+  /// Lines [title] may wrap to before it is cut short, for a caption that
+  /// names an assignment (Custom).
+  final int titleMaxLines;
+
+  /// Whether this pedal's Hold is armed and still pending: draws the pen's
+  /// Pending Hold cue (#1229, `PRSrG`), a bar under the face filling over
+  /// [holdThreshold] from the moment this turns true, and a brightened
+  /// [hint].
+  final bool holdPending;
+
+  /// How long the pending hold takes to fire.
+  final Duration holdThreshold;
+
   /// Admits a timed contact identified by its token.
   final void Function(PedalButton button, Object contact) onPressed;
 
@@ -86,8 +107,22 @@ class PerformancePedal extends StatefulWidget {
   State<PerformancePedal> createState() => _PerformancePedalState();
 }
 
-class _PerformancePedalState extends State<PerformancePedal> {
+class _PerformancePedalState extends State<PerformancePedal>
+    with SingleTickerProviderStateMixin {
   ({Object source, Object token})? _contact;
+
+  /// Times the Pending Hold cue from this widget's own ticker, never a wall
+  /// clock: the cubit publishes only that the hold is pending.
+  late final AnimationController _hold = AnimationController(
+    vsync: this,
+    duration: widget.holdThreshold,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.holdPending) _hold.forward();
+  }
 
   void _press(Object source) {
     if (_contact != null || !widget.enabled) return;
@@ -114,11 +149,20 @@ class _PerformancePedalState extends State<PerformancePedal> {
   void didUpdateWidget(PerformancePedal oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!widget.enabled) _cancel();
+    _hold.duration = widget.holdThreshold;
+    if (widget.holdPending && !oldWidget.holdPending) {
+      _hold.forward(from: 0);
+    } else if (!widget.holdPending && oldWidget.holdPending) {
+      _hold
+        ..stop()
+        ..value = 0;
+    }
   }
 
   @override
   void dispose() {
     _cancel();
+    _hold.dispose();
     super.dispose();
   }
 
@@ -195,12 +239,31 @@ class _PerformancePedalState extends State<PerformancePedal> {
                         selected: false,
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    // The pen's 16 px between face and caption carries the
+                    // 3 px Pending Hold bar 5 px under the face (`IBL3g`),
+                    // laid out always so the cue never reflows the pedal.
+                    const SizedBox(height: 5),
+                    _HoldProgress(
+                      key: Key(
+                        '${widget.keyPrefix}_${widget.button.name}_hold',
+                      ),
+                      pending: widget.holdPending,
+                      progress: _hold,
+                    ),
+                    const SizedBox(height: 8),
                     AppText(
                       widget.title,
-                      maxLines: 1,
+                      maxLines: widget.titleMaxLines,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 24),
+                      // A wrapped caption centres each line; a single line
+                      // keeps its own width, centred by the column.
+                      textAlign: widget.titleMaxLines > 1
+                          ? TextAlign.center
+                          : null,
+                      style: TextStyle(
+                        fontSize: 24,
+                        color: widget.titleMuted ? surface.textMuted : null,
+                      ),
                     ),
                     if (widget.level case final level?) ...[
                       const SizedBox(height: 14),
@@ -241,13 +304,61 @@ class _PerformancePedalState extends State<PerformancePedal> {
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 18,
-                            color: surface.textSecondary,
+                            color: widget.holdPending
+                                ? surface.holdPendingText
+                                : surface.textSecondary,
                           ),
                         ),
                       ),
                     ],
                   ],
                 ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The 3 px Pending Hold bar: a [SurfaceTheme.holdTrack] track and a
+/// [SurfaceTheme.holdProgress] fill at [progress], invisible while no hold
+/// is pending.
+class _HoldProgress extends StatelessWidget {
+  const _HoldProgress({
+    required this.pending,
+    required this.progress,
+    super.key,
+  });
+
+  /// Pedal face width; the bar spans it.
+  static const double width = 156;
+
+  /// Bar height (pen `IBL3g`).
+  static const double height = 3;
+
+  final bool pending;
+  final Animation<double> progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Opacity(
+      opacity: pending ? 1 : 0,
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: ColoredBox(
+          color: surface.holdTrack,
+          child: Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: AnimatedBuilder(
+              animation: progress,
+              builder: (context, _) => FractionallySizedBox(
+                widthFactor: progress.value,
+                heightFactor: 1,
+                child: ColoredBox(color: surface.holdProgress),
               ),
             ),
           ),

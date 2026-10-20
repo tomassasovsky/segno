@@ -92,9 +92,9 @@ void main() {
       expect(kMaxChannels, LE_MAX_CHANNELS);
     });
 
-    test('every openable input can be monitored (slice 3)', () {
+    test('every openable input and instrument can be monitored', () {
       expect(kMaxMonitoredInputs, LE_MAX_MONITORED_INPUTS);
-      expect(kMaxMonitoredInputs, kMaxChannels);
+      expect(kMaxMonitoredInputs, kMaxChannels + LE_MAX_INSTRUMENTS);
     });
   });
 
@@ -290,6 +290,215 @@ void main() {
       expect(peeled.peelDepth, 0);
       expect(peeled, isNot(peelable));
       expect(peeled.hashCode, isNot(peelable.hashCode));
+    });
+
+    test(
+      'speed and head rate are projected from the native fields (#1179)',
+      () {
+        final snap = calloc<le_snapshot>();
+        final track = calloc<le_track_snapshot>();
+        addTearDown(
+          () => calloc
+            ..free(snap)
+            ..free(track),
+        );
+        expect(const EngineSnapshot.initial().speed, SpeedFactor.normal);
+        expect(const TrackSnapshot.empty().headRate, 1);
+        final unconfigured = EngineSnapshot.fromNative(snap.ref, const []);
+        expect(unconfigured.speed, SpeedFactor.normal); // 0/0 before configure
+        for (final factor in SpeedFactor.values) {
+          snap.ref
+            ..speed_numer = factor.numer
+            ..speed_denom = factor.denom;
+          final projected = EngineSnapshot.fromNative(snap.ref, const []);
+          expect(projected.speed, factor);
+          expect(projected == unconfigured, factor == SpeedFactor.normal);
+          expect(projected.copyWith().speed, factor);
+        }
+        expect(SpeedFactor.fromRatio(0, 0), SpeedFactor.normal);
+        expect(() => SpeedFactor.fromRatio(3, 1), throwsArgumentError);
+        expect(() => SpeedFactor.fromRatio(1, 0), throwsArgumentError);
+        track.ref
+          ..quantize_override = -1
+          ..quantize_div_override = -1
+          ..overdub_feedback_override = -1
+          ..head_rate_milli = 500;
+        final half = TrackSnapshot.fromNative(track.ref);
+        expect(half.headRate, 0.5);
+        track.ref.head_rate_milli = 8000;
+        final eight = TrackSnapshot.fromNative(track.ref);
+        expect(eight.headRate, 8);
+        expect(eight, isNot(half));
+        expect(eight.hashCode, isNot(half.hashCode));
+      },
+    );
+
+    test('transpose and its bypass are projected from the native fields '
+        '(#1179)', () {
+      final snap = calloc<le_snapshot>();
+      final track = calloc<le_track_snapshot>();
+      addTearDown(
+        () => calloc
+          ..free(snap)
+          ..free(track),
+      );
+      expect(const EngineSnapshot.initial().transposeBypass, isFalse);
+      expect(const TrackSnapshot.empty().transpose, (stored: 0, effective: 0));
+      final live = EngineSnapshot.fromNative(snap.ref, const []);
+      snap.ref.transpose_bypass = 1;
+      final bypassed = EngineSnapshot.fromNative(snap.ref, const []);
+      expect(live.transposeBypass, isFalse);
+      expect(bypassed.transposeBypass, isTrue);
+      expect(bypassed, isNot(live));
+      expect(bypassed.hashCode, isNot(live.hashCode));
+      expect(live.copyWith(transposeBypass: true), bypassed);
+      expect(bypassed.copyWith().transposeBypass, isTrue);
+      track.ref
+        ..quantize_override = -1
+        ..quantize_div_override = -1
+        ..overdub_feedback_override = -1
+        ..transpose_st = 7;
+      // Stored but not sounding yet: the render is pending.
+      final pending = TrackSnapshot.fromNative(track.ref);
+      expect(pending.transpose, (stored: 7, effective: 0));
+      track.ref.transpose_effective_st = 7;
+      final landed = TrackSnapshot.fromNative(track.ref);
+      expect(landed.transpose, (stored: 7, effective: 7));
+      expect(landed, isNot(pending));
+      expect(landed.hashCode, isNot(pending.hashCode));
+      track.ref.transpose_st = -12;
+      track.ref.transpose_effective_st = -12;
+      expect(
+        TrackSnapshot.fromNative(track.ref).transpose,
+        (stored: -12, effective: -12),
+      );
+    });
+
+    test('sync divisor is projected from the native field and compared', () {
+      final ptr = calloc<le_track_snapshot>();
+      addTearDown(() => calloc.free(ptr));
+      ptr.ref
+        ..quantize_override = -1
+        ..quantize_div_override = -1
+        ..overdub_feedback_override = -1
+        ..multiple = 1
+        ..sync_divisor = 4;
+      final division = TrackSnapshot.fromNative(ptr.ref);
+      expect(division.syncDivisor, 4);
+      expect(const TrackSnapshot.empty().syncDivisor, 0);
+      ptr.ref.sync_divisor = 0;
+      final whole = TrackSnapshot.fromNative(ptr.ref);
+      expect(whole.syncDivisor, 0);
+      expect(whole, isNot(division));
+      expect(whole.hashCode, isNot(division.hashCode));
+    });
+
+    test('the Song queue is projected from the native fields (#1077)', () {
+      final snap = calloc<le_snapshot>();
+      addTearDown(() => calloc.free(snap));
+      const initial = EngineSnapshot.initial();
+      expect(initial.songQueuedTrack, -1);
+      expect(initial.songQueueProgress, 0);
+      snap.ref
+        ..song_queued_track = -1
+        ..song_queue_progress = 0;
+      final none = EngineSnapshot.fromNative(snap.ref, const []);
+      expect(none.songQueuedTrack, -1);
+      expect(none.songQueueProgress, 0);
+      snap.ref
+        ..song_queued_track = 5
+        ..song_queue_progress = 0.25;
+      final queued = EngineSnapshot.fromNative(snap.ref, const []);
+      expect(queued.songQueuedTrack, 5);
+      expect(queued.songQueueProgress, 0.25);
+      expect(queued, isNot(none));
+      expect(queued.hashCode, isNot(none.hashCode));
+      expect(
+        none.copyWith(songQueuedTrack: 5, songQueueProgress: 0.25),
+        queued,
+      );
+      expect(queued.copyWith(songQueueProgress: 0.5), isNot(queued));
+      expect(initial.songLastSection, -1);
+      snap.ref.song_last_section = 3;
+      final last = EngineSnapshot.fromNative(snap.ref, const []);
+      expect(last.songLastSection, 3);
+      expect(last, isNot(queued));
+      expect(queued.copyWith(songLastSection: 3), last);
+    });
+
+    test('tempo follow and pitch are projected from the native fields '
+        '(#1179)', () {
+      final snap = calloc<le_snapshot>();
+      final track = calloc<le_track_snapshot>();
+      addTearDown(
+        () => calloc
+          ..free(snap)
+          ..free(track),
+      );
+      const initial = EngineSnapshot.initial();
+      expect(initial.followTempo, isFalse);
+      expect(initial.tempoFollow, TempoFollowState.free);
+      expect(initial.pitchMode, PitchMode.unchanged);
+      expect(initial.recordedTempoBpm, 0);
+      final base = EngineSnapshot.fromNative(snap.ref, const []);
+      snap.ref
+        ..recorded_tempo_bpm = 120
+        ..recorded_length_frames = 16000
+        ..follow_tempo = 1
+        ..tempo_follow = 1
+        ..pitch_follows_speed = 1;
+      final set = EngineSnapshot.fromNative(snap.ref, const []);
+      expect(set.recordedTempoBpm, 120);
+      expect(set.recordedLengthFrames, 16000);
+      expect(set.followTempo, isTrue);
+      expect(set.tempoFollow, TempoFollowState.retimes);
+      expect(set.pitchMode, PitchMode.followsSpeed);
+      expect(set, isNot(base));
+      expect(set.hashCode, isNot(base.hashCode));
+      expect(
+        base.copyWith(pitchMode: PitchMode.followsSpeed).pitchMode,
+        PitchMode.followsSpeed,
+      );
+      expect(
+        base.copyWith(recordedLengthFrames: 8000),
+        isNot(base),
+      );
+      for (final (code, state) in [
+        (0, TempoFollowState.free),
+        (2, TempoFollowState.noGrid),
+        (3, TempoFollowState.noFollower),
+        (4, TempoFollowState.busy),
+        (99, TempoFollowState.busy),
+      ]) {
+        expect(TempoFollowState.fromCode(code), state);
+      }
+      track.ref
+        ..quantize_override = -1
+        ..quantize_div_override = -1
+        ..overdub_feedback_override = -1
+        ..follow_override = -1
+        ..pitch_override = -1;
+      final inherit = TrackSnapshot.fromNative(track.ref);
+      expect(inherit.followTempoOverride, isNull);
+      expect(inherit.pitchModeOverride, isNull);
+      track.ref
+        ..follow_override = 0
+        ..pitch_override = 1
+        ..pitch_effective_cents = -498
+        ..span_frames = 21333;
+      final own = TrackSnapshot.fromNative(track.ref);
+      expect(own.spanFrames, 21333);
+      expect(own.followTempoOverride, isFalse);
+      expect(own.pitchModeOverride, PitchMode.followsSpeed);
+      expect(own.pitchEffectiveCents, -498);
+      expect(own, isNot(inherit));
+      expect(own.hashCode, isNot(inherit.hashCode));
+      track.ref
+        ..follow_override = 1
+        ..pitch_override = 0;
+      final other = TrackSnapshot.fromNative(track.ref);
+      expect(other.followTempoOverride, isTrue);
+      expect(other.pitchModeOverride, PitchMode.unchanged);
     });
 
     test('global native record settings each participate in equality', () {
@@ -1261,6 +1470,31 @@ void main() {
       expect(build(), isNot(equals(build(perfZeroFilledFrames: 128))));
     });
 
+    test('perfRingSeconds participates in equality', () {
+      const base = EngineSnapshot.initial();
+      expect(base, isNot(equals(base.copyWith(perfRingSeconds: 8))));
+    });
+
+    test('perfStopReason and perfOvers participate in equality', () {
+      const base = EngineSnapshot.initial();
+      expect(
+        base,
+        isNot(
+          equals(base.copyWith(perfStopReason: PerfStopReason.slowStorage)),
+        ),
+      );
+      expect(base, isNot(equals(base.copyWith(perfOvers: 2))));
+      expect(base, isNot(equals(base.copyWith(perfCaptureStreams: 2))));
+      expect(base, isNot(equals(base.copyWith(perfCaptureFrameBytes: 16))));
+      expect(base, isNot(equals(base.copyWith(perfFailedCheckpoints: 1))));
+    });
+
+    test('an unknown native stop reason reads as none', () {
+      expect(PerfStopReason.fromNative(4), PerfStopReason.reserveReached);
+      expect(PerfStopReason.fromNative(99), PerfStopReason.none);
+      expect(PerfStopReason.fromNative(-1), PerfStopReason.none);
+    });
+
     test('tempoBpm participates in equality', () {
       expect(build(), isNot(equals(build(tempoBpm: 120))));
     });
@@ -1636,6 +1870,12 @@ void main() {
         'perfOverruns',
         'perfZeroFilledFrames',
         'perfStopped',
+        'perfRingSeconds',
+        'perfStopReason',
+        'perfOvers',
+        'perfCaptureStreams',
+        'perfCaptureFrameBytes',
+        'perfFailedCheckpoints',
         'tempoBpm',
         'tempoSource',
         'tsNum',
@@ -1643,6 +1883,7 @@ void main() {
         'syncTempo',
         'quantizeDiv',
         'loopBars',
+        'loopBeats',
         'currentBeat',
         'clickMode',
         'clickModeRevision',
@@ -1656,6 +1897,21 @@ void main() {
         'countInBeatsLeft',
         'looperMode',
         'primaryTrack',
+        'speed', // a request outcome, not a callback-rate counter (#1179)
+        'transposeBypass', // likewise a request outcome (#1179)
+        // Audio & tempo follow (#1179): settings, a latched tempo and a state
+        // that moves with content, not per callback.
+        'recordedTempoBpm',
+        'recordedLengthFrames',
+        // The Song queue (#1077): the progress moves with the playhead while a
+        // section waits, like masterPositionFrames, and is still once per
+        // block, not per callback.
+        'songQueuedTrack',
+        'songQueueProgress',
+        'songLastSection', // moves when a section starts, not per callback
+        'followTempo',
+        'tempoFollow',
+        'pitchMode',
         'quantize',
         'autoRecord',
         'overdubFeedback',
@@ -1685,6 +1941,11 @@ void main() {
         'perfCaptureMask',
         'perfOutputEnabledMask',
         'tracks',
+        // #1197: slot patches, voices and peaks change with playing, like the
+        // meters; MIDI input carries only binding edges and losses, never the
+        // per-message totals (a MIDI clock would tick those 48 times a second).
+        'instruments',
+        'midiInput',
       };
 
       final actual = _declaredFinalFields(

@@ -6,8 +6,18 @@
 #   get         {"supported":bool,"percent":0-100}
 #   set <0-100> {"supported":bool,"percent":0-100}
 #
+# Every verb takes `--connector <name>` (a DRM connector such as HDMI-A-2):
+# the helper then talks to that panel only, over the I2C bus its DRM
+# connector exposes (/sys/class/drm/card*-<name>/ddc -> i2c-N, passed to
+# ddcutil as --bus N). A connector with no DDC bus is unsupported. Without the
+# flag the helper keeps its old behaviour: the first display ddcutil finds.
+#
 # Uses ddcutil VCP 0x10 (brightness). HDMI panels without DDC report unsupported.
+#
+# SEGNO_DRM_ROOT overrides /sys/class/drm for tests.
 set -eu
+
+DRM_ROOT=${SEGNO_DRM_ROOT:-/sys/class/drm}
 
 log() { echo "segno-brightness-ctl: $*" >&2; }
 
@@ -15,8 +25,34 @@ have_ddc() {
     command -v ddcutil >/dev/null 2>&1
 }
 
+# The ddcutil arguments that pick the display: `--bus N` for a connector, or
+# nothing (the first display) without one. Fails when the connector has no
+# DDC bus.
+connector=""
+bus_args=""
+
+resolve_bus() {
+    [ -n "$connector" ] || return 0
+    for dir in "$DRM_ROOT"/card*-"$connector"; do
+        [ -e "$dir/ddc" ] || continue
+        target=$(readlink "$dir/ddc" 2>/dev/null || true)
+        bus=${target##*/i2c-}
+        case "$bus" in ''|*[!0-9]*) continue ;; esac
+        bus_args="--bus $bus"
+        return 0
+    done
+    log "no DDC bus for connector $connector"
+    return 1
+}
+
 detect_ok() {
     have_ddc || return 1
+    if [ -n "$connector" ]; then
+        resolve_bus || return 1
+        # shellcheck disable=SC2086 # bus_args is two words by design.
+        ddcutil $bus_args getvcp 10 >/dev/null 2>&1
+        return
+    fi
     # detect exits 0 when at least one capable display is found.
     ddcutil detect --brief 2>/dev/null | grep -q '^Display'
 }
@@ -31,7 +67,8 @@ do_supported() {
 
 read_percent() {
     # Typical: "VCP code 0x10 (Brightness): current value =    50, max value =   100"
-    out=$(ddcutil getvcp 10 2>/dev/null || true)
+    # shellcheck disable=SC2086
+    out=$(ddcutil $bus_args getvcp 10 2>/dev/null || true)
     cur=$(printf '%s\n' "$out" | sed -n 's/.*current value *= *\([0-9][0-9]*\).*/\1/p' | head -n1)
     max=$(printf '%s\n' "$out" | sed -n 's/.*max value *= *\([0-9][0-9]*\).*/\1/p' | head -n1)
     [ -n "$cur" ] || return 1
@@ -57,16 +94,28 @@ do_set() {
     pct=$1
     case "$pct" in ''|*[!0-9]*) log "set needs integer 0-100"; return 2 ;; esac
     if [ "$pct" -gt 100 ]; then pct=100; fi
+    if [ -n "$connector" ]; then
+        # The app asks for one panel it already probed: a panel that cannot
+        # be reached now is a failure it must hear about (it falls back to
+        # dimming in software), never a silent "unsupported" success. No
+        # getvcp first, so one flaky read cannot drop the write.
+        resolve_bus || exit 1
+        # shellcheck disable=SC2086
+        ddcutil $bus_args setvcp 10 "$pct" >/dev/null
+        printf '{"supported":true,"percent":%s}\n' "$pct"
+        return 0
+    fi
     if ! detect_ok; then
         echo '{"supported":false,"percent":'"$pct"'}'
         return 0
     fi
-    ddcutil setvcp 10 "$pct" >/dev/null
+    # shellcheck disable=SC2086
+    ddcutil $bus_args setvcp 10 "$pct" >/dev/null
     printf '{"supported":true,"percent":%s}\n' "$pct"
 }
 
 usage() {
-    log "usage: $0 supported|get|set <0-100>"
+    log "usage: $0 supported|get|set <0-100> [--connector <name>]"
     exit 2
 }
 
@@ -74,12 +123,35 @@ usage() {
 verb=$1
 shift
 
+value=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --connector)
+            [ $# -ge 2 ] || usage
+            # An empty name would mean "the first display", maybe the
+            # other panel.
+            [ -n "$2" ] || { log "empty connector name"; exit 2; }
+            connector=$2
+            shift 2
+            ;;
+        *)
+            [ -z "$value" ] || usage
+            value=$1
+            shift
+            ;;
+    esac
+done
+
+case "$connector" in
+    */*|.*) log "bad connector name: $connector"; exit 2 ;;
+esac
+
 case "$verb" in
     supported) do_supported ;;
     get) do_get ;;
     set)
-        [ $# -ge 1 ] || usage
-        do_set "$1"
+        [ -n "$value" ] || usage
+        do_set "$value"
         ;;
     *) usage ;;
 esac

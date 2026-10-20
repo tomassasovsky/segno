@@ -86,7 +86,10 @@ Sources:
    consistent horizontal padding and readable full-size geometry.
 8. A slider double tap resets its meaningful default; no redundant Default
    button. Encoder press enters a draft, turn adjusts, press commits and Back
-   cancels. Changing target/editor cancels unfinished edits; unrelated saves do
+   cancels. Outside a draft a turn moves focus to the next or previous control
+   and a press activates it. On the Stage, with nothing open above it, a turn
+   stays master volume (the level in foot Mixer) and a press opens Settings
+   (#1276). Changing target/editor cancels unfinished edits; unrelated saves do
    not commit them. Focus scrolls into view, stays inside unclipped bounds, is
    trapped in the active dialog and returns to the opener. Fixed/readout controls
    never enter focus. Rename/password entry uses a fixed bottom keyboard sheet:
@@ -119,8 +122,10 @@ Sources:
    a chosen recording source. No selected source yields a repair reason rather
    than an invented input. Count-in and Sound arming are mutually exclusive.
 4. Keep Tempo, time signature, click behavior and count-in together. Tempo has
-   whole-BPM and 0.01-BPM adjustment. Count-in is Off/1/2/4 bars, shared for a
-   simultaneous launch from stopped, and canceled by Stop. Adding while music
+   whole-BPM and 0.01-BPM adjustment. Count-in is Off/1/2/4 bars, counts in captures
+   only (a stopped Play starts at once, and joins a take's count-in already
+   running), is shared for a simultaneous launch from stopped, and is canceled
+   by Stop. Adding while music
    runs uses the chosen grid. External clock adds no extra local count-in.
    Quantization choices are Immediately, Loop start, bar, half, quarter, eighth
    and sixteenth note, with per-track ownership. A queued action belongs to its
@@ -283,11 +288,27 @@ Sources:
    bank position; after it fires, release remains attached to that completed
    gesture. Resolve fixed targets by identity, never visible slot/name. Cancel
    pending gestures on invalidating navigation, disconnect or configuration.
-4. LEDs represent function state: momentary lights only while active contact is
-   held; toggle stays lit until toggled again. Color is configurable on all ten,
-   including pedals with fixed actions. Custom colors can be added, edited and
-   reused; changing color never resets active state. Selection feedback in setup
-   must not masquerade as a saved performance latch.
+4. LEDs represent function state: a toggle stays lit until toggled again. Every
+   press lights its pedal at once while held, MODE included, whether or not the
+   press was accepted: the light comes from the press event itself, never from
+   an engine round-trip. Colour is a per-mode, per-state map (#1297), edited in
+   Pedals → LED colors: pick a mode, pick a pedal group on the map, and set a
+   colour for each state that group can show in that mode. The four track
+   pedals are one group (for example Record: recording, overdubbing, playing,
+   selected, pressed); Rec/Play, Stop, Undo, Clear, MODE and Bank are a group
+   each, with only the states their mode can light. Every mode, Rec and Mute
+   included, has its own map; Reset to defaults puts the shown mode back. The
+   defaults are the pedal's original colours, pure channels rather than the
+   screen palette's tints: recording and overdub red, playing and Mute-armed
+   green, engaged FX/Fade/Reverse/Peel blue, the Multiply/Divide selection red,
+   Mixer and Tuner selections white; MODE red in Record, green in Mute, blue in
+   FX and yellow elsewhere; Bank B a dim blue. A held pedal lights white,
+   except Clear, which keeps the red it always showed while held. In Custom
+   mode MODE and Bank follow the Custom map, and every assignable pedal takes
+   its own colour for Active (its function is on) and Pressed, set beside its
+   Press/Hold in Custom controls and keyed like the assignment (track pedals
+   per bank). Changing a colour never resets active state. Selection feedback
+   in setup must not masquerade as a saved performance latch.
 5. Performance functions retain the same physical map and a foot Exit. Their
    musical meanings are fixed below; exact current pedal captions are in the
    shared performance module, not copied from Looper X hardware.

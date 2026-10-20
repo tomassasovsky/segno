@@ -132,11 +132,13 @@ packages/segno_engine/*.exe
 # Ignore .claude/ contents (settings.local.json etc.) but TRACK the shared
 # launch config so the 3D viewer is one command for anyone who clones, the
 # shared settings (tracking-reminder + iterative-dev hooks) so every
-# session/agent respects them, and the hook scripts those settings run.
+# session/agent respects them, the hook scripts those settings run, and the
+# shared project skills.
 .claude/*
 !.claude/launch.json
 !.claude/settings.json
 !.claude/hooks/
+!.claude/skills/
 .portfolio-output/
 
 # KiCad scratch + caches. Underscore-prefixed = scratch experiments; canonical
