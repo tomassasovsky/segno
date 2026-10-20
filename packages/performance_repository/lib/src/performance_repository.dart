@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:meta/meta.dart';
+import 'package:operation_guards/operation_guards.dart';
+import 'package:performance_repository/src/models/capture_summary.dart';
 import 'package:performance_repository/src/models/performance_chains.dart';
 import 'package:performance_repository/src/models/performance_manifest.dart';
 import 'package:performance_repository/src/models/unfinalized_capture.dart';
@@ -36,11 +40,15 @@ class PerformanceRepository {
   PerformanceRepository({
     required AudioEngine engine,
     required Future<String> Function() exportsRoot,
+    required GuardRegistry guards,
     DateTime Function() now = DateTime.now,
     Duration bootRecoveryPollInterval = const Duration(milliseconds: 200),
     Duration bootRecoveryRenderTimeout = defaultBootRecoveryRenderTimeout,
+    int? reserveBytes,
   }) : _engine = engine,
+       _guards = guards,
        _exportsRoot = exportsRoot,
+       _reserveBytes = reserveBytes,
        _now = now,
        _bootRecoveryPollInterval = bootRecoveryPollInterval,
        _bootRecoveryRenderTimeout = bootRecoveryRenderTimeout;
@@ -50,6 +58,73 @@ class PerformanceRepository {
   final DateTime Function() _now;
   final Duration _bootRecoveryPollInterval;
   final Duration _bootRecoveryRenderTimeout;
+
+  /// The app's one guard table (accepted behaviour 6.12). A take holds a
+  /// `capture` guard from the commit of [arm] until it is finalized or its
+  /// failed arm is cancelled, so a device change, a calibration, a session
+  /// apply or a shutdown sees it at their own commits, and [arm] itself is
+  /// refused while one of them is in flight.
+  final GuardRegistry _guards;
+  OperationGuard? _captureGuard;
+
+  final StreamController<GuardRefused> _armRefusals =
+      StreamController<GuardRefused>.broadcast();
+
+  /// Every [arm] the guard table refused, with what refused it. [arm] keeps
+  /// its silent-ok contract (the pedal calls it with nothing in front of
+  /// it), so this is where the reason goes; the recorder cubit listens.
+  Stream<GuardRefused> get armRefusals => _armRefusals.stream;
+
+  /// What the Storage page and the recorder name a take by.
+  static const String capturePurpose = 'recording';
+
+  /// Bytes every take leaves free on the exports volume (#1198): the engine
+  /// stops a take at the last whole frame above it. Null means no budget, so
+  /// a take stops only when a write fails. The app passes Internal's storage
+  /// reserve.
+  final int? _reserveBytes;
+
+  /// The shortest take [minimumFreeBytesToArm] must leave room for.
+  static const Duration minimumTake = Duration(seconds: 10);
+
+  /// Free bytes the exports volume needs before a take may start: the
+  /// reserve, the engine's allowance, and [minimumTake] of every stream the
+  /// arm would capture (the master and each monitored input, as the engine
+  /// reports them) at the current sample rate, with one part header each.
+  /// Arming below this would start a take the reserve stops at once. When
+  /// the engine reports nothing to capture, a stereo master is assumed.
+  int get minimumFreeBytesToArm => minimumFreeBytesToArmAt();
+
+  /// [minimumFreeBytesToArm] for a take armed under [root] (see [arm]): a
+  /// take on a removable volume keeps no reserve (#1177), so only the
+  /// allowance and [minimumTake] count there.
+  int minimumFreeBytesToArmAt({String? root}) {
+    final reserve = root == null ? (_reserveBytes ?? 0) : 0;
+    final snapshot = _engine.snapshot();
+    final rate = snapshot.sampleRate > 0 ? snapshot.sampleRate : 48000;
+    final streams = snapshot.perfCaptureStreams > 0
+        ? snapshot.perfCaptureStreams
+        : 1;
+    final frameBytes = snapshot.perfCaptureFrameBytes > 0
+        ? snapshot.perfCaptureFrameBytes
+        : 2 * 4;
+    return reserve +
+        PerfTarget.allowanceBytes +
+        streams * PerfTarget.partHeaderBytes +
+        rate * minimumTake.inSeconds * frameBytes;
+  }
+
+  /// Called with the hidden directory a delete is about to remove, so a
+  /// test can see that the take left the listing before any file went.
+  @visibleForTesting
+  static void Function(String doomed)? debugBeforeDeleting;
+
+  /// What a guard refusal names a recording's delete by.
+  static const String deletePurpose = 'deleting a recording';
+
+  /// The suffix a take's directory takes while [deleteCapture] removes it:
+  /// a hidden sibling the listing skips and the next boot finishes.
+  static const String deletingSuffix = '.deleting';
 
   /// The `exports/` root new bundles are created under.
   ///
@@ -82,6 +157,7 @@ class PerformanceRepository {
   /// which the loser's re-check cleanup would delete the winner's just-armed
   /// live capture directory out from under the engine's drain thread.
   bool _armInFlight = false;
+  Completer<void>? _armFinished;
 
   /// The number of finalize passes ([_finalize]) currently in flight; [arm]
   /// refuses while it is above zero. A count, not a flag: finalizes can
@@ -109,41 +185,34 @@ class PerformanceRepository {
   ///
   /// The same constant as [reservedRecoveredDirName]: [renameCapture]'s slug
   /// validation refuses the name, since a take renamed onto it would BE this
-  /// area — enumerated by the retention prune, adopted by future salvages.
+  /// area, adopted by future salvages.
   static const String recoveredDirName = reservedRecoveredDirName;
 
-  /// How long a salvaged capture lives under [recoveredDirName] before
-  /// [runBootRecovery] prunes it at the next boot.
-  ///
-  /// Measured from when the bundle *landed* in the recovered area — read
-  /// from the [recoveredAtStampName] stamp the move writes — not from when
-  /// it was captured or finalized, so a bundle salvaged (or stranded, then
-  /// swept) after the console sat unpowered for weeks still gets its full
-  /// window on disk.
-  static const Duration recoveredRetention = Duration(days: 30);
+  /// The largest raw `.pcm` file of a pre-#1198 capture that finalize still
+  /// converts by reading it whole, as it always did. Reading costs the file
+  /// once and the WAV it becomes once more, so this stays well inside the
+  /// appliance's memory: the 6 GB and 36 GB takes found on one ran it out
+  /// (#1198). A capture with a larger file stays unfinalized, in place, its
+  /// files untouched, for Part 8's streaming conversion, and is reported in
+  /// [unrecoveredTakes].
+  static const int legacyConvertMaxBytes = 512 * 1024 * 1024;
 
-  /// The provenance + retention-clock stamp inside every recovered bundle:
-  /// epoch milliseconds as text, written on the SOURCE bundle immediately
-  /// before the move's rename so the rename carries it atomically — a
-  /// bundle can never exist in the recovered area without its stamp, and a
-  /// crash before the rename just re-stamps on that boot's retry. The prune
-  /// ages ONLY stamped entries: the stamp is what proves the salvage moved
-  /// a bundle in (a finished take a user drags into the area by hand has a
-  /// sidecar but no stamp, and is never the prune's to delete), and its
-  /// contents — not any filesystem mtime, which copies and moves rewrite
-  /// freely — are the retention clock.
+  /// Captures the last [runBootRecovery] tried and could not finalize (a
+  /// raw take too large to convert yet, a damaged sidecar, a failed write).
+  /// Each stays where it is with every file kept; the app tells the player
+  /// it could not be recovered.
+  List<String> get unrecoveredTakes => List.unmodifiable(_unrecovered);
+  final List<String> _unrecovered = [];
+
+  /// The provenance stamp inside every recovered bundle: epoch
+  /// milliseconds as text, written on the SOURCE bundle immediately before
+  /// the move's rename so the rename carries it atomically — a bundle can
+  /// never exist in the recovered area without its stamp, and a crash before
+  /// the rename just re-stamps on that boot's retry. It records when the
+  /// salvage moved the bundle in. Nothing ages or deletes a recovered
+  /// bundle: recovered audio is kept until the user removes it (owner
+  /// decision, #1198).
   static const String recoveredAtStampName = '.recovered-at';
-
-  /// Timestamps before this instant are treated as evidence of a wrong
-  /// clock, and the prune never acts on them. An RTC-less appliance (the Pi
-  /// console) boots at/near the epoch until its first NTP sync, so a capture
-  /// recovered before that sync carries a near-epoch [recoveredAtStampName]
-  /// stamp — comparing it against the later-corrected clock computes
-  /// decades of "age" and would delete yesterday's recovery. Anything
-  /// stamped before this project's own era plainly wasn't recovered then;
-  /// keep it and let a boot with a sane clock (which re-stamps nothing) age
-  /// it out only if it truly is old.
-  static final DateTime pruneSanityFloor = DateTime.utc(2026);
 
   /// The marker file [runBootRecovery] drops inside a bundle before
   /// salvaging it, and removes only after the bundle lands under
@@ -180,16 +249,17 @@ class PerformanceRepository {
   /// native fields while armed). Deleted once finalize folds it in.
   static const String _armSnapshotFileName = 'arm-snapshot.json';
 
-  /// Free bytes on the volume holding [path], or `null` when the platform
-  /// cannot answer.
+  /// Total and free bytes of the volume holding [path], or `null` when the
+  /// platform cannot answer.
   ///
   /// A capture re-checks the volume it is filling, and used to do it by running
   /// `df` — which forks the whole app, twelve times a minute, for the length
   /// of a take. On the appliance that is milliseconds of `mmap_lock` held for
   /// write while a 1.7 GB address space's page tables are copied, with the
   /// real-time audio thread asleep behind it (#806). The engine answers the
-  /// same question with a `statvfs` and no child process.
-  int? freeSpaceBytes(String path) => _engine.volumeFreeBytes(path);
+  /// same question with a `statvfs` and no child process. The Storage page
+  /// reads Internal capacity through this same call (#1177).
+  VolumeSpace? volumeSpace(String path) => _engine.volumeSpace(path);
 
   /// The repository-owned capture phase, replaying the current value to a new
   /// listener before live updates (mirrors `LooperRepository.looperState`).
@@ -225,7 +295,13 @@ class PerformanceRepository {
   /// Poll-on-demand, the same convention [renderProgress] uses, so a UI
   /// driving an elapsed-time readout ticks this itself rather than this
   /// repository owning a second internal timer.
-  ({Duration elapsed, bool overrun, bool selfStopped}) get captureProgress {
+  ({
+    Duration elapsed,
+    bool overrun,
+    bool selfStopped,
+    PerfStopReason stopReason,
+  })
+  get captureProgress {
     final snapshot = _engine.snapshot();
     final sampleRate = snapshot.sampleRate > 0 ? snapshot.sampleRate : 48000;
     return (
@@ -242,6 +318,9 @@ class PerformanceRepository {
       // progress the UI already polls rather than on a second channel, so the
       // app learns about it at tick rate instead of not at all (#652).
       selfStopped: snapshot.perfStopped,
+      // Why it stopped (#1198): a failed write, the reserve, or the storage
+      // falling behind. Set before the engine publishes the stop.
+      stopReason: snapshot.perfStopReason,
     );
   }
 
@@ -249,6 +328,15 @@ class PerformanceRepository {
     _status = status;
     if (!_statusController.isClosed) _statusController.add(status);
   }
+
+  /// Sets the capture policy the next [arm] freezes for its take (accepted
+  /// design, Performance recording): `false` (the default) leaves the final
+  /// output volume and mute out of the take; `true` (Follow output volume)
+  /// applies the selected destination's level and mute. Mono, Balance,
+  /// hardware master gain and limiter remain outside either capture. A
+  /// running take keeps the policy it was armed with.
+  EngineResult setFollowOutput({required bool follow}) =>
+      _engine.setPerfFollowOutput(follow: follow);
 
   /// Arms performance-recording capture: resolves a new collision-free
   /// `{exportsRoot}/perf-YYYYMMDD-HHMMSS/` bundle directory, takes the
@@ -271,29 +359,46 @@ class PerformanceRepository {
   /// directly with no cubit-level gate in front of it. Callers observe
   /// the refusal through [captureStatus] never reporting armed (and
   /// [armedDirectory] staying null), not through the return value.
+  ///
+  /// [root] puts this take's bundle under another directory than the
+  /// constructor's `exportsRoot` (a USB volume's `Segno/Performances`, #1177);
+  /// [armedDirectory] stays the truth of where it went. [scope] is where the
+  /// take's `capture` guard is held, so the guard table can refuse an eject
+  /// or a copy on that volume while it records: a removable [root] must come
+  /// with that volume's scope.
   Future<EngineResult> arm({
     PerformanceChains chains = const PerformanceChains(),
+    String? root,
+    GuardScope scope = const GuardScope.internal(),
   }) async {
     if (_armedDir != null || _armInFlight) return EngineResult.ok;
     if (_finalizesInFlight > 0 || !renderProgress.done) return EngineResult.ok;
     _armInFlight = true;
+    final finished = Completer<void>();
+    _armFinished = finished;
     try {
-      return await _armGated(chains);
+      return await _armGated(chains, root: root, scope: scope);
     } finally {
       _armInFlight = false;
+      _armFinished = null;
+      finished.complete();
     }
   }
 
   /// The body of [arm] past its entry gate; runs with [_armInFlight] held.
-  Future<EngineResult> _armGated(PerformanceChains chains) async {
-    final root = await _exportsRoot();
+  Future<EngineResult> _armGated(
+    PerformanceChains chains, {
+    required String? root,
+    required GuardScope scope,
+  }) async {
+    final under = root ?? await _exportsRoot();
     final base = performanceSlug(_now());
     var slug = base;
-    var dir = '$root/$slug';
+    var dir = '$under/$slug';
     var suffix = 1;
     while (Directory(dir).existsSync()) {
       slug = '$base-$suffix';
-      dir = '$root/$slug';
+      dir = '$under/$slug';
       suffix++;
     }
     await Directory(dir).create(recursive: true);
@@ -310,6 +415,10 @@ class PerformanceRepository {
       limiterEnabled: chains.limiterEnabled,
       limiterCeiling: chains.limiterCeiling,
       latencyOffsetFrames: snapshot.recordOffsetFrames,
+      // The capture policy (slice 3b) the engine freezes for this take. The
+      // destination it captures and that destination's facts are filled in
+      // after the arm below, from the engine's own frozen choice.
+      followOutput: snapshot.perfFollowOutput,
       // The engine tempo at the arm instant, verbatim (0 = unset, matching
       // the session manifest's own sentinel). The crash-salvage fallback
       // only — the disarm snapshot re-reads it authoritatively, because
@@ -320,13 +429,8 @@ class PerformanceRepository {
       // The bus stages (FX v3, R20/R3): recorded so a replay can rebuild the
       // whole four-stage rig, bypass state included.
       trackChains: chains.trackChains,
-      masterEffects: chains.masterEffects,
-      masterChainEnabled: chains.masterChainEnabled,
+      outputChains: chains.outputChains,
     );
-    await File(
-      '$dir/$_armSnapshotFileName',
-    ).writeAsString(jsonEncode(armSnapshot.toJson()));
-
     // Re-checked here, not just at entry: the awaits above suspend this arm,
     // and a boot-salvage ([recoverCapture]) starting inside that window
     // raises [_finalizesInFlight] too late for the entry gate to see — the
@@ -344,18 +448,163 @@ class PerformanceRepository {
       return EngineResult.ok;
     }
 
-    final result = _engine.perfArm(dir);
+    // The commit point (accepted behaviour 6.12): the guard is taken here,
+    // after every await of this arm, never when a control was pressed.
+    try {
+      _captureGuard = _guards.enter(
+        GuardKind.capture,
+        scope,
+        purpose: capturePurpose,
+      );
+    } on GuardRefused catch (refusal) {
+      final created = Directory(dir);
+      if (created.existsSync()) created.deleteSync(recursive: true);
+      _armRefusals.add(refusal);
+      return EngineResult.ok;
+    }
+
+    // The take's identity (#1198): random, minted before any audio exists,
+    // and written into every part's `sgno` chunk by the drain.
+    final random = Random.secure();
+    final takeId = Uint8List.fromList([
+      for (var i = 0; i < PerfTarget.takeIdBytes; i++) random.nextInt(256),
+    ]);
+    // The reserve is Internal's (#1198); a removable volume keeps none
+    // (#1177), so a take there stops only when its writes fail.
+    final result = _engine.perfArm(
+      PerfTarget(
+        captureDir: dir,
+        takeId: takeId,
+        reserveBytes: root == null ? _reserveBytes : null,
+      ),
+    );
     if (!result.isOk) {
+      _releaseCaptureGuard();
       final created = Directory(dir);
       if (created.existsSync()) created.deleteSync(recursive: true);
       return result;
     }
 
+    // perfArm queues the callback command. Claim its directory immediately:
+    // the callback may begin draining before this future observes its frozen
+    // facts, and a later I/O error must never leave that live capture hidden
+    // behind an idle repository. The native disarm contract also cancels a
+    // pending arm; a failed disarm retains ownership for retry.
     _armedDir = dir;
-    _armSnapshot = armSnapshot;
-    _armedAt = _now();
-    _setStatus(PerformanceCaptureStatus.armed);
-    return EngineResult.ok;
+    try {
+      final armWait = Stopwatch()..start();
+      var armed = _engine.snapshot();
+      while (!armed.isPerfArmed &&
+          armWait.elapsed < const Duration(seconds: 2)) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        armed = _engine.snapshot();
+      }
+      if (!armed.isPerfArmed || armed.perfCaptureMask == 0) {
+        return _cancelFailedArm(EngineResult.device);
+      }
+
+      // The captured destination and its facts, read AFTER the arm: the
+      // engine picks the destination inside le_perf_arm from the output gate
+      // as it stands then, and the lane export above ran before that. This
+      // gap also made the old `clockFrame` anchor race-stale (#262). Taking
+      // the destination from the pre-arm
+      // snapshot would let the manifest name one destination while the take
+      // captured another, and the offline render replays the level rides of
+      // whichever the manifest names.
+      final captureBus = armed.perfCaptureBus;
+      if (captureBus < 0) {
+        return _cancelFailedArm(EngineResult.device);
+      }
+      final outputChain = _engine.outputFxSnapshot(bus: captureBus);
+      if (outputChain.effects.any(
+        (effect) =>
+            effect.type != 0 &&
+            TrackEffectType.fromCode(effect.type) == TrackEffectType.none,
+      )) {
+        return _cancelFailedArm(EngineResult.invalid);
+      }
+      final finalArm = armSnapshot.withCapture(
+        followOutput: armed.perfFollowOutput,
+        captureBus: captureBus,
+        captureMask: armed.perfCaptureMask,
+        outputEnabledMask: armed.perfOutputEnabledMask,
+        outputLevel: armed.perfOutputLevel,
+        outputMuted: armed.perfOutputMuted,
+        outputEffects: [
+          for (final effect in outputChain.effects)
+            BuiltInEffect(
+              type: TrackEffectType.fromCode(effect.type),
+              params: effect.params,
+              enabled: effect.enabled,
+            ),
+        ],
+        outputChainEnabled: outputChain.chainEnabled,
+      );
+      _armSnapshot = finalArm;
+      // A pre-arm snapshot cannot truthfully name the callback-selected output
+      // or policy. Write only the settled facts, then atomically publish them;
+      // a crash or failed write leaves no misleading salvage snapshot. Keep
+      // live ownership and the in-memory snapshot if publication fails, so a
+      // later disarm can still stop and finalize this take.
+      final pending = File('$dir/$_armSnapshotFileName.pending');
+      try {
+        await pending.writeAsString(jsonEncode(finalArm.toJson()), flush: true);
+        await pending.rename('$dir/$_armSnapshotFileName');
+      } on Object {
+        try {
+          if (pending.existsSync()) pending.deleteSync();
+        } on FileSystemException {
+          // The volume may still be unavailable; the pending file is ignored
+          // by salvage, and the live capture remains owned above.
+        }
+        // The capture remains live and owned even though publication failed;
+        // expose it now, with no gesture guard on the stop retry.
+        _armedAt = null;
+        _setStatus(PerformanceCaptureStatus.armed);
+        rethrow;
+      }
+      _armedAt = _now();
+      _setStatus(PerformanceCaptureStatus.armed);
+      return EngineResult.ok;
+    } catch (_) {
+      // Snapshot/getter failures before the armed state is published still
+      // have a live native owner. Stop it through the same pending-safe
+      // contract; if that fails, expose ownership for a later disarm retry.
+      // Once armed was published, a failed atomic file write keeps the
+      // in-memory final snapshot and capture for disarm/finalize instead.
+      if (_armedDir == dir && _status != PerformanceCaptureStatus.armed) {
+        _cancelFailedArm(EngineResult.device);
+      } else if (_armedDir == dir) {
+        // This was an arm failure, not a second user tap. An immediate
+        // disarm must be allowed through the gesture guard to stop it.
+        _armedAt = null;
+      }
+      rethrow;
+    }
+  }
+
+  EngineResult _cancelFailedArm(EngineResult reason) {
+    EngineResult stopped;
+    try {
+      stopped = _engine.perfDisarm();
+    } catch (_) {
+      _armedAt = null;
+      _setStatus(PerformanceCaptureStatus.armed);
+      rethrow;
+    }
+    if (stopped.isOk) {
+      _armedDir = null;
+      _armSnapshot = null;
+      _armedAt = null;
+      _releaseCaptureGuard();
+      if (_status != PerformanceCaptureStatus.idle) {
+        _setStatus(PerformanceCaptureStatus.idle);
+      }
+    } else {
+      _armedAt = null;
+      _setStatus(PerformanceCaptureStatus.armed);
+    }
+    return reason;
   }
 
   /// Disarms performance-recording capture — the **toggle-gesture** path
@@ -369,6 +618,7 @@ class PerformanceRepository {
   /// See [disarmAndFinalize] for what the disarm itself actually does;
   /// idempotent identically.
   Future<EngineResult> disarm() async {
+    await _armFinished?.future;
     final dir = _armedDir;
     if (dir == null) return EngineResult.ok;
     final armedAt = _armedAt;
@@ -403,6 +653,7 @@ class PerformanceRepository {
   /// complete, without waiting on the render; poll [renderProgress] /
   /// [renderTrackStatuses] for its outcome.
   Future<EngineResult> disarmAndFinalize() async {
+    await _armFinished?.future;
     final dir = _armedDir;
     if (dir == null) return EngineResult.ok;
     return _finalizeArmed(dir);
@@ -432,12 +683,24 @@ class PerformanceRepository {
       _setStatus(PerformanceCaptureStatus.armed);
       return result;
     }
-
-    await _finalize(
-      dir,
-      armSnapshot: _armSnapshot,
-      disarmSnapshot: disarmSnapshot,
-    );
+    // Nothing is capturing from here on: the finalize below is file work
+    // that _finalizesInFlight fences. On Internal the guard goes now. A take
+    // on a USB drive keeps it through the finalize, which writes its WAVs to
+    // that drive for as long as the take ran: a restart or an eject let in
+    // meanwhile would cut them (#1177). Either way it is released in a
+    // finally, so a finalize that throws leaves nothing refused behind it.
+    if (_captureGuard?.operation.scope.generation == null) {
+      _releaseCaptureGuard();
+    }
+    try {
+      await _finalize(
+        dir,
+        armSnapshot: _armSnapshot,
+        disarmSnapshot: disarmSnapshot,
+      );
+    } finally {
+      _releaseCaptureGuard();
+    }
 
     _armedDir = null;
     _armSnapshot = null;
@@ -507,9 +770,8 @@ class PerformanceRepository {
     if (dir.existsSync()) await dir.delete(recursive: true);
   }
 
-  /// Boot-time crash salvage, run silently (D-SALVAGE, #679): prunes the
-  /// [recoveredDirName] area of entries older than [recoveredRetention],
-  /// then salvages — finalize, stem render, move — every capture a crash
+  /// Boot-time crash salvage, run silently (D-SALVAGE, #679): salvages —
+  /// finalize, stem render, move — every capture a crash
   /// left unfinalized, plus any bundle a previous boot finalized but never
   /// moved ([_strandedSalvage]), each finished bundle landing in
   /// `{exportsRoot}/`[recoveredDirName]`/<slug>/` — rendered, usable audio
@@ -523,10 +785,10 @@ class PerformanceRepository {
   /// missing sidecar, or a thrown write — leaves the raw bundle in place,
   /// untouched, to be retried at the next boot; what could not be rendered
   /// is never deleted. Retries are unbounded but cheap (the undecodable
-  /// -sidecar case is [_finalize]'s documented early return), and the prune
-  /// only ever touches bundles that DID recover, so a permanently
-  /// unrecoverable bundle stays on disk for the user rather than aging out
-  /// silently. A failed *stem render* on a finalized bundle still moves it —
+  /// -sidecar case is [_finalize]'s documented early return). Nothing here
+  /// deletes audio: a permanently unrecoverable bundle stays on disk for the
+  /// user, and a recovered one stays in [recoveredDirName] until the user
+  /// removes it. A failed *stem render* on a finalized bundle still moves it —
   /// the bundle is complete and valid without its stems, the same
   /// partial-success posture [_finalize] itself takes. Each capture is
   /// salvaged under its own guard: one bundle's failure never aborts its
@@ -543,13 +805,14 @@ class PerformanceRepository {
   /// every capture and again before each move; whatever is skipped waits
   /// for the next boot.
   Future<void> runBootRecovery() async {
+    _unrecovered.clear();
     final String root;
     try {
       root = await _exportsRoot();
     } on Exception {
       return; // cannot resolve the root: nothing to recover this boot
     }
-    _pruneRecovered(root);
+    _finishDeletes(root);
     final List<UnfinalizedCapture> unfinalized;
     try {
       unfinalized = await findUnfinalized();
@@ -579,6 +842,11 @@ class PerformanceRepository {
       // with its marker gone. Stop; the remainder waits for the next boot.
       if (!renderProgress.done) return;
       await _recoverSilently(root, dir);
+      // Still in place and still unfinalized: this boot could not recover
+      // it. Its files stay; the player is told.
+      if (Directory(dir).existsSync() && !_sidecarFinalized(dir)) {
+        _unrecovered.add(dir);
+      }
     }
   }
 
@@ -669,13 +937,11 @@ class PerformanceRepository {
   /// salvage complete.
   ///
   /// Writes the [recoveredAtStampName] stamp on the SOURCE, before anything
-  /// else in the move: the rename then carries provenance and retention
-  /// clock atomically, so no crash window can land a bundle in the
-  /// recovered area unstamped (where the prune would otherwise have only a
-  /// stale finalize time to age it by — a bundle stranded through a month
-  /// unpowered would be pruned on the very next boot). A failure anywhere
-  /// mid-move merely leaves a stamp travelling with the bundle, which the
-  /// next boot's retry overwrites with its own fresh landing time.
+  /// else in the move: the rename then carries it atomically, so no crash
+  /// window can land a bundle in the recovered area unstamped. A failure
+  /// anywhere mid-move merely leaves a stamp travelling with the bundle,
+  /// which the next boot's retry overwrites with its own fresh landing
+  /// time.
   void _moveToRecovered(String root, String dir) {
     File(
       '$dir/$recoveredAtStampName',
@@ -720,47 +986,6 @@ class PerformanceRepository {
       out.add(entity.path);
     }
     return out;
-  }
-
-  /// Deletes recovered-area entries older than [recoveredRetention], aged
-  /// by — and ONLY by — the salvage's own [recoveredAtStampName] stamp.
-  /// The stamp is provenance, not just shape: a finished take a user drags
-  /// into the area by hand carries a sidecar but no stamp, so nothing the
-  /// salvage didn't move in is ever the prune's to delete (belt to
-  /// [performanceCaptureSlug]'s reserved-name refusal). Age is read from
-  /// the stamp's contents, never a filesystem mtime — mtimes are rewritten
-  /// by copies and moves, and were the fragility behind two review rounds
-  /// here. A stamp before [pruneSanityFloor] is never acted on — see that
-  /// constant for the RTC-less-boot clock hazard — and an unreadable stamp
-  /// means no age worth guessing at. An entry the filesystem refuses is
-  /// skipped — and an unreadable recovered area skips the prune whole — the
-  /// next boot retries; a prune must never be the thing that takes boot
-  /// recovery down.
-  void _pruneRecovered(String root) {
-    final recoveredRoot = Directory('$root/$recoveredDirName');
-    if (!recoveredRoot.existsSync()) return;
-    final List<FileSystemEntity> entries;
-    try {
-      entries = recoveredRoot.listSync();
-    } on FileSystemException {
-      return; // unreadable area: prune waits for a healthier boot
-    }
-    for (final entity in entries) {
-      if (entity is! Directory) continue;
-      try {
-        final stampFile = File('${entity.path}/$recoveredAtStampName');
-        if (!stampFile.existsSync()) continue; // not ours: never delete
-        final millis = int.tryParse(stampFile.readAsStringSync().trim());
-        if (millis == null) continue; // unreadable stamp: no age to act on
-        final recoveredAt = DateTime.fromMillisecondsSinceEpoch(millis);
-        if (recoveredAt.isBefore(pruneSanityFloor)) continue;
-        if (_now().difference(recoveredAt) > recoveredRetention) {
-          entity.deleteSync(recursive: true);
-        }
-      } on FileSystemException {
-        continue;
-      }
-    }
   }
 
   /// Whether [dir]'s sidecar provably reads back with `finalized: true` — a
@@ -809,6 +1034,298 @@ class PerformanceRepository {
     return idx == -1 ? '.' : path.substring(0, idx);
   }
 
+  /// The DAW project files a bundle carries once written: the Ableton Live
+  /// Set and the plain-text effect chains it is read with.
+  static const List<String> dawProjectFiles = ['project.als', 'fx-chains.txt'];
+
+  /// Every finished recording, newest first (#1178 Part 7): the takes in the
+  /// exports root and the ones boot recovery salvaged under
+  /// [recoveredDirName], which are kept and listed with
+  /// [CaptureSummary.recovered] set (owner decision: no automatic delete
+  /// from the Library's point of view).
+  ///
+  /// Left out: the take being recorded, any bundle whose sidecar is not
+  /// finalized (a crash the boot salvage has not finished), and any bundle
+  /// still carrying [recoveryMarkerName] (salvage output that has not moved
+  /// yet). An unreadable sidecar leaves its bundle out; a missing root lists
+  /// nothing.
+  Future<List<CaptureSummary>> listCaptures() async {
+    final root = await _exportsRoot();
+    final out = <CaptureSummary>[
+      ..._capturesIn(root, recovered: false),
+      ..._capturesIn('$root/$recoveredDirName', recovered: true),
+    ];
+    final epoch = DateTime.fromMillisecondsSinceEpoch(0);
+    out.sort((a, b) {
+      final byTime = (b.startedAt ?? epoch).compareTo(a.startedAt ?? epoch);
+      return byTime != 0 ? byTime : a.name.compareTo(b.name);
+    });
+    return out;
+  }
+
+  List<CaptureSummary> _capturesIn(String dir, {required bool recovered}) {
+    final List<FileSystemEntity> entries;
+    try {
+      entries = Directory(dir).listSync();
+    } on FileSystemException {
+      return const [];
+    }
+    return [
+      for (final entity in entries)
+        // The take being recorded is never finalized, so it is left out
+        // with the crashed ones.
+        if (entity is Directory &&
+            !_basename(entity.path).startsWith('.') &&
+            (recovered || _basename(entity.path) != recoveredDirName) &&
+            !File('${entity.path}/$recoveryMarkerName').existsSync())
+          ?_readCapture(entity.path, recovered: recovered),
+    ];
+  }
+
+  CaptureSummary? _readCapture(String dir, {required bool recovered}) {
+    final PerformanceManifest manifest;
+    try {
+      manifest = PerformanceManifest.fromJson(
+        jsonDecode(File('$dir/$manifestName').readAsStringSync())
+            as Map<String, dynamic>,
+      );
+    } on Object {
+      return null;
+    }
+    if (!manifest.finalized) return null;
+    final parts = _partsOf(dir, manifest);
+    final listed = [
+      for (final part in parts)
+        if (part.isMaster) part.frames,
+    ];
+    return CaptureSummary(
+      path: dir,
+      name: _basename(dir),
+      startedAt: performanceSlugTime(manifest.slug),
+      durationFrames: listed.isEmpty
+          ? manifest.captureFrames
+          : listed.reduce((a, b) => a + b),
+      sampleRate: manifest.sampleRate,
+      recovered: recovered,
+      hasDawProject: File('$dir/${dawProjectFiles.first}').existsSync(),
+      parts: parts,
+    );
+  }
+
+  /// The take's audio parts in order: the sidecar's `parts` list (#1198's
+  /// format) when it has one, or the single-file `master.wav` and
+  /// `live-input-<n>.wav` of a take written before it. A `parts` list that
+  /// does not read is read as no parts: the take is listed without audio
+  /// rather than with a guess at it.
+  List<CapturePart> _partsOf(String dir, PerformanceManifest manifest) {
+    final listed = manifest.native['parts'];
+    if (listed is List<dynamic>) {
+      try {
+        final parts =
+            [
+              for (final entry in listed)
+                CapturePart.fromJson(entry as Map<String, dynamic>),
+            ]..sort(
+              (a, b) => a.stream != b.stream
+                  ? a.stream.compareTo(b.stream)
+                  : a.index.compareTo(b.index),
+            );
+        return parts;
+      } on Object {
+        return const [];
+      }
+    }
+    final layout =
+        manifest.native['channel_layout'] as Map<String, dynamic>? ?? const {};
+    final inputs = [
+      for (final c in (layout['captured_inputs'] as List<dynamic>? ?? const []))
+        if (c is num) c.toInt(),
+    ]..sort();
+    return [
+      ?_legacyPart(dir, 'master.wav', 0, manifest.captureFrames),
+      for (final input in inputs)
+        ?_legacyPart(
+          dir,
+          'live-input-$input.wav',
+          1 + input,
+          manifest.captureFrames,
+        ),
+    ];
+  }
+
+  CapturePart? _legacyPart(String dir, String file, int stream, int frames) {
+    final f = File('$dir/$file');
+    if (!f.existsSync()) return null;
+    return CapturePart(
+      stream: stream,
+      index: 1,
+      file: file,
+      frames: frames,
+      bytes: f.lengthSync(),
+    );
+  }
+
+  /// The files of [capture]'s DAW package, relative to its directory, that
+  /// exist on disk: every audio part in order, the rendered stems the Live
+  /// Set points at (`stems/dry/`, `stems/wet/`), then the [dawProjectFiles].
+  /// The Library copies them keeping these paths, so the Live Set opens on
+  /// the drive.
+  List<String> dawPackageFiles(CaptureSummary capture) {
+    final dir = capture.path;
+    final stems = <String>[];
+    for (final kind in const ['dry', 'wet']) {
+      final List<FileSystemEntity> entries;
+      try {
+        entries = Directory('$dir/stems/$kind').listSync();
+      } on FileSystemException {
+        continue;
+      }
+      stems.addAll(
+        [
+          for (final e in entries)
+            if (e is File && e.path.toLowerCase().endsWith('.wav'))
+              'stems/$kind/${_basename(e.path)}',
+        ]..sort(),
+      );
+    }
+    return [
+      for (final part in capture.parts)
+        if (File('$dir/${part.file}').existsSync()) part.file,
+      ...stems,
+      for (final file in dawProjectFiles)
+        if (File('$dir/$file').existsSync()) file,
+    ];
+  }
+
+  /// Deletes the finished recording [capture] from internal storage (the
+  /// Library's confirmed Delete, #1178 Part 7).
+  ///
+  /// Refused with [PerformanceCaptureBusy] while a take is being recorded,
+  /// finalized or rendered, since any of them may be writing into a bundle,
+  /// and with [GuardRefused] when the guard table forbids a bundle write
+  /// (a shutdown in flight). Refuses a path that is not a finished take
+  /// in the exports root or its recovered area with [ArgumentError].
+  Future<void> deleteCapture(CaptureSummary capture) async {
+    final root = await _exportsRoot();
+    final dir = capture.path;
+    final parent = _dirname(dir);
+    if ((parent != root && parent != '$root/$recoveredDirName') ||
+        _basename(dir) == recoveredDirName ||
+        !_sidecarFinalized(dir)) {
+      throw ArgumentError.value(dir, 'capture', 'not a finished take');
+    }
+    if (_armedDir != null ||
+        _armInFlight ||
+        _finalizesInFlight > 0 ||
+        !renderProgress.done) {
+      throw const PerformanceCaptureBusy();
+    }
+    final guard = _guards.enter(
+      GuardKind.sessionWrite,
+      GuardScope.internal(item: dir),
+      purpose: deletePurpose,
+    );
+    try {
+      // One rename takes the whole take out of the listing at once (atomic
+      // on the internal ext4); the recursive delete then works on a hidden
+      // directory, and the next boot finishes one a cut left behind.
+      final doomed = '${_dirname(dir)}/.${_basename(dir)}$deletingSuffix';
+      if (Directory(doomed).existsSync()) {
+        Directory(doomed).deleteSync(recursive: true);
+      }
+      Directory(dir).renameSync(doomed);
+      debugBeforeDeleting?.call(doomed);
+      try {
+        Directory(doomed).deleteSync(recursive: true);
+      } on FileSystemException {
+        // Hidden already; the next boot removes the rest.
+      }
+    } finally {
+      guard.release();
+    }
+  }
+
+  /// Removes the takes a delete hid but could not finish ([deletingSuffix]),
+  /// in the exports root and the recovered area.
+  void _finishDeletes(String root) {
+    for (final dir in [root, '$root/$recoveredDirName']) {
+      final List<FileSystemEntity> entries;
+      try {
+        entries = Directory(dir).listSync();
+      } on FileSystemException {
+        continue;
+      }
+      for (final e in entries) {
+        final name = _basename(e.path);
+        if (e is Directory &&
+            name.startsWith('.') &&
+            name.endsWith(deletingSuffix)) {
+          try {
+            e.deleteSync(recursive: true);
+          } on FileSystemException {
+            continue;
+          }
+        }
+      }
+    }
+  }
+
+  /// Plays [capture]'s first main-output part on the engine's audition voice
+  /// (the Library's `Preview`), decoded by the engine's one decoder off the
+  /// UI isolate. A take with no main-output part is refused with
+  /// [EngineResult.invalid] before the engine.
+  ///
+  /// [stillWanted] is handed to the engine: a start the caller withdrew
+  /// while it decoded never reaches the voice ([AuditionStart.cancelled]).
+  Future<AuditionStart> startAudition(
+    CaptureSummary capture, {
+    bool Function()? stillWanted,
+  }) async {
+    final first = capture.masterParts.firstOrNull;
+    final path = first == null ? null : '${capture.path}/${first.file}';
+    if (path == null || !File(path).existsSync()) {
+      return const AuditionStart(result: EngineResult.invalid);
+    }
+    return _engine.auditionStartFile(path, stillWanted: stillWanted);
+  }
+
+  /// Whether a take's stems may still be being written: the engine's one
+  /// render slot is busy, and the render writes `stems/` in place. The DAW
+  /// project and the DAW package wait for it (#1178 Part 7 review,
+  /// finding 4); the take's own parts are final and may go.
+  bool get rendering => !renderProgress.done;
+
+  /// [buckets] absolute peaks over [capture]'s main output, streamed off the
+  /// UI isolate through the engine's one decoder, the parts concatenated in
+  /// proportion to their lengths; null when no part reads.
+  Future<Float32List?> readPeaks(
+    CaptureSummary capture, {
+    int buckets = 256,
+  }) async {
+    final parts = capture.masterParts;
+    final total = parts.fold<int>(0, (sum, p) => sum + p.frames);
+    if (parts.isEmpty || total <= 0) return null;
+    final out = Float32List(buckets);
+    var filled = 0;
+    var framesBefore = 0;
+    for (final part in parts) {
+      framesBefore += part.frames;
+      final end = part == parts.last
+          ? buckets
+          : (framesBefore * buckets / total).round();
+      final share = end - filled;
+      if (share <= 0) continue;
+      final path = '${capture.path}/${part.file}';
+      final peaks = File(path).existsSync()
+          ? await _engine.filePeaks(path, buckets: share)
+          : null;
+      if (peaks == null) return null;
+      out.setRange(filled, end, peaks);
+      filled = end;
+    }
+    return out;
+  }
+
   Future<void> _finalize(
     String dir, {
     required PerformanceArmSnapshot? armSnapshot,
@@ -839,36 +1356,28 @@ class PerformanceRepository {
       }
       final layout =
           native['channel_layout'] as Map<String, dynamic>? ?? const {};
-      final sampleRate = (native['sample_rate'] as num?)?.toInt() ?? 0;
-      final masterChannels = (layout['master_channels'] as num?)?.toInt() ?? 1;
       final capturedInputs = [
         for (final c
             in (layout['captured_inputs'] as List<dynamic>? ?? const []))
           (c as num).toInt(),
       ];
-
-      final masterPcm = File('$dir/master.pcm');
-      if (masterPcm.existsSync()) {
-        final samples = _readRawPcm(masterPcm);
-        await File('$dir/master.wav').writeAsBytes(
-          WavCodec.encodeFloat32(
-            samples: samples,
-            sampleRate: sampleRate,
-            channels: masterChannels,
-          ),
-        );
-      }
-      for (final input in capturedInputs) {
-        final raw = File('$dir/input-$input.pcm');
-        if (!raw.existsSync()) continue;
-        final samples = _readRawPcm(raw);
-        await File('$dir/live-input-$input.wav').writeAsBytes(
-          WavCodec.encodeFloat32(
-            samples: samples,
-            sampleRate: sampleRate,
-            channels: 2,
-          ),
-        );
+      final legacy = [
+        File('$dir/master.pcm'),
+        for (final input in capturedInputs) File('$dir/input-$input.pcm'),
+      ].where((f) => f.existsSync()).toList();
+      if (legacy.isNotEmpty && !File('$dir/master-001.wav').existsSync()) {
+        // A capture from before #1198: raw PCM, no parts. Converted exactly
+        // as before, so an existing install's takes keep their audio. A raw
+        // file too large to read whole is left unfinalized, in place, for
+        // Part 8's bounded conversion; it is never finalized without audio.
+        if (legacy.any((f) => f.lengthSync() > legacyConvertMaxBytes)) return;
+        await _convertLegacyPcm(dir, native, capturedInputs);
+      } else {
+        // The drain writes each stream as finished float WAV parts, so there
+        // is nothing to convert. A crash leaves the open part's sizes
+        // unpatched; seal it here so a salvaged take still plays (#1198).
+        // Part 8 replaces this with the checkpoint-based recovery.
+        _sealOpenParts(dir);
       }
 
       var resolvedArm = armSnapshot;
@@ -910,8 +1419,8 @@ class PerformanceRepository {
   }
 
   /// Exports every currently-settled lane's PCM as a WAV directly into
-  /// `<dir>/loops/`, and returns one [PerformanceTrackSnapshot] per non-empty
-  /// track. A track currently capturing (recording/overdubbing) contributes
+  /// `<dir>/loops/`, and returns metadata for every active lane at arm, including empty
+  /// tracks that can be restored during capture. A track currently capturing (recording/overdubbing) contributes
   /// `deferred: true` lane entries instead of exporting (D-SNAP) — its buffer
   /// is being written by the audio thread and exporting it would tear.
   /// [stampTakeId] writes each track's settled take id onto its lane-0 entry
@@ -933,17 +1442,26 @@ class PerformanceRepository {
           track.state == TrackState.overdubbing;
       final lanes = <PerformanceLaneSnapshot>[];
       for (var laneIndex = 0; laneIndex < track.lanes.length; laneIndex++) {
-        if (capturing) {
+        final lane = track.lanes[laneIndex];
+        final laneChain = writeChains
+            ? _laneChain(chains, channel, laneIndex)
+            : null;
+        if (capturing || (writeChains && lane.lengthFrames <= 0)) {
           lanes.add(
             PerformanceLaneSnapshot(
               lane: laneIndex,
               lengthFrames: 0,
               deferred: true,
+              effects: laneChain?.effects ?? const [],
+              chainEnabled: laneChain?.chainEnabled ?? true,
+              volume: track.lanes[laneIndex].volume,
+              pan: track.lanes[laneIndex].pan,
+              muted: track.lanes[laneIndex].muted,
+              outputMask: track.lanes[laneIndex].outputMask,
             ),
           );
           continue;
         }
-        final lane = track.lanes[laneIndex];
         if (lane.lengthFrames <= 0) continue;
         final pcm = _engine.exportTrackLane(channel, laneIndex);
         if (pcm.isEmpty) continue;
@@ -958,9 +1476,6 @@ class PerformanceRepository {
             channels: 1,
           ),
         );
-        final laneChain = writeChains
-            ? _laneChain(chains, channel, laneIndex)
-            : null;
         lanes.add(
           PerformanceLaneSnapshot(
             lane: laneIndex,
@@ -969,6 +1484,10 @@ class PerformanceRepository {
             pcmFile: filename,
             effects: laneChain?.effects ?? const [],
             chainEnabled: laneChain?.chainEnabled ?? true,
+            volume: lane.volume,
+            pan: lane.pan,
+            muted: lane.muted,
+            outputMask: lane.outputMask,
             // Take identity (#819): lane 0 of the DISARM pass carries the
             // track's settled take id so the offline renderer can anchor this
             // disarm image by identity. Presence-keyed (written only when > 0);
@@ -985,6 +1504,7 @@ class PerformanceRepository {
           state: track.state,
           volume: track.volume,
           muted: track.muted,
+          solo: track.solo,
           multiple: track.multiple,
           lanes: lanes,
         ),
@@ -1020,6 +1540,41 @@ class PerformanceRepository {
       },
   ];
 
+  /// Converts a pre-#1198 capture's raw `master.pcm` and `input-<n>.pcm` to
+  /// `master.wav` and `live-input-<n>.wav`, as every finalize did before the
+  /// drain wrote parts.
+  Future<void> _convertLegacyPcm(
+    String dir,
+    Map<String, dynamic> native,
+    List<int> capturedInputs,
+  ) async {
+    final layout =
+        native['channel_layout'] as Map<String, dynamic>? ?? const {};
+    final sampleRate = (native['sample_rate'] as num?)?.toInt() ?? 0;
+    final masterChannels = (layout['master_channels'] as num?)?.toInt() ?? 1;
+    final masterPcm = File('$dir/master.pcm');
+    if (masterPcm.existsSync()) {
+      await File('$dir/master.wav').writeAsBytes(
+        WavCodec.encodeFloat32(
+          samples: _readRawPcm(masterPcm),
+          sampleRate: sampleRate,
+          channels: masterChannels,
+        ),
+      );
+    }
+    for (final input in capturedInputs) {
+      final raw = File('$dir/input-$input.pcm');
+      if (!raw.existsSync()) continue;
+      await File('$dir/live-input-$input.wav').writeAsBytes(
+        WavCodec.encodeFloat32(
+          samples: _readRawPcm(raw),
+          sampleRate: sampleRate,
+          channels: 2,
+        ),
+      );
+    }
+  }
+
   Float32List _readRawPcm(File file) {
     final bytes = file.readAsBytesSync();
     return Float32List.view(
@@ -1029,6 +1584,56 @@ class PerformanceRepository {
     );
   }
 
+  void _releaseCaptureGuard() {
+    _captureGuard?.release();
+    _captureGuard = null;
+  }
+
+  /// A part file the drain names: `master-001.wav`, `input-3-002.wav`.
+  static final _partFile = RegExp(r'^(master|input-\d+)-\d{3}\.wav$');
+
+  /// Patches the RIFF and data sizes of every part [dir] holds whose header
+  /// still reads 0 (the drain patches them only when it seals the part),
+  /// dropping a torn trailing frame. A file that is not a recorded part is
+  /// left alone; one that cannot be opened throws, which keeps the bundle in
+  /// place for the next boot.
+  void _sealOpenParts(String dir) {
+    const header = PerfTarget.partHeaderBytes;
+    for (final entity in Directory(dir).listSync()) {
+      if (!_partFile.hasMatch(_basename(entity.path))) continue;
+      final file = File(entity.path).openSync(mode: FileMode.append);
+      try {
+        final length = file.lengthSync();
+        if (length < header) continue;
+        file.setPositionSync(0);
+        final head = ByteData.sublistView(file.readSync(header));
+        String tag(int at) =>
+            String.fromCharCodes(head.buffer.asUint8List(at, 4));
+        if (tag(0) != 'RIFF' ||
+            tag(8) != 'WAVE' ||
+            tag(36) != 'sgno' ||
+            tag(76) != 'data' ||
+            head.getUint32(4, Endian.little) != 0) {
+          continue;
+        }
+        final frameBytes = head.getUint16(22, Endian.little) * 4;
+        if (frameBytes == 0) continue;
+        final data = (length - header) ~/ frameBytes * frameBytes;
+        file
+          ..truncateSync(header + data)
+          ..setPositionSync(4)
+          ..writeFromSync(_u32(header - 8 + data))
+          ..setPositionSync(header - 4)
+          ..writeFromSync(_u32(data));
+      } finally {
+        file.closeSync();
+      }
+    }
+  }
+
+  static Uint8List _u32(int value) =>
+      (ByteData(4)..setUint32(0, value, Endian.little)).buffer.asUint8List();
+
   String _basename(String path) =>
       path.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).last;
 
@@ -1036,5 +1641,6 @@ class PerformanceRepository {
   /// engine lifecycle are responsible for disarming before disposal.
   void dispose() {
     unawaited(_statusController.close());
+    unawaited(_armRefusals.close());
   }
 }

@@ -103,14 +103,37 @@ extension EngineLocalizations on AppLocalizations {
   /// disagreeing about what an input is called is exactly the bug track names
   /// already had (#526).
   ///
-  /// An unnamed socket falls back to its ordinal (`In 2`), which is what every
-  /// surface said before names existed. A socket with no entry falls back
-  /// rather than throwing — a session saved on an eight-in rig still routes
-  /// In 6 when it is reopened on a two-in one, and that lane's row has to say
-  /// something.
+  /// An unnamed socket falls back to its full ordinal (`Input 2`). A session
+  /// saved on an eight-in rig still names Input 6 when reopened on a two-in
+  /// one, where that source is unavailable.
   String inputName(Map<int, String> names, int input) {
     final given = names[input] ?? '';
-    return given.isNotEmpty ? given : inputChannelLabel(input + 1);
+    return given.isNotEmpty ? given : routingInputOrdinal(input + 1);
+  }
+
+  /// The jacks destination [bus] drives on a device with [channels] outputs.
+  ///
+  /// A destination is the stereo pair `2*bus` and `2*bus + 1`. An odd-channel
+  /// device leaves the last destination holding a single jack, and it is
+  /// labelled as one rather than promising a socket the interface has not got.
+  String outputBusLabel(int bus, {required int channels}) =>
+      2 * bus + 1 < channels
+      ? outputPairLabel(2 * bus + 1, 2 * bus + 2)
+      : outputSingleLabel(2 * bus + 1);
+
+  /// What to CALL destination [bus], given the rig's [names] — the output-side
+  /// twin of [inputName], and for the same reason.
+  ///
+  /// An unnamed destination falls back to its full jack label (`Outputs 1–2`
+  /// or `Output 5` for an odd final jack).
+  String outputName(
+    Map<int, String> names,
+    int bus, {
+    required int channels,
+  }) {
+    final given = names[bus] ?? '';
+    if (given.isNotEmpty) return given;
+    return outputBusLabel(bus, channels: channels);
   }
 
   String sampleRateKhzLabel(int rate) {

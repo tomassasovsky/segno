@@ -1,0 +1,14 @@
+{
+  "section": "A3mXW",
+  "name": "Native implementation / Shared overdub decay / M3.12",
+  "penSha256": "183e78354b35e5d9740c71cf4f422b36d48f911504fa77e08ae587abb2730a72",
+  "layout": "MCP bounds inspection found no clipped descendants. Group render visually inspected; File > Save cleared Edited state and on-disk hash changed.",
+  "nativeUI": "Restarted actual development app; Loop controls > Loop defaults offers decay; new button endpoints both Off/Keep layers. Saved Held 50%, Released 0%; removal followed by Cancel restored the saved assignment and endpoints. Removed only this temporary mapping afterward; original pan and Click mappings preserved.",
+  "screenshots": {
+    "test/screenshots/goldens/midi_controls_decay_ranges.png": "e4fe00b6a6424bbfb2e29b8378f9af3a878f5d1cc5afebae26575566ab4bff36",
+    "test/screenshots/goldens/midi_controls_decay_destination.png": "c2d7b4e6be972aad20f48bbed90e9bb6b2215de903a8b93051d41760fb09ea1d",
+    "test/screenshots/goldens/external_pedals_decay_held_released.png": "43ffeff0d0ddbfbee1f681780d74914c260b907d68fb666a353347ac095396cd",
+    "test/screenshots/goldens/click_recovery_power_off.png": "0d98a565abee2fc9740f9f891b886d00738ec7c8062f02756c9150fa958fe29a"
+  },
+  "reused": "Unchanged generic shutdown recovery render from M3.11; three new decay renders."
+}

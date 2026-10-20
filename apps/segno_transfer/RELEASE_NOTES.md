@@ -1,13 +1,22 @@
-# Segno Transfer 0.1.0
+# Segno Transfer 0.2.0
 
 A small Mac companion for your Segno appliance: browse performance recordings,
 stream audio with seeking, and download selected files with names you choose.
+
+## What's new
+
+- Lists recordings from appliances that save the main recording as numbered
+  parts (`master-001.wav`, `master-002.wav`, ...) and each live input the same
+  way. Each part has its own row, and **Main recordings shown** selects every
+  part. Recordings from older appliances (`master.wav`) still list as before.
+  Install this version before updating the appliance to a build that records
+  in parts.
 
 ## Download and install
 
 Requires **macOS 14 or newer and Apple Silicon (M1 or newer)**.
 
-1. Download **Segno-Transfer-0.1.0-macos-arm64.dmg** below.
+1. Download **Segno-Transfer-0.2.0-macos-arm64.dmg** below.
 2. Open the disk image and drag **Segno Transfer** into **Applications**.
 3. Open the app from Applications.
 

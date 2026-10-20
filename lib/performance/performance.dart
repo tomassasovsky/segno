@@ -5,6 +5,8 @@ library;
 
 export 'cubit/performance_completion_cubit.dart';
 export 'cubit/performance_recorder_cubit.dart';
+export 'cubit/recording_destination_cubit.dart';
 export 'view/armed_indicator.dart';
 export 'view/perf_record_button.dart';
 export 'view/performance_completion_sheet.dart';
+export 'view/recording_save_to.dart';
