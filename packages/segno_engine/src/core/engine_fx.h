@@ -76,7 +76,7 @@ static inline int32_t le_fx_quarter_seed(uint32_t q) {
 }
 
 /* The hop-stagger seed (le_fx_state::hop_seed) of track [track]'s lane
- * [lane]; lane == LE_MAX_LANES is the track's bus. le_engine_create seeds
+ * [lane] (le_fx_bus_hop_seed: its bus). le_engine_create seeds
  * every owner through these functions, and the OFFLINE renderers that stand
  * in for a live owner (the wet cache, the render recipe, the performance stem
  * render) copy the seed of the owner they reproduce: a different seed is a
@@ -97,9 +97,10 @@ static inline int32_t le_fx_quarter_seed(uint32_t q) {
  * Unsigned arithmetic, masked: perf_render's track index comes from a
  * manifest on disk and is only checked for being non-negative. */
 static inline int32_t le_fx_lane_hop_seed(int32_t track, int32_t lane) {
-  const uint32_t t = (uint32_t)track;
-  return lane >= LE_MAX_LANES ? le_fx_quarter_seed(t + 2u)
-                              : le_fx_quarter_seed(t + (uint32_t)lane);
+  return le_fx_quarter_seed((uint32_t)track + (uint32_t)lane);
+}
+static inline int32_t le_fx_bus_hop_seed(int32_t track) {
+  return le_fx_quarter_seed((uint32_t)track + 2u);
 }
 static inline int32_t le_fx_monitor_hop_seed(int32_t source) {
   return le_fx_quarter_seed((uint32_t)source + 1u);
