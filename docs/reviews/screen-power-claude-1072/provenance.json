@@ -1,0 +1,12 @@
+{
+  "reviewed_commit": "e98256a5a36f5341b9a521d63b6b951ca2b67f70",
+  "board": "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
+  "board_sha256": "273c4503440df2d6f3431d1f176bc1ca2e11c4b8d55cd499a94efca23aa95e1e",
+  "reviewer": "Claude Code",
+  "model": "claude-opus-5",
+  "review_date": "2026-09-25",
+  "scope": "Read-only native KiCad circuit, layout, thermal and manufacturing-readiness review",
+  "blocking_finding": "IM02TS common pins3/6 are not connected; both USB data paths stay open in both states",
+  "withdrawn_screen_zip_sha256": "25370578cbb1184f6d2bc1913c88746ff87ce91809779c7878d62f4af735a878",
+  "independent_confirmation": "TE terminal assignment, native KiCad symbol, generated-netlist contact-state calculation"
+}

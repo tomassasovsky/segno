@@ -1,0 +1,268 @@
+{
+  "date_utc": "2026-09-28",
+  "model": "opencode-go/deepseek-v4-flash",
+  "reasoning_variant": "low",
+  "baseline_revision": "44edd9483518768506533a3b6fe30e85d6d530c4",
+  "permissions": {
+    "read": true,
+    "glob": true,
+    "grep": true,
+    "webfetch": true,
+    "shell": false,
+    "writes": false
+  },
+  "scope_limit": "Read-only paper, native numerical geometry and primary-text review; no visual diagram or physical qualification attributed to this model.",
+  "boards": {
+    "screen": {
+      "path": "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
+      "sha256": "e72850b26ae9076011bc368b69d3f1f1edce758be878bf5fb0decc4f415c5a2f",
+      "native_extraction_sha256": "1d0bc6dbe7431d4a0ae328a0a9a1f1aa606ce04c3bf1ebc0a7e052d2b2e0aed8",
+      "distinct_tool_read_files": 40,
+      "runs": [
+        {
+          "name": "screen-closeout",
+          "exit_code": 0,
+          "has_response": true,
+          "started_utc": "2026-09-28T11:53:41.931121+00:00",
+          "finished_utc": "2026-09-28T11:54:53.107440+00:00",
+          "prompt_sha256": "6784ec058703f8bef22a07b2ad349126fc448d59bb536eb27ddfdea56c0a7255",
+          "response_sha256": "7ed72a00197632645a9d247e9942b3fe53dcef035f20ded532c3b7535ac05da6",
+          "tool_event_sha256": "da673b38a34ba96a4c8a9f3e9888d9816ac59ebc79fdaed93d886697368d3c70"
+        },
+        {
+          "name": "screen-final-closeout",
+          "exit_code": 0,
+          "has_response": true,
+          "started_utc": "2026-09-28T12:02:59.884555+00:00",
+          "finished_utc": "2026-09-28T12:03:46.116637+00:00",
+          "prompt_sha256": "56168e30cb93e3422df33b5f03d55fb282830230be26966493103985abd2ce48",
+          "response_sha256": "55595a779004c5080e7821bb2982e9e52673ba7f34a03740d9eff4ae2c3dfaaa",
+          "tool_event_sha256": "6c423a5392bcdce4e7d2b8cf77ac5e06f9e0ed6069ef2bc55aec53156f0bf593"
+        },
+        {
+          "name": "screen",
+          "exit_code": 0,
+          "has_response": true,
+          "started_utc": "2026-09-28T11:42:41.900084+00:00",
+          "finished_utc": "2026-09-28T11:45:20.379362+00:00",
+          "prompt_sha256": "e25f3096409d140ae079621d610a73521114310be50a3bdf1906cd35f51a5ad0",
+          "response_sha256": "5cc0b506d658ea655cffa561061c8403d5ccad338ce0453581f5d622f2b49093",
+          "tool_event_sha256": "eddb561d2d9ff27a142739e3da502b9cf7f2e5ad6084a4ad7a9c8af768c775fe"
+        }
+      ],
+      "report": "deepseek-screen.md"
+    },
+    "ring": {
+      "path": "hardware/kicad/segno_pedal_ring.kicad_pcb",
+      "sha256": "c53eb16d7531f2c891dc5854faaf40fc1414ebcb2747d0101740e6a35bd1d9ca",
+      "native_extraction_sha256": "d12afe67ccfde5269329e3bd0fd4afe57f25ed6898f7377406f9c79316e9799f",
+      "distinct_tool_read_files": 25,
+      "runs": [
+        {
+          "name": "ring-closeout",
+          "exit_code": 0,
+          "has_response": true,
+          "started_utc": "2026-09-28T11:57:59.369692+00:00",
+          "finished_utc": "2026-09-28T11:59:56.468031+00:00",
+          "prompt_sha256": "2a08e02017be00ecef1d84f246f29bad7e1884faa04fbbad99dc0eed901f63b2",
+          "response_sha256": "d1ab0fe75220921b179a2622e3d5608990e59bcd966c191f876133c289a67133",
+          "tool_event_sha256": "d0f0fc216711fd9d83af0bcceae888eb989e5b95a1a45c9612607f76e99439c8"
+        },
+        {
+          "name": "ring",
+          "exit_code": 0,
+          "has_response": true,
+          "started_utc": "2026-09-28T11:46:03.742532+00:00",
+          "finished_utc": "2026-09-28T11:47:13.785683+00:00",
+          "prompt_sha256": "2e624dc12b3ea2ac131e4ec037b23458c94ecab78d4133c32721e317f49224a5",
+          "response_sha256": "23bec274919081e66144652c11e73d18252779724a08e83f82c81f0f07f6b640",
+          "tool_event_sha256": "9c6a9daac24cfdfb360839b3cd8ec8fce46b45b3c7d2c13360e00e86828c2489"
+        }
+      ],
+      "report": "deepseek-ring.md"
+    },
+    "console": {
+      "path": "hardware/kicad/out_console/segno_console_board.kicad_pcb",
+      "sha256": "c23df586f211bb439081ca951dd23dc54ba21f6d89eb3d373bd6f196749f326d",
+      "native_extraction_sha256": "cd516b32bf2890b3aa4f2e802fc7c01dae028fceb74767e27b0b70ebe5a6b749",
+      "distinct_tool_read_files": 37,
+      "runs": [
+        {
+          "name": "console-closeout",
+          "exit_code": 0,
+          "has_response": true,
+          "started_utc": "2026-09-28T12:00:11.981050+00:00",
+          "finished_utc": "2026-09-28T12:02:08.713029+00:00",
+          "prompt_sha256": "4805793a2978ea94be17bd8c8de78d11f3f692da13f3fb9b38592603f756b463",
+          "response_sha256": "c1df6ffce3af67cd9d1d28e9c46714196e83b0e174351ecc6142c776a1026e9f",
+          "tool_event_sha256": "cf21bc389a350baff4e2c4bd4bbabb0a1c9204c82e7d16f0426f00e29857bda4"
+        },
+        {
+          "name": "console-final-closeout",
+          "exit_code": 0,
+          "has_response": true,
+          "started_utc": "2026-09-28T12:04:22.887836+00:00",
+          "finished_utc": "2026-09-28T12:04:59.783370+00:00",
+          "prompt_sha256": "76b61ec75a1f55bbd81ded2cf90dfe3d2748a98cfe28f2fd831f33d2c44a324d",
+          "response_sha256": "30b0da3e741e2b074469ad425d47237e0ad37bf0467418abc088c85923db35db",
+          "tool_event_sha256": "05c0b3505463e5563bf7a7b7f9ee80c55822e4e441c67010d5febc364d8b3009"
+        },
+        {
+          "name": "console",
+          "exit_code": 0,
+          "has_response": true,
+          "started_utc": "2026-09-28T11:49:17.773707+00:00",
+          "finished_utc": "2026-09-28T11:52:34.234558+00:00",
+          "prompt_sha256": "191229179b2c576049e39894986d0c1314039d99d9070a248fd624dfda06d0b9",
+          "response_sha256": "28985a1d3b41da54e748eec079dcfb29dd9600668e0d144e6e167046d85d932c",
+          "tool_event_sha256": "107113daac06193a2fe40b4f389845e2139315e2943ca330565b324ad3ae3e79"
+        }
+      ],
+      "report": "deepseek-console.md"
+    }
+  },
+  "primary_sources": [
+    {
+      "capture": "H11L1-current-web.txt",
+      "url": "https://www.onsemi.com/download/data-sheet/pdf/h11l3m-d.pdf",
+      "provenance": "fresh primary extraction, officialURL inside text or manifest RP2350 entry; targetedRP2350sections preserve original line numbers",
+      "text_sha256": "334a5af0ba6767eea5677eacecbdbfd1d3df1b4b669f2899c3d439ddb16a64ec"
+    },
+    {
+      "capture": "ACZ11-captured.txt",
+      "url": "https://www.sameskydevices.com/product/resource/acz11.pdf",
+      "provenance": "Previously extracted selected manufacturer rev1.08 May7 2026; current live URL404; repository RING_ENCODER.md records original PDF SHA256 a1d5e9764abdf31c5da469bc044ad1ea916185cd0b6459b692f1e1aa52396996",
+      "text_sha256": "78db17f830eda6ebd1cc427560051baf81532f3bb725e5ae1add7b0287a8f679"
+    },
+    {
+      "capture": "AHCT125-web.txt",
+      "url": "https://www.ti.com/lit/ds/symlink/sn74ahct125.pdf",
+      "provenance": "fresh primary extraction, officialURL inside text or manifest RP2350 entry; targetedRP2350sections preserve original line numbers",
+      "text_sha256": "3a80ff4ba73797fd3036ddc83c7ce452c19922fdbd9d08072c3e4b9913a24c9c"
+    },
+    {
+      "capture": "RP2350.txt",
+      "url": "https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf",
+      "provenance": "fresh primary PDF download 2026-09-28",
+      "text_sha256": "4e36e37b222c83077f6042b2e5c7e93e15f887b4f0ab1b09d565f6550e156df9",
+      "pdf_sha256": "2877d0f270fb6d6a57943bee58aaad536aa027bea1e5b1c4ce2541a3230d4be8"
+    },
+    {
+      "capture": "JSTVH-web.txt",
+      "url": "https://www.jst-mfg.com/product/pdf/eng/eVH.pdf",
+      "provenance": "fresh web extraction from primary URL shown inside file, 2026-09-28; not direct downloaded PDF",
+      "text_sha256": "44db56bdf12d4bfd5f5a08a5f52e90cbc8defd5bb4a2e7ee8c2de1f911f66c8a"
+    },
+    {
+      "capture": "D1N4007-web.txt",
+      "url": "https://www.onsemi.com/pdf/datasheet/1n4001-d.pdf",
+      "provenance": "fresh web extraction from primary URL shown inside file, 2026-09-28; not direct downloaded PDF",
+      "text_sha256": "e2e5217a8798cea87ec87074b242be5c006e91f4e438adcae35f0183e34c4433"
+    },
+    {
+      "capture": "P6KE-web.txt",
+      "url": "https://www.littelfuse.com/~/media/electronics/datasheets/tvs_diodes/littelfuse_tvs_diode_p6ke_datasheet.pdf.pdf",
+      "provenance": "fresh web extraction from primary URL shown inside file, 2026-09-28; not direct downloaded PDF",
+      "text_sha256": "985a073ef99ed4ad4683f8c7154c0919ab9d123bf7f21b4b27ff60aff82a1940"
+    },
+    {
+      "capture": "RP2350-critical.txt",
+      "url": "https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf",
+      "provenance": "fresh primary extraction, officialURL inside text or manifest RP2350 entry; targetedRP2350sections preserve original line numbers",
+      "text_sha256": "c809ade3ec0212776d33afed5bc94547c79b14a14daaccb6e6480f57518d6a9c",
+      "derived_from": "RP2350.txt; excerpts preserve original source line numbers"
+    },
+    {
+      "capture": "OGN.txt",
+      "url": "https://www.schurter.com/en/datasheet/typ_ogn.pdf",
+      "provenance": "fresh primary URL fetch 2026-09-28",
+      "text_sha256": "88775b4061ed2e3f9edcd286971fc9994e3d352907e7a9b3a38ded5b2d202f79",
+      "pdf_sha256": "12ede3914c793bb0b942331f79e2ab03f2b9e203b75f1ed8b906c1be0511b801"
+    },
+    {
+      "capture": "IM02-mirror.txt",
+      "url": "https://hannfit.com.au/wp-content/uploads/AXICOM-signal-relays.pdf",
+      "provenance": "TE manufacturer datasheet, 08/24 edition from Hannfit mirror; graph visual inspection not performed by DeepSeek",
+      "text_sha256": "6c8487ba3da37764135228ba25955e57e48cdfa27c9ef9d9a7b945a671291204"
+    },
+    {
+      "capture": "ACZ11.txt",
+      "url": "https://www.sameskydevices.com/product/resource/acz11.pdf",
+      "provenance": "fresh primary PDF download 2026-09-28",
+      "text_sha256": "78db17f830eda6ebd1cc427560051baf81532f3bb725e5ae1add7b0287a8f679",
+      "pdf_sha256": "c8ae8c18d3ae05b1f7e7dac2aa0aa4b9f050c6dee2bcdee66b59898262baa3c6"
+    },
+    {
+      "capture": "BEL0697H.txt",
+      "url": "https://www.belfuse.com/media/datasheets/products/circuit-protection/ds-cp-0697h-series.pdf",
+      "provenance": "fresh primary URL fetch 2026-09-28",
+      "text_sha256": "d90027f09a87b347980ed6ef06f2796fb08d1c5d6deea9207d44e25f08b41998",
+      "pdf_sha256": "58974d03b2d6f47c6618e2e80d383ab1066be9626481731bc764b8cea4651ab9"
+    },
+    {
+      "capture": "PICO2.txt",
+      "url": "https://datasheets.raspberrypi.com/pico/pico-2-datasheet.pdf",
+      "provenance": "fresh primary PDF download 2026-09-28",
+      "text_sha256": "c4c493b84559e7b7e42ecc2a2500fddf4ca3898ca8092ada5af9232f1bdf2af7",
+      "pdf_sha256": "cbcfaf881018c686495a2e53c7bd281e7e0a8217d79447d73eda7c8f74b7f675"
+    },
+    {
+      "capture": "IRLZ44N.txt",
+      "url": "https://www.infineon.com/assets/row/public/documents/24/49/infineon-irlz44n-datasheet-en.pdf",
+      "provenance": "fresh primary URL fetch 2026-09-28",
+      "text_sha256": "a51c6984ce2476b808680de7140eb7f5c4442e9458c925c1686ad14efd6c6509",
+      "pdf_sha256": "b4f1361a4486b8ec84206012a3e4a985111203d140fa6da8d4190b867c9ba077"
+    },
+    {
+      "capture": "TN0702-web.txt",
+      "url": "https://www.microchip.com/content/dam/mchp/documents/APID/ProductDocuments/DataSheets/TN0702-N-Channel-Enhancement-Mode-Vertical-DMOS-FET-Data-Sheet-20005941A.pdf",
+      "provenance": "fresh web extraction from primary URL shown inside file, 2026-09-28; not direct downloaded PDF",
+      "text_sha256": "34751d42d98d3cbcbe4198f0f49f1c52c74461813b4587c121bc90611a689d99"
+    },
+    {
+      "capture": "N3904-web.txt",
+      "url": "https://www.onsemi.com/pdf/datasheet/2n3904-d.pdf",
+      "provenance": "fresh web extraction from primary URL shown inside file, 2026-09-28; not direct downloaded PDF",
+      "text_sha256": "d3eabe4d6ea8464b09c485a67ca8360aa1e3dae5e657e963e693c7d7617d4d59"
+    },
+    {
+      "capture": "SPARKFUN.txt",
+      "url": "https://cdn.sparkfun.com/assets/9/2/6/8/6/SparkFun_PowerDeliveryBoardSchematic.pdf",
+      "provenance": "fresh official manufacturer PDF download2026-09-28",
+      "text_sha256": "d16abc183aa7891a985b8384d905e0e10b44787ca9a8dbdbd1fd8f0f2dae5cac",
+      "pdf_sha256": "13d484315ae1dddac7560d32dd6eb52b9db757eda502fc772ae3ae927148d90c"
+    },
+    {
+      "capture": "SPT.txt",
+      "url": "https://www.schurter.com/pdf/english/typ_SPT_5x20.pdf",
+      "provenance": "fresh primary URL fetch 2026-09-28",
+      "text_sha256": "c0555869e238d2042ba9a3a9ea216be3db2babf2a0531addb7573971e1396825",
+      "pdf_sha256": "95063c4cf2ec2a40985b5661dbf54893b8e69b491be5417c7448b06219cebc52"
+    },
+    {
+      "capture": "N3906-web.txt",
+      "url": "https://www.onsemi.com/pdf/datasheet/2n3906-d.pdf",
+      "provenance": "fresh web extraction from primary URL shown inside file, 2026-09-28; not direct downloaded PDF",
+      "text_sha256": "c6fa7e148b5b7bc639ac624fdc6d572e3460030c1fd7be4734e88004bec22762"
+    },
+    {
+      "capture": "WS2812B-web.txt",
+      "url": "https://cdn-shop.adafruit.com/datasheets/WS2812B.pdf",
+      "provenance": "fresh web extraction from primary URL shown inside file, 2026-09-28; not direct downloaded PDF",
+      "text_sha256": "4c9982af6d9ac4ea561b024053fb3d043996282eba16da5866f1c26008876126"
+    },
+    {
+      "capture": "JSTXH-web.txt",
+      "url": "https://www.jst-mfg.com/product/pdf/eng/eXH.pdf",
+      "provenance": "fresh web extraction from primary URL shown inside file, 2026-09-28; not direct downloaded PDF",
+      "text_sha256": "496643fcc4cc1b74d09a0aae3f51385d731b06b6059d1f5bd18447ab3b1c2ab6"
+    },
+    {
+      "capture": "G6C.txt",
+      "url": "https://components.omron.com/us-en/system/files/2026-03/datasheet_pdf/K018-E1.pdf",
+      "provenance": "previous locally captured manufacturer PDF; source URL shown",
+      "text_sha256": "47318733d2d6bed1032aa1fa58f5ffe68a1cc3ad5811a4d8e736cd9e52f03126",
+      "pdf_sha256": "0fc4e0ef9285b21f8066d0f5d269faa187babef167acabe032da0d9d6d31ed5a"
+    }
+  ]
+}
