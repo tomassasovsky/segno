@@ -9250,7 +9250,7 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * (#405); 2 = an aborted take logs LE_PLOG_RECORD_ABORT; 1 = it logged a
  * RECORD_END (every capture written before #264). See the format doc's "What
  * `version` means". */
-#define LE_TEST_EVENTS_VERSION 12
+#define LE_TEST_EVENTS_VERSION 13
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {
@@ -20709,6 +20709,15 @@ static int oct_spread_any_offset(const int32_t* ph) {
   return 1;
 }
 
+/* The phase a running PV octaver in slot [s] of [fx] is on, read off its
+ * counter against the chain clock: after the callback, `clock` is the frame of
+ * the last sample the chain processed and `hop_count` the value its next tick
+ * runs at, which is 0 on the frames c with (c + phase) mod LE_PV_HOP == 0. */
+static int32_t oct_live_phase(const le_fx_state* fx, int s) {
+  return (int32_t)(((uint32_t)fx->oct[s][0].hop_count - fx->clock - 1u) &
+                   (uint32_t)(LE_PV_HOP - 1));
+}
+
 static int32_t oct_slot_phase(int32_t seed, int slot) {
   return (int32_t)(((uint32_t)seed +
                     (uint32_t)slot * (uint32_t)LE_PV_STAGGER_QUARTER) &
@@ -21056,13 +21065,12 @@ static void test_octaver_hop_stagger_survives_recipe_publish(void) {
     le_engine_process(e, out, in, 64);
     CHECK(le_engine_fx_recipe_revision(e, LE_FX_OWNER_MONITOR, 0, 0) == rev);
     const le_fx_state* fx = &e->monitors[0].fx;
-    /* Every counter advanced by the same 64 ticks since the reset, so the
-     * counters minus 64 are the phases the reset seeded. Their frames run
-     * (LE_PV_HOP - phase) samples after it. */
+    /* Each instance's phase, read off its counter against the chain clock;
+     * its frames run (LE_PV_HOP - phase) samples after any frame that is a
+     * multiple of the hop. */
     int32_t phase[4];
     for (int s = 0; s < 4; ++s) {
-      phase[s] = (int32_t)(((uint32_t)fx->oct[s][0].hop_count - 64u) &
-                           (uint32_t)(LE_PV_HOP - 1));
+      phase[s] = oct_live_phase(fx, s);
       CHECK(phase[s] == oct_slot_phase(le_fx_monitor_hop_seed(0), s));
     }
     CHECK(oct_buckets_distinct(phase, 4, 64));
@@ -21115,6 +21123,58 @@ static void test_octaver_hop_stagger_survives_chain_stomp(void) {
   printf("  slot 0 counter %d, slot 2 counter %d: %d apart\n", a, c, gap);
   CHECK(gap == 2 * LE_PV_STAGGER_QUARTER);
   le_engine_destroy(e);
+}
+
+/* The hop is anchored to the engine clock, not to the instant an instance
+ * was reset (#941): an octaver added to a second chain long after the first,
+ * at a reset instant that is not a multiple of anything, still lands on its
+ * own quarter, and the two run their frames in different callbacks. Before
+ * the anchor, the second instance's phase was whatever its reset instant made
+ * it, and one time in four it shared the first one's callback. */
+static void test_octaver_hop_stagger_holds_for_late_adds(void) {
+  printf("test_octaver_hop_stagger_holds_for_late_adds\n");
+  const int offsets[] = {0, 1, 63, 64, 100, 191, 255, 777};
+  for (size_t k = 0; k < sizeof(offsets) / sizeof(offsets[0]); ++k) {
+    le_engine* e = le_engine_create();
+    le_engine_configure(e, OCT_SR, 2, 2, OCT_SR * 4);
+    float in[2 * 512];
+    float out[2 * 512];
+    for (int i = 0; i < 2 * 512; ++i) in[i] = 0.3f * sinf((float)i * 0.1f);
+    for (int c = 0; c < 2; ++c) {
+      le_engine_set_monitor_input(e, c, 1);
+      le_engine_set_monitor_input_output(e, c, 0x1);
+    }
+    le_fx_recipe r;
+    memset(&r, 0, sizeof(r));
+    r.count = 1;
+    r.enabled = 1;
+    r.type[0] = LE_FX_OCTAVER;
+    r.slot_enabled[0] = 1;
+    r.params[0][0] = 0.75f;
+    r.params[0][2] = 1.0f;
+    r.level[0] = 1.0f;
+    CHECK(le_engine_set_fx_recipe(e, LE_FX_OWNER_MONITOR, 0, 0, 1, &r) == LE_OK);
+    le_engine_process(e, out, in, 64);
+    /* An arbitrary stretch of time, in blocks of any length. */
+    int left = offsets[k];
+    while (left > 0) {
+      const int n = left > 37 ? 37 : left;
+      le_engine_process(e, out, in, (uint32_t)n);
+      left -= n;
+    }
+    CHECK(le_engine_set_fx_recipe(e, LE_FX_OWNER_MONITOR, 1, 0, 1, &r) == LE_OK);
+    for (int b = 0; b < 8; ++b) le_engine_process(e, out, in, 64);
+    const int32_t p0 = oct_live_phase(&e->monitors[0].fx, 0);
+    const int32_t p1 = oct_live_phase(&e->monitors[1].fx, 0);
+    CHECK(p0 == oct_slot_phase(le_fx_monitor_hop_seed(0), 0));
+    CHECK(p1 == oct_slot_phase(le_fx_monitor_hop_seed(1), 0));
+    /* Heavy ticks a quarter apart on the engine clock: different callbacks
+     * for any period that divides a quarter. */
+    const int gap = (int)((p1 - p0) & (LE_PV_HOP - 1));
+    CHECK(gap == LE_PV_STAGGER_QUARTER ||
+          gap == LE_PV_HOP - LE_PV_STAGGER_QUARTER);
+    le_engine_destroy(e);
+  }
 }
 
 /* The two octaver modes run one counter in opposite directions (PV up to its
@@ -22606,6 +22666,7 @@ static float* oct_reference_wet(const float* dry, int32_t n, int32_t sr,
   CHECK(fx != NULL);
   if (fx == NULL) return NULL;
   fx->hop_seed = hop_seed;
+  fx->clock = 0; /* capture frame 0 of a log without a PERF_ARMED clock */
   le_fx_entry_reset(fx, 0);
   CHECK(le_fx_prepare(fx, 0, LE_FX_OCTAVER, sr) == LE_OK);
   if (settle) le_fx_octaver_seed_settled(fx, 0, params4);
@@ -22626,6 +22687,7 @@ static float* oct_reference_wet(const float* dry, int32_t n, int32_t sr,
     for (int32_t f = 0; f < n; ++f) {
       float l = dry[f];
       float r = dry[f];
+      fx->clock = (uint32_t)f; /* the live frame, as the render clocks it */
       fx_apply_chain(fx, sr, sr, &l, &r, 1, types, params, enabled);
       wet[f] = l;
     }
@@ -37552,6 +37614,7 @@ int main(void) {
   test_octaver_hop_stagger_survives_recipe_publish();
   test_octaver_hop_schedule_survives_mode_switch();
   test_octaver_hop_stagger_survives_chain_stomp();
+  test_octaver_hop_stagger_holds_for_late_adds();
   test_fft_roundtrip();
 
   test_json_read_parses_nested_objects_and_arrays();

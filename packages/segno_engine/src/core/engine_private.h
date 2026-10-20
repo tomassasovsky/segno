@@ -340,16 +340,23 @@ typedef struct le_octaver_state {
  * NULL), reading both banks from xl / xr — see fx_reverb. The rev_* arrays
  * already hold both banks (LE_REV_BANKS == 2) and stay per-slot. */
 typedef struct le_fx_state {
-  /* Octaver hop-stagger seed (#915): this CHAIN's base analysis-hop phase,
-   * in [0, LE_PV_HOP). le_engine_create gives every chain owner a distinct
-   * one (le_fx_*_hop_seed, engine_fx.h) and the octaver adds its slot's step
-   * (le_pv_hop_phase, engine_fx.c), so octaver instances do not run their FFT
-   * frames on the same sample index. 0, the calloc'd default, is a valid base
-   * for a standalone state that is not a copy of a live owner (the VST3
+  /* Octaver hop-stagger seed (#915): this CHAIN's quarter of the octaver
+   * hop, in samples (0, 64, 128 or 192). le_engine_create gives each chain
+   * owner one (le_fx_*_hop_seed, engine_fx.h) and the octaver adds its slot
+   * (le_pv_hop_phase, engine_fx.c). 0, the calloc'd default, suits a
+   * standalone state that is not a copy of a live owner (the VST3
    * processors; #940 covers giving a hosted instance its own). The offline
    * renderers stand in for a live owner and copy its seed. Written once by
    * the control thread before any audio runs; read-only afterwards. */
   int32_t hop_seed;
+  /* The engine frame (mod 2^32) of the sample this chain processes next
+   * (#941): the clock an octaver's hop is anchored to, so its heavy ticks
+   * fall on absolute frames whatever instant it was reset at. The audio
+   * thread sets it for every owner at the top of each callback and before
+   * each fx_apply_chain call (engine_process.c); an offline render sets the
+   * live frame it stands for. A state nobody clocks (the VST3 processors)
+   * stays at 0, and its phase then counts from its reset. */
+  uint32_t clock;
   float svf_ic1[LE_FX_MAX][2];
   float svf_ic2[LE_FX_MAX][2];
   float lfo[LE_FX_MAX][2];
@@ -993,6 +1000,11 @@ typedef struct le_track {
    * read index for the last frame of the block, or the write head while
    * RECORDING. Published once per block beside the level above. */
   _Atomic int32_t a_play_pos;
+  /* The engine frame (mod 2^32) of this track's most recent loop top (read
+   * index 0 while playing), published by the audio thread at each top. The
+   * wet cache renders a print as the lap that starts there, so a print that
+   * engages at the next top reproduces the live octaver hop exactly (#941). */
+  _Atomic uint32_t a_top_clock;
   _Atomic int32_t lane_count; /* Active lanes, release-published after prepared
                                * buffers and routing become callback-owned. */
 
@@ -2644,6 +2656,9 @@ struct le_engine {
    * applied). Published to a_play_pos once per block; stale (held) for a track
    * the mixer skipped, which is what a stopped track should show anyway. */
   int32_t trk_play_pos[LE_MAX_TRACKS];
+  /* The engine frame (mod 2^32) of this callback's first sample: the FX
+   * clock base (le_fx_state::clock). Audio-thread only. */
+  uint32_t fx_clock_base;
 
   /* Latency harness (audio-thread-local + published state). The measurement
    * captures the input-magnitude envelope into lat_buf for a fixed window after

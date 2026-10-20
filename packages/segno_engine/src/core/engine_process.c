@@ -5505,6 +5505,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
                                     .position = e->clock.position,
                                     .master_len = e->clock.length,
                                     .iteration = (int32_t)e->loop_iteration,
+                                    /* the FX clock at capture frame 0
+                                     * (events.log version 13, #941) */
+                                    .fx_clock = e->fx_clock_base,
                                 }});
       for (int t = 0; t < e->track_count; ++t) {
         le_fade_log(e, t, frame);
@@ -5781,6 +5784,7 @@ static inline void output_bus_frame(le_engine* e, float* out, uint32_t f,
   float l = o[c0];
   float r = c1 >= 0 ? o[c1] : l;
   if (sn->has_fx) {
+    e->outputs[bus].fx.fx.clock = e->fx_clock_base + f;
     fx_apply_chain(&e->outputs[bus].fx.fx, sr, fx_cap, &l, &r, sn->fx_count,
                    sn->fx_type, sn->fx_params, sn->fx_enabled);
   }
@@ -7343,6 +7347,7 @@ static inline void mix_monitors_frame(
       float ml = clean;
       float mr = clean;
       if (mon_has_fx[c]) {
+        e->monitors[c].fx.clock = e->fx_clock_base + f;
         fx_apply_chain(&e->monitors[c].fx, sr, fx_cap, &ml, &mr, mon_fx_count[c],
                        mon_fx_type[c], mon_fx_params[c], mon_fx_enabled[c]);
       }
@@ -8074,6 +8079,12 @@ static inline void mix_tracks_frame(
        * tail/LFO continuity) for playback nobody hears. */
       const le_wet_entry* wce = cache_ent[t][l];
       const int32_t rp = seg_base[t] + trk_pos[t];
+      /* The track's loop top on the engine clock, for the wet cache's
+       * prediction of the lap a print will engage at (#941). */
+      if (l == 0 && rp == 0 && st[t] == LE_TRACK_PLAYING) {
+        atomic_store_explicit(&tr->a_top_clock, e->fx_clock_base + f,
+                              memory_order_relaxed);
+      }
       if (wce != NULL && st[t] == LE_TRACK_PLAYING && !tr->head.reversed &&
           le_head_is_integral(&tr->head) &&
           (tr->transpose_st == 0 || e->transpose_bypass) &&
@@ -8114,6 +8125,7 @@ static inline void mix_tracks_frame(
        * skipped rather than walked: its state was settled to bypass at that
        * engage edge and a fallback re-enters through the clean path. */
       if (has_fx[t][l] && !track_printed) {
+        ln->fx.clock = e->fx_clock_base + f;
         fx_apply_chain(&ln->fx, sr, fx_cap, &wl, &wr, fx_count[t][l],
                        fx_type[t][l], fx_params[t][l], fx_enabled[t][l]);
       }
@@ -8210,6 +8222,7 @@ static inline void mix_tracks_frame(
       }
     }
     if (trk_has_fx[t]) {
+      tr->bus.fx.clock = e->fx_clock_base + f;
       fx_apply_chain_with_gain(&tr->bus.fx, sr, fx_cap, &bus_l, &bus_r,
                      trk_fx_count[t], trk_fx_type[t], trk_fx_params[t],
                      trk_fx_enabled[t], trk_fx_pre_count[t],
@@ -8289,6 +8302,7 @@ static inline void mix_tracks_frame(
       const int c1 = c0 + 1 < ch_out ? c0 + 1 : -1;
       float l = rec[c0];
       float r = c1 >= 0 ? rec[c1] : l;
+      e->all_tracks_fx[k].clock = e->fx_clock_base + f;
       fx_apply_chain(&e->all_tracks_fx[k], sr, fx_cap, &l, &r, at_fx_count,
                      at_fx_type, at_fx_params, at_fx_enabled);
       /* The chain keeps ticking on silence so tails can finish, but a
@@ -8613,6 +8627,21 @@ static void le_midi_ports_drain(le_engine* e) {
   }
 }
 
+/* Sets every chain owner's FX clock (le_fx_state::clock) to [clock]: the
+ * lanes, track buses, monitored sources, all-tracks instances and output
+ * buses. 144 stores per callback. */
+static void le_fx_clock_owners(le_engine* e, uint32_t clock) {
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    for (int l = 0; l < LE_MAX_LANES; ++l) e->tracks[t].lanes[l].fx.clock = clock;
+    e->tracks[t].bus.fx.clock = clock;
+  }
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) e->monitors[c].fx.clock = clock;
+  for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+    e->all_tracks_fx[k].clock = clock;
+    e->outputs[k].fx.fx.clock = clock;
+  }
+}
+
 void le_engine_process(le_engine* e, float* output, const float* input,
                        uint32_t frames) {
   le_flush_denormals(); /* per-thread; cheap to reassert every callback */
@@ -8630,6 +8659,14 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * ordering ceremony: only this thread ever writes it. */
   const uint64_t perf_frame_base =
       atomic_load_explicit(&e->a_perf_frames, memory_order_relaxed);
+
+  /* The FX clock (#941): every chain owner learns this callback's first
+   * frame before any command can reset one of its slots, so a reset seeds
+   * the octaver's hop against the engine clock. The per-frame call sites
+   * then set the exact frame before each chain runs. */
+  e->fx_clock_base = (uint32_t)atomic_load_explicit(&e->a_frames,
+                                                    memory_order_relaxed);
+  le_fx_clock_owners(e, e->fx_clock_base);
 
   le_command cmd;
   while (le_ring_pop(&e->ring, &cmd)) {
