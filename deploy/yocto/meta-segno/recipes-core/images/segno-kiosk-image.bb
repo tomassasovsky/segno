@@ -28,7 +28,6 @@ IMAGE_INSTALL:append = " \
     alsa-utils \
     alsa-plugins \
     util-linux-chrt \
-    xdg-user-dirs \
     plymouth \
     plymouth-segno-theme \
     rauc \
@@ -84,10 +83,9 @@ inherit tryboot-cmdline
 
 # Headroom for the kernel & modules on the rootfs. User/session data lives on /data.
 IMAGE_ROOTFS_EXTRA_SPACE = "1048576"
-# xdg-user-dirs provides the `xdg-user-dir` binary. Flutter's path_provider shells
-# out to it for getApplicationDocumentsDirectory; without it the app throws
-# MissingPlatformDirectoryException on startup. The launcher seeds a user-dirs.dirs
-# so it resolves ~/Documents (see segno-kiosk-launch). Validated on device.
+# No xdg-user-dirs: the app reads the user-dirs.dirs the launcher seeds itself
+# (lib/xdg_documents_directory.dart) instead of starting `xdg-user-dir`, which
+# forked the app on every documents lookup (#1367).
 # alsa-plugins provides the dmix/dsnoop slaves the bare ALSA config references.
 
 # NetworkManager owns eth0 + wlan*. Mask systemd-networkd so the two managers
