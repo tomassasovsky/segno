@@ -150,8 +150,10 @@ the owner. The singles library keeps the existing seven built-ins only.
    with. Text is formatted in Dart through the ARB files, so English and
    Spanish both stay localized; tile names follow the pen ("Octave 1 Level",
    "Step length") and note divisions use the pen's spelling ("1/4 dotted").
-   A Dart registry loads the descriptors at startup and replaces every
-   synchronous reader of `TrackEffectType.params`: `fxParamName`
+   A const Dart copy of the descriptor table, checked against the engine's
+   by a native parity test, replaces every synchronous reader of
+   `TrackEffectType.params` (a startup read would make them wait on an async
+   load; shipped this way in #1381): `fxParamName`
    (`binding_labels.dart`), `_midiParamDivisions` (`control_midi.dart`),
    `expression_catalogue.dart`, `control_value_resolver.dart`, the mock
    engine, and the unused `effectParamLabel` / `octaverModeLabel` /
@@ -271,7 +273,7 @@ Each part is its own issue (area:fx) and PR against `claude/segno-integration`.
 |---|---|---|---|
 | 0 | Phase 0 emulation capture (#891) | none | continuous; feeds the waiting kinds |
 | 1 | Octaver hop stagger (#915, replaces PR #917) | none | in progress on `claude/octaver-stagger-915`; a dependency of every pitch part |
-| 2 | Descriptors and tiles for the existing seven, Dart registry with ARB keys (en, es), taper-unverified flag, VST3 4-float state pinned | none | pen write-backs: Connected pedal editor, Hidden parameters, Save a preset, Replace a saved preset, Rack options, Track Solo while editing FX |
+| 2 | Descriptors and tiles for the existing seven, Dart copy (native parity test) with ARB keys (en, es), taper-unverified flag, VST3 4-float state pinned | none | pen write-backs: Connected pedal editor, Hidden parameters, Save a preset, Replace a saved preset, Rack options, Track Solo while editing FX |
 | 3 | Catalogue: module-table fixes, shared Vocal Tuner parameters, chain order, Master Vol as Rack level, `Rv04K` mapping, preset id persistence, readiness from type | 2 | Dart only |
 | 4 | Engine room + EQ: width 32, fork-shielded per-kind state, vtable flags and update hook, instance-id resets, parameter-only recipes, worker FTZ, applied-frame parameter logging | 2, #907, #914 | first engine change |
 | 5 | Compressor, Transient, HP/Gate | 4 | |
