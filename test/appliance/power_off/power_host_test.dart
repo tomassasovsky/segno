@@ -12,6 +12,8 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/appliance/power_off/power_host.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
+import 'package:segno/backing/cubit/backing_cubit.dart';
+import 'package:segno/backing/model/backing_state.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/session/cubit/session_cubit.dart';
@@ -36,6 +38,9 @@ class _MockRecorder extends MockCubit<PerformanceRecorderState>
 class _MockPedalRepository extends Mock implements PedalRepository {}
 
 class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit {}
+
+class _MockBackingCubit extends MockCubit<BackingCubitState>
+    implements BackingCubit {}
 
 const _loops = LooperState(
   tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
@@ -105,6 +110,7 @@ void main() {
       WidgetTester tester, {
       UpdateCubit? update,
       StorageRepository? storage,
+      BackingCubit? backing,
     }) async {
       tester.view.physicalSize = const Size(1920, 1080);
       tester.view.devicePixelRatio = 1;
@@ -123,6 +129,8 @@ void main() {
               BlocProvider<PowerCubit>.value(value: cubit),
               if (update != null)
                 BlocProvider<UpdateCubit>.value(value: update),
+              if (backing != null)
+                BlocProvider<BackingCubit>.value(value: backing),
               BlocProvider<LooperBloc>.value(value: looper),
               BlocProvider<PerformanceRecorderCubit>.value(value: recorder),
               BlocProvider<SessionCubit>.value(value: session),
@@ -142,8 +150,12 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
     }
 
-    Future<void> openOptions(WidgetTester tester, {UpdateCubit? update}) async {
-      await pumpHost(tester, update: update);
+    Future<void> openOptions(
+      WidgetTester tester, {
+      UpdateCubit? update,
+      BackingCubit? backing,
+    }) async {
+      await pumpHost(tester, update: update, backing: backing);
       await tester.pump();
       keys.emitPress();
       await settle(tester);
@@ -356,6 +368,127 @@ void main() {
 
       expect(log, ['stop', 'flush', 'pedal', 'reboot']);
       verify(() => session.save()).called(1);
+    });
+
+    group('empty unnamed session', () {
+      late _MockBackingCubit backing;
+
+      setUp(() {
+        whenListen(
+          looper,
+          const Stream<LooperState>.empty(),
+          initialState: const LooperState(),
+        );
+        backing = _MockBackingCubit();
+        whenListen(
+          backing,
+          const Stream<BackingCubitState>.empty(),
+          initialState: const BackingCubitState(backing: BackingState()),
+        );
+      });
+
+      testWidgets('Install and restart reboots with no Save As and no save', (
+        tester,
+      ) async {
+        await pumpHost(tester, backing: backing);
+        await tester.pump();
+        requestRestart(
+          tester.element(find.byKey(const Key('power_host_child'))),
+        );
+        await settle(tester);
+
+        expect(find.byKey(const Key('console_rename_sheet')), findsNothing);
+        expect(cubit.state.phase, PowerPhase.goodbye);
+        expect(log, ['stop', 'flush', 'pedal', 'reboot']);
+        verifyNever(() => session.save());
+        verifyNever(() => session.saveAs(any()));
+      });
+
+      testWidgets('Power options says nothing is saved; Shut down halts '
+          'with no Save As', (tester) async {
+        await openOptions(tester, backing: backing);
+
+        expect(
+          find.text(
+            'Playback will stop. This session is empty, so there is '
+            'nothing to save.',
+          ),
+          findsOneWidget,
+        );
+        await tester.tap(find.byKey(const Key('power_shut_down')));
+        await settle(tester);
+
+        expect(find.byKey(const Key('console_rename_sheet')), findsNothing);
+        expect(find.byKey(const Key('power_dialog')), findsNothing);
+        expect(log, ['stop', 'flush', 'pedal', 'powerOff']);
+        verifyNever(() => session.save());
+        verifyNever(() => session.saveAs(any()));
+      });
+
+      testWidgets('a prepared backing still asks for a name', (tester) async {
+        final prepared = _MockBackingCubit();
+        whenListen(
+          prepared,
+          const Stream<BackingCubitState>.empty(),
+          initialState: const BackingCubitState(
+            backing: BackingState(
+              prepared: [BackingItem(digest: 'abc', name: 'drums.wav')],
+            ),
+          ),
+        );
+        await pumpHost(tester, backing: prepared);
+        await tester.pump();
+        requestRestart(
+          tester.element(find.byKey(const Key('power_host_child'))),
+        );
+        await settle(tester);
+
+        expect(cubit.state.phase, PowerPhase.saveAs);
+        expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
+        expect(log, isEmpty);
+      });
+
+      testWidgets('no backing player mounted counts as content: Save As', (
+        tester,
+      ) async {
+        await pumpHost(tester);
+        await tester.pump();
+        requestRestart(
+          tester.element(find.byKey(const Key('power_host_child'))),
+        );
+        await settle(tester);
+
+        expect(cubit.state.phase, PowerPhase.saveAs);
+        expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
+        expect(log, isEmpty);
+      });
+
+      testWidgets('a take that finishes while Power options is open replaces '
+          'the empty line with the save promise', (tester) async {
+        final states = StreamController<LooperState>();
+        addTearDown(states.close);
+        whenListen(looper, states.stream, initialState: const LooperState());
+        await openOptions(tester, backing: backing);
+        const empty =
+            'Playback will stop. This session is empty, so there is '
+            'nothing to save.';
+        expect(find.text(empty), findsOneWidget);
+
+        states.add(_loops);
+        await settle(tester);
+
+        expect(find.text(empty), findsNothing);
+        expect(
+          find.text('Playback will stop and your session will be saved.'),
+          findsOneWidget,
+        );
+        expect(
+          find.text(
+            "This session has no name yet. You'll name it before it saves.",
+          ),
+          findsOneWidget,
+        );
+      });
     });
 
     testWidgets('named save failure: Segno is staying on; Stay on idles', (
