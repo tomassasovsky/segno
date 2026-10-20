@@ -359,6 +359,87 @@ void main() {
       ]);
       expect(encoded, isNot(contains('enabled')));
       expect(encoded, isNot(contains('slotId')));
+      expect(encoded, isNot(contains('placement')));
+    });
+  });
+
+  group('placement (slice 3e)', () {
+    const ref = PluginRef(format: PluginFormat.clap, id: 'com.acme.reverb');
+
+    test('defaults to post on both subtypes and threads through copyWith', () {
+      final builtIn = BuiltInEffect(type: TrackEffectType.drive);
+      expect(builtIn.placement, FxPlacement.post);
+      expect(const PluginEffect(ref: ref).placement, FxPlacement.post);
+      expect(
+        builtIn.copyWith(placement: FxPlacement.pre).placement,
+        FxPlacement.pre,
+      );
+      // Preserved when copyWith names other fields.
+      expect(
+        builtIn
+            .copyWith(placement: FxPlacement.pre)
+            .copyWith(enabled: false)
+            .placement,
+        FxPlacement.pre,
+      );
+    });
+
+    test('survives the boundary mappers in BOTH arms', () {
+      // The engine mirror is a separate enum: a mapper that drops the field
+      // would round-trip every entry as post and the bug would only show as
+      // a Pre chain that stopped being recorded into the loop.
+      final chain = <TrackEffect>[
+        BuiltInEffect(
+          type: TrackEffectType.delay,
+          slotId: 'built-in-1',
+          placement: FxPlacement.pre,
+        ),
+        const PluginEffect(
+          ref: ref,
+          slotId: 'plugin-1',
+          placement: FxPlacement.pre,
+        ),
+      ];
+      final decoded = decodeTrackEffects(encodeTrackEffects(chain));
+      expect(decoded, chain);
+      expect(decoded.map((e) => e.placement), [
+        FxPlacement.pre,
+        FxPlacement.pre,
+      ]);
+    });
+
+    test('is part of entry equality', () {
+      expect(
+        BuiltInEffect(type: TrackEffectType.drive, placement: FxPlacement.pre),
+        isNot(BuiltInEffect(type: TrackEffectType.drive)),
+      );
+      expect(
+        const PluginEffect(ref: ref, placement: FxPlacement.pre),
+        isNot(const PluginEffect(ref: ref)),
+      );
+    });
+
+    test('partitionByPlacement is stable, and the identity on an already '
+        'ordered chain', () {
+      BuiltInEffect at(TrackEffectType type, FxPlacement placement) =>
+          BuiltInEffect(type: type, placement: placement);
+      final mixed = [
+        at(TrackEffectType.drive, FxPlacement.post),
+        at(TrackEffectType.filter, FxPlacement.pre),
+        at(TrackEffectType.delay, FxPlacement.post),
+        at(TrackEffectType.echo, FxPlacement.pre),
+      ];
+      final ordered = partitionByPlacement(mixed);
+      expect(ordered.map((e) => (e as BuiltInEffect).type), [
+        // Relative order preserved within each stage: reorder moves an entry
+        // within its own stage, so re-partitioning must never permute one.
+        TrackEffectType.filter,
+        TrackEffectType.echo,
+        TrackEffectType.drive,
+        TrackEffectType.delay,
+      ]);
+      expect(partitionByPlacement(ordered), ordered);
+      expect(fxPreCount(ordered), 2);
     });
   });
 

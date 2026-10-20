@@ -19,6 +19,14 @@ A floating board in a box full of bonded connector flanges is the worst case: th
 loops exist anyway, through long, undefined, high-impedance paths. So the bonds
 are made deliberate instead.
 
+**Since #1088 there is no rear I/O panel.** Every connector is cut straight into
+the base's painted 2.0 mm rear wall, and the CTRL jacks are D-flange sockets
+there too. The flanges now bear on paint, so they are not bonded to the chassis
+by design: each shell reaches it through the ground it already carries (the
+board's GND for CTRL and MIDI, the Pi's for the USB couplers) and H1. That keeps
+H1 the only DC bond. If ESD testing wants the shells on the chassis directly,
+mask one land at a time and measure; do not mask every flange by assumption.
+
 ## The board
 
 | Hole | Position | Bond |
@@ -124,11 +132,11 @@ Ten minutes with a multimeter on continuity, from bare chassis metal to:
       Pi 3, and the N07 NVMe board sits between the Pi and the plate in this stack.
 - [ ] **Console board GND**, with H1's screw *out* — expect open, because the only
       other paths are connector flanges. Anything else means an accidental bond.
-- [ ] **Each rear-panel connector shell**: 2× USB coupler, 2× DIN-5, 2× TRS, and
-      the USB-C PD coupler.
-- [ ] **The rear I/O panel itself**, with its masked bolt done up — expect a short
-      to chassis. If it reads open, the masked land is painted over or the wrong
-      bolt was masked, and every shell on that panel is floating.
+- [ ] **Each rear-wall connector shell**: 2× USB coupler, 2× DIN-5, 2× CTRL
+      D-flange socket, and the USB-C PD coupler. Since #1088 these sit on paint:
+      expect open to chassis with H1's screw out, and a short only through GND
+      with it in. A shell that reads shorted with H1 out has scraped through the
+      paint and is a second, accidental bond.
 - [ ] **Each buck's shell against its own V−** (B0GGHN97TK ×2) — mount per
       stud item 4 above depending on what the meter says.
 - [ ] **The top shell and faceplate**, to check whether the painted joints conduct.

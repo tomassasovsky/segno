@@ -24,7 +24,6 @@ class ConsoleFactsState extends Equatable {
     this.status = ConsoleFactsStatus.initial,
     this.storage = const StorageUsage.unknown(),
     this.facts = ConsoleFacts.unknown,
-    this.exportDestination = '',
     this.givenName = '',
     this.busy = false,
     this.actionFailed = false,
@@ -41,9 +40,6 @@ class ConsoleFactsState extends Equatable {
 
   /// What the box is.
   final ConsoleFacts facts;
-
-  /// Where everything can be exported to, or empty for nowhere.
-  final String exportDestination;
 
   /// The name the user gave this box, or empty while it still answers to the
   /// one the appliance shipped with.
@@ -85,7 +81,6 @@ class ConsoleFactsState extends Equatable {
     ConsoleFactsStatus? status,
     StorageUsage? storage,
     ConsoleFacts? facts,
-    String? exportDestination,
     String? givenName,
     bool? busy,
     bool? actionFailed,
@@ -94,7 +89,6 @@ class ConsoleFactsState extends Equatable {
     status: status ?? this.status,
     storage: storage ?? this.storage,
     facts: facts ?? this.facts,
-    exportDestination: exportDestination ?? this.exportDestination,
     givenName: givenName ?? this.givenName,
     busy: busy ?? this.busy,
     actionFailed: actionFailed ?? this.actionFailed,
@@ -106,7 +100,6 @@ class ConsoleFactsState extends Equatable {
     status,
     storage,
     facts,
-    exportDestination,
     givenName,
     busy,
     actionFailed,

@@ -1,0 +1,15 @@
+# M3.1 architecture review
+
+Scope: the twelve changed M3.1 code, test and configuration paths in `final-hashes.json`, compared with base `0d601db8ec3450afb8ca94071ce96c969ffde1d9`. This includes the independent root Settings default and fuzzer timing amendments. The same reviewer performed these five role passes sequentially and authored none of this delta. Earlier M2.6 package/native work is excluded from the review's authorship claim; unchanged repository and wire code was read only to trace the current contracts. Later assignment UI/action-catalogue work and the pre-existing app overflow are outside this slice.
+
+Binding: the final source snapshot and `final-hashes.json` bind this report. ControlCubit is `3de5752f05393cdcebe5d27e6bea600756ef128a2b6e120d2c78c545c63a5eaa`; its test is `e5f7ecad7f6fd140e66b0ca6692c2354519a7f57bf783922daca7fc0d3f99a1d`. The entire changed diff and relevant enclosing functions/callers were inspected. This is a source review, not an assertion that the eventual remote PR head has green CI.
+
+No unresolved actionable architecture finding remains. Import and caller tracing found no reversed package dependency or new presentation-to-data access. The app resolves opaque binding identifiers through the existing FxBindingResolver and LooperRepository seams; settings persists the compact assignment model and threshold using its existing store.
+
+Selected scope rewrites only the track coordinate for Loop and Track stages at action firing. Lane and slot identity survive that rewrite, and Input, Output and All tracks retain their own address. A completed momentary stores the resolved target and session revision, so release cannot follow a later selection or overwrite a replacement session. An absent captured slot retires its obligation without selecting another slot.
+
+Gesture validity belongs to ControlCubit: one private helper captures the session and checks current lock/closure state for every system or assigned timer. Normal transport and ordinary track selection stay immediate. Session replacement invalidates pending actions even during the asynchronous apply window; equal binding values do not bypass cancellation. Disconnect still releases built-in/CTRL contacts through their established owner while the unchanged MIDI path keeps its own ownership.
+
+Restore readiness reuses `settleFxRecipes(waitForCallback: true)` so exact acknowledgment can wake a restore even when the public projection is unchanged. At most one wait is active; completion retries retained targets once, and a repeated refusal remains observable without an immediate loop. The independent real second-recipe probe confirmed continued waiting and eventual restoration on that reachable admission sequence. No new native callback, FFI, protocol or real-time ownership behavior is introduced.
+
+The final display amendment adds assignment identity and the current bank's channel offset, with no change to gesture admission or restore code. The remembered target selects the function whose live state is projected; it does not cache a synthetic success value.

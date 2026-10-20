@@ -1,6 +1,53 @@
 import 'package:meta/meta.dart';
 import 'package:performance_repository/src/models/performance_chains.dart';
+import 'package:performance_repository/src/models/recording_format.dart';
 import 'package:segno_engine/segno_engine.dart';
+
+bool _requiredCapturePolicy(Object? value) {
+  if (value is! bool) throw const FormatException('invalid capture policy');
+  return value;
+}
+
+int _captureBus(Object? value, {bool omitted = false}) {
+  if (omitted) return 0;
+  if (value is! int || value < 0 || value >= 16) {
+    throw const FormatException('invalid capture bus');
+  }
+  return value;
+}
+
+int _captureMask(Object? value, int bus) {
+  if (value is! int || value <= 0 || value > 0xFFFFFFFF) {
+    throw const FormatException('invalid capture mask');
+  }
+  final pair = 0x3 << (bus * 2);
+  if ((value & ~pair) != 0) {
+    throw const FormatException('capture mask outside destination');
+  }
+  return value;
+}
+
+int _outputEnabledMask(Object? value, {bool omitted = false}) {
+  if (omitted) return 0xFFFFFFFF;
+  if (value is! int || value < 0 || value > 0xFFFFFFFF) {
+    throw const FormatException('invalid output enabled mask');
+  }
+  return value;
+}
+
+double _outputLevel(Object? value, {bool omitted = false}) {
+  if (omitted) return 1;
+  if (value is! num || !value.isFinite || value < 0 || value > 1) {
+    throw const FormatException('invalid output level');
+  }
+  return value.toDouble();
+}
+
+bool _outputMuted(Object? value, {bool omitted = false}) {
+  if (omitted) return false;
+  if (value is! bool) throw const FormatException('invalid output mute');
+  return value;
+}
 
 /// One lane's PCM + (arm-only) effect chain at the moment of a performance
 /// snapshot.
@@ -22,6 +69,10 @@ class PerformanceLaneSnapshot {
     this.effects = const [],
     this.chainEnabled = true,
     this.takeId = 0,
+    this.volume = 1,
+    this.pan = 0,
+    this.muted = false,
+    this.outputMask = 3,
   });
 
   /// Rebuilds a [PerformanceLaneSnapshot] from a decoded JSON map. An absent
@@ -35,6 +86,10 @@ class PerformanceLaneSnapshot {
         pcmFile: json['pcmRef'] as String?,
         chainEnabled: json['chainEnabled'] as bool? ?? true,
         takeId: (json['takeId'] as num?)?.toInt() ?? 0,
+        volume: (json['volume'] as num?)?.toDouble() ?? 1,
+        pan: (json['pan'] as num?)?.toDouble() ?? 0,
+        muted: json['muted'] as bool? ?? false,
+        outputMask: (json['outputMask'] as num?)?.toInt() ?? 3,
         effects: [
           for (final e in (json['effects'] as List<dynamic>? ?? const []))
             TrackEffect.fromJson(e as Map<String, dynamic>),
@@ -87,6 +142,18 @@ class PerformanceLaneSnapshot {
   /// then places no disarm segment for the channel (the arm image covers it).
   final int takeId;
 
+  /// Effective arm/disarm lane level used by offline route replay.
+  final double volume;
+
+  /// Effective arm/disarm lane pan used by offline route replay.
+  final double pan;
+
+  /// Whether the lane was muted at this snapshot boundary.
+  final bool muted;
+
+  /// Output channel mask for this lane at the snapshot boundary.
+  final int outputMask;
+
   /// Serializes this lane snapshot to a JSON map.
   Map<String, dynamic> toJson() => {
     'lane': lane,
@@ -95,6 +162,10 @@ class PerformanceLaneSnapshot {
     if (pcmFile != null) 'pcmRef': pcmFile,
     if (!chainEnabled) 'chainEnabled': false,
     if (takeId > 0) 'takeId': takeId,
+    'volume': volume,
+    'pan': pan,
+    'muted': muted,
+    'outputMask': outputMask,
     if (effects.isNotEmpty) 'effects': [for (final e in effects) e.toJson()],
   };
 }
@@ -109,6 +180,7 @@ class PerformanceTrackSnapshot {
     required this.volume,
     required this.muted,
     required this.multiple,
+    this.solo = false,
     this.lanes = const [],
   });
 
@@ -120,6 +192,8 @@ class PerformanceTrackSnapshot {
         volume: (json['volume'] as num).toDouble(),
         muted: json['muted'] as bool,
         multiple: (json['multiple'] as num).toInt(),
+        // Absent in manifests written before per-track solo existed.
+        solo: json['solo'] as bool? ?? false,
         lanes: [
           for (final l in (json['lanes'] as List<dynamic>? ?? const []))
             PerformanceLaneSnapshot.fromJson(l as Map<String, dynamic>),
@@ -138,6 +212,10 @@ class PerformanceTrackSnapshot {
   /// Whether the track is muted.
   final bool muted;
 
+  /// Whether the track is soloed: while any track is, only soloed tracks are
+  /// audible. Independent of [muted].
+  final bool solo;
+
   /// Track length in whole base loops.
   final int multiple;
 
@@ -150,6 +228,7 @@ class PerformanceTrackSnapshot {
     'state': state.name,
     'volume': volume,
     'muted': muted,
+    'solo': solo,
     'multiple': multiple,
     'lanes': [for (final l in lanes) l.toJson()],
   };
@@ -157,13 +236,13 @@ class PerformanceTrackSnapshot {
 
 /// The arm-time snapshot (ARM_SNAPSHOT / TRACK_STATE / LANE_SNAPSHOT /
 /// FX_ENTRY in the umbrella plan's data model): clock position, transport +
-/// mix state, and every settled lane's PCM + effect chain, plus the monitor,
-/// bus-stage and master state the engine snapshot alone cannot supply (see
+/// mix state, and every settled lane's PCM + effect chain, plus the monitor
+/// and bus-stage state the engine snapshot alone cannot supply (see
 /// [PerformanceChains]).
 ///
 /// All four FX stages of the v3 model are recorded — Input ([monitors]), Loop
-/// (per-lane, inside [tracks]), Track ([trackChains]) and Master
-/// ([masterEffects] + [masterChainEnabled]) — each with its chain-enabled flag
+/// (per-lane, inside [tracks]), Track ([trackChains]) and captured output
+/// ([outputEffects] + [outputChainEnabled]) — each with its chain-enabled flag
 /// and each entry with its own `enabled` bit, so a replay seeds arm-time bypass
 /// state rather than assuming everything was audible (R3). [fxStagesVersion] is
 /// the presence-keyed marker that tells a legacy snapshot (written before those
@@ -181,13 +260,18 @@ class PerformanceArmSnapshot {
     this.tracks = const [],
     this.monitors = const [],
     this.trackChains = const [],
-    this.masterEffects = const [],
-    this.masterChainEnabled = true,
+    this.outputChains = const [],
+    this.outputEffects = const [],
+    this.outputChainEnabled = true,
     this.fxStagesVersion = currentFxStagesVersion,
+    this.followOutput = false,
+    this.captureBus = 0,
+    this.captureMask = 3,
+    this.outputEnabledMask = 0xFFFFFFFF,
+    this.outputLevel = 1,
+    this.outputMuted = false,
   });
 
-  /// Rebuilds a [PerformanceArmSnapshot] from a decoded JSON map.
-  ///
   /// Presence-keyed, matching the session manifest's own migration style (no
   /// version `switch`): an absent `fxStagesVersion` marks a LEGACY snapshot —
   /// bus stages empty, every chain enabled — and the two bus fields are simply
@@ -195,33 +279,92 @@ class PerformanceArmSnapshot {
   /// is not read: the renderer takes the arm phase from events.log's
   /// `LE_PLOG_PERF_ARMED` fact now (#262), so any such keys in an older bundle
   /// are ignored.
-  factory PerformanceArmSnapshot.fromJson(Map<String, dynamic> json) =>
-      PerformanceArmSnapshot(
-        masterGain: (json['masterGain'] as num).toDouble(),
-        limiterEnabled: json['limiterOn'] as bool,
-        limiterCeiling: (json['limiterCeiling'] as num).toDouble(),
-        latencyOffsetFrames: (json['latencyOffsetFrames'] as num).toInt(),
-        tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
-        fxStagesVersion:
-            (json['fxStagesVersion'] as num?)?.toInt() ?? legacyFxStagesVersion,
-        tracks: [
-          for (final t in (json['tracks'] as List<dynamic>? ?? const []))
-            PerformanceTrackSnapshot.fromJson(t as Map<String, dynamic>),
-        ],
-        monitors: [
-          for (final m in (json['monitors'] as List<dynamic>? ?? const []))
-            m as Map<String, dynamic>,
-        ],
-        trackChains: [
-          for (final c in (json['trackChains'] as List<dynamic>? ?? const []))
-            PerformanceTrackChain.fromJson(c as Map<String, dynamic>),
-        ],
-        masterEffects: [
-          for (final e in (json['masterEffects'] as List<dynamic>? ?? const []))
-            TrackEffect.fromJson(e as Map<String, dynamic>),
-        ],
-        masterChainEnabled: json['masterChainEnabled'] as bool? ?? true,
-      );
+  factory PerformanceArmSnapshot.fromJson(Map<String, dynamic> json) {
+    final bus = _captureBus(
+      json['captureBus'],
+      omitted: !json.containsKey('captureBus'),
+    );
+    final mask = _captureMask(json['captureMask'], bus);
+    return PerformanceArmSnapshot(
+      masterGain: (json['masterGain'] as num).toDouble(),
+      limiterEnabled: json['limiterOn'] as bool,
+      limiterCeiling: (json['limiterCeiling'] as num).toDouble(),
+      latencyOffsetFrames: (json['latencyOffsetFrames'] as num).toInt(),
+      tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
+      // A capture policy is mandatory; a missing or malformed value is an
+      // invalid manifest rather than a request to infer output behavior.
+      followOutput: _requiredCapturePolicy(json['followOutput']),
+      captureBus: bus,
+      captureMask: mask,
+      outputEnabledMask: _outputEnabledMask(
+        json['outputEnabledMask'],
+        omitted: !json.containsKey('outputEnabledMask'),
+      ),
+      outputLevel: _outputLevel(
+        json['outputLevel'],
+        omitted: !json.containsKey('outputLevel'),
+      ),
+      outputMuted: _outputMuted(
+        json['outputMuted'],
+        omitted: !json.containsKey('outputMuted'),
+      ),
+      fxStagesVersion:
+          (json['fxStagesVersion'] as num?)?.toInt() ?? legacyFxStagesVersion,
+      tracks: [
+        for (final t in (json['tracks'] as List<dynamic>? ?? const []))
+          PerformanceTrackSnapshot.fromJson(t as Map<String, dynamic>),
+      ],
+      monitors: [
+        for (final m in (json['monitors'] as List<dynamic>? ?? const []))
+          m as Map<String, dynamic>,
+      ],
+      trackChains: [
+        for (final c in (json['trackChains'] as List<dynamic>? ?? const []))
+          PerformanceTrackChain.fromJson(c as Map<String, dynamic>),
+      ],
+      outputChains: [
+        for (final c in (json['outputChains'] as List<dynamic>? ?? const []))
+          PerformanceOutputChain.fromJson(c as Map<String, dynamic>),
+      ],
+      outputEffects: [
+        for (final e in (json['outputEffects'] as List<dynamic>? ?? const []))
+          TrackEffect.fromJson(e as Map<String, dynamic>),
+      ],
+      outputChainEnabled: json['outputChainEnabled'] as bool? ?? true,
+    );
+  }
+
+  /// This snapshot with the captured destination's callback-frozen facts.
+  /// The caller records them after arming rather than trusting pre-arm state.
+  PerformanceArmSnapshot withCapture({
+    required bool followOutput,
+    required int captureBus,
+    required int captureMask,
+    required int outputEnabledMask,
+    required double outputLevel,
+    required bool outputMuted,
+    required List<TrackEffect> outputEffects,
+    required bool outputChainEnabled,
+  }) => PerformanceArmSnapshot(
+    masterGain: masterGain,
+    limiterEnabled: limiterEnabled,
+    limiterCeiling: limiterCeiling,
+    latencyOffsetFrames: latencyOffsetFrames,
+    tempoBpm: tempoBpm,
+    tracks: tracks,
+    monitors: monitors,
+    trackChains: trackChains,
+    outputChains: outputChains,
+    outputEffects: outputEffects,
+    outputChainEnabled: outputChainEnabled,
+    fxStagesVersion: fxStagesVersion,
+    followOutput: followOutput,
+    captureBus: captureBus,
+    captureMask: captureMask,
+    outputEnabledMask: outputEnabledMask,
+    outputLevel: outputLevel,
+    outputMuted: outputMuted,
+  );
 
   /// The FX-stage schema revision this code writes (R20): the four-stage model
   /// with per-chain + per-slot enabled flags.
@@ -232,7 +375,7 @@ class PerformanceArmSnapshot {
   /// concept of a disabled chain or slot.
   static const int legacyFxStagesVersion = 0;
 
-  /// Master output gain at arm time.
+  /// Hardware master output gain at arm time (excluded from capture).
   final double masterGain;
 
   /// Whether the master peak limiter was enabled at arm time.
@@ -243,6 +386,33 @@ class PerformanceArmSnapshot {
 
   /// The active device profile's latency offset in frames at arm time.
   final int latencyOffsetFrames;
+
+  /// The take's capture policy (slice 3b), frozen at arm: `false` (the
+  /// default) captures [captureBus] after its chain and before its level and
+  /// mute; `true` (Follow output volume) applies that destination's level
+  /// and mute, including their changes during the take. Both policies exclude
+  /// Mono, Balance, hardware master gain and limiter. The policy key is
+  /// required for this format.
+  final bool followOutput;
+
+  /// The output destination the take captured — the first one with an
+  /// enabled channel at arm, which need not be destination 0. The render
+  /// replays this destination's level and mute, so a rig on the second pair
+  /// is rendered with the level the performer actually rode.
+  final int captureBus;
+
+  /// Enabled channels on the selected destination, frozen at arm.
+  final int captureMask;
+
+  /// Hardware output gate frozen at the callback arm boundary.
+  final int outputEnabledMask;
+
+  /// [captureBus]'s level at arm time, the starting point of the render's
+  /// replay under [followOutput].
+  final double outputLevel;
+
+  /// Whether [captureBus] was muted at arm time.
+  final bool outputMuted;
 
   /// Denominator-note beats per minute the engine read at the arm instant;
   /// `0` = unset, stored verbatim exactly like `Session.tempoBpm` (the same
@@ -268,11 +438,15 @@ class PerformanceArmSnapshot {
   /// no bus FX.
   final List<PerformanceTrackChain> trackChains;
 
-  /// The Master insert chain's entries at arm time, in order.
-  final List<TrackEffect> masterEffects;
+  /// Configured destination chains observed before arm. The captured chain
+  /// below is authoritative for replay, including edits while arm was pending.
+  final List<PerformanceOutputChain> outputChains;
 
-  /// Whether the Master insert chain was engaged as a whole at arm time.
-  final bool masterChainEnabled;
+  /// The captured destination's output chain, frozen at arm, in order.
+  final List<TrackEffect> outputEffects;
+
+  /// Whether that chain was engaged at arm time.
+  final bool outputChainEnabled;
 
   /// Which FX-stage schema this snapshot was written under (R20):
   /// [currentFxStagesVersion] for a four-stage capture,
@@ -280,26 +454,41 @@ class PerformanceArmSnapshot {
   /// tell an omitted default from an unknowable legacy value.
   final int fxStagesVersion;
 
-  /// Serializes this snapshot to a JSON map. The marker and the two bus fields
-  /// are omitted at their legacy/default values, so a rig with no bus FX writes
-  /// the same bytes a pre-FX-v3 build did — apart from the marker itself, which
-  /// is what makes that distinction readable.
-  Map<String, dynamic> toJson() => {
-    'masterGain': masterGain,
-    'limiterOn': limiterEnabled,
-    'limiterCeiling': limiterCeiling,
-    'latencyOffsetFrames': latencyOffsetFrames,
-    'tempoBpm': tempoBpm,
-    if (fxStagesVersion != legacyFxStagesVersion)
-      'fxStagesVersion': fxStagesVersion,
-    'tracks': [for (final t in tracks) t.toJson()],
-    'monitors': monitors,
-    if (trackChains.isNotEmpty)
-      'trackChains': [for (final c in trackChains) c.toJson()],
-    if (masterEffects.isNotEmpty)
-      'masterEffects': [for (final e in masterEffects) e.toJson()],
-    if (!masterChainEnabled) 'masterChainEnabled': false,
-  };
+  /// Serializes this snapshot to a JSON map. The captured channel mask is
+  /// always present and valid for the selected destination; bus 0 is omitted
+  /// because it is the format's defined default. Empty effect chains and
+  /// engaged flags retain their compact representation.
+  Map<String, dynamic> toJson() {
+    _captureBus(captureBus);
+    _captureMask(captureMask, captureBus);
+    _outputEnabledMask(outputEnabledMask);
+    _outputLevel(outputLevel);
+    _outputMuted(outputMuted);
+    return {
+      'masterGain': masterGain,
+      'limiterOn': limiterEnabled,
+      'limiterCeiling': limiterCeiling,
+      'latencyOffsetFrames': latencyOffsetFrames,
+      'tempoBpm': tempoBpm,
+      'followOutput': followOutput,
+      if (captureBus != 0) 'captureBus': captureBus,
+      'captureMask': captureMask,
+      'outputEnabledMask': outputEnabledMask,
+      if (outputLevel != 1) 'outputLevel': outputLevel,
+      if (outputMuted) 'outputMuted': true,
+      if (fxStagesVersion != legacyFxStagesVersion)
+        'fxStagesVersion': fxStagesVersion,
+      'tracks': [for (final t in tracks) t.toJson()],
+      'monitors': monitors,
+      if (trackChains.isNotEmpty)
+        'trackChains': [for (final c in trackChains) c.toJson()],
+      if (outputChains.isNotEmpty)
+        'outputChains': [for (final c in outputChains) c.toJson()],
+      if (outputEffects.isNotEmpty)
+        'outputEffects': [for (final e in outputEffects) e.toJson()],
+      if (!outputChainEnabled) 'outputChainEnabled': false,
+    };
+  }
 }
 
 /// The disarm-time snapshot (DISARM_SNAPSHOT): a second settled-lane capture
@@ -484,6 +673,23 @@ class PerformanceManifest {
   /// Why capture stopped early (`disk_full` / `device_changed`), or `null`
   /// for a normal disarm.
   String? get stoppedEarly => native['stopped_early'] as String?;
+
+  /// The take's id (32 lower-case hex digits), from the native fields;
+  /// null for a capture written before takes had ids.
+  String? get takeId => native['take_id'] as String?;
+
+  /// Samples above full scale in the whole take, from the native fields;
+  /// 0 for a capture written before overs were counted.
+  int get overs => (native['overs'] as num?)?.toInt() ?? 0;
+
+  /// Every recorded part of every stream, in the order the native drain
+  /// listed them; empty for a capture written before ordered parts.
+  ///
+  /// Throws [FormatException] for a malformed entry.
+  List<TakePart> get parts => [
+    for (final p in (native['parts'] as List<dynamic>? ?? const []))
+      TakePart.fromJson(p as Map<String, dynamic>),
+  ];
 
   /// Every retired overdub layer's raw PCM file (part 5), from the native
   /// fields.

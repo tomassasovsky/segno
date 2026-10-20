@@ -1,0 +1,29 @@
+{
+  "tool": "Built-in image_gen",
+  "assets": [
+    {
+      "file": "expression.png",
+      "prompt": "Create a single high resolution product illustration asset for a dark professional music appliance UI: one generic unbranded expression foot pedal, isolated on a genuinely transparent background with alpha. Portrait image. Perfectly straight top-down orthographic view, centered vertically with toe at top and heel at bottom, entire object visible. Premium understated dark graphite aluminum chassis, subtle softly chamfered edges, full-length black rubber tread plate with precise horizontal grip ribs, realistic physical depth and refined studio lighting showing materials clearly against a dark UI. Modern professional industrial design, restrained photorealistic 3D product render, crisp edges, generous tight transparent margin about 8%. The pedal itself fills most of the tall canvas. No words, letters, logos, brand marks, numbers, ports/cables sticking out, badges, text, scene, floor, drop shadow outside silhouette, glow, blue accent or colored LEDs. Do not resemble or copy a specific commercial brand. High detail suitable for retina display at 180 by 340 CSS pixels. Output just one expression pedal, not a montage.",
+      "width": 1024,
+      "height": 1536,
+      "mode": "RGBA",
+      "sha256": "3f411ec573eb585e9eb4b35bd4eb050cda3db2f42ed4e3e210482df1ab7cd957"
+    },
+    {
+      "file": "single.png",
+      "prompt": "Create a high resolution isolated product illustration asset for a professional dark music appliance UI. Subject: one single-button footswitch pedal, with exactly ONE large circular brushed-silver metal stomp switch centered on its top. Compact vertical rectangular dark graphite aluminum enclosure with softly chamfered corners. A tiny unlit indicator lens just above the switch. Absolutely no words, text, letters, numbers, logos, brands, symbols, ports or cables, or colored glows. Perfectly straight top-down orthographic view, centered, entire product visible, precisely symmetrical composition. Premium understated modern hardware, realistic metal finish and subtle studio lighting with crisp edges. Match the material style of an unbranded dark graphite expression pedal with black rubber: sophisticated photorealistic 3D product render, no cartoon styling. Genuinely transparent background with alpha; no floor or surrounding shadow or vignette. Product fills about 84 percent of the canvas, with transparent margins on all sides. Portrait canvas, one rectangular single footswitch device. No montage, no additional objects. Suitable for retina UI.",
+      "width": 1024,
+      "height": 1536,
+      "mode": "RGBA",
+      "sha256": "37d4cd87dee110ce0bfaf5fa6efddd1172cc0a01df6ef3c6307a783f6a605f28"
+    },
+    {
+      "file": "dual.png",
+      "prompt": "Create a high resolution isolated product illustration asset for a professional dark music appliance UI. Subject: one dual-button footswitch pedal, with exactly TWO large circular brushed-silver metal stomp switches side by side horizontally, equally spaced left and right, on ONE shared low wide horizontal rectangular dark graphite aluminum enclosure with softly chamfered corners. Two tiny unlit indicator lenses, each centered just above its switch. Absolutely no words, text, letters, numbers, logos, brands, symbols, ports or cables, or colored glows. Perfectly straight top-down orthographic view, centered, entire product visible, precisely symmetrical composition. Premium understated modern hardware, realistic metal finish and subtle studio lighting with crisp edges. Match the material style of an unbranded dark graphite expression pedal with black rubber: sophisticated photorealistic 3D product render, no cartoon styling. Genuinely transparent background with alpha; no floor or surrounding shadow or vignette. Product fills about 84 percent of the canvas, with transparent margins on all sides. Landscape canvas, one WIDE dual footswitch device, two silver switches on the same chassis. No montage, no additional objects. Suitable for retina UI.",
+      "width": 1672,
+      "height": 941,
+      "mode": "RGBA",
+      "sha256": "11df0dca22c5312869f566e6d59c0f122e1f7971c6c9b4017f3a795796de5188"
+    }
+  ]
+}

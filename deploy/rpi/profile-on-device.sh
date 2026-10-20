@@ -2,23 +2,37 @@
 # Run a PROFILE-mode Segno bundle on the appliance and expose its Dart VM service
 # to a DevTools session on your workstation. See #638.
 #
-# Why this exists: the installed appliance bundle is release-mode AOT with no VM
-# service, so DevTools has nothing to attach to, and the Yocto image is a pure
-# runtime with no toolchain so it cannot build a profile bundle itself. Get one
-# from the `appliance-profile-bundle` workflow:
+# Why this exists: the installed appliance bundle is release-mode AOT on the
+# release engine, with no VM service, so DevTools has nothing to attach to, and
+# the Yocto image is a pure runtime with no toolchain, so it cannot build a
+# profile bundle itself. Get one from the `appliance-profile-bundle` workflow:
 #
-#   gh run download <run-id> -n segno-linux-arm64-profile -D /tmp/segno-profile
+#   gh run download <run-id> -n segno-appliance-profile -D /tmp/segno-profile
 #   deploy/rpi/profile-on-device.sh /tmp/segno-profile
+#
+# or build it locally with deploy/rpi/build/build-arm64-bundle.sh --profile and
+# pass build/appliance/profile-bundle.
 #
 # The release install at /opt/segno is never touched: the profile bundle goes to
 # /data/profile (the persistent partition OTA preserves, and the only one with
-# room to spare — the rootfs runs ~1GB). segno.service is stopped for the
-# duration so weston's kiosk-shell has a single client and the audio device is
-# not held, then restarted on exit however this script ends.
+# room to spare). It carries its own profile engine, lib/libflutter_engine.so,
+# which LD_LIBRARY_PATH puts ahead of the release engine the image ships; a
+# profile snapshot runs only on a profile engine.
 #
-# VERIFIED end-to-end on the Yocto Pi 4B: bundle deploys, app starts under
-# weston, audio opens (`audio auto-start: started ok pinned=true`), and the VM
-# service answers HTTP JSON-RPC through the tunnel.
+# The profile build runs through the shipped launcher, /usr/bin/segno-kiosk-launch,
+# with SEGNO_ENGINE_LIB and SEGNO_HOMESCREEN_CONFIG pointed at /data/profile and
+# LD_LIBRARY_PATH at its lib/ (which every process the app starts inherits), so
+# it gets the same HOME, ALSA and RT settings as the appliance. It runs as a
+# transient systemd unit, segno-devtools, with segno.service's limits and stop
+# handling; segno.service is stopped for the duration, because
+# both screens and the audio device belong to one process at a time, and is
+# started again on exit however this script ends.
+#
+# Its homescreen.toml is the installed one with the bundle path changed and two
+# engine switches added: a fixed VM service port and no auth code. ivi-homescreen
+# passes `engine` switches to the Flutter engine as they are. Both views share
+# one Dart VM, so DevTools sees the main and the readout isolates on the one
+# port.
 #
 # One caveat this script cannot remove: the appliance renders ZERO frames while
 # nothing is moving, so a profile session with no one touching the console
@@ -34,148 +48,124 @@ HOST="${2:-root@segno}"
 PORT="${SEGNO_VM_PORT:-8181}"
 REMOTE_DIR=/data/profile
 
-if [ -z "$BUNDLE" ] || [ ! -x "$BUNDLE/segno" ]; then
+if [ -z "$BUNDLE" ] || [ ! -f "$BUNDLE/lib/libapp.so" ] \
+  || [ ! -f "$BUNDLE/lib/libflutter_engine.so" ]; then
   cat >&2 <<USAGE
 usage: $0 <profile-bundle-dir> [user@host]
 
-  <profile-bundle-dir>  directory containing the 'segno' binary plus data/ and
-                        lib/ -- i.e. build/linux/arm64/profile/bundle, or the
-                        unpacked segno-linux-arm64-profile CI artifact.
+  <profile-bundle-dir>  the profile bundle: data/ and lib/, with
+                        lib/libflutter_engine.so -- the unpacked
+                        segno-appliance-profile CI artifact, or
+                        build/appliance/profile-bundle.
 
-  SEGNO_VM_PORT         VM service port to use on both ends (default 8181).
+  SEGNO_VM_PORT         VM service port, on both ends (default 8181).
 USAGE
   exit 2
 fi
 
-echo "==> checking $HOST"
-ssh -o BatchMode=yes "$HOST" 'command -v tar >/dev/null' \
-  || { echo "no tar on device" >&2; exit 1; }
+remote() { ssh -o BatchMode=yes "$HOST" "$@"; }
 
-# The rootfs has ~1GB free and is A/B-swapped by OTA; /data has the room and
+echo "==> checking $HOST"
+remote 'command -v tar >/dev/null && command -v systemd-run >/dev/null' \
+  || { echo "no tar or systemd-run on the device" >&2; exit 1; }
+
+# The rootfs is A/B-swapped by OTA and has little room; /data has it and
 # survives updates. Bail rather than half-copy if it is tight.
-avail=$(ssh -o BatchMode=yes "$HOST" "df -k /data | awk 'NR==2{print \$4}'")
+avail=$(remote "df -k /data | awk 'NR==2{print \$4}'")
 if [ "$avail" -lt 524288 ]; then
   echo "/data has less than 512MB free (${avail}K) -- free space first" >&2
   exit 1
 fi
 
-echo "==> stopping segno.service"
-ssh -o BatchMode=yes "$HOST" 'systemctl stop segno.service'
+# A session whose workstation went away can leave its unit behind; it holds the
+# screens and runs from the directory about to be replaced.
+remote 'systemctl stop segno-devtools.service 2>/dev/null; systemctl reset-failed segno-devtools.service 2>/dev/null; true'
+
+echo "==> copying bundle to $REMOTE_DIR"
+remote "rm -rf $REMOTE_DIR && mkdir -p $REMOTE_DIR/bundle"
+tar -C "$BUNDLE" -cf - . | remote "tar -C $REMOTE_DIR/bundle -xf -"
+remote "sed \
+  -e \"s#^bundle = '/opt/segno'#bundle = '$REMOTE_DIR/bundle'#\" \
+  -e \"s#engine = \\['--enable-impeller=false'\\]#engine = ['--enable-impeller=false', '--vm-service-port=$PORT', '--disable-service-auth-codes']#\" \
+  /etc/segno/homescreen.toml > $REMOTE_DIR/homescreen.toml"
+# A sed that matched nothing would run the release bundle, or one with no VM
+# service, and look like a working profile session.
+remote "[ \$(grep -c \"^bundle = '$REMOTE_DIR/bundle'\" $REMOTE_DIR/homescreen.toml) -eq 2 ] \
+  && [ \$(grep -c -- '--vm-service-port=$PORT' $REMOTE_DIR/homescreen.toml) -eq 2 ]" \
+  || { echo "the installed homescreen.toml no longer has the lines this script rewrites" >&2; exit 1; }
 
 # Whatever happens next -- success, failure, Ctrl-C -- the appliance goes back to
 # running its release build. Leaving a floor unit dark is not an acceptable exit.
+# Set before segno.service stops, so an interrupt during the stop restores too;
+# INT and TERM exit, so the EXIT trap runs once and the script goes no further.
 restore() {
   echo
   echo "==> stopping the profile build"
-  # Kill the profile instance FIRST and by recorded PID. It holds the ALSA
-  # device; starting the release build while it is still alive makes the release
-  # build fail with `audio auto-start: open failed result=device` and look, from
-  # the console, like the appliance came back broken.
-  #
-  # By PID, not `pkill -f /data/profile/segno`: that pattern also matches the
-  # ssh-spawned shell running it, so pkill kills its own session and the rest of
-  # the restore never runs. Learned the hard way.
-  ssh -o BatchMode=yes "$HOST" "
-    [ -f $REMOTE_DIR/segno.pid ] && kill -9 \$(cat $REMOTE_DIR/segno.pid) 2>/dev/null
-    rm -f $REMOTE_DIR/segno.pid
-    true
-  " || true
+  remote 'systemctl stop segno-devtools.service 2>/dev/null; systemctl reset-failed segno-devtools.service 2>/dev/null; true' || true
   echo "==> restoring segno.service"
-  ssh -o BatchMode=yes "$HOST" 'systemctl restart segno.service' || true
+  remote 'systemctl start segno.service' || true
 }
-trap restore EXIT INT TERM
+trap restore EXIT
+trap 'exit 130' INT TERM
 
-echo "==> copying bundle to $REMOTE_DIR"
-ssh -o BatchMode=yes "$HOST" "rm -rf $REMOTE_DIR && mkdir -p $REMOTE_DIR"
-tar -C "$BUNDLE" -cf - . | ssh -o BatchMode=yes "$HOST" "tar -C $REMOTE_DIR -xf -"
-ssh -o BatchMode=yes "$HOST" "chmod +x $REMOTE_DIR/segno"
+echo "==> stopping segno.service"
+remote 'systemctl stop segno.service'
 
-echo "==> starting profile build"
-# The ENVIRONMENT VARIABLES below mirror /usr/bin/segno-kiosk-launch. They have
-# to: the ALSA/RT/HOME variables change how the engine and path_provider behave,
-# and a profile run under a different environment would not be measuring the
-# appliance. Kept in sync by hand -- if that launcher changes, change this too.
-# That includes SEGNO_ALSA_PERIODS: it tracks the shipped value rather than
-# pinning one of its own, because the whole point of this script is to profile
-# the configuration that ships. Pinning a different depth here would make every
-# capture-path measurement describe a build nobody runs. To profile a candidate
-# depth, edit it here for that one run and put it back -- a value left behind
-# here stops measuring the appliance without saying so.
-#
-# What is NOT mirrored, so nobody reads "mirrors the launcher" as "is the
-# launcher". Both are benign today; the second has a tripwire.
-#
-#   1. Filesystem setup. segno-kiosk-launch:15-20 falls back to HOME=/root when
-#      /data is unmounted, and seeds user-dirs.dirs plus $HOME/log (:25, :33-45).
-#      This script skips all of it and just exports HOME. Fine while /data is
-#      mounted, which is the case a profile run cares about.
-#   2. Process limits. segno.service:29-30 sets LimitRTPRIO=95 and
-#      LimitMEMLOCK=infinity; an ssh-spawned process is not in that unit and
-#      gets neither. This is moot ONLY because the profile runs as root, where
-#      CAP_SYS_NICE and CAP_IPC_LOCK bypass both limits. The day the appliance
-#      stops running as root, SEGNO_RT_AUDIO=1 below silently stops taking
-#      effect here: setschedparam EPERMs, the audio thread stays SCHED_OTHER,
-#      and every profile run measures a non-RT thread while still claiming to
-#      measure the appliance. Add explicit ulimits here before that happens.
-#
-# setsid + nohup + </dev/null, NOT `ssh -f ... &`: with a bare trailing `&` the
-# remote shell exits immediately and SIGHUPs the app before it ever opens its
-# log. Detaching it from the session is what makes it survive the ssh close.
-#
-# No --vm-service-port / --disable-service-auth-codes: VERIFIED on device that
-# the Linux GTK embedder ignores both. It always picks a random port and always
-# mints an auth code, so the port is discovered from the log below rather than
-# dictated here. SEGNO_VM_PORT therefore only selects the LOCAL end of the
-# tunnel.
-ssh -o BatchMode=yes "$HOST" "
-  export GDK_BACKEND=wayland
-  export XDG_RUNTIME_DIR=/run/user/1000
-  export WAYLAND_DISPLAY=wayland-1
-  export HOME=/data
-  export XDG_DATA_HOME=\$HOME/.local/share
-  export XDG_CONFIG_HOME=\$HOME/.config
-  export SEGNO_ALSA_ONLY=1
-  export SEGNO_RT_AUDIO=1
-  export SEGNO_ALSA_PERIODS=8
-  setsid nohup $REMOTE_DIR/segno >$REMOTE_DIR/profile.log 2>&1 </dev/null &
-  echo \$! > $REMOTE_DIR/segno.pid
-"
+echo "==> starting the profile build"
+# segno.service's limits and stop handling. ExecStopPost brings the release
+# build back from the device itself whenever this unit stops: the profile build
+# crashing, or this workstation dropping off the network, must not leave the
+# floor dark until someone reconnects.
+remote "systemd-run --unit=segno-devtools --collect \
+  --property=LimitRTPRIO=95 --property=LimitMEMLOCK=infinity \
+  --property=LimitCORE=infinity --property=TimeoutStopSec=15s \
+  --property=TimeoutStopFailureMode=abort --property=TimeoutAbortSec=120s \
+  --property='ExecStopPost=/usr/bin/systemctl --no-block start segno.service' \
+  --setenv=LD_LIBRARY_PATH=$REMOTE_DIR/bundle/lib \
+  --setenv=SEGNO_ENGINE_LIB=$REMOTE_DIR/bundle/lib/libsegno_engine.so \
+  --setenv=SEGNO_HOMESCREEN_CONFIG=$REMOTE_DIR/homescreen.toml \
+  /usr/bin/segno-kiosk-launch"
+
+# This run's log only: an earlier session this boot logged the same line.
+invocation=$(remote 'systemctl show -p InvocationID --value segno-devtools.service')
+log="journalctl _SYSTEMD_INVOCATION_ID=$invocation --no-pager -o cat"
 
 echo "==> waiting for the VM service"
-url=""
+up=""
 for _ in $(seq 1 30); do
   sleep 1
-  # The full URL including the auth-code path segment -- DevTools needs it.
-  url=$(ssh -o BatchMode=yes "$HOST" \
-    "grep -oE 'http://127\.0\.0\.1:[0-9]+/[A-Za-z0-9_=-]*/' $REMOTE_DIR/profile.log 2>/dev/null | head -1" \
-    || true)
-  [ -n "$url" ] && break
+  if remote "$log | grep -q 'http://127\.0\.0\.1:$PORT/'"; then
+    up=1
+    break
+  fi
 done
 
-if [ -z "$url" ]; then
-  echo "no VM service URL after 30s. Device-side log:" >&2
-  ssh -o BatchMode=yes "$HOST" "tail -30 $REMOTE_DIR/profile.log" >&2 || true
+if [ -z "$up" ]; then
+  echo "no VM service on port $PORT after 30s. Device-side log:" >&2
+  remote "$log | tail -30" >&2 || true
   exit 1
 fi
 
-remote_port=$(printf '%s' "$url" | sed -E 's#^http://127\.0\.0\.1:([0-9]+)/.*#\1#')
-local_url=${url/127.0.0.1:$remote_port/127.0.0.1:$PORT}
-
-echo "==> VM service up on device: $url"
-echo "==> forwarding localhost:$PORT -> device:$remote_port (Ctrl-C to stop and restore)"
+echo "==> VM service up on device port $PORT"
+echo "==> forwarding localhost:$PORT -> device:$PORT (Ctrl-C to stop and restore)"
 echo
 echo "    Attach DevTools to:"
-echo "      $local_url"
+echo "      http://127.0.0.1:$PORT/"
 echo
 echo "    Measure, in this order:"
 echo "      1. idle console          -- the floor for everything else"
 echo "      2. a record/overdub pass -- the 16ms snapshot poll under load"
 echo "      3. tray open/close       -- implicit animations + layout"
-echo "      4. waveform window open  -- two engines on one V3D"
+echo "      4. the Track display     -- two engines on one V3D"
 echo
 echo "    What decides the work: UI thread over budget -> the poll timer and"
 echo "    context.watch fan-out. Raster over budget -> RepaintBoundary, the"
 echo "    per-sample waveform rects, card elevation."
 echo
 
-exec ssh -o BatchMode=yes -N -L "$PORT:127.0.0.1:$remote_port" "$HOST"
+# ExitOnForwardFailure: a port already taken here would otherwise leave DevTools
+# attached to whatever holds it. ServerAlive: notice a dead link and exit, so
+# the restore runs.
+ssh -o BatchMode=yes -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+  -N -L "$PORT:127.0.0.1:$PORT" "$HOST"

@@ -1,6 +1,6 @@
 # Segno — Progress & Roadmap
 
-<!-- cspell:words hashlib -->
+<!-- cspell:words hashlib manufacturability -->
 
 Living status doc for the Flutter desktop loopstation. Pairs with the original
 plan in `docs/plan/2026-06-08-feat-flutter-desktop-loopstation-plan.md`.
@@ -9,6 +9,687 @@ Update this as work lands so any session (human or agent) can resume cold.
 Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
+
+## Active threads
+
+Issues with a live branch. Agents add a row when a thread starts, update it
+when its stage changes, and remove it in the PR that closes the issue or when
+the work is parked (rules in `AGENTS.md`). Stage and autonomy are copied from
+the issue labels, which are authoritative; if a row disagrees, fix the row.
+
+| Issue | Thread | Stage | Autonomy | Branch |
+|-------|--------|-------|----------|--------|
+| #1367 | Start helper programs without forking the app | brainstorm | plan-gate | `claude/no-fork-spike-1367` |
+| #1299 | Appliance slowdown profiler | in-review | merge-gate | `claude/appliance-responsiveness-08d39b` |
+| #1301 | Idle console redraws at 60 fps | build | merge-gate | `claude/idle-redraw-1301` |
+| #1337 | Retry Wi-Fi after a runtime drop, holding off while performing | in-review | blocked-verify | `claude/wifi-runtime-retry-1337` |
+| #1349 | Console LEDs dim with the screens (protocol 11, console 2.2, ring 1.1) | build | blocked-verify | `claude/idle-dim-leds-1349` |
+| #1352 | Console negotiates the charger's full 20 V current, with a power-cycle prompt | in-review | blocked-verify | `claude/pd-provisioning-1352` |
+| #1081 | Console v3 and ring carrier firmware on protocol 10 | in-review | merge-gate | `claude/console-v3-port-1081` |
+| #1072 | Screen power follows the app (runtime on integration) | in-review | blocked-verify | `claude/screen-power-runtime-1072` |
+| #1077 | Song queue completion | in-review | blocked-verify | `claude/song-queue-comet-1077` |
+| #1140 | Keep recorded material across audio-engine reopen | in-review | merge-gate | `claude/engine-reopen-1140*` |
+| #1143 | Replay audio-history changes in performance stems | build | merge-gate | `claude/stem-history-replay-1143` |
+| #1144 | Report render manifest failures | in-review | merge-gate | `claude/manifest-failure-1144` |
+| #1146 | Guard fresh capture preparation | in-review | merge-gate | `claude/capture-prep-guard-1146` |
+| #1159 | One settings-transaction owner | (none) | merge-gate | `claude/settings-owner-1159-*` |
+| #1164 | Foot Peel | plan-review | merge-gate | `claude/peel-plan-1164` |
+| #1168 | Foot Multiply and Divide | plan-review | merge-gate | `claude/multiply-divide-1168-*` |
+| #1177 | Appliance USB storage service | build | merge-gate | `claude/usb-storage-1177-*` |
+| #1178 | Library and Sessions redesign | build | merge-gate | `claude/library-1178-*` |
+| #1179 | Pitch and time DSP core | build | merge-gate | `claude/pitch-time-1179-*` |
+| #1197 | Instruments | plan | merge-gate | `claude/instruments-1197-*` |
+| #1198 | Recording to USB and long recordings | plan | merge-gate | `claude/recording-1198-*` |
+| #1200 | Backing player | plan | merge-gate | `claude/backing-1200-*` |
+| #1202 | Shared render recipe, Bounce, Save selected | plan | merge-gate | `claude/render-1202-*` |
+| #1228 | MIDI clock | plan | merge-gate | `claude/midi-clock-1228-*` |
+| #1270 | Device and appliance pages | plan | merge-gate | `claude/device-pages-plan-1270` |
+| #1342 | Ring carrier firmware updates from the console | in-review | blocked-verify | `claude/ring-update-1342` |
+
+---
+
+## October 2026 Clear history and Fade (#1142)
+
+Clear and grouped Clear now retain the Fade amount applied at the audio boundary;
+Undo restores stationary levels before playback, with ordinary mute and frozen
+history preserved. Performance capture records exact restored material through
+its existing staging and renderer owners. Invalid source transitions fail their
+derived stems while the independently recorded master remains usable.
+
+The [review](code-review/fade-clear-history/review.md) records the native safety
+matrix, six actual-native repository tests, all 187 FFI symbols, package coverage
+and independent source reviews. Production adds 323 lines and removes 108, with
+no additional state owner. General history replay (#1143), whole-render manifest
+errors (#1144), reopen (#1140) and Fade controls remain separate work. Actual
+Claude, published-head CI and human merge gates remain pending independently.
+
+## October 2026 stationary Session Fade (#1139)
+
+Sessions now save recorded tracks' current Fade amounts and restore them as
+stationary levels before publishing stopped playback. Material finalization and
+all Fade confirmations complete first; rejected or retired imports are cleaned up.
+The implementation extends five existing production files without another owner
+or native API. Exact Session schema 11 requires the saved amounts.
+
+The [review](code-review/session-fade-levels/review.md) records 3,166 passing app
+tests, 716 ordinary Looper tests and 116 Session tests, plus 21 actual-native
+focused checks. Coverage floors, analysis, formatting and positive Bloc lint pass.
+Independent review repaired two test issues without production changes. Claude,
+published-head CI and human merge remain separate gates. Full-engine reopen
+retention (#1140), Clear/history and public Fade controls are separate follow-ups.
+
+## October 2026 Fade duration persistence (#1137)
+
+Fade defaults and explicit per-track durations now survive startup and Session
+save/recall through one settings writer. Failed writes restore the previous
+record or require explicit recovery. Incoming Session settings finish before
+the existing boot barrier releases; an active fade keeps its original rate.
+
+The [review](code-review/fade-duration-settings/review.md) records 3,162 passing
+app tests (49 conditional skips), 198 settings tests and 114 Session tests, with
+all applicable coverage floors met. Analysis, formatting and 811-file Bloc lint
+pass. Independent reviews are clean after bounded fixes. Actual Claude,
+published-head CI and human merge approval remain separate gates. Coefficient
+recall/reconnect, Clear/history and Fade controls are still separate follow-ups.
+
+## October 2026 stopped Session recall (#1134)
+
+Session recall now publishes recorded tracks stopped, with timing and crown
+preserved, and keeps ordinary transport edits blocked until saved settings finish
+applying. Explicit Play starts the recalled material. Unavailable audio devices
+are rejected before destructive work; settings-only empty loads still work.
+
+The [review](code-review/stopped-session-recall/review.md) records the local gates:
+3,142 app tests, 715 ordinary Looper tests, 112 Session tests and 356 Engine tests
+pass; coverage meets every affected floor. Native safety configurations, FFI,
+analysis, formatting and positive Bloc lint pass. Independent reviews are clean;
+Claude review, published-head CI and human merge approval remain separate gates.
+This prerequisite does not complete Fade duration or Session persistence.
+
+## October 2026 native track Fade (#1131)
+
+The native Fade capability now has independent per-track envelopes, confirmed
+callback results and matching performance-log rendering. It changes neither
+saved Mixer gain nor recorded PCM. Existing playback remains at full Fade level;
+user-facing control and durable Session/reconnect composition are separate parts.
+
+The [review](code-review/foot-fade-native/review.md) binds the candidate and its
+checks: native standard, sanitizer, telemetry-disabled and C++17 pass, as do all
+187 FFI symbol lookups. App tests pass 3,137 cases at 92.634% coverage; ordinary
+Looper coverage is 95.136%, with four additional actual-native Fade tests.
+Analyzer, formatter and 806-file Bloc lint pass. Independent reviews repaired a
+Session-retirement receipt leak and have no remaining actionable finding.
+Actual Claude review, published-head CI and human merge remain separate gates;
+no appliance validation or deployment is claimed.
+
+## October 2026 recording-start pair (#1026)
+
+Count-in and Sound-start now share one confirmed setting across Recording,
+Tempo, both Audio setup surfaces, startup and Session save/recall. Count-in
+above zero disables Sound; enabling Sound turns Count-in off. Explicit Off
+remains Off, while a new setup defaults to one bar. Capture refuses edits;
+unknown or failed acceptance stays visibly unavailable until recovery.
+
+Storage writes preserve exact prior keys on failure, and native callback
+receipts confirm changes before publication. Fresh recordings wait for a
+confirmed pair; cancellation and finishing remain available. Sound-start
+requires a usable selected input before arming and reports the affected track
+when one is missing. Session save and shutdown wait for settlement.
+
+The [part-one plan](plan/2026-10-03-feat-count-in-part-1-plan.md) defines this
+boundary. Native standard, sanitizer, telemetry-disabled and C++ checks pass.
+Independent tests caught and repaired a countdown-cancellation ordering defect.
+The saved Pen section contains five checked native captures. The full app
+passes 2,789 tests at 91.927% coverage; all five affected package suites meet
+their required gates. Static checks cover 763 Dart files, and independent review
+has no unresolved finding. A bound native desktop build passes the paired
+Count-in/Sound interaction and all 182 FFI symbol lookups. Exact-head CI and
+human merge remain separate. Shared launch countdowns and mapped
+Count-in are the next two parts; they are not implemented by this part.
+
+## October 2026 shared Hear click (#1026)
+
+Touch, encoder, MIDI and External controls now share Off, First recording,
+Recording and Play & record. New setups default to First recording; explicit
+Off is preserved. Native callback receipts confirm changes before publication.
+Recording and overdubbing refuse edits without stopping audio. Session Save and
+restart retain Released values while Held remains audible, and safe shutdown
+waits for owed releases or presents recovery.
+
+`docs/reviews/shared-hear-click/` binds the candidate and independent evidence.
+The app passes 2,611 tests at 91.069% coverage; Looper passes 691 at 95.261%.
+Engine passes 352 against the repaired native library. Native configurations,
+affected package suites and 757-file static checks pass. Independent review
+closed callback publication, command counter width, obsolete initialization,
+recovery readout and compensated-flush defects. Author renders include the
+repaired expression choice layout. The saved Pen section has passed its final
+composite visual check. Native desktop interaction still needs verification
+against a bound build. Published-head CI and human merge remain separate.
+
+Count-in and its Sound-start interlock are next. The future capture journal must
+extend the capture lock before stopped failed-finalization takes ship; no such
+producer is implemented by this slice. M5 full live-Control Session Load and
+physical appliance checks remain open.
+
+## October 2026 shared Record timing (#1026)
+
+Touch, MIDI and External controls share the seven recording-timing choices for
+Loop defaults and fixed Tracks 1–8. Explicit Immediately remains Custom; null
+restores inheritance. Waiting requests can be rescheduled or cancelled without
+changing unrelated arms. Capture refuses edits without stopping audio. One
+native vector and coherent receipt replace the split timing writers; record
+acquisition is fenced before plugin, layer or history preparation.
+
+Held timing stays live while Save/restart retain Released intent and remembered
+division. Exact rollback preserves absent settings. Shutdown refuses unfinished
+release cleanup; Retry and Keep playing retain their distinct recovery behavior.
+The shared owner composes startup, session capture and the existing settings UI.
+
+`docs/reviews/shared-record-timing/` binds the implementation, independent review,
+tests and saved Pen references. Full app: 2,552 passed at 90.989% coverage; Looper:
+675 passed at 95.344%. Native variants, snapshot/preparation negative controls,
+affected independent replay, Engine/Settings/Session/Performance packages and
+748-file static checks pass. Author-only renders and native desktop interaction
+are recorded separately. Published-head CI, human merge, appliance verification
+and M5 full live-Control Session Load remain separate gates. Hear click is the
+next bounded shared-control slice.
+
+## October 2026 shared Record length (#1026)
+
+Touch, MIDI and External controls now share Auto/1–64-bar choices for Loop
+defaults and fixed Tracks 1–8. Explicit Auto stays Custom; Multi retains latent
+track overrides. Capture blocks edits without stopping audio. Held values stay
+live while Save/restart preserve Released choices, and refused cleanup retries
+when safe. Startup and shutdown require confirmed state or explicit recovery.
+
+`docs/reviews/shared-record-length/` binds 88 source/test/render paths and saved
+Pen references. Ordinary app checks pass 2,729 results at 91.0011% coverage;
+Looper repository passes 693 at 95.5842%, Settings 171 at 90.3498%. The 44-case
+independent matrix and receipt-bypass negative control pass their expectations.
+Native configurations, native-backed fuzz and 741-file static checks pass.
+Review repaired startup Retry, raw endpoint cancellation and a clipped lock
+label. Published-head CI, human merge, physical proof and M5 live-Control full
+Session Load remain separate. Shared Record timing is the next bounded slice.
+
+## October 2026 shared Playback Loop or Once (#1026)
+
+Touch, MIDI and External controls now share confirmed Loop/Once choices for
+Loop defaults and fixed Tracks 1–8, including empty tracks and all five modes.
+Explicit false remains Custom. Use default supersedes older held cleanup;
+Save and reconnect preserve authored Released values. Startup validates all
+nine stored choices and verifies the eight native bits. Shutdown drains pending
+changes and offers recovery instead of losing them.
+
+`docs/reviews/shared-playback-choice/` binds source and saved Pen references.
+The final app suite passes 2,666 results at 90.7948% coverage; Looper repository
+passes 686 at 95.7472%. Settings and Controller results are reused only for
+unchanged sources. The independent 50-case matrix covers all native modes, and
+an isolated receipt bypass fails the expected pending assertion. Strict static
+checks cover 733 Dart files. Review caught and fixed startup-validation Retry
+and reconnect-readiness defects. Exact-head CI and human merge approval remain
+separate; hardware proof and M5 live-controller full Session Load remain open.
+
+## October 2026 shared overdub decay (#1026)
+
+MIDI and External button/expression controls now share the Playback owner for
+Loop defaults and fixed Tracks 1–8. Explicit zero remains Custom; Use default
+removes only that field and supersedes older held cleanup. Storage is verified
+before acceptance. Sessions/restarts retain Released intent, and shutdown waits
+for pending changes and refuses on unresolved recovery.
+
+`docs/reviews/shared-overdub-decay/` binds the source, saved Pen references and
+local evidence: 2,617 ordinary app results at 90.7010% coverage, three affected
+package suites, 51 independent probes, a native-sample negative control, eight
+native session cases, standard native suites and clean strict static gates.
+Startup replay and stale-error defects found during review are repaired. CI on
+the published head and human merge approval remain separate. Hardware and the
+inherited complete session-load defect with a live controller owner remain
+explicit follow-up work.
+
+## October 2026 shared Click volume (#1026)
+
+Click volume now shares one confirmed owner across touch, MIDI and External
+buttons/expression. The same linear range appears as 0–200%, with unity at
+100%. Temporary held values do not enter saved sessions or engine restart
+intent. Settings and native acceptance are checked; explicit recovery keeps
+old failures separate from replacement sessions. Shutdown retires controls,
+waits for settings and stays on after a failure with Retry or Keep playing.
+
+The [verification record](reviews/shared-click-volume/verification.md) binds
+83 intended files, 55 independent native-backed probes, ordinary app coverage
+of 90.4296%, affected package gates and strict static checks across 714 Dart
+files. Four native references are saved in Pen. Earlier failures and repairs
+remain documented. No native/FFI or firmware source changed. Published-head
+CI, human merge and physical device validation remain separate. Shared decay
+and the remaining loop targets follow; the M5 live-owner session-load issue
+is still open.
+
+## October 2026 shared Mixer controls (#1026)
+
+MIDI and External assignments now share eight typed Mixer control families,
+actual-unit endpoint readouts and one confirmed durable transaction. Input
+monitor level remains separate from recording trim. Missing targets retain
+their identity; source retirement and topology replacement preserve newer
+accepted changes. Session capture saves Released values while a control is
+held. Four new native references are saved in Pen.
+
+The [verification record](reviews/shared-mixer-controls/verification.md)
+records 2,525 ordinary app tests at 90.0054% coverage, 30 controller tests at
+83.2237%, static checks across 706 files and 52 independent native-backed
+adversarial probes. Failed prior cases and repairs remain documented. No
+native API or firmware changed. Click/loop targets follow next. Broader live
+session-load publication remains tracked for M5; physical controllers,
+published-head CI and human merge are separate gates.
+
+## October 2026 MIDI reconstruction (#1026)
+
+MIDI setup now selects explicit message formats, learns stable sources and
+edits multiple action or value targets through the shared control owner.
+Save/Cancel, source overlap, missing-target repair, pause/retry and session
+replacement preserve confirmed state. Pending effect writes and momentary
+restoration join the session/shutdown persistence barrier. Obsolete MIDI
+bindings and the old editor are removed.
+
+The [verification record](reviews/design-midi-controls-restack/README.md)
+records 2,433 passing application tests, nine package suites, native checks,
+coverage, independent review and adversarial probes. Native renders are saved
+in Pen. The broader shared target catalogue remains the next M3 slice;
+physical MIDI validation, published-head CI and human merge stay separate.
+
+The first MIDI publication passed tests but failed ordinary CI coverage at
+89.07%. A reviewed test-only correction adds 23 editor journeys. The matching
+local run excludes author screenshots and supplies no native library: 2,306
+tests pass at 90.0039% coverage, with static gates clean. All 20 workflow jobs
+and GitGuardian subsequently passed on PR #1047 head
+`06633b2b537efba4c59108e38764e58c0b2c542e` (run 36935129976). The current-head
+review is clean; human merge and physical MIDI validation remain separate.
+
+## October 2026 external pedal reconstruction (#1026)
+
+Single, Dual and Expression now share a confirmed External setup and the
+existing UART CTRL ingress. Multiple actions, FX activation, parameter ranges,
+directed calibration, unavailable-target repair and independent jack profiles
+are implemented. Source retirement and refused release cleanup preserve newer
+accepted controller contributions; the old generic console editor is removed.
+
+The [verification record](reviews/design-external-controls-restack/README.md)
+binds the final source, 2,467 passing app tests, five package suites, coverage,
+firmware and 54 independent adversarial probes. Source and five quality-role
+reviews have no unresolved actionable finding. Native render references are
+saved in Pen. Published-head CI and human merge remain separate gates; physical
+pedal validation is not established by the desktop checks. The MIDI slice above
+builds on this verified dispatch foundation.
+
+## September 2026 design-stack reconstruction (#1058)
+
+The accepted Tracks, selected-track display and crown slice (#1010 / #1011)
+is reconstructed on current master, retaining its UART console and appliance
+lifecycle. Review corrected full-track waveform coordinates, stopped-waveform
+retention, divided/independent bar counts, and compact desktop Wave layout.
+See the [slice ledger](plan/2026-09-09-segno-implementation-ledger.md) and
+[validation record](reviews/design-tracks-restack/validation.md). The remaining
+stack is still pending reconstruction; no appliance deployment is implied.
+
+## October 2026 Loop settings reconstruction (#1012)
+
+The Loop settings slice is reconstructed on the verified recording-timing
+stack. Default and per-track choices retain field-level inheritance, including
+explicit Auto and Loop overrides. Length and mode requests submit one bounded
+engine command and publish or save only the callback-confirmed result. Startup,
+recall, timeout and device reconnect use the same confirmed state boundary.
+Touch and keyboard focus cover edit, commit and Cancel; obsolete Loop and
+coarse timing controls are removed. See the
+[validation record](reviews/design-loop-settings-restack/README.md).
+
+Follow-tempo/pitch processing remains explicitly unavailable until its engine
+slice. Physical encoder routing remains in the controller slice; desktop focus
+checks do not establish UART or appliance behavior. No deployment is implied.
+
+## October 2026 FX surface reconstruction (#1016)
+
+Effects now uses the accepted destination/library/editor flow on the verified
+mix, routing and Pre/Post stack. Adding a single or rack opens its confirmed
+new instance directly. Structural edits retain stable identities, reject full
+destinations and cannot complete against a replacement session. Saved presets
+retain rack identity and create independent instances. The obsolete Signal
+surface and its unused cache controls are removed.
+
+Native, package and app checks plus independent source and visual reviews are
+recorded in the [verification record](reviews/design-fx-surfaces-restack/README.md).
+Exact factory parameter/DSP completion remains M6 work; physical appliance
+validation and the human merge gate remain separate. No deployment is implied.
+
+## October 2026 pedal gesture reconstruction (#1026)
+
+FX assignments now carry separate Press/Hold targets and explicit fixed or
+selected-track scope, using the existing UART control owner. Holds resolve
+selection when they fire and retain that target until release. The accepted
+800 ms default is shared with Settings; normal Record/Play and Stop remain
+immediate. Session changes, take locks and disconnects invalidate pending
+work without applying it to a replacement session.
+
+Refused momentary restoration waits for callback readiness, removed effects
+do not strand a pedal, and LEDs follow the successfully dispatched action in
+the correct bank. The
+[verification record](reviews/design-assignments-restack/README.md) separates
+independent behavioral checks from physical pedal validation. Layout A setup,
+Custom mode and external/MIDI assignment surfaces are the next dependent
+slices. No appliance deployment or human merge approval is implied.
+
+## October 2026 Custom pedal runtime (#1026)
+
+Layout A now edits and runs Custom Press/Hold assignments. Mode exits and Bank
+pages; fresh Mode defaults to Mute/Custom. Gesture lifetime follows accepted
+selection, session and connection rules. Grouped Solo shares the app-wide mix
+coordinator, and Clear/Restore preserves unrelated setup edits. See the
+[verification record](reviews/design-custom-runtime-restack/README.md).
+
+Application and independent behavioral checks pass. Configurable physical LED
+colors and all-ten activity transport are the next slices; no appliance
+installation or human merge approval is implied.
+
+## Solid second-row enclosure platforms - 2026-09-15 (#1037)
+
+Integrated the existing solid CLEAR/BANK collar revision into the active
+manufacturing generator and print STEP/STL/archive. Both Fusion models are
+saved and reopened at sheet metal 160 / populated 388. The four driver bores,
+short-screw mounting patterns and all external interfaces are verified; other
+native geometry and all 42 / 434 positions are preserved. Metal outputs did
+not change. All 134 enclosure tests pass, plus the seven focused mounting
+tests after strengthening the solid-material check. The #1019 physical load
+hold remains. See [evidence](../hardware/enclosure/reference/solid_mid_platform_verification.json).
+
+## Enclosure corner preparation - 2026-09-15
+
+Prepared the welder's example on the existing #1025 branch while Dinacut's
+confirmation is pending. Four angular reliefs now provide a nominal 0.50 mm
+gap and 1.00 mm overlap. The rear upper return and all control/support mounting
+geometry remain intact. The weld scope includes all four corners, lower relief
+openings and the two upper rear joints, with the separately agreed 5356 filler
+and smooth exterior finish. No files were sent and no fabrication was authorized.
+
+Generator, native Fusion models (sheet metal 159 / populated 387), STEP, DXF and
+individual drawings are synchronized. Both saved models were reopened; all
+42 / 434 placements and unrelated body geometry/health are preserved. The full
+generator and 133 tests across 15 modules pass. Cross-kernel mass integration was
+qualified independently before changing its numerical consistency limit to
+50 ppm; dimensional, forming, source-hash and full-flat gates remain unchanged.
+
+The separate #1019 structural/load hold remains. Dinacut still needs to confirm
+the relief/tooling assumptions; post-weld fit and front drilling are completed
+before paint. See [current evidence](../hardware/enclosure/reference/welder_corner_preparation_verification.json)
+and [release review](../hardware/enclosure/RELEASE_REVIEW.md).
+
+## September 14 enclosure revision - historical digital evidence
+
+The owner authorized #1025's welded rear-corner direction and manufacturing
+tolerance revision from `43c94a27` on
+`claude/sheet-metal-enclosure-analysis-6c2aa4`. This supersedes the older riveted
+process below. It is implementation approval, not fabrication release; **#1019
+remains an independent structural/load hold**, including the changed corner
+restraint and welding effects.
+
+The new metal handoff has five parts, one each: base, faceplate and ring disc
+in 2.0 mm 1100-H14 aluminium, a **1.2 mm aluminium rear panel**, and a 1.6 mm
+cold-rolled steel beam. Rear-panel alloy/temper and steel grade remain to be
+confirmed. One metal archive carries exactly 15 STEP/DXF/individual-PDF
+files with material, thickness and quantity in their names; no assembly,
+hardware, printed parts, drafts, removed brackets or posts.
+
+Dinacut cuts/folds/deburrs; a separate welder joins both rear corners. The two
+brackets and ten base rivet holes are removed. The nine front lid/body stations
+are laser-piloted and drilled out by Dinacut **after folding and before
+welding** (#1090). No electronics trial or second manufacture is requested. A separate
+painter coats all faces and clearance passages smooth matte black RAL 9005,
+0.06–0.10 mm locally per face, protecting identified electrical-bond contacts.
+The owner then cleans Ø2.5 pilots and taps **32 M3 threads** (18 lid, 14 screen
+supports), and fits shims/felt. No new holes or enlarged screw passages are
+planned after paint.
+
+The current fit candidate is rear **10 mm depth ×6 mm wide CUT slots / OD12
+washers**, front **Ø4.5 / OD7**, and **1.1 mm nominal bare front clearance**
+with **0.70–1.50 mm acceptance inclusive of forming/fixture errors**. Coating
+alone projects **0.357–1.488 mm** painted clearance. The slot passage calculation
+does not qualify washer seating, wedge contact or the welded assembly;
+final fit, washer selection and shim bearing remain pending.
+
+Fusion was saved and reopened as **VAMP sheet metal 158 / populated 386**.
+All changed features are healthy; all 42 / 434 final occurrence placements
+survive reopening. Both bases have the ten rivet holes removed and both bracket
+pairs are gone; each base measures **945.325929644 cm³**. The revised lids,
+discs, washers and nominal shims are present in both models. Reopened native
+solids match the verified exports; the populated lid flat comparison is exact
+and each base differs by less than 0.000619 mm². All **126 tests across 14
+modules** and the full generator pass. Five individual metal PDFs were visually
+reviewed; the exact 15-file metal archive was verified after removing only
+proven timestamp noise. The historical riveted guide was corrected.
+All five independent implementation reviews are complete with no unresolved
+findings; see the [consolidated review](reviews/dinacut-welded-revision/review.md).
+Physical fit and strength qualification still block fabrication; no supplier message
+or cutting authorization was sent. See the
+[current plan](plan/2026-09-14-fix-dinacut-manufacturing-tolerances-plan.md),
+[release review](../hardware/enclosure/RELEASE_REVIEW.md) and
+[internal supplier drafts](../hardware/enclosure/SHOP_REVIEW.md).
+
+## Enclosure release corrections — local, 2026-09-05
+
+The following dated evidence records earlier revisions. Its riveted-corner
+process, fit dimensions, quantities and saved versions are historical; the
+September 14 status above governs the current revision.
+
+Prepared from `fix/drawing-legibility-1001` at `1d14d701` on
+`codex/sheetmetal-release-fixes`. Earlier converter, monitor support, post,
+rear-panel gauge and corner corrections remain in place. The owner confirmed
+no shop work has started, separate metal/painting suppliers, short text messages,
+and **smooth matte black RAL 9005**, with no texture.
+
+A full review corrected intersecting corner cutting paths, USB corner geometry,
+an encoder bushing-root clash, coating-sensitive drilling/bore requirements,
+hardware quantities and unsafe partial/failed archive publication. A repeat
+review then found and corrected the installed Ring24 pin-strip stack's clash
+with its printed holder, the disc's finished outer-diameter allowance, lid
+centering before drilling, stale bend/post-gap notes and acceptance of retraced
+laser slits hidden by CAD healing.
+
+Fusion is saved and reopened as **sheet metal 131 / populated 344**. The repeat
+pass changed only the existing ring holder with two cuts and eight support ribs;
+all 414 other populated occurrences and all 18 sheet-metal occurrences retain
+identity, geometry, placement, visibility and appearance. There are no empty
+leaf components. The selected Ø80 board/pin strip and visible encoder positions
+remain fixed. Its 73-body interface and bottom-up insertion clear the new
+one-piece holder; nominal PCB axial clearance is 0.1346 mm and still needs the
+actual print-fit check. Align the holder to the board before gluing.
+
+The complete generator and **26 regressions pass**. All six metal laser profiles
+pass topology checks; native base/bracket flats have zero missing/extra area,
+and lid difference remains 0.008358 mm² each way within the 0.01 mm² gate. The
+expanded printed-part sweep completes 1,056 candidate pairs without Boolean
+failures; residual physical contacts are measured 0.000139–0.007803 mm
+seat/compliant-rubber fits. The five changed PDFs / ten pages were rendered and
+inspected. Final archive hashes and independent repeat-review results are in
+[the repeat-pass evidence](reviews/sheetmetal-release-fixes/round2-verification.json).
+The selected Ø80 ring-board revision must not be confused with this checkout's
+Ø68 Gerber package.
+
+**Seam corrections completed locally; Fusion saved and reopened at132/345.** The base side profile now follows the
+lid ridge at 0.30 mm nominal clearance; fit to 0.30–0.40 mm before coating. Two
+handed rear brackets back the upper straight seam with approximately 0.22–0.30 mm
+vertical relief, fitted to 0.20–0.40 mm. Nine purchased stainless shim packs
+support the front M3 stations; their actual thickness is fitted before painting
+between hidden bearing lands, subsequently masked (September 6 sequence correction). Nominal 0.50 mm CAD packs are reference only.
+The selected electronics, ring stack and all visible controls remain in place.
+
+The seven fabricated stems make eight pieces, plus nine purchased reference
+solids in the assembly. All 28 manufacturing regressions pass and six final
+archives contain 90 matching members. Base and both handed bracket flats match
+source exactly in both Fusion documents; unchanged lid parity remains within
+0.01 mm². See [current seam evidence](reviews/sheetmetal-release-fixes/seam-fix-verification.json)
+and [the correction review](reviews/sheetmetal-release-fixes/seam-review.md).
+Earlier 131/344 and 26-test records above are historical.
+
+**September 6 sled/screen corrections completed locally.** Populated Fusion
+is saved and reopened at **346**; the separate mini console is synchronized to
+the current source and saved/reopened at **13**. Each mini sled has two underside
+retention fixings at 60 mm pitch, with matching tray access. Both sleds now
+appear in the assembly STEP. A toe relief and revised rear lid bosses/locating
+tabs remove the closed-lid and LED-insert clashes found during integration.
+All 27 native mini interface checks are clear. The seven-inch module and four
+mounting bosses move 0.50 mm toward the front along the faceplate; its six floor
+anchors and aperture stay fixed. All 50 screen-area native checks succeed,
+with only the unchanged tab-seat contact. **33 manufacturing regressions pass.**
+Printed mini/tower/jig files are current; the console print ZIP carries the new
+tower. Metal DXFs, PDFs and the five other supplier ZIPs are byte-identical to
+the preceding reviewed package. No new PDF was authored. See
+[the sled/screen evidence](reviews/sheetmetal-release-fixes/sled-screen-verification.json).
+
+**Not released for fabrication.** Shop stock/tooling, rivet choice and final
+pre-coating fitting and the coated fit coupon must be accepted; purchased-part fit, insert/screw lengths,
+knob relief and coating sample still require physical checks. First-piece dry
+and finished assembly and load/retention qualification remain necessary. See
+[the release review](../hardware/enclosure/RELEASE_REVIEW.md),
+[verification](reviews/sheetmetal-release-fixes/full-review-verification.json)
+and [short supplier drafts](../hardware/enclosure/SHOP_REVIEW.md).
+No package or supplier message was sent; no commit, push or remote issue/PR state
+was changed by this review.
+
+The subsequent rear-joint correction removes the remaining 0.610842 mm straight
+seam opening: both rear/side joints now measure 0.050001 mm in both native
+models. Source, actual native flat, formed STEP and shop packages were regenerated.
+The owner retained rivets and a visible fine joint, with 0.00–0.10 mm dry fit
+before riveting/coating. All 34 enclosure regressions pass; independent geometry
+and preservation checks found no new interference or unrelated movement.
+Final saves **sheet metal135 / populated348** reopened with unchanged geometry.
+The source base was rebuilt from its DXF to repair an unreadable derived flat;
+all five source flat products now load. See
+[the rear-joint verification](reviews/sheetmetal-release-fixes/rear-closure-review.md).
+
+
+**September 6 coating-scope correction — local checks complete.** The owner
+retired the full-face overlay; labels remain on individual pedal tiles. Extra
+machining PDF pages are removed in favor of text instructions. All metalwork
+remains before the separate painting shop. All enclosure surfaces and clearance
+bores are coated smooth matte black RAL 9005, without texture; only threads and
+identified ground contacts are protected. Source/native clearances, printed
+supports, screen setback and lid washers account for the stated coating range.
+All 40 enclosure tests pass, the full generator reports ALL PASS, and the five
+archives contain 88 verified members. Eight changed PDFs (11 pages) were
+rendered and visually reviewed. Earlier masked-seat/prepaint evidence is
+superseded for this coating process. Final native save versions are recorded
+in [the current verification](reviews/sheetmetal-release-fixes/full-coat-verification.json).
+The standalone mini geometry remains unchanged. Nothing has been sent to either
+supplier. Physical shop/tooling, coated-coupon and assembled retention checks
+remain open; local CAD checks do not grant production release.
+
+**September 7 owner finishing decision.** The owner will install the ten corner
+rivets before painting, retaining the existing Ø3.3 rivet holes, and manually
+tap the eighteen M3 body holes after painting. The shop delivers matched parts
+with Ø2.5 body pilots untapped and Ø4.5 lid clearances finished. Paint-narrowed
+body pilots are cleaned back to Ø2.5 before tapping; no other post-paint hole
+changes are planned. This supersedes the earlier all-machining-before-paint
+sequence and protection of already-cut body threads. Ground contacts remain
+protected. Only process notes change; native geometry and poses are unchanged.
+The base drawing and painting notes were refreshed, all five pages visually
+checked, and changed archive members verified. The proposed straight Ø8.5 disc
+hole clears the modeled encoder root with paint allowance, but is not applied:
+actual retaining nut/washer coverage must be checked before removing the chamfer.
+
+**September 7 straight encoder-disc hole completed.** Owner measurements are
+washer ID7.25/OD11.85. The disc now has a laser-cut straight Ø8.50±0.05 bore,
+without chamfer; the outer diameter, thickness and all placements stay fixed.
+Finished bore8.25–8.43 clears the modeled root when centered; conservative
+opposing clearances leave0.87 mm minimum washer coverage. Both native documents
+were saved/reopened (sheet-metal138/populated351), with no unrelated changes
+or new warnings. All40 enclosure tests pass; five changed output files and
+matching archive members were updated; two PDFs/five pages were visually checked.
+See [the current disc verification](reviews/sheetmetal-release-fixes/straight-disc-verification.json).
+No supplier message or package was sent. Physical fit/retention acceptance remains.
+
+**September 8 thread-count and structural-comment correction.** The current
+source and the supplied base DXF contain 32 M3 tap pilots: 18 lid fixings plus
+14 screen-support anchors (six for the 7-inch tower and four per 15.6-inch
+stand). The earlier September 7 process note counted only the lid fixings.
+The owner cleans any paint-narrowed Ø2.5 pilots and manually taps all 32 after
+painting; the shop delivers them untapped. The 18 lid clearance holes and
+18 head washers retain their existing quantities. Current process prose and
+the generated base note now distinguish those counts. Unsupported fixed
+1050 strength, fold-stiffness and dent-load claims were removed from source
+comments: actual temper, assembled support conditions and physical loading
+remain to be qualified. These prose corrections do not establish structural
+capacity or change the joint hardware. Historical verification records remain
+unchanged.
+
+**September 8 floor support update completed locally.** Four original rubber
+feet are retained and eleven are added: four front, four rear and three
+staggered near CLEAR/BANK and the steel posts. Both native bases were rebuilt
+from the generated flat and saved/reopened as sheet-metal139/populated352.
+The populated group has15 real feet; no unrelated components moved and no
+warnings were added. All45 enclosure regressions pass, both final flats agree
+with source contours, and the current sheet-metal-only archive has14 verified
+STEP/DXF members. Base drawing inspected; older supplier packs are not the
+current handoff. [Evidence](reviews/extra-feet/verification.json).
+
+The owner's sustained scale reading was15–20kg and displayed maximum35kg; body
+mass70kg. The provisional200N/700N static cases are not impact ratings. A
+published-temper comparison and bare-sheet-strip sensitivity screen leave
+assembled bending unresolved. Actual foot contact and printed-support load
+spreading must be assessed before physical load qualification or cutting
+release. [Temper analysis](reviews/extra-feet/temper-screening.json).
+
+**September 9 console collar print correction completed locally.** Front/rear
+light-baffle walls grow from 0.85 to 2.4 mm, increasing collar depth to 118.47 mm.
+The bore, sleds, insert pockets, screw axes and pedal heights are unchanged.
+Both native documents are saved/reopened at sheet-metal 140/populated 353 and
+their collar solids match source exactly by bidirectional volume comparison.
+The sheet-metal document's older collar references also receive the current
+source geometry and mirrored populated-model placement. All 442 unrelated
+populated occurrences and 35 unrelated sheet-metal occurrences are unchanged.
+All 49 enclosure tests pass, including four new collar regressions. The two
+collars' STEP/STL files and 36-member printing archive are current; all other
+output files, including the metal-shop archive and sled files, are byte-identical.
+[Evidence](reviews/collar-thickness/verification.json). First-print insert fit
+and assembled structural qualification remain physical checks.
+
+September 9 cable-opening follow-up completed locally: both console collars
+now have an 8.6 mm centred open-top exit, with its bottom 6.95 mm above the
+bare pedal underside. This clears the measured 7.6 ×11.45 mm feature with
+0.5 mm side clearance and covers the 1.05 mm vertical measurement discrepancy.
+All 50 enclosure tests pass. Native sheet-metal 141/populated 355 were saved,
+reopened and matched to source; other geometry and placements remain fixed.
+The user's three visibility changes during inspection are preserved. Updated
+collar STEP/STL pairs and the printing archive agree; other outputs, including
+the metal-shop archive, are unchanged. [Evidence](reviews/cable-opening/verification.json).
+
+Closed stadium update, September 9: the console cable opening is now
+8.6 ×13.5 mm with R4.3 ends and 4.9 mm straight sides, closed at the top.
+Thread the cable before seating the pedal/sled. This supersedes the prior
+open-top version. The 0.5 mm fitting allowance assumes the reported cable
+feature has a stadium profile. Both models are saved/reopened at sheet-metal
+143/populated 358, with exact native/source parity and 50 passing tests.
+Other geometry/placements and the user's visibility choices are preserved.
+The two print pairs and printing archive are updated; the metal-shop archive
+and all other outputs are unchanged. [Evidence](reviews/cable-hole/verification.json).
+
+Short-screw CLEAR/BANK mounting, September 9: the two tall collars now anchor
+independently to the bottom base with M3×6 screws and M3 Ø5 ×5 inserts. Their
+new dedicated sleds attach through the 8 mm deck with four M3×12 screws per
+module. Front sled/collar, all metal geometry, mini-console and cable stadium
+are preserved. Bench-assemble and remove the complete module for service.
+Both native documents are saved/reopened at sheet-metal v144 and populated
+v360; native/source differences are zero, with 448 other populated and 43 other
+sheet-metal occurrences unchanged. The first-print ZIP now contains four STLs
+(one collar and matching sled for each row). All 56 enclosure tests pass.
+Physical insert fit and loaded PETG
+performance remain unqualified. [Evidence](reviews/mid-platform-mount/final-verification.json).
+
+September 9 material certificate received: Dinacut corrected the offered stock
+from 1050 to 1100-H14. The Alcast certificate covers 2.00 mm lot 26E0269, with
+127 MPa reported yield against a 95 MPa specified minimum. Use the minimum as
+a material reference with separate design margins; the lot result is not a
+universal allowance. Job-stock traceability and the 1.2 mm rear-panel material
+remain unconfirmed. The previous strip screen still does not qualify assembled
+stomp strength. Generator/drawing material callouts await controlled reissue;
+no output/CAD geometry changed for this evidence review.
+[Certificate assessment](reviews/material-certificate/review.md).
 
 ## September 2026 Mac recording companion
 
@@ -56,12 +737,11 @@ check remains pending; this source change does not install an update.
 
 ## Startup readiness and bundle inspection (#980 / #982)
 
-The remaining startup work from #982 now follows the current appliance stack:
-the launcher waits for a stable Wayland socket and stops if that wait fails,
-restarts pause for three seconds, and the secondary native window opens after
-a 750 ms startup delay. Preference changes cannot bypass that delay, and
-unmounting cancels it. These timings mitigate #970; they do not establish that
-EGL is ready or replace compositor-restart verification on the appliance.
+The startup mitigations from #982 for #970 (the launcher's wait for a stable
+Wayland socket and the 750 ms delay before the second window opened) were
+removed with the GTK runner (#1330): ivi-homescreen opens both screens itself,
+with no compositor to wait for. Restarts still pause for three seconds
+(`segno.service`).
 
 The bundle build inspects the actual RAUC artifact for the selected board and
 version, its rootfs and boot archive, and the firmware install hook. The boot
@@ -93,11 +773,11 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
 ## How to build / test (environment gotchas — read first)
 
 - **Dart/Flutter tests:** the very_good_cli MCP `test` tool is broken in this
-  env (exit 69, machine-output parser vs Flutter 3.44). Hooks block bare
-  `flutter test` / `dart test`. Run via the **absolute path**, which the guard
-  doesn't match: `/Users/Tomas/development/flutter/bin/flutter test`.
-- **Scaffolding:** `flutter create` is hook-blocked in favour of the very_good
-  MCP `create` tool — but that only makes federated method-channel plugins. The
+  env (exit 69, machine-output parser vs Flutter 3.44). Use the working SDK:
+  `/Users/Tomas/development/flutter/bin/flutter test`. Codex does not install
+  the former Claude hook that blocked bare CLI test commands.
+- **Scaffolding:** prefer the Very Good CLI templates for normal packages.
+  The Very Good MCP `create` tool only makes federated method-channel plugins. The
   FFI plugin (`segno_engine`) is **hand-authored** (`ffiPlugin: true` + CMake +
   podspec). Native engine lives **inside** the plugin at
   `packages/segno_engine/src/` (Flutter symlinks plugins at build time, so
@@ -110,6 +790,10 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   ```sh
   bash packages/segno_engine/src/test/run_native_tests.sh
   ```
+  Concurrent native configurations need separate `TMPDIR` directories: the
+  script uses fixed executable names there, so sharing a directory can make
+  builds overwrite another run's binaries.
+
   The script self-locates (no preceding `cd` needed) and builds/runs the
   engine core test suite and the MIDI test suite on every desktop OS
   (`gcc`/`gnu11` by default, overridable via `CC`), plus macOS-only plugin
@@ -192,9 +876,9 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   ```sh
   packages/segno_engine/tool/check_ffi_symbols.sh <path-to-libsegno_engine.so>
   ```
-  Both Linux CI jobs run it against the bundle they just built, and
-  `build-arm64-bundle.sh` runs it before the bundle can be deployed or staged
-  for Yocto, so ordinary work should never see it fail. It is worth running by
+  CI's `appliance-bundle` job and the release build run it against the bundle
+  they just built, and `build-arm64-bundle.sh` runs it before the bundle can be
+  deployed or staged for Yocto, so ordinary work should never see it fail. It is worth running by
   hand after a regen if you are about to hand-stage a bundle. The check is
   itself tested (`bash packages/segno_engine/tool/test/run_check_ffi_symbols_tests.sh`),
   including that it **fails closed**: if ffigen's emitted call shape ever drifts
@@ -202,30 +886,35 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
 - **macOS app run/build:** flavor schemes required.
   `flutter build macos --debug --flavor development -t lib/main_development.dart`
   Run: `flutter run -d macos --flavor development -t lib/main_development.dart`
-- **Driving the Network domain off the appliance:** both radios are Linux-only
-  helpers (`segno-wifi-ctl`, `segno-bt-ctl`), so on macOS every path past "no
-  WiFi on this build" is unreachable — including the ones with the most
+- **Appliance bundle:** `deploy/rpi/build/build-arm64-bundle.sh` builds what
+  the console runs (`build/appliance/bundle`) in an arm64 container, on the
+  Flutter release the image's engine is (`FLUTTER_ENGINE_VERSION` in
+  `deploy/yocto/meta-segno/recipes-graphics/flutter-engine/flutter-engine-version.inc`).
+  There is no `linux/` and no Linux desktop build: the app is built with
+  `flutter assemble` and the engine with its own CMake project, and the
+  console runs it on ivi-homescreen (#1330). macOS is the dev host.
+- **Driving the Network page off the appliance:** Wi-Fi is a Linux-only
+  helper (`segno-wifi-ctl`), so on macOS every path past "no WiFi on this
+  build" is unreachable — including the ones with the most
   behaviour in them. Add `--dart-define=SEGNO_FAKE_RADIOS=true` to swap in
-  in-memory stacks:
+  an in-memory stack:
   ```sh
   flutter run -d macos --flavor development -t lib/main_development.dart \
     --dart-define=SEGNO_FAKE_RADIOS=true
   ```
-  The define is read inside `createWifiClient` / `createBluetoothClient`
-  **before** their platform test, so every entry point picks it up with no app
-  wiring change. The fakes are opinionated rather than empty — they exist to
-  reach the states the mockups draw, with deliberate delays so in-flight
-  spinners and banners are visible. Failure is reachable on purpose:
-  `segno123` is the only passphrase that joins, and one Bluetooth device
-  always refuses to pair. **Off by default**, so a shipped build can never
+  The define is read inside `createWifiClient` **before** its platform test,
+  so every entry point picks it up with no app wiring change. The fake is
+  opinionated rather than empty — it exists to reach the states the mockups
+  draw, with deliberate delays so in-flight spinners and banners are visible.
+  Failure is reachable on purpose: `segno123` is the only passphrase that
+  joins. **Off by default**, so a shipped build can never
   present invented networks as real ones; the factory tests assert the flag
   from both sides, so the branch is covered by the ordinary CI run.
-- **Appliance helper suites** (shell, no device):
-  ```sh
-  bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_bt_ctl_tests.sh
-  ```
-  Pins the ordering inside `segno-bt-ctl`'s device verbs against a stubbed
-  `bluetoothctl`. What bluez does with those commands still needs hardware.
+- **Appliance helper suites** (shell, no device): every
+  `deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_*_tests.sh`,
+  as the `appliance-shell-tests` CI job runs them. Bluetooth was retired (#1199): the
+  image ships no BlueZ, and the pairings an earlier image kept stay on
+  `/data/bluetooth` for a fallback to the previous slot.
 
 ---
 
@@ -345,6 +1034,84 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
 
 Phases 1–3 of the plan plus several sync refinements. See `git log` for detail.
 
+- **Accepted design, slice 3e (#1016, epic #1009):** the October
+  reconstruction applies complete FX recipes at an audio boundary and persists
+  only their confirmed application. Whole-track Pre combines original parts
+  once while keeping the Mixer gain separate. Capture inheritance, Clear/Undo,
+  restart, plugin ownership and channel refusal have independent sample and
+  persistence checks. All relevant local Dart/native suites, coverage floors,
+  static checks and source reviews pass; publication and current-head CI are
+  separate gates. FX screens follow in 3f; complete offline rendering, exact
+  DSP parity and in-flight cross-session storage ordering retain their later
+  owners. See `docs/reviews/design-fx-placement-restack/README.md`.
+- **Accepted design, slice 3b (#1016, epic #1009):** output destinations
+  have level, mute, Stereo/Mono, retained balance and a post-sum effect chain.
+  October reconstruction joins output setup to the shared atomic mix and durable
+  rollback path. Performance recording freezes the actual destination and its
+  effect chain at callback acknowledgment. Default capture excludes final level
+  and mute; Follow applies their later changes. Both policies exclude hardware
+  Mono/Balance/master gain/limiter. Cut stops current sources and clears old
+  tails and the current click pulse, while preserving monitoring preferences.
+  Failed arm publication retains ownership for Stop; malformed destination
+  metadata is refused. Track-wide routing surfaces are slice 3c. Offline
+  reconstruction still lacks full multi-lane, live-input/click and track-bus
+  replay; these are later integration work, not proof of complete parity.
+  Ledger: `docs/plan/2026-09-09-segno-implementation-ledger.md`.
+- **Accepted design, slice 3a (#1016, epic #1009):** the mix model: per-lane
+  pan with a unity-centre balance law, per-track Solo beside mute, a capture
+  trim per input on the recorded branch only, monitoring for every hardware
+  input, a recorded image fixed per lane from its input's setup (stereo
+  pairs as two lanes with a shared balance), the Mixer's meters (post-fader
+  stereo peaks per track, per-input, per-monitor and per-output peaks) and
+  typed mix targets; persisted in settings and the session manifest. The
+  October reconstruction adds one durable mix coordinator, exact rollback
+  and stopped recovery, capture lifetime fencing and atomic recording/Undo
+  admission. Verified scope and remaining integration boundaries are recorded
+  in `docs/reviews/design-mix-model-restack/README.md`.
+  Ledger: `docs/plan/2026-09-09-segno-implementation-ledger.md`.
+- **Accepted design, slice 2c (#1012, epic #1009):** the Loop settings
+  pages at the pen's size (hub, Loop mode cards with reasons and the stop
+  dialog, Recording, Tempo & click with the signature grid, Length &
+  quantize and Playback & overdub with the Tracks / Defaults / 1-8 selector
+  and field-level inheritance, Audio & tempo as a readout), opened from the
+  tray's Loop entry and the Settings rail; the tray's Loop tabs and Tracks
+  Lengths tab, the desktop Tempo and Mode sections and per-track rows, the
+  boolean quantize cubit and the sync switch are gone; the session manifest
+  carries per-track length and Once overrides; the click output and level
+  sit on the Audio tray's Device tab until the Mixer. Ledger:
+  `docs/plan/2026-09-09-segno-implementation-ledger.md`.
+- **Accepted design, slice 2b (#1012, epic #1009):** timing ownership: one
+  record timing setting (Immediately, Loop start, bar to 1/16) by default and
+  per track (a per-track division joins the per-track gate in the engine),
+  overdub decay by default and per track with a ramped live change, Once in
+  all five modes (a track's lap ends on the shared clock in Multi/Sync/Band),
+  count-in and Sound start exclusive through native commands, repository and cubits,
+  and the overrides in settings and the session manifest. Ledger:
+  `docs/plan/2026-09-09-segno-implementation-ledger.md`.
+- **Timing reconstruction (#1061):** explicit per-track inheritance survives
+  empty-track/session recall, Immediate retains the remembered musical grid,
+  and queue refusal leaves Count-in, Sound start and armed tracks unchanged.
+  Native snapshots publish the applied start choice as one coherent state.
+  Current validation and independent review are recorded in
+  `docs/reviews/design-timing-restack/README.md`; hardware proof stays separate.
+- **Accepted design, slice 2a (#1012, epic #1009):** mode changes with
+  recorded audio follow the accepted contract (the engine measures the gate:
+  compatible spans switch on a stopped rig, playing loops are stopped first,
+  captures and queued arms refuse; nothing is cleared or resized); undo during
+  an overdub removes the pass, undo during a take cancels it with an
+  immediate-playback redo, a clear on a capturing track freezes the take
+  restorable, and Clear All is one grouped edit. Ledger:
+  `docs/plan/2026-09-09-segno-implementation-ledger.md`.
+- **Accepted design, slice 1 (#1010, epic #1009):** the Tracks view is the
+  accepted stage (four columns per bank with name/crown, number · bars ·
+  layers · FX, one dB-linear whole-track meter with a clip cap, queued cue,
+  bottom progress, shared dBFS scales, footer, Library/bank/view/Settings
+  top bar, Wave view) and the 7" follows the selected track. The engine
+  crowns the first completed take and clears the crown of an empty session;
+  the snapshot
+  carries a per-track playhead and the master-bus peak. The volume overlay,
+  status bar and readiness strip are gone. Ledger:
+  `docs/plan/2026-09-09-segno-implementation-ledger.md`.
 - **Phase 1:** monorepo, miniaudio FFI plugin, duplex passthrough, round-trip
   latency harness, "hello duplex" smoke app.
 - **Phase 2:** single-track looper (record → master length → overdub → mix →
@@ -391,9 +1158,9 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   a white playhead bar. Fed by a new RT-safe native **loop-indexed viz tap**
   (`le_engine_read_visual` + `read_track_visual`: peak per loop bucket, master
   + per-track, refreshed as the playhead sweeps). `KeyValueStore` now stores
-  string/bool/double. (Two-window runtime is build-verified only; needs an
-  on-machine run to confirm visually.) `desktop_multi_window` is pinned to
-  pub.dev `^0.2.0` (the SPM-fork branch was dropped; CocoaPods builds fine).
+  string/bool/double. _(The second window and `desktop_multi_window` were
+  later removed: the readout is the console's 7″ screen, a second engine
+  under ivi-homescreen, #1330.)_
 - **Auto-start audio + first-run flow:** the last-used audio config (sample
   rate / buffer / monitor) is persisted on a successful start
   (`SettingsRepository.save/loadAudioConfig`). On launch, `tryAutoStartEngine`
@@ -487,7 +1254,9 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   build jobs. Per-channel label exclusion is **unchanged** (`return 0` off macOS;
   ASIO/PipeWire are PR2/PR3). *Hardware-gated, not yet run on real interfaces:
   end-to-end record/loop/play/monitor/FX, the `desktop_multi_window` waveform window
-  on GTK, device-name classification, and the latency harness.*
+  on GTK, device-name classification, and the latency harness.* _(`linux/` and
+  the Linux desktop build were later deleted; the appliance bundle is built
+  with `flutter assemble`, #1330.)_
 - **Windows bring-up fixes (real-hardware run).** Two blockers found running the
   app on a real Windows interface, both fixed + verified (build + app launch +
   native tests green via MSVC):
@@ -785,9 +1554,9 @@ remains open — see "On-hardware validations" below.
 - **VST3/CLAP plugin hosting — Linux (X11) port.** See the "Effects chain"
   Done entry above for macOS/Windows status; Linux needs an X11 embedding
   target, deferred to on-platform work.
-- Secondary-window **visualizer** (`desktop_multi_window`) — wired end-to-end in
-  code (`runWaveformWindow`, `WaveformWindowService`, frame IPC); needs a 2nd
-  display for a live visual confirmation.
+- **Readout screen** — the console's 7″ runs as the second Flutter engine under
+  ivi-homescreen, fed over the screen link (`lib/visualizer/screen_link.dart`,
+  #1318, #1330); the on-device check is in `docs/HARDWARE_VALIDATION.md`.
 - **Device hot-plug / reconnect — SHIPPED** (PR #41-era `feat/audio-device-a2`):
   `LooperRepository` reconnect supervisor (`_intendRunning` guard,
   `_attemptReconnect`, `_pinnedDevicesPresent`) + `devicePresent` UI banner.
@@ -824,3 +1593,80 @@ stacking, contextual dock**, session menu, **performance recorder UI +
 pedal arm/disarm**, **DAW device-chain export**). `flutter analyze` clean;
 macOS app builds end-to-end. `LE_MAX_TRACKS = 8`, `LE_MAX_CHANNELS = 32`,
 `LE_FX_MAX = 8`, `kMaxOutputs = 8`.
+
+### 2026-09-07 — Supplier handoff packaging
+
+Prepared `hardware/enclosure/out/segno_dinacut_2026-09-07.zip` with 22 unchanged,
+previously reviewed CAD/drawing files plus Spanish text instructions and a hash
+manifest. Eight fabricated pieces use seven distinct designs; the assembly STEP
+is reference only. Added the request to qualify laser cutting of the lid
+fastener holes; DRILL geometry and its current post-bend meaning are unchanged.
+The complete enclosure stack is grouped separately by supplier in
+`segno_archivos_completos_2026-09-07.zip`. Verified all five original archive
+hashes and all 88 members against loose files, then checked the new packages.
+Nothing was sent; supplier and physical acceptance remain open. Evidence:
+`docs/reviews/sheetmetal-release-fixes/dinacut-handoff-verification.json`.
+
+## Reversible-edits reconstruction (2026-09-15)
+
+The accepted mode-rules and reversible-edits slice is reconstructed on the
+reviewed Tracks/UART base (`09c8e9c2`), retaining original slice parent
+`6cdfb9fb`. Tracking: #1060, part of #1012 and integration #1058.
+
+The user approved refusing recovery of a completed recording that does not
+fit the current loop mode. Audio, history, effects and transport stay intact;
+the app explains how to select Free and retry. A pending clock or unfinished
+capture asks for a retry instead. No automatic mode change is made. Partial
+takes inside an established Multi cycle still retain the whole loop span,
+with silence outside the recorded fragment.
+
+Frozen-clear ownership/reset, grouped Undo/Redo metadata, confirmed-mode
+persistence and callback mode-fit races are repaired. Final validation passed:
+2,255 app tests, 1,610 package tests, native safety configurations, 150 FFI
+symbols, analysis, Bloc lint and formatting. Five review roles have no
+unresolved findings. The stacked PR still needs remote CI and its human merge
+gate; recording timing and later implementation slices remain in progress.
+Details and validation boundaries are in
+`docs/reviews/design-edits-restack/review.md` and `validation.md`.
+
+## Physical pedal state integration — October 1, 2026
+
+PR #1031 now uses one authoritative ten-pedal activity/color frame through the
+app, setup map and current Pico 2 renderer. UART v8 / STATE51 avoids the separate
+published v6/v7 hardware formats; intermediate #1029/#1030 must not be installed
+alone. Ten eight-pixel indicators and the forty-pixel ring preserve the sourced
+optical/current limits. No legacy protocol fallback or device flash.
+
+Full app: 2,346 passing, six existing skips, 91.126% coverage. Pedal package:
+213 passing, 97.743%. Firmware fixtures, actual sketch tests and Pico 2 compile
+pass. Independent source/five-role review and a separate adversary are clean.
+[Validation and limits](reviews/design-pedal-led-restack/README.md) bind the exact
+candidate. Palette editing is the next slice; hardware acceptance remains open.
+
+## Reusable LED palette — October 1, 2026
+
+PR #1032 adds the accepted LED colors editor to Layout A. All ten physical
+indicators have saved hues, including fixed controls. Reusable custom colors
+keep stable identities; Hue/Saturation/Brightness edit exact RGB. Draft
+preview stays local until durable Save, and Cancel preserves the live setup.
+Color-only saves preserve held actions, pending gestures and delayed native
+receipts. Actual assignment changes still retire those gestures.
+
+The palette is app-owned configuration on the existing protocol 8 frame; no
+firmware, native engine or package changes are introduced. Malformed explicit
+settings are refused through the existing recovery path. Clear and Restore
+retain later palette edits. The saved Pen note and setup images record the
+color context and non-overlapping placement beside the raised pedal row.
+
+Verification and review are recorded in
+[the palette report](reviews/design-led-palette-restack/README.md). Physical
+color appearance and brightness remain appliance checks.
+
+## Pedal artwork reconciliation — October 1, 2026
+
+PR #1034 restores measured geometry in the existing pedal widget, preserving
+its enclosing hit areas, labels and state-driven indicators. The source and
+independent render reviews are clean; the app suite passes 2,374 tests with
+90.069% coverage. See `docs/reviews/design-pedal-art-restack/` for the source
+binding, saved Pen reference, author visuals and separate review evidence.
+Published-head CI and the human merge gate remain required.

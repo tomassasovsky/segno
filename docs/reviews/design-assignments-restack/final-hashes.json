@@ -1,0 +1,26 @@
+{
+  "base": "0d601db8ec3450afb8ca94071ce96c969ffde1d9",
+  "changed": {
+    ".github/cspell.json": "93ab819cbb525664cdbbb64724f7b071eceb1217ceade83d1d0a91c262b62e82",
+    "lib/control/binding/binding_scope.dart": "f824d12cd0a2902327cecac84cc579cdfd9471c8ddbc0a098d6808b02b728f63",
+    "lib/control/binding/pedal_binding.dart": "eadb02a6f756d855b25f599dc8c338c2ba41f02b29b12f72bf830cae05e600bc",
+    "lib/control/cubit/control_cubit.dart": "3de5752f05393cdcebe5d27e6bea600756ef128a2b6e120d2c78c545c63a5eaa",
+    "packages/settings_repository/lib/src/settings_repository.dart": "01dd8f966212f4524acc1fc5a231fdb7cf00856d93d098031e8178775aade9e9",
+    "packages/settings_repository/test/settings_repository_test.dart": "492c073bf517a07f428d377c82655c62df21fcc099ec9f39ae46a1f252eac9dc",
+    "test/control/binding/binding_scope_test.dart": "6d87774b78458e1c336b0926efacd03934a8a2c01f94e80ae179b1efb0c0b075",
+    "test/control/binding/pedal_binding_hold_test.dart": "014064b3ce604b3311a2aaee0d79fc478744c754bbb721a18e4f564e90914426",
+    "test/control/binding/pedal_binding_set_test.dart": "cce2445c7224e04ad4ce2bb525616050e62c3319025b621c04bf5c382bd14f86",
+    "test/control/control_cubit_test.dart": "e5f7ecad7f6fd140e66b0ca6692c2354519a7f57bf783922daca7fc0d3f99a1d",
+    "test/control/control_face_test.dart": "0ccc8d5e810cc3fdf8b2474afe8b67d235e78983439dd6ae53559f2169e43eca",
+    "test/fuzz/control_sequence_fuzz_test.dart": "133c38b7812020a1c71e4f5af33e74fb72cd396ea91c91ec8c619a3178adbc82"
+  },
+  "context": {
+    "lib/control/binding/fx_binding_resolver.dart": "fe23998d0dd20b6f35d68c3b67905f6d70e69bb34eac6f8512937930c6960490",
+    "lib/control/binding/pedal_binding_set.dart": "4b601e9a12524a286b999e1851f9616ddfa75716aac9a87a5c5ee9a2d9c6f06e",
+    "lib/control/control_projection.dart": "b2945f9eabb47c920a74779b9e8c8a8f0a3e07dcc04f01b5540e38c88ec0538f",
+    "lib/control/cubit/control_state.dart": "e377d8e3b81051eb9b2e253c66d384779b0e033b4bf424cefe2ced327731261a",
+    "lib/session/cubit/session_cubit.dart": "abb2154b57fca94358bedaa658a6863e547db3e5939420319b5735968ebdd62e",
+    "packages/looper_repository/lib/src/looper_repository.dart": "a165a784eb27ead111992f683f4c7c3b22ad2dfe8d8cb71e6674808f8a05ff50",
+    "firmware/console_board/console_board.ino": "6bd5ad770e01cc6a133bb626c6c8b41814c7b089181cdb4e748839f3edbb2534"
+  }
+}

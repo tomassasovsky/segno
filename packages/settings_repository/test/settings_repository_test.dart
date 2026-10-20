@@ -1,9 +1,21 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pub_semver/pub_semver.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 class _InMemoryStore implements KeyValueStore {
   final Map<String, Object> values = {};
+  String? failNextKey;
+  String? failNextReadKey;
+  String? failAfterWriteKey;
+  String? failOnSetValue;
+  String? discardNextWriteKey;
+  String? discardNextRemovalKey;
+  String? failAfterRemovalKey;
+  Completer<void>? boolWrite;
+  final boolEntered = Completer<void>();
 
   @override
   Future<int?> getInt(String key) async => values[key] as int?;
@@ -12,26 +24,88 @@ class _InMemoryStore implements KeyValueStore {
   Future<void> setInt(String key, int value) async => values[key] = value;
 
   @override
-  Future<String?> getString(String key) async => values[key] as String?;
+  Future<String?> getString(String key) async {
+    if (failNextReadKey == key) {
+      failNextReadKey = null;
+      throw StateError('storage read failed');
+    }
+    return values[key] as String?;
+  }
 
   @override
-  Future<void> setString(String key, String value) async => values[key] = value;
+  Future<void> setString(String key, String value) async {
+    if (discardNextWriteKey == key) {
+      discardNextWriteKey = null;
+      return;
+    }
+    if (value == failOnSetValue) {
+      throw StateError('checkpoint restoration refused');
+    }
+    if (failNextKey == key) {
+      failNextKey = null;
+      throw StateError('storage write failed');
+    }
+    values[key] = value;
+    if (failAfterWriteKey == key) {
+      failAfterWriteKey = null;
+      throw StateError('storage reported failure after writing');
+    }
+  }
 
   @override
   Future<bool?> getBool(String key) async => values[key] as bool?;
 
   @override
-  Future<void> setBool(String key, {required bool value}) async =>
-      values[key] = value;
+  Future<void> setBool(String key, {required bool value}) async {
+    if (!boolEntered.isCompleted) boolEntered.complete();
+    await boolWrite?.future;
+    if (discardNextWriteKey == key) {
+      discardNextWriteKey = null;
+      return;
+    }
+    values[key] = value;
+    if (failAfterWriteKey == key) {
+      failAfterWriteKey = null;
+      throw StateError('scalar wrote then failed');
+    }
+  }
 
   @override
   Future<double?> getDouble(String key) async => values[key] as double?;
 
   @override
-  Future<void> setDouble(String key, double value) async => values[key] = value;
+  Future<void> setDouble(String key, double value) async {
+    if (discardNextWriteKey == key) {
+      discardNextWriteKey = null;
+      return;
+    }
+    if (failNextKey == key) {
+      failNextKey = null;
+      throw StateError('scalar write failed');
+    }
+    values[key] = value;
+    if (failAfterWriteKey == key) {
+      failAfterWriteKey = null;
+      throw StateError('scalar wrote then failed');
+    }
+  }
 
   @override
-  Future<void> remove(String key) async => values.remove(key);
+  Future<void> remove(String key) async {
+    if (discardNextRemovalKey == key) {
+      discardNextRemovalKey = null;
+      return;
+    }
+    if (failNextKey == key) {
+      failNextKey = null;
+      throw StateError('storage write failed');
+    }
+    values.remove(key);
+    if (failAfterRemovalKey == key) {
+      failAfterRemovalKey = null;
+      throw StateError('storage reported failure after removing');
+    }
+  }
 
   @override
   Future<void> clear() async => values.clear();
@@ -44,6 +118,259 @@ void main() {
   setUp(() {
     store = _InMemoryStore();
     repository = SettingsRepository(store: store);
+  });
+
+  group('Fade duration record', () {
+    test(
+      'orders after other scalar writes and restores exact bytes or absence',
+      () async {
+        expect(await repository.readFadeDurationsCheckpoint(), isNull);
+        store.boolWrite = Completer<void>();
+        final mute = repository.saveLaneMute(0, 0, muted: true);
+        await store.boolEntered.future;
+        final fade = repository.saveFadeDurations(
+          FadeDurations(overrides: const {0: 4000}),
+        );
+        final read = repository.readFadeDurationsCheckpoint();
+        store.boolWrite!.complete();
+        await Future.wait([mute, fade]);
+        expect(await read, '{"defaultMs":4000,"overrides":{"0":4000}}');
+        const original = '{ "overrides": {}, "defaultMs":500 }';
+        await repository.restoreFadeDurationsCheckpoint(original);
+        expect(await repository.readFadeDurationsCheckpoint(), original);
+        await repository.restoreFadeDurationsCheckpoint(null);
+        expect(await repository.readFadeDurationsCheckpoint(), isNull);
+      },
+    );
+
+    test('reports a lost write without poisoning the shared tail', () async {
+      store.discardNextWriteKey = 'looper.fade_durations';
+      await expectLater(
+        repository.saveFadeDurations(FadeDurations.defaults),
+        throwsStateError,
+      );
+      await repository.saveFadeDurations(FadeDurations(defaultMs: 30000));
+      expect(
+        await repository.readFadeDurationsCheckpoint(),
+        '{"defaultMs":30000,"overrides":{}}',
+      );
+    });
+  });
+
+  group('instruments record', () {
+    test('restores exact bytes or absence', () async {
+      expect(await repository.readInstrumentsCheckpoint(), isNull);
+      const record = '{"version":1,"instruments":[]}';
+      await repository.restoreInstrumentsCheckpoint(record);
+      expect(await repository.readInstrumentsCheckpoint(), record);
+      await repository.restoreInstrumentsCheckpoint(null);
+      expect(await repository.readInstrumentsCheckpoint(), isNull);
+    });
+
+    test('reports a lost write', () async {
+      store.discardNextWriteKey = 'instruments.working_copy';
+      await expectLater(
+        repository.restoreInstrumentsCheckpoint('{}'),
+        throwsStateError,
+      );
+      expect(await repository.readInstrumentsCheckpoint(), isNull);
+    });
+  });
+
+  group('lane mute scalar', () {
+    test(
+      'orders a rapid pair of writes and reads behind blocked storage',
+      () async {
+        store.boolWrite = Completer<void>();
+        final first = repository.saveLaneMute(0, 0, muted: true);
+        await store.boolEntered.future;
+        final second = repository.saveLaneMute(0, 0, muted: false);
+        final read = repository.loadLaneMute(0, 0);
+        store.boolWrite!.complete();
+        await Future.wait([first, second]);
+        expect(await read, isFalse);
+      },
+    );
+
+    test('refuses silent storage loss and permits deliberate retry', () async {
+      store.discardNextWriteKey = 'lane_mute.0.0';
+      await expectLater(
+        repository.saveLaneMute(0, 0, muted: true),
+        throwsStateError,
+      );
+      expect(await repository.loadLaneMute(0, 0), isNull);
+      await repository.saveLaneMute(0, 0, muted: true);
+      expect(await repository.loadLaneMute(0, 0), isTrue);
+    });
+
+    test(
+      'mutation then error fails the write '
+      'without pretending bytes rolled back',
+      () async {
+        store.failAfterWriteKey = 'lane_mute.0.0';
+        await expectLater(
+          repository.saveLaneMute(0, 0, muted: true),
+          throwsStateError,
+        );
+        expect(await repository.loadLaneMute(0, 0), isTrue);
+        await repository.saveLaneMute(0, 0, muted: false);
+        expect(await repository.loadLaneMute(0, 0), isFalse);
+      },
+    );
+  });
+
+  group('live-input gain admission', () {
+    for (final raw in ['-0.1', '2.5', '1e999']) {
+      test(
+        'rejects saved monitor gain $raw without changing saved bytes',
+        () async {
+          final checkpoint =
+              '{"trackLevels":{"0":1.5},"monitorLevels":{"0":0.5,"1":$raw}}';
+          store.values['mix_settings'] = checkpoint;
+          await expectLater(
+            repository.loadMixSettings('device'),
+            throwsFormatException,
+          );
+          await expectLater(
+            repository.loadMonitorVolume(0),
+            throwsFormatException,
+          );
+          expect(store.values, {'mix_settings': checkpoint});
+        },
+      );
+    }
+    for (final raw in ['1.01', '2']) {
+      test(
+        'reads legacy monitor gain $raw as unity and writes it back once',
+        () async {
+          store.values['mix_settings'] =
+              '{"trackLevels":{"0":1.5},"monitorLevels":{"0":0.5,"1":$raw}}';
+          final loaded = await repository.loadMixSettings('device');
+          expect(loaded.monitorLevels[0], 0.5);
+          expect(loaded.monitorLevels[1] ?? 1, 1);
+          expect(loaded.trackLevels[0], 1.5, reason: 'track gain untouched');
+          final stored =
+              jsonDecode(store.values['mix_settings']! as String)
+                  as Map<String, dynamic>;
+          final monitors = stored['monitorLevels'] as Map<String, dynamic>;
+          expect(
+            monitors.values.every((gain) => (gain as num) <= 1),
+            isTrue,
+            reason: 'storage no longer carries a gain above unity',
+          );
+          expect(await repository.loadMonitorVolume(1), 1);
+        },
+      );
+    }
+    test('a failing legacy write-back still loads the repaired gain', () async {
+      store
+        ..values['mix_settings'] = '{"monitorLevels":{"1":1.5}}'
+        ..failNextKey = 'mix_settings';
+      final loaded = await repository.loadMixSettings('device');
+      expect(loaded.monitorLevels[1] ?? 1, 1);
+    });
+
+    test('writes accept unity and refuse invalid monitor gain', () async {
+      await repository.saveMonitorVolume(0, 0.5);
+      final before = Map<String, Object>.of(store.values);
+      for (final value in [-0.1, 1.01, double.nan, double.infinity]) {
+        await expectLater(
+          repository.saveMonitorVolume(0, value),
+          throwsArgumentError,
+        );
+        expect(store.values, before);
+      }
+      await repository.saveMonitorVolume(0, 1);
+      expect(await repository.loadMonitorVolume(0), isNull);
+    });
+  });
+
+  group('backing checkpoints (#1200)', () {
+    test('the mix record restores exact bytes or absence', () async {
+      expect(await repository.readBackingMixCheckpoint(), isNull);
+      const record =
+          '{ "level": 0.5, "pan": 0, "outputMask": 3, "end": "next" }';
+      await repository.restoreBackingMixCheckpoint(record);
+      expect(await repository.readBackingMixCheckpoint(), record);
+      await repository.restoreBackingMixCheckpoint(null);
+      expect(store.values.containsKey('backing.mix'), isFalse);
+      store.discardNextWriteKey = 'backing.mix';
+      await expectLater(
+        repository.restoreBackingMixCheckpoint(record),
+        throwsStateError,
+      );
+      expect(await repository.readBackingMixCheckpoint(), isNull);
+    });
+
+    test('click pan keeps absence distinct from centre', () async {
+      expect(await repository.readClickPanCheckpoint(), isNull);
+      await repository.restoreClickPanCheckpoint(-0.5);
+      expect(await repository.readClickPanCheckpoint(), -0.5);
+      await repository.restoreClickPanCheckpoint(0);
+      expect(store.values['tempo.click_pan'], 0);
+      await repository.restoreClickPanCheckpoint(null);
+      expect(store.values.containsKey('tempo.click_pan'), isFalse);
+      store.discardNextWriteKey = 'tempo.click_pan';
+      await expectLater(
+        repository.restoreClickPanCheckpoint(1),
+        throwsStateError,
+      );
+      expect(await repository.readClickPanCheckpoint(), isNull);
+    });
+  });
+
+  group('Click scalar checkpoint', () {
+    test(
+      'absence and explicit unity remain distinct after restoration',
+      () async {
+        expect(await repository.readClickVolumeCheckpoint(), isNull);
+        await repository.restoreClickVolumeCheckpoint(1.5);
+        await repository.restoreClickVolumeCheckpoint(null);
+        expect(store.values.containsKey('tempo.click_volume'), isFalse);
+        await repository.restoreClickVolumeCheckpoint(1);
+        final checkpoint = await repository.readClickVolumeCheckpoint();
+        await repository.restoreClickVolumeCheckpoint(.25);
+        await repository.restoreClickVolumeCheckpoint(checkpoint);
+        expect(store.values['tempo.click_volume'], 1);
+      },
+    );
+    test(
+      'unconfirmed scalar write is rejected and next write still works',
+      () async {
+        await repository.restoreClickVolumeCheckpoint(.5);
+        store.discardNextWriteKey = 'tempo.click_volume';
+        await expectLater(
+          repository.restoreClickVolumeCheckpoint(1.5),
+          throwsStateError,
+        );
+        expect(await repository.readClickVolumeCheckpoint(), .5);
+        await repository.restoreClickVolumeCheckpoint(.25);
+        expect(await repository.readClickVolumeCheckpoint(), .25);
+      },
+    );
+    test(
+      'write-then-failure checkpoint can restore exact prior scalar',
+      () async {
+        await repository.restoreClickVolumeCheckpoint(.5);
+        final checkpoint = await repository.readClickVolumeCheckpoint();
+        store.failAfterWriteKey = 'tempo.click_volume';
+        await expectLater(
+          repository.restoreClickVolumeCheckpoint(1.5),
+          throwsStateError,
+        );
+        expect(store.values['tempo.click_volume'], 1.5);
+        await repository.restoreClickVolumeCheckpoint(checkpoint);
+        expect(await repository.readClickVolumeCheckpoint(), .5);
+      },
+    );
+    test('failed restoration is not reported as confirmed', () async {
+      store.failNextKey = 'tempo.click_volume';
+      await expectLater(
+        repository.restoreClickVolumeCheckpoint(1),
+        throwsStateError,
+      );
+      expect(store.values.containsKey('tempo.click_volume'), isFalse);
+    });
   });
 
   group('latency offset', () {
@@ -344,33 +671,86 @@ void main() {
     });
   });
 
-  group('lane routing', () {
-    test('returns sensible defaults when nothing is stored', () async {
-      expect(await repository.loadLaneCount(0), 1);
-      expect(await repository.loadLaneInput(0, 0), isNull);
-      expect(await repository.loadLaneOutput(0, 0), isNull);
-      expect(await repository.loadLaneVolume(0, 0), isNull);
-      expect(await repository.loadLaneMute(0, 0), isNull);
+  group('output names', () {
+    test('round-trips a saved name, keyed per device', () async {
+      await repository.saveOutputName(
+        device: 'Scarlett',
+        bus: 1,
+        name: 'monitors',
+      );
+      expect(
+        await repository.loadOutputName(device: 'Scarlett', bus: 1),
+        'monitors',
+      );
+      expect(await repository.loadOutputName(device: 'Scarlett', bus: 0), null);
+      expect(await repository.loadOutputName(device: 'Built-in', bus: 1), null);
     });
 
-    test('round-trips a saved lane count per track', () async {
-      await repository.saveLaneCount(1, 3);
-      expect(await repository.loadLaneCount(1), 3);
-      expect(await repository.loadLaneCount(0), 1);
+    test('the unit is the DESTINATION, not the jack', () async {
+      // Bus 1 is outputs 3 and 4. Its name must not collide with bus 3's, and
+      // it must not collide with the per-jack output GATE either: a name and a
+      // gate are different facts about different units.
+      await repository.saveOutputName(
+        device: 'Scarlett',
+        bus: 1,
+        name: 'monitors',
+      );
+      await repository.saveOutputEnabled(
+        device: 'Scarlett',
+        output: 1,
+        enabled: false,
+      );
+      expect(await repository.loadOutputName(device: 'Scarlett', bus: 3), null);
+      expect(
+        await repository.loadOutputName(device: 'Scarlett', bus: 1),
+        'monitors',
+      );
+      expect(
+        await repository.loadOutputEnabled(device: 'Scarlett', output: 1),
+        isFalse,
+      );
     });
 
-    test('round-trips per-lane input / output / volume / mute', () async {
-      await repository.saveLaneInput(1, 0, 2);
-      await repository.saveLaneOutput(1, 0, 0x5);
-      await repository.saveLaneVolume(1, 0, 0.6);
-      await repository.saveLaneMute(1, 0, muted: true);
-      expect(await repository.loadLaneInput(1, 0), 2);
-      expect(await repository.loadLaneOutput(1, 0), 0x5);
-      expect(await repository.loadLaneVolume(1, 0), closeTo(0.6, 1e-6));
-      expect(await repository.loadLaneMute(1, 0), isTrue);
-      // A different lane is independent.
-      expect(await repository.loadLaneInput(1, 1), isNull);
+    test('clearing REMOVES the key, never stores an empty name', () async {
+      await repository.saveOutputName(
+        device: 'Scarlett',
+        bus: 2,
+        name: 'wedge',
+      );
+      await repository.clearOutputName(device: 'Scarlett', bus: 2);
+      expect(await repository.loadOutputName(device: 'Scarlett', bus: 2), null);
     });
+  });
+
+  group('canonical lane routing', () {
+    test(
+      'one saved mix retains source, destination and count facts together',
+      () async {
+        await repository.replaceMixSettings(
+          device: 'test',
+          mix: (
+            trackLevels: const {},
+            trackPans: const {},
+            laneLevels: const {(1, 0): 0.6},
+            monitorLevels: const {},
+            laneInputs: const {(1, 0): 2},
+            laneOutputs: const {(1, 0): 0x5, (1, 7): 0x5},
+            laneCounts: const {1: 2},
+            inputSetup: const (trimDb: {}, pan: {}, pairs: {}),
+            outputSetup: const (level: {}, muted: {}, mono: {}, balance: {}),
+          ),
+        );
+        final loaded = await repository.loadMixSettings('test');
+        expect(loaded.laneInputs, {(1, 0): 2});
+        expect(loaded.laneOutputs, {(1, 0): 0x5, (1, 7): 0x5});
+        expect(loaded.laneCounts, {1: 2});
+        expect(loaded.laneLevels[(1, 0)], closeTo(0.6, 1e-6));
+        expect(
+          (await repository.loadMixSettings('other')).laneOutputs,
+          loaded.laneOutputs,
+        );
+      },
+    );
   });
 
   group('lane effects', () {
@@ -417,9 +797,9 @@ void main() {
     });
 
     test('round-trips the master chain envelope', () async {
-      expect(await repository.loadMasterFxChain(), isNull);
-      await repository.saveMasterFxChain('{"chainEnabled":true}');
-      expect(await repository.loadMasterFxChain(), '{"chainEnabled":true}');
+      expect(await repository.loadOutputFxChain(0), isNull);
+      await repository.saveOutputFxChain(0, '{"chainEnabled":true}');
+      expect(await repository.loadOutputFxChain(0), '{"chainEnabled":true}');
     });
 
     test('clearing a track chain reads back as unset, not as the old '
@@ -778,58 +1158,349 @@ void main() {
       expect(loaded?.name, 'FCB1010');
     });
 
-    test('defaults the name to empty when only the id was stored', () async {
-      await store.setString('midi.input_device_id', 'port-1');
-      final loaded = await repository.loadMidiDevice();
-      expect(loaded?.id, 'port-1');
-      expect(loaded?.name, '');
-    });
-
-    test('treats an empty saved id as no selection', () async {
-      await repository.saveMidiDevice(id: '', name: '');
-      expect(await repository.loadMidiDevice(), isNull);
-    });
-
-    test('clearMidiDevice removes both keys', () async {
+    test('saves the id and name in one record', () async {
       await repository.saveMidiDevice(id: '12345', name: 'FCB1010');
-      await repository.clearMidiDevice();
-      expect(await repository.loadMidiDevice(), isNull);
-      expect(store.values.containsKey('midi.input_device_id'), isFalse);
-      expect(store.values.containsKey('midi.input_device_name'), isFalse);
-    });
-  });
-
-  group('controller mappings', () {
-    test('returns null when nothing is stored', () async {
-      expect(await repository.loadControllerMappings(), isNull);
+      expect(store.values.keys, contains('midi.input_device'));
+      expect(store.values.length, 1);
+      expect(
+        store.values['midi.input_device'],
+        '{"id":"12345","name":"FCB1010"}',
+      );
     });
 
-    test('round-trips the opaque blob under the global key', () async {
-      const blob = '[{"bind":"continuous","kind":"midiCc","id":11}]';
-      await repository.saveControllerMappings(blob);
-
-      expect(await repository.loadControllerMappings(), blob);
-      expect(store.values['controller.mappings'], blob);
+    test('rejects an empty id without saving', () async {
+      await expectLater(
+        repository.saveMidiDevice(id: '', name: ''),
+        throwsArgumentError,
+      );
+      expect(store.values, isEmpty);
     });
-  });
 
-  group('mode switch style', () {
     test(
-      'defaults to null when unset (the original three-mode cycle)',
+      'rejects malformed saved records rather than selecting a device',
       () async {
-        expect(await repository.loadModeSwitchStyle(), isNull);
+        for (final raw in [
+          'not json',
+          '{"id":"port-1"}',
+          '{"id":"","name":"Pedal"}',
+          '{"id":"port-1","name":3}',
+          '{"id":"port-1","name":"Pedal","extra":true}',
+        ]) {
+          store.values['midi.input_device'] = raw;
+          await expectLater(repository.loadMidiDevice(), throwsFormatException);
+        }
       },
     );
 
-    test('round-trips a saved token', () async {
-      await repository.saveModeSwitchStyle('holdFx');
-      expect(await repository.loadModeSwitchStyle(), 'holdFx');
+    test('dropped save is not reported as durable', () async {
+      store.discardNextWriteKey = 'midi.input_device';
+      await expectLater(
+        repository.saveMidiDevice(id: 'port-1', name: 'Pedal'),
+        throwsStateError,
+      );
+      expect(await repository.loadMidiDevice(), isNull);
+    });
+
+    test('a write that mutates then throws leaves a coherent pair', () async {
+      store.failAfterWriteKey = 'midi.input_device';
+      await expectLater(
+        repository.saveMidiDevice(id: 'port-1', name: 'Pedal'),
+        throwsStateError,
+      );
+      expect(await repository.loadMidiDevice(), (id: 'port-1', name: 'Pedal'));
+    });
+
+    test('clearMidiDevice removes the one record', () async {
+      await repository.saveMidiDevice(id: '12345', name: 'FCB1010');
+      await repository.clearMidiDevice();
+      expect(await repository.loadMidiDevice(), isNull);
+      expect(store.values.containsKey('midi.input_device'), isFalse);
+    });
+
+    test('dropped clear is not reported as durable', () async {
+      await repository.saveMidiDevice(id: '12345', name: 'FCB1010');
+      store.discardNextRemovalKey = 'midi.input_device';
+      await expectLater(repository.clearMidiDevice(), throwsStateError);
+      expect(await repository.loadMidiDevice(), (id: '12345', name: 'FCB1010'));
+    });
+
+    test('a clear that mutates then throws remains uncertain', () async {
+      await repository.saveMidiDevice(id: '12345', name: 'FCB1010');
+      store.failAfterRemovalKey = 'midi.input_device';
+      await expectLater(repository.clearMidiDevice(), throwsStateError);
+      expect(await repository.loadMidiDevice(), isNull);
     });
   });
 
+  group('MIDI configuration', () {
+    test('is absent until explicitly saved', () async {
+      expect(await repository.loadMidiConfiguration(), isNull);
+    });
+
+    test('round-trips the opaque current setup', () async {
+      const encoded = '{"modePress":"mute","recordHold":"none"}';
+      await repository.saveMidiConfiguration(encoded);
+      expect(await repository.loadMidiConfiguration(), encoded);
+    });
+
+    test(
+      'before-write refusal preserves checkpoint and permits same-value repair',
+      () async {
+        const prior = '{"version":1,"enabled":true,"mappings":[]}';
+        await repository.saveMidiConfiguration(prior);
+        store.failNextKey = 'midi.configuration';
+        await expectLater(
+          repository.saveMidiConfiguration(prior),
+          throwsA(
+            isA<MidiSettingsSaveException>().having(
+              (e) => e.checkpointRestored,
+              'restored',
+              isTrue,
+            ),
+          ),
+        );
+        expect(await repository.loadMidiConfiguration(), prior);
+        await repository.saveMidiConfiguration(prior);
+        expect(await repository.loadMidiConfiguration(), prior);
+      },
+    );
+
+    test('silent dropped write cannot report confirmed success', () async {
+      const prior = '{"version":1,"enabled":true,"mappings":[]}';
+      await repository.saveMidiConfiguration(prior);
+      store.discardNextWriteKey = 'midi.configuration';
+      await expectLater(
+        repository.saveMidiConfiguration(
+          '{"version":1,"enabled":false,"mappings":[]}',
+        ),
+        throwsA(
+          isA<MidiSettingsSaveException>().having(
+            (e) => e.checkpointRestored,
+            'restored',
+            isTrue,
+          ),
+        ),
+      );
+      expect(await repository.loadMidiConfiguration(), prior);
+    });
+
+    test('write-then-throw restores the exact prior setup', () async {
+      const prior = '{"custom":"prior bytes"}';
+      await repository.saveMidiConfiguration(prior);
+      store.failAfterWriteKey = 'midi.configuration';
+
+      await expectLater(
+        repository.saveMidiConfiguration('{"modePress":"fx"}'),
+        throwsA(
+          isA<MidiSettingsSaveException>()
+              .having((error) => error.cause, 'cause', isA<StateError>())
+              .having((error) => error.checkpointRestored, 'restored', isTrue),
+        ),
+      );
+      expect(await repository.loadMidiConfiguration(), prior);
+    });
+
+    test('write-then-throw preserves an absent setup key', () async {
+      store.failAfterWriteKey = 'midi.configuration';
+
+      await expectLater(
+        repository.saveMidiConfiguration('{"modePress":"fx"}'),
+        throwsA(
+          isA<MidiSettingsSaveException>().having(
+            (error) => error.checkpointRestored,
+            'restored',
+            isTrue,
+          ),
+        ),
+      );
+      expect(await repository.loadMidiConfiguration(), isNull);
+      expect(store.values.containsKey('midi.configuration'), isFalse);
+    });
+
+    test('checkpoint read refusal does not attempt a setup write', () async {
+      const prior = '{"custom":"prior bytes"}';
+      await repository.saveMidiConfiguration(prior);
+      store.failNextReadKey = 'midi.configuration';
+
+      await expectLater(
+        repository.saveMidiConfiguration('{"modePress":"fx"}'),
+        throwsA(
+          isA<MidiSettingsSaveException>()
+              .having((error) => error.cause, 'cause', isA<StateError>())
+              .having(
+                (error) => error.checkpointRestored,
+                'checkpoint confirmed',
+                isFalse,
+              ),
+        ),
+      );
+      expect(await repository.loadMidiConfiguration(), prior);
+    });
+
+    test(
+      'rollback refusal reports the original and recovery failures',
+      () async {
+        const prior = '{"custom":"prior bytes"}';
+        await repository.saveMidiConfiguration(prior);
+        store
+          ..failAfterWriteKey = 'midi.configuration'
+          ..failOnSetValue = prior;
+
+        await expectLater(
+          repository.saveMidiConfiguration('{"modePress":"fx"}'),
+          throwsA(
+            isA<MidiSettingsSaveException>()
+                .having((error) => error.cause, 'cause', isA<StateError>())
+                .having(
+                  (error) => error.restoreFailure,
+                  'restore failure',
+                  isA<StateError>(),
+                )
+                .having(
+                  (error) => error.checkpointRestored,
+                  'restored',
+                  isFalse,
+                ),
+          ),
+        );
+      },
+    );
+  });
+
+  group('pedal setup', () {
+    test('is absent until explicitly saved', () async {
+      expect(await repository.loadPedalSetup(), isNull);
+    });
+
+    test('round-trips the opaque current setup', () async {
+      const encoded = '{"modePress":"mute","recordHold":"none"}';
+      await repository.savePedalSetup(encoded);
+      expect(await repository.loadPedalSetup(), encoded);
+    });
+
+    test('write-then-throw restores the exact prior setup', () async {
+      const prior = '{"custom":"prior bytes"}';
+      await repository.savePedalSetup(prior);
+      store.failAfterWriteKey = 'pedal.setup';
+
+      await expectLater(
+        repository.savePedalSetup('{"modePress":"fx"}'),
+        throwsA(
+          isA<PedalSetupSaveException>()
+              .having((error) => error.cause, 'cause', isA<StateError>())
+              .having((error) => error.checkpointRestored, 'restored', isTrue),
+        ),
+      );
+      expect(await repository.loadPedalSetup(), prior);
+    });
+
+    test('write-then-throw preserves an absent setup key', () async {
+      store.failAfterWriteKey = 'pedal.setup';
+
+      await expectLater(
+        repository.savePedalSetup('{"modePress":"fx"}'),
+        throwsA(
+          isA<PedalSetupSaveException>().having(
+            (error) => error.checkpointRestored,
+            'restored',
+            isTrue,
+          ),
+        ),
+      );
+      expect(await repository.loadPedalSetup(), isNull);
+      expect(store.values.containsKey('pedal.setup'), isFalse);
+    });
+
+    test('checkpoint read refusal does not attempt a setup write', () async {
+      const prior = '{"custom":"prior bytes"}';
+      await repository.savePedalSetup(prior);
+      store.failNextReadKey = 'pedal.setup';
+
+      await expectLater(
+        repository.savePedalSetup('{"modePress":"fx"}'),
+        throwsA(
+          isA<PedalSetupSaveException>()
+              .having((error) => error.cause, 'cause', isA<StateError>())
+              .having(
+                (error) => error.checkpointRestored,
+                'checkpoint confirmed',
+                isFalse,
+              ),
+        ),
+      );
+      expect(await repository.loadPedalSetup(), prior);
+    });
+
+    test(
+      'rollback refusal reports the original and recovery failures',
+      () async {
+        const prior = '{"custom":"prior bytes"}';
+        await repository.savePedalSetup(prior);
+        store
+          ..failAfterWriteKey = 'pedal.setup'
+          ..failOnSetValue = prior;
+
+        await expectLater(
+          repository.savePedalSetup('{"modePress":"fx"}'),
+          throwsA(
+            isA<PedalSetupSaveException>()
+                .having((error) => error.cause, 'cause', isA<StateError>())
+                .having(
+                  (error) => error.restoreFailure,
+                  'restore failure',
+                  isA<StateError>(),
+                )
+                .having(
+                  (error) => error.checkpointRestored,
+                  'restored',
+                  isFalse,
+                ),
+          ),
+        );
+      },
+    );
+  });
+
+  group('tuner preferences (#1229)', () {
+    test('the Hold · Tuner default is unattempted until marked', () async {
+      expect(await repository.loadTunerDefaultSeeded(), isFalse);
+      await repository.saveTunerDefaultSeeded();
+      expect(await repository.loadTunerDefaultSeeded(), isTrue);
+    });
+
+    test('the A4 reference defaults to 440 Hz, round-trips and clamps to '
+        '420-460', () async {
+      expect(await repository.loadTunerReferenceHz(), 440);
+      await repository.saveTunerReferenceHz(432);
+      expect(await repository.loadTunerReferenceHz(), 432);
+      await repository.saveTunerReferenceHz(500);
+      expect(await repository.loadTunerReferenceHz(), 460);
+      await repository.saveTunerReferenceHz(300);
+      expect(await repository.loadTunerReferenceHz(), 420);
+    });
+
+    test('a stored reference outside the range reads clamped', () async {
+      await store.setInt('tuner.reference_hz', 1000);
+      expect(await repository.loadTunerReferenceHz(), 460);
+    });
+
+    test(
+      'the input defaults to the first available (-1) and round-trips',
+      () async {
+        expect(await repository.loadTunerInput(), -1);
+        await repository.saveTunerInput(3);
+        expect(await repository.loadTunerInput(), 3);
+        await repository.saveTunerInput(-7);
+        expect(await repository.loadTunerInput(), -1);
+        await store.setInt('tuner.input', -4);
+        expect(await repository.loadTunerInput(), -1);
+      },
+    );
+  });
+
   group('pedal timing', () {
-    test('long-press defaults to 500 ms and round-trips', () async {
-      expect(await repository.loadPedalLongPressMs(), 500);
+    test('long-press defaults to 800 ms and round-trips', () async {
+      expect(await repository.loadPedalLongPressMs(), 800);
       await repository.savePedalLongPressMs(750);
       expect(await repository.loadPedalLongPressMs(), 750);
     });
@@ -855,6 +1526,17 @@ void main() {
     });
   });
 
+  group('FX Stop change notice', () {
+    test('is not shown yet when unset', () async {
+      expect(await repository.loadFxStopChangeNoticeShown(), isFalse);
+    });
+
+    test('stays shown once saved', () async {
+      await repository.saveFxStopChangeNoticeShown();
+      expect(await repository.loadFxStopChangeNoticeShown(), isTrue);
+    });
+  });
+
   group('high contrast', () {
     test('defaults to off when unset', () async {
       expect(await repository.loadHighContrast(), isFalse);
@@ -866,38 +1548,96 @@ void main() {
     });
   });
 
-  group('brightness', () {
-    test('defaults to full brightness (1.0) when unset', () async {
-      expect(await repository.loadBrightness(), 1.0);
+  group('display brightness', () {
+    test('defaults to 80% on each panel when nothing was ever set', () async {
+      expect(await repository.loadDisplayBrightness(DisplayRole.track), 0.8);
+      expect(await repository.loadDisplayBrightness(DisplayRole.main), 0.8);
     });
 
-    test('round-trips a saved preference and clamps', () async {
-      await repository.saveBrightness(0.42);
-      expect(await repository.loadBrightness(), 0.42);
-      await repository.saveBrightness(2);
-      expect(await repository.loadBrightness(), 1);
+    test('a panel never set starts from the one older brightness', () async {
+      await store.setDouble('ui.brightness', 0.6);
+      expect(await repository.loadDisplayBrightness(DisplayRole.track), 0.6);
+      expect(await repository.loadDisplayBrightness(DisplayRole.main), 0.6);
+    });
+
+    test('an older brightness below the range lands on its floor', () async {
+      await store.setDouble('ui.brightness', 0.1);
+      expect(await repository.loadDisplayBrightness(DisplayRole.track), 0.2);
+      expect(await repository.loadDisplayBrightness(DisplayRole.main), 0.2);
+    });
+
+    test('each panel keeps its own; the older key is left in place for a '
+        'downgrade', () async {
+      await store.setDouble('ui.brightness', 0.6);
+      await repository.saveDisplayBrightness(DisplayRole.main, 0.5);
+      expect(await repository.loadDisplayBrightness(DisplayRole.main), 0.5);
+      expect(await repository.loadDisplayBrightness(DisplayRole.track), 0.6);
+      expect(await store.getDouble('ui.brightness'), 0.6);
+      expect(await store.getDouble('ui.brightness.main'), 0.5);
+    });
+
+    test('saves clamped into the range', () async {
+      await repository.saveDisplayBrightness(DisplayRole.track, 2);
+      expect(await repository.loadDisplayBrightness(DisplayRole.track), 1);
+      await repository.saveDisplayBrightness(DisplayRole.track, 0);
+      expect(await repository.loadDisplayBrightness(DisplayRole.track), 0.2);
     });
   });
 
-  group('track indicators', () {
-    test('defaults to enabled when unset', () async {
-      expect(await repository.loadShowTrackIndicators(), isTrue);
+  group('idle dimming', () {
+    test('defaults to never', () async {
+      expect(await repository.loadIdleDimSeconds(), 0);
     });
 
-    test('round-trips a saved preference', () async {
-      await repository.saveShowTrackIndicators(value: false);
-      expect(await repository.loadShowTrackIndicators(), isFalse);
+    test('round-trips each choice', () async {
+      for (final seconds in SettingsRepository.idleDimChoices) {
+        await repository.saveIdleDimSeconds(seconds);
+        expect(await repository.loadIdleDimSeconds(), seconds);
+      }
+    });
+
+    test('an unknown stored value reads as never', () async {
+      await store.setInt('ui.idle_dim_seconds', 45);
+      expect(await repository.loadIdleDimSeconds(), 0);
+    });
+
+    test('refuses a value that is not a choice', () {
+      expect(() => repository.saveIdleDimSeconds(45), throwsArgumentError);
     });
   });
 
-  group('default interaction mode', () {
-    test('returns null when unset', () async {
-      expect(await repository.loadDefaultInteractionMode(), isNull);
+  group('saved FX presets', () {
+    test('reads null when nothing has been saved', () async {
+      expect(await repository.loadFxUserPresets(), isNull);
     });
 
-    test('round-trips a saved token', () async {
-      await repository.saveDefaultInteractionMode('play');
-      expect(await repository.loadDefaultInteractionMode(), 'play');
+    test('round-trips the encoded list', () async {
+      await repository.saveFxUserPresets('[{"id":"1","name":"Verse"}]');
+      expect(
+        await repository.loadFxUserPresets(),
+        '[{"id":"1","name":"Verse"}]',
+      );
+    });
+  });
+
+  group('retired default interaction mode', () {
+    test('is null when no build stored one', () async {
+      expect(await repository.takeRetiredDefaultInteractionMode(), isNull);
+    });
+
+    test('returns the stored token once, then forgets it', () async {
+      await store.setString('looper.default_mode', 'mute');
+      expect(await repository.takeRetiredDefaultInteractionMode(), 'mute');
+      expect(await store.getString('looper.default_mode'), isNull);
+      expect(await repository.takeRetiredDefaultInteractionMode(), isNull);
+    });
+  });
+
+  group('Bluetooth retirement notice', () {
+    test('is not shown until recorded, then stays shown', () async {
+      expect(await repository.loadBluetoothRetiredNoticeShown(), isFalse);
+      await repository.saveBluetoothRetiredNoticeShown();
+      expect(await repository.loadBluetoothRetiredNoticeShown(), isTrue);
     });
   });
 
@@ -912,25 +1652,17 @@ void main() {
     });
   });
 
-  group('quantize', () {
-    test('defaults to off when unset', () async {
-      expect(await repository.loadQuantize(), isFalse);
-    });
-
-    test('round-trips a saved preference', () async {
-      await repository.saveQuantize(value: true);
-      expect(await repository.loadQuantize(), isTrue);
-    });
-  });
-
   group('record options', () {
-    test('rec/dub and auto-record default off and round-trip', () async {
+    test('rec/dub default and exact Sound membership round-trip', () async {
       expect(await repository.loadRecDub(), isFalse);
-      expect(await repository.loadAutoRecord(), isFalse);
+      expect((await repository.readRecordStartCheckpoint()).soundStart, isNull);
       await repository.saveRecDub(value: true);
-      await repository.saveAutoRecord(value: true);
+      await repository.saveRecordStartSettings(
+        countInBars: 0,
+        soundStart: true,
+      );
       expect(await repository.loadRecDub(), isTrue);
-      expect(await repository.loadAutoRecord(), isTrue);
+      expect((await repository.readRecordStartCheckpoint()).soundStart, isTrue);
     });
   });
 
@@ -950,19 +1682,295 @@ void main() {
     });
   });
 
-  group('track quantize override', () {
-    test('defaults to null (inherit) when unset', () async {
-      expect(await repository.loadTrackQuantize(0), isNull);
+  group('track record timing override', () {
+    test('defaults to null (follow the default) when unset', () async {
+      expect(
+        (await repository.readRecordTimingCheckpoint()).trackOverrides[0],
+        isNull,
+      );
     });
 
-    test('round-trips force-on, force-off, and inherit', () async {
-      await repository.saveTrackQuantize(0, enabled: true);
-      await repository.saveTrackQuantize(1, enabled: false);
-      expect(await repository.loadTrackQuantize(0), isTrue);
-      expect(await repository.loadTrackQuantize(1), isFalse);
+    test('round-trips a code and the follow-the-default value', () async {
+      await repository.restoreRecordTimingCheckpoint((
+        quantize: null,
+        division: null,
+        trackOverrides: {0: 4, 1: 0},
+      ));
+      expect(
+        (await repository.readRecordTimingCheckpoint()).trackOverrides[0],
+        4,
+      );
+      expect(
+        (await repository.readRecordTimingCheckpoint()).trackOverrides[1],
+        0,
+      );
 
-      await repository.saveTrackQuantize(0, enabled: null);
-      expect(await repository.loadTrackQuantize(0), isNull);
+      await repository.restoreRecordTimingCheckpoint((
+        quantize: null,
+        division: null,
+        trackOverrides: {1: 0},
+      ));
+      expect(
+        (await repository.readRecordTimingCheckpoint()).trackOverrides[0],
+        isNull,
+      );
+    });
+  });
+
+  group('length defaults and overrides', () {
+    test('the default length preset round-trips', () async {
+      expect(await repository.loadDefaultLengthPreset(), 0);
+      await repository.saveDefaultLengthPreset(8);
+      expect(await repository.loadDefaultLengthPreset(), 8);
+    });
+
+    test(
+      'a length override distinguishes inheritance, Auto and bars',
+      () async {
+        expect(await repository.loadTrackLengthPreset(0), isNull);
+        await repository.saveTrackLengthPreset(0, 0);
+        await repository.saveTrackLengthPreset(1, 16);
+        expect(await repository.loadTrackLengthPreset(0), 0);
+        expect(await repository.loadTrackLengthPreset(1), 16);
+        await repository.saveTrackLengthPreset(0, null);
+        expect(await repository.loadTrackLengthPreset(0), isNull);
+      },
+    );
+  });
+
+  group('canonical mix settings', () {
+    const scarlett = 'Scarlett';
+    const builtIn = 'Built-in';
+
+    StoredMixSettings mix({
+      Map<int, double> trackLevels = const {},
+      Map<int, double> pans = const {},
+      Map<(int, int), double> levels = const {},
+      Map<int, double> monitors = const {},
+      StoredInputSetup input = const (trimDb: {}, pan: {}, pairs: {}),
+      StoredOutputSetup output = const (
+        level: {},
+        muted: {},
+        mono: {},
+        balance: {},
+      ),
+    }) => (
+      trackLevels: trackLevels,
+      trackPans: pans,
+      laneLevels: levels,
+      monitorLevels: monitors,
+      laneInputs: const {},
+      laneOutputs: const {},
+      laneCounts: const {},
+      inputSetup: input,
+      outputSetup: output,
+    );
+
+    test(
+      'one value preserves the complete mix and another device setup',
+      () async {
+        await repository.replaceMixSettings(
+          device: builtIn,
+          mix: mix(input: (trimDb: {0: -3}, pan: {}, pairs: {})),
+        );
+        await repository.replaceMixSettings(
+          device: scarlett,
+          mix: mix(
+            trackLevels: {0: .8, 7: 1.5},
+            pans: {0: -0.5},
+            levels: {(0, 1): 0.4},
+            monitors: {2: 0.7},
+            input: (trimDb: {1: -6}, pan: {1: 0.25}, pairs: {0: 0}),
+          ),
+        );
+        expect(
+          store.values.keys.where((key) => key == 'mix_settings'),
+          hasLength(1),
+        );
+        expect(store.values.containsKey('mixer_settings'), isFalse);
+        expect(store.values.containsKey('monitor_vol.2'), isFalse);
+        expect(store.values.containsKey('input_setup.Scarlett'), isFalse);
+        final loaded = await repository.loadMixSettings(scarlett);
+        expect(loaded.trackLevels, {0: .8, 7: 1.5});
+        expect(loaded.trackPans, {0: -0.5});
+        expect(loaded.laneLevels, {(0, 1): 0.4});
+        expect(loaded.monitorLevels, {2: 0.7});
+        expect(loaded.inputSetup.trimDb, {1: -6});
+        expect(loaded.inputSetup.pan, {1: 0.25});
+        expect(loaded.inputSetup.pairs, {0: 0});
+        expect((await repository.loadMixSettings(builtIn)).inputSetup.trimDb, {
+          0: -3,
+        });
+      },
+    );
+
+    test(
+      'failed full write and exact checkpoint restore keep prior mix',
+      () async {
+        await repository.replaceMixSettings(
+          device: scarlett,
+          mix: mix(
+            trackLevels: {7: .75},
+            pans: {0: .5},
+            levels: {(0, 0): .25},
+            monitors: {1: .6},
+            input: (trimDb: {0: -6}, pan: {1: -.5}, pairs: {2: 0}),
+          ),
+        );
+        final checkpoint = await repository.readMixSettingsCheckpoint();
+        store.failNextKey = 'mix_settings';
+        await expectLater(
+          repository.replaceMixSettings(device: scarlett, mix: mix()),
+          throwsStateError,
+        );
+        expect(await repository.readMixSettingsCheckpoint(), checkpoint);
+        expect((await repository.loadMixSettings(scarlett)).trackLevels, {
+          7: .75,
+        });
+        await repository.replaceMixSettings(device: scarlett, mix: mix());
+        await repository.restoreMixSettingsCheckpoint(checkpoint);
+        expect(await repository.readMixSettingsCheckpoint(), checkpoint);
+        expect((await repository.loadMixSettings(scarlett)).inputSetup.pairs, {
+          2: 0,
+        });
+      },
+    );
+
+    test(
+      'an empty track keeps its gain through sparse value removal',
+      () async {
+        expect(await repository.readMixSettingsCheckpoint(), isNull);
+        await repository.replaceMixSettings(
+          device: scarlett,
+          mix: mix(trackLevels: {7: .65}),
+        );
+        final checkpoint = await repository.readMixSettingsCheckpoint();
+        expect(checkpoint, isNotNull);
+        expect((await repository.loadMixSettings(scarlett)).trackLevels, {
+          7: .65,
+        });
+
+        await repository.replaceMixSettings(device: scarlett, mix: mix());
+        expect(await repository.readMixSettingsCheckpoint(), isNull);
+        await repository.restoreMixSettingsCheckpoint(checkpoint);
+        expect(await repository.readMixSettingsCheckpoint(), checkpoint);
+        expect((await repository.loadMixSettings(scarlett)).trackLevels, {
+          7: .65,
+        });
+      },
+    );
+
+    test(
+      'output facts share the mix checkpoint and remain device scoped',
+      () async {
+        await repository.replaceMixSettings(
+          device: builtIn,
+          mix: mix(
+            output: (
+              level: {0: .4},
+              muted: {},
+              mono: {},
+              balance: {},
+            ),
+          ),
+        );
+        await repository.replaceMixSettings(
+          device: scarlett,
+          mix: mix(
+            output: (
+              level: {1: .5},
+              muted: {1: true},
+              mono: {0: true},
+              balance: {0: -.25},
+            ),
+          ),
+        );
+        final checkpoint = await repository.readMixSettingsCheckpoint();
+        expect(
+          store.values.keys.where((key) => key.startsWith('output_')),
+          isEmpty,
+        );
+        final setup = (await repository.loadMixSettings(scarlett)).outputSetup;
+        expect(setup.level, {1: .5});
+        expect(setup.muted, {1: true});
+        expect(setup.mono, {0: true});
+        expect(setup.balance, {0: -.25});
+        expect((await repository.loadMixSettings(builtIn)).outputSetup.level, {
+          0: .4,
+        });
+        await repository.replaceMixSettings(device: scarlett, mix: mix());
+        await repository.restoreMixSettingsCheckpoint(checkpoint);
+        expect((await repository.loadMixSettings(scarlett)).outputSetup.muted, {
+          1: true,
+        });
+        expect((await repository.loadMixSettings(builtIn)).outputSetup.level, {
+          0: .4,
+        });
+      },
+    );
+
+    test(
+      'whole candidate validation refuses nonfinite and odd pairs',
+      () async {
+        final checkpoint = await repository.readMixSettingsCheckpoint();
+        await expectLater(
+          repository.replaceMixSettings(
+            device: scarlett,
+            mix: mix(pans: {0: double.nan}),
+          ),
+          throwsArgumentError,
+        );
+        await expectLater(
+          repository.replaceMixSettings(
+            device: scarlett,
+            mix: mix(input: (trimDb: {}, pan: {}, pairs: {1: 0})),
+          ),
+          throwsArgumentError,
+        );
+        expect(await repository.readMixSettingsCheckpoint(), checkpoint);
+      },
+    );
+  });
+
+  group('overdub decay', () {
+    test('retains an explicit value equal to the default', () async {
+      await repository.restoreDecayCheckpoint(channel: null, percent: 25);
+      await repository.restoreDecayCheckpoint(channel: 0, percent: 25);
+      await repository.restoreDecayCheckpoint(channel: 1, percent: 0);
+      await repository.restoreDecayCheckpoint(channel: null, percent: 70);
+      expect(await repository.readDecayCheckpoint(channel: 0), 25);
+      expect(await repository.readDecayCheckpoint(channel: 1), 0);
+      expect(await repository.readDecayCheckpoint(channel: 2), isNull);
+    });
+  });
+
+  group('playback choice', () {
+    test(
+      'preserves explicit Loop and Once independently of the default',
+      () async {
+        await repository.restoreOneShotCheckpoint(channel: 0, oneShot: false);
+        await repository.restoreOneShotCheckpoint(channel: 1, oneShot: true);
+        await repository.restoreOneShotCheckpoint(channel: null, oneShot: true);
+        expect(await repository.readOneShotCheckpoint(channel: null), isTrue);
+        expect(await repository.readOneShotCheckpoint(channel: 0), isFalse);
+        expect(await repository.readOneShotCheckpoint(channel: 1), isTrue);
+        expect(await repository.readOneShotCheckpoint(channel: 2), isNull);
+
+        await repository.restoreOneShotCheckpoint(
+          channel: null,
+          oneShot: false,
+        );
+        expect(await repository.readOneShotCheckpoint(channel: null), isFalse);
+        expect(await repository.readOneShotCheckpoint(channel: 1), isTrue);
+      },
+    );
+
+    test('Use default removes either explicit playback choice', () async {
+      for (final oneShot in [false, true]) {
+        await repository.restoreOneShotCheckpoint(channel: 0, oneShot: oneShot);
+        await repository.restoreOneShotCheckpoint(channel: 0, oneShot: null);
+        expect(await repository.readOneShotCheckpoint(channel: 0), isNull);
+      }
     });
   });
 
@@ -988,36 +1996,14 @@ void main() {
     });
   });
 
-  group('sync tempo', () {
-    test('defaults to on when unset', () async {
-      expect(await repository.loadSyncTempo(), isTrue);
-    });
-
-    test('round-trips a saved preference', () async {
-      await repository.saveSyncTempo(value: false);
-      expect(await repository.loadSyncTempo(), isFalse);
-    });
-  });
-
-  group('quantize div', () {
-    test('defaults to 0 (off) when unset', () async {
-      expect(await repository.loadQuantizeDiv(), 0);
-    });
-
-    test('round-trips a saved enum code', () async {
-      await repository.saveQuantizeDiv(3);
-      expect(await repository.loadQuantizeDiv(), 3);
-    });
-  });
-
   group('click mode', () {
-    test('defaults to 0 (off) when unset', () async {
-      expect(await repository.loadClickMode(), 0);
+    test('preserves absence for the owner to apply First recording', () async {
+      expect(await repository.readClickModeCheckpoint(), isNull);
     });
 
     test('round-trips a saved enum code', () async {
-      await repository.saveClickMode(2);
-      expect(await repository.loadClickMode(), 2);
+      await repository.restoreClickModeCheckpoint(2);
+      expect(await repository.readClickModeCheckpoint(), 2);
     });
   });
 
@@ -1033,25 +2019,33 @@ void main() {
   });
 
   group('click volume', () {
-    test('defaults to 1.0 when unset', () async {
-      expect(await repository.loadClickVolume(), 1.0);
+    test('reads absence as absence', () async {
+      expect(await repository.readClickVolumeCheckpoint(), isNull);
     });
 
     test('round-trips a saved volume', () async {
-      await repository.saveClickVolume(0.5);
-      expect(await repository.loadClickVolume(), 0.5);
+      await repository.restoreClickVolumeCheckpoint(0.5);
+      expect(await repository.readClickVolumeCheckpoint(), 0.5);
     });
   });
 
   group('count-in bars', () {
-    test('defaults to 0 (off) when unset — the wire default, not the '
-        'UI-suggested one bar', () async {
-      expect(await repository.loadCountInBars(), 0);
-    });
+    test(
+      'leaves absent Count-in undecoded for the application default',
+      () async {
+        expect(
+          (await repository.readRecordStartCheckpoint()).countInBars,
+          isNull,
+        );
+      },
+    );
 
     test('round-trips a saved bar count', () async {
-      await repository.saveCountInBars(2);
-      expect(await repository.loadCountInBars(), 2);
+      await repository.saveRecordStartSettings(
+        countInBars: 2,
+        soundStart: false,
+      );
+      expect((await repository.readRecordStartCheckpoint()).countInBars, 2);
     });
   });
 
@@ -1067,8 +2061,9 @@ void main() {
   });
 
   group('track length preset', () {
-    test('defaults to 0 (AUTO) and round-trips a fixed value', () async {
-      expect(await repository.loadTrackLengthPreset(0), 0);
+    test('defaults to null (follow the default) and round-trips a fixed '
+        'value', () async {
+      expect(await repository.loadTrackLengthPreset(0), isNull);
       await repository.saveTrackLengthPreset(0, 8);
       expect(await repository.loadTrackLengthPreset(0), 8);
     });
@@ -1078,7 +2073,7 @@ void main() {
       await repository.saveTrackLengthPreset(1, 16);
       expect(await repository.loadTrackLengthPreset(0), 4);
       expect(await repository.loadTrackLengthPreset(1), 16);
-      expect(await repository.loadTrackLengthPreset(2), 0);
+      expect(await repository.loadTrackLengthPreset(2), isNull);
     });
   });
 
@@ -1124,6 +2119,34 @@ void main() {
       await repository.saveUpdateChannel('experimental');
       expect(await repository.loadUpdateChannel(), 'experimental');
       expect(store.values['updates.channel'], 'experimental');
+    });
+  });
+
+  group('update rollback', () {
+    test('defaults to none', () async {
+      expect(await repository.loadUpdateRollback(), isNull);
+    });
+
+    test('round-trips the pair, and clearing forgets it', () async {
+      await repository.saveUpdateRollback(
+        attempted: Version.parse('1.1.0'),
+        restored: Version.parse('1.0.0'),
+      );
+      expect(store.values['updates.rollback'], '1.1.0,1.0.0');
+      expect(
+        await repository.loadUpdateRollback(),
+        (attempted: Version.parse('1.1.0'), restored: Version.parse('1.0.0')),
+      );
+
+      await repository.clearUpdateRollback();
+      expect(await repository.loadUpdateRollback(), isNull);
+    });
+
+    test('reads an unparseable value as none', () async {
+      await store.setString('updates.rollback', '1.1.0');
+      expect(await repository.loadUpdateRollback(), isNull);
+      await store.setString('updates.rollback', 'x,1.0.0');
+      expect(await repository.loadUpdateRollback(), isNull);
     });
   });
 
@@ -1233,19 +2256,6 @@ void main() {
       await repository.saveInputRestore(0, 2);
       expect(await repository.loadInputRestore(0), 2);
       expect(await repository.loadInputRestore(1), isNull);
-    });
-  });
-  group('CTRL calibration', () {
-    test('round-trips per jack, and clears', () async {
-      final repo = SettingsRepository(store: _InMemoryStore());
-      expect(await repo.loadCtrlCalibration(0), isNull);
-      await repo.saveCtrlCalibration(0, min: 24, max: 255);
-      await repo.saveCtrlCalibration(1, min: 0, max: 200);
-      expect(await repo.loadCtrlCalibration(0), (24, 255));
-      expect(await repo.loadCtrlCalibration(1), (0, 200));
-      await repo.clearCtrlCalibration(0);
-      expect(await repo.loadCtrlCalibration(0), isNull);
-      expect(await repo.loadCtrlCalibration(1), (0, 200));
     });
   });
 }

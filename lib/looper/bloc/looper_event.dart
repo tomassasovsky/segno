@@ -85,77 +85,198 @@ final class LooperVolumeChanged extends LooperChannelEvent {
   List<Object?> get props => [channel, volume];
 }
 
-/// Track [channel]'s quantize override changed: `null` inherits the global
-/// default, `false` forces it off, `true` forces it on.
-final class LooperTrackQuantizeChanged extends LooperChannelEvent {
-  /// Creates a [LooperTrackQuantizeChanged].
-  const LooperTrackQuantizeChanged(super.channel, {required this.enabled});
+/// Track [channel]'s Mixer pan changed (accepted design, Mixer): `-1` is
+/// hard left, `1` hard right. Every lane's recorded image moves by it.
+final class LooperTrackPanChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackPanChanged].
+  const LooperTrackPanChanged(super.channel, {required this.pan});
 
-  /// The override (`null` => inherit the global default).
-  final bool? enabled;
+  /// The pan, `-1..1`.
+  final double pan;
 
   @override
-  List<Object?> get props => [channel, enabled];
+  List<Object?> get props => [channel, pan];
 }
 
-/// Track [channel]'s forced loop multiple changed (`0` = auto-round-up).
-final class LooperTrackMultipleChanged extends LooperChannelEvent {
-  /// Creates a [LooperTrackMultipleChanged].
-  const LooperTrackMultipleChanged(super.channel, this.multiple);
-
-  /// The forced loop length in whole base loops, or `0` for auto.
-  final int multiple;
-
-  @override
-  List<Object?> get props => [channel, multiple];
+/// Track [channel] was soloed or un-soloed (accepted design, Mixer): while
+/// any track is soloed, only soloed tracks route. Not persisted: Solo is a
+/// performance state the engine drops on restart.
+final class LooperTrackSoloToggled extends LooperChannelEvent {
+  /// Creates a [LooperTrackSoloToggled].
+  const LooperTrackSoloToggled(super.channel);
 }
 
-/// Track [channel]'s length preset changed (A6, D17; `0` = AUTO).
-///
-/// Governs the DEFINING (first/master) recording only — orthogonal to
-/// [LooperTrackMultipleChanged], which governs a non-defining track once a
-/// master already exists.
-final class LooperTrackLengthPresetChanged extends LooperChannelEvent {
-  /// Creates a [LooperTrackLengthPresetChanged].
-  const LooperTrackLengthPresetChanged(super.channel, this.bars);
-
-  /// The fixed bar count, or `0` for AUTO.
-  final int bars;
-
-  @override
-  List<Object?> get props => [channel, bars];
+/// The Mixer's clear Solo: every track is un-soloed.
+final class LooperSoloCleared extends LooperEvent {
+  /// Creates a [LooperSoloCleared].
+  const LooperSoloCleared();
 }
 
-/// Track [channel]'s One Shot flag changed (song-mode-spec.md §2, B5c):
-/// `true` = the track plays once and then stops instead of looping.
-/// Settable in any looper mode, but only behaviorally active in Free/Song.
-final class LooperOneShotToggled extends LooperChannelEvent {
-  /// Creates a [LooperOneShotToggled].
-  const LooperOneShotToggled(super.channel, {required this.oneShot});
-
-  /// The new flag value.
-  final bool oneShot;
-
-  @override
-  List<Object?> get props => [channel, oneShot];
+/// The Mixer's Reset mixer: every track's level back to unity and pan to
+/// centre; mute, Solo, effects and audio stay as they are.
+final class LooperMixerReset extends LooperEvent {
+  /// Creates a [LooperMixerReset].
+  const LooperMixerReset();
 }
 
-/// Every track's one-shot flag was set to [oneShot] at once — the rig-wide
-/// switch on the console's Mode face.
-///
-/// One event rather than the UI fanning out a [LooperOneShotToggled] per
-/// track: the rig-wide rule is then written down once, where it can be tested
-/// without a widget, and a half-applied sweep cannot be observed between two
-/// dispatches.
-final class LooperAllOneShotToggled extends LooperEvent {
-  /// Creates a [LooperAllOneShotToggled].
-  const LooperAllOneShotToggled({required this.oneShot});
+/// Base for events targeting a single hardware [input]'s capture setup
+/// (accepted design, Audio routing). The setup is keyed by the open device
+/// in settings, like the input names.
+sealed class LooperInputEvent extends LooperEvent {
+  const LooperInputEvent(this.input);
 
-  /// The new flag, applied to every track.
-  final bool oneShot;
+  /// The hardware input channel, `0`-based.
+  final int input;
 
   @override
-  List<Object?> get props => [oneShot];
+  List<Object?> get props => [input];
+}
+
+/// Hardware [input]'s capture trim changed, in dB.
+final class LooperInputTrimChanged extends LooperInputEvent {
+  /// Creates a [LooperInputTrimChanged].
+  const LooperInputTrimChanged(super.input, {required this.db});
+
+  /// The trim in dB (`kMinInputTrimDb..kMaxInputTrimDb`; `0` = unity).
+  final double db;
+
+  @override
+  List<Object?> get props => [input, db];
+}
+
+/// Mono hardware [input]'s pan changed.
+final class LooperInputPanChanged extends LooperInputEvent {
+  /// Creates a [LooperInputPanChanged].
+  const LooperInputPanChanged(super.input, {required this.pan});
+
+  /// The pan, `-1..1`.
+  final double pan;
+
+  @override
+  List<Object?> get props => [input, pan];
+}
+
+/// The stereo pair whose lower (even) member is [input] was linked or
+/// unlinked.
+final class LooperInputPairChanged extends LooperInputEvent {
+  /// Creates a [LooperInputPairChanged].
+  const LooperInputPairChanged(super.input, {required this.paired});
+
+  /// Whether [input] and the odd input above it form a stereo pair.
+  final bool paired;
+
+  @override
+  List<Object?> get props => [input, paired];
+}
+
+/// Selects one recording source for a track; linked pairs move together.
+final class LooperRecordingInputChanged extends LooperChannelEvent {
+  /// Creates a [LooperRecordingInputChanged].
+  const LooperRecordingInputChanged(
+    super.channel,
+    this.input, {
+    required this.selected,
+  });
+
+  /// The hardware input selected or removed.
+  final int input;
+
+  /// Whether the track should record it.
+  final bool selected;
+
+  @override
+  List<Object?> get props => [channel, input, selected];
+}
+
+/// Changes every lane and future lane of one track to one destination mask.
+final class LooperTrackOutputChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackOutputChanged].
+  const LooperTrackOutputChanged(super.channel, this.mask);
+
+  /// Hardware jack bitmask.
+  final int mask;
+
+  @override
+  List<Object?> get props => [channel, mask];
+}
+
+/// The balance of the pair whose lower member is [input] changed.
+final class LooperInputBalanceChanged extends LooperInputEvent {
+  /// Creates a [LooperInputBalanceChanged].
+  const LooperInputBalanceChanged(super.input, {required this.balance});
+
+  /// The balance, `-1` (Left only) .. `1` (Right only).
+  final double balance;
+
+  @override
+  List<Object?> get props => [input, balance];
+}
+
+/// An edit to one output destination (accepted design, Output setup).
+sealed class LooperOutputEvent extends LooperEvent {
+  /// Creates a [LooperOutputEvent].
+  const LooperOutputEvent(this.bus);
+
+  /// The destination: one per stereo pair of hardware outputs, `0`-based.
+  final int bus;
+
+  @override
+  List<Object?> get props => [bus];
+}
+
+/// Output destination [bus]'s level changed.
+final class LooperOutputLevelChanged extends LooperOutputEvent {
+  /// Creates a [LooperOutputLevelChanged].
+  const LooperOutputLevelChanged(super.bus, {required this.level});
+
+  /// The level, `0..1`.
+  final double level;
+
+  @override
+  List<Object?> get props => [bus, level];
+}
+
+/// Output destination [bus] was muted or unmuted.
+final class LooperOutputMuteChanged extends LooperOutputEvent {
+  /// Creates a [LooperOutputMuteChanged].
+  const LooperOutputMuteChanged(super.bus, {required this.muted});
+
+  /// Whether the destination is muted.
+  final bool muted;
+
+  @override
+  List<Object?> get props => [bus, muted];
+}
+
+/// Output destination [bus] switched between Stereo and Mono.
+final class LooperOutputMonoChanged extends LooperOutputEvent {
+  /// Creates a [LooperOutputMonoChanged].
+  const LooperOutputMonoChanged(super.bus, {required this.mono});
+
+  /// Whether the destination is in Mono.
+  final bool mono;
+
+  @override
+  List<Object?> get props => [bus, mono];
+}
+
+/// Output destination [bus]'s balance changed.
+final class LooperOutputBalanceChanged extends LooperOutputEvent {
+  /// Creates a [LooperOutputBalanceChanged].
+  const LooperOutputBalanceChanged(super.bus, {required this.balance});
+
+  /// The balance, `-1` (left only) .. `1` (right only).
+  final double balance;
+
+  @override
+  List<Object?> get props => [bus, balance];
+}
+
+/// Cut all sound (accepted design): every audible track stops and every
+/// effect tail is cleared; the rig's settings stay.
+final class LooperCutSoundPressed extends LooperEvent {
+  /// Creates a [LooperCutSoundPressed].
+  const LooperCutSoundPressed();
 }
 
 /// [channel] was crowned the primary track (Sync/Band, D18;
@@ -164,22 +285,6 @@ final class LooperAllOneShotToggled extends LooperEvent {
 final class LooperCrownPrimaryPressed extends LooperChannelEvent {
   /// Creates a [LooperCrownPrimaryPressed].
   const LooperCrownPrimaryPressed(super.channel);
-}
-
-/// The five-mode axis (Multi/Sync/Song/Band/Free) changed (D4). The UI is
-/// responsible for the D4 clear-all confirmation BEFORE dispatching this —
-/// the engine silently ignores the change while any track has content (see
-/// `LooperModeControl.setLooperMode`'s doc), so this event assumes the
-/// caller has already confirmed/cleared.
-final class LooperModeChanged extends LooperEvent {
-  /// Creates a [LooperModeChanged].
-  const LooperModeChanged(this.mode);
-
-  /// The new looper mode.
-  final LooperMode mode;
-
-  @override
-  List<Object?> get props => [mode];
 }
 
 /// Base for events targeting one [lane] of a track [channel].
@@ -191,44 +296,6 @@ sealed class LooperLaneEvent extends LooperChannelEvent {
 
   @override
   List<Object?> get props => [channel, lane];
-}
-
-/// Track [channel]'s active lane count changed (add/remove a lane). Lanes are a
-/// stack: growing appends an empty lane, shrinking drops the last one.
-final class LooperLaneCountChanged extends LooperChannelEvent {
-  /// Creates a [LooperLaneCountChanged].
-  const LooperLaneCountChanged(super.channel, this.count);
-
-  /// The new active lane count (`>= 1`).
-  final int count;
-
-  @override
-  List<Object?> get props => [channel, count];
-}
-
-/// Lane [lane] of track [channel] now records hardware input [inputChannel]
-/// (`-1` records nothing). A lane captures a single clean input.
-final class LooperLaneInputChanged extends LooperLaneEvent {
-  /// Creates a [LooperLaneInputChanged].
-  const LooperLaneInputChanged(super.channel, super.lane, this.inputChannel);
-
-  /// The hardware input channel this lane records (`-1` = none).
-  final int inputChannel;
-
-  @override
-  List<Object?> get props => [channel, lane, inputChannel];
-}
-
-/// Lane [lane] of track [channel]'s output-routing bitmask changed.
-final class LooperLaneOutputChanged extends LooperLaneEvent {
-  /// Creates a [LooperLaneOutputChanged].
-  const LooperLaneOutputChanged(super.channel, super.lane, this.mask);
-
-  /// Bitmask of hardware output channels to play to (bit c => out c).
-  final int mask;
-
-  @override
-  List<Object?> get props => [channel, lane, mask];
 }
 
 /// Lane [lane] of track [channel]'s playback volume changed.
@@ -263,6 +330,82 @@ final class LooperLaneEffectAdded extends LooperLaneEvent {
 
   @override
   List<Object?> get props => [channel, lane, type];
+}
+
+/// Lane [lane] of track [channel]'s chain was replaced with [effects] — the
+/// lane twin of [LooperTrackEffectsChanged].
+///
+/// The structural write: rename, reorder and removal all rewrite the chain
+/// rather than edit one slot, because a rack is several entries and every one
+/// of them moves together.
+final class LooperLaneEffectsChanged extends LooperLaneEvent {
+  /// Creates a [LooperLaneEffectsChanged].
+  const LooperLaneEffectsChanged(
+    super.channel,
+    super.lane,
+    this.effects, {
+    this.receipt,
+    this.cancelled,
+    this.expectedMixGeneration,
+  });
+
+  /// The new chain, in processing order.
+  final List<TrackEffect> effects;
+
+  /// Optional exact-application receipt for a modal structural edit.
+  final Completer<bool>? receipt;
+
+  /// Cancels a modal receipt when its editor route closes.
+  final bool Function()? cancelled;
+
+  /// UI generation at dispatch, so queued edits cannot land after replacement.
+  final int? expectedMixGeneration;
+
+  @override
+  List<Object?> get props => [
+    channel,
+    lane,
+    effects,
+    receipt,
+    cancelled,
+    expectedMixGeneration,
+  ];
+}
+
+/// Appends [entries] to lane [lane] of track [channel]'s chain in one write
+/// — the lane twin of [LooperBusEffectsAppended], for the same reason.
+final class LooperLaneEffectsAppended extends LooperLaneEvent {
+  /// Creates a [LooperLaneEffectsAppended].
+  const LooperLaneEffectsAppended(
+    super.channel,
+    super.lane,
+    this.entries, {
+    this.receipt,
+    this.cancelled,
+    this.expectedMixGeneration,
+  });
+
+  /// The entries to append, in order.
+  final List<TrackEffect> entries;
+
+  /// Completes after the accepted recipe is applied, when requested.
+  final Completer<bool>? receipt;
+
+  /// Whether the requesting editor has left its route.
+  final bool Function()? cancelled;
+
+  /// The engine lifetime that owned the library choice.
+  final int? expectedMixGeneration;
+
+  @override
+  List<Object?> get props => [
+    channel,
+    lane,
+    entries,
+    receipt,
+    cancelled,
+    expectedMixGeneration,
+  ];
 }
 
 /// Chain entry [index] was removed from lane [lane] of track [channel].
@@ -312,6 +455,92 @@ final class LooperLaneEffectMoved extends LooperLaneEvent {
 
   @override
   List<Object?> get props => [channel, lane, from, to];
+}
+
+/// Sets chain entry [index] on lane [lane] of track [channel] to [channels] —
+/// its input handling, its output handling, its placement between the sides
+/// and its own level.
+///
+/// One event for all four, because they are one control: the accepted design
+/// applies the input choice before the effects, the output choice and its
+/// placement after them, and the level last, and a half-applied change is
+/// audible.
+final class LooperLaneEffectChannelsChanged extends LooperLaneEvent {
+  /// Creates a [LooperLaneEffectChannelsChanged].
+  const LooperLaneEffectChannelsChanged(
+    super.channel,
+    super.lane,
+    this.index,
+    this.channels,
+  );
+
+  /// The entry's current index in the chain.
+  final int index;
+
+  /// Its channel handling and level.
+  final FxChannels channels;
+
+  @override
+  List<Object?> get props => [channel, lane, index, channels];
+}
+
+/// Sets entry [index] of the bus chain at [address] to [channels] — the bus
+/// twin of the lane event above.
+final class LooperBusEffectChannelsChanged extends LooperBusChainEvent {
+  /// Creates a [LooperBusEffectChannelsChanged].
+  const LooperBusEffectChannelsChanged(
+    super.address,
+    this.index,
+    this.channels,
+  );
+
+  /// The entry's current index in the chain.
+  final int index;
+
+  /// Its channel handling and level.
+  final FxChannels channels;
+
+  @override
+  List<Object?> get props => [address, index, channels];
+}
+
+/// Sets entry [index] of the All tracks chain to [channels].
+final class LooperAllTracksEffectChannelsChanged extends LooperEvent {
+  /// Creates a [LooperAllTracksEffectChannelsChanged].
+  const LooperAllTracksEffectChannelsChanged(this.index, this.channels);
+
+  /// The entry's current index in the chain.
+  final int index;
+
+  /// Its channel handling and level.
+  final FxChannels channels;
+
+  @override
+  List<Object?> get props => [index, channels];
+}
+
+/// Moves entry [slotId] of lane [lane] of track [channel]'s chain to
+/// [placement].
+///
+/// The entry keeps its identity, parameters and enable state and lands at the
+/// end of the destination stage's run.
+final class LooperLaneEffectPlacementChanged extends LooperLaneEvent {
+  /// Creates a [LooperLaneEffectPlacementChanged].
+  const LooperLaneEffectPlacementChanged(
+    super.channel,
+    super.lane,
+    this.slotId,
+    this.placement,
+  );
+
+  /// Stable identity of the entry to move.
+  final String slotId;
+
+  /// Where the entry should sit relative to the loop player.
+  final FxPlacement placement;
+
+  @override
+  List<Object?> get props => [channel, lane, slotId, placement];
 }
 
 /// Parameter [param] of chain entry [index] on lane [lane] of track [channel]
@@ -477,7 +706,7 @@ final class LooperLaneChainResyncedFromInput extends LooperLaneEvent {
 }
 
 /// Base for the **bus-stage** chain edits — the Track stereo bus and the
-/// Master insert — addressed by [FxAddress] rather than by a stage-specific
+/// output chains — addressed by [FxAddress] rather than by a stage-specific
 /// event pair, since the stage is data (A9/R19) and the two differ only in
 /// which chain the handler reads and writes.
 ///
@@ -490,7 +719,7 @@ sealed class LooperBusChainEvent extends LooperEvent {
   /// Creates a [LooperBusChainEvent] for the chain at [address].
   const LooperBusChainEvent(this.address);
 
-  /// The bus chain being edited ([FxStage.track] or [FxStage.master]).
+  /// The bus chain being edited ([FxStage.track] or [FxStage.output]).
   final FxAddress address;
 
   @override
@@ -509,6 +738,79 @@ final class LooperBusEffectAdded extends LooperBusChainEvent {
 
   @override
   List<Object?> get props => [address, type];
+}
+
+/// The bus chain at [address] was replaced with [effects] — the addressed
+/// twin of [LooperTrackEffectsChanged] / [LooperOutputEffectsChanged], so one
+/// structural edit reaches either bus stage without the caller switching.
+final class LooperBusEffectsChanged extends LooperBusChainEvent {
+  /// Creates a [LooperBusEffectsChanged].
+  const LooperBusEffectsChanged(
+    super.address,
+    this.effects, {
+    this.receipt,
+    this.cancelled,
+    this.expectedMixGeneration,
+  });
+
+  /// The new chain, in processing order.
+  final List<TrackEffect> effects;
+
+  /// Optional exact-application receipt for a modal structural edit.
+  final Completer<bool>? receipt;
+
+  /// Cancels a modal receipt when its editor route closes.
+  final bool Function()? cancelled;
+
+  /// UI generation at dispatch, so queued edits cannot land after replacement.
+  final int? expectedMixGeneration;
+
+  @override
+  List<Object?> get props => [
+    address,
+    effects,
+    receipt,
+    cancelled,
+    expectedMixGeneration,
+  ];
+}
+
+/// Appends [entries] to the bus chain at [address] in one write.
+///
+/// One event rather than a run of [LooperBusEffectAdded], because a rack is
+/// one thing the player chose: adding its pedals one at a time would push the
+/// chain to the engine once per pedal and let a half-built rack be heard on
+/// the way.
+final class LooperBusEffectsAppended extends LooperBusChainEvent {
+  /// Creates a [LooperBusEffectsAppended].
+  const LooperBusEffectsAppended(
+    super.address,
+    this.entries, {
+    this.receipt,
+    this.cancelled,
+    this.expectedMixGeneration,
+  });
+
+  /// The entries to append, in order.
+  final List<TrackEffect> entries;
+
+  /// Completes after the accepted recipe is applied, when requested.
+  final Completer<bool>? receipt;
+
+  /// Whether the requesting editor has left its route.
+  final bool Function()? cancelled;
+
+  /// The engine lifetime that owned the library choice.
+  final int? expectedMixGeneration;
+
+  @override
+  List<Object?> get props => [
+    address,
+    entries,
+    receipt,
+    cancelled,
+    expectedMixGeneration,
+  ];
 }
 
 /// Removes entry [index] from the bus chain at [address].
@@ -634,7 +936,7 @@ final class LooperBusPluginRelinked extends LooperBusChainEvent {
 
 /// Track [channel]'s Track-stage (stereo bus) chain was replaced with
 /// [effects] — the bus twin of the lane chain-set path (FX v3 part 3a). The
-/// bloc owns Track/Master chain state: it pushes through the repository and
+/// bloc owns Track/output chain state: it pushes through the repository and
 /// persists the encoded envelope.
 final class LooperTrackEffectsChanged extends LooperChannelEvent {
   /// Creates a [LooperTrackEffectsChanged].
@@ -695,22 +997,157 @@ final class LooperTrackChainToggled extends LooperChannelEvent {
   const LooperTrackChainToggled(super.channel);
 }
 
-/// The Master insert chain was replaced with [effects].
-final class LooperMasterEffectsChanged extends LooperEvent {
-  /// Creates a [LooperMasterEffectsChanged].
-  const LooperMasterEffectsChanged(this.effects);
+/// Output destination [bus]'s post-sum chain was replaced with [effects].
+final class LooperOutputEffectsChanged extends LooperEvent {
+  /// Creates a [LooperOutputEffectsChanged].
+  const LooperOutputEffectsChanged(this.bus, this.effects);
+
+  /// The output destination.
+  final int bus;
 
   /// The new chain, in processing order.
   final List<TrackEffect> effects;
 
   @override
-  List<Object?> get props => [effects];
+  List<Object?> get props => [bus, effects];
 }
 
-/// Entry [index] of the Master insert chain was toggled to [enabled].
-final class LooperMasterEffectEnabledToggled extends LooperEvent {
-  /// Creates a [LooperMasterEffectEnabledToggled].
-  const LooperMasterEffectEnabledToggled(this.index, {required this.enabled});
+/// Entry [index] of output destination [bus]'s chain was toggled to
+/// [enabled].
+final class LooperOutputEffectEnabledToggled extends LooperEvent {
+  /// Creates a [LooperOutputEffectEnabledToggled].
+  const LooperOutputEffectEnabledToggled(
+    this.bus,
+    this.index, {
+    required this.enabled,
+  });
+
+  /// The output destination.
+  final int bus;
+
+  /// The chain entry index (`0..kTrackEffectMax-1`).
+  final int index;
+
+  /// The new flag value.
+  final bool enabled;
+
+  @override
+  List<Object?> get props => [bus, index, enabled];
+}
+
+/// The WHOLE chain on output destination [bus] was toggled to [enabled] in
+/// one atomic flip.
+final class LooperOutputChainEnabledToggled extends LooperEvent {
+  /// Creates a [LooperOutputChainEnabledToggled].
+  const LooperOutputChainEnabledToggled(this.bus, {required this.enabled});
+
+  /// The output destination.
+  final int bus;
+
+  /// The new flag value.
+  final bool enabled;
+
+  @override
+  List<Object?> get props => [bus, enabled];
+}
+
+/// Entry [slotId] of track [channel]'s Track-stage chain moved to [placement]
+/// — Pre (recorded into the loop) or Post (can ring after Stop).
+///
+/// A whole track's Pre run processes the combination of its parts as one
+/// signal, which is why it is not the same as putting the effect on each
+/// part.
+final class LooperTrackEffectPlacementChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackEffectPlacementChanged].
+  const LooperTrackEffectPlacementChanged(
+    super.channel,
+    this.slotId,
+    this.placement,
+  );
+
+  /// Stable identity of the entry to move.
+  final String slotId;
+
+  /// Where the entry should sit relative to the loop player.
+  final FxPlacement placement;
+
+  @override
+  List<Object?> get props => [channel, slotId, placement];
+}
+
+/// The All tracks recorded-mix chain was replaced with [effects] (slice 3e).
+///
+/// The chain applied after the loop tracks are combined, and only them: live
+/// monitoring, the click and the output chains all join after it.
+final class LooperAllTracksEffectsChanged extends LooperEvent {
+  /// Creates a [LooperAllTracksEffectsChanged].
+  const LooperAllTracksEffectsChanged(
+    this.effects, {
+    this.receipt,
+    this.cancelled,
+    this.expectedMixGeneration,
+  });
+
+  /// The new chain, in processing order.
+  final List<TrackEffect> effects;
+
+  /// Optional exact-application receipt for a modal structural edit.
+  final Completer<bool>? receipt;
+
+  /// Cancels a modal receipt when its editor route closes.
+  final bool Function()? cancelled;
+
+  /// UI generation at dispatch, so queued edits cannot land after replacement.
+  final int? expectedMixGeneration;
+
+  @override
+  List<Object?> get props => [
+    effects,
+    receipt,
+    cancelled,
+    expectedMixGeneration,
+  ];
+}
+
+/// Appends [entries] to the All tracks chain in one write — see
+/// [LooperBusEffectsAppended].
+final class LooperAllTracksEffectsAppended extends LooperEvent {
+  /// Creates a [LooperAllTracksEffectsAppended].
+  const LooperAllTracksEffectsAppended(
+    this.entries, {
+    this.receipt,
+    this.cancelled,
+    this.expectedMixGeneration,
+  });
+
+  /// The entries to append, in order.
+  final List<TrackEffect> entries;
+
+  /// Completes after the accepted recipe is applied, when requested.
+  final Completer<bool>? receipt;
+
+  /// Whether the requesting editor has left its route.
+  final bool Function()? cancelled;
+
+  /// The engine lifetime that owned the library choice.
+  final int? expectedMixGeneration;
+
+  @override
+  List<Object?> get props => [
+    entries,
+    receipt,
+    cancelled,
+    expectedMixGeneration,
+  ];
+}
+
+/// Entry [index] of the All tracks chain was toggled to [enabled].
+final class LooperAllTracksEffectEnabledToggled extends LooperEvent {
+  /// Creates a [LooperAllTracksEffectEnabledToggled].
+  const LooperAllTracksEffectEnabledToggled(
+    this.index, {
+    required this.enabled,
+  });
 
   /// The chain entry index (`0..kTrackEffectMax-1`).
   final int index;
@@ -722,16 +1159,35 @@ final class LooperMasterEffectEnabledToggled extends LooperEvent {
   List<Object?> get props => [index, enabled];
 }
 
-/// The WHOLE Master insert chain was toggled to [enabled] in one atomic flip.
-final class LooperMasterChainEnabledToggled extends LooperEvent {
-  /// Creates a [LooperMasterChainEnabledToggled].
-  const LooperMasterChainEnabledToggled({required this.enabled});
+/// The WHOLE All tracks chain was toggled to [enabled] in one atomic flip.
+final class LooperAllTracksChainEnabledToggled extends LooperEvent {
+  /// Creates a [LooperAllTracksChainEnabledToggled].
+  const LooperAllTracksChainEnabledToggled({required this.enabled});
 
   /// The new flag value.
   final bool enabled;
 
   @override
   List<Object?> get props => [enabled];
+}
+
+/// Parameter [param] of All tracks chain entry [index] changed to [value]
+/// (`0..1`). A live tweak — does not reset DSP state.
+final class LooperAllTracksEffectParamChanged extends LooperEvent {
+  /// Creates a [LooperAllTracksEffectParamChanged].
+  const LooperAllTracksEffectParamChanged(this.index, this.param, this.value);
+
+  /// The chain entry index.
+  final int index;
+
+  /// The parameter index (`0..kTrackEffectParams-1`).
+  final int param;
+
+  /// The new normalized value.
+  final double value;
+
+  @override
+  List<Object?> get props => [index, param, value];
 }
 
 /// Play every track that has content.
@@ -761,21 +1217,4 @@ final class LooperOutputEnabledToggled extends LooperEvent {
 
   @override
   List<Object?> get props => [output, enabled];
-}
-
-/// A session load landed, so the bloc must write its chains back to the
-/// boot-restore keys — see `_resyncSessionChains`.
-///
-/// Named for the trigger rather than the work, like every other event here: a
-/// load is what HAPPENED; re-persisting is this bloc's response to it.
-final class LooperSessionLoaded extends LooperEvent {
-  /// Creates a [LooperSessionLoaded].
-  const LooperSessionLoaded();
-}
-
-/// Flushes coalesced FX persistence now — a clean halt must not wait for
-/// cubit teardown.
-final class LooperPersistFlush extends LooperEvent {
-  /// Creates a [LooperPersistFlush].
-  const LooperPersistFlush();
 }

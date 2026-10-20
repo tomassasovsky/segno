@@ -1,0 +1,66 @@
+// Fixture generator for #1196 (not part of this commit's tree): a real
+// schema-4 bundle written by this commit's own SessionRepository.save.
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:loopy_engine/loopy_engine.dart';
+import 'package:session_repository/session_repository.dart';
+
+import 'helpers/fake_session_engine.dart';
+
+Float32List pcm(int frames, double value) =>
+    Float32List.fromList(List.filled(frames, value));
+
+String get out => Platform.environment['FIXTURE_OUT']!;
+
+SessionRepository repoFor(AudioEngine engine) => SessionRepository(
+  engine: engine,
+  clearPollInterval: Duration.zero,
+  clearPollAttempts: 4,
+);
+
+void main() {
+  test('generate', () async {
+    final engine = FakeSessionEngine()
+      ..seedLayers(0, [pcm(2400, 0.25), pcm(2400, 0.375)], undoDepth: 1)
+      ..seedTrack(1, pcm(4800, 0.5), multiple: 2, volume: 0.5, muted: true)
+      ..seedLane(1, 1, pcm(4800, 0.125), volume: 1.5, outputMask: 0x1)
+      ..tempoBpm = 110
+      ..tempoSource = TempoSource.manual
+      ..tsNum = 3
+      ..quantizeDiv = GridDivision.bar
+      ..clickMode = ClickMode.rec
+      ..clickMask = 0x2
+      ..countInBars = 2
+      ..looperMode = LooperMode.sync
+      ..primaryTrack = 0
+      ..oneShot[1] = true;
+    await repoFor(engine).save(
+      '$out/v4_loopy_fb8d7cc2b',
+      chains: SessionChains(
+        laneChains: [
+          SessionLaneChain(
+            channel: 0,
+            lane: 0,
+            encoded: encodeTrackEffects([
+              BuiltInEffect(type: TrackEffectType.delay),
+            ]),
+          ),
+        ],
+        monitors: [
+          SessionMonitor(
+            input: 0,
+            enabled: true,
+            outputMask: 3,
+            volume: 1.5,
+            muted: false,
+            encoded: encodeTrackEffects([
+              BuiltInEffect(type: TrackEffectType.reverb),
+            ]),
+          ),
+        ],
+      ),
+    );
+  });
+}
