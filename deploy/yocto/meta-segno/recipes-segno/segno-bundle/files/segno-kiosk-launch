@@ -1,8 +1,10 @@
 #!/bin/sh
-# Launch the prebuilt Segno GTK bundle as a Wayland client under weston.
-# GDK_BACKEND=wayland forces the GTK embedder onto Wayland (not X11/XWayland).
+# Launch Segno: ivi-homescreen, installed as /usr/bin/segno, drives both HDMI
+# outputs itself over DRM/KMS with no compositor, and runs one Flutter engine
+# per screen from the bundle in /opt/segno (#1318, #1330).
+# /etc/segno/homescreen.toml says which screen goes where; each engine learns
+# its role from the --segno-screen= argument that file gives it.
 # The console build is the only build; nothing to pass here.
-export GDK_BACKEND=wayland
 
 # Persistent data lives on the /data partition (label "data"), which OS/app updates
 # never touch. Point HOME (and thus every XDG dir + ~/Documents) there so sessions,
@@ -171,8 +173,15 @@ export SEGNO_RT_AUDIO=1
 # to clear the capture case too, not just the monitor one. The engine's own
 # default stays 2; this override is appliance-only.
 export SEGNO_ALSA_PERIODS=8
-# Space the two native views after startup; this is a timing mitigation for
-# #970, not proof that the compositor's EGL state is ready.
-export SEGNO_WAVEFORM_OPEN_DELAY_MS=750
-/usr/bin/segno-wait-wayland || exit $?
-exec /opt/segno/segno "$@"
+
+# The engine library is opened by name, and ivi-homescreen puts nothing of
+# /opt/segno on the loader's path, so name the file outright: both of its
+# loaders honour this (segno_engine's native_audio_engine.dart and
+# midi_client's native_library.dart).
+#
+# Both this and the configuration can be overridden from the environment, and
+# only deploy/rpi/profile-on-device.sh does: it runs a profile bundle from
+# /data/profile through this same script, so the profile measures the
+# environment above rather than a copy of it.
+export SEGNO_ENGINE_LIB="${SEGNO_ENGINE_LIB:-/opt/segno/lib/libsegno_engine.so}"
+exec /usr/bin/segno --config "${SEGNO_HOMESCREEN_CONFIG:-/etc/segno/homescreen.toml}" "$@"

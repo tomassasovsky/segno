@@ -7,6 +7,7 @@ export 'package:wifi_client/wifi_client.dart'
         SystemWifiClient,
         UnsupportedWifiClient,
         WifiClient,
+        WifiHelperException,
         WifiNetwork,
         WifiStatus,
         createWifiClient,

@@ -28,6 +28,7 @@
 #define SEGNO_PERF_LOG_RING_H
 
 #include <stdatomic.h>
+#include <string.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -109,6 +110,15 @@ typedef enum le_perf_log_code {
                                         * index, type = enabled (0/1). */
   LE_PLOG_SET_MONITOR_FX_CHAIN_ENABLED = 313, /* generic arm: arg_i = input,
                                               * arg_f = enabled (0.0/1.0). */
+  /* 317, not 315: 315 and 316 are taken FURTHER DOWN this enum
+   * (LE_PLOG_PERF_ARMED and LE_PLOG_TRANSPORT_HELD), and duplicate
+   * enumerator VALUES are legal C — the collision compiles silently and only
+   * shows up as a renderer reading one arm of the union as the other. Codes
+   * are on-disk wire values; pick the next free NUMBER, never the next line. */
+  LE_PLOG_SET_TRACK_OVERDUB_FEEDBACK = 317, /* generic arm: arg_i = channel,
+                                             * arg_f = feedback (0..1), or a
+                                             * negative value = inherit the
+                                             * global coefficient (309). */
   LE_PLOG_RECORD_ABORT = 314, /* a take died having captured NOTHING: either it
                                * left RECORDING (finalize_new_track's void
                                * branch: armed, then stopped before a single
@@ -126,6 +136,26 @@ typedef enum le_perf_log_code {
   /* Transport facts fired from inside the audio thread's command drain /
    * per-frame loop, carrying the exact sample-accurate frame. Both are new in
    * events.log version 4 (#262). */
+  LE_PLOG_SOURCE_APPLIED = 322, /* restore_log: a staged history image became the
+                                 * channel's live source at this exact mixer
+                                 * frame — {channel, image_id, state, phase}.
+                                 * Every callback-applied history transition
+                                 * (Clear Undo, layer Undo/Redo, Redo-from-empty)
+                                 * logs one; a channel may carry several per
+                                 * capture, and a reader switches images on each
+                                 * (events.log version 6, #1143). */
+  LE_PLOG_SOURCE_TRANSPORT = 323, /* restore_log: same image, new state/phase.
+                                   * image_id 0 with state EMPTY = provenance
+                                   * lost (a slot became live without a staged
+                                   * image, or is being written): the stem is
+                                   * not reconstructible. */
+  LE_PLOG_FADE = 321, /* fade_log: exact callback image, including arm/reset */
+  LE_PLOG_PEEL = 325, /* peel_log: a Peel succeeded (#1164) — {channel, slot
+                       * now live, previous slot filed as PEEL, dub_generation},
+                       * the control-side admission record like 304/305; the
+                       * callback's 322 names the staged image it mixes and is
+                       * the authoritative image name. events.log version 7,
+                       * shared with Reverse's 324. */
   LE_PLOG_PERF_ARMED = 315,   /* LE_CMD_PERF_ARM applied: the master loop phase
                                * at capture frame 0. `perf_arm` arm: {position,
                                * master_len, iteration}. The offline renderer's
@@ -146,6 +176,48 @@ typedef enum le_perf_log_code {
                                  * FROM. Lets the renderer's phase math see a
                                  * clock the engine froze rather than silently
                                  * running it forward. */
+  LE_PLOG_SET_OUTPUT_FX_PARAM = 318,
+  LE_PLOG_SET_OUTPUT_FX_ENABLED = 319,
+  LE_PLOG_SET_OUTPUT_FX_CHAIN_ENABLED = 320,
+  LE_PLOG_REVERSE = 324, /* reverse_log: a track's read direction (#1162,
+                          * events.log version 7) — every accepted toggle or
+                          * install carries the exact read index the callback
+                          * continues from and its turn window; every material
+                          * reset logs forward with read_index -1; a reversed
+                          * track also logs its index at PERF_ARM. 325 is
+                          * reserved for Peel; do not take it. */
+  LE_PLOG_LENGTH = 326, /* length_log: a length edit, or its Undo/Redo,
+                         * applied (#1168) — {channel, slot now live, len,
+                         * image_id}; the callback's 322 at the same frame
+                         * names the same staged image. events.log version
+                         * 10. */
+  LE_PLOG_SPEED = 327, /* speed_log: a track's head rate (#1179, events.log
+                        * version 8) with the exact index in Q32.32 — at every
+                        * accepted Speed change (each track), at PERF_ARM and
+                        * at a material reset for a track not at 1x, and after
+                        * every 322/323 a track logs while reading off whole
+                        * samples, whose phase is only the integral part. */
+  LE_PLOG_TRANSPOSE = 328, /* transpose_log: what a track SOUNDS (#1179 Part
+                            * 3a, events.log version 9) — at every change of
+                            * its sounding pitch (render engaged, dry
+                            * fallback, bypass) with the exact index, and at
+                            * PERF_ARM for a track sounding transposed. */
+  LE_PLOG_HEAD_SPAN = 329, /* span_log: the span a track's take plays over
+                            * (#1179 Part 4a, events.log version 11), so the
+                            * head's rate is speed * len / play_len — at a
+                            * retime for every following track, at a Follow
+                            * setting change, at a material change to or
+                            * from another span, and at PERF_ARM. */
+  LE_PLOG_RETIME = 330, /* retime_log: a song-tempo change that retimed the
+                         * shared clock with content (#1179 Part 4a): the new
+                         * length and the position it continues from. */
+  LE_PLOG_SOURCE_LEN = 331, /* lanei {channel, 0, out_len}: the length of the
+                             * render a track sounds (#1179 Part 4a-ii,
+                             * events.log version 12), 0 for the take itself
+                             * or a render of its own length; logged just
+                             * before every 328, so a stretch render (Pitch
+                             * Unchanged across a retime) replays at its
+                             * length. */
 } le_perf_log_code;
 
 /* Pack/unpack helpers for LE_PLOG_SET_LANE_FX_PARAM / _MONITOR_FX_PARAM's
@@ -163,9 +235,79 @@ typedef enum le_perf_log_code {
  * already reads/writes, reused verbatim for entries whose `code` is an
  * audited LE_CMD_*; le_perf_log_code entries reuse whichever arm fits their
  * own payload, documented per code above). */
+/* Performance facts are primitive commands only. Keep their named 16-byte
+ * payload independent from the larger in-process transaction union. */
+typedef struct le_log_command {
+  int32_t code;
+  union {
+    struct { int32_t arg_i; float arg_f; };
+    struct { int32_t channel; uint32_t mask; } trackmask;
+    struct { int32_t channel, lane, index, type; } fx;
+    struct { int32_t channel, lane, count; } fxcount;
+    struct { int32_t channel, lane, value; } lanei;
+    struct { int32_t channel, lane; float value; } lanef;
+    struct { int32_t channel, slot; uint32_t generation; } evt;
+    struct { int32_t channel, take_id; } take;
+    struct { int32_t channel; float amount, target, seconds; } fade_log;
+    struct { int32_t channel, reversed, read_index, turn_frames; } reverse_log;
+    struct {
+      int32_t channel;
+      uint8_t numer, denom;
+      uint16_t turn_frames;
+      uint32_t index_lo, index_hi;
+    } speed_log;
+    struct {
+      int32_t channel;
+      int8_t stored, effective;
+      uint16_t turn_frames;
+      uint32_t index_lo, index_hi;
+    } transpose_log;
+    struct { /* LE_PLOG_HEAD_SPAN: the span a track's take plays over (0 =
+              * its own length), the turn window still mixing the old head
+              * and the exact index in Q32.32. */
+      int16_t channel;
+      uint16_t turn_frames;
+      int32_t play_len;
+      uint32_t index_lo, index_hi;
+    } span_log;
+    struct { /* LE_PLOG_RETIME: the song tempo and the master length and
+              * position it retimed the shared clock to. */
+      float bpm;
+      int32_t length, position, bars;
+    } retime_log;
+    struct { int32_t channel; uint32_t image_id; int32_t state, phase; } restore_log;
+    struct { int32_t channel, slot, previous; uint32_t generation; } peel_log;
+    struct { int32_t channel, slot, len; uint32_t image_id; } length_log;
+    struct { int32_t position, master_len, iteration; } perf_arm;
+    struct { int32_t value; uint32_t sequence; } clock;
+    struct { int32_t base_frames, loop_beats; } session;
+  };
+} le_log_command;
+
+/* Explicit extraction also handles the transaction union's stronger alignment:
+ * never assume a le_command payload starts four bytes after its code. */
+static inline int le_log_extract(const le_command* command, le_log_command* out) {
+  if (command->code == LE_CMD_RESET_TRANSFORMS || command->code == LE_CMD_FADE ||
+      command->code == LE_CMD_REVERSE || command->code == LE_CMD_SET_SPEED ||
+      command->code == LE_CMD_TRANSPOSE ||
+      command->code == LE_CMD_TRANSPOSE_BYPASS ||
+      command->code == LE_CMD_SET_LENGTH ||
+      command->code == LE_CMD_SET_FOLLOW_TEMPO ||
+      command->code == LE_CMD_SET_PITCH_MODE ||
+      command->code == LE_CMD_SET_MIX ||
+      command->code == LE_CMD_RECORD_IMAGE ||
+      command->code == LE_CMD_SET_LENGTH_PRESETS ||
+      command->code == LE_CMD_RENDER_FREEZE ||
+      command->code == LE_CMD_BOUNCE ||
+      command->code == LE_CMD_BOUNCE_RECOVER) return 0;
+  out->code = command->code;
+  memcpy(&out->arg_i, &command->arg_i, 16);
+  return 1;
+}
+
 typedef struct le_perf_log_entry {
   uint64_t frame;
-  le_command cmd;
+  le_log_command cmd;
 } le_perf_log_entry;
 
 /* Fixed-capacity SPSC ring of le_perf_log_entry. `capacity` is a power of two;

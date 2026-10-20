@@ -14,7 +14,9 @@ LINE = "GPIO17"
 # Provisional upper wait, NOT a measured screen discharge specification.
 # Qualify both actual panels during assembled-system validation.
 OFF_DELAY = 5.0
-ON_DELAY = 1.0
+# Panels need time to come up before the app opens the outputs; 3 s is what
+# the assembled console needed on the bench (2026-10-17), 1 s was untested.
+ON_DELAY = 3.0
 RECLAIM_TIMEOUT = 10.0
 
 
@@ -112,7 +114,7 @@ def command(value):
 
 
 def force_off():
-    # A killed keeper's systemd cleanup and Weston's stop hook may both arrive.
+    # A killed keeper's systemd cleanup and the app's stop hook may both arrive.
     # Only one owns the GPIO at a time; wait for that low-holding request to
     # release before taking it. Never pretend an unacknowledged off succeeded.
     deadline = time.monotonic() + RECLAIM_TIMEOUT

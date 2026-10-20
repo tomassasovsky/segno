@@ -19,3 +19,13 @@ class PerformanceNameCollision extends PerformanceException {
   @override
   String toString() => 'a capture named "$slug" already exists';
 }
+
+/// A recording could not be deleted because a take is being recorded,
+/// finalized or rendered: any of them may be writing into a bundle.
+class PerformanceCaptureBusy extends PerformanceException {
+  /// Creates a [PerformanceCaptureBusy].
+  const PerformanceCaptureBusy();
+
+  @override
+  String toString() => 'a take is being recorded or rendered';
+}

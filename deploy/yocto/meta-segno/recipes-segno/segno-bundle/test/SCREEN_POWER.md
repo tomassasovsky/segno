@@ -4,19 +4,21 @@ The v3 console carries GPIO17 through J25 to the screen board. The appliance
 uses the official libgpiod 2 Python binding to keep that line owned. It locates
 the Pi 5 RP1 controller by label and GPIO17 by line name, starting low.
 
-Weston depends on the GPIO service. Its start hook enables screen power and
-waits one second before display/touch probing. The app remains ordered after
-Weston. During stop/restart, the app finishes first; Weston's synchronous stop
-hook drives low and waits five seconds before systemd terminates the compositor.
+The app draws both HDMI outputs itself (ivi-homescreen, no compositor), so
+`segno.service` depends on the GPIO service. Its start hook enables screen power
+and waits three seconds, the time the assembled console needed on the bench,
+before the app opens the outputs and touch. During stop/restart its synchronous
+stop hook drives low and waits five seconds before systemd terminates the app
+and with it the HDMI signal.
 This applies to orderly poweroff, ordinary reboot and update reboot because all
 use the same systemd stop transaction. The existing save/goodbye UI stays intact.
 
 The five seconds are a provisional wait, not a measured discharge specification.
 The GPIO service has no automatic re-enable on failure. Its cleanup reclaims the
-line low even if its main process was killed. Weston is bound to that service;
-a failed GPIO owner stops the display session instead of leaving it running.
-An abrupt loss of HDMI caused by a compositor/kernel fault is not an orderly
-shutdown and cannot be prevented by a userspace stop hook.
+line low even if its main process was killed. The app is bound to that service;
+a failed GPIO owner stops the app instead of leaving it running on unpowered
+screens. An abrupt loss of HDMI caused by an app or kernel fault is not an
+orderly shutdown and cannot be prevented by a userspace stop hook.
 
 Run the host tests with:
 
