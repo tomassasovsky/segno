@@ -542,8 +542,8 @@ extension MidiControlEditing on ControlCubit {
     if (target is MixValueTarget) return target.relativeStep;
     if (target is OwnedValueTarget) return target.relativeStep;
     if (target is FxParamTarget) {
-      final divisions = _midiParamDivisions(target);
-      if (divisions != null && divisions > 0) return 1 / divisions;
+      final param = _midiSteppedParam(target);
+      if (param != null) return 1 / (param.steps - 1);
     }
     return 0.01;
   }
@@ -909,17 +909,17 @@ extension MidiControlEditing on ControlCubit {
     if (target is OwnedValueTarget) return target.coerce(value);
     final clamped = value.clamp(0.0, 1.0);
     if (target is FxParamTarget) {
-      final divisions = _midiParamDivisions(target);
-      if (divisions != null && divisions > 0) {
-        return (clamped * divisions).round() / divisions;
+      final param = _midiSteppedParam(target);
+      if (param != null) {
+        return param.positionOf(clamped) / (param.steps - 1);
       }
     }
     return clamped;
   }
 
-  /// The number of intervals between [target]'s positions (`steps - 1`), so
-  /// a MIDI value lands on a position, or `null` for a continuous parameter.
-  int? _midiParamDivisions(FxParamTarget target) {
+  /// [target]'s parameter when it snaps to positions, so a MIDI value lands
+  /// on one, or `null` for a continuous parameter.
+  FxParamInfo? _midiSteppedParam(FxParamTarget target) {
     for (final effect
         in _looper.chainEntriesAt(target.address) ?? <TrackEffect>[]) {
       if (effect.slotId == target.slotId &&
@@ -927,7 +927,7 @@ extension MidiControlEditing on ControlCubit {
           target.param >= 0 &&
           target.param < effect.type.params.length) {
         final param = effect.type.params[target.param];
-        return param.isStepped ? param.steps - 1 : null;
+        return param.isStepped ? param : null;
       }
     }
     return null;

@@ -62,16 +62,24 @@ extension EngineLocalizations on AppLocalizations {
             : tenths >= 100
             ? fxValueHz(value.round())
             : fxValueHzFine(tenths),
-      FxParamUnit.semitones => _pitchInterval(value.round()),
+      FxParamUnit.semitones => _pitchInterval(value),
       FxParamUnit.times => fxValueTimes(value),
       FxParamUnit.choice => _choiceName(p, p.positionOf(setting)),
     };
   }
 
-  String _pitchInterval(int semitones) {
-    if (semitones == 0) return pitchUnison;
-    final sign = semitones > 0 ? '+' : '-';
-    final magnitude = semitones.abs();
+  /// A pitch interval: unison, whole octaves or semitones, or semitones with
+  /// one decimal for a setting between semitones (the octaver plays its shift
+  /// as set; only its controls snap to semitones).
+  String _pitchInterval(double semitones) {
+    final whole = semitones.round();
+    if ((semitones - whole).abs() >= 0.05) {
+      final sign = semitones > 0 ? '+' : '-';
+      return pitchSemitonesFine(sign, (semitones.abs() * 10).round() / 10);
+    }
+    if (whole == 0) return pitchUnison;
+    final sign = whole > 0 ? '+' : '-';
+    final magnitude = whole.abs();
     if (magnitude % 12 == 0) return pitchOctaves(sign, magnitude ~/ 12);
     return pitchSemitones(sign, magnitude);
   }

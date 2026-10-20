@@ -416,6 +416,7 @@
     "pitchUnison": "Unísono",
     "pitchOctaves": "{sign}{count} oct",
     "pitchSemitones": "{sign}{count} st",
+    "pitchSemitonesFine": "{sign}{count} st",
     "defaultTrackName": "PISTA {trackNumber}",
     "@deviceReconnectedSnackbar": {
         "placeholders": {
