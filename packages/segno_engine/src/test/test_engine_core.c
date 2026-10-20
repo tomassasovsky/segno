@@ -20790,30 +20790,60 @@ static void test_octaver_hop_stagger_alignment(void) {
   {
     float worst_drop = 0.0f;
     int worst_phase = -1;
+    /* Driven on a heap state through fx_apply_chain, the engine's own chain
+     * runner and the place the warmup lives, rather than through a whole
+     * engine per phase. */
+    static int32_t types[LE_FX_MAX];
+    static float params[LE_FX_MAX][LE_FX_PARAMS];
+    int32_t on[LE_FX_MAX];
+    for (int s = 0; s < LE_FX_MAX; ++s) {
+      types[s] = LE_FX_NONE;
+      on[s] = 1;
+    }
+    types[0] = LE_FX_OCTAVER;
+    params[0][0] = 0.5f; /* unison */
+    params[0][1] = 1.0f; /* tone open */
+    params[0][2] = 1.0f; /* full wet */
+    params[0][3] = 0.0f; /* PV */
     for (int32_t phase = 0; phase < LE_PV_HOP; ++phase) {
-      le_engine* e = oct_stagger_engine_at(0, 1.0f, phase);
+      le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+      CHECK(fx != NULL);
+      if (fx == NULL) break;
+      fx->hop_seed = phase; /* slot 0: the phase IS the seed */
+      for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
+      le_fx_entry_reset(fx, 0);
+      CHECK(le_fx_prepare(fx, 0, LE_FX_OCTAVER, OCT_SR) == LE_OK);
       /* Settle and measure this run's own floor: the phase vocoder does not
        * reconstruct a constant exactly, and how far off it sits depends on
        * libm and arch, so the dip is measured against this, not 0.5. */
-      oct_stagger_run(e, in, out, 4 * OCT_PV_N);
       float steady = 1e9f;
-      for (int i = 2 * OCT_PV_N; i < 4 * OCT_PV_N; ++i) {
-        if (out[i] < steady) steady = out[i];
+      for (int i = 0; i < 4 * OCT_PV_N; ++i) {
+        float l = 0.5f;
+        float r = 0.5f;
+        fx_apply_chain(fx, OCT_SR, OCT_SR, &l, &r, 1, types, params, on);
+        if (i >= 2 * OCT_PV_N && l < steady) steady = l;
       }
       CHECK(fabsf(steady - 0.5f) < 0.01f);
-      le_engine_set_monitor_input_fx_enabled(e, 0, 0, 0);
-      oct_stagger_run(e, in, out, OCT_PV_N);
-      le_engine_set_monitor_input_fx_enabled(e, 0, 0, 1);
-      oct_stagger_run(e, in, out, 4 * OCT_PV_N);
+      on[0] = 0;
+      for (int i = 0; i < OCT_PV_N; ++i) {
+        float l = 0.5f;
+        float r = 0.5f;
+        fx_apply_chain(fx, OCT_SR, OCT_SR, &l, &r, 1, types, params, on);
+      }
+      on[0] = 1;
       float min = 1e9f;
       for (int i = 0; i < 4 * OCT_PV_N; ++i) {
-        if (out[i] < min) min = out[i];
+        float l = 0.5f;
+        float r = 0.5f;
+        fx_apply_chain(fx, OCT_SR, OCT_SR, &l, &r, 1, types, params, on);
+        if (l < min) min = l;
       }
       if (steady - min > worst_drop) {
         worst_drop = steady - min;
         worst_phase = (int)phase;
       }
-      le_engine_destroy(e);
+      le_fx_state_free_buffers(fx);
+      free(fx);
     }
     printf("  re-enable worst drop below steady %.7f at phase %d\n",
            (double)worst_drop, worst_phase);
@@ -20971,9 +21001,17 @@ static void test_octaver_hop_stagger_seeds(void) {
   }
 
   /* d. A track's lane 0 and its bus, the pair a track most often uses
-   *    together, do not share a quarter. */
+   *    together, do not share a quarter; nor do the first owners of the
+   *    lane, monitor, bus and output-bus kinds. */
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     CHECK(le_fx_lane_hop_seed(t, 0) != le_fx_lane_hop_seed(t, LE_MAX_LANES));
+  }
+  {
+    const int32_t first[4] = {le_fx_lane_hop_seed(0, 0),
+                              le_fx_monitor_hop_seed(0),
+                              le_fx_lane_hop_seed(0, LE_MAX_LANES),
+                              le_fx_output_hop_seed(0)};
+    CHECK(oct_spread_any_offset(first));
   }
 
   le_engine_destroy(e);
@@ -21037,6 +21075,44 @@ static void test_octaver_hop_stagger_survives_recipe_publish(void) {
     for (int b = 0; b < 4; ++b) CHECK(frames_in_block[b] == 1);
   }
   drain(e);
+  le_engine_destroy(e);
+}
+
+/* A whole-chain stomp re-enables its ring-owning slots one clear spacing
+ * apart, each resetting at its own instant. The spacing is a whole hop, so
+ * every octaver of the chain still lands on its own quarter: with a ring-less
+ * drive between two octavers (the case where a half-hop spacing put both
+ * octavers' frames in one callback), slots 0 and 2 run their heavy ticks half
+ * a hop apart after the stomp, as their quarters say. */
+static void test_octaver_hop_stagger_survives_chain_stomp(void) {
+  printf("test_octaver_hop_stagger_survives_chain_stomp\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, OCT_SR, 1, 1, OCT_SR * 4);
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_input_output(e, 0, 0x1);
+  const int32_t chain[3] = {LE_FX_OCTAVER, LE_FX_DRIVE, LE_FX_OCTAVER};
+  for (int s = 0; s < 3; ++s) {
+    le_engine_set_monitor_input_fx(e, 0, s, chain[s]);
+    if (chain[s] == LE_FX_OCTAVER) {
+      le_engine_set_monitor_input_fx_param(e, 0, s, 3, 0.0f); /* PV */
+    }
+  }
+  le_engine_set_monitor_input_fx_count(e, 0, 3);
+  float in[64];
+  float out[64];
+  for (int i = 0; i < 64; ++i) in[i] = 0.3f * sinf((float)i * 0.2f);
+  for (int b = 0; b < 100; ++b) le_engine_process(e, out, in, 64);
+  /* Bypass the chain, let it settle, stomp it back on. */
+  CHECK(le_engine_set_monitor_input_fx_chain_enabled(e, 0, 0) == LE_OK);
+  for (int b = 0; b < 100; ++b) le_engine_process(e, out, in, 64);
+  CHECK(le_engine_set_monitor_input_fx_chain_enabled(e, 0, 1) == LE_OK);
+  for (int b = 0; b < 100; ++b) le_engine_process(e, out, in, 64);
+  const le_fx_state* fx = &e->monitors[0].fx;
+  const int a = fx->oct[0][0].hop_count;
+  const int c = fx->oct[2][0].hop_count;
+  const int gap = ((c - a) % LE_PV_HOP + LE_PV_HOP) % LE_PV_HOP;
+  printf("  slot 0 counter %d, slot 2 counter %d: %d apart\n", a, c, gap);
+  CHECK(gap == 2 * LE_PV_STAGGER_QUARTER);
   le_engine_destroy(e);
 }
 
@@ -37474,6 +37550,7 @@ int main(void) {
   test_octaver_hop_stagger_seeds();
   test_octaver_hop_stagger_survives_recipe_publish();
   test_octaver_hop_schedule_survives_mode_switch();
+  test_octaver_hop_stagger_survives_chain_stomp();
   test_fft_roundtrip();
 
   test_json_read_parses_nested_objects_and_arrays();

@@ -1447,6 +1447,32 @@ static void le_pr_fx_chain_init_from_lane(le_pr_fx_chain* c,
   }
 }
 
+/* Settles slot [s]'s enable crossfade at its EFFECTIVE arm bit, as the live
+ * owner and the wet cache hold it (le_fx_frozen_state_init): a calloc'd zero
+ * state would fade the chain in at frame 0, and an enabled seed on a slot the
+ * arm marks disabled would fade out an effect that was never heard. */
+static void le_pr_settle_arm_bit(le_fx_state* fx, int s, int effective) {
+  if (effective) {
+    le_fx_enable_seed_settled(fx, s);
+  } else {
+    le_fx_enable_force_bypass(fx, s);
+  }
+}
+
+/* Puts arm-time slot [s] of [type] in the state the live owner's slot was in
+ * when the type landed: the reset the ring handler ran (a raw calloc zero is
+ * not that state; the octaver would ramp its shift up from two octaves down,
+ * fade its mode in over ~15 ms and sit at hop phase 0), its buffers, and for
+ * an octaver its smoothers and mode already settled at [params], since a slot
+ * carrying it at arm is not ramping. Returns 0 on an allocation failure. */
+static int le_pr_arm_slot(le_fx_state* fx, int s, int32_t type,
+                          const float* params, int32_t sample_rate) {
+  le_fx_entry_reset(fx, s);
+  const int ok = le_fx_prepare(fx, s, type, sample_rate) == LE_OK;
+  if (type == LE_FX_OCTAVER) le_fx_octaver_seed_settled(fx, s, params);
+  return ok;
+}
+
 /* This render's heap le_fx_state teardown is the shared offline-state one
  * (le_fx_state_free_buffers, engine_fx.c) — a future heap-owning effect adds
  * its free there once and this renderer inherits it. */
@@ -1514,9 +1540,12 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
   }
   /* The live lane's hop-stagger seed (#915; this render reconstructs lane 0
    * of track [channel]), set BEFORE any octaver's hop counter is seeded from
-   * it. EXACT for an octaver that lands during the capture: the replay below
-   * runs le_fx_entry_reset at the logged frame the audio thread ran it, so
-   * both chains start the counter from this lane's phase at the same instant.
+   * it. EXACT for an octaver that lands during the capture through a logged
+   * command (LE_CMD_SET_LANE_FX): the replay below runs le_fx_entry_reset at
+   * the logged frame the audio thread ran it, so both chains start the counter
+   * from this lane's phase at the same instant. A lane chain published by
+   * recipe is not in events.log at all; logging it is the rack plan's
+   * applied-frame logging (#887, part 4).
    * An octaver already in the chain at arm is approximated, like every
    * arm-time slot here (an empty delay ring, a cold reverb): its live counter
    * is this phase plus an elapsed-frame count nothing records. */
@@ -1527,11 +1556,7 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
    * an enabled seed on a slot the arm marks disabled would fade an effect out
    * that was never heard. */
   for (int s = 0; s < LE_FX_MAX; ++s) {
-    if (chain.chain_enabled && chain.enabled[s]) {
-      le_fx_enable_seed_settled(fx, s);
-    } else {
-      le_fx_enable_force_bypass(fx, s);
-    }
+    le_pr_settle_arm_bit(fx, s, chain.chain_enabled && chain.enabled[s]);
   }
   /* A prepare failure (OOM on a delay ring / octaver's phase-vocoder heap)
    * is NOT let through as a silent dry-passthrough degradation: fx_delay/
@@ -1544,21 +1569,9 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
   int prepare_failed = 0;
   for (int s = 0; s < chain.count; ++s) {
     if (chain.type[s] == LE_FX_NONE) continue;
-    /* Start the slot from the reset the live lane got when the type landed
-     * (the ring handler runs le_fx_entry_reset), as the wet cache does. A raw
-     * calloc zero is not that state: the octaver's shift smoother would ramp
-     * up from two octaves down, its mode crossfade would fade the wet in over
-     * ~15 ms, and its hop counter would sit at 0 instead of this lane's
-     * phase. */
-    le_fx_entry_reset(fx, s);
-    if (le_fx_prepare(fx, s, chain.type[s], m->sample_rate) != LE_OK) {
+    if (!le_pr_arm_slot(fx, s, chain.type[s], chain.params[s],
+                        m->sample_rate)) {
       prepare_failed = 1;
-    }
-    /* A lane already carrying an octaver at arm is not ramping its shift or
-     * crossfading its mode: settle those, as le_fx_enable_seed_settled does
-     * for the enable crossfade above. */
-    if (chain.type[s] == LE_FX_OCTAVER) {
-      le_fx_octaver_seed_settled(fx, s, chain.params[s]);
     }
   }
 
@@ -1795,17 +1808,11 @@ static int le_pr_render_master(const le_pr_manifest* m,
   fx->hop_seed = le_fx_output_hop_seed(m->arm_capture_bus);
   int ok = 1;
   for (int i = 0; i < LE_FX_MAX; ++i) {
-    /* Settled at the effective arm bit (see le_pr_render_wet_track). */
-    if (chain.chain_enabled && chain.enabled[i]) {
-      le_fx_enable_seed_settled(fx, i);
-    } else {
-      le_fx_enable_force_bypass(fx, i);
-    }
+    le_pr_settle_arm_bit(fx, i, chain.chain_enabled && chain.enabled[i]);
     if (chain.type[i] == LE_FX_NONE) continue;
-    le_fx_entry_reset(fx, i);
-    if (le_fx_prepare(fx, i, chain.type[i], m->sample_rate) != LE_OK) ok = 0;
-    if (chain.type[i] == LE_FX_OCTAVER) {
-      le_fx_octaver_seed_settled(fx, i, chain.params[i]);
+    if (!le_pr_arm_slot(fx, i, chain.type[i], chain.params[i],
+                        m->sample_rate)) {
+      ok = 0;
     }
   }
   float level = m->arm_output_level;
