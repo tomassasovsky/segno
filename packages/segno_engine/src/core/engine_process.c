@@ -7901,7 +7901,8 @@ static inline void mix_tracks_frame(
     /* The track's loop top on the engine clock, for the wet cache's
      * prediction of the lap a print will engage at (#941). */
     if (trk_rp == 0 &&
-        (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING)) {
+        (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
+        !tr->head.reversed && le_head_is_integral(&tr->head)) {
       atomic_store_explicit(&tr->a_top_clock, e->fx_clock_base + f,
                             memory_order_relaxed);
     }
@@ -9121,8 +9122,15 @@ void le_engine_process(le_engine* e, float* output, const float* input,
 
     viz_tap_frame(e, pos, frame_out_peak);
     track_viz_tap_frame(e, tc, st, frame_trk_peak);
+    /* Frame f is mixed: anything the transport resets from here (a quantized
+     * record start applying a capture image) first processes frame f + 1. */
+    atomic_store_explicit(&e->a_fx_frame, e->fx_clock_base + f + 1u,
+                          memory_order_relaxed);
     advance_transport_frame(e, tc, st, perf_frame_base + f);
   }
+  /* ...and a block-end install (a bounce) first processes the next block. */
+  atomic_store_explicit(&e->a_fx_frame, e->fx_clock_base + frames,
+                        memory_order_relaxed);
 
   if (backing_ran) {
     le_backing_publish(e);

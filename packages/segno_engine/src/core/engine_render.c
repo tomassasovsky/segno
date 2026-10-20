@@ -930,7 +930,7 @@ static void le_render_window(le_render_job* j, int32_t from, int32_t n,
             }
           }
           if (ln->fx != NULL) {
-            ln->fx->clock = (uint32_t)k; /* the window frame (#941) */
+            ln->fx->clock = (uint32_t)f; /* the window frame (#941) */
             fx_apply_chain(ln->fx, sr, cap, &a, &b, ln->chain.count,
                            ln->chain.type, ln->chain.params, ln->post_bits);
           }
@@ -946,7 +946,7 @@ static void le_render_window(le_render_job* j, int32_t from, int32_t n,
         }
       }
       if (s->track_has) {
-        s->tfx->clock = (uint32_t)k;
+        s->tfx->clock = (uint32_t)f;
         fx_apply_chain_with_gain(s->tfx, sr, cap, &tl, &tr, s->track.count,
                                  s->track.type, s->track.params, s->track_bits,
                                  s->track.pre, g);
@@ -958,7 +958,7 @@ static void le_render_window(le_render_job* j, int32_t from, int32_t n,
       mr += tr;
     }
     if (j->mixfx != NULL) {
-      j->mixfx->clock = (uint32_t)k;
+      j->mixfx->clock = (uint32_t)f;
       fx_apply_chain(j->mixfx, sr, cap, &ml, &mr, j->mix.count, j->mix.type,
                      j->mix.params, j->mix_bits);
     }
