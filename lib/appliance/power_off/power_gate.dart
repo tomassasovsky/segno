@@ -49,13 +49,16 @@ class PowerSnapshot extends Equatable {
 
 /// Projects live feature state onto a [PowerSnapshot].
 ///
+/// [backing] is null when no backing player is mounted; the session then
+/// counts as having content.
+///
 /// Count-in is the looper transport's own flag, not TransportClockState
 /// running — that flag is also true while loops play, which is not in-flight.
 PowerSnapshot powerSnapshotOf({
   required LooperState looper,
   required PerformanceRecorderState recorder,
   required SessionState session,
-  BackingState backing = const BackingState(),
+  required BackingState? backing,
   bool transferInFlight = false,
 }) {
   return PowerSnapshot(
@@ -70,8 +73,11 @@ PowerSnapshot powerSnapshotOf({
         (recorder is PerformanceRecorderIdle && recorder.recovering),
     transferInFlight: transferInFlight,
     currentSessionName: session.currentSessionName,
+    // An unknown backing (no player mounted) counts as content: the save
+    // is kept rather than a setup dropped unseen.
     sessionHasContent:
         looper.hasContent ||
+        backing == null ||
         backing.prepared.isNotEmpty ||
         backing.loaded != null,
   );

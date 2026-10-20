@@ -165,6 +165,49 @@ void main() {
       expect(cubit.state.phase, PowerPhase.goodbye);
     });
 
+    testWidgets('the lines follow the rig while the dialog is open', (
+      tester,
+    ) async {
+      final cubit = _cubit();
+      addTearDown(cubit.close);
+      final changes = StreamController<Object?>();
+      addTearDown(changes.close);
+      var reading = const PowerSnapshot(sessionHasContent: false);
+      cubit.press(reading);
+      await tester.pumpApp(
+        BlocProvider.value(
+          value: cubit,
+          child: Scaffold(
+            body: PowerDialog(
+              snapshot: () => reading,
+              save: () async {},
+              changes: [changes.stream],
+            ),
+          ),
+        ),
+      );
+      const empty =
+          'Playback will stop. This session is empty, so there is nothing '
+          'to save.';
+      expect(find.text(empty), findsOneWidget);
+
+      reading = const PowerSnapshot();
+      changes.add(null);
+      await tester.pump();
+
+      expect(find.text(empty), findsNothing);
+      expect(
+        find.text('Playback will stop and your session will be saved.'),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          "This session has no name yet. You'll name it before it saves.",
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('a named session that holds nothing keeps the save promise', (
       tester,
     ) async {

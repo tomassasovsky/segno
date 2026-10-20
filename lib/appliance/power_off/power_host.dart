@@ -8,7 +8,6 @@ import 'package:segno/appliance/power_off/power_dialog.dart';
 import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
 import 'package:segno/backing/cubit/backing_cubit.dart';
-import 'package:segno/backing/model/backing_state.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -25,8 +24,7 @@ PowerSnapshot currentPowerSnapshot(BuildContext context) => powerSnapshotOf(
   looper: context.read<LooperBloc>().state,
   recorder: context.read<PerformanceRecorderCubit>().state,
   session: context.read<SessionCubit>().state,
-  backing:
-      _maybeRead<BackingCubit>(context)?.state.backing ?? const BackingState(),
+  backing: _maybeRead<BackingCubit>(context)?.state.backing,
   // Asked of the repository at the press: a lease can be taken between two
   // of the Storage page's reads.
   transferInFlight:
@@ -173,6 +171,10 @@ class _PowerHostState extends State<PowerHost> {
       snapshot: _snapshot,
       save: saveOpenSession(context),
       stagedUpdate: _stagedUpdate(context),
+      changes: [
+        context.read<LooperBloc>().stream,
+        ?_maybeRead<BackingCubit>(context)?.stream,
+      ],
     );
     if (!mounted) return;
     _dialogOpen = false;
