@@ -1521,10 +1521,18 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
    * arm-time slot here (an empty delay ring, a cold reverb): its live counter
    * is this phase plus an elapsed-frame count nothing records. */
   fx->hop_seed = le_fx_lane_hop_seed(channel, 0);
-  /* Seed the enable-crossfade runtime SETTLED at enabled, mirroring
-   * le_lane_reset — a calloc'd zero state would fade the whole chain in over
-   * the ramp window at frame 0 and break golden parity. */
-  for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
+  /* Seed the enable-crossfade runtime SETTLED at each slot's effective arm
+   * bit, as the wet cache does (le_fx_frozen_state_init): a calloc'd zero
+   * state would fade the whole chain in over the ramp window at frame 0, and
+   * an enabled seed on a slot the arm marks disabled would fade an effect out
+   * that was never heard. */
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    if (chain.chain_enabled && chain.enabled[s]) {
+      le_fx_enable_seed_settled(fx, s);
+    } else {
+      le_fx_enable_force_bypass(fx, s);
+    }
+  }
   /* A prepare failure (OOM on a delay ring / octaver's phase-vocoder heap)
    * is NOT let through as a silent dry-passthrough degradation: fx_delay/
    * fx_octaver already handle a NULL buffer gracefully at the DSP level
@@ -1787,7 +1795,12 @@ static int le_pr_render_master(const le_pr_manifest* m,
   fx->hop_seed = le_fx_output_hop_seed(m->arm_capture_bus);
   int ok = 1;
   for (int i = 0; i < LE_FX_MAX; ++i) {
-    le_fx_enable_seed_settled(fx, i);
+    /* Settled at the effective arm bit (see le_pr_render_wet_track). */
+    if (chain.chain_enabled && chain.enabled[i]) {
+      le_fx_enable_seed_settled(fx, i);
+    } else {
+      le_fx_enable_force_bypass(fx, i);
+    }
     if (chain.type[i] == LE_FX_NONE) continue;
     le_fx_entry_reset(fx, i);
     if (le_fx_prepare(fx, i, chain.type[i], m->sample_rate) != LE_OK) ok = 0;

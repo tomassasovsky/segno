@@ -19,8 +19,8 @@
  *   lanes N   one octaver on lane 0 of N tracks, N publishes in one block.
  *
  * Reported per scenario: p50 / p99 / p99.9 / max per callback, the callbacks
- * over the period's deadline, and the mean of each block phase (block index
- * mod 4), which is where the FFT work lands.
+ * over the period's deadline, and the mean cost of the blocks starting in
+ * each quarter of the octaver's hop, which is where the FFT work lands.
  *
  *   ./bench_fx_cpu.sh                      # 96 kHz / 64 frames, unpaced
  *   ./bench_fx_cpu.sh --paced              # paced to the period, like a device
@@ -52,7 +52,11 @@
 #include "segno_engine_api.h"
 #include "bench_common.h"
 
-#define PHASES 4 /* LE_PV_HOP / 64: the octaver's hop in 64-frame callbacks */
+/* The octaver's hop (LE_PV_HOP, 256 samples) in quarters: each block is
+ * counted in the quarter its first sample falls in, so the column shows where
+ * the FFT work lands at any period. */
+#define HOP 256
+#define PHASES 4
 
 static int g_paced;
 
@@ -71,6 +75,13 @@ static void octaver_entry(le_fx_recipe* r, int s) {
 /* Times `blocks` callbacks after `warm` discarded ones. */
 static stats time_blocks(rig* r, int blocks, int warm, double phase_mean[PHASES]) {
   double* us = (double*)malloc(sizeof(double) * (size_t)blocks);
+  stats none;
+  memset(&none, 0, sizeof(none));
+  if (us == NULL) {
+    fprintf(stderr, "out of memory for %d timings\n", blocks);
+    for (int p = 0; p < PHASES; ++p) phase_mean[p] = 0.0;
+    return none;
+  }
   double phase_sum[PHASES] = {0};
   int phase_n[PHASES] = {0};
   const double step = g_budget_us; /* one period, in us */
@@ -87,8 +98,10 @@ static stats time_blocks(rig* r, int blocks, int warm, double phase_mean[PHASES]
     const double dt = now_us() - t0;
     if (b >= warm) {
       us[kept++] = dt;
-      phase_sum[b % PHASES] += dt;
-      phase_n[b % PHASES]++;
+      const int q =
+          (int)(((long long)b * r->period) % HOP) / (HOP / PHASES);
+      phase_sum[q] += dt;
+      phase_n[q]++;
     }
   }
   rt_leave();

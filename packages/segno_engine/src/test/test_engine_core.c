@@ -20675,36 +20675,43 @@ static double oct_null_err(const float* in, const float* out, int total,
   return den > 0.0 ? sqrt(num / den) : 0.0;
 }
 
-/* The callback bucket an instance reset at a block boundary with hop phase
- * [p] runs its frames in, for [block]-frame callbacks: the first frame lands
- * (LE_PV_HOP - p) % LE_PV_HOP samples after the reset. */
-static int oct_bucket(int32_t p, int block) {
-  return ((LE_PV_HOP - p) % LE_PV_HOP) / block;
+/* The callback an instance with hop phase [p] runs its frames in, for
+ * [block]-frame callbacks, when its reset happened [shift] samples into a
+ * callback: the first frame lands (LE_PV_HOP - p) % LE_PV_HOP samples after
+ * the reset. */
+static int oct_bucket_at(int32_t p, int block, int shift) {
+  return (((LE_PV_HOP - p) % LE_PV_HOP + shift) % LE_PV_HOP) / block;
 }
 
-/* Whether the first [n] phases in [ph] fall in [n] different [block]-frame
- * buckets (n <= LE_PV_HOP / block). */
-static int oct_buckets_distinct(const int32_t* ph, int n, int block) {
+/* Whether [n] phases fall in [n] different [block]-frame callbacks after a
+ * common reset at offset [shift]. */
+static int oct_buckets_distinct_at(const int32_t* ph, int n, int block,
+                                   int shift) {
   int used[LE_PV_HOP] = {0};
   for (int i = 0; i < n; ++i) {
-    const int b = oct_bucket(ph[i], block);
+    const int b = oct_bucket_at(ph[i], block, shift);
     if (used[b]) return 0;
     used[b] = 1;
   }
   return 1;
 }
 
-/* The two properties the stagger steps were searched for, along one axis:
- * the first four instances in four different 64-frame callbacks and the
- * first eight in eight different 32-frame ones. */
-static int oct_axis_spread(const int32_t* ph, int n) {
-  return oct_buckets_distinct(ph, n < 4 ? n : 4, 64) &&
-         oct_buckets_distinct(ph, n < 8 ? n : 8, 32);
+static int oct_buckets_distinct(const int32_t* ph, int n, int block) {
+  return oct_buckets_distinct_at(ph, n, block, 0);
+}
+
+/* The stagger's guarantee for four instances reset together: four different
+ * 64-frame callbacks whatever the reset's offset inside a callback. */
+static int oct_spread_any_offset(const int32_t* ph) {
+  for (int shift = 0; shift < LE_PV_HOP; ++shift) {
+    if (!oct_buckets_distinct_at(ph, 4, 64, shift)) return 0;
+  }
+  return 1;
 }
 
 static int32_t oct_slot_phase(int32_t seed, int slot) {
   return (int32_t)(((uint32_t)seed +
-                    (uint32_t)slot * (uint32_t)LE_PV_STAGGER_SLOT_STEP) &
+                    (uint32_t)slot * (uint32_t)LE_PV_STAGGER_QUARTER) &
                    (uint32_t)(LE_PV_HOP - 1));
 }
 
@@ -20874,94 +20881,99 @@ static void test_octaver_hop_stagger_alignment(void) {
   free(out);
 }
 
-/* The stagger STEPS, which the alignment test cannot pin: a step "tidied"
- * into a multiple of another axis keeps every leg there green while putting
- * four per-track octavers back on one sample index. So the properties the
- * steps were searched for (engine_fx.h) are asserted directly, over the
- * engine's own owners as le_engine_create seeds them. */
+/* The stagger SEEDS, which the alignment test cannot pin: a seed or slot
+ * step moved off the quarter lattice keeps every leg there green while
+ * letting two of four instances share a callback once the reset lands inside
+ * one. So the guarantee in engine_fx.h is asserted directly, over the
+ * engine's own owners as le_engine_create seeds them, at every reset offset. */
 static void test_octaver_hop_stagger_seeds(void) {
   printf("test_octaver_hop_stagger_seeds\n");
   le_engine* e = le_engine_create();
 
-  /* a. Every chain owner the engine holds has a distinct base phase: two
-   *    octavers in different chains are both slot 0, so only the seed can
-   *    separate them. */
-  int32_t base[LE_MAX_TRACKS * (LE_MAX_LANES + 1) + LE_MAX_MONITORED_INPUTS +
-               2 * LE_MAX_OUTPUT_BUSES];
-  int n = 0;
+  /* a. Every owner's base phase is on the quarter lattice, and the engine
+   *    holds exactly what the seed functions say. */
+  int owners = 0;
+  int off_lattice = 0;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
-    for (int l = 0; l < LE_MAX_LANES; ++l) {
-      base[n++] = e->tracks[t].lanes[l].fx.hop_seed;
-      CHECK(e->tracks[t].lanes[l].fx.hop_seed == le_fx_lane_hop_seed(t, l));
+    for (int l = 0; l <= LE_MAX_LANES; ++l) {
+      const int32_t seed = l < LE_MAX_LANES ? e->tracks[t].lanes[l].fx.hop_seed
+                                            : e->tracks[t].bus.fx.hop_seed;
+      CHECK(seed == le_fx_lane_hop_seed(t, l));
+      off_lattice += seed % LE_PV_STAGGER_QUARTER != 0;
+      owners++;
     }
-    base[n++] = e->tracks[t].bus.fx.hop_seed;
   }
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    base[n++] = e->monitors[c].fx.hop_seed;
+    CHECK(e->monitors[c].fx.hop_seed == le_fx_monitor_hop_seed(c));
+    off_lattice += e->monitors[c].fx.hop_seed % LE_PV_STAGGER_QUARTER != 0;
+    owners++;
   }
   for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
-    base[n++] = e->all_tracks_fx[k].hop_seed;
-    base[n++] = e->outputs[k].fx.fx.hop_seed;
+    CHECK(e->all_tracks_fx[k].hop_seed == le_fx_all_tracks_hop_seed(k));
+    CHECK(e->outputs[k].fx.fx.hop_seed == le_fx_output_hop_seed(k));
+    off_lattice += e->all_tracks_fx[k].hop_seed % LE_PV_STAGGER_QUARTER != 0;
+    off_lattice += e->outputs[k].fx.fx.hop_seed % LE_PV_STAGGER_QUARTER != 0;
+    owners += 2;
   }
-  int collisions = 0;
-  for (int i = 0; i < n; ++i) {
-    for (int j = i + 1; j < n; ++j) {
-      if (base[i] == base[j]) collisions++;
-    }
-  }
-  printf("  %d owners, %d shared base phases\n", n, collisions);
-  CHECK(n == 144);
-  CHECK(collisions == 0);
+  CHECK(owners == 144);
+  CHECK(off_lattice == 0);
 
-  /* b. Along each axis that commonly holds octavers together, the first four
-   *    land in four different 64-frame callbacks and the first eight in eight
-   *    different 32-frame ones. */
-  int32_t ph[LE_FX_MAX];
-  for (int s = 0; s < LE_FX_MAX; ++s) ph[s] = oct_slot_phase(0, s);
-  CHECK(oct_axis_spread(ph, LE_FX_MAX)); /* one chain's slots */
-  for (int t = 0; t < LE_MAX_TRACKS; ++t) ph[t] = le_fx_lane_hop_seed(t, 0);
-  CHECK(oct_axis_spread(ph, LE_MAX_TRACKS)); /* the same lane on each track */
-  for (int l = 0; l <= LE_MAX_LANES; ++l) ph[l] = le_fx_lane_hop_seed(0, l);
-  CHECK(oct_axis_spread(ph, LE_MAX_LANES + 1)); /* one track's lanes, its bus */
-  for (int c = 0; c < 8; ++c) ph[c] = le_fx_monitor_hop_seed(c);
-  CHECK(oct_axis_spread(ph, 8)); /* the monitor inputs */
-  for (int k = 0; k < 8; ++k) ph[k] = le_fx_output_hop_seed(k);
-  CHECK(oct_axis_spread(ph, 8)); /* the output buses */
-  for (int k = 0; k < 8; ++k) ph[k] = le_fx_all_tracks_hop_seed(k);
-  CHECK(oct_axis_spread(ph, 8)); /* the all-tracks instances */
-
-  /* ...and the first owner of each group runs in its own callback, so a
-   * monitor octaver and a track octaver and a bus octaver do not pile up. */
-  {
-    const int32_t first[4] = {le_fx_lane_hop_seed(0, 0), le_fx_monitor_hop_seed(0),
-                              le_fx_output_hop_seed(0),
-                              le_fx_all_tracks_hop_seed(0)};
-    CHECK(oct_buckets_distinct(first, 4, 64));
-    CHECK(oct_buckets_distinct(first, 4, 32));
-  }
-
-  /* c. Every slot of one chain has its own phase, and the slot axis does not
-   *    alias the owner axes: slot s on track t + 1 never shares a phase with
-   *    slot s + 1 on track t, and likewise for the first eight monitors. */
-  {
-    int seen[LE_PV_HOP] = {0};
-    int dup = 0;
-    for (int s = 0; s < LE_FX_MAX; ++s) dup += seen[oct_slot_phase(0, s)]++;
-    CHECK(dup == 0);
-  }
-  {
-    int seen_t[LE_PV_HOP] = {0};
-    int seen_m[LE_PV_HOP] = {0};
-    int dup_t = 0;
-    int dup_m = 0;
-    for (int o = 0; o < 8; ++o) {
-      for (int s = 0; s < 8; ++s) {
-        dup_t += seen_t[oct_slot_phase(le_fx_lane_hop_seed(o, 0), s)]++;
-        dup_m += seen_m[oct_slot_phase(le_fx_monitor_hop_seed(o), s)]++;
+  /* b. Four consecutive slots of any owner's chain run in four different
+   *    64-frame callbacks at every reset offset. */
+  int bad_chains = 0;
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    for (int l = 0; l <= LE_MAX_LANES; ++l) {
+      for (int first = 0; first + 4 <= LE_FX_MAX; first += 7) {
+        int32_t ph[4];
+        for (int i = 0; i < 4; ++i) {
+          ph[i] = oct_slot_phase(le_fx_lane_hop_seed(t, l), first + i);
+        }
+        bad_chains += !oct_spread_any_offset(ph);
       }
     }
-    CHECK(dup_t == 0);
-    CHECK(dup_m == 0);
+  }
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    int32_t ph[4];
+    for (int i = 0; i < 4; ++i) {
+      ph[i] = oct_slot_phase(le_fx_monitor_hop_seed(c), i);
+    }
+    bad_chains += !oct_spread_any_offset(ph);
+  }
+  CHECK(bad_chains == 0);
+
+  /* c. The same slot on four consecutive owners of each kind runs in four
+   *    different callbacks at every offset: tracks (lane 0), the lanes of a
+   *    track, monitors, output buses, all-tracks instances. */
+  for (int slot = 0; slot < 8; ++slot) {
+    for (int first = 0; first + 4 <= LE_MAX_TRACKS; ++first) {
+      int32_t tr[4];
+      int32_t ln[4];
+      for (int i = 0; i < 4; ++i) {
+        tr[i] = oct_slot_phase(le_fx_lane_hop_seed(first + i, 0), slot);
+        ln[i] = oct_slot_phase(le_fx_lane_hop_seed(0, first + i), slot);
+      }
+      CHECK(oct_spread_any_offset(tr));
+      CHECK(oct_spread_any_offset(ln));
+    }
+    for (int first = 0; first + 4 <= LE_MAX_OUTPUT_BUSES; ++first) {
+      int32_t mo[4];
+      int32_t ou[4];
+      int32_t at[4];
+      for (int i = 0; i < 4; ++i) {
+        mo[i] = oct_slot_phase(le_fx_monitor_hop_seed(first + i), slot);
+        ou[i] = oct_slot_phase(le_fx_output_hop_seed(first + i), slot);
+        at[i] = oct_slot_phase(le_fx_all_tracks_hop_seed(first + i), slot);
+      }
+      CHECK(oct_spread_any_offset(mo));
+      CHECK(oct_spread_any_offset(ou));
+      CHECK(oct_spread_any_offset(at));
+    }
+  }
+
+  /* d. A track's lane 0 and its bus, the pair a track most often uses
+   *    together, do not share a quarter. */
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    CHECK(le_fx_lane_hop_seed(t, 0) != le_fx_lane_hop_seed(t, LE_MAX_LANES));
   }
 
   le_engine_destroy(e);
@@ -21015,13 +21027,66 @@ static void test_octaver_hop_stagger_survives_recipe_publish(void) {
       CHECK(phase[s] == oct_slot_phase(le_fx_monitor_hop_seed(0), s));
     }
     CHECK(oct_buckets_distinct(phase, 4, 64));
+    CHECK(oct_spread_any_offset(phase));
     /* And the work actually spreads: over one hop of 64-frame blocks each
      * block runs exactly one instance's frame. */
     int frames_in_block[4] = {0};
-    for (int s = 0; s < 4; ++s) frames_in_block[oct_bucket(phase[s], 64)]++;
+    for (int s = 0; s < 4; ++s) {
+      frames_in_block[oct_bucket_at(phase[s], 64, 0)]++;
+    }
     for (int b = 0; b < 4; ++b) CHECK(frames_in_block[b] == 1);
   }
   drain(e);
+  le_engine_destroy(e);
+}
+
+/* The two octaver modes run one counter in opposite directions (PV up to its
+ * frame, PSOLA down to its YIN pass). A slot resets into PV and a PSOLA slot
+ * flips mode ~15 ms later; if the flip re-seeded the counter from the phase,
+ * the PSOLA schedule would be anchored to that later instant and leave the
+ * slot's quarter. The flip keeps the schedule instead, so a PV slot and a
+ * PSOLA slot of one chain run their heavy ticks a quarter apart, as their
+ * phases say. Pinned by counting, per 64-frame block of one hop, the blocks
+ * in which each slot's heavy tick fell. */
+static void test_octaver_hop_schedule_survives_mode_switch(void) {
+  printf("test_octaver_hop_schedule_survives_mode_switch\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, OCT_SR, 1, 1, OCT_SR * 4);
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_input_output(e, 0, 0x1);
+  le_fx_recipe r;
+  memset(&r, 0, sizeof(r));
+  r.count = 2;
+  r.enabled = 1;
+  for (int s = 0; s < 2; ++s) {
+    r.type[s] = LE_FX_OCTAVER;
+    r.slot_enabled[s] = 1;
+    r.params[s][0] = 0.75f;
+    r.params[s][1] = 1.0f;
+    r.params[s][2] = 1.0f;
+    r.level[s] = 1.0f;
+  }
+  r.params[0][3] = 0.0f; /* PV */
+  r.params[1][3] = 1.0f; /* PSOLA */
+  CHECK(le_engine_set_fx_recipe(e, LE_FX_OWNER_MONITOR, 0, 0, 1, &r) == LE_OK);
+  float in[64];
+  float out[64];
+  for (int i = 0; i < 64; ++i) in[i] = 0.3f * sinf((float)i * 0.2f);
+  /* Past the PSOLA slot's ~30 ms switch. */
+  for (int b = 0; b < 200; ++b) le_engine_process(e, out, in, 64);
+  const le_fx_state* fx = &e->monitors[0].fx;
+  CHECK(fx->oct[0][0].cur_mode == 0);
+  CHECK(fx->oct[1][0].cur_mode == 1);
+  /* Ticks until each slot's next heavy tick, from the counters. */
+  const int pv = fx->oct[0][0].hop_count == 0
+                     ? 1
+                     : LE_PV_HOP - fx->oct[0][0].hop_count + 1;
+  const int ps = fx->oct[1][0].hop_count < 1 ? 1 : fx->oct[1][0].hop_count;
+  const int gap = ((ps - pv) % LE_PV_HOP + LE_PV_HOP) % LE_PV_HOP;
+  printf("  PV next heavy tick in %d, PSOLA in %d: %d apart\n", pv, ps, gap);
+  /* Slot 1 is one quarter after slot 0, so its work comes a quarter EARLIER
+   * in ticks-to-go (its counter started a quarter further on). */
+  CHECK(gap == LE_PV_HOP - LE_PV_STAGGER_QUARTER);
   le_engine_destroy(e);
 }
 
@@ -22619,6 +22684,68 @@ static void test_perf_render_wet_octaver_matches_lane_hop_phase(void) {
   printf("test_perf_render_wet_octaver_matches_lane_hop_phase\n");
   run_perf_render_octaver_case("wet-octaver-phase", 0.0f);
   run_perf_render_octaver_case("wet-octaver-psola", 1.0f);
+}
+
+/* The stem render settles each arm-time slot at its EFFECTIVE bit, as the
+ * live lane and the wet cache do. A drive the arm marks disabled is silent
+ * live from frame 0; a render that settled it enabled would fade its wet out
+ * over the first ~5 ms of the export, audio that was never heard. */
+static void test_perf_render_arm_disabled_slot_is_silent(void) {
+  printf("test_perf_render_arm_disabled_slot_is_silent\n");
+  const char* dir = render_test_dir("wet-arm-disabled");
+  const int32_t sr = 48000;
+  const int32_t loop_len = 64;
+  const uint64_t capture_frames = 960; /* 20 ms, past the 5 ms ramp */
+  char loops_dir[700];
+  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
+  test_render_mkdir(loops_dir);
+  float base[64];
+  for (int i = 0; i < loop_len; ++i) base[i] = 0.5f;
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track1-lane0.wav", loops_dir);
+  test_write_wav_mono(wav_path, base, loop_len, sr);
+  char manifest[2048];
+  snprintf(manifest, sizeof(manifest),
+           "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+           "\"armSnapshot\": {\"followOutput\": false, \"captureMask\": 1, "
+           "\"masterGain\": 1.0, \"limiterOn\": false, "
+           "\"limiterCeiling\": 0.99, \"tracks\": [{\"channel\": 1, "
+           "\"volume\": 1.0, \"muted\": false, \"lanes\": [{\"lane\": 0, "
+           "\"deferred\": false, \"pcmRef\": \"loops/track1-lane0.wav\", "
+           "\"effects\": [{\"type\": %d, \"enabled\": false, "
+           "\"params\": [0.9, 0.8, 0.0, 0.0]}]}]}]}, "
+           "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}",
+           sr, (unsigned long long)capture_frames, LE_FX_DRIVE);
+  test_write_manifest(dir, manifest);
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  FILE* lf = fopen(log_path, "wb");
+  CHECK(lf != NULL);
+  if (lf != NULL) {
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
+    fclose(lf);
+  }
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 5000);
+  int32_t done = 0;
+  CHECK(le_perf_render_poll(e, &done, NULL, NULL) == LE_OK);
+  CHECK(done == 1);
+  static float dry[960];
+  static float wet[960];
+  CHECK(test_read_stem(dir, 1, dry, (int32_t)capture_frames) ==
+        (int32_t)capture_frames);
+  CHECK(test_read_wet_stem(dir, 1, wet, (int32_t)capture_frames) ==
+        (int32_t)capture_frames);
+  float worst = 0.0f;
+  for (uint64_t f = 0; f < capture_frames; ++f) {
+    const float d = fabsf(wet[f] - dry[f]);
+    if (d > worst) worst = d;
+  }
+  printf("  wet vs dry over the first %llu frames: %.7f\n",
+         (unsigned long long)capture_frames, (double)worst);
+  CHECK(worst == 0.0f); /* bypassed from the first frame, bit-exact */
+  le_engine_destroy(e);
 }
 
 /* Regression: a dry-stem write failure must exclude that channel's wet
@@ -37346,6 +37473,7 @@ int main(void) {
   test_octaver_hop_stagger_alignment();
   test_octaver_hop_stagger_seeds();
   test_octaver_hop_stagger_survives_recipe_publish();
+  test_octaver_hop_schedule_survives_mode_switch();
   test_fft_roundtrip();
 
   test_json_read_parses_nested_objects_and_arrays();
@@ -37367,6 +37495,7 @@ int main(void) {
   test_perf_render_large_manifest_parses();
   test_perf_render_wet_fx_sweep();
   test_perf_render_wet_octaver_matches_lane_hop_phase();
+  test_perf_render_arm_disabled_slot_is_silent();
   test_perf_render_dry_write_fail_excludes_from_master();
   test_perf_render_multi_channel_dry_fail_isolated();
   test_perf_render_wet_multi_slot_and_count_shrink();

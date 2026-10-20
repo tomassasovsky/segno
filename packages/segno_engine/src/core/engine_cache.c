@@ -977,9 +977,7 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   /* The channel handling the fingerprint above was taken over, not a fresh
    * read: the job must render exactly the chain its key names. */
   le_fx_frozen_fill(&job->chain, count, count, chain_on, types, raw_en, params,
-                    chan, chan_any);
-  /* Render on the live lane's hop-stagger seed (#915). */
-  job->chain.hop_seed = ln->fx.hop_seed;
+                    chan, chan_any, ln->fx.hop_seed);
   job->copy_pos = 0;
   job->dry = dry;
   job->wet = NULL;
@@ -1188,9 +1186,7 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   job->sample_rate = sr;
   job->fx_cap = e->fx_delay_frames;
   le_fx_frozen_fill(&job->chain, count, count, chain_on, types, raw_en, params,
-                    chan, chan_any);
-  /* Render on the live bus's hop-stagger seed (#915). */
-  job->chain.hop_seed = b->fx.hop_seed;
+                    chan, chan_any, b->fx.hop_seed);
   job->copy_pos = 0;
   job->dry = src;
   job->wet = NULL;
@@ -1466,8 +1462,10 @@ void le_fx_frozen_fill(le_fx_frozen_chain* c, int32_t count, int32_t pre,
                        int32_t chain_on, const int32_t* types,
                        const int32_t* enabled,
                        const float params[LE_FX_MAX][LE_FX_PARAMS],
-                       const le_fx_chan* chan, int32_t chan_any) {
+                       const le_fx_chan* chan, int32_t chan_any,
+                       int32_t hop_seed) {
   memset(c, 0, sizeof(*c));
+  c->hop_seed = hop_seed;
   if (count < 0) count = 0;
   if (count > LE_FX_MAX) count = LE_FX_MAX;
   if (pre < 0) pre = 0;
@@ -1489,7 +1487,7 @@ void le_fx_frozen_capture(le_fx_frozen_chain* c, _Atomic int32_t* count,
                           _Atomic uint32_t (*param)[LE_FX_PARAMS],
                           _Atomic int32_t* chan_in, _Atomic int32_t* chan_out,
                           _Atomic uint32_t* gl, _Atomic uint32_t* gr,
-                          _Atomic uint32_t* level) {
+                          _Atomic uint32_t* level, int32_t hop_seed) {
   int32_t n = load_i32(count);
   if (n < 0) n = 0;
   if (n > LE_FX_MAX) n = LE_FX_MAX;
@@ -1506,7 +1504,7 @@ void le_fx_frozen_capture(le_fx_frozen_chain* c, _Atomic int32_t* count,
   memset(chan, 0, sizeof(chan));
   le_fx_chan_snapshot(chan, &chan_any, n, chan_in, chan_out, gl, gr, level);
   le_fx_frozen_fill(c, n, load_i32(pre), load_i32(chain_on), types, en, params,
-                    chan, chan_any);
+                    chan, chan_any, hop_seed);
 }
 
 int le_fx_frozen_has(const le_fx_frozen_chain* c, int32_t from, int32_t to,
