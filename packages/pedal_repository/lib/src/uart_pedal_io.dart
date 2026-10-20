@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:pedal_repository/src/uart_termios.dart';
 
 /// Operating-system operations used by the UART connection lifecycle.
 abstract interface class UartPedalIo {
@@ -52,29 +53,25 @@ class NativeUartPedalIo implements UartPedalIo {
   @override
   bool exists(String device) => File(device).existsSync();
 
-  @override
-  Future<void> configure(String device, int baud) async {
-    final result = await Process.run('stty', [
-      '-F',
-      device,
-      '$baud',
-      'cs8',
-      '-parenb',
-      '-cstopb',
-      'raw',
-      '-echo',
-      '-crtscts',
-      'clocal',
-      'min',
-      '0',
-      'time',
-      '1',
-    ]);
-    if (result.exitCode != 0) {
-      throw FileSystemException('stty failed: ${result.stderr}', device);
-    }
-  }
+  // coverage:ignore-end
 
+  /// Sets the line with `termios` calls, the settings `stty` applied before
+  /// (see [configureRawUart]), so plugging a pedal in starts no process.
+  ///
+  /// The calls run on an isolate of their own: they are blocking FFI calls,
+  /// and on the caller's isolate a call stuck in the kernel would freeze it
+  /// and keep the link's timeout on this future from ever firing.
+  @override
+  Future<void> configure(String device, int baud) =>
+      _configureOffIsolate(device, baud);
+
+  static Future<void> _configureOffIsolate(String device, int baud) =>
+      Isolate.run(
+        () => configureRawUart(device, baud),
+        debugName: 'pedal-link-configure',
+      );
+
+  // coverage:ignore-start
   @override
   int open(String device, {required bool forWriting}) {
     final path = device.toNativeUtf8();
