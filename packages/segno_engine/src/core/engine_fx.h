@@ -66,6 +66,15 @@ extern "C" {
  * phase. */
 #define LE_PV_STAGGER_QUARTER (LE_PV_HOP / 4)
 
+/* Whether [ent] may play from a lap that began at engine frame [top] (#941):
+ * always for a print without an octaver, and for one with an octaver only on
+ * the hop position it was rendered from. */
+static inline int le_wet_entry_hop_matches(const le_wet_entry* ent,
+                                           uint32_t top) {
+  return ent->hop_tag == 0 ||
+         ent->hop_tag == (top & (uint32_t)(LE_PV_HOP - 1)) + 1u;
+}
+
 static inline int32_t le_fx_hop_mask(uint32_t p) {
   return (int32_t)(p & (uint32_t)(LE_PV_HOP - 1));
 }
