@@ -419,6 +419,11 @@ static long rt_run_performance(int fork_first, int shielded, long* worst,
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
 
+  /* A lane added to a playing track: the callback reads its live slot from
+   * the next block, over the whole loop. */
+  CHECK(le_engine_set_lane_count(e, 1, 2) == LE_OK);
+  rt_step(&a, fork_first, 2 * loop_blocks, 0.0f);
+
   /* And one more overdub on track 0 over the quantized grid. */
   CHECK(le_engine_record(e, 0) == LE_OK);
   rt_step(&a, fork_first, 2 * loop_blocks, 0.2f);
@@ -455,7 +460,7 @@ static void test_audio_thread_takes_no_page_faults_across_forks(void) {
   long worst = 0;
   long blocks = 0;
   const long faults = rt_run_performance(1, 1, &worst, &blocks);
-  printf("  %ld blocks, a fork before each of 25 steps: %ld faults on the "
+  printf("  %ld blocks, a fork before each of 26 steps: %ld faults on the "
          "audio thread (worst block %ld)\n", blocks, faults, worst);
   CHECK(blocks > 0);
   CHECK(faults == 0);

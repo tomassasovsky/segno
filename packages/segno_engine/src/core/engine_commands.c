@@ -1547,6 +1547,15 @@ static int le_prepare_routing(le_engine* e, const le_mix_settings* mix) {
          * starts (le_track_prefault_capture). */
         if (got == LE_SLOT_REUSED && !load_i32(&ln->a_recoverable))
           memset(ln->pool[live], 0, (size_t)e->max_loop_frames * sizeof(float));
+        /* On a track that already plays, the callback reads the new lane
+         * over the whole loop from its next block, and the first read of an
+         * untouched page faults in the zero page. Fault in the loop's length
+         * of it now; the rest of the cap waits for a take. */
+        int32_t len = le_track_settled_len(t);
+        const int32_t len0 = load_i32(&t->lanes[0].a_len);
+        if (len0 > len) len = len0;
+        if (len > e->max_loop_frames) len = e->max_loop_frames;
+        if (len > 0) le_rt_prefault(ln->pool[live], (size_t)len * sizeof(float));
       }
     }
   }
