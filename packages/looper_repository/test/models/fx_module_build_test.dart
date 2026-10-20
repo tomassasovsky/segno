@@ -47,6 +47,30 @@ void main() {
       expect(delay.unmapped, contains('Del Reso'));
     });
 
+    test("the Dub Rack's delay builds from its own power key and keys", () {
+      final dub = fxModuleBuild(_module('Dub delay'));
+
+      expect(dub.type, TrackEffectType.delay);
+      expect(dub.readiness, FxModuleReadiness.partial);
+      expect(dub.unmapped, contains('Del Damp'));
+
+      final entry = fxModuleEntry(
+        _module('Dub delay'),
+        const FxPreset(
+          family: 'Dub Rack',
+          name: 'Light',
+          id: 'dub',
+          type: 4,
+          params: {'Dub Delay': 0, 'Del Time': 0.3, 'Del Feedback': 0.6},
+        ),
+      );
+      // Powered by `Dub Delay`, which the dub reverb used to take as one of
+      // its own parameters, leaving the delay always on.
+      expect(entry.enabled, isFalse);
+      expect(entry.params[0], closeTo(0.3, 1e-9));
+      expect(entry.params[1], closeTo(0.6, 1e-9));
+    });
+
     test("the reverb's brightness is NOT wired into the engine's damping", () {
       final reverb = fxModuleBuild(_module('Reverb'));
 

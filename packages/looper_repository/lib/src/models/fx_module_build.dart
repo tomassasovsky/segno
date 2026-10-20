@@ -83,6 +83,14 @@ const Map<String, FxModuleBuild> kFxModuleBuilds = {
       'Del Reso',
     ],
   ),
+  // The Dub Rack's delay: p0 time and p1 feedback. It has no mix control, so
+  // the mix keeps the engine default. Its damping, stereo ratio and resonance
+  // are the dub delay's own shaping and have no engine parameter.
+  'Dub delay': FxModuleBuild(
+    type: TrackEffectType.delay,
+    params: ['Del Time', 'Del Feedback'],
+    unmapped: ['Del Damp', 'Del L/R Ratio', 'Del Res-Freq', 'Del Reso'],
+  ),
   // p0 size, p1 damping, p2 mix. `Rev Bright` is brightness where the engine
   // wants damping, which is its complement, so it is NOT wired here: inverting
   // someone else's control into ours is the silent substitution the accepted
@@ -175,25 +183,4 @@ BuiltInEffect fxModuleEntry(FxModule module, FxPreset preset) {
     // entry, and this is what still says which pedal it is.
     module: module.name,
   );
-}
-
-/// The modules [preset] holds, in the table's order, keeping only those the
-/// preset actually names.
-///
-/// A preset names a module by carrying its power key or any of its
-/// parameters — some presets carry a module's controls without its power key
-/// and the other way round, so either is enough to say the rack has it.
-List<FxModule> fxPresetModules(FxPreset preset) => [
-  for (final module in kFxModules)
-    if (_names(preset, module)) module,
-];
-
-bool _names(FxPreset preset, FxModule module) {
-  for (final key in module.enables) {
-    if (preset.params.containsKey(key)) return true;
-  }
-  for (final key in preset.params.keys) {
-    if (module.owns(key)) return true;
-  }
-  return false;
 }

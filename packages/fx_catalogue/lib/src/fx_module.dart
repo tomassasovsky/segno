@@ -1,4 +1,5 @@
 import 'package:fx_catalogue/src/fx_family.dart';
+import 'package:fx_catalogue/src/fx_preset.dart';
 
 /// One pedal a factory rack can hold: how the source spells its power, which
 /// parameter groups belong to it, and which illustrations the catalogue
@@ -23,6 +24,8 @@ class FxModule {
     required this.enables,
     required this.groups,
     required this.artwork,
+    this.shared = const [],
+    this.families,
   });
 
   /// The pedal's display name.
@@ -53,20 +56,92 @@ class FxModule {
   /// the gap stays visible rather than looking like a choice.
   final List<String> artwork;
 
+  /// Whole parameter names this module reads although another module of the
+  /// same rack reads them too.
+  ///
+  /// The Vocal Tuner's Smart Tune and Harmonizer both read the tuning mode,
+  /// the source that drives them, the key and the scale type: presets with
+  /// Smart Tune off still set them for the Harmonizer ("Midi Harm" sets Auto
+  /// Source to 1, "Scale Harm" sets Mode to 1 and Key to 3/11). A prefix group
+  /// cannot say that, because it gives each key to one module.
+  final List<String> shared;
+
+  /// The rack families this module appears in, or `null` for every family.
+  ///
+  /// Needed where two racks use the same parameter prefix for different
+  /// pedals: the `Del` parameters are the Dub delay's in the Dub Rack and the
+  /// Delay's everywhere else, and the `EQ` parameters are the parametric EQ's
+  /// in the Dub and Lo-Fi racks and the four-band EQ's everywhere else.
+  final Set<String>? families;
+
   /// Whether [key] is this module's power key.
   bool poweredBy(String key) => enables.contains(key);
 
   /// Whether the parameter [key] belongs to this module.
   bool owns(String key) {
+    if (shared.contains(key)) return true;
     final prefix = key.split(' ').first;
     return groups.contains(prefix);
   }
+
+  /// Whether this module can appear in a rack of [family].
+  bool appearsIn(String family) => families?.contains(family) ?? true;
 }
+
+const Set<String> _paraEqFamilies = {'Dub Rack', 'Lo-Fi Rack'};
+
+const Set<String> _fourBandEqFamilies = {
+  'Drum Rack',
+  "Ed's Rack",
+  'Guitar Rack',
+  'Rhythmic Rack',
+  'Studio Rack',
+  'Vocal Rack',
+  'Vocal Tuner Rack',
+};
+
+const Set<String> _dubDelayFamilies = {'Dub Rack'};
+
+const Set<String> _delayFamilies = {
+  'Drum Rack',
+  "Ed's Rack",
+  'Guitar Rack',
+  'Lo-Fi Rack',
+  'Rhythmic Rack',
+  'Studio Rack',
+  'Vocal Rack',
+  'Vocal Tuner Rack',
+};
+
+/// The Vocal Tuner parameters that both Smart Tune and the Harmonizer read.
+const List<String> _vocalTunerShared = [
+  'Mode',
+  'Auto Source',
+  'Key',
+  'Scale Type',
+];
 
 /// Every module the factory catalogue names, with the evidence for each.
 ///
-/// Order is the table's own, not a processing order: the source does not say
-/// what order a rack runs its pedals in, and nothing here pretends to.
+/// A rack builds its entries in this table's order. That is the table's own
+/// order, not the order the Looper X runs its modules in, because no source
+/// examined records that order:
+///
+/// - The presets are flat maps whose keys are stored in alphabetical order.
+/// - The extracted UI draws a rack's power buttons from the binary's parameter
+///   model (`Pages/FxEdit/SelectorPanel.qml` repeats `effect.param(index)` for
+///   `index < effect.bypassCount`, and `Pages/FxEdit/ParamsPanel.qml` does the
+///   same for the parameters), so the QML holds no order of its own.
+/// - The binary's string table lists Ed's Rack power keys as Oct, Wah,
+///   Compressor, OvDrive, Amp, Chor, EQ 4-Band and the Dub Rack's as Para EQ,
+///   Doubler, Dub Delay, Dub-Verb, Amb-Verb, but the linker keeps only the
+///   first copy of a repeated string (Delay, Reverb and Comp are missing from
+///   those runs), and the same racks' parameter strings follow a different
+///   order (the EQ parameters come last). String order is therefore not a
+///   processing order either.
+///
+/// Until a source states the order, a rack's modules keep the table order and
+/// the player reorders them.
 const List<FxModule> kFxModules = [
   FxModule(
     name: 'Amp',
@@ -100,6 +175,18 @@ const List<FxModule> kFxModules = [
     enables: ['EQ', 'EQ 4-Band'],
     groups: ['EQ'],
     artwork: ['EQ3', 'EQ4', 'EQ5', 'EQ8'],
+    families: _fourBandEqFamilies,
+  ),
+  FxModule(
+    name: 'Parametric EQ',
+    // The Dub and Lo-Fi racks power their EQ with `Para EQ` and give it the
+    // same `EQ` prefix the four-band EQ uses elsewhere.
+    enables: ['Para EQ'],
+    groups: ['EQ'],
+    // The binary's single-effect artwork list runs in effect-name order and
+    // puts EQ5 between Overdrive2 and PitchShift2, where Parametric EQ falls.
+    artwork: ['EQ5'],
+    families: _paraEqFamilies,
   ),
   FxModule(
     name: 'Low-pass filter',
@@ -148,6 +235,19 @@ const List<FxModule> kFxModules = [
     enables: ['Delay'],
     groups: ['Del'],
     artwork: ['Delay3', 'Delay4', 'Delay6'],
+    families: _delayFamilies,
+  ),
+  FxModule(
+    name: 'Dub delay',
+    // The Dub Rack powers its delay with `Dub Delay` and gives it the same
+    // `Del` prefix the plain delay uses elsewhere.
+    enables: ['Dub Delay'],
+    groups: ['Del'],
+    // The binary's single-effect artwork list runs in effect-name order and
+    // puts Delay6 between Doubler1 and the four-band EQ, where Dub Delay
+    // falls.
+    artwork: ['Delay6'],
+    families: _dubDelayFamilies,
   ),
   FxModule(
     name: 'Reverb',
@@ -172,7 +272,7 @@ const List<FxModule> kFxModules = [
   FxModule(
     name: 'Dub reverb',
     enables: ['Dub-Verb'],
-    groups: ['Dub-Verb', 'Dub'],
+    groups: ['Dub-Verb'],
     artwork: ['DubVerb2'],
   ),
   FxModule(
@@ -223,15 +323,14 @@ const List<FxModule> kFxModules = [
   FxModule(
     name: 'Harmonizer',
     enables: ['Harmonize'],
-    groups: ['Harm', 'Voice', 'Lead', 'Low', 'Mid', 'High', 'Key', 'Scale'],
+    groups: ['Harm', 'Voice', 'Lead', 'Low', 'Mid', 'High', 'Scale'],
+    shared: _vocalTunerShared,
     artwork: ['Harmonise20'],
   ),
   FxModule(
     name: 'Smart tune',
-    enables: ['Mode'],
+    enables: ['Smart Tune'],
     groups: [
-      'Smart',
-      'Auto',
       'Audio',
       'Reference',
       'Speed',
@@ -239,6 +338,7 @@ const List<FxModule> kFxModules = [
       'Tightness',
       'Tracking',
     ],
+    shared: _vocalTunerShared,
     artwork: ['SmartTune2'],
   ),
 ];
@@ -247,10 +347,7 @@ const List<FxModule> kFxModules = [
 ///
 /// `Master` is the rack's own output level, which the accepted design puts
 /// AFTER the pedals and gives to the rack rather than to any of them.
-/// `Para` appears in two families with no power key of its own and nothing
-/// naming what it belongs to, so it stays an evidence gap rather than being
-/// assigned to a module on a guess.
-const Set<String> kFxUnclaimedGroups = {'Master', 'Para'};
+const Set<String> kFxUnclaimedGroups = {'Master'};
 
 /// The module whose power key is [key], or `null`.
 FxModule? fxModuleFor(String key) {
@@ -280,10 +377,32 @@ String? fxModuleArt(String name) {
   return fxStompAsset(artwork.first);
 }
 
-/// The module that owns parameter [key], or `null`.
-FxModule? fxModuleOwning(String key) {
-  for (final module in kFxModules) {
-    if (module.owns(key)) return module;
+/// The modules of a [family] rack that read parameter [key], in table order.
+///
+/// Usually one. Two for a parameter in [FxModule.shared], and none for a power
+/// key or a key the table leaves unclaimed on purpose.
+List<FxModule> fxModulesOwning(String key, String family) => [
+  for (final module in kFxModules)
+    if (module.appearsIn(family) && module.owns(key)) module,
+];
+
+/// The modules [preset] holds, in the table's order, keeping only those the
+/// preset actually names.
+///
+/// A preset names a module by carrying its power key or any of its
+/// parameters — some presets carry a module's controls without its power key
+/// and the other way round, so either is enough to say the rack has it.
+List<FxModule> fxPresetModules(FxPreset preset) => [
+  for (final module in kFxModules)
+    if (module.appearsIn(preset.family) && _names(preset, module)) module,
+];
+
+bool _names(FxPreset preset, FxModule module) {
+  for (final key in module.enables) {
+    if (preset.params.containsKey(key)) return true;
   }
-  return null;
+  for (final key in preset.params.keys) {
+    if (module.owns(key)) return true;
+  }
+  return false;
 }
