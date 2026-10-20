@@ -164,14 +164,29 @@ extern "C" {
  * max_loop_frames (see le_lane_ensure_slot). */
 #define LE_LAYER_QUANTUM 48000
 
-/* SAMPLES of live->shadow copy per track per le_engine_process call while a
- * partially backed-up overdub layer drains after punch-out. The per-track
- * budget is divided by the track's active lane count (the copy runs per
- * lane), so one draining track costs <= 128 KB of memcpy per callback
- * regardless of lanes; even all 8 tracks draining at once stay ~1 MB/block
- * (~0.1-0.5 ms — bounded on the Pi appliance target). A 30 s mono loop
- * completes in ~44 callbacks (~0.5 s at typical buffer sizes). */
-#define LE_DRAIN_CHUNK 32768
+/* SAMPLES of live->shadow copy per track per BLOCK FRAME while a partially
+ * backed-up overdub layer drains after punch-out (#906).
+ *
+ * Per frame, not per callback: a fixed per-callback chunk costs the same
+ * memcpy at every period, so it takes a growing share of a shrinking
+ * deadline. The old fixed 32768 samples was ~0.1-0.5 ms for 8 draining tracks,
+ * against 667 us at 64 frames / 96 kHz and 333 us at 32 frames. 512 per frame
+ * is exactly 32768 at 64 frames, and it keeps the drain RATE (512 x sample
+ * rate samples/s) the same at every period, so a drain takes the wall-clock
+ * time it always did (a 30 s mono loop in ~0.5 s) while its cost per callback
+ * scales with the deadline. The per-track budget is divided by the track's
+ * active lane count (the copy runs per lane). */
+#define LE_DRAIN_SAMPLES_PER_FRAME 512
+
+/* ...and never more per callback than the fixed chunk it replaced, so a
+ * desktop host's 512- or 1024-frame period cannot turn one callback into
+ * megabytes of memcpy. Identical to the old budget at 64 frames and longer;
+ * smaller below. */
+#define LE_DRAIN_CHUNK_MAX 32768
+
+/* A frames == 0 call (the host tests' drain pump) has no deadline; it drains
+ * what one 64-frame callback would. */
+#define LE_DRAIN_PUMP_FRAMES 64
 
 
 /* One looper track.
@@ -1819,6 +1834,10 @@ struct le_engine {
 
   ma_device device;
   int device_initialised;
+  /* Device-thread-owned once started: 0 until the device thread's first
+   * callback has prefaulted its stack (le_rt_prefault_stack). Cleared by the
+   * control thread before each device start, while the thread is idle. */
+  int rt_stack_ready;
 
   /* Snapshot, published as independent atomics. */
   _Atomic int32_t a_running;

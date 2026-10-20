@@ -480,13 +480,24 @@ void le_engine_reopen_file_retired(le_engine* engine, uint32_t drop_mask);
  * re-initialises the rings. */
 void le_engine_reopen_settle(le_engine* engine, uint32_t drop_mask);
 
+/* le_lane_ensure_slot outcomes. Both successes are non-zero, so the plain
+ * `if (!le_lane_ensure_slot(...))` failure check reads as it always did. */
+enum {
+  LE_SLOT_FAILED = 0, /* allocation failed; the slot is left unallocated */
+  LE_SLOT_REUSED = 1, /* the existing buffer was big enough; content is stale */
+  LE_SLOT_FRESH = 2   /* a new buffer: all zeros, and no page touched yet */
+};
+
 /* Ensures lane [ln]'s pool slot [slot] holds a buffer of >= [frames] frames
  * (control thread only; the caller guarantees the audio thread is not reading
  * the slot's CONTENT — an EMPTY track's live slot, or a slot outside
- * live/stacks/outstanding). Growth replaces the buffer (free + fresh calloc);
- * no content survives a regrow by design — snapshots are always written whole
- * before use. Returns 1 on success, 0 on allocation failure (the slot is left
- * unallocated). Defined in engine.c. */
+ * live/stacks/outstanding). Growth replaces the buffer with a fresh, untouched
+ * le_rt_alloc mapping; no content survives a regrow by design — snapshots are
+ * always written whole before use. A caller that needs the slot cleared
+ * clears only a REUSED one: a FRESH one already reads zeros, and clearing it
+ * would make every page of a cap-sized buffer resident (#906). Nothing here
+ * prefaults: the audio thread may write the slot only after
+ * le_track_prefault_capture or a shadow post has. Defined in engine.c. */
 int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames);
 
 /* Shrinks an over-allocated slot to `frames`, PRESERVING the leading `frames`
@@ -495,7 +506,7 @@ int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames);
  * pre-armed at the recording cap because the loop length was not yet known.
  * Control thread only, and only for a slot the audio thread no longer holds
  * (never the live slot). No-op when the slot is unallocated or already at or
- * below `frames`; a failed realloc keeps the oversized buffer. Defined in
+ * below `frames`; a failed allocation keeps the oversized buffer. Defined in
  * engine.c. */
 void le_lane_shrink_slot(le_lane* ln, int32_t slot, int32_t frames);
 

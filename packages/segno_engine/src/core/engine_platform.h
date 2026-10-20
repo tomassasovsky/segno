@@ -79,6 +79,40 @@ void le_platform_after_device_open(le_engine* engine);
  * dynamic quantum (force-quantum 0). No-op elsewhere. */
 void le_platform_on_engine_teardown(void);
 
+/* Called from le_engine_create before anything is allocated; once per
+ * process, never fatal. Linux pins every page the process has touched, and
+ * every page it touches from now on, into RAM: mlockall(MCL_CURRENT |
+ * MCL_FUTURE | MCL_ONFAULT). rt_alloc.h keeps the audio thread off first-touch
+ * and copy-on-write faults; this keeps the pages it has touched (its buffers,
+ * its stack, the engine's code and tables) from being reclaimed and faulted
+ * back in from disk inside a callback. ONFAULT locks only what is touched, so
+ * the untouched recording caps and the Dart VM's reservations stay free.
+ * Attempted only where it cannot make a later allocation fail: with
+ * CAP_IPC_LOCK (the appliance runs as root) or RLIMIT_MEMLOCK unlimited.
+ * Logs "segno/rt: memory locked" or the reason it did not. No-op on macOS. */
+void le_platform_lock_memory(void);
+
+/* Called from le_engine_create; once per process. Linux registers a
+ * pthread_atfork handler that counts every fork() of this process and logs
+ * it ("segno/rt: fork #N", the first eight and then every power of two). The
+ * app starts helpers with posix_spawn (#1373), which does not fork; a logged
+ * fork is code that slipped past that, and it can still cost the audio thread
+ * a few faults (rt_alloc.h). No-op on macOS. */
+void le_platform_watch_forks(void);
+
+/* The number of fork() calls le_platform_watch_forks has seen (0 before it
+ * runs, and always 0 on macOS). For the tests and the RT bench. */
+unsigned le_platform_fork_count(void);
+
+/* Called on the control thread before each device start (Linux; no-op
+ * elsewhere). Maps in every page of the code and data of the objects the
+ * callback executes: the engine itself, libc, libm and libasound. The first
+ * execution of a code page the process has not run yet is a page fault, even
+ * when the page is in the page cache, and MCL_ONFAULT deliberately does not
+ * populate anything; without this, the first octaver or echo a user enables
+ * costs the callback a fault. Once mapped, mlockall keeps them. */
+void le_platform_prefault_audio_code(void);
+
 /* Excluded-input-channel mask from per-channel labels. macOS reads CoreAudio
  * labels. Linux returns 0 (no channel-label source yet; PipeWire port labels
  * are future work). All paths route through the shared
