@@ -20618,6 +20618,284 @@ static void test_octaver_added_latency(void) {
   le_engine_destroy(e);
 }
 
+/* ---- built-in parameter descriptors (#1378) ---- */
+
+/* The value descriptor [d] gives normalized setting [v]: a choice at its
+ * nearest position, anything else as set, the way the kernels read them. */
+static double fxd_value(const le_fx_param_desc* d, double v) {
+  if (d->unit == LE_FX_UNIT_CHOICE && d->steps > 1) {
+    const double k = floor(v * (double)(d->steps - 1) + 0.5);
+    v = k / (double)(d->steps - 1);
+  }
+  if (d->curve == LE_FX_CURVE_EXPONENTIAL) {
+    return (double)d->at_min * pow((double)d->at_max / (double)d->at_min, v);
+  }
+  return (double)d->at_min + ((double)d->at_max - (double)d->at_min) * v;
+}
+
+static le_fx_param_desc fxd_get(int32_t type, int32_t param) {
+  le_fx_param_desc d;
+  memset(&d, 0, sizeof(d));
+  CHECK(le_fx_param_info(type, param, &d) == LE_OK);
+  return d;
+}
+
+/* A heap chain of one built-in [type] at [params], settled enabled, the way
+ * the offline renders build theirs. */
+static le_fx_state* fxd_state(int32_t type, int32_t sr) {
+  le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+  CHECK(fx != NULL);
+  if (fx == NULL) return NULL;
+  for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
+  le_fx_entry_reset(fx, 0);
+  CHECK(le_fx_prepare(fx, 0, type, sr) == LE_OK);
+  return fx;
+}
+
+/* Runs [n] samples of [in] (mono, both channels) through slot 0 of [fx] as
+ * [type] with params [p], writing the left output. */
+static void fxd_run(le_fx_state* fx, int32_t type, const float* p4, int32_t sr,
+                    const float* in, float* out, int n) {
+  static int32_t types[LE_FX_MAX];
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  for (int s = 0; s < LE_FX_MAX; ++s) types[s] = LE_FX_NONE;
+  types[0] = type;
+  for (int q = 0; q < LE_FX_PARAMS; ++q) params[0][q] = p4[q];
+  for (int i = 0; i < n; ++i) {
+    float l = in[i];
+    float r = in[i];
+    fx_apply_chain(fx, sr, sr, &l, &r, 1, types, params, NULL);
+    out[i] = l;
+  }
+}
+
+/* The descriptors are what the kernels do. Each is measured against the
+ * kernel it describes rather than restated: a delay time in samples, a
+ * feedback ratio, a drive gain, a tremolo period, a filter's response at its
+ * cutoff. A descriptor and a kernel that drift apart fail here, which is what
+ * keeps the app's readouts true. */
+static void test_fx_param_descriptors_match_kernels(void) {
+  printf("test_fx_param_descriptors_match_kernels\n");
+  const int32_t sr = 48000;
+
+  /* Counts: the parameters each kernel reads; none for NONE and PLUGIN. */
+  const int32_t counts[] = {0, 2, 2, 3, 2, 4, 3, 3, 0};
+  for (int32_t t = 0; t < 9; ++t) CHECK(le_fx_param_count(t) == counts[t]);
+  CHECK(le_fx_param_count(9) == LE_ERR_INVALID);
+  CHECK(le_fx_param_count(-1) == LE_ERR_INVALID);
+  le_fx_param_desc scratch;
+  CHECK(le_fx_param_info(LE_FX_DELAY, 3, &scratch) == LE_ERR_INVALID);
+  CHECK(le_fx_param_info(LE_FX_DELAY, 0, NULL) == LE_ERR_INVALID);
+
+  /* Defaults come from the descriptors, and are the engine's long-standing
+   * ones (a session saved before this change keeps its sound). */
+  const float want_defaults[8][LE_FX_PARAMS] = {
+      {0, 0, 0, 0},          {0.5f, 0.8f, 0, 0},     {0.5f, 0.2f, 0, 0},
+      {0.35f, 0.35f, 0.35f, 0}, {0.3f, 0.7f, 0, 0}, {0.25f, 0.5f, 0.5f, 0},
+      {0.45f, 0.5f, 0.35f, 0}, {0.5f, 0.5f, 0.35f, 0}};
+  for (int32_t t = 0; t < 8; ++t) {
+    float d[LE_FX_PARAMS];
+    le_fx_defaults(t, d);
+    for (int q = 0; q < LE_FX_PARAMS; ++q) CHECK(d[q] == want_defaults[t][q]);
+    for (int32_t q = 0; q < le_fx_param_count(t); ++q) {
+      const le_fx_param_desc desc = fxd_get(t, q);
+      CHECK(desc.def == want_defaults[t][q]);
+      CHECK(desc.key[0] != '\0');
+      CHECK(desc.flags == 0); /* segno's own effects: nothing unverified */
+    }
+  }
+
+  static float in[96000];
+  static float out[96000];
+
+  /* Delay: time is v of the one-second ring (one sample either side), the
+   * second repeat is feedback/100 of the first, the dry share is 1 - mix. */
+  {
+    const le_fx_param_desc t_d = fxd_get(LE_FX_DELAY, 0);
+    const le_fx_param_desc fb_d = fxd_get(LE_FX_DELAY, 1);
+    const le_fx_param_desc mix_d = fxd_get(LE_FX_DELAY, 2);
+    const float settings[] = {0.1f, 0.35f, 0.8f};
+    for (int k = 0; k < 3; ++k) {
+      memset(in, 0, sizeof(in));
+      in[0] = 1.0f;
+      const float p[LE_FX_PARAMS] = {settings[k], 0.6f, 0.35f, 0.0f};
+      le_fx_state* fx = fxd_state(LE_FX_DELAY, sr);
+      if (fx == NULL) return;
+      fxd_run(fx, LE_FX_DELAY, p, sr, in, out, sr);
+      le_fx_state_free_buffers(fx);
+      free(fx);
+      int first = -1;
+      for (int i = 1; i < sr; ++i) {
+        if (fabsf(out[i]) > 1e-6f) {
+          first = i;
+          break;
+        }
+      }
+      const double want = fxd_value(&t_d, settings[k]) * sr / 1000.0;
+      /* The kernel truncates v x (ring - 1) to whole samples. */
+      CHECK(first > 0 && fabs((double)first - want) <= 1.001);
+      if (first > 0 && 2 * first < sr) {
+        const double ratio = (double)out[2 * first] / (double)out[first];
+        CHECK(fabs(ratio - fxd_value(&fb_d, 0.6) / 100.0) < 1e-4);
+      }
+      CHECK(fabs((1.0 - (double)out[0]) - fxd_value(&mix_d, 0.35) / 100.0) <
+            1e-5);
+    }
+  }
+
+  /* Echo: the same time scale, within its ~4 ms wow. */
+  {
+    const le_fx_param_desc t_d = fxd_get(LE_FX_ECHO, 0);
+    memset(in, 0, sizeof(in));
+    in[0] = 1.0f;
+    const float p[LE_FX_PARAMS] = {0.5f, 0.0f, 1.0f, 0.0f};
+    le_fx_state* fx = fxd_state(LE_FX_ECHO, sr);
+    if (fx == NULL) return;
+    fxd_run(fx, LE_FX_ECHO, p, sr, in, out, sr);
+    le_fx_state_free_buffers(fx);
+    free(fx);
+    int peak = 1;
+    for (int i = 1; i < sr; ++i) {
+      if (fabsf(out[i]) > fabsf(out[peak])) peak = i;
+    }
+    const double want = fxd_value(&t_d, 0.5) * sr / 1000.0;
+    CHECK(fabs((double)peak - want) <= 0.004 * sr + 2.0);
+  }
+
+  /* Drive: the small-signal gain is drive x level. */
+  {
+    const le_fx_param_desc drv = fxd_get(LE_FX_DRIVE, 0);
+    const le_fx_param_desc lvl = fxd_get(LE_FX_DRIVE, 1);
+    const float settings[] = {0.0f, 0.4f, 1.0f};
+    for (int k = 0; k < 3; ++k) {
+      in[0] = 1e-5f;
+      const float p[LE_FX_PARAMS] = {settings[k], 0.6f, 0.0f, 0.0f};
+      le_fx_state* fx = fxd_state(LE_FX_DRIVE, sr);
+      if (fx == NULL) return;
+      fxd_run(fx, LE_FX_DRIVE, p, sr, in, out, 1);
+      le_fx_state_free_buffers(fx);
+      free(fx);
+      const double gain = (double)out[0] / 1e-5;
+      const double want =
+          fxd_value(&drv, settings[k]) * fxd_value(&lvl, 0.6) / 100.0;
+      CHECK(fabs(gain / want - 1.0) < 1e-3);
+    }
+  }
+
+  /* Tremolo: the envelope repeats at the rate. */
+  {
+    const le_fx_param_desc rate = fxd_get(LE_FX_TREMOLO, 0);
+    for (int i = 0; i < sr; ++i) in[i] = 1.0f;
+    const float p[LE_FX_PARAMS] = {0.5f, 1.0f, 0.0f, 0.0f};
+    le_fx_state* fx = fxd_state(LE_FX_TREMOLO, sr);
+    if (fx == NULL) return;
+    fxd_run(fx, LE_FX_TREMOLO, p, sr, in, out, sr);
+    le_fx_state_free_buffers(fx);
+    free(fx);
+    int crossings = 0;
+    int first = -1;
+    int last = -1;
+    for (int i = 1; i < sr; ++i) {
+      if (out[i - 1] < 0.5f && out[i] >= 0.5f) {
+        if (first < 0) first = i;
+        last = i;
+        crossings++;
+      }
+    }
+    CHECK(crossings >= 2);
+    if (crossings >= 2) {
+      const double hz = (double)(crossings - 1) * sr / (double)(last - first);
+      CHECK(fabs(hz / fxd_value(&rate, 0.5) - 1.0) < 0.01);
+    }
+  }
+
+  /* Filter: with no resonance the state-variable low-pass is down to half
+   * (-6 dB) at its cutoff. */
+  {
+    const le_fx_param_desc cut = fxd_get(LE_FX_FILTER, 0);
+    const float settings[] = {0.3f, 0.55f};
+    for (int k = 0; k < 2; ++k) {
+      const double fc = fxd_value(&cut, settings[k]);
+      for (int i = 0; i < sr; ++i) {
+        in[i] = (float)sin(2.0 * 3.14159265358979 * fc * i / sr);
+      }
+      const float p[LE_FX_PARAMS] = {settings[k], 0.0f, 0.0f, 0.0f};
+      le_fx_state* fx = fxd_state(LE_FX_FILTER, sr);
+      if (fx == NULL) return;
+      fxd_run(fx, LE_FX_FILTER, p, sr, in, out, sr);
+      le_fx_state_free_buffers(fx);
+      free(fx);
+      float amp = 0.0f;
+      for (int i = sr / 2; i < sr; ++i) {
+        if (fabsf(out[i]) > amp) amp = fabsf(out[i]);
+      }
+      CHECK(fabs((double)amp - 0.5) < 0.02);
+    }
+  }
+
+  /* Octaver: the wet pitch of a sine is the descriptor's shift, on the
+   * semitone grid and between it (0.26 plays -11.52 semitones, not -12: the
+   * kernel does not snap). Both modes take the one ratio fx_octaver computes
+   * from the shift, so the phase vocoder measures it (PSOLA falls back to dry
+   * on a pure tone). The mode flips at 0.5 as fx_octaver reads it. */
+  {
+    const le_fx_param_desc shift = fxd_get(LE_FX_OCTAVER, 0);
+    const le_fx_param_desc mode = fxd_get(LE_FX_OCTAVER, 3);
+    CHECK(shift.unit == LE_FX_UNIT_SEMITONES && shift.steps == 49);
+    CHECK(mode.unit == LE_FX_UNIT_CHOICE && mode.steps == 2);
+    CHECK(fxd_value(&mode, 0.49) == 0.0);
+    CHECK(fxd_value(&mode, 0.5) == 1.0);
+    const int n = 2 * sr;
+    float* sig = (float*)malloc((size_t)n * sizeof(float));
+    float* wet = (float*)malloc((size_t)n * sizeof(float));
+    CHECK(sig != NULL && wet != NULL);
+    if (sig == NULL || wet == NULL) {
+      free(sig);
+      free(wet);
+      return;
+    }
+    const double f0 = 220.0;
+    for (int i = 0; i < n; ++i) {
+      sig[i] = 0.5f * (float)sin(2.0 * 3.14159265358979 * f0 * i / sr);
+    }
+    const float settings[] = {0.25f, 0.26f, 0.75f};
+    {
+      for (int k = 0; k < 3; ++k) {
+        const float p[LE_FX_PARAMS] = {settings[k], 1.0f, 1.0f, 0.0f};
+        le_fx_state* fx = fxd_state(LE_FX_OCTAVER, sr);
+        if (fx == NULL) break;
+        fxd_run(fx, LE_FX_OCTAVER, p, sr, sig, wet, n);
+        le_fx_state_free_buffers(fx);
+        free(fx);
+        /* The frequency from the upward zero crossings of the second
+         * second, each placed between its two samples. */
+        double first = -1.0;
+        double last = -1.0;
+        int crossings = 0;
+        for (int i = sr; i < n - 1; ++i) {
+          if (wet[i] <= 0.0f && wet[i + 1] > 0.0f) {
+            const double t = i + wet[i] / (double)(wet[i] - wet[i + 1]);
+            if (first < 0.0) first = t;
+            last = t;
+            ++crossings;
+          }
+        }
+        const double got =
+            crossings > 1 ? (crossings - 1) * sr / (last - first) : 0.0;
+        const double want = f0 * pow(2.0, fxd_value(&shift, settings[k]) / 12.0);
+        if (fabs(got / want - 1.0) > 0.003) {
+          printf("  FAIL: octaver shift %.2f plays %.2f Hz, the descriptor "
+                 "says %.2f Hz (line %d)\n",
+                 (double)settings[k], got, want, __LINE__);
+          g_failures++;
+        }
+      }
+    }
+    free(sig);
+    free(wet);
+  }
+}
+
 /* ---- octaver analysis-hop stagger (#915) ---- */
 
 /* A mono monitor chain whose slot [slot] is a PV octaver at UNISON with mix
@@ -37735,6 +38013,7 @@ int main(void) {
   test_octaver_psola_voice_and_fallback();
   test_octaver_psola_no_chatter();
   test_octaver_added_latency();
+  test_fx_param_descriptors_match_kernels();
   test_octaver_hop_stagger_alignment();
   test_octaver_hop_stagger_seeds();
   test_octaver_hop_stagger_survives_recipe_publish();

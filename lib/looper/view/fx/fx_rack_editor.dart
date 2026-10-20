@@ -279,7 +279,7 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
     final built = effect is BuiltInEffect ? effect : null;
     final name = fxPedalName(l10n, effect);
     final art = effect.module == null ? null : fxModuleArt(effect.module!);
-    final params = built?.type.params ?? const <TrackEffectParam>[];
+    final params = built?.type.params ?? const <FxParamInfo>[];
     return SizedBox(
       width: kFxPedalWidth,
       height: 650,
@@ -345,12 +345,11 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
                         children: [
                           for (var i = 0; i < params.length; i++) ...[
                             if (i > 0) const SizedBox(height: 14),
-                            FxParamControl(
+                            FxBuiltInParamControl(
                               key: Key('fx_pedal_param_$i'),
-                              label: params[i].label,
-                              value: built!.params[i],
+                              effect: built!,
+                              index: i,
                               width: 250,
-                              note: l10n.fxScaleUnverified,
                               onChanged: (value) => widget.onParam(i, value),
                             ),
                           ],

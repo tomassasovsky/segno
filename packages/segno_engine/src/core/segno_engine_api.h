@@ -662,6 +662,67 @@ typedef enum le_fx_type {
   LE_FX_PLUGIN = 8,
 } le_fx_type;
 
+/* ---- Built-in effect parameter descriptors (#1378) ----
+ *
+ * What each built-in's normalized parameters mean, from the same table the
+ * effect's kernel is pinned against (test_fx_param_descriptors_match_kernels).
+ * Static data: any thread, no engine handle. The text a surface shows is
+ * formatted from these in the app's own language; `key` is the stable name
+ * it localizes by. */
+
+#define LE_FX_PARAM_KEY_CHARS 24 /* parameter key, NUL-terminated */
+
+/* The unit a parameter's value is shown in. */
+typedef enum le_fx_param_unit {
+  LE_FX_UNIT_PERCENT = 0,   /* 0..100 */
+  LE_FX_UNIT_MS = 1,        /* milliseconds */
+  LE_FX_UNIT_HZ = 2,        /* hertz */
+  LE_FX_UNIT_SEMITONES = 3, /* a pitch interval */
+  LE_FX_UNIT_TIMES = 4,     /* a gain factor, "x" */
+  LE_FX_UNIT_CHOICE = 5,    /* named positions; the value is the position */
+} le_fx_param_unit;
+
+/* How a parameter's value follows its normalized setting v in 0..1. */
+typedef enum le_fx_param_curve {
+  LE_FX_CURVE_LINEAR = 0,      /* at_min + (at_max - at_min) * v */
+  LE_FX_CURVE_EXPONENTIAL = 1, /* at_min * (at_max / at_min) ^ v */
+} le_fx_param_curve;
+
+/* Bit flags for le_fx_param_desc.flags. */
+typedef enum le_fx_param_flags {
+  /* The mapping was chosen, not measured against the effect it reproduces
+   * (the Looper X kinds until reference audio confirms them, #891). */
+  LE_FX_PARAM_TAPER_UNVERIFIED = 1 << 0,
+} le_fx_param_flags;
+
+/* One built-in parameter. `steps` is 0 for a continuous parameter, otherwise
+ * the number of positions a control snaps it to: position k of n stands for
+ * setting k / (n - 1) and the value at that setting. The kernel reads a
+ * LE_FX_UNIT_CHOICE parameter at its nearest position and every other one as
+ * set, so a setting between positions plays as set. `def` is the setting a
+ * freshly engaged effect starts at (le_fx_defaults). */
+typedef struct le_fx_param_desc {
+  char key[LE_FX_PARAM_KEY_CHARS];
+  int32_t unit;  /* le_fx_param_unit */
+  int32_t steps;
+  float at_min;  /* value at setting 0 */
+  float at_max;  /* value at setting 1 */
+  int32_t curve; /* le_fx_param_curve */
+  float def;
+  uint32_t flags; /* le_fx_param_flags */
+} le_fx_param_desc;
+
+/* The number of parameters built-in [type] uses (0 for LE_FX_NONE and
+ * LE_FX_PLUGIN, whose parameters come from le_plugin_param_info_at), or
+ * LE_ERR_INVALID for an unknown type. */
+LE_EXPORT int32_t le_fx_param_count(int32_t type);
+
+/* Fills *out with parameter [param] (0..count-1) of built-in [type]. Returns
+ * LE_OK, or LE_ERR_INVALID for a NULL `out`, an unknown type or a parameter
+ * out of range. */
+LE_EXPORT int32_t le_fx_param_info(int32_t type, int32_t param,
+                                   le_fx_param_desc* out);
+
 /* Which device backend to open. The default (0) opens miniaudio's default
  * backend for the platform (Core Audio on macOS, the Linux preference list) —
  * the only backend this engine ships. */

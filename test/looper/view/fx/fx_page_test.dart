@@ -1274,15 +1274,32 @@ void main() {
       expect(find.byKey(const Key('fx_param_2')), findsOneWidget);
     });
 
-    testWidgets("says a control's scale was never recovered rather than "
-        'printing a unit nobody verified', (tester) async {
+    testWidgets('a plain built-in reads in its own units, without the '
+        'unverified note', (tester) async {
       await pump(tester, destination: const FxDestination.recordedTrack(0));
       await tapKey(tester, 'fx_card_t1');
 
+      // t1 is a filter at its defaults: cutoff 0.5 is 20 x 900^0.5 = 600 Hz,
+      // resonance 0.2 is 20%.
+      final cutoff = find.byKey(const Key('fx_param_0'));
+      final resonance = find.byKey(const Key('fx_param_1'));
       expect(
-        find.text(l10nOf(tester).fxScaleUnverified),
-        findsNWidgets(2),
+        find.descendant(of: cutoff, matching: find.text('600 Hz')),
+        findsOneWidget,
       );
+      expect(
+        find.descendant(of: resonance, matching: find.text('20%')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: cutoff,
+          matching: find.text(l10nOf(tester).paramCutoff),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('0.50'), findsNothing);
+      expect(find.text(l10nOf(tester).fxScaleUnverified), findsNothing);
     });
 
     group('the Pre/Post switch', () {
@@ -1477,6 +1494,32 @@ void main() {
         // Two cables for three pedals.
         expect(find.byKey(const Key('fx_pedal_cable_1')), findsOneWidget);
         expect(find.byKey(const Key('fx_pedal_cable_2')), findsOneWidget);
+      });
+
+      testWidgets('a factory module keeps the raw setting and says its scale '
+          'was never recovered', (tester) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_card_R1');
+
+        // r1a is the rack's Delay module at its defaults (0.35 each). Its
+        // preset values were written against the Looper X's own scales, so
+        // it does not read in this build's milliseconds and percent.
+        final pedal = find.byKey(const Key('fx_pedal_r1a'));
+        expect(
+          find.descendant(of: pedal, matching: find.text('0.35')),
+          findsNWidgets(3),
+        );
+        expect(
+          find.descendant(
+            of: pedal,
+            matching: find.text(l10nOf(tester).fxScaleUnverified),
+          ),
+          findsNWidgets(3),
+        );
+        expect(
+          find.descendant(of: pedal, matching: find.text('350 ms')),
+          findsNothing,
+        );
       });
 
       testWidgets("a pedal this build cannot process keeps the catalogue's "
