@@ -21212,6 +21212,41 @@ static void test_octaver_hop_reanchors_after_a_gap(void) {
   le_engine_destroy(e);
 }
 
+/* A slot beyond a chain's count is not ticked while the chain runs, and an
+ * enabled slot keeps its state across that, so when the count grows back the
+ * octaver there finds its counter off the clock and restarts on its own
+ * quarter. */
+static void test_octaver_hop_resyncs_after_a_count_gap(void) {
+  printf("test_octaver_hop_resyncs_after_a_count_gap\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, OCT_SR, 1, 1, OCT_SR * 4);
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_input_output(e, 0, 0x1);
+  for (int s = 0; s < 2; ++s) {
+    le_engine_set_monitor_input_fx(e, 0, s, LE_FX_OCTAVER);
+    le_engine_set_monitor_input_fx_param(e, 0, s, 3, 0.0f); /* PV */
+  }
+  le_engine_set_monitor_input_fx_count(e, 0, 2);
+  float in[64];
+  float out[64];
+  for (int i = 0; i < 64; ++i) in[i] = 0.3f * sinf((float)i * 0.2f);
+  for (int b = 0; b < 20; ++b) le_engine_process(e, out, in, 64);
+  le_engine_set_monitor_input_fx_count(e, 0, 1);
+  int left = 1000;
+  while (left > 0) {
+    const int n = left > 64 ? 64 : left;
+    le_engine_process(e, out, in, (uint32_t)n);
+    left -= n;
+  }
+  le_engine_set_monitor_input_fx_count(e, 0, 2);
+  for (int b = 0; b < 40; ++b) le_engine_process(e, out, in, 64);
+  for (int s = 0; s < 2; ++s) {
+    CHECK(oct_live_phase(&e->monitors[0].fx, s) ==
+          oct_slot_phase(le_fx_monitor_hop_seed(0), s));
+  }
+  le_engine_destroy(e);
+}
+
 /* The two octaver modes run one counter in opposite directions (PV up to its
  * frame, PSOLA down to its YIN pass). A slot resets into PV and a PSOLA slot
  * flips mode ~15 ms later; if the flip re-seeded the counter from the phase,
@@ -37674,6 +37709,7 @@ int main(void) {
   test_octaver_hop_stagger_survives_chain_stomp();
   test_octaver_hop_stagger_holds_for_late_adds();
   test_octaver_hop_reanchors_after_a_gap();
+  test_octaver_hop_resyncs_after_a_count_gap();
   test_fft_roundtrip();
 
   test_json_read_parses_nested_objects_and_arrays();
