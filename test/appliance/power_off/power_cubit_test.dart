@@ -218,7 +218,7 @@ void main() {
         await pumpEventQueue();
         expect(cubit.state.phase, PowerPhase.saveFailed);
         fail = false;
-        cubit.retry(named);
+        cubit.retry(named, save: save);
         await pumpEventQueue();
         expect(attempts, [false, true]);
         expect(log, [
@@ -236,7 +236,7 @@ void main() {
       test('Retry still honours the take gate', () async {
         final cubit = build()..shutDown(named, save: failingSave);
         await pumpEventQueue();
-        cubit.retry(inFlight);
+        cubit.retry(inFlight, save: save);
         await pumpEventQueue();
         expect(cubit.state, const PowerState(phase: PowerPhase.refuse));
         expect(log, ['stop', 'flush', 'save']);
@@ -248,7 +248,7 @@ void main() {
         await pumpEventQueue();
         cubit.dismiss();
         expect(cubit.state, const PowerState());
-        cubit.retry(named);
+        cubit.retry(named, save: save);
         await pumpEventQueue();
         expect(log, ['stop', 'flush', 'save']);
         await cubit.close();
@@ -339,10 +339,67 @@ void main() {
         )..shutDown(empty, save: () async => log.add('save'));
         await pumpEventQueue();
         expect(cubit.state.phase, PowerPhase.saveFailed);
-        cubit.retry(empty);
+        cubit.retry(empty, save: save);
         await pumpEventQueue();
         expect(attempts, [false, true]);
         expect(log, ['stop', 'stop', 'storage', 'pedal', 'powerOff']);
+        await cubit.close();
+      });
+
+      test('empty: content that appears between a failure and Retry goes '
+          'to Save As, and the name then saves', () async {
+        var failFlush = true;
+        final repairs = <bool>[];
+        final cubit = build(
+          flush: ({required retry}) {
+            log.add('flush');
+            repairs.add(retry);
+            if (failFlush) throw StateError('unconfirmed');
+          },
+        )..restart(empty, save: () async => log.add('save'));
+        await pumpEventQueue();
+        expect(cubit.state.phase, PowerPhase.saveFailed);
+        failFlush = false;
+        cubit.retry(unnamed, save: () async => log.add('save'));
+        await pumpEventQueue();
+        expect(
+          cubit.state,
+          const PowerState(
+            phase: PowerPhase.saveAs,
+            action: PowerAction.restart,
+          ),
+        );
+        expect(log, ['stop', 'flush']);
+        cubit.commitSaveAs(unnamed, save: () async => log.add('saveAs'));
+        await pumpEventQueue();
+        expect(log, [
+          'stop',
+          'flush',
+          'stop',
+          'flush',
+          'saveAs',
+          'storage',
+          'pedal',
+          'reboot',
+        ]);
+        // The Save As a Retry opened flushes in the repairing mode.
+        expect(repairs, [false, true]);
+        await cubit.close();
+      });
+
+      test('empty: a session named between a failure and Retry is saved '
+          'on Retry', () async {
+        var failFlush = true;
+        final cubit = build(
+          flush: ({required retry}) {
+            if (failFlush) throw StateError('unconfirmed');
+          },
+        )..shutDown(empty, save: () async => log.add('save'));
+        await pumpEventQueue();
+        failFlush = false;
+        cubit.retry(namedEmpty, save: () async => log.add('save'));
+        await pumpEventQueue();
+        expect(log, ['stop', 'stop', 'save', 'storage', 'pedal', 'powerOff']);
         await cubit.close();
       });
 
@@ -386,7 +443,7 @@ void main() {
         ..press(named)
         ..dismiss()
         ..restart(named, save: save)
-        ..retry(named);
+        ..retry(named, save: save);
       saving.complete();
       await pumpEventQueue();
       expect(log, ['stop', 'flush', 'save', 'storage', 'pedal', 'powerOff']);

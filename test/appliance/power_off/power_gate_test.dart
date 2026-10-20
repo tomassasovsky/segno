@@ -38,6 +38,7 @@ void main() {
         looper: looper,
         recorder: const PerformanceRecorderIdle(),
         session: const SessionState(),
+        backing: const BackingState(),
       );
       expect(snapshot.takeInFlight, isTrue);
     });
@@ -48,6 +49,7 @@ void main() {
           looper: const LooperState(tracks: [Track(pending: true)]),
           recorder: const PerformanceRecorderIdle(),
           session: const SessionState(),
+          backing: const BackingState(),
         ).takeInFlight,
         isTrue,
       );
@@ -58,6 +60,7 @@ void main() {
           ),
           recorder: const PerformanceRecorderIdle(),
           session: const SessionState(),
+          backing: const BackingState(),
         ).takeInFlight,
         isTrue,
       );
@@ -68,6 +71,7 @@ void main() {
           ),
           recorder: const PerformanceRecorderIdle(),
           session: const SessionState(),
+          backing: const BackingState(),
         ).takeInFlight,
         isTrue,
       );
@@ -79,6 +83,7 @@ void main() {
           looper: const LooperState(),
           recorder: const PerformanceRecorderIdle(recovering: true),
           session: const SessionState(),
+          backing: const BackingState(),
         ).takeInFlight,
         isTrue,
       );
@@ -90,6 +95,7 @@ void main() {
             overrun: false,
           ),
           session: const SessionState(),
+          backing: const BackingState(),
         ).takeInFlight,
         isTrue,
       );
@@ -98,6 +104,7 @@ void main() {
           looper: const LooperState(),
           recorder: const PerformanceRecorderFinalizing(),
           session: const SessionState(),
+          backing: const BackingState(),
         ).takeInFlight,
         isTrue,
       );
@@ -106,6 +113,7 @@ void main() {
           looper: const LooperState(),
           recorder: const PerformanceRecorderRendering(percent: 10),
           session: const SessionState(),
+          backing: const BackingState(),
         ).takeInFlight,
         isTrue,
       );
@@ -117,6 +125,7 @@ void main() {
           looper: const LooperState(),
           recorder: const PerformanceRecorderCompleted.discardedShort(),
           session: const SessionState(),
+          backing: const BackingState(),
         ).takeInFlight,
         isFalse,
       );
@@ -129,11 +138,13 @@ void main() {
               looper: const LooperState(),
               recorder: const PerformanceRecorderIdle(),
               session: const SessionState(),
+              backing: const BackingState(),
             )
           : powerSnapshotOf(
               looper: const LooperState(),
               recorder: const PerformanceRecorderIdle(),
               session: const SessionState(),
+              backing: const BackingState(),
               transferInFlight: transfer,
             );
       expect(read().transferInFlight, isFalse);
@@ -175,12 +186,41 @@ void main() {
       expect(const PowerSnapshot().sessionHasContent, isTrue);
     });
 
+    test('a cleared or zero-length track is not content', () {
+      PowerSnapshot read(Track track) => powerSnapshotOf(
+        looper: LooperState(tracks: [track]),
+        recorder: const PerformanceRecorderIdle(),
+        session: const SessionState(),
+        backing: const BackingState(),
+      );
+      // Cleared: the state is empty again, whatever length it last had.
+      expect(read(const Track(lengthFrames: 48000)).sessionHasContent, isFalse);
+      // Zero length: never captured anything.
+      expect(
+        read(const Track(state: TrackState.playing)).sessionHasContent,
+        isFalse,
+      );
+    });
+
+    test('an unknown backing (no player mounted) counts as content', () {
+      expect(
+        powerSnapshotOf(
+          looper: const LooperState(),
+          recorder: const PerformanceRecorderIdle(),
+          session: const SessionState(),
+          backing: null,
+        ).sessionHasContent,
+        isTrue,
+      );
+    });
+
     test('maps currentSessionName', () {
       expect(
         powerSnapshotOf(
           looper: const LooperState(),
           recorder: const PerformanceRecorderIdle(),
           session: const SessionState(currentSessionName: 'live'),
+          backing: const BackingState(),
         ).currentSessionName,
         'live',
       );

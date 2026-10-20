@@ -150,8 +150,12 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
     }
 
-    Future<void> openOptions(WidgetTester tester, {UpdateCubit? update}) async {
-      await pumpHost(tester, update: update);
+    Future<void> openOptions(
+      WidgetTester tester, {
+      UpdateCubit? update,
+      BackingCubit? backing,
+    }) async {
+      await pumpHost(tester, update: update, backing: backing);
       await tester.pump();
       keys.emitPress();
       await settle(tester);
@@ -367,18 +371,26 @@ void main() {
     });
 
     group('empty unnamed session', () {
-      setUp(
-        () => whenListen(
+      late _MockBackingCubit backing;
+
+      setUp(() {
+        whenListen(
           looper,
           const Stream<LooperState>.empty(),
           initialState: const LooperState(),
-        ),
-      );
+        );
+        backing = _MockBackingCubit();
+        whenListen(
+          backing,
+          const Stream<BackingCubitState>.empty(),
+          initialState: const BackingCubitState(backing: BackingState()),
+        );
+      });
 
       testWidgets('Install and restart reboots with no Save As and no save', (
         tester,
       ) async {
-        await pumpHost(tester);
+        await pumpHost(tester, backing: backing);
         await tester.pump();
         requestRestart(
           tester.element(find.byKey(const Key('power_host_child'))),
@@ -394,7 +406,7 @@ void main() {
 
       testWidgets('Power options says nothing is saved; Shut down halts '
           'with no Save As', (tester) async {
-        await openOptions(tester);
+        await openOptions(tester, backing: backing);
 
         expect(
           find.text(
@@ -414,9 +426,9 @@ void main() {
       });
 
       testWidgets('a prepared backing still asks for a name', (tester) async {
-        final backing = _MockBackingCubit();
+        final prepared = _MockBackingCubit();
         whenListen(
-          backing,
+          prepared,
           const Stream<BackingCubitState>.empty(),
           initialState: const BackingCubitState(
             backing: BackingState(
@@ -424,7 +436,7 @@ void main() {
             ),
           ),
         );
-        await pumpHost(tester, backing: backing);
+        await pumpHost(tester, backing: prepared);
         await tester.pump();
         requestRestart(
           tester.element(find.byKey(const Key('power_host_child'))),
@@ -434,6 +446,48 @@ void main() {
         expect(cubit.state.phase, PowerPhase.saveAs);
         expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
         expect(log, isEmpty);
+      });
+
+      testWidgets('no backing player mounted counts as content: Save As', (
+        tester,
+      ) async {
+        await pumpHost(tester);
+        await tester.pump();
+        requestRestart(
+          tester.element(find.byKey(const Key('power_host_child'))),
+        );
+        await settle(tester);
+
+        expect(cubit.state.phase, PowerPhase.saveAs);
+        expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
+        expect(log, isEmpty);
+      });
+
+      testWidgets('a take that finishes while Power options is open replaces '
+          'the empty line with the save promise', (tester) async {
+        final states = StreamController<LooperState>();
+        addTearDown(states.close);
+        whenListen(looper, states.stream, initialState: const LooperState());
+        await openOptions(tester, backing: backing);
+        const empty =
+            'Playback will stop. This session is empty, so there is '
+            'nothing to save.';
+        expect(find.text(empty), findsOneWidget);
+
+        states.add(_loops);
+        await settle(tester);
+
+        expect(find.text(empty), findsNothing);
+        expect(
+          find.text('Playback will stop and your session will be saved.'),
+          findsOneWidget,
+        );
+        expect(
+          find.text(
+            "This session has no name yet. You'll name it before it saves.",
+          ),
+          findsOneWidget,
+        );
       });
     });
 
