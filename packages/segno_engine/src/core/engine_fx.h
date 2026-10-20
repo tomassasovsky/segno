@@ -198,6 +198,13 @@ int le_fx_type_drains(int32_t type);
  * offline render, VST3 plugin processors, test harnesses). */
 void le_fx_enable_seed_settled(le_fx_state* fx, int slot);
 
+/* Settles slot [slot]'s enable crossfade at [effective]: settled wet when 1,
+ * settled bypass when 0. How an offline render (the wet cache, the render
+ * recipe, the stem render) starts each slot where the live owner holds it:
+ * a calloc'd zero state would fade the chain in at frame 0, and an enabled
+ * seed on a disabled slot would fade out an effect that was never heard. */
+void le_fx_enable_seed_at(le_fx_state* fx, int slot, int effective);
+
 /* Seeds slot [slot]'s OCTAVER runtime settled at [params]: the three param
  * smoothers already at their targets and the mode crossfade already resolved
  * onto the mode params[3] selects. The octaver's analogue of
@@ -207,9 +214,10 @@ void le_fx_enable_seed_settled(le_fx_state* fx, int slot);
  * and a PSOLA slot spends ~15 ms fading the wet leg out and ~15 ms back in
  * before the mode flips, none of which the live lane was doing.
  *
- * It cannot settle the analysis-hop phase: the live counter is its phase plus
- * an elapsed-frame count nothing records. Caller passes an octaver slot (no
- * type check). Control thread / offline only, after le_fx_entry_reset. */
+ * The analysis-hop schedule needs no settling: it follows the clock the
+ * render sets (le_fx_state::clock), which reproduces the live one. Caller
+ * passes an octaver slot (no type check). Control thread / offline only,
+ * after le_fx_entry_reset. */
 void le_fx_octaver_seed_settled(le_fx_state* fx, int slot, const float* params);
 
 /* Settles chain slot [slot]'s enable-crossfade runtime at fully BYPASSED.

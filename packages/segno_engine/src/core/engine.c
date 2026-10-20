@@ -1336,6 +1336,22 @@ le_engine* le_engine_create(void) {
     engine->outputs[k].fx.fx.hop_seed = le_fx_output_hop_seed(k);
   }
   engine->all_tracks.fx.hop_seed = le_fx_all_tracks_hop_seed(0);
+  /* ...and every live owner reads the engine's frame as its FX clock (#941),
+   * so each reset site sees the frame being processed. */
+  for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) {
+    for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
+      engine->tracks[t].lanes[l].fx.clock_src = &engine->a_fx_frame;
+    }
+    engine->tracks[t].bus.fx.clock_src = &engine->a_fx_frame;
+  }
+  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    engine->monitors[c].fx.clock_src = &engine->a_fx_frame;
+  }
+  for (int32_t k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+    engine->all_tracks_fx[k].clock_src = &engine->a_fx_frame;
+    engine->outputs[k].fx.fx.clock_src = &engine->a_fx_frame;
+  }
+  engine->all_tracks.fx.clock_src = &engine->a_fx_frame;
   return engine;
 }
 

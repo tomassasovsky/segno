@@ -89,6 +89,11 @@ static stats time_blocks(rig* r, int blocks, int warm, double phase_mean[PHASES]
   int phase_n[PHASES] = {0};
   const double step = g_budget_us; /* one period, in us */
   rt_enter();
+  /* The engine frame of the first block, so each block is counted in the
+   * quarter of the engine clock it starts at, which is what the octaver's
+   * heavy ticks follow (#941), whatever ran before the timed loop. */
+  const uint64_t frame0 =
+      atomic_load_explicit(&r->e->a_frames, memory_order_relaxed);
   double next = now_us();
   int kept = 0;
   for (int b = 0; b < blocks + warm; ++b) {
@@ -101,8 +106,9 @@ static stats time_blocks(rig* r, int blocks, int warm, double phase_mean[PHASES]
     const double dt = now_us() - t0;
     if (b >= warm) {
       us[kept++] = dt;
-      const int q =
-          (int)(((long long)b * r->period) % HOP) / (HOP / PHASES);
+      const int q = (int)((frame0 + (uint64_t)b * (uint64_t)r->period) %
+                          (uint64_t)HOP) /
+                    (HOP / PHASES);
       phase_sum[q] += dt;
       phase_n[q]++;
     }

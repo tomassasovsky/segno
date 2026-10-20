@@ -20710,11 +20710,15 @@ static int oct_spread_any_offset(const int32_t* ph) {
 }
 
 /* The phase a running PV octaver in slot [s] of [fx] is on, read off its
- * counter against the chain clock: after the callback, `clock` is the frame of
- * the last sample the chain processed and `hop_count` the value its next tick
+ * counter against the chain clock: after the callback, the clock is the frame
+ * of the last sample the engine processed and `hop_count` the value its next tick
  * runs at, which is 0 on the frames c with (c + phase) mod LE_PV_HOP == 0. */
 static int32_t oct_live_phase(const le_fx_state* fx, int s) {
-  return (int32_t)(((uint32_t)fx->oct[s][0].hop_count - fx->clock - 1u) &
+  const uint32_t clock =
+      fx->clock_src != NULL
+          ? atomic_load_explicit(fx->clock_src, memory_order_relaxed)
+          : fx->clock;
+  return (int32_t)(((uint32_t)fx->oct[s][0].hop_count - clock - 1u) &
                    (uint32_t)(LE_PV_HOP - 1));
 }
 

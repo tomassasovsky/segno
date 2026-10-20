@@ -314,8 +314,9 @@ typedef struct le_octaver_state {
   float* last_phase; /* previous analysis phase per bin, length LE_PV_BINS */
   float* sum_phase;  /* accumulated synthesis phase per bin, length LE_PV_BINS */
   /* Samples into the current hop: PV counts up to LE_PV_HOP and runs a frame
-   * on wrap; PSOLA counts down to its next YIN pass. Seeded at this
-   * instance's staggered phase, not 0 (le_pv_hop_phase, engine_fx.c). */
+   * on wrap; PSOLA counts down to its next YIN pass. Seeded so the heavy
+   * ticks land on this instance's frames of the engine clock, not at 0
+   * (le_oct_seeded_ticks, engine_fx.c). */
   int32_t hop_count;
   int32_t out_pos;   /* reserved read/write phase (PSOLA, part 4) */
   /* PSOLA (part 4; zero-initialized and unused here). */
@@ -349,13 +350,16 @@ typedef struct le_fx_state {
    * renderers stand in for a live owner and copy its seed. Written once by
    * the control thread before any audio runs; read-only afterwards. */
   int32_t hop_seed;
-  /* The engine frame (mod 2^32) of the sample this chain processes next
-   * (#941): the clock an octaver's hop is anchored to, so its heavy ticks
-   * fall on absolute frames whatever instant it was reset at. The audio
-   * thread sets it for every owner at the top of each callback and before
-   * each fx_apply_chain call (engine_process.c); an offline render sets the
-   * live frame it stands for. A state nobody clocks (the VST3 processors)
-   * stays at 0, and its phase then counts from its reset. */
+  /* The clock an octaver's hop is anchored to (#941): the engine frame
+   * (mod 2^32) of the sample being processed, so its heavy ticks fall on
+   * absolute frames whatever instant it was reset at. A live owner reads the
+   * engine's own frame through [clock_src] (le_engine::a_fx_frame, set by
+   * le_engine_create), which the audio thread advances once per frame, so
+   * every reset site sees the right frame without setting anything. An
+   * offline render leaves [clock_src] NULL and sets [clock] to the live frame
+   * it stands for before each sample. A state nobody clocks (the VST3
+   * processors) stays at 0, and its phase then counts from its reset. */
+  const _Atomic uint32_t* clock_src;
   uint32_t clock;
   float svf_ic1[LE_FX_MAX][2];
   float svf_ic2[LE_FX_MAX][2];
@@ -1003,7 +1007,9 @@ typedef struct le_track {
   /* The engine frame (mod 2^32) of this track's most recent loop top (read
    * index 0 while playing), published by the audio thread at each top. The
    * wet cache renders a print as the lap that starts there, so a print that
-   * engages at the next top reproduces the live octaver hop exactly (#941). */
+   * engages at the next top reproduces the live octaver hop exactly (#941).
+   * Stored while playing or overdubbing, so the top a print is predicted
+   * from is never laps old after a punch-out. */
   _Atomic uint32_t a_top_clock;
   _Atomic int32_t lane_count; /* Active lanes, release-published after prepared
                                * buffers and routing become callback-owned. */
@@ -2656,9 +2662,12 @@ struct le_engine {
    * applied). Published to a_play_pos once per block; stale (held) for a track
    * the mixer skipped, which is what a stopped track should show anyway. */
   int32_t trk_play_pos[LE_MAX_TRACKS];
-  /* The engine frame (mod 2^32) of this callback's first sample: the FX
-   * clock base (le_fx_state::clock). Audio-thread only. */
+  /* The engine frame (mod 2^32) of this callback's first sample, and of the
+   * frame being processed (#941): every live owner's FX clock
+   * (le_fx_state::clock_src). The audio thread writes both; a control-thread
+   * reset reads the frame atomically. */
   uint32_t fx_clock_base;
+  _Atomic uint32_t a_fx_frame;
 
   /* Latency harness (audio-thread-local + published state). The measurement
    * captures the input-magnitude envelope into lat_buf for a fixed window after
