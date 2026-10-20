@@ -196,16 +196,24 @@ static void le_oct_set_ticks_to_work(le_octaver_state* o, int ticks) {
                                   : ticks;
 }
 
+/* The ticks until the first heavy tick of an instance seeded at its phase
+ * (le_pv_hop_phase) at this instant. */
+static int le_oct_seeded_ticks(const le_fx_state* fx, int slot) {
+  const int phase = le_pv_hop_phase(fx, slot);
+  return phase == 0 ? 1 : LE_PV_HOP - phase + 1;
+}
+
 /* Zeros the octaver's per-mode DSP runtime (phase history, synthesis
  * accumulator, hop counter) without touching the heap-buffer allocation or the
  * smoothed params / current mode. Used on a mode switch and on entry reset; safe
- * with NULL buffers (a slot that is not an octaver). The hop counter starts at
- * this instance's staggered phase (le_pv_hop_phase) in the current mode's
- * terms, not at 0. */
-static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan) {
+ * with NULL buffers (a slot that is not an octaver). The hop counter is set, in
+ * the current mode's terms, to run its first heavy tick [ticks] ticks from now:
+ * a reset passes le_oct_seeded_ticks (the instance's staggered phase), a mode
+ * switch the old mode's remaining ticks. */
+static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
+                                int ticks) {
   le_octaver_state* o = &fx->oct[slot][chan];
-  const int phase = le_pv_hop_phase(fx, slot);
-  le_oct_set_ticks_to_work(o, phase == 0 ? 1 : LE_PV_HOP - phase + 1);
+  le_oct_set_ticks_to_work(o, ticks);
   o->out_pos = 0;
   o->in_epoch = 0;
   o->out_epoch = 0;
@@ -662,8 +670,7 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
        * and move it off the instance's quarter. */
       const int ticks = le_oct_ticks_to_work(o);
       o->cur_mode = requested;
-      le_pv_reset_runtime(fx, slot, chan);
-      le_oct_set_ticks_to_work(o, ticks);
+      le_pv_reset_runtime(fx, slot, chan, ticks);
     }
   } else if (o->xfade < 1.0f) {
     o->xfade += xstep;
@@ -785,7 +792,7 @@ void le_fx_entry_reset(le_fx_state* fx, int slot) {
     o->sm_mix = 0.0f; /* starts dry, so the param ramp-in is inaudible */
     o->cur_mode = 0;  /* phase vocoder */
     o->xfade = 1.0f;  /* steady (no gain dip) */
-    le_pv_reset_runtime(fx, slot, chan);
+    le_pv_reset_runtime(fx, slot, chan, le_oct_seeded_ticks(fx, slot));
   }
   le_fx_clear_reverb(fx, slot);
   /* A retyped slot has no tail to drain: a stale budget would let the next
@@ -809,7 +816,7 @@ void le_fx_octaver_seed_settled(le_fx_state* fx, int slot,
       /* Land on the requested mode without fx_octaver's ~15 ms dip, and
        * re-seed the runtime as that switch would, hop phase included. */
       o->cur_mode = mode;
-      le_pv_reset_runtime(fx, slot, chan);
+      le_pv_reset_runtime(fx, slot, chan, le_oct_seeded_ticks(fx, slot));
     }
   }
 }

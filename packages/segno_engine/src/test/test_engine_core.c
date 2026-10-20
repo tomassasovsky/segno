@@ -20928,7 +20928,8 @@ static void test_octaver_hop_stagger_seeds(void) {
     for (int l = 0; l <= LE_MAX_LANES; ++l) {
       const int32_t seed = l < LE_MAX_LANES ? e->tracks[t].lanes[l].fx.hop_seed
                                             : e->tracks[t].bus.fx.hop_seed;
-      CHECK(seed == le_fx_lane_hop_seed(t, l));
+      CHECK(seed == (l < LE_MAX_LANES ? le_fx_lane_hop_seed(t, l)
+                                      : le_fx_bus_hop_seed(t)));
       off_lattice += seed % LE_PV_STAGGER_QUARTER != 0;
       owners++;
     }
@@ -20953,11 +20954,11 @@ static void test_octaver_hop_stagger_seeds(void) {
   int bad_chains = 0;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     for (int l = 0; l <= LE_MAX_LANES; ++l) {
+      const int32_t seed =
+          l < LE_MAX_LANES ? le_fx_lane_hop_seed(t, l) : le_fx_bus_hop_seed(t);
       for (int first = 0; first + 4 <= LE_FX_MAX; first += 7) {
         int32_t ph[4];
-        for (int i = 0; i < 4; ++i) {
-          ph[i] = oct_slot_phase(le_fx_lane_hop_seed(t, l), first + i);
-        }
+        for (int i = 0; i < 4; ++i) ph[i] = oct_slot_phase(seed, first + i);
         bad_chains += !oct_spread_any_offset(ph);
       }
     }
@@ -21004,12 +21005,12 @@ static void test_octaver_hop_stagger_seeds(void) {
    *    together, do not share a quarter; nor do the first owners of the
    *    lane, monitor, bus and output-bus kinds. */
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
-    CHECK(le_fx_lane_hop_seed(t, 0) != le_fx_lane_hop_seed(t, LE_MAX_LANES));
+    CHECK(le_fx_lane_hop_seed(t, 0) != le_fx_bus_hop_seed(t));
   }
   {
     const int32_t first[4] = {le_fx_lane_hop_seed(0, 0),
                               le_fx_monitor_hop_seed(0),
-                              le_fx_lane_hop_seed(0, LE_MAX_LANES),
+                              le_fx_bus_hop_seed(0),
                               le_fx_output_hop_seed(0)};
     CHECK(oct_spread_any_offset(first));
   }

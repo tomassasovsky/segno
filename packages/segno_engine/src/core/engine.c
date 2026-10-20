@@ -1326,7 +1326,7 @@ le_engine* le_engine_create(void) {
     for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
       engine->tracks[t].lanes[l].fx.hop_seed = le_fx_lane_hop_seed(t, l);
     }
-    engine->tracks[t].bus.fx.hop_seed = le_fx_lane_hop_seed(t, LE_MAX_LANES);
+    engine->tracks[t].bus.fx.hop_seed = le_fx_bus_hop_seed(t);
   }
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     engine->monitors[c].fx.hop_seed = le_fx_monitor_hop_seed(c);
