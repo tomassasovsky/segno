@@ -33,12 +33,15 @@
  * header is the cache line right below the payload, so the payload is 64-byte
  * aligned.
  *
- * The payload does not start at the same offset in every mapping: big buffers
- * start one of LE_RT_COLOURS cache lines further in, in turn. Fresh mappings
- * of one size land on the same alignment (huge-page aligned, often), so
- * without this the 64 lane buffers a mix reads at one position would all map
- * to the same cache sets and evict each other every frame; that cost the
- * 8 x 8 mixer bench 16 us a period. Costs at most a page per buffer. */
+ * The payload does not start on the same page of every mapping: a big buffer
+ * starts one of LE_RT_COLOURS pages further in, in turn. The kernel places
+ * fresh mappings of one large size on huge-page boundaries, so without this
+ * the 64 lane buffers a mix reads at one position sit at the same address
+ * modulo 2 MB: their pages then share TLB sets and their lines share cache
+ * sets, and they evict each other every block. That cost the 8 x 8 mixer
+ * bench 25 us a period without THP (a third of it) and 12 us with it. The
+ * pages skipped are address space only: never touched, so never resident or
+ * locked. A cache-line offset instead of a page one fixed only part of it. */
 #define LE_RT_HEADER 64u
 #define LE_RT_COLOURS 64u
 #define LE_RT_COLOUR_MIN_BYTES ((size_t)64 << 10) /* small buffers: no colour */
@@ -69,22 +72,30 @@ static size_t le_rt_page_size(void) {
   }
   return page;
 }
+
+/* The distance between colours: a page. */
+static size_t le_rt_colour_stride(void) { return le_rt_page_size(); }
+#else
+/* The heap path (sanitized builds) is not tuned: no colours. */
+static size_t le_rt_colour_stride(void) { return 0; }
 #endif
 
-/* Linux: fork-shield the fresh mapping, keep THP off it, and lock it on
- * fault. Each refusal degrades instead of failing the allocation (the mapping
+/* The largest lead le_rt_alloc gives a buffer. */
+static size_t le_rt_most_lead(void) {
+  return LE_RT_HEADER + (LE_RT_COLOURS - 1u) * le_rt_colour_stride();
+}
+
+/* Linux: fork-shield the fresh mapping and lock it on fault. Each refusal degrades instead of failing the allocation (the mapping
  * is good memory either way) and is logged once per process: the condition is
  * process-wide and segno.log does not rotate. */
 static void le_rt_advise(void* base, size_t total) {
 #if defined(__linux__) && !LE_RT_ALLOC_USES_HEAP
   static int shield_warned = 0; /* a race prints a line twice: harmless */
   static int lock_warned = 0;
-  /* Transparent huge pages are left to the system's policy. Turning them off
-   * here cost the 64-lane mixer about 8% where THP is "always" (TLB and
-   * prefetch reach over 64 streams), and only the fork case needed anything
-   * from this mapping. Where THP is "always", a touched slot rounds up to
-   * whole huge pages, so the appliance runs THP "madvise" (the kernel
-   * default) and the on-device check confirms it. */
+  /* Transparent huge pages are left to the system's policy. The appliance
+   * kernel has none; where THP is "always", turning it off here cost the
+   * 64-lane mixer about 8%, and a touched slot rounds up to whole huge pages
+   * instead (the residency tests allow for that). */
   /* fork() skips the mapping and never write-protects it (rt_alloc.h, 1). A
    * forced refusal is silent, so a test never consumes the one line a genuine
    * refusal owns. */
@@ -118,11 +129,10 @@ static void le_rt_advise(void* base, size_t total) {
 }
 
 void* le_rt_alloc(size_t bytes) {
-  const size_t most_lead = LE_RT_HEADER * (LE_RT_COLOURS + 1u);
-  if (bytes == 0 || bytes > SIZE_MAX - 2u * most_lead) return NULL;
+  if (bytes == 0 || bytes > SIZE_MAX - 2u * le_rt_most_lead()) return NULL;
   size_t lead = LE_RT_HEADER;
   if (bytes >= LE_RT_COLOUR_MIN_BYTES) {
-    lead += LE_RT_HEADER *
+    lead += le_rt_colour_stride() *
             (atomic_fetch_add_explicit(&g_colour, 1u, memory_order_relaxed) %
              LE_RT_COLOURS);
   }
@@ -161,7 +171,7 @@ static size_t le_rt_header_bytes(const void* p, size_t* lead) {
   le_rt_header h;
   memcpy(&h, (const unsigned char*)p - LE_RT_HEADER, sizeof(h));
   if (h.magic != LE_RT_MAGIC || (h.bytes ^ h.lead ^ LE_RT_MIX) != h.check ||
-      h.lead < LE_RT_HEADER || h.lead > LE_RT_HEADER * (LE_RT_COLOURS + 1u)) {
+      h.lead < LE_RT_HEADER || h.lead > le_rt_most_lead()) {
     return 0;
   }
   if (lead != NULL) *lead = (size_t)h.lead;
