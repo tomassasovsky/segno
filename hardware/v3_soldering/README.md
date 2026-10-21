@@ -4,12 +4,12 @@
 Covers the three current boards. The ring carrier and screen-power archives
 are the ones in the fabrication record,
 `docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json`; the console
-v3.1 archive (#1388) is listed in [the manufacturing notes](../MANUFACTURING.md)
+v3.2 archive (#1388, #1391) is listed in [the manufacturing notes](../MANUFACTURING.md)
 and needs the owner's review before it is ordered.
 
 | Board | KiCad file | Gerbers |
 |---|---|---|
-| Console v3.1 (Pico 2) | `hardware/kicad/out_console/segno_console_board.kicad_pcb` | `fab/segno_console_v3_1_gerbers.zip` |
+| Console v3.2 (Pico 2) | `hardware/kicad/out_console/segno_console_board.kicad_pcb` | `fab/segno_console_v3_2_gerbers.zip` |
 | Ring carrier (XIAO RP2350, white) | `hardware/kicad/segno_pedal_ring.kicad_pcb` | `fab/segno_pedal_ring_gerbers.zip` |
 | Screen power, Rev P | `hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb` | `fab/segno_screen_power_rev_p_gerbers.zip` |
 
@@ -31,14 +31,19 @@ the ring carrier, which has parts on both faces.
 
 ---
 
-## 1. Console v3.1
+## 1. Console v3.2
 
-![Console v3.1 solder order](console_order.png)
+![Console v3.2 back face, solder order (mirrored view)](console_back_order.png)
 
-![Console v3.1, 3D render](console_3d.png)
+![Console v3.2 top face, solder order](console_order.png)
 
-Every part goes on the top face. Everything is through-hole except the Pico 2,
-which is soldered flat by its castellations.
+![Console v3.2, 3D render](console_3d.png)
+
+The footswitch input protection (#1391) is on the **back**: five SOT-23 clamps
+and ten 1206 resistors between the debounce caps and the footswitch headers,
+the only surface-mount parts on the board. Fit them first, while the board
+lies flat. Everything else goes on the top face and is through-hole, except
+the Pico 2, which is soldered flat by its castellations.
 
 ### Parts
 
@@ -47,6 +52,8 @@ which is soldered flat by its castellations.
 | 220 Ω | R3, R4, R5 |
 | 330 Ω | R2 |
 | 1 kΩ | R7, R9 |
+| 1 kΩ 1206 (back) | R23-R32 |
+| PESD5V2S2UT, SOT-23 (back) | D2-D6 |
 | 4.7 kΩ | R19, R20, R21, R22 |
 | 6.8 kΩ 1% | R18 |
 | 10 kΩ | R6, R8, R10, R11, R12, R17 |
@@ -75,16 +82,27 @@ J3 pin 1 to pin 2 (+5V to GND) open. J2 pin 1 to J2 pin 6 (+3V3 to GND) open.
 
 ### Order
 
-1. **Pico 2 (J1).** USB connector at the left end, toward `5V IN`. Pad 1 is
+1. **D2-D6 (PESD5V2S2UT), back.** Turn the board over. Each sits between two
+   footswitch columns, just above the header row; the single pin (the common
+   anode) points down, toward the headers. Flux, tack one corner pin, check
+   all three pins sit on their pads, then solder the other two.
+2. **R23-R32 (1 kΩ 1206), back.** One per footswitch column, lying across it
+   between the debounce cap's pads and the header's pads. Tack one pad, then
+   solder the other. Then meter each footswitch, console unpowered: header
+   pin 1 to the cap's pin 1 above it reads 1 kΩ. In diode mode, red lead on
+   header pin 1 and black on GND reads open (the clamp is reverse-biased);
+   swapped, it reads about 0.7 V through the clamp. A short either way is a
+   bridged SOT-23.
+3. **Pico 2 (J1).** USB connector at the left end, toward `5V IN`. Pad 1 is
    bottom-left. Flux the pads, tape the module flat, tack pad 1 and pad 21
    (top-right), check alignment, then solder all 40 castellations. Leave the
    GND pads (3, 8, 13, 18, 23, 28, 33, 38) for last. Solder the three SWD
    holes at the right end too: the Pi reflashes the Pico through them, so they
    must be real joints. Then meter: pad 39 (VSYS) to J3 pin 1 short; pad 40
    (VBUS) to pad 39 open.
-2. **D1 (1N4148)**, between `MIDI IN` and U2. Cathode band to the left, on the
+4. **D1 (1N4148)**, between `MIDI IN` and U2. Cathode band to the left, on the
    `K` mark.
-3. **Resistors.** The silk labels in the two rows under the Pico are crowded, so
+5. **Resistors.** The silk labels in the two rows under the Pico are crowded, so
    go by position:
    - Under the rear headers (`MIDI OUT` / `CTRL 1` / `CTRL 2`), left to right:
      R4 220 Ω, R8 10 kΩ, R7 1 kΩ.
@@ -97,32 +115,32 @@ J3 pin 1 to pin 2 (+5V to GND) open. J2 pin 1 to J2 pin 6 (+3V3 to GND) open.
      R18 6.8 kΩ.
    - Right of the Pico, under U1: R2 330 Ω.
    - Vertical, right of the ribbon header: R17 10 kΩ (upper), R14 100 kΩ (lower).
-4. **Ceramic capacitors.** C1-C10 100 nF in the row above the footswitch
+6. **Ceramic capacitors.** C1-C10 100 nF in the row above the footswitch
    headers. C11 100 nF above U1, C20 100 nF beside U2. C13 and C14 are the only
    10 nF (`103`) parts, between `MIDI OUT` and `CTRL 1`.
-5. **U2 (H11L1)** and **U1 (74AHCT125N)**. Notch / pin 1 at the top (toward the
+7. **U2 (H11L1)** and **U1 (74AHCT125N)**. Notch / pin 1 at the top (toward the
    rear-panel edge) on both. Solder two diagonal pins, check the package is
    flat, then the rest. Sockets are fine if you want them. Clean the flux
    around U2 and D1 afterwards: residue across the opto gap defeats the MIDI
    isolation.
-6. **JST XH headers.** Pin 1 is on the left for every horizontal header. Solder
+8. **JST XH headers.** Pin 1 is on the left for every horizontal header. Solder
    one pin, press the housing flat while reheating, then the rest.
    - Top edge: J8 `PWR BTN`, J5 `MIDI IN`, J4 `MIDI OUT`, J20 `CTRL 1` (4-pin),
      J21 `CTRL 2` (4-pin).
    - Middle row: J23 `PD` (3-pin), J6 `RING` (4-pin), J25 `SCREEN`, J9 `PI PWR`.
    - Bottom edge, left to right: `REC STOP UNDO TRK1 TRK2 TRK3 TRK4 CLR BANK MODE`
      (J10 J11 J12 J14 J15 J16 J17 J18 J19 J13). `MODE` is at the right end on
-     v3.1 because it moved to GP12 (#1388).
-7. **JST VH headers** on the left edge: J3 `5V IN` (2-pin) and J24 `PILLS`
+     v3.1 and later because it moved to GP12 (#1388).
+9. **JST VH headers** on the left edge: J3 `5V IN` (2-pin) and J24 `PILLS`
    (3-pin). Both are vertical; **pin 1 is the bottom pin**. J3 pin 1 is +5V;
    J24 pin 1 is GND, pin 2 data, pin 3 +5V.
-8. **J2, Pi ribbon header.** Pin 1 is bottom-right, next to the small triangle
+10. **J2, Pi ribbon header.** Pin 1 is bottom-right, next to the small triangle
    by R14. Match the shroud's notch to the silk outline. Solder two diagonal
    corners, check it is square, then the rest. J2 pins 2 and 4 (Pi 5 V) are
    not connected on purpose.
-9. **C31 (100 µF)**, then **C30 (470 µF)**, upper-left. **+ lead in the left
+11. **C31 (100 µF)**, then **C30 (470 µF)**, upper-left. **+ lead in the left
    hole** on both (silk `+`). C30 backwards will vent on first power-up.
-10. **J22 `EXP`** (optional). 2×3, pin 1 top-left. Worth fitting on the first
+12. **J22 `EXP`** (optional). 2×3, pin 1 top-left. Worth fitting on the first
     unit: pin 1 is +3V3, pin 2 is +5V and pin 6 is GND, which makes it the
     easiest test point on the board.
 

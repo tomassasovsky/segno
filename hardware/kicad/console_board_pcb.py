@@ -1,4 +1,4 @@
-"""pcbnew layout generator for the Segno CONSOLE board v3 (issue #747; v3: #987 ring link, CTRL ring sense; v3.1: #1388 MODE on GP12).
+"""pcbnew layout generator for the Segno CONSOLE board v3 (issue #747; v3: #987 ring link, CTRL ring sense; v3.1: #1388 MODE on GP12; v3.2: #1391 footswitch input protection).
 
 Consumes `console_board.net` -- the SKiDL netlist is the single source of truth for
 what connects to what -- and emits a placed, routed, poured, DRC-clean board plus a
@@ -393,6 +393,88 @@ def fsw_x(i):
     return FSW_X0 + (FSW_X1 - FSW_X0) * i / 9.0
 
 
+# ---- footswitch input protection (#1391), on the BACK -----------------------
+# console_board.py puts a 1k (R23..R32) and a clamp (D2..D6, one dual part per
+# two inputs) between every footswitch header and its GPIO. The front has no
+# room for twenty more parts: the strip between the debounce caps and the
+# headers holds the function labels, and every gap in the cap row holds a
+# designator. The back of that strip is empty. Each column has one THT pad above
+# (the cap's pin 1, y 75.3) and one below (the header's pin 1, y 84.2), both at
+# the same x, and the circuit is exactly "cap pin 1 -- 1k -- header pin 1", so
+# the parts go there as surface-mount: hand-solderable 1206 and SOT-23, and
+# the only SMD parts on the board. Seen from the top, one pair of columns:
+#
+#        cap a pin 1              cap b pin 1               (THT, y 75.3)
+#     R_a ref          D ref           R_b ref               (back silk)
+#   [2  R_a  1]      K1   K2        [1  R_b  2]              (y 80.0 / 78.5)
+#                       A                                    (y 81.5)
+#    header a pin 1   pin 2 (GND)  header b pin 1            (THT, y 84.2)
+#
+# Each resistor's cable-side pad 1 faces the clamp between the two columns, and
+# the clamp's anode lands beside header a's GND pin, so a strike on either cable
+# returns to a ground pin a few millimetres from where it arrived (TI SLVA680:
+# the TVS at the connector, its ground short).
+FSW_SERIES_Y = 80.0
+FSW_TVS_Y = 80.0
+FSW_TVS_ROT = 270      # on the back: K1 upper left, K2 upper right, anode below
+BACK_SILK_GAP = 0.3    # back designator to its own part's courtyard
+
+
+def _input_protection(fps, nets):
+    """-> {ref: (x, y, rot)}: each footswitch's series resistor and its clamp.
+
+    Paired off the netlist, like _debounce_caps(): the resistor and the clamp are
+    whatever sits on the net of that header's pin 1. Positions come from the
+    placed header's own pin 1, and columns are taken left to right as placed,
+    so they follow the headers wherever they go.
+    """
+    out = {}
+    columns = sorted(FSW_SLOTS, key=lambda r: _pad_xy(fps[r], "1")[0])
+    for i, j in enumerate(columns):
+        ext = [n for n, nodes in nets.items() if (j, "1") in nodes]
+        assert len(ext) == 1, f"PROTECT: {j} pin 1 is on {ext}, expected one net"
+        refs = {r for r, _p in nets[ext[0]]}
+        rs = sorted(r for r in refs if r.startswith("R"))
+        ds = sorted(r for r in refs if r.startswith("D"))
+        assert len(rs) == 1 and len(ds) == 1, (
+            f"PROTECT: {ext[0]} carries {sorted(refs)}, expected one resistor and "
+            "one clamp beside the header")
+        x1, _y1 = _pad_xy(fps[j], "1")
+        # Pad 1 is the cable side; it faces the clamp between the pair's columns.
+        out[rs[0]] = (x1, FSW_SERIES_Y, 180 if i % 2 == 0 else 0)
+        if i % 2 == 0:
+            partner = columns[i + 1]
+            assert any(r == ds[0] for r, _p in
+                       next(nodes for n, nodes in nets.items()
+                            if (partner, "1") in nodes)), (
+                f"PROTECT: {ds[0]} clamps {j} but not its neighbour {partner} -- a "
+                "dual clamp has to serve two ADJACENT headers, or one of its "
+                "traces crosses a column")
+            out[ds[0]] = ((x1 + _pad_xy(fps[partner], "1")[0]) / 2.0,
+                          FSW_TVS_Y, FSW_TVS_ROT)
+    assert len(out) == 15, f"PROTECT: placed {len(out)} protection parts, expected 15"
+    return out
+
+
+def _on_back(fp):
+    """A surface-mount part on the back: its copper and its body are under the
+    board, where only the THT pads of the parts above can collide with it."""
+    return fp.IsFlipped() and not any(p.GetAttribute() == pcbnew.PAD_ATTRIB_PTH
+                                      for p in fp.Pads())
+
+
+def _tht_pad_boxes(fp):
+    """Boxes, board-local mm, of a footprint's plated through-hole pads."""
+    out = []
+    for p in fp.Pads():
+        if p.GetAttribute() not in (pcbnew.PAD_ATTRIB_PTH, pcbnew.PAD_ATTRIB_NPTH):
+            continue
+        b = p.GetBoundingBox()
+        out.append((ToMM(b.GetLeft()) - ORIGIN[0], ToMM(b.GetTop()) - ORIGIN[1],
+                    ToMM(b.GetRight()) - ORIGIN[0], ToMM(b.GetBottom()) - ORIGIN[1]))
+    return out
+
+
 for _i, _ref in enumerate(FSW_SLOTS):
     PLACEMENT[_ref] = (fsw_x(_i), FSW_Y, 0)
 
@@ -453,7 +535,7 @@ def _outline(board):
         board.Add(a)
 
 
-def _load_fp(board, lib, name, ref, x, y, rot, by_centre=True):
+def _load_fp(board, lib, name, ref, x, y, rot, by_centre=True, back=False):
     """Place a footprint so (x, y) is the CENTRE of its extent.
 
     A footprint's origin is wherever its author put it -- pad 1 on an axial
@@ -477,6 +559,10 @@ def _load_fp(board, lib, name, ref, x, y, rot, by_centre=True):
             models[i].m_Filename = "${KIPRJMOD}/../segno.pretty/" + name + ".step"
     board.Add(fp)
     fp.SetPosition(P(0.0, 0.0))
+    if back:
+        # Flipped BEFORE the rotation, so `rot` means the same thing for every
+        # back part: the orientation as seen from the top of the board.
+        fp.Flip(fp.GetPosition(), pcbnew.FLIP_DIRECTION_TOP_BOTTOM)
     if rot:
         fp.SetOrientationDegrees(rot)
     cw, ch = _courtyard_size(lib, name)
@@ -1139,6 +1225,9 @@ def _free_slot(anchor, w, h, boxes):
 # J9 now exits beside the ribbon, as requested for the Pi harness. Its two
 # floating button traces add ~128 mm of minimum copper compared with the
 # former position beside the Pico. Preserve the existing routing headroom.
+# v3.2 (#1391) measures 2116 mm: the footswitch protection parts sit on the back
+# directly between each debounce cap and its header, so they add only the short
+# cable-side nets and the clamps' hops across their column pairs.
 MAX_RATSNEST_MM = 2180.0
 POURED_NETS = {"GND"}
 
@@ -1254,12 +1343,23 @@ def _check_place(fps):
             f"PLACE: {ref} spans ({x0:.1f},{y0:.1f})..({x1:.1f},{y1:.1f}), outside "
             f"the {BW:.1f}x{BH:.1f} outline")
 
-    # footprints must not overlap each other
+    # footprints must not overlap each other. A surface-mount part on the back
+    # shares no space with a part on the front -- only with the front part's
+    # through-hole pads, whose barrels and solder fillets come through.
     refs = sorted(fps)
     for i, a in enumerate(refs):
         for b in refs[i + 1:]:
             ax0, ay0, ax1, ay1 = _extent(fps[a])
             bx0, by0, bx1, by1 = _extent(fps[b])
+            if _on_back(fps[a]) != _on_back(fps[b]):
+                back, front = (a, b) if _on_back(fps[a]) else (b, a)
+                x0, y0, x1, y1 = _extent(fps[back])
+                for px0, py0, px1, py1 in _tht_pad_boxes(fps[front]):
+                    if not (x1 <= px0 or px1 <= x0 or y1 <= py0 or py1 <= y0):
+                        raise AssertionError(
+                            f"PLACE: {back} on the back sits on a through-hole pad "
+                            f"of {front} -- the pad's barrel and fillet come through")
+                continue
             if not (ax1 <= bx0 or bx1 <= ax0 or ay1 <= by0 or by1 <= ay0):
                 raise AssertionError(
                     f"PLACE: {a} and {b} overlap -- footprints cannot share copper area")
@@ -1280,13 +1380,19 @@ def _check(fps, nets, board=None):
     # as a silkscreen symptom and a selftest control once proved the wrong gate.
     _check_place(fps)
 
-    # the footswitch fan-out must preserve order, or its tracks cross
+    # the footswitch fan-out must preserve order, or its tracks cross. Pin 1 is
+    # on the cable side of the input's series resistor (#1391), so the Pico pad
+    # it serves is found through that resistor.
     order = []
     for i in range(10):
         ref = "J%d" % (10 + i)
         pad = _pad_xy(fps[ref], "1")
         sig = [n for n, nodes in nets.items() if (ref, "1") in nodes]
         assert len(sig) == 1, f"CROSSING: {ref} pin 1 is on {sig}, expected exactly one net"
+        series = [r for r, _p in nets[sig[0]] if r.startswith("R")]
+        if series:
+            sig = [n for n, nodes in nets.items() if n != sig[0]
+                   and any(r == series[0] for r, _p in nodes)]
         pico_pad = [p for r, p in nets[sig[0]] if r == "J1"]
         assert len(pico_pad) == 1, f"CROSSING: {sig[0]} does not land on exactly one Pico pad"
         order.append((pad[0], _pad_xy(fps["J1"], pico_pad[0])[0], ref, sig[0]))
@@ -1345,6 +1451,8 @@ def _check(fps, nets, board=None):
             f"{FAB_MIN_SILK_HEIGHT} mm the fab can print")
     for item, text, (x0, y0, x1, y1) in silk:
         for ref, fp in fps.items():
+            if _on_back(fp):
+                continue           # front ink cannot land on a part under the board
             fx0, fy0, fx1, fy1 = _extent(fp)
             if not (x1 < fx0 or fx1 < x0 or y1 < fy0 or fy1 < y0):
                 raise AssertionError(
@@ -1364,6 +1472,8 @@ def _check(fps, nets, board=None):
                     "neither can be read at the bench")
 
     if board:
+        _back = _back_silk_problems(board, fps)
+        assert not _back, _back[0]
         _legend = _pin_legend_problems(board)
         assert not _legend, _legend[0]
 
@@ -1667,7 +1777,7 @@ def _labels(board, fps):
     placed the same way the passives are -- try the four sides at increasing
     distance, take the first gap that is actually empty.
     """
-    taken = [_extent(fp) for fp in fps.values()]
+    taken = [_extent(fp) for fp in fps.values() if not _on_back(fp)]
     for t in board.GetDrawings():
         # Shapes as well as text: the silk art (the logo) is PCB_SHAPE polygons,
         # and a label searched past it landed on the glyphs the moment J3 moved
@@ -1768,6 +1878,56 @@ def _labels(board, fps):
         taken.append(_text_box(t))
 
 
+def _back_refs(fps):
+    """Designators for the back parts, on the back, directly above each part.
+
+    _labels() only places FRONT designators; a flipped footprint's reference is
+    on B.Silkscreen, where the library left it -- across its own pads.
+    """
+    for ref, fp in sorted(fps.items()):
+        if not _on_back(fp):
+            continue
+        t = fp.Reference()
+        t.SetTextAngle(pcbnew.EDA_ANGLE(0, pcbnew.DEGREES_T))
+        t.SetTextSize(pcbnew.VECTOR2I(FromMM(REF_H), FromMM(REF_H)))
+        t.SetTextThickness(FromMM(REF_STROKE))
+        x0, y0, x1, _y1 = _extent(fp)
+        h = _text_box(t)[3] - _text_box(t)[1]
+        t.SetPosition(P((x0 + x1) / 2.0, y0 - BACK_SILK_GAP - h / 2.0))
+
+
+def _back_silk_problems(board, fps):
+    """BACK_SILK: what _check's SILK gate asks of the front, asked of the back's
+    designators -- on the board, off every part, off each other and the art."""
+    texts, out = [], []
+    for ref, fp in fps.items():
+        t = fp.Reference()
+        if t.IsVisible() and t.IsOnLayer(pcbnew.B_SilkS):
+            texts.append((ref, _text_box(t)))
+    art = [d for d in board.GetDrawings() if d.IsOnLayer(pcbnew.B_SilkS)
+           and d.GetClass() == "PCB_SHAPE"]
+    hit = lambda a, b: not (a[2] < b[0] or b[2] < a[0] or a[3] < b[1] or b[3] < a[1])
+    for i, (ref, box) in enumerate(texts):
+        if not (0 <= box[0] and box[2] <= BW and 0 <= box[1] and box[3] <= BH):
+            out.append(f"BACK_SILK: '{ref}' is printed off the outline")
+        for other, fp in fps.items():
+            if _on_back(fp) and hit(box, _extent(fp)):
+                out.append(f"BACK_SILK: '{ref}' is printed across {other} on the back")
+            if any(hit(box, pad) for pad in _tht_pad_boxes(fp)):
+                out.append(f"BACK_SILK: '{ref}' is printed across a pad of {other}")
+        for other, obox in texts[i + 1:]:
+            if hit(box, obox):
+                out.append(f"BACK_SILK: '{ref}' and '{other}' are printed on top of "
+                           "each other")
+        for d in art:
+            b = d.GetBoundingBox()
+            if hit(box, (ToMM(b.GetLeft()) - ORIGIN[0], ToMM(b.GetTop()) - ORIGIN[1],
+                         ToMM(b.GetRight()) - ORIGIN[0], ToMM(b.GetBottom()) - ORIGIN[1])):
+                out.append(f"BACK_SILK: '{ref}' is printed across the back art")
+                break
+    return out
+
+
 def _pin_legend(board, fps):
     """Name each pad of the power headers on B.Silkscreen, to the pad's right."""
     for ref in PIN_LEGEND_REFS:
@@ -1836,17 +1996,19 @@ def _debounce_caps(nets):
     """
     out = {}
     for i, j in enumerate(FSW_SLOTS):
-        for name, nodes in nets.items():
-            if not name.startswith("SW_"):
-                continue
-            refs = {r for r, _p in nodes}
-            if j not in refs:
-                continue
-            caps = sorted(r for r in refs if r.startswith("C"))
-            assert len(caps) == 1, (
-                f"DEBOUNCE: {name} has {caps} on it, expected exactly one cap")
-            out[caps[0]] = (fsw_x(i), CAP_Y, 0)
-            break
+        # The cap is on the Pico side of the input's series resistor (#1391): from
+        # the header's pin-1 net, across the resistor, to the GPIO net.
+        ext = next((n for n, nodes in nets.items() if (j, "1") in nodes), None)
+        series = sorted(r for r, _p in nets.get(ext, ()) if r.startswith("R"))
+        gpio = [n for n, nodes in nets.items() if n != ext and series
+                and any(r == series[0] for r, _p in nodes)]
+        assert len(series) == 1 and len(gpio) == 1, (
+            f"DEBOUNCE: {j} pin 1 ({ext}) does not reach a GPIO net through one "
+            f"series resistor (found {series})")
+        caps = sorted(r for r, _p in nets[gpio[0]] if r.startswith("C"))
+        assert len(caps) == 1, (
+            f"DEBOUNCE: {gpio[0]} has {caps} on it, expected exactly one cap")
+        out[caps[0]] = (fsw_x(i), CAP_Y, 0)
     assert len(out) == 10, f"DEBOUNCE: paired {len(out)} caps to switches, expected 10"
     return out
 
@@ -1881,8 +2043,15 @@ def _selftest():
         # Same spot, turned round -- the coordinates follow PLACEMENT, or the
         # control lands on the cap row and trips PLACE instead of its own gate.
         ("pill power header turned against J3", "PILL_POWER:", {"J24": (5.4, 60.84, 270)}, {}),
+        # Two neighbours swapped, REC and STOP: they share a clamp (#1391), so the
+        # protection parts still place and the fan-out order is what fails.
         ("footswitch fan-out out of order", "CROSSING:",
-         {FSW_SLOTS[0]: (FSW_X1, FSW_Y, 0), FSW_SLOTS[-1]: (FSW_X0, FSW_Y, 0)}, {}),
+         {FSW_SLOTS[0]: (fsw_x(1), FSW_Y, 0), FSW_SLOTS[1]: (fsw_x(0), FSW_Y, 0)}, {}),
+        # A clamp pushed down onto the header row it protects.
+        ("footswitch clamp on a header pin", "PLACE:", {}, {"FSW_TVS_Y": 83.5}),
+        # The back designators dropped onto their own parts.
+        ("back designator printed across its part", "BACK_SILK:", {},
+         {"BACK_SILK_GAP": -2.0}),
         # The pours tie SMD pads solid. This gate ran BEFORE the pours existed, so it
         # looped over an empty board.Zones() and could not fail; the ordering is what
         # makes the control below meaningful rather than the assertion text.
@@ -2002,6 +2171,10 @@ def build(quiet=False):
         lib, name, _v = comps[ref]
         fps[ref] = _load_fp(board, lib, name, ref, x, y, rot)
 
+    for ref, (x, y, rot) in _input_protection(fps, nets).items():
+        lib, name, _v = comps[ref]
+        fps[ref] = _load_fp(board, lib, name, ref, x, y, rot, back=True)
+
     # everything else follows the netlist
     boxes = [_bbox_mm(fp) for fp in fps.values()]
     # The pinned label rows are geometry, not folklore: LABEL_ROW fixes fifteen
@@ -2066,11 +2239,12 @@ def build(quiet=False):
     # H4's pad at the left end of the bottom strip. Dropping the numbers only
     # shortens it inward from that centre, so the clearance can only improve;
     # the SILK gates below re-measure it as rendered either way.
-    _silk(board, "SEGNO CONSOLE v3.1", 33.0, 95.5, 1.6)
+    _silk(board, "SEGNO CONSOLE v3.2", 33.0, 95.5, 1.6)
     # No "MIDI IN: ISOLATED" legend (owner call, #1062). It said something true
     # about the circuit to nobody who needed it at the bench, and the bottom
     # strip reads better with the title alone.
     _labels(board, fps)
+    _back_refs(fps)
     _pin_legend(board, fps)
 
     # Poured on BOTH layers, not just B.Cu. With one pour, B.Cu routing chopped the
@@ -2168,14 +2342,20 @@ def write_bom():
             roles += "; " + exact[items[0][0]]
         rows.append((roles, [r for r, _v in items], fp))
 
+    # Exact purchase numbers where a substitute breaks the circuit. The clamp is
+    # chosen for its 1 uA leakage against the Pico's weak pull-up; a generic 5 V
+    # TVS leaks up to 800 uA and holds the footswitch pressed (#1391).
+    lcsc = {"PESD5V2S2UT": "C18441"}
+
     path = os.path.join(HERE, "fab", "segno_console_board_bom.csv")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as fh:
         fh.write("Comment,Designator,Footprint,LCSC,Qty,Type\n")
         for comment, refs, fp in sorted(rows, key=lambda r: (-len(r[1]), r[2])):
             refs = sorted(refs, key=_ref_key)
-            fh.write('"%s","%s",%s,,%d,Component\n'
-                     % (comment or "?", ",".join(refs), fp, len(refs)))
+            fh.write('"%s","%s",%s,%s,%d,Component\n'
+                     % (comment or "?", ",".join(refs), fp, lcsc.get(comment, ""),
+                        len(refs)))
     return path
 
 
