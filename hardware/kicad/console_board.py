@@ -818,12 +818,10 @@ for _name in FSW_ORDER:
 # The datasheet values the FSW_PROTECT gate reasons from, keyed by the part value
 # the BOM prints. Nexperia PESD5V2S2UT (SOT-23, pin 1 K1, pin 2 K2, pin 3 common
 # anode): VRWM 5.2 V, IRM 1 uA max at VRWM, V(CL) 20 V at 18 A (8/20 us), IEC
-# 61000-4-2 level 4. SMAJ5.0A is here as the counter-example the self-test fits:
-# a general-purpose 5 V TVS leaks up to 800 uA at its stand-off voltage, which
-# would hold a footswitch line low against a 32-86k pull-up.
+# 61000-4-2 level 4. Only parts that pass the gate belong here; the self-test
+# brings its own leaky counter-example.
 TVS_SPECS = {
     "PESD5V2S2UT": {"vrwm": 5.2, "irm": 1e-6, "vcl": 20.0},
-    "SMAJ5.0A": {"vrwm": 5.0, "irm": 800e-6, "vcl": 9.2},
 }
 FSW_TVS = "PESD5V2S2UT"
 FSW_BY_PAD = sorted(FSW_ORDER, key=lambda _n: PICO[GPIO["SW_" + _n]])
@@ -975,10 +973,8 @@ def _check(strict_stations=True):
     # Check electrical limits, not just a remembered BOM value: increasing R18
     # revives A2 E9; reducing it too far loses the retained 1 mA fault bound.
     _rx_series = next((p for p in default_circuit.parts if p.ref == "R18"), None)
-    _rx_value = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)k",
-                             str(_rx_series.value) if _rx_series is not None else "")
-    assert _rx_value, "LINK_RX_DRIVE: R18 must name its resistance in kOhm"
-    _rx_ohms = float(_rx_value[1]) * 1000
+    assert _rx_series is not None, "LINK_RX_DRIVE: R18 is missing"
+    _rx_ohms = _value_si(_rx_series.value, "R")
     assert _rx_ohms * 1.01 <= 8200, (
         "LINK_RX_DRIVE: R18 exceeds RP2350 A2 E9's 8.2 kOhm low-drive limit")
     assert _rx_ohms > 0 and 3.63 / (_rx_ohms * 0.99) <= 0.001, (
@@ -1663,13 +1659,22 @@ def _selftest():
         fsw_series["MODE"].value = "10k"
 
     def _fsw_leaky_clamp():
+        # A general-purpose 5 V TVS: up to 800 uA at its stand-off voltage,
+        # which holds a footswitch low against a 32-86k pull-up.
+        TVS_SPECS["SMAJ5.0A"] = {"vrwm": 5.0, "irm": 800e-6, "vcl": 9.2}
         fsw_tvs["MODE"].value = "SMAJ5.0A"
+
+    def _fsw_anode_off_ground():
+        # Cathodes where they belong, common anode on a rail instead of GND.
+        fsw_tvs["MODE"][3].disconnect()
+        fsw_tvs["MODE"][3] += v5
 
     case("footswitch header wired straight to its GPIO", "FSW_PROTECT:", _fsw_direct)
     case("debounce cap on the cable side", "FSW_PROTECT:", _fsw_cap_cable_side)
     case("footswitch clamp fitted backwards", "FSW_PROTECT:", _fsw_clamp_reversed)
     case("footswitch series resistor past E9", "FSW_PROTECT:", _fsw_series_weak)
     case("leaky general-purpose TVS as the clamp", "FSW_PROTECT:", _fsw_leaky_clamp)
+    case("footswitch clamp anode off GND", "anode is not on GND", _fsw_anode_off_ground)
     case("CTRL bias connected to Pi supply", "CTRL_SUPPLY:", _ctrl_pi_bias)
     case("ring UART bias connected to Pi supply", "CTRL_SUPPLY:", _ring_pi_bias)
     case("Pico output on wrong supply", "CTRL_SUPPLY:", _ctrl_supply_short)
@@ -1742,6 +1747,10 @@ def _selftest():
                 fsw_series["MODE"].value = FSW_SERIES
             if mutate is _fsw_leaky_clamp:
                 fsw_tvs["MODE"].value = FSW_TVS
+                TVS_SPECS.pop("SMAJ5.0A", None)
+            if mutate is _fsw_anode_off_ground:
+                fsw_tvs["MODE"][3].disconnect()
+                fsw_tvs["MODE"][3] += gnd
             if mutate in (_rx_too_weak, _rx_fault_current):
                 next(p for p in default_circuit.parts if p.ref == "R18").value = "6.8k"
             if mutate in (_ctrl_pi_bias, _ring_pi_bias):

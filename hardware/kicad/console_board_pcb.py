@@ -430,6 +430,9 @@ def _input_protection(fps, nets):
     """
     out = {}
     columns = sorted(FSW_SLOTS, key=lambda r: _pad_xy(fps[r], "1")[0])
+    assert len(columns) % 2 == 0, (
+        f"PROTECT: {len(columns)} footswitch headers; each dual clamp serves two "
+        "neighbours, so one header would be left without one")
     for i, j in enumerate(columns):
         ext = [n for n, nodes in nets.items() if (j, "1") in nodes]
         assert len(ext) == 1, f"PROTECT: {j} pin 1 is on {ext}, expected one net"
@@ -452,7 +455,8 @@ def _input_protection(fps, nets):
                 "traces crosses a column")
             out[ds[0]] = ((x1 + _pad_xy(fps[partner], "1")[0]) / 2.0,
                           FSW_TVS_Y, FSW_TVS_ROT)
-    assert len(out) == 15, f"PROTECT: placed {len(out)} protection parts, expected 15"
+    want = len(columns) + len(columns) // 2
+    assert len(out) == want, f"PROTECT: placed {len(out)} protection parts, expected {want}"
     return out
 
 
@@ -1986,7 +1990,7 @@ def _pin_legend_problems(board):
     return out
 
 
-def _debounce_caps(nets):
+def _debounce_caps(nets, fps):
     """-> {cap_ref: (x, y, rot)}, each 100nF sat directly above the switch it debounces.
 
     Left to the auto-placer these scattered: seven landed in the channel, C8 was
@@ -1995,7 +1999,7 @@ def _debounce_caps(nets):
     correct if console_board.py ever builds the switches in a different order.
     """
     out = {}
-    for i, j in enumerate(FSW_SLOTS):
+    for j in FSW_SLOTS:
         # The cap is on the Pico side of the input's series resistor (#1391): from
         # the header's pin-1 net, across the resistor, to the GPIO net.
         ext = next((n for n, nodes in nets.items() if (j, "1") in nodes), None)
@@ -2008,7 +2012,10 @@ def _debounce_caps(nets):
         caps = sorted(r for r, _p in nets[gpio[0]] if r.startswith("C"))
         assert len(caps) == 1, (
             f"DEBOUNCE: {gpio[0]} has {caps} on it, expected exactly one cap")
-        out[caps[0]] = (fsw_x(i), CAP_Y, 0)
+        # Over the PLACED header, as the protection parts below it are, so the
+        # column stays one column wherever the header goes.
+        hx0, _hy0, hx1, _hy1 = _extent(fps[j])
+        out[caps[0]] = ((hx0 + hx1) / 2.0, CAP_Y, 0)
     assert len(out) == 10, f"DEBOUNCE: paired {len(out)} caps to switches, expected 10"
     return out
 
@@ -2167,7 +2174,7 @@ def build(quiet=False):
             x, y, rot = PLACEMENT[ref]
             fps[ref] = _load_fp(board, lib, name, ref, x, y, rot)
 
-    for ref, (x, y, rot) in {**_debounce_caps(nets), **CAP_AT}.items():
+    for ref, (x, y, rot) in {**_debounce_caps(nets, fps), **CAP_AT}.items():
         lib, name, _v = comps[ref]
         fps[ref] = _load_fp(board, lib, name, ref, x, y, rot)
 
