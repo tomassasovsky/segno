@@ -128,7 +128,8 @@ void le_fx_frozen_capture(le_fx_frozen_chain* c, _Atomic int32_t* count,
                           _Atomic uint32_t* level, _Atomic int32_t* rack,
                           int32_t hop_seed);
 
-/* 1 when any entry in [from, to) has `type` (LE_FX_NONE: any real entry). */
+/* 1 when any entry in [from, to) has `type` (LE_FX_NONE: any real entry, or
+ * any entry with a rack edge, whose rack applies its output side). */
 int le_fx_frozen_has(const le_fx_frozen_chain* c, int32_t from, int32_t to,
                      int32_t type);
 

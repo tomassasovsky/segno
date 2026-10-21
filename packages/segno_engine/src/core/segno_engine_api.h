@@ -913,12 +913,15 @@ typedef struct le_plugin_slot le_plugin_slot;
  * first entry has LE_FX_RACK_FIRST, its last LE_FX_RACK_LAST, a one-entry
  * rack both, and an entry inside a rack or in none, neither.
  *
- * A rack's output side (the output choice, placement and level of its LAST
- * entry) is the rack's own: the engine applies it after that entry whatever
- * the entry is (a passthrough, a plugin, or bypassed), while any entry of the
- * rack is on, fading with the enable ramp. With every entry off, or the chain
- * off, the rack passes its input through untouched. Every other entry's output
- * side stays its own and applies to its effect's result, as before. */
+ * A rack's input choice (its FIRST entry's) and output side (the output
+ * choice, placement and level of its LAST entry) are the rack's own: the
+ * engine applies them before the first entry and after the last whatever
+ * those entries are (a passthrough, a plugin, or bypassed), while any entry
+ * of the rack is on, fading with the enable ramp. With every entry off, or
+ * the chain off, the rack passes its input through untouched, except that a
+ * tail still draining out of one of its entries keeps the rack's output side
+ * it was heard with. Every other entry's channel handling stays its own and
+ * applies around its effect, as before. */
 typedef enum le_fx_rack_edge {
   LE_FX_RACK_FIRST = 1,
   LE_FX_RACK_LAST = 2,

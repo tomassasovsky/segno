@@ -6601,10 +6601,15 @@ static inline void snapshot_lane_fx(
           fx_params[t][l][s][p] = load_f32(&ln->a_fx_param[s][p]);
         }
       }
-      le_fx_chan_snapshot(ln->fx.chan, &ln->fx.chan_any, n, ln->a_fx_chan_in,
-                          ln->a_fx_chan_out, ln->a_fx_chan_gl_bits,
-                          ln->a_fx_chan_gr_bits, ln->a_fx_chan_level_bits,
-                          ln->a_fx_chan_rack);
+      /* A rack runs even when every entry is LE_FX_NONE: its output side
+       * still applies, and its crossfade must keep following its pedals
+       * (le_fx_chan_snapshot). */
+      if (le_fx_chan_snapshot(ln->fx.chan, &ln->fx.chan_any, n,
+                              ln->a_fx_chan_in, ln->a_fx_chan_out,
+                              ln->a_fx_chan_gl_bits, ln->a_fx_chan_gr_bits,
+                              ln->a_fx_chan_level_bits, ln->a_fx_chan_rack)) {
+        has_fx[t][l] = 1;
+      }
       /* A slot the chain will NOT process this buffer (chain skipped, beyond
        * the active count, or LE_FX_NONE) cannot advance its enable ramp; if
        * its effective bit is 0, settle it to bypass now so a processing gap
@@ -6669,10 +6674,13 @@ static inline void snapshot_monitor_fx(
         mon_fx_params[c][s][p] = load_f32(&m->a_fx_param[s][p]);
       }
     }
-    le_fx_chan_snapshot(m->fx.chan, &m->fx.chan_any, n, m->a_fx_chan_in,
-                        m->a_fx_chan_out, m->a_fx_chan_gl_bits,
-                        m->a_fx_chan_gr_bits, m->a_fx_chan_level_bits,
-                        m->a_fx_chan_rack);
+    /* A rack runs even when every entry is LE_FX_NONE (snapshot_lane_fx). */
+    if (le_fx_chan_snapshot(m->fx.chan, &m->fx.chan_any, n, m->a_fx_chan_in,
+                            m->a_fx_chan_out, m->a_fx_chan_gl_bits,
+                            m->a_fx_chan_gr_bits, m->a_fx_chan_level_bits,
+                            m->a_fx_chan_rack)) {
+      mon_has_fx[c] = 1;
+    }
     /* Settle unprocessed disabled slots (see snapshot_lane_fx). The monitor
      * chain additionally stops running while the input is off or muted
      * (mix_monitors_frame), so those gaps are covered here too. */
@@ -6723,10 +6731,13 @@ static inline void snapshot_bus_fx(le_fx_bus* b, int32_t* bus_fx_count,
       bus_fx_params[s][p] = load_f32(&b->a_fx_param[s][p]);
     }
   }
-  le_fx_chan_snapshot(b->fx.chan, &b->fx.chan_any, n, b->a_fx_chan_in,
-                      b->a_fx_chan_out, b->a_fx_chan_gl_bits,
-                      b->a_fx_chan_gr_bits, b->a_fx_chan_level_bits,
-                      b->a_fx_chan_rack);
+  /* A rack runs even when every entry is LE_FX_NONE (snapshot_lane_fx). */
+  if (le_fx_chan_snapshot(b->fx.chan, &b->fx.chan_any, n, b->a_fx_chan_in,
+                          b->a_fx_chan_out, b->a_fx_chan_gl_bits,
+                          b->a_fx_chan_gr_bits, b->a_fx_chan_level_bits,
+                          b->a_fx_chan_rack)) {
+    *bus_has_fx = 1;
+  }
   /* Settle unprocessed disabled slots (see snapshot_lane_fx): an empty bus
    * chain runs nothing at all, so every disabled slot's ramp settles here. */
   for (int s = 0; s < LE_FX_MAX; ++s) {
