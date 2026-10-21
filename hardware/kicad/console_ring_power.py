@@ -19,21 +19,26 @@ VIA_DRILL = 0.5
 # Centreline radius for the supply's bends: a 1 mm radius on the inner edge of
 # the band, the same rule the screen board's power copper follows.
 BEND = WIDTH / 2 + 1
-CENTER = (141.8, 136.9)
+# The layer change sits between the TRK1 and TRK2 footswitch columns (#1391).
+# The back of those columns now carries the footswitch series resistors and
+# clamps, at y 78.9..82.7 board-local; x 39.4 is the middle of the one free gap
+# near J6, between TRK1's ground pads and TRK2's resistor, with 0.45 mm and
+# 1.6 mm to their copper. It was at x 41.8, through TRK2's resistor. The bottom
+# leg turns straight up into it: a 45-degree corner there clips TRK1's GND pin.
+CENTER = (139.4, 136.9)
 # The run leaves the pill busbar inside it and comes back out across its west
 # edge at x = 102.9. The vertical used to sit at x = 102, which put its east
 # edge 0.05 mm from that edge: same net, too far apart to merge and too close
 # to be a clearance, so the fill left a dead-end slot beside J24 pad 3 that
 # ended in a point. At x = 102.27 the two overlap by 0.22 mm and merge, while
-# the run keeps 0.22 mm to the indicator-data track east of it. Only the
-# vertical moves: the corner below it moves down by the same 0.27 mm so the
-# diagonal that follows keeps its own line, 0.21 mm off that net's via.
+# the run keeps 0.22 mm to the indicator-data track east of it. The vertical
+# then runs straight down the board edge to the bottom leg: the jog it used to
+# make to x = 104.4 lands on REC's series resistor (#1391).
 BACK_PATH = (
-    (105.4, 113.0), (102.27, 116.13), (102.27, 137.27),
-    (104.4, 139.4), (104.4, 145.4), (106.5, 147.5),
-    (139.0, 147.5), (141.8, 144.7), CENTER,
+    (105.4, 113.0), (102.27, 116.13), (102.27, 145.4), (104.37, 147.5),
+    (139.4, 147.5), CENTER,
 )
-FRONT_PATH = (CENTER, (141.8, 134.0), (146.8, 129.0), (148.75, 129.0))
+FRONT_PATH = (CENTER, (139.4, 134.0), (144.4, 129.0), (148.75, 129.0))
 VIA_CENTERS = tuple(
     (CENTER[0] + dx, CENTER[1] + dy)
     for dx in (-0.55, 0.55) for dy in (-0.55, 0.55)
@@ -254,8 +259,9 @@ def self_test(path):
         return candidates[0]
 
     def curved_segment(board):
-        # Pick a short diagonal chord at the front bend near (142, 134),
+        # Pick a short diagonal chord at the front bend after FRONT_PATH[1],
         # away from the busbar and all pads. A straight leg cannot match.
+        bx, by = FRONT_PATH[1]
         candidates = []
         for track in board.GetTracks():
             if (track.GetClass() != "PCB_TRACK" or track.GetNetname() != "+5V"
@@ -266,8 +272,8 @@ def self_test(path):
             if (a.x == b.x or a.y == b.y
                     or math.hypot(a.x - b.x, a.y - b.y) >= pcbnew.FromMM(0.3)):
                 continue
-            if all(pcbnew.FromMM(141.8) < point.x < pcbnew.FromMM(142.4)
-                   and pcbnew.FromMM(133.7) < point.y < pcbnew.FromMM(134.2)
+            if all(pcbnew.FromMM(bx) < point.x < pcbnew.FromMM(bx + 0.6)
+                   and pcbnew.FromMM(by - 0.3) < point.y < pcbnew.FromMM(by + 0.2)
                    for point in (a, b)):
                 candidates.append(track)
         assert candidates, "RING_POWER: expected a front rounded supply chord"

@@ -40,28 +40,44 @@ CONSOLE_VALUES = {
     **{f"J{10 + i}": n for i, n in enumerate(
         ["REC", "STOP", "UNDO", "MODE", "TRK1", "TRK2", "TRK3", "TRK4", "CLR", "BANK"])},
 }
+CONSOLE_VALUES.update({f"R{n}": "1k" for n in range(23, 33)})
+CONSOLE_VALUES.update({f"D{n}": "PESD5V2S2UT" for n in range(2, 7)})
 CONSOLE_R = ["R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11", "R12",
              "R14", "R16", "R17", "R18", "R19", "R20", "R21", "R22"]
 CONSOLE_C = [f"C{i}" for i in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 20)]
 CONSOLE_XH = ["J4", "J5", "J6", "J8", "J9", "J20", "J21", "J23", "J25"] + [f"J{i}" for i in range(10, 20)]
 
+# The footswitch protection parts (#1391) are surface-mount on the back and go
+# on first, while the board still lies flat.
+CONSOLE_STEPS = [
+    ("D2-D6 PESD5V2S2UT - back", [f"D{n}" for n in range(2, 7)], "SOT-23: the single pin points down, toward the headers.", "B"),
+    ("R23-R32 1k 1206 - back", [f"R{n}" for n in range(23, 33)], "No polarity. Tack one pad, then the other.", "B"),
+    ("Pico 2 (J1)", ["J1"], "USB to the left. Tack pads 1 and 21, then all 40 castellations and the 3 SWD holes.", "F"),
+    ("D1  1N4148", ["D1"], "Cathode band on the K side (left).", "F"),
+    ("19 resistors", CONSOLE_R, "Values are printed on each part. Meter them.", "F"),
+    ("14 ceramic caps", CONSOLE_C, "C13, C14 are 10 nF (103); the rest 100 nF (104).", "F"),
+    ("U2 H11L1, U1 74AHCT125", ["U2", "U1"], "Notch / pin 1 at the top. Clean flux around U2 and D1.", "F"),
+    ("JST XH headers", CONSOLE_XH, "Pin 1 on the left. Press flat while reheating one pin.", "F"),
+    ("JST VH J3, J24", ["J3", "J24"], "Pin 1 is the BOTTOM pin. J24 pin 1 = GND.", "F"),
+    ("J2 Pi ribbon", ["J2"], "Pin 1 bottom-right. Shroud notch to the silk.", "F"),
+    ("C31, then C30", ["C31", "C30"], "+ lead in the LEFT hole on both.", "F"),
+    ("J22 EXP (optional)", ["J22"], "Pin 1 top-left: +3V3, +5V ... GND.", "F"),
+]
+
 BOARDS = [
     {
-        "name": "console", "face": "F", "scale": 13,
-        "title": "Console v3.1 - solder order (top face)",
+        "name": "console", "face": "B", "scale": 13,
+        "title": "Console v3.2 - BACK face (view looking at the back)",
         "values": CONSOLE_VALUES,
-        "steps": [
-            ("Pico 2 (J1)", ["J1"], "USB to the left. Tack pads 1 and 21, then all 40 castellations and the 3 SWD holes."),
-            ("D1  1N4148", ["D1"], "Cathode band on the K side (left)."),
-            ("19 resistors", CONSOLE_R, "Values are printed on each part. Meter them."),
-            ("14 ceramic caps", CONSOLE_C, "C13, C14 are 10 nF (103); the rest 100 nF (104)."),
-            ("U2 H11L1, U1 74AHCT125", ["U2", "U1"], "Notch / pin 1 at the top. Clean flux around U2 and D1."),
-            ("JST XH headers", CONSOLE_XH, "Pin 1 on the left. Press flat while reheating one pin."),
-            ("JST VH J3, J24", ["J3", "J24"], "Pin 1 is the BOTTOM pin. J24 pin 1 = GND."),
-            ("J2 Pi ribbon", ["J2"], "Pin 1 bottom-right. Shroud notch to the silk."),
-            ("C31, then C30", ["C31", "C30"], "+ lead in the LEFT hole on both."),
-            ("J22 EXP (optional)", ["J22"], "Pin 1 top-left: +3V3, +5V ... GND."),
-        ],
+        "steps": "CONSOLE",
+        "marks": {},
+        "dots": [f"D{n}" for n in range(2, 7)],
+    },
+    {
+        "name": "console", "face": "F", "scale": 13,
+        "title": "Console v3.2 - solder order (top face)",
+        "values": CONSOLE_VALUES,
+        "steps": "CONSOLE",
         "marks": {"D1": "K", "C30": "+", "C31": "+"},
         "dots": ["J1", "J2", "J3", "J24", "U1", "U2", "J22"] + CONSOLE_XH,
     },
@@ -162,9 +178,10 @@ def render(cfg):
             x = 2 * cx - x
         return ((x - cx) * S + W / 2, (y - cy) * S + H / 2)
 
-    if cfg["steps"] == "RING":
-        steps = [(t, refs, note) for t, refs, note, _ in RING_STEPS]
-        active = [f == face for *_, f in RING_STEPS]
+    if isinstance(cfg["steps"], str):
+        faced = {"RING": RING_STEPS, "CONSOLE": CONSOLE_STEPS}[cfg["steps"]]
+        steps = [(t, refs, note) for t, refs, note, _ in faced]
+        active = [f == face for *_, f in faced]
     else:
         steps = cfg["steps"]
         active = [True] * len(steps)
@@ -260,7 +277,7 @@ def render(cfg):
             cd.text((W + 54, y + 27 + 20 * k), line, font=font(16), fill=tc)
         y += 74
     cd.text((W + 10, y + 8), "Black dot = pin 1.  K = cathode.  + = positive lead.", font=font(15), fill="black")
-    if cfg["name"] == "ring" and face == "B":
+    if face == "B":
         cd.text((W + 10, y + 30), "Back view is mirrored: it matches the board", font=font(15), fill="black")
         cd.text((W + 10, y + 50), "when you hold it back-face up.", font=font(15), fill="black")
     name = cfg["name"] + "_" + cfg.get("suffix", "back_order" if face == "B" else "order") + ".png"
