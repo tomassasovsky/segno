@@ -11,7 +11,7 @@ runs the encoder and the ring. segno runs the behavior machine.
 | Signal | GPIO | Notes |
 |---|---|---|
 | Link TX / RX | GP16 / GP17 | UART0 → Pi uart3 (GPIO8/9, `/dev/ttyAMA3`), 115200 8N1 |
-| Footswitches | GP2–GP11 | REC/PLAY, STOP, UNDO, MODE, TRACK1–4, CLEAR, BANK. Internal pull-up, active low, 8 ms stable-edge debounce |
+| Footswitches | GP2–GP4, GP12, GP6–GP11 | REC/PLAY (GP2), STOP (GP3), UNDO (GP4), MODE (GP12), TRACK1–4 (GP6–GP9), CLEAR (GP10), BANK (GP11). Internal pull-up, active low, 8 ms stable-edge debounce. MODE moved from GP5 in firmware 2.4 (#1388): GP5 died on the first unit, and the board design moves SW_MODE to GP12 too. GP5 is left unconfigured |
 | Ring link | GP13 / GP14 | J6 pins 3/4: PIO UART to the ring carrier's XIAO RP2350, 115200 — GP13 drives, GP14 listens. R11/R12 pull both lines up to the Pico's own 3V3, so the link idles high while the Pi is off. Private protocol: `firmware/libraries/SegnoRing/src/ring_link.h` |
 | Indicator data | GP18 | via 74AHCT125 → J24 (`PILLS`) pin 2, **80** GRB WS2812 pixels, eight per pill, sent with PIO/DMA |
 | CTRL1 / CTRL2 tip | GP26 / GP27 | ADC0 / ADC1: a footswitch at the rails, an expression pedal's wiper between them. The first press on a jack the board has not yet classified is held 200 ms (a plug sliding in drags the tip low the same way); once the jack is known to hold a footswitch, edges are debounced at 8 ms and sent at once |
@@ -210,7 +210,7 @@ without the app, watch the hellos arrive:
 
 ```sh
 stty -F /dev/ttyAMA3 115200 raw -echo
-od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0c 02 03 0d (HELLO, protocol 12, fw 2.3), once a second
+od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0c 02 04 0a (HELLO, protocol 12, fw 2.4), once a second
 ```
 
 ## Bring-up record
