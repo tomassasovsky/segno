@@ -909,6 +909,24 @@ LE_EXPORT int32_t le_engine_set_record_timing_settings(
 
 typedef struct le_plugin_slot le_plugin_slot;
 
+/* Where a recipe entry sits in a rack (le_fx_recipe.rack), as bits: a rack's
+ * first entry has LE_FX_RACK_FIRST, its last LE_FX_RACK_LAST, a one-entry
+ * rack both, and an entry inside a rack or in none, neither.
+ *
+ * A rack's input choice (its FIRST entry's) and output side (the output
+ * choice, placement and level of its LAST entry) are the rack's own: the
+ * engine applies them before the first entry and after the last whatever
+ * those entries are (a passthrough, a plugin, or bypassed), while any entry
+ * of the rack is on, fading with the enable ramp. With every entry off, or
+ * the chain off, the rack passes its input through untouched, except that a
+ * tail still draining out of one of its entries keeps the rack's output side
+ * it was heard with. Every other entry's channel handling stays its own and
+ * applies around its effect, as before. */
+typedef enum le_fx_rack_edge {
+  LE_FX_RACK_FIRST = 1,
+  LE_FX_RACK_LAST = 2,
+} le_fx_rack_edge;
+
 /* Complete structural recipe, copied before admission. Hosted pointers must
  * belong to this chain or have been prepared by this engine. */
 typedef struct le_fx_recipe {
@@ -918,6 +936,7 @@ typedef struct le_fx_recipe {
   int32_t input_mode[LE_FX_MAX], output_mode[LE_FX_MAX];
   float placement[LE_FX_MAX], level[LE_FX_MAX];
   le_plugin_slot* plugin[LE_FX_MAX];
+  int32_t rack[LE_FX_MAX]; /* le_fx_rack_edge bits */
 } le_fx_recipe;
 
 typedef enum le_fx_owner {

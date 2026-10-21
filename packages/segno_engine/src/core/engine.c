@@ -297,6 +297,7 @@ void le_lane_reset_settings(le_lane* ln, int32_t input_channel) {
     store_f32(&ln->a_fx_chan_gl_bits[s], 1.0f);
     store_f32(&ln->a_fx_chan_gr_bits[s], 1.0f);
     store_f32(&ln->a_fx_chan_level_bits[s], 1.0f);
+    store_i32(&ln->a_fx_chan_rack[s], 0);
     le_fx_enable_seed_settled(&ln->fx, s);
     le_fx_free_delay(&ln->fx, s);
     le_fx_free_octaver(&ln->fx, s);
@@ -358,6 +359,7 @@ static void le_monitor_input_reset(le_monitor_input* m) {
     store_f32(&m->a_fx_chan_gl_bits[s], 1.0f);
     store_f32(&m->a_fx_chan_gr_bits[s], 1.0f);
     store_f32(&m->a_fx_chan_level_bits[s], 1.0f);
+    store_i32(&m->a_fx_chan_rack[s], 0);
     le_fx_enable_seed_settled(&m->fx, s);
     le_fx_free_delay(&m->fx, s);
     le_fx_free_octaver(&m->fx, s);
@@ -399,6 +401,7 @@ static void le_fx_bus_reset(le_fx_bus* b) {
     store_f32(&b->a_fx_chan_gl_bits[s], 1.0f);
     store_f32(&b->a_fx_chan_gr_bits[s], 1.0f);
     store_f32(&b->a_fx_chan_level_bits[s], 1.0f);
+    store_i32(&b->a_fx_chan_rack[s], 0);
     le_fx_enable_seed_settled(&b->fx, s);
     le_fx_free_delay(&b->fx, s);
     le_fx_free_octaver(&b->fx, s);
