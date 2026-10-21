@@ -236,9 +236,10 @@ typedef struct le_fx_chan {
   float gr;
   float level; /* applied after the effects and after the output choice */
   /* LE_FX_RACK_* bits: where the entry sits in a rack. An entry with
-   * LE_FX_RACK_LAST carries its RACK's output side (output choice, gains and
-   * level), which fx_apply_chain applies after the entry whatever the entry
-   * is, while any entry of the rack is on (see fx_rack_output). */
+   * LE_FX_RACK_FIRST carries its RACK's input choice and one with
+   * LE_FX_RACK_LAST its output side (output choice, gains and level), which
+   * fx_apply_chain applies around the rack whatever those entries are, while
+   * any entry of the rack is on (fx_rack_head, fx_rack_output). */
   int32_t rack;
 } le_fx_chan;
 
@@ -434,9 +435,10 @@ typedef struct le_fx_state {
    * of quiet settles the drain. These fields are callback-owned. */
   int32_t enable_drain[LE_FX_MAX];
   int32_t enable_quiet[LE_FX_MAX];
-  /* A rack's output-side crossfade, kept on its LAST entry (fx_rack_output):
-   * rack_mix is how much of the rack's output side applies (1 while any of
-   * its entries is on, 0 with all of them off), ramped at the enable rate.
+  /* A rack's crossfade, kept on its LAST entry and advanced at its head
+   * (fx_rack_head): rack_mix is how much of the rack's input and output
+   * sides apply (1 while any of its entries is on, 0 with all of them off),
+   * ramped at the enable rate.
    * rack_primed 0 means the next use settles it at its target without a
    * ramp: a zeroed state, a fresh structure (le_fx_rack_reset) and a print
    * engaging all start there, so none of them fades. Callback-owned. */
@@ -3033,17 +3035,26 @@ static inline float load_f32(_Atomic uint32_t* slot) {
 /* Caches one chain's published channel handling into its DSP state, once per
  * buffer (slice 3e). Sets chan_any when any ACTIVE entry asks for something
  * other than stereo in, stereo out and unity level, so a chain at its defaults
- * costs one flag and fx_apply_chain never looks further. A rack edge alone
- * does not set it: a rack whose output side is at its defaults has nothing to
- * apply. */
-static inline void le_fx_chan_snapshot(le_fx_chan* chan, int32_t* out_any,
-                                       int32_t count, _Atomic int32_t* a_in,
-                                       _Atomic int32_t* a_out,
-                                       _Atomic uint32_t* a_gl,
-                                       _Atomic uint32_t* a_gr,
-                                       _Atomic uint32_t* a_level,
-                                       _Atomic int32_t* a_rack) {
+ * costs one flag and fx_apply_chain never looks further.
+ *
+ * A rack edge sets it too, whatever the rack's channel handling: the rack's
+ * crossfade (fx_rack_head) has to follow its pedals every sample, even while
+ * its input and output sides are at their defaults, or a later edit to them
+ * would land on a crossfade that stopped tracking. At the defaults every rack
+ * step is exact identity, so this costs time, never bits.
+ *
+ * Returns whether any active entry carries a rack edge: such a chain has to
+ * run even when every entry is LE_FX_NONE, because its rack's output side
+ * still applies (the callers' has_fx). */
+static inline int le_fx_chan_snapshot(le_fx_chan* chan, int32_t* out_any,
+                                      int32_t count, _Atomic int32_t* a_in,
+                                      _Atomic int32_t* a_out,
+                                      _Atomic uint32_t* a_gl,
+                                      _Atomic uint32_t* a_gr,
+                                      _Atomic uint32_t* a_level,
+                                      _Atomic int32_t* a_rack) {
   int32_t any = 0;
+  int racked = 0;
   if (count < 0) count = 0;
   if (count > LE_FX_MAX) count = LE_FX_MAX;
   for (int32_t s = 0; s < count; ++s) {
@@ -3054,13 +3065,15 @@ static inline void le_fx_chan_snapshot(le_fx_chan* chan, int32_t* out_any,
     c->gr = load_f32(&a_gr[s]);
     c->level = load_f32(&a_level[s]);
     c->rack = load_i32(&a_rack[s]);
+    if (c->rack != 0) racked = 1;
     if (c->in_mode != LE_FX_CHAN_IN_STEREO ||
         c->out_mode != LE_FX_CHAN_OUT_STEREO || c->gl != 1.0f ||
-        c->gr != 1.0f || c->level != 1.0f) {
+        c->gr != 1.0f || c->level != 1.0f || c->rack != 0) {
       any = 1;
     }
   }
   *out_any = any;
+  return racked;
 }
 
 

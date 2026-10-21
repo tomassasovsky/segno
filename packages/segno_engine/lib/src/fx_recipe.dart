@@ -21,15 +21,17 @@ enum FxOwner {
 
 /// Where a recipe entry sits in a rack (the native `le_fx_rack_edge` bits).
 ///
-/// A rack's output side (the output choice, placement and level its LAST
-/// entry carries) is the rack's own: the engine applies it after that entry
-/// whatever the entry is, while any entry of the rack is on, and leaves the
-/// signal untouched once every entry is off or the chain is.
+/// A rack's input choice (its FIRST entry's) and output side (the output
+/// choice, placement and level its LAST entry carries) are the rack's own:
+/// the engine applies them around the rack whatever those entries are, while
+/// any entry of the rack is on, and leaves the signal untouched once every
+/// entry is off or the chain is. A tail still draining out of the rack keeps
+/// the output side it was heard with.
 enum FxRackEdge {
   /// Not a rack's first or last entry: inside a rack, or in none.
   none(0),
 
-  /// A rack's first entry.
+  /// A rack's first entry, which carries the rack's input choice.
   first(1),
 
   /// A rack's last entry, which carries the rack's output side.

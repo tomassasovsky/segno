@@ -1613,7 +1613,11 @@ int le_fx_frozen_has(const le_fx_frozen_chain* c, int32_t from, int32_t to,
                      int32_t type) {
   if (to > c->count) to = c->count;
   for (int32_t s = from < 0 ? 0 : from; s < to; ++s) {
-    if (type == LE_FX_NONE ? c->type[s] != LE_FX_NONE : c->type[s] == type) {
+    /* "Any real entry" counts a rack edge: a rack of LE_FX_NONE entries
+     * still applies its output side (le_fx_chan_snapshot). */
+    if (type == LE_FX_NONE
+            ? c->type[s] != LE_FX_NONE || c->chan[s].rack != 0
+            : c->type[s] == type) {
       return 1;
     }
   }

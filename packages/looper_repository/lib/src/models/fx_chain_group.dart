@@ -68,11 +68,13 @@ class FxChainGroup extends Equatable {
   /// between stay at defaults, which is bit-identical to no channel handling
   /// at all, so the rack is transparent between its own pedals.
   ///
-  /// The recipe marks that last entry ([fxRackEdges]), and the engine applies
-  /// its output side as the RACK's: after the entry whatever the entry is (a
-  /// module this engine cannot build, or a bypassed pedal), while any pedal of
-  /// the rack is on, fading with the enable ramp. With every pedal off, or
-  /// the chain off, the rack passes its input through untouched.
+  /// The recipe marks those two entries ([fxRackEdges]), and the engine
+  /// applies the first one's input choice and the last one's output side as
+  /// the RACK's: around the rack whatever those entries are (a module this
+  /// engine cannot build, or a bypassed pedal), while any pedal of the rack is
+  /// on, fading with the enable ramp. With every pedal off, or the chain off,
+  /// the rack passes its input through untouched, and a tail still draining
+  /// out of it keeps the output side it was heard with.
   FxChannels get channels => FxChannels(
     input: chain[start].channels.input,
     output: chain[end - 1].channels.output,

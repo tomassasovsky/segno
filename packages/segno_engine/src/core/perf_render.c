@@ -1524,9 +1524,10 @@ static void le_pr_seed_channels(le_fx_state* fx, const le_json_value* effects,
     c->level = level;
     racked[s] = le_json_string(le_json_get(le_json_get(entry, "rack"), "id"),
                                ids[s], sizeof(ids[s]));
+    /* The live snapshot's rule: a rack edge sets it too. */
     if (c->in_mode != LE_FX_CHAN_IN_STEREO ||
         c->out_mode != LE_FX_CHAN_OUT_STEREO || c->gl != 1.0f ||
-        c->gr != 1.0f || c->level != 1.0f) {
+        c->gr != 1.0f || c->level != 1.0f || racked[s]) {
       any = 1;
     }
   }
@@ -1558,9 +1559,12 @@ static void le_pr_seed_channels(le_fx_state* fx, const le_json_value* effects,
  * live — only whether the result is later summed into the master differs
  * live, and this render has no separate "audible" gate beyond content
  * presence, see the doc note below). A mono source is fed into both L/R
- * (fx_apply_chain always runs stereo per-channel state); since both start
- * and stay equal by construction (symmetric per-channel state, identical
- * input), only L is kept.
+ * (fx_apply_chain always runs stereo per-channel state), and the stem is the
+ * mono fold-down of the pair, 0.5 * (L + R): the chain's channel handling
+ * (a rack's balance or pan, an entry's output choice) makes the two sides
+ * differ, and a single side would read a hard-right balance as silence. The
+ * fold-down is the same one this render uses for a pair routed to a single
+ * output, and it is exactly L wherever the two sides are equal.
  *
  * Scope note: this reconstructs lane-0 volume/mute and the lane-0 FX chain
  * from events.log (LE_CMD_SET_LANE_FX/_FX_COUNT, LE_PLOG_SET_LANE_FX_PARAM,
@@ -1829,7 +1833,7 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
     const float gain = track_gain * le_fade_tick(&fade, m->sample_rate);
     l *= gain;
     r *= gain;
-    wet[f] = l;
+    wet[f] = 0.5f * (l + r);
     const float far = fabsf(pan) >= 1 ? 0 : cosf(fabsf(pan) * 1.57079632679f);
     l *= pan > 0 ? far : 1;
     r *= pan < 0 ? far : 1;

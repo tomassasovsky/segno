@@ -405,6 +405,284 @@ static void test_rack_output_side_in_the_stems(void) {
            "\"channels\": {\"level\": %f}}]",
            LE_FX_DRIVE, (double)RK_LEVEL);
   CHECK(rk_stem_case("entry-level", fx, tanhf(0.5f) * RK_LEVEL) < 1e-6f);
+  /* A rack balanced hard right: the stem is the mono fold-down of the pair,
+   * not its silent left side. The pan law keeps the near side at unity. */
+  snprintf(fx, sizeof(fx),
+           "[{\"type\": %d, \"params\": [0.0, 1.0, 0.0, 0.0], "
+           "\"rack\": {\"id\": \"r1\"}}, "
+           "{\"type\": 0, \"params\": [0.0, 0.0, 0.0, 0.0], "
+           "\"channels\": {\"placement\": 1.0}, \"rack\": {\"id\": \"r1\"}}]",
+           LE_FX_DRIVE);
+  CHECK(rk_stem_case("rack-balance-right", fx, 0.5f * tanhf(0.5f)) < 1e-6f);
+}
+
+/* ---- the chain itself, driven directly ---- */
+
+/* A fresh offline state with every slot settled on and at its channel
+ * defaults; [chan_any] set, as the snapshot sets it for a chain with a rack. */
+static le_fx_state* rk_state(void) {
+  le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    le_fx_enable_seed_settled(fx, s);
+    fx->chan[s] = (le_fx_chan){LE_FX_CHAN_IN_STEREO, LE_FX_CHAN_OUT_STEREO,
+                               1.0f, 1.0f, 1.0f, 0};
+  }
+  fx->chan_any = 1;
+  return fx;
+}
+
+static void rk_chan(le_fx_state* fx, int s, int32_t in, int32_t out,
+                    float placement, float level, int32_t rack) {
+  le_fx_chan* c = &fx->chan[s];
+  c->in_mode = in;
+  c->out_mode = out;
+  le_pan_gains(placement, &c->gl, &c->gr);
+  c->level = level;
+  c->rack = rack;
+}
+
+static void rk_free(le_fx_state* fx) {
+  le_fx_state_free_buffers(fx);
+  free(fx);
+}
+
+/* Unity DRIVE parameters: tanhf(x) out. */
+static void rk_unity_drive(float p[LE_FX_PARAMS]) {
+  for (int k = 0; k < LE_FX_PARAMS; ++k) p[k] = 0.0f;
+  p[1] = 1.0f;
+}
+
+/* Stomping a rack off at -20 dB leaves the tail draining out of its last
+ * pedal at -20 dB, and the dry signal passing untouched — never the tail
+ * jumping to unity. A rack of a unity DRIVE and a 100-frame DELAY (all wet,
+ * feedback 0.6, level 0.1): twin A keeps the rack on and hears silence after
+ * an impulse; twin B stomps the rack off before the first echo and, once the
+ * stomp's ramp is over, is fed a constant 0.2. The delay is linear and B's
+ * feed is silent while it drains, so B must be exactly 0.2 plus A's echoes. */
+static void test_rack_off_tail_keeps_the_rack_level(void) {
+  printf("test_rack_off_tail_keeps_the_rack_level\n");
+  const int sr = 48000;
+  int32_t types[LE_FX_MAX] = {LE_FX_DRIVE, LE_FX_DELAY};
+  float params[LE_FX_MAX][LE_FX_PARAMS] = {{0}};
+  rk_unity_drive(params[0]);
+  params[1][0] = 100.0f / (float)(sr - 1);
+  params[1][1] = 0.6f;
+  params[1][2] = 1.0f;
+  le_fx_state* a = rk_state();
+  le_fx_state* b = rk_state();
+  le_fx_state* both[2] = {a, b};
+  for (int k = 0; k < 2; ++k) {
+    rk_chan(both[k], 0, 0, 0, 0.0f, 1.0f, LE_FX_RACK_FIRST);
+    rk_chan(both[k], 1, 0, 0, 0.0f, 0.1f, LE_FX_RACK_LAST);
+    le_fx_entry_reset(both[k], 1);
+    CHECK(le_fx_prepare(both[k], 1, LE_FX_DELAY, sr) == LE_OK);
+  }
+  const int32_t on[LE_FX_MAX] = {1, 1};
+  const int32_t off[LE_FX_MAX] = {0, 0};
+  float worst = 0.0f;
+  float loudest = 0.0f;
+  for (int f = 0; f < 4000; ++f) {
+    float al = f == 0 ? 0.5f : 0.0f;
+    float ar = al;
+    fx_apply_chain(a, sr, sr, &al, &ar, 2, types, params, on);
+    /* The dry 0.2 starts once the stomp's ramp is over: during the ramp a
+     * delay is still fed a fading copy of its input, by design. */
+    float bl = f == 0 ? 0.5f : f >= 50 + 300 ? 0.2f : 0.0f;
+    float br = bl;
+    fx_apply_chain(b, sr, sr, &bl, &br, 2, types, params, f >= 50 ? off : on);
+    if (f >= 50 + 300) { /* past the stomp's ramp */
+      const float d = fabsf(bl - (0.2f + al));
+      if (d > worst) worst = d;
+      if (fabsf(bl - 0.2f) > loudest) loudest = fabsf(bl - 0.2f);
+    }
+  }
+  printf("  tail vs the rack-on twin: %.8f, loudest echo %.6f\n",
+         (double)worst, (double)loudest);
+  CHECK(worst < 1e-6f);
+  /* The echoes are there, at the rack level: tanh(0.5) * 0.6^k * 0.1. */
+  CHECK(loudest > 0.005f && loudest < 0.05f);
+  rk_free(a);
+  rk_free(b);
+}
+
+/* The rack's input choice is the rack's: it reaches the pedals whatever the
+ * first pedal is, and an all-off rack passes the pair untouched. */
+static void test_rack_input_choice_survives_a_bypassed_first_pedal(void) {
+  printf("test_rack_input_choice_survives_a_bypassed_first_pedal\n");
+  const int sr = 48000;
+  for (int head = 0; head < 2; ++head) { /* a bypassed DRIVE, then NONE */
+    int32_t types[LE_FX_MAX] = {head == 0 ? LE_FX_DRIVE : LE_FX_NONE,
+                                LE_FX_DRIVE};
+    float params[LE_FX_MAX][LE_FX_PARAMS] = {{0}};
+    rk_unity_drive(params[0]);
+    rk_unity_drive(params[1]);
+    le_fx_state* fx = rk_state();
+    rk_chan(fx, 0, LE_FX_CHAN_IN_LEFT, 0, 0.0f, 1.0f, LE_FX_RACK_FIRST);
+    rk_chan(fx, 1, 0, 0, 0.0f, 1.0f, LE_FX_RACK_LAST);
+    const int32_t en[LE_FX_MAX] = {0, 1};
+    float l = 0.0f;
+    float r = 0.0f;
+    for (int f = 0; f < 600; ++f) {
+      l = 0.5f;
+      r = -0.25f;
+      fx_apply_chain(fx, sr, sr, &l, &r, 2, types, params, en);
+    }
+    CHECK(fabsf(l - tanhf(0.5f)) < 1e-6f);
+    CHECK(fabsf(r - tanhf(0.5f)) < 1e-6f); /* Left only, on both sides */
+    const int32_t off[LE_FX_MAX] = {0, 0};
+    for (int f = 0; f < 600; ++f) {
+      l = 0.5f;
+      r = -0.25f;
+      fx_apply_chain(fx, sr, sr, &l, &r, 2, types, params, off);
+    }
+    CHECK(l == 0.5f && r == -0.25f);
+    rk_free(fx);
+  }
+}
+
+/* Output choice and placement on a rack that ends in a passthrough, and two
+ * racks with a single effect between them, each keeping its own sides. */
+static void test_rack_placement_mono_and_multi_rack(void) {
+  printf("test_rack_placement_mono_and_multi_rack\n");
+  const int sr = 48000;
+  int32_t types[LE_FX_MAX] = {LE_FX_DRIVE, LE_FX_NONE};
+  float params[LE_FX_MAX][LE_FX_PARAMS] = {{0}};
+  rk_unity_drive(params[0]);
+  const int32_t on[LE_FX_MAX] = {1, 1, 1, 1};
+  /* Stereo out, balance hard right: the left side exactly silent. */
+  le_fx_state* fx = rk_state();
+  rk_chan(fx, 0, 0, 0, 0.0f, 1.0f, LE_FX_RACK_FIRST);
+  rk_chan(fx, 1, 0, LE_FX_CHAN_OUT_STEREO, 1.0f, 0.5f, LE_FX_RACK_LAST);
+  float l = 0.5f;
+  float r = -0.25f;
+  fx_apply_chain(fx, sr, sr, &l, &r, 2, types, params, on);
+  CHECK(l == 0.0f);
+  CHECK(fabsf(r - tanhf(-0.25f) * 0.5f) < 1e-6f);
+  /* Mono out, panned hard left: the average, on the left only. */
+  rk_chan(fx, 1, 0, LE_FX_CHAN_OUT_MONO, -1.0f, 1.0f, LE_FX_RACK_LAST);
+  l = 0.5f;
+  r = -0.25f;
+  fx_apply_chain(fx, sr, sr, &l, &r, 2, types, params, on);
+  CHECK(fabsf(l - 0.5f * (tanhf(0.5f) + tanhf(-0.25f))) < 1e-6f);
+  CHECK(r == 0.0f);
+  rk_free(fx);
+
+  /* [rack A: DRIVE, NONE at 0.5] [a single DRIVE] [rack B: NONE at 0.25]. */
+  int32_t chain[LE_FX_MAX] = {LE_FX_DRIVE, LE_FX_NONE, LE_FX_DRIVE,
+                              LE_FX_NONE};
+  float cp[LE_FX_MAX][LE_FX_PARAMS] = {{0}};
+  rk_unity_drive(cp[0]);
+  rk_unity_drive(cp[2]);
+  fx = rk_state();
+  rk_chan(fx, 0, 0, 0, 0.0f, 1.0f, LE_FX_RACK_FIRST);
+  rk_chan(fx, 1, 0, 0, 0.0f, 0.5f, LE_FX_RACK_LAST);
+  rk_chan(fx, 3, 0, 0, 0.0f, 0.25f, LE_FX_RACK_FIRST | LE_FX_RACK_LAST);
+  const int32_t b_off[LE_FX_MAX] = {1, 1, 1, 0};
+  for (int f = 0; f < 600; ++f) {
+    l = 0.5f;
+    r = 0.5f;
+    fx_apply_chain(fx, sr, sr, &l, &r, 4, chain, cp, b_off);
+  }
+  const float want_a = tanhf(tanhf(0.5f) * 0.5f);
+  CHECK(fabsf(l - want_a) < 1e-6f); /* rack B off: untouched */
+  for (int f = 0; f < 600; ++f) {
+    l = 0.5f;
+    r = 0.5f;
+    fx_apply_chain(fx, sr, sr, &l, &r, 4, chain, cp, on);
+  }
+  CHECK(fabsf(l - want_a * 0.25f) < 1e-6f); /* rack B on: its own level */
+  rk_free(fx);
+}
+
+/* A rack made only of entries the engine has no effect for still runs: its
+ * level lands with a pedal on, and it is dry with every pedal off — live and
+ * in a render. */
+static void test_rack_of_passthroughs_runs(void) {
+  printf("test_rack_of_passthroughs_runs\n");
+  le_fx_recipe r = rk_recipe(0, 1, LE_FX_NONE, 1, 1);
+  r.type[0] = LE_FX_NONE;
+  float l = 0.0f;
+  float rr = 0.0f;
+  rk_live_settled(&r, &l, &rr);
+  CHECK(fabsf(l - 0.5f * RK_LEVEL) < 1e-6f);
+  le_fx_recipe off = r;
+  off.slot_enabled[0] = 0;
+  off.slot_enabled[1] = 0;
+  rk_live_settled(&off, &l, &rr);
+  CHECK(l == 0.5f && rr == 0.5f);
+  float first[8];
+  for (int32_t pre = 0; pre <= 2; pre += 2) {
+    r.pre_count = pre;
+    rk_render_parity(&r, first);
+    for (int f = 0; f < 8; ++f) {
+      const float src = (float)((f * 5) % 11) / 11.0f - 0.4f;
+      CHECK(fabsf(first[f] - src * RK_LEVEL) < 1e-6f);
+    }
+  }
+}
+
+/* The rack's crossfade keeps following its pedals while its channel handling
+ * sits at the defaults: switched off at unity and then given a level, the
+ * rack stays dry on every frame instead of fading that level out. */
+static void test_rack_crossfade_follows_at_the_defaults(void) {
+  printf("test_rack_crossfade_follows_at_the_defaults\n");
+  le_engine* e = rk_live_engine();
+  le_fx_recipe r = rk_recipe(0, 1, LE_FX_NONE, 1, 1);
+  r.level[1] = 1.0f;
+  rk_publish(e, &r);
+  rk_pump(e, 1024, NULL);
+  CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 0) == LE_OK);
+  CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 1, 0) == LE_OK);
+  drain(e);
+  rk_pump(e, 1024, NULL);
+  CHECK(le_engine_set_lane_fx_channels(e, 0, 0, 1, 0, 0, 0.0f, 0.5f) ==
+        LE_OK);
+  drain(e);
+  static float out[2 * 1024];
+  rk_pump(e, 1024, out);
+  int moved = 0;
+  for (int f = 0; f < 1024; ++f) {
+    if (out[2 * f] != 0.5f || out[2 * f + 1] != 0.5f) moved++;
+  }
+  CHECK(moved == 0);
+  /* And a pedal on brings the new level in. */
+  CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 1) == LE_OK);
+  drain(e);
+  rk_pump(e, 1024, out);
+  CHECK(fabsf(out[2 * 1023] - tanhf(0.5f) * 0.5f) < 1e-6f);
+  le_engine_destroy(e);
+}
+
+/* A recipe that moves a rack's last entry while audio plays keeps the rack's
+ * level on every frame: the new last entry takes the rack's state at once. */
+static void test_rack_edge_moving_while_playing(void) {
+  printf("test_rack_edge_moving_while_playing\n");
+  le_engine* e = rk_live_engine();
+  const le_fx_recipe two = rk_recipe(0, 1, LE_FX_NONE, 1, 1);
+  rk_publish(e, &two);
+  rk_pump(e, 1024, NULL);
+  /* Three entries: the old last one is inside the rack now. */
+  le_fx_recipe three = two;
+  three.count = 3;
+  three.rack[1] = 0;
+  three.level[1] = 1.0f;
+  three.type[2] = LE_FX_NONE;
+  three.slot_enabled[2] = 1;
+  three.level[2] = RK_LEVEL;
+  three.rack[2] = LE_FX_RACK_LAST;
+  const float want = tanhf(0.5f) * RK_LEVEL;
+  static float out[2 * 512];
+  for (int k = 0; k < 2; ++k) {
+    rk_publish(e, k == 0 ? &three : &two);
+    rk_pump(e, 512, out);
+    float worst = 0.0f;
+    for (int f = 0; f < 512; ++f) {
+      const float d = fabsf(out[2 * f] - want);
+      if (d > worst) worst = d;
+    }
+    CHECK(worst < 1e-6f);
+  }
+  le_engine_destroy(e);
 }
 
 static void run_rack_output_tests(void) {
@@ -415,4 +693,10 @@ static void run_rack_output_tests(void) {
   test_rack_output_side_in_the_wet_cache();
   test_rack_output_side_in_a_render();
   test_rack_output_side_in_the_stems();
+  test_rack_off_tail_keeps_the_rack_level();
+  test_rack_input_choice_survives_a_bypassed_first_pedal();
+  test_rack_placement_mono_and_multi_rack();
+  test_rack_of_passthroughs_runs();
+  test_rack_crossfade_follows_at_the_defaults();
+  test_rack_edge_moving_while_playing();
 }
