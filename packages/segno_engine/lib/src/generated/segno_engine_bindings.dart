@@ -5130,7 +5130,7 @@ class SegnoEngineBindings {
   /// placement -1..1, centre 0 (default). One unity-centre law, the same the
   /// lanes, monitors and output buses use, so centre is exactly
   /// unity and a hard side is exactly silent.
-  /// level     0..LE_MAX_GAIN, unity 1 (default). Applied last.
+  /// level     0..LE_FX_LEVEL_MAX, unity 1 (default). Applied last.
   ///
   /// Set as one call, because the four values are one control surface and a
   /// half-applied change would be audible. Direct atomic publishes: they change
@@ -8980,6 +8980,10 @@ final class le_fx_recipe extends ffi.Struct {
 
   @ffi.Array.multi([64])
   external ffi.Array<ffi.Pointer<le_plugin_slot>> plugin;
+
+  /// le_fx_rack_edge bits
+  @ffi.Array.multi([64])
+  external ffi.Array<ffi.Int32> rack;
 }
 
 /// Source context frozen at the accepted record/arm gesture. The image is

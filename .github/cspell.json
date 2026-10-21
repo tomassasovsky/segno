@@ -1373,7 +1373,17 @@
     "floorplan",
     "idempotently",
     "kilohm",
-    "Mbps"
+    "Mbps",
+    "AABB",
+    "AACD",
+    "ABCC",
+    "Accdd",
+    "Bcccc",
+    "Chor",
+    "Highpass",
+    "normaliser",
+    "RESO",
+    "Slic"
   ],
   "overrides": [
     {

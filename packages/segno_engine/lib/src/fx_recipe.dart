@@ -19,6 +19,33 @@ enum FxOwner {
   output,
 }
 
+/// Where a recipe entry sits in a rack (the native `le_fx_rack_edge` bits).
+///
+/// A rack's input choice (its FIRST entry's) and output side (the output
+/// choice, placement and level its LAST entry carries) are the rack's own:
+/// the engine applies them around the rack whatever those entries are, while
+/// any entry of the rack is on, and leaves the signal untouched once every
+/// entry is off or the chain is. A tail still draining out of the rack keeps
+/// the output side it was heard with.
+enum FxRackEdge {
+  /// Not a rack's first or last entry: inside a rack, or in none.
+  none(0),
+
+  /// A rack's first entry, which carries the rack's input choice.
+  first(1),
+
+  /// A rack's last entry, which carries the rack's output side.
+  last(2),
+
+  /// The only entry of a one-entry rack.
+  only(3);
+
+  const FxRackEdge(this.bits);
+
+  /// The native bits.
+  final int bits;
+}
+
 /// A complete effect instance prepared before structural admission.
 class FxRecipeSlot {
   /// Creates a detached, immutable slot description.
@@ -27,6 +54,7 @@ class FxRecipeSlot {
     List<double> params = const [],
     this.enabled = true,
     this.channels = FxChannels.defaults,
+    this.rack = FxRackEdge.none,
     this.plugin,
   }) : params = List.unmodifiable(params);
 
@@ -39,8 +67,13 @@ class FxRecipeSlot {
   /// Whether this instance is engaged.
   final bool enabled;
 
-  /// Per-instance input/output handling and gain.
+  /// Per-instance input/output handling and gain. On a rack's [FxRackEdge.last]
+  /// entry, the output side is the rack's.
   final FxChannels channels;
+
+  /// Where this entry sits in its rack. Structural, so it rides the recipe
+  /// and no granular channel write moves it.
+  final FxRackEdge rack;
 
   /// A retained owner handle or a detached handle prepared by this engine.
   final PluginSlotHandle? plugin;

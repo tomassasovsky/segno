@@ -128,25 +128,8 @@ const List<String> _vocalTunerShared = [
 
 /// Every module the factory catalogue names, with the evidence for each.
 ///
-/// A rack builds its entries in this table's order. That is the table's own
-/// order, not the order the Looper X runs its modules in, because no source
-/// examined records that order:
-///
-/// - The presets are flat maps whose keys are stored in alphabetical order.
-/// - The extracted UI draws a rack's power buttons from the binary's parameter
-///   model (`Pages/FxEdit/SelectorPanel.qml` repeats `effect.param(index)` for
-///   `index < effect.bypassCount`, and `Pages/FxEdit/ParamsPanel.qml` does the
-///   same for the parameters), so the QML holds no order of its own.
-/// - The binary's string table lists Ed's Rack power keys as Oct, Wah,
-///   Compressor, OvDrive, Amp, Chor, EQ 4-Band and the Dub Rack's as Para EQ,
-///   Doubler, Dub Delay, Dub-Verb, Amb-Verb, but the linker keeps only the
-///   first copy of a repeated string (Delay, Reverb and Comp are missing from
-///   those runs), and the same racks' parameter strings follow a different
-///   order (the EQ parameters come last). String order is therefore not a
-///   processing order either.
-///
-/// Until a source states the order, a rack's modules keep the table order and
-/// the player reorders them.
+/// The table's own order is not a processing order. A rack builds its entries
+/// in the order [kFxRackOrders] gives its family.
 const List<FxModule> kFxModules = [
   FxModule(
     name: 'Amp',
@@ -360,6 +343,119 @@ const List<FxModule> kFxModules = [
 /// AFTER the pedals and gives to the rack rather than to any of them.
 const Set<String> kFxUnclaimedGroups = {'Master'};
 
+/// The order each factory rack runs its modules in, first to last, by
+/// [FxModule.name]. The rack's own level (`Master Vol`, see
+/// [kFxUnclaimedGroups]) comes after the last of them in every rack.
+///
+/// Measured on the Looper X in the #891 rig and recorded under "Chain order"
+/// in `docs/plan/2026-10-20-looperx-derived-tables.md`: each rack's processor
+/// runs a fixed array of slots in index order, in series, and each list below
+/// is that array read through this table's modules. The presets cannot give
+/// the order, because their keys are stored alphabetically.
+///
+/// Where one module covers several measured slots, it stands where they do:
+///
+/// - Guitar's Modulation is three slots in series, Chorus, Phaser and
+///   Flanger, of which Mod Mode runs one.
+/// - Studio's Modulation is two slots, Chorus then Tremolo.
+/// - The High-pass gate is the highpass and gate slots of the Vocal and Vocal
+///   Tuner racks, which their presets power with one key, `HP/Gate`.
+/// - Studio's Distortion is the processor's amp simulator, which the editor
+///   labels Dist.
+///
+/// The measurement records the editor's pedal order for two racks only, Ed's
+/// and Dub. Ed's editor draws Delay before Reverb, and its processor runs
+/// Reverb then Delay. This table follows the processor. Both are linear, so in
+/// series the order does not change the sound.
+const Map<String, List<String>> kFxRackOrders = {
+  'Drum Rack': [
+    'Transient',
+    'Delay',
+    'Reverb',
+    'Four-band EQ',
+    'Compressor',
+  ],
+  'Dub Rack': [
+    'Doubler',
+    'Dub delay',
+    // Less certain: the processor shows two reverb slots without names, so
+    // Dub reverb before Ambience comes from the Dub editor's pedal order
+    // alone. Both are linear, so in series the order is not audible.
+    'Dub reverb',
+    'Ambience',
+    'Compressor',
+    'Parametric EQ',
+  ],
+  "Ed's Rack": [
+    'Octaver',
+    'Wah',
+    'Compressor',
+    'Overdrive',
+    'Amp',
+    'Chorus',
+    // The processor's order. The editor draws Delay first.
+    'Reverb',
+    'Delay',
+    'Four-band EQ',
+  ],
+  'Guitar Rack': [
+    'Whammy',
+    'Overdrive',
+    'Wah',
+    'Amp',
+    'Modulation',
+    'Spring reverb',
+    'Delay',
+  ],
+  'Lo-Fi Rack': [
+    'Low-pass filter',
+    'Vinyl',
+    'Degrade',
+    'Distortion',
+    'Parametric EQ',
+    'Delay',
+  ],
+  'Rhythmic Rack': [
+    'Low-pass filter',
+    'Slicer',
+    'Pumper',
+    'Parametric EQ',
+    'Delay',
+    'Reverb',
+  ],
+  'Studio Rack': [
+    'Pitch shift',
+    'Distortion',
+    'Doubler',
+    'Modulation',
+    'Delay',
+    'Reverb',
+    'Compressor',
+    'Four-band EQ',
+  ],
+  'Vocal Rack': [
+    'High-pass gate',
+    'Pitch shift',
+    'Doubler',
+    'Delay',
+    'Reverb',
+    'Compressor',
+    'Four-band EQ',
+  ],
+  // The measurement records this rack's Master Vol slot at medium confidence.
+  // It is the rack level, after every module, either way.
+  'Vocal Tuner Rack': [
+    'High-pass gate',
+    'Smart tune',
+    'Harmonizer',
+    'Doubler',
+    'Delay',
+    'Reverb',
+    'Compressor',
+    'Four-band EQ',
+  ],
+};
+
 /// The module of a [family] rack whose power key is [key], or `null`.
 FxModule? fxModuleFor(String key, String family) {
   for (final module in kFxModules) {
@@ -401,16 +497,27 @@ List<FxModule> fxModulesOwning(String key, String family) => [
     if (module.appearsIn(family) && module.owns(key)) module,
 ];
 
-/// The modules [preset] holds, in the table's order, keeping only those the
-/// preset actually names.
+/// The modules [preset] holds, in the order its rack runs them
+/// ([kFxRackOrders]), keeping only those the preset actually names.
 ///
 /// A preset names a module by carrying its power key or any of its
 /// parameters — some presets carry a module's controls without its power key
 /// and the other way round, so either is enough to say the rack has it.
-List<FxModule> fxPresetModules(FxPreset preset) => [
-  for (final module in kFxModules)
-    if (module.appearsIn(preset.family) && _names(preset, module)) module,
-];
+///
+/// A module the family's order does not place (no factory preset has one, a
+/// test pins that) is still kept, after the placed ones in table order: a rack
+/// is what the player loaded.
+List<FxModule> fxPresetModules(FxPreset preset) {
+  final named = [
+    for (final module in kFxModules)
+      if (module.appearsIn(preset.family) && _names(preset, module)) module,
+  ];
+  final order = kFxRackOrders[preset.family] ?? const <String>[];
+  return [
+    for (final name in order) ...named.where((m) => m.name == name),
+    ...named.where((m) => !order.contains(m.name)),
+  ];
+}
 
 bool _names(FxPreset preset, FxModule module) {
   for (final key in module.enables) {

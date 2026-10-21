@@ -37472,6 +37472,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_backing.h"
 #include "test_engine_audition.h"
 #include "test_engine_render.h"
+#include "test_engine_rack_output.h"
 #include "test_engine_bounce.h"
 #include "test_engine_clock.h"
 #include "test_engine_rt_memory.h"
@@ -37547,6 +37548,7 @@ int main(void) {
   run_backing_tests();
   run_audition_tests();
   run_render_tests();
+  run_rack_output_tests();
   run_bounce_tests();
   if (getenv("SEGNO_PEEL_TESTS_ONLY")) return g_failures ? 1 : 0;
   run_length_tests();

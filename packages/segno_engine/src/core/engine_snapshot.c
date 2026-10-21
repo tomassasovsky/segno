@@ -295,7 +295,8 @@ uint64_t le_lane_pre_fx_fingerprint(le_engine* engine, int32_t channel,
   memset(chan, 0, sizeof(chan));
   le_fx_chan_snapshot(chan, &chan_any, pre, ln->a_fx_chan_in,
                       ln->a_fx_chan_out, ln->a_fx_chan_gl_bits,
-                      ln->a_fx_chan_gr_bits, ln->a_fx_chan_level_bits);
+                      ln->a_fx_chan_gr_bits, ln->a_fx_chan_level_bits,
+                      ln->a_fx_chan_rack);
   for (int32_t s = 0; s < pre; ++s) h = le_fx_chan_fold(h, &chan[s]);
   return le_fx_fold_hop_position(h, pre, ln->a_fx_type,
                                  &engine->tracks[channel]);
@@ -357,7 +358,7 @@ uint64_t le_track_pre_fingerprint(le_engine* engine, int32_t channel) {
   memset(chan, 0, sizeof(chan));
   le_fx_chan_snapshot(chan, &chan_any, pre, b->a_fx_chan_in, b->a_fx_chan_out,
                       b->a_fx_chan_gl_bits, b->a_fx_chan_gr_bits,
-                      b->a_fx_chan_level_bits);
+                      b->a_fx_chan_level_bits, b->a_fx_chan_rack);
   for (int32_t s = 0; s < pre; ++s) h = le_fx_chan_fold(h, &chan[s]);
   h = le_fx_fold_hop_position(h, pre, b->a_fx_type, t);
 
