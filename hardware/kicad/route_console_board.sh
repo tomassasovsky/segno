@@ -131,6 +131,14 @@ print('   violations: %d | unconnected: %d' % (len(v), len(u)), file=__import__(
 for t, n in collections.Counter(x['type'] for x in v).most_common():
     print('      %-26s %d' % (t, n), file=__import__('sys').stderr)
 print(len(v) + len(u))")
+  # A DRC-clean attempt still has to pass the routed-board fab gates, which DRC
+  # knows nothing about. Freerouting once ran two signals through the J3/J24
+  # +5V bar on an otherwise clean attempt (#1388); DRC passed it, and only the
+  # step-6 RING_POWER gate refused it, after the loop had already stopped.
+  if [ "$BAD" -eq 0 ] && ! "$KPY" console_board_pcb.py --check-routed 2>&1 \
+       | grep -viE "wxApp|memory leak|Debug:" | tail -1 | sed 's/^/   /'; then
+    BAD=1
+  fi
   [ "$BAD" -lt "$BEST" ] && BEST=$BAD
   [ "$BAD" -eq 0 ] && break
 done

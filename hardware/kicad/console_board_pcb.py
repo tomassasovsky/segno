@@ -1,4 +1,4 @@
-"""pcbnew layout generator for the Segno CONSOLE board v3 (issue #747; v3: #987 ring link, CTRL ring sense).
+"""pcbnew layout generator for the Segno CONSOLE board v3 (issue #747; v3: #987 ring link, CTRL ring sense; v3.1: #1388 MODE on GP12).
 
 Consumes `console_board.net` -- the SKiDL netlist is the single source of truth for
 what connects to what -- and emits a placed, routed, poured, DRC-clean board plus a
@@ -280,14 +280,15 @@ PLACEMENT = {
                                    # A 40-way ribbon leaving
                                    # mid-board folds straight back over everything;
                                    # here the cable clears the board immediately.
-    "J22": (46.3, 26.0, 0),        # expansion, 2x4: GP12/15/19/22/28 since v3
-                                   # (GP20/21 became the ring senses). Where it
-                                   # was on v2 -- the bench preferred it here.
-                                   # Not on the top edge: its GP28 pin is pad 34,
-                                   # near the module's LEFT end, while GP19/22
-                                   # are pads 25/29 toward the right -- from the
-                                   # top-right corner that ADC lead ran 61 mm.
-                                   # Sat here it reaches both ends of its span.
+    "J22": (46.3, 26.0, 0),        # expansion, 2x3: GP15/28, pin 3 unconnected
+                                   # since GP12 became MODE (#1388; GP19-22 left
+                                   # it in v3 for the jacks). Where it was on
+                                   # v2 -- the bench preferred it here. Not on
+                                   # the top edge: its GP28 pin is pad 34, near
+                                   # the module's LEFT end, while GP15 is pad 20
+                                   # at the right -- from the top-right corner
+                                   # that ADC lead ran 61 mm. Sat here it
+                                   # reaches both ends of its span.
 
     # Buffer support parts stay beside U1. R2 lies horizontally below it to
     # leave the internal connector row free for the Pi button lead at J9.
@@ -350,8 +351,14 @@ PLACEMENT = {
     "H3":  (BW - MOUNT_INSET, BH - MOUNT_INSET, 0),
     "H4":  (MOUNT_INSET, BH - MOUNT_INSET, 0),
 }
-# footswitches J10..J19 along the bottom, left-to-right in GPIO order -- that
-# ordering is what keeps the fan-out from crossing (gated in _check)
+# footswitches J10..J19 along the bottom, left-to-right in PICO PAD order --
+# that ordering is what keeps the fan-out from crossing (gated in _check). It is
+# no longer designator order: MODE moved to GP12 (#1388), pad 16, the right end
+# of the run, so its header J13 (still MODE's designator, with C4 its debounce
+# cap, as on v3) takes the rightmost slot and TRK1..BANK each shift one slot
+# left. Pad 7 in the middle of the run is GP5, left unconnected (SPARE_GPIO in
+# console_board.py says why it does not go to J22).
+FSW_SLOTS = ["J10", "J11", "J12", "J14", "J15", "J16", "J17", "J18", "J19", "J13"]
 #
 # 84.2, not 85.0, since the module was socketed (#1062). Its through-holes sit
 # 0.8 mm inboard of the hand-solder pads they replace, so every hop from the
@@ -386,8 +393,8 @@ def fsw_x(i):
     return FSW_X0 + (FSW_X1 - FSW_X0) * i / 9.0
 
 
-for _i in range(10):
-    PLACEMENT["J%d" % (10 + _i)] = (fsw_x(_i), FSW_Y, 0)
+for _i, _ref in enumerate(FSW_SLOTS):
+    PLACEMENT[_ref] = (fsw_x(_i), FSW_Y, 0)
 
 PWR_NETS = {"+5V", "+3V3", "+3V3_PICO"}
 # The FLOOR, which is the routed width: a rail under this means the netclass in
@@ -1576,13 +1583,13 @@ REF_AT = {
     "C1": (8.0, 72.256199),
     "C2": (17.3333, 72.256199),
     "C3": (31.152652, 75.3),
-    "C4": (36.0, 72.256199),
-    "C5": (49.819252, 75.3),
-    "C6": (59.152652, 75.3),
-    "C7": (68.485952, 75.3),
-    "C8": (77.819285, 75.3),
-    "C9": (87.152618, 75.3),
-    "C10": (96.866904, 75.3),
+    "C4": (96.866904, 75.3),
+    "C5": (36.0, 72.256199),
+    "C6": (49.819252, 75.3),
+    "C7": (59.152652, 75.3),
+    "C8": (68.485952, 75.3),
+    "C9": (77.819285, 75.3),
+    "C10": (87.152618, 75.3),
     "C11": (80.0, 27.9562),
     "C13": (55.899999, 24.0438),
     "C14": (61.133095, 21.0),
@@ -1605,13 +1612,13 @@ REF_AT = {
     "J10": (8.0, 89.1188),
     "J11": (17.3333, 89.1188),
     "J12": (26.666699, 89.1188),
-    "J13": (36.0, 89.1188),
-    "J14": (45.333299, 89.1188),
-    "J15": (54.6667, 89.1188),
-    "J16": (64.0, 89.1188),
-    "J17": (73.333299, 89.1188),
-    "J18": (82.6667, 89.1188),
-    "J19": (85.778333, 89.1188),
+    "J13": (85.778333, 89.1188),
+    "J14": (36.0, 89.1188),
+    "J15": (45.333299, 89.1188),
+    "J16": (54.6667, 89.1188),
+    "J17": (64.0, 89.1188),
+    "J18": (73.333299, 89.1188),
+    "J19": (82.6667, 89.1188),
     "J20": (63.4, 12.9188),
     "J21": (77.7, 12.9188),
     "J22": (41.233333, 26.0),
@@ -1828,8 +1835,7 @@ def _debounce_caps(nets):
     correct if console_board.py ever builds the switches in a different order.
     """
     out = {}
-    for i in range(10):
-        j = "J%d" % (10 + i)
+    for i, j in enumerate(FSW_SLOTS):
         for name, nodes in nets.items():
             if not name.startswith("SW_"):
                 continue
@@ -1876,7 +1882,7 @@ def _selftest():
         # control lands on the cap row and trips PLACE instead of its own gate.
         ("pill power header turned against J3", "PILL_POWER:", {"J24": (5.4, 60.84, 270)}, {}),
         ("footswitch fan-out out of order", "CROSSING:",
-         {"J10": (FSW_X1, FSW_Y, 0), "J19": (FSW_X0, FSW_Y, 0)}, {}),
+         {FSW_SLOTS[0]: (FSW_X1, FSW_Y, 0), FSW_SLOTS[-1]: (FSW_X0, FSW_Y, 0)}, {}),
         # The pours tie SMD pads solid. This gate ran BEFORE the pours existed, so it
         # looped over an empty board.Zones() and could not fail; the ordering is what
         # makes the control below meaningful rather than the assertion text.
@@ -2060,7 +2066,7 @@ def build(quiet=False):
     # H4's pad at the left end of the bottom strip. Dropping the numbers only
     # shortens it inward from that centre, so the clearance can only improve;
     # the SILK gates below re-measure it as rendered either way.
-    _silk(board, "SEGNO CONSOLE v3", 33.0, 95.5, 1.6)
+    _silk(board, "SEGNO CONSOLE v3.1", 33.0, 95.5, 1.6)
     # No "MIDI IN: ISOLATED" legend (owner call, #1062). It said something true
     # about the circuit to nobody who needed it at the bench, and the bottom
     # strip reads better with the title alone.
