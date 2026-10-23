@@ -1593,6 +1593,9 @@ static void le_pr_seed_channels(le_fx_state* fx, const le_json_value* effects,
                                 int count) {
   static const char* const kIn[] = {"stereo", "left", "right", "monoSum"};
   static const char* const kOut[] = {"stereo", "mono"};
+  static const char* const kPath[] = {"none", "dub", "amb"};
+  static const int32_t kPathBits[] = {0, LE_FX_RACK_DUB_PATH,
+                                      LE_FX_RACK_AMB_PATH};
   char ids[LE_FX_MAX][128];
   int racked[LE_FX_MAX] = {0};
   if (count > LE_FX_MAX) count = LE_FX_MAX;
@@ -1617,6 +1620,11 @@ static void le_pr_seed_channels(le_fx_state* fx, const le_json_value* effects,
     c->level = level;
     racked[s] = le_json_string(le_json_get(le_json_get(entry, "rack"), "id"),
                                ids[s], sizeof(ids[s]));
+    /* A path counts inside a rack only, as the live recipe sets it. */
+    if (racked[s]) {
+      c->rack = kPathBits[le_pr_wire_index(le_json_get(entry, "rackPath"),
+                                           kPath, 3)];
+    }
     /* The live snapshot's rule: a rack edge sets it too. */
     if (c->in_mode != LE_FX_CHAN_IN_STEREO ||
         c->out_mode != LE_FX_CHAN_OUT_STEREO || c->gl != 1.0f ||

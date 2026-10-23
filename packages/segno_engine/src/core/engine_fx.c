@@ -1019,6 +1019,7 @@ void le_fx_enable_seed_settled(le_fx_state* fx, int slot) {
 
 void le_fx_rack_reset(le_fx_state* fx, int slot) {
   fx->rack_primed[slot] = 0;
+  fx->path_primed[slot] = 0;
 }
 
 void le_fx_enable_seed_at(le_fx_state* fx, int slot, int effective) {
@@ -4389,6 +4390,91 @@ static inline void fx_rack_output(const le_fx_state* fx, int s, float dl,
   }
 }
 
+#define LE_FX_RACK_PATHS (LE_FX_RACK_DUB_PATH | LE_FX_RACK_AMB_PATH)
+
+/* A parallel section being walked (LE_FX_RACK_DUB_PATH): its first entry
+ * (-1 outside one), the pair it was handed, each path's running pair ([0]
+ * Amb, [1] Dub) and its Amb-Dub Mix. */
+typedef struct fx_section {
+  int at;
+  int has_mix;
+  float mix;
+  float x[2];
+  float p[2][2];
+} fx_section;
+
+/* The Amb-Dub Mix law at [m]: the Amb path's gain [0], the Dub path's [1]. */
+static inline void fx_path_targets(float m, float g[2]) {
+  const float d = 2.0f * (m < 0.0f ? 0.0f : m > 1.0f ? 1.0f : m);
+  g[1] = d < 1.0f ? d * d : 1.0f;
+  g[0] = d > 1.0f ? 1.0f - (d - 1.0f) * (d - 1.0f) : 1.0f;
+}
+
+/* Entry [s] of a section ([sec]) takes its path's running pair, opening
+ * the section at its first entry. Returns the path (0 Amb, 1 Dub). */
+static inline int fx_section_enter(fx_section* sec, int s, int32_t bits,
+                                   int32_t ty, const float* p, float* xl,
+                                   float* xr) {
+  if (sec->at < 0) {
+    sec->at = s;
+    sec->has_mix = 0;
+    sec->mix = LE_FX_AMB_VERB_PARAMS[2].def;
+    sec->x[0] = sec->p[0][0] = sec->p[1][0] = *xl;
+    sec->x[1] = sec->p[0][1] = sec->p[1][1] = *xr;
+  }
+  /* Read here, ahead of anything that skips the entry: a bypassed
+   * Amb-Verb's Amb-Dub Mix still sets the mix. */
+  if (ty == LE_FX_AMB_VERB && !sec->has_mix) {
+    sec->mix = p[2];
+    sec->has_mix = 1;
+  }
+  const int path = (bits & LE_FX_RACK_AMB_PATH) ? 0 : 1;
+  *xl = sec->p[path][0];
+  *xr = sec->p[path][1];
+  return path;
+}
+
+/* Whether the section ends after entry [s]: the chain, the rack or the run
+ * of path entries ends there. */
+static inline int fx_section_ends(const le_fx_state* fx, int s, int count) {
+  return s + 1 >= count || (fx->chan[s].rack & LE_FX_RACK_LAST) ||
+         (fx->chan[s + 1].rack & LE_FX_RACK_FIRST) ||
+         !(fx->chan[s + 1].rack & LE_FX_RACK_PATHS);
+}
+
+/* A section's output: x + A (amb - x) + D (dub - x) + rm (A + D - 1) x,
+ * which is A amb + D dub with the rack on (rack crossfade [rm] 1) and, with
+ * it off, the input plus whatever each path added (a draining tail) at its
+ * path's gain. So a section whose entries are all settled off, in a rack
+ * that is off, hands on its input exactly. */
+static inline void fx_section_merge(le_fx_state* fx, const fx_section* sec,
+                                    int sr, float rm, float* xl, float* xr) {
+  float tgt[2];
+  fx_path_targets(sec->mix, tgt);
+  float* g = fx->path_gain[sec->at];
+  if (!fx->path_primed[sec->at]) {
+    g[0] = tgt[0];
+    g[1] = tgt[1];
+    fx->path_primed[sec->at] = 1;
+  } else if (g[0] != tgt[0] || g[1] != tgt[1]) {
+    const float step =
+        sr > 0 ? 1000.0f / ((float)LE_FX_ENABLE_RAMP_MS * (float)sr) : 1.0f;
+    for (int i = 0; i < 2; ++i) {
+      const float d = tgt[i] - g[i];
+      g[i] = d > step ? g[i] + step : d < -step ? g[i] - step : tgt[i];
+    }
+  }
+  const float boost = rm * (g[0] + g[1] - 1.0f);
+  float out[2];
+  for (int c = 0; c < 2; ++c) {
+    const float x = sec->x[c];
+    out[c] = x + g[0] * (sec->p[0][c] - x) + g[1] * (sec->p[1][c] - x);
+    if (boost != 0.0f) out[c] += boost * x;
+  }
+  *xl = out[0];
+  *xr = out[1];
+}
+
 void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float* r,
                     int count, const int32_t* types,
                     const float params[LE_FX_MAX][LE_FX_PARAMS],
@@ -4400,15 +4486,32 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
   int rack_tail = -1;
   float rack_dl = 0.0f;
   float rack_dr = 0.0f;
+  fx_section sec;
+  sec.at = -1;
   if (fx->enable_clear_cooldown > 0) fx->enable_clear_cooldown--;
   for (int s = 0; s < count; ++s) {
-    if (s == gain_at) { xl *= gain; xr *= gain; }
+    if (s == gain_at) {
+      xl *= gain;
+      xr *= gain;
+      if (sec.at >= 0) { /* the merge is linear: scale what it will sum */
+        for (int c = 0; c < 2; ++c) {
+          sec.x[c] *= gain;
+          sec.p[0][c] *= gain;
+          sec.p[1][c] *= gain;
+        }
+      }
+    }
     if (fx->chan_any && (fx->chan[s].rack & LE_FX_RACK_FIRST)) {
       rack_dl = xl;
       rack_dr = xr;
       rack_tail = fx_rack_head(fx, s, count, enabled, sr, &xl, &xr);
     }
     const int32_t ty = types[s];
+    const int32_t path_bits =
+        fx->chan_any ? fx->chan[s].rack & LE_FX_RACK_PATHS : 0;
+    const int path = path_bits ? fx_section_enter(&sec, s, path_bits, ty,
+                                                  params[s], &xl, &xr)
+                               : -1;
     if (ty > LE_FX_NONE && ty < LE_FX_TYPE_COUNT &&
         (LE_FX[ty].process || LE_FX[ty].kprocess || LE_FX[ty].rkprocess)) {
       /* Plugin installation can replace a draining built-in without a ring
@@ -4555,6 +4658,18 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
       }
     }
   slot_done:
+    /* Whatever the entry did, a path entry hands its result back to its
+     * path, and the section's last one merges the paths. */
+    if (path >= 0) {
+      sec.p[path][0] = xl;
+      sec.p[path][1] = xr;
+      if (fx_section_ends(fx, s, count)) {
+        fx_section_merge(fx, &sec, sr,
+                         rack_tail >= 0 ? fx->rack_mix[rack_tail] : 1.0f, &xl,
+                         &xr);
+        sec.at = -1;
+      }
+    }
     /* Whatever the entry did — processed, passed through as LE_FX_NONE,
      * skipped as a settled bypass — a rack's last entry hands on through the
      * rack's output side. */

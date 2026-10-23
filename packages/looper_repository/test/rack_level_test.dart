@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart'
-    show FxOwner, FxRackEdge, MockAudioEngine, fxInstanceId;
+    show FxOwner, FxRackEdge, FxRackPath, MockAudioEngine, fxInstanceId;
 
 /// Guitar Rack / Rhythm Atmos, read from the catalogue's own file: its
 /// Master Vol is +10.6 dB, past the old x2 entry-level ceiling.
@@ -123,6 +123,32 @@ void main() {
     expect(
       engine.fxRecipes[(FxOwner.track, 0, 0)]!.slots.map((s) => s.instance),
       first.map((s) => s.instance),
+    );
+  });
+
+  test("a Dub Rack's recipe puts its pedals on the rack's two paths", () {
+    final preset = FxPreset.tryParse(
+      'Dub Rack',
+      File(
+        '../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset',
+      ).readAsStringSync(),
+    )!;
+    final entries = asRack(fxRackEntries(preset));
+    expect(repo.setTrackEffects(channel: 0, effects: entries), EngineResult.ok);
+    final slots = engine.fxRecipes[(FxOwner.track, 0, 0)]!.slots;
+    expect(
+      {
+        for (final (i, fx) in repo.trackEffects(0).indexed)
+          fx.module: slots[i].path,
+      },
+      {
+        'Doubler': FxRackPath.dub,
+        'Dub delay': FxRackPath.dub,
+        'Dub reverb': FxRackPath.dub,
+        'Ambience': FxRackPath.amb,
+        'Compressor': FxRackPath.none,
+        'Parametric EQ': FxRackPath.none,
+      },
     );
   });
 }
