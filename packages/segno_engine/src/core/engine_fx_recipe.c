@@ -294,18 +294,22 @@ void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* p, uint64_t frame) 
           retyped || rehosted || id == 0u ||
           atomic_load_explicit(&t.meta[s].instance, memory_order_relaxed) != id;
       atomic_store_explicit(&t.meta[s].instance, id, memory_order_relaxed);
+      if (active) {
+        /* Only what the type reads: this runs in the callback. A retyped row
+         * also clears its tail once, so no cell past the width ever holds
+         * another type's setting. The row is written before the type and
+         * its tag (release), so a worker that finds the tag matching reads
+         * this row (le_fx_slot_type). */
+        const int32_t width = le_fx_param_width(ty);
+        for (int k = 0; k < width; ++k) store_f32(&t.param[s][k], r->params[s][k]);
+        if (retyped) {
+          for (int k = width; k < LE_FX_PARAMS; ++k) store_f32(&t.param[s][k], 0.0f);
+        }
+      }
       store_i32(&t.type[s], ty);
-      store_i32(&t.meta[s].param_type, ty); /* the row is this type's */
+      atomic_store_explicit(&t.meta[s].param_type, ty, memory_order_release);
       if (!active) continue;
       if (renew) renewed |= 1ull << s;
-      /* Only what the type reads: this runs in the callback. A retyped row
-       * also clears its tail once, so no cell past the width ever holds
-       * another type's setting. */
-      const int32_t width = le_fx_param_width(ty);
-      for (int k = 0; k < width; ++k) store_f32(&t.param[s][k], r->params[s][k]);
-      if (retyped) {
-        for (int k = width; k < LE_FX_PARAMS; ++k) store_f32(&t.param[s][k], 0.0f);
-      }
       store_i32(&t.slot_enabled[s], r->slot_enabled[s]);
       store_i32(&t.in[s], r->input_mode[s]); store_i32(&t.out[s], r->output_mode[s]);
       store_f32(&t.pan[s], r->placement[s]); store_f32(&t.level[s], r->level[s]);

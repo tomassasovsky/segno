@@ -871,11 +871,7 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   int has_builtin = 0;
   int has_plugin = 0;
   for (int32_t s = 0; s < count; ++s) {
-    types[s] = load_i32(&ln->a_fx_type[s]);
-    /* The type the row is for (see le_fx_frozen_capture); a pending
-     * retype then fails the scheduler's fingerprint check and retries. */
-    types[s] = atomic_load_explicit(&ln->fx_meta[s].param_type,
-                                    memory_order_acquire);
+    types[s] = le_fx_slot_type(ln->a_fx_type, ln->fx_meta, s);
     raw_en[s] = load_i32(&ln->a_fx_enabled[s]) ? 1 : 0;
     const int32_t w = le_fx_param_width(types[s]);
     for (int32_t p = 0; p < w; ++p) {
@@ -1110,9 +1106,7 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   int has_builtin = 0;
   int has_plugin = 0;
   for (int32_t s = 0; s < count; ++s) {
-    types[s] = load_i32(&b->a_fx_type[s]);
-    types[s] = atomic_load_explicit(&b->fx_meta[s].param_type,
-                                    memory_order_acquire); /* see the lane */
+    types[s] = le_fx_slot_type(b->a_fx_type, b->fx_meta, s);
     raw_en[s] = load_i32(&b->a_fx_enabled[s]) ? 1 : 0;
     const int32_t w = le_fx_param_width(types[s]);
     for (int32_t p = 0; p < w; ++p) {
@@ -1606,11 +1600,9 @@ void le_fx_frozen_capture(le_fx_frozen_chain* c, _Atomic int32_t* count,
   int32_t en[LE_FX_MAX];
   float params[LE_FX_MAX][LE_FX_PARAMS]; /* each type's own cells only */
   for (int32_t s = 0; s < n; ++s) {
-    types[s] = load_i32(&type[s]);
-    /* A row seeded for another type whose command has not landed: the
-     * render takes the type the row is for, which is the chain it is about
-     * to be (a whole bounce must not miss the entry for its length). */
-    types[s] = atomic_load_explicit(&meta[s].param_type, memory_order_acquire);
+    /* The live rule (le_fx_slot_type): a capture taken while a granular
+     * retype is in flight renders the slot dry, as the callback plays it. */
+    types[s] = le_fx_slot_type(type, meta, s);
     en[s] = load_i32(&enabled[s]) ? 1 : 0;
     const int32_t w = le_fx_param_width(types[s]);
     for (int32_t p = 0; p < w; ++p) params[s][p] = load_f32(&param[s][p]);

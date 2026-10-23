@@ -164,8 +164,11 @@ int32_t le_engine_set_lane_plugin(le_engine* engine, int32_t channel,
                         memory_order_release);
   const int32_t rc = install(engine, fx, type, index, plugin_id, out_slot);
   if (rc != LE_OK) {
+    /* The row is the published type's again (install may have cleared the
+     * slot to none before it failed). */
     atomic_store_explicit(&owner->fx_meta[index].param_type,
-                          owner->fx_type_pushed[index], memory_order_release);
+                          atomic_load_explicit(type, memory_order_relaxed),
+                          memory_order_release);
   }
   if (rc == LE_OK) {
     /* D-ENSEED for the plugin path: installing publishes a type change the
@@ -192,8 +195,11 @@ int32_t le_engine_set_monitor_plugin(le_engine* engine, int32_t input,
                         memory_order_release); /* see the lane's */
   const int32_t rc = install(engine, fx, type, index, plugin_id, out_slot);
   if (rc != LE_OK) {
+    /* The row is the published type's again (install may have cleared the
+     * slot to none before it failed). */
     atomic_store_explicit(&owner->fx_meta[index].param_type,
-                          owner->fx_type_pushed[index], memory_order_release);
+                          atomic_load_explicit(type, memory_order_relaxed),
+                          memory_order_release);
   }
   if (rc == LE_OK) {
     le_monitor_input* m = &engine->monitors[input];
@@ -213,6 +219,10 @@ int32_t le_engine_clear_lane_plugin(le_engine* engine, int32_t channel,
    * callback) is still a successful clear from the caller's view. */
   (void)clear_slot(engine, fx, type, index);
   engine->tracks[channel].lanes[lane].fx_type_pushed[index] = LE_FX_NONE;
+  /* The emptied slot's row is nobody's plugin any more. */
+  atomic_store_explicit(
+      &engine->tracks[channel].lanes[lane].fx_meta[index].param_type,
+      LE_FX_NONE, memory_order_release);
   le_lane_fx_gen_bump(&engine->tracks[channel].lanes[lane]);
   return LE_OK;
 }
@@ -225,5 +235,7 @@ int32_t le_engine_clear_monitor_plugin(le_engine* engine, int32_t input,
   if (!fx) return LE_ERR_INVALID;
   (void)clear_slot(engine, fx, type, index);
   engine->monitors[input].fx_type_pushed[index] = LE_FX_NONE;
+  atomic_store_explicit(&engine->monitors[input].fx_meta[index].param_type,
+                        LE_FX_NONE, memory_order_release);
   return LE_OK;
 }
