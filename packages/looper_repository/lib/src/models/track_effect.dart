@@ -214,6 +214,10 @@ enum FxParamCurve {
   /// `1 / (1 / atMin + (1 / atMax - 1 / atMin) * v)`: the reciprocal is
   /// linear.
   reciprocal,
+
+  /// `(v + atMin) / (1 - v)`, at most `atMax`: the Looper X's reverb time
+  /// display.
+  reverbTime,
 }
 
 /// One built-in effect parameter: what its normalized `0..1` setting means.
@@ -337,6 +341,7 @@ class FxParamInfo extends Equatable {
       FxParamCurve.linear => engine.FxParamCurve.linear,
       FxParamCurve.exponential => engine.FxParamCurve.exponential,
       FxParamCurve.reciprocal => engine.FxParamCurve.reciprocal,
+      FxParamCurve.reverbTime => engine.FxParamCurve.reverbTime,
     },
     taperUnverified: taperUnverified,
     off: switch (off) {
@@ -428,7 +433,14 @@ enum TrackEffectType {
   lpf(20),
 
   /// The Looper X's spring reverb (#887 part 8).
-  spring(21);
+  spring(21),
+
+  /// The Looper X's Dub-Verb (#1430).
+  dubVerb(22),
+
+  /// The Looper X's Amb-Verb (#1430), which also carries the Dub Rack's
+  /// Amb-Dub Mix.
+  ambVerb(23);
 
   const TrackEffectType(this.code);
 
@@ -840,6 +852,7 @@ FxParamCurve _curveFromEngine(engine.FxParamCurve curve) => switch (curve) {
   engine.FxParamCurve.linear => FxParamCurve.linear,
   engine.FxParamCurve.exponential => FxParamCurve.exponential,
   engine.FxParamCurve.reciprocal => FxParamCurve.reciprocal,
+  engine.FxParamCurve.reverbTime => FxParamCurve.reverbTime,
 };
 
 /// Maps a domain [FxChannels] to the engine value at the boundary.
