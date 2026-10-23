@@ -1,0 +1,61 @@
+name: Bug report
+description: Something in Segno does not work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [open issues](https://github.com/tomassasovsky/segno/issues) first. For a security problem, [report it privately](https://github.com/tomassasovsky/segno/security/advisories/new) instead of filing it here.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Looping and tracks
+        - Effects
+        - Instruments
+        - Library, sessions and storage
+        - Performance recording and export
+        - Console, pedals and MIDI
+        - Settings, updates and network
+        - Appliance image and boot
+        - Hardware design
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Record a loop on track 1
+        2. Press Undo twice
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: From Settings > About on the appliance, or the commit you built from.
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Setup
+      description: Audio interface, controllers, and whether this is the appliance or a development build.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log output, if any.
+      render: text
