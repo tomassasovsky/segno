@@ -2838,7 +2838,7 @@ static const le_fx_param_desc LE_FX_SPRING_PARAMS[] = {
     {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
 };
 #define LE_SPR_PARAMS_N 2
-#define LE_SPR_RING 8192u /* holds the 38 ms trip at 192 kHz */
+#define LE_SPR_RING 4096u /* holds the 38 ms trip up to 107 kHz */
 #define LE_SPR_TRIP_S 0.038
 #define LE_SPR_STAGES 12
 #define LE_SPR_DISPERSION_HZ 1500.0
@@ -2870,7 +2870,7 @@ typedef struct le_fx_spring {
   le_fx_glide wet;
   float gain_tgt;   /* the targets, recomputed when the settings change */
   float wet_tgt;
-  double trip_scale; /* the trip held, over the 38 ms one (1 below 215 kHz) */
+  double trip_scale; /* the trip held, over the 38 ms one (1 below 107 kHz) */
   float ap;         /* the all-passes' coefficient */
   float loss_g1;
   uint32_t trip;    /* the delay line's samples */
@@ -2888,6 +2888,14 @@ static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
   if (!f) return;
   const int rate = sr > 0 ? sr : 48000;
   if (f & LE_FX_DYN_NEW_RATE) {
+    /* A rate change makes the ring's samples another rate's: start clean
+     * (a fresh block is already clear). */
+    if (!settle) {
+      memset(q->ring, 0, sizeof(q->ring));
+      memset(q->z, 0, sizeof(q->z));
+      memset(q->ap_z, 0, sizeof(q->ap_z));
+      q->loss_s = 0.0f;
+    }
     for (int s = 0; s < LE_SPR_SECTIONS; ++s) {
       double c[5];
       le_eq_design(LE_SPR_SHAPE[s].kind, LE_SPR_SHAPE[s].hz, LE_SPR_SHAPE[s].db,
@@ -2901,8 +2909,9 @@ static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
     /* The trip less the all-passes' delay at low frequencies. */
     const double want = LE_SPR_TRIP_S * rate - LE_SPR_STAGES * (1.0 - a) / (1.0 + a);
     double trip = want;
-    /* Past 215 kHz the trip outgrows the ring: hold it there and scale the
-     * loss per trip, so the decay stays right though the echo shortens. */
+    /* Past 107 kHz the trip outgrows the ring (a larger one would sit in
+     * every slot's arena): hold it there and scale the loss per trip, so the
+     * decay stays right though the echo shortens. */
     if (trip > (double)(LE_SPR_RING - 1u)) trip = (double)(LE_SPR_RING - 1u);
     if (trip < 1.0) trip = 1.0;
     q->trip = (uint32_t)(trip + 0.5);
@@ -3263,12 +3272,19 @@ static inline void fx_run(le_fx_state* fx, int s, int32_t ty, int sr, int cap,
   LE_FX[ty].process(fx, s, sr, cap, l, r, p);
 }
 
+/* Whether slot [s] as [type] holds a tail that re-enabling must clear: the
+ * rings `prepare` allocated (delay, echo, reverb, the octaver), or a
+ * draining kind's block (the spring's ring). */
+static int le_fx_holds_tail(const le_fx_state* fx, int s, int32_t type) {
+  if (type <= LE_FX_NONE || type >= LE_FX_TYPE_COUNT) return 0;
+  if (LE_FX[type].state_size != 0) return (LE_FX[type].flags & LE_FX_F_DRAINS) != 0;
+  return LE_FX[type].prepare != NULL &&
+         (fx->delay[s][0] != NULL || fx->delay[s][1] != NULL);
+}
+
 void le_fx_entry_renew(le_fx_state* fx, int slot, int32_t type) {
   le_fx_entry_reset(fx, slot);
-  const int rings = type > LE_FX_NONE && type < LE_FX_TYPE_COUNT &&
-                    LE_FX[type].prepare != NULL &&
-                    (fx->delay[slot][0] != NULL || fx->delay[slot][1] != NULL);
-  if (rings) le_fx_enable_force_bypass(fx, slot);
+  if (le_fx_holds_tail(fx, slot, type)) le_fx_enable_force_bypass(fx, slot);
 }
 
 int le_fx_type_free_running(int32_t type) {
@@ -3521,16 +3537,13 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
            * Only ring-OWNING types (vtable `prepare` non-NULL) pay the ring
            * clear, and those are spaced by the cooldown: a deferred slot
            * simply stays bypassed and retries next sample. */
-          /* A kind that drains keeps its rings in its block, cleared with
-           * it by the reset below: spaced the same way. */
-          const int needs_clear =
-              (LE_FX[ty].prepare != NULL &&
-               (fx->delay[s][0] != NULL || fx->delay[s][1] != NULL)) ||
-              (LE_FX[ty].state_size != 0 && (LE_FX[ty].flags & LE_FX_F_DRAINS));
+          /* A draining kind keeps its ring in its block, which the reset
+           * below clears: it is spaced the same way. */
+          const int needs_clear = le_fx_holds_tail(fx, s, ty);
           if (needs_clear && fx->enable_clear_cooldown > 0) goto slot_done;
           le_fx_entry_reset(fx, s);
           if (needs_clear) {
-            le_fx_entry_clear_rings(fx, s, cap);
+            if (LE_FX[ty].state_size == 0) le_fx_entry_clear_rings(fx, s, cap);
             fx->enable_clear_cooldown = LE_FX_ENABLE_CLEAR_SPACING;
           }
           fx->enable_warmup[s] = le_fx_added_latency(fx, s, ty);
