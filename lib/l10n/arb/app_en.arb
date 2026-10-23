@@ -4130,6 +4130,10 @@
         }
     },
     "fxValueQ": "{q}",
+    "fxValueOff": "Off",
+    "@fxValueOff": {
+        "description": "An EQ cut at the end of its range, where it filters nothing."
+    },
     "@fxValueQ": {
         "description": "A filter's Q, a plain number with two decimals (an EQ band's width).",
         "placeholders": {

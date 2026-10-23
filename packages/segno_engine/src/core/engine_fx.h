@@ -262,6 +262,13 @@ void le_fx_enable_force_bypass(le_fx_state* fx, int slot);
  * nulls them. Control-thread only (lane/monitor reset, engine destroy). */
 void le_fx_free_octaver(le_fx_state* fx, int slot);
 
+/* Frees every heap buffer chain slot [slot] owns: its delay rings, its
+ * octaver buffers and its per-kind state. The one call an owner reset or
+ * destroy makes per slot, so a future heap-owning kind adds its free to it
+ * once. Control-thread only, where the audio thread no longer reads the
+ * slot. */
+void le_fx_free_slot(le_fx_state* fx, int slot);
+
 /* Frees chain slot [slot]'s per-kind state (its arena and every block in it)
  * and forgets it. Control-thread only, where the audio thread no longer reads
  * the slot, like le_fx_free_delay. */
@@ -312,6 +319,13 @@ int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap);
 extern const uint8_t le_fx_widths[LE_FX_WIDTHS];
 static inline int32_t le_fx_param_width(int32_t type) {
   return type > 0 && type < LE_FX_WIDTHS ? (int32_t)le_fx_widths[type] : 0;
+}
+
+/* Whether [type] is a built-in an entry may be set to: none or a built-in
+ * effect, not a hosted plugin (which arrives through its own call) nor an
+ * unknown code. */
+static inline int le_fx_settable_type(int32_t type) {
+  return type >= LE_FX_NONE && type < LE_FX_WIDTHS && type != LE_FX_PLUGIN;
 }
 
 /* Writes effect [type]'s default normalized params into out[LE_FX_PARAMS] (all

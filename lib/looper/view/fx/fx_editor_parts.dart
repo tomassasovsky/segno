@@ -82,9 +82,7 @@ class FxBuiltInParamControl extends StatelessWidget {
     final setting = effect.params[index];
     final reading = fxParamReading(l10n, effect, param, setting);
     return FxParamControl(
-      label: labelKey == null
-          ? l10n.fxParamName(param)
-          : l10n.fxParamKeyName(labelKey!),
+      label: l10n.fxParamKeyName(labelKey ?? param.key),
       value: setting,
       valueText: reading.valueText,
       width: width,

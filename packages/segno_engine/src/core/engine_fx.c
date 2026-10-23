@@ -169,6 +169,14 @@ _Static_assert(LE_PSOLA_AHOP == LE_PV_HOP,
  *
  * MASKED, not %-ed: hop_count indexes o->out[] in le_pv_tick, so the phase
  * must be in [0, LE_PV_HOP) for any seed a caller stores. */
+/* The engine frame the chain is processing (le_fx_state::clock): the one
+ * clock the octaver's hop and a heap-state kind's update cadence follow. */
+static inline uint32_t le_fx_now(const le_fx_state* fx) {
+  return fx->clock_src != NULL
+             ? atomic_load_explicit(fx->clock_src, memory_order_relaxed)
+             : fx->clock;
+}
+
 static int le_pv_hop_phase(const le_fx_state* fx, int slot) {
   return le_fx_hop_mask((uint32_t)fx->hop_seed +
                         (uint32_t)slot * (uint32_t)LE_PV_STAGGER_QUARTER);
@@ -202,10 +210,7 @@ static void le_oct_set_ticks_to_work(le_octaver_state* o, int ticks) {
  * reset. */
 static int le_oct_seeded_ticks(const le_fx_state* fx, int slot) {
   const uint32_t phase = (uint32_t)le_pv_hop_phase(fx, slot);
-  const uint32_t clock =
-      fx->clock_src != NULL
-          ? atomic_load_explicit(fx->clock_src, memory_order_relaxed)
-          : fx->clock;
+  const uint32_t clock = le_fx_now(fx);
   const uint32_t to_go = (0u - (clock + phase)) & (uint32_t)(LE_PV_HOP - 1);
   return (int)to_go + 1;
 }
@@ -943,11 +948,14 @@ void le_fx_free_delay(le_fx_state* fx, int slot) {
   fx->delay[slot][1] = NULL;
 }
 
+void le_fx_free_slot(le_fx_state* fx, int slot) {
+  le_fx_free_delay(fx, slot);
+  le_fx_free_octaver(fx, slot);
+  le_fx_free_kinds(fx, slot);
+}
+
 void le_fx_state_free_buffers(le_fx_state* fx) {
-  for (int s = 0; s < LE_FX_MAX; ++s) {
-    le_fx_free_delay(fx, s);
-    le_fx_free_octaver(fx, s);
-  }
+  for (int s = 0; s < LE_FX_MAX; ++s) le_fx_free_slot(fx, s);
   le_fx_free_kind_table(fx);
 }
 
@@ -1311,6 +1319,9 @@ typedef struct le_fx_eq {
    * for the rate it was computed at: a settled EQ whose settings did not
    * change costs one compare per update. */
   float last[LE_EQ_PARAMS_N];
+  float tgt_hz[LE_EQ_BANDS];
+  float tgt_db[LE_EQ_BANDS];
+  float tgt_lnq[LE_EQ_BANDS];
   int32_t primed;
   int32_t k_sr;
   float k;
@@ -1388,29 +1399,30 @@ static void le_eq_targets(const float* p, float hz[LE_EQ_BANDS],
 
 static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
   le_fx_eq* q = (le_fx_eq*)ks;
-  if (!settle && !q->moving && q->primed &&
-      memcmp(q->last, p, sizeof(q->last)) == 0) {
-    return; /* settled and unchanged */
-  }
-  memcpy(q->last, p, sizeof(q->last));
-  q->primed = 1;
-  if (q->k_sr != sr) {
+  const int new_rate = q->k_sr != sr; /* every band's design moves */
+  const int new_params = !q->primed || memcmp(q->last, p, sizeof(q->last)) != 0;
+  if (!settle && !new_rate && !new_params && !q->moving) return;
+  if (new_rate) {
     q->k_sr = sr;
     q->k = (float)(1.0 - exp(-(double)LE_FX_UPDATE_FRAMES /
                              (LE_EQ_SMOOTH_S * (double)(sr > 0 ? sr : 48000))));
   }
-  float hz[LE_EQ_BANDS], db[LE_EQ_BANDS], lnq[LE_EQ_BANDS];
-  le_eq_targets(p, hz, db, lnq);
+  if (new_params || settle) {
+    /* The targets change only with the settings; a glide reuses them. */
+    memcpy(q->last, p, sizeof(q->last));
+    q->primed = 1;
+    le_eq_targets(p, q->tgt_hz, q->tgt_db, q->tgt_lnq);
+  }
   const float k = settle ? 1.0f : q->k;
   int moving = 0;
-  int changed = settle;
   for (int b = 0; b < LE_EQ_BANDS; ++b) {
     float* cur[3] = {&q->hz[b], &q->db[b], &q->lnq[b]};
-    const float tgt[3] = {hz[b], db[b], lnq[b]};
+    const float tgt[3] = {q->tgt_hz[b], q->tgt_db[b], q->tgt_lnq[b]};
+    int dirty = settle || new_rate;
     for (int i = 0; i < 3; ++i) {
       const float d = tgt[i] - *cur[i];
       if (d == 0.0f) continue;
-      changed = 1;
+      dirty = 1;
       if (k >= 1.0f || fabsf(d) < 1e-4f) {
         *cur[i] = tgt[i];
       } else {
@@ -1418,20 +1430,16 @@ static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
         moving = 1;
       }
     }
-  }
-  q->moving = moving;
-  if (!changed) return;
-  for (int b = 0; b < LE_EQ_BANDS; ++b) {
+    if (!dirty) continue; /* only a band that moved is redesigned */
     const int cut = b == LE_EQ_LOWCUT || b == LE_EQ_HIGHCUT;
     /* A cut whose amount has glided to 0, or a shelf or peak that has
      * settled at 0 dB, is the identity: the band is skipped and its memory
      * cleared, so it starts clean when it comes back. A gain that only
      * passes through 0 dB on its way somewhere is never exactly 0, so the
      * band keeps running and its state stays continuous. */
-    const int on = q->db[b] != 0.0f;
     le_eq_band* band = &q->band[b];
     band->mix = cut ? q->db[b] : 1.0f;
-    if (!on) {
+    if (q->db[b] == 0.0f) {
       if (q->active & (1u << b)) memset(band->z, 0, sizeof(band->z));
       q->active &= ~(1u << b);
       continue;
@@ -1443,6 +1451,7 @@ static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
     band->a1 = (float)c[3]; band->a2 = (float)c[4];
     q->active |= 1u << b;
   }
+  q->moving = moving;
 }
 
 static void fx_eq_kprocess(void* ks, float* l, float* r) {
@@ -1678,13 +1687,6 @@ void le_fx_free_kind_table(le_fx_state* fx) {
   for (int s = 0; s < LE_FX_MAX; ++s) le_rt_arena_release(&k->slot[s].arena);
   atomic_store_explicit(&fx->kinds, NULL, memory_order_relaxed);
   le_rt_free(k);
-}
-
-/* The engine frame the chain is processing (le_fx_state::clock). */
-static inline uint32_t le_fx_now(const le_fx_state* fx) {
-  return fx->clock_src != NULL
-             ? atomic_load_explicit(fx->clock_src, memory_order_relaxed)
-             : fx->clock;
 }
 
 /* Audio thread: slot [s]'s state for [ty], updated at the cadence, or NULL

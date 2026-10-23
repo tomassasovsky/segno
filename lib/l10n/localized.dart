@@ -73,6 +73,11 @@ extension EngineLocalizations on AppLocalizations {
   /// finer than a performer sets or hears; a frequency reads in kHz from
   /// 1000 Hz.
   String fxParamValueText(FxParamInfo p, double setting) {
+    // The EQ's cuts are off at their ends of the range (engine_fx.c).
+    if ((p.key == 'low_cut' && setting <= 0) ||
+        (p.key == 'high_cut' && setting >= 1)) {
+      return fxValueOff;
+    }
     final value = p.valueAt(setting);
     final tenths = (value * 10).round() / 10;
     return switch (p.unit) {

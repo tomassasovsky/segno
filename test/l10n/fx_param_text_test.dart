@@ -25,7 +25,7 @@ const _english = <String, List<String>>{
   'reverb.size': ['0%', '50%', '100%'],
   'reverb.damping': ['0%', '50%', '100%'],
   'reverb.mix': ['0%', '35%', '100%'],
-  'eq.low_cut': ['20.0 Hz', '70.4 Hz', '8.0 kHz'],
+  'eq.low_cut': ['Off', '70.4 Hz', '8.0 kHz'],
   'eq.low_gain': ['-18.0 dB', '0.0 dB', '18.0 dB'],
   'eq.low_freq': ['20.0 Hz', '90.0 Hz', '1.0 kHz'],
   'eq.low_q': ['0.40', '0.40', '2.00'],
@@ -38,7 +38,7 @@ const _english = <String, List<String>>{
   'eq.high_gain': ['-18.0 dB', '0.0 dB', '18.0 dB'],
   'eq.high_freq': ['2.0 kHz', '6.0 kHz', '16.0 kHz'],
   'eq.high_q': ['0.40', '0.40', '2.00'],
-  'eq.high_cut': ['120 Hz', '20.0 kHz', '20.0 kHz'],
+  'eq.high_cut': ['120 Hz', 'Off', 'Off'],
   'eq.air_gain': ['-18.0 dB', '0.0 dB', '18.0 dB'],
 };
 
@@ -63,7 +63,7 @@ const _spanish = <String, List<String>>{
   'reverb.size': ['0%', '50%', '100%'],
   'reverb.damping': ['0%', '50%', '100%'],
   'reverb.mix': ['0%', '35%', '100%'],
-  'eq.low_cut': ['20,0 Hz', '70,4 Hz', '8,0 kHz'],
+  'eq.low_cut': ['Apagado', '70,4 Hz', '8,0 kHz'],
   'eq.low_gain': ['-18,0 dB', '0,0 dB', '18,0 dB'],
   'eq.low_freq': ['20,0 Hz', '90,0 Hz', '1,0 kHz'],
   'eq.low_q': ['0,40', '0,40', '2,00'],
@@ -76,7 +76,7 @@ const _spanish = <String, List<String>>{
   'eq.high_gain': ['-18,0 dB', '0,0 dB', '18,0 dB'],
   'eq.high_freq': ['2,0 kHz', '6,0 kHz', '16,0 kHz'],
   'eq.high_q': ['0,40', '0,40', '2,00'],
-  'eq.high_cut': ['120 Hz', '20,0 kHz', '20,0 kHz'],
+  'eq.high_cut': ['120 Hz', 'Apagado', 'Apagado'],
   'eq.air_gain': ['-18,0 dB', '0,0 dB', '18,0 dB'],
 };
 
