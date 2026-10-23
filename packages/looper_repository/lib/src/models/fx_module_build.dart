@@ -130,18 +130,6 @@ const Map<String, FxModuleBuild> kFxModuleBuilds = {
       'Rev Tail/ER',
     ],
   ),
-  // p0 drive, p1 output level. The preset's tone control has no engine
-  // parameter — the built-in drive has no tone stage at all.
-  'Overdrive': FxModuleBuild(
-    type: TrackEffectType.drive,
-    params: ['OD Drive'],
-    unmapped: ['OD Tone'],
-  ),
-  'Distortion': FxModuleBuild(
-    type: TrackEffectType.drive,
-    params: ['Dist Drive'],
-    unmapped: ['Dist Tone'],
-  ),
   // p0 cutoff, p1 resonance. The preset's own LFO over the cutoff has no
   // engine parameter.
   'Low-pass filter': FxModuleBuild(
@@ -194,11 +182,12 @@ class FxSourceScale {
 ///   4 : 1 ratio, every Ed's preset's, and its default 1.7 ms attack and
 ///   141 ms release);
 /// - the doubler: where a rack hides it, the Dub Rack's default 100 %
-///   separation.
+///   separation;
+/// - the distortion: where a rack hides it, the tone flat (50 %).
 ///
 /// The first variant of each module is its default, the one "Add an effect"
 /// uses (#887: Ed's 4-band, the Dub Rack's Para, Ed's compressor, the Dub
-/// Rack's doubler).
+/// Rack's doubler, the Lo-Fi Rack's distortion).
 const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Four-band EQ': {
     "Ed's Rack": _edsEq,
@@ -233,7 +222,28 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   },
   'Chorus': {"Ed's Rack": _chorus},
   'Wah': {"Ed's Rack": _wah, 'Guitar Rack': _wah},
+  'Overdrive': {"Ed's Rack": _overdrive, 'Guitar Rack': _overdrive},
+  'Distortion': {'Lo-Fi Rack': _loFiDistortion, 'Studio Rack': _distortion},
 };
+
+// Lo-Fi Rack: drive and tone.
+const FxModuleBuild _loFiDistortion = FxModuleBuild(
+  type: TrackEffectType.distortion,
+  params: ['Dist Drive', 'Dist Tone'],
+);
+
+// Studio Rack: the drive, the tone flat.
+const FxModuleBuild _distortion = FxModuleBuild(
+  type: TrackEffectType.distortion,
+  params: ['Dist Drive'],
+  fixed: {1: 50},
+);
+
+// Ed's and Guitar racks: drive and tone.
+const FxModuleBuild _overdrive = FxModuleBuild(
+  type: TrackEffectType.overdrive,
+  params: ['OD Drive', 'OD Tone'],
+);
 
 // Dub Rack: mix and separation.
 const FxModuleBuild _dubDoubler = FxModuleBuild(

@@ -382,7 +382,17 @@ enum TrackEffectType {
 
   /// The Looper X's wah (#887 part 6): a resonant band-pass swept by the
   /// pedal.
-  wah(15, 'Wah');
+  wah(15, 'Wah'),
+
+  /// The Looper X's overdrive (#887 part 7): a clean part plus a clipped
+  /// part whose gain the drive sets, then a tone filter; fit to the Guitar
+  /// Rack's OvDrive.
+  overdrive(16, 'Overdrive'),
+
+  /// The Looper X's amp simulator at its defaults, which the Studio Rack
+  /// labels Dist (#887 part 7): an asymmetric curve, then the 4x12"
+  /// cabinet; fit to the Phase 0 amp captures.
+  distortion(17, 'Distortion');
 
   const TrackEffectType(this.code, this.label);
 
@@ -801,6 +811,46 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.619,
+        taperUnverified: true,
+      ),
+    ],
+    // Fit to the Guitar Rack's OvDrive (#891): the drive's law is measured,
+    // the tone's only at 50 %. Ed's Rack's defaults.
+    TrackEffectType.overdrive => const [
+      FxParamInfo(
+        key: 'drive',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.09,
+      ),
+      FxParamInfo(
+        key: 'tone',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+        taperUnverified: true,
+      ),
+    ],
+    // Fit to the amp captures (#891), the Studio Rack's Dist; the Lo-Fi
+    // Rack's is taken to be the same module, so both carry the flag. The
+    // Lo-Fi Rack's defaults.
+    TrackEffectType.distortion => const [
+      FxParamInfo(
+        key: 'drive',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.2,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'tone',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
         taperUnverified: true,
       ),
     ],

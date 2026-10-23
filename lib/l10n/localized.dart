@@ -27,6 +27,8 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.doubler => effectDoubler,
     TrackEffectType.chorus => effectChorus,
     TrackEffectType.wah => effectWah,
+    TrackEffectType.overdrive => effectOverdrive,
+    TrackEffectType.distortion => effectDistortion,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown

@@ -371,7 +371,13 @@ enum TrackEffectType {
   chorus(14),
 
   /// The Looper X's wah (#887 part 6).
-  wah(15);
+  wah(15),
+
+  /// The Looper X's overdrive (#887 part 7).
+  overdrive(16),
+
+  /// The Looper X's amp simulator as the Studio Rack's Dist (#887 part 7).
+  distortion(17);
 
   const TrackEffectType(this.code);
 
