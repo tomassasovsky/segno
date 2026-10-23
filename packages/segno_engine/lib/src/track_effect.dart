@@ -1242,13 +1242,13 @@ class FxParamInfo {
   /// The setting (`0..1`) that stands for [value], the inverse of [valueAt]
   /// for a continuous parameter; a value outside the range clamps.
   double settingFor(double value) {
+    if (value.isNaN) return 0;
+    final x = value.clamp(atMin, atMax);
     final v = switch (curve) {
-      FxParamCurve.exponential =>
-        math.log(value / atMin) / math.log(atMax / atMin),
-      FxParamCurve.reciprocal =>
-        (1 / value - 1 / atMin) / (1 / atMax - 1 / atMin),
-      FxParamCurve.reverbTime => (value - atMin) / (value + 1),
-      FxParamCurve.linear => (value - atMin) / (atMax - atMin),
+      FxParamCurve.exponential => math.log(x / atMin) / math.log(atMax / atMin),
+      FxParamCurve.reciprocal => (1 / x - 1 / atMin) / (1 / atMax - 1 / atMin),
+      FxParamCurve.reverbTime => (x - atMin) / (x + 1),
+      FxParamCurve.linear => (x - atMin) / (atMax - atMin),
     };
     return v.isNaN ? 0.0 : v.clamp(0.0, 1.0);
   }
