@@ -256,12 +256,14 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
 // Studio and Vocal racks: the shift and the mix, on the octaver's phase
 // vocoder with the tone open. The shift reads -12..+12 semitones in whole
 // steps (linear), the rack's own range, inside the octaver's +-24, and
-// starts at unison. The formants are held, as the octaver holds them, until a
-// capture of the Looper X shows whether its pitch shifter moves them (#1433).
+// starts at unison. The formants move with the pitch: measured on the Looper
+// X (#891, docs/plan/2026-10-23-looperx-gaps-measured.md), its pitch shifter
+// moves the spectral envelope by the pitch ratio to within 1 % at 0, +-6 and
+// +-12 semitones, a resampling-type shifter.
 const FxModuleBuild _pitchShift = FxModuleBuild(
   type: TrackEffectType.octaver,
   params: ['Pitch Shift', null, 'Pitch Mix'],
-  fixed: {1: 100, 3: 0, 4: 0},
+  fixed: {1: 100, 3: 0, 4: 1},
   shown: {
     0: FxParamInfo(
       key: 'shift',
