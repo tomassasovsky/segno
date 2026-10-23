@@ -9575,8 +9575,8 @@ final class le_snapshot extends ffi.Struct {
   /// Added latency (frames) of the highest-latency effect active in any audible
   /// or monitored lane chain — the MAXIMUM across active effects, so it stays
   /// forward-compatible as effects accrue. Today the formant-preserving octaver
-  /// is the only contributor (~LE_PV_N frames; both PV and PSOLA modes report the
-  /// same value); every other effect adds 0, so this reads 0 whenever no octaver
+  /// is the only contributor (LE_PV_LATENCY frames, the window plus the hop
+  /// split's hop, 1280; both PV and PSOLA modes report the same value); every other effect adds 0, so this reads 0 whenever no octaver
   /// is engaged. The Dart layer divides by sample_rate to show milliseconds and
   /// warn a performer monitoring through the octaver. PURELY informational: this
   /// does NOT feed record_offset_frames or any compensation — it only surfaces

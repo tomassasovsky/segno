@@ -20560,8 +20560,8 @@ static void test_fx_params_past_count_are_inert(void) {
 /* ---- phase-vocoder octaver (LE_FX_OCTAVER) ---- */
 
 #define OCT_SR 48000
-/* Mirrors engine.c's internal LE_PV_N (the phase-vocoder window / latency); kept
- * local because that constant is private to the engine translation unit. */
+/* Mirrors engine_fx.h's LE_PV_N (the phase-vocoder window); the latency is
+ * LE_PV_LATENCY, a hop more since the hop split (#887 part 9). */
 #define OCT_PV_N 1024
 
 /* A fixed formant envelope: a resonance near 1 kHz (Gaussian in log-frequency).
@@ -20798,8 +20798,8 @@ static void test_octaver_mix_no_comb(void) {
   for (int i = 0; i < total; ++i) {
     if (fabsf(out[i]) > fabsf(out[peak])) peak = i;
   }
-  printf("  dry-delay: impulse at out[%d] (want ~%d)\n", peak, OCT_PV_N - 1);
-  CHECK(abs(peak - OCT_PV_N) <= 2); /* delay-matched to the wet latency (N-1) */
+  printf("  dry-delay: impulse at out[%d] (want ~%d)\n", peak, LE_PV_LATENCY - 1);
+  CHECK(abs(peak - LE_PV_LATENCY) <= 2); /* delay-matched to the wet latency */
   CHECK(out[0] == 0.0f);           /* not a zero-delay dry (the old comb bug) */
 
   /* PSOLA leg (D2): the dry tap re-matches on a mode switch because both modes
@@ -20830,12 +20830,13 @@ static void test_octaver_mix_no_comb(void) {
   for (int i = 0; i < total; ++i) {
     if (fabsf(out[i]) > fabsf(out[ppeak])) ppeak = i;
   }
-  printf("  psola dry-delay: impulse at out[%d] (want ~%d)\n", ppeak, OCT_PV_N - 1);
-  CHECK(abs(ppeak - OCT_PV_N) <= 4); /* still delay-matched in PSOLA mode */
+  printf("  psola dry-delay: impulse at out[%d] (want ~%d)\n", ppeak,
+         LE_PV_LATENCY - 1);
+  CHECK(abs(ppeak - LE_PV_LATENCY) <= 4); /* still delay-matched in PSOLA mode */
   /* No early (pre-latency) energy spike: the mix is not combing a zero-delay dry
    * against a delayed wet. */
   float early = 0.0f;
-  for (int i = 0; i < OCT_PV_N - 64; ++i) {
+  for (int i = 0; i < LE_PV_LATENCY - 64; ++i) {
     if (fabsf(out[i]) > early) early = fabsf(out[i]);
   }
   CHECK(early < 0.05f);
@@ -21375,7 +21376,7 @@ static void test_octaver_psola_voice_and_fallback(void) {
   for (int i = skip; i < total; ++i) {
     /* PSOLA reports the same added latency as PV (le_octaver_latency), so the dry
      * tap sits OCT_PV_N - 1 behind the newest sample in both modes. */
-    const float dry = in[i - (OCT_PV_N - 1)];
+    const float dry = in[i - (LE_PV_LATENCY - 1)];
     err += (double)(out[i] - dry) * (out[i] - dry);
     ref += (double)dry * dry;
   }
@@ -21483,7 +21484,7 @@ static void test_octaver_added_latency(void) {
   le_engine_set_monitor_input_fx_count(e, 0, 1);
   drain(e);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.fx_added_latency_frames == 1024); /* == LE_PV_N */
+  CHECK(s.fx_added_latency_frames == LE_PV_LATENCY);
   CHECK(s.record_offset_frames == 0);       /* compensation untouched */
 
   /* Switching the same octaver to PSOLA reports the same latency (both modes
@@ -21491,7 +21492,7 @@ static void test_octaver_added_latency(void) {
   le_engine_set_monitor_input_fx_param(e, 0, 0, 3, 1.0f); /* PSOLA mode */
   drain(e);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.fx_added_latency_frames == 1024);
+  CHECK(s.fx_added_latency_frames == LE_PV_LATENCY);
 
   /* Disengage the chain -> the reported latency falls back to 0. */
   le_engine_set_monitor_input_fx_count(e, 0, 0);
@@ -21507,7 +21508,7 @@ static void test_octaver_added_latency(void) {
   le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
   drain(e);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.fx_added_latency_frames == 1024);
+  CHECK(s.fx_added_latency_frames == LE_PV_LATENCY);
 
   le_engine_set_lane_fx_count(e, 0, 0, 0, 0);
   drain(e);
@@ -21520,7 +21521,7 @@ static void test_octaver_added_latency(void) {
   le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
   drain(e);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.fx_added_latency_frames == 1024);
+  CHECK(s.fx_added_latency_frames == LE_PV_LATENCY);
   CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 0) == LE_OK);
   le_engine_get_snapshot(e, &s);
   CHECK(s.fx_added_latency_frames == 0);
@@ -21530,7 +21531,7 @@ static void test_octaver_added_latency(void) {
   CHECK(s.fx_added_latency_frames == 0);
   CHECK(le_engine_set_lane_fx_chain_enabled(e, 0, 0, 1) == LE_OK);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.fx_added_latency_frames == 1024);
+  CHECK(s.fx_added_latency_frames == LE_PV_LATENCY);
 
   le_engine_destroy(e);
 }
@@ -21963,9 +21964,9 @@ static void test_octaver_hop_stagger_alignment(void) {
     le_engine* e = oct_stagger_engine(slot, 1.0f);
     oct_stagger_run(e, in, out, total);
     le_engine_destroy(e);
-    const double at = oct_null_err(in, out, total, OCT_PV_N - 1);
-    const double early = oct_null_err(in, out, total, OCT_PV_N - 1 - 256);
-    const double late = oct_null_err(in, out, total, OCT_PV_N - 1 + 256);
+    const double at = oct_null_err(in, out, total, LE_PV_LATENCY - 1);
+    const double early = oct_null_err(in, out, total, LE_PV_LATENCY - 1 - 256);
+    const double late = oct_null_err(in, out, total, LE_PV_LATENCY - 1 + 256);
     if (at > worst_on) worst_on = at;
     if (early < least_off) least_off = early;
     if (late < least_off) least_off = late;
@@ -21988,7 +21989,7 @@ static void test_octaver_hop_stagger_alignment(void) {
     for (int i = 0; i < 2 * OCT_PV_N; ++i) {
       if (fabsf(out[i]) > fabsf(out[peak])) peak = i;
     }
-    CHECK(abs(peak - OCT_PV_N) <= 2);
+    CHECK(abs(peak - LE_PV_LATENCY) <= 2);
     CHECK(out[0] == 0.0f);
   }
 

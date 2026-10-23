@@ -344,7 +344,7 @@ typedef struct le_fx_snapshot {
  * state the audio thread owns. The PSOLA fields are defined now but unused until
  * part 4, so that PR needs no struct/ABI change. */
 typedef struct le_octaver_state {
-  float* out;        /* synthesis overlap-add accumulator, length LE_PV_N */
+  float* out;        /* synthesis overlap-add accumulator, LE_PV_OUT long */
   float* last_phase; /* previous analysis phase per bin, length LE_PV_BINS */
   float* sum_phase;  /* accumulated synthesis phase per bin, length LE_PV_BINS */
   /* Samples into the current hop: PV counts up to LE_PV_HOP and runs a frame
@@ -364,6 +364,10 @@ typedef struct le_octaver_state {
   float sm_mix;
   int32_t cur_mode; /* 0 = phase vocoder, 1 = PSOLA */
   float xfade;      /* equal-power gain-dip envelope during a mode switch (1 = steady) */
+  /* The hop split's frame state (LE_PV_SCRATCH floats, engine_fx.h) and the
+   * write position of PSOLA's one-hop hold in it. */
+  float* scratch;
+  int32_t hold_pos;
 } le_octaver_state;
 
 /* Per-kind DSP state for the kinds that keep it on the heap (#887 part 4).

@@ -60,6 +60,19 @@ extern "C" {
                                   * LE_PV_HOP - 1 */
 #define LE_PV_BINS (LE_PV_N / 2 + 1)
 #define LE_PV_LIFTER (LE_PV_N / 24) /* ~42: cepstral envelope lifter cutoff */
+/* The hop split (#887 part 9): a frame's work runs in four stages, one per
+ * quarter of its hop (analysis, envelope, shift, synthesis), so no one
+ * callback carries a whole frame whatever the hop phase. The synthesis lands
+ * three quarters of a hop after the analysis, so the output runs one hop
+ * later than an unsplit frame's: the octaver's latency is LE_PV_N +
+ * LE_PV_HOP, in both modes (PSOLA's voice is held back the same hop so the
+ * dry tap does not move on a mode switch). */
+#define LE_PV_LATENCY (LE_PV_N + LE_PV_HOP)
+#define LE_PV_OUT (LE_PV_N + LE_PV_HOP) /* the overlap-add accumulator */
+/* A frame's state between stages, per channel: the window (reused for the
+ * inverse transform), the spectrum, magnitude, true frequency and envelope,
+ * and PSOLA's one-hop hold. */
+#define LE_PV_SCRATCH (LE_PV_N + 5 * LE_PV_BINS + LE_PV_HOP)
 
 /* Analysis-hop stagger (#915). Every octaver instance used to start its hop
  * counter at 0, so all instances ran their four length-LE_PV_N FFTs on the
