@@ -844,14 +844,15 @@ static int le_cache_hop_unprintable(const int32_t* types, int32_t count,
 /* Whether a printed run holds a free-running modulator (#887 part 6: the
  * chorus's and the doubler's LFOs run on whatever the loop does): each lap
  * of it sounds different, so one lap's print would repeat where live does
- * not. Such a chain plays live. A bypassed one (or a chain switched off)
- * prints, as it passes the signal through; switching it back on changes
- * the key and re-checks. */
+ * not. Such a chain plays live. A bypassed one, one at 0 % mix, or a chain
+ * switched off prints, as the signal passes through it; turning it back up
+ * changes the key and re-checks. */
 static int le_cache_free_running(const int32_t* types, const int32_t* enabled,
+                                  const float params[LE_FX_MAX][LE_FX_PARAMS],
                                   int32_t chain_on, int32_t count) {
   if (!chain_on) return 0; /* the print is the dry signal */
   for (int32_t s = 0; s < count; ++s) {
-    if (enabled[s] && le_fx_type_free_running(types[s])) return 1;
+    if (enabled[s] && le_fx_entry_free_running(types[s], params[s])) return 1;
   }
   return 0;
 }
@@ -909,7 +910,7 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
     return;
   }
   const int32_t len = load_i32(&ln->a_len);
-  const int free_running = le_cache_free_running(types, raw_en, chain_on, count);
+  const int free_running = le_cache_free_running(types, raw_en, params, chain_on, count);
   if (free_running || le_cache_hop_unprintable(types, count, len)) {
     lc->state = LE_CACHE_GAVE_UP;
     lc->reason =
@@ -1141,7 +1142,7 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
     return;
   }
   const int32_t len = load_i32(&tr->lanes[0].a_len);
-  const int free_running = le_cache_free_running(types, raw_en, chain_on, count);
+  const int free_running = le_cache_free_running(types, raw_en, params, chain_on, count);
   if (free_running || le_cache_hop_unprintable(types, count, len)) {
     lc->state = LE_CACHE_GAVE_UP;
     lc->reason =
