@@ -131,16 +131,34 @@ List<FxRackEdge> fxRackEdges(List<TrackEffect> chain) {
   return edges;
 }
 
-/// Whether [modules] (one rack's, in order) keep their path modules
-/// ([fxEntryPath]) in one run. The engine runs one such run as the rack's
-/// parallel section; a module between two path modules would split it in
-/// two, each at its own mix, so a reorder that would do that is refused.
-bool _pathsTogether(List<TrackEffect> modules) {
-  final on = [
-    for (var i = 0; i < modules.length; i++)
-      if (fxEntryPath(modules[i]) != null) i,
+/// How many runs of path modules ([fxEntryPaths]) [modules] (one rack's, in
+/// order) hold. The engine runs each run as a parallel section at its own
+/// mix, so a rack's path modules belong in one: a reorder that would add a
+/// run is refused, and [fxKeepPathsTogether] joins them when modules are
+/// added.
+int _pathRuns(List<TrackEffect> modules) {
+  final paths = fxEntryPaths(modules);
+  var runs = 0;
+  for (var i = 0; i < paths.length; i++) {
+    if (paths[i] != null && (i == 0 || paths[i - 1] == null)) runs++;
+  }
+  return runs;
+}
+
+/// [modules] (one rack's) with every path module ([fxEntryPaths]) moved up
+/// to follow the first run of them, everything else in its order: what a
+/// rack is after modules are added to it, so its paths stay one section.
+List<TrackEffect> fxKeepPathsTogether(List<TrackEffect> modules) {
+  final paths = fxEntryPaths(modules);
+  final first = paths.indexWhere((p) => p != null);
+  if (first < 0) return modules;
+  return [
+    for (var i = 0; i < first; i++) modules[i],
+    for (var i = first; i < modules.length; i++)
+      if (paths[i] != null) modules[i],
+    for (var i = first; i < modules.length; i++)
+      if (paths[i] == null) modules[i],
   ];
-  return on.isEmpty || on.last - on.first + 1 == on.length;
 }
 
 /// A group's stable identity: its rack's id, or its single effect's slot id.
@@ -179,7 +197,7 @@ List<TrackEffect> fxOrderGroups(List<TrackEffect> chain, List<String> ids) {
 ///
 /// Refuses, returning [chain] unchanged, when [slotIds] does not name exactly
 /// that rack's modules — see [fxOrderGroups] for why — or when the order
-/// would put another module between the rack's path modules ([fxEntryPath]).
+/// would split the rack's path modules ([fxEntryPaths]) into more runs.
 List<TrackEffect> fxOrderRackModules(
   List<TrackEffect> chain,
   String rackId,
@@ -197,7 +215,9 @@ List<TrackEffect> fxOrderRackModules(
       !slotIds.every(byId.containsKey)) {
     return chain;
   }
-  if (!_pathsTogether([for (final id in slotIds) byId[id]!])) return chain;
+  if (_pathRuns([for (final id in slotIds) byId[id]!]) > _pathRuns(modules)) {
+    return chain;
+  }
   return fxSetGroupChannels(
     [
       ...chain.sublist(0, group.start),
@@ -292,8 +312,8 @@ List<TrackEffect> fxMoveGroup(List<TrackEffect> chain, int from, int to) {
 ///
 /// The rack's own position in the chain does not change, and neither does any
 /// other group: a module can only move among its own rack's pedals. A move
-/// that would put another module between the rack's path modules
-/// ([fxEntryPath]) is refused, returning [chain] unchanged.
+/// that would split the rack's path modules ([fxEntryPaths]) into more runs
+/// is refused, returning [chain] unchanged.
 List<TrackEffect> fxMoveWithinRack(
   List<TrackEffect> chain,
   String rackId,
@@ -309,7 +329,7 @@ List<TrackEffect> fxMoveWithinRack(
   if (to < 0 || to >= modules.length) return chain;
   if (from == to) return chain;
   modules.insert(to, modules.removeAt(from));
-  if (!_pathsTogether(modules)) return chain;
+  if (_pathRuns(modules) > _pathRuns(group.entries)) return chain;
   return fxSetGroupChannels(
     [
       ...chain.sublist(0, group.start),

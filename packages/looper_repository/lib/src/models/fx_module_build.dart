@@ -44,16 +44,32 @@ enum FxModulePath {
   amb,
 }
 
-/// The rack path [fx] runs on: its rack variant's ([fxEntryBuild],
-/// [FxModuleBuild.path]) for a built-in entry in a rack, `null` for any other.
-/// Derived, never stored, so it always agrees with the variant the entry's
-/// controls come from.
+/// The rack path each entry of [chain] runs on, by index: a built-in entry's
+/// rack variant's ([fxEntryBuild], [FxModuleBuild.path]) when its rack also
+/// holds an Amb-Verb (a module on the [FxModulePath.amb] path), `null` for
+/// any other. Derived, never stored, so it always agrees with the variant
+/// the entry's controls come from.
 ///
-/// A Dub path module in a rack without an Amb-Verb runs as the Dub Rack does
-/// with its Amb-Verb off at the default mix: the input plus 0.64 of the Dub
-/// path's.
-FxModulePath? fxEntryPath(TrackEffect fx) =>
-    fx is BuiltInEffect && fx.rack != null ? fxEntryBuild(fx)?.path : null;
+/// So the paths exist only in a rack that has the Amb-Verb that mixes them.
+/// A Dub path module anywhere else runs in series, as the module itself is:
+/// the Dub delay passes its echoes only.
+List<FxModulePath?> fxEntryPaths(List<TrackEffect> chain) {
+  final own = [
+    for (final fx in chain)
+      if (fx is BuiltInEffect && fx.rack != null)
+        fxEntryBuild(fx)?.path
+      else
+        null,
+  ];
+  final mixed = {
+    for (var i = 0; i < chain.length; i++)
+      if (own[i] == FxModulePath.amb) chain[i].rack!.id,
+  };
+  return [
+    for (var i = 0; i < chain.length; i++)
+      if (mixed.contains(chain[i].rack?.id)) own[i] else null,
+  ];
+}
 
 /// What building one catalogue module on this engine amounts to: the effect
 /// type, which preset key feeds each of its parameters, and which of the

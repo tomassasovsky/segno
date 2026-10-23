@@ -248,15 +248,17 @@ class FxCubit extends Cubit<FxState> {
     if (added.isEmpty || current.length + added.length > kTrackEffectMax) {
       return null;
     }
+    // A Dub Rack's path modules stay one parallel section.
+    final modules = fxKeepPathsTogether([...group.entries, ...added]);
     return (
       entries: fxSetGroupChannels(
         [
-          ...current.sublist(0, group.end),
-          ...added,
+          ...current.sublist(0, group.start),
+          ...modules,
           ...current.sublist(group.end),
         ],
         group.start,
-        group.end + added.length,
+        group.start + modules.length,
         group.channels,
       ),
       groupId: rackId,

@@ -915,7 +915,10 @@ engine.TrackEffectType trackEffectTypeToEngine(TrackEffectType type) =>
 /// Named explicitly by the FX-v3 plan (R16): `enabled` and `slotId` MUST
 /// thread through both arms — a field silently dropped here round-trips as its
 /// default and the bug stays invisible until a stomp un-bypasses a chain.
-engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
+engine.TrackEffect _trackEffectToEngine(
+  TrackEffect effect, [
+  FxModulePath? path,
+]) => switch (effect) {
   BuiltInEffect(
     :final type,
     :final params,
@@ -938,7 +941,7 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
       rack: _rackToEngine(rack),
       module: module,
       presetId: presetId,
-      rackPath: fxRackPathToEngine(effect),
+      rackPath: _pathToEngine(path),
       source: source,
     ),
   PluginEffect(
@@ -971,13 +974,17 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
     ),
 };
 
-/// The engine's rack path for [fx] ([fxEntryPath]; boundary; internal).
-engine.FxRackPath fxRackPathToEngine(TrackEffect fx) =>
-    switch (fxEntryPath(fx)) {
-      FxModulePath.dub => engine.FxRackPath.dub,
-      FxModulePath.amb => engine.FxRackPath.amb,
-      null => engine.FxRackPath.none,
-    };
+/// The engine's rack path for each entry of [chain] ([fxEntryPaths];
+/// boundary; internal).
+List<engine.FxRackPath> fxRackPathsToEngine(List<TrackEffect> chain) => [
+  for (final p in fxEntryPaths(chain)) _pathToEngine(p),
+];
+
+engine.FxRackPath _pathToEngine(FxModulePath? path) => switch (path) {
+  FxModulePath.dub => engine.FxRackPath.dub,
+  FxModulePath.amb => engine.FxRackPath.amb,
+  null => engine.FxRackPath.none,
+};
 
 /// Maps a domain [FxRack] to the engine mirror (boundary; internal).
 engine.FxRack? _rackToEngine(FxRack? rack) => rack == null
@@ -997,9 +1004,18 @@ FxRack? _rackFromEngine(engine.FxRack? rack) =>
 /// private behind [encodeTrackEffects] / [decodeTrackEffects]. Callers never
 /// need to name the engine types — and must not re-derive this mapping
 /// themselves, or the domain and engine models would silently drift.
-List<engine.TrackEffect> trackEffectsToEngine(List<TrackEffect> effects) => [
-  for (final e in effects) _trackEffectToEngine(e),
-];
+List<engine.TrackEffect> trackEffectsToEngine(List<TrackEffect> effects) =>
+    _chainToEngine(effects);
+
+/// [effects] mapped one by one, each with its rack path ([fxEntryPaths]),
+/// which only the whole chain decides.
+List<engine.TrackEffect> _chainToEngine(List<TrackEffect> effects) {
+  final paths = fxEntryPaths(effects);
+  return [
+    for (var i = 0; i < effects.length; i++)
+      _trackEffectToEngine(effects[i], paths[i]),
+  ];
+}
 
 /// Maps an engine [TrackEffect] to its domain mirror (boundary; internal).
 ///
@@ -1066,9 +1082,7 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
 /// Delegates to the engine's wire-format serializer so the persisted format
 /// stays the single source of truth (no domain/engine drift).
 String encodeTrackEffects(List<TrackEffect> effects) =>
-    engine.encodeTrackEffects([
-      for (final e in effects) _trackEffectToEngine(e),
-    ]);
+    engine.encodeTrackEffects(_chainToEngine(effects));
 
 /// Decodes a chain produced by [encodeTrackEffects]; malformed input yields an
 /// empty chain. Delegates to the engine serializer, then maps to domain types.

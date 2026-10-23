@@ -1022,23 +1022,36 @@ void main() {
         ).readAsStringSync(),
       )!;
       const rack = FxRack(id: 'r', name: 'Dub FX 1');
-      final paths = {
-        for (final e in fxRackEntries(preset))
-          e.module: fxEntryPath(e.copyWith(rack: rack)),
-      };
-      expect(paths, {
-        'Doubler': FxModulePath.dub,
-        'Dub delay': FxModulePath.dub,
-        'Dub reverb': FxModulePath.dub,
-        'Ambience': FxModulePath.amb,
-        'Compressor': null,
-        'Parametric EQ': null,
-      });
-      // Outside a rack an entry runs on no path.
+      final entries = [
+        for (final e in fxRackEntries(preset)) e.copyWith(rack: rack),
+      ];
+      expect(
+        {
+          for (final (i, p) in fxEntryPaths(entries).indexed)
+            entries[i].module: p,
+        },
+        {
+          'Doubler': FxModulePath.dub,
+          'Dub delay': FxModulePath.dub,
+          'Dub reverb': FxModulePath.dub,
+          'Ambience': FxModulePath.amb,
+          'Compressor': null,
+          'Parametric EQ': null,
+        },
+      );
+      // Outside a rack an entry runs on no path, and so does a Dub path
+      // module in a rack without the Amb-Verb that mixes the paths.
       final verb = fxRackEntries(preset).firstWhere(
         (e) => e.module == 'Dub reverb',
       );
-      expect(fxEntryPath(verb), isNull);
+      expect(fxEntryPaths([verb]), [null]);
+      expect(
+        fxEntryPaths([
+          for (final e in entries)
+            if (e.module != 'Ambience') e,
+        ]),
+        everyElement(isNull),
+      );
       // Every other family's modules run on none, the Studio, Vocal and Vocal
       // Tuner doublers included (their presets carry no Doubler Sep).
       final dir = Directory('../fx_catalogue/assets/presets');
@@ -1047,18 +1060,28 @@ void main() {
         if (name == 'Dub Rack') continue;
         for (final file in family.listSync().whereType<File>()) {
           final p = FxPreset.tryParse(name, file.readAsStringSync())!;
-          for (final e in fxRackEntries(p)) {
-            expect(
-              fxEntryPath(e.copyWith(rack: rack)),
-              isNull,
-              reason: '${file.path} ${e.module}',
-            );
-          }
+          expect(
+            fxEntryPaths([
+              for (final e in fxRackEntries(p)) e.copyWith(rack: rack),
+            ]),
+            everyElement(isNull),
+            reason: file.path,
+          );
         }
       }
       // And the engine model carries it for the performance render.
-      final engine = trackEffectsToEngine([verb.copyWith(rack: rack)]).single;
-      expect(engine.toJson()['rackPath'], 'dub');
+      final engine = trackEffectsToEngine(entries);
+      expect(
+        [for (final e in engine) e.toJson()['rackPath']],
+        [
+          'dub',
+          'dub',
+          'dub',
+          'amb',
+          null,
+          null,
+        ],
+      );
     });
 
     test("the Guitar Rack's spring copies time and mix", () {
