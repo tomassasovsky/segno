@@ -19,9 +19,38 @@ const int kPluginFxCode = 8;
 /// whose own note records what raising it cost.
 const int kTrackEffectMax = 64;
 
-/// The number of normalized (`0..1`) parameters each effect exposes. Mirrors
-/// the native `LE_FX_PARAMS`.
-const int kTrackEffectParams = 4;
+/// The number of normalized (`0..1`) parameter cells each chain entry carries.
+/// Mirrors the native `LE_FX_PARAMS`. A type uses the first
+/// `type.params.length` of them; the rest stay 0 (see [canonicalEffectParams]).
+///
+/// Thirty-two since the Looper X kinds (#887 part 4): each carries its generic
+/// module's whole parameter set, and the four-band EQ alone has fourteen.
+const int kTrackEffectParams = 32;
+
+/// The [kTrackEffectParams] cells an entry of [type] holds for [params]: the
+/// given values for the parameters the type uses, its defaults for any the
+/// list does not reach, and 0 past them.
+///
+/// Every [BuiltInEffect] holds its parameters in this shape, so two entries
+/// that sound the same compare equal however their lists were built, and a
+/// list saved by a narrower build (or trimmed by [BuiltInEffect.toJson])
+/// decodes to the same entry.
+List<double> canonicalEffectParams(
+  TrackEffectType type,
+  List<double>? params,
+) {
+  final defaults = type.defaultParams;
+  final count = type.params.length;
+  return List<double>.unmodifiable([
+    for (var i = 0; i < kTrackEffectParams; i++)
+      if (i >= count)
+        0.0
+      else if (params != null && i < params.length)
+        params[i]
+      else
+        defaults[i],
+  ]);
+}
 
 /// The ceiling of a chain entry's own level, [FxChannels.level]: `4.0`, about
 /// +12 dB, the top of a factory rack's level. Mirrors the native
@@ -783,20 +812,19 @@ final class BuiltInEffect extends TrackEffect {
     this.module,
     this.presetId,
     Map<String, double> source = const {},
-  }) : params = List<double>.unmodifiable(params ?? type.defaultParams),
+  }) : params = canonicalEffectParams(type, params),
        source = Map<String, double>.unmodifiable(source);
 
   /// Rebuilds a [BuiltInEffect] from [toJson] output; unknown codes fall back
   /// to safe defaults. A legacy `stage` key (from the removed pre/post model)
   /// is ignored, so older persisted chains still decode.
   ///
-  /// The decoded `params` are normalized to [kTrackEffectParams]: a list saved
-  /// by a narrower build is padded with the type's own `defaultParams` (so a
-  /// future non-zero default round-trips, and the octaver's new `mode` lands on
-  /// phase vocoder), and an over-long list is truncated. A missing `enabled`
-  /// decodes `true` (every pre-FX-v3 entry was audible — R15's "migration
-  /// defaults every level to enabled"); a missing `slotId` stays null for the
-  /// repository write boundary to mint (A9).
+  /// The decoded `params` go through [canonicalEffectParams]: a list saved by
+  /// a narrower build, or trimmed by [toJson], is padded with the type's own
+  /// `defaultParams`, and cells past the type's parameters are dropped. A
+  /// missing `enabled` decodes `true` (every pre-FX-v3 entry was audible —
+  /// R15's "migration defaults every level to enabled"); a missing `slotId`
+  /// stays null for the repository write boundary to mint (A9).
   factory BuiltInEffect.fromJson(Map<String, dynamic> json) {
     final type = TrackEffectType.fromCode((json['type'] as num?)?.toInt() ?? 0);
     // `is`-checks, not casts: a wrong-typed field in a corrupt persisted
@@ -844,13 +872,9 @@ final class BuiltInEffect extends TrackEffect {
       );
     }
     final decoded = [for (final v in rawParams) (v as num).toDouble()];
-    final defaults = type.defaultParams;
     return BuiltInEffect(
       type: type,
-      params: [
-        for (var i = 0; i < kTrackEffectParams; i++)
-          if (i < decoded.length) decoded[i] else defaults[i],
-      ],
+      params: decoded,
       enabled: enabled,
       slotId: slotId,
       placement: placement,
@@ -865,7 +889,8 @@ final class BuiltInEffect extends TrackEffect {
   /// The effect type.
   final TrackEffectType type;
 
-  /// The normalized parameter values (length [kTrackEffectParams]).
+  /// The normalized parameter values, in [canonicalEffectParams] shape:
+  /// length [kTrackEffectParams], the type's parameters first, 0 after them.
   final List<double> params;
 
   /// Whether this entry is audible (R16): a disabled entry stays in the chain
@@ -931,7 +956,9 @@ final class BuiltInEffect extends TrackEffect {
   @override
   Map<String, dynamic> toJson() => {
     'type': type.code,
-    'params': params,
+    // Only the cells the type uses: the rest are 0 by construction, and
+    // fromJson restores them.
+    'params': params.sublist(0, type.params.length),
     // Omitted when default so a pre-FX-v3 chain's encoding is byte-unchanged.
     if (!enabled) 'enabled': false,
     if (slotId != null) 'slotId': slotId,

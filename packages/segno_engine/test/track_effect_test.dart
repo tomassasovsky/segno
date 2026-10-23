@@ -5,6 +5,12 @@ import 'package:segno_engine/segno_engine.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart'
     show LE_FX_LEVEL_MAX;
 
+/// [head] padded with 0 to the [kTrackEffectParams] cells an entry holds.
+List<double> cells(List<double> head) => [
+  ...head,
+  for (var i = head.length; i < kTrackEffectParams; i++) 0.0,
+];
+
 void main() {
   group('BuiltInEffect', () {
     test('defaults params to the type musical defaults', () {
@@ -26,7 +32,17 @@ void main() {
       expect(json.keys, containsAll(<String>['type', 'params']));
       expect(json.containsKey('stage'), isFalse);
       expect(json['type'], TrackEffectType.filter.code);
-      expect(json['params'], [0.1, 0.2, 0.3]);
+      // Only the two cells the filter reads: the third is past its
+      // parameters, so it is 0 in the entry and absent from the wire.
+      expect(json['params'], [0.1, 0.2]);
+    });
+
+    test('holds 0 past the type parameters, whatever it was given', () {
+      final fx = BuiltInEffect(
+        type: TrackEffectType.drive,
+        params: [for (var i = 0; i < kTrackEffectParams; i++) 0.5],
+      );
+      expect(fx.params, cells(const [0.5, 0.5]));
     });
 
     test('typeCode is the native fx code', () {
@@ -45,7 +61,8 @@ void main() {
         'params': [0.4, 0.5, 0.6],
       });
       expect(fx.type, TrackEffectType.tremolo);
-      expect(fx.params, [0.4, 0.5, 0.6, 0]);
+      // The tremolo reads two: the third saved cell is dropped.
+      expect(fx.params, cells(const [0.4, 0.5]));
       expect(fx.placement, FxPlacement.post);
     });
 
@@ -68,7 +85,10 @@ void main() {
         TrackEffectType.filter,
       );
       expect(base.copyWith(type: TrackEffectType.filter).params, base.params);
-      expect(base.copyWith(params: const [0.9, 0, 0]).params, [0.9, 0, 0]);
+      expect(
+        base.copyWith(params: const [0.9, 0, 0]).params,
+        cells(const [0.9, 0]),
+      );
     });
 
     test('copyWith preserves the unmodifiable params contract', () {
@@ -87,9 +107,9 @@ void main() {
         'params': const [0.25, 0.5, 0.5],
       });
       expect(fx.type, TrackEffectType.octaver);
-      expect(fx.params, [0.25, 0.5, 0.5, 0]);
+      expect(fx.params, cells(const [0.25, 0.5, 0.5, 0]));
       expect(fx.params, hasLength(kTrackEffectParams));
-      expect(fx.params.last, 0.0); // mode == phase vocoder
+      expect(fx.params[3], 0.0); // mode == phase vocoder
     });
 
     test('fromJson pads with the type default, not a blanket zero', () {
@@ -99,7 +119,7 @@ void main() {
         'type': TrackEffectType.delay.code,
         'params': const [0.1, 0.2],
       });
-      expect(fx.params, [0.1, 0.2, 0.35, 0]);
+      expect(fx.params, cells(const [0.1, 0.2, 0.35]));
     });
 
     test('fromJson truncates an over-long params list', () {
@@ -107,7 +127,7 @@ void main() {
         'type': TrackEffectType.drive.code,
         'params': const [0.1, 0.2, 0.3, 0.4, 0.5],
       });
-      expect(fx.params, [0.1, 0.2, 0.3, 0.4]);
+      expect(fx.params, cells(const [0.1, 0.2]));
       expect(fx.params, hasLength(kTrackEffectParams));
     });
 
@@ -325,8 +345,8 @@ void main() {
 
     test('kTrackEffectParams mirrors the native LE_FX_PARAMS width', () {
       // Pins the Dart side of the cross-language contract (the native test
-      // asserts LE_FX_PARAMS == 4 in turn).
-      expect(kTrackEffectParams, 4);
+      // asserts LE_FX_PARAMS == 32 in turn).
+      expect(kTrackEffectParams, 32);
     });
 
     test('fromCode maps known codes and falls back to none', () {
@@ -357,8 +377,11 @@ void main() {
         'damping',
         'mix',
       ]);
-      // The fourth slot is the inert, shared trailing param.
-      expect(TrackEffectType.reverb.defaultParams, [0.5, 0.5, 0.35, 0]);
+      // The cells past its three parameters are inert and stay 0.
+      expect(
+        TrackEffectType.reverb.defaultParams,
+        cells(const [0.5, 0.5, 0.35]),
+      );
     });
 
     test('codes are unique', () {
@@ -387,7 +410,7 @@ void main() {
         TrackEffectType.reverb: [0.5, 0.5, 0.35, 0.0],
       };
       for (final type in TrackEffectType.values) {
-        expect(type.defaultParams, expected[type], reason: type.name);
+        expect(type.defaultParams, cells(expected[type]!), reason: type.name);
         for (var i = 0; i < type.params.length; i++) {
           expect(type.defaultParams[i], type.params[i].defaultValue);
         }
@@ -577,7 +600,7 @@ void main() {
     });
 
     test(
-      'the exact pre-plugin bare-array string still decodes byte-for-byte',
+      'the exact pre-plugin bare-array string still decodes',
       () {
         // Back-compat: a v1 chain is a bare array of {type, params} with no
         // envelope and no plugin entries; it must decode unchanged.
@@ -592,9 +615,15 @@ void main() {
         for (final e in decoded) {
           expect(e, isA<BuiltInEffect>());
         }
-        // Re-encoding yields the identical bare array — no envelope, no plugin
-        // keys — so the built-in wire format is byte-for-byte unchanged.
-        expect(encodeTrackEffects(decoded), v1);
+        // Re-encoding yields a bare array — no envelope, no plugin keys —
+        // carrying only the cells each type reads, which decodes back to the
+        // same entries.
+        expect(
+          encodeTrackEffects(decoded),
+          '[{"type":1,"params":[0.5,0.8]},'
+          '{"type":3,"params":[0.35,0.35,0.35]}]',
+        );
+        expect(decodeTrackEffects(encodeTrackEffects(decoded)), decoded);
       },
     );
 
@@ -610,8 +639,8 @@ void main() {
       expect(decoded, hasLength(1));
       final first = decoded.first as BuiltInEffect;
       expect(first.type, TrackEffectType.filter);
-      // The length-3 legacy params are padded to the current width.
-      expect(first.params, [0.2, 0.3, 0, 0]);
+      // The legacy params are brought to the current width.
+      expect(first.params, cells(const [0.2, 0.3]));
     });
 
     test('empty or malformed input yields an empty chain', () {

@@ -117,7 +117,12 @@ void main() {
         (decoded[0] as BuiltInEffect).params,
         TrackEffectType.filter.defaultParams,
       );
-      expect((decoded[1] as BuiltInEffect).params, [0.3, 0.42, 0.5, 0]);
+      expect((decoded[1] as BuiltInEffect).params, [
+        0.3,
+        0.42,
+        0.5,
+        for (var i = 3; i < kTrackEffectParams; i++) 0,
+      ]);
     });
 
     test('reads a chain written by the engine serializer (wire-format '
@@ -170,7 +175,8 @@ void main() {
       final swapped = fx.copyWith(type: TrackEffectType.echo);
 
       expect(swapped.type, TrackEffectType.echo);
-      expect(swapped.params, [0.1, 0.2, 0.3, 0.4]);
+      // The echo reads three, like the delay; the fourth cell is past both.
+      expect(swapped.params.take(4), [0.1, 0.2, 0.3, 0]);
     });
   });
 

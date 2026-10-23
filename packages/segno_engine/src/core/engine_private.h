@@ -674,7 +674,10 @@ typedef struct le_lane {
   _Atomic int32_t a_fx_count;
   _Atomic int32_t a_fx_pre_count; /* leading Pre entries (default 0) */
   _Atomic int32_t a_fx_type[LE_FX_MAX];
-  _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
+  /* float bits, 0..1: this owner's row of le_engine.fx_param_store, set once
+   * by le_engine_create. Out of line so the parameter width (32 since #887
+   * part 4) does not move the fields after it. */
+  _Atomic uint32_t (*a_fx_param)[LE_FX_PARAMS];
   _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
   _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
   /* Per-entry channel handling and level (slice 3e), published like the
@@ -778,7 +781,10 @@ typedef struct le_monitor_input {
   _Atomic uint32_t a_fx_recipe_revision; /* callback-applied structural recipe */
   _Atomic int32_t a_fx_count;
   _Atomic int32_t a_fx_type[LE_FX_MAX];
-  _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
+  /* float bits, 0..1: this owner's row of le_engine.fx_param_store, set once
+   * by le_engine_create. Out of line so the parameter width (32 since #887
+   * part 4) does not move the fields after it. */
+  _Atomic uint32_t (*a_fx_param)[LE_FX_PARAMS];
   _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
   _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
   /* Per-entry channel handling and level (slice 3e), published like the
@@ -896,7 +902,10 @@ typedef struct le_fx_bus {
    * control there. */
   _Atomic int32_t a_fx_pre_count;
   _Atomic int32_t a_fx_type[LE_FX_MAX];
-  _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
+  /* float bits, 0..1: this owner's row of le_engine.fx_param_store, set once
+   * by le_engine_create. Out of line so the parameter width (32 since #887
+   * part 4) does not move the fields after it. */
+  _Atomic uint32_t (*a_fx_param)[LE_FX_PARAMS];
   _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
   _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
   /* Per-entry channel handling and level (slice 3e), published like the
@@ -1907,6 +1916,12 @@ typedef struct le_lane_spares {
   int32_t zero_spare_cap;
 } le_lane_spares;
 
+/* Chain owners whose parameters live in le_engine.fx_param_store: every lane,
+ * every track bus, every monitor, every output bus and the All tracks config. */
+#define LE_FX_PARAM_OWNERS                                          \
+  (LE_MAX_TRACKS * LE_MAX_LANES + LE_MAX_TRACKS + LE_MAX_MONITORED_INPUTS + \
+   LE_MAX_OUTPUT_BUSES + 1)
+
 struct le_engine {
   /* The device backend driving the lifecycle (le_select_backend's choice),
    * remembered so le_engine_stop / le_engine_destroy release the device through
@@ -2156,18 +2171,6 @@ struct le_engine {
    * engine, so this stage costs nothing until something is put on it. */
   le_fx_bus all_tracks;
   le_fx_state all_tracks_fx[LE_MAX_OUTPUT_BUSES];
-  /* Per-buffer FX snapshot scratch, audio-thread-owned (slice 3f).
-   *
-   * Written and read only inside one callback, so it carries no state across
-   * buffers and needs no atomics — but it lives HERE rather than on the
-   * callback's stack because it is sized by LE_FX_MAX, and an audio thread's
-   * stack is the one budget in this engine that is neither ours to set nor
-   * reported by the host. At the eight-slot ceiling these arrays were 32 KB
-   * of frame; the accepted FX design needs a chain long enough to hold
-   * several racks, and on the stack that number buys itself in kilobytes of
-   * a budget nothing measures. In the engine struct it is one allocation
-   * made during engine construction, outside the audio callback. */
-  le_fx_snapshot fx_snap;
   /* Advances on every applied LE_CMD_CUT_SOUND; published as
    * le_snapshot.tail_reset_rev. */
   _Atomic uint32_t a_tail_reset_rev;
@@ -2806,6 +2809,28 @@ struct le_engine {
    * le_dub_write_index to fault a punch-in's shadow in (le_prefault_shadow). */
   _Atomic int32_t a_clock_at[LE_MAX_TRACKS];
   _Atomic int32_t a_clock_seg[LE_MAX_TRACKS];
+
+  /* Per-buffer FX snapshot scratch, audio-thread-owned (slice 3f).
+   *
+   * Written and read only inside one callback, so it carries no state across
+   * buffers and needs no atomics — but it lives HERE rather than on the
+   * callback's stack because it is sized by LE_FX_MAX, and an audio thread's
+   * stack is the one budget in this engine that is neither ours to set nor
+   * reported by the host. At the eight-slot ceiling these arrays were 32 KB
+   * of frame; the accepted FX design needs a chain long enough to hold
+   * several racks, and on the stack that number buys itself in kilobytes of
+   * a budget nothing measures. In the engine struct it is one allocation
+   * made during engine construction, outside the audio callback.
+   *
+   * At the end of the struct since the parameter width went to 32 (#887 part
+   * 4): about a megabyte now, and where it stood it moved every offset after
+   * it, the tracks included. */
+  le_fx_snapshot fx_snap;
+  /* Every chain owner's published parameters (float bits, 0..1), one row
+   * per owner; each owner's a_fx_param points at its row (le_engine_create).
+   * Rows: the lanes (track * LE_MAX_LANES + lane), then the track buses, the
+   * monitors, the output buses and the All tracks config. */
+  _Atomic uint32_t fx_param_store[LE_FX_PARAM_OWNERS][LE_FX_MAX][LE_FX_PARAMS];
 };
 
 /* Fills `out` (room for `max`) with the host's playback or capture devices and

@@ -280,7 +280,10 @@ void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* p, uint64_t frame) 
       for (int s = 0; s < r->count; ++s) {
         le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_OUTPUT_FX,
             .fx = {p->channel, 0, s, r->type[s]}});
-        for (int k = 0; k < LE_FX_PARAMS; ++k)
+        /* Only what the type reads: 32 rows per slot would fill the log
+         * ring on one long chain. */
+        const int32_t w = le_fx_param_width(r->type[s]);
+        for (int k = 0; k < w; ++k)
           le_plog_push(e, frame, (le_command){.code = LE_PLOG_SET_OUTPUT_FX_PARAM,
               .fx = {p->channel, 0, LE_PLOG_FX_PARAM_PACK(s, k), (int32_t)f32_to_bits(r->params[s][k])}});
       }

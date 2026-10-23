@@ -6597,7 +6597,10 @@ static inline void snapshot_lane_fx(
         fx_type[t][l][s] = ty;
         if (ty != LE_FX_NONE) has_fx[t][l] = 1;
         fx_enabled[t][l][s] = chain_on && load_i32(&ln->a_fx_enabled[s]);
-        for (int p = 0; p < LE_FX_PARAMS; ++p) {
+        /* Only what the type reads: the rest of the row is never looked
+         * at, so the width costs nothing here. */
+        const int32_t w = le_fx_param_width(ty);
+        for (int p = 0; p < w; ++p) {
           fx_params[t][l][s][p] = load_f32(&ln->a_fx_param[s][p]);
         }
       }
@@ -6670,7 +6673,8 @@ static inline void snapshot_monitor_fx(
       mon_fx_type[c][s] = ty;
       if (ty != LE_FX_NONE) mon_has_fx[c] = 1;
       mon_fx_enabled[c][s] = chain_on && load_i32(&m->a_fx_enabled[s]);
-      for (int p = 0; p < LE_FX_PARAMS; ++p) {
+      const int32_t w = le_fx_param_width(ty); /* see snapshot_lane_fx */
+      for (int p = 0; p < w; ++p) {
         mon_fx_params[c][s][p] = load_f32(&m->a_fx_param[s][p]);
       }
     }
@@ -6727,7 +6731,8 @@ static inline void snapshot_bus_fx(le_fx_bus* b, int32_t* bus_fx_count,
     bus_fx_type[s] = ty;
     if (ty != LE_FX_NONE) *bus_has_fx = 1;
     bus_fx_enabled[s] = chain_on && load_i32(&b->a_fx_enabled[s]);
-    for (int p = 0; p < LE_FX_PARAMS; ++p) {
+    const int32_t w = le_fx_param_width(ty); /* see snapshot_lane_fx */
+    for (int p = 0; p < w; ++p) {
       bus_fx_params[s][p] = load_f32(&b->a_fx_param[s][p]);
     }
   }
