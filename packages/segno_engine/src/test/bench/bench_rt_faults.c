@@ -27,14 +27,24 @@
  *
  * Expected, and the exit status:
  *   - with no forks (the app as shipped): 0 page faults on the callback
- *     thread and 0 late periods (a period service longer than its deadline);
+ *     thread, 0 late periods (a period service longer than its deadline) and
+ *     0 xruns in the window (#1406). Every xrun kind counts. miniaudio's ALSA
+ *     data loop reports all three (capture overrun, playback underrun,
+ *     playback slip resync), and that loop is the callback thread: each one
+ *     means the thread did not read or write in time, and the listener hears
+ *     it. None of them belongs to the device start: start-up overruns land
+ *     before the 0.5 s settle and the warm-up, and the bench never
+ *     reconfigures the device. An xrun with no fault and no late period
+ *     still fails: the time was lost outside le_engine_process (in alsa-lib,
+ *     the kernel, the scheduler or the driver), which late_periods does not
+ *     measure, and the appliance dropped audio all the same;
  *   - with forced forks (the backstop): at most --max-faults-per-fork faults
  *     per fork on the callback thread (default 16). Not zero, by
  *     construction: the callback's own stack cannot be fork-shielded, and
  *     buffers inside miniaudio and alsa-lib are plain heap, so each fork costs
  *     a few copy-on-write faults on those pages, and each can wait for the
- *     page-table copy. Late periods are reported, not judged, here: no
- *     shielding makes a fork free, which is why the app does not fork. The
+ *     page-table copy. Late periods and xruns are reported, not judged, here:
+ *     no shielding makes a fork free, which is why the app does not fork. The
  *     engine's own buffers contribute nothing (the native fault test proves
  *     that with a shielded stack: test_engine_rt_memory.h);
  *   - either way, the window fails when it holds fewer than half the periods
@@ -387,9 +397,12 @@ int main(int argc, char** argv) {
   const long faults = (st1.minflt - st0.minflt) + (st1.majflt - st0.majflt);
   const uint64_t periods = t1.session.periods - t0.session.periods;
   const uint64_t late = t1.session.late_periods - t0.session.late_periods;
+  uint64_t dx[LE_XRUN_KINDS];
   uint64_t xruns = 0;
-  for (int k = 0; k < LE_XRUN_KINDS; ++k)
-    xruns += t1.session.xruns[k] - t0.session.xruns[k];
+  for (int k = 0; k < LE_XRUN_KINDS; ++k) {
+    dx[k] = t1.session.xruns[k] - t0.session.xruns[k];
+    xruns += dx[k];
+  }
   printf("window: %.1f s measured after a %.1f s warm-up, %d-frame period "
          "(%u us)\n",
          window_s, g_s0.at - t_start, (int)o.period, t1.budget_us);
@@ -406,10 +419,15 @@ int main(int argc, char** argv) {
   const double expected =
       t1.budget_us > 0 ? window_s * 1e6 / t1.budget_us : 0.0;
   printf("periods: %llu (about %.0f expected), late: %llu, worst service "
-         "since start %u us, xruns %llu\n",
+         "since start %u us\n",
          (unsigned long long)periods, expected,
-         (unsigned long long)late, t1.session.max_us,
-         (unsigned long long)xruns);
+         (unsigned long long)late, t1.session.max_us);
+  printf("xruns: %llu (capture overrun %llu, playback underrun %llu, "
+         "playback resync %llu)\n",
+         (unsigned long long)xruns,
+         (unsigned long long)dx[LE_XRUN_CAPTURE_OVERRUN],
+         (unsigned long long)dx[LE_XRUN_PLAYBACK_UNDERRUN],
+         (unsigned long long)dx[LE_XRUN_PLAYBACK_RESYNC]);
   int ok;
   if (!g_s0.st_ok || !s1.st_ok) {
     ok = 0;
@@ -418,9 +436,15 @@ int main(int argc, char** argv) {
     ok = 0;
     printf("FAIL: the window holds too few periods to prove anything\n");
   } else if (forks == 0) {
-    ok = faults == 0 && late == 0;
-    printf("%s\n", ok ? "PASS: no fault and no late period on the callback"
-                      : "FAIL: the callback faulted or ran late");
+    ok = faults == 0 && late == 0 && xruns == 0;
+    if (ok) {
+      printf("PASS: no fault, no late period and no xrun on the callback\n");
+    } else if (faults != 0 || late != 0) {
+      printf("FAIL: the callback faulted or ran late\n");
+    } else {
+      printf("FAIL: the device dropped out with no fault and no late period: "
+             "the time was lost outside le_engine_process\n");
+    }
   } else {
     const double per_fork = (double)faults / (double)forks;
     ok = per_fork <= (double)o.max_faults_per_fork;
