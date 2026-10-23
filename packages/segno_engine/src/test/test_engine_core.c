@@ -38325,6 +38325,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_read_head.h"
 #include "test_engine_stretch.h"
 #include "test_engine_reverse.h"
+#include "test_engine_gate_fade.h"
 #include "test_engine_speed.h"
 #include "test_engine_transpose.h"
 #include "test_engine_tempo_follow.h"
@@ -38354,6 +38355,8 @@ int main(void) {
   if (getenv("SEGNO_SYNTH_TESTS_ONLY")) return g_failures ? 1 : 0;
   run_instrument_tests();
   if (getenv("SEGNO_INSTRUMENT_TESTS_ONLY")) return g_failures ? 1 : 0;
+  run_gate_fade_tests();
+  if (getenv("SEGNO_GATE_FADE_TESTS_ONLY")) return g_failures ? 1 : 0;
   run_reverse_tests();
   run_tuner_mute_tests();
   if (getenv("SEGNO_REVERSE_TESTS_ONLY")) return g_failures ? 1 : 0;
