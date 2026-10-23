@@ -308,6 +308,15 @@ jobs:
               --kind "$kind" --blocks 2000 >> bench-fx-kinds-arm64.md
           done
           cat bench-fx-kinds-arm64.md
+      # The pitch-shifter comparison (#887 part 9): the phase vocoder, PSOLA
+      # and Signalsmith Stretch on the same signals. Informational.
+      - name: Run the pitch-shifter comparison (informational)
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: >
+          bash packages/segno_engine/src/test/bench/bench_pitch_algos.sh
+          | tee bench-pitch-algos-arm64.md
       - name: Upload the effects bench and its report for the appliance
         if: always()
         uses: actions/upload-artifact@v4
@@ -316,6 +325,7 @@ jobs:
           path: |
             packages/segno_engine/build/bench/bench_fx_cpu
             bench-fx-kinds-arm64.md
+            bench-pitch-algos-arm64.md
           if-no-files-found: error
       # The audio-thread fault bench (#900): build only, since it needs the
       # console's sound card. Its binary is uploaded for the on-device proof
