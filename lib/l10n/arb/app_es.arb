@@ -1954,6 +1954,8 @@
     "fxNoSavedPresets": "Todavía no has guardado ningún sonido",
     "fxChainFull": "Esta cadena está llena",
     "fxRackTooLong": "{name} necesita {needed} espacios y aquí quedan {free}",
+    "fxOverBudget": "No queda procesamiento para agregar esto",
+    "fxNoRoom": "{name} necesita más procesamiento del que queda",
     "fxModulePartial": "Algunos controles todavía no llegan al sonido",
     "fxModuleUnavailable": "Esta versión todavía no procesa este efecto",
     "fxEffectOptions": "Opciones del efecto",
