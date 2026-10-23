@@ -697,6 +697,14 @@ typedef enum le_fx_type {
   /* WAH: p0 pedal (0 to 100 %). A resonant band-pass from 350 Hz (heel) to
    * 2.5 kHz (toe). */
   LE_FX_WAH = 15,
+  /* OVERDRIVE: p0 drive, p1 tone (0 to 100 %). A clean part plus a clipped
+   * part whose gain the drive sets, a softer second stage, then a tone
+   * filter; fit to the Guitar Rack's OvDrive (#891). */
+  LE_FX_OVERDRIVE = 16,
+  /* DISTORTION: p0 drive, p1 tone (0 to 100 %). The Looper X's amp
+   * simulator at its defaults (the Studio Rack's Dist): an asymmetric curve,
+   * then the 4x12" cabinet; fit to the Phase 0 amp captures (#891). */
+  LE_FX_DISTORTION = 17,
 } le_fx_type;
 
 /* ---- Built-in effect parameter descriptors (#1378) ----

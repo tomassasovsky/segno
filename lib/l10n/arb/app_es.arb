@@ -445,6 +445,8 @@
     "effectDoubler": "Doblador",
     "effectChorus": "Chorus",
     "effectWah": "Wah",
+    "effectOverdrive": "Overdrive",
+    "effectDistortion": "Distorsión",
     "paramSeparation": "Separación",
     "paramPedal": "Pedal",
     "octaverModePhaseVocoder": "Vocoder de fase",

@@ -24,10 +24,11 @@
  * engaged, and `late` becomes `moving`: the chain's gains change every
  * callback, so every EQ recomputes its coefficients on each update. The
  * dynamics kinds (#887 part 5) run the same way with --kind comp, transient
- * or hpgate, and the modulation kinds (part 6) with doubler, chorus or wah,
- * each set so its whole kernel works; `moving` changes a setting that
+ * or hpgate, the modulation kinds (part 6) with doubler, chorus or wah, and
+ * the drives (part 7) with overdrive or distortion, each set so its whole
+ * kernel works; `moving` changes a setting that
  * glides (the threshold, the attack amount, the high-pass corner, the
- * doubler's mix, the chorus's rate, the wah's pedal).
+ * doubler's mix, the chorus's rate, the wah's pedal, the drives' tone).
  *
  * Reported per scenario: p50 / p99 / p99.9 / max per callback, the callbacks
  * over the period's deadline, and the mean cost of the blocks starting in
@@ -38,7 +39,8 @@
  *   ./bench_fx_cpu.sh --smoke              # short runs (CI)
  *   ./bench_fx_cpu.sh --kind eq            # the EQ instead of the octaver
  *   ./bench_fx_cpu.sh --kind comp          # or transient, hpgate, doubler,
- *                                          # chorus, wah
+ *                                          # chorus, wah, overdrive,
+ *                                          # distortion
  *   bench_fx_cpu --paced --cpu 3           # on the console, off the audio core
  *
  * On the console, run it pinned away from the app's audio core; the timed
@@ -121,7 +123,7 @@ static void dynamics_entry(le_fx_recipe* r, int s) {
   } else if (g_kind == LE_FX_HP_GATE) {
     r->params[s][0] = 0.5f;
     r->params[s][1] = 0.5f;
-  } /* the doubler, chorus and wah run at their defaults */
+  } /* the doubler, chorus, wah and drives run at their defaults */
   r->level[s] = 1.0f;
 }
 
@@ -139,7 +141,12 @@ static void fx_entry(le_fx_recipe* r, int s) {
  * in the monitor chain alternates every callback, so each entry is always
  * smoothing: the EQ's low-mid gain, the compressor's threshold, the
  * transient shaper's attack, the high-pass corner. */
-static int32_t moving_param(void) { return g_kind == LE_FX_EQ ? 4 : 0; }
+static int32_t moving_param(void) {
+  if (g_kind == LE_FX_EQ) return 4;
+  /* The drives' tone: the setting whose move redesigns a filter. */
+  if (g_kind == LE_FX_OVERDRIVE || g_kind == LE_FX_DISTORTION) return 1;
+  return 0;
+}
 static int g_moving;
 static int g_moving_n;
 
@@ -205,6 +212,8 @@ static const char* kind_name(void) {
     case LE_FX_DOUBLER: return "doubler";
     case LE_FX_CHORUS: return "chorus";
     case LE_FX_WAH: return "wah";
+    case LE_FX_OVERDRIVE: return "overdrive";
+    case LE_FX_DISTORTION: return "distortion";
     default: return "octaver";
   }
 }
@@ -247,10 +256,14 @@ int main(int argc, char** argv) {
         g_kind = LE_FX_CHORUS;
       } else if (!strcmp(kind, "wah")) {
         g_kind = LE_FX_WAH;
+      } else if (!strcmp(kind, "overdrive")) {
+        g_kind = LE_FX_OVERDRIVE;
+      } else if (!strcmp(kind, "distortion")) {
+        g_kind = LE_FX_DISTORTION;
       } else {
         fprintf(stderr,
                 "unknown --kind %s (octaver, eq, comp, transient, hpgate, "
-                "doubler, chorus, wah)\n",
+                "doubler, chorus, wah, overdrive, distortion)\n",
                 kind);
         return 2;
       }
@@ -276,7 +289,8 @@ int main(int argc, char** argv) {
       fprintf(stderr,
               "usage: %s [--smoke] [--paced] [--rate HZ] [--period FRAMES] "
               "[--blocks N] [--cpu N] "
-              "[--kind octaver|eq|comp|transient|hpgate|doubler|chorus|wah]\n",
+              "[--kind octaver|eq|comp|transient|hpgate|doubler|chorus|wah|"
+              "overdrive|distortion]\n",
               argv[0]);
       return 2;
     }
