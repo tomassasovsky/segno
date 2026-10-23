@@ -1398,6 +1398,186 @@ static void le_seam_fold_dub_shadow(le_track* t, int32_t len, int32_t F) {
   }
 }
 
+/* A linear fade out over `f` frames that ends (weight 0) at position `last`,
+ * modulo `len`, on every active lane of pool slot `slot` (-1 = each lane's
+ * live slot). Lanes whose slot is missing or shorter than `len` are skipped,
+ * the same capacity rule as le_seam_fold. */
+static void le_lanes_fade_out_to(le_track* t, int32_t slot, int32_t last,
+                                 int32_t len, int32_t f) {
+  if (len <= 0 || f <= 0 || f > len || last < 0 || last >= len) return;
+  const int32_t n = le_lanes_active(t);
+  for (int32_t l = 0; l < n; ++l) {
+    le_lane* ln = &t->lanes[l];
+    const int32_t s = slot >= 0 ? slot : load_i32(&ln->a_live);
+    float* b = ln->pool[s];
+    if (b == NULL || ln->pool_cap[s] < len) continue;
+    for (int32_t i = 0; i < f; ++i) {
+      int32_t p = last - i;
+      if (p < 0) p += len;
+      b[p] *= (float)i / (float)f;
+    }
+  }
+}
+
+/* #730: the two joins a take that STOPPED EARLY leaves behind.
+ *
+ * Auto rounds the length UP to whole base loops, and everything the take did
+ * not reach stays the digital silence le_prepare_new_capture wrote. A take
+ * that does not fill its loop therefore has TWO discontinuities, not one:
+ * material -> silence where the playing stopped, and silence -> material
+ * where it started. #730 measured the first. The second is as large or
+ * larger, and #730's fixture hid it by starting its oscillator at phase 0,
+ * which makes the first sample zero. A take begins wherever the performer
+ * happens to be, so that sample is arbitrary: measured with the take starting
+ * at the signal's peak, the cut is 142x and the join back into the material
+ * 598x.
+ *
+ * So the take is treated as a one-shot with a start and an end, and gets a
+ * short linear fade at both: seam_xfade_frames (~10 ms), the same length every
+ * other seam in this engine uses.
+ *
+ * The other two options #730 lists were rejected. Rounding to NEAREST
+ * truncates material whenever the performer stops just past the loop top, and
+ * removes the step only in the cases where it truncates. Recording PAST the
+ * press until the take fills records what the performer did after saying
+ * stop, and delays the take by up to a lap. Padding with silence is the only
+ * option that keeps exactly what was played, where it was played.
+ *
+ * WHERE THE MATERIAL IS. The write head maps input frame p to p - offset
+ * (latency compensation; frames that map below 0 were never written), and a
+ * fixed multiple wraps that modulo its known length. So the material runs from
+ * record_start - offset to record_pos - offset in playback order, and it can
+ * sit anywhere in the loop: a take pressed mid-loop, or delayed to a grid unit
+ * (D8), has silence on BOTH sides, and a fixed-multiple take stopped before
+ * its K laps can wrap past the loop end and stop short of its own start. The
+ * fades follow the material, modulo the loop length, never position 0.
+ *
+ * A take that covers the whole loop has no silence to fade into, so it is
+ * left alone: its join is take-end against take-start, which is #728's seam,
+ * not this one.
+ *
+ * `fade_tail` is 0 when something else continues the take's end, and only the
+ * start is faded then. finalize_new_track passes 0 in two cases:
+ *   - #728's fold is armed on the tail (the take ended exactly at the loop
+ *     end, with its continuation still being captured). The fold owns the
+ *     wrap, and fading the tail out first would put a faded-out last sample
+ *     next to the full-amplitude continuation the fold writes into the head.
+ *   - The take finalizes into OVERDUBBING (rec/dub). The player keeps playing
+ *     and the dub writes the continuation from the take's end on, so a fade
+ *     out there would be a dip to zero once per lap. finalize_new_track starts
+ *     that dub at full gain so the join is the continuous performance.
+ *
+ * Returns 1 when the take covers part of its loop but not all of it (whether
+ * or not it was long enough to fade), 0 otherwise. *out_tail_end is one past
+ * the tail's last sample when the take was long enough to fade (whether or
+ * not the tail was faded here), 0 otherwise.
+ *
+ * FOUR fades of room. Below 4F (~40 ms) the take is left exactly as recorded:
+ * with only 2F, a short stab could be entirely envelope (the grid fixtures
+ * capture 23 ms, where two 10 ms fades leave 3 ms flat), which changes what
+ * was played instead of removing a click. Pinned on both sides by
+ * test_take_taper_threshold_leaves_short_takes_alone.
+ *
+ * Runs synchronously inside the finalize, before the state store and before
+ * le_dub_session_start, so a pass the take continues into backs up an already
+ * tapered live slot and needs no shadow twin (unlike #728's deferred fold).
+ * Bounded: 2F multiplies per lane, once per take. */
+static int le_take_taper_ends(const le_engine* e, le_track* t, int32_t len,
+                              int32_t offset, int fade_tail,
+                              int32_t* out_tail_end) {
+  *out_tail_end = 0;
+  if (len <= 0) return 0;
+  const int32_t ch = (int32_t)(t - e->tracks);
+  /* The write head's wrap (mix_tracks_frame, le_truncate_capture_tail). A
+   * wrap onto a length other than the loop's is not a layout this can reason
+   * about, so it is left as recorded. */
+  const int32_t k = le_effective_multiple(e, ch);
+  const int32_t wrap = (k >= 1 && e->clock.length > 0) ? k * e->clock.length : 0;
+  if (wrap > 0 && wrap != len) return 0;
+  int32_t start = t->record_start - offset;
+  int32_t end = t->record_pos - offset;
+  if (start < 0) start = 0;
+  /* Linear writes past the rounded length are outside the loop. */
+  if (wrap == 0 && end > len) end = len;
+  const int32_t span = end - start;
+  if (span <= 0 || span >= len) return 0;
+  const int32_t f = seam_xfade_frames(e);
+  if (f <= 0 || span < 4 * f) return 1;
+  start %= len;
+  const int32_t last = (end - 1) % len;
+  *out_tail_end = last + 1;
+  const int32_t n = le_lanes_active(t);
+  for (int32_t l = 0; l < n; ++l) {
+    le_lane* ln = &t->lanes[l];
+    const int32_t live = load_i32(&ln->a_live);
+    float* b = ln->pool[live];
+    /* Same (pointer, cap) immutability argument as le_seam_fold: the live
+     * slot cannot be resized under the audio thread. */
+    if (b == NULL || ln->pool_cap[live] < len) continue;
+    for (int32_t i = 0; i < f; ++i) {
+      const float x = (float)i / (float)f; /* 0 .. 1 across the fade */
+      int32_t in = start + i;
+      if (in >= len) in -= len;
+      b[in] *= x; /* in, from the silence before it */
+    }
+  }
+  if (fade_tail) le_lanes_fade_out_to(t, -1, last, len, f);
+  return 1;
+}
+
+/* The take's undo image after a rec/dub continuation (#730): the first pass's
+ * shadow holds the take alone, followed by silence, so its tail gets the fade
+ * the live slot skipped. Called as that shadow retires, on the slot it
+ * retires, and by the reopen filer (engine_commands.c) for a frozen one. */
+void le_dub_fade_image_tail(const le_engine* e, le_track* t, int32_t slot) {
+  if (t->dub_tail_end <= 0) return;
+  const int32_t len = t->dub_len;
+  if (slot >= 0 && len > 0 && t->dub_tail_end <= len) {
+    le_lanes_fade_out_to(t, slot, t->dub_tail_end - 1, len,
+                         seam_xfade_frames(e));
+  }
+  t->dub_tail_end = 0;
+}
+
+/* A stop that ends a rec/dub continuation within F frames of the take's end
+ * (#730): the dub wrote only `k` < F frames past it and stops dead there
+ * (STOPPED has no punch-out tail), so without this the buffer cuts. Fades the
+ * take plus those k frames out, ending at the last one written, in the live
+ * slot, and gives the shadow the same k frames so the undo image matches
+ * (the drain copies the rest of it, faded tail included, from live). A longer
+ * continuation is left as the dub wrote it; its image tail is faded at
+ * retire as usual. */
+static void le_dub_stop_tail(const le_engine* e, le_track* t) {
+  if (t->dub_tail_end <= 0) return;
+  const int32_t len = t->dub_len;
+  const int32_t f = seam_xfade_frames(e);
+  if (t->dub_slot < 0 || len <= 0 || t->dub_tail_end > len || f <= 0) {
+    t->dub_tail_end = 0; /* no image to keep in step: leave it as written */
+    return;
+  }
+  const int32_t k = t->dub_count > 0 ? t->dub_count : 0;
+  if (k >= f) return;
+  const int32_t end = t->dub_tail_end % len; /* first continuation position */
+  le_lanes_fade_out_to(t, -1, (t->dub_tail_end - 1 + k) % len, len, f);
+  const int32_t n = le_lanes_active(t);
+  for (int32_t l = 0; l < n; ++l) {
+    le_lane* ln = &t->lanes[l];
+    const int32_t live = load_i32(&ln->a_live);
+    float* b = ln->pool[live];
+    float* sb = ln->pool[t->dub_slot];
+    if (b == NULL || sb == NULL || ln->pool_cap[live] < len ||
+        ln->pool_cap[t->dub_slot] < len) {
+      continue;
+    }
+    for (int32_t i = 0; i < k; ++i) {
+      int32_t p = end + i;
+      if (p >= len) p -= len;
+      sb[p] = b[p];
+    }
+  }
+  t->dub_tail_end = 0;
+}
+
 /* Requests finalize of the *defining master* at its current length. When the
  * loop is long enough and the buffer has room, this defers the finalize: the
  * track keeps RECORDING F more frames so the seam can be crossfaded (see
@@ -1638,7 +1818,7 @@ static inline int le_is_reestablishing_primary(le_engine* e, int32_t ch) {
  *     le_effective_multiple (engine_private.h — shared with the control
  *     thread's first-wrap pre-arm gate, which predicts this finalize). */
 static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
-                               uint64_t frame) {
+                               uint64_t frame, int allow_fold) {
   const int32_t ch = (int32_t)(t - e->tracks);
   const int32_t base = e->clock.length > 0 ? e->clock.length : 1;
   if (t->record_pos <= 0) { /* nothing captured */
@@ -1713,10 +1893,10 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
    * because in neither does a continuation of position len-1 exist:
    *
    *   - The take STOPPED EARLY. Auto rounds the length UP, so [record_pos, len)
-   *     stays the digital silence le_prepare_new_capture wrote; the wrap is a
-   *     silence cut, a different artifact with a different fix (#730), and
-   *     folding a continuation of the wrong sample onto the head would only
-   *     add a second one.
+   *     stays the digital silence le_prepare_new_capture wrote, and folding a
+   *     continuation of the wrong sample onto the head would only add a second
+   *     artifact. le_take_taper_ends (#730, below) fades that take's ends
+   *     instead.
    *
    *   - a_record_offset > 0 — i.e. EVERY latency-calibrated rig. Compensation
    *     writes input frame i at position i - offset, so a take that ran to
@@ -1728,17 +1908,35 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
    *     fold silently does not run there, and that is the honest outcome: the
    *     buffer's true last sample is at len - offset - 1 and what follows it is
    *     already IN the loop, not past it — there is nothing to capture and no
-   *     seam of the assumed shape to smooth. Refusing leaves such a take
-   *     exactly as it was before #728; giving the offset path a seam of its own
-   *     means first fixing the trailing-zeros gap it shares with #730, which is
-   *     a length/round-up direction call, not a crossfade one. Pinned by
-   *     test_loop_seam_not_armed_with_record_offset. */
+   *     seam of the assumed shape to smooth. There is still no fold there, but
+   *     the take is no longer left raw: on the auto path the offset leaves
+   *     trailing zeros, so le_take_taper_ends sees a take that does not fill
+   *     its loop and turns the splice into a fade out into those zeros and a
+   *     fade in at the head. That is an honest improvement, not the
+   *     continuation fold, which would need material the compensation
+   *     consumed. Pinned by test_loop_seam_not_armed_with_record_offset. */
   const int32_t new_len = load_i32(&t->lanes[0].a_len);
   const int32_t seam_f = seam_room(e, t, new_len);
-  if (seam_f > 0 && t->record_pos - load_i32(&e->a_record_offset) == new_len) {
+  /* ONE read of the offset for the fold's arming and the taper's positions:
+   * read twice, a calibration landing between them would arm on one value and
+   * fade at positions computed from another. */
+  const int32_t rec_off = load_i32(&e->a_record_offset);
+  /* `allow_fold` is the caller's: a take that is frozen or cancelled right
+   * after this (clear-freeze, CANCEL_TAKE) captures no continuation, so its
+   * tail has to be faded here instead of being left for a fold that never
+   * runs. */
+  const int tail_folds =
+      allow_fold && seam_f > 0 && t->record_pos - rec_off == new_len;
+  if (tail_folds) {
     t->seam_len = new_len;
     t->seam_capture = seam_f;
   }
+  /* rec/dub: the dub continues the take from its end (#730). */
+  const int dub_continues = end_state == LE_TRACK_OVERDUBBING;
+  int32_t tail_end = 0;
+  const int partial =
+      le_take_taper_ends(e, t, new_len, rec_off > 0 ? rec_off : 0,
+                         !tail_folds && !dub_continues, &tail_end);
   le_audio_rev_bump(t); /* [R1] record finalize: fresh content */
   store_i32(&t->a_state, end_state);
   /* A non-defining take is a completed take too: if the crown went with a
@@ -1752,7 +1950,27 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
                (le_command){.code = LE_PLOG_RECORD_END,
                             .take = {.channel = ch, .take_id = t->take_seq}});
   store_i32(&t->a_settled_take_id, t->take_seq);
-  if (end_state == LE_TRACK_OVERDUBBING) le_dub_session_start(e, t);
+  if (dub_continues) {
+    const int fresh_session = !load_i32(&t->a_layer_in_flight);
+    le_dub_session_start(e, t);
+    /* A take that stopped short of its loop and continues into the dub: the
+     * dub's first write lands on the position right after the take's last
+     * sample (same write-head mapping, same offset), over silence. Writing
+     * never stopped, so the dub starts at full gain rather than ramping in
+     * from 0 the way a punch-in over existing content must; together with the
+     * unfaded tail the buffer holds the performance as played. A take that
+     * filled its loop keeps the ramp: its dub starts over the take's own head.
+     *
+     * The session's first undo layer is the take before the dub: the take
+     * followed by silence. dub_tail_end makes that layer's tail fade as it
+     * retires (le_dub_fade_image_tail), and a stop within F frames fades the
+     * live tail too (le_dub_stop_tail). Set after le_dub_session_start, which
+     * clears it for every new session. */
+    if (partial && !tail_folds) {
+      t->od_gain = 1.0f;
+      if (fresh_session) t->dub_tail_end = tail_end;
+    }
+  }
 }
 /* ---- per-pass undo layer capture (audio thread) ----
  *
@@ -1805,9 +2023,13 @@ static void le_dub_session_start(le_engine* e, le_track* t) {
       t->dub_draining = 0;
       t->dub_count = -1;
       t->dub_phase = 0;
+      /* The restarted capture's image includes the earlier partial dub after
+       * the take's end, so its tail is continued, not followed by silence. */
+      t->dub_tail_end = 0;
     }
     return;
   }
+  t->dub_tail_end = 0; /* a new session: finalize_new_track may set it */
   t->pass_key = pre_key; /* the first pass backs up this content */
   t->dub_len = len;
   t->dub_offset = load_i32(&e->a_record_offset);
@@ -1865,6 +2087,7 @@ static void le_dub_drop_armed(le_track* t) {
   t->dub_count = -1;
   t->dub_phase = 0;
   t->dub_draining = 0;
+  t->dub_tail_end = 0; /* #730: its image is gone with the slots */
   /* An in-flight seam overlap is indexed off the OLD length and lives in the
    * OLD live slot, so it is stale for exactly the same reasons (#728); the
    * next finalize arms a fresh one. */
@@ -1892,6 +2115,7 @@ static void le_dub_boundary(le_engine* e, le_track* t, uint64_t frame) {
     if (t->dub_retire_slot >= 0) return; /* frozen: retire is stuck */
     t->dub_retire_slot = t->dub_slot;
     t->dub_slot = -1;
+    le_dub_fade_image_tail(e, t, t->dub_retire_slot); /* #730 */
     le_file_pass_key(t);
     le_audio_rev_bump(t); /* [R1] a completed overdub pass retired */
     le_dub_try_retire(e, t, frame);
@@ -2025,6 +2249,7 @@ static void le_dub_block_update(le_engine* e, uint64_t frame,
         t->dub_retire_slot < 0) {
       t->dub_retire_slot = t->dub_slot;
       t->dub_slot = -1;
+      le_dub_fade_image_tail(e, t, t->dub_retire_slot); /* #730 */
       le_file_pass_key(t);
       le_audio_rev_bump(t); /* [R1] the punch-out pass retired (post-drain) */
       le_dub_try_retire(e, t, frame);
@@ -2115,6 +2340,19 @@ void le_engine_reopen_settle(le_engine* e, uint32_t drop_mask) {
         }
         le_audio_rev_bump(t); /* [R1] reopen: the partial pass is reverted */
       }
+    }
+    /* #730: a rec/dub continuation whose first pass never completed. Live is
+     * the take before the dub again (reverted above, or never covered), and
+     * that take is followed by silence, so its tail gets the fade now. */
+    if (!drop && t->dub_tail_end > 0 && t->dub_count < t->dub_len) {
+      /* Only with a shadow: without one the dub's writes were never backed
+       * up or reverted, and they continue the tail in live. */
+      if (t->dub_slot >= 0 && t->dub_tail_end <= t->dub_len) {
+        le_lanes_fade_out_to(t, -1, t->dub_tail_end - 1, t->dub_len,
+                             seam_xfade_frames(e));
+        le_audio_rev_bump(t);
+      }
+      t->dub_tail_end = 0;
     }
 
     if (drop) {
@@ -2219,7 +2457,7 @@ static void close_active_capture(le_engine* e, int32_t except_ch,
         tr->seam_capture = 0;
         finalize_master(e, tr, LE_TRACK_PLAYING, frame); /* defines the master loop */
       } else {
-        finalize_new_track(e, tr, LE_TRACK_PLAYING, frame); /* round up to whole loops */
+        finalize_new_track(e, tr, LE_TRACK_PLAYING, frame, 1); /* round up to whole loops */
       }
     } else if (st == LE_TRACK_OVERDUBBING) {
       store_i32(&tr->a_state, LE_TRACK_PLAYING);
@@ -2331,7 +2569,7 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
       if (e->clock.length == 0) {
         request_master_finalize(e, t, end, frame); /* defers for the seam crossfade */
       } else {
-        finalize_new_track(e, t, end, frame);
+        finalize_new_track(e, t, end, frame, 1);
       }
       break;
     }
@@ -2426,7 +2664,8 @@ static void apply_undo_to_empty(le_engine* e, int32_t ch, uint64_t frame) {
  * lands on, every branch here either ends a capture or does nothing:
  * - RECORDING, non-defining (clock.length > 0): finalize_new_track, the exact
  *   quantize-off second-press finalize — round UP to whole base loops, the
- *   silence tail seam-treated (#730), RECORD_END logged there. Always to
+ *   ends of a take that does not fill them faded into the silence around it
+ *   (le_take_taper_ends, #730), RECORD_END logged there. Always to
  *   PLAYING, never rec/dub's continue-into-overdub: FX mode's transport is
  *   inert, so the punch-out would be unreachable.
  * - RECORDING, defining (clock.length == 0): refuse — a mode switch must
@@ -2439,7 +2678,7 @@ static void handle_finalize_take(le_engine* e, int32_t ch, uint64_t frame) {
   le_track* t = &e->tracks[ch];
   if (load_i32(&t->a_state) != LE_TRACK_RECORDING) return;
   if (e->clock.length == 0) return; /* the defining take keeps running */
-  finalize_new_track(e, t, LE_TRACK_PLAYING, frame);
+  finalize_new_track(e, t, LE_TRACK_PLAYING, frame, 1);
 }
 
 static void handle_stop(le_engine* e, int32_t ch, uint64_t frame) {
@@ -2454,9 +2693,11 @@ static void handle_stop(le_engine* e, int32_t ch, uint64_t frame) {
     if (e->clock.length == 0) {
       request_master_finalize(e, t, LE_TRACK_STOPPED, frame); /* defers for crossfade */
     } else {
-      finalize_new_track(e, t, LE_TRACK_STOPPED, frame); /* round up to whole loops */
+      finalize_new_track(e, t, LE_TRACK_STOPPED, frame, 1); /* round up to whole loops */
     }
   } else if (st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING) {
+    /* A stop right after a rec/dub continuation began (#730). */
+    if (st == LE_TRACK_OVERDUBBING) le_dub_stop_tail(e, t);
     store_i32(&t->a_state, LE_TRACK_STOPPED);
     /* Stopping an overdub ends its capture: land any deferred mute. */
     le_consume_pending_mutes(e, t, LE_TRACK_STOPPED, 1, frame);
@@ -3048,8 +3289,9 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
         }
         finalize_master(e, t, LE_TRACK_STOPPED, frame);
       } else {
-        finalize_new_track(e, t, LE_TRACK_STOPPED, frame);
-        t->seam_capture = 0; /* nothing to fold into an erased take */
+        /* No fold: nothing is captured after a freeze, so the taper fades
+         * the tail instead (allow_fold = 0). */
+        finalize_new_track(e, t, LE_TRACK_STOPPED, frame, 0);
       }
     } else if (st == LE_TRACK_OVERDUBBING) {
       /* The pass ends here; its writes were in place, so the live slot holds
@@ -4333,14 +4575,15 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         if (e->clock.length == 0) {
           apply_undo_to_empty(e, ch, frame);
         } else {
-          finalize_new_track(e, t, LE_TRACK_PLAYING, frame); /* void: EMPTY */
+          finalize_new_track(e, t, LE_TRACK_PLAYING, frame, 1); /* void: EMPTY */
         }
       } else {
         if (e->clock.length == 0) {
           finalize_master(e, t, LE_TRACK_PLAYING, frame);
         } else {
-          finalize_new_track(e, t, LE_TRACK_PLAYING, frame);
-          t->seam_capture = 0; /* nothing to fold into a held take */
+          /* Nothing to fold into a held take, so the taper fades its tail
+           * instead (allow_fold = 0). */
+          finalize_new_track(e, t, LE_TRACK_PLAYING, frame, 0);
         }
         len = load_i32(&t->lanes[0].a_len);
         apply_undo_to_empty(e, ch, frame);
@@ -5820,13 +6063,30 @@ static inline void output_bus_frame(le_engine* e, float* out, uint32_t f,
   if (c1 >= 0 && sn->en_r) o[c1] = r;
 }
 
+/* One-pole coefficient for a `seconds` time constant at `sr`, as one
+ * definition for the limiter's attack and release.
+ *
+ * It SATURATES: below 1/seconds samples per second the coefficient would
+ * exceed 1.0 and is clamped there, which is a one-sample jump, i.e. no
+ * smoothing at all. For the 2 ms attack that threshold is 500 Hz, so every
+ * real rate is far clear of it, but several native fixtures configure the
+ * engine at sr=4 or sr=1000, and a test written at the low end cannot observe
+ * smoothing however the coefficient is spelled. */
+static inline float le_one_pole_coeff(float seconds, float sr) {
+  if (seconds <= 0.0f || sr <= 0.0f) return 1.0f;
+  const float c = 1.0f / (seconds * sr);
+  return c > 1.0f ? 1.0f : c;
+}
+
 /* Master bus for one output frame: global gain, then the feed-forward peak
- * limiter (instant attack / smooth release, bit-transparent below the ceiling),
- * then output metering. Accumulates *out_sumsq and tracks *frame_out_peak (both
- * start at the caller's per-block / per-frame seed). */
+ * limiter (peak hold, smoothed attack, smooth release, brickwall backstop;
+ * bit-transparent below the ceiling), then output metering. Accumulates
+ * *out_sumsq and tracks *frame_out_peak (both start at the caller's per-block /
+ * per-frame seed). `lim_hold` is the hold window in frames (>= 1). */
 static inline void master_bus_frame(le_engine* e, float* out, uint32_t f,
                                     int ch_out, float master_gain, int limiter_on,
-                                    float limiter_ceiling, float lim_release,
+                                    float limiter_ceiling, int32_t lim_hold,
+                                    float lim_attack, float lim_release,
                                     float* out_sumsq, float* frame_out_peak,
                                     float* out_peak_ch) {
   /* Apply the global master gain post-mix, before metering and the loop-viz
@@ -5838,26 +6098,92 @@ static inline void master_bus_frame(le_engine* e, float* out, uint32_t f,
   }
 
   /* Master peak limiter (feed-forward, no lookahead): find this frame's peak,
-   * compute the gain that would pin it to the ceiling, and apply it. Instant
-   * attack — if the needed gain is below the current one, clamp down this very
-   * frame so nothing exceeds the ceiling (no overshoot); smooth release back
-   * toward unity. Below the ceiling the gain rests at 1.0, so the path is
-   * bit-transparent when nothing is clipping. */
+   * compute the gain that would pin it to the ceiling, and approach it.
+   *
+   * SMOOTHED ATTACK, not instant (#725). An instant attack set lim_gain to the
+   * target in one sample: a one-sample gain step on EVERY channel of the whole
+   * mix, at the moment a transient arrives. It also moved the content that
+   * never crossed the ceiling, so a quiet pad under a loud snare took the same
+   * step. A ~2 ms one-pole attack removes the step. Its cost is that the gain
+   * is still falling for those few frames, so a sample there could exceed the
+   * ceiling.
+   *
+   * The BRICKWALL BACKSTOP pays that cost. It changes only the samples that
+   * actually exceed the ceiling, for the few frames the attack is still
+   * moving, instead of scaling everything. Clipping the tip of a transient is
+   * bounded distortion on the part of the signal that was already at the
+   * limit; a gain step is broadband and audible on the part that was not. The
+   * ceiling contract is unchanged: no sample leaves here above it.
+   *
+   * PEAK HOLD, which the smoothed attack depends on. A frame's own |x| is not
+   * the signal's level: between a waveform's peaks it falls toward zero, so a
+   * target taken from it rises in every trough, the release pulls the gain
+   * back up, and at the next peak the 2 ms attack has to start again. On
+   * steady loud material the attack then never catches up and the backstop
+   * does the limiting: a sustained sine at twice the ceiling had 27-29% of
+   * its samples clamped. So the gain follows the lowest target over the last
+   * one to two hold windows (~50 ms each, one period of 20 Hz, so every window
+   * of audible material contains a peak). Steady loud material is then
+   * scaled, and the backstop only catches the onset. Two windows rather than
+   * one running minimum, so a passage that gets quieter but stays over the
+   * ceiling releases to its new level within ~100 ms instead of staying at
+   * its loudest.
+   *
+   * NOT LOOKAHEAD, the other way to remove the step. Lookahead adds exactly its
+   * own length to the output latency, and the performer hears themselves
+   * through this bus while playing.
+   *
+   * Below the ceiling the gain rests at exactly 1.0 and the clamp does
+   * nothing, so the path stays bit-transparent when nothing is limiting. */
   if (limiter_on) {
     float peak = 0.0f;
     for (int c = 0; c < ch_out; ++c) {
       const float a = fabsf(out[f * ch_out + c]);
       if (a > peak) peak = a;
     }
-    float target = 1.0f;
-    if (peak > limiter_ceiling && peak > 0.0f) target = limiter_ceiling / peak;
+    float frame_target = 1.0f;
+    if (peak > limiter_ceiling && peak > 0.0f) {
+      frame_target = limiter_ceiling / peak;
+    }
+    if (frame_target < e->lim_hold_cur) e->lim_hold_cur = frame_target;
+    const float target = e->lim_hold_cur < e->lim_hold_prev ? e->lim_hold_cur
+                                                            : e->lim_hold_prev;
+    if (++e->lim_hold_count >= lim_hold) {
+      e->lim_hold_prev = e->lim_hold_cur;
+      e->lim_hold_cur = 1.0f;
+      e->lim_hold_count = 0;
+    }
     if (target < e->lim_gain) {
-      e->lim_gain = target; /* instant attack: no sample over the ceiling */
+      e->lim_gain += (target - e->lim_gain) * lim_attack;
+      /* Rounding only: with lim_attack <= 1 the update cannot pass the target
+       * in exact arithmetic. */
+      if (e->lim_gain < target) e->lim_gain = target;
     } else {
       e->lim_gain += (target - e->lim_gain) * lim_release;
+      /* Snap to exactly 1.0 so "rests at 1.0" holds. A one-pole approaches
+       * unity and never arrives, so without this the first transient of a set
+       * would leave every later sample scaled by 0.9999999 for the rest of the
+       * session, ending the bit-transparency this path promises.
+       *
+       * 1e-3 sits above the point where the update stalls in float: progress
+       * stops once (1 - gain) * release drops below half an ulp at 1.0
+       * (~3e-8), i.e. at 1 - gain ~= 7e-5 at 48 kHz and ~3e-4 at 192 kHz, so a
+       * tighter threshold would never fire. The snap is a gain move of at most
+       * 0.001 (0.0087 dB) on material that is below the ceiling, measured in
+       * test_master_limiter_settles_into_scaling_then_unity. */
+      if (target >= 1.0f && e->lim_gain > 1.0f - 1e-3f) e->lim_gain = 1.0f;
     }
-    if (e->lim_gain != 1.0f) {
-      for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] *= e->lim_gain;
+    /* One pass: scale, then hold at the ceiling. A multiply by exactly 1.0 is
+     * bit-exact, so no branch is needed to stay transparent. */
+    const float gain = e->lim_gain;
+    for (int c = 0; c < ch_out; ++c) {
+      float v = out[f * ch_out + c] * gain;
+      if (v > limiter_ceiling) {
+        v = limiter_ceiling;
+      } else if (v < -limiter_ceiling) {
+        v = -limiter_ceiling;
+      }
+      out[f * ch_out + c] = v;
     }
   }
 
@@ -6408,9 +6734,9 @@ static inline void advance_transport_frame(le_engine* e, int tc,
       const int32_t eff = le_effective_multiple(e, t);
       const int32_t base = e->clock.length;
       if (eff >= 1 && tr->record_pos - tr->record_start >= eff * base) {
-        finalize_new_track(e, tr, LE_TRACK_OVERDUBBING, frame);
+        finalize_new_track(e, tr, LE_TRACK_OVERDUBBING, frame, 1);
       } else if (tr->record_pos >= e->max_loop_frames) {
-        finalize_new_track(e, tr, LE_TRACK_OVERDUBBING, frame);
+        finalize_new_track(e, tr, LE_TRACK_OVERDUBBING, frame, 1);
       }
     }
   }
@@ -8381,17 +8707,19 @@ static inline void mix_tracks_frame(
 
 /* Test seam: drive one output frame through master_bus_frame (master gain ->
  * feed-forward limiter -> metering) with explicit params, so the limiter dynamics
- * (transparent below the ceiling, instant-attack clamp above, smooth release) can
- * be exercised in isolation. Mirrors what le_engine_process calls per frame. Not
- * part of the FFI surface. */
+ * (transparent below the ceiling, peak hold, smoothed attack with a brickwall
+ * backstop above it, smooth release) can be exercised in isolation. Mirrors
+ * what le_engine_process calls per frame. Not part of the FFI surface. */
 void le_engine_master_bus_frame_for_test(le_engine* e, float* out, uint32_t f,
                                          int ch_out, float master_gain,
                                          int limiter_on, float limiter_ceiling,
+                                         int32_t lim_hold, float lim_attack,
                                          float lim_release, float* out_sumsq,
                                          float* frame_out_peak) {
   float out_peak_ch[LE_MAX_CHANNELS] = {0};
   master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
-                   lim_release, out_sumsq, frame_out_peak, out_peak_ch);
+                   lim_hold > 0 ? lim_hold : 1, lim_attack, lim_release,
+                   out_sumsq, frame_out_peak, out_peak_ch);
   atomic_fetch_add_explicit(&e->a_fx_frame, 1u, memory_order_relaxed);
 }
 
@@ -8767,6 +9095,14 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   const int limiter_on = load_i32(&e->a_limiter_enabled) != 0;
   const float limiter_ceiling = load_f32(&e->a_limiter_ceiling_bits);
   const float overdub_fb = load_f32(&e->a_overdub_fb_bits);
+  /* An off limiter holds no state, so switching it on starts from unity with
+   * an empty hold instead of a gain left over from the last time it ran. */
+  if (!limiter_on) {
+    e->lim_gain = 1.0f;
+    e->lim_hold_cur = 1.0f;
+    e->lim_hold_prev = 1.0f;
+    e->lim_hold_count = 0;
+  }
 
   /* Click bus settings, read once per block (same rationale; the click's
    * volume is its ONLY gain stage — deliberately outside the master bus). */
@@ -8776,11 +9112,16 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   const float click_vol = load_f32(&e->a_click_volume_bits);
   float click_gl, click_gr;
   le_pan_gains(load_f32(&e->a_click_pan_bits), &click_gl, &click_gr);
-  /* ~50 ms release toward unity once the signal drops below the ceiling. */
-  float lim_release = 1.0f / (0.05f * (float)(e->sample_rate > 0
-                                                  ? e->sample_rate
-                                                  : 48000));
-  if (lim_release > 1.0f) lim_release = 1.0f;
+  /* The limiter's ~50 ms peak-hold window (one period of 20 Hz), ~2 ms attack
+   * down toward the needed gain (#725) and ~50 ms release back toward unity,
+   * per block so the RT path never divides per frame. 2 ms is the trade:
+   * shorter and the gain move starts to look like the step it replaces,
+   * longer and the brickwall backstop clips more of the transient. */
+  const float lim_sr = (float)(e->sample_rate > 0 ? e->sample_rate : 48000);
+  const int32_t lim_hold_sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  const int32_t lim_hold = lim_hold_sr / 20 > 0 ? lim_hold_sr / 20 : 1;
+  const float lim_attack = le_one_pole_coeff(0.002f, lim_sr);
+  const float lim_release = le_one_pole_coeff(0.05f, lim_sr);
 
   const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
   /* The nominal frames-per-beat grid_beat_frame counts a grid-free loop in
@@ -9199,7 +9540,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       audition_live = e->audition_buf != NULL;
     }
     master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
-                     lim_release, &out_sumsq, &frame_out_peak, out_peak_ch);
+                     lim_hold, lim_attack, lim_release, &out_sumsq,
+                     &frame_out_peak, out_peak_ch);
     if (frame_out_peak > out_peak) out_peak = frame_out_peak;
 
     viz_tap_frame(e, pos, frame_out_peak);
