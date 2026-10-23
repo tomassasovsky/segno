@@ -466,6 +466,8 @@ void main() {
         // Vol 20 %; Amb-Verb Dec 0.2, Vol 40 %, Amb-Dub Mix 40 %.
         TrackEffectType.dubVerb: [0.7, 0.2],
         TrackEffectType.ambVerb: [0.2, 0.4, 0.4],
+        // The Guitar Rack's Whammy: heel down, range -12.
+        TrackEffectType.whammy: [0.0, 0.0],
       };
       for (final type in TrackEffectType.values) {
         expect(type.defaultParams, cells(expected[type]!), reason: type.name);
