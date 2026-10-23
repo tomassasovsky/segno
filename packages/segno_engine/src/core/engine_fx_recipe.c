@@ -142,7 +142,7 @@ static int prepare_recipe(le_engine* e, struct le_prepared_fx* edit,
        && r->pre_count)) return 0;
   if (le_fx_edit_pending(e, edit->owner, edit->channel, lane)) return 0;
   for (int s = 0; s < r->count; ++s) {
-    if (r->type[s] < LE_FX_NONE || r->type[s] > LE_FX_PLUGIN ||
+    if (r->type[s] < LE_FX_NONE || r->type[s] >= LE_FX_WIDTHS ||
         (r->slot_enabled[s] != 0 && r->slot_enabled[s] != 1) ||
         r->input_mode[s] < 0 || r->input_mode[s] > 3 ||
         r->output_mode[s] < 0 || r->output_mode[s] > 1 ||

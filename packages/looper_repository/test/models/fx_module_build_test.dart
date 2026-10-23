@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -83,9 +85,11 @@ void main() {
           'Delay',
           'Distortion',
           'Dub Delay',
+          'Four-band EQ',
           'Low-pass Filter',
           'Octaver',
           'Overdrive',
+          'Parametric EQ',
           'Reverb',
         ]);
       },
@@ -371,6 +375,109 @@ void main() {
 
     test('names nothing for a preset carrying nothing it knows', () {
       expect(fxPresetModules(_preset(const {'Nonsense': 1})), isEmpty);
+    });
+  });
+
+  group('the EQ variants', () {
+    FxPreset preset(String family, Map<String, double> params) =>
+        FxPreset(family: family, name: 'p', id: 'p', type: 0, params: params);
+    double hz(BuiltInEffect e, int i) => e.type.params[i].valueAt(e.params[i]);
+
+    test("Ed's 4-band EQ copies every control and holds the air band flat", () {
+      final build = fxModuleBuild(
+        _module('Four-band EQ'),
+        family: "Ed's Rack",
+      );
+      expect(build.type, TrackEffectType.eq);
+      expect(build.readiness, FxModuleReadiness.full);
+      expect(build.exposed, List<int>.generate(14, (i) => i));
+
+      final e = fxModuleEntry(
+        _module('Four-band EQ'),
+        preset("Ed's Rack", const {
+          'EQ 4-Band': 1,
+          'EQ Low Cut': 0.21,
+          'EQ Lo Mid Freq': 0.17574,
+          'EQ Hi Mid': 0.75,
+        }),
+      );
+      expect(e.type, TrackEffectType.eq);
+      // The low cut's range is the kind's: copied as it is.
+      expect(e.params[0], closeTo(0.21, 1e-12));
+      // The mid frequency is read on Ed's 100..8000 Hz scale and set to the
+      // same frequency on the kind's 20..20000 Hz scale.
+      expect(hz(e, 5), closeTo(100 * math.pow(80, 0.17574), 1e-6));
+      // Gains share the kind's -18..18 dB scale.
+      expect(e.type.params[7].valueAt(e.params[7]), closeTo(9, 1e-9));
+      expect(e.type.params[14].valueAt(e.params[14]), closeTo(0, 1e-9));
+    });
+
+    test('the Drum Rack sweeps one mid from 40 Hz and fixes the rest', () {
+      final e = fxModuleEntry(
+        _module('Four-band EQ'),
+        preset('Drum Rack', const {
+          'EQ': 1,
+          'EQ Low': 0.5,
+          'EQ Mid': 0.25,
+          'EQ Mid Freq': 0.5,
+          'EQ High': 0.5,
+        }),
+      );
+      expect(hz(e, 5), closeTo(40 * math.sqrt(200), 1e-6));
+      expect(e.type.params[4].valueAt(e.params[4]), closeTo(-9, 1e-9));
+      expect(hz(e, 2), closeTo(100, 1e-6));
+      expect(hz(e, 11), closeTo(5000, 1e-6));
+      expect(e.params[0], 0.0); // low cut off
+      expect(e.params[13], 1.0); // high cut off
+
+      final build = fxEntryBuild(e)!;
+      expect(build.exposed, [1, 4, 5, 10]);
+      expect(build.labels[4], 'mid_gain');
+    });
+
+    test('the Rhythmic Rack is the parametric EQ without its Q', () {
+      const keys = {
+        'EQ': 1.0,
+        'EQ Low Cut': 0.0,
+        'EQ High Cut': 1.0,
+        'EQ Mid Freq': 0.5,
+        'EQ Mid Gain': 0.5,
+      };
+      final rhythmic = fxModuleEntry(
+        _module('Parametric EQ'),
+        preset('Rhythmic Rack', keys),
+      );
+      expect(fxEntryBuild(rhythmic)!.exposed, [0, 4, 5, 13]);
+      expect(
+        rhythmic.type.params[6].valueAt(rhythmic.params[6]),
+        closeTo(0.7616, 1e-6),
+      );
+      expect(hz(rhythmic, 5), closeTo(120 * math.sqrt(16000 / 120), 1e-6));
+
+      final dub = fxModuleEntry(
+        _module('Parametric EQ'),
+        preset('Dub Rack', {...keys, 'Para EQ': 1, 'EQ Mid Q': 0.2}),
+      );
+      expect(fxEntryBuild(dub)!.exposed, [0, 4, 5, 6, 13]);
+      expect(dub.enabled, isTrue);
+    });
+
+    test('Studio, Vocal and Vocal Tuner show four gains', () {
+      for (final family in ['Studio Rack', 'Vocal Rack', 'Vocal Tuner Rack']) {
+        final e = fxModuleEntry(
+          _module('Four-band EQ'),
+          preset(family, const {
+            'EQ': 1,
+            'EQ Low': 0.5,
+            'EQ Mid': 0.5,
+            'EQ High': 0.5,
+            'EQ Air': 0.7,
+          }),
+        );
+        expect(fxEntryBuild(e)!.exposed, [1, 4, 10, 14], reason: family);
+        expect(e.type.params[14].valueAt(e.params[14]), closeTo(7.2, 1e-6));
+        expect(hz(e, 5), closeTo(1000, 1e-6));
+      }
     });
   });
 }

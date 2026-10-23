@@ -106,6 +106,7 @@ typedef enum le_midi_dispatch_kind {
                                 * LE_FX_PARAMS / LE_VIZ_POINTS */
 #include "miniaudio.h"         /* ma_device, ma_context, ma_device_id */
 #include "perf_log_ring.h"     /* le_perf_log_ring (performance event log) */
+#include "rt_alloc.h"          /* le_rt_arena (per-kind FX state) */
 
 #ifdef __cplusplus
 extern "C" {
@@ -365,6 +366,30 @@ typedef struct le_octaver_state {
   float xfade;      /* equal-power gain-dip envelope during a mode switch (1 = steady) */
 } le_octaver_state;
 
+/* Per-kind DSP state for the kinds that keep it on the heap (#887 part 4).
+ *
+ * Each slot owns one fork-shielded arena (le_rt_arena, rt_alloc.h), made on
+ * the control thread the first time the slot is prepared for such a kind and
+ * sized for one block of every kind, and a list of the blocks it has
+ * allocated: one per kind the slot has held. A block is never freed while
+ * the owner lives, so a retype never frees memory the audio thread may still
+ * read; the arena goes at owner reset or destroy, with the delay rings.
+ *
+ * `head` is the control thread's list (pushed with release); `cur` is the
+ * audio thread's: the block of the type it last ran. When the type it runs
+ * differs from cur's, or le_fx_entry_reset cleared cur, it walks the list,
+ * clears the block and runs the kind's update with settle set, so no kind
+ * ever reads another's state or a stale one of its own. */
+struct le_fx_kind_block;
+typedef struct le_fx_kind_slot {
+  le_rt_arena arena;                        /* control thread */
+  struct le_fx_kind_block *_Atomic head;    /* control pushes, audio walks */
+  struct le_fx_kind_block* cur;             /* audio thread */
+} le_fx_kind_slot;
+typedef struct le_fx_kinds {
+  le_fx_kind_slot slot[LE_FX_MAX];
+} le_fx_kinds;
+
 /* Per-slot DSP state is carried per channel ([slot][chan], chan 0 = left,
  * 1 = right) so the whole chain runs in full stereo: a slot colours its left and
  * right independently. A mono source seeds l == r, so a symmetric chain produces
@@ -471,6 +496,11 @@ typedef struct le_fx_state {
    * `chan` and sets the flag explicitly. */
   int32_t chan_any;
   le_fx_chan chan[LE_FX_MAX];
+  /* Per-kind state (#887 part 4): NULL until the control thread prepares
+   * the first slot of a kind that keeps state on the heap (le_fx_prepare),
+   * then that table for good. Published with release; see le_fx_kinds.
+   * Last in the struct so nothing before it moves. */
+  struct le_fx_kinds *_Atomic kinds;
 } le_fx_state;
 
 /* The unity-centre pan/balance law (accepted design, slice 3; documented on

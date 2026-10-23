@@ -413,6 +413,11 @@ void main() {
         TrackEffectType.octaver: [0.25, 0.5, 0.5, 0.0],
         TrackEffectType.echo: [0.45, 0.5, 0.35, 0.0],
         TrackEffectType.reverb: [0.5, 0.5, 0.35, 0.0],
+        // Ed's 4-band EQ, the mids moved onto the kind's 20..20000 Hz range.
+        TrackEffectType.eq: [
+          0.21, 0.5, 0.384476, 0.0, 0.5, 0.3445, 0.174, 0.5, 0.652, //
+          0.15557, 0.5, 0.5278, 0.0, 1.0, 0.5,
+        ],
       };
       for (final type in TrackEffectType.values) {
         expect(type.defaultParams, cells(expected[type]!), reason: type.name);
@@ -437,10 +442,17 @@ void main() {
       expect(mode.steps, 2);
     });
 
-    test('no built-in carries the taper-unverified flag', () {
+    test('only the chosen EQ mid ranges carry the taper-unverified flag', () {
+      // The seven built-ins are segno's own; the EQ's ranges are the Looper
+      // X's except the two mid frequencies, which span every rack's range.
       for (final type in TrackEffectType.values) {
         for (final p in type.params) {
-          expect(p.taperUnverified, isFalse, reason: '${type.name}.${p.key}');
+          expect(
+            p.taperUnverified,
+            type == TrackEffectType.eq &&
+                (p.key == 'lo_mid_freq' || p.key == 'hi_mid_freq'),
+            reason: '${type.name}.${p.key}',
+          );
         }
       }
     });
@@ -448,7 +460,19 @@ void main() {
 
   group('FxParamUnit and FxParamCurve', () {
     test('codes match the native enums', () {
-      expect([for (final u in FxParamUnit.values) u.code], [0, 1, 2, 3, 4, 5]);
+      expect(
+        [for (final u in FxParamUnit.values) u.code],
+        [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+        ],
+      );
       expect(FxParamUnit.choice.code, 5);
       expect(FxParamCurve.linear.code, 0);
       expect(FxParamCurve.exponential.code, 1);

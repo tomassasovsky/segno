@@ -21590,9 +21590,9 @@ static void test_fx_param_descriptors_match_kernels(void) {
   const int32_t sr = 48000;
 
   /* Counts: the parameters each kernel reads; none for NONE and PLUGIN. */
-  const int32_t counts[] = {0, 2, 2, 3, 2, 4, 3, 3, 0};
-  for (int32_t t = 0; t < 9; ++t) CHECK(le_fx_param_count(t) == counts[t]);
-  CHECK(le_fx_param_count(9) == LE_ERR_INVALID);
+  const int32_t counts[] = {0, 2, 2, 3, 2, 4, 3, 3, 0, 15};
+  for (int32_t t = 0; t < 10; ++t) CHECK(le_fx_param_count(t) == counts[t]);
+  CHECK(le_fx_param_count(10) == LE_ERR_INVALID);
   CHECK(le_fx_param_count(-1) == LE_ERR_INVALID);
   le_fx_param_desc scratch;
   CHECK(le_fx_param_info(LE_FX_DELAY, 3, &scratch) == LE_ERR_INVALID);
@@ -38529,6 +38529,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_audition.h"
 #include "test_engine_render.h"
 #include "test_engine_rack_output.h"
+#include "test_engine_eq.h"
 #include "test_engine_bounce.h"
 #include "test_engine_clock.h"
 #include "test_engine_rt_memory.h"
@@ -38607,6 +38608,7 @@ int main(void) {
   run_audition_tests();
   run_render_tests();
   run_rack_output_tests();
+  run_eq_tests();
   run_bounce_tests();
   if (getenv("SEGNO_PEEL_TESTS_ONLY")) return g_failures ? 1 : 0;
   run_length_tests();
