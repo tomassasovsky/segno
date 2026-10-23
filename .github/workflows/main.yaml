@@ -324,6 +324,7 @@ jobs:
           name: bench-fx-cpu-arm64
           path: |
             packages/segno_engine/build/bench/bench_fx_cpu
+            packages/segno_engine/build/bench/bench_pitch_algos
             bench-fx-kinds-arm64.md
             bench-pitch-algos-arm64.md
           if-no-files-found: error

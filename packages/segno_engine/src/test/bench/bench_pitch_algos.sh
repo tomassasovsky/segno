@@ -8,7 +8,7 @@
 # The source list and the per-OS link flags mirror run_native_tests.sh; keep
 # them in sync with it and with src/CMakeLists.txt.
 #
-# Usage: ./bench_pitch_algos.sh [--smoke]
+# Usage: ./bench_pitch_algos.sh [--smoke] [--paced]
 # The binary lands in packages/segno_engine/build/bench/, which is not
 # tracked.
 set -euo pipefail
