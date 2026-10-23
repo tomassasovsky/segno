@@ -220,7 +220,14 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Vinyl': {'Lo-Fi Rack': _vinyl},
   'Degrade': {'Lo-Fi Rack': _degrade},
   'Low-pass filter': {'Rhythmic Rack': _rhythmicLpf, 'Lo-Fi Rack': _lpf},
+  'Spring reverb': {'Guitar Rack': _spring},
 };
+
+// Guitar Rack: the whole spring.
+const FxModuleBuild _spring = FxModuleBuild(
+  type: TrackEffectType.spring,
+  params: ['Spring Time', 'Spring Mix'],
+);
 
 // Lo-Fi Rack: the whole vinyl.
 const FxModuleBuild _vinyl = FxModuleBuild(

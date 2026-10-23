@@ -2808,6 +2808,140 @@ static void fx_lpf_kprocess(void* ks, float* l, float* r) {
   *r = io[1];
 }
 
+/* ---- Spring (LE_FX_SPRING, #887 part 8) ----
+ *
+ * Fit to the Phase 0 captures of the Guitar Rack's Spring (#891, s3/6 at
+ * Time 2.00 s and s3/7 at Time 7.9 s, both at Mix 28.9 %):
+ * - the tank is one recirculating spring: its echo returns every 38.0 ms
+ *   (the envelope's autocorrelation peak in both), dispersed on each trip by
+ *   a chain of twelve first-order all-passes;
+ * - the decay: each trip loses 2.14 / Time + 0.17 dB, and above 1.2 kHz
+ *   another 0.32 dB (a first-order shelf in the loop). Measured on the
+ *   impulse responses in four bands from 200 Hz to 4 kHz, that decays in
+ *   1.95, 1.85, 1.74, 1.63 s against the capture's 1.96, 1.86, 1.76, 1.54
+ *   at Time 2.00 s, and 6.2, 5.3, 4.4, 3.8 s against 6.5, 5.3, 4.5, 3.4 at
+ *   7.9 s (so Time is the decay at the bottom of the band at short settings
+ *   and longer than it at long ones);
+ * - the wet sound is band-limited, 200 Hz to a steep edge near 4 kHz
+ *   (-46 dB at 4.7 kHz, -96 dB at 7.2 kHz): nine sections fitted to the
+ *   impulse response's spectrum within 1.7 dB rms from 100 Hz to 7.3 kHz;
+ * - the mix law is the chorus's (dry 1 - 0.29 mix; the capture's dry gain
+ *   was 0.9165 at 28.9 %), and the wet level follows
+ *   0.85 mix (Time / 2)^0.45, fitted to the wet energy against the dry at
+ *   both Times.
+ * A known difference: successive echoes repeat more closely (envelope
+ * autocorrelation 0.87 at 38 ms against the capture's 0.4). Both channels
+ * take the tank's mono output (the capture's correlated at 0.996). */
+static const le_fx_param_desc LE_FX_SPRING_PARAMS[] = {
+    {"time", LE_FX_UNIT_SECONDS, 0, 1.0f, 10.0f, LE_FX_CURVE_EXPONENTIAL,
+     0.30103f, 0},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+};
+#define LE_SPR_PARAMS_N 2
+#define LE_SPR_RING 8192u /* holds the 38 ms trip at 192 kHz */
+#define LE_SPR_TRIP_S 0.038
+#define LE_SPR_STAGES 12
+#define LE_SPR_DISPERSION_HZ 1500.0
+#define LE_SPR_LOSS_HZ 1200.0
+#define LE_SPR_LOSS_SHELF 0.963829f /* -0.32 dB per trip above it */
+#define LE_SPR_DRY_DROP 0.29f
+#define LE_SPR_WET 0.85
+#define LE_SPR_WET_EXP 0.45
+#define LE_SPR_LOSS_TIME_DB 2.14 /* dB a trip, over Time */
+#define LE_SPR_LOSS_DB 0.17
+#define LE_SPR_SECTIONS 9
+
+static const struct {
+  int kind;
+  double hz, db, q;
+} LE_SPR_SHAPE[LE_SPR_SECTIONS] = {
+    {LE_EQ_LOWCUT, 103.20, 0.0, 0.1057},  {LE_EQ_LOWCUT, 130.52, 0.0, 0.1164},
+    {LE_EQ_HIGHCUT, 1154.0, 0.0, 1.1618}, {LE_EQ_HIGHCUT, 4120.4, 0.0, 7.0998},
+    {LE_EQ_HIGHCUT, 3248.9, 0.0, 4.3359}, {LE_EQ_HIGHCUT, 882.81, 0.0, 1.2811},
+    {LE_EQ_LOMID, 405.11, 18.600, 0.1000}, {LE_EQ_LOMID, 2014.2, 4.521, 3.8881},
+    {LE_EQ_LOMID, 948.47, -6.570, 2.5891},
+};
+
+typedef struct le_fx_spring {
+  le_fx_dyn_head h;
+  float last[LE_SPR_PARAMS_N];
+  le_fx_glide gain; /* the loop's gain per trip */
+  le_fx_glide dry;
+  le_fx_glide wet;
+  float ap;         /* the all-passes' coefficient */
+  float loss_g1;
+  uint32_t trip;    /* the delay line's samples */
+  float shape[LE_SPR_SECTIONS][5];
+  float z[LE_SPR_SECTIONS][2];
+  float ap_z[LE_SPR_STAGES];
+  float loss_s;
+  uint32_t w;
+  float ring[LE_SPR_RING];
+} le_fx_spring;
+
+static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
+  le_fx_spring* q = (le_fx_spring*)ks;
+  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_SPR_PARAMS_N, sr, settle);
+  if (!f) return;
+  const int rate = sr > 0 ? sr : 48000;
+  if (f & LE_FX_DYN_NEW_RATE) {
+    for (int s = 0; s < LE_SPR_SECTIONS; ++s) {
+      double c[5];
+      le_eq_design(LE_SPR_SHAPE[s].kind, LE_SPR_SHAPE[s].hz, LE_SPR_SHAPE[s].db,
+                   LE_SPR_SHAPE[s].q, rate, c);
+      for (int i = 0; i < 5; ++i) q->shape[s][i] = (float)c[i];
+    }
+    const double t = le_prewarp(LE_SPR_DISPERSION_HZ, rate);
+    const double a = (1.0 - t) / (1.0 + t);
+    q->ap = (float)a;
+    q->loss_g1 = le_onepole_g1(LE_SPR_LOSS_HZ, rate);
+    /* The trip less the all-passes' delay at low frequencies. */
+    double trip = LE_SPR_TRIP_S * rate - LE_SPR_STAGES * (1.0 - a) / (1.0 + a);
+    if (trip > (double)(LE_SPR_RING - 1u)) trip = (double)(LE_SPR_RING - 1u);
+    if (trip < 1.0) trip = 1.0;
+    q->trip = (uint32_t)(trip + 0.5);
+  }
+  const le_fx_param_desc* d = LE_FX_SPRING_PARAMS;
+  const double time = le_fx_desc_value(&d[0], p[0]);
+  const float m = p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1];
+  const float k = settle ? 1.0f : q->h.k;
+  int moving = le_fx_glide_step(
+      &q->gain,
+      (float)pow(10.0, -(LE_SPR_LOSS_TIME_DB / time + LE_SPR_LOSS_DB) / 20.0),
+      k);
+  moving |= le_fx_glide_step(&q->dry, 1.0f - LE_SPR_DRY_DROP * m, k);
+  moving |= le_fx_glide_step(
+      &q->wet, (float)(LE_SPR_WET * pow(time / 2.0, LE_SPR_WET_EXP)) * m, k);
+  q->h.moving = moving;
+}
+
+static void fx_spring_kprocess(void* ks, float* l, float* r) {
+  le_fx_spring* q = (le_fx_spring*)ks;
+  const float g = le_fx_glide_next(&q->gain);
+  const float dry = le_fx_glide_next(&q->dry);
+  const float wet = le_fx_glide_next(&q->wet);
+  const float x0 = fx_sanitize(*l);
+  const float x1 = fx_sanitize(*r);
+  float s = 0.5f * (x0 + x1);
+  for (int i = 0; i < LE_SPR_SECTIONS; ++i) {
+    s = le_biquad_tick(q->shape[i], q->z[i], s);
+  }
+  const uint32_t at = q->w & (LE_SPR_RING - 1u);
+  /* The delayed trip: written trip samples ago. */
+  float u = s + g * q->ring[(q->w - q->trip) & (LE_SPR_RING - 1u)];
+  for (int i = 0; i < LE_SPR_STAGES; ++i) {
+    const float y = q->ap * u + q->ap_z[i];
+    q->ap_z[i] = u - q->ap * y;
+    u = y;
+  }
+  u += (LE_SPR_LOSS_SHELF - 1.0f) * (u - le_onepole_lp(&q->loss_s, q->loss_g1, u));
+  u = fx_sanitize(u); /* a decayed tail flushes to 0 */
+  q->ring[at] = u;
+  q->w++;
+  *l = dry * x0 + wet * u;
+  *r = dry * x1 + wet * u;
+}
+
 /* A type's rows are the parameters an entry holds, so none may outgrow it. */
 #define LE_FX_ROWS_FIT(t)                                  \
   _Static_assert(sizeof(t) / sizeof(t[0]) <= LE_FX_PARAMS, \
@@ -2831,6 +2965,7 @@ LE_FX_ROWS_FIT(LE_FX_DISTORTION_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_VINYL_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_DEGRADE_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_LPF_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_SPRING_PARAMS);
 
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
  * published for this chain entry (NULL / not-ready => dry passthrough; the slot
@@ -2935,6 +3070,10 @@ static const le_fx_vtable LE_FX[] = {
                        fx_degrade_update, fx_degrade_kprocess},
     [LE_FX_LPF] = {NULL, NULL, NULL, LE_FX_LPF_PARAMS, 0, sizeof(le_fx_lpf),
                    fx_lpf_update, fx_lpf_kprocess},
+    /* The spring drains its tail on bypass, as the delay and reverb do. */
+    [LE_FX_SPRING] = {NULL, NULL, NULL, LE_FX_SPRING_PARAMS, LE_FX_F_DRAINS,
+                      sizeof(le_fx_spring), fx_spring_update,
+                      fx_spring_kprocess},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -2956,7 +3095,8 @@ _Static_assert(LE_COMP_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_COMPRESSOR_PARAMS) &&
                    LE_DIST_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_DISTORTION_PARAMS) &&
                    LE_VIN_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_VINYL_PARAMS) &&
                    LE_DEG_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_DEGRADE_PARAMS) &&
-                   LE_LPF_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_LPF_PARAMS),
+                   LE_LPF_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_LPF_PARAMS) &&
+                   LE_SPR_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_SPRING_PARAMS),
                "each Looper X kind's `last` holds every setting");
 _Static_assert(LE_FX_WIDTHS == sizeof(LE_FX) / sizeof(LE_FX[0]),
                "LE_FX_WIDTHS must be one past the last le_fx_type code");
@@ -2980,6 +3120,7 @@ const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
     [LE_FX_VINYL] = LE_FX_ROW_COUNT(LE_FX_VINYL_PARAMS),
     [LE_FX_DEGRADE] = LE_FX_ROW_COUNT(LE_FX_DEGRADE_PARAMS),
     [LE_FX_LPF] = LE_FX_ROW_COUNT(LE_FX_LPF_PARAMS),
+    [LE_FX_SPRING] = LE_FX_ROW_COUNT(LE_FX_SPRING_PARAMS),
 };
 
 /* ---- per-kind state (le_fx_kinds, engine_private.h) ---- */
