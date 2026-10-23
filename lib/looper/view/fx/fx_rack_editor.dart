@@ -282,7 +282,8 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
     final params = built?.type.params ?? const <FxParamInfo>[];
     // A rack variant shows the controls its rack shows, under its names; any
     // other entry shows every parameter of its type.
-    final shown = built == null ? const <int>[] : fxEntryShownParams(built);
+    final controls = built == null ? null : fxEntryControls(built);
+    final shown = controls?.params ?? const <int>[];
     return SizedBox(
       width: kFxPedalWidth,
       height: 650,
@@ -346,15 +347,16 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
                         // value.
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          for (final i in shown) ...[
-                            if (i != shown.first) const SizedBox(height: 14),
+                          for (var j = 0; j < shown.length; j++) ...[
+                            if (j > 0) const SizedBox(height: 14),
                             FxBuiltInParamControl(
-                              key: Key('fx_pedal_param_$i'),
+                              key: Key('fx_pedal_param_${shown[j]}'),
                               effect: built!,
-                              index: i,
-                              labelKey: fxEntryParamKey(built, i),
+                              index: shown[j],
+                              labelKey: controls!.keys[j],
                               width: 250,
-                              onChanged: (value) => widget.onParam(i, value),
+                              onChanged: (value) =>
+                                  widget.onParam(shown[j], value),
                             ),
                           ],
                         ],

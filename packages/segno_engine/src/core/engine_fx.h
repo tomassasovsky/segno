@@ -129,9 +129,10 @@ static inline int32_t le_fx_all_tracks_hop_seed(int32_t bus) {
 #define LE_PSOLA_THMAX 300   /* grain half-width cap: 2*THMAX < LE_PV_N (fits OLA) */
 
 /* The cadence of a heap-state kind's update hook (le_fx_kinds), in engine
- * frames: it runs on the frames whose clock is a multiple of this, live and
- * offline alike, so an offline render recomputes on the same frames as the
- * chain it reproduces. A power of two. */
+ * frames: it runs once per this many frames of the engine clock, at a phase
+ * set by the owner's hop-stagger seed and the slot, live and offline alike,
+ * so an offline render recomputes on the same frames as the chain it
+ * reproduces. A power of two, divisible by four. */
 #define LE_FX_UPDATE_FRAMES 32
 
 /* Enable-crossfade length: a slot's dry/wet ramp on an effective-enabled

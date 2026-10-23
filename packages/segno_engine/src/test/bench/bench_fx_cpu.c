@@ -183,7 +183,13 @@ int main(int argc, char** argv) {
     } else if (!strcmp(argv[i], "--paced")) {
       g_paced = 1;
     } else if (!strcmp(argv[i], "--kind") && i + 1 < argc) {
-      g_eq = !strcmp(argv[++i], "eq");
+      const char* kind = argv[++i];
+      if (!strcmp(kind, "eq")) {
+        g_eq = 1;
+      } else if (strcmp(kind, "octaver") != 0) {
+        fprintf(stderr, "unknown --kind %s (octaver or eq)\n", kind);
+        return 2;
+      }
     } else if (!strcmp(argv[i], "--rate") && i + 1 < argc) {
       o.rate = atoi(argv[++i]);
     } else if (!strcmp(argv[i], "--period") && i + 1 < argc) {
