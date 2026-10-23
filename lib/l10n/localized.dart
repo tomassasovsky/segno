@@ -56,6 +56,7 @@ extension EngineLocalizations on AppLocalizations {
     'size' => paramSize,
     'damping' => paramDamping,
     'mode' => paramMode,
+    'formants' => paramFormants,
     'low_cut' => paramLowCut,
     'low_gain' => paramLowGain,
     'low_freq' => paramLowFreq,
@@ -151,11 +152,14 @@ extension EngineLocalizations on AppLocalizations {
   }
 
   /// The name of position [position] of choice parameter [p]: the octaver's
-  /// mode or the EQ's layout. Any other reads as its 1-based number.
+  /// mode or formants, or the EQ's layout. Any other reads as its 1-based
+  /// number.
   String _choiceName(FxParamInfo p, int position) =>
       switch ((p.key, position)) {
         ('mode', 0) => octaverModePhaseVocoder,
         ('mode', 1) => octaverModePsola,
+        ('formants', 0) => octaverFormantsHeld,
+        ('formants', 1) => octaverFormantsMoved,
         ('layout', 0) => eqLayoutShelves,
         ('layout', 1) => eqLayoutBellsCuts,
         ('layout', 2) => eqLayoutBells,

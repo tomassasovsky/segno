@@ -540,6 +540,16 @@ enum TrackEffectType {
         atMax: 1,
         defaultValue: 0,
       ),
+      // Position 0 = formants held where they are, 1 = moved with the
+      // pitch. The phase vocoder only: PSOLA's grains hold them.
+      FxParamInfo(
+        key: 'formants',
+        unit: FxParamUnit.choice,
+        steps: 2,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
     ],
     TrackEffectType.echo => const [
       FxParamInfo(
