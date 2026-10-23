@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:segno/update/appliance/appliance_env.dart';
 import 'package:spawn_process/spawn_process.dart';
+import 'package:update_repository/update_repository.dart';
 
 /// The production [ApplianceEnv]: real files, HTTP, and the privileged helper.
 ///
@@ -60,7 +61,8 @@ class SystemApplianceEnv implements ApplianceEnv {
 
   /// Runs the privileged helper with [args], republishing its
   /// `PROGRESS <0-100>` lines as `[0, 1]` and failing with the collected
-  /// stderr on a non-zero exit.
+  /// stderr on a non-zero exit: a [BootPartitionReadOnlyException] for
+  /// [kBootReadOnlyExitCode], a [ProcessException] otherwise.
   ///
   /// Cancelling the subscription sends the helper SIGTERM and completes once
   /// it has exited, so whatever the helper leaves behind on a kill is in
@@ -99,7 +101,11 @@ class SystemApplianceEnv implements ApplianceEnv {
           final reason = stderrLines.isEmpty
               ? 'update helper failed'
               : stderrLines.join('\n');
-          controller.addError(ProcessException(helperPath, args, reason, code));
+          controller.addError(
+            code == kBootReadOnlyExitCode
+                ? BootPartitionReadOnlyException(reason)
+                : ProcessException(helperPath, args, reason, code),
+          );
         } else {
           controller.add(1);
         }

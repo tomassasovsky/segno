@@ -214,6 +214,7 @@ SEGNO_STAGED_BOOT_ID_FILE="$work/state/ota-staged-boot-id" \
 SEGNO_BOOT_ID_FILE="$work/boot_id" \
 SEGNO_PENDING_FLAG="$work/state/update-pending" \
 SEGNO_UPDATE_ATTEMPT_FILE="$work/state/update-attempt" \
+SEGNO_MOUNTS_FILE="/nonexistent" \
 PATH="$work/bin:$PATH" \
     "$SHELL_UNDER_TEST" "$CTL" install >/dev/null 2>"$work/stderr"; rc=$?
 check "stages" 0 "$rc"

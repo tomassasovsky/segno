@@ -332,6 +332,25 @@ void main() {
       verifyNever(update.check);
     });
 
+    testWidgets('a read-only boot partition says so and offers no retry', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        _running.copyWith(
+          phase: UpdatePhase.error,
+          failure: UpdateFailure.bootReadOnly,
+          available: _offer,
+        ),
+      );
+      final l10n = l10nOf(tester);
+
+      expect(find.text(l10n.updatesPageBootReadOnly), findsOneWidget);
+      expect(find.text(l10n.updatesPageDownloadFailed), findsNothing);
+      expect(find.byKey(const Key('updates_retry')), findsNothing);
+      expect(focused(tester, 'updates_check'), isTrue);
+    });
+
     testWidgets('a failed check says so, and its retry is the check', (
       tester,
     ) async {

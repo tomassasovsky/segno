@@ -86,6 +86,7 @@ ctl_env() {
         SEGNO_BOOT_ID_FILE="$work/boot_id" \
         SEGNO_PENDING_FLAG="$work/state/update-pending" \
         SEGNO_UPDATE_ATTEMPT_FILE="$work/state/segno/update-attempt" \
+        SEGNO_MOUNTS_FILE="/nonexistent" \
         TMPDIR="$work/tmp" \
         PATH="$work/bin:$PATH"
 }
