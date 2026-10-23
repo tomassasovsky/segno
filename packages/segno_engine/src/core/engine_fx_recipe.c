@@ -281,6 +281,9 @@ void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* p, uint64_t frame) 
      * publish that only moves settings leaves every tail sounding. */
     _Static_assert(LE_FX_MAX <= 64, "renewed is one bit per slot");
     uint64_t renewed = 0;
+    /* The count the chain was running: a renewed slot inside it replaces an
+     * entry that was sounding (le_fx_entry_renew). */
+    const int32_t was_count = load_i32(t.count);
     for (int s = 0; s < LE_FX_MAX; ++s) {
       const int active = s < r->count;
       const int ty = active ? r->type[s] : LE_FX_NONE;
@@ -307,7 +310,13 @@ void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* p, uint64_t frame) 
         }
       }
       store_i32(&t.type[s], ty);
-      if (!active) continue;
+      if (!active) {
+        /* A slot leaving the chain drops its enabled bit, so the per-buffer
+         * sweep parks its ramp at bypass and a later entry there starts
+         * from silence (#1452). */
+        store_i32(&t.slot_enabled[s], 0);
+        continue;
+      }
       if (renew) renewed |= 1ull << s;
       store_i32(&t.slot_enabled[s], r->slot_enabled[s]);
       store_i32(&t.in[s], r->input_mode[s]); store_i32(&t.out[s], r->output_mode[s]);
@@ -320,7 +329,7 @@ void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* p, uint64_t frame) 
       const int instances = p->owner == LE_FX_OWNER_ALL_TRACKS ? (e->out_channels + 1) / 2 : 1;
       for (int bus = 0; bus < instances; ++bus) {
         le_fx_state* fx = p->owner == LE_FX_OWNER_ALL_TRACKS ? &e->all_tracks_fx[bus] : t.fx;
-        if (renew) le_fx_entry_renew(fx, s, ty);
+        if (renew) le_fx_entry_renew(fx, s, ty, s < was_count);
         /* A new structure: a rack edge landing here settles at its rack's
          * state on first use instead of ramping from whatever stood here. */
         le_fx_rack_reset(fx, s);

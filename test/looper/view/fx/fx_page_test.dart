@@ -202,6 +202,20 @@ const _catalogue = FxCatalogue(
           type: 6,
           params: {'Pumper': 1, 'Pumper Depth': 0.8},
         ),
+        // Its pumper off and its delay on: the opposite mix to Acoustic
+        // Rhythm 1's, so a rule that kept only one polarity fails one of them.
+        FxPreset(
+          family: 'Rhythmic Rack',
+          name: 'Pump and Echo',
+          id: 'rh-2',
+          type: 6,
+          params: {
+            'Pumper': 0,
+            'Pumper Depth': 0.8,
+            'Delay': 1,
+            'Del Time': 0.3,
+          },
+        ),
       ],
     ),
   ],
@@ -1112,25 +1126,63 @@ void main() {
       },
     );
 
-    testWidgets(
-      'every added entry arrives bypassed, whatever the preset says',
-      (tester) async {
-        await pump(tester, destination: const FxDestination.recordedTrack(0));
-        await tapKey(tester, 'fx_add_effects');
-        await tapKey(tester, 'fx_library_family_edsguitar');
-        await tapKey(tester, 'fx_preset_ed53e7b8');
+    testWidgets("an added factory rack keeps the preset's pedal states", (
+      tester,
+    ) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'fx_library_family_rhythmic');
+      await tapKey(tester, 'fx_preset_rh-2');
 
-        final appended = (
-          entries: lastTrackWrite()
-              .skip(_rig.tracks.first.effects.length)
-              .toList(),
-        );
+      final appended = (
+        entries: lastTrackWrite()
+            .skip(_rig.tracks.first.effects.length)
+            .toList(),
+      );
 
-        // The preset engages its compressor and reverb. Adding a rack mid-set
-        // must not change the sound until the player says so.
-        expect(appended.entries.every((e) => !e.enabled), isTrue);
-      },
-    );
+      // Pump and Echo leaves its pumper off and engages its delay, and the
+      // rack arrives so, as the Looper X loads it.
+      expect(
+        {for (final e in appended.entries) e.module: e.enabled},
+        {'Pumper': false, 'Delay': true},
+      );
+    });
+
+    testWidgets('a factory rack with some pedals off keeps each pedal as the '
+        'preset sets it', (tester) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'fx_library_family_edsguitar');
+      await tapKey(tester, 'fx_preset_ed53e7b8');
+
+      final appended = (
+        entries: lastTrackWrite()
+            .skip(_rig.tracks.first.effects.length)
+            .toList(),
+      );
+
+      // Acoustic Rhythm 1 engages its compressor and reverb and leaves its
+      // delay off.
+      expect(
+        {for (final e in appended.entries) e.module: e.enabled},
+        {'Compressor': true, 'Reverb': true, 'Delay': false},
+      );
+    });
+
+    testWidgets('a single effect arrives on', (tester) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'fx_library_single');
+      await tapKey(tester, 'fx_single_reverb');
+
+      final appended = (
+        entries: lastTrackWrite()
+            .skip(_rig.tracks.first.effects.length)
+            .toList(),
+      );
+
+      expect(appended.entries.single.enabled, isTrue);
+    });
 
     testWidgets("an added entry takes the destination's default placement", (
       tester,
@@ -1835,7 +1887,7 @@ void main() {
           name: 'verse',
           entries: [
             _fx('old1', TrackEffectType.echo),
-            _fx('old2', TrackEffectType.reverb),
+            _fx('old2', TrackEffectType.reverb, enabled: false),
           ],
           art: 'guitar',
         );
@@ -1852,14 +1904,14 @@ void main() {
               .toList(),
         );
 
-        // Its own rack, so it is its own thing on the chain; bypassed, like
-        // every other addition; and the destination's placement, because
+        // Its own rack, so it is its own thing on the chain; each pedal on
+        // or off as it was saved; and the destination's placement, because
         // placement belongs to where a sound is used, not to the sound.
         final racks = appended.entries.map((e) => e.rack).toSet();
         expect(racks, hasLength(1));
         expect(racks.single!.name, 'verse');
         expect(racks.single!.id, isNot('R1'));
-        expect(appended.entries.every((e) => !e.enabled), isTrue);
+        expect(appended.entries.map((e) => e.enabled), [true, false]);
         expect(
           appended.entries.every((e) => e.placement == FxPlacement.post),
           isTrue,
@@ -2200,6 +2252,12 @@ void main() {
           (fx) => fx is BuiltInEffect && fx.presetId == 'ed53e7b8',
         ),
         isTrue,
+      );
+      // The new pedals take the preset's states, not the old rack's (all
+      // off): the compressor and reverb on, the delay off.
+      expect(
+        {for (final fx in rack.entries) fx.module: fx.enabled},
+        {'Compressor': true, 'Reverb': true, 'Delay': false},
       );
       // The old pedals' assignments are removed, as the dialog said.
       verify(

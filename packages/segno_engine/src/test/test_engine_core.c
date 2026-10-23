@@ -21044,11 +21044,8 @@ static void tuner_harmonic(float* buf, int n, float f0, int sr) {
   }
 }
 
-/* The tuner's band-parameterised detector. Two separate claims:
- *
- * 1. `le_psola_detect` is unchanged. It is now a wrapper over the band form at
- *    (60, 1000), so this pins that the octaver's band did not move.
- * 2. The tuner reaches BELOW the octaver's floor. Bass low B is 30.87 Hz, and
+/* The tuner's band-parameterised detector: it reaches BELOW the octaver's
+ * floor. Bass low B is 30.87 Hz, and
  *    the whole reason the band became a parameter is that it is derived from
  *    `sr` — decimating rescales both ends and never lowers the floor by
  *    itself, which the plan originally got backwards.
@@ -21060,19 +21057,6 @@ static void test_tuner_detect_band(void) {
   enum { W = LE_TUNER_WIN };
   const int sr_d = OCT_SR / LE_TUNER_DECIM;
   float* b = (float*)malloc(sizeof(float) * (size_t)W);
-
-  /* The wrapper is exactly the band form at the octaver's own band. */
-  {
-    tuner_harmonic(b, W, 200.0f, sr_d);
-    float pa = 0.0f;
-    float va = 0.0f;
-    float pb = 0.0f;
-    float vb = 0.0f;
-    le_psola_detect(b, W, sr_d, &pa, &va);
-    le_psola_detect_band(b, W, sr_d, 60, 1000, &pb, &vb);
-    CHECK(pa == pb);
-    CHECK(va == vb);
-  }
 
   /* Reaching BELOW the octaver's floor is this function's job — bass low B is
    * 30.87 Hz. Accuracy here is the COARSE accuracy: a decimated sample is 8
@@ -21288,7 +21272,7 @@ static void test_tuner_raw_ring_wrap(void) {
   le_engine_destroy(e);
 }
 
-/* PSOLA pitch detector (YIN): the engine-internal le_psola_detect reports the true
+/* PSOLA pitch detector (YIN, le_psola_detect_band at 60..1000 Hz) reports the true
  * period within tolerance across the vocal band with NO octave error (the half/
  * double-period trap that plain autocorrelation falls into), reads noise as
  * unvoiced, and — crucially for the soft voiced<->unvoiced gate — yields a SMOOTH,
@@ -21307,7 +21291,7 @@ static void test_octaver_psola_pitch_detect(void) {
     oct_harmonic(b, W, f0s[k]);
     float period = 0.0f;
     float voiced = 0.0f;
-    le_psola_detect(b, W, OCT_SR, &period, &voiced);
+    le_psola_detect_band(b, W, OCT_SR, 60, 1000, &period, &voiced);
     const float truep = (float)OCT_SR / f0s[k];
     printf("  f0=%.0f -> period=%.1f (true %.1f) voiced=%.2f\n", f0s[k], period,
            truep, voiced);
@@ -21327,7 +21311,7 @@ static void test_octaver_psola_pitch_detect(void) {
   {
     float period = 0.0f;
     float voiced = 0.0f;
-    le_psola_detect(b, W, OCT_SR, &period, &voiced);
+    le_psola_detect_band(b, W, OCT_SR, 60, 1000, &period, &voiced);
     printf("  noise -> voiced=%.2f\n", voiced);
     CHECK(voiced < 0.4f);
   }
@@ -21346,7 +21330,7 @@ static void test_octaver_psola_pitch_detect(void) {
     }
     float period = 0.0f;
     float voiced = 0.0f;
-    le_psola_detect(b, W, OCT_SR, &period, &voiced);
+    le_psola_detect_band(b, W, OCT_SR, 60, 1000, &period, &voiced);
     printf("  noise=%.1f -> voiced=%.2f\n", nz, voiced);
     CHECK(voiced <= prevc + 0.02f); /* monotone non-increasing */
     prevc = voiced;
@@ -21357,6 +21341,105 @@ static void test_octaver_psola_pitch_detect(void) {
 
   free(noise);
   free(b);
+}
+
+/* PSOLA's sliced detection (#913): from 32 to 192 kHz every pass finishes
+ * inside the hop that started it (the per-tick credit covers the worst pass
+ * at every decimation), the period it settles on is the input's to within
+ * 0.3 % for a 220 Hz voice and 1 % for an 80 Hz one, and the shifted output
+ * plays the shifted pitch. At 96 kHz the old undecimated pass could not see
+ * 80 Hz at all: its 800-lag search stopped at 120 Hz. */
+static void test_octaver_psola_sliced_detection(void) {
+  printf("test_octaver_psola_sliced_detection\n");
+  static int32_t types[LE_FX_MAX];
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  int32_t on[LE_FX_MAX];
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    types[s] = LE_FX_NONE;
+    on[s] = 1;
+  }
+  types[0] = LE_FX_OCTAVER;
+  params[0][0] = 0.5f + 7.0f / 48.0f;
+  params[0][1] = 1.0f;
+  params[0][2] = 1.0f;
+  params[0][3] = 1.0f; /* PSOLA */
+  const int rates[] = {32000, 44100, 48000, 96000, 192000};
+  const float f0s[] = {220.0f, 80.0f};
+  for (int ri = 0; ri < 5; ++ri) {
+    for (int fi = 0; fi < 2; ++fi) {
+      const int sr = rates[ri];
+      const float f0 = f0s[fi];
+      le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+      CHECK(fx != NULL);
+      if (fx == NULL) return;
+      for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
+      le_fx_entry_reset(fx, 0);
+      CHECK(le_fx_prepare(fx, 0, LE_FX_OCTAVER, sr) == LE_OK);
+      le_fx_octaver_seed_settled(fx, 0, params[0]);
+      le_octaver_state* o = &fx->oct[0][0];
+      const le_psola_pass* ps = le_ps(o);
+      /* A pass starts every max(1, D / 2) hops, D = ceil(sr / 24 kHz). */
+      int every = ((sr + LE_PSOLA_RATE - 1) / LE_PSOLA_RATE) / 2;
+      if (every < 1) every = 1;
+      int passes = 0;
+      int overran = 0;
+      float* out = (float*)malloc(sizeof(float) * (size_t)sr);
+      CHECK(out != NULL);
+      if (out == NULL) return;
+      for (int i = 0; i < sr; ++i) {
+        /* A harmonic voice: 8 partials, falling 1/h. */
+        float x = 0.0f;
+        for (int h = 1; h <= 8; ++h) {
+          x += 0.3f / (float)h *
+               sinf(2.0f * LE_FFT_PI * f0 * (float)h * (float)i / (float)sr);
+        }
+        /* A pass starts on the tick that takes the counter to 0 on its
+         * hop; the one before it must have finished. */
+        if (o->hop_count == 1 && ps->hops == every - 1) {
+          ++passes;
+          if (ps->phase != 0) ++overran;
+        }
+        float l = x;
+        float r = x;
+        fx_apply_chain(fx, sr, sr, &l, &r, 1, types, params, on);
+        out[i] = l;
+      }
+      /* The output's pitch, over its last 0.25 s: +7 semitones. Measured at
+       * 48 kHz or under (a boxcar decimation), since the one-shot detector's
+       * lags stop at LE_PSOLA_MAXLAG. */
+      const int dd = sr > 48000 ? sr / 48000 : 1;
+      const int tail = sr / 4 / dd;
+      for (int i = 0; i < tail; ++i) {
+        float acc = 0.0f;
+        for (int k = 0; k < dd; ++k) acc += out[sr - tail * dd + i * dd + k];
+        out[i] = acc / (float)dd;
+      }
+      float out_period = 0.0f;
+      float out_voiced = 0.0f;
+      le_psola_detect_band(out, tail, sr / dd, 60, 1000, &out_period,
+                           &out_voiced);
+      const float shifted = f0 * powf(2.0f, 7.0f / 12.0f);
+      const float out_cents =
+          out_period > 0.0f
+              ? 1200.0f * log2f(((float)(sr / dd) / out_period) / shifted)
+              : 9999.0f;
+      free(out);
+      const float want = (float)sr / f0;
+      const float err = fabsf(o->period - want) / want;
+      printf("  %d Hz, %.0f Hz voice: period %.2f (want %.2f, %.3f %%), "
+             "voiced %.2f, %d passes, %d overran, output %+.1f cents\n",
+             sr, (double)f0, (double)o->period, (double)want,
+             (double)(100.0f * err), (double)o->voiced, passes, overran,
+             (double)out_cents);
+      CHECK(fabsf(out_cents) < 20.0f);
+      CHECK(passes > 100 / every);
+      CHECK(overran <= 1); /* the first may meet a reset pass, never more */
+      CHECK(err < (f0 > 100.0f ? 0.003f : 0.01f));
+      CHECK(o->voiced > 0.6f);
+      le_fx_state_free_buffers(fx);
+      free(fx);
+    }
+  }
 }
 
 /* PSOLA voice + fallback (D4): a voiced harmonic tone shifts up an octave with the
@@ -33476,9 +33559,11 @@ static int wt_wait_engaged(le_engine* e, float* out) {
 
 /* Part levels precede the combined nonlinear Pre; the track fader follows
  * that result exactly once, before Post. Changing it must not reprint PCM. */
+/* One drive with an identity, so a publish that changes only its gain keeps
+ * the entry (and its enable ramp), as the app's recipes do. */
 static le_fx_recipe test_drive_recipe(float gain) {
   le_fx_recipe r = {.count = 1, .enabled = 1};
-  r.type[0] = LE_FX_DRIVE; r.params[0][1] = gain;
+  r.type[0] = LE_FX_DRIVE; r.params[0][1] = gain; r.instance[0] = 1;
   r.slot_enabled[0] = 1; r.level[0] = 1; return r;
 }
 
@@ -39249,6 +39334,7 @@ int main(void) {
   test_octaver_lifecycle();
   test_octaver_mode_switch_no_click();
   test_octaver_psola_pitch_detect();
+  test_octaver_psola_sliced_detection();
   test_tuner_detect_band();
   test_tuner_arm_and_detect();
   test_tuner_raw_ring_wrap();

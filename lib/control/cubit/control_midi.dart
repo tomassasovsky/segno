@@ -916,20 +916,35 @@ extension MidiControlEditing on ControlCubit {
     _midiTargets.remove(row);
   }
 
+  /// A MIDI value for [target], as what the binding writes: an owned
+  /// value's own coercion, or for an effect parameter the chain's setting for
+  /// the value at that point of the parameter's shown range, snapped to its
+  /// positions (_bindingToChain).
   double _coerceMidiValue(ControlValueTarget target, double value) {
     if (target is OwnedValueTarget) return target.coerce(value);
-    final clamped = value.clamp(0.0, 1.0);
+    var clamped = value.clamp(0.0, 1.0);
     if (target is FxParamTarget) {
       final param = _midiSteppedParam(target);
       if (param != null) {
-        return param.positionOf(clamped) / (param.steps - 1);
+        clamped = param.positionOf(clamped) / (param.steps - 1);
       }
     }
-    return clamped;
+    return _bindingToChain(target, clamped);
   }
 
-  /// [target]'s parameter when it snaps to positions, so a MIDI value lands
-  /// on one, or `null` for a continuous parameter.
+  /// A binding's [value] for [target] as the chain's own: for an effect
+  /// parameter, the setting for the value at that point of the range the rack
+  /// shows (`fxKindSettingFor`); anything else as it is. A controller value (a
+  /// MIDI value, an External button's or expression pedal's) is a point of
+  /// the shown range, as the value it reads back (`readValueTarget`) is; from
+  /// here on, holders, persistence and the chain all hold the chain's
+  /// setting, so a retype or a gone slot never reinterprets one.
+  double _bindingToChain(ControlValueTarget target, double value) =>
+      target is FxParamTarget ? _looper.fxKindSettingFor(target, value) : value;
+
+  /// [target]'s parameter, as its surface shows it ([fxEntryParam]), when it
+  /// snaps to positions, so a MIDI value lands on one, or `null` for a
+  /// continuous parameter.
   FxParamInfo? _midiSteppedParam(FxParamTarget target) {
     for (final effect
         in _looper.chainEntriesAt(target.address) ?? <TrackEffect>[]) {
@@ -937,7 +952,7 @@ extension MidiControlEditing on ControlCubit {
           effect is BuiltInEffect &&
           target.param >= 0 &&
           target.param < effect.type.params.length) {
-        final param = effect.type.params[target.param];
+        final param = fxEntryParam(effect, target.param);
         return param.isStepped ? param : null;
       }
     }
