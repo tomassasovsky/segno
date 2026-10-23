@@ -29,6 +29,9 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.wah => effectWah,
     TrackEffectType.overdrive => effectOverdrive,
     TrackEffectType.distortion => effectDistortion,
+    TrackEffectType.vinyl => effectVinyl,
+    TrackEffectType.degrade => effectDegrade,
+    TrackEffectType.lpf => effectLpf,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
@@ -81,6 +84,10 @@ extension EngineLocalizations on AppLocalizations {
     'gate_threshold' => paramGateThreshold,
     'separation' => paramSeparation,
     'pedal' => paramPedal,
+    'frequency' => paramFrequency,
+    'noise' => paramNoise,
+    'noise_tone' => paramNoiseTone,
+    'filter' => paramFilter,
     _ => key,
   };
 

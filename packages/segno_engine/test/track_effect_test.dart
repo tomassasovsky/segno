@@ -430,6 +430,10 @@ void main() {
         // Ed's overdrive; the Lo-Fi Rack's distortion.
         TrackEffectType.overdrive: [0.09, 0.5],
         TrackEffectType.distortion: [0.2, 0.5],
+        // The Lo-Fi Rack's vinyl, degrade and low-pass filter.
+        TrackEffectType.vinyl: [0.4, 0.35, 0.3, 0.9],
+        TrackEffectType.degrade: [1.0, 1.0, 1.0],
+        TrackEffectType.lpf: [1.0, 1.0],
       };
       for (final type in TrackEffectType.values) {
         expect(type.defaultParams, cells(expected[type]!), reason: type.name);
@@ -460,7 +464,9 @@ void main() {
       // every rack's range, and the controls whose effect is chosen or
       // inferred from one capture: the transient shaper, the doubler, the
       // chorus, the wah, the overdrive's tone (captured at 50 % only) and
-      // the distortion (fit to the Studio Rack's, used for Lo-Fi's too).
+      // the distortion (fit to the Studio Rack's, used for Lo-Fi's too), the
+      // vinyl, the degrade and the low-pass filter's resonance (no
+      // capture).
       for (final type in TrackEffectType.values) {
         for (final p in type.params) {
           expect(
@@ -472,6 +478,9 @@ void main() {
                 type == TrackEffectType.chorus ||
                 type == TrackEffectType.wah ||
                 type == TrackEffectType.distortion ||
+                type == TrackEffectType.vinyl ||
+                type == TrackEffectType.degrade ||
+                (type == TrackEffectType.lpf && p.key == 'resonance') ||
                 (type == TrackEffectType.overdrive && p.key == 'tone'),
             reason: '${type.name}.${p.key}',
           );

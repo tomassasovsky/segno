@@ -377,7 +377,16 @@ enum TrackEffectType {
   overdrive(16),
 
   /// The Looper X's amp simulator as the Studio Rack's Dist (#887 part 7).
-  distortion(17);
+  distortion(17),
+
+  /// The Looper X's vinyl (#887 part 7).
+  vinyl(18),
+
+  /// The Looper X's degrade (#887 part 7).
+  degrade(19),
+
+  /// The Looper X's low-pass filter (#887 part 7).
+  lpf(20);
 
   const TrackEffectType(this.code);
 
