@@ -2,8 +2,9 @@
 # Build + run the pitch-shifter comparison (#887 part 9). NOT part of the test gate;
 # CI runs it on the arm64 bench job.
 #
-# Links the real engine sources, so the numbers are what le_engine_process
-# costs as shipped, plus the Signalsmith Stretch C shim the render paths call.
+# Links the real engine sources and drives fx_apply_chain (the chain runner
+# le_engine_process calls per lane) and the Signalsmith Stretch C shim the
+# render paths call, so the kernels are the shipped ones.
 # The source list and the per-OS link flags mirror run_native_tests.sh; keep
 # them in sync with it and with src/CMakeLists.txt.
 #
