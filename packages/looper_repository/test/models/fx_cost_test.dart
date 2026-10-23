@@ -2,10 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart' show MockAudioEngine;
 
-BuiltInEffect _fx(
-  TrackEffectType type, {
-  FxPlacement placement = FxPlacement.post,
-}) => BuiltInEffect(type: type, placement: placement);
+BuiltInEffect _fx(TrackEffectType type) => BuiltInEffect(type: type);
 
 int _cost(TrackEffectType type) => fxEntryCostNs(_fx(type));
 
@@ -39,38 +36,19 @@ void main() {
       );
     });
 
-    test('a kind on the hop and the engine cost per block, the rest per '
-        'frame', () {
+    test('a kind on the hop and the engine cost per block up to 64 frames, '
+        'the rest per frame', () {
       final octaver = _fx(TrackEffectType.octaver);
       final delay = _fx(TrackEffectType.delay);
       // Half the block: the octaver's quarter-frame lands in half the time.
       expect(fxEntryCostNs(octaver, period: 32), (69 * 1000 / 32).ceil());
+      // A longer block runs several hop stages: no cheaper per frame.
+      expect(fxEntryCostNs(octaver, period: 256), fxEntryCostNs(octaver));
       expect(fxEntryCostNs(delay, period: 32), fxEntryCostNs(delay));
       expect(
         fxBudgetNs(96000, period: 32),
         8333 - (kFxBaseCostUs * 1000 / 32).ceil(),
       );
-    });
-
-    test('a lane charges what plays live: its Post entries, and its Pre '
-        'prefix only when no print can stand for it', () {
-      final pre = _fx(TrackEffectType.delay, placement: FxPlacement.pre);
-      final post = _fx(TrackEffectType.reverb);
-      // A printable Pre prefix plays from the print.
-      expect(fxLaneCostNs([pre, post]), _cost(TrackEffectType.reverb));
-      // A free-running or hop kind in it, on or off, keeps it live.
-      for (final type in [TrackEffectType.chorus, TrackEffectType.octaver]) {
-        final odd = BuiltInEffect(
-          type: type,
-          placement: FxPlacement.pre,
-          enabled: false,
-        );
-        expect(
-          fxLaneCostNs([pre, odd, post]),
-          fxChainCostNs([pre, odd, post]),
-          reason: type.name,
-        );
-      }
     });
 
     test("the budget is 80 % of a frame less the engine's own cost", () {
@@ -118,7 +96,7 @@ void main() {
       expect(repo.fxCostNs, cost);
       expect(repo.fxRoomNs, room - cost);
       expect(
-        repo.fxChainCostAt(FxStage.track, [_fx(TrackEffectType.reverb)]),
+        repo.fxCostOf([_fx(TrackEffectType.reverb)]),
         _cost(TrackEffectType.reverb),
       );
     });

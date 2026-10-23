@@ -42,9 +42,9 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
 
 /// What a kind on the hop charges, in microseconds a block: its frame's work
 /// is split across the blocks of its hop by quarters, so a quarter lands in
-/// one block whatever the block's length. The octaver's phase vocoder is
-/// 69 us alone on the console after the hop split; PSOLA 84 us with the YIN
-/// slicing (#913).
+/// one block whatever the block's length below 64 frames. The octaver's
+/// phase vocoder is 69 us alone on the console after the hop split; PSOLA
+/// 84 us with the YIN slicing (#913).
 const Map<TrackEffectType, double> kFxHopCostUs = {
   TrackEffectType.octaver: 69,
 };
@@ -63,16 +63,6 @@ const int kFxBenchPeriod = 64;
 /// 80 %, leaving the rest to the callback's own jitter.
 const double kFxBudgetShare = 0.8;
 
-/// The kinds whose sound changes every lap (a free-running LFO or noise:
-/// LE_FX_F_FREE_RUNNING), which a lane never prints.
-const Set<TrackEffectType> _freeRunning = {
-  TrackEffectType.doubler,
-  TrackEffectType.chorus,
-  TrackEffectType.vinyl,
-  TrackEffectType.degrade,
-  TrackEffectType.lpf,
-};
-
 /// What [fx] charges, in nanoseconds per frame at [period]-frame blocks:
 /// its kind's ([kFxKindCostNs], or [kFxHopCostUs] spread over the block),
 /// whether or not it is on, so switching a pedal on is never refused. A
@@ -82,7 +72,7 @@ int fxEntryCostNs(TrackEffect fx, {int period = kFxBenchPeriod}) {
   final hop = fx.type == TrackEffectType.octaver && fx.params[3] >= 0.5
       ? kFxPsolaCostUs
       : kFxHopCostUs[fx.type];
-  if (hop != null) return (hop * 1000 / period).ceil();
+  if (hop != null) return (hop * 1000 / _perBlock(period)).ceil();
   return kFxKindCostNs[fx.type] ?? 0;
 }
 
@@ -92,34 +82,16 @@ int fxChainCostNs(
   int period = kFxBenchPeriod,
 }) => chain.fold(0, (sum, fx) => sum + fxEntryCostNs(fx, period: period));
 
-/// What a lane's [chain] charges, as the engine plays it: its Post entries
-/// always live; its Pre prefix from the lane's print, unless the prefix
-/// holds an entry no print can stand for (a free-running kind, a kind on
-/// the hop, which loops rarely fit, or a hosted plugin), on or off, when it
-/// plays live too.
-int fxLaneCostNs(Iterable<TrackEffect> chain, {int period = kFxBenchPeriod}) {
-  final pre = [
-    for (final fx in chain)
-      if (fx.placement == FxPlacement.pre) fx,
-  ];
-  final post = [
-    for (final fx in chain)
-      if (fx.placement != FxPlacement.pre) fx,
-  ];
-  final live = pre.any(
-    (fx) =>
-        fx is PluginEffect ||
-        (fx is BuiltInEffect &&
-            (_freeRunning.contains(fx.type) ||
-                kFxHopCostUs.containsKey(fx.type))),
-  );
-  return fxChainCostNs(post, period: period) +
-      (live ? fxChainCostNs(pre, period: period) : 0);
-}
-
 /// What the effects may charge in all, in nanoseconds per frame, at
 /// [sampleRate] and [period]-frame blocks: the budget's share of a frame
 /// less the engine's own cost.
 int fxBudgetNs(int sampleRate, {int period = kFxBenchPeriod}) =>
     (kFxBudgetShare * 1e9 / sampleRate).floor() -
-    (kFxBaseCostUs * 1000 / period).ceil();
+    (kFxBaseCostUs * 1000 / _perBlock(period)).ceil();
+
+/// The frames a per-block cost spreads over: the block below the bench's
+/// 64, where a hop quarter and the engine's fixed work land in every
+/// block; the bench's 64 above it, where a longer block runs several hop
+/// stages and mixes proportionally more (engine_fx.h, LE_PV_HOP).
+int _perBlock(int period) =>
+    period > 0 && period < kFxBenchPeriod ? period : kFxBenchPeriod;

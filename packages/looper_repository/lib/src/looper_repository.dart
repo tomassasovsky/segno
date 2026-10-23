@@ -7,7 +7,6 @@ import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/audio_config.dart';
 import 'package:looper_repository/src/models/engine_reopened.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
-import 'package:looper_repository/src/models/fx_address.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/fx_chain_group.dart';
 import 'package:looper_repository/src/models/fx_cost.dart';
@@ -7702,19 +7701,16 @@ class LooperRepository {
     return frames > 0 ? frames : kFxBenchPeriod;
   }
 
-  /// What [chain] would charge at [stage] ([fxChainCostNs], or
-  /// [fxLaneCostNs] for a loop's lane), in nanoseconds per frame at the
-  /// running block length.
-  int fxChainCostAt(FxStage stage, List<TrackEffect> chain) {
-    final period = _fxPeriod;
-    return stage == FxStage.loop
-        ? fxLaneCostNs(chain, period: period)
-        : fxChainCostNs(chain, period: period);
-  }
+  /// What [chain] would charge ([fxChainCostNs]), in nanoseconds per frame
+  /// at the running block length.
+  int fxCostOf(List<TrackEffect> chain) =>
+      fxChainCostNs(chain, period: _fxPeriod);
 
-  /// What every chain charges the audio thread's worst block
-  /// ([fxChainCostAt]), in nanoseconds per frame: the live inputs, the
-  /// tracks, All tracks, the destinations and the lanes.
+  /// What every chain charges the audio thread's worst block ([fxCostOf]),
+  /// in nanoseconds per frame: the live inputs, the tracks, All tracks, the
+  /// destinations and the lanes. A lane counts in full: its print stands in
+  /// for its Pre entries only between edits, overdubs, evictions and
+  /// renders, and the worst block is the one in between.
   int get fxCostNs {
     final period = _fxPeriod;
     return [
@@ -7722,7 +7718,7 @@ class LooperRepository {
       for (final c in _trackEffects.values) fxChainCostNs(c, period: period),
       for (final c in _outputEffects.values) fxChainCostNs(c, period: period),
       fxChainCostNs(_allTracksEffects, period: period),
-      for (final c in _laneEffects.values) fxLaneCostNs(c, period: period),
+      for (final c in _laneEffects.values) fxChainCostNs(c, period: period),
     ].fold(0, (a, b) => a + b);
   }
 

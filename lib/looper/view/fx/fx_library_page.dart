@@ -46,8 +46,8 @@ class FxLibraryPage extends StatefulWidget {
   /// explains itself, as one that needs more slots does.
   final int roomNs;
 
-  /// What entries would cost at the destination
-  /// ([LooperRepository.fxChainCostAt]), weighed against [roomNs].
+  /// What adding entries would cost ([LooperRepository.fxCostOf]),
+  /// weighed against [roomNs].
   final int Function(List<TrackEffect>) costOf;
 
   @override
