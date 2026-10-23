@@ -94,6 +94,14 @@ local_conf_header:
     # the framebuffer console away, audit=0 kills the audit flood, quiet/loglevel
     # trim kernel noise, and vt.global_cursor_default=0 hides the text cursor.
     #
+    # loglevel=4 lets errors and worse (KERN_ERR and below) reach the kernel
+    # consoles; warnings and info stay out. With fbcon mapped away nothing shows
+    # on a screen. It matters for the pstore console copy (#1437), which is a
+    # console like tty3 and gets only what passes this filter: at loglevel=3 a
+    # hung-task warning, an NVMe timeout or an RCU stall (all KERN_ERR) would
+    # be missing from the one record a hang that never panics leaves behind.
+    # The journal gets every level either way.
+    #
     # video=HDMI-A-*:1920x1080@60D sets the console's boot mode on both HDMI
     # connectors AND force-enables them (modedb `D` = digital + on). The app
     # does its own modeset (each panel's EDID-preferred mode, homescreen.toml),
@@ -107,7 +115,7 @@ local_conf_header:
     # threadirqs runs IRQ handlers as schedulable kernel threads so segno-rtirq can
     # raise the USB sound-card IRQ above the audio thread (PREEMPT_RT force-threads
     # them anyway, but keep it explicit so it also holds on a non-RT fallback).
-    CMDLINE:append = " console=tty3 fbcon=map:9 audit=0 quiet loglevel=3 logo.nologo vt.global_cursor_default=0 consoleblank=0 video=HDMI-A-1:1920x1080@60D video=HDMI-A-2:1920x1080@60D splash plymouth.ignore-serial-consoles cpufreq.default_governor=performance threadirqs"
+    CMDLINE:append = " console=tty3 fbcon=map:9 audit=0 quiet loglevel=4 logo.nologo vt.global_cursor_default=0 consoleblank=0 video=HDMI-A-1:1920x1080@60D video=HDMI-A-2:1920x1080@60D splash plymouth.ignore-serial-consoles cpufreq.default_governor=performance threadirqs"
     # Kill the Raspberry Pi firmware's rainbow test square at boot (the plymouth
     # segno splash replaces it). `splash` above triggers plymouth despite `quiet`.
     RPI_EXTRA_CONFIG:append = "\ndisable_splash=1"

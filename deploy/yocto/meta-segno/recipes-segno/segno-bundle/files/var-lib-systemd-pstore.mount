@@ -1,0 +1,33 @@
+# Kernel crash records on /data (#1437).
+#
+# systemd-pstore moves what the kernel left in the ramoops region (the dmesg of
+# a panic or oops, and the copy of the kernel console) from /sys/fs/pstore to
+# /var/lib/systemd/pstore. That path is on the A/B rootfs, where a record would
+# not survive the next OS update, so it is bound to /data like the journal and
+# the cores.
+#
+# systemd-pstore.service carries RequiresMountsFor=/var/lib/systemd/pstore,
+# which finds this unit by its path. If /data never mounts, the service does
+# not run and the records stay in /sys/fs/pstore (systemd-pstore only removes
+# them after archiving), to be archived on a later boot.
+[Unit]
+Description=Segno: kernel crash records on /data (survive reboot and OS update)
+DefaultDependencies=no
+Requires=data.mount
+# Wants, not Requires, for the same reason as the other two bind mounts.
+Wants=segno-log-dirs.service
+After=data.mount segno-log-dirs.service
+Before=systemd-pstore.service local-fs.target
+Conflicts=umount.target
+Before=umount.target
+# On the boot path like the other two bind mounts, so bound the same way.
+JobTimeoutSec=10
+
+[Mount]
+What=/data/log/pstore
+Where=/var/lib/systemd/pstore
+Type=none
+Options=bind
+
+[Install]
+WantedBy=local-fs.target
