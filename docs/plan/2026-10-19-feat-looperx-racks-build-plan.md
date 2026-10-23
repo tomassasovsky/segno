@@ -211,8 +211,8 @@ the owner. The singles library keeps the existing seven built-ins only.
    delay's wow) or a bar-locked one (Slicer, Pumper, synced LFO) are not
    wet-cached: their output does not repeat each lap, so a print cannot equal
    live. Noise generators are seeded per owner like the hop phase.
-9. **Pitch kinds.** One stereo phase-vocoder hop costs about 315 us on the
-   console, all in one block of four. Before any new pitch kind: measure the
+9. **Pitch kinds.** One stereo phase-vocoder hop costs about 170 us on the
+   console since #1420 (it was 315 us), all in one block of four. Before any new pitch kind: measure the
    vendored signalsmith-stretch (#1179) against PSOLA for Pitch Shift,
    Whammy and the Harmonizer; split each hop's frame work across the blocks
    of its hop; run one mono analysis and one YIN pass shared by all voices of
@@ -252,10 +252,13 @@ the owner. The singles library keeps the existing seven built-ins only.
 
 Measured on the console with `bench_fx_cpu` (part 1): an 8-track playing rig
 with one monitored input and no effects costs 60 us per block at p50 and 73
-us at worst. One stereo phase-vocoder octaver adds about 320 us to one block
-in four; with part 1, two to four octavers stay at 400 to 430 us worst, and
-eight need about 740 us in every block, so eight do not fit whatever the
-stagger. The full rig must stay under 533 us (80 percent) in its worst block. Per rack, on
+us at worst. Since #1420 (real FFTs, table twiddles) one stereo
+phase-vocoder octaver frame costs about 170 us (it was 290 to 320 us), in
+one block in four. Eight octavers, two per hop quarter, now fit: p99 457 us
+with no late blocks (they were 706 us, every block late). Three sharing one
+quarter (9 to 12 instances) would come to about 580 us, which the hop split
+(part 9) removes. The full rig must stay under 533 us (80 percent) in its
+worst block. Per rack, on
 one monitored input, worst-block increments:
 
 | rack | target |
