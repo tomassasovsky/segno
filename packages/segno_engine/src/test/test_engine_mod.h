@@ -3,16 +3,6 @@
  * (dyn_setting, dyn_run, dyn_state, dyn_free, dyn_db, tr_peak) and the EQ's
  * (eq_measured_db, eq_design_db, le_eq_design_for_test) it reuses. */
 
-/* The wet path's delay, in samples, at an impulse: the largest sample past
- * the dry spike at [at] (a chorus's dry spike sits at 0). */
-static int mod_peak_after(const float* y, int from, int to) {
-  int best = from;
-  for (int i = from; i < to; ++i) {
-    if (fabsf(y[i]) > fabsf(y[best])) best = i;
-  }
-  return best;
-}
-
 /* ---- Chorus ---- */
 
 /* The chorus at the Guitar Rack capture's settings (Rate 32.6 %, Depth 12 %,
@@ -298,7 +288,16 @@ static void test_cache_free_running_stays_live(void) {
       CHECK(info.state == LE_CACHE_GAVE_UP);
       CHECK(info.reason == LE_CACHE_REASON_FREE_RUNNING);
       CHECK(info.renders == 0);
-      /* Bypassed, it passes the signal through, so the lane prints. */
+      /* At 0 % mix the entry is the identity, so the lane prints; and
+       * bypassed at full mix, the same. */
+      CHECK(le_engine_set_lane_fx_param(
+                a, 0, 0, 0, kinds[k] == LE_FX_DOUBLER ? 0 : 2, 0.0f) == LE_OK);
+      drain(a);
+      le_engine_get_lane_cache(a, 0, 0, &info); /* sees the new key */
+      pump_frames(a, 0.0f, CACHE_SETTLE);
+      CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+      CHECK(le_engine_set_lane_fx_param(
+                a, 0, 0, 0, kinds[k] == LE_FX_DOUBLER ? 0 : 2, 1.0f) == LE_OK);
       CHECK(le_engine_set_lane_fx_enabled(a, 0, 0, 0, 0) == LE_OK);
       drain(a);
       le_engine_get_lane_cache(a, 0, 0, &info); /* sees the new key */

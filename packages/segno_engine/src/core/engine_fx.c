@@ -2001,7 +2001,7 @@ static inline double le_lfo_step(double ph, double inc) {
 #define LE_DBL_A_MS 11.0
 #define LE_DBL_B_MS 17.0
 #define LE_DBL_DRIFT_MS 0.6 /* each voice drifts +-0.6 ms ... */
-#define LE_DBL_A_HZ 0.29    /* ... at these rates (about +-3 cents) */
+#define LE_DBL_A_HZ 0.29    /* ... at these rates (+-1.2 and +-1.5 cents) */
 #define LE_DBL_B_HZ 0.37
 #define LE_DBL_VOICE 0.7071f /* each copy at -3 dB of the dry signal */
 
@@ -2027,6 +2027,10 @@ static void fx_doubler_update(void* ks, const float* p, int sr, int settle) {
     d->base_a = (float)(LE_DBL_A_MS * 1e-3 * rate);
     d->base_b = (float)(LE_DBL_B_MS * 1e-3 * rate);
     d->drift = (float)(LE_DBL_DRIFT_MS * 1e-3 * rate);
+    /* Past 192 kHz the voices would outgrow the ring: hold them inside. */
+    const float room = (float)(LE_DBL_RING - 2u) - d->drift;
+    if (d->base_a > room) d->base_a = room;
+    if (d->base_b > room) d->base_b = room;
     d->inc_a = LE_DBL_A_HZ / rate;
     d->inc_b = LE_DBL_B_HZ / rate;
   }
@@ -2099,6 +2103,7 @@ typedef struct le_fx_chorus {
   le_fx_glide dry;
   le_fx_glide wet;
   float centre; /* samples */
+  float max_swing; /* what the ring holds past the centre */
   float inv_sr;
   double ph;
   float lp[5];       /* the voice low-pass, a0-normalized b0 b1 b2 a1 a2 */
@@ -2114,6 +2119,7 @@ static void fx_chorus_update(void* ks, const float* p, int sr, int settle) {
   const double rate = (double)(sr > 0 ? sr : 48000);
   if (f & LE_FX_DYN_NEW_RATE) {
     c->centre = (float)(LE_CHO_CENTRE_MS * 1e-3 * rate);
+    c->max_swing = (float)(LE_CHO_RING - 2u) - c->centre;
     c->inv_sr = (float)(1.0 / rate);
     /* RBJ low-pass, the same design le_eq_design uses for a cut. */
     const double w0 = 2.0 * 3.14159265358979323846 *
@@ -2136,8 +2142,9 @@ static void fx_chorus_update(void* ks, const float* p, int sr, int settle) {
   };
   int moving = le_fx_glide_step(
       &c->rate, (float)(LE_CHO_RATE_MIN_HZ + LE_CHO_RATE_SPAN_HZ * v[0]), k);
-  moving |= le_fx_glide_step(
-      &c->swing, (float)(LE_CHO_DEPTH_MS * 1e-3 * rate * v[1]), k);
+  float swing = (float)(LE_CHO_DEPTH_MS * 1e-3 * rate * v[1]);
+  if (swing > c->max_swing) swing = c->max_swing;
+  moving |= le_fx_glide_step(&c->swing, swing, k);
   moving |= le_fx_glide_step(&c->dry, 1.0f - LE_CHO_DRY_DROP * v[2], k);
   moving |= le_fx_glide_step(&c->wet, LE_CHO_VOICE * v[2], k);
   c->h.moving = moving;
@@ -2510,15 +2517,22 @@ void le_fx_entry_renew(le_fx_state* fx, int slot, int32_t type) {
   if (rings) le_fx_enable_force_bypass(fx, slot);
 }
 
-/* Whether a bypassed slot of [type] drains its tail rather than crossfading
- * out: a ring-owning type with no reported latency (delay, echo, reverb).
- * Everything else — memoryless kernels, the latency-bearing octaver, hosted
- * plugins — crossfades (see fx_apply_chain's doc). */
 int le_fx_type_free_running(int32_t type) {
   return type > LE_FX_NONE && type < LE_FX_TYPE_COUNT &&
          (LE_FX[type].flags & LE_FX_F_FREE_RUNNING) != 0;
 }
 
+int le_fx_entry_free_running(int32_t type, const float* p) {
+  if (!le_fx_type_free_running(type)) return 0;
+  /* At 0 % mix the voices add nothing: the entry is the identity. */
+  const int32_t mix = type == LE_FX_DOUBLER ? 0 : 2;
+  return p[mix] > 0.0f;
+}
+
+/* Whether a bypassed slot of [type] drains its tail rather than crossfading
+ * out: a ring-owning type with no reported latency (delay, echo, reverb).
+ * Everything else — memoryless kernels, the latency-bearing octaver, hosted
+ * plugins — crossfades (see fx_apply_chain's doc). */
 int le_fx_type_drains(int32_t type) {
   return type > LE_FX_NONE && type < LE_FX_TYPE_COUNT &&
          (LE_FX[type].flags & LE_FX_F_DRAINS) != 0;

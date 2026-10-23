@@ -250,6 +250,11 @@ int le_fx_type_drains(int32_t type);
  * live does not. Any thread. */
 int le_fx_type_free_running(int32_t type);
 
+/* Whether an entry of [type] at settings [p] (its first
+ * le_fx_param_width(type) cells) runs a free-running modulator that is
+ * heard: le_fx_type_free_running, with a mix above 0 %. Any thread. */
+int le_fx_entry_free_running(int32_t type, const float* p);
+
 /* Seeds chain slot [slot]'s enable-crossfade runtime SETTLED at enabled so a
  * freshly created (zeroed) le_fx_state does not fade in on first use. Call
  * once after creating/zeroing a standalone le_fx_state (lane/monitor reset,
