@@ -57,17 +57,16 @@ class FxModuleBuild {
   /// surface can show them and say plainly that they do not reach the sound.
   final List<String> unmapped;
 
-  /// The rack's own scale for an engine parameter whose range differs from
-  /// the kind's, by parameter index: the preset value is read on this scale
-  /// and set to the same value on the kind's (an EQ's mid frequency, which
-  /// the Drum Rack spans 40..8000 Hz and the kind 20..20000 Hz). A parameter
-  /// absent here copies the preset value as it is.
+  /// What a rack's control applies, for an engine parameter whose range
+  /// differs from the kind's, by parameter index: the preset value is read on
+  /// this scale and set to the same value on the kind's (an EQ's mid
+  /// frequency, which the Drum Rack spans 40..8000 Hz and the kind
+  /// 20..20000 Hz). A parameter absent here copies the preset value as it is.
   final Map<int, FxSourceScale> scales;
 
   /// The value, in the parameter's own unit, of each engine parameter this
   /// variant does not expose but fixes (a four-band EQ's band frequencies in
-  /// the racks that show only the gains), by parameter index. Chosen, not
-  /// measured (#891).
+  /// the racks that show only the gains), by parameter index.
   final Map<int, double> fixed;
 
   /// The parameter key a variant shows instead of the kind's own, by index
@@ -141,42 +140,60 @@ const Map<String, FxModuleBuild> kFxModuleBuilds = {
   ),
 };
 
-/// A rack control's own scale (see [FxModuleBuild.scales]).
+/// What a rack control applies at each setting (see
+/// [FxModuleBuild.scales]).
 class FxSourceScale {
   /// `min * (max / min) ^ v`.
-  const FxSourceScale.log(this.min, this.max) : log = true;
+  const FxSourceScale.log(this.min, this.max) : log = true, points = const [];
 
   /// `min + (max - min) * v`.
-  const FxSourceScale.linear(this.min, this.max) : log = false;
+  const FxSourceScale.linear(this.min, this.max)
+    : log = false,
+      points = const [];
 
-  /// The value at 0.
+  /// Straight lines through measured `(setting, value)` [points], in
+  /// setting order from 0 to 1.
+  const FxSourceScale.table(this.points) : min = 0, max = 0, log = false;
+
+  /// The value at 0, unless [points] is set.
   final double min;
 
-  /// The value at 1.
+  /// The value at 1, unless [points] is set.
   final double max;
 
   /// Whether the scale is logarithmic.
   final bool log;
 
+  /// The measured points of a table scale, or empty.
+  final List<(double, double)> points;
+
   /// The value setting [v] (clamped to `0..1`) stands for.
   double valueAt(double v) {
     final c = v.clamp(0.0, 1.0);
-    return log ? min * math.pow(max / min, c) : min + (max - min) * c;
+    if (points.isEmpty) {
+      return log ? min * math.pow(max / min, c) : min + (max - min) * c;
+    }
+    var i = 1;
+    while (i < points.length - 1 && c > points[i].$1) {
+      i++;
+    }
+    final (x0, y0) = points[i - 1];
+    final (x1, y1) = points[i];
+    return y0 + (y1 - y0) * (c - x0) / (x1 - x0);
   }
 }
 
 /// The rack variants of the Looper X kinds, by module and family: one engine
 /// kind per module, each variant exposing the controls its racks show
-/// (docs/plan/2026-10-20-looperx-derived-tables.md) and fixing the rest at
-/// values chosen here until reference audio says otherwise (#891):
-/// - the EQ: where a rack shows only gains, 100 Hz and 5 kHz shelves, a
-///   1 kHz mid, Q 0.71;
-/// - the compressor: where a rack hides them, Ed's Rack's own settings (a
-///   4 : 1 ratio, every Ed's preset's, and its default 1.7 ms attack and
-///   141 ms release);
+/// (docs/plan/2026-10-20-looperx-derived-tables.md) and fixing the rest:
+/// - the EQ and the compressor: at the values measured on the Looper X
+///   (#891, docs/plan/2026-10-23-looperx-eq-measured.md and
+///   docs/plan/2026-10-23-looperx-dynamics-measured.md), with each control
+///   read as the value it applies, which is not always the value the
+///   Looper X shows;
 /// - the doubler: where a rack hides it, the Dub Rack's default 100 %
-///   separation;
-/// - the distortion: where a rack hides it, the tone flat (50 %).
+///   separation (chosen);
+/// - the distortion: where a rack hides it, the tone flat (50 %, chosen).
 ///
 /// The first variant of each module is its default, the one "Add an effect"
 /// uses (#887: Ed's 4-band, the Dub Rack's Para, Ed's compressor, the Dub
@@ -197,10 +214,10 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Compressor': {
     "Ed's Rack": _edsComp,
     'Drum Rack': _drumComp,
-    'Dub Rack': _comp2,
-    'Studio Rack': _comp2,
-    'Vocal Rack': _comp2,
-    'Vocal Tuner Rack': _comp2,
+    'Dub Rack': _dubComp,
+    'Studio Rack': _vocalComp,
+    'Vocal Rack': _vocalComp,
+    'Vocal Tuner Rack': _vocalComp,
   },
   'Transient': {'Drum Rack': _transient},
   'High-pass gate': {
@@ -300,11 +317,22 @@ const FxModuleBuild _wah = FxModuleBuild(
   params: ['Wah Pedal'],
 );
 
-// The compressor settings a rack that hides them is fixed at (see
-// [kFxModuleVariants]).
-const double _compRatio = 4;
-const double _compAttackMs = 1.732;
-const double _compReleaseMs = 141.4;
+// The make-up every rack applies: its control shows 0..30 dB, linear, and
+// applies this, the same in every rack and at every threshold (#891).
+const FxSourceScale _makeUp = FxSourceScale.table([
+  (0, 0),
+  (0.06, 3.25),
+  (0.106, 6.16),
+  (0.2, 10.08),
+  (0.303, 12.86),
+  (0.4, 14.8),
+  (0.5, 16.32),
+  (0.6, 17.53),
+  (0.75, 19.08),
+  (0.8, 19.52),
+  (0.9, 20.34),
+  (1, 21.07),
+]);
 
 // Ed's Rack: the whole compressor.
 const FxModuleBuild _edsComp = FxModuleBuild(
@@ -316,21 +344,34 @@ const FxModuleBuild _edsComp = FxModuleBuild(
     'Comp Release',
     'Comp Make-Up',
   ],
+  scales: {4: _makeUp},
 );
 
-// Drum Rack: threshold, attack on its own 0.1 to 300 ms scale, make-up.
+// Drum Rack: threshold, attack on its own 0.1 to 300 ms scale, make-up; a
+// hidden 4 : 1 ratio and 45 ms release (measured).
 const FxModuleBuild _drumComp = FxModuleBuild(
   type: TrackEffectType.compressor,
   params: ['Comp Thresh', null, 'Comp Attack', null, 'Comp Make-Up'],
-  scales: {2: FxSourceScale.log(0.1, 300)},
-  fixed: {1: _compRatio, 3: _compReleaseMs},
+  scales: {2: FxSourceScale.log(0.1, 300), 4: _makeUp},
+  fixed: {1: 4, 3: 45},
 );
 
-// Dub, Studio, Vocal and Vocal Tuner racks: threshold and make-up.
-const FxModuleBuild _comp2 = FxModuleBuild(
+// Studio, Vocal and Vocal Tuner racks: threshold and make-up; a hidden
+// 4 : 1 ratio, 1.5 ms attack and 65 ms release (measured).
+const FxModuleBuild _vocalComp = FxModuleBuild(
   type: TrackEffectType.compressor,
   params: ['Comp Thresh', null, null, null, 'Comp Make-Up'],
-  fixed: {1: _compRatio, 2: _compAttackMs, 3: _compReleaseMs},
+  scales: {4: _makeUp},
+  fixed: {1: 4, 2: 1.5, 3: 65},
+);
+
+// Dub Rack: threshold and make-up; a hidden 6 : 1 ratio, 1 ms attack and
+// 80 ms release (measured).
+const FxModuleBuild _dubComp = FxModuleBuild(
+  type: TrackEffectType.compressor,
+  params: ['Comp Thresh', null, null, null, 'Comp Make-Up'],
+  scales: {4: _makeUp},
+  fixed: {1: 6, 2: 1, 3: 80},
 );
 
 // Drum Rack: the whole transient shaper.
@@ -345,9 +386,15 @@ const FxModuleBuild _hpGate = FxModuleBuild(
   params: ['Highpass', 'Gate Thresh'],
 );
 
-const double _q = 0.7071;
+// The EQ layouts (the kind's "layout" choice).
+const double _layoutShelves = 0;
+const double _layoutCuts = 1;
+const double _layoutBells = 2;
 
-// Ed's Rack: every control of the generic EQ but the air band.
+// Ed's Rack: every control of the generic EQ, four bells and both cuts. Its
+// Lo Mid and Hi Mid frequencies apply 40..8000 and 120..16000 Hz (it shows
+// 100..8000 Hz for both). Its High frequency and Low and High Q need no
+// scale: the kind's ranges are what they apply.
 const FxModuleBuild _edsEq = FxModuleBuild(
   type: TrackEffectType.eq,
   params: [
@@ -366,14 +413,13 @@ const FxModuleBuild _edsEq = FxModuleBuild(
     'EQ High Q',
     'EQ High Cut',
   ],
-  scales: {
-    5: FxSourceScale.log(100, 8000),
-    8: FxSourceScale.log(100, 8000),
-  },
-  fixed: {14: 0},
+  scales: {5: FxSourceScale.log(40, 8000), 8: FxSourceScale.log(120, 16000)},
+  fixed: {14: _layoutCuts},
 );
 
-// Drum Rack: low and high shelves, one swept mid.
+// Drum Rack: a low shelf at 200 Hz (Q 0.5) and a high shelf at 4 kHz
+// (Q 0.7), each applying 2/3 of the gain its control shows, a swept mid bell
+// at Q 0.9, and no cuts.
 const FxModuleBuild _drumEq = FxModuleBuild(
   type: TrackEffectType.eq,
   params: [
@@ -389,22 +435,17 @@ const FxModuleBuild _drumEq = FxModuleBuild(
     null,
     'EQ High',
   ],
-  scales: {5: FxSourceScale.log(40, 8000)},
-  fixed: {
-    0: 20, // low cut off
-    2: 100,
-    3: _q,
-    6: _q,
-    7: 0,
-    11: 5000,
-    12: _q,
-    13: 20000, // high cut off
-    14: 0,
+  scales: {
+    1: FxSourceScale.linear(-12, 12),
+    5: FxSourceScale.log(40, 8000),
+    10: FxSourceScale.linear(-12, 12),
   },
+  fixed: {2: 200, 3: 0.5, 6: 0.9, 7: 0, 11: 4000, 12: 0.7, 14: _layoutShelves},
   labels: {4: 'mid_gain', 5: 'mid_freq'},
 );
 
-// Studio, Vocal and Vocal Tuner racks: four gains.
+// Studio, Vocal and Vocal Tuner racks: four gains, on bells at 300, 900,
+// 2700 and 8100 Hz (Q 3.6, 1.2, 1.2 and 3.6), and no cuts.
 const FxModuleBuild _vocalEq = FxModuleBuild(
   type: TrackEffectType.eq,
   params: [
@@ -415,30 +456,28 @@ const FxModuleBuild _vocalEq = FxModuleBuild(
     'EQ Mid',
     null,
     null,
-    null,
-    null,
-    null,
     'EQ High',
-    null,
     null,
     null,
     'EQ Air',
   ],
   fixed: {
-    0: 20,
-    2: 100,
-    3: _q,
-    5: 1000,
-    6: _q,
-    7: 0,
-    11: 5000,
-    12: _q,
-    13: 20000,
+    2: 300,
+    3: 3.6,
+    5: 900,
+    6: 1.2,
+    8: 2700,
+    9: 1.2,
+    11: 8100,
+    12: 3.6,
+    14: _layoutBells,
   },
-  labels: {4: 'mid_gain'},
+  labels: {4: 'mid_gain', 7: 'high_gain', 10: 'air_gain'},
 );
 
-// Dub and Lo-Fi racks: low cut, one band, high cut.
+// Dub and Lo-Fi racks: low cut, one bell, high cut. The Looper X's Dub Rack
+// holds its bell at 2 kHz and lets Mid Freq set the gain; here Mid Freq
+// moves the frequency, as its label says (owner decision, #1429).
 const FxModuleBuild _paraEq = FxModuleBuild(
   type: TrackEffectType.eq,
   params: [
@@ -458,12 +497,11 @@ const FxModuleBuild _paraEq = FxModuleBuild(
     'EQ High Cut',
   ],
   scales: {5: FxSourceScale.log(120, 16000)},
-  fixed: {1: 0, 7: 0, 10: 0, 14: 0},
+  fixed: {1: 0, 7: 0, 10: 0, 14: _layoutCuts},
   labels: {4: 'mid_gain', 5: 'mid_freq', 6: 'mid_q'},
 );
 
-// Rhythmic Rack: the parametric EQ without its Q, held at the Dub Rack's
-// default (0.76).
+// Rhythmic Rack: the parametric EQ with its Q hidden at 1.0 (measured).
 const FxModuleBuild _rhythmicEq = FxModuleBuild(
   type: TrackEffectType.eq,
   params: [
@@ -483,7 +521,7 @@ const FxModuleBuild _rhythmicEq = FxModuleBuild(
     'EQ High Cut',
   ],
   scales: {5: FxSourceScale.log(120, 16000)},
-  fixed: {1: 0, 6: 0.7616, 7: 0, 10: 0, 14: 0},
+  fixed: {1: 0, 6: 1, 7: 0, 10: 0, 14: _layoutCuts},
   labels: {4: 'mid_gain', 5: 'mid_freq'},
 );
 

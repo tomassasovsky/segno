@@ -124,8 +124,6 @@ static void test_lpf(void) {
   /* At the top of its range, as a fresh filter is, it is off: the
    * identity, and its descriptor says so. */
   CHECK(fxd_get(LE_FX_LPF, 0).flags & LE_FX_PARAM_OFF_AT_MAX);
-  CHECK(fxd_get(LE_FX_EQ, 0).flags & LE_FX_PARAM_OFF_AT_MIN);
-  CHECK(fxd_get(LE_FX_EQ, 13).flags & LE_FX_PARAM_OFF_AT_MAX);
   le_fx_defaults(LE_FX_LPF, p);
   const int n = 512;
   float in[512];

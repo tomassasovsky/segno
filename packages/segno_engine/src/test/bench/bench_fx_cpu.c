@@ -95,8 +95,8 @@ static void octaver_entry(le_fx_recipe* r, int s) {
   r->level[s] = 1.0f;
 }
 
-/* An EQ recipe entry with every band engaged: both cuts on, every shelf and
- * peak away from 0 dB, the air band up. */
+/* An EQ recipe entry with every band engaged: both cuts and every bell away
+ * from 0 dB (the layout with cuts). */
 static void eq_entry(le_fx_recipe* r, int s) {
   r->type[s] = LE_FX_EQ;
   r->slot_enabled[s] = 1;
@@ -107,7 +107,7 @@ static void eq_entry(le_fx_recipe* r, int s) {
   r->params[s][7] = 0.65f; /* +5.4 dB */
   r->params[s][10] = 0.45f;
   r->params[s][13] = 0.8f; /* high cut ~7.2 kHz */
-  r->params[s][14] = 0.6f;
+  r->params[s][14] = 0.5f; /* bells and cuts */
   r->level[s] = 1.0f;
 }
 

@@ -59,12 +59,11 @@ void main() {
 
       expect(reading.valueText, '9.0 dB');
       expect(reading.note, isNull);
-      // Its chosen mid range still says so.
+      // Its mid frequency reads as the value it applies, measured (#891).
       final mid = TrackEffectType.eq.params[5];
-      expect(
-        fxParamReading(l10n, effect, mid, 0.5).note,
-        l10n.fxScaleUnverified,
-      );
+      final midReading = fxParamReading(l10n, effect, mid, 0.5);
+      expect(midReading.valueText, '632 Hz');
+      expect(midReading.note, isNull);
     });
   });
 }

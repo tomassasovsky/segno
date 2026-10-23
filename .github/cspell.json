@@ -1384,7 +1384,12 @@
     "Highpass",
     "normaliser",
     "RESO",
-    "Slic"
+    "Slic",
+    "Giannoulis",
+    "Chamberlin",
+    "Zolzer",
+    "biquad",
+    "looperx"
   ],
   "overrides": [
     {
