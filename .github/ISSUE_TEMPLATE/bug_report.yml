@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Check the [open issues](https://github.com/tomassasovsky/segno/issues) first. For a security problem, follow [SECURITY.md](https://github.com/tomassasovsky/segno/blob/master/SECURITY.md) instead of filing it here.
+        Check the [open issues](https://github.com/tomassasovsky/segno/issues) first. For a security problem, [report it privately](https://github.com/tomassasovsky/segno/security/advisories/new) instead of filing it here.
   - type: dropdown
     id: area
     attributes:

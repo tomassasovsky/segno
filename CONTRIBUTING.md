@@ -54,8 +54,10 @@ bash packages/segno_engine/src/test/run_native_tests.sh
 bash firmware/test/run_tests.sh
 ```
 
-Run `flutter pub get` first in a fresh checkout. Without it, `dart format`
-cannot find the lint settings and reformats the whole repository.
+`bloc lint` comes from bloc_tools: install it once with
+`dart pub global activate bloc_tools`. Run `flutter pub get` first in a fresh
+checkout. Without it, `dart format` cannot find the lint settings and
+reformats the whole repository.
 
 CI also spell-checks every Markdown file with cspell. Project-specific words
 go in the `words` list in `.github/cspell.json`.

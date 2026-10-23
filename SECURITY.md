@@ -17,8 +17,9 @@ appliance image, update service, console firmware), the steps to reproduce it,
 and the version from **Settings > About** or `/etc/segno/build-version` on the
 appliance.
 
-You will get an acknowledgement within seven days. Once a fix is available, the
-advisory is published with credit to the reporter unless you ask otherwise.
+Segno is maintained by one person, so responses are best effort. Once a fix
+is available, the advisory can be published with credit to the reporter if you
+want it.
 
 ## Scope
 
