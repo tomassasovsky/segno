@@ -22,15 +22,17 @@
  *              PV keeps little of a fundamental pushed below the source's
  *              spectrum)
  *   purity     the share of the output's energy, up to Nyquist, within
- *              +-3 FFT bins (+-8.8 Hz) of the target's partials, on that tone
+ *              +-2 FFT bins (+-11.7 Hz) of the target's partials, on that tone
  *              and on an A major triad shifted +5 semitones (polyphony), in
  *              dB below total
  *
  * The octaver instances start settled at their parameters, as the engine's
  * offline renders seed them, so no row includes a start-up ramp.
  *
- *   ./bench_pitch_algos.sh            # the full table (CI runs this)
+ *   ./bench_pitch_algos.sh            # the full table, unpaced (CI runs this)
  *   ./bench_pitch_algos.sh --smoke    # a 1 s CPU run per algorithm
+ *   ./bench_pitch_algos.sh --paced    # one block per period, like a device:
+ *                                     # caches cool between callbacks
  */
 #define _GNU_SOURCE
 #include <errno.h>
@@ -55,6 +57,7 @@
 #include "engine_fx.h"
 #include "bench_common.h"
 #include "../../stretch/le_stretch.h"
+#include "kiss_fft.h" /* rnnoise's, already linked into the engine */
 
 #define SR 96000
 #define BLOCK 64
@@ -62,6 +65,16 @@
 enum { ALG_PV, ALG_PSOLA, ALG_STRETCH, ALG_N };
 static const char* const k_names[ALG_N] = {"phase vocoder", "PSOLA",
                                            "Signalsmith Stretch"};
+
+/* malloc, or exit with a message. */
+static void* xmalloc(size_t bytes) {
+  void* p = malloc(bytes);
+  if (p == NULL) {
+    fprintf(stderr, "out of memory for %zu bytes\n", bytes);
+    exit(1);
+  }
+  return p;
+}
 
 typedef struct shifter {
   int alg;
@@ -75,6 +88,10 @@ static void shifter_open(shifter* s, int alg, double semitones) {
   s->alg = alg;
   if (alg == ALG_STRETCH) {
     s->st = le_stretch_create(2, SR, 0, 1u);
+    if (s->st == NULL) {
+      fprintf(stderr, "le_stretch_create failed\n");
+      exit(1);
+    }
     le_stretch_set_semitones(s->st, (float)semitones, 8000.0f / SR);
     return;
   }
@@ -85,6 +102,10 @@ static void shifter_open(shifter* s, int alg, double semitones) {
   /* A standalone state's setup (engine_fx.h): settled enables, a reset slot,
    * the buffers, then the octaver settled at its parameters and mode. */
   s->fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+  if (s->fx == NULL) {
+    fprintf(stderr, "out of memory for the octaver state\n");
+    exit(1);
+  }
   for (int i = 0; i < LE_FX_MAX; ++i) le_fx_enable_seed_settled(s->fx, i);
   le_fx_entry_reset(s->fx, 0);
   if (le_fx_prepare(s->fx, 0, LE_FX_OCTAVER, SR) != LE_OK) {
@@ -143,96 +164,114 @@ static void run(shifter* s, const float* in, float* out, int n) {
   }
 }
 
-/* Energy at frequency f over x (a windowed single-bin DFT, Hann): the
- * fine search around the FFT's peak. */
-static double bin_energy(const float* x, int n, double f) {
-  double re = 0.0, im = 0.0;
-  for (int i = 0; i < n; ++i) {
-    const double w = 0.5 - 0.5 * cos(2.0 * M_PI * i / (n - 1));
-    re += w * x[i] * cos(2.0 * M_PI * f * i / SR);
-    im -= w * x[i] * sin(2.0 * M_PI * f * i / SR);
+/* The analysis length (a 5.86 Hz bin at 96 kHz). core/fft.h stops at
+ * LE_FFT_MAX_N (4096, a 23 Hz bin), too coarse to separate a triad's
+ * partials, so this uses rnnoise's kiss_fft, which the engine already
+ * links. Its stage table (MAXFACTORS) holds seven radix-4 stages, so 16384
+ * is its largest power of two: 32768 overruns it. */
+#define SPEC_N 16384
+
+static double g_hann[SPEC_N];
+
+static void hann_init(void) {
+  for (int i = 0; i < SPEC_N; ++i) {
+    g_hann[i] = 0.5 - 0.5 * cos(2.0 * M_PI * i / (SPEC_N - 1));
+  }
+}
+
+/* Energy at frequency f over x[0 .. SPEC_N) (a Hann-windowed single-bin DFT,
+ * its phasor advanced by rotation): the fine search around the FFT's peak. */
+static double bin_energy(const float* x, double f) {
+  const double dr = cos(2.0 * M_PI * f / SR);
+  const double di = -sin(2.0 * M_PI * f / SR);
+  double pr = 1.0, pi = 0.0, re = 0.0, im = 0.0;
+  for (int i = 0; i < SPEC_N; ++i) {
+    const double v = g_hann[i] * x[i];
+    re += v * pr;
+    im += v * pi;
+    const double t = pr * dr - pi * di;
+    pi = pr * di + pi * dr;
+    pr = t;
   }
   return re * re + im * im;
 }
 
-/* The analysis length: the largest power of two in the half second a quality
- * run measures (a 2.93 Hz bin at 96 kHz). core/fft.h stops at LE_FFT_MAX_N
- * (4096, a 23 Hz bin), too coarse to separate a triad's partials, so the
- * bench carries its own double-precision transform. */
-#define SPEC_N 32768
-
 /* The Hann-windowed power spectrum of x[0 .. SPEC_N), bins 0 .. SPEC_N / 2,
- * into pw. An iterative radix-2 complex FFT on the real input. */
+ * into pw. */
 static void power_spectrum(const float* x, double* pw) {
-  static double re[SPEC_N], im[SPEC_N];
+  static kiss_fft_state* cfg;
+  static kiss_fft_cpx in[SPEC_N], out[SPEC_N];
+  if (cfg == NULL) {
+    cfg = rnn_fft_alloc(SPEC_N, NULL, NULL, 0);
+    if (cfg == NULL) {
+      fprintf(stderr, "rnn_fft_alloc failed\n");
+      exit(1);
+    }
+  }
   for (int i = 0; i < SPEC_N; ++i) {
-    re[i] = x[i] * (0.5 - 0.5 * cos(2.0 * M_PI * i / (SPEC_N - 1)));
-    im[i] = 0.0;
+    in[i].r = (float)(g_hann[i] * x[i]);
+    in[i].i = 0.0f;
   }
-  for (int i = 1, j = 0; i < SPEC_N; ++i) { /* bit reversal */
-    int bit = SPEC_N >> 1;
-    for (; j & bit; bit >>= 1) j ^= bit;
-    j |= bit;
-    if (i < j) {
-      double t = re[i];
-      re[i] = re[j];
-      re[j] = t;
-      t = im[i];
-      im[i] = im[j];
-      im[j] = t;
-    }
+  rnn_fft_c(cfg, in, out);
+  for (int k = 0; k <= SPEC_N / 2; ++k) {
+    pw[k] = (double)out[k].r * out[k].r + (double)out[k].i * out[k].i;
   }
-  for (int len = 2; len <= SPEC_N; len <<= 1) {
-    const double a = -2.0 * M_PI / len;
-    for (int k = 0; k < len / 2; ++k) {
-      const double wr = cos(a * k), wi = sin(a * k);
-      for (int i = k; i < SPEC_N; i += len) {
-        const int j = i + len / 2;
-        const double tr = re[j] * wr - im[j] * wi;
-        const double ti = re[j] * wi + im[j] * wr;
-        re[j] = re[i] - tr;
-        im[j] = im[i] - ti;
-        re[i] += tr;
-        im[i] += ti;
-      }
-    }
-  }
-  for (int k = 0; k <= SPEC_N / 2; ++k) pw[k] = re[k] * re[k] + im[k] * im[k];
 }
 
 static double g_pw[SPEC_N / 2 + 1];
 
-/* The fundamental near [want] Hz: the strongest FFT bin within a tritone
- * either side, then a ternary search of the windowed DFT over +-1 bin around
- * it. Returns Hz, or 0 when the output has no energy there. */
-static double find_f0(const float* x, double want) {
+/* A fundamental the search found nothing for: the output has no energy within
+ * 60 dB of its strongest bin there, or none at all. */
+#define F0_SILENT 0.0
+/* The search's strongest bin is a partial of the unshifted source, not the
+ * target: the shifter passed its input through. */
+#define F0_UNSHIFTED -1.0
+
+/* The fundamental near [want] Hz from an output of a [src_f0] Hz source: the
+ * strongest FFT bin within a tritone either side, then a ternary search of
+ * the windowed DFT over +-1 bin around it. Returns Hz, F0_SILENT or
+ * F0_UNSHIFTED. */
+static double find_f0(const float* x, double want, double src_f0) {
   power_spectrum(x, g_pw);
   const double hz = (double)SR / SPEC_N;
+  double strongest = 0.0;
+  for (int k = 1; k <= SPEC_N / 2; ++k) {
+    if (g_pw[k] > strongest) strongest = g_pw[k];
+  }
   int lo_k = (int)(want / M_SQRT2 / hz), hi_k = (int)(want * M_SQRT2 / hz);
   if (lo_k < 1) lo_k = 1;
   int best = lo_k;
   for (int k = lo_k; k <= hi_k; ++k) {
     if (g_pw[k] > g_pw[best]) best = k;
   }
-  if (g_pw[best] <= 1e-12) return 0.0;
+  if (strongest <= 0.0 || g_pw[best] < 1e-6 * strongest) return F0_SILENT;
   double lo = (best - 1) * hz;
   double hi = (best + 1) * hz;
   for (int it = 0; it < 40; ++it) {
     const double m1 = lo + (hi - lo) / 3.0;
     const double m2 = hi - (hi - lo) / 3.0;
-    if (bin_energy(x, SPEC_N, m1) < bin_energy(x, SPEC_N, m2)) {
+    if (bin_energy(x, m1) < bin_energy(x, m2)) {
       lo = m1;
     } else {
       hi = m2;
     }
   }
-  return 0.5 * (lo + hi);
+  const double f = 0.5 * (lo + hi);
+  const double h = round(f / src_f0);
+  if (fabs(1200.0 * log2(f / want)) > 20.0 && h >= 1.0 &&
+      fabs(1200.0 * log2(f / (h * src_f0))) < 20.0) {
+    return F0_UNSHIFTED;
+  }
+  return f;
 }
 
-/* Share of [x]'s energy, up to Nyquist, within +-3 bins of the partials (12
- * each, below Nyquist) of the [count] fundamentals, in dB (0 = all of it).
- * NAN when the output has no energy. */
+/* Share of [x]'s energy, up to Nyquist, within +-2 bins (the Hann main lobe)
+ * of the partials (12 each, below Nyquist) of the [count] fundamentals, in
+ * dB (0 = all of it). NAN when the output is silent (RMS below 1e-6). */
 static double purity_db(const float* x, const double* f0, int count) {
+  double sq = 0.0;
+  for (int i = 0; i < SPEC_N; ++i) sq += (double)x[i] * x[i];
+  if (sqrt(sq / SPEC_N) < 1e-6) return NAN;
   power_spectrum(x, g_pw);
   const double hz = (double)SR / SPEC_N;
   static unsigned char near_mask[SPEC_N / 2 + 1];
@@ -240,7 +279,7 @@ static double purity_db(const float* x, const double* f0, int count) {
   for (int c = 0; c < count; ++c) {
     for (int h = 1; h <= 12; ++h) {
       const int k = (int)(f0[c] * h / hz + 0.5);
-      for (int d = -3; d <= 3; ++d) {
+      for (int d = -2; d <= 2; ++d) {
         if (k + d > 0 && k + d <= SPEC_N / 2) near_mask[k + d] = 1;
       }
     }
@@ -251,7 +290,6 @@ static double purity_db(const float* x, const double* f0, int count) {
     total += g_pw[k];
     if (near_mask[k]) near += g_pw[k];
   }
-  if (total <= 1e-12) return NAN;
   return 10.0 * log10(near / total);
 }
 
@@ -259,8 +297,9 @@ static double purity_db(const float* x, const double* f0, int count) {
  * envelope first reaching half its steady level. */
 static double latency_ms(int alg, double semis) {
   const int n = SR / 2;
-  float* in = (float*)calloc((size_t)n, sizeof(float));
-  float* out = (float*)calloc((size_t)n, sizeof(float));
+  float* in = (float*)xmalloc(sizeof(float) * (size_t)n);
+  float* out = (float*)xmalloc(sizeof(float) * (size_t)n);
+  memset(in, 0, sizeof(float) * (size_t)n);
   const double f0 = 220.0;
   const int start = SR / 10;
   make_tone(in + start, n - start, &f0, 1);
@@ -282,10 +321,12 @@ static double latency_ms(int alg, double semis) {
   return at < 0 ? -1.0 : 1000.0 * (at - start) / SR;
 }
 
-/* Prints a cents column, or "silent" for a fundamental not found. */
+/* Prints a cents column, or what find_f0 found instead of a fundamental. */
 static void print_cents(double hz, double want, int width) {
-  if (hz <= 0.0) {
+  if (hz == F0_SILENT) {
     printf(" %*s |", width, "silent");
+  } else if (hz == F0_UNSHIFTED) {
+    printf(" %*s |", width, "unshifted");
   } else {
     printf(" %+*.1f |", width, 1200.0 * log2(hz / want));
   }
@@ -293,36 +334,47 @@ static void print_cents(double hz, double want, int width) {
 
 int main(int argc, char** argv) {
   int seconds = 10;
+  int paced = 0;
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--smoke")) seconds = 1;
+    if (!strcmp(argv[i], "--paced")) paced = 1;
   }
   detect_cpu();
+  hann_init();
   g_budget_us = 1e6 * BLOCK / SR;
-  printf("bench_pitch_algos: %s, %d Hz, %d-frame blocks (deadline %.1f us)\n",
-         g_cpu_name, SR, BLOCK, g_budget_us);
+  printf("bench_pitch_algos: %s, %d Hz, %d-frame blocks (deadline %.1f us), "
+         "%s\n",
+         g_cpu_name, SR, BLOCK, g_budget_us, paced ? "paced" : "unpaced");
   printf("| algorithm           | mean us | p50 us | p99 us | max us | latency ms "
          "| +7 cents | -12 cents | tone purity dB | triad purity dB |\n");
   printf("|---------------------|---------|--------|--------|--------|------------"
          "|----------|-----------|----------------|-----------------|\n");
   const int quality_n = SR;
-  float* in = (float*)malloc(sizeof(float) * (size_t)quality_n);
-  float* out = (float*)malloc(sizeof(float) * (size_t)quality_n);
+  float* triad_in = (float*)xmalloc(sizeof(float) * (size_t)quality_n);
+  float* out = (float*)xmalloc(sizeof(float) * (size_t)quality_n);
   /* The quality runs measure the last SPEC_N samples of a 1 s run. */
   const float* tail = out + quality_n - SPEC_N;
   const double f0 = 220.0;
-  float* src = (float*)malloc(sizeof(float) * (size_t)SR);
+  float* src = (float*)xmalloc(sizeof(float) * (size_t)SR);
   make_tone(src, SR, &f0, 1); /* exactly 220 cycles: loops seamlessly */
+  const double triad[3] = {220.0, 277.18, 329.63};
+  make_tone(triad_in, quality_n, triad, 3);
   for (int alg = 0; alg < ALG_N; ++alg) {
-    /* CPU: a 220 Hz tone, +7 semitones, stereo; half a second untimed
+    /* CPU: the 220 Hz tone, +7 semitones, stereo; half a second untimed
      * first. */
     const int warm = SR / 2 / BLOCK;
     const int blocks = seconds * SR / BLOCK;
-    double* us = (double*)malloc(sizeof(double) * (size_t)blocks);
+    double* us = (double*)xmalloc(sizeof(double) * (size_t)blocks);
     shifter s;
     shifter_open(&s, alg, 7.0);
     float l[BLOCK], r[BLOCK];
     rt_enter();
+    double next = now_us();
     for (int b = 0; b < warm + blocks; ++b) {
+      if (paced) {
+        next += g_budget_us;
+        sleep_until_us(next);
+      }
       const int at = (b * BLOCK) % SR;
       memcpy(l, src + at, sizeof(l));
       memcpy(r, src + at, sizeof(r));
@@ -335,27 +387,22 @@ int main(int argc, char** argv) {
     const stats cpu = stats_of(us, (size_t)blocks);
     free(us);
 
+    /* Quality: the tone at +7 (pitch and purity) and -12 (pitch), then the
+     * triad at +5 (purity). */
     double found[2];
     double want[2];
+    double tone_p = NAN;
     const double shifts[2] = {7.0, -12.0};
     for (int k = 0; k < 2; ++k) {
-      make_tone(in, quality_n, &f0, 1);
       shifter_open(&s, alg, shifts[k]);
-      run(&s, in, out, quality_n);
+      run(&s, src, out, quality_n);
       shifter_close(&s);
       want[k] = f0 * pow(2.0, shifts[k] / 12.0);
-      found[k] = find_f0(tail, want[k]);
+      found[k] = find_f0(tail, want[k], f0);
+      if (k == 0) tone_p = purity_db(tail, &want[0], 1);
     }
-    make_tone(in, quality_n, &f0, 1);
-    shifter_open(&s, alg, 7.0);
-    run(&s, in, out, quality_n);
-    shifter_close(&s);
-    const double tgt = f0 * pow(2.0, 7.0 / 12.0);
-    const double tone_p = purity_db(tail, &tgt, 1);
-    const double triad[3] = {220.0, 277.18, 329.63};
-    make_tone(in, quality_n, triad, 3);
     shifter_open(&s, alg, 5.0);
-    run(&s, in, out, quality_n);
+    run(&s, triad_in, out, quality_n);
     shifter_close(&s);
     double ttgt[3];
     for (int c = 0; c < 3; ++c) ttgt[c] = triad[c] * pow(2.0, 5.0 / 12.0);
@@ -370,7 +417,7 @@ int main(int argc, char** argv) {
   }
   printf("\ntimed under: %s\n", g_timed_sched);
   free(src);
-  free(in);
+  free(triad_in);
   free(out);
   return 0;
 }
