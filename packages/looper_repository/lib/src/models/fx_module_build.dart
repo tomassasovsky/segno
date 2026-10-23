@@ -387,8 +387,8 @@ const FxModuleBuild _hpGate = FxModuleBuild(
 );
 
 // The EQ layouts (the kind's "layout" choice).
-const double _layoutCuts = 0;
-const double _layoutShelves = 1;
+const double _layoutShelves = 0;
+const double _layoutCuts = 1;
 const double _layoutBells = 2;
 
 // Ed's Rack: every control of the generic EQ, four bells and both cuts. Its

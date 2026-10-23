@@ -107,7 +107,7 @@ static void eq_entry(le_fx_recipe* r, int s) {
   r->params[s][7] = 0.65f; /* +5.4 dB */
   r->params[s][10] = 0.45f;
   r->params[s][13] = 0.8f; /* high cut ~7.2 kHz */
-  r->params[s][14] = 0.0f; /* bells and cuts */
+  r->params[s][14] = 0.5f; /* bells and cuts */
   r->level[s] = 1.0f;
 }
 
