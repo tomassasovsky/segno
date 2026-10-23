@@ -279,6 +279,7 @@ void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* p, uint64_t frame) 
      * (and, on an output bus, log their type for perf_render to reset too).
      * An entry kept where it was, with its type, keeps its DSP state, so a
      * publish that only moves settings leaves every tail sounding. */
+    _Static_assert(LE_FX_MAX <= 64, "renewed is one bit per slot");
     uint64_t renewed = 0;
     for (int s = 0; s < LE_FX_MAX; ++s) {
       const int active = s < r->count;
@@ -327,14 +328,23 @@ void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* p, uint64_t frame) 
     }
     if (p->owner == LE_FX_OWNER_OUTPUT) {
       /* Every slot's type, marked kept (lane 1) where the entry stayed,
-       * so perf_render renews exactly the slots live renewed (with the
-       * type's defaults when it changed). Parameters are not logged here:
-       * the snapshot logs each one that changed, at the frame it applies
-       * (snapshot_bus_fx), so a publish logs only what moved. */
+       * so perf_render renews exactly the slots live renewed, then every
+       * described parameter, so perf_render holds this recipe's values
+       * whatever it held before. The snapshot's view takes them too, so it
+       * logs only later granular edits (snapshot_bus_fx). */
+      le_obus_snap* view = &e->fx_snap.obus[p->channel];
       for (int s = 0; s < r->count; ++s) {
         const int kept = !(renewed & (1ull << s));
         le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_OUTPUT_FX,
             .fx = {p->channel, kept, s, r->type[s]}});
+        const int32_t w = le_fx_param_width(r->type[s]);
+        for (int k = 0; k < w; ++k) {
+          le_plog_push(e, frame, (le_command){.code = LE_PLOG_SET_OUTPUT_FX_PARAM,
+              .fx = {p->channel, 0, LE_PLOG_FX_PARAM_PACK(s, k),
+                     (int32_t)f32_to_bits(r->params[s][k])}});
+          view->fx_params[s][k] = r->params[s][k];
+        }
+        view->fx_type[s] = r->type[s];
       }
       le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_OUTPUT_FX_COUNT,
           .fxcount = {p->channel, 0, r->count, 0}});
