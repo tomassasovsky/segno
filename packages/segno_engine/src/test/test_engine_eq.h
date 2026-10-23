@@ -221,6 +221,50 @@ static void test_eq_gain_change_glides(void) {
   free(out);
 }
 
+/* Switching a cut on or off glides too: a 100 Hz sine through a low cut
+ * that switches from off to 1 kHz fades out over the smoothing time instead
+ * of dropping in one sample, and a gain sweep through 0 dB never resets the
+ * band (its output stays continuous). */
+static void test_eq_switches_glide(void) {
+  printf("test_eq_switches_glide\n");
+  const int sr = 48000;
+  const int n = sr / 5;
+  float p[LE_FX_PARAMS] = {0};
+  le_fx_defaults(LE_FX_EQ, p);
+  p[0] = 0.0f; /* low cut off */
+  p[13] = 1.0f;
+  le_fx_state* fx = eq_state();
+  fx->clocked = 1;
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  const int32_t types[1] = {LE_FX_EQ};
+  float prev = 0.0f;
+  float max_step = 0.0f;
+  float tail = 0.0f;
+  for (int i = 0; i < n; ++i) {
+    if (i == n / 4) p[0] = eq_setting(0, 1000.0); /* on, at 1 kHz */
+    /* A gain sweep from +6 to -6 dB through 0 across the second half. */
+    if (i >= n / 2) p[7] = 0.5f + (1.0f / 6.0f) * (1.0f - 4.0f * (float)(i - n / 2) / n);
+    memcpy(params[0], p, sizeof(p));
+    fx->clock = (uint32_t)i;
+    const float x = 0.5f * sinf(2.0f * (float)M_PI * 100.0f * i / sr);
+    float l = x, r = x;
+    fx_apply_chain(fx, sr, sr, &l, &r, 1, types, params, NULL);
+    if (i > 0) {
+      const float step = fabsf(l - prev);
+      if (step > max_step) max_step = step;
+    }
+    prev = l;
+    if (i > n / 4 + sr / 20 && i < n / 2 && fabsf(l) > tail) tail = fabsf(l);
+  }
+  /* The sine's own largest step is 0.0065; a switched-in filter would jump
+   * by up to 0.5. The glide moves in 32-frame updates, so the largest step
+   * (at the first updates, where the corner moves fastest) is about 0.022. */
+  CHECK(max_step < 0.03f);
+  /* And the cut did engage: 100 Hz is ~27 dB down a 1 kHz 12 dB/oct cut. */
+  CHECK(tail < 0.5f * 0.06f);
+  eq_free(fx);
+}
+
 /* A slot keeps one block per kind it has held, never reads another kind's
  * bytes, and starts its own clean when it comes back to it: EQ -> delay ->
  * EQ sounds exactly like a fresh EQ from the second EQ on, and the slot's
@@ -342,6 +386,7 @@ static void test_eq_on_a_lane(void) {
 static void run_eq_tests(void) {
   test_eq_magnitude_matches_design();
   test_eq_gain_change_glides();
+  test_eq_switches_glide();
   test_eq_retype_is_clean();
   test_eq_offline_equals_live();
   test_eq_on_a_lane();

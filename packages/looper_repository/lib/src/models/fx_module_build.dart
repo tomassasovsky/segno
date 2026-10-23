@@ -385,33 +385,30 @@ FxModuleBuild fxModuleBuild(FxModule module, {String? family}) {
   return kFxModuleBuilds[module.name] ?? const FxModuleBuild.unavailable();
 }
 
-/// The build [entry] came from, or `null` for an entry that is not a
-/// catalogue module of its own type: the variant whose controls all appear in
-/// the entry's [BuiltInEffect.source], the one with the most of them first.
+/// The rack variant [entry] was built as, or `null` when it is not one: a
+/// Looper X kind ([TrackEffectType.isRackKind]) built from a module with
+/// variants ([kFxModuleVariants]). The variant is the one whose controls all
+/// appear in the entry's [BuiltInEffect.source], the one with the most of
+/// them first; every factory preset of a family carries all of its keys, so
+/// this is the family's own. An entry no variant fits is not one.
 ///
 /// What a surface shows for a rack pedal: [FxModuleBuild.exposed], under
-/// [FxModuleBuild.labels].
+/// [FxModuleBuild.labels]. Any other entry shows every parameter of its type.
 FxModuleBuild? fxEntryBuild(BuiltInEffect entry) {
   final name = entry.module;
-  if (name == null) return null;
-  final module = fxModuleNamed(name);
-  if (module == null) return null;
+  if (name == null || !entry.type.isRackKind) return null;
   final variants = kFxModuleVariants[name];
+  if (variants == null) return null;
   FxModuleBuild? build;
-  if (variants == null) {
-    build = fxModuleBuild(module);
-  } else {
-    var best = -1;
-    for (final v in variants.values) {
-      final keys = v.params.whereType<String>().toList();
-      if (keys.length > best && keys.every(entry.source.containsKey)) {
-        best = keys.length;
-        build = v;
-      }
+  var best = -1;
+  for (final v in variants.values) {
+    final keys = v.params.whereType<String>().toList();
+    if (keys.length > best && keys.every(entry.source.containsKey)) {
+      best = keys.length;
+      build = v;
     }
-    build ??= variants.values.first;
   }
-  return build.type == entry.type ? build : null;
+  return build?.type == entry.type ? build : null;
 }
 
 /// Builds one chain entry for [module] out of [preset]'s values.
