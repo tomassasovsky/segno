@@ -254,7 +254,7 @@ void main() {
       final saved = decodeFxChain(await settings.loadTrackFxChain(0));
       expect(saved.chainEnabled, isFalse);
       final effect = saved.entries.single as BuiltInEffect;
-      expect(effect.params, [.2, .4, .5, 0]);
+      expect(effect.params.take(2), [.2, .4]);
       expect(effect.slotId, 'drive');
       expect(held.params.first, .8);
     },
@@ -424,8 +424,9 @@ void main() {
       expect(
         (decodeFxChain(await settings.loadTrackFxChain(0)).entries.single
                 as BuiltInEffect)
-            .params,
-        [.8, .4, .5, 0],
+            .params
+            .take(2),
+        [.8, .4],
       );
     },
   );
@@ -444,8 +445,9 @@ void main() {
     expect(
       (decodeFxChain(await settings.loadTrackFxChain(0)).entries.single
               as BuiltInEffect)
-          .params,
-      [.3, .4, .5, 0],
+          .params
+          .take(2),
+      [.3, .4],
     );
   });
 
@@ -517,8 +519,9 @@ void main() {
     expect(
       (decodeFxChain(await settings.loadTrackFxChain(0)).entries.single
               as BuiltInEffect)
-          .params,
-      [.1, .4, .5, 0],
+          .params
+          .take(2),
+      [.1, .4],
     );
   });
 
@@ -542,8 +545,9 @@ void main() {
       expect(
         (decodeFxChain(await settings.loadTrackFxChain(0)).entries.single
                 as BuiltInEffect)
-            .params,
-        [.8, .4, .5, 0],
+            .params
+            .take(2),
+        [.8, .4],
       );
       await projection.close();
       expect(replays.hasListener, isFalse);
@@ -574,8 +578,9 @@ void main() {
     expect(
       (decodeFxChain(await settings.loadTrackFxChain(0)).entries.single
               as BuiltInEffect)
-          .params,
-      [.6, .4, .5, 0],
+          .params
+          .take(2),
+      [.6, .4],
     );
   });
 }

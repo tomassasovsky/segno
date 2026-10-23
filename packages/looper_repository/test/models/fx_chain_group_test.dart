@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno_engine/segno_engine.dart' show FxRackEdge;
 
 /// One module of the rack [rackId], or a standalone effect when [rackId] is
 /// null. The slot id makes each entry addressable in an expectation.
@@ -40,6 +41,32 @@ void main() {
       expect(fxGroupChannelWrites(group, channels), {0: channels});
     },
   );
+
+  test("rack edges mark each rack's first and last entry and nothing "
+      'else', () {
+    final chain = [
+      _fx('a'),
+      _fx('b1', rackId: 'B'),
+      _fx('b2', rackId: 'B'),
+      _fx('b3', rackId: 'B'),
+      _fx('c1', rackId: 'C'),
+      _fx('d'),
+      // Two racks back to back are two racks, not one.
+      _fx('e1', rackId: 'E'),
+      _fx('e2', rackId: 'E'),
+    ];
+    expect(fxRackEdges(chain), [
+      FxRackEdge.none,
+      FxRackEdge.first,
+      FxRackEdge.none,
+      FxRackEdge.last,
+      FxRackEdge.only,
+      FxRackEdge.none,
+      FxRackEdge.first,
+      FxRackEdge.last,
+    ]);
+    expect(fxRackEdges(const []), isEmpty);
+  });
 
   test('removing a boundary module keeps the rack channel envelope', () {
     const channels = FxChannels(

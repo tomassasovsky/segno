@@ -3,8 +3,11 @@
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps -->
 
-Living status doc for the Flutter desktop loopstation. Pairs with the original
-plan in `docs/plan/2026-06-08-feat-flutter-desktop-loopstation-plan.md`.
+Living status doc for Segno, the live looping appliance (a Raspberry Pi 5
+console). It began as a Flutter desktop loopstation; the original plan is
+`docs/plan/2026-06-08-feat-flutter-desktop-loopstation-plan.md`. macOS and
+Windows were dropped as targets in #920, so desktop-era entries below are
+history.
 Update this as work lands so any session (human or agent) can resume cold.
 
 Repo: https://github.com/tomassasovsky/segno · branch `master`.
@@ -20,6 +23,9 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
+| #1433 | Looper X racks part 9: pitch groundwork (bench, hop split) and Pitch Shift | in-review | merge-gate | `claude/fx-*1433*` |
+| #1430 | Looper X racks part 8: Spring (fit to captures); Dub-Verb and Amb-Verb wait for a capture | in-review | merge-gate | `claude/fx-spring-1430` |
+| #1388 | MODE footswitch moves from GP5 to GP12 (firmware 2.4; design PR separate) | in-review | auto | `claude/console-mode-gp12-1388-fw` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
 | #887 | Looper X factory racks: build plan and parts | plan | plan-gate | `claude/looperx-racks-plan-887` |
 | #900, #906 | The audio thread never faults or copies on write (replaces #907, #914) | in-review | blocked-verify | `claude/zero-stall-memory-907-914` |
@@ -47,6 +53,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1228 | MIDI clock | plan | merge-gate | `claude/midi-clock-1228-*` |
 | #1270 | Device and appliance pages | plan | merge-gate | `claude/device-pages-plan-1270` |
 | #1342 | Ring carrier firmware updates from the console | in-review | blocked-verify | `claude/ring-update-1342` |
+| #1437 | Recover from and record a freeze (watchdog, pstore, journal sync, lockup policy) | in-review | auto | `claude/appliance-freeze-recovery-1437` |
 
 ---
 
@@ -1280,7 +1287,7 @@ packages/
   segno_engine/        DATA  — FFI plugin over a hand-written miniaudio engine (C)
   controller_repository/ REPO — hardware-agnostic MIDI → looper actions
   looper_repository/   REPO  — owns the engine; EngineSnapshot → LooperState
-  settings_repository/ REPO  — per-device latency calibration persistence
+  settings_repository/ REPO  — persistent settings over KeyValueStore
   local_storage_client/ DATA — KeyValueStore (shared_preferences)
   session_repository/  REPO  — save/restore .segno session bundles (manifest + WAV stems)
   performance_repository/ REPO — performance-recording capture lifecycle (arm/finalize/recover)
@@ -1866,7 +1873,10 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   was deleted (not hidden) from engine → FFI → repo → bloc → UI. Loop multiples
   (#4), latency compensation, the waveform visualizer, Big Picture / two-window,
   and theming are retained. (Supersedes the earlier #2 loop↔tempo and #3
-  quantize-start decisions, which were removed.)
+  quantize-start decisions, which were removed.) **Superseded in turn** by the
+  tempo-aware engine (#263, #1179): tempo, click, count-in, quantization and
+  the five looper modes are back, as `docs/handoff/segno-app/accepted-behavior.md`
+  specifies.
 - **Transport holds at the top when idle** — the master clock advances only
   while a track is active; otherwise it sits at 0. Play always resumes from the
   beginning, never mid-loop in silence.
@@ -1900,15 +1910,17 @@ remains open — see "On-hardware validations" below.
   the 7 already shipped (Delay/Reverb/Echo/Drive/Filter/Tremolo/Octaver) and
   their Windows/Linux builds; brainstormed
   (`docs/brainstorm/2026-07-13-vst3-plugins-parts-15-17-brainstorm-doc.md`)
-  but not planned or built yet.
+  but never planned or built. Epic #194 is closed, and the desktop targets
+  went with #920.
 
 ### Deferred (need hardware / 2nd display)
 - `midi_client` — real USB-MIDI binding **SHIPPED** (PRs #39/#40/#42): native
   `le_midi_*` capture seam → `MidiControllerSource` → `ControllerRepository`,
   with a device-selection UI. Hardware-gated only for a live DIN-MIDI smoke test.
-- **VST3/CLAP plugin hosting — Linux (X11) port.** See the "Effects chain"
-  Done entry above for macOS/Windows status; Linux needs an X11 embedding
-  target, deferred to on-platform work.
+- **VST3/CLAP plugin hosting on Linux.** Hosting is on by default only on
+  macOS; the Linux CMake build leaves `SEGNO_ENABLE_PLUGINS` off unless the
+  environment overrides it, since third-party plugins rarely ship for aarch64
+  Linux.
 - **Readout screen** — the console's 7″ runs as the second Flutter engine under
   ivi-homescreen, fed over the screen link (`lib/visualizer/screen_link.dart`,
   #1318, #1330); the on-device check is in `docs/HARDWARE_VALIDATION.md`.
@@ -1923,7 +1935,7 @@ remains open — see "On-hardware validations" below.
 
 ### On-hardware validations still open
 - Phase-1 **latency gate** (≤10 ms round-trip) — needs a class-compliant
-  interface + loopback (cable or virtual device like BlackHole).
+  interface + a loopback cable; see `docs/HARDWARE_VALIDATION.md`.
 - Audible tightness of latency compensation and undo/redo clicks.
 
 ---

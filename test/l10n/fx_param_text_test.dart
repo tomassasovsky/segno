@@ -19,12 +19,59 @@ const _english = <String, List<String>>{
   'octaver.tone': ['0%', '50%', '100%'],
   'octaver.mix': ['0%', '50%', '100%'],
   'octaver.mode': ['Phase Vocoder', 'Phase Vocoder', 'PSOLA'],
+  'octaver.formants': ['Held', 'Held', 'Follow pitch'],
   'echo.time': ['0.0 ms', '450 ms', '1000 ms'],
   'echo.feedback': ['0%', '49%', '97%'],
   'echo.mix': ['0%', '35%', '100%'],
   'reverb.size': ['0%', '50%', '100%'],
   'reverb.damping': ['0%', '50%', '100%'],
   'reverb.mix': ['0%', '35%', '100%'],
+  'eq.low_cut': ['20.0 Hz', '70.4 Hz', '8.0 kHz'],
+  'eq.low_gain': ['-18.0 dB', '0.0 dB', '18.0 dB'],
+  'eq.low_freq': ['20.0 Hz', '90.0 Hz', '1.0 kHz'],
+  'eq.low_q': ['0.40', '0.40', '10.00'],
+  'eq.lo_mid_gain': ['-18.0 dB', '0.0 dB', '18.0 dB'],
+  'eq.lo_mid_freq': ['20.0 Hz', '101 Hz', '20.0 kHz'],
+  'eq.lo_mid_q': ['0.40', '0.70', '10.00'],
+  'eq.hi_mid_gain': ['-18.0 dB', '0.0 dB', '18.0 dB'],
+  'eq.hi_mid_freq': ['20.0 Hz', '3.0 kHz', '20.0 kHz'],
+  'eq.hi_mid_q': ['0.40', '0.66', '10.00'],
+  'eq.high_gain': ['-18.0 dB', '0.0 dB', '18.0 dB'],
+  'eq.high_freq': ['1.2 kHz', '5.3 kHz', '20.0 kHz'],
+  'eq.high_q': ['0.40', '0.40', '10.00'],
+  'eq.high_cut': ['120 Hz', '20.0 kHz', '20.0 kHz'],
+  'eq.layout': ['Shelves', 'Bells, cuts', 'Bells'],
+  'compressor.threshold': ['0.0 dB', '-21.0 dB', '-60.0 dB'],
+  'compressor.ratio': ['1.0:1', '4.0:1', '100:1'],
+  'compressor.attack': ['0.01 ms', '1.7 ms', '300 ms'],
+  'compressor.release': ['5.0 ms', '141 ms', '4000 ms'],
+  'compressor.makeup': ['0.0 dB', '3.3 dB', '30.0 dB'],
+  'transient.attack': ['0%', '50%', '100%'],
+  'transient.attack_length': ['0%', '50%', '100%'],
+  'transient.sustain': ['0%', '50%', '100%'],
+  'hpGate.highpass': ['Off', 'Off', '500 Hz'],
+  'hpGate.gate_threshold': ['-120.0 dB', '-120.0 dB', '0.0 dB'],
+  'doubler.mix': ['0%', '100%', '100%'],
+  'doubler.separation': ['0%', '100%', '100%'],
+  'chorus.rate': ['0%', '45%', '100%'],
+  'chorus.depth': ['0%', '21%', '100%'],
+  'chorus.mix': ['0%', '50%', '100%'],
+  'wah.pedal': ['0%', '62%', '100%'],
+  'overdrive.drive': ['0%', '9%', '100%'],
+  'overdrive.tone': ['0%', '50%', '100%'],
+  'distortion.drive': ['0%', '20%', '100%'],
+  'distortion.tone': ['0%', '50%', '100%'],
+  'vinyl.drive': ['0%', '40%', '100%'],
+  'vinyl.frequency': ['50.0 Hz', '251 Hz', '5.0 kHz'],
+  'vinyl.noise': ['0%', '30%', '100%'],
+  'vinyl.noise_tone': ['0%', '90%', '100%'],
+  'degrade.frequency': ['500 Hz', '50.0 kHz', '50.0 kHz'],
+  'degrade.filter': ['0%', '100%', '100%'],
+  'degrade.mix': ['0%', '100%', '100%'],
+  'lpf.cutoff': ['20.0 Hz', 'Off', 'Off'],
+  'lpf.resonance': ['0%', '100%', '100%'],
+  'spring.time': ['1.00 s', '2.00 s', '10.00 s'],
+  'spring.mix': ['0%', '50%', '100%'],
 };
 
 /// The same in Spanish: a decimal comma, and the Spanish mode name.
@@ -42,12 +89,59 @@ const _spanish = <String, List<String>>{
   'octaver.tone': ['0%', '50%', '100%'],
   'octaver.mix': ['0%', '50%', '100%'],
   'octaver.mode': ['Vocoder de fase', 'Vocoder de fase', 'PSOLA'],
+  'octaver.formants': ['Fijos', 'Fijos', 'Siguen el tono'],
   'echo.time': ['0,0 ms', '450 ms', '1000 ms'],
   'echo.feedback': ['0%', '49%', '97%'],
   'echo.mix': ['0%', '35%', '100%'],
   'reverb.size': ['0%', '50%', '100%'],
   'reverb.damping': ['0%', '50%', '100%'],
   'reverb.mix': ['0%', '35%', '100%'],
+  'eq.low_cut': ['20,0 Hz', '70,4 Hz', '8,0 kHz'],
+  'eq.low_gain': ['-18,0 dB', '0,0 dB', '18,0 dB'],
+  'eq.low_freq': ['20,0 Hz', '90,0 Hz', '1,0 kHz'],
+  'eq.low_q': ['0,40', '0,40', '10,00'],
+  'eq.lo_mid_gain': ['-18,0 dB', '0,0 dB', '18,0 dB'],
+  'eq.lo_mid_freq': ['20,0 Hz', '101 Hz', '20,0 kHz'],
+  'eq.lo_mid_q': ['0,40', '0,70', '10,00'],
+  'eq.hi_mid_gain': ['-18,0 dB', '0,0 dB', '18,0 dB'],
+  'eq.hi_mid_freq': ['20,0 Hz', '3,0 kHz', '20,0 kHz'],
+  'eq.hi_mid_q': ['0,40', '0,66', '10,00'],
+  'eq.high_gain': ['-18,0 dB', '0,0 dB', '18,0 dB'],
+  'eq.high_freq': ['1,2 kHz', '5,3 kHz', '20,0 kHz'],
+  'eq.high_q': ['0,40', '0,40', '10,00'],
+  'eq.high_cut': ['120 Hz', '20,0 kHz', '20,0 kHz'],
+  'eq.layout': ['Shelving', 'Con cortes', 'Campanas'],
+  'compressor.threshold': ['0,0 dB', '-21,0 dB', '-60,0 dB'],
+  'compressor.ratio': ['1,0:1', '4,0:1', '100:1'],
+  'compressor.attack': ['0,01 ms', '1,7 ms', '300 ms'],
+  'compressor.release': ['5,0 ms', '141 ms', '4000 ms'],
+  'compressor.makeup': ['0,0 dB', '3,3 dB', '30,0 dB'],
+  'transient.attack': ['0%', '50%', '100%'],
+  'transient.attack_length': ['0%', '50%', '100%'],
+  'transient.sustain': ['0%', '50%', '100%'],
+  'hpGate.highpass': ['Apagado', 'Apagado', '500 Hz'],
+  'hpGate.gate_threshold': ['-120,0 dB', '-120,0 dB', '0,0 dB'],
+  'doubler.mix': ['0%', '100%', '100%'],
+  'doubler.separation': ['0%', '100%', '100%'],
+  'chorus.rate': ['0%', '45%', '100%'],
+  'chorus.depth': ['0%', '21%', '100%'],
+  'chorus.mix': ['0%', '50%', '100%'],
+  'wah.pedal': ['0%', '62%', '100%'],
+  'overdrive.drive': ['0%', '9%', '100%'],
+  'overdrive.tone': ['0%', '50%', '100%'],
+  'distortion.drive': ['0%', '20%', '100%'],
+  'distortion.tone': ['0%', '50%', '100%'],
+  'vinyl.drive': ['0%', '40%', '100%'],
+  'vinyl.frequency': ['50,0 Hz', '251 Hz', '5,0 kHz'],
+  'vinyl.noise': ['0%', '30%', '100%'],
+  'vinyl.noise_tone': ['0%', '90%', '100%'],
+  'degrade.frequency': ['500 Hz', '50,0 kHz', '50,0 kHz'],
+  'degrade.filter': ['0%', '100%', '100%'],
+  'degrade.mix': ['0%', '100%', '100%'],
+  'lpf.cutoff': ['20,0 Hz', 'Apagado', 'Apagado'],
+  'lpf.resonance': ['0%', '100%', '100%'],
+  'spring.time': ['1,00 s', '2,00 s', '10,00 s'],
+  'spring.mix': ['0%', '50%', '100%'],
 };
 
 void main() {
@@ -92,6 +186,25 @@ void main() {
       // 99.96 ms rounds to 100.0, so it reads as a whole 100.
       expect(en.fxParamValueText(ms, 0.09996), '100 ms');
       expect(en.fxParamValueText(ms, 0.35), '350 ms');
+    });
+
+    test('keeps two decimals below 1 ms', () {
+      final attack = TrackEffectType.compressor.params[2];
+      expect(en.fxParamValueText(attack, 0), '0.01 ms');
+      // 0.01 * 30000^0.3 = 0.22 ms.
+      expect(en.fxParamValueText(attack, 0.3), '0.22 ms');
+      expect(es.fxParamValueText(attack, 0.3), '0,22 ms');
+      // 0.999 ms rounds to 1.00, so it reads with one decimal.
+      expect(
+        en.fxParamValueText(attack, attack.settingFor(0.999)),
+        '1.0 ms',
+      );
+    });
+
+    test('reads a ratio with one decimal against 1', () {
+      final ratio = TrackEffectType.compressor.params[1];
+      expect(en.fxParamValueText(ratio, 0.758), '4.0:1');
+      expect(es.fxParamValueText(ratio, 0.5), '2,0:1');
     });
 
     test('reads whole hertz from 100 Hz and kilohertz from 1000 Hz', () {
@@ -141,7 +254,7 @@ void main() {
         }
       }
       expect(en.fxParamName(TrackEffectType.filter.params.first), 'Cutoff');
-      expect(es.fxParamName(TrackEffectType.octaver.params.last), 'Modo');
+      expect(es.fxParamName(TrackEffectType.octaver.params[3]), 'Modo');
     });
 
     test('reads an unknown key as the key itself', () {

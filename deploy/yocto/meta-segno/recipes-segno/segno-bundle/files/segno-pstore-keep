@@ -1,0 +1,86 @@
+#!/bin/sh
+# File each archived set of kernel crash records in its own directory, and
+# bound how many sets are kept (#1437).
+#
+# Runs as ExecStartPost of systemd-pstore.service (drop-in
+# systemd-pstore.service.d/10-segno.conf), right after systemd-pstore has moved
+# the ramoops records into /var/lib/systemd/pstore (bound to /data).
+#
+# Why a directory per set: systemd-pstore only groups EFI and ERST records into
+# directories. A ramoops record keeps its kernel name (dmesg-ramoops-0,
+# console-ramoops-0) and is copied to the top of the archive with COPY_REPLACE.
+# ramoops numbers its dmesg slots from 0 again on every boot, so the second
+# crash would overwrite the first one's dmesg-ramoops-0. Moving each set into a
+# directory named for the time it was archived (UTC, so names sort by age)
+# keeps them all.
+#
+# Why prune: every warm reboot, clean or not, leaves a console copy, so the
+# console-only sets grow with every restart. A set with a dmesg record is a
+# panic or an oops and is worth far more. So the two kinds are counted
+# separately: the newest KEEP_CONSOLE console-only sets and the newest
+# KEEP_CRASH crash sets stay, and older ones go. A crash set is deleted only
+# when KEEP_CRASH newer crash sets exist, so the latest crashes are always
+# there. systemd's own 14-day cleanup is turned off
+# (tmpfiles.d/10-segno-pstore.conf) so that age never deletes them.
+set -u
+
+DIR="${SEGNO_PSTORE_DIR:-/var/lib/systemd/pstore}"
+STAMP="${SEGNO_PSTORE_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
+KEEP_CONSOLE="${SEGNO_PSTORE_KEEP_CONSOLE:-10}"
+KEEP_CRASH="${SEGNO_PSTORE_KEEP_CRASH:-50}"
+
+log() { echo "segno-pstore-keep: $*" >&2; }
+
+set --
+for f in "$DIR"/*; do
+    [ -f "$f" ] && set -- "$@" "$f"
+done
+[ "$#" -gt 0 ] || exit 0
+
+dest="$DIR/$STAMP"
+if ! mkdir -p "$dest"; then
+    log "could not create $dest; the records stay at the top of $DIR"
+    exit 1
+fi
+if ! mv -- "$@" "$dest/"; then
+    log "could not move every record into $dest"
+    exit 1
+fi
+log "kept $# record(s) in $dest"
+
+# crash or console: a set with any dmesg record is a crash.
+kind_of() {
+    for f in "$1"/dmesg-*; do
+        [ -e "$f" ] && { echo crash; return; }
+    done
+    echo console
+}
+
+count() {
+    n=0
+    for d in "$DIR"/[0-9]*T*Z; do
+        [ -d "$d" ] && [ "$(kind_of "$d")" = "$1" ] && n=$((n + 1))
+    done
+    echo "$n"
+}
+
+# The glob lists the sets oldest first, so the first (total - keep) of a kind
+# are the ones to drop.
+prune() {
+    kind=$1
+    keep=$2
+    drop=$(( $(count "$kind") - keep ))
+    for d in "$DIR"/[0-9]*T*Z; do
+        [ "$drop" -gt 0 ] || return 0
+        [ -d "$d" ] && [ "$(kind_of "$d")" = "$kind" ] || continue
+        if rm -rf -- "$d"; then
+            log "pruned $kind set $(basename "$d")"
+        else
+            log "could not prune $d"
+        fi
+        drop=$((drop - 1))
+    done
+}
+
+prune console "$KEEP_CONSOLE"
+prune crash "$KEEP_CRASH"

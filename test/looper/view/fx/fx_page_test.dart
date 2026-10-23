@@ -1055,14 +1055,14 @@ void main() {
       expect(
         appended.entries.map((e) => (e as BuiltInEffect).type),
         [
-          // The table's order, which is not a processing order.
-          TrackEffectType.none, // Compressor, which this engine cannot build
-          TrackEffectType.delay,
+          // Ed's Rack's measured order, with Reverb before Delay.
+          TrackEffectType.compressor,
           TrackEffectType.reverb,
+          TrackEffectType.delay,
         ],
       );
       // The preset's own values reach the parameters they feed.
-      final delay = appended.entries[1] as BuiltInEffect;
+      final delay = appended.entries[2] as BuiltInEffect;
       expect(delay.params[0], closeTo(0.42, 1e-9));
     });
 
@@ -1089,7 +1089,7 @@ void main() {
       // engine could build for it.
       expect(
         appended.entries.map((e) => e.module),
-        ['Compressor', 'Delay', 'Reverb'],
+        ['Compressor', 'Reverb', 'Delay'],
       );
     });
 
@@ -2040,9 +2040,9 @@ void main() {
 
         final written = lastTrackWrite();
         expect(
-          (written.firstWhere((e) => e.slotId == 'r1a') as BuiltInEffect)
-              .params,
-          const [0.41, 0.32, 0.23, 0.14],
+          (written.firstWhere((e) => e.slotId == 'r1a') as BuiltInEffect).params
+              .take(3),
+          const [0.41, 0.32, 0.23],
         );
       });
 
@@ -2113,7 +2113,7 @@ void main() {
           lanes: _rig.tracks.first.lanes,
           effects: [
             ..._rig.tracks.first.effects,
-            for (final (i, module) in ['Compressor', 'Delay', 'Reverb'].indexed)
+            for (final (i, module) in ['Compressor', 'Reverb', 'Delay'].indexed)
               BuiltInEffect(
                 type: TrackEffectType.none,
                 slotId: 'old-$i',

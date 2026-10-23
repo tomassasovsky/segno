@@ -37,6 +37,10 @@ add_library(segno_dsp_core STATIC
 # Matches segno_engine's own C_STANDARD/atomics configuration below: this
 # static lib ends up embedded in multiple .so/.dll/.dylib outputs, so PIC is
 # set explicitly rather than relying on it propagating from consumers.
+# pthread_once (engine_fx.c builds the octaver's shared tables once, #1410).
+find_package(Threads REQUIRED)
+target_link_libraries(segno_dsp_core PUBLIC Threads::Threads)
+
 set_target_properties(segno_dsp_core PROPERTIES
   C_STANDARD 11
   C_STANDARD_REQUIRED ON
@@ -64,9 +68,10 @@ target_include_directories(segno_dsp_core PUBLIC
 )
 
 # Verified via `nm -u` on the built objects: segno_dsp_core's only unresolved
-# symbols are libc/libm (rt_alloc.c's mmap/munmap/madvise/sysconf/fprintf,
-# and calloc/free/sinf/cosf/tanf/tanhf/atan2f/expf/logf/
-# powf, plus the compiler-inserted stack-protector/memcpy-check builtins) and
+# symbols are libc/libm/pthread (rt_alloc.c's mmap/munmap/madvise/sysconf/
+# fprintf, and calloc/free/sinf/cosf/sin/cos/tanf/tanhf/atan2f/expf/logf/
+# powf, engine_fx.c's pthread_once for the octaver tables (#1410), plus the
+# compiler-inserted stack-protector/memcpy-check builtins) and
 # le_plugin_slot_process (the link-seam gotcha above). If a future change to
 # engine_fx.c (or a header it pulls in) adds a new external dependency, this
 # list goes stale — re-run `nm -u` on the object and update both this comment

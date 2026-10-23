@@ -59,7 +59,7 @@
 #include "engine_read_head.h"  /* the fractional read coordinate (#1179) */
 #include "engine_miniaudio.h" /* le_miniaudio_backend (le_select_backend target) */
 #include "engine_platform.h"  /* le_platform_device_id_to_str, ma_device_id */
-#include "fft.h"              /* le_fft, le_rfft_fwd, le_rfft_inv, le_hann_init */
+#include "fft.h"              /* le_rfft_plan, le_rfft_fwd/_inv, le_hann_init */
 #include "json_read.h"        /* le_json_parse (part 7 offline renderer) */
 #include "lockfree_ring.h"
 #include "loop_clock.h"
@@ -486,6 +486,16 @@ static void process_const(le_engine* e, float value, int frames, float* out) {
   float in[64];
   for (int i = 0; i < frames; ++i) in[i] = value;
   le_engine_process(e, out, in, (uint32_t)frames);
+}
+
+/* The audibility fade's gain (#1400) on frame k of a fade-in (or, with
+ * `out`, of a fade-out) at sr, stepped as the callback steps it, so a check
+ * against it is exact. */
+static float test_gate_gain(int sr, int k, int out) {
+  const float step = le_gate_step_size(sr);
+  float g = out ? 1.0f : 0.0f;
+  for (int i = 0; i <= k; ++i) g = le_gate_step(g, out ? 0.0f : 1.0f, step);
+  return g;
 }
 
 static le_engine* make_configured_engine(void) {
@@ -2980,11 +2990,15 @@ static void test_device_lost_keeps_running(void) {
 }
 
 /* Exercises the master_bus_frame RT step in isolation (the limiter dynamics):
- * below the ceiling it is bit-transparent; above it, instant attack pins the
- * frame to the ceiling; master gain is applied before the limiter and metering. */
+ * below the ceiling it is bit-transparent; above it, the brickwall backstop pins
+ * the frame to the ceiling; master gain is applied before the limiter and
+ * metering. Runs at the shipped ~2 ms attack coefficient; the attack's shape is
+ * measured by test_master_limiter_attack_is_not_a_step. */
 static void test_master_bus_frame_limiter(void) {
   printf("test_master_bus_frame_limiter\n");
   le_engine* e = make_configured_engine(); /* configure seeds lim_gain = 1.0 */
+  const float attack = 1.0f / (0.002f * 48000.0f); /* the shipped ~2 ms */
+  const int32_t hold = 48000 / 20;                 /* the shipped ~50 ms */
   float out[2];
   float sumsq;
   float peak;
@@ -2994,19 +3008,20 @@ static void test_master_bus_frame_limiter(void) {
   out[1] = -0.5f;
   sumsq = 0.0f;
   peak = 0.0f;
-  le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, 0.99f, 0.001f,
-                                      &sumsq, &peak);
+  le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, 0.99f, hold,
+                                      attack, 0.001f, &sumsq, &peak);
   CHECK(fabsf(out[0] - 0.5f) < 1e-6f);
   CHECK(fabsf(out[1] + 0.5f) < 1e-6f);
   CHECK(fabsf(peak - 0.5f) < 1e-6f); /* metering reads the output */
 
-  /* Above the ceiling: instant attack clamps this very frame, no overshoot. */
+  /* Above the ceiling: the gain has barely started to fall, and the backstop
+   * still holds this very frame at the ceiling, no overshoot. */
   out[0] = 2.0f;
   out[1] = 0.0f;
   sumsq = 0.0f;
   peak = 0.0f;
-  le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, 0.99f, 0.001f,
-                                      &sumsq, &peak);
+  le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, 0.99f, hold,
+                                      attack, 0.001f, &sumsq, &peak);
   CHECK(out[0] <= 0.99f + 1e-4f);
   CHECK(peak <= 0.99f + 1e-4f);
 
@@ -3015,11 +3030,282 @@ static void test_master_bus_frame_limiter(void) {
   out[1] = 1.0f;
   sumsq = 0.0f;
   peak = 0.0f;
-  le_engine_master_bus_frame_for_test(e, out, 0, 2, 0.5f, 0, 0.99f, 0.001f,
-                                      &sumsq, &peak);
+  le_engine_master_bus_frame_for_test(e, out, 0, 2, 0.5f, 0, 0.99f, hold,
+                                      attack, 0.001f, &sumsq, &peak);
   CHECK(fabsf(out[0] - 0.5f) < 1e-6f);
 
   le_engine_destroy(e);
+}
+
+/* One run of the #725 fixture at a given attack coefficient. Channel 0 carries a
+ * QUIET steady sine and nothing else; channel 1 is silent until a sudden loud
+ * burst pushes the frame peak far past the ceiling. The limiter takes its peak
+ * across channels and applies the resulting gain to ALL of them, so whatever it
+ * does to channel 0 is a gain move and nothing else: channel 0 never contains a
+ * transient of its own. Returns the worst sample-to-sample delta seen on channel
+ * 0, and the quiet sine's own worst delta through `out_worst_quiet`.
+ *
+ * Two things this fixture had to learn. An amplitude that ramps GENTLY through
+ * the ceiling does not show the defect (the instant jump is tiny there, because
+ * ceiling/peak is barely below 1.0 at the crossing); it takes a sudden
+ * transient. And a burst at n/2 lands exactly on the 100 Hz sine's zero
+ * crossing (480 frames per cycle, 2400 = 5 whole cycles), where a gain step
+ * multiplied by ~0 is invisible, so the burst sits a quarter cycle later, at
+ * the sine's peak. */
+static double limiter_quiet_channel_worst_delta(float lim_attack,
+                                                double* out_worst_quiet) {
+  le_engine* e = make_configured_engine();
+  const int sr = 48000;
+  const int n = sr / 10; /* 100 ms */
+  const int burst_at = n / 2 + 120;
+  const float ceiling = 0.99f;
+  const float release = 1.0f / (0.05f * (float)sr);
+  const int32_t hold = sr / 20;
+  const double inc = 2.0 * 3.14159265358979323846 * 100.0 / (double)sr;
+
+  double worst_out = 0.0;
+  double worst_quiet = 0.0;
+  float prev_out = 0.0f;
+  float prev_quiet = 0.0f;
+  for (int i = 0; i < n; ++i) {
+    const float quiet = 0.2f * (float)sin(inc * (double)i);
+    /* A 5 ms burst well over the ceiling, on the OTHER channel. */
+    const float loud =
+        (i >= burst_at && i < burst_at + sr / 200) ? 2.0f : 0.0f;
+    float out[2];
+    out[0] = quiet;
+    out[1] = loud;
+    float sumsq = 0.0f;
+    float peak = 0.0f;
+    le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, ceiling, hold,
+                                        lim_attack, release, &sumsq, &peak);
+    if (i > 0) {
+      const double d_out = fabs((double)out[0] - (double)prev_out);
+      const double d_quiet = fabs((double)quiet - (double)prev_quiet);
+      if (d_out > worst_out) worst_out = d_out;
+      if (d_quiet > worst_quiet) worst_quiet = d_quiet;
+    }
+    prev_out = out[0];
+    prev_quiet = quiet;
+    /* The ceiling contract, unchanged by the smoothing. */
+    CHECK(out[0] <= ceiling + 1e-6f);
+    CHECK(out[1] <= ceiling + 1e-6f);
+    CHECK(out[1] >= -ceiling - 1e-6f);
+  }
+  le_engine_destroy(e);
+  if (out_worst_quiet != NULL) *out_worst_quiet = worst_quiet;
+  return worst_out;
+}
+
+/* #725: the limiter's gain move must not itself be a click.
+ *
+ * The fixture is the defect stated literally: a quiet pad under a loud snare.
+ * Any step on the quiet channel is the gain move, not the material.
+ *
+ * Both coefficients run, the shipped ~2 ms attack and the instant one it
+ * replaced, so this demonstrates the improvement rather than asserting the
+ * state after it, and cannot pass by accident if the fixture is retuned. */
+static void test_master_limiter_attack_is_not_a_step(void) {
+  printf("test_master_limiter_attack_is_not_a_step\n");
+  const float shipped = 1.0f / (0.002f * 48000.0f); /* the ~2 ms attack */
+
+  double quiet_delta = 0.0;
+  const double instant = limiter_quiet_channel_worst_delta(1.0f, &quiet_delta);
+  const double smoothed = limiter_quiet_channel_worst_delta(shipped, NULL);
+
+  printf("  the quiet channel's own worst delta: %.6f\n", quiet_delta);
+  printf("  instant attack: worst delta on it %.6f (%.1fx)\n", instant,
+         quiet_delta > 0 ? instant / quiet_delta : 0.0);
+  printf("  ~2 ms attack:   worst delta on it %.6f (%.1fx)\n", smoothed,
+         quiet_delta > 0 ? smoothed / quiet_delta : 0.0);
+
+  /* The old behaviour: one sample scaled the whole mix, so a channel carrying
+   * only a quiet sine took a step many times its own largest movement. */
+  CHECK(instant > quiet_delta * 10.0);
+  /* What ships now: the gain move does not exceed the material it rides. */
+  CHECK(smoothed <= quiet_delta * 1.05);
+  /* A large improvement, not a rounding difference. */
+  CHECK(smoothed < instant * 0.2);
+}
+
+/* #725: what the smoothed attack settles INTO, which the step test above does
+ * not measure (it watches the first few milliseconds).
+ *
+ * If the gain never arrived at ceiling/peak, the backstop would turn the
+ * limiter into a hard clipper that flat-tops every loud passage, a far worse
+ * artifact than the click the smoothing removed. A channel BELOW the ceiling
+ * tells the two apart: a clipper leaves it untouched, a limiter scales it with
+ * everything else.
+ *
+ * The second half is the transparency claim, which the smoothing put at risk.
+ * A one-pole release approaches unity and never reaches it, so without the snap
+ * every later sample would leave multiplied by 0.999999-something. "Rests at
+ * 1.0" is asserted as bit equality for that reason: a tolerance would pass
+ * either way. */
+static void test_master_limiter_settles_into_scaling_then_unity(void) {
+  printf("test_master_limiter_settles_into_scaling_then_unity\n");
+  le_engine* e = make_configured_engine();
+  const int sr = 48000;
+  const float ceiling = 0.99f;
+  const float attack = 1.0f / (0.002f * (float)sr);
+  const float release = 1.0f / (0.05f * (float)sr);
+  const int32_t hold = sr / 20;
+  /* Sustained constant levels, so the limiter's target is the same every frame
+   * and the gain has something fixed to converge on. */
+  const float loud = 2.0f;
+  const float under = 0.5f; /* already below the ceiling; only a GAIN moves it */
+
+  float last0 = 0.0f;
+  float last1 = 0.0f;
+  for (int i = 0; i < sr / 10; ++i) { /* 100 ms, ~50 attack time constants */
+    float out[2] = {loud, under};
+    float sumsq = 0.0f;
+    float peak = 0.0f;
+    le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, ceiling, hold,
+                                        attack, release, &sumsq, &peak);
+    CHECK(out[0] <= ceiling + 1e-6f);
+    last0 = out[0];
+    last1 = out[1];
+  }
+  const float settled = ceiling / loud;
+  printf("  sustained: loud %.4f, under-ceiling channel %.4f (clipping would "
+         "leave it at %.4f)\n",
+         (double)last0, (double)last1, (double)under);
+  /* Scaling, not clipping: the channel that never touched the ceiling came
+   * down with the rest of the mix. */
+  CHECK(fabs((double)last1 - (double)(under * settled)) < 1e-4);
+  CHECK(fabs((double)last1 - (double)under) > 0.1);
+  /* The loud channel sits AT the ceiling by gain, so the clamp has nothing
+   * left to do. */
+  CHECK(fabs((double)last0 - (double)ceiling) < 1e-4);
+
+  /* Release: quiet material, well under the ceiling, until the gain is back. */
+  const float quiet = 0.1f;
+  int exact_at = -1;
+  double worst_release_delta = 0.0;
+  float prev = last0;
+  for (int i = 0; i < sr * 2; ++i) {
+    float out[2] = {quiet, quiet};
+    float sumsq = 0.0f;
+    float peak = 0.0f;
+    le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, ceiling, hold,
+                                        attack, release, &sumsq, &peak);
+    if (i > 0) {
+      const double d = fabs((double)out[0] - (double)prev);
+      if (d > worst_release_delta) worst_release_delta = d;
+    }
+    prev = out[0];
+    if (exact_at < 0 && out[0] == quiet && out[1] == quiet) exact_at = i;
+  }
+  printf("  bit-exact again %d ms after the loud passage ended; worst step on "
+         "the way %.8f\n",
+         exact_at < 0 ? -1 : exact_at * 1000 / sr, worst_release_delta);
+  CHECK(exact_at >= 0);
+  /* The snap that buys that equality is a gain discontinuity, so measure it:
+   * at most 1e-3 of gain on a 0.1 signal. */
+  CHECK(worst_release_delta < (double)quiet * 2e-3);
+  le_engine_destroy(e);
+}
+
+/* What one steady AC run through the limiter measured. */
+typedef struct {
+  double clamped;    /* steady-state share of samples the backstop clamped */
+  double over_db;    /* how far over the ceiling the worst of them was, dB */
+  double gain_step;  /* largest one-frame gain change anywhere in the run */
+  int over_ceiling;  /* samples that LEFT above the ceiling (must be 0) */
+} lim_ac_result;
+
+/* #725: steady AC material through the limiter at the constants the engine
+ * ships for `sr`, with the hold window `hold` (sr / 20 shipped, 1 = no hold).
+ * Channel 0 carries the loud signal: a 100 Hz sine, or the 110 + 347 Hz
+ * two-tone, peaking near `level` times the ceiling. Channel 1 carries a 0.1 DC
+ * probe that never nears the ceiling, so out[1] / 0.1 IS the frame's gain, and
+ * a channel-0 sample was clamped exactly when |in| * gain exceeds the ceiling.
+ *
+ * A DC fixture cannot see what this measures. With a constant level every
+ * frame's own |x| is the peak, so a detector without a hold reads it right. A
+ * waveform falls toward zero between its peaks, and a detector that follows
+ * each frame releases there. */
+static lim_ac_result limiter_steady_ac(int sr, int hold, int two_tone,
+                                       double level) {
+  le_engine* e = make_configured_engine();
+  const float ceiling = 0.99f;
+  const float attack = 1.0f / (0.002f * (float)sr);
+  const float release = 1.0f / (0.05f * (float)sr);
+  const double pi = 3.14159265358979323846;
+  const double amp = level * (double)ceiling;
+  const int n = sr; /* 1 s */
+  const int steady_from = sr / 5; /* judged after 200 ms */
+  lim_ac_result r = {0.0, 0.0, 0.0, 0};
+  int clamped = 0;
+  double prev_gain = 1.0;
+  for (int i = 0; i < n; ++i) {
+    const double ts = (double)i / (double)sr;
+    const double x = two_tone ? 0.5 * amp * (sin(2.0 * pi * 110.0 * ts) +
+                                             sin(2.0 * pi * 347.0 * ts))
+                              : amp * sin(2.0 * pi * 100.0 * ts);
+    float out[2] = {(float)x, 0.1f};
+    float sumsq = 0.0f;
+    float peak = 0.0f;
+    le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, ceiling, hold,
+                                        attack, release, &sumsq, &peak);
+    const double gain = (double)out[1] / 0.1;
+    if (fabs(gain - prev_gain) > r.gain_step) r.gain_step = fabs(gain - prev_gain);
+    prev_gain = gain;
+    if (fabsf(out[0]) > ceiling + 1e-6f) r.over_ceiling++;
+    if (i >= steady_from) {
+      const double want = fabs((double)(float)x) * gain;
+      if (want > (double)ceiling * (1.0 + 1e-4)) {
+        clamped++;
+        const double db = 20.0 * log10(want / (double)ceiling);
+        if (db > r.over_db) r.over_db = db;
+      }
+    }
+  }
+  r.clamped = (double)clamped / (double)(n - steady_from);
+  le_engine_destroy(e);
+  return r;
+}
+
+/* #725 review: the smoothed attack needs a PEAK HOLD, or the brickwall
+ * backstop does the limiting on any steady loud waveform. Without one the
+ * target rises in every trough between peaks, the release lifts the gain, and
+ * the 2 ms attack never catches up: a sustained sine at twice the ceiling had
+ * 27-29% of its samples clamped, and the two-tone at six times up to +3.6 dB
+ * flat-topped (the old instant attack clamped none).
+ *
+ * Every row runs at 48 and 96 kHz. With the shipped hold, steady material is
+ * scaled, not clamped, the gain never steps, and nothing leaves above the
+ * ceiling. The same sine with the hold removed (hold = 1) shows the defect, so
+ * this test cannot pass by measuring nothing. */
+static void test_master_limiter_holds_through_a_steady_waveform(void) {
+  printf("test_master_limiter_holds_through_a_steady_waveform\n");
+  const int rates[2] = {48000, 96000};
+  const struct {
+    int two_tone;
+    double level;
+  } rows[5] = {{0, 1.5}, {0, 2.0}, {0, 6.0}, {1, 1.5}, {1, 6.0}};
+  for (int ri = 0; ri < 2; ++ri) {
+    const int sr = rates[ri];
+    const double attack = 1.0 / (0.002 * (double)sr);
+    for (int k = 0; k < 5; ++k) {
+      const lim_ac_result r =
+          limiter_steady_ac(sr, sr / 20, rows[k].two_tone, rows[k].level);
+      printf("  %d Hz %s x%.1f: clamped %.4f%% (worst +%.3f dB), largest gain "
+             "step %.5f\n",
+             sr, rows[k].two_tone ? "two-tone" : "sine    ", rows[k].level,
+             100.0 * r.clamped, r.over_db, r.gain_step);
+      CHECK(r.over_ceiling == 0);
+      CHECK(r.clamped < 0.002);
+      CHECK(r.over_db < 0.01);
+      /* One frame of the one-pole at most, never a step to the target. */
+      CHECK(r.gain_step <= attack * 1.01);
+    }
+    const lim_ac_result none = limiter_steady_ac(sr, 1, 0, 2.0);
+    printf("  %d Hz sine x2.0 with NO hold: clamped %.2f%% (worst +%.3f dB)\n",
+           sr, 100.0 * none.clamped, none.over_db);
+    CHECK(none.clamped > 0.1);
+  }
 }
 
 static void test_looper_clear(void) {
@@ -3295,6 +3581,69 @@ static void feed_to_loop_top(le_engine* e) {
   }
 }
 
+/* One engine-level limiter run: a loop of a 100 Hz sine plays through
+ * le_engine_process with the limiter on and its ceiling at half the loop's
+ * peak, so the coefficients under test are the ones le_engine_process itself
+ * computes. Returns the share of output samples that sit AT the ceiling (the
+ * backstop's mark) over the first 300 ms after the limiter is switched on, and
+ * reports the steady peak and whether anything left above the ceiling. */
+static double limiter_engine_run(double* out_steady_peak, int* out_over) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800; /* 100 ms: exactly 10 cycles of 100 Hz */
+  le_test_osc osc = make_osc(100.0, 48000.0);
+  le_engine_record(e, 0);
+  feed_osc(e, &osc, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_osc(e, &osc, 512, NULL, NULL);
+  drain(e);
+
+  float* buf = (float*)malloc(sizeof(float) * (size_t)48000);
+  int n = 0;
+  feed_const(e, 0.0f, 2 * N, buf, &n);
+  double loop_peak = 0.0;
+  for (int i = 0; i < n; ++i) {
+    if (fabs((double)buf[i]) > loop_peak) loop_peak = fabs((double)buf[i]);
+  }
+  const float ceiling = (float)(loop_peak / 2.0);
+  CHECK(le_engine_set_limiter(e, 1, ceiling) == LE_OK);
+  n = 0;
+  feed_const(e, 0.0f, 24000, buf, &n); /* 500 ms */
+  int at_ceiling = 0;
+  int over = 0;
+  double steady_peak = 0.0;
+  for (int i = 0; i < n; ++i) {
+    const float a = fabsf(buf[i]);
+    if (a > ceiling + 1e-6f) over++;
+    if (i < 14400 && a >= ceiling - 1e-7f) at_ceiling++;
+    if (i >= 14400 && (double)a > steady_peak) steady_peak = (double)a;
+  }
+  *out_steady_peak = steady_peak / (double)ceiling;
+  *out_over = over;
+  free(buf);
+  le_engine_destroy(e);
+  return (double)at_ceiling / 14400.0;
+}
+
+/* #725 review: the limiter through le_engine_process, so the hold, attack and
+ * release le_engine_process computes are the ones measured. A loop at twice
+ * the ceiling must come out scaled to the ceiling: peaks at it, nothing over
+ * it, and the backstop's mark on only the onset and the samples at the sine's
+ * crest. Swapping the attack and release (a 50 ms attack) would keep the
+ * backstop clamping for most of the window and fail the first bound. */
+static void test_master_limiter_through_process(void) {
+  printf("test_master_limiter_through_process\n");
+  double steady_peak = 0.0;
+  int over = 0;
+  const double at_ceiling = limiter_engine_run(&steady_peak, &over);
+  printf("  at the ceiling over the first 300 ms: %.3f%%; steady peak %.4f of "
+         "the ceiling; samples over it: %d\n",
+         100.0 * at_ceiling, steady_peak, over);
+  CHECK(over == 0);
+  CHECK(at_ceiling < 0.03);
+  CHECK(steady_peak > 0.99); /* scaled to the ceiling, not below it */
+}
+
 static int cmp_float(const void* a, const void* b) {
   const float x = *(const float*)a;
   const float y = *(const float*)b;
@@ -3320,6 +3669,407 @@ static double splice_score(const float* buf, int n, double* out_step,
   if (out_median != NULL) *out_median = med;
   if (med <= 0.0) return max_d > 0.0 ? 1e9 : 0.0;
   return max_d / med;
+}
+
+/* #730: a take that STOPS EARLY. Auto rounds the length up to whole base loops
+ * and everything past record_pos stays the digital silence
+ * le_prepare_new_capture wrote, so without the taper the loop holds material, a
+ * hard cut to 0.0, silence, then a step back into the material at the wrap,
+ * once per lap for as long as the take lives.
+ *
+ * The oscillator starts at its PEAK on purpose: a take begins wherever the
+ * performer happens to be, so the buffer's first sample is arbitrary, and
+ * starting at phase 0 would make the wrap join look clean for a reason that has
+ * nothing to do with the engine. Both joins are reported by position, so a
+ * future replacement can be compared on the same two numbers (before the fix:
+ * cut 142x, wrap 598x). */
+static void test_take_stops_early_no_silence_cut(void) {
+  printf("test_take_stops_early_no_silence_cut\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  le_test_osc osc = make_osc(36.25, 48000.0);
+  osc.phase = 3.14159265358979323846 / 2.0; /* start at the peak */
+
+  /* Silent defining master, so only the short take contributes content. */
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  feed_to_loop_top(e);
+
+  /* Track 1: 1.3 laps, then stop. Auto rounds 6240 up to 2 x 4800 = 9600. */
+  const int recorded = (13 * N) / 10;
+  le_engine_record(e, 1);
+  drain(e);
+  feed_osc(e, &osc, recorded, NULL, NULL);
+  le_engine_record(e, 1);               /* stop early */
+  feed_const(e, 0.0f, 512, NULL, NULL); /* the player really has stopped */
+  drain(e);
+  settle_layers(e);
+
+  const int len = 2 * N;
+  feed_to_loop_top(e); /* so capture index == loop position */
+  float* loop = (float*)malloc(sizeof(float) * (size_t)(2 * len));
+  int n = 0;
+  feed_const(e, 0.0f, 2 * len, loop, &n);
+
+  double step = 0.0;
+  double med = 0.0;
+  const double score = splice_score(loop, n, &step, &med);
+  const double cut = fabs((double)loop[recorded] - (double)loop[recorded - 1]);
+  const double wrap = fabs((double)loop[len] - (double)loop[len - 1]);
+  printf("  cut-to-silence @%d: %.5f (%.1fx)   wrap @%d: %.5f (%.1fx)"
+         "   median-delta=%.6f\n",
+         recorded, cut, med > 0 ? cut / med : 0.0, len, wrap,
+         med > 0 ? wrap / med : 0.0, med);
+  printf("  worst step anywhere: %.5f  score=%.1fx\n", step, score);
+  CHECK(cut < 1e-3);
+  CHECK(wrap < 1e-3);
+  CHECK(score < 25.0);
+  free(loop);
+
+  le_engine_destroy(e);
+}
+
+/* One #730 fixture run at a chosen take length; returns the worst step in the
+ * looped output. Split out so the taper's 4F threshold is measured on both
+ * sides of itself rather than asserted from the constant. */
+static double take_worst_step_for_length(int recorded) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  le_test_osc osc = make_osc(36.25, 48000.0);
+  osc.phase = 3.14159265358979323846 / 2.0; /* start at the peak */
+
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  feed_to_loop_top(e);
+
+  le_engine_record(e, 1);
+  drain(e);
+  feed_osc(e, &osc, recorded, NULL, NULL);
+  le_engine_record(e, 1);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  settle_layers(e);
+
+  feed_to_loop_top(e);
+  float* loop = (float*)malloc(sizeof(float) * (size_t)(2 * N));
+  int n = 0;
+  feed_const(e, 0.0f, 2 * N, loop, &n);
+  double step = 0.0;
+  double med = 0.0;
+  (void)splice_score(loop, n, &step, &med);
+  free(loop);
+  le_engine_destroy(e);
+  return step;
+}
+
+/* #730's threshold, measured. Below 4F (~40 ms at 48 kHz) a take is left
+ * exactly as recorded: a take that short is a transient either way, and fading
+ * it would turn it into a swell. Above it, both joins are closed. Both sides
+ * are checked so that lowering the constant (2F was tried and let a take be
+ * entirely envelope) fails here. */
+static void test_take_taper_threshold_leaves_short_takes_alone(void) {
+  printf("test_take_taper_threshold_leaves_short_takes_alone\n");
+  const int f = 48000 / 100; /* seam_xfade_frames at 48 kHz */
+
+  const double just_under = take_worst_step_for_length(4 * f - 400);
+  const double comfortably_over = take_worst_step_for_length(4 * f + 2000);
+  printf("  %d frames (< 4F): worst step %.5f    %d frames (> 4F): %.5f\n",
+         4 * f - 400, just_under, 4 * f + 2000, comfortably_over);
+
+  CHECK(just_under > 0.05);       /* left alone: the joins are still there */
+  CHECK(comfortably_over < 0.01); /* tapered: both joins closed */
+}
+
+/* #730 on the fixed-multiple path, which the original fix did not cover. With
+ * a fixed multiple the write head wraps modulo K*base, so a take pressed
+ * mid-loop and stopped before its K laps runs past the loop end, wraps to the
+ * head, and stops short of its own start: material over [start, len) and
+ * [0, stop), silence between. The joins are at `stop` and `start`, NOT at the
+ * loop end, where the material is continuous and must not be faded.
+ *
+ * K = 2 (9600), pressed at 2400, 8000 frames played: material [2400, 9600) and
+ * [0, 800), silence [800, 2400). Read from the buffer itself, so the check does
+ * not depend on which lap the master is on. */
+static void test_take_taper_follows_a_wrapped_fixed_multiple_take(void) {
+  printf("test_take_taper_follows_a_wrapped_fixed_multiple_take\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  const int len = 2 * N;
+  const int start = 2400;
+  const int played = 8000;
+  const int stop = start + played - len; /* 800, after the wrap */
+  const int f = 48000 / 100;
+  le_test_osc osc = make_osc(36.25, 48000.0);
+  osc.phase = 3.14159265358979323846 / 2.0; /* start at the peak */
+
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  CHECK(le_engine_set_track_multiple(e, 1, 2) == LE_OK);
+  feed_to_loop_top(e);
+  feed_const(e, 0.0f, start, NULL, NULL);
+
+  le_engine_record(e, 1);
+  drain(e);
+  feed_osc(e, &osc, played, NULL, NULL);
+  le_engine_record(e, 1); /* stop before the 2 laps */
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  settle_layers(e);
+
+  float* b = (float*)calloc((size_t)len, sizeof(float));
+  CHECK(le_engine_export_track(e, 1, b, len) == len);
+  double worst = 0.0;
+  int worst_at = 0;
+  for (int i = 0; i < len; ++i) {
+    const int prev = i == 0 ? len - 1 : i - 1; /* the loop wraps */
+    const double d = fabs((double)b[i] - (double)b[prev]);
+    if (d > worst) {
+      worst = d;
+      worst_at = i;
+    }
+  }
+  /* What the oscillator put at the loop end and the head: untouched there. */
+  const double at_end = 0.5 * sin(osc.inc * (double)(len - 1 - start) +
+                                  3.14159265358979323846 / 2.0);
+  const double at_head = 0.5 * sin(osc.inc * (double)(len - start) +
+                                   3.14159265358979323846 / 2.0);
+  printf("  joins: in @%d %.5f, out @%d %.5f; loop end %.5f (want %.5f), head "
+         "%.5f (want %.5f); worst step %.5f @%d\n",
+         start, (double)b[start], stop - 1, (double)b[stop - 1],
+         (double)b[len - 1], at_end, (double)b[0], at_head, worst, worst_at);
+
+  CHECK(fabsf(b[start - 1]) < 1e-6f);    /* silence before the material */
+  CHECK(fabsf(b[start]) < 1e-6f);        /* fade-in starts at 0 */
+  CHECK(fabsf(b[stop]) < 1e-6f);         /* silence after the material */
+  CHECK(fabs((double)b[stop - 1]) < 0.01); /* fade-out ends near 0 */
+  CHECK(fabs((double)b[len - 1] - at_end) < 1e-5);  /* continuous, unfaded */
+  CHECK(fabs((double)b[0] - at_head) < 1e-5);
+  CHECK(fabs((double)b[start + f] -
+             0.5 * sin(osc.inc * (double)f + 3.14159265358979323846 / 2.0)) <
+        1e-5); /* full amplitude past the fade-in */
+  CHECK(worst < 0.01);
+  free(b);
+  le_engine_destroy(e);
+}
+
+/* #730 with rec/dub: an early stop finalizes into OVERDUBBING and the player
+ * keeps playing, so the dub writes the take's continuation from its end on.
+ * Fading the tail out there, with the dub fading in after it, was a ~20 ms
+ * dip to zero once per lap. The tail must stay as played and the dub must
+ * start at full gain, so the buffer holds the performance continuously
+ * across the take's end; only the start (silence before it) is faded.
+ *
+ * Auto length: 6240 frames played round up to 9600; the dub then runs 1000
+ * more frames before the punch-out, whose own fade ends the layer. */
+static void test_take_taper_rec_dub_continues_without_a_dip(void) {
+  printf("test_take_taper_rec_dub_continues_without_a_dip\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  const int len = 2 * N;
+  const int stop = (13 * N) / 10; /* 6240 */
+  const int f = 48000 / 100;
+  const double phase0 = 3.14159265358979323846 / 2.0;
+  le_test_osc osc = make_osc(36.25, 48000.0);
+  osc.phase = phase0; /* start at the peak */
+
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  le_engine_set_rec_dub(e, 1);
+  feed_to_loop_top(e);
+
+  le_engine_record(e, 1);
+  drain(e);
+  feed_osc(e, &osc, stop, NULL, NULL);
+  le_engine_record(e, 1); /* stop early: into OVERDUBBING */
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_OVERDUBBING);
+  CHECK(s.tracks[1].length_frames == len);
+  feed_osc(e, &osc, 1000, NULL, NULL); /* the player keeps playing */
+  le_engine_record(e, 1);              /* punch out */
+  feed_osc(e, &osc, 512, NULL, NULL);  /* through the punch-out fade */
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  settle_layers(e);
+
+  float* b = (float*)calloc((size_t)len, sizeof(float));
+  CHECK(le_engine_export_track(e, 1, b, len) == len);
+  /* Across the take's end, sample for sample what was played. */
+  double dev = 0.0;
+  for (int j = stop - f; j < stop + f; ++j) {
+    const double want = 0.5 * sin(phase0 + osc.inc * (double)j);
+    const double d = fabs((double)b[j] - want);
+    if (d > dev) dev = d;
+  }
+  double worst = 0.0;
+  for (int i = 0; i < len; ++i) {
+    const double d = fabs((double)b[i] - (double)b[i == 0 ? len - 1 : i - 1]);
+    if (d > worst) worst = d;
+  }
+  printf("  across the take's end @%d: deviation from the performance %.7f; "
+         "worst step in the loop %.5f\n",
+         stop, dev, worst);
+  CHECK(dev < 1e-5);
+  CHECK(fabsf(b[0]) < 1e-6f); /* the start is still faded in */
+  CHECK(worst < 0.01);
+  free(b);
+  le_engine_destroy(e);
+}
+
+/* The #730 rec/dub fixture up to the early stop: a silent 4800-frame master,
+ * rec/dub on, and track 1 recorded from the loop top for 6240 frames from the
+ * oscillator's peak, then the stop press (queued, not yet drained). */
+static le_engine* rec_dub_early_stop_fixture(le_test_osc* osc) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  *osc = make_osc(36.25, 48000.0);
+  osc->phase = 3.14159265358979323846 / 2.0;
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  le_engine_set_rec_dub(e, 1);
+  feed_to_loop_top(e);
+  le_engine_record(e, 1);
+  drain(e);
+  feed_osc(e, osc, (13 * N) / 10, NULL, NULL);
+  le_engine_record(e, 1); /* stop early: into OVERDUBBING */
+  return e;
+}
+
+/* Checks a 9600-frame take buffer whose material ends at `end` with the
+ * standard 480-frame fade, followed by silence: the fade's own values, then
+ * nothing, and no step anywhere around the loop. */
+static void check_take_tail_faded(const float* b, int len, int end,
+                                  double phase0, double inc, const char* what) {
+  const int f = 48000 / 100;
+  double dev = 0.0;
+  for (int i = 0; i < f; ++i) {
+    const int p = end - 1 - i;
+    const double want =
+        0.5 * sin(phase0 + inc * (double)p) * ((double)i / (double)f);
+    if (fabs((double)b[p] - want) > dev) dev = fabs((double)b[p] - want);
+  }
+  double after = 0.0;
+  for (int p = end; p < end + 400; ++p) {
+    if (fabs((double)b[p]) > after) after = fabs((double)b[p]);
+  }
+  double worst = 0.0;
+  for (int i = 0; i < len; ++i) {
+    const double d = fabs((double)b[i] - (double)b[i == 0 ? len - 1 : i - 1]);
+    if (d > worst) worst = d;
+  }
+  printf("  %s: fade deviation %.7f, after the end %.7f, worst step %.5f\n",
+         what, dev, after, worst);
+  CHECK(dev < 1e-5);
+  CHECK(after < 1e-6);
+  CHECK(worst < 0.01);
+}
+
+/* #730 review: the rec/dub continuation's UNDO image. The first dub pass backs
+ * up the take with its tail unfaded (live skipped that fade because the dub
+ * continues it), and that image is the take followed by silence, so undoing
+ * the dub used to bring back a raw cut once per lap. Its tail is now faded as
+ * the layer retires. Both retire paths: a short dub punched out (the drain
+ * completes the image) and a dub that ran a whole pass (the pass boundary). */
+static void test_take_taper_rec_dub_undo_restores_a_faded_tail(void) {
+  printf("test_take_taper_rec_dub_undo_restores_a_faded_tail\n");
+  const int len = 9600;
+  const int stop = 6240;
+  const int dubs[2] = {1000, 10000};
+  for (int d = 0; d < 2; ++d) {
+    le_test_osc osc;
+    le_engine* e = rec_dub_early_stop_fixture(&osc);
+    const double phase0 = 3.14159265358979323846 / 2.0;
+    drain(e);
+    feed_osc(e, &osc, dubs[d], NULL, NULL); /* the player keeps playing */
+    le_engine_record(e, 1);                 /* punch out */
+    feed_osc(e, &osc, 512, NULL, NULL);
+    feed_const(e, 0.0f, 512, NULL, NULL);
+    drain(e);
+    settle_layers(e);
+    le_snapshot s;
+    for (int k = 0; k < 8; ++k) {
+      le_engine_get_snapshot(e, &s);
+      if (s.tracks[1].undo_depth <= 0) break;
+      le_engine_undo(e, 1);
+      drain(e);
+      settle_layers(e);
+    }
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[1].undo_depth == 0);
+    float* b = (float*)calloc((size_t)len, sizeof(float));
+    CHECK(le_engine_export_track(e, 1, b, len) == len);
+    check_take_tail_faded(b, len, stop, phase0, osc.inc,
+                          d == 0 ? "undone short dub" : "undone whole-pass dub");
+    free(b);
+    le_engine_destroy(e);
+  }
+}
+
+/* #730 review: a stop that ends the rec/dub continuation at once. STOPPED has
+ * no punch-out tail, so a tail left unfaded for a continuation that then never
+ * happens would be a raw cut. Stopped in the same drain as the finalize (k = 0
+ * frames continued) the take's own tail is faded; stopped 100 frames in, the
+ * fade ends at the last frame the dub wrote. */
+static void test_take_taper_rec_dub_stop_right_after_fades_the_tail(void) {
+  printf("test_take_taper_rec_dub_stop_right_after_fades_the_tail\n");
+  const int len = 9600;
+  const int stop = 6240;
+  const int ks[2] = {0, 100};
+  for (int d = 0; d < 2; ++d) {
+    le_test_osc osc;
+    le_engine* e = rec_dub_early_stop_fixture(&osc);
+    const double phase0 = 3.14159265358979323846 / 2.0;
+    if (ks[d] > 0) {
+      drain(e);
+      feed_osc(e, &osc, ks[d], NULL, NULL);
+    }
+    CHECK(le_engine_stop_track(e, 1) == LE_OK);
+    drain(e);
+    le_snapshot s;
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+    feed_const(e, 0.0f, 1024, NULL, NULL);
+    drain(e);
+    settle_layers(e);
+    float* b = (float*)calloc((size_t)len, sizeof(float));
+    CHECK(le_engine_export_track(e, 1, b, len) == len);
+    check_take_tail_faded(b, len, stop + ks[d], phase0, osc.inc,
+                          d == 0 ? "stopped in the same drain"
+                                 : "stopped 100 frames in");
+    /* And undoing that short pass, if it left a layer, changes nothing. */
+    le_engine_get_snapshot(e, &s);
+    if (s.tracks[1].undo_depth > 0) {
+      le_engine_undo(e, 1);
+      drain(e);
+      settle_layers(e);
+      CHECK(le_engine_export_track(e, 1, b, len) == len);
+      check_take_tail_faded(b, len, stop + ks[d], phase0, osc.inc,
+                            "and after undoing it");
+    }
+    free(b);
+    le_engine_destroy(e);
+  }
 }
 
 /* #728 control: the defining master's OWN take already wraps continuously —
@@ -3646,14 +4396,19 @@ static void test_loop_seam_on_non_defining_track(void) {
 }
 
 /* #728 (c): with a NONZERO record offset — i.e. every latency-calibrated rig —
- * the seam is deliberately NOT folded, and the take is left exactly as #728
- * found it. Compensation writes input frame i at position i - offset, so a
- * take that ran a full lap leaves its head at len - offset and the trailing
- * `offset` frames as the zeros le_prepare_new_capture wrote: there is no
- * continuation of position len-1 to fold, and finalize_new_track's arming gate
- * refuses. This pins that refusal (rather than leaving it to be discovered as
- * a silent no-op), and pins that refusing costs nothing — the head is the raw
- * take, untouched, and nothing was written past the compensated write head. */
+ * the seam is deliberately NOT folded. Compensation writes input frame i at
+ * position i - offset, so a take that ran a full lap leaves its head at
+ * len - offset and the trailing `offset` frames as the zeros
+ * le_prepare_new_capture wrote: there is no continuation of position len-1 to
+ * fold, and finalize_new_track's arming gate refuses. This pins that refusal
+ * (rather than leaving it to be discovered as a silent no-op), and that nothing
+ * was written past the compensated write head.
+ *
+ * Because the take does not fill its loop (the compensation ate its last OFF
+ * frames), #730's taper fades both of its ends. So the head is the raw take
+ * through the fade-in, which still proves no continuation was folded in: a fold
+ * would replace the head with the take's continuation, which the ramp cannot
+ * mimic. */
 static void test_loop_seam_not_armed_with_record_offset(void) {
   printf("test_loop_seam_not_armed_with_record_offset\n");
   le_engine* e = le_engine_create();
@@ -3692,13 +4447,18 @@ static void test_loop_seam_not_armed_with_record_offset(void) {
   float* stem = (float*)malloc(sizeof(float) * (size_t)N);
   CHECK(le_engine_export_track(e, 1, stem, N) == N);
 
-  /* The head is the raw take: input frame j + OFF landed at position j. */
+  /* The head is the raw take (input frame j + OFF landed at position j)
+   * through #730's fade-in. */
   double head_dev = 0.0;
   for (int j = 0; j < F; ++j) {
-    const double want = 0.5 * sin(phase0 + inc * (double)(j + OFF));
+    const double ramp = (double)j / (double)F;
+    const double want = 0.5 * sin(phase0 + inc * (double)(j + OFF)) * ramp;
     const double d = fabs((double)stem[j] - want);
     if (d > head_dev) head_dev = d;
   }
+  /* And its last sample, just before the zeros, is the end of the fade-out
+   * (weight 0) rather than a raw splice into them. */
+  CHECK(fabs((double)stem[N - OFF - 1]) < 1e-9);
   /* And nothing was written past the compensated write head: the last OFF
    * frames are still the prepared zeros. A stray overlap write would land
    * exactly here. */
@@ -6553,6 +7313,111 @@ static void test_quantize_div_start_fires_on_loop_locked_grid(void) {
   le_engine_destroy(e);
 }
 
+/* #730: the material does not always start at position 0, and the fade has to
+ * follow it. Grid-quantized record-start (D8) delays capture to the next grid
+ * unit, so the take sits at [375, 1500) inside a 3000-frame loop with silence
+ * on BOTH sides of it.
+ *
+ * The quantize tests elsewhere only BRACKET this (silence at 374, full
+ * amplitude a little later), which would pass just as well with the fade at
+ * position 0, fading silence and leaving both real steps. This measures the
+ * ramps themselves. */
+static void test_take_taper_follows_a_quantized_record_start(void) {
+  printf("test_take_taper_follows_a_quantized_record_start\n");
+  le_engine* e = qa_make_grid_engine();
+  le_snapshot s;
+  const int f = 1000 / 100; /* seam_xfade_frames at this fixture's rate */
+
+  CHECK(timing_remember(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  qa_advance_to(e, 0.0f, 1);
+  le_engine_record(e, 1);
+  drain(e);
+  qa_advance_to(e, 0.0f, 375); /* capture begins at 375, not 0 */
+  qa_advance_to(e, 2.0f, 375 + 1125);
+  le_engine_record(e, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].length_frames == 3000);
+
+  static float dst[3000];
+  qa_advance_to(e, 0.0f, 0);
+  qa_capture_out(e, dst, 3000);
+
+  printf("  fade-in: %.4f %.4f %.4f   fade-out: %.4f %.4f %.4f\n", dst[375],
+         dst[375 + f / 2], dst[375 + f], dst[1499 - f], dst[1499 - f / 2],
+         dst[1499]);
+  /* The fade-in is AT the material's start, not at the buffer's. */
+  CHECK(fabsf(dst[374]) < 1e-6f);            /* silence right before it */
+  CHECK(fabsf(dst[375]) < 1e-6f);            /* first material sample: 0 */
+  CHECK(dst[375 + f / 2] > 0.5f);            /* on its way up */
+  CHECK(dst[375 + f / 2] < 2.0f - 1e-6f);    /* but not there yet */
+  CHECK(fabsf(dst[375 + f] - 2.0f) < 1e-6f); /* full amplitude past it */
+  /* And the fade-out at the material's end. */
+  CHECK(fabsf(dst[1499 - f] - 2.0f) < 1e-6f);
+  CHECK(dst[1499 - f / 2] > 0.5f);
+  CHECK(dst[1499 - f / 2] < 2.0f - 1e-6f);
+  CHECK(fabsf(dst[1499]) < 1e-6f); /* last material sample: 0 */
+  CHECK(fabsf(dst[1500]) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* #730 and #728 on the same take. A grid-quantized take that starts at a grid
+ * unit and ends exactly ON the loop end has silence before it and its own
+ * continuation after it: #728's fold arms on the tail (the player keeps
+ * playing through the finalize) and folds that continuation into the head.
+ * The taper must then fade only the START. Fading the tail out as well would
+ * leave the faded last sample next to the full-amplitude continuation the fold
+ * writes at position 0: a full-scale step at every wrap (2.0 at this
+ * fixture's level, measured with the tail fade forced on). */
+static void test_take_taper_leaves_a_folded_tail_to_the_seam_fold(void) {
+  printf("test_take_taper_leaves_a_folded_tail_to_the_seam_fold\n");
+  le_engine* e = qa_make_grid_engine();
+  le_snapshot s;
+  const int f = 1000 / 100; /* seam_xfade_frames at this fixture's rate */
+
+  CHECK(timing_remember(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  qa_advance_to(e, 0.0f, 1);
+  le_engine_record(e, 1);
+  drain(e);
+  qa_advance_to(e, 0.0f, 375); /* capture begins at 375 */
+  /* Position 2900: behind = 275 >= ahead = 100, so the end rounds UP to the
+   * boundary at the loop end, 3000. */
+  qa_advance_to(e, 2.0f, 2900);
+  le_engine_record(e, 1);
+  drain(e);
+  qa_advance_to(e, 2.0f, 0); /* the loop-end boundary fires the finalize */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].length_frames == 3000);
+  qa_advance_to(e, 2.0f, 100); /* the player plays through: the continuation */
+
+  static float dst[3000];
+  qa_advance_to(e, 0.0f, 0);
+  qa_capture_out(e, dst, 3000);
+  double worst = 0.0;
+  int worst_at = 0;
+  for (int i = 0; i < 3000; ++i) {
+    const double d = fabs((double)dst[i] - (double)dst[i == 0 ? 2999 : i - 1]);
+    if (d > worst) {
+      worst = d;
+      worst_at = i;
+    }
+  }
+  printf("  tail %.4f, head %.4f (the fold's continuation), fade-in %.4f -> "
+         "%.4f; worst step %.4f @%d\n",
+         dst[2999], dst[0], dst[375], dst[375 + f], worst, worst_at);
+  CHECK(fabsf(dst[2999] - 2.0f) < 1e-6f); /* the tail is NOT faded */
+  CHECK(fabsf(dst[0] - 2.0f) < 1e-6f);    /* the fold's first sample */
+  CHECK(fabsf(dst[f]) < 1e-6f);           /* the fold has faded it out */
+  CHECK(fabsf(dst[375]) < 1e-6f);         /* the start is faded in */
+  CHECK(fabsf(dst[375 + f] - 2.0f) < 1e-6f);
+  /* Every step is one fade increment (2.0 / f) at most. */
+  CHECK(worst < 2.0 / f + 1e-4);
+
+  le_engine_destroy(e);
+}
+
 /* D8 record END, round-down: a finalize press 3.49 quarter units into the
  * capture truncates at unit 3 — the tail past the boundary behind is dropped
  * (zeroed) and the track finalizes immediately at that boundary. */
@@ -6580,13 +7445,17 @@ static void test_quantize_div_record_end_rounds_down(void) {
   CHECK(s.tracks[1].length_frames == 3000);
 
   /* Content: 2.0 over exactly [375, 1500) — 3 whole units — and silence
-   * everywhere else, including the truncated tail [1500, 1684). */
+   * everywhere else, including the truncated tail [1500, 1684). The take does
+   * not fill its loop, so its first and last 10 frames are #730's fades
+   * (measured by test_take_taper_follows_a_quantized_record_start); the 2.0
+   * checks sample just inside them, and the silence checks still pin the
+   * edges. */
   static float dst[3000];
   qa_advance_to(e, 0.0f, 0);
   qa_capture_out(e, dst, 3000);
   CHECK(fabsf(dst[374]) < 1e-6f);
-  CHECK(fabsf(dst[375] - 2.0f) < 1e-6f);
-  CHECK(fabsf(dst[1499] - 2.0f) < 1e-6f);
+  CHECK(fabsf(dst[385] - 2.0f) < 1e-6f);
+  CHECK(fabsf(dst[1489] - 2.0f) < 1e-6f);
   CHECK(fabsf(dst[1500]) < 1e-6f);
   CHECK(fabsf(dst[1600]) < 1e-6f);
   CHECK(fabsf(dst[1683]) < 1e-6f);
@@ -6626,12 +7495,14 @@ static void test_quantize_div_record_end_rounds_up(void) {
   CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
   CHECK(s.tracks[1].length_frames == 3000);
 
-  /* Content: 2.0 over exactly [375, 1875) — 4 whole units. */
+  /* Content: 2.0 over exactly [375, 1875) — 4 whole units — sampled just
+   * inside #730's 10-frame fades. */
   static float dst[3000];
   qa_advance_to(e, 0.0f, 0);
   qa_capture_out(e, dst, 3000);
-  CHECK(fabsf(dst[375] - 2.0f) < 1e-6f);
-  CHECK(fabsf(dst[1874] - 2.0f) < 1e-6f);
+  CHECK(fabsf(dst[374]) < 1e-6f);
+  CHECK(fabsf(dst[385] - 2.0f) < 1e-6f);
+  CHECK(fabsf(dst[1864] - 2.0f) < 1e-6f);
   CHECK(fabsf(dst[1875]) < 1e-6f);
 
   le_engine_destroy(e);
@@ -6664,11 +7535,13 @@ static void test_quantize_div_record_end_min_one_unit(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
 
+  /* Exactly one unit, [375, 750), sampled just inside #730's 10-frame fades. */
   static float dst[3000];
   qa_advance_to(e, 0.0f, 0);
   qa_capture_out(e, dst, 3000);
-  CHECK(fabsf(dst[375] - 2.0f) < 1e-6f);
-  CHECK(fabsf(dst[749] - 2.0f) < 1e-6f);
+  CHECK(fabsf(dst[374]) < 1e-6f);
+  CHECK(fabsf(dst[385] - 2.0f) < 1e-6f);
+  CHECK(fabsf(dst[739] - 2.0f) < 1e-6f);
   CHECK(fabsf(dst[750]) < 1e-6f);
 
   le_engine_destroy(e);
@@ -6813,11 +7686,13 @@ static void test_quantize_div_capture_lock_preserves_pending_end(
   CHECK(s.tracks[1].pending == 0);
   CHECK(s.tracks[1].length_frames == 3000); /* rounded up to the base loop */
 
-  /* Literal PCM boundary: content through 374, silence from 375. */
+  /* Literal PCM boundary: content through 374, silence from 375. The take
+   * does not fill its loop, so the 2.0 checks sample just inside #730's
+   * 10-frame fades; the silence check pins the edge. */
   float* lane1 = (float*)calloc(3000, sizeof(float));
   CHECK(le_engine_export_track_lane(e, 1, 0, lane1, 3000) == 3000);
-  CHECK(fabsf(lane1[0] - 2.0f) < 1e-6f);
-  CHECK(fabsf(lane1[374] - 2.0f) < 1e-6f);
+  CHECK(fabsf(lane1[10] - 2.0f) < 1e-6f);
+  CHECK(fabsf(lane1[364] - 2.0f) < 1e-6f);
   CHECK(fabsf(lane1[375]) < 1e-6f);
   CHECK(fabsf(lane1[750]) < 1e-6f); /* silent well past the old QUARTER unit */
   free(lane1);
@@ -13017,10 +13892,10 @@ static void test_perf_events_log_command_storm_no_loss(void) {
   le_engine_destroy(e);
 }
 
-/* Acceptance criterion: FX param sweeps are logged (control-side emission)
- * with monotonic frames. Each le_engine_set_lane_fx_param call reads a fresh
- * a_perf_frames snapshot, so processing frames between calls should produce
- * a strictly non-decreasing frame sequence in the log. */
+/* Acceptance criterion: FX param sweeps are logged with monotonic frames.
+ * A lane parameter is logged by the callback at the frame it first applies
+ * it (#887 part 4): a value set before a block is that block's first frame,
+ * exactly. Monitor parameters are still logged by their setter. */
 static void test_perf_events_log_fx_param_sweep_monotonic_frames(void) {
   printf("test_perf_events_log_fx_param_sweep_monotonic_frames\n");
   le_engine* e = make_configured_engine();
@@ -13029,6 +13904,7 @@ static void test_perf_events_log_fx_param_sweep_monotonic_frames(void) {
   CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
   CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
   drain(e);
 
@@ -13037,12 +13913,12 @@ static void test_perf_events_log_fx_param_sweep_monotonic_frames(void) {
                                 * coincidentally right for param==0 */
   const int monitor_param = 2; /* different again, on the monitor sibling */
   for (int i = 0; i < sweeps; ++i) {
-    process_const(e, 0.0f, LOOP_N, out); /* advance a_perf_frames between calls */
     CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, lane_param,
                                       (float)i / (float)sweeps) == LE_OK);
     CHECK(le_engine_set_monitor_input_fx_param(
               e, 0, 0, monitor_param, (float)(sweeps - i) / (float)sweeps) ==
           LE_OK);
+    process_const(e, 0.0f, LOOP_N, out); /* applies, and advances the frame */
   }
   drain(e);
 
@@ -13065,6 +13941,7 @@ static void test_perf_events_log_fx_param_sweep_monotonic_frames(void) {
     decode_log_entry_at(buf, i, &entry);
     if (entry.cmd.code != LE_PLOG_SET_LANE_FX_PARAM) continue;
     if (seen > 0) CHECK(entry.frame >= last_frame);
+    CHECK(entry.frame == (uint64_t)seen * LOOP_N); /* the block it applied in */
     last_frame = entry.frame;
     CHECK(entry.cmd.fx.channel == 0 && entry.cmd.fx.lane == 0);
     CHECK(LE_PLOG_FX_PARAM_INDEX(entry.cmd.fx.index) == 0);
@@ -15279,6 +16156,8 @@ static void test_shared_count_in_play_cancel_and_resume(void) {
     CHECK(s.tracks[6].state == LE_TRACK_PLAYING);
     float input = 0, output = 0;
     le_engine_process(e, &output, &input, 1);
+    CHECK(output > 0.0f); /* fading in (#1400) */
+    for (int i = 0; i < 80; ++i) le_engine_process(e, &output, &input, 1);
     CHECK(output > .1f);
     le_engine_destroy(e);
   }
@@ -17084,7 +17963,11 @@ static void test_monitor_input_fx_rejects_invalid_args(void) {
   CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, LE_FX_PARAMS, 0.5f) ==
         LE_ERR_INVALID);
 
+  /* An empty slot reads no parameter, so it takes none. */
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.5f) ==
+        LE_ERR_INVALID);
   /* Over-range values clamp; an over-large count clamps to LE_FX_MAX. */
+  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
   CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 5.0f) == LE_OK);
   CHECK(le_engine_set_monitor_input_fx_count(e, 0, 999) == LE_OK);
 
@@ -19606,30 +20489,53 @@ static void test_lane_setters_reject_invalid_args(void) {
   le_engine_destroy(e);
 }
 
-/* Widening LE_FX_PARAMS from 3 to 4 must leave EVERY non-octaver effect inert in
- * the new slot: p3 is never read, so its value cannot change the output. Two
- * identically-driven engines — one with p3 = 0 (the default), one with p3 = 1 —
- * must produce byte-for-byte identical output across many blocks (so stateful
- * delay/echo/reverb tails are exercised too). This is the M3 "identical after
- * the widening" guard. Index 3 is also now a valid param (rejected before the
- * widening). The octaver is excluded — it will read p3 in parts 3-4. */
-static void test_fx_fourth_param_is_inert(void) {
-  printf("test_fx_fourth_param_is_inert\n");
-  CHECK(LE_FX_PARAMS == 4);
+/* A type reads only its first le_fx_param_count(type) settings (#887 part 4
+ * widened the row to 32). Two identically driven engines, one whose recipe
+ * carries 0 in every cell past the type's count and one carrying 1, must
+ * produce byte-identical output across many blocks, so the delay, echo and
+ * reverb tails are exercised too. */
+static void test_fx_params_past_count_are_inert(void) {
+  printf("test_fx_params_past_count_are_inert\n");
+  CHECK(LE_FX_PARAMS == 32);
+  /* The inline width table and the descriptor rows agree for every code. */
+  for (int32_t t = 0; t < LE_FX_WIDTHS; ++t) {
+    const int32_t n = le_fx_param_count(t);
+    CHECK(le_fx_param_width(t) == (n > 0 ? n : 0));
+  }
+  CHECK(le_fx_param_width(LE_FX_WIDTHS) == 0);
+  /* Every built-in reads at least one parameter: a type whose row in the
+   * width table was forgotten would read none. */
+  for (int32_t t = LE_FX_NONE + 1; t < LE_FX_WIDTHS; ++t) {
+    if (t != LE_FX_PLUGIN) CHECK(le_fx_param_width(t) > 0);
+  }
+  CHECK(le_fx_param_width(-1) == 0);
 
-  const int32_t types[] = {LE_FX_DRIVE,   LE_FX_FILTER, LE_FX_DELAY,
-                           LE_FX_TREMOLO, LE_FX_ECHO,   LE_FX_REVERB};
+  const int32_t types[] = {LE_FX_DRIVE,      LE_FX_FILTER,    LE_FX_DELAY,
+                           LE_FX_TREMOLO,    LE_FX_OCTAVER,   LE_FX_ECHO,
+                           LE_FX_REVERB,     LE_FX_EQ,        LE_FX_COMPRESSOR,
+                           LE_FX_TRANSIENT,  LE_FX_HP_GATE,   LE_FX_DOUBLER,
+                           LE_FX_CHORUS,     LE_FX_WAH,       LE_FX_OVERDRIVE, LE_FX_DISTORTION,
+                           LE_FX_VINYL,      LE_FX_DEGRADE,   LE_FX_LPF,
+                           LE_FX_SPRING};
   for (int t = 0; t < (int)(sizeof(types) / sizeof(types[0])); ++t) {
     le_engine* a = make_configured_engine();
     le_engine* b = make_configured_engine();
     establish_loop(a, 1.0f);
     establish_loop(b, 1.0f);
 
-    le_engine_set_lane_fx(a, 0, 0, 0, types[t]); /* seeds p3 = 0 */
-    le_engine_set_lane_fx(b, 0, 0, 0, types[t]);
-    CHECK(le_engine_set_lane_fx_param(b, 0, 0, 0, 3, 1.0f) == LE_OK); /* drive p3 */
-    le_engine_set_lane_fx_count(a, 0, 0, 1, 0);
-    le_engine_set_lane_fx_count(b, 0, 0, 1, 0);
+    const int32_t count = le_fx_param_count(types[t]);
+    CHECK(count > 0 && count <= LE_FX_PARAMS);
+    /* The same entry twice, b's recipe carrying 1 in every cell past the
+     * type's parameters. */
+    le_fx_recipe ra = {.count = 1, .enabled = 1};
+    ra.type[0] = types[t];
+    ra.slot_enabled[0] = 1;
+    ra.level[0] = 1.0f;
+    le_fx_defaults(types[t], ra.params[0]);
+    le_fx_recipe rb = ra;
+    for (int32_t p = count; p < LE_FX_PARAMS; ++p) rb.params[0][p] = 1.0f;
+    CHECK(le_engine_set_fx_recipe(a, LE_FX_OWNER_LANE, 0, 0, 1, &ra) == LE_OK);
+    CHECK(le_engine_set_fx_recipe(b, LE_FX_OWNER_LANE, 0, 0, 1, &rb) == LE_OK);
 
     float oa[64];
     float ob[64];
@@ -19638,6 +20544,13 @@ static void test_fx_fourth_param_is_inert(void) {
       process_const(b, 0.0f, 64, ob);
       for (int i = 0; i < 64; ++i) CHECK(oa[i] == ob[i]); /* byte-for-byte */
     }
+    /* They never reach the published row, so the fingerprint agrees. */
+    CHECK(le_engine_lane_fx_fingerprint(a, 0, 0) ==
+          le_engine_lane_fx_fingerprint(b, 0, 0));
+    /* A granular write to such a cell is refused: it would never sound. */
+    CHECK(le_engine_set_lane_fx_param(b, 0, 0, 0, count, 0.5f) ==
+          LE_ERR_INVALID);
+    CHECK(le_engine_set_lane_fx_param(b, 0, 0, 0, count - 1, 0.5f) == LE_OK);
 
     le_engine_destroy(a);
     le_engine_destroy(b);
@@ -19647,8 +20560,9 @@ static void test_fx_fourth_param_is_inert(void) {
 /* ---- phase-vocoder octaver (LE_FX_OCTAVER) ---- */
 
 #define OCT_SR 48000
-/* Mirrors engine.c's internal LE_PV_N (the phase-vocoder window / latency); kept
- * local because that constant is private to the engine translation unit. */
+/* Mirrors engine_fx.h's LE_PV_N (the phase-vocoder window); the latency is
+ * LE_PV_LATENCY, three quarters of a hop more since the hop split (#887
+ * part 9). */
 #define OCT_PV_N 1024
 
 /* A fixed formant envelope: a resonance near 1 kHz (Gaussian in log-frequency).
@@ -19680,8 +20594,10 @@ static void oct_harmonic(float* buf, int n, float f0) {
 }
 
 /* Runs `total` samples of `in` through one octaver on a mono monitor lane (full
- * wet, tone open, PV mode) at the given shift, capturing the output. */
-static void oct_run(float shift, const float* in, int total, float* out) {
+ * wet, tone open, PV mode) at the given shift and formant setting (p4: 0 held,
+ * 1 moved with the pitch), capturing the output. */
+static void oct_run_formants(float shift, float formants, const float* in,
+                             int total, float* out) {
   le_engine* e = le_engine_create();
   const int blk = 2048;
   le_engine_configure(e, OCT_SR, 1, 1, blk);
@@ -19692,6 +20608,7 @@ static void oct_run(float shift, const float* in, int total, float* out) {
   le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 1.0f);  /* tone open */
   le_engine_set_monitor_input_fx_param(e, 0, 0, 2, 1.0f);  /* full wet */
   le_engine_set_monitor_input_fx_param(e, 0, 0, 3, 0.0f);  /* PV mode */
+  le_engine_set_monitor_input_fx_param(e, 0, 0, 4, formants);
   le_engine_set_monitor_input_fx_count(e, 0, 1);
   int done = 0;
   while (done < total) {
@@ -19701,6 +20618,11 @@ static void oct_run(float shift, const float* in, int total, float* out) {
     done += n;
   }
   le_engine_destroy(e);
+}
+
+/* oct_run with the formants held (the octaver's default). */
+static void oct_run(float shift, const float* in, int total, float* out) {
+  oct_run_formants(shift, 0.0f, in, total, out);
 }
 
 /* Fundamental via autocorrelation. The first lag whose correlation reaches 90%
@@ -19732,12 +20654,14 @@ static float oct_centroid(const float* x, int n) {
   float im[F / 2 + 1];
   double num = 0.0;
   double den = 0.0;
+  static le_rfft_plan plan;
+  CHECK(le_rfft_plan_init(&plan, F));
   for (int start = 0; start + F <= n; start += F / 2) {
     for (int i = 0; i < F; ++i) {
       const float w = 0.5f - 0.5f * cosf(2.0f * LE_FFT_PI * (float)i / (float)F);
       win[i] = x[start + i] * w;
     }
-    le_rfft_fwd(win, re, im, F);
+    le_rfft_fwd(&plan, win, re, im);
     for (int k = 1; k <= F / 2; ++k) {
       const float mag = sqrtf(re[k] * re[k] + im[k] * im[k]);
       num += (double)((float)k * (float)OCT_SR / (float)F) * mag;
@@ -19775,6 +20699,28 @@ static void test_octaver_pv_shifts_pitch_preserves_formant(void) {
   CHECK(fabsf(f0_dn - 110.0f) < 20.0f);
   CHECK(fabsf(c_dn - cin) < 0.45f * cin);
 
+  free(in);
+  free(out);
+}
+
+/* The formant setting moved (p4 = 1): the envelope goes with the pitch, so an
+ * octave up doubles the spectral centroid as a resample would, where the held
+ * setting keeps it (the test above). The pitch shifts the same either way. */
+static void test_octaver_pv_formants_move_with_pitch(void) {
+  printf("test_octaver_pv_formants_move_with_pitch\n");
+  const int total = 24000;
+  const int skip = 12000;
+  const int an = total - skip;
+  float* in = (float*)malloc(sizeof(float) * (size_t)total);
+  float* out = (float*)malloc(sizeof(float) * (size_t)total);
+  oct_harmonic(in, total, 220.0f);
+  const float cin = oct_centroid(in + skip, an);
+  oct_run_formants(0.75f, 1.0f, in, total, out); /* octave up, moved */
+  const float f0 = oct_detect_f0(out + skip, an);
+  const float c = oct_centroid(out + skip, an);
+  printf("  moved: f0=%.1f (want 440) centroid=%.1f in=%.1f\n", f0, c, cin);
+  CHECK(fabsf(f0 - 440.0f) < 30.0f);
+  CHECK(c > 1.6f * cin); /* the envelope went up with the pitch */
   free(in);
   free(out);
 }
@@ -19848,10 +20794,10 @@ static void test_octaver_mono_coherent(void) {
   oct_mono_coherent_mode(1.0f); /* PSOLA */
 }
 
-/* Delay-matched dry (D2): the dry tap is delayed by the same LE_PV_N as the wet
+/* Delay-matched dry (D2): the dry tap is delayed by the same LE_PV_LATENCY as the wet
  * voice, so the two stay time-aligned in the mix instead of combing (the old
  * granular octaver mixed a zero-delay dry against a delayed wet). An impulse on
- * the dry-only path (mix = 0) emerges delayed by ~LE_PV_N, not at t = 0. */
+ * the dry-only path (mix = 0) emerges delayed by ~LE_PV_LATENCY, not at t = 0. */
 static void test_octaver_mix_no_comb(void) {
   printf("test_octaver_mix_no_comb\n");
   const int total = 2 * OCT_PV_N;
@@ -19878,18 +20824,18 @@ static void test_octaver_mix_no_comb(void) {
   }
   le_engine_destroy(e);
 
-  /* Find the dry impulse in the output; it must arrive near LE_PV_N, not at 0. */
+  /* Find the dry impulse in the output; it must arrive near LE_PV_LATENCY, not at 0. */
   int peak = 0;
   for (int i = 0; i < total; ++i) {
     if (fabsf(out[i]) > fabsf(out[peak])) peak = i;
   }
-  printf("  dry-delay: impulse at out[%d] (want ~%d)\n", peak, OCT_PV_N - 1);
-  CHECK(abs(peak - OCT_PV_N) <= 2); /* delay-matched to the wet latency (N-1) */
+  printf("  dry-delay: impulse at out[%d] (want ~%d)\n", peak, LE_PV_LATENCY - 1);
+  CHECK(abs(peak - LE_PV_LATENCY) <= 2); /* delay-matched to the wet latency */
   CHECK(out[0] == 0.0f);           /* not a zero-delay dry (the old comb bug) */
 
   /* PSOLA leg (D2): the dry tap re-matches on a mode switch because both modes
    * report the same added latency, so an impulse through PSOLA at mix = 0.5 still
-   * lands the dry energy near LE_PV_N (comb-free) — never at t = 0. An impulse is
+   * lands the dry energy near LE_PV_LATENCY (comb-free) — never at t = 0. An impulse is
    * unvoiced, so PSOLA's own voice is gated to the delay-matched dry, keeping the
    * whole response time-aligned. */
   memset(out, 0, sizeof(float) * (size_t)total);
@@ -19915,12 +20861,13 @@ static void test_octaver_mix_no_comb(void) {
   for (int i = 0; i < total; ++i) {
     if (fabsf(out[i]) > fabsf(out[ppeak])) ppeak = i;
   }
-  printf("  psola dry-delay: impulse at out[%d] (want ~%d)\n", ppeak, OCT_PV_N - 1);
-  CHECK(abs(ppeak - OCT_PV_N) <= 4); /* still delay-matched in PSOLA mode */
+  printf("  psola dry-delay: impulse at out[%d] (want ~%d)\n", ppeak,
+         LE_PV_LATENCY - 1);
+  CHECK(abs(ppeak - LE_PV_LATENCY) <= 4); /* still delay-matched in PSOLA mode */
   /* No early (pre-latency) energy spike: the mix is not combing a zero-delay dry
    * against a delayed wet. */
   float early = 0.0f;
-  for (int i = 0; i < OCT_PV_N - 64; ++i) {
+  for (int i = 0; i < LE_PV_LATENCY - 64; ++i) {
     if (fabsf(out[i]) > early) early = fabsf(out[i]);
   }
   CHECK(early < 0.05f);
@@ -20459,8 +21406,8 @@ static void test_octaver_psola_voice_and_fallback(void) {
   double ref = 0.0;
   for (int i = skip; i < total; ++i) {
     /* PSOLA reports the same added latency as PV (le_octaver_latency), so the dry
-     * tap sits OCT_PV_N - 1 behind the newest sample in both modes. */
-    const float dry = in[i - (OCT_PV_N - 1)];
+     * tap sits LE_PV_LATENCY - 1 behind the newest sample in both modes. */
+    const float dry = in[i - (LE_PV_LATENCY - 1)];
     err += (double)(out[i] - dry) * (out[i] - dry);
     ref += (double)dry * dry;
   }
@@ -20547,8 +21494,8 @@ static void test_octaver_psola_no_chatter(void) {
 }
 
 /* Part 5: the snapshot surfaces the octaver's added latency (frames) so the UI
- * can warn about monitoring lag. A PV octaver on a monitor lane reports LE_PV_N
- * (1024, engine.c); a chain with no octaver reports 0. Informational only — the
+ * can warn about monitoring lag. A PV octaver on a monitor lane reports
+ * LE_PV_LATENCY (engine_fx.h); a chain with no octaver reports 0. Informational only — the
  * record offset stays untouched (compensation is out of scope). */
 static void test_octaver_added_latency(void) {
   printf("test_octaver_added_latency\n");
@@ -20561,22 +21508,22 @@ static void test_octaver_added_latency(void) {
   CHECK(s.fx_added_latency_frames == 0);
   CHECK(s.record_offset_frames == 0);
 
-  /* Engage a PV octaver on a monitor lane -> LE_PV_N frames of added latency. */
+  /* Engage a PV octaver on a monitor lane -> LE_PV_LATENCY frames of added latency. */
   le_engine_set_monitor_input(e, 0, 1);
   le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_OCTAVER);
   le_engine_set_monitor_input_fx_param(e, 0, 0, 3, 0.0f); /* PV mode */
   le_engine_set_monitor_input_fx_count(e, 0, 1);
   drain(e);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.fx_added_latency_frames == 1024); /* == LE_PV_N */
+  CHECK(s.fx_added_latency_frames == LE_PV_LATENCY);
   CHECK(s.record_offset_frames == 0);       /* compensation untouched */
 
   /* Switching the same octaver to PSOLA reports the same latency (both modes
-   * read LE_PV_N today, so the dry tap does not jump on a mode switch). */
+   * read LE_PV_LATENCY today, so the dry tap does not jump on a mode switch). */
   le_engine_set_monitor_input_fx_param(e, 0, 0, 3, 1.0f); /* PSOLA mode */
   drain(e);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.fx_added_latency_frames == 1024);
+  CHECK(s.fx_added_latency_frames == LE_PV_LATENCY);
 
   /* Disengage the chain -> the reported latency falls back to 0. */
   le_engine_set_monitor_input_fx_count(e, 0, 0);
@@ -20592,7 +21539,7 @@ static void test_octaver_added_latency(void) {
   le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
   drain(e);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.fx_added_latency_frames == 1024);
+  CHECK(s.fx_added_latency_frames == LE_PV_LATENCY);
 
   le_engine_set_lane_fx_count(e, 0, 0, 0, 0);
   drain(e);
@@ -20605,7 +21552,7 @@ static void test_octaver_added_latency(void) {
   le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
   drain(e);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.fx_added_latency_frames == 1024);
+  CHECK(s.fx_added_latency_frames == LE_PV_LATENCY);
   CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 0) == LE_OK);
   le_engine_get_snapshot(e, &s);
   CHECK(s.fx_added_latency_frames == 0);
@@ -20615,7 +21562,7 @@ static void test_octaver_added_latency(void) {
   CHECK(s.fx_added_latency_frames == 0);
   CHECK(le_engine_set_lane_fx_chain_enabled(e, 0, 0, 1) == LE_OK);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.fx_added_latency_frames == 1024);
+  CHECK(s.fx_added_latency_frames == LE_PV_LATENCY);
 
   le_engine_destroy(e);
 }
@@ -20631,6 +21578,10 @@ static double fxd_value(const le_fx_param_desc* d, double v) {
   }
   if (d->curve == LE_FX_CURVE_EXPONENTIAL) {
     return (double)d->at_min * pow((double)d->at_max / (double)d->at_min, v);
+  }
+  if (d->curve == LE_FX_CURVE_RECIPROCAL) {
+    const double lo = 1.0 / (double)d->at_min;
+    return 1.0 / (lo + (1.0 / (double)d->at_max - lo) * v);
   }
   return (double)d->at_min + ((double)d->at_max - (double)d->at_min) * v;
 }
@@ -20681,9 +21632,10 @@ static void test_fx_param_descriptors_match_kernels(void) {
   const int32_t sr = 48000;
 
   /* Counts: the parameters each kernel reads; none for NONE and PLUGIN. */
-  const int32_t counts[] = {0, 2, 2, 3, 2, 4, 3, 3, 0};
-  for (int32_t t = 0; t < 9; ++t) CHECK(le_fx_param_count(t) == counts[t]);
-  CHECK(le_fx_param_count(9) == LE_ERR_INVALID);
+  const int32_t counts[] = {0, 2, 2, 3, 2, 5, 3, 3, 0, 15, 5,
+                            3, 2, 2, 3, 1, 2, 2, 4, 3, 2, 2};
+  for (int32_t t = 0; t < 22; ++t) CHECK(le_fx_param_count(t) == counts[t]);
+  CHECK(le_fx_param_count(22) == LE_ERR_INVALID);
   CHECK(le_fx_param_count(-1) == LE_ERR_INVALID);
   le_fx_param_desc scratch;
   CHECK(le_fx_param_info(LE_FX_DELAY, 3, &scratch) == LE_ERR_INVALID);
@@ -21013,17 +21965,74 @@ static int32_t oct_slot_phase(int32_t seed, int slot) {
  * A phase offset is only safe if it moves nothing audible. The three
  * quantities that had to be re-derived with it are pinned at every slot:
  *
- *  1. The WET path is still a pure LE_PV_N - 1 delay. Unison PV reconstructs a
- *     stationary two-tone almost exactly, so a full-wet output nulls against
- *     in[t - (LE_PV_N - 1)]; the same null one hop either side is asserted
+ *  1. The WET path is still a pure LE_PV_LATENCY - 1 delay. Unison PV
+ *     reconstructs a stationary two-tone almost exactly, so a full-wet output
+ *     nulls against
+ *     in[t - (LE_PV_LATENCY - 1)]; the same null one hop either side is asserted
  *     LARGE, so the test cannot pass by accident.
  *  2. The delay-matched DRY tap has not moved (an impulse at mix 0 still
- *     emerges at LE_PV_N).
- *  3. fx_apply_chain's LE_PV_N WARMUP still covers a phase-shifted first frame,
- *     at all LE_PV_HOP phases, with no margin.
+ *     emerges at LE_PV_LATENCY).
+ *  3. fx_apply_chain's LE_PV_LATENCY WARMUP still covers a phase-shifted
+ *     first frame, at all LE_PV_HOP phases, with no margin.
  *
  * ...plus that the stagger is there: two slots of one chain hold different
  * counters, the two channels of one slot the same one (mono coherence). */
+/* A reset partway through a phase-vocoder frame (the hop split, #887 part
+ * 9): the stages after the analysis must not run on the frame analysed
+ * before the reset. Until the first frame analysed since the reset is
+ * synthesised, a full-wet octaver has nothing to emit, so its output is
+ * exactly zero; a stale envelope, shift or synthesis stage would emit the
+ * old frame instead. Swept over every reset phase, since only the phases
+ * whose first analysis comes after a later stage's tick can show it. */
+static void test_octaver_reset_mid_frame_is_silent(void) {
+  printf("test_octaver_reset_mid_frame_is_silent\n");
+  static int32_t types[LE_FX_MAX];
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  int32_t on[LE_FX_MAX];
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    types[s] = LE_FX_NONE;
+    on[s] = 1;
+  }
+  types[0] = LE_FX_OCTAVER;
+  params[0][0] = 0.5f + 7.0f / 48.0f; /* +7 semitones */
+  params[0][1] = 1.0f;                /* tone open */
+  params[0][2] = 1.0f;                /* full wet */
+  params[0][3] = 0.0f;                /* PV */
+  int stale = 0;
+  for (int32_t phase = 0; phase < LE_PV_HOP; ++phase) {
+    le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+    CHECK(fx != NULL);
+    if (fx == NULL) break;
+    fx->hop_seed = phase; /* slot 0: the phase IS the seed */
+    for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
+    le_fx_entry_reset(fx, 0);
+    CHECK(le_fx_prepare(fx, 0, LE_FX_OCTAVER, OCT_SR) == LE_OK);
+    le_fx_octaver_seed_settled(fx, 0, params[0]);
+    /* Fill the frame state with a loud tone. The run length is not a
+     * multiple of the hop, so the reset below lands at a different point of
+     * a frame for each phase. */
+    for (int i = 0; i < 3 * OCT_PV_N + 101; ++i) {
+      float l = 0.5f * sinf(2.0f * LE_FFT_PI * 330.0f * (float)i / OCT_SR);
+      float r = l;
+      fx_apply_chain(fx, OCT_SR, OCT_SR, &l, &r, 1, types, params, on);
+    }
+    le_fx_entry_reset(fx, 0);
+    le_fx_octaver_seed_settled(fx, 0, params[0]); /* full wet at once */
+    /* The first analysis comes within a hop and its synthesis
+     * LE_PV_SYNTH_TICK later: everything before that is silence. */
+    for (int i = 0; i < LE_PV_SYNTH_TICK + 1; ++i) {
+      float l = 0.0f;
+      float r = 0.0f;
+      fx_apply_chain(fx, OCT_SR, OCT_SR, &l, &r, 1, types, params, on);
+      if (l != 0.0f || r != 0.0f) ++stale;
+    }
+    le_fx_state_free_buffers(fx);
+    free(fx);
+  }
+  printf("  non-zero samples before the first fresh frame: %d\n", stale);
+  CHECK(stale == 0);
+}
+
 static void test_octaver_hop_stagger_alignment(void) {
   printf("test_octaver_hop_stagger_alignment\n");
   const int total = 24576;
@@ -21039,13 +22048,13 @@ static void test_octaver_hop_stagger_alignment(void) {
   double worst_on = 0.0;
   double least_off = 1e9;
   for (int slot = 0; slot < LE_FX_MAX; ++slot) {
-    /* (1) full wet: a pure LE_PV_N - 1 delay at this slot's phase. */
+    /* (1) full wet: a pure LE_PV_LATENCY - 1 delay at this slot's phase. */
     le_engine* e = oct_stagger_engine(slot, 1.0f);
     oct_stagger_run(e, in, out, total);
     le_engine_destroy(e);
-    const double at = oct_null_err(in, out, total, OCT_PV_N - 1);
-    const double early = oct_null_err(in, out, total, OCT_PV_N - 1 - 256);
-    const double late = oct_null_err(in, out, total, OCT_PV_N - 1 + 256);
+    const double at = oct_null_err(in, out, total, LE_PV_LATENCY - 1);
+    const double early = oct_null_err(in, out, total, LE_PV_LATENCY - 1 - 256);
+    const double late = oct_null_err(in, out, total, LE_PV_LATENCY - 1 + 256);
     if (at > worst_on) worst_on = at;
     if (early < least_off) least_off = early;
     if (late < least_off) least_off = late;
@@ -21068,7 +22077,7 @@ static void test_octaver_hop_stagger_alignment(void) {
     for (int i = 0; i < 2 * OCT_PV_N; ++i) {
       if (fabsf(out[i]) > fabsf(out[peak])) peak = i;
     }
-    CHECK(abs(peak - OCT_PV_N) <= 2);
+    CHECK(abs(peak - LE_PV_LATENCY) <= 2);
     CHECK(out[0] == 0.0f);
   }
 
@@ -21076,7 +22085,7 @@ static void test_octaver_hop_stagger_alignment(void) {
    * one full-wet signal whose dry and wet legs are in phase, so a warmup that
    * ended too early reads as a plain level dip. Swept over all LE_PV_HOP
    * phases, not over the slots: the worst phase is p = 1 (full overlap-add at
-   * sample LE_PV_N exactly), and nothing guarantees a slot lands on it. */
+   * sample LE_PV_LATENCY exactly), and nothing guarantees a slot lands on it. */
   for (int i = 0; i < total; ++i) in[i] = 0.5f;
   {
     float worst_drop = 0.0f;
@@ -21309,12 +22318,14 @@ static void test_octaver_hop_stagger_seeds(void) {
   le_engine_destroy(e);
 }
 
-/* The realignment the console bench found: a recipe publish resets every
- * active slot it carries, and before the seed every reset set the counter to
+/* The realignment the console bench found: a recipe publish reset every
+ * active slot it carried, and before the seed every reset set the counter to
  * 0, so publishing a chain put all of its octavers back on one sample index.
- * Now the reset puts each slot back on its own phase: after a publish, and
- * after a second publish of the same chain, four octavers run their frames
- * in four different 64-frame callbacks. */
+ * Now the reset puts each slot back on its own phase: after a publish that
+ * brings four new octavers in (each engages through the enable edge, its
+ * ring cleared one spacing after the last), and after a second publish that
+ * only moves a setting (the entries keep their state, #887 part 4), they run
+ * their frames in four different 64-frame callbacks. */
 static void test_octaver_hop_stagger_survives_recipe_publish(void) {
   printf("test_octaver_hop_stagger_survives_recipe_publish\n");
   le_engine* e = le_engine_create();
@@ -21338,13 +22349,17 @@ static void test_octaver_hop_stagger_survives_recipe_publish(void) {
     r.params[s][2] = 1.0f;
     r.params[s][3] = 0.0f; /* PV */
     r.level[s] = 1.0f;
+    r.instance[s] = (uint32_t)s + 1u;
   }
   for (uint32_t rev = 1; rev <= 2; ++rev) {
     r.params[0][0] = rev == 1 ? 0.75f : 0.7f; /* a real edit the second time */
     CHECK(le_engine_set_fx_recipe(e, LE_FX_OWNER_MONITOR, 0, 0, rev, &r) ==
           LE_OK);
-    /* One block applies the recipe (and resets every slot at its start). */
-    le_engine_process(e, out, in, 64);
+    /* The first block applies the recipe; the new entries engage over the
+     * next few (spaced ring clears, then the octaver's warmup). */
+    for (int b = 0; b < (rev == 1 ? 40 : 1); ++b) {
+      le_engine_process(e, out, in, 64);
+    }
     CHECK(le_engine_fx_recipe_revision(e, LE_FX_OWNER_MONITOR, 0, 0) == rev);
     const le_fx_state* fx = &e->monitors[0].fx;
     /* Each instance's phase, read off its counter against the chain clock;
@@ -21580,8 +22595,9 @@ static void test_octaver_hop_schedule_survives_mode_switch(void) {
 /* ---- FFT primitive (fft.h) ---- */
 
 /* Verifies the header-only FFT in isolation, before the phase vocoder (part 3)
- * consumes it: a random round-trip, a single-sine single-peak, an impulse's flat
- * spectrum, the 1/n scaling via a constant's DC, and the shared Hann table. */
+ * consumes it: the plan's length checks, a random round-trip, agreement with a
+ * direct DFT, a single-sine single-peak, an impulse's flat spectrum, the 1/n
+ * scaling via a constant's DC, and the shared Hann table. */
 static void test_fft_roundtrip(void) {
   printf("test_fft_roundtrip\n");
   enum { N = 1024 };
@@ -21590,6 +22606,17 @@ static void test_fft_roundtrip(void) {
   float re[N / 2 + 1];
   float im[N / 2 + 1];
 
+  /* The plan takes powers of two from 4 to LE_FFT_MAX_N, and only those. */
+  static le_rfft_plan plan;
+  CHECK(!le_rfft_plan_init(&plan, 0));
+  CHECK(!le_rfft_plan_init(&plan, 2));
+  CHECK(!le_rfft_plan_init(&plan, 1000));
+  CHECK(!le_rfft_plan_init(&plan, 2 * LE_FFT_MAX_N));
+  CHECK(plan.n == 0);
+  CHECK(le_rfft_plan_init(&plan, N));
+  CHECK(plan.n == N);
+  CHECK(le_rfft_plan_init(&plan, N)); /* idempotent */
+
   /* Deterministic pseudo-random signal in [-1, 1] (LCG; no global rand state). */
   uint32_t seed = 0x1234567u;
   for (int i = 0; i < N; ++i) {
@@ -21597,9 +22624,10 @@ static void test_fft_roundtrip(void) {
     x[i] = (float)(seed >> 8) / (float)(1u << 23) - 1.0f;
   }
 
+  le_rfft_fwd(&plan, x, re, im);
+
   /* Round-trip reconstructs the signal to within a small epsilon. */
-  le_rfft_fwd(x, re, im, N);
-  le_rfft_inv(re, im, y, N);
+  le_rfft_inv(&plan, re, im, y);
   float max_err = 0.0f;
   for (int i = 0; i < N; ++i) {
     float e = fabsf(y[i] - x[i]);
@@ -21612,7 +22640,7 @@ static void test_fft_roundtrip(void) {
   for (int i = 0; i < N; ++i) {
     x[i] = sinf(2.0f * LE_FFT_PI * (float)k * (float)i / (float)N);
   }
-  le_rfft_fwd(x, re, im, N);
+  le_rfft_fwd(&plan, x, re, im);
   float peak = 0.0f;
   int peak_bin = -1;
   for (int b = 0; b <= N / 2; ++b) {
@@ -21634,7 +22662,7 @@ static void test_fft_roundtrip(void) {
   /* A unit impulse has a flat magnitude spectrum (|X[b]| == 1 for every bin). */
   for (int i = 0; i < N; ++i) x[i] = 0.0f;
   x[0] = 1.0f;
-  le_rfft_fwd(x, re, im, N);
+  le_rfft_fwd(&plan, x, re, im);
   for (int b = 0; b <= N / 2; ++b) {
     float mag = sqrtf(re[b] * re[b] + im[b] * im[b]);
     CHECK(fabsf(mag - 1.0f) < 1e-4f);
@@ -21643,14 +22671,14 @@ static void test_fft_roundtrip(void) {
   /* A constant input is pure DC, and the inverse is correctly 1/n-scaled: the
    * constant round-trips to itself. */
   for (int i = 0; i < N; ++i) x[i] = 0.75f;
-  le_rfft_fwd(x, re, im, N);
+  le_rfft_fwd(&plan, x, re, im);
   CHECK(fabsf(re[0] - 0.75f * (float)N) < 1e-2f); /* DC == sum == 0.75 * N */
   CHECK(fabsf(im[0]) < 1e-4f);
   for (int b = 1; b <= N / 2; ++b) {
     float mag = sqrtf(re[b] * re[b] + im[b] * im[b]);
     CHECK(mag < 1e-3f); /* no energy outside DC */
   }
-  le_rfft_inv(re, im, y, N);
+  le_rfft_inv(&plan, re, im, y);
   for (int i = 0; i < N; ++i) CHECK(fabsf(y[i] - 0.75f) < 1e-4f);
 
   /* Shared Hann table: built once, guarded by the ready flag. Endpoints are the
@@ -21668,6 +22696,132 @@ static void test_fft_roundtrip(void) {
   hann[3] = -42.0f;
   le_hann_init(hann, N, &ready);
   CHECK(hann[3] == -42.0f);
+}
+
+/* Uniform in [-1, 1] from an LCG, so the FFT tests need no global rand state. */
+static float fft_test_rand(uint32_t* seed) {
+  *seed = *seed * 1664525u + 1013904223u;
+  return (float)(*seed >> 8) / (float)(1u << 23) - 1.0f;
+}
+
+/* Every bin of the forward transform matches a direct DFT, and the inverse on
+ * its own matches a direct inverse DFT of a Hermitian half spectrum, at every
+ * length class the split touches: the smallest (4: one butterfly stage, the
+ * k == m/2 self-paired bin), small, and the largest the plan holds (#1410). */
+static void test_fft_matches_direct_dft(void) {
+  printf("test_fft_matches_direct_dft\n");
+  const double pi = 3.14159265358979323846;
+  static le_rfft_plan plan;
+  static float x[LE_FFT_MAX_N];
+  static float y[LE_FFT_MAX_N];
+  static float re[LE_FFT_MAX_N / 2 + 1];
+  static float im[LE_FFT_MAX_N / 2 + 1];
+  const int lengths[] = {4, 8, 16, 64, 256, 1024, LE_FFT_MAX_N};
+  uint32_t seed = 0xC0FFEEu;
+  for (size_t li = 0; li < sizeof(lengths) / sizeof(lengths[0]); ++li) {
+    const int n = lengths[li];
+    const int m = n / 2;
+    CHECK(le_rfft_plan_init(&plan, n));
+    /* Float error grows with sqrt(n); a wrong twiddle or split is O(1). */
+    const double tol = 2e-5 * sqrt((double)n);
+
+    for (int i = 0; i < n; ++i) x[i] = fft_test_rand(&seed);
+    le_rfft_fwd(&plan, x, re, im);
+    double worst = 0.0;
+    for (int k = 0; k <= m; ++k) {
+      double dr = 0.0, di = 0.0;
+      for (int i = 0; i < n; ++i) {
+        const double a = -2.0 * pi * (double)((long)k * i % n) / n;
+        dr += x[i] * cos(a);
+        di += x[i] * sin(a);
+      }
+      const double e = fmax(fabs(re[k] - dr), fabs(im[k] - di));
+      if (e > worst) worst = e;
+    }
+    CHECK(worst < tol);
+    if (worst >= tol) printf("  forward n=%d worst %g\n", n, worst);
+
+    /* A Hermitian half spectrum, with imaginary parts on DC and Nyquist that
+     * a real signal cannot carry and the inverse must ignore. */
+    for (int k = 0; k <= m; ++k) {
+      re[k] = fft_test_rand(&seed);
+      im[k] = fft_test_rand(&seed);
+    }
+    le_rfft_inv(&plan, re, im, y);
+    worst = 0.0;
+    for (int t = 0; t < n; ++t) {
+      double v = re[0] + ((t & 1) ? -re[m] : re[m]);
+      for (int k = 1; k < m; ++k) {
+        const double a = 2.0 * pi * (double)((long)k * t % n) / n;
+        v += 2.0 * (re[k] * cos(a) - im[k] * sin(a));
+      }
+      v /= n;
+      const double e = fabs(y[t] - v);
+      if (e > worst) worst = e;
+    }
+    CHECK(worst < tol / n * 8.0);
+    if (worst >= tol / n * 8.0) printf("  inverse n=%d worst %g\n", n, worst);
+  }
+}
+
+/* The octaver's formant envelope against a direct evaluation in double: keep
+ * cepstral quefrencies below LE_PV_LIFTER of the even log-magnitude and
+ * exponentiate. Tight enough that a lifter one quefrency off fails, which
+ * the test proves against itself before trusting the comparison (#1410). */
+static double oct_env_ref(const double* logm, int lifter, int k) {
+  const double pi = 3.14159265358979323846;
+  const int n = LE_PV_N;
+  double sum = 0.0;
+  for (int q = 0; q < lifter; ++q) {
+    double c = 0.0; /* the cepstrum at q: the even log-magnitude's cosine sum */
+    for (int j = 0; j < n; ++j) {
+      const int b = j <= n / 2 ? j : n - j;
+      c += logm[b] * cos(2.0 * pi * (double)((long)j * q % n) / n);
+    }
+    sum += (q == 0 ? 1.0 : 2.0) * c *
+           cos(2.0 * pi * (double)((long)q * k % n) / n);
+  }
+  /* sum is N * the smoothed log-magnitude (both cosine sums unnormalised, as
+   * the two forward transforms are). */
+  return exp(sum / (double)n);
+}
+
+static void test_octaver_envelope_matches_direct_cepstrum(void) {
+  printf("test_octaver_envelope_matches_direct_cepstrum\n");
+  /* Preparing an octaver builds the shared tables the envelope reads. */
+  le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(*fx));
+  CHECK(fx != NULL);
+  if (fx == NULL) return;
+  CHECK(le_fx_prepare(fx, 0, LE_FX_OCTAVER, 48000) == LE_OK);
+
+  static float mag[LE_PV_BINS];
+  static float env[LE_PV_BINS];
+  static double logm[LE_PV_BINS];
+  uint32_t seed = 0xF0F0u;
+  for (int k = 0; k < LE_PV_BINS; ++k) {
+    mag[k] = expf(3.0f * fft_test_rand(&seed)); /* a detailed spectrum */
+    logm[k] = log((double)mag[k] + 1e-9);
+  }
+  le_octaver_envelope(mag, env);
+
+  const int probes[] = {0, 1, 7, 100, 255, 256, 400, 511, 512};
+  double worst = 0.0, off_by_one = 0.0;
+  for (size_t i = 0; i < sizeof(probes) / sizeof(probes[0]); ++i) {
+    const int k = probes[i];
+    const double ref = oct_env_ref(logm, LE_PV_LIFTER, k);
+    const double e = fabs(env[k] / ref - 1.0);
+    if (e > worst) worst = e;
+    /* What a lifter one quefrency short or long would give at this bin. */
+    const double lo = fabs(oct_env_ref(logm, LE_PV_LIFTER - 1, k) / ref - 1.0);
+    const double hi = fabs(oct_env_ref(logm, LE_PV_LIFTER + 1, k) / ref - 1.0);
+    if (fmin(lo, hi) > off_by_one) off_by_one = fmin(lo, hi);
+  }
+  CHECK(worst < 1e-4);
+  /* Both neighbouring lifters miss the tolerance by far at some bin. */
+  CHECK(off_by_one > 1e-2);
+  printf("  envelope rel err %g, off-by-one lifter %g\n", worst, off_by_one);
+  le_fx_state_free_buffers(fx);
+  free(fx);
 }
 
 /* ---- json_read: the minimal JSON parser (part 7) ----
@@ -23062,7 +24216,7 @@ static void run_perf_render_octaver_case(const char* name, float mode_p3) {
   const int32_t sr = 48000;
   const int32_t channel = 3;
   const int32_t loop_len = 1024;
-  const int32_t capture_frames = 8192; /* well past the LE_PV_N warmup */
+  const int32_t capture_frames = 8192; /* well past the LE_PV_LATENCY warmup */
   /* -1 octave, tone open, full wet; mode_p3 picks phase vocoder or PSOLA. */
   const float params4[LE_FX_PARAMS] = {0.25f, 1.0f, 1.0f, mode_p3};
 
@@ -24430,7 +25584,7 @@ static void test_perf_render_golden_octaver_nonzero_track(void) {
   oct_golden_pump(e, &phase, cyc, loop_len);
 
   /* Engage the octaver mid-performance, then full wet, and run well past its
-   * LE_PV_N warmup so the compared window is steady phase-vocoder output. */
+   * LE_PV_LATENCY warmup so the compared window is steady phase-vocoder output. */
   CHECK(le_engine_set_lane_fx(e, channel, 0, 0, LE_FX_OCTAVER) == LE_OK);
   CHECK(le_engine_set_lane_fx_count(e, channel, 0, 1, 0) == LE_OK);
   oct_golden_pump(e, &phase, cyc, loop_len);
@@ -24616,10 +25770,11 @@ static void test_perf_render_quantized_round_down_truncation_log_frame(void) {
   CHECK(s.tracks[1].length_frames == loop_len);
 
   /* The finalized take's own content proves where le_truncate_capture_tail
-   * actually cut: 2.0 up to (not including) 1500, silence from 1500. */
+   * actually cut: 2.0 up to (not including) 1500, silence from 1500. The 2.0
+   * check samples just inside #730's 10-frame fade-out. */
   float* lane1 = (float*)calloc((size_t)loop_len, sizeof(float));
   CHECK(le_engine_export_track_lane(e, 1, 0, lane1, loop_len) == loop_len);
-  CHECK(fabsf(lane1[1499] - 2.0f) < 1e-6f);
+  CHECK(fabsf(lane1[1489] - 2.0f) < 1e-6f);
   const int32_t content_boundary = 1500;
   CHECK(fabsf(lane1[content_boundary]) < 1e-6f);
   free(lane1);
@@ -25852,11 +27007,14 @@ static void test_song_queue_exact_boundary_both_channel_orders(void) {
     CHECK(s.song_queued_track == target && s.song_queue_progress < 1.0f);
     CHECK(s.tracks[source].state == LE_TRACK_PLAYING);
     float in[2] = {0}, out[2];
-    /* One block straddles the edge: no gap, overlap or early switch,
-     * whichever side of the source the target sits in the track loop. */
+    /* One block straddles the edge: no gap or early switch, whichever side
+     * of the source the target sits in the track loop. The handoff is a
+     * crossfade (#1400): from the edge the source fades out as it reads on
+     * and the target fades in, one 0.1 step per frame at 1 kHz. */
     le_engine_process(e, out, in, 2);
-    CHECK(fabsf(out[0] - (reverse ? 0.6f : 0.2f)) < 1e-5f);
-    CHECK(fabsf(out[1] - (reverse ? 0.2f : 0.6f)) < 1e-5f);
+    const float from = reverse ? 0.6f : 0.2f, to = reverse ? 0.2f : 0.6f;
+    CHECK(fabsf(out[0] - from) < 1e-5f);
+    CHECK(fabsf(out[1] - (from * 0.9f + to * 0.1f)) < 1e-5f);
     le_engine_get_snapshot(e, &s);
     CHECK(s.tracks[source].state == LE_TRACK_STOPPED);
     CHECK(s.tracks[target].state == LE_TRACK_PLAYING);
@@ -27000,7 +28158,8 @@ static void test_once_relaunch_reads_whole_audio_without_moving_sibling_clock(vo
           float out = 0.0f;
           const float in = 0.0f;
           le_engine_process(e, &out, &in, 1);
-          CHECK(fabsf(out - saved[f]) < 0.0001f);
+          /* The relaunch fades in (#1400): ten frames at 1 kHz. */
+          CHECK(fabsf(out - saved[f] * test_gate_gain(1000, f, 0)) < 0.0001f);
           le_engine_get_snapshot(e, &snapshot);
           CHECK(snapshot.tracks[1].position_frames == f);
           CHECK(snapshot.master_position_frames == (before + f + 1) % 1000);
@@ -31096,8 +32255,8 @@ static void test_fx_enable_chain_stomp_staggered_clear(void) {
 }
 
 /* Octaver re-enable warmup: the ring clear also zeroes the octaver's
- * delay-matched DRY tap, so without warmup a re-enable rendered a ~LE_PV_N
- * (~21 ms) hole of silence. The warmup feeds the FIFO while the output stays
+ * delay-matched DRY tap, so without warmup a re-enable rendered a ~LE_PV_LATENCY
+ * (~25 ms) hole of silence. The warmup feeds the FIFO while the output stays
  * bit-exact dry, then ramps — the output never dips. p2 (mix) = 0 makes the
  * settled wet path exactly the dry tap, so any hole is a hard dip to ~0. */
 static void test_fx_enable_octaver_warmup_no_hole(void) {
@@ -33575,7 +34734,10 @@ static void test_track_output_fx_prepare_entry_reuse(void) {
  * replay fact, with exactly one entry and its addressed primitive payload. */
 static void test_output_fx_logs_exact_edits_track_fx_stays_manifest_only(void) {
   printf("test_output_fx_logs_exact_edits_track_fx_stays_manifest_only\n");
-  le_engine* e = make_configured_engine();
+  /* Four outputs, so output bus 1 exists: its parameter is logged by the
+   * callback when it applies it, and a bus the device lacks applies none. */
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 4, 1000);
   float out[64];
 
   CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
@@ -33979,6 +35141,34 @@ static void test_cache_octaver_on_a_partial_hop_loop_stays_live(void) {
   le_engine_destroy(a);
 }
 
+/* A bypassed octaver passes the signal dry, whatever its hop, so the same
+ * partial-hop lane prints: a rack's switched-off Pitch Shift (most Studio and
+ * Vocal presets) must not keep the whole rack live. Switching it on gives up
+ * again, for the hop. */
+static void test_cache_bypassed_octaver_prints_on_a_partial_hop_loop(void) {
+  printf("test_cache_bypassed_octaver_prints_on_a_partial_hop_loop\n");
+  le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  cache_record_loop(a, CACHE_LOOP - 80, 1.0f); /* 54.7 hops */
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_OCTAVER) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 2, 2) == LE_OK);
+  CHECK(le_engine_set_lane_fx_enabled(a, 0, 0, 1, 0) == LE_OK);
+  drain(a);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+
+  CHECK(le_engine_set_lane_fx_enabled(a, 0, 0, 1, 1) == LE_OK);
+  drain(a);
+  le_engine_get_lane_cache(a, 0, 0, &info); /* registers the new key */
+  pump_frames(a, 0.0f, CACHE_SETTLE + 64);
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  CHECK(info.state == LE_CACHE_GAVE_UP);
+  CHECK(info.reason == LE_CACHE_REASON_HOP);
+  le_engine_destroy(a);
+}
+
 /* An octaver print is rendered against the hop position of the loop top it
  * engages at (#941). A stop and relaunch moves the loop against the engine
  * clock without a chain edit, so the print's key changes: the old print falls
@@ -34014,9 +35204,14 @@ static void test_cache_octaver_relaunch_rerenders(void) {
 
 static void test_cache_cached_matches_live_every_builtin(void) {
   printf("test_cache_cached_matches_live_every_builtin\n");
-  const int32_t types[] = {LE_FX_DRIVE,   LE_FX_FILTER, LE_FX_DELAY,
-                           LE_FX_TREMOLO, LE_FX_OCTAVER, LE_FX_ECHO,
-                           LE_FX_REVERB};
+  const int32_t types[] = {LE_FX_DRIVE,      LE_FX_FILTER,    LE_FX_DELAY,
+                           LE_FX_TREMOLO,    LE_FX_OCTAVER,   LE_FX_ECHO,
+                           LE_FX_REVERB,     LE_FX_EQ,        LE_FX_COMPRESSOR,
+                           LE_FX_TRANSIENT,  LE_FX_HP_GATE,   LE_FX_WAH,
+                           LE_FX_OVERDRIVE, LE_FX_DISTORTION, LE_FX_LPF,
+                           LE_FX_SPRING};
+  /* The doubler and the chorus are free-running and never print
+   * (test_cache_free_running_stays_live). */
   for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); ++i) {
     cache_check_chain_parity(&types[i], 1);
     /* ...and on a NON-ZERO lane. Track 0, lane 0 has hop-stagger seed 0,
@@ -34222,9 +35417,11 @@ static void test_cache_mute_stays_cached(void) {
   CHECK(cache_engaged(a, 0, 0) == 1);
   CHECK(le_engine_set_lane_mute(a, 0, 0, 1) == LE_OK);
   float out[256];
+  pump_capture(a, 0.0f, 256, out); /* the mute's fade-out (#1400) */
+  pump_capture(a, 0.0f, 256, out);
   pump_capture(a, 0.0f, 256, out);
   CHECK(cache_engaged(a, 0, 0) == 1); /* mute is not part of the key */
-  for (int i = 64; i < 256; ++i) CHECK(fabsf(out[i]) < 1e-6f);
+  for (int i = 0; i < 256; ++i) CHECK(fabsf(out[i]) < 1e-6f);
   CHECK(le_engine_set_lane_mute(a, 0, 0, 0) == LE_OK);
   pump_capture(a, 0.0f, 256, out);
   CHECK(cache_engaged(a, 0, 0) == 1);
@@ -37459,6 +38656,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_read_head.h"
 #include "test_engine_stretch.h"
 #include "test_engine_reverse.h"
+#include "test_engine_gate_fade.h"
 #include "test_engine_speed.h"
 #include "test_engine_transpose.h"
 #include "test_engine_tempo_follow.h"
@@ -37472,6 +38670,15 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_backing.h"
 #include "test_engine_audition.h"
 #include "test_engine_render.h"
+#include "test_engine_rack_output.h"
+#include "test_engine_eq.h"
+#include "test_engine_eq_rate.h"
+#include "test_engine_dynamics.h"
+#include "test_engine_mod.h"
+#include "test_engine_drive.h"
+#include "test_engine_lofi.h"
+#include "test_engine_verb.h"
+#include "test_engine_fx_publish.h"
 #include "test_engine_bounce.h"
 #include "test_engine_clock.h"
 #include "test_engine_rt_memory.h"
@@ -37487,6 +38694,8 @@ int main(void) {
   if (getenv("SEGNO_SYNTH_TESTS_ONLY")) return g_failures ? 1 : 0;
   run_instrument_tests();
   if (getenv("SEGNO_INSTRUMENT_TESTS_ONLY")) return g_failures ? 1 : 0;
+  run_gate_fade_tests();
+  if (getenv("SEGNO_GATE_FADE_TESTS_ONLY")) return g_failures ? 1 : 0;
   run_reverse_tests();
   run_tuner_mute_tests();
   if (getenv("SEGNO_REVERSE_TESTS_ONLY")) return g_failures ? 1 : 0;
@@ -37547,6 +38756,15 @@ int main(void) {
   run_backing_tests();
   run_audition_tests();
   run_render_tests();
+  run_rack_output_tests();
+  run_eq_tests();
+  run_eq_rate_tests();
+  run_dynamics_tests();
+  run_mod_tests();
+  run_drive_tests();
+  run_lofi_tests();
+  run_verb_tests();
+  run_fx_publish_tests();
   run_bounce_tests();
   if (getenv("SEGNO_PEEL_TESTS_ONLY")) return g_failures ? 1 : 0;
   run_length_tests();
@@ -37862,11 +39080,21 @@ int main(void) {
   test_perf_arm_command_resets_armed_window();
   test_device_lost_keeps_running();
   test_master_bus_frame_limiter();
+  test_master_limiter_attack_is_not_a_step();
+  test_master_limiter_settles_into_scaling_then_unity();
+  test_master_limiter_holds_through_a_steady_waveform();
+  test_master_limiter_through_process();
   test_looper_clear();
   test_looper_requires_configure();
   test_looper_multitrack();
   test_latency_compensation();
   test_overdub_punch_no_click();
+  test_take_stops_early_no_silence_cut();
+  test_take_taper_threshold_leaves_short_takes_alone();
+  test_take_taper_follows_a_wrapped_fixed_multiple_take();
+  test_take_taper_rec_dub_continues_without_a_dip();
+  test_take_taper_rec_dub_undo_restores_a_faded_tail();
+  test_take_taper_rec_dub_stop_right_after_fades_the_tail();
   test_loop_seam_master_take_no_splice();
   test_loop_seam_survives_whole_lap_overdub();
   test_loop_seam_on_punch_out_with_player_stopped();
@@ -37946,6 +39174,8 @@ int main(void) {
   test_beat_boundary_on_block_edge();
   test_loop_subdiv_ratio_and_boundaries();
   test_quantize_div_start_fires_on_loop_locked_grid();
+  test_take_taper_follows_a_quantized_record_start();
+  test_take_taper_leaves_a_folded_tail_to_the_seam_fold();
   test_quantize_div_record_end_rounds_down();
   test_quantize_div_record_end_rounds_up();
   test_quantize_div_record_end_min_one_unit();
@@ -38009,8 +39239,9 @@ int main(void) {
   test_fx_stereo_chain_independent_lr_state();
   test_fx_stereo_ring_retained_across_type_reorder();
   test_monitor_input_fx_rejects_invalid_args();
-  test_fx_fourth_param_is_inert();
+  test_fx_params_past_count_are_inert();
   test_octaver_pv_shifts_pitch_preserves_formant();
+  test_octaver_pv_formants_move_with_pitch();
   test_octaver_pv_low_fundamental();
   test_octaver_mono_coherent();
   test_octaver_mix_no_comb();
@@ -38026,6 +39257,7 @@ int main(void) {
   test_octaver_added_latency();
   test_fx_param_descriptors_match_kernels();
   test_octaver_hop_stagger_alignment();
+  test_octaver_reset_mid_frame_is_silent();
   test_octaver_hop_stagger_seeds();
   test_octaver_hop_stagger_survives_recipe_publish();
   test_octaver_hop_schedule_survives_mode_switch();
@@ -38034,6 +39266,8 @@ int main(void) {
   test_octaver_hop_reanchors_after_a_gap();
   test_octaver_hop_resyncs_after_a_count_gap();
   test_fft_roundtrip();
+  test_fft_matches_direct_dft();
+  test_octaver_envelope_matches_direct_cepstrum();
 
   test_json_read_parses_nested_objects_and_arrays();
   test_json_read_rejects_malformed_input();
@@ -38304,6 +39538,7 @@ int main(void) {
   test_a_pre_channel_edit_drops_the_print();
   test_cache_cached_matches_live_every_builtin();
   test_cache_octaver_on_a_partial_hop_loop_stays_live();
+  test_cache_bypassed_octaver_prints_on_a_partial_hop_loop();
   test_cache_octaver_relaunch_rerenders();
   test_cache_cached_matches_live_multi_slot_chain();
   test_cache_volume_move_invalidates();

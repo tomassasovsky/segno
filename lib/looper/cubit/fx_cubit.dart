@@ -499,7 +499,7 @@ class FxCubit extends Cubit<FxState> {
     final effect = chain![index];
     if (effect is! BuiltInEffect ||
         parameter < 0 ||
-        parameter >= effect.params.length) {
+        parameter >= effect.type.params.length) {
       return const FxEditResult(FxEditStatus.refused);
     }
     if (effect.params[parameter] == value) {

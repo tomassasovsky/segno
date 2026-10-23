@@ -290,6 +290,46 @@ jobs:
             packages/segno_engine/build/bench/bench_instruments
             bench-instruments-arm64.md
           if-no-files-found: error
+      # The Looper X kinds' CPU (#887): informational on this proxy, judged
+      # against the plan's per-rack budgets on the console. The binary is
+      # uploaded for that run.
+      - name: Run the effects bench for the Looper X kinds (informational)
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The script builds the bench once; the other kinds rerun it.
+          bash packages/segno_engine/src/test/bench/bench_fx_cpu.sh \
+            --kind eq --blocks 2000 > bench-fx-kinds-arm64.md
+          for kind in comp transient hpgate doubler chorus wah overdrive \
+              distortion vinyl degrade lpf spring; do
+            packages/segno_engine/build/bench/bench_fx_cpu \
+              --kind "$kind" --blocks 2000 >> bench-fx-kinds-arm64.md
+          done
+          packages/segno_engine/build/bench/bench_fx_cpu \
+            --racks --blocks 2000 >> bench-fx-kinds-arm64.md
+          cat bench-fx-kinds-arm64.md
+      # The pitch-shifter comparison (#887 part 9): the phase vocoder, PSOLA
+      # and Signalsmith Stretch on the same signals. Informational.
+      - name: Run the pitch-shifter comparison (informational)
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: >
+          bash packages/segno_engine/src/test/bench/bench_pitch_algos.sh
+          | tee bench-pitch-algos-arm64.md
+      - name: Upload the effects bench and its report for the appliance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-fx-cpu-arm64
+          path: |
+            packages/segno_engine/build/bench/bench_fx_cpu
+            packages/segno_engine/build/bench/bench_pitch_algos
+            bench-fx-kinds-arm64.md
+            bench-pitch-algos-arm64.md
+          if-no-files-found: error
       # The audio-thread fault bench (#900): build only, since it needs the
       # console's sound card. Its binary is uploaded for the on-device proof
       # run (usage in bench_rt_faults.sh).
@@ -632,6 +672,8 @@ jobs:
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_log_persist_tests.sh
       - name: Run kernel cmdline tests
         run: bash deploy/yocto/test/run_kernel_cmdline_tests.sh
+      - name: Run freeze recovery tests
+        run: bash deploy/yocto/test/run_freeze_recovery_tests.sh
       - name: Run screen power lifecycle tests
         run: python3 deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/test_screen_power.py
       # Twice on purpose: the appliance's /bin/sh is busybox ash, so the

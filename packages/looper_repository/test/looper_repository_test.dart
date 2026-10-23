@@ -8823,7 +8823,8 @@ void main() {
 
       final moved = repo.laneEffects(0, 0).single as BuiltInEffect;
       expect(moved.slotId, id);
-      expect(moved.params, const [0.11, 0.22, 0.33, 0.44]);
+      expect(moved.params.take(3), const [0.11, 0.22, 0.33]);
+      expect(moved.params.skip(3), everyElement(0.0));
       expect(moved.enabled, isFalse);
       expect(moved.placement, FxPlacement.pre);
     });

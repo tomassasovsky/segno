@@ -451,10 +451,11 @@ void main() {
 
       expect(result.status, FxEditStatus.applied);
       final rack = rackOf(result.groupId!);
+      // Ed's Rack's measured order: Reverb runs before Delay.
       expect(rack.entries.map((fx) => fx.module), [
         'Compressor',
-        'Delay',
         'Reverb',
+        'Delay',
       ]);
       expect(fxRackLevelDb(rack.channels.level), -2.4);
       expect(rack.entries.every((fx) => !fx.enabled), isTrue);

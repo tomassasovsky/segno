@@ -803,8 +803,61 @@
     "paramSize": "Size",
     "paramDamping": "Damping",
     "paramMode": "Mode",
+    "paramFormants": "Formants",
+    "effectEq": "EQ",
+    "paramLowCut": "Low cut",
+    "paramLowGain": "Low",
+    "paramLowFreq": "Low freq",
+    "paramLowQ": "Low Q",
+    "paramLoMidGain": "Lo mid",
+    "paramLoMidFreq": "Lo mid freq",
+    "paramLoMidQ": "Lo mid Q",
+    "paramHiMidGain": "Hi mid",
+    "paramHiMidFreq": "Hi mid freq",
+    "paramHiMidQ": "Hi mid Q",
+    "paramHighGain": "High",
+    "paramHighFreq": "High freq",
+    "paramHighQ": "High Q",
+    "paramHighCut": "High cut",
+    "paramAirGain": "Air",
+    "paramEqLayout": "Layout",
+    "eqLayoutBellsCuts": "Bells, cuts",
+    "eqLayoutShelves": "Shelves",
+    "eqLayoutBells": "Bells",
+    "paramMidGain": "Mid",
+    "paramMidFreq": "Mid freq",
+    "paramMidQ": "Mid Q",
+    "effectCompressor": "Compressor",
+    "effectTransient": "Transient",
+    "effectHpGate": "HP / Gate",
+    "paramThreshold": "Threshold",
+    "paramRatio": "Ratio",
+    "paramAttack": "Attack",
+    "paramRelease": "Release",
+    "paramMakeup": "Make-up",
+    "paramAttackLength": "Attack length",
+    "paramSustain": "Sustain",
+    "paramHighpass": "High-pass",
+    "paramGateThreshold": "Gate threshold",
+    "effectDoubler": "Doubler",
+    "effectChorus": "Chorus",
+    "effectWah": "Wah",
+    "effectOverdrive": "Overdrive",
+    "effectDistortion": "Distortion",
+    "effectVinyl": "Vinyl",
+    "effectDegrade": "Degrade",
+    "effectLpf": "Low-pass filter",
+    "effectSpring": "Spring reverb",
+    "paramFrequency": "Frequency",
+    "paramNoise": "Noise",
+    "paramNoiseTone": "Noise tone",
+    "paramFilter": "Filter",
+    "paramSeparation": "Separation",
+    "paramPedal": "Pedal",
     "octaverModePhaseVocoder": "Phase Vocoder",
     "octaverModePsola": "PSOLA",
+    "octaverFormantsHeld": "Held",
+    "octaverFormantsMoved": "Follow pitch",
     "pitchUnison": "Unison",
     "pitchOctaves": "{sign}{count} oct",
     "@pitchOctaves": {
@@ -2403,6 +2456,10 @@
     "powerSessionUnnamed": "This session has no name yet. You'll name it before it saves.",
     "@powerSessionUnnamed": {
         "description": "Power options line in place of the session name when the open session is unnamed."
+    },
+    "powerOptionsBodyEmpty": "Playback will stop. This session is empty, so there is nothing to save.",
+    "@powerOptionsBodyEmpty": {
+        "description": "Power options body in place of the save promise and the session line when the open session is unnamed and holds no recorded audio and no backing: Restart and Shut down write no session."
     },
     "powerStagedUpdate": "Segno {version} installs during the restart.",
     "@powerStagedUpdate": {
@@ -4102,6 +4159,71 @@
                 "format": "decimalPatternDigits",
                 "optionalParameters": {
                     "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "fxValueMsFiner": "{milliseconds} ms",
+    "@fxValueMsFiner": {
+        "description": "A built-in effect parameter's time below 1 ms, with two decimals (a compressor's fastest attack).",
+        "placeholders": {
+            "milliseconds": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 2
+                }
+            }
+        }
+    },
+    "fxValueSeconds": "{seconds} s",
+    "@fxValueSeconds": {
+        "description": "A built-in effect parameter's time in seconds, with two decimals (a spring reverb's decay).",
+        "placeholders": {
+            "seconds": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 2
+                }
+            }
+        }
+    },
+    "fxValueRatioWhole": "{ratio}:1",
+    "@fxValueRatioWhole": {
+        "description": "A compressor's ratio from 100 up, without a decimal (100:1).",
+        "placeholders": {
+            "ratio": {
+                "type": "int"
+            }
+        }
+    },
+    "fxValueRatio": "{ratio}:1",
+    "@fxValueRatio": {
+        "description": "A compressor's ratio with one decimal, such as 4.0:1.",
+        "placeholders": {
+            "ratio": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "fxValueQ": "{q}",
+    "fxValueOff": "Off",
+    "@fxValueOff": {
+        "description": "An EQ cut at the end of its range, where it filters nothing."
+    },
+    "@fxValueQ": {
+        "description": "A filter's Q, a plain number with two decimals (an EQ band's width).",
+        "placeholders": {
+            "q": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 2
                 }
             }
         }

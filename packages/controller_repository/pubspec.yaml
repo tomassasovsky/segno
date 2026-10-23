@@ -1,7 +1,7 @@
 name: controller_repository
 description: >-
-  Hardware-agnostic controller abstraction for Segno: maps raw MIDI inputs
-  to looper actions through a remappable mapping, with MIDI-learn capture.
+  Controller sources for Segno: forwards console CTRL events and provides
+  the MIDI mapping model (decoder and mapping engine) the app's controls use.
 version: 0.1.0
 publish_to: none
 

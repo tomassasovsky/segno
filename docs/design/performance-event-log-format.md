@@ -165,7 +165,7 @@ bytes are that command's union, unchanged, so a reader already familiar with
 | `LE_CMD_SET_OUTPUT_MUTE`              | 68    | lanef       | Yes     | Output destination mute — same rule as 67 |
 | `LE_CMD_SET_OUTPUT_MONO`              | 69    | lanef       | Yes     | Output destination Stereo/Mono. Hardware output format; excluded from the performance capture policies |
 | `LE_CMD_SET_OUTPUT_BALANCE`           | 70    | lanef       | Yes     | Output destination balance — same as 69 |
-| `LE_CMD_SET_OUTPUT_FX`                | 71    | fx          | Yes     | Captured destination output-chain entry type; replay filters on the frozen destination |
+| `LE_CMD_SET_OUTPUT_FX`                | 71    | fx          | Yes     | Captured destination output-chain entry type; replay filters on the frozen destination. `fx.lane` 1 marks an entry a recipe kept in place (same identity and type, its DSP state goes on); 0 renews the slot (state reset, delay rings cleared through the enable edge) |
 | `LE_CMD_SET_OUTPUT_FX_COUNT`          | 72    | fxcount     | Yes     | Captured destination output-chain length |
 | `LE_CMD_CUT_SOUND`                    | 73    | —           | Yes     | Stop recorded sources and clear existing effect tails and the current click pulse. Every stopped track also logs a synthetic `LE_CMD_STOP`. Replay handles Cut itself to clear delay memory and keep sources silent until explicit Play or a new recording start; a finalizing `RECORD_END` does not restart them. Live monitoring and future click preferences remain unchanged |
 
@@ -229,7 +229,7 @@ control-side-only concepts:
 | `LE_PLOG_LAYER_RETIRED`           | 303   | evt     | `{channel, slot, generation}`, mirroring `LE_EVT_LAYER_RETIRED`'s payload. A completed overdub pass retired. |
 | `LE_PLOG_UNDO`                    | 304   | generic | `arg_i` = channel. Every undo path — the common in-track swap or the to-EMPTY edge case — logs this one code. |
 | `LE_PLOG_REDO`                    | 305   | generic | `arg_i` = channel. Same unification for redo. |
-| `LE_PLOG_SET_LANE_FX_PARAM`       | 306   | fx      | `channel`, `lane`, `index` = `(fx_index << 8) \| param`, `type` = the float value bit-cast to `int32` (`f32_to_bits`). Control-side emission — params bypass the command ring. |
+| `LE_PLOG_SET_LANE_FX_PARAM`       | 306   | fx      | `channel`, `lane`, `index` = `(fx_index << 8) \| param`, `type` = the float value bit-cast to `int32` (`f32_to_bits`). Logged by the callback at the frame it first applies the value (the snapshot sees it differ from its last view), not by the setter. A lane recipe's own values are not logged (lane structure is not either). |
 | `LE_PLOG_SET_MONITOR_FX_PARAM`    | 307   | fx      | Same packing; `channel` = input index, `lane` = -1. |
 | `LE_PLOG_SET_LIMITER`             | 308   | generic | `arg_i` = enabled (0/1), `arg_f` = ceiling. |
 | `LE_PLOG_SET_OVERDUB_FEEDBACK`    | 309   | generic | `arg_f` = feedback (0..1). |
@@ -240,7 +240,7 @@ control-side-only concepts:
 | `LE_PLOG_PERF_ARMED`              | 315   | perf_arm | `{position, master_len, iteration, fx_clock}` (`fx_clock` from version 13: the engine frame of capture frame 0, the FX clock the renderer anchors octaver hops to) — the master loop phase at the exact audio-thread frame `LE_CMD_PERF_ARM` applied (capture frame 0). `master_len` == 0 means the capture armed with no master loop (Free/Song, or from silence), and `position`/`iteration` are then both 0. Exactly one per capture, from header version 4. The offline renderer's arm-image anchor and its no-lock `RECORD_END` phase math read this instead of the race-stale `armSnapshot.clockFrame` the control thread sampled BEFORE lane capture (#262); `iteration` also resolves a multi-loop arm image's sub-cycle (#260). |
 | `LE_PLOG_TRANSPORT_HELD`          | 316   | generic | `arg_i` = the clock position the loop clock was pinned FROM. The shared transport became HELD mid-capture — nothing playing/recording/overdubbing, so `advance_transport_frame` pins the clock to position 0 (its all-idle branch). Edge-triggered: logged once when the hold begins, not every held frame. From header version 4. Lets the renderer's phase math see a clock the engine froze rather than running it forward. |
 | `LE_PLOG_SET_TRACK_OVERDUB_FEEDBACK` | 317 | generic | `arg_i` = channel, `arg_f` = that track's own overdub feedback (0..1), or a negative value meaning the track follows the global coefficient (309). One per write, from events.log version 4. Written as 317 rather than the next line's number because 315 and 316 were already taken further down the enum. |
-| `LE_PLOG_SET_OUTPUT_FX_PARAM` | 318 | fx | `fx.track` = output bus, `fx.lane` = 0, `fx.index` = `(slot << 8) | parameter`, `fx.type` = float32 value bits. Replays only the captured destination. |
+| `LE_PLOG_SET_OUTPUT_FX_PARAM` | 318 | fx | `fx.track` = output bus, `fx.lane` = 0, `fx.index` = `(slot << 8) | parameter`, `fx.type` = float32 value bits. Replays only the captured destination. Logged by the callback: an output recipe logs every described parameter of its entries when it lands, and a granular edit at the frame the callback first applies it. |
 | `LE_PLOG_SET_OUTPUT_FX_ENABLED` | 319 | fx | `fx.track` = output bus, `fx.index` = slot, `fx.type` = enabled flag. |
 | `LE_PLOG_SET_OUTPUT_FX_CHAIN_ENABLED` | 320 | generic | `arg_i` = output bus, `arg_f` = chain enabled flag. |
 | `LE_PLOG_REVERSE`                 | 324   | reverse_log | `{channel, reversed, read_index, turn_frames}` — the track's read direction (#1162), from header version 7. An accepted `le_engine_toggle_reverse` / `le_engine_install_reverse` logs `reversed` as it now stands, `read_index` = the exact dry index the callback reads at this frame (continuous across the turn: the same sample a forward read would have produced) and `turn_frames` = the window over which the pre-turn head is still mixed in with the seam's equal-gain law (0 on a loop too short to host it, or on a STOPPED track). Every material reset logs `reversed` 0 with `read_index` -1 (no anchor). A track reversed at `LE_CMD_PERF_ARM` logs its direction and index at capture frame 0; forward is the reader's default. **Replayed in the dry pass**: `perf_render.c` steps a reversed segment's phase -1 per frame from the logged index and mixes the turn. Written as 324 because 321-323 were taken; 325 is reserved for Peel. From header version 8, at a Speed other than 1x the logged `read_index` is the integral part of the callback's index; the renderer keeps its own exact fraction when the integral parts agree (see 327). |
@@ -263,7 +263,8 @@ events): enable flips are stamped with the control thread's buffer-base
 at audio-thread apply time — so an enable flip and a type/count change issued
 within the same buffer can sort into the opposite order from the live engine,
 and the replay's D-ENSEED re-seed then lands on the other side of the flip.
-Bounded by one buffer, like the documented `LE_PLOG_SET_LANE_FX_PARAM` skew.
+Bounded by one buffer. (Lane and output FX parameters no longer carry such a
+skew: the callback logs them at the frame it applies them.)
 
 ### Why record start/end are separate from the raw `LE_CMD_RECORD`/`LE_CMD_STOP` entries
 
