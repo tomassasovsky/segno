@@ -59,7 +59,7 @@
 #include "engine_read_head.h"  /* the fractional read coordinate (#1179) */
 #include "engine_miniaudio.h" /* le_miniaudio_backend (le_select_backend target) */
 #include "engine_platform.h"  /* le_platform_device_id_to_str, ma_device_id */
-#include "fft.h"              /* le_fft, le_rfft_fwd, le_rfft_inv, le_hann_init */
+#include "fft.h"              /* le_rfft_plan, le_rfft_fwd/_inv, le_hann_init */
 #include "json_read.h"        /* le_json_parse (part 7 offline renderer) */
 #include "lockfree_ring.h"
 #include "loop_clock.h"
@@ -20609,12 +20609,14 @@ static float oct_centroid(const float* x, int n) {
   float im[F / 2 + 1];
   double num = 0.0;
   double den = 0.0;
+  static le_rfft_plan plan;
+  CHECK(le_rfft_plan_init(&plan, F));
   for (int start = 0; start + F <= n; start += F / 2) {
     for (int i = 0; i < F; ++i) {
       const float w = 0.5f - 0.5f * cosf(2.0f * LE_FFT_PI * (float)i / (float)F);
       win[i] = x[start + i] * w;
     }
-    le_rfft_fwd(win, re, im, F);
+    le_rfft_fwd(&plan, win, re, im);
     for (int k = 1; k <= F / 2; ++k) {
       const float mag = sqrtf(re[k] * re[k] + im[k] * im[k]);
       num += (double)((float)k * (float)OCT_SR / (float)F) * mag;
@@ -22457,8 +22459,9 @@ static void test_octaver_hop_schedule_survives_mode_switch(void) {
 /* ---- FFT primitive (fft.h) ---- */
 
 /* Verifies the header-only FFT in isolation, before the phase vocoder (part 3)
- * consumes it: a random round-trip, a single-sine single-peak, an impulse's flat
- * spectrum, the 1/n scaling via a constant's DC, and the shared Hann table. */
+ * consumes it: the plan's length checks, a random round-trip, agreement with a
+ * direct DFT, a single-sine single-peak, an impulse's flat spectrum, the 1/n
+ * scaling via a constant's DC, and the shared Hann table. */
 static void test_fft_roundtrip(void) {
   printf("test_fft_roundtrip\n");
   enum { N = 1024 };
@@ -22467,6 +22470,17 @@ static void test_fft_roundtrip(void) {
   float re[N / 2 + 1];
   float im[N / 2 + 1];
 
+  /* The plan takes powers of two from 4 to LE_FFT_MAX_N, and only those. */
+  static le_rfft_plan plan;
+  CHECK(!le_rfft_plan_init(&plan, 0));
+  CHECK(!le_rfft_plan_init(&plan, 2));
+  CHECK(!le_rfft_plan_init(&plan, 1000));
+  CHECK(!le_rfft_plan_init(&plan, 2 * LE_FFT_MAX_N));
+  CHECK(plan.n == 0);
+  CHECK(le_rfft_plan_init(&plan, N));
+  CHECK(plan.n == N);
+  CHECK(le_rfft_plan_init(&plan, N)); /* idempotent */
+
   /* Deterministic pseudo-random signal in [-1, 1] (LCG; no global rand state). */
   uint32_t seed = 0x1234567u;
   for (int i = 0; i < N; ++i) {
@@ -22474,9 +22488,24 @@ static void test_fft_roundtrip(void) {
     x[i] = (float)(seed >> 8) / (float)(1u << 23) - 1.0f;
   }
 
+  /* The half spectrum matches a direct DFT, bin by bin (the even/odd split
+   * pairs bin k with bin N/2 - k, so check both ends and the middle). */
+  le_rfft_fwd(&plan, x, re, im);
+  const int bins[] = {0, 1, 2, 3, 255, 256, 257, 509, 510, 511, 512};
+  for (size_t b = 0; b < sizeof(bins) / sizeof(bins[0]); ++b) {
+    const int k = bins[b];
+    double dr = 0.0, di = 0.0;
+    for (int i = 0; i < N; ++i) {
+      const double a = -2.0 * 3.14159265358979323846 * (double)k * i / N;
+      dr += x[i] * cos(a);
+      di += x[i] * sin(a);
+    }
+    CHECK(fabs(re[k] - dr) < 1e-3);
+    CHECK(fabs(im[k] - di) < 1e-3);
+  }
+
   /* Round-trip reconstructs the signal to within a small epsilon. */
-  le_rfft_fwd(x, re, im, N);
-  le_rfft_inv(re, im, y, N);
+  le_rfft_inv(&plan, re, im, y);
   float max_err = 0.0f;
   for (int i = 0; i < N; ++i) {
     float e = fabsf(y[i] - x[i]);
@@ -22489,7 +22518,7 @@ static void test_fft_roundtrip(void) {
   for (int i = 0; i < N; ++i) {
     x[i] = sinf(2.0f * LE_FFT_PI * (float)k * (float)i / (float)N);
   }
-  le_rfft_fwd(x, re, im, N);
+  le_rfft_fwd(&plan, x, re, im);
   float peak = 0.0f;
   int peak_bin = -1;
   for (int b = 0; b <= N / 2; ++b) {
@@ -22511,7 +22540,7 @@ static void test_fft_roundtrip(void) {
   /* A unit impulse has a flat magnitude spectrum (|X[b]| == 1 for every bin). */
   for (int i = 0; i < N; ++i) x[i] = 0.0f;
   x[0] = 1.0f;
-  le_rfft_fwd(x, re, im, N);
+  le_rfft_fwd(&plan, x, re, im);
   for (int b = 0; b <= N / 2; ++b) {
     float mag = sqrtf(re[b] * re[b] + im[b] * im[b]);
     CHECK(fabsf(mag - 1.0f) < 1e-4f);
@@ -22520,14 +22549,14 @@ static void test_fft_roundtrip(void) {
   /* A constant input is pure DC, and the inverse is correctly 1/n-scaled: the
    * constant round-trips to itself. */
   for (int i = 0; i < N; ++i) x[i] = 0.75f;
-  le_rfft_fwd(x, re, im, N);
+  le_rfft_fwd(&plan, x, re, im);
   CHECK(fabsf(re[0] - 0.75f * (float)N) < 1e-2f); /* DC == sum == 0.75 * N */
   CHECK(fabsf(im[0]) < 1e-4f);
   for (int b = 1; b <= N / 2; ++b) {
     float mag = sqrtf(re[b] * re[b] + im[b] * im[b]);
     CHECK(mag < 1e-3f); /* no energy outside DC */
   }
-  le_rfft_inv(re, im, y, N);
+  le_rfft_inv(&plan, re, im, y);
   for (int i = 0; i < N; ++i) CHECK(fabsf(y[i] - 0.75f) < 1e-4f);
 
   /* Shared Hann table: built once, guarded by the ready flag. Endpoints are the

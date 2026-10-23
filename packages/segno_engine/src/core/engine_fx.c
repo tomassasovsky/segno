@@ -19,7 +19,7 @@
 
 #include "engine_fx.h"
 #include "engine_internal.h" /* le_psola_detect prototype (defined below) */
-#include "fft.h" /* le_rfft_fwd / le_rfft_inv / le_fft / le_hann_init */
+#include "fft.h" /* le_rfft_plan, le_rfft_fwd / le_rfft_inv, le_hann_init */
 #include "rt_alloc.h" /* le_rt_alloc_prefaulted / le_rt_free: the audio thread writes these */
 #include "../host/plugin_slot.h" /* le_plugin_slot_process (LE_FX_PLUGIN row) */
 
@@ -39,11 +39,15 @@
 
 static float le_hann[LE_PV_N];
 static int le_hann_ready;
+/* The length-LE_PV_N real-FFT tables shared the same way (fft.h). */
+static le_rfft_plan le_pv_fft;
 
-/* Builds the shared octaver Hann window once (idempotent). Internal: reached only
- * via the octaver's prepare (fx_octaver_prepare) on the control thread. */
+/* Builds the shared octaver Hann window and FFT tables once (idempotent).
+ * Internal: reached only via the octaver's prepare (fx_octaver_prepare) on the
+ * control thread. */
 static void le_fx_ensure_hann(void) {
   le_hann_init(le_hann, LE_PV_N, &le_hann_ready);
+  (void)le_rfft_plan_init(&le_pv_fft, LE_PV_N);
 }
 
 /* Soft-clipping overdrive: tanh saturation with a pre-gain, then output trim. */
@@ -237,10 +241,12 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
  * Called once per LE_PV_HOP samples from le_pv_tick. All scratch is stack-local
  * (bounded; no allocation). `head` indexes the newest FIFO sample.
  *
- * Cost per hop per channel: four length-N FFTs — analysis (le_rfft_fwd), the two
- * cepstrum transforms (le_fft inverse + forward), and synthesis (le_rfft_inv).
- * Stack peak ~60 KB at N = 1024 (the locals below ~27 KB plus the fixed ~32 KB
- * scratch inside one le_rfft_* call, which run sequentially, not nested); this
+ * Cost per hop per channel: four length-N real FFTs — analysis, the two cepstrum
+ * transforms, and synthesis — all on the shared plan le_pv_fft (fft.h). On the
+ * console a stereo frame costs ~170 us, down from ~290 us with full-length
+ * complex transforms (bench_fx_cpu, gcc -O2; #1410).
+ * Stack peak ~42 KB at N = 1024 (the locals below ~26 KB plus the fixed ~16 KB
+ * scratch inside le_rfft_inv, which runs after the forward transforms); this
  * scales with N, so a future bump to N = 2048 must re-check constrained
  * (e.g. plugin-host) audio-thread stack budgets. */
 static void le_octaver_frame(le_octaver_state* o, const float* fifo, int head,
@@ -253,20 +259,21 @@ static void le_octaver_frame(le_octaver_state* o, const float* fifo, int head,
   float env[LE_PV_BINS];
   float syn_mag[LE_PV_BINS];
   float syn_freq[LE_PV_BINS];
-  float cr[LE_PV_N];
-  float ci[LE_PV_N];
+  float cl[LE_PV_N];    /* the full log-magnitude, then the liftered cepstrum */
+  float cr[LE_PV_BINS]; /* their transforms (real; ci is the zero imaginary) */
+  float ci[LE_PV_BINS];
 
   const float expct = 2.0f * LE_PI * (float)LE_PV_HOP / (float)LE_PV_N;
   const float osamp = (float)LE_PV_N / (float)LE_PV_HOP;
 
   /* 1. Hann-window the newest N samples (win[N-1] is the freshest). */
+  int idx = (head - LE_PV_N + 1) % cap;
+  if (idx < 0) idx += cap;
   for (int i = 0; i < LE_PV_N; ++i) {
-    int idx = head - LE_PV_N + 1 + i;
-    idx %= cap;
-    if (idx < 0) idx += cap;
     win[i] = fifo[idx] * le_hann[i];
+    if (++idx == cap) idx = 0;
   }
-  le_rfft_fwd(win, re, im, LE_PV_N);
+  le_rfft_fwd(&le_pv_fft, win, re, im);
 
   /* 2. Per-bin magnitude + true frequency (in bins) from the phase advance. */
   for (int k = 0; k < LE_PV_BINS; ++k) {
@@ -282,22 +289,21 @@ static void le_octaver_frame(le_octaver_state* o, const float* fifo, int head,
   }
 
   /* 3. Formant envelope: lifter the low-quefrency cepstrum of log|X|. The full
-   *    symmetric log-magnitude round-trips through a complex FFT pair (inverse
-   *    then forward == * N), so the net 1/N is divided back out below. */
+   *    symmetric log-magnitude is real and even, so its transform is real and
+   *    even too, and the same either direction: two real FFTs (the imaginary
+   *    parts are zero) give N * the smoothed log-magnitude, and the net 1/N is
+   *    divided back out below. */
   for (int k = 0; k < LE_PV_BINS; ++k) {
-    cr[k] = logf(mag[k] + 1e-9f);
-    ci[k] = 0.0f;
+    cl[k] = logf(mag[k] + 1e-9f);
   }
   for (int k = 1; k < LE_PV_N / 2; ++k) {
-    cr[LE_PV_N - k] = cr[k];
-    ci[LE_PV_N - k] = 0.0f;
+    cl[LE_PV_N - k] = cl[k];
   }
-  le_fft(cr, ci, LE_PV_N, 1); /* -> cepstrum (real, even) */
-  for (int q = LE_PV_LIFTER; q <= LE_PV_N - LE_PV_LIFTER; ++q) {
-    cr[q] = 0.0f;
-    ci[q] = 0.0f;
-  }
-  le_fft(cr, ci, LE_PV_N, 0); /* -> N * smoothed log-magnitude */
+  le_rfft_fwd(&le_pv_fft, cl, cr, ci); /* -> cepstrum, quefrency 0 .. N/2 */
+  for (int q = 0; q < LE_PV_LIFTER; ++q) cl[q] = cr[q];
+  for (int q = LE_PV_LIFTER; q <= LE_PV_N - LE_PV_LIFTER; ++q) cl[q] = 0.0f;
+  for (int q = 1; q < LE_PV_LIFTER; ++q) cl[LE_PV_N - q] = cr[q];
+  le_rfft_fwd(&le_pv_fft, cl, cr, ci); /* -> N * smoothed log-magnitude */
   for (int k = 0; k < LE_PV_BINS; ++k) {
     env[k] = expf(cr[k] / (float)LE_PV_N);
   }
@@ -328,7 +334,7 @@ static void le_octaver_frame(le_octaver_state* o, const float* fifo, int head,
 
   /* 6. Inverse transform, synthesis-window, overlap-add. The Hann analysis x
    *    Hann synthesis window at 4x overlap sums to 1.5 — divide for unity. */
-  le_rfft_inv(re, im, win, LE_PV_N);
+  le_rfft_inv(&le_pv_fft, re, im, win);
   const float norm = 1.0f / 1.5f;
   for (int i = 0; i < LE_PV_N; ++i) {
     o->out[i] += win[i] * le_hann[i] * norm;
