@@ -749,7 +749,7 @@ void main() {
         FxPreset(family: family, name: 'p', id: 'p', type: 0, params: params);
 
     test("the Dub Rack's doubler shows mix and separation, the others the "
-        'mix alone, at full separation', () {
+        'mix alone, at half separation', () {
       final dub = fxModuleEntry(
         _module('Doubler'),
         preset('Dub Rack', const {
@@ -767,7 +767,7 @@ void main() {
           preset(family, const {'Doubler': 1, 'Doubler Mix': 0.4}),
         );
         expect(fxEntryBuild(e)!.exposed, [0], reason: family);
-        expect(e.params.take(2), [0.4, 1.0], reason: family);
+        expect(e.params.take(2), [0.4, 0.5], reason: family);
       }
     });
 
