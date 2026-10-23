@@ -35,6 +35,9 @@ static le_engine* pk_fixture(int tracks) {
   CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
   fade_result(e, id, LE_OK);
+  /* One lap from the top, so the Play's fade-in (#1400) is over. */
+  static float lap[PK_LEN];
+  rev_process(e, lap, PK_LEN, 512);
   return e;
 }
 

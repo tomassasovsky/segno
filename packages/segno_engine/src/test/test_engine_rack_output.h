@@ -276,7 +276,9 @@ static void rk_render_parity(const le_fx_recipe* r, float* out_first) {
   static float out[2 * 4000];
   CHECK(rr_render(e, &q, out, 4000) == 4000);
   int mismatches = 0;
-  for (int f = 0; f < 3000; ++f) {
+  /* From the end of the Play's fade-in (#1400), which the render does not
+   * have; these racks hold no memory, so the fade ends where it ends. */
+  for (int f = RR_SR / 100; f < 3000; ++f) {
     if (live[2 * f] != out[2 * f] || live[2 * f + 1] != out[2 * f + 1]) {
       mismatches++;
     }

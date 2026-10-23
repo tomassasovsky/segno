@@ -22,4 +22,29 @@ static inline float le_fade_tick(le_fade* fade, int sample_rate) {
   }
   return sample;
 }
+
+/* One frame of an audibility fade (#1400): [g] moves [step] toward [target]
+ * (0 or 1) and lands on it exactly. The callback steps a lane's mute, a
+ * track's solo and a track's play gain with it, and the performance replay
+ * steps the same gates with it, so an export fades where the performer heard
+ * a fade. */
+static inline float le_gate_step(float g, float target, float step) {
+  if (g < target) {
+    g += step;
+    return g > target ? target : g;
+  }
+  if (g > target) {
+    g -= step;
+    return g < target ? target : g;
+  }
+  return g;
+}
+
+/* The step le_gate_step takes at [sample_rate]: one fade over sr / 100
+ * frames (~10 ms), the overdub punch's od_step and the loop seam's length. */
+static inline float le_gate_step_size(int sample_rate) {
+  int32_t frames = (sample_rate > 0 ? sample_rate : 48000) / 100;
+  if (frames < 1) frames = 1;
+  return 1.0f / (float)frames;
+}
 #endif
