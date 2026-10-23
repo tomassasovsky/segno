@@ -342,7 +342,7 @@ void le_octaver_envelope(const float* mag, float* env) {
  * formants moved, which skips the envelope stage), on the shared plan
  * le_pv_fft (fft.h). On the console a stereo frame cost ~170 us in one
  * callback (#1410). The stages are not equal: measured on the dev machine
- * the analysis, envelope, shift and synthesis take about 29, 34, 22 and 15 %
+ * the analysis, envelope, shift and synthesis take about 30, 31, 26 and 13 %
  * of a frame, so the heaviest callback carries about a third of it. The
  * frame's arrays live in the heap scratch, so the stack holds only each
  * stage's own temporaries. */
@@ -432,18 +432,21 @@ static void le_pv_stage_shift(le_octaver_state* o) {
       peaks[np++] = q;
     }
   }
-  if (np == 0) peaks[np++] = 0; /* silence: one region, from DC */
+  if (np == 0) peaks[np++] = 0; /* NaN magnitudes only: one region */
   int start = 0;
   for (int r = 0; r < np; ++r) {
     const int peak = peaks[r];
     const int end = r + 1 < np ? (peak + peaks[r + 1] + 1) / 2 : LE_PV_BINS;
     const int to = (int)((float)peak * ratio + 0.5f);
+    if (to >= LE_PV_BINS) { /* the peak leaves the band: drop its region */
+      start = end;
+      continue;
+    }
     const int shift = to - peak;
     /* The peak's phase at its new bin: last frame's there, advanced by the
      * shifted frequency. */
     const float peak_phase =
-        (to < LE_PV_BINS ? o->sum_phase[to] : 0.0f) +
-        advance * freq[peak] * ratio;
+        o->sum_phase[to] + advance * freq[peak] * ratio;
     for (int k = start; k < end; ++k) {
       const int j = k + shift;
       if (j < 0 || j >= LE_PV_BINS) continue;
@@ -1262,6 +1265,14 @@ static void fx_octaver_process(le_fx_state* fx, int slot, int sr, int cap,
  * off a single tone, so the fit keeps the three-point sweep. */
 #define LE_WHAMMY_TAPER 1.39f
 
+/* The Whammy's shift as the octaver's shift setting: -24 + 48 v semitones
+ * for range x pedal^taper. */
+static float le_whammy_shift(const float* p) {
+  const float pedal = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
+  const float range = p[1] >= 0.5f ? 12.0f : -12.0f;
+  return 0.5f + range * powf(pedal, LE_WHAMMY_TAPER) / 48.0f;
+}
+
 int le_fx_type_hops(int32_t type) {
   return type == LE_FX_OCTAVER || type == LE_FX_WHAMMY;
 }
@@ -1269,11 +1280,7 @@ int le_fx_type_hops(int32_t type) {
 void le_fx_octaver_settings(int32_t type, const float* params, float* out) {
   for (int k = 0; k < LE_FX_PARAMS; ++k) out[k] = params[k];
   if (type != LE_FX_WHAMMY) return;
-  const float pedal =
-      params[0] < 0.0f ? 0.0f : params[0] > 1.0f ? 1.0f : params[0];
-  const float range = params[1] >= 0.5f ? 12.0f : -12.0f;
-  const float st = range * powf(pedal, LE_WHAMMY_TAPER);
-  out[0] = 0.5f + st / 48.0f; /* the octaver's shift: -24 + 48 v */
+  out[0] = le_whammy_shift(params);
   out[1] = 1.0f;              /* the tone open */
   out[2] = 1.0f;              /* fully wet */
   out[3] = 0.0f;              /* the phase vocoder */
@@ -1282,11 +1289,8 @@ void le_fx_octaver_settings(int32_t type, const float* params, float* out) {
 
 static void fx_whammy_process(le_fx_state* fx, int slot, int sr, int cap,
                               float* l, float* r, const float* p) {
-  /* The five settings the octaver's kernel reads. */
-  const float pedal = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
-  const float range = p[1] >= 0.5f ? 12.0f : -12.0f;
-  const float q[5] = {0.5f + range * powf(pedal, LE_WHAMMY_TAPER) / 48.0f,
-                      1.0f, 1.0f, 0.0f, 1.0f};
+  /* The five settings the octaver's kernel reads (le_fx_octaver_settings). */
+  const float q[5] = {le_whammy_shift(p), 1.0f, 1.0f, 0.0f, 1.0f};
   fx_octaver_process(fx, slot, sr, cap, l, r, q);
 }
 static void fx_echo_process(le_fx_state* fx, int slot, int sr, int cap, float* l,
