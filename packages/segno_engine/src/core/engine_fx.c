@@ -1284,6 +1284,7 @@ static const le_fx_param_desc LE_FX_EQ_PARAMS[] = {
  * 10 ms, in octaves, decibels and log Q, and coefficients are recomputed only
  * while something moves. */
 #define LE_EQ_BANDS 7
+#define LE_EQ_PARAMS_N 15 /* LE_FX_EQ_PARAMS rows */
 #define LE_EQ_AIR_HZ 12000.0
 #define LE_EQ_CUT_Q 0.70710678118654752
 #define LE_EQ_SMOOTH_S 0.010
@@ -1293,16 +1294,26 @@ enum { LE_EQ_LOWCUT, LE_EQ_LOW, LE_EQ_LOMID, LE_EQ_HIMID, LE_EQ_HIGH,
 
 typedef struct le_eq_band {
   float b0, b1, b2, a1, a2; /* a0-normalized */
+  float mix;                /* a cut's amount (1 for a shelf or peak) */
   float z[2][2];            /* transposed direct form II, per channel */
 } le_eq_band;
 
 typedef struct le_fx_eq {
-  /* Smoothed targets per band: log2 Hz, dB and ln Q (cuts use only Hz). */
+  /* Smoothed targets per band: log2 Hz, ln Q, and for a shelf or peak its
+   * dB, for a cut its amount (1 on, 0 off), which it glides in and out by
+   * so switching one never steps. */
   float hz[LE_EQ_BANDS];
   float db[LE_EQ_BANDS];
   float lnq[LE_EQ_BANDS];
   uint32_t active; /* bands that are not the identity */
   int32_t moving;  /* smoothing still under way */
+  /* The settings the targets were last taken from, and the smoothing step
+   * for the rate it was computed at: a settled EQ whose settings did not
+   * change costs one compare per update. */
+  float last[LE_EQ_PARAMS_N];
+  int32_t primed;
+  int32_t k_sr;
+  float k;
   le_eq_band band[LE_EQ_BANDS];
 } le_fx_eq;
 
@@ -1370,20 +1381,27 @@ void le_eq_design_for_test(int kind, double hz, double db, double q, int sr,
   le_eq_design(kind, hz, db, q, sr, c);
 }
 
-/* The targets [p] sets, per band: Hz (log2), dB and ln Q. A cut's dB is 0
- * when it is on and 1 when off (at its end of the range), which is how the
- * band skips it. */
+/* The targets [p] sets, per band: Hz (log2), ln Q, and dB (a shelf or peak)
+ * or amount (a cut: 1 on, 0 off at its end of the range). */
 static void le_eq_targets(const float* p, float hz[LE_EQ_BANDS],
                           float db[LE_EQ_BANDS], float lnq[LE_EQ_BANDS]);
 
 static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
   le_fx_eq* q = (le_fx_eq*)ks;
+  if (!settle && !q->moving && q->primed &&
+      memcmp(q->last, p, sizeof(q->last)) == 0) {
+    return; /* settled and unchanged */
+  }
+  memcpy(q->last, p, sizeof(q->last));
+  q->primed = 1;
+  if (q->k_sr != sr) {
+    q->k_sr = sr;
+    q->k = (float)(1.0 - exp(-(double)LE_FX_UPDATE_FRAMES /
+                             (LE_EQ_SMOOTH_S * (double)(sr > 0 ? sr : 48000))));
+  }
   float hz[LE_EQ_BANDS], db[LE_EQ_BANDS], lnq[LE_EQ_BANDS];
   le_eq_targets(p, hz, db, lnq);
-  const float k =
-      settle ? 1.0f
-             : (float)(1.0 - exp(-(double)LE_FX_UPDATE_FRAMES /
-                                 (LE_EQ_SMOOTH_S * (double)(sr > 0 ? sr : 48000))));
+  const float k = settle ? 1.0f : q->k;
   int moving = 0;
   int changed = settle;
   for (int b = 0; b < LE_EQ_BANDS; ++b) {
@@ -1405,11 +1423,14 @@ static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
   if (!changed) return;
   for (int b = 0; b < LE_EQ_BANDS; ++b) {
     const int cut = b == LE_EQ_LOWCUT || b == LE_EQ_HIGHCUT;
-    /* A cut is off at its end (db 1 there); a shelf or peak at 0 dB is the
-     * identity. Either way the band is skipped and its memory cleared, so
-     * it starts clean when it comes back. */
-    const int on = cut ? q->db[b] < 0.5f : fabsf(q->db[b]) >= 0.01f;
+    /* A cut whose amount has glided to 0, or a shelf or peak that has
+     * settled at 0 dB, is the identity: the band is skipped and its memory
+     * cleared, so it starts clean when it comes back. A gain that only
+     * passes through 0 dB on its way somewhere is never exactly 0, so the
+     * band keeps running and its state stays continuous. */
+    const int on = q->db[b] != 0.0f;
     le_eq_band* band = &q->band[b];
+    band->mix = cut ? q->db[b] : 1.0f;
     if (!on) {
       if (q->active & (1u << b)) memset(band->z, 0, sizeof(band->z));
       q->active &= ~(1u << b);
@@ -1426,7 +1447,9 @@ static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
 
 static void fx_eq_kprocess(void* ks, float* l, float* r) {
   le_fx_eq* q = (le_fx_eq*)ks;
-  float x[2] = {*l, *r};
+  /* A non-finite sample would latch into the band memory for good (the
+   * conditioning stage's biquads guard the same way). */
+  float x[2] = {isfinite(*l) ? *l : 0.0f, isfinite(*r) ? *r : 0.0f};
   for (int b = 0; b < LE_EQ_BANDS; ++b) {
     if (!(q->active & (1u << b))) continue;
     le_eq_band* f = &q->band[b];
@@ -1435,7 +1458,7 @@ static void fx_eq_kprocess(void* ks, float* l, float* r) {
       const float y = f->b0 * in + f->z[c][0];
       f->z[c][0] = f->b1 * in - f->a1 * y + f->z[c][1];
       f->z[c][1] = f->b2 * in - f->a2 * y;
-      x[c] = y;
+      x[c] = f->mix >= 1.0f ? y : in + f->mix * (y - in);
     }
   }
   *l = x[0];
@@ -1448,7 +1471,7 @@ static void le_eq_targets(const float* p, float hz[LE_EQ_BANDS],
 #define LE_EQ_V(i) le_fx_desc_value(&d[i], p[i])
   const double ln_cut_q = log(LE_EQ_CUT_Q);
   hz[LE_EQ_LOWCUT] = (float)log2(LE_EQ_V(0));
-  db[LE_EQ_LOWCUT] = p[0] <= 0.0f ? 1.0f : 0.0f;
+  db[LE_EQ_LOWCUT] = p[0] <= 0.0f ? 0.0f : 1.0f; /* off at its lowest */
   lnq[LE_EQ_LOWCUT] = (float)ln_cut_q;
   hz[LE_EQ_LOW] = (float)log2(LE_EQ_V(2));
   db[LE_EQ_LOW] = (float)LE_EQ_V(1);
@@ -1466,7 +1489,7 @@ static void le_eq_targets(const float* p, float hz[LE_EQ_BANDS],
   db[LE_EQ_AIR] = (float)LE_EQ_V(14);
   lnq[LE_EQ_AIR] = (float)ln_cut_q;
   hz[LE_EQ_HIGHCUT] = (float)log2(LE_EQ_V(13));
-  db[LE_EQ_HIGHCUT] = p[13] >= 1.0f ? 1.0f : 0.0f;
+  db[LE_EQ_HIGHCUT] = p[13] >= 1.0f ? 0.0f : 1.0f; /* off at its highest */
   lnq[LE_EQ_HIGHCUT] = (float)ln_cut_q;
 #undef LE_EQ_V
 }
@@ -1567,6 +1590,9 @@ static const le_fx_vtable LE_FX[] = {
  * le_fx_param_count and le_fx_defaults. A type with descriptor rows and no
  * entry here would read nothing; test_fx_params_past_count_are_inert checks
  * every built-in has one. */
+_Static_assert(LE_EQ_PARAMS_N ==
+                   sizeof(LE_FX_EQ_PARAMS) / sizeof(LE_FX_EQ_PARAMS[0]),
+               "le_fx_eq.last holds every EQ setting");
 _Static_assert(LE_FX_WIDTHS == sizeof(LE_FX) / sizeof(LE_FX[0]),
                "LE_FX_WIDTHS must be one past the last le_fx_type code");
 #define LE_FX_ROW_COUNT(t) (uint8_t)(sizeof(t) / sizeof(t[0]))
