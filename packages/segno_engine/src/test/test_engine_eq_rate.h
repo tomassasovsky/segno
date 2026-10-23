@@ -2,29 +2,31 @@
  * (#1436). Included by test_engine_core.c after test_engine_eq.h, whose
  * declarations and helpers it reuses. */
 
-/* The stated tolerances, in dB, over random settings across each band's
- * whole range, scored on 480 frequencies: the 95th percentile and the worst
- * case at 44.1 and 96 kHz (48 kHz is exact). The worst cases are settings a
+/* The stated tolerances, in dB, over 8000 random settings across each
+ * band's whole range (1000 per cut), scored on 480 frequencies: the 95th
+ * percentile and the worst case at 44.1 and 96 kHz (48 kHz is exact). The
+ * worst cases are this sample's, with a margin; the grid is checked to be no
+ * worse than the plain design, not bounded. The worst cases are settings a
  * single biquad cannot follow at that rate without lifting the band above
  * 24 kHz: at 96 kHz, deep wide cuts (Q under about 0.6) near 2 to 5 kHz,
  * high shelves with Q over about 3 above 14 kHz, and high cuts between
  * about 3 and 8 kHz, whose error is in the stopband. */
 #define EQR_BELL_P95_44 0.12
-#define EQR_BELL_MAX_44 1.3
-#define EQR_BELL_P95_96 0.7
-#define EQR_BELL_MAX_96 5.6
+#define EQR_BELL_MAX_44 1.5
+#define EQR_BELL_P95_96 0.75
+#define EQR_BELL_MAX_96 6
 #define EQR_HS_P95_44 0.95
-#define EQR_HS_MAX_44 7.5
-#define EQR_HS_P95_96 3.6
-#define EQR_HS_MAX_96 19
+#define EQR_HS_MAX_44 10.5
+#define EQR_HS_P95_96 5.2
+#define EQR_HS_MAX_96 21
 #define EQR_LS_P95_44 0.01
 #define EQR_LS_MAX_44 0.04
 #define EQR_LS_P95_96 0.02
-#define EQR_LS_MAX_96 0.13
-#define EQR_LP_P95_44 0.27
-#define EQR_LP_MAX_44 1.05
-#define EQR_LP_P95_96 2.9
-#define EQR_LP_MAX_96 3.6
+#define EQR_LS_MAX_96 0.15
+#define EQR_LP_P95_44 0.2
+#define EQR_LP_MAX_44 1.1
+#define EQR_LP_P95_96 2.6
+#define EQR_LP_MAX_96 3.8
 #define EQR_HP_P95_44 0.002
 #define EQR_HP_MAX_44 0.005
 #define EQR_HP_P95_96 0.008
@@ -116,10 +118,11 @@ typedef struct eqr_shape {
 /* Every band, at random settings across its whole range, reproduces its
  * 48 kHz magnitude response within the shape's stated tolerance at 44.1 and
  * 96 kHz, and runs exactly the plain 48 kHz design at 48 kHz. Every design
- * is stable; at 96 kHz none lifts the band above 24 kHz, up to the Nyquist
- * frequency, more than 6 dB over the 48 kHz response's level at the top of
- * its band (or the plain design's own level); and few are worse than the
- * plain design. */
+ * is stable. At 96 kHz, past the scored band, none rises from 20 to 24 kHz
+ * more than 3 dB over both the 48 kHz response and the plain design, nor
+ * above 24 kHz, up to the Nyquist frequency, more than 6 dB over the 48 kHz
+ * response's level at the top of its band (or the plain design's own level
+ * there); and few are worse than the plain design. */
 static void test_eq_rate_matches_48k(void) {
   printf("test_eq_rate_matches_48k\n");
   static const eqr_shape shapes[] = {
@@ -140,13 +143,13 @@ static void test_eq_rate_matches_48k(void) {
        {EQR_HP_MAX_44, 0.0, EQR_HP_MAX_96}},
   };
   const int rates[3] = {44100, 48000, 96000};
-  enum { N = 3000 };
+  enum { N = 8000 };
   static double errs[N];
   static double plain[N];
   for (size_t s = 0; s < sizeof(shapes) / sizeof(shapes[0]); ++s) {
     const eqr_shape* sh = &shapes[s];
     const int cut = sh->q_lo == sh->q_hi;
-    const int n = cut ? N / 6 : N;
+    const int n = cut ? N / 8 : N;
     for (int r = 0; r < 3; ++r) {
       const int sr = rates[r];
       uint32_t seed = 1436u + (uint32_t)s;
@@ -171,6 +174,17 @@ static void test_eq_rate_matches_48k(void) {
           for (int k = 0; k < 5; ++k) CHECK(c[k] == p[k]);
         }
         if (sr > 48000) {
+          /* From 20 to 24 kHz (past the scored band): no more than 3 dB
+           * over both the 48 kHz response and the plain design. */
+          for (int k = 0; k <= 24; ++k) {
+            const double fb = 20000.0 + 3990.0 * k / 24.0;
+            const double want = eqr_db(ref, fb, 48000);
+            const double own = eqr_db(p, fb, sr);
+            if (eqr_db(c, fb, sr) > (want > own ? want : own) + 3.0 + 0.01) {
+              ++ultra;
+              break;
+            }
+          }
           /* Above 24 kHz, to the Nyquist frequency: no higher than 6 dB
            * over the larger of the 48 kHz response at 24 kHz and at 20 kHz
            * (for the high cut, -15 dB at least), or the plain design's own
@@ -208,8 +222,9 @@ static void test_eq_rate_matches_48k(void) {
   }
 }
 
-/* The largest change of band [b]'s response, at 48 probes over the band,
- * between neighbouring designs while one setting sweeps in 4000 steps. */
+/* The largest change of band [b]'s response, at 48 probes over the band
+ * where it is above -60 dB, between neighbouring designs while one setting
+ * sweeps in 4000 steps. */
 static double eqr_sweep(int b, int shelves, const double from[3],
                         const double to[3], int sr) {
   double prev[48];
@@ -223,7 +238,11 @@ static double eqr_sweep(int b, int shelves, const double from[3],
     le_eq_band_design_for_test(b, shelves, hz, db, q, sr, c);
     for (int i = 0; i < 48; ++i) {
       const double v = eqr_db(c, 20.0 * pow(1000.0, i / 47.0), sr);
-      if (s > 0 && fabs(v - prev[i]) > worst) worst = fabs(v - prev[i]);
+      /* where the band passes more than -60 dB: deeper in a cut's stopband
+       * a step of a few dB moves nothing anyone hears */
+      if (s > 0 && (v > -60.0 || prev[i] > -60.0) && fabs(v - prev[i]) > worst) {
+        worst = fabs(v - prev[i]);
+      }
       prev[i] = v;
     }
   }

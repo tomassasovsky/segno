@@ -29,8 +29,11 @@ How each fit stays valid:
 - Above 24 kHz (at 96 kHz) the 48 kHz response says nothing. A fit is
   penalised there for rising more than 3 dB above the larger of the 48 kHz
   response at 24 kHz and at 20 kHz (for the high cut, at least -15 dB), and
-  rejected past 6 dB (ultra_cap), so a correction never boosts or rings in
-  the ultrasonic band (checked up to the Nyquist frequency).
+  rejected past 6 dB (ultra_cap) unless the plain design is already that
+  high there, so a correction never boosts or rings in the ultrasonic band
+  (checked up to the Nyquist frequency). Between 20 and 24 kHz, outside the
+  scored band, it is rejected for rising 3 dB above both the 48 kHz
+  response and the plain design.
 - After the grid is built, the corrections around any cell where the
   interpolated design, at 27 points inside the cell, is worse than the
   plain design by more than 0.1 dB, or breaks that bound, are dropped
@@ -276,14 +279,21 @@ def ultra_cap(shape, t, tg):
 
 
 def ultrasonic_ok(shape, sr, c, f0, g, q):
-    """Whether design c stays under ultra_cap above 24 kHz, or under the
-    plain design there where that is higher."""
+    """Whether design c stays, above the scored band, under its bound: from
+    20 to 24 kHz, 3 dB over the larger of the 48 kHz response and the plain
+    design; from 24 kHz to the Nyquist frequency, under ultra_cap or the
+    plain design where that is higher."""
     if sr <= 48000:
         return True
     f, t = target(shape, f0, g, q, sr)
     fg, tg = guide(shape, f0, g, q, sr)
+    fb = np.linspace(20000.0, 23990.0, 24)
+    plain = design(shape, f0, g, q, sr)
+    lim = np.maximum(mag_db(design(shape, f0, g, q, 48000), fb, 48000), mag_db(plain, fb, sr)) + 3.0
+    if np.any(mag_db(c, fb, sr) > lim):
+        return False
     fu = np.linspace(24000.0, 0.5 * sr, NU)  # to the Nyquist frequency itself
-    own = mag_db(design(shape, f0, g, q, sr), fu, sr)
+    own = mag_db(plain, fu, sr)
     return bool(np.all(mag_db(c, fu, sr) <= np.maximum(own, ultra_cap(shape, t, tg)) + 0.01))
 
 
