@@ -150,7 +150,10 @@ static int prepare_recipe(le_engine* e, struct le_prepared_fx* edit,
         r->output_mode[s] < 0 || r->output_mode[s] > 1 ||
         !isfinite(r->placement[s]) || r->placement[s] < -1 || r->placement[s] > 1 ||
         !isfinite(r->level[s]) || r->level[s] < 0 || r->level[s] > LE_FX_LEVEL_MAX ||
-        r->rack[s] < 0 || r->rack[s] > (LE_FX_RACK_FIRST | LE_FX_RACK_LAST)) return 0;
+        (r->rack[s] & ~(LE_FX_RACK_FIRST | LE_FX_RACK_LAST | LE_FX_RACK_DUB_PATH |
+                        LE_FX_RACK_AMB_PATH)) != 0 ||
+        (r->rack[s] & (LE_FX_RACK_DUB_PATH | LE_FX_RACK_AMB_PATH)) ==
+            (LE_FX_RACK_DUB_PATH | LE_FX_RACK_AMB_PATH)) return 0;
     /* The cells the type reads; the rest are never stored. */
     for (int k = 0; k < le_fx_param_width(r->type[s]); ++k)
       if (!isfinite(r->params[s][k]) || r->params[s][k] < 0 || r->params[s][k] > 1) return 0;

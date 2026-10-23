@@ -38763,6 +38763,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_drive.h"
 #include "test_engine_lofi.h"
 #include "test_engine_verb.h"
+#include "test_engine_rack_paths.h"
 #include "test_engine_fx_publish.h"
 #include "test_engine_bounce.h"
 #include "test_engine_clock.h"
@@ -38849,6 +38850,7 @@ int main(void) {
   run_drive_tests();
   run_lofi_tests();
   run_verb_tests();
+  run_rack_path_tests();
   run_fx_publish_tests();
   run_bounce_tests();
   if (getenv("SEGNO_PEEL_TESTS_ONLY")) return g_failures ? 1 : 0;
