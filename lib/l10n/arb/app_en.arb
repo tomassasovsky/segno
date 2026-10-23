@@ -803,6 +803,7 @@
     "paramSize": "Size",
     "paramDamping": "Damping",
     "paramMode": "Mode",
+    "paramFormants": "Formants",
     "effectEq": "EQ",
     "paramLowCut": "Low cut",
     "paramLowGain": "Low",
@@ -855,6 +856,8 @@
     "paramPedal": "Pedal",
     "octaverModePhaseVocoder": "Phase Vocoder",
     "octaverModePsola": "PSOLA",
+    "octaverFormantsHeld": "Held",
+    "octaverFormantsMoved": "Follow pitch",
     "pitchUnison": "Unison",
     "pitchOctaves": "{sign}{count} oct",
     "@pitchOctaves": {

@@ -40,6 +40,7 @@ class FxModuleBuild {
     this.scales = const {},
     this.fixed = const {},
     this.labels = const {},
+    this.shown = const {},
   });
 
   /// A module this engine cannot build at all.
@@ -72,6 +73,16 @@ class FxModuleBuild {
   /// The parameter key a variant shows instead of the kind's own, by index
   /// (a parametric EQ's single band is "Mid", not "Lo mid").
   final Map<int, String> labels;
+
+  /// The parameter as the rack shows it, by index, where its range is
+  /// narrower than the kind's (the Pitch Shift's -12..+12 semitones in 25
+  /// steps on the octaver's -24..+24). It is also the rack's own scale: a
+  /// preset value is read on it (its [FxParamInfo.defaultValue] when the
+  /// preset lacks the key), so it needs no entry in [scales]. Its control
+  /// works in this parameter's settings and writes the kind's setting for
+  /// the same value ([fxEntryParam], [fxEntryShownSetting],
+  /// [fxEntryKindSetting]).
+  final Map<int, FxParamInfo> shown;
 
   /// The engine parameters this variant shows, in order: those a preset key
   /// feeds.
@@ -129,10 +140,10 @@ const Map<String, FxModuleBuild> kFxModuleBuilds = {
       'Rev Tail/ER',
     ],
   ),
-  // p0 shift, p1 tone, p2 mix, p3 mode. Only the mix has a preset key: the
-  // catalogue's octaver is two fixed voices with their own levels, where this
-  // engine's is one continuously shifted voice, so its shift has nothing to
-  // read and keeps the engine default.
+  // p0 shift, p1 tone, p2 mix, p3 mode, p4 formants. Only the mix has a
+  // preset key: the catalogue's octaver is two fixed voices with their own
+  // levels, where this engine's is one continuously shifted voice, so its
+  // shift has nothing to read and keeps the engine default.
   'Octaver': FxModuleBuild(
     type: TrackEffectType.octaver,
     params: [null, null, 'Octave Mix'],
@@ -183,8 +194,9 @@ class FxSourceScale {
   }
 }
 
-/// The rack variants of the Looper X kinds, by module and family: one engine
-/// kind per module, each variant exposing the controls its racks show
+/// The rack variants of the Looper X modules, by module and family: one engine
+/// kind per module (a Looper X kind, or for the Pitch Shift the octaver), each
+/// variant exposing the controls its racks show
 /// (docs/plan/2026-10-20-looperx-derived-tables.md) and fixing the rest:
 /// - the EQ and the compressor: at the values measured on the Looper X
 ///   (#891, docs/plan/2026-10-23-looperx-eq-measured.md and
@@ -238,7 +250,29 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Degrade': {'Lo-Fi Rack': _degrade},
   'Low-pass filter': {'Rhythmic Rack': _rhythmicLpf, 'Lo-Fi Rack': _lpf},
   'Spring reverb': {'Guitar Rack': _spring},
+  'Pitch shift': {'Studio Rack': _pitchShift, 'Vocal Rack': _pitchShift},
 };
+
+// Studio and Vocal racks: the shift and the mix, on the octaver's phase
+// vocoder with the tone open. The shift reads -12..+12 semitones in whole
+// steps (linear), the rack's own range, inside the octaver's +-24, and
+// starts at unison. The formants are held, as the octaver holds them, until a
+// capture of the Looper X shows whether its pitch shifter moves them (#1433).
+const FxModuleBuild _pitchShift = FxModuleBuild(
+  type: TrackEffectType.octaver,
+  params: ['Pitch Shift', null, 'Pitch Mix'],
+  fixed: {1: 100, 3: 0, 4: 0},
+  shown: {
+    0: FxParamInfo(
+      key: 'shift',
+      unit: FxParamUnit.semitones,
+      steps: 25,
+      atMin: -12,
+      atMax: 12,
+      defaultValue: 0.5,
+    ),
+  },
+);
 
 // Guitar Rack: the whole spring.
 const FxModuleBuild _spring = FxModuleBuild(
@@ -562,9 +596,10 @@ FxModuleBuild fxModuleBuild(FxModule module, {String? family}) {
   return kFxModuleBuilds[module.name] ?? const FxModuleBuild.unavailable();
 }
 
-/// The rack variant [entry] was built as, or `null` when it is not one: a
-/// Looper X kind ([TrackEffectType.isRackKind]) built from a module with
-/// variants ([kFxModuleVariants]). The variant is the one whose controls all
+/// The rack variant [entry] was built as, or `null` when it is not one: an
+/// entry built from a module with variants ([kFxModuleVariants]) onto the
+/// variant's own type (a Looper X kind, or the octaver a Pitch Shift runs
+/// on). The variant is the one whose controls all
 /// appear in the entry's [BuiltInEffect.source] (with the ones it knows it
 /// drops, [FxModuleBuild.unmapped]), the one with the most of them first;
 /// every factory preset of a family carries all of its keys, so this is the
@@ -572,9 +607,16 @@ FxModuleBuild fxModuleBuild(FxModule module, {String? family}) {
 ///
 /// What a surface shows for a rack pedal: [FxModuleBuild.exposed], under
 /// [FxModuleBuild.labels]. Any other entry shows every parameter of its type.
-FxModuleBuild? fxEntryBuild(BuiltInEffect entry) {
+FxModuleBuild? fxEntryBuild(BuiltInEffect entry) =>
+    (_entryBuilds[entry] ??= (build: _findEntryBuild(entry))).build;
+
+/// [fxEntryBuild]'s answer per entry: every control of an editor resolves
+/// it, on every build and drag event, and an entry never changes.
+final Expando<({FxModuleBuild? build})> _entryBuilds = Expando();
+
+FxModuleBuild? _findEntryBuild(BuiltInEffect entry) {
   final name = entry.module;
-  if (name == null || !entry.type.isRackKind) return null;
+  if (name == null) return null;
   final variants = kFxModuleVariants[name];
   if (variants == null) return null;
   FxModuleBuild? build;
@@ -608,6 +650,28 @@ FxModuleBuild? fxEntryBuild(BuiltInEffect entry) {
   );
 }
 
+/// Parameter [index] of [entry] as its surface shows it: its rack variant's
+/// narrowed parameter ([FxModuleBuild.shown]), or its type's own.
+FxParamInfo fxEntryParam(BuiltInEffect entry, int index) =>
+    fxEntryBuild(entry)?.shown[index] ?? entry.type.params[index];
+
+/// [entry]'s parameter [index] as a setting of [fxEntryParam]: the setting
+/// that stands for the same value as the kind's.
+double fxEntryShownSetting(BuiltInEffect entry, int index) {
+  final setting = entry.params[index];
+  final shown = fxEntryBuild(entry)?.shown[index];
+  if (shown == null) return setting;
+  return shown.settingFor(entry.type.params[index].valueAt(setting));
+}
+
+/// The kind's setting for parameter [index] of [entry] that stands for the
+/// same value as [shownSetting], a setting of [fxEntryParam].
+double fxEntryKindSetting(BuiltInEffect entry, int index, double shownSetting) {
+  final shown = fxEntryBuild(entry)?.shown[index];
+  if (shown == null) return shownSetting;
+  return entry.type.params[index].settingFor(shown.valueAt(shownSetting));
+}
+
 /// Builds one chain entry for [module] out of [preset]'s values.
 ///
 /// Returns an entry whatever the readiness: a rack is what the player loaded,
@@ -628,12 +692,16 @@ BuiltInEffect fxModuleEntry(FxModule module, FxPreset preset) {
   final params = List<double>.of(type.defaultParams);
   for (var i = 0; i < build.params.length && i < type.params.length; i++) {
     final key = build.params[i];
-    final value = key == null ? null : preset.params[key];
+    final shown = build.shown[i];
+    final value =
+        (key == null ? null : preset.params[key]) ?? shown?.defaultValue;
     if (value == null) continue;
     final scale = build.scales[i];
-    params[i] = scale == null
-        ? value.clamp(0.0, 1.0)
-        : type.params[i].settingFor(scale.valueAt(value));
+    params[i] = scale != null
+        ? type.params[i].settingFor(scale.valueAt(value))
+        : shown != null
+        ? type.params[i].settingFor(shown.valueAt(value))
+        : value.clamp(0.0, 1.0);
   }
   for (final e in build.fixed.entries) {
     if (e.key < type.params.length) {

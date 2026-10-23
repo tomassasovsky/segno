@@ -20594,8 +20594,10 @@ static void oct_harmonic(float* buf, int n, float f0) {
 }
 
 /* Runs `total` samples of `in` through one octaver on a mono monitor lane (full
- * wet, tone open, PV mode) at the given shift, capturing the output. */
-static void oct_run(float shift, const float* in, int total, float* out) {
+ * wet, tone open, PV mode) at the given shift and formant setting (p4: 0 held,
+ * 1 moved with the pitch), capturing the output. */
+static void oct_run_formants(float shift, float formants, const float* in,
+                             int total, float* out) {
   le_engine* e = le_engine_create();
   const int blk = 2048;
   le_engine_configure(e, OCT_SR, 1, 1, blk);
@@ -20606,6 +20608,7 @@ static void oct_run(float shift, const float* in, int total, float* out) {
   le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 1.0f);  /* tone open */
   le_engine_set_monitor_input_fx_param(e, 0, 0, 2, 1.0f);  /* full wet */
   le_engine_set_monitor_input_fx_param(e, 0, 0, 3, 0.0f);  /* PV mode */
+  le_engine_set_monitor_input_fx_param(e, 0, 0, 4, formants);
   le_engine_set_monitor_input_fx_count(e, 0, 1);
   int done = 0;
   while (done < total) {
@@ -20615,6 +20618,11 @@ static void oct_run(float shift, const float* in, int total, float* out) {
     done += n;
   }
   le_engine_destroy(e);
+}
+
+/* oct_run with the formants held (the octaver's default). */
+static void oct_run(float shift, const float* in, int total, float* out) {
+  oct_run_formants(shift, 0.0f, in, total, out);
 }
 
 /* Fundamental via autocorrelation. The first lag whose correlation reaches 90%
@@ -20691,6 +20699,28 @@ static void test_octaver_pv_shifts_pitch_preserves_formant(void) {
   CHECK(fabsf(f0_dn - 110.0f) < 20.0f);
   CHECK(fabsf(c_dn - cin) < 0.45f * cin);
 
+  free(in);
+  free(out);
+}
+
+/* The formant setting moved (p4 = 1): the envelope goes with the pitch, so an
+ * octave up doubles the spectral centroid as a resample would, where the held
+ * setting keeps it (the test above). The pitch shifts the same either way. */
+static void test_octaver_pv_formants_move_with_pitch(void) {
+  printf("test_octaver_pv_formants_move_with_pitch\n");
+  const int total = 24000;
+  const int skip = 12000;
+  const int an = total - skip;
+  float* in = (float*)malloc(sizeof(float) * (size_t)total);
+  float* out = (float*)malloc(sizeof(float) * (size_t)total);
+  oct_harmonic(in, total, 220.0f);
+  const float cin = oct_centroid(in + skip, an);
+  oct_run_formants(0.75f, 1.0f, in, total, out); /* octave up, moved */
+  const float f0 = oct_detect_f0(out + skip, an);
+  const float c = oct_centroid(out + skip, an);
+  printf("  moved: f0=%.1f (want 440) centroid=%.1f in=%.1f\n", f0, c, cin);
+  CHECK(fabsf(f0 - 440.0f) < 30.0f);
+  CHECK(c > 1.6f * cin); /* the envelope went up with the pitch */
   free(in);
   free(out);
 }
@@ -21602,7 +21632,7 @@ static void test_fx_param_descriptors_match_kernels(void) {
   const int32_t sr = 48000;
 
   /* Counts: the parameters each kernel reads; none for NONE and PLUGIN. */
-  const int32_t counts[] = {0, 2, 2, 3, 2, 4, 3, 3, 0, 15, 5,
+  const int32_t counts[] = {0, 2, 2, 3, 2, 5, 3, 3, 0, 15, 5,
                             3, 2, 2, 3, 1, 2, 2, 4, 3, 2, 2};
   for (int32_t t = 0; t < 22; ++t) CHECK(le_fx_param_count(t) == counts[t]);
   CHECK(le_fx_param_count(22) == LE_ERR_INVALID);
@@ -35111,6 +35141,34 @@ static void test_cache_octaver_on_a_partial_hop_loop_stays_live(void) {
   le_engine_destroy(a);
 }
 
+/* A bypassed octaver passes the signal dry, whatever its hop, so the same
+ * partial-hop lane prints: a rack's switched-off Pitch Shift (most Studio and
+ * Vocal presets) must not keep the whole rack live. Switching it on gives up
+ * again, for the hop. */
+static void test_cache_bypassed_octaver_prints_on_a_partial_hop_loop(void) {
+  printf("test_cache_bypassed_octaver_prints_on_a_partial_hop_loop\n");
+  le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  cache_record_loop(a, CACHE_LOOP - 80, 1.0f); /* 54.7 hops */
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_OCTAVER) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 2, 2) == LE_OK);
+  CHECK(le_engine_set_lane_fx_enabled(a, 0, 0, 1, 0) == LE_OK);
+  drain(a);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+
+  CHECK(le_engine_set_lane_fx_enabled(a, 0, 0, 1, 1) == LE_OK);
+  drain(a);
+  le_engine_get_lane_cache(a, 0, 0, &info); /* registers the new key */
+  pump_frames(a, 0.0f, CACHE_SETTLE + 64);
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  CHECK(info.state == LE_CACHE_GAVE_UP);
+  CHECK(info.reason == LE_CACHE_REASON_HOP);
+  le_engine_destroy(a);
+}
+
 /* An octaver print is rendered against the hop position of the loop top it
  * engages at (#941). A stop and relaunch moves the loop against the engine
  * clock without a chain edit, so the print's key changes: the old print falls
@@ -39183,6 +39241,7 @@ int main(void) {
   test_monitor_input_fx_rejects_invalid_args();
   test_fx_params_past_count_are_inert();
   test_octaver_pv_shifts_pitch_preserves_formant();
+  test_octaver_pv_formants_move_with_pitch();
   test_octaver_pv_low_fundamental();
   test_octaver_mono_coherent();
   test_octaver_mix_no_comb();
@@ -39479,6 +39538,7 @@ int main(void) {
   test_a_pre_channel_edit_drops_the_print();
   test_cache_cached_matches_live_every_builtin();
   test_cache_octaver_on_a_partial_hop_loop_stays_live();
+  test_cache_bypassed_octaver_prints_on_a_partial_hop_loop();
   test_cache_octaver_relaunch_rerenders();
   test_cache_cached_matches_live_multi_slot_chain();
   test_cache_volume_move_invalidates();

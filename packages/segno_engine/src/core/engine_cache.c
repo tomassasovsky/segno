@@ -323,8 +323,8 @@ static uint64_t le_ca_snapshot_fp(int32_t count, int32_t chain_on,
   /* ...and, for a chain holding an octaver, the loop top's position on the
    * hop the print is rendered against (#941), as le_lane_pre_fx_fingerprint
    * folds it. */
-  for (int32_t i = 0; i < count; ++i) {
-    if (types[i] == LE_FX_OCTAVER) {
+  for (int32_t i = 0; i < count && chain_on; ++i) {
+    if (types[i] == LE_FX_OCTAVER && enabled[i]) {
       h = le_fx_fp_u32(h, top & (uint32_t)(LE_PV_HOP - 1));
       break;
     }
@@ -621,16 +621,22 @@ static void le_cache_install_entry(le_engine* e, struct le_fx_cache* c,
                         memory_order_release);
 }
 
-/* Whether a Pre run [0, pre) of [a_type] holds an octaver. */
+/* Whether a Pre run [0, pre) of [a_type] holds an octaver that plays: its
+ * slot enabled and the chain on (le_fx_fold_hop_position's rule). */
 static int le_ca_pre_has_octaver(_Atomic int32_t* a_type,
+                                 _Atomic int32_t* a_enabled,
+                                 _Atomic int32_t* a_chain_enabled,
                                  _Atomic int32_t* a_pre,
                                  _Atomic int32_t* a_count) {
+  if (!load_i32(a_chain_enabled)) return 0;
   int32_t pre = load_i32(a_pre);
   const int32_t count = load_i32(a_count);
   if (pre > count) pre = count;
   if (pre > LE_FX_MAX) pre = LE_FX_MAX;
   for (int32_t s = 0; s < pre; ++s) {
-    if (load_i32(&a_type[s]) == LE_FX_OCTAVER) return 1;
+    if (load_i32(&a_type[s]) == LE_FX_OCTAVER && load_i32(&a_enabled[s])) {
+      return 1;
+    }
   }
   return 0;
 }
@@ -644,18 +650,22 @@ static uint32_t le_ca_hop_tag(le_engine* e, const le_cache_job* job) {
   le_track* tr = &e->tracks[job->channel];
   int octaver = 0;
   if (job->kind == LE_CACHE_KIND_TRACK) {
-    octaver = le_ca_pre_has_octaver(tr->bus.a_fx_type, &tr->bus.a_fx_pre_count,
+    octaver = le_ca_pre_has_octaver(tr->bus.a_fx_type, tr->bus.a_fx_enabled,
+                                    &tr->bus.a_fx_chain_enabled,
+                                    &tr->bus.a_fx_pre_count,
                                     &tr->bus.a_fx_count);
     const int32_t lanes = le_lanes_active(tr);
     for (int32_t l = 0; l < lanes && !octaver; ++l) {
       le_lane* ln = &tr->lanes[l];
-      octaver = le_ca_pre_has_octaver(ln->a_fx_type, &ln->a_fx_pre_count,
-                                      &ln->a_fx_count);
+      octaver = le_ca_pre_has_octaver(ln->a_fx_type, ln->a_fx_enabled,
+                                      &ln->a_fx_chain_enabled,
+                                      &ln->a_fx_pre_count, &ln->a_fx_count);
     }
   } else {
     le_lane* ln = &tr->lanes[job->lane];
-    octaver = le_ca_pre_has_octaver(ln->a_fx_type, &ln->a_fx_pre_count,
-                                    &ln->a_fx_count);
+    octaver = le_ca_pre_has_octaver(ln->a_fx_type, ln->a_fx_enabled,
+                                    &ln->a_fx_chain_enabled,
+                                    &ln->a_fx_pre_count, &ln->a_fx_count);
   }
   return octaver ? (job->chain.clock0 & (uint32_t)(LE_PV_HOP - 1)) + 1u : 0u;
 }
@@ -831,12 +841,15 @@ static int le_cache_copy_key_matches(le_engine* e, const le_cache_job* job) {
  * the loop each lap: the live octaver output differs lap to lap, and a print
  * of one lap would step at the loop top where it swaps in. Such a chain
  * plays live. On a loop of whole hops every lap is the same, and the print
- * equals live at whichever loop top it engages. */
-static int le_cache_hop_unprintable(const int32_t* types, int32_t count,
-                                    int32_t len) {
-  if (len <= 0 || len % LE_PV_HOP == 0) return 0;
+ * equals live at whichever loop top it engages. A bypassed octaver, or one in
+ * a chain switched off, passes the signal dry and prints (a rack's
+ * switched-off Pitch Shift); turning it on changes the key and re-checks. */
+static int le_cache_hop_unprintable(const int32_t* types,
+                                    const int32_t* enabled, int32_t chain_on,
+                                    int32_t count, int32_t len) {
+  if (!chain_on || len <= 0 || len % LE_PV_HOP == 0) return 0;
   for (int32_t s = 0; s < count; ++s) {
-    if (types[s] == LE_FX_OCTAVER) return 1;
+    if (types[s] == LE_FX_OCTAVER && enabled[s]) return 1;
   }
   return 0;
 }
@@ -914,7 +927,7 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   const int32_t len = load_i32(&ln->a_len);
   const int free_running = le_cache_free_running(types, raw_en, params, chain_on, count,
                                                  e->sample_rate);
-  if (free_running || le_cache_hop_unprintable(types, count, len)) {
+  if (free_running || le_cache_hop_unprintable(types, raw_en, chain_on, count, len)) {
     lc->state = LE_CACHE_GAVE_UP;
     lc->reason =
         free_running ? LE_CACHE_REASON_FREE_RUNNING : LE_CACHE_REASON_HOP;
@@ -1147,7 +1160,7 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   const int32_t len = load_i32(&tr->lanes[0].a_len);
   const int free_running = le_cache_free_running(types, raw_en, params, chain_on, count,
                                                  e->sample_rate);
-  if (free_running || le_cache_hop_unprintable(types, count, len)) {
+  if (free_running || le_cache_hop_unprintable(types, raw_en, chain_on, count, len)) {
     lc->state = LE_CACHE_GAVE_UP;
     lc->reason =
         free_running ? LE_CACHE_REASON_FREE_RUNNING : LE_CACHE_REASON_HOP;
