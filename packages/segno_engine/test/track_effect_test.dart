@@ -455,10 +455,18 @@ void main() {
     });
 
     test('the octaver mode is a two-position choice', () {
-      final mode = TrackEffectType.octaver.params.last;
+      final mode = TrackEffectType.octaver.params[3];
       expect(mode.key, 'mode');
       expect(mode.unit, FxParamUnit.choice);
       expect(mode.steps, 2);
+    });
+
+    test('the octaver formants are a two-position choice, held by default', () {
+      final formants = TrackEffectType.octaver.params.last;
+      expect(formants.key, 'formants');
+      expect(formants.unit, FxParamUnit.choice);
+      expect(formants.steps, 2);
+      expect(formants.defaultValue, 0);
     });
 
     test('only the chosen mappings carry the taper-unverified flag', () {

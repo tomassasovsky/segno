@@ -38,7 +38,6 @@ void main() {
         [
           'Amp',
           'Modulation',
-          'Pitch shift',
           'Whammy',
           'Ambience',
           'Dub reverb',
@@ -108,6 +107,7 @@ void main() {
           'Octaver',
           'Overdrive',
           'Parametric EQ',
+          'Pitch Shift',
           'Reverb',
           'Spring Reverb',
           'Transient',
@@ -896,6 +896,77 @@ void main() {
       );
       expect(fxEntryBuild(rhythmic)!.readiness, FxModuleReadiness.partial);
       expect(rhythmic.params.take(2), [0.6, 0.3]);
+    });
+  });
+
+  group('the pitch shift variant', () {
+    BuiltInEffect entry(String family, double shift, double mix) =>
+        fxModuleEntry(
+          _module('Pitch shift'),
+          FxPreset(
+            family: family,
+            name: 'p',
+            id: 'p',
+            type: 0,
+            params: {'Pitch': 1, 'Pitch Shift': shift, 'Pitch Mix': mix},
+          ),
+        );
+
+    test('runs on the octaver with the shift in semitones and the mix', () {
+      // The Studio Rack's Bass Amp preset: 0.7917 is +7 semitones on the
+      // rack's -12..+12.
+      final e = entry('Studio Rack', 0.791666686534882, 0.402);
+      expect(e.type, TrackEffectType.octaver);
+      expect(e.type.params[0].valueAt(e.params[0]), closeTo(7, 1e-4));
+      expect(e.params[2], closeTo(0.402, 1e-9));
+      // Tone open, the phase vocoder, the formants held.
+      expect(e.params[1], 1);
+      expect(e.params[3], 0);
+      expect(e.params[4], 0);
+    });
+
+    test('shows the shift and the mix, the shift on the rack range', () {
+      for (final family in ['Studio Rack', 'Vocal Rack']) {
+        final e = entry(family, 0.5, 1);
+        expect(fxEntryControls(e).params, [0, 2]);
+        final shown = fxEntryParam(e, 0);
+        expect(shown.steps, 25);
+        expect(shown.atMin, -12);
+        expect(shown.atMax, 12);
+        expect(fxEntryShownSetting(e, 0), closeTo(0.5, 1e-9));
+        // The mix shows as the kind's own.
+        expect(fxEntryParam(e, 2), e.type.params[2]);
+      }
+    });
+
+    test('a preset without the shift starts at unison', () {
+      final e = fxModuleEntry(
+        _module('Pitch shift'),
+        const FxPreset(
+          family: 'Vocal Rack',
+          name: 'p',
+          id: 'p',
+          type: 0,
+          params: {'Pitch': 1, 'Pitch Mix': 1},
+        ),
+      );
+      expect(e.type.params[0].valueAt(e.params[0]), closeTo(0, 1e-9));
+    });
+
+    test('a shown setting writes the kind setting for the same value', () {
+      final e = entry('Vocal Rack', 0.5, 1);
+      for (var step = 0; step < 25; step++) {
+        final shown = step / 24;
+        final kind = fxEntryKindSetting(e, 0, shown);
+        expect(e.type.params[0].valueAt(kind), closeTo(step - 12, 1e-4));
+        expect(
+          fxEntryShownSetting(
+            e.copyWith(params: [kind, ...e.params.skip(1)]),
+            0,
+          ),
+          closeTo(shown, 1e-9),
+        );
+      }
     });
   });
 
