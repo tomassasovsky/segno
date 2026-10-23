@@ -37,7 +37,9 @@
  *     shielding makes a fork free, which is why the app does not fork. The
  *     engine's own buffers contribute nothing (the native fault test proves
  *     that with a shielded stack: test_engine_rt_memory.h);
- *   - either way, a window with no periods in it fails: it proves nothing.
+ *   - either way, the window fails when it holds fewer than half the periods
+ *     its length implies (an empty window proves nothing), or when the
+ *     callback thread's stat could not be read at either end.
  */
 #define _GNU_SOURCE 1
 
@@ -173,6 +175,7 @@ static int g_fx_turn = 0;
 
 typedef struct {
   double at;
+  int st_ok; /* read_task_stat succeeded */
   rt_task_stat st;
   le_callback_telemetry tel;
   long forks;
@@ -186,7 +189,7 @@ static rt_sample g_s0;
 
 static void take_sample(rt_sample* out) {
   out->at = now_s();
-  read_task_stat(g_tid, &out->st);
+  out->st_ok = read_task_stat(g_tid, &out->st);
   le_engine_get_callback_telemetry(g_e, &out->tel);
   out->forks = g_forks;
 }
@@ -342,9 +345,8 @@ int main(int argc, char** argv) {
     return 2;
   }
   sleep_ms(500);
-  const long tid = find_rt_task();
-  g_tid = tid;
-  if (tid < 0) {
+  g_tid = find_rt_task();
+  if (g_tid < 0) {
     fprintf(stderr, "no SCHED_FIFO thread: the callback did not get real-time "
                     "priority (run as root, or with LimitRTPRIO)\n");
     return 2;
@@ -352,7 +354,7 @@ int main(int argc, char** argv) {
   le_snapshot s;
   le_engine_get_snapshot(g_e, &s);
   printf("device: %s, %d Hz, %d-frame period, callback thread %ld\n",
-         le_engine_device_name(g_e), s.sample_rate, (int)o.period, tid);
+         le_engine_device_name(g_e), s.sample_rate, (int)o.period, g_tid);
   le_engine_set_monitor_input(g_e, 0, 1);
 
   pthread_t forker;
@@ -373,7 +375,7 @@ int main(int argc, char** argv) {
   }
   /* time_left() returned 0, so the deadline has passed, and the call that
    * found it took the start sample if nothing had before. */
-  rt_sample s1;
+  rt_sample s1 = {0};
   take_sample(&s1);
   g_stop = 1;
   if (o.fork_ms > 0) pthread_join(forker, NULL);
@@ -401,16 +403,20 @@ int main(int argc, char** argv) {
          le_platform_fork_count());
   printf("callback thread faults: %ld minor, %ld major\n",
          st1.minflt - st0.minflt, st1.majflt - st0.majflt);
+  const double expected =
+      t1.budget_us > 0 ? window_s * 1e6 / t1.budget_us : 0.0;
   printf("periods: %llu (about %.0f expected), late: %llu, worst service "
          "since start %u us, xruns %llu\n",
-         (unsigned long long)periods,
-         t1.budget_us > 0 ? window_s * 1e6 / t1.budget_us : 0.0,
+         (unsigned long long)periods, expected,
          (unsigned long long)late, t1.session.max_us,
          (unsigned long long)xruns);
   int ok;
-  if (periods == 0) {
+  if (!g_s0.st_ok || !s1.st_ok) {
     ok = 0;
-    printf("FAIL: the window holds no periods, so it proves nothing\n");
+    printf("FAIL: the callback thread's stat could not be read\n");
+  } else if (periods == 0 || (double)periods < expected / 2) {
+    ok = 0;
+    printf("FAIL: the window holds too few periods to prove anything\n");
   } else if (forks == 0) {
     ok = faults == 0 && late == 0;
     printf("%s\n", ok ? "PASS: no fault and no late period on the callback"
