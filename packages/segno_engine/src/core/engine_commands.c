@@ -4744,7 +4744,12 @@ int32_t le_engine_set_lane_fx_param(le_engine* engine, int32_t channel,
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
-  if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
+  /* Only a cell the entry's type reads (le_fx_param_width): any other
+   * write would never be heard. */
+  if (param < 0 ||
+      param >= le_fx_param_width(engine->tracks[channel].lanes[lane].fx_type_pushed[index])) {
+    return LE_ERR_INVALID;
+  }
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
   /* Params are plain published atomics read once per buffer; a direct store is
@@ -4884,7 +4889,11 @@ int32_t le_engine_set_monitor_input_fx_param(le_engine* engine, int32_t input,
   if (engine == NULL) return LE_ERR_INVALID;
   if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
-  if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
+  /* A cell the entry's type reads (see the lane setter). */
+  if (param < 0 ||
+      param >= le_fx_param_width(engine->monitors[input].fx_type_pushed[index])) {
+    return LE_ERR_INVALID;
+  }
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
   store_f32(&engine->monitors[input].a_fx_param[index][param], value);
@@ -5019,7 +5028,11 @@ int32_t le_engine_set_track_fx_param(le_engine* engine, int32_t channel,
   if (engine == NULL) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
-  if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
+  /* A cell the entry's type reads (see the lane setter). */
+  if (param < 0 ||
+      param >= le_fx_param_width(engine->tracks[channel].bus.fx_type_pushed[index])) {
+    return LE_ERR_INVALID;
+  }
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
   store_f32(&engine->tracks[channel].bus.a_fx_param[index][param], value);
@@ -5121,7 +5134,11 @@ int32_t le_engine_set_output_fx_param(le_engine* engine, int32_t bus,
   if (le_fx_edit_pending(engine, LE_FX_OWNER_OUTPUT, bus, 0)) return LE_ERR_INVALID;
   if (engine == NULL || !le_output_bus_valid(bus)) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
-  if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
+  /* A cell the entry's type reads (see the lane setter). */
+  if (param < 0 ||
+      param >= le_fx_param_width(engine->outputs[bus].fx.fx_type_pushed[index])) {
+    return LE_ERR_INVALID;
+  }
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
   store_f32(&engine->outputs[bus].fx.a_fx_param[index][param], value);
@@ -5226,7 +5243,11 @@ int32_t le_engine_set_all_tracks_fx_param(le_engine* engine, int32_t index,
   if (le_fx_edit_pending(engine, LE_FX_OWNER_ALL_TRACKS, 0, 0)) return LE_ERR_INVALID;
   if (engine == NULL) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
-  if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
+  /* A cell the entry's type reads (see the lane setter). */
+  if (param < 0 ||
+      param >= le_fx_param_width(engine->all_tracks.fx_type_pushed[index])) {
+    return LE_ERR_INVALID;
+  }
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
   store_f32(&engine->all_tracks.a_fx_param[index][param], value);
