@@ -68,9 +68,9 @@ const _english = <String, List<String>>{
   'degrade.filter': ['0%', '100%', '100%'],
   'degrade.mix': ['0%', '100%', '100%'],
   'lpf.cutoff': ['20.0 Hz', 'Off', 'Off'],
+  'lpf.resonance': ['0%', '100%', '100%'],
   'spring.time': ['1.00 s', '2.00 s', '10.00 s'],
   'spring.mix': ['0%', '50%', '100%'],
-  'lpf.resonance': ['0%', '100%', '100%'],
 };
 
 /// The same in Spanish: a decimal comma, and the Spanish mode name.
@@ -137,9 +137,9 @@ const _spanish = <String, List<String>>{
   'degrade.filter': ['0%', '100%', '100%'],
   'degrade.mix': ['0%', '100%', '100%'],
   'lpf.cutoff': ['20,0 Hz', 'Apagado', 'Apagado'],
+  'lpf.resonance': ['0%', '100%', '100%'],
   'spring.time': ['1,00 s', '2,00 s', '10,00 s'],
   'spring.mix': ['0%', '50%', '100%'],
-  'lpf.resonance': ['0%', '100%', '100%'],
 };
 
 void main() {
