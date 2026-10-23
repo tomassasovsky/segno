@@ -263,15 +263,21 @@ set_primary_persistent() {
 	    -e "s,boot_partition_tmp=,boot_partition=," \
 	    /boot/autoboot.txt >/boot/autoboot.txt.tmp
 
+	# Segno (#1437): put the swap on the disk before reporting success, in
+	# two steps. Without them the new autoboot.txt sits in the page cache
+	# for up to ~35 s after mark-good says the slot is committed, and a
+	# reset in that window (the hardware watchdog, a panic reboot, a power
+	# cut) boots the old slot. Seen on the console: a crash 12 s after the
+	# commit came back on the previous build with the old autoboot.txt.
+	#
+	# 1. fsync the new file's data BEFORE the rename. Otherwise a reset
+	#    between the rename reaching the disk and the data reaching it
+	#    leaves an autoboot.txt with no contents, and the firmware then
+	#    has no boot_partition to follow.
+	# 2. After the rename, syncfs(2) on /boot (sync -f), which writes the
+	#    directory entry and the FAT.
+	sync /boot/autoboot.txt.tmp
 	mv /boot/autoboot.txt{.tmp,}
-
-	# Segno (#1437): write the swap to the disk before reporting success.
-	# Without this the new autoboot.txt sits in the page cache for up to
-	# ~35 s after mark-good says the slot is committed, and a reset in that
-	# window (the hardware watchdog, a panic reboot, a power cut) boots the
-	# old slot. Seen on the console: a crash 12 s after the commit came back
-	# on the previous build with the old autoboot.txt. sync -f is syncfs(2)
-	# on /boot, which also covers the rename's directory entry.
 	sync -f /boot/autoboot.txt
 }
 

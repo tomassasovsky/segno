@@ -187,6 +187,53 @@ check "earlier directories are not moved again" no \
     "$([ -d "$work/pstore/20261024T080000Z/20261023T120000Z" ] && echo yes || echo no)"
 teardown
 
+# Sets as segno-pstore-keep leaves them: a directory per archive, named by its
+# UTC time, holding a console copy and, for a crash, a dmesg record.
+console_set() { mkdir -p "$work/pstore/$1"; printf 'c\n' > "$work/pstore/$1/console-ramoops-0"; }
+crash_set() { console_set "$1"; printf 'd\n' > "$work/pstore/$1/dmesg-ramoops-0"; }
+sets() { (cd "$work/pstore" && ls -1d [0-9]*T*Z 2>/dev/null | tr '\n' ' '); }
+has_set() { [ -d "$work/pstore/$1" ] && echo yes || echo no; }
+
+echo "console-only sets are pruned to the newest 10"
+setup
+crash_set 20260101T000000Z
+for day in 01 02 03 04 05 06 07 08 09 10 11; do console_set "202602${day}T000000Z"; done
+printf 'console\n' > "$work/pstore/console-ramoops-0"
+run_keep 20261023T120000Z; rc=$?
+check "exits 0" 0 "$rc"
+check "keeps the new set" yes "$(has_set 20261023T120000Z)"
+check "drops the two oldest console-only sets" "no no" \
+    "$(has_set 20260201T000000Z) $(has_set 20260202T000000Z)"
+check "keeps the next one" yes "$(has_set 20260203T000000Z)"
+# Older than every console-only set, and still kept: console pruning never
+# counts or touches a crash.
+check "keeps the old crash set" yes "$(has_set 20260101T000000Z)"
+check "10 console-only sets and 1 crash set remain" 11 \
+    "$(sets | wc -w | tr -d ' ')"
+teardown
+
+echo "crash sets are pruned only once enough newer crashes exist"
+setup
+crash_set 20260101T000000Z
+crash_set 20260201T000000Z
+console_set 20260301T000000Z
+printf 'panic\n' > "$work/pstore/dmesg-ramoops-0"
+SEGNO_PSTORE_KEEP_CRASH=2 run_keep 20261023T120000Z
+check "drops only the oldest crash" "no yes yes" \
+    "$(has_set 20260101T000000Z) $(has_set 20260201T000000Z) $(has_set 20261023T120000Z)"
+check "the console-only set is untouched" yes "$(has_set 20260301T000000Z)"
+teardown
+
+echo "a console-only boot never pushes out a crash"
+setup
+crash_set 20260101T000000Z
+crash_set 20260201T000000Z
+printf 'console\n' > "$work/pstore/console-ramoops-0"
+SEGNO_PSTORE_KEEP_CRASH=2 SEGNO_PSTORE_KEEP_CONSOLE=1 run_keep 20261023T120000Z
+check "both crashes kept" "yes yes" \
+    "$(has_set 20260101T000000Z) $(has_set 20260201T000000Z)"
+teardown
+
 echo "the archive cannot be written"
 setup
 printf 'panic\n' > "$work/pstore/dmesg-ramoops-0"

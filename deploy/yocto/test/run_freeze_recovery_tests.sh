@@ -82,23 +82,43 @@ echo "systemd drives the BCM2835 watchdog"
 runtime=$(bb_value "$SYSTEMD_BBAPPEND" WATCHDOG_RUNTIME_SEC)
 reboot=$(bb_value "$SYSTEMD_BBAPPEND" WATCHDOG_TIMEOUT)
 check "WATCHDOG_RUNTIME_SEC is set" yes "$([ -n "$runtime" ] && echo yes || echo no)"
-# bcm2835_wdt counts 20 bits of 1/65536 s: 15.99 s is all the hardware holds.
-# Above that the kernel has to feed it on systemd's behalf, which is not what
-# this value was chosen for.
-check "RuntimeWatchdogSec fits the hardware (1-15 s)" yes \
-    "$(s=$(seconds "$runtime"); [ "$s" -ge 1 ] 2>/dev/null && [ "$s" -le 15 ] && echo yes || echo no)"
+# Above 15.99 s the kernel's watchdog worker feeds the bcm2835 hardware every
+# 8 s. The driver programs (seconds << 16) & 0xfffff ticks, i.e. the timeout
+# modulo 16 s, so that window has to outlast the 8 s ping with room to spare:
+# a multiple of 16 would program 0 ticks and reset the board at once.
+window_ok() {
+    local s
+    s=$(seconds "$1")
+    [ "$s" -gt 15 ] 2>/dev/null && [ $((s % 16)) -ge 10 ] && echo yes || echo no
+}
+check "RuntimeWatchdogSec rides out an NVMe I/O timeout (>= 60 s)" yes \
+    "$([ "$(seconds "$runtime")" -ge 60 ] 2>/dev/null && echo yes || echo no)"
+check "RuntimeWatchdogSec ($runtime) programs a hardware window of 10 s or more" yes \
+    "$(window_ok "$runtime")"
 check "WATCHDOG_TIMEOUT (RebootWatchdogSec) is set" yes \
     "$([ -n "$reboot" ] && echo yes || echo no)"
+check "RebootWatchdogSec ($reboot) programs a hardware window of 10 s or more" yes \
+    "$(window_ok "$reboot")"
 check "systemd builds systemd-pstore" yes \
     "$(grep -E '^PACKAGECONFIG:append = ".* pstore( |")' "$SYSTEMD_BBAPPEND" > /dev/null && echo yes || echo no)"
 
 echo "a slot commit is on the disk before mark-good reports it"
 # A reset within ~35 s of the autoboot.txt swap used to lose it: the console
 # came back on the previous build, and the unsynced FAT later went read-only.
-check "set_primary_persistent syncs /boot after the swap" yes \
-    "$(sed -n '/^set_primary_persistent()/,/^}/p' "$BACKEND" |
+swap_steps() {
+    sed -n '/^set_primary_persistent()/,/^}/p' "$BACKEND" |
         grep -v '^[[:space:]]*#' |
-        awk '/mv \/boot\/autoboot.txt/ { moved = 1 } moved && /sync -f \/boot/ { ok = 1 } END { print ok ? "yes" : "no" }')"
+        awk '/^[[:space:]]*sync \/boot\/autoboot.txt.tmp$/ { if (!moved) synced = 1 }
+             /^[[:space:]]*mv \/boot\/autoboot.txt/ { moved = 1 }
+             /^[[:space:]]*sync -f \/boot/ { if (moved) after = 1 }
+             END { print (synced ? "data-before " : "") (after ? "fs-after" : "") }'
+}
+# A rename that reaches the disk before the new file's data leaves an empty
+# autoboot.txt, so the data has to be synced first.
+check "set_primary_persistent syncs the new file's data before the rename" yes \
+    "$(swap_steps | grep -q 'data-before' && echo yes || echo no)"
+check "set_primary_persistent syncs /boot after the rename" yes \
+    "$(swap_steps | grep -q 'fs-after' && echo yes || echo no)"
 
 echo "the journal reaches the disk within seconds"
 check "journald drop-in sets SyncIntervalSec=10s" yes \

@@ -183,8 +183,10 @@ The unit recovers from a hang by itself and leaves a record on `/data`
 | Native crashes of the app | `/data/log/coredump` | `coredumpctl list` |
 | Kernel panic or oops, and the kernel console of the boot that hung | `/data/log/pstore/<UTC time>/` | `ls /data/log/pstore`, or `journalctl -b -u systemd-pstore` |
 
-- **Watchdog.** systemd pings the BCM2835 hardware watchdog every 7.5 s. If
-  PID 1 or the kernel stops for 15 s, the board resets.
+- **Watchdog.** The BCM2835 hardware watchdog resets the board when PID 1
+  stops pinging for 60 s (long enough to ride out an NVMe I/O timeout), or
+  within about 12 s when the kernel itself dies, because the kernel feeds the
+  hardware on PID 1's behalf only while it is running.
 - **Panics reboot.** A panic, a soft lockup (a CPU stuck 20 s) or a hard
   lockup (10 s with interrupts off) reboots after 10 s. A hung task (120 s in
   uninterruptible sleep) is only logged, because a slow USB stick can cause
@@ -192,8 +194,10 @@ The unit recovers from a hang by itself and leaves a record on `/data`
 - **pstore.** The kernel writes the panic's log, and a copy of every kernel
   error, into 1 MiB of reserved RAM (the `ramoops` overlay). A warm reset
   keeps that RAM, so systemd-pstore finds the records at the next boot and
-  moves them to `/data/log/pstore`. A power cut erases it: pull the power on a
-  frozen unit only after the watchdog had its 15 s.
+  moves them to `/data/log/pstore`, one directory per boot. The newest 50
+  crash sets and the newest 10 console-only sets (every warm reboot leaves
+  one) are kept. A power cut erases the RAM: pull the power on a frozen unit
+  only after the watchdog had its minute.
 - A reset during a tryboot trial boot comes back on the committed slot,
   because the tryboot flag only lasts one boot.
 
