@@ -60,14 +60,14 @@ static double gf_out_gain(int k) {
 }
 
 /* The repro from the console capture (perf-20261023-015001): a mute, a Stop,
- * the record-mode Stop's mute and Stop on one frame, and Cut, each pressed at
- * the loop's peak. Each one now fades the waveform out over F frames instead
- * of stepping from 0.5 to 0. A Stop keeps reading the loop through its fade
+ * and the record-mode Stop's mute and Stop on one frame, each pressed at the
+ * loop's peak. Each one now fades the waveform out over F frames instead of
+ * stepping from 0.5 to 0. A Stop keeps reading the loop through its fade
  * even though the transport is held (the only track stopped), so the fade
  * follows the waveform rather than holding a sample. */
 static void test_gate_fade_stop_and_mute_at_the_peak(void) {
   printf("test_gate_fade_stop_and_mute_at_the_peak\n");
-  for (int how = 0; how < 4; ++how) {
+  for (int how = 0; how < 3; ++how) {
     le_engine* e = gf_fixture(1, 0);
     float out[3 * GF_F];
     int n = 0;
@@ -77,11 +77,9 @@ static void test_gate_fade_stop_and_mute_at_the_peak(void) {
       CHECK(le_engine_set_lane_mute(e, 0, 0, 1) == LE_OK);
     } else if (how == 1) {
       CHECK(le_engine_stop_track(e, 0) == LE_OK);
-    } else if (how == 2) {
+    } else {
       CHECK(le_engine_set_lane_mute(e, 0, 0, 1) == LE_OK);
       CHECK(le_engine_stop_track(e, 0) == LE_OK);
-    } else {
-      CHECK(le_engine_cut_sound(e) == LE_OK);
     }
     feed_const(e, 0.0f, 3 * GF_F, out, &n);
     const double worst = gf_worst_step(out, n, before);
@@ -351,7 +349,58 @@ static void test_gate_fade_render_matches_live_stop_and_play(void) {
   le_engine_destroy(e);
 }
 
+/* Cut all sound stays a cut: it silences at once rather than fading, so no
+ * Stop fade-out feeds the chains whose tails it clears. A Post delay on the
+ * lane does not ring after it. */
+static void test_gate_fade_cut_silences_at_once(void) {
+  printf("test_gate_fade_cut_silences_at_once\n");
+  for (int post = 0; post < 2; ++post) {
+    le_engine* e = gf_fixture(1, 0);
+    if (post) {
+      CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
+      CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DELAY) == LE_OK);
+      CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 0,
+                                        2400.0f / (float)(GF_SR - 1)) ==
+            LE_OK);
+      feed_const(e, 0.0f, GF_SR, NULL, NULL);
+    }
+    feed_const(e, 0.0f, 480, NULL, NULL);
+    CHECK(le_engine_cut_sound(e) == LE_OK);
+    static float out[GF_SR];
+    int n = 0;
+    feed_const(e, 0.0f, GF_SR / 2, out, &n);
+    int loud = 0;
+    for (int k = 0; k < n; ++k) loud += out[k] != 0.0f;
+    CHECK(loud == 0);
+    CHECK(e->trk_play_gain[0] == 0.0f && e->trk_tail_gain[0] == 0.0f);
+    le_engine_destroy(e);
+  }
+}
+
+/* Stop, Play and Stop again inside one fade: the second Stop keeps the
+ * louder of the playing read and the first tail, so the one it drops is the
+ * quieter. */
+static void test_gate_fade_second_stop_keeps_the_louder_voice(void) {
+  printf("test_gate_fade_second_stop_keeps_the_louder_voice\n");
+  le_engine* e = gf_fixture(1, 0);
+  feed_const(e, 0.0f, 480, NULL, NULL);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  feed_const(e, 0.0f, 100, NULL, NULL);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  feed_const(e, 0.0f, 100, NULL, NULL);
+  const float tail = e->trk_tail_gain[0], head = e->trk_play_gain[0];
+  CHECK(tail > head && head > 0.0f);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  feed_const(e, 0.0f, 1, NULL, NULL);
+  /* The first tail kept fading; the playing read was dropped. */
+  CHECK(fabsf(e->trk_tail_gain[0] - (tail - 1.0f / GF_F)) < 1e-6f);
+  CHECK(e->trk_play_gain[0] == 0.0f);
+  le_engine_destroy(e);
+}
+
 static void run_gate_fade_tests(void) {
+  test_gate_fade_cut_silences_at_once();
+  test_gate_fade_second_stop_keeps_the_louder_voice();
   test_gate_fade_stop_and_mute_at_the_peak();
   test_gate_fade_unmute_and_play_fade_in();
   test_gate_fade_solo_in_and_out();

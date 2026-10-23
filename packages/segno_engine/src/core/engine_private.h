@@ -2853,6 +2853,9 @@ struct le_engine {
   double trk_head_index[LE_MAX_TRACKS];
   double trk_tail_index[LE_MAX_TRACKS];
   uint8_t trk_gate_stale[LE_MAX_TRACKS];
+  /* The lane count each track was mixed with last frame: a lane added since
+   * starts at its gate. */
+  uint8_t trk_lane_n[LE_MAX_TRACKS];
 };
 
 /* Fills `out` (room for `max`) with the host's playback or capture devices and

@@ -3025,6 +3025,11 @@ static void handle_cut_sound(le_engine* e, uint64_t frame) {
       le_plog_push(e, frame, (le_command){.code = LE_CMD_STOP, .arg_i = ch});
       handle_stop(e, ch, frame);
     }
+    /* Cut silences at once rather than fading (#1400): a Stop's fade-out
+     * would feed the chains whose tails this Cut clears below, and they
+     * would ring with it. */
+    e->trk_play_gain[ch] = 0.0f;
+    e->trk_tail_gain[ch] = 0.0f;
     for (int l = 0; l < LE_MAX_LANES; ++l) {
       le_lane* ln = &t->lanes[l];
       le_fx_state_clear_tails(&ln->fx, ln->a_fx_type, fx_cap);
@@ -7931,11 +7936,14 @@ static inline void mix_tracks_frame(
         tg = le_gate_step(tg, 0.0f, od_step);
       } else {
         if (pg > 0.0f) {
-          /* The Stop: the tail takes over from the playing read's last index
-           * (a second Stop inside a tail's fade replaces that tail). */
-          tg = pg;
+          /* The Stop: the tail takes over from the playing read's last index.
+           * A Stop inside an earlier tail's fade keeps the louder of the two
+           * and drops the other, so at most the quieter one steps. */
+          if (pg >= tg) {
+            tg = pg;
+            e->trk_tail_index[t] = e->trk_head_index[t];
+          }
           pg = 0.0f;
-          e->trk_tail_index[t] = e->trk_head_index[t];
         }
         tg = le_gate_step(tg, 0.0f, od_step);
       }
@@ -8015,7 +8023,13 @@ static inline void mix_tracks_frame(
         e->lane_mute_gain[t][l] = mut[t][l] ? 0.0f : 1.0f;
       }
       e->trk_solo_gain[t] = !any_solo || solo[t] ? 1.0f : 0.0f;
+    } else if (lane_n[t] > e->trk_lane_n[t]) {
+      /* A lane added since the last frame starts at its gate too. */
+      for (int l = e->trk_lane_n[t]; l < lane_n[t]; ++l) {
+        e->lane_mute_gain[t][l] = mut[t][l] ? 0.0f : 1.0f;
+      }
     }
+    e->trk_lane_n[t] = (uint8_t)lane_n[t];
   }
 #ifdef LE_NATIVE_TESTS
   if (le_test_fade_hook) le_test_fade_hook(e, 5);
