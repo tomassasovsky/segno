@@ -9,6 +9,7 @@ import 'package:looper_repository/src/models/engine_reopened.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/fx_chain_group.dart';
+import 'package:looper_repository/src/models/fx_cost.dart';
 import 'package:looper_repository/src/models/fx_slot_ids.dart';
 import 'package:looper_repository/src/models/input_monitor.dart';
 import 'package:looper_repository/src/models/input_setup.dart';
@@ -7692,6 +7693,27 @@ class LooperRepository {
     if (updated == null) return false;
     _monitorEffects[input] = List<TrackEffect>.of(effects)..[index] = updated;
     return true;
+  }
+
+  /// What every live chain charges the audio thread's worst block
+  /// ([fxChainCostNs]), in nanoseconds per frame: the live inputs, the
+  /// tracks, All tracks and the destinations, and on the lanes their
+  /// free-running kinds ([fxLaneCostNs]), the rest of a lane playing from its
+  /// print.
+  int get fxCostNs => [
+    for (final c in _monitorEffects.values) fxChainCostNs(c),
+    for (final c in _trackEffects.values) fxChainCostNs(c),
+    for (final c in _outputEffects.values) fxChainCostNs(c),
+    fxChainCostNs(_allTracksEffects),
+    for (final c in _laneEffects.values) fxLaneCostNs(c),
+  ].fold(0, (a, b) => a + b);
+
+  /// What is left of the effects budget ([fxBudgetNs]) at the running sample
+  /// rate, in nanoseconds per frame; negative once a chain went over (an edit
+  /// that removes effects is never refused).
+  int get fxRoomNs {
+    final rate = _engine.snapshot().sampleRate;
+    return fxBudgetNs(rate > 0 ? rate : 96000) - fxCostNs;
   }
 
   /// Monitor [input]'s remembered effect chain (empty if none), in processing

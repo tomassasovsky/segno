@@ -22,6 +22,10 @@ enum FxEditStatus {
   /// The target or native admission refused the edit.
   refused,
 
+  /// The edit would add more processing than the audio thread has left
+  /// ([LooperRepository.fxRoomNs]); nothing changed.
+  overBudget,
+
   /// The route, selection or engine life changed before completion.
   stale,
 
@@ -164,6 +168,13 @@ class FxCubit extends Cubit<FxState> {
     if (identical(proposed.entries, current)) {
       return const FxEditResult(FxEditStatus.unchanged);
     }
+    // Admission (#887, Architecture 10): an edit that adds processing must
+    // fit what is left; one that removes it always lands.
+    final cost = address.stage == FxStage.loop ? fxLaneCostNs : fxChainCostNs;
+    final grows = cost(proposed.entries) - cost(current);
+    if (grows > 0 && grows > _repository.fxRoomNs) {
+      return const FxEditResult(FxEditStatus.overBudget);
+    }
     if (stale()) return const FxEditResult(FxEditStatus.stale);
     final ticket = _persistence.beginPending();
     var confirmed = false;
@@ -199,6 +210,10 @@ class FxCubit extends Cubit<FxState> {
     }
     return FxEditResult(FxEditStatus.applied, groupId: proposed.groupId);
   }
+
+  /// How much processing is left for effects ([LooperRepository.fxRoomNs]),
+  /// in nanoseconds per frame: what the library weighs each choice against.
+  int get fxRoomNs => _repository.fxRoomNs;
 
   /// Appends one library choice to the selected destination as a new group.
   // ignore: prefer_void_public_cubit_methods

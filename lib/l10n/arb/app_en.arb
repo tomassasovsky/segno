@@ -3983,6 +3983,19 @@
             }
         }
     },
+    "fxOverBudget": "Not enough processing left for that effect",
+    "@fxOverBudget": {
+        "description": "Shown when adding an effect would overload the audio processing, so the add was refused."
+    },
+    "fxNoRoom": "{name} needs more processing than is left",
+    "@fxNoRoom": {
+        "description": "A library row note: adding this rack or effect would overload the audio processing.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
     "fxModulePartial": "Some controls do not reach the sound yet",
     "@fxModulePartial": {
         "description": "Readiness note for an effect the engine builds only partly."

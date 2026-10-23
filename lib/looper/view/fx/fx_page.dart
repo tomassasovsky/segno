@@ -407,6 +407,7 @@ class _FxViewState extends State<FxView> {
             catalogue: widget.catalogue ?? FxCatalogue.empty,
             destinationLabel: rack.name,
             freeSlots: kTrackEffectMax - chain.length,
+            roomNs: context.read<FxCubit>().fxRoomNs,
           ),
         ),
       ),
@@ -555,6 +556,12 @@ class _FxViewState extends State<FxView> {
     switch (result.status) {
       case FxEditStatus.refused:
         _changeRefused(context);
+      case FxEditStatus.overBudget:
+        showAppSnackToast(
+          id: 'fx-over-budget',
+          type: ToastificationType.error,
+          title: AppText(context.l10n.fxOverBudget),
+        );
       case FxEditStatus.unsaved:
         showAppSnackToast(
           id: 'fx-storage-failed',
@@ -623,6 +630,7 @@ class _FxViewState extends State<FxView> {
             catalogue: widget.catalogue ?? FxCatalogue.empty,
             destinationLabel: _destinationLabel(destination),
             freeSlots: kTrackEffectMax - entries.length,
+            roomNs: context.read<FxCubit>().fxRoomNs,
           ),
         ),
       ),
