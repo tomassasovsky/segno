@@ -1234,6 +1234,26 @@ void main() {
       );
     });
 
+    testWidgets('a rack that needs more processing than is left is offered '
+        'and explains itself', (tester) async {
+      when(() => repository.fxRoomNs).thenReturn(0);
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'fx_library_family_edsguitar');
+
+      expect(
+        find.text(l10nOf(tester).fxNoRoom('Acoustic Rhythm 1')),
+        findsOneWidget,
+      );
+      await tapKey(tester, 'fx_preset_ed53e7b8');
+      verifyNever(
+        () => repository.setTrackEffects(
+          channel: 0,
+          effects: any(named: 'effects'),
+        ),
+      );
+    });
+
     testWidgets('a build with no catalogue says so instead of drawing an '
         'empty grid', (tester) async {
       await pump(

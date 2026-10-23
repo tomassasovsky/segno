@@ -32,6 +32,7 @@ void main() {
   late List<TrackEffect> chain;
   var generation = 4;
   var session = 9;
+  var room = 1 << 40;
 
   setUpAll(() {
     registerFallbackValue(<TrackEffect>[]);
@@ -41,12 +42,14 @@ void main() {
   setUp(() {
     generation = 4;
     session = 9;
+    room = 1 << 40;
     repository = _Repository();
     settings = _Settings();
     persistence = _Persistence();
     chain = [_effect('first'), _effect('second')];
     when(() => repository.mixGeneration).thenAnswer((_) => generation);
     when(() => repository.sessionRevision).thenAnswer((_) => session);
+    when(() => repository.fxRoomNs).thenAnswer((_) => room);
     when(() => repository.state).thenReturn(
       const LooperState(
         tracks: [Track(), Track(channel: 1)],
@@ -421,6 +424,45 @@ void main() {
         settings,
       ),
     ).called(1);
+  });
+
+  group('the effects budget', () {
+    const track = FxDestination.recordedTrack(0);
+    const address = FxAddress(stage: FxStage.track);
+
+    test('an add that needs more than is left is refused and changes '
+        'nothing', () async {
+      room = kFxKindCostNs[TrackEffectType.octaver]! - 1;
+      final before = chain;
+
+      final result = await cubit.appendChoice(
+        track,
+        const FxSingleChoice(TrackEffectType.octaver),
+      );
+
+      expect(result.status, FxEditStatus.overBudget);
+      expect(chain, same(before));
+    });
+
+    test('an add that fits lands', () async {
+      room = kFxKindCostNs[TrackEffectType.delay]!;
+
+      final result = await cubit.appendChoice(
+        track,
+        const FxSingleChoice(TrackEffectType.delay),
+      );
+
+      expect(result.status, FxEditStatus.applied);
+    });
+
+    test('a removal always lands, even over budget', () async {
+      room = -1000;
+
+      final result = await cubit.removeEffect(address, 'first');
+
+      expect(result.status, FxEditStatus.applied);
+      expect(chain.map((fx) => fx.slotId), ['second']);
+    });
   });
 
   group('a factory rack', () {

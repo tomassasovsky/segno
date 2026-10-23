@@ -1,40 +1,47 @@
 import 'package:looper_repository/src/models/track_effect.dart';
 
 /// What one instance of each kind charges the audio thread's worst block, in
-/// nanoseconds per frame: `bench_fx_cpu --table` on the console (Pi 5,
-/// 96 kHz, 64-frame periods, SCHED_FIFO 70), each kind's share of the worst
-/// block with eight in one chain, or one alone for a kind on the hop.
+/// nanoseconds per frame (96 kHz, 64-frame periods): each kind's share of
+/// the worst block with eight in one chain, or one alone for a kind on the
+/// hop (`bench_fx_cpu --table`).
 ///
-/// Per frame because both the cost and the budget scale with the block:
-/// at another rate the same work fits a different share of real time
+/// Measured on the console (Pi 5, SCHED_FIFO 70) where a console bench
+/// exists: the octaver (69 us alone after the hop split), the overdrive,
+/// distortion, vinyl, degrade, LPF and spring (#1433). The rest are the
+/// arm64 CI runner's table times 1.75, the console's ratio to it on the
+/// octaver and on the rig itself, until the console's own table replaces
+/// them.
+///
+/// Per frame because both the cost and the budget scale with the block: at
+/// another rate the same work fits a different share of real time
 /// ([fxBudgetNs]).
 const Map<TrackEffectType, int> kFxKindCostNs = {
   TrackEffectType.none: 0,
-  TrackEffectType.drive: 0,
-  TrackEffectType.filter: 0,
-  TrackEffectType.delay: 0,
-  TrackEffectType.tremolo: 0,
-  TrackEffectType.octaver: 0,
-  TrackEffectType.echo: 0,
-  TrackEffectType.reverb: 0,
-  TrackEffectType.eq: 0,
-  TrackEffectType.compressor: 0,
-  TrackEffectType.transient: 0,
-  TrackEffectType.hpGate: 0,
-  TrackEffectType.doubler: 0,
-  TrackEffectType.chorus: 0,
-  TrackEffectType.wah: 0,
-  TrackEffectType.overdrive: 0,
-  TrackEffectType.distortion: 0,
-  TrackEffectType.vinyl: 0,
-  TrackEffectType.degrade: 0,
-  TrackEffectType.lpf: 0,
-  TrackEffectType.spring: 0,
+  TrackEffectType.drive: 84,
+  TrackEffectType.filter: 110,
+  TrackEffectType.delay: 28,
+  TrackEffectType.tremolo: 37,
+  TrackEffectType.octaver: 1078,
+  TrackEffectType.echo: 142,
+  TrackEffectType.reverb: 156,
+  TrackEffectType.eq: 63,
+  TrackEffectType.compressor: 56,
+  TrackEffectType.transient: 46,
+  TrackEffectType.hpGate: 33,
+  TrackEffectType.doubler: 40,
+  TrackEffectType.chorus: 67,
+  TrackEffectType.wah: 30,
+  TrackEffectType.overdrive: 122,
+  TrackEffectType.distortion: 227,
+  TrackEffectType.vinyl: 97,
+  TrackEffectType.degrade: 47,
+  TrackEffectType.lpf: 55,
+  TrackEffectType.spring: 95,
 };
 
-/// The octaver in PSOLA mode (its mode setting at 1), which costs more than
-/// its phase vocoder ([kFxKindCostNs]).
-const int kFxPsolaCostNs = 0;
+/// The octaver in PSOLA mode (its mode setting at 1): 84 us alone on the
+/// console with the YIN slicing (#913), 1.25 times its phase vocoder.
+const int kFxPsolaCostNs = 1350;
 
 /// The engine with eight tracks playing, one input monitored and no effects:
 /// the console's worst block (73 us at 96 kHz, 64 frames), per frame.
