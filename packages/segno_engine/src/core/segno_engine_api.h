@@ -610,7 +610,7 @@ typedef enum le_command_code {
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
  * carries an ordered chain of up to LE_FX_MAX entries, each with a type and
- * LE_FX_PARAMS normalized (0..1) parameters. The chain is non-destructive (the
+ * up to LE_FX_PARAMS normalized (0..1) parameters. The chain is non-destructive (the
  * recording is ALWAYS dry; effects color playback only) and every active entry
  * applies in chain order. The cap exists only so the audio thread reads a
  * fixed-size, allocation-free array — it is not a CPU limit: the audio path
@@ -627,11 +627,16 @@ typedef enum le_command_code {
  * the callback stack. Recipe commands carry retained prepared pointers, so
  * raising this ceiling does not enlarge each command-ring entry. */
 #define LE_FX_MAX 64
-#define LE_FX_PARAMS 4
+/* Raised from 4 to 32 for the Looper X kinds (#887 part 4): each kind carries
+ * its generic module's whole parameter set, and the four-band EQ alone has
+ * fourteen. A type uses the first le_fx_param_count(type) of them; the audio
+ * thread's per-buffer snapshot, the wet-cache key and the offline renders copy
+ * only those, so the width costs memory, not per-buffer work. */
+#define LE_FX_PARAMS 32
 
 /* Built-in effect types. Designed so a hosted VST3/CLAP plugin can later slot
- * in as just another type. Each type reads its entry's LE_FX_PARAMS normalized
- * values:
+ * in as just another type. Each type reads only the first le_fx_param_count(type)
+ * of its entry's LE_FX_PARAMS normalized values (none for an unknown code):
  *   DRIVE:   p0 = drive amount, p1 = output level
  *   FILTER:  p0 = cutoff, p1 = resonance        (resonant low-pass)
  *   DELAY:   p0 = time, p1 = feedback, p2 = wet mix
@@ -639,8 +644,6 @@ typedef enum le_command_code {
  *   OCTAVER: p0 = shift (0 = -2 oct, .5 = unison, 1 = +2 oct), p1 = tone,
  *            p2 = mix, p3 = mode (< .5 = phase vocoder, >= .5 = PSOLA; stored
  *            but inert until the formant-preserving rewrite reads it)
- * Every other type leaves its unused trailing params (including p3) at 0; no
- * non-octaver effect reads p3.
  *   ECHO:    p0 = time, p1 = feedback, p2 = mix  (tape-style, damped repeats)
  *   REVERB:  p0 = size, p1 = damping, p2 = mix   (Schroeder room tail; a mono
  *            input yields a decorrelated stereo tail spread across the first two
@@ -1871,7 +1874,7 @@ LE_EXPORT int32_t le_engine_clear_monitor_plugin(le_engine* engine,
 /* ---- Plugin parameters (control thread; D-PARAM) ----
  *
  * A plugin's parameters are a VARIABLE-LENGTH list sourced live from the plugin
- * — separate from the built-in fixed 4-float LE_FX_PARAMS surface, which is left
+ * — separate from the built-in fixed LE_FX_PARAMS surface, which is left
  * untouched. Values are PLAIN (not normalized): VST3's normalized params are
  * converted via normalizedParamToPlain; CLAP params are already plain. */
 
@@ -3977,7 +3980,8 @@ LE_EXPORT int32_t le_perf_render_cancel(le_engine* engine);
 /* ---- effect-chain fingerprints (control thread; FX divergence detection) ---- *
  * An order-sensitive 64-bit hash of a lane's / monitor's PUBLISHED effect chain:
  * for each of the a_fx_count active entries, its type, plus (for a built-in) its
- * LE_FX_PARAMS float parameter bits — a plugin entry contributes its type only
+ * float bits of the parameters its type reads (le_fx_param_count; none for an
+ * unknown code) — a plugin entry contributes its type only
  * (its params live in the plugin host, not a_fx_param). The empty chain hashes
  * to the FNV-1a offset basis. This is DETECTION only, not a chain readback: the
  * Dart repository owns the chain and computes the identical hash over its cache,

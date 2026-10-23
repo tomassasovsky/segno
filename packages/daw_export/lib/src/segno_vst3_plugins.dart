@@ -32,16 +32,15 @@ class SegnoVst3Ref {
   /// future consumer doesn't have to re-derive it from the C++ source.
   final String subcategory;
 
-  /// How many of a `DawEffect`'s (up to `kTrackEffectParams` = 4, always
-  /// padded to that width in the persisted manifest) `params` this plugin's
+  /// How many of a `DawEffect`'s `params` (the cells its type reads, as
+  /// the persisted manifest carries them) this plugin's
   /// controller actually registers as a real `RangeParameter`/
   /// `StringListParameter` — matching each plugin's `controller.cpp`
   /// exactly (Drive/Filter/Tremolo: 2; Delay/Echo/Reverb: 3; Octaver: 4).
   /// `als_builder.dart`'s `_deviceChainXml` emits only the first
-  /// [paramCount] values, never the full always-4-wide padded array — the
-  /// trailing padding entries don't correspond to any real parameter the
-  /// plugin registers, so emitting them would write `ParameterId` values
-  /// Ableton (or the plugin itself) has no meaning for.
+  /// [paramCount] values: anything further doesn't correspond to a real
+  /// parameter the plugin registers, so emitting it would write `ParameterId`
+  /// values Ableton (or the plugin itself) has no meaning for.
   final int paramCount;
 
   /// The plugin vendor string every Segno plugin's factory registers —

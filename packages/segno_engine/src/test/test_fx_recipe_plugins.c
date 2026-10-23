@@ -95,7 +95,10 @@ static void test_full_recipe_boundary(void) {
   for (int s = 0; s < LE_FX_MAX; ++s) expected = tanhf(expected);
   CHECK(fabsf(out[126]) < 1e-6f);
   CHECK(fabsf(out[127] - expected * .5f) < 1e-5f);
-  CHECK(load_f32(&e->monitors[0].a_fx_param[last][3]) == .375f);
+  /* Published: what the drive reads. Its cell 3 is past its two
+   * parameters, so the callback never stores it. */
+  CHECK(load_f32(&e->monitors[0].a_fx_param[last][1]) == 1.0f);
+  CHECK(load_f32(&e->monitors[0].a_fx_param[last][3]) == 0.0f);
   CHECK(le_engine_fx_recipe_revision(e, LE_FX_OWNER_MONITOR, 0, 0) == 100);
   r.count = LE_FX_MAX + 1;
   CHECK(le_engine_set_fx_recipe(e, LE_FX_OWNER_MONITOR, 0, 0, 101, &r) == LE_ERR_INVALID);

@@ -215,8 +215,8 @@ static int32_t le_max_fx_latency(le_engine* engine) {
  * positions): the chain-enabled bit first, but only for a NON-empty chain, so
  * an empty chain still hashes to the FNV offset basis (chain-disabled empty ≡
  * enabled empty ≡ dry — the documented empty-chain invariant); then per entry
- * its type, its slot-enabled bit, and (built-ins only) its LE_FX_PARAMS
- * float-bit params — a plugin entry (LE_FX_PLUGIN) folds type + enabled bit
+ * its type, its slot-enabled bit, and (built-ins only) the float bits of the
+ * le_fx_param_width(type) params it reads — a plugin entry (LE_FX_PLUGIN) folds type + enabled bit
  * only. The Dart repository computes the identical hash over its cache. */
 static uint64_t le_fx_chain_fingerprint(
     int32_t count, _Atomic int32_t* a_type,
@@ -234,7 +234,8 @@ static uint64_t le_fx_chain_fingerprint(
     h = le_fx_fp_u32(h, (uint32_t)type);
     h = le_fx_fp_u32(h, load_i32(&a_enabled[i]) ? 1u : 0u);
     if (type == LE_FX_PLUGIN) continue; /* plugin params live in the host */
-    for (int32_t p = 0; p < LE_FX_PARAMS; ++p) {
+    const int32_t w = le_fx_param_width(type);
+    for (int32_t p = 0; p < w; ++p) {
       h = le_fx_fp_u32(
           h, atomic_load_explicit(&a_param[i][p], memory_order_relaxed));
     }

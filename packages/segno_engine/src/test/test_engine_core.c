@@ -17961,7 +17961,11 @@ static void test_monitor_input_fx_rejects_invalid_args(void) {
   CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, LE_FX_PARAMS, 0.5f) ==
         LE_ERR_INVALID);
 
+  /* An empty slot reads no parameter, so it takes none. */
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.5f) ==
+        LE_ERR_INVALID);
   /* Over-range values clamp; an over-large count clamps to LE_FX_MAX. */
+  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
   CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 5.0f) == LE_OK);
   CHECK(le_engine_set_monitor_input_fx_count(e, 0, 999) == LE_OK);
 
@@ -20483,30 +20487,49 @@ static void test_lane_setters_reject_invalid_args(void) {
   le_engine_destroy(e);
 }
 
-/* Widening LE_FX_PARAMS from 3 to 4 must leave EVERY non-octaver effect inert in
- * the new slot: p3 is never read, so its value cannot change the output. Two
- * identically-driven engines — one with p3 = 0 (the default), one with p3 = 1 —
- * must produce byte-for-byte identical output across many blocks (so stateful
- * delay/echo/reverb tails are exercised too). This is the M3 "identical after
- * the widening" guard. Index 3 is also now a valid param (rejected before the
- * widening). The octaver is excluded — it will read p3 in parts 3-4. */
-static void test_fx_fourth_param_is_inert(void) {
-  printf("test_fx_fourth_param_is_inert\n");
-  CHECK(LE_FX_PARAMS == 4);
+/* A type reads only its first le_fx_param_count(type) settings (#887 part 4
+ * widened the row to 32). Two identically driven engines, one whose recipe
+ * carries 0 in every cell past the type's count and one carrying 1, must
+ * produce byte-identical output across many blocks, so the delay, echo and
+ * reverb tails are exercised too. */
+static void test_fx_params_past_count_are_inert(void) {
+  printf("test_fx_params_past_count_are_inert\n");
+  CHECK(LE_FX_PARAMS == 32);
+  /* The inline width table and the descriptor rows agree for every code. */
+  for (int32_t t = 0; t < LE_FX_WIDTHS; ++t) {
+    const int32_t n = le_fx_param_count(t);
+    CHECK(le_fx_param_width(t) == (n > 0 ? n : 0));
+  }
+  CHECK(le_fx_param_width(LE_FX_WIDTHS) == 0);
+  /* Every built-in reads at least one parameter: a type whose row in the
+   * width table was forgotten would read none. */
+  for (int32_t t = LE_FX_NONE + 1; t < LE_FX_WIDTHS; ++t) {
+    if (t != LE_FX_PLUGIN) CHECK(le_fx_param_width(t) > 0);
+  }
+  CHECK(le_fx_param_width(-1) == 0);
 
   const int32_t types[] = {LE_FX_DRIVE,   LE_FX_FILTER, LE_FX_DELAY,
-                           LE_FX_TREMOLO, LE_FX_ECHO,   LE_FX_REVERB};
+                           LE_FX_TREMOLO, LE_FX_OCTAVER, LE_FX_ECHO,
+                           LE_FX_REVERB};
   for (int t = 0; t < (int)(sizeof(types) / sizeof(types[0])); ++t) {
     le_engine* a = make_configured_engine();
     le_engine* b = make_configured_engine();
     establish_loop(a, 1.0f);
     establish_loop(b, 1.0f);
 
-    le_engine_set_lane_fx(a, 0, 0, 0, types[t]); /* seeds p3 = 0 */
-    le_engine_set_lane_fx(b, 0, 0, 0, types[t]);
-    CHECK(le_engine_set_lane_fx_param(b, 0, 0, 0, 3, 1.0f) == LE_OK); /* drive p3 */
-    le_engine_set_lane_fx_count(a, 0, 0, 1, 0);
-    le_engine_set_lane_fx_count(b, 0, 0, 1, 0);
+    const int32_t count = le_fx_param_count(types[t]);
+    CHECK(count > 0 && count <= LE_FX_PARAMS);
+    /* The same entry twice, b's recipe carrying 1 in every cell past the
+     * type's parameters. */
+    le_fx_recipe ra = {.count = 1, .enabled = 1};
+    ra.type[0] = types[t];
+    ra.slot_enabled[0] = 1;
+    ra.level[0] = 1.0f;
+    le_fx_defaults(types[t], ra.params[0]);
+    le_fx_recipe rb = ra;
+    for (int32_t p = count; p < LE_FX_PARAMS; ++p) rb.params[0][p] = 1.0f;
+    CHECK(le_engine_set_fx_recipe(a, LE_FX_OWNER_LANE, 0, 0, 1, &ra) == LE_OK);
+    CHECK(le_engine_set_fx_recipe(b, LE_FX_OWNER_LANE, 0, 0, 1, &rb) == LE_OK);
 
     float oa[64];
     float ob[64];
@@ -20515,6 +20538,13 @@ static void test_fx_fourth_param_is_inert(void) {
       process_const(b, 0.0f, 64, ob);
       for (int i = 0; i < 64; ++i) CHECK(oa[i] == ob[i]); /* byte-for-byte */
     }
+    /* They never reach the published row, so the fingerprint agrees. */
+    CHECK(le_engine_lane_fx_fingerprint(a, 0, 0) ==
+          le_engine_lane_fx_fingerprint(b, 0, 0));
+    /* A granular write to such a cell is refused: it would never sound. */
+    CHECK(le_engine_set_lane_fx_param(b, 0, 0, 0, count, 0.5f) ==
+          LE_ERR_INVALID);
+    CHECK(le_engine_set_lane_fx_param(b, 0, 0, 0, count - 1, 0.5f) == LE_OK);
 
     le_engine_destroy(a);
     le_engine_destroy(b);
@@ -39051,7 +39081,7 @@ int main(void) {
   test_fx_stereo_chain_independent_lr_state();
   test_fx_stereo_ring_retained_across_type_reorder();
   test_monitor_input_fx_rejects_invalid_args();
-  test_fx_fourth_param_is_inert();
+  test_fx_params_past_count_are_inert();
   test_octaver_pv_shifts_pitch_preserves_formant();
   test_octaver_pv_low_fundamental();
   test_octaver_mono_coherent();

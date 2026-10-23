@@ -449,13 +449,28 @@ class BuiltInEffect extends TrackEffect {
     this.module,
     this.presetId,
     Map<String, double> source = const {},
-  }) : params = List<double>.unmodifiable(params ?? type.defaultParams),
+  }) : params = engine.canonicalEffectParams(type._engine, params),
        source = Map<String, double>.unmodifiable(source);
+
+  /// [copyWith] keeping [type]: [params] is already canonical for it.
+  const BuiltInEffect._sameType({
+    required this.type,
+    required this.params,
+    required this.enabled,
+    required this.slotId,
+    required this.placement,
+    required this.channels,
+    required this.rack,
+    required this.module,
+    required this.presetId,
+    required this.source,
+  });
 
   /// The effect type.
   final TrackEffectType type;
 
-  /// The normalized parameter values (length `kTrackEffectParams`).
+  /// The normalized parameter values: length `kTrackEffectParams`, the
+  /// type's parameters first and 0 after them (`canonicalEffectParams`).
   final List<double> params;
 
   @override
@@ -492,6 +507,10 @@ class BuiltInEffect extends TrackEffect {
   int get typeCode => type.code;
 
   /// Returns a copy with the given fields replaced. [params] is copied.
+  ///
+  /// A new [type] without new [params] starts at that type's defaults, as
+  /// the engine seeds them on a type change: one type's settings mean
+  /// nothing to another.
   BuiltInEffect copyWith({
     TrackEffectType? type,
     List<double>? params,
@@ -503,18 +522,33 @@ class BuiltInEffect extends TrackEffect {
     String? module,
     String? presetId,
     Map<String, double>? source,
-  }) => BuiltInEffect(
-    type: type ?? this.type,
-    params: params ?? this.params,
-    enabled: enabled ?? this.enabled,
-    slotId: slotId ?? this.slotId,
-    placement: placement ?? this.placement,
-    channels: channels ?? this.channels,
-    rack: rack ?? this.rack,
-    module: module ?? this.module,
-    presetId: presetId ?? this.presetId,
-    source: source ?? this.source,
-  );
+  }) => params == null && (type == null || type == this.type)
+      ? BuiltInEffect._sameType(
+          type: this.type,
+          params: this.params,
+          enabled: enabled ?? this.enabled,
+          slotId: slotId ?? this.slotId,
+          placement: placement ?? this.placement,
+          channels: channels ?? this.channels,
+          rack: rack ?? this.rack,
+          module: module ?? this.module,
+          presetId: presetId ?? this.presetId,
+          source: source == null
+              ? this.source
+              : Map<String, double>.unmodifiable(source),
+        )
+      : BuiltInEffect(
+          type: type ?? this.type,
+          params: params ?? (type ?? this.type).defaultParams,
+          enabled: enabled ?? this.enabled,
+          slotId: slotId ?? this.slotId,
+          placement: placement ?? this.placement,
+          channels: channels ?? this.channels,
+          rack: rack ?? this.rack,
+          module: module ?? this.module,
+          presetId: presetId ?? this.presetId,
+          source: source ?? this.source,
+        );
 
   @override
   List<Object?> get props => [
@@ -923,9 +957,9 @@ List<TrackEffect> decodeTrackEffects(String? encoded) => [
 /// NON-empty chain — an empty chain still yields the FNV-1a offset basis (a
 /// chain-disabled empty chain and an enabled empty chain are both dry). Then
 /// each entry folds its type code, then its real [TrackEffect.enabled] bit,
-/// then (built-ins only) its `kTrackEffectParams` parameter float-bits
-/// (padding a short param list with the type's defaults, matching the tail the
-/// engine seeds on a type set). A plugin entry contributes its type + enabled
+/// then (built-ins only) the float bits of the parameters its type reads
+/// (`le_fx_param_width`: the cells past them are never heard, so they never
+/// fold). A plugin entry contributes its type + enabled
 /// bit only — the engine's `a_fx_param` holds no plugin params (they live in
 /// the plugin host).
 ///
@@ -947,10 +981,11 @@ int fxChainFingerprint(List<TrackEffect> chain, {bool chainEnabled = true}) {
     h = engine.FxFingerprint.mixU32(h, fx.typeCode);
     h = engine.FxFingerprint.mixU32(h, fx.enabled ? 1 : 0);
     if (fx is! BuiltInEffect) continue; // plugin: type + enabled bit only
-    final defaults = fx.type.defaultParams;
-    for (var p = 0; p < engine.kTrackEffectParams; p++) {
-      final value = p < fx.params.length ? fx.params[p] : defaults[p];
-      h = engine.FxFingerprint.mixU32(h, engine.FxFingerprint.floatBits(value));
+    for (var p = 0; p < fx.type.params.length; p++) {
+      h = engine.FxFingerprint.mixU32(
+        h,
+        engine.FxFingerprint.floatBits(fx.params[p]),
+      );
     }
   }
   return h;
