@@ -41,6 +41,10 @@ enum UpdateFailure {
 
   /// The download and stage of an offered bundle.
   download,
+
+  /// The download and stage of an offered bundle, refused because the boot
+  /// partition is read-only. A restart repairs it; retrying does not.
+  bootReadOnly,
 }
 
 /// Immutable state of the update feature.

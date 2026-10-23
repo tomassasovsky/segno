@@ -2512,6 +2512,7 @@
     "updatesPageIdle": "Busca una versión más reciente de Segno.",
     "updatesPageCheckFailed": "No se pudo contactar con el servidor de actualizaciones. Revisa la red y vuelve a intentarlo.",
     "updatesPageDownloadFailed": "La descarga no terminó. El software actual no ha cambiado.",
+    "updatesPageBootReadOnly": "La partición de arranque es de solo lectura, así que no se puede instalar la actualización. Reinicia la consola para repararla y vuelve a intentarlo. El software actual no ha cambiado.",
     "updatesPageInterrupted": "Descarga interrumpida. El software actual no ha cambiado.",
     "updatesPagePercent": "{percent} %",
     "updatesPageDownload": "Descargar e instalar",

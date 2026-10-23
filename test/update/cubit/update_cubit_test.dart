@@ -221,6 +221,29 @@ void main() {
     );
 
     blocTest<UpdateCubit, UpdateState>(
+      'names a read-only boot partition as its own failure',
+      seed: () => UpdateState(available: _v2),
+      setUp: () =>
+          when(
+            () => updates.downloadAndStage(_v2),
+          ).thenAnswer(
+            (_) => Stream.error(const BootPartitionReadOnlyException('ro')),
+          ),
+      build: build,
+      act: (cubit) => cubit.startDownload(),
+      expect: () => [
+        isA<UpdateState>().having(
+          (s) => s.phase,
+          'phase',
+          UpdatePhase.downloading,
+        ),
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.error)
+            .having((s) => s.failure, 'failure', UpdateFailure.bootReadOnly),
+      ],
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
       'emits error when staging fails',
       seed: () => UpdateState(available: _v2),
       setUp: () => when(
@@ -234,7 +257,9 @@ void main() {
           'phase',
           UpdatePhase.downloading,
         ),
-        isA<UpdateState>().having((s) => s.phase, 'phase', UpdatePhase.error),
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.error)
+            .having((s) => s.failure, 'failure', UpdateFailure.download),
       ],
     );
   });

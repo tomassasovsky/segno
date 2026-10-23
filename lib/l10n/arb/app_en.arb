@@ -6617,6 +6617,10 @@
     "@updatesPageDownloadFailed": {
         "description": "Updates page status sentence when the download or install failed."
     },
+    "updatesPageBootReadOnly": "The boot partition is read-only, so the update cannot be installed. Restart the console to repair it, then try again. The current software is unchanged.",
+    "@updatesPageBootReadOnly": {
+        "description": "Updates page status sentence when the install was refused because the boot partition is read-only (usually after a power cut). The boot-time check repairs it on restart."
+    },
     "updatesPageInterrupted": "Download interrupted. The current software is unchanged.",
     "@updatesPageInterrupted": {
         "description": "Updates page status sentence when an install was cut off by a crash or power loss."

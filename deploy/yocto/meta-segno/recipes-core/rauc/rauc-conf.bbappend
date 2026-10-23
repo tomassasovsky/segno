@@ -4,7 +4,8 @@
 # over meta-rauc's when the rauc-conf recipe fetches file://system.conf.
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
-SRC_URI += "file://ca.cert.pem"
+SRC_URI += "file://ca.cert.pem \
+            file://10-segno-data.conf"
 
 # Board-specific values for the @PLACEHOLDERS@ in files/system.conf. Set per
 # board in the kas project (deploy/yocto/kas-segno-rpi{4,5}.yml); no defaults
@@ -16,6 +17,11 @@ SEGNO_RAUC_COMPATIBLE  ?= ""
 do_install:append() {
     install -d ${D}${sysconfdir}/rauc
     install -m 0644 ${UNPACKDIR}/ca.cert.pem ${D}${sysconfdir}/rauc/keyring.pem
+
+    # Pairs with data-directory= in system.conf, so it ships in the same
+    # package: rauc.service waits for /data and /boot and creates the directory.
+    install -d ${D}${systemd_system_unitdir}/rauc.service.d
+    install -m 0644 ${UNPACKDIR}/10-segno-data.conf ${D}${systemd_system_unitdir}/rauc.service.d/10-segno-data.conf
 
     if [ -z "${SEGNO_BOOT_DISK}" ] || [ -z "${SEGNO_RAUC_COMPATIBLE}" ]; then
         bbfatal "SEGNO_BOOT_DISK and SEGNO_RAUC_COMPATIBLE must both be set — see deploy/yocto/kas-segno-rpi5.yml"
@@ -32,4 +38,5 @@ do_install:append() {
     fi
 }
 
-FILES:${PN} += "${sysconfdir}/rauc/keyring.pem"
+FILES:${PN} += "${sysconfdir}/rauc/keyring.pem \
+                ${systemd_system_unitdir}/rauc.service.d/10-segno-data.conf"

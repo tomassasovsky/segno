@@ -15,6 +15,11 @@
 #             is recorded in the attempt marker; a failure removes it, and a
 #             kill (power loss, a stopped service, the app's Cancel) leaves it
 #             so the next start can say the install was cut off.
+#             Exits 3 when /boot is mounted read-only, before downloading, so
+#             the app can say so instead of reporting a failed download
+#             (#1397). The kernel's FAT driver remounts /boot
+#             read-only when it finds a damaged filesystem. The boot-time fsck
+#             repairs it, so the remedy is a restart.
 #   attempt   Print the install that was cut off, {"version":"<v>"}, or {}.
 #   clear-attempt
 #             Forget it (the app retried or dropped the cut-off install).
@@ -66,6 +71,13 @@ ATTEMPT_FILE="${SEGNO_UPDATE_ATTEMPT_FILE:-/data/segno/update-attempt}"
 # Written by `reboot` when it asks for the staged slot: a reboot without it
 # (Shut down, a power cut, a watchdog) never tried the staged build.
 TRYBOOT_FILE="${SEGNO_TRYBOOT_REQUESTED_FILE:-/data/.ota-tryboot-requested}"
+# Where to read the mount table, and the tryboot selector's mount point.
+MOUNTS_FILE="${SEGNO_MOUNTS_FILE:-/proc/mounts}"
+BOOT_MOUNT="${SEGNO_BOOT_MOUNT:-/boot}"
+# The install's exit status when /boot is read-only. The app maps it to its own
+# message, so keep it in step with kBootReadOnlyExitCode in
+# lib/update/appliance/appliance_env.dart.
+EXIT_BOOT_READ_ONLY=3
 
 log() { echo "segno-update-ctl: $*" >&2; }
 progress() { echo "PROGRESS $1"; }
@@ -105,6 +117,15 @@ run_child() {
     if wait "$child"; then child=""; return 0; fi
     child=""
     return 1
+}
+
+# Whether /boot is mounted read-only. The last entry for the mount point wins,
+# as it does in the kernel. An unreadable mount table counts as writable.
+boot_read_only() {
+    awk -v where="$BOOT_MOUNT" '
+        $2 == where { ro = ("," $4 ",") ~ /,ro,/ }
+        END { exit ro ? 0 : 1 }
+    ' "$MOUNTS_FILE" 2>/dev/null
 }
 
 # Prefer the Settings-written override on /data, then the image-baked marker.
@@ -163,6 +184,13 @@ record_staged_boot_id() {
 
 do_install() {
     command -v rauc >/dev/null 2>&1 || { log "rauc not installed"; return 1; }
+    # Before the download: the new slot is committed through /boot, so a
+    # 30-minute download would be wasted. The install itself writes nothing
+    # there (the status file is on /data), so this is the one check.
+    if boot_read_only; then
+        log "the boot partition is read-only; restart to repair it"
+        return "$EXIT_BOOT_READ_ONLY"
+    fi
     channel=$(resolve_channel)
     current=$(cat "$CUR_FILE" 2>/dev/null || echo "0.0.0")
 

@@ -371,6 +371,15 @@ class _StatusPanel extends StatelessWidget {
                   ),
                 ],
               ),
+              // Retrying cannot help until a restart has repaired the
+              // partition, so there is no button. The check above keeps the
+              // focus.
+              UpdateFailure.bootReadOnly => (
+                l10n.updatesPanelAvailable,
+                _meta(l10n, offeredVersion, megabytes),
+                l10n.updatesPageBootReadOnly,
+                <Widget>[],
+              ),
               UpdateFailure.check || null => (
                 l10n.updatesPanelSoftware,
                 null,

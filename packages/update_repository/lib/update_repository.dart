@@ -5,6 +5,8 @@ library;
 
 export 'package:pub_semver/pub_semver.dart' show Version;
 
+export 'src/boot_partition_read_only_exception.dart'
+    show BootPartitionReadOnlyException;
 export 'src/platform_update_backend.dart' show PlatformUpdateBackend;
 export 'src/unsupported_platform_backend.dart' show UnsupportedPlatformBackend;
 export 'src/update_channel.dart' show normalizeUpdateChannel;
