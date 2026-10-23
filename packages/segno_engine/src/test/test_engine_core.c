@@ -20501,6 +20501,11 @@ static void test_fx_params_past_count_are_inert(void) {
     CHECK(le_fx_param_width(t) == (n > 0 ? n : 0));
   }
   CHECK(le_fx_param_width(LE_FX_WIDTHS) == 0);
+  /* Every built-in reads at least one parameter: a type whose row in the
+   * width table was forgotten would read none. */
+  for (int32_t t = LE_FX_NONE + 1; t < LE_FX_WIDTHS; ++t) {
+    if (t != LE_FX_PLUGIN) CHECK(le_fx_param_width(t) > 0);
+  }
   CHECK(le_fx_param_width(-1) == 0);
 
   const int32_t types[] = {LE_FX_DRIVE,   LE_FX_FILTER, LE_FX_DELAY,

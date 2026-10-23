@@ -635,8 +635,8 @@ typedef enum le_command_code {
 #define LE_FX_PARAMS 32
 
 /* Built-in effect types. Designed so a hosted VST3/CLAP plugin can later slot
- * in as just another type. Each type reads the first le_fx_param_count(type) of
- * its entry's LE_FX_PARAMS normalized values:
+ * in as just another type. Each type reads only the first le_fx_param_count(type)
+ * of its entry's LE_FX_PARAMS normalized values (none for an unknown code):
  *   DRIVE:   p0 = drive amount, p1 = output level
  *   FILTER:  p0 = cutoff, p1 = resonance        (resonant low-pass)
  *   DELAY:   p0 = time, p1 = feedback, p2 = wet mix
@@ -644,7 +644,6 @@ typedef enum le_command_code {
  *   OCTAVER: p0 = shift (0 = -2 oct, .5 = unison, 1 = +2 oct), p1 = tone,
  *            p2 = mix, p3 = mode (< .5 = phase vocoder, >= .5 = PSOLA; stored
  *            but inert until the formant-preserving rewrite reads it)
- * No type reads past its own parameter count.
  *   ECHO:    p0 = time, p1 = feedback, p2 = mix  (tape-style, damped repeats)
  *   REVERB:  p0 = size, p1 = damping, p2 = mix   (Schroeder room tail; a mono
  *            input yields a decorrelated stereo tail spread across the first two
@@ -3981,7 +3980,8 @@ LE_EXPORT int32_t le_perf_render_cancel(le_engine* engine);
 /* ---- effect-chain fingerprints (control thread; FX divergence detection) ---- *
  * An order-sensitive 64-bit hash of a lane's / monitor's PUBLISHED effect chain:
  * for each of the a_fx_count active entries, its type, plus (for a built-in) its
- * le_fx_param_count(type) float parameter bits — a plugin entry contributes its type only
+ * float bits of the parameters its type reads (le_fx_param_count; none for an
+ * unknown code) — a plugin entry contributes its type only
  * (its params live in the plugin host, not a_fx_param). The empty chain hashes
  * to the FNV-1a offset basis. This is DETECTION only, not a chain readback: the
  * Dart repository owns the chain and computes the identical hash over its cache,

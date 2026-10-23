@@ -180,7 +180,7 @@ BuiltInEffect fxModuleEntry(FxModule module, FxPreset preset) {
     '${module.name} maps more keys than ${type.name} reads',
   );
   final params = List<double>.of(type.defaultParams);
-  for (var i = 0; i < build.params.length; i++) {
+  for (var i = 0; i < build.params.length && i < type.params.length; i++) {
     final key = build.params[i];
     final value = key == null ? null : preset.params[key];
     if (value != null) params[i] = value.clamp(0.0, 1.0);
