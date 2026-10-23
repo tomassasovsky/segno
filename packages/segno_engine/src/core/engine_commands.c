@@ -32,7 +32,7 @@
 #include "engine_render.h" /* le_render_take (Bounce, #1202) */
 #include "engine_restore.h" /* le_restore_tick + le_restore_commit_layer (#697) */
 #include "engine_core.h" /* le_push, valid_channel, le_lanes_active, le_*_reset */
-#include "engine_fx.h"   /* le_fx_ensure_hann, LE_PV_N / LE_PV_BINS */
+#include "engine_fx.h"   /* LE_PV_N / LE_PV_BINS */
 #include "engine_private.h"
 #include "engine_internal.h"
 #include "engine_prefault.h" /* the background prefaulter (#900) */

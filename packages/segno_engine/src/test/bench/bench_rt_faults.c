@@ -383,19 +383,22 @@ int main(int argc, char** argv) {
     } else if (strcmp(a, "--trace-late") == 0) {
       g_trace = 1;
     } else if (v != NULL && strcmp(a, "--fx-types") == 0) {
+      /* Built-in types only (LE_FX_DRIVE .. LE_FX_REVERB): a plugin slot
+       * needs an id, and NONE flips nothing. At most 8, all of it parsed. */
       g_fx_type_count = 0;
       const char* q = v;
-      while (g_fx_type_count < 8) {
+      for (;;) {
         char* e;
         const long t = strtol(q, &e, 10);
-        if (e == q) break; /* not a number */
+        if (e == q || t < LE_FX_DRIVE || t > LE_FX_REVERB ||
+            g_fx_type_count == 8 || (*e != ',' && *e != '\0')) {
+          fprintf(stderr, "--fx-types takes 1 to 8 ids from %d to %d, "
+                          "comma-separated\n", LE_FX_DRIVE, LE_FX_REVERB);
+          return 2;
+        }
         k_fx_types[g_fx_type_count++] = (int32_t)t;
-        if (*e != ',') break;
+        if (*e == '\0') break;
         q = e + 1;
-      }
-      if (g_fx_type_count == 0) {
-        usage();
-        return 2;
       }
       ++i;
     } else if (strcmp(a, "--timeline") == 0) {

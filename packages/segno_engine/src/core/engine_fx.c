@@ -6,7 +6,7 @@
  * rings and octaver buffers are pre-allocated by the control thread in
  * le_fx_prepare_entry). The only control-thread entry points are le_fx_entry_reset
  * (also called on the audio thread), le_fx_free_octaver, le_octaver_latency, and
- * le_fx_ensure_hann. Parameters arrive normalized (0..1) and are mapped to
+ * le_fx_ensure_pv_tables. Parameters arrive normalized (0..1) and are mapped to
  * musical ranges here.
  *
  * Behaviour is identical to the pre-split engine.c; the chain is non-destructive
@@ -14,6 +14,7 @@
  * cross-TU surface and the PV/PSOLA tuning constants live in engine_fx.h.
  */
 #include <math.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -38,16 +39,25 @@
 #define LE_FX_ENABLE_CLEAR_SPACING 128
 
 static float le_hann[LE_PV_N];
-static int le_hann_ready;
-/* The length-LE_PV_N real-FFT tables shared the same way (fft.h). */
+/* The length-LE_PV_N real-FFT tables, shared the same way (fft.h). */
 static le_rfft_plan le_pv_fft;
+static pthread_once_t le_pv_tables_once = PTHREAD_ONCE_INIT;
 
-/* Builds the shared octaver Hann window and FFT tables once (idempotent).
- * Internal: reached only via the octaver's prepare (fx_octaver_prepare) on the
- * control thread. */
-static void le_fx_ensure_hann(void) {
-  le_hann_init(le_hann, LE_PV_N, &le_hann_ready);
+static void le_pv_tables_build(void) {
+  int ready = 0;
+  le_hann_init(le_hann, LE_PV_N, &ready);
   (void)le_rfft_plan_init(&le_pv_fft, LE_PV_N);
+}
+
+/* Builds the shared octaver Hann window and FFT tables, exactly once in the
+ * process. More than one thread prepares octavers (the control thread, the
+ * wet-cache worker through le_fx_prepare), and a plain ready flag would let
+ * one see the flag before the table stores (#1410). pthread_once orders the
+ * build before every caller's return, and the audio thread reads the tables
+ * only through a slot a preparing thread published to it afterwards, so the
+ * audio path takes no lock. Reached only through fx_octaver_prepare. */
+static void le_fx_ensure_pv_tables(void) {
+  (void)pthread_once(&le_pv_tables_once, le_pv_tables_build);
 }
 
 /* Soft-clipping overdrive: tanh saturation with a pre-gain, then output trim. */
@@ -235,6 +245,30 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   if (o->sum_phase != NULL) memset(o->sum_phase, 0, sizeof(float) * LE_PV_BINS);
 }
 
+/* The formant envelope (engine_fx.h). */
+void le_octaver_envelope(const float* mag, float* env) {
+  float cl[LE_PV_N];    /* the full log-magnitude, then the liftered cepstrum */
+  float cr[LE_PV_BINS]; /* their transforms (real; ci is the zero imaginary) */
+  float ci[LE_PV_BINS];
+  /* The full symmetric log-magnitude is real and even, so its transform is
+   * real and even too, and the same in either direction: two real FFTs give
+   * N * the smoothed log-magnitude, and the 1/N is divided back out. */
+  for (int k = 0; k < LE_PV_BINS; ++k) {
+    cl[k] = logf(mag[k] + 1e-9f);
+  }
+  for (int k = 1; k < LE_PV_N / 2; ++k) {
+    cl[LE_PV_N - k] = cl[k];
+  }
+  le_rfft_fwd(&le_pv_fft, cl, cr, ci); /* -> cepstrum, quefrency 0 .. N/2 */
+  for (int q = 0; q < LE_PV_LIFTER; ++q) cl[q] = cr[q];
+  for (int q = LE_PV_LIFTER; q <= LE_PV_N - LE_PV_LIFTER; ++q) cl[q] = 0.0f;
+  for (int q = 1; q < LE_PV_LIFTER; ++q) cl[LE_PV_N - q] = cr[q];
+  le_rfft_fwd(&le_pv_fft, cl, cr, ci); /* -> N * smoothed log-magnitude */
+  for (int k = 0; k < LE_PV_BINS; ++k) {
+    env[k] = expf(cr[k] / (float)LE_PV_N);
+  }
+}
+
 /* Runs one STFT analysis/synthesis frame: windows the newest LE_PV_N FIFO
  * samples, shifts the harmonic structure by `ratio` while holding the cepstral
  * formant envelope fixed in frequency, and overlap-adds the result into o->out.
@@ -245,10 +279,10 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
  * transforms, and synthesis — all on the shared plan le_pv_fft (fft.h). On the
  * console a stereo frame costs ~170 us, down from ~290 us with full-length
  * complex transforms (bench_fx_cpu, gcc -O2; #1410).
- * Stack peak ~42 KB at N = 1024 (the locals below ~26 KB plus the fixed ~16 KB
- * scratch inside le_rfft_inv, which runs after the forward transforms); this
- * scales with N, so a future bump to N = 2048 must re-check constrained
- * (e.g. plugin-host) audio-thread stack budgets. */
+ * Stack peak ~34 KB at N = 1024 (the locals below ~18 KB, plus either
+ * le_octaver_envelope's ~8 KB or le_rfft_inv's ~16 KB scratch, which run one
+ * after the other). This scales with N, so a future bump to N = 2048 must
+ * re-check constrained (e.g. plugin-host) audio-thread stack budgets. */
 static void le_octaver_frame(le_octaver_state* o, const float* fifo, int head,
                              int cap, float ratio) {
   float win[LE_PV_N];
@@ -259,9 +293,6 @@ static void le_octaver_frame(le_octaver_state* o, const float* fifo, int head,
   float env[LE_PV_BINS];
   float syn_mag[LE_PV_BINS];
   float syn_freq[LE_PV_BINS];
-  float cl[LE_PV_N];    /* the full log-magnitude, then the liftered cepstrum */
-  float cr[LE_PV_BINS]; /* their transforms (real; ci is the zero imaginary) */
-  float ci[LE_PV_BINS];
 
   const float expct = 2.0f * LE_PI * (float)LE_PV_HOP / (float)LE_PV_N;
   const float osamp = (float)LE_PV_N / (float)LE_PV_HOP;
@@ -288,25 +319,8 @@ static void le_octaver_frame(le_octaver_state* o, const float* fifo, int head,
     freq[k] = (float)k + osamp * d / (2.0f * LE_PI);
   }
 
-  /* 3. Formant envelope: lifter the low-quefrency cepstrum of log|X|. The full
-   *    symmetric log-magnitude is real and even, so its transform is real and
-   *    even too, and the same either direction: two real FFTs (the imaginary
-   *    parts are zero) give N * the smoothed log-magnitude, and the net 1/N is
-   *    divided back out below. */
-  for (int k = 0; k < LE_PV_BINS; ++k) {
-    cl[k] = logf(mag[k] + 1e-9f);
-  }
-  for (int k = 1; k < LE_PV_N / 2; ++k) {
-    cl[LE_PV_N - k] = cl[k];
-  }
-  le_rfft_fwd(&le_pv_fft, cl, cr, ci); /* -> cepstrum, quefrency 0 .. N/2 */
-  for (int q = 0; q < LE_PV_LIFTER; ++q) cl[q] = cr[q];
-  for (int q = LE_PV_LIFTER; q <= LE_PV_N - LE_PV_LIFTER; ++q) cl[q] = 0.0f;
-  for (int q = 1; q < LE_PV_LIFTER; ++q) cl[LE_PV_N - q] = cr[q];
-  le_rfft_fwd(&le_pv_fft, cl, cr, ci); /* -> N * smoothed log-magnitude */
-  for (int k = 0; k < LE_PV_BINS; ++k) {
-    env[k] = expf(cr[k] / (float)LE_PV_N);
-  }
+  /* 3. Formant envelope (le_octaver_envelope). */
+  le_octaver_envelope(mag, env);
 
   /* 4. Whiten (mag/env), shift bins by `ratio`, then re-apply the envelope at
    *    the DESTINATION bin so the formants stay fixed in frequency. */
@@ -1150,7 +1164,7 @@ static int32_t fx_octaver_prepare(le_fx_state* fx, int slot, int cap) {
       owned[n++] = &fx->delay[slot][chan];
     }
   }
-  le_fx_ensure_hann(); /* control-thread; before the slot can be processed */
+  le_fx_ensure_pv_tables(); /* before the slot can be processed */
   for (int chan = 0; chan < 2; ++chan) {
     le_octaver_state* o = &fx->oct[slot][chan];
     if (o->out == NULL) {
