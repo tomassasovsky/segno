@@ -1760,6 +1760,14 @@ static inline void fx_run(le_fx_state* fx, int s, int32_t ty, int sr, int cap,
   LE_FX[ty].process(fx, s, sr, cap, l, r, p);
 }
 
+void le_fx_entry_renew(le_fx_state* fx, int slot, int32_t type) {
+  le_fx_entry_reset(fx, slot);
+  const int rings = type > LE_FX_NONE && type < LE_FX_TYPE_COUNT &&
+                    LE_FX[type].prepare != NULL &&
+                    (fx->delay[slot][0] != NULL || fx->delay[slot][1] != NULL);
+  if (rings) le_fx_enable_force_bypass(fx, slot);
+}
+
 /* Whether a bypassed slot of [type] drains its tail rather than crossfading
  * out: a ring-owning type with no reported latency (delay, echo, reverb).
  * Everything else — memoryless kernels, the latency-bearing octaver, hosted

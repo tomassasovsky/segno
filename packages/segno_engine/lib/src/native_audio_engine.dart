@@ -447,6 +447,7 @@ class NativeAudioEngine implements AudioEngine {
       target.placement[i] = slot.channels.placement;
       target.level[i] = slot.channels.level;
       target.rack[i] = slot.rack.bits;
+      target.instance[i] = slot.instance;
     }
     return true;
   }

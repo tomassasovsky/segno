@@ -8985,6 +8985,13 @@ final class le_fx_recipe extends ffi.Struct {
   /// le_fx_rack_edge bits
   @ffi.Array.multi([64])
   external ffi.Array<ffi.Int32> rack;
+
+  /// Each entry's stable identity (#887 part 4), 0 for none. A publish
+  /// resets a slot's DSP state only when the entry there is a different one
+  /// (another identity, another type, or 0), so an edit that keeps an entry
+  /// where it was, such as a parameter change, leaves its tail sounding.
+  @ffi.Array.multi([64])
+  external ffi.Array<ffi.Uint64> instance;
 }
 
 /// Source context frozen at the accepted record/arm gesture. The image is

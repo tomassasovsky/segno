@@ -1546,6 +1546,17 @@ static int le_pr_reset_slot(le_fx_state* fx, int s, int32_t type,
          le_fx_prepare(fx, s, type, sample_rate) == LE_OK;
 }
 
+/* What the callback does to a live slot when a logged type command lands on
+ * it (le_fx_entry_renew): its buffers, then the renewal, which clears its
+ * rings through the enable edge. Returns 0 on an allocation failure. */
+static int le_pr_renew_slot(le_fx_state* fx, int s, int32_t type,
+                            int32_t sample_rate) {
+  const int ok = type == LE_FX_NONE ||
+                 le_fx_prepare(fx, s, type, sample_rate) == LE_OK;
+  le_fx_entry_renew(fx, s, type);
+  return ok;
+}
+
 /* Puts arm-time slot [s] of [type] in the state the live owner's slot was in
  * when the type landed: the reset the ring handler ran (a raw calloc zero is
  * not that state; the octaver would ramp its shift up from two octaves down,
@@ -2037,7 +2048,12 @@ static int le_pr_render_master(const le_pr_manifest* m,
           chain.enabled[i] = 1;
         }
         chain.type[i] = cmd->fx.type;
-        if (!le_pr_reset_slot(fx, i, chain.type[i], m->sample_rate)) ok = 0;
+        /* lane 1: a recipe kept the entry there (same identity and type),
+         * so its state goes on; otherwise the slot renews, as live. */
+        if (cmd->fx.lane != 1 &&
+            !le_pr_renew_slot(fx, i, chain.type[i], m->sample_rate)) {
+          ok = 0;
+        }
       } else if (cmd->code == LE_CMD_SET_OUTPUT_FX_COUNT && cmd->fxcount.channel == m->arm_capture_bus) {
         int count = cmd->fxcount.count;
         if (count < 0 || count > LE_FX_MAX) { ok = 0; continue; }
@@ -2086,6 +2102,7 @@ void le_perf_render_force_dry_write_failure_for_test(int32_t channel) {
 
 static void le_pr_worker_main(void* arg) {
   le_perf_render* r = (le_perf_render*)arg;
+  le_flush_denormals(); /* stems round as the callback does */
 
   char* text = NULL;
   le_json_value* root = NULL;

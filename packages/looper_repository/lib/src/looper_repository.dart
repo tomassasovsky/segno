@@ -3286,6 +3286,7 @@ class LooperRepository {
                   enabled: fx.enabled,
                   channels: fxChannelsToEngine(fx.channels),
                   rack: edges[index],
+                  instance: fxInstanceId(fx.slotId),
                 ),
               );
             } else {
@@ -3307,6 +3308,7 @@ class LooperRepository {
                     enabled: plugin.enabled,
                     channels: fxChannelsToEngine(plugin.channels),
                     rack: edges[index],
+                    instance: fxInstanceId(plugin.slotId),
                   ),
                 );
                 continue;
@@ -3326,6 +3328,7 @@ class LooperRepository {
                   enabled: plugin.enabled,
                   channels: fxChannelsToEngine(plugin.channels),
                   rack: edges[index],
+                  instance: fxInstanceId(plugin.slotId),
                 ),
               );
             }
@@ -7396,6 +7399,7 @@ class LooperRepository {
               enabled: fx.enabled,
               channels: fxChannelsToEngine(fx.channels),
               rack: edges[index],
+              instance: fxInstanceId(fx.slotId),
             ),
           );
           continue;
@@ -7422,6 +7426,7 @@ class LooperRepository {
               enabled: plugin.enabled,
               channels: fxChannelsToEngine(plugin.channels),
               rack: edges[index],
+              instance: fxInstanceId(plugin.slotId),
             ),
           );
           continue;
@@ -7456,6 +7461,7 @@ class LooperRepository {
             enabled: plugin.enabled,
             channels: fxChannelsToEngine(plugin.channels),
             rack: edges[index],
+            instance: fxInstanceId(plugin.slotId),
           ),
         );
       }
