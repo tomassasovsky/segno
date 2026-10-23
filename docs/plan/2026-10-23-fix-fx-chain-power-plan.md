@@ -272,7 +272,12 @@ All in the main-checkout `segno-ui.pen`, group `01 CURRENT UX`:
      editor` (`GEW2L`) and `Single effect` (`iixR7`).
    - Add one new screen, "Connected pedal editor, effects off", with the band
      and the dimmed pedal strip.
-3. Add a `c/` note to `01  Effects · destinations` that records:
+3. Record the #1452 item 3 rule where the pen states the old one: an added
+   factory rack keeps each pedal on or off as the preset sets it, a saved
+   sound as it was saved, and a single effect arrives on (owner decision,
+   2026-10-23, PR #1453). Any screen or `c/` note that draws or says "new
+   instances start bypassed" changes to match.
+4. Add a `c/` note to `01  Effects · destinations` that records:
    - that effects power is separate from rack activation and pedal power;
    - that an off chain dims everything inside it and is named once by a band
      with its own Turn on;

@@ -567,6 +567,9 @@ class FxCubit extends Cubit<FxState> {
     return (entries: next, groupId: groupId);
   });
 
+  /// The entries [choice] adds, each in the on/off state its source gives
+  /// it: a factory rack's pedals as the preset sets them (as the Looper X
+  /// loads them), a saved sound as it was saved, and a single effect on.
   static List<TrackEffect> _entriesFor(
     FxLibraryChoice choice, {
     required FxPlacement placement,
@@ -577,7 +580,6 @@ class FxCubit extends Cubit<FxState> {
         return [
           BuiltInEffect(
             type: type,
-            enabled: false,
             placement: placement,
             rack: into,
           ),
@@ -596,12 +598,10 @@ class FxCubit extends Cubit<FxState> {
           for (final effect in preset.entries)
             switch (effect) {
               BuiltInEffect() => effect.copyWith(
-                enabled: false,
                 placement: placement,
                 rack: rack,
               ),
               PluginEffect() => effect.copyWith(
-                enabled: false,
                 placement: placement,
                 rack: rack,
               ),
@@ -618,7 +618,6 @@ class FxCubit extends Cubit<FxState> {
         return [
           for (final entry in fxRackEntries(preset))
             entry.copyWith(
-              enabled: false,
               placement: placement,
               rack: rack,
             ),
