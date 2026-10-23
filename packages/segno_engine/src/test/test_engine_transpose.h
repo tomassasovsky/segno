@@ -120,6 +120,7 @@ static void test_transpose_dry_until_ready_then_swap(void) {
   printf("test_transpose_dry_until_ready_then_swap\n");
   static float live[6 * TP_LEN], replay[6 * TP_LEN];
   le_engine* e = tp_engine(1);
+  rev_process(e, live, TP_LEN, 64); /* one lap: the Play's fade-in (#1400) */
   const char* dir = render_test_dir("transpose-swap");
   CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);

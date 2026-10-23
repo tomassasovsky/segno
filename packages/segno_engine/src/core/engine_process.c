@@ -7894,15 +7894,65 @@ static inline void mix_tracks_frame(
    *    let a writing one in. */
   int idle[LE_MAX_TRACKS];
   int32_t live_idx[LE_MAX_TRACKS];
+  /* Whether this track's take is long enough to host the audibility fades
+   * (#1400): two fades, as the overdub punch requires. */
+  int gate_on[LE_MAX_TRACKS];
   for (int t = 0; t < tc; ++t) {
     st[t] = load_i32(&e->tracks[t].a_state);
+    gate_on[t] = load_i32(&e->tracks[t].lanes[0].a_len) >= 2 * od_fade_frames;
+    /* The play and tail gains (#1400). A Play fades the playing read in; a
+     * Stop hands its gain to the tail, which reads on from where the track
+     * stopped (the track loop below) and fades out, so neither switches the
+     * output in one frame. A Play inside a Stop's fade fades in over the
+     * fading tail. Two edges snap instead:
+     *  - RECORDING to PLAYING or OVERDUBBING, a finalize. The performer's
+     *    take continues into its own playback there (the seam fold, the
+     *    rec/dub continuation, the take's own end fades from #730), so a
+     *    fade-in would dip the join.
+     *  - a track with nothing to fade: RECORDING, EMPTY after a Clear (its
+     *    slot is no longer the callback's to read), or a loop under two
+     *    fades, where the overdub punch snaps too.
+     * One compare per gain per frame while both sit at their gates. */
+    const int sounding_now =
+        st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING;
+    const float pg_was = e->trk_play_gain[t];
+    const float tg_was = e->trk_tail_gain[t];
+    float pg = pg_was;
+    float tg = tg_was;
+    if (sounding_now ? pg != 1.0f || tg != 0.0f : pg != 0.0f || tg != 0.0f) {
+      const int snap = st[t] == LE_TRACK_RECORDING || !gate_on[t];
+      if (snap) {
+        pg = sounding_now ? 1.0f : 0.0f;
+        tg = 0.0f;
+      } else if (sounding_now) {
+        pg = e->tracks[t].proc_prev_state == LE_TRACK_RECORDING
+                 ? 1.0f
+                 : le_gate_step(pg, 1.0f, od_step);
+        tg = le_gate_step(tg, 0.0f, od_step);
+      } else {
+        if (pg > 0.0f) {
+          /* The Stop: the tail takes over from the playing read's last index
+           * (a second Stop inside a tail's fade replaces that tail). */
+          tg = pg;
+          pg = 0.0f;
+          e->trk_tail_index[t] = e->trk_head_index[t];
+        }
+        tg = le_gate_step(tg, 0.0f, od_step);
+      }
+      e->trk_play_gain[t] = pg;
+      e->trk_tail_gain[t] = tg;
+    }
     /* The edge out of sounding, wherever it came from — a stop press, a
      * finalize, a clear, a Cut. "Printed Pre stops with its recording", so
      * each lane's Pre slots lose their tails here while its Post slots keep
      * theirs and drain. One compare per track per frame; the clear itself
-     * only runs on the edge, and only over slots that carry a tail. */
+     * only runs on the edge, and only over slots that carry a tail. The edge
+     * is where the Stop's fade-out ends (#1400), so the Pre slots keep
+     * running through it rather than losing their tails under it. */
     if ((st[t] == LE_TRACK_STOPPED || st[t] == LE_TRACK_EMPTY) &&
-        e->tracks[t].proc_prev_state != st[t]) {
+        tg == 0.0f &&
+        (tg_was > 0.0f || pg_was > 0.0f ||
+         e->tracks[t].proc_prev_state != st[t])) {
       for (int l = 0; l < lane_n[t]; ++l) {
         if (fx_pre_count[t][l] <= 0) continue;
         le_lane* pl = &e->tracks[t].lanes[l];
@@ -7928,7 +7978,8 @@ static inline void mix_tracks_frame(
      * plain and every effect sits on the track. */
     idle[t] = (st[t] == LE_TRACK_EMPTY || st[t] == LE_TRACK_STOPPED) &&
               !lane_fx_any[t] && !trk_has_fx[t] &&
-              e->tracks[t].seam_capture == 0 && e->tracks[t].od_gain == 0.0f;
+              e->tracks[t].seam_capture == 0 && e->tracks[t].od_gain == 0.0f &&
+              tg == 0.0f;
     /* Lane 0's live slot, loaded ONCE for this frame and shared by the mixer
      * below and the capture-provenance tracker further down (#1143): the fact
      * must name the slot this very frame mixes, never a swap published between
@@ -7938,7 +7989,10 @@ static inline void mix_tracks_frame(
      * source change, then followed through Play by 323. */
     live_idx[t] = atomic_load_explicit(&e->tracks[t].lanes[0].a_live,
                                        memory_order_acquire);
-    if (idle[t]) continue;
+    if (idle[t]) {
+      e->trk_gate_stale[t] = 1;
+      continue;
+    }
     for (int l = 0; l < lane_n[t]; ++l) {
       le_lane* ln = &e->tracks[t].lanes[l];
       const int32_t live = l == 0 ? live_idx[t] : load_i32(&ln->a_live);
@@ -7951,6 +8005,16 @@ static inline void mix_tracks_frame(
       lane_in[t][l] = load_i32(&ln->a_input_channel);
       out_mask[t][l] =
           atomic_load_explicit(&ln->a_output_mask, memory_order_relaxed);
+    }
+    /* A track the mixer skipped as idle sounded nothing, so its mute and
+     * solo gains start from their gates (#1400): a lane muted while its
+     * track was stopped must not fade out after the next Play. */
+    if (e->trk_gate_stale[t]) {
+      e->trk_gate_stale[t] = 0;
+      for (int l = 0; l < lane_n[t]; ++l) {
+        e->lane_mute_gain[t][l] = mut[t][l] ? 0.0f : 1.0f;
+      }
+      e->trk_solo_gain[t] = !any_solo || solo[t] ? 1.0f : 0.0f;
     }
   }
 #ifdef LE_NATIVE_TESTS
@@ -8240,6 +8304,50 @@ static inline void mix_tracks_frame(
     const int32_t seam_w =
         tr->seam_capture > 0 ? tr->seam_len + (seam_f - tr->seam_capture) : -1;
 
+    /* Audibility (#1400). `sounding` is the transport's own verdict, `pg`
+     * the playing read's gain and `tg` the tail's, as the snapshot loop
+     * stepped them. The playing read remembers the index it reads this
+     * frame; a tail reads on from where the track stopped, in its head's
+     * direction and at its rate. The shared clock may already be held when
+     * the tail runs, so it keeps its own index rather than the clock's. It
+     * reads the source the track sounded (a Transpose or stretch render
+     * through the head), never past a lane's allocated slot. */
+    const int sounding =
+        st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING;
+    const float pg = e->trk_play_gain[t];
+    const float tg = e->trk_tail_gain[t];
+    const int tail = tg > 0.0f;
+    double tail_at = 0.0;
+    int32_t tail_len = 0;
+    const int tail_head =
+        tail && (!le_head_is_integral(&tr->head) || tr->src_ent[0] != NULL);
+    if (sounding) {
+      e->trk_head_index[t] = head_idx[t] >= 0.0
+                                 ? head_idx[t]
+                                 : (double)(seg_base[t] + trk_pos[t]);
+    }
+    if (tail) {
+      tail_len = load_i32(&tr->lanes[0].a_len);
+      if (tail_len > 0) {
+        const double rate = tr->head.reversed ? -tr->head.rate : tr->head.rate;
+        tail_at = le_head_wrap(e->trk_tail_index[t] + rate, tail_len);
+        e->trk_tail_index[t] = tail_at;
+      }
+    }
+    /* The solo gate fades as the mute gate does: one gain per track. */
+    float sg = e->trk_solo_gain[t];
+    {
+      const float target = !any_solo || solo[t] ? 1.0f : 0.0f;
+      if (sg != target) {
+        sg = gate_on[t] ? le_gate_step(sg, target, od_step) : target;
+        e->trk_solo_gain[t] = sg;
+      }
+    }
+    /* The loudest part gate on this track, for the track-stage chain's
+     * output: a track whose parts are all muted fades its chain (tail
+     * included) with them. */
+    float bus_mg = 0.0f;
+
     /* Track-stage stereo bus (FX v3 part 1b, D-TRACKROUTE): live only while
      * the track's chain is non-empty. Audible lanes then sum their post-
      * lane-chain (wl, wr) pairs here instead of routing individually, and OR
@@ -8406,6 +8514,25 @@ static inline void mix_tracks_frame(
           lbuf[wdub] = lbuf[wdub] * trk_fb + insample * od_gain;
         }
       }
+      /* Unity while the track plays, so steady playback is bit-identical. */
+      loopsample *= pg;
+      if (tail && tail_len > 0) {
+        /* The Stop's fade-out (#1400): read on past the stop, never past
+         * this lane's allocated slot. */
+        float x = 0.0f;
+        if (tail_head) {
+          const le_wet_entry* se = tr->src_ent[l];
+          if (tail_len <= cap[t][l]) {
+            x = le_head_read_scaled(se ? se->pcm : lbuf,
+                                    se ? se->out_len : tail_len, tail_len,
+                                    &tr->head, tail_at);
+          }
+        } else {
+          const int32_t i = (int32_t)tail_at;
+          if (i < cap[t][l]) x = lbuf[i];
+        }
+        loopsample += x * tg;
+      }
       /* #728 trailing overlap capture: a just-finalized non-defining take keeps
        * writing its continuation past the loop point for F frames, exactly as
        * the defining master's deferred finalize does. Folded (and stopped)
@@ -8425,11 +8552,24 @@ static inline void mix_tracks_frame(
        * EXCEPTION (part 2): while cached playback is engaged below, the live
        * chain is skipped entirely — its state was settled to bypass at the
        * engage edge, and a fallback re-enters through the clean re-enable
-       * path instead of resuming a stale tail. */
-      const int gate_ok = !mut[t][l] && (!any_solo || solo[t]);
-      const int audible =
-          (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
-          gate_ok;
+       * path instead of resuming a stale tail.
+       *
+       * Both gates fade (#1400): `gate` is the lane's mute gain times the
+       * track's solo gain, and the gate counts as open until it reaches 0,
+       * so a Mute fades the lane out, tail included, and an unmute fades it
+       * back in. A stopped track keeps feeding its chain through the Stop's
+       * fade-out (`tail`, already in `loopsample`). */
+      float mg = e->lane_mute_gain[t][l];
+      {
+        const float target = mut[t][l] ? 0.0f : 1.0f;
+        if (mg != target) {
+          mg = gate_on[t] ? le_gate_step(mg, target, od_step) : target;
+          e->lane_mute_gain[t][l] = mg;
+        }
+      }
+      const float gate = mg * sg;
+      const int gate_ok = gate > 0.0f;
+      const int audible = (sounding || tail) && gate_ok;
       /* The lane's wet pair reaches its route while fed, or while a chain
        * may still hold a tail and the gate is open. */
       const int routes = audible || (has_fx[t][l] && gate_ok);
@@ -8501,12 +8641,17 @@ static inline void mix_tracks_frame(
         for (int s = 0; s < fx_pre_count[t][l]; ++s) {
           fx_enabled[t][l][s] = 0;
         }
-        if (audible && rp >= 0 && rp < wce->len) {
-          wl = wce->pcm[2 * rp];
-          wr = wce->pcm[2 * rp + 1];
-        } else {
-          wl = 0.0f;
-          wr = 0.0f;
+        wl = 0.0f;
+        wr = 0.0f;
+        if (audible && sounding && rp >= 0 && rp < wce->len) {
+          wl = wce->pcm[2 * rp] * pg;
+          wr = wce->pcm[2 * rp + 1] * pg;
+        }
+        /* A Stop's fade-out reads the print on from where it stopped. */
+        const int32_t trp = (int32_t)tail_at;
+        if (audible && tail && trp >= 0 && trp < wce->len) {
+          wl += wce->pcm[2 * trp] * tg;
+          wr += wce->pcm[2 * trp + 1] * tg;
         }
       } else {
         wl = audible ? loopsample * vol[t][l] : 0.0f;
@@ -8530,7 +8675,7 @@ static inline void mix_tracks_frame(
       wl *= pan_gl[t][l];
       wr *= pan_gr[t][l];
       if (!trk_has_fx[t]) {
-        const float gain = load_f32(&tr->a_gain_bits) * tr->fade_sample;
+        const float gain = load_f32(&tr->a_gain_bits) * tr->fade_sample * gate;
         wl *= gain;
         wr *= gain;
         /* Empty Track chain (the default and the migration state): the legacy
@@ -8561,12 +8706,17 @@ static inline void mix_tracks_frame(
          * with the track; only the shared output chains drain under Mute,
          * see the accepted tail distinctions). */
         if (routes && !track_printed) {
-          bus_l += wl;
-          bus_r += wr;
+          bus_l += wl * mg;
+          bus_r += wr * mg;
         }
         /* The routing union is built from the parts either way: the printed
-         * pair reaches exactly the destinations the parts would have. */
-        if (gate_ok) bus_mask |= out_mask[t][l] & out_enabled;
+         * pair reaches exactly the destinations the parts would have. The
+         * solo gain and the loudest part gain scale the chain's output
+         * below (#1400). */
+        if (gate_ok) {
+          bus_mask |= out_mask[t][l] & out_enabled;
+          if (mg > bus_mg) bus_mg = mg;
+        }
       }
 
       const float la = fabsf(loopsample);
@@ -8604,15 +8754,17 @@ static inline void mix_tracks_frame(
        * part's print is: a stopped or soloed-away track feeds its chain
        * silence, so the Post run drains exactly as it does live. Each part's
        * own mute is already inside the render. */
-      const int track_audible =
-          (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
-          (!any_solo || solo[t]);
-      if (track_audible && trk_rp >= 0 && trk_rp < tce->len) {
-        bus_l = tce->pcm[2 * trk_rp];
-        bus_r = tce->pcm[2 * trk_rp + 1];
-      } else {
-        bus_l = 0.0f;
-        bus_r = 0.0f;
+      bus_l = 0.0f;
+      bus_r = 0.0f;
+      if (sg > 0.0f && sounding && trk_rp >= 0 && trk_rp < tce->len) {
+        bus_l = tce->pcm[2 * trk_rp] * pg;
+        bus_r = tce->pcm[2 * trk_rp + 1] * pg;
+      }
+      /* A Stop's fade-out reads the print on from where it stopped. */
+      const int32_t trp = (int32_t)tail_at;
+      if (sg > 0.0f && tail && trp >= 0 && trp < tce->len) {
+        bus_l += tce->pcm[2 * trp] * tg;
+        bus_r += tce->pcm[2 * trp + 1] * tg;
       }
     }
     if (trk_has_fx[t]) {
@@ -8620,6 +8772,11 @@ static inline void mix_tracks_frame(
                      trk_fx_count[t], trk_fx_type[t], trk_fx_params[t],
                      trk_fx_enabled[t], trk_fx_pre_count[t],
                      load_f32(&tr->a_gain_bits) * tr->fade_sample);
+      /* The track's gates (#1400): unity while any part is open and the
+       * track is not soloed away, so a steady bus is bit-identical. */
+      const float bus_gate = bus_mg * sg;
+      bus_l *= bus_gate;
+      bus_r *= bus_gate;
       if (at_has_fx) {
         le_fx_route_frame(rec, ch_out, bus_mask, bus_l, bus_r);
       } else {

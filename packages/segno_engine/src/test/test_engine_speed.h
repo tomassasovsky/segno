@@ -25,17 +25,21 @@ static uint64_t speed_set(le_engine* e, int numer, int denom) {
 }
 
 /* A fixture whose transport is held, so the origin is parked and the next
- * Play starts the head at index 0, with Speed already at numer/denom. */
+ * Play starts the head at index 0, with Speed already at numer/denom. The
+ * Play's fade-in (#1400) runs during `denom` laps of the take, which bring
+ * the head back to index 0 at full gain. */
 static le_engine* speed_parked(int sr, int len, int base, int numer,
                                int denom) {
   le_engine* e = reverse_fixture(sr, len, base);
-  float out[8];
+  static float out[4096];
   CHECK(le_engine_stop_track(e, 0) == LE_OK);
-  rev_process(e, out, 4, 512);
+  rev_process(e, out, sr / 100 + 4, 512); /* the Stop's fade-out ends */
   const uint64_t id = speed_set(e, numer, denom);
   drain(e);
   fade_result(e, id, LE_OK);
   CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  rev_process(e, out, denom * len, 512);
   return e;
 }
 
@@ -209,13 +213,15 @@ static void test_speed_multiples_and_divisions(void) {
       double want = 0;
       const int lens[] = {1024, 512, 256};
       for (int t = 0; t < 3; ++t) {
-        want += f == 0 ? speed_ramp_at(fmod(0.5 * p, lens[t]), lens[t])
-                       : speed_box_at((2 * p) % lens[t], 2, lens[t]);
+        /* Only the primary is long enough to fade in (#1400). */
+        want += (f == 0 ? speed_ramp_at(fmod(0.5 * p, lens[t]), lens[t])
+                        : speed_box_at((2 * p) % lens[t], 2, lens[t])) *
+                (t == 0 ? rev_fade(48000, p, 0) : 1.0f);
       }
       CHECK(fabs(out[p] - want) < 4e-3);
     }
     for (int t = 0; t < 3; ++t) CHECK(le_engine_stop_track(e, t) == LE_OK);
-    rev_process(e, out, 4, 512);
+    rev_process(e, out, 480 + 4, 512); /* the Stops' fade-outs end */
   }
   le_engine_destroy(e);
 }
@@ -239,12 +245,18 @@ static void test_speed_free_mode_and_once(void) {
   drain(e);
   fade_result(e, id, LE_OK);
   static float out[4096];
+  const int F = 480;
   CHECK(le_engine_play(e, 0) == LE_OK);
-  rev_process(e, out, 2 * len + 10, 512);
+  rev_process(e, out, 2 * len + F + 10, 512);
   for (int k = 0; k < 2 * len; ++k) {
-    CHECK(fabs(out[k] - speed_ramp_at(0.5 * k, len)) < 2e-3);
+    CHECK(fabs(out[k] - speed_ramp_at(0.5 * k, len) * rev_fade(48000, k, 0)) <
+          2e-3);
   }
-  for (int k = 2 * len; k < 2 * len + 10; ++k) CHECK(out[k] == 0);
+  /* The end fades out (#1400), reading on into the next pass. */
+  for (int k = 2 * len; k < 2 * len + F; ++k) {
+    CHECK(fabsf(out[k]) <= (float)len * rev_fade(48000, k - 2 * len, 1) + 1e-3f);
+  }
+  for (int k = 2 * len + F; k < 2 * len + F + 10; ++k) CHECK(out[k] == 0);
   le_track_snapshot snap;
   le_engine_get_track(e, 0, &snap);
   CHECK(snap.state == LE_TRACK_STOPPED);
@@ -253,11 +265,15 @@ static void test_speed_free_mode_and_once(void) {
   drain(e);
   fade_result(e, rid, LE_OK);
   CHECK(le_engine_play(e, 0) == LE_OK);
-  rev_process(e, out, 2 * len + 10, 512);
+  rev_process(e, out, 2 * len + F + 10, 512);
   for (int k = 0; k < 2 * len - 1; ++k) {
-    CHECK(fabs(out[k] - speed_ramp_at(fmod(len - 1 - 0.5 * k + len, len), len)) < 2e-3);
+    CHECK(fabs(out[k] - speed_ramp_at(fmod(len - 1 - 0.5 * k + len, len), len) *
+                            rev_fade(48000, k, 0)) < 2e-3);
   }
-  for (int k = 2 * len; k < 2 * len + 10; ++k) CHECK(out[k] == 0);
+  for (int k = 2 * len; k < 2 * len + F; ++k) {
+    CHECK(fabsf(out[k]) <= (float)len * rev_fade(48000, k - 2 * len, 1) + 1e-3f);
+  }
+  for (int k = 2 * len + F; k < 2 * len + F + 10; ++k) CHECK(out[k] == 0);
   le_engine_get_track(e, 0, &snap);
   CHECK(snap.state == LE_TRACK_STOPPED && snap.reversed == 1);
   le_engine_destroy(e);
@@ -446,7 +462,9 @@ static void test_speed_material_reset_and_lanes(void) {
   static float out[2048];
   CHECK(le_engine_play(e, 0) == LE_OK);
   rev_process(e, out, 301, 512);
-  for (int k = 0; k < 301; ++k) CHECK(fabs(out[k] - 2 * 0.5 * k) < 4e-3);
+  for (int k = 0; k < 301; ++k) {
+    CHECK(fabs(out[k] - 2 * 0.5 * k * rev_fade(48000, k, 0)) < 4e-3);
+  }
   CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
   rev_process(e, out, 64, 512);
   le_snapshot s;
@@ -456,7 +474,9 @@ static void test_speed_material_reset_and_lanes(void) {
   CHECK(le_engine_undo(e, 0) == LE_OK);
   rev_process(e, out, 400, 512);
   for (int k = 0; k < 400; ++k) {
-    CHECK(fabs(out[k] - 2 * speed_ramp_at(0.5 * (365 + k), len)) < 4e-3);
+    /* The undo plays the take from EMPTY: it fades in (#1400). */
+    CHECK(fabs(out[k] - 2 * speed_ramp_at(0.5 * (365 + k), len) *
+                            rev_fade(48000, k, 0)) < 4e-3);
   }
   le_engine_destroy(e);
 }
@@ -516,6 +536,8 @@ static void test_speed_clear_undo_stem_exact(void) {
   CHECK(le_engine_commit_session(e, len, 0) == LE_OK);
   CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
+  static float preroll[1000];
+  rev_process(e, preroll, len, 512); /* the Play's fade-in (#1400) ends */
   const char* dir = render_test_dir("speed-clear-undo");
   CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
