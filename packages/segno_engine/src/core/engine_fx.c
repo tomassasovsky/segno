@@ -281,8 +281,9 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   le_octaver_state* o = &fx->oct[slot][chan];
   le_oct_set_ticks_to_work(o, ticks);
   o->out_pos = 0;
-  /* PSOLA's analysis marks start LE_PSOLA_LAG back, where its sources are. */
-  o->in_epoch = LE_PSOLA_LAG;
+  /* PSOLA's analysis marks start at its nominal source distance (dn in
+   * le_psola_tick), so the first deposit has nothing to snap. */
+  o->in_epoch = LE_PV_N - LE_PV_N / 2 + LE_PSOLA_LAG;
   o->out_epoch = 0;
   o->period = 0.0f;
   o->voiced = 0.0f;
@@ -336,7 +337,9 @@ void le_octaver_envelope(const float* mag, float* env) {
  * Cost per hop per channel: four length-N real FFTs, one per stage but the
  * shift (analysis, the two cepstrum transforms, synthesis), on the shared
  * plan le_pv_fft (fft.h). On the console a stereo frame cost ~170 us in one
- * callback (#1410); split, a callback carries about a quarter of it. The
+ * callback (#1410). The stages are not equal: measured on the dev machine
+ * the analysis, envelope, shift and synthesis take about 29, 34, 22 and 15 %
+ * of a frame, so the heaviest callback carries about a third of it. The
  * frame's arrays live in the heap scratch, so the stack holds only each
  * stage's own temporaries. */
 #define LE_PV_S_WIN(o) ((o)->scratch)

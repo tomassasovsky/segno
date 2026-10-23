@@ -21376,7 +21376,7 @@ static void test_octaver_psola_voice_and_fallback(void) {
   double ref = 0.0;
   for (int i = skip; i < total; ++i) {
     /* PSOLA reports the same added latency as PV (le_octaver_latency), so the dry
-     * tap sits OCT_PV_N - 1 behind the newest sample in both modes. */
+     * tap sits LE_PV_LATENCY - 1 behind the newest sample in both modes. */
     const float dry = in[i - (LE_PV_LATENCY - 1)];
     err += (double)(out[i] - dry) * (out[i] - dry);
     ref += (double)dry * dry;
@@ -21464,8 +21464,8 @@ static void test_octaver_psola_no_chatter(void) {
 }
 
 /* Part 5: the snapshot surfaces the octaver's added latency (frames) so the UI
- * can warn about monitoring lag. A PV octaver on a monitor lane reports LE_PV_LATENCY
- * (1024, engine.c); a chain with no octaver reports 0. Informational only — the
+ * can warn about monitoring lag. A PV octaver on a monitor lane reports
+ * LE_PV_LATENCY (engine_fx.h); a chain with no octaver reports 0. Informational only — the
  * record offset stays untouched (compensation is out of scope). */
 static void test_octaver_added_latency(void) {
   printf("test_octaver_added_latency\n");
@@ -21947,6 +21947,62 @@ static int32_t oct_slot_phase(int32_t seed, int slot) {
  *
  * ...plus that the stagger is there: two slots of one chain hold different
  * counters, the two channels of one slot the same one (mono coherence). */
+/* A reset partway through a phase-vocoder frame (the hop split, #887 part
+ * 9): the stages after the analysis must not run on the frame analysed
+ * before the reset. Until the first frame analysed since the reset is
+ * synthesised, a full-wet octaver has nothing to emit, so its output is
+ * exactly zero; a stale envelope, shift or synthesis stage would emit the
+ * old frame instead. Swept over every reset phase, since only the phases
+ * whose first analysis comes after a later stage's tick can show it. */
+static void test_octaver_reset_mid_frame_is_silent(void) {
+  printf("test_octaver_reset_mid_frame_is_silent\n");
+  static int32_t types[LE_FX_MAX];
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  int32_t on[LE_FX_MAX];
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    types[s] = LE_FX_NONE;
+    on[s] = 1;
+  }
+  types[0] = LE_FX_OCTAVER;
+  params[0][0] = 0.5f + 7.0f / 48.0f; /* +7 semitones */
+  params[0][1] = 1.0f;                /* tone open */
+  params[0][2] = 1.0f;                /* full wet */
+  params[0][3] = 0.0f;                /* PV */
+  int stale = 0;
+  for (int32_t phase = 0; phase < LE_PV_HOP; ++phase) {
+    le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+    CHECK(fx != NULL);
+    if (fx == NULL) break;
+    fx->hop_seed = phase; /* slot 0: the phase IS the seed */
+    for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
+    le_fx_entry_reset(fx, 0);
+    CHECK(le_fx_prepare(fx, 0, LE_FX_OCTAVER, OCT_SR) == LE_OK);
+    le_fx_octaver_seed_settled(fx, 0, params[0]);
+    /* Fill the frame state with a loud tone. The run length is not a
+     * multiple of the hop, so the reset below lands at a different point of
+     * a frame for each phase. */
+    for (int i = 0; i < 3 * OCT_PV_N + 101; ++i) {
+      float l = 0.5f * sinf(2.0f * LE_FFT_PI * 330.0f * (float)i / OCT_SR);
+      float r = l;
+      fx_apply_chain(fx, OCT_SR, OCT_SR, &l, &r, 1, types, params, on);
+    }
+    le_fx_entry_reset(fx, 0);
+    le_fx_octaver_seed_settled(fx, 0, params[0]); /* full wet at once */
+    /* The first analysis comes within a hop and its synthesis
+     * LE_PV_SYNTH_TICK later: everything before that is silence. */
+    for (int i = 0; i < LE_PV_SYNTH_TICK + 1; ++i) {
+      float l = 0.0f;
+      float r = 0.0f;
+      fx_apply_chain(fx, OCT_SR, OCT_SR, &l, &r, 1, types, params, on);
+      if (l != 0.0f || r != 0.0f) ++stale;
+    }
+    le_fx_state_free_buffers(fx);
+    free(fx);
+  }
+  printf("  non-zero samples before the first fresh frame: %d\n", stale);
+  CHECK(stale == 0);
+}
+
 static void test_octaver_hop_stagger_alignment(void) {
   printf("test_octaver_hop_stagger_alignment\n");
   const int total = 24576;
@@ -32170,7 +32226,7 @@ static void test_fx_enable_chain_stomp_staggered_clear(void) {
 
 /* Octaver re-enable warmup: the ring clear also zeroes the octaver's
  * delay-matched DRY tap, so without warmup a re-enable rendered a ~LE_PV_LATENCY
- * (~21 ms) hole of silence. The warmup feeds the FIFO while the output stays
+ * (~25 ms) hole of silence. The warmup feeds the FIFO while the output stays
  * bit-exact dry, then ramps — the output never dips. p2 (mix) = 0 makes the
  * settled wet path exactly the dry tap, so any hole is a hard dip to ~0. */
 static void test_fx_enable_octaver_warmup_no_hole(void) {
@@ -39140,6 +39196,7 @@ int main(void) {
   test_octaver_added_latency();
   test_fx_param_descriptors_match_kernels();
   test_octaver_hop_stagger_alignment();
+  test_octaver_reset_mid_frame_is_silent();
   test_octaver_hop_stagger_seeds();
   test_octaver_hop_stagger_survives_recipe_publish();
   test_octaver_hop_schedule_survives_mode_switch();
