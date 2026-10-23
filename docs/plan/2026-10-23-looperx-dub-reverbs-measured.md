@@ -50,9 +50,9 @@ Evidence:
 - Doubler alone: at m = 0 the output is exactly the dry (1.000, no voice);
   at m = 1 it is the Doubler alone (dry 0.31, voice 0.9-1.0). So the
   Doubler is on the Dub path too.
-- Parallel, not series: at m = 0.5 (A = D = 1) the output with both on
-  equals Dub-alone + Amb-alone - 2x to -98.5 dB. At m = 0 and m = 1 the
-  same identity holds to -99.8 and -99.0 dB. A series pair would leave a
+- Parallel, not series: the output with both on equals Dub-alone +
+  Amb-alone - (A(m) + D(m)) x, to -98.5 dB at m = 0.5 (A = D = 1, so 2x),
+  -99.8 dB at m = 0 and -99.0 dB at m = 1 (A + D = 1, so x). A series pair would leave a
   Dub*Amb cross term; there is none.
 - Dub-Verb alone: no wet at all at m = 0; wet at m = 0.4 is 3.87 dB below
   m = 0.5 (0.64 = 0.8^2); m = 0.5 and m = 1 give the same wet.
@@ -63,10 +63,11 @@ Evidence:
   | m | 0 | 0.055 | 0.106 | 0.206 | 0.303 | 0.403 | 0.502 | 0.600 | 0.701 | 0.797 | 0.898 | 0.947 | 1 |
   |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
   | measured | 1.0000 | 1.0125 | 1.0458 | 1.1714 | 1.3697 | 1.6529 | 2.0000 | 1.9576 | 1.8368 | 1.6400 | 1.3600 | 1.1900 | 1.0000 |
-  | A + D | 1 | 1.012 | 1.045 | 1.170 | 1.367 | 1.651 | 1.992* | 1.960 | 1.838 | 1.643 | 1.364 | 1.193 | 1 |
+  | A + D | 1 | 1.012 | 1.045 | 1.170 | 1.367 | 1.650 | 2.000 | 1.960 | 1.838 | 1.647 | 1.366 | 1.201 | 1 |
 
-  (*) at 0.502 the law gives 2.000; the fill read-out is 0.003 coarse.
-  Every point matches to the read-out's resolution.
+  Every point matches to within 0.011; the mix positions are read off the
+  screen fill (about 0.003 coarse), and the largest gaps (0.898, 0.947) sit
+  where the law is steepest.
 
 ## The Dub Rack's +4.31 dB (EQ and dynamics fits)
 
@@ -85,7 +86,7 @@ Isolation, one change at a time, Amb-Dub Mix 40 %:
 | all pedals off, mix 0 % or 100 % | 1.0000 |
 | Comp alone (Thresh 0, Make-Up 0) | 1.6549 |
 | Dub Delay alone | 1.0000 (its path carries echoes only, so only A = 1 is left) |
-| Doubler alone, Doubler Mix 100 % | 1.2017 = 1 + 0.6529 x 0.31 |
+| Doubler alone, Doubler Mix 100 % | 1.2017 (at 40.4 %: 1 + 0.6529 x 0.31 = 1.202) |
 | Para EQ alone | not a pure gain (its default low cut at 36 Hz); flat above it |
 
 It comes from the path mix, so it is ahead of the compressor: that is why
@@ -150,10 +151,10 @@ Vol 100 % (Vol does not change the decay):
   T_mid = 1.085 * display + 0.43 s (6 %).
 - Below v = 0.1 it collapses fast: 1.0 s at 0.1, 0.36 s at 0.
 - Low and mid bands decay together. Highs decay faster as Dec grows:
-  T(8 kHz) / T(1 kHz) = 0.95, 0.89, 0.81, 0.74, 0.64, 0.54, 0.39 at
-  v = 0.1, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9. A fixed high-frequency loss per
-  pass fits this: the 8 kHz decay rate exceeds the 1 kHz rate by an almost
-  constant 6-7 dB/s.
+  T(8 kHz) / T(1 kHz) = 0.90, 0.89, 0.81, 0.73, 0.64, 0.54, 0.39 at
+  v = 0.1, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9. A roughly fixed high-frequency
+  loss per pass fits this: the 8 kHz decay rate exceeds the 1 kHz rate by
+  4.6 to 7.1 dB/s (6.0, 4.6, 5.7, 6.5, 7.1, 7.0, 6.6 at those settings).
 
 **Amb-Verb**
 
@@ -170,9 +171,9 @@ Vol 100 % (Vol does not change the decay):
 
 - Shorter than its display: the high-band (2-8 kHz) T60 is 0.55 to 0.88 x
   the display. Fit of the 500 Hz-1 kHz mean: T_mid = 0.719 * display^0.811
-  s (max error 2.5 %).
+  s (max error 2.5 % for v >= 0.1; 4.7 % at v = 0).
 - The opposite tilt to Dub-Verb: lows die first. T(125 Hz) / T(2 kHz) is
-  0.4 to 0.8 and falls as Dec grows (1.51 s against 7.36 s at v = 0.9);
+  0.2 to 0.8 and falls as Dec grows (1.51 s against 7.36 s at v = 0.9);
   2-8 kHz decay together.
 
 ## Pre-delay, early pattern, echo density
