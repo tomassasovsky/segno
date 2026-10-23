@@ -276,7 +276,8 @@ static void test_mod_offline_equals_live(void) {
 }
 
 /* A chain holding a chorus or a doubler sounds different each lap, so the
- * lane stays live and says why; a wah prints. */
+ * lane stays live and says why, until that entry is bypassed; a wah
+ * prints. */
 static void test_cache_free_running_stays_live(void) {
   printf("test_cache_free_running_stays_live\n");
   const int32_t kinds[3] = {LE_FX_CHORUS, LE_FX_DOUBLER, LE_FX_WAH};
@@ -290,16 +291,19 @@ static void test_cache_free_running_stays_live(void) {
     le_engine_get_lane_cache(a, 0, 0, &info); /* a scheduler tick */
     pump_frames(a, 0.0f, CACHE_SETTLE);
     if (kinds[k] == LE_FX_WAH) {
-      const int ok = cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000);
-      le_engine_get_lane_cache(a, 0, 0, &info);
-      if (!ok) printf("  wah: state %d reason %d renders %d\n", info.state, info.reason, (int)info.renders);
-      CHECK(ok);
+      CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
     } else {
       pump_frames(a, 0.0f, CACHE_LOOP);
       le_engine_get_lane_cache(a, 0, 0, &info);
       CHECK(info.state == LE_CACHE_GAVE_UP);
       CHECK(info.reason == LE_CACHE_REASON_FREE_RUNNING);
       CHECK(info.renders == 0);
+      /* Bypassed, it passes the signal through, so the lane prints. */
+      CHECK(le_engine_set_lane_fx_enabled(a, 0, 0, 0, 0) == LE_OK);
+      drain(a);
+      le_engine_get_lane_cache(a, 0, 0, &info); /* sees the new key */
+      pump_frames(a, 0.0f, CACHE_SETTLE);
+      CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
     }
     le_engine_destroy(a);
   }
