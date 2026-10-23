@@ -1510,7 +1510,10 @@ static inline double le_fx_beat_now(const le_fx_state* fx, int sr, float* qpf,
  * gain = 1 - a(depth) e(phase), phase 0 on the beat of the note value
  * (#891, docs/plan/2026-10-23-looperx-gaps-measured.md). */
 
-/* Each rate position's period in quarter notes; Bar is the bar's (-1). */
+/* Each rate position's period in quarter notes; Bar is the bar's (-1). The
+ * order is the binary's 11-entry note-value table (Bar, 1/2, 1/2T, ...,
+ * 1/32T), which the presets' 11-step grid matches; the capture confirmed
+ * Bar, 1/2, 1/4, 1/8 and 1/16 (#891). */
 static const double LE_PUMP_PERIOD[11] = {
     -1.0, 2.0, 4.0 / 3.0, 1.0, 2.0 / 3.0, 0.5, 1.0 / 3.0, 0.25, 1.0 / 6.0,
     0.125, 1.0 / 12.0};
@@ -1526,9 +1529,11 @@ static const float LE_PUMP_SHAPE[16] = {
 static const float LE_PUMP_DIP_AT[4] = {0.0f, 0.3f, 0.7f, 1.0f};
 static const float LE_PUMP_DIP_DB[4] = {0.0f, 6.0206f, 20.0877f, 40.0f};
 
-/* The duck's onset ramp: the measured shape is at full depth on the beat,
- * and a gain step is a click (#813), so it reaches it over 1 ms. */
-#define LE_PUMP_ONSET_S 0.001
+/* The duck is smoothed with this time constant: the measured shape is at
+ * full depth on the beat, and a gain step is a click (#813), whether at the
+ * beat or where an anchor moves the phase (a loop top that is not a whole
+ * number of periods). */
+#define LE_PUMP_SMOOTH_S 0.00025
 
 static float le_pump_shape(double phase) {
   const double x = phase * 20.0;
@@ -1570,11 +1575,10 @@ static void fx_pumper_process(le_fx_state* fx, int slot, int sr, int cap,
   if (pos > 10) pos = 10;
   const double period = pos == 0 ? (double)num * 4.0 / (double)den
                                  : LE_PUMP_PERIOD[pos];
+  (void)qpf;
   double into = fmod(beat, period); /* quarter notes since the beat */
   if (into < 0.0) into += period;
-  float e = le_pump_shape(into / period);
-  const double onset = LE_PUMP_ONSET_S * (double)rate * (double)qpf;
-  if (into < onset) e *= (float)(into / onset);
+  const float e = le_pump_shape(into / period);
   /* The depth glides (about 10 ms), so a moving control never steps. Its
    * target is worked out only when the setting moves: lfo[slot][1] holds
    * it for the setting in fx_lp[slot][0] (both 0 after a reset, which is
@@ -1585,7 +1589,11 @@ static void fx_pumper_process(le_fx_state* fx, int slot, int sr, int cap,
   }
   float* a = &fx->lfo[slot][0];
   *a += (fx->lfo[slot][1] - *a) * (100.0f / (float)rate);
-  const float g = 1.0f - *a * e;
+  /* The duck itself, smoothed (fx_lp[slot][1], 0 after a reset). */
+  float* duck = &fx->fx_lp[slot][1];
+  *duck += (*a * e - *duck) /
+           (1.0f + (float)(LE_PUMP_SMOOTH_S * (double)rate));
+  const float g = 1.0f - *duck;
   *l *= g;
   *r *= g;
 }

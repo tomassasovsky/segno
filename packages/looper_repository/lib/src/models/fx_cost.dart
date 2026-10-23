@@ -43,6 +43,8 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   TrackEffectType.ambVerb: 167,
   // On the hop, as the octaver whose kernel it runs ([kFxHopCostUs]).
   TrackEffectType.whammy: 0,
+  // As the tremolo, which it matches eight for eight on the bench.
+  TrackEffectType.pumper: 37,
 };
 
 /// What a kind on the hop charges, in microseconds a block: its frame's work

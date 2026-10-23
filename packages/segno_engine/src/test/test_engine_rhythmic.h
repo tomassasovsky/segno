@@ -76,13 +76,15 @@ static void test_pumper_matches_the_capture(void) {
     CHECK(fabsf(g[at] - (1.0f - a * e[k])) < 2e-3f);
   }
   const int ms = RH_SR / 1000;
-  const float dip = 20.0f * log10f(g[period + ms]);
-  printf("  dip 1 ms after the beat: %.2f dB (capture -20.1)\n", dip);
+  const float dip = 20.0f * log10f(g[period + 2 * ms]);
+  printf("  dip 2 ms after the beat: %.2f dB (capture -20.1)\n", dip);
   CHECK(fabsf(dip - -20.09f) < 0.1f);
-  CHECK(g[period + period * 4 / 5] == 1.0f);
-  /* The onset ramps over the first millisecond: no step on the beat. */
-  for (int i = period; i < period + ms; ++i) {
-    CHECK(fabsf(g[i + 1] - g[i]) <= a / (float)ms * 1.01f + 1e-6f);
+  CHECK(fabsf(g[period + period * 4 / 5] - 1.0f) < 1e-6f);
+  /* The duck is smoothed (0.25 ms): no sample steps by more than its share
+   * of the depth, on the beat or anywhere. */
+  const float k = 1.0f / (1.0f + 0.00025f * (float)RH_SR);
+  for (int i = 1; i < n; ++i) {
+    CHECK(fabsf(g[i] - g[i - 1]) <= a * k * 1.01f + 1e-6f);
   }
   free(g);
   le_fx_state_free_buffers(fx);
@@ -108,7 +110,7 @@ static void test_pumper_rates_and_depths(void) {
     const double frames = quarters[pos] * quarter;
     /* 1 ms into the second period the duck is the shape at that phase, at
      * 100 % depth (a = 0.99)... */
-    const int at = (int)ceil(frames) + RH_SR / 1000 + 1;
+    const int at = (int)ceil(frames) + 2 * RH_SR / 1000 + 1;
     const double phase = ((double)at - frames) / frames;
     CHECK(fabsf(g[at] - (1.0f - 0.99f * rh_shape(phase))) < 2e-3f);
     /* ...and it has recovered at 80 % of the first. */
@@ -123,10 +125,13 @@ static void test_pumper_rates_and_depths(void) {
     le_fx_state* fx = rh_pumper(&t, p);
     rh_pump_run(fx, p, g, RH_SR / 100);
     /* The dip, taken back to the beat: the gain over the shape there. */
-    const int at = RH_SR / 1000 + 1;
+    const int at = 2 * RH_SR / 1000 + 1;
     const float a = (1.0f - g[at]) / rh_shape((double)at / quarter);
     const float db = 20.0f * log10f(1.0f - a);
-    CHECK(fabsf(db - want_db[d]) < 0.05f);
+    printf("  depth %.0f %%: %.2f dB (want %.2f)\n", 100.0 * depth[d], db, want_db[d]);
+    /* The smoothing trails the falling shape by a hair: 0.3 dB of a 40 dB
+     * dip is 3e-4 of the gain. */
+    CHECK(fabsf(db - want_db[d]) < 0.3f);
     le_fx_state_free_buffers(fx);
     free(fx);
   }
@@ -218,7 +223,7 @@ static void test_fx_tempo_log_reproduces_the_beat(void) {
     from++;
   }
   printf("  %d anchors\n", na);
-  CHECK(na >= 2); /* the arm, and the tempo change */
+  CHECK(na == 2); /* the arm, and the tempo change: no more */
   /* The perf frames start at the arm: the block ends are the live frames
    * the arm's block saw first, plus the frames since. */
   const uint64_t base = anchors[0].frame;
@@ -346,6 +351,64 @@ static void test_pumper_renders_from_the_logged_anchors(void) {
   free(fx);
 }
 
+/* The beat restarts at the loop top: while a loop plays it is the
+ * position times the rate, every block, through every wrap; and a held
+ * transport (the loop stopped) leaves the beat on its line with no new
+ * anchor, frame after frame. */
+static void test_fx_beat_follows_the_loop(void) {
+  printf("test_fx_beat_follows_the_loop\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, RH_SR, 1, 1, 1000);
+  float out[64];
+  float in[64];
+  for (int i = 0; i < 64; ++i) in[i] = 0.25f;
+  le_engine_record(e, 0);
+  for (int f = 0; f < 4800; f += 64) le_engine_process(e, out, in, 64);
+  le_engine_record(e, 0);
+  drain(e);
+  CHECK(e->clock.length > 0);
+  int checked = 0;
+  for (int b = 0; b < 400; ++b) {
+    le_engine_process(e, out, in, 64);
+    if (e->clock.length <= 0 || e->transport_held) continue;
+    const le_fx_tempo* t = &e->fx_tempo;
+    /* The clock of the frame the position stands for: the next one. */
+    const uint32_t clock = e->fx_clock_base + 64u;
+    const double beat = t->anchor_beat + (double)(uint32_t)(clock -
+                                                            t->anchor_clock) *
+                                             (double)t->qpf;
+    CHECK(fabs(beat - (double)e->clock.position * (double)t->qpf) < 1e-9);
+    checked++;
+  }
+  CHECK(checked > 300);
+  /* Stopped: the transport holds at the top; the beat runs on. */
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  for (int b = 0; b < 4; ++b) le_engine_process(e, out, in, 64);
+  CHECK(e->transport_held);
+  const uint32_t anchored = e->fx_tempo.anchor_clock;
+  for (int b = 0; b < 50; ++b) le_engine_process(e, out, in, 64);
+  CHECK(e->fx_tempo.anchor_clock == anchored);
+  le_engine_destroy(e);
+}
+
+/* A Bar is the time signature's: three quarters in 3/4. */
+static void test_pumper_bar_follows_the_signature(void) {
+  printf("test_pumper_bar_follows_the_signature\n");
+  le_fx_tempo t = rh_tempo(120.0);
+  t.num = 3;
+  const float p[LE_FX_PARAMS] = {rh_rate(0), 1.0f};
+  le_fx_state* fx = rh_pumper(&t, p);
+  const int n = 2 * RH_SR;
+  float* g = (float*)malloc(sizeof(float) * (size_t)n);
+  rh_pump_run(fx, p, g, n);
+  const int bar = 3 * RH_SR / 2; /* three quarters at 120 BPM */
+  CHECK(g[bar * 4 / 5] > 0.999f);
+  CHECK(20.0f * log10f(g[bar + 2 * RH_SR / 1000]) < -39.0f);
+  free(g);
+  le_fx_state_free_buffers(fx);
+  free(fx);
+}
+
 static void run_rhythmic_tests(void) {
   test_pumper_matches_the_capture();
   test_pumper_rates_and_depths();
@@ -353,4 +416,6 @@ static void run_rhythmic_tests(void) {
   test_fx_tempo_log_reproduces_the_beat();
   test_pumper_lane_is_not_printed();
   test_pumper_renders_from_the_logged_anchors();
+  test_fx_beat_follows_the_loop();
+  test_pumper_bar_follows_the_signature();
 }

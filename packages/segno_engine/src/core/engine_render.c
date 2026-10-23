@@ -96,6 +96,9 @@ struct le_render_job {
   le_render_src src[LE_MAX_TRACKS];
   le_fx_frozen_chain mix;
   le_fx_state* mixfx;
+  /* The chains' musical time (le_fx_tempo): the song tempo when the job was
+   * posted, beat 0 at the render's frame 0, the loop top it starts from. */
+  le_fx_tempo tempo;
   int32_t mix_bits[LE_FX_MAX];
   int mix_on;
   int64_t bytes;  /* what the job holds, against LE_RENDER_BUDGET_BYTES */
@@ -399,6 +402,19 @@ int32_t le_engine_render_begin(le_engine* engine,
   j->plan = plan;
   j->frames = plan.frames;
   j->sample_rate = engine->sample_rate;
+  {
+    float bpm = le_render_tempo(engine);
+    if (!(bpm > 0.0f)) bpm = 120.0f;
+    int32_t num = atomic_load_explicit(&engine->a_ts_num, memory_order_acquire);
+    int32_t den = atomic_load_explicit(&engine->a_ts_den, memory_order_acquire);
+    if (num <= 0 || num > 255) num = 4;
+    if (den <= 0 || den > 255) den = 4;
+    const int32_t sr = engine->sample_rate > 0 ? engine->sample_rate : 48000;
+    j->tempo.qpf =
+        (float)((double)bpm / 60.0 / (double)sr * 4.0 / (double)den);
+    j->tempo.num = num;
+    j->tempo.den = den;
+  }
   j->cap = engine->fx_delay_frames;
   j->passes = request->tails == LE_RENDER_WRAP ? 2 : 1;
   if (request->target == LE_RENDER_TARGET_FILE) {
@@ -844,6 +860,7 @@ static void le_render_setup_unit(le_render_job* j) {
         le_render_worker_fail(j, LE_ERR_INVALID);
         return;
       }
+      ln->fx->tempo = &j->tempo;
     }
     if (s->track_has) {
       s->tfx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
@@ -854,6 +871,7 @@ static void le_render_setup_unit(le_render_job* j) {
         le_render_worker_fail(j, LE_ERR_INVALID);
         return;
       }
+      s->tfx->tempo = &j->tempo;
     }
   }
   if (j->mix_on) {
@@ -864,6 +882,7 @@ static void le_render_setup_unit(le_render_job* j) {
       le_render_worker_fail(j, LE_ERR_INVALID);
       return;
     }
+    j->mixfx->tempo = &j->tempo;
   }
   const size_t out_frames = j->req.target == LE_RENDER_TARGET_MEMORY
                                 ? (size_t)j->frames

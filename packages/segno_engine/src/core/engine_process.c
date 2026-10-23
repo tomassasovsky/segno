@@ -1058,7 +1058,10 @@ static inline void le_fx_tempo_tick(le_engine* e, uint32_t clock,
   int32_t den = load_i32(&e->a_ts_den);
   if (num <= 0 || num > 255) num = 4;
   if (den <= 0 || den > 255) den = 4;
-  const int loop = !free_or_song && e->clock.length > 0;
+  /* A held transport (a loop, nothing playing) pins the position at 0: the
+   * beat runs on its line instead of resetting every frame. */
+  const int loop =
+      !free_or_song && e->clock.length > 0 && !e->transport_held;
   const float qpf =
       loop && e->grid_total_beats > 0
           ? (float)((double)e->grid_total_beats * 4.0 / (double)den /
@@ -1072,8 +1075,11 @@ static inline void le_fx_tempo_tick(le_engine* e, uint32_t clock,
                       : 0.0;
   const double want =
       loop ? (double)e->clock.position * (double)qpf : on_line;
+  /* An anchor half the FX clock's range old is renewed, so the frame count
+   * from it never wraps. */
   if (!e->fx_tempo_set || qpf != t->qpf || num != t->num || den != t->den ||
-      fabs(want - on_line) > 1e-6) {
+      fabs(want - on_line) > 1e-6 ||
+      (uint32_t)(clock - t->anchor_clock) >= 0x80000000u) {
     t->anchor_clock = clock;
     t->anchor_beat = want;
     t->qpf = qpf;
