@@ -262,6 +262,43 @@ static void test_doubler_matches_the_capture(void) {
   }
 }
 
+/* A rate change in the middle of the doubler's holds and fades (96 kHz,
+ * then 44.1 kHz, then 192 kHz) keeps its output bounded by its gains. */
+static void test_doubler_survives_a_rate_change(void) {
+  printf("test_doubler_survives_a_rate_change\n");
+  const int rates[3] = {96000, 44100, 192000};
+  le_fx_state* fx = dyn_state(LE_FX_DOUBLER, rates[0]);
+  fx->clocked = 1;
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  const int32_t types[1] = {LE_FX_DOUBLER};
+  params[0][0] = 1.0f;
+  params[0][1] = 1.0f;
+  uint32_t s = 777u;
+  uint32_t clock = 0;
+  float worst = 0.0f;
+  for (int k = 0; k < 3; ++k) {
+    /* 0.37 s: past the first hold, so some fades are under way. */
+    const int n = (int)(0.37 * rates[k]);
+    for (int i = 0; i < n; ++i) {
+      s ^= s << 13;
+      s ^= s >> 17;
+      s ^= s << 5;
+      const float x = (float)(int32_t)s * (0.5f / 2147483648.0f);
+      float l = x;
+      float r = -x;
+      fx->clock = clock++;
+      fx_apply_chain(fx, rates[k], rates[k], &l, &r, 1, types, params, NULL);
+      CHECK(isfinite(l) && isfinite(r));
+      if (fabsf(l) > worst) worst = fabsf(l);
+      if (fabsf(r) > worst) worst = fabsf(r);
+    }
+  }
+  dyn_free(fx);
+  /* 0.31 + 0.95 of a 0.5 input. */
+  printf("  largest output %.3f (bound 0.630)\n", worst);
+  CHECK(worst <= 0.63f);
+}
+
 /* ---- Wah ---- */
 
 /* The wah against the Guitar and Ed's racks' captures (#1445): the peak's
@@ -434,6 +471,7 @@ static void test_mod_on_a_lane(void) {
 static void run_mod_tests(void) {
   test_chorus_matches_the_capture();
   test_doubler_matches_the_capture();
+  test_doubler_survives_a_rate_change();
   test_wah_matches_the_capture();
   test_mod_offline_equals_live();
   test_cache_free_running_stays_live();

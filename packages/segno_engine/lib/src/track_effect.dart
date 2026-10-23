@@ -787,7 +787,8 @@ enum TrackEffectType {
       ),
     ],
     // Shown as the Looper X shows them; what each percent does is measured
-    // (the doubler and the wah in #1445), except the chorus's, measured on
+    // (the doubler and the wah in #1445, the doubler's mix at 0, 50 and
+    // 100 % with the line between chosen), except the chorus's, measured on
     // the Guitar Rack's at two settings (#891). The Dub Rack's doubler, Ed's
     // chorus and Ed's wah defaults.
     TrackEffectType.doubler => const [
