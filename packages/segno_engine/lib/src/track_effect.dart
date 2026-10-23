@@ -1021,7 +1021,7 @@ enum TrackEffectType {
         defaultValue: 0,
       ),
       FxParamInfo(
-        key: 'range',
+        key: 'whammy_range',
         unit: FxParamUnit.choice,
         steps: 2,
         atMin: 0,

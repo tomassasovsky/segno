@@ -133,6 +133,9 @@ static void dynamics_entry(le_fx_recipe* r, int s, int32_t kind) {
     r->params[s][0] = 0.4f; /* holding at 3.2 kHz */
   } else if (kind == LE_FX_LPF) {
     r->params[s][0] = 0.6f; /* 1.2 kHz */
+  } else if (kind == LE_FX_WHAMMY) {
+    r->params[s][0] = 0.5f; /* half the pedal */
+    r->params[s][1] = 1.0f; /* up */
   } /* the doubler, chorus, wah, drives, delay and reverb run at their
      * defaults */
   r->level[s] = 1.0f;
@@ -161,8 +164,8 @@ static void fx_entry(le_fx_recipe* r, int s) { kind_entry(r, s, g_kind); }
  *  - the engine's delay and reverb for the racks' Delay and Reverb;
  *  - every EQ with every band engaged and every compressor working (the
  *    kinds' heaviest settings, an upper bound for each rack's variant).
- * Left out, not built yet: the Whammy, Amp+Cab, the Mod module's phaser and
- * flanger, Dub-Verb, Amb-Verb, Slicer, Pumper, Smart Tune and Harmonizer.
+ * Left out, not built yet: Amp+Cab, the Mod module's phaser and flanger,
+ * Slicer, Pumper, Smart Tune and Harmonizer.
  * Each list ends at the first LE_FX_NONE. */
 typedef struct {
   const char* name;
@@ -173,7 +176,9 @@ typedef struct {
 static const rack_spec k_racks[] = {
     {"drum", 60.0,
      {LE_FX_TRANSIENT, LE_FX_DELAY, LE_FX_REVERB, LE_FX_EQ, LE_FX_COMPRESSOR}},
-    {"dub", 60.0, {LE_FX_DOUBLER, LE_FX_DELAY, LE_FX_COMPRESSOR, LE_FX_EQ}},
+    {"dub", 60.0,
+     {LE_FX_DOUBLER, LE_FX_DELAY, LE_FX_DUB_VERB, LE_FX_AMB_VERB,
+      LE_FX_COMPRESSOR, LE_FX_EQ}},
     {"lofi", 60.0,
      {LE_FX_LPF, LE_FX_VINYL, LE_FX_DEGRADE, LE_FX_DISTORTION, LE_FX_EQ,
       LE_FX_DELAY}},
@@ -182,7 +187,8 @@ static const rack_spec k_racks[] = {
      {LE_FX_OCTAVER, LE_FX_WAH, LE_FX_COMPRESSOR, LE_FX_OVERDRIVE,
       LE_FX_CHORUS, LE_FX_REVERB, LE_FX_DELAY, LE_FX_EQ}},
     {"guitar", 200.0,
-     {LE_FX_OVERDRIVE, LE_FX_WAH, LE_FX_CHORUS, LE_FX_SPRING, LE_FX_DELAY}},
+     {LE_FX_WHAMMY, LE_FX_OVERDRIVE, LE_FX_WAH, LE_FX_CHORUS, LE_FX_SPRING,
+      LE_FX_DELAY}},
     {"studio", 200.0,
      {LE_FX_OCTAVER, LE_FX_DISTORTION, LE_FX_DOUBLER, LE_FX_CHORUS,
       LE_FX_TREMOLO, LE_FX_DELAY, LE_FX_REVERB, LE_FX_COMPRESSOR, LE_FX_EQ}},
@@ -201,10 +207,11 @@ static int rack_len(const rack_spec* rack) {
   return n;
 }
 
-/* Whether [rack] holds an octaver, whose work the hop quarters show. */
+/* Whether [rack] holds a kind on the hop (the octaver, the Whammy), whose
+ * work the hop quarters show. */
 static int rack_has_octaver(const rack_spec* rack) {
   for (int i = 0; i < rack_len(rack); ++i) {
-    if (rack->kinds[i] == LE_FX_OCTAVER) return 1;
+    if (le_fx_type_hops(rack->kinds[i])) return 1;
   }
   return 0;
 }
@@ -294,6 +301,9 @@ static const char* kind_name(void) {
     case LE_FX_DEGRADE: return "degrade";
     case LE_FX_LPF: return "lpf";
     case LE_FX_SPRING: return "spring";
+    case LE_FX_DUB_VERB: return "dubverb";
+    case LE_FX_AMB_VERB: return "ambverb";
+    case LE_FX_WHAMMY: return "whammy";
     default: return "octaver";
   }
 }
@@ -442,11 +452,17 @@ int main(int argc, char** argv) {
         g_kind = LE_FX_LPF;
       } else if (!strcmp(kind, "spring")) {
         g_kind = LE_FX_SPRING;
+      } else if (!strcmp(kind, "dubverb")) {
+        g_kind = LE_FX_DUB_VERB;
+      } else if (!strcmp(kind, "ambverb")) {
+        g_kind = LE_FX_AMB_VERB;
+      } else if (!strcmp(kind, "whammy")) {
+        g_kind = LE_FX_WHAMMY;
       } else {
         fprintf(stderr,
                 "unknown --kind %s (octaver, eq, comp, transient, hpgate, "
                 "doubler, chorus, wah, overdrive, distortion, vinyl, degrade, "
-                "lpf, spring)\n",
+                "lpf, spring, dubverb, ambverb, whammy)\n",
                 kind);
         return 2;
       }
@@ -474,7 +490,8 @@ int main(int argc, char** argv) {
               "[--period FRAMES] "
               "[--blocks N] [--cpu N] "
               "[--kind octaver|eq|comp|transient|hpgate|doubler|chorus|wah|"
-              "overdrive|distortion|vinyl|degrade|lpf|spring]\n",
+              "overdrive|distortion|vinyl|degrade|lpf|spring|dubverb|ambverb|"
+              "whammy]\n",
               argv[0]);
       return 2;
     }

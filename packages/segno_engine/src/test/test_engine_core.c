@@ -20728,8 +20728,8 @@ static void test_octaver_pv_formants_move_with_pitch(void) {
 
 /* The Whammy (#891): range x pedal^1.39 semitones on the octaver, fully wet,
  * tone open, formants moving. The taper puts 50 % at the captures' 4.57 of
- * 12 semitones; the pitch lands there both ways, and a full pedal is the
- * octave, with the envelope going along. */
+ * 12 semitones; the pitch lands there both ways at the input's level, and a
+ * full pedal is the octave, with the envelope going along. */
 static void whammy_run(float pedal, float range, const float* in, int total,
                        float* out) {
   le_engine* e = le_engine_create();
@@ -20777,6 +20777,16 @@ static void test_whammy_taper_and_pitch(void) {
   float* out = (float*)malloc(sizeof(float) * (size_t)total);
   oct_harmonic(in, total, 220.0f);
   const float cin = oct_centroid(in + skip, an);
+  float* low = (float*)malloc(sizeof(float) * (size_t)total);
+  for (int i = 0; i < total; ++i) {
+    float v = 0.0f;
+    for (int h = 1; h <= 10; ++h) {
+      v += sinf(2.0f * LE_FFT_PI * 220.0f * (float)h * (float)i /
+                (float)OCT_SR) /
+           (float)h;
+    }
+    low[i] = 0.2f * v;
+  }
   const struct {
     float pedal, range, semis;
   } cases[] = {{0.0f, 1.0f, 0.0f},
@@ -20788,15 +20798,28 @@ static void test_whammy_taper_and_pitch(void) {
     whammy_run(cases[c].pedal, cases[c].range, in, total, out);
     const float f0 = oct_detect_f0(out + skip, an);
     const float want = 220.0f * powf(2.0f, cases[c].semis / 12.0f);
-    printf("  pedal %.0f %%, range %+.0f: f0 %.1f (want %.1f)\n",
+    /* The level, on ten harmonics that stay below Nyquist at +12. */
+    whammy_run(cases[c].pedal, cases[c].range, low, total, out);
+    double ei = 0.0, eo = 0.0;
+    for (int i = skip; i < total; ++i) {
+      ei += (double)low[i] * low[i];
+      eo += (double)out[i] * out[i];
+    }
+    const double db = 10.0 * log10(eo / ei);
+    printf("  pedal %.0f %%, range %+.0f: f0 %.1f (want %.1f), level %+.2f dB\n",
            100.0f * cases[c].pedal, cases[c].range >= 0.5f ? 12.0 : -12.0,
-           f0, want);
+           f0, want, db);
     CHECK(fabsf(f0 - want) < 0.03f * want);
+    /* Fully wet, the level holds across the sweep (the peak regions move
+     * whole, le_pv_stage_shift). */
+    CHECK(fabs(db) < 1.5);
     if (cases[c].semis == 12.0f) {
+      whammy_run(cases[c].pedal, cases[c].range, in, total, out);
       CHECK(oct_centroid(out + skip, an) > 1.6f * cin); /* formants moved */
     }
   }
   free(in);
+  free(low);
   free(out);
 }
 
@@ -24286,14 +24309,19 @@ static float* oct_reference_wet(const float* dry, int32_t n, int32_t sr,
  * over the render's own dry stem with the lane's seed. The wrong-seed and
  * unsettled references are asserted to differ, so the comparison cannot pass
  * by being insensitive to either. */
-static void run_perf_render_octaver_case(const char* name, float mode_p3) {
+static void run_perf_render_octaver_case(const char* name, int32_t type,
+                                         const float* raw4) {
   const char* dir = render_test_dir(name);
   const int32_t sr = 48000;
   const int32_t channel = 3;
   const int32_t loop_len = 1024;
   const int32_t capture_frames = 8192; /* well past the LE_PV_LATENCY warmup */
-  /* -1 octave, tone open, full wet; mode_p3 picks phase vocoder or PSOLA. */
-  const float params4[LE_FX_PARAMS] = {0.25f, 1.0f, 1.0f, mode_p3};
+  /* The manifest carries [type]'s own settings ([raw4]); the reference runs
+   * the octaver at the settings they map to (le_fx_octaver_settings). */
+  float raw[LE_FX_PARAMS] = {0};
+  for (int q = 0; q < 4; ++q) raw[q] = raw4[q];
+  float params4[LE_FX_PARAMS];
+  le_fx_octaver_settings(type, raw, params4);
 
   char loops_dir[700];
   snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
@@ -24325,9 +24353,8 @@ static void run_perf_render_octaver_case(const char* name, float mode_p3) {
            "\"deferred\": false, \"pcmRef\": \"loops/track%d-lane0.wav\", "
            "\"effects\": [{\"type\": %d, \"params\": [%f, %f, %f, %f]}]}]}]}, "
            "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}",
-           sr, capture_frames, channel, channel, LE_FX_OCTAVER,
-           (double)params4[0], (double)params4[1], (double)params4[2],
-           (double)params4[3]);
+           sr, capture_frames, channel, channel, type, (double)raw[0],
+           (double)raw[1], (double)raw[2], (double)raw[3]);
   test_write_manifest(dir, manifest);
 
   char log_path[700];
@@ -24379,10 +24406,9 @@ static void run_perf_render_octaver_case(const char* name, float mode_p3) {
       if (b > d_seed) d_seed = b;
       if (c > d_unsettled) d_unsettled = c;
     }
-    printf("  mode %d: stem vs lane ref %.7f, vs seed-0 %.4f, vs unsettled "
+    printf("  %s: stem vs lane ref %.7f, vs seed-0 %.4f, vs unsettled "
            "%.4f\n",
-           params4[3] >= 0.5f ? 1 : 0, (double)d_ref, (double)d_seed,
-           (double)d_unsettled);
+           name, (double)d_ref, (double)d_seed, (double)d_unsettled);
     CHECK(d_ref < 1e-6f);       /* the render used THIS lane's hop phase */
     CHECK(d_seed > 0.01f);      /* and can tell a wrong seed */
     CHECK(d_unsettled > 0.01f); /* and a start-up state the lane was not in */
@@ -24400,8 +24426,15 @@ static void run_perf_render_octaver_case(const char* name, float mode_p3) {
  * le_fx_octaver_seed_settled resolves. */
 static void test_perf_render_wet_octaver_matches_lane_hop_phase(void) {
   printf("test_perf_render_wet_octaver_matches_lane_hop_phase\n");
-  run_perf_render_octaver_case("wet-octaver-phase", 0.0f);
-  run_perf_render_octaver_case("wet-octaver-psola", 1.0f);
+  /* -1 octave, tone open, full wet, in each mode. */
+  const float pv[4] = {0.25f, 1.0f, 1.0f, 0.0f};
+  const float psola[4] = {0.25f, 1.0f, 1.0f, 1.0f};
+  run_perf_render_octaver_case("wet-octaver-phase", LE_FX_OCTAVER, pv);
+  run_perf_render_octaver_case("wet-octaver-psola", LE_FX_OCTAVER, psola);
+  /* The Whammy toe down at -12: the render seeds its MAPPED settings, fully
+   * wet, or it would start dry (#1451). */
+  const float whammy[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+  run_perf_render_octaver_case("wet-whammy", LE_FX_WHAMMY, whammy);
 }
 
 /* The stem render settles each arm-time slot at its EFFECTIVE bit, as the
@@ -35198,11 +35231,10 @@ static void test_a_pre_channel_edit_drops_the_print(void) {
  * is not a whole number of hops it lands on other frames of the loop each lap
  * and no one lap's print can equal live. Such a lane stays live and says why;
  * the same chain on a loop of whole hops prints (the parity sweep below). */
-static void test_cache_octaver_on_a_partial_hop_loop_stays_live(void) {
-  printf("test_cache_octaver_on_a_partial_hop_loop_stays_live\n");
+static void cache_hop_stays_live(int32_t type) {
   le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
   cache_record_loop(a, CACHE_LOOP - 80, 1.0f); /* 54.7 hops */
-  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_OCTAVER) == LE_OK);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, type) == LE_OK);
   CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1, 1) == LE_OK);
   drain(a);
   le_lane_cache_info info;
@@ -35214,6 +35246,12 @@ static void test_cache_octaver_on_a_partial_hop_loop_stays_live(void) {
   CHECK(info.renders == 0);
   CHECK(info.engaged == 0);
   le_engine_destroy(a);
+}
+
+static void test_cache_octaver_on_a_partial_hop_loop_stays_live(void) {
+  printf("test_cache_octaver_on_a_partial_hop_loop_stays_live\n");
+  cache_hop_stays_live(LE_FX_OCTAVER);
+  cache_hop_stays_live(LE_FX_WHAMMY); /* the same kernel, on the same hop */
 }
 
 /* A bypassed octaver passes the signal dry, whatever its hop, so the same
