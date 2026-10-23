@@ -86,8 +86,12 @@ check "Wants= the fsck unit" "$fsck_unit" "$(value "$BOOT_MOUNT" Wants)"
 check "After= the fsck unit" "$fsck_unit" "$(value "$BOOT_MOUNT" After)"
 check "does not Require it (a failed check still mounts)" no \
     "$(yes_if grep -qE '^Requires=' "$BOOT_MOUNT")"
+# The RDEPENDS:${PN} block, from its first line to the closing quote.
+rdepends=$(sed -n '/^RDEPENDS:\${PN} = "/,/"$/p' "$BUNDLE")
 check "the image carries fsck.vfat" yes \
-    "$(yes_if grep -qE '^[[:space:]]+dosfstools util-linux-fsck' "$BUNDLE")"
+    "$(yes_if grep -qw dosfstools <<<"$rdepends")"
+check "the image carries the fsck wrapper" yes \
+    "$(yes_if grep -qw util-linux-fsck <<<"$rdepends")"
 
 echo "the helper and the app agree on the read-only exit status"
 helper_code=$(value "$CTL" EXIT_BOOT_READ_ONLY)

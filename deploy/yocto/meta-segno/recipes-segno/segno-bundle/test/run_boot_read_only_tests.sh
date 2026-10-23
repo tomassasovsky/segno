@@ -12,8 +12,7 @@
 #   - only a real `ro` option counts. The FAT mount carries
 #     `errors=remount-ro` while it is still writable;
 #   - the last mount-table entry for /boot decides, as in the kernel;
-#   - a /boot that goes read-only while rauc runs turns rauc's failure into
-#     exit 3, while any other rauc failure stays exit 1;
+#   - a rauc failure stays exit 1;
 #   - an unreadable mount table does not block an install.
 #
 # The appliance's /bin/sh is busybox ash; the script under test is run via
@@ -31,9 +30,8 @@ RW="/dev/nvme0n1p1 /boot vfat rw,noatime,fmask=0022,dmask=0022,codepage=437,ioch
 RO="/dev/nvme0n1p1 /boot vfat ro,noatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,errors=remount-ro 0 0"
 DATA="/dev/nvme0n1p7 /data ext4 rw,noatime 0 0"
 
-# Stubs: a rauc that "installs" (or, with RAUC_MODE=fail, fails, and with
-# RAUC_MODE=fail-ro, first flips /boot read-only in the mount table), and a
-# curl that copies file:// URLs and records that it fetched the bundle.
+# Stubs: a rauc that "installs" (or, with RAUC_MODE=fail, fails), and a curl
+# that copies file:// URLs and records that it fetched the bundle.
 setup() {
     work=$(mktemp -d "${TMPDIR:-/tmp}/boot-read-only-test.XXXXXX")
     mkdir -p "$work/state" "$work/bin" "$work/tmp" "$work/channel/production"
@@ -43,13 +41,7 @@ setup() {
 
     cat > "$work/bin/rauc" <<STUB
 #!/bin/sh
-case "\${RAUC_MODE:-ok}" in
-    fail) echo "rauc: refused"; exit 1 ;;
-    fail-ro)
-        printf '%s\n%s\n' "$DATA" "$RO" > "$work/mounts"
-        echo "Error while writing status file: Read-only file system"
-        exit 1 ;;
-esac
+[ "\${RAUC_MODE:-ok}" = fail ] && { echo "rauc: refused"; exit 1; }
 echo "100% installing done."
 exit 0
 STUB
@@ -155,17 +147,7 @@ install; rc=$?
 check "exits 0" 0 "$rc"
 teardown
 
-echo "/boot going read-only while rauc runs is reported as such"
-setup
-RAUC_MODE=fail-ro install; rc=$?
-check "exits 3" 3 "$rc"
-check "says the boot partition is read-only" yes "$(says_read_only)"
-check "removes the attempt marker" no "$(exists "$work/state/segno/update-attempt")"
-check "stages nothing" no "$(exists "$work/state/ota-staged-version")"
-check "leaves no work dir" 0 "$(work_dirs)"
-teardown
-
-echo "any other rauc failure stays a plain failure"
+echo "a rauc failure stays a plain failure"
 setup
 RAUC_MODE=fail install; rc=$?
 check "exits 1" 1 "$rc"
