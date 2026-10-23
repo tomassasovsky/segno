@@ -67,6 +67,19 @@ static float fx_drive(float x, const float* p) {
   return tanhf(x * drive) * level;
 }
 
+/* One tick of a TPT state-variable filter (Cytomic/Zavalishin form) with
+ * coefficients a1 = 1 / (1 + g (g + k)), a2 = g a1, a3 = g a2: advances the
+ * state (ic1, ic2) and gives the band-pass v1 and the low-pass v2 (the
+ * high-pass is x - k v1 - v2). */
+static inline void le_svf_tick(float x, float a1, float a2, float a3,
+                               float* ic1, float* ic2, float* v1, float* v2) {
+  const float v3 = x - *ic2;
+  *v1 = a1 * (*ic1) + a2 * v3;
+  *v2 = *ic2 + a2 * (*ic1) + a3 * v3;
+  *ic1 = 2.0f * (*v1) - *ic1;
+  *ic2 = 2.0f * (*v2) - *ic2;
+}
+
 /* Resonant low-pass: a TPT state-variable filter (Cytomic/Zavalishin form).
  * p0 = cutoff (20 Hz .. ~18 kHz, log), p1 = resonance. */
 static float fx_filter(le_fx_state* fx, int slot, int chan, int sr, float x,
@@ -79,13 +92,10 @@ static float fx_filter(le_fx_state* fx, int slot, int chan, int sr, float x,
   const float a1 = 1.0f / (1.0f + g * (g + k));
   const float a2 = g * a1;
   const float a3 = g * a2;
-  float* ic1 = &fx->svf_ic1[slot][chan];
-  float* ic2 = &fx->svf_ic2[slot][chan];
-  const float v3 = x - *ic2;
-  const float v1 = a1 * (*ic1) + a2 * v3;
-  const float v2 = *ic2 + a2 * (*ic1) + a3 * v3;
-  *ic1 = 2.0f * v1 - *ic1;
-  *ic2 = 2.0f * v2 - *ic2;
+  float v1;
+  float v2;
+  le_svf_tick(x, a1, a2, a3, &fx->svf_ic1[slot][chan], &fx->svf_ic2[slot][chan],
+              &v1, &v2);
   return v2; /* low-pass output */
 }
 
@@ -1333,7 +1343,7 @@ typedef struct le_fx_dyn_head {
  * recorded. */
 static int le_fx_dyn_begin(le_fx_dyn_head* h, float* last, const float* p,
                            size_t n, int sr, int settle) {
-  const int new_rate = h->k_sr != sr;
+  const int new_rate = !h->primed || h->k_sr != sr;
   const int new_params =
       !h->primed || memcmp(last, p, n * sizeof(float)) != 0;
   if (!settle && !new_rate && !new_params && !h->moving) return 0;
@@ -1650,8 +1660,14 @@ static float le_one_pole(double tau_s, int sr) {
   return n <= 0.0 ? 0.0f : (float)exp(-1.0 / n);
 }
 
-/* A non-finite sample would latch into a detector or filter for good. */
-static inline float le_finite(float x) { return isfinite(x) ? x : 0.0f; }
+/* D-RT: bound a sample so it cannot poison a kernel's state, downstream
+ * lanes or the master sum (a hosted plugin's output, a dynamics kind's
+ * input): NaN and Inf map to 0, and denormals flush to 0. */
+static inline float fx_sanitize(float x) {
+  if (!isfinite(x)) return 0.0f;
+  if (x < 1e-30f && x > -1e-30f) return 0.0f;
+  return x;
+}
 
 /* ---- Compressor (LE_FX_COMPRESSOR) ----
  *
@@ -1668,6 +1684,8 @@ typedef struct le_fx_comp {
   le_fx_glide mk;    /* make-up, dB */
   float att;         /* detector coefficients */
   float rel;
+  float att_p;       /* the settings they were computed from */
+  float rel_p;
   float gr; /* gain reduction now, dB (0 or more) */
 } le_fx_comp;
 
@@ -1677,7 +1695,10 @@ static void fx_comp_update(void* ks, const float* p, int sr, int settle) {
   if (!f) return;
   const int changed = (f & LE_FX_DYN_CHANGED) != 0;
   const le_fx_param_desc* d = LE_FX_COMPRESSOR_PARAMS;
-  if (changed) {
+  if ((f & LE_FX_DYN_NEW_RATE) || settle || p[2] != c->att_p ||
+      p[3] != c->rel_p) {
+    c->att_p = p[2];
+    c->rel_p = p[3];
     c->att = le_one_pole(le_fx_desc_value(&d[2], p[2]) * 1e-3, sr);
     c->rel = le_one_pole(le_fx_desc_value(&d[3], p[3]) * 1e-3, sr);
   }
@@ -1691,8 +1712,8 @@ static void fx_comp_update(void* ks, const float* p, int sr, int settle) {
 
 static void fx_comp_kprocess(void* ks, float* l, float* r) {
   le_fx_comp* c = (le_fx_comp*)ks;
-  const float x0 = le_finite(*l);
-  const float x1 = le_finite(*r);
+  const float x0 = fx_sanitize(*l);
+  const float x1 = fx_sanitize(*r);
   const float thr = le_fx_glide_next(&c->thr);
   const float slope = le_fx_glide_next(&c->slope);
   const float mk = le_fx_glide_next(&c->mk);
@@ -1774,8 +1795,8 @@ static void fx_transient_update(void* ks, const float* p, int sr, int settle) {
 
 static void fx_transient_kprocess(void* ks, float* l, float* r) {
   le_fx_transient* t = (le_fx_transient*)ks;
-  const float x0 = le_finite(*l);
-  const float x1 = le_finite(*r);
+  const float x0 = fx_sanitize(*l);
+  const float x1 = fx_sanitize(*r);
   const float atk = le_fx_glide_next(&t->atk);
   const float sus = le_fx_glide_next(&t->sus);
   const float x = fmaxf(fabsf(x0), fabsf(x1));
@@ -1849,17 +1870,19 @@ static void fx_hp_gate_update(void* ks, const float* p, int sr, int settle) {
   le_fx_hp_gate* q = (le_fx_hp_gate*)ks;
   const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_HPG_PARAMS_N, sr, settle);
   if (!f) return;
-  const int changed = (f & LE_FX_DYN_CHANGED) != 0;
+  const int new_rate = (f & LE_FX_DYN_NEW_RATE) != 0;
   const le_fx_param_desc* d = LE_FX_HP_GATE_PARAMS;
-  if (changed) {
-    q->tgt_lhz = (float)log2(le_fx_desc_value(&d[0], p[0]));
-    const double thr = le_fx_desc_value(&d[1], p[1]);
-    q->open_at = le_gain_of_db((float)thr);
-    q->close_at = le_gain_of_db((float)(thr - LE_GATE_HYST_DB));
+  if (new_rate) {
     q->env_rel = le_one_pole(LE_GATE_ENV_REL_S, sr);
     q->open_c = le_one_pole(LE_GATE_OPEN_S, sr);
     q->close_c = le_one_pole(LE_GATE_CLOSE_S, sr);
     q->hold_n = (int32_t)(LE_GATE_HOLD_S * (double)(sr > 0 ? sr : 48000));
+  }
+  if (f & LE_FX_DYN_CHANGED) {
+    q->tgt_lhz = (float)log2(le_fx_desc_value(&d[0], p[0]));
+    const double thr = le_fx_desc_value(&d[1], p[1]);
+    q->open_at = le_gain_of_db((float)thr);
+    q->close_at = le_gain_of_db((float)(thr - LE_GATE_HYST_DB));
   }
   /* The corner glides in octaves; the filter is redesigned while it moves
    * (a state-variable filter takes a coefficient change without a click). */
@@ -1870,7 +1893,7 @@ static void fx_hp_gate_update(void* ks, const float* p, int sr, int settle) {
     q->gain = 1.0f;
     q->hold = q->hold_n;
   }
-  if (q->lhz != q->tgt_lhz || changed) {
+  if (q->lhz != q->tgt_lhz || new_rate) {
     le_fx_step_toward(&q->lhz, q->tgt_lhz, settle ? 1.0f : q->h.k);
     le_hpg_design(q, sr);
   }
@@ -1879,14 +1902,12 @@ static void fx_hp_gate_update(void* ks, const float* p, int sr, int settle) {
 
 static void fx_hp_gate_kprocess(void* ks, float* l, float* r) {
   le_fx_hp_gate* q = (le_fx_hp_gate*)ks;
-  float y[2] = {le_finite(*l), le_finite(*r)};
+  float y[2] = {fx_sanitize(*l), fx_sanitize(*r)};
   const float k = (float)LE_HPG_K;
   for (int c = 0; c < 2; ++c) {
-    const float v3 = y[c] - q->ic2[c];
-    const float v1 = q->a1 * q->ic1[c] + q->a2 * v3;
-    const float v2 = q->ic2[c] + q->a2 * q->ic1[c] + q->a3 * v3;
-    q->ic1[c] = 2.0f * v1 - q->ic1[c];
-    q->ic2[c] = 2.0f * v2 - q->ic2[c];
+    float v1;
+    float v2;
+    le_svf_tick(y[c], q->a1, q->a2, q->a3, &q->ic1[c], &q->ic2[c], &v1, &v2);
     y[c] = y[c] - k * v1 - v2;
   }
   const float x = fmaxf(fabsf(y[0]), fabsf(y[1]));
@@ -1943,13 +1964,6 @@ static void fx_plugin_process(le_fx_state* fx, int slot, int sr, int cap,
   le_plugin_slot_process(s, l, r);
 }
 
-/* D-RT: bound a misbehaving plugin's output so it cannot poison downstream
- * lanes or the master sum — NaN/Inf map to 0 and denormals flush to 0. */
-static inline float fx_sanitize(float x) {
-  if (!isfinite(x)) return 0.0f;
-  if (x < 1e-30f && x > -1e-30f) return 0.0f;
-  return x;
-}
 
 typedef struct le_fx_vtable {
   /* Processes one stereo sample through chain slot [slot] in place, advancing
