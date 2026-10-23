@@ -3926,9 +3926,14 @@ static int le_fx_holds_tail(const le_fx_state* fx, int s, int32_t type) {
          (fx->delay[s][0] != NULL || fx->delay[s][1] != NULL);
 }
 
-void le_fx_entry_renew(le_fx_state* fx, int slot, int32_t type) {
+void le_fx_entry_renew(le_fx_state* fx, int slot, int32_t type, int sounding) {
   le_fx_entry_reset(fx, slot);
-  if (le_fx_holds_tail(fx, slot, type)) le_fx_enable_force_bypass(fx, slot);
+  /* An entry replacing one the chain was running enters through the enable
+   * edge: handed the old entry's settled ramp, it would switch in at full in
+   * one sample (#1452). */
+  if (sounding || le_fx_holds_tail(fx, slot, type)) {
+    le_fx_enable_force_bypass(fx, slot);
+  }
 }
 
 int le_fx_type_free_running(int32_t type) {

@@ -201,6 +201,20 @@ const _catalogue = FxCatalogue(
           type: 6,
           params: {'Pumper': 1, 'Pumper Depth': 0.8},
         ),
+        // Its pumper off and its delay on: the opposite mix to Acoustic
+        // Rhythm 1's, so a rule that kept only one polarity fails one of them.
+        FxPreset(
+          family: 'Rhythmic Rack',
+          name: 'Pump and Echo',
+          id: 'rh-2',
+          type: 6,
+          params: {
+            'Pumper': 0,
+            'Pumper Depth': 0.8,
+            'Delay': 1,
+            'Del Time': 0.3,
+          },
+        ),
       ],
     ),
   ],
@@ -1117,7 +1131,7 @@ void main() {
       await pump(tester, destination: const FxDestination.recordedTrack(0));
       await tapKey(tester, 'fx_add_effects');
       await tapKey(tester, 'fx_library_family_rhythmic');
-      await tapKey(tester, 'fx_preset_rh-1');
+      await tapKey(tester, 'fx_preset_rh-2');
 
       final appended = (
         entries: lastTrackWrite()
@@ -1125,9 +1139,12 @@ void main() {
             .toList(),
       );
 
-      // The preset engages its Pumper, so the rack sounds as it was saved,
-      // as the Looper X loads it.
-      expect(appended.entries.single.enabled, isTrue);
+      // Pump and Echo leaves its pumper off and engages its delay, and the
+      // rack arrives so, as the Looper X loads it.
+      expect(
+        {for (final e in appended.entries) e.module: e.enabled},
+        {'Pumper': false, 'Delay': true},
+      );
     });
 
     testWidgets('a factory rack with some pedals off keeps each pedal as the '

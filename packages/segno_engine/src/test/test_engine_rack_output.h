@@ -30,6 +30,10 @@ static le_fx_recipe rk_recipe(int32_t pre, int32_t on0, int32_t tail,
   r.slot_enabled[1] = on1;
   r.level[1] = RK_LEVEL;
   r.rack[1] = LE_FX_RACK_LAST;
+  /* Identities, so a publish that keeps an entry keeps its state and its
+   * enable ramp, as the app's recipes do. */
+  r.instance[0] = 1;
+  r.instance[1] = 2;
   return r;
 }
 
@@ -672,6 +676,7 @@ static void test_rack_edge_moving_while_playing(void) {
   three.slot_enabled[2] = 1;
   three.level[2] = RK_LEVEL;
   three.rack[2] = LE_FX_RACK_LAST;
+  three.instance[2] = 3;
   const float want = tanhf(0.5f) * RK_LEVEL;
   static float out[2 * 512];
   for (int k = 0; k < 2; ++k) {
