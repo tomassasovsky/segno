@@ -7,7 +7,7 @@ supports. This supersedes earlier instructions
 to tap at the shop/protect existing body threads. Geometry is unchanged.
 
 A wedge-shaped folded-aluminium console that houses this repo's standalone build
-(a Raspberry Pi 5 + the [console board v2](kicad/console_board.py), #747)
+(a Raspberry Pi 5 + the [console board v3](kicad/console_board.py), #747)
 and **integrates ten foot pedals
 into the chassis** the way the real "Chewie II" / Sonnit reference does. Form
 (850 ×423 ×100 mm, top sloping toward the player) and layout from the reference;
@@ -275,8 +275,10 @@ collar hard rims and the sled outer rim receive 0.15 mm normal relief for the
 coated floor/lid fit. These allowances do not change the separate mini-console.
 
 The indicators use eight-LED segments of 144 LEDs/m strip in the printed pill
-lenses. The selected ring uses the Ring 24/header/Ø80 PCB assembly documented in
-`enclosure/FUSION_MODELS.md`; the old 12-THT-LED description is superseded.
+lenses. The selected ring is the #1075 console strip ring: a 35-LED strip on the
+Ø80 ring carrier (owner, 2026-10-19). The Ring 24/header assembly documented in
+`enclosure/FUSION_MODELS.md` is the alternative; the old 12-THT-LED description
+is superseded.
 There are no separate power/mode lamps beside the encoder. Labels are carried
 on the individual pedal tiles; no full-face overlay or logo cutout is required.
 
@@ -472,7 +474,7 @@ remain supported from the floor when the lid is removed. Retired sheet-metal
 
 The **bottom plate** (`board_mounts()` drives the patterns) is the CENTRE of the
 folded blank — the wall bottom edges are its own fold lines, not a joint — and carries: the **Pi** (58 × 49) and
-**console board v2** (89.5 × 89.5 M3 — the number comes over the
+**console board v3** (89.5 × 89.5 M3 — the number comes over the
 `console_board_mount.json` seam, gated by `BOARD_MOUNT`, not copied by hand)
 standoff holes in the rear; an **intake-vent block** in the clear gap between the
 two platform rows (air crosses the boards to the rear-wall exhaust); and 15 rubber

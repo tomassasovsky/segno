@@ -14,7 +14,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."   # tool -> packages/segno_engine
 
 CC="${CC:-gcc}"
-STD="-std=gnu11 -O2 -fPIC -I src/core -I src/midi -I src/asio -I src/miniaudio \
+STD="-std=gnu11 -O2 -fPIC -I src/core -I src/midi -I src/miniaudio \
   -I third_party/rnnoise/include -I third_party/rnnoise/src"
 
 # The C++ runtime is linked for the one C++ engine TU (src/stretch/

@@ -2,10 +2,10 @@
 
 Generates a **manufacturing package** for a wedge-shaped floor console modelled on
 the "Chewie II" / Sonnit reference (850 x 465 x 100 mm, top sloping toward the
-player), housing this repo's standalone build: a Raspberry Pi 4/5 running segno,
-the console board v2 (#747), ten foot pedals, the EC11 encoder + diffused LED ring,
+player), housing this repo's standalone build: a Raspberry Pi 5 running segno,
+the console board v3 (#747), ten foot pedals, the EC11 encoder + diffused LED ring,
 SMD LED-strip status indicators (WS2812B segments behind diffuser slots) and a
-7" + 16" touchscreen pair. Branded **Segno**.
+7" + 15.6" touchscreen pair. Branded **Segno**.
 
 Construction (see ../segno_enclosure_design.md and
 ../../docs/plan/2026-06-27-feat-segno-enclosure-rework-plan.md):
@@ -872,7 +872,7 @@ PI_HOLES    = (58.0, 49.0)    # Raspberry Pi 4/5 mounting-hole rectangle (M2.5)
 # writes -- the mirror of the rear_io_stations.json handoff going the other way. The
 # plate spent a while drilling 85 x 87 for a board whose holes had moved to 89.5 x
 # 89.5, and neither part had been ordered only by luck.
-BOARD_HOLES = (89.5, 89.5)    # M3 mount rectangle (console board v2, 5 mm inset)
+BOARD_HOLES = (89.5, 89.5)    # M3 mount rectangle (console board v3, 5 mm inset)
 BOARD_SIZE  = (99.5, 99.5)    # board outline (for the 3D render + clearance gates)
 BOARD_MOUNT_JSON = os.path.join(HERE, "..", "kicad", "out_console",
                                 "console_board_mount.json")

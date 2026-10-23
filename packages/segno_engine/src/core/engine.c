@@ -58,14 +58,14 @@
 
 /* All platform-specific behavior (CoreAudio channel labels, JACK port-pinning,
  * PipeWire quantum forcing) lives behind the engine_platform.h seam, implemented
- * per OS in engine_apple.c / engine_linux.c / engine_windows.c. This file is
+ * per OS in engine_apple.c / engine_linux.c. This file is
  * platform-agnostic — no #if defined(__APPLE__|__linux__|_WIN32) behavior. */
 
 
 /* struct le_engine and its nested types (le_fx_state, le_lane,
  * le_monitor_input, le_track) plus LE_RING_CAPACITY / LE_POOL_SLOTS now live in
  * engine_private.h, shared with the per-OS translation units (engine_linux.c /
- * engine_apple.c / engine_windows.c). */
+ * engine_apple.c). */
 
 /* The float/double <-> atomic-bits helpers (f32_to_bits / load_f32 / …) and the
  * int32 helpers (load_i32 / store_i32) are static inline in engine_private.h,
