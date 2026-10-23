@@ -279,15 +279,16 @@ static void test_comp_matches_measured_bursts(void) {
            cases[c].att, cases[c].rel, pre - fin, cases[c].gr, a50, a90,
            cases[c].a50, cases[c].a90, r50, r90, cases[c].r50, cases[c].r90);
     CHECK(fabs((pre - fin) - cases[c].gr) < 0.5);
-    /* Within a factor, or within one crest (0.5 ms) for the instant ones. */
+    /* Within the factor, give or take one crest (0.5 ms), the resolution
+     * the times are read at. */
     const double got[4] = {a50, a90, r50, r90};
     const double want[4] = {cases[c].a50, cases[c].a90, cases[c].r50,
                             cases[c].r90};
     const double factor[4] = {1.6, 1.6, 1.9, 1.9};
     for (int k = 0; k < 4; ++k) {
       CHECK(got[k] > 0.0);
-      CHECK(fabs(got[k] - want[k]) <= 0.5 ||
-            (got[k] <= want[k] * factor[k] && got[k] >= want[k] / factor[k]));
+      CHECK(got[k] <= want[k] * factor[k] + 0.5);
+      CHECK(got[k] >= want[k] / factor[k] - 0.5);
     }
   }
   free(x);
