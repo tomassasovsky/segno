@@ -35141,6 +35141,34 @@ static void test_cache_octaver_on_a_partial_hop_loop_stays_live(void) {
   le_engine_destroy(a);
 }
 
+/* A bypassed octaver passes the signal dry, whatever its hop, so the same
+ * partial-hop lane prints: a rack's switched-off Pitch Shift (most Studio and
+ * Vocal presets) must not keep the whole rack live. Switching it on gives up
+ * again, for the hop. */
+static void test_cache_bypassed_octaver_prints_on_a_partial_hop_loop(void) {
+  printf("test_cache_bypassed_octaver_prints_on_a_partial_hop_loop\n");
+  le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  cache_record_loop(a, CACHE_LOOP - 80, 1.0f); /* 54.7 hops */
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_OCTAVER) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 2, 2) == LE_OK);
+  CHECK(le_engine_set_lane_fx_enabled(a, 0, 0, 1, 0) == LE_OK);
+  drain(a);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+
+  CHECK(le_engine_set_lane_fx_enabled(a, 0, 0, 1, 1) == LE_OK);
+  drain(a);
+  le_engine_get_lane_cache(a, 0, 0, &info); /* registers the new key */
+  pump_frames(a, 0.0f, CACHE_SETTLE + 64);
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  CHECK(info.state == LE_CACHE_GAVE_UP);
+  CHECK(info.reason == LE_CACHE_REASON_HOP);
+  le_engine_destroy(a);
+}
+
 /* An octaver print is rendered against the hop position of the loop top it
  * engages at (#941). A stop and relaunch moves the loop against the engine
  * clock without a chain edit, so the print's key changes: the old print falls
@@ -39508,6 +39536,7 @@ int main(void) {
   test_a_pre_channel_edit_drops_the_print();
   test_cache_cached_matches_live_every_builtin();
   test_cache_octaver_on_a_partial_hop_loop_stays_live();
+  test_cache_bypassed_octaver_prints_on_a_partial_hop_loop();
   test_cache_octaver_relaunch_rerenders();
   test_cache_cached_matches_live_multi_slot_chain();
   test_cache_volume_move_invalidates();

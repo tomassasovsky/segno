@@ -194,8 +194,9 @@ class FxSourceScale {
   }
 }
 
-/// The rack variants of the Looper X kinds, by module and family: one engine
-/// kind per module, each variant exposing the controls its racks show
+/// The rack variants of the Looper X modules, by module and family: one engine
+/// kind per module (a Looper X kind, or for the Pitch Shift the octaver), each
+/// variant exposing the controls its racks show
 /// (docs/plan/2026-10-20-looperx-derived-tables.md) and fixing the rest:
 /// - the EQ and the compressor: at the values measured on the Looper X
 ///   (#891, docs/plan/2026-10-23-looperx-eq-measured.md and
