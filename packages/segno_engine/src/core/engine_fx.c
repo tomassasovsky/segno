@@ -841,7 +841,7 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
   const float ratio = powf(2.0f, (o->sm_shift - 0.5f) * 48.0f / 12.0f);
   const float wet = o->cur_mode == 0
                         ? le_pv_tick(o, buf, head, cap, ratio, p[4] >= 0.5f)
-                                     : le_psola_tick(o, buf, head, cap, ratio);
+                        : le_psola_tick(o, buf, head, cap, ratio);
 
   /* Tone: a one-pole low-pass on the wet voice that opens up as p1 rises. */
   const float a = 0.05f + 0.9f * o->sm_tone;
