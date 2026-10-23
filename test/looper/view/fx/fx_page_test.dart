@@ -310,6 +310,10 @@ void main() {
     when(() => repository.state).thenReturn(_rig);
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.fxRoomNs).thenReturn(1 << 40);
+    when(() => repository.fxCostOf(any())).thenAnswer(
+      (call) => fxChainCostNs(call.positionalArguments[0] as List<TrackEffect>),
+    );
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
     when(() => repository.laneCount(any())).thenReturn(1);
     when(() => repository.fxRecipesSettled).thenReturn(true);
@@ -1275,6 +1279,26 @@ void main() {
         find.text(
           l10nOf(tester).fxRackTooLong('Acoustic Rhythm 1', 3, 1),
         ),
+        findsOneWidget,
+      );
+      await tapKey(tester, 'fx_preset_ed53e7b8');
+      verifyNever(
+        () => repository.setTrackEffects(
+          channel: 0,
+          effects: any(named: 'effects'),
+        ),
+      );
+    });
+
+    testWidgets('a rack that needs more processing than is left is offered '
+        'and explains itself', (tester) async {
+      when(() => repository.fxRoomNs).thenReturn(0);
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'fx_library_family_edsguitar');
+
+      expect(
+        find.text(l10nOf(tester).fxNoRoom('Acoustic Rhythm 1')),
         findsOneWidget,
       );
       await tapKey(tester, 'fx_preset_ed53e7b8');

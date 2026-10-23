@@ -23,6 +23,10 @@ enum FxEditStatus {
   /// The target or native admission refused the edit.
   refused,
 
+  /// The edit would add more processing than the audio thread has left
+  /// ([LooperRepository.fxRoomNs]); nothing changed.
+  overBudget,
+
   /// The route, selection or engine life changed before completion.
   stale,
 
@@ -165,6 +169,11 @@ class FxCubit extends Cubit<FxState> {
     if (identical(proposed.entries, current)) {
       return const FxEditResult(FxEditStatus.unchanged);
     }
+    // Admission (#887, Architecture 10): an edit that adds processing must
+    // fit what is left; one that removes it always lands.
+    if (_overBudget(address, current, proposed.entries)) {
+      return const FxEditResult(FxEditStatus.overBudget);
+    }
     if (stale()) return const FxEditResult(FxEditStatus.stale);
     final ticket = _persistence.beginPending();
     var confirmed = false;
@@ -199,6 +208,18 @@ class FxCubit extends Cubit<FxState> {
       );
     }
     return FxEditResult(FxEditStatus.applied, groupId: proposed.groupId);
+  }
+
+  /// Whether [next] would add more processing at [address] than is left
+  /// ([LooperRepository.fxRoomNs]). An edit that removes processing always
+  /// fits.
+  bool _overBudget(
+    FxAddress address,
+    List<TrackEffect> current,
+    List<TrackEffect> next,
+  ) {
+    final grows = _repository.fxCostOf(next) - _repository.fxCostOf(current);
+    return grows > 0 && grows > _repository.fxRoomNs;
   }
 
   /// Appends one library choice to the selected destination as a new group.
@@ -538,6 +559,14 @@ class FxCubit extends Cubit<FxState> {
     }
     if (effect.params[parameter] == value) {
       return const FxEditResult(FxEditStatus.unchanged);
+    }
+    // A setting can change what an entry costs (the octaver's mode).
+    if (_overBudget(address, chain, [
+      ...chain.sublist(0, index),
+      effect.copyWith(params: [...effect.params]..[parameter] = value),
+      ...chain.sublist(index + 1),
+    ])) {
+      return const FxEditResult(FxEditStatus.overBudget);
     }
     final result = switch (address.stage) {
       FxStage.input => _repository.setMonitorEffectParam(
