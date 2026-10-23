@@ -407,7 +407,7 @@ enum TrackEffectType {
 
   /// The Looper X's spring reverb (#887 part 8): one recirculating,
   /// dispersive spring; fit to the Guitar Rack's Spring.
-  spring(21, 'Spring Reverb');
+  spring(21, 'Spring reverb');
 
   const TrackEffectType(this.code, this.label);
 

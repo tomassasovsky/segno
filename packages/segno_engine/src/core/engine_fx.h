@@ -182,7 +182,7 @@ static inline int32_t le_fx_all_tracks_hop_seed(int32_t bus) {
  * a disable behaves depends on whether the type carries a tail
  * (le_fx_type_drains):
  *  - A draining type (a ring-owning type with no reported latency: delay,
- *    echo, reverb) has the ramp scale its FEED, so new audio moves to the
+ *    echo, reverb, the spring) has the ramp scale its FEED, so new audio moves to the
  *    dry path while the tail already in its rings keeps sounding on a silent
  *    feed. It drains until quiet (LE_FX_DRAIN_FLOOR for
  *    a complete delay-ring horizon, at least LE_FX_DRAIN_QUIET_MS),
