@@ -1,6 +1,6 @@
 """SKiDL generator for the Segno ring/encoder carrier.
 
-The selected assembly uses a 40-LED external WS2812 strip, a Same Sky
+The selected assembly uses a 35-LED external WS2812 strip, a Same Sky
 ACZ11BR1E-20FD1-20C encoder and a Seeed XIAO RP2350 module. The 80 mm circular
 carrier is two-layer, white mask / black silk and hand soldered. It snap-mounts;
 the shaft location and M7 threaded-bushing mount are fixed by the enclosure.
