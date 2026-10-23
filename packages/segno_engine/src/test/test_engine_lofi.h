@@ -109,7 +109,7 @@ static void test_degrade(void) {
 /* ---- LPF ---- */
 
 /* At 0 % resonance the low-pass is -3 dB at its cutoff; at 100 % it peaks
- * there at Q 6 (+15.6 dB); an octave above, it is falling at 12 dB/oct. */
+ * there at Q 3 (+9.5 dB); two octaves above, it is down 12 dB/oct. */
 static void test_lpf(void) {
   printf("test_lpf\n");
   const int sr = 48000;
@@ -120,9 +120,12 @@ static void test_lpf(void) {
   CHECK(fabs(lofi_db(LE_FX_LPF, p, sr, 100.0)) < 0.1);
   CHECK(lofi_db(LE_FX_LPF, p, sr, 4000.0) < -23.0);
   p[1] = 1.0f;
-  CHECK(fabs(lofi_db(LE_FX_LPF, p, sr, 1000.0) - 15.56) < 0.3);
+  CHECK(fabs(lofi_db(LE_FX_LPF, p, sr, 1000.0) - 9.54) < 0.3);
   /* At the top of its range, as a fresh filter is, it is off: the
-   * identity. */
+   * identity, and its descriptor says so. */
+  CHECK(fxd_get(LE_FX_LPF, 0).flags & LE_FX_PARAM_OFF_AT_MAX);
+  CHECK(fxd_get(LE_FX_EQ, 0).flags & LE_FX_PARAM_OFF_AT_MIN);
+  CHECK(fxd_get(LE_FX_EQ, 13).flags & LE_FX_PARAM_OFF_AT_MAX);
   le_fx_defaults(LE_FX_LPF, p);
   const int n = 512;
   float in[512];

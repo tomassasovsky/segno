@@ -15,6 +15,10 @@ import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 /// The `LE_FX_PARAM_TAPER_UNVERIFIED` bit of `le_fx_param_desc.flags`.
 const int _taperUnverified = 1 << 0;
 
+/// The `LE_FX_PARAM_OFF_AT_MIN` and `LE_FX_PARAM_OFF_AT_MAX` bits.
+const int _offAtMin = 1 << 1;
+const int _offAtMax = 1 << 2;
+
 /// The value a Dart double holds once stored in a C `float`, so the Dart copy
 /// of the table compares exactly against the native one.
 double _asFloat(double value) => Float32List.fromList([value])[0];
@@ -63,7 +67,20 @@ void main() {
             p.taperUnverified,
             reason: reason,
           );
-          expect(native.flags & ~_taperUnverified, 0, reason: reason);
+          expect(
+            native.flags & (_offAtMin | _offAtMax),
+            switch (p.off) {
+              FxParamOff.none => 0,
+              FxParamOff.atMin => _offAtMin,
+              FxParamOff.atMax => _offAtMax,
+            },
+            reason: reason,
+          );
+          expect(
+            native.flags & ~(_taperUnverified | _offAtMin | _offAtMax),
+            0,
+            reason: reason,
+          );
         }
         // One past the last parameter is refused.
         expect(

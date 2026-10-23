@@ -570,6 +570,7 @@ enum TrackEffectType {
         atMax: 8000,
         curve: FxParamCurve.exponential,
         defaultValue: 0.21,
+        off: FxParamOff.atMin,
       ),
       FxParamInfo(
         key: 'low_gain',
@@ -672,6 +673,7 @@ enum TrackEffectType {
         atMax: 20000,
         curve: FxParamCurve.exponential,
         defaultValue: 1,
+        off: FxParamOff.atMax,
       ),
       FxParamInfo(
         key: 'air_gain',
@@ -933,12 +935,13 @@ enum TrackEffectType {
     // transparent, though the Looper X's default resonance is 100 %).
     TrackEffectType.lpf => const [
       FxParamInfo(
-        key: 'lp_cutoff',
+        key: 'cutoff',
         unit: FxParamUnit.hz,
         atMin: 20,
         atMax: 20000,
         curve: FxParamCurve.exponential,
         defaultValue: 1,
+        off: FxParamOff.atMax,
       ),
       FxParamInfo(
         key: 'resonance',
@@ -1045,6 +1048,19 @@ enum FxParamCurve {
   final int code;
 }
 
+/// Where a built-in parameter turns its effect off (the identity), which a
+/// surface reads as Off. Mirrors the native `LE_FX_PARAM_OFF_AT_*` flags.
+enum FxParamOff {
+  /// Never: every setting does something.
+  none,
+
+  /// At setting 0 (an EQ's low cut).
+  atMin,
+
+  /// At setting 1 (an EQ's high cut, the low-pass filter's cutoff).
+  atMax,
+}
+
 /// One built-in effect parameter: what its normalized `0..1` setting means.
 /// The Dart copy of the native `le_fx_param_desc`.
 ///
@@ -1065,6 +1081,7 @@ class FxParamInfo {
     this.steps = 0,
     this.curve = FxParamCurve.linear,
     this.taperUnverified = false,
+    this.off = FxParamOff.none,
   });
 
   /// The stable parameter key (`drive`, `cutoff`, `shift`, ...).
@@ -1095,6 +1112,17 @@ class FxParamInfo {
   /// Whether the mapping was chosen rather than measured against the effect
   /// it reproduces (the native `LE_FX_PARAM_TAPER_UNVERIFIED` flag).
   final bool taperUnverified;
+
+  /// Where the parameter turns its effect off (the native
+  /// `LE_FX_PARAM_OFF_AT_*` flags).
+  final FxParamOff off;
+
+  /// Whether [setting] (clamped to `0..1`) is where the effect is off.
+  bool isOffAt(double setting) => switch (off) {
+    FxParamOff.none => false,
+    FxParamOff.atMin => setting <= 0,
+    FxParamOff.atMax => setting >= 1,
+  };
 
   /// Whether the parameter snaps to [steps] positions.
   bool get isStepped => steps > 1;
@@ -1146,7 +1174,8 @@ class FxParamInfo {
       other.atMax == atMax &&
       other.curve == curve &&
       other.defaultValue == defaultValue &&
-      other.taperUnverified == taperUnverified;
+      other.taperUnverified == taperUnverified &&
+      other.off == off;
 
   @override
   int get hashCode => Object.hash(
@@ -1158,6 +1187,7 @@ class FxParamInfo {
     curve,
     defaultValue,
     taperUnverified,
+    off,
   );
 
   @override
