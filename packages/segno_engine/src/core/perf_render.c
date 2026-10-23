@@ -2086,6 +2086,7 @@ void le_perf_render_force_dry_write_failure_for_test(int32_t channel) {
 
 static void le_pr_worker_main(void* arg) {
   le_perf_render* r = (le_perf_render*)arg;
+  le_flush_denormals(); /* stems round as the callback does */
 
   char* text = NULL;
   le_json_value* root = NULL;

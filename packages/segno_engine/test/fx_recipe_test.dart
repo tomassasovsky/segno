@@ -96,4 +96,16 @@ void main() {
     expect(engine.snapshot().tracks[0].volume, 0.5);
     expect(engine.snapshot().tracks[0].lanes[0].volume, 0.25);
   });
+
+  test('fxInstanceId is a stable non-zero 32-bit id, 0 for no id', () {
+    expect(fxInstanceId(null), 0);
+    expect(fxInstanceId('slot-1'), fxInstanceId('slot-1'));
+    expect(fxInstanceId('slot-1'), isNot(fxInstanceId('slot-2')));
+    for (final id in ['', 'a', 'slot-1', 'rack/very-long-id-0123456789']) {
+      final v = fxInstanceId(id);
+      expect(v, inInclusiveRange(1, 0xffffffff));
+    }
+    // FNV-1a of "a".
+    expect(fxInstanceId('a'), 0xe40c292c);
+  });
 }

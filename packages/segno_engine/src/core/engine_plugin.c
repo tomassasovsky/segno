@@ -165,6 +165,10 @@ int32_t le_engine_set_lane_plugin(le_engine* engine, int32_t channel,
     le_lane* ln = &engine->tracks[channel].lanes[lane];
     store_i32(&ln->a_fx_enabled[index], 1);
     ln->fx_type_pushed[index] = LE_FX_PLUGIN;
+    /* The row is the plugin's (it reads none of it), so the snapshot runs
+     * the slot (le_fx_slot_meta.param_type). */
+    atomic_store_explicit(&ln->fx_meta[index].param_type, LE_FX_PLUGIN,
+                          memory_order_release);
     le_lane_fx_gen_bump(ln); /* chain identity moved (wet-cache fast path) */
   }
   return rc;
@@ -182,6 +186,8 @@ int32_t le_engine_set_monitor_plugin(le_engine* engine, int32_t input,
     le_monitor_input* m = &engine->monitors[input];
     store_i32(&m->a_fx_enabled[index], 1);
     m->fx_type_pushed[index] = LE_FX_PLUGIN;
+    atomic_store_explicit(&m->fx_meta[index].param_type, LE_FX_PLUGIN,
+                          memory_order_release); /* see the lane's */
   }
   return rc;
 }
