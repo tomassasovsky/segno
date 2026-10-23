@@ -61,8 +61,11 @@ extern "C" {
 #define LE_PV_BINS (LE_PV_N / 2 + 1)
 #define LE_PV_LIFTER (LE_PV_N / 24) /* ~42: cepstral envelope lifter cutoff */
 /* The hop split (#887 part 9): a frame's work runs in four stages, one per
- * quarter of its hop (analysis, envelope, shift, synthesis), so no one
- * callback carries a whole frame whatever the hop phase. The synthesis runs
+ * quarter of its hop (analysis, envelope, shift, synthesis), so on a device
+ * period no longer than a quarter hop (64 frames, the console's) no callback
+ * carries a whole frame, whatever the hop phase. A longer period runs
+ * several stages in one callback and gains nothing, but pays the same
+ * latency: the engine keeps one schedule for every host. The synthesis runs
  * LE_PV_SYNTH_TICK ticks after the analysis and its first sample is emitted
  * on that tick, so the output runs that much later than an unsplit frame's:
  * the octaver's latency is LE_PV_LATENCY in both modes (PSOLA reads its
