@@ -74,6 +74,15 @@ void le_plog_push(le_engine* e, uint64_t frame, le_command cmd) {
   }
 }
 
+/* A type command landing on slot [index]: the row is this type's from now
+ * (a raw post never seeded it, le_fx_slot_meta.param_type), and the slot no
+ * longer holds the entry a recipe put there (instance). */
+static inline void le_fx_type_landed(le_fx_slot_meta* meta, int32_t index,
+                                     int32_t type) {
+  atomic_store_explicit(&meta[index].param_type, type, memory_order_release);
+  atomic_store_explicit(&meta[index].instance, 0u, memory_order_relaxed);
+}
+
 /* Whether the transport is HELD: no track is playing, recording, or
  * overdubbing, so the loop clock sits at the top (advance_transport_frame's
  * idle branch). The audio-thread twin of le_transport_active on the control
@@ -5323,11 +5332,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       le_plog_push(e, frame, *cmd);
       le_lane* ln = &e->tracks[ch].lanes[lane];
       store_i32(&ln->a_fx_type[index], cmd->fx.type);
-      /* The row is this type's from now (a raw post never seeded it), and
-       * the slot no longer holds the entry a recipe put there. */
-      atomic_store_explicit(&ln->fx_meta[index].param_type, cmd->fx.type,
-                            memory_order_release);
-      ln->fx_meta[index].instance = 0;
+      le_fx_type_landed(ln->fx_meta, index, cmd->fx.type);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&ln->fx, index);
       /* Wet-cache fast path: the published type just moved, so the chain
@@ -5463,9 +5468,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       le_plog_push(e, frame, *cmd);
       le_monitor_input* m = &e->monitors[input];
       store_i32(&m->a_fx_type[index], cmd->fx.type);
-      atomic_store_explicit(&m->fx_meta[index].param_type, cmd->fx.type,
-                            memory_order_release); /* see the lane's */
-      m->fx_meta[index].instance = 0;
+      le_fx_type_landed(m->fx_meta, index, cmd->fx.type);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&m->fx, index);
       break;
@@ -5518,11 +5521,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       if (!valid_channel(e, ch) || index < 0 || index >= LE_FX_MAX) break;
       le_fx_bus* b = &e->tracks[ch].bus;
       store_i32(&b->a_fx_type[index], cmd->fx.type);
-      /* The row is this type's from now (a raw post never seeded it), and
-       * the slot no longer holds the entry a recipe put there. */
-      atomic_store_explicit(&b->fx_meta[index].param_type, cmd->fx.type,
-                            memory_order_release);
-      b->fx_meta[index].instance = 0;
+      le_fx_type_landed(b->fx_meta, index, cmd->fx.type);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&b->fx, index);
       break;
@@ -5546,11 +5545,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       const int32_t index = cmd->fx.index;
       if (index < 0 || index >= LE_FX_MAX) break;
       store_i32(&e->all_tracks.a_fx_type[index], cmd->fx.type);
-      /* The row is this type's from now (a raw post never seeded it), and
-       * the slot no longer holds the entry a recipe put there. */
-      atomic_store_explicit(&e->all_tracks.fx_meta[index].param_type, cmd->fx.type,
-                            memory_order_release);
-      e->all_tracks.fx_meta[index].instance = 0;
+      le_fx_type_landed(e->all_tracks.fx_meta, index, cmd->fx.type);
       /* One config, one instance per bus: every instance's DSP state resets,
        * or a destination would keep the previous effect's filter memory. */
       for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
@@ -5572,12 +5567,10 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       if (index < 0 || index >= LE_FX_MAX) break;
       le_plog_push(e, frame, *cmd);
       store_i32(&e->outputs[bus].fx.a_fx_type[index], cmd->fx.type);
-      /* The row is this type's from now (a raw post never seeded it), and
-       * the slot no longer holds the entry a recipe put there. */
-      atomic_store_explicit(&e->outputs[bus].fx.fx_meta[index].param_type, cmd->fx.type,
-                            memory_order_release);
-      e->outputs[bus].fx.fx_meta[index].instance = 0;
-      le_fx_entry_reset(&e->outputs[bus].fx.fx, index);
+      le_fx_type_landed(e->outputs[bus].fx.fx_meta, index, cmd->fx.type);
+      /* As a recipe renews a slot (le_fx_entry_renew), so perf_render can
+       * answer every logged output type the one way. */
+      le_fx_entry_renew(&e->outputs[bus].fx.fx, index, cmd->fx.type);
       break;
     }
     case LE_CMD_SET_OUTPUT_FX_COUNT: {
@@ -6910,9 +6903,7 @@ static inline void snapshot_lane_fx(
   /* While a performance is armed, a parameter that differs from the one
    * this slot held at the last snapshot is logged here, at the frame the
    * callback first applies it (#887 part 4): the setters' own stamp could
-   * be a block early or late. A slot whose type changed logs nothing, as
-   * the lane's structure is not logged (perf_render keeps the arm-time
-   * chain). */
+   * be a block early or late. */
   const int log = e->perf.armed;
   for (int t = 0; t < tc; ++t) {
     if (!(track_mask & (1u << t))) continue;
@@ -6946,9 +6937,16 @@ static inline void snapshot_lane_fx(
         /* Only what the type reads: the rest of the row is never looked
          * at, so the width costs nothing here. */
         const int32_t w = le_fx_param_width(ty);
+        /* A slot retyped by a granular command: the log carries that type
+         * (apply_command), which perf_render answers with its defaults, so
+         * what differs from them is what moved. A lane recipe writes its
+         * own values into this view first (le_fx_recipe_apply), so it never
+         * reaches here retyped. */
+        float base[LE_FX_PARAMS];
+        if (log && !same_type) le_fx_defaults(ty, base);
         for (int p = 0; p < w; ++p) {
           const float v = load_f32(&ln->a_fx_param[s][p]);
-          if (log && same_type && fx_params[t][l][s][p] != v) {
+          if (log && (same_type ? fx_params[t][l][s][p] : base[p]) != v) {
             le_plog_push(e, log_frame,
                          (le_command){.code = LE_PLOG_SET_LANE_FX_PARAM,
                                       .fx = {t, l, LE_PLOG_FX_PARAM_PACK(s, p),

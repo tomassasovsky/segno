@@ -291,8 +291,9 @@ void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* p, uint64_t frame) 
       atomic_store_explicit(&t.fx->plugin[s], host, memory_order_release);
       const int retyped = load_i32(&t.type[s]) != ty;
       const int renew =
-          retyped || rehosted || id == 0u || t.meta[s].instance != id;
-      t.meta[s].instance = id;
+          retyped || rehosted || id == 0u ||
+          atomic_load_explicit(&t.meta[s].instance, memory_order_relaxed) != id;
+      atomic_store_explicit(&t.meta[s].instance, id, memory_order_relaxed);
       store_i32(&t.type[s], ty);
       store_i32(&t.meta[s].param_type, ty); /* the row is this type's */
       if (!active) continue;

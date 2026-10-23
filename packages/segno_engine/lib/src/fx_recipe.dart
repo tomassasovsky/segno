@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:segno_engine/src/fx_fingerprint.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
 import 'package:segno_engine/src/track_effect.dart';
 
@@ -59,13 +60,7 @@ enum FxRackEdge {
 /// place leaves its tail sounding (#887 part 4).
 int fxInstanceId(String? slotId) {
   if (slotId == null) return 0;
-  // The bit pattern is what matters; it reads as a negative Dart int above
-  // 2^63. VM-only, like FxFingerprint.
-  // ignore: avoid_js_rounded_ints
-  var h = 0xcbf29ce484222325;
-  for (final b in utf8.encode(slotId)) {
-    h = (h ^ b) * 0x100000001b3;
-  }
+  final h = FxFingerprint.mixBytes(FxFingerprint.offset, utf8.encode(slotId));
   return h == 0 ? 1 : h;
 }
 
