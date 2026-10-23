@@ -871,7 +871,7 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   int has_builtin = 0;
   int has_plugin = 0;
   for (int32_t s = 0; s < count; ++s) {
-    types[s] = le_fx_slot_type(ln->a_fx_type, ln->fx_meta, s);
+    types[s] = load_i32(&ln->a_fx_type[s]);
     raw_en[s] = load_i32(&ln->a_fx_enabled[s]) ? 1 : 0;
     const int32_t w = le_fx_param_width(types[s]);
     for (int32_t p = 0; p < w; ++p) {
@@ -1106,7 +1106,7 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   int has_builtin = 0;
   int has_plugin = 0;
   for (int32_t s = 0; s < count; ++s) {
-    types[s] = le_fx_slot_type(b->a_fx_type, b->fx_meta, s);
+    types[s] = load_i32(&b->a_fx_type[s]);
     raw_en[s] = load_i32(&b->a_fx_enabled[s]) ? 1 : 0;
     const int32_t w = le_fx_param_width(types[s]);
     for (int32_t p = 0; p < w; ++p) {
@@ -1592,7 +1592,7 @@ void le_fx_frozen_capture(le_fx_frozen_chain* c, _Atomic int32_t* count,
                           _Atomic int32_t* chan_in, _Atomic int32_t* chan_out,
                           _Atomic uint32_t* gl, _Atomic uint32_t* gr,
                           _Atomic uint32_t* level, _Atomic int32_t* rack,
-                          const le_fx_slot_meta* meta, int32_t hop_seed) {
+                          int32_t hop_seed) {
   int32_t n = load_i32(count);
   if (n < 0) n = 0;
   if (n > LE_FX_MAX) n = LE_FX_MAX;
@@ -1600,9 +1600,7 @@ void le_fx_frozen_capture(le_fx_frozen_chain* c, _Atomic int32_t* count,
   int32_t en[LE_FX_MAX];
   float params[LE_FX_MAX][LE_FX_PARAMS]; /* each type's own cells only */
   for (int32_t s = 0; s < n; ++s) {
-    /* The live rule (le_fx_slot_type): a capture taken while a granular
-     * retype is in flight renders the slot dry, as the callback plays it. */
-    types[s] = le_fx_slot_type(type, meta, s);
+    types[s] = load_i32(&type[s]);
     en[s] = load_i32(&enabled[s]) ? 1 : 0;
     const int32_t w = le_fx_param_width(types[s]);
     for (int32_t p = 0; p < w; ++p) params[s][p] = load_f32(&param[s][p]);

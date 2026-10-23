@@ -286,7 +286,6 @@ void le_lane_reset_settings(le_lane* ln, int32_t input_channel) {
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       store_f32(&ln->a_fx_param[s][p], 0.0f);
     }
-    store_i32(&ln->fx_meta[s].param_type, LE_FX_NONE);
     atomic_store_explicit(&ln->fx_meta[s].instance, 0u, memory_order_relaxed);
     /* Enable flags default 1 with the crossfade runtime SETTLED at that
      * target, so a fresh chain does not fade in on first use. */
@@ -350,7 +349,6 @@ static void le_monitor_input_reset(le_monitor_input* m) {
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       store_f32(&m->a_fx_param[s][p], 0.0f);
     }
-    store_i32(&m->fx_meta[s].param_type, LE_FX_NONE);
     atomic_store_explicit(&m->fx_meta[s].instance, 0u, memory_order_relaxed);
     /* Enable flags default 1, crossfade runtime settled (see le_lane_reset). */
     store_i32(&m->a_fx_enabled[s], 1);
@@ -393,7 +391,6 @@ static void le_fx_bus_reset(le_fx_bus* b) {
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       store_f32(&b->a_fx_param[s][p], 0.0f);
     }
-    store_i32(&b->fx_meta[s].param_type, LE_FX_NONE);
     atomic_store_explicit(&b->fx_meta[s].instance, 0u, memory_order_relaxed);
     /* Enable flags default 1, crossfade runtime settled (see le_lane_reset). */
     store_i32(&b->a_fx_enabled[s], 1);

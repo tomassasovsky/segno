@@ -35305,8 +35305,6 @@ static void test_cache_plugin_chain_excluded(void) {
    * the scheduler and fingerprint read the same published atomic either
    * way. */
   store_i32(&a->tracks[0].lanes[0].a_fx_type[1], LE_FX_PLUGIN);
-  /* ...with its row marked as the plugin's, as the plugin path does. */
-  store_i32(&a->tracks[0].lanes[0].fx_meta[1].param_type, LE_FX_PLUGIN);
   le_lane_cache_info info;
   le_engine_get_lane_cache(a, 0, 0, &info);
   pump_frames(a, 0.0f, CACHE_SETTLE + 2000);

@@ -42,25 +42,21 @@ static void control_sleep_ms(int ms) {
 /* Resolves a lane's effect state + the published type cell for chain entry
  * [index], or returns NULL on an out-of-range address. */
 static le_fx_state* lane_fx(le_engine* e, int32_t channel, int32_t lane,
-                            int32_t index, _Atomic int32_t** out_type,
-                            _Atomic int32_t** out_tag) {
+                            int32_t index, _Atomic int32_t** out_type) {
   if (!e || channel < 0 || channel >= e->track_count) return NULL;
   if (lane < 0 || lane >= LE_MAX_LANES) return NULL;
   if (index < 0 || index >= LE_FX_MAX) return NULL;
   le_lane* ln = &e->tracks[channel].lanes[lane];
   *out_type = &ln->a_fx_type[index];
-  *out_tag = &ln->fx_meta[index].param_type;
   return &ln->fx;
 }
 
 static le_fx_state* monitor_fx(le_engine* e, int32_t input, int32_t index,
-                               _Atomic int32_t** out_type,
-                               _Atomic int32_t** out_tag) {
+                               _Atomic int32_t** out_type) {
   if (!e || input < 0 || input >= LE_MAX_MONITORED_INPUTS) return NULL;
   if (index < 0 || index >= LE_FX_MAX) return NULL;
   le_monitor_input* m = &e->monitors[input];
   *out_type = &m->a_fx_type[index];
-  *out_tag = &m->fx_meta[index].param_type;
   return &m->fx;
 }
 
@@ -80,7 +76,7 @@ static le_fx_state* monitor_fx(le_engine* e, int32_t input, int32_t index,
  * is reclaimed at le_engine_destroy (after the device is closed) or by a later
  * successful clear once the callback recovers. */
 static int clear_slot(le_engine* e, le_fx_state* fx, _Atomic int32_t* type,
-                      _Atomic int32_t* tag, int32_t index) {
+                      int32_t index) {
   le_plugin_slot* slot =
       atomic_load_explicit(&fx->plugin[index], memory_order_acquire);
   if (!slot) return 1;
@@ -90,8 +86,6 @@ static int clear_slot(le_engine* e, le_fx_state* fx, _Atomic int32_t* type,
   le_plugin_slot_set_ready(slot, 0);
   /* 2. Stop the audio thread dispatching the entry at all (release-ordered so
    *    the retract above is visible no later than the NONE the audio reads). */
-  /* The row's tag moves with the type (le_fx_slot_type), first. */
-  atomic_store_explicit(tag, LE_FX_NONE, memory_order_release);
   atomic_store_explicit(type, LE_FX_NONE, memory_order_release);
   /* 3. Confirm the audio thread cycled past two buffer boundaries (a_frames
    *    advances once per processed buffer), so it has snapshotted NONE. Only
@@ -126,11 +120,11 @@ static int clear_slot(le_engine* e, le_fx_state* fx, _Atomic int32_t* type,
 /* Creates + publishes a plugin into an (already-resolved) slot. Replaces any
  * existing plugin in the same entry first. */
 static int32_t install(le_engine* e, le_fx_state* fx, _Atomic int32_t* type,
-                       _Atomic int32_t* tag, int32_t index,
-                       const char* plugin_id, le_plugin_slot** out_slot) {
+                       int32_t index, const char* plugin_id,
+                       le_plugin_slot** out_slot) {
   /* Replace any existing plugin first. If the old one cannot be safely cleared
    * (a stalled callback), refuse rather than overwrite + leak its pointer. */
-  if (!clear_slot(e, fx, type, tag, index)) return LE_ERR_DEVICE;
+  if (!clear_slot(e, fx, type, index)) return LE_ERR_DEVICE;
 
   double sr = (double)load_i32(&e->a_sample_rate);
   if (sr <= 0.0) sr = e->sample_rate > 0 ? (double)e->sample_rate : 48000.0;
@@ -149,8 +143,6 @@ static int32_t install(le_engine* e, le_fx_state* fx, _Atomic int32_t* type,
    * prior built-in drain when it observes LE_FX_PLUGIN in fx_apply_chain. */
   atomic_store_explicit(&fx->plugin[index], slot, memory_order_release);
   le_plugin_slot_set_ready(slot, 1);
-  /* The row is the plugin's (it reads none of it) as its type shows. */
-  atomic_store_explicit(tag, LE_FX_PLUGIN, memory_order_release);
   atomic_store_explicit(type, LE_FX_PLUGIN, memory_order_release);
   if (out_slot) *out_slot = slot;
   return LE_OK;
@@ -162,10 +154,9 @@ int32_t le_engine_set_lane_plugin(le_engine* engine, int32_t channel,
                                   le_plugin_slot** out_slot) {
   if (le_fx_edit_pending(engine, LE_FX_OWNER_LANE, channel, lane)) return LE_ERR_INVALID;
   _Atomic int32_t* type = NULL;
-  _Atomic int32_t* tag = NULL;
-  le_fx_state* fx = lane_fx(engine, channel, lane, index, &type, &tag);
+  le_fx_state* fx = lane_fx(engine, channel, lane, index, &type);
   if (!fx || !plugin_id) return LE_ERR_INVALID;
-  const int32_t rc = install(engine, fx, type, tag, index, plugin_id, out_slot);
+  const int32_t rc = install(engine, fx, type, index, plugin_id, out_slot);
   if (rc == LE_OK) {
     /* D-ENSEED for the plugin path: installing publishes a type change the
      * command setters never see, so the freshly placed plugin must start
@@ -184,10 +175,9 @@ int32_t le_engine_set_monitor_plugin(le_engine* engine, int32_t input,
                                      le_plugin_slot** out_slot) {
   if (le_fx_edit_pending(engine, LE_FX_OWNER_MONITOR, input, 0)) return LE_ERR_INVALID;
   _Atomic int32_t* type = NULL;
-  _Atomic int32_t* tag = NULL;
-  le_fx_state* fx = monitor_fx(engine, input, index, &type, &tag);
+  le_fx_state* fx = monitor_fx(engine, input, index, &type);
   if (!fx || !plugin_id) return LE_ERR_INVALID;
-  const int32_t rc = install(engine, fx, type, tag, index, plugin_id, out_slot);
+  const int32_t rc = install(engine, fx, type, index, plugin_id, out_slot);
   if (rc == LE_OK) {
     le_monitor_input* m = &engine->monitors[input];
     store_i32(&m->a_fx_enabled[index], 1);
@@ -200,12 +190,11 @@ int32_t le_engine_clear_lane_plugin(le_engine* engine, int32_t channel,
                                     int32_t lane, int32_t index) {
   if (le_fx_edit_pending(engine, LE_FX_OWNER_LANE, channel, lane)) return LE_ERR_INVALID;
   _Atomic int32_t* type = NULL;
-  _Atomic int32_t* tag = NULL;
-  le_fx_state* fx = lane_fx(engine, channel, lane, index, &type, &tag);
+  le_fx_state* fx = lane_fx(engine, channel, lane, index, &type);
   if (!fx) return LE_ERR_INVALID;
   /* The slot is always retracted + emptied; a deferred reclaim (stalled
    * callback) is still a successful clear from the caller's view. */
-  (void)clear_slot(engine, fx, type, tag, index);
+  (void)clear_slot(engine, fx, type, index);
   engine->tracks[channel].lanes[lane].fx_type_pushed[index] = LE_FX_NONE;
   le_lane_fx_gen_bump(&engine->tracks[channel].lanes[lane]);
   return LE_OK;
@@ -215,10 +204,9 @@ int32_t le_engine_clear_monitor_plugin(le_engine* engine, int32_t input,
                                        int32_t index) {
   if (le_fx_edit_pending(engine, LE_FX_OWNER_MONITOR, input, 0)) return LE_ERR_INVALID;
   _Atomic int32_t* type = NULL;
-  _Atomic int32_t* tag = NULL;
-  le_fx_state* fx = monitor_fx(engine, input, index, &type, &tag);
+  le_fx_state* fx = monitor_fx(engine, input, index, &type);
   if (!fx) return LE_ERR_INVALID;
-  (void)clear_slot(engine, fx, type, tag, index);
+  (void)clear_slot(engine, fx, type, index);
   engine->monitors[input].fx_type_pushed[index] = LE_FX_NONE;
   return LE_OK;
 }

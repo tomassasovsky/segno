@@ -1,6 +1,5 @@
 /* Cheap publishes (#887 part 4): a recipe resets only the slots that hold a
- * different entry than before, and a snapshot never runs a kernel on another
- * type's parameters. Included by test_engine_core.c. */
+ * different entry than before. Included by test_engine_core.c. */
 
 /* A monitor whose input is 1 for the first block and silent after: the
  * impulse a delay or reverb on its chain rings with. */
@@ -63,28 +62,6 @@ static void test_fx_publish_keeps_unchanged_entries(void) {
   }
 }
 
-/* A slot whose published row belongs to another type sits the buffer out
- * (dry) instead of running its kernel on those settings; when the row is
- * its own again it runs. */
-static void test_fx_snapshot_skips_foreign_rows(void) {
-  printf("test_fx_snapshot_skips_foreign_rows\n");
-  le_engine* e = pub_engine();
-  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 1.0f) == LE_OK);
-  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
-  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 1) == LE_OK);
-  pub_block(e, 0.1f);
-  const float driven = pub_block(e, 0.1f);
-  CHECK(fabsf(driven - tanhf(0.1f * 30.0f)) < 1e-3f);
-  /* As a granular retype leaves it until its command lands. */
-  atomic_store(&e->monitors[0].fx_meta[0].param_type, LE_FX_DELAY);
-  CHECK(fabsf(pub_block(e, 0.1f) - 0.1f) < 1e-6f);
-  atomic_store(&e->monitors[0].fx_meta[0].param_type, LE_FX_DRIVE);
-  CHECK(fabsf(pub_block(e, 0.1f) - driven) < 1e-3f);
-  le_engine_destroy(e);
-}
-
 static void run_fx_publish_tests(void) {
   test_fx_publish_keeps_unchanged_entries();
-  test_fx_snapshot_skips_foreign_rows();
 }

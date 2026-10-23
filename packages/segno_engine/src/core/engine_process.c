@@ -75,9 +75,7 @@ void le_plog_push(le_engine* e, uint64_t frame, le_command cmd) {
 }
 
 /* A type command landing on slot [index]: the slot no longer holds the
- * entry a recipe put there (instance). The row's tag is the setter's to
- * write (it seeded the row for this type, le_fx_seed_params); a raw post of
- * a type command seeds nothing, so its slot sits out (le_fx_slot_type). */
+ * entry a recipe put there (instance), so the next recipe renews it. */
 static inline void le_fx_type_landed(le_fx_slot_meta* meta, int32_t index) {
   atomic_store_explicit(&meta[index].instance, 0u, memory_order_relaxed);
 }
@@ -6908,7 +6906,6 @@ static inline void snapshot_lane_fx(
     if (!(track_mask & (1u << t))) continue;
     for (int l = 0; l < lane_n[t]; ++l) {
       le_lane* ln = &e->tracks[t].lanes[l];
-      const le_fx_slot_meta* meta = ln->fx_meta;
       has_fx[t][l] = 0;
       int32_t n = load_i32(&ln->a_fx_count);
       if (n < 0) n = 0;
@@ -6924,10 +6921,7 @@ static inline void snapshot_lane_fx(
       fx_pre_count[t][l] = pre;
       const int32_t chain_on = load_i32(&ln->a_fx_chain_enabled);
       for (int s = 0; s < n; ++s) {
-        /* Parameters written for another type (a granular type change
-         * whose command has not landed yet): the slot sits this buffer
-         * out rather than run either kernel on them (le_fx_slot_type). */
-        const int32_t ty = le_fx_slot_type(ln->a_fx_type, meta, s);
+        const int32_t ty = load_i32(&ln->a_fx_type[s]);
         const int same_type = fx_type[t][l][s] == ty;
         fx_type[t][l][s] = ty;
         if (ty != LE_FX_NONE) has_fx[t][l] = 1;
@@ -7017,9 +7011,8 @@ static inline void snapshot_monitor_fx(
     if (n > LE_FX_MAX) n = LE_FX_MAX;
     mon_fx_count[c] = n;
     const int32_t chain_on = load_i32(&m->a_fx_chain_enabled);
-    const le_fx_slot_meta* meta = m->fx_meta;
     for (int s = 0; s < n; ++s) {
-      const int32_t ty = le_fx_slot_type(m->a_fx_type, meta, s);
+      const int32_t ty = load_i32(&m->a_fx_type[s]);
       mon_fx_type[c][s] = ty;
       if (ty != LE_FX_NONE) mon_has_fx[c] = 1;
       mon_fx_enabled[c][s] = chain_on && load_i32(&m->a_fx_enabled[s]);
@@ -7072,7 +7065,6 @@ static inline void snapshot_bus_fx(le_engine* e, le_fx_bus* b,
    * defaults: whatever retyped it logged the type, which perf_render answers
    * with those defaults. */
   const int log = log_bus >= 0 && e->perf.armed;
-  const le_fx_slot_meta* meta = b->fx_meta;
   *bus_has_fx = 0;
   int32_t n = load_i32(&b->a_fx_count);
   if (n < 0) n = 0;
@@ -7086,7 +7078,7 @@ static inline void snapshot_bus_fx(le_engine* e, le_fx_bus* b,
   *bus_fx_pre_count = pre;
   const int32_t chain_on = load_i32(&b->a_fx_chain_enabled);
   for (int s = 0; s < n; ++s) {
-    const int32_t ty = le_fx_slot_type(b->a_fx_type, meta, s);
+    const int32_t ty = load_i32(&b->a_fx_type[s]);
     const int same_type = bus_fx_type[s] == ty;
     bus_fx_type[s] = ty;
     if (ty != LE_FX_NONE) *bus_has_fx = 1;
