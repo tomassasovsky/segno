@@ -3286,7 +3286,7 @@ class LooperRepository {
                   enabled: fx.enabled,
                   channels: fxChannelsToEngine(fx.channels),
                   rack: edges[index],
-                  path: fxRackPath(fx),
+                  path: fxRackPathToEngine(fx),
                   instance: fxInstanceId(fx.slotId),
                 ),
               );
@@ -7400,7 +7400,7 @@ class LooperRepository {
               enabled: fx.enabled,
               channels: fxChannelsToEngine(fx.channels),
               rack: edges[index],
-              path: fxRackPath(fx),
+              path: fxRackPathToEngine(fx),
               instance: fxInstanceId(fx.slotId),
             ),
           );

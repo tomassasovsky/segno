@@ -44,6 +44,17 @@ enum FxModulePath {
   amb,
 }
 
+/// The rack path [fx] runs on: its rack variant's ([fxEntryBuild],
+/// [FxModuleBuild.path]) for a built-in entry in a rack, `null` for any other.
+/// Derived, never stored, so it always agrees with the variant the entry's
+/// controls come from.
+///
+/// A Dub path module in a rack without an Amb-Verb runs as the Dub Rack does
+/// with its Amb-Verb off at the default mix: the input plus 0.64 of the Dub
+/// path's.
+FxModulePath? fxEntryPath(TrackEffect fx) =>
+    fx is BuiltInEffect && fx.rack != null ? fxEntryBuild(fx)?.path : null;
+
 /// What building one catalogue module on this engine amounts to: the effect
 /// type, which preset key feeds each of its parameters, and which of the
 /// preset's own controls have nowhere to go.

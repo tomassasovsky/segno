@@ -4673,7 +4673,8 @@ static inline void fx_rack_output(const le_fx_state* fx, int s, float dl,
 
 #define LE_FX_RACK_PATHS (LE_FX_RACK_DUB_PATH | LE_FX_RACK_AMB_PATH)
 
-/* A parallel section being walked (LE_FX_RACK_DUB_PATH): its first entry
+/* A parallel section being walked (LE_FX_RACK_DUB_PATH and
+ * LE_FX_RACK_AMB_PATH): its first entry
  * (-1 outside one), the pair it was handed, each path's running pair ([0]
  * Amb, [1] Dub) and its Amb-Dub Mix. */
 typedef struct fx_section {

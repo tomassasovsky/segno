@@ -477,7 +477,8 @@ typedef struct le_fx_state {
    * engaging all start there, so none of them fades. Callback-owned. */
   float rack_mix[LE_FX_MAX];
   int32_t rack_primed[LE_FX_MAX];
-  /* A parallel section's path gains (LE_FX_RACK_DUB_PATH), kept on its
+  /* A parallel section's path gains (LE_FX_RACK_DUB_PATH and
+   * LE_FX_RACK_AMB_PATH), kept on its
    * first entry: [0] the Amb path's A(m), [1] the Dub path's D(m), each
    * slewed toward its target at the enable rate so a moving Amb-Dub Mix
    * never steps. path_primed 0 settles them at their targets on the next

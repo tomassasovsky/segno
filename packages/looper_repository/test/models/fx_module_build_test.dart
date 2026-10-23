@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:segno_engine/segno_engine.dart' show FxRackPath;
 
 /// One real preset's worth of parameters, as the catalogue files carry them:
 /// Ed's Rack / Acoustic Rhythm 1, trimmed to the modules under test.
@@ -1025,21 +1024,38 @@ void main() {
       const rack = FxRack(id: 'r', name: 'Dub FX 1');
       final paths = {
         for (final e in fxRackEntries(preset))
-          e.module: fxRackPath(e.copyWith(rack: rack)),
+          e.module: fxEntryPath(e.copyWith(rack: rack)),
       };
       expect(paths, {
-        'Doubler': FxRackPath.dub,
-        'Dub delay': FxRackPath.dub,
-        'Dub reverb': FxRackPath.dub,
-        'Ambience': FxRackPath.amb,
-        'Compressor': FxRackPath.none,
-        'Parametric EQ': FxRackPath.none,
+        'Doubler': FxModulePath.dub,
+        'Dub delay': FxModulePath.dub,
+        'Dub reverb': FxModulePath.dub,
+        'Ambience': FxModulePath.amb,
+        'Compressor': null,
+        'Parametric EQ': null,
       });
       // Outside a rack an entry runs on no path.
       final verb = fxRackEntries(preset).firstWhere(
         (e) => e.module == 'Dub reverb',
       );
-      expect(fxRackPath(verb), FxRackPath.none);
+      expect(fxEntryPath(verb), isNull);
+      // Every other family's modules run on none, the Studio, Vocal and Vocal
+      // Tuner doublers included (their presets carry no Doubler Sep).
+      final dir = Directory('../fx_catalogue/assets/presets');
+      for (final family in dir.listSync().whereType<Directory>()) {
+        final name = family.uri.pathSegments.lastWhere((s) => s.isNotEmpty);
+        if (name == 'Dub Rack') continue;
+        for (final file in family.listSync().whereType<File>()) {
+          final p = FxPreset.tryParse(name, file.readAsStringSync())!;
+          for (final e in fxRackEntries(p)) {
+            expect(
+              fxEntryPath(e.copyWith(rack: rack)),
+              isNull,
+              reason: '${file.path} ${e.module}',
+            );
+          }
+        }
+      }
       // And the engine model carries it for the performance render.
       final engine = trackEffectsToEngine([verb.copyWith(rack: rack)]).single;
       expect(engine.toJson()['rackPath'], 'dub');
