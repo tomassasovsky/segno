@@ -724,7 +724,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     final fx = monitor.effects[index];
     // Built-in params only — a plugin's parameter surface arrives in part 5.
     if (fx is! BuiltInEffect) return;
-    if (param < 0 || param >= fx.params.length) return;
+    if (param < 0 || param >= fx.type.params.length) return;
     final params = List<double>.of(fx.params)..[param] = value;
     final next = [...monitor.effects]..[index] = fx.copyWith(params: params);
     final result = _repository.setMonitorEffectParam(

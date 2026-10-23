@@ -1202,7 +1202,6 @@ oom:
  * here, so the defaults have one home). test_fx_param_descriptors_match_kernels
  * measures the kernels against these rows. The seven built-ins are segno's own
  * effects, so none carries LE_FX_PARAM_TAPER_UNVERIFIED. */
-#define LE_FX_ROWS(t) t, (int32_t)(sizeof(t) / sizeof(t[0]))
 
 static const le_fx_param_desc LE_FX_DRIVE_PARAMS[] = {
     /* tanh pre-gain 1 + 29 v */
@@ -1295,34 +1294,51 @@ typedef struct le_fx_vtable {
    * LE_ERR_INVALID on OOM (after freeing whatever it allocated this call). NULL =
    * the type needs no allocation. */
   int32_t (*prepare)(le_fx_state* fx, int slot, int cap);
-  /* The type's parameter descriptors (le_fx_param_info) and their count; NULL
-   * and 0 for a type without fixed params. Defaults come from here. */
+  /* The type's parameter descriptors (le_fx_param_info), NULL for a type
+   * without fixed params; their count is le_fx_widths[type], the one table
+   * le_fx_param_width reads. Defaults come from here. */
   const le_fx_param_desc* params;
-  int32_t param_count;
 } le_fx_vtable;
 
 /* Indexed by le_fx_type — one row per effect. Adding an effect is adding its
  * kernels above + one row here. LE_FX_NONE is the all-NULL no-op (the empty-chain
  * regression guard). */
 static const le_fx_vtable LE_FX[] = {
-    [LE_FX_NONE] = {NULL, NULL, NULL, NULL, 0},
-    [LE_FX_DRIVE] = {fx_drive_process, NULL, NULL, LE_FX_ROWS(LE_FX_DRIVE_PARAMS)},
-    [LE_FX_FILTER] = {fx_filter_process, NULL, NULL, LE_FX_ROWS(LE_FX_FILTER_PARAMS)},
+    [LE_FX_NONE] = {NULL, NULL, NULL, NULL},
+    [LE_FX_DRIVE] = {fx_drive_process, NULL, NULL, LE_FX_DRIVE_PARAMS},
+    [LE_FX_FILTER] = {fx_filter_process, NULL, NULL, LE_FX_FILTER_PARAMS},
     [LE_FX_DELAY] =
-        {fx_delay_process, NULL, fx_stereo_ring_prepare, LE_FX_ROWS(LE_FX_DELAY_PARAMS)},
-    [LE_FX_TREMOLO] = {fx_tremolo_process, NULL, NULL, LE_FX_ROWS(LE_FX_TREMOLO_PARAMS)},
+        {fx_delay_process, NULL, fx_stereo_ring_prepare, LE_FX_DELAY_PARAMS},
+    [LE_FX_TREMOLO] = {fx_tremolo_process, NULL, NULL, LE_FX_TREMOLO_PARAMS},
     [LE_FX_OCTAVER] = {fx_octaver_process, fx_octaver_latency_vt,
-                       fx_octaver_prepare, LE_FX_ROWS(LE_FX_OCTAVER_PARAMS)},
+                       fx_octaver_prepare, LE_FX_OCTAVER_PARAMS},
     [LE_FX_ECHO] =
-        {fx_echo_process, NULL, fx_stereo_ring_prepare, LE_FX_ROWS(LE_FX_ECHO_PARAMS)},
+        {fx_echo_process, NULL, fx_stereo_ring_prepare, LE_FX_ECHO_PARAMS},
     [LE_FX_REVERB] =
-        {fx_reverb_process, NULL, fx_reverb_prepare, LE_FX_ROWS(LE_FX_REVERB_PARAMS)},
+        {fx_reverb_process, NULL, fx_reverb_prepare, LE_FX_REVERB_PARAMS},
     /* A hosted plugin: process forwards to its slot; no params, no prepare, no
      * defaults (the host owns all state). Output is sanitized at the chain
      * boundary in fx_apply_chain. */
-    [LE_FX_PLUGIN] = {fx_plugin_process, NULL, NULL, NULL, 0},
+    [LE_FX_PLUGIN] = {fx_plugin_process, NULL, NULL, NULL},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
+
+/* Each type's descriptor count: the only copy, read by le_fx_param_width,
+ * le_fx_param_count and le_fx_defaults. A type with descriptor rows and no
+ * entry here would read nothing; test_fx_params_past_count_are_inert checks
+ * every built-in has one. */
+_Static_assert(LE_FX_WIDTHS == sizeof(LE_FX) / sizeof(LE_FX[0]),
+               "LE_FX_WIDTHS must be one past the last le_fx_type code");
+#define LE_FX_ROW_COUNT(t) (uint8_t)(sizeof(t) / sizeof(t[0]))
+const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
+    [LE_FX_DRIVE] = LE_FX_ROW_COUNT(LE_FX_DRIVE_PARAMS),
+    [LE_FX_FILTER] = LE_FX_ROW_COUNT(LE_FX_FILTER_PARAMS),
+    [LE_FX_DELAY] = LE_FX_ROW_COUNT(LE_FX_DELAY_PARAMS),
+    [LE_FX_TREMOLO] = LE_FX_ROW_COUNT(LE_FX_TREMOLO_PARAMS),
+    [LE_FX_OCTAVER] = LE_FX_ROW_COUNT(LE_FX_OCTAVER_PARAMS),
+    [LE_FX_ECHO] = LE_FX_ROW_COUNT(LE_FX_ECHO_PARAMS),
+    [LE_FX_REVERB] = LE_FX_ROW_COUNT(LE_FX_REVERB_PARAMS),
+};
 
 /* Whether a bypassed slot of [type] drains its tail rather than crossfading
  * out: a ring-owning type with no reported latency (delay, echo, reverb).
@@ -1710,7 +1726,7 @@ int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap) {
 
 void le_fx_defaults(int32_t type, float out[LE_FX_PARAMS]) {
   const int known = type > LE_FX_NONE && type < LE_FX_TYPE_COUNT;
-  const int32_t n = known ? LE_FX[type].param_count : 0;
+  const int32_t n = known ? le_fx_widths[type] : 0;
   for (int p = 0; p < LE_FX_PARAMS; ++p) {
     out[p] = p < n ? LE_FX[type].params[p].def : 0.0f; /* NONE / unknown: 0 */
   }
@@ -1718,12 +1734,12 @@ void le_fx_defaults(int32_t type, float out[LE_FX_PARAMS]) {
 
 int32_t le_fx_param_count(int32_t type) {
   if (type < LE_FX_NONE || type >= LE_FX_TYPE_COUNT) return LE_ERR_INVALID;
-  return LE_FX[type].param_count;
+  return le_fx_widths[type];
 }
 
 int32_t le_fx_param_info(int32_t type, int32_t param, le_fx_param_desc* out) {
   if (out == NULL || type < LE_FX_NONE || type >= LE_FX_TYPE_COUNT ||
-      param < 0 || param >= LE_FX[type].param_count) {
+      param < 0 || param >= le_fx_widths[type]) {
     return LE_ERR_INVALID;
   }
   *out = LE_FX[type].params[param];

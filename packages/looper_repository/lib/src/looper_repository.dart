@@ -6109,7 +6109,9 @@ class LooperRepository {
     final fx = effects[index];
     // Built-in params only — a plugin's parameter surface arrives in part 5.
     if (fx is! BuiltInEffect) return EngineResult.invalid;
-    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    if (param < 0 || param >= fx.type.params.length) {
+      return EngineResult.invalid;
+    }
     final params = List<double>.of(fx.params)..[param] = value;
     if (_intendRunning) {
       final result = _engine.setLaneFxParam(
@@ -6669,7 +6671,9 @@ class LooperRepository {
     }
     final fx = effects[index];
     if (fx is! BuiltInEffect) return EngineResult.invalid;
-    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    if (param < 0 || param >= fx.type.params.length) {
+      return EngineResult.invalid;
+    }
     final params = List<double>.of(fx.params)..[param] = value;
     if (_intendRunning) {
       final result = _engine.setTrackFxParam(
@@ -6742,7 +6746,9 @@ class LooperRepository {
     }
     final fx = effects[index];
     if (fx is! BuiltInEffect) return EngineResult.invalid;
-    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    if (param < 0 || param >= fx.type.params.length) {
+      return EngineResult.invalid;
+    }
     if (_intendRunning) {
       final result = _engine.setOutputFxParam(
         bus: bus,
@@ -6862,7 +6868,9 @@ class LooperRepository {
     }
     final fx = _allTracksEffects[index];
     if (fx is! BuiltInEffect) return EngineResult.invalid;
-    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    if (param < 0 || param >= fx.type.params.length) {
+      return EngineResult.invalid;
+    }
     if (_intendRunning) {
       final result = _engine.setAllTracksFxParam(
         index: index,
@@ -7573,7 +7581,9 @@ class LooperRepository {
     final fx = effects[index];
     // Built-in params only — a plugin's parameter surface arrives in part 5.
     if (fx is! BuiltInEffect) return EngineResult.invalid;
-    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    if (param < 0 || param >= fx.type.params.length) {
+      return EngineResult.invalid;
+    }
     if (_intendRunning) {
       final result = _engine.setMonitorInputFxParam(
         input: input,

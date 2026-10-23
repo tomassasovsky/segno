@@ -81,7 +81,10 @@ class FxRecipeSlot {
   /// Whether this slot can be represented faithfully by the native recipe.
   bool get isValid =>
       params.length <= kTrackEffectParams &&
-      params.every((v) => v.isFinite && v >= 0 && v <= 1) &&
+      // The cells the type reads: the only ones the recipe carries.
+      params
+          .take(type.params.length)
+          .every((v) => v.isFinite && v >= 0 && v <= 1) &&
       channels.placement.isFinite &&
       channels.placement >= -1 &&
       channels.placement <= 1 &&

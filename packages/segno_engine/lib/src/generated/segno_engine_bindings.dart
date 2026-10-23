@@ -5990,7 +5990,8 @@ class SegnoEngineBindings {
   /// ---- effect-chain fingerprints (control thread; FX divergence detection) ---- *
   /// An order-sensitive 64-bit hash of a lane's / monitor's PUBLISHED effect chain:
   /// for each of the a_fx_count active entries, its type, plus (for a built-in) its
-  /// LE_FX_PARAMS float parameter bits — a plugin entry contributes its type only
+  /// float bits of the parameters its type reads (le_fx_param_count; none for an
+  /// unknown code) — a plugin entry contributes its type only
   /// (its params live in the plugin host, not a_fx_param). The empty chain hashes
   /// to the FNV-1a offset basis. This is DETECTION only, not a chain readback: the
   /// Dart repository owns the chain and computes the identical hash over its cache,
@@ -8840,7 +8841,7 @@ final class le_output_fx_snapshot extends ffi.Struct {
   @ffi.Array.multi([64])
   external ffi.Array<ffi.Int32> enabled;
 
-  @ffi.Array.multi([64, 4])
+  @ffi.Array.multi([64, 32])
   external ffi.Array<ffi.Array<ffi.Float>> params;
 }
 
@@ -8963,7 +8964,7 @@ final class le_fx_recipe extends ffi.Struct {
   @ffi.Array.multi([64])
   external ffi.Array<ffi.Int32> slot_enabled;
 
-  @ffi.Array.multi([64, 4])
+  @ffi.Array.multi([64, 32])
   external ffi.Array<ffi.Array<ffi.Float>> params;
 
   @ffi.Array.multi([64])
@@ -10838,7 +10839,7 @@ const int LE_LENGTH_PRESET_MAX_BARS = 64;
 
 const int LE_FX_MAX = 64;
 
-const int LE_FX_PARAMS = 4;
+const int LE_FX_PARAMS = 32;
 
 const int LE_FX_PARAM_KEY_CHARS = 24;
 
