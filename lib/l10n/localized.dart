@@ -20,11 +20,16 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.octaver => effectOctaver,
     TrackEffectType.echo => effectEcho,
     TrackEffectType.reverb => effectReverb,
+    TrackEffectType.eq => effectEq,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
   /// key reads as the key itself rather than as nothing.
-  String fxParamName(FxParamInfo p) => switch (p.key) {
+  String fxParamName(FxParamInfo p) => fxParamKeyName(p.key);
+
+  /// The name of the built-in parameter whose stable key is [key]; also how
+  /// a rack variant renames one (the single mid band of a parametric EQ).
+  String fxParamKeyName(String key) => switch (key) {
     'drive' => paramDrive,
     'level' => paramLevel,
     'cutoff' => paramCutoff,
@@ -39,7 +44,25 @@ extension EngineLocalizations on AppLocalizations {
     'size' => paramSize,
     'damping' => paramDamping,
     'mode' => paramMode,
-    _ => p.key,
+    'low_cut' => paramLowCut,
+    'low_gain' => paramLowGain,
+    'low_freq' => paramLowFreq,
+    'low_q' => paramLowQ,
+    'lo_mid_gain' => paramLoMidGain,
+    'lo_mid_freq' => paramLoMidFreq,
+    'lo_mid_q' => paramLoMidQ,
+    'hi_mid_gain' => paramHiMidGain,
+    'hi_mid_freq' => paramHiMidFreq,
+    'hi_mid_q' => paramHiMidQ,
+    'high_gain' => paramHighGain,
+    'high_freq' => paramHighFreq,
+    'high_q' => paramHighQ,
+    'high_cut' => paramHighCut,
+    'air_gain' => paramAirGain,
+    'mid_gain' => paramMidGain,
+    'mid_freq' => paramMidFreq,
+    'mid_q' => paramMidQ,
+    _ => key,
   };
 
   /// The value a built-in parameter's normalized [setting] stands for, with
@@ -50,6 +73,11 @@ extension EngineLocalizations on AppLocalizations {
   /// finer than a performer sets or hears; a frequency reads in kHz from
   /// 1000 Hz.
   String fxParamValueText(FxParamInfo p, double setting) {
+    // The EQ's cuts are off at their ends of the range (engine_fx.c).
+    if ((p.key == 'low_cut' && setting <= 0) ||
+        (p.key == 'high_cut' && setting >= 1)) {
+      return fxValueOff;
+    }
     final value = p.valueAt(setting);
     final tenths = (value * 10).round() / 10;
     return switch (p.unit) {
@@ -65,6 +93,8 @@ extension EngineLocalizations on AppLocalizations {
       FxParamUnit.semitones => _pitchInterval(value),
       FxParamUnit.times => fxValueTimes(value),
       FxParamUnit.choice => _choiceName(p, p.positionOf(setting)),
+      FxParamUnit.db => fxValueDb(tenths),
+      FxParamUnit.q => fxValueQ(value),
     };
   }
 

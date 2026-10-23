@@ -803,6 +803,25 @@
     "paramSize": "Size",
     "paramDamping": "Damping",
     "paramMode": "Mode",
+    "effectEq": "EQ",
+    "paramLowCut": "Low cut",
+    "paramLowGain": "Low",
+    "paramLowFreq": "Low freq",
+    "paramLowQ": "Low Q",
+    "paramLoMidGain": "Lo mid",
+    "paramLoMidFreq": "Lo mid freq",
+    "paramLoMidQ": "Lo mid Q",
+    "paramHiMidGain": "Hi mid",
+    "paramHiMidFreq": "Hi mid freq",
+    "paramHiMidQ": "Hi mid Q",
+    "paramHighGain": "High",
+    "paramHighFreq": "High freq",
+    "paramHighQ": "High Q",
+    "paramHighCut": "High cut",
+    "paramAirGain": "Air",
+    "paramMidGain": "Mid",
+    "paramMidFreq": "Mid freq",
+    "paramMidQ": "Mid Q",
     "octaverModePhaseVocoder": "Phase Vocoder",
     "octaverModePsola": "PSOLA",
     "pitchUnison": "Unison",
@@ -4106,6 +4125,23 @@
                 "format": "decimalPatternDigits",
                 "optionalParameters": {
                     "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "fxValueQ": "{q}",
+    "fxValueOff": "Off",
+    "@fxValueOff": {
+        "description": "An EQ cut at the end of its range, where it filters nothing."
+    },
+    "@fxValueQ": {
+        "description": "A filter's Q, a plain number with two decimals (an EQ band's width).",
+        "placeholders": {
+            "q": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 2
                 }
             }
         }

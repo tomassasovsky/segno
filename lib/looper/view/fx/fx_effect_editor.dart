@@ -190,7 +190,7 @@ class _Parameters extends StatelessWidget {
   Widget build(BuildContext context) {
     final effect = this.effect;
     if (effect == null) return const SizedBox.shrink();
-    final params = effect.type.params;
+    final controls = fxEntryControls(effect);
     return Align(
       alignment: Alignment.topRight,
       child: SizedBox(
@@ -199,15 +199,18 @@ class _Parameters extends StatelessWidget {
           spacing: 58,
           runSpacing: 46,
           children: [
-            for (var i = 0; i < params.length; i++)
+            for (var j = 0; j < controls.params.length; j++)
               FxBuiltInParamControl(
-                key: Key('fx_param_$i'),
+                key: Key('fx_param_${controls.params[j]}'),
                 effect: effect,
-                index: i,
+                index: controls.params[j],
+                labelKey: controls.keys[j],
                 width: 493,
                 onChanged: (value) {
                   final id = slotId;
-                  if (id != null) edits.setParam(id, i, value);
+                  if (id != null) {
+                    edits.setParam(id, controls.params[j], value);
+                  }
                 },
               ),
           ],

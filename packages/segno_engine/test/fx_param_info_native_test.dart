@@ -3,6 +3,7 @@ library;
 
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -73,7 +74,8 @@ void main() {
       }
       // A hosted plugin has no fixed parameters; an unknown type is refused.
       expect(bindings.le_fx_param_count(kPluginFxCode), 0);
-      expect(bindings.le_fx_param_count(kPluginFxCode + 1), lessThan(0));
+      final last = TrackEffectType.values.map((t) => t.code).reduce(math.max);
+      expect(bindings.le_fx_param_count(last + 1), lessThan(0));
     },
     skip: skip,
   );

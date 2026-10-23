@@ -128,6 +128,13 @@ static inline int32_t le_fx_all_tracks_hop_seed(int32_t bus) {
 #define LE_PSOLA_THRESH 0.15f /* YIN absolute threshold for the first dip */
 #define LE_PSOLA_THMAX 300   /* grain half-width cap: 2*THMAX < LE_PV_N (fits OLA) */
 
+/* The cadence of a heap-state kind's update hook (le_fx_kinds), in engine
+ * frames: it runs once per this many frames of the engine clock, at a phase
+ * set by the owner's hop-stagger seed and the slot, live and offline alike,
+ * so an offline render recomputes on the same frames as the chain it
+ * reproduces. A power of two, divisible by four. */
+#define LE_FX_UPDATE_FRAMES 32
+
 /* Enable-crossfade length: a slot's dry/wet ramp on an effective-enabled
  * transition, in milliseconds. Short enough to feel instant on a pedal stomp,
  * long enough to be click-free. */
@@ -263,6 +270,22 @@ void le_octaver_envelope(const float* mag, float* env);
  * nulls them. Control-thread only (lane/monitor reset, engine destroy). */
 void le_fx_free_octaver(le_fx_state* fx, int slot);
 
+/* Frees every heap buffer chain slot [slot] owns: its delay rings, its
+ * octaver buffers and its per-kind state. The one call an owner reset or
+ * destroy makes per slot, so a future heap-owning kind adds its free to it
+ * once. Control-thread only, where the audio thread no longer reads the
+ * slot. */
+void le_fx_free_slot(le_fx_state* fx, int slot);
+
+/* Frees chain slot [slot]'s per-kind state (its arena and every block in it)
+ * and forgets it. Control-thread only, where the audio thread no longer reads
+ * the slot, like le_fx_free_delay. */
+void le_fx_free_kinds(le_fx_state* fx, int slot);
+
+/* Frees the per-kind table itself, after le_fx_free_kinds on every slot.
+ * Owner destroy only (le_engine_destroy, le_fx_state_free_buffers). */
+void le_fx_free_kind_table(le_fx_state* fx);
+
 /* Frees a chain slot's delay rings (both channels) and nulls them. Control-
  * thread only, like le_fx_free_octaver. The rings are le_rt_alloc storage
  * (rt_alloc.h), so every owner releases them here and never with free(). */
@@ -300,10 +323,17 @@ int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap);
  *
  * LE_FX_WIDTHS is one past the last le_fx_type code; engine_fx.c checks it
  * against its effect table. */
-#define LE_FX_WIDTHS 9
+#define LE_FX_WIDTHS 10
 extern const uint8_t le_fx_widths[LE_FX_WIDTHS];
 static inline int32_t le_fx_param_width(int32_t type) {
   return type > 0 && type < LE_FX_WIDTHS ? (int32_t)le_fx_widths[type] : 0;
+}
+
+/* Whether [type] is a built-in an entry may be set to: none or a built-in
+ * effect, not a hosted plugin (which arrives through its own call) nor an
+ * unknown code. */
+static inline int le_fx_settable_type(int32_t type) {
+  return type >= LE_FX_NONE && type < LE_FX_WIDTHS && type != LE_FX_PLUGIN;
 }
 
 /* Writes effect [type]'s default normalized params into out[LE_FX_PARAMS] (all

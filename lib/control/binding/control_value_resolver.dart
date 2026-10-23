@@ -37,7 +37,7 @@ extension ControlValueResolver on LooperRepository {
       for (final fx in entries) {
         final slotId = fx.slotId;
         if (slotId == null || fx is! BuiltInEffect) continue;
-        for (var param = 0; param < fx.type.params.length; param++) {
+        for (final param in fxEntryControls(fx).params) {
           targets.add(
             FxParamTarget(address: address, slotId: slotId, param: param),
           );

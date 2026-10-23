@@ -663,6 +663,16 @@ typedef enum le_fx_type {
    * le_engine_set_lane_plugin). An LE_FX_PLUGIN entry whose slot is not yet
    * published (or is being torn down) renders dry passthrough. */
   LE_FX_PLUGIN = 8,
+  /* The Looper X kinds (#887 part 4 on): one type per kind, carrying the
+   * generic module's whole parameter set; a rack variant exposes a subset.
+   *
+   * EQ: p0 low cut, p1 low gain, p2 low frequency, p3 low Q, p4 low-mid
+   * gain, p5 low-mid frequency, p6 low-mid Q, p7 high-mid gain, p8 high-mid
+   * frequency, p9 high-mid Q, p10 high gain, p11 high frequency, p12 high Q,
+   * p13 high cut, p14 air gain. In series: a 12 dB/octave high-pass (off at
+   * its lowest setting), a low shelf, two peaking bands, a high shelf, an air
+   * shelf at 12 kHz and a 12 dB/octave low-pass (off at its highest). */
+  LE_FX_EQ = 9,
 } le_fx_type;
 
 /* ---- Built-in effect parameter descriptors (#1378) ----
@@ -683,6 +693,8 @@ typedef enum le_fx_param_unit {
   LE_FX_UNIT_SEMITONES = 3, /* a pitch interval */
   LE_FX_UNIT_TIMES = 4,     /* a gain factor, "x" */
   LE_FX_UNIT_CHOICE = 5,    /* named positions; the value is the position */
+  LE_FX_UNIT_DB = 6,        /* decibels */
+  LE_FX_UNIT_Q = 7,         /* a filter's Q, a plain number */
 } le_fx_param_unit;
 
 /* How a parameter's value follows its normalized setting v in 0..1. */

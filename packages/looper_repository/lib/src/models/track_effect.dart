@@ -175,6 +175,12 @@ enum FxParamUnit {
 
   /// Named positions; the value is the position.
   choice,
+
+  /// Decibels.
+  db,
+
+  /// A filter's Q, a plain number.
+  q,
 }
 
 /// How a built-in parameter's value follows its normalized setting. Domain
@@ -265,6 +271,9 @@ class FxParamInfo extends Equatable {
   int positionOf(double setting) =>
       (_source ?? _toEngine()).positionOf(setting);
 
+  /// The setting that stands for [value] (see the engine's `settingFor`).
+  double settingFor(double value) => (_source ?? _toEngine()).settingFor(value);
+
   /// The engine descriptor, which holds the one implementation of the
   /// mapping.
   engine.FxParamInfo _toEngine() => engine.FxParamInfo(
@@ -276,6 +285,8 @@ class FxParamInfo extends Equatable {
       FxParamUnit.semitones => engine.FxParamUnit.semitones,
       FxParamUnit.times => engine.FxParamUnit.times,
       FxParamUnit.choice => engine.FxParamUnit.choice,
+      FxParamUnit.db => engine.FxParamUnit.db,
+      FxParamUnit.q => engine.FxParamUnit.q,
     },
     atMin: atMin,
     atMax: atMax,
@@ -330,9 +341,17 @@ enum TrackEffectType {
   echo(6),
 
   /// Schroeder/Freeverb room reverb.
-  reverb(7);
+  reverb(7),
+
+  /// The Looper X's generic EQ (#887 part 4).
+  eq(9);
 
   const TrackEffectType(this.code);
+
+  /// Whether this is one of the Looper X kinds (#887): a type built to
+  /// reproduce a factory module, whose descriptors carry that module's own
+  /// scales. The seven built-ins stand in for modules only approximately.
+  bool get isRackKind => code >= TrackEffectType.eq.code;
 
   /// The native `le_fx_type` integer.
   final int code;
@@ -726,6 +745,8 @@ FxParamUnit _unitFromEngine(engine.FxParamUnit unit) => switch (unit) {
   engine.FxParamUnit.semitones => FxParamUnit.semitones,
   engine.FxParamUnit.times => FxParamUnit.times,
   engine.FxParamUnit.choice => FxParamUnit.choice,
+  engine.FxParamUnit.db => FxParamUnit.db,
+  engine.FxParamUnit.q => FxParamUnit.q,
 };
 
 /// Maps an engine parameter curve to its domain mirror.
