@@ -989,7 +989,10 @@ extension MidiControlEditing on ControlCubit {
     }
     for (final target in _parameterHolders.keys.whereType<FxParamTarget>()) {
       final released = _survivingMidiReleased(target);
-      if (released != null) parameters[target] = released;
+      // Persistence holds the chain's setting; a holder the binding's.
+      if (released != null) {
+        parameters[target] = _looper.fxKindSettingFor(target, released);
+      }
     }
     _fxPersistence.replace(powers: powers, parameters: parameters);
   }
@@ -1003,7 +1006,11 @@ extension MidiControlEditing on ControlCubit {
       );
     } else if (target is ControlValueTarget) {
       (_parameterHolders[target] ??= {})[key] = (
-        value: value,
+        // A UI edit arrives as the chain's setting; a holder keeps the
+        // binding's (fxKindSettingFor).
+        value: target is FxParamTarget
+            ? _looper.fxShownSettingFor(target, value)
+            : value,
         order: ++_activationOrder,
       );
     }

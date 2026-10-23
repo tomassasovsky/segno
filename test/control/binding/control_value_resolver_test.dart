@@ -4,6 +4,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
+import 'package:segno/control/binding/external_control_writer.dart';
 import 'package:segno/control/binding/owned_value_control.dart';
 import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
@@ -142,6 +143,64 @@ void main() {
       param: 0,
     );
     expect(looper.readValueTarget(shift), closeTo(19 / 24, 1e-6));
+  });
+
+  group('a rack variant shown range', () {
+    // A Vocal Rack Pitch Shift on monitor 2, at +7 semitones: the octaver's
+    // -24..+24 shown as the rack's -12..+12.
+    const shift = FxParamTarget(
+      address: FxAddress(stage: FxStage.input, index: 2),
+      slotId: 'ps-2',
+      param: 0,
+    );
+    late BuiltInEffect pitch;
+
+    setUp(() {
+      pitch = fxModuleEntry(
+        kFxModules.firstWhere((m) => m.name == 'Pitch shift'),
+        const FxPreset(
+          family: 'Vocal Rack',
+          name: 'p',
+          id: 'p',
+          type: 0,
+          params: {'Pitch': 1, 'Pitch Shift': 19 / 24, 'Pitch Mix': 1},
+        ),
+      ).copyWith(slotId: 'ps-2');
+      monitorChains[2] = [pitch];
+    });
+
+    test('converts a binding value to the chain setting and back', () {
+      final kind = looper.fxKindSettingFor(shift, 1);
+      expect(pitch.type.params[0].valueAt(kind), closeTo(12, 1e-4));
+      expect(looper.fxShownSettingFor(shift, kind), closeTo(1, 1e-9));
+      // A parameter the rack shows as the kind does passes through.
+      const mix = FxParamTarget(
+        address: FxAddress(stage: FxStage.input, index: 2),
+        slotId: 'ps-2',
+        param: 2,
+      );
+      expect(looper.fxKindSettingFor(mix, 0.3), 0.3);
+    });
+
+    test('the external writer plays a binding at the top as +12', () {
+      when(() => looper.monitorChainEnabled(2)).thenReturn(true);
+      List<TrackEffect>? written;
+      when(
+        () => looper.setMonitorEffects(
+          input: 2,
+          effects: any(named: 'effects'),
+          chainEnabled: any(named: 'chainEnabled'),
+        ),
+      ).thenAnswer((i) {
+        written = i.namedArguments[#effects] as List<TrackEffect>;
+        return EngineResult.ok;
+      });
+
+      looper.writeExternalFx(activations: const {}, parameters: {shift: 1});
+
+      final entry = written!.single as BuiltInEffect;
+      expect(entry.type.params[0].valueAt(entry.params[0]), closeTo(12, 1e-4));
+    });
   });
 
   group('availableValueTargets', () {
