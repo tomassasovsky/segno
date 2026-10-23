@@ -76,9 +76,12 @@ class FxModuleBuild {
 
   /// The parameter as the rack shows it, by index, where its range is
   /// narrower than the kind's (the Pitch Shift's -12..+12 semitones in 25
-  /// steps on the octaver's -24..+24). Its control works in this parameter's
-  /// settings and writes the kind's setting for the same value
-  /// ([fxEntryParam], [fxEntryShownSetting], [fxEntryKindSetting]).
+  /// steps on the octaver's -24..+24). It is also the rack's own scale: a
+  /// preset value is read on it (its [FxParamInfo.defaultValue] when the
+  /// preset lacks the key), so it needs no entry in [scales]. Its control
+  /// works in this parameter's settings and writes the kind's setting for
+  /// the same value ([fxEntryParam], [fxEntryShownSetting],
+  /// [fxEntryKindSetting]).
   final Map<int, FxParamInfo> shown;
 
   /// The engine parameters this variant shows, in order: those a preset key
@@ -137,10 +140,10 @@ const Map<String, FxModuleBuild> kFxModuleBuilds = {
       'Rev Tail/ER',
     ],
   ),
-  // p0 shift, p1 tone, p2 mix, p3 mode. Only the mix has a preset key: the
-  // catalogue's octaver is two fixed voices with their own levels, where this
-  // engine's is one continuously shifted voice, so its shift has nothing to
-  // read and keeps the engine default.
+  // p0 shift, p1 tone, p2 mix, p3 mode, p4 formants. Only the mix has a
+  // preset key: the catalogue's octaver is two fixed voices with their own
+  // levels, where this engine's is one continuously shifted voice, so its
+  // shift has nothing to read and keeps the engine default.
   'Octaver': FxModuleBuild(
     type: TrackEffectType.octaver,
     params: [null, null, 'Octave Mix'],
@@ -251,13 +254,12 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
 
 // Studio and Vocal racks: the shift and the mix, on the octaver's phase
 // vocoder with the tone open. The shift reads -12..+12 semitones in whole
-// steps (linear), the rack's own range, inside the octaver's +-24. The
-// formants are held, as the octaver holds them, until a capture of the Looper
-// X shows whether its pitch shifter moves them (#1433).
+// steps (linear), the rack's own range, inside the octaver's +-24, and
+// starts at unison. The formants are held, as the octaver holds them, until a
+// capture of the Looper X shows whether its pitch shifter moves them (#1433).
 const FxModuleBuild _pitchShift = FxModuleBuild(
   type: TrackEffectType.octaver,
   params: ['Pitch Shift', null, 'Pitch Mix'],
-  scales: {0: FxSourceScale.linear(-12, 12)},
   fixed: {1: 100, 3: 0, 4: 0},
   shown: {
     0: FxParamInfo(
@@ -604,7 +606,14 @@ FxModuleBuild fxModuleBuild(FxModule module, {String? family}) {
 ///
 /// What a surface shows for a rack pedal: [FxModuleBuild.exposed], under
 /// [FxModuleBuild.labels]. Any other entry shows every parameter of its type.
-FxModuleBuild? fxEntryBuild(BuiltInEffect entry) {
+FxModuleBuild? fxEntryBuild(BuiltInEffect entry) =>
+    (_entryBuilds[entry] ??= (build: _findEntryBuild(entry))).build;
+
+/// [fxEntryBuild]'s answer per entry: every control of an editor resolves
+/// it, on every build and drag event, and an entry never changes.
+final Expando<({FxModuleBuild? build})> _entryBuilds = Expando();
+
+FxModuleBuild? _findEntryBuild(BuiltInEffect entry) {
   final name = entry.module;
   if (name == null) return null;
   final variants = kFxModuleVariants[name];
@@ -682,12 +691,16 @@ BuiltInEffect fxModuleEntry(FxModule module, FxPreset preset) {
   final params = List<double>.of(type.defaultParams);
   for (var i = 0; i < build.params.length && i < type.params.length; i++) {
     final key = build.params[i];
-    final value = key == null ? null : preset.params[key];
+    final shown = build.shown[i];
+    final value =
+        (key == null ? null : preset.params[key]) ?? shown?.defaultValue;
     if (value == null) continue;
     final scale = build.scales[i];
-    params[i] = scale == null
-        ? value.clamp(0.0, 1.0)
-        : type.params[i].settingFor(scale.valueAt(value));
+    params[i] = scale != null
+        ? type.params[i].settingFor(scale.valueAt(value))
+        : shown != null
+        ? type.params[i].settingFor(shown.valueAt(value))
+        : value.clamp(0.0, 1.0);
   }
   for (final e in build.fixed.entries) {
     if (e.key < type.params.length) {

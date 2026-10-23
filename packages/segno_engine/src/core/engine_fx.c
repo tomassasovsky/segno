@@ -331,13 +331,16 @@ void le_octaver_envelope(const float* mag, float* env) {
  *   freq [LE_PV_BINS] true frequency, in bins
  *   env  [LE_PV_BINS] the formant envelope
  *
- * The frame shifts the harmonic structure by `ratio` while holding the
- * cepstral formant envelope fixed in frequency, and overlap-adds the result
- * one hop on in o->out (the split's hop of latency, LE_PV_LATENCY).
+ * The frame shifts the harmonic structure by `ratio`, holding the cepstral
+ * formant envelope fixed in frequency or, with p4 (formants) moved, letting
+ * it go with the pitch, and overlap-adds the result into o->out from the
+ * element its synthesis tick emits (LE_PV_SYNTH_TICK, so the octaver's
+ * latency is LE_PV_LATENCY).
  *
  * Cost per hop per channel: four length-N real FFTs, one per stage but the
- * shift (analysis, the two cepstrum transforms, synthesis), on the shared
- * plan le_pv_fft (fft.h). On the console a stereo frame cost ~170 us in one
+ * shift (analysis, the two cepstrum transforms, synthesis; two with the
+ * formants moved, which skips the envelope stage), on the shared plan
+ * le_pv_fft (fft.h). On the console a stereo frame cost ~170 us in one
  * callback (#1410). The stages are not equal: measured on the dev machine
  * the analysis, envelope, shift and synthesis take about 29, 34, 22 and 15 %
  * of a frame, so the heaviest callback carries about a third of it. The

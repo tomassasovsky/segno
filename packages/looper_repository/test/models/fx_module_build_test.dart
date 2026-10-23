@@ -939,6 +939,20 @@ void main() {
       }
     });
 
+    test('a preset without the shift starts at unison', () {
+      final e = fxModuleEntry(
+        _module('Pitch shift'),
+        const FxPreset(
+          family: 'Vocal Rack',
+          name: 'p',
+          id: 'p',
+          type: 0,
+          params: {'Pitch': 1, 'Pitch Mix': 1},
+        ),
+      );
+      expect(e.type.params[0].valueAt(e.params[0]), closeTo(0, 1e-9));
+    });
+
     test('a shown setting writes the kind setting for the same value', () {
       final e = entry('Vocal Rack', 0.5, 1);
       for (var step = 0; step < 25; step++) {
