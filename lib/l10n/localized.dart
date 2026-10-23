@@ -20,11 +20,28 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.octaver => effectOctaver,
     TrackEffectType.echo => effectEcho,
     TrackEffectType.reverb => effectReverb,
+    TrackEffectType.eq => effectEq,
+    TrackEffectType.compressor => effectCompressor,
+    TrackEffectType.transient => effectTransient,
+    TrackEffectType.hpGate => effectHpGate,
+    TrackEffectType.doubler => effectDoubler,
+    TrackEffectType.chorus => effectChorus,
+    TrackEffectType.wah => effectWah,
+    TrackEffectType.overdrive => effectOverdrive,
+    TrackEffectType.distortion => effectDistortion,
+    TrackEffectType.vinyl => effectVinyl,
+    TrackEffectType.degrade => effectDegrade,
+    TrackEffectType.lpf => effectLpf,
+    TrackEffectType.spring => effectSpring,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
   /// key reads as the key itself rather than as nothing.
-  String fxParamName(FxParamInfo p) => switch (p.key) {
+  String fxParamName(FxParamInfo p) => fxParamKeyName(p.key);
+
+  /// The name of the built-in parameter whose stable key is [key]; also how
+  /// a rack variant renames one (the single mid band of a parametric EQ).
+  String fxParamKeyName(String key) => switch (key) {
     'drive' => paramDrive,
     'level' => paramLevel,
     'cutoff' => paramCutoff,
@@ -39,23 +56,68 @@ extension EngineLocalizations on AppLocalizations {
     'size' => paramSize,
     'damping' => paramDamping,
     'mode' => paramMode,
-    _ => p.key,
+    'formants' => paramFormants,
+    'low_cut' => paramLowCut,
+    'low_gain' => paramLowGain,
+    'low_freq' => paramLowFreq,
+    'low_q' => paramLowQ,
+    'lo_mid_gain' => paramLoMidGain,
+    'lo_mid_freq' => paramLoMidFreq,
+    'lo_mid_q' => paramLoMidQ,
+    'hi_mid_gain' => paramHiMidGain,
+    'hi_mid_freq' => paramHiMidFreq,
+    'hi_mid_q' => paramHiMidQ,
+    'high_gain' => paramHighGain,
+    'high_freq' => paramHighFreq,
+    'high_q' => paramHighQ,
+    'high_cut' => paramHighCut,
+    'air_gain' => paramAirGain,
+    'layout' => paramEqLayout,
+    'mid_gain' => paramMidGain,
+    'mid_freq' => paramMidFreq,
+    'mid_q' => paramMidQ,
+    'threshold' => paramThreshold,
+    'ratio' => paramRatio,
+    'attack' => paramAttack,
+    'release' => paramRelease,
+    'makeup' => paramMakeup,
+    'attack_length' => paramAttackLength,
+    'sustain' => paramSustain,
+    'highpass' => paramHighpass,
+    'gate_threshold' => paramGateThreshold,
+    'separation' => paramSeparation,
+    'pedal' => paramPedal,
+    'frequency' => paramFrequency,
+    'noise' => paramNoise,
+    'noise_tone' => paramNoiseTone,
+    'filter' => paramFilter,
+    _ => key,
   };
 
   /// The value a built-in parameter's normalized [setting] stands for, with
-  /// its unit, as one string: `35%`, `350 ms`, `12.5 ms`, `440 Hz`,
-  /// `1.2 kHz`, `15.5x`, a pitch interval, or a named position.
+  /// its unit, as one string: `35%`, `350 ms`, `12.5 ms`, `0.05 ms`,
+  /// `440 Hz`, `1.2 kHz`, `15.5x`, `4.0:1`, a pitch interval, or a named
+  /// position.
   ///
   /// Times and frequencies drop the decimal from 100 up, where a tenth is
-  /// finer than a performer sets or hears; a frequency reads in kHz from
-  /// 1000 Hz.
+  /// finer than a performer sets or hears; a time under 1 ms keeps two
+  /// decimals; a frequency reads in kHz from 1000 Hz.
   String fxParamValueText(FxParamInfo p, double setting) {
+    // The low-pass filter and the HP/Gate's high-pass are off at an end of
+    // their range (the descriptor's off flag).
+    if (p.isOffAt(setting)) {
+      return fxValueOff;
+    }
     final value = p.valueAt(setting);
     final tenths = (value * 10).round() / 10;
     return switch (p.unit) {
       FxParamUnit.percent => fxValuePercent(value.round()),
       FxParamUnit.ms =>
-        tenths >= 100 ? fxValueMs(value.round()) : fxValueMsFine(tenths),
+        tenths >= 100
+            ? fxValueMs(value.round())
+            : value > 0 && value < 0.995
+            ? fxValueMsFiner((value * 100).round() / 100)
+            : fxValueMsFine(tenths),
       FxParamUnit.hz =>
         value.round() >= 1000
             ? fxValueKhz(value / 1000)
@@ -65,6 +127,11 @@ extension EngineLocalizations on AppLocalizations {
       FxParamUnit.semitones => _pitchInterval(value),
       FxParamUnit.times => fxValueTimes(value),
       FxParamUnit.choice => _choiceName(p, p.positionOf(setting)),
+      FxParamUnit.db => fxValueDb(tenths),
+      FxParamUnit.q => fxValueQ(value),
+      FxParamUnit.seconds => fxValueSeconds(value),
+      FxParamUnit.ratio =>
+        tenths >= 100 ? fxValueRatioWhole(value.round()) : fxValueRatio(tenths),
     };
   }
 
@@ -84,12 +151,18 @@ extension EngineLocalizations on AppLocalizations {
     return pitchSemitones(sign, magnitude);
   }
 
-  /// The name of position [position] of choice parameter [p]. The octaver's
-  /// mode is the only built-in choice; any other reads as its 1-based number.
+  /// The name of position [position] of choice parameter [p]: the octaver's
+  /// mode or formants, or the EQ's layout. Any other reads as its 1-based
+  /// number.
   String _choiceName(FxParamInfo p, int position) =>
       switch ((p.key, position)) {
         ('mode', 0) => octaverModePhaseVocoder,
         ('mode', 1) => octaverModePsola,
+        ('formants', 0) => octaverFormantsHeld,
+        ('formants', 1) => octaverFormantsMoved,
+        ('layout', 0) => eqLayoutShelves,
+        ('layout', 1) => eqLayoutBellsCuts,
+        ('layout', 2) => eqLayoutBells,
         _ => '${position + 1}',
       };
 

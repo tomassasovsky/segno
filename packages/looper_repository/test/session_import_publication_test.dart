@@ -311,7 +311,8 @@ void main() {
         engine.pump(frames: 1);
         expect(engine.snapshot().outputPeaks[0], 0);
         expect(repository.play(), EngineResult.ok);
-        engine.pump(frames: 1);
+        // The Play fades in over 480 frames (#1400), full on the last one.
+        engine.pump(frames: 480);
         // Only track 0 contributes: PCM .5 times coefficient .25.
         expect(engine.snapshot().outputPeaks[0], closeTo(.125, 1e-6));
         expect(repository.play(channel: 1), EngineResult.ok);
@@ -516,7 +517,9 @@ void main() {
         engine.pump(frames: 0);
         repository.clearSessionBootStartBlock();
         expect(repository.play(), EngineResult.ok);
-        engine.pump(frames: 256);
+        engine
+          ..pump() // the Play's 480-frame fade-in (#1400)
+          ..pump(frames: 256);
         expect(engine.snapshot().outputRms, closeTo(.25, 1e-6));
       },
     );

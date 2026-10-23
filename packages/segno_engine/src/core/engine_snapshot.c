@@ -215,8 +215,8 @@ static int32_t le_max_fx_latency(le_engine* engine) {
  * positions): the chain-enabled bit first, but only for a NON-empty chain, so
  * an empty chain still hashes to the FNV offset basis (chain-disabled empty ≡
  * enabled empty ≡ dry — the documented empty-chain invariant); then per entry
- * its type, its slot-enabled bit, and (built-ins only) its LE_FX_PARAMS
- * float-bit params — a plugin entry (LE_FX_PLUGIN) folds type + enabled bit
+ * its type, its slot-enabled bit, and (built-ins only) the float bits of the
+ * le_fx_param_width(type) params it reads — a plugin entry (LE_FX_PLUGIN) folds type + enabled bit
  * only. The Dart repository computes the identical hash over its cache. */
 static uint64_t le_fx_chain_fingerprint(
     int32_t count, _Atomic int32_t* a_type,
@@ -234,7 +234,8 @@ static uint64_t le_fx_chain_fingerprint(
     h = le_fx_fp_u32(h, (uint32_t)type);
     h = le_fx_fp_u32(h, load_i32(&a_enabled[i]) ? 1u : 0u);
     if (type == LE_FX_PLUGIN) continue; /* plugin params live in the host */
-    for (int32_t p = 0; p < LE_FX_PARAMS; ++p) {
+    const int32_t w = le_fx_param_width(type);
+    for (int32_t p = 0; p < w; ++p) {
       h = le_fx_fp_u32(
           h, atomic_load_explicit(&a_param[i][p], memory_order_relaxed));
     }
@@ -255,17 +256,22 @@ uint64_t le_engine_lane_fx_fingerprint(le_engine* engine, int32_t channel,
 }
 
 /* Folds the track's loop-top position on the octaver hop (#941) into a print
- * key when [types][0, n) holds an octaver: such a print is rendered against
+ * key when [types][0, n) holds an octaver that plays (its slot enabled, the
+ * chain on; a bypassed one passes the signal dry, hop or no hop, as a rack's
+ * switched-off Pitch Shift does): such a print is rendered against
  * that position (the cache's clock0), so a stop and relaunch, or a held
  * transport, that moves the loop against the engine clock changes the key and
  * the print falls back live and re-renders instead of engaging off the live
  * hop. A chain without an octaver is keyed as before. */
 static uint64_t le_fx_fold_hop_position(uint64_t h, int32_t n,
                                         _Atomic int32_t* a_type,
+                                        _Atomic int32_t* a_enabled,
+                                        _Atomic int32_t* a_chain_enabled,
                                         const le_track* t) {
   if (n > LE_FX_MAX) n = LE_FX_MAX;
+  if (!load_i32(a_chain_enabled)) return h;
   for (int32_t i = 0; i < n; ++i) {
-    if (load_i32(&a_type[i]) == LE_FX_OCTAVER) {
+    if (load_i32(&a_type[i]) == LE_FX_OCTAVER && load_i32(&a_enabled[i])) {
       const uint32_t top =
           atomic_load_explicit(&t->a_top_clock, memory_order_relaxed);
       return le_fx_fp_u32(h, top & (uint32_t)(LE_PV_HOP - 1));
@@ -295,9 +301,11 @@ uint64_t le_lane_pre_fx_fingerprint(le_engine* engine, int32_t channel,
   memset(chan, 0, sizeof(chan));
   le_fx_chan_snapshot(chan, &chan_any, pre, ln->a_fx_chan_in,
                       ln->a_fx_chan_out, ln->a_fx_chan_gl_bits,
-                      ln->a_fx_chan_gr_bits, ln->a_fx_chan_level_bits);
+                      ln->a_fx_chan_gr_bits, ln->a_fx_chan_level_bits,
+                      ln->a_fx_chan_rack);
   for (int32_t s = 0; s < pre; ++s) h = le_fx_chan_fold(h, &chan[s]);
-  return le_fx_fold_hop_position(h, pre, ln->a_fx_type,
+  return le_fx_fold_hop_position(h, pre, ln->a_fx_type, ln->a_fx_enabled,
+                                 &ln->a_fx_chain_enabled,
                                  &engine->tracks[channel]);
 }
 
@@ -357,9 +365,10 @@ uint64_t le_track_pre_fingerprint(le_engine* engine, int32_t channel) {
   memset(chan, 0, sizeof(chan));
   le_fx_chan_snapshot(chan, &chan_any, pre, b->a_fx_chan_in, b->a_fx_chan_out,
                       b->a_fx_chan_gl_bits, b->a_fx_chan_gr_bits,
-                      b->a_fx_chan_level_bits);
+                      b->a_fx_chan_level_bits, b->a_fx_chan_rack);
   for (int32_t s = 0; s < pre; ++s) h = le_fx_chan_fold(h, &chan[s]);
-  h = le_fx_fold_hop_position(h, pre, b->a_fx_type, t);
+  h = le_fx_fold_hop_position(h, pre, b->a_fx_type, b->a_fx_enabled,
+                              &b->a_fx_chain_enabled, t);
 
   const int32_t n = le_lanes_active(t);
   h = le_fx_fp_u32(h, (uint32_t)n);

@@ -8,6 +8,7 @@ import 'package:looper_repository/src/models/audio_config.dart';
 import 'package:looper_repository/src/models/engine_reopened.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
+import 'package:looper_repository/src/models/fx_chain_group.dart';
 import 'package:looper_repository/src/models/fx_slot_ids.dart';
 import 'package:looper_repository/src/models/input_monitor.dart';
 import 'package:looper_repository/src/models/input_setup.dart';
@@ -3271,10 +3272,11 @@ class LooperRepository {
             if (fx != null) captured.add(fx);
           }
           final copied = withFreshSlotIds(captured);
+          final edges = fxRackEdges(copied);
           final slots = <FxRecipeSlot>[];
           final handles = <String, PluginSlotHandle>{};
           final loaded = <TrackEffect>[];
-          for (final fx in copied) {
+          for (final (index, fx) in copied.indexed) {
             if (fx is BuiltInEffect) {
               loaded.add(fx);
               slots.add(
@@ -3283,6 +3285,8 @@ class LooperRepository {
                   params: fx.params,
                   enabled: fx.enabled,
                   channels: fxChannelsToEngine(fx.channels),
+                  rack: edges[index],
+                  instance: fxInstanceId(fx.slotId),
                 ),
               );
             } else {
@@ -3296,9 +3300,15 @@ class LooperRepository {
                       ? plugin.copyWith(loading: false, unavailable: true)
                       : plugin,
                 );
+                // Inert, but still in its rack: a rack ending here keeps its
+                // output side.
                 slots.add(
                   FxRecipeSlot(
                     type: trackEffectTypeToEngine(TrackEffectType.none),
+                    enabled: plugin.enabled,
+                    channels: fxChannelsToEngine(plugin.channels),
+                    rack: edges[index],
+                    instance: fxInstanceId(plugin.slotId),
                   ),
                 );
                 continue;
@@ -3317,6 +3327,8 @@ class LooperRepository {
                   plugin: handle,
                   enabled: plugin.enabled,
                   channels: fxChannelsToEngine(plugin.channels),
+                  rack: edges[index],
+                  instance: fxInstanceId(plugin.slotId),
                 ),
               );
             }
@@ -6100,7 +6112,9 @@ class LooperRepository {
     final fx = effects[index];
     // Built-in params only — a plugin's parameter surface arrives in part 5.
     if (fx is! BuiltInEffect) return EngineResult.invalid;
-    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    if (param < 0 || param >= fx.type.params.length) {
+      return EngineResult.invalid;
+    }
     final params = List<double>.of(fx.params)..[param] = value;
     if (_intendRunning) {
       final result = _engine.setLaneFxParam(
@@ -6660,7 +6674,9 @@ class LooperRepository {
     }
     final fx = effects[index];
     if (fx is! BuiltInEffect) return EngineResult.invalid;
-    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    if (param < 0 || param >= fx.type.params.length) {
+      return EngineResult.invalid;
+    }
     final params = List<double>.of(fx.params)..[param] = value;
     if (_intendRunning) {
       final result = _engine.setTrackFxParam(
@@ -6733,7 +6749,9 @@ class LooperRepository {
     }
     final fx = effects[index];
     if (fx is! BuiltInEffect) return EngineResult.invalid;
-    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    if (param < 0 || param >= fx.type.params.length) {
+      return EngineResult.invalid;
+    }
     if (_intendRunning) {
       final result = _engine.setOutputFxParam(
         bus: bus,
@@ -6853,7 +6871,9 @@ class LooperRepository {
     }
     final fx = _allTracksEffects[index];
     if (fx is! BuiltInEffect) return EngineResult.invalid;
-    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    if (param < 0 || param >= fx.type.params.length) {
+      return EngineResult.invalid;
+    }
     if (_intendRunning) {
       final result = _engine.setAllTracksFxParam(
         index: index,
@@ -7367,8 +7387,9 @@ class LooperRepository {
     final loaded = <TrackEffect>[];
     final slots = <FxRecipeSlot>[];
     var refusal = EngineResult.invalid;
+    final edges = fxRackEdges(effects);
     try {
-      for (final fx in effects) {
+      for (final (index, fx) in effects.indexed) {
         if (fx is BuiltInEffect) {
           loaded.add(fx);
           slots.add(
@@ -7377,6 +7398,8 @@ class LooperRepository {
               params: fx.params,
               enabled: fx.enabled,
               channels: fxChannelsToEngine(fx.channels),
+              rack: edges[index],
+              instance: fxInstanceId(fx.slotId),
             ),
           );
           continue;
@@ -7395,8 +7418,16 @@ class LooperRepository {
               loading: false,
             ),
           );
+          // Inert, but still in its rack: a rack ending here keeps its
+          // output side.
           slots.add(
-            FxRecipeSlot(type: trackEffectTypeToEngine(TrackEffectType.none)),
+            FxRecipeSlot(
+              type: trackEffectTypeToEngine(TrackEffectType.none),
+              enabled: plugin.enabled,
+              channels: fxChannelsToEngine(plugin.channels),
+              rack: edges[index],
+              instance: fxInstanceId(plugin.slotId),
+            ),
           );
           continue;
         }
@@ -7429,6 +7460,8 @@ class LooperRepository {
             plugin: handle,
             enabled: plugin.enabled,
             channels: fxChannelsToEngine(plugin.channels),
+            rack: edges[index],
+            instance: fxInstanceId(plugin.slotId),
           ),
         );
       }
@@ -7554,7 +7587,9 @@ class LooperRepository {
     final fx = effects[index];
     // Built-in params only — a plugin's parameter surface arrives in part 5.
     if (fx is! BuiltInEffect) return EngineResult.invalid;
-    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    if (param < 0 || param >= fx.type.params.length) {
+      return EngineResult.invalid;
+    }
     if (_intendRunning) {
       final result = _engine.setMonitorInputFxParam(
         input: input,

@@ -76,6 +76,66 @@ void main() {
   );
 
   test(
+    'a rack edge crosses FFI: the rack level lands after a passthrough last '
+    'entry, and an all-off rack is dry',
+    () {
+      final engine = PumpedNativeEngine();
+      addTearDown(engine.dispose);
+      engine
+        ..start(
+          const EngineConfig(
+            inputChannels: 1,
+            outputChannels: 2,
+            maxLoopFrames: 1000,
+          ),
+        )
+        ..setMonitorInputEnabled(input: 0, enabled: true)
+        ..setMonitorInputOutput(input: 0, mask: 3)
+        ..pump(frames: 0);
+      FxRecipe rack({required bool on}) => FxRecipe(
+        slots: [
+          FxRecipeSlot(
+            type: TrackEffectType.drive,
+            params: [0, 1],
+            enabled: on,
+            rack: FxRackEdge.first,
+          ),
+          FxRecipeSlot(
+            type: TrackEffectType.none,
+            enabled: on,
+            channels: const FxChannels(level: .5),
+            rack: FxRackEdge.last,
+          ),
+        ],
+      );
+      expect(
+        engine.setFxRecipe(
+          owner: FxOwner.monitor,
+          recipe: rack(on: true),
+          revision: 8,
+        ),
+        EngineResult.ok,
+      );
+      engine.pump(frames: 2048, input: .2);
+      // tanh(.2) * .5: the level rides an entry with no effect of its own.
+      expect(engine.snapshot().outputPeaks[0], closeTo(.0986876601, 1e-6));
+      expect(
+        engine.setFxRecipe(
+          owner: FxOwner.monitor,
+          recipe: rack(on: false),
+          revision: 9,
+        ),
+        EngineResult.ok,
+      );
+      engine
+        ..pump(frames: 2048, input: .2)
+        ..pump(frames: 64, input: .2);
+      expect(engine.snapshot().outputPeaks[0], closeTo(.2, 1e-7));
+    },
+    skip: skip,
+  );
+
+  test(
     'record recipe and independent track gain cross FFI '
     'without changing originals',
     () {

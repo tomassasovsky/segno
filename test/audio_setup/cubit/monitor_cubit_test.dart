@@ -508,7 +508,7 @@ void main() {
             final recipe = engine.fxRecipes[(FxOwner.monitor, 0, 0)]!;
             expect(recipe.enabled, isFalse);
             expect(recipe.slots.single.type.name, 'drive');
-            expect(recipe.slots.single.params, [.7, .4, .5, 0]);
+            expect(recipe.slots.single.params.take(2), [.7, .4]);
             expect(await saved.loadMonitorMute(0), isFalse);
             expect(
               (

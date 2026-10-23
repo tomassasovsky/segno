@@ -54,6 +54,7 @@ void main() {
         looper: const LooperState(),
         recorder: const PerformanceRecorderIdle(),
         session: const SessionState(),
+        backing: null,
       ),
     );
   });
@@ -414,6 +415,8 @@ void main() {
         looper: const LooperState(),
         recorder: const PerformanceRecorderIdle(),
         session: const SessionState(currentSessionName: 'Evening loop'),
+        // No backing player is mounted here.
+        backing: null,
       );
       verify(() => power.press(expected)).called(1);
     });

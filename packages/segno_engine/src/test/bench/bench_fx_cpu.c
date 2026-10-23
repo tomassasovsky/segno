@@ -20,6 +20,19 @@
  *   late N    the same N octavers added one at a time, three callbacks apart
  *             (#941: an instance added later keeps its own quarter).
  *
+ * With --kind eq the same scenarios run an EQ (#887 part 4) with every band
+ * engaged, and `late` becomes `moving`: the chain's gains change every
+ * callback, so every EQ recomputes its coefficients on each update. The
+ * dynamics kinds (#887 part 5) run the same way with --kind comp, transient
+ * or hpgate, the modulation kinds (part 6) with doubler, chorus or wah, and
+ * the drives and lo-fi kinds (part 7) with overdrive, distortion, vinyl,
+ * degrade or lpf, and the spring (part 8), each set so its whole kernel
+ * works; `moving` changes a setting that
+ * glides (the threshold, the attack amount, the high-pass corner, the
+ * doubler's mix, the chorus's rate, the wah's pedal, the drives' tone, the
+ * vinyl's frequency, the degrade's hold, the low-pass cutoff, the spring's
+ * time).
+ *
  * Reported per scenario: p50 / p99 / p99.9 / max per callback, the callbacks
  * over the period's deadline, and the mean cost of the blocks starting in
  * each quarter of the octaver's hop, which is where the FFT work lands.
@@ -27,6 +40,13 @@
  *   ./bench_fx_cpu.sh                      # 96 kHz / 64 frames, unpaced
  *   ./bench_fx_cpu.sh --paced              # paced to the period, like a device
  *   ./bench_fx_cpu.sh --smoke              # short runs (CI)
+ *   ./bench_fx_cpu.sh --kind eq            # the EQ instead of the octaver
+ *   ./bench_fx_cpu.sh --racks              # each rack as built today on one
+ *                                          # input, against its budget
+ *   ./bench_fx_cpu.sh --kind comp          # or transient, hpgate, doubler,
+ *                                          # chorus, wah, overdrive,
+ *                                          # distortion, vinyl, degrade,
+ *                                          # lpf, spring
  *   bench_fx_cpu --paced --cpu 3           # on the console, off the audio core
  *
  * On the console, run it pinned away from the app's audio core; the timed
@@ -62,6 +82,8 @@
 #define PHASES 4 /* quarters of the hop */
 
 static int g_paced;
+/* --kind: the effect every scenario runs (LE_FX_OCTAVER by default). */
+static int32_t g_kind = LE_FX_OCTAVER;
 
 /* An octaver recipe entry: one octave up, tone open, full wet, phase vocoder.
  * Full wet keeps the wet path (the FFTs) the whole output. */
@@ -74,6 +96,135 @@ static void octaver_entry(le_fx_recipe* r, int s) {
   r->params[s][3] = 0.0f;
   r->level[s] = 1.0f;
 }
+
+/* An EQ recipe entry with every band engaged: both cuts and every bell away
+ * from 0 dB (the layout with cuts). */
+static void eq_entry(le_fx_recipe* r, int s) {
+  r->type[s] = LE_FX_EQ;
+  r->slot_enabled[s] = 1;
+  le_fx_defaults(LE_FX_EQ, r->params[s]);
+  r->params[s][0] = 0.3f;  /* low cut ~120 Hz */
+  r->params[s][1] = 0.6f;  /* +3.6 dB */
+  r->params[s][4] = 0.4f;  /* -3.6 dB */
+  r->params[s][7] = 0.65f; /* +5.4 dB */
+  r->params[s][10] = 0.45f;
+  r->params[s][13] = 0.8f; /* high cut ~7.2 kHz */
+  r->params[s][14] = 0.5f; /* bells and cuts */
+  r->level[s] = 1.0f;
+}
+
+/* A dynamics entry set so its whole kernel runs: the compressor 30 dB
+ * under the bench source's level with make-up, the transient shaper off
+ * neutral on both controls, the high-pass at 31 Hz under a -60 dB gate. */
+static void dynamics_entry(le_fx_recipe* r, int s, int32_t kind) {
+  r->type[s] = kind;
+  r->slot_enabled[s] = 1;
+  le_fx_defaults(kind, r->params[s]);
+  if (kind == LE_FX_COMPRESSOR) {
+    r->params[s][0] = 0.5f;
+    r->params[s][4] = 0.3f;
+  } else if (kind == LE_FX_TRANSIENT) {
+    r->params[s][0] = 0.9f;
+    r->params[s][2] = 0.3f;
+  } else if (kind == LE_FX_HP_GATE) {
+    r->params[s][0] = 0.5f;
+    r->params[s][1] = 0.5f;
+  } else if (kind == LE_FX_DEGRADE) {
+    r->params[s][0] = 0.4f; /* holding at 3.2 kHz */
+  } else if (kind == LE_FX_LPF) {
+    r->params[s][0] = 0.6f; /* 1.2 kHz */
+  } /* the doubler, chorus, wah, drives, delay and reverb run at their
+     * defaults */
+  r->level[s] = 1.0f;
+}
+
+static void kind_entry(le_fx_recipe* r, int s, int32_t kind) {
+  if (kind == LE_FX_OCTAVER) {
+    octaver_entry(r, s);
+  } else if (kind == LE_FX_EQ) {
+    eq_entry(r, s);
+  } else {
+    dynamics_entry(r, s, kind);
+  }
+}
+
+static void fx_entry(le_fx_recipe* r, int s) { kind_entry(r, s, g_kind); }
+
+/* --racks: each Looper X rack's chain, in its chain order
+ * (docs/plan/2026-10-20-looperx-derived-tables.md, "Chain order"), on one
+ * monitored input, against the per-rack worst-block increment the racks plan
+ * budgets (#1372: 60 us for Drum, Dub, Lo-Fi and Rhythmic, 200 us for Ed's,
+ * Guitar, Studio and Vocal, 300 us for the Vocal Tuner). Each slot runs the
+ * kind it has or will have:
+ *  - the octaver for the Pitch Shift (#1441), and the chorus and tremolo for
+ *    the Mod module, which is not built yet (a projection of its cost);
+ *  - the engine's delay and reverb for the racks' Delay and Reverb;
+ *  - every EQ with every band engaged and every compressor working (the
+ *    kinds' heaviest settings, an upper bound for each rack's variant).
+ * Left out, not built yet: the Whammy, Amp+Cab, the Mod module's phaser and
+ * flanger, Dub-Verb, Amb-Verb, Slicer, Pumper, Smart Tune and Harmonizer.
+ * Each list ends at the first LE_FX_NONE. */
+typedef struct {
+  const char* name;
+  double budget_us;
+  int32_t kinds[10];
+} rack_spec;
+
+static const rack_spec k_racks[] = {
+    {"drum", 60.0,
+     {LE_FX_TRANSIENT, LE_FX_DELAY, LE_FX_REVERB, LE_FX_EQ, LE_FX_COMPRESSOR}},
+    {"dub", 60.0, {LE_FX_DOUBLER, LE_FX_DELAY, LE_FX_COMPRESSOR, LE_FX_EQ}},
+    {"lofi", 60.0,
+     {LE_FX_LPF, LE_FX_VINYL, LE_FX_DEGRADE, LE_FX_DISTORTION, LE_FX_EQ,
+      LE_FX_DELAY}},
+    {"rhythmic", 60.0, {LE_FX_LPF, LE_FX_EQ, LE_FX_DELAY, LE_FX_REVERB}},
+    {"eds", 200.0,
+     {LE_FX_OCTAVER, LE_FX_WAH, LE_FX_COMPRESSOR, LE_FX_OVERDRIVE,
+      LE_FX_CHORUS, LE_FX_REVERB, LE_FX_DELAY, LE_FX_EQ}},
+    {"guitar", 200.0,
+     {LE_FX_OVERDRIVE, LE_FX_WAH, LE_FX_CHORUS, LE_FX_SPRING, LE_FX_DELAY}},
+    {"studio", 200.0,
+     {LE_FX_OCTAVER, LE_FX_DISTORTION, LE_FX_DOUBLER, LE_FX_CHORUS,
+      LE_FX_TREMOLO, LE_FX_DELAY, LE_FX_REVERB, LE_FX_COMPRESSOR, LE_FX_EQ}},
+    {"vocal", 200.0,
+     {LE_FX_HP_GATE, LE_FX_OCTAVER, LE_FX_DOUBLER, LE_FX_DELAY, LE_FX_REVERB,
+      LE_FX_COMPRESSOR, LE_FX_EQ}},
+    {"vtuner", 300.0,
+     {LE_FX_HP_GATE, LE_FX_DOUBLER, LE_FX_DELAY, LE_FX_REVERB,
+      LE_FX_COMPRESSOR, LE_FX_EQ}},
+};
+
+/* The number of kinds in [rack]'s list. */
+static int rack_len(const rack_spec* rack) {
+  int n = 0;
+  while (n < 10 && rack->kinds[n] != LE_FX_NONE) ++n;
+  return n;
+}
+
+/* Whether [rack] holds an octaver, whose work the hop quarters show. */
+static int rack_has_octaver(const rack_spec* rack) {
+  for (int i = 0; i < rack_len(rack); ++i) {
+    if (rack->kinds[i] == LE_FX_OCTAVER) return 1;
+  }
+  return 0;
+}
+static int g_racks;
+
+/* `moving` (every kind but the octaver): one gliding setting of each entry
+ * in the monitor chain alternates every callback, so each entry is always
+ * smoothing: the EQ's low-mid gain, the compressor's threshold, the
+ * transient shaper's attack, the high-pass corner. */
+static int32_t moving_param(void) {
+  if (g_kind == LE_FX_EQ) return 4;
+  /* The drives' tone: the setting whose move redesigns a filter. */
+  if (g_kind == LE_FX_OVERDRIVE || g_kind == LE_FX_DISTORTION ||
+      g_kind == LE_FX_VINYL) {
+    return 1; /* the drives' tone, the vinyl's frequency */
+  }
+  return 0;
+}
+static int g_moving;
+static int g_moving_n;
 
 /* Times `blocks` callbacks after `warm` discarded ones. */
 static stats time_blocks(rig* r, int blocks, int warm, double phase_mean[PHASES]) {
@@ -101,6 +252,12 @@ static stats time_blocks(rig* r, int blocks, int warm, double phase_mean[PHASES]
       next += step;
       sleep_until_us(next);
     }
+    if (g_moving) {
+      for (int s = 0; s < g_moving_n; ++s) {
+        le_engine_set_monitor_input_fx_param(r->e, 0, s, moving_param(),
+                                             (b & 1) ? 0.2f : 0.8f);
+      }
+    }
     const double t0 = now_us();
     le_engine_process(r->e, r->out, r->in, (uint32_t)r->period);
     const double dt = now_us() - t0;
@@ -122,11 +279,122 @@ static stats time_blocks(rig* r, int blocks, int warm, double phase_mean[PHASES]
   return s;
 }
 
+static const char* kind_name(void) {
+  switch (g_kind) {
+    case LE_FX_EQ: return "eq";
+    case LE_FX_COMPRESSOR: return "comp";
+    case LE_FX_TRANSIENT: return "transient";
+    case LE_FX_HP_GATE: return "hpgate";
+    case LE_FX_DOUBLER: return "doubler";
+    case LE_FX_CHORUS: return "chorus";
+    case LE_FX_WAH: return "wah";
+    case LE_FX_OVERDRIVE: return "overdrive";
+    case LE_FX_DISTORTION: return "distortion";
+    case LE_FX_VINYL: return "vinyl";
+    case LE_FX_DEGRADE: return "degrade";
+    case LE_FX_LPF: return "lpf";
+    case LE_FX_SPRING: return "spring";
+    default: return "octaver";
+  }
+}
+
 static void report(const char* label, stats s, const double ph[PHASES]) {
   printf("| %-18s | %8.1f | %8.1f | %8.1f | %8.1f | %5zu | %7.1f %7.1f %7.1f %7.1f |\n",
          label, s.p50, s.p99, s.p999, s.max, s.over, ph[0], ph[1], ph[2],
          ph[3]);
   fflush(stdout);
+}
+
+/* A playing rig with monitor input 0 routed to both outputs and the source's
+ * first period at its input. Returns 0 when the engine refused it. */
+static int monitor_rig(rig* r, const bench_opts* o, float* src, int32_t frames) {
+  if (!rig_create_io(r, o, 1, src, frames, 2)) return 0;
+  if (le_engine_set_monitor_input(r->e, 0, 1) != LE_OK ||
+      le_engine_set_monitor_input_output(r->e, 0, 0x3) != LE_OK) {
+    rig_destroy(r);
+    return 0;
+  }
+  for (int32_t f = 0; f < o->period; ++f) {
+    r->in[2 * f] = src[f];
+    r->in[2 * f + 1] = src[f];
+  }
+  return 1;
+}
+
+/* The monitor rig running [rack]'s chain (none for a NULL rack), timed.
+ * Returns 0 when the engine refused the setup. */
+static int time_rack(const bench_opts* o, float* src, int32_t frames,
+                     const rack_spec* rack, int blocks, int warm, stats* out,
+                     double ph[PHASES]) {
+  rig r;
+  if (!monitor_rig(&r, o, src, frames)) return 0;
+  if (rack != NULL) {
+    le_fx_recipe rec;
+    memset(&rec, 0, sizeof(rec));
+    rec.enabled = 1;
+    rec.count = rack_len(rack);
+    for (int s = 0; s < rec.count; ++s) kind_entry(&rec, s, rack->kinds[s]);
+    if (le_engine_set_fx_recipe(r.e, LE_FX_OWNER_MONITOR, 0, 0, 1, &rec) !=
+        LE_OK) {
+      rig_destroy(&r);
+      return 0;
+    }
+  }
+  *out = time_blocks(&r, blocks, warm, ph);
+  rig_destroy(&r);
+  return 1;
+}
+
+/* --racks: each rack timed right after a rig without effects, its increment
+ * taken against that run, so drift between runs stays out of it. The budget
+ * is a worst-block increment; the verdict reads the p99.9 increment, the
+ * worst block but for a 0.1 % tail, so a single interrupt in either run does
+ * not decide it (the max increment is printed beside it). A verdict is given
+ * only where the budgets apply: the console's core (a Cortex-A76, part
+ * 0xd0b), paced, with the timed loops under SCHED_FIFO. Any other run prints
+ * the numbers without one. A rack the engine refuses gets a row saying so. */
+static int run_racks(const bench_opts* o, float* src, int32_t frames,
+                     int blocks, int warm) {
+  printf("bench_fx_cpu: racks, %s, %d Hz, %d-frame periods (deadline %.1f "
+         "us), %d timed blocks%s\n",
+         g_cpu_name, o->rate, o->period, g_budget_us, blocks,
+         g_paced ? ", paced" : "");
+  printf("| rack     |  p50 us |  p99 us |  max us | late | +p99.9 us | +max "
+         "us | budget us | within | phase 0..3 mean us               |\n");
+  printf("|----------|---------|---------|---------|------|-----------|-------"
+         "--|-----------|--------|-----------------------------------|\n");
+  int judged = 0;
+  for (size_t k = 0; k < sizeof(k_racks) / sizeof(k_racks[0]); ++k) {
+    const rack_spec* rack = &k_racks[k];
+    stats base;
+    stats st;
+    double ph[PHASES];
+    if (!time_rack(o, src, frames, NULL, blocks, warm, &base, ph) ||
+        !time_rack(o, src, frames, rack, blocks, warm, &st, ph)) {
+      printf("| %-8s | refused by the engine |\n", rack->name);
+      fflush(stdout);
+      continue;
+    }
+    judged = g_cpu_part == 0xd0b && g_paced &&
+             strstr(g_timed_sched, "SCHED_FIFO") != NULL &&
+             strstr(g_timed_sched, "refused") == NULL;
+    const double d999 = st.p999 - base.p999;
+    char phases[40] = "-";
+    if (rack_has_octaver(rack)) {
+      snprintf(phases, sizeof(phases), "%7.1f %7.1f %7.1f %7.1f", ph[0], ph[1],
+               ph[2], ph[3]);
+    }
+    printf("| %-8s | %7.1f | %7.1f | %7.1f | %4zu | %9.1f | %7.1f | %9.0f | "
+           "%-6s | %-33s |\n",
+           rack->name, st.p50, st.p99, st.max, st.over, d999,
+           st.max - base.max, rack->budget_us,
+           !judged ? "-" : d999 <= rack->budget_us ? "yes" : "NO", phases);
+    fflush(stdout);
+  }
+  printf("timed loops ran at: %s%s\n", g_timed_sched,
+         judged ? "" : " (no verdict: not paced on the console under "
+                       "SCHED_FIFO)");
+  return 0;
 }
 
 int main(int argc, char** argv) {
@@ -142,6 +410,46 @@ int main(int argc, char** argv) {
       blocks = 400;
     } else if (!strcmp(argv[i], "--paced")) {
       g_paced = 1;
+    } else if (!strcmp(argv[i], "--racks")) {
+      g_racks = 1;
+    } else if (!strcmp(argv[i], "--kind") && i + 1 < argc) {
+      const char* kind = argv[++i];
+      if (!strcmp(kind, "octaver")) {
+        g_kind = LE_FX_OCTAVER;
+      } else if (!strcmp(kind, "eq")) {
+        g_kind = LE_FX_EQ;
+      } else if (!strcmp(kind, "comp")) {
+        g_kind = LE_FX_COMPRESSOR;
+      } else if (!strcmp(kind, "transient")) {
+        g_kind = LE_FX_TRANSIENT;
+      } else if (!strcmp(kind, "hpgate")) {
+        g_kind = LE_FX_HP_GATE;
+      } else if (!strcmp(kind, "doubler")) {
+        g_kind = LE_FX_DOUBLER;
+      } else if (!strcmp(kind, "chorus")) {
+        g_kind = LE_FX_CHORUS;
+      } else if (!strcmp(kind, "wah")) {
+        g_kind = LE_FX_WAH;
+      } else if (!strcmp(kind, "overdrive")) {
+        g_kind = LE_FX_OVERDRIVE;
+      } else if (!strcmp(kind, "distortion")) {
+        g_kind = LE_FX_DISTORTION;
+      } else if (!strcmp(kind, "vinyl")) {
+        g_kind = LE_FX_VINYL;
+      } else if (!strcmp(kind, "degrade")) {
+        g_kind = LE_FX_DEGRADE;
+      } else if (!strcmp(kind, "lpf")) {
+        g_kind = LE_FX_LPF;
+      } else if (!strcmp(kind, "spring")) {
+        g_kind = LE_FX_SPRING;
+      } else {
+        fprintf(stderr,
+                "unknown --kind %s (octaver, eq, comp, transient, hpgate, "
+                "doubler, chorus, wah, overdrive, distortion, vinyl, degrade, "
+                "lpf, spring)\n",
+                kind);
+        return 2;
+      }
     } else if (!strcmp(argv[i], "--rate") && i + 1 < argc) {
       o.rate = atoi(argv[++i]);
     } else if (!strcmp(argv[i], "--period") && i + 1 < argc) {
@@ -162,8 +470,11 @@ int main(int argc, char** argv) {
 #endif
     } else {
       fprintf(stderr,
-              "usage: %s [--smoke] [--paced] [--rate HZ] [--period FRAMES] "
-              "[--blocks N] [--cpu N]\n",
+              "usage: %s [--smoke] [--paced] [--racks] [--rate HZ] "
+              "[--period FRAMES] "
+              "[--blocks N] [--cpu N] "
+              "[--kind octaver|eq|comp|transient|hpgate|doubler|chorus|wah|"
+              "overdrive|distortion|vinyl|degrade|lpf|spring]\n",
               argv[0]);
       return 2;
     }
@@ -176,11 +487,16 @@ int main(int argc, char** argv) {
   if (src == NULL) return 1;
 
   const int warm = 600;
+  if (g_racks) {
+    const int rc = run_racks(&o, src, frames, blocks, warm);
+    free(src);
+    return rc;
+  }
   const int counts[] = {0, 1, 2, 4, 8};
-  printf("bench_fx_cpu: %s, %d Hz, %d-frame periods (deadline %.1f us), "
+  printf("bench_fx_cpu: %s, %s, %d Hz, %d-frame periods (deadline %.1f us), "
          "%d timed blocks%s\n",
-         g_cpu_name, o.rate, o.period, g_budget_us, blocks,
-         g_paced ? ", paced" : "");
+         kind_name(), g_cpu_name, o.rate, o.period, g_budget_us,
+         blocks, g_paced ? ", paced" : "");
   printf("| scenario           |  p50 us |  p99 us | p99.9 us |  max us | late "
          "| phase 0..3 mean us               |\n");
   printf("|--------------------|---------|---------|----------|---------|------"
@@ -190,26 +506,17 @@ int main(int argc, char** argv) {
       const int n = counts[k];
       if (mode > 0 && n == 0) continue;
       rig r;
-      if (!rig_create_io(&r, &o, 1, src, frames, 2)) {
-        fprintf(stderr, "rig failed\n");
+      if (!monitor_rig(&r, &o, src, frames)) {
+        fprintf(stderr, "rig or monitor input 0 refused\n");
         return 1;
-      }
-      if (le_engine_set_monitor_input(r.e, 0, 1) != LE_OK ||
-          le_engine_set_monitor_input_output(r.e, 0, 0x3) != LE_OK) {
-        fprintf(stderr, "monitor input 0 refused\n");
-        return 1;
-      }
-      for (int32_t f = 0; f < o.period; ++f) {
-        r.in[2 * f] = src[f];
-        r.in[2 * f + 1] = src[f];
       }
       if (n > 0) {
         le_fx_recipe rec;
         memset(&rec, 0, sizeof(rec));
         rec.enabled = 1;
-        if (mode == 0) {
+        if (mode == 0 || (g_kind != LE_FX_OCTAVER && mode == 2)) {
           rec.count = n;
-          for (int s = 0; s < n; ++s) octaver_entry(&rec, s);
+          for (int s = 0; s < n; ++s) fx_entry(&rec, s);
           if (le_engine_set_fx_recipe(r.e, LE_FX_OWNER_MONITOR, 0, 0, 1, &rec) !=
               LE_OK) {
             fprintf(stderr, "monitor recipe refused\n");
@@ -217,7 +524,7 @@ int main(int argc, char** argv) {
           }
         } else {
           rec.count = 1;
-          octaver_entry(&rec, 0);
+          fx_entry(&rec, 0);
           for (int t = 0; t < n; ++t) {
             if (le_engine_set_fx_recipe(r.e, LE_FX_OWNER_LANE, t, 0, 1, &rec) !=
                 LE_OK) {
@@ -233,10 +540,19 @@ int main(int argc, char** argv) {
         }
       }
       double ph[PHASES];
+      g_moving = g_kind != LE_FX_OCTAVER && mode == 2;
+      g_moving_n = n;
       const stats s = time_blocks(&r, blocks, warm, ph);
+      g_moving = 0;
       char label[32];
       static const char* const names[] = {"chain", "lanes", "late"};
-      snprintf(label, sizeof(label), "%s %d", names[mode], n);
+      static const char* const kind_names[] = {"chain", "lanes", "moving"};
+      if (g_kind == LE_FX_OCTAVER) {
+        snprintf(label, sizeof(label), "%s %d", names[mode], n);
+      } else {
+        snprintf(label, sizeof(label), "%s %s %d", kind_name(),
+                 kind_names[mode], n);
+      }
       report(label, s, ph);
       rig_destroy(&r);
     }

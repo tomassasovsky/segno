@@ -1024,7 +1024,7 @@ void main() {
             await tester.pumpAndSettle();
             expect(halted, isFalse);
             store.values.remove('looper.fade_durations');
-            power.retry(_named);
+            power.retry(_named, save: () async {});
             await tester.pumpAndSettle();
             await tester.pump(const Duration(seconds: 6));
             expect(halted, isTrue);

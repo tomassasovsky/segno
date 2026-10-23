@@ -610,7 +610,7 @@ typedef enum le_command_code {
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
  * carries an ordered chain of up to LE_FX_MAX entries, each with a type and
- * LE_FX_PARAMS normalized (0..1) parameters. The chain is non-destructive (the
+ * up to LE_FX_PARAMS normalized (0..1) parameters. The chain is non-destructive (the
  * recording is ALWAYS dry; effects color playback only) and every active entry
  * applies in chain order. The cap exists only so the audio thread reads a
  * fixed-size, allocation-free array — it is not a CPU limit: the audio path
@@ -627,20 +627,24 @@ typedef enum le_command_code {
  * the callback stack. Recipe commands carry retained prepared pointers, so
  * raising this ceiling does not enlarge each command-ring entry. */
 #define LE_FX_MAX 64
-#define LE_FX_PARAMS 4
+/* Raised from 4 to 32 for the Looper X kinds (#887 part 4): each kind carries
+ * its generic module's whole parameter set, and the four-band EQ alone has
+ * fourteen. A type uses the first le_fx_param_count(type) of them; the audio
+ * thread's per-buffer snapshot, the wet-cache key and the offline renders copy
+ * only those, so the width costs memory, not per-buffer work. */
+#define LE_FX_PARAMS 32
 
 /* Built-in effect types. Designed so a hosted VST3/CLAP plugin can later slot
- * in as just another type. Each type reads its entry's LE_FX_PARAMS normalized
- * values:
+ * in as just another type. Each type reads only the first le_fx_param_count(type)
+ * of its entry's LE_FX_PARAMS normalized values (none for an unknown code):
  *   DRIVE:   p0 = drive amount, p1 = output level
  *   FILTER:  p0 = cutoff, p1 = resonance        (resonant low-pass)
  *   DELAY:   p0 = time, p1 = feedback, p2 = wet mix
  *   TREMOLO: p0 = rate, p1 = depth
  *   OCTAVER: p0 = shift (0 = -2 oct, .5 = unison, 1 = +2 oct), p1 = tone,
- *            p2 = mix, p3 = mode (< .5 = phase vocoder, >= .5 = PSOLA; stored
- *            but inert until the formant-preserving rewrite reads it)
- * Every other type leaves its unused trailing params (including p3) at 0; no
- * non-octaver effect reads p3.
+ *            p2 = mix, p3 = mode (< .5 = phase vocoder, >= .5 = PSOLA), p4 =
+ *            formants (< .5 = held where they are, >= .5 = moved with the
+ *            pitch; the phase vocoder only, since PSOLA's grains hold them)
  *   ECHO:    p0 = time, p1 = feedback, p2 = mix  (tape-style, damped repeats)
  *   REVERB:  p0 = size, p1 = damping, p2 = mix   (Schroeder room tail; a mono
  *            input yields a decorrelated stereo tail spread across the first two
@@ -660,6 +664,64 @@ typedef enum le_fx_type {
    * le_engine_set_lane_plugin). An LE_FX_PLUGIN entry whose slot is not yet
    * published (or is being torn down) renders dry passthrough. */
   LE_FX_PLUGIN = 8,
+  /* The Looper X kinds (#887 part 4 on): one type per kind, carrying the
+   * generic module's whole parameter set; a rack variant exposes a subset.
+   *
+   * EQ: p0 low cut, p1 low gain, p2 low frequency, p3 low Q, p4 low-mid
+   * gain, p5 low-mid frequency, p6 low-mid Q, p7 high-mid gain, p8 high-mid
+   * frequency, p9 high-mid Q, p10 high gain, p11 high frequency, p12 high Q,
+   * p13 high cut, p14 air gain. In series: a 12 dB/octave high-pass (off at
+   * its lowest setting), a low shelf, two peaking bands, a high shelf, an air
+   * shelf at 12 kHz and a 12 dB/octave low-pass (off at its highest). */
+  LE_FX_EQ = 9,
+  /* COMPRESSOR: p0 threshold (0 to -60 dB), p1 ratio (1 to 100 : 1), p2
+   * attack (0.01 to 300 ms), p3 release (5 to 4000 ms), p4 make-up (0 to
+   * 30 dB). Feed-forward and stereo-linked: the louder channel's peak level
+   * drives a hard-knee gain computer in dB, smoothed by attack and release. */
+  LE_FX_COMPRESSOR = 10,
+  /* TRANSIENT: p0 attack, p1 attack length, p2 sustain, each 0 to 100 % with
+   * 50 % neutral. Boosts or cuts a sound's onset (attack, over the attack
+   * length) and its decay (sustain) from the difference of two envelope
+   * pairs. */
+  LE_FX_TRANSIENT = 11,
+  /* HP_GATE: p0 high-pass frequency (1 to 1000 Hz, 12 dB/octave), p1 gate
+   * threshold (-120 to 0 dB). The gate keys on the high-passed signal. */
+  LE_FX_HP_GATE = 12,
+  /* DOUBLER: p0 mix, p1 separation (0 to 100 %). Two slowly drifting
+   * delayed copies of the input, panned apart by the separation and added
+   * to the dry signal. Not wet-cached (free-running). */
+  LE_FX_DOUBLER = 13,
+  /* CHORUS: p0 rate, p1 depth, p2 mix (0 to 100 %). One triangle-modulated
+   * voice per channel about 1.9 ms, low-passed, mixed with the dry signal.
+   * Not wet-cached (free-running). */
+  LE_FX_CHORUS = 14,
+  /* WAH: p0 pedal (0 to 100 %). A resonant band-pass from 350 Hz (heel) to
+   * 2.5 kHz (toe). */
+  LE_FX_WAH = 15,
+  /* OVERDRIVE: p0 drive, p1 tone (0 to 100 %). A clean part plus a clipped
+   * part whose gain the drive sets, a softer second stage, then a tone
+   * filter; fit to the Guitar Rack's OvDrive (#891). */
+  LE_FX_OVERDRIVE = 16,
+  /* DISTORTION: p0 drive, p1 tone (0 to 100 %). The Looper X's amp
+   * simulator at its defaults (the Studio Rack's Dist): an asymmetric curve,
+   * then the 4x12" cabinet; fit to the Phase 0 amp captures (#891). */
+  LE_FX_DISTORTION = 17,
+  /* VINYL: p0 drive, p1 frequency (50 to 5000 Hz), p2 noise, p3 noise tone.
+   * A high-pass at the frequency, a 7 kHz roll-off, soft saturation, then
+   * hiss and crackle. Not wet-cached while the noise is up. */
+  LE_FX_VINYL = 18,
+  /* DEGRADE: p0 frequency (500 to 50000 Hz), p1 filter, p2 mix. The input
+   * held at the frequency, low-passed, mixed with the dry signal. Not
+   * wet-cached while it holds. */
+  LE_FX_DEGRADE = 19,
+  /* LPF: p0 cutoff (20 to 20000 Hz), p1 resonance. A resonant
+   * 12 dB/octave low-pass. */
+  LE_FX_LPF = 20,
+  /* SPRING: p0 time (the Looper X's 1 to 10 s: about the decay to -60 dB at
+   * short settings, shorter at long ones), p1 mix. One
+   * recirculating, dispersive spring, band-limited to 200 Hz - 4 kHz; fit to
+   * the Guitar Rack's Spring (#891). Drains its tail on bypass. */
+  LE_FX_SPRING = 21,
 } le_fx_type;
 
 /* ---- Built-in effect parameter descriptors (#1378) ----
@@ -680,12 +742,19 @@ typedef enum le_fx_param_unit {
   LE_FX_UNIT_SEMITONES = 3, /* a pitch interval */
   LE_FX_UNIT_TIMES = 4,     /* a gain factor, "x" */
   LE_FX_UNIT_CHOICE = 5,    /* named positions; the value is the position */
+  LE_FX_UNIT_DB = 6,        /* decibels */
+  LE_FX_UNIT_Q = 7,         /* a filter's Q, a plain number */
+  LE_FX_UNIT_RATIO = 8,     /* a compression ratio, "n : 1" */
+  LE_FX_UNIT_SECONDS = 9,   /* seconds */
 } le_fx_param_unit;
 
 /* How a parameter's value follows its normalized setting v in 0..1. */
 typedef enum le_fx_param_curve {
   LE_FX_CURVE_LINEAR = 0,      /* at_min + (at_max - at_min) * v */
   LE_FX_CURVE_EXPONENTIAL = 1, /* at_min * (at_max / at_min) ^ v */
+  /* 1 / (1 / at_min + (1 / at_max - 1 / at_min) * v): the reciprocal is
+   * linear (the Looper X compressor's ratio, 1 / (1 - v / 1.0101)). */
+  LE_FX_CURVE_RECIPROCAL = 2,
 } le_fx_param_curve;
 
 /* Bit flags for le_fx_param_desc.flags. */
@@ -693,6 +762,11 @@ typedef enum le_fx_param_flags {
   /* The mapping was chosen, not measured against the effect it reproduces
    * (the Looper X kinds until reference audio confirms them, #891). */
   LE_FX_PARAM_TAPER_UNVERIFIED = 1 << 0,
+  /* The effect is off (the identity) at setting 0 (an EQ's low cut) or at
+   * setting 1 (its high cut, the low-pass filter's cutoff); a surface reads
+   * the setting there as Off. */
+  LE_FX_PARAM_OFF_AT_MIN = 1 << 1,
+  LE_FX_PARAM_OFF_AT_MAX = 1 << 2,
 } le_fx_param_flags;
 
 /* One built-in parameter. `steps` is 0 for a continuous parameter, otherwise
@@ -909,6 +983,24 @@ LE_EXPORT int32_t le_engine_set_record_timing_settings(
 
 typedef struct le_plugin_slot le_plugin_slot;
 
+/* Where a recipe entry sits in a rack (le_fx_recipe.rack), as bits: a rack's
+ * first entry has LE_FX_RACK_FIRST, its last LE_FX_RACK_LAST, a one-entry
+ * rack both, and an entry inside a rack or in none, neither.
+ *
+ * A rack's input choice (its FIRST entry's) and output side (the output
+ * choice, placement and level of its LAST entry) are the rack's own: the
+ * engine applies them before the first entry and after the last whatever
+ * those entries are (a passthrough, a plugin, or bypassed), while any entry
+ * of the rack is on, fading with the enable ramp. With every entry off, or
+ * the chain off, the rack passes its input through untouched, except that a
+ * tail still draining out of one of its entries keeps the rack's output side
+ * it was heard with. Every other entry's channel handling stays its own and
+ * applies around its effect, as before. */
+typedef enum le_fx_rack_edge {
+  LE_FX_RACK_FIRST = 1,
+  LE_FX_RACK_LAST = 2,
+} le_fx_rack_edge;
+
 /* Complete structural recipe, copied before admission. Hosted pointers must
  * belong to this chain or have been prepared by this engine. */
 typedef struct le_fx_recipe {
@@ -918,6 +1010,12 @@ typedef struct le_fx_recipe {
   int32_t input_mode[LE_FX_MAX], output_mode[LE_FX_MAX];
   float placement[LE_FX_MAX], level[LE_FX_MAX];
   le_plugin_slot* plugin[LE_FX_MAX];
+  int32_t rack[LE_FX_MAX]; /* le_fx_rack_edge bits */
+  /* Each entry's stable identity (#887 part 4), 0 for none. A publish
+   * resets a slot's DSP state only when the entry there is a different one
+   * (another identity, another type, or 0), so an edit that keeps an entry
+   * where it was, such as a parameter change, leaves its tail sounding. */
+  uint64_t instance[LE_FX_MAX];
 } le_fx_recipe;
 
 typedef enum le_fx_owner {
@@ -1358,9 +1456,9 @@ typedef struct le_snapshot {
   /* Added latency (frames) of the highest-latency effect active in any audible
    * or monitored lane chain — the MAXIMUM across active effects, so it stays
    * forward-compatible as effects accrue. Today the formant-preserving octaver
-   * is the only contributor (~LE_PV_N frames; both PV and PSOLA modes report the
-   * same value); every other effect adds 0, so this reads 0 whenever no octaver
-   * is engaged. The Dart layer divides by sample_rate to show milliseconds and
+   * is the only contributor (LE_PV_LATENCY frames, engine_fx.h; both PV and
+   * PSOLA modes report the same value); every other effect adds 0, so this
+   * reads 0 whenever no octaver is engaged. The Dart layer divides by sample_rate to show milliseconds and
    * warn a performer monitoring through the octaver. PURELY informational: this
    * does NOT feed record_offset_frames or any compensation — it only surfaces
    * the lag so the UI can suggest the lower-latency choice. */
@@ -1852,7 +1950,7 @@ LE_EXPORT int32_t le_engine_clear_monitor_plugin(le_engine* engine,
 /* ---- Plugin parameters (control thread; D-PARAM) ----
  *
  * A plugin's parameters are a VARIABLE-LENGTH list sourced live from the plugin
- * — separate from the built-in fixed 4-float LE_FX_PARAMS surface, which is left
+ * — separate from the built-in fixed LE_FX_PARAMS surface, which is left
  * untouched. Values are PLAIN (not normalized): VST3's normalized params are
  * converted via normalizedParamToPlain; CLAP params are already plain. */
 
@@ -3474,6 +3572,10 @@ typedef enum le_cache_reason {
                             * whole number of octaver hops (256 frames): its
                             * hop falls on other frames each lap, so no single
                             * lap's render equals live (#941) */
+  LE_CACHE_REASON_FREE_RUNNING = 6, /* the print holds a free-running
+                                     * modulator (a chorus or doubler LFO,
+                                     * vinyl noise, a degrade's hold), which
+                                     * sounds different each lap */
 } le_cache_reason;
 
 /* Snapshot of one lane's cache state (le_engine_get_lane_cache). */
@@ -3958,7 +4060,8 @@ LE_EXPORT int32_t le_perf_render_cancel(le_engine* engine);
 /* ---- effect-chain fingerprints (control thread; FX divergence detection) ---- *
  * An order-sensitive 64-bit hash of a lane's / monitor's PUBLISHED effect chain:
  * for each of the a_fx_count active entries, its type, plus (for a built-in) its
- * LE_FX_PARAMS float parameter bits — a plugin entry contributes its type only
+ * float bits of the parameters its type reads (le_fx_param_count; none for an
+ * unknown code) — a plugin entry contributes its type only
  * (its params live in the plugin host, not a_fx_param). The empty chain hashes
  * to the FNV-1a offset basis. This is DETECTION only, not a chain readback: the
  * Dart repository owns the chain and computes the identical hash over its cache,

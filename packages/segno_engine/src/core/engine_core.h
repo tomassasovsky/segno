@@ -111,7 +111,10 @@ static inline uint64_t le_fx_chan_fold(uint64_t h, const le_fx_chan* c) {
   h = le_fx_fp_u32(h, (uint32_t)c->out_mode);
   h = le_fx_fp_u32(h, f32_to_bits(c->gl));
   h = le_fx_fp_u32(h, f32_to_bits(c->gr));
-  return le_fx_fp_u32(h, f32_to_bits(c->level));
+  h = le_fx_fp_u32(h, f32_to_bits(c->level));
+  /* Where the entry sits in its rack decides where its output side applies.
+   * Folded only when set, so a chain without racks keeps its key. */
+  return c->rack ? le_fx_fp_u32(h, (uint32_t)c->rack) : h;
 }
 
 
