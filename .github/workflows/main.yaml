@@ -302,7 +302,8 @@ jobs:
           # The script builds the bench once; the other kinds rerun it.
           bash packages/segno_engine/src/test/bench/bench_fx_cpu.sh \
             --kind eq --blocks 2000 > bench-fx-kinds-arm64.md
-          for kind in comp transient hpgate doubler chorus wah; do
+          for kind in comp transient hpgate doubler chorus wah overdrive \
+              distortion; do
             packages/segno_engine/build/bench/bench_fx_cpu \
               --kind "$kind" --blocks 2000 >> bench-fx-kinds-arm64.md
           done

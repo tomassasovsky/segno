@@ -2239,6 +2239,262 @@ static void fx_wah_kprocess(void* ks, float* l, float* r) {
   *r = y[1];
 }
 
+/* ---- Overdrive (LE_FX_OVERDRIVE, #887 part 7) ----
+ *
+ * Fit to the Phase 0 captures of the Guitar Rack's OvDrive (#891, session
+ * fxlive: Drive 10.7, 50 and 90 % at Tone 50 %, 1 kHz ladders from -48 to
+ * 0 dBFS and a -12 dBFS sweep). What the captures show:
+ * - the output is a clean part plus a clipped part, as in a diode-feedback
+ *   overdrive: above -24 dBFS in the three drives give the same output
+ *   (the clipped part has saturated and only the clean part still grows),
+ *   while below it the drive sets the gain (+13.5, +17.6 and +20.2 dB at
+ *   -48 dBFS); the third, fifth and seventh harmonics of the clipped part
+ *   stay at the same level from -24 to -12 dBFS;
+ * - a second, softer stage compresses the top, slightly asymmetrically
+ *   (the second harmonic reaches -20 dBc at 0 dBFS);
+ * - a tone filter after both: a +1.5 dB rise about 680 Hz and a roll-off
+ *   from 1.6 kHz (fitted within 0.24 dB rms from 30 Hz to 18 kHz);
+ * - the polarity is inverted.
+ * The model, u = K x + c tanh(G x / c), then (tanh(a (u + b)) -
+ * tanh(a b)) / a, then the tone filter, matches the fundamental within
+ * 0.9 dB and the third harmonic within 3 dB at every level and drive
+ * (scratch fit, not committed). The drive's clipped-part gain follows
+ * G = 3.98 e^(1.812 v), within 2 % of the three fitted gains. Only Tone
+ * 50 % was captured: the tone setting moves the 1.6 kHz corner two octaves
+ * either way, a choice (#891). */
+static const le_fx_param_desc LE_FX_OVERDRIVE_PARAMS[] = {
+    {"drive", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.09f,
+     0},
+    {"tone", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     LE_FX_PARAM_TAPER_UNVERIFIED},
+};
+#define LE_OD_PARAMS_N 2
+#define LE_OD_K 0.5166f      /* the clean part */
+#define LE_OD_C 0.0367f      /* the clipped part's ceiling */
+#define LE_OD_A 2.8826f      /* the second stage */
+#define LE_OD_B 0.0772f      /* ... and its asymmetry */
+#define LE_OD_P 0.9752f      /* output, with the tone filter at 1 kHz */
+#define LE_OD_G0 3.9823      /* G at 0 % drive */
+#define LE_OD_GK 1.8122      /* ln G per unit of drive */
+#define LE_OD_HP_HZ 17.32
+#define LE_OD_PEAK_HZ 682.2
+#define LE_OD_PEAK_DB 1.552
+#define LE_OD_PEAK_Q 0.566
+#define LE_OD_TONE_HZ 1630.2 /* the tone corner at 50 % */
+#define LE_OD_LP2_HZ 11110.0
+#define LE_OD_TONE_1K 0.98544 /* |tone filter| at 1 kHz, 50 %: the fit's unit */
+
+/* A one-pole filter in trapezoidal form: g = tan(pi fc / sr). */
+static inline float le_onepole_lp(float* s, float g1, float x) {
+  const float v = (x - *s) * g1; /* g1 = g / (1 + g) */
+  const float y = v + *s;
+  *s = y + v;
+  return y;
+}
+
+static float le_onepole_g1(double hz, double rate) {
+  if (hz > 0.45 * rate) hz = 0.45 * rate;
+  const double g = tan(3.14159265358979323846 * hz / rate);
+  return (float)(g / (1.0 + g));
+}
+
+typedef struct le_fx_overdrive {
+  le_fx_dyn_head h;
+  float last[LE_OD_PARAMS_N];
+  le_fx_glide g;    /* the clipped part's gain over its ceiling, G / c */
+  float tone_lhz;   /* the tone corner now, log2 Hz */
+  float tone_tgt;
+  float hp_g1, tone_g1, lp2_g1;
+  float pk[5];      /* the 680 Hz rise, RBJ, a0-normalized */
+  float off;        /* tanh(a b): the second stage's rest point */
+  float s_hp[2], s_tone[2], s_lp2[2];
+  float z_pk[2][2];
+} le_fx_overdrive;
+
+static void fx_overdrive_update(void* ks, const float* p, int sr, int settle) {
+  le_fx_overdrive* o = (le_fx_overdrive*)ks;
+  const int f = le_fx_dyn_begin(&o->h, o->last, p, LE_OD_PARAMS_N, sr, settle);
+  if (!f) return;
+  const double rate = (double)(sr > 0 ? sr : 48000);
+  if (f & LE_FX_DYN_NEW_RATE) {
+    o->hp_g1 = le_onepole_g1(LE_OD_HP_HZ, rate);
+    o->lp2_g1 = le_onepole_g1(LE_OD_LP2_HZ, rate);
+    double c[5];
+    le_eq_design(LE_EQ_LOMID, LE_OD_PEAK_HZ, LE_OD_PEAK_DB, LE_OD_PEAK_Q,
+                 (int)rate, c);
+    for (int i = 0; i < 5; ++i) o->pk[i] = (float)c[i];
+    o->off = tanhf(LE_OD_A * LE_OD_B);
+  }
+  const float d = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
+  const float t = p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1];
+  if (f & LE_FX_DYN_CHANGED) {
+    o->tone_tgt = (float)(log2(LE_OD_TONE_HZ) + 2.0 * (2.0 * t - 1.0));
+  }
+  const float k = settle ? 1.0f : o->h.k;
+  int moving = le_fx_glide_step(
+      &o->g, (float)(LE_OD_G0 * exp(LE_OD_GK * d) / LE_OD_C), k);
+  if (o->tone_lhz != o->tone_tgt || (f & LE_FX_DYN_NEW_RATE)) {
+    le_fx_step_toward(&o->tone_lhz, o->tone_tgt, k);
+    o->tone_g1 = le_onepole_g1(exp2((double)o->tone_lhz), rate);
+  }
+  moving |= o->tone_lhz != o->tone_tgt;
+  o->h.moving = moving;
+}
+
+static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
+  le_fx_overdrive* o = (le_fx_overdrive*)ks;
+  const float g = le_fx_glide_next(&o->g);
+  float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
+  for (int ch = 0; ch < 2; ++ch) {
+    const float x = io[ch];
+    const float u = LE_OD_K * x + LE_OD_C * tanhf(g * x);
+    float v = (tanhf(LE_OD_A * (u + LE_OD_B)) - o->off) * (1.0f / LE_OD_A);
+    /* The tone filter: the 17 Hz high-pass, the 680 Hz rise, the tone
+     * corner and the 11 kHz pole. */
+    v = v - le_onepole_lp(&o->s_hp[ch], o->hp_g1, v);
+    float* z = o->z_pk[ch];
+    const float pk = o->pk[0] * v + z[0];
+    z[0] = o->pk[1] * v - o->pk[3] * pk + z[1];
+    z[1] = o->pk[2] * v - o->pk[4] * pk;
+    v = le_onepole_lp(&o->s_tone[ch], o->tone_g1, pk);
+    v = le_onepole_lp(&o->s_lp2[ch], o->lp2_g1, v);
+    io[ch] = -(LE_OD_P / (float)LE_OD_TONE_1K) * v; /* inverted, as captured */
+  }
+  *l = io[0];
+  *r = io[1];
+}
+
+/* ---- Distortion (LE_FX_DISTORTION, #887 part 7) ----
+ *
+ * The Looper X's amp simulator, which the Studio Rack labels Dist (the
+ * chain scan, #891), at its other controls' defaults: Bass, Treble and
+ * Modern 50 % and the 4x12" cabinet. Fit to the Phase 0 captures (#891):
+ * the amp at Drive 50 % with the D.I. cabinet (s4/17) for the curve, with
+ * the 4x12" (s4/16) for the cabinet, and at Drive 10, 22.7 and 80 % with
+ * the 4x12" (s3/3, s3/1, s3/2) for the drive's law.
+ * - The curve: an early asymmetry (the second harmonic is -18 dBc at
+ *   -24 dBFS while the third is -38), then a knee into asymmetric ceilings.
+ *   Fitted, it gives the fundamental within 2 dB at every level and drive
+ *   (a closer fit needs the multi-stage amp the Amp+Cab part will build).
+ * - The drive: the gain into the curve follows ln G = -1.089 + 2.314 v -
+ *   3.344 v^2 + 6.512 v^3, through the four fitted gains (rising
+ *   throughout); the output level falls with drive, 1.451 - 0.482 v.
+ * - The cabinet and the amp's voicing after the curve: nine sections fitted
+ *   within 0.8 dB rms from 45 Hz to 18 kHz.
+ * The Lo-Fi Rack's Dist Tone has no capture: it tilts a 2 kHz shelf
+ * +-6 dB, flat at 50 % (#891). */
+static const le_fx_param_desc LE_FX_DISTORTION_PARAMS[] = {
+    {"drive", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.2f,
+     0},
+    {"tone", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     LE_FX_PARAM_TAPER_UNVERIFIED},
+};
+#define LE_DIST_PARAMS_N 2
+#define LE_DIST_ALPHA 3.4467f /* the early asymmetry */
+#define LE_DIST_UP 0.20428f   /* the positive ceiling */
+#define LE_DIST_DOWN 0.045506f
+#define LE_DIST_KNEE 3.5319f
+#define LE_DIST_SECTIONS 9
+#define LE_DIST_TONE_HZ 2000.0
+#define LE_DIST_TONE_DB 6.0
+
+/* The cabinet and voicing: band kind (le_eq_design's), Hz, dB, Q. */
+static const struct {
+  int kind;
+  double hz, db, q;
+} LE_DIST_CAB[LE_DIST_SECTIONS] = {
+    {LE_EQ_LOWCUT, 51.72, 0.0, 1.9413},  {LE_EQ_HIGHCUT, 5935.5, 0.0, 0.5584},
+    {LE_EQ_HIGHCUT, 6353.9, 0.0, 0.8313}, {LE_EQ_LOMID, 314.57, 9.102, 0.2376},
+    {LE_EQ_LOMID, 835.28, -3.605, 3.7532}, {LE_EQ_LOMID, 1113.0, 1.233, 7.0801},
+    {LE_EQ_LOMID, 720.80, -1.553, 5.1893}, {LE_EQ_LOMID, 2660.4, 7.255, 0.9623},
+    {LE_EQ_LOMID, 6429.4, 12.876, 2.2105},
+};
+
+typedef struct le_fx_distortion {
+  le_fx_dyn_head h;
+  float last[LE_DIST_PARAMS_N];
+  le_fx_glide g;     /* the gain into the curve */
+  le_fx_glide level; /* the output level, over the cabinet's 1 kHz gain */
+  float norm;        /* 1 / |cabinet at 1 kHz| */
+  float tone_db;     /* the shelf now */
+  float cab[LE_DIST_SECTIONS][5];
+  float shelf[5];
+  float z[LE_DIST_SECTIONS + 1][2][2]; /* [section][channel][state] */
+} le_fx_distortion;
+
+/* |H(e^jw)| of one a0-normalized biquad. */
+static double le_biquad_mag(const double c[5], double w) {
+  const double cr = cos(w), ci = -sin(w), c2r = cos(2.0 * w), c2i = -sin(2.0 * w);
+  const double nr = c[0] + c[1] * cr + c[2] * c2r;
+  const double ni = c[1] * ci + c[2] * c2i;
+  const double dr = 1.0 + c[3] * cr + c[4] * c2r;
+  const double di = c[3] * ci + c[4] * c2i;
+  return sqrt((nr * nr + ni * ni) / (dr * dr + di * di));
+}
+
+static void fx_distortion_update(void* ks, const float* p, int sr, int settle) {
+  le_fx_distortion* q = (le_fx_distortion*)ks;
+  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_DIST_PARAMS_N, sr, settle);
+  if (!f) return;
+  const int rate = sr > 0 ? sr : 48000;
+  if (f & LE_FX_DYN_NEW_RATE) {
+    double mag = 1.0;
+    const double w1k = 2.0 * 3.14159265358979323846 * 1000.0 / rate;
+    for (int s = 0; s < LE_DIST_SECTIONS; ++s) {
+      double c[5];
+      le_eq_design(LE_DIST_CAB[s].kind, LE_DIST_CAB[s].hz, LE_DIST_CAB[s].db,
+                   LE_DIST_CAB[s].q, rate, c);
+      for (int i = 0; i < 5; ++i) q->cab[s][i] = (float)c[i];
+      mag *= le_biquad_mag(c, w1k);
+    }
+    q->norm = (float)(1.0 / mag);
+    q->tone_db = 1e9f; /* redesign the shelf below */
+  }
+  const float d = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
+  const float t = p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1];
+  const float k = settle ? 1.0f : q->h.k;
+  int moving = le_fx_glide_step(
+      &q->g,
+      (float)exp(-1.0887 + d * (2.3136 + d * (-3.3444 + d * 6.5117))), k);
+  moving |= le_fx_glide_step(&q->level, (1.4512f - 0.4823f * d) * q->norm, k);
+  const float tone_db = (float)(LE_DIST_TONE_DB * (2.0 * t - 1.0));
+  if (tone_db != q->tone_db) {
+    /* The shelf moves in one step: a tone change is a filter change the
+     * state takes without a click at these gains. */
+    q->tone_db = tone_db;
+    double c[5];
+    le_eq_design(LE_EQ_HIGH, LE_DIST_TONE_HZ, tone_db, 0.70710678, rate, c);
+    for (int i = 0; i < 5; ++i) q->shelf[i] = (float)c[i];
+  }
+  q->h.moving = moving;
+}
+
+static void fx_distortion_kprocess(void* ks, float* l, float* r) {
+  le_fx_distortion* q = (le_fx_distortion*)ks;
+  const float g = le_fx_glide_next(&q->g);
+  const float level = le_fx_glide_next(&q->level);
+  float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
+  for (int ch = 0; ch < 2; ++ch) {
+    const float u = g * io[ch];
+    const float au = LE_DIST_ALPHA * u;
+    const float w = u + LE_DIST_ALPHA * u * u / (1.0f + au * au);
+    const float c = w > 0.0f ? LE_DIST_UP : LE_DIST_DOWN;
+    float v = w / powf(1.0f + powf(fabsf(w / c), LE_DIST_KNEE),
+                       1.0f / LE_DIST_KNEE);
+    for (int s = 0; s <= LE_DIST_SECTIONS; ++s) {
+      const float* b = s < LE_DIST_SECTIONS ? q->cab[s] : q->shelf;
+      float* z = q->z[s][ch];
+      const float o = b[0] * v + z[0];
+      z[0] = b[1] * v - b[3] * o + z[1];
+      z[1] = b[2] * v - b[4] * o;
+      v = o;
+    }
+    io[ch] = level * v;
+  }
+  *l = io[0];
+  *r = io[1];
+}
+
 /* A type's rows are the parameters an entry holds, so none may outgrow it. */
 #define LE_FX_ROWS_FIT(t)                                  \
   _Static_assert(sizeof(t) / sizeof(t[0]) <= LE_FX_PARAMS, \
@@ -2257,6 +2513,8 @@ LE_FX_ROWS_FIT(LE_FX_HP_GATE_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_DOUBLER_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_CHORUS_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_WAH_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_OVERDRIVE_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_DISTORTION_PARAMS);
 
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
  * published for this chain entry (NULL / not-ready => dry passthrough; the slot
@@ -2348,6 +2606,12 @@ static const le_fx_vtable LE_FX[] = {
                       fx_chorus_update, fx_chorus_kprocess},
     [LE_FX_WAH] = {NULL, NULL, NULL, LE_FX_WAH_PARAMS, 0, sizeof(le_fx_wah),
                    fx_wah_update, fx_wah_kprocess},
+    [LE_FX_OVERDRIVE] = {NULL, NULL, NULL, LE_FX_OVERDRIVE_PARAMS, 0,
+                         sizeof(le_fx_overdrive), fx_overdrive_update,
+                         fx_overdrive_kprocess},
+    [LE_FX_DISTORTION] = {NULL, NULL, NULL, LE_FX_DISTORTION_PARAMS, 0,
+                          sizeof(le_fx_distortion), fx_distortion_update,
+                          fx_distortion_kprocess},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -2364,7 +2628,9 @@ _Static_assert(LE_COMP_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_COMPRESSOR_PARAMS) &&
                    LE_HPG_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_HP_GATE_PARAMS) &&
                    LE_DBL_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_DOUBLER_PARAMS) &&
                    LE_CHO_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_CHORUS_PARAMS) &&
-                   LE_WAH_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_WAH_PARAMS),
+                   LE_WAH_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_WAH_PARAMS) &&
+                   LE_OD_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_OVERDRIVE_PARAMS) &&
+                   LE_DIST_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_DISTORTION_PARAMS),
                "each Looper X kind's `last` holds every setting");
 _Static_assert(LE_FX_WIDTHS == sizeof(LE_FX) / sizeof(LE_FX[0]),
                "LE_FX_WIDTHS must be one past the last le_fx_type code");
@@ -2383,6 +2649,8 @@ const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
     [LE_FX_DOUBLER] = LE_FX_ROW_COUNT(LE_FX_DOUBLER_PARAMS),
     [LE_FX_CHORUS] = LE_FX_ROW_COUNT(LE_FX_CHORUS_PARAMS),
     [LE_FX_WAH] = LE_FX_ROW_COUNT(LE_FX_WAH_PARAMS),
+    [LE_FX_OVERDRIVE] = LE_FX_ROW_COUNT(LE_FX_OVERDRIVE_PARAMS),
+    [LE_FX_DISTORTION] = LE_FX_ROW_COUNT(LE_FX_DISTORTION_PARAMS),
 };
 
 /* ---- per-kind state (le_fx_kinds, engine_private.h) ---- */
