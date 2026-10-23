@@ -203,8 +203,8 @@ class FxSourceScale {
 ///   docs/plan/2026-10-23-looperx-dynamics-measured.md), with each control
 ///   read as the value it applies, which is not always the value the
 ///   Looper X shows;
-/// - the doubler: where a rack hides it, the Dub Rack's default 100 %
-///   separation (chosen);
+/// - the doubler: where a rack hides its separation, 50 % (the Studio and
+///   Vocal racks' copies reach the 51 ms of the Dub Rack's 50 %, #1445);
 /// - the distortion: where a rack hides it, the tone flat (50 %, chosen).
 ///
 /// The first variant of each module is its default, the one "Add an effect"
@@ -335,12 +335,13 @@ const FxModuleBuild _dubDoubler = FxModuleBuild(
   params: ['Doubler Mix', 'Doubler Sep'],
 );
 
-// Studio, Vocal and Vocal Tuner racks: the mix, the separation held at the
-// Dub Rack's default.
+// Studio, Vocal and Vocal Tuner racks: the mix, the separation held at
+// 50 %, where the Dub Rack's copies reach as far as these racks' do
+// (#1445: 49 ms against 51).
 const FxModuleBuild _doubler = FxModuleBuild(
   type: TrackEffectType.doubler,
   params: ['Doubler Mix'],
-  fixed: {1: 100},
+  fixed: {1: 50},
 );
 
 // Ed's Rack: the whole chorus.
