@@ -512,6 +512,21 @@ void main() {
       }
       expect(ratio.valueAt(0.758), closeTo(4.0, 0.01));
     });
+
+    test("the reverbs' decay is the Looper X's reverb-time taper", () {
+      // (v + 0.45) / (1 - v), capped at 144 s; a time outside the range
+      // clamps to its end.
+      final decay = TrackEffectType.dubVerb.params[0];
+      expect(decay.unit, FxParamUnit.seconds);
+      for (var v = 0.0; v < 0.99; v += 0.1) {
+        expect(decay.valueAt(v), closeTo((v + 0.45) / (1 - v), 1e-9));
+        expect(decay.settingFor(decay.valueAt(v)), closeTo(v, 1e-9));
+      }
+      expect(decay.valueAt(1), 144);
+      expect(decay.settingFor(-5), 0);
+      expect(decay.settingFor(0.1), 0);
+      expect(decay.settingFor(1000), decay.settingFor(144));
+    });
   });
 
   group('FxParamUnit and FxParamCurve', () {

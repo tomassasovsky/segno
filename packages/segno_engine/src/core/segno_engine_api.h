@@ -728,8 +728,9 @@ typedef enum le_fx_type {
    * its tail on bypass. */
   LE_FX_DUB_VERB = 22,
   /* AMB_VERB: p0 decay (as DUB_VERB's), p1 volume (the dry falls to 0.71),
-   * p2 Amb-Dub Mix, which the kernel does not read: it sets the Dub Rack's
-   * parallel paths' mix (#1430). A reverb with a strong early echo and
+   * p2 Amb-Dub Mix, which the kernel does not read: it is the Dub Rack's
+   * parallel-path mix, which nothing reads until that routing lands
+   * (#1430). A reverb with a strong early echo and
    * shorter lows, fit to the Dub Rack's Amb-Verb (#891). Drains its tail on
    * bypass. */
   LE_FX_AMB_VERB = 23,

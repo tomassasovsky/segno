@@ -3485,7 +3485,6 @@ typedef struct le_fx_verb {
   le_fx_glide dry;
   le_fx_glide wet;
   const le_verb_def* def;
-  int ok; /* the geometry fits the rings at this rate */
   uint32_t need[2]; /* the samples each ring must hold */
   uint32_t hist_n;
   uint32_t pd[2];
@@ -3504,6 +3503,10 @@ typedef struct le_fx_verb {
   uint8_t line_full[LE_VB_LINES];
   float dec;        /* Dec, gliding toward the setting */
   float dec_design; /* the Dec the lines were last designed for (-1: none) */
+  /* Per rate: the line shelves' prewarped corners (lo, hi) and the anchors'
+   * cos and sin (125 Hz, 1 kHz, 8 kHz), so a redesign calls no trig. */
+  double warp[2];
+  double anchor[3][2];
   float gm[LE_VB_LINES];
   float lo[LE_VB_LINES][3]; /* first-order: b0, b1, a1 */
   float hi[LE_VB_LINES][3];
@@ -3516,10 +3519,14 @@ typedef struct le_fx_verb {
   float tail_z;
 } le_fx_verb;
 
+/* A corner [hz] prewarped for the bilinear transform at [sr]. */
+static double le_vb_warp(double hz, int sr) {
+  return tan(LE_PI * hz / (double)sr);
+}
+
 /* A first-order shelf (bilinear): gain [k] at DC (low) or Nyquist (high),
- * unity at the other end, corner [hz]. */
-static void le_vb_shelf(double hz, double k, int sr, int high, float c[3]) {
-  const double t = tan(LE_PI * hz / (double)sr);
+ * unity at the other end, at the prewarped corner [t]. */
+static void le_vb_shelf(double t, double k, int high, float c[3]) {
   if (high) {
     c[0] = (float)((k + t) / (1.0 + t));
     c[1] = (float)((t - k) / (1.0 + t));
@@ -3530,11 +3537,21 @@ static void le_vb_shelf(double hz, double k, int sr, int high, float c[3]) {
   c[2] = (float)((t - 1.0) / (1.0 + t));
 }
 
-static double le_vb_mag(const float c[3], double hz, int sr) {
-  const double w = 2.0 * LE_PI * hz / (double)sr;
-  const double nr = c[0] + c[1] * cos(w), ni = -c[1] * sin(w);
-  const double dr = 1.0 + c[2] * cos(w), di = -c[2] * sin(w);
+/* A first-order section's gain at the frequency whose cos and sin are
+ * [cs]. */
+static double le_vb_mag(const float c[3], const double cs[2]) {
+  const double nr = c[0] + c[1] * cs[0], ni = -c[1] * cs[1];
+  const double dr = 1.0 + c[2] * cs[0], di = -c[2] * cs[1];
   return sqrt((nr * nr + ni * ni) / (dr * dr + di * di));
+}
+
+/* One sample through a first-order section [c] (b0, b1, a1) with state [z]
+ * (x1, y1). */
+static inline float le_vb_tick(const float c[3], float z[2], float x) {
+  const float y = c[0] * x + c[1] * z[0] - c[2] * z[1];
+  z[0] = x;
+  z[1] = y;
+  return y;
 }
 
 /* The table's value at Vol [v] (linear between the points). */
@@ -3589,27 +3606,25 @@ static void le_vb_t(const le_verb_def* d, double v, double t[3]) {
  * gains are corrected four times for their leakage at the other anchors. */
 static void le_vb_design_line(le_fx_verb* q, int i, const double t[3],
                               int sr) {
-  const le_verb_def* d = q->def;
   const double len = (double)q->line_n[i];
+  const double(*a)[2] = q->anchor; /* 125 Hz, 1 kHz, 8 kHz */
   const double glo = pow(10.0, -3.0 * len / (t[0] * sr));
   const double gmid = pow(10.0, -3.0 * len / (t[1] * sr));
   const double ghi = pow(10.0, -3.0 * len / (t[2] * sr));
   double klo = glo / gmid;
   double khi = ghi / gmid;
   for (int it = 0; it < 4; ++it) {
-    le_vb_shelf(d->lo_hz, klo, sr, 0, q->lo[i]);
-    le_vb_shelf(d->hi_hz, khi, sr, 1, q->hi[i]);
+    le_vb_shelf(q->warp[0], klo, 0, q->lo[i]);
+    le_vb_shelf(q->warp[1], khi, 1, q->hi[i]);
     const double gm =
-        gmid / (le_vb_mag(q->lo[i], 1000.0, sr) * le_vb_mag(q->hi[i], 1000.0, sr));
-    klo *= glo / (gm * le_vb_mag(q->lo[i], 125.0, sr) *
-                  le_vb_mag(q->hi[i], 125.0, sr));
-    khi *= ghi / (gm * le_vb_mag(q->lo[i], 8000.0, sr) *
-                  le_vb_mag(q->hi[i], 8000.0, sr));
+        gmid / (le_vb_mag(q->lo[i], a[1]) * le_vb_mag(q->hi[i], a[1]));
+    klo *= glo / (gm * le_vb_mag(q->lo[i], a[0]) * le_vb_mag(q->hi[i], a[0]));
+    khi *= ghi / (gm * le_vb_mag(q->lo[i], a[2]) * le_vb_mag(q->hi[i], a[2]));
   }
-  le_vb_shelf(d->lo_hz, klo, sr, 0, q->lo[i]);
-  le_vb_shelf(d->hi_hz, khi, sr, 1, q->hi[i]);
-  q->gm[i] = (float)(gmid / (le_vb_mag(q->lo[i], 1000.0, sr) *
-                             le_vb_mag(q->hi[i], 1000.0, sr)));
+  le_vb_shelf(q->warp[0], klo, 0, q->lo[i]);
+  le_vb_shelf(q->warp[1], khi, 1, q->hi[i]);
+  q->gm[i] = (float)(gmid / (le_vb_mag(q->lo[i], a[1]) *
+                             le_vb_mag(q->hi[i], a[1])));
 }
 
 static uint32_t le_vb_len(double ms, int sr) {
@@ -3670,9 +3685,15 @@ static void fx_verb_update(void* ks, const float* p, int sr, int settle,
     q->tail_z = 0.0f;
     q->dec_design = -1.0f;
     le_vb_geometry(q, rate);
-    /* The rings are one second each (le_fx_prepare's cap is the rate). */
-    q->ok = q->need[0] <= (uint32_t)rate && q->need[1] <= (uint32_t)rate;
-    le_vb_shelf(def->shelf_hz, def->shelf_k, rate, 1, q->shelf);
+    q->warp[0] = le_vb_warp(def->lo_hz, rate);
+    q->warp[1] = le_vb_warp(def->hi_hz, rate);
+    static const double anchor_hz[3] = {125.0, 1000.0, 8000.0};
+    for (int a = 0; a < 3; ++a) {
+      const double w = 2.0 * LE_PI * anchor_hz[a] / (double)rate;
+      q->anchor[a][0] = cos(w);
+      q->anchor[a][1] = sin(w);
+    }
+    le_vb_shelf(le_vb_warp(def->shelf_hz, rate), def->shelf_k, 1, q->shelf);
     if (def->peak_db != 0.0) {
       double c[5];
       le_eq_design(LE_EQ_LOMID, def->peak_hz, def->peak_db, def->peak_q, rate,
@@ -3684,8 +3705,7 @@ static void fx_verb_update(void* ks, const float* p, int sr, int settle,
   /* Dec glides with the other settings' smoothing; the lines are redesigned
    * (eight shelf pairs) only while it moves, not when Vol does. */
   const float dec_tgt = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
-  q->dec += (dec_tgt - q->dec) * k;
-  if (fabsf(dec_tgt - q->dec) < 1e-4f) q->dec = dec_tgt;
+  le_fx_step_toward(&q->dec, dec_tgt, k);
   if (q->dec != q->dec_design) {
     double t[3];
     le_vb_t(def, (double)q->dec, t);
@@ -3709,17 +3729,15 @@ static void fx_amb_verb_update(void* ks, const float* p, int sr, int settle) {
 static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
                               float* r) {
   le_fx_verb* q = (le_fx_verb*)ks;
+  const le_verb_def* d = q->def;
+  /* Rings too short for the geometry: the input passes untouched, as it
+   * does when the slot has no rings (fx_run). */
+  if (d == NULL || (uint32_t)cap < q->need[0] || (uint32_t)cap < q->need[1])
+    return;
   const float dry = le_fx_glide_next(&q->dry);
   const float wet = le_fx_glide_next(&q->wet);
   const float x0 = fx_sanitize(*l);
   const float x1 = fx_sanitize(*r);
-  const le_verb_def* d = q->def;
-  if (d == NULL || !q->ok || (uint32_t)cap < q->need[0] ||
-      (uint32_t)cap < q->need[1]) {
-    *l = dry * x0;
-    *r = dry * x1;
-    return;
-  }
   float* ring[2] = {r0, r1};
   const float m = 0.5f * (x0 + x1);
   /* The input history: the pre-delays and the strong taps read it. */
@@ -3773,15 +3791,8 @@ static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
   const float house = 2.0f / (float)LE_VB_LINES * sum;
   for (int i = 0; i < LE_VB_LINES; ++i) {
     const int c = i < LE_VB_LINES / 2 ? 0 : 1;
-    const float s = o[i] - house;
-    const float y = q->lo[i][0] * s + q->lo[i][1] * q->lo_z[i][0] -
-                    q->lo[i][2] * q->lo_z[i][1];
-    q->lo_z[i][0] = s;
-    q->lo_z[i][1] = y;
-    const float y2 = q->hi[i][0] * y + q->hi[i][1] * q->hi_z[i][0] -
-                     q->hi[i][2] * q->hi_z[i][1];
-    q->hi_z[i][0] = y;
-    q->hi_z[i][1] = y2;
+    const float y = le_vb_tick(q->lo[i], q->lo_z[i], o[i] - house);
+    const float y2 = le_vb_tick(q->hi[i], q->hi_z[i], y);
     const float inj = (i & 1) == 0 ? e[0] : e[1];
     ring[c][q->line_off[i] + q->line_w[i]] =
         fx_sanitize(q->gm[i] * y2 + (float)d->cin[i] * d->late_g * inj);
@@ -3797,11 +3808,7 @@ static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
                 inv * orr + d->early_g * e[1] + tap[1]};
   for (int c = 0; c < 2; ++c) {
     if (d->peak_db != 0.0) w[c] = le_biquad_tick(q->peak, q->peak_z[c], w[c]);
-    const float y = q->shelf[0] * w[c] + q->shelf[1] * q->shelf_z[c][0] -
-                    q->shelf[2] * q->shelf_z[c][1];
-    q->shelf_z[c][0] = w[c];
-    q->shelf_z[c][1] = y;
-    w[c] = y;
+    w[c] = le_vb_tick(q->shelf, q->shelf_z[c], w[c]);
   }
   if (d->tail_g != 0.0f) {
     q->tail_z = fx_sanitize(d->tail_p * q->tail_z + m);
@@ -3882,7 +3889,9 @@ typedef struct le_fx_vtable {
   void (*kprocess)(void* ks, float* l, float* r);
   /* A heap-state kind whose long lines live in the slot's two rings, which
    * its `prepare` allocates (the reverbs): run instead of `kprocess`, with
-   * both rings and their length. */
+   * both rings and their length (the sample rate). A slot without both
+   * rings passes the input untouched. Its block tracks which parts of the
+   * rings it has written, so the rings are never cleared for it. */
   void (*rkprocess)(void* ks, float* r0, float* r1, int cap, float* l,
                     float* r);
 } le_fx_vtable;
@@ -4419,14 +4428,18 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
            * discontinue a still-audible tail.
            * Only ring-OWNING types (vtable `prepare` non-NULL) pay the ring
            * clear, and those are spaced by the cooldown: a deferred slot
-           * simply stays bypassed and retries next sample. */
-          /* A draining kind keeps its ring in its block, which the reset
-           * below clears: it is spaced the same way. */
+           * simply stays bypassed and retries next sample. A draining
+           * heap-state kind is spaced the same way: the reset clears its
+           * block (the spring's ring lives there). A ring kernel
+           * (`rkprocess`, the reverbs) skips the ring clear: its cleared
+           * block marks every structure unwrapped, so it reads silence
+           * until it has written there again. */
           const int needs_clear = le_fx_holds_tail(fx, s, ty);
           if (needs_clear && fx->enable_clear_cooldown > 0) goto slot_done;
           le_fx_entry_reset(fx, s);
           if (needs_clear) {
-            if (LE_FX[ty].prepare != NULL) le_fx_entry_clear_rings(fx, s, cap);
+            if (LE_FX[ty].prepare != NULL && LE_FX[ty].rkprocess == NULL)
+              le_fx_entry_clear_rings(fx, s, cap);
             fx->enable_clear_cooldown = LE_FX_ENABLE_CLEAR_SPACING;
           }
           fx->enable_warmup[s] = le_fx_added_latency(fx, s, ty);
