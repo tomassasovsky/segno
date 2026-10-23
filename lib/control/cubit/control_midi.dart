@@ -916,17 +916,31 @@ extension MidiControlEditing on ControlCubit {
     _midiTargets.remove(row);
   }
 
+  /// A MIDI value for [target], as what the binding writes: an owned
+  /// value's own coercion, or for an effect parameter the chain's setting for
+  /// the value at that point of the parameter's shown range, snapped to its
+  /// positions (_bindingToChain).
   double _coerceMidiValue(ControlValueTarget target, double value) {
     if (target is OwnedValueTarget) return target.coerce(value);
-    final clamped = value.clamp(0.0, 1.0);
+    var clamped = value.clamp(0.0, 1.0);
     if (target is FxParamTarget) {
       final param = _midiSteppedParam(target);
       if (param != null) {
-        return param.positionOf(clamped) / (param.steps - 1);
+        clamped = param.positionOf(clamped) / (param.steps - 1);
       }
     }
-    return clamped;
+    return _bindingToChain(target, clamped);
   }
+
+  /// A binding's [value] for [target] as the chain's own: for an effect
+  /// parameter, the setting for the value at that point of the range the rack
+  /// shows (`fxKindSettingFor`); anything else as it is. A controller value (a
+  /// MIDI value, an External button's or expression pedal's) is a point of
+  /// the shown range, as the value it reads back (`readValueTarget`) is; from
+  /// here on, holders, persistence and the chain all hold the chain's
+  /// setting, so a retype or a gone slot never reinterprets one.
+  double _bindingToChain(ControlValueTarget target, double value) =>
+      target is FxParamTarget ? _looper.fxKindSettingFor(target, value) : value;
 
   /// [target]'s parameter, as its surface shows it ([fxEntryParam]), when it
   /// snaps to positions, so a MIDI value lands on one, or `null` for a
@@ -989,10 +1003,7 @@ extension MidiControlEditing on ControlCubit {
     }
     for (final target in _parameterHolders.keys.whereType<FxParamTarget>()) {
       final released = _survivingMidiReleased(target);
-      // Persistence holds the chain's setting; a holder the binding's.
-      if (released != null) {
-        parameters[target] = _looper.fxKindSettingFor(target, released);
-      }
+      if (released != null) parameters[target] = released;
     }
     _fxPersistence.replace(powers: powers, parameters: parameters);
   }
@@ -1006,11 +1017,7 @@ extension MidiControlEditing on ControlCubit {
       );
     } else if (target is ControlValueTarget) {
       (_parameterHolders[target] ??= {})[key] = (
-        // A UI edit arrives as the chain's setting; a holder keeps the
-        // binding's (fxKindSettingFor).
-        value: target is FxParamTarget
-            ? _looper.fxShownSettingFor(target, value)
-            : value,
+        value: value,
         order: ++_activationOrder,
       );
     }
