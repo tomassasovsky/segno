@@ -264,7 +264,7 @@ jobs:
           | tee bench-pitch-time-arm64.md
       - name: Upload the harness and its report for the appliance
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bench-pitch-time-arm64
           path: |
@@ -283,7 +283,7 @@ jobs:
           | tee bench-instruments-arm64.md
       - name: Upload the instrument bench and its report for the appliance
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bench-instruments-arm64
           path: |
@@ -319,7 +319,7 @@ jobs:
           | tee bench-pitch-algos-arm64.md
       - name: Upload the effects bench and its report for the appliance
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bench-fx-cpu-arm64
           path: |
@@ -336,7 +336,7 @@ jobs:
         run: bash packages/segno_engine/src/test/bench/bench_rt_faults.sh
       - name: Upload the audio-thread fault bench for the appliance
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bench-rt-faults-arm64
           path: packages/segno_engine/build/bench/bench_rt_faults
