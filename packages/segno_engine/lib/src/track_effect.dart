@@ -407,7 +407,16 @@ enum TrackEffectType {
 
   /// The Looper X's spring reverb (#887 part 8): one recirculating,
   /// dispersive spring; fit to the Guitar Rack's Spring.
-  spring(21, 'Spring reverb');
+  spring(21, 'Spring reverb'),
+
+  /// The Looper X's Dub-Verb (#1430): a bright, slowly thickening reverb with
+  /// a decay and a volume; fit to the Dub Rack's.
+  dubVerb(22, 'Dub reverb'),
+
+  /// The Looper X's Amb-Verb (#1430): a reverb with a strong early echo and
+  /// shorter lows; its third parameter is the Dub Rack's Amb-Dub Mix, which
+  /// sets the rack's parallel paths. Fit to the Dub Rack's.
+  ambVerb(23, 'Ambience');
 
   const TrackEffectType(this.code, this.label);
 
@@ -986,6 +995,51 @@ enum TrackEffectType {
         defaultValue: 0.5,
       ),
     ],
+    // Fit to the Dub Rack's Dub-Verb (#891); the Looper X's ranges.
+    TrackEffectType.dubVerb => const [
+      FxParamInfo(
+        key: 'decay',
+        unit: FxParamUnit.seconds,
+        atMin: 0.45,
+        atMax: 144,
+        curve: FxParamCurve.reverbTime,
+        defaultValue: 0.7,
+      ),
+      FxParamInfo(
+        key: 'volume',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.2,
+      ),
+    ],
+    // Fit to the Dub Rack's Amb-Verb (#891); the Looper X's ranges.
+    TrackEffectType.ambVerb => const [
+      FxParamInfo(
+        key: 'decay',
+        unit: FxParamUnit.seconds,
+        atMin: 0.45,
+        atMax: 144,
+        curve: FxParamCurve.reverbTime,
+        defaultValue: 0.2,
+      ),
+      FxParamInfo(
+        key: 'volume',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.4,
+      ),
+      // The Dub Rack's Amb-Dub Mix: the rack's parallel paths read it, the
+      // kernel does not.
+      FxParamInfo(
+        key: 'amb_dub_mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.4,
+      ),
+    ],
     TrackEffectType.reverb => const [
       // comb feedback 0.70 + 0.28 v; feedback low-pass 0.4 v
       FxParamInfo(
@@ -1077,7 +1131,11 @@ enum FxParamCurve {
 
   /// `1 / (1 / atMin + (1 / atMax - 1 / atMin) * v)`: the reciprocal is
   /// linear (`LE_FX_CURVE_RECIPROCAL`, the Looper X compressor's ratio).
-  reciprocal(2);
+  reciprocal(2),
+
+  /// `(v + atMin) / (1 - v)`, at most [FxParamInfo.atMax]: the Looper X's
+  /// reverb time display (`LE_FX_CURVE_REVERB_TIME`).
+  reverbTime(3);
 
   const FxParamCurve(this.code);
 
@@ -1175,6 +1233,8 @@ class FxParamInfo {
     return switch (curve) {
       FxParamCurve.exponential => atMin * math.pow(atMax / atMin, v),
       FxParamCurve.reciprocal => 1 / (1 / atMin + (1 / atMax - 1 / atMin) * v),
+      FxParamCurve.reverbTime =>
+        v >= 1 ? atMax : math.min(atMax, (v + atMin) / (1 - v)),
       FxParamCurve.linear => atMin + (atMax - atMin) * v,
     };
   }
@@ -1187,6 +1247,7 @@ class FxParamInfo {
         math.log(value / atMin) / math.log(atMax / atMin),
       FxParamCurve.reciprocal =>
         (1 / value - 1 / atMin) / (1 / atMax - 1 / atMin),
+      FxParamCurve.reverbTime => (value - atMin) / (value + 1),
       FxParamCurve.linear => (value - atMin) / (atMax - atMin),
     };
     return v.isNaN ? 0.0 : v.clamp(0.0, 1.0);

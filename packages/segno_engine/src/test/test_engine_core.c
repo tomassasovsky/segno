@@ -21632,10 +21632,10 @@ static void test_fx_param_descriptors_match_kernels(void) {
   const int32_t sr = 48000;
 
   /* Counts: the parameters each kernel reads; none for NONE and PLUGIN. */
-  const int32_t counts[] = {0, 2, 2, 3, 2, 5, 3, 3, 0, 15, 5,
-                            3, 2, 2, 3, 1, 2, 2, 4, 3, 2, 2};
-  for (int32_t t = 0; t < 22; ++t) CHECK(le_fx_param_count(t) == counts[t]);
-  CHECK(le_fx_param_count(22) == LE_ERR_INVALID);
+  const int32_t counts[] = {0, 2, 2, 3, 2, 5, 3, 3, 0, 15, 5, 3,
+                            2, 2, 3, 1, 2, 2, 4, 3, 2, 2, 2, 3};
+  for (int32_t t = 0; t < 24; ++t) CHECK(le_fx_param_count(t) == counts[t]);
+  CHECK(le_fx_param_count(24) == LE_ERR_INVALID);
   CHECK(le_fx_param_count(-1) == LE_ERR_INVALID);
   le_fx_param_desc scratch;
   CHECK(le_fx_param_info(LE_FX_DELAY, 3, &scratch) == LE_ERR_INVALID);

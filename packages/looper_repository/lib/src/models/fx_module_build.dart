@@ -250,6 +250,8 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Degrade': {'Lo-Fi Rack': _degrade},
   'Low-pass filter': {'Rhythmic Rack': _rhythmicLpf, 'Lo-Fi Rack': _lpf},
   'Spring reverb': {'Guitar Rack': _spring},
+  'Dub reverb': {'Dub Rack': _dubVerb},
+  'Ambience': {'Dub Rack': _ambVerb},
   'Pitch shift': {'Studio Rack': _pitchShift, 'Vocal Rack': _pitchShift},
 };
 
@@ -272,6 +274,19 @@ const FxModuleBuild _pitchShift = FxModuleBuild(
       defaultValue: 0.5,
     ),
   },
+);
+
+// Dub Rack: the whole Dub-Verb, decay and volume.
+const FxModuleBuild _dubVerb = FxModuleBuild(
+  type: TrackEffectType.dubVerb,
+  params: ['Dub-Verb Dec', 'Dub-Verb Vol'],
+);
+
+// Dub Rack: the whole Amb-Verb, decay and volume, and the rack's Amb-Dub Mix,
+// which the source groups with it (and spells its volume key in lower case).
+const FxModuleBuild _ambVerb = FxModuleBuild(
+  type: TrackEffectType.ambVerb,
+  params: ['Amb-Verb Dec', 'Amb-verb Vol', 'Amb-Dub Mix'],
 );
 
 // Guitar Rack: the whole spring.
