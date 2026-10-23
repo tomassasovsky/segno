@@ -41,8 +41,8 @@
  *   ./bench_fx_cpu.sh --paced              # paced to the period, like a device
  *   ./bench_fx_cpu.sh --smoke              # short runs (CI)
  *   ./bench_fx_cpu.sh --kind eq            # the EQ instead of the octaver
- *   ./bench_fx_cpu.sh --racks              # each rack's buildable kinds on
- *                                          # one input, against its budget
+ *   ./bench_fx_cpu.sh --racks              # each rack as built today on one
+ *                                          # input, against its budget
  *   ./bench_fx_cpu.sh --kind comp          # or transient, hpgate, doubler,
  *                                          # chorus, wah, overdrive,
  *                                          # distortion, vinyl, degrade,
@@ -150,41 +150,52 @@ static void kind_entry(le_fx_recipe* r, int s, int32_t kind) {
 
 static void fx_entry(le_fx_recipe* r, int s) { kind_entry(r, s, g_kind); }
 
-/* --racks: each Looper X rack's kinds that this engine builds, in the rack's
- * chain order (docs/plan/2026-10-20-looperx-derived-tables.md), on one
- * monitored input, against the plan's per-rack worst-block increment
- * (docs/plan/2026-10-19-feat-looperx-racks-build-plan.md, CPU budget). The
- * octaver stands in for the Pitch Shift; kinds not built yet (Whammy, Amp+Cab,
- * Dub-Verb, Amb-Verb, Slicer, Pumper, the Vocal Tuner's) are left out, so a
- * row measures what the rack costs today. */
+/* --racks: each Looper X rack as this engine builds it today, in the rack's
+ * chain order (docs/plan/2026-10-20-looperx-derived-tables.md, "Chain
+ * order"), on one monitored input, against the per-rack worst-block increment
+ * the racks plan budgets (#1372: 60 us for Drum, Dub, Lo-Fi and Rhythmic, 200
+ * us for Ed's, Guitar, Studio and Vocal, 300 us for the Vocal Tuner).
+ * Stand-ins, as the racks build them now: the octaver for the Pitch Shift,
+ * the chorus for the Mod module (Guitar, Studio), and the engine's delay and
+ * reverb for the racks' Delay and Reverb. Left out, not built yet: the
+ * Whammy, Amp+Cab, Dub-Verb, Amb-Verb, Slicer, Pumper, Smart Tune and
+ * Harmonizer. Each list ends at the first LE_FX_NONE. */
 typedef struct {
   const char* name;
   double budget_us;
-  int n;
   int32_t kinds[10];
 } rack_spec;
 
 static const rack_spec k_racks[] = {
-    {"drum", 60.0, 5,
-     {LE_FX_TRANSIENT, LE_FX_DELAY, LE_FX_REVERB, LE_FX_COMPRESSOR, LE_FX_EQ}},
-    {"dub", 60.0, 4,
-     {LE_FX_DOUBLER, LE_FX_DELAY, LE_FX_COMPRESSOR, LE_FX_EQ}},
-    {"lofi", 60.0, 6,
+    {"drum", 60.0,
+     {LE_FX_TRANSIENT, LE_FX_DELAY, LE_FX_REVERB, LE_FX_EQ, LE_FX_COMPRESSOR}},
+    {"dub", 60.0, {LE_FX_DOUBLER, LE_FX_DELAY, LE_FX_COMPRESSOR, LE_FX_EQ}},
+    {"lofi", 60.0,
      {LE_FX_LPF, LE_FX_VINYL, LE_FX_DEGRADE, LE_FX_DISTORTION, LE_FX_EQ,
       LE_FX_DELAY}},
-    {"rhythmic", 60.0, 4, {LE_FX_LPF, LE_FX_EQ, LE_FX_DELAY, LE_FX_REVERB}},
-    {"eds", 200.0, 8,
+    {"rhythmic", 60.0, {LE_FX_LPF, LE_FX_EQ, LE_FX_DELAY, LE_FX_REVERB}},
+    {"eds", 200.0,
      {LE_FX_OCTAVER, LE_FX_WAH, LE_FX_COMPRESSOR, LE_FX_OVERDRIVE,
       LE_FX_CHORUS, LE_FX_REVERB, LE_FX_DELAY, LE_FX_EQ}},
-    {"guitar", 200.0, 5,
+    {"guitar", 200.0,
      {LE_FX_OVERDRIVE, LE_FX_WAH, LE_FX_CHORUS, LE_FX_SPRING, LE_FX_DELAY}},
-    {"studio", 200.0, 8,
+    {"studio", 200.0,
      {LE_FX_OCTAVER, LE_FX_DISTORTION, LE_FX_DOUBLER, LE_FX_CHORUS,
       LE_FX_DELAY, LE_FX_REVERB, LE_FX_COMPRESSOR, LE_FX_EQ}},
-    {"vocal", 200.0, 7,
+    {"vocal", 200.0,
      {LE_FX_HP_GATE, LE_FX_OCTAVER, LE_FX_DOUBLER, LE_FX_DELAY, LE_FX_REVERB,
       LE_FX_COMPRESSOR, LE_FX_EQ}},
+    {"vtuner", 300.0,
+     {LE_FX_HP_GATE, LE_FX_DOUBLER, LE_FX_DELAY, LE_FX_REVERB,
+      LE_FX_COMPRESSOR, LE_FX_EQ}},
 };
+
+/* The number of kinds in [rack]'s list. */
+static int rack_len(const rack_spec* rack) {
+  int n = 0;
+  while (n < 10 && rack->kinds[n] != LE_FX_NONE) ++n;
+  return n;
+}
 static int g_racks;
 
 /* `moving` (every kind but the octaver): one gliding setting of each entry
@@ -282,28 +293,35 @@ static void report(const char* label, stats s, const double ph[PHASES]) {
   fflush(stdout);
 }
 
-/* A playing rig with monitor input 0 running [rack]'s chain (none for a
- * NULL rack), timed. Returns 0 when the engine refused the setup. */
+/* A playing rig with monitor input 0 routed to both outputs and the source's
+ * first period at its input. Returns 0 when the engine refused it. */
+static int monitor_rig(rig* r, const bench_opts* o, float* src, int32_t frames) {
+  if (!rig_create_io(r, o, 1, src, frames, 2)) return 0;
+  if (le_engine_set_monitor_input(r->e, 0, 1) != LE_OK ||
+      le_engine_set_monitor_input_output(r->e, 0, 0x3) != LE_OK) {
+    rig_destroy(r);
+    return 0;
+  }
+  for (int32_t f = 0; f < o->period; ++f) {
+    r->in[2 * f] = src[f];
+    r->in[2 * f + 1] = src[f];
+  }
+  return 1;
+}
+
+/* The monitor rig running [rack]'s chain (none for a NULL rack), timed.
+ * Returns 0 when the engine refused the setup. */
 static int time_rack(const bench_opts* o, float* src, int32_t frames,
                      const rack_spec* rack, int blocks, int warm, stats* out,
                      double ph[PHASES]) {
   rig r;
-  if (!rig_create_io(&r, o, 1, src, frames, 2)) return 0;
-  if (le_engine_set_monitor_input(r.e, 0, 1) != LE_OK ||
-      le_engine_set_monitor_input_output(r.e, 0, 0x3) != LE_OK) {
-    rig_destroy(&r);
-    return 0;
-  }
-  for (int32_t f = 0; f < o->period; ++f) {
-    r.in[2 * f] = src[f];
-    r.in[2 * f + 1] = src[f];
-  }
+  if (!monitor_rig(&r, o, src, frames)) return 0;
   if (rack != NULL) {
     le_fx_recipe rec;
     memset(&rec, 0, sizeof(rec));
     rec.enabled = 1;
-    rec.count = rack->n;
-    for (int s = 0; s < rack->n; ++s) kind_entry(&rec, s, rack->kinds[s]);
+    rec.count = rack_len(rack);
+    for (int s = 0; s < rec.count; ++s) kind_entry(&rec, s, rack->kinds[s]);
     if (le_engine_set_fx_recipe(r.e, LE_FX_OWNER_MONITOR, 0, 0, 1, &rec) !=
         LE_OK) {
       rig_destroy(&r);
@@ -315,39 +333,40 @@ static int time_rack(const bench_opts* o, float* src, int32_t frames,
   return 1;
 }
 
-/* --racks: the baseline, then each rack with its increment over it. */
+/* --racks: each rack timed right after a rig without effects, its increment
+ * taken against that run, so drift between runs stays out of it. The budget
+ * is a worst-block increment, so the verdict reads the max; it is given only
+ * on the console's core (a Cortex-A76, part 0xd0b), the machine the budgets
+ * are for, and a proxy prints the numbers without one. */
 static int run_racks(const bench_opts* o, float* src, int32_t frames,
                      int blocks, int warm) {
+  const int judged = g_cpu_part == 0xd0b;
   printf("bench_fx_cpu: racks, %s, %d Hz, %d-frame periods (deadline %.1f "
-         "us), %d timed blocks%s\n",
+         "us), %d timed blocks%s%s\n",
          g_cpu_name, o->rate, o->period, g_budget_us, blocks,
-         g_paced ? ", paced" : "");
+         g_paced ? ", paced" : "",
+         judged ? "" : " (not the console: no verdict)");
   printf("| rack     |  p50 us |  p99 us |  max us | late | +p99 us | +max us "
-         "| budget us | p99 within |\n");
+         "| budget us | within | phase 0..3 mean us               |\n");
   printf("|----------|---------|---------|---------|------|---------|---------"
-         "|-----------|------------|\n");
-  stats base;
-  double ph[PHASES];
-  if (!time_rack(o, src, frames, NULL, blocks, warm, &base, ph)) {
-    fprintf(stderr, "baseline rig refused\n");
-    return 1;
-  }
-  printf("| %-8s | %7.1f | %7.1f | %7.1f | %4zu |         |         |       "
-         "    |            |\n",
-         "none", base.p50, base.p99, base.max, base.over);
+         "|-----------|--------|-----------------------------------|\n");
   for (size_t k = 0; k < sizeof(k_racks) / sizeof(k_racks[0]); ++k) {
     const rack_spec* rack = &k_racks[k];
+    stats base;
     stats st;
-    if (!time_rack(o, src, frames, rack, blocks, warm, &st, ph)) {
+    double ph[PHASES];
+    if (!time_rack(o, src, frames, NULL, blocks, warm, &base, ph) ||
+        !time_rack(o, src, frames, rack, blocks, warm, &st, ph)) {
       fprintf(stderr, "rack %s refused\n", rack->name);
       return 1;
     }
-    const double dp99 = st.p99 - base.p99;
+    const double dmax = st.max - base.max;
     printf("| %-8s | %7.1f | %7.1f | %7.1f | %4zu | %7.1f | %7.1f | %9.0f | "
-           "%-10s |\n",
-           rack->name, st.p50, st.p99, st.max, st.over, dp99,
-           st.max - base.max, rack->budget_us,
-           dp99 <= rack->budget_us ? "yes" : "NO");
+           "%-6s | %7.1f %7.1f %7.1f %7.1f |\n",
+           rack->name, st.p50, st.p99, st.max, st.over, st.p99 - base.p99,
+           dmax, rack->budget_us,
+           !judged ? "-" : dmax <= rack->budget_us ? "yes" : "NO", ph[0],
+           ph[1], ph[2], ph[3]);
     fflush(stdout);
   }
   printf("timed loops ran at: %s\n", g_timed_sched);
@@ -463,18 +482,9 @@ int main(int argc, char** argv) {
       const int n = counts[k];
       if (mode > 0 && n == 0) continue;
       rig r;
-      if (!rig_create_io(&r, &o, 1, src, frames, 2)) {
-        fprintf(stderr, "rig failed\n");
+      if (!monitor_rig(&r, &o, src, frames)) {
+        fprintf(stderr, "rig or monitor input 0 refused\n");
         return 1;
-      }
-      if (le_engine_set_monitor_input(r.e, 0, 1) != LE_OK ||
-          le_engine_set_monitor_input_output(r.e, 0, 0x3) != LE_OK) {
-        fprintf(stderr, "monitor input 0 refused\n");
-        return 1;
-      }
-      for (int32_t f = 0; f < o.period; ++f) {
-        r.in[2 * f] = src[f];
-        r.in[2 * f + 1] = src[f];
       }
       if (n > 0) {
         le_fx_recipe rec;
