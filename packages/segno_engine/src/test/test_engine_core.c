@@ -488,6 +488,16 @@ static void process_const(le_engine* e, float value, int frames, float* out) {
   le_engine_process(e, out, in, (uint32_t)frames);
 }
 
+/* The audibility fade's gain (#1400) on frame k of a fade-in (or, with
+ * `out`, of a fade-out) at sr, stepped as the callback steps it, so a check
+ * against it is exact. */
+static float test_gate_gain(int sr, int k, int out) {
+  const float step = le_gate_step_size(sr);
+  float g = out ? 1.0f : 0.0f;
+  for (int i = 0; i <= k; ++i) g = le_gate_step(g, out ? 0.0f : 1.0f, step);
+  return g;
+}
+
 static le_engine* make_configured_engine(void) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 1, 1, 1000); /* mono in, mono out */
@@ -16144,6 +16154,8 @@ static void test_shared_count_in_play_cancel_and_resume(void) {
     CHECK(s.tracks[6].state == LE_TRACK_PLAYING);
     float input = 0, output = 0;
     le_engine_process(e, &output, &input, 1);
+    CHECK(output > 0.0f); /* fading in (#1400) */
+    for (int i = 0; i < 80; ++i) le_engine_process(e, &output, &input, 1);
     CHECK(output > .1f);
     le_engine_destroy(e);
   }
@@ -26718,11 +26730,14 @@ static void test_song_queue_exact_boundary_both_channel_orders(void) {
     CHECK(s.song_queued_track == target && s.song_queue_progress < 1.0f);
     CHECK(s.tracks[source].state == LE_TRACK_PLAYING);
     float in[2] = {0}, out[2];
-    /* One block straddles the edge: no gap, overlap or early switch,
-     * whichever side of the source the target sits in the track loop. */
+    /* One block straddles the edge: no gap or early switch, whichever side
+     * of the source the target sits in the track loop. The handoff is a
+     * crossfade (#1400): from the edge the source fades out as it reads on
+     * and the target fades in, one 0.1 step per frame at 1 kHz. */
     le_engine_process(e, out, in, 2);
-    CHECK(fabsf(out[0] - (reverse ? 0.6f : 0.2f)) < 1e-5f);
-    CHECK(fabsf(out[1] - (reverse ? 0.2f : 0.6f)) < 1e-5f);
+    const float from = reverse ? 0.6f : 0.2f, to = reverse ? 0.2f : 0.6f;
+    CHECK(fabsf(out[0] - from) < 1e-5f);
+    CHECK(fabsf(out[1] - (from * 0.9f + to * 0.1f)) < 1e-5f);
     le_engine_get_snapshot(e, &s);
     CHECK(s.tracks[source].state == LE_TRACK_STOPPED);
     CHECK(s.tracks[target].state == LE_TRACK_PLAYING);
@@ -27866,7 +27881,8 @@ static void test_once_relaunch_reads_whole_audio_without_moving_sibling_clock(vo
           float out = 0.0f;
           const float in = 0.0f;
           le_engine_process(e, &out, &in, 1);
-          CHECK(fabsf(out - saved[f]) < 0.0001f);
+          /* The relaunch fades in (#1400): ten frames at 1 kHz. */
+          CHECK(fabsf(out - saved[f] * test_gate_gain(1000, f, 0)) < 0.0001f);
           le_engine_get_snapshot(e, &snapshot);
           CHECK(snapshot.tracks[1].position_frames == f);
           CHECK(snapshot.master_position_frames == (before + f + 1) % 1000);
@@ -35088,9 +35104,11 @@ static void test_cache_mute_stays_cached(void) {
   CHECK(cache_engaged(a, 0, 0) == 1);
   CHECK(le_engine_set_lane_mute(a, 0, 0, 1) == LE_OK);
   float out[256];
+  pump_capture(a, 0.0f, 256, out); /* the mute's fade-out (#1400) */
+  pump_capture(a, 0.0f, 256, out);
   pump_capture(a, 0.0f, 256, out);
   CHECK(cache_engaged(a, 0, 0) == 1); /* mute is not part of the key */
-  for (int i = 64; i < 256; ++i) CHECK(fabsf(out[i]) < 1e-6f);
+  for (int i = 0; i < 256; ++i) CHECK(fabsf(out[i]) < 1e-6f);
   CHECK(le_engine_set_lane_mute(a, 0, 0, 0) == LE_OK);
   pump_capture(a, 0.0f, 256, out);
   CHECK(cache_engaged(a, 0, 0) == 1);
