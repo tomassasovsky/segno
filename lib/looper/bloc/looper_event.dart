@@ -558,7 +558,7 @@ final class LooperLaneEffectParamChanged extends LooperLaneEvent {
   /// The chain entry index (`0..kTrackEffectMax-1`).
   final int index;
 
-  /// The parameter index (`0..kTrackEffectParams-1`).
+  /// The parameter index (a cell its type reads; others are refused).
   final int param;
 
   /// The normalized parameter value (`0..1`).
@@ -1180,7 +1180,7 @@ final class LooperAllTracksEffectParamChanged extends LooperEvent {
   /// The chain entry index.
   final int index;
 
-  /// The parameter index (`0..kTrackEffectParams-1`).
+  /// The parameter index (a cell its type reads; others are refused).
   final int param;
 
   /// The new normalized value.
