@@ -649,8 +649,9 @@ typedef struct le_lane {
 
   /* Per-lane effects chain. Published config (control writes, audio reads once
    * per buffer): an ordered array of LE_FX_MAX entries, of which a_fx_count are
-   * active, each with a type and LE_FX_PARAMS normalized parameters. Every
-   * active entry colors playback in order, on the lane's own `fx` DSP state.
+   * active, each with a type and up to LE_FX_PARAMS normalized parameters (a
+   * type reads its first le_fx_param_width). Every active entry colors
+   * playback in order, on the lane's own `fx` DSP state.
    *
    * a_fx_pre_count splits that order in two (slice 3e). Entries [0,
    * a_fx_pre_count) are Pre: they belong to what the take plays back, so the

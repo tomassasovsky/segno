@@ -5065,7 +5065,10 @@ int32_t le_engine_get_output_fx_snapshot(le_engine* engine, int32_t bus,
   for (int i = 0; i < LE_FX_MAX; ++i) {
     out->type[i] = load_i32(&b->a_fx_type[i]);
     out->enabled[i] = load_i32(&b->a_fx_enabled[i]);
-    for (int p = 0; p < LE_FX_PARAMS; ++p)
+    /* Only what the type reads: LE_CMD_PERF_ARM calls this in the
+     * callback. The cells past it are never read. */
+    const int32_t width = le_fx_param_width(out->type[i]);
+    for (int p = 0; p < width; ++p)
       out->params[i][p] = load_f32(&b->a_fx_param[i][p]);
   }
   return LE_OK;

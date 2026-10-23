@@ -1697,8 +1697,8 @@ void le_fx_defaults(int32_t type, float out[LE_FX_PARAMS]) {
 }
 
 int32_t le_fx_param_width(int32_t type) {
-  if (type <= LE_FX_NONE || type >= LE_FX_TYPE_COUNT) return 0;
-  return LE_FX[type].param_count;
+  const int32_t n = le_fx_param_count(type);
+  return n > 0 ? n : 0; /* an unknown code reads nothing */
 }
 
 int32_t le_fx_param_count(int32_t type) {

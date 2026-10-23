@@ -929,6 +929,10 @@ final class BuiltInEffect extends TrackEffect {
   int get typeCode => type.code;
 
   /// Returns a copy with the given fields replaced. [params] is copied.
+  ///
+  /// A new [type] without new [params] starts at that type's defaults, as
+  /// the engine seeds them on a type change: one type's settings mean
+  /// nothing to another.
   BuiltInEffect copyWith({
     TrackEffectType? type,
     List<double>? params,
@@ -942,7 +946,9 @@ final class BuiltInEffect extends TrackEffect {
     Map<String, double>? source,
   }) => BuiltInEffect(
     type: type ?? this.type,
-    params: params ?? this.params,
+    params:
+        params ??
+        (type == null || type == this.type ? this.params : type.defaultParams),
     enabled: enabled ?? this.enabled,
     slotId: slotId ?? this.slotId,
     placement: placement ?? this.placement,
@@ -959,7 +965,7 @@ final class BuiltInEffect extends TrackEffect {
     // Only the cells the type uses: the rest are 0 by construction, and
     // fromJson restores them.
     'params': params.sublist(0, type.params.length),
-    // Omitted when default so a pre-FX-v3 chain's encoding is byte-unchanged.
+    // The keys below are omitted at their defaults, keeping the wire short.
     if (!enabled) 'enabled': false,
     if (slotId != null) 'slotId': slotId,
     if (placement != FxPlacement.post) 'placement': placement.wireName,

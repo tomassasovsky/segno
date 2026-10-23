@@ -191,9 +191,7 @@ struct le_prepared_fx* le_fx_prepare_chains(le_engine* e, int owner,
   struct le_prepared_fx* p = le_rt_alloc_prefaulted(sizeof(*p));
   if (!p) return NULL;
   p->owner = owner; p->channel = channel;
-  le_fx_recipe empty;
-  memset(&empty, 0, sizeof(empty));
-  empty.enabled = 1;
+  static const le_fx_recipe empty = {.enabled = 1};
   for (int lane = 0; lane < count; ++lane) {
     const le_fx_recipe* r =
         recipes != NULL && lane < recipe_count ? &recipes[lane] : &empty;
@@ -260,7 +258,9 @@ void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* p, uint64_t frame) 
       atomic_store_explicit(&t.fx->plugin[s], active ? r->plugin[s] : NULL, memory_order_release);
       store_i32(&t.type[s], ty);
       if (!active) continue;
-      for (int k = 0; k < LE_FX_PARAMS; ++k) store_f32(&t.param[s][k], r->params[s][k]);
+      /* Only what the type reads: this runs in the callback. */
+      const int32_t width = le_fx_param_width(ty);
+      for (int k = 0; k < width; ++k) store_f32(&t.param[s][k], r->params[s][k]);
       store_i32(&t.slot_enabled[s], r->slot_enabled[s]);
       store_i32(&t.in[s], r->input_mode[s]); store_i32(&t.out[s], r->output_mode[s]);
       store_f32(&t.pan[s], r->placement[s]); store_f32(&t.level[s], r->level[s]);
