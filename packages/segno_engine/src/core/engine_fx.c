@@ -1304,6 +1304,21 @@ static const le_fx_vtable LE_FX[] = {
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
+/* le_fx_param_width's table: each type's descriptor count, from the same rows
+ * as the vtable above. */
+_Static_assert(LE_FX_WIDTHS == sizeof(LE_FX) / sizeof(LE_FX[0]),
+               "LE_FX_WIDTHS must be one past the last le_fx_type code");
+#define LE_FX_ROW_COUNT(t) (uint8_t)(sizeof(t) / sizeof(t[0]))
+const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
+    [LE_FX_DRIVE] = LE_FX_ROW_COUNT(LE_FX_DRIVE_PARAMS),
+    [LE_FX_FILTER] = LE_FX_ROW_COUNT(LE_FX_FILTER_PARAMS),
+    [LE_FX_DELAY] = LE_FX_ROW_COUNT(LE_FX_DELAY_PARAMS),
+    [LE_FX_TREMOLO] = LE_FX_ROW_COUNT(LE_FX_TREMOLO_PARAMS),
+    [LE_FX_OCTAVER] = LE_FX_ROW_COUNT(LE_FX_OCTAVER_PARAMS),
+    [LE_FX_ECHO] = LE_FX_ROW_COUNT(LE_FX_ECHO_PARAMS),
+    [LE_FX_REVERB] = LE_FX_ROW_COUNT(LE_FX_REVERB_PARAMS),
+};
+
 /* Whether a bypassed slot of [type] drains its tail rather than crossfading
  * out: a ring-owning type with no reported latency (delay, echo, reverb).
  * Everything else — memoryless kernels, the latency-bearing octaver, hosted
@@ -1694,11 +1709,6 @@ void le_fx_defaults(int32_t type, float out[LE_FX_PARAMS]) {
   for (int p = 0; p < LE_FX_PARAMS; ++p) {
     out[p] = p < n ? LE_FX[type].params[p].def : 0.0f; /* NONE / unknown: 0 */
   }
-}
-
-int32_t le_fx_param_width(int32_t type) {
-  const int32_t n = le_fx_param_count(type);
-  return n > 0 ? n : 0; /* an unknown code reads nothing */
 }
 
 int32_t le_fx_param_count(int32_t type) {

@@ -27,12 +27,24 @@ struct le_prepared_fx {
   uint32_t image_revision, revision;
   int owner, channel, lane, count;
   uint32_t lane_mask;
-  le_fx_recipe recipes[LE_MAX_LANES];
   le_plugin_slot* removed[LE_MAX_LANES * LE_FX_MAX];
   le_plugin_slot* added[LE_MAX_LANES * LE_FX_MAX];
   int removed_count, added_count;
   _Atomic int applied;
+  /* One recipe per lane up to the highest lane the edit names: a recipe is
+   * about 13 KB at 32 parameter cells, so a one-chain edit does not carry
+   * eight. */
+  int recipe_lanes;
+  le_fx_recipe recipes[];
 };
+
+/* A zeroed edit with room for lanes [0, lanes), or NULL. */
+static struct le_prepared_fx* le_prepared_alloc(int lanes) {
+  struct le_prepared_fx* p = le_rt_alloc_prefaulted(
+      sizeof(*p) + (size_t)lanes * sizeof(le_fx_recipe));
+  if (p) p->recipe_lanes = lanes;
+  return p;
+}
 
 #define LE_RECIPE_TARGET(v) (le_recipe_target){ &(v)->fx, &(v)->a_fx_count, \
   NULL, &(v)->a_fx_chain_enabled, (v)->a_fx_type, (v)->a_fx_enabled, \
@@ -170,7 +182,9 @@ struct le_prepared_fx* le_fx_prepare_capture(le_engine* e, int ch,
                                             const le_record_image* image) {
   if (!image->fx_lane_mask) return NULL;
   if (!image->lane_fx || (image->fx_lane_mask >> LE_MAX_LANES)) return NULL;
-  struct le_prepared_fx* p = le_rt_alloc_prefaulted(sizeof(*p));
+  int lanes = 0;
+  while (image->fx_lane_mask >> lanes) ++lanes;
+  struct le_prepared_fx* p = le_prepared_alloc(lanes);
   if (!p) return NULL;
   p->owner = LE_FX_OWNER_LANE; p->channel = ch; p->lane_mask = image->fx_lane_mask;
   for (int lane = 0; lane < LE_MAX_LANES; ++lane)
@@ -188,7 +202,7 @@ struct le_prepared_fx* le_fx_prepare_chains(le_engine* e, int owner,
   if (owner != LE_FX_OWNER_LANE && owner != LE_FX_OWNER_TRACK) return NULL;
   if (owner == LE_FX_OWNER_TRACK) count = 1;
   if (count < 1 || count > LE_MAX_LANES) return NULL;
-  struct le_prepared_fx* p = le_rt_alloc_prefaulted(sizeof(*p));
+  struct le_prepared_fx* p = le_prepared_alloc(count);
   if (!p) return NULL;
   p->owner = owner; p->channel = channel;
   static const le_fx_recipe empty = {.enabled = 1};
@@ -228,7 +242,7 @@ int32_t le_engine_set_fx_recipe(le_engine* e, int owner, int ch, int lane,
   if (!revision || lane < 0 || lane >= LE_MAX_LANES ||
       (owner != LE_FX_OWNER_LANE && lane != 0) ||
       (owner == LE_FX_OWNER_ALL_TRACKS && ch != 0)) return LE_ERR_INVALID;
-  struct le_prepared_fx* p = le_rt_alloc_prefaulted(sizeof(*p));
+  struct le_prepared_fx* p = le_prepared_alloc(lane + 1);
   if (!p) return LE_ERR_INVALID;
   p->owner = owner; p->channel = ch; p->lane = lane; p->lane_mask = 1u << lane;
   p->revision = revision;

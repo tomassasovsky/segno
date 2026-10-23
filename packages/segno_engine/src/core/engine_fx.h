@@ -286,11 +286,18 @@ int le_fx_added_latency(const le_fx_state* fx, int slot, int32_t type);
 int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap);
 
 /* How many of an entry's LE_FX_PARAMS settings effect [type] reads: its
- * descriptor count, and 0 for LE_FX_NONE, a hosted plugin and an unknown
- * code. Everything that copies or folds a chain's parameters (the per-buffer
- * snapshot, the wet-cache key, the offline renders, the perf log) stops here,
- * so the width costs nothing per buffer. Any thread. */
-int32_t le_fx_param_width(int32_t type);
+ * descriptor count (le_fx_param_count), and 0 for LE_FX_NONE, a hosted plugin
+ * and an unknown code. Everything that copies or folds a chain's parameters
+ * (the per-buffer snapshot, the wet-cache key, the offline renders, the perf
+ * log) stops here, so the width costs one table load per entry. Any thread.
+ *
+ * LE_FX_WIDTHS is one past the last le_fx_type code; engine_fx.c checks it
+ * against its effect table. */
+#define LE_FX_WIDTHS 9
+extern const uint8_t le_fx_widths[LE_FX_WIDTHS];
+static inline int32_t le_fx_param_width(int32_t type) {
+  return type > 0 && type < LE_FX_WIDTHS ? (int32_t)le_fx_widths[type] : 0;
+}
 
 /* Writes effect [type]'s default normalized params into out[LE_FX_PARAMS] (all
  * zero for LE_FX_NONE / unknown). Each type owns its defaults behind the vtable.

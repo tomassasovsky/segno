@@ -867,8 +867,7 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   const int32_t chain_on = load_i32(&ln->a_fx_chain_enabled);
   int32_t types[LE_FX_MAX];
   int32_t raw_en[LE_FX_MAX];
-  /* Zeroed: only each type's own cells are copied in. */
-  float params[LE_FX_MAX][LE_FX_PARAMS] = {{0}};
+  float params[LE_FX_MAX][LE_FX_PARAMS]; /* each type's own cells only */
   int has_builtin = 0;
   int has_plugin = 0;
   for (int32_t s = 0; s < count; ++s) {
@@ -1103,8 +1102,7 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   const int32_t chain_on = load_i32(&b->a_fx_chain_enabled);
   int32_t types[LE_FX_MAX];
   int32_t raw_en[LE_FX_MAX];
-  /* Zeroed: only each type's own cells are copied in. */
-  float params[LE_FX_MAX][LE_FX_PARAMS] = {{0}};
+  float params[LE_FX_MAX][LE_FX_PARAMS]; /* each type's own cells only */
   int has_builtin = 0;
   int has_plugin = 0;
   for (int32_t s = 0; s < count; ++s) {
@@ -1600,8 +1598,7 @@ void le_fx_frozen_capture(le_fx_frozen_chain* c, _Atomic int32_t* count,
   if (n > LE_FX_MAX) n = LE_FX_MAX;
   int32_t types[LE_FX_MAX];
   int32_t en[LE_FX_MAX];
-  /* Zeroed: only each type's own cells are copied in. */
-  float params[LE_FX_MAX][LE_FX_PARAMS] = {{0}};
+  float params[LE_FX_MAX][LE_FX_PARAMS]; /* each type's own cells only */
   for (int32_t s = 0; s < n; ++s) {
     types[s] = load_i32(&type[s]);
     en[s] = load_i32(&enabled[s]) ? 1 : 0;
