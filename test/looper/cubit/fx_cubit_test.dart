@@ -128,7 +128,7 @@ void main() {
   });
 
   test(
-    'an added effect is bypassed, saved only after its native receipt',
+    'an added effect is on, saved only after its native receipt',
     () async {
       final result = await cubit.appendChoice(
         const FxDestination.recordedTrack(0),
@@ -137,7 +137,7 @@ void main() {
 
       expect(result.status, FxEditStatus.applied);
       expect(chain, hasLength(3));
-      expect(chain.last.enabled, isFalse);
+      expect(chain.last.enabled, isTrue);
       verifyInOrder([
         () => repository.setTrackEffects(
           channel: 0,
@@ -458,7 +458,8 @@ void main() {
         'Delay',
       ]);
       expect(fxRackLevelDb(rack.channels.level), -2.4);
-      expect(rack.entries.every((fx) => !fx.enabled), isTrue);
+      // Every pedal as the preset sets it: all three engaged.
+      expect(rack.entries.every((fx) => fx.enabled), isTrue);
     });
 
     test('appended into an existing rack keeps that rack its own '
