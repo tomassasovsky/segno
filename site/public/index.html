@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Segno: a live looping appliance</title>
+<meta name="description" content="Segno is an open-source live looper: a floor console with ten footswitches and two touch screens, a native C audio engine, and a Flutter interface on a Raspberry Pi 5. GPLv3.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0b0c" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f6f4" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://segno.aquiles.dev/">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Segno: a live looping appliance">
+<meta property="og:description" content="A floor console, a native C audio engine and a Flutter interface on a Raspberry Pi 5. Open source under GPLv3.">
+<meta property="og:url" content="https://segno.aquiles.dev/">
+<meta property="og:image" content="https://segno.aquiles.dev/img/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Render of the Segno floor console.">
+<link rel="preload" href="fonts/Inter-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/Inter-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<svg class="sprite" aria-hidden="true">
+  <symbol id="glyph" viewBox="0 0 1024 1024">
+    <path transform="matrix(0.88590331 0 0 -0.88590331 266.60478372 836.24061069)" fill="currentColor" d="M135 665C141 665 148 663 151 652L153 645C160 618 175 559 226 559C267 559 295 583 295 626C295 641 292 657 287 673C271 719 204 736 153 736C83 736 4 650 4 551C4 527 9 502 20 477C52 404 197 315 205 312C209 310 211 308 211 304C211 300 209 295 205 288C198 274 54 15 54 15C52 11 51 6 51 2C51 -14 63 -27 79 -27C89 -27 99 -21 104 -12C104 -12 259 268 262 274C262 273 270 279 274 279C289 276 489 217 489 122C489 83 465 57 431 52L428 51C407 51 390 65 390 96V107C390 145 365 173 337 173C333 173 329 172 325 171C288 162 254 146 254 106C254 45 316 -8 375 -8C388 -8 402 -6 417 -1C497 26 550 91 550 174C550 183 549 193 548 203C533 313 375 402 363 408C351 415 346 419 346 424C346 426 347 428 348 430C353 438 508 717 508 717C511 722 512 726 512 731C512 747 499 759 484 759C474 759 464 754 459 745C459 745 300 458 294 449C291 444 289 441 285 441C282 441 279 442 275 444C266 447 115 505 89 550C83 561 75 582 75 603C75 630 87 658 129 665ZM415 466C415 435 441 409 472 409C504 409 529 435 529 466C529 498 504 523 472 523C441 523 415 498 415 466ZM140 264C140 295 115 321 83 321C52 321 26 295 26 264C26 232 52 207 83 207C115 207 140 232 140 264Z"/>
+  </symbol>
+</svg>
+
+<header class="bar">
+  <div class="wrap bar-inner">
+    <a class="brand" href="#top" aria-label="Segno home">
+      <svg class="brand-glyph" aria-hidden="true"><use href="#glyph"/></svg>
+      <span class="brand-word">segno</span>
+    </a>
+    <nav class="nav" aria-label="Sections">
+      <a href="#features">Features</a>
+      <a href="#hardware">Hardware</a>
+      <a href="#architecture">Architecture</a>
+      <a class="nav-source" href="https://github.com/tomassasovsky/segno">Source</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="wrap">
+      <p class="eyebrow">Open source &middot; GPLv3</p>
+      <h1>A live looper you play with your feet.</h1>
+      <p class="lede">Segno is a live looping appliance: a floor console with ten footswitches and two touch screens, a native C audio engine, and a Flutter interface on a Raspberry Pi&nbsp;5. The software, firmware and hardware designs are all in one public repository.</p>
+      <div class="actions">
+        <a class="button primary" href="https://github.com/tomassasovsky/segno">View the source on GitHub</a>
+        <a class="button" href="#architecture">How it works</a>
+      </div>
+    </div>
+    <figure class="hero-figure wrap">
+      <img src="img/console-iso-1200.webp"
+           srcset="img/console-iso-1200.webp 1200w, img/console-iso-2000.webp 2000w"
+           sizes="(min-width: 1200px) 1120px, 100vw"
+           width="1200" height="675" fetchpriority="high"
+           alt="The Segno console seen from above at an angle: ten footswitches with light bars, an encoder with a light ring, a small screen showing a waveform, and a large screen showing four tracks.">
+      <figcaption>Render of the console design from Autodesk Fusion. This is not a photo.</figcaption>
+    </figure>
+  </section>
+
+  <section class="status">
+    <div class="wrap">
+      <p><strong>Status:</strong> in active development. The software runs on the appliance today with the console board on the bench. The enclosure exists as a CAD design, so every picture of the console on this page is a render.</p>
+    </div>
+  </section>
+
+  <section id="features" class="section">
+    <div class="wrap">
+      <h2>What it does</h2>
+      <p class="section-lede">Record a phrase, let it repeat, and add another part over it, without taking your hands off the instrument.</p>
+      <div class="cards">
+        <article class="card">
+          <h3>Record and layer</h3>
+          <p>Eight tracks in two banks of four. Record, overdub, play, stop, and undo or redo each layer. Every track follows one master loop clock, and a track can run for a whole multiple of the first loop's length.</p>
+        </article>
+        <article class="card">
+          <h3>Foot control</h3>
+          <p>Ten footswitches, an encoder with an LED ring, and a light bar above each switch that shows its state. Two jacks take an expression pedal or an extra footswitch. DIN MIDI in and out, and USB MIDI controllers through a mapping layer.</p>
+        </article>
+        <article class="card">
+          <h3>Tempo or free time</h3>
+          <p>Loop against a tempo with a click and count-in, or switch to free mode and set the loop length by playing. Latency is measured with a loopback cable and compensated when recording.</p>
+        </article>
+        <article class="card">
+          <h3>Effects and routing</h3>
+          <p>Built-in effects on live inputs, on recorded tracks, and on outputs. Each input can be heard dry on one set of outputs and with effects on another at the same time.</p>
+        </article>
+        <article class="card">
+          <h3>Sessions and recordings</h3>
+          <p>Save a loop session as WAV stems and a manifest, and open it again later. Record a whole performance and export it as an Ableton Live&nbsp;12 project.</p>
+        </article>
+        <article class="card">
+          <h3>Updates</h3>
+          <p>The appliance installs signed system updates into a second partition and boots into it on trial. A failed boot falls back to the previous system.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <h2>The interface</h2>
+      <p class="section-lede">The large screen shows the tracks and the mixer. The interface is a Flutter app that runs directly on the display hardware, one Flutter engine per screen.</p>
+      <div class="shots">
+        <figure>
+          <img src="img/tracks-main-window-1600.webp" width="1600" height="900" loading="lazy"
+               alt="The Tracks view: four tracks named GUITAR, BOOM, RC20 and VOX with level meters, a timer and a BPM readout.">
+          <figcaption>Tracks view.</figcaption>
+        </figure>
+        <figure>
+          <img src="img/tracks-mixer-window-1600.webp" width="1600" height="900" loading="lazy"
+               alt="The mixer view: each track has mute and solo buttons, a pan control, a level in decibels and stereo meters.">
+          <figcaption>Mixer view.</figcaption>
+        </figure>
+      </div>
+      <p class="note">Both images are captures from the app's UI tests, with simulated track state.</p>
+    </div>
+  </section>
+
+  <section id="hardware" class="section">
+    <div class="wrap">
+      <h2>Hardware</h2>
+      <p class="section-lede">A wedge-shaped folded sheet-metal console, 850&nbsp;mm wide, with the top sloping toward the player. The ten footswitches are built into the chassis and wired inside it.</p>
+      <div class="gallery">
+        <figure class="wide">
+          <img src="img/console-low-1200.webp"
+               srcset="img/console-low-1200.webp 1200w, img/console-low-2000.webp 2000w"
+               sizes="(min-width: 1200px) 1120px, 100vw"
+               width="1200" height="675" loading="lazy"
+               alt="The console from a low angle at the left side, showing the ventilation slots, the waveform screen and the row of footswitches.">
+        </figure>
+        <figure>
+          <img src="img/console-rear-1200.webp"
+               srcset="img/console-rear-1200.webp 1200w, img/console-rear-2000.webp 2000w"
+               sizes="(min-width: 760px) 50vw, 100vw"
+               width="1200" height="675" loading="lazy"
+               alt="The console seen from behind, showing the rear panel openings for connectors and a ventilation grille.">
+        </figure>
+        <figure>
+          <img src="img/console-edge-1200.webp"
+               srcset="img/console-edge-1200.webp 1200w, img/console-edge-2000.webp 2000w"
+               sizes="(min-width: 760px) 50vw, 100vw"
+               width="1200" height="675" loading="lazy"
+               alt="The console seen almost edge-on along its top surface, with the footswitches and the large screen catching the light.">
+        </figure>
+      </div>
+      <p class="note">Renders of the console design from Autodesk Fusion. Not photos.</p>
+
+      <div class="split">
+        <div>
+          <h3>Inside the console</h3>
+          <ul class="specs">
+            <li><span>Computer</span>Raspberry Pi 5, booting from NVMe</li>
+            <li><span>Screens</span>15.6-inch main touch screen and a 7-inch readout, both over HDMI</li>
+            <li><span>Controls</span>Ten footswitches, an encoder with a 35-pixel LED ring, 80 LED pixels in ten light bars</li>
+            <li><span>Console board</span>Raspberry Pi Pico&nbsp;2 (RP2350), linked to the Pi over UART</li>
+            <li><span>Ring board</span>Seeed XIAO RP2350 driving the encoder and its ring</li>
+            <li><span>Power</span>USB-C Power Delivery at 20&nbsp;V, negotiated by an STUSB4500</li>
+            <li><span>Audio</span>A USB audio interface, driven directly through ALSA</li>
+          </ul>
+        </div>
+        <figure class="board">
+          <img src="img/console-board-1000.webp" width="1000" height="1000" loading="lazy"
+               alt="The console board v3: a purple circuit board with a Raspberry Pi Pico 2 in the middle, a 40-pin header for the Raspberry Pi, and labelled connectors for each footswitch, MIDI, the CTRL jacks, the LED pills and the ring board.">
+          <figcaption>Console board v3, KiCad 3D view. Through-hole parts, designed to be soldered by hand.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section id="architecture" class="section">
+    <div class="wrap">
+      <h2>Architecture</h2>
+      <p class="section-lede">The console board reports what your feet do. The app decides what that means. The engine does the audio.</p>
+
+      <div class="diagram" role="img" aria-label="Signal path: footswitches and encoder go to the console board, which talks to the Flutter app on the Raspberry Pi over UART. The app talks to the C audio engine through Dart FFI. The engine reads and writes audio through ALSA and a USB audio interface. The app also drives the two screens and the LEDs.">
+        <div class="lane">
+          <div class="node">
+            <p class="node-title">Console board</p>
+            <p>RP2350 firmware. Sends footswitch, encoder and pedal-jack events; lights the LEDs from state frames the app sends back. Holds no looper state.</p>
+          </div>
+          <div class="link"><span>UART</span></div>
+          <div class="node accent">
+            <p class="node-title">Flutter app</p>
+            <p>Interface, looper behaviour, sessions, MIDI and settings. Layered: widgets, blocs, repositories, data clients.</p>
+          </div>
+          <div class="link"><span>Dart FFI</span></div>
+          <div class="node">
+            <p class="node-title">Audio engine</p>
+            <p>Native C on miniaudio. Recording, playback, mixing and effects on a real-time thread.</p>
+          </div>
+          <div class="link"><span>ALSA</span></div>
+          <div class="node">
+            <p class="node-title">USB audio interface</p>
+            <p>Instrument and microphone inputs, monitor and main outputs.</p>
+          </div>
+        </div>
+        <p class="diagram-base">All of it runs on a Yocto Linux image for the Raspberry Pi&nbsp;5.</p>
+      </div>
+
+      <div class="cards three">
+        <article class="card">
+          <h3>Audio engine</h3>
+          <ul>
+            <li>The audio thread never allocates, locks or makes system calls. Commands reach it through a single-producer, single-consumer ring.</li>
+            <li>One master loop clock keeps every track phase-locked.</li>
+            <li>Each track holds up to eight lanes. A lane records one input into its own buffer and has its own effects chain.</li>
+            <li>Tests drive the engine without an audio device, sample by sample.</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>App</h3>
+          <ul>
+            <li>Separate Dart packages for the engine interface, looper, pedal link, MIDI, sessions, performance recording, WAV encoding and DAW export.</li>
+            <li>Presentation depends on repositories, and repositories on data clients, never the other way round.</li>
+            <li>The engine's typed Dart interface is the test seam, so app tests run against fakes.</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>Appliance image</h3>
+          <ul>
+            <li>A Yocto build that boots the Raspberry Pi&nbsp;5 from NVMe.</li>
+            <li>Flutter draws straight to both HDMI outputs over DRM/KMS through ivi-homescreen. No compositor, no desktop.</li>
+            <li>Audio goes through ALSA with no sound server in between.</li>
+            <li>Updates are signed RAUC bundles installed A/B with the Pi firmware's trial boot.</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="source" class="section">
+    <div class="wrap">
+      <h2>In the repository</h2>
+      <p class="section-lede">The software, firmware and hardware designs are public under the GNU General Public License v3.</p>
+      <div class="table-scroll">
+        <table class="repo">
+          <tbody>
+            <tr><td><a href="https://github.com/tomassasovsky/segno/tree/master/lib"><code>lib/</code></a></td><td>The Flutter app</td></tr>
+            <tr><td><a href="https://github.com/tomassasovsky/segno/tree/master/packages"><code>packages/</code></a></td><td>The audio engine (<code>segno_engine</code>) and the Dart packages the app is built from</td></tr>
+            <tr><td><a href="https://github.com/tomassasovsky/segno/tree/master/firmware"><code>firmware/</code></a></td><td>Firmware for the console board and the ring board</td></tr>
+            <tr><td><a href="https://github.com/tomassasovsky/segno/tree/master/hardware"><code>hardware/</code></a></td><td>KiCad board generators, the parametric enclosure, 3D-printed parts and the manufacturing package</td></tr>
+            <tr><td><a href="https://github.com/tomassasovsky/segno/tree/master/deploy"><code>deploy/</code></a></td><td>The Yocto image and the build for the Raspberry Pi</td></tr>
+            <tr><td><a href="https://github.com/tomassasovsky/segno/tree/master/docs"><code>docs/</code></a></td><td>Design notes, plans and build instructions</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <a class="button primary" href="https://github.com/tomassasovsky/segno">github.com/tomassasovsky/segno</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-inner">
+    <p><svg class="foot-glyph" aria-hidden="true"><use href="#glyph"/></svg> Segno is made by <a href="https://github.com/tomassasovsky">Tom&aacute;s Sasovsky</a>.</p>
+    <p>Source under <a href="https://github.com/tomassasovsky/segno/blob/master/LICENSE">GPLv3</a>. Set in Inter and JetBrains Mono (SIL Open Font License).</p>
+  </div>
+</footer>
+</body>
+</html>
