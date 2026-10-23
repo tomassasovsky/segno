@@ -118,7 +118,8 @@ void le_fx_frozen_fill(le_fx_frozen_chain* c, int32_t count, int32_t pre,
                        (owner)->a_fx_chan_in, (owner)->a_fx_chan_out,         \
                        (owner)->a_fx_chan_gl_bits, (owner)->a_fx_chan_gr_bits, \
                        (owner)->a_fx_chan_level_bits,                  \
-                       (owner)->a_fx_chan_rack, (owner)->fx.hop_seed)
+                       (owner)->a_fx_chan_rack, (owner)->fx_meta,       \
+                       (owner)->fx.hop_seed)
 void le_fx_frozen_capture(le_fx_frozen_chain* c, _Atomic int32_t* count,
                           _Atomic int32_t* pre, _Atomic int32_t* chain_on,
                           _Atomic int32_t* type, _Atomic int32_t* enabled,
@@ -126,6 +127,7 @@ void le_fx_frozen_capture(le_fx_frozen_chain* c, _Atomic int32_t* count,
                           _Atomic int32_t* chan_in, _Atomic int32_t* chan_out,
                           _Atomic uint32_t* gl, _Atomic uint32_t* gr,
                           _Atomic uint32_t* level, _Atomic int32_t* rack,
+                          const le_fx_slot_meta* meta,
                           int32_t hop_seed);
 
 /* 1 when any entry in [from, to) has `type` (LE_FX_NONE: any real entry, or

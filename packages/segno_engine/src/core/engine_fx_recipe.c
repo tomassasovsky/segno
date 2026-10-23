@@ -283,10 +283,15 @@ void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* p, uint64_t frame) 
     for (int s = 0; s < LE_FX_MAX; ++s) {
       const int active = s < r->count;
       const int ty = active ? r->type[s] : LE_FX_NONE;
-      const uint32_t id = active ? r->instance[s] : 0u;
-      atomic_store_explicit(&t.fx->plugin[s], active ? r->plugin[s] : NULL, memory_order_release);
+      const uint64_t id = active ? r->instance[s] : 0u;
+      le_plugin_slot* host = active ? r->plugin[s] : NULL;
+      /* Another hosted plugin under the same entry is another instance. */
+      const int rehosted =
+          atomic_load_explicit(&t.fx->plugin[s], memory_order_relaxed) != host;
+      atomic_store_explicit(&t.fx->plugin[s], host, memory_order_release);
       const int retyped = load_i32(&t.type[s]) != ty;
-      const int renew = retyped || id == 0u || t.meta[s].instance != id;
+      const int renew =
+          retyped || rehosted || id == 0u || t.meta[s].instance != id;
       t.meta[s].instance = id;
       store_i32(&t.type[s], ty);
       store_i32(&t.meta[s].param_type, ty); /* the row is this type's */
@@ -334,6 +339,20 @@ void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* p, uint64_t frame) 
             .fx = {p->channel, 0, s, r->slot_enabled[s]}});
       le_plog_push(e, frame, (le_command){.code = LE_PLOG_SET_OUTPUT_FX_CHAIN_ENABLED,
           .arg_i = p->channel, .arg_f = (float)r->enabled});
+    }
+    if (p->owner == LE_FX_OWNER_LANE) {
+      /* A lane recipe is not in the perf log (perf_render keeps the
+       * arm-time lane chain), so its settings must not be logged either:
+       * the snapshot logs a lane parameter that differs from its last view
+       * (snapshot_lane_fx), and this makes the recipe's values that view. */
+      le_fx_snapshot* snap = &e->fx_snap;
+      for (int s = 0; s < r->count; ++s) {
+        snap->lane_type[p->channel][lane][s] = r->type[s];
+        const int32_t w = le_fx_param_width(r->type[s]);
+        for (int k = 0; k < w; ++k) {
+          snap->lane_params[p->channel][lane][s][k] = r->params[s][k];
+        }
+      }
     }
     store_i32(t.count, r->count); if (t.pre) store_i32(t.pre, r->pre_count);
     store_i32(t.enabled, r->enabled);

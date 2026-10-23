@@ -8991,7 +8991,7 @@ final class le_fx_recipe extends ffi.Struct {
   /// (another identity, another type, or 0), so an edit that keeps an entry
   /// where it was, such as a parameter change, leaves its tail sounding.
   @ffi.Array.multi([64])
-  external ffi.Array<ffi.Uint32> instance;
+  external ffi.Array<ffi.Uint64> instance;
 }
 
 /// Source context frozen at the accepted record/arm gesture. The image is

@@ -5323,6 +5323,11 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       le_plog_push(e, frame, *cmd);
       le_lane* ln = &e->tracks[ch].lanes[lane];
       store_i32(&ln->a_fx_type[index], cmd->fx.type);
+      /* The row is this type's from now (a raw post never seeded it), and
+       * the slot no longer holds the entry a recipe put there. */
+      atomic_store_explicit(&ln->fx_meta[index].param_type, cmd->fx.type,
+                            memory_order_release);
+      ln->fx_meta[index].instance = 0;
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&ln->fx, index);
       /* Wet-cache fast path: the published type just moved, so the chain
@@ -5458,6 +5463,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       le_plog_push(e, frame, *cmd);
       le_monitor_input* m = &e->monitors[input];
       store_i32(&m->a_fx_type[index], cmd->fx.type);
+      atomic_store_explicit(&m->fx_meta[index].param_type, cmd->fx.type,
+                            memory_order_release); /* see the lane's */
+      m->fx_meta[index].instance = 0;
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&m->fx, index);
       break;
@@ -5510,6 +5518,11 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       if (!valid_channel(e, ch) || index < 0 || index >= LE_FX_MAX) break;
       le_fx_bus* b = &e->tracks[ch].bus;
       store_i32(&b->a_fx_type[index], cmd->fx.type);
+      /* The row is this type's from now (a raw post never seeded it), and
+       * the slot no longer holds the entry a recipe put there. */
+      atomic_store_explicit(&b->fx_meta[index].param_type, cmd->fx.type,
+                            memory_order_release);
+      b->fx_meta[index].instance = 0;
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&b->fx, index);
       break;
@@ -5533,6 +5546,11 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       const int32_t index = cmd->fx.index;
       if (index < 0 || index >= LE_FX_MAX) break;
       store_i32(&e->all_tracks.a_fx_type[index], cmd->fx.type);
+      /* The row is this type's from now (a raw post never seeded it), and
+       * the slot no longer holds the entry a recipe put there. */
+      atomic_store_explicit(&e->all_tracks.fx_meta[index].param_type, cmd->fx.type,
+                            memory_order_release);
+      e->all_tracks.fx_meta[index].instance = 0;
       /* One config, one instance per bus: every instance's DSP state resets,
        * or a destination would keep the previous effect's filter memory. */
       for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
@@ -5554,6 +5572,11 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       if (index < 0 || index >= LE_FX_MAX) break;
       le_plog_push(e, frame, *cmd);
       store_i32(&e->outputs[bus].fx.a_fx_type[index], cmd->fx.type);
+      /* The row is this type's from now (a raw post never seeded it), and
+       * the slot no longer holds the entry a recipe put there. */
+      atomic_store_explicit(&e->outputs[bus].fx.fx_meta[index].param_type, cmd->fx.type,
+                            memory_order_release);
+      e->outputs[bus].fx.fx_meta[index].instance = 0;
       le_fx_entry_reset(&e->outputs[bus].fx.fx, index);
       break;
     }
