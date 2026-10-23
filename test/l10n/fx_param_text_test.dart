@@ -25,6 +25,21 @@ const _english = <String, List<String>>{
   'reverb.size': ['0%', '50%', '100%'],
   'reverb.damping': ['0%', '50%', '100%'],
   'reverb.mix': ['0%', '35%', '100%'],
+  'eq.low_cut': ['20.0 Hz', '70.4 Hz', '8.0 kHz'],
+  'eq.low_gain': ['-18.0 dB', '0.0 dB', '18.0 dB'],
+  'eq.low_freq': ['20.0 Hz', '90.0 Hz', '1.0 kHz'],
+  'eq.low_q': ['0.40', '0.40', '2.00'],
+  'eq.lo_mid_gain': ['-18.0 dB', '0.0 dB', '18.0 dB'],
+  'eq.lo_mid_freq': ['20.0 Hz', '216 Hz', '20.0 kHz'],
+  'eq.lo_mid_q': ['0.40', '0.70', '10.00'],
+  'eq.hi_mid_gain': ['-18.0 dB', '0.0 dB', '18.0 dB'],
+  'eq.hi_mid_freq': ['20.0 Hz', '1.8 kHz', '20.0 kHz'],
+  'eq.hi_mid_q': ['0.40', '0.66', '10.00'],
+  'eq.high_gain': ['-18.0 dB', '0.0 dB', '18.0 dB'],
+  'eq.high_freq': ['2.0 kHz', '6.0 kHz', '16.0 kHz'],
+  'eq.high_q': ['0.40', '0.40', '2.00'],
+  'eq.high_cut': ['120 Hz', '20.0 kHz', '20.0 kHz'],
+  'eq.air_gain': ['-18.0 dB', '0.0 dB', '18.0 dB'],
 };
 
 /// The same in Spanish: a decimal comma, and the Spanish mode name.
@@ -48,6 +63,21 @@ const _spanish = <String, List<String>>{
   'reverb.size': ['0%', '50%', '100%'],
   'reverb.damping': ['0%', '50%', '100%'],
   'reverb.mix': ['0%', '35%', '100%'],
+  'eq.low_cut': ['20,0 Hz', '70,4 Hz', '8,0 kHz'],
+  'eq.low_gain': ['-18,0 dB', '0,0 dB', '18,0 dB'],
+  'eq.low_freq': ['20,0 Hz', '90,0 Hz', '1,0 kHz'],
+  'eq.low_q': ['0,40', '0,40', '2,00'],
+  'eq.lo_mid_gain': ['-18,0 dB', '0,0 dB', '18,0 dB'],
+  'eq.lo_mid_freq': ['20,0 Hz', '216 Hz', '20,0 kHz'],
+  'eq.lo_mid_q': ['0,40', '0,70', '10,00'],
+  'eq.hi_mid_gain': ['-18,0 dB', '0,0 dB', '18,0 dB'],
+  'eq.hi_mid_freq': ['20,0 Hz', '1,8 kHz', '20,0 kHz'],
+  'eq.hi_mid_q': ['0,40', '0,66', '10,00'],
+  'eq.high_gain': ['-18,0 dB', '0,0 dB', '18,0 dB'],
+  'eq.high_freq': ['2,0 kHz', '6,0 kHz', '16,0 kHz'],
+  'eq.high_q': ['0,40', '0,40', '2,00'],
+  'eq.high_cut': ['120 Hz', '20,0 kHz', '20,0 kHz'],
+  'eq.air_gain': ['-18,0 dB', '0,0 dB', '18,0 dB'],
 };
 
 void main() {

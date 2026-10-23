@@ -353,7 +353,12 @@ enum TrackEffectType {
   /// Schroeder/Freeverb room reverb — a dense, smooth decaying tail. Spreads a
   /// mono source into a stereo tail across the first two channels of its output
   /// route, so it is best placed last in a chain.
-  reverb(7, 'Reverb');
+  reverb(7, 'Reverb'),
+
+  /// The Looper X's generic EQ (#887 part 4): low cut, low shelf, two
+  /// peaking mids, high shelf, air shelf and high cut. A factory rack exposes
+  /// a subset of its fifteen parameters.
+  eq(9, 'EQ');
 
   const TrackEffectType(this.code, this.label);
 
@@ -510,6 +515,127 @@ enum TrackEffectType {
         defaultValue: 0.35,
       ),
     ],
+    // The Looper X ranges, except the two mid frequencies, which span every
+    // rack's own range (taper unverified). Ed's 4-band EQ's defaults.
+    TrackEffectType.eq => const [
+      FxParamInfo(
+        key: 'low_cut',
+        unit: FxParamUnit.hz,
+        atMin: 20,
+        atMax: 8000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.21,
+      ),
+      FxParamInfo(
+        key: 'low_gain',
+        unit: FxParamUnit.db,
+        atMin: -18,
+        atMax: 18,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'low_freq',
+        unit: FxParamUnit.hz,
+        atMin: 20,
+        atMax: 1000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.384476,
+      ),
+      FxParamInfo(
+        key: 'low_q',
+        unit: FxParamUnit.q,
+        atMin: 0.4,
+        atMax: 2,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'lo_mid_gain',
+        unit: FxParamUnit.db,
+        atMin: -18,
+        atMax: 18,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'lo_mid_freq',
+        unit: FxParamUnit.hz,
+        atMin: 20,
+        atMax: 20000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.3445,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'lo_mid_q',
+        unit: FxParamUnit.q,
+        atMin: 0.4,
+        atMax: 10,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.174,
+      ),
+      FxParamInfo(
+        key: 'hi_mid_gain',
+        unit: FxParamUnit.db,
+        atMin: -18,
+        atMax: 18,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'hi_mid_freq',
+        unit: FxParamUnit.hz,
+        atMin: 20,
+        atMax: 20000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.652,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'hi_mid_q',
+        unit: FxParamUnit.q,
+        atMin: 0.4,
+        atMax: 10,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.15557,
+      ),
+      FxParamInfo(
+        key: 'high_gain',
+        unit: FxParamUnit.db,
+        atMin: -18,
+        atMax: 18,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'high_freq',
+        unit: FxParamUnit.hz,
+        atMin: 2000,
+        atMax: 16000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.5278,
+      ),
+      FxParamInfo(
+        key: 'high_q',
+        unit: FxParamUnit.q,
+        atMin: 0.4,
+        atMax: 2,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'high_cut',
+        unit: FxParamUnit.hz,
+        atMin: 120,
+        atMax: 20000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 1,
+      ),
+      FxParamInfo(
+        key: 'air_gain',
+        unit: FxParamUnit.db,
+        atMin: -18,
+        atMax: 18,
+        defaultValue: 0.5,
+      ),
+    ],
     TrackEffectType.reverb => const [
       // comb feedback 0.70 + 0.28 v; feedback low-pass 0.4 v
       FxParamInfo(
@@ -570,7 +696,13 @@ enum FxParamUnit {
   times(4),
 
   /// Named positions; the value is the position (`LE_FX_UNIT_CHOICE`).
-  choice(5);
+  choice(5),
+
+  /// Decibels (`LE_FX_UNIT_DB`).
+  db(6),
+
+  /// A filter's Q, a plain number (`LE_FX_UNIT_Q`).
+  q(7);
 
   const FxParamUnit(this.code);
 
@@ -659,6 +791,17 @@ class FxParamInfo {
       FxParamCurve.exponential => atMin * math.pow(atMax / atMin, v),
       FxParamCurve.linear => atMin + (atMax - atMin) * v,
     };
+  }
+
+  /// The setting (`0..1`) that stands for [value], the inverse of [valueAt]
+  /// for a continuous parameter; a value outside the range clamps.
+  double settingFor(double value) {
+    final v = switch (curve) {
+      FxParamCurve.exponential =>
+        math.log(value / atMin) / math.log(atMax / atMin),
+      FxParamCurve.linear => (value - atMin) / (atMax - atMin),
+    };
+    return v.isNaN ? 0.0 : v.clamp(0.0, 1.0);
   }
 
   /// The position (`0..steps-1`) [setting] (clamped to `0..1`) snaps to.

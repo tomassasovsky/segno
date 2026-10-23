@@ -280,6 +280,10 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
     final name = fxPedalName(l10n, effect);
     final art = effect.module == null ? null : fxModuleArt(effect.module!);
     final params = built?.type.params ?? const <FxParamInfo>[];
+    // A rack variant shows the controls its rack shows, under its names; any
+    // other entry shows every parameter of its type.
+    final build = built == null ? null : fxEntryBuild(built);
+    final shown = build?.exposed ?? [for (var i = 0; i < params.length; i++) i];
     return SizedBox(
       width: kFxPedalWidth,
       height: 650,
@@ -343,12 +347,13 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
                         // value.
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          for (var i = 0; i < params.length; i++) ...[
-                            if (i > 0) const SizedBox(height: 14),
+                          for (final i in shown) ...[
+                            if (i != shown.first) const SizedBox(height: 14),
                             FxBuiltInParamControl(
                               key: Key('fx_pedal_param_$i'),
                               effect: built!,
                               index: i,
+                              labelKey: build?.labels[i],
                               width: 250,
                               onChanged: (value) => widget.onParam(i, value),
                             ),

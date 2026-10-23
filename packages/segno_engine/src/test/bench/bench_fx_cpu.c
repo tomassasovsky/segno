@@ -20,6 +20,10 @@
  *   late N    the same N octavers added one at a time, three callbacks apart
  *             (#941: an instance added later keeps its own quarter).
  *
+ * With --kind eq the same scenarios run an EQ (#887 part 4) with every band
+ * engaged, and `late` becomes `moving`: the chain's gains change every
+ * callback, so every EQ recomputes its coefficients on each update.
+ *
  * Reported per scenario: p50 / p99 / p99.9 / max per callback, the callbacks
  * over the period's deadline, and the mean cost of the blocks starting in
  * each quarter of the octaver's hop, which is where the FFT work lands.
@@ -27,6 +31,7 @@
  *   ./bench_fx_cpu.sh                      # 96 kHz / 64 frames, unpaced
  *   ./bench_fx_cpu.sh --paced              # paced to the period, like a device
  *   ./bench_fx_cpu.sh --smoke              # short runs (CI)
+ *   ./bench_fx_cpu.sh --kind eq            # the EQ instead of the octaver
  *   bench_fx_cpu --paced --cpu 3           # on the console, off the audio core
  *
  * On the console, run it pinned away from the app's audio core; the timed
@@ -62,6 +67,7 @@
 #define PHASES 4 /* quarters of the hop */
 
 static int g_paced;
+static int g_eq; /* --kind eq */
 
 /* An octaver recipe entry: one octave up, tone open, full wet, phase vocoder.
  * Full wet keeps the wet path (the FFTs) the whole output. */
@@ -74,6 +80,35 @@ static void octaver_entry(le_fx_recipe* r, int s) {
   r->params[s][3] = 0.0f;
   r->level[s] = 1.0f;
 }
+
+/* An EQ recipe entry with every band engaged: both cuts on, every shelf and
+ * peak away from 0 dB, the air band up. */
+static void eq_entry(le_fx_recipe* r, int s) {
+  r->type[s] = LE_FX_EQ;
+  r->slot_enabled[s] = 1;
+  le_fx_defaults(LE_FX_EQ, r->params[s]);
+  r->params[s][0] = 0.3f;  /* low cut ~120 Hz */
+  r->params[s][1] = 0.6f;  /* +3.6 dB */
+  r->params[s][4] = 0.4f;  /* -3.6 dB */
+  r->params[s][7] = 0.65f; /* +5.4 dB */
+  r->params[s][10] = 0.45f;
+  r->params[s][13] = 0.8f; /* high cut ~5 kHz */
+  r->params[s][14] = 0.6f;
+  r->level[s] = 1.0f;
+}
+
+static void fx_entry(le_fx_recipe* r, int s) {
+  if (g_eq) {
+    eq_entry(r, s);
+  } else {
+    octaver_entry(r, s);
+  }
+}
+
+/* --kind eq, `moving`: the monitor chain's low-mid gain alternates every
+ * callback, so each EQ is always smoothing. */
+static int g_moving;
+static int g_moving_n;
 
 /* Times `blocks` callbacks after `warm` discarded ones. */
 static stats time_blocks(rig* r, int blocks, int warm, double phase_mean[PHASES]) {
@@ -100,6 +135,11 @@ static stats time_blocks(rig* r, int blocks, int warm, double phase_mean[PHASES]
     if (g_paced) {
       next += step;
       sleep_until_us(next);
+    }
+    if (g_moving) {
+      for (int s = 0; s < g_moving_n; ++s) {
+        le_engine_set_monitor_input_fx_param(r->e, 0, s, 4, (b & 1) ? 0.2f : 0.8f);
+      }
     }
     const double t0 = now_us();
     le_engine_process(r->e, r->out, r->in, (uint32_t)r->period);
@@ -142,6 +182,8 @@ int main(int argc, char** argv) {
       blocks = 400;
     } else if (!strcmp(argv[i], "--paced")) {
       g_paced = 1;
+    } else if (!strcmp(argv[i], "--kind") && i + 1 < argc) {
+      g_eq = !strcmp(argv[++i], "eq");
     } else if (!strcmp(argv[i], "--rate") && i + 1 < argc) {
       o.rate = atoi(argv[++i]);
     } else if (!strcmp(argv[i], "--period") && i + 1 < argc) {
@@ -163,7 +205,7 @@ int main(int argc, char** argv) {
     } else {
       fprintf(stderr,
               "usage: %s [--smoke] [--paced] [--rate HZ] [--period FRAMES] "
-              "[--blocks N] [--cpu N]\n",
+              "[--blocks N] [--cpu N] [--kind octaver|eq]\n",
               argv[0]);
       return 2;
     }
@@ -177,10 +219,10 @@ int main(int argc, char** argv) {
 
   const int warm = 600;
   const int counts[] = {0, 1, 2, 4, 8};
-  printf("bench_fx_cpu: %s, %d Hz, %d-frame periods (deadline %.1f us), "
+  printf("bench_fx_cpu: %s, %s, %d Hz, %d-frame periods (deadline %.1f us), "
          "%d timed blocks%s\n",
-         g_cpu_name, o.rate, o.period, g_budget_us, blocks,
-         g_paced ? ", paced" : "");
+         g_eq ? "EQ" : "octaver", g_cpu_name, o.rate, o.period, g_budget_us,
+         blocks, g_paced ? ", paced" : "");
   printf("| scenario           |  p50 us |  p99 us | p99.9 us |  max us | late "
          "| phase 0..3 mean us               |\n");
   printf("|--------------------|---------|---------|----------|---------|------"
@@ -207,9 +249,9 @@ int main(int argc, char** argv) {
         le_fx_recipe rec;
         memset(&rec, 0, sizeof(rec));
         rec.enabled = 1;
-        if (mode == 0) {
+        if (mode == 0 || (g_eq && mode == 2)) {
           rec.count = n;
-          for (int s = 0; s < n; ++s) octaver_entry(&rec, s);
+          for (int s = 0; s < n; ++s) fx_entry(&rec, s);
           if (le_engine_set_fx_recipe(r.e, LE_FX_OWNER_MONITOR, 0, 0, 1, &rec) !=
               LE_OK) {
             fprintf(stderr, "monitor recipe refused\n");
@@ -217,7 +259,7 @@ int main(int argc, char** argv) {
           }
         } else {
           rec.count = 1;
-          octaver_entry(&rec, 0);
+          fx_entry(&rec, 0);
           for (int t = 0; t < n; ++t) {
             if (le_engine_set_fx_recipe(r.e, LE_FX_OWNER_LANE, t, 0, 1, &rec) !=
                 LE_OK) {
@@ -233,10 +275,16 @@ int main(int argc, char** argv) {
         }
       }
       double ph[PHASES];
+      g_moving = g_eq && mode == 2;
+      g_moving_n = n;
       const stats s = time_blocks(&r, blocks, warm, ph);
+      g_moving = 0;
       char label[32];
       static const char* const names[] = {"chain", "lanes", "late"};
-      snprintf(label, sizeof(label), "%s %d", names[mode], n);
+      static const char* const eq_names[] = {"eq chain", "eq lanes",
+                                             "eq moving"};
+      snprintf(label, sizeof(label), "%s %d",
+               g_eq ? eq_names[mode] : names[mode], n);
       report(label, s, ph);
       rig_destroy(&r);
     }
