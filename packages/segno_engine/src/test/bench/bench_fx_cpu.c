@@ -408,11 +408,13 @@ static int run_racks(const bench_opts* o, float* src, int32_t frames,
 }
 
 /* --table: what admission control charges each kind (#887 part 9): one
- * instance's worst-block cost, in ns per frame, measured on the monitor rig
- * as the larger of one instance's p99.9 increment and an eighth of eight
- * instances' (an instance alone can land its heaviest work in one block;
- * eight show the steady share). Prints a row per kind, then the line to
- * paste into le_fx_cost_ns (engine_fx.c). Run it paced on the console. */
+ * instance's share of the worst block, in ns per frame, on the monitor rig.
+ * Eight instances in one chain show the steady share, an eighth of their
+ * p99 increment over the rig alone. A kind on the hop clock (the phase
+ * vocoder, PSOLA) can land a whole frame in one block, so it is charged the
+ * larger of that and one instance's own p99 increment. Prints a row per
+ * kind, then the line to copy into kFxKindCostNs (looper_repository). Run it
+ * paced on the console; elsewhere the numbers are only a proxy. */
 typedef struct {
   const char* name;
   int32_t type;
@@ -464,27 +466,32 @@ static int run_table(const bench_opts* o, float* src, int32_t frames,
   printf("bench_fx_cpu: cost table, %s, %d Hz, %d-frame periods, %d timed "
          "blocks%s\n",
          g_cpu_name, o->rate, o->period, blocks, g_paced ? ", paced" : "");
-  printf("| kind       | base p99.9 us | 1 x +us | 8 x +us | charge ns/frame |\n");
-  printf("|------------|---------------|---------|---------|-----------------|\n");
+  printf("| kind       | base p99 us | 1 x +us | 8 x +us | charge ns/frame |\n");
+  printf("|------------|-------------|---------|---------|-----------------|\n");
   double ns[sizeof(k_table) / sizeof(k_table[0])];
+  stats base;
+  if (!time_kinds(o, src, frames, &k_table[0], 0, blocks, warm, &base)) {
+    fprintf(stderr, "the rig alone refused\n");
+    return 1;
+  }
   for (size_t k = 0; k < sizeof(k_table) / sizeof(k_table[0]); ++k) {
     const table_kind* kind = &k_table[k];
-    stats base, one, eight;
-    if (!time_kinds(o, src, frames, kind, 0, blocks, warm, &base) ||
-        !time_kinds(o, src, frames, kind, 1, blocks, warm, &one) ||
+    stats one, eight;
+    if (!time_kinds(o, src, frames, kind, 1, blocks, warm, &one) ||
         !time_kinds(o, src, frames, kind, 8, blocks, warm, &eight)) {
       fprintf(stderr, "%s refused\n", kind->name);
       return 1;
     }
-    const double d1 = one.p999 - base.p999;
-    const double d8 = (eight.p999 - base.p999) / 8.0;
-    const double us = d1 > d8 ? d1 : d8;
+    const double d1 = one.p99 - base.p99;
+    const double d8 = (eight.p99 - base.p99) / 8.0;
+    const int hops = kind->type == LE_FX_OCTAVER;
+    const double us = hops && d1 > d8 ? d1 : d8;
     ns[k] = us > 0.0 ? 1000.0 * us / (double)o->period : 0.0;
-    printf("| %-10s | %13.1f | %7.1f | %7.1f | %15.0f |\n", kind->name,
-           base.p999, d1, 8.0 * d8, ns[k]);
+    printf("| %-10s | %11.1f | %7.1f | %7.1f | %15.0f |\n", kind->name,
+           base.p99, d1, 8.0 * d8, ns[k]);
     fflush(stdout);
   }
-  printf("le_fx_cost_ns:");
+  printf("kFxKindCostNs:");
   for (size_t k = 0; k < sizeof(k_table) / sizeof(k_table[0]); ++k) {
     printf(" %s=%.0f", k_table[k].name, ns[k]);
   }
