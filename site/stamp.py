@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Version every local asset reference in the site by content hash.
 
-Each reference to a file under site/public (styles.css, favicon.svg, img/...,
-fonts/...) gets `?v=<first 8 hex of its sha256>`, so nginx can cache assets
-for a year and a changed file still reaches visitors at once.
+Each reference to a file under site/public with an extension nginx caches
+(css, webp, jpg, png, svg, woff2) gets `?v=<first 8 hex of its sha256>`, so
+nginx can cache assets for a year and a changed file still reaches visitors
+at once.
 
     python3 site/stamp.py           rewrite the references in place
     python3 site/stamp.py --check   exit 1 if any reference is stale (CI)
@@ -20,9 +21,13 @@ import sys
 PUBLIC = pathlib.Path(__file__).resolve().parent / "public"
 # styles.css first: the pages reference it, so its hash must be final.
 FILES = ["styles.css", "index.html", "404.html"]
+# A relative or root-relative path, or a URL on the site's own host (og:image),
+# with an extension nginx caches for a year (nginx.conf). Paths that do not
+# name a file under public/ are left alone.
 ASSET = re.compile(
-    r"(?<![\w.-])(?P<path>(?:img|fonts)/[\w.-]+\.(?:webp|jpg|png|svg|woff2)"
-    r"|styles\.css|favicon\.svg)(?:\?v=[0-9a-f]*)?"
+    r"(?P<prefix>https://segno\.aquiles\.dev/|(?<![\w./:-])/?)"
+    r"(?P<path>[\w-][\w./-]*\.(?:css|webp|jpg|png|svg|woff2))"
+    r"(?:\?v=[0-9a-f]*)?"
 )
 
 
@@ -31,7 +36,12 @@ def version(path: str) -> str:
 
 
 def stamp(text: str) -> str:
-    return ASSET.sub(lambda m: f"{m['path']}?v={version(m['path'])}", text)
+    def replace(m: re.Match) -> str:
+        if not (PUBLIC / m["path"]).is_file():
+            return m[0]
+        return f"{m['prefix']}{m['path']}?v={version(m['path'])}"
+
+    return ASSET.sub(replace, text)
 
 
 def main() -> int:
