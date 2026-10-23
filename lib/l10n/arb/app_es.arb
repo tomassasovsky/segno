@@ -459,6 +459,8 @@
     "effectDubVerb": "Reverb dub",
     "effectAmbVerb": "Ambiente",
     "effectWhammy": "Whammy",
+    "effectPumper": "Pumper",
+    "noteValueBar": "Compás",
     "paramFrequency": "Frecuencia",
     "paramNoise": "Ruido",
     "paramNoiseTone": "Tono del ruido",

@@ -1042,6 +1042,63 @@ static void le_apply_length_preset_tempo(le_engine* e, int32_t len,
  * the free-running scheduler re-anchoring at each record press. The loop top
  * starts the count again, so a loop that is not a whole number of beats has
  * a short last beat. */
+/* Moves the chains' musical time (le_fx_tempo, #887 part 10) to the frame
+ * whose FX clock is [clock] ([frame] on the performance log). The beat runs
+ * in quarter notes at the song tempo (120 BPM while none is set), from 0 at
+ * the loop top while a shared loop exists (at its grid's rate when it has
+ * one), and on from wherever it was when none does. It is re-anchored only
+ * when it leaves its line, so the beat is anchor + frames * qpf in every
+ * frame, the very sum a render computes from the logged anchors. */
+static inline void le_fx_tempo_tick(le_engine* e, uint32_t clock,
+                                    uint64_t frame, int free_or_song) {
+  const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  float bpm = load_f32(&e->a_tempo_bpm_bits);
+  if (!(bpm > 0.0f)) bpm = 120.0f;
+  int32_t num = load_i32(&e->a_ts_num);
+  int32_t den = load_i32(&e->a_ts_den);
+  if (num <= 0 || num > 255) num = 4;
+  if (den <= 0 || den > 255) den = 4;
+  const int loop = !free_or_song && e->clock.length > 0;
+  const float qpf =
+      loop && e->grid_total_beats > 0
+          ? (float)((double)e->grid_total_beats * 4.0 / (double)den /
+                    (double)e->clock.length)
+          : (float)((double)bpm / 60.0 / (double)sr * 4.0 / (double)den);
+  le_fx_tempo* t = &e->fx_tempo;
+  const double on_line =
+      e->fx_tempo_set ? t->anchor_beat +
+                            (double)(uint32_t)(clock - t->anchor_clock) *
+                                (double)t->qpf
+                      : 0.0;
+  const double want =
+      loop ? (double)e->clock.position * (double)qpf : on_line;
+  if (!e->fx_tempo_set || qpf != t->qpf || num != t->num || den != t->den ||
+      fabs(want - on_line) > 1e-6) {
+    t->anchor_clock = clock;
+    t->anchor_beat = want;
+    t->qpf = qpf;
+    t->num = num;
+    t->den = den;
+    e->fx_tempo_set = 1;
+    e->fx_tempo_log = 1;
+  }
+  if (e->fx_tempo_log) {
+    /* Re-expressed at this frame, so a render anchors where the log does. */
+    const double beat = t->anchor_beat +
+                        (double)(uint32_t)(clock - t->anchor_clock) *
+                            (double)t->qpf;
+    uint64_t bits;
+    memcpy(&bits, &beat, sizeof(bits));
+    le_plog_push(e, frame,
+                 (le_command){.code = LE_PLOG_FX_TEMPO,
+                              .fx_tempo_log = {(uint32_t)bits,
+                                               (uint32_t)(bits >> 32), qpf,
+                                               (uint8_t)num, (uint8_t)den,
+                                               0}});
+    e->fx_tempo_log = 0;
+  }
+}
+
 static inline void grid_beat_frame(le_engine* e, int32_t pos, int click_on,
                                    int32_t nominal_fpb) {
   if (e->clock.length <= 0) return;
@@ -5755,6 +5812,15 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
                                      * (events.log version 13, #941) */
                                     .fx_clock = e->fx_clock_base,
                                 }});
+      /* The chains' musical time at capture frame 0 (version 14), logged
+       * with the arm's own facts. */
+      {
+        const int32_t mode = load_i32(&e->a_looper_mode);
+        e->fx_tempo_log = 1;
+        le_fx_tempo_tick(e, e->fx_clock_base, frame,
+                         mode == LE_LOOPER_MODE_FREE ||
+                             mode == LE_LOOPER_MODE_SONG);
+      }
       for (int t = 0; t < e->track_count; ++t) {
         le_fade_log(e, t, frame);
         /* A track already reversed at arm logs its direction and the index
@@ -9581,6 +9647,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   e->capture_image_dirty = 0;
   for (uint32_t f = 0; f < frames; ++f) {
     e->perf.tap_frame = perf_frame_base + f;
+    le_fx_tempo_tick(e, e->fx_clock_base + f, perf_frame_base + f,
+                     free_or_song);
     for (int t = 0; t < tc; ++t)
       e->tracks[t].fade_sample = le_fade_tick(&e->tracks[t].fade, sr);
     /* Input metering + sound-activated record + latency harness. When the harness
