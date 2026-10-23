@@ -172,6 +172,39 @@ the old name go stale (`ssh-keygen -R raspberrypi5`), but the dropbear host
 keys live on `/data` and do not move — expect a re-learn under the new name,
 never a key-change warning. IP-keyed entries are untouched.
 
+## After a crash or a freeze
+
+The unit recovers from a hang by itself and leaves a record on `/data`
+(#438, #1437):
+
+| What | Where | Read it with |
+|------|-------|--------------|
+| Journal of earlier boots | `/data/log/journal` | `journalctl -b -1` |
+| Native crashes of the app | `/data/log/coredump` | `coredumpctl list` |
+| Kernel panic or oops, and the kernel console of the boot that hung | `/data/log/pstore/<UTC time>/` | `ls /data/log/pstore`, or `journalctl -b -u systemd-pstore` |
+
+- **Watchdog.** The BCM2835 hardware watchdog resets the board when PID 1
+  stops pinging for 60 s (long enough to ride out an NVMe I/O timeout), or
+  within about 12 s when the kernel itself dies, because the kernel feeds the
+  hardware on PID 1's behalf only while it is running.
+- **Panics reboot.** A panic, a soft lockup (a CPU stuck 20 s) or a hard
+  lockup (10 s with interrupts off) reboots after 10 s. A hung task (120 s in
+  uninterruptible sleep) is only logged, because a slow USB stick can cause
+  one while the audio is fine.
+- **pstore.** The kernel writes the panic's log, and a copy of every kernel
+  error, into 1 MiB of reserved RAM (the `ramoops` overlay). A warm reset
+  keeps that RAM, so systemd-pstore finds the records at the next boot and
+  moves them to `/data/log/pstore`, one directory per boot. The newest 50
+  crash sets and the newest 10 console-only sets (every warm reboot leaves
+  one) are kept. A power cut erases the RAM: pull the power on a frozen unit
+  only after the watchdog had its minute.
+- A reset during a tryboot trial boot comes back on the committed slot,
+  because the tryboot flag only lasts one boot.
+
+To check the chain on a unit: `echo c > /proc/sysrq-trigger` panics the
+kernel. The unit is back about a minute later, with a new directory under
+`/data/log/pstore` holding `dmesg-ramoops-0`.
+
 ## Iterating
 
 App-only changes don't need a reflash. Build the bundle, copy its three parts
