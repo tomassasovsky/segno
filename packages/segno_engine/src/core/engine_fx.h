@@ -321,8 +321,9 @@ void le_fx_rack_reset(le_fx_state* fx, int slot);
  *
  * The analysis-hop schedule needs no settling: it follows the clock the
  * render sets (le_fx_state::clock), which reproduces the live one. Caller
- * passes an octaver slot (no type check). Control thread / offline only,
- * after le_fx_entry_reset. */
+ * passes a slot on the hop (le_fx_type_hops) and the octaver settings it
+ * runs (le_fx_octaver_settings); no type check. Control thread / offline
+ * only, after le_fx_entry_reset. */
 void le_fx_octaver_seed_settled(le_fx_state* fx, int slot, const float* params);
 /* Whether [type] runs the octaver's kernel on the hop clock (the octaver and
  * the Whammy): what the prints and caches key the hop phase on. */

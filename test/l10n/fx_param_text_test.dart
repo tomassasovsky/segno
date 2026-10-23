@@ -78,7 +78,7 @@ const _english = <String, List<String>>{
   'ambVerb.volume': ['0%', '40%', '100%'],
   'ambVerb.amb_dub_mix': ['0%', '40%', '100%'],
   'whammy.pedal': ['0%', '0%', '100%'],
-  'whammy.range': ['-1 oct', '-1 oct', '+1 oct'],
+  'whammy.whammy_range': ['-1 oct', '-1 oct', '+1 oct'],
 };
 
 /// The same in Spanish: a decimal comma, and the Spanish mode name.
@@ -155,7 +155,7 @@ const _spanish = <String, List<String>>{
   'ambVerb.volume': ['0%', '40%', '100%'],
   'ambVerb.amb_dub_mix': ['0%', '40%', '100%'],
   'whammy.pedal': ['0%', '0%', '100%'],
-  'whammy.range': ['-1 oct', '-1 oct', '+1 oct'],
+  'whammy.whammy_range': ['-1 oct', '-1 oct', '+1 oct'],
 };
 
 void main() {

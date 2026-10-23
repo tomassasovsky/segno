@@ -114,8 +114,8 @@ class EngineStatus extends Equatable {
 
   /// Added latency (frames) of the highest-latency effect engaged in any
   /// audible or monitored lane chain — the maximum across active effects. Today
-  /// only the formant-preserving octaver contributes; `0` when no octaver is
-  /// engaged. Purely informational (see [fxAddedLatencyMs]); it never feeds
+  /// only the octaver and the Whammy (its kernel) contribute; `0` when
+  /// neither is engaged. Purely informational (see [fxAddedLatencyMs]); it never feeds
   /// [recordOffsetFrames] or any compensation.
   final int fxAddedLatencyFrames;
 
