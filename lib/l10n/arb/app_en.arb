@@ -822,6 +822,18 @@
     "paramMidGain": "Mid",
     "paramMidFreq": "Mid freq",
     "paramMidQ": "Mid Q",
+    "effectCompressor": "Compressor",
+    "effectTransient": "Transient",
+    "effectHpGate": "HP / Gate",
+    "paramThreshold": "Threshold",
+    "paramRatio": "Ratio",
+    "paramAttack": "Attack",
+    "paramRelease": "Release",
+    "paramMakeup": "Make-up",
+    "paramAttackLength": "Attack length",
+    "paramSustain": "Sustain",
+    "paramHighpass": "High-pass",
+    "paramGateThreshold": "Gate threshold",
     "octaverModePhaseVocoder": "Phase Vocoder",
     "octaverModePsola": "PSOLA",
     "pitchUnison": "Unison",
@@ -4121,6 +4133,41 @@
         "description": "A built-in effect parameter's gain factor with one decimal, such as the drive amount.",
         "placeholders": {
             "factor": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "fxValueMsFiner": "{milliseconds} ms",
+    "@fxValueMsFiner": {
+        "description": "A built-in effect parameter's time below 1 ms, with two decimals (a compressor's fastest attack).",
+        "placeholders": {
+            "milliseconds": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 2
+                }
+            }
+        }
+    },
+    "fxValueRatioWhole": "{ratio}:1",
+    "@fxValueRatioWhole": {
+        "description": "A compressor's ratio from 100 up, without a decimal (100:1).",
+        "placeholders": {
+            "ratio": {
+                "type": "int"
+            }
+        }
+    },
+    "fxValueRatio": "{ratio}:1",
+    "@fxValueRatio": {
+        "description": "A compressor's ratio with one decimal, such as 4.0:1.",
+        "placeholders": {
+            "ratio": {
                 "type": "double",
                 "format": "decimalPatternDigits",
                 "optionalParameters": {

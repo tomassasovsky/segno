@@ -293,22 +293,28 @@ jobs:
       # The Looper X kinds' CPU (#887): informational on this proxy, judged
       # against the plan's per-rack budgets on the console. The binary is
       # uploaded for that run.
-      - name: Run the effects bench for the EQ kind (informational)
+      - name: Run the effects bench for the Looper X kinds (informational)
         if: always()
         continue-on-error: true
         shell: bash
-        run: >
-          bash packages/segno_engine/src/test/bench/bench_fx_cpu.sh
-          --kind eq --blocks 2000
-          | tee bench-fx-eq-arm64.md
-      - name: Upload the effects bench and its EQ report for the appliance
+        run: |
+          set -euo pipefail
+          # The script builds the bench once; the other kinds rerun it.
+          bash packages/segno_engine/src/test/bench/bench_fx_cpu.sh \
+            --kind eq --blocks 2000 > bench-fx-kinds-arm64.md
+          for kind in comp transient hpgate; do
+            packages/segno_engine/build/bench/bench_fx_cpu \
+              --kind "$kind" --blocks 2000 >> bench-fx-kinds-arm64.md
+          done
+          cat bench-fx-kinds-arm64.md
+      - name: Upload the effects bench and its report for the appliance
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bench-fx-cpu-arm64
           path: |
             packages/segno_engine/build/bench/bench_fx_cpu
-            bench-fx-eq-arm64.md
+            bench-fx-kinds-arm64.md
           if-no-files-found: error
       # The audio-thread fault bench (#900): build only, since it needs the
       # console's sound card. Its binary is uploaded for the on-device proof

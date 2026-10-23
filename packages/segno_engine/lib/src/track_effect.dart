@@ -358,7 +358,19 @@ enum TrackEffectType {
   /// The Looper X's generic EQ (#887 part 4): low cut, low shelf, two
   /// peaking mids, high shelf, air shelf and high cut. A factory rack exposes
   /// a subset of its fifteen parameters.
-  eq(9, 'EQ');
+  eq(9, 'EQ'),
+
+  /// The Looper X's compressor (#887 part 5): threshold, ratio, attack,
+  /// release and make-up. Feed-forward and stereo-linked, hard knee.
+  compressor(10, 'Compressor'),
+
+  /// The Looper X's transient shaper (#887 part 5): attack, attack length
+  /// and sustain, each neutral at 50 %.
+  transient(11, 'Transient'),
+
+  /// The Looper X's high-pass gate (#887 part 5): a 12 dB/octave high-pass,
+  /// then a gate keyed on what it passes.
+  hpGate(12, 'HP / Gate');
 
   const TrackEffectType(this.code, this.label);
 
@@ -636,6 +648,93 @@ enum TrackEffectType {
         defaultValue: 0.5,
       ),
     ],
+    // The Looper X ranges and tapers (#887 part 5); the ratio's is its own
+    // reciprocal taper. Ed's Rack's defaults.
+    TrackEffectType.compressor => const [
+      FxParamInfo(
+        key: 'threshold',
+        unit: FxParamUnit.db,
+        atMin: 0,
+        atMax: -60,
+        defaultValue: 0.35,
+      ),
+      FxParamInfo(
+        key: 'ratio',
+        unit: FxParamUnit.ratio,
+        atMin: 1,
+        atMax: 100,
+        curve: FxParamCurve.reciprocal,
+        defaultValue: 0.76,
+      ),
+      FxParamInfo(
+        key: 'attack',
+        unit: FxParamUnit.ms,
+        atMin: 0.01,
+        atMax: 300,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'release',
+        unit: FxParamUnit.ms,
+        atMin: 5,
+        atMax: 4000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'makeup',
+        unit: FxParamUnit.db,
+        atMin: 0,
+        atMax: 30,
+        defaultValue: 0.06,
+      ),
+    ],
+    // Shown as the Looper X shows them; what each percent does is chosen.
+    TrackEffectType.transient => const [
+      FxParamInfo(
+        key: 'attack',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'attack_length',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'sustain',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+        taperUnverified: true,
+      ),
+    ],
+    // The Vocal Rack's defaults: the high-pass at 1 Hz, the gate at -120 dB.
+    TrackEffectType.hpGate => const [
+      FxParamInfo(
+        key: 'highpass',
+        unit: FxParamUnit.hz,
+        atMin: 1,
+        atMax: 1000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'gate_threshold',
+        unit: FxParamUnit.db,
+        atMin: -120,
+        atMax: 0,
+        defaultValue: 0,
+      ),
+    ],
     TrackEffectType.reverb => const [
       // comb feedback 0.70 + 0.28 v; feedback low-pass 0.4 v
       FxParamInfo(
@@ -702,7 +801,10 @@ enum FxParamUnit {
   db(6),
 
   /// A filter's Q, a plain number (`LE_FX_UNIT_Q`).
-  q(7);
+  q(7),
+
+  /// A compression ratio, "n : 1" (`LE_FX_UNIT_RATIO`).
+  ratio(8);
 
   const FxParamUnit(this.code);
 
@@ -717,7 +819,11 @@ enum FxParamCurve {
   linear(0),
 
   /// `atMin * (atMax / atMin) ^ v` (`LE_FX_CURVE_EXPONENTIAL`).
-  exponential(1);
+  exponential(1),
+
+  /// `1 / (1 / atMin + (1 / atMax - 1 / atMin) * v)`: the reciprocal is
+  /// linear (`LE_FX_CURVE_RECIPROCAL`, the Looper X compressor's ratio).
+  reciprocal(2);
 
   const FxParamCurve(this.code);
 
@@ -789,6 +895,7 @@ class FxParamInfo {
     }
     return switch (curve) {
       FxParamCurve.exponential => atMin * math.pow(atMax / atMin, v),
+      FxParamCurve.reciprocal => 1 / (1 / atMin + (1 / atMax - 1 / atMin) * v),
       FxParamCurve.linear => atMin + (atMax - atMin) * v,
     };
   }
@@ -799,6 +906,8 @@ class FxParamInfo {
     final v = switch (curve) {
       FxParamCurve.exponential =>
         math.log(value / atMin) / math.log(atMax / atMin),
+      FxParamCurve.reciprocal =>
+        (1 / value - 1 / atMin) / (1 / atMax - 1 / atMin),
       FxParamCurve.linear => (value - atMin) / (atMax - atMin),
     };
     return v.isNaN ? 0.0 : v.clamp(0.0, 1.0);

@@ -1056,7 +1056,7 @@ void main() {
         appended.entries.map((e) => (e as BuiltInEffect).type),
         [
           // Ed's Rack's measured order, with Reverb before Delay.
-          TrackEffectType.none, // Compressor, which this engine cannot build
+          TrackEffectType.compressor,
           TrackEffectType.reverb,
           TrackEffectType.delay,
         ],

@@ -67,6 +67,19 @@ static float fx_drive(float x, const float* p) {
   return tanhf(x * drive) * level;
 }
 
+/* One tick of a TPT state-variable filter (Cytomic/Zavalishin form) with
+ * coefficients a1 = 1 / (1 + g (g + k)), a2 = g a1, a3 = g a2: advances the
+ * state (ic1, ic2) and gives the band-pass v1 and the low-pass v2 (the
+ * high-pass is x - k v1 - v2). */
+static inline void le_svf_tick(float x, float a1, float a2, float a3,
+                               float* ic1, float* ic2, float* v1, float* v2) {
+  const float v3 = x - *ic2;
+  *v1 = a1 * (*ic1) + a2 * v3;
+  *v2 = *ic2 + a2 * (*ic1) + a3 * v3;
+  *ic1 = 2.0f * (*v1) - *ic1;
+  *ic2 = 2.0f * (*v2) - *ic2;
+}
+
 /* Resonant low-pass: a TPT state-variable filter (Cytomic/Zavalishin form).
  * p0 = cutoff (20 Hz .. ~18 kHz, log), p1 = resonance. */
 static float fx_filter(le_fx_state* fx, int slot, int chan, int sr, float x,
@@ -79,13 +92,10 @@ static float fx_filter(le_fx_state* fx, int slot, int chan, int sr, float x,
   const float a1 = 1.0f / (1.0f + g * (g + k));
   const float a2 = g * a1;
   const float a3 = g * a2;
-  float* ic1 = &fx->svf_ic1[slot][chan];
-  float* ic2 = &fx->svf_ic2[slot][chan];
-  const float v3 = x - *ic2;
-  const float v1 = a1 * (*ic1) + a2 * v3;
-  const float v2 = *ic2 + a2 * (*ic1) + a3 * v3;
-  *ic1 = 2.0f * v1 - *ic1;
-  *ic2 = 2.0f * v2 - *ic2;
+  float v1;
+  float v2;
+  le_svf_tick(x, a1, a2, a3, &fx->svf_ic1[slot][chan], &fx->svf_ic2[slot][chan],
+              &v1, &v2);
   return v2; /* low-pass output */
 }
 
@@ -1297,6 +1307,93 @@ static const le_fx_param_desc LE_FX_EQ_PARAMS[] = {
     {"air_gain", LE_FX_UNIT_DB, 0, -18.0f, 18.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
 };
 
+/* The per-update smoothing factor of a setting that glides over
+ * LE_FX_SMOOTH_S at [sr]: the share of the remaining distance one update
+ * (LE_FX_UPDATE_FRAMES frames) covers. */
+#define LE_FX_SMOOTH_S 0.010
+static float le_fx_smooth_k(int sr) {
+  return (float)(1.0 - exp(-(double)LE_FX_UPDATE_FRAMES /
+                           (LE_FX_SMOOTH_S * (double)(sr > 0 ? sr : 48000))));
+}
+
+/* One smoothing step of a setting the update cadence moves: [*cur] covers a
+ * share [k] of the way to [tgt], landing on it once within 1e-4 (or at once
+ * for k >= 1). The one rule every Looper X kind glides by. */
+static inline void le_fx_step_toward(float* cur, float tgt, float k) {
+  const float d = tgt - *cur;
+  *cur = k >= 1.0f || fabsf(d) < 1e-4f ? tgt : *cur + k * d;
+}
+
+/* What every Looper X kind's update starts with: whether it has anything to
+ * do, given the settings it last saw ([last], [n] of them), the rate its
+ * smoothing factor was computed at and whether something still moves. */
+typedef struct le_fx_dyn_head {
+  int32_t primed; /* [last] holds settings */
+  int32_t k_sr;   /* the rate [k] is for */
+  int32_t moving; /* a glide is under way */
+  float k;        /* le_fx_smooth_k(k_sr) */
+} le_fx_dyn_head;
+
+#define LE_FX_DYN_RUN 1      /* the update has work */
+#define LE_FX_DYN_NEW_RATE 2 /* the sample rate changed */
+#define LE_FX_DYN_CHANGED 4  /* the settings or the rate changed, or settle */
+
+/* Returns 0 when nothing changed and nothing moves; otherwise LE_FX_DYN_RUN
+ * with the other bits saying what changed, and the rate and settings
+ * recorded. */
+static int le_fx_dyn_begin(le_fx_dyn_head* h, float* last, const float* p,
+                           size_t n, int sr, int settle) {
+  const int new_rate = !h->primed || h->k_sr != sr;
+  const int new_params =
+      !h->primed || memcmp(last, p, n * sizeof(float)) != 0;
+  if (!settle && !new_rate && !new_params && !h->moving) return 0;
+  if (new_rate) {
+    h->k_sr = sr;
+    h->k = le_fx_smooth_k(sr);
+  }
+  if (new_params || settle) {
+    memcpy(last, p, n * sizeof(float));
+    h->primed = 1;
+  }
+  return LE_FX_DYN_RUN | (new_rate ? LE_FX_DYN_NEW_RATE : 0) |
+         (new_rate || new_params || settle ? LE_FX_DYN_CHANGED : 0);
+}
+
+/* A setting a kernel reads every sample. Each update moves its glide point
+ * one smoothing step toward the target, and the samples after it ramp from
+ * wherever the value is onto that point over LE_FX_UPDATE_FRAMES samples,
+ * stopping there. A change never steps, and frames the kernel did not run
+ * (a slot skipped for a while) only slow the ramp down. */
+typedef struct le_fx_glide {
+  float v;   /* the value now */
+  float inc; /* per-sample step toward g */
+  float g;   /* the glide point */
+} le_fx_glide;
+
+/* Update: one glide step toward [tgt] (k >= 1 lands at once). Returns
+ * whether the value is still moving. */
+static int le_fx_glide_step(le_fx_glide* s, float tgt, float k) {
+  le_fx_step_toward(&s->g, tgt, k);
+  if (k >= 1.0f) s->v = s->g;
+  s->inc = (s->g - s->v) * (1.0f / (float)LE_FX_UPDATE_FRAMES);
+  if (s->v + s->inc == s->v) { /* closer than a step can show: land */
+    s->v = s->g;
+    s->inc = 0.0f;
+  }
+  return s->v != s->g || s->g != tgt;
+}
+
+static inline float le_fx_glide_next(le_fx_glide* s) {
+  if (s->inc != 0.0f) {
+    s->v += s->inc;
+    if (s->inc > 0.0f ? s->v >= s->g : s->v <= s->g) {
+      s->v = s->g;
+      s->inc = 0.0f;
+    }
+  }
+  return s->v;
+}
+
 /* ---- EQ (LE_FX_EQ, #887 part 4) ----
  *
  * The Looper X's generic EQ module, of which each rack exposes a subset (the
@@ -1315,7 +1412,6 @@ static const le_fx_param_desc LE_FX_EQ_PARAMS[] = {
 #define LE_EQ_PARAMS_N 15 /* LE_FX_EQ_PARAMS rows */
 #define LE_EQ_AIR_HZ 12000.0
 #define LE_EQ_CUT_Q 0.70710678118654752
-#define LE_EQ_SMOOTH_S 0.010
 
 enum { LE_EQ_LOWCUT, LE_EQ_LOW, LE_EQ_LOMID, LE_EQ_HIMID, LE_EQ_HIGH,
        LE_EQ_AIR, LE_EQ_HIGHCUT };
@@ -1334,17 +1430,14 @@ typedef struct le_fx_eq {
   float db[LE_EQ_BANDS];
   float lnq[LE_EQ_BANDS];
   uint32_t active; /* bands that are not the identity */
-  int32_t moving;  /* smoothing still under way */
   /* The settings the targets were last taken from, and the smoothing step
    * for the rate it was computed at: a settled EQ whose settings did not
    * change costs one compare per update. */
+  le_fx_dyn_head h;
   float last[LE_EQ_PARAMS_N];
   float tgt_hz[LE_EQ_BANDS];
   float tgt_db[LE_EQ_BANDS];
   float tgt_lnq[LE_EQ_BANDS];
-  int32_t primed;
-  int32_t k_sr;
-  float k;
   le_eq_band band[LE_EQ_BANDS];
 } le_fx_eq;
 
@@ -1355,8 +1448,13 @@ static double le_fx_desc_value(const le_fx_param_desc* d, float v) {
   if (d->curve == LE_FX_CURVE_EXPONENTIAL) {
     return (double)d->at_min * pow((double)d->at_max / (double)d->at_min, v);
   }
+  if (d->curve == LE_FX_CURVE_RECIPROCAL) {
+    const double lo = 1.0 / (double)d->at_min;
+    return 1.0 / (lo + (1.0 / (double)d->at_max - lo) * v);
+  }
   return (double)d->at_min + ((double)d->at_max - (double)d->at_min) * v;
 }
+
 
 /* RBJ cookbook coefficients for one band of the EQ, in double. kind is an
  * LE_EQ_* band index; hz the corner or centre, db the gain, q the Q. */
@@ -1419,36 +1517,22 @@ static void le_eq_targets(const float* p, float hz[LE_EQ_BANDS],
 
 static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
   le_fx_eq* q = (le_fx_eq*)ks;
-  const int new_rate = q->k_sr != sr; /* every band's design moves */
-  const int new_params = !q->primed || memcmp(q->last, p, sizeof(q->last)) != 0;
-  if (!settle && !new_rate && !new_params && !q->moving) return;
-  if (new_rate) {
-    q->k_sr = sr;
-    q->k = (float)(1.0 - exp(-(double)LE_FX_UPDATE_FRAMES /
-                             (LE_EQ_SMOOTH_S * (double)(sr > 0 ? sr : 48000))));
-  }
-  if (new_params || settle) {
-    /* The targets change only with the settings; a glide reuses them. */
-    memcpy(q->last, p, sizeof(q->last));
-    q->primed = 1;
-    le_eq_targets(p, q->tgt_hz, q->tgt_db, q->tgt_lnq);
-  }
-  const float k = settle ? 1.0f : q->k;
+  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_EQ_PARAMS_N, sr, settle);
+  if (!f) return;
+  const int new_rate = (f & LE_FX_DYN_NEW_RATE) != 0; /* every design moves */
+  /* The targets change only with the settings; a glide reuses them. */
+  if (f & LE_FX_DYN_CHANGED) le_eq_targets(p, q->tgt_hz, q->tgt_db, q->tgt_lnq);
+  const float k = settle ? 1.0f : q->h.k;
   int moving = 0;
   for (int b = 0; b < LE_EQ_BANDS; ++b) {
     float* cur[3] = {&q->hz[b], &q->db[b], &q->lnq[b]};
     const float tgt[3] = {q->tgt_hz[b], q->tgt_db[b], q->tgt_lnq[b]};
     int dirty = settle || new_rate;
     for (int i = 0; i < 3; ++i) {
-      const float d = tgt[i] - *cur[i];
-      if (d == 0.0f) continue;
+      if (tgt[i] == *cur[i]) continue;
       dirty = 1;
-      if (k >= 1.0f || fabsf(d) < 1e-4f) {
-        *cur[i] = tgt[i];
-      } else {
-        *cur[i] += k * d;
-        moving = 1;
-      }
+      le_fx_step_toward(cur[i], tgt[i], k);
+      if (*cur[i] != tgt[i]) moving = 1;
     }
     if (!dirty) continue; /* only a band that moved is redesigned */
     const int cut = b == LE_EQ_LOWCUT || b == LE_EQ_HIGHCUT;
@@ -1471,7 +1555,7 @@ static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
     band->a1 = (float)c[3]; band->a2 = (float)c[4];
     q->active |= 1u << b;
   }
-  q->moving = moving;
+  q->h.moving = moving;
 }
 
 static void fx_eq_kprocess(void* ks, float* l, float* r) {
@@ -1523,6 +1607,333 @@ static void le_eq_targets(const float* p, float hz[LE_EQ_BANDS],
 #undef LE_EQ_V
 }
 
+/* ---- Dynamics: Compressor, Transient, HP/Gate (#887 part 5) ----
+ *
+ * The ranges and tapers are the Looper X's own
+ * (docs/plan/2026-10-20-looperx-derived-tables.md). What happens inside each
+ * module (the compressor's knee and detector, the transient shaper's
+ * envelopes, the high-pass slope and the gate's timing) is not measured yet
+ * (#891); the constants below are the choices. */
+
+static const le_fx_param_desc LE_FX_COMPRESSOR_PARAMS[] = {
+    {"threshold", LE_FX_UNIT_DB, 0, 0.0f, -60.0f, LE_FX_CURVE_LINEAR, 0.35f, 0},
+    {"ratio", LE_FX_UNIT_RATIO, 0, 1.0f, 100.0f, LE_FX_CURVE_RECIPROCAL, 0.76f,
+     0},
+    {"attack", LE_FX_UNIT_MS, 0, 0.01f, 300.0f, LE_FX_CURVE_EXPONENTIAL, 0.5f,
+     0},
+    {"release", LE_FX_UNIT_MS, 0, 5.0f, 4000.0f, LE_FX_CURVE_EXPONENTIAL, 0.5f,
+     0},
+    {"makeup", LE_FX_UNIT_DB, 0, 0.0f, 30.0f, LE_FX_CURVE_LINEAR, 0.06f, 0},
+};
+/* The Looper X shows these as 0 to 100 %; what each percent does is chosen
+ * (fx_transient_update), so all three carry the flag. */
+static const le_fx_param_desc LE_FX_TRANSIENT_PARAMS[] = {
+    {"attack", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     LE_FX_PARAM_TAPER_UNVERIFIED},
+    {"attack_length", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR,
+     0.5f, LE_FX_PARAM_TAPER_UNVERIFIED},
+    {"sustain", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     LE_FX_PARAM_TAPER_UNVERIFIED},
+};
+static const le_fx_param_desc LE_FX_HP_GATE_PARAMS[] = {
+    {"highpass", LE_FX_UNIT_HZ, 0, 1.0f, 1000.0f, LE_FX_CURVE_EXPONENTIAL, 0.0f,
+     0},
+    {"gate_threshold", LE_FX_UNIT_DB, 0, -120.0f, 0.0f, LE_FX_CURVE_LINEAR, 0.0f,
+     0},
+};
+#define LE_COMP_PARAMS_N 5
+#define LE_TR_PARAMS_N 3
+#define LE_HPG_PARAMS_N 2
+
+/* 20 log10 |x| and back, through log2 and exp2. */
+#define LE_DB_PER_OCTAVE 6.0205999132796239f /* 20 log10 2 */
+static inline float le_db_of(float x) { return LE_DB_PER_OCTAVE * log2f(x); }
+static inline float le_gain_of_db(float db) {
+  return exp2f(db * (1.0f / LE_DB_PER_OCTAVE));
+}
+
+/* The coefficient of a one-pole smoother with time constant [tau_s] at
+ * [sr]: each sample keeps this share of the distance to the target, so the
+ * smoother covers 1 - 1/e of a step in tau_s. */
+static float le_one_pole(double tau_s, int sr) {
+  const double n = tau_s * (double)(sr > 0 ? sr : 48000);
+  return n <= 0.0 ? 0.0f : (float)exp(-1.0 / n);
+}
+
+/* D-RT: bound a sample so it cannot poison a kernel's state, downstream
+ * lanes or the master sum (a hosted plugin's output, a dynamics kind's
+ * input): NaN and Inf map to 0, and denormals flush to 0. */
+static inline float fx_sanitize(float x) {
+  if (!isfinite(x)) return 0.0f;
+  if (x < 1e-30f && x > -1e-30f) return 0.0f;
+  return x;
+}
+
+/* ---- Compressor (LE_FX_COMPRESSOR) ----
+ *
+ * Feed-forward, after Giannoulis, Massberg and Reiss ("Digital dynamic range
+ * compressor design", JAES 2012): the louder channel's peak level in dB
+ * through a hard-knee gain computer, the gain reduction smoothed by a
+ * branching one-pole (attack while it grows, release while it falls), then
+ * the make-up gain. Both channels take the same gain. */
+typedef struct le_fx_comp {
+  le_fx_dyn_head h;
+  float last[LE_COMP_PARAMS_N];
+  le_fx_glide thr;   /* threshold, dB */
+  le_fx_glide slope; /* 1 - 1 / ratio */
+  le_fx_glide mk;    /* make-up, dB */
+  float att;         /* detector coefficients */
+  float rel;
+  float att_p;       /* the settings they were computed from */
+  float rel_p;
+  float gr; /* gain reduction now, dB (0 or more) */
+} le_fx_comp;
+
+static void fx_comp_update(void* ks, const float* p, int sr, int settle) {
+  le_fx_comp* c = (le_fx_comp*)ks;
+  const int f = le_fx_dyn_begin(&c->h, c->last, p, LE_COMP_PARAMS_N, sr, settle);
+  if (!f) return;
+  const int changed = (f & LE_FX_DYN_CHANGED) != 0;
+  const le_fx_param_desc* d = LE_FX_COMPRESSOR_PARAMS;
+  if ((f & LE_FX_DYN_NEW_RATE) || settle || p[2] != c->att_p ||
+      p[3] != c->rel_p) {
+    c->att_p = p[2];
+    c->rel_p = p[3];
+    c->att = le_one_pole(le_fx_desc_value(&d[2], p[2]) * 1e-3, sr);
+    c->rel = le_one_pole(le_fx_desc_value(&d[3], p[3]) * 1e-3, sr);
+  }
+  const float k = settle ? 1.0f : c->h.k;
+  int moving = le_fx_glide_step(&c->thr, (float)le_fx_desc_value(&d[0], p[0]), k);
+  moving |= le_fx_glide_step(
+      &c->slope, (float)(1.0 - 1.0 / le_fx_desc_value(&d[1], p[1])), k);
+  moving |= le_fx_glide_step(&c->mk, (float)le_fx_desc_value(&d[4], p[4]), k);
+  c->h.moving = moving;
+}
+
+static void fx_comp_kprocess(void* ks, float* l, float* r) {
+  le_fx_comp* c = (le_fx_comp*)ks;
+  const float x0 = fx_sanitize(*l);
+  const float x1 = fx_sanitize(*r);
+  const float thr = le_fx_glide_next(&c->thr);
+  const float slope = le_fx_glide_next(&c->slope);
+  const float mk = le_fx_glide_next(&c->mk);
+  const float peak = fmaxf(fabsf(x0), fabsf(x1));
+  const float over = peak > 1e-9f ? le_db_of(peak) - thr : -1.0f;
+  const float want = over > 0.0f ? over * slope : 0.0f;
+  const float a = want > c->gr ? c->att : c->rel;
+  float gr = want + a * (c->gr - want);
+  if (gr < 1e-6f) gr = 0.0f; /* settled: no denormal tail */
+  c->gr = gr;
+  const float g = le_gain_of_db(mk - gr);
+  *l = x0 * g;
+  *r = x1 * g;
+}
+
+/* Exposed for the native tests: the compressor's static curve, the gain
+ * reduction in dB a steady level [in_db] settles to at settings [p]. */
+float le_comp_static_gr_for_test(const float* p, float in_db) {
+  const le_fx_param_desc* d = LE_FX_COMPRESSOR_PARAMS;
+  const double over = (double)in_db - le_fx_desc_value(&d[0], p[0]);
+  return over > 0.0
+             ? (float)(over * (1.0 - 1.0 / le_fx_desc_value(&d[1], p[1])))
+             : 0.0f;
+}
+
+/* ---- Transient (LE_FX_TRANSIENT) ----
+ *
+ * The differential-envelope shaper (SPL's Transient Designer, and most since),
+ * built on one peak envelope of the louder channel (instant rise, a
+ * LE_TR_PEAK_REL_S fall) and two followers of it:
+ * - a slow riser, which climbs to the peak envelope over the attack length
+ *   and falls with it at once, so the peak envelope leads it only while a
+ *   sound starts;
+ * - a slow faller, which rises with the peak envelope at once and falls over
+ *   LE_TR_SUS_REL_S, so it leads the peak envelope only while a sound decays.
+ * Each lead, in dB, scaled by its control (-1 at 0 %, none at 50 %, +1 at
+ * 100 %), adds to the gain: at 100 % an onset is lifted by as much as it rose
+ * over the slow riser. The gain is held within +-LE_TR_MAX_DB. A held tone
+ * leads neither, so it keeps its level (up to the peak envelope's ripple on
+ * a low note). */
+#define LE_TR_PEAK_REL_S 0.050
+#define LE_TR_LEN_MIN_S 0.002 /* the slow riser at 0 % attack length */
+#define LE_TR_LEN_SPAN 25.0   /* ... and 25 times that at 100 % */
+#define LE_TR_SUS_REL_S 0.500
+#define LE_TR_MAX_DB 24.0f
+#define LE_TR_FLOOR 1e-9f
+
+typedef struct le_fx_transient {
+  le_fx_dyn_head h;
+  float last[LE_TR_PARAMS_N];
+  le_fx_glide atk; /* attack amount, -1..1 */
+  le_fx_glide sus; /* sustain amount, -1..1 */
+  float peak_rel;  /* coefficients */
+  float rise;
+  float fall;
+  float peak; /* the peak envelope */
+  float riser;
+  float faller;
+} le_fx_transient;
+
+static void fx_transient_update(void* ks, const float* p, int sr, int settle) {
+  le_fx_transient* t = (le_fx_transient*)ks;
+  const int f = le_fx_dyn_begin(&t->h, t->last, p, LE_TR_PARAMS_N, sr, settle);
+  if (!f) return;
+  const int changed = (f & LE_FX_DYN_CHANGED) != 0;
+  if (changed) {
+    const float len = p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1];
+    t->peak_rel = le_one_pole(LE_TR_PEAK_REL_S, sr);
+    t->rise = le_one_pole(LE_TR_LEN_MIN_S * pow(LE_TR_LEN_SPAN, len), sr);
+    t->fall = le_one_pole(LE_TR_SUS_REL_S, sr);
+  }
+  const float k = settle ? 1.0f : t->h.k;
+  const float a = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
+  const float s = p[2] < 0.0f ? 0.0f : p[2] > 1.0f ? 1.0f : p[2];
+  int moving = le_fx_glide_step(&t->atk, 2.0f * a - 1.0f, k);
+  moving |= le_fx_glide_step(&t->sus, 2.0f * s - 1.0f, k);
+  t->h.moving = moving;
+}
+
+static void fx_transient_kprocess(void* ks, float* l, float* r) {
+  le_fx_transient* t = (le_fx_transient*)ks;
+  const float x0 = fx_sanitize(*l);
+  const float x1 = fx_sanitize(*r);
+  const float atk = le_fx_glide_next(&t->atk);
+  const float sus = le_fx_glide_next(&t->sus);
+  const float x = fmaxf(fabsf(x0), fabsf(x1));
+  const float pk = x > t->peak ? x : x + t->peak_rel * (t->peak - x);
+  t->peak = pk;
+  t->riser = pk > t->riser ? pk + t->rise * (t->riser - pk) : pk;
+  t->faller = pk < t->faller ? pk + t->fall * (t->faller - pk) : pk;
+  if (atk == 0.0f && sus == 0.0f) {
+    *l = x0;
+    *r = x1;
+    return; /* neutral: the identity */
+  }
+  const float db =
+      atk * le_db_of((pk + LE_TR_FLOOR) / (t->riser + LE_TR_FLOOR)) +
+      sus * le_db_of((t->faller + LE_TR_FLOOR) / (pk + LE_TR_FLOOR));
+  const float g =
+      le_gain_of_db(db > LE_TR_MAX_DB ? LE_TR_MAX_DB
+                                      : db < -LE_TR_MAX_DB ? -LE_TR_MAX_DB : db);
+  *l = x0 * g;
+  *r = x1 * g;
+}
+
+/* ---- HP/Gate (LE_FX_HP_GATE) ----
+ *
+ * A 12 dB/octave Butterworth high-pass, as a trapezoidal state-variable
+ * filter (Simper), which stays exact down to the 1 Hz end of the range where
+ * a direct-form biquad in float would not. Its response is the RBJ high-pass
+ * at Q 0.7071. Then a gate keyed on the filtered signal: it opens when the
+ * louder channel's peak envelope rises over the threshold and closes once
+ * it has stayed LE_GATE_HYST_DB under it for the hold time. Opening and
+ * closing ramp the gain. */
+#define LE_HPG_K 1.41421356237309505 /* 1 / Q, Q = 0.7071 */
+#define LE_GATE_ENV_REL_S 0.010
+#define LE_GATE_HYST_DB 6.0
+#define LE_GATE_HOLD_S 0.020
+#define LE_GATE_OPEN_S 0.0005
+#define LE_GATE_CLOSE_S 0.050
+
+typedef struct le_fx_hp_gate {
+  le_fx_dyn_head h;
+  float last[LE_HPG_PARAMS_N];
+  float lhz; /* the corner now, log2 Hz */
+  float tgt_lhz;
+  float a1, a2, a3;  /* SVF coefficients */
+  float ic1[2];      /* SVF state, per channel */
+  float ic2[2];
+  float open_at;     /* gate thresholds, linear */
+  float close_at;
+  float env_rel;     /* gate coefficients */
+  float open_c;
+  float close_c;
+  int32_t hold_n;
+  float env;  /* gate detector */
+  float gain; /* gate gain now */
+  int32_t hold;
+  int32_t open;
+} le_fx_hp_gate;
+
+static void le_hpg_design(le_fx_hp_gate* q, int sr) {
+  double hz = exp2((double)q->lhz);
+  const double nyq = 0.49 * (double)(sr > 0 ? sr : 48000);
+  if (hz > nyq) hz = nyq;
+  const double g = tan(3.14159265358979323846 * hz / (double)(sr > 0 ? sr : 48000));
+  const double a1 = 1.0 / (1.0 + g * (g + LE_HPG_K));
+  q->a1 = (float)a1;
+  q->a2 = (float)(g * a1);
+  q->a3 = (float)(g * g * a1);
+}
+
+static void fx_hp_gate_update(void* ks, const float* p, int sr, int settle) {
+  le_fx_hp_gate* q = (le_fx_hp_gate*)ks;
+  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_HPG_PARAMS_N, sr, settle);
+  if (!f) return;
+  const int new_rate = (f & LE_FX_DYN_NEW_RATE) != 0;
+  const le_fx_param_desc* d = LE_FX_HP_GATE_PARAMS;
+  if (new_rate) {
+    q->env_rel = le_one_pole(LE_GATE_ENV_REL_S, sr);
+    q->open_c = le_one_pole(LE_GATE_OPEN_S, sr);
+    q->close_c = le_one_pole(LE_GATE_CLOSE_S, sr);
+    q->hold_n = (int32_t)(LE_GATE_HOLD_S * (double)(sr > 0 ? sr : 48000));
+  }
+  if (f & LE_FX_DYN_CHANGED) {
+    q->tgt_lhz = (float)log2(le_fx_desc_value(&d[0], p[0]));
+    const double thr = le_fx_desc_value(&d[1], p[1]);
+    q->open_at = le_gain_of_db((float)thr);
+    q->close_at = le_gain_of_db((float)(thr - LE_GATE_HYST_DB));
+  }
+  /* The corner glides in octaves; the filter is redesigned while it moves
+   * (a state-variable filter takes a coefficient change without a click). */
+  if (settle) {
+    /* A fresh gate starts open, so it never cuts into the first sound it
+     * is handed; with nothing to hold it open it closes after the hold. */
+    q->open = 1;
+    q->gain = 1.0f;
+    q->hold = q->hold_n;
+  }
+  if (q->lhz != q->tgt_lhz || new_rate) {
+    le_fx_step_toward(&q->lhz, q->tgt_lhz, settle ? 1.0f : q->h.k);
+    le_hpg_design(q, sr);
+  }
+  q->h.moving = q->lhz != q->tgt_lhz;
+}
+
+static void fx_hp_gate_kprocess(void* ks, float* l, float* r) {
+  le_fx_hp_gate* q = (le_fx_hp_gate*)ks;
+  float y[2] = {fx_sanitize(*l), fx_sanitize(*r)};
+  const float k = (float)LE_HPG_K;
+  for (int c = 0; c < 2; ++c) {
+    float v1;
+    float v2;
+    le_svf_tick(y[c], q->a1, q->a2, q->a3, &q->ic1[c], &q->ic2[c], &v1, &v2);
+    y[c] = y[c] - k * v1 - v2;
+  }
+  const float x = fmaxf(fabsf(y[0]), fabsf(y[1]));
+  q->env = x > q->env ? x : x + q->env_rel * (q->env - x);
+  /* Open over the threshold; the hold restarts whenever the level is back
+   * within the hysteresis, so the gate closes only once it has stayed under
+   * close_at for the whole hold. */
+  if (q->env >= q->open_at) {
+    q->open = 1;
+    q->hold = q->hold_n;
+  } else if (q->env >= q->close_at) {
+    q->hold = q->hold_n;
+  } else if (q->hold > 0) {
+    q->hold--;
+  } else {
+    q->open = 0;
+  }
+  const float tgt = q->open ? 1.0f : 0.0f;
+  float g = tgt + (q->open ? q->open_c : q->close_c) * (q->gain - tgt);
+  if (g < 1e-6f) g = 0.0f;
+  if (g > 1.0f - 1e-7f) g = 1.0f;
+  q->gain = g;
+  *l = y[0] * g;
+  *r = y[1] * g;
+}
+
 /* A type's rows are the parameters an entry holds, so none may outgrow it. */
 #define LE_FX_ROWS_FIT(t)                                  \
   _Static_assert(sizeof(t) / sizeof(t[0]) <= LE_FX_PARAMS, \
@@ -1535,6 +1946,9 @@ LE_FX_ROWS_FIT(LE_FX_OCTAVER_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_ECHO_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_REVERB_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_EQ_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_COMPRESSOR_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_TRANSIENT_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_HP_GATE_PARAMS);
 
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
  * published for this chain entry (NULL / not-ready => dry passthrough; the slot
@@ -1550,13 +1964,6 @@ static void fx_plugin_process(le_fx_state* fx, int slot, int sr, int cap,
   le_plugin_slot_process(s, l, r);
 }
 
-/* D-RT: bound a misbehaving plugin's output so it cannot poison downstream
- * lanes or the master sum — NaN/Inf map to 0 and denormals flush to 0. */
-static inline float fx_sanitize(float x) {
-  if (!isfinite(x)) return 0.0f;
-  if (x < 1e-30f && x > -1e-30f) return 0.0f;
-  return x;
-}
 
 typedef struct le_fx_vtable {
   /* Processes one stereo sample through chain slot [slot] in place, advancing
@@ -1612,6 +2019,15 @@ static const le_fx_vtable LE_FX[] = {
     /* The EQ: linear but with no tail worth draining, so it crossfades. */
     [LE_FX_EQ] = {NULL, NULL, NULL, LE_FX_EQ_PARAMS, 0, sizeof(le_fx_eq),
                   fx_eq_update, fx_eq_kprocess},
+    /* The dynamics kinds hold no tail worth draining: they crossfade. */
+    [LE_FX_COMPRESSOR] = {NULL, NULL, NULL, LE_FX_COMPRESSOR_PARAMS, 0,
+                          sizeof(le_fx_comp), fx_comp_update, fx_comp_kprocess},
+    [LE_FX_TRANSIENT] = {NULL, NULL, NULL, LE_FX_TRANSIENT_PARAMS, 0,
+                         sizeof(le_fx_transient), fx_transient_update,
+                         fx_transient_kprocess},
+    [LE_FX_HP_GATE] = {NULL, NULL, NULL, LE_FX_HP_GATE_PARAMS, 0,
+                       sizeof(le_fx_hp_gate), fx_hp_gate_update,
+                       fx_hp_gate_kprocess},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -1619,12 +2035,16 @@ static const le_fx_vtable LE_FX[] = {
  * le_fx_param_count and le_fx_defaults. A type with descriptor rows and no
  * entry here would read nothing; test_fx_params_past_count_are_inert checks
  * every built-in has one. */
+#define LE_FX_ROW_COUNT(t) (uint8_t)(sizeof(t) / sizeof(t[0]))
 _Static_assert(LE_EQ_PARAMS_N ==
                    sizeof(LE_FX_EQ_PARAMS) / sizeof(LE_FX_EQ_PARAMS[0]),
                "le_fx_eq.last holds every EQ setting");
+_Static_assert(LE_COMP_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_COMPRESSOR_PARAMS) &&
+                   LE_TR_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_TRANSIENT_PARAMS) &&
+                   LE_HPG_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_HP_GATE_PARAMS),
+               "each dynamics kind's `last` holds every setting");
 _Static_assert(LE_FX_WIDTHS == sizeof(LE_FX) / sizeof(LE_FX[0]),
                "LE_FX_WIDTHS must be one past the last le_fx_type code");
-#define LE_FX_ROW_COUNT(t) (uint8_t)(sizeof(t) / sizeof(t[0]))
 const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
     [LE_FX_DRIVE] = LE_FX_ROW_COUNT(LE_FX_DRIVE_PARAMS),
     [LE_FX_FILTER] = LE_FX_ROW_COUNT(LE_FX_FILTER_PARAMS),
@@ -1634,6 +2054,9 @@ const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
     [LE_FX_ECHO] = LE_FX_ROW_COUNT(LE_FX_ECHO_PARAMS),
     [LE_FX_REVERB] = LE_FX_ROW_COUNT(LE_FX_REVERB_PARAMS),
     [LE_FX_EQ] = LE_FX_ROW_COUNT(LE_FX_EQ_PARAMS),
+    [LE_FX_COMPRESSOR] = LE_FX_ROW_COUNT(LE_FX_COMPRESSOR_PARAMS),
+    [LE_FX_TRANSIENT] = LE_FX_ROW_COUNT(LE_FX_TRANSIENT_PARAMS),
+    [LE_FX_HP_GATE] = LE_FX_ROW_COUNT(LE_FX_HP_GATE_PARAMS),
 };
 
 /* ---- per-kind state (le_fx_kinds, engine_private.h) ---- */

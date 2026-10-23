@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
@@ -82,15 +83,18 @@ void main() {
         ];
 
         expect(playable, [
+          'Compressor',
           'Delay',
           'Distortion',
           'Dub Delay',
           'Four-band EQ',
+          'HP / Gate',
           'Low-pass Filter',
           'Octaver',
           'Overdrive',
           'Parametric EQ',
           'Reverb',
+          'Transient',
         ]);
       },
     );
@@ -478,6 +482,154 @@ void main() {
         expect(e.type.params[14].valueAt(e.params[14]), closeTo(7.2, 1e-6));
         expect(hz(e, 5), closeTo(1000, 1e-6));
       }
+    });
+  });
+
+  group('the dynamics variants', () {
+    FxPreset preset(String family, Map<String, double> params) =>
+        FxPreset(family: family, name: 'p', id: 'p', type: 0, params: params);
+    double value(BuiltInEffect e, int i) =>
+        e.type.params[i].valueAt(e.params[i]);
+
+    test("Ed's compressor copies all five controls", () {
+      final build = fxModuleBuild(_module('Compressor'), family: "Ed's Rack");
+      expect(build.type, TrackEffectType.compressor);
+      expect(build.readiness, FxModuleReadiness.full);
+      expect(build.exposed, [0, 1, 2, 3, 4]);
+
+      final e = fxModuleEntry(
+        _module('Compressor'),
+        preset("Ed's Rack", const {
+          'Compressor': 1,
+          'Comp Thresh': 0.35,
+          'Comp Ratio': 0.758,
+          'Comp Attack': 0.5,
+          'Comp Release': 0.5,
+          'Comp Make-Up': 0.06,
+        }),
+      );
+      // The derived tables' readings of these settings.
+      expect(value(e, 0), closeTo(-21, 1e-6));
+      expect(value(e, 1), closeTo(4.0, 0.01));
+      expect(value(e, 2), closeTo(math.sqrt(0.01 * 300), 1e-6));
+      expect(value(e, 3), closeTo(math.sqrt(5 * 4000), 1e-6));
+      expect(value(e, 4), closeTo(1.8, 1e-6));
+      expect(fxEntryControls(e).keys, [
+        'threshold',
+        'ratio',
+        'attack',
+        'release',
+        'makeup',
+      ]);
+    });
+
+    test("the Drum Rack's attack reads on its own 0.1 to 300 ms scale", () {
+      final e = fxModuleEntry(
+        _module('Compressor'),
+        preset('Drum Rack', const {
+          'Comp': 1,
+          'Comp Thresh': 0.7,
+          'Comp Attack': 0.2,
+          'Comp Make-Up': 0.2,
+        }),
+      );
+      expect(e.type, TrackEffectType.compressor);
+      expect(value(e, 2), closeTo(0.1 * math.pow(3000, 0.2), 1e-6));
+      expect(value(e, 0), closeTo(-42, 1e-6));
+      // The hidden ratio and release are Ed's.
+      expect(value(e, 1), closeTo(4, 1e-9));
+      expect(value(e, 3), closeTo(141.4, 1e-6));
+      expect(fxEntryBuild(e)!.exposed, [0, 2, 4]);
+    });
+
+    test('Dub, Studio, Vocal and Vocal Tuner show threshold and make-up', () {
+      for (final family in [
+        'Dub Rack',
+        'Studio Rack',
+        'Vocal Rack',
+        'Vocal Tuner Rack',
+      ]) {
+        final e = fxModuleEntry(
+          _module('Compressor'),
+          preset(family, const {
+            'Comp': 1,
+            'Comp Thresh': 0.8,
+            'Comp Make-Up': 0.6,
+          }),
+        );
+        expect(fxEntryBuild(e)!.exposed, [0, 4], reason: family);
+        expect(value(e, 0), closeTo(-48, 1e-6));
+        expect(value(e, 4), closeTo(18, 1e-6));
+        expect(value(e, 1), closeTo(4, 1e-9));
+        expect(value(e, 2), closeTo(1.732, 1e-6));
+        expect(value(e, 3), closeTo(141.4, 1e-6));
+      }
+    });
+
+    test('the transient shaper and the high-pass gate copy every control', () {
+      final t = fxModuleEntry(
+        _module('Transient'),
+        preset('Drum Rack', const {
+          'Transient': 1,
+          'Attack': 0.75,
+          'Attack Length': 0.48,
+          'Sustain': 0.6,
+        }),
+      );
+      expect(t.type, TrackEffectType.transient);
+      expect(t.params.take(3), [0.75, 0.48, 0.6]);
+      expect(fxEntryBuild(t)!.exposed, [0, 1, 2]);
+
+      final g = fxModuleEntry(
+        _module('High-pass gate'),
+        preset('Vocal Tuner Rack', const {
+          'HP/Gate': 1,
+          'Highpass': 0.2,
+          'Gate Thresh': 0.4,
+        }),
+      );
+      expect(g.type, TrackEffectType.hpGate);
+      // The derived tables' on-screen checks: 4 Hz and -72 dB.
+      expect(value(g, 0), closeTo(3.98, 0.01));
+      expect(value(g, 1), closeTo(-72, 1e-6));
+      expect(fxEntryControls(g).keys, ['highpass', 'gate_threshold']);
+    });
+
+    test('every factory preset builds its dynamics modules in full', () {
+      final dir = Directory('../fx_catalogue/assets/presets');
+      var built = 0;
+      for (final family in dir.listSync().whereType<Directory>()) {
+        final name = family.uri.pathSegments.lastWhere((s) => s.isNotEmpty);
+        for (final file in family.listSync().whereType<File>()) {
+          final parsed = FxPreset.tryParse(name, file.readAsStringSync());
+          expect(parsed, isNotNull, reason: file.path);
+          final p = parsed!;
+          for (final module in fxPresetModules(p)) {
+            if (!const [
+              'Compressor',
+              'Transient',
+              'High-pass gate',
+            ].contains(module.name)) {
+              continue;
+            }
+            final e = fxModuleEntry(module, p);
+            final build = fxEntryBuild(e);
+            expect(build, isNotNull, reason: '${p.name} ${module.name}');
+            expect(build!.readiness, FxModuleReadiness.full);
+            // Every key the preset gives the module, but its power key, has
+            // a parameter.
+            final placed = build.params.whereType<String>().toSet();
+            for (final key in e.source.keys) {
+              if (module.poweredBy(key)) continue;
+              expect(placed, contains(key), reason: '${p.name} $key');
+            }
+            built++;
+          }
+        }
+      }
+      // 36 Ed's, 12 Drum (compressor and transient), 11 Dub, 19 Studio, 17
+      // Vocal (compressor and gate), 25 Vocal Tuner (compressor and gate).
+      expect(built, 36 + 24 + 11 + 19 + 34 + 50);
     });
   });
 }

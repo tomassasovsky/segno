@@ -94,8 +94,8 @@ class FxModuleBuild {
 ///
 /// Written against the parameter names that are actually in the catalogue
 /// files, not against a guess at what a module ought to carry. A module absent
-/// from this map is [FxModuleReadiness.unavailable]: the engine builds seven
-/// effects and the catalogue names twenty-six modules, so most of them are.
+/// from this map or [kFxModuleVariants] is [FxModuleReadiness.unavailable]:
+/// the catalogue names twenty-six modules and the engine builds fewer.
 const Map<String, FxModuleBuild> kFxModuleBuilds = {
   // p0 time, p1 feedback, p2 mix — the three the preset names, so nothing is
   // dropped. Its mode (and the Drum Rack's feedback filter frequency) are
@@ -184,13 +184,18 @@ class FxSourceScale {
   }
 }
 
-/// The Looper X EQ's rack variants, by module and family: one engine kind
-/// (`TrackEffectType.eq`), each variant exposing the controls its racks show
-/// (docs/plan/2026-10-20-looperx-derived-tables.md). Where a rack shows only
-/// gains, the band frequencies and Qs are fixed at values chosen here
-/// (100 Hz and 5 kHz shelves, a 1 kHz mid, Q 0.71) until reference audio
-/// says otherwise (#891). The first variant of each module is its default,
-/// the one "Add an effect" uses (#887: Ed's 4-band, the Dub Rack's Para).
+/// The rack variants of the Looper X kinds, by module and family: one engine
+/// kind per module, each variant exposing the controls its racks show
+/// (docs/plan/2026-10-20-looperx-derived-tables.md) and fixing the rest at
+/// values chosen here until reference audio says otherwise (#891):
+/// - the EQ: where a rack shows only gains, 100 Hz and 5 kHz shelves, a
+///   1 kHz mid, Q 0.71;
+/// - the compressor: where a rack hides them, Ed's Rack's own settings (a
+///   4 : 1 ratio, every Ed's preset's, and its default 1.7 ms attack and
+///   141 ms release).
+///
+/// The first variant of each module is its default, the one "Add an effect"
+/// uses (#887: Ed's 4-band, the Dub Rack's Para, Ed's compressor).
 const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Four-band EQ': {
     "Ed's Rack": _edsEq,
@@ -204,7 +209,65 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
     'Lo-Fi Rack': _paraEq,
     'Rhythmic Rack': _rhythmicEq,
   },
+  'Compressor': {
+    "Ed's Rack": _edsComp,
+    'Drum Rack': _drumComp,
+    'Dub Rack': _comp2,
+    'Studio Rack': _comp2,
+    'Vocal Rack': _comp2,
+    'Vocal Tuner Rack': _comp2,
+  },
+  'Transient': {'Drum Rack': _transient},
+  'High-pass gate': {
+    'Vocal Rack': _hpGate,
+    'Vocal Tuner Rack': _hpGate,
+  },
 };
+
+// The compressor settings a rack that hides them is fixed at (see
+// [kFxModuleVariants]).
+const double _compRatio = 4;
+const double _compAttackMs = 1.732;
+const double _compReleaseMs = 141.4;
+
+// Ed's Rack: the whole compressor.
+const FxModuleBuild _edsComp = FxModuleBuild(
+  type: TrackEffectType.compressor,
+  params: [
+    'Comp Thresh',
+    'Comp Ratio',
+    'Comp Attack',
+    'Comp Release',
+    'Comp Make-Up',
+  ],
+);
+
+// Drum Rack: threshold, attack on its own 0.1 to 300 ms scale, make-up.
+const FxModuleBuild _drumComp = FxModuleBuild(
+  type: TrackEffectType.compressor,
+  params: ['Comp Thresh', null, 'Comp Attack', null, 'Comp Make-Up'],
+  scales: {2: FxSourceScale.log(0.1, 300)},
+  fixed: {1: _compRatio, 3: _compReleaseMs},
+);
+
+// Dub, Studio, Vocal and Vocal Tuner racks: threshold and make-up.
+const FxModuleBuild _comp2 = FxModuleBuild(
+  type: TrackEffectType.compressor,
+  params: ['Comp Thresh', null, null, null, 'Comp Make-Up'],
+  fixed: {1: _compRatio, 2: _compAttackMs, 3: _compReleaseMs},
+);
+
+// Drum Rack: the whole transient shaper.
+const FxModuleBuild _transient = FxModuleBuild(
+  type: TrackEffectType.transient,
+  params: ['Attack', 'Attack Length', 'Sustain'],
+);
+
+// Vocal and Vocal Tuner racks: the whole high-pass gate.
+const FxModuleBuild _hpGate = FxModuleBuild(
+  type: TrackEffectType.hpGate,
+  params: ['Highpass', 'Gate Thresh'],
+);
 
 const double _q = 0.7071;
 
