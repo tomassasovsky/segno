@@ -4629,53 +4629,18 @@ int32_t le_engine_set_track_overdub_feedback(le_engine* engine,
   return LE_OK;
 }
 
-/* What a granular retype's seed replaced, so a refused command can put it
- * back (le_fx_seed_undo). */
-typedef struct le_fx_seed {
-  int seeded;
-  int32_t old_tag;         /* the row's tag before the seed */
-  float row[LE_FX_PARAMS]; /* the row before the seed */
-} le_fx_seed;
-
-/* Writes [type]'s defaults into slot [index]'s published row and then marks
- * the row as [type]'s (le_fx_slot_meta.param_type, release): until the type
- * command lands the snapshot sees the mismatch and sits the slot out, so
- * neither the old kernel nor the new one runs on the other's settings. */
+/* Writes [type]'s defaults into slot [index]'s published row (control
+ * thread, before its type command). The app changes types through recipes,
+ * which land type and row together in the callback; this granular path is
+ * for the engine's own tests and tools, where the old kernel may run on the
+ * new defaults for the buffer before the command lands. */
 static void le_fx_seed_params(_Atomic uint32_t a_param[][LE_FX_PARAMS],
-                              le_fx_slot_meta* meta, int32_t index,
-                              int32_t type, le_fx_seed* undo) {
-  undo->seeded = 1;
-  undo->old_tag =
-      atomic_load_explicit(&meta[index].param_type, memory_order_relaxed);
-  /* The tag first: from here the running type no longer matches it, so no
-   * reader runs the old kernel on a half-written row; the type command
-   * makes them match again. */
-  atomic_store_explicit(&meta[index].param_type, type, memory_order_seq_cst);
+                              int32_t index, int32_t type) {
   float defaults[LE_FX_PARAMS];
   le_fx_defaults(type, defaults);
   for (int p = 0; p < LE_FX_PARAMS; ++p) {
-    undo->row[p] = load_f32(&a_param[index][p]);
     store_f32(&a_param[index][p], defaults[p]);
   }
-  /* Republished with release, so a reader that finds it matching the new
-   * type once the command lands also sees the row. */
-  atomic_store_explicit(&meta[index].param_type, type, memory_order_release);
-}
-
-/* A refused type command: the row goes back to the running type's settings
- * and tag, or the snapshot would sit the slot out (or run it on the other
- * type's settings) until the next retype. */
-static void le_fx_seed_undo(_Atomic uint32_t a_param[][LE_FX_PARAMS],
-                            le_fx_slot_meta* meta, int32_t index,
-                            const le_fx_seed* undo) {
-  if (!undo->seeded) return;
-  /* The tag still names the refused type, so readers sit the slot out
-   * while the row is restored; then the tag it had comes back. */
-  for (int p = 0; p < LE_FX_PARAMS; ++p) {
-    store_f32(&a_param[index][p], undo->row[p]);
-  }
-  atomic_store_explicit(&meta[index].param_type, undo->old_tag,
-                        memory_order_release);
 }
 
 /* Prepares a chain entry for [type]: lazily allocates its heap buffers and,
@@ -4696,16 +4661,12 @@ static void le_fx_seed_undo(_Atomic uint32_t a_param[][LE_FX_PARAMS],
  * (buffers left as they were). */
 static int32_t le_fx_prepare_entry(le_fx_state* fx, const int32_t* type_pushed,
                                    _Atomic uint32_t a_param[][LE_FX_PARAMS],
-                                   le_fx_slot_meta* meta,
                                    int32_t index, int32_t type,
-                                   int32_t delay_cap, int32_t* out_changed,
-                                   le_fx_seed* undo) {
+                                   int32_t delay_cap, int32_t* out_changed) {
   const int32_t cap = delay_cap > 0 ? delay_cap : 48000;
   if (le_fx_prepare(fx, index, type, cap) != LE_OK) return LE_ERR_INVALID;
   *out_changed = type_pushed[index] != type;
-  if (*out_changed) {
-    le_fx_seed_params(a_param, meta, index, type, undo);
-  }
+  if (*out_changed) le_fx_seed_params(a_param, index, type);
   return LE_OK;
 }
 
@@ -4719,9 +4680,8 @@ int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel, int32_t lane,
   if (!le_fx_settable_type(type)) return LE_ERR_INVALID;
   le_lane* ln = &engine->tracks[channel].lanes[lane];
   int32_t changed = 0;
-  le_fx_seed undo = {0};
-  if (le_fx_prepare_entry(&ln->fx, ln->fx_type_pushed, ln->a_fx_param, ln->fx_meta, index,
-                          type, engine->fx_delay_frames, &changed, &undo) != LE_OK) {
+  if (le_fx_prepare_entry(&ln->fx, ln->fx_type_pushed, ln->a_fx_param, index,
+                          type, engine->fx_delay_frames, &changed) != LE_OK) {
     return LE_ERR_INVALID;
   }
   /* Publish the type via the ring so the audio thread resets the entry's DSP
@@ -4737,7 +4697,6 @@ int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel, int32_t lane,
     if (changed) store_i32(&ln->a_fx_enabled[index], 1);
     le_lane_fx_gen_bump(ln); /* chain identity moved (wet-cache fast path) */
   }
-  if (rc != LE_OK) le_fx_seed_undo(ln->a_fx_param, ln->fx_meta, index, &undo);
   return rc;
 }
 
@@ -4901,9 +4860,8 @@ int32_t le_engine_set_monitor_input_fx(le_engine* engine, int32_t input,
   if (!le_fx_settable_type(type)) return LE_ERR_INVALID;
   le_monitor_input* m = &engine->monitors[input];
   int32_t changed = 0;
-  le_fx_seed undo = {0};
-  if (le_fx_prepare_entry(&m->fx, m->fx_type_pushed, m->a_fx_param, m->fx_meta, index,
-                          type, engine->fx_delay_frames, &changed, &undo) != LE_OK) {
+  if (le_fx_prepare_entry(&m->fx, m->fx_type_pushed, m->a_fx_param, index,
+                          type, engine->fx_delay_frames, &changed) != LE_OK) {
     return LE_ERR_INVALID;
   }
   const int32_t rc =
@@ -4913,7 +4871,6 @@ int32_t le_engine_set_monitor_input_fx(le_engine* engine, int32_t input,
     m->fx_type_pushed[index] = type;
     if (changed) store_i32(&m->a_fx_enabled[index], 1);
   }
-  if (rc != LE_OK) le_fx_seed_undo(m->a_fx_param, m->fx_meta, index, &undo);
   return rc;
 }
 
@@ -5038,9 +4995,8 @@ int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
   if (!le_fx_settable_type(type)) return LE_ERR_INVALID;
   le_fx_bus* b = &engine->tracks[channel].bus;
   int32_t changed = 0;
-  le_fx_seed undo = {0};
-  if (le_fx_prepare_entry(&b->fx, b->fx_type_pushed, b->a_fx_param, b->fx_meta, index,
-                          type, engine->fx_delay_frames, &changed, &undo) != LE_OK) {
+  if (le_fx_prepare_entry(&b->fx, b->fx_type_pushed, b->a_fx_param, index,
+                          type, engine->fx_delay_frames, &changed) != LE_OK) {
     return LE_ERR_INVALID;
   }
   const int32_t rc =
@@ -5050,7 +5006,6 @@ int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
     b->fx_type_pushed[index] = type;
     if (changed) store_i32(&b->a_fx_enabled[index], 1);
   }
-  if (rc != LE_OK) le_fx_seed_undo(b->a_fx_param, b->fx_meta, index, &undo);
   return rc;
 }
 
@@ -5154,9 +5109,8 @@ int32_t le_engine_set_output_fx(le_engine* engine, int32_t bus, int32_t index,
   if (!le_fx_settable_type(type)) return LE_ERR_INVALID;
   le_fx_bus* b = &engine->outputs[bus].fx;
   int32_t changed = 0;
-  le_fx_seed undo = {0};
-  if (le_fx_prepare_entry(&b->fx, b->fx_type_pushed, b->a_fx_param, b->fx_meta, index,
-                          type, engine->fx_delay_frames, &changed, &undo) != LE_OK) {
+  if (le_fx_prepare_entry(&b->fx, b->fx_type_pushed, b->a_fx_param, index,
+                          type, engine->fx_delay_frames, &changed) != LE_OK) {
     return LE_ERR_INVALID;
   }
   const int32_t rc =
@@ -5166,7 +5120,6 @@ int32_t le_engine_set_output_fx(le_engine* engine, int32_t bus, int32_t index,
     b->fx_type_pushed[index] = type;
     if (changed) store_i32(&b->a_fx_enabled[index], 1);
   }
-  if (rc != LE_OK) le_fx_seed_undo(b->a_fx_param, b->fx_meta, index, &undo);
   return rc;
 }
 
@@ -5264,10 +5217,7 @@ int32_t le_engine_set_all_tracks_fx(le_engine* engine, int32_t index,
     }
   }
   const int32_t changed = b->fx_type_pushed[index] != type;
-  le_fx_seed undo = {0};
-  if (changed) {
-    le_fx_seed_params(b->a_fx_param, b->fx_meta, index, type, &undo);
-  }
+  if (changed) le_fx_seed_params(b->a_fx_param, index, type);
   const int32_t rc =
       le_push_cmd(engine, (le_command){.code = LE_CMD_SET_ALL_TRACKS_FX,
                                        .fx = {0, 0, index, type}});
@@ -5275,7 +5225,6 @@ int32_t le_engine_set_all_tracks_fx(le_engine* engine, int32_t index,
     b->fx_type_pushed[index] = type;
     if (changed) store_i32(&b->a_fx_enabled[index], 1);
   }
-  if (rc != LE_OK) le_fx_seed_undo(b->a_fx_param, b->fx_meta, index, &undo);
   return rc;
 }
 

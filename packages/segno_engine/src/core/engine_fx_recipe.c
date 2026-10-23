@@ -297,9 +297,8 @@ void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* p, uint64_t frame) 
       if (active) {
         /* Only what the type reads: this runs in the callback. A retyped row
          * also clears its tail once, so no cell past the width ever holds
-         * another type's setting. The row is written before the type and
-         * its tag (release), so a worker that finds the tag matching reads
-         * this row (le_fx_slot_type). */
+         * another type's setting. Row and type land in the same callback,
+         * so no kernel runs on another type's settings. */
         const int32_t width = le_fx_param_width(ty);
         for (int k = 0; k < width; ++k) store_f32(&t.param[s][k], r->params[s][k]);
         if (retyped) {
@@ -307,7 +306,6 @@ void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* p, uint64_t frame) 
         }
       }
       store_i32(&t.type[s], ty);
-      atomic_store_explicit(&t.meta[s].param_type, ty, memory_order_release);
       if (!active) continue;
       if (renew) renewed |= 1ull << s;
       store_i32(&t.slot_enabled[s], r->slot_enabled[s]);
@@ -328,14 +326,15 @@ void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* p, uint64_t frame) 
       }
     }
     if (p->owner == LE_FX_OWNER_OUTPUT) {
-      /* The slots that reset, which perf_render resets in turn (with the
+      /* Every slot's type, marked kept (lane 1) where the entry stayed,
+       * so perf_render renews exactly the slots live renewed (with the
        * type's defaults when it changed). Parameters are not logged here:
        * the snapshot logs each one that changed, at the frame it applies
        * (snapshot_bus_fx), so a publish logs only what moved. */
       for (int s = 0; s < r->count; ++s) {
-        if (!(renewed & (1ull << s))) continue;
+        const int kept = !(renewed & (1ull << s));
         le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_OUTPUT_FX,
-            .fx = {p->channel, 0, s, r->type[s]}});
+            .fx = {p->channel, kept, s, r->type[s]}});
       }
       le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_OUTPUT_FX_COUNT,
           .fxcount = {p->channel, 0, r->count, 0}});

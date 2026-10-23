@@ -617,35 +617,14 @@ static inline int le_src_entry_fits(const le_wet_entry* ent, uint32_t key,
   return le_src_len_within(ent->out_len, want_out);
 }
 
-/* What a chain slot's published row is, beside the row itself
- * (le_engine.fx_slot_meta):
- *   - param_type: the type the parameters were last written for. A
- *     granular type change writes the new type's defaults and then this,
- *     before it queues the type command; a recipe writes both in the
- *     callback. A snapshot that finds it differing from the slot's type
- *     skips the slot for that buffer, so no kernel ever runs on another
- *     type's parameters.
- *   - instance: the identity of the entry whose DSP state the slot holds
- *     (le_fx_recipe.instance), written by the callback when a recipe lands
- *     and read only there. */
+/* What a chain slot holds beside its published row (le_engine.fx_slot_meta):
+ * the identity of the entry whose DSP state it holds (le_fx_recipe.instance),
+ * written by the callback when a recipe lands and cleared when a granular
+ * type command lands. */
 typedef struct le_fx_slot_meta {
-  _Atomic int32_t param_type;
   _Atomic uint64_t instance;
 } le_fx_slot_meta;
 
-/* The type slot [s] runs as, from its published type and its row's tag: the
- * type when the row is that type's, else LE_FX_NONE (the slot sits out while
- * a granular retype is in flight). Every reader of a published chain goes
- * through this one rule: the callback's snapshot, the wet-cache scheduler
- * and the offline captures. The tag is loaded with acquire, so a reader that
- * finds it matching also sees the row written before it. */
-static inline int32_t le_fx_slot_type(const _Atomic int32_t* type,
-                                      const le_fx_slot_meta* meta, int s) {
-  const int32_t tag =
-      atomic_load_explicit(&meta[s].param_type, memory_order_acquire);
-  const int32_t ty = atomic_load_explicit(&type[s], memory_order_relaxed);
-  return tag == ty ? ty : LE_FX_NONE;
-}
 
 /* One recordable input lane — the fundamental unit of captured audio.
  *
