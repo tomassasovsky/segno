@@ -279,7 +279,7 @@ static void test_vinyl_noise(void) {
  * 1581 Hz is the steep low-pass at 0.194 of the hold; Filter 50 % has moved
  * it up past 1 kHz; Filter 100 % is no filter. The Looper X's hold droops
  * less than a sample-and-hold does (-3.1 dB at 1 kHz on a 1581 Hz hold,
- * against -6.4). The hold puts images at the hold rate +- 1 kHz. At 0 %
+ * against -6.8). The hold puts images at the hold rate +- 1 kHz. At 0 %
  * mix the degrade is the identity. */
 static void test_degrade(void) {
   printf("test_degrade\n");
@@ -404,6 +404,31 @@ static void test_lpf_oscillates(void) {
     CHECK(fabs(hz / want[k][1] - 1.0) < 0.012);
     CHECK(peak > 0.22f && peak < 0.32f);
     CHECK(le_fx_entry_free_running(LE_FX_LPF, p, sr));
+    free(in);
+    free(out);
+  }
+  /* From digital silence it starts on its own, within about a second. */
+  {
+    const int n = 2 * sr;
+    float* in = (float*)calloc((size_t)n, sizeof(float));
+    float* out = (float*)calloc((size_t)n, sizeof(float));
+    float p[LE_FX_PARAMS] = {0};
+    p[0] = dyn_setting(LE_FX_LPF, 0, 632.0);
+    p[1] = 1.0f;
+    le_fx_state* fx = dyn_state(LE_FX_LPF, sr);
+    uint32_t clock = 0;
+    dyn_run(fx, LE_FX_LPF, p, sr, in, out, NULL, n, &clock);
+    dyn_free(fx);
+    float peak = 0.0f;
+    int at = -1;
+    for (int i = 0; i < n; ++i) {
+      if (fabsf(out[i]) > peak) peak = fabsf(out[i]);
+      if (at < 0 && fabsf(out[i]) > 0.2f) at = i;
+    }
+    printf("  from silence: 0.2 reached at %.2f s, peak %.3f\n",
+           at < 0 ? -1.0 : (double)at / sr, peak);
+    CHECK(at >= 0 && at < (int)(1.5 * sr));
+    CHECK(peak < 0.32f);
     free(in);
     free(out);
   }

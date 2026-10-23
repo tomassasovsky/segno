@@ -2408,9 +2408,12 @@ static inline float le_unit(uint32_t* s) {
  * holds that delay for 125 to 175 ms, crossfades over 25 ms to a new random
  * delay and holds again; left and right draw independently. The dry signal
  * is cut to 0.31 and the copy sits at 0.95 (measured 0.9 to 1.0).
- * - The separation sets the longest delay a side draws: 1 ms at 0 %, 51 ms
- *   at 50 % and 100 ms at 100 % (measured 1.0, 51.2 and 100.8 ms), the
- *   shortest 0.2 ms.
+ * - The separation sets the longest delay a side draws: 1 ms at 0 %,
+ *   50.5 ms at 50 % and 100 ms at 100 % (measured 1.0, 51.2 and 100.8 ms),
+ *   the shortest 0.2 ms. The ring holds 100 ms up to 81 kHz; at 96 kHz the
+ *   longest delay stops at 85 ms (the spring caps its rate the same way),
+ *   which keeps the block at 64 KB: every slot's arena holds one block of
+ *   each kind, and a fresh block is cleared on the audio thread.
  * - The mix does not fade the copy: from 50 % up it changes nothing
  *   (Studio, Vocal and Dub alike), and towards 0 % it shrinks the delays
  *   until, at 0 %, the copy sits within 1 ms of the dry signal (the range
@@ -2418,7 +2421,7 @@ static inline float le_unit(uint32_t* s) {
  *   flutter on a steady tone). Between 0 and 50 % the longest delay moves
  *   linearly (chosen; only 0, 50 and 100 % were captured).
  * A new mix or separation applies from the next delay a side draws. */
-#define LE_DBL_RING 16384u /* holds the longest delay up to 162 kHz */
+#define LE_DBL_RING 8192u /* holds the longest delay up to 81 kHz */
 #define LE_DBL_DRY 0.31f
 #define LE_DBL_VOICE 0.95f
 #define LE_DBL_SHORT_MS 0.2
@@ -2486,8 +2489,10 @@ static void fx_doubler_update(void* ks, const float* p, int sr, int settle) {
       d->fade[ch] = -1;
     }
   }
-  /* A rate drop can leave a drawn delay past the ring: hold it inside. */
+  /* A rate change can leave a drawn delay past the ring, or a fade past its
+   * new length: hold both inside. */
   for (int ch = 0; ch < 2; ++ch) {
+    if (d->fade[ch] >= d->fade_n) d->fade[ch] = d->fade_n - 1;
     if (d->cur[ch] > LE_DBL_RING - 1u) d->cur[ch] = LE_DBL_RING - 1u;
     if (d->next[ch] > LE_DBL_RING - 1u) d->next[ch] = LE_DBL_RING - 1u;
   }
@@ -3107,7 +3112,10 @@ static void fx_vinyl_update(void* ks, const float* p, int sr, int settle) {
   if (v->tone_l2 != v->tone_tgt || (f & LE_FX_DYN_NEW_RATE)) {
     le_fx_step_toward(&v->tone_l2, v->tone_tgt, k);
     const double hz = exp2((double)v->tone_l2);
-    v->tone_open = hz >= 0.45 * (double)rate;
+    const int32_t open = hz >= 0.45 * (double)rate;
+    /* Back from open, the filter starts clean rather than from old state. */
+    if (open != v->tone_open) memset(v->z_tone, 0, sizeof(v->z_tone));
+    v->tone_open = open;
     double c[5];
     le_eq_design(LE_EQ_HIGHCUT, hz, 0.0, 0.70710678, rate, c);
     for (int i = 0; i < 5; ++i) v->tone[i] = (float)c[i];
@@ -3283,16 +3291,20 @@ static void fx_degrade_kprocess(void* ks, float* l, float* r) {
  * - f(v) = tanh(2.4 v) / 2.4 bounds the feedback: the oscillation settles
  *   at about 0.27 peak (the Looper X's 0.25 and 0.28), and a loud tone
  *   above the corner loses some resonance (1 kHz at a 632 Hz corner,
- *   50 %: -9.9 dB at -48 dBFS to -14.7 dB at 0 dBFS, the Looper X's -9.7 to
- *   -17.1);
+ *   50 %: -10.3 dB at -48 dBFS to -15.0 dB at 0 dBFS, the Looper X's -9.7
+ *   to -17.1);
  * - the corner is 1.04 x the cutoff at 0 % resonance, 1.015 x at 100 %, so
  *   the oscillation lands within 1 % of where the Looper X's does (644.5 Hz
- *   for 632 Hz shown, 3575.5 for 3557); at 0 % the responses fit within
- *   0.3 dB down to -60 dB at 112 and 632 Hz; at 3557 Hz the ladder at the
+ *   for 632 Hz shown, 3575.5 for 3557); the responses fit within 0.4 dB at
+ *   632 Hz (0 and 50 %) and 0.7 dB at 112 Hz, down to -50 dB; at 3557 Hz
+ *   the ladder at the
  *   engine's rate falls faster than the Looper X's above 8 kHz (-31 dB
  *   against -27 at 8 kHz, -48 against -40 at 12 kHz);
- * - a one-pole high-pass at 25.3 Hz in front (-3.9 dB at 20 Hz, -0.9 dB at
- *   50 Hz).
+ * - a one-pole high-pass at 25.3 Hz in front (-4.2 dB at 20 Hz and -1.0 dB
+ *   at 50 Hz; the Looper X's -3.9 and -1.1).
+ * An oscillating filter starts on its own: its first stage starts from a
+ * 1e-9 offset rather than 0, so it rises out of digital silence in about
+ * 0.2 s (632 Hz), as the Looper X's sounds in silence.
  * The Looper X's filter also adds a second harmonic (-23 dBc for a
  * -12 dBFS tone above the corner); this one adds none. At the top of the
  * cutoff's range the filter is off (the Looper X's default; its filter
@@ -3314,6 +3326,7 @@ static const le_fx_param_desc LE_FX_LPF_PARAMS[] = {
 #define LE_LPF_FC_HI 1.015 /* at 100 % */
 #define LE_LPF_SAT 2.4f
 #define LE_LPF_HP_HZ 25.3
+#define LE_LPF_SEED 1e-9f /* the first stage's start, so it can oscillate */
 
 /* The resonance from which the ladder oscillates (k > 4). */
 static double le_lpf_osc_reso(void) {
@@ -3340,6 +3353,7 @@ static void fx_lpf_update(void* ks, const float* p, int sr, int settle) {
   const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_LPF_PARAMS_N, sr, settle);
   if (!f) return;
   const float k = settle ? 1.0f : q->h.k;
+  if (settle) q->s[0][0] = q->s[1][0] = LE_LPF_SEED;
   if (f & LE_FX_DYN_CHANGED) {
     const double v = p[1] < 0.0f ? 0.0 : p[1] > 1.0f ? 1.0 : p[1];
     const double ratio = LE_LPF_FC_LO + (LE_LPF_FC_HI - LE_LPF_FC_LO) * v;
@@ -3374,9 +3388,10 @@ static void fx_lpf_kprocess(void* ks, float* l, float* r) {
   const float amount = le_fx_glide_next(&q->amount);
   float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
   if (amount <= 0.0f) {
-    /* Off: the identity, with the filter's memory cleared so it starts
-     * clean when it comes back. */
+    /* Off: the identity, with the filter's memory cleared (but for the
+     * seed) so it starts clean when it comes back. */
     memset(q->s, 0, sizeof(q->s));
+    q->s[0][0] = q->s[1][0] = LE_LPF_SEED;
     q->sh[0] = q->sh[1] = 0.0f;
     *l = io[0];
     *r = io[1];
