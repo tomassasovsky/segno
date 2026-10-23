@@ -72,7 +72,15 @@ void main() {
           name: 'Light',
           id: 'dub',
           type: 4,
-          params: {'Dub Delay': 0, 'Del Time': 0.3, 'Del Feedback': 0.6},
+          params: {
+            'Dub Delay': 0,
+            'Del Time': 0.3,
+            'Del Feedback': 0.6,
+            'Del Damp': 0.5,
+            'Del L/R Ratio': 0.5,
+            'Del Res-Freq': 0.5,
+            'Del Reso': 0.5,
+          },
         ),
       );
       // Powered by `Dub Delay`, which the dub reverb used to take as one of
@@ -80,6 +88,10 @@ void main() {
       expect(entry.enabled, isFalse);
       expect(entry.params[0], closeTo(0.3, 1e-9));
       expect(entry.params[1], closeTo(0.6, 1e-9));
+      // Echoes only: the Dub path's dry comes from the rack's paths (#891).
+      expect(entry.params[2], 1);
+      expect(fxEntryBuild(entry)?.exposed, [0, 1]);
+      expect(dub.path, FxModulePath.dub);
     });
 
     test(
@@ -994,11 +1006,100 @@ void main() {
       expect(dub.type.params[0].settingFor(6.25), closeTo(0.8, 1e-9));
       final amb = fxModuleEntry(_module('Ambience'), preset);
       expect(amb.type, TrackEffectType.ambVerb);
-      expect(amb.params.take(2), [0.3, 0.5]);
-      // Amb-Dub Mix reaches nothing until the rack's parallel paths land.
+      // The Amb-Dub Mix rides the Amb-Verb, which mixes the rack's paths.
+      expect(amb.params.take(3), [0.3, 0.5, 0.404]);
       expect(
         fxModuleBuild(_module('Ambience')).readiness,
-        FxModuleReadiness.partial,
+        FxModuleReadiness.full,
+      );
+    });
+
+    test("the Dub Rack's paths: Amb-Verb on one, the rest of the Dub "
+        'pedals on the other, every other module on none', () {
+      final preset = FxPreset.tryParse(
+        'Dub Rack',
+        File(
+          '../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset',
+        ).readAsStringSync(),
+      )!;
+      const rack = FxRack(id: 'r', name: 'Dub FX 1');
+      final entries = [
+        for (final e in fxRackEntries(preset)) e.copyWith(rack: rack),
+      ];
+      expect(
+        {
+          for (final (i, p) in fxEntryPaths(entries).indexed)
+            entries[i].module: p,
+        },
+        {
+          'Doubler': FxModulePath.dub,
+          'Dub delay': FxModulePath.dub,
+          'Dub reverb': FxModulePath.dub,
+          'Ambience': FxModulePath.amb,
+          'Compressor': null,
+          'Parametric EQ': null,
+        },
+      );
+      // Outside a rack an entry runs on no path, and so does a Dub path
+      // module in a rack without the Amb-Verb that mixes the paths.
+      final verb = fxRackEntries(preset).firstWhere(
+        (e) => e.module == 'Dub reverb',
+      );
+      expect(fxEntryPaths([verb]), [null]);
+      expect(
+        fxEntryPaths([
+          for (final e in entries)
+            if (e.module != 'Ambience') e,
+        ]),
+        everyElement(isNull),
+      );
+      // A Dub Rack beside a rack holding a stray Dub module: only the Dub
+      // Rack has paths.
+      final stray = [
+        for (final e in entries)
+          if (e.module == 'Doubler')
+            e.copyWith(
+              rack: const FxRack(id: 'other', name: 'Other'),
+            ),
+      ];
+      expect(fxEntryPaths([...entries, ...stray]), [
+        FxModulePath.dub,
+        FxModulePath.dub,
+        FxModulePath.dub,
+        FxModulePath.amb,
+        null,
+        null,
+        null,
+      ]);
+      // Every other family's modules run on none, the Studio, Vocal and Vocal
+      // Tuner doublers included (their presets carry no Doubler Sep).
+      final dir = Directory('../fx_catalogue/assets/presets');
+      for (final family in dir.listSync().whereType<Directory>()) {
+        final name = family.uri.pathSegments.lastWhere((s) => s.isNotEmpty);
+        if (name == 'Dub Rack') continue;
+        for (final file in family.listSync().whereType<File>()) {
+          final p = FxPreset.tryParse(name, file.readAsStringSync())!;
+          expect(
+            fxEntryPaths([
+              for (final e in fxRackEntries(p)) e.copyWith(rack: rack),
+            ]),
+            everyElement(isNull),
+            reason: file.path,
+          );
+        }
+      }
+      // And the engine model carries it for the performance render.
+      final engine = trackEffectsToEngine(entries);
+      expect(
+        [for (final e in engine) e.toJson()['rackPath']],
+        [
+          'dub',
+          'dub',
+          'dub',
+          'amb',
+          null,
+          null,
+        ],
       );
     });
 

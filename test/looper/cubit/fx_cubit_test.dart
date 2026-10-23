@@ -497,6 +497,55 @@ void main() {
       expect(rack.channels.level, 0.8);
     });
 
+    test(
+      'a Dub Rack appended into a Dub Rack keeps the paths one run',
+      () async {
+        const dub = FxPreset(
+          family: 'Dub Rack',
+          name: 'Dub',
+          id: 'dub-1',
+          type: 4,
+          params: {
+            'Doubler': 1,
+            'Doubler Mix': 1,
+            'Doubler Sep': 1,
+            'Dub Delay': 1,
+            'Del Time': 0.3,
+            'Del Feedback': 0.4,
+            'Del Damp': 0.5,
+            'Del L/R Ratio': 0.5,
+            'Del Res-Freq': 0.5,
+            'Del Reso': 0.5,
+            'Dub-Verb': 1,
+            'Dub-Verb Dec': 0.5,
+            'Dub-Verb Vol': 0.2,
+            'Amb-Verb': 1,
+            'Amb-Verb Dec': 0.2,
+            'Amb-verb Vol': 0.4,
+            'Amb-Dub Mix': 0.4,
+          },
+        );
+        final added = await cubit.appendChoice(track, const FxRackChoice(dub));
+        final rackId = added.groupId!;
+        final before = rackOf(rackId).entries.length;
+
+        final result = await cubit.appendToRack(
+          address,
+          rackId,
+          const FxRackChoice(dub),
+        );
+
+        expect(result.status, FxEditStatus.applied);
+        final rack = rackOf(rackId).entries;
+        expect(rack, hasLength(2 * before));
+        final paths = fxEntryPaths(rack);
+        final first = paths.indexWhere((p) => p != null);
+        final last = paths.lastIndexWhere((p) => p != null);
+        expect(paths.sublist(first, last + 1), everyElement(isNotNull));
+        expect(paths.where((p) => p == FxModulePath.amb), hasLength(2));
+      },
+    );
+
     test('added again replaces the rack built from it, in its place, with '
         'new identities', () async {
       final first = await cubit.appendChoice(track, const FxRackChoice(preset));

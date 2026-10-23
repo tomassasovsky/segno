@@ -3273,6 +3273,7 @@ class LooperRepository {
           }
           final copied = withFreshSlotIds(captured);
           final edges = fxRackEdges(copied);
+          final paths = fxRackPathsToEngine(copied);
           final slots = <FxRecipeSlot>[];
           final handles = <String, PluginSlotHandle>{};
           final loaded = <TrackEffect>[];
@@ -3286,6 +3287,7 @@ class LooperRepository {
                   enabled: fx.enabled,
                   channels: fxChannelsToEngine(fx.channels),
                   rack: edges[index],
+                  path: paths[index],
                   instance: fxInstanceId(fx.slotId),
                 ),
               );
@@ -7388,6 +7390,7 @@ class LooperRepository {
     final slots = <FxRecipeSlot>[];
     var refusal = EngineResult.invalid;
     final edges = fxRackEdges(effects);
+    final paths = fxRackPathsToEngine(effects);
     try {
       for (final (index, fx) in effects.indexed) {
         if (fx is BuiltInEffect) {
@@ -7399,6 +7402,7 @@ class LooperRepository {
               enabled: fx.enabled,
               channels: fxChannelsToEngine(fx.channels),
               rack: edges[index],
+              path: paths[index],
               instance: fxInstanceId(fx.slotId),
             ),
           );
