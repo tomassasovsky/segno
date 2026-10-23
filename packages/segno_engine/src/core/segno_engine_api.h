@@ -739,6 +739,13 @@ typedef enum le_fx_type {
    * the Guitar Rack's Whammy, whose pedal at 50 % gives 4.6 of its 12
    * semitones (#891). */
   LE_FX_WHAMMY = 24,
+  /* PUMPER: p0 rate (a choice of 11 note values: Bar, 1/2, 1/2T, 1/4, 1/4T,
+   * 1/8, 1/8T, 1/16, 1/16T, 1/32, 1/32T), p1 depth. A ducking envelope on
+   * the beat, one per note value at the song tempo (120 BPM with none), of
+   * the Rhythmic Rack's measured shape: a dip of 6, 20 and 40 dB at 30, 70
+   * and 100 % depth that recovers by three quarters of the period (#891).
+   * Locked to the beat, so a lane holding one is never printed. */
+  LE_FX_PUMPER = 25,
 } le_fx_type;
 
 /* ---- Built-in effect parameter descriptors (#1378) ----

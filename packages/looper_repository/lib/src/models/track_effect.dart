@@ -444,7 +444,10 @@ enum TrackEffectType {
   ambVerb(23),
 
   /// The Looper X's Whammy (#1433).
-  whammy(24);
+  whammy(24),
+
+  /// The Looper X's Pumper (#887 part 10).
+  pumper(25);
 
   const TrackEffectType(this.code);
 

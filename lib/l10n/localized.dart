@@ -36,6 +36,7 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.dubVerb => effectDubVerb,
     TrackEffectType.ambVerb => effectAmbVerb,
     TrackEffectType.whammy => effectWhammy,
+    TrackEffectType.pumper => effectPumper,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
@@ -64,6 +65,7 @@ extension EngineLocalizations on AppLocalizations {
     'mode' => paramMode,
     'formants' => paramFormants,
     'whammy_range' => paramRange,
+    'pumper_rate' => paramRate,
     'low_cut' => paramLowCut,
     'low_gain' => paramLowGain,
     'low_freq' => paramLowFreq,
@@ -169,11 +171,27 @@ extension EngineLocalizations on AppLocalizations {
         ('formants', 1) => octaverFormantsMoved,
         ('whammy_range', 0) => pitchOctaves('-', 1),
         ('whammy_range', 1) => pitchOctaves('+', 1),
+        ('pumper_rate', 0) => noteValueBar,
+        ('pumper_rate', final i) => _pumperRates[i - 1],
         ('layout', 0) => eqLayoutShelves,
         ('layout', 1) => eqLayoutBellsCuts,
         ('layout', 2) => eqLayoutBells,
         _ => '${position + 1}',
       };
+
+  /// The Pumper's note values after Bar, in its rate's order.
+  static const List<String> _pumperRates = [
+    '1/2',
+    '1/2T',
+    '1/4',
+    '1/4T',
+    '1/8',
+    '1/8T',
+    '1/16',
+    '1/16T',
+    '1/32',
+    '1/32T',
+  ];
 
   String loopbackKindLabel(LoopbackKind kind) => switch (kind) {
     LoopbackKind.backendLoopback => loopbackKindBackend,

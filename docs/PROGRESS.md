@@ -23,6 +23,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
+| #1459 | Looper X racks part 10: tempo context and the synced kinds (Pumper, Slicer, LPF LFO, note-division delays) | build | merge-gate | `claude/*1459*` |
 | #1433 | Looper X racks part 9: pitch groundwork (bench, hop split) and Pitch Shift | in-review | merge-gate | `claude/*1433*` |
 | #1430 | Looper X racks part 8: Dub-Verb and Amb-Verb (fit to the captures) and the Dub Rack's parallel paths | in-review | merge-gate | `claude/fx-dub-verbs-1430*`, `claude/dub-rack-paths-1430` |
 | #1388 | MODE footswitch moves from GP5 to GP12 (firmware 2.4; design PR separate) | in-review | auto | `claude/console-mode-gp12-1388-fw` |
