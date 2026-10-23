@@ -642,8 +642,9 @@ typedef enum le_command_code {
  *   DELAY:   p0 = time, p1 = feedback, p2 = wet mix
  *   TREMOLO: p0 = rate, p1 = depth
  *   OCTAVER: p0 = shift (0 = -2 oct, .5 = unison, 1 = +2 oct), p1 = tone,
- *            p2 = mix, p3 = mode (< .5 = phase vocoder, >= .5 = PSOLA; stored
- *            but inert until the formant-preserving rewrite reads it)
+ *            p2 = mix, p3 = mode (< .5 = phase vocoder, >= .5 = PSOLA), p4 =
+ *            formants (< .5 = held where they are, >= .5 = moved with the
+ *            pitch; the phase vocoder only, since PSOLA's grains hold them)
  *   ECHO:    p0 = time, p1 = feedback, p2 = mix  (tape-style, damped repeats)
  *   REVERB:  p0 = size, p1 = damping, p2 = mix   (Schroeder room tail; a mono
  *            input yields a decorrelated stereo tail spread across the first two

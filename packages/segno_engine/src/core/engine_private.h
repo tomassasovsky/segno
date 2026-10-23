@@ -365,11 +365,12 @@ typedef struct le_octaver_state {
   int32_t cur_mode; /* 0 = phase vocoder, 1 = PSOLA */
   float xfade;      /* equal-power gain-dip envelope during a mode switch (1 = steady) */
   /* The hop split's frame state (LE_PV_SCRATCH floats, engine_fx.h), the
-   * shift ratio read when the frame was analysed, and whether a frame has
-   * been analysed since the last reset (the later stages wait for one, so a
-   * reset never synthesises a stale scratch). */
+   * shift ratio and formant setting read when the frame was analysed, and
+   * whether a frame has been analysed since the last reset (the later stages
+   * wait for one, so a reset never synthesises a stale scratch). */
   float* scratch;
   float frame_ratio;
+  int32_t frame_formants_move;
   int32_t analysed;
 } le_octaver_state;
 

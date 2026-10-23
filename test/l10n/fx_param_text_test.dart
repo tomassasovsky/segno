@@ -19,6 +19,7 @@ const _english = <String, List<String>>{
   'octaver.tone': ['0%', '50%', '100%'],
   'octaver.mix': ['0%', '50%', '100%'],
   'octaver.mode': ['Phase Vocoder', 'Phase Vocoder', 'PSOLA'],
+  'octaver.formants': ['Held', 'Held', 'Follow pitch'],
   'echo.time': ['0.0 ms', '450 ms', '1000 ms'],
   'echo.feedback': ['0%', '49%', '97%'],
   'echo.mix': ['0%', '35%', '100%'],
@@ -88,6 +89,7 @@ const _spanish = <String, List<String>>{
   'octaver.tone': ['0%', '50%', '100%'],
   'octaver.mix': ['0%', '50%', '100%'],
   'octaver.mode': ['Vocoder de fase', 'Vocoder de fase', 'PSOLA'],
+  'octaver.formants': ['Fijos', 'Fijos', 'Siguen el tono'],
   'echo.time': ['0,0 ms', '450 ms', '1000 ms'],
   'echo.feedback': ['0%', '49%', '97%'],
   'echo.mix': ['0%', '35%', '100%'],
@@ -252,7 +254,7 @@ void main() {
         }
       }
       expect(en.fxParamName(TrackEffectType.filter.params.first), 'Cutoff');
-      expect(es.fxParamName(TrackEffectType.octaver.params.last), 'Modo');
+      expect(es.fxParamName(TrackEffectType.octaver.params[3]), 'Modo');
     });
 
     test('reads an unknown key as the key itself', () {

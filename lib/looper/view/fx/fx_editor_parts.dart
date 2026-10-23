@@ -26,7 +26,8 @@ typedef FxEdits = ({
 /// unverified" note: its preset values were written against the Looper X's
 /// own scales, which the built-in does not share, so printing them in its
 /// units would state numbers nobody verified. A Looper X kind
-/// ([TrackEffectType.isRackKind]) carries the module's own scales, and like a
+/// ([TrackEffectType.isRackKind]) or a rack variant ([fxEntryBuild], the
+/// Pitch Shift on the octaver) carries the module's own scales, and like a
 /// plain built-in reads in its descriptor's units with no note, unless the
 /// descriptor itself is marked [FxParamInfo.taperUnverified], in which case
 /// it reads like a module's.
@@ -36,7 +37,9 @@ typedef FxEdits = ({
   FxParamInfo param,
   double setting,
 ) {
-  final rackKind = effect is BuiltInEffect && effect.type.isRackKind;
+  final rackKind =
+      effect is BuiltInEffect &&
+      (effect.type.isRackKind || fxEntryBuild(effect) != null);
   if ((effect.module != null && !rackKind) || param.taperUnverified) {
     return (
       valueText: setting.toStringAsFixed(2),
@@ -78,8 +81,10 @@ class FxBuiltInParamControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final param = effect.type.params[index];
-    final setting = effect.params[index];
+    // A rack variant may show a narrower range than its kind's: the
+    // control works in that range and reports the kind's setting.
+    final param = fxEntryParam(effect, index);
+    final setting = fxEntryShownSetting(effect, index);
     final reading = fxParamReading(l10n, effect, param, setting);
     return FxParamControl(
       label: l10n.fxParamKeyName(labelKey ?? param.key),
@@ -87,7 +92,7 @@ class FxBuiltInParamControl extends StatelessWidget {
       valueText: reading.valueText,
       width: width,
       note: reading.note,
-      onChanged: onChanged,
+      onChanged: (v) => onChanged(fxEntryKindSetting(effect, index, v)),
     );
   }
 }

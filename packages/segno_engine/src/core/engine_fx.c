@@ -290,6 +290,7 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   if (o->out != NULL) memset(o->out, 0, sizeof(float) * LE_PV_OUT);
   o->analysed = 0;
   o->frame_ratio = 1.0f;
+  o->frame_formants_move = 0;
   if (o->last_phase != NULL) memset(o->last_phase, 0, sizeof(float) * LE_PV_BINS);
   if (o->sum_phase != NULL) memset(o->sum_phase, 0, sizeof(float) * LE_PV_BINS);
 }
@@ -381,14 +382,17 @@ static void le_pv_stage_analyse(le_octaver_state* o, const float* fifo,
   }
 }
 
-/* Stage 1: the formant envelope (le_octaver_envelope). */
+/* Stage 1: the formant envelope (le_octaver_envelope); skipped for a frame
+ * whose formants move with the pitch, which needs none. */
 static void le_pv_stage_envelope(le_octaver_state* o) {
   le_octaver_envelope(LE_PV_S_MAG(o), LE_PV_S_ENV(o));
 }
 
-/* Stage 2: whiten (mag/env), shift bins by the ratio read at analysis, re-apply the envelope at
- * the DESTINATION bin so the formants stay fixed in frequency, advance the
- * synthesis phase (2*pi*freq*HOP/N a hop) and rebuild the half spectrum. */
+/* Stage 2: shift bins by the ratio read at analysis, advance the synthesis
+ * phase (2*pi*freq*HOP/N a hop) and rebuild the half spectrum. Holding the
+ * formants, each bin is whitened (mag/env) and the envelope re-applied at the
+ * DESTINATION bin, so the formants stay fixed in frequency; moving them, the
+ * magnitude goes over as it is, envelope and all. */
 static void le_pv_stage_shift(le_octaver_state* o) {
   const float ratio = o->frame_ratio;
   float* re = LE_PV_S_RE(o);
@@ -405,8 +409,11 @@ static void le_pv_stage_shift(le_octaver_state* o) {
   for (int k = 0; k < LE_PV_BINS; ++k) {
     const int j = (int)((float)k * ratio + 0.5f);
     if (j >= 0 && j < LE_PV_BINS) {
-      const float res = mag[k] / (env[k] + 1e-9f);
-      syn_mag[j] += res * env[j];
+      if (o->frame_formants_move) {
+        syn_mag[j] += mag[k];
+      } else {
+        syn_mag[j] += mag[k] / (env[k] + 1e-9f) * env[j];
+      }
       syn_freq[j] = freq[k] * ratio;
     }
   }
@@ -460,16 +467,17 @@ static void le_pv_stage_synth(le_octaver_state* o) {
  * A stage whose tick comes before the first analysis after a reset is
  * skipped (o->analysed), so a reset never synthesises a stale frame. */
 static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int cap,
-                        float ratio) {
+                        float ratio, int formants_move) {
   if (o->out == NULL || o->scratch == NULL) return 0.0f;
   switch (o->hop_count) {
     case 0:
       le_pv_stage_analyse(o, fifo, head, cap);
       o->frame_ratio = ratio;
+      o->frame_formants_move = formants_move;
       o->analysed = 1;
       break;
     case LE_PV_HOP / 4:
-      if (o->analysed) le_pv_stage_envelope(o);
+      if (o->analysed && !o->frame_formants_move) le_pv_stage_envelope(o);
       break;
     case LE_PV_HOP / 2:
       if (o->analysed) le_pv_stage_shift(o);
@@ -763,7 +771,8 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
  * then mixes a delay-matched dry tap (LE_PV_LATENCY back) with a wet voice from the
  * phase vocoder (mode p3 < 0.5) or PSOLA (part 4, currently silent). p0 = shift
  * (0 = -2 oct, 0.5 = unison, 1 = +2 oct), p1 = tone (one-pole darkening of the
- * wet voice), p2 = dry/wet mix, p3 = mode. Params are one-pole smoothed
+ * wet voice), p2 = dry/wet mix, p3 = mode, p4 = formants (held or moved with
+ * the pitch, the phase vocoder only). Params are one-pole smoothed
  * (zipper-free) and a mode switch runs an equal-power gain dip while the DSP
  * runtime resets. The ring length `cap` equals the sample rate (1 s), used here
  * as the time base for the smoothing / dip constants. */
@@ -827,7 +836,8 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
   }
 
   const float ratio = powf(2.0f, (o->sm_shift - 0.5f) * 48.0f / 12.0f);
-  const float wet = o->cur_mode == 0 ? le_pv_tick(o, buf, head, cap, ratio)
+  const float wet = o->cur_mode == 0
+                        ? le_pv_tick(o, buf, head, cap, ratio, p[4] >= 0.5f)
                                      : le_psola_tick(o, buf, head, cap, ratio);
 
   /* Tone: a one-pole low-pass on the wet voice that opens up as p1 rises. */
@@ -1357,6 +1367,10 @@ static const le_fx_param_desc LE_FX_OCTAVER_PARAMS[] = {
     {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
     /* position 0 = phase vocoder, 1 = PSOLA (fx_octaver: v >= 0.5) */
     {"mode", LE_FX_UNIT_CHOICE, 2, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f, 0},
+    /* position 0 = held where they are (the cepstral envelope stays fixed in
+     * frequency), 1 = moved with the pitch; the phase vocoder only */
+    {"formants", LE_FX_UNIT_CHOICE, 2, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f,
+     0},
 };
 static const le_fx_param_desc LE_FX_ECHO_PARAMS[] = {
     {"time", LE_FX_UNIT_MS, 0, 0.0f, 1000.0f, LE_FX_CURVE_LINEAR, 0.45f, 0},
