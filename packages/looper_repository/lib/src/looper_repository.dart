@@ -6845,6 +6845,8 @@ class LooperRepository {
     if (chainEnabled != null) _allTracksChainEnabled = chainEnabled;
     _allTracksEffects = submitted.effects;
     if (_intendRunning) _recoverUnavailablePlugins();
+    // As setOutputEffects does: the projected state carries the chain.
+    _reproject();
     return submitted.result;
   }
 
@@ -6918,6 +6920,9 @@ class LooperRepository {
       if (!result.isOk) return result;
     }
     _allTracksChainEnabled = enabled;
+    // The projected state carries the flag (allTracksChain), and the Effects
+    // page reads it from there.
+    _reproject();
     return EngineResult.ok;
   }
 

@@ -1242,7 +1242,7 @@ void main() {
         ..clock.flushMicrotasks()
         ..settle()
         ..store.monitorFxGate = Completer<void>();
-      monitor.setChainEnabled(0, enabled: false);
+      monitor.setEffectEnabled(0, 0, enabled: false);
       r.settle();
       done = false;
       unawaited(monitor.flushPersistence().then((_) => done = true));
