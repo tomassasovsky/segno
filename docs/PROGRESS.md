@@ -23,7 +23,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
-| #1433 | Looper X racks part 9: pitch groundwork (bench, hop split) and Pitch Shift | in-review | merge-gate | `claude/fx-*1433*` |
+| #1433 | Looper X racks part 9: pitch groundwork (bench, hop split) and Pitch Shift | in-review | merge-gate | `claude/*1433*` |
 | #1430 | Looper X racks part 8: Spring (fit to captures); Dub-Verb and Amb-Verb wait for a capture | in-review | merge-gate | `claude/fx-spring-1430` |
 | #1388 | MODE footswitch moves from GP5 to GP12 (firmware 2.4; design PR separate) | in-review | auto | `claude/console-mode-gp12-1388-fw` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |

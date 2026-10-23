@@ -384,8 +384,8 @@ class _FxViewState extends State<FxView> {
   /// with what it resolves to joining THIS rack rather than starting a second
   /// one beside it.
   ///
-  /// The new pedals land at the end of the rack and arrive bypassed, like every
-  /// other addition, and Back from the catalogue changes nothing.
+  /// The new pedals land at the end of the rack, on or off as their source
+  /// sets them, and Back from the catalogue changes nothing.
   Future<void> _addToRack(
     BuildContext context,
     FxAddress address,

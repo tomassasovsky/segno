@@ -1550,10 +1550,10 @@ static int le_pr_reset_slot(le_fx_state* fx, int s, int32_t type,
  * it (le_fx_entry_renew): its buffers, then the renewal, which clears its
  * rings through the enable edge. Returns 0 on an allocation failure. */
 static int le_pr_renew_slot(le_fx_state* fx, int s, int32_t type,
-                            int32_t sample_rate) {
+                            int sounding, int32_t sample_rate) {
   const int ok = type == LE_FX_NONE ||
                  le_fx_prepare(fx, s, type, sample_rate) == LE_OK;
-  le_fx_entry_renew(fx, s, type);
+  le_fx_entry_renew(fx, s, type, sounding);
   return ok;
 }
 
@@ -2051,7 +2051,8 @@ static int le_pr_render_master(const le_pr_manifest* m,
         /* lane 1: a recipe kept the entry there (same identity and type),
          * so its state goes on; otherwise the slot renews, as live. */
         if (cmd->fx.lane != 1 &&
-            !le_pr_renew_slot(fx, i, chain.type[i], m->sample_rate)) {
+            !le_pr_renew_slot(fx, i, chain.type[i], i < chain.count,
+                              m->sample_rate)) {
           ok = 0;
         }
       } else if (cmd->code == LE_CMD_SET_OUTPUT_FX_COUNT && cmd->fxcount.channel == m->arm_capture_bus) {

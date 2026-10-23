@@ -5567,7 +5567,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       le_fx_type_landed(e->outputs[bus].fx.fx_meta, index);
       /* As a recipe renews a slot (le_fx_entry_renew), so perf_render can
        * answer every logged output type the one way. */
-      le_fx_entry_renew(&e->outputs[bus].fx.fx, index, cmd->fx.type);
+      le_fx_entry_renew(&e->outputs[bus].fx.fx, index, cmd->fx.type,
+                        index < load_i32(&e->outputs[bus].fx.a_fx_count));
       break;
     }
     case LE_CMD_SET_OUTPUT_FX_COUNT: {
@@ -7379,66 +7380,8 @@ static inline void tuner_publish(le_engine* e, float hz, float conf) {
   store_f32(&e->a_tuner_conf_bits, conf);
 }
 
-/* Refines a coarse period (in DEVICE-rate samples) against the frozen
- * device-rate window, by walking the plain difference function over a narrow
- * window of lags around it and interpolating the minimum.
- *
- * Plain difference rather than YIN's normalized form: the octave decision has
- * already been made by the coarse pass, and cumulative-mean normalization
- * exists to make that decision. All this pass has to do is locate a minimum it
- * is already sitting next to.
- *
- * Declines (begin returns 0, and the caller publishes the coarse estimate)
- * when the lag is too long for the ring to hold enough of it — which is the
- * low end, where the coarse estimate is already sub-cent. */
-static int tuner_refine_begin(le_tuner_pass* p) {
-  const int n = LE_TUNER_RAW;
-  const int lo = (int)p->coarse - LE_TUNER_DECIM;
-  const int hi = (int)p->coarse + LE_TUNER_DECIM + 1;
-  if (lo < 2 || hi >= n / 2) return 0;
-  const int integ = n - hi;
-  if (integ < hi) return 0; /* fewer than two periods: not worth it */
-  p->lo = lo;
-  p->hi = hi;
-  p->integ = integ;
-  p->tau = lo;
-  p->best = 0;
-  return 1;
-}
-
-/* Accumulates lags until at least `budget` inner iterations are spent (one
- * whole lag always runs). Returns 1 once every lag is in. */
-static int tuner_refine_step(le_tuner_pass* p, long budget) {
-  const float* x = p->raw;
-  while (p->tau <= p->hi) {
-    const int tau = p->tau;
-    double sum = 0.0;
-    for (int i = 0; i < p->integ; ++i) {
-      const float df = x[i] - x[i + tau];
-      sum += (double)df * (double)df;
-    }
-    const int k = tau - p->lo;
-    p->d[k] = (float)sum;
-    if (tau == p->lo || p->d[k] < p->d[p->best]) p->best = k;
-    ++p->tau;
-    budget -= p->integ;
-    if (budget <= 0) break;
-  }
-  return p->tau > p->hi;
-}
-
-/* Interpolates the completed refinement's minimum, or hands back the coarse
- * period when the minimum sits on an edge of the searched band. */
-static float tuner_refine_finish(const le_tuner_pass* p) {
-  if (p->best == 0 || p->best == p->hi - p->lo) return p->coarse;
-  const float s0 = p->d[p->best - 1];
-  const float s1 = p->d[p->best];
-  const float s2 = p->d[p->best + 1];
-  const float denom = s0 + s2 - 2.0f * s1;
-  float refined = (float)(p->lo + p->best);
-  if (fabsf(denom) > 1e-9f) refined += 0.5f * (s0 - s2) / denom;
-  return refined;
-}
+_Static_assert(LE_TUNER_DECIM <= LE_REFINE_SPAN_MAX,
+               "the tuner's refinement span fits le_lag_refine");
 
 /* Starts a detection at a hop boundary: freezes both analysis windows (the
  * live ones keep moving under a pass that outlives this block) and opens the
@@ -7487,7 +7430,10 @@ static void tuner_coarse_done(le_engine* e) {
    * device rate, so scale before handing it over and divide by the device rate
    * on the way out. */
   p->coarse = period * (float)LE_TUNER_DECIM;
-  if (!p->raw_valid || !tuner_refine_begin(p)) {
+  /* The refinement declines the low end, where the lag is too long for the
+   * ring to hold two of it and the coarse estimate is already sub-cent. */
+  if (!p->raw_valid ||
+      !le_refine_begin(&p->ref, p->coarse, LE_TUNER_DECIM, LE_TUNER_RAW)) {
     tuner_publish(e, (float)p->sr / p->coarse, p->conf);
     p->phase = LE_TUNER_PHASE_IDLE;
     return;
@@ -7511,11 +7457,12 @@ static void tuner_slice(le_engine* e, uint32_t frames) {
       if (!done) return;
       tuner_coarse_done(e);
     } else {
-      const int32_t was = p->tau;
-      const int done = tuner_refine_step(p, budget);
-      budget -= (long)(p->tau - was) * p->integ;
+      const int32_t was = p->ref.tau;
+      const int done = le_refine_step(&p->ref, p->raw, budget);
+      budget -= (long)(p->ref.tau - was) * p->ref.integ;
       if (!done) return;
-      tuner_publish(e, (float)p->sr / tuner_refine_finish(p), p->conf);
+      tuner_publish(e, (float)p->sr / le_refine_finish(&p->ref, p->coarse),
+                    p->conf);
       p->phase = LE_TUNER_PHASE_IDLE;
     }
   }

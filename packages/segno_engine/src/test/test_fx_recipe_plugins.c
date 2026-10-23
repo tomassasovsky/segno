@@ -132,6 +132,8 @@ int main(void) {
   CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 0, .7f) == LE_ERR_INVALID);
   pump(e, .4f, out); le_engine_drain_events(e);
   CHECK(le_engine_fx_recipe_revision(e, LE_FX_OWNER_MONITOR, 0, 0) == 1);
+  /* A new entry fades in over the 5 ms enable ramp (240 frames). */
+  for (int n = 0; n < 4; ++n) pump(e, .4f, out);
   CHECK(out[126] > .199f && out[126] < .201f);
   CHECK(le_engine_prepare_plugin(e, "fail", &next) == LE_ERR_DEVICE);
   CHECK(destroyed == 0);
@@ -163,6 +165,7 @@ int main(void) {
   le_engine_drain_events(e); CHECK(destroyed == 1);
   pump(e, .4f, out); le_engine_drain_events(e);
   CHECK(destroyed == 2);
+  for (int n = 0; n < 4; ++n) pump(e, .4f, out); /* the new host's ramp */
   CHECK(out[126] > .099f && out[126] < .101f);
   CHECK(le_engine_fx_recipe_revision(e, LE_FX_OWNER_MONITOR, 0, 0) == 3);
 

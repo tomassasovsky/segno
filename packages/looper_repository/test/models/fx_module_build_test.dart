@@ -919,10 +919,11 @@ void main() {
       expect(e.type, TrackEffectType.octaver);
       expect(e.type.params[0].valueAt(e.params[0]), closeTo(7, 1e-4));
       expect(e.params[2], closeTo(0.402, 1e-9));
-      // Tone open, the phase vocoder, the formants held.
+      // Tone open, the phase vocoder, the formants moving with the pitch
+      // (measured, #891).
       expect(e.params[1], 1);
       expect(e.params[3], 0);
-      expect(e.params[4], 0);
+      expect(e.params[4], 1);
     });
 
     test('shows the shift and the mix, the shift on the rack range', () {

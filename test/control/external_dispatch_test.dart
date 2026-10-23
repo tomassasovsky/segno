@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
@@ -39,6 +40,36 @@ const _param = FxParamTarget(
   slotId: 'drive',
   param: 0,
 );
+
+/// A Studio Rack Pitch Shift's shift on track 0: the octaver's -24..+24
+/// shown as the rack's -12..+12 (#1442).
+const _pitch = FxParamTarget(
+  address: FxAddress(stage: FxStage.track),
+  slotId: 'pitch',
+  param: 0,
+);
+
+BuiltInEffect _pitchShift() => fxModuleEntry(
+  kFxModules.firstWhere((m) => m.name == 'Pitch shift'),
+  const FxPreset(
+    family: 'Studio Rack',
+    name: 'p',
+    id: 'p',
+    type: 0,
+    params: {'Pitch': 1, 'Pitch Shift': 0.5, 'Pitch Mix': 1},
+  ),
+).copyWith(slotId: 'pitch');
+
+/// The semitones track 0's Pitch Shift plays.
+double _pitchSemitones(LooperRepository looper) {
+  final pitch = looper
+      .trackEffects(0)
+      .whereType<BuiltInEffect>()
+      .firstWhere(
+        (e) => e.slotId == 'pitch',
+      );
+  return pitch.type.params[0].valueAt(pitch.params[0]);
+}
 
 class _RefusingEngine extends PumpedNativeEngine {
   int taps = 0;
@@ -1311,6 +1342,57 @@ void main() {
         ..sample(0)
         ..settle();
       expect(looper.trackChainEnabled(0), isFalse);
+    },
+  );
+  check(
+    "an expression pedal sweeps a Pitch Shift over the rack's -12..+12",
+    ExternalJackSetup(
+      type: ExternalJackType.expression,
+      expression: ExternalExpressionSetup(
+        calibration: ExpressionCalibration(heel: 0, toe: 255),
+        mappings: [ExpressionMapping(target: _pitch)],
+      ),
+    ),
+    (r) {
+      expect(
+        looper.setTrackEffects(channel: 0, effects: [_pitchShift()]),
+        EngineResult.ok,
+      );
+      r
+        ..settle()
+        ..sample(0, kind: PedalCtrlKind.expression)
+        ..sample(255, kind: PedalCtrlKind.expression)
+        ..settle();
+      expect(_pitchSemitones(looper), closeTo(12, 1e-3));
+      r
+        ..sample(0, kind: PedalCtrlKind.expression)
+        ..settle();
+      expect(_pitchSemitones(looper), closeTo(-12, 1e-3));
+    },
+  );
+  check(
+    'a MIDI value lands a Pitch Shift on whole semitones of -12..+12',
+    ExternalJackSetup.empty,
+    (r) {
+      expect(
+        looper.setTrackEffects(channel: 0, effects: [_pitchShift()]),
+        EngineResult.ok,
+      );
+      r
+        ..settle()
+        ..bindMidi(
+          target: _pitch.canonicalString(),
+          behavior: MidiBehavior.continuous,
+        )
+        // The knob picks up at the shift's own unison, in the middle of the
+        // shown range (where the octaver's whole range would put +/-0 too,
+        // so pickup alone cannot tell the ranges apart).
+        ..midiValue(64);
+      expect(_pitchSemitones(looper), closeTo(0, 1e-3));
+      r.midiValue(70); // 70 / 127 x 24 - 12 = 1.2: one semitone
+      expect(_pitchSemitones(looper), closeTo(1, 1e-3));
+      r.midiValue(127);
+      expect(_pitchSemitones(looper), closeTo(12, 1e-3));
     },
   );
   check(

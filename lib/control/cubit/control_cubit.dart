@@ -478,7 +478,10 @@ class ControlCubit extends Cubit<ControlState> {
       if (position == null) return;
       final parameters = <ControlValueTarget, double>{
         for (final mapping in jack.expression.mappings)
-          mapping.target: mapping.valueAt(position),
+          mapping.target: _bindingToChain(
+            mapping.target,
+            mapping.valueAt(position),
+          ),
       };
       final token = Object();
       _externalTokens[input] = token;
@@ -609,7 +612,10 @@ class ControlCubit extends Cubit<ControlState> {
     for (final row in setup.controls.parameters) {
       final value = row.condition == ExternalValueCondition.onOff ? on : held;
       if (value != null) {
-        parameters[row.target] = value ? row.active : row.inactive;
+        parameters[row.target] = _bindingToChain(
+          row.target,
+          value ? row.active : row.inactive,
+        );
       }
     }
     final token = _externalTokens[input] ?? Object();
@@ -692,7 +698,10 @@ class ControlCubit extends Cubit<ControlState> {
             }
             for (final row in logical.controls.parameters) {
               if (row.condition == ExternalValueCondition.onOff) {
-                parameters[row.target] = nextOn ? row.active : row.inactive;
+                parameters[row.target] = _bindingToChain(
+                  row.target,
+                  nextOn ? row.active : row.inactive,
+                );
               }
             }
           }
@@ -719,8 +728,10 @@ class ControlCubit extends Cubit<ControlState> {
                 excluding: trigger,
               );
               if (survivor != null && !parameters.containsKey(entry.key)) {
-                parameters[entry.key] =
-                    _readControlValue(entry.key) ?? survivor;
+                final now = _readControlValue(entry.key);
+                parameters[entry.key] = now == null
+                    ? survivor
+                    : _bindingToChain(entry.key, now);
               } else if (survivor == null &&
                   !parameters.containsKey(entry.key)) {
                 entry.value.remove(trigger);
