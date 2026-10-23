@@ -159,9 +159,9 @@ jobs:
   # spawn_process (#1367) starts the appliance helpers with posix_spawn
   # through dart:ffi, so the app never forks. Pure Dart. Its tests start real
   # programs on this Linux runner. What it cannot cover here are its macOS
-  # branches and the libc failures a test cannot provoke. Some retry lines
-  # (EAGAIN on a pipe) run only when the timing allows, so the measured figure
-  # moves between 88.7% and 89.3% from run to run; the floor sits below both.
+  # branches and the libc failures a test cannot provoke. The tests force the
+  # EPIPE and ECHILD paths rather than racing for them (#1457), so the figure
+  # is 89.3% on every run; the floor leaves room for a few lines of change.
   spawn-process:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
     with:
