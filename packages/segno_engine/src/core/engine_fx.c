@@ -1307,7 +1307,7 @@ static const le_fx_param_desc LE_FX_REVERB_PARAMS[] = {
  * the defaults are Ed's 4-band EQ's. */
 static const le_fx_param_desc LE_FX_EQ_PARAMS[] = {
     {"low_cut", LE_FX_UNIT_HZ, 0, 20.0f, 8000.0f, LE_FX_CURVE_EXPONENTIAL,
-     0.21f, 0},
+     0.21f, LE_FX_PARAM_OFF_AT_MIN},
     {"low_gain", LE_FX_UNIT_DB, 0, -18.0f, 18.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
     {"low_freq", LE_FX_UNIT_HZ, 0, 20.0f, 1000.0f, LE_FX_CURVE_EXPONENTIAL,
      0.384476f, 0},
@@ -1330,7 +1330,7 @@ static const le_fx_param_desc LE_FX_EQ_PARAMS[] = {
      0.5278f, 0},
     {"high_q", LE_FX_UNIT_Q, 0, 0.4f, 2.0f, LE_FX_CURVE_EXPONENTIAL, 0.0f, 0},
     {"high_cut", LE_FX_UNIT_HZ, 0, 120.0f, 20000.0f, LE_FX_CURVE_EXPONENTIAL,
-     1.0f, 0},
+     1.0f, LE_FX_PARAM_OFF_AT_MAX},
     {"air_gain", LE_FX_UNIT_DB, 0, -18.0f, 18.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
 };
 
@@ -2662,9 +2662,9 @@ static void fx_vinyl_kprocess(void* ks, float* l, float* r) {
 /* ---- Degrade (LE_FX_DEGRADE) ----
  *
  * Sample-rate reduction: the input held at the Looper X's 500 Hz to 50 kHz
- * (at or above the engine's rate it holds every sample, so nothing
- * changes), then a 12 dB/octave low-pass the filter control moves from
- * 20 kHz (0 %) down to half the held rate (100 %), mixed with the dry
+ * (at or above the engine's rate it holds every sample, so only the filter
+ * and the mix act), then a 12 dB/octave low-pass the filter control moves
+ * from 20 kHz (0 %) down to half the held rate (100 %), mixed with the dry
  * signal. The hold runs on whatever the loop does, so a degrade that holds
  * never prints. */
 static const le_fx_param_desc LE_FX_DEGRADE_PARAMS[] = {
@@ -2740,21 +2740,21 @@ static void fx_degrade_kprocess(void* ks, float* l, float* r) {
 /* ---- LPF (LE_FX_LPF) ----
  *
  * A resonant 12 dB/octave low-pass (state-variable): the Looper X's cutoff,
- * 20 Hz to 20 kHz, and its resonance from Q 0.71 (0 %) to Q 6 (100 %,
- * +15.6 dB at the corner). The cutoff glides in octaves. At the top of its
+ * 20 Hz to 20 kHz, and its resonance from Q 0.71 (0 %) to Q 3 (100 %,
+ * +9.5 dB at the corner). The cutoff glides in octaves. At the top of its
  * range the filter is off (the Looper X's default, with resonance at
  * 100 %: a fresh filter is transparent), gliding in and out as the EQ's
  * cuts do. The Rhythmic
  * Rack's LFO over the cutoff comes with the tempo context (#887 part 10). */
 static const le_fx_param_desc LE_FX_LPF_PARAMS[] = {
-    {"lp_cutoff", LE_FX_UNIT_HZ, 0, 20.0f, 20000.0f, LE_FX_CURVE_EXPONENTIAL,
-     1.0f, 0},
+    {"cutoff", LE_FX_UNIT_HZ, 0, 20.0f, 20000.0f, LE_FX_CURVE_EXPONENTIAL,
+     1.0f, LE_FX_PARAM_OFF_AT_MAX},
     {"resonance", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR,
      1.0f, LE_FX_PARAM_TAPER_UNVERIFIED},
 };
 #define LE_LPF_PARAMS_N 2
 #define LE_LPF_Q_LO 0.70710678
-#define LE_LPF_Q_HI 6.0
+#define LE_LPF_Q_HI 3.0
 
 typedef struct le_fx_lpf {
   le_fx_dyn_head h;

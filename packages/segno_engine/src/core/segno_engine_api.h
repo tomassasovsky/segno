@@ -755,6 +755,11 @@ typedef enum le_fx_param_flags {
   /* The mapping was chosen, not measured against the effect it reproduces
    * (the Looper X kinds until reference audio confirms them, #891). */
   LE_FX_PARAM_TAPER_UNVERIFIED = 1 << 0,
+  /* The effect is off (the identity) at setting 0 (an EQ's low cut) or at
+   * setting 1 (its high cut, the low-pass filter's cutoff); a surface reads
+   * the setting there as Off. */
+  LE_FX_PARAM_OFF_AT_MIN = 1 << 1,
+  LE_FX_PARAM_OFF_AT_MAX = 1 << 2,
 } le_fx_param_flags;
 
 /* One built-in parameter. `steps` is 0 for a continuous parameter, otherwise
