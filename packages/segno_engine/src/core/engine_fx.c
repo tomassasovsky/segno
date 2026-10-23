@@ -207,12 +207,12 @@ _Static_assert(LE_PSOLA_AHOP == LE_PV_HOP,
  * equal to 0 (le_oct_seeded_ticks). Spreading the phase does not reduce the
  * work; it stops it arriving in one callback.
  *
- * WHY IT COSTS NO LATENCY: a PV frame runs at hop_count == 0 and writes the
- * OLA accumulator so that out[j] is emitted j samples later; the emitted
- * sample always corresponds to input index (head - LE_PV_N + 1), whatever the
- * phase. So le_octaver_latency stays a flat LE_PV_N, fx_octaver's dry tap
- * stays matched, and fx_apply_chain's warmup stays sufficient (le_pv_tick has
- * the warmup argument).
+ * WHY IT COSTS NO LATENCY: a PV frame is analysed at hop_count == 0 and its
+ * synthesis is emitted a fixed number of ticks later, so the emitted sample
+ * always corresponds to input index (head - LE_PV_LATENCY + 1), whatever the
+ * phase. So le_octaver_latency stays a flat LE_PV_LATENCY, fx_octaver's dry
+ * tap stays matched, and fx_apply_chain's warmup stays sufficient (le_pv_tick
+ * has the warmup argument).
  *
  * PER SLOT, NOT PER CHANNEL: mono coherence (test_octaver_mono_coherent)
  * needs identical left and right in to give identical out, so both channels
@@ -285,6 +285,7 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   if (o->out != NULL) memset(o->out, 0, sizeof(float) * LE_PV_OUT);
   if (o->scratch != NULL) memset(o->scratch, 0, sizeof(float) * LE_PV_SCRATCH);
   o->hold_pos = 0;
+  o->frame_ratio = 1.0f;
   if (o->last_phase != NULL) memset(o->last_phase, 0, sizeof(float) * LE_PV_BINS);
   if (o->sum_phase != NULL) memset(o->sum_phase, 0, sizeof(float) * LE_PV_BINS);
 }
@@ -380,10 +381,11 @@ static void le_pv_stage_envelope(le_octaver_state* o) {
   le_octaver_envelope(LE_PV_S_MAG(o), LE_PV_S_ENV(o));
 }
 
-/* Stage 2: whiten (mag/env), shift bins by `ratio`, re-apply the envelope at
+/* Stage 2: whiten (mag/env), shift bins by the ratio read at analysis, re-apply the envelope at
  * the DESTINATION bin so the formants stay fixed in frequency, advance the
  * synthesis phase (2*pi*freq*HOP/N a hop) and rebuild the half spectrum. */
-static void le_pv_stage_shift(le_octaver_state* o, float ratio) {
+static void le_pv_stage_shift(le_octaver_state* o) {
+  const float ratio = o->frame_ratio;
   float* re = LE_PV_S_RE(o);
   float* im = LE_PV_S_IM(o);
   const float* mag = LE_PV_S_MAG(o);
@@ -456,12 +458,13 @@ static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int ca
   switch (o->hop_count) {
     case 0:
       le_pv_stage_analyse(o, fifo, head, cap);
+      o->frame_ratio = ratio;
       break;
     case LE_PV_HOP / 4:
       le_pv_stage_envelope(o);
       break;
     case LE_PV_HOP / 2:
-      le_pv_stage_shift(o, ratio);
+      le_pv_stage_shift(o);
       break;
     case 3 * LE_PV_HOP / 4:
       le_pv_stage_synth(o);
@@ -731,30 +734,29 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
   }
 
   /* 4. Soft voiced/unvoiced gate (D4): crossfade the grain voice against the
-   *    delay-matched dry by the smoothed confidence. Silence -> voiced ~0 and the
-   *    dry tap is ~0, so the output collapses to silence (no grain buzz). */
-  int didx = head - le_octaver_latency(o) + 1;
+   *    dry N samples back (the voice's own alignment) by the smoothed
+   *    confidence. Silence -> voiced ~0 and the dry tap is ~0, so the output
+   *    collapses to silence (no grain buzz). */
+  int didx = head - N + 1;
   didx %= cap;
   if (didx < 0) didx += cap;
-  const float dry = fifo[didx];
-  /* The voice is held back one hop, so PSOLA's latency is the phase
-   * vocoder's (LE_PV_LATENCY) and the dry tap does not move on a mode
-   * switch. */
-  float yh = y;
-  if (o->scratch != NULL) {
-    float* hold = LE_PV_S_HOLD(o);
-    yh = hold[o->hold_pos];
-    hold[o->hold_pos] = y;
-    if (++o->hold_pos >= LE_PV_HOP) o->hold_pos = 0;
-  }
   float wv = (o->voiced - 0.3f) / 0.3f; /* soft gate around conf ~0.3..0.6 */
   if (wv < 0.0f) wv = 0.0f;
   if (wv > 1.0f) wv = 1.0f;
-  return wv * yh + (1.0f - wv) * dry;
+  const float mixed = wv * y + (1.0f - wv) * fifo[didx];
+  /* 5. Hold the result back one hop, so PSOLA's latency is the phase
+   *    vocoder's (LE_PV_LATENCY) and the dry tap does not move on a mode
+   *    switch. Voice, dry and gate move together: the hold is a pure delay. */
+  if (o->scratch == NULL) return mixed;
+  float* hold = LE_PV_S_HOLD(o);
+  const float held = hold[o->hold_pos];
+  hold[o->hold_pos] = mixed;
+  if (++o->hold_pos >= LE_PV_HOP) o->hold_pos = 0;
+  return held;
 }
 
 /* Formant-preserving octaver. Writes the newest sample to the slot's FIFO ring,
- * then mixes a delay-matched dry tap (head - LE_PV_N) with a wet voice from the
+ * then mixes a delay-matched dry tap (LE_PV_LATENCY back) with a wet voice from the
  * phase vocoder (mode p3 < 0.5) or PSOLA (part 4, currently silent). p0 = shift
  * (0 = -2 oct, 0.5 = unison, 1 = +2 oct), p1 = tone (one-pole darkening of the
  * wet voice), p2 = dry/wet mix, p3 = mode. Params are one-pole smoothed
