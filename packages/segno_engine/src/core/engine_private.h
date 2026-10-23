@@ -347,8 +347,8 @@ typedef struct le_octaver_state {
   float* out;        /* synthesis overlap-add accumulator, LE_PV_OUT long */
   float* last_phase; /* previous analysis phase per bin, length LE_PV_BINS */
   float* sum_phase;  /* accumulated synthesis phase per bin, length LE_PV_BINS */
-  /* Samples into the current hop: PV counts up to LE_PV_HOP and runs a frame
-   * on wrap; PSOLA counts down to its next YIN pass. Seeded so the heavy
+  /* Samples into the current hop: PV counts up to LE_PV_HOP and runs one
+   * stage of a frame at each quarter; PSOLA counts down to its next YIN pass. Seeded so the heavy
    * ticks land on this instance's frames of the engine clock, not at 0
    * (le_oct_seeded_ticks, engine_fx.c). */
   int32_t hop_count;
@@ -364,9 +364,11 @@ typedef struct le_octaver_state {
   float sm_mix;
   int32_t cur_mode; /* 0 = phase vocoder, 1 = PSOLA */
   float xfade;      /* equal-power gain-dip envelope during a mode switch (1 = steady) */
-  /* The hop split's frame state (LE_PV_SCRATCH floats, engine_fx.h) and the
-   * write position of PSOLA's one-hop hold in it. */
+  /* The hop split's frame state (LE_PV_SCRATCH floats, engine_fx.h), the
+   * shift ratio read when the frame was analysed, and the write position of
+   * PSOLA's one-hop hold in the scratch. */
   float* scratch;
+  float frame_ratio;
   int32_t hold_pos;
 } le_octaver_state;
 
