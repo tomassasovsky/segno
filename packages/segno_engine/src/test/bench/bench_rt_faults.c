@@ -20,8 +20,10 @@
  *     and retyped on its lanes and on the input monitor every --fx-ms, the
  *     snapshot polled every 20 ms like the UI does, and every few takes the
  *     tracks cleared and the cycle started again on the next track;
- *   - after a warm-up it samples the callback thread's own minflt/majflt from
- *     /proc/self/task/<tid>/stat, and the engine's callback telemetry.
+ *   - the window runs from --warmup to --seconds: at each end it samples the
+ *     callback thread's own minflt/majflt from /proc/self/task/<tid>/stat, and
+ *     the engine's callback telemetry. Both samples are taken on time, not at
+ *     a cycle boundary: one cycle can outlast a short run (#1403).
  *
  * Expected, and the exit status:
  *   - with no forks (the app as shipped): 0 page faults on the callback
@@ -34,7 +36,10 @@
  *     page-table copy. Late periods are reported, not judged, here: no
  *     shielding makes a fork free, which is why the app does not fork. The
  *     engine's own buffers contribute nothing (the native fault test proves
- *     that with a shielded stack: test_engine_rt_memory.h).
+ *     that with a shielded stack: test_engine_rt_memory.h);
+ *   - either way, the window fails when it holds fewer than half the periods
+ *     its length implies (an empty window proves nothing), or when the
+ *     callback thread's stat could not be read at either end.
  */
 #define _GNU_SOURCE 1
 
@@ -166,13 +171,48 @@ static const int32_t k_fx_types[] = {LE_FX_DELAY, LE_FX_REVERB, LE_FX_OCTAVER,
 static le_engine* g_e;
 static int g_fx_turn = 0;
 
+/* ---- the measurement window ---- */
+
+typedef struct {
+  double at;
+  int st_ok; /* read_task_stat succeeded */
+  rt_task_stat st;
+  le_callback_telemetry tel;
+  long forks;
+} rt_sample;
+
+static long g_tid;
+static double g_window_start; /* the end of the warm-up */
+static double g_deadline;     /* the end of the run */
+static int g_sampled = 0;
+static rt_sample g_s0;
+
+static void take_sample(rt_sample* out) {
+  out->at = now_s();
+  out->st_ok = read_task_stat(g_tid, &out->st);
+  le_engine_get_callback_telemetry(g_e, &out->tel);
+  out->forks = g_forks;
+}
+
+/* Whether the run has time left. Also takes the window's start sample the
+ * first time it finds the warm-up over: the player calls this every 20 ms
+ * poll, so the sample lands on time however long a cycle runs. */
+static int time_left(void) {
+  const double t = now_s();
+  if (!g_sampled && t >= g_window_start) {
+    take_sample(&g_s0);
+    g_sampled = 1;
+  }
+  return t < g_deadline;
+}
+
 /* Polls like the UI (the poll files retired layers and posts shadows), and
- * flips an FX every fx_ms, for `ms` of wall clock. */
+ * flips an FX every fx_ms, for `ms` of wall clock or until the run ends. */
 static void play_for(int ms, int fx_ms, int track) {
   const double end = now_s() + ms / 1000.0;
   double next_fx = now_s() + fx_ms / 1000.0;
   le_snapshot s;
-  while (now_s() < end && !g_stop) {
+  while (time_left() && now_s() < end) {
     le_engine_get_snapshot(g_e, &s);
     if (fx_ms > 0 && now_s() >= next_fx) {
       next_fx += fx_ms / 1000.0;
@@ -202,13 +242,15 @@ static void play_for(int ms, int fx_ms, int track) {
 }
 
 /* One cycle on [track]: a take, its finalize, two overdub passes, a
- * punch-out, and the drain. */
+ * punch-out, and the drain. With a 2 s loop it takes about 10 s; it stops
+ * early when the run ends. */
 static void perform_cycle(int track, int fx_ms) {
   le_snapshot s;
   le_engine_record(g_e, track); /* a fresh take (immediate or quantized) */
   play_for(2000, fx_ms, track);
   le_engine_record(g_e, track); /* finalize */
   play_for(1500, fx_ms, track);
+  if (!time_left()) return;
   le_engine_get_snapshot(g_e, &s);
   if (s.tracks[track].state != LE_TRACK_PLAYING) return;
   const int loop_ms = s.master_length_frames > 0
@@ -217,6 +259,7 @@ static void perform_cycle(int track, int fx_ms) {
                           : 2000;
   le_engine_record(g_e, track); /* punch in */
   play_for(2 * loop_ms + loop_ms / 3, fx_ms, track);
+  if (!time_left()) return;
   le_engine_record(g_e, track); /* punch out mid-pass: the drain runs */
   play_for(loop_ms, fx_ms, track);
 }
@@ -276,6 +319,10 @@ int main(int argc, char** argv) {
       return 2;
     }
   }
+  if (o.warmup < 0 || o.warmup >= o.seconds) {
+    fprintf(stderr, "--warmup must be at least 0 and less than --seconds\n");
+    return 2;
+  }
   /* The appliance's audio path: direct ALSA, the callback on SCHED_FIFO 80
    * (segno-kiosk-launch exports the same two). */
   setenv("SEGNO_ALSA_ONLY", "1", 0);
@@ -298,8 +345,8 @@ int main(int argc, char** argv) {
     return 2;
   }
   sleep_ms(500);
-  const long tid = find_rt_task();
-  if (tid < 0) {
+  g_tid = find_rt_task();
+  if (g_tid < 0) {
     fprintf(stderr, "no SCHED_FIFO thread: the callback did not get real-time "
                     "priority (run as root, or with LimitRTPRIO)\n");
     return 2;
@@ -307,62 +354,70 @@ int main(int argc, char** argv) {
   le_snapshot s;
   le_engine_get_snapshot(g_e, &s);
   printf("device: %s, %d Hz, %d-frame period, callback thread %ld\n",
-         le_engine_device_name(g_e), s.sample_rate, (int)o.period, tid);
+         le_engine_device_name(g_e), s.sample_rate, (int)o.period, g_tid);
   le_engine_set_monitor_input(g_e, 0, 1);
 
   pthread_t forker;
   if (o.fork_ms > 0) pthread_create(&forker, NULL, forker_main, &o.fork_ms);
 
-  rt_task_stat st0 = {0}, st1 = {0};
-  le_callback_telemetry t0, t1;
-  long forks0 = 0;
-  int sampled = 0;
   const double t_start = now_s();
+  g_window_start = t_start + o.warmup;
+  g_deadline = t_start + o.seconds;
   int track = 0;
   int takes = 0;
-  while (now_s() - t_start < o.seconds) {
-    if (!sampled && now_s() - t_start >= o.warmup) {
-      read_task_stat(tid, &st0);
-      le_engine_get_callback_telemetry(g_e, &t0);
-      forks0 = g_forks;
-      sampled = 1;
-    }
+  while (time_left()) {
     perform_cycle(track, o.fx_ms);
-    if (++takes % 3 == 0) { /* clear and move on, so takes stay fresh */
+    if (++takes % 3 == 0 && time_left()) { /* clear, so takes stay fresh */
       for (int c = 0; c < LE_MAX_TRACKS; ++c) le_engine_clear(g_e, c);
       play_for(500, o.fx_ms, track);
     }
     track = (track + 1) % 4;
   }
-  if (!sampled) {
-    read_task_stat(tid, &st0);
-    le_engine_get_callback_telemetry(g_e, &t0);
-  }
-  read_task_stat(tid, &st1);
-  le_engine_get_callback_telemetry(g_e, &t1);
+  /* time_left() returned 0, so the deadline has passed, and the call that
+   * found it took the start sample if nothing had before. */
+  rt_sample s1 = {0};
+  take_sample(&s1);
   g_stop = 1;
   if (o.fork_ms > 0) pthread_join(forker, NULL);
   le_engine_stop(g_e);
 
+  const rt_task_stat st0 = g_s0.st, st1 = s1.st;
+  const le_callback_telemetry t0 = g_s0.tel, t1 = s1.tel;
+  const double window_s = s1.at - g_s0.at;
   const long faults = (st1.minflt - st0.minflt) + (st1.majflt - st0.majflt);
+  const uint64_t periods = t1.session.periods - t0.session.periods;
   const uint64_t late = t1.session.late_periods - t0.session.late_periods;
   uint64_t xruns = 0;
   for (int k = 0; k < LE_XRUN_KINDS; ++k)
     xruns += t1.session.xruns[k] - t0.session.xruns[k];
-  printf("window: %.0f s after a %.0f s warm-up, %d-frame period (%u us)\n",
-         o.seconds - o.warmup, o.warmup, (int)o.period, t1.budget_us);
-  const long forks = g_forks - forks0;
+  printf("window: %.1f s measured after a %.1f s warm-up, %d-frame period "
+         "(%u us)\n",
+         window_s, g_s0.at - t_start, (int)o.period, t1.budget_us);
+  printf("t0: calls %llu, periods %llu\nt1: calls %llu, periods %llu\n",
+         (unsigned long long)t0.session.calls,
+         (unsigned long long)t0.session.periods,
+         (unsigned long long)t1.session.calls,
+         (unsigned long long)t1.session.periods);
+  const long forks = s1.forks - g_s0.forks;
   printf("forks in the window: %ld (engine counted %u in all)\n", forks,
          le_platform_fork_count());
   printf("callback thread faults: %ld minor, %ld major\n",
          st1.minflt - st0.minflt, st1.majflt - st0.majflt);
-  printf("periods: %llu, late: %llu, worst service since start %u us, "
-         "xruns %llu\n",
-         (unsigned long long)(t1.session.periods - t0.session.periods),
+  const double expected =
+      t1.budget_us > 0 ? window_s * 1e6 / t1.budget_us : 0.0;
+  printf("periods: %llu (about %.0f expected), late: %llu, worst service "
+         "since start %u us, xruns %llu\n",
+         (unsigned long long)periods, expected,
          (unsigned long long)late, t1.session.max_us,
          (unsigned long long)xruns);
   int ok;
-  if (forks == 0) {
+  if (!g_s0.st_ok || !s1.st_ok) {
+    ok = 0;
+    printf("FAIL: the callback thread's stat could not be read\n");
+  } else if (periods == 0 || (double)periods < expected / 2) {
+    ok = 0;
+    printf("FAIL: the window holds too few periods to prove anything\n");
+  } else if (forks == 0) {
     ok = faults == 0 && late == 0;
     printf("%s\n", ok ? "PASS: no fault and no late period on the callback"
                       : "FAIL: the callback faulted or ran late");
