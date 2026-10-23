@@ -56,8 +56,9 @@ typedef struct le_rfft_plan {
 
 /* Builds [p] for real length [n] (a power of two, 4 .. LE_FFT_MAX_N). A no-op
  * when [p] already holds n. Returns 1 when [p] holds a plan for n, 0 for a bad
- * n. Not real-time safe (double-precision trig): call it where the effect is
- * prepared, as le_hann_init is. */
+ * n. Not real-time safe (double-precision trig), and not synchronised: a plan
+ * shared between threads must be built once before any of them reads it
+ * (engine_fx.c builds its plan under pthread_once). */
 static int le_rfft_plan_init(le_rfft_plan* p, int n) {
   if (n < 4 || n > LE_FFT_MAX_N || (n & (n - 1)) != 0) return 0;
   if (p->n == n) return 1;
@@ -203,9 +204,11 @@ static void le_rfft_inv(const le_rfft_plan* p, const float* re,
 
 /* Fills table[0..n-1] with a periodic Hann window once, then short-circuits on
  * later calls via *ready. The table is read-only shared state owned by the
- * caller (the phase vocoder keeps a file-scope table + ready flag, sized to its
- * own LE_PV_N), so fft.h stays free of engine constants. Periodic form
- * (divide by n, not n-1) gives correct constant-overlap-add for the STFT. */
+ * caller, sized to its own n, so fft.h stays free of engine constants. The
+ * flag is not synchronised: a table shared between threads must be built once
+ * before any of them reads it (engine_fx.c builds its own under pthread_once).
+ * Periodic form (divide by n, not n-1) gives correct constant-overlap-add for
+ * the STFT. */
 static void le_hann_init(float* table, int n, int* ready) {
   if (*ready) {
     return;
