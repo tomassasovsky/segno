@@ -3,7 +3,9 @@
 Measured on the owner's emulated Looper X 1.0.2 (HG08) in the #891 rig on
 2026-10-23. Numbers and formulas only: no vendor code, disassembly, QML or
 audio. Captures stay on the rig machine. segno is compared at
-origin/claude/segno-integration @ 4952e9b0b (`engine_fx.c`).
+origin/claude/segno-integration @ 4952e9b0b (`engine_fx.c`); the "segno"
+notes describe that commit. Since then the Pitch Shift has landed on the
+octaver (#1441) with its formants following the pitch (#1446).
 
 ## Method
 
@@ -117,8 +119,8 @@ Band-pass with skirts falling about 6 dB/octave; peak gain, centre and
 
 - The sweep is not log-linear: most of it happens in the top half of the
   pedal (439 to 536 Hz over 0-0.5, then 536 to 2313 Hz over 0.5-1).
-- Constant-bandwidth-like: bandwidth grows from 39 Hz to 1.1 kHz as the
-  peak rises.
+- Neither constant-Q nor constant-bandwidth: the bandwidth grows from 39 Hz
+  to 1.1 kHz as the peak rises, and Q falls from 11 to 2.
 
 segno `LE_WAH`: 350-2500 Hz log sweep, Q 4, +6 dB peak. Needs: 439-2313 Hz
 with the curved taper above, Q 11 at the heel falling to 2 at the toe, peak
@@ -145,7 +147,7 @@ at the same setting never match). No pitch wander was found on a steady
 | Dub, Sep 100 %, Mix 0 % | 1.26-1.63, fluctuating | voice collapses to about 0 ms | |
 
 (The Doubler sits on the Dub path, so Dub values are (output - A(m)) /
-D(m) with the mix law in dub-reverbs-measured.md; checked directly at
+D(m) with the mix law in 2026-10-23-looperx-dub-reverbs-measured.md; checked directly at
 Amb-Dub Mix 100 %, where the Dub path is all that is heard.)
 
 - Mix 50 % and 100 % sound the same; Mix 0 % does not remove the voice, it
@@ -157,8 +159,8 @@ Amb-Dub Mix 100 %, where the Dub path is all that is heard.)
 segno `LE_FX_DOUBLER`: two LFO-drifting voices at 11 and 17 ms (+-0.6 ms),
 -3 dB each, panned by separation, dry untouched, mix scales the voices.
 Needs: random-delay voices (hold ~150 ms, ~25 ms crossfade, independent
-L/R), the ranges above, dry cut to 0.31 in all three racks once Mix is past
-50 %, voice at 0.9-1.0, and the Mix-0 % collapse.
+L/R), the ranges above, dry cut to 0.31 in all three racks at Mix 50 % and
+above, voice at 0.9-1.0, and the Mix-0 % collapse.
 
 ## Studio Mod: Tremolo (Mod Mode = Tremolo)
 
