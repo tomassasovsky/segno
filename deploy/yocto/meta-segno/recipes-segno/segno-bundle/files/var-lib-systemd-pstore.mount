@@ -6,10 +6,11 @@
 # not survive the next OS update, so it is bound to /data like the journal and
 # the cores.
 #
-# systemd-pstore.service carries RequiresMountsFor=/var/lib/systemd/pstore,
-# which finds this unit by its path. If /data never mounts, the service does
-# not run and the records stay in /sys/fs/pstore (systemd-pstore only removes
-# them after archiving), to be archived on a later boot.
+# systemd-pstore.service sets StateDirectory=systemd/pstore, which implies
+# RequiresMountsFor=/var/lib/systemd/pstore and so finds this unit by its path;
+# the Before= below states the order as well. If /data never mounts, the
+# service does not run and the records stay in /sys/fs/pstore (systemd-pstore
+# only removes them after archiving), to be archived on a later boot.
 [Unit]
 Description=Segno: kernel crash records on /data (survive reboot and OS update)
 DefaultDependencies=no
