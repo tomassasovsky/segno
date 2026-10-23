@@ -10392,7 +10392,12 @@ enum le_cache_reason {
   /// whole number of octaver hops (256 frames): its
   /// hop falls on other frames each lap, so no single
   /// lap's render equals live (#941)
-  LE_CACHE_REASON_HOP(5);
+  LE_CACHE_REASON_HOP(5),
+
+  /// the print holds a free-running
+  /// modulator (a chorus or doubler LFO),
+  /// which sounds different each lap
+  LE_CACHE_REASON_FREE_RUNNING(6);
 
   final int value;
   const le_cache_reason(this.value);
@@ -10404,6 +10409,7 @@ enum le_cache_reason {
     3 => LE_CACHE_REASON_PART_POST,
     4 => LE_CACHE_REASON_BUDGET,
     5 => LE_CACHE_REASON_HOP,
+    6 => LE_CACHE_REASON_FREE_RUNNING,
     _ => throw ArgumentError('Unknown value for le_cache_reason: $value'),
   };
 }

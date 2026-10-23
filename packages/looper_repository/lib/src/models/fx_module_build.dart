@@ -192,10 +192,13 @@ class FxSourceScale {
 ///   1 kHz mid, Q 0.71;
 /// - the compressor: where a rack hides them, Ed's Rack's own settings (a
 ///   4 : 1 ratio, every Ed's preset's, and its default 1.7 ms attack and
-///   141 ms release).
+///   141 ms release);
+/// - the doubler: where a rack hides it, the Dub Rack's default 100 %
+///   separation.
 ///
 /// The first variant of each module is its default, the one "Add an effect"
-/// uses (#887: Ed's 4-band, the Dub Rack's Para, Ed's compressor).
+/// uses (#887: Ed's 4-band, the Dub Rack's Para, Ed's compressor, the Dub
+/// Rack's doubler).
 const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Four-band EQ': {
     "Ed's Rack": _edsEq,
@@ -222,7 +225,41 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
     'Vocal Rack': _hpGate,
     'Vocal Tuner Rack': _hpGate,
   },
+  'Doubler': {
+    'Dub Rack': _dubDoubler,
+    'Studio Rack': _doubler,
+    'Vocal Rack': _doubler,
+    'Vocal Tuner Rack': _doubler,
+  },
+  'Chorus': {"Ed's Rack": _chorus},
+  'Wah': {"Ed's Rack": _wah, 'Guitar Rack': _wah},
 };
+
+// Dub Rack: mix and separation.
+const FxModuleBuild _dubDoubler = FxModuleBuild(
+  type: TrackEffectType.doubler,
+  params: ['Doubler Mix', 'Doubler Sep'],
+);
+
+// Studio, Vocal and Vocal Tuner racks: the mix, the separation held at the
+// Dub Rack's default.
+const FxModuleBuild _doubler = FxModuleBuild(
+  type: TrackEffectType.doubler,
+  params: ['Doubler Mix'],
+  fixed: {1: 100},
+);
+
+// Ed's Rack: the whole chorus.
+const FxModuleBuild _chorus = FxModuleBuild(
+  type: TrackEffectType.chorus,
+  params: ['Chor Rate', 'Chor Depth', 'Chor Mix'],
+);
+
+// Ed's and Guitar racks: the pedal.
+const FxModuleBuild _wah = FxModuleBuild(
+  type: TrackEffectType.wah,
+  params: ['Wah Pedal'],
+);
 
 // The compressor settings a rack that hides them is fixed at (see
 // [kFxModuleVariants]).

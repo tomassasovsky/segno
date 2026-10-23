@@ -362,7 +362,16 @@ enum TrackEffectType {
   transient(11),
 
   /// The Looper X's high-pass gate (#887 part 5).
-  hpGate(12);
+  hpGate(12),
+
+  /// The Looper X's doubler (#887 part 6).
+  doubler(13),
+
+  /// The Looper X's chorus (#887 part 6).
+  chorus(14),
+
+  /// The Looper X's wah (#887 part 6).
+  wah(15);
 
   const TrackEffectType(this.code);
 

@@ -21,7 +21,9 @@ enum LaneCacheState {
   /// The lane is live until its chain or loop changes: its chain can never be
   /// rendered offline (it hosts a plugin slot), renders failed repeatedly, or
   /// it holds an octaver on a loop that is not a whole number of octaver hops
-  /// (256 frames), so no single lap's render equals live.
+  /// (256 frames), so no single lap's render equals live, or it holds a
+  /// free-running modulator (a chorus or a doubler), which sounds different
+  /// each lap.
   gaveUp;
 
   /// Projects a native `le_cache_state` code, defaulting to [live] for a code
