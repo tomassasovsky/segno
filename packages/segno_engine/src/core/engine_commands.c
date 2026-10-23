@@ -4633,15 +4633,41 @@ int32_t le_engine_set_track_overdub_feedback(le_engine* engine,
  * the row as [type]'s (le_fx_slot_meta.param_type, release): until the type
  * command lands the snapshot sees the mismatch and sits the slot out, so
  * neither the old kernel nor the new one runs on the other's settings. */
+typedef struct le_fx_seed {
+  int seeded;
+  int32_t old_type;
+  float row[LE_FX_PARAMS]; /* the row before the seed */
+} le_fx_seed;
+
 static void le_fx_seed_params(_Atomic uint32_t a_param[][LE_FX_PARAMS],
                               le_fx_slot_meta* meta, int32_t index,
-                              int32_t type) {
+                              int32_t type, int32_t old_type,
+                              le_fx_seed* undo) {
+  undo->seeded = 1;
+  undo->old_type = old_type;
   float defaults[LE_FX_PARAMS];
   le_fx_defaults(type, defaults);
   for (int p = 0; p < LE_FX_PARAMS; ++p) {
+    undo->row[p] = load_f32(&a_param[index][p]);
     store_f32(&a_param[index][p], defaults[p]);
   }
   atomic_store_explicit(&meta[index].param_type, type, memory_order_release);
+}
+
+/* A refused type command: the row goes back to the running type's settings
+ * and tag, or the snapshot would sit the slot out (or run it on the other
+ * type's settings) until the next retype. */
+static void le_fx_seed_undo(_Atomic uint32_t a_param[][LE_FX_PARAMS],
+                            le_fx_slot_meta* meta, int32_t index,
+                            const le_fx_seed* undo) {
+  if (!undo->seeded) return;
+  atomic_store_explicit(&meta[index].param_type, LE_FX_NONE - 1,
+                        memory_order_release); /* sit out while restoring */
+  for (int p = 0; p < LE_FX_PARAMS; ++p) {
+    store_f32(&a_param[index][p], undo->row[p]);
+  }
+  atomic_store_explicit(&meta[index].param_type, undo->old_type,
+                        memory_order_release);
 }
 
 /* Prepares a chain entry for [type]: lazily allocates its heap buffers and,
@@ -4664,11 +4690,14 @@ static int32_t le_fx_prepare_entry(le_fx_state* fx, const int32_t* type_pushed,
                                    _Atomic uint32_t a_param[][LE_FX_PARAMS],
                                    le_fx_slot_meta* meta,
                                    int32_t index, int32_t type,
-                                   int32_t delay_cap, int32_t* out_changed) {
+                                   int32_t delay_cap, int32_t* out_changed,
+                                   le_fx_seed* undo) {
   const int32_t cap = delay_cap > 0 ? delay_cap : 48000;
   if (le_fx_prepare(fx, index, type, cap) != LE_OK) return LE_ERR_INVALID;
   *out_changed = type_pushed[index] != type;
-  if (*out_changed) le_fx_seed_params(a_param, meta, index, type);
+  if (*out_changed) {
+    le_fx_seed_params(a_param, meta, index, type, type_pushed[index], undo);
+  }
   return LE_OK;
 }
 
@@ -4682,8 +4711,9 @@ int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel, int32_t lane,
   if (!le_fx_settable_type(type)) return LE_ERR_INVALID;
   le_lane* ln = &engine->tracks[channel].lanes[lane];
   int32_t changed = 0;
+  le_fx_seed undo = {0};
   if (le_fx_prepare_entry(&ln->fx, ln->fx_type_pushed, ln->a_fx_param, ln->fx_meta, index,
-                          type, engine->fx_delay_frames, &changed) != LE_OK) {
+                          type, engine->fx_delay_frames, &changed, &undo) != LE_OK) {
     return LE_ERR_INVALID;
   }
   /* Publish the type via the ring so the audio thread resets the entry's DSP
@@ -4699,13 +4729,7 @@ int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel, int32_t lane,
     if (changed) store_i32(&ln->a_fx_enabled[index], 1);
     le_lane_fx_gen_bump(ln); /* chain identity moved (wet-cache fast path) */
   }
-  /* Refused: the row goes back to being the running type's, or the
-   * snapshot would sit the slot out until the next retype. */
-  if (rc != LE_OK && changed) {
-    atomic_store_explicit(&ln->fx_meta[index].param_type,
-                          ln->fx_type_pushed[index],
-                          memory_order_release);
-  }
+  if (rc != LE_OK) le_fx_seed_undo(ln->a_fx_param, ln->fx_meta, index, &undo);
   return rc;
 }
 
@@ -4868,8 +4892,9 @@ int32_t le_engine_set_monitor_input_fx(le_engine* engine, int32_t input,
   if (!le_fx_settable_type(type)) return LE_ERR_INVALID;
   le_monitor_input* m = &engine->monitors[input];
   int32_t changed = 0;
+  le_fx_seed undo = {0};
   if (le_fx_prepare_entry(&m->fx, m->fx_type_pushed, m->a_fx_param, m->fx_meta, index,
-                          type, engine->fx_delay_frames, &changed) != LE_OK) {
+                          type, engine->fx_delay_frames, &changed, &undo) != LE_OK) {
     return LE_ERR_INVALID;
   }
   const int32_t rc =
@@ -4879,13 +4904,7 @@ int32_t le_engine_set_monitor_input_fx(le_engine* engine, int32_t input,
     m->fx_type_pushed[index] = type;
     if (changed) store_i32(&m->a_fx_enabled[index], 1);
   }
-  /* Refused: the row goes back to being the running type's, or the
-   * snapshot would sit the slot out until the next retype. */
-  if (rc != LE_OK && changed) {
-    atomic_store_explicit(&m->fx_meta[index].param_type,
-                          m->fx_type_pushed[index],
-                          memory_order_release);
-  }
+  if (rc != LE_OK) le_fx_seed_undo(m->a_fx_param, m->fx_meta, index, &undo);
   return rc;
 }
 
@@ -5009,8 +5028,9 @@ int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
   if (!le_fx_settable_type(type)) return LE_ERR_INVALID;
   le_fx_bus* b = &engine->tracks[channel].bus;
   int32_t changed = 0;
+  le_fx_seed undo = {0};
   if (le_fx_prepare_entry(&b->fx, b->fx_type_pushed, b->a_fx_param, b->fx_meta, index,
-                          type, engine->fx_delay_frames, &changed) != LE_OK) {
+                          type, engine->fx_delay_frames, &changed, &undo) != LE_OK) {
     return LE_ERR_INVALID;
   }
   const int32_t rc =
@@ -5020,13 +5040,7 @@ int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
     b->fx_type_pushed[index] = type;
     if (changed) store_i32(&b->a_fx_enabled[index], 1);
   }
-  /* Refused: the row goes back to being the running type's, or the
-   * snapshot would sit the slot out until the next retype. */
-  if (rc != LE_OK && changed) {
-    atomic_store_explicit(&b->fx_meta[index].param_type,
-                          b->fx_type_pushed[index],
-                          memory_order_release);
-  }
+  if (rc != LE_OK) le_fx_seed_undo(b->a_fx_param, b->fx_meta, index, &undo);
   return rc;
 }
 
@@ -5129,8 +5143,9 @@ int32_t le_engine_set_output_fx(le_engine* engine, int32_t bus, int32_t index,
   if (!le_fx_settable_type(type)) return LE_ERR_INVALID;
   le_fx_bus* b = &engine->outputs[bus].fx;
   int32_t changed = 0;
+  le_fx_seed undo = {0};
   if (le_fx_prepare_entry(&b->fx, b->fx_type_pushed, b->a_fx_param, b->fx_meta, index,
-                          type, engine->fx_delay_frames, &changed) != LE_OK) {
+                          type, engine->fx_delay_frames, &changed, &undo) != LE_OK) {
     return LE_ERR_INVALID;
   }
   const int32_t rc =
@@ -5140,13 +5155,7 @@ int32_t le_engine_set_output_fx(le_engine* engine, int32_t bus, int32_t index,
     b->fx_type_pushed[index] = type;
     if (changed) store_i32(&b->a_fx_enabled[index], 1);
   }
-  /* Refused: the row goes back to being the running type's, or the
-   * snapshot would sit the slot out until the next retype. */
-  if (rc != LE_OK && changed) {
-    atomic_store_explicit(&b->fx_meta[index].param_type,
-                          b->fx_type_pushed[index],
-                          memory_order_release);
-  }
+  if (rc != LE_OK) le_fx_seed_undo(b->a_fx_param, b->fx_meta, index, &undo);
   return rc;
 }
 
@@ -5243,7 +5252,11 @@ int32_t le_engine_set_all_tracks_fx(le_engine* engine, int32_t index,
     }
   }
   const int32_t changed = b->fx_type_pushed[index] != type;
-  if (changed) le_fx_seed_params(b->a_fx_param, b->fx_meta, index, type);
+  le_fx_seed undo = {0};
+  if (changed) {
+    le_fx_seed_params(b->a_fx_param, b->fx_meta, index, type,
+                      b->fx_type_pushed[index], &undo);
+  }
   const int32_t rc =
       le_push_cmd(engine, (le_command){.code = LE_CMD_SET_ALL_TRACKS_FX,
                                        .fx = {0, 0, index, type}});
@@ -5251,13 +5264,7 @@ int32_t le_engine_set_all_tracks_fx(le_engine* engine, int32_t index,
     b->fx_type_pushed[index] = type;
     if (changed) store_i32(&b->a_fx_enabled[index], 1);
   }
-  /* Refused: the row goes back to being the running type's, or the
-   * snapshot would sit the slot out until the next retype. */
-  if (rc != LE_OK && changed) {
-    atomic_store_explicit(&b->fx_meta[index].param_type,
-                          b->fx_type_pushed[index],
-                          memory_order_release);
-  }
+  if (rc != LE_OK) le_fx_seed_undo(b->a_fx_param, b->fx_meta, index, &undo);
   return rc;
 }
 

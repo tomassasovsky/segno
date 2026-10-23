@@ -2038,6 +2038,9 @@ static int le_pr_render_master(const le_pr_manifest* m,
         }
         chain.type[i] = cmd->fx.type;
         if (!le_pr_reset_slot(fx, i, chain.type[i], m->sample_rate)) ok = 0;
+        /* Live renews the slot (le_fx_entry_renew): rings cleared through
+         * the enable edge, the entry ramped in. Prepared above first. */
+        le_fx_entry_renew(fx, i, chain.type[i]);
       } else if (cmd->code == LE_CMD_SET_OUTPUT_FX_COUNT && cmd->fxcount.channel == m->arm_capture_bus) {
         int count = cmd->fxcount.count;
         if (count < 0 || count > LE_FX_MAX) { ok = 0; continue; }

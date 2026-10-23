@@ -630,7 +630,7 @@ static inline int le_src_entry_fits(const le_wet_entry* ent, uint32_t key,
  *     and read only there. */
 typedef struct le_fx_slot_meta {
   _Atomic int32_t param_type;
-  uint64_t instance;
+  _Atomic uint64_t instance;
 } le_fx_slot_meta;
 
 /* One recordable input lane — the fundamental unit of captured audio.
