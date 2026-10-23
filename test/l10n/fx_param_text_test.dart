@@ -40,6 +40,16 @@ const _english = <String, List<String>>{
   'eq.high_q': ['0.40', '0.40', '2.00'],
   'eq.high_cut': ['120 Hz', 'Off', 'Off'],
   'eq.air_gain': ['-18.0 dB', '0.0 dB', '18.0 dB'],
+  'compressor.threshold': ['0.0 dB', '-21.0 dB', '-60.0 dB'],
+  'compressor.ratio': ['1.0:1', '4.0:1', '100.0:1'],
+  'compressor.attack': ['0.01 ms', '1.7 ms', '300 ms'],
+  'compressor.release': ['5.0 ms', '141 ms', '4000 ms'],
+  'compressor.makeup': ['0.0 dB', '1.8 dB', '30.0 dB'],
+  'transient.attack': ['0%', '50%', '100%'],
+  'transient.attack_length': ['0%', '50%', '100%'],
+  'transient.sustain': ['0%', '50%', '100%'],
+  'hpGate.highpass': ['1.0 Hz', '1.0 Hz', '1.0 kHz'],
+  'hpGate.gate_threshold': ['-120.0 dB', '-120.0 dB', '0.0 dB'],
 };
 
 /// The same in Spanish: a decimal comma, and the Spanish mode name.
@@ -78,6 +88,16 @@ const _spanish = <String, List<String>>{
   'eq.high_q': ['0,40', '0,40', '2,00'],
   'eq.high_cut': ['120 Hz', 'Apagado', 'Apagado'],
   'eq.air_gain': ['-18,0 dB', '0,0 dB', '18,0 dB'],
+  'compressor.threshold': ['0,0 dB', '-21,0 dB', '-60,0 dB'],
+  'compressor.ratio': ['1,0:1', '4,0:1', '100,0:1'],
+  'compressor.attack': ['0,01 ms', '1,7 ms', '300 ms'],
+  'compressor.release': ['5,0 ms', '141 ms', '4000 ms'],
+  'compressor.makeup': ['0,0 dB', '1,8 dB', '30,0 dB'],
+  'transient.attack': ['0%', '50%', '100%'],
+  'transient.attack_length': ['0%', '50%', '100%'],
+  'transient.sustain': ['0%', '50%', '100%'],
+  'hpGate.highpass': ['1,0 Hz', '1,0 Hz', '1,0 kHz'],
+  'hpGate.gate_threshold': ['-120,0 dB', '-120,0 dB', '0,0 dB'],
 };
 
 void main() {
@@ -122,6 +142,25 @@ void main() {
       // 99.96 ms rounds to 100.0, so it reads as a whole 100.
       expect(en.fxParamValueText(ms, 0.09996), '100 ms');
       expect(en.fxParamValueText(ms, 0.35), '350 ms');
+    });
+
+    test('keeps two decimals below 1 ms', () {
+      final attack = TrackEffectType.compressor.params[2];
+      expect(en.fxParamValueText(attack, 0), '0.01 ms');
+      // 0.01 * 30000^0.3 = 0.22 ms.
+      expect(en.fxParamValueText(attack, 0.3), '0.22 ms');
+      expect(es.fxParamValueText(attack, 0.3), '0,22 ms');
+      // 0.999 ms rounds to 1.00, so it reads with one decimal.
+      expect(
+        en.fxParamValueText(attack, attack.settingFor(0.999)),
+        '1.0 ms',
+      );
+    });
+
+    test('reads a ratio with one decimal against 1', () {
+      final ratio = TrackEffectType.compressor.params[1];
+      expect(en.fxParamValueText(ratio, 0.758), '4.0:1');
+      expect(es.fxParamValueText(ratio, 0.5), '2,0:1');
     });
 
     test('reads whole hertz from 100 Hz and kilohertz from 1000 Hz', () {
