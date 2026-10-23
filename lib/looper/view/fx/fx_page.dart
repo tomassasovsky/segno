@@ -408,6 +408,8 @@ class _FxViewState extends State<FxView> {
             catalogue: widget.catalogue ?? FxCatalogue.empty,
             destinationLabel: rack.name,
             freeSlots: kTrackEffectMax - chain.length,
+            roomNs: context.read<LooperRepository>().fxRoomNs,
+            costOf: _costOf(context, chain),
           ),
         ),
       ),
@@ -548,6 +550,17 @@ class _FxViewState extends State<FxView> {
     title: AppText(context.l10n.fxChangeNotApplied),
   );
 
+  /// What adding entries to [chain] would cost
+  /// ([LooperRepository.fxCostOf]).
+  static int Function(List<TrackEffect>) _costOf(
+    BuildContext context,
+    List<TrackEffect> chain,
+  ) {
+    final repository = context.read<LooperRepository>();
+    final base = repository.fxCostOf(chain);
+    return (added) => repository.fxCostOf([...chain, ...added]) - base;
+  }
+
   static bool _committed(FxEditResult result) =>
       result.status == FxEditStatus.applied ||
       result.status == FxEditStatus.unsaved;
@@ -556,6 +569,12 @@ class _FxViewState extends State<FxView> {
     switch (result.status) {
       case FxEditStatus.refused:
         _changeRefused(context);
+      case FxEditStatus.overBudget:
+        showAppSnackToast(
+          id: 'fx-over-budget',
+          type: ToastificationType.error,
+          title: AppText(context.l10n.fxOverBudget),
+        );
       case FxEditStatus.unsaved:
         showAppSnackToast(
           id: 'fx-storage-failed',
@@ -626,6 +645,8 @@ class _FxViewState extends State<FxView> {
             catalogue: widget.catalogue ?? FxCatalogue.empty,
             destinationLabel: _destinationLabel(destination),
             freeSlots: kTrackEffectMax - entries.length,
+            roomNs: context.read<LooperRepository>().fxRoomNs,
+            costOf: _costOf(context, entries),
           ),
         ),
       ),
