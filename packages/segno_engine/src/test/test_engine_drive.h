@@ -203,8 +203,10 @@ static void test_drive_on_a_lane(void) {
     CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, count - 1, 0.5f) == LE_OK);
     CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, count, 0.5f) == LE_ERR_INVALID);
     CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
-    /* The loop plays a steady 0.5 through the drive: the output is finite
-     * and, past the high-pass's settling, still carries the loop. */
+    /* The loop plays a steady 0.5 through the drive: the output stays
+     * finite, and the drive's response to the loop starting is heard (its
+     * high-pass then removes the steady part; the capture tests check what
+     * it does to signal). */
     float out[64];
     double energy = 0.0;
     for (int b = 0; b < 200; ++b) {

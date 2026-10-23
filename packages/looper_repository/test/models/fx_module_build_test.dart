@@ -743,12 +743,13 @@ void main() {
       final lofi = fxModuleEntry(
         _module('Distortion'),
         preset('Lo-Fi Rack', const {
-          'Dist': 1,
+          'Distort': 1,
           'Dist Drive': 0.2,
           'Dist Tone': 0.7,
         }),
       );
       expect(lofi.type, TrackEffectType.distortion);
+      expect(lofi.enabled, isTrue);
       expect(fxEntryBuild(lofi)!.exposed, [0, 1]);
       expect(lofi.params.take(2), [0.2, 0.7]);
       final studio = fxModuleEntry(

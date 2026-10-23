@@ -81,8 +81,8 @@ static inline void le_svf_tick(float x, float a1, float a2, float a3,
 }
 
 /* The bilinear prewarp of a corner [hz] at [sr]: tan(pi hz / sr), the
- * corner held under 0.45 of the rate. Every TPT filter here designs from
- * it. */
+ * corner held under 0.45 of the rate. The Looper X kinds' TPT filters
+ * design from it (the built-in resonant filter keeps its own float form). */
 static double le_prewarp(double hz, int sr) {
   const double rate = (double)(sr > 0 ? sr : 48000);
   if (hz > 0.45 * rate) hz = 0.45 * rate;
@@ -2282,6 +2282,7 @@ static const le_fx_param_desc LE_FX_OVERDRIVE_PARAMS[] = {
 #define LE_OD_C 0.0367f      /* the clipped part's ceiling */
 #define LE_OD_A 2.8826f      /* the second stage */
 #define LE_OD_B 0.0772f      /* ... and its asymmetry */
+#define LE_OD_OFF 0.21893453f /* tanh(LE_OD_A LE_OD_B): its rest point */
 #define LE_OD_P 0.9752f      /* output, with the tone filter at 1 kHz */
 #define LE_OD_G0 3.9823      /* G at 0 % drive */
 #define LE_OD_GK 1.8122      /* ln G per unit of drive */
@@ -2314,7 +2315,6 @@ typedef struct le_fx_overdrive {
   float tone_tgt;
   float hp_g1, tone_g1, lp2_g1;
   float pk[5];      /* the 680 Hz rise, RBJ, a0-normalized */
-  float off;        /* tanh(a b): the second stage's rest point */
   float s_hp[2], s_tone[2], s_lp2[2];
   float z_pk[2][2];
 } le_fx_overdrive;
@@ -2331,7 +2331,6 @@ static void fx_overdrive_update(void* ks, const float* p, int sr, int settle) {
     le_eq_design(LE_EQ_LOMID, LE_OD_PEAK_HZ, LE_OD_PEAK_DB, LE_OD_PEAK_Q,
                  (int)rate, c);
     for (int i = 0; i < 5; ++i) o->pk[i] = (float)c[i];
-    o->off = tanhf(LE_OD_A * LE_OD_B);
   }
   const float d = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
   const float t = p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1];
@@ -2356,7 +2355,7 @@ static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
   for (int ch = 0; ch < 2; ++ch) {
     const float x = io[ch];
     const float u = LE_OD_K * x + LE_OD_C * tanhf(g * x);
-    float v = (tanhf(LE_OD_A * (u + LE_OD_B)) - o->off) * (1.0f / LE_OD_A);
+    float v = (tanhf(LE_OD_A * (u + LE_OD_B)) - LE_OD_OFF) * (1.0f / LE_OD_A);
     /* The tone filter: the 17 Hz high-pass, the 680 Hz rise, the tone
      * corner and the 11 kHz pole. */
     v = v - le_onepole_lp(&o->s_hp[ch], o->hp_g1, v);
