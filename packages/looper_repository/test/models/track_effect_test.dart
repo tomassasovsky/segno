@@ -166,7 +166,7 @@ void main() {
       );
     });
 
-    test('copyWith replaces type while keeping params', () {
+    test('copyWith to another type starts at its defaults', () {
       final fx = BuiltInEffect(
         type: TrackEffectType.delay,
         params: const [0.1, 0.2, 0.3, 0.4],
@@ -175,8 +175,8 @@ void main() {
       final swapped = fx.copyWith(type: TrackEffectType.echo);
 
       expect(swapped.type, TrackEffectType.echo);
-      // The echo reads three, like the delay; the fourth cell is past both.
-      expect(swapped.params.take(4), [0.1, 0.2, 0.3, 0]);
+      expect(swapped.params, TrackEffectType.echo.defaultParams);
+      expect(fx.copyWith(params: const [0.4]).params.first, 0.4);
     });
   });
 

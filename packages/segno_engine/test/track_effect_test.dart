@@ -84,7 +84,12 @@ void main() {
         base.copyWith(type: TrackEffectType.filter).type,
         TrackEffectType.filter,
       );
-      expect(base.copyWith(type: TrackEffectType.filter).params, base.params);
+      // Another type starts at its own defaults; the same type keeps them.
+      expect(
+        base.copyWith(type: TrackEffectType.filter).params,
+        TrackEffectType.filter.defaultParams,
+      );
+      expect(base.copyWith(type: TrackEffectType.drive).params, base.params);
       expect(
         base.copyWith(params: const [0.9, 0, 0]).params,
         cells(const [0.9, 0]),
