@@ -40,7 +40,7 @@ jobs:
   # job above — that job only runs the root app's own test/ dir. It gets its
   # own dart_package.yml job instead. No bloc usage here, so bloc lint is off.
   daw-export:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v2
     with:
       working_directory: packages/daw_export
       run_bloc_lint: false
@@ -49,7 +49,7 @@ jobs:
   # usb_storage_client (#1177) is pure Dart too: it reads the appliance's USB
   # volume records and files eject requests, with no Flutter dependency.
   usb-storage-client:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v2
     with:
       working_directory: packages/usb_storage_client
       run_bloc_lint: false
@@ -60,7 +60,7 @@ jobs:
   # here is the factory's return of the real helper, which only the appliance
   # has installed.
   touch-calibration-client:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v2
     with:
       working_directory: packages/touch_calibration_client
       run_bloc_lint: false
@@ -151,7 +151,7 @@ jobs:
   # cannot cover here are the two factories, which only pick the real client
   # on the appliance.
   brightness-client:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v2
     with:
       working_directory: packages/brightness_client
       run_bloc_lint: false
@@ -163,7 +163,7 @@ jobs:
   # EPIPE and ECHILD paths rather than racing for them (#1457), so the figure
   # is 89.3% on every run; the floor leaves room for a few lines of change.
   spawn-process:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v2
     with:
       working_directory: packages/spawn_process
       run_bloc_lint: false
