@@ -411,6 +411,19 @@ FxModuleBuild? fxEntryBuild(BuiltInEffect entry) {
   return build?.type == entry.type ? build : null;
 }
 
+/// The parameters [entry] shows, in order: its rack variant's
+/// ([fxEntryBuild]), or every parameter of its type. What every surface that
+/// lists or names an entry's controls goes through (the pedal, the control
+/// bindings), so they agree.
+List<int> fxEntryShownParams(BuiltInEffect entry) =>
+    fxEntryBuild(entry)?.exposed ??
+    [for (var i = 0; i < entry.type.params.length; i++) i];
+
+/// The key [entry]'s parameter [param] is named by: its rack variant's name
+/// for it, or the parameter's own key.
+String fxEntryParamKey(BuiltInEffect entry, int param) =>
+    fxEntryBuild(entry)?.labels[param] ?? entry.type.params[param].key;
+
 /// Builds one chain entry for [module] out of [preset]'s values.
 ///
 /// Returns an entry whatever the readiness: a rack is what the player loaded,

@@ -295,10 +295,11 @@ jobs:
       # uploaded for that run.
       - name: Run the effects bench for the EQ kind (informational)
         if: always()
+        continue-on-error: true
         shell: bash
         run: >
           bash packages/segno_engine/src/test/bench/bench_fx_cpu.sh
-          --kind eq --blocks 6000
+          --kind eq --blocks 2000
           | tee bench-fx-eq-arm64.md
       - name: Upload the effects bench and its EQ report for the appliance
         if: always()

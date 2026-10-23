@@ -187,7 +187,7 @@ String? fxParamName(
     if (fx is! BuiltInEffect) return null;
     final params = fx.type.params;
     if (target.param < 0 || target.param >= params.length) return null;
-    return l10n.fxParamName(params[target.param]);
+    return l10n.fxParamKeyName(fxEntryParamKey(fx, target.param));
   }
   return null;
 }
