@@ -24,6 +24,9 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.compressor => effectCompressor,
     TrackEffectType.transient => effectTransient,
     TrackEffectType.hpGate => effectHpGate,
+    TrackEffectType.doubler => effectDoubler,
+    TrackEffectType.chorus => effectChorus,
+    TrackEffectType.wah => effectWah,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
@@ -74,6 +77,8 @@ extension EngineLocalizations on AppLocalizations {
     'sustain' => paramSustain,
     'highpass' => paramHighpass,
     'gate_threshold' => paramGateThreshold,
+    'separation' => paramSeparation,
+    'pedal' => paramPedal,
     _ => key,
   };
 

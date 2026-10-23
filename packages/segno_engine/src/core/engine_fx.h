@@ -244,6 +244,17 @@ void le_fx_entry_renew(le_fx_state* fx, int slot, int32_t type);
  * (memoryless or latency-bearing types, and hosted plugins). */
 int le_fx_type_drains(int32_t type);
 
+/* Whether [type] runs a free-running modulator (the chorus's and the
+ * doubler's LFOs), which sounds different on each lap of a loop: a chain
+ * holding one is never wet-cached, since one lap's print would repeat where
+ * live does not. Any thread. */
+int le_fx_type_free_running(int32_t type);
+
+/* Whether an entry of [type] at settings [p] (its first
+ * le_fx_param_width(type) cells) runs a free-running modulator that is
+ * heard: le_fx_type_free_running, with a mix above 0 %. Any thread. */
+int le_fx_entry_free_running(int32_t type, const float* p);
+
 /* Seeds chain slot [slot]'s enable-crossfade runtime SETTLED at enabled so a
  * freshly created (zeroed) le_fx_state does not fade in on first use. Call
  * once after creating/zeroing a standalone le_fx_state (lane/monitor reset,
@@ -359,7 +370,7 @@ int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap);
  *
  * LE_FX_WIDTHS is one past the last le_fx_type code; engine_fx.c checks it
  * against its effect table. */
-#define LE_FX_WIDTHS 13
+#define LE_FX_WIDTHS 16
 extern const uint8_t le_fx_widths[LE_FX_WIDTHS];
 static inline int32_t le_fx_param_width(int32_t type) {
   return type > 0 && type < LE_FX_WIDTHS ? (int32_t)le_fx_widths[type] : 0;
