@@ -716,6 +716,10 @@ typedef enum le_fx_type {
   /* LPF: p0 cutoff (20 to 20000 Hz), p1 resonance. A resonant
    * 12 dB/octave low-pass. */
   LE_FX_LPF = 20,
+  /* SPRING: p0 time (1 to 10 s, the decay to -60 dB), p1 mix. One
+   * recirculating, dispersive spring, band-limited to 200 Hz - 4 kHz; fit to
+   * the Guitar Rack's Spring (#891). Drains its tail on bypass. */
+  LE_FX_SPRING = 21,
 } le_fx_type;
 
 /* ---- Built-in effect parameter descriptors (#1378) ----
@@ -739,6 +743,7 @@ typedef enum le_fx_param_unit {
   LE_FX_UNIT_DB = 6,        /* decibels */
   LE_FX_UNIT_Q = 7,         /* a filter's Q, a plain number */
   LE_FX_UNIT_RATIO = 8,     /* a compression ratio, "n : 1" */
+  LE_FX_UNIT_SECONDS = 9,   /* seconds */
 } le_fx_param_unit;
 
 /* How a parameter's value follows its normalized setting v in 0..1. */

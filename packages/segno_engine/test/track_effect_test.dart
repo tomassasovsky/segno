@@ -434,6 +434,8 @@ void main() {
         TrackEffectType.vinyl: [0.4, 0.35, 0.3, 0.9],
         TrackEffectType.degrade: [1.0, 1.0, 1.0],
         TrackEffectType.lpf: [1.0, 1.0],
+        // The Guitar Rack's spring: 2.00 s, 50 %.
+        TrackEffectType.spring: [0.30103, 0.5],
       };
       for (final type in TrackEffectType.values) {
         expect(type.defaultParams, cells(expected[type]!), reason: type.name);
@@ -517,6 +519,7 @@ void main() {
           6,
           7,
           8,
+          9,
         ],
       );
       expect(FxParamUnit.choice.code, 5);

@@ -68,6 +68,8 @@ const _english = <String, List<String>>{
   'degrade.filter': ['0%', '100%', '100%'],
   'degrade.mix': ['0%', '100%', '100%'],
   'lpf.cutoff': ['20.0 Hz', 'Off', 'Off'],
+  'spring.time': ['1.00 s', '2.00 s', '10.00 s'],
+  'spring.mix': ['0%', '50%', '100%'],
   'lpf.resonance': ['0%', '100%', '100%'],
 };
 
@@ -135,6 +137,8 @@ const _spanish = <String, List<String>>{
   'degrade.filter': ['0%', '100%', '100%'],
   'degrade.mix': ['0%', '100%', '100%'],
   'lpf.cutoff': ['20,0 Hz', 'Apagado', 'Apagado'],
+  'spring.time': ['1,00 s', '2,00 s', '10,00 s'],
+  'spring.mix': ['0%', '50%', '100%'],
   'lpf.resonance': ['0%', '100%', '100%'],
 };
 

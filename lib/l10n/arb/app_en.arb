@@ -842,6 +842,7 @@
     "effectVinyl": "Vinyl",
     "effectDegrade": "Degrade",
     "effectLpf": "Low-pass filter",
+    "effectSpring": "Spring Reverb",
     "paramFrequency": "Frequency",
     "paramNoise": "Noise",
     "paramNoiseTone": "Noise tone",
@@ -4160,6 +4161,19 @@
         "description": "A built-in effect parameter's time below 1 ms, with two decimals (a compressor's fastest attack).",
         "placeholders": {
             "milliseconds": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 2
+                }
+            }
+        }
+    },
+    "fxValueSeconds": "{seconds} s",
+    "@fxValueSeconds": {
+        "description": "A built-in effect parameter's time in seconds, with two decimals (a spring reverb's decay).",
+        "placeholders": {
+            "seconds": {
                 "type": "double",
                 "format": "decimalPatternDigits",
                 "optionalParameters": {

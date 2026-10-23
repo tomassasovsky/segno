@@ -403,7 +403,11 @@ enum TrackEffectType {
   degrade(19, 'Degrade'),
 
   /// The Looper X's low-pass filter (#887 part 7): resonant, 12 dB/octave.
-  lpf(20, 'LPF');
+  lpf(20, 'LPF'),
+
+  /// The Looper X's spring reverb (#887 part 8): one recirculating,
+  /// dispersive spring; fit to the Guitar Rack's Spring.
+  spring(21, 'Spring Reverb');
 
   const TrackEffectType(this.code, this.label);
 
@@ -952,6 +956,24 @@ enum TrackEffectType {
         taperUnverified: true,
       ),
     ],
+    // Fit to the Guitar Rack's Spring (#891); the Looper X's ranges.
+    TrackEffectType.spring => const [
+      FxParamInfo(
+        key: 'time',
+        unit: FxParamUnit.seconds,
+        atMin: 1,
+        atMax: 10,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.30103,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+    ],
     TrackEffectType.reverb => const [
       // comb feedback 0.70 + 0.28 v; feedback low-pass 0.4 v
       FxParamInfo(
@@ -1021,7 +1043,10 @@ enum FxParamUnit {
   q(7),
 
   /// A compression ratio, "n : 1" (`LE_FX_UNIT_RATIO`).
-  ratio(8);
+  ratio(8),
+
+  /// Seconds (`LE_FX_UNIT_SECONDS`).
+  seconds(9);
 
   const FxParamUnit(this.code);
 
