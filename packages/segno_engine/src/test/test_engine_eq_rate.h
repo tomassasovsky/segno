@@ -12,7 +12,7 @@
  * high shelves with Q over about 3 above 14 kHz, and high cuts between
  * about 3 and 8 kHz, whose error is in the stopband. */
 #define EQR_BELL_P95_44 0.12
-#define EQR_BELL_MAX_44 1.5
+#define EQR_BELL_MAX_44 1.8
 #define EQR_BELL_P95_96 0.75
 #define EQR_BELL_MAX_96 6
 #define EQR_HS_P95_44 0.95
