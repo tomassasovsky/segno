@@ -378,6 +378,23 @@ typedef struct le_lag_refine {
   float d[2 * LE_REFINE_SPAN_MAX + 2];
 } le_lag_refine;
 
+/* The PSOLA octaver's pitch detection in flight (#913), sliced across its
+ * hops: a coarse YIN pass over a decimated window, then a narrow device-rate
+ * refinement (le_psola_pass_*, engine_fx.c). It lives at the end of the
+ * octaver's heap scratch (le_ps, engine_fx.h), with the windows it reads, so
+ * only octaver slots carry it. */
+typedef struct le_psola_pass {
+  int32_t phase;  /* 0 idle, 1 coarse, 2 refinement */
+  int32_t decim;  /* the pass's decimation factor */
+  int32_t end;    /* the ring index the pass's input ends at */
+  int32_t credit; /* iterations the pass may spend, carried tick to tick */
+  int32_t hops;   /* hops since the last pass started */
+  float conf;     /* the coarse pass's voicing confidence */
+  float coarse;   /* the coarse period, in device samples */
+  le_yin_pass yin;
+  le_lag_refine ref;
+} le_psola_pass;
+
 /* The PSOLA octaver's largest pitch-detection decimation (the detection
  * geometry is in engine_fx.h, which includes this file); its refinement spans
  * that many lags either side of the coarse one. */
@@ -405,25 +422,15 @@ typedef struct le_octaver_state {
   float voiced;
   int32_t in_epoch;
   int32_t out_epoch;
-  /* PSOLA's pitch detection in flight (#913), sliced across its hop: a coarse
-   * YIN pass over a decimated window, then a narrow device-rate refinement
-   * (le_psola_pass_*, engine_fx.c). Its windows live in the scratch, which
-   * PSOLA has to itself, since the phase vocoder never runs beside it. */
-  int32_t ps_phase;  /* 0 idle, 1 coarse, 2 refinement */
-  int32_t ps_decim;  /* the pass's decimation factor */
-  int32_t ps_end;    /* the ring index the pass's input ends at */
-  int32_t ps_credit; /* iterations the pass may spend, carried tick to tick */
-  le_yin_pass ps_yin;
-  float ps_conf;   /* the coarse pass's voicing confidence */
-  float ps_coarse; /* the coarse period, in device samples */
-  le_lag_refine ps_ref;
   /* Shared: per-sample param smoothing + mode-switch gain-dip (D1/D2/H3). */
   float sm_shift;
   float sm_tone;
   float sm_mix;
   int32_t cur_mode; /* 0 = phase vocoder, 1 = PSOLA */
   float xfade;      /* equal-power gain-dip envelope during a mode switch (1 = steady) */
-  /* The hop split's frame state (LE_PV_SCRATCH floats, engine_fx.h), the
+  /* The hop split's frame state (LE_PV_SCRATCH floats, engine_fx.h; PSOLA's
+   * detection windows and its le_psola_pass instead in PSOLA mode, since the
+   * two modes never run together), the
    * shift ratio and formant setting read when the frame was analysed, and
    * whether a frame has been analysed since the last reset (the later stages
    * wait for one, so a reset never synthesises a stale scratch). */

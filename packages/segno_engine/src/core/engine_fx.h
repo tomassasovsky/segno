@@ -177,22 +177,37 @@ static inline int32_t le_fx_all_tracks_hop_seed(int32_t bus) {
  * D = ceil(rate / LE_PSOLA_RATE), 1..LE_PSOLA_DMAX (2 at 44.1 and 48 kHz, 4 at
  * 96 kHz, 8 at 192 kHz): LE_PSOLA_DWIN decimated samples, 33 ms or more,
  * searched from LE_PSOLA_MIN_HZ to LE_PSOLA_MAX_HZ at every rate up to
- * 192 kHz. A narrow pass over the last LE_PSOLA_RAW device samples refines it
- * to a device sample, as the tuner does. The pass averages
- * LE_PSOLA_WORK_PER_TICK iterations a tick (a credit, carried tick to tick),
- * so it spreads over its hop instead of landing in one callback: a whole pass
- * is at most ~190k (the decimation, 160k of coarse lags, the device-rate copy
- * and up to 26k of refinement at 192 kHz) against the hop's 256 x 896 = 229k.
- * A 64-frame callback carries about 64 x 896 = 57k of it, plus at most one
- * lag of overshoot. */
+ * 192 kHz. A narrow pass over the last LE_PSOLA_RAW device samples refines a
+ * voiced one to a device sample, as the tuner does. A pass starts every
+ * max(1, D / 2) hops, about every 5 ms at every rate, and averages
+ * LE_PSOLA_WORK_PER_TICK / max(1, D / 2) iterations a tick (a credit, carried
+ * tick to tick), so it spreads over its hops instead of landing in one
+ * callback: a whole pass is at most ~202k (the decimation, 160k of coarse
+ * lags, the device-rate copy and up to 33k of refinement at 192 kHz) against
+ * 256 x 896 = 229k a span. A 64-frame callback carries at most 64 x 896 =
+ * 57k of it (at 48 kHz; 29k at 96 kHz), plus one lag of overshoot. */
 #define LE_PSOLA_RATE 24000 /* LE_PSOLA_DMAX is in engine_private.h */
 #define LE_PSOLA_DWIN 800
 #define LE_PSOLA_MIN_HZ 60
 #define LE_PSOLA_MAX_HZ 1000
 #define LE_PSOLA_RAW 2048
 #define LE_PSOLA_WORK_PER_TICK 896
+/* Where PSOLA's detection state starts in the octaver scratch (16-byte
+ * aligned, after the frame arrays), and the scratch's whole length. */
+#define LE_PS_STATE_OFF ((LE_PV_SCRATCH + 3) & ~3)
+#define LE_PV_SCRATCH_ALLOC \
+  (LE_PS_STATE_OFF + (int)((sizeof(le_psola_pass) + 3) / 4))
+static inline le_psola_pass* le_ps(le_octaver_state* o) {
+  return (le_psola_pass*)(void*)(o->scratch + LE_PS_STATE_OFF);
+}
 #define LE_PSOLA_THRESH 0.15f /* YIN absolute threshold for the first dip */
-#define LE_PSOLA_THMAX 300   /* grain half-width cap: 2*THMAX < LE_PV_N (fits OLA) */
+/* Grain half-width cap. A grain is laid around LE_PV_N / 2 ahead of the read
+ * pointer in the LE_PV_N-long OLA accumulator, so its half-width must stay
+ * under LE_PV_N / 2: 500 keeps grains overlapping for periods up to 1000
+ * samples (48 Hz at 48 kHz, 96 Hz at 96 kHz). A longer period, which the
+ * detector reaches at 96 kHz and up, is rebuilt from grains that no longer
+ * meet; covering it would take a longer latency. */
+#define LE_PSOLA_THMAX 500
 /* How far behind the head PSOLA reads its input, so its latency matches the
  * split phase vocoder's (LE_PV_LATENCY). */
 #define LE_PSOLA_LAG (LE_PV_LATENCY - LE_PV_N)
@@ -444,8 +459,9 @@ void le_fx_defaults(int32_t type, float out[LE_FX_PARAMS]);
  * le_psola_detect_band split at its two pausable points, so a caller that
  * cannot afford the whole (lags x integration) difference function in one
  * callback can spread it. See le_yin_pass in engine_private.h for why, and
- * tuner_slice in engine_process.c for the only sliced caller. All three run on
- * the audio thread and allocate nothing.
+ * tuner_slice in engine_process.c and le_psola_pass_tick in engine_fx.c for
+ * the two sliced callers. All three run on the audio thread and allocate
+ * nothing.
  *
  * Sets up a pass over `n` contiguous samples of `x` at `sr` Hz, searching
  * [min_hz, max_hz]. `dp` is the caller's d'(tau) scratch, `dp_cap` its length

@@ -21376,7 +21376,11 @@ static void test_octaver_psola_sliced_detection(void) {
       le_fx_entry_reset(fx, 0);
       CHECK(le_fx_prepare(fx, 0, LE_FX_OCTAVER, sr) == LE_OK);
       le_fx_octaver_seed_settled(fx, 0, params[0]);
-      const le_octaver_state* o = &fx->oct[0][0];
+      le_octaver_state* o = &fx->oct[0][0];
+      const le_psola_pass* ps = le_ps(o);
+      /* A pass starts every max(1, D / 2) hops, D = ceil(sr / 24 kHz). */
+      int every = ((sr + LE_PSOLA_RATE - 1) / LE_PSOLA_RATE) / 2;
+      if (every < 1) every = 1;
       int passes = 0;
       int overran = 0;
       float* out = (float*)malloc(sizeof(float) * (size_t)sr);
@@ -21389,11 +21393,11 @@ static void test_octaver_psola_sliced_detection(void) {
           x += 0.3f / (float)h *
                sinf(2.0f * LE_FFT_PI * f0 * (float)h * (float)i / (float)sr);
         }
-        /* A pass starts on the tick that takes the counter to 0; the one
-         * before it must have finished. */
-        if (o->hop_count == 1) {
+        /* A pass starts on the tick that takes the counter to 0 on its
+         * hop; the one before it must have finished. */
+        if (o->hop_count == 1 && ps->hops == every - 1) {
           ++passes;
-          if (o->ps_phase != 0) ++overran;
+          if (ps->phase != 0) ++overran;
         }
         float l = x;
         float r = x;
@@ -21428,7 +21432,7 @@ static void test_octaver_psola_sliced_detection(void) {
              (double)(100.0f * err), (double)o->voiced, passes, overran,
              (double)out_cents);
       CHECK(fabsf(out_cents) < 20.0f);
-      CHECK(passes > 100);
+      CHECK(passes > 100 / every);
       CHECK(overran <= 1); /* the first may meet a reset pass, never more */
       CHECK(err < (f0 > 100.0f ? 0.003f : 0.01f));
       CHECK(o->voiced > 0.6f);
