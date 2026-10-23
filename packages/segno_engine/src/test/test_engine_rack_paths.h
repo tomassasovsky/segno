@@ -120,8 +120,9 @@ static void test_rack_paths_off_is_passthrough(void) {
 }
 
 /* The Dub Delay passes no dry, so with it alone on only the Amb path's dry
- * is left at lag 0, and its echo arrives at D(m) (#891: 0.409 = 0.64 x its
- * own 0.639 at 40 %). */
+ * is left at lag 0, and its echo arrives at D(m) times the delay's own echo
+ * level (here 1; #891 saw 0.409 = 0.64 x the Looper X delay's 0.639 at
+ * 40 %). */
 static void test_rack_paths_dub_delay_alone(void) {
   printf("test_rack_paths_dub_delay_alone\n");
   const int n = RP_SR / 2;
@@ -266,6 +267,85 @@ static void test_rack_paths_in_the_stems(void) {
   CHECK(rk_stem_case("rack-no-paths", fx, 0.5f) < 1e-6f);
 }
 
+/* A gain between Pre and Post that lands inside a section scales what the
+ * section sums, as it would the signal in series: the result is the same as
+ * the gain ahead of the section. */
+static void test_rack_paths_gain_inside_a_section(void) {
+  printf("test_rack_paths_gain_inside_a_section\n");
+  for (int at = 0; at < 3; ++at) {
+    rp_rack k;
+    rp_open(&k, 0.4f, 1 << 3);
+    float y = 0.0f;
+    for (int i = 0; i < 100; ++i) {
+      k.fx->clock = k.clock++;
+      float l = 0.25f;
+      float r = 0.25f;
+      fx_apply_chain_with_gain(k.fx, RP_SR, RP_SR, &l, &r, RP_N, k.types,
+                               k.params, k.on, at, 0.5f);
+      y = l;
+    }
+    rp_close(&k);
+    CHECK(fabsf(y - 0.25f * 1.64f * 0.5f) < 1e-6f);
+  }
+}
+
+/* The rack switching off glides the dry boost away at the enable rate and
+ * lands on the input exactly; a tail draining out of it keeps its path's
+ * gain, as the same tail does with the rack on. */
+static void test_rack_paths_rack_off(void) {
+  printf("test_rack_paths_rack_off\n");
+  {
+    rp_rack k;
+    rp_open(&k, 0.4f, 1 << 3);
+    const int n = RP_SR / 50;
+    float in[RP_SR / 50];
+    float out[RP_SR / 50];
+    for (int i = 0; i < n; ++i) in[i] = 0.25f;
+    rp_run(&k, in, out, 10);
+    CHECK(fabsf(out[9] - 0.41f) < 1e-6f);
+    k.on[3] = 0;
+    rp_run(&k, in, out, n);
+    const float step = 1000.0f / ((float)LE_FX_ENABLE_RAMP_MS * RP_SR);
+    float prev = 0.41f;
+    for (int i = 0; i < n; ++i) {
+      CHECK(out[i] <= prev + 1e-7f);
+      CHECK(prev - out[i] <= 0.16f * step * 1.01f + 1e-7f);
+      prev = out[i];
+    }
+    CHECK(out[n - 1] == 0.25f);
+    rp_close(&k);
+  }
+  {
+    /* The Dub-Verb at m 0.25 (D 0.25): an impulse, then the whole rack
+     * off, against the rack left on. */
+    const int n = RP_SR / 4;
+    float* in = (float*)calloc((size_t)n, sizeof(float));
+    float* on = (float*)calloc((size_t)n, sizeof(float));
+    float* off = (float*)calloc((size_t)n, sizeof(float));
+    in[0] = 0.5f;
+    rp_rack k;
+    rp_open(&k, 0.25f, 1 << 1 | 1 << 3);
+    rp_run(&k, in, on, n);
+    rp_close(&k);
+    rp_open(&k, 0.25f, 1 << 1 | 1 << 3);
+    rp_run(&k, in, off, RP_SR / 100);
+    k.on[1] = 0;
+    k.on[3] = 0;
+    rp_run(&k, in + RP_SR / 100, off + RP_SR / 100, n - RP_SR / 100);
+    rp_close(&k);
+    double err = 0.0, ref = 0.0;
+    for (int i = RP_SR / 100; i < n; ++i) {
+      err += (double)(off[i] - on[i]) * (off[i] - on[i]);
+      ref += (double)on[i] * on[i];
+    }
+    CHECK(ref > 0.0);
+    CHECK(10.0 * log10(err / ref + 1e-30) < -90.0);
+    free(in);
+    free(on);
+    free(off);
+  }
+}
+
 static void run_rack_path_tests(void) {
   test_rack_paths_dry_law();
   test_rack_paths_off_is_passthrough();
@@ -274,4 +354,6 @@ static void run_rack_path_tests(void) {
   test_rack_paths_mix_glides();
   test_rack_paths_recipe_bits();
   test_rack_paths_in_the_stems();
+  test_rack_paths_gain_inside_a_section();
+  test_rack_paths_rack_off();
 }

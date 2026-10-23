@@ -1,5 +1,5 @@
 import 'package:equatable/equatable.dart';
-import 'package:looper_repository/src/models/fx_chain_group.dart';
+import 'package:looper_repository/src/models/fx_module_build.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart';
 import 'package:segno_engine/segno_engine.dart' as engine;
 
@@ -938,7 +938,7 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
       rack: _rackToEngine(rack),
       module: module,
       presetId: presetId,
-      rackPath: fxRackPath(effect),
+      rackPath: fxRackPathToEngine(effect),
       source: source,
     ),
   PluginEffect(
@@ -970,6 +970,14 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
       module: module,
     ),
 };
+
+/// The engine's rack path for [fx] ([fxEntryPath]; boundary; internal).
+engine.FxRackPath fxRackPathToEngine(TrackEffect fx) =>
+    switch (fxEntryPath(fx)) {
+      FxModulePath.dub => engine.FxRackPath.dub,
+      FxModulePath.amb => engine.FxRackPath.amb,
+      null => engine.FxRackPath.none,
+    };
 
 /// Maps a domain [FxRack] to the engine mirror (boundary; internal).
 engine.FxRack? _rackToEngine(FxRack? rack) => rack == null

@@ -1021,7 +1021,9 @@ typedef struct le_plugin_slot le_plugin_slot;
  * Mix (p2), or that parameter's default when the section has none. The
  * boost the two dry signals add (A + D - 1 of the input) follows the rack's
  * on/off fade, so a rack with every entry off still passes its input
- * through untouched. */
+ * through untouched. Path entries outside any rack still form a section,
+ * with the boost in full (there is no rack fade to follow); segno sets the
+ * bits only inside racks. */
 typedef enum le_fx_rack_edge {
   LE_FX_RACK_FIRST = 1,
   LE_FX_RACK_LAST = 2,
