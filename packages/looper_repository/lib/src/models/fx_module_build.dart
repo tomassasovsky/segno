@@ -662,11 +662,21 @@ FxParamInfo fxEntryParam(BuiltInEffect entry, int index) =>
 
 /// [entry]'s parameter [index] as a setting of [fxEntryParam]: the setting
 /// that stands for the same value as the kind's.
-double fxEntryShownSetting(BuiltInEffect entry, int index) {
-  final setting = entry.params[index];
+double fxEntryShownSetting(BuiltInEffect entry, int index) =>
+    fxEntryShownSettingFor(entry, index, entry.params[index]);
+
+/// The setting of [fxEntryParam] that stands for the same value as
+/// [kindSetting], a setting of [entry]'s parameter [index] (the entry's own
+/// or another one, such as a value about to be written to it). A setting
+/// outside the shown range clamps to its end.
+double fxEntryShownSettingFor(
+  BuiltInEffect entry,
+  int index,
+  double kindSetting,
+) {
   final shown = fxEntryBuild(entry)?.shown[index];
-  if (shown == null) return setting;
-  return shown.settingFor(entry.type.params[index].valueAt(setting));
+  if (shown == null) return kindSetting;
+  return shown.settingFor(entry.type.params[index].valueAt(kindSetting));
 }
 
 /// The kind's setting for parameter [index] of [entry] that stands for the
