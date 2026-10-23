@@ -284,32 +284,37 @@ Why every fit is usable:
   negative, so every fit factors into a stable, minimum-phase biquad. The
   two earlier attempts could produce numerators or poles that could not be
   realized.
-- **Above 24 kHz.** The 48 kHz response says nothing there, so up to the
-  Nyquist frequency a fit may not rise more than 6 dB above that response's
-  level at the top of the band.
+- **Above the scored band.** Above 24 kHz the 48 kHz response says
+  nothing. Up to the Nyquist frequency, a fit may not rise more than 6 dB
+  above that response's level at the top of the band, or above the plain
+  design's own level there where that is higher. From 20 to 24 kHz it may
+  not rise more than 3 dB above both the 48 kHz response and the plain
+  design.
 - **Never worse than the plain design.** A grid point keeps the plain
   design unless its fit beats it. The corrections around any cell are
   dropped if, at 27 points inside it, the interpolated design is more than
-  0.1 dB worse than the plain design or breaks the bound above 24 kHz.
+  0.1 dB worse than the plain design, or breaks the bounds above the
+  scored band.
 - **Stable in use.** At run time a correction is scaled by the largest
   factor up to 1 that keeps the poles inside the stability margin. That
   factor is continuous in the settings, so a glide never steps.
 
-Measured at 3000 random settings per band (500 per cut) across each
+Measured at 8000 random settings per band (1000 per cut) across each
 band's full range of frequency, Q and gain. The figures are the largest dB
 error against the 48 kHz response, on 480 frequencies from 20 Hz to 20 kHz,
-wherever that response is above -40 dB.
+wherever that response is above -40 dB. The worst cases are the worst of
+this sample, not bounds.
 
 | band | 44.1 kHz: p95 / worst | 96 kHz: p95 / worst | plain design at 96 kHz |
 |---|---|---|---|
-| bell | 0.10 / 1.2 | 0.64 / 5.2 | 2.4 / 5.4 |
-| high shelf | 0.84 / 6.9 | 3.3 / 18.4 | 7.3 / 19.7 |
-| low shelf (plain) | 0.004 / 0.03 | 0.02 / 0.12 | |
-| high cut | 0.24 / 0.95 | 2.7 / 3.4 | 14.4 / 14.8 |
-| low cut | 0.001 / 0.003 | 0.006 / 0.011 | 0.71 / 1.3 |
+| bell | 0.10 / 1.2 | 0.65 / 5.6 | 2.4 / 5.6 |
+| high shelf | 0.84 / 9.1 | 4.7 / 20.0 | 7.2 / 20.0 |
+| low shelf (plain) | 0.004 / 0.03 | 0.02 / 0.13 | |
+| high cut | 0.16 / 0.95 | 2.3 / 3.4 | 14.4 / 14.8 |
+| low cut | 0.001 / 0.003 | 0.006 / 0.011 | 0.70 / 1.3 |
 
-At most 0.1 % of settings (high shelves at 96 kHz) are more than 0.1 dB
-worse than the plain design.
+None of the sampled settings is more than 0.1 dB worse than the plain
+design.
 
 The worst cases are settings that one biquad cannot follow at 96 kHz
 without lifting the band above 24 kHz:
