@@ -1696,6 +1696,11 @@ void le_fx_defaults(int32_t type, float out[LE_FX_PARAMS]) {
   }
 }
 
+int32_t le_fx_param_width(int32_t type) {
+  if (type <= LE_FX_NONE || type >= LE_FX_TYPE_COUNT) return 0;
+  return LE_FX[type].param_count;
+}
+
 int32_t le_fx_param_count(int32_t type) {
   if (type < LE_FX_NONE || type >= LE_FX_TYPE_COUNT) return LE_ERR_INVALID;
   return LE_FX[type].param_count;

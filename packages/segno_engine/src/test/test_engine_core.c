@@ -19606,28 +19606,31 @@ static void test_lane_setters_reject_invalid_args(void) {
   le_engine_destroy(e);
 }
 
-/* Widening LE_FX_PARAMS from 3 to 4 must leave EVERY non-octaver effect inert in
- * the new slot: p3 is never read, so its value cannot change the output. Two
- * identically-driven engines — one with p3 = 0 (the default), one with p3 = 1 —
- * must produce byte-for-byte identical output across many blocks (so stateful
- * delay/echo/reverb tails are exercised too). This is the M3 "identical after
- * the widening" guard. Index 3 is also now a valid param (rejected before the
- * widening). The octaver is excluded — it will read p3 in parts 3-4. */
-static void test_fx_fourth_param_is_inert(void) {
-  printf("test_fx_fourth_param_is_inert\n");
-  CHECK(LE_FX_PARAMS == 4);
+/* A type reads only its first le_fx_param_count(type) settings (#887 part 4
+ * widened the row to 32). Two identically driven engines, one with every
+ * setting past the type's count at 0 and one with them at 1, must produce
+ * byte-identical output across many blocks, so the delay, echo and reverb
+ * tails are exercised too. Every index up to LE_FX_PARAMS - 1 is accepted. */
+static void test_fx_params_past_count_are_inert(void) {
+  printf("test_fx_params_past_count_are_inert\n");
+  CHECK(LE_FX_PARAMS == 32);
 
   const int32_t types[] = {LE_FX_DRIVE,   LE_FX_FILTER, LE_FX_DELAY,
-                           LE_FX_TREMOLO, LE_FX_ECHO,   LE_FX_REVERB};
+                           LE_FX_TREMOLO, LE_FX_OCTAVER, LE_FX_ECHO,
+                           LE_FX_REVERB};
   for (int t = 0; t < (int)(sizeof(types) / sizeof(types[0])); ++t) {
     le_engine* a = make_configured_engine();
     le_engine* b = make_configured_engine();
     establish_loop(a, 1.0f);
     establish_loop(b, 1.0f);
 
-    le_engine_set_lane_fx(a, 0, 0, 0, types[t]); /* seeds p3 = 0 */
+    le_engine_set_lane_fx(a, 0, 0, 0, types[t]);
     le_engine_set_lane_fx(b, 0, 0, 0, types[t]);
-    CHECK(le_engine_set_lane_fx_param(b, 0, 0, 0, 3, 1.0f) == LE_OK); /* drive p3 */
+    const int32_t count = le_fx_param_count(types[t]);
+    CHECK(count > 0 && count <= LE_FX_PARAMS);
+    for (int32_t p = count; p < LE_FX_PARAMS; ++p) {
+      CHECK(le_engine_set_lane_fx_param(b, 0, 0, 0, p, 1.0f) == LE_OK);
+    }
     le_engine_set_lane_fx_count(a, 0, 0, 1, 0);
     le_engine_set_lane_fx_count(b, 0, 0, 1, 0);
 
@@ -19638,6 +19641,9 @@ static void test_fx_fourth_param_is_inert(void) {
       process_const(b, 0.0f, 64, ob);
       for (int i = 0; i < 64; ++i) CHECK(oa[i] == ob[i]); /* byte-for-byte */
     }
+    /* The wet-cache key ignores them too. */
+    CHECK(le_engine_lane_fx_fingerprint(a, 0, 0) ==
+          le_engine_lane_fx_fingerprint(b, 0, 0));
 
     le_engine_destroy(a);
     le_engine_destroy(b);
@@ -38011,7 +38017,7 @@ int main(void) {
   test_fx_stereo_chain_independent_lr_state();
   test_fx_stereo_ring_retained_across_type_reorder();
   test_monitor_input_fx_rejects_invalid_args();
-  test_fx_fourth_param_is_inert();
+  test_fx_params_past_count_are_inert();
   test_octaver_pv_shifts_pitch_preserves_formant();
   test_octaver_pv_low_fundamental();
   test_octaver_mono_coherent();

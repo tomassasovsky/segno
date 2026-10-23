@@ -174,6 +174,7 @@ export 'src/track_effect.dart'
         PluginRef,
         TrackEffect,
         TrackEffectType,
+        canonicalEffectParams,
         decodeTrackEffects,
         encodeTrackEffects,
         fxPreCount,

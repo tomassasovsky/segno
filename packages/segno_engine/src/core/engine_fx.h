@@ -285,6 +285,13 @@ int le_fx_added_latency(const le_fx_state* fx, int slot, int32_t type);
  * frees whatever it allocated this call). Control thread (le_fx_prepare_entry). */
 int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap);
 
+/* How many of an entry's LE_FX_PARAMS settings effect [type] reads: its
+ * descriptor count, and 0 for LE_FX_NONE, a hosted plugin and an unknown
+ * code. Everything that copies or folds a chain's parameters (the per-buffer
+ * snapshot, the wet-cache key, the offline renders, the perf log) stops here,
+ * so the width costs nothing per buffer. Any thread. */
+int32_t le_fx_param_width(int32_t type);
+
 /* Writes effect [type]'s default normalized params into out[LE_FX_PARAMS] (all
  * zero for LE_FX_NONE / unknown). Each type owns its defaults behind the vtable.
  * Seeded on a type change so a chain reorder does not wipe the user's tweaks. */

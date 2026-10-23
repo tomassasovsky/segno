@@ -312,7 +312,8 @@ static uint64_t le_ca_snapshot_fp(int32_t count, int32_t chain_on,
     h = le_fx_fp_u32(h, (uint32_t)types[i]);
     h = le_fx_fp_u32(h, enabled[i] ? 1u : 0u);
     if (types[i] == LE_FX_PLUGIN) continue;
-    for (int32_t p = 0; p < LE_FX_PARAMS; ++p) {
+    const int32_t w = le_fx_param_width(types[i]);
+    for (int32_t p = 0; p < w; ++p) {
       h = le_fx_fp_u32(h, f32_to_bits(params[i][p]));
     }
   }
@@ -872,7 +873,8 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   for (int32_t s = 0; s < count; ++s) {
     types[s] = load_i32(&ln->a_fx_type[s]);
     raw_en[s] = load_i32(&ln->a_fx_enabled[s]) ? 1 : 0;
-    for (int32_t p = 0; p < LE_FX_PARAMS; ++p) {
+    const int32_t w = le_fx_param_width(types[s]);
+    for (int32_t p = 0; p < w; ++p) {
       params[s][p] = load_f32(&ln->a_fx_param[s][p]);
     }
     if (types[s] == LE_FX_PLUGIN) {
@@ -1106,7 +1108,8 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   for (int32_t s = 0; s < count; ++s) {
     types[s] = load_i32(&b->a_fx_type[s]);
     raw_en[s] = load_i32(&b->a_fx_enabled[s]) ? 1 : 0;
-    for (int32_t p = 0; p < LE_FX_PARAMS; ++p) {
+    const int32_t w = le_fx_param_width(types[s]);
+    for (int32_t p = 0; p < w; ++p) {
       params[s][p] = load_f32(&b->a_fx_param[s][p]);
     }
     if (types[s] == LE_FX_PLUGIN) {
@@ -1575,7 +1578,8 @@ void le_fx_frozen_fill(le_fx_frozen_chain* c, int32_t count, int32_t pre,
   for (int32_t s = 0; s < count; ++s) {
     c->type[s] = types[s];
     c->effective[s] = chain_on && enabled[s];
-    for (int32_t p = 0; p < LE_FX_PARAMS; ++p) c->params[s][p] = params[s][p];
+    const int32_t w = le_fx_param_width(types[s]);
+    for (int32_t p = 0; p < w; ++p) c->params[s][p] = params[s][p];
   }
   c->chan_any = chan_any;
   for (int32_t s = 0; s < LE_FX_MAX; ++s) c->chan[s] = chan[s];
@@ -1598,7 +1602,8 @@ void le_fx_frozen_capture(le_fx_frozen_chain* c, _Atomic int32_t* count,
   for (int32_t s = 0; s < n; ++s) {
     types[s] = load_i32(&type[s]);
     en[s] = load_i32(&enabled[s]) ? 1 : 0;
-    for (int32_t p = 0; p < LE_FX_PARAMS; ++p) params[s][p] = load_f32(&param[s][p]);
+    const int32_t w = le_fx_param_width(types[s]);
+    for (int32_t p = 0; p < w; ++p) params[s][p] = load_f32(&param[s][p]);
   }
   le_fx_chan chan[LE_FX_MAX];
   int32_t chan_any = 0;

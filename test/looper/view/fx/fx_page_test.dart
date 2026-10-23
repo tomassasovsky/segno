@@ -2040,9 +2040,9 @@ void main() {
 
         final written = lastTrackWrite();
         expect(
-          (written.firstWhere((e) => e.slotId == 'r1a') as BuiltInEffect)
-              .params,
-          const [0.41, 0.32, 0.23, 0.14],
+          (written.firstWhere((e) => e.slotId == 'r1a') as BuiltInEffect).params
+              .take(3),
+          const [0.41, 0.32, 0.23],
         );
       });
 
