@@ -2829,6 +2829,33 @@ struct le_engine {
    * le_dub_write_index to fault a punch-in's shadow in (le_prefault_shadow). */
   _Atomic int32_t a_clock_at[LE_MAX_TRACKS];
   _Atomic int32_t a_clock_seg[LE_MAX_TRACKS];
+  /* Audibility fades (#1400), audio-thread-owned (mix_tracks_frame). Each
+   * gain moves one od_step per frame toward its gate (le_gate_step,
+   * engine_fade.h), so a mute, an unmute, a solo, a Stop or a Play never
+   * steps the output. At the end of the struct so no field the mixer already
+   * reads moves (the arm64 64-lane mixer gate).
+   *   - lane_mute_gain: toward 1 while the lane is unmuted.
+   *   - trk_solo_gain: toward 1 while no other track's solo silences it.
+   *   - trk_play_gain: the playing read's gain, toward 1 while the track
+   *     plays (PLAYING or OVERDUBBING) and 0 when it stops.
+   *   - trk_tail_gain: a Stop hands the playing read's gain to the tail,
+   *     which reads on from where the track stopped (trk_tail_index) and
+   *     fades to 0. A Play during that fade fades the new read in over it,
+   *     so the two cross rather than jump.
+   *   - trk_head_index: the index the playing read read on its last frame.
+   *   - trk_gate_stale: the mixer skipped the track as idle, so its lane and
+   *     solo gains did not move; they are set to their gates on the next
+   *     frame it is mixed. 1 at create. */
+  float lane_mute_gain[LE_MAX_TRACKS][LE_MAX_LANES];
+  float trk_solo_gain[LE_MAX_TRACKS];
+  float trk_play_gain[LE_MAX_TRACKS];
+  float trk_tail_gain[LE_MAX_TRACKS];
+  double trk_head_index[LE_MAX_TRACKS];
+  double trk_tail_index[LE_MAX_TRACKS];
+  uint8_t trk_gate_stale[LE_MAX_TRACKS];
+  /* The lane count each track was mixed with last frame: a lane added since
+   * starts at its gate. */
+  uint8_t trk_lane_n[LE_MAX_TRACKS];
 };
 
 /* Fills `out` (room for `max`) with the host's playback or capture devices and

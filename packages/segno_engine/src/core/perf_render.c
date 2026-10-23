@@ -681,6 +681,12 @@ typedef struct le_pr_segment {
    * out with the equal-power law (`turn_power`). */
   float* src;
   int owns_src;
+  /* A segment the callback switches to without a fade (#1400): a
+   * finalize's take (RECORD_END) starts at full gain, and a Cut stops at
+   * once. Here,
+   * in owns_src's padding, so the per-track build (LE_PR_MAX_SEGMENTS of
+   * these, on the render worker's stack) does not grow. */
+  int snap_in;
   const float* turn_src;
   int turn_power;
   /* The renders' lengths (#1179 Part 4a-ii, LE_PLOG_SOURCE_LEN): a stretch
@@ -700,6 +706,40 @@ static le_read_head le_pr_segment_head(const le_pr_segment* seg) {
 static double le_pr_segment_index(const le_pr_segment* seg, uint64_t f) {
   const le_read_head h = le_pr_segment_head(seg);
   return le_head_index(&h, (int64_t)(f - seg->start_frame), seg->image_len);
+}
+
+/* The sample segment `seg` sounds at capture frame `f` (>= start_frame):
+ * phase-locked (#255), the segment's image plays from the loop position it
+ * was actually at when the segment activated, not from its own index 0, in
+ * its own direction (#1162), so stems reproduce exactly what the performer
+ * heard. A direction turn mixes the old head out with the callback's
+ * equal-gain law for its window. A Stop's fade-out (#1400) reads the last
+ * sounding segment on past its end the same way. */
+static float le_pr_segment_sample(const le_pr_segment* seg, uint64_t f) {
+  const le_read_head head = le_pr_segment_head(seg);
+  const int64_t into = (int64_t)(f - seg->start_frame);
+  const float* rb = seg->src != NULL ? seg->src : seg->image;
+  const int32_t rl =
+      seg->src != NULL && seg->src_len > 0 ? seg->src_len : seg->image_len;
+  float x = le_head_read_scaled(rb, rl, seg->image_len, &head,
+                                le_head_index(&head, into, seg->image_len));
+  const int64_t mixed = into + seg->turn_into0;
+  if (seg->turn_frames > 0 && mixed < seg->turn_frames) {
+    const double old = le_head_index(&seg->turn, into, seg->image_len);
+    const float a = le_head_turn_mix((int32_t)mixed, seg->turn_frames,
+                                     seg->turn_power);
+    const float b =
+        seg->turn_power
+            ? le_head_turn_mix(seg->turn_frames - (int32_t)mixed,
+                               seg->turn_frames, 1)
+            : 1.0f - a;
+    const float* ob = seg->turn_src != NULL ? seg->turn_src : seg->image;
+    const int32_t ol = seg->turn_src != NULL && seg->turn_src_len > 0
+                           ? seg->turn_src_len
+                           : seg->image_len;
+    x = x * a + le_head_read_scaled(ob, ol, seg->image_len, &seg->turn, old) * b;
+  }
+  return x;
 }
 
 typedef struct le_pr_track_build {
@@ -750,6 +790,7 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
   le_pr_segment* seg = &b->segments[b->segment_count++];
   seg->owns_image = 1;
   seg->silent = 0;
+  seg->snap_in = 0;
   seg->start_frame = start_frame;
   seg->phase0 = image_len > 0 ? le_head_wrap(phase0, image_len) : 0.0;
   seg->image = image;
@@ -1050,9 +1091,21 @@ static uint64_t le_pr_record_end_phase(const le_pr_manifest* m,
  * actually name could not be read (the per-stem "partial success" failure
  * this part's acceptance criteria describe) or the stem buffer itself could
  * not be allocated. Channels can come from either snapshot or an applied restoration fact. */
+/* Where a channel's audibility fades engage (#1400): the callback fades a
+ * mute, a solo or a transport change only on a take at least two fades long
+ * and snaps on a shorter one, so the dry pass records, from each listed
+ * frame on, whether the material it sounds is long enough, and the wet pass
+ * reads it back. One run per segment edge at most. */
+typedef struct le_pr_gate_runs {
+  int count;
+  uint64_t frame[LE_PR_MAX_SEGMENTS];
+  uint8_t on[LE_PR_MAX_SEGMENTS];
+} le_pr_gate_runs;
+
 static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
                                  const le_pr_log_entry* log, int log_count,
-                                 int32_t channel, int32_t* out_failed) {
+                                 int32_t channel, int32_t* out_failed,
+                                 le_pr_gate_runs* runs) {
   *out_failed = 0;
   le_pr_track_build build = {0};
   build.numer = 1;
@@ -1138,8 +1191,12 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
   uint32_t restore_id = 0;
   float* restore_image = NULL; /* owned by its initial source segment */
   int32_t restore_len = 0;
+  /* The frame of the last Cut: the callback stops a track there without a
+   * fade (#1400), so a 323 STOPPED on it snaps. */
+  uint64_t cut_frame = UINT64_MAX;
   for (int i = 0; i < log_count; ++i) {
     const le_pr_log_entry* e = &log[i];
+    if (e->cmd.code == LE_CMD_CUT_SOUND) cut_frame = e->frame;
     if ((e->cmd.code == LE_PLOG_SOURCE_APPLIED || e->cmd.code == LE_PLOG_SOURCE_TRANSPORT) &&
         e->cmd.restore_log.channel == channel) {
       const int initial = e->cmd.code == LE_PLOG_SOURCE_APPLIED;
@@ -1161,6 +1218,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
       if (build.load_failed) break;
       le_pr_segment* seg = &build.segments[build.segment_count - 1];
       seg->silent = state == LE_TRACK_STOPPED;
+      seg->snap_in = seg->silent && e->frame == cut_frame;
       if (!initial) {
         seg->owns_image = 0;
         seg->image = restore_image;
@@ -1206,6 +1264,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
                * logged with the finalize, whichever lands first in the file. */
               if (!build.load_failed) {
                 build.segments[build.segment_count - 1].reversed = 0;
+                build.segments[build.segment_count - 1].snap_in = 1;
               }
             } else {
               build.load_failed = 1;
@@ -1345,44 +1404,65 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
     return NULL;
   }
 
+  /* The play and tail gains (#1400), stepped exactly as mix_tracks_frame
+   * steps the callback's: a segment the track sounds through fades in, a
+   * STOPPED one (323) hands the gain to a tail that reads the stopped
+   * material on and fades out, an emptying cuts at once, and a finalize's
+   * take starts at full gain. At capture frame 0 the track already sounds
+   * the way the arm found it. */
+  const float gate_step = le_gate_step_size(m->sample_rate);
+  const int32_t gate_min =
+      2 * (m->sample_rate / 100 > 0 ? m->sample_rate / 100 : 1);
+  float play_gain = 0.0f;
+  float tail_gain = 0.0f;
+  const le_pr_segment* tail_seg = NULL; /* the stopped material */
   int seg_index = 0;
+  int entered = -1;
   for (uint64_t f = 0; f < m->capture_frames; ++f) {
     while (seg_index + 1 < build.segment_count &&
           build.segments[seg_index + 1].start_frame <= f) {
       seg_index++;
     }
     const le_pr_segment* seg = &build.segments[seg_index];
-    if (!seg->silent && seg->image != NULL && seg->image_len > 0) {
-      /* Phase-locked (#255): the segment's image plays from the loop
-       * position it was actually at when the segment activated, not from
-       * its own index 0, in its own direction (#1162) — stems reproduce
-       * exactly what the performer heard. A direction turn mixes the old
-       * head out with the callback's equal-gain law for its window. */
-      const le_read_head head = le_pr_segment_head(seg);
-      const int64_t into = (int64_t)(f - seg->start_frame);
-      const float* rb = seg->src != NULL ? seg->src : seg->image;
-      const int32_t rl =
-          seg->src != NULL && seg->src_len > 0 ? seg->src_len : seg->image_len;
-      stem[f] = le_head_read_scaled(rb, rl, seg->image_len, &head,
-                                    le_head_index(&head, into, seg->image_len));
-      const int64_t mixed = into + seg->turn_into0;
-      if (seg->turn_frames > 0 && mixed < seg->turn_frames) {
-        const double old = le_head_index(&seg->turn, into, seg->image_len);
-        const float x = le_head_turn_mix((int32_t)mixed, seg->turn_frames,
-                                         seg->turn_power);
-        const float y =
-            seg->turn_power
-                ? le_head_turn_mix(seg->turn_frames - (int32_t)mixed,
-                                   seg->turn_frames, 1)
-                : 1.0f - x;
-        const float* ob = seg->turn_src != NULL ? seg->turn_src : seg->image;
-        const int32_t ol = seg->turn_src != NULL && seg->turn_src_len > 0
-                               ? seg->turn_src_len
-                               : seg->image_len;
-        stem[f] = stem[f] * x + le_head_read_scaled(ob, ol, seg->image_len,
-                                                    &seg->turn, old) * y;
+    const int has_image = seg->image != NULL && seg->image_len > 0;
+    const int audible = has_image && !seg->silent;
+    if (seg_index != entered) {
+      const le_pr_segment* was =
+          entered >= 0 ? &build.segments[entered] : NULL;
+      entered = seg_index;
+      const uint8_t on = has_image && seg->image_len >= gate_min;
+      if (runs != NULL && runs->count < LE_PR_MAX_SEGMENTS &&
+          (runs->count == 0 || runs->on[runs->count - 1] != on)) {
+        runs->frame[runs->count] = f;
+        runs->on[runs->count] = on;
+        runs->count++;
+      }
+      if (!on) {
+        play_gain = audible ? 1.0f : 0.0f;
+        tail_gain = 0.0f;
+        tail_seg = NULL;
+      } else if (f == 0) {
+        play_gain = audible ? 1.0f : 0.0f;
+      } else if (seg->snap_in) {
+        play_gain = audible ? 1.0f : 0.0f; /* a finalize, or a Cut's stop */
+        tail_gain = 0.0f;
+        tail_seg = NULL;
+      } else if (!audible && play_gain > 0.0f && was != NULL) {
+        if (play_gain >= tail_gain) { /* the Stop; the louder voice stays */
+          tail_gain = play_gain;
+          tail_seg = was;
+        }
+        play_gain = 0.0f;
       }
     }
+    play_gain = le_gate_step(play_gain, audible ? 1.0f : 0.0f, gate_step);
+    tail_gain = le_gate_step(tail_gain, 0.0f, gate_step);
+    float x = 0.0f;
+    if (audible) x = le_pr_segment_sample(seg, f) * play_gain;
+    if (tail_gain > 0.0f && tail_seg != NULL) {
+      x += le_pr_segment_sample(tail_seg, f) * tail_gain;
+    }
+    stem[f] = x;
   }
 
   for (int i = 0; i < build.segment_count; ++i) {
@@ -1555,8 +1635,11 @@ static void le_pr_seed_channels(le_fx_state* fx, const le_json_value* effects,
  * allocation failure. `dry` is that channel's already-reconstructed dry
  * content (le_pr_render_track's output — same content, not recomputed) at
  * unity gain; this replays the SAME per-frame mix order the live engine's
- * mix_tracks_frame uses: lane-0 volume gates the sample (zeroed while
- * muted), THEN the logged FX chain processes it (continuously, every frame,
+ * mix_tracks_frame uses: lane-0 volume scales the sample, THEN the logged
+ * FX chain processes it, THEN the mute and solo gains scale what the chain
+ * sends, fading as the callback fades them (#1400; a muted lane feeds its
+ * chain nothing and sends nothing, its tail included) — the chain runs
+ * (continuously, every frame,
  * so delay/reverb tails and LFO phase stay continuous exactly as they do
  * live — only whether the result is later summed into the master differs
  * live, and this render has no separate "audible" gate beyond content
@@ -1577,10 +1660,13 @@ static void le_pr_seed_channels(le_fx_state* fx, const le_json_value* effects,
  * out of scope here (matching this part's fixed golden-parity protocol,
  * which already excludes monitor inputs, plugin slots, and pre-arm FX tails
  * BY CONSTRUCTION rather than widening tolerance) — content presence (from
- * `dry`) is this render's only audibility gate beyond mute. */
+ * `dry`, which carries the play and tail fades of the transport facts it
+ * does replay) is this render's only audibility gate beyond mute, solo and
+ * Cut (which silences at once, live and here). */
 static float* le_pr_render_wet_track(const le_pr_manifest* m,
                                      const le_pr_log_entry* log, int log_count,
                                      int32_t channel, const float* dry,
+                                     const le_pr_gate_runs* runs,
                                      int32_t* out_failed, float* routed) {
   *out_failed = 0;
   const le_json_value* arm_track = le_pr_find_track(m->arm_tracks, channel);
@@ -1677,6 +1763,17 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
     effective[s] = chain.chain_enabled && chain.enabled[s];
   }
 
+  /* The callback's audibility fades (#1400), stepped the way
+   * mix_tracks_frame steps them: the lane's mute gain and the track's solo
+   * gain scale what the chain sends (tail included), and Cut's stop fades
+   * the feed out as the callback's play gain does. Each starts at its gate:
+   * at capture frame 0 the track sounds as the arm found it. */
+  const float gate_step = le_gate_step_size(m->sample_rate);
+  float mute_gain = 1.0f;
+  float solo_gain = 1.0f;
+  float cut_gain = 1.0f;
+  int run_index = -1;
+  int gates_fade = 0;
   int log_index = 0;
   for (uint64_t f = 0; f < m->capture_frames; ++f) {
     /* The live frame this one stands for, before any logged reset below. */
@@ -1777,6 +1874,7 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
           break;
         case LE_CMD_CUT_SOUND:
           cut_silenced = 1;
+          cut_gain = 0.0f; /* at once, as the callback cuts (#1400) */
           for (int i = 0; i < LE_FX_MAX; ++i) {
             le_fx_entry_reset(fx, i);
             le_fx_entry_clear_rings(fx, i, m->sample_rate);
@@ -1826,13 +1924,31 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
 
     int any_solo = 0;
     for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) any_solo |= solo[t];
-    const int audible = !cut_silenced && !muted && (!any_solo || solo[channel]);
-    const float in = audible ? dry[f] * volume : 0.0f;
+    while (runs != NULL && run_index + 1 < runs->count &&
+           runs->frame[run_index + 1] <= f) {
+      gates_fade = runs->on[++run_index];
+    }
+    const float mute_target = muted ? 0.0f : 1.0f;
+    const float solo_target = !any_solo || solo[channel] ? 1.0f : 0.0f;
+    const float cut_target = cut_silenced ? 0.0f : 1.0f;
+    if (f == 0 || !gates_fade) {
+      mute_gain = mute_target;
+      solo_gain = solo_target;
+      if (!gates_fade) cut_gain = cut_target;
+    } else {
+      mute_gain = le_gate_step(mute_gain, mute_target, gate_step);
+      solo_gain = le_gate_step(solo_gain, solo_target, gate_step);
+    }
+    if (gates_fade) cut_gain = le_gate_step(cut_gain, cut_target, gate_step);
+    const float gate = mute_gain * solo_gain;
+    const int fed = cut_gain > 0.0f && gate > 0.0f;
+    const float in = fed ? dry[f] * cut_gain * volume : 0.0f;
     float l = in;
     float r = in;
     fx_apply_chain(fx, m->sample_rate, m->sample_rate, &l, &r, chain.count,
                    chain.type, chain.params, effective);
-    const float gain = track_gain * le_fade_tick(&fade, m->sample_rate);
+    const float gain =
+        track_gain * le_fade_tick(&fade, m->sample_rate) * gate;
     l *= gain;
     r *= gain;
     wet[f] = 0.5f * (l + r);
@@ -2013,8 +2129,11 @@ static void le_pr_worker_main(void* arg) {
 
       const int32_t channel = channels[i];
       int32_t load_failed = 0;
-      float* stem = le_pr_render_track(r->capture_dir, &manifest, log, log_count,
-                                       channel, &load_failed);
+      le_pr_gate_runs* runs = (le_pr_gate_runs*)calloc(1, sizeof(le_pr_gate_runs));
+      float* stem = runs == NULL ? NULL
+                                 : le_pr_render_track(r->capture_dir, &manifest,
+                                                      log, log_count, channel,
+                                                      &load_failed, runs);
       int ok = 0;
       if (stem != NULL) {
         char dry_path[LE_PR_FULL_PATH_MAX];
@@ -2034,7 +2153,7 @@ static void le_pr_worker_main(void* arg) {
         int32_t wet_failed = 0;
         float* routed = calloc((size_t)manifest.capture_frames * 2, sizeof(float));
         float* wet = routed ? le_pr_render_wet_track(&manifest, log, log_count, channel,
-                                            stem, &wet_failed, routed) : NULL;
+                                            stem, runs, &wet_failed, routed) : NULL;
         if (wet != NULL) {
           char wet_path[LE_PR_FULL_PATH_MAX];
           snprintf(wet_path, sizeof(wet_path), "%s/track%d.wav", wet_dir, channel);
@@ -2067,6 +2186,7 @@ static void le_pr_worker_main(void* arg) {
         free(routed);
         free(stem);
       }
+      free(runs);
 
       const int index = atomic_load_explicit(&r->track_count, memory_order_relaxed);
       atomic_store_explicit(&r->results[index].channel, channel,
