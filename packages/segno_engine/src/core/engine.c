@@ -721,6 +721,12 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
     tr->record_start = 0;
     tr->start_iter = 0;
     tr->od_gain = 0.0f;
+    /* The audibility fades (#1400): a new device session starts with
+     * nothing sounding, so no fade carries over and the gates are set on
+     * the first frame each track is mixed. */
+    engine->trk_play_gain[t] = 0.0f;
+    engine->trk_tail_gain[t] = 0.0f;
+    engine->trk_gate_stale[t] = 1;
     tr->xfade_capture = 0;
     /* ...and the trailing seam overlap (#728), for the same reason and then
      * some. Both are per-take audio-thread deferrals indexed off the OLD
@@ -1366,6 +1372,9 @@ le_engine* le_engine_create(void) {
                              engine->perf.layer_staging_storage,
                              LE_LAYER_STAGING_RING_CAPACITY);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
+  /* The audibility gains (#1400) start at their gates on the first frame each
+   * track is mixed. */
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) engine->trk_gate_stale[t] = 1;
   /* No take has dropped a frame (#1198): 0 would name frame 0. */
   atomic_store_explicit(&engine->a_perf_first_drop_frame, UINT64_MAX,
                         memory_order_relaxed);
