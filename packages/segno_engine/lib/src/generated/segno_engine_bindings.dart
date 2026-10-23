@@ -10395,8 +10395,9 @@ enum le_cache_reason {
   LE_CACHE_REASON_HOP(5),
 
   /// the print holds a free-running
-  /// modulator (a chorus or doubler LFO),
-  /// which sounds different each lap
+  /// modulator (a chorus or doubler LFO,
+  /// vinyl noise, a degrade's hold), which
+  /// sounds different each lap
   LE_CACHE_REASON_FREE_RUNNING(6);
 
   final int value;

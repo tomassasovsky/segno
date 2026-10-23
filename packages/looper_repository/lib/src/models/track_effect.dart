@@ -186,6 +186,19 @@ enum FxParamUnit {
   ratio,
 }
 
+/// Where a built-in parameter turns its effect off. Domain mirror of the
+/// engine's `FxParamOff`.
+enum FxParamOff {
+  /// Never.
+  none,
+
+  /// At setting 0.
+  atMin,
+
+  /// At setting 1.
+  atMax,
+}
+
 /// How a built-in parameter's value follows its normalized setting. Domain
 /// mirror of the engine's `FxParamCurve`.
 enum FxParamCurve {
@@ -220,6 +233,7 @@ class FxParamInfo extends Equatable {
     this.steps = 0,
     this.curve = FxParamCurve.linear,
     this.taperUnverified = false,
+    this.off = FxParamOff.none,
   }) : _source = null;
 
   FxParamInfo._fromEngine(engine.FxParamInfo p)
@@ -231,6 +245,11 @@ class FxParamInfo extends Equatable {
       steps = p.steps,
       curve = _curveFromEngine(p.curve),
       taperUnverified = p.taperUnverified,
+      off = switch (p.off) {
+        engine.FxParamOff.none => FxParamOff.none,
+        engine.FxParamOff.atMin => FxParamOff.atMin,
+        engine.FxParamOff.atMax => FxParamOff.atMax,
+      },
       _source = p;
 
   /// The engine descriptor this mirrors, kept so the mapping below does not
@@ -264,6 +283,16 @@ class FxParamInfo extends Equatable {
   /// Whether the mapping was chosen rather than measured against the effect
   /// it reproduces.
   final bool taperUnverified;
+
+  /// Where the parameter turns its effect off.
+  final FxParamOff off;
+
+  /// Whether [setting] is where the effect is off.
+  bool isOffAt(double setting) => switch (off) {
+    FxParamOff.none => false,
+    FxParamOff.atMin => setting <= 0,
+    FxParamOff.atMax => setting >= 1,
+  };
 
   /// Whether the parameter snaps to [steps] positions.
   bool get isStepped => steps > 1;
@@ -306,6 +335,11 @@ class FxParamInfo extends Equatable {
       FxParamCurve.reciprocal => engine.FxParamCurve.reciprocal,
     },
     taperUnverified: taperUnverified,
+    off: switch (off) {
+      FxParamOff.none => engine.FxParamOff.none,
+      FxParamOff.atMin => engine.FxParamOff.atMin,
+      FxParamOff.atMax => engine.FxParamOff.atMax,
+    },
   );
 
   @override
@@ -318,6 +352,7 @@ class FxParamInfo extends Equatable {
     curve,
     defaultValue,
     taperUnverified,
+    off,
   ];
 }
 
@@ -377,7 +412,16 @@ enum TrackEffectType {
   overdrive(16),
 
   /// The Looper X's amp simulator as the Studio Rack's Dist (#887 part 7).
-  distortion(17);
+  distortion(17),
+
+  /// The Looper X's vinyl (#887 part 7).
+  vinyl(18),
+
+  /// The Looper X's degrade (#887 part 7).
+  degrade(19),
+
+  /// The Looper X's low-pass filter (#887 part 7).
+  lpf(20);
 
   const TrackEffectType(this.code);
 

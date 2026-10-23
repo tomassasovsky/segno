@@ -392,7 +392,18 @@ enum TrackEffectType {
   /// The Looper X's amp simulator at its defaults, which the Studio Rack
   /// labels Dist (#887 part 7): an asymmetric curve, then the 4x12"
   /// cabinet; fit to the Phase 0 amp captures.
-  distortion(17, 'Distortion');
+  distortion(17, 'Distortion'),
+
+  /// The Looper X's vinyl (#887 part 7): a high-pass, a roll-off, soft
+  /// saturation, then hiss and crackle.
+  vinyl(18, 'Vinyl'),
+
+  /// The Looper X's degrade (#887 part 7): sample-rate reduction, filtered
+  /// and mixed with the dry signal.
+  degrade(19, 'Degrade'),
+
+  /// The Looper X's low-pass filter (#887 part 7): resonant, 12 dB/octave.
+  lpf(20, 'LPF');
 
   const TrackEffectType(this.code, this.label);
 
@@ -559,6 +570,7 @@ enum TrackEffectType {
         atMax: 8000,
         curve: FxParamCurve.exponential,
         defaultValue: 0.21,
+        off: FxParamOff.atMin,
       ),
       FxParamInfo(
         key: 'low_gain',
@@ -661,6 +673,7 @@ enum TrackEffectType {
         atMax: 20000,
         curve: FxParamCurve.exponential,
         defaultValue: 1,
+        off: FxParamOff.atMax,
       ),
       FxParamInfo(
         key: 'air_gain',
@@ -854,6 +867,91 @@ enum TrackEffectType {
         taperUnverified: true,
       ),
     ],
+    // The Looper X's ranges and tapers; what each control does is chosen
+    // (#891). The Lo-Fi Rack's defaults.
+    TrackEffectType.vinyl => const [
+      FxParamInfo(
+        key: 'drive',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.4,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'frequency',
+        unit: FxParamUnit.hz,
+        atMin: 50,
+        atMax: 5000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.35,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'noise',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.3,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'noise_tone',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.9,
+        taperUnverified: true,
+      ),
+    ],
+    TrackEffectType.degrade => const [
+      FxParamInfo(
+        key: 'frequency',
+        unit: FxParamUnit.hz,
+        atMin: 500,
+        atMax: 50000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 1,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'filter',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
+        taperUnverified: true,
+      ),
+    ],
+    // The cutoff is off at the top of its range (a fresh filter is
+    // transparent, though the Looper X's default resonance is 100 %).
+    TrackEffectType.lpf => const [
+      FxParamInfo(
+        key: 'cutoff',
+        unit: FxParamUnit.hz,
+        atMin: 20,
+        atMax: 20000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 1,
+        off: FxParamOff.atMax,
+      ),
+      FxParamInfo(
+        key: 'resonance',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
+        taperUnverified: true,
+      ),
+    ],
     TrackEffectType.reverb => const [
       // comb feedback 0.70 + 0.28 v; feedback low-pass 0.4 v
       FxParamInfo(
@@ -950,6 +1048,19 @@ enum FxParamCurve {
   final int code;
 }
 
+/// Where a built-in parameter turns its effect off (the identity), which a
+/// surface reads as Off. Mirrors the native `LE_FX_PARAM_OFF_AT_*` flags.
+enum FxParamOff {
+  /// Never: every setting does something.
+  none,
+
+  /// At setting 0 (an EQ's low cut).
+  atMin,
+
+  /// At setting 1 (an EQ's high cut, the low-pass filter's cutoff).
+  atMax,
+}
+
 /// One built-in effect parameter: what its normalized `0..1` setting means.
 /// The Dart copy of the native `le_fx_param_desc`.
 ///
@@ -970,6 +1081,7 @@ class FxParamInfo {
     this.steps = 0,
     this.curve = FxParamCurve.linear,
     this.taperUnverified = false,
+    this.off = FxParamOff.none,
   });
 
   /// The stable parameter key (`drive`, `cutoff`, `shift`, ...).
@@ -1000,6 +1112,17 @@ class FxParamInfo {
   /// Whether the mapping was chosen rather than measured against the effect
   /// it reproduces (the native `LE_FX_PARAM_TAPER_UNVERIFIED` flag).
   final bool taperUnverified;
+
+  /// Where the parameter turns its effect off (the native
+  /// `LE_FX_PARAM_OFF_AT_*` flags).
+  final FxParamOff off;
+
+  /// Whether [setting] (clamped to `0..1`) is where the effect is off.
+  bool isOffAt(double setting) => switch (off) {
+    FxParamOff.none => false,
+    FxParamOff.atMin => setting <= 0,
+    FxParamOff.atMax => setting >= 1,
+  };
 
   /// Whether the parameter snaps to [steps] positions.
   bool get isStepped => steps > 1;
@@ -1051,7 +1174,8 @@ class FxParamInfo {
       other.atMax == atMax &&
       other.curve == curve &&
       other.defaultValue == defaultValue &&
-      other.taperUnverified == taperUnverified;
+      other.taperUnverified == taperUnverified &&
+      other.off == off;
 
   @override
   int get hashCode => Object.hash(
@@ -1063,6 +1187,7 @@ class FxParamInfo {
     curve,
     defaultValue,
     taperUnverified,
+    off,
   );
 
   @override

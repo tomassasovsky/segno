@@ -29,6 +29,9 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.wah => effectWah,
     TrackEffectType.overdrive => effectOverdrive,
     TrackEffectType.distortion => effectDistortion,
+    TrackEffectType.vinyl => effectVinyl,
+    TrackEffectType.degrade => effectDegrade,
+    TrackEffectType.lpf => effectLpf,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
@@ -81,6 +84,10 @@ extension EngineLocalizations on AppLocalizations {
     'gate_threshold' => paramGateThreshold,
     'separation' => paramSeparation,
     'pedal' => paramPedal,
+    'frequency' => paramFrequency,
+    'noise' => paramNoise,
+    'noise_tone' => paramNoiseTone,
+    'filter' => paramFilter,
     _ => key,
   };
 
@@ -93,9 +100,9 @@ extension EngineLocalizations on AppLocalizations {
   /// finer than a performer sets or hears; a time under 1 ms keeps two
   /// decimals; a frequency reads in kHz from 1000 Hz.
   String fxParamValueText(FxParamInfo p, double setting) {
-    // The EQ's cuts are off at their ends of the range (engine_fx.c).
-    if ((p.key == 'low_cut' && setting <= 0) ||
-        (p.key == 'high_cut' && setting >= 1)) {
+    // An EQ's cuts and the low-pass filter are off at an end of their
+    // range (the descriptor's off flag).
+    if (p.isOffAt(setting)) {
       return fxValueOff;
     }
     final value = p.valueAt(setting);
