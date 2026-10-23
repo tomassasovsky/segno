@@ -156,8 +156,8 @@ extension EngineLocalizations on AppLocalizations {
       switch ((p.key, position)) {
         ('mode', 0) => octaverModePhaseVocoder,
         ('mode', 1) => octaverModePsola,
-        ('layout', 0) => eqLayoutBellsCuts,
-        ('layout', 1) => eqLayoutShelves,
+        ('layout', 0) => eqLayoutShelves,
+        ('layout', 1) => eqLayoutBellsCuts,
         ('layout', 2) => eqLayoutBells,
         _ => '${position + 1}',
       };

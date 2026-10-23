@@ -81,7 +81,10 @@ static float* eq_impulse(const float* p, int sr, int n) {
   return h;
 }
 
-/* A flat EQ (every gain 0 dB) in [layout] (0..2), the cuts at the ends of
+/* The layout positions (the "layout" row). */
+enum { EQL_SHELVES, EQL_CUTS, EQL_BELLS };
+
+/* A flat EQ (every gain 0 dB) in [layout] (EQL_*), the cuts at the ends of
  * their ranges. */
 static void eq_flat(float* p, int layout) {
   memset(p, 0, sizeof(float) * LE_FX_PARAMS);
@@ -102,10 +105,11 @@ static void test_eq_kernel_matches_design(void) {
   const int n = 1 << 16;
   for (int ri = 0; ri < 2; ++ri) {
     const int sr = rates[ri];
-    for (int layout = 0; layout < 2; ++layout) {
+    for (int li = 0; li < 2; ++li) {
+      const int layout = li == 0 ? EQL_CUTS : EQL_SHELVES;
       float p[LE_FX_PARAMS];
       eq_flat(p, layout);
-      p[0] = eq_setting(0, 60.0);     /* low cut (layout 0 only) */
+      p[0] = eq_setting(0, 60.0);     /* low cut (EQL_CUTS only) */
       p[1] = eq_setting(1, 6.0);      /* low band +6 dB */
       p[2] = eq_setting(2, 150.0);    /*   at 150 Hz */
       p[3] = eq_setting(3, 0.7);
@@ -118,24 +122,24 @@ static void test_eq_kernel_matches_design(void) {
       p[10] = eq_setting(10, -4.0);   /* high band -4 dB */
       p[11] = eq_setting(11, 8000.0);
       p[12] = eq_setting(12, 0.7);
-      p[13] = eq_setting(13, 15000.0); /* high cut (layout 0 only) */
+      p[13] = eq_setting(13, 15000.0); /* high cut (EQL_CUTS only) */
       float* h = eq_impulse(p, sr, n);
       double c[6][5];
       int bands = 0;
-      if (layout == 0) le_eq_design_for_test(0, 60.0, 0.0, M_SQRT1_2, sr, c[bands++]);
-      if (layout == 0) {
+      if (layout == EQL_CUTS) le_eq_design_for_test(0, 60.0, 0.0, M_SQRT1_2, sr, c[bands++]);
+      if (layout == EQL_CUTS) {
         le_eq_bell_for_test(150.0, 6.0, 0.7, sr, c[bands++]);
       } else {
         le_eq_design_for_test(1, 150.0, 6.0, 0.7, sr, c[bands++]);
       }
       le_eq_bell_for_test(400.0, -9.0, 2.0, sr, c[bands++]);
       le_eq_bell_for_test(3000.0, 12.0, 1.0, sr, c[bands++]);
-      if (layout == 0) {
+      if (layout == EQL_CUTS) {
         le_eq_bell_for_test(8000.0, -4.0, 0.7, sr, c[bands++]);
       } else {
         le_eq_design_for_test(4, 8000.0, -4.0, 0.7, sr, c[bands++]);
       }
-      if (layout == 0) le_eq_design_for_test(5, 15000.0, 0.0, M_SQRT1_2, sr, c[bands++]);
+      if (layout == EQL_CUTS) le_eq_design_for_test(5, 15000.0, 0.0, M_SQRT1_2, sr, c[bands++]);
       for (size_t i = 0; i < sizeof(probes) / sizeof(probes[0]); ++i) {
         const double want = eq_design_db(c, bands, probes[i], sr);
         const double got = eq_measured_db(h, n, probes[i], sr);
@@ -186,49 +190,49 @@ static const double EQ_MEASURED_HZ[11] = {32,   63,   125,  250,   500,  1000,
 /* The settings are the captures' fits (or, for the Vocal family, the
  * nominal values the rack variant fixes); the probes are the captures. */
 static const eq_measured_case EQ_MEASURED[] = {
-    {"Ed's Low +18 @90 Q0.4", 0, 1, 89.99, 18.0, 0.3999, 0.05,
+    {"Ed's Low +18 @90 Q0.4", EQL_CUTS, 1, 89.99, 18.0, 0.3999, 0.05,
      {15.132, 17.652, 17.704, 15.196, 10.805, 6.054, 2.481, 0.745, 0.172,
       0.058, 0.019}},
-    {"Ed's Lo Mid +18 @101.5 Q10", 0, 4, 101.49, 18.0, 9.9993, 0.05,
+    {"Ed's Lo Mid +18 @101.5 Q10", EQL_CUTS, 4, 101.49, 18.0, 9.9993, 0.05,
      {0.318, 2.114, 6.370, 0.593, 0.119, 0.028, 0.007, 0.002, 0.000, 0.000,
       0.000}},
-    {"Ed's Hi Mid +18 @16k Q2.02", 0, 7, 16000.0, 18.0, 2.02, 0.05,
+    {"Ed's Hi Mid +18 @16k Q2.02", EQL_CUTS, 7, 16000.0, 18.0, 2.02, 0.05,
      {0.000, 0.002, 0.006, 0.024, 0.093, 0.363, 1.315, 3.966, 9.306, 14.363,
       18.000}},
-    {"Ed's High -18 @20k Q2.025", 0, 10, 20000.0, -18.0, 2.025, 0.05,
+    {"Ed's High -18 @20k Q2.025", EQL_CUTS, 10, 20000.0, -18.0, 2.025, 0.05,
      {-0.000, -0.001, -0.005, -0.019, -0.075, -0.293, -1.075, -3.335, -7.926,
       -11.890, -15.537}},
-    {"Ed's High +9 @20k Q2.025", 0, 10, 20000.0, 9.0, 2.025, 0.05,
+    {"Ed's High +9 @20k Q2.025", EQL_CUTS, 10, 20000.0, 9.0, 2.025, 0.05,
      {0.000, 0.000, 0.001, 0.002, 0.008, 0.034, 0.134, 0.528, 1.991, 4.177,
       6.893}},
-    {"Drum Low shelf +12 @200 Q0.5", 1, 1, 200.0, 12.0, 0.5, 0.05,
+    {"Drum Low shelf +12 @200 Q0.5", EQL_SHELVES, 1, 200.0, 12.0, 0.5, 0.05,
      {11.677, 10.852, 8.548, 4.731, 1.736, 0.493, 0.127, 0.031, 0.007, 0.002,
       0.001}},
-    {"Drum High shelf -12 @4k Q0.7", 1, 10, 4000.0, -12.0, 0.7, 0.05,
+    {"Drum High shelf -12 @4k Q0.7", EQL_SHELVES, 10, 4000.0, -12.0, 0.7, 0.05,
      {-0.000, -0.000, -0.000, -0.001, -0.008, -0.073, -0.891, -6.000, -11.269,
       -11.899, -11.984}},
-    {"Drum Mid +18 @565.7 Q0.9", 1, 4, 565.7, 18.0, 0.9, 0.05,
+    {"Drum Mid +18 @565.7 Q0.9", EQL_SHELVES, 4, 565.7, 18.0, 0.9, 0.05,
      {0.955, 2.923, 6.884, 12.517, 17.793, 14.709, 8.707, 3.959, 1.196, 0.435,
       0.150}},
-    {"Vocal Low +18", 2, 1, 300.0, 18.0, 3.6, 0.05,
+    {"Vocal Low +18", EQL_BELLS, 1, 300.0, 18.0, 3.6, 0.05,
      {0.236, 0.901, 3.414, 13.737, 6.939, 1.804, 0.459, 0.112, 0.024, 0.008,
       0.003}},
-    {"Vocal Mid -18", 2, 4, 900.0, -18.0, 1.2, 0.15,
+    {"Vocal Mid -18", EQL_BELLS, 4, 900.0, -18.0, 1.2, 0.15,
      {-0.231, -0.837, -2.679, -6.664, -13.054, -17.733, -10.845, -5.094,
       -1.637, -0.611, -0.213}},
-    {"Vocal High +9", 2, 7, 2700.0, 9.0, 1.2, 0.15,
+    {"Vocal High +9", EQL_BELLS, 7, 2700.0, 9.0, 1.2, 0.15,
      {0.004, 0.013, 0.049, 0.223, 0.736, 2.631, 7.440, 6.558, 1.868, 0.664,
       0.227}},
-    {"Vocal Air +18", 2, 10, 8100.0, 18.0, 3.6, 0.15,
+    {"Vocal Air +18", EQL_BELLS, 10, 8100.0, 18.0, 3.6, 0.15,
      {0.001, 0.003, 0.009, 0.066, 0.127, 0.450, 1.413, 4.934, 17.872, 7.584,
       2.846}},
-    {"Lo-Fi Para +18 @1386 Q0.8", 0, 4, 1385.92, 17.981, 0.7978, 0.1,
+    {"Lo-Fi Para +18 @1386 Q0.8", EQL_CUTS, 4, 1385.92, 17.981, 0.7978, 0.1,
      {0.220, 0.796, 2.538, 6.239, 11.515, 16.936, 16.678, 11.035, 5.382, 2.582,
       1.038}},
-    {"Lo-Fi Para +18 @16k Q0.8", 0, 4, 15994.18, 18.003, 0.8013, 0.1,
+    {"Lo-Fi Para +18 @16k Q0.8", EQL_CUTS, 4, 15994.18, 18.003, 0.8013, 0.1,
      {0.002, 0.010, 0.037, 0.148, 0.563, 1.908, 5.034, 9.743, 14.778, 17.175,
       18.000}},
-    {"Rhythmic +18 @1384 Q1.0", 0, 4, 1384.37, 18.008, 1.0011, 0.1,
+    {"Rhythmic +18 @1384 Q1.0", EQL_CUTS, 4, 1384.37, 18.008, 1.0011, 0.1,
      {0.143, 0.529, 1.798, 4.915, 10.072, 16.448, 16.092, 9.562, 4.113, 1.757,
       0.597}},
 };
@@ -279,7 +283,7 @@ static void test_eq_cuts_and_layouts(void) {
   const int sr = 48000;
   const int n = 1 << 16;
   float p[LE_FX_PARAMS];
-  eq_flat(p, 0);
+  eq_flat(p, EQL_CUTS);
   CHECK(fxd_get(LE_FX_EQ, 0).flags == 0 && fxd_get(LE_FX_EQ, 13).flags == 0);
   float* h = eq_impulse(p, sr, n);
   const double hz[4] = {20.0, 32.0, 16000.0, 20000.0};
@@ -293,8 +297,9 @@ static void test_eq_cuts_and_layouts(void) {
     CHECK(fabs(got - want[i]) < 0.02);
   }
   free(h);
-  for (int layout = 1; layout < 3; ++layout) {
-    eq_flat(p, layout);
+  const int bare[2] = {EQL_SHELVES, EQL_BELLS};
+  for (int li = 0; li < 2; ++li) {
+    eq_flat(p, bare[li]);
     p[0] = eq_setting(0, 1000.0); /* a cut setting a layout without cuts ignores */
     h = eq_impulse(p, sr, 64);
     CHECK(h[0] == 1.0f);
@@ -314,7 +319,7 @@ static void test_eq_gain_change_glides(void) {
   float* out = (float*)malloc(sizeof(float) * (size_t)n);
   for (int i = 0; i < n; ++i) in[i] = 0.1f * sinf(2.0f * (float)M_PI * 1000.0f * i / sr);
   float p[LE_FX_PARAMS];
-  eq_flat(p, 2); /* no cuts */
+  eq_flat(p, EQL_BELLS); /* no cuts */
   p[8] = eq_setting(8, 1000.0);
   le_fx_state* fx = eq_state();
   /* Clock it like an offline render, so the update cadence is real. */
@@ -361,7 +366,7 @@ static void test_eq_switches_glide(void) {
   const int sr = 48000;
   const int n = sr / 5;
   float p[LE_FX_PARAMS];
-  eq_flat(p, 2); /* no cuts */
+  eq_flat(p, EQL_BELLS); /* no cuts */
   p[0] = eq_setting(0, 1000.0);
   le_fx_state* fx = eq_state();
   fx->clocked = 1;
@@ -371,7 +376,7 @@ static void test_eq_switches_glide(void) {
   float max_step = 0.0f;
   float tail = 0.0f;
   for (int i = 0; i < n; ++i) {
-    if (i == n / 4) p[14] = 0.0f; /* the cuts come in */
+    if (i == n / 4) p[14] = 0.5f; /* the cuts come in */
     /* A gain sweep from +6 to -6 dB through 0 across the second half. */
     if (i >= n / 2) p[7] = 0.5f + (1.0f / 6.0f) * (1.0f - 4.0f * (float)(i - n / 2) / n);
     memcpy(params[0], p, sizeof(p));
@@ -392,6 +397,54 @@ static void test_eq_switches_glide(void) {
   /* And the cut did engage: 100 Hz is ~27 dB down a 1 kHz 12 dB/oct cut. */
   CHECK(tail < 0.5f * 0.06f);
   eq_free(fx);
+}
+
+/* A layout change that turns the outer bands from bells into shelves never
+ * steps: the bands glide to 0 dB, change shape there and glide back (about
+ * a quarter of a second in all), and land where an EQ set up in the new
+ * layout plays. */
+static void test_eq_layout_change_glides(void) {
+  printf("test_eq_layout_change_glides\n");
+  const int sr = 48000;
+  const int n = sr;
+  float p[LE_FX_PARAMS];
+  eq_flat(p, EQL_BELLS);
+  p[1] = eq_setting(1, -12.0); /* low band -12 dB at 1 kHz */
+  p[2] = eq_setting(2, 1000.0);
+  p[10] = eq_setting(10, -12.0); /* high band -12 dB at 1.2 kHz */
+  p[11] = eq_setting(11, 1200.0);
+  float shelves[LE_FX_PARAMS];
+  memcpy(shelves, p, sizeof(shelves));
+  shelves[14] = 0.5f * EQL_SHELVES;
+  le_fx_state* fx = eq_state();
+  le_fx_state* ref = eq_state();
+  fx->clocked = 1;
+  ref->clocked = 1;
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  static float ref_params[LE_FX_MAX][LE_FX_PARAMS];
+  memcpy(ref_params[0], shelves, sizeof(shelves));
+  const int32_t types[1] = {LE_FX_EQ};
+  float prev = 0.0f;
+  float max_step = 0.0f;
+  float worst = 0.0f;
+  for (int i = 0; i < n; ++i) {
+    memcpy(params[0], i < n / 4 ? p : shelves, sizeof(p));
+    fx->clock = (uint32_t)i;
+    ref->clock = (uint32_t)i;
+    const float x = 0.1f * sinf(2.0f * (float)M_PI * 1000.0f * i / sr);
+    float l = x, r = x, rl = x, rr = x;
+    fx_apply_chain(fx, sr, sr, &l, &r, 1, types, params, NULL);
+    fx_apply_chain(ref, sr, sr, &rl, &rr, 1, types, ref_params, NULL);
+    if (i > 0 && fabsf(l - prev) > max_step) max_step = fabsf(l - prev);
+    prev = l;
+    if (i > n / 2 && fabsf(l - rl) > worst) worst = fabsf(l - rl);
+  }
+  /* The sine's own largest step at unity is 0.1 * 2 sin(pi / 48) = 0.013;
+   * the switch adds nothing beyond the glide. */
+  CHECK(max_step < 0.014f);
+  CHECK(worst < 1e-4f);
+  eq_free(fx);
+  eq_free(ref);
 }
 
 /* A slot keeps one block per kind it has held, never reads another kind's
@@ -461,7 +514,7 @@ static void test_eq_offline_equals_live(void) {
   const int32_t types[1] = {LE_FX_EQ};
   for (int i = 0; i < n; ++i) {
     if (i == 777) p[4] = 0.95f; /* a move mid-run */
-    if (i == 2000) p[14] = 0.5f; /* and the shelves layout */
+    if (i == 2000) p[14] = 0.0f; /* and the shelves layout */
     memcpy(params[0], p, sizeof(p));
     const float x = sinf((float)i * 0.05f);
     float ll = x, lr = x, ol = x, orr = x;
@@ -483,9 +536,9 @@ static void test_eq_on_a_lane(void) {
   establish_loop(e, 0.5f);
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_EQ) == LE_OK);
   /* Every cell the EQ reads takes a write; the next does not. */
-  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 14, 0.5f) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 14, 0.0f) == LE_OK);
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 15, 0.5f) == LE_ERR_INVALID);
-  /* The shelves layout (14 = 0.5, set above, has no cuts), its low shelf
+  /* The shelves layout (14 = 0, set above, has no cuts), its low shelf
    * -18 dB far below everything: a DC loop drops by about that. */
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.0f) == LE_OK);
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.0f) == LE_OK);
@@ -520,6 +573,7 @@ static void run_eq_tests(void) {
   test_eq_cuts_and_layouts();
   test_eq_gain_change_glides();
   test_eq_switches_glide();
+  test_eq_layout_change_glides();
   test_eq_retype_is_clean();
   test_eq_offline_equals_live();
   test_eq_on_a_lane();

@@ -1338,10 +1338,10 @@ static const le_fx_param_desc LE_FX_EQ_PARAMS[] = {
     {"high_q", LE_FX_UNIT_Q, 0, 0.4f, 10.0f, LE_FX_CURVE_EXPONENTIAL, 0.0f, 0},
     {"high_cut", LE_FX_UNIT_HZ, 0, 120.0f, 20000.0f, LE_FX_CURVE_EXPONENTIAL,
      1.0f, 0},
-    /* position 0 = four bells and both cuts (Ed's and the Para EQ), 1 = low
-     * and high shelves and no cuts (Drum), 2 = four bells and no cuts (Vocal,
-     * Studio and Vocal Tuner) */
-    {"layout", LE_FX_UNIT_CHOICE, 3, 0.0f, 2.0f, LE_FX_CURVE_LINEAR, 0.0f, 0},
+    /* position 0 = low and high shelves and no cuts (Drum), 1 = four bells
+     * and both cuts (Ed's and the Para EQ), 2 = four bells and no cuts
+     * (Vocal, Studio and Vocal Tuner) */
+    {"layout", LE_FX_UNIT_CHOICE, 3, 0.0f, 2.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
 };
 
 /* The per-update smoothing factor of a setting that glides over
@@ -1459,7 +1459,7 @@ enum { LE_EQB_LOWCUT, LE_EQB_LOW, LE_EQB_LOMID, LE_EQB_HIMID, LE_EQB_HIGH,
        LE_EQB_HIGHCUT, LE_EQ_BANDS };
 
 /* The layout positions (the "layout" row). */
-enum { LE_EQ_LAYOUT_CUTS, LE_EQ_LAYOUT_SHELVES, LE_EQ_LAYOUT_BELLS };
+enum { LE_EQ_LAYOUT_SHELVES, LE_EQ_LAYOUT_CUTS, LE_EQ_LAYOUT_BELLS };
 
 /* In double: in float, the rounding of a 20 Hz cut's coefficients alone
  * moves its response by 0.1 dB, and the cuts always run. */
@@ -1638,16 +1638,20 @@ static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
     le_eq_targets(p, q->tgt_hz, q->tgt_db, q->tgt_lnq, &q->tgt_shelves);
   }
   const float k = settle ? 1.0f : q->h.k;
-  /* The outer bands change shape at once (only a rack variant sets the
-   * layout, so it does not move while a variant plays). */
-  const int reshape = q->shelves != q->tgt_shelves;
-  q->shelves = q->tgt_shelves;
-  int moving = 0;
+  /* The outer bands change shape (bell or shelf) only at 0 dB, where both
+   * are the identity: a layout change first glides them to 0 dB, switches
+   * the shape there and glides them back, so it never steps. A settle
+   * switches at once. */
+  if (settle) q->shelves = q->tgt_shelves;
+  const int reshaping = q->shelves != q->tgt_shelves;
+  int moving = reshaping;
   for (int b = 0; b < LE_EQ_BANDS; ++b) {
+    const int outer = b == LE_EQB_LOW || b == LE_EQB_HIGH;
     float* cur[3] = {&q->hz[b], &q->db[b], &q->lnq[b]};
-    const float tgt[3] = {q->tgt_hz[b], q->tgt_db[b], q->tgt_lnq[b]};
-    int dirty = settle || new_rate ||
-                (reshape && (b == LE_EQB_LOW || b == LE_EQB_HIGH));
+    const float tgt[3] = {q->tgt_hz[b],
+                          reshaping && outer ? 0.0f : q->tgt_db[b],
+                          q->tgt_lnq[b]};
+    int dirty = settle || new_rate;
     for (int i = 0; i < 3; ++i) {
       if (tgt[i] == *cur[i]) continue;
       dirty = 1;
@@ -1675,6 +1679,9 @@ static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
     band->b0 = c[0]; band->b1 = c[1]; band->b2 = c[2];
     band->a1 = c[3]; band->a2 = c[4];
     q->active |= 1u << b;
+  }
+  if (reshaping && q->db[LE_EQB_LOW] == 0.0f && q->db[LE_EQB_HIGH] == 0.0f) {
+    q->shelves = q->tgt_shelves; /* both outer bands are the identity now */
   }
   q->h.moving = moving;
 }
@@ -1902,7 +1909,10 @@ float le_comp_static_gr_for_test(const float* p, float in_db) {
  *   peak envelope by the share rs = 1 - env / follower. The sustain gain
  *   rises toward LE_TR_SUS_K * rs over LE_TR_SUS_LIFT_S and drops back at
  *   once, and is applied as 1 + s * gain, or its reciprocal for a cut.
- * A held tone leads neither follower and keeps its level. Gains in the
+ * A held tone leads neither follower and keeps its level, up to the peak
+ * envelope's ripple on a low note: at 100 % the attack gain moves by up to
+ * 1.7 dB within each cycle at 40 Hz, 0.9 dB at 80 Hz and 0.5 dB at 160 Hz
+ * (the captures held only a 1 kHz tone). Gains in the
  * linear domain saturate, as the Looper X's do: at 100 % an onset rises by
  * at most 1 + LE_TR_ATK_K (+15.2 dB) whatever its size, and after a 30 dB
  * drop the sustain lift peaks near +19 dB about 290 ms in (measured:

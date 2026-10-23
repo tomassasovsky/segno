@@ -675,15 +675,15 @@ enum TrackEffectType {
         curve: FxParamCurve.exponential,
         defaultValue: 1,
       ),
-      // Position 0 = four bells and both cuts, 1 = low and high shelves and
-      // no cuts, 2 = four bells and no cuts.
+      // Position 0 = low and high shelves and no cuts, 1 = four bells and
+      // both cuts, 2 = four bells and no cuts.
       FxParamInfo(
         key: 'layout',
         unit: FxParamUnit.choice,
         steps: 3,
         atMin: 0,
         atMax: 2,
-        defaultValue: 0,
+        defaultValue: 0.5,
       ),
     ],
     // The Looper X ranges and tapers (#887 part 5); the ratio's is its own

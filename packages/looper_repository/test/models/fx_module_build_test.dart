@@ -438,7 +438,7 @@ void main() {
       // Gains share the kind's -18..18 dB scale.
       expect(e.type.params[7].valueAt(e.params[7]), closeTo(9, 1e-9));
       // Four bells and both cuts.
-      expect(e.type.params[14].positionOf(e.params[14]), 0);
+      expect(e.type.params[14].positionOf(e.params[14]), 1);
     });
 
     test('the Drum Rack: shelves at 2/3 gain, one swept mid, no cuts', () {
@@ -462,7 +462,7 @@ void main() {
       expect(hz(e, 6), closeTo(0.9, 1e-9));
       expect(hz(e, 11), closeTo(4000, 1e-6));
       expect(hz(e, 12), closeTo(0.7, 1e-9));
-      expect(e.type.params[14].positionOf(e.params[14]), 1);
+      expect(e.type.params[14].positionOf(e.params[14]), 0);
 
       final build = fxEntryBuild(e)!;
       expect(build.exposed, [1, 4, 5, 10]);

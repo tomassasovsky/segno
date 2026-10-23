@@ -417,7 +417,7 @@ void main() {
         // on the kind's 20..20000 Hz range, four bells and both cuts.
         TrackEffectType.eq: [
           0.21, 0.5, 0.384476, 0.0, 0.5, 0.235138, 0.174, 0.5, 0.727302, //
-          0.15557, 0.5, 0.5278, 0.0, 1.0, 0.0,
+          0.15557, 0.5, 0.5278, 0.0, 1.0, 0.5,
         ],
         // Ed's compressor (its 1.8 dB make-up applies 3.25 dB); the transient
         // shaper neutral; the Vocal Rack's HP/Gate (high-pass off, -120 dB).
