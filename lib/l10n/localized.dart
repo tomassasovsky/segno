@@ -35,6 +35,7 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.spring => effectSpring,
     TrackEffectType.dubVerb => effectDubVerb,
     TrackEffectType.ambVerb => effectAmbVerb,
+    TrackEffectType.whammy => effectWhammy,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
@@ -62,6 +63,7 @@ extension EngineLocalizations on AppLocalizations {
     'damping' => paramDamping,
     'mode' => paramMode,
     'formants' => paramFormants,
+    'range' => paramRange,
     'low_cut' => paramLowCut,
     'low_gain' => paramLowGain,
     'low_freq' => paramLowFreq,
@@ -165,6 +167,8 @@ extension EngineLocalizations on AppLocalizations {
         ('mode', 1) => octaverModePsola,
         ('formants', 0) => octaverFormantsHeld,
         ('formants', 1) => octaverFormantsMoved,
+        ('range', 0) => pitchOctaves('-', 1),
+        ('range', 1) => pitchOctaves('+', 1),
         ('layout', 0) => eqLayoutShelves,
         ('layout', 1) => eqLayoutBellsCuts,
         ('layout', 2) => eqLayoutBells,

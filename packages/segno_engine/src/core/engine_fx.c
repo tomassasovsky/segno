@@ -1217,6 +1217,36 @@ static void fx_octaver_process(le_fx_state* fx, int slot, int sr, int cap,
   *l = fx_octaver(fx, slot, 0, cap, *l, p);
   *r = fx_octaver(fx, slot, 1, cap, *r, p);
 }
+
+/* The Whammy's taper: the pedal's share of the range, pedal^1.39. The
+ * captures put 50 % at 4.57 of the 12 semitones (-4.57 / -4.52 down, +4.61 /
+ * +4.57 up), and 0 and 100 % at the ends (#891). */
+#define LE_WHAMMY_TAPER 1.39f
+
+int le_fx_type_hops(int32_t type) {
+  return type == LE_FX_OCTAVER || type == LE_FX_WHAMMY;
+}
+
+void le_fx_octaver_settings(int32_t type, const float* params, float* out) {
+  for (int k = 0; k < LE_FX_PARAMS; ++k) out[k] = params[k];
+  if (type != LE_FX_WHAMMY) return;
+  const float pedal =
+      params[0] < 0.0f ? 0.0f : params[0] > 1.0f ? 1.0f : params[0];
+  const float range = params[1] >= 0.5f ? 12.0f : -12.0f;
+  const float st = range * powf(pedal, LE_WHAMMY_TAPER);
+  out[0] = 0.5f + st / 48.0f; /* the octaver's shift: -24 + 48 v */
+  out[1] = 1.0f;              /* the tone open */
+  out[2] = 1.0f;              /* fully wet */
+  out[3] = 0.0f;              /* the phase vocoder */
+  out[4] = 1.0f;              /* the formants move with the pitch */
+}
+
+static void fx_whammy_process(le_fx_state* fx, int slot, int sr, int cap,
+                              float* l, float* r, const float* p) {
+  float q[LE_FX_PARAMS];
+  le_fx_octaver_settings(LE_FX_WHAMMY, p, q);
+  fx_octaver_process(fx, slot, sr, cap, l, r, q);
+}
 static void fx_echo_process(le_fx_state* fx, int slot, int sr, int cap, float* l,
                             float* r, const float* p) {
   *l = fx_echo(fx, slot, 0, sr, cap, *l, p);
@@ -1374,6 +1404,12 @@ static const le_fx_param_desc LE_FX_OCTAVER_PARAMS[] = {
      * frequency), 1 = moved with the pitch; the phase vocoder only */
     {"formants", LE_FX_UNIT_CHOICE, 2, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f,
      0},
+};
+/* The Guitar Rack's Whammy (#891): position 0 of the range is -12, 1 is
+ * +12 semitones, the Looper X's two. */
+static const le_fx_param_desc LE_FX_WHAMMY_PARAMS[] = {
+    {"pedal", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.0f, 0},
+    {"range", LE_FX_UNIT_CHOICE, 2, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f, 0},
 };
 static const le_fx_param_desc LE_FX_ECHO_PARAMS[] = {
     {"time", LE_FX_UNIT_MS, 0, 0.0f, 1000.0f, LE_FX_CURVE_LINEAR, 0.45f, 0},
@@ -4125,6 +4161,7 @@ LE_FX_ROWS_FIT(LE_FX_LPF_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_SPRING_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_DUB_VERB_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_AMB_VERB_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_WHAMMY_PARAMS);
 
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
  * published for this chain entry (NULL / not-ready => dry passthrough; the slot
@@ -4251,6 +4288,9 @@ static const le_fx_vtable LE_FX[] = {
                         LE_FX_AMB_VERB_PARAMS, LE_FX_F_DRAINS,
                         sizeof(le_fx_verb), fx_amb_verb_update, NULL,
                         fx_verb_rkprocess},
+    /* The octaver's kernel and state, its settings mapped (fx_whammy_process). */
+    [LE_FX_WHAMMY] = {fx_whammy_process, fx_octaver_latency_vt,
+                      fx_octaver_prepare, LE_FX_WHAMMY_PARAMS},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -4302,6 +4342,7 @@ const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
     [LE_FX_SPRING] = LE_FX_ROW_COUNT(LE_FX_SPRING_PARAMS),
     [LE_FX_DUB_VERB] = LE_FX_ROW_COUNT(LE_FX_DUB_VERB_PARAMS),
     [LE_FX_AMB_VERB] = LE_FX_ROW_COUNT(LE_FX_AMB_VERB_PARAMS),
+    [LE_FX_WHAMMY] = LE_FX_ROW_COUNT(LE_FX_WHAMMY_PARAMS),
 };
 
 /* ---- per-kind state (le_fx_kinds, engine_private.h) ---- */

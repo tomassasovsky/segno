@@ -734,6 +734,12 @@ typedef enum le_fx_type {
    * shorter lows, fit to the Dub Rack's Amb-Verb (#891). Drains its tail on
    * bypass. */
   LE_FX_AMB_VERB = 23,
+  /* WHAMMY: p0 pedal (0..100 %), p1 range (a choice: -12 or +12
+   * semitones). The octaver's phase vocoder, fully wet with the tone open
+   * and the formants moving with the pitch, shifted by range x pedal^1.39:
+   * the Guitar Rack's Whammy, whose pedal at 50 % gives 4.6 of its 12
+   * semitones (#891). */
+  LE_FX_WHAMMY = 24,
 } le_fx_type;
 
 /* ---- Built-in effect parameter descriptors (#1378) ----
