@@ -181,8 +181,10 @@ static inline int32_t le_fx_all_tracks_hop_seed(int32_t bus) {
  * An enabled transition ramps over ~LE_FX_ENABLE_RAMP_MS per slot, and how
  * a disable behaves depends on whether the type carries a tail
  * (le_fx_type_drains):
- *  - A draining type (a ring-owning type with no reported latency: delay,
- *    echo, reverb) has the ramp scale its FEED, so new audio moves to the
+ *  - A draining type (one that holds a tail in rings and reports no
+ *    latency: delay, echo and reverb, whose rings `prepare` allocates, and
+ *    the spring, whose ring is in its kind block) has the ramp scale its
+ *    FEED, so new audio moves to the
  *    dry path while the tail already in its rings keeps sounding on a silent
  *    feed. It drains until quiet (LE_FX_DRAIN_FLOOR for
  *    a complete delay-ring horizon, at least LE_FX_DRAIN_QUIET_MS),
@@ -232,8 +234,9 @@ void le_fx_entry_reset(le_fx_state* fx, int slot);
 void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap);
 
 /* Settles slot [slot] for an entry that has just replaced another there (a
- * recipe's renewed slot): its DSP state is reset, and a slot holding delay
- * rings re-enters through the enable edge, which clears them spaced by
+ * recipe's renewed slot): its DSP state is reset, and a slot holding a tail
+ * (delay rings, or a draining kind's ring) re-enters through the enable
+ * edge, which clears them spaced by
  * LE_FX_ENABLE_CLEAR_SPACING and ramps the new entry in, so the old entry's
  * tail never sounds through the new one and no one callback clears every
  * ring. Audio thread (le_fx_recipe_apply). */
@@ -372,7 +375,7 @@ int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap);
  *
  * LE_FX_WIDTHS is one past the last le_fx_type code; engine_fx.c checks it
  * against its effect table. */
-#define LE_FX_WIDTHS 21
+#define LE_FX_WIDTHS 22
 extern const uint8_t le_fx_widths[LE_FX_WIDTHS];
 static inline int32_t le_fx_param_width(int32_t type) {
   return type > 0 && type < LE_FX_WIDTHS ? (int32_t)le_fx_widths[type] : 0;

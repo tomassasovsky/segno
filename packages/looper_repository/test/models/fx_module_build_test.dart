@@ -40,7 +40,6 @@ void main() {
           'Modulation',
           'Pitch shift',
           'Whammy',
-          'Spring reverb',
           'Ambience',
           'Dub reverb',
           'Pumper',
@@ -110,6 +109,7 @@ void main() {
           'Overdrive',
           'Parametric EQ',
           'Reverb',
+          'Spring Reverb',
           'Transient',
           'Vinyl',
           'Wah',
@@ -635,6 +635,7 @@ void main() {
               'Vinyl',
               'Degrade',
               'Low-pass filter',
+              'Spring reverb',
             ].contains(module.name)) {
               continue;
             }
@@ -670,13 +671,14 @@ void main() {
       // Guitar. Drives (part 7): the overdrive in 36 Ed's and 14 Guitar; the
       // distortion in 15 Lo-Fi and 19 Studio. Lo-fi (part 7): the vinyl, the
       // degrade and the low-pass filter in 15 Lo-Fi, the filter in 10
-      // Rhythmic.
+      // Rhythmic. Reverbs (part 8): the spring in 14 Guitar.
       expect(
         built,
         (36 + 24 + 11 + 19 + 34 + 50) +
             (11 + 19 + 17 + 25 + 72 + 14) +
             (36 + 14 + 15 + 19) +
-            (45 + 10),
+            (45 + 10) +
+            14,
       );
     });
   });
@@ -831,6 +833,25 @@ void main() {
       );
       expect(fxEntryBuild(rhythmic)!.readiness, FxModuleReadiness.partial);
       expect(rhythmic.params.take(2), [0.6, 0.3]);
+    });
+  });
+
+  group('the reverb variants', () {
+    test("the Guitar Rack's spring copies time and mix", () {
+      final e = fxModuleEntry(
+        _module('Spring reverb'),
+        const FxPreset(
+          family: 'Guitar Rack',
+          name: 'p',
+          id: 'p',
+          type: 0,
+          params: {'Spring': 1, 'Spring Time': 0.30103, 'Spring Mix': 0.289},
+        ),
+      );
+      expect(e.type, TrackEffectType.spring);
+      expect(e.params.take(2), [0.30103, 0.289]);
+      // The derived tables' on-screen check: 0.30103 is 2.00 s.
+      expect(e.type.params[0].valueAt(e.params[0]), closeTo(2.0, 1e-4));
     });
   });
 }

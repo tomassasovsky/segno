@@ -26,10 +26,12 @@
  * dynamics kinds (#887 part 5) run the same way with --kind comp, transient
  * or hpgate, the modulation kinds (part 6) with doubler, chorus or wah, and
  * the drives and lo-fi kinds (part 7) with overdrive, distortion, vinyl,
- * degrade or lpf, each set so its whole kernel works; `moving` changes a setting that
+ * degrade or lpf, and the spring (part 8), each set so its whole kernel
+ * works; `moving` changes a setting that
  * glides (the threshold, the attack amount, the high-pass corner, the
  * doubler's mix, the chorus's rate, the wah's pedal, the drives' tone, the
- * vinyl's frequency, the degrade's hold, the low-pass cutoff).
+ * vinyl's frequency, the degrade's hold, the low-pass cutoff, the spring's
+ * time).
  *
  * Reported per scenario: p50 / p99 / p99.9 / max per callback, the callbacks
  * over the period's deadline, and the mean cost of the blocks starting in
@@ -42,7 +44,7 @@
  *   ./bench_fx_cpu.sh --kind comp          # or transient, hpgate, doubler,
  *                                          # chorus, wah, overdrive,
  *                                          # distortion, vinyl, degrade,
- *                                          # lpf
+ *                                          # lpf, spring
  *   bench_fx_cpu --paced --cpu 3           # on the console, off the audio core
  *
  * On the console, run it pinned away from the app's audio core; the timed
@@ -226,6 +228,7 @@ static const char* kind_name(void) {
     case LE_FX_VINYL: return "vinyl";
     case LE_FX_DEGRADE: return "degrade";
     case LE_FX_LPF: return "lpf";
+    case LE_FX_SPRING: return "spring";
     default: return "octaver";
   }
 }
@@ -278,11 +281,13 @@ int main(int argc, char** argv) {
         g_kind = LE_FX_DEGRADE;
       } else if (!strcmp(kind, "lpf")) {
         g_kind = LE_FX_LPF;
+      } else if (!strcmp(kind, "spring")) {
+        g_kind = LE_FX_SPRING;
       } else {
         fprintf(stderr,
                 "unknown --kind %s (octaver, eq, comp, transient, hpgate, "
                 "doubler, chorus, wah, overdrive, distortion, vinyl, degrade, "
-                "lpf)\n",
+                "lpf, spring)\n",
                 kind);
         return 2;
       }
@@ -309,7 +314,7 @@ int main(int argc, char** argv) {
               "usage: %s [--smoke] [--paced] [--rate HZ] [--period FRAMES] "
               "[--blocks N] [--cpu N] "
               "[--kind octaver|eq|comp|transient|hpgate|doubler|chorus|wah|"
-              "overdrive|distortion|vinyl|degrade|lpf]\n",
+              "overdrive|distortion|vinyl|degrade|lpf|spring]\n",
               argv[0]);
       return 2;
     }
