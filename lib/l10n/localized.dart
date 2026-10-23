@@ -32,6 +32,7 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.vinyl => effectVinyl,
     TrackEffectType.degrade => effectDegrade,
     TrackEffectType.lpf => effectLpf,
+    TrackEffectType.spring => effectSpring,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
@@ -127,6 +128,7 @@ extension EngineLocalizations on AppLocalizations {
       FxParamUnit.choice => _choiceName(p, p.positionOf(setting)),
       FxParamUnit.db => fxValueDb(tenths),
       FxParamUnit.q => fxValueQ(value),
+      FxParamUnit.seconds => fxValueSeconds(value),
       FxParamUnit.ratio =>
         tenths >= 100 ? fxValueRatioWhole(value.round()) : fxValueRatio(tenths),
     };
