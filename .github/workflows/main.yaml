@@ -290,6 +290,25 @@ jobs:
             packages/segno_engine/build/bench/bench_instruments
             bench-instruments-arm64.md
           if-no-files-found: error
+      # The Looper X kinds' CPU (#887): informational on this proxy, judged
+      # against the plan's per-rack budgets on the console. The binary is
+      # uploaded for that run.
+      - name: Run the effects bench for the EQ kind (informational)
+        if: always()
+        shell: bash
+        run: >
+          bash packages/segno_engine/src/test/bench/bench_fx_cpu.sh
+          --kind eq --blocks 6000
+          | tee bench-fx-eq-arm64.md
+      - name: Upload the effects bench and its EQ report for the appliance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-fx-cpu-arm64
+          path: |
+            packages/segno_engine/build/bench/bench_fx_cpu
+            bench-fx-eq-arm64.md
+          if-no-files-found: error
       # The audio-thread fault bench (#900): build only, since it needs the
       # console's sound card. Its binary is uploaded for the on-device proof
       # run (usage in bench_rt_faults.sh).

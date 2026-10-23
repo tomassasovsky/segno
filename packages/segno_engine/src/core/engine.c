@@ -301,6 +301,7 @@ void le_lane_reset_settings(le_lane* ln, int32_t input_channel) {
     le_fx_enable_seed_settled(&ln->fx, s);
     le_fx_free_delay(&ln->fx, s);
     le_fx_free_octaver(&ln->fx, s);
+    le_fx_free_kinds(&ln->fx, s);
     le_fx_entry_reset(&ln->fx, s);
     /* Destroy any hosted plugin slot too. Reset runs from le_engine_configure
      * while the device is closed (no audio thread), so a direct destroy is safe
@@ -363,6 +364,7 @@ static void le_monitor_input_reset(le_monitor_input* m) {
     le_fx_enable_seed_settled(&m->fx, s);
     le_fx_free_delay(&m->fx, s);
     le_fx_free_octaver(&m->fx, s);
+    le_fx_free_kinds(&m->fx, s);
     le_fx_entry_reset(&m->fx, s);
     /* Destroy any hosted plugin slot too (see le_lane_reset) — otherwise a
      * reconfigure leaks the monitor input's live plugin host + binary. */
@@ -405,6 +407,7 @@ static void le_fx_bus_reset(le_fx_bus* b) {
     le_fx_enable_seed_settled(&b->fx, s);
     le_fx_free_delay(&b->fx, s);
     le_fx_free_octaver(&b->fx, s);
+    le_fx_free_kinds(&b->fx, s);
     le_fx_entry_reset(&b->fx, s);
     /* No plugin-slot loading targets the bus owners yet (built-in effects
      * only through the track/master setters), but destroy defensively like
@@ -1053,6 +1056,7 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
       le_fx_enable_seed_settled(&engine->all_tracks_fx[k], s);
       le_fx_free_delay(&engine->all_tracks_fx[k], s);
       le_fx_free_octaver(&engine->all_tracks_fx[k], s);
+      le_fx_free_kinds(&engine->all_tracks_fx[k], s);
     }
     engine->all_tracks_fx[k].enable_clear_cooldown = 0;
   }
@@ -1538,6 +1542,7 @@ void le_engine_destroy(le_engine* engine) {
       for (int s = 0; s < LE_FX_MAX; ++s) {
         le_fx_free_delay(&ln->fx, s);
         le_fx_free_octaver(&ln->fx, s);
+        le_fx_free_kinds(&ln->fx, s);
         /* The device is already closed (no audio thread), so any hosted plugin
          * slot — including one left behind by a stalled-callback clear — can be
          * destroyed directly without the quiescent handshake. */
@@ -1549,6 +1554,7 @@ void le_engine_destroy(le_engine* engine) {
     for (int s = 0; s < LE_FX_MAX; ++s) {
       le_fx_free_delay(&engine->tracks[t].bus.fx, s);
       le_fx_free_octaver(&engine->tracks[t].bus.fx, s);
+      le_fx_free_kinds(&engine->tracks[t].bus.fx, s);
       le_plugin_slot_destroy(atomic_load_explicit(
           &engine->tracks[t].bus.fx.plugin[s], memory_order_relaxed));
     }
@@ -1557,6 +1563,7 @@ void le_engine_destroy(le_engine* engine) {
     for (int s = 0; s < LE_FX_MAX; ++s) {
       le_fx_free_delay(&engine->monitors[c].fx, s);
       le_fx_free_octaver(&engine->monitors[c].fx, s);
+      le_fx_free_kinds(&engine->monitors[c].fx, s);
       le_plugin_slot_destroy(atomic_load_explicit(
           &engine->monitors[c].fx.plugin[s], memory_order_relaxed));
     }
@@ -1566,14 +1573,31 @@ void le_engine_destroy(le_engine* engine) {
     for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
       le_fx_free_delay(&engine->outputs[k].fx.fx, s);
       le_fx_free_octaver(&engine->outputs[k].fx.fx, s);
+      le_fx_free_kinds(&engine->outputs[k].fx.fx, s);
       le_fx_free_delay(&engine->all_tracks_fx[k], s);
       le_fx_free_octaver(&engine->all_tracks_fx[k], s);
+      le_fx_free_kinds(&engine->all_tracks_fx[k], s);
     }
     for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
       le_plugin_slot_destroy(atomic_load_explicit(
           &engine->outputs[k].fx.fx.plugin[s], memory_order_relaxed));
     }
   }
+  /* The per-kind tables, after every slot's arena went above. */
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    for (int l = 0; l < LE_MAX_LANES; ++l) {
+      le_fx_free_kind_table(&engine->tracks[t].lanes[l].fx);
+    }
+    le_fx_free_kind_table(&engine->tracks[t].bus.fx);
+  }
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    le_fx_free_kind_table(&engine->monitors[c].fx);
+  }
+  for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+    le_fx_free_kind_table(&engine->outputs[k].fx.fx);
+    le_fx_free_kind_table(&engine->all_tracks_fx[k]);
+  }
+  le_fx_free_kind_table(&engine->all_tracks.fx);
   le_rt_free(engine->lat_buf);
   le_rt_free(engine->cond_buf); /* conditioned-copy scratch (input conditioning) */
   le_instruments_destroy(engine); /* the synth and its buses (#1197) */

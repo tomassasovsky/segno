@@ -47,5 +47,24 @@ void main() {
       expect(reading.valueText, '0.35');
       expect(reading.note, l10n.fxScaleUnverified);
     });
+
+    test("a Looper X kind's module reads in the module's own units", () {
+      final effect = BuiltInEffect(
+        type: TrackEffectType.eq,
+        module: 'Four-band EQ',
+      );
+      final gain = TrackEffectType.eq.params[1];
+
+      final reading = fxParamReading(l10n, effect, gain, 0.75);
+
+      expect(reading.valueText, '9.0 dB');
+      expect(reading.note, isNull);
+      // Its chosen mid range still says so.
+      final mid = TrackEffectType.eq.params[5];
+      expect(
+        fxParamReading(l10n, effect, mid, 0.5).note,
+        l10n.fxScaleUnverified,
+      );
+    });
   });
 }

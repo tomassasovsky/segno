@@ -358,13 +358,12 @@ class _SingleList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    // The built-ins, which is what a standalone effect can be here. The
-    // catalogue's own single-effect identities are rack modules, and most of
-    // them have no DSP in this build — offering one as a standalone would be
-    // offering a pedal that does nothing.
+    // The seven built-ins, which is what a standalone effect can be here
+    // (#887: the singles library keeps them only). The Looper X kinds are
+    // rack modules and arrive through a rack or "Add an effect to a rack".
     final types = [
       for (final type in TrackEffectType.values)
-        if (type != TrackEffectType.none) type,
+        if (type != TrackEffectType.none && !type.isRackKind) type,
     ];
     return ListView.separated(
       itemCount: types.length,

@@ -819,6 +819,10 @@ void le_fx_entry_reset(le_fx_state* fx, int slot) {
     le_pv_reset_runtime(fx, slot, chan, le_oct_seeded_ticks(fx, slot));
   }
   le_fx_clear_reverb(fx, slot);
+  /* A heap-state kind starts clean too: its block is cleared and settled
+   * the next time the slot runs (fx_kind_state). */
+  le_fx_kinds* kinds = atomic_load_explicit(&fx->kinds, memory_order_acquire);
+  if (kinds != NULL) kinds->slot[slot].cur = NULL;
   /* A retyped slot has no tail to drain: a stale budget would let the next
    * re-enable edge skip its clean reset and read the old type's ring. */
   fx->enable_drain[slot] = 0;
@@ -944,6 +948,7 @@ void le_fx_state_free_buffers(le_fx_state* fx) {
     le_fx_free_delay(fx, s);
     le_fx_free_octaver(fx, s);
   }
+  le_fx_free_kind_table(fx);
 }
 
 /* Schroeder/Freeverb reverb: LE_REV_COMBS parallel damped comb filters are
@@ -1229,6 +1234,243 @@ static const le_fx_param_desc LE_FX_REVERB_PARAMS[] = {
     {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.35f, 0},
 };
 
+/* The EQ's parameters (the generic module's whole set). The ranges are the
+ * Looper X's own (docs/plan/2026-10-20-looperx-derived-tables.md), except the
+ * two mid frequencies: the racks give them 100..8000 (Ed's), 120..16000 (Para)
+ * and 40..8000 (Drum), so the kind spans all three, 20..20000, and each
+ * variant converts its own setting. Those two are the taper choices here;
+ * the defaults are Ed's 4-band EQ's. */
+static const le_fx_param_desc LE_FX_EQ_PARAMS[] = {
+    {"low_cut", LE_FX_UNIT_HZ, 0, 20.0f, 8000.0f, LE_FX_CURVE_EXPONENTIAL,
+     0.21f, 0},
+    {"low_gain", LE_FX_UNIT_DB, 0, -18.0f, 18.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"low_freq", LE_FX_UNIT_HZ, 0, 20.0f, 1000.0f, LE_FX_CURVE_EXPONENTIAL,
+     0.384476f, 0},
+    {"low_q", LE_FX_UNIT_Q, 0, 0.4f, 2.0f, LE_FX_CURVE_EXPONENTIAL, 0.0f, 0},
+    {"lo_mid_gain", LE_FX_UNIT_DB, 0, -18.0f, 18.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     0},
+    {"lo_mid_freq", LE_FX_UNIT_HZ, 0, 20.0f, 20000.0f,
+     LE_FX_CURVE_EXPONENTIAL, 0.3445f, LE_FX_PARAM_TAPER_UNVERIFIED},
+    {"lo_mid_q", LE_FX_UNIT_Q, 0, 0.4f, 10.0f, LE_FX_CURVE_EXPONENTIAL, 0.174f,
+     0},
+    {"hi_mid_gain", LE_FX_UNIT_DB, 0, -18.0f, 18.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     0},
+    {"hi_mid_freq", LE_FX_UNIT_HZ, 0, 20.0f, 20000.0f,
+     LE_FX_CURVE_EXPONENTIAL, 0.652f, LE_FX_PARAM_TAPER_UNVERIFIED},
+    {"hi_mid_q", LE_FX_UNIT_Q, 0, 0.4f, 10.0f, LE_FX_CURVE_EXPONENTIAL,
+     0.15557f, 0},
+    {"high_gain", LE_FX_UNIT_DB, 0, -18.0f, 18.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     0},
+    {"high_freq", LE_FX_UNIT_HZ, 0, 2000.0f, 16000.0f, LE_FX_CURVE_EXPONENTIAL,
+     0.5278f, 0},
+    {"high_q", LE_FX_UNIT_Q, 0, 0.4f, 2.0f, LE_FX_CURVE_EXPONENTIAL, 0.0f, 0},
+    {"high_cut", LE_FX_UNIT_HZ, 0, 120.0f, 20000.0f, LE_FX_CURVE_EXPONENTIAL,
+     1.0f, 0},
+    {"air_gain", LE_FX_UNIT_DB, 0, -18.0f, 18.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+};
+
+/* ---- EQ (LE_FX_EQ, #887 part 4) ----
+ *
+ * The Looper X's generic EQ module, of which each rack exposes a subset (the
+ * rack variants live in kFxModuleBuilds on the Dart side). Seven biquads in
+ * series, RBJ cookbook designs computed in double: a 12 dB/octave high-pass
+ * (low cut), a low shelf, two peaking bands, a high shelf, an air shelf at a
+ * fixed 12 kHz and a 12 dB/octave low-pass (high cut). The low cut is off at
+ * its lowest setting and the high cut at its highest; a shelf or peak at
+ * 0 dB is skipped. Which of these the Looper X uses (shelf or peak for the
+ * outer bands, the cut slopes, the air frequency) is not measured yet (#891).
+ *
+ * Settings are smoothed per update (LE_FX_UPDATE_FRAMES frames) over about
+ * 10 ms, in octaves, decibels and log Q, and coefficients are recomputed only
+ * while something moves. */
+#define LE_EQ_BANDS 7
+#define LE_EQ_AIR_HZ 12000.0
+#define LE_EQ_CUT_Q 0.70710678118654752
+#define LE_EQ_SMOOTH_S 0.010
+
+enum { LE_EQ_LOWCUT, LE_EQ_LOW, LE_EQ_LOMID, LE_EQ_HIMID, LE_EQ_HIGH,
+       LE_EQ_AIR, LE_EQ_HIGHCUT };
+
+typedef struct le_eq_band {
+  float b0, b1, b2, a1, a2; /* a0-normalized */
+  float z[2][2];            /* transposed direct form II, per channel */
+} le_eq_band;
+
+typedef struct le_fx_eq {
+  /* Smoothed targets per band: log2 Hz, dB and ln Q (cuts use only Hz). */
+  float hz[LE_EQ_BANDS];
+  float db[LE_EQ_BANDS];
+  float lnq[LE_EQ_BANDS];
+  uint32_t active; /* bands that are not the identity */
+  int32_t moving;  /* smoothing still under way */
+  le_eq_band band[LE_EQ_BANDS];
+} le_fx_eq;
+
+/* The value of descriptor row [d] at setting v, in its own unit. */
+static double le_fx_desc_value(const le_fx_param_desc* d, float v) {
+  if (v < 0.0f) v = 0.0f;
+  if (v > 1.0f) v = 1.0f;
+  if (d->curve == LE_FX_CURVE_EXPONENTIAL) {
+    return (double)d->at_min * pow((double)d->at_max / (double)d->at_min, v);
+  }
+  return (double)d->at_min + ((double)d->at_max - (double)d->at_min) * v;
+}
+
+/* RBJ cookbook coefficients for one band of the EQ, in double. kind is an
+ * LE_EQ_* band index; hz the corner or centre, db the gain, q the Q. */
+static void le_eq_design(int kind, double hz, double db, double q, int sr,
+                         double c[5]) {
+  const double nyq = 0.49 * (double)sr;
+  if (hz > nyq) hz = nyq;
+  const double w0 = 2.0 * 3.14159265358979323846 * hz / (double)sr;
+  const double cw = cos(w0);
+  const double sw = sin(w0);
+  const double alpha = sw / (2.0 * q);
+  const double A = pow(10.0, db / 40.0);
+  const double sa = 2.0 * sqrt(A) * alpha;
+  double b0, b1, b2, a0, a1, a2;
+  switch (kind) {
+    case LE_EQ_LOWCUT:
+      b0 = (1.0 + cw) / 2.0; b1 = -(1.0 + cw); b2 = b0;
+      a0 = 1.0 + alpha; a1 = -2.0 * cw; a2 = 1.0 - alpha;
+      break;
+    case LE_EQ_HIGHCUT:
+      b0 = (1.0 - cw) / 2.0; b1 = 1.0 - cw; b2 = b0;
+      a0 = 1.0 + alpha; a1 = -2.0 * cw; a2 = 1.0 - alpha;
+      break;
+    case LE_EQ_LOW:
+      b0 = A * ((A + 1.0) - (A - 1.0) * cw + sa);
+      b1 = 2.0 * A * ((A - 1.0) - (A + 1.0) * cw);
+      b2 = A * ((A + 1.0) - (A - 1.0) * cw - sa);
+      a0 = (A + 1.0) + (A - 1.0) * cw + sa;
+      a1 = -2.0 * ((A - 1.0) + (A + 1.0) * cw);
+      a2 = (A + 1.0) + (A - 1.0) * cw - sa;
+      break;
+    case LE_EQ_HIGH:
+    case LE_EQ_AIR:
+      b0 = A * ((A + 1.0) + (A - 1.0) * cw + sa);
+      b1 = -2.0 * A * ((A - 1.0) + (A + 1.0) * cw);
+      b2 = A * ((A + 1.0) + (A - 1.0) * cw - sa);
+      a0 = (A + 1.0) - (A - 1.0) * cw + sa;
+      a1 = 2.0 * ((A - 1.0) - (A + 1.0) * cw);
+      a2 = (A + 1.0) - (A - 1.0) * cw - sa;
+      break;
+    default: /* peaking */
+      b0 = 1.0 + alpha * A; b1 = -2.0 * cw; b2 = 1.0 - alpha * A;
+      a0 = 1.0 + alpha / A; a1 = -2.0 * cw; a2 = 1.0 - alpha / A;
+      break;
+  }
+  c[0] = b0 / a0; c[1] = b1 / a0; c[2] = b2 / a0; c[3] = a1 / a0;
+  c[4] = a2 / a0;
+}
+
+/* Exposed for the native tests: band [kind]'s design at these values. */
+void le_eq_design_for_test(int kind, double hz, double db, double q, int sr,
+                           double c[5]) {
+  le_eq_design(kind, hz, db, q, sr, c);
+}
+
+/* The targets [p] sets, per band: Hz (log2), dB and ln Q. A cut's dB is 0
+ * when it is on and 1 when off (at its end of the range), which is how the
+ * band skips it. */
+static void le_eq_targets(const float* p, float hz[LE_EQ_BANDS],
+                          float db[LE_EQ_BANDS], float lnq[LE_EQ_BANDS]);
+
+static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
+  le_fx_eq* q = (le_fx_eq*)ks;
+  float hz[LE_EQ_BANDS], db[LE_EQ_BANDS], lnq[LE_EQ_BANDS];
+  le_eq_targets(p, hz, db, lnq);
+  const float k =
+      settle ? 1.0f
+             : (float)(1.0 - exp(-(double)LE_FX_UPDATE_FRAMES /
+                                 (LE_EQ_SMOOTH_S * (double)(sr > 0 ? sr : 48000))));
+  int moving = 0;
+  int changed = settle;
+  for (int b = 0; b < LE_EQ_BANDS; ++b) {
+    float* cur[3] = {&q->hz[b], &q->db[b], &q->lnq[b]};
+    const float tgt[3] = {hz[b], db[b], lnq[b]};
+    for (int i = 0; i < 3; ++i) {
+      const float d = tgt[i] - *cur[i];
+      if (d == 0.0f) continue;
+      changed = 1;
+      if (k >= 1.0f || fabsf(d) < 1e-4f) {
+        *cur[i] = tgt[i];
+      } else {
+        *cur[i] += k * d;
+        moving = 1;
+      }
+    }
+  }
+  q->moving = moving;
+  if (!changed) return;
+  for (int b = 0; b < LE_EQ_BANDS; ++b) {
+    const int cut = b == LE_EQ_LOWCUT || b == LE_EQ_HIGHCUT;
+    /* A cut is off at its end (db 1 there); a shelf or peak at 0 dB is the
+     * identity. Either way the band is skipped and its memory cleared, so
+     * it starts clean when it comes back. */
+    const int on = cut ? q->db[b] < 0.5f : fabsf(q->db[b]) >= 0.01f;
+    le_eq_band* band = &q->band[b];
+    if (!on) {
+      if (q->active & (1u << b)) memset(band->z, 0, sizeof(band->z));
+      q->active &= ~(1u << b);
+      continue;
+    }
+    double c[5];
+    le_eq_design(b, exp2((double)q->hz[b]), cut ? 0.0 : (double)q->db[b],
+                 exp((double)q->lnq[b]), sr, c);
+    band->b0 = (float)c[0]; band->b1 = (float)c[1]; band->b2 = (float)c[2];
+    band->a1 = (float)c[3]; band->a2 = (float)c[4];
+    q->active |= 1u << b;
+  }
+}
+
+static void fx_eq_kprocess(void* ks, float* l, float* r) {
+  le_fx_eq* q = (le_fx_eq*)ks;
+  float x[2] = {*l, *r};
+  for (int b = 0; b < LE_EQ_BANDS; ++b) {
+    if (!(q->active & (1u << b))) continue;
+    le_eq_band* f = &q->band[b];
+    for (int c = 0; c < 2; ++c) {
+      const float in = x[c];
+      const float y = f->b0 * in + f->z[c][0];
+      f->z[c][0] = f->b1 * in - f->a1 * y + f->z[c][1];
+      f->z[c][1] = f->b2 * in - f->a2 * y;
+      x[c] = y;
+    }
+  }
+  *l = x[0];
+  *r = x[1];
+}
+
+static void le_eq_targets(const float* p, float hz[LE_EQ_BANDS],
+                          float db[LE_EQ_BANDS], float lnq[LE_EQ_BANDS]) {
+  const le_fx_param_desc* d = LE_FX_EQ_PARAMS;
+#define LE_EQ_V(i) le_fx_desc_value(&d[i], p[i])
+  const double ln_cut_q = log(LE_EQ_CUT_Q);
+  hz[LE_EQ_LOWCUT] = (float)log2(LE_EQ_V(0));
+  db[LE_EQ_LOWCUT] = p[0] <= 0.0f ? 1.0f : 0.0f;
+  lnq[LE_EQ_LOWCUT] = (float)ln_cut_q;
+  hz[LE_EQ_LOW] = (float)log2(LE_EQ_V(2));
+  db[LE_EQ_LOW] = (float)LE_EQ_V(1);
+  lnq[LE_EQ_LOW] = (float)log(LE_EQ_V(3));
+  hz[LE_EQ_LOMID] = (float)log2(LE_EQ_V(5));
+  db[LE_EQ_LOMID] = (float)LE_EQ_V(4);
+  lnq[LE_EQ_LOMID] = (float)log(LE_EQ_V(6));
+  hz[LE_EQ_HIMID] = (float)log2(LE_EQ_V(8));
+  db[LE_EQ_HIMID] = (float)LE_EQ_V(7);
+  lnq[LE_EQ_HIMID] = (float)log(LE_EQ_V(9));
+  hz[LE_EQ_HIGH] = (float)log2(LE_EQ_V(11));
+  db[LE_EQ_HIGH] = (float)LE_EQ_V(10);
+  lnq[LE_EQ_HIGH] = (float)log(LE_EQ_V(12));
+  hz[LE_EQ_AIR] = (float)log2(LE_EQ_AIR_HZ);
+  db[LE_EQ_AIR] = (float)LE_EQ_V(14);
+  lnq[LE_EQ_AIR] = (float)ln_cut_q;
+  hz[LE_EQ_HIGHCUT] = (float)log2(LE_EQ_V(13));
+  db[LE_EQ_HIGHCUT] = p[13] >= 1.0f ? 1.0f : 0.0f;
+  lnq[LE_EQ_HIGHCUT] = (float)ln_cut_q;
+#undef LE_EQ_V
+}
+
 /* A type's rows are the parameters an entry holds, so none may outgrow it. */
 #define LE_FX_ROWS_FIT(t)                                  \
   _Static_assert(sizeof(t) / sizeof(t[0]) <= LE_FX_PARAMS, \
@@ -1240,6 +1482,7 @@ LE_FX_ROWS_FIT(LE_FX_TREMOLO_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_OCTAVER_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_ECHO_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_REVERB_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_EQ_PARAMS);
 
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
  * published for this chain entry (NULL / not-ready => dry passthrough; the slot
@@ -1278,7 +1521,21 @@ typedef struct le_fx_vtable {
    * without fixed params; their count is le_fx_widths[type], the one table
    * le_fx_param_width reads. Defaults come from here. */
   const le_fx_param_desc* params;
+  /* LE_FX_F_* behaviour bits. */
+  uint32_t flags;
+  /* A kind that keeps its state on the heap (le_fx_kinds): the bytes of its
+   * block, 0 for the rest. Such a kind has no `process`; the chain runs
+   * `update` on its block at the update cadence (and with settle set right
+   * after the block is cleared, so smoothing lands at once), then
+   * `kprocess`. */
+  size_t state_size;
+  void (*update)(void* ks, const float* p, int sr, int settle);
+  void (*kprocess)(void* ks, float* l, float* r);
 } le_fx_vtable;
+
+/* Bypass drains the tail instead of crossfading out: a linear, ring-owning
+ * kind with no reported latency (delay, echo, reverb). */
+#define LE_FX_F_DRAINS 1u
 
 /* Indexed by le_fx_type — one row per effect. Adding an effect is adding its
  * kernels above + one row here. LE_FX_NONE is the all-NULL no-op (the empty-chain
@@ -1288,18 +1545,21 @@ static const le_fx_vtable LE_FX[] = {
     [LE_FX_DRIVE] = {fx_drive_process, NULL, NULL, LE_FX_DRIVE_PARAMS},
     [LE_FX_FILTER] = {fx_filter_process, NULL, NULL, LE_FX_FILTER_PARAMS},
     [LE_FX_DELAY] =
-        {fx_delay_process, NULL, fx_stereo_ring_prepare, LE_FX_DELAY_PARAMS},
+        {fx_delay_process, NULL, fx_stereo_ring_prepare, LE_FX_DELAY_PARAMS, LE_FX_F_DRAINS},
     [LE_FX_TREMOLO] = {fx_tremolo_process, NULL, NULL, LE_FX_TREMOLO_PARAMS},
     [LE_FX_OCTAVER] = {fx_octaver_process, fx_octaver_latency_vt,
                        fx_octaver_prepare, LE_FX_OCTAVER_PARAMS},
     [LE_FX_ECHO] =
-        {fx_echo_process, NULL, fx_stereo_ring_prepare, LE_FX_ECHO_PARAMS},
+        {fx_echo_process, NULL, fx_stereo_ring_prepare, LE_FX_ECHO_PARAMS, LE_FX_F_DRAINS},
     [LE_FX_REVERB] =
-        {fx_reverb_process, NULL, fx_reverb_prepare, LE_FX_REVERB_PARAMS},
+        {fx_reverb_process, NULL, fx_reverb_prepare, LE_FX_REVERB_PARAMS, LE_FX_F_DRAINS},
     /* A hosted plugin: process forwards to its slot; no params, no prepare, no
      * defaults (the host owns all state). Output is sanitized at the chain
      * boundary in fx_apply_chain. */
     [LE_FX_PLUGIN] = {fx_plugin_process, NULL, NULL, NULL},
+    /* The EQ: linear but with no tail worth draining, so it crossfades. */
+    [LE_FX_EQ] = {NULL, NULL, NULL, LE_FX_EQ_PARAMS, 0, sizeof(le_fx_eq),
+                  fx_eq_update, fx_eq_kprocess},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -1318,7 +1578,126 @@ const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
     [LE_FX_OCTAVER] = LE_FX_ROW_COUNT(LE_FX_OCTAVER_PARAMS),
     [LE_FX_ECHO] = LE_FX_ROW_COUNT(LE_FX_ECHO_PARAMS),
     [LE_FX_REVERB] = LE_FX_ROW_COUNT(LE_FX_REVERB_PARAMS),
+    [LE_FX_EQ] = LE_FX_ROW_COUNT(LE_FX_EQ_PARAMS),
 };
+
+/* ---- per-kind state (le_fx_kinds, engine_private.h) ---- */
+
+/* A block's header; the kind's state follows at LE_FX_KIND_ALIGN. */
+#define LE_FX_KIND_ALIGN 64
+typedef struct le_fx_kind_block {
+  struct le_fx_kind_block* next; /* set before the block is published */
+  int32_t type;
+  int32_t settle; /* audio thread: the next update lands at once */
+} le_fx_kind_block;
+
+static inline void* le_fx_kind_payload(le_fx_kind_block* b) {
+  return (unsigned char*)b + LE_FX_KIND_ALIGN;
+}
+
+static size_t le_fx_kind_block_bytes(int32_t type) {
+  const size_t n = LE_FX[type].state_size;
+  return LE_FX_KIND_ALIGN + ((n + LE_FX_KIND_ALIGN - 1) & ~(size_t)(LE_FX_KIND_ALIGN - 1));
+}
+
+/* One slot's arena: room for one block of every heap-state kind, so a slot
+ * that holds each kind in turn never runs out. */
+static size_t le_fx_kind_arena_bytes(void) {
+  size_t bytes = 0;
+  for (int32_t t = LE_FX_NONE + 1; t < LE_FX_TYPE_COUNT; ++t) {
+    if (LE_FX[t].state_size) bytes += le_fx_kind_block_bytes(t);
+  }
+  return bytes;
+}
+
+/* Control thread: makes sure slot [slot] has a block for [type]. */
+static int32_t le_fx_kind_prepare(le_fx_state* fx, int slot, int32_t type) {
+  le_fx_kinds* k = atomic_load_explicit(&fx->kinds, memory_order_relaxed);
+  if (k == NULL) {
+    k = (le_fx_kinds*)le_rt_alloc_prefaulted(sizeof(*k));
+    if (k == NULL) return LE_ERR_INVALID;
+    atomic_store_explicit(&fx->kinds, k, memory_order_release);
+  }
+  le_fx_kind_slot* ks = &k->slot[slot];
+  le_fx_kind_block* head = atomic_load_explicit(&ks->head, memory_order_relaxed);
+  for (le_fx_kind_block* b = head; b != NULL; b = b->next) {
+    if (b->type == type) return LE_OK;
+  }
+  if (ks->arena.base == NULL &&
+      !le_rt_arena_init(&ks->arena, le_fx_kind_arena_bytes())) {
+    return LE_ERR_INVALID;
+  }
+  le_fx_kind_block* b = (le_fx_kind_block*)le_rt_arena_alloc(
+      &ks->arena, le_fx_kind_block_bytes(type));
+  if (b == NULL) return LE_ERR_INVALID; /* sized for every kind: unreachable */
+  b->type = type;
+  b->settle = 1;
+  b->next = head;
+  atomic_store_explicit(&ks->head, b, memory_order_release);
+  return LE_OK;
+}
+
+void le_fx_free_kinds(le_fx_state* fx, int slot) {
+  le_fx_kinds* k = atomic_load_explicit(&fx->kinds, memory_order_relaxed);
+  if (k == NULL) return;
+  le_fx_kind_slot* ks = &k->slot[slot];
+  atomic_store_explicit(&ks->head, NULL, memory_order_relaxed);
+  ks->cur = NULL;
+  le_rt_arena_release(&ks->arena);
+}
+
+void le_fx_free_kind_table(le_fx_state* fx) {
+  le_fx_kinds* k = atomic_load_explicit(&fx->kinds, memory_order_relaxed);
+  if (k == NULL) return;
+  for (int s = 0; s < LE_FX_MAX; ++s) le_rt_arena_release(&k->slot[s].arena);
+  atomic_store_explicit(&fx->kinds, NULL, memory_order_relaxed);
+  le_rt_free(k);
+}
+
+/* The engine frame the chain is processing (le_fx_state::clock). */
+static inline uint32_t le_fx_now(const le_fx_state* fx) {
+  return fx->clock_src != NULL
+             ? atomic_load_explicit(fx->clock_src, memory_order_relaxed)
+             : fx->clock;
+}
+
+/* Audio thread: slot [s]'s state for [ty], updated at the cadence, or NULL
+ * when the control thread prepared none (the slot then passes through). A
+ * block it switches to (a retype, or le_fx_entry_reset) starts cleared and
+ * settles on its first update. */
+static void* fx_kind_state(le_fx_state* fx, int s, int32_t ty, int sr,
+                           const float* p) {
+  le_fx_kinds* k = atomic_load_explicit(&fx->kinds, memory_order_acquire);
+  if (k == NULL) return NULL;
+  le_fx_kind_slot* ks = &k->slot[s];
+  le_fx_kind_block* b = ks->cur;
+  if (b == NULL || b->type != ty) {
+    b = atomic_load_explicit(&ks->head, memory_order_acquire);
+    while (b != NULL && b->type != ty) b = b->next;
+    ks->cur = b;
+    if (b == NULL) return NULL;
+    memset(le_fx_kind_payload(b), 0, LE_FX[ty].state_size);
+    b->settle = 1;
+  }
+  void* st = le_fx_kind_payload(b);
+  if (b->settle || (le_fx_now(fx) & (uint32_t)(LE_FX_UPDATE_FRAMES - 1)) == 0) {
+    LE_FX[ty].update(st, p, sr, b->settle);
+    b->settle = 0;
+  }
+  return st;
+}
+
+/* One entry's effect on a pair: the kernel, or a heap-state kind's update
+ * and kernel. */
+static inline void fx_run(le_fx_state* fx, int s, int32_t ty, int sr, int cap,
+                          float* l, float* r, const float* p) {
+  if (LE_FX[ty].state_size) {
+    void* st = fx_kind_state(fx, s, ty, sr, p);
+    if (st != NULL) LE_FX[ty].kprocess(st, l, r);
+    return;
+  }
+  LE_FX[ty].process(fx, s, sr, cap, l, r, p);
+}
 
 /* Whether a bypassed slot of [type] drains its tail rather than crossfading
  * out: a ring-owning type with no reported latency (delay, echo, reverb).
@@ -1326,7 +1705,7 @@ const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
  * plugins — crossfades (see fx_apply_chain's doc). */
 int le_fx_type_drains(int32_t type) {
   return type > LE_FX_NONE && type < LE_FX_TYPE_COUNT &&
-         LE_FX[type].prepare != NULL && LE_FX[type].latency == NULL;
+         (LE_FX[type].flags & LE_FX_F_DRAINS) != 0;
 }
 
 /* Applies a chain to one stereo sample, in chain order, carrying the (l, r) pair
@@ -1528,7 +1907,8 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
       rack_tail = fx_rack_head(fx, s, count, enabled, sr, &xl, &xr);
     }
     const int32_t ty = types[s];
-    if (ty > LE_FX_NONE && ty < LE_FX_TYPE_COUNT && LE_FX[ty].process) {
+    if (ty > LE_FX_NONE && ty < LE_FX_TYPE_COUNT &&
+        (LE_FX[ty].process || LE_FX[ty].kprocess)) {
       /* Plugin installation can replace a draining built-in without a ring
        * command. Its obsolete tail state belongs to this callback, never
        * to the concurrent installer. Plugins use crossfade, not drain. */
@@ -1574,7 +1954,7 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
          * holds real input, THEN ramp in. */
         float wl = xl;
         float wr = xr;
-        LE_FX[ty].process(fx, s, sr, cap, &wl, &wr, params[s]);
+        fx_run(fx, s, ty, sr, cap, &wl, &wr, params[s]);
         fx->enable_warmup[s]--;
         goto slot_done;
       }
@@ -1619,7 +1999,7 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
       }
       float wl = mix >= 1.0f || fades ? il : il * mix;
       float wr = mix >= 1.0f || fades ? ir : ir * mix;
-      LE_FX[ty].process(fx, s, sr, cap, &wl, &wr, params[s]);
+      fx_run(fx, s, ty, sr, cap, &wl, &wr, params[s]);
       /* Sanitize a plugin slot's output before it re-enters the chain (D-RT).
        * Built-ins are already bounded, so only the plugin row pays this. */
       if (ty == LE_FX_PLUGIN) {
@@ -1697,10 +2077,9 @@ int le_fx_added_latency(const le_fx_state* fx, int slot, int32_t type) {
 }
 
 int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap) {
-  if (type <= LE_FX_NONE || type >= LE_FX_TYPE_COUNT ||
-      LE_FX[type].prepare == NULL) {
-    return LE_OK; /* type needs no heap allocation */
-  }
+  if (type <= LE_FX_NONE || type >= LE_FX_TYPE_COUNT) return LE_OK;
+  if (LE_FX[type].state_size) return le_fx_kind_prepare(fx, slot, type);
+  if (LE_FX[type].prepare == NULL) return LE_OK; /* needs no heap */
   return LE_FX[type].prepare(fx, slot, cap);
 }
 
