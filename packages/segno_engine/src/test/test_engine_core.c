@@ -20561,7 +20561,8 @@ static void test_fx_params_past_count_are_inert(void) {
 
 #define OCT_SR 48000
 /* Mirrors engine_fx.h's LE_PV_N (the phase-vocoder window); the latency is
- * LE_PV_LATENCY, a hop more since the hop split (#887 part 9). */
+ * LE_PV_LATENCY, three quarters of a hop more since the hop split (#887
+ * part 9). */
 #define OCT_PV_N 1024
 
 /* A fixed formant envelope: a resonance near 1 kHz (Gaussian in log-frequency).
@@ -20763,10 +20764,10 @@ static void test_octaver_mono_coherent(void) {
   oct_mono_coherent_mode(1.0f); /* PSOLA */
 }
 
-/* Delay-matched dry (D2): the dry tap is delayed by the same LE_PV_N as the wet
+/* Delay-matched dry (D2): the dry tap is delayed by the same LE_PV_LATENCY as the wet
  * voice, so the two stay time-aligned in the mix instead of combing (the old
  * granular octaver mixed a zero-delay dry against a delayed wet). An impulse on
- * the dry-only path (mix = 0) emerges delayed by ~LE_PV_N, not at t = 0. */
+ * the dry-only path (mix = 0) emerges delayed by ~LE_PV_LATENCY, not at t = 0. */
 static void test_octaver_mix_no_comb(void) {
   printf("test_octaver_mix_no_comb\n");
   const int total = 2 * OCT_PV_N;
@@ -20793,7 +20794,7 @@ static void test_octaver_mix_no_comb(void) {
   }
   le_engine_destroy(e);
 
-  /* Find the dry impulse in the output; it must arrive near LE_PV_N, not at 0. */
+  /* Find the dry impulse in the output; it must arrive near LE_PV_LATENCY, not at 0. */
   int peak = 0;
   for (int i = 0; i < total; ++i) {
     if (fabsf(out[i]) > fabsf(out[peak])) peak = i;
@@ -20804,7 +20805,7 @@ static void test_octaver_mix_no_comb(void) {
 
   /* PSOLA leg (D2): the dry tap re-matches on a mode switch because both modes
    * report the same added latency, so an impulse through PSOLA at mix = 0.5 still
-   * lands the dry energy near LE_PV_N (comb-free) — never at t = 0. An impulse is
+   * lands the dry energy near LE_PV_LATENCY (comb-free) — never at t = 0. An impulse is
    * unvoiced, so PSOLA's own voice is gated to the delay-matched dry, keeping the
    * whole response time-aligned. */
   memset(out, 0, sizeof(float) * (size_t)total);
@@ -21463,7 +21464,7 @@ static void test_octaver_psola_no_chatter(void) {
 }
 
 /* Part 5: the snapshot surfaces the octaver's added latency (frames) so the UI
- * can warn about monitoring lag. A PV octaver on a monitor lane reports LE_PV_N
+ * can warn about monitoring lag. A PV octaver on a monitor lane reports LE_PV_LATENCY
  * (1024, engine.c); a chain with no octaver reports 0. Informational only — the
  * record offset stays untouched (compensation is out of scope). */
 static void test_octaver_added_latency(void) {
@@ -21477,7 +21478,7 @@ static void test_octaver_added_latency(void) {
   CHECK(s.fx_added_latency_frames == 0);
   CHECK(s.record_offset_frames == 0);
 
-  /* Engage a PV octaver on a monitor lane -> LE_PV_N frames of added latency. */
+  /* Engage a PV octaver on a monitor lane -> LE_PV_LATENCY frames of added latency. */
   le_engine_set_monitor_input(e, 0, 1);
   le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_OCTAVER);
   le_engine_set_monitor_input_fx_param(e, 0, 0, 3, 0.0f); /* PV mode */
@@ -21488,7 +21489,7 @@ static void test_octaver_added_latency(void) {
   CHECK(s.record_offset_frames == 0);       /* compensation untouched */
 
   /* Switching the same octaver to PSOLA reports the same latency (both modes
-   * read LE_PV_N today, so the dry tap does not jump on a mode switch). */
+   * read LE_PV_LATENCY today, so the dry tap does not jump on a mode switch). */
   le_engine_set_monitor_input_fx_param(e, 0, 0, 3, 1.0f); /* PSOLA mode */
   drain(e);
   le_engine_get_snapshot(e, &s);
@@ -21934,14 +21935,15 @@ static int32_t oct_slot_phase(int32_t seed, int slot) {
  * A phase offset is only safe if it moves nothing audible. The three
  * quantities that had to be re-derived with it are pinned at every slot:
  *
- *  1. The WET path is still a pure LE_PV_N - 1 delay. Unison PV reconstructs a
- *     stationary two-tone almost exactly, so a full-wet output nulls against
- *     in[t - (LE_PV_N - 1)]; the same null one hop either side is asserted
+ *  1. The WET path is still a pure LE_PV_LATENCY - 1 delay. Unison PV
+ *     reconstructs a stationary two-tone almost exactly, so a full-wet output
+ *     nulls against
+ *     in[t - (LE_PV_LATENCY - 1)]; the same null one hop either side is asserted
  *     LARGE, so the test cannot pass by accident.
  *  2. The delay-matched DRY tap has not moved (an impulse at mix 0 still
- *     emerges at LE_PV_N).
- *  3. fx_apply_chain's LE_PV_N WARMUP still covers a phase-shifted first frame,
- *     at all LE_PV_HOP phases, with no margin.
+ *     emerges at LE_PV_LATENCY).
+ *  3. fx_apply_chain's LE_PV_LATENCY WARMUP still covers a phase-shifted
+ *     first frame, at all LE_PV_HOP phases, with no margin.
  *
  * ...plus that the stagger is there: two slots of one chain hold different
  * counters, the two channels of one slot the same one (mono coherence). */
@@ -21960,7 +21962,7 @@ static void test_octaver_hop_stagger_alignment(void) {
   double worst_on = 0.0;
   double least_off = 1e9;
   for (int slot = 0; slot < LE_FX_MAX; ++slot) {
-    /* (1) full wet: a pure LE_PV_N - 1 delay at this slot's phase. */
+    /* (1) full wet: a pure LE_PV_LATENCY - 1 delay at this slot's phase. */
     le_engine* e = oct_stagger_engine(slot, 1.0f);
     oct_stagger_run(e, in, out, total);
     le_engine_destroy(e);
@@ -21997,7 +21999,7 @@ static void test_octaver_hop_stagger_alignment(void) {
    * one full-wet signal whose dry and wet legs are in phase, so a warmup that
    * ended too early reads as a plain level dip. Swept over all LE_PV_HOP
    * phases, not over the slots: the worst phase is p = 1 (full overlap-add at
-   * sample LE_PV_N exactly), and nothing guarantees a slot lands on it. */
+   * sample LE_PV_LATENCY exactly), and nothing guarantees a slot lands on it. */
   for (int i = 0; i < total; ++i) in[i] = 0.5f;
   {
     float worst_drop = 0.0f;
@@ -24128,7 +24130,7 @@ static void run_perf_render_octaver_case(const char* name, float mode_p3) {
   const int32_t sr = 48000;
   const int32_t channel = 3;
   const int32_t loop_len = 1024;
-  const int32_t capture_frames = 8192; /* well past the LE_PV_N warmup */
+  const int32_t capture_frames = 8192; /* well past the LE_PV_LATENCY warmup */
   /* -1 octave, tone open, full wet; mode_p3 picks phase vocoder or PSOLA. */
   const float params4[LE_FX_PARAMS] = {0.25f, 1.0f, 1.0f, mode_p3};
 
@@ -25496,7 +25498,7 @@ static void test_perf_render_golden_octaver_nonzero_track(void) {
   oct_golden_pump(e, &phase, cyc, loop_len);
 
   /* Engage the octaver mid-performance, then full wet, and run well past its
-   * LE_PV_N warmup so the compared window is steady phase-vocoder output. */
+   * LE_PV_LATENCY warmup so the compared window is steady phase-vocoder output. */
   CHECK(le_engine_set_lane_fx(e, channel, 0, 0, LE_FX_OCTAVER) == LE_OK);
   CHECK(le_engine_set_lane_fx_count(e, channel, 0, 1, 0) == LE_OK);
   oct_golden_pump(e, &phase, cyc, loop_len);
@@ -32167,7 +32169,7 @@ static void test_fx_enable_chain_stomp_staggered_clear(void) {
 }
 
 /* Octaver re-enable warmup: the ring clear also zeroes the octaver's
- * delay-matched DRY tap, so without warmup a re-enable rendered a ~LE_PV_N
+ * delay-matched DRY tap, so without warmup a re-enable rendered a ~LE_PV_LATENCY
  * (~21 ms) hole of silence. The warmup feeds the FIFO while the output stays
  * bit-exact dry, then ramps — the output never dips. p2 (mix) = 0 makes the
  * settled wet path exactly the dry tap, so any hole is a hard dip to ~0. */

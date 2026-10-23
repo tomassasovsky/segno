@@ -62,17 +62,20 @@ extern "C" {
 #define LE_PV_LIFTER (LE_PV_N / 24) /* ~42: cepstral envelope lifter cutoff */
 /* The hop split (#887 part 9): a frame's work runs in four stages, one per
  * quarter of its hop (analysis, envelope, shift, synthesis), so no one
- * callback carries a whole frame whatever the hop phase. The synthesis lands
- * three quarters of a hop after the analysis, so the output runs one hop
- * later than an unsplit frame's: the octaver's latency is LE_PV_N +
- * LE_PV_HOP, in both modes (PSOLA's voice is held back the same hop so the
- * dry tap does not move on a mode switch). */
-#define LE_PV_LATENCY (LE_PV_N + LE_PV_HOP)
-#define LE_PV_OUT (LE_PV_N + LE_PV_HOP) /* the overlap-add accumulator */
+ * callback carries a whole frame whatever the hop phase. The synthesis runs
+ * LE_PV_SYNTH_TICK ticks after the analysis and its first sample is emitted
+ * on that tick, so the output runs that much later than an unsplit frame's:
+ * the octaver's latency is LE_PV_LATENCY in both modes (PSOLA reads its
+ * input the same ticks further back, so the dry tap does not move on a mode
+ * switch). */
+#define LE_PV_SYNTH_TICK (3 * LE_PV_HOP / 4)
+#define LE_PV_LATENCY (LE_PV_N + LE_PV_SYNTH_TICK)
+/* The overlap-add accumulator: a frame written at the synthesis tick ends on
+ * its last element. */
+#define LE_PV_OUT LE_PV_LATENCY
 /* A frame's state between stages, per channel: the window (reused for the
- * inverse transform), the spectrum, magnitude, true frequency and envelope,
- * and PSOLA's one-hop hold. */
-#define LE_PV_SCRATCH (LE_PV_N + 5 * LE_PV_BINS + LE_PV_HOP)
+ * inverse transform), the spectrum, magnitude, true frequency and envelope. */
+#define LE_PV_SCRATCH (LE_PV_N + 5 * LE_PV_BINS)
 
 /* Analysis-hop stagger (#915). Every octaver instance used to start its hop
  * counter at 0, so all instances ran their four length-LE_PV_N FFTs on the
@@ -85,8 +88,9 @@ extern "C" {
  *
  *     phase = LE_PV_STAGGER_QUARTER * ((owner quarter + slot) mod 4)
  *
- * and its heavy ticks (the PV frame, or PSOLA's YIN pass) fall on the engine
- * frames c with (c + phase) mod LE_PV_HOP equal to 0 (#941). The hop is
+ * and its analysis ticks (the PV frame's first stage, or PSOLA's YIN pass)
+ * fall on the engine frames c with (c + phase) mod LE_PV_HOP equal to 0
+ * (#941); the PV frame's later stages follow a quarter apart. The hop is
  * anchored to the engine's own frame count, not to the instant the instance
  * was reset, so the spread holds for instances added at any time: one added
  * to a second track long after the first keeps its quarter, and so does a
@@ -102,9 +106,10 @@ extern "C" {
  *
  * With four callbacks per hop, a fifth instance always shares one, and two
  * axes cannot both be kept apart: slot s on track t + 1 shares a quarter
- * with slot s + 1 on track t. Spreading the work does not reduce it; the hop
- * split in the rack plan (#887, part 9) makes the cost independent of the
- * phase. */
+ * with slot s + 1 on track t. Spreading the work does not reduce it. Since
+ * the hop split (above), every quarter carries one PV stage whatever the
+ * phase, so the phase only decides which stage lands in which callback;
+ * PSOLA's YIN pass still runs on one tick a hop. */
 #define LE_PV_STAGGER_QUARTER (LE_PV_HOP / 4)
 
 /* Whether [ent] may play from a lap that began at engine frame [top] (#941):
@@ -168,6 +173,13 @@ static inline int32_t le_fx_all_tracks_hop_seed(int32_t bus) {
 #define LE_PSOLA_MAXLAG 800  /* longest lag searched (60 Hz at 48 kHz) */
 #define LE_PSOLA_THRESH 0.15f /* YIN absolute threshold for the first dip */
 #define LE_PSOLA_THMAX 300   /* grain half-width cap: 2*THMAX < LE_PV_N (fits OLA) */
+/* How far behind the head PSOLA reads its input, so its latency matches the
+ * split phase vocoder's (LE_PV_LATENCY). */
+#define LE_PSOLA_LAG (LE_PV_LATENCY - LE_PV_N)
+/* The deepest FIFO read of either mode (PSOLA's pitch window, which lies
+ * past the dry tap and the PV window): a smaller ring would wrap onto recent
+ * input, so fx_octaver passes such a slot through dry. */
+#define LE_OCT_REACH (LE_PSOLA_LAG + LE_PSOLA_WIN)
 
 /* The cadence of a heap-state kind's update hook (le_fx_kinds), in engine
  * frames: it runs once per this many frames of the engine clock, at a phase
