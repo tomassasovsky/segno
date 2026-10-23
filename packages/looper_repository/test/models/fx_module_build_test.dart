@@ -405,7 +405,7 @@ void main() {
         FxPreset(family: family, name: 'p', id: 'p', type: 0, params: params);
     double hz(BuiltInEffect e, int i) => e.type.params[i].valueAt(e.params[i]);
 
-    test("Ed's 4-band EQ copies every control and holds the air band flat", () {
+    test("Ed's 4-band EQ copies every control as the value it applies", () {
       final build = fxModuleBuild(
         _module('Four-band EQ'),
         family: "Ed's Rack",
@@ -419,45 +419,57 @@ void main() {
         preset("Ed's Rack", const {
           'EQ 4-Band': 1,
           'EQ Low Cut': 0.21,
+          'EQ Low Q': 1,
           'EQ Lo Mid Freq': 0.17574,
           'EQ Hi Mid': 0.75,
+          'EQ Hi Mid Freq': 0.66061,
+          'EQ High Freq': 0.5278,
         }),
       );
       expect(e.type, TrackEffectType.eq);
       // The low cut's range is the kind's: copied as it is.
       expect(e.params[0], closeTo(0.21, 1e-12));
-      // The mid frequency is read on Ed's 100..8000 Hz scale and set to the
-      // same frequency on the kind's 20..20000 Hz scale.
-      expect(hz(e, 5), closeTo(100 * math.pow(80, 0.17574), 1e-6));
+      // The measured applied values (#891): Lo Mid on 40..8000 Hz, Hi Mid on
+      // 120..16000 Hz, High on 1200..20000 Hz, Low Q up to 10.
+      expect(hz(e, 5), closeTo(101.5, 0.05));
+      expect(hz(e, 8), closeTo(3040, 1));
+      expect(hz(e, 11), closeTo(5298, 1));
+      expect(hz(e, 3), closeTo(10, 1e-9));
       // Gains share the kind's -18..18 dB scale.
       expect(e.type.params[7].valueAt(e.params[7]), closeTo(9, 1e-9));
-      expect(e.type.params[14].valueAt(e.params[14]), closeTo(0, 1e-9));
+      // Four bells and both cuts.
+      expect(e.type.params[14].positionOf(e.params[14]), 1);
     });
 
-    test('the Drum Rack sweeps one mid from 40 Hz and fixes the rest', () {
+    test('the Drum Rack: shelves at 2/3 gain, one swept mid, no cuts', () {
       final e = fxModuleEntry(
         _module('Four-band EQ'),
         preset('Drum Rack', const {
           'EQ': 1,
-          'EQ Low': 0.5,
+          'EQ Low': 1,
           'EQ Mid': 0.25,
           'EQ Mid Freq': 0.5,
-          'EQ High': 0.5,
+          'EQ High': 0.6,
         }),
       );
       expect(hz(e, 5), closeTo(40 * math.sqrt(200), 1e-6));
       expect(e.type.params[4].valueAt(e.params[4]), closeTo(-9, 1e-9));
-      expect(hz(e, 2), closeTo(100, 1e-6));
-      expect(hz(e, 11), closeTo(5000, 1e-6));
-      expect(e.params[0], 0.0); // low cut off
-      expect(e.params[13], 1.0); // high cut off
+      // +18 shown applies +12; the default +3.6 applies +2.4.
+      expect(e.type.params[1].valueAt(e.params[1]), closeTo(12, 1e-9));
+      expect(e.type.params[10].valueAt(e.params[10]), closeTo(2.4, 1e-9));
+      expect(hz(e, 2), closeTo(200, 1e-6));
+      expect(hz(e, 3), closeTo(0.5, 1e-9));
+      expect(hz(e, 6), closeTo(0.9, 1e-9));
+      expect(hz(e, 11), closeTo(4000, 1e-6));
+      expect(hz(e, 12), closeTo(0.7, 1e-9));
+      expect(e.type.params[14].positionOf(e.params[14]), 0);
 
       final build = fxEntryBuild(e)!;
       expect(build.exposed, [1, 4, 5, 10]);
       expect(build.labels[4], 'mid_gain');
     });
 
-    test('the Rhythmic Rack is the parametric EQ without its Q', () {
+    test('the Rhythmic Rack is the parametric EQ with its Q at 1', () {
       const keys = {
         'EQ': 1.0,
         'EQ Low Cut': 0.0,
@@ -472,19 +484,21 @@ void main() {
       expect(fxEntryBuild(rhythmic)!.exposed, [0, 4, 5, 13]);
       expect(
         rhythmic.type.params[6].valueAt(rhythmic.params[6]),
-        closeTo(0.7616, 1e-6),
+        closeTo(1, 1e-9),
       );
       expect(hz(rhythmic, 5), closeTo(120 * math.sqrt(16000 / 120), 1e-6));
 
+      // The Dub Rack's Mid Freq moves the frequency, as labelled.
       final dub = fxModuleEntry(
         _module('Parametric EQ'),
         preset('Dub Rack', {...keys, 'Para EQ': 1, 'EQ Mid Q': 0.2}),
       );
       expect(fxEntryBuild(dub)!.exposed, [0, 4, 5, 6, 13]);
+      expect(hz(dub, 5), closeTo(120 * math.sqrt(16000 / 120), 1e-6));
       expect(dub.enabled, isTrue);
     });
 
-    test('Studio, Vocal and Vocal Tuner show four gains', () {
+    test('Studio, Vocal and Vocal Tuner show four gains on fixed bells', () {
       for (final family in ['Studio Rack', 'Vocal Rack', 'Vocal Tuner Rack']) {
         final e = fxModuleEntry(
           _module('Four-band EQ'),
@@ -496,9 +510,34 @@ void main() {
             'EQ Air': 0.7,
           }),
         );
-        expect(fxEntryBuild(e)!.exposed, [1, 4, 10, 14], reason: family);
-        expect(e.type.params[14].valueAt(e.params[14]), closeTo(7.2, 1e-6));
-        expect(hz(e, 5), closeTo(1000, 1e-6));
+        final build = fxEntryBuild(e)!;
+        expect(build.exposed, [1, 4, 7, 10], reason: family);
+        expect(fxEntryControls(e).keys, [
+          'low_gain',
+          'mid_gain',
+          'high_gain',
+          'air_gain',
+        ]);
+        expect(e.type.params[10].valueAt(e.params[10]), closeTo(7.2, 1e-6));
+        expect(
+          [hz(e, 2), hz(e, 5), hz(e, 8), hz(e, 11)],
+          [
+            closeTo(300, 1e-6),
+            closeTo(900, 1e-6),
+            closeTo(2700, 1e-6),
+            closeTo(8100, 1e-6),
+          ],
+        );
+        expect(
+          [hz(e, 3), hz(e, 6), hz(e, 9), hz(e, 12)],
+          [
+            closeTo(3.6, 1e-9),
+            closeTo(1.2, 1e-9),
+            closeTo(1.2, 1e-9),
+            closeTo(3.6, 1e-9),
+          ],
+        );
+        expect(e.type.params[14].positionOf(e.params[14]), 2);
       }
     });
   });
@@ -531,7 +570,8 @@ void main() {
       expect(value(e, 1), closeTo(4.0, 0.01));
       expect(value(e, 2), closeTo(math.sqrt(0.01 * 300), 1e-6));
       expect(value(e, 3), closeTo(math.sqrt(5 * 4000), 1e-6));
-      expect(value(e, 4), closeTo(1.8, 1e-6));
+      // Make-up shown as 1.8 dB applies 3.25 dB (#891).
+      expect(value(e, 4), closeTo(3.25, 1e-6));
       expect(fxEntryControls(e).keys, [
         'threshold',
         'ratio',
@@ -554,19 +594,22 @@ void main() {
       expect(e.type, TrackEffectType.compressor);
       expect(value(e, 2), closeTo(0.1 * math.pow(3000, 0.2), 1e-6));
       expect(value(e, 0), closeTo(-42, 1e-6));
-      // The hidden ratio and release are Ed's.
+      // The hidden ratio and release, as measured.
       expect(value(e, 1), closeTo(4, 1e-9));
-      expect(value(e, 3), closeTo(141.4, 1e-6));
+      expect(value(e, 3), closeTo(45, 1e-6));
+      expect(value(e, 4), closeTo(10.08, 1e-6));
       expect(fxEntryBuild(e)!.exposed, [0, 2, 4]);
     });
 
     test('Dub, Studio, Vocal and Vocal Tuner show threshold and make-up', () {
-      for (final family in [
-        'Dub Rack',
-        'Studio Rack',
-        'Vocal Rack',
-        'Vocal Tuner Rack',
-      ]) {
+      // The hidden ratio, attack and release, as measured.
+      const hidden = {
+        'Dub Rack': (6.0, 1.0, 80.0),
+        'Studio Rack': (4.0, 1.5, 65.0),
+        'Vocal Rack': (4.0, 1.5, 65.0),
+        'Vocal Tuner Rack': (4.0, 1.5, 65.0),
+      };
+      for (final MapEntry(key: family, value: h) in hidden.entries) {
         final e = fxModuleEntry(
           _module('Compressor'),
           preset(family, const {
@@ -577,10 +620,29 @@ void main() {
         );
         expect(fxEntryBuild(e)!.exposed, [0, 4], reason: family);
         expect(value(e, 0), closeTo(-48, 1e-6));
-        expect(value(e, 4), closeTo(18, 1e-6));
-        expect(value(e, 1), closeTo(4, 1e-9));
-        expect(value(e, 2), closeTo(1.732, 1e-6));
-        expect(value(e, 3), closeTo(141.4, 1e-6));
+        // Shown as 18 dB, applies 17.53 dB.
+        expect(value(e, 4), closeTo(17.53, 1e-6));
+        expect(value(e, 1), closeTo(h.$1, 1e-6), reason: family);
+        expect(value(e, 2), closeTo(h.$2, 1e-6), reason: family);
+        expect(value(e, 3), closeTo(h.$3, 1e-6), reason: family);
+      }
+    });
+
+    test('the make-up applies the measured curve, not the display', () {
+      // Shown 0..30 dB in a straight line; applied as measured (#891).
+      const shownToApplied = [
+        (0.0, 0.0),
+        (0.03, 1.625),
+        (0.4, 14.8),
+        (0.775, 19.3),
+        (1.0, 21.07),
+      ];
+      for (final (v, applied) in shownToApplied) {
+        final e = fxModuleEntry(
+          _module('Compressor'),
+          preset("Ed's Rack", {'Compressor': 1, 'Comp Make-Up': v}),
+        );
+        expect(value(e, 4), closeTo(applied, 1e-6), reason: '$v');
       }
     });
 
@@ -607,8 +669,9 @@ void main() {
         }),
       );
       expect(g.type, TrackEffectType.hpGate);
-      // The derived tables' on-screen checks: 4 Hz and -72 dB.
-      expect(value(g, 0), closeTo(3.98, 0.01));
+      // The derived tables' on-screen checks: 4 Hz shown, which applies a
+      // corner of half that (#891), and -72 dB.
+      expect(value(g, 0), closeTo(1.99, 0.01));
       expect(value(g, 1), closeTo(-72, 1e-6));
       expect(fxEntryControls(g).keys, ['highpass', 'gate_threshold']);
     });

@@ -564,8 +564,8 @@ enum TrackEffectType {
         defaultValue: 0.35,
       ),
     ],
-    // The Looper X ranges, except the two mid frequencies, which span every
-    // rack's own range (taper unverified). Ed's 4-band EQ's defaults.
+    // The values the Looper X applies, as measured (#891): the rack variants
+    // convert the racks' own scales. Ed's 4-band EQ's defaults.
     TrackEffectType.eq => const [
       FxParamInfo(
         key: 'low_cut',
@@ -574,7 +574,6 @@ enum TrackEffectType {
         atMax: 8000,
         curve: FxParamCurve.exponential,
         defaultValue: 0.21,
-        off: FxParamOff.atMin,
       ),
       FxParamInfo(
         key: 'low_gain',
@@ -595,7 +594,7 @@ enum TrackEffectType {
         key: 'low_q',
         unit: FxParamUnit.q,
         atMin: 0.4,
-        atMax: 2,
+        atMax: 10,
         curve: FxParamCurve.exponential,
         defaultValue: 0,
       ),
@@ -612,8 +611,7 @@ enum TrackEffectType {
         atMin: 20,
         atMax: 20000,
         curve: FxParamCurve.exponential,
-        defaultValue: 0.3445,
-        taperUnverified: true,
+        defaultValue: 0.235138,
       ),
       FxParamInfo(
         key: 'lo_mid_q',
@@ -636,8 +634,7 @@ enum TrackEffectType {
         atMin: 20,
         atMax: 20000,
         curve: FxParamCurve.exponential,
-        defaultValue: 0.652,
-        taperUnverified: true,
+        defaultValue: 0.727302,
       ),
       FxParamInfo(
         key: 'hi_mid_q',
@@ -657,8 +654,8 @@ enum TrackEffectType {
       FxParamInfo(
         key: 'high_freq',
         unit: FxParamUnit.hz,
-        atMin: 2000,
-        atMax: 16000,
+        atMin: 1200,
+        atMax: 20000,
         curve: FxParamCurve.exponential,
         defaultValue: 0.5278,
       ),
@@ -666,7 +663,7 @@ enum TrackEffectType {
         key: 'high_q',
         unit: FxParamUnit.q,
         atMin: 0.4,
-        atMax: 2,
+        atMax: 10,
         curve: FxParamCurve.exponential,
         defaultValue: 0,
       ),
@@ -677,18 +674,22 @@ enum TrackEffectType {
         atMax: 20000,
         curve: FxParamCurve.exponential,
         defaultValue: 1,
-        off: FxParamOff.atMax,
       ),
+      // Position 0 = low and high shelves and no cuts, 1 = four bells and
+      // both cuts, 2 = four bells and no cuts.
       FxParamInfo(
-        key: 'air_gain',
-        unit: FxParamUnit.db,
-        atMin: -18,
-        atMax: 18,
+        key: 'layout',
+        unit: FxParamUnit.choice,
+        steps: 3,
+        atMin: 0,
+        atMax: 2,
         defaultValue: 0.5,
       ),
     ],
     // The Looper X ranges and tapers (#887 part 5); the ratio's is its own
-    // reciprocal taper. Ed's Rack's defaults.
+    // reciprocal taper. The make-up is the gain applied, which the rack
+    // variants convert from the Looper X's display (#891). Ed's Rack's
+    // defaults.
     TrackEffectType.compressor => const [
       FxParamInfo(
         key: 'threshold',
@@ -726,10 +727,11 @@ enum TrackEffectType {
         unit: FxParamUnit.db,
         atMin: 0,
         atMax: 30,
-        defaultValue: 0.06,
+        defaultValue: 0.10833334,
       ),
     ],
-    // Shown as the Looper X shows them; what each percent does is chosen.
+    // Shown as the Looper X shows them; what each percent does is measured
+    // (#891).
     TrackEffectType.transient => const [
       FxParamInfo(
         key: 'attack',
@@ -737,7 +739,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.5,
-        taperUnverified: true,
       ),
       FxParamInfo(
         key: 'attack_length',
@@ -745,7 +746,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.5,
-        taperUnverified: true,
       ),
       FxParamInfo(
         key: 'sustain',
@@ -753,18 +753,20 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.5,
-        taperUnverified: true,
       ),
     ],
-    // The Vocal Rack's defaults: the high-pass at 1 Hz, the gate at -120 dB.
+    // The corner the high-pass applies, half the Looper X's display, and off
+    // at its lowest, which the Looper X shows as 1 Hz (#891). The Vocal
+    // Rack's defaults: the high-pass off, the gate at -120 dB.
     TrackEffectType.hpGate => const [
       FxParamInfo(
         key: 'highpass',
         unit: FxParamUnit.hz,
-        atMin: 1,
-        atMax: 1000,
+        atMin: 0.5,
+        atMax: 500,
         curve: FxParamCurve.exponential,
         defaultValue: 0,
+        off: FxParamOff.atMin,
       ),
       FxParamInfo(
         key: 'gate_threshold',

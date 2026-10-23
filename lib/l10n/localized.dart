@@ -71,6 +71,7 @@ extension EngineLocalizations on AppLocalizations {
     'high_q' => paramHighQ,
     'high_cut' => paramHighCut,
     'air_gain' => paramAirGain,
+    'layout' => paramEqLayout,
     'mid_gain' => paramMidGain,
     'mid_freq' => paramMidFreq,
     'mid_q' => paramMidQ,
@@ -101,8 +102,8 @@ extension EngineLocalizations on AppLocalizations {
   /// finer than a performer sets or hears; a time under 1 ms keeps two
   /// decimals; a frequency reads in kHz from 1000 Hz.
   String fxParamValueText(FxParamInfo p, double setting) {
-    // An EQ's cuts and the low-pass filter are off at an end of their
-    // range (the descriptor's off flag).
+    // The low-pass filter and the HP/Gate's high-pass are off at an end of
+    // their range (the descriptor's off flag).
     if (p.isOffAt(setting)) {
       return fxValueOff;
     }
@@ -149,12 +150,15 @@ extension EngineLocalizations on AppLocalizations {
     return pitchSemitones(sign, magnitude);
   }
 
-  /// The name of position [position] of choice parameter [p]. The octaver's
-  /// mode is the only built-in choice; any other reads as its 1-based number.
+  /// The name of position [position] of choice parameter [p]: the octaver's
+  /// mode or the EQ's layout. Any other reads as its 1-based number.
   String _choiceName(FxParamInfo p, int position) =>
       switch ((p.key, position)) {
         ('mode', 0) => octaverModePhaseVocoder,
         ('mode', 1) => octaverModePsola,
+        ('layout', 0) => eqLayoutShelves,
+        ('layout', 1) => eqLayoutBellsCuts,
+        ('layout', 2) => eqLayoutBells,
         _ => '${position + 1}',
       };
 

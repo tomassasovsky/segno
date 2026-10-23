@@ -413,14 +413,15 @@ void main() {
         TrackEffectType.octaver: [0.25, 0.5, 0.5, 0.0],
         TrackEffectType.echo: [0.45, 0.5, 0.35, 0.0],
         TrackEffectType.reverb: [0.5, 0.5, 0.35, 0.0],
-        // Ed's 4-band EQ, the mids moved onto the kind's 20..20000 Hz range.
+        // Ed's 4-band EQ as it applies (#891): the mids at 101.5 and 3040 Hz
+        // on the kind's 20..20000 Hz range, four bells and both cuts.
         TrackEffectType.eq: [
-          0.21, 0.5, 0.384476, 0.0, 0.5, 0.3445, 0.174, 0.5, 0.652, //
+          0.21, 0.5, 0.384476, 0.0, 0.5, 0.235138, 0.174, 0.5, 0.727302, //
           0.15557, 0.5, 0.5278, 0.0, 1.0, 0.5,
         ],
-        // Ed's compressor; the transient shaper neutral; the Vocal Rack's
-        // HP/Gate (1 Hz, -120 dB).
-        TrackEffectType.compressor: [0.35, 0.76, 0.5, 0.5, 0.06],
+        // Ed's compressor (its 1.8 dB make-up applies 3.25 dB); the transient
+        // shaper neutral; the Vocal Rack's HP/Gate (high-pass off, -120 dB).
+        TrackEffectType.compressor: [0.35, 0.76, 0.5, 0.5, 0.10833334],
         TrackEffectType.transient: [0.5, 0.5, 0.5],
         TrackEffectType.hpGate: [0.0, 0.0],
         // The Dub Rack's doubler, Ed's chorus and wah.
@@ -462,21 +463,17 @@ void main() {
 
     test('only the chosen mappings carry the taper-unverified flag', () {
       // The seven built-ins are segno's own; the Looper X kinds' ranges are
-      // the Looper X's, except the EQ's two mid frequencies, which span
-      // every rack's range, and the controls whose effect is chosen or
-      // inferred from one capture: the transient shaper, the doubler, the
-      // chorus, the wah, the overdrive's tone (captured at 50 % only) and
-      // the distortion (fit to the Studio Rack's, used for Lo-Fi's too), the
-      // vinyl, the degrade and the low-pass filter's resonance (no
-      // capture).
+      // the Looper X's, and the EQ and dynamics kinds are measured (#891).
+      // The controls whose effect is chosen or inferred from one capture
+      // carry it: the doubler, the chorus, the wah, the overdrive's tone
+      // (captured at 50 % only) and the distortion (fit to the Studio
+      // Rack's, used for Lo-Fi's too), the vinyl, the degrade and the
+      // low-pass filter's resonance (no capture).
       for (final type in TrackEffectType.values) {
         for (final p in type.params) {
           expect(
             p.taperUnverified,
-            (type == TrackEffectType.eq &&
-                    (p.key == 'lo_mid_freq' || p.key == 'hi_mid_freq')) ||
-                type == TrackEffectType.transient ||
-                type == TrackEffectType.doubler ||
+            type == TrackEffectType.doubler ||
                 type == TrackEffectType.chorus ||
                 type == TrackEffectType.wah ||
                 type == TrackEffectType.distortion ||
