@@ -686,6 +686,17 @@ typedef enum le_fx_type {
   /* HP_GATE: p0 high-pass frequency (1 to 1000 Hz, 12 dB/octave), p1 gate
    * threshold (-120 to 0 dB). The gate keys on the high-passed signal. */
   LE_FX_HP_GATE = 12,
+  /* DOUBLER: p0 mix, p1 separation (0 to 100 %). Two slowly drifting
+   * delayed copies of the input, panned apart by the separation and added
+   * to the dry signal. Not wet-cached (free-running). */
+  LE_FX_DOUBLER = 13,
+  /* CHORUS: p0 rate, p1 depth, p2 mix (0 to 100 %). One triangle-modulated
+   * voice per channel about 1.9 ms, low-passed, mixed with the dry signal.
+   * Not wet-cached (free-running). */
+  LE_FX_CHORUS = 14,
+  /* WAH: p0 pedal (0 to 100 %). A resonant band-pass from 350 Hz (heel) to
+   * 2.5 kHz (toe). */
+  LE_FX_WAH = 15,
 } le_fx_type;
 
 /* ---- Built-in effect parameter descriptors (#1378) ----
@@ -3530,6 +3541,9 @@ typedef enum le_cache_reason {
                             * whole number of octaver hops (256 frames): its
                             * hop falls on other frames each lap, so no single
                             * lap's render equals live (#941) */
+  LE_CACHE_REASON_FREE_RUNNING = 6, /* the print holds a free-running
+                                     * modulator (a chorus or doubler LFO),
+                                     * which sounds different each lap */
 } le_cache_reason;
 
 /* Snapshot of one lane's cache state (le_engine_get_lane_cache). */

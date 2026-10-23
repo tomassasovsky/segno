@@ -19,23 +19,38 @@ FxModule _module(String name) => kFxModules.firstWhere((m) => m.name == name);
 
 void main() {
   group('readiness', () {
-    test('a module the engine has no effect for is unavailable, and most of '
-        'the catalogue is', () {
-      // Twenty-six modules against seven built-ins, so this is the common
-      // case rather than the exception. Saying so is the point: the accepted
-      // design forbids substituting another effect and calling that parity.
+    test('a module the engine has no effect for is unavailable', () {
+      // The Looper X kinds land part by part (#887); until one has, its
+      // module is shown and processes nothing. The accepted design forbids
+      // substituting another effect and calling that parity.
       expect(
         fxModuleBuild(_module('Pumper')).readiness,
         FxModuleReadiness.unavailable,
       );
       expect(fxModuleBuild(_module('Pumper')).type, isNull);
 
-      final unavailable = kFxModules
-          .where(
-            (m) => fxModuleBuild(m).readiness == FxModuleReadiness.unavailable,
-          )
-          .length;
-      expect(unavailable, greaterThan(kFxModules.length ~/ 2));
+      expect(
+        [
+          for (final m in kFxModules)
+            if (fxModuleBuild(m).readiness == FxModuleReadiness.unavailable)
+              m.name,
+        ],
+        [
+          'Amp',
+          'Modulation',
+          'Pitch shift',
+          'Whammy',
+          'Spring reverb',
+          'Ambience',
+          'Dub reverb',
+          'Pumper',
+          'Slicer',
+          'Vinyl',
+          'Degrade',
+          'Harmonizer',
+          'Smart tune',
+        ],
+      );
     });
 
     test('a module the engine builds but cannot carry every control of is '
@@ -83,9 +98,11 @@ void main() {
         ];
 
         expect(playable, [
+          'Chorus',
           'Compressor',
           'Delay',
           'Distortion',
+          'Doubler',
           'Dub Delay',
           'Four-band EQ',
           'HP / Gate',
@@ -95,6 +112,7 @@ void main() {
           'Parametric EQ',
           'Reverb',
           'Transient',
+          'Wah',
         ]);
       },
     );
@@ -595,7 +613,7 @@ void main() {
       expect(fxEntryControls(g).keys, ['highpass', 'gate_threshold']);
     });
 
-    test('every factory preset builds its dynamics modules in full', () {
+    test('every factory preset builds its Looper X modules in full', () {
       final dir = Directory('../fx_catalogue/assets/presets');
       var built = 0;
       for (final family in dir.listSync().whereType<Directory>()) {
@@ -609,6 +627,9 @@ void main() {
               'Compressor',
               'Transient',
               'High-pass gate',
+              'Doubler',
+              'Chorus',
+              'Wah',
             ].contains(module.name)) {
               continue;
             }
@@ -627,9 +648,68 @@ void main() {
           }
         }
       }
-      // 36 Ed's, 12 Drum (compressor and transient), 11 Dub, 19 Studio, 17
-      // Vocal (compressor and gate), 25 Vocal Tuner (compressor and gate).
-      expect(built, 36 + 24 + 11 + 19 + 34 + 50);
+      // Dynamics (part 5): 36 Ed's, 12 Drum (compressor and transient), 11
+      // Dub, 19 Studio, 17 Vocal and 25 Vocal Tuner (compressor and gate).
+      // Modulation (part 6): the doubler in 11 Dub, 19 Studio, 17 Vocal and
+      // 25 Vocal Tuner; the chorus and the wah in 36 Ed's; the wah in 14
+      // Guitar.
+      expect(
+        built,
+        (36 + 24 + 11 + 19 + 34 + 50) + (11 + 19 + 17 + 25 + 72 + 14),
+      );
+    });
+  });
+
+  group('the modulation variants', () {
+    FxPreset preset(String family, Map<String, double> params) =>
+        FxPreset(family: family, name: 'p', id: 'p', type: 0, params: params);
+
+    test("the Dub Rack's doubler shows mix and separation, the others the "
+        'mix alone, at full separation', () {
+      final dub = fxModuleEntry(
+        _module('Doubler'),
+        preset('Dub Rack', const {
+          'Doubler': 1,
+          'Doubler Mix': 0.7,
+          'Doubler Sep': 0.3,
+        }),
+      );
+      expect(dub.type, TrackEffectType.doubler);
+      expect(dub.params.take(2), [0.7, 0.3]);
+      expect(fxEntryBuild(dub)!.exposed, [0, 1]);
+      for (final family in ['Studio Rack', 'Vocal Rack', 'Vocal Tuner Rack']) {
+        final e = fxModuleEntry(
+          _module('Doubler'),
+          preset(family, const {'Doubler': 1, 'Doubler Mix': 0.4}),
+        );
+        expect(fxEntryBuild(e)!.exposed, [0], reason: family);
+        expect(e.params.take(2), [0.4, 1.0], reason: family);
+      }
+    });
+
+    test("Ed's chorus and both racks' wah copy every control", () {
+      final chorus = fxModuleEntry(
+        _module('Chorus'),
+        preset("Ed's Rack", const {
+          'Chor': 1,
+          'Chor Rate': 0.45,
+          'Chor Depth': 0.21,
+          'Chor Mix': 0.5,
+        }),
+      );
+      expect(chorus.type, TrackEffectType.chorus);
+      expect(chorus.params.take(3), [0.45, 0.21, 0.5]);
+      expect(fxEntryControls(chorus).keys, ['rate', 'depth', 'mix']);
+      for (final family in ["Ed's Rack", 'Guitar Rack']) {
+        final wah = fxModuleEntry(
+          _module('Wah'),
+          preset(family, const {'Wah': 0, 'Wah Pedal': 0.619}),
+        );
+        expect(wah.type, TrackEffectType.wah, reason: family);
+        expect(wah.params.first, 0.619);
+        expect(wah.enabled, isFalse);
+        expect(fxEntryControls(wah).keys, ['pedal']);
+      }
     });
   });
 }

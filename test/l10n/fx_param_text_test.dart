@@ -50,6 +50,12 @@ const _english = <String, List<String>>{
   'transient.sustain': ['0%', '50%', '100%'],
   'hpGate.highpass': ['1.0 Hz', '1.0 Hz', '1.0 kHz'],
   'hpGate.gate_threshold': ['-120.0 dB', '-120.0 dB', '0.0 dB'],
+  'doubler.mix': ['0%', '100%', '100%'],
+  'doubler.separation': ['0%', '100%', '100%'],
+  'chorus.rate': ['0%', '45%', '100%'],
+  'chorus.depth': ['0%', '21%', '100%'],
+  'chorus.mix': ['0%', '50%', '100%'],
+  'wah.pedal': ['0%', '62%', '100%'],
 };
 
 /// The same in Spanish: a decimal comma, and the Spanish mode name.
@@ -98,6 +104,12 @@ const _spanish = <String, List<String>>{
   'transient.sustain': ['0%', '50%', '100%'],
   'hpGate.highpass': ['1,0 Hz', '1,0 Hz', '1,0 kHz'],
   'hpGate.gate_threshold': ['-120,0 dB', '-120,0 dB', '0,0 dB'],
+  'doubler.mix': ['0%', '100%', '100%'],
+  'doubler.separation': ['0%', '100%', '100%'],
+  'chorus.rate': ['0%', '45%', '100%'],
+  'chorus.depth': ['0%', '21%', '100%'],
+  'chorus.mix': ['0%', '50%', '100%'],
+  'wah.pedal': ['0%', '62%', '100%'],
 };
 
 void main() {

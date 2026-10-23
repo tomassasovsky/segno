@@ -370,7 +370,19 @@ enum TrackEffectType {
 
   /// The Looper X's high-pass gate (#887 part 5): a 12 dB/octave high-pass,
   /// then a gate keyed on what it passes.
-  hpGate(12, 'HP / Gate');
+  hpGate(12, 'HP / Gate'),
+
+  /// The Looper X's doubler (#887 part 6): two slowly drifting delayed
+  /// copies of the input, panned apart by the separation.
+  doubler(13, 'Doubler'),
+
+  /// The Looper X's chorus (#887 part 6): one triangle-modulated voice per
+  /// channel, low-passed, mixed with the dry signal.
+  chorus(14, 'Chorus'),
+
+  /// The Looper X's wah (#887 part 6): a resonant band-pass swept by the
+  /// pedal.
+  wah(15, 'Wah');
 
   const TrackEffectType(this.code, this.label);
 
@@ -733,6 +745,63 @@ enum TrackEffectType {
         atMin: -120,
         atMax: 0,
         defaultValue: 0,
+      ),
+    ],
+    // Shown as the Looper X shows them; what each percent does is chosen,
+    // or for the chorus measured on the Guitar Rack's (#891). The Dub
+    // Rack's doubler, Ed's chorus and Ed's wah defaults.
+    TrackEffectType.doubler => const [
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'separation',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
+        taperUnverified: true,
+      ),
+    ],
+    TrackEffectType.chorus => const [
+      FxParamInfo(
+        key: 'rate',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.45,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'depth',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.21,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+        taperUnverified: true,
+      ),
+    ],
+    TrackEffectType.wah => const [
+      FxParamInfo(
+        key: 'pedal',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.619,
+        taperUnverified: true,
       ),
     ],
     TrackEffectType.reverb => const [

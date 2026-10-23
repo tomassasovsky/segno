@@ -423,6 +423,10 @@ void main() {
         TrackEffectType.compressor: [0.35, 0.76, 0.5, 0.5, 0.06],
         TrackEffectType.transient: [0.5, 0.5, 0.5],
         TrackEffectType.hpGate: [0.0, 0.0],
+        // The Dub Rack's doubler, Ed's chorus and wah.
+        TrackEffectType.doubler: [1.0, 1.0],
+        TrackEffectType.chorus: [0.45, 0.21, 0.5],
+        TrackEffectType.wah: [0.619],
       };
       for (final type in TrackEffectType.values) {
         expect(type.defaultParams, cells(expected[type]!), reason: type.name);
@@ -450,15 +454,19 @@ void main() {
     test('only the chosen mappings carry the taper-unverified flag', () {
       // The seven built-ins are segno's own; the Looper X kinds' ranges are
       // the Looper X's, except the EQ's two mid frequencies, which span
-      // every rack's range, and the transient shaper's controls, whose
-      // effect is chosen.
+      // every rack's range, and the controls whose effect is chosen or
+      // inferred from one capture: the transient shaper, the doubler, the
+      // chorus and the wah.
       for (final type in TrackEffectType.values) {
         for (final p in type.params) {
           expect(
             p.taperUnverified,
             (type == TrackEffectType.eq &&
                     (p.key == 'lo_mid_freq' || p.key == 'hi_mid_freq')) ||
-                type == TrackEffectType.transient,
+                type == TrackEffectType.transient ||
+                type == TrackEffectType.doubler ||
+                type == TrackEffectType.chorus ||
+                type == TrackEffectType.wah,
             reason: '${type.name}.${p.key}',
           );
         }

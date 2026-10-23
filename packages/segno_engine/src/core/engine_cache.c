@@ -841,6 +841,17 @@ static int le_cache_hop_unprintable(const int32_t* types, int32_t count,
   return 0;
 }
 
+/* Whether a printed run holds a free-running modulator (#887 part 6: the
+ * chorus's and the doubler's LFOs run on whatever the loop does): each lap
+ * of it sounds different, so one lap's print would repeat where live does
+ * not. Such a chain plays live. */
+static int le_cache_free_running(const int32_t* types, int32_t count) {
+  for (int32_t s = 0; s < count; ++s) {
+    if (le_fx_type_free_running(types[s])) return 1;
+  }
+  return 0;
+}
+
 static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
                                    int64_t cap, int t, int l) {
   le_track* tr = &e->tracks[t];
@@ -894,9 +905,11 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
     return;
   }
   const int32_t len = load_i32(&ln->a_len);
-  if (le_cache_hop_unprintable(types, count, len)) {
+  const int free_running = le_cache_free_running(types, count);
+  if (free_running || le_cache_hop_unprintable(types, count, len)) {
     lc->state = LE_CACHE_GAVE_UP;
-    lc->reason = LE_CACHE_REASON_HOP;
+    lc->reason =
+        free_running ? LE_CACHE_REASON_FREE_RUNNING : LE_CACHE_REASON_HOP;
     lc->has_key = 0; /* any later printable chain re-arms, even the old key */
     /* Withdraw an older print still published, so the track scheduler does
      * not read it as a ready part and render a whole-track print it would
@@ -1124,9 +1137,11 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
     return;
   }
   const int32_t len = load_i32(&tr->lanes[0].a_len);
-  if (le_cache_hop_unprintable(types, count, len)) {
+  const int free_running = le_cache_free_running(types, count);
+  if (free_running || le_cache_hop_unprintable(types, count, len)) {
     lc->state = LE_CACHE_GAVE_UP;
-    lc->reason = LE_CACHE_REASON_HOP;
+    lc->reason =
+        free_running ? LE_CACHE_REASON_FREE_RUNNING : LE_CACHE_REASON_HOP;
     lc->has_key = 0; /* any later printable chain re-arms, even the old key */
     atomic_store_explicit(&tr->a_track_wet, NULL, memory_order_release);
     return;
