@@ -598,6 +598,32 @@ void main() {
         '5',
       ]);
     });
+
+    test('a Dub Rack added into a Dub Rack joins its paths', () {
+      final preset = FxPreset.tryParse(
+        'Dub Rack',
+        File(
+          '../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset',
+        ).readAsStringSync(),
+      )!;
+      List<BuiltInEffect> rack(String prefix) => [
+        for (final (i, e) in fxRackEntries(preset).indexed)
+          e.copyWith(
+            slotId: '$prefix$i',
+            rack: const FxRack(id: 'dub', name: 'Dub FX 1'),
+          ),
+      ];
+      final joined = fxKeepPathsTogether([...rack('a'), ...rack('b')]);
+      expect(_slots(joined), [
+        'a0', 'a1', 'a2', 'a3', 'b0', 'b1', 'b2', 'b3', //
+        'a4', 'a5', 'b4', 'b5',
+      ]);
+      // The joined rack still reorders: its Compressor and EQ swap.
+      expect(
+        _slots(fxMoveWithinRack(joined, 'dub', 8, 9)).sublist(8),
+        ['a5', 'a4', 'b4', 'b5'],
+      );
+    });
   });
 
   group('fxSetGroupPlacement', () {
