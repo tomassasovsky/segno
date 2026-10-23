@@ -24,6 +24,7 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/model/fx_library_choice.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
+import 'package:segno/looper/view/fx/fx_chain_power.dart';
 import 'package:segno/looper/view/fx/fx_chain_strip.dart';
 import 'package:segno/looper/view/fx/fx_editor_parts.dart';
 import 'package:segno/looper/view/fx/fx_effect_editor.dart';
@@ -581,6 +582,8 @@ class _FxViewState extends State<FxView> {
     }
 
     return (
+      setChainEnabled: ({required enabled}) =>
+          report(fx.setChainEnabled(address, enabled: enabled)),
       setEnabled: (slotId, {required enabled}) =>
           report(fx.setEffectEnabled(address, slotId, enabled: enabled)),
       setGroupEnabled: (groupId, {required enabled}) =>
@@ -962,8 +965,9 @@ class _InputStrip extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       itemCount: count,
       separatorBuilder: (_, _) => const SizedBox(width: 16),
-      itemBuilder: (context, input) => RoutingSourceCard(
-        key: Key('fx_input_card_$input'),
+      itemBuilder: (context, input) => _FxSourceCard(
+        cardKey: Key('fx_input_card_$input'),
+        address: FxDestination.liveInput(input).address!,
         ordinal: l10n.routingInputOrdinal(input + 1),
         name: l10n.inputName(names.names, input),
         selected: input == selected,
@@ -996,8 +1000,13 @@ class _TrackStrip extends StatelessWidget {
       itemBuilder: (context, i) {
         final isAllTracks = i == count;
         final index = isAllTracks ? FxDestination.allTracksIndex : i;
-        return RoutingSourceCard(
-          key: Key(isAllTracks ? 'fx_all_tracks' : 'fx_track_card_$i'),
+        return _FxSourceCard(
+          cardKey: Key(isAllTracks ? 'fx_all_tracks' : 'fx_track_card_$i'),
+          address:
+              (isAllTracks
+                      ? const FxDestination.allTracks()
+                      : FxDestination.recordedTrack(i))
+                  .address!,
           ordinal: null,
           name: isAllTracks ? l10n.fxAllTracks : l10n.trackName(names, i),
           selected: index == selected,
@@ -1027,8 +1036,9 @@ class _OutputStrip extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       itemCount: count,
       separatorBuilder: (_, _) => const SizedBox(width: 16),
-      itemBuilder: (context, bus) => RoutingSourceCard(
-        key: Key('fx_output_card_$bus'),
+      itemBuilder: (context, bus) => _FxSourceCard(
+        cardKey: Key('fx_output_card_$bus'),
+        address: FxDestination.output(bus).address!,
         ordinal: l10n.outputBusLabel(bus, channels: channels),
         name: l10n.outputName(names, bus, channels: channels),
         selected: bus == selected,
@@ -1036,6 +1046,44 @@ class _OutputStrip extends StatelessWidget {
       ),
     );
   }
+}
+
+/// One source in a strip, saying "Effects off" while its chain is off, so an
+/// input that sounds dry shows it before it is selected (#1452).
+class _FxSourceCard extends StatelessWidget {
+  const _FxSourceCard({
+    required this.cardKey,
+    required this.address,
+    required this.ordinal,
+    required this.name,
+    required this.selected,
+    required this.onTap,
+    this.width = 264,
+  });
+
+  /// The card's own key, which the page's tests find it by.
+  final Key cardKey;
+  final FxAddress address;
+  final String? ordinal;
+  final String name;
+  final bool selected;
+  final VoidCallback onTap;
+
+  /// The card's width: the track strip's are narrower.
+  final double width;
+
+  @override
+  Widget build(BuildContext context) => RoutingSourceCard(
+    key: cardKey,
+    ordinal: ordinal,
+    name: name,
+    selected: selected,
+    width: width,
+    status: watchFxChainEnabled(context, address)
+        ? null
+        : context.l10n.fxChainOffCard,
+    onTap: onTap,
+  );
 }
 
 /// The row under the strip: what this destination processes, the part picker
@@ -1087,6 +1135,19 @@ class _SoundContext extends StatelessWidget {
               if (destination.kind == FxDestinationKind.recordedTrack &&
                   !destination.isAllTracks)
                 _PartPicker(destination: destination),
+              if (destination.address case final address?) ...[
+                const SizedBox(width: 32),
+                FxChainPower(
+                  address: address,
+                  onChanged: (enabled) => _FxViewState._notifyEditResult(
+                    context,
+                    context.read<FxCubit>().setChainEnabled(
+                      address,
+                      enabled: enabled,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1260,34 +1321,8 @@ class _DestinationChain extends StatelessWidget {
         : context.select<LooperBloc, List<TrackEffect>>(
             (b) => _entriesAt(b.state, address),
           );
-    final chainEnabled = switch (address.stage) {
-      FxStage.input =>
-        context
-            .watch<MonitorCubit>()
-            .state
-            .forInput(address.index)
-            .chainEnabled,
-      FxStage.loop => context.select<LooperBloc, bool>(
-        (b) =>
-            b.state.tracks
-                .elementAtOrNull(address.index)
-                ?.lanes
-                .elementAtOrNull(address.lane ?? 0)
-                ?.chainEnabled ??
-            true,
-      ),
-      FxStage.track => context.select<LooperBloc, bool>(
-        (b) =>
-            b.state.tracks.elementAtOrNull(address.index)?.chainEnabled ?? true,
-      ),
-      FxStage.output => context.select<LooperBloc, bool>(
-        (b) => b.state.outputChainEnabled(address.index),
-      ),
-      FxStage.allTracks => context.select<LooperBloc, bool>(
-        (b) => b.state.allTracksChain.chainEnabled,
-      ),
-    };
-    return FxChainStrip(
+    final chainEnabled = watchFxChainEnabled(context, address);
+    final strip = FxChainStrip(
       key: Key('fx_chain_${address.canonicalString()}'),
       entries: entries,
       chainEnabled: chainEnabled,
@@ -1304,6 +1339,29 @@ class _DestinationChain extends StatelessWidget {
         _FxViewState._notifyEditResult(context, outcome);
       },
       onOpen: (group) => onOpen(destination, group),
+    );
+    // Off: the racks stay dimmed (their own switches still work), and one
+    // band over them says why nothing is heard and turns the chain back on.
+    // One Column either way, so the strip (and its scroll position) stays
+    // mounted when the band comes and goes.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!chainEnabled) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: FxChainOffNotice(
+              message: fxChainOffConsequence(context.l10n, address.stage),
+              onTurnOn: () => _FxViewState._notifyEditResult(
+                context,
+                context.read<FxCubit>().setChainEnabled(address, enabled: true),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        Expanded(child: strip),
+      ],
     );
   }
 

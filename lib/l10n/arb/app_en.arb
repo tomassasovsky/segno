@@ -207,7 +207,7 @@
     },
     "a11yTrackFxChainOn": "Track FX chain on",
     "@a11yTrackFxChainOn": {
-        "description": "Announced when a track's Track-stage FX chain is switched on from the tracks surface. Distinct from a11yFxChainOn, which belongs to the FX editor's chain power toggle — two surfaces, two strings, so a copy change to one never rewords the other."
+        "description": "Announced when a track's Track-stage FX chain is switched on from the tracks surface. Distinct from fxChainPowerLabel, the Effects page's own chain power control — two surfaces, two strings, so a copy change to one never rewords the other."
     },
     "a11yTrackFxChainOff": "Track FX chain off",
     "@a11yTrackFxChainOff": {
@@ -630,20 +630,6 @@
     "signalMasterFxLabel": "MASTER",
     "signalEditTrackFx": "Edit the track bus FX chain",
     "signalEditMasterFx": "Edit the master FX chain",
-    "signalChainOff": "Chain off",
-    "signalCardChainOffRun": "Chain off · {run}",
-    "@signalCardChainOffRun": {
-        "description": "A Signal card's chain line while the chain is switched off: the entries, behind the word that says they are not running.",
-        "placeholders": {
-            "run": {
-                "type": "String"
-            }
-        }
-    },
-    "signalChainOn": "Chain on",
-    "@signalChainOn": {
-        "description": "The Signal panel's chain-power pill while the chain is running."
-    },
     "signalShowAllLanes": "All lanes",
     "signalShowRecordedLanes": "Recorded lanes",
     "signalInherited": "Inherited",
@@ -657,12 +643,20 @@
     },
     "fxEffectPowerOnTooltip": "Turn this effect on",
     "fxEffectPowerOffTooltip": "Turn this effect off",
-    "fxChainPowerOnTooltip": "Turn this chain on",
-    "fxChainPowerOffTooltip": "Turn this chain off",
+    "fxChainTurnOn": "Turn effects on",
+    "@fxChainTurnOn": {
+        "description": "The button on the band that says a chain is off (#1452)."
+    },
+    "fxChainPowerLabel": "Effects",
+    "@fxChainPowerLabel": {
+        "description": "The name of the chain-power control (Off / On) on the Effects page and both editors (#1452): switches every effect on this input, take, track, All tracks or output in or out, leaving each rack and pedal as it is."
+    },
+    "fxChainOffCard": "Effects off",
+    "@fxChainOffCard": {
+        "description": "A source card's line while that source's chain is switched off (#1452), so an input that sounds dry shows it before it is selected."
+    },
     "a11yFxEffectOn": "Effect on",
     "a11yFxEffectOff": "Effect off",
-    "a11yFxChainOn": "Chain on",
-    "a11yFxChainOff": "Chain off",
     "fxEditorInputTitle": "Input {number}",
     "@fxEditorInputTitle": {
         "placeholders": {
@@ -684,10 +678,26 @@
     "fxEditorMasterTitle": "Master",
     "fxEditorTrackConsequence": "shapes the whole track, after its lanes",
     "fxEditorMasterConsequence": "shapes the whole mix, before the limiter",
-    "fxChainOffInputConsequence": "chain off — this input monitors dry, and new takes print dry",
-    "fxChainOffLoopConsequence": "chain off — this take plays dry",
-    "fxChainOffTrackConsequence": "chain off — this track passes through its bus dry",
-    "fxChainOffMasterConsequence": "chain off — the whole mix passes through dry",
+    "fxChainOffInputConsequence": "Effects are off for this input: you hear it dry, and new takes record dry.",
+    "@fxChainOffInputConsequence": {
+        "description": "The band over an input's racks while its chain is off (#1452). A take inherits only an enabled input chain (_inheritableChain), so new takes are dry too."
+    },
+    "fxChainOffLoopConsequence": "Effects are off for this take: it plays dry.",
+    "@fxChainOffLoopConsequence": {
+        "description": "The band over a recorded part's racks while its chain is off (#1452)."
+    },
+    "fxChainOffTrackConsequence": "Effects are off for this track: it plays dry.",
+    "@fxChainOffTrackConsequence": {
+        "description": "The band over a track's racks while its chain is off (#1452)."
+    },
+    "fxChainOffAllTracksConsequence": "Effects are off for all tracks: the track mix plays dry.",
+    "@fxChainOffAllTracksConsequence": {
+        "description": "The band over All tracks' racks while its chain is off (#1452)."
+    },
+    "fxChainOffOutputConsequence": "Effects are off for this output: it plays dry.",
+    "@fxChainOffOutputConsequence": {
+        "description": "The band over an output's racks while its chain is off (#1452)."
+    },
     "fxResyncFromInput": "Re-sync from input",
     "fxResyncFromInputTooltip": "Copy the routed input’s chain onto this take again. Other takes are untouched.",
     "fxOverdubMismatchHint": "The input chain no longer matches this take — this overdub is captured dry and does not re-inherit.",
@@ -2241,9 +2251,9 @@
             }
         }
     },
-    "fxChainOffHere": "The whole chain is switched off, so this changes nothing you can hear yet.",
+    "fxChainOffHere": "Effects are off here, so nothing you change on this page is heard until you turn them on.",
     "@fxChainOffHere": {
-        "description": "Shown in the editor when the chain's own power is off (R15). Without it, un-bypassing an entry visibly does nothing and the surface never says why."
+        "description": "The band in the rack and effect editors while the chain is off (#1452): without it, switching a pedal on visibly does nothing and the page never says why."
     },
     "fxAddChip": "+ effect",
     "@fxAddChip": {
@@ -2376,14 +2386,6 @@
     "signalPanelLevelInputExplain": "How loud this input is in what you hear. Like the switches under it, it never reaches a take: a recording prints the signal itself, at the level it arrived.",
     "@signalPanelLevelInputExplain": {
         "description": "The gain row on the INPUT card. The generic string says 'this chain in the mix', but an input's fader is the monitor's own volume — engine mon_vol, applied only in mix_monitors_frame and never recorded. Same argument as the in-mix and chain splits."
-    },
-    "signalPanelChainInputExplain": "The effects this input passes through, in order. Switching the chain off leaves the effects loaded, takes them out of what you hear — and prints new takes dry, since a take copies the chain that was on when it started.",
-    "@signalPanelChainInputExplain": {
-        "description": "The chain caption on the INPUT card. The generic string stops at 'out of the sound', which on an input is half the story: _snapshotMonitorChainsOntoLanes bails on a disabled chain, so the take is dry too. Saying so only after the fact — in fxChainOffInputConsequence — tells people once it is too late."
-    },
-    "signalPanelChainExplain": "The effects this signal passes through, in order. Switching the chain off leaves the effects loaded and takes them out of the sound.",
-    "@signalPanelChainExplain": {
-        "description": "Explains the chain strip and what its power switch does."
     },
     "a11yExplainControl": "What \"{group}\" does",
     "@a11yExplainControl": {

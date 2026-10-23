@@ -343,3 +343,39 @@ not by `git status`.
    cue on the input meter in the readout? The default is no: the Stage has no
    input FX display today, and this plan covers every surface that shows
    effects. Say if you want it, and it becomes a follow-up issue.
+
+## 9. Build record (branch `claude/fx-chain-power-1452`)
+
+- Built as section 4 describes, with these differences:
+  - The Off / On labels reuse `toggleOff` / `toggleOn`.
+  - The power control in the editors sits at the right end of the title
+    row, just before Track Solo (the pen has the rack's pedal-assignment
+    chip there, which the app does not draw).
+  - `FxCubit.setChainEnabled` reads and writes through the per-stage
+    dispatch pedal bindings already used (`chainEnabledAt` /
+    `setChainEnabledAt` on `FxBindingResolver`, made public), so there is
+    one switch per stage, not two.
+  - Switching off a chain with no effects changes nothing. On an input this
+    also keeps the phantom-monitor guard that `MonitorCubit.setChainEnabled`
+    carried.
+  - The editors' titles end before the power control
+    (`LoopSettingsFrame.titleRight`) and ellipsize, so a long rack name
+    never runs under it.
+  - `setAllTracksChainEnabled` and `setAllTracksEffects` now republish the
+    projected state, as `setOutputEffects` already did, so the All tracks
+    flag reaches the page without waiting for the next poll.
+- Strings: the orphans are reused or deleted as section 4 lists. The
+  input sentence keeps "new takes record dry", because
+  `_inheritableChain` returns nothing for a disabled input chain.
+- Pen: the write-back in section 5 was made through the pencil MCP. It
+  covers:
+  - the Effects Off | On control on the ten `sound-context` rows of
+    `01  Effects · destinations`, and in the `chain-actions` title rows of
+    `Connected pedal editor` and `Single effect`;
+  - `13 / Live input, effects off`;
+  - `07 / Connected pedal editor, effects off`;
+  - the note `c/ Effects power and new racks (#1452)`.
+
+  They are not on disk: the file's hash is unchanged, because a pencil
+  MCP edit is saved only from the Pencil app, which this session could not
+  drive. The PR lists them so they can be saved from Pencil or redone.
