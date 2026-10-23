@@ -19641,7 +19641,7 @@ static void test_fx_params_past_count_are_inert(void) {
       process_const(b, 0.0f, 64, ob);
       for (int i = 0; i < 64; ++i) CHECK(oa[i] == ob[i]); /* byte-for-byte */
     }
-    /* The wet-cache key ignores them too. */
+    /* The published-chain fingerprint ignores them too. */
     CHECK(le_engine_lane_fx_fingerprint(a, 0, 0) ==
           le_engine_lane_fx_fingerprint(b, 0, 0));
 

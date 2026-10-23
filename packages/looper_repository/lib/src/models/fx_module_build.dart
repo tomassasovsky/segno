@@ -1,7 +1,6 @@
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/src/models/fx_rack_level.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
-import 'package:segno_engine/segno_engine.dart' show kTrackEffectParams;
 
 /// How much of a catalogue module this engine can actually build.
 ///
@@ -175,17 +174,15 @@ FxModuleBuild fxModuleBuild(FxModule module) =>
 /// of the preset.
 BuiltInEffect fxModuleEntry(FxModule module, FxPreset preset) {
   final build = fxModuleBuild(module);
-  final params = List<double>.filled(kTrackEffectParams, 0);
-  final defaults = build.type == null
-      ? const <double>[]
-      : BuiltInEffect(type: build.type!).params;
-  for (var i = 0; i < params.length; i++) {
-    params[i] = i < defaults.length ? defaults[i] : 0;
-  }
-  for (var i = 0; i < build.params.length && i < params.length; i++) {
+  final type = build.type ?? TrackEffectType.none;
+  assert(
+    build.params.length <= type.params.length,
+    '${module.name} maps more keys than ${type.name} reads',
+  );
+  final params = List<double>.of(type.defaultParams);
+  for (var i = 0; i < build.params.length; i++) {
     final key = build.params[i];
-    if (key == null) continue;
-    final value = preset.params[key];
+    final value = key == null ? null : preset.params[key];
     if (value != null) params[i] = value.clamp(0.0, 1.0);
   }
   var enabled = true;
@@ -197,7 +194,7 @@ BuiltInEffect fxModuleEntry(FxModule module, FxPreset preset) {
     }
   }
   return BuiltInEffect(
-    type: build.type ?? TrackEffectType.none,
+    type: type,
     params: params,
     enabled: enabled,
     // The catalogue's own name for the pedal, kept whatever this engine could
