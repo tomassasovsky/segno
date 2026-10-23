@@ -6,7 +6,7 @@
  * rings and octaver buffers are pre-allocated by the control thread in
  * le_fx_prepare_entry). The only control-thread entry points are le_fx_entry_reset
  * (also called on the audio thread), le_fx_free_octaver, le_octaver_latency, and
- * le_fx_ensure_hann. Parameters arrive normalized (0..1) and are mapped to
+ * le_fx_ensure_pv_tables. Parameters arrive normalized (0..1) and are mapped to
  * musical ranges here.
  *
  * Behaviour is identical to the pre-split engine.c; the chain is non-destructive
@@ -14,12 +14,13 @@
  * cross-TU surface and the PV/PSOLA tuning constants live in engine_fx.h.
  */
 #include <math.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "engine_fx.h"
 #include "engine_internal.h" /* le_psola_detect prototype (defined below) */
-#include "fft.h" /* le_rfft_fwd / le_rfft_inv / le_fft / le_hann_init */
+#include "fft.h" /* le_rfft_plan, le_rfft_fwd / le_rfft_inv, le_hann_init */
 #include "rt_alloc.h" /* le_rt_alloc_prefaulted / le_rt_free: the audio thread writes these */
 #include "../host/plugin_slot.h" /* le_plugin_slot_process (LE_FX_PLUGIN row) */
 
@@ -38,12 +39,25 @@
 #define LE_FX_ENABLE_CLEAR_SPACING 128
 
 static float le_hann[LE_PV_N];
-static int le_hann_ready;
+/* The length-LE_PV_N real-FFT tables, shared the same way (fft.h). */
+static le_rfft_plan le_pv_fft;
+static pthread_once_t le_pv_tables_once = PTHREAD_ONCE_INIT;
 
-/* Builds the shared octaver Hann window once (idempotent). Internal: reached only
- * via the octaver's prepare (fx_octaver_prepare) on the control thread. */
-static void le_fx_ensure_hann(void) {
-  le_hann_init(le_hann, LE_PV_N, &le_hann_ready);
+static void le_pv_tables_build(void) {
+  int ready = 0;
+  le_hann_init(le_hann, LE_PV_N, &ready);
+  (void)le_rfft_plan_init(&le_pv_fft, LE_PV_N);
+}
+
+/* Builds the shared octaver Hann window and FFT tables, exactly once in the
+ * process. More than one thread prepares octavers (the control thread, the
+ * wet-cache worker through le_fx_prepare), and a plain ready flag would let
+ * one see the flag before the table stores (#1410). pthread_once orders the
+ * build before every caller's return, and the audio thread reads the tables
+ * only through a slot a preparing thread published to it afterwards, so the
+ * audio path takes no lock. Reached only through fx_octaver_prepare. */
+static void le_fx_ensure_pv_tables(void) {
+  (void)pthread_once(&le_pv_tables_once, le_pv_tables_build);
 }
 
 /* Soft-clipping overdrive: tanh saturation with a pre-gain, then output trim. */
@@ -231,18 +245,44 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   if (o->sum_phase != NULL) memset(o->sum_phase, 0, sizeof(float) * LE_PV_BINS);
 }
 
+/* The formant envelope (engine_fx.h). */
+void le_octaver_envelope(const float* mag, float* env) {
+  float cl[LE_PV_N];    /* the full log-magnitude, then the liftered cepstrum */
+  float cr[LE_PV_BINS]; /* their transforms (real; ci is the zero imaginary) */
+  float ci[LE_PV_BINS];
+  /* The full symmetric log-magnitude is real and even, so its transform is
+   * real and even too, and the same in either direction: two real FFTs give
+   * N * the smoothed log-magnitude, and the 1/N is divided back out. */
+  for (int k = 0; k < LE_PV_BINS; ++k) {
+    cl[k] = logf(mag[k] + 1e-9f);
+  }
+  for (int k = 1; k < LE_PV_N / 2; ++k) {
+    cl[LE_PV_N - k] = cl[k];
+  }
+  le_rfft_fwd(&le_pv_fft, cl, cr, ci); /* -> cepstrum, quefrency 0 .. N/2 */
+  for (int q = 0; q < LE_PV_LIFTER; ++q) cl[q] = cr[q];
+  for (int q = LE_PV_LIFTER; q <= LE_PV_N - LE_PV_LIFTER; ++q) cl[q] = 0.0f;
+  for (int q = 1; q < LE_PV_LIFTER; ++q) cl[LE_PV_N - q] = cr[q];
+  le_rfft_fwd(&le_pv_fft, cl, cr, ci); /* -> N * smoothed log-magnitude */
+  for (int k = 0; k < LE_PV_BINS; ++k) {
+    env[k] = expf(cr[k] / (float)LE_PV_N);
+  }
+}
+
 /* Runs one STFT analysis/synthesis frame: windows the newest LE_PV_N FIFO
  * samples, shifts the harmonic structure by `ratio` while holding the cepstral
  * formant envelope fixed in frequency, and overlap-adds the result into o->out.
  * Called once per LE_PV_HOP samples from le_pv_tick. All scratch is stack-local
  * (bounded; no allocation). `head` indexes the newest FIFO sample.
  *
- * Cost per hop per channel: four length-N FFTs — analysis (le_rfft_fwd), the two
- * cepstrum transforms (le_fft inverse + forward), and synthesis (le_rfft_inv).
- * Stack peak ~60 KB at N = 1024 (the locals below ~27 KB plus the fixed ~32 KB
- * scratch inside one le_rfft_* call, which run sequentially, not nested); this
- * scales with N, so a future bump to N = 2048 must re-check constrained
- * (e.g. plugin-host) audio-thread stack budgets. */
+ * Cost per hop per channel: four length-N real FFTs — analysis, the two cepstrum
+ * transforms, and synthesis — all on the shared plan le_pv_fft (fft.h). On the
+ * console a stereo frame costs ~170 us, down from ~290 us with full-length
+ * complex transforms (bench_fx_cpu, gcc -O2; #1410).
+ * Stack peak ~34 KB at N = 1024 (the locals below ~18 KB, plus either
+ * le_octaver_envelope's ~8 KB or le_rfft_inv's ~16 KB scratch, which run one
+ * after the other). This scales with N, so a future bump to N = 2048 must
+ * re-check constrained (e.g. plugin-host) audio-thread stack budgets. */
 static void le_octaver_frame(le_octaver_state* o, const float* fifo, int head,
                              int cap, float ratio) {
   float win[LE_PV_N];
@@ -253,20 +293,18 @@ static void le_octaver_frame(le_octaver_state* o, const float* fifo, int head,
   float env[LE_PV_BINS];
   float syn_mag[LE_PV_BINS];
   float syn_freq[LE_PV_BINS];
-  float cr[LE_PV_N];
-  float ci[LE_PV_N];
 
   const float expct = 2.0f * LE_PI * (float)LE_PV_HOP / (float)LE_PV_N;
   const float osamp = (float)LE_PV_N / (float)LE_PV_HOP;
 
   /* 1. Hann-window the newest N samples (win[N-1] is the freshest). */
+  int idx = (head - LE_PV_N + 1) % cap;
+  if (idx < 0) idx += cap;
   for (int i = 0; i < LE_PV_N; ++i) {
-    int idx = head - LE_PV_N + 1 + i;
-    idx %= cap;
-    if (idx < 0) idx += cap;
     win[i] = fifo[idx] * le_hann[i];
+    if (++idx == cap) idx = 0;
   }
-  le_rfft_fwd(win, re, im, LE_PV_N);
+  le_rfft_fwd(&le_pv_fft, win, re, im);
 
   /* 2. Per-bin magnitude + true frequency (in bins) from the phase advance. */
   for (int k = 0; k < LE_PV_BINS; ++k) {
@@ -281,26 +319,8 @@ static void le_octaver_frame(le_octaver_state* o, const float* fifo, int head,
     freq[k] = (float)k + osamp * d / (2.0f * LE_PI);
   }
 
-  /* 3. Formant envelope: lifter the low-quefrency cepstrum of log|X|. The full
-   *    symmetric log-magnitude round-trips through a complex FFT pair (inverse
-   *    then forward == * N), so the net 1/N is divided back out below. */
-  for (int k = 0; k < LE_PV_BINS; ++k) {
-    cr[k] = logf(mag[k] + 1e-9f);
-    ci[k] = 0.0f;
-  }
-  for (int k = 1; k < LE_PV_N / 2; ++k) {
-    cr[LE_PV_N - k] = cr[k];
-    ci[LE_PV_N - k] = 0.0f;
-  }
-  le_fft(cr, ci, LE_PV_N, 1); /* -> cepstrum (real, even) */
-  for (int q = LE_PV_LIFTER; q <= LE_PV_N - LE_PV_LIFTER; ++q) {
-    cr[q] = 0.0f;
-    ci[q] = 0.0f;
-  }
-  le_fft(cr, ci, LE_PV_N, 0); /* -> N * smoothed log-magnitude */
-  for (int k = 0; k < LE_PV_BINS; ++k) {
-    env[k] = expf(cr[k] / (float)LE_PV_N);
-  }
+  /* 3. Formant envelope (le_octaver_envelope). */
+  le_octaver_envelope(mag, env);
 
   /* 4. Whiten (mag/env), shift bins by `ratio`, then re-apply the envelope at
    *    the DESTINATION bin so the formants stay fixed in frequency. */
@@ -328,7 +348,7 @@ static void le_octaver_frame(le_octaver_state* o, const float* fifo, int head,
 
   /* 6. Inverse transform, synthesis-window, overlap-add. The Hann analysis x
    *    Hann synthesis window at 4x overlap sums to 1.5 — divide for unity. */
-  le_rfft_inv(re, im, win, LE_PV_N);
+  le_rfft_inv(&le_pv_fft, re, im, win);
   const float norm = 1.0f / 1.5f;
   for (int i = 0; i < LE_PV_N; ++i) {
     o->out[i] += win[i] * le_hann[i] * norm;
@@ -1144,7 +1164,7 @@ static int32_t fx_octaver_prepare(le_fx_state* fx, int slot, int cap) {
       owned[n++] = &fx->delay[slot][chan];
     }
   }
-  le_fx_ensure_hann(); /* control-thread; before the slot can be processed */
+  le_fx_ensure_pv_tables(); /* before the slot can be processed */
   for (int chan = 0; chan < 2; ++chan) {
     le_octaver_state* o = &fx->oct[slot][chan];
     if (o->out == NULL) {

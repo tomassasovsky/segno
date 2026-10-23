@@ -59,7 +59,7 @@
 #include "engine_read_head.h"  /* the fractional read coordinate (#1179) */
 #include "engine_miniaudio.h" /* le_miniaudio_backend (le_select_backend target) */
 #include "engine_platform.h"  /* le_platform_device_id_to_str, ma_device_id */
-#include "fft.h"              /* le_fft, le_rfft_fwd, le_rfft_inv, le_hann_init */
+#include "fft.h"              /* le_rfft_plan, le_rfft_fwd/_inv, le_hann_init */
 #include "json_read.h"        /* le_json_parse (part 7 offline renderer) */
 #include "lockfree_ring.h"
 #include "loop_clock.h"
@@ -20609,12 +20609,14 @@ static float oct_centroid(const float* x, int n) {
   float im[F / 2 + 1];
   double num = 0.0;
   double den = 0.0;
+  static le_rfft_plan plan;
+  CHECK(le_rfft_plan_init(&plan, F));
   for (int start = 0; start + F <= n; start += F / 2) {
     for (int i = 0; i < F; ++i) {
       const float w = 0.5f - 0.5f * cosf(2.0f * LE_FFT_PI * (float)i / (float)F);
       win[i] = x[start + i] * w;
     }
-    le_rfft_fwd(win, re, im, F);
+    le_rfft_fwd(&plan, win, re, im);
     for (int k = 1; k <= F / 2; ++k) {
       const float mag = sqrtf(re[k] * re[k] + im[k] * im[k]);
       num += (double)((float)k * (float)OCT_SR / (float)F) * mag;
@@ -22457,8 +22459,9 @@ static void test_octaver_hop_schedule_survives_mode_switch(void) {
 /* ---- FFT primitive (fft.h) ---- */
 
 /* Verifies the header-only FFT in isolation, before the phase vocoder (part 3)
- * consumes it: a random round-trip, a single-sine single-peak, an impulse's flat
- * spectrum, the 1/n scaling via a constant's DC, and the shared Hann table. */
+ * consumes it: the plan's length checks, a random round-trip, agreement with a
+ * direct DFT, a single-sine single-peak, an impulse's flat spectrum, the 1/n
+ * scaling via a constant's DC, and the shared Hann table. */
 static void test_fft_roundtrip(void) {
   printf("test_fft_roundtrip\n");
   enum { N = 1024 };
@@ -22467,6 +22470,17 @@ static void test_fft_roundtrip(void) {
   float re[N / 2 + 1];
   float im[N / 2 + 1];
 
+  /* The plan takes powers of two from 4 to LE_FFT_MAX_N, and only those. */
+  static le_rfft_plan plan;
+  CHECK(!le_rfft_plan_init(&plan, 0));
+  CHECK(!le_rfft_plan_init(&plan, 2));
+  CHECK(!le_rfft_plan_init(&plan, 1000));
+  CHECK(!le_rfft_plan_init(&plan, 2 * LE_FFT_MAX_N));
+  CHECK(plan.n == 0);
+  CHECK(le_rfft_plan_init(&plan, N));
+  CHECK(plan.n == N);
+  CHECK(le_rfft_plan_init(&plan, N)); /* idempotent */
+
   /* Deterministic pseudo-random signal in [-1, 1] (LCG; no global rand state). */
   uint32_t seed = 0x1234567u;
   for (int i = 0; i < N; ++i) {
@@ -22474,9 +22488,10 @@ static void test_fft_roundtrip(void) {
     x[i] = (float)(seed >> 8) / (float)(1u << 23) - 1.0f;
   }
 
+  le_rfft_fwd(&plan, x, re, im);
+
   /* Round-trip reconstructs the signal to within a small epsilon. */
-  le_rfft_fwd(x, re, im, N);
-  le_rfft_inv(re, im, y, N);
+  le_rfft_inv(&plan, re, im, y);
   float max_err = 0.0f;
   for (int i = 0; i < N; ++i) {
     float e = fabsf(y[i] - x[i]);
@@ -22489,7 +22504,7 @@ static void test_fft_roundtrip(void) {
   for (int i = 0; i < N; ++i) {
     x[i] = sinf(2.0f * LE_FFT_PI * (float)k * (float)i / (float)N);
   }
-  le_rfft_fwd(x, re, im, N);
+  le_rfft_fwd(&plan, x, re, im);
   float peak = 0.0f;
   int peak_bin = -1;
   for (int b = 0; b <= N / 2; ++b) {
@@ -22511,7 +22526,7 @@ static void test_fft_roundtrip(void) {
   /* A unit impulse has a flat magnitude spectrum (|X[b]| == 1 for every bin). */
   for (int i = 0; i < N; ++i) x[i] = 0.0f;
   x[0] = 1.0f;
-  le_rfft_fwd(x, re, im, N);
+  le_rfft_fwd(&plan, x, re, im);
   for (int b = 0; b <= N / 2; ++b) {
     float mag = sqrtf(re[b] * re[b] + im[b] * im[b]);
     CHECK(fabsf(mag - 1.0f) < 1e-4f);
@@ -22520,14 +22535,14 @@ static void test_fft_roundtrip(void) {
   /* A constant input is pure DC, and the inverse is correctly 1/n-scaled: the
    * constant round-trips to itself. */
   for (int i = 0; i < N; ++i) x[i] = 0.75f;
-  le_rfft_fwd(x, re, im, N);
+  le_rfft_fwd(&plan, x, re, im);
   CHECK(fabsf(re[0] - 0.75f * (float)N) < 1e-2f); /* DC == sum == 0.75 * N */
   CHECK(fabsf(im[0]) < 1e-4f);
   for (int b = 1; b <= N / 2; ++b) {
     float mag = sqrtf(re[b] * re[b] + im[b] * im[b]);
     CHECK(mag < 1e-3f); /* no energy outside DC */
   }
-  le_rfft_inv(re, im, y, N);
+  le_rfft_inv(&plan, re, im, y);
   for (int i = 0; i < N; ++i) CHECK(fabsf(y[i] - 0.75f) < 1e-4f);
 
   /* Shared Hann table: built once, guarded by the ready flag. Endpoints are the
@@ -22545,6 +22560,132 @@ static void test_fft_roundtrip(void) {
   hann[3] = -42.0f;
   le_hann_init(hann, N, &ready);
   CHECK(hann[3] == -42.0f);
+}
+
+/* Uniform in [-1, 1] from an LCG, so the FFT tests need no global rand state. */
+static float fft_test_rand(uint32_t* seed) {
+  *seed = *seed * 1664525u + 1013904223u;
+  return (float)(*seed >> 8) / (float)(1u << 23) - 1.0f;
+}
+
+/* Every bin of the forward transform matches a direct DFT, and the inverse on
+ * its own matches a direct inverse DFT of a Hermitian half spectrum, at every
+ * length class the split touches: the smallest (4: one butterfly stage, the
+ * k == m/2 self-paired bin), small, and the largest the plan holds (#1410). */
+static void test_fft_matches_direct_dft(void) {
+  printf("test_fft_matches_direct_dft\n");
+  const double pi = 3.14159265358979323846;
+  static le_rfft_plan plan;
+  static float x[LE_FFT_MAX_N];
+  static float y[LE_FFT_MAX_N];
+  static float re[LE_FFT_MAX_N / 2 + 1];
+  static float im[LE_FFT_MAX_N / 2 + 1];
+  const int lengths[] = {4, 8, 16, 64, 256, 1024, LE_FFT_MAX_N};
+  uint32_t seed = 0xC0FFEEu;
+  for (size_t li = 0; li < sizeof(lengths) / sizeof(lengths[0]); ++li) {
+    const int n = lengths[li];
+    const int m = n / 2;
+    CHECK(le_rfft_plan_init(&plan, n));
+    /* Float error grows with sqrt(n); a wrong twiddle or split is O(1). */
+    const double tol = 2e-5 * sqrt((double)n);
+
+    for (int i = 0; i < n; ++i) x[i] = fft_test_rand(&seed);
+    le_rfft_fwd(&plan, x, re, im);
+    double worst = 0.0;
+    for (int k = 0; k <= m; ++k) {
+      double dr = 0.0, di = 0.0;
+      for (int i = 0; i < n; ++i) {
+        const double a = -2.0 * pi * (double)((long)k * i % n) / n;
+        dr += x[i] * cos(a);
+        di += x[i] * sin(a);
+      }
+      const double e = fmax(fabs(re[k] - dr), fabs(im[k] - di));
+      if (e > worst) worst = e;
+    }
+    CHECK(worst < tol);
+    if (worst >= tol) printf("  forward n=%d worst %g\n", n, worst);
+
+    /* A Hermitian half spectrum, with imaginary parts on DC and Nyquist that
+     * a real signal cannot carry and the inverse must ignore. */
+    for (int k = 0; k <= m; ++k) {
+      re[k] = fft_test_rand(&seed);
+      im[k] = fft_test_rand(&seed);
+    }
+    le_rfft_inv(&plan, re, im, y);
+    worst = 0.0;
+    for (int t = 0; t < n; ++t) {
+      double v = re[0] + ((t & 1) ? -re[m] : re[m]);
+      for (int k = 1; k < m; ++k) {
+        const double a = 2.0 * pi * (double)((long)k * t % n) / n;
+        v += 2.0 * (re[k] * cos(a) - im[k] * sin(a));
+      }
+      v /= n;
+      const double e = fabs(y[t] - v);
+      if (e > worst) worst = e;
+    }
+    CHECK(worst < tol / n * 8.0);
+    if (worst >= tol / n * 8.0) printf("  inverse n=%d worst %g\n", n, worst);
+  }
+}
+
+/* The octaver's formant envelope against a direct evaluation in double: keep
+ * cepstral quefrencies below LE_PV_LIFTER of the even log-magnitude and
+ * exponentiate. Tight enough that a lifter one quefrency off fails, which
+ * the test proves against itself before trusting the comparison (#1410). */
+static double oct_env_ref(const double* logm, int lifter, int k) {
+  const double pi = 3.14159265358979323846;
+  const int n = LE_PV_N;
+  double sum = 0.0;
+  for (int q = 0; q < lifter; ++q) {
+    double c = 0.0; /* the cepstrum at q: the even log-magnitude's cosine sum */
+    for (int j = 0; j < n; ++j) {
+      const int b = j <= n / 2 ? j : n - j;
+      c += logm[b] * cos(2.0 * pi * (double)((long)j * q % n) / n);
+    }
+    sum += (q == 0 ? 1.0 : 2.0) * c *
+           cos(2.0 * pi * (double)((long)q * k % n) / n);
+  }
+  /* sum is N * the smoothed log-magnitude (both cosine sums unnormalised, as
+   * the two forward transforms are). */
+  return exp(sum / (double)n);
+}
+
+static void test_octaver_envelope_matches_direct_cepstrum(void) {
+  printf("test_octaver_envelope_matches_direct_cepstrum\n");
+  /* Preparing an octaver builds the shared tables the envelope reads. */
+  le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(*fx));
+  CHECK(fx != NULL);
+  if (fx == NULL) return;
+  CHECK(le_fx_prepare(fx, 0, LE_FX_OCTAVER, 48000) == LE_OK);
+
+  static float mag[LE_PV_BINS];
+  static float env[LE_PV_BINS];
+  static double logm[LE_PV_BINS];
+  uint32_t seed = 0xF0F0u;
+  for (int k = 0; k < LE_PV_BINS; ++k) {
+    mag[k] = expf(3.0f * fft_test_rand(&seed)); /* a detailed spectrum */
+    logm[k] = log((double)mag[k] + 1e-9);
+  }
+  le_octaver_envelope(mag, env);
+
+  const int probes[] = {0, 1, 7, 100, 255, 256, 400, 511, 512};
+  double worst = 0.0, off_by_one = 0.0;
+  for (size_t i = 0; i < sizeof(probes) / sizeof(probes[0]); ++i) {
+    const int k = probes[i];
+    const double ref = oct_env_ref(logm, LE_PV_LIFTER, k);
+    const double e = fabs(env[k] / ref - 1.0);
+    if (e > worst) worst = e;
+    /* What a lifter one quefrency short or long would give at this bin. */
+    const double lo = fabs(oct_env_ref(logm, LE_PV_LIFTER - 1, k) / ref - 1.0);
+    const double hi = fabs(oct_env_ref(logm, LE_PV_LIFTER + 1, k) / ref - 1.0);
+    if (fmin(lo, hi) > off_by_one) off_by_one = fmin(lo, hi);
+  }
+  CHECK(worst < 1e-4);
+  /* Both neighbouring lifters miss the tolerance by far at some bin. */
+  CHECK(off_by_one > 1e-2);
+  printf("  envelope rel err %g, off-by-one lifter %g\n", worst, off_by_one);
+  le_fx_state_free_buffers(fx);
+  free(fx);
 }
 
 /* ---- json_read: the minimal JSON parser (part 7) ----
@@ -38935,6 +39076,8 @@ int main(void) {
   test_octaver_hop_reanchors_after_a_gap();
   test_octaver_hop_resyncs_after_a_count_gap();
   test_fft_roundtrip();
+  test_fft_matches_direct_dft();
+  test_octaver_envelope_matches_direct_cepstrum();
 
   test_json_read_parses_nested_objects_and_arrays();
   test_json_read_rejects_malformed_input();
