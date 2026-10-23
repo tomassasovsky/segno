@@ -7,7 +7,8 @@
 # The source list and the per-OS link flags mirror run_native_tests.sh; keep
 # them in sync with it and with src/CMakeLists.txt.
 #
-# Usage: ./bench_fx_cpu.sh [--smoke] [--paced] [--rate HZ] [--period FRAMES]
+# Usage: ./bench_fx_cpu.sh [--smoke] [--paced] [--racks] [--rate HZ]
+#          [--period FRAMES]
 #          [--blocks N] [--cpu N] [--kind octaver|eq|comp|transient|hpgate|
 #          doubler|chorus|wah|overdrive|distortion|vinyl|degrade|lpf|
 #          spring]
