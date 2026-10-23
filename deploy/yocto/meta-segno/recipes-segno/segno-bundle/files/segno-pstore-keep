@@ -1,0 +1,41 @@
+#!/bin/sh
+# Give each archived set of kernel crash records its own directory (#1437).
+#
+# Runs as ExecStartPost of systemd-pstore.service (drop-in
+# systemd-pstore.service.d/10-segno.conf), right after systemd-pstore has moved
+# the ramoops records into /var/lib/systemd/pstore (bound to /data).
+#
+# Why: systemd-pstore only groups EFI and ERST records into directories. A
+# ramoops record keeps its kernel name (dmesg-ramoops-0, console-ramoops-0) and
+# is copied to the top of the archive with COPY_REPLACE. ramoops numbers its
+# dmesg slots from 0 again on every boot, so the second crash would overwrite
+# the first one's dmesg-ramoops-0. Moving each set into a directory named for
+# the time it was archived keeps them all.
+#
+# The records are small: a dmesg record is written only by a panic or an oops,
+# and the console copy holds only what reached the kernel console
+# (loglevel=4: errors and worse), at most the ramoops console size per boot.
+# So the archive is never pruned (see tmpfiles.d/10-segno-pstore.conf).
+set -u
+
+DIR="${SEGNO_PSTORE_DIR:-/var/lib/systemd/pstore}"
+STAMP="${SEGNO_PSTORE_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
+
+log() { echo "segno-pstore-keep: $*" >&2; }
+
+set --
+for f in "$DIR"/*; do
+    [ -f "$f" ] && set -- "$@" "$f"
+done
+[ "$#" -gt 0 ] || exit 0
+
+dest="$DIR/$STAMP"
+if ! mkdir -p "$dest"; then
+    log "could not create $dest; the records stay at the top of $DIR"
+    exit 1
+fi
+if ! mv -- "$@" "$dest/"; then
+    log "could not move every record into $dest"
+    exit 1
+fi
+log "kept $# record(s) in $dest"
