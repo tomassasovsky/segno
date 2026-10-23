@@ -337,6 +337,69 @@ typedef struct le_fx_snapshot {
 #define LE_REV_APS 4
 #define LE_REV_BANKS 2
 
+/* ---- Resumable YIN difference-function pass -------------------------------
+ *
+ * The cumulative-mean-normalized difference function is (lags x integration)
+ * serial double accumulates: at 96 kHz the tuner's is 384 x 384 = 147k, which
+ * on one callback is the entire 333 us budget of a 32-frame period on the
+ * appliance's A76. The pass is therefore resumable — the tuner advances it a
+ * slice at a time across callbacks, and its result is consumed at a ~43 ms
+ * cadence, so spreading it over a few dozen blocks changes nothing observable.
+ * The PSOLA octaver slices its own pass the same way, across each hop (#913).
+ *
+ * le_psola_detect_band is le_yin_begin + one unbounded le_yin_step +
+ * le_yin_finish, so the sliced and the one-shot paths run the same arithmetic
+ * in the same order and cannot drift apart. `x` and `dp` are borrowed, not
+ * owned: the caller keeps both alive and unchanged for the life of the pass
+ * (the one-shot form uses stack buffers; the tuner uses a frozen snapshot in
+ * le_tuner_pass, the PSOLA octaver one in its scratch). No array member, so this type carries none of the octaver's
+ * tuning constants and can live beside the rest of the DSP state here. */
+typedef struct le_yin_pass {
+  const float* x; /* analysis window; maxlag + integ contiguous samples */
+  float* dp;      /* d'(tau) output, at least maxlag + 1 floats */
+  int32_t minlag;
+  int32_t maxlag;
+  int32_t integ; /* difference-function integration length (n - maxlag) */
+  int32_t tau;   /* next lag to accumulate; > maxlag once the pass is done */
+  double cum;    /* running sum of d(1..tau-1) — YIN's normalizer */
+} le_yin_pass;
+
+/* A coarse period refined at the device rate (le_refine_*, engine_fx.c): the
+ * plain difference function over lags [lo, hi] around it, `integ` samples
+ * long, resumable a lag at a time. Shared by the tuner and the PSOLA octaver,
+ * whose coarse passes run decimated by up to LE_REFINE_SPAN_MAX. */
+#define LE_REFINE_SPAN_MAX 8
+typedef struct le_lag_refine {
+  int32_t lo;
+  int32_t hi;
+  int32_t integ;
+  int32_t tau;  /* next lag to accumulate */
+  int32_t best; /* index into d[] of the smallest lag seen so far */
+  float d[2 * LE_REFINE_SPAN_MAX + 2];
+} le_lag_refine;
+
+/* The PSOLA octaver's pitch detection in flight (#913), sliced across its
+ * hops: a coarse YIN pass over a decimated window, then a narrow device-rate
+ * refinement (le_psola_pass_*, engine_fx.c). It lives at the end of the
+ * octaver's heap scratch (le_ps, engine_fx.h), with the windows it reads, so
+ * only octaver slots carry it. */
+typedef struct le_psola_pass {
+  int32_t phase;  /* 0 idle, 1 coarse, 2 refinement */
+  int32_t decim;  /* the pass's decimation factor */
+  int32_t end;    /* the ring index the pass's input ends at */
+  int32_t credit; /* iterations the pass may spend, carried tick to tick */
+  int32_t hops;   /* hops since the last pass started */
+  float conf;     /* the coarse pass's voicing confidence */
+  float coarse;   /* the coarse period, in device samples */
+  le_yin_pass yin;
+  le_lag_refine ref;
+} le_psola_pass;
+
+/* The PSOLA octaver's largest pitch-detection decimation (the detection
+ * geometry is in engine_fx.h, which includes this file); its refinement spans
+ * that many lags either side of the coarse one. */
+#define LE_PSOLA_DMAX 8
+
 /* The OCTAVER's phase-vocoder (and, in part 4, PSOLA) working set for one chain
  * slot on one channel. The three pointers are heap buffers the control thread
  * allocates when the slot becomes OCTAVER (sized by the LE_PV_* constants in
@@ -352,8 +415,9 @@ typedef struct le_octaver_state {
    * ticks land on this instance's frames of the engine clock, not at 0
    * (le_oct_seeded_ticks, engine_fx.c). */
   int32_t hop_count;
-  int32_t out_pos;   /* reserved read/write phase (PSOLA, part 4) */
-  /* PSOLA (part 4; zero-initialized and unused here). */
+  int32_t out_pos;   /* PSOLA's read/write phase in the OLA accumulator */
+  /* PSOLA: the smoothed period (device samples) and voicing, and the grain
+   * marks. */
   float period;
   float voiced;
   int32_t in_epoch;
@@ -364,7 +428,9 @@ typedef struct le_octaver_state {
   float sm_mix;
   int32_t cur_mode; /* 0 = phase vocoder, 1 = PSOLA */
   float xfade;      /* equal-power gain-dip envelope during a mode switch (1 = steady) */
-  /* The hop split's frame state (LE_PV_SCRATCH floats, engine_fx.h), the
+  /* The hop split's frame state (LE_PV_SCRATCH floats, engine_fx.h; PSOLA's
+   * detection windows and its le_psola_pass instead in PSOLA mode, since the
+   * two modes never run together), the
    * shift ratio and formant setting read when the frame was analysed, and
    * whether a frame has been analysed since the last reset (the later stages
    * wait for one, so a reset never synthesises a stale scratch). */
@@ -1867,31 +1933,6 @@ typedef struct le_render_freeze {
  * length of overshoot (a lag is never split). See tuner_slice. */
 #define LE_TUNER_WORK_PER_FRAME 192
 
-/* ---- Resumable YIN difference-function pass -------------------------------
- *
- * The cumulative-mean-normalized difference function is (lags x integration)
- * serial double accumulates: at 96 kHz the tuner's is 384 x 384 = 147k, which
- * on one callback is the entire 333 us budget of a 32-frame period on the
- * appliance's A76. The pass is therefore resumable — the tuner advances it a
- * slice at a time across callbacks, and its result is consumed at a ~43 ms
- * cadence, so spreading it over a few dozen blocks changes nothing observable.
- *
- * le_psola_detect_band is le_yin_begin + one unbounded le_yin_step +
- * le_yin_finish, so the sliced and the one-shot paths run the same arithmetic
- * in the same order and cannot drift apart. `x` and `dp` are borrowed, not
- * owned: the caller keeps both alive and unchanged for the life of the pass
- * (the one-shot form uses stack buffers; the tuner uses a frozen snapshot in
- * le_tuner_pass). No array member, so this type carries none of the octaver's
- * tuning constants and can live beside the rest of the DSP state here. */
-typedef struct le_yin_pass {
-  const float* x; /* analysis window; maxlag + integ contiguous samples */
-  float* dp;      /* d'(tau) output, at least maxlag + 1 floats */
-  int32_t minlag;
-  int32_t maxlag;
-  int32_t integ; /* difference-function integration length (n - maxlag) */
-  int32_t tau;   /* next lag to accumulate; > maxlag once the pass is done */
-  double cum;    /* running sum of d(1..tau-1) — YIN's normalizer */
-} le_yin_pass;
 
 /* Where a sliced tuner detection has got to. IDLE also means "no pass in
  * flight", which is what a hop boundary tests before starting one. */
@@ -1919,13 +1960,7 @@ typedef struct le_tuner_pass {
   float dp[LE_TUNER_WIN / 2 + 1]; /* the tuner's maxlag is clamped to n/2 */
   float conf;   /* coarse voicing confidence, published with the refined Hz */
   float coarse; /* coarse period, rescaled to DEVICE-rate samples */
-  /* Refinement state (tuner_refine_*): lags [lo, hi] over `integ` samples. */
-  int32_t lo;
-  int32_t hi;
-  int32_t integ;
-  int32_t tau;  /* next lag to accumulate */
-  int32_t best; /* index into d[] of the smallest lag seen so far */
-  float d[2 * LE_TUNER_DECIM + 2];
+  le_lag_refine ref; /* the device-rate refinement (le_refine_*) */
 } le_tuner_pass;
 
 /* One backing read head (#1200): see le_engine.backing_cur. */
