@@ -33476,9 +33476,11 @@ static int wt_wait_engaged(le_engine* e, float* out) {
 
 /* Part levels precede the combined nonlinear Pre; the track fader follows
  * that result exactly once, before Post. Changing it must not reprint PCM. */
+/* One drive with an identity, so a publish that changes only its gain keeps
+ * the entry (and its enable ramp), as the app's recipes do. */
 static le_fx_recipe test_drive_recipe(float gain) {
   le_fx_recipe r = {.count = 1, .enabled = 1};
-  r.type[0] = LE_FX_DRIVE; r.params[0][1] = gain;
+  r.type[0] = LE_FX_DRIVE; r.params[0][1] = gain; r.instance[0] = 1;
   r.slot_enabled[0] = 1; r.level[0] = 1; return r;
 }
 
