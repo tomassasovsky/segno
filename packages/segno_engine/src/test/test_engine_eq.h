@@ -3,6 +3,7 @@
 
 void le_eq_design_for_test(int kind, double hz, double db, double q, int sr,
                            double c[5]);
+void le_eq_bell_for_test(double hz, double db, double q, int sr, double c[5]);
 
 /* The setting that gives `value` on EQ descriptor row [p]. */
 static float eq_setting(int32_t p, double value) {
@@ -68,106 +69,238 @@ static double eq_measured_db(const float* h, int n, double f, int sr) {
   return 10.0 * log10(re * re + im * im);
 }
 
-/* The kernel's magnitude response is the RBJ design's within 0.1 dB at every
- * band, at 48 and 96 kHz, and its bands land where the settings say: a peak's
- * gain at its centre, a shelf's gain far into its shelf, a cut's -3 dB at its
- * corner. */
-static void test_eq_magnitude_matches_design(void) {
-  printf("test_eq_magnitude_matches_design\n");
-  const int rates[2] = {48000, 96000};
-  for (int ri = 0; ri < 2; ++ri) {
-    const int sr = rates[ri];
-    float p[LE_FX_PARAMS] = {0};
-    p[0] = eq_setting(0, 60.0);     /* low cut */
-    p[1] = eq_setting(1, 6.0);      /* low shelf +6 dB */
-    p[2] = eq_setting(2, 150.0);    /*   at 150 Hz */
-    p[3] = eq_setting(3, 0.7);
-    p[4] = eq_setting(4, -9.0);     /* low-mid -9 dB */
-    p[5] = eq_setting(5, 400.0);
-    p[6] = eq_setting(6, 2.0);
-    p[7] = eq_setting(7, 12.0);     /* high-mid +12 dB */
-    p[8] = eq_setting(8, 3000.0);
-    p[9] = eq_setting(9, 1.0);
-    p[10] = eq_setting(10, -4.0);   /* high shelf -4 dB */
-    p[11] = eq_setting(11, 8000.0);
-    p[12] = eq_setting(12, 0.7);
-    p[13] = eq_setting(13, 15000.0); /* high cut */
-    p[14] = eq_setting(14, 3.0);    /* air +3 dB */
-    const int n = 1 << 16;
-    float* in = (float*)calloc((size_t)n, sizeof(float));
-    float* h = (float*)calloc((size_t)n, sizeof(float));
-    in[0] = 1.0f;
-    le_fx_state* fx = eq_state();
-    eq_run(fx, LE_FX_EQ, p, sr, in, h, NULL, n);
-    eq_free(fx);
-
-    double c[7][5];
-    le_eq_design_for_test(0, 60.0, 0.0, M_SQRT1_2, sr, c[0]);
-    le_eq_design_for_test(1, 150.0, 6.0, 0.7, sr, c[1]);
-    le_eq_design_for_test(2, 400.0, -9.0, 2.0, sr, c[2]);
-    le_eq_design_for_test(3, 3000.0, 12.0, 1.0, sr, c[3]);
-    le_eq_design_for_test(4, 8000.0, -4.0, 0.7, sr, c[4]);
-    le_eq_design_for_test(5, 12000.0, 3.0, M_SQRT1_2, sr, c[5]);
-    le_eq_design_for_test(6, 15000.0, 0.0, M_SQRT1_2, sr, c[6]);
-    const double probes[] = {30, 60, 100, 150, 250, 400, 700, 1000, 2000,
-                             3000, 5000, 8000, 12000, 15000, 18000};
-    for (size_t i = 0; i < sizeof(probes) / sizeof(probes[0]); ++i) {
-      const double want = eq_design_db(c, 7, probes[i], sr);
-      const double got = eq_measured_db(h, n, probes[i], sr);
-      if (fabs(want - got) >= 0.1) {
-        printf("  sr %d at %.0f Hz: design %.3f dB, kernel %.3f dB\n", sr,
-               probes[i], want, got);
-      }
-      CHECK(fabs(want - got) < 0.1);
-    }
-    free(in);
-    free(h);
-  }
-
-  /* Each band alone lands where its setting says (independent of the
-   * design function above). */
-  const int sr = 48000;
-  const int n = 1 << 16;
+/* The kernel's impulse response through slot 0 at [sr], [n] samples. */
+static float* eq_impulse(const float* p, int sr, int n) {
   float* in = (float*)calloc((size_t)n, sizeof(float));
   float* h = (float*)calloc((size_t)n, sizeof(float));
   in[0] = 1.0f;
-  float flat[LE_FX_PARAMS] = {0};
-  le_fx_defaults(LE_FX_EQ, flat);
-  flat[0] = 0.0f; /* low cut off */
-  flat[13] = 1.0f; /* high cut off */
-  float p[LE_FX_PARAMS];
-  /* A flat EQ (every gain 0 dB, both cuts off) is the identity. */
-  memcpy(p, flat, sizeof(p));
   le_fx_state* fx = eq_state();
-  eq_run(fx, LE_FX_EQ, p, sr, in, h, NULL, 64);
-  eq_free(fx);
-  CHECK(h[0] == 1.0f);
-  for (int i = 1; i < 64; ++i) CHECK(h[i] == 0.0f);
-  /* A peak: +12 dB at its centre. */
-  memcpy(p, flat, sizeof(p));
-  p[7] = eq_setting(7, 12.0);
-  p[8] = eq_setting(8, 1000.0);
-  fx = eq_state();
   eq_run(fx, LE_FX_EQ, p, sr, in, h, NULL, n);
   eq_free(fx);
-  CHECK(fabs(eq_measured_db(h, n, 1000.0, sr) - 12.0) < 0.1);
-  /* A low shelf: -6 dB far below it. */
-  memcpy(p, flat, sizeof(p));
-  p[1] = eq_setting(1, -6.0);
-  p[2] = eq_setting(2, 200.0);
-  fx = eq_state();
-  eq_run(fx, LE_FX_EQ, p, sr, in, h, NULL, n);
-  eq_free(fx);
-  CHECK(fabs(eq_measured_db(h, n, 10.0, sr) + 6.0) < 0.1);
-  /* A low cut: -3 dB at its corner (Butterworth). */
-  memcpy(p, flat, sizeof(p));
-  p[0] = eq_setting(0, 100.0);
-  fx = eq_state();
-  eq_run(fx, LE_FX_EQ, p, sr, in, h, NULL, n);
-  eq_free(fx);
-  CHECK(fabs(eq_measured_db(h, n, 100.0, sr) + 3.0103) < 0.1);
   free(in);
+  return h;
+}
+
+/* A flat EQ (every gain 0 dB) in [layout] (0..2), the cuts at the ends of
+ * their ranges. */
+static void eq_flat(float* p, int layout) {
+  memset(p, 0, sizeof(float) * LE_FX_PARAMS);
+  le_fx_defaults(LE_FX_EQ, p);
+  p[0] = 0.0f;
+  p[13] = 1.0f;
+  p[14] = 0.5f * (float)layout;
+}
+
+/* The bell and the shelves and cuts the kernel runs are their designs
+ * within 0.1 dB, at 48 and 96 kHz. The bell is the identity at 0 dB, and a
+ * cut is the exact inverse of the same boost. */
+static void test_eq_kernel_matches_design(void) {
+  printf("test_eq_kernel_matches_design\n");
+  const int rates[2] = {48000, 96000};
+  const double probes[] = {30, 60, 100, 150, 250, 400, 700, 1000, 2000,
+                           3000, 5000, 8000, 12000, 15000, 18000};
+  const int n = 1 << 16;
+  for (int ri = 0; ri < 2; ++ri) {
+    const int sr = rates[ri];
+    for (int layout = 0; layout < 2; ++layout) {
+      float p[LE_FX_PARAMS];
+      eq_flat(p, layout);
+      p[0] = eq_setting(0, 60.0);     /* low cut (layout 0 only) */
+      p[1] = eq_setting(1, 6.0);      /* low band +6 dB */
+      p[2] = eq_setting(2, 150.0);    /*   at 150 Hz */
+      p[3] = eq_setting(3, 0.7);
+      p[4] = eq_setting(4, -9.0);     /* low-mid -9 dB */
+      p[5] = eq_setting(5, 400.0);
+      p[6] = eq_setting(6, 2.0);
+      p[7] = eq_setting(7, 12.0);     /* high-mid +12 dB */
+      p[8] = eq_setting(8, 3000.0);
+      p[9] = eq_setting(9, 1.0);
+      p[10] = eq_setting(10, -4.0);   /* high band -4 dB */
+      p[11] = eq_setting(11, 8000.0);
+      p[12] = eq_setting(12, 0.7);
+      p[13] = eq_setting(13, 15000.0); /* high cut (layout 0 only) */
+      float* h = eq_impulse(p, sr, n);
+      double c[6][5];
+      int bands = 0;
+      if (layout == 0) le_eq_design_for_test(0, 60.0, 0.0, M_SQRT1_2, sr, c[bands++]);
+      if (layout == 0) {
+        le_eq_bell_for_test(150.0, 6.0, 0.7, sr, c[bands++]);
+      } else {
+        le_eq_design_for_test(1, 150.0, 6.0, 0.7, sr, c[bands++]);
+      }
+      le_eq_bell_for_test(400.0, -9.0, 2.0, sr, c[bands++]);
+      le_eq_bell_for_test(3000.0, 12.0, 1.0, sr, c[bands++]);
+      if (layout == 0) {
+        le_eq_bell_for_test(8000.0, -4.0, 0.7, sr, c[bands++]);
+      } else {
+        le_eq_design_for_test(4, 8000.0, -4.0, 0.7, sr, c[bands++]);
+      }
+      if (layout == 0) le_eq_design_for_test(5, 15000.0, 0.0, M_SQRT1_2, sr, c[bands++]);
+      for (size_t i = 0; i < sizeof(probes) / sizeof(probes[0]); ++i) {
+        const double want = eq_design_db(c, bands, probes[i], sr);
+        const double got = eq_measured_db(h, n, probes[i], sr);
+        if (fabs(want - got) >= 0.1) {
+          printf("  sr %d layout %d at %.0f Hz: design %.3f dB, kernel %.3f dB\n",
+                 sr, layout, probes[i], want, got);
+        }
+        CHECK(fabs(want - got) < 0.1);
+      }
+      free(h);
+    }
+  }
+
+  /* The bell: its gain at the centre, unity at 0 dB, and a cut the exact
+   * inverse of the boost. */
+  double up[1][5];
+  double down[1][5];
+  le_eq_bell_for_test(1000.0, 18.0, 1.0, 48000, up[0]);
+  le_eq_bell_for_test(1000.0, -18.0, 1.0, 48000, down[0]);
+  CHECK(fabs(eq_design_db(up, 1, 1000.0, 48000) - 18.0) < 1e-6);
+  for (double f = 20.0; f < 24000.0; f *= 1.5) {
+    CHECK(fabs(eq_design_db(up, 1, f, 48000) + eq_design_db(down, 1, f, 48000)) <
+          1e-9);
+  }
+  double flat[1][5];
+  le_eq_bell_for_test(1000.0, 0.0, 1.0, 48000, flat[0]);
+  for (double f = 20.0; f < 24000.0; f *= 1.5) {
+    CHECK(fabs(eq_design_db(flat, 1, f, 48000)) < 1e-9);
+  }
+}
+
+/* One measured Looper X band (#891, docs/plan/2026-10-23-looperx-eq-
+ * measured.md): the layout and the band's settings (LE_FX_EQ_PARAMS rows
+ * gain, frequency, Q), and the response the captures show against the same
+ * rack with the band flat, in dB at the probe frequencies. */
+typedef struct eq_measured_case {
+  const char* name;
+  int layout;
+  int row; /* the band's gain row; frequency and Q follow it */
+  double hz, db, q;
+  double tol_db;
+  double want[11];
+} eq_measured_case;
+
+static const double EQ_MEASURED_HZ[11] = {32,   63,   125,  250,   500,  1000,
+                                          2000, 4000, 8000, 12000, 16000};
+
+/* The settings are the captures' fits (or, for the Vocal family, the
+ * nominal values the rack variant fixes); the probes are the captures. */
+static const eq_measured_case EQ_MEASURED[] = {
+    {"Ed's Low +18 @90 Q0.4", 0, 1, 89.99, 18.0, 0.3999, 0.05,
+     {15.132, 17.652, 17.704, 15.196, 10.805, 6.054, 2.481, 0.745, 0.172,
+      0.058, 0.019}},
+    {"Ed's Lo Mid +18 @101.5 Q10", 0, 4, 101.49, 18.0, 9.9993, 0.05,
+     {0.318, 2.114, 6.370, 0.593, 0.119, 0.028, 0.007, 0.002, 0.000, 0.000,
+      0.000}},
+    {"Ed's Hi Mid +18 @16k Q2.02", 0, 7, 16000.0, 18.0, 2.02, 0.05,
+     {0.000, 0.002, 0.006, 0.024, 0.093, 0.363, 1.315, 3.966, 9.306, 14.363,
+      18.000}},
+    {"Ed's High -18 @20k Q2.025", 0, 10, 20000.0, -18.0, 2.025, 0.05,
+     {-0.000, -0.001, -0.005, -0.019, -0.075, -0.293, -1.075, -3.335, -7.926,
+      -11.890, -15.537}},
+    {"Ed's High +9 @20k Q2.025", 0, 10, 20000.0, 9.0, 2.025, 0.05,
+     {0.000, 0.000, 0.001, 0.002, 0.008, 0.034, 0.134, 0.528, 1.991, 4.177,
+      6.893}},
+    {"Drum Low shelf +12 @200 Q0.5", 1, 1, 200.0, 12.0, 0.5, 0.05,
+     {11.677, 10.852, 8.548, 4.731, 1.736, 0.493, 0.127, 0.031, 0.007, 0.002,
+      0.001}},
+    {"Drum High shelf -12 @4k Q0.7", 1, 10, 4000.0, -12.0, 0.7, 0.05,
+     {-0.000, -0.000, -0.000, -0.001, -0.008, -0.073, -0.891, -6.000, -11.269,
+      -11.899, -11.984}},
+    {"Drum Mid +18 @565.7 Q0.9", 1, 4, 565.7, 18.0, 0.9, 0.05,
+     {0.955, 2.923, 6.884, 12.517, 17.793, 14.709, 8.707, 3.959, 1.196, 0.435,
+      0.150}},
+    {"Vocal Low +18", 2, 1, 300.0, 18.0, 3.6, 0.05,
+     {0.236, 0.901, 3.414, 13.737, 6.939, 1.804, 0.459, 0.112, 0.024, 0.008,
+      0.003}},
+    {"Vocal Mid -18", 2, 4, 900.0, -18.0, 1.2, 0.15,
+     {-0.231, -0.837, -2.679, -6.664, -13.054, -17.733, -10.845, -5.094,
+      -1.637, -0.611, -0.213}},
+    {"Vocal High +9", 2, 7, 2700.0, 9.0, 1.2, 0.15,
+     {0.004, 0.013, 0.049, 0.223, 0.736, 2.631, 7.440, 6.558, 1.868, 0.664,
+      0.227}},
+    {"Vocal Air +18", 2, 10, 8100.0, 18.0, 3.6, 0.15,
+     {0.001, 0.003, 0.009, 0.066, 0.127, 0.450, 1.413, 4.934, 17.872, 7.584,
+      2.846}},
+    {"Lo-Fi Para +18 @1386 Q0.8", 0, 4, 1385.92, 17.981, 0.7978, 0.1,
+     {0.220, 0.796, 2.538, 6.239, 11.515, 16.936, 16.678, 11.035, 5.382, 2.582,
+      1.038}},
+    {"Lo-Fi Para +18 @16k Q0.8", 0, 4, 15994.18, 18.003, 0.8013, 0.1,
+     {0.002, 0.010, 0.037, 0.148, 0.563, 1.908, 5.034, 9.743, 14.778, 17.175,
+      18.000}},
+    {"Rhythmic +18 @1384 Q1.0", 0, 4, 1384.37, 18.008, 1.0011, 0.1,
+     {0.143, 0.529, 1.798, 4.915, 10.072, 16.448, 16.092, 9.562, 4.113, 1.757,
+      0.597}},
+};
+
+/* Each measured band, run through the kernel against the same layout with
+ * the band flat, lands on the captures within the case's tolerance: 0.05 dB
+ * where the captures fit the design exactly, 0.1 to 0.15 dB where a fit or
+ * the nominal Vocal centres leave that much. */
+static void test_eq_matches_measured(void) {
+  printf("test_eq_matches_measured\n");
+  const int sr = 48000;
+  const int n = 1 << 16;
+  double worst = 0.0;
+  for (size_t ci = 0; ci < sizeof(EQ_MEASURED) / sizeof(EQ_MEASURED[0]); ++ci) {
+    const eq_measured_case* m = &EQ_MEASURED[ci];
+    float ref[LE_FX_PARAMS];
+    eq_flat(ref, m->layout);
+    float p[LE_FX_PARAMS];
+    memcpy(p, ref, sizeof(p));
+    p[m->row] = eq_setting(m->row, m->db);
+    p[m->row + 1] = eq_setting(m->row + 1, m->hz);
+    p[m->row + 2] = eq_setting(m->row + 2, m->q);
+    float* h = eq_impulse(p, sr, n);
+    float* h0 = eq_impulse(ref, sr, n);
+    for (int i = 0; i < 11; ++i) {
+      const double f = EQ_MEASURED_HZ[i];
+      const double got = eq_measured_db(h, n, f, sr) - eq_measured_db(h0, n, f, sr);
+      const double err = fabs(got - m->want[i]);
+      if (err > worst) worst = err;
+      if (err >= m->tol_db) {
+        printf("  %s at %.0f Hz: measured %.3f dB, kernel %.3f dB\n", m->name, f,
+               m->want[i], got);
+      }
+      CHECK(err < m->tol_db);
+    }
+    free(h);
+    free(h0);
+  }
+  printf("  worst error against the captures: %.3f dB\n", worst);
+}
+
+/* The cuts never switch off: at the ends of their ranges they are a 20 Hz
+ * high-pass and a 20 kHz low-pass, -3.01 dB at 20 Hz and -0.63 dB at 32 Hz,
+ * -0.20 dB at 16 kHz and -3.01 dB at 20 kHz (measured). The layouts without
+ * cuts (Drum, Vocal) are the identity when flat, sample for sample. */
+static void test_eq_cuts_and_layouts(void) {
+  printf("test_eq_cuts_and_layouts\n");
+  const int sr = 48000;
+  const int n = 1 << 16;
+  float p[LE_FX_PARAMS];
+  eq_flat(p, 0);
+  CHECK(fxd_get(LE_FX_EQ, 0).flags == 0 && fxd_get(LE_FX_EQ, 13).flags == 0);
+  float* h = eq_impulse(p, sr, n);
+  const double hz[4] = {20.0, 32.0, 16000.0, 20000.0};
+  const double want[4] = {-3.01, -0.63, -0.20, -3.01};
+  for (int i = 0; i < 4; ++i) {
+    const double got = eq_measured_db(h, n, hz[i], sr);
+    if (fabs(got - want[i]) >= 0.02) {
+      printf("  the cuts at %.0f Hz: measured %.2f dB, kernel %.3f dB\n", hz[i],
+             want[i], got);
+    }
+    CHECK(fabs(got - want[i]) < 0.02);
+  }
   free(h);
+  for (int layout = 1; layout < 3; ++layout) {
+    eq_flat(p, layout);
+    p[0] = eq_setting(0, 1000.0); /* a cut setting a layout without cuts ignores */
+    h = eq_impulse(p, sr, 64);
+    CHECK(h[0] == 1.0f);
+    for (int i = 1; i < 64; ++i) CHECK(h[i] == 0.0f);
+    free(h);
+  }
 }
 
 /* A gain change glides over about 10 ms instead of stepping: a sine through
@@ -180,10 +313,8 @@ static void test_eq_gain_change_glides(void) {
   float* in = (float*)malloc(sizeof(float) * (size_t)n);
   float* out = (float*)malloc(sizeof(float) * (size_t)n);
   for (int i = 0; i < n; ++i) in[i] = 0.1f * sinf(2.0f * (float)M_PI * 1000.0f * i / sr);
-  float p[LE_FX_PARAMS] = {0};
-  le_fx_defaults(LE_FX_EQ, p);
-  p[0] = 0.0f;
-  p[13] = 1.0f;
+  float p[LE_FX_PARAMS];
+  eq_flat(p, 2); /* no cuts */
   p[8] = eq_setting(8, 1000.0);
   le_fx_state* fx = eq_state();
   /* Clock it like an offline render, so the update cadence is real. */
@@ -221,18 +352,17 @@ static void test_eq_gain_change_glides(void) {
   free(out);
 }
 
-/* Switching a cut on or off glides too: a 100 Hz sine through a low cut
- * that switches from off to 1 kHz fades out over the smoothing time instead
- * of dropping in one sample, and a gain sweep through 0 dB never resets the
- * band (its output stays continuous). */
+/* Switching the cuts in glides too: a 100 Hz sine through a layout without
+ * cuts that switches to one with a 1 kHz low cut fades out over the
+ * smoothing time instead of dropping in one sample, and a gain sweep through
+ * 0 dB never resets the band (its output stays continuous). */
 static void test_eq_switches_glide(void) {
   printf("test_eq_switches_glide\n");
   const int sr = 48000;
   const int n = sr / 5;
-  float p[LE_FX_PARAMS] = {0};
-  le_fx_defaults(LE_FX_EQ, p);
-  p[0] = 0.0f; /* low cut off */
-  p[13] = 1.0f;
+  float p[LE_FX_PARAMS];
+  eq_flat(p, 2); /* no cuts */
+  p[0] = eq_setting(0, 1000.0);
   le_fx_state* fx = eq_state();
   fx->clocked = 1;
   static float params[LE_FX_MAX][LE_FX_PARAMS];
@@ -241,7 +371,7 @@ static void test_eq_switches_glide(void) {
   float max_step = 0.0f;
   float tail = 0.0f;
   for (int i = 0; i < n; ++i) {
-    if (i == n / 4) p[0] = eq_setting(0, 1000.0); /* on, at 1 kHz */
+    if (i == n / 4) p[14] = 0.0f; /* the cuts come in */
     /* A gain sweep from +6 to -6 dB through 0 across the second half. */
     if (i >= n / 2) p[7] = 0.5f + (1.0f / 6.0f) * (1.0f - 4.0f * (float)(i - n / 2) / n);
     memcpy(params[0], p, sizeof(p));
@@ -257,8 +387,7 @@ static void test_eq_switches_glide(void) {
     if (i > n / 4 + sr / 20 && i < n / 2 && fabsf(l) > tail) tail = fabsf(l);
   }
   /* The sine's own largest step is 0.0065; a switched-in filter would jump
-   * by up to 0.5. The glide moves in 32-frame updates, so the largest step
-   * (at the first updates, where the corner moves fastest) is about 0.022. */
+   * by up to 0.5. The cut's amount glides in 32-frame updates. */
   CHECK(max_step < 0.03f);
   /* And the cut did engage: 100 Hz is ~27 dB down a 1 kHz 12 dB/oct cut. */
   CHECK(tail < 0.5f * 0.06f);
@@ -332,6 +461,7 @@ static void test_eq_offline_equals_live(void) {
   const int32_t types[1] = {LE_FX_EQ};
   for (int i = 0; i < n; ++i) {
     if (i == 777) p[4] = 0.95f; /* a move mid-run */
+    if (i == 2000) p[14] = 0.5f; /* and the shelves layout */
     memcpy(params[0], p, sizeof(p));
     const float x = sinf((float)i * 0.05f);
     float ll = x, lr = x, ol = x, orr = x;
@@ -355,7 +485,8 @@ static void test_eq_on_a_lane(void) {
   /* Every cell the EQ reads takes a write; the next does not. */
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 14, 0.5f) == LE_OK);
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 15, 0.5f) == LE_ERR_INVALID);
-  /* Low shelf -18 dB far below everything: a DC loop drops by about that. */
+  /* The shelves layout (14 = 0.5, set above, has no cuts), its low shelf
+   * -18 dB far below everything: a DC loop drops by about that. */
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.0f) == LE_OK);
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.0f) == LE_OK);
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f) == LE_OK);
@@ -384,7 +515,9 @@ static void test_eq_on_a_lane(void) {
 }
 
 static void run_eq_tests(void) {
-  test_eq_magnitude_matches_design();
+  test_eq_kernel_matches_design();
+  test_eq_matches_measured();
+  test_eq_cuts_and_layouts();
   test_eq_gain_change_glides();
   test_eq_switches_glide();
   test_eq_retype_is_clean();
