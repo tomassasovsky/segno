@@ -1,7 +1,8 @@
 name: settings_repository
 description: >-
-  Persists Segno settings (per-device latency calibration) via a key-value
-  store.
+  Persists Segno's settings (audio configuration and latency calibration,
+  monitoring and input conditioning, tempo and recording choices, pedal and
+  MIDI configuration, displays) via a key-value store.
 version: 0.1.0
 publish_to: none
 

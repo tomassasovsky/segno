@@ -1,6 +1,6 @@
 name: segno
-description: Segno — a cross-platform desktop loopstation with a native low-latency audio engine
-version: 1.0.0+1
+description: Segno, a live looping appliance with a native low-latency audio engine.
+version: 0.1.0+1
 publish_to: none
 license: GPL-3.0-or-later
 

@@ -1,0 +1,2208 @@
+{
+  "date": "2026-09-09",
+  "requiredFxCapture": [
+    "Stable family or native Single FX identity and exact source key",
+    "Instantiated translator type and units",
+    "Legal domain, scale curve and complete enum value/label table",
+    "Factory reset value and reset provenance",
+    "Mode-dependent visibility and editing conditions"
+  ],
+  "unresolvedControls": [
+    {
+      "family": "Ed's Rack",
+      "key": "Amp Bass"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Amp Drive"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Amp Modern"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Amp Treble"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Cab"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Chor Depth"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Chor Mix"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Chor Rate"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Comp Attack"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Comp Make-Up"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Comp Ratio"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Comp Release"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Comp Thresh"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Del Feedback"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Del Mix"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Del Mode"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Del Time"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "EQ Hi Mid"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "EQ Hi Mid Freq"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "EQ Hi Mid Q"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "EQ High"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "EQ High Cut"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "EQ High Freq"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "EQ High Q"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "EQ Lo Mid"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "EQ Lo Mid Freq"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "EQ Lo Mid Q"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "EQ Low"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "EQ Low Cut"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "EQ Low Freq"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "EQ Low Q"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Master Vol"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "OD Drive"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "OD Tone"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Oct High Mode"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Octave 1 Vol"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Octave 2 Vol"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Octave Mix"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Rev Bright"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Rev Length"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Rev Mix"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Rev Mode"
+    },
+    {
+      "family": "Ed's Rack",
+      "key": "Wah Pedal"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "Comp Make-Up"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "Comp Thresh"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "Del Feedback"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "Del Mix"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "Del Mode"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "Del Time"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "Doubler Mix"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "EQ Air"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "EQ High"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "EQ Low"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "EQ Mid"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "Gate Thresh"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "Highpass"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "Master Vol"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "Pitch Mix"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "Pitch Shift"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "Rev Bright"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "Rev Length"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "Rev Mix"
+    },
+    {
+      "family": "Vocal Rack",
+      "key": "Rev Mode"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Amp Bass"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Amp Drive"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Amp Modern"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Amp Treble"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Cab"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Del Feedback"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Del Mix"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Del Mode"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Del Time"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Master Vol"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Mod Depth"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Mod Mix"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Mod Mode"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Mod Rate"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "OD Drive"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "OD Tone"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Spring Mix"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Spring Time"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Wah Pedal"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Whammy Pedal"
+    },
+    {
+      "family": "Guitar Rack",
+      "key": "Whammy Range"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "Degrade Filter"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "Degrade Freq"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "Degrade Mix"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "Del Feedback"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "Del Mix"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "Del Mode"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "Del Time"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "Dist Drive"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "Dist Tone"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "EQ High Cut"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "EQ Low Cut"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "EQ Mid Freq"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "EQ Mid Gain"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "EQ Mid Q"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "LPF Cutoff"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "LPF Reso"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "Master Vol"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "Vinyl Drive"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "Vinyl Freq"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "Vinyl Noise"
+    },
+    {
+      "family": "Lo-Fi Rack",
+      "key": "Vinyl Noise-Tone"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "Attack"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "Attack Length"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "Comp Attack"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "Comp Make-Up"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "Comp Thresh"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "Del Feedback"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "Del Freq"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "Del Mix"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "Del Time"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "EQ High"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "EQ Low"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "EQ Mid"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "EQ Mid Freq"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "Master Vol"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "Rev Density"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "Rev ER"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "Rev Length"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "Rev Lo/Hi"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "Rev Mix"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "Rev Tail/ER"
+    },
+    {
+      "family": "Drum Rack",
+      "key": "Sustain"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "Amb-Dub Mix"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "Amb-Verb Dec"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "Amb-verb Vol"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "Comp Make-Up"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "Comp Thresh"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "Del Damp"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "Del Feedback"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "Del L/R Ratio"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "Del Res-Freq"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "Del Reso"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "Del Time"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "Doubler Mix"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "Doubler Sep"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "Dub-Verb Dec"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "Dub-Verb Vol"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "EQ High Cut"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "EQ Low Cut"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "EQ Mid Freq"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "EQ Mid Gain"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "EQ Mid Q"
+    },
+    {
+      "family": "Dub Rack",
+      "key": "Master Vol"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "Comp Make-Up"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "Comp Thresh"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "Del Feedback"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "Del Mix"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "Del Mode"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "Del Time"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "Dist Drive"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "Doubler Mix"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "EQ Air"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "EQ High"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "EQ Low"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "EQ Mid"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "Master Vol"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "Mod Depth"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "Mod Mode"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "Mod Rate"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "Pitch Mix"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "Pitch Shift"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "Rev Length"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "Rev Mix"
+    },
+    {
+      "family": "Studio Rack",
+      "key": "Rev Mode"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "Del Feedback"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "Del Mix"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "Del Mode"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "Del Time"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "EQ High Cut"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "EQ Low Cut"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "EQ Mid Freq"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "EQ Mid Gain"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "LPF Cutoff"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "LPF LFO Depth"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "LPF LFO Rate"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "LPF Reso"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "Master Vol"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "Pumper Depth"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "Pumper Rate"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "Rev Length"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "Rev Mix"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "Rev Mode"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "Slic Mix"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "Slic Patt"
+    },
+    {
+      "family": "Rhythmic Rack",
+      "key": "Slic Step Len"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Audio Type"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Auto Source"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Comp Make-Up"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Comp Thresh"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Del Feedback"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Del Mix"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Del Mode"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Del Time"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Doubler Mix"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "EQ Air"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "EQ High"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "EQ Low"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "EQ Mid"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Gate Thresh"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Harm Vol"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "High EQ"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "High EQ Freq"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Highpass"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Key"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Lead Vol"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Low EQ"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Low EQ Freq"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Master Vol"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Mid EQ"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Mid EQ Freq"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Mode"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Reference"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Rev Bright"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Rev Length"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Rev Mix"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Rev Mode"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Scale"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Scale Root"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Scale Type"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Speed"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Stereo"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Tightness"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Tracking"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Voice 1"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Voice 1 Delay"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Voice 1 Gender"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Voice 1 Pan"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Voice 1 Pitch"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Voice 1 Vol"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Voice 2"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Voice 2 Delay"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Voice 2 Gender"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Voice 2 Pan"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Voice 2 Pitch"
+    },
+    {
+      "family": "Vocal Tuner Rack",
+      "key": "Voice 2 Vol"
+    }
+  ],
+  "unresolvedSingles": [
+    "Amp",
+    "Chorus",
+    "Compressor",
+    "Degrade",
+    "Delay",
+    "Distortion",
+    "Doubler",
+    "Dub Delay",
+    "Four-band EQ",
+    "Harmonize",
+    "HP / Gate",
+    "Low-pass Filter",
+    "Modulation",
+    "Octaver",
+    "Overdrive",
+    "Parametric EQ",
+    "Pitch Shift",
+    "Pumper",
+    "Reverb",
+    "Slicer",
+    "Smart Tune",
+    "Spring Reverb",
+    "Transient",
+    "Vinyl",
+    "Wah",
+    "Whammy"
+  ],
+  "requiredAudioSource": "Looper X factory-content Resources and looper.db, with version and provenance. Historical names and byte counts alone do not prove exact current content.",
+  "unavailableFactoryAudio": [
+    {
+      "name": "035 6-8 Brushes 1.wav",
+      "expectedBytes": 2633188
+    },
+    {
+      "name": "035 6-8 Brushes 2.wav",
+      "expectedBytes": 2633188
+    },
+    {
+      "name": "035 6-8 Brushes 3.wav",
+      "expectedBytes": 2633188
+    },
+    {
+      "name": "060 Jazz Ballad 1.wav",
+      "expectedBytes": 3072044
+    },
+    {
+      "name": "060 Jazz Ballad 2.wav",
+      "expectedBytes": 3072044
+    },
+    {
+      "name": "060 Jazz Ballad 3.wav",
+      "expectedBytes": 3072044
+    },
+    {
+      "name": "065 Doowop 1.wav",
+      "expectedBytes": 2835736
+    },
+    {
+      "name": "065 Doowop 2.wav",
+      "expectedBytes": 2835736
+    },
+    {
+      "name": "065 Doowop 3.wav",
+      "expectedBytes": 2835736
+    },
+    {
+      "name": "065 Reggae 1.wav",
+      "expectedBytes": 2835736
+    },
+    {
+      "name": "065 Reggae 2.wav",
+      "expectedBytes": 2835736
+    },
+    {
+      "name": "065 Reggae 3.wav",
+      "expectedBytes": 2835736
+    },
+    {
+      "name": "070 Dubstep 1.wav",
+      "expectedBytes": 2633188
+    },
+    {
+      "name": "070 Dubstep 2.wav",
+      "expectedBytes": 2633188
+    },
+    {
+      "name": "070 Dubstep 3.wav",
+      "expectedBytes": 2633188
+    },
+    {
+      "name": "075 Dub 1.wav",
+      "expectedBytes": 2457644
+    },
+    {
+      "name": "075 Dub 2.wav",
+      "expectedBytes": 2457644
+    },
+    {
+      "name": "075 Dub 3.wav",
+      "expectedBytes": 2457644
+    },
+    {
+      "name": "075 Laid Back 1.wav",
+      "expectedBytes": 2457644
+    },
+    {
+      "name": "075 Laid Back 2.wav",
+      "expectedBytes": 2457644
+    },
+    {
+      "name": "075 Laid Back 3.wav",
+      "expectedBytes": 2457644
+    },
+    {
+      "name": "075 Psy Rock 1.wav",
+      "expectedBytes": 2457644
+    },
+    {
+      "name": "075 Psy Rock 2.wav",
+      "expectedBytes": 2457644
+    },
+    {
+      "name": "075 Psy Rock 3.wav",
+      "expectedBytes": 2457644
+    },
+    {
+      "name": "075 Rhythm N Blues 1.wav",
+      "expectedBytes": 2457644
+    },
+    {
+      "name": "075 Rhythm N Blues 2.wav",
+      "expectedBytes": 2457644
+    },
+    {
+      "name": "075 Rhythm N Blues 3.wav",
+      "expectedBytes": 2457644
+    },
+    {
+      "name": "077 Half Double Time 1.wav",
+      "expectedBytes": 2393808
+    },
+    {
+      "name": "077 Half Double Time 2.wav",
+      "expectedBytes": 2393808
+    },
+    {
+      "name": "077 Half Double Time 3.wav",
+      "expectedBytes": 2393808
+    },
+    {
+      "name": "080 Roomy Rock 1.wav",
+      "expectedBytes": 2304044
+    },
+    {
+      "name": "080 Roomy Rock 2.wav",
+      "expectedBytes": 2304044
+    },
+    {
+      "name": "080 Roomy Rock 3.wav",
+      "expectedBytes": 2304044
+    },
+    {
+      "name": "085 Dancehall 1.wav",
+      "expectedBytes": 2168512
+    },
+    {
+      "name": "085 Dancehall 2.wav",
+      "expectedBytes": 2168512
+    },
+    {
+      "name": "085 Dancehall 3.wav",
+      "expectedBytes": 2168512
+    },
+    {
+      "name": "085 Pop Rock 1.wav",
+      "expectedBytes": 2168512
+    },
+    {
+      "name": "085 Pop Rock 2.wav",
+      "expectedBytes": 2168512
+    },
+    {
+      "name": "085 Pop Rock 3.wav",
+      "expectedBytes": 2168512
+    },
+    {
+      "name": "087 Brit Slow 1.wav",
+      "expectedBytes": 2118660
+    },
+    {
+      "name": "087 Brit Slow 2.wav",
+      "expectedBytes": 2118660
+    },
+    {
+      "name": "087 Brit Slow 3.wav",
+      "expectedBytes": 2118660
+    },
+    {
+      "name": "090 Afro Beat 1.wav",
+      "expectedBytes": 2048044
+    },
+    {
+      "name": "090 Afro Beat 2.wav",
+      "expectedBytes": 2048044
+    },
+    {
+      "name": "090 Afro Beat 3.wav",
+      "expectedBytes": 2048044
+    },
+    {
+      "name": "090 Folk Brushes 1.wav",
+      "expectedBytes": 2048044
+    },
+    {
+      "name": "090 Folk Brushes 2.wav",
+      "expectedBytes": 2048044
+    },
+    {
+      "name": "090 Folk Brushes 3.wav",
+      "expectedBytes": 2048044
+    },
+    {
+      "name": "090 Modern Rock 1.wav",
+      "expectedBytes": 2048044
+    },
+    {
+      "name": "090 Modern Rock 2.wav",
+      "expectedBytes": 2048044
+    },
+    {
+      "name": "090 Modern Rock 3.wav",
+      "expectedBytes": 2048044
+    },
+    {
+      "name": "090 Perc Beatz 1.wav",
+      "expectedBytes": 2048044
+    },
+    {
+      "name": "090 Perc Beatz 2.wav",
+      "expectedBytes": 2048044
+    },
+    {
+      "name": "090 Perc Beatz 3.wav",
+      "expectedBytes": 2048044
+    },
+    {
+      "name": "090 Pop Rock 1.wav",
+      "expectedBytes": 2048044
+    },
+    {
+      "name": "090 Pop Rock 2.wav",
+      "expectedBytes": 2048044
+    },
+    {
+      "name": "090 Pop Rock 3.wav",
+      "expectedBytes": 2048044
+    },
+    {
+      "name": "090 Prog Rock 1.wav",
+      "expectedBytes": 2048044
+    },
+    {
+      "name": "090 Prog Rock 2.wav",
+      "expectedBytes": 2048044
+    },
+    {
+      "name": "090 Prog Rock 3.wav",
+      "expectedBytes": 2048044
+    },
+    {
+      "name": "095 Chem Beatz 1.wav",
+      "expectedBytes": 1940256
+    },
+    {
+      "name": "095 Chem Beatz 2.wav",
+      "expectedBytes": 1940256
+    },
+    {
+      "name": "095 Chem Beatz 3.wav",
+      "expectedBytes": 1940256
+    },
+    {
+      "name": "095 Light Pop 1.wav",
+      "expectedBytes": 1940256
+    },
+    {
+      "name": "095 Light Pop 2.wav",
+      "expectedBytes": 1940256
+    },
+    {
+      "name": "095 Light Pop 3.wav",
+      "expectedBytes": 1940256
+    },
+    {
+      "name": "095 Rock Funk 1.wav",
+      "expectedBytes": 1940256
+    },
+    {
+      "name": "095 Rock Funk 2.wav",
+      "expectedBytes": 1940256
+    },
+    {
+      "name": "095 Rock Funk 3.wav",
+      "expectedBytes": 1940256
+    },
+    {
+      "name": "098 Adult Rock 1.wav",
+      "expectedBytes": 1880860
+    },
+    {
+      "name": "098 Adult Rock 2.wav",
+      "expectedBytes": 1880860
+    },
+    {
+      "name": "098 Adult Rock 3.wav",
+      "expectedBytes": 1880860
+    },
+    {
+      "name": "098 Brit Pop 1.wav",
+      "expectedBytes": 1880860
+    },
+    {
+      "name": "098 Brit Pop 2.wav",
+      "expectedBytes": 1880860
+    },
+    {
+      "name": "098 Brit Pop 3.wav",
+      "expectedBytes": 1880860
+    },
+    {
+      "name": "100 J Rock 1.wav",
+      "expectedBytes": 1843244
+    },
+    {
+      "name": "100 J Rock 2.wav",
+      "expectedBytes": 1843244
+    },
+    {
+      "name": "100 J Rock 3.wav",
+      "expectedBytes": 1843244
+    },
+    {
+      "name": "100 Metal 1.wav",
+      "expectedBytes": 1843244
+    },
+    {
+      "name": "100 Metal 2.wav",
+      "expectedBytes": 1843244
+    },
+    {
+      "name": "100 Metal 3.wav",
+      "expectedBytes": 1843244
+    },
+    {
+      "name": "100 Super Swing 1.wav",
+      "expectedBytes": 1843244
+    },
+    {
+      "name": "100 Super Swing 2.wav",
+      "expectedBytes": 1843244
+    },
+    {
+      "name": "100 Super Swing 3.wav",
+      "expectedBytes": 1843244
+    },
+    {
+      "name": "100 White Soul 1.wav",
+      "expectedBytes": 1843244
+    },
+    {
+      "name": "100 White Soul 2.wav",
+      "expectedBytes": 1843244
+    },
+    {
+      "name": "100 White Soul 3.wav",
+      "expectedBytes": 1843244
+    },
+    {
+      "name": "100 World 1.wav",
+      "expectedBytes": 1843244
+    },
+    {
+      "name": "100 World 2.wav",
+      "expectedBytes": 1843244
+    },
+    {
+      "name": "100 World 3.wav",
+      "expectedBytes": 1843244
+    },
+    {
+      "name": "100 World Pop 1.wav",
+      "expectedBytes": 1843244
+    },
+    {
+      "name": "100 World Pop 2.wav",
+      "expectedBytes": 1843244
+    },
+    {
+      "name": "100 World Pop 3.wav",
+      "expectedBytes": 1843244
+    },
+    {
+      "name": "103 Bossa Brush 2.wav",
+      "expectedBytes": 1789560
+    },
+    {
+      "name": "103 Bossa Brush 3.wav",
+      "expectedBytes": 1789560
+    },
+    {
+      "name": "103 Bossa Brushes 1.wav",
+      "expectedBytes": 1789560
+    },
+    {
+      "name": "107 60s Fox Trot 1.wav",
+      "expectedBytes": 1722660
+    },
+    {
+      "name": "107 60s Fox Trot 2.wav",
+      "expectedBytes": 1722660
+    },
+    {
+      "name": "107 60s Fox Trot 3.wav",
+      "expectedBytes": 1722660
+    },
+    {
+      "name": "108 Rockabilly 1.wav",
+      "expectedBytes": 1706712
+    },
+    {
+      "name": "108 Rockabilly 2.wav",
+      "expectedBytes": 1706712
+    },
+    {
+      "name": "108 Rockabilly 3.wav",
+      "expectedBytes": 1706712
+    },
+    {
+      "name": "110 Delay Drums 1.wav",
+      "expectedBytes": 1675676
+    },
+    {
+      "name": "110 Delay Drums 2.wav",
+      "expectedBytes": 1675676
+    },
+    {
+      "name": "110 Delay Drums 3.wav",
+      "expectedBytes": 1675676
+    },
+    {
+      "name": "112 Dry Rock 1.wav",
+      "expectedBytes": 1645756
+    },
+    {
+      "name": "112 Dry Rock 2.wav",
+      "expectedBytes": 1645756
+    },
+    {
+      "name": "112 Dry Rock 3.wav",
+      "expectedBytes": 1645756
+    },
+    {
+      "name": "115 Folk 1.wav",
+      "expectedBytes": 1602828
+    },
+    {
+      "name": "115 Folk 2.wav",
+      "expectedBytes": 1602828
+    },
+    {
+      "name": "115 Folk 3.wav",
+      "expectedBytes": 1602828
+    },
+    {
+      "name": "115 Quick Step 1.wav",
+      "expectedBytes": 1602828
+    },
+    {
+      "name": "115 Quick Step 2.wav",
+      "expectedBytes": 1602828
+    },
+    {
+      "name": "115 Quick Step 3.wav",
+      "expectedBytes": 1602828
+    },
+    {
+      "name": "115 Straight Rock 1.wav",
+      "expectedBytes": 1602828
+    },
+    {
+      "name": "115 Straight Rock 2.wav",
+      "expectedBytes": 1602828
+    },
+    {
+      "name": "115 Straight Rock 3.wav",
+      "expectedBytes": 1602828
+    },
+    {
+      "name": "115 Texas Boogie 1.wav",
+      "expectedBytes": 1602828
+    },
+    {
+      "name": "115 Texas Boogie 2.wav",
+      "expectedBytes": 1602828
+    },
+    {
+      "name": "115 Texas Boogie 3.wav",
+      "expectedBytes": 1602828
+    },
+    {
+      "name": "118 Samba Brushes 1.wav",
+      "expectedBytes": 1562076
+    },
+    {
+      "name": "118 Samba Brushes 2.wav",
+      "expectedBytes": 1562076
+    },
+    {
+      "name": "118 Samba Brushes 3.wav",
+      "expectedBytes": 1562076
+    },
+    {
+      "name": "119 Double Timer 1.wav",
+      "expectedBytes": 1548948
+    },
+    {
+      "name": "119 Double Timer 2.wav",
+      "expectedBytes": 1548948
+    },
+    {
+      "name": "119 Double Timer 3.wav",
+      "expectedBytes": 1548948
+    },
+    {
+      "name": "120 Bongos 1.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 Brit Fast 1.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 Brit Fast 2.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 Brit Fast 3.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 Claps Deluxe.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 Claps on 2&4 1.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 Modern Rock 1.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 Modern Rock 2.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 Modern Rock 3.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 More Cowbell 1.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 More Cowbell 2.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 Songo Fusion 1.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 Songo Fusion 2.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 Songo Fusion 3.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 Swing Brushes 1.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 Swing Brushes 2.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 Swing Brushes 3.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 Synth Pop 1.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 Synth Pop 2.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "120 Synth Pop 3.wav",
+      "expectedBytes": 1536044
+    },
+    {
+      "name": "124 Acoustic Folk 1.wav",
+      "expectedBytes": 1486496
+    },
+    {
+      "name": "124 Acoustic Folk 2.wav",
+      "expectedBytes": 1486496
+    },
+    {
+      "name": "124 Acoustic Folk 3.wav",
+      "expectedBytes": 1486496
+    },
+    {
+      "name": "124 Easy Swing 1.wav",
+      "expectedBytes": 1486496
+    },
+    {
+      "name": "124 Easy Swing 2.wav",
+      "expectedBytes": 1486496
+    },
+    {
+      "name": "124 Easy Swing 3.wav",
+      "expectedBytes": 1486496
+    },
+    {
+      "name": "124 Pop Rock 1.wav",
+      "expectedBytes": 1474604
+    },
+    {
+      "name": "124 Pop Rock 2.wav",
+      "expectedBytes": 1474604
+    },
+    {
+      "name": "124 Pop Rock 3.wav",
+      "expectedBytes": 1474604
+    },
+    {
+      "name": "125 Electric Disco 1.wav",
+      "expectedBytes": 1474604
+    },
+    {
+      "name": "125 Electric Disco 2.wav",
+      "expectedBytes": 1474604
+    },
+    {
+      "name": "125 Electric Disco 3.wav",
+      "expectedBytes": 1474604
+    },
+    {
+      "name": "125 Indie 1.wav",
+      "expectedBytes": 1474604
+    },
+    {
+      "name": "125 Indie 2.wav",
+      "expectedBytes": 1474604
+    },
+    {
+      "name": "125 Indie 3.wav",
+      "expectedBytes": 1474604
+    },
+    {
+      "name": "125 Pop Rock 1.wav",
+      "expectedBytes": 1474604
+    },
+    {
+      "name": "125 Pop Rock 2.wav",
+      "expectedBytes": 1474604
+    },
+    {
+      "name": "125 Pop Rock 3.wav",
+      "expectedBytes": 1474604
+    },
+    {
+      "name": "125 Retro Pop 1.wav",
+      "expectedBytes": 1474604
+    },
+    {
+      "name": "125 Retro Pop 2.wav",
+      "expectedBytes": 1474604
+    },
+    {
+      "name": "125 Retro Pop 3.wav",
+      "expectedBytes": 1474604
+    },
+    {
+      "name": "125 SouthernSoul 1.wav",
+      "expectedBytes": 1474604
+    },
+    {
+      "name": "125 SouthernSoul 2.wav",
+      "expectedBytes": 1474604
+    },
+    {
+      "name": "125 SouthernSoul 3.wav",
+      "expectedBytes": 1474604
+    },
+    {
+      "name": "128 12-8 Rock 1.wav",
+      "expectedBytes": 1440044
+    },
+    {
+      "name": "128 12-8 Rock 2.wav",
+      "expectedBytes": 1440044
+    },
+    {
+      "name": "128 12-8 Rock 3.wav",
+      "expectedBytes": 1440044
+    },
+    {
+      "name": "128 Hard House 1.wav",
+      "expectedBytes": 1440044
+    },
+    {
+      "name": "128 Hard House 2.wav",
+      "expectedBytes": 1440044
+    },
+    {
+      "name": "128 Hard House 3.wav",
+      "expectedBytes": 1440044
+    },
+    {
+      "name": "130 Art Rock 1.wav",
+      "expectedBytes": 1417888
+    },
+    {
+      "name": "130 Art Rock 2.wav",
+      "expectedBytes": 1417888
+    },
+    {
+      "name": "130 Art Rock 3.wav",
+      "expectedBytes": 1417888
+    },
+    {
+      "name": "130 Bounce Rock 1.wav",
+      "expectedBytes": 1417888
+    },
+    {
+      "name": "130 Bounce Rock 2.wav",
+      "expectedBytes": 1417888
+    },
+    {
+      "name": "130 Bounce Rock 3.wav",
+      "expectedBytes": 1417888
+    },
+    {
+      "name": "130 Heavy Shuffle 1.wav",
+      "expectedBytes": 1417888
+    },
+    {
+      "name": "130 Heavy Shuffle 2.wav",
+      "expectedBytes": 1417888
+    },
+    {
+      "name": "130 Heavy Shuffle 3.wav",
+      "expectedBytes": 1417888
+    },
+    {
+      "name": "130 Prog Metal 1.wav",
+      "expectedBytes": 1417888
+    },
+    {
+      "name": "130 Prog Metal 2.wav",
+      "expectedBytes": 1417888
+    },
+    {
+      "name": "130 Prog Metal 3.wav",
+      "expectedBytes": 1417888
+    },
+    {
+      "name": "130 Shuffle Rock 1.wav",
+      "expectedBytes": 1417888
+    },
+    {
+      "name": "130 Shuffle Rock 2.wav",
+      "expectedBytes": 1417888
+    },
+    {
+      "name": "130 Shuffle Rock 3.wav",
+      "expectedBytes": 1417888
+    },
+    {
+      "name": "135 Beat 1.wav",
+      "expectedBytes": 1365376
+    },
+    {
+      "name": "135 Beat 2.wav",
+      "expectedBytes": 1365376
+    },
+    {
+      "name": "135 Beat 3.wav",
+      "expectedBytes": 1365376
+    },
+    {
+      "name": "135 Fat Rock 1.wav",
+      "expectedBytes": 1365376
+    },
+    {
+      "name": "135 Fat Rock 2.wav",
+      "expectedBytes": 1365376
+    },
+    {
+      "name": "135 Fat Rock 3.wav",
+      "expectedBytes": 1365376
+    },
+    {
+      "name": "135 Heavy Metal 1.wav",
+      "expectedBytes": 1365376
+    },
+    {
+      "name": "135 Heavy Metal 2.wav",
+      "expectedBytes": 1365376
+    },
+    {
+      "name": "135 Heavy Metal 3.wav",
+      "expectedBytes": 1365376
+    },
+    {
+      "name": "135 Trance 1.wav",
+      "expectedBytes": 1365376
+    },
+    {
+      "name": "135 Trance 2.wav",
+      "expectedBytes": 1365376
+    },
+    {
+      "name": "135 Trance 3.wav",
+      "expectedBytes": 1365376
+    },
+    {
+      "name": "140 Mambo 1.wav",
+      "expectedBytes": 1316616
+    },
+    {
+      "name": "140 Mambo 2.wav",
+      "expectedBytes": 1316616
+    },
+    {
+      "name": "140 Mambo 3.wav",
+      "expectedBytes": 1316616
+    },
+    {
+      "name": "140 Metal 1.wav",
+      "expectedBytes": 1316616
+    },
+    {
+      "name": "140 Metal 2.wav",
+      "expectedBytes": 1316616
+    },
+    {
+      "name": "140 Metal 3.wav",
+      "expectedBytes": 1316616
+    },
+    {
+      "name": "140 Modern Rock 1.wav",
+      "expectedBytes": 1316612
+    },
+    {
+      "name": "140 Modern Rock 2.wav",
+      "expectedBytes": 1316612
+    },
+    {
+      "name": "140 Modern Rock 3.wav",
+      "expectedBytes": 1316612
+    },
+    {
+      "name": "140 Pop Bossa 1.wav",
+      "expectedBytes": 1316616
+    },
+    {
+      "name": "140 Pop Bossa 2.wav",
+      "expectedBytes": 1316616
+    },
+    {
+      "name": "140 Pop Bossa 3.wav",
+      "expectedBytes": 1316616
+    },
+    {
+      "name": "140 Quick Swing 1.wav",
+      "expectedBytes": 1316616
+    },
+    {
+      "name": "140 Quick Swing 2.wav",
+      "expectedBytes": 1316616
+    },
+    {
+      "name": "140 Quick Swing 3.wav",
+      "expectedBytes": 1316616
+    },
+    {
+      "name": "140 Straight Rock 1.wav",
+      "expectedBytes": 1316616
+    },
+    {
+      "name": "140 Straight Rock 2.wav",
+      "expectedBytes": 1316616
+    },
+    {
+      "name": "140 Straight Rock 3.wav",
+      "expectedBytes": 1316616
+    },
+    {
+      "name": "145 Modern Rock 1.wav",
+      "expectedBytes": 1271216
+    },
+    {
+      "name": "145 Modern Rock 2.wav",
+      "expectedBytes": 1271216
+    },
+    {
+      "name": "145 Modern Rock 3.wav",
+      "expectedBytes": 1271216
+    },
+    {
+      "name": "145 Vintage Rock 1.wav",
+      "expectedBytes": 1271216
+    },
+    {
+      "name": "145 Vintage Rock 2.wav",
+      "expectedBytes": 1271216
+    },
+    {
+      "name": "145 Vintage Rock 3.wav",
+      "expectedBytes": 1271216
+    },
+    {
+      "name": "150 Modern Rock 1.wav",
+      "expectedBytes": 1228844
+    },
+    {
+      "name": "150 Modern Rock 2.wav",
+      "expectedBytes": 1228844
+    },
+    {
+      "name": "150 Modern Rock 3.wav",
+      "expectedBytes": 1228844
+    },
+    {
+      "name": "150 Punk 1.wav",
+      "expectedBytes": 1228844
+    },
+    {
+      "name": "150 Punk 2.wav",
+      "expectedBytes": 1228844
+    },
+    {
+      "name": "150 Punk 3.wav",
+      "expectedBytes": 1228844
+    },
+    {
+      "name": "150 Smasher 1.wav",
+      "expectedBytes": 1228844
+    },
+    {
+      "name": "150 Smasher 2.wav",
+      "expectedBytes": 1228844
+    },
+    {
+      "name": "150 Smasher 3.wav",
+      "expectedBytes": 1228844
+    },
+    {
+      "name": "150 Straight Rock 1.wav",
+      "expectedBytes": 1228844
+    },
+    {
+      "name": "150 Straight Rock 2.wav",
+      "expectedBytes": 1228844
+    },
+    {
+      "name": "150 Straight Rock 3.wav",
+      "expectedBytes": 1228844
+    },
+    {
+      "name": "150 Teen Rock 1.wav",
+      "expectedBytes": 1228844
+    },
+    {
+      "name": "150 Teen Rock 2.wav",
+      "expectedBytes": 1228844
+    },
+    {
+      "name": "150 Teen Rock 3.wav",
+      "expectedBytes": 1228844
+    },
+    {
+      "name": "150 Triple Rock 1.wav",
+      "expectedBytes": 1228844
+    },
+    {
+      "name": "150 Triple Rock 2.wav",
+      "expectedBytes": 1228844
+    },
+    {
+      "name": "150 Triple Rock 3.wav",
+      "expectedBytes": 1228844
+    },
+    {
+      "name": "155 Alternative 1.wav",
+      "expectedBytes": 1189204
+    },
+    {
+      "name": "155 Alternative 2.wav",
+      "expectedBytes": 1189204
+    },
+    {
+      "name": "155 Alternative 3.wav",
+      "expectedBytes": 1189204
+    },
+    {
+      "name": "155 Boogaloo 1.wav",
+      "expectedBytes": 1189204
+    },
+    {
+      "name": "155 Boogaloo 2.wav",
+      "expectedBytes": 1189204
+    },
+    {
+      "name": "155 Boogaloo 3.wav",
+      "expectedBytes": 1189204
+    },
+    {
+      "name": "160 Modern Rock 1.wav",
+      "expectedBytes": 1152044
+    },
+    {
+      "name": "160 Modern Rock 2.wav",
+      "expectedBytes": 1152044
+    },
+    {
+      "name": "160 Modern Rock 3.wav",
+      "expectedBytes": 1152044
+    },
+    {
+      "name": "160 RockNRoll 1.wav",
+      "expectedBytes": 1152044
+    },
+    {
+      "name": "160 RockNRoll 2.wav",
+      "expectedBytes": 1152044
+    },
+    {
+      "name": "160 RockNRoll 3.wav",
+      "expectedBytes": 1152044
+    },
+    {
+      "name": "165 Krautrock 1.wav",
+      "expectedBytes": 1117132
+    },
+    {
+      "name": "165 Krautrock 2.wav",
+      "expectedBytes": 1117132
+    },
+    {
+      "name": "165 Krautrock 3.wav",
+      "expectedBytes": 1117132
+    },
+    {
+      "name": "165 Modern Rock 1.wav",
+      "expectedBytes": 1117132
+    },
+    {
+      "name": "165 Modern Rock 2.wav",
+      "expectedBytes": 1117132
+    },
+    {
+      "name": "165 Modern Rock 3.wav",
+      "expectedBytes": 1117132
+    },
+    {
+      "name": "165 Polar 1.wav",
+      "expectedBytes": 1117132
+    },
+    {
+      "name": "165 Polar 2.wav",
+      "expectedBytes": 1117132
+    },
+    {
+      "name": "165 Polar 3.wav",
+      "expectedBytes": 1117132
+    },
+    {
+      "name": "165 Power Rock 1.wav",
+      "expectedBytes": 1117132
+    },
+    {
+      "name": "165 Power Rock 2.wav",
+      "expectedBytes": 1117132
+    },
+    {
+      "name": "165 Power Rock 3.wav",
+      "expectedBytes": 1117132
+    },
+    {
+      "name": "168 Country Train 1.wav",
+      "expectedBytes": 1097188
+    },
+    {
+      "name": "168 Country Train 2.wav",
+      "expectedBytes": 1097188
+    },
+    {
+      "name": "168 Country Train 3.wav",
+      "expectedBytes": 1097188
+    },
+    {
+      "name": "170 Rock Shuffle 1.wav",
+      "expectedBytes": 1084280
+    },
+    {
+      "name": "170 Rock Shuffle 2.wav",
+      "expectedBytes": 1084280
+    },
+    {
+      "name": "170 Rock Shuffle 3.wav",
+      "expectedBytes": 1084280
+    },
+    {
+      "name": "170 Vintage Rock 1.wav",
+      "expectedBytes": 1084280
+    },
+    {
+      "name": "170 Vintage Rock 2.wav",
+      "expectedBytes": 1084280
+    },
+    {
+      "name": "170 Vintage Rock 3.wav",
+      "expectedBytes": 1084280
+    },
+    {
+      "name": "175 Country Bounce 1.wav",
+      "expectedBytes": 1053296
+    },
+    {
+      "name": "175 Country Bounce 2.wav",
+      "expectedBytes": 1053296
+    },
+    {
+      "name": "175 Country Bounce 3.wav",
+      "expectedBytes": 1053296
+    },
+    {
+      "name": "175 DrumNBass 1.wav",
+      "expectedBytes": 1053296
+    },
+    {
+      "name": "175 DrumNBass 2.wav",
+      "expectedBytes": 1053296
+    },
+    {
+      "name": "175 DrumNBass 3.wav",
+      "expectedBytes": 1053296
+    },
+    {
+      "name": "175 Modern Rock 1.wav",
+      "expectedBytes": 1053300
+    },
+    {
+      "name": "175 Modern Rock 2.wav",
+      "expectedBytes": 1053300
+    },
+    {
+      "name": "175 Modern Rock 3.wav",
+      "expectedBytes": 1053300
+    },
+    {
+      "name": "176 Cajun Blues 1.wav",
+      "expectedBytes": 1047316
+    },
+    {
+      "name": "176 Cajun Blues 2.wav",
+      "expectedBytes": 1047316
+    },
+    {
+      "name": "176 Cajun Blues 3.wav",
+      "expectedBytes": 1047316
+    },
+    {
+      "name": "180 Fast Punk 1.wav",
+      "expectedBytes": 1024044
+    },
+    {
+      "name": "180 Fast Punk 2.wav",
+      "expectedBytes": 1024044
+    },
+    {
+      "name": "180 Fast Punk 3.wav",
+      "expectedBytes": 1024044
+    },
+    {
+      "name": "180 New Punk 1.wav",
+      "expectedBytes": 1024044
+    },
+    {
+      "name": "180 New Punk 2.wav",
+      "expectedBytes": 1024044
+    },
+    {
+      "name": "180 New Punk 3.wav",
+      "expectedBytes": 1024044
+    },
+    {
+      "name": "195 Speed Rock 1.wav",
+      "expectedBytes": 945272
+    },
+    {
+      "name": "195 Speed Rock 2.wav",
+      "expectedBytes": 945272
+    },
+    {
+      "name": "195 Speed Rock 3.wav",
+      "expectedBytes": 945272
+    },
+    {
+      "name": "208 Bebop 1.wav",
+      "expectedBytes": 886196
+    },
+    {
+      "name": "208 Bebop 2.wav",
+      "expectedBytes": 886196
+    },
+    {
+      "name": "208 Bebop 3.wav",
+      "expectedBytes": 886196
+    }
+  ],
+  "limits": "Evidence inspector. No DSP, native UI, reset-default or playable factory-content parity claim."
+}
