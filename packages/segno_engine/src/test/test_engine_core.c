@@ -20516,7 +20516,8 @@ static void test_fx_params_past_count_are_inert(void) {
                            LE_FX_TRANSIENT,  LE_FX_HP_GATE,   LE_FX_DOUBLER,
                            LE_FX_CHORUS,     LE_FX_WAH,       LE_FX_OVERDRIVE, LE_FX_DISTORTION,
                            LE_FX_VINYL,      LE_FX_DEGRADE,   LE_FX_LPF,
-                           LE_FX_SPRING};
+                           LE_FX_SPRING,     LE_FX_DUB_VERB,  LE_FX_AMB_VERB,
+                           LE_FX_WHAMMY};
   for (int t = 0; t < (int)(sizeof(types) / sizeof(types[0])); ++t) {
     le_engine* a = make_configured_engine();
     le_engine* b = make_configured_engine();
@@ -20722,6 +20723,103 @@ static void test_octaver_pv_formants_move_with_pitch(void) {
   CHECK(fabsf(f0 - 440.0f) < 30.0f);
   CHECK(c > 1.6f * cin); /* the envelope went up with the pitch */
   free(in);
+  free(out);
+}
+
+/* The Whammy (#891): range x pedal^1.39 semitones on the octaver, fully wet,
+ * tone open, formants moving. The taper puts 50 % at the captures' 4.57 of
+ * 12 semitones; the pitch lands there both ways at the input's level, and a
+ * full pedal is the octave, with the envelope going along. */
+static void whammy_run(float pedal, float range, const float* in, int total,
+                       float* out) {
+  le_engine* e = le_engine_create();
+  const int blk = 2048;
+  le_engine_configure(e, OCT_SR, 1, 1, blk);
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_input_output(e, 0, 0x1);
+  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_WHAMMY) == LE_OK);
+  le_engine_set_monitor_input_fx_param(e, 0, 0, 0, pedal);
+  le_engine_set_monitor_input_fx_param(e, 0, 0, 1, range);
+  le_engine_set_monitor_input_fx_count(e, 0, 1);
+  for (int done = 0; done < total;) {
+    int n = total - done;
+    if (n > blk) n = blk;
+    le_engine_process(e, out + done, in + done, (uint32_t)n);
+    done += n;
+  }
+  le_engine_destroy(e);
+}
+
+static void test_whammy_taper_and_pitch(void) {
+  printf("test_whammy_taper_and_pitch\n");
+  /* The mapping: the octaver's settings, from the pedal and the range. */
+  const float p_half_up[LE_FX_PARAMS] = {0.5f, 1.0f};
+  float q[LE_FX_PARAMS];
+  le_fx_octaver_settings(LE_FX_WHAMMY, p_half_up, q);
+  const float st = (q[0] - 0.5f) * 48.0f;
+  printf("  pedal 50 %%: %+.2f semitones (captures +4.61 / +4.57)\n", st);
+  CHECK(fabsf(st - 4.57f) < 0.05f);
+  CHECK(q[1] == 1.0f && q[2] == 1.0f && q[3] == 0.0f && q[4] == 1.0f);
+  const float p_full_down[LE_FX_PARAMS] = {1.0f, 0.0f};
+  le_fx_octaver_settings(LE_FX_WHAMMY, p_full_down, q);
+  CHECK(fabsf(q[0] - 0.25f) < 1e-6f); /* -12 */
+  const float p_heel[LE_FX_PARAMS] = {0.0f, 1.0f};
+  le_fx_octaver_settings(LE_FX_WHAMMY, p_heel, q);
+  CHECK(q[0] == 0.5f); /* unison */
+  CHECK(le_fx_type_hops(LE_FX_WHAMMY) && le_fx_type_hops(LE_FX_OCTAVER));
+  CHECK(!le_fx_type_hops(LE_FX_DELAY));
+
+  /* The sound: a 220 Hz harmonic tone. */
+  const int total = 24000;
+  const int skip = 12000;
+  const int an = total - skip;
+  float* in = (float*)malloc(sizeof(float) * (size_t)total);
+  float* out = (float*)malloc(sizeof(float) * (size_t)total);
+  oct_harmonic(in, total, 220.0f);
+  const float cin = oct_centroid(in + skip, an);
+  float* low = (float*)malloc(sizeof(float) * (size_t)total);
+  for (int i = 0; i < total; ++i) {
+    float v = 0.0f;
+    for (int h = 1; h <= 10; ++h) {
+      v += sinf(2.0f * LE_FFT_PI * 220.0f * (float)h * (float)i /
+                (float)OCT_SR) /
+           (float)h;
+    }
+    low[i] = 0.2f * v;
+  }
+  const struct {
+    float pedal, range, semis;
+  } cases[] = {{0.0f, 1.0f, 0.0f},
+               {0.5f, 1.0f, 4.57f},
+               {0.5f, 0.0f, -4.57f},
+               {1.0f, 1.0f, 12.0f},
+               {1.0f, 0.0f, -12.0f}};
+  for (int c = 0; c < 5; ++c) {
+    whammy_run(cases[c].pedal, cases[c].range, in, total, out);
+    const float f0 = oct_detect_f0(out + skip, an);
+    const float want = 220.0f * powf(2.0f, cases[c].semis / 12.0f);
+    /* The level, on ten harmonics that stay below Nyquist at +12. */
+    whammy_run(cases[c].pedal, cases[c].range, low, total, out);
+    double ei = 0.0, eo = 0.0;
+    for (int i = skip; i < total; ++i) {
+      ei += (double)low[i] * low[i];
+      eo += (double)out[i] * out[i];
+    }
+    const double db = 10.0 * log10(eo / ei);
+    printf("  pedal %.0f %%, range %+.0f: f0 %.1f (want %.1f), level %+.2f dB\n",
+           100.0f * cases[c].pedal, cases[c].range >= 0.5f ? 12.0 : -12.0,
+           f0, want, db);
+    CHECK(fabsf(f0 - want) < 0.03f * want);
+    /* Fully wet, the level holds across the sweep (the peak regions move
+     * whole, le_pv_stage_shift). */
+    CHECK(fabs(db) < 1.5);
+    if (cases[c].semis == 12.0f) {
+      whammy_run(cases[c].pedal, cases[c].range, in, total, out);
+      CHECK(oct_centroid(out + skip, an) > 1.6f * cin); /* formants moved */
+    }
+  }
+  free(in);
+  free(low);
   free(out);
 }
 
@@ -21044,11 +21142,8 @@ static void tuner_harmonic(float* buf, int n, float f0, int sr) {
   }
 }
 
-/* The tuner's band-parameterised detector. Two separate claims:
- *
- * 1. `le_psola_detect` is unchanged. It is now a wrapper over the band form at
- *    (60, 1000), so this pins that the octaver's band did not move.
- * 2. The tuner reaches BELOW the octaver's floor. Bass low B is 30.87 Hz, and
+/* The tuner's band-parameterised detector: it reaches BELOW the octaver's
+ * floor. Bass low B is 30.87 Hz, and
  *    the whole reason the band became a parameter is that it is derived from
  *    `sr` — decimating rescales both ends and never lowers the floor by
  *    itself, which the plan originally got backwards.
@@ -21060,19 +21155,6 @@ static void test_tuner_detect_band(void) {
   enum { W = LE_TUNER_WIN };
   const int sr_d = OCT_SR / LE_TUNER_DECIM;
   float* b = (float*)malloc(sizeof(float) * (size_t)W);
-
-  /* The wrapper is exactly the band form at the octaver's own band. */
-  {
-    tuner_harmonic(b, W, 200.0f, sr_d);
-    float pa = 0.0f;
-    float va = 0.0f;
-    float pb = 0.0f;
-    float vb = 0.0f;
-    le_psola_detect(b, W, sr_d, &pa, &va);
-    le_psola_detect_band(b, W, sr_d, 60, 1000, &pb, &vb);
-    CHECK(pa == pb);
-    CHECK(va == vb);
-  }
 
   /* Reaching BELOW the octaver's floor is this function's job — bass low B is
    * 30.87 Hz. Accuracy here is the COARSE accuracy: a decimated sample is 8
@@ -21288,7 +21370,7 @@ static void test_tuner_raw_ring_wrap(void) {
   le_engine_destroy(e);
 }
 
-/* PSOLA pitch detector (YIN): the engine-internal le_psola_detect reports the true
+/* PSOLA pitch detector (YIN, le_psola_detect_band at 60..1000 Hz) reports the true
  * period within tolerance across the vocal band with NO octave error (the half/
  * double-period trap that plain autocorrelation falls into), reads noise as
  * unvoiced, and — crucially for the soft voiced<->unvoiced gate — yields a SMOOTH,
@@ -21307,7 +21389,7 @@ static void test_octaver_psola_pitch_detect(void) {
     oct_harmonic(b, W, f0s[k]);
     float period = 0.0f;
     float voiced = 0.0f;
-    le_psola_detect(b, W, OCT_SR, &period, &voiced);
+    le_psola_detect_band(b, W, OCT_SR, 60, 1000, &period, &voiced);
     const float truep = (float)OCT_SR / f0s[k];
     printf("  f0=%.0f -> period=%.1f (true %.1f) voiced=%.2f\n", f0s[k], period,
            truep, voiced);
@@ -21327,7 +21409,7 @@ static void test_octaver_psola_pitch_detect(void) {
   {
     float period = 0.0f;
     float voiced = 0.0f;
-    le_psola_detect(b, W, OCT_SR, &period, &voiced);
+    le_psola_detect_band(b, W, OCT_SR, 60, 1000, &period, &voiced);
     printf("  noise -> voiced=%.2f\n", voiced);
     CHECK(voiced < 0.4f);
   }
@@ -21346,7 +21428,7 @@ static void test_octaver_psola_pitch_detect(void) {
     }
     float period = 0.0f;
     float voiced = 0.0f;
-    le_psola_detect(b, W, OCT_SR, &period, &voiced);
+    le_psola_detect_band(b, W, OCT_SR, 60, 1000, &period, &voiced);
     printf("  noise=%.1f -> voiced=%.2f\n", nz, voiced);
     CHECK(voiced <= prevc + 0.02f); /* monotone non-increasing */
     prevc = voiced;
@@ -21357,6 +21439,105 @@ static void test_octaver_psola_pitch_detect(void) {
 
   free(noise);
   free(b);
+}
+
+/* PSOLA's sliced detection (#913): from 32 to 192 kHz every pass finishes
+ * inside the hop that started it (the per-tick credit covers the worst pass
+ * at every decimation), the period it settles on is the input's to within
+ * 0.3 % for a 220 Hz voice and 1 % for an 80 Hz one, and the shifted output
+ * plays the shifted pitch. At 96 kHz the old undecimated pass could not see
+ * 80 Hz at all: its 800-lag search stopped at 120 Hz. */
+static void test_octaver_psola_sliced_detection(void) {
+  printf("test_octaver_psola_sliced_detection\n");
+  static int32_t types[LE_FX_MAX];
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  int32_t on[LE_FX_MAX];
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    types[s] = LE_FX_NONE;
+    on[s] = 1;
+  }
+  types[0] = LE_FX_OCTAVER;
+  params[0][0] = 0.5f + 7.0f / 48.0f;
+  params[0][1] = 1.0f;
+  params[0][2] = 1.0f;
+  params[0][3] = 1.0f; /* PSOLA */
+  const int rates[] = {32000, 44100, 48000, 96000, 192000};
+  const float f0s[] = {220.0f, 80.0f};
+  for (int ri = 0; ri < 5; ++ri) {
+    for (int fi = 0; fi < 2; ++fi) {
+      const int sr = rates[ri];
+      const float f0 = f0s[fi];
+      le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+      CHECK(fx != NULL);
+      if (fx == NULL) return;
+      for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
+      le_fx_entry_reset(fx, 0);
+      CHECK(le_fx_prepare(fx, 0, LE_FX_OCTAVER, sr) == LE_OK);
+      le_fx_octaver_seed_settled(fx, 0, params[0]);
+      le_octaver_state* o = &fx->oct[0][0];
+      const le_psola_pass* ps = le_ps(o);
+      /* A pass starts every max(1, D / 2) hops, D = ceil(sr / 24 kHz). */
+      int every = ((sr + LE_PSOLA_RATE - 1) / LE_PSOLA_RATE) / 2;
+      if (every < 1) every = 1;
+      int passes = 0;
+      int overran = 0;
+      float* out = (float*)malloc(sizeof(float) * (size_t)sr);
+      CHECK(out != NULL);
+      if (out == NULL) return;
+      for (int i = 0; i < sr; ++i) {
+        /* A harmonic voice: 8 partials, falling 1/h. */
+        float x = 0.0f;
+        for (int h = 1; h <= 8; ++h) {
+          x += 0.3f / (float)h *
+               sinf(2.0f * LE_FFT_PI * f0 * (float)h * (float)i / (float)sr);
+        }
+        /* A pass starts on the tick that takes the counter to 0 on its
+         * hop; the one before it must have finished. */
+        if (o->hop_count == 1 && ps->hops == every - 1) {
+          ++passes;
+          if (ps->phase != 0) ++overran;
+        }
+        float l = x;
+        float r = x;
+        fx_apply_chain(fx, sr, sr, &l, &r, 1, types, params, on);
+        out[i] = l;
+      }
+      /* The output's pitch, over its last 0.25 s: +7 semitones. Measured at
+       * 48 kHz or under (a boxcar decimation), since the one-shot detector's
+       * lags stop at LE_PSOLA_MAXLAG. */
+      const int dd = sr > 48000 ? sr / 48000 : 1;
+      const int tail = sr / 4 / dd;
+      for (int i = 0; i < tail; ++i) {
+        float acc = 0.0f;
+        for (int k = 0; k < dd; ++k) acc += out[sr - tail * dd + i * dd + k];
+        out[i] = acc / (float)dd;
+      }
+      float out_period = 0.0f;
+      float out_voiced = 0.0f;
+      le_psola_detect_band(out, tail, sr / dd, 60, 1000, &out_period,
+                           &out_voiced);
+      const float shifted = f0 * powf(2.0f, 7.0f / 12.0f);
+      const float out_cents =
+          out_period > 0.0f
+              ? 1200.0f * log2f(((float)(sr / dd) / out_period) / shifted)
+              : 9999.0f;
+      free(out);
+      const float want = (float)sr / f0;
+      const float err = fabsf(o->period - want) / want;
+      printf("  %d Hz, %.0f Hz voice: period %.2f (want %.2f, %.3f %%), "
+             "voiced %.2f, %d passes, %d overran, output %+.1f cents\n",
+             sr, (double)f0, (double)o->period, (double)want,
+             (double)(100.0f * err), (double)o->voiced, passes, overran,
+             (double)out_cents);
+      CHECK(fabsf(out_cents) < 20.0f);
+      CHECK(passes > 100 / every);
+      CHECK(overran <= 1); /* the first may meet a reset pass, never more */
+      CHECK(err < (f0 > 100.0f ? 0.003f : 0.01f));
+      CHECK(o->voiced > 0.6f);
+      le_fx_state_free_buffers(fx);
+      free(fx);
+    }
+  }
 }
 
 /* PSOLA voice + fallback (D4): a voiced harmonic tone shifts up an octave with the
@@ -21632,10 +21813,10 @@ static void test_fx_param_descriptors_match_kernels(void) {
   const int32_t sr = 48000;
 
   /* Counts: the parameters each kernel reads; none for NONE and PLUGIN. */
-  const int32_t counts[] = {0, 2, 2, 3, 2, 5, 3, 3, 0, 15, 5,
-                            3, 2, 2, 3, 1, 2, 2, 4, 3, 2, 2};
-  for (int32_t t = 0; t < 22; ++t) CHECK(le_fx_param_count(t) == counts[t]);
-  CHECK(le_fx_param_count(22) == LE_ERR_INVALID);
+  const int32_t counts[] = {0, 2, 2, 3, 2, 5, 3, 3, 0, 15, 5, 3,
+                            2, 2, 3, 1, 2, 2, 4, 3, 2, 2, 2, 3, 2};
+  for (int32_t t = 0; t < 25; ++t) CHECK(le_fx_param_count(t) == counts[t]);
+  CHECK(le_fx_param_count(25) == LE_ERR_INVALID);
   CHECK(le_fx_param_count(-1) == LE_ERR_INVALID);
   le_fx_param_desc scratch;
   CHECK(le_fx_param_info(LE_FX_DELAY, 3, &scratch) == LE_ERR_INVALID);
@@ -24211,14 +24392,19 @@ static float* oct_reference_wet(const float* dry, int32_t n, int32_t sr,
  * over the render's own dry stem with the lane's seed. The wrong-seed and
  * unsettled references are asserted to differ, so the comparison cannot pass
  * by being insensitive to either. */
-static void run_perf_render_octaver_case(const char* name, float mode_p3) {
+static void run_perf_render_octaver_case(const char* name, int32_t type,
+                                         const float* raw4) {
   const char* dir = render_test_dir(name);
   const int32_t sr = 48000;
   const int32_t channel = 3;
   const int32_t loop_len = 1024;
   const int32_t capture_frames = 8192; /* well past the LE_PV_LATENCY warmup */
-  /* -1 octave, tone open, full wet; mode_p3 picks phase vocoder or PSOLA. */
-  const float params4[LE_FX_PARAMS] = {0.25f, 1.0f, 1.0f, mode_p3};
+  /* The manifest carries [type]'s own settings ([raw4]); the reference runs
+   * the octaver at the settings they map to (le_fx_octaver_settings). */
+  float raw[LE_FX_PARAMS] = {0};
+  for (int q = 0; q < 4; ++q) raw[q] = raw4[q];
+  float params4[LE_FX_PARAMS];
+  le_fx_octaver_settings(type, raw, params4);
 
   char loops_dir[700];
   snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
@@ -24250,9 +24436,8 @@ static void run_perf_render_octaver_case(const char* name, float mode_p3) {
            "\"deferred\": false, \"pcmRef\": \"loops/track%d-lane0.wav\", "
            "\"effects\": [{\"type\": %d, \"params\": [%f, %f, %f, %f]}]}]}]}, "
            "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}",
-           sr, capture_frames, channel, channel, LE_FX_OCTAVER,
-           (double)params4[0], (double)params4[1], (double)params4[2],
-           (double)params4[3]);
+           sr, capture_frames, channel, channel, type, (double)raw[0],
+           (double)raw[1], (double)raw[2], (double)raw[3]);
   test_write_manifest(dir, manifest);
 
   char log_path[700];
@@ -24304,10 +24489,9 @@ static void run_perf_render_octaver_case(const char* name, float mode_p3) {
       if (b > d_seed) d_seed = b;
       if (c > d_unsettled) d_unsettled = c;
     }
-    printf("  mode %d: stem vs lane ref %.7f, vs seed-0 %.4f, vs unsettled "
+    printf("  %s: stem vs lane ref %.7f, vs seed-0 %.4f, vs unsettled "
            "%.4f\n",
-           params4[3] >= 0.5f ? 1 : 0, (double)d_ref, (double)d_seed,
-           (double)d_unsettled);
+           name, (double)d_ref, (double)d_seed, (double)d_unsettled);
     CHECK(d_ref < 1e-6f);       /* the render used THIS lane's hop phase */
     CHECK(d_seed > 0.01f);      /* and can tell a wrong seed */
     CHECK(d_unsettled > 0.01f); /* and a start-up state the lane was not in */
@@ -24325,8 +24509,15 @@ static void run_perf_render_octaver_case(const char* name, float mode_p3) {
  * le_fx_octaver_seed_settled resolves. */
 static void test_perf_render_wet_octaver_matches_lane_hop_phase(void) {
   printf("test_perf_render_wet_octaver_matches_lane_hop_phase\n");
-  run_perf_render_octaver_case("wet-octaver-phase", 0.0f);
-  run_perf_render_octaver_case("wet-octaver-psola", 1.0f);
+  /* -1 octave, tone open, full wet, in each mode. */
+  const float pv[4] = {0.25f, 1.0f, 1.0f, 0.0f};
+  const float psola[4] = {0.25f, 1.0f, 1.0f, 1.0f};
+  run_perf_render_octaver_case("wet-octaver-phase", LE_FX_OCTAVER, pv);
+  run_perf_render_octaver_case("wet-octaver-psola", LE_FX_OCTAVER, psola);
+  /* The Whammy toe down at -12: the render seeds its MAPPED settings, fully
+   * wet, or it would start dry (#1451). */
+  const float whammy[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+  run_perf_render_octaver_case("wet-whammy", LE_FX_WHAMMY, whammy);
 }
 
 /* The stem render settles each arm-time slot at its EFFECTIVE bit, as the
@@ -33476,9 +33667,11 @@ static int wt_wait_engaged(le_engine* e, float* out) {
 
 /* Part levels precede the combined nonlinear Pre; the track fader follows
  * that result exactly once, before Post. Changing it must not reprint PCM. */
+/* One drive with an identity, so a publish that changes only its gain keeps
+ * the entry (and its enable ramp), as the app's recipes do. */
 static le_fx_recipe test_drive_recipe(float gain) {
   le_fx_recipe r = {.count = 1, .enabled = 1};
-  r.type[0] = LE_FX_DRIVE; r.params[0][1] = gain;
+  r.type[0] = LE_FX_DRIVE; r.params[0][1] = gain; r.instance[0] = 1;
   r.slot_enabled[0] = 1; r.level[0] = 1; return r;
 }
 
@@ -35123,11 +35316,10 @@ static void test_a_pre_channel_edit_drops_the_print(void) {
  * is not a whole number of hops it lands on other frames of the loop each lap
  * and no one lap's print can equal live. Such a lane stays live and says why;
  * the same chain on a loop of whole hops prints (the parity sweep below). */
-static void test_cache_octaver_on_a_partial_hop_loop_stays_live(void) {
-  printf("test_cache_octaver_on_a_partial_hop_loop_stays_live\n");
+static void cache_hop_stays_live(int32_t type) {
   le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
   cache_record_loop(a, CACHE_LOOP - 80, 1.0f); /* 54.7 hops */
-  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_OCTAVER) == LE_OK);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, type) == LE_OK);
   CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1, 1) == LE_OK);
   drain(a);
   le_lane_cache_info info;
@@ -35139,6 +35331,12 @@ static void test_cache_octaver_on_a_partial_hop_loop_stays_live(void) {
   CHECK(info.renders == 0);
   CHECK(info.engaged == 0);
   le_engine_destroy(a);
+}
+
+static void test_cache_octaver_on_a_partial_hop_loop_stays_live(void) {
+  printf("test_cache_octaver_on_a_partial_hop_loop_stays_live\n");
+  cache_hop_stays_live(LE_FX_OCTAVER);
+  cache_hop_stays_live(LE_FX_WHAMMY); /* the same kernel, on the same hop */
 }
 
 /* A bypassed octaver passes the signal dry, whatever its hop, so the same
@@ -35209,7 +35407,8 @@ static void test_cache_cached_matches_live_every_builtin(void) {
                            LE_FX_REVERB,     LE_FX_EQ,        LE_FX_COMPRESSOR,
                            LE_FX_TRANSIENT,  LE_FX_HP_GATE,   LE_FX_WAH,
                            LE_FX_OVERDRIVE, LE_FX_DISTORTION, LE_FX_LPF,
-                           LE_FX_SPRING};
+                           LE_FX_SPRING,    LE_FX_DUB_VERB,   LE_FX_AMB_VERB,
+                           LE_FX_WHAMMY};
   /* The doubler and the chorus are free-running and never print
    * (test_cache_free_running_stays_live). */
   for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); ++i) {
@@ -38678,6 +38877,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_drive.h"
 #include "test_engine_lofi.h"
 #include "test_engine_verb.h"
+#include "test_engine_rack_paths.h"
 #include "test_engine_fx_publish.h"
 #include "test_engine_bounce.h"
 #include "test_engine_clock.h"
@@ -38764,6 +38964,7 @@ int main(void) {
   run_drive_tests();
   run_lofi_tests();
   run_verb_tests();
+  run_rack_path_tests();
   run_fx_publish_tests();
   run_bounce_tests();
   if (getenv("SEGNO_PEEL_TESTS_ONLY")) return g_failures ? 1 : 0;
@@ -39242,6 +39443,7 @@ int main(void) {
   test_fx_params_past_count_are_inert();
   test_octaver_pv_shifts_pitch_preserves_formant();
   test_octaver_pv_formants_move_with_pitch();
+  test_whammy_taper_and_pitch();
   test_octaver_pv_low_fundamental();
   test_octaver_mono_coherent();
   test_octaver_mix_no_comb();
@@ -39249,6 +39451,7 @@ int main(void) {
   test_octaver_lifecycle();
   test_octaver_mode_switch_no_click();
   test_octaver_psola_pitch_detect();
+  test_octaver_psola_sliced_detection();
   test_tuner_detect_band();
   test_tuner_arm_and_detect();
   test_tuner_raw_ring_wrap();

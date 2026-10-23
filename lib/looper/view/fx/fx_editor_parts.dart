@@ -11,6 +11,7 @@ import 'package:segno/theme/theme.dart';
 /// Editor intentions forwarded to the FX owner by stable effect/group ID.
 /// Indices remain a rendering detail and never identify a write.
 typedef FxEdits = ({
+  void Function({required bool enabled}) setChainEnabled,
   void Function(String slotId, {required bool enabled}) setEnabled,
   void Function(String groupId, {required bool enabled}) setGroupEnabled,
   void Function(String slotId, int param, double value) setParam,

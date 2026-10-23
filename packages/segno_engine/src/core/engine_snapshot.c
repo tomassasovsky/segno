@@ -271,7 +271,7 @@ static uint64_t le_fx_fold_hop_position(uint64_t h, int32_t n,
   if (n > LE_FX_MAX) n = LE_FX_MAX;
   if (!load_i32(a_chain_enabled)) return h;
   for (int32_t i = 0; i < n; ++i) {
-    if (load_i32(&a_type[i]) == LE_FX_OCTAVER && load_i32(&a_enabled[i])) {
+    if (le_fx_type_hops(load_i32(&a_type[i])) && load_i32(&a_enabled[i])) {
       const uint32_t top =
           atomic_load_explicit(&t->a_top_clock, memory_order_relaxed);
       return le_fx_fp_u32(h, top & (uint32_t)(LE_PV_HOP - 1));

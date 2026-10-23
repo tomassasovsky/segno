@@ -1550,10 +1550,10 @@ static int le_pr_reset_slot(le_fx_state* fx, int s, int32_t type,
  * it (le_fx_entry_renew): its buffers, then the renewal, which clears its
  * rings through the enable edge. Returns 0 on an allocation failure. */
 static int le_pr_renew_slot(le_fx_state* fx, int s, int32_t type,
-                            int32_t sample_rate) {
+                            int sounding, int32_t sample_rate) {
   const int ok = type == LE_FX_NONE ||
                  le_fx_prepare(fx, s, type, sample_rate) == LE_OK;
-  le_fx_entry_renew(fx, s, type);
+  le_fx_entry_renew(fx, s, type, sounding);
   return ok;
 }
 
@@ -1566,7 +1566,11 @@ static int le_pr_renew_slot(le_fx_state* fx, int s, int32_t type,
 static int le_pr_arm_slot(le_fx_state* fx, int s, int32_t type,
                           const float* params, int32_t sample_rate) {
   const int ok = le_pr_reset_slot(fx, s, type, sample_rate);
-  if (type == LE_FX_OCTAVER) le_fx_octaver_seed_settled(fx, s, params);
+  if (le_fx_type_hops(type)) {
+    float q[LE_FX_PARAMS];
+    le_fx_octaver_settings(type, params, q);
+    le_fx_octaver_seed_settled(fx, s, q);
+  }
   return ok;
 }
 
@@ -1593,6 +1597,9 @@ static void le_pr_seed_channels(le_fx_state* fx, const le_json_value* effects,
                                 int count) {
   static const char* const kIn[] = {"stereo", "left", "right", "monoSum"};
   static const char* const kOut[] = {"stereo", "mono"};
+  static const char* const kPath[] = {"none", "dub", "amb"};
+  static const int32_t kPathBits[] = {0, LE_FX_RACK_DUB_PATH,
+                                      LE_FX_RACK_AMB_PATH};
   char ids[LE_FX_MAX][128];
   int racked[LE_FX_MAX] = {0};
   if (count > LE_FX_MAX) count = LE_FX_MAX;
@@ -1617,6 +1624,11 @@ static void le_pr_seed_channels(le_fx_state* fx, const le_json_value* effects,
     c->level = level;
     racked[s] = le_json_string(le_json_get(le_json_get(entry, "rack"), "id"),
                                ids[s], sizeof(ids[s]));
+    /* A path counts inside a rack only, as the live recipe sets it. */
+    if (racked[s]) {
+      c->rack = kPathBits[le_pr_wire_index(le_json_get(entry, "rackPath"),
+                                           kPath, 3)];
+    }
     /* The live snapshot's rule: a rack edge sets it too. */
     if (c->in_mode != LE_FX_CHAN_IN_STEREO ||
         c->out_mode != LE_FX_CHAN_OUT_STEREO || c->gl != 1.0f ||
@@ -2051,7 +2063,8 @@ static int le_pr_render_master(const le_pr_manifest* m,
         /* lane 1: a recipe kept the entry there (same identity and type),
          * so its state goes on; otherwise the slot renews, as live. */
         if (cmd->fx.lane != 1 &&
-            !le_pr_renew_slot(fx, i, chain.type[i], m->sample_rate)) {
+            !le_pr_renew_slot(fx, i, chain.type[i], i < chain.count,
+                              m->sample_rate)) {
           ok = 0;
         }
       } else if (cmd->code == LE_CMD_SET_OUTPUT_FX_COUNT && cmd->fxcount.channel == m->arm_capture_bus) {

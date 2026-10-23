@@ -3274,6 +3274,7 @@ class LooperRepository {
           }
           final copied = withFreshSlotIds(captured);
           final edges = fxRackEdges(copied);
+          final paths = fxRackPathsToEngine(copied);
           final slots = <FxRecipeSlot>[];
           final handles = <String, PluginSlotHandle>{};
           final loaded = <TrackEffect>[];
@@ -3287,6 +3288,7 @@ class LooperRepository {
                   enabled: fx.enabled,
                   channels: fxChannelsToEngine(fx.channels),
                   rack: edges[index],
+                  path: paths[index],
                   instance: fxInstanceId(fx.slotId),
                 ),
               );
@@ -6844,6 +6846,8 @@ class LooperRepository {
     if (chainEnabled != null) _allTracksChainEnabled = chainEnabled;
     _allTracksEffects = submitted.effects;
     if (_intendRunning) _recoverUnavailablePlugins();
+    // As setOutputEffects does: the projected state carries the chain.
+    _reproject();
     return submitted.result;
   }
 
@@ -6917,6 +6921,9 @@ class LooperRepository {
       if (!result.isOk) return result;
     }
     _allTracksChainEnabled = enabled;
+    // The projected state carries the flag (allTracksChain), and the Effects
+    // page reads it from there.
+    _reproject();
     return EngineResult.ok;
   }
 
@@ -7389,6 +7396,7 @@ class LooperRepository {
     final slots = <FxRecipeSlot>[];
     var refusal = EngineResult.invalid;
     final edges = fxRackEdges(effects);
+    final paths = fxRackPathsToEngine(effects);
     try {
       for (final (index, fx) in effects.indexed) {
         if (fx is BuiltInEffect) {
@@ -7400,6 +7408,7 @@ class LooperRepository {
               enabled: fx.enabled,
               channels: fxChannelsToEngine(fx.channels),
               rack: edges[index],
+              path: paths[index],
               instance: fxInstanceId(fx.slotId),
             ),
           );

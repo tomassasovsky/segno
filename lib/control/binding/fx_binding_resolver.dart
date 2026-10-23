@@ -75,7 +75,7 @@ extension FxBindingResolver on LooperRepository {
   bool? bindingEnabled(FxBindingTarget target) {
     switch (target) {
       case FxChainTarget(:final address):
-        return _chainEnabled(address);
+        return chainEnabledAt(address);
       case FxSlotTarget(:final address, :final slotId):
         final index = _slotIndex(address, slotId);
         if (index == null) return null;
@@ -95,10 +95,10 @@ extension FxBindingResolver on LooperRepository {
   bool setBindingEnabled(FxBindingTarget target, {required bool enabled}) {
     if (bindingEnabled(target) != !enabled) return false;
     return switch (target) {
-      FxChainTarget(:final address) => _setChainEnabled(
+      FxChainTarget(:final address) => setChainEnabledAt(
         address,
         enabled: enabled,
-      ),
+      ).isOk,
       FxSlotTarget(:final address, :final slotId) => _setSlotEnabled(
         address,
         slotId,
@@ -107,9 +107,10 @@ extension FxBindingResolver on LooperRepository {
     };
   }
 
-  /// The chain-level `enabled` flag at [address], or `null` when that chain
-  /// does not exist in the rig.
-  bool? _chainEnabled(FxAddress address) {
+  /// The chain-level `enabled` flag at [address] (its effects power), or
+  /// `null` when that chain does not exist in the rig. The one per-stage read
+  /// both a pedal binding and the Effects page go through.
+  bool? chainEnabledAt(FxAddress address) {
     if (chainEntriesAt(address) == null) return null;
     return switch (address.stage) {
       FxStage.input => monitorChainEnabled(address.index),
@@ -122,26 +123,29 @@ extension FxBindingResolver on LooperRepository {
     };
   }
 
-  bool _setChainEnabled(FxAddress address, {required bool enabled}) {
+  /// Writes the chain-level `enabled` flag at [address] through its stage's
+  /// own writer: the one per-stage write both a pedal binding and the Effects
+  /// page go through. The caller has resolved [address] ([chainEnabledAt]).
+  EngineResult setChainEnabledAt(FxAddress address, {required bool enabled}) {
     return switch (address.stage) {
       FxStage.input => setMonitorChainEnabled(
         input: address.index,
         enabled: enabled,
-      ).isOk,
+      ),
       FxStage.loop => setLaneChainEnabled(
         channel: address.index,
-        lane: address.lane!, // resolved above; see `chainEntriesAt`
+        lane: address.lane!, // resolved by the caller; see `chainEntriesAt`
         enabled: enabled,
-      ).isOk,
+      ),
       FxStage.track => setTrackChainEnabled(
         channel: address.index,
         enabled: enabled,
-      ).isOk,
-      FxStage.allTracks => setAllTracksChainEnabled(enabled: enabled).isOk,
+      ),
+      FxStage.allTracks => setAllTracksChainEnabled(enabled: enabled),
       FxStage.output => setOutputChainEnabled(
         bus: address.index,
         enabled: enabled,
-      ).isOk,
+      ),
     };
   }
 
