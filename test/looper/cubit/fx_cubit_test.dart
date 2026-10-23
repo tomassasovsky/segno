@@ -607,6 +607,166 @@ void main() {
     });
   });
 
+  group('setChainEnabled', () {
+    // One chain per stage, all on, each written through its own repository
+    // setter.
+    late Map<FxAddress, bool> power;
+    late EngineResult outcome;
+
+    setUp(() {
+      outcome = EngineResult.ok;
+      power = {};
+      bool on(FxAddress a) => power[a] ?? true;
+      EngineResult write(FxAddress a, {required bool enabled}) {
+        if (!outcome.isOk) return outcome;
+        power[a] = enabled;
+        return EngineResult.ok;
+      }
+
+      when(() => persistence.inputRestoreFailed).thenReturn(false);
+      when(() => repository.monitorEffects(0)).thenReturn([_effect('m')]);
+      when(() => repository.laneCount(0)).thenReturn(1);
+      when(() => repository.laneEffects(0, 0)).thenReturn([_effect('l')]);
+      when(() => repository.allTracksEffects).thenReturn([_effect('a')]);
+      when(() => repository.outputEffects(0)).thenReturn([_effect('o')]);
+      // The rig holds settings for every one of them.
+      when(
+        () => repository.allMonitors(),
+      ).thenReturn(const {0: InputMonitor(input: 0)});
+      when(
+        () => repository.allLaneChains(),
+      ).thenReturn(const {(0, 0): FxChainEnvelope()});
+      when(
+        () => persistence.ordinaryChain(any(), enabled: any(named: 'enabled')),
+      ).thenReturn(null);
+      const input = FxAddress(stage: FxStage.input);
+      const lane = FxAddress(stage: FxStage.loop, lane: 0);
+      const track = FxAddress(stage: FxStage.track);
+      const all = FxAddress(stage: FxStage.allTracks);
+      const output = FxAddress(stage: FxStage.output);
+      when(
+        () => repository.monitorChainEnabled(0),
+      ).thenAnswer((_) => on(input));
+      when(() => repository.laneChainEnabled(0, 0)).thenAnswer((_) => on(lane));
+      when(() => repository.trackChainEnabled(0)).thenAnswer((_) => on(track));
+      when(() => repository.allTracksChainEnabled).thenAnswer((_) => on(all));
+      when(
+        () => repository.outputChainEnabled(0),
+      ).thenAnswer((_) => on(output));
+      when(
+        () => repository.setMonitorChainEnabled(
+          input: 0,
+          enabled: any(named: 'enabled'),
+        ),
+      ).thenAnswer(
+        (call) => write(input, enabled: call.namedArguments[#enabled]! as bool),
+      );
+      when(
+        () => repository.setLaneChainEnabled(
+          channel: 0,
+          lane: 0,
+          enabled: any(named: 'enabled'),
+        ),
+      ).thenAnswer(
+        (call) => write(lane, enabled: call.namedArguments[#enabled]! as bool),
+      );
+      when(
+        () => repository.setTrackChainEnabled(
+          channel: 0,
+          enabled: any(named: 'enabled'),
+        ),
+      ).thenAnswer(
+        (call) => write(track, enabled: call.namedArguments[#enabled]! as bool),
+      );
+      when(
+        () => repository.setAllTracksChainEnabled(
+          enabled: any(named: 'enabled'),
+        ),
+      ).thenAnswer(
+        (call) => write(all, enabled: call.namedArguments[#enabled]! as bool),
+      );
+      when(
+        () => repository.setOutputChainEnabled(
+          bus: 0,
+          enabled: any(named: 'enabled'),
+        ),
+      ).thenAnswer(
+        (call) =>
+            write(output, enabled: call.namedArguments[#enabled]! as bool),
+      );
+    });
+
+    for (final address in const [
+      FxAddress(stage: FxStage.input),
+      FxAddress(stage: FxStage.loop, lane: 0),
+      FxAddress(stage: FxStage.track),
+      FxAddress(stage: FxStage.allTracks),
+      FxAddress(stage: FxStage.output),
+    ]) {
+      test('switches the ${address.stage.name} chain through its own writer, '
+          'as an ordinary write that is saved', () {
+        final result = cubit.setChainEnabled(address, enabled: false);
+
+        expect(result.status, FxEditStatus.applied);
+        expect(power[address], isFalse);
+        verify(
+          () => persistence.ordinaryChain(address, enabled: false),
+        ).called(1);
+        verify(() => persistence.scheduleSave(address, settings)).called(1);
+      });
+
+      test('leaves the ${address.stage.name} chain alone when it is already '
+          'so', () {
+        final result = cubit.setChainEnabled(address, enabled: true);
+
+        expect(result.status, FxEditStatus.unchanged);
+        verifyNever(
+          () =>
+              persistence.ordinaryChain(any(), enabled: any(named: 'enabled')),
+        );
+      });
+
+      test('reports a refused ${address.stage.name} write and saves '
+          'nothing', () {
+        outcome = EngineResult.invalid;
+
+        final result = cubit.setChainEnabled(address, enabled: false);
+
+        expect(result.status, FxEditStatus.refused);
+        verifyNever(() => persistence.scheduleSave(any(), settings));
+      });
+    }
+
+    test('switching off an input with no effects changes nothing, so no '
+        'monitor the player never set up is saved', () {
+      when(() => repository.monitorEffects(0)).thenReturn(const []);
+      when(() => repository.allMonitors()).thenReturn(const {});
+
+      final result = cubit.setChainEnabled(
+        const FxAddress(stage: FxStage.input),
+        enabled: false,
+      );
+
+      expect(result.status, FxEditStatus.unchanged);
+      verifyNever(
+        () => repository.setMonitorChainEnabled(
+          input: any(named: 'input'),
+          enabled: any(named: 'enabled'),
+        ),
+      );
+      verifyNever(() => persistence.scheduleSave(any(), settings));
+    });
+
+    test('refuses a chain that does not exist', () {
+      final result = cubit.setChainEnabled(
+        const FxAddress(stage: FxStage.output, index: 5),
+        enabled: false,
+      );
+
+      expect(result.status, FxEditStatus.refused);
+    });
+  });
+
   group('an addition keeps its source pedal states', () {
     // Mixed power keys, so a state the source sets cannot pass for one the
     // adding surface forced, on or off.

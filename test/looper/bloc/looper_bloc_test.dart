@@ -2485,37 +2485,6 @@ void main() {
       );
 
       blocTest<LooperBloc, LooperState>(
-        'LooperLaneChainEnabledToggled flips the chain flag and re-persists',
-        setUp: () {
-          when(
-            () => repository.setLaneChainEnabled(
-              channel: any(named: 'channel'),
-              lane: any(named: 'lane'),
-              enabled: any(named: 'enabled'),
-            ),
-          ).thenReturn(EngineResult.ok);
-        },
-        build: () => LooperBloc(
-          fxPersistence: FxChainPersistence(looper: repository),
-          mixSettings: testMixSettings(repository),
-          repository: repository,
-          settings: settings,
-        ),
-        act: (bloc) =>
-            bloc.add(const LooperLaneChainEnabledToggled(0, 1, enabled: false)),
-        verify: (_) {
-          verify(
-            () => repository.setLaneChainEnabled(
-              channel: 0,
-              lane: 1,
-              enabled: false,
-            ),
-          ).called(1);
-          verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
-        },
-      );
-
-      blocTest<LooperBloc, LooperState>(
         'LooperLaneChainResyncedFromInput re-copies the routed input chain',
         setUp: () {
           when(
@@ -2565,25 +2534,6 @@ void main() {
       );
 
       blocTest<LooperBloc, LooperState>(
-        'LooperTrackChainEnabledToggled flips the chain flag and '
-        're-persists',
-        build: () => LooperBloc(
-          fxPersistence: FxChainPersistence(looper: repository),
-          mixSettings: testMixSettings(repository),
-          repository: repository,
-          settings: settings,
-        ),
-        act: (bloc) =>
-            bloc.add(const LooperTrackChainEnabledToggled(2, enabled: false)),
-        verify: (_) {
-          verify(
-            () => repository.setTrackChainEnabled(channel: 2, enabled: false),
-          ).called(1);
-          verify(() => settings.saveTrackFxChain(2, any())).called(1);
-        },
-      );
-
-      blocTest<LooperBloc, LooperState>(
         'LooperOutputEffectsChanged pushes the chain and persists the '
         'envelope',
         build: () => LooperBloc(
@@ -2624,25 +2574,6 @@ void main() {
               index: 0,
               enabled: false,
             ),
-          ).called(1);
-          verify(() => settings.saveOutputFxChain(0, any())).called(1);
-        },
-      );
-
-      blocTest<LooperBloc, LooperState>(
-        'LooperOutputChainEnabledToggled flips the chain flag and '
-        're-persists',
-        build: () => LooperBloc(
-          fxPersistence: FxChainPersistence(looper: repository),
-          mixSettings: testMixSettings(repository),
-          repository: repository,
-          settings: settings,
-        ),
-        act: (bloc) =>
-            bloc.add(const LooperOutputChainEnabledToggled(0, enabled: false)),
-        verify: (_) {
-          verify(
-            () => repository.setOutputChainEnabled(bus: 0, enabled: false),
           ).called(1);
           verify(() => settings.saveOutputFxChain(0, any())).called(1);
         },
