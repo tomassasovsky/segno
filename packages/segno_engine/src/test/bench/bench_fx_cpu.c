@@ -43,6 +43,7 @@
  *   ./bench_fx_cpu.sh --kind eq            # the EQ instead of the octaver
  *   ./bench_fx_cpu.sh --racks              # each rack as built today on one
  *                                          # input, against its budget
+ *   ./bench_fx_cpu.sh --table              # each kind's admission charge
  *   ./bench_fx_cpu.sh --kind comp          # or transient, hpgate, doubler,
  *                                          # chorus, wah, overdrive,
  *                                          # distortion, vinyl, degrade,
@@ -87,13 +88,15 @@ static int32_t g_kind = LE_FX_OCTAVER;
 
 /* An octaver recipe entry: one octave up, tone open, full wet, phase vocoder.
  * Full wet keeps the wet path (the FFTs) the whole output. */
+static int g_psola; /* --kind psola: the octaver in PSOLA mode */
+
 static void octaver_entry(le_fx_recipe* r, int s) {
   r->type[s] = LE_FX_OCTAVER;
   r->slot_enabled[s] = 1;
   r->params[s][0] = 0.75f;
   r->params[s][1] = 1.0f;
   r->params[s][2] = 1.0f;
-  r->params[s][3] = 0.0f;
+  r->params[s][3] = g_psola ? 1.0f : 0.0f;
   r->level[s] = 1.0f;
 }
 
@@ -280,6 +283,7 @@ static stats time_blocks(rig* r, int blocks, int warm, double phase_mean[PHASES]
 }
 
 static const char* kind_name(void) {
+  if (g_kind == LE_FX_OCTAVER && g_psola) return "psola";
   switch (g_kind) {
     case LE_FX_EQ: return "eq";
     case LE_FX_COMPRESSOR: return "comp";
@@ -294,6 +298,12 @@ static const char* kind_name(void) {
     case LE_FX_DEGRADE: return "degrade";
     case LE_FX_LPF: return "lpf";
     case LE_FX_SPRING: return "spring";
+    case LE_FX_DRIVE: return "drive";
+    case LE_FX_FILTER: return "filter";
+    case LE_FX_DELAY: return "delay";
+    case LE_FX_TREMOLO: return "tremolo";
+    case LE_FX_ECHO: return "echo";
+    case LE_FX_REVERB: return "reverb";
     default: return "octaver";
   }
 }
@@ -397,8 +407,94 @@ static int run_racks(const bench_opts* o, float* src, int32_t frames,
   return 0;
 }
 
+/* --table: what admission control charges each kind (#887 part 9): one
+ * instance's worst-block cost, in ns per frame, measured on the monitor rig
+ * as the larger of one instance's p99.9 increment and an eighth of eight
+ * instances' (an instance alone can land its heaviest work in one block;
+ * eight show the steady share). Prints a row per kind, then the line to
+ * paste into le_fx_cost_ns (engine_fx.c). Run it paced on the console. */
+typedef struct {
+  const char* name;
+  int32_t type;
+  int psola;
+} table_kind;
+
+static const table_kind k_table[] = {
+    {"drive", LE_FX_DRIVE, 0},          {"filter", LE_FX_FILTER, 0},
+    {"delay", LE_FX_DELAY, 0},          {"tremolo", LE_FX_TREMOLO, 0},
+    {"octaver", LE_FX_OCTAVER, 0},      {"psola", LE_FX_OCTAVER, 1},
+    {"echo", LE_FX_ECHO, 0},            {"reverb", LE_FX_REVERB, 0},
+    {"eq", LE_FX_EQ, 0},                {"comp", LE_FX_COMPRESSOR, 0},
+    {"transient", LE_FX_TRANSIENT, 0},  {"hpgate", LE_FX_HP_GATE, 0},
+    {"doubler", LE_FX_DOUBLER, 0},      {"chorus", LE_FX_CHORUS, 0},
+    {"wah", LE_FX_WAH, 0},              {"overdrive", LE_FX_OVERDRIVE, 0},
+    {"distortion", LE_FX_DISTORTION, 0}, {"vinyl", LE_FX_VINYL, 0},
+    {"degrade", LE_FX_DEGRADE, 0},      {"lpf", LE_FX_LPF, 0},
+    {"spring", LE_FX_SPRING, 0},
+};
+
+/* The monitor rig with [n] instances of [kind] in one chain, timed. */
+static int time_kinds(const bench_opts* o, float* src, int32_t frames,
+                      const table_kind* kind, int n, int blocks, int warm,
+                      stats* out) {
+  rig r;
+  if (!monitor_rig(&r, o, src, frames)) return 0;
+  if (n > 0) {
+    le_fx_recipe rec;
+    memset(&rec, 0, sizeof(rec));
+    rec.enabled = 1;
+    rec.count = n;
+    g_psola = kind->psola;
+    for (int s = 0; s < n; ++s) kind_entry(&rec, s, kind->type);
+    g_psola = 0;
+    if (le_engine_set_fx_recipe(r.e, LE_FX_OWNER_MONITOR, 0, 0, 1, &rec) !=
+        LE_OK) {
+      rig_destroy(&r);
+      return 0;
+    }
+  }
+  double ph[PHASES];
+  *out = time_blocks(&r, blocks, warm, ph);
+  rig_destroy(&r);
+  return 1;
+}
+
+static int run_table(const bench_opts* o, float* src, int32_t frames,
+                     int blocks, int warm) {
+  printf("bench_fx_cpu: cost table, %s, %d Hz, %d-frame periods, %d timed "
+         "blocks%s\n",
+         g_cpu_name, o->rate, o->period, blocks, g_paced ? ", paced" : "");
+  printf("| kind       | base p99.9 us | 1 x +us | 8 x +us | charge ns/frame |\n");
+  printf("|------------|---------------|---------|---------|-----------------|\n");
+  double ns[sizeof(k_table) / sizeof(k_table[0])];
+  for (size_t k = 0; k < sizeof(k_table) / sizeof(k_table[0]); ++k) {
+    const table_kind* kind = &k_table[k];
+    stats base, one, eight;
+    if (!time_kinds(o, src, frames, kind, 0, blocks, warm, &base) ||
+        !time_kinds(o, src, frames, kind, 1, blocks, warm, &one) ||
+        !time_kinds(o, src, frames, kind, 8, blocks, warm, &eight)) {
+      fprintf(stderr, "%s refused\n", kind->name);
+      return 1;
+    }
+    const double d1 = one.p999 - base.p999;
+    const double d8 = (eight.p999 - base.p999) / 8.0;
+    const double us = d1 > d8 ? d1 : d8;
+    ns[k] = us > 0.0 ? 1000.0 * us / (double)o->period : 0.0;
+    printf("| %-10s | %13.1f | %7.1f | %7.1f | %15.0f |\n", kind->name,
+           base.p999, d1, 8.0 * d8, ns[k]);
+    fflush(stdout);
+  }
+  printf("le_fx_cost_ns:");
+  for (size_t k = 0; k < sizeof(k_table) / sizeof(k_table[0]); ++k) {
+    printf(" %s=%.0f", k_table[k].name, ns[k]);
+  }
+  printf("\ntimed loops ran at: %s\n", g_timed_sched);
+  return 0;
+}
+
 int main(int argc, char** argv) {
   bench_opts o;
+  int table = 0;
   memset(&o, 0, sizeof(o));
   o.rate = 96000;
   o.period = 64;
@@ -412,6 +508,8 @@ int main(int argc, char** argv) {
       g_paced = 1;
     } else if (!strcmp(argv[i], "--racks")) {
       g_racks = 1;
+    } else if (!strcmp(argv[i], "--table")) {
+      table = 1;
     } else if (!strcmp(argv[i], "--kind") && i + 1 < argc) {
       const char* kind = argv[++i];
       if (!strcmp(kind, "octaver")) {
@@ -442,11 +540,27 @@ int main(int argc, char** argv) {
         g_kind = LE_FX_LPF;
       } else if (!strcmp(kind, "spring")) {
         g_kind = LE_FX_SPRING;
+      } else if (!strcmp(kind, "psola")) {
+        g_kind = LE_FX_OCTAVER;
+        g_psola = 1;
+      } else if (!strcmp(kind, "drive")) {
+        g_kind = LE_FX_DRIVE;
+      } else if (!strcmp(kind, "filter")) {
+        g_kind = LE_FX_FILTER;
+      } else if (!strcmp(kind, "delay")) {
+        g_kind = LE_FX_DELAY;
+      } else if (!strcmp(kind, "tremolo")) {
+        g_kind = LE_FX_TREMOLO;
+      } else if (!strcmp(kind, "echo")) {
+        g_kind = LE_FX_ECHO;
+      } else if (!strcmp(kind, "reverb")) {
+        g_kind = LE_FX_REVERB;
       } else {
         fprintf(stderr,
-                "unknown --kind %s (octaver, eq, comp, transient, hpgate, "
-                "doubler, chorus, wah, overdrive, distortion, vinyl, degrade, "
-                "lpf, spring)\n",
+                "unknown --kind %s (octaver, psola, eq, comp, transient, "
+                "hpgate, doubler, chorus, wah, overdrive, distortion, vinyl, "
+                "degrade, lpf, spring, drive, filter, delay, tremolo, echo, "
+                "reverb)\n",
                 kind);
         return 2;
       }
@@ -473,8 +587,9 @@ int main(int argc, char** argv) {
               "usage: %s [--smoke] [--paced] [--racks] [--rate HZ] "
               "[--period FRAMES] "
               "[--blocks N] [--cpu N] "
-              "[--kind octaver|eq|comp|transient|hpgate|doubler|chorus|wah|"
-              "overdrive|distortion|vinyl|degrade|lpf|spring]\n",
+              "[--kind octaver|psola|eq|comp|transient|hpgate|doubler|chorus|"
+              "wah|overdrive|distortion|vinyl|degrade|lpf|spring|drive|filter|"
+              "delay|tremolo|echo|reverb] [--table]\n",
               argv[0]);
       return 2;
     }
@@ -487,8 +602,9 @@ int main(int argc, char** argv) {
   if (src == NULL) return 1;
 
   const int warm = 600;
-  if (g_racks) {
-    const int rc = run_racks(&o, src, frames, blocks, warm);
+  if (g_racks || table) {
+    const int rc = table ? run_table(&o, src, frames, blocks, warm)
+                         : run_racks(&o, src, frames, blocks, warm);
     free(src);
     return rc;
   }
