@@ -437,6 +437,10 @@ void main() {
         TrackEffectType.lpf: [1.0, 1.0],
         // The Guitar Rack's spring: 2.00 s, 50 %.
         TrackEffectType.spring: [0.30103, 0.5],
+        // The Dub Rack's reverbs as a fresh rack has them: Dub-Verb Dec 0.7,
+        // Vol 20 %; Amb-Verb Dec 0.2, Vol 40 %, Amb-Dub Mix 40 %.
+        TrackEffectType.dubVerb: [0.7, 0.2],
+        TrackEffectType.ambVerb: [0.2, 0.4, 0.4],
       };
       for (final type in TrackEffectType.values) {
         expect(type.defaultParams, cells(expected[type]!), reason: type.name);
@@ -501,6 +505,21 @@ void main() {
         expect(ratio.settingFor(ratio.valueAt(v)), closeTo(v, 1e-9));
       }
       expect(ratio.valueAt(0.758), closeTo(4.0, 0.01));
+    });
+
+    test("the reverbs' decay is the Looper X's reverb-time taper", () {
+      // (v + 0.45) / (1 - v), capped at 144 s; a time outside the range
+      // clamps to its end.
+      final decay = TrackEffectType.dubVerb.params[0];
+      expect(decay.unit, FxParamUnit.seconds);
+      for (var v = 0.0; v < 0.99; v += 0.1) {
+        expect(decay.valueAt(v), closeTo((v + 0.45) / (1 - v), 1e-9));
+        expect(decay.settingFor(decay.valueAt(v)), closeTo(v, 1e-9));
+      }
+      expect(decay.valueAt(1), 144);
+      expect(decay.settingFor(-5), 0);
+      expect(decay.settingFor(0.1), 0);
+      expect(decay.settingFor(1000), decay.settingFor(144));
     });
   });
 

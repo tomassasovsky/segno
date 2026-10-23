@@ -20516,7 +20516,7 @@ static void test_fx_params_past_count_are_inert(void) {
                            LE_FX_TRANSIENT,  LE_FX_HP_GATE,   LE_FX_DOUBLER,
                            LE_FX_CHORUS,     LE_FX_WAH,       LE_FX_OVERDRIVE, LE_FX_DISTORTION,
                            LE_FX_VINYL,      LE_FX_DEGRADE,   LE_FX_LPF,
-                           LE_FX_SPRING};
+                           LE_FX_SPRING,     LE_FX_DUB_VERB,  LE_FX_AMB_VERB};
   for (int t = 0; t < (int)(sizeof(types) / sizeof(types[0])); ++t) {
     le_engine* a = make_configured_engine();
     le_engine* b = make_configured_engine();
@@ -21715,10 +21715,10 @@ static void test_fx_param_descriptors_match_kernels(void) {
   const int32_t sr = 48000;
 
   /* Counts: the parameters each kernel reads; none for NONE and PLUGIN. */
-  const int32_t counts[] = {0, 2, 2, 3, 2, 5, 3, 3, 0, 15, 5,
-                            3, 2, 2, 3, 1, 2, 2, 4, 3, 2, 2};
-  for (int32_t t = 0; t < 22; ++t) CHECK(le_fx_param_count(t) == counts[t]);
-  CHECK(le_fx_param_count(22) == LE_ERR_INVALID);
+  const int32_t counts[] = {0, 2, 2, 3, 2, 5, 3, 3, 0, 15, 5, 3,
+                            2, 2, 3, 1, 2, 2, 4, 3, 2, 2, 2, 3};
+  for (int32_t t = 0; t < 24; ++t) CHECK(le_fx_param_count(t) == counts[t]);
+  CHECK(le_fx_param_count(24) == LE_ERR_INVALID);
   CHECK(le_fx_param_count(-1) == LE_ERR_INVALID);
   le_fx_param_desc scratch;
   CHECK(le_fx_param_info(LE_FX_DELAY, 3, &scratch) == LE_ERR_INVALID);
@@ -35294,7 +35294,7 @@ static void test_cache_cached_matches_live_every_builtin(void) {
                            LE_FX_REVERB,     LE_FX_EQ,        LE_FX_COMPRESSOR,
                            LE_FX_TRANSIENT,  LE_FX_HP_GATE,   LE_FX_WAH,
                            LE_FX_OVERDRIVE, LE_FX_DISTORTION, LE_FX_LPF,
-                           LE_FX_SPRING};
+                           LE_FX_SPRING,    LE_FX_DUB_VERB,   LE_FX_AMB_VERB};
   /* The doubler and the chorus are free-running and never print
    * (test_cache_free_running_stays_live). */
   for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); ++i) {

@@ -39,8 +39,6 @@ void main() {
           'Amp',
           'Modulation',
           'Whammy',
-          'Ambience',
-          'Dub reverb',
           'Pumper',
           'Slicer',
           'Harmonizer',
@@ -972,6 +970,38 @@ void main() {
   });
 
   group('the reverb variants', () {
+    test("the Dub Rack's reverbs copy decay and volume", () {
+      const preset = FxPreset(
+        family: 'Dub Rack',
+        name: 'p',
+        id: 'p',
+        type: 0,
+        params: {
+          'Dub-Verb': 1,
+          'Dub-Verb Dec': 0.8,
+          'Dub-Verb Vol': 0.35,
+          'Amb-Verb': 1,
+          'Amb-Verb Dec': 0.3,
+          'Amb-verb Vol': 0.5,
+          'Amb-Dub Mix': 0.404,
+        },
+      );
+      final dub = fxModuleEntry(_module('Dub reverb'), preset);
+      expect(dub.type, TrackEffectType.dubVerb);
+      expect(dub.params.take(2), [0.8, 0.35]);
+      // The Looper X's display at Dec 0.8: (0.8 + 0.45) / 0.2 = 6.25 s.
+      expect(dub.type.params[0].valueAt(0.8), closeTo(6.25, 1e-9));
+      expect(dub.type.params[0].settingFor(6.25), closeTo(0.8, 1e-9));
+      final amb = fxModuleEntry(_module('Ambience'), preset);
+      expect(amb.type, TrackEffectType.ambVerb);
+      expect(amb.params.take(2), [0.3, 0.5]);
+      // Amb-Dub Mix reaches nothing until the rack's parallel paths land.
+      expect(
+        fxModuleBuild(_module('Ambience')).readiness,
+        FxModuleReadiness.partial,
+      );
+    });
+
     test("the Guitar Rack's spring copies time and mix", () {
       final e = fxModuleEntry(
         _module('Spring reverb'),

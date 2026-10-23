@@ -722,6 +722,18 @@ typedef enum le_fx_type {
    * recirculating, dispersive spring, band-limited to 200 Hz - 4 kHz; fit to
    * the Guitar Rack's Spring (#891). Drains its tail on bypass. */
   LE_FX_SPRING = 21,
+  /* DUB_VERB: p0 decay (the Looper X's 0.45 to 144 s display), p1 volume (a
+   * partial crossfade: the dry falls to 0.66 as the wet rises). A bright,
+   * slowly thickening reverb fit to the Dub Rack's Dub-Verb (#891). Drains
+   * its tail on bypass. */
+  LE_FX_DUB_VERB = 22,
+  /* AMB_VERB: p0 decay (as DUB_VERB's), p1 volume (the dry falls to 0.71),
+   * p2 Amb-Dub Mix, which the kernel does not read: it is the Dub Rack's
+   * parallel-path mix, which nothing reads until that routing lands
+   * (#1430). A reverb with a strong early echo and
+   * shorter lows, fit to the Dub Rack's Amb-Verb (#891). Drains its tail on
+   * bypass. */
+  LE_FX_AMB_VERB = 23,
 } le_fx_type;
 
 /* ---- Built-in effect parameter descriptors (#1378) ----
@@ -755,6 +767,9 @@ typedef enum le_fx_param_curve {
   /* 1 / (1 / at_min + (1 / at_max - 1 / at_min) * v): the reciprocal is
    * linear (the Looper X compressor's ratio, 1 / (1 - v / 1.0101)). */
   LE_FX_CURVE_RECIPROCAL = 2,
+  /* (v + at_min) / (1 - v), at most at_max: the Looper X's reverb time
+   * display (0.45 s at 0, 144 s near 1). */
+  LE_FX_CURVE_REVERB_TIME = 3,
 } le_fx_param_curve;
 
 /* Bit flags for le_fx_param_desc.flags. */

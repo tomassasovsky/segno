@@ -72,6 +72,11 @@ const _english = <String, List<String>>{
   'lpf.resonance': ['0%', '100%', '100%'],
   'spring.time': ['1.00 s', '2.00 s', '10.00 s'],
   'spring.mix': ['0%', '50%', '100%'],
+  'dubVerb.decay': ['0.45 s', '3.83 s', '144.00 s'],
+  'dubVerb.volume': ['0%', '20%', '100%'],
+  'ambVerb.decay': ['0.45 s', '0.81 s', '144.00 s'],
+  'ambVerb.volume': ['0%', '40%', '100%'],
+  'ambVerb.amb_dub_mix': ['0%', '40%', '100%'],
 };
 
 /// The same in Spanish: a decimal comma, and the Spanish mode name.
@@ -142,6 +147,11 @@ const _spanish = <String, List<String>>{
   'lpf.resonance': ['0%', '100%', '100%'],
   'spring.time': ['1,00 s', '2,00 s', '10,00 s'],
   'spring.mix': ['0%', '50%', '100%'],
+  'dubVerb.decay': ['0,45 s', '3,83 s', '144,00 s'],
+  'dubVerb.volume': ['0%', '20%', '100%'],
+  'ambVerb.decay': ['0,45 s', '0,81 s', '144,00 s'],
+  'ambVerb.volume': ['0%', '40%', '100%'],
+  'ambVerb.amb_dub_mix': ['0%', '40%', '100%'],
 };
 
 void main() {

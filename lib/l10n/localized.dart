@@ -33,6 +33,8 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.degrade => effectDegrade,
     TrackEffectType.lpf => effectLpf,
     TrackEffectType.spring => effectSpring,
+    TrackEffectType.dubVerb => effectDubVerb,
+    TrackEffectType.ambVerb => effectAmbVerb,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
@@ -47,6 +49,9 @@ extension EngineLocalizations on AppLocalizations {
     'cutoff' => paramCutoff,
     'resonance' => paramResonance,
     'time' => paramTime,
+    'decay' => paramDecay,
+    'volume' => paramVolume,
+    'amb_dub_mix' => paramAmbDubMix,
     'feedback' => paramFeedback,
     'mix' => paramMix,
     'rate' => paramRate,
