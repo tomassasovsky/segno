@@ -264,6 +264,15 @@ set_primary_persistent() {
 	    /boot/autoboot.txt >/boot/autoboot.txt.tmp
 
 	mv /boot/autoboot.txt{.tmp,}
+
+	# Segno (#1437): write the swap to the disk before reporting success.
+	# Without this the new autoboot.txt sits in the page cache for up to
+	# ~35 s after mark-good says the slot is committed, and a reset in that
+	# window (the hardware watchdog, a panic reboot, a power cut) boots the
+	# old slot. Seen on the console: a crash 12 s after the commit came back
+	# on the previous build with the old autoboot.txt. sync -f is syncfs(2)
+	# on /boot, which also covers the rename's directory entry.
+	sync -f /boot/autoboot.txt
 }
 
 # RAUC custom bootloader backend interface

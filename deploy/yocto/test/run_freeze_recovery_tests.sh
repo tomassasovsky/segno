@@ -19,6 +19,7 @@ SYSTEMD_BBAPPEND="$LAYER/recipes-core/systemd/systemd_%.bbappend"
 JOURNALD="$LAYER/recipes-segno/segno-bundle/files/journald-segno.conf"
 KAS_COMMON="$YOCTO/kas-segno-common.yml"
 KAS_RPI5="$YOCTO/kas-segno-rpi5.yml"
+BACKEND="$LAYER/recipes-bsp/rauc-rpi-backend/files/bootloader-custom-backend"
 
 pass=0
 fail=0
@@ -90,6 +91,14 @@ check "WATCHDOG_TIMEOUT (RebootWatchdogSec) is set" yes \
     "$([ -n "$reboot" ] && echo yes || echo no)"
 check "systemd builds systemd-pstore" yes \
     "$(grep -E '^PACKAGECONFIG:append = ".* pstore( |")' "$SYSTEMD_BBAPPEND" > /dev/null && echo yes || echo no)"
+
+echo "a slot commit is on the disk before mark-good reports it"
+# A reset within ~35 s of the autoboot.txt swap used to lose it: the console
+# came back on the previous build, and the unsynced FAT later went read-only.
+check "set_primary_persistent syncs /boot after the swap" yes \
+    "$(sed -n '/^set_primary_persistent()/,/^}/p' "$BACKEND" |
+        grep -v '^[[:space:]]*#' |
+        awk '/mv \/boot\/autoboot.txt/ { moved = 1 } moved && /sync -f \/boot/ { ok = 1 } END { print ok ? "yes" : "no" }')"
 
 echo "the journal reaches the disk within seconds"
 check "journald drop-in sets SyncIntervalSec=10s" yes \
