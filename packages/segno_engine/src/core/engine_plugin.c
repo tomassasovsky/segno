@@ -156,7 +156,17 @@ int32_t le_engine_set_lane_plugin(le_engine* engine, int32_t channel,
   _Atomic int32_t* type = NULL;
   le_fx_state* fx = lane_fx(engine, channel, lane, index, &type);
   if (!fx || !plugin_id) return LE_ERR_INVALID;
+  le_lane* owner = &engine->tracks[channel].lanes[lane];
+  /* The row is the plugin's (it reads none of it) before its type shows,
+   * so the snapshot never sits the new plugin out (le_fx_slot_meta); a
+   * refused install gives the row back to the type still there. */
+  atomic_store_explicit(&owner->fx_meta[index].param_type, LE_FX_PLUGIN,
+                        memory_order_release);
   const int32_t rc = install(engine, fx, type, index, plugin_id, out_slot);
+  if (rc != LE_OK) {
+    atomic_store_explicit(&owner->fx_meta[index].param_type,
+                          owner->fx_type_pushed[index], memory_order_release);
+  }
   if (rc == LE_OK) {
     /* D-ENSEED for the plugin path: installing publishes a type change the
      * command setters never see, so the freshly placed plugin must start
@@ -165,10 +175,6 @@ int32_t le_engine_set_lane_plugin(le_engine* engine, int32_t channel,
     le_lane* ln = &engine->tracks[channel].lanes[lane];
     store_i32(&ln->a_fx_enabled[index], 1);
     ln->fx_type_pushed[index] = LE_FX_PLUGIN;
-    /* The row is the plugin's (it reads none of it), so the snapshot runs
-     * the slot (le_fx_slot_meta.param_type). */
-    atomic_store_explicit(&ln->fx_meta[index].param_type, LE_FX_PLUGIN,
-                          memory_order_release);
     le_lane_fx_gen_bump(ln); /* chain identity moved (wet-cache fast path) */
   }
   return rc;
@@ -181,13 +187,18 @@ int32_t le_engine_set_monitor_plugin(le_engine* engine, int32_t input,
   _Atomic int32_t* type = NULL;
   le_fx_state* fx = monitor_fx(engine, input, index, &type);
   if (!fx || !plugin_id) return LE_ERR_INVALID;
+  le_monitor_input* owner = &engine->monitors[input];
+  atomic_store_explicit(&owner->fx_meta[index].param_type, LE_FX_PLUGIN,
+                        memory_order_release); /* see the lane's */
   const int32_t rc = install(engine, fx, type, index, plugin_id, out_slot);
+  if (rc != LE_OK) {
+    atomic_store_explicit(&owner->fx_meta[index].param_type,
+                          owner->fx_type_pushed[index], memory_order_release);
+  }
   if (rc == LE_OK) {
     le_monitor_input* m = &engine->monitors[input];
     store_i32(&m->a_fx_enabled[index], 1);
     m->fx_type_pushed[index] = LE_FX_PLUGIN;
-    atomic_store_explicit(&m->fx_meta[index].param_type, LE_FX_PLUGIN,
-                          memory_order_release); /* see the lane's */
   }
   return rc;
 }

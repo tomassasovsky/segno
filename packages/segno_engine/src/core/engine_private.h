@@ -630,7 +630,7 @@ static inline int le_src_entry_fits(const le_wet_entry* ent, uint32_t key,
  *     and read only there. */
 typedef struct le_fx_slot_meta {
   _Atomic int32_t param_type;
-  uint32_t instance;
+  uint64_t instance;
 } le_fx_slot_meta;
 
 /* One recordable input lane — the fundamental unit of captured audio.
@@ -2935,6 +2935,34 @@ struct le_engine {
   /* Per slot of the same owners, by the same rows (each owner's fx_meta). */
   le_fx_slot_meta fx_slot_meta[LE_FX_PARAM_OWNERS][LE_FX_MAX];
 };
+
+/* Points every chain owner at its rows of fx_param_store and fx_slot_meta, in
+ * the order LE_FX_PARAM_OWNERS documents. Fixed for the engine's life:
+ * le_engine_create calls it once, before anything can run (as do the tests
+ * that build an engine by hand). */
+static inline void le_engine_bind_fx_rows(le_engine* e) {
+  int32_t row = 0;
+  for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) {
+    for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
+      e->tracks[t].lanes[l].fx_meta = e->fx_slot_meta[row];
+      e->tracks[t].lanes[l].a_fx_param = e->fx_param_store[row++];
+    }
+  }
+  for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) {
+    e->tracks[t].bus.fx_meta = e->fx_slot_meta[row];
+    e->tracks[t].bus.a_fx_param = e->fx_param_store[row++];
+  }
+  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    e->monitors[c].fx_meta = e->fx_slot_meta[row];
+    e->monitors[c].a_fx_param = e->fx_param_store[row++];
+  }
+  for (int32_t k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+    e->outputs[k].fx.fx_meta = e->fx_slot_meta[row];
+    e->outputs[k].fx.a_fx_param = e->fx_param_store[row++];
+  }
+  e->all_tracks.fx_meta = e->fx_slot_meta[row];
+  e->all_tracks.a_fx_param = e->fx_param_store[row++];
+}
 
 /* Fills `out` (room for `max`) with the host's playback or capture devices and
  * writes the count into *count. Uses a transient context so it never disturbs a

@@ -668,6 +668,7 @@ static void test_render_plugin_mask(void) {
   le_engine* e = rr_fixture();
   e->tracks[1].lanes[0].a_fx_count = 1; /* a hosted plugin entry */
   e->tracks[1].lanes[0].a_fx_type[0] = LE_FX_PLUGIN;
+  e->tracks[1].lanes[0].fx_meta[0].param_type = LE_FX_PLUGIN;
   le_render_request q = rr_request(0x3, LE_RENDER_CUT);
   le_render_plan plan;
   CHECK(le_engine_render_measure(e, &q, &plan) == LE_OK);
@@ -677,6 +678,7 @@ static void test_render_plugin_mask(void) {
   for (int f = 0; f < 48; ++f) CHECK(out[2 * f] == rr_a(f) + rr_b(f));
   e->tracks[1].lanes[0].a_fx_count = 0;
   e->tracks[1].lanes[0].a_fx_type[0] = LE_FX_NONE;
+  e->tracks[1].lanes[0].fx_meta[0].param_type = LE_FX_NONE;
   le_engine_destroy(e);
 }
 

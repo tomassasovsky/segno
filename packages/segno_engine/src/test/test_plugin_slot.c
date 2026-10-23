@@ -247,6 +247,7 @@ static void test_engine_abi_errors(void) {
   CHECK(e != NULL);
   if (!e) return;
   e->track_count = 1; /* one addressable track (lane 0) */
+  le_engine_bind_fx_rows(e); /* as le_engine_create does */
 
   le_plugin_slot* out = NULL;
   /* Unknown plugin id (no scan has run): load fails cleanly, no slot. */

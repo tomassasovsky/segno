@@ -49,17 +49,22 @@ enum FxRackEdge {
 }
 
 /// The native identity (`le_fx_recipe.instance`) of the chain entry whose
-/// stable id is [slotId]: a 32-bit FNV-1a hash of it, never 0, or 0 for an
+/// stable id is [slotId]: a 64-bit FNV-1a hash of it, never 0, or 0 for an
 /// entry without one (which the engine treats as new on every publish).
+/// Sixty-four bits, so two entries that follow each other at one slot never
+/// pass for the same one.
 ///
 /// The engine keeps a slot's DSP state across a publish only when the entry
 /// there has the same identity and type, so an edit that keeps an entry in
 /// place leaves its tail sounding (#887 part 4).
 int fxInstanceId(String? slotId) {
   if (slotId == null) return 0;
-  var h = 0x811c9dc5;
+  // The bit pattern is what matters; it reads as a negative Dart int above
+  // 2^63. VM-only, like FxFingerprint.
+  // ignore: avoid_js_rounded_ints
+  var h = 0xcbf29ce484222325;
   for (final b in utf8.encode(slotId)) {
-    h = ((h ^ b) * 0x01000193) & 0xffffffff;
+    h = (h ^ b) * 0x100000001b3;
   }
   return h == 0 ? 1 : h;
 }
@@ -103,8 +108,6 @@ class FxRecipeSlot {
   /// Whether this slot can be represented faithfully by the native recipe.
   bool get isValid =>
       params.length <= kTrackEffectParams &&
-      instance >= 0 &&
-      instance <= 0xffffffff &&
       // The cells the type reads: the only ones the recipe carries.
       params
           .take(type.params.length)

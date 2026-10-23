@@ -4699,6 +4699,13 @@ int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel, int32_t lane,
     if (changed) store_i32(&ln->a_fx_enabled[index], 1);
     le_lane_fx_gen_bump(ln); /* chain identity moved (wet-cache fast path) */
   }
+  /* Refused: the row goes back to being the running type's, or the
+   * snapshot would sit the slot out until the next retype. */
+  if (rc != LE_OK && changed) {
+    atomic_store_explicit(&ln->fx_meta[index].param_type,
+                          ln->fx_type_pushed[index],
+                          memory_order_release);
+  }
   return rc;
 }
 
@@ -4872,6 +4879,13 @@ int32_t le_engine_set_monitor_input_fx(le_engine* engine, int32_t input,
     m->fx_type_pushed[index] = type;
     if (changed) store_i32(&m->a_fx_enabled[index], 1);
   }
+  /* Refused: the row goes back to being the running type's, or the
+   * snapshot would sit the slot out until the next retype. */
+  if (rc != LE_OK && changed) {
+    atomic_store_explicit(&m->fx_meta[index].param_type,
+                          m->fx_type_pushed[index],
+                          memory_order_release);
+  }
   return rc;
 }
 
@@ -5006,6 +5020,13 @@ int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
     b->fx_type_pushed[index] = type;
     if (changed) store_i32(&b->a_fx_enabled[index], 1);
   }
+  /* Refused: the row goes back to being the running type's, or the
+   * snapshot would sit the slot out until the next retype. */
+  if (rc != LE_OK && changed) {
+    atomic_store_explicit(&b->fx_meta[index].param_type,
+                          b->fx_type_pushed[index],
+                          memory_order_release);
+  }
   return rc;
 }
 
@@ -5119,6 +5140,13 @@ int32_t le_engine_set_output_fx(le_engine* engine, int32_t bus, int32_t index,
     b->fx_type_pushed[index] = type;
     if (changed) store_i32(&b->a_fx_enabled[index], 1);
   }
+  /* Refused: the row goes back to being the running type's, or the
+   * snapshot would sit the slot out until the next retype. */
+  if (rc != LE_OK && changed) {
+    atomic_store_explicit(&b->fx_meta[index].param_type,
+                          b->fx_type_pushed[index],
+                          memory_order_release);
+  }
   return rc;
 }
 
@@ -5222,6 +5250,13 @@ int32_t le_engine_set_all_tracks_fx(le_engine* engine, int32_t index,
   if (rc == LE_OK) {
     b->fx_type_pushed[index] = type;
     if (changed) store_i32(&b->a_fx_enabled[index], 1);
+  }
+  /* Refused: the row goes back to being the running type's, or the
+   * snapshot would sit the slot out until the next retype. */
+  if (rc != LE_OK && changed) {
+    atomic_store_explicit(&b->fx_meta[index].param_type,
+                          b->fx_type_pushed[index],
+                          memory_order_release);
   }
   return rc;
 }

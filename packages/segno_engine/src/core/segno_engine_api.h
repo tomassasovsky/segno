@@ -956,7 +956,7 @@ typedef struct le_fx_recipe {
    * resets a slot's DSP state only when the entry there is a different one
    * (another identity, another type, or 0), so an edit that keeps an entry
    * where it was, such as a parameter change, leaves its tail sounding. */
-  uint32_t instance[LE_FX_MAX];
+  uint64_t instance[LE_FX_MAX];
 } le_fx_recipe;
 
 typedef enum le_fx_owner {
