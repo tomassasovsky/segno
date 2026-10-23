@@ -4629,6 +4629,20 @@ int32_t le_engine_set_track_overdub_feedback(le_engine* engine,
   return LE_OK;
 }
 
+/* Writes [type]'s defaults into slot [index]'s published row (control
+ * thread, before its type command). The app changes types through recipes,
+ * which land type and row together in the callback; this granular path is
+ * for the engine's own tests and tools, where the old kernel may run on the
+ * new defaults for the buffer before the command lands. */
+static void le_fx_seed_params(_Atomic uint32_t a_param[][LE_FX_PARAMS],
+                              int32_t index, int32_t type) {
+  float defaults[LE_FX_PARAMS];
+  le_fx_defaults(type, defaults);
+  for (int p = 0; p < LE_FX_PARAMS; ++p) {
+    store_f32(&a_param[index][p], defaults[p]);
+  }
+}
+
 /* Prepares a chain entry for [type]: lazily allocates its heap buffers and,
  * only when the type ACTUALLY changes (so a reorder does not wipe the user's
  * tweaks), seeds the type's default params. "Actually changes" is judged
@@ -4652,13 +4666,7 @@ static int32_t le_fx_prepare_entry(le_fx_state* fx, const int32_t* type_pushed,
   const int32_t cap = delay_cap > 0 ? delay_cap : 48000;
   if (le_fx_prepare(fx, index, type, cap) != LE_OK) return LE_ERR_INVALID;
   *out_changed = type_pushed[index] != type;
-  if (*out_changed) {
-    float defaults[LE_FX_PARAMS];
-    le_fx_defaults(type, defaults);
-    for (int p = 0; p < LE_FX_PARAMS; ++p) {
-      store_f32(&a_param[index][p], defaults[p]);
-    }
-  }
+  if (*out_changed) le_fx_seed_params(a_param, index, type);
   return LE_OK;
 }
 
@@ -4753,6 +4761,7 @@ int32_t le_engine_set_lane_fx_param(le_engine* engine, int32_t channel,
       param >= le_fx_param_width(engine->tracks[channel].lanes[lane].fx_type_pushed[index])) {
     return LE_ERR_INVALID;
   }
+  if (isnan(value)) return LE_ERR_INVALID; /* never published, never logged */
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
   /* Params are plain published atomics read once per buffer; a direct store is
@@ -4761,11 +4770,8 @@ int32_t le_engine_set_lane_fx_param(le_engine* engine, int32_t channel,
   store_f32(&engine->tracks[channel].lanes[lane].a_fx_param[index][param],
             value);
   le_lane_fx_gen_bump(&engine->tracks[channel].lanes[lane]);
-  le_plog_push_ctrl(
-      engine, (le_command){.code = LE_PLOG_SET_LANE_FX_PARAM,
-                           .fx = {channel, lane,
-                                  LE_PLOG_FX_PARAM_PACK(index, param),
-                                  (int32_t)f32_to_bits(value)}});
+  /* Logged by the callback at the frame it applies it (snapshot_lane_fx),
+   * not here: this store lands in whichever block happens to read it. */
   return LE_OK;
 }
 
@@ -4897,6 +4903,7 @@ int32_t le_engine_set_monitor_input_fx_param(le_engine* engine, int32_t input,
       param >= le_fx_param_width(engine->monitors[input].fx_type_pushed[index])) {
     return LE_ERR_INVALID;
   }
+  if (isnan(value)) return LE_ERR_INVALID; /* never published, never logged */
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
   store_f32(&engine->monitors[input].a_fx_param[index][param], value);
@@ -5036,6 +5043,7 @@ int32_t le_engine_set_track_fx_param(le_engine* engine, int32_t channel,
       param >= le_fx_param_width(engine->tracks[channel].bus.fx_type_pushed[index])) {
     return LE_ERR_INVALID;
   }
+  if (isnan(value)) return LE_ERR_INVALID; /* never published, never logged */
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
   store_f32(&engine->tracks[channel].bus.a_fx_param[index][param], value);
@@ -5142,11 +5150,11 @@ int32_t le_engine_set_output_fx_param(le_engine* engine, int32_t bus,
       param >= le_fx_param_width(engine->outputs[bus].fx.fx_type_pushed[index])) {
     return LE_ERR_INVALID;
   }
+  if (isnan(value)) return LE_ERR_INVALID; /* never published, never logged */
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
   store_f32(&engine->outputs[bus].fx.a_fx_param[index][param], value);
-  le_plog_push_ctrl(engine, (le_command){.code = LE_PLOG_SET_OUTPUT_FX_PARAM,
-    .fx = {bus, 0, LE_PLOG_FX_PARAM_PACK(index, param), (int32_t)f32_to_bits(value)}});
+  /* Logged by the callback when it applies it (snapshot_bus_fx). */
   return LE_OK;
 }
 
@@ -5209,13 +5217,7 @@ int32_t le_engine_set_all_tracks_fx(le_engine* engine, int32_t index,
     }
   }
   const int32_t changed = b->fx_type_pushed[index] != type;
-  if (changed) {
-    float defaults[LE_FX_PARAMS];
-    le_fx_defaults(type, defaults);
-    for (int p = 0; p < LE_FX_PARAMS; ++p) {
-      store_f32(&b->a_fx_param[index][p], defaults[p]);
-    }
-  }
+  if (changed) le_fx_seed_params(b->a_fx_param, index, type);
   const int32_t rc =
       le_push_cmd(engine, (le_command){.code = LE_CMD_SET_ALL_TRACKS_FX,
                                        .fx = {0, 0, index, type}});
@@ -5251,6 +5253,7 @@ int32_t le_engine_set_all_tracks_fx_param(le_engine* engine, int32_t index,
       param >= le_fx_param_width(engine->all_tracks.fx_type_pushed[index])) {
     return LE_ERR_INVALID;
   }
+  if (isnan(value)) return LE_ERR_INVALID; /* never published, never logged */
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
   store_f32(&engine->all_tracks.a_fx_param[index][param], value);

@@ -1839,6 +1839,7 @@ static void le_cache_render(le_engine* e, struct le_fx_cache* c,
 
 static void le_ca_worker_main(void* arg) {
   le_engine* e = (le_engine*)arg;
+  le_flush_denormals(); /* renders round as the callback does */
   struct le_fx_cache* c = e->cache; /* stable: shutdown joins before free */
 #if defined(__linux__)
   /* E9: SCHED_OTHER at nice +10, so an eight-lane Transpose render yields to

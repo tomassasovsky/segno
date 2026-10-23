@@ -952,6 +952,11 @@ typedef struct le_fx_recipe {
   float placement[LE_FX_MAX], level[LE_FX_MAX];
   le_plugin_slot* plugin[LE_FX_MAX];
   int32_t rack[LE_FX_MAX]; /* le_fx_rack_edge bits */
+  /* Each entry's stable identity (#887 part 4), 0 for none. A publish
+   * resets a slot's DSP state only when the entry there is a different one
+   * (another identity, another type, or 0), so an edit that keeps an entry
+   * where it was, such as a parameter change, leaves its tail sounding. */
+  uint64_t instance[LE_FX_MAX];
 } le_fx_recipe;
 
 typedef enum le_fx_owner {

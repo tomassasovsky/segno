@@ -286,6 +286,7 @@ void le_lane_reset_settings(le_lane* ln, int32_t input_channel) {
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       store_f32(&ln->a_fx_param[s][p], 0.0f);
     }
+    atomic_store_explicit(&ln->fx_meta[s].instance, 0u, memory_order_relaxed);
     /* Enable flags default 1 with the crossfade runtime SETTLED at that
      * target, so a fresh chain does not fade in on first use. */
     store_i32(&ln->a_fx_enabled[s], 1);
@@ -348,6 +349,7 @@ static void le_monitor_input_reset(le_monitor_input* m) {
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       store_f32(&m->a_fx_param[s][p], 0.0f);
     }
+    atomic_store_explicit(&m->fx_meta[s].instance, 0u, memory_order_relaxed);
     /* Enable flags default 1, crossfade runtime settled (see le_lane_reset). */
     store_i32(&m->a_fx_enabled[s], 1);
     /* Channel handling defaults (slice 3e): stereo in, stereo out, centre and
@@ -389,6 +391,7 @@ static void le_fx_bus_reset(le_fx_bus* b) {
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       store_f32(&b->a_fx_param[s][p], 0.0f);
     }
+    atomic_store_explicit(&b->fx_meta[s].instance, 0u, memory_order_relaxed);
     /* Enable flags default 1, crossfade runtime settled (see le_lane_reset). */
     store_i32(&b->a_fx_enabled[s], 1);
     /* Channel handling defaults (slice 3e): stereo in, stereo out, centre and
@@ -1475,24 +1478,7 @@ le_engine* le_engine_create(void) {
     le_fx_seed_owner(&engine->outputs[k].fx.fx, engine, le_fx_output_hop_seed(k));
   }
   le_fx_seed_owner(&engine->all_tracks.fx, engine, le_fx_all_tracks_hop_seed(0));
-  /* Each owner's published parameters: its row of fx_param_store, in the
-   * order LE_FX_PARAM_OWNERS documents. Fixed for the engine's life. */
-  int32_t row = 0;
-  for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) {
-    for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
-      engine->tracks[t].lanes[l].a_fx_param = engine->fx_param_store[row++];
-    }
-  }
-  for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) {
-    engine->tracks[t].bus.a_fx_param = engine->fx_param_store[row++];
-  }
-  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    engine->monitors[c].a_fx_param = engine->fx_param_store[row++];
-  }
-  for (int32_t k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
-    engine->outputs[k].fx.a_fx_param = engine->fx_param_store[row++];
-  }
-  engine->all_tracks.a_fx_param = engine->fx_param_store[row++];
+  le_engine_bind_fx_rows(engine);
   return engine;
 }
 

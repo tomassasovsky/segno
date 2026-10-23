@@ -617,6 +617,15 @@ static inline int le_src_entry_fits(const le_wet_entry* ent, uint32_t key,
   return le_src_len_within(ent->out_len, want_out);
 }
 
+/* What a chain slot holds beside its published row (le_engine.fx_slot_meta):
+ * the identity of the entry whose DSP state it holds (le_fx_recipe.instance),
+ * written by the callback when a recipe lands and cleared when a granular
+ * type command lands. */
+typedef struct le_fx_slot_meta {
+  _Atomic uint64_t instance;
+} le_fx_slot_meta;
+
+
 /* One recordable input lane — the fundamental unit of captured audio.
  *
  * A lane records exactly one hardware input (a_input_channel, -1 = none) into
@@ -709,6 +718,7 @@ typedef struct le_lane {
    * by le_engine_create. Out of line so the parameter width (32 since #887
    * part 4) does not move the fields after it. */
   _Atomic uint32_t (*a_fx_param)[LE_FX_PARAMS];
+  le_fx_slot_meta* fx_meta; /* its row of le_engine.fx_slot_meta */
   _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
   _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
   /* Per-entry channel handling and level (slice 3e), published like the
@@ -816,6 +826,7 @@ typedef struct le_monitor_input {
    * by le_engine_create. Out of line so the parameter width (32 since #887
    * part 4) does not move the fields after it. */
   _Atomic uint32_t (*a_fx_param)[LE_FX_PARAMS];
+  le_fx_slot_meta* fx_meta; /* its row of le_engine.fx_slot_meta */
   _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
   _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
   /* Per-entry channel handling and level (slice 3e), published like the
@@ -937,6 +948,7 @@ typedef struct le_fx_bus {
    * by le_engine_create. Out of line so the parameter width (32 since #887
    * part 4) does not move the fields after it. */
   _Atomic uint32_t (*a_fx_param)[LE_FX_PARAMS];
+  le_fx_slot_meta* fx_meta; /* its row of le_engine.fx_slot_meta */
   _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
   _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
   /* Per-entry channel handling and level (slice 3e), published like the
@@ -1958,6 +1970,7 @@ typedef struct le_lane_spares {
   int32_t zero_spare_cap;
 } le_lane_spares;
 
+
 /* Chain owners whose parameters live in le_engine.fx_param_store: every lane,
  * every track bus, every monitor, every output bus and the All tracks config. */
 #define LE_FX_PARAM_OWNERS                                          \
@@ -2912,7 +2925,37 @@ struct le_engine {
    * Rows: the lanes (track * LE_MAX_LANES + lane), then the track buses, the
    * monitors, the output buses and the All tracks config. */
   _Atomic uint32_t fx_param_store[LE_FX_PARAM_OWNERS][LE_FX_MAX][LE_FX_PARAMS];
+  /* Per slot of the same owners, by the same rows (each owner's fx_meta). */
+  le_fx_slot_meta fx_slot_meta[LE_FX_PARAM_OWNERS][LE_FX_MAX];
 };
+
+/* Points every chain owner at its rows of fx_param_store and fx_slot_meta, in
+ * the order LE_FX_PARAM_OWNERS documents. Fixed for the engine's life:
+ * le_engine_create calls it once, before anything can run (as do the tests
+ * that build an engine by hand). */
+static inline void le_engine_bind_fx_rows(le_engine* e) {
+  int32_t row = 0;
+  for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) {
+    for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
+      e->tracks[t].lanes[l].fx_meta = e->fx_slot_meta[row];
+      e->tracks[t].lanes[l].a_fx_param = e->fx_param_store[row++];
+    }
+  }
+  for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) {
+    e->tracks[t].bus.fx_meta = e->fx_slot_meta[row];
+    e->tracks[t].bus.a_fx_param = e->fx_param_store[row++];
+  }
+  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    e->monitors[c].fx_meta = e->fx_slot_meta[row];
+    e->monitors[c].a_fx_param = e->fx_param_store[row++];
+  }
+  for (int32_t k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+    e->outputs[k].fx.fx_meta = e->fx_slot_meta[row];
+    e->outputs[k].fx.a_fx_param = e->fx_param_store[row++];
+  }
+  e->all_tracks.fx_meta = e->fx_slot_meta[row];
+  e->all_tracks.a_fx_param = e->fx_param_store[row++];
+}
 
 /* Fills `out` (room for `max`) with the host's playback or capture devices and
  * writes the count into *count. Uses a transient context so it never disturbs a
