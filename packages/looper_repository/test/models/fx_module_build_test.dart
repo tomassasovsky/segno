@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno_engine/segno_engine.dart' show FxRackPath;
 
 /// One real preset's worth of parameters, as the catalogue files carry them:
 /// Ed's Rack / Acoustic Rhythm 1, trimmed to the modules under test.
@@ -72,7 +73,15 @@ void main() {
           name: 'Light',
           id: 'dub',
           type: 4,
-          params: {'Dub Delay': 0, 'Del Time': 0.3, 'Del Feedback': 0.6},
+          params: {
+            'Dub Delay': 0,
+            'Del Time': 0.3,
+            'Del Feedback': 0.6,
+            'Del Damp': 0.5,
+            'Del L/R Ratio': 0.5,
+            'Del Res-Freq': 0.5,
+            'Del Reso': 0.5,
+          },
         ),
       );
       // Powered by `Dub Delay`, which the dub reverb used to take as one of
@@ -80,6 +89,10 @@ void main() {
       expect(entry.enabled, isFalse);
       expect(entry.params[0], closeTo(0.3, 1e-9));
       expect(entry.params[1], closeTo(0.6, 1e-9));
+      // Echoes only: the Dub path's dry comes from the rack's paths (#891).
+      expect(entry.params[2], 1);
+      expect(fxEntryBuild(entry)?.exposed, [0, 1]);
+      expect(dub.path, FxModulePath.dub);
     });
 
     test(
@@ -993,12 +1006,43 @@ void main() {
       expect(dub.type.params[0].settingFor(6.25), closeTo(0.8, 1e-9));
       final amb = fxModuleEntry(_module('Ambience'), preset);
       expect(amb.type, TrackEffectType.ambVerb);
-      expect(amb.params.take(2), [0.3, 0.5]);
-      // Amb-Dub Mix reaches nothing until the rack's parallel paths land.
+      // The Amb-Dub Mix rides the Amb-Verb, which mixes the rack's paths.
+      expect(amb.params.take(3), [0.3, 0.5, 0.404]);
       expect(
         fxModuleBuild(_module('Ambience')).readiness,
-        FxModuleReadiness.partial,
+        FxModuleReadiness.full,
       );
+    });
+
+    test("the Dub Rack's paths: Amb-Verb on one, the rest of the Dub "
+        'pedals on the other, every other module on none', () {
+      final preset = FxPreset.tryParse(
+        'Dub Rack',
+        File(
+          '../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset',
+        ).readAsStringSync(),
+      )!;
+      const rack = FxRack(id: 'r', name: 'Dub FX 1');
+      final paths = {
+        for (final e in fxRackEntries(preset))
+          e.module: fxRackPath(e.copyWith(rack: rack)),
+      };
+      expect(paths, {
+        'Doubler': FxRackPath.dub,
+        'Dub delay': FxRackPath.dub,
+        'Dub reverb': FxRackPath.dub,
+        'Ambience': FxRackPath.amb,
+        'Compressor': FxRackPath.none,
+        'Parametric EQ': FxRackPath.none,
+      });
+      // Outside a rack an entry runs on no path.
+      final verb = fxRackEntries(preset).firstWhere(
+        (e) => e.module == 'Dub reverb',
+      );
+      expect(fxRackPath(verb), FxRackPath.none);
+      // And the engine model carries it for the performance render.
+      final engine = trackEffectsToEngine([verb.copyWith(rack: rack)]).single;
+      expect(engine.toJson()['rackPath'], 'dub');
     });
 
     test("the Guitar Rack's spring copies time and mix", () {

@@ -728,9 +728,8 @@ typedef enum le_fx_type {
    * its tail on bypass. */
   LE_FX_DUB_VERB = 22,
   /* AMB_VERB: p0 decay (as DUB_VERB's), p1 volume (the dry falls to 0.71),
-   * p2 Amb-Dub Mix, which the kernel does not read: it is the Dub Rack's
-   * parallel-path mix, which nothing reads until that routing lands
-   * (#1430). A reverb with a strong early echo and
+   * p2 Amb-Dub Mix, which the kernel does not read: it mixes the Dub Rack's
+   * parallel paths (LE_FX_RACK_DUB_PATH). A reverb with a strong early echo and
    * shorter lows, fit to the Dub Rack's Amb-Verb (#891). Drains its tail on
    * bypass. */
   LE_FX_AMB_VERB = 23,
@@ -1010,10 +1009,24 @@ typedef struct le_plugin_slot le_plugin_slot;
  * the chain off, the rack passes its input through untouched, except that a
  * tail still draining out of one of its entries keeps the rack's output side
  * it was heard with. Every other entry's channel handling stays its own and
- * applies around its effect, as before. */
+ * applies around its effect, as before.
+ *
+ * LE_FX_RACK_DUB_PATH and LE_FX_RACK_AMB_PATH (at most one per entry) put an
+ * entry on one of the Dub Rack's two parallel paths (#1430). A run of
+ * entries that carry a path bit, inside one rack, is a parallel section:
+ * both paths start from the pair the section is handed, each runs its own
+ * entries in chain order, and the section hands on A(m) times the Amb path
+ * plus D(m) times the Dub path, with D(m) = min(1, (2m)^2) and A(m) = 1 up
+ * to m = 0.5, 1 - (2m - 1)^2 above. m is the section's AMB_VERB's Amb-Dub
+ * Mix (p2), or that parameter's default when the section has none. The
+ * boost the two dry signals add (A + D - 1 of the input) follows the rack's
+ * on/off fade, so a rack with every entry off still passes its input
+ * through untouched. */
 typedef enum le_fx_rack_edge {
   LE_FX_RACK_FIRST = 1,
   LE_FX_RACK_LAST = 2,
+  LE_FX_RACK_DUB_PATH = 4,
+  LE_FX_RACK_AMB_PATH = 8,
 } le_fx_rack_edge;
 
 /* Complete structural recipe, copied before admission. Hosted pointers must

@@ -275,6 +275,33 @@ final class FxRack {
   int get hashCode => Object.hash(id, name, art);
 }
 
+/// Which of the Dub Rack's two parallel paths a rack entry runs on (#1430),
+/// as the native `le_fx_rack_edge` path bits.
+///
+/// A run of path entries inside one rack is a parallel section: both paths
+/// start from the pair the section is handed, each runs its own entries in
+/// chain order, and the section hands on A(m) times the [amb] path plus D(m)
+/// times the [dub] path, m being the section's Amb-Verb's Amb-Dub Mix.
+enum FxRackPath {
+  /// On no path: in series, as every other entry.
+  none(0),
+
+  /// The Dub path (the Doubler, the Dub Delay and the Dub-Verb).
+  dub(4),
+
+  /// The Amb path (the Amb-Verb).
+  amb(8);
+
+  const FxRackPath(this.bits);
+
+  /// The native bits.
+  final int bits;
+
+  /// The path whose name is [name], or [none] for anything else.
+  static FxRackPath fromWireName(Object? name) =>
+      values.where((p) => p.name == name).firstOrNull ?? none;
+}
+
 /// Where one chain entry sits relative to the loop player.
 ///
 /// The chain is ordered [pre] entries first, then [post] entries, so the split
@@ -1410,6 +1437,7 @@ final class BuiltInEffect extends TrackEffect {
     this.rack,
     this.module,
     this.presetId,
+    this.rackPath = FxRackPath.none,
     Map<String, double> source = const {},
   }) : params = canonicalEffectParams(type, params),
        source = Map<String, double>.unmodifiable(source);
@@ -1425,6 +1453,7 @@ final class BuiltInEffect extends TrackEffect {
     required this.rack,
     required this.module,
     required this.presetId,
+    required this.rackPath,
     required this.source,
   });
 
@@ -1463,6 +1492,7 @@ final class BuiltInEffect extends TrackEffect {
     final module = rawModule is String ? rawModule : null;
     final rawPresetId = json['presetId'];
     final presetId = rawPresetId is String ? rawPresetId : null;
+    final rackPath = FxRackPath.fromWireName(json['rackPath']);
     final rawSource = json['source'];
     final source = <String, double>{
       if (rawSource is Map)
@@ -1481,6 +1511,7 @@ final class BuiltInEffect extends TrackEffect {
         rack: rack,
         module: module,
         presetId: presetId,
+        rackPath: rackPath,
         source: source,
       );
     }
@@ -1499,6 +1530,7 @@ final class BuiltInEffect extends TrackEffect {
       rack: rack,
       module: module,
       presetId: presetId,
+      rackPath: rackPath,
       source: source,
     );
   }
@@ -1537,6 +1569,11 @@ final class BuiltInEffect extends TrackEffect {
   /// it did not come from one.
   final String? presetId;
 
+  /// The rack path this entry runs on ([FxRackPath]): derived by the
+  /// repository from the entry's rack variant, and carried here so the
+  /// performance render routes the rack as the live chain did.
+  final FxRackPath rackPath;
+
   /// The factory preset's own values for this entry's module, by the
   /// preset's parameter names. Kept whatever this build could do with them,
   /// so a later build can rebuild the module from what the player loaded.
@@ -1560,6 +1597,7 @@ final class BuiltInEffect extends TrackEffect {
     FxRack? rack,
     String? module,
     String? presetId,
+    FxRackPath? rackPath,
     Map<String, double>? source,
   }) => params == null && (type == null || type == this.type)
       ? BuiltInEffect._sameType(
@@ -1572,6 +1610,7 @@ final class BuiltInEffect extends TrackEffect {
           rack: rack ?? this.rack,
           module: module ?? this.module,
           presetId: presetId ?? this.presetId,
+          rackPath: rackPath ?? this.rackPath,
           source: source == null
               ? this.source
               : Map<String, double>.unmodifiable(source),
@@ -1586,6 +1625,7 @@ final class BuiltInEffect extends TrackEffect {
           rack: rack ?? this.rack,
           module: module ?? this.module,
           presetId: presetId ?? this.presetId,
+          rackPath: rackPath ?? this.rackPath,
           source: source ?? this.source,
         );
 
@@ -1603,6 +1643,7 @@ final class BuiltInEffect extends TrackEffect {
     if (rack != null) 'rack': rack!.toJson(),
     if (module != null) 'module': module,
     if (presetId != null) 'presetId': presetId,
+    if (rackPath != FxRackPath.none) 'rackPath': rackPath.name,
     if (source.isNotEmpty) 'source': source,
   };
 
@@ -1617,6 +1658,7 @@ final class BuiltInEffect extends TrackEffect {
       other.rack == rack &&
       other.module == module &&
       other.presetId == presetId &&
+      other.rackPath == rackPath &&
       _listEquals(other.params, params) &&
       _sourceEquals(other.source, source);
 
@@ -1630,6 +1672,7 @@ final class BuiltInEffect extends TrackEffect {
     rack,
     module,
     presetId,
+    rackPath,
     Object.hashAll(params),
     Object.hashAllUnordered([
       for (final e in source.entries) Object.hash(e.key, e.value),

@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
+import 'package:looper_repository/src/models/fx_module_build.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
-import 'package:segno_engine/segno_engine.dart' show FxRackEdge;
+import 'package:segno_engine/segno_engine.dart' show FxRackEdge, FxRackPath;
 
 /// One thing the accepted FX surfaces draw: a rack with its modules, or a
 /// standalone single effect.
@@ -128,6 +129,19 @@ List<FxRackEdge> fxRackEdges(List<TrackEffect> chain) {
     }
   }
   return edges;
+}
+
+/// The rack path [fx] runs on, for the engine recipe and the performance
+/// render: its rack variant's ([fxEntryBuild], [FxModuleBuild.path]) for an
+/// entry in a rack, none for any other. Derived, never stored, so it always
+/// agrees with the variant the entry's controls come from.
+FxRackPath fxRackPath(TrackEffect fx) {
+  if (fx is! BuiltInEffect || fx.rack == null) return FxRackPath.none;
+  return switch (fxEntryBuild(fx)?.path) {
+    FxModulePath.dub => FxRackPath.dub,
+    FxModulePath.amb => FxRackPath.amb,
+    null => FxRackPath.none,
+  };
 }
 
 /// A group's stable identity: its rack's id, or its single effect's slot id.

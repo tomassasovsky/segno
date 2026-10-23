@@ -188,6 +188,31 @@ void main() {
       expect(fx, isNot(equals(fx.copyWith(source: const {'Mode': 0}))));
     });
 
+    test('the rack path round-trips by name, counts in equality and is '
+        'omitted on no path', () {
+      final fx = BuiltInEffect(
+        type: TrackEffectType.ambVerb,
+        rackPath: FxRackPath.amb,
+      );
+      final json = fx.toJson();
+      expect(json['rackPath'], 'amb');
+      final decoded = BuiltInEffect.fromJson(
+        jsonDecode(jsonEncode(json)) as Map<String, dynamic>,
+      );
+      expect(decoded, fx);
+      expect(decoded.hashCode, fx.hashCode);
+      expect(fx, isNot(equals(fx.copyWith(rackPath: FxRackPath.dub))));
+      final none = BuiltInEffect(type: TrackEffectType.ambVerb).toJson();
+      expect(none.containsKey('rackPath'), isFalse);
+      expect(BuiltInEffect.fromJson(none).rackPath, FxRackPath.none);
+      expect(
+        BuiltInEffect.fromJson(const {'type': 23, 'rackPath': 7}).rackPath,
+        FxRackPath.none,
+      );
+      // The native path bits (le_fx_rack_edge).
+      expect([for (final p in FxRackPath.values) p.bits], [0, 4, 8]);
+    });
+
     test('an entry with no preset writes neither key and decodes to none', () {
       final json = BuiltInEffect(type: TrackEffectType.drive).toJson();
 

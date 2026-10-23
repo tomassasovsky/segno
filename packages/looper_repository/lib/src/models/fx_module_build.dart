@@ -28,6 +28,22 @@ enum FxModuleReadiness {
   unavailable,
 }
 
+/// Which of the Dub Rack's two parallel paths a module runs on (#1430).
+///
+/// The rack's path entries form a parallel section: both paths start from
+/// what the section is handed, each runs its own modules in chain order, and
+/// the Amb-Verb's Amb-Dub Mix m sums them, the [amb] path at A(m) (1 up to
+/// 50 %, then 1 - (2m - 1)^2) and the [dub] path at D(m) (min(1, (2m)^2)).
+/// Each path carries its own dry, so with every path module off the rack
+/// still passes A(m) + D(m) of its input: 1.64 at the default 40 %.
+enum FxModulePath {
+  /// The Doubler, the Dub Delay and the Dub-Verb.
+  dub,
+
+  /// The Amb-Verb.
+  amb,
+}
+
 /// What building one catalogue module on this engine amounts to: the effect
 /// type, which preset key feeds each of its parameters, and which of the
 /// preset's own controls have nowhere to go.
@@ -41,6 +57,7 @@ class FxModuleBuild {
     this.fixed = const {},
     this.labels = const {},
     this.shown = const {},
+    this.path,
   });
 
   /// A module this engine cannot build at all.
@@ -84,6 +101,10 @@ class FxModuleBuild {
   /// [fxEntryKindSetting]).
   final Map<int, FxParamInfo> shown;
 
+  /// The rack path this variant runs on, or `null` for none: in series, as
+  /// every module outside the Dub Rack's paths.
+  final FxModulePath? path;
+
   /// The engine parameters this variant shows, in order: those a preset key
   /// feeds.
   List<int> get exposed => [
@@ -115,14 +136,6 @@ const Map<String, FxModuleBuild> kFxModuleBuilds = {
     type: TrackEffectType.delay,
     params: ['Del Time', 'Del Feedback', 'Del Mix'],
     unmapped: ['Del Freq', 'Del Mode'],
-  ),
-  // The Dub Rack's delay: p0 time and p1 feedback. It has no mix control, so
-  // the mix keeps the engine default. Its damping, stereo ratio and resonance
-  // are the dub delay's own shaping and have no engine parameter.
-  'Dub delay': FxModuleBuild(
-    type: TrackEffectType.delay,
-    params: ['Del Time', 'Del Feedback'],
-    unmapped: ['Del Damp', 'Del L/R Ratio', 'Del Res-Freq', 'Del Reso'],
   ),
   // p0 size, p1 damping, p2 mix. `Rev Bright` is brightness where the engine
   // wants damping, which is its complement, so it is NOT wired here: inverting
@@ -250,6 +263,7 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Degrade': {'Lo-Fi Rack': _degrade},
   'Low-pass filter': {'Rhythmic Rack': _rhythmicLpf, 'Lo-Fi Rack': _lpf},
   'Spring reverb': {'Guitar Rack': _spring},
+  'Dub delay': {'Dub Rack': _dubDelay},
   'Dub reverb': {'Dub Rack': _dubVerb},
   'Ambience': {'Dub Rack': _ambVerb},
   'Pitch shift': {'Studio Rack': _pitchShift, 'Vocal Rack': _pitchShift},
@@ -276,19 +290,32 @@ const FxModuleBuild _pitchShift = FxModuleBuild(
   },
 );
 
-// Dub Rack: the whole Dub-Verb, decay and volume.
+// Dub Rack: the delay's time and feedback, on the Dub path. It passes echoes
+// only (#891), so its mix is held at 100 %: the path's dry is the rack's
+// paths' to give. Its damping, stereo ratio and resonance are the dub delay's
+// own shaping and have no engine parameter.
+const FxModuleBuild _dubDelay = FxModuleBuild(
+  type: TrackEffectType.delay,
+  params: ['Del Time', 'Del Feedback'],
+  unmapped: ['Del Damp', 'Del L/R Ratio', 'Del Res-Freq', 'Del Reso'],
+  fixed: {2: 100},
+  path: FxModulePath.dub,
+);
+
+// Dub Rack: the whole Dub-Verb, decay and volume, on the Dub path.
 const FxModuleBuild _dubVerb = FxModuleBuild(
   type: TrackEffectType.dubVerb,
   params: ['Dub-Verb Dec', 'Dub-Verb Vol'],
+  path: FxModulePath.dub,
 );
 
 // Dub Rack: the Amb-Verb's decay and volume (the source spells its volume key
-// in lower case). The rack's Amb-Dub Mix, which the source groups with it,
-// stays unmapped until the rack's parallel paths read it (#1430).
+// in lower case) and the rack's Amb-Dub Mix, which the source groups with
+// it and which mixes the rack's two paths. On the Amb path.
 const FxModuleBuild _ambVerb = FxModuleBuild(
   type: TrackEffectType.ambVerb,
-  params: ['Amb-Verb Dec', 'Amb-verb Vol'],
-  unmapped: ['Amb-Dub Mix'],
+  params: ['Amb-Verb Dec', 'Amb-verb Vol', 'Amb-Dub Mix'],
+  path: FxModulePath.amb,
 );
 
 // Guitar Rack: the whole spring.
@@ -342,10 +369,11 @@ const FxModuleBuild _overdrive = FxModuleBuild(
   params: ['OD Drive', 'OD Tone'],
 );
 
-// Dub Rack: mix and separation.
+// Dub Rack: mix and separation, on the Dub path.
 const FxModuleBuild _dubDoubler = FxModuleBuild(
   type: TrackEffectType.doubler,
   params: ['Doubler Mix', 'Doubler Sep'],
+  path: FxModulePath.dub,
 );
 
 // Studio, Vocal and Vocal Tuner racks: the mix, the separation held at the
