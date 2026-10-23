@@ -6,7 +6,7 @@ import 'package:looper_repository/src/models/track_effect.dart';
 /// hop (`bench_fx_cpu --table`).
 ///
 /// Measured on the console (Pi 5, SCHED_FIFO 70) where a console bench
-/// exists: the octaver (69 us alone after the hop split), the overdrive,
+/// exists: the overdrive,
 /// distortion, vinyl, degrade, LPF and spring (#1433). The rest are the
 /// arm64 CI runner's table times 1.75, the console's ratio to it on the
 /// octaver and on the rig itself, until the console's own table replaces
@@ -21,7 +21,8 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   TrackEffectType.filter: 110,
   TrackEffectType.delay: 28,
   TrackEffectType.tremolo: 37,
-  TrackEffectType.octaver: 1078,
+  // On the hop: charged per block ([kFxHopCostUs]), not per frame.
+  TrackEffectType.octaver: 0,
   TrackEffectType.echo: 142,
   TrackEffectType.reverb: 156,
   TrackEffectType.eq: 63,
@@ -39,50 +40,86 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   TrackEffectType.spring: 95,
 };
 
-/// The octaver in PSOLA mode (its mode setting at 1): 84 us alone on the
-/// console with the YIN slicing (#913), 1.25 times its phase vocoder.
-const int kFxPsolaCostNs = 1350;
+/// What a kind on the hop charges, in microseconds a block: its frame's work
+/// is split across the blocks of its hop by quarters, so a quarter lands in
+/// one block whatever the block's length. The octaver's phase vocoder is
+/// 69 us alone on the console after the hop split; PSOLA 84 us with the YIN
+/// slicing (#913).
+const Map<TrackEffectType, double> kFxHopCostUs = {
+  TrackEffectType.octaver: 69,
+};
+
+/// The octaver in PSOLA mode (its mode setting at 1), per block.
+const double kFxPsolaCostUs = 84;
 
 /// The engine with eight tracks playing, one input monitored and no effects:
-/// the console's worst block (73 us at 96 kHz, 64 frames), per frame.
-const int kFxBaseCostNs = 1140;
+/// the console's worst block, 73 us at 96 kHz, mostly per block.
+const double kFxBaseCostUs = 73;
+
+/// The block the per-frame charges were measured at.
+const int kFxBenchPeriod = 64;
 
 /// The share of each block the worst block may fill (#887, Architecture 10):
 /// 80 %, leaving the rest to the callback's own jitter.
 const double kFxBudgetShare = 0.8;
 
-/// The kinds whose sound changes every lap (a free-running LFO or noise),
-/// which a lane never prints and so always plays live.
+/// The kinds whose sound changes every lap (a free-running LFO or noise:
+/// LE_FX_F_FREE_RUNNING), which a lane never prints.
 const Set<TrackEffectType> _freeRunning = {
   TrackEffectType.doubler,
   TrackEffectType.chorus,
   TrackEffectType.vinyl,
   TrackEffectType.degrade,
+  TrackEffectType.lpf,
 };
 
-/// What [fx] charges, in nanoseconds per frame: its kind's
-/// ([kFxKindCostNs]), whether or not it is on, so switching a pedal on is
-/// never refused. A hosted plugin charges nothing here; its cost is its
-/// own.
-int fxEntryCostNs(TrackEffect fx) => switch (fx) {
-  BuiltInEffect(:final type, :final params)
-      when type == TrackEffectType.octaver && params[3] >= 0.5 =>
-    kFxPsolaCostNs,
-  BuiltInEffect(:final type) => kFxKindCostNs[type] ?? 0,
-  PluginEffect() => 0,
-};
+/// What [fx] charges, in nanoseconds per frame at [period]-frame blocks:
+/// its kind's ([kFxKindCostNs], or [kFxHopCostUs] spread over the block),
+/// whether or not it is on, so switching a pedal on is never refused. A
+/// hosted plugin charges nothing here; its cost is its own.
+int fxEntryCostNs(TrackEffect fx, {int period = kFxBenchPeriod}) {
+  if (fx is! BuiltInEffect) return 0;
+  final hop = fx.type == TrackEffectType.octaver && fx.params[3] >= 0.5
+      ? kFxPsolaCostUs
+      : kFxHopCostUs[fx.type];
+  if (hop != null) return (hop * 1000 / period).ceil();
+  return kFxKindCostNs[fx.type] ?? 0;
+}
 
 /// What [chain] charges ([fxEntryCostNs]), in nanoseconds per frame.
-int fxChainCostNs(Iterable<TrackEffect> chain) =>
-    chain.fold(0, (sum, fx) => sum + fxEntryCostNs(fx));
+int fxChainCostNs(
+  Iterable<TrackEffect> chain, {
+  int period = kFxBenchPeriod,
+}) => chain.fold(0, (sum, fx) => sum + fxEntryCostNs(fx, period: period));
 
-/// What a lane's [chain] charges: its free-running kinds only. The rest
-/// plays from the lane's print.
-int fxLaneCostNs(Iterable<TrackEffect> chain) => fxChainCostNs(
-  chain.where((fx) => fx is BuiltInEffect && _freeRunning.contains(fx.type)),
-);
+/// What a lane's [chain] charges, as the engine plays it: its Post entries
+/// always live; its Pre prefix from the lane's print, unless the prefix
+/// holds an entry no print can stand for (a free-running kind, a kind on
+/// the hop, which loops rarely fit, or a hosted plugin), on or off, when it
+/// plays live too.
+int fxLaneCostNs(Iterable<TrackEffect> chain, {int period = kFxBenchPeriod}) {
+  final pre = [
+    for (final fx in chain)
+      if (fx.placement == FxPlacement.pre) fx,
+  ];
+  final post = [
+    for (final fx in chain)
+      if (fx.placement != FxPlacement.pre) fx,
+  ];
+  final live = pre.any(
+    (fx) =>
+        fx is PluginEffect ||
+        (fx is BuiltInEffect &&
+            (_freeRunning.contains(fx.type) ||
+                kFxHopCostUs.containsKey(fx.type))),
+  );
+  return fxChainCostNs(post, period: period) +
+      (live ? fxChainCostNs(pre, period: period) : 0);
+}
 
 /// What the effects may charge in all, in nanoseconds per frame, at
-/// [sampleRate]: the budget's share of a frame less the engine's own cost.
-int fxBudgetNs(int sampleRate) =>
-    (kFxBudgetShare * 1e9 / sampleRate).floor() - kFxBaseCostNs;
+/// [sampleRate] and [period]-frame blocks: the budget's share of a frame
+/// less the engine's own cost.
+int fxBudgetNs(int sampleRate, {int period = kFxBenchPeriod}) =>
+    (kFxBudgetShare * 1e9 / sampleRate).floor() -
+    (kFxBaseCostUs * 1000 / period).ceil();

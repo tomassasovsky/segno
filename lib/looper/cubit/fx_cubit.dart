@@ -170,9 +170,7 @@ class FxCubit extends Cubit<FxState> {
     }
     // Admission (#887, Architecture 10): an edit that adds processing must
     // fit what is left; one that removes it always lands.
-    final cost = address.stage == FxStage.loop ? fxLaneCostNs : fxChainCostNs;
-    final grows = cost(proposed.entries) - cost(current);
-    if (grows > 0 && grows > _repository.fxRoomNs) {
+    if (_overBudget(address, current, proposed.entries)) {
       return const FxEditResult(FxEditStatus.overBudget);
     }
     if (stale()) return const FxEditResult(FxEditStatus.stale);
@@ -209,6 +207,20 @@ class FxCubit extends Cubit<FxState> {
       );
     }
     return FxEditResult(FxEditStatus.applied, groupId: proposed.groupId);
+  }
+
+  /// Whether [next] would add more processing at [address] than is left
+  /// ([LooperRepository.fxRoomNs]). An edit that removes processing always
+  /// fits.
+  bool _overBudget(
+    FxAddress address,
+    List<TrackEffect> current,
+    List<TrackEffect> next,
+  ) {
+    final grows =
+        _repository.fxChainCostAt(address.stage, next) -
+        _repository.fxChainCostAt(address.stage, current);
+    return grows > 0 && grows > _repository.fxRoomNs;
   }
 
   /// Appends one library choice to the selected destination as a new group.
@@ -515,6 +527,14 @@ class FxCubit extends Cubit<FxState> {
     }
     if (effect.params[parameter] == value) {
       return const FxEditResult(FxEditStatus.unchanged);
+    }
+    // A setting can change what an entry costs (the octaver's mode).
+    if (_overBudget(address, chain, [
+      ...chain.sublist(0, index),
+      effect.copyWith(params: [...effect.params]..[parameter] = value),
+      ...chain.sublist(index + 1),
+    ])) {
+      return const FxEditResult(FxEditStatus.overBudget);
     }
     final result = switch (address.stage) {
       FxStage.input => _repository.setMonitorEffectParam(

@@ -211,6 +211,7 @@ void main() {
     registerFallbackValue(const LooperInputPanChanged(0, pan: 0));
     registerFallbackValue(MonitorMode.off);
     registerFallbackValue(const FxAddress(stage: FxStage.track));
+    registerFallbackValue(FxStage.track);
     registerFallbackValue(<String>{});
   });
 
@@ -296,6 +297,11 @@ void main() {
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.fxRoomNs).thenReturn(1 << 40);
+    when(() => repository.fxChainCostAt(any(), any())).thenAnswer(
+      (call) => fxChainCostNs(
+        call.positionalArguments[1] as List<TrackEffect>,
+      ),
+    );
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
     when(() => repository.laneCount(any())).thenReturn(1);
     when(() => repository.fxRecipesSettled).thenReturn(true);

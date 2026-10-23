@@ -2,27 +2,33 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart' show MockAudioEngine;
 
+BuiltInEffect _fx(
+  TrackEffectType type, {
+  FxPlacement placement = FxPlacement.post,
+}) => BuiltInEffect(type: type, placement: placement);
+
+int _cost(TrackEffectType type) => fxEntryCostNs(_fx(type));
+
 void main() {
   group('the effects budget', () {
-    test('every kind has a charge', () {
+    test('every kind has a charge above nothing', () {
       // A kind added without one would cost nothing and never be refused.
       for (final type in TrackEffectType.values) {
-        expect(kFxKindCostNs.containsKey(type), isTrue, reason: type.name);
+        if (type == TrackEffectType.none) continue;
+        expect(_cost(type), greaterThan(0), reason: type.name);
       }
-      expect(kFxKindCostNs[TrackEffectType.none], 0);
+      expect(_cost(TrackEffectType.none), 0);
     });
 
     test('an entry charges its kind, on or off; PSOLA its own', () {
-      final octaver = BuiltInEffect(type: TrackEffectType.octaver);
-      expect(fxEntryCostNs(octaver), kFxKindCostNs[TrackEffectType.octaver]);
+      final octaver = _fx(TrackEffectType.octaver);
+      expect(fxEntryCostNs(octaver), (69 * 1000 / 64).ceil());
       expect(
         fxEntryCostNs(octaver.copyWith(enabled: false)),
         fxEntryCostNs(octaver),
       );
-      final psola = octaver.copyWith(
-        params: [...octaver.params]..[3] = 1,
-      );
-      expect(fxEntryCostNs(psola), kFxPsolaCostNs);
+      final psola = octaver.copyWith(params: [...octaver.params]..[3] = 1);
+      expect(fxEntryCostNs(psola), (kFxPsolaCostUs * 1000 / 64).ceil());
       expect(
         fxEntryCostNs(
           const PluginEffect(
@@ -33,31 +39,48 @@ void main() {
       );
     });
 
-    test('a lane charges its free-running kinds only', () {
-      final chain = [
-        BuiltInEffect(type: TrackEffectType.delay),
-        BuiltInEffect(type: TrackEffectType.chorus),
-        BuiltInEffect(type: TrackEffectType.octaver),
-      ];
+    test('a kind on the hop and the engine cost per block, the rest per '
+        'frame', () {
+      final octaver = _fx(TrackEffectType.octaver);
+      final delay = _fx(TrackEffectType.delay);
+      // Half the block: the octaver's quarter-frame lands in half the time.
+      expect(fxEntryCostNs(octaver, period: 32), (69 * 1000 / 32).ceil());
+      expect(fxEntryCostNs(delay, period: 32), fxEntryCostNs(delay));
       expect(
-        fxChainCostNs(chain),
-        kFxKindCostNs[TrackEffectType.delay]! +
-            kFxKindCostNs[TrackEffectType.chorus]! +
-            kFxKindCostNs[TrackEffectType.octaver]!,
+        fxBudgetNs(96000, period: 32),
+        8333 - (kFxBaseCostUs * 1000 / 32).ceil(),
       );
-      expect(fxLaneCostNs(chain), kFxKindCostNs[TrackEffectType.chorus]);
+    });
+
+    test('a lane charges what plays live: its Post entries, and its Pre '
+        'prefix only when no print can stand for it', () {
+      final pre = _fx(TrackEffectType.delay, placement: FxPlacement.pre);
+      final post = _fx(TrackEffectType.reverb);
+      // A printable Pre prefix plays from the print.
+      expect(fxLaneCostNs([pre, post]), _cost(TrackEffectType.reverb));
+      // A free-running or hop kind in it, on or off, keeps it live.
+      for (final type in [TrackEffectType.chorus, TrackEffectType.octaver]) {
+        final odd = BuiltInEffect(
+          type: type,
+          placement: FxPlacement.pre,
+          enabled: false,
+        );
+        expect(
+          fxLaneCostNs([pre, odd, post]),
+          fxChainCostNs([pre, odd, post]),
+          reason: type.name,
+        );
+      }
     });
 
     test("the budget is 80 % of a frame less the engine's own cost", () {
+      final base = (kFxBaseCostUs * 1000 / 64).ceil();
       // 96 kHz: 10417 ns a frame, 8333 of them for the worst block.
-      expect(fxBudgetNs(96000), 8333 - kFxBaseCostNs);
+      expect(fxBudgetNs(96000), 8333 - base);
       // Half the rate, twice the time a frame.
-      expect(fxBudgetNs(48000), 16666 - kFxBaseCostNs);
+      expect(fxBudgetNs(48000), 16666 - base);
       // One octaver, the heaviest kind, fits with room to spare.
-      expect(
-        kFxKindCostNs[TrackEffectType.octaver]! < fxBudgetNs(96000),
-        isTrue,
-      );
+      expect(_cost(TrackEffectType.octaver) < fxBudgetNs(96000), isTrue);
     });
   });
 
@@ -72,24 +95,32 @@ void main() {
       addTearDown(repo.dispose);
     });
 
-    test('sums the live chains, and the room is what is left', () {
+    test('sums the chains, and the room is what is left', () {
       final room = repo.fxRoomNs;
       expect(repo.fxCostNs, 0);
       expect(
         repo.setTrackEffects(
           channel: 0,
           effects: [
-            BuiltInEffect(type: TrackEffectType.octaver),
+            _fx(TrackEffectType.octaver),
             BuiltInEffect(type: TrackEffectType.reverb, enabled: false),
           ],
         ),
         EngineResult.ok,
       );
-      final cost =
-          kFxKindCostNs[TrackEffectType.octaver]! +
-          kFxKindCostNs[TrackEffectType.reverb]!;
+      // The mock reports no block length: the bench's stands in.
+      final frames = engine.snapshot().bufferFrames;
+      final period = frames > 0 ? frames : kFxBenchPeriod;
+      final cost = fxChainCostNs([
+        _fx(TrackEffectType.octaver),
+        _fx(TrackEffectType.reverb),
+      ], period: period);
       expect(repo.fxCostNs, cost);
       expect(repo.fxRoomNs, room - cost);
+      expect(
+        repo.fxChainCostAt(FxStage.track, [_fx(TrackEffectType.reverb)]),
+        _cost(TrackEffectType.reverb),
+      );
     });
   });
 }

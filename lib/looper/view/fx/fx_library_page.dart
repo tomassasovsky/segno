@@ -21,12 +21,11 @@ class FxLibraryPage extends StatefulWidget {
     required this.catalogue,
     required this.destinationLabel,
     required this.onStage,
+    required this.roomNs,
+    required this.costOf,
     this.freeSlots = kTrackEffectMax,
-    this.roomNs = _unlimited,
     super.key,
   });
-
-  static const int _unlimited = 1 << 40;
 
   /// The catalogue to offer.
   final FxCatalogue catalogue;
@@ -47,11 +46,19 @@ class FxLibraryPage extends StatefulWidget {
   /// explains itself, as one that needs more slots does.
   final int roomNs;
 
+  /// What entries would cost at the destination
+  /// ([LooperRepository.fxChainCostAt]), weighed against [roomNs].
+  final int Function(List<TrackEffect>) costOf;
+
   @override
   State<FxLibraryPage> createState() => _FxLibraryPageState();
 }
 
 class _FxLibraryPageState extends State<FxLibraryPage> {
+  /// Whether [entries] fit the processing left at the destination.
+  bool _fitsRoom(List<TrackEffect> entries) =>
+      widget.costOf(entries) <= widget.roomNs;
+
   /// The family being browsed, or null for the grid.
   ///
   /// Page state rather than a route, so Back from a family lands on the grid
@@ -147,16 +154,16 @@ class _FxLibraryPageState extends State<FxLibraryPage> {
               (final FxFamily f, _, _) => _PresetList(
                 family: f,
                 freeSlots: widget.freeSlots,
-                roomNs: widget.roomNs,
+                fitsRoom: _fitsRoom,
                 onChoose: _choose,
               ),
               (_, true, _) => _SingleList(
-                roomNs: widget.roomNs,
+                fitsRoom: _fitsRoom,
                 onChoose: _choose,
               ),
               (_, _, true) => FxSavedList(
                 freeSlots: widget.freeSlots,
-                roomNs: widget.roomNs,
+                fitsRoom: _fitsRoom,
                 onChoose: _choose,
               ),
               _ => _LibraryGrid(
@@ -328,13 +335,13 @@ class _PresetList extends StatelessWidget {
   const _PresetList({
     required this.family,
     required this.freeSlots,
-    required this.roomNs,
+    required this.fitsRoom,
     required this.onChoose,
   });
 
   final FxFamily family;
   final int freeSlots;
-  final int roomNs;
+  final bool Function(List<TrackEffect>) fitsRoom;
   final void Function(FxLibraryChoice) onChoose;
 
   @override
@@ -350,7 +357,7 @@ class _PresetList extends StatelessWidget {
         // Offered whatever the room, and explained when there is not enough:
         // a rack that half-landed would be a sound nobody chose.
         final slots = needed <= freeSlots;
-        final fits = slots && fxChainCostNs(fxRackEntries(preset)) <= roomNs;
+        final fits = slots && fitsRoom(fxRackEntries(preset));
         return _PresetRow(
           key: Key('fx_preset_${preset.id}'),
           name: preset.name,
@@ -369,9 +376,9 @@ class _PresetList extends StatelessWidget {
 
 /// The standalone effects this engine can build.
 class _SingleList extends StatelessWidget {
-  const _SingleList({required this.roomNs, required this.onChoose});
+  const _SingleList({required this.fitsRoom, required this.onChoose});
 
-  final int roomNs;
+  final bool Function(List<TrackEffect>) fitsRoom;
   final void Function(FxLibraryChoice) onChoose;
 
   @override
@@ -389,7 +396,7 @@ class _SingleList extends StatelessWidget {
       itemCount: types.length,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, i) {
-        final fits = fxEntryCostNs(BuiltInEffect(type: types[i])) <= roomNs;
+        final fits = fitsRoom([BuiltInEffect(type: types[i])]);
         return _PresetRow(
           key: Key('fx_single_${types[i].name}'),
           name: types[i].label,
