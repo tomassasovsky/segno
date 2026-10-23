@@ -23,7 +23,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
-| #1433 | Looper X racks part 9: pitch groundwork (bench, hop split) and Pitch Shift | in-review | merge-gate | `claude/fx-*1433*` |
+| #1433 | Looper X racks part 9: pitch groundwork (bench, hop split) and Pitch Shift | in-review | merge-gate | `claude/*1433*` |
 | #1430 | Looper X racks part 8: Dub-Verb and Amb-Verb (fit to the captures) and the Dub Rack's parallel paths | in-review | merge-gate | `claude/fx-dub-verbs-1430*`, `claude/dub-rack-paths-1430` |
 | #1388 | MODE footswitch moves from GP5 to GP12 (firmware 2.4; design PR separate) | in-review | auto | `claude/console-mode-gp12-1388-fw` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
@@ -51,6 +51,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1202 | Shared render recipe, Bounce, Save selected | plan | merge-gate | `claude/render-1202-*` |
 | #1228 | MIDI clock | plan | merge-gate | `claude/midi-clock-1228-*` |
 | #1270 | Device and appliance pages | plan | merge-gate | `claude/device-pages-plan-1270` |
+| #1452 | Effects power on screen; added racks keep pedal states | plan | plan-gate | `claude/*-1452` |
 | #1342 | Ring carrier firmware updates from the console | in-review | blocked-verify | `claude/ring-update-1342` |
 | #1437 | Recover from and record a freeze (watchdog, pstore, journal sync, lockup policy) | in-review | auto | `claude/appliance-freeze-recovery-1437` |
 

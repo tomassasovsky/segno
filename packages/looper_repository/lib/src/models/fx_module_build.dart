@@ -299,12 +299,16 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
 // Studio and Vocal racks: the shift and the mix, on the octaver's phase
 // vocoder with the tone open. The shift reads -12..+12 semitones in whole
 // steps (linear), the rack's own range, inside the octaver's +-24, and
-// starts at unison. The formants are held, as the octaver holds them, until a
-// capture of the Looper X shows whether its pitch shifter moves them (#1433).
+// starts at unison. The formants move with the pitch: measured on the Looper
+// X (#891, docs/plan/2026-10-23-looperx-gaps-measured.md), the Studio Rack's
+// Pitch pedal and the Whammy move the spectral envelope by the pitch ratio to
+// within 1 % at 0, +-6 and +-12 semitones, a resampling-type shifter; the
+// Vocal Rack's pedal is the same Pitch shift module. Its +12 lands 8 cents
+// sharp there (ratio 2.009), which this keeps at the display's 2.0.
 const FxModuleBuild _pitchShift = FxModuleBuild(
   type: TrackEffectType.octaver,
   params: ['Pitch Shift', null, 'Pitch Mix'],
-  fixed: {1: 100, 3: 0, 4: 0},
+  fixed: {1: 100, 3: 0, 4: 1},
   shown: {
     0: FxParamInfo(
       key: 'shift',
@@ -730,11 +734,21 @@ FxParamInfo fxEntryParam(BuiltInEffect entry, int index) =>
 
 /// [entry]'s parameter [index] as a setting of [fxEntryParam]: the setting
 /// that stands for the same value as the kind's.
-double fxEntryShownSetting(BuiltInEffect entry, int index) {
-  final setting = entry.params[index];
+double fxEntryShownSetting(BuiltInEffect entry, int index) =>
+    fxEntryShownSettingFor(entry, index, entry.params[index]);
+
+/// The setting of [fxEntryParam] that stands for the same value as
+/// [kindSetting], a setting of [entry]'s parameter [index] (the entry's own
+/// or another one, such as a value about to be written to it). A setting
+/// outside the shown range clamps to its end.
+double fxEntryShownSettingFor(
+  BuiltInEffect entry,
+  int index,
+  double kindSetting,
+) {
   final shown = fxEntryBuild(entry)?.shown[index];
-  if (shown == null) return setting;
-  return shown.settingFor(entry.type.params[index].valueAt(setting));
+  if (shown == null) return kindSetting;
+  return shown.settingFor(entry.type.params[index].valueAt(kindSetting));
 }
 
 /// The kind's setting for parameter [index] of [entry] that stands for the
