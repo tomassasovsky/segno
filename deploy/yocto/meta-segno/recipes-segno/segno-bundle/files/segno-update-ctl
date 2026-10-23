@@ -15,9 +15,9 @@
 #             is recorded in the attempt marker; a failure removes it, and a
 #             kill (power loss, a stopped service, the app's Cancel) leaves it
 #             so the next start can say the install was cut off.
-#             Exits 3 when /boot is mounted read-only, before downloading or
-#             after rauc fails, so the app can say so instead of reporting a
-#             failed download (#1397). The kernel's FAT driver remounts /boot
+#             Exits 3 when /boot is mounted read-only, before downloading, so
+#             the app can say so instead of reporting a failed download
+#             (#1397). The kernel's FAT driver remounts /boot
 #             read-only when it finds a damaged filesystem. The boot-time fsck
 #             repairs it, so the remedy is a restart.
 #   attempt   Print the install that was cut off, {"version":"<v>"}, or {}.
@@ -184,8 +184,9 @@ record_staged_boot_id() {
 
 do_install() {
     command -v rauc >/dev/null 2>&1 || { log "rauc not installed"; return 1; }
-    # Before the download: RAUC cannot commit the new slot through a
-    # read-only /boot, so a 30-minute download would be wasted.
+    # Before the download: the new slot is committed through /boot, so a
+    # 30-minute download would be wasted. The install itself writes nothing
+    # there (the status file is on /data), so this is the one check.
     if boot_read_only; then
         log "the boot partition is read-only; restart to repair it"
         return "$EXIT_BOOT_READ_ONLY"
@@ -251,11 +252,6 @@ do_install() {
     done < "$fifo"
     if ! wait "$child"; then
         child=""
-        # The FAT driver can remount /boot read-only while RAUC runs.
-        if boot_read_only; then
-            log "rauc install failed: the boot partition is read-only; restart to repair it"
-            return "$EXIT_BOOT_READ_ONLY"
-        fi
         log "rauc install failed"; return 1
     fi
     child=""
