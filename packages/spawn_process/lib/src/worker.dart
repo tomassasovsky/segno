@@ -362,7 +362,7 @@ void _pump(SpawnRequest request, int pid, Pointer<Int32> fds, Arena arena) {
       if (!retry) finishPipe(end);
     }
 
-    if (exitedAt == null && _hasExited(pid, info)) {
+    if (exitedAt == null && hasExited(pid, info)) {
       exitedAt = clock.elapsedMilliseconds;
       _close(fds, _stdinWrite);
       port.send(const [WorkerMessage.exited]);
@@ -386,15 +386,15 @@ void _close(Pointer<Int32> fds, int end) {
 void _waitForExit(int pid, Arena arena) {
   final info = arena<Uint8>(libc.opaqueBytes);
   final none = arena<libc.PollFd>();
-  while (!_hasExited(pid, info)) {
+  while (!hasExited(pid, info)) {
     libc.poll(none, 0, 10);
   }
 }
 
 /// Whether the child has exited, without reaping it. A child someone else
 /// has already reaped (`ECHILD`) counts as exited: the parent's `waitpid`
-/// then reports it.
-bool _hasExited(int pid, Pointer<Uint8> info) {
+/// then reports it. [info] is an [libc.opaqueBytes] block for `siginfo_t`.
+bool hasExited(int pid, Pointer<Uint8> info) {
   info.asTypedList(libc.opaqueBytes).fillRange(0, libc.opaqueBytes, 0);
   final result = libc.waitid(
     libc.pPid,
