@@ -346,6 +346,30 @@ static void test_rack_paths_rack_off(void) {
   }
 }
 
+/* Two Amb-Verbs in one section (a Dub Rack added into a Dub Rack) run in
+ * series on the Amb path, and the first one in chain order sets the mix:
+ * with both off and the rack on, the dry is A(m) + D(m) of the first's m. */
+static void test_rack_paths_two_amb_verbs(void) {
+  printf("test_rack_paths_two_amb_verbs\n");
+  rp_rack k;
+  /* Slot 2's Amb-Verb at 100 %, and slot 1 becomes the first Amb-Verb, at
+   * 40 %, on the Amb path. */
+  rp_open(&k, 1.0f, 1 << 3);
+  k.types[1] = LE_FX_AMB_VERB;
+  k.fx->chan[1].rack = LE_FX_RACK_AMB_PATH;
+  le_fx_entry_reset(k.fx, 1);
+  CHECK(le_fx_prepare(k.fx, 1, LE_FX_AMB_VERB, RP_SR) == LE_OK);
+  k.params[1][0] = 0.2f;
+  k.params[1][1] = 0.4f;
+  k.params[1][2] = 0.4f;
+  float in[64];
+  float out[64];
+  for (int i = 0; i < 64; ++i) in[i] = 0.25f;
+  rp_run(&k, in, out, 64);
+  CHECK(fabsf(out[63] - 0.41f) < 1e-6f);
+  rp_close(&k);
+}
+
 static void run_rack_path_tests(void) {
   test_rack_paths_dry_law();
   test_rack_paths_off_is_passthrough();
@@ -356,4 +380,5 @@ static void run_rack_path_tests(void) {
   test_rack_paths_in_the_stems();
   test_rack_paths_gain_inside_a_section();
   test_rack_paths_rack_off();
+  test_rack_paths_two_amb_verbs();
 }

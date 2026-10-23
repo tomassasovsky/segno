@@ -1052,6 +1052,24 @@ void main() {
         ]),
         everyElement(isNull),
       );
+      // A Dub Rack beside a rack holding a stray Dub module: only the Dub
+      // Rack has paths.
+      final stray = [
+        for (final e in entries)
+          if (e.module == 'Doubler')
+            e.copyWith(
+              rack: const FxRack(id: 'other', name: 'Other'),
+            ),
+      ];
+      expect(fxEntryPaths([...entries, ...stray]), [
+        FxModulePath.dub,
+        FxModulePath.dub,
+        FxModulePath.dub,
+        FxModulePath.amb,
+        null,
+        null,
+        null,
+      ]);
       // Every other family's modules run on none, the Studio, Vocal and Vocal
       // Tuner doublers included (their presets carry no Doubler Sep).
       final dir = Directory('../fx_catalogue/assets/presets');
