@@ -184,6 +184,9 @@ enum FxParamUnit {
 
   /// A compression ratio, "n : 1".
   ratio,
+
+  /// Seconds.
+  seconds,
 }
 
 /// Where a built-in parameter turns its effect off. Domain mirror of the
@@ -324,6 +327,7 @@ class FxParamInfo extends Equatable {
       FxParamUnit.db => engine.FxParamUnit.db,
       FxParamUnit.q => engine.FxParamUnit.q,
       FxParamUnit.ratio => engine.FxParamUnit.ratio,
+      FxParamUnit.seconds => engine.FxParamUnit.seconds,
     },
     atMin: atMin,
     atMax: atMax,
@@ -421,7 +425,10 @@ enum TrackEffectType {
   degrade(19),
 
   /// The Looper X's low-pass filter (#887 part 7).
-  lpf(20);
+  lpf(20),
+
+  /// The Looper X's spring reverb (#887 part 8).
+  spring(21);
 
   const TrackEffectType(this.code);
 
@@ -825,6 +832,7 @@ FxParamUnit _unitFromEngine(engine.FxParamUnit unit) => switch (unit) {
   engine.FxParamUnit.db => FxParamUnit.db,
   engine.FxParamUnit.q => FxParamUnit.q,
   engine.FxParamUnit.ratio => FxParamUnit.ratio,
+  engine.FxParamUnit.seconds => FxParamUnit.seconds,
 };
 
 /// Maps an engine parameter curve to its domain mirror.
