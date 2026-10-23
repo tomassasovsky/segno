@@ -60,6 +60,15 @@ const _english = <String, List<String>>{
   'overdrive.tone': ['0%', '50%', '100%'],
   'distortion.drive': ['0%', '20%', '100%'],
   'distortion.tone': ['0%', '50%', '100%'],
+  'vinyl.drive': ['0%', '40%', '100%'],
+  'vinyl.frequency': ['50.0 Hz', '251 Hz', '5.0 kHz'],
+  'vinyl.noise': ['0%', '30%', '100%'],
+  'vinyl.noise_tone': ['0%', '90%', '100%'],
+  'degrade.frequency': ['500 Hz', '50.0 kHz', '50.0 kHz'],
+  'degrade.filter': ['0%', '100%', '100%'],
+  'degrade.mix': ['0%', '100%', '100%'],
+  'lpf.cutoff': ['20.0 Hz', '20.0 kHz', '20.0 kHz'],
+  'lpf.resonance': ['0%', '100%', '100%'],
 };
 
 /// The same in Spanish: a decimal comma, and the Spanish mode name.
@@ -118,6 +127,15 @@ const _spanish = <String, List<String>>{
   'overdrive.tone': ['0%', '50%', '100%'],
   'distortion.drive': ['0%', '20%', '100%'],
   'distortion.tone': ['0%', '50%', '100%'],
+  'vinyl.drive': ['0%', '40%', '100%'],
+  'vinyl.frequency': ['50,0 Hz', '251 Hz', '5,0 kHz'],
+  'vinyl.noise': ['0%', '30%', '100%'],
+  'vinyl.noise_tone': ['0%', '90%', '100%'],
+  'degrade.frequency': ['500 Hz', '50,0 kHz', '50,0 kHz'],
+  'degrade.filter': ['0%', '100%', '100%'],
+  'degrade.mix': ['0%', '100%', '100%'],
+  'lpf.cutoff': ['20,0 Hz', '20,0 kHz', '20,0 kHz'],
+  'lpf.resonance': ['0%', '100%', '100%'],
 };
 
 void main() {

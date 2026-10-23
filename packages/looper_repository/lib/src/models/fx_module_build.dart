@@ -130,13 +130,6 @@ const Map<String, FxModuleBuild> kFxModuleBuilds = {
       'Rev Tail/ER',
     ],
   ),
-  // p0 cutoff, p1 resonance. The preset's own LFO over the cutoff has no
-  // engine parameter.
-  'Low-pass filter': FxModuleBuild(
-    type: TrackEffectType.filter,
-    params: ['LPF Cutoff', 'LPF Reso'],
-    unmapped: ['LPF LFO Depth', 'LPF LFO Rate'],
-  ),
   // p0 shift, p1 tone, p2 mix, p3 mode. Only the mix has a preset key: the
   // catalogue's octaver is two fixed voices with their own levels, where this
   // engine's is one continuously shifted voice, so its shift has nothing to
@@ -224,7 +217,36 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Wah': {"Ed's Rack": _wah, 'Guitar Rack': _wah},
   'Overdrive': {"Ed's Rack": _overdrive, 'Guitar Rack': _overdrive},
   'Distortion': {'Lo-Fi Rack': _loFiDistortion, 'Studio Rack': _distortion},
+  'Vinyl': {'Lo-Fi Rack': _vinyl},
+  'Degrade': {'Lo-Fi Rack': _degrade},
+  'Low-pass filter': {'Rhythmic Rack': _rhythmicLpf, 'Lo-Fi Rack': _lpf},
 };
+
+// Lo-Fi Rack: the whole vinyl.
+const FxModuleBuild _vinyl = FxModuleBuild(
+  type: TrackEffectType.vinyl,
+  params: ['Vinyl Drive', 'Vinyl Freq', 'Vinyl Noise', 'Vinyl Noise-Tone'],
+);
+
+// Lo-Fi Rack: the whole degrade.
+const FxModuleBuild _degrade = FxModuleBuild(
+  type: TrackEffectType.degrade,
+  params: ['Degrade Freq', 'Degrade Filter', 'Degrade Mix'],
+);
+
+// Lo-Fi Rack: cutoff and resonance.
+const FxModuleBuild _lpf = FxModuleBuild(
+  type: TrackEffectType.lpf,
+  params: ['LPF Cutoff', 'LPF Reso'],
+);
+
+// Rhythmic Rack: cutoff and resonance; its LFO over the cutoff lands with
+// the tempo context (#887 part 10), so until then it is partial.
+const FxModuleBuild _rhythmicLpf = FxModuleBuild(
+  type: TrackEffectType.lpf,
+  params: ['LPF Cutoff', 'LPF Reso'],
+  unmapped: ['LPF LFO Depth', 'LPF LFO Rate'],
+);
 
 // Lo-Fi Rack: drive and tone.
 const FxModuleBuild _loFiDistortion = FxModuleBuild(
@@ -498,9 +520,10 @@ FxModuleBuild fxModuleBuild(FxModule module, {String? family}) {
 /// The rack variant [entry] was built as, or `null` when it is not one: a
 /// Looper X kind ([TrackEffectType.isRackKind]) built from a module with
 /// variants ([kFxModuleVariants]). The variant is the one whose controls all
-/// appear in the entry's [BuiltInEffect.source], the one with the most of
-/// them first; every factory preset of a family carries all of its keys, so
-/// this is the family's own. An entry no variant fits is not one.
+/// appear in the entry's [BuiltInEffect.source] (with the ones it knows it
+/// drops, [FxModuleBuild.unmapped]), the one with the most of them first;
+/// every factory preset of a family carries all of its keys, so this is the
+/// family's own. An entry no variant fits is not one.
 ///
 /// What a surface shows for a rack pedal: [FxModuleBuild.exposed], under
 /// [FxModuleBuild.labels]. Any other entry shows every parameter of its type.
@@ -512,7 +535,9 @@ FxModuleBuild? fxEntryBuild(BuiltInEffect entry) {
   FxModuleBuild? build;
   var best = -1;
   for (final v in variants.values) {
-    final keys = v.params.whereType<String>().toList();
+    // The keys it places and the ones it knows it drops: a variant that
+    // drops a key (the Rhythmic Rack's LFO) is that rack's alone.
+    final keys = [...v.params.whereType<String>(), ...v.unmapped];
     if (keys.length > best && keys.every(entry.source.containsKey)) {
       best = keys.length;
       build = v;

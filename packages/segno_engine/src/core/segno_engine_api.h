@@ -705,6 +705,17 @@ typedef enum le_fx_type {
    * simulator at its defaults (the Studio Rack's Dist): an asymmetric curve,
    * then the 4x12" cabinet; fit to the Phase 0 amp captures (#891). */
   LE_FX_DISTORTION = 17,
+  /* VINYL: p0 drive, p1 frequency (50 to 5000 Hz), p2 noise, p3 noise tone.
+   * A high-pass at the frequency, a 7 kHz roll-off, soft saturation, then
+   * hiss and crackle. Not wet-cached while the noise is up. */
+  LE_FX_VINYL = 18,
+  /* DEGRADE: p0 frequency (500 to 50000 Hz), p1 filter, p2 mix. The input
+   * held at the frequency, low-passed, mixed with the dry signal. Not
+   * wet-cached while it holds. */
+  LE_FX_DEGRADE = 19,
+  /* LPF: p0 cutoff (20 to 20000 Hz), p1 resonance. A resonant
+   * 12 dB/octave low-pass. */
+  LE_FX_LPF = 20,
 } le_fx_type;
 
 /* ---- Built-in effect parameter descriptors (#1378) ----
@@ -3550,8 +3561,9 @@ typedef enum le_cache_reason {
                             * hop falls on other frames each lap, so no single
                             * lap's render equals live (#941) */
   LE_CACHE_REASON_FREE_RUNNING = 6, /* the print holds a free-running
-                                     * modulator (a chorus or doubler LFO),
-                                     * which sounds different each lap */
+                                     * modulator (a chorus or doubler LFO,
+                                     * vinyl noise, a degrade's hold), which
+                                     * sounds different each lap */
 } le_cache_reason;
 
 /* Snapshot of one lane's cache state (le_engine_get_lane_cache). */

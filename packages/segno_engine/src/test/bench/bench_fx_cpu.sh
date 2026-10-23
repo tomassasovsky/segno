@@ -9,7 +9,7 @@
 #
 # Usage: ./bench_fx_cpu.sh [--smoke] [--paced] [--rate HZ] [--period FRAMES]
 #          [--blocks N] [--cpu N] [--kind octaver|eq|comp|transient|hpgate|
-#          doubler|chorus|wah|overdrive|distortion]
+#          doubler|chorus|wah|overdrive|distortion|vinyl|degrade|lpf]
 # The binary lands in packages/segno_engine/build/bench/, which is not
 # tracked.
 set -euo pipefail

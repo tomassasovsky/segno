@@ -392,7 +392,18 @@ enum TrackEffectType {
   /// The Looper X's amp simulator at its defaults, which the Studio Rack
   /// labels Dist (#887 part 7): an asymmetric curve, then the 4x12"
   /// cabinet; fit to the Phase 0 amp captures.
-  distortion(17, 'Distortion');
+  distortion(17, 'Distortion'),
+
+  /// The Looper X's vinyl (#887 part 7): a high-pass, a roll-off, soft
+  /// saturation, then hiss and crackle.
+  vinyl(18, 'Vinyl'),
+
+  /// The Looper X's degrade (#887 part 7): sample-rate reduction, filtered
+  /// and mixed with the dry signal.
+  degrade(19, 'Degrade'),
+
+  /// The Looper X's low-pass filter (#887 part 7): resonant, 12 dB/octave.
+  lpf(20, 'LPF');
 
   const TrackEffectType(this.code, this.label);
 
@@ -851,6 +862,88 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.5,
+        taperUnverified: true,
+      ),
+    ],
+    // The Looper X's ranges and tapers; what each control does is chosen
+    // (#891). The Lo-Fi Rack's defaults.
+    TrackEffectType.vinyl => const [
+      FxParamInfo(
+        key: 'drive',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.4,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'frequency',
+        unit: FxParamUnit.hz,
+        atMin: 50,
+        atMax: 5000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.35,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'noise',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.3,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'noise_tone',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.9,
+        taperUnverified: true,
+      ),
+    ],
+    TrackEffectType.degrade => const [
+      FxParamInfo(
+        key: 'frequency',
+        unit: FxParamUnit.hz,
+        atMin: 500,
+        atMax: 50000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 1,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'filter',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
+        taperUnverified: true,
+      ),
+    ],
+    TrackEffectType.lpf => const [
+      FxParamInfo(
+        key: 'cutoff',
+        unit: FxParamUnit.hz,
+        atMin: 20,
+        atMax: 20000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 1,
+      ),
+      FxParamInfo(
+        key: 'resonance',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
         taperUnverified: true,
       ),
     ],
