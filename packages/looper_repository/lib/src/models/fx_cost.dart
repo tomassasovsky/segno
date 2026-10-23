@@ -38,6 +38,11 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   TrackEffectType.degrade: 47,
   TrackEffectType.lpf: 55,
   TrackEffectType.spring: 95,
+  // CI arm64, an eighth of eight in one chain (6.2 and 6.1 us), x 1.75.
+  TrackEffectType.dubVerb: 170,
+  TrackEffectType.ambVerb: 167,
+  // On the hop, as the octaver whose kernel it runs ([kFxHopCostUs]).
+  TrackEffectType.whammy: 0,
 };
 
 /// What a kind on the hop charges, in microseconds a block: its frame's work
@@ -47,6 +52,9 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
 /// 84 us with the YIN slicing (#913).
 const Map<TrackEffectType, double> kFxHopCostUs = {
   TrackEffectType.octaver: 69,
+  // The octaver's phase vocoder, its settings mapped; CI measures the two
+  // alike (41 against 40 us alone).
+  TrackEffectType.whammy: 69,
 };
 
 /// The octaver in PSOLA mode (its mode setting at 1), per block.
