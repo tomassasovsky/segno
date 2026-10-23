@@ -630,6 +630,8 @@ void main() {
               'Doubler',
               'Chorus',
               'Wah',
+              'Overdrive',
+              'Distortion',
             ].contains(module.name)) {
               continue;
             }
@@ -652,10 +654,13 @@ void main() {
       // Dub, 19 Studio, 17 Vocal and 25 Vocal Tuner (compressor and gate).
       // Modulation (part 6): the doubler in 11 Dub, 19 Studio, 17 Vocal and
       // 25 Vocal Tuner; the chorus and the wah in 36 Ed's; the wah in 14
-      // Guitar.
+      // Guitar. Drives (part 7): the overdrive in 36 Ed's and 14 Guitar; the
+      // distortion in 15 Lo-Fi and 19 Studio.
       expect(
         built,
-        (36 + 24 + 11 + 19 + 34 + 50) + (11 + 19 + 17 + 25 + 72 + 14),
+        (36 + 24 + 11 + 19 + 34 + 50) +
+            (11 + 19 + 17 + 25 + 72 + 14) +
+            (36 + 14 + 15 + 19),
       );
     });
   });
@@ -710,6 +715,48 @@ void main() {
         expect(wah.enabled, isFalse);
         expect(fxEntryControls(wah).keys, ['pedal']);
       }
+    });
+  });
+
+  group('the drive variants', () {
+    FxPreset preset(String family, Map<String, double> params) =>
+        FxPreset(family: family, name: 'p', id: 'p', type: 0, params: params);
+
+    test("Ed's and the Guitar Rack's overdrive copy drive and tone", () {
+      for (final family in ["Ed's Rack", 'Guitar Rack']) {
+        final e = fxModuleEntry(
+          _module('Overdrive'),
+          preset(family, const {
+            'OvDrive': 1,
+            'OD Drive': 0.3,
+            'OD Tone': 0.6,
+          }),
+        );
+        expect(e.type, TrackEffectType.overdrive, reason: family);
+        expect(e.params.take(2), [0.3, 0.6]);
+        expect(fxEntryBuild(e)!.readiness, FxModuleReadiness.full);
+      }
+    });
+
+    test('the Lo-Fi Rack shows drive and tone, the Studio Rack the drive '
+        'with the tone flat', () {
+      final lofi = fxModuleEntry(
+        _module('Distortion'),
+        preset('Lo-Fi Rack', const {
+          'Dist': 1,
+          'Dist Drive': 0.2,
+          'Dist Tone': 0.7,
+        }),
+      );
+      expect(lofi.type, TrackEffectType.distortion);
+      expect(fxEntryBuild(lofi)!.exposed, [0, 1]);
+      expect(lofi.params.take(2), [0.2, 0.7]);
+      final studio = fxModuleEntry(
+        _module('Distortion'),
+        preset('Studio Rack', const {'Dist Drive': 0.5}),
+      );
+      expect(fxEntryBuild(studio)!.exposed, [0]);
+      expect(studio.params.take(2), [0.5, 0.5]);
     });
   });
 }

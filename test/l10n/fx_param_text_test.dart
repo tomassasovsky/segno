@@ -56,6 +56,10 @@ const _english = <String, List<String>>{
   'chorus.depth': ['0%', '21%', '100%'],
   'chorus.mix': ['0%', '50%', '100%'],
   'wah.pedal': ['0%', '62%', '100%'],
+  'overdrive.drive': ['0%', '9%', '100%'],
+  'overdrive.tone': ['0%', '50%', '100%'],
+  'distortion.drive': ['0%', '20%', '100%'],
+  'distortion.tone': ['0%', '50%', '100%'],
 };
 
 /// The same in Spanish: a decimal comma, and the Spanish mode name.
@@ -110,6 +114,10 @@ const _spanish = <String, List<String>>{
   'chorus.depth': ['0%', '21%', '100%'],
   'chorus.mix': ['0%', '50%', '100%'],
   'wah.pedal': ['0%', '62%', '100%'],
+  'overdrive.drive': ['0%', '9%', '100%'],
+  'overdrive.tone': ['0%', '50%', '100%'],
+  'distortion.drive': ['0%', '20%', '100%'],
+  'distortion.tone': ['0%', '50%', '100%'],
 };
 
 void main() {

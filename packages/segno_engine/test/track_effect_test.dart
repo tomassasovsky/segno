@@ -427,6 +427,9 @@ void main() {
         TrackEffectType.doubler: [1.0, 1.0],
         TrackEffectType.chorus: [0.45, 0.21, 0.5],
         TrackEffectType.wah: [0.619],
+        // Ed's overdrive; the Lo-Fi Rack's distortion.
+        TrackEffectType.overdrive: [0.09, 0.5],
+        TrackEffectType.distortion: [0.2, 0.5],
       };
       for (final type in TrackEffectType.values) {
         expect(type.defaultParams, cells(expected[type]!), reason: type.name);
@@ -456,7 +459,7 @@ void main() {
       // the Looper X's, except the EQ's two mid frequencies, which span
       // every rack's range, and the controls whose effect is chosen or
       // inferred from one capture: the transient shaper, the doubler, the
-      // chorus and the wah.
+      // chorus, the wah, and the drives' tone (captured at 50 % only).
       for (final type in TrackEffectType.values) {
         for (final p in type.params) {
           expect(
@@ -466,7 +469,10 @@ void main() {
                 type == TrackEffectType.transient ||
                 type == TrackEffectType.doubler ||
                 type == TrackEffectType.chorus ||
-                type == TrackEffectType.wah,
+                type == TrackEffectType.wah ||
+                ((type == TrackEffectType.overdrive ||
+                        type == TrackEffectType.distortion) &&
+                    p.key == 'tone'),
             reason: '${type.name}.${p.key}',
           );
         }

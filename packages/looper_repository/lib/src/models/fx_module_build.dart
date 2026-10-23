@@ -130,18 +130,6 @@ const Map<String, FxModuleBuild> kFxModuleBuilds = {
       'Rev Tail/ER',
     ],
   ),
-  // p0 drive, p1 output level. The preset's tone control has no engine
-  // parameter — the built-in drive has no tone stage at all.
-  'Overdrive': FxModuleBuild(
-    type: TrackEffectType.drive,
-    params: ['OD Drive'],
-    unmapped: ['OD Tone'],
-  ),
-  'Distortion': FxModuleBuild(
-    type: TrackEffectType.drive,
-    params: ['Dist Drive'],
-    unmapped: ['Dist Tone'],
-  ),
   // p0 cutoff, p1 resonance. The preset's own LFO over the cutoff has no
   // engine parameter.
   'Low-pass filter': FxModuleBuild(
@@ -233,7 +221,28 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   },
   'Chorus': {"Ed's Rack": _chorus},
   'Wah': {"Ed's Rack": _wah, 'Guitar Rack': _wah},
+  'Overdrive': {"Ed's Rack": _overdrive, 'Guitar Rack': _overdrive},
+  'Distortion': {'Lo-Fi Rack': _loFiDistortion, 'Studio Rack': _distortion},
 };
+
+// Lo-Fi Rack: drive and tone.
+const FxModuleBuild _loFiDistortion = FxModuleBuild(
+  type: TrackEffectType.distortion,
+  params: ['Dist Drive', 'Dist Tone'],
+);
+
+// Studio Rack: the drive, the tone flat.
+const FxModuleBuild _distortion = FxModuleBuild(
+  type: TrackEffectType.distortion,
+  params: ['Dist Drive'],
+  fixed: {1: 50},
+);
+
+// Ed's and Guitar racks: drive and tone.
+const FxModuleBuild _overdrive = FxModuleBuild(
+  type: TrackEffectType.overdrive,
+  params: ['OD Drive', 'OD Tone'],
+);
 
 // Dub Rack: mix and separation.
 const FxModuleBuild _dubDoubler = FxModuleBuild(
