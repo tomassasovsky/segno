@@ -200,11 +200,14 @@ _Static_assert((LE_PV_HOP & (LE_PV_HOP - 1)) == 0,
 _Static_assert(LE_PV_HOP % 4 == 0, "the stagger lattice is four quarters");
 _Static_assert(LE_PSOLA_AHOP == LE_PV_HOP,
                "PSOLA's YIN cadence must equal the PV hop to share its schedule");
+_Static_assert(LE_OCT_REACH > LE_PV_LATENCY && LE_OCT_REACH > LE_PV_N,
+               "the octaver's ring guard covers the dry tap and the PV window");
 
 /* The analysis-hop PHASE of the octaver in chain slot [slot] of [fx]: the
  * owner's quarter plus the slot, mod 4, on the quarter lattice (engine_fx.h).
- * Its heavy ticks fall on the engine frames c with (c + phase) mod LE_PV_HOP
- * equal to 0 (le_oct_seeded_ticks). Spreading the phase does not reduce the
+ * Its analysis ticks fall on the engine frames c with (c + phase) mod
+ * LE_PV_HOP equal to 0 (le_oct_seeded_ticks), and the PV frame's later
+ * stages a quarter apart after them. Spreading the phase does not reduce the
  * work; it stops it arriving in one callback.
  *
  * WHY IT COSTS NO LATENCY: a PV frame is analysed at hop_count == 0 and its
@@ -278,13 +281,13 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   le_octaver_state* o = &fx->oct[slot][chan];
   le_oct_set_ticks_to_work(o, ticks);
   o->out_pos = 0;
-  o->in_epoch = 0;
+  /* PSOLA's analysis marks start LE_PSOLA_LAG back, where its sources are. */
+  o->in_epoch = LE_PSOLA_LAG;
   o->out_epoch = 0;
   o->period = 0.0f;
   o->voiced = 0.0f;
   if (o->out != NULL) memset(o->out, 0, sizeof(float) * LE_PV_OUT);
-  if (o->scratch != NULL) memset(o->scratch, 0, sizeof(float) * LE_PV_SCRATCH);
-  o->hold_pos = 0;
+  o->analysed = 0;
   o->frame_ratio = 1.0f;
   if (o->last_phase != NULL) memset(o->last_phase, 0, sizeof(float) * LE_PV_BINS);
   if (o->sum_phase != NULL) memset(o->sum_phase, 0, sizeof(float) * LE_PV_BINS);
@@ -333,16 +336,15 @@ void le_octaver_envelope(const float* mag, float* env) {
  * Cost per hop per channel: four length-N real FFTs, one per stage but the
  * shift (analysis, the two cepstrum transforms, synthesis), on the shared
  * plan le_pv_fft (fft.h). On the console a stereo frame cost ~170 us in one
- * callback (#1410); split, a callback carries about a quarter of it. Stack
- * use falls to the inverse transform's ~16 KB scratch, since the frame's
- * arrays moved to the heap. */
+ * callback (#1410); split, a callback carries about a quarter of it. The
+ * frame's arrays live in the heap scratch, so the stack holds only each
+ * stage's own temporaries. */
 #define LE_PV_S_WIN(o) ((o)->scratch)
 #define LE_PV_S_RE(o) ((o)->scratch + LE_PV_N)
 #define LE_PV_S_IM(o) ((o)->scratch + LE_PV_N + LE_PV_BINS)
 #define LE_PV_S_MAG(o) ((o)->scratch + LE_PV_N + 2 * LE_PV_BINS)
 #define LE_PV_S_FREQ(o) ((o)->scratch + LE_PV_N + 3 * LE_PV_BINS)
 #define LE_PV_S_ENV(o) ((o)->scratch + LE_PV_N + 4 * LE_PV_BINS)
-#define LE_PV_S_HOLD(o) ((o)->scratch + LE_PV_N + 5 * LE_PV_BINS)
 
 /* Stage 0: Hann-window the newest N samples (win[N-1] is the freshest),
  * transform, and read each bin's magnitude and true frequency from its phase
@@ -413,13 +415,14 @@ static void le_pv_stage_shift(le_octaver_state* o) {
   }
 }
 
-/* Stage 3: inverse transform, synthesis-window, and overlap-add one hop on
- * (the Hann x Hann windows at 4x overlap sum to 1.5: divide for unity). */
+/* Stage 3: inverse transform, synthesis-window, and overlap-add from the
+ * accumulator element this tick emits (the Hann x Hann windows at 4x overlap
+ * sum to 1.5: divide for unity). */
 static void le_pv_stage_synth(le_octaver_state* o) {
   float* win = LE_PV_S_WIN(o);
   le_rfft_inv(&le_pv_fft, LE_PV_S_RE(o), LE_PV_S_IM(o), win);
   const float norm = 1.0f / 1.5f;
-  float* out = o->out + LE_PV_HOP;
+  float* out = o->out + LE_PV_SYNTH_TICK;
   for (int i = 0; i < LE_PV_N; ++i) {
     out[i] += win[i] * le_hann[i] * norm;
   }
@@ -436,22 +439,23 @@ static void le_pv_stage_synth(le_octaver_state* o) {
  * analysis runs at tick (LE_PV_HOP - p) % LE_PV_HOP + 1 instead of tick 1:
  *
  *  1. Reported latency. A frame analysed with the FIFO head at H covers input
- *     [H - N + 1, H] and lands at out[HOP .. HOP + N - 1] three quarters of a
- *     hop later; after the hop's shift that is out[0 .. N - 1] at the next
- *     hop's first tick, H + HOP, and out[j] is emitted when the head is
- *     H + HOP + j. The emitted sample therefore corresponds to input
- *     (head - N - HOP + 1) for every p: latency stays LE_PV_LATENCY.
+ *     [H - N + 1, H]. Its synthesis runs LE_PV_SYNTH_TICK (S) ticks later,
+ *     with the head at H + S, and overlap-adds at out[S ..]: frame sample s
+ *     sits at out[S + s] in that hop's frame of reference, and is emitted
+ *     when the head is H + S + s (the shift at each hop's end moves it and
+ *     the read position together). The emitted sample therefore corresponds
+ *     to input (head - N - S + 1) for every p: latency stays LE_PV_LATENCY.
  *  2. The dry-delay match (fx_octaver's tap at head - latency + 1) is the same
  *     index, so wet and dry stay aligned at every phase.
  *  3. fx_apply_chain's warmup (LE_PV_LATENCY ticks, output discarded). The
- *     argument is the unsplit one moved a hop later: the worst phase's fourth
- *     frame lands on tick LE_PV_LATENCY exactly, so the first ramped sample
- *     is complete at every phase, with no margin.
+ *     argument is the unsplit one moved S ticks later: the worst phase's
+ *     fourth frame lands on tick LE_PV_LATENCY exactly, so the first ramped
+ *     sample is complete at every phase, with no margin.
  *     test_octaver_hop_stagger_alignment sweeps all LE_PV_HOP phases and
  *     fails with a warmup one sample shorter.
  *
- * A stage that runs before the first analysis after a reset reads the
- * zeroed scratch and adds silence. */
+ * A stage whose tick comes before the first analysis after a reset is
+ * skipped (o->analysed), so a reset never synthesises a stale frame. */
 static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int cap,
                         float ratio) {
   if (o->out == NULL || o->scratch == NULL) return 0.0f;
@@ -459,15 +463,16 @@ static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int ca
     case 0:
       le_pv_stage_analyse(o, fifo, head, cap);
       o->frame_ratio = ratio;
+      o->analysed = 1;
       break;
     case LE_PV_HOP / 4:
-      le_pv_stage_envelope(o);
+      if (o->analysed) le_pv_stage_envelope(o);
       break;
     case LE_PV_HOP / 2:
-      le_pv_stage_shift(o);
+      if (o->analysed) le_pv_stage_shift(o);
       break;
-    case 3 * LE_PV_HOP / 4:
-      le_pv_stage_synth(o);
+    case LE_PV_SYNTH_TICK:
+      if (o->analysed) le_pv_stage_synth(o);
       break;
     default:
       break;
@@ -634,11 +639,12 @@ int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
 /* Added latency (frames) of the active octaver. Single source of truth, read in
  * two places: the dry-delay match in fx_octaver (D2), and — per the part-5 plan —
  * the control thread, which folds it into the published snapshot so the UI can
- * warn about monitoring lag. PSOLA reuses the LE_PV_N OLA accumulator (the no-
- * extra-allocation budget part 3 fixed), and by construction its grain centers sit
- * LE_PV_N behind the head, so its latency equals the phase vocoder's; both modes
- * therefore report LE_PV_N and the dry tap does not jump on a switch. The argument
- * is the per-mode seam a future dedicated PSOLA buffer (lower latency) would use. */
+ * warn about monitoring lag. PSOLA reuses the PV's OLA accumulator (the no-
+ * extra-allocation budget part 3 fixed); its grain centers sit LE_PV_N behind the
+ * input it reads, and it reads LE_PSOLA_LAG further back than the head, so its
+ * latency equals the phase vocoder's. Both modes therefore report LE_PV_LATENCY
+ * and the dry tap does not jump on a switch. The argument is the per-mode seam a
+ * future dedicated PSOLA buffer (lower latency) would use. */
 static int le_octaver_latency(const le_octaver_state* o) {
   (void)o;
   return LE_PV_LATENCY;
@@ -663,6 +669,10 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
                            int cap, float ratio) {
   if (o->out == NULL) return 0.0f;
   const int N = LE_PV_N;
+  /* PSOLA works on the input LE_PSOLA_LAG ticks back (its pitch window, its
+   * grain sources and its dry fallback), so its latency matches the split
+   * phase vocoder's. */
+  const int lag = LE_PSOLA_LAG;
   const int sr = cap; /* the fx ring is 1 s long, so cap == sample rate */
 
   /* 1. Emit one sample from the circular OLA accumulator, clearing it behind. */
@@ -676,7 +686,7 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
     o->hop_count = LE_PSOLA_AHOP;
     float win[LE_PSOLA_WIN];
     for (int i = 0; i < LE_PSOLA_WIN; ++i) {
-      int idx = head - (LE_PSOLA_WIN - 1) + i;
+      int idx = head - lag - (LE_PSOLA_WIN - 1) + i;
       idx %= cap;
       if (idx < 0) idx += cap;
       win[i] = fifo[idx];
@@ -709,7 +719,7 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
     int th = pi;
     if (th > LE_PSOLA_THMAX) th = LE_PSOLA_THMAX;
     const int c = N / 2;  /* grain center offset ahead of the read pointer */
-    const int dn = N - c; /* nominal source distance behind the head */
+    const int dn = N - c + lag; /* nominal source distance behind the head */
     /* Snap the analysis mark to the nearest of the period-spaced grid near dn. */
     while (o->in_epoch - dn > pi / 2) o->in_epoch -= pi;
     while (dn - o->in_epoch > pi / 2) o->in_epoch += pi;
@@ -734,25 +744,16 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
   }
 
   /* 4. Soft voiced/unvoiced gate (D4): crossfade the grain voice against the
-   *    dry N samples back (the voice's own alignment) by the smoothed
-   *    confidence. Silence -> voiced ~0 and the dry tap is ~0, so the output
-   *    collapses to silence (no grain buzz). */
-  int didx = head - N + 1;
+   *    delay-matched dry by the smoothed confidence. Silence -> voiced ~0 and the
+   *    dry tap is ~0, so the output collapses to silence (no grain buzz). */
+  int didx = head - le_octaver_latency(o) + 1;
   didx %= cap;
   if (didx < 0) didx += cap;
+  const float dry = fifo[didx];
   float wv = (o->voiced - 0.3f) / 0.3f; /* soft gate around conf ~0.3..0.6 */
   if (wv < 0.0f) wv = 0.0f;
   if (wv > 1.0f) wv = 1.0f;
-  const float mixed = wv * y + (1.0f - wv) * fifo[didx];
-  /* 5. Hold the result back one hop, so PSOLA's latency is the phase
-   *    vocoder's (LE_PV_LATENCY) and the dry tap does not move on a mode
-   *    switch. Voice, dry and gate move together: the hold is a pure delay. */
-  if (o->scratch == NULL) return mixed;
-  float* hold = LE_PV_S_HOLD(o);
-  const float held = hold[o->hold_pos];
-  hold[o->hold_pos] = mixed;
-  if (++o->hold_pos >= LE_PV_HOP) o->hold_pos = 0;
-  return held;
+  return wv * y + (1.0f - wv) * dry;
 }
 
 /* Formant-preserving octaver. Writes the newest sample to the slot's FIFO ring,
@@ -767,7 +768,10 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
                         const float* p) {
   float* buf = fx->delay[slot][chan];
   le_octaver_state* o = &fx->oct[slot][chan];
-  if (buf == NULL || o->out == NULL || cap < LE_PV_N + 1) return x;
+  if (buf == NULL || o->out == NULL || o->scratch == NULL ||
+      cap < LE_OCT_REACH) {
+    return x;
+  }
 
   /* Keep the hop on the engine clock (#941). The counter advances one per
    * tick, so it stays in step for as long as the slot is ticked every frame;
@@ -831,7 +835,7 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
 
   /* Delay-matched dry (D2): read the dry tap behind the newest by the active
    * mode's added latency (le_octaver_latency) so the mix stays comb-free. Both
-   * modes report LE_PV_N today, so the dry tap does not jump on a mode switch. */
+   * modes report LE_PV_LATENCY, so the dry tap does not jump on a mode switch. */
   int dry_idx = head - le_octaver_latency(o) + 1;
   dry_idx %= cap;
   if (dry_idx < 0) dry_idx += cap;
@@ -918,8 +922,9 @@ static void le_fx_clear_reverb(le_fx_state* fx, int s) {
  * reset one slot when its type changes), removing what was a copy-pasted clear.
  *
  * RT note: this runs on the AUDIO THREAD (the SET_*_FX ring handlers). For an
- * allocated octaver slot it now memsets the three phase-vocoder buffers
- * (~16 KB/channel). That is bounded and fires only on a discrete type-change
+ * allocated octaver slot it memsets the phase-vocoder accumulator and phase
+ * buffers (~9 KB/channel; the frame scratch is not cleared, see
+ * le_octaver_state::analysed). That is bounded and fires only on a discrete type-change
  * event (never per sample), consistent with the existing reverb-line clears. */
 void le_fx_entry_reset(le_fx_state* fx, int slot) {
   for (int chan = 0; chan < 2; ++chan) {

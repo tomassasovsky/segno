@@ -11,7 +11,7 @@
  * harness's param slots — Shift/Tone/Mix/Mode — exercising its upper bound.
  *
  * NO offset/alignment math is needed here despite Octaver's non-zero
- * getLatencySamples() (LE_PV_N=1024): that value is host-facing metadata
+ * getLatencySamples() (LE_PV_LATENCY): that value is host-facing metadata
  * for external delay compensation, not something that shifts what
  * IAudioProcessor::process() itself outputs — both the hosted and direct
  * paths call the exact same fx_apply_chain per sample, so they stay

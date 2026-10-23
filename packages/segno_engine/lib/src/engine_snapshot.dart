@@ -2059,9 +2059,10 @@ class EngineSnapshot {
 
   /// Added latency (frames) of the highest-latency effect engaged in any
   /// audible or monitored lane chain — the maximum across active effects. Today
-  /// only the formant-preserving octaver contributes (~21 ms); `0` when no
-  /// octaver is engaged. Purely informational (see [fxAddedLatencyMs]); never
-  /// feeds [recordOffsetFrames] or any compensation.
+  /// only the formant-preserving octaver contributes (~25 ms at 48 kHz); `0`
+  /// when no octaver is engaged. Purely informational (see
+  /// [fxAddedLatencyMs]); never feeds [recordOffsetFrames] or any
+  /// compensation.
   final int fxAddedLatencyFrames;
 
   /// [fxAddedLatencyFrames] expressed in milliseconds at the current
