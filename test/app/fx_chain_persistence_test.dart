@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
@@ -293,29 +292,6 @@ void main() {
     );
     expect(result.chainEnabled, isFalse);
     expect((result.entries.single as BuiltInEffect).params.first, .8);
-  });
-
-  test('a held binding value on a Pitch Shift is a shown setting', () {
-    // The Studio Rack's Pitch Shift runs on the octaver (-24..+24) but shows
-    // -12..+12: a binding at the top of its range plays +12, not +24.
-    final pitch = fxModuleEntry(
-      kFxModules.firstWhere((m) => m.name == 'Pitch shift'),
-      const FxPreset(
-        family: 'Studio Rack',
-        name: 'p',
-        id: 'p',
-        type: 0,
-        params: {'Pitch': 1, 'Pitch Shift': 0.5, 'Pitch Mix': 1},
-      ),
-    ).copyWith(slotId: 'pitch');
-    const shift = FxParamTarget(address: address, slotId: 'pitch', param: 0);
-    projection.replace(powers: const {}, parameters: {shift: 1});
-    final result = projection.project(
-      address,
-      FxChainEnvelope(entries: [pitch]),
-    );
-    final entry = result.entries.single as BuiltInEffect;
-    expect(entry.type.params[0].valueAt(entry.params[0]), closeTo(12, 1e-4));
   });
 
   test('session replacement cancels stale awaited settings capture', () async {

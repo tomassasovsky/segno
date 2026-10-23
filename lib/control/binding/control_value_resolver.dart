@@ -149,7 +149,6 @@ extension ControlValueResolver on LooperRepository {
     ControlValueTarget target, {
     OwnedValueReadout? owned,
   }) => switch (target) {
-    // A binding reads the shown setting (fxEntryShownSettingFor).
     FxParamTarget(:final param) => switch (_paramSlot(target)) {
       final slot? => fxEntryShownSetting(slot.effect, param),
       null => null,
@@ -183,6 +182,31 @@ extension ControlValueResolver on LooperRepository {
     };
     return target.fromDomain(value);
   }
+
+  /// A binding's value for [target], a setting of the parameter's shown range
+  /// ([fxEntryParam]), as the chain's own setting for the same value.
+  ///
+  /// A binding (MIDI, an expression pedal, an External value) works in the
+  /// range the rack shows, which for a rack variant can be narrower than the
+  /// kind's (the Pitch Shift's -12..+12 on the octaver's -24..+24); the chain
+  /// and its persistence hold the kind's setting. The control layer converts
+  /// where the two meet: [fxShownSettingFor] on the way in (the value read
+  /// back, a UI edit becoming a holder) and this on the way out (the external
+  /// writer, the durable holds). A target that does not resolve passes
+  /// through.
+  double fxKindSettingFor(FxParamTarget target, double shown) =>
+      switch (_paramSlot(target)) {
+        final slot? => fxEntryKindSetting(slot.effect, target.param, shown),
+        null => shown,
+      };
+
+  /// The chain setting [kind] of [target] as a binding's value, a setting of
+  /// the parameter's shown range (see [fxKindSettingFor]).
+  double fxShownSettingFor(FxParamTarget target, double kind) =>
+      switch (_paramSlot(target)) {
+        final slot? => fxEntryShownSettingFor(slot.effect, target.param, kind),
+        null => kind,
+      };
 
   /// The CURRENT position and entry [target] names, or `null` when the chain,
   /// the slot, or the parameter index is gone (A9).

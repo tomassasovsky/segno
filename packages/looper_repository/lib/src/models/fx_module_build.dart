@@ -662,13 +662,8 @@ double fxEntryShownSetting(BuiltInEffect entry, int index) =>
 
 /// The setting of [fxEntryParam] that stands for the same value as
 /// [kindSetting], a setting of [entry]'s parameter [index] (the entry's own
-/// or one about to be written to it).
-///
-/// A shown setting is also what a control binding (MIDI, an expression pedal,
-/// an External value) works in: its 0..1 spans the range the rack shows, and
-/// the binding layer converts at the two places its values meet the chain
-/// (the writer and the persisted holds) and the two where chain values come
-/// in (the value read-back and a UI edit).
+/// or another one, such as a value about to be written to it). A setting
+/// outside the shown range clamps to its end.
 double fxEntryShownSettingFor(
   BuiltInEffect entry,
   int index,
