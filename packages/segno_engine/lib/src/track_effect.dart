@@ -39,6 +39,10 @@ List<double> canonicalEffectParams(
   TrackEffectType type,
   List<double>? params,
 ) {
+  assert(
+    params == null || params.length <= kTrackEffectParams,
+    'an entry holds at most $kTrackEffectParams parameter cells',
+  );
   final defaults = type.defaultParams;
   final count = type.params.length;
   return List<double>.unmodifiable([
@@ -819,9 +823,9 @@ final class BuiltInEffect extends TrackEffect {
   /// to safe defaults. A legacy `stage` key (from the removed pre/post model)
   /// is ignored, so older persisted chains still decode.
   ///
-  /// The decoded `params` go through [canonicalEffectParams]: a list saved by
-  /// a narrower build, or trimmed by [toJson], is padded with the type's own
-  /// `defaultParams`, and cells past the type's parameters are dropped. A
+  /// The decoded `params` go through [canonicalEffectParams], like any
+  /// other list: a short one takes the type's defaults for the cells it does
+  /// not reach, and cells past the type's parameters are dropped. A
   /// missing `enabled` decodes `true` (every pre-FX-v3 entry was audible —
   /// R15's "migration defaults every level to enabled"); a missing `slotId`
   /// stays null for the repository write boundary to mint (A9).
