@@ -21,6 +21,9 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.echo => effectEcho,
     TrackEffectType.reverb => effectReverb,
     TrackEffectType.eq => effectEq,
+    TrackEffectType.compressor => effectCompressor,
+    TrackEffectType.transient => effectTransient,
+    TrackEffectType.hpGate => effectHpGate,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
@@ -62,16 +65,26 @@ extension EngineLocalizations on AppLocalizations {
     'mid_gain' => paramMidGain,
     'mid_freq' => paramMidFreq,
     'mid_q' => paramMidQ,
+    'threshold' => paramThreshold,
+    'ratio' => paramRatio,
+    'attack' => paramAttack,
+    'release' => paramRelease,
+    'makeup' => paramMakeup,
+    'attack_length' => paramAttackLength,
+    'sustain' => paramSustain,
+    'highpass' => paramHighpass,
+    'gate_threshold' => paramGateThreshold,
     _ => key,
   };
 
   /// The value a built-in parameter's normalized [setting] stands for, with
-  /// its unit, as one string: `35%`, `350 ms`, `12.5 ms`, `440 Hz`,
-  /// `1.2 kHz`, `15.5x`, a pitch interval, or a named position.
+  /// its unit, as one string: `35%`, `350 ms`, `12.5 ms`, `0.05 ms`,
+  /// `440 Hz`, `1.2 kHz`, `15.5x`, `4.0:1`, a pitch interval, or a named
+  /// position.
   ///
   /// Times and frequencies drop the decimal from 100 up, where a tenth is
-  /// finer than a performer sets or hears; a frequency reads in kHz from
-  /// 1000 Hz.
+  /// finer than a performer sets or hears; a time under 1 ms keeps two
+  /// decimals; a frequency reads in kHz from 1000 Hz.
   String fxParamValueText(FxParamInfo p, double setting) {
     // The EQ's cuts are off at their ends of the range (engine_fx.c).
     if ((p.key == 'low_cut' && setting <= 0) ||
@@ -83,7 +96,11 @@ extension EngineLocalizations on AppLocalizations {
     return switch (p.unit) {
       FxParamUnit.percent => fxValuePercent(value.round()),
       FxParamUnit.ms =>
-        tenths >= 100 ? fxValueMs(value.round()) : fxValueMsFine(tenths),
+        tenths >= 100
+            ? fxValueMs(value.round())
+            : value > 0 && value < 0.995
+            ? fxValueMsFiner((value * 100).round() / 100)
+            : fxValueMsFine(tenths),
       FxParamUnit.hz =>
         value.round() >= 1000
             ? fxValueKhz(value / 1000)
@@ -95,6 +112,7 @@ extension EngineLocalizations on AppLocalizations {
       FxParamUnit.choice => _choiceName(p, p.positionOf(setting)),
       FxParamUnit.db => fxValueDb(tenths),
       FxParamUnit.q => fxValueQ(value),
+      FxParamUnit.ratio => fxValueRatio(tenths),
     };
   }
 

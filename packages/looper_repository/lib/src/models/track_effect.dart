@@ -181,6 +181,9 @@ enum FxParamUnit {
 
   /// A filter's Q, a plain number.
   q,
+
+  /// A compression ratio, "n : 1".
+  ratio,
 }
 
 /// How a built-in parameter's value follows its normalized setting. Domain
@@ -191,6 +194,10 @@ enum FxParamCurve {
 
   /// `atMin * (atMax / atMin) ^ v`.
   exponential,
+
+  /// `1 / (1 / atMin + (1 / atMax - 1 / atMin) * v)`: the reciprocal is
+  /// linear.
+  reciprocal,
 }
 
 /// One built-in effect parameter: what its normalized `0..1` setting means.
@@ -287,6 +294,7 @@ class FxParamInfo extends Equatable {
       FxParamUnit.choice => engine.FxParamUnit.choice,
       FxParamUnit.db => engine.FxParamUnit.db,
       FxParamUnit.q => engine.FxParamUnit.q,
+      FxParamUnit.ratio => engine.FxParamUnit.ratio,
     },
     atMin: atMin,
     atMax: atMax,
@@ -295,6 +303,7 @@ class FxParamInfo extends Equatable {
     curve: switch (curve) {
       FxParamCurve.linear => engine.FxParamCurve.linear,
       FxParamCurve.exponential => engine.FxParamCurve.exponential,
+      FxParamCurve.reciprocal => engine.FxParamCurve.reciprocal,
     },
     taperUnverified: taperUnverified,
   );
@@ -344,7 +353,16 @@ enum TrackEffectType {
   reverb(7),
 
   /// The Looper X's generic EQ (#887 part 4).
-  eq(9);
+  eq(9),
+
+  /// The Looper X's compressor (#887 part 5).
+  compressor(10),
+
+  /// The Looper X's transient shaper (#887 part 5).
+  transient(11),
+
+  /// The Looper X's high-pass gate (#887 part 5).
+  hpGate(12);
 
   const TrackEffectType(this.code);
 
@@ -747,12 +765,14 @@ FxParamUnit _unitFromEngine(engine.FxParamUnit unit) => switch (unit) {
   engine.FxParamUnit.choice => FxParamUnit.choice,
   engine.FxParamUnit.db => FxParamUnit.db,
   engine.FxParamUnit.q => FxParamUnit.q,
+  engine.FxParamUnit.ratio => FxParamUnit.ratio,
 };
 
 /// Maps an engine parameter curve to its domain mirror.
 FxParamCurve _curveFromEngine(engine.FxParamCurve curve) => switch (curve) {
   engine.FxParamCurve.linear => FxParamCurve.linear,
   engine.FxParamCurve.exponential => FxParamCurve.exponential,
+  engine.FxParamCurve.reciprocal => FxParamCurve.reciprocal,
 };
 
 /// Maps a domain [FxChannels] to the engine value at the boundary.
