@@ -467,6 +467,88 @@ static void test_hp_gate_gates(void) {
   free(out);
 }
 
+/* The hold restarts whenever the level comes back within the hysteresis:
+ * after a dip that ran part of the hold down, a return to between the two
+ * thresholds and a second dip keep the gate open for a whole hold again. */
+static void test_hp_gate_hold_restarts(void) {
+  printf("test_hp_gate_hold_restarts\n");
+  const int sr = 48000;
+  /* -30 dB, then -60 dB for 25 ms (the envelope falls under -46 dB after
+   * about 18 ms, so 7 ms of the 20 ms hold run down), -43 dB for 30 ms,
+   * then -60 dB again. */
+  const int a = sr / 10;
+  const int b = a + sr / 40;
+  const int c = b + 3 * sr / 100;
+  const int n = c + sr / 10;
+  float* in = (float*)malloc(sizeof(float) * (size_t)n);
+  float* out = (float*)malloc(sizeof(float) * (size_t)n);
+  for (int i = 0; i < n; ++i) {
+    const float db = i < a ? -30.0f : i < b ? -60.0f : i < c ? -43.0f : -60.0f;
+    in[i] = powf(10.0f, db / 20.0f) * sinf(2.0f * (float)M_PI * 1000.0f * i / sr);
+  }
+  float p[LE_FX_PARAMS] = {0};
+  p[1] = dyn_setting(LE_FX_HP_GATE, 1, -40.0);
+  le_fx_state* fx = dyn_state(LE_FX_HP_GATE, sr);
+  uint32_t clock = 0;
+  dyn_run(fx, LE_FX_HP_GATE, p, sr, in, out, NULL, n, &clock);
+  dyn_free(fx);
+  /* The envelope is under -46 dB about 3.5 ms into the second dip; the
+   * whole hold has 20 ms to run from there, so 20 to 22 ms in it is still
+   * open (the 1 Hz high-pass leaves about 0.15 dB of the level change). A
+   * hold left at 13 ms would have closed at about 17 ms, and the gain would
+   * be 0.7 dB down by then. */
+  const int from = c + 20 * sr / 1000;
+  const int to = c + 22 * sr / 1000;
+  CHECK(fabsf(dyn_db(tr_peak(out, from, to) / tr_peak(in, from, to))) < 0.3f);
+  /* And it does close after that. */
+  const int late = c + 80 * sr / 1000;
+  CHECK(dyn_db(tr_peak(out, late, late + sr / 100) / tr_peak(in, late, late + sr / 100)) <
+        -6.0f);
+  free(in);
+  free(out);
+}
+
+/* A glide the slot stops processing part-way (the chain skipped for a
+ * while, the engine clock running on) resumes from where it stood, never
+ * jumping: the compressor's make-up rising 0 -> 30 dB, paused for 1000
+ * frames after 40 samples. */
+static void test_dynamics_paused_glide_resumes_smoothly(void) {
+  printf("test_dynamics_paused_glide_resumes_smoothly\n");
+  const int sr = 48000;
+  float p[LE_FX_PARAMS] = {0};
+  le_fx_defaults(LE_FX_COMPRESSOR, p);
+  p[0] = 0.0f;
+  p[4] = 0.0f;
+  le_fx_state* fx = dyn_state(LE_FX_COMPRESSOR, sr);
+  fx->clocked = 1;
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  const int32_t types[1] = {LE_FX_COMPRESSOR};
+  uint32_t clock = 0;
+  float prev = 0.0f;
+  float max_step = 0.0f;
+  const float a = 0.01f;
+  for (int i = 0; i < sr / 5; ++i) {
+    if (i == 4800) p[4] = 1.0f;
+    if (i == 4840) clock += 1000; /* not processed for 1000 frames */
+    memcpy(params[0], p, sizeof(p));
+    fx->clock = clock++;
+    /* A constant level, so any change sample to sample is the gain's. */
+    float l = a;
+    float r = a;
+    fx_apply_chain(fx, sr, sr, &l, &r, 1, types, params, NULL);
+    if (i > 4790) {
+      const float step = fabsf(l - prev);
+      if (step > max_step) max_step = step;
+    }
+    prev = l;
+  }
+  /* The gain moves at most one ramp step a sample: 30 dB over ~10 ms
+   * starts at about 0.06 dB per sample (0.007 x the level at most). */
+  CHECK(max_step < 0.002f);
+  CHECK(fabsf(dyn_db(prev / a) - 30.0f) < 0.05f);
+  dyn_free(fx);
+}
+
 /* ---- all three ---- */
 
 /* A live owner and an offline render update on the same frames and produce
@@ -546,6 +628,8 @@ static void run_dynamics_tests(void) {
   test_transient_shapes();
   test_hp_gate_highpass_matches_design();
   test_hp_gate_gates();
+  test_hp_gate_hold_restarts();
+  test_dynamics_paused_glide_resumes_smoothly();
   test_dynamics_offline_equals_live();
   test_dynamics_on_a_lane();
 }

@@ -298,11 +298,15 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          set -o pipefail
-          for kind in eq comp transient hpgate; do
-            bash packages/segno_engine/src/test/bench/bench_fx_cpu.sh \
-              --kind "$kind" --blocks 2000
-          done | tee bench-fx-kinds-arm64.md
+          set -euo pipefail
+          # The script builds the bench once; the other kinds rerun it.
+          bash packages/segno_engine/src/test/bench/bench_fx_cpu.sh \
+            --kind eq --blocks 2000 > bench-fx-kinds-arm64.md
+          for kind in comp transient hpgate; do
+            packages/segno_engine/build/bench/bench_fx_cpu \
+              --kind "$kind" --blocks 2000 >> bench-fx-kinds-arm64.md
+          done
+          cat bench-fx-kinds-arm64.md
       - name: Upload the effects bench and its report for the appliance
         if: always()
         uses: actions/upload-artifact@v4
