@@ -1665,33 +1665,150 @@ void le_eq_bell_for_test(double hz, double db, double q, int sr, double c[5]) {
   le_eq_bell(hz, db, q, sr, c);
 }
 
+/* ---- The EQ at rates other than 48 kHz (#1436) ----
+ *
+ * The bands are the Looper X's, measured at 48 kHz. At another rate the same
+ * design runs high near the top of the audio band, where the 48 kHz response
+ * is compressed toward its 24 kHz Nyquist frequency: at 96 kHz the 20 kHz
+ * high cut lost 1.2 dB at 16 kHz instead of 0.2 dB, and a bell near 20 kHz
+ * was off by up to 7 dB. tool/eq_rate_fit.py fits, for each band shape at
+ * each point of a grid over its settings, a biquad at the running rate to
+ * the 48 kHz magnitude response over 20 Hz to 20 kHz, and stores how its
+ * coefficients differ from the plain design below. A band adds the
+ * difference, interpolated over the grid, to its plain design: a table
+ * lookup, no fitting. 48 kHz needs none, and other rates run the plain
+ * design. */
+typedef struct le_eq_rate_table {
+  int32_t nf, nq, ng;     /* grid points per axis */
+  double f0, df;          /* ln f0 at the first point, and the step */
+  double q0, dq;          /* ln Q likewise */
+  double g0, dg;          /* gain in dB likewise */
+  const float* d;         /* [nf][nq][ng][5]: b0 b1 b2 a1 a2 */
+} le_eq_rate_table;
+
+#include "engine_fx_eq_rate.inc"
+
+enum { LE_EQR_BELL, LE_EQR_HS, LE_EQR_LP, LE_EQR_HP, LE_EQR_NONE };
+
+static const le_eq_rate_table* le_eq_rate_table_for(int shape, int sr) {
+  static const le_eq_rate_table* const t44[4] = {
+      &LE_EQR_BELL_44100, &LE_EQR_HS_44100, &LE_EQR_LP_44100, &LE_EQR_HP_44100};
+  static const le_eq_rate_table* const t96[4] = {
+      &LE_EQR_BELL_96000, &LE_EQR_HS_96000, &LE_EQR_LP_96000, &LE_EQR_HP_96000};
+  if (shape == LE_EQR_NONE) return NULL;
+  if (sr == 44100) return t44[shape];
+  if (sr == 96000) return t96[shape];
+  return NULL;
+}
+
+/* The grid position of [v] on an axis of [n] points from [v0] in steps of
+ * [dv]: the lower point and the share toward the next, clamped to the grid. */
+static void le_eq_rate_axis(double v, double v0, double dv, int32_t n,
+                            int32_t* i, double* t) {
+  if (n < 2) {
+    *i = 0;
+    *t = 0.0;
+    return;
+  }
+  double u = (v - v0) / dv;
+  if (u < 0.0) u = 0.0;
+  if (u > (double)(n - 1)) u = (double)(n - 1);
+  int32_t k = (int32_t)u;
+  if (k > n - 2) k = n - 2;
+  *i = k;
+  *t = u - (double)k;
+}
+
+/* How close to the stability edge a correction may move a pole. */
+#define LE_EQR_MARGIN 0.9999
+
+/* Adds [shape]'s correction at these settings to the plain design [c], when
+ * the rate has one. The grid's own designs are all stable, but the plain
+ * design between grid points plus the interpolated correction could land
+ * close to or past the edge, so the correction is scaled by the largest
+ * s <= 1 that keeps |a2| <= LE_EQR_MARGIN and |a1| <= LE_EQR_MARGIN (1 + a2),
+ * or no further out than the plain design where that already is. Each bound
+ * is linear in s, so s moves continuously with the settings and a glide
+ * never steps (tool/eq_rate_fit.py guarded() is the same). */
+static void le_eq_rate_correct(int shape, double hz, double db, double q,
+                               int sr, double c[5]) {
+  const le_eq_rate_table* t = le_eq_rate_table_for(shape, sr);
+  if (t == NULL) return;
+  int32_t i[3];
+  double w[3];
+  le_eq_rate_axis(log(hz), t->f0, t->df, t->nf, &i[0], &w[0]);
+  le_eq_rate_axis(log(q), t->q0, t->dq, t->nq, &i[1], &w[1]);
+  le_eq_rate_axis(db, t->g0, t->dg, t->ng, &i[2], &w[2]);
+  double d[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+  for (int corner = 0; corner < 8; ++corner) {
+    const int32_t fi = i[0] + ((corner & 1) && t->nf > 1);
+    const int32_t qi = i[1] + ((corner & 2) && t->nq > 1);
+    const int32_t gi = i[2] + ((corner & 4) && t->ng > 1);
+    const double wt = ((corner & 1) ? w[0] : 1.0 - w[0]) *
+                      ((corner & 2) ? w[1] : 1.0 - w[1]) *
+                      ((corner & 4) ? w[2] : 1.0 - w[2]);
+    if (wt == 0.0) continue;
+    const float* e = t->d + 5 * ((fi * t->nq + qi) * t->ng + gi);
+    for (int k = 0; k < 5; ++k) d[k] += wt * (double)e[k];
+  }
+  const double m = LE_EQR_MARGIN;
+  const double a1 = c[3];
+  const double a2 = c[4];
+  const double g0[4] = {a2 - m, -a2 - m, a1 - m * (1.0 + a2),
+                        -a1 - m * (1.0 + a2)};
+  const double dg[4] = {d[4], -d[4], d[3] - m * d[4], -d[3] - m * d[4]};
+  double s = 1.0;
+  for (int k = 0; k < 4; ++k) {
+    const double bound = g0[k] > 0.0 ? g0[k] : 0.0;
+    if (dg[k] > 0.0 && (bound - g0[k]) / dg[k] < s) s = (bound - g0[k]) / dg[k];
+  }
+  if (s < 0.0) s = 0.0;
+  for (int k = 0; k < 5; ++k) c[k] += s * d[k];
+}
+
 /* The EQ kind's design of band [b] (LE_EQB_*): the cuts, the outer bands as
- * shelves or bells, and the mid bells. */
+ * shelves or bells, and the mid bells, each corrected to its 48 kHz
+ * response at the running rate where a table has it. */
 static void le_eq_band_design(int b, int shelves, double hz, double db,
                               double q, int sr, double c[5]) {
+  int shape = LE_EQR_BELL;
   switch (b) {
     case LE_EQB_LOWCUT:
       le_eq_design(LE_EQ_LOWCUT, hz, 0.0, q, sr, c);
-      return;
+      shape = LE_EQR_HP;
+      break;
     case LE_EQB_HIGHCUT:
       le_eq_design(LE_EQ_HIGHCUT, hz, 0.0, q, sr, c);
-      return;
+      shape = LE_EQR_LP;
+      break;
     case LE_EQB_LOW:
       if (shelves) {
+        /* at most 1 kHz: its plain design is within 0.12 dB at any rate */
         le_eq_design(LE_EQ_LOW, hz, db, q, sr, c);
-        return;
+        shape = LE_EQR_NONE;
+      } else {
+        le_eq_bell(hz, db, q, sr, c);
       }
       break;
     case LE_EQB_HIGH:
       if (shelves) {
         le_eq_design(LE_EQ_HIGH, hz, db, q, sr, c);
-        return;
+        shape = LE_EQR_HS;
+      } else {
+        le_eq_bell(hz, db, q, sr, c);
       }
       break;
     default:
+      le_eq_bell(hz, db, q, sr, c);
       break;
   }
-  le_eq_bell(hz, db, q, sr, c);
+  le_eq_rate_correct(shape, hz, db, q, sr, c);
+}
+
+/* Exposed for the native tests: band [b]'s design, as the kernel runs it. */
+void le_eq_band_design_for_test(int b, int shelves, double hz, double db,
+                                double q, int sr, double c[5]) {
+  le_eq_band_design(b, shelves, hz, db, q, sr, c);
 }
 
 /* The targets [p] sets, per band: Hz (log2), ln Q, and dB (a shelf or bell)

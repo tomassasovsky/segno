@@ -38614,6 +38614,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_render.h"
 #include "test_engine_rack_output.h"
 #include "test_engine_eq.h"
+#include "test_engine_eq_rate.h"
 #include "test_engine_dynamics.h"
 #include "test_engine_mod.h"
 #include "test_engine_drive.h"
@@ -38699,6 +38700,7 @@ int main(void) {
   run_render_tests();
   run_rack_output_tests();
   run_eq_tests();
+  run_eq_rate_tests();
   run_dynamics_tests();
   run_mod_tests();
   run_drive_tests();
