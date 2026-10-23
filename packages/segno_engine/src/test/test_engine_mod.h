@@ -1,4 +1,5 @@
-/* The modulation and filter kinds (#887 part 6): Doubler, Chorus and Wah.
+/* The modulation and filter kinds (#887 part 6): Doubler, Chorus and Wah,
+ * the doubler and the wah against the Phase 0 gap captures (#1445).
  * Included by test_engine_core.c after the dynamics tests, whose helpers
  * (dyn_setting, dyn_run, dyn_state, dyn_free, dyn_db, tr_peak) and the EQ's
  * (eq_measured_db, eq_design_db, le_eq_design_for_test) it reuses. */
@@ -114,89 +115,228 @@ static void test_chorus_matches_the_capture(void) {
 
 /* ---- Doubler ---- */
 
-/* At 0 % mix the doubler is the identity. At 100 % separation a mono
- * impulse comes back as one copy on the left about 11 ms later and one on
- * the right about 17 ms later, each at -3 dB; at 0 % both copies sit in the
- * centre, each at -6 dB a side. The copies drift by no more than 0.6 ms. */
-static void test_doubler_places_its_copies(void) {
-  printf("test_doubler_places_its_copies\n");
-  const int sr = 48000;
-  const int n = sr / 20;
-  float* in = (float*)calloc((size_t)n, sizeof(float));
-  float* ol = (float*)calloc((size_t)n, sizeof(float));
-  float* orr = (float*)calloc((size_t)n, sizeof(float));
-  for (int i = 0; i < n; ++i) in[i] = 0.3f * sinf(0.01f * (float)i * (float)i);
-  float p[LE_FX_PARAMS] = {0};
+/* White noise through the doubler, read in windows of [win] samples: in
+ * each, the gain at lag 0 (the dry signal) and the strongest other lag up
+ * to [maxlag] and its gain (the copy), per side. Returns the window count. */
+static int dbl_windows(const float* p, int sr, int n, int win, int maxlag,
+                       int* lag_l, int* lag_r, double* dry, double* voice) {
+  float* x = (float*)malloc(sizeof(float) * (size_t)n);
+  float* yl = (float*)malloc(sizeof(float) * (size_t)n);
+  float* yr = (float*)malloc(sizeof(float) * (size_t)n);
+  uint32_t s = 12345u;
+  for (int i = 0; i < n; ++i) {
+    s ^= s << 13;
+    s ^= s >> 17;
+    s ^= s << 5;
+    x[i] = (float)(int32_t)s * (0.25f / 2147483648.0f);
+  }
   le_fx_state* fx = dyn_state(LE_FX_DOUBLER, sr);
-  uint32_t clock = 0;
-  p[0] = 0.0f;
-  p[1] = 1.0f;
-  dyn_run(fx, LE_FX_DOUBLER, p, sr, in, ol, orr, n, &clock);
+  fx->clocked = 1;
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  memcpy(params[0], p, sizeof(float) * LE_FX_PARAMS);
+  const int32_t types[1] = {LE_FX_DOUBLER};
+  for (int i = 0; i < n; ++i) {
+    fx->clock = (uint32_t)i;
+    float l = x[i];
+    float r = x[i];
+    fx_apply_chain(fx, sr, sr, &l, &r, 1, types, params, NULL);
+    yl[i] = l;
+    yr[i] = r;
+  }
   dyn_free(fx);
-  for (int i = 0; i < n; ++i) CHECK(ol[i] == in[i] && orr[i] == in[i]);
-
-  memset(in, 0, sizeof(float) * (size_t)n);
-  in[0] = 1.0f;
-  for (int sep = 0; sep < 2; ++sep) {
-    p[0] = 1.0f;
-    p[1] = sep ? 1.0f : 0.0f;
-    fx = dyn_state(LE_FX_DOUBLER, sr);
-    clock = 0;
-    dyn_run(fx, LE_FX_DOUBLER, p, sr, in, ol, orr, n, &clock);
-    dyn_free(fx);
-    CHECK(ol[0] == 1.0f && orr[0] == 1.0f); /* the dry signal, untouched */
-    double el_a = 0.0, er_a = 0.0, el_b = 0.0, er_b = 0.0;
-    const int a0 = (int)(0.0104 * sr);
-    const int a1 = (int)(0.0116 * sr) + 2;
-    const int b0 = (int)(0.0164 * sr);
-    const int b1 = (int)(0.0176 * sr) + 2;
-    for (int i = a0; i < a1; ++i) { el_a += ol[i]; er_a += orr[i]; }
-    for (int i = b0; i < b1; ++i) { el_b += ol[i]; er_b += orr[i]; }
-    /* Nothing outside the two copies' windows. */
-    for (int i = 1; i < n; ++i) {
-      if ((i >= a0 && i < a1) || (i >= b0 && i < b1)) continue;
-      CHECK(ol[i] == 0.0f && orr[i] == 0.0f);
-    }
-    if (sep) {
-      CHECK(fabs(el_a - 0.7071) < 1e-3 && fabs(er_a) < 1e-3);
-      CHECK(fabs(er_b - 0.7071) < 1e-3 && fabs(el_b) < 1e-3);
-    } else {
-      for (int k = 0; k < 4; ++k) {
-        const double g = k == 0 ? el_a : k == 1 ? er_a : k == 2 ? el_b : er_b;
-        CHECK(fabs(g - 0.5) < 1e-3);
+  int w = 0;
+  for (int at = maxlag; at + win <= n; at += win, ++w) {
+    for (int ch = 0; ch < 2; ++ch) {
+      const float* y = ch ? yr : yl;
+      double best = 0.0;
+      int best_lag = 0;
+      double g0 = 0.0;
+      for (int lag = 0; lag <= maxlag; ++lag) {
+        double c = 0.0;
+        double e = 0.0;
+        for (int i = at; i < at + win; ++i) {
+          c += (double)y[i] * x[i - lag];
+          e += (double)x[i - lag] * x[i - lag];
+        }
+        const double g = c / e;
+        if (lag == 0) {
+          g0 = g;
+        } else if (g > best) {
+          best = g;
+          best_lag = lag;
+        }
+      }
+      if (ch == 0) {
+        lag_l[w] = best_lag;
+        dry[2 * w] = g0;
+        voice[2 * w] = best;
+      } else {
+        lag_r[w] = best_lag;
+        dry[2 * w + 1] = g0;
+        voice[2 * w + 1] = best;
       }
     }
   }
-  free(in);
-  free(ol);
-  free(orr);
+  free(x);
+  free(yl);
+  free(yr);
+  return w;
+}
+
+/* The doubler against the Dub, Studio and Vocal racks' captures (#1445):
+ * the dry signal at 0.31 and one copy a side at 0.95, at a random delay
+ * that holds 125 to 175 ms between 25 ms crossfades, drawn independently
+ * left and right, up to 1 ms at 0 % separation, 51 ms at 50 % and 100 ms at
+ * 100 %; at 0 % mix the copy collapses to within 1 ms. */
+static void test_doubler_matches_the_capture(void) {
+  printf("test_doubler_matches_the_capture\n");
+  const int sr = 48000;
+  const int n = 2 * sr;
+  /* mix, separation, window, longest lag looked at, then the longest delay
+   * the capture saw, the shortest the longest should reach. */
+  const double cases[4][6] = {
+      {1.0, 0.5, 1024, 2600, 51.2, 30.0}, /* Studio and Vocal */
+      {1.0, 0.0, 1024, 100, 1.0, 0.6},    /* Dub, Sep 0 % */
+      {1.0, 1.0, 2048, 4900, 100.8, 60.0}, /* Dub, Sep 100 % */
+      {0.0, 1.0, 1024, 100, 1.0, 0.6},    /* Mix 0 %: collapsed */
+  };
+  enum { MAXW = 256 };
+  static int lag_l[MAXW];
+  static int lag_r[MAXW];
+  static double dry[2 * MAXW];
+  static double voice[2 * MAXW];
+  for (int c = 0; c < 4; ++c) {
+    float p[LE_FX_PARAMS] = {0};
+    p[0] = (float)cases[c][0];
+    p[1] = (float)cases[c][1];
+    const int win = (int)cases[c][2];
+    const int maxlag = (int)cases[c][3];
+    const int w = dbl_windows(p, sr, n, win, maxlag, lag_l, lag_r, dry, voice);
+    int clean = 0;
+    int differ = 0;
+    int longest = 0;
+    double dry_sum = 0.0;
+    for (int i = 0; i < w; ++i) {
+      for (int ch = 0; ch < 2; ++ch) {
+        /* A window inside a hold shows the whole copy at one lag. */
+        if (voice[2 * i + ch] > 0.85) {
+          dry_sum += dry[2 * i + ch];
+          ++clean;
+          CHECK(voice[2 * i + ch] < 1.05);
+          const int lag = ch ? lag_r[i] : lag_l[i];
+          if (lag > longest) longest = lag;
+          CHECK(lag >= (int)(0.0002 * sr) - 1);
+          CHECK(lag <= (int)(cases[c][4] * 1e-3 * sr) + 2);
+        }
+      }
+      if (lag_l[i] != lag_r[i]) ++differ;
+    }
+    const double dry_mean = clean ? dry_sum / clean : 0.0;
+    printf("  mix %.0f %%, sep %.0f %%: %d of %d windows clean, dry %.3f, "
+           "longest %.1f ms, sides differ in %d\n",
+           100 * cases[c][0], 100 * cases[c][1], clean, 2 * w, dry_mean,
+           1e3 * longest / sr, differ);
+    CHECK(clean > w); /* most of both sides' windows */
+    CHECK(longest > (int)(cases[c][5] * 1e-3 * sr));
+    CHECK(differ > w / 2);
+    /* The dry gain, apart from the copy, is 0.31. */
+    CHECK(fabs(dry_mean - 0.31) < 0.02);
+  }
+  /* The holds: count the copy's moves on the left over 2 s at 50 %
+   * separation, in 10 ms windows; 2 s holds 10 to 13 hold-and-fade
+   * cycles. */
+  {
+    float p[LE_FX_PARAMS] = {0};
+    p[0] = 1.0f;
+    p[1] = 0.5f;
+    const int w = dbl_windows(p, sr, n, 480, 2600, lag_l, lag_r, dry, voice);
+    int moves = 0;
+    int last = -1;
+    for (int i = 0; i < w; ++i) {
+      if (voice[2 * i] < 0.85) continue; /* fading */
+      if (last >= 0 && abs(lag_l[i] - last) > 2) ++moves;
+      last = lag_l[i];
+    }
+    printf("  %d moves in %.1f s\n", moves, (double)w * 480 / sr);
+    CHECK(moves >= 9 && moves <= 14);
+  }
+}
+
+/* A rate change in the middle of the doubler's holds and fades (96 kHz,
+ * then 44.1 kHz, then 192 kHz) keeps its output bounded by its gains. */
+static void test_doubler_survives_a_rate_change(void) {
+  printf("test_doubler_survives_a_rate_change\n");
+  const int rates[3] = {96000, 44100, 192000};
+  le_fx_state* fx = dyn_state(LE_FX_DOUBLER, rates[0]);
+  fx->clocked = 1;
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  const int32_t types[1] = {LE_FX_DOUBLER};
+  params[0][0] = 1.0f;
+  params[0][1] = 1.0f;
+  uint32_t s = 777u;
+  uint32_t clock = 0;
+  float worst = 0.0f;
+  for (int k = 0; k < 3; ++k) {
+    /* 0.37 s: past the first hold, so some fades are under way. */
+    const int n = (int)(0.37 * rates[k]);
+    for (int i = 0; i < n; ++i) {
+      s ^= s << 13;
+      s ^= s >> 17;
+      s ^= s << 5;
+      const float x = (float)(int32_t)s * (0.5f / 2147483648.0f);
+      float l = x;
+      float r = -x;
+      fx->clock = clock++;
+      fx_apply_chain(fx, rates[k], rates[k], &l, &r, 1, types, params, NULL);
+      CHECK(isfinite(l) && isfinite(r));
+      if (fabsf(l) > worst) worst = fabsf(l);
+      if (fabsf(r) > worst) worst = fabsf(r);
+    }
+  }
+  dyn_free(fx);
+  /* 0.31 + 0.95 of a 0.5 input. */
+  printf("  largest output %.3f (bound 0.630)\n", worst);
+  CHECK(worst <= 0.63f);
 }
 
 /* ---- Wah ---- */
 
-/* The pedal sweeps the band-pass's peak from 350 Hz (heel) to 2.5 kHz
- * (toe), where the response peaks at +6 dB, and a pedal swept heel to toe in
- * 20 ms moves the output smoothly. */
-static void test_wah_sweeps(void) {
-  printf("test_wah_sweeps\n");
+/* The wah against the Guitar and Ed's racks' captures (#1445): the peak's
+ * level at the captured pedal positions, and the floor below 100 Hz and
+ * the skirt at 10 kHz; a pedal swept heel to toe in 20 ms moves the output
+ * smoothly. */
+static void test_wah_matches_the_capture(void) {
+  printf("test_wah_matches_the_capture\n");
   const int sr = 48000;
   const int n = 1 << 15;
   float* in = (float*)calloc((size_t)n, sizeof(float));
   float* h = (float*)calloc((size_t)n, sizeof(float));
   in[0] = 1.0f;
-  const double hz[3] = {350.0, 350.0 * sqrt(2500.0 / 350.0), 2500.0};
-  for (int k = 0; k < 3; ++k) {
+  /* pedal, peak Hz, peak dB, 50 Hz dB, 10 kHz dB */
+  const double cases[6][5] = {
+      {0.0, 439, 13.1, -17.0, -33.7},  {0.25, 459, 13.9, -16.6, -32.2},
+      {0.5, 536, 11.1, -17.4, -29.3},  {0.619, 749, 12.4, -15.7, -23.0},
+      {0.75, 1208, 10.9, -15.4, -17.0}, {1.0, 2313, 13.2, -16.4, -4.7},
+  };
+  for (int k = 0; k < 6; ++k) {
     float p[LE_FX_PARAMS] = {0};
-    p[0] = 0.5f * (float)k;
+    p[0] = (float)cases[k][0];
     le_fx_state* fx = dyn_state(LE_FX_WAH, sr);
     uint32_t clock = 0;
     dyn_run(fx, LE_FX_WAH, p, sr, in, h, NULL, n, &clock);
     dyn_free(fx);
-    const double at = eq_measured_db(h, n, hz[k], sr);
-    const double below = eq_measured_db(h, n, hz[k] / 2.0, sr);
-    const double above = eq_measured_db(h, n, hz[k] * 2.0, sr);
-    CHECK(fabs(at - 6.0) < 0.1);
-    CHECK(below < at - 9.0 && above < at - 9.0);
+    const double pk = eq_measured_db(h, n, cases[k][1], sr);
+    const double lo = eq_measured_db(h, n, 50.0, sr);
+    const double hi = eq_measured_db(h, n, 10000.0, sr);
+    printf("  pedal %.3f: %.0f Hz %.1f dB (%.1f), 50 Hz %.1f (%.1f), 10 kHz %.1f (%.1f)\n",
+           cases[k][0], cases[k][1], pk, cases[k][2], lo, cases[k][3], hi,
+           cases[k][4]);
+    CHECK(fabs(pk - cases[k][2]) < 0.7);
+    CHECK(fabs(lo - cases[k][3]) < 1.5);
+    CHECK(fabs(hi - cases[k][4]) < 1.5);
+    /* The peak is the peak: an eighth of an octave either side is lower. */
+    CHECK(eq_measured_db(h, n, cases[k][1] * 1.09, sr) < pk);
+    CHECK(eq_measured_db(h, n, cases[k][1] / 1.09, sr) < pk);
   }
   free(h);
   /* A fast sweep: no sample-to-sample jump beyond what the filtered signal
@@ -221,9 +361,9 @@ static void test_wah_sweeps(void) {
     }
     prev = l;
   }
-  /* A 900 Hz sine at 0.2, at most +6 dB (0.4): its own largest step is
-   * 0.4 * 2 sin(pi * 900 / 48000) = 0.047. */
-  CHECK(max_step < 0.05f);
+  /* A 900 Hz sine at 0.2, at most +14 dB (1.0): its own largest step is
+   * 1.0 * 2 sin(pi * 900 / 48000) = 0.118. */
+  CHECK(max_step < 0.13f);
   dyn_free(fx);
   free(x);
   free(in);
@@ -266,7 +406,8 @@ static void test_mod_offline_equals_live(void) {
 }
 
 /* A chain holding a chorus or a doubler sounds different each lap, so the
- * lane stays live and says why, until that entry is bypassed; a wah
+ * lane stays live and says why, until that entry is bypassed (or, for the
+ * chorus, its mix is at 0 %; the doubler's copy wanders even then); a wah
  * prints. */
 static void test_cache_free_running_stays_live(void) {
   printf("test_cache_free_running_stays_live\n");
@@ -288,16 +429,16 @@ static void test_cache_free_running_stays_live(void) {
       CHECK(info.state == LE_CACHE_GAVE_UP);
       CHECK(info.reason == LE_CACHE_REASON_FREE_RUNNING);
       CHECK(info.renders == 0);
-      /* At 0 % mix the entry is the identity, so the lane prints; and
+      /* A chorus at 0 % mix is the identity, so the lane prints; and
        * bypassed at full mix, the same. */
-      CHECK(le_engine_set_lane_fx_param(
-                a, 0, 0, 0, kinds[k] == LE_FX_DOUBLER ? 0 : 2, 0.0f) == LE_OK);
-      drain(a);
-      le_engine_get_lane_cache(a, 0, 0, &info); /* sees the new key */
-      pump_frames(a, 0.0f, CACHE_SETTLE);
-      CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
-      CHECK(le_engine_set_lane_fx_param(
-                a, 0, 0, 0, kinds[k] == LE_FX_DOUBLER ? 0 : 2, 1.0f) == LE_OK);
+      if (kinds[k] == LE_FX_CHORUS) {
+        CHECK(le_engine_set_lane_fx_param(a, 0, 0, 0, 2, 0.0f) == LE_OK);
+        drain(a);
+        le_engine_get_lane_cache(a, 0, 0, &info); /* sees the new key */
+        pump_frames(a, 0.0f, CACHE_SETTLE);
+        CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+        CHECK(le_engine_set_lane_fx_param(a, 0, 0, 0, 2, 1.0f) == LE_OK);
+      }
       CHECK(le_engine_set_lane_fx_enabled(a, 0, 0, 0, 0) == LE_OK);
       drain(a);
       le_engine_get_lane_cache(a, 0, 0, &info); /* sees the new key */
@@ -329,8 +470,9 @@ static void test_mod_on_a_lane(void) {
 
 static void run_mod_tests(void) {
   test_chorus_matches_the_capture();
-  test_doubler_places_its_copies();
-  test_wah_sweeps();
+  test_doubler_matches_the_capture();
+  test_doubler_survives_a_rate_change();
+  test_wah_matches_the_capture();
   test_mod_offline_equals_live();
   test_cache_free_running_stays_live();
   test_mod_on_a_lane();
