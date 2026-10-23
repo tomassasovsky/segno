@@ -5567,7 +5567,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       le_fx_type_landed(e->outputs[bus].fx.fx_meta, index);
       /* As a recipe renews a slot (le_fx_entry_renew), so perf_render can
        * answer every logged output type the one way. */
-      le_fx_entry_renew(&e->outputs[bus].fx.fx, index, cmd->fx.type);
+      le_fx_entry_renew(&e->outputs[bus].fx.fx, index, cmd->fx.type,
+                        index < load_i32(&e->outputs[bus].fx.a_fx_count));
       break;
     }
     case LE_CMD_SET_OUTPUT_FX_COUNT: {

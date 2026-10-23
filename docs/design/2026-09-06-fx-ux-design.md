@@ -401,7 +401,8 @@ The prototype's single-effect controls borrow a matching module's parameters fro
 an extracted rack preset, with the source preset ID retained. The Delay study uses
 Funk Wah's Delay values. These are explicit design-study starting values, not a
 claim that native single-effect factory defaults were recovered. The module's own
-enable parameter is engaged; the new effect instance starts bypassed. Missing
+enable parameter is engaged, and the new effect instance arrives on (owner
+decision, 2026-10-23, #1452; it used to start bypassed). Missing
 matching descriptors remain unavailable. Saving a preset copies its parameters,
 channel choices and provenance. Grouping existing single effects into a new rack
 is a separate journey still to design.
@@ -632,7 +633,9 @@ card label because their placement is fixed after their respective mixes.
 Input instances default to Pre; new recorded-track/part instances default to
 Post. Placement is instance context, excluded from reusable sound presets along
 with destination and pedal assignment. Reusing a preset applies the destination's
-default, starts bypassed, and creates independent parameters. Output chains
+default, keeps each pedal on or off as the preset sets it (as the Looper X
+loads a rack; owner decision, 2026-10-23, #1452, replacing "starts
+bypassed"), and creates independent parameters. Output chains
 always resolve to Post. Two named output mixes are illustrative fixtures, not
 hardware detection or an implemented routing editor.
 

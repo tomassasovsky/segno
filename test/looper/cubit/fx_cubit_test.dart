@@ -128,7 +128,7 @@ void main() {
   });
 
   test(
-    'an added effect is bypassed, saved only after its native receipt',
+    'an added single effect is on, saved only after its native receipt',
     () async {
       final result = await cubit.appendChoice(
         const FxDestination.recordedTrack(0),
@@ -137,7 +137,7 @@ void main() {
 
       expect(result.status, FxEditStatus.applied);
       expect(chain, hasLength(3));
-      expect(chain.last.enabled, isFalse);
+      expect(chain.last.enabled, isTrue);
       verifyInOrder([
         () => repository.setTrackEffects(
           channel: 0,
@@ -433,7 +433,7 @@ void main() {
       type: 0,
       params: {
         'Compressor': 1,
-        'Delay': 1,
+        'Delay': 0,
         'Del Time': 0.42,
         'Reverb': 1,
         'Master Vol': 0.4,
@@ -458,7 +458,9 @@ void main() {
         'Delay',
       ]);
       expect(fxRackLevelDb(rack.channels.level), -2.4);
-      expect(rack.entries.every((fx) => !fx.enabled), isTrue);
+      // Every pedal as the preset sets it: the compressor and reverb on, the
+      // delay off.
+      expect(rack.entries.map((fx) => fx.enabled), [true, true, false]);
     });
 
     test('appended into an existing rack keeps that rack its own '
@@ -554,5 +556,149 @@ void main() {
       expect(result.status, FxEditStatus.refused);
       expect(chain, hasLength(2));
     });
+  });
+
+  group('an addition keeps its source pedal states', () {
+    // Mixed power keys, so a state the source sets cannot pass for one the
+    // adding surface forced, on or off.
+    const rack = FxPreset(
+      family: "Ed's Rack",
+      name: 'Acoustic Rhythm 1',
+      id: 'ed53e7b8',
+      type: 0,
+      params: {'Compressor': 1, 'Delay': 0, 'Reverb': 1},
+    );
+    final saved = FxUserPreset(
+      id: 'u1',
+      name: 'verse',
+      isRack: true,
+      entries: [
+        BuiltInEffect(type: TrackEffectType.echo, slotId: 's1'),
+        BuiltInEffect(
+          type: TrackEffectType.reverb,
+          slotId: 's2',
+          enabled: false,
+        ),
+      ],
+    );
+    final choices = <(String, FxLibraryChoice, List<bool>)>[
+      // Rack order: Compressor, Reverb, Delay.
+      ('a factory rack', const FxRackChoice(rack), [true, true, false]),
+      ('a saved sound', FxSavedChoice(saved), [true, false]),
+      (
+        'a single effect',
+        const FxSingleChoice(TrackEffectType.reverb),
+        [true],
+      ),
+    ];
+
+    /// Points the destination's chain at [staged], which every replacement
+    /// writes back.
+    void stage(
+      FxAddress address,
+      List<TrackEffect> Function() read,
+      void Function(List<TrackEffect>) write,
+    ) {
+      switch (address.stage) {
+        case FxStage.input:
+          when(() => persistence.inputRestoreFailed).thenReturn(false);
+          when(() => repository.monitorEffects(0)).thenAnswer((_) => read());
+          when(
+            () => repository.setMonitorEffects(
+              input: 0,
+              effects: any(named: 'effects'),
+              chainEnabled: any(named: 'chainEnabled'),
+              allowUnavailable: any(named: 'allowUnavailable'),
+            ),
+          ).thenAnswer((call) {
+            write(call.namedArguments[#effects]! as List<TrackEffect>);
+            return EngineResult.ok;
+          });
+        case FxStage.output:
+          when(() => repository.outputEffects(0)).thenAnswer((_) => read());
+          when(
+            () => repository.setOutputEffects(
+              bus: 0,
+              effects: any(named: 'effects'),
+              chainEnabled: any(named: 'chainEnabled'),
+              allowUnavailable: any(named: 'allowUnavailable'),
+            ),
+          ).thenAnswer((call) {
+            write(call.namedArguments[#effects]! as List<TrackEffect>);
+            return EngineResult.ok;
+          });
+        case FxStage.allTracks:
+          when(() => repository.allTracksEffects).thenAnswer((_) => read());
+          when(
+            () => repository.setAllTracksEffects(
+              effects: any(named: 'effects'),
+              chainEnabled: any(named: 'chainEnabled'),
+              allowUnavailable: any(named: 'allowUnavailable'),
+            ),
+          ).thenAnswer((call) {
+            write(call.namedArguments[#effects]! as List<TrackEffect>);
+            return EngineResult.ok;
+          });
+        case FxStage.track:
+        case FxStage.loop:
+          // The group's own setUp already stages track 0 on `chain`.
+          break;
+      }
+    }
+
+    const destinations = <FxDestination>[
+      FxDestination.liveInput(0),
+      FxDestination.output(0),
+      FxDestination.allTracks(),
+      FxDestination.recordedTrack(0),
+    ];
+
+    for (final destination in destinations) {
+      final address = destination.address!;
+      for (final (label, choice, states) in choices) {
+        test(
+          '$label added to ${address.stage.name} keeps its states',
+          () async {
+            var staged = <TrackEffect>[];
+            stage(address, () => staged, (next) => staged = next);
+            List<TrackEffect> current() =>
+                address.stage == FxStage.track ? chain : staged;
+            final before = current().length;
+            cubit.show(destination);
+
+            final result = await cubit.appendChoice(destination, choice);
+
+            expect(result.status, FxEditStatus.applied);
+            expect(
+              current().skip(before).map((fx) => fx.enabled),
+              states,
+            );
+          },
+        );
+      }
+    }
+
+    for (final (label, choice, states) in choices) {
+      test('$label added into an existing rack keeps its states', () async {
+        const track = FxDestination.recordedTrack(0);
+        final host = await cubit.appendChoice(track, const FxRackChoice(rack));
+        final rackId = host.groupId!;
+        final hostSize = fxChainGroups(
+          chain,
+        ).firstWhere((group) => group.rack?.id == rackId).length;
+
+        final result = await cubit.appendToRack(
+          const FxAddress(stage: FxStage.track),
+          rackId,
+          choice,
+        );
+
+        expect(result.status, FxEditStatus.applied);
+        final grown = fxChainGroups(
+          chain,
+        ).firstWhere((group) => group.rack?.id == rackId);
+        expect(grown.entries.skip(hostSize).map((fx) => fx.enabled), states);
+      });
+    }
   });
 }

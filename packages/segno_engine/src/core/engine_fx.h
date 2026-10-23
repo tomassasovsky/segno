@@ -294,14 +294,20 @@ void le_fx_entry_reset(le_fx_state* fx, int slot);
  * callers space these (see LE_FX_ENABLE_CLEAR_SPACING). */
 void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap);
 
-/* Settles slot [slot] for an entry that has just replaced another there (a
- * recipe's renewed slot): its DSP state is reset, and a slot holding a tail
- * (delay rings, or a draining kind's ring) re-enters through the enable
- * edge, which clears them spaced by
- * LE_FX_ENABLE_CLEAR_SPACING and ramps the new entry in, so the old entry's
- * tail never sounds through the new one and no one callback clears every
- * ring. Audio thread (le_fx_recipe_apply). */
-void le_fx_entry_renew(le_fx_state* fx, int slot, int32_t type);
+/* Settles slot [slot] for an entry of [type] that has just replaced another
+ * there (a recipe's renewed slot): its DSP state is reset, and the slot
+ * re-enters through the enable edge when it was [sounding] (inside the chain's
+ * active count, so the chain was running the entry it held) or holds a tail
+ * (delay rings, or a draining kind's ring). The edge ramps the new entry in
+ * over LE_FX_ENABLE_RAMP_MS, so it never switches in at full in one sample
+ * over the one the chain was running (#1452), and clears the rings spaced by
+ * LE_FX_ENABLE_CLEAR_SPACING, so the old entry's tail never sounds through
+ * the new one and no one callback clears every ring. A slot past the old
+ * count keeps its ramp: a slot leaving the chain dropped its enabled bit, so
+ * the per-buffer sweep parked it at bypass, and a slot that never held an
+ * entry takes the new one settled from its first frame, as a render seeds it.
+ * Audio thread (le_fx_recipe_apply). */
+void le_fx_entry_renew(le_fx_state* fx, int slot, int32_t type, int sounding);
 
 /* Whether a bypassed slot of [type] drains its tail (a ring-owning type with
  * no reported latency: delay, echo, reverb) rather than crossfading out
