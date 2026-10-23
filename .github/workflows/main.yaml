@@ -309,6 +309,8 @@ jobs:
           done
           packages/segno_engine/build/bench/bench_fx_cpu \
             --racks --blocks 2000 >> bench-fx-kinds-arm64.md
+          packages/segno_engine/build/bench/bench_fx_cpu \
+            --table --blocks 2000 >> bench-fx-kinds-arm64.md
           cat bench-fx-kinds-arm64.md
       # The pitch-shifter comparison (#887 part 9): the phase vocoder, PSOLA
       # and Signalsmith Stretch on the same signals. Informational.
