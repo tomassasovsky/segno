@@ -21,6 +21,8 @@
 # window with fewer than half its expected periods fails either way (an empty
 # window proves nothing). --warmup must be less than --seconds; the window is
 # the time between them.
+# The bench sets SEGNO_ALSA_PERIODS=8 like segno-kiosk-launch, unless the
+# environment already sets it.
 # --list prints the device ids for --playback / --capture.
 set -euo pipefail
 cd "$(dirname "$0")/../../.."   # src/test/bench -> packages/segno_engine

@@ -8,8 +8,9 @@
  * ./bench_rt_faults.sh (CI's native-bench-arm64 job uploads the arm64 build).
  *
  * What it does, for --seconds of wall clock:
- *   - opens the device the way the app does (ALSA only, the callback thread on
- *     SCHED_FIFO 80), with an 8-track engine and a 60 s recording cap;
+ *   - opens the device the way the app does (ALSA only, an 8-period ring, the
+ *     callback thread on SCHED_FIFO 80), with an 8-track engine and a 60 s
+ *     recording cap;
  *   - with --fork-ms N, a forker thread starts /bin/true every N ms with plain
  *     fork(), in the pattern Dart's Process.start uses (the child blocks on a
  *     pipe until the parent has registered it, then execs), so every fork
@@ -29,11 +30,13 @@
  *   - with no forks (the app as shipped): 0 page faults on the callback
  *     thread, 0 late periods (a period service longer than its deadline) and
  *     0 xruns in the window (#1406). Every xrun kind counts. miniaudio's ALSA
- *     data loop reports all three (capture overrun, playback underrun,
- *     playback slip resync), and that loop is the callback thread: each one
- *     means the thread did not read or write in time, and the listener hears
- *     it. None of them belongs to the device start: start-up overruns land
- *     before the 0.5 s settle and the warm-up, and the bench never
+ *     data loop reports them (capture overrun, playback underrun, playback
+ *     slip resync), and that loop is the callback thread: each one means the
+ *     thread did not read or write in time, and the listener hears it. The
+ *     playback stop threshold is the ring boundary, so writei never returns
+ *     -EPIPE and a playback underrun shows up as a resync, not as an
+ *     underrun. None of them belongs to the device start: start-up overruns
+ *     land before the 0.5 s settle and the warm-up, and the bench never
  *     reconfigures the device. An xrun with no fault and no late period
  *     still fails: the time was lost outside le_engine_process (in alsa-lib,
  *     the kernel, the scheduler or the driver), which late_periods does not
@@ -333,10 +336,14 @@ int main(int argc, char** argv) {
     fprintf(stderr, "--warmup must be at least 0 and less than --seconds\n");
     return 2;
   }
-  /* The appliance's audio path: direct ALSA, the callback on SCHED_FIFO 80
-   * (segno-kiosk-launch exports the same two). */
+  /* The appliance's audio path: direct ALSA, the callback on SCHED_FIFO 80,
+   * and an 8-period ring (segno-kiosk-launch exports the same three). The
+   * ring depth decides how long a stall the card absorbs before an xrun, so
+   * at the engine's default of 2 the verdict would judge a ring a quarter
+   * the size of the app's. */
   setenv("SEGNO_ALSA_ONLY", "1", 0);
   setenv("SEGNO_RT_AUDIO", "1", 0);
+  setenv("SEGNO_ALSA_PERIODS", "8", 0);
 
   g_e = le_engine_create();
   le_config cfg;
@@ -363,8 +370,10 @@ int main(int argc, char** argv) {
   }
   le_snapshot s;
   le_engine_get_snapshot(g_e, &s);
-  printf("device: %s, %d Hz, %d-frame period, callback thread %ld\n",
-         le_engine_device_name(g_e), s.sample_rate, (int)o.period, g_tid);
+  printf("device: %s, %d Hz, %d-frame period, SEGNO_ALSA_PERIODS %s, "
+         "callback thread %ld\n",
+         le_engine_device_name(g_e), s.sample_rate, (int)o.period,
+         getenv("SEGNO_ALSA_PERIODS"), g_tid);
   le_engine_set_monitor_input(g_e, 0, 1);
 
   pthread_t forker;
@@ -423,11 +432,12 @@ int main(int argc, char** argv) {
          (unsigned long long)periods, expected,
          (unsigned long long)late, t1.session.max_us);
   printf("xruns: %llu (capture overrun %llu, playback underrun %llu, "
-         "playback resync %llu)\n",
+         "playback resync %llu, backend overload %llu)\n",
          (unsigned long long)xruns,
          (unsigned long long)dx[LE_XRUN_CAPTURE_OVERRUN],
          (unsigned long long)dx[LE_XRUN_PLAYBACK_UNDERRUN],
-         (unsigned long long)dx[LE_XRUN_PLAYBACK_RESYNC]);
+         (unsigned long long)dx[LE_XRUN_PLAYBACK_RESYNC],
+         (unsigned long long)dx[LE_XRUN_BACKEND_OVERLOAD]);
   int ok;
   if (!g_s0.st_ok || !s1.st_ok) {
     ok = 0;
@@ -440,7 +450,8 @@ int main(int argc, char** argv) {
     if (ok) {
       printf("PASS: no fault, no late period and no xrun on the callback\n");
     } else if (faults != 0 || late != 0) {
-      printf("FAIL: the callback faulted or ran late\n");
+      printf("FAIL: the callback faulted or ran late%s\n",
+             xruns != 0 ? ", and the device dropped out" : "");
     } else {
       printf("FAIL: the device dropped out with no fault and no late period: "
              "the time was lost outside le_engine_process\n");
