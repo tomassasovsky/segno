@@ -1281,7 +1281,7 @@ packages/
   segno_engine/        DATA  — FFI plugin over a hand-written miniaudio engine (C)
   controller_repository/ REPO — hardware-agnostic MIDI → looper actions
   looper_repository/   REPO  — owns the engine; EngineSnapshot → LooperState
-  settings_repository/ REPO  — per-device latency calibration persistence
+  settings_repository/ REPO  — persistent settings over KeyValueStore
   local_storage_client/ DATA — KeyValueStore (shared_preferences)
   session_repository/  REPO  — save/restore .segno session bundles (manifest + WAV stems)
   performance_repository/ REPO — performance-recording capture lifecycle (arm/finalize/recover)
