@@ -94,8 +94,8 @@ class FxModuleBuild {
 ///
 /// Written against the parameter names that are actually in the catalogue
 /// files, not against a guess at what a module ought to carry. A module absent
-/// from this map is [FxModuleReadiness.unavailable]: the engine builds seven
-/// effects and the catalogue names twenty-six modules, so most of them are.
+/// from this map or [kFxModuleVariants] is [FxModuleReadiness.unavailable]:
+/// the catalogue names twenty-six modules and the engine builds fewer.
 const Map<String, FxModuleBuild> kFxModuleBuilds = {
   // p0 time, p1 feedback, p2 mix — the three the preset names, so nothing is
   // dropped. Its mode (and the Drum Rack's feedback filter frequency) are

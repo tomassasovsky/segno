@@ -112,7 +112,8 @@ extension EngineLocalizations on AppLocalizations {
       FxParamUnit.choice => _choiceName(p, p.positionOf(setting)),
       FxParamUnit.db => fxValueDb(tenths),
       FxParamUnit.q => fxValueQ(value),
-      FxParamUnit.ratio => fxValueRatio(tenths),
+      FxParamUnit.ratio =>
+        tenths >= 100 ? fxValueRatioWhole(value.round()) : fxValueRatio(tenths),
     };
   }
 

@@ -1959,6 +1959,7 @@
     "fxValueKhz": "{kilohertz} kHz",
     "fxValueTimes": "{factor}x",
     "fxValueMsFiner": "{milliseconds} ms",
+    "fxValueRatioWhole": "{ratio}:1",
     "fxValueRatio": "{ratio}:1",
     "fxValueQ": "{q}",
     "fxValueOff": "Apagado",

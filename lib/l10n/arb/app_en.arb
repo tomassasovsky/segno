@@ -4154,6 +4154,15 @@
             }
         }
     },
+    "fxValueRatioWhole": "{ratio}:1",
+    "@fxValueRatioWhole": {
+        "description": "A compressor's ratio from 100 up, without a decimal (100:1).",
+        "placeholders": {
+            "ratio": {
+                "type": "int"
+            }
+        }
+    },
     "fxValueRatio": "{ratio}:1",
     "@fxValueRatio": {
         "description": "A compressor's ratio with one decimal, such as 4.0:1.",
