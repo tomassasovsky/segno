@@ -76,26 +76,17 @@ TrackEffect _edited(
       enabled: enabled,
       params: [
         for (var p = 0; p < effect.type.params.length; p++)
-          _boundSetting(
-            effect,
-            p,
-            id == null
-                ? null
-                : parameters[FxParamTarget(
-                    address: address,
-                    slotId: id,
-                    param: p,
-                  )],
-          ),
+          if (id == null)
+            effect.params[p]
+          else
+            parameters[FxParamTarget(
+                  address: address,
+                  slotId: id,
+                  param: p,
+                )] ??
+                effect.params[p],
       ],
     ),
     PluginEffect() => effect.copyWith(enabled: enabled),
   };
 }
-
-/// Parameter [p] of [effect] after a binding wrote [bound] to it: a binding
-/// works in the parameter's shown range (fxKindSettingFor), so its value
-/// becomes the kind's setting for the same value. None written keeps the
-/// entry's own.
-double _boundSetting(BuiltInEffect effect, int p, double? bound) =>
-    bound == null ? effect.params[p] : fxEntryKindSetting(effect, p, bound);
