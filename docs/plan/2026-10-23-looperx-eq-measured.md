@@ -253,3 +253,86 @@ frequency, for the same stored values.
 - Against the captures, the native tests' probes land within 0.05 dB for
   Ed's, the Drum Rack and the Vocal Low band, and within 0.11 dB for the
   nominal Vocal Mid, High and Air centres and the Lo-Fi and Rhythmic fits.
+
+## At rates other than 48 kHz (#1436)
+
+The bands above are designed at the running rate. At 48 kHz that is exact.
+At another rate, the same design drifts from the measured response near the
+top of the audio band. The 48 kHz response is compressed toward its 24 kHz
+Nyquist frequency, and a design at 96 kHz is not. The worst cases were the
+20 kHz high cut, at -1.2 dB at 16 kHz instead of -0.2 dB, and bells near
+20 kHz, off by up to 7 dB.
+
+`tool/eq_rate_fit.py` corrects this at 44.1 and 96 kHz. It covers every
+band shape except the low shelf, and bells below 100 Hz; both are already
+within 0.15 dB.
+
+- For each point of a grid over the band's settings, it fits one biquad at
+  the running rate to the 48 kHz magnitude over 20 Hz to 20 kHz. Each fit is
+  scored on a grid eight times denser than the one it was fitted on, so a
+  notch or peak between the fitting points counts against it.
+- It stores how that biquad's coefficients differ from the plain design.
+- `src/core/engine_fx_eq_rate.inc` holds those differences.
+- When a band is designed, the engine adds the difference, interpolated
+  over the grid, to its plain design. That is a table lookup with no
+  fitting and no per-sample cost.
+
+Why every fit is usable:
+
+- **Realizable.** The fitted prototype's squared numerator and squared
+  denominator are each (a - b v)^2 + c v, with a, b, c > 0. That is never
+  negative, so every fit factors into a stable, minimum-phase biquad. The
+  two earlier attempts could produce numerators or poles that could not be
+  realized.
+- **Above the scored band.** Above 24 kHz the 48 kHz response says
+  nothing. Up to the Nyquist frequency, a fit may not rise more than 6 dB
+  above that response's level at the top of the band, or above the plain
+  design's own level there where that is higher. From 20 to 24 kHz it may
+  not rise more than 3 dB above both the 48 kHz response and the plain
+  design.
+- **Never worse than the plain design.** A grid point keeps the plain
+  design unless its fit beats it. The corrections around any cell are
+  dropped if, at 27 points inside it, the interpolated design is more than
+  0.1 dB worse than the plain design, or breaks the bounds above the
+  scored band.
+- **Stable in use.** At run time a correction is scaled by the largest
+  factor up to 1 that keeps the poles inside the stability margin. That
+  factor is continuous in the settings, so a glide never steps.
+
+Measured at 8000 random settings per band (1000 per cut) across each
+band's full range of frequency, Q and gain. The figures are the largest dB
+error against the 48 kHz response, on 480 frequencies from 20 Hz to 20 kHz,
+wherever that response is above -40 dB. The worst cases are the worst of
+this sample, not bounds.
+
+| band | 44.1 kHz: p95 / worst | 96 kHz: p95 / worst | plain design at 96 kHz |
+|---|---|---|---|
+| bell | 0.10 / 1.2 | 0.65 / 5.6 | 2.4 / 5.6 |
+| high shelf | 0.84 / 9.1 | 4.7 / 20.0 | 7.2 / 20.0 |
+| low shelf (plain) | 0.004 / 0.03 | 0.02 / 0.13 | |
+| high cut | 0.16 / 0.95 | 2.3 / 3.4 | 14.4 / 14.8 |
+| low cut | 0.001 / 0.003 | 0.006 / 0.011 | 0.70 / 1.3 |
+
+None of the sampled settings is more than 0.1 dB worse than the plain
+design.
+
+The worst cases are settings that one biquad cannot follow at 96 kHz
+without lifting the band above 24 kHz:
+
+- deep, wide cuts (Q under about 0.6) near 2 to 5 kHz;
+- high shelves with Q over about 3 above 14 kHz;
+- high cuts between about 3 and 8 kHz, where the error is in the stopband.
+
+For the settings the racks fix, at 44.1 and 96 kHz, across their gains:
+
+| settings | error |
+|---|---|
+| the cuts at the ends of their ranges, the Drum Rack's shelves | within 0.1 dB |
+| the Vocal family's four bells | within 0.6 dB |
+| Ed's default bells | within 5.7 dB |
+
+Ed's High default (5.3 kHz, Q 0.4) is a wide bell. Cut deeper than about
+10 dB, no biquad at 96 kHz follows it without lifting the band above
+24 kHz, so it keeps the plain design, 5.6 dB off at -18 dB as before. Its
+boosts are within 1.9 dB (plain: 5.6 dB), and Ed's Hi Mid default
+(3 kHz, Q 0.66) is within 3.5 dB (plain: 3.8 dB).

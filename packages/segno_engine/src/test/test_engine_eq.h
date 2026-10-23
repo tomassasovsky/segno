@@ -4,6 +4,8 @@
 void le_eq_design_for_test(int kind, double hz, double db, double q, int sr,
                            double c[5]);
 void le_eq_bell_for_test(double hz, double db, double q, int sr, double c[5]);
+void le_eq_band_design_for_test(int b, int shelves, double hz, double db,
+                                double q, int sr, double c[5]);
 
 /* The setting that gives `value` on EQ descriptor row [p]. */
 static float eq_setting(int32_t p, double value) {
@@ -94,8 +96,8 @@ static void eq_flat(float* p, int layout) {
   p[14] = 0.5f * (float)layout;
 }
 
-/* The bell and the shelves and cuts the kernel runs are their designs
- * within 0.1 dB, at 48 and 96 kHz. The bell is the identity at 0 dB, and a
+/* The kernel runs its bands' designs (le_eq_band_design: at 96 kHz,
+ * corrected to the 48 kHz responses) within 0.1 dB, at 48 and 96 kHz. The bell is the identity at 0 dB, and a
  * cut is the exact inverse of the same boost. */
 static void test_eq_kernel_matches_design(void) {
   printf("test_eq_kernel_matches_design\n");
@@ -126,20 +128,14 @@ static void test_eq_kernel_matches_design(void) {
       float* h = eq_impulse(p, sr, n);
       double c[6][5];
       int bands = 0;
-      if (layout == EQL_CUTS) le_eq_design_for_test(0, 60.0, 0.0, M_SQRT1_2, sr, c[bands++]);
-      if (layout == EQL_CUTS) {
-        le_eq_bell_for_test(150.0, 6.0, 0.7, sr, c[bands++]);
-      } else {
-        le_eq_design_for_test(1, 150.0, 6.0, 0.7, sr, c[bands++]);
-      }
-      le_eq_bell_for_test(400.0, -9.0, 2.0, sr, c[bands++]);
-      le_eq_bell_for_test(3000.0, 12.0, 1.0, sr, c[bands++]);
-      if (layout == EQL_CUTS) {
-        le_eq_bell_for_test(8000.0, -4.0, 0.7, sr, c[bands++]);
-      } else {
-        le_eq_design_for_test(4, 8000.0, -4.0, 0.7, sr, c[bands++]);
-      }
-      if (layout == EQL_CUTS) le_eq_design_for_test(5, 15000.0, 0.0, M_SQRT1_2, sr, c[bands++]);
+      const int sh = layout == EQL_SHELVES;
+      const double q2 = M_SQRT1_2;
+      if (!sh) le_eq_band_design_for_test(0, sh, 60.0, 0.0, q2, sr, c[bands++]);
+      le_eq_band_design_for_test(1, sh, 150.0, 6.0, 0.7, sr, c[bands++]);
+      le_eq_band_design_for_test(2, sh, 400.0, -9.0, 2.0, sr, c[bands++]);
+      le_eq_band_design_for_test(3, sh, 3000.0, 12.0, 1.0, sr, c[bands++]);
+      le_eq_band_design_for_test(4, sh, 8000.0, -4.0, 0.7, sr, c[bands++]);
+      if (!sh) le_eq_band_design_for_test(5, sh, 15000.0, 0.0, q2, sr, c[bands++]);
       for (size_t i = 0; i < sizeof(probes) / sizeof(probes[0]); ++i) {
         const double want = eq_design_db(c, bands, probes[i], sr);
         const double got = eq_measured_db(h, n, probes[i], sr);
