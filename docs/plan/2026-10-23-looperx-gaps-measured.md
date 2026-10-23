@@ -253,3 +253,72 @@ kernel, `LE_FX_OCTAVER`, is formant-preserving in both modes (the phase
 vocoder re-applies a cepstral envelope; PSOLA keeps the grain spectrum).
 The Looper X does the opposite: for Part 9 a Whammy / Pitch Shift that
 matches must let the formants move with the pitch.
+
+## Re-read for the fit (#1445)
+
+Corrections and additions from the same captures, read while fitting
+segno's kernels to them. Where these differ from the sections above, these
+hold.
+
+- **LPF.** The noise responses fit a ladder with k = 0.2 + 4.2 Reso^1.15
+  (0.20 at 0 %, 2.06 at 50 %) and the corner at 1.04 x the display at 0 %;
+  the oscillation sits at 1.02 x (632 Hz) and 1.005 x (3557 Hz) the
+  display. The self-oscillation peaks at 0.251 (632 Hz) and 0.279
+  (3557 Hz). A 1 kHz tone at 632 Hz, Reso 50 %, comes out at -9.7 dB from
+  -48 dBFS and -17.1 dB at 0 dBFS. The output carries a second harmonic
+  that grows with level (-23 dBc for a -12 dBFS tone above the corner,
+  -28 dBc at 3557 Hz, Reso 0 %), and no DC.
+- **Vinyl, drive.** On the 1 kHz ladders the fundamental is 0.500 x the
+  input at every drive and frequency until the output nears 0.5; the
+  driven copy adds only DC and even harmonics. Per unit input amplitude A
+  (below the limit): H4 = 0.0849 c1, DC = 0.637 c1 + c2 A / 2,
+  H2 = 0.424 c1 + c2 A / 2, the full-wave rectifier's series plus a square
+  law. c1 = 0.621, 0.600, 0.471 and 0.024 at Freq 251, 50, 1256 and
+  5000 Hz (Drive 40 %), 3.88 at Drive 100 % (Freq 251); c2 / c1 = 4.4 at
+  40 % and 4.5 at 100 %. c1 against frequency (from the sweep's 4th
+  harmonic) rises 12 dB/octave below Freq with a small peak just above it:
+  a 2nd-order high-pass at Freq, Q about 1.1. The "+0.21 / +1.2"
+  fundamental in the sweep table above is the copy's products, not a
+  linear gain.
+- **Vinyl, limit.** Past an output peak of 0.5, everything (fundamental,
+  DC, harmonics) scales down together: H1 / A = 0.201 at -6 dBFS and 0.065
+  at 0 dBFS (Drive 40 %), 0.114 at -12 dBFS (Drive 100 %). After a loud
+  tone stops the gain recovers 0.229, 0.458 (100 ms), 0.700 (200 ms),
+  0.842 (280 ms), 1.0 (580 ms).
+- **Vinyl, noise.** The octave-band numbers above are not dBFS. In dBFS
+  (12 dB/octave band edges, mean power over 2 s of silence), Noise 100 %,
+  Tone 90 %: -58.0 (63 Hz), -65.6 (250), -70.7 (1k), -64.3 (4k), -57.6
+  (16k); these means are set by a few large clicks. Between the clicks
+  (median 20 ms frame): -63.5, -69.7, -79.3, -74.7, -69.5; Tone 0 %:
+  -64.6, -72.7, -80.4, -74.1, -90.1; Tone 50 %: -64.4, -71.1, -80.6,
+  -73.1, -77.6; Noise 50 %, Tone 50 %: -84.0, -91.8, -101.4, -95.0, -99.5;
+  Noise 30 %, Tone 90 %: -95.8, -104.5, -112.9, -107.6, -102.8. The tone
+  does not lift the bed below its corner. Peaks over 0.1: 1.6 a second
+  (Tone 90 %), 1.1 (0 %), 1.6 (50 %); largest 0.43, 0.12, 0.50. With the
+  noise at 0 % the silence is clean (-137 dBFS) at any drive; the -81 dBFS
+  floor with sparse clicks noted in the Vinyl section above did not show in
+  these passes.
+- **Degrade.** The 1 kHz tone: +3.1 dB at Filter 0 % (5000 Hz), +0.8 dB
+  at 50 %, +0.1 dB at 100 %; -47.6 dB at Filter 0 % (1581 Hz) and -3.1 dB
+  at 100 %. The Filter 0 % responses fit two 2nd-order low-pass sections
+  (Q 0.91 and 1.83) at 0.194 x the hold (2.4 dB rms below 0.8 x the hold);
+  Filter 50 % fits the same at 0.89 x (3.0 dB rms). The held path lags the dry by about
+  10 samples (8-sample impulse peak at 50 kHz, 17 samples of group delay at
+  5000 Hz), and Mix 50 % gives -4.2 dB on the 1 kHz tone.
+- **Wah.** Each pedal position fits one state-variable filter with mixed
+  outputs, H(s) = (hp s^2 + bp s / Q + lp) / (s^2 + s / Q + 1), within
+  0.06 dB rms (30 Hz-15 kHz):
+
+  | Pedal | f0 | Q | bp | lp | hp |
+  |---|---|---|---|---|---|
+  | 0 | 438.6 Hz | 11.43 | 4.325 | 0.130 | 0.0153 |
+  | 0.25 | 459.0 Hz | 11.23 | 4.703 | 0.140 | 0.0184 |
+  | 0.5 | 536.1 Hz | 7.49 | 3.551 | 0.127 | 0.0267 |
+  | 0.619 (Ed's) | 748.8 Hz | 5.74 | 4.177 | 0.161 | 0.0546 |
+  | 0.75 | 1208.5 Hz | 3.75 | 3.514 | 0.159 | 0.1023 |
+  | 1 | 2311.5 Hz | 2.10 | 4.517 | 0.140 | 0.3717 |
+
+  The lp term is the floor below 100 Hz (about -17 dB) a pure band-pass
+  misses.
+- **Doubler.** The Studio and Vocal racks' copies reach 49 ms, as the Dub
+  Rack's do at Sep 50 % (51 ms).
