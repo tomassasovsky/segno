@@ -5990,7 +5990,8 @@ class SegnoEngineBindings {
   /// ---- effect-chain fingerprints (control thread; FX divergence detection) ---- *
   /// An order-sensitive 64-bit hash of a lane's / monitor's PUBLISHED effect chain:
   /// for each of the a_fx_count active entries, its type, plus (for a built-in) its
-  /// le_fx_param_count(type) float parameter bits — a plugin entry contributes its type only
+  /// float bits of the parameters its type reads (le_fx_param_count; none for an
+  /// unknown code) — a plugin entry contributes its type only
   /// (its params live in the plugin host, not a_fx_param). The empty chain hashes
   /// to the FNV-1a offset basis. This is DETECTION only, not a chain readback: the
   /// Dart repository owns the chain and computes the identical hash over its cache,

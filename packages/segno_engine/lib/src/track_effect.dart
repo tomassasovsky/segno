@@ -44,12 +44,13 @@ List<double> canonicalEffectParams(
     'an entry holds at most $kTrackEffectParams parameter cells',
   );
   final defaults = type.defaultParams;
+  if (params == null) return defaults; // already canonical and unmodifiable
   final count = type.params.length;
   return List<double>.unmodifiable([
     for (var i = 0; i < kTrackEffectParams; i++)
       if (i >= count)
         0.0
-      else if (params != null && i < params.length)
+      else if (i < params.length)
         params[i]
       else
         defaults[i],
