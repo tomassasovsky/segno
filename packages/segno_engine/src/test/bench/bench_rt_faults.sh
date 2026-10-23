@@ -14,11 +14,15 @@
 #   ./bench_rt_faults --seconds 120 --fork-ms 50    # the backstop, forced forks
 #   systemctl start segno.service
 # Exit status 0: with no forks, no page fault and no late period on the
-# callback thread; with forks, at most --max-faults-per-fork (16) faults per
-# fork (its stack and alsa-lib/miniaudio pages; see bench_rt_faults.c). A
+# callback thread and no xrun of any kind in the window (each one is an
+# audible dropout, wherever the time went); with forks, at most
+# --max-faults-per-fork (16) faults per fork (its stack and alsa-lib/miniaudio
+# pages; see bench_rt_faults.c), with late periods and xruns reported only. A
 # window with fewer than half its expected periods fails either way (an empty
 # window proves nothing). --warmup must be less than --seconds; the window is
 # the time between them.
+# The bench sets SEGNO_ALSA_PERIODS=8 like segno-kiosk-launch, unless the
+# environment already sets it.
 # --list prints the device ids for --playback / --capture.
 set -euo pipefail
 cd "$(dirname "$0")/../../.."   # src/test/bench -> packages/segno_engine
