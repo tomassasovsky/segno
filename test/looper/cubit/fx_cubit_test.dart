@@ -37,6 +37,7 @@ void main() {
   setUpAll(() {
     registerFallbackValue(<TrackEffect>[]);
     registerFallbackValue(const FxAddress(stage: FxStage.track));
+    registerFallbackValue(FxStage.track);
   });
 
   setUp(() {
@@ -50,6 +51,11 @@ void main() {
     when(() => repository.mixGeneration).thenAnswer((_) => generation);
     when(() => repository.sessionRevision).thenAnswer((_) => session);
     when(() => repository.fxRoomNs).thenAnswer((_) => room);
+    when(() => repository.fxChainCostAt(any(), any())).thenAnswer(
+      (call) => fxChainCostNs(
+        call.positionalArguments[1] as List<TrackEffect>,
+      ),
+    );
     when(() => repository.state).thenReturn(
       const LooperState(
         tracks: [Track(), Track(channel: 1)],
@@ -432,7 +438,7 @@ void main() {
 
     test('an add that needs more than is left is refused and changes '
         'nothing', () async {
-      room = kFxKindCostNs[TrackEffectType.octaver]! - 1;
+      room = fxEntryCostNs(BuiltInEffect(type: TrackEffectType.octaver)) - 1;
       final before = chain;
 
       final result = await cubit.appendChoice(
@@ -453,6 +459,20 @@ void main() {
       );
 
       expect(result.status, FxEditStatus.applied);
+    });
+
+    test('switching an octaver to PSOLA is refused when its extra cost '
+        'does not fit', () async {
+      final octaver = BuiltInEffect(
+        type: TrackEffectType.octaver,
+        slotId: 'oct',
+      );
+      chain = [octaver];
+      room = 0;
+
+      final result = cubit.setParameter(address, 'oct', 3, 1);
+
+      expect(result.status, FxEditStatus.overBudget);
     });
 
     test('a removal always lands, even over budget', () async {

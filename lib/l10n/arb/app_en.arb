@@ -3983,7 +3983,7 @@
             }
         }
     },
-    "fxOverBudget": "Not enough processing left for that effect",
+    "fxOverBudget": "Not enough processing left to add this",
     "@fxOverBudget": {
         "description": "Shown when adding an effect would overload the audio processing, so the add was refused."
     },

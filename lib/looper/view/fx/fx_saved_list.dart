@@ -24,17 +24,16 @@ class FxSavedList extends StatelessWidget {
   /// Creates an [FxSavedList].
   const FxSavedList({
     required this.freeSlots,
+    required this.fitsRoom,
     required this.onChoose,
-    this.roomNs = 1 << 40,
     super.key,
   });
 
   /// How many chain entries the destination can still take.
   final int freeSlots;
 
-  /// How much processing is left, in nanoseconds per frame
-  /// ([LooperRepository.fxRoomNs]).
-  final int roomNs;
+  /// Whether entries fit the processing left at the destination.
+  final bool Function(List<TrackEffect>) fitsRoom;
 
   /// Reports the preset chosen.
   final ValueChanged<FxLibraryChoice> onChoose;
@@ -71,7 +70,7 @@ class FxSavedList extends StatelessWidget {
                 // A saved sound that would not fit is still listed and still
                 // says why, rather than half-landing or quietly vanishing.
                 fits: preset.entries.length <= freeSlots,
-                roomy: fxChainCostNs(preset.entries) <= roomNs,
+                roomy: fitsRoom(preset.entries),
                 freeSlots: freeSlots,
                 onChoose: () => onChoose(FxSavedChoice(preset)),
               ),

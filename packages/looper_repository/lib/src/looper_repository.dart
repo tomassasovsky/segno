@@ -7,6 +7,7 @@ import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/audio_config.dart';
 import 'package:looper_repository/src/models/engine_reopened.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
+import 'package:looper_repository/src/models/fx_address.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/fx_chain_group.dart';
 import 'package:looper_repository/src/models/fx_cost.dart';
@@ -7695,25 +7696,44 @@ class LooperRepository {
     return true;
   }
 
-  /// What every live chain charges the audio thread's worst block
-  /// ([fxChainCostNs]), in nanoseconds per frame: the live inputs, the
-  /// tracks, All tracks and the destinations, and on the lanes their
-  /// free-running kinds ([fxLaneCostNs]), the rest of a lane playing from its
-  /// print.
-  int get fxCostNs => [
-    for (final c in _monitorEffects.values) fxChainCostNs(c),
-    for (final c in _trackEffects.values) fxChainCostNs(c),
-    for (final c in _outputEffects.values) fxChainCostNs(c),
-    fxChainCostNs(_allTracksEffects),
-    for (final c in _laneEffects.values) fxLaneCostNs(c),
-  ].fold(0, (a, b) => a + b);
+  /// The running block length, or the bench's when the engine is stopped.
+  int get _fxPeriod {
+    final frames = _engine.snapshot().bufferFrames;
+    return frames > 0 ? frames : kFxBenchPeriod;
+  }
 
-  /// What is left of the effects budget ([fxBudgetNs]) at the running sample
-  /// rate, in nanoseconds per frame; negative once a chain went over (an edit
-  /// that removes effects is never refused).
+  /// What [chain] would charge at [stage] ([fxChainCostNs], or
+  /// [fxLaneCostNs] for a loop's lane), in nanoseconds per frame at the
+  /// running block length.
+  int fxChainCostAt(FxStage stage, List<TrackEffect> chain) {
+    final period = _fxPeriod;
+    return stage == FxStage.loop
+        ? fxLaneCostNs(chain, period: period)
+        : fxChainCostNs(chain, period: period);
+  }
+
+  /// What every chain charges the audio thread's worst block
+  /// ([fxChainCostAt]), in nanoseconds per frame: the live inputs, the
+  /// tracks, All tracks, the destinations and the lanes.
+  int get fxCostNs {
+    final period = _fxPeriod;
+    return [
+      for (final c in _monitorEffects.values) fxChainCostNs(c, period: period),
+      for (final c in _trackEffects.values) fxChainCostNs(c, period: period),
+      for (final c in _outputEffects.values) fxChainCostNs(c, period: period),
+      fxChainCostNs(_allTracksEffects, period: period),
+      for (final c in _laneEffects.values) fxLaneCostNs(c, period: period),
+    ].fold(0, (a, b) => a + b);
+  }
+
+  /// What is left of the effects budget ([fxBudgetNs]) at the running rate
+  /// and block length, in nanoseconds per frame; negative once the chains
+  /// went over (a removal is never refused, and a take's inherited chain is
+  /// never refused either: a recording is not an edit).
   int get fxRoomNs {
-    final rate = _engine.snapshot().sampleRate;
-    return fxBudgetNs(rate > 0 ? rate : 96000) - fxCostNs;
+    final snapshot = _engine.snapshot();
+    final rate = snapshot.sampleRate > 0 ? snapshot.sampleRate : 96000;
+    return fxBudgetNs(rate, period: _fxPeriod) - fxCostNs;
   }
 
   /// Monitor [input]'s remembered effect chain (empty if none), in processing

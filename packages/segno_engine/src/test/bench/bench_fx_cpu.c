@@ -412,9 +412,10 @@ static int run_racks(const bench_opts* o, float* src, int32_t frames,
  * Eight instances in one chain show the steady share, an eighth of their
  * p99 increment over the rig alone. A kind on the hop clock (the phase
  * vocoder, PSOLA) can land a whole frame in one block, so it is charged the
- * larger of that and one instance's own p99 increment. Prints a row per
- * kind, then the line to copy into kFxKindCostNs (looper_repository). Run it
- * paced on the console; elsewhere the numbers are only a proxy. */
+ * larger of that and one instance's own p99 increment (p99 rather than the
+ * racks' p99.9: a share of eight is steadier there). Prints a row per kind,
+ * then the charges for kFxKindCostNs and kFxHopCostUs (looper_repository).
+ * Run it paced on the console; elsewhere the numbers are only a proxy. */
 typedef struct {
   const char* name;
   int32_t type;
@@ -487,11 +488,14 @@ static int run_table(const bench_opts* o, float* src, int32_t frames,
     const int hops = kind->type == LE_FX_OCTAVER;
     const double us = hops && d1 > d8 ? d1 : d8;
     ns[k] = us > 0.0 ? 1000.0 * us / (double)o->period : 0.0;
-    printf("| %-10s | %11.1f | %7.1f | %7.1f | %15.0f |\n", kind->name,
-           base.p99, d1, 8.0 * d8, ns[k]);
+    printf("| %-10s | %11.1f | %7.1f | %7.1f | %15.0f |%s\n", kind->name,
+           base.p99, d1, 8.0 * d8, ns[k],
+           ns[k] <= 0.0 ? " lost in the noise: rerun" : "");
     fflush(stdout);
   }
-  printf("kFxKindCostNs:");
+  /* kFxKindCostNs takes these per frame; the octaver and PSOLA go to
+   * kFxHopCostUs and kFxPsolaCostUs per block (1 x +us). */
+  printf("charges, ns per frame:");
   for (size_t k = 0; k < sizeof(k_table) / sizeof(k_table[0]); ++k) {
     printf(" %s=%.0f", k_table[k].name, ns[k]);
   }
