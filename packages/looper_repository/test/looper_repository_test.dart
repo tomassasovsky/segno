@@ -8633,6 +8633,16 @@ void main() {
       expect(fxPreCount(repo.allTracksEffects), 0);
     });
 
+    test('its chain flag reaches the projected state at once (#1452)', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setAllTracksChainEnabled(enabled: false);
+
+      // The Effects page reads All tracks' power from the projection.
+      expect(repo.state.allTracksChain.chainEnabled, isFalse);
+    });
+
     test('re-applies on restart, chain flag included', () {
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);

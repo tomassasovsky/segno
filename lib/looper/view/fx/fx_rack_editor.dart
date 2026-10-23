@@ -4,6 +4,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/fx_destination.dart';
+import 'package:segno/looper/view/fx/fx_chain_power.dart';
 import 'package:segno/looper/view/fx/fx_editor_parts.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
@@ -15,6 +16,16 @@ const double kFxPedalWidth = 286;
 
 /// The pen's gap between two pedal columns.
 const double kFxPedalGap = 26;
+
+/// The pen's pedal strip height.
+const double kFxPedalHeight = 650;
+
+/// The left edge of the pen's Track Solo chip in the rack editor's titlebar.
+const double _kSoloLeft = 926;
+
+/// Where the title ends: before the Effects power control (#1452), whose
+/// right edge is 24 short of Track Solo and which is about 270 wide.
+const double _kTitleRight = 1920 - _kSoloLeft + 24 + 300;
 
 /// One rack, opened in place (accepted design, `01 Connected pedal editor`):
 /// its pedals side by side with a plain cable between them, each pedal's own
@@ -72,18 +83,37 @@ class FxRackEditor extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final entries = group.entries;
+    final address = destination.address;
+    final chainOn = address == null || watchFxChainEnabled(context, address);
+    // While the chain is off its band takes the strip's top, and the pedals,
+    // dimmed, keep the rest: their own switches still work, so a sound can be
+    // prepared before the chain goes back on.
+    final band = chainOn ? 0.0 : FxChainOffNotice.height + 12;
+    final pedalHeight = kFxPedalHeight - band;
     return Material(
       type: MaterialType.transparency,
       child: LoopSettingsFrame(
         crumb: l10n.fxAddCrumb(destinationLabel),
         title: group.rack?.name ?? '',
+        titleRight: _kTitleRight,
         onBack: onBack,
         onStage: onStage,
         children: [
+          // The chain's own power, ahead of Track Solo and the rack's own
+          // switch (#1452).
+          if (address != null)
+            Positioned(
+              right: kLoopPenSize.width - _kSoloLeft + 24,
+              top: 32,
+              child: FxChainPower(
+                address: address,
+                onChanged: (enabled) => edits.setChainEnabled(enabled: enabled),
+              ),
+            ),
           // The pen's Track Solo chip, at the left end of the titlebar's row
           // and centred on its 64-high buttons.
           Positioned(
-            left: 926,
+            left: _kSoloLeft,
             top: 52,
             child: FxTrackSolo(destination: destination),
           ),
@@ -106,34 +136,53 @@ class FxRackEditor extends StatelessWidget {
               onAddEffect: onAddEffect,
             ),
           ),
+          if (!chainOn)
+            Positioned(
+              left: 36,
+              top: 124,
+              right: 36,
+              child: FxChainOffNotice(
+                message: l10n.fxChainOffHere,
+                onTurnOn: () => edits.setChainEnabled(enabled: true),
+              ),
+            ),
           Positioned(
             left: 36,
-            top: 124,
+            top: 124 + band,
             right: 36,
-            height: 650,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (var i = 0; i < entries.length; i++) ...[
-                    if (i > 0) _Cable(key: Key('fx_pedal_cable_$i')),
-                    FxPedalColumn(
-                      key: Key('fx_pedal_${entries[i].slotId ?? i}'),
-                      effect: entries[i],
-                      onTogglePower: () {
-                        final id = entries[i].slotId;
-                        if (id != null) {
-                          edits.setEnabled(id, enabled: !entries[i].enabled);
-                        }
-                      },
-                      onParam: (param, value) {
-                        final id = entries[i].slotId;
-                        if (id != null) edits.setParam(id, param, value);
-                      },
-                    ),
+            height: pedalHeight,
+            child: Opacity(
+              key: const Key('fx_pedal_strip'),
+              opacity: chainOn ? 1 : context.surface.disabledOpacity,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var i = 0; i < entries.length; i++) ...[
+                      if (i > 0)
+                        _Cable(
+                          key: Key('fx_pedal_cable_$i'),
+                          height: pedalHeight,
+                        ),
+                      FxPedalColumn(
+                        key: Key('fx_pedal_${entries[i].slotId ?? i}'),
+                        height: pedalHeight,
+                        effect: entries[i],
+                        onTogglePower: () {
+                          final id = entries[i].slotId;
+                          if (id != null) {
+                            edits.setEnabled(id, enabled: !entries[i].enabled);
+                          }
+                        },
+                        onParam: (param, value) {
+                          final id = entries[i].slotId;
+                          if (id != null) edits.setParam(id, param, value);
+                        },
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -160,12 +209,14 @@ class FxRackEditor extends StatelessWidget {
 /// The plain line between two pedals. No arrowhead: the order of the columns
 /// is what says which way the signal goes.
 class _Cable extends StatelessWidget {
-  const _Cable({super.key});
+  const _Cable({required this.height, super.key});
+
+  final double height;
 
   @override
   Widget build(BuildContext context) => SizedBox(
     width: kFxPedalGap,
-    height: 650,
+    height: height,
     child: Align(
       alignment: const Alignment(0, -0.45),
       child: Container(height: 3, color: context.surface.borderStrong),
@@ -243,8 +294,13 @@ class FxPedalColumn extends StatefulWidget {
     required this.effect,
     required this.onTogglePower,
     required this.onParam,
+    this.height = kFxPedalHeight,
     super.key,
   });
+
+  /// How tall the column is: the pen's strip, less the chain-off band when
+  /// it shows.
+  final double height;
 
   /// The module.
   final TrackEffect effect;
@@ -286,7 +342,7 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
     final shown = controls?.params ?? const <int>[];
     return SizedBox(
       width: kFxPedalWidth,
-      height: 650,
+      height: widget.height,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
