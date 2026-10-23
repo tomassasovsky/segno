@@ -7,12 +7,27 @@ no build step and no JavaScript.
 
 ```
 public/index.html   the page
+public/404.html     the not-found page
 public/styles.css   light and dark palettes, phone layout
+public/robots.txt   and sitemap.xml
 public/img/         console renders, UI captures, the board view (WebP)
 public/fonts/       Inter and JetBrains Mono, subset to Latin-1 (OFL)
 nginx.conf          the server block inside the image
 Dockerfile          nginx:alpine with public/ baked in
+stamp.py            versions asset references by content hash
 ```
+
+## Asset versions
+
+Every reference to a local asset carries `?v=<hash>`, and nginx caches assets
+for a year. After changing any file under `public/`, run:
+
+```bash
+python3 site/stamp.py
+```
+
+The Site workflow runs `python3 site/stamp.py --check` and fails on a stale
+version.
 
 ## Preview
 
@@ -27,7 +42,10 @@ model, the board view from KiCad, and the interface images from the app's UI
 tests (`test/screenshots/goldens`). None of them is a photo, and the page says
 so. Do not use generated art.
 
-To add a render, convert it to WebP at 1200 and 2000 pixels wide:
+Crop renders so the console sits in the middle of the frame: centre the crop
+on the console's bounding box (the pixels brighter than the black background),
+not on the original frame. To add a render, convert it to WebP at 1200 and
+2000 pixels wide:
 
 ```bash
 magick render.png -resize 1200x -strip -quality 80 site/public/img/name-1200.webp

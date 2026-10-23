@@ -1,18 +1,18 @@
 @font-face {
   font-family: "Inter";
-  src: url("fonts/Inter-Regular.woff2") format("woff2");
+  src: url("fonts/Inter-Regular.woff2?v=5fedeecb") format("woff2");
   font-weight: 400;
   font-display: swap;
 }
 @font-face {
   font-family: "Inter";
-  src: url("fonts/Inter-SemiBold.woff2") format("woff2");
+  src: url("fonts/Inter-SemiBold.woff2?v=a6a1a4db") format("woff2");
   font-weight: 600;
   font-display: swap;
 }
 @font-face {
   font-family: "JetBrains Mono";
-  src: url("fonts/JetBrainsMono-Regular.woff2") format("woff2");
+  src: url("fonts/JetBrainsMono-Regular.woff2?v=13f9151f") format("woff2");
   font-weight: 400;
   font-display: swap;
 }
@@ -60,6 +60,20 @@ body {
   text-rendering: optimizeLegibility;
 }
 .sprite { position: absolute; width: 0; height: 0; }
+.skip {
+  position: absolute;
+  left: 16px;
+  top: -100px;
+  z-index: 20;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--bg);
+  font-weight: 600;
+  text-decoration: none;
+}
+.skip:focus { top: calc(12px + env(safe-area-inset-top, 0px)); }
+main:focus { outline: none; }
 img { display: block; max-width: 100%; height: auto; }
 a { color: inherit; text-decoration-color: var(--line); text-underline-offset: 3px; }
 a:hover { text-decoration-color: currentColor; }
@@ -100,8 +114,19 @@ p { margin: 0; }
 }
 .nav a:hover { color: var(--text); background: var(--surface-2); }
 .nav .nav-source { color: var(--text); border: 1px solid var(--line); }
+/* Phones: the links move to a second row that scrolls sideways if it must. */
 @media (max-width: 620px) {
-  .nav a:not(.nav-source) { display: none; }
+  html { scroll-padding-top: 112px; }
+  .bar-inner { flex-wrap: wrap; height: auto; gap: 0; padding-block: 10px 6px; }
+  .nav {
+    width: calc(100% + 16px);
+    margin-inline: -8px;
+    padding-top: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .nav a { flex: none; padding-inline: 8px; }
+  .nav .nav-source { margin-left: auto; }
 }
 
 /* Hero */
@@ -275,3 +300,8 @@ h2 { font-size: clamp(30px, 4.2vw, 44px); }
 .foot { border-top: 1px solid var(--line); padding-block: 28px calc(28px + env(safe-area-inset-bottom, 0px)); }
 .foot-inner { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; font-size: 14px; color: var(--muted); }
 .foot-glyph { width: 18px; height: 18px; vertical-align: -4px; color: var(--text); }
+
+/* 404 page */
+.missing { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; padding-block: 48px; }
+.missing-glyph { width: 64px; height: 64px; margin-bottom: 24px; }
+.missing .actions { margin-top: 28px; }
