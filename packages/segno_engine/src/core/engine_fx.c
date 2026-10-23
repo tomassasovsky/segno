@@ -1963,16 +1963,16 @@ static const le_fx_param_desc LE_FX_WAH_PARAMS[] = {
 #define LE_WAH_PARAMS_N 1
 
 /* A delay line inside a kind's block: [LE_*_RING] floats, a power of two,
- * written every sample and read back at a fractional delay by linear
- * interpolation. */
+ * written at [w] every sample and read back [delay] samples earlier by
+ * linear interpolation. The whole samples are counted in integers, so the
+ * read stays exact however long the counter has run. */
 static inline float le_ring_read(const float* ring, uint32_t mask, uint32_t w,
                                  float delay) {
-  const float pos = (float)w - delay;
-  const float base = floorf(pos);
-  const float fr = pos - base;
-  const uint32_t i0 = (uint32_t)(int32_t)base & mask;
-  const float a = ring[i0];
-  const float b = ring[(i0 + 1u) & mask];
+  const float whole = floorf(delay);
+  const float fr = delay - whole;
+  const uint32_t near = (w - (uint32_t)whole) & mask;
+  const float a = ring[near];
+  const float b = ring[(near - 1u) & mask];
   return a + fr * (b - a);
 }
 
@@ -1981,10 +1981,12 @@ static inline float le_tri(float ph) {
   return ph < 0.5f ? 4.0f * ph - 1.0f : 3.0f - 4.0f * ph;
 }
 
-/* Advances an LFO phase in 0..1 by [inc]. */
-static inline float le_lfo_step(float ph, float inc) {
+/* Advances an LFO phase in 0..1 by [inc]. The phase is kept in double: a
+ * slow LFO's step at a high rate (1.5e-6 a sample) is too fine for a float
+ * near 1. */
+static inline double le_lfo_step(double ph, double inc) {
   ph += inc;
-  return ph >= 1.0f ? ph - 1.0f : ph;
+  return ph >= 1.0 ? ph - 1.0 : ph;
 }
 
 /* ---- Doubler (LE_FX_DOUBLER) ----
@@ -1995,7 +1997,7 @@ static inline float le_lfo_step(float ph, float inc) {
  * separation both copies sit in the centre; at 100 % one is hard left and
  * the other hard right (equal-power pan). The dry signal passes untouched.
  * The voice times and drifts are chosen (#891). */
-#define LE_DBL_RING 8192u /* holds 42 ms at 192 kHz */
+#define LE_DBL_RING 4096u /* holds 21 ms at 192 kHz */
 #define LE_DBL_A_MS 11.0
 #define LE_DBL_B_MS 17.0
 #define LE_DBL_DRIFT_MS 0.6 /* each voice drifts +-0.6 ms ... */
@@ -2010,8 +2012,8 @@ typedef struct le_fx_doubler {
   le_fx_glide sep_a[2]; /* voice A's left and right gains */
   le_fx_glide sep_b[2];
   float base_a, base_b, drift; /* in samples */
-  float inc_a, inc_b;          /* LFO phase per sample */
-  float ph_a, ph_b;
+  double inc_a, inc_b;         /* LFO phase per sample */
+  double ph_a, ph_b;
   uint32_t w;
   float ring[LE_DBL_RING];
 } le_fx_doubler;
@@ -2025,10 +2027,10 @@ static void fx_doubler_update(void* ks, const float* p, int sr, int settle) {
     d->base_a = (float)(LE_DBL_A_MS * 1e-3 * rate);
     d->base_b = (float)(LE_DBL_B_MS * 1e-3 * rate);
     d->drift = (float)(LE_DBL_DRIFT_MS * 1e-3 * rate);
-    d->inc_a = (float)(LE_DBL_A_HZ / rate);
-    d->inc_b = (float)(LE_DBL_B_HZ / rate);
-    if (settle) d->ph_b = 0.5f; /* the two voices drift apart */
+    d->inc_a = LE_DBL_A_HZ / rate;
+    d->inc_b = LE_DBL_B_HZ / rate;
   }
+  if (settle) d->ph_b = 0.5; /* a fresh pair starts half a cycle apart */
   const float k = settle ? 1.0f : d->h.k;
   const float m = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
   const float s = p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1];
@@ -2056,9 +2058,9 @@ static void fx_doubler_kprocess(void* ks, float* l, float* r) {
   d->ph_a = le_lfo_step(d->ph_a, d->inc_a);
   d->ph_b = le_lfo_step(d->ph_b, d->inc_b);
   const float va = le_ring_read(d->ring, LE_DBL_RING - 1u, d->w,
-                                d->base_a + d->drift * le_tri(d->ph_a));
+                                d->base_a + d->drift * le_tri((float)d->ph_a));
   const float vb = le_ring_read(d->ring, LE_DBL_RING - 1u, d->w,
-                                d->base_b + d->drift * le_tri(d->ph_b));
+                                d->base_b + d->drift * le_tri((float)d->ph_b));
   d->w++;
   *l = x0 + mix * (al * va + bl * vb);
   *r = x1 + mix * (ar * va + br * vb);
@@ -2092,12 +2094,13 @@ static void fx_doubler_kprocess(void* ks, float* l, float* r) {
 typedef struct le_fx_chorus {
   le_fx_dyn_head h;
   float last[LE_CHO_PARAMS_N];
-  le_fx_glide inc;   /* LFO phase per sample */
+  le_fx_glide rate;  /* LFO rate, Hz */
   le_fx_glide swing; /* the delay's swing, samples */
   le_fx_glide dry;
   le_fx_glide wet;
   float centre; /* samples */
-  float ph;
+  float inv_sr;
+  double ph;
   float lp[5];       /* the voice low-pass, a0-normalized b0 b1 b2 a1 a2 */
   float z[2][2][2];  /* [section][channel][state] */
   uint32_t w;
@@ -2111,6 +2114,7 @@ static void fx_chorus_update(void* ks, const float* p, int sr, int settle) {
   const double rate = (double)(sr > 0 ? sr : 48000);
   if (f & LE_FX_DYN_NEW_RATE) {
     c->centre = (float)(LE_CHO_CENTRE_MS * 1e-3 * rate);
+    c->inv_sr = (float)(1.0 / rate);
     /* RBJ low-pass, the same design le_eq_design uses for a cut. */
     const double w0 = 2.0 * 3.14159265358979323846 *
                       (LE_CHO_LP_HZ < 0.45 * rate ? LE_CHO_LP_HZ : 0.45 * rate) /
@@ -2131,8 +2135,7 @@ static void fx_chorus_update(void* ks, const float* p, int sr, int settle) {
       p[2] < 0.0f ? 0.0f : p[2] > 1.0f ? 1.0f : p[2],
   };
   int moving = le_fx_glide_step(
-      &c->inc, (float)((LE_CHO_RATE_MIN_HZ + LE_CHO_RATE_SPAN_HZ * v[0]) / rate),
-      k);
+      &c->rate, (float)(LE_CHO_RATE_MIN_HZ + LE_CHO_RATE_SPAN_HZ * v[0]), k);
   moving |= le_fx_glide_step(
       &c->swing, (float)(LE_CHO_DEPTH_MS * 1e-3 * rate * v[1]), k);
   moving |= le_fx_glide_step(&c->dry, 1.0f - LE_CHO_DRY_DROP * v[2], k);
@@ -2143,12 +2146,12 @@ static void fx_chorus_update(void* ks, const float* p, int sr, int settle) {
 static void fx_chorus_kprocess(void* ks, float* l, float* r) {
   le_fx_chorus* c = (le_fx_chorus*)ks;
   const float x[2] = {fx_sanitize(*l), fx_sanitize(*r)};
-  const float inc = le_fx_glide_next(&c->inc);
+  const double inc = (double)le_fx_glide_next(&c->rate) * (double)c->inv_sr;
   const float swing = le_fx_glide_next(&c->swing);
   const float dry = le_fx_glide_next(&c->dry);
   const float wet = le_fx_glide_next(&c->wet);
   c->ph = le_lfo_step(c->ph, inc);
-  const float delay = c->centre + swing * le_tri(c->ph);
+  const float delay = c->centre + swing * le_tri((float)c->ph);
   const uint32_t at = c->w & (LE_CHO_RING - 1u);
   float y[2];
   for (int ch = 0; ch < 2; ++ch) {
@@ -2172,13 +2175,13 @@ static void fx_chorus_kprocess(void* ks, float* l, float* r) {
  *
  * A resonant band-pass swept by the pedal, as a state-variable filter: from
  * LE_WAH_LO_HZ heel down to LE_WAH_HI_HZ toe up (log), Q LE_WAH_Q, its peak
- * LE_WAH_PEAK_DB over the input. The pedal glides in octaves (a pedal moved
+ * LE_WAH_PEAK (+6 dB) over the input. The pedal glides in octaves (a pedal moved
  * by an expression input never zips). The sweep, Q and level are chosen
  * (#891). */
 #define LE_WAH_LO_HZ 350.0
 #define LE_WAH_HI_HZ 2500.0
 #define LE_WAH_Q 4.0
-#define LE_WAH_PEAK_DB 6.0
+#define LE_WAH_PEAK 1.9952623149688795 /* +6 dB */
 
 typedef struct le_fx_wah {
   le_fx_dyn_head h;
@@ -2211,7 +2214,7 @@ static void fx_wah_update(void* ks, const float* p, int sr, int settle) {
     q->a2 = (float)(g * a1);
     q->a3 = (float)(g * g * a1);
     /* The band output peaks at 1 / k; scale it to the chosen peak. */
-    q->gain = (float)(kq * pow(10.0, LE_WAH_PEAK_DB / 20.0));
+    q->gain = (float)(kq * LE_WAH_PEAK);
   }
   q->h.moving = q->lhz != q->tgt_lhz;
 }

@@ -35087,8 +35087,9 @@ static void test_cache_cached_matches_live_every_builtin(void) {
   const int32_t types[] = {LE_FX_DRIVE,      LE_FX_FILTER,    LE_FX_DELAY,
                            LE_FX_TREMOLO,    LE_FX_OCTAVER,   LE_FX_ECHO,
                            LE_FX_REVERB,     LE_FX_EQ,        LE_FX_COMPRESSOR,
-                           LE_FX_TRANSIENT,  LE_FX_HP_GATE,   LE_FX_DOUBLER,
-                           LE_FX_CHORUS,     LE_FX_WAH};
+                           LE_FX_TRANSIENT,  LE_FX_HP_GATE,   LE_FX_WAH};
+  /* The doubler and the chorus are free-running and never print
+   * (test_cache_free_running_stays_live). */
   for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); ++i) {
     cache_check_chain_parity(&types[i], 1);
     /* ...and on a NON-ZERO lane. Track 0, lane 0 has hop-stagger seed 0,
