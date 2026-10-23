@@ -78,7 +78,12 @@ static void test_spring_matches_the_capture(void) {
    * capture's impulse response, smoothed): within 4 dB at 318 Hz, 1.96 kHz
    * and 3.77 kHz, and the steep edge past 4.7 kHz. */
   const int len = sr;
-  const double ref = eq_measured_db(h, len, 1000.0, sr);
+  double accr = 0.0;
+  int cntr = 0;
+  for (double f = 1000.0 / 1.06; f <= 1000.0 * 1.06; f += 2.0) {
+    accr += pow(10.0, eq_measured_db(h, len, f, sr) / 10.0);
+    cntr++;
+  }
   /* A single DFT bin rides the comb of the 38 ms loop; average a few bins
    * either side, the way the capture's spectrum was smoothed. */
   const double want[4][2] = {{318, -10.6}, {1958, -7.2}, {3765, -23.4},
@@ -90,14 +95,7 @@ static void test_spring_matches_the_capture(void) {
       acc += pow(10.0, (eq_measured_db(h, len, f, sr)) / 10.0);
       cnt++;
     }
-    double accr = 0.0;
-    int cntr = 0;
-    for (double f = 1000.0 / 1.06; f <= 1000.0 * 1.06; f += 2.0) {
-      accr += pow(10.0, eq_measured_db(h, len, f, sr) / 10.0);
-      cntr++;
-    }
     const double got = 10.0 * log10(acc / cnt) - 10.0 * log10(accr / cntr);
-    (void)ref;
     printf("  %.0f Hz: %.1f dB (capture %.1f)\n", want[i][0], got, want[i][1]);
     CHECK(fabs(got - want[i][1]) < (want[i][1] < -40.0 ? 8.0 : 4.0));
   }
@@ -127,6 +125,39 @@ static void test_spring_matches_the_capture(void) {
   for (int i = 0; i < sr / 10; ++i) CHECK(h[i] == in[i]);
   free(in);
   free(h);
+}
+
+/* At the longest Time, with noise in the loop, the spring stays finite and
+ * dies away once the input stops. */
+static void test_spring_stable_at_ten_seconds(void) {
+  printf("test_spring_stable_at_ten_seconds\n");
+  const int sr = 48000;
+  const int n = 12 * sr;
+  float* in = (float*)calloc((size_t)n, sizeof(float));
+  float* out = (float*)calloc((size_t)n, sizeof(float));
+  uint32_t seed = 12345u;
+  for (int i = 0; i < sr; ++i) {
+    seed = seed * 1664525u + 1013904223u;
+    in[i] = 0.5f * ((float)(seed >> 8) / 8388608.0f - 1.0f);
+  }
+  float p[LE_FX_PARAMS] = {0};
+  p[0] = 1.0f; /* 10 s */
+  p[1] = 1.0f;
+  le_fx_state* fx = dyn_state(LE_FX_SPRING, sr);
+  uint32_t clock = 0;
+  dyn_run(fx, LE_FX_SPRING, p, sr, in, out, NULL, n, &clock);
+  dyn_free(fx);
+  double early = 0.0;
+  double late = 0.0;
+  for (int i = 0; i < n; ++i) {
+    CHECK(isfinite(out[i]));
+    if (i >= sr && i < 2 * sr) early += (double)out[i] * out[i];
+    if (i >= 11 * sr) late += (double)out[i] * out[i];
+  }
+  /* Ten seconds on, well over 20 dB down. */
+  CHECK(late < early * 0.01);
+  free(in);
+  free(out);
 }
 
 /* ---- all ---- */
@@ -183,6 +214,7 @@ static void test_verb_on_a_lane(void) {
 
 static void run_verb_tests(void) {
   test_spring_matches_the_capture();
+  test_spring_stable_at_ten_seconds();
   test_verb_offline_equals_live();
   test_verb_on_a_lane();
 }

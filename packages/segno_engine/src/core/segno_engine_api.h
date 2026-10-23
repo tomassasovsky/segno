@@ -716,7 +716,8 @@ typedef enum le_fx_type {
   /* LPF: p0 cutoff (20 to 20000 Hz), p1 resonance. A resonant
    * 12 dB/octave low-pass. */
   LE_FX_LPF = 20,
-  /* SPRING: p0 time (1 to 10 s, the decay to -60 dB), p1 mix. One
+  /* SPRING: p0 time (the Looper X's 1 to 10 s: about the decay to -60 dB at
+   * short settings, shorter at long ones), p1 mix. One
    * recirculating, dispersive spring, band-limited to 200 Hz - 4 kHz; fit to
    * the Guitar Rack's Spring (#891). Drains its tail on bypass. */
   LE_FX_SPRING = 21,

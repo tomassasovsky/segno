@@ -2868,6 +2868,9 @@ typedef struct le_fx_spring {
   le_fx_glide gain; /* the loop's gain per trip */
   le_fx_glide dry;
   le_fx_glide wet;
+  float gain_tgt;   /* the targets, recomputed when the settings change */
+  float wet_tgt;
+  double trip_scale; /* the trip held, over the 38 ms one (1 below 215 kHz) */
   float ap;         /* the all-passes' coefficient */
   float loss_g1;
   uint32_t trip;    /* the delay line's samples */
@@ -2896,22 +2899,26 @@ static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
     q->ap = (float)a;
     q->loss_g1 = le_onepole_g1(LE_SPR_LOSS_HZ, rate);
     /* The trip less the all-passes' delay at low frequencies. */
-    double trip = LE_SPR_TRIP_S * rate - LE_SPR_STAGES * (1.0 - a) / (1.0 + a);
+    const double want = LE_SPR_TRIP_S * rate - LE_SPR_STAGES * (1.0 - a) / (1.0 + a);
+    double trip = want;
+    /* Past 215 kHz the trip outgrows the ring: hold it there and scale the
+     * loss per trip, so the decay stays right though the echo shortens. */
     if (trip > (double)(LE_SPR_RING - 1u)) trip = (double)(LE_SPR_RING - 1u);
     if (trip < 1.0) trip = 1.0;
     q->trip = (uint32_t)(trip + 0.5);
+    q->trip_scale = want > 1.0 ? (double)q->trip / want : 1.0;
   }
-  const le_fx_param_desc* d = LE_FX_SPRING_PARAMS;
-  const double time = le_fx_desc_value(&d[0], p[0]);
   const float m = p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1];
+  if (f & LE_FX_DYN_CHANGED) {
+    const double time = le_fx_desc_value(&LE_FX_SPRING_PARAMS[0], p[0]);
+    q->gain_tgt = (float)pow(10.0, -(LE_SPR_LOSS_TIME_DB / time + LE_SPR_LOSS_DB) *
+                                       q->trip_scale / 20.0);
+    q->wet_tgt = (float)(LE_SPR_WET * pow(time / 2.0, LE_SPR_WET_EXP));
+  }
   const float k = settle ? 1.0f : q->h.k;
-  int moving = le_fx_glide_step(
-      &q->gain,
-      (float)pow(10.0, -(LE_SPR_LOSS_TIME_DB / time + LE_SPR_LOSS_DB) / 20.0),
-      k);
+  int moving = le_fx_glide_step(&q->gain, q->gain_tgt, k);
   moving |= le_fx_glide_step(&q->dry, 1.0f - LE_SPR_DRY_DROP * m, k);
-  moving |= le_fx_glide_step(
-      &q->wet, (float)(LE_SPR_WET * pow(time / 2.0, LE_SPR_WET_EXP)) * m, k);
+  moving |= le_fx_glide_step(&q->wet, q->wet_tgt * m, k);
   q->h.moving = moving;
 }
 
@@ -3009,8 +3016,9 @@ typedef struct le_fx_vtable {
   void (*kprocess)(void* ks, float* l, float* r);
 } le_fx_vtable;
 
-/* Bypass drains the tail instead of crossfading out: a linear, ring-owning
- * kind with no reported latency (delay, echo, reverb). */
+/* Bypass drains the tail instead of crossfading out: a linear kind that
+ * holds a tail in rings and reports no latency (delay, echo, reverb, whose
+ * rings `prepare` allocates; the spring, whose ring is in its kind block). */
 #define LE_FX_F_DRAINS 1u
 /* A free-running modulator (an LFO that runs on whatever the loop does): the
  * kind sounds different each lap, so a chain holding it is never printed
@@ -3285,7 +3293,8 @@ int le_fx_entry_free_running(int32_t type, const float* p, int sr) {
 }
 
 /* Whether a bypassed slot of [type] drains its tail rather than crossfading
- * out: a ring-owning type with no reported latency (delay, echo, reverb).
+ * out: a ring-owning type with no reported latency (delay, echo, reverb, the
+ * spring).
  * Everything else — memoryless kernels, the latency-bearing octaver, hosted
  * plugins — crossfades (see fx_apply_chain's doc). */
 int le_fx_type_drains(int32_t type) {
@@ -3512,9 +3521,12 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
            * Only ring-OWNING types (vtable `prepare` non-NULL) pay the ring
            * clear, and those are spaced by the cooldown: a deferred slot
            * simply stays bypassed and retries next sample. */
+          /* A kind that drains keeps its rings in its block, cleared with
+           * it by the reset below: spaced the same way. */
           const int needs_clear =
-              LE_FX[ty].prepare != NULL &&
-              (fx->delay[s][0] != NULL || fx->delay[s][1] != NULL);
+              (LE_FX[ty].prepare != NULL &&
+               (fx->delay[s][0] != NULL || fx->delay[s][1] != NULL)) ||
+              (LE_FX[ty].state_size != 0 && (LE_FX[ty].flags & LE_FX_F_DRAINS));
           if (needs_clear && fx->enable_clear_cooldown > 0) goto slot_done;
           le_fx_entry_reset(fx, s);
           if (needs_clear) {

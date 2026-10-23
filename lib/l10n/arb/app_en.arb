@@ -842,7 +842,7 @@
     "effectVinyl": "Vinyl",
     "effectDegrade": "Degrade",
     "effectLpf": "Low-pass filter",
-    "effectSpring": "Spring Reverb",
+    "effectSpring": "Spring reverb",
     "paramFrequency": "Frequency",
     "paramNoise": "Noise",
     "paramNoiseTone": "Noise tone",
