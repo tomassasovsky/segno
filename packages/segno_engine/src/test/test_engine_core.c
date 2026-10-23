@@ -21343,12 +21343,12 @@ static void test_octaver_psola_pitch_detect(void) {
   free(b);
 }
 
-/* PSOLA's sliced detection (#913): at 44.1, 48 and 96 kHz every pass
- * finishes inside the hop that started it (the per-tick budget covers the
- * worst pass at every decimation), and the period it settles on is the
- * input's to within 0.3 % for a 220 Hz voice and 1 % for an 80 Hz one. At
- * 96 kHz the old undecimated pass could not see 80 Hz at all: its 800-lag
- * search stopped at 120 Hz. */
+/* PSOLA's sliced detection (#913): from 32 to 192 kHz every pass finishes
+ * inside the hop that started it (the per-tick credit covers the worst pass
+ * at every decimation), the period it settles on is the input's to within
+ * 0.3 % for a 220 Hz voice and 1 % for an 80 Hz one, and the shifted output
+ * plays the shifted pitch. At 96 kHz the old undecimated pass could not see
+ * 80 Hz at all: its 800-lag search stopped at 120 Hz. */
 static void test_octaver_psola_sliced_detection(void) {
   printf("test_octaver_psola_sliced_detection\n");
   static int32_t types[LE_FX_MAX];
@@ -21363,9 +21363,9 @@ static void test_octaver_psola_sliced_detection(void) {
   params[0][1] = 1.0f;
   params[0][2] = 1.0f;
   params[0][3] = 1.0f; /* PSOLA */
-  const int rates[] = {44100, 48000, 96000};
+  const int rates[] = {32000, 44100, 48000, 96000, 192000};
   const float f0s[] = {220.0f, 80.0f};
-  for (int ri = 0; ri < 3; ++ri) {
+  for (int ri = 0; ri < 5; ++ri) {
     for (int fi = 0; fi < 2; ++fi) {
       const int sr = rates[ri];
       const float f0 = f0s[fi];
@@ -21379,6 +21379,9 @@ static void test_octaver_psola_sliced_detection(void) {
       const le_octaver_state* o = &fx->oct[0][0];
       int passes = 0;
       int overran = 0;
+      float* out = (float*)malloc(sizeof(float) * (size_t)sr);
+      CHECK(out != NULL);
+      if (out == NULL) return;
       for (int i = 0; i < sr; ++i) {
         /* A harmonic voice: 8 partials, falling 1/h. */
         float x = 0.0f;
@@ -21395,13 +21398,36 @@ static void test_octaver_psola_sliced_detection(void) {
         float l = x;
         float r = x;
         fx_apply_chain(fx, sr, sr, &l, &r, 1, types, params, on);
+        out[i] = l;
       }
+      /* The output's pitch, over its last 0.25 s: +7 semitones. Measured at
+       * 48 kHz or under (a boxcar decimation), since the one-shot detector's
+       * lags stop at LE_PSOLA_MAXLAG. */
+      const int dd = sr > 48000 ? sr / 48000 : 1;
+      const int tail = sr / 4 / dd;
+      for (int i = 0; i < tail; ++i) {
+        float acc = 0.0f;
+        for (int k = 0; k < dd; ++k) acc += out[sr - tail * dd + i * dd + k];
+        out[i] = acc / (float)dd;
+      }
+      float out_period = 0.0f;
+      float out_voiced = 0.0f;
+      le_psola_detect_band(out, tail, sr / dd, 60, 1000, &out_period,
+                           &out_voiced);
+      const float shifted = f0 * powf(2.0f, 7.0f / 12.0f);
+      const float out_cents =
+          out_period > 0.0f
+              ? 1200.0f * log2f(((float)(sr / dd) / out_period) / shifted)
+              : 9999.0f;
+      free(out);
       const float want = (float)sr / f0;
       const float err = fabsf(o->period - want) / want;
       printf("  %d Hz, %.0f Hz voice: period %.2f (want %.2f, %.3f %%), "
-             "voiced %.2f, %d passes, %d overran\n",
+             "voiced %.2f, %d passes, %d overran, output %+.1f cents\n",
              sr, (double)f0, (double)o->period, (double)want,
-             (double)(100.0f * err), (double)o->voiced, passes, overran);
+             (double)(100.0f * err), (double)o->voiced, passes, overran,
+             (double)out_cents);
+      CHECK(fabsf(out_cents) < 20.0f);
       CHECK(passes > 100);
       CHECK(overran <= 1); /* the first may meet a reset pass, never more */
       CHECK(err < (f0 > 100.0f ? 0.003f : 0.01f));

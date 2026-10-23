@@ -174,15 +174,17 @@ static inline int32_t le_fx_all_tracks_hop_seed(int32_t bus) {
 #define LE_PSOLA_AHOP 256    /* re-run pitch detection every this many samples */
 #define LE_PSOLA_MAXLAG 800  /* the YIN detector's longest lag (le_yin_begin) */
 /* Pitch detection (#913). A coarse YIN pass runs on the window decimated by
- * D = round(rate / LE_PSOLA_RATE), 1..LE_PSOLA_DMAX (2 at 48 kHz, 4 at 96
- * kHz): LE_PSOLA_DWIN decimated samples, about 33 ms, searched from
- * LE_PSOLA_MIN_HZ to LE_PSOLA_MAX_HZ at every rate. A narrow pass over the
- * last LE_PSOLA_RAW device samples refines it to a device sample, as the
- * tuner does. The pass is sliced, LE_PSOLA_WORK_PER_TICK difference-function
- * iterations a tick, so it finishes inside its hop instead of landing in one
- * callback: a whole pass is at most ~176k iterations (160k coarse at any
- * rate, 16k refinement at 96 kHz) against the hop's 256 x 896 = 229k, so the
- * work spreads over the whole hop with 1.3x headroom. */
+ * D = ceil(rate / LE_PSOLA_RATE), 1..LE_PSOLA_DMAX (2 at 44.1 and 48 kHz, 4 at
+ * 96 kHz, 8 at 192 kHz): LE_PSOLA_DWIN decimated samples, 33 ms or more,
+ * searched from LE_PSOLA_MIN_HZ to LE_PSOLA_MAX_HZ at every rate up to
+ * 192 kHz. A narrow pass over the last LE_PSOLA_RAW device samples refines it
+ * to a device sample, as the tuner does. The pass averages
+ * LE_PSOLA_WORK_PER_TICK iterations a tick (a credit, carried tick to tick),
+ * so it spreads over its hop instead of landing in one callback: a whole pass
+ * is at most ~190k (the decimation, 160k of coarse lags, the device-rate copy
+ * and up to 26k of refinement at 192 kHz) against the hop's 256 x 896 = 229k.
+ * A 64-frame callback carries about 64 x 896 = 57k of it, plus at most one
+ * lag of overshoot. */
 #define LE_PSOLA_RATE 24000 /* LE_PSOLA_DMAX is in engine_private.h */
 #define LE_PSOLA_DWIN 800
 #define LE_PSOLA_MIN_HZ 60
@@ -467,6 +469,30 @@ int le_yin_step(le_yin_pass* p, long budget);
  * samples to *out_period and the voicing confidence in [0,1] to *out_voiced,
  * and returns 1 when the frame reads as confidently voiced. */
 int le_yin_finish(const le_yin_pass* p, float* out_period, float* out_voiced);
+
+/* --- Device-rate refinement of a coarse period ------------------------------
+ *
+ * A coarse period from a decimated pass is accurate to a fraction of a
+ * DECIMATED sample. The refinement walks the plain difference function at the
+ * device rate over lags [coarse - span, coarse + span + 1] and interpolates
+ * the minimum. Plain difference rather than YIN's normalized form: the octave
+ * decision is the coarse pass's, and this pass only locates a minimum it is
+ * already next to. Shared by the tuner and the PSOLA octaver; all three run
+ * on the audio thread and allocate nothing.
+ *
+ * Opens a refinement of [coarse] (device samples) over a window of [n]
+ * samples. Returns 0, nothing to refine, when the lags would fall under 2 or
+ * past n / 2 (fewer than two periods in the window): the caller keeps the
+ * coarse period. [span] is at most LE_REFINE_SPAN_MAX. */
+int le_refine_begin(le_lag_refine* r, float coarse, int span, int n);
+
+/* Accumulates lags over window [x] until at least [budget] inner iterations
+ * are spent (one whole lag always runs). Returns 1 once every lag is in. */
+int le_refine_step(le_lag_refine* r, const float* x, long budget);
+
+/* The completed refinement's minimum, interpolated, or [coarse] when the
+ * minimum sits on an edge of the searched band. */
+float le_refine_finish(const le_lag_refine* r, float coarse);
 
 #ifdef __cplusplus
 }

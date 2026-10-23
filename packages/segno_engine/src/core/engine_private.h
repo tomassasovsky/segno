@@ -364,8 +364,23 @@ typedef struct le_yin_pass {
   double cum;    /* running sum of d(1..tau-1) — YIN's normalizer */
 } le_yin_pass;
 
+/* A coarse period refined at the device rate (le_refine_*, engine_fx.c): the
+ * plain difference function over lags [lo, hi] around it, `integ` samples
+ * long, resumable a lag at a time. Shared by the tuner and the PSOLA octaver,
+ * whose coarse passes run decimated by up to LE_REFINE_SPAN_MAX. */
+#define LE_REFINE_SPAN_MAX 8
+typedef struct le_lag_refine {
+  int32_t lo;
+  int32_t hi;
+  int32_t integ;
+  int32_t tau;  /* next lag to accumulate */
+  int32_t best; /* index into d[] of the smallest lag seen so far */
+  float d[2 * LE_REFINE_SPAN_MAX + 2];
+} le_lag_refine;
+
 /* The PSOLA octaver's largest pitch-detection decimation (the detection
- * geometry is in engine_fx.h, which includes this file). */
+ * geometry is in engine_fx.h, which includes this file); its refinement spans
+ * that many lags either side of the coarse one. */
 #define LE_PSOLA_DMAX 8
 
 /* The OCTAVER's phase-vocoder (and, in part 4, PSOLA) working set for one chain
@@ -394,17 +409,14 @@ typedef struct le_octaver_state {
    * YIN pass over a decimated window, then a narrow device-rate refinement
    * (le_psola_pass_*, engine_fx.c). Its windows live in the scratch, which
    * PSOLA has to itself, since the phase vocoder never runs beside it. */
-  int32_t ps_phase; /* 0 idle, 1 coarse, 2 refinement */
-  int32_t ps_decim; /* the pass's decimation factor */
+  int32_t ps_phase;  /* 0 idle, 1 coarse, 2 refinement */
+  int32_t ps_decim;  /* the pass's decimation factor */
+  int32_t ps_end;    /* the ring index the pass's input ends at */
+  int32_t ps_credit; /* iterations the pass may spend, carried tick to tick */
   le_yin_pass ps_yin;
   float ps_conf;   /* the coarse pass's voicing confidence */
   float ps_coarse; /* the coarse period, in device samples */
-  int32_t ps_lo;   /* refinement: lags [lo, hi] over `integ` samples */
-  int32_t ps_hi;
-  int32_t ps_integ;
-  int32_t ps_tau;
-  int32_t ps_best;
-  float ps_d[2 * LE_PSOLA_DMAX + 2];
+  le_lag_refine ps_ref;
   /* Shared: per-sample param smoothing + mode-switch gain-dip (D1/D2/H3). */
   float sm_shift;
   float sm_tone;
@@ -1941,13 +1953,7 @@ typedef struct le_tuner_pass {
   float dp[LE_TUNER_WIN / 2 + 1]; /* the tuner's maxlag is clamped to n/2 */
   float conf;   /* coarse voicing confidence, published with the refined Hz */
   float coarse; /* coarse period, rescaled to DEVICE-rate samples */
-  /* Refinement state (tuner_refine_*): lags [lo, hi] over `integ` samples. */
-  int32_t lo;
-  int32_t hi;
-  int32_t integ;
-  int32_t tau;  /* next lag to accumulate */
-  int32_t best; /* index into d[] of the smallest lag seen so far */
-  float d[2 * LE_TUNER_DECIM + 2];
+  le_lag_refine ref; /* the device-rate refinement (le_refine_*) */
 } le_tuner_pass;
 
 /* One backing read head (#1200): see le_engine.backing_cur. */
