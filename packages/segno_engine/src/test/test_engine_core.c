@@ -20514,7 +20514,8 @@ static void test_fx_params_past_count_are_inert(void) {
                            LE_FX_TREMOLO,    LE_FX_OCTAVER,   LE_FX_ECHO,
                            LE_FX_REVERB,     LE_FX_EQ,        LE_FX_COMPRESSOR,
                            LE_FX_TRANSIENT,  LE_FX_HP_GATE,   LE_FX_DOUBLER,
-                           LE_FX_CHORUS,     LE_FX_WAH,       LE_FX_OVERDRIVE, LE_FX_DISTORTION};
+                           LE_FX_CHORUS,     LE_FX_WAH,       LE_FX_OVERDRIVE, LE_FX_DISTORTION,
+                           LE_FX_VINYL,      LE_FX_DEGRADE,   LE_FX_LPF};
   for (int t = 0; t < (int)(sizeof(types) / sizeof(types[0])); ++t) {
     le_engine* a = make_configured_engine();
     le_engine* b = make_configured_engine();
@@ -21598,9 +21599,10 @@ static void test_fx_param_descriptors_match_kernels(void) {
   const int32_t sr = 48000;
 
   /* Counts: the parameters each kernel reads; none for NONE and PLUGIN. */
-  const int32_t counts[] = {0, 2, 2, 3, 2, 4, 3, 3, 0, 15, 5, 3, 2, 2, 3, 1, 2, 2};
-  for (int32_t t = 0; t < 18; ++t) CHECK(le_fx_param_count(t) == counts[t]);
-  CHECK(le_fx_param_count(18) == LE_ERR_INVALID);
+  const int32_t counts[] = {0, 2, 2, 3, 2, 4, 3, 3, 0, 15, 5,
+                            3, 2, 2, 3, 1, 2, 2, 4, 3, 2};
+  for (int32_t t = 0; t < 21; ++t) CHECK(le_fx_param_count(t) == counts[t]);
+  CHECK(le_fx_param_count(21) == LE_ERR_INVALID);
   CHECK(le_fx_param_count(-1) == LE_ERR_INVALID);
   le_fx_param_desc scratch;
   CHECK(le_fx_param_info(LE_FX_DELAY, 3, &scratch) == LE_ERR_INVALID);
@@ -35088,7 +35090,7 @@ static void test_cache_cached_matches_live_every_builtin(void) {
                            LE_FX_TREMOLO,    LE_FX_OCTAVER,   LE_FX_ECHO,
                            LE_FX_REVERB,     LE_FX_EQ,        LE_FX_COMPRESSOR,
                            LE_FX_TRANSIENT,  LE_FX_HP_GATE,   LE_FX_WAH,
-                           LE_FX_OVERDRIVE, LE_FX_DISTORTION};
+                           LE_FX_OVERDRIVE, LE_FX_DISTORTION, LE_FX_LPF};
   /* The doubler and the chorus are free-running and never print
    * (test_cache_free_running_stays_live). */
   for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); ++i) {
@@ -38554,6 +38556,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_dynamics.h"
 #include "test_engine_mod.h"
 #include "test_engine_drive.h"
+#include "test_engine_lofi.h"
 #include "test_engine_fx_publish.h"
 #include "test_engine_bounce.h"
 #include "test_engine_clock.h"
@@ -38637,6 +38640,7 @@ int main(void) {
   run_dynamics_tests();
   run_mod_tests();
   run_drive_tests();
+  run_lofi_tests();
   run_fx_publish_tests();
   run_bounce_tests();
   if (getenv("SEGNO_PEEL_TESTS_ONLY")) return g_failures ? 1 : 0;

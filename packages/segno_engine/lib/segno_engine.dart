@@ -168,6 +168,7 @@ export 'src/track_effect.dart'
         FxChannels,
         FxParamCurve,
         FxParamInfo,
+        FxParamOff,
         FxParamUnit,
         FxPlacement,
         FxRack,

@@ -1307,7 +1307,7 @@ static const le_fx_param_desc LE_FX_REVERB_PARAMS[] = {
  * the defaults are Ed's 4-band EQ's. */
 static const le_fx_param_desc LE_FX_EQ_PARAMS[] = {
     {"low_cut", LE_FX_UNIT_HZ, 0, 20.0f, 8000.0f, LE_FX_CURVE_EXPONENTIAL,
-     0.21f, 0},
+     0.21f, LE_FX_PARAM_OFF_AT_MIN},
     {"low_gain", LE_FX_UNIT_DB, 0, -18.0f, 18.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
     {"low_freq", LE_FX_UNIT_HZ, 0, 20.0f, 1000.0f, LE_FX_CURVE_EXPONENTIAL,
      0.384476f, 0},
@@ -1330,7 +1330,7 @@ static const le_fx_param_desc LE_FX_EQ_PARAMS[] = {
      0.5278f, 0},
     {"high_q", LE_FX_UNIT_Q, 0, 0.4f, 2.0f, LE_FX_CURVE_EXPONENTIAL, 0.0f, 0},
     {"high_cut", LE_FX_UNIT_HZ, 0, 120.0f, 20000.0f, LE_FX_CURVE_EXPONENTIAL,
-     1.0f, 0},
+     1.0f, LE_FX_PARAM_OFF_AT_MAX},
     {"air_gain", LE_FX_UNIT_DB, 0, -18.0f, 18.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
 };
 
@@ -2509,6 +2509,305 @@ static void fx_distortion_kprocess(void* ks, float* l, float* r) {
   *r = io[1];
 }
 
+/* ---- Lo-fi: Vinyl, Degrade, LPF (#887 part 7) ----
+ *
+ * No Phase 0 capture covers these. The ranges and tapers are the Looper
+ * X's (the derived tables); what each control does inside is chosen (#891),
+ * so every control carries the flag but the LPF's cutoff, whose range and
+ * taper are all it is. */
+
+/* The seed a kind's fresh block was given (fx_kind_state): the owner's
+ * hop-stagger seed and the slot, so two owners' noise differs and an
+ * owner's is the same from every fresh block (the plan's per-owner
+ * seeding, as the hop phase is). */
+static uint32_t le_fx_kind_seed(const void* ks);
+
+/* xorshift32: the next state, never 0 from a nonzero one. */
+static inline uint32_t le_xorshift(uint32_t* s) {
+  uint32_t x = *s;
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+  *s = x;
+  return x;
+}
+
+/* A uniform sample in [-1, 1). */
+static inline float le_noise(uint32_t* s) {
+  return (float)(int32_t)le_xorshift(s) * (1.0f / 2147483648.0f);
+}
+
+/* ---- Vinyl (LE_FX_VINYL) ----
+ *
+ * A worn record: a 12 dB/octave high-pass at Freq (the Looper X's 50 to
+ * 5000 Hz, thinning the low end), a fixed 7 kHz roll-off, a soft saturation
+ * the drive pushes (gain 1 to 10), then surface noise mixed in: hiss and
+ * crackle (clicks at up to 8 a second), both through a low-pass the noise
+ * tone sets (500 Hz to 12 kHz). Each channel has its own noise. The noise
+ * runs on whatever the loop does, so a vinyl with noise up never prints. */
+static const le_fx_param_desc LE_FX_VINYL_PARAMS[] = {
+    {"drive", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.4f,
+     LE_FX_PARAM_TAPER_UNVERIFIED},
+    {"frequency", LE_FX_UNIT_HZ, 0, 50.0f, 5000.0f, LE_FX_CURVE_EXPONENTIAL,
+     0.35f, LE_FX_PARAM_TAPER_UNVERIFIED},
+    {"noise", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.3f,
+     LE_FX_PARAM_TAPER_UNVERIFIED},
+    {"noise_tone", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR,
+     0.9f, LE_FX_PARAM_TAPER_UNVERIFIED},
+};
+#define LE_VIN_PARAMS_N 4
+#define LE_VIN_LP_HZ 7000.0
+#define LE_VIN_HISS 0.02f        /* -34 dBFS of hiss at 100 % noise */
+#define LE_VIN_CRACKLE 0.3f      /* a click's peak at 100 % */
+#define LE_VIN_CRACKLE_HZ 8.0    /* clicks a second at 100 % */
+#define LE_VIN_CRACKLE_S 0.0002  /* a click's decay */
+#define LE_VIN_TONE_LO_HZ 500.0
+#define LE_VIN_TONE_HI_HZ 12000.0
+
+typedef struct le_fx_vinyl {
+  le_fx_dyn_head h;
+  float last[LE_VIN_PARAMS_N];
+  le_fx_glide gain;  /* the saturation's gain */
+  le_fx_glide noise; /* the noise level, 0..1 */
+  float hz_l2, hz_tgt; /* the high-pass corner, log2 Hz */
+  float tone_l2, tone_tgt;
+  float hp[5], lp[5];
+  float tone_a1, tone_a2, tone_a3; /* the noise's low-pass, SVF */
+  float click_odds;                /* a click per sample, at 100 % noise */
+  float click_decay;
+  float z_hp[2][2], z_lp[2][2];
+  float n_ic1[2], n_ic2[2];
+  float click[2];
+  uint32_t rng[2];
+} le_fx_vinyl;
+
+static void fx_vinyl_update(void* ks, const float* p, int sr, int settle) {
+  le_fx_vinyl* v = (le_fx_vinyl*)ks;
+  const int f = le_fx_dyn_begin(&v->h, v->last, p, LE_VIN_PARAMS_N, sr, settle);
+  if (!f) return;
+  const int rate = sr > 0 ? sr : 48000;
+  const float k = settle ? 1.0f : v->h.k;
+  if (settle) {
+    const uint32_t seed = le_fx_kind_seed(ks);
+    v->rng[0] = seed | 1u;
+    v->rng[1] = (seed * 2654435761u) | 1u;
+  }
+  if (f & LE_FX_DYN_NEW_RATE) {
+    double c[5];
+    le_eq_design(LE_EQ_HIGHCUT, LE_VIN_LP_HZ, 0.0, 0.70710678, rate, c);
+    for (int i = 0; i < 5; ++i) v->lp[i] = (float)c[i];
+    v->click_decay = le_one_pole(LE_VIN_CRACKLE_S, rate);
+  }
+  const le_fx_param_desc* d = LE_FX_VINYL_PARAMS;
+  const float drive = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
+  const float noise = p[2] < 0.0f ? 0.0f : p[2] > 1.0f ? 1.0f : p[2];
+  if (f & LE_FX_DYN_CHANGED) {
+    v->hz_tgt = (float)log2(le_fx_desc_value(&d[1], p[1]));
+    const float t = p[3] < 0.0f ? 0.0f : p[3] > 1.0f ? 1.0f : p[3];
+    v->tone_tgt = (float)log2(LE_VIN_TONE_LO_HZ *
+                              pow(LE_VIN_TONE_HI_HZ / LE_VIN_TONE_LO_HZ, t));
+    v->click_odds = (float)(4294967295.0 * LE_VIN_CRACKLE_HZ / (double)rate);
+  }
+  int moving = le_fx_glide_step(&v->gain, 1.0f + 9.0f * drive, k);
+  moving |= le_fx_glide_step(&v->noise, noise, k);
+  if (v->hz_l2 != v->hz_tgt || (f & LE_FX_DYN_NEW_RATE)) {
+    le_fx_step_toward(&v->hz_l2, v->hz_tgt, k);
+    double c[5];
+    le_eq_design(LE_EQ_LOWCUT, exp2((double)v->hz_l2), 0.0, 0.70710678, rate, c);
+    for (int i = 0; i < 5; ++i) v->hp[i] = (float)c[i];
+  }
+  if (v->tone_l2 != v->tone_tgt || (f & LE_FX_DYN_NEW_RATE)) {
+    le_fx_step_toward(&v->tone_l2, v->tone_tgt, k);
+    le_svf_coefs(le_prewarp(exp2((double)v->tone_l2), rate), 1.41421356,
+                 &v->tone_a1, &v->tone_a2, &v->tone_a3);
+  }
+  moving |= v->hz_l2 != v->hz_tgt || v->tone_l2 != v->tone_tgt;
+  v->h.moving = moving;
+}
+
+static void fx_vinyl_kprocess(void* ks, float* l, float* r) {
+  le_fx_vinyl* v = (le_fx_vinyl*)ks;
+  const float g = le_fx_glide_next(&v->gain);
+  const float noise = le_fx_glide_next(&v->noise);
+  float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
+  for (int ch = 0; ch < 2; ++ch) {
+    float x = le_biquad_tick(v->hp, v->z_hp[ch], io[ch]);
+    x = le_biquad_tick(v->lp, v->z_lp[ch], x);
+    x = tanhf(g * x) / g;
+    if (noise <= 0.0f) {
+      /* Silent: nothing left to come back when the noise is raised. */
+      v->click[ch] = 0.0f;
+      v->n_ic1[ch] = 0.0f;
+      v->n_ic2[ch] = 0.0f;
+    } else {
+      /* A click starts when the draw falls under the odds (they follow the
+       * gliding noise level), at a random size and sign, then decays. */
+      if (le_xorshift(&v->rng[ch]) < (uint32_t)(v->click_odds * noise)) {
+        v->click[ch] = LE_VIN_CRACKLE * le_noise(&v->rng[ch]);
+      }
+      const float n = LE_VIN_HISS * le_noise(&v->rng[ch]) + v->click[ch];
+      v->click[ch] *= v->click_decay;
+      float b1;
+      float lp;
+      le_svf_tick(n, v->tone_a1, v->tone_a2, v->tone_a3, &v->n_ic1[ch],
+                  &v->n_ic2[ch], &b1, &lp);
+      x += noise * lp;
+    }
+    io[ch] = x;
+  }
+  *l = io[0];
+  *r = io[1];
+}
+
+/* ---- Degrade (LE_FX_DEGRADE) ----
+ *
+ * Sample-rate reduction: the input held at the Looper X's 500 Hz to 50 kHz
+ * (at or above the engine's rate it holds every sample, so only the filter
+ * and the mix act), then a 12 dB/octave low-pass the filter control moves
+ * from 20 kHz (0 %) down to half the held rate (100 %), mixed with the dry
+ * signal. The hold runs on whatever the loop does, so a degrade that holds
+ * never prints. */
+static const le_fx_param_desc LE_FX_DEGRADE_PARAMS[] = {
+    {"frequency", LE_FX_UNIT_HZ, 0, 500.0f, 50000.0f, LE_FX_CURVE_EXPONENTIAL,
+     1.0f, LE_FX_PARAM_TAPER_UNVERIFIED},
+    {"filter", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 1.0f,
+     LE_FX_PARAM_TAPER_UNVERIFIED},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 1.0f,
+     LE_FX_PARAM_TAPER_UNVERIFIED},
+};
+#define LE_DEG_PARAMS_N 3
+#define LE_DEG_OPEN_HZ 20000.0
+
+typedef struct le_fx_degrade {
+  le_fx_dyn_head h;
+  float last[LE_DEG_PARAMS_N];
+  le_fx_glide step; /* the hold's phase step per sample (1: every sample) */
+  le_fx_glide mix;
+  float lp_l2, lp_tgt; /* the low-pass corner, log2 Hz */
+  float a1, a2, a3;
+  double ph;
+  float held[2];
+  float ic1[2], ic2[2];
+} le_fx_degrade;
+
+static void fx_degrade_update(void* ks, const float* p, int sr, int settle) {
+  le_fx_degrade* q = (le_fx_degrade*)ks;
+  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_DEG_PARAMS_N, sr, settle);
+  if (!f) return;
+  const int rate = sr > 0 ? sr : 48000;
+  const float k = settle ? 1.0f : q->h.k;
+  const le_fx_param_desc* d = LE_FX_DEGRADE_PARAMS;
+  const double hz = le_fx_desc_value(&d[0], p[0]);
+  const float step = (float)(hz >= rate ? 1.0 : hz / rate);
+  if (f & LE_FX_DYN_CHANGED) {
+    const double v = p[1] < 0.0f ? 0.0 : p[1] > 1.0f ? 1.0 : p[1];
+    const double down = 0.5 * (hz < rate ? hz : rate);
+    q->lp_tgt = (float)((1.0 - v) * log2(LE_DEG_OPEN_HZ) + v * log2(down));
+  }
+  const float m = p[2] < 0.0f ? 0.0f : p[2] > 1.0f ? 1.0f : p[2];
+  int moving = le_fx_glide_step(&q->step, step, k);
+  moving |= le_fx_glide_step(&q->mix, m, k);
+  if (q->lp_l2 != q->lp_tgt || (f & LE_FX_DYN_NEW_RATE)) {
+    le_fx_step_toward(&q->lp_l2, q->lp_tgt, k);
+    le_svf_coefs(le_prewarp(exp2((double)q->lp_l2), rate), 1.41421356, &q->a1,
+                 &q->a2, &q->a3);
+  }
+  moving |= q->lp_l2 != q->lp_tgt;
+  q->h.moving = moving;
+}
+
+static void fx_degrade_kprocess(void* ks, float* l, float* r) {
+  le_fx_degrade* q = (le_fx_degrade*)ks;
+  const float step = le_fx_glide_next(&q->step);
+  const float m = le_fx_glide_next(&q->mix);
+  const float x[2] = {fx_sanitize(*l), fx_sanitize(*r)};
+  q->ph += (double)step;
+  const int take = q->ph >= 1.0;
+  if (take) q->ph -= 1.0;
+  float y[2];
+  for (int ch = 0; ch < 2; ++ch) {
+    if (take) q->held[ch] = x[ch];
+    float b1;
+    float lp;
+    le_svf_tick(q->held[ch], q->a1, q->a2, q->a3, &q->ic1[ch], &q->ic2[ch], &b1,
+                &lp);
+    y[ch] = x[ch] + m * (lp - x[ch]);
+  }
+  *l = y[0];
+  *r = y[1];
+}
+
+/* ---- LPF (LE_FX_LPF) ----
+ *
+ * A resonant 12 dB/octave low-pass (state-variable): the Looper X's cutoff,
+ * 20 Hz to 20 kHz, and its resonance from Q 0.71 (0 %) to Q 3 (100 %,
+ * +9.5 dB at the corner). The cutoff glides in octaves. At the top of its
+ * range the filter is off (the Looper X's default, with resonance at
+ * 100 %: a fresh filter is transparent), gliding in and out as the EQ's
+ * cuts do. The Rhythmic
+ * Rack's LFO over the cutoff comes with the tempo context (#887 part 10). */
+static const le_fx_param_desc LE_FX_LPF_PARAMS[] = {
+    {"cutoff", LE_FX_UNIT_HZ, 0, 20.0f, 20000.0f, LE_FX_CURVE_EXPONENTIAL,
+     1.0f, LE_FX_PARAM_OFF_AT_MAX},
+    {"resonance", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR,
+     1.0f, LE_FX_PARAM_TAPER_UNVERIFIED},
+};
+#define LE_LPF_PARAMS_N 2
+#define LE_LPF_Q_LO 0.70710678
+#define LE_LPF_Q_HI 3.0
+
+typedef struct le_fx_lpf {
+  le_fx_dyn_head h;
+  float last[LE_LPF_PARAMS_N];
+  float l2, tgt;   /* the cutoff, log2 Hz */
+  float lnq, qtgt; /* the resonance, ln Q */
+  le_fx_glide amount; /* 1 filtering, 0 off (cutoff at the top) */
+  float a1, a2, a3;
+  float ic1[2], ic2[2];
+} le_fx_lpf;
+
+static void fx_lpf_update(void* ks, const float* p, int sr, int settle) {
+  le_fx_lpf* q = (le_fx_lpf*)ks;
+  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_LPF_PARAMS_N, sr, settle);
+  if (!f) return;
+  const float k = settle ? 1.0f : q->h.k;
+  if (f & LE_FX_DYN_CHANGED) {
+    q->tgt = (float)log2(le_fx_desc_value(&LE_FX_LPF_PARAMS[0], p[0]));
+    const double v = p[1] < 0.0f ? 0.0 : p[1] > 1.0f ? 1.0 : p[1];
+    q->qtgt = (float)(log(LE_LPF_Q_LO) + v * log(LE_LPF_Q_HI / LE_LPF_Q_LO));
+  }
+  if (q->l2 != q->tgt || q->lnq != q->qtgt || (f & LE_FX_DYN_NEW_RATE)) {
+    le_fx_step_toward(&q->l2, q->tgt, k);
+    le_fx_step_toward(&q->lnq, q->qtgt, k);
+    le_svf_coefs(le_prewarp(exp2((double)q->l2), sr), exp(-(double)q->lnq),
+                 &q->a1, &q->a2, &q->a3);
+  }
+  const int moving = le_fx_glide_step(&q->amount, p[0] >= 1.0f ? 0.0f : 1.0f, k);
+  q->h.moving = moving || q->l2 != q->tgt || q->lnq != q->qtgt;
+}
+
+static void fx_lpf_kprocess(void* ks, float* l, float* r) {
+  le_fx_lpf* q = (le_fx_lpf*)ks;
+  const float amount = le_fx_glide_next(&q->amount);
+  float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
+  if (amount <= 0.0f) {
+    /* Off: the identity, with the filter's memory cleared so it starts
+     * clean when it comes back. */
+    q->ic1[0] = q->ic1[1] = q->ic2[0] = q->ic2[1] = 0.0f;
+    *l = io[0];
+    *r = io[1];
+    return;
+  }
+  for (int ch = 0; ch < 2; ++ch) {
+    float b1;
+    float lp;
+    le_svf_tick(io[ch], q->a1, q->a2, q->a3, &q->ic1[ch], &q->ic2[ch], &b1, &lp);
+    io[ch] = amount >= 1.0f ? lp : io[ch] + amount * (lp - io[ch]);
+  }
+  *l = io[0];
+  *r = io[1];
+}
+
 /* A type's rows are the parameters an entry holds, so none may outgrow it. */
 #define LE_FX_ROWS_FIT(t)                                  \
   _Static_assert(sizeof(t) / sizeof(t[0]) <= LE_FX_PARAMS, \
@@ -2529,6 +2828,9 @@ LE_FX_ROWS_FIT(LE_FX_CHORUS_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_WAH_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_OVERDRIVE_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_DISTORTION_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_VINYL_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_DEGRADE_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_LPF_PARAMS);
 
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
  * published for this chain entry (NULL / not-ready => dry passthrough; the slot
@@ -2626,6 +2928,13 @@ static const le_fx_vtable LE_FX[] = {
     [LE_FX_DISTORTION] = {NULL, NULL, NULL, LE_FX_DISTORTION_PARAMS, 0,
                           sizeof(le_fx_distortion), fx_distortion_update,
                           fx_distortion_kprocess},
+    [LE_FX_VINYL] = {NULL, NULL, NULL, LE_FX_VINYL_PARAMS, LE_FX_F_FREE_RUNNING,
+                     sizeof(le_fx_vinyl), fx_vinyl_update, fx_vinyl_kprocess},
+    [LE_FX_DEGRADE] = {NULL, NULL, NULL, LE_FX_DEGRADE_PARAMS,
+                       LE_FX_F_FREE_RUNNING, sizeof(le_fx_degrade),
+                       fx_degrade_update, fx_degrade_kprocess},
+    [LE_FX_LPF] = {NULL, NULL, NULL, LE_FX_LPF_PARAMS, 0, sizeof(le_fx_lpf),
+                   fx_lpf_update, fx_lpf_kprocess},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -2644,7 +2953,10 @@ _Static_assert(LE_COMP_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_COMPRESSOR_PARAMS) &&
                    LE_CHO_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_CHORUS_PARAMS) &&
                    LE_WAH_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_WAH_PARAMS) &&
                    LE_OD_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_OVERDRIVE_PARAMS) &&
-                   LE_DIST_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_DISTORTION_PARAMS),
+                   LE_DIST_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_DISTORTION_PARAMS) &&
+                   LE_VIN_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_VINYL_PARAMS) &&
+                   LE_DEG_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_DEGRADE_PARAMS) &&
+                   LE_LPF_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_LPF_PARAMS),
                "each Looper X kind's `last` holds every setting");
 _Static_assert(LE_FX_WIDTHS == sizeof(LE_FX) / sizeof(LE_FX[0]),
                "LE_FX_WIDTHS must be one past the last le_fx_type code");
@@ -2665,6 +2977,9 @@ const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
     [LE_FX_WAH] = LE_FX_ROW_COUNT(LE_FX_WAH_PARAMS),
     [LE_FX_OVERDRIVE] = LE_FX_ROW_COUNT(LE_FX_OVERDRIVE_PARAMS),
     [LE_FX_DISTORTION] = LE_FX_ROW_COUNT(LE_FX_DISTORTION_PARAMS),
+    [LE_FX_VINYL] = LE_FX_ROW_COUNT(LE_FX_VINYL_PARAMS),
+    [LE_FX_DEGRADE] = LE_FX_ROW_COUNT(LE_FX_DEGRADE_PARAMS),
+    [LE_FX_LPF] = LE_FX_ROW_COUNT(LE_FX_LPF_PARAMS),
 };
 
 /* ---- per-kind state (le_fx_kinds, engine_private.h) ---- */
@@ -2675,10 +2990,16 @@ typedef struct le_fx_kind_block {
   struct le_fx_kind_block* next; /* set before the block is published */
   int32_t type;
   int32_t settle; /* audio thread: the next update lands at once */
+  uint32_t seed;  /* audio thread: set with each clear (le_fx_kind_seed) */
 } le_fx_kind_block;
 
 static inline void* le_fx_kind_payload(le_fx_kind_block* b) {
   return (unsigned char*)b + LE_FX_KIND_ALIGN;
+}
+
+static uint32_t le_fx_kind_seed(const void* ks) {
+  return ((const le_fx_kind_block*)((const unsigned char*)ks -
+                                    LE_FX_KIND_ALIGN))->seed;
 }
 
 static size_t le_fx_kind_block_bytes(int32_t type) {
@@ -2768,6 +3089,8 @@ static void* fx_kind_state(le_fx_state* fx, int s, int32_t ty, int sr,
     if (b == NULL) return NULL;
     memset(le_fx_kind_payload(b), 0, LE_FX[ty].state_size);
     b->settle = 1;
+    b->seed = ((uint32_t)fx->hop_seed + 1u) * 2654435761u +
+              (uint32_t)s * 0x9E3779B9u;
   }
   void* st = le_fx_kind_payload(b);
   if (b->settle ||
@@ -2804,11 +3127,20 @@ int le_fx_type_free_running(int32_t type) {
          (LE_FX[type].flags & LE_FX_F_FREE_RUNNING) != 0;
 }
 
-int le_fx_entry_free_running(int32_t type, const float* p) {
+int le_fx_entry_free_running(int32_t type, const float* p, int sr) {
   if (!le_fx_type_free_running(type)) return 0;
-  /* At 0 % mix the voices add nothing: the entry is the identity. */
-  const int32_t mix = type == LE_FX_DOUBLER ? 0 : 2;
-  return p[mix] > 0.0f;
+  switch (type) {
+    case LE_FX_VINYL:
+      return p[2] > 0.0f; /* the noise */
+    case LE_FX_DEGRADE: /* holding (below the rate), and heard */
+      return le_fx_desc_value(&LE_FX_DEGRADE_PARAMS[0], p[0]) <
+                 (double)(sr > 0 ? sr : 48000) &&
+             p[2] > 0.0f;
+    case LE_FX_DOUBLER:
+      return p[0] > 0.0f; /* at 0 % mix the voices add nothing */
+    default:
+      return p[2] > 0.0f; /* the chorus's mix */
+  }
 }
 
 /* Whether a bypassed slot of [type] drains its tail rather than crossfading

@@ -45,8 +45,6 @@ void main() {
           'Dub reverb',
           'Pumper',
           'Slicer',
-          'Vinyl',
-          'Degrade',
           'Harmonizer',
           'Smart tune',
         ],
@@ -100,6 +98,7 @@ void main() {
         expect(playable, [
           'Chorus',
           'Compressor',
+          'Degrade',
           'Delay',
           'Distortion',
           'Doubler',
@@ -112,6 +111,7 @@ void main() {
           'Parametric EQ',
           'Reverb',
           'Transient',
+          'Vinyl',
           'Wah',
         ]);
       },
@@ -632,18 +632,31 @@ void main() {
               'Wah',
               'Overdrive',
               'Distortion',
+              'Vinyl',
+              'Degrade',
+              'Low-pass filter',
             ].contains(module.name)) {
               continue;
             }
             final e = fxModuleEntry(module, p);
             final build = fxEntryBuild(e);
             expect(build, isNotNull, reason: '${p.name} ${module.name}');
-            expect(build!.readiness, FxModuleReadiness.full);
+            // The Rhythmic Rack's low-pass filter drops its LFO until the
+            // tempo context lands (#887 part 10); everything else is full.
+            expect(
+              build!.readiness,
+              p.family == 'Rhythmic Rack' && module.name == 'Low-pass filter'
+                  ? FxModuleReadiness.partial
+                  : FxModuleReadiness.full,
+              reason: '${p.name} ${module.name}',
+            );
             // Every key the preset gives the module, but its power key, has
             // a parameter.
             final placed = build.params.whereType<String>().toSet();
             for (final key in e.source.keys) {
-              if (module.poweredBy(key)) continue;
+              if (module.poweredBy(key) || build.unmapped.contains(key)) {
+                continue;
+              }
               expect(placed, contains(key), reason: '${p.name} $key');
             }
             built++;
@@ -655,12 +668,15 @@ void main() {
       // Modulation (part 6): the doubler in 11 Dub, 19 Studio, 17 Vocal and
       // 25 Vocal Tuner; the chorus and the wah in 36 Ed's; the wah in 14
       // Guitar. Drives (part 7): the overdrive in 36 Ed's and 14 Guitar; the
-      // distortion in 15 Lo-Fi and 19 Studio.
+      // distortion in 15 Lo-Fi and 19 Studio. Lo-fi (part 7): the vinyl, the
+      // degrade and the low-pass filter in 15 Lo-Fi, the filter in 10
+      // Rhythmic.
       expect(
         built,
         (36 + 24 + 11 + 19 + 34 + 50) +
             (11 + 19 + 17 + 25 + 72 + 14) +
-            (36 + 14 + 15 + 19),
+            (36 + 14 + 15 + 19) +
+            (45 + 10),
       );
     });
   });
@@ -758,6 +774,63 @@ void main() {
       );
       expect(fxEntryBuild(studio)!.exposed, [0]);
       expect(studio.params.take(2), [0.5, 0.5]);
+    });
+  });
+
+  group('the lo-fi variants', () {
+    FxPreset preset(String family, Map<String, double> params) =>
+        FxPreset(family: family, name: 'p', id: 'p', type: 0, params: params);
+
+    test("the Lo-Fi Rack's vinyl and degrade copy every control", () {
+      final vinyl = fxModuleEntry(
+        _module('Vinyl'),
+        preset('Lo-Fi Rack', const {
+          'Vinyl': 1,
+          'Vinyl Drive': 0.2,
+          'Vinyl Freq': 0.5,
+          'Vinyl Noise': 0.25,
+          'Vinyl Noise-Tone': 0.9,
+        }),
+      );
+      expect(vinyl.type, TrackEffectType.vinyl);
+      expect(vinyl.params.take(4), [0.2, 0.5, 0.25, 0.9]);
+      final degrade = fxModuleEntry(
+        _module('Degrade'),
+        preset('Lo-Fi Rack', const {
+          'Degrade': 1,
+          'Degrade Freq': 0.45,
+          'Degrade Filter': 0.6,
+          'Degrade Mix': 0.7,
+        }),
+      );
+      expect(degrade.type, TrackEffectType.degrade);
+      expect(degrade.params.take(3), [0.45, 0.6, 0.7]);
+    });
+
+    test("the low-pass filter: the Lo-Fi Rack's is full, the Rhythmic Rack's "
+        'drops its LFO until part 10', () {
+      final lofi = fxModuleEntry(
+        _module('Low-pass filter'),
+        preset('Lo-Fi Rack', const {
+          'LPF': 1,
+          'LPF Cutoff': 0.7,
+          'LPF Reso': 0.57,
+        }),
+      );
+      expect(lofi.type, TrackEffectType.lpf);
+      expect(fxEntryBuild(lofi)!.readiness, FxModuleReadiness.full);
+      final rhythmic = fxModuleEntry(
+        _module('Low-pass filter'),
+        preset('Rhythmic Rack', const {
+          'LPF': 1,
+          'LPF Cutoff': 0.6,
+          'LPF Reso': 0.3,
+          'LPF LFO Depth': 0.8,
+          'LPF LFO Rate': 0.6,
+        }),
+      );
+      expect(fxEntryBuild(rhythmic)!.readiness, FxModuleReadiness.partial);
+      expect(rhythmic.params.take(2), [0.6, 0.3]);
     });
   });
 }
