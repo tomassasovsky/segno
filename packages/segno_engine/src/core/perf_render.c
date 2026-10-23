@@ -681,8 +681,9 @@ typedef struct le_pr_segment {
    * out with the equal-power law (`turn_power`). */
   float* src;
   int owns_src;
-  /* A finalize's segment (RECORD_END): the callback starts playing a take
-   * it just captured at full gain rather than fading it in (#1400). Here,
+  /* A segment the callback switches to without a fade (#1400): a
+   * finalize's take (RECORD_END) starts at full gain, and a Cut stops at
+   * once. Here,
    * in owns_src's padding, so the per-track build (LE_PR_MAX_SEGMENTS of
    * these, on the render worker's stack) does not grow. */
   int snap_in;
@@ -1190,8 +1191,12 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
   uint32_t restore_id = 0;
   float* restore_image = NULL; /* owned by its initial source segment */
   int32_t restore_len = 0;
+  /* The frame of the last Cut: the callback stops a track there without a
+   * fade (#1400), so a 323 STOPPED on it snaps. */
+  uint64_t cut_frame = UINT64_MAX;
   for (int i = 0; i < log_count; ++i) {
     const le_pr_log_entry* e = &log[i];
+    if (e->cmd.code == LE_CMD_CUT_SOUND) cut_frame = e->frame;
     if ((e->cmd.code == LE_PLOG_SOURCE_APPLIED || e->cmd.code == LE_PLOG_SOURCE_TRANSPORT) &&
         e->cmd.restore_log.channel == channel) {
       const int initial = e->cmd.code == LE_PLOG_SOURCE_APPLIED;
@@ -1213,6 +1218,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
       if (build.load_failed) break;
       le_pr_segment* seg = &build.segments[build.segment_count - 1];
       seg->silent = state == LE_TRACK_STOPPED;
+      seg->snap_in = seg->silent && e->frame == cut_frame;
       if (!initial) {
         seg->owns_image = 0;
         seg->image = restore_image;
@@ -1435,11 +1441,17 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
         play_gain = audible ? 1.0f : 0.0f;
         tail_gain = 0.0f;
         tail_seg = NULL;
-      } else if (f == 0 || seg->snap_in) {
+      } else if (f == 0) {
         play_gain = audible ? 1.0f : 0.0f;
+      } else if (seg->snap_in) {
+        play_gain = audible ? 1.0f : 0.0f; /* a finalize, or a Cut's stop */
+        tail_gain = 0.0f;
+        tail_seg = NULL;
       } else if (!audible && play_gain > 0.0f && was != NULL) {
-        tail_gain = play_gain; /* the Stop */
-        tail_seg = was;
+        if (play_gain >= tail_gain) { /* the Stop; the louder voice stays */
+          tail_gain = play_gain;
+          tail_seg = was;
+        }
         play_gain = 0.0f;
       }
     }
@@ -1650,9 +1662,7 @@ static void le_pr_seed_channels(le_fx_state* fx, const le_json_value* effects,
  * BY CONSTRUCTION rather than widening tolerance) — content presence (from
  * `dry`, which carries the play and tail fades of the transport facts it
  * does replay) is this render's only audibility gate beyond mute, solo and
- * Cut. One fade-shape difference follows from that: a Cut on a track whose
- * source is a staged image fades through both the dry stem's tail (its 323)
- * and Cut's own gain here, where the callback fades once. */
+ * Cut (which silences at once, live and here). */
 static float* le_pr_render_wet_track(const le_pr_manifest* m,
                                      const le_pr_log_entry* log, int log_count,
                                      int32_t channel, const float* dry,
@@ -1864,6 +1874,7 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
           break;
         case LE_CMD_CUT_SOUND:
           cut_silenced = 1;
+          cut_gain = 0.0f; /* at once, as the callback cuts (#1400) */
           for (int i = 0; i < LE_FX_MAX; ++i) {
             le_fx_entry_reset(fx, i);
             le_fx_entry_clear_rings(fx, i, m->sample_rate);
