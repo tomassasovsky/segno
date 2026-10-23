@@ -251,10 +251,11 @@ int le_fx_type_drains(int32_t type);
 int le_fx_type_free_running(int32_t type);
 
 /* Whether an entry of [type] at settings [p] (its first
- * le_fx_param_width(type) cells) runs a free-running modulator that is
- * heard: le_fx_type_free_running, with its mix (or the vinyl's noise, or
- * the degrade's hold) actually doing something. Any thread. */
-int le_fx_entry_free_running(int32_t type, const float* p);
+ * le_fx_param_width(type) cells), at engine rate [sr], runs a free-running
+ * modulator that is heard: le_fx_type_free_running, with its mix (or the
+ * vinyl's noise, or the degrade's hold below [sr]) actually doing
+ * something. Any thread. */
+int le_fx_entry_free_running(int32_t type, const float* p, int sr);
 
 /* Seeds chain slot [slot]'s enable-crossfade runtime SETTLED at enabled so a
  * freshly created (zeroed) le_fx_state does not fade in on first use. Call

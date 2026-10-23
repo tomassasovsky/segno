@@ -67,7 +67,7 @@ const _english = <String, List<String>>{
   'degrade.frequency': ['500 Hz', '50.0 kHz', '50.0 kHz'],
   'degrade.filter': ['0%', '100%', '100%'],
   'degrade.mix': ['0%', '100%', '100%'],
-  'lpf.cutoff': ['20.0 Hz', '20.0 kHz', '20.0 kHz'],
+  'lpf.lp_cutoff': ['20.0 Hz', 'Off', 'Off'],
   'lpf.resonance': ['0%', '100%', '100%'],
 };
 
@@ -134,7 +134,7 @@ const _spanish = <String, List<String>>{
   'degrade.frequency': ['500 Hz', '50,0 kHz', '50,0 kHz'],
   'degrade.filter': ['0%', '100%', '100%'],
   'degrade.mix': ['0%', '100%', '100%'],
-  'lpf.cutoff': ['20,0 Hz', '20,0 kHz', '20,0 kHz'],
+  'lpf.lp_cutoff': ['20,0 Hz', 'Apagado', 'Apagado'],
   'lpf.resonance': ['0%', '100%', '100%'],
 };
 

@@ -121,6 +121,45 @@ static void test_lpf(void) {
   CHECK(lofi_db(LE_FX_LPF, p, sr, 4000.0) < -23.0);
   p[1] = 1.0f;
   CHECK(fabs(lofi_db(LE_FX_LPF, p, sr, 1000.0) - 15.56) < 0.3);
+  /* At the top of its range, as a fresh filter is, it is off: the
+   * identity. */
+  le_fx_defaults(LE_FX_LPF, p);
+  const int n = 512;
+  float in[512];
+  float out[512];
+  for (int i = 0; i < n; ++i) in[i] = 0.4f * sinf(0.3f * (float)i);
+  le_fx_state* fx = dyn_state(LE_FX_LPF, sr);
+  uint32_t clock = 0;
+  dyn_run(fx, LE_FX_LPF, p, sr, in, out, NULL, n, &clock);
+  dyn_free(fx);
+  for (int i = 0; i < n; ++i) CHECK(out[i] == in[i]);
+}
+
+/* A vinyl at 0 % noise and a degrade that does not hold print; with the
+ * noise up the lane stays live. */
+static void test_lofi_cache(void) {
+  printf("test_lofi_cache\n");
+  for (int k = 0; k < 3; ++k) {
+    const int32_t ty = k == 2 ? LE_FX_DEGRADE : LE_FX_VINYL;
+    le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+    cache_record_loop(a, CACHE_LOOP, 1.0f);
+    CHECK(le_engine_set_lane_fx(a, 0, 0, 0, ty) == LE_OK);
+    if (k == 0) CHECK(le_engine_set_lane_fx_param(a, 0, 0, 0, 2, 0.0f) == LE_OK);
+    CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1, 1) == LE_OK);
+    drain(a);
+    le_lane_cache_info info;
+    le_engine_get_lane_cache(a, 0, 0, &info);
+    pump_frames(a, 0.0f, CACHE_SETTLE);
+    if (k == 1) {
+      pump_frames(a, 0.0f, CACHE_LOOP);
+      le_engine_get_lane_cache(a, 0, 0, &info);
+      CHECK(info.state == LE_CACHE_GAVE_UP);
+      CHECK(info.reason == LE_CACHE_REASON_FREE_RUNNING);
+    } else {
+      CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+    }
+    le_engine_destroy(a);
+  }
 }
 
 /* ---- all ---- */
@@ -164,15 +203,19 @@ static void test_lofi_offline_equals_live(void) {
    * heard. */
   float v[LE_FX_PARAMS] = {0};
   le_fx_defaults(LE_FX_VINYL, v);
-  CHECK(le_fx_entry_free_running(LE_FX_VINYL, v));
+  CHECK(le_fx_entry_free_running(LE_FX_VINYL, v, 48000));
   v[2] = 0.0f;
-  CHECK(!le_fx_entry_free_running(LE_FX_VINYL, v));
+  CHECK(!le_fx_entry_free_running(LE_FX_VINYL, v, 48000));
   le_fx_defaults(LE_FX_DEGRADE, v);
-  CHECK(!le_fx_entry_free_running(LE_FX_DEGRADE, v)); /* 50 kHz */
+  /* 50 kHz: not holding at 48 kHz, holding every other sample at 96. */
+  CHECK(!le_fx_entry_free_running(LE_FX_DEGRADE, v, 48000));
+  CHECK(le_fx_entry_free_running(LE_FX_DEGRADE, v, 96000));
+  v[0] = dyn_setting(LE_FX_DEGRADE, 0, 46000.0);
+  CHECK(!le_fx_entry_free_running(LE_FX_DEGRADE, v, 44100));
   v[0] = 0.4f;
-  CHECK(le_fx_entry_free_running(LE_FX_DEGRADE, v));
+  CHECK(le_fx_entry_free_running(LE_FX_DEGRADE, v, 48000));
   v[2] = 0.0f;
-  CHECK(!le_fx_entry_free_running(LE_FX_DEGRADE, v));
+  CHECK(!le_fx_entry_free_running(LE_FX_DEGRADE, v, 48000));
 }
 
 static void test_lofi_on_a_lane(void) {
@@ -200,6 +243,7 @@ static void run_lofi_tests(void) {
   test_vinyl();
   test_degrade();
   test_lpf();
+  test_lofi_cache();
   test_lofi_offline_equals_live();
   test_lofi_on_a_lane();
 }

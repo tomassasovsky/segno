@@ -88,6 +88,7 @@ extension EngineLocalizations on AppLocalizations {
     'noise' => paramNoise,
     'noise_tone' => paramNoiseTone,
     'filter' => paramFilter,
+    'lp_cutoff' => paramCutoff,
     _ => key,
   };
 
@@ -100,9 +101,10 @@ extension EngineLocalizations on AppLocalizations {
   /// finer than a performer sets or hears; a time under 1 ms keeps two
   /// decimals; a frequency reads in kHz from 1000 Hz.
   String fxParamValueText(FxParamInfo p, double setting) {
-    // The EQ's cuts are off at their ends of the range (engine_fx.c).
+    // The EQ's cuts and the low-pass filter are off at their ends of the
+    // range (engine_fx.c).
     if ((p.key == 'low_cut' && setting <= 0) ||
-        (p.key == 'high_cut' && setting >= 1)) {
+        ((p.key == 'high_cut' || p.key == 'lp_cutoff') && setting >= 1)) {
       return fxValueOff;
     }
     final value = p.valueAt(setting);

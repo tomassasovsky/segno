@@ -929,9 +929,11 @@ enum TrackEffectType {
         taperUnverified: true,
       ),
     ],
+    // The cutoff is off at the top of its range (a fresh filter is
+    // transparent, though the Looper X's default resonance is 100 %).
     TrackEffectType.lpf => const [
       FxParamInfo(
-        key: 'cutoff',
+        key: 'lp_cutoff',
         unit: FxParamUnit.hz,
         atMin: 20,
         atMax: 20000,
