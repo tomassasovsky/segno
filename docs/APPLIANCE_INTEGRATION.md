@@ -37,6 +37,14 @@ These corrections make the integrated tree different from release 137.
 
 ## Hardware boundary
 
+> **Since this record (October 2026):** the v3 console board is the fitted
+> hardware. Console firmware 2.0 to 2.4 ([`firmware/console_board`](../firmware/console_board/README.md))
+> carries the PIO UART ring link, the ring-update bridge and the USB-C PD
+> trigger; the ring carrier runs [`firmware/ring_board`](../firmware/ring_board/README.md);
+> and Settings shows the negotiated power supply. The appliance has run
+> releases newer than 137, and `/etc/segno/build-version` on the device names
+> the installed build. The rest of this section is the September record.
+
 The running firmware targets the v2 console board: Pico 2, direct encoder and
 NeoPixel ring, and CTRL ring sensing. Earlier bench records in #984 and #990
 cover end-to-end console controls, boot flashing on release 133, and the FS-6
