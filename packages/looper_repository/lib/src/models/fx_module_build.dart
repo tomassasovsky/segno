@@ -680,9 +680,8 @@ double fxEntryKindSetting(BuiltInEffect entry, int index, double shownSetting) {
 /// in the chain and passes signal through untouched.
 ///
 /// The entry's enabled bit follows the preset's own power key when it carries
-/// one. New instances arriving bypassed is the ADDING surface's rule, applied
-/// where the instance is added rather than here, so this stays a faithful read
-/// of the preset.
+/// one, and an added rack keeps it: the pedals arrive on or off as the preset
+/// sets them, as the Looper X loads them.
 BuiltInEffect fxModuleEntry(FxModule module, FxPreset preset) {
   final build = fxModuleBuild(module, family: preset.family);
   final type = build.type ?? TrackEffectType.none;
