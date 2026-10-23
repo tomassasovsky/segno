@@ -73,6 +73,7 @@ class FxRecipeSlot {
     this.enabled = true,
     this.channels = FxChannels.defaults,
     this.rack = FxRackEdge.none,
+    this.path = FxRackPath.none,
     this.plugin,
     this.instance = 0,
   }) : params = List.unmodifiable(params);
@@ -93,6 +94,9 @@ class FxRecipeSlot {
   /// Where this entry sits in its rack. Structural, so it rides the recipe
   /// and no granular channel write moves it.
   final FxRackEdge rack;
+
+  /// The rack path this entry runs on. Structural, as [rack] is.
+  final FxRackPath path;
 
   /// A retained owner handle or a detached handle prepared by this engine.
   final PluginSlotHandle? plugin;

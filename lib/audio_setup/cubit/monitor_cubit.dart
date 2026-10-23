@@ -796,8 +796,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     if (index < 0 || index >= monitor.effects.length) return;
     // Write first, then emit what actually landed — the repository owns the
     // flag flip across the sealed entry hierarchy, so re-reading it is more
-    // honest than reproducing that dispatch here. [setChainEnabled] keeps the
-    // same order for the same reason.
+    // honest than reproducing that dispatch here.
     final result = _repository.setMonitorEffectEnabled(
       input: input,
       index: index,
@@ -822,34 +821,6 @@ class MonitorCubit extends Cubit<MonitorState> {
       _fxPersistence.trackSave(
         _persistMonitorAfterFx(state.forInput(input)),
       ),
-    );
-  }
-
-  /// Enables/disables monitor [input]'s WHOLE chain in one atomic flip, leaving
-  /// the per-entry flags intact (R15). A chain-disabled monitor sounds dry and
-  /// stops being snapshot-copied onto recording lanes (D-CHAINDIS, R18).
-  void setChainEnabled(int input, {required bool enabled}) {
-    if (!_editable) return;
-    // Only flip a monitor the user actually has. `forInput` synthesizes a
-    // default for an unknown input, so without this an input that exists on
-    // the device but was never configured would be materialized into state and
-    // persisted here — and the restore path counts a disabled chain as saved
-    // state, so the phantom would come back on every subsequent boot.
-    if (!state.hasInput(input)) return;
-    final monitor = state.forInput(input);
-    // Write, then emit — the same order as [setEffectEnabled].
-    final result = _repository.setMonitorChainEnabled(
-      input: input,
-      enabled: enabled,
-    );
-    if (!result.isOk) return;
-    _fxPersistence.ordinaryChain(
-      FxAddress(stage: FxStage.input, index: input),
-      enabled: enabled,
-    );
-    emit(state.withInput(monitor.copyWith(chainEnabled: enabled)));
-    unawaited(
-      _persistMonitorAfterFx(state.forInput(input)),
     );
   }
 

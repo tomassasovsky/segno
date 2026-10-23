@@ -722,6 +722,23 @@ typedef enum le_fx_type {
    * recirculating, dispersive spring, band-limited to 200 Hz - 4 kHz; fit to
    * the Guitar Rack's Spring (#891). Drains its tail on bypass. */
   LE_FX_SPRING = 21,
+  /* DUB_VERB: p0 decay (the Looper X's 0.45 to 144 s display), p1 volume (a
+   * partial crossfade: the dry falls to 0.66 as the wet rises). A bright,
+   * slowly thickening reverb fit to the Dub Rack's Dub-Verb (#891). Drains
+   * its tail on bypass. */
+  LE_FX_DUB_VERB = 22,
+  /* AMB_VERB: p0 decay (as DUB_VERB's), p1 volume (the dry falls to 0.71),
+   * p2 Amb-Dub Mix, which the kernel does not read: it mixes the Dub Rack's
+   * parallel paths (LE_FX_RACK_DUB_PATH). A reverb with a strong early echo and
+   * shorter lows, fit to the Dub Rack's Amb-Verb (#891). Drains its tail on
+   * bypass. */
+  LE_FX_AMB_VERB = 23,
+  /* WHAMMY: p0 pedal (0..100 %), p1 range (a choice: -12 or +12
+   * semitones). The octaver's phase vocoder, fully wet with the tone open
+   * and the formants moving with the pitch, shifted by range x pedal^1.39:
+   * the Guitar Rack's Whammy, whose pedal at 50 % gives 4.6 of its 12
+   * semitones (#891). */
+  LE_FX_WHAMMY = 24,
 } le_fx_type;
 
 /* ---- Built-in effect parameter descriptors (#1378) ----
@@ -755,6 +772,9 @@ typedef enum le_fx_param_curve {
   /* 1 / (1 / at_min + (1 / at_max - 1 / at_min) * v): the reciprocal is
    * linear (the Looper X compressor's ratio, 1 / (1 - v / 1.0101)). */
   LE_FX_CURVE_RECIPROCAL = 2,
+  /* (v + at_min) / (1 - v), at most at_max: the Looper X's reverb time
+   * display (0.45 s at 0, 144 s near 1). */
+  LE_FX_CURVE_REVERB_TIME = 3,
 } le_fx_param_curve;
 
 /* Bit flags for le_fx_param_desc.flags. */
@@ -995,10 +1015,26 @@ typedef struct le_plugin_slot le_plugin_slot;
  * the chain off, the rack passes its input through untouched, except that a
  * tail still draining out of one of its entries keeps the rack's output side
  * it was heard with. Every other entry's channel handling stays its own and
- * applies around its effect, as before. */
+ * applies around its effect, as before.
+ *
+ * LE_FX_RACK_DUB_PATH and LE_FX_RACK_AMB_PATH (at most one per entry) put an
+ * entry on one of the Dub Rack's two parallel paths (#1430). A run of
+ * entries that carry a path bit, inside one rack, is a parallel section:
+ * both paths start from the pair the section is handed, each runs its own
+ * entries in chain order, and the section hands on A(m) times the Amb path
+ * plus D(m) times the Dub path, with D(m) = min(1, (2m)^2) and A(m) = 1 up
+ * to m = 0.5, 1 - (2m - 1)^2 above. m is the section's AMB_VERB's Amb-Dub
+ * Mix (p2), or that parameter's default when the section has none. The
+ * boost the two dry signals add (A + D - 1 of the input) follows the rack's
+ * on/off fade, so a rack with every entry off still passes its input
+ * through untouched. Path entries outside any rack still form a section,
+ * with the boost in full (there is no rack fade to follow); segno sets the
+ * bits only inside racks. */
 typedef enum le_fx_rack_edge {
   LE_FX_RACK_FIRST = 1,
   LE_FX_RACK_LAST = 2,
+  LE_FX_RACK_DUB_PATH = 4,
+  LE_FX_RACK_AMB_PATH = 8,
 } le_fx_rack_edge;
 
 /* Complete structural recipe, copied before admission. Hosted pointers must

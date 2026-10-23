@@ -188,6 +188,31 @@ void main() {
       expect(fx, isNot(equals(fx.copyWith(source: const {'Mode': 0}))));
     });
 
+    test('the rack path round-trips by name, counts in equality and is '
+        'omitted on no path', () {
+      final fx = BuiltInEffect(
+        type: TrackEffectType.ambVerb,
+        rackPath: FxRackPath.amb,
+      );
+      final json = fx.toJson();
+      expect(json['rackPath'], 'amb');
+      final decoded = BuiltInEffect.fromJson(
+        jsonDecode(jsonEncode(json)) as Map<String, dynamic>,
+      );
+      expect(decoded, fx);
+      expect(decoded.hashCode, fx.hashCode);
+      expect(fx, isNot(equals(fx.copyWith(rackPath: FxRackPath.dub))));
+      final none = BuiltInEffect(type: TrackEffectType.ambVerb).toJson();
+      expect(none.containsKey('rackPath'), isFalse);
+      expect(BuiltInEffect.fromJson(none).rackPath, FxRackPath.none);
+      expect(
+        BuiltInEffect.fromJson(const {'type': 23, 'rackPath': 7}).rackPath,
+        FxRackPath.none,
+      );
+      // The native path bits (le_fx_rack_edge).
+      expect([for (final p in FxRackPath.values) p.bits], [0, 4, 8]);
+    });
+
     test('an entry with no preset writes neither key and decodes to none', () {
       final json = BuiltInEffect(type: TrackEffectType.drive).toJson();
 
@@ -437,6 +462,12 @@ void main() {
         TrackEffectType.lpf: [1.0, 1.0],
         // The Guitar Rack's spring: 2.00 s, 50 %.
         TrackEffectType.spring: [0.30103, 0.5],
+        // The Dub Rack's reverbs as a fresh rack has them: Dub-Verb Dec 0.7,
+        // Vol 20 %; Amb-Verb Dec 0.2, Vol 40 %, Amb-Dub Mix 40 %.
+        TrackEffectType.dubVerb: [0.7, 0.2],
+        TrackEffectType.ambVerb: [0.2, 0.4, 0.4],
+        // The Guitar Rack's Whammy: heel down, range -12.
+        TrackEffectType.whammy: [0.0, 0.0],
       };
       for (final type in TrackEffectType.values) {
         expect(type.defaultParams, cells(expected[type]!), reason: type.name);
@@ -501,6 +532,21 @@ void main() {
         expect(ratio.settingFor(ratio.valueAt(v)), closeTo(v, 1e-9));
       }
       expect(ratio.valueAt(0.758), closeTo(4.0, 0.01));
+    });
+
+    test("the reverbs' decay is the Looper X's reverb-time taper", () {
+      // (v + 0.45) / (1 - v), capped at 144 s; a time outside the range
+      // clamps to its end.
+      final decay = TrackEffectType.dubVerb.params[0];
+      expect(decay.unit, FxParamUnit.seconds);
+      for (var v = 0.0; v < 0.99; v += 0.1) {
+        expect(decay.valueAt(v), closeTo((v + 0.45) / (1 - v), 1e-9));
+        expect(decay.settingFor(decay.valueAt(v)), closeTo(v, 1e-9));
+      }
+      expect(decay.valueAt(1), 144);
+      expect(decay.settingFor(-5), 0);
+      expect(decay.settingFor(0.1), 0);
+      expect(decay.settingFor(1000), decay.settingFor(144));
     });
   });
 

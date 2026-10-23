@@ -172,6 +172,7 @@ export 'src/track_effect.dart'
         FxParamUnit,
         FxPlacement,
         FxRack,
+        FxRackPath,
         PluginEffect,
         PluginRef,
         TrackEffect,
