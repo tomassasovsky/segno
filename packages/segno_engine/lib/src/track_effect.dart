@@ -370,7 +370,7 @@ enum TrackEffectType {
 
   /// The Looper X's high-pass gate (#887 part 5): a 12 dB/octave high-pass,
   /// then a gate keyed on what it passes.
-  hpGate(12, 'HP/Gate');
+  hpGate(12, 'HP / Gate');
 
   const TrackEffectType(this.code, this.label);
 

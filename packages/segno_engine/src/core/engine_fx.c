@@ -1297,6 +1297,93 @@ static const le_fx_param_desc LE_FX_EQ_PARAMS[] = {
     {"air_gain", LE_FX_UNIT_DB, 0, -18.0f, 18.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
 };
 
+/* The per-update smoothing factor of a setting that glides over
+ * LE_FX_SMOOTH_S at [sr]: the share of the remaining distance one update
+ * (LE_FX_UPDATE_FRAMES frames) covers. */
+#define LE_FX_SMOOTH_S 0.010
+static float le_fx_smooth_k(int sr) {
+  return (float)(1.0 - exp(-(double)LE_FX_UPDATE_FRAMES /
+                           (LE_FX_SMOOTH_S * (double)(sr > 0 ? sr : 48000))));
+}
+
+/* One smoothing step of a setting the update cadence moves: [*cur] covers a
+ * share [k] of the way to [tgt], landing on it once within 1e-4 (or at once
+ * for k >= 1). The one rule every Looper X kind glides by. */
+static inline void le_fx_step_toward(float* cur, float tgt, float k) {
+  const float d = tgt - *cur;
+  *cur = k >= 1.0f || fabsf(d) < 1e-4f ? tgt : *cur + k * d;
+}
+
+/* What every Looper X kind's update starts with: whether it has anything to
+ * do, given the settings it last saw ([last], [n] of them), the rate its
+ * smoothing factor was computed at and whether something still moves. */
+typedef struct le_fx_dyn_head {
+  int32_t primed; /* [last] holds settings */
+  int32_t k_sr;   /* the rate [k] is for */
+  int32_t moving; /* a glide is under way */
+  float k;        /* le_fx_smooth_k(k_sr) */
+} le_fx_dyn_head;
+
+#define LE_FX_DYN_RUN 1      /* the update has work */
+#define LE_FX_DYN_NEW_RATE 2 /* the sample rate changed */
+#define LE_FX_DYN_CHANGED 4  /* the settings or the rate changed, or settle */
+
+/* Returns 0 when nothing changed and nothing moves; otherwise LE_FX_DYN_RUN
+ * with the other bits saying what changed, and the rate and settings
+ * recorded. */
+static int le_fx_dyn_begin(le_fx_dyn_head* h, float* last, const float* p,
+                           size_t n, int sr, int settle) {
+  const int new_rate = h->k_sr != sr;
+  const int new_params =
+      !h->primed || memcmp(last, p, n * sizeof(float)) != 0;
+  if (!settle && !new_rate && !new_params && !h->moving) return 0;
+  if (new_rate) {
+    h->k_sr = sr;
+    h->k = le_fx_smooth_k(sr);
+  }
+  if (new_params || settle) {
+    memcpy(last, p, n * sizeof(float));
+    h->primed = 1;
+  }
+  return LE_FX_DYN_RUN | (new_rate ? LE_FX_DYN_NEW_RATE : 0) |
+         (new_rate || new_params || settle ? LE_FX_DYN_CHANGED : 0);
+}
+
+/* A setting a kernel reads every sample. Each update moves its glide point
+ * one smoothing step toward the target, and the samples after it ramp from
+ * wherever the value is onto that point over LE_FX_UPDATE_FRAMES samples,
+ * stopping there. A change never steps, and frames the kernel did not run
+ * (a slot skipped for a while) only slow the ramp down. */
+typedef struct le_fx_glide {
+  float v;   /* the value now */
+  float inc; /* per-sample step toward g */
+  float g;   /* the glide point */
+} le_fx_glide;
+
+/* Update: one glide step toward [tgt] (k >= 1 lands at once). Returns
+ * whether the value is still moving. */
+static int le_fx_glide_step(le_fx_glide* s, float tgt, float k) {
+  le_fx_step_toward(&s->g, tgt, k);
+  if (k >= 1.0f) s->v = s->g;
+  s->inc = (s->g - s->v) * (1.0f / (float)LE_FX_UPDATE_FRAMES);
+  if (s->v + s->inc == s->v) { /* closer than a step can show: land */
+    s->v = s->g;
+    s->inc = 0.0f;
+  }
+  return s->v != s->g || s->g != tgt;
+}
+
+static inline float le_fx_glide_next(le_fx_glide* s) {
+  if (s->inc != 0.0f) {
+    s->v += s->inc;
+    if (s->inc > 0.0f ? s->v >= s->g : s->v <= s->g) {
+      s->v = s->g;
+      s->inc = 0.0f;
+    }
+  }
+  return s->v;
+}
+
 /* ---- EQ (LE_FX_EQ, #887 part 4) ----
  *
  * The Looper X's generic EQ module, of which each rack exposes a subset (the
@@ -1333,17 +1420,14 @@ typedef struct le_fx_eq {
   float db[LE_EQ_BANDS];
   float lnq[LE_EQ_BANDS];
   uint32_t active; /* bands that are not the identity */
-  int32_t moving;  /* smoothing still under way */
   /* The settings the targets were last taken from, and the smoothing step
    * for the rate it was computed at: a settled EQ whose settings did not
    * change costs one compare per update. */
+  le_fx_dyn_head h;
   float last[LE_EQ_PARAMS_N];
   float tgt_hz[LE_EQ_BANDS];
   float tgt_db[LE_EQ_BANDS];
   float tgt_lnq[LE_EQ_BANDS];
-  int32_t primed;
-  int32_t k_sr;
-  float k;
   le_eq_band band[LE_EQ_BANDS];
 } le_fx_eq;
 
@@ -1361,14 +1445,6 @@ static double le_fx_desc_value(const le_fx_param_desc* d, float v) {
   return (double)d->at_min + ((double)d->at_max - (double)d->at_min) * v;
 }
 
-/* The per-update smoothing factor of a setting that glides over
- * LE_FX_SMOOTH_S at [sr]: the share of the remaining distance one update
- * (LE_FX_UPDATE_FRAMES frames) covers. */
-#define LE_FX_SMOOTH_S 0.010
-static float le_fx_smooth_k(int sr) {
-  return (float)(1.0 - exp(-(double)LE_FX_UPDATE_FRAMES /
-                           (LE_FX_SMOOTH_S * (double)(sr > 0 ? sr : 48000))));
-}
 
 /* RBJ cookbook coefficients for one band of the EQ, in double. kind is an
  * LE_EQ_* band index; hz the corner or centre, db the gain, q the Q. */
@@ -1431,35 +1507,22 @@ static void le_eq_targets(const float* p, float hz[LE_EQ_BANDS],
 
 static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
   le_fx_eq* q = (le_fx_eq*)ks;
-  const int new_rate = q->k_sr != sr; /* every band's design moves */
-  const int new_params = !q->primed || memcmp(q->last, p, sizeof(q->last)) != 0;
-  if (!settle && !new_rate && !new_params && !q->moving) return;
-  if (new_rate) {
-    q->k_sr = sr;
-    q->k = le_fx_smooth_k(sr);
-  }
-  if (new_params || settle) {
-    /* The targets change only with the settings; a glide reuses them. */
-    memcpy(q->last, p, sizeof(q->last));
-    q->primed = 1;
-    le_eq_targets(p, q->tgt_hz, q->tgt_db, q->tgt_lnq);
-  }
-  const float k = settle ? 1.0f : q->k;
+  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_EQ_PARAMS_N, sr, settle);
+  if (!f) return;
+  const int new_rate = (f & LE_FX_DYN_NEW_RATE) != 0; /* every design moves */
+  /* The targets change only with the settings; a glide reuses them. */
+  if (f & LE_FX_DYN_CHANGED) le_eq_targets(p, q->tgt_hz, q->tgt_db, q->tgt_lnq);
+  const float k = settle ? 1.0f : q->h.k;
   int moving = 0;
   for (int b = 0; b < LE_EQ_BANDS; ++b) {
     float* cur[3] = {&q->hz[b], &q->db[b], &q->lnq[b]};
     const float tgt[3] = {q->tgt_hz[b], q->tgt_db[b], q->tgt_lnq[b]};
     int dirty = settle || new_rate;
     for (int i = 0; i < 3; ++i) {
-      const float d = tgt[i] - *cur[i];
-      if (d == 0.0f) continue;
+      if (tgt[i] == *cur[i]) continue;
       dirty = 1;
-      if (k >= 1.0f || fabsf(d) < 1e-4f) {
-        *cur[i] = tgt[i];
-      } else {
-        *cur[i] += k * d;
-        moving = 1;
-      }
+      le_fx_step_toward(cur[i], tgt[i], k);
+      if (*cur[i] != tgt[i]) moving = 1;
     }
     if (!dirty) continue; /* only a band that moved is redesigned */
     const int cut = b == LE_EQ_LOWCUT || b == LE_EQ_HIGHCUT;
@@ -1482,7 +1545,7 @@ static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
     band->a1 = (float)c[3]; band->a2 = (float)c[4];
     q->active |= 1u << b;
   }
-  q->moving = moving;
+  q->h.moving = moving;
 }
 
 static void fx_eq_kprocess(void* ks, float* l, float* r) {
@@ -1590,66 +1653,6 @@ static float le_one_pole(double tau_s, int sr) {
 /* A non-finite sample would latch into a detector or filter for good. */
 static inline float le_finite(float x) { return isfinite(x) ? x : 0.0f; }
 
-/* A setting a kernel reads every sample. Each update moves its glide point
- * a share k of the way to the target and the samples until the next update
- * ramp onto that point, so a change never steps. */
-typedef struct le_fx_glide {
-  float v;   /* the value now */
-  float inc; /* per-sample step to the glide point */
-  float g;   /* the glide point */
-} le_fx_glide;
-
-/* Update: one glide step toward [tgt] (k >= 1 lands at once). Returns
- * whether the setting is still moving. */
-static int le_fx_glide_step(le_fx_glide* s, float tgt, float k) {
-  if (k >= 1.0f) {
-    s->v = s->g = tgt;
-    s->inc = 0.0f;
-    return 0;
-  }
-  s->v = s->g; /* the ramp just finished there */
-  const float d = tgt - s->g;
-  s->g = fabsf(d) < 1e-4f ? tgt : s->g + k * d;
-  s->inc = (s->g - s->v) * (1.0f / (float)LE_FX_UPDATE_FRAMES);
-  return s->inc != 0.0f;
-}
-
-static inline float le_fx_glide_next(le_fx_glide* s) {
-  s->v += s->inc;
-  return s->v;
-}
-
-/* Whether an update has anything to do, and records the settings it acts
- * on: [last] holds the settings it last saw, [primed] whether it saw any,
- * [k_sr] the rate [k] was computed at. */
-typedef struct le_fx_dyn_head {
-  int32_t primed;
-  int32_t k_sr;
-  int32_t moving;
-  float k;
-} le_fx_dyn_head;
-
-/* Returns 0 when nothing changed and nothing moves; otherwise 1, with the
- * rate and settings recorded, and *changed set when the settings or the
- * rate did (the coefficients that follow them need recomputing). */
-static int le_fx_dyn_begin(le_fx_dyn_head* h, float* last, const float* p,
-                           size_t n, int sr, int settle, int* changed) {
-  const int new_rate = h->k_sr != sr;
-  const int new_params =
-      !h->primed || memcmp(last, p, n * sizeof(float)) != 0;
-  if (!settle && !new_rate && !new_params && !h->moving) return 0;
-  if (new_rate) {
-    h->k_sr = sr;
-    h->k = le_fx_smooth_k(sr);
-  }
-  *changed = new_rate || new_params || settle;
-  if (new_params || settle) {
-    memcpy(last, p, n * sizeof(float));
-    h->primed = 1;
-  }
-  return 1;
-}
-
 /* ---- Compressor (LE_FX_COMPRESSOR) ----
  *
  * Feed-forward, after Giannoulis, Massberg and Reiss ("Digital dynamic range
@@ -1670,11 +1673,9 @@ typedef struct le_fx_comp {
 
 static void fx_comp_update(void* ks, const float* p, int sr, int settle) {
   le_fx_comp* c = (le_fx_comp*)ks;
-  int changed = 0;
-  if (!le_fx_dyn_begin(&c->h, c->last, p, LE_COMP_PARAMS_N, sr, settle,
-                       &changed)) {
-    return;
-  }
+  const int f = le_fx_dyn_begin(&c->h, c->last, p, LE_COMP_PARAMS_N, sr, settle);
+  if (!f) return;
+  const int changed = (f & LE_FX_DYN_CHANGED) != 0;
   const le_fx_param_desc* d = LE_FX_COMPRESSOR_PARAMS;
   if (changed) {
     c->att = le_one_pole(le_fx_desc_value(&d[2], p[2]) * 1e-3, sr);
@@ -1754,11 +1755,9 @@ typedef struct le_fx_transient {
 
 static void fx_transient_update(void* ks, const float* p, int sr, int settle) {
   le_fx_transient* t = (le_fx_transient*)ks;
-  int changed = 0;
-  if (!le_fx_dyn_begin(&t->h, t->last, p, LE_TR_PARAMS_N, sr, settle,
-                       &changed)) {
-    return;
-  }
+  const int f = le_fx_dyn_begin(&t->h, t->last, p, LE_TR_PARAMS_N, sr, settle);
+  if (!f) return;
+  const int changed = (f & LE_FX_DYN_CHANGED) != 0;
   if (changed) {
     const float len = p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1];
     t->peak_rel = le_one_pole(LE_TR_PEAK_REL_S, sr);
@@ -1848,17 +1847,15 @@ static void le_hpg_design(le_fx_hp_gate* q, int sr) {
 
 static void fx_hp_gate_update(void* ks, const float* p, int sr, int settle) {
   le_fx_hp_gate* q = (le_fx_hp_gate*)ks;
-  int changed = 0;
-  if (!le_fx_dyn_begin(&q->h, q->last, p, LE_HPG_PARAMS_N, sr, settle,
-                       &changed)) {
-    return;
-  }
+  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_HPG_PARAMS_N, sr, settle);
+  if (!f) return;
+  const int changed = (f & LE_FX_DYN_CHANGED) != 0;
   const le_fx_param_desc* d = LE_FX_HP_GATE_PARAMS;
   if (changed) {
     q->tgt_lhz = (float)log2(le_fx_desc_value(&d[0], p[0]));
     const double thr = le_fx_desc_value(&d[1], p[1]);
-    q->open_at = (float)pow(10.0, thr / 20.0);
-    q->close_at = (float)pow(10.0, (thr - LE_GATE_HYST_DB) / 20.0);
+    q->open_at = le_gain_of_db((float)thr);
+    q->close_at = le_gain_of_db((float)(thr - LE_GATE_HYST_DB));
     q->env_rel = le_one_pole(LE_GATE_ENV_REL_S, sr);
     q->open_c = le_one_pole(LE_GATE_OPEN_S, sr);
     q->close_c = le_one_pole(LE_GATE_CLOSE_S, sr);
@@ -1873,10 +1870,8 @@ static void fx_hp_gate_update(void* ks, const float* p, int sr, int settle) {
     q->gain = 1.0f;
     q->hold = q->hold_n;
   }
-  const float d_lhz = q->tgt_lhz - q->lhz;
-  const int land = settle || fabsf(d_lhz) < 1e-4f;
-  if (d_lhz != 0.0f || changed) {
-    q->lhz = land ? q->tgt_lhz : q->lhz + q->h.k * d_lhz;
+  if (q->lhz != q->tgt_lhz || changed) {
+    le_fx_step_toward(&q->lhz, q->tgt_lhz, settle ? 1.0f : q->h.k);
     le_hpg_design(q, sr);
   }
   q->h.moving = q->lhz != q->tgt_lhz;
@@ -1896,15 +1891,18 @@ static void fx_hp_gate_kprocess(void* ks, float* l, float* r) {
   }
   const float x = fmaxf(fabsf(y[0]), fabsf(y[1]));
   q->env = x > q->env ? x : x + q->env_rel * (q->env - x);
+  /* Open over the threshold; the hold restarts whenever the level is back
+   * within the hysteresis, so the gate closes only once it has stayed under
+   * close_at for the whole hold. */
   if (q->env >= q->open_at) {
     q->open = 1;
     q->hold = q->hold_n;
-  } else if (q->env < q->close_at) {
-    if (q->hold > 0) {
-      q->hold--;
-    } else {
-      q->open = 0;
-    }
+  } else if (q->env >= q->close_at) {
+    q->hold = q->hold_n;
+  } else if (q->hold > 0) {
+    q->hold--;
+  } else {
+    q->open = 0;
   }
   const float tgt = q->open ? 1.0f : 0.0f;
   float g = tgt + (q->open ? q->open_c : q->close_c) * (q->gain - tgt);

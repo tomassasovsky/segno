@@ -601,7 +601,9 @@ void main() {
       for (final family in dir.listSync().whereType<Directory>()) {
         final name = family.uri.pathSegments.lastWhere((s) => s.isNotEmpty);
         for (final file in family.listSync().whereType<File>()) {
-          final p = FxPreset.tryParse(name, file.readAsStringSync())!;
+          final parsed = FxPreset.tryParse(name, file.readAsStringSync());
+          expect(parsed, isNotNull, reason: file.path);
+          final p = parsed!;
           for (final module in fxPresetModules(p)) {
             if (!const [
               'Compressor',
