@@ -1255,6 +1255,17 @@ typedef struct le_track {
   int32_t length_pending;
   int32_t length_op; /* 0 edit, 1 undo of a LENGTH entry, 2 its redo */
   int length_ack;
+  /* #730, rec/dub: a take that stopped short of its loop and continued into
+   * this session's dub keeps its tail unfaded in the live slot (the dub
+   * continues it), but the session's first undo layer is the take alone,
+   * followed by silence, so that layer's tail still needs the fade. One past
+   * the tail's last sample, or 0 for none. Set by finalize_new_track, applied
+   * when the first pass retires (or at a stop, or a reopen revert), and
+   * cleared by every new session. It sits here, in the padding before
+   * length_file, so adding it moved no other field: the mixer reads the
+   * fields after the dub block every frame, and the 8 x 8 lane benchmark is
+   * sensitive to where they fall (#1374). */
+  int32_t dub_tail_end;
   le_hist_entry length_file;
   _Atomic int32_t a_length_result; /* audio: the verdict, before the ack */
   /* Control: Undo/Redo taps on LENGTH entries that did nothing (published as
@@ -2366,10 +2377,12 @@ struct le_engine {
   uint32_t bypass_posted;
   int32_t bypass_pending;
   _Atomic uint32_t a_bypass_applied;
+  /* Callback-only: image publication invalidates the current frame snapshots.
+   * Beside the 32-bit fields above, so it fills their padding: that keeps
+   * the limiter's peak-hold state below from moving `tracks` (#1374). */
+  uint32_t capture_image_dirty;
   uint64_t commands_posted;
   uint64_t commands_applied;
-  /* Callback-only: image publication invalidates the current frame snapshots. */
-  uint32_t capture_image_dirty;
   _Atomic uint64_t a_commands_published;
 
   /* Primary track (B3, D18, published — see le_snapshot's trailing block).
@@ -2398,12 +2411,22 @@ struct le_engine {
 
   /* Master peak limiter, applied post-gain to the additive mix so the summed
    * output (many tracks + overdub layers + monitoring) cannot hard-clip in the
-   * driver. Feed-forward, no lookahead: instant attack (clamp this frame to the
-   * ceiling) + smooth release. OFF by default so the deterministic native tests
-   * see the raw mix; the app enables it. ceiling is float bits in (0,1]. */
+   * driver. Feed-forward, no lookahead: a ~50 ms peak hold, ~2 ms smoothed
+   * attack with a brickwall clamp at the ceiling, ~50 ms release (#725;
+   * master_bus_frame). OFF by
+   * default so the deterministic native tests see the raw mix; the app
+   * enables it. ceiling is float bits in (0,1]. */
   _Atomic int32_t a_limiter_enabled;
   _Atomic uint32_t a_limiter_ceiling_bits;
   float lim_gain; /* audio-thread-local smoothed gain reduction (1 = no cut) */
+  /* The limiter's peak hold (#725), audio-thread-local: the lowest target gain
+   * seen in the current hold window and in the previous one, and the frames
+   * counted into the current window. The gain follows the lower of the two,
+   * so it holds through the troughs between a waveform's peaks instead of
+   * releasing there. All three rest at 1 / 1 / 0. */
+  float lim_hold_cur;
+  float lim_hold_prev;
+  int32_t lim_hold_count;
 
   /* Overdub feedback: the existing loop content at the write head is scaled by
    * this before the new input is layered in, so stacked overdubs can't grow
@@ -2810,6 +2833,33 @@ struct le_engine {
    * le_dub_write_index to fault a punch-in's shadow in (le_prefault_shadow). */
   _Atomic int32_t a_clock_at[LE_MAX_TRACKS];
   _Atomic int32_t a_clock_seg[LE_MAX_TRACKS];
+  /* Audibility fades (#1400), audio-thread-owned (mix_tracks_frame). Each
+   * gain moves one od_step per frame toward its gate (le_gate_step,
+   * engine_fade.h), so a mute, an unmute, a solo, a Stop or a Play never
+   * steps the output. At the end of the struct so no field the mixer already
+   * reads moves (the arm64 64-lane mixer gate).
+   *   - lane_mute_gain: toward 1 while the lane is unmuted.
+   *   - trk_solo_gain: toward 1 while no other track's solo silences it.
+   *   - trk_play_gain: the playing read's gain, toward 1 while the track
+   *     plays (PLAYING or OVERDUBBING) and 0 when it stops.
+   *   - trk_tail_gain: a Stop hands the playing read's gain to the tail,
+   *     which reads on from where the track stopped (trk_tail_index) and
+   *     fades to 0. A Play during that fade fades the new read in over it,
+   *     so the two cross rather than jump.
+   *   - trk_head_index: the index the playing read read on its last frame.
+   *   - trk_gate_stale: the mixer skipped the track as idle, so its lane and
+   *     solo gains did not move; they are set to their gates on the next
+   *     frame it is mixed. 1 at create. */
+  float lane_mute_gain[LE_MAX_TRACKS][LE_MAX_LANES];
+  float trk_solo_gain[LE_MAX_TRACKS];
+  float trk_play_gain[LE_MAX_TRACKS];
+  float trk_tail_gain[LE_MAX_TRACKS];
+  double trk_head_index[LE_MAX_TRACKS];
+  double trk_tail_index[LE_MAX_TRACKS];
+  uint8_t trk_gate_stale[LE_MAX_TRACKS];
+  /* The lane count each track was mixed with last frame: a lane added since
+   * starts at its gate. */
+  uint8_t trk_lane_n[LE_MAX_TRACKS];
 
   /* Per-buffer FX snapshot scratch, audio-thread-owned (slice 3f).
    *
