@@ -1593,6 +1593,11 @@ static double le_fx_desc_value(const le_fx_param_desc* d, float v) {
     const double lo = 1.0 / (double)d->at_min;
     return 1.0 / (lo + (1.0 / (double)d->at_max - lo) * v);
   }
+  if (d->curve == LE_FX_CURVE_REVERB_TIME) {
+    const double t =
+        v >= 1.0f ? (double)d->at_max : ((double)v + d->at_min) / (1.0 - v);
+    return t < (double)d->at_max ? t : (double)d->at_max;
+  }
   return (double)d->at_min + ((double)d->at_max - (double)d->at_min) * v;
 }
 
@@ -3323,6 +3328,455 @@ static void fx_spring_kprocess(void* ks, float* l, float* r) {
   *r = dry * x1 + wet * u;
 }
 
+/* ---- Dub-Verb and Amb-Verb (LE_FX_DUB_VERB, LE_FX_AMB_VERB, #1430) ----
+ *
+ * Fit to the Phase 0 captures of the Dub Rack's two reverbs (#891,
+ * docs/plan/2026-10-23-looperx-dub-reverbs-measured.md): impulse responses
+ * at every Dec from 0 to 0.9 and Vol from 0 to 1. One structure serves both,
+ * from a definition per kind (le_verb_def):
+ * - the mono input, a pre-delay per side and a two-stage all-pass diffuser
+ *   per side, heard directly (the early part, the same at every Dec, as
+ *   measured) and fed into
+ * - an eight-line feedback delay network (Householder mixing), each line
+ *   with a first-order low shelf, a first-order high shelf and a gain
+ *   designed so it decays at the measured T30 at 125 Hz, mid (500 Hz - 1 kHz)
+ *   and 8 kHz for the Dec setting (le_verb_t, the capture's table, extended
+ *   above Dec 0.9 by the doc's power law);
+ * - an output equalizer for the wet spectrum, and the Amb-Verb's two strong
+ *   early taps (32.79 ms left, 40.48 ms right) and the Dub-Verb's small
+ *   negative tail right after the dry;
+ * - the Vol law: a dry gain that falls (to 0.66, 0.71) and a wet gain, both
+ *   interpolated from the captures.
+ * Measured against the captures at Dec 0.1, 0.5 and 0.8 (Dub) and 0.2, 0.5
+ * and 0.8 (Amb): wet energy within 0.4 dB, the first 90 ms within 0.2 dB,
+ * the octave-band T30 from 125 Hz to 8 kHz within 14 % (most within 6 %),
+ * the octave-band spectrum within 1 dB, the first arrivals to a sample,
+ * left and right uncorrelated (test_dub_verbs_match_the_captures).
+ * A known difference: the echo density builds faster than the Dub-Verb's
+ * (0.6 against 0.4 at 100 ms) and slower than the Amb-Verb's (0.4 against
+ * 0.9 at 200 ms). The long lines live in the slot's two
+ * one-second rings (fx_verb_prepare); the block holds the filters and
+ * write positions. */
+#define LE_VB_LINES 8
+#define LE_VB_APS 2
+#define LE_VB_TN 10
+#define LE_VB_WN 7
+
+typedef struct {
+  double pd_ms[2];
+  double ap_ms[2][LE_VB_APS];
+  float ap_g;
+  float early_g;
+  float late_g;
+  double tap_ms[2]; /* the Amb-Verb's strong early taps; 0 for none */
+  float tap_g[2];
+  double line_ms[LE_VB_LINES];
+  signed char cin[LE_VB_LINES]; /* injection signs (even lines take left) */
+  signed char cl[LE_VB_LINES];  /* output signs, over sqrt(8) */
+  signed char cr[LE_VB_LINES];
+  double lo_hz; /* the lines' shelf corners */
+  double hi_hz;
+  double shelf_hz; /* the output's first-order high shelf */
+  double shelf_k;
+  double peak_hz; /* the output's peaking cut; 0 dB for none */
+  double peak_db;
+  double peak_q;
+  float tail_g; /* the immediate tail, tail_g * tail_p^k at lag k >= 1 */
+  float tail_p;
+  int tn; /* the decay table: T30 (s) at 125 Hz, mid and 8 kHz against Dec */
+  double tv[LE_VB_TN];
+  double tlo[LE_VB_TN];
+  double tmid[LE_VB_TN];
+  double thi[LE_VB_TN];
+  double law_exp;  /* mid above the table: (display ratio)^law_exp */
+  int hi_by_rate;  /* above the table, 8 kHz keeps its excess decay rate */
+  double dry[LE_VB_WN]; /* the dry gain at LE_VB_WV */
+} le_verb_def;
+
+/* The Vol points the dry and wet laws are tabulated at, and the wet law
+ * (the same for both reverbs, measured to 0.01). */
+static const double LE_VB_WV[LE_VB_WN] = {0.0, 0.1, 0.3, 0.5, 0.7, 0.85, 1.0};
+static const double LE_VB_WET[LE_VB_WN] = {0.0,   0.124, 0.346, 0.552,
+                                            0.753, 0.895, 1.0};
+
+static const le_verb_def LE_DUB_VERB_DEF = {
+    .pd_ms = {10.19, 10.65},
+    .ap_ms = {{7.13, 11.31}, {6.71, 12.07}},
+    .ap_g = 0.5f,
+    .early_g = 0.40f,
+    .late_g = 0.18f,
+    .line_ms = {31.3, 33.9, 36.7, 38.9, 41.3, 44.6, 47.3, 51.1},
+    .cin = {-1, -1, -1, -1, 1, -1, -1, -1},
+    .cl = {1, -1, -1, -1, -1, 1, 1, 1},
+    .cr = {1, 1, -1, 1, 1, 1, -1, 1},
+    .lo_hz = 200.0,
+    .hi_hz = 4000.0,
+    .shelf_hz = 5000.0,
+    .shelf_k = 0.35,
+    .tail_g = -0.162f,
+    .tail_p = 0.415f,
+    .tn = 10,
+    .tv = {0.0, 0.02, 0.05, 0.1, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9},
+    .tlo = {0.413, 0.533, 0.711, 0.834, 1.555, 2.653, 3.403, 4.772, 7.534,
+            14.361},
+    .tmid = {0.356, 0.491, 0.679, 0.832, 1.556, 2.635, 3.370, 4.745, 7.408,
+             14.132},
+    .thi = {0.386, 0.451, 0.638, 0.786, 1.318, 2.036, 2.526, 3.114, 3.967,
+            5.564},
+    .law_exp = 0.845,
+    .hi_by_rate = 1,
+    .dry = {1.0, 1.0, 0.9742, 0.8959, 0.8324, 0.7588, 0.6616},
+};
+
+static const le_verb_def LE_AMB_VERB_DEF = {
+    .pd_ms = {24.58, 24.58},
+    .ap_ms = {{1.73, 3.11}, {2.41, 4.07}},
+    .ap_g = 0.5f,
+    .early_g = 0.35f,
+    .late_g = 0.20f,
+    .tap_ms = {32.79, 40.48},
+    .tap_g = {0.30f, 0.33f},
+    .line_ms = {52.1, 59.7, 63.4, 68.5, 71.0, 76.1, 78.5, 94.1},
+    .cin = {1, -1, -1, -1, 1, -1, -1, -1},
+    .cl = {1, 1, -1, 1, -1, 1, 1, -1},
+    .cr = {1, -1, -1, -1, 1, 1, -1, -1},
+    .lo_hz = 150.0,
+    .hi_hz = 6000.0,
+    .shelf_hz = 8000.0,
+    .shelf_k = 0.85,
+    .peak_hz = 320.0,
+    .peak_db = -2.5,
+    .peak_q = 0.9,
+    .tn = 8,
+    .tv = {0.0, 0.1, 0.2, 0.3, 0.5, 0.6, 0.8, 0.9},
+    .tlo = {0.351, 0.386, 0.445, 0.533, 0.747, 0.830, 1.166, 1.379},
+    .tmid = {0.429, 0.509, 0.613, 0.769, 1.206, 1.586, 3.232, 5.834},
+    .thi = {0.440, 0.529, 0.641, 0.818, 1.304, 1.744, 3.805, 7.603},
+    .law_exp = 0.811,
+    .hi_by_rate = 0,
+    .dry = {1.0, 0.9962, 0.9702, 0.9204, 0.8492, 0.7777, 0.7062},
+};
+
+static const le_fx_param_desc LE_FX_DUB_VERB_PARAMS[] = {
+    {"decay", LE_FX_UNIT_SECONDS, 0, 0.45f, 144.0f, LE_FX_CURVE_REVERB_TIME,
+     0.7f, 0},
+    {"volume", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.2f,
+     0},
+};
+static const le_fx_param_desc LE_FX_AMB_VERB_PARAMS[] = {
+    {"decay", LE_FX_UNIT_SECONDS, 0, 0.45f, 144.0f, LE_FX_CURVE_REVERB_TIME,
+     0.2f, 0},
+    {"volume", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.4f,
+     0},
+    /* The Dub Rack's Amb-Dub Mix: read by the chain's parallel paths, not
+     * by this kernel. */
+    {"amb_dub_mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR,
+     0.4f, 0},
+};
+#define LE_VB_PARAMS_N 3
+
+typedef struct le_fx_verb {
+  le_fx_dyn_head h;
+  float last[LE_VB_PARAMS_N];
+  le_fx_glide dry;
+  le_fx_glide wet;
+  const le_verb_def* def;
+  int ok; /* the geometry fits the rings at this rate */
+  uint32_t need[2]; /* the samples each ring must hold */
+  uint32_t hist_n;
+  uint32_t pd[2];
+  uint32_t tap[2];
+  uint32_t ap_n[2][LE_VB_APS];
+  uint32_t ap_off[2][LE_VB_APS];
+  uint32_t line_n[LE_VB_LINES];
+  uint32_t line_off[LE_VB_LINES]; /* lines 0-3 in ring 0, 4-7 in ring 1 */
+  uint32_t hist_w;
+  uint32_t ap_w[2][LE_VB_APS];
+  uint32_t line_w[LE_VB_LINES];
+  float gm[LE_VB_LINES];
+  float lo[LE_VB_LINES][3]; /* first-order: b0, b1, a1 */
+  float hi[LE_VB_LINES][3];
+  float lo_z[LE_VB_LINES][2]; /* x1, y1 */
+  float hi_z[LE_VB_LINES][2];
+  float shelf[3];
+  float shelf_z[2][2];
+  float peak[5];
+  float peak_z[2][2];
+  float tail_z;
+} le_fx_verb;
+
+/* A first-order shelf (bilinear): gain [k] at DC (low) or Nyquist (high),
+ * unity at the other end, corner [hz]. */
+static void le_vb_shelf(double hz, double k, int sr, int high, float c[3]) {
+  const double t = tan(LE_PI * hz / (double)sr);
+  if (high) {
+    c[0] = (float)((k + t) / (1.0 + t));
+    c[1] = (float)((t - k) / (1.0 + t));
+  } else {
+    c[0] = (float)((1.0 + k * t) / (1.0 + t));
+    c[1] = (float)((k * t - 1.0) / (1.0 + t));
+  }
+  c[2] = (float)((t - 1.0) / (1.0 + t));
+}
+
+static double le_vb_mag(const float c[3], double hz, int sr) {
+  const double w = 2.0 * LE_PI * hz / (double)sr;
+  const double nr = c[0] + c[1] * cos(w), ni = -c[1] * sin(w);
+  const double dr = 1.0 + c[2] * cos(w), di = -c[2] * sin(w);
+  return sqrt((nr * nr + ni * ni) / (dr * dr + di * di));
+}
+
+/* The table's value at Vol [v] (linear between the points). */
+static double le_vb_interp(const double* y, double v) {
+  if (v <= 0.0) return y[0];
+  for (int i = 1; i < LE_VB_WN; ++i) {
+    if (v <= LE_VB_WV[i]) {
+      const double t = (v - LE_VB_WV[i - 1]) / (LE_VB_WV[i] - LE_VB_WV[i - 1]);
+      return y[i - 1] + (y[i] - y[i - 1]) * t;
+    }
+  }
+  return y[LE_VB_WN - 1];
+}
+
+/* The reverb time display at Dec [v] (s), as the descriptor shows it. */
+static double le_vb_display(double v) {
+  return le_fx_desc_value(&LE_FX_DUB_VERB_PARAMS[0], (float)v);
+}
+
+/* T30 at 125 Hz, mid and 8 kHz for Dec [v]: the table, log-linear between
+ * its points, and above its last point the doc's power law on the display
+ * for mid, the low band at its last ratio, and 8 kHz at its last excess
+ * decay rate (Dub) or ratio (Amb). */
+static void le_vb_t(const le_verb_def* d, double v, double t[3]) {
+  const int n = d->tn;
+  if (v <= d->tv[0]) {
+    t[0] = d->tlo[0];
+    t[1] = d->tmid[0];
+    t[2] = d->thi[0];
+    return;
+  }
+  for (int i = 1; i < n; ++i) {
+    if (v <= d->tv[i]) {
+      const double f = (v - d->tv[i - 1]) / (d->tv[i] - d->tv[i - 1]);
+      t[0] = d->tlo[i - 1] * pow(d->tlo[i] / d->tlo[i - 1], f);
+      t[1] = d->tmid[i - 1] * pow(d->tmid[i] / d->tmid[i - 1], f);
+      t[2] = d->thi[i - 1] * pow(d->thi[i] / d->thi[i - 1], f);
+      return;
+    }
+  }
+  const double vl = d->tv[n - 1];
+  const double mid =
+      d->tmid[n - 1] * pow(le_vb_display(v) / le_vb_display(vl), d->law_exp);
+  t[1] = mid;
+  t[0] = mid * d->tlo[n - 1] / d->tmid[n - 1];
+  t[2] = d->hi_by_rate
+             ? 1.0 / (1.0 / mid + 1.0 / d->thi[n - 1] - 1.0 / d->tmid[n - 1])
+             : mid * d->thi[n - 1] / d->tmid[n - 1];
+}
+
+/* Line [i]'s shelves and gain for the decay times [t] (s). The shelves'
+ * gains are corrected four times for their leakage at the other anchors. */
+static void le_vb_design_line(le_fx_verb* q, int i, const double t[3],
+                              int sr) {
+  const le_verb_def* d = q->def;
+  const double len = (double)q->line_n[i];
+  const double glo = pow(10.0, -3.0 * len / (t[0] * sr));
+  const double gmid = pow(10.0, -3.0 * len / (t[1] * sr));
+  const double ghi = pow(10.0, -3.0 * len / (t[2] * sr));
+  double klo = glo / gmid;
+  double khi = ghi / gmid;
+  for (int it = 0; it < 4; ++it) {
+    le_vb_shelf(d->lo_hz, klo, sr, 0, q->lo[i]);
+    le_vb_shelf(d->hi_hz, khi, sr, 1, q->hi[i]);
+    const double gm =
+        gmid / (le_vb_mag(q->lo[i], 1000.0, sr) * le_vb_mag(q->hi[i], 1000.0, sr));
+    klo *= glo / (gm * le_vb_mag(q->lo[i], 125.0, sr) *
+                  le_vb_mag(q->hi[i], 125.0, sr));
+    khi *= ghi / (gm * le_vb_mag(q->lo[i], 8000.0, sr) *
+                  le_vb_mag(q->hi[i], 8000.0, sr));
+  }
+  le_vb_shelf(d->lo_hz, klo, sr, 0, q->lo[i]);
+  le_vb_shelf(d->hi_hz, khi, sr, 1, q->hi[i]);
+  q->gm[i] = (float)(gmid / (le_vb_mag(q->lo[i], 1000.0, sr) *
+                             le_vb_mag(q->hi[i], 1000.0, sr)));
+}
+
+static uint32_t le_vb_len(double ms, int sr) {
+  const double n = ms * (double)sr / 1000.0 + 0.5;
+  return n < 1.0 ? 1u : (uint32_t)n;
+}
+
+/* The geometry at [sr]: every length, and where each stage sits in its
+ * ring. */
+static void le_vb_geometry(le_fx_verb* q, int sr) {
+  const le_verb_def* d = q->def;
+  q->pd[0] = le_vb_len(d->pd_ms[0], sr);
+  q->pd[1] = le_vb_len(d->pd_ms[1], sr);
+  q->tap[0] = d->tap_ms[0] > 0.0 ? le_vb_len(d->tap_ms[0], sr) : 0u;
+  q->tap[1] = d->tap_ms[1] > 0.0 ? le_vb_len(d->tap_ms[1], sr) : 0u;
+  uint32_t reach = q->pd[0] > q->pd[1] ? q->pd[0] : q->pd[1];
+  if (q->tap[0] > reach) reach = q->tap[0];
+  if (q->tap[1] > reach) reach = q->tap[1];
+  q->hist_n = reach + 2u;
+  uint32_t at[2] = {q->hist_n, 0u};
+  for (int c = 0; c < 2; ++c) {
+    for (int k = 0; k < LE_VB_APS; ++k) {
+      q->ap_n[c][k] = le_vb_len(d->ap_ms[c][k], sr);
+      q->ap_off[c][k] = at[c];
+      at[c] += q->ap_n[c][k];
+    }
+  }
+  for (int i = 0; i < LE_VB_LINES; ++i) {
+    const int c = i < LE_VB_LINES / 2 ? 0 : 1;
+    q->line_n[i] = le_vb_len(d->line_ms[i], sr);
+    q->line_off[i] = at[c];
+    at[c] += q->line_n[i];
+  }
+  q->need[0] = at[0];
+  q->need[1] = at[1];
+}
+
+static void fx_verb_update(void* ks, const float* p, int sr, int settle,
+                           const le_verb_def* def) {
+  le_fx_verb* q = (le_fx_verb*)ks;
+  q->def = def;
+  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_VB_PARAMS_N, sr, settle);
+  if (!f) return;
+  const int rate = sr > 0 ? sr : 48000;
+  if (f & LE_FX_DYN_NEW_RATE) {
+    /* A new rate makes the rings another rate's: the positions start over
+     * (the rings were cleared with the block, or are cleared by the
+     * re-enable that follows a rate change). */
+    memset(q->lo_z, 0, sizeof(q->lo_z));
+    memset(q->hi_z, 0, sizeof(q->hi_z));
+    memset(q->shelf_z, 0, sizeof(q->shelf_z));
+    memset(q->peak_z, 0, sizeof(q->peak_z));
+    memset(q->ap_w, 0, sizeof(q->ap_w));
+    memset(q->line_w, 0, sizeof(q->line_w));
+    q->hist_w = 0;
+    q->tail_z = 0.0f;
+    le_vb_geometry(q, rate);
+    /* The rings are one second each (le_fx_prepare's cap is the rate). */
+    q->ok = q->need[0] <= (uint32_t)rate && q->need[1] <= (uint32_t)rate;
+    le_vb_shelf(def->shelf_hz, def->shelf_k, rate, 1, q->shelf);
+    if (def->peak_db != 0.0) {
+      double c[5];
+      le_eq_design(LE_EQ_LOMID, def->peak_hz, def->peak_db, def->peak_q, rate,
+                   c);
+      for (int i = 0; i < 5; ++i) q->peak[i] = (float)c[i];
+    }
+  }
+  if (f & (LE_FX_DYN_CHANGED | LE_FX_DYN_NEW_RATE)) {
+    double t[3];
+    le_vb_t(def, p[0] < 0.0f ? 0.0 : p[0] > 1.0f ? 1.0 : (double)p[0], t);
+    for (int i = 0; i < LE_VB_LINES; ++i) le_vb_design_line(q, i, t, rate);
+  }
+  const double vol = p[1] < 0.0f ? 0.0 : p[1] > 1.0f ? 1.0 : (double)p[1];
+  const float k = settle ? 1.0f : q->h.k;
+  int moving = le_fx_glide_step(&q->dry, (float)le_vb_interp(def->dry, vol), k);
+  moving |= le_fx_glide_step(&q->wet, (float)le_vb_interp(LE_VB_WET, vol), k);
+  q->h.moving = moving;
+}
+
+static void fx_dub_verb_update(void* ks, const float* p, int sr, int settle) {
+  fx_verb_update(ks, p, sr, settle, &LE_DUB_VERB_DEF);
+}
+static void fx_amb_verb_update(void* ks, const float* p, int sr, int settle) {
+  fx_verb_update(ks, p, sr, settle, &LE_AMB_VERB_DEF);
+}
+
+static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
+                              float* r) {
+  le_fx_verb* q = (le_fx_verb*)ks;
+  const float dry = le_fx_glide_next(&q->dry);
+  const float wet = le_fx_glide_next(&q->wet);
+  const float x0 = fx_sanitize(*l);
+  const float x1 = fx_sanitize(*r);
+  const le_verb_def* d = q->def;
+  if (d == NULL || !q->ok || (uint32_t)cap < q->need[0] ||
+      (uint32_t)cap < q->need[1]) {
+    *l = dry * x0;
+    *r = dry * x1;
+    return;
+  }
+  float* ring[2] = {r0, r1};
+  const float m = 0.5f * (x0 + x1);
+  /* The input history: the pre-delays and the strong taps read it. */
+  float* hist = r0;
+  hist[q->hist_w] = m;
+  float e[2];
+  float tap[2] = {0.0f, 0.0f};
+  for (int c = 0; c < 2; ++c) {
+    uint32_t at = q->hist_w + q->hist_n - q->pd[c];
+    if (at >= q->hist_n) at -= q->hist_n;
+    float u = hist[at];
+    if (q->tap[c] != 0u) {
+      uint32_t ta = q->hist_w + q->hist_n - q->tap[c];
+      if (ta >= q->hist_n) ta -= q->hist_n;
+      tap[c] = d->tap_g[c] * hist[ta];
+    }
+    for (int k = 0; k < LE_VB_APS; ++k) {
+      float* b = ring[c] + q->ap_off[c][k];
+      const uint32_t w = q->ap_w[c][k];
+      const float dl = b[w];
+      const float v = u + d->ap_g * dl;
+      u = dl - d->ap_g * v;
+      b[w] = fx_sanitize(v);
+      q->ap_w[c][k] = w + 1u >= q->ap_n[c][k] ? 0u : w + 1u;
+    }
+    e[c] = u;
+  }
+  if (++q->hist_w >= q->hist_n) q->hist_w = 0;
+  /* The network: each line's output was written line_n samples ago. */
+  float o[LE_VB_LINES];
+  float sum = 0.0f;
+  float ol = 0.0f;
+  float orr = 0.0f;
+  for (int i = 0; i < LE_VB_LINES; ++i) {
+    const int c = i < LE_VB_LINES / 2 ? 0 : 1;
+    o[i] = ring[c][q->line_off[i] + q->line_w[i]];
+    sum += o[i];
+    ol += (float)d->cl[i] * o[i];
+    orr += (float)d->cr[i] * o[i];
+  }
+  const float house = 2.0f / (float)LE_VB_LINES * sum;
+  for (int i = 0; i < LE_VB_LINES; ++i) {
+    const int c = i < LE_VB_LINES / 2 ? 0 : 1;
+    const float s = o[i] - house;
+    const float y = q->lo[i][0] * s + q->lo[i][1] * q->lo_z[i][0] -
+                    q->lo[i][2] * q->lo_z[i][1];
+    q->lo_z[i][0] = s;
+    q->lo_z[i][1] = y;
+    const float y2 = q->hi[i][0] * y + q->hi[i][1] * q->hi_z[i][0] -
+                     q->hi[i][2] * q->hi_z[i][1];
+    q->hi_z[i][0] = y;
+    q->hi_z[i][1] = y2;
+    const float inj = (i & 1) == 0 ? e[0] : e[1];
+    ring[c][q->line_off[i] + q->line_w[i]] =
+        fx_sanitize(q->gm[i] * y2 + (float)d->cin[i] * d->late_g * inj);
+    q->line_w[i] = q->line_w[i] + 1u >= q->line_n[i] ? 0u : q->line_w[i] + 1u;
+  }
+  const float inv = 0.35355339f; /* 1 / sqrt(8) */
+  float w[2] = {inv * ol + d->early_g * e[0] + tap[0],
+                inv * orr + d->early_g * e[1] + tap[1]};
+  for (int c = 0; c < 2; ++c) {
+    if (d->peak_db != 0.0) w[c] = le_biquad_tick(q->peak, q->peak_z[c], w[c]);
+    const float y = q->shelf[0] * w[c] + q->shelf[1] * q->shelf_z[c][0] -
+                    q->shelf[2] * q->shelf_z[c][1];
+    q->shelf_z[c][0] = w[c];
+    q->shelf_z[c][1] = y;
+    w[c] = y;
+  }
+  if (d->tail_g != 0.0f) {
+    q->tail_z = fx_sanitize(d->tail_p * q->tail_z + m);
+    const float t = d->tail_g * (q->tail_z - m);
+    w[0] += t;
+    w[1] += t;
+  }
+  *l = dry * x0 + wet * w[0];
+  *r = dry * x1 + wet * w[1];
+}
+
 /* A type's rows are the parameters an entry holds, so none may outgrow it. */
 #define LE_FX_ROWS_FIT(t)                                  \
   _Static_assert(sizeof(t) / sizeof(t[0]) <= LE_FX_PARAMS, \
@@ -3347,6 +3801,8 @@ LE_FX_ROWS_FIT(LE_FX_VINYL_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_DEGRADE_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_LPF_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_SPRING_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_DUB_VERB_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_AMB_VERB_PARAMS);
 
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
  * published for this chain entry (NULL / not-ready => dry passthrough; the slot
@@ -3388,6 +3844,11 @@ typedef struct le_fx_vtable {
   size_t state_size;
   void (*update)(void* ks, const float* p, int sr, int settle);
   void (*kprocess)(void* ks, float* l, float* r);
+  /* A heap-state kind whose long lines live in the slot's two rings, which
+   * its `prepare` allocates (the reverbs): run instead of `kprocess`, with
+   * both rings and their length. */
+  void (*rkprocess)(void* ks, float* r0, float* r1, int cap, float* l,
+                    float* r);
 } le_fx_vtable;
 
 /* Bypass drains the tail instead of crossfading out: a linear kind that
@@ -3456,6 +3917,16 @@ static const le_fx_vtable LE_FX[] = {
     [LE_FX_SPRING] = {NULL, NULL, NULL, LE_FX_SPRING_PARAMS, LE_FX_F_DRAINS,
                       sizeof(le_fx_spring), fx_spring_update,
                       fx_spring_kprocess},
+    /* The reverbs keep their filters in the block and their lines in the
+     * slot's rings, and drain their tails on bypass. */
+    [LE_FX_DUB_VERB] = {NULL, NULL, fx_stereo_ring_prepare,
+                        LE_FX_DUB_VERB_PARAMS, LE_FX_F_DRAINS,
+                        sizeof(le_fx_verb), fx_dub_verb_update, NULL,
+                        fx_verb_rkprocess},
+    [LE_FX_AMB_VERB] = {NULL, NULL, fx_stereo_ring_prepare,
+                        LE_FX_AMB_VERB_PARAMS, LE_FX_F_DRAINS,
+                        sizeof(le_fx_verb), fx_amb_verb_update, NULL,
+                        fx_verb_rkprocess},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -3478,7 +3949,9 @@ _Static_assert(LE_COMP_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_COMPRESSOR_PARAMS) &&
                    LE_VIN_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_VINYL_PARAMS) &&
                    LE_DEG_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_DEGRADE_PARAMS) &&
                    LE_LPF_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_LPF_PARAMS) &&
-                   LE_SPR_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_SPRING_PARAMS),
+                   LE_SPR_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_SPRING_PARAMS) &&
+                   LE_VB_PARAMS_N >= LE_FX_ROW_COUNT(LE_FX_DUB_VERB_PARAMS) &&
+                   LE_VB_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_AMB_VERB_PARAMS),
                "each Looper X kind's `last` holds every setting");
 _Static_assert(LE_FX_WIDTHS == sizeof(LE_FX) / sizeof(LE_FX[0]),
                "LE_FX_WIDTHS must be one past the last le_fx_type code");
@@ -3503,6 +3976,8 @@ const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
     [LE_FX_DEGRADE] = LE_FX_ROW_COUNT(LE_FX_DEGRADE_PARAMS),
     [LE_FX_LPF] = LE_FX_ROW_COUNT(LE_FX_LPF_PARAMS),
     [LE_FX_SPRING] = LE_FX_ROW_COUNT(LE_FX_SPRING_PARAMS),
+    [LE_FX_DUB_VERB] = LE_FX_ROW_COUNT(LE_FX_DUB_VERB_PARAMS),
+    [LE_FX_AMB_VERB] = LE_FX_ROW_COUNT(LE_FX_AMB_VERB_PARAMS),
 };
 
 /* ---- per-kind state (le_fx_kinds, engine_private.h) ---- */
@@ -3631,7 +4106,14 @@ static inline void fx_run(le_fx_state* fx, int s, int32_t ty, int sr, int cap,
                           float* l, float* r, const float* p) {
   if (LE_FX[ty].state_size) {
     void* st = fx_kind_state(fx, s, ty, sr, p);
-    if (st != NULL) LE_FX[ty].kprocess(st, l, r);
+    if (st == NULL) return;
+    if (LE_FX[ty].rkprocess != NULL) {
+      float* r0 = fx->delay[s][0];
+      float* r1 = fx->delay[s][1];
+      if (r0 != NULL && r1 != NULL) LE_FX[ty].rkprocess(st, r0, r1, cap, l, r);
+      return;
+    }
+    LE_FX[ty].kprocess(st, l, r);
     return;
   }
   LE_FX[ty].process(fx, s, sr, cap, l, r, p);
@@ -3883,7 +4365,7 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
     }
     const int32_t ty = types[s];
     if (ty > LE_FX_NONE && ty < LE_FX_TYPE_COUNT &&
-        (LE_FX[ty].process || LE_FX[ty].kprocess)) {
+        (LE_FX[ty].process || LE_FX[ty].kprocess || LE_FX[ty].rkprocess)) {
       /* Plugin installation can replace a draining built-in without a ring
        * command. Its obsolete tail state belongs to this callback, never
        * to the concurrent installer. Plugins use crossfade, not drain. */
@@ -3908,7 +4390,7 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
           if (needs_clear && fx->enable_clear_cooldown > 0) goto slot_done;
           le_fx_entry_reset(fx, s);
           if (needs_clear) {
-            if (LE_FX[ty].state_size == 0) le_fx_entry_clear_rings(fx, s, cap);
+            if (LE_FX[ty].prepare != NULL) le_fx_entry_clear_rings(fx, s, cap);
             fx->enable_clear_cooldown = LE_FX_ENABLE_CLEAR_SPACING;
           }
           fx->enable_warmup[s] = le_fx_added_latency(fx, s, ty);
@@ -4053,7 +4535,12 @@ int le_fx_added_latency(const le_fx_state* fx, int slot, int32_t type) {
 
 int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap) {
   if (type <= LE_FX_NONE || type >= LE_FX_TYPE_COUNT) return LE_OK;
-  if (LE_FX[type].state_size) return le_fx_kind_prepare(fx, slot, type);
+  if (LE_FX[type].state_size) {
+    const int32_t rc = le_fx_kind_prepare(fx, slot, type);
+    /* A kind with rings too (the reverbs) allocates them as the delay does. */
+    if (rc != LE_OK || LE_FX[type].prepare == NULL) return rc;
+    return LE_FX[type].prepare(fx, slot, cap);
+  }
   if (LE_FX[type].prepare == NULL) return LE_OK; /* needs no heap */
   return LE_FX[type].prepare(fx, slot, cap);
 }
