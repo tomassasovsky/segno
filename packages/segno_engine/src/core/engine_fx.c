@@ -295,6 +295,7 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   if (o->out != NULL) memset(o->out, 0, sizeof(float) * LE_PV_OUT);
   o->analysed = 0;
   o->ps_phase = 0;
+  o->ps_credit = 0;
   o->frame_ratio = 1.0f;
   o->frame_formants_move = 0;
   if (o->last_phase != NULL) memset(o->last_phase, 0, sizeof(float) * LE_PV_BINS);
@@ -635,6 +636,48 @@ int le_yin_finish(const le_yin_pass* p, float* out_period, float* out_voiced) {
   return conf > 0.5f ? 1 : 0;
 }
 
+int le_refine_begin(le_lag_refine* r, float coarse, int span, int n) {
+  if (span < 1 || span > LE_REFINE_SPAN_MAX) return 0;
+  const int lo = (int)coarse - span;
+  const int hi = (int)coarse + span + 1;
+  if (lo < 2 || hi >= n / 2) return 0;
+  r->lo = lo;
+  r->hi = hi;
+  r->integ = n - hi;
+  r->tau = lo;
+  r->best = 0;
+  return 1;
+}
+
+int le_refine_step(le_lag_refine* r, const float* x, long budget) {
+  while (r->tau <= r->hi) {
+    const int tau = r->tau;
+    double sum = 0.0;
+    for (int i = 0; i < r->integ; ++i) {
+      const float df = x[i] - x[i + tau];
+      sum += (double)df * (double)df;
+    }
+    const int k = tau - r->lo;
+    r->d[k] = (float)sum;
+    if (tau == r->lo || r->d[k] < r->d[r->best]) r->best = k;
+    ++r->tau;
+    budget -= r->integ;
+    if (budget <= 0) break;
+  }
+  return r->tau > r->hi;
+}
+
+float le_refine_finish(const le_lag_refine* r, float coarse) {
+  if (r->best == 0 || r->best == r->hi - r->lo) return coarse;
+  const float s0 = r->d[r->best - 1];
+  const float s1 = r->d[r->best];
+  const float s2 = r->d[r->best + 1];
+  const float denom = s0 + s2 - 2.0f * s1;
+  float refined = (float)(r->lo + r->best);
+  if (fabsf(denom) > 1e-9f) refined += 0.5f * (s0 - s2) / denom;
+  return refined;
+}
+
 int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
                          float* out_period, float* out_voiced) {
   *out_period = 0.0f;
@@ -658,21 +701,27 @@ int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
  * of a 64-frame period at 96 kHz. The pass now runs on a decimated window
  * (a boxcar of D samples is the decimator and its own anti-alias filter, as
  * the tuner's), so it searches 60 Hz at every rate for about a quarter of the
- * work, then refines at the device rate over a narrow band around the coarse
- * lag, and both steps are spread over the hop, LE_PSOLA_WORK_PER_TICK
- * iterations a tick. Its windows are frozen into the scratch when the pass
- * starts, so the moving ring cannot change them under it. The result lands
+ * work, then refines at the device rate around the coarse lag (le_refine_*),
+ * and both are spread over the hop: each tick adds LE_PSOLA_WORK_PER_TICK to
+ * a credit the pass spends, and a lag that overshoots it leaves a debt the
+ * next ticks pay, so the pass averages exactly that much a tick. The
+ * decimated window is frozen into the scratch when the pass starts, and the
+ * device-rate one when the refinement starts (the 1 s ring still holds it),
+ * so the moving ring cannot change either under the pass. The result lands
  * within the hop it was started in, a hop at most after the one-shot pass's
  * would have: the period and the voicing it feeds are smoothed over several
  * hops anyway. */
 #define LE_PS_WIN(o) ((o)->scratch)
 #define LE_PS_DP(o) ((o)->scratch + LE_PSOLA_DWIN)
 #define LE_PS_RAW(o) ((o)->scratch + LE_PSOLA_DWIN + LE_PSOLA_DWIN / 2 + 1)
+_Static_assert(LE_PSOLA_DMAX <= LE_REFINE_SPAN_MAX,
+               "PSOLA's refinement span fits le_lag_refine");
 
-/* The decimation for a [sr] Hz input: round(sr / LE_PSOLA_RATE), 1 to
- * LE_PSOLA_DMAX. */
+/* The decimation for a [sr] Hz input: ceil(sr / LE_PSOLA_RATE), 1 to
+ * LE_PSOLA_DMAX, so the analysis rate is at most LE_PSOLA_RATE and its
+ * window holds two periods of LE_PSOLA_MIN_HZ (up to 192 kHz). */
 static int le_psola_decim(int sr) {
-  int d = (sr + LE_PSOLA_RATE / 2) / LE_PSOLA_RATE;
+  int d = (sr + LE_PSOLA_RATE - 1) / LE_PSOLA_RATE;
   if (d < 1) d = 1;
   if (d > LE_PSOLA_DMAX) d = LE_PSOLA_DMAX;
   return d;
@@ -683,6 +732,7 @@ static int le_psola_decim(int sr) {
  * pitched one (it holds through gaps). */
 static void le_psola_pass_apply(le_octaver_state* o, float period,
                                 float voiced) {
+  o->ps_phase = 0;
   o->voiced += 0.35f * (voiced - o->voiced); /* chatter-free soft gate */
   if (period > 0.0f) {
     o->period =
@@ -691,15 +741,16 @@ static void le_psola_pass_apply(le_octaver_state* o, float period,
 }
 
 /* Starts a detection over the input ending at FIFO index [end]: freezes the
- * decimated window and the device-rate window into the scratch and opens the
- * coarse pass. Any pass still in flight is dropped. A silent window settles
- * at once as unvoiced. */
+ * decimated window into the scratch and opens the coarse pass, charging the
+ * decimation to the pass's credit. Any pass still in flight is dropped. A
+ * silent window settles at once as unvoiced. */
 static void le_psola_pass_begin(le_octaver_state* o, const float* fifo,
                                 int end, int cap) {
   const int sr = cap; /* the fx ring is 1 s long, so cap == sample rate */
   const int d = le_psola_decim(sr);
   float* win = LE_PS_WIN(o);
-  float* raw = LE_PS_RAW(o);
+  end %= cap;
+  if (end < 0) end += cap;
   int idx = (end - LE_PSOLA_DWIN * d + 1) % cap;
   if (idx < 0) idx += cap;
   const float inv = 1.0f / (float)d;
@@ -711,93 +762,71 @@ static void le_psola_pass_begin(le_octaver_state* o, const float* fifo,
     }
     win[i] = acc * inv;
   }
-  idx = (end - LE_PSOLA_RAW + 1) % cap;
-  if (idx < 0) idx += cap;
-  for (int i = 0; i < LE_PSOLA_RAW; ++i) {
-    raw[i] = fifo[idx];
-    if (++idx == cap) idx = 0;
-  }
   o->ps_decim = d;
+  o->ps_end = end;
+  o->ps_credit -= LE_PSOLA_DWIN * d;
   if (!le_yin_begin(&o->ps_yin, win, LE_PSOLA_DWIN, sr / d, LE_PSOLA_MIN_HZ,
                     LE_PSOLA_MAX_HZ, LE_PS_DP(o), LE_PSOLA_DWIN / 2 + 1)) {
-    o->ps_phase = 0;
     le_psola_pass_apply(o, 0.0f, 0.0f);
     return;
   }
   o->ps_phase = 1;
 }
 
-/* Hands the finished coarse pass to the refinement, or applies it as it is
- * when there is nothing to refine (no decimation, or a period too long for
- * two periods to fit the device-rate window). */
-static void le_psola_coarse_done(le_octaver_state* o) {
+/* Hands the finished coarse pass to the refinement, freezing the device-rate
+ * window it walks, or applies the coarse period as it is when there is
+ * nothing to refine (no decimation, or a period too long for two of it to fit
+ * the device-rate window). */
+static void le_psola_coarse_done(le_octaver_state* o, const float* fifo,
+                                 int cap) {
   float period = 0.0f;
   le_yin_finish(&o->ps_yin, &period, &o->ps_conf);
   if (period <= 0.0f) {
-    o->ps_phase = 0;
     le_psola_pass_apply(o, 0.0f, 0.0f);
     return;
   }
   const int d = o->ps_decim;
   o->ps_coarse = period * (float)d;
-  const int lo = (int)o->ps_coarse - d;
-  const int hi = (int)o->ps_coarse + d + 1;
-  const int integ = LE_PSOLA_RAW - hi;
-  if (d == 1 || lo < 2 || hi >= LE_PSOLA_RAW / 2 || integ < hi) {
-    o->ps_phase = 0;
+  if (d == 1 || !le_refine_begin(&o->ps_ref, o->ps_coarse, d, LE_PSOLA_RAW)) {
     le_psola_pass_apply(o, o->ps_coarse, o->ps_conf);
     return;
   }
-  o->ps_lo = lo;
-  o->ps_hi = hi;
-  o->ps_integ = integ;
-  o->ps_tau = lo;
-  o->ps_best = 0;
+  float* raw = LE_PS_RAW(o);
+  int idx = (o->ps_end - LE_PSOLA_RAW + 1) % cap;
+  if (idx < 0) idx += cap;
+  for (int i = 0; i < LE_PSOLA_RAW; ++i) {
+    raw[i] = fifo[idx];
+    if (++idx == cap) idx = 0;
+  }
+  o->ps_credit -= LE_PSOLA_RAW;
   o->ps_phase = 2;
 }
 
-/* Spends about [budget] difference-function iterations on the pass in
- * flight (a lag is never split), carrying over from the coarse pass into the
+/* One tick of the pass in flight: adds the tick's work to the credit and,
+ * while it is positive, spends it on lags (a lag is never split, so the last
+ * one may overshoot into a debt), carrying from the coarse pass into the
  * refinement, and applies the result once the refinement is in. */
-static void le_psola_pass_slice(le_octaver_state* o, long budget) {
-  while (budget > 0 && o->ps_phase != 0) {
+static void le_psola_pass_tick(le_octaver_state* o, const float* fifo,
+                               int cap) {
+  o->ps_credit += LE_PSOLA_WORK_PER_TICK;
+  if (o->ps_credit > LE_PSOLA_WORK_PER_TICK) {
+    o->ps_credit = LE_PSOLA_WORK_PER_TICK; /* no banking while idle */
+  }
+  while (o->ps_credit > 0 && o->ps_phase != 0) {
     if (o->ps_phase == 1) {
       const int32_t was = o->ps_yin.tau;
-      const int done = le_yin_step(&o->ps_yin, budget);
-      budget -= (long)(o->ps_yin.tau - was) * o->ps_yin.integ;
-      if (!done) return;
-      le_psola_coarse_done(o);
+      const int done = le_yin_step(&o->ps_yin, o->ps_credit);
+      o->ps_credit -= (o->ps_yin.tau - was) * o->ps_yin.integ;
+      if (done) le_psola_coarse_done(o, fifo, cap);
       continue;
     }
-    const float* x = LE_PS_RAW(o);
-    while (o->ps_tau <= o->ps_hi && budget > 0) {
-      const int tau = o->ps_tau;
-      double sum = 0.0;
-      for (int i = 0; i < o->ps_integ; ++i) {
-        const float df = x[i] - x[i + tau];
-        sum += (double)df * (double)df;
-      }
-      const int k = tau - o->ps_lo;
-      o->ps_d[k] = (float)sum;
-      if (k == 0 || o->ps_d[k] < o->ps_d[o->ps_best]) o->ps_best = k;
-      ++o->ps_tau;
-      budget -= o->ps_integ;
+    const int32_t was = o->ps_ref.tau;
+    const int done = le_refine_step(&o->ps_ref, LE_PS_RAW(o), o->ps_credit);
+    o->ps_credit -= (o->ps_ref.tau - was) * o->ps_ref.integ;
+    if (done) {
+      le_psola_pass_apply(o, le_refine_finish(&o->ps_ref, o->ps_coarse),
+                          o->ps_conf);
     }
-    if (o->ps_tau <= o->ps_hi) return;
-    /* The minimum, interpolated; the coarse period when it sits on an edge
-     * of the searched band. */
-    float period = o->ps_coarse;
-    const int b = o->ps_best;
-    if (b > 0 && b < o->ps_hi - o->ps_lo) {
-      const float s0 = o->ps_d[b - 1];
-      const float s1 = o->ps_d[b];
-      const float s2 = o->ps_d[b + 1];
-      const float denom = s0 + s2 - 2.0f * s1;
-      period = (float)(o->ps_lo + b);
-      if (fabsf(denom) > 1e-9f) period += 0.5f * (s0 - s2) / denom;
-    }
-    o->ps_phase = 0;
-    le_psola_pass_apply(o, period, o->ps_conf);
   }
 }
 
@@ -853,7 +882,7 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
       o->hop_count = LE_PSOLA_AHOP;
       le_psola_pass_begin(o, fifo, head - lag, cap);
     }
-    if (o->ps_phase != 0) le_psola_pass_slice(o, LE_PSOLA_WORK_PER_TICK);
+    le_psola_pass_tick(o, fifo, cap);
   }
 
   /* 3. Synthesis: marks recede from the head one sample per tick; at each
@@ -879,7 +908,10 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
     /* Snap the analysis mark to the nearest of the period-spaced grid near dn. */
     while (o->in_epoch - dn > pi / 2) o->in_epoch -= pi;
     while (dn - o->in_epoch > pi / 2) o->in_epoch += pi;
-    if (o->in_epoch < th) o->in_epoch = th; /* keep the grain read causal */
+    /* Keep the grain read causal: a mark too near the head moves on by whole
+     * periods, so it stays on the period grid (a long period at a high rate
+     * can snap it under th). */
+    while (o->in_epoch < th) o->in_epoch += pi;
     if (o->in_epoch > cap - 1 - th) o->in_epoch = cap - 1 - th;
 
     /* COLA gain: Hann area (= th) over the hop (= ps) keeps the overlap-add near
@@ -1216,6 +1248,9 @@ void le_fx_free_octaver(le_fx_state* fx, int slot) {
     o->sum_phase = NULL;
     le_rt_free(o->scratch);
     o->scratch = NULL;
+    /* Nothing in flight may outlive the scratch it reads. */
+    o->analysed = 0;
+    o->ps_phase = 0;
   }
 }
 
@@ -1461,6 +1496,8 @@ static int32_t fx_octaver_prepare(le_fx_state* fx, int slot, int cap) {
           (float*)le_rt_alloc_prefaulted((size_t)LE_PV_SCRATCH * sizeof(float));
       if (o->scratch == NULL) goto oom;
       owned[n++] = &o->scratch;
+      o->analysed = 0; /* a fresh scratch holds no frame and no pass */
+      o->ps_phase = 0;
     }
   }
   return LE_OK;
