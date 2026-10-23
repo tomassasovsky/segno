@@ -22,8 +22,11 @@ class FxLibraryPage extends StatefulWidget {
     required this.destinationLabel,
     required this.onStage,
     this.freeSlots = kTrackEffectMax,
+    this.roomNs = _unlimited,
     super.key,
   });
+
+  static const int _unlimited = 1 << 40;
 
   /// The catalogue to offer.
   final FxCatalogue catalogue;
@@ -38,6 +41,11 @@ class FxLibraryPage extends StatefulWidget {
   /// How many chain entries the destination can still take. A rack needing
   /// more than this is offered but explains itself rather than half-landing.
   final int freeSlots;
+
+  /// How much processing is left ([LooperRepository.fxRoomNs]), in
+  /// nanoseconds per frame. A choice that would need more is offered but
+  /// explains itself, as one that needs more slots does.
+  final int roomNs;
 
   @override
   State<FxLibraryPage> createState() => _FxLibraryPageState();
@@ -139,11 +147,16 @@ class _FxLibraryPageState extends State<FxLibraryPage> {
               (final FxFamily f, _, _) => _PresetList(
                 family: f,
                 freeSlots: widget.freeSlots,
+                roomNs: widget.roomNs,
                 onChoose: _choose,
               ),
-              (_, true, _) => _SingleList(onChoose: _choose),
+              (_, true, _) => _SingleList(
+                roomNs: widget.roomNs,
+                onChoose: _choose,
+              ),
               (_, _, true) => FxSavedList(
                 freeSlots: widget.freeSlots,
+                roomNs: widget.roomNs,
                 onChoose: _choose,
               ),
               _ => _LibraryGrid(
@@ -315,11 +328,13 @@ class _PresetList extends StatelessWidget {
   const _PresetList({
     required this.family,
     required this.freeSlots,
+    required this.roomNs,
     required this.onChoose,
   });
 
   final FxFamily family;
   final int freeSlots;
+  final int roomNs;
   final void Function(FxLibraryChoice) onChoose;
 
   @override
@@ -334,13 +349,16 @@ class _PresetList extends StatelessWidget {
         final needed = fxPresetModules(preset).length;
         // Offered whatever the room, and explained when there is not enough:
         // a rack that half-landed would be a sound nobody chose.
-        final fits = needed <= freeSlots;
+        final slots = needed <= freeSlots;
+        final fits = slots && fxChainCostNs(fxRackEntries(preset)) <= roomNs;
         return _PresetRow(
           key: Key('fx_preset_${preset.id}'),
           name: preset.name,
-          note: fits
+          note: !slots
+              ? l10n.fxRackTooLong(preset.name, needed, freeSlots)
+              : fits
               ? null
-              : l10n.fxRackTooLong(preset.name, needed, freeSlots),
+              : l10n.fxNoRoom(preset.name),
           onTap: fits ? () => onChoose(FxRackChoice(preset)) : null,
           surface: surface,
         );
@@ -351,12 +369,14 @@ class _PresetList extends StatelessWidget {
 
 /// The standalone effects this engine can build.
 class _SingleList extends StatelessWidget {
-  const _SingleList({required this.onChoose});
+  const _SingleList({required this.roomNs, required this.onChoose});
 
+  final int roomNs;
   final void Function(FxLibraryChoice) onChoose;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final surface = context.surface;
     // The seven built-ins, which is what a standalone effect can be here
     // (#887: the singles library keeps them only). The Looper X kinds are
@@ -368,12 +388,16 @@ class _SingleList extends StatelessWidget {
     return ListView.separated(
       itemCount: types.length,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
-      itemBuilder: (context, i) => _PresetRow(
-        key: Key('fx_single_${types[i].name}'),
-        name: types[i].label,
-        onTap: () => onChoose(FxSingleChoice(types[i])),
-        surface: surface,
-      ),
+      itemBuilder: (context, i) {
+        final fits = fxEntryCostNs(BuiltInEffect(type: types[i])) <= roomNs;
+        return _PresetRow(
+          key: Key('fx_single_${types[i].name}'),
+          name: types[i].label,
+          note: fits ? null : l10n.fxNoRoom(types[i].label),
+          onTap: fits ? () => onChoose(FxSingleChoice(types[i])) : null,
+          surface: surface,
+        );
+      },
     );
   }
 }
