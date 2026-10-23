@@ -833,8 +833,9 @@ enum TrackEffectType {
         taperUnverified: true,
       ),
     ],
-    // Fit to the amp captures (#891): the drive's law is measured, the
-    // Lo-Fi Rack's tone is not. The Lo-Fi Rack's defaults.
+    // Fit to the amp captures (#891), the Studio Rack's Dist; the Lo-Fi
+    // Rack's is taken to be the same module, so both carry the flag. The
+    // Lo-Fi Rack's defaults.
     TrackEffectType.distortion => const [
       FxParamInfo(
         key: 'drive',
@@ -842,6 +843,7 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.2,
+        taperUnverified: true,
       ),
       FxParamInfo(
         key: 'tone',

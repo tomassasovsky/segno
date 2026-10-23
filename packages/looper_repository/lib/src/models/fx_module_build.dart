@@ -182,11 +182,12 @@ class FxSourceScale {
 ///   4 : 1 ratio, every Ed's preset's, and its default 1.7 ms attack and
 ///   141 ms release);
 /// - the doubler: where a rack hides it, the Dub Rack's default 100 %
-///   separation.
+///   separation;
+/// - the distortion: where a rack hides it, the tone flat (50 %).
 ///
 /// The first variant of each module is its default, the one "Add an effect"
 /// uses (#887: Ed's 4-band, the Dub Rack's Para, Ed's compressor, the Dub
-/// Rack's doubler).
+/// Rack's doubler, the Lo-Fi Rack's distortion).
 const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Four-band EQ': {
     "Ed's Rack": _edsEq,
