@@ -13892,10 +13892,10 @@ static void test_perf_events_log_command_storm_no_loss(void) {
   le_engine_destroy(e);
 }
 
-/* Acceptance criterion: FX param sweeps are logged (control-side emission)
- * with monotonic frames. Each le_engine_set_lane_fx_param call reads a fresh
- * a_perf_frames snapshot, so processing frames between calls should produce
- * a strictly non-decreasing frame sequence in the log. */
+/* Acceptance criterion: FX param sweeps are logged with monotonic frames.
+ * A lane parameter is logged by the callback at the frame it first applies
+ * it (#887 part 4): a value set before a block is that block's first frame,
+ * exactly. Monitor parameters are still logged by their setter. */
 static void test_perf_events_log_fx_param_sweep_monotonic_frames(void) {
   printf("test_perf_events_log_fx_param_sweep_monotonic_frames\n");
   le_engine* e = make_configured_engine();
@@ -13904,6 +13904,7 @@ static void test_perf_events_log_fx_param_sweep_monotonic_frames(void) {
   CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
   CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
   drain(e);
 
@@ -13912,12 +13913,12 @@ static void test_perf_events_log_fx_param_sweep_monotonic_frames(void) {
                                 * coincidentally right for param==0 */
   const int monitor_param = 2; /* different again, on the monitor sibling */
   for (int i = 0; i < sweeps; ++i) {
-    process_const(e, 0.0f, LOOP_N, out); /* advance a_perf_frames between calls */
     CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, lane_param,
                                       (float)i / (float)sweeps) == LE_OK);
     CHECK(le_engine_set_monitor_input_fx_param(
               e, 0, 0, monitor_param, (float)(sweeps - i) / (float)sweeps) ==
           LE_OK);
+    process_const(e, 0.0f, LOOP_N, out); /* applies, and advances the frame */
   }
   drain(e);
 
@@ -13940,6 +13941,7 @@ static void test_perf_events_log_fx_param_sweep_monotonic_frames(void) {
     decode_log_entry_at(buf, i, &entry);
     if (entry.cmd.code != LE_PLOG_SET_LANE_FX_PARAM) continue;
     if (seen > 0) CHECK(entry.frame >= last_frame);
+    CHECK(entry.frame == (uint64_t)seen * LOOP_N); /* the block it applied in */
     last_frame = entry.frame;
     CHECK(entry.cmd.fx.channel == 0 && entry.cmd.fx.lane == 0);
     CHECK(LE_PLOG_FX_PARAM_INDEX(entry.cmd.fx.index) == 0);
@@ -22216,12 +22218,14 @@ static void test_octaver_hop_stagger_seeds(void) {
   le_engine_destroy(e);
 }
 
-/* The realignment the console bench found: a recipe publish resets every
- * active slot it carries, and before the seed every reset set the counter to
+/* The realignment the console bench found: a recipe publish reset every
+ * active slot it carried, and before the seed every reset set the counter to
  * 0, so publishing a chain put all of its octavers back on one sample index.
- * Now the reset puts each slot back on its own phase: after a publish, and
- * after a second publish of the same chain, four octavers run their frames
- * in four different 64-frame callbacks. */
+ * Now the reset puts each slot back on its own phase: after a publish that
+ * brings four new octavers in (each engages through the enable edge, its
+ * ring cleared one spacing after the last), and after a second publish that
+ * only moves a setting (the entries keep their state, #887 part 4), they run
+ * their frames in four different 64-frame callbacks. */
 static void test_octaver_hop_stagger_survives_recipe_publish(void) {
   printf("test_octaver_hop_stagger_survives_recipe_publish\n");
   le_engine* e = le_engine_create();
@@ -22245,13 +22249,17 @@ static void test_octaver_hop_stagger_survives_recipe_publish(void) {
     r.params[s][2] = 1.0f;
     r.params[s][3] = 0.0f; /* PV */
     r.level[s] = 1.0f;
+    r.instance[s] = (uint32_t)s + 1u;
   }
   for (uint32_t rev = 1; rev <= 2; ++rev) {
     r.params[0][0] = rev == 1 ? 0.75f : 0.7f; /* a real edit the second time */
     CHECK(le_engine_set_fx_recipe(e, LE_FX_OWNER_MONITOR, 0, 0, rev, &r) ==
           LE_OK);
-    /* One block applies the recipe (and resets every slot at its start). */
-    le_engine_process(e, out, in, 64);
+    /* The first block applies the recipe; the new entries engage over the
+     * next few (spaced ring clears, then the octaver's warmup). */
+    for (int b = 0; b < (rev == 1 ? 40 : 1); ++b) {
+      le_engine_process(e, out, in, 64);
+    }
     CHECK(le_engine_fx_recipe_revision(e, LE_FX_OWNER_MONITOR, 0, 0) == rev);
     const le_fx_state* fx = &e->monitors[0].fx;
     /* Each instance's phase, read off its counter against the chain clock;
@@ -34487,7 +34495,10 @@ static void test_track_output_fx_prepare_entry_reuse(void) {
  * replay fact, with exactly one entry and its addressed primitive payload. */
 static void test_output_fx_logs_exact_edits_track_fx_stays_manifest_only(void) {
   printf("test_output_fx_logs_exact_edits_track_fx_stays_manifest_only\n");
-  le_engine* e = make_configured_engine();
+  /* Four outputs, so output bus 1 exists: its parameter is logged by the
+   * callback when it applies it, and a bus the device lacks applies none. */
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 4, 1000);
   float out[64];
 
   CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
@@ -38389,6 +38400,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_render.h"
 #include "test_engine_rack_output.h"
 #include "test_engine_eq.h"
+#include "test_engine_fx_publish.h"
 #include "test_engine_bounce.h"
 #include "test_engine_clock.h"
 #include "test_engine_rt_memory.h"
@@ -38468,6 +38480,7 @@ int main(void) {
   run_render_tests();
   run_rack_output_tests();
   run_eq_tests();
+  run_fx_publish_tests();
   run_bounce_tests();
   if (getenv("SEGNO_PEEL_TESTS_ONLY")) return g_failures ? 1 : 0;
   run_length_tests();

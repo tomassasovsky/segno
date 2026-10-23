@@ -21,6 +21,34 @@
 
 #include "engine_private.h" /* le_fx_state, le_octaver_state, LE_FX_MAX/PARAMS */
 
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || \
+    defined(_M_IX86)
+#include <pmmintrin.h> /* _MM_SET_DENORMALS_ZERO_MODE (DAZ) */
+#include <xmmintrin.h> /* _MM_SET_FLUSH_ZERO_MODE (FTZ) */
+#endif
+
+/* Flush denormals to zero on the calling thread. Decaying FX tails (reverb/
+ * delay/phase-vocoder) trend toward ~1e-30, and denormal arithmetic can be
+ * orders of magnitude slower — a CPU spike that shows up as a buffer underrun
+ * (dropout / click), not as wrong audio. FTZ+DAZ make the FPU treat those as
+ * zero. Per thread: the audio thread sets it each callback (negligible cost),
+ * and every worker that runs an FX chain offline (the wet cache and render
+ * worker, the stem render) sets it at its start, so an offline render rounds
+ * the way the live chain does (#887 part 4). No-op where unsupported; the
+ * inaudible denormals simply remain. */
+static inline void le_flush_denormals(void) {
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || \
+    defined(_M_IX86)
+  _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+  _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
+#elif defined(__aarch64__)
+  uint64_t fpcr;
+  __asm__ __volatile__("mrs %0, fpcr" : "=r"(fpcr));
+  fpcr |= (1ull << 24); /* FZ: flush-to-zero */
+  __asm__ __volatile__("msr fpcr, %0" : : "r"(fpcr));
+#endif
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -202,6 +230,14 @@ void le_fx_entry_reset(le_fx_state* fx, int slot);
  * le_fx_entry_reset deliberately leaves out. One ring is cap floats, so
  * callers space these (see LE_FX_ENABLE_CLEAR_SPACING). */
 void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap);
+
+/* Settles slot [slot] for an entry that has just replaced another there (a
+ * recipe's renewed slot): its DSP state is reset, and a slot holding delay
+ * rings re-enters through the enable edge, which clears them spaced by
+ * LE_FX_ENABLE_CLEAR_SPACING and ramps the new entry in, so the old entry's
+ * tail never sounds through the new one and no one callback clears every
+ * ring. Audio thread (le_fx_recipe_apply). */
+void le_fx_entry_renew(le_fx_state* fx, int slot, int32_t type);
 
 /* Whether a bypassed slot of [type] drains its tail (a ring-owning type with
  * no reported latency: delay, echo, reverb) rather than crossfading out
