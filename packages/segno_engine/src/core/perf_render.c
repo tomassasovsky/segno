@@ -1566,7 +1566,11 @@ static int le_pr_renew_slot(le_fx_state* fx, int s, int32_t type,
 static int le_pr_arm_slot(le_fx_state* fx, int s, int32_t type,
                           const float* params, int32_t sample_rate) {
   const int ok = le_pr_reset_slot(fx, s, type, sample_rate);
-  if (type == LE_FX_OCTAVER) le_fx_octaver_seed_settled(fx, s, params);
+  if (le_fx_type_hops(type)) {
+    float q[LE_FX_PARAMS];
+    le_fx_octaver_settings(type, params, q);
+    le_fx_octaver_seed_settled(fx, s, q);
+  }
   return ok;
 }
 

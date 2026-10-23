@@ -443,7 +443,12 @@ enum TrackEffectType {
   /// The Looper X's Amb-Verb (#1430): a reverb with a strong early echo and
   /// shorter lows; its third parameter is the Dub Rack's Amb-Dub Mix, which
   /// sets the rack's parallel paths. Fit to the Dub Rack's.
-  ambVerb(23, 'Ambience');
+  ambVerb(23, 'Ambience'),
+
+  /// The Looper X's Whammy (#1433): the octaver's phase vocoder, fully wet,
+  /// shifted by the range times pedal^1.39 with the formants moving; fit to
+  /// the Guitar Rack's.
+  whammy(24, 'Whammy');
 
   const TrackEffectType(this.code, this.label);
 
@@ -1030,6 +1035,25 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.2,
+      ),
+    ],
+    // The Guitar Rack's Whammy (#891): the pedal, and the range (position 0
+    // -12 semitones, 1 +12).
+    TrackEffectType.whammy => const [
+      FxParamInfo(
+        key: 'pedal',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'whammy_range',
+        unit: FxParamUnit.choice,
+        steps: 2,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
       ),
     ],
     // Fit to the Dub Rack's Amb-Verb (#891); the Looper X's ranges.

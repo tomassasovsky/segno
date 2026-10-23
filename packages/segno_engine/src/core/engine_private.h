@@ -408,7 +408,10 @@ typedef struct le_psola_pass {
  * part 4, so that PR needs no struct/ABI change. */
 typedef struct le_octaver_state {
   float* out;        /* synthesis overlap-add accumulator, LE_PV_OUT long */
-  float* last_phase; /* previous analysis phase per bin, length LE_PV_BINS */
+  /* Each bin's phase at the latest analysis, length LE_PV_BINS: the next
+   * analysis reads it as the previous frame's, the shift stage as this
+   * frame's. */
+  float* last_phase;
   float* sum_phase;  /* accumulated synthesis phase per bin, length LE_PV_BINS */
   /* Samples into the current hop: PV counts up to LE_PV_HOP and runs one
    * stage of a frame at each quarter; PSOLA counts down to its next YIN pass. Seeded so the heavy

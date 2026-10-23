@@ -353,7 +353,7 @@ void le_octaver_envelope(const float* mag, float* env) {
  * formants moved, which skips the envelope stage), on the shared plan
  * le_pv_fft (fft.h). On the console a stereo frame cost ~170 us in one
  * callback (#1410). The stages are not equal: measured on the dev machine
- * the analysis, envelope, shift and synthesis take about 29, 34, 22 and 15 %
+ * the analysis, envelope, shift and synthesis take about 30, 31, 26 and 13 %
  * of a frame, so the heaviest callback carries about a third of it. The
  * frame's arrays live in the heap scratch, so the stack holds only each
  * stage's own temporaries. */
@@ -402,11 +402,12 @@ static void le_pv_stage_envelope(le_octaver_state* o) {
   le_octaver_envelope(LE_PV_S_MAG(o), LE_PV_S_ENV(o));
 }
 
-/* Stage 2: shift bins by the ratio read at analysis, advance the synthesis
- * phase (2*pi*freq*HOP/N a hop) and rebuild the half spectrum. Holding the
- * formants, each bin is whitened (mag/env) and the envelope re-applied at the
- * DESTINATION bin, so the formants stay fixed in frequency; moving them, the
- * magnitude goes over as it is, envelope and all. */
+/* Stage 2: move each peak region by the ratio read at analysis, advance each
+ * moved peak's synthesis phase (2*pi*freq*HOP/N a hop), lock the bins around
+ * it to it, and rebuild the half spectrum. Holding the formants, each bin is
+ * whitened (mag/env) and the envelope re-applied at the DESTINATION bin, so
+ * the formants stay fixed in frequency; moving them, the magnitude goes over
+ * as it is, envelope and all. */
 static void le_pv_stage_shift(le_octaver_state* o) {
   const float ratio = o->frame_ratio;
   float* re = LE_PV_S_RE(o);
@@ -414,28 +415,67 @@ static void le_pv_stage_shift(le_octaver_state* o) {
   const float* mag = LE_PV_S_MAG(o);
   const float* freq = LE_PV_S_FREQ(o);
   const float* env = LE_PV_S_ENV(o);
+  const float* in_phase = o->last_phase; /* this frame's, from the analysis */
+  const float advance = 2.0f * LE_PI * (float)LE_PV_HOP / (float)LE_PV_N;
   float syn_mag[LE_PV_BINS];
-  float syn_freq[LE_PV_BINS];
+  float syn_phase[LE_PV_BINS];
+  float syn_best[LE_PV_BINS];
   for (int k = 0; k < LE_PV_BINS; ++k) {
     syn_mag[k] = 0.0f;
-    syn_freq[k] = 0.0f;
+    syn_phase[k] = o->sum_phase[k];
+    syn_best[k] = -1.0f;
   }
-  for (int k = 0; k < LE_PV_BINS; ++k) {
-    const int j = (int)((float)k * ratio + 0.5f);
-    if (j >= 0 && j < LE_PV_BINS) {
-      if (o->frame_formants_move) {
-        syn_mag[j] += mag[k];
-      } else {
-        syn_mag[j] += mag[k] / (env[k] + 1e-9f) * env[j];
-      }
-      syn_freq[j] = freq[k] * ratio;
+  /* Peak-region shifting with identity phase locking (Laroche and Dolson,
+   * 1999): each spectral peak moves to its shifted frequency carrying the
+   * bins around it, and those bins keep their phases relative to the peak.
+   * A partial keeps its main lobe's shape, and with it its level, at any
+   * ratio; scaling each bin's index instead spread an up-shifted lobe over
+   * every other bin and lost up to 13 dB at a fifth. A region runs from
+   * halfway after the previous peak to halfway before the next; where two
+   * regions land on one bin, the louder source sets its phase. */
+  int peaks[LE_PV_BINS];
+  int np = 0;
+  for (int q = 0; q < LE_PV_BINS; ++q) {
+    const float m = mag[q];
+    if ((q < 1 || m > mag[q - 1]) && (q < 2 || m > mag[q - 2]) &&
+        (q + 1 >= LE_PV_BINS || m >= mag[q + 1]) &&
+        (q + 2 >= LE_PV_BINS || m >= mag[q + 2])) {
+      peaks[np++] = q;
     }
   }
-  for (int k = 0; k < LE_PV_BINS; ++k) {
-    o->sum_phase[k] +=
-        2.0f * LE_PI * syn_freq[k] * (float)LE_PV_HOP / (float)LE_PV_N;
-    re[k] = syn_mag[k] * cosf(o->sum_phase[k]);
-    im[k] = syn_mag[k] * sinf(o->sum_phase[k]);
+  if (np == 0) peaks[np++] = 0; /* NaN magnitudes only: one region */
+  int start = 0;
+  for (int r = 0; r < np; ++r) {
+    const int peak = peaks[r];
+    const int end = r + 1 < np ? (peak + peaks[r + 1] + 1) / 2 : LE_PV_BINS;
+    const int to = (int)((float)peak * ratio + 0.5f);
+    if (to >= LE_PV_BINS) { /* the peak leaves the band: drop its region */
+      start = end;
+      continue;
+    }
+    const int shift = to - peak;
+    /* The peak's phase at its new bin: last frame's there, advanced by the
+     * shifted frequency. */
+    const float peak_phase =
+        o->sum_phase[to] + advance * freq[peak] * ratio;
+    for (int k = start; k < end; ++k) {
+      const int j = k + shift;
+      if (j < 0 || j >= LE_PV_BINS) continue;
+      syn_mag[j] += o->frame_formants_move
+                        ? mag[k]
+                        : mag[k] / (env[k] + 1e-9f) * env[j];
+      if (mag[k] > syn_best[j]) {
+        syn_best[j] = mag[k];
+        syn_phase[j] =
+            le_wrap_pi(peak_phase + (in_phase[k] - in_phase[peak]));
+      }
+    }
+    start = end;
+  }
+  for (int b = 0; b < LE_PV_BINS; ++b) {
+    o->sum_phase[b] = syn_phase[b];
+    re[b] = syn_mag[b] * cosf(syn_phase[b]);
+    im[b] = syn_mag[b] * sinf(syn_phase[b]);
   }
 }
 
@@ -1409,6 +1449,42 @@ static void fx_octaver_process(le_fx_state* fx, int slot, int sr, int cap,
   *l = fx_octaver(fx, slot, 0, cap, *l, p);
   *r = fx_octaver(fx, slot, 1, cap, *r, p);
 }
+
+/* The Whammy's taper: the pedal's share of the range, pedal^1.39. The
+ * captures put 50 % at 4.57 of the 12 semitones (-4.57 / -4.52 down, +4.61 /
+ * +4.57 up), and 0 and 100 % at the ends (#891). The earlier 1 kHz pass read
+ * 99.8 % as -11.8 semitones, where the taper gives -11.97; one point, read
+ * off a single tone, so the fit keeps the three-point sweep. */
+#define LE_WHAMMY_TAPER 1.39f
+
+/* The Whammy's shift as the octaver's shift setting: -24 + 48 v semitones
+ * for range x pedal^taper. */
+static float le_whammy_shift(const float* p) {
+  const float pedal = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
+  const float range = p[1] >= 0.5f ? 12.0f : -12.0f;
+  return 0.5f + range * powf(pedal, LE_WHAMMY_TAPER) / 48.0f;
+}
+
+int le_fx_type_hops(int32_t type) {
+  return type == LE_FX_OCTAVER || type == LE_FX_WHAMMY;
+}
+
+void le_fx_octaver_settings(int32_t type, const float* params, float* out) {
+  for (int k = 0; k < LE_FX_PARAMS; ++k) out[k] = params[k];
+  if (type != LE_FX_WHAMMY) return;
+  out[0] = le_whammy_shift(params);
+  out[1] = 1.0f;              /* the tone open */
+  out[2] = 1.0f;              /* fully wet */
+  out[3] = 0.0f;              /* the phase vocoder */
+  out[4] = 1.0f;              /* the formants move with the pitch */
+}
+
+static void fx_whammy_process(le_fx_state* fx, int slot, int sr, int cap,
+                              float* l, float* r, const float* p) {
+  /* The five settings the octaver's kernel reads (le_fx_octaver_settings). */
+  const float q[5] = {le_whammy_shift(p), 1.0f, 1.0f, 0.0f, 1.0f};
+  fx_octaver_process(fx, slot, sr, cap, l, r, q);
+}
 static void fx_echo_process(le_fx_state* fx, int slot, int sr, int cap, float* l,
                             float* r, const float* p) {
   *l = fx_echo(fx, slot, 0, sr, cap, *l, p);
@@ -1567,6 +1643,13 @@ static const le_fx_param_desc LE_FX_OCTAVER_PARAMS[] = {
     /* position 0 = held where they are (the cepstral envelope stays fixed in
      * frequency), 1 = moved with the pitch; the phase vocoder only */
     {"formants", LE_FX_UNIT_CHOICE, 2, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f,
+     0},
+};
+/* The Guitar Rack's Whammy (#891): position 0 of the range is -12, 1 is
+ * +12 semitones, the Looper X's two. */
+static const le_fx_param_desc LE_FX_WHAMMY_PARAMS[] = {
+    {"pedal", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.0f, 0},
+    {"whammy_range", LE_FX_UNIT_CHOICE, 2, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f,
      0},
 };
 static const le_fx_param_desc LE_FX_ECHO_PARAMS[] = {
@@ -4319,6 +4402,7 @@ LE_FX_ROWS_FIT(LE_FX_LPF_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_SPRING_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_DUB_VERB_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_AMB_VERB_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_WHAMMY_PARAMS);
 
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
  * published for this chain entry (NULL / not-ready => dry passthrough; the slot
@@ -4445,6 +4529,9 @@ static const le_fx_vtable LE_FX[] = {
                         LE_FX_AMB_VERB_PARAMS, LE_FX_F_DRAINS,
                         sizeof(le_fx_verb), fx_amb_verb_update, NULL,
                         fx_verb_rkprocess},
+    /* The octaver's kernel and state, its settings mapped (fx_whammy_process). */
+    [LE_FX_WHAMMY] = {fx_whammy_process, fx_octaver_latency_vt,
+                      fx_octaver_prepare, LE_FX_WHAMMY_PARAMS},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -4496,6 +4583,7 @@ const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
     [LE_FX_SPRING] = LE_FX_ROW_COUNT(LE_FX_SPRING_PARAMS),
     [LE_FX_DUB_VERB] = LE_FX_ROW_COUNT(LE_FX_DUB_VERB_PARAMS),
     [LE_FX_AMB_VERB] = LE_FX_ROW_COUNT(LE_FX_AMB_VERB_PARAMS),
+    [LE_FX_WHAMMY] = LE_FX_ROW_COUNT(LE_FX_WHAMMY_PARAMS),
 };
 
 /* ---- per-kind state (le_fx_kinds, engine_private.h) ---- */

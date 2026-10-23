@@ -293,6 +293,7 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Dub delay': {'Dub Rack': _dubDelay},
   'Dub reverb': {'Dub Rack': _dubVerb},
   'Ambience': {'Dub Rack': _ambVerb},
+  'Whammy': {'Guitar Rack': _whammy},
   'Pitch shift': {'Studio Rack': _pitchShift, 'Vocal Rack': _pitchShift},
 };
 
@@ -347,6 +348,12 @@ const FxModuleBuild _ambVerb = FxModuleBuild(
   type: TrackEffectType.ambVerb,
   params: ['Amb-Verb Dec', 'Amb-verb Vol', 'Amb-Dub Mix'],
   path: FxModulePath.amb,
+);
+
+// Guitar Rack: the whole Whammy, pedal and range.
+const FxModuleBuild _whammy = FxModuleBuild(
+  type: TrackEffectType.whammy,
+  params: ['Whammy Pedal', 'Whammy Range'],
 );
 
 // Guitar Rack: the whole spring.

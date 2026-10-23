@@ -38,7 +38,6 @@ void main() {
         [
           'Amp',
           'Modulation',
-          'Whammy',
           'Pumper',
           'Slicer',
           'Harmonizer',
@@ -123,6 +122,7 @@ void main() {
           'Transient',
           'Vinyl',
           'Wah',
+          'Whammy',
         ]);
       },
     );
@@ -1100,6 +1100,26 @@ void main() {
           null,
           null,
         ],
+      );
+    });
+
+    test("the Guitar Rack's Whammy copies pedal and range", () {
+      final e = fxModuleEntry(
+        _module('Whammy'),
+        const FxPreset(
+          family: 'Guitar Rack',
+          name: 'p',
+          id: 'p',
+          type: 0,
+          params: {'Whammy': 1, 'Whammy Pedal': 0.5, 'Whammy Range': 1},
+        ),
+      );
+      expect(e.type, TrackEffectType.whammy);
+      expect(e.enabled, isTrue);
+      expect(e.params.take(2), [0.5, 1.0]);
+      expect(
+        fxModuleBuild(_module('Whammy')).readiness,
+        FxModuleReadiness.full,
       );
     });
 
