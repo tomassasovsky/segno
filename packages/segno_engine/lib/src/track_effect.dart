@@ -786,9 +786,10 @@ enum TrackEffectType {
         defaultValue: 0,
       ),
     ],
-    // Shown as the Looper X shows them; what each percent does is chosen,
-    // or for the chorus measured on the Guitar Rack's (#891). The Dub
-    // Rack's doubler, Ed's chorus and Ed's wah defaults.
+    // Shown as the Looper X shows them; what each percent does is measured
+    // (the doubler and the wah in #1445), except the chorus's, measured on
+    // the Guitar Rack's at two settings (#891). The Dub Rack's doubler, Ed's
+    // chorus and Ed's wah defaults.
     TrackEffectType.doubler => const [
       FxParamInfo(
         key: 'mix',
@@ -796,7 +797,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 1,
-        taperUnverified: true,
       ),
       FxParamInfo(
         key: 'separation',
@@ -804,7 +804,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 1,
-        taperUnverified: true,
       ),
     ],
     TrackEffectType.chorus => const [
@@ -840,7 +839,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.619,
-        taperUnverified: true,
       ),
     ],
     // Fit to the Guitar Rack's OvDrive (#891): the drive's law is measured,
@@ -883,8 +881,8 @@ enum TrackEffectType {
         taperUnverified: true,
       ),
     ],
-    // The Looper X's ranges and tapers; what each control does is chosen
-    // (#891). The Lo-Fi Rack's defaults.
+    // The Looper X's ranges and tapers, fit to its captures (#1445). The
+    // Lo-Fi Rack's defaults.
     TrackEffectType.vinyl => const [
       FxParamInfo(
         key: 'drive',
@@ -892,7 +890,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.4,
-        taperUnverified: true,
       ),
       FxParamInfo(
         key: 'frequency',
@@ -901,7 +898,6 @@ enum TrackEffectType {
         atMax: 5000,
         curve: FxParamCurve.exponential,
         defaultValue: 0.35,
-        taperUnverified: true,
       ),
       FxParamInfo(
         key: 'noise',
@@ -909,7 +905,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.3,
-        taperUnverified: true,
       ),
       FxParamInfo(
         key: 'noise_tone',
@@ -917,7 +912,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.9,
-        taperUnverified: true,
       ),
     ],
     TrackEffectType.degrade => const [
@@ -928,7 +922,6 @@ enum TrackEffectType {
         atMax: 50000,
         curve: FxParamCurve.exponential,
         defaultValue: 1,
-        taperUnverified: true,
       ),
       FxParamInfo(
         key: 'filter',
@@ -936,7 +929,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 1,
-        taperUnverified: true,
       ),
       FxParamInfo(
         key: 'mix',
@@ -944,11 +936,11 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 1,
-        taperUnverified: true,
       ),
     ],
-    // The cutoff is off at the top of its range (a fresh filter is
-    // transparent, though the Looper X's default resonance is 100 %).
+    // Fit to the Lo-Fi and Rhythmic racks' (#1445). The cutoff is off at
+    // the top of its range (a fresh filter is transparent, though the Looper
+    // X's default resonance is 100 %).
     TrackEffectType.lpf => const [
       FxParamInfo(
         key: 'cutoff',
@@ -965,7 +957,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 1,
-        taperUnverified: true,
       ),
     ],
     // Fit to the Guitar Rack's Spring (#891); the Looper X's ranges.
