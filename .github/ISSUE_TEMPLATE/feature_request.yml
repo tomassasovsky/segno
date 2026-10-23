@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest a change to how Segno works.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Segno has a fixed product direction, so not every request will be taken up. Requests that describe the musical problem, rather than a specific control, are the easiest to act on.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do while playing, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How you would like it to work. Mention other loopers that solve it well, if any.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Workarounds you use today, or other approaches you considered.
