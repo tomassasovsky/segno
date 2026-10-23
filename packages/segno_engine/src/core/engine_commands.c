@@ -4629,22 +4629,24 @@ int32_t le_engine_set_track_overdub_feedback(le_engine* engine,
   return LE_OK;
 }
 
+/* What a granular retype's seed replaced, so a refused command can put it
+ * back (le_fx_seed_undo). */
+typedef struct le_fx_seed {
+  int seeded;
+  int32_t old_tag;         /* the row's tag before the seed */
+  float row[LE_FX_PARAMS]; /* the row before the seed */
+} le_fx_seed;
+
 /* Writes [type]'s defaults into slot [index]'s published row and then marks
  * the row as [type]'s (le_fx_slot_meta.param_type, release): until the type
  * command lands the snapshot sees the mismatch and sits the slot out, so
  * neither the old kernel nor the new one runs on the other's settings. */
-typedef struct le_fx_seed {
-  int seeded;
-  int32_t old_type;
-  float row[LE_FX_PARAMS]; /* the row before the seed */
-} le_fx_seed;
-
 static void le_fx_seed_params(_Atomic uint32_t a_param[][LE_FX_PARAMS],
                               le_fx_slot_meta* meta, int32_t index,
-                              int32_t type, int32_t old_type,
-                              le_fx_seed* undo) {
+                              int32_t type, le_fx_seed* undo) {
   undo->seeded = 1;
-  undo->old_type = old_type;
+  undo->old_tag =
+      atomic_load_explicit(&meta[index].param_type, memory_order_relaxed);
   float defaults[LE_FX_PARAMS];
   le_fx_defaults(type, defaults);
   for (int p = 0; p < LE_FX_PARAMS; ++p) {
@@ -4661,12 +4663,12 @@ static void le_fx_seed_undo(_Atomic uint32_t a_param[][LE_FX_PARAMS],
                             le_fx_slot_meta* meta, int32_t index,
                             const le_fx_seed* undo) {
   if (!undo->seeded) return;
-  atomic_store_explicit(&meta[index].param_type, LE_FX_NONE - 1,
-                        memory_order_release); /* sit out while restoring */
+  /* The tag still names the refused type, so readers sit the slot out
+   * while the row is restored; then the tag it had comes back. */
   for (int p = 0; p < LE_FX_PARAMS; ++p) {
     store_f32(&a_param[index][p], undo->row[p]);
   }
-  atomic_store_explicit(&meta[index].param_type, undo->old_type,
+  atomic_store_explicit(&meta[index].param_type, undo->old_tag,
                         memory_order_release);
 }
 
@@ -4696,7 +4698,7 @@ static int32_t le_fx_prepare_entry(le_fx_state* fx, const int32_t* type_pushed,
   if (le_fx_prepare(fx, index, type, cap) != LE_OK) return LE_ERR_INVALID;
   *out_changed = type_pushed[index] != type;
   if (*out_changed) {
-    le_fx_seed_params(a_param, meta, index, type, type_pushed[index], undo);
+    le_fx_seed_params(a_param, meta, index, type, undo);
   }
   return LE_OK;
 }
@@ -5254,8 +5256,7 @@ int32_t le_engine_set_all_tracks_fx(le_engine* engine, int32_t index,
   const int32_t changed = b->fx_type_pushed[index] != type;
   le_fx_seed undo = {0};
   if (changed) {
-    le_fx_seed_params(b->a_fx_param, b->fx_meta, index, type,
-                      b->fx_type_pushed[index], &undo);
+    le_fx_seed_params(b->a_fx_param, b->fx_meta, index, type, &undo);
   }
   const int32_t rc =
       le_push_cmd(engine, (le_command){.code = LE_CMD_SET_ALL_TRACKS_FX,
