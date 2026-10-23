@@ -20516,7 +20516,8 @@ static void test_fx_params_past_count_are_inert(void) {
                            LE_FX_TRANSIENT,  LE_FX_HP_GATE,   LE_FX_DOUBLER,
                            LE_FX_CHORUS,     LE_FX_WAH,       LE_FX_OVERDRIVE, LE_FX_DISTORTION,
                            LE_FX_VINYL,      LE_FX_DEGRADE,   LE_FX_LPF,
-                           LE_FX_SPRING,     LE_FX_DUB_VERB,  LE_FX_AMB_VERB};
+                           LE_FX_SPRING,     LE_FX_DUB_VERB,  LE_FX_AMB_VERB,
+                           LE_FX_WHAMMY};
   for (int t = 0; t < (int)(sizeof(types) / sizeof(types[0])); ++t) {
     le_engine* a = make_configured_engine();
     le_engine* b = make_configured_engine();
@@ -20721,6 +20722,80 @@ static void test_octaver_pv_formants_move_with_pitch(void) {
   printf("  moved: f0=%.1f (want 440) centroid=%.1f in=%.1f\n", f0, c, cin);
   CHECK(fabsf(f0 - 440.0f) < 30.0f);
   CHECK(c > 1.6f * cin); /* the envelope went up with the pitch */
+  free(in);
+  free(out);
+}
+
+/* The Whammy (#891): range x pedal^1.39 semitones on the octaver, fully wet,
+ * tone open, formants moving. The taper puts 50 % at the captures' 4.57 of
+ * 12 semitones; the pitch lands there both ways, and a full pedal is the
+ * octave, with the envelope going along. */
+static void whammy_run(float pedal, float range, const float* in, int total,
+                       float* out) {
+  le_engine* e = le_engine_create();
+  const int blk = 2048;
+  le_engine_configure(e, OCT_SR, 1, 1, blk);
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_input_output(e, 0, 0x1);
+  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_WHAMMY) == LE_OK);
+  le_engine_set_monitor_input_fx_param(e, 0, 0, 0, pedal);
+  le_engine_set_monitor_input_fx_param(e, 0, 0, 1, range);
+  le_engine_set_monitor_input_fx_count(e, 0, 1);
+  for (int done = 0; done < total;) {
+    int n = total - done;
+    if (n > blk) n = blk;
+    le_engine_process(e, out + done, in + done, (uint32_t)n);
+    done += n;
+  }
+  le_engine_destroy(e);
+}
+
+static void test_whammy_taper_and_pitch(void) {
+  printf("test_whammy_taper_and_pitch\n");
+  /* The mapping: the octaver's settings, from the pedal and the range. */
+  const float p_half_up[LE_FX_PARAMS] = {0.5f, 1.0f};
+  float q[LE_FX_PARAMS];
+  le_fx_octaver_settings(LE_FX_WHAMMY, p_half_up, q);
+  const float st = (q[0] - 0.5f) * 48.0f;
+  printf("  pedal 50 %%: %+.2f semitones (captures +4.61 / +4.57)\n", st);
+  CHECK(fabsf(st - 4.57f) < 0.05f);
+  CHECK(q[1] == 1.0f && q[2] == 1.0f && q[3] == 0.0f && q[4] == 1.0f);
+  const float p_full_down[LE_FX_PARAMS] = {1.0f, 0.0f};
+  le_fx_octaver_settings(LE_FX_WHAMMY, p_full_down, q);
+  CHECK(fabsf(q[0] - 0.25f) < 1e-6f); /* -12 */
+  const float p_heel[LE_FX_PARAMS] = {0.0f, 1.0f};
+  le_fx_octaver_settings(LE_FX_WHAMMY, p_heel, q);
+  CHECK(q[0] == 0.5f); /* unison */
+  CHECK(le_fx_type_hops(LE_FX_WHAMMY) && le_fx_type_hops(LE_FX_OCTAVER));
+  CHECK(!le_fx_type_hops(LE_FX_DELAY));
+
+  /* The sound: a 220 Hz harmonic tone. */
+  const int total = 24000;
+  const int skip = 12000;
+  const int an = total - skip;
+  float* in = (float*)malloc(sizeof(float) * (size_t)total);
+  float* out = (float*)malloc(sizeof(float) * (size_t)total);
+  oct_harmonic(in, total, 220.0f);
+  const float cin = oct_centroid(in + skip, an);
+  const struct {
+    float pedal, range, semis;
+  } cases[] = {{0.0f, 1.0f, 0.0f},
+               {0.5f, 1.0f, 4.57f},
+               {0.5f, 0.0f, -4.57f},
+               {1.0f, 1.0f, 12.0f},
+               {1.0f, 0.0f, -12.0f}};
+  for (int c = 0; c < 5; ++c) {
+    whammy_run(cases[c].pedal, cases[c].range, in, total, out);
+    const float f0 = oct_detect_f0(out + skip, an);
+    const float want = 220.0f * powf(2.0f, cases[c].semis / 12.0f);
+    printf("  pedal %.0f %%, range %+.0f: f0 %.1f (want %.1f)\n",
+           100.0f * cases[c].pedal, cases[c].range >= 0.5f ? 12.0 : -12.0,
+           f0, want);
+    CHECK(fabsf(f0 - want) < 0.03f * want);
+    if (cases[c].semis == 12.0f) {
+      CHECK(oct_centroid(out + skip, an) > 1.6f * cin); /* formants moved */
+    }
+  }
   free(in);
   free(out);
 }
@@ -21633,9 +21708,9 @@ static void test_fx_param_descriptors_match_kernels(void) {
 
   /* Counts: the parameters each kernel reads; none for NONE and PLUGIN. */
   const int32_t counts[] = {0, 2, 2, 3, 2, 5, 3, 3, 0, 15, 5, 3,
-                            2, 2, 3, 1, 2, 2, 4, 3, 2, 2, 2, 3};
-  for (int32_t t = 0; t < 24; ++t) CHECK(le_fx_param_count(t) == counts[t]);
-  CHECK(le_fx_param_count(24) == LE_ERR_INVALID);
+                            2, 2, 3, 1, 2, 2, 4, 3, 2, 2, 2, 3, 2};
+  for (int32_t t = 0; t < 25; ++t) CHECK(le_fx_param_count(t) == counts[t]);
+  CHECK(le_fx_param_count(25) == LE_ERR_INVALID);
   CHECK(le_fx_param_count(-1) == LE_ERR_INVALID);
   le_fx_param_desc scratch;
   CHECK(le_fx_param_info(LE_FX_DELAY, 3, &scratch) == LE_ERR_INVALID);
@@ -35209,7 +35284,8 @@ static void test_cache_cached_matches_live_every_builtin(void) {
                            LE_FX_REVERB,     LE_FX_EQ,        LE_FX_COMPRESSOR,
                            LE_FX_TRANSIENT,  LE_FX_HP_GATE,   LE_FX_WAH,
                            LE_FX_OVERDRIVE, LE_FX_DISTORTION, LE_FX_LPF,
-                           LE_FX_SPRING,    LE_FX_DUB_VERB,   LE_FX_AMB_VERB};
+                           LE_FX_SPRING,    LE_FX_DUB_VERB,   LE_FX_AMB_VERB,
+                           LE_FX_WHAMMY};
   /* The doubler and the chorus are free-running and never print
    * (test_cache_free_running_stays_live). */
   for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); ++i) {
@@ -39242,6 +39318,7 @@ int main(void) {
   test_fx_params_past_count_are_inert();
   test_octaver_pv_shifts_pitch_preserves_formant();
   test_octaver_pv_formants_move_with_pitch();
+  test_whammy_taper_and_pitch();
   test_octaver_pv_low_fundamental();
   test_octaver_mono_coherent();
   test_octaver_mix_no_comb();

@@ -440,7 +440,10 @@ enum TrackEffectType {
 
   /// The Looper X's Amb-Verb (#1430), which also carries the Dub Rack's
   /// Amb-Dub Mix.
-  ambVerb(23);
+  ambVerb(23),
+
+  /// The Looper X's Whammy (#1433).
+  whammy(24);
 
   const TrackEffectType(this.code);
 
