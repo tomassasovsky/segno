@@ -411,18 +411,22 @@ FxModuleBuild? fxEntryBuild(BuiltInEffect entry) {
   return build?.type == entry.type ? build : null;
 }
 
-/// The parameters [entry] shows, in order: its rack variant's
-/// ([fxEntryBuild]), or every parameter of its type. What every surface that
-/// lists or names an entry's controls goes through (the pedal, the control
+/// The controls [entry] shows: the parameters, in order, and the key each is
+/// named by. Its rack variant's ([fxEntryBuild]), or every parameter of its
+/// type under its own key. What every surface that lists or names an entry's
+/// controls goes through (the pedal, the effect editor, the control
 /// bindings), so they agree.
-List<int> fxEntryShownParams(BuiltInEffect entry) =>
-    fxEntryBuild(entry)?.exposed ??
-    [for (var i = 0; i < entry.type.params.length; i++) i];
-
-/// The key [entry]'s parameter [param] is named by: its rack variant's name
-/// for it, or the parameter's own key.
-String fxEntryParamKey(BuiltInEffect entry, int param) =>
-    fxEntryBuild(entry)?.labels[param] ?? entry.type.params[param].key;
+({List<int> params, List<String> keys}) fxEntryControls(BuiltInEffect entry) {
+  final build = fxEntryBuild(entry);
+  final params =
+      build?.exposed ?? [for (var i = 0; i < entry.type.params.length; i++) i];
+  return (
+    params: params,
+    keys: [
+      for (final i in params) build?.labels[i] ?? entry.type.params[i].key,
+    ],
+  );
+}
 
 /// Builds one chain entry for [module] out of [preset]'s values.
 ///

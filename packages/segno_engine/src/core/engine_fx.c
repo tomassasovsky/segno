@@ -1280,7 +1280,7 @@ static const le_fx_param_desc LE_FX_EQ_PARAMS[] = {
 /* ---- EQ (LE_FX_EQ, #887 part 4) ----
  *
  * The Looper X's generic EQ module, of which each rack exposes a subset (the
- * rack variants live in kFxModuleBuilds on the Dart side). Seven biquads in
+ * rack variants live in kFxModuleVariants on the Dart side). Seven biquads in
  * series, RBJ cookbook designs computed in double: a 12 dB/octave high-pass
  * (low cut), a low shelf, two peaking bands, a high shelf, an air shelf at a
  * fixed 12 kHz and a 12 dB/octave low-pass (high cut). The low cut is off at
@@ -1689,6 +1689,17 @@ void le_fx_free_kind_table(le_fx_state* fx) {
   le_rt_free(k);
 }
 
+/* Where in the update cadence slot [s] of this owner runs: one of four
+ * quarters, from the owner's hop-stagger quarter plus the slot, as the
+ * octaver staggers its hop (le_pv_hop_phase). Several gliding instances then
+ * redesign on different frames instead of all on the same one. The offline
+ * renders copy the owner's seed, so they keep the live phase. */
+static inline uint32_t le_fx_update_phase(const le_fx_state* fx, int s) {
+  const uint32_t quarter =
+      (uint32_t)fx->hop_seed / (uint32_t)LE_PV_STAGGER_QUARTER + (uint32_t)s;
+  return (quarter & 3u) * (uint32_t)(LE_FX_UPDATE_FRAMES / 4);
+}
+
 /* Audio thread: slot [s]'s state for [ty], updated at the cadence, or NULL
  * when the control thread prepared none (the slot then passes through). A
  * block it switches to (a retype, or le_fx_entry_reset) starts cleared and
@@ -1708,7 +1719,9 @@ static void* fx_kind_state(le_fx_state* fx, int s, int32_t ty, int sr,
     b->settle = 1;
   }
   void* st = le_fx_kind_payload(b);
-  if (b->settle || (le_fx_now(fx) & (uint32_t)(LE_FX_UPDATE_FRAMES - 1)) == 0) {
+  if (b->settle ||
+      ((le_fx_now(fx) + le_fx_update_phase(fx, s)) &
+       (uint32_t)(LE_FX_UPDATE_FRAMES - 1)) == 0) {
     LE_FX[ty].update(st, p, sr, b->settle);
     b->settle = 0;
   }
