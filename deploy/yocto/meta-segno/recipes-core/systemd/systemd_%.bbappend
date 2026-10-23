@@ -79,7 +79,14 @@ PACKAGECONFIG:append = " pstore"
 #
 # - a dead kernel (panic, hard hang) stops the kthread, and the hardware
 #   resets within one hardware window of its last ping;
-# - a stuck PID 1 resets about 60 s after its last ping.
+# - a stuck PID 1 resets just under 60 s after its last ping: the kthread's
+#   last ping lands 16 s before the deadline and the 12 s window below runs
+#   out first.
+#
+# Measured on the console: after `echo c` with kernel.panic=0 the next kernel
+# banner came 13.4 s later, about 6 s of it waiting for the reset and the rest
+# firmware. PID 1 frozen in its crash handler (`kill -SEGV 1`) was reset 57 s
+# after the freeze.
 #
 # The hardware window is not 16 s. bcm2835_wdt has no set_timeout op, so
 # it programs (timeout << 16) & 0xfffff ticks: the timeout in seconds modulo
