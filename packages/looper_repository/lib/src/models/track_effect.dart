@@ -452,6 +452,20 @@ class BuiltInEffect extends TrackEffect {
   }) : params = engine.canonicalEffectParams(type._engine, params),
        source = Map<String, double>.unmodifiable(source);
 
+  /// [copyWith] keeping [type]: [params] is already canonical for it.
+  const BuiltInEffect._sameType({
+    required this.type,
+    required this.params,
+    required this.enabled,
+    required this.slotId,
+    required this.placement,
+    required this.channels,
+    required this.rack,
+    required this.module,
+    required this.presetId,
+    required this.source,
+  });
+
   /// The effect type.
   final TrackEffectType type;
 
@@ -508,20 +522,33 @@ class BuiltInEffect extends TrackEffect {
     String? module,
     String? presetId,
     Map<String, double>? source,
-  }) => BuiltInEffect(
-    type: type ?? this.type,
-    params:
-        params ??
-        (type == null || type == this.type ? this.params : type.defaultParams),
-    enabled: enabled ?? this.enabled,
-    slotId: slotId ?? this.slotId,
-    placement: placement ?? this.placement,
-    channels: channels ?? this.channels,
-    rack: rack ?? this.rack,
-    module: module ?? this.module,
-    presetId: presetId ?? this.presetId,
-    source: source ?? this.source,
-  );
+  }) => params == null && (type == null || type == this.type)
+      ? BuiltInEffect._sameType(
+          type: this.type,
+          params: this.params,
+          enabled: enabled ?? this.enabled,
+          slotId: slotId ?? this.slotId,
+          placement: placement ?? this.placement,
+          channels: channels ?? this.channels,
+          rack: rack ?? this.rack,
+          module: module ?? this.module,
+          presetId: presetId ?? this.presetId,
+          source: source == null
+              ? this.source
+              : Map<String, double>.unmodifiable(source),
+        )
+      : BuiltInEffect(
+          type: type ?? this.type,
+          params: params ?? (type ?? this.type).defaultParams,
+          enabled: enabled ?? this.enabled,
+          slotId: slotId ?? this.slotId,
+          placement: placement ?? this.placement,
+          channels: channels ?? this.channels,
+          rack: rack ?? this.rack,
+          module: module ?? this.module,
+          presetId: presetId ?? this.presetId,
+          source: source ?? this.source,
+        );
 
   @override
   List<Object?> get props => [

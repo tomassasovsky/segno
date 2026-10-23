@@ -819,6 +819,20 @@ final class BuiltInEffect extends TrackEffect {
   }) : params = canonicalEffectParams(type, params),
        source = Map<String, double>.unmodifiable(source);
 
+  /// [copyWith] keeping [type]: [params] is already canonical for it.
+  const BuiltInEffect._sameType({
+    required this.type,
+    required this.params,
+    required this.enabled,
+    required this.slotId,
+    required this.placement,
+    required this.channels,
+    required this.rack,
+    required this.module,
+    required this.presetId,
+    required this.source,
+  });
+
   /// Rebuilds a [BuiltInEffect] from [toJson] output; unknown codes fall back
   /// to safe defaults. A legacy `stage` key (from the removed pre/post model)
   /// is ignored, so older persisted chains still decode.
@@ -875,7 +889,11 @@ final class BuiltInEffect extends TrackEffect {
         source: source,
       );
     }
-    final decoded = [for (final v in rawParams) (v as num).toDouble()];
+    // Cells past the width cannot belong to any type: dropped, as a corrupt
+    // or foreign file's extra cells are.
+    final decoded = [
+      for (final v in rawParams.take(kTrackEffectParams)) (v as num).toDouble(),
+    ];
     return BuiltInEffect(
       type: type,
       params: decoded,
@@ -948,20 +966,33 @@ final class BuiltInEffect extends TrackEffect {
     String? module,
     String? presetId,
     Map<String, double>? source,
-  }) => BuiltInEffect(
-    type: type ?? this.type,
-    params:
-        params ??
-        (type == null || type == this.type ? this.params : type.defaultParams),
-    enabled: enabled ?? this.enabled,
-    slotId: slotId ?? this.slotId,
-    placement: placement ?? this.placement,
-    channels: channels ?? this.channels,
-    rack: rack ?? this.rack,
-    module: module ?? this.module,
-    presetId: presetId ?? this.presetId,
-    source: source ?? this.source,
-  );
+  }) => params == null && (type == null || type == this.type)
+      ? BuiltInEffect._sameType(
+          type: this.type,
+          params: this.params,
+          enabled: enabled ?? this.enabled,
+          slotId: slotId ?? this.slotId,
+          placement: placement ?? this.placement,
+          channels: channels ?? this.channels,
+          rack: rack ?? this.rack,
+          module: module ?? this.module,
+          presetId: presetId ?? this.presetId,
+          source: source == null
+              ? this.source
+              : Map<String, double>.unmodifiable(source),
+        )
+      : BuiltInEffect(
+          type: type ?? this.type,
+          params: params ?? (type ?? this.type).defaultParams,
+          enabled: enabled ?? this.enabled,
+          slotId: slotId ?? this.slotId,
+          placement: placement ?? this.placement,
+          channels: channels ?? this.channels,
+          rack: rack ?? this.rack,
+          module: module ?? this.module,
+          presetId: presetId ?? this.presetId,
+          source: source ?? this.source,
+        );
 
   @override
   Map<String, dynamic> toJson() => {
