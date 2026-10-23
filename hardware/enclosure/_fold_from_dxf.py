@@ -328,60 +328,11 @@ def pcb_parts():
 
 
 def rear_panels():
-    """The bolt-on I/O sub-panel as a thin plate over the rear WINDOW. Built in the
-    panel-local (u,z) plane from V.rear_panel_holes(), then stood up onto the rear wall
-    (Y=D) centred on the panel blank.
+    """No bolt-on rear panel since #1088: every connector is cut into the rear wall,
+    which the folded base already carries. Kept so build() and its callers need
+    no special case."""
+    return []
 
-    REBUILT on the derived rear-panel API (#767): this used to size the plate from
-    V.REAR_WIN_W/H + a local ov=12 and emit two swappable "pi"/"nopi" variants. All
-    four REAR_WIN_* constants and the variant argument went away when the window
-    became derived and the panel came back as one part (#757/#761) -- so this whole
-    module (the fold render AND the collision audit) had been dying on an
-    AttributeError before it drew a single solid. Everything now comes from
-    V.rear_panel_outline() / V.rear_window(), which cannot drift from the metal."""
-    th = 2.0
-    pu0, pz0, pw, ph = V.rear_panel_outline()     # wall coords; holes are panel-LOCAL
-    pcu, pcz = pu0 + pw/2.0, pz0 + ph/2.0         # panel centre = the holes' origin
-    plate = cq.Workplane("XY").box(pw, ph, th, centered=(True, True, False))
-    for c in V.rear_panel_holes():
-        if c.get("layer") == "MASK":              # bare-metal bonding land, not a hole
-            continue
-        if c["kind"] == "circle":
-            tool = cq.Workplane("XY").circle(c["d"]/2).extrude(th+0.2).translate((c["u"], c["v"], -0.1))
-        else:                                     # only circle/rect come out of the panel
-            assert c["kind"] == "rect", f"rear_panels: unhandled cut kind {c['kind']!r}"
-            tool = (cq.Workplane("XY").box(c["w"], c["h"], th+0.2, centered=(True, True, False))
-                      .translate((c["u"]+c["w"]/2, c["v"]+c["h"]/2, -0.1)))
-        plate = plate.cut(tool)
-    # mount the sub-panel from INSIDE: plate against the inner wall face, connectors poke
-    # OUT through the window flush with the outer wall. rot about X (+90) maps panel-v -> Z,
-    # thickness -> -Y; seat the plate just inside the wall (Y = inner face).
-    rear_wall_y = V.D - 2*V.T
-    s = plate.val().rotate((0, 0, 0), (1, 0, 0), 90).translate((pcu, rear_wall_y - V.T, pcz))
-    return [("rearpanel", s)]
-
-
-def corner_joins():
-    """Weld-free corner L-brackets + rivets, so the riveted joint is VISIBLE and provably
-    aligned. Geometry matches the base rivet holes exactly (CORNER_RO / CORNER_ZF / ZR)."""
-    BW, BD, T, LEG, RO = V.W - 2*V.T, V.D - 2*V.T, V.T, V.CORNER_LEG, V.CORNER_RO
-    out = []
-    corners = [("RL", 0.0, BD, +1, -1),    # tall rear corners only
-               ("RR", BW,  BD, -1, -1)]    # (short front corners: butt+relief, lid-clamped)
-    ht = V.CORNER_HT
-    def leg(xa, xb, ya, yb):
-        x0, x1 = sorted((xa, xb)); y0, y1 = sorted((ya, yb))
-        return cq.Workplane("XY").box(x1 - x0, y1 - y0, ht, centered=False).translate((x0, y0, T + V.RI)).val()  # floats RI above the floor top, on the bend's inside arc
-    for tag, cx, cy, sx, sy in corners:
-        xin, yin = cx + sx*T, cy + sy*T          # INNER faces of the two walls (inset by T -> no wall clash)
-        legA = leg(xin, xin + sx*LEG, yin, yin + sy*T)    # flat on the rear-wall inner face, along +x
-        legB = leg(xin, xin + sx*T,   yin, yin + sy*LEG)  # flat on the side-wall inner face, along +y
-        out.append((f"cbracket_{tag}", legA.fuse(legB)))
-        for i, z in enumerate(V.CORNER_ZR_WALL):
-            out.append((f"crivet_{tag}_w{i}", cq.Solid.makeCylinder(1.7, 3*T, cq.Vector(cx + sx*(RO + T), cy - sy, T + V.RI + z), cq.Vector(0, sy, 0))))   # rear wall -> legA (dxf_base: CORNER_RO + T along, T + RI + z up)
-        for i, z in enumerate(V.CORNER_ZR_SIDE):
-            out.append((f"crivet_{tag}_s{i}", cq.Solid.makeCylinder(1.7, 3*T, cq.Vector(cx - sx, cy + sy*(RO + T), T + V.RI + z), cq.Vector(sx, 0, 0))))   # side wall -> legB
-    return out
 
 def check_platform_screws(path):
     """THE gate this file exists for (#742). Read the PLAT_SCR holes out of the
@@ -410,7 +361,6 @@ def check_platform_screws(path):
 def build(explode=0.0):
     """Assemble base + platforms + pedals + lid, all from the DXFs (no mirror)."""
     parts = list(fold_base(os.path.join(OUT, "segno_base.dxf")))
-    parts += corner_joins()
     parts += pcb_parts()
     parts += rear_panels()
     # PLATFORMS ARE NO LONGER SHEET METAL (#719): ring + sled, 3D printed, and
@@ -422,16 +372,19 @@ def build(explode=0.0):
     # stand-in is the WTB-006 too, not the ASP-1 placeholder this carried.
     cs = math.cos(math.radians(V.SLOPE_ANGLE))   # slot at slope-distance v lands at horizontal v*cos
     rings = {}
+    sleds = {}
     for v in (V.PEDAL_ROW1_V, V.PEDAL_ROW2_V):
-        rings[v] = (V._platform_printed(cq, V.platform_h(v), v, sled=V.CONSOLE_SLED_T)
+        rings[v] = (V._platform_printed(cq, V.platform_h(v), v,
+                                       baffle_t=V.CONSOLE_BAFFLE_T, sled=V.CONSOLE_SLED_T)
                     .val().rotate((0, 0, 0), (0, 0, 1), 90),
                     V.platform_h(v) - V.T - (V.CONSOLE_SLED_T - (V.PEDAL_PAD_T - V.POCKET_DEPTH)))
-    sled = V.pedal_console_sled(cq).val().rotate((0, 0, 0), (0, 0, 1), 90)
+        sleds[v] = (V.pedal_console_sled(cq, mid=v == V.PEDAL_ROW2_V)
+                    .val().rotate((0, 0, 0), (0, 0, 1), 90))
     for i, (label, u, v) in enumerate(V.PEDALS):
         vh = v * cs
         ring, seat = rings[v]
         parts.append((f"ring{i}", ring.translate((u, vh, V.T + explode))))
-        parts.append((f"sled{i}", sled.translate((u, vh, V.T + seat + explode))))
+        parts.append((f"sled{i}", sleds[v].translate((u, vh, V.T + seat + explode))))
         # The pedal stand-in is a BOX in the PEDESTAL FRAME -- local +X = depth
         # (toward the case back), local +Y = width -- and it gets the SAME 90 deg
         # spin as the ring and the sled under it, because it is the same frame.
@@ -458,12 +411,6 @@ def _obj_key(name):
     object, etc.). Embossed silk labels sit on the lid by design, so they're excluded."""
     if "silk" in name:
         return None
-    if name.startswith("crivet"):
-        return None                        # rivets pierce walls BY DESIGN -> skip collision
-    if name.startswith("cbracket"):
-        return name                        # keep each corner bracket separate (grouping the two
-                                           # disjoint brackets into one compound makes OCC's
-                                           # intersect over-report a phantom overlap)
     if name.startswith("plat"):
         return name.split("_")[0]          # plat3_5 -> plat3
     if name.startswith("board"):
@@ -475,39 +422,6 @@ def _bbox_hit(a, b, m=0.05):
     return (a.xmin <= b.xmax+m and a.xmax >= b.xmin-m and
             a.ymin <= b.ymax+m and a.ymax >= b.ymin-m and
             a.zmin <= b.zmax+m and a.zmax >= b.zmin-m)
-
-
-def _intended_contact(a, b):
-    """Pairs excused from the audit. ONE entry, and it has to earn its place: every
-    exemption here is a hole in the gate, so a pair stays out unless it has been
-    MEASURED and the number explained.
-
-    Measured with the whitelist switched off entirely (thresholds warn>1e-6), the
-    complete residual is: base<->cbracket 17 mm^3 (excused below), pedal<->lid
-    6 mm^3 x10, lid<->lid_screen 3 mm^3 x2. The last two are face-contact skin --
-    a pedal passes through its slot, a screen is bonded behind its aperture -- and
-    they sit under the 10 mm^3 warn floor on their own, so they need no exemption
-    and get none: if either ever grows to 500 mm^3 that IS a defect and the gate
-    should say so.
-
-    Three set-based entries used to live here and all three are gone:
-      - {"base","lid"}: measures 0 mm^3. The lid laps the body but does not
-        interpenetrate it -- it never needed excusing.
-      - {"pedal","plat"}: "plat" objects stopped existing at #719 (ring + sled).
-        Dead name; pedal<->ring now measures 0 mm^3.
-      - {"lid","pedal"}: 6 mm^3, i.e. under the warn floor -- see above.
-    Moving the ring stack onto its true station (ENC_V, #767) needed no entry here
-    either: dxf_faceplate cuts the RING aperture at the OD only (the centre land
-    leaves the blank as segno_ring_disc), so lid_ringmetal drops into a real void.
-    """
-    # WHY: the corner L-brackets exist to be riveted FLAT onto the inner faces of
-    # the rear and side walls -- coincident faces are the function of the part, not
-    # a clash. ~1920 mm^2 of face per bracket returns 17 mm^3 of boolean skin, i.e.
-    # 0.009 mm of "penetration", which is OCC tolerance, not metal. Without this the
-    # audit would carry two permanent WARNs and stop being silent-when-clean.
-    if "base" in (a, b) and any(x.startswith("cbracket") for x in (a, b)):
-        return True
-    return False
 
 
 def check_collisions(parts, warn=10.0, err=500.0):
@@ -534,7 +448,7 @@ def check_collisions(parts, warn=10.0, err=500.0):
     for i in range(len(objs)):
         for j in range(i+1, len(objs)):
             n1, c1, b1 = objs[i]; n2, c2, b2 = objs[j]
-            if not _bbox_hit(b1, b2) or _intended_contact(n1, n2):
+            if not _bbox_hit(b1, b2):
                 continue
             try:
                 inter = c1.intersect(c2)
@@ -579,8 +493,6 @@ if __name__ == "__main__":
         if n=="lid_ringmetal": return cq.Color(0.72,0.74,0.78,1.0)       # metal centre disc inside the ring
         if n.startswith("buckso"): return cq.Color(0.78,0.66,0.32,1.0)    # brass standoffs
         if n.startswith("buck"): return cq.Color(0.12,0.32,0.46,1.0)      # external buck module
-        if n.startswith("crivet"): return cq.Color(0.85,0.86,0.90,1.0)    # rivets (bright metal)
-        if n.startswith("cbracket"): return cq.Color(0.95,0.55,0.20,1.0)  # corner brackets (orange, visible)
         if n.startswith("lid"): return cq.Color(0.45,0.55,0.78,1.0)
         if n.startswith("pedal"): return cq.Color(0.30,0.31,0.36,1.0)
         if n.startswith("plat"): return cq.Color(0.62,0.64,0.70,1.0)
@@ -603,8 +515,6 @@ if __name__ == "__main__":
         if n in ("board_main","board_pi"): return (0.10,0.42,0.20)
         if n=="board_pieth": return (0.72,0.73,0.78)
         if n.startswith("board"): return (0.10,0.10,0.12)
-        if n.startswith("crivet"): return (0.85,0.86,0.90)
-        if n.startswith("cbracket"): return (0.95,0.55,0.20)
         if n.startswith("lid"): return (0.45,0.55,0.80)
         if n.startswith("pedal"): return (0.30,0.31,0.36)
         if n.startswith("plat"): return (0.62,0.64,0.70)

@@ -9,7 +9,9 @@
 # miniaudio/ (the vendored backend). Every subdirectory with headers is on the
 # include path below, so sources keep using flat `#include "x.h"`.
 cmake_minimum_required(VERSION 3.15)
-project(segno_engine_core VERSION 0.1.0 LANGUAGES C)
+# C for the engine; C++ for the one Signalsmith Stretch shim TU (stretch/
+# le_stretch.cpp, #1179) and, when SEGNO_ENABLE_PLUGINS is on, the plugin host.
+project(segno_engine_core VERSION 0.1.0 LANGUAGES C CXX)
 
 # --- segno_dsp_core: the effects DSP, split out as its own STATIC library so a
 # second target (the future VST3 plugin builds, parts 2/3) can link engine_fx.c
@@ -24,6 +26,12 @@ project(segno_engine_core VERSION 0.1.0 LANGUAGES C)
 # core/plugin_disabled.c when it's off) — parts 2/3 must link the stub too.
 add_library(segno_dsp_core STATIC
   core/engine_fx.c
+  # The audio-thread allocator (rt_alloc.h). It rides here, and only here,
+  # because engine_fx.c claims its rings from it, so every target linking
+  # segno_dsp_core (the VST3 plugin builds in ../vst3) needs it; segno_engine
+  # gets it by linking this library, and listing it there too would define it
+  # twice.
+  core/rt_alloc.c
 )
 
 # Matches segno_engine's own C_STANDARD/atomics configuration below: this
@@ -55,8 +63,9 @@ target_include_directories(segno_dsp_core PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/midi"
 )
 
-# Verified via `nm -u` on the built object: segno_dsp_core's only unresolved
-# symbols are libc/libm (calloc/free/sinf/cosf/tanf/tanhf/atan2f/expf/logf/
+# Verified via `nm -u` on the built objects: segno_dsp_core's only unresolved
+# symbols are libc/libm (rt_alloc.c's mmap/munmap/madvise/sysconf/fprintf,
+# and calloc/free/sinf/cosf/tanf/tanhf/atan2f/expf/logf/
 # powf, plus the compiler-inserted stack-protector/memcpy-check builtins) and
 # le_plugin_slot_process (the link-seam gotcha above). If a future change to
 # engine_fx.c (or a header it pulls in) adds a new external dependency, this
@@ -67,22 +76,36 @@ add_library(segno_engine SHARED
   # ---- core/: the portable engine (S1 split into per-concern TUs) ----
   core/engine.c              # residual control-thread core + shared helpers
   core/engine_convert.c      # pure sample-format conversion
-  # core/engine_fx.c lives in segno_dsp_core above (linked PRIVATE below) so a
-  # second target (future VST3 plugin builds) can link it too.
+  core/engine_digest.c       # SHA-256, file digests, directory fsync (engine-free)
+  # core/engine_fx.c and core/rt_alloc.c live in segno_dsp_core above (linked
+  # PRIVATE below) so the VST3 plugin builds can link them too.
   core/engine_session.c      # session export / import / commit
   core/engine_devices.c      # device discovery, loopback, id resolution, backend
   core/engine_snapshot.c     # published-state snapshots + visualization reads
   core/engine_process.c      # THE audio-thread TU (le_engine_process + transport)
   core/engine_commands.c     # control-thread command producers
+  core/engine_fx_recipe.c    # prepared FX publication and resource retirement
   core/engine_cache.c        # Loop-stage wet cache (scheduler + render worker)
+  core/engine_render.c       # shared render recipe: Bounce + Save selected audio
+  core/engine_wav.c          # the one native streaming float WAV writer
   core/engine_restore.c      # Offline loop-close restoration worker (#697 S9)
   core/engine_cond.c         # per-input conditioning stage (input conditioning)
+  core/engine_backing.c      # backing player buffers + control API (#1200)
+  core/engine_decode.c       # the audio-file decoder + offline resampler (#1200)
+  core/engine_audition.c     # Library audition voice control API (#1178)
+  core/engine_instruments.c  # instrument slots, note rings, synth in the callback (#1197)
+  core/engine_prefault.c    # background prefaulter ahead of the write head (#900)
   # Offline loop-close restoration DSP (#697 S8) — pure TUs, no engine state;
   # consumed by the restore worker (engine_restore.c, S9). NOT matched by
   # run_native_tests.sh's engine*.c glob — they are listed explicitly there;
   # keep the two lists in sync.
   core/restore_declip.c      # de-clip: flat-run detect + spline/Burg-AR repair
   core/restore_halfband.c    # 2:1 half-band resample (RNNoise's 48 k leg)
+  # Instrument synthesis (#1197) — pure TUs like the restore DSP: the voice
+  # pool and the patch table (whose catalogue reads are exported). Listed
+  # explicitly in run_native_tests.sh and tool/build_test_lib.sh too.
+  core/synth_voice.c         # instrument voice pool (synth_voice.h)
+  core/synth_patch.c         # the 19 patches + le_synth_patch_info & co.
   # The miniaudio device backend (le_device_backend.h), compiled unconditionally
   # — the only device backend this build ships; another backend slots in behind
   # le_select_backend.
@@ -94,6 +117,7 @@ add_library(segno_engine SHARED
   core/perf_log_ring.c       # perf event log: SPSC ring of frame-tagged le_command entries
   core/layer_staging_ring.c  # retired-layer PCM staging ring (persist before pool eviction)
   core/perf_drain.c          # perf-capture drain thread: rings -> raw PCM + sidecar
+  core/perf_checkpoint.c     # durable two-slot take checkpoints (#1198 D4)
   core/json_read.c           # minimal read-only JSON parser (performance.json)
   core/perf_render.c         # offline renderer: replay capture dir -> dry stems
   # Control-thread plugin-slot lifecycle (load/clear + quiescent handshake).
@@ -122,14 +146,27 @@ add_library(segno_engine SHARED
   # placement) but is a portable ENGINE dependency (engine_process.c calls
   # le_midi_clock_advance every block), not an OS MIDI backend.
   midi/le_midi_clock.c
+  # le_clock_follow.c (#1228) is the pure-value MIDI clock follower the
+  # audio thread drives from the source port's pulses; an engine dependency
+  # like le_midi_clock.c, not an OS MIDI backend.
+  midi/le_clock_follow.c
   # ---- miniaudio/: the vendored backend ----
   miniaudio/miniaudio_impl.c
+  # ---- stretch/: the C ABI over the vendored Signalsmith Stretch (#1179) ----
+  # The only C++ TU of the portable engine; it includes the header-only
+  # library relatively from ../third_party/signalsmith-stretch, so no include
+  # path is added. Mirrored by run_native_tests.sh / tool/build_test_lib.sh
+  # (compiled with $CXX) and by the macOS forwarders — keep them in sync.
+  stretch/le_stretch.cpp
 )
 
-# C11 gives us <stdatomic.h> for the lock-free ring and snapshot publication.
+# C11 gives us <stdatomic.h> for the lock-free ring and snapshot publication;
+# C++17 is what the stretch shim (and the vendored VST3 SDK, when enabled) need.
 set_target_properties(segno_engine PROPERTIES
   C_STANDARD 11
   C_STANDARD_REQUIRED ON
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED ON
   OUTPUT_NAME "segno_engine"
 )
 
@@ -160,6 +197,11 @@ if(UNIX AND NOT APPLE)
   # directly (unlike miniaudio, which dlopen()s it). Needs libasound2-dev.
   find_package(ALSA REQUIRED)
   target_link_libraries(segno_engine PRIVATE ALSA::ALSA)
+  # Resolve every external symbol at load (BIND_NOW), so the first call the
+  # audio thread makes to a libc or libm function never runs the lazy-binding
+  # resolver on the callback, which writes the GOT and runs code in ld.so that
+  # nothing has prefaulted (rt_alloc.h, engine_platform.h).
+  target_link_options(segno_engine PRIVATE "LINKER:-z,now")
 endif()
 
 # The CocoaPods (macOS/iOS) build compiles these sources via the podspec, not
@@ -238,6 +280,17 @@ set_source_files_properties(
   "${SEGNO_RNNOISE_DIR}/src/rnnoise_tables.c"
   PROPERTIES COMPILE_OPTIONS "-fvisibility=hidden")
 
+# The stretch shim TU for the same reason (#1179): on Linux its out-of-line
+# Signalsmith Stretch and std::vector instantiations would otherwise be
+# default-visibility weak exports of libsegno_engine.so, and Signalsmith is a
+# common plugin dependency, so a dlopen'd plugin could interpose them (or have
+# its own copy interposed). Nothing outside the engine calls le_stretch_*; the
+# FFI surface is untouched.
+if(UNIX AND NOT APPLE)
+  set_source_files_properties(stretch/le_stretch.cpp
+    PROPERTIES COMPILE_OPTIONS "-fvisibility=hidden;-fvisibility-inlines-hidden")
+endif()
+
 # --- VST3 + CLAP plugin hosting (vendored SDK include roots) ----------------
 #
 # Plugin hosting (third_party/vst3sdk + third_party/clap, both MIT — see
@@ -272,8 +325,8 @@ if(SEGNO_ENABLE_PLUGINS)
       "${CMAKE_CURRENT_SOURCE_DIR}/../third_party (a broken or partial checkout?). "
       "Restore them. See third_party/README.md.")
   endif()
-  # The VST3 SDK is C++; CLAP is a C header API consumed from C++.
-  enable_language(CXX)
+  # The VST3 SDK is C++ (the language is enabled at project() above); CLAP is
+  # a C header API consumed from C++.
   target_include_directories(segno_engine PRIVATE
     "${SEGNO_VST3_SDK_DIR}"
     "${SEGNO_CLAP_DIR}"
@@ -298,6 +351,4 @@ if(SEGNO_ENABLE_PLUGINS)
     "${SEGNO_VST3_SDK_DIR}/public.sdk/source/common/commoniids.cpp"
     "${SEGNO_VST3_SDK_DIR}/public.sdk/source/vst/vstinitiids.cpp"
   )
-  set_target_properties(segno_engine PROPERTIES CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED ON)
 endif()

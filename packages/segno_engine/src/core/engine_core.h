@@ -20,6 +20,11 @@
 extern "C" {
 #endif
 
+/* Pure bounded validation shared by control producers and callback consumers.
+ * A batch rechecks the live signature before applying any future preset. */
+int32_t le_length_presets_check(le_engine* engine, const int32_t* bars,
+                               int32_t count);
+
 /* Loopback latency harness tuning. The echo returns only mildly attenuated
  * (~0.9 from a full-scale pulse on a typical interface), so we emit a quiet
  * calibration tone rather than full scale to spare the user's monitors, and
@@ -35,6 +40,22 @@ extern "C" {
 /* Input level (0..1) that triggers sound-activated recording (~-34 dBFS). */
 #define LE_AUTO_RECORD_THRESHOLD 0.02f
 
+/* Drops any Song handoff (#1077). Audio thread, or lifecycle code while the
+ * callback is stopped. */
+static inline void le_song_cancel(le_engine* e) {
+  e->song_source = -1;
+  e->song_target = -1;
+  e->song_elapsed = 0;
+  atomic_store_explicit(&e->a_song_queue, 0u, memory_order_relaxed);
+}
+
+/* Forgets the Song section that sounded last (#1077). Audio thread, or
+ * lifecycle code while the callback is stopped. */
+static inline void le_song_forget(le_engine* e) {
+  e->song_last = -1;
+  atomic_store_explicit(&e->a_song_last, -1, memory_order_relaxed);
+}
+
 /* Wraps `pos - offset` into [0, len). Used to write captured input at the
  * latency-compensated loop position so overdubs align with what was heard. */
 static inline int32_t comp_pos(int32_t pos, int32_t offset, int32_t len) {
@@ -44,10 +65,21 @@ static inline int32_t comp_pos(int32_t pos, int32_t offset, int32_t len) {
   return p;
 }
 
+/* Where an overdub on a track writes this frame: its segment base plus the
+ * latency-compensated position inside the segment (comp_pos wraps within the
+ * segment, not the whole multiple). The mixer writes there (wdub), and the
+ * control thread's prefault of a punch-in shadow maps the coming second of
+ * play positions through the same function (le_prefault_dub_second), so the
+ * two cannot drift apart. */
+static inline int32_t le_dub_write_index(int32_t seg_base, int32_t pos,
+                                         int32_t offset, int32_t len) {
+  return seg_base + comp_pos(pos, offset, len);
+}
+
 /* A track's active lane count, clamped to a usable range (a track always has at
  * least one lane). */
 static inline int32_t le_lanes_active(const le_track* t) {
-  int32_t n = t->lane_count;
+  int32_t n = atomic_load_explicit(&t->lane_count, memory_order_acquire);
   if (n < 1) n = 1;
   if (n > LE_MAX_LANES) n = LE_MAX_LANES;
   return n;
@@ -67,6 +99,25 @@ static inline uint64_t le_fx_fp_u32(uint64_t h, uint32_t v) {
   return h;
 }
 
+/* Folds one entry's channel handling into a chain fingerprint (slice 3e).
+ *
+ * The PRINT key needs it: the wet cache renders the entries WITH their channel
+ * handling, so a change to an input choice, a placement or a level makes the
+ * published render stale exactly as a param change does. Kept out of
+ * le_engine_lane_fx_fingerprint, which is the Dart-divergence hash over the
+ * chain the repository mirrors. */
+static inline uint64_t le_fx_chan_fold(uint64_t h, const le_fx_chan* c) {
+  h = le_fx_fp_u32(h, (uint32_t)c->in_mode);
+  h = le_fx_fp_u32(h, (uint32_t)c->out_mode);
+  h = le_fx_fp_u32(h, f32_to_bits(c->gl));
+  h = le_fx_fp_u32(h, f32_to_bits(c->gr));
+  h = le_fx_fp_u32(h, f32_to_bits(c->level));
+  /* Where the entry sits in its rack decides where its output side applies.
+   * Folded only when set, so a chain without racks keeps its key. */
+  return c->rack ? le_fx_fp_u32(h, (uint32_t)c->rack) : h;
+}
+
+
 /* The control thread's view of a track's state: the target of a
  * posted-but-unapplied state-flip command (UNDO_TO_EMPTY / REDO_FROM_EMPTY /
  * CLEAR), or the published a_state once everything posted has been acked.
@@ -80,7 +131,168 @@ static inline int32_t le_effective_state(le_track* t) {
       atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
     return t->pending_target;
   }
-  return load_i32(&t->a_state);
+  /* Record finalization does not post a state command; its release state
+   * store independently publishes the settled length and master clock. */
+  return atomic_load_explicit(&t->a_state, memory_order_acquire);
+}
+
+/* A history entry of `kind` naming `slot`; `skipped` is meaningful for PEEL
+ * only and zero otherwise. Same zero-filling aggregate shape as le_hist_layer.
+ * Shared by the history motions (engine_commands.c) and the Session rebuild
+ * (engine_session.c). */
+static inline le_hist_entry le_hist_kind_entry(int32_t kind, int32_t slot,
+                                               int32_t skipped) {
+  le_hist_entry e = le_hist_layer(slot);
+  e.kind = kind;
+  e.skipped = skipped;
+  return e;
+}
+
+/* How many LAYER entries Peel can still consume (#1164): those above the
+ * highest entry that is neither LAYER nor PEEL (the whole stack when there is
+ * none). */
+static inline int32_t le_peel_depth(const le_track* t) {
+  int32_t depth = 0;
+  for (int i = t->undo_count - 1; i >= 0; --i) {
+    const int32_t kind = t->undo_stack[i].kind;
+    if (kind == LE_HIST_LAYER) ++depth;
+    else if (kind != LE_HIST_PEEL) break;
+  }
+  return depth;
+}
+
+/* The equal-gain head fold every seam gets (#728): morphs head[0, F) from the
+ * continuation of the sample that wraps into it, so the wrap is continuous.
+ * Linear weights sum to 1, so correlated material passes at unity. Shared by
+ * the finalize fold, its dub-shadow twin and the length edits' halves. */
+static inline void le_seam_fold_head(float* head, const float* continuation,
+                                     int32_t F) {
+  for (int32_t i = 0; i < F; ++i) {
+    const float x = (float)i / (float)F; /* 0..1 across the fade */
+    head[i] = continuation[i] * (1.0f - x) + head[i] * x;
+  }
+}
+
+/* Whether a recalled track of `len` frames fits a Session's `base`: a whole
+ * multiple, or exactly half or a quarter of it (a Sync division, #1168). */
+static inline int le_session_length_fits(int32_t base, int32_t len) {
+  if (base <= 0 || len <= 0) return 0;
+  return len % base == 0 || (int64_t)len * 2 == base ||
+         (int64_t)len * 4 == base;
+}
+
+/* What a length edit or its Undo/Redo (#1168) makes of one track: the new
+ * length, its multiple or Sync division, `reclock` (the new master when the
+ * rig re-clocks, else 0) and the beat count the re-clocked grid keeps. */
+typedef struct {
+  int32_t len, multiple, divisor, reclock, beats;
+} le_length_fit;
+
+/* The re-clock beat rule (#1212 review M2; owner decision 2026-10-06), the
+ * only place it lives: a track that is the rig's only content re-clocks the
+ * master to its new length `len` and keeps the tempo, so a grid of `beats`
+ * beats over `base` frames must come out a whole beat count over `len`
+ * (within a frame per beat, the odd length's half frame). Returns the kept
+ * beat count, or 0 when a fraction of a beat would remain: that edit is
+ * refused as incompatible. A 1-bar loop in 4/4 halves to 2 beats and a 3-bar
+ * loop to 6 beats; a 1-beat loop cannot halve. */
+static inline int32_t le_reclock_whole_beats(int32_t base, int32_t beats,
+                                             int32_t len) {
+  const int64_t span = (int64_t)beats * len; /* beats * base frames */
+  const int64_t kept = (span + base / 2) / base;
+  const int64_t off = kept * base - span;
+  if (kept < 1 || kept > INT32_MAX / 15 || (off < 0 ? -off : off) > beats) {
+    return 0;
+  }
+  return (int32_t)kept;
+}
+
+/* The one verdict for a new length `len`, shared by control admission (its
+ * effective view) and the callback recheck (the applied rig), so the two can
+ * only disagree when the rig changed in between. `others`: another track holds
+ * or is capturing content; `primary`: this track is the crowned primary.
+ * Free/Song spans are independent. With no other content the master follows
+ * the track, keeping the tempo, under le_reclock_whole_beats (`beats` is the
+ * grid's beat count, 0 for none). A crowned Sync/Band primary with
+ * dependents is refused (a Double would end Sync quantization, a half would
+ * re-clock every dependent); any other track must fit the mode's span rule
+ * against the unchanged base. */
+static inline int32_t le_length_fit_check(int32_t mode, int32_t base,
+                                          int32_t beats, int others,
+                                          int primary, int32_t len,
+                                          int32_t cap, le_length_fit* out) {
+  out->len = len;
+  out->multiple = 1;
+  out->divisor = 0;
+  out->reclock = 0;
+  out->beats = 0;
+  if (len <= 0) return LE_ERR_INVALID;
+  if (len > cap) return LE_ERR_CAPACITY;
+  if (mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG) return LE_OK;
+  if (!others) {
+    out->reclock = len;
+    if (beats > 0 && base > 0) {
+      out->beats = le_reclock_whole_beats(base, beats, len);
+      if (out->beats == 0) return LE_ERR_MODE_MISMATCH;
+    }
+    return LE_OK;
+  }
+  if (base <= 0) return LE_ERR_NOT_READY;
+  if (primary && (mode == LE_LOOPER_MODE_SYNC || mode == LE_LOOPER_MODE_BAND)) {
+    return LE_ERR_MODE_MISMATCH;
+  }
+  if (!le_mode_span_fits(mode, base, len)) return LE_ERR_MODE_MISMATCH;
+  if (len >= base) {
+    out->multiple = len / base;
+  } else {
+    out->divisor = base / len;
+  }
+  return LE_OK;
+}
+
+/* The control thread's view of a track's read direction (#1162): the
+ * direction the posted-but-unapplied REVERSE commands predict, or the
+ * published a_reversed once the callback has processed every one of them.
+ * Used by the Record guard (a punch-in on a reversed track is refused) and
+ * by toggle admission; the callback remains the authority and a refused
+ * toggle corrects the view the moment it is processed (posted == applied). */
+static inline int le_effective_reversed(le_track* t) {
+  if (t->reverse_posted >
+      atomic_load_explicit(&t->a_reverse_applied, memory_order_acquire)) {
+    return t->reverse_pending;
+  }
+  return atomic_load_explicit(&t->a_reversed, memory_order_acquire) != 0;
+}
+
+/* The control thread's view of whether track [t] plays transposed (#1179
+ * Part 3a): the stored pitch and the global bypass the posted-but-unapplied
+ * TRANSPOSE / BYPASS commands predict, or the published ones once all are
+ * processed. The Record guard refuses a punch-in while it holds. */
+static inline int le_effective_transposed(le_engine* e, le_track* t) {
+  const int32_t st =
+      t->transpose_posted >
+              atomic_load_explicit(&t->a_transpose_applied, memory_order_acquire)
+          ? t->transpose_pending
+          : atomic_load_explicit(&t->a_transpose_st, memory_order_acquire);
+  const int bypass =
+      e->bypass_posted >
+              atomic_load_explicit(&e->a_bypass_applied, memory_order_acquire)
+          ? e->bypass_pending
+          : atomic_load_explicit(&e->a_transpose_bypass, memory_order_acquire);
+  return st != 0 && !bypass;
+}
+
+/* The control thread's view of the global Speed (#1179), as for direction
+ * above: whether the factor the posted-but-unapplied SET_SPEED commands
+ * predict, or the published one once all are processed, is 1x. The Record
+ * guard refuses a capture while it is not. */
+static inline int le_effective_speed_one(le_engine* e) {
+  if (e->speed_posted >
+      atomic_load_explicit(&e->a_speed_applied, memory_order_acquire)) {
+    return e->speed_pending_one;
+  }
+  return atomic_load_explicit(&e->a_speed_ratio, memory_order_acquire) ==
+         le_speed_pack(1, 1);
 }
 
 /* Publishes pool slot [slot] as every active lane's live buffer AND bumps the
@@ -90,10 +302,61 @@ static inline int32_t le_effective_state(le_track* t) {
  * clear-restore, layered session finalize) MUST go through this helper, so
  * the [R1] bump can never be forgotten when the next history feature copies
  * the swap. Control thread only (a_live's sole writer). */
-static inline void le_track_publish_live(le_track* t, int32_t slot) {
+static inline void le_track_publish_live(le_track* t, int32_t slot,
+                                         int reuse_key) {
   const int32_t lanes = le_lanes_active(t);
-  for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, slot);
+  /* The outgoing content keeps its key on its slot (#1179, a_src_key). */
+  const int32_t old = atomic_load_explicit(&t->lanes[0].a_live,
+                                           memory_order_relaxed);
+  if (old >= 0 && old < LE_POOL_SLOTS && old != slot) {
+    atomic_store_explicit(
+        &t->a_slot_key[old],
+        atomic_load_explicit(&t->a_src_key, memory_order_acquire),
+        memory_order_relaxed);
+  }
+  const uint32_t key =
+      reuse_key && slot >= 0 && slot < LE_POOL_SLOTS && old != slot
+          ? atomic_load_explicit(&t->a_slot_key[slot], memory_order_relaxed)
+          : 0u;
+  /* Lane 0 is published LAST, with release: a callback that observes the new
+   * slot there (the acquire load of lane 0's a_live in mix_tracks_frame, the
+   * capture's application boundary, #1143) also observes the perf.slot_image
+   * entry the caller stored for it AND the lanes 1..n stores above, so no lane
+   * can still mix the old slot in the frame lane 0's fact names. A lane k may
+   * still mix the new slot up to one frame BEFORE that fact (its own relaxed
+   * load runs after lane 0's in the same frame); the fact is exact for lane 0,
+   * which is all today's lane-0 renderer consumes. */
+  for (int32_t l = lanes - 1; l >= 0; --l) {
+    atomic_store_explicit(&t->lanes[l].a_live, slot, memory_order_release);
+  }
   le_audio_rev_bump(t); /* [R1] a_live now names other audio */
+  if (key != 0u) atomic_store_explicit(&t->a_src_key, key, memory_order_release);
+}
+
+/* Publishes [slot] live with its staged image identity (#1143): `id` is the
+ * perf.slot_image entry the callback will log when it first mixes the slot —
+ * a nonzero staged id from le_stage_source_image, or 0 for a slot whose PCM
+ * has no immutable copy in this capture (loop-close restoration, session
+ * import), which the callback logs as 323/0 so the stem fails truthfully.
+ * Every control-side a_live publisher goes through here, so a stale entry
+ * can never be read for a slot that was published without one. */
+static inline void le_publish_live_image(le_engine* e, le_track* t, int32_t slot,
+                                         uint32_t id, int reuse_key) {
+  atomic_store_explicit(&e->perf.slot_image[t - e->tracks][slot], id,
+                        memory_order_relaxed);
+  le_track_publish_live(t, slot, reuse_key);
+}
+
+/* Drops every staged image identity of [channel] (#1143). Called by every
+ * control path that writes PCM into a pool slot outside the overdub write
+ * path (session import, the fresh-capture zero/regrow): the slot's content
+ * no longer matches the image an earlier admission staged for it, and the
+ * callback must not log that image when the slot next becomes live. */
+static inline void le_forget_slot_images(le_engine* e, int32_t channel) {
+  for (int32_t s = 0; s < LE_POOL_SLOTS; ++s) {
+    atomic_store_explicit(&e->perf.slot_image[channel][s], 0u,
+                          memory_order_relaxed);
+  }
 }
 
 /* Whether `ch` is a usable track index. Defined in engine.c. */
@@ -108,13 +371,95 @@ void le_track_set_len(le_track* t, int32_t len);
  * Defined in engine.c. */
 int32_t le_mask_to_channel(uint32_t mask);
 
+/* The lane's PRE-PREFIX chain fingerprint (slice 3e): the canonical
+ * le_fx_chain_fingerprint fold over entries [0, a_fx_pre_count) only.
+ *
+ * This is the wet cache's key term, because the cache renders exactly the Pre
+ * prefix — the printed part of the take. Keying on the prefix rather than the
+ * whole chain is what lets a Post edit leave the print standing: a Post entry
+ * is downstream of the player and never enters the render, so changing one
+ * cannot make the render stale. le_engine_lane_fx_fingerprint still folds the
+ * WHOLE chain and stays the Dart-divergence hash. */
+uint64_t le_lane_pre_fx_fingerprint(le_engine* engine, int32_t channel,
+                                    int32_t lane);
+
+/* Whether track [channel]'s Pre run can be rendered at all: every active part
+ * must carry a wholly-Pre chain (slice 3e). See engine_snapshot.c. */
+int le_track_pre_printable(le_engine* engine, int32_t channel);
+
+/* The whole-track print's key: the track's Pre run plus every per-part fact
+ * inside the combined material it is rendered over. See engine_snapshot.c. */
+uint64_t le_track_pre_fingerprint(le_engine* engine, int32_t channel);
+
 /* Posts a command into the engine's SPSC ring (control thread). Returns LE_OK,
  * LE_ERR_NOT_RUNNING (not configured), or LE_ERR_INVALID (null / ring full).
  * le_push builds a generic { arg_i, arg_f } command; le_push_cmd posts a
  * prebuilt typed command (the addressed/packed families fill a named union arm).
  * Both defined in engine.c. */
 int32_t le_push(le_engine* engine, int32_t code, int32_t arg_i, float arg_f);
+int le_mix_valid(const le_engine* engine, const le_mix_settings* settings);
+int le_image_valid(const le_engine* engine, int32_t channel,
+                   const le_record_image* image);
 int32_t le_push_cmd(le_engine* engine, le_command cmd);
+
+/* Backing player (#1200, engine_backing.c): frees every engine-owned backing
+ * buffer with the callback stopped, except, when [keep_loaded] is set, the
+ * loaded and staged ones (a retained reopen). Resets the voices to Stopped at
+ * 0 and republishes the state. Control thread, audio thread NOT running. */
+void le_backing_release(le_engine* engine, int keep_loaded);
+
+/* The decoder's offline converter (engine_decode.c, #1200 Part 2): one
+ * channel, strided input and output; out_frames must be
+ * le_resample_frames(in_frames, in_rate, out_rate) = floor(in_frames *
+ * out_rate / in_rate); equal rates copy exactly; out_rate * 2 < in_rate is
+ * refused (halve first). LE_OK, LE_ERR_INVALID (bad arguments, or more than
+ * 8192 rational phases), LE_ERR_CAPACITY. Control or worker thread. */
+int64_t le_resample_frames(int64_t in_frames, int32_t in_rate,
+                           int32_t out_rate);
+int32_t le_resample_offline(const float* in, int32_t in_stride,
+                            int32_t in_frames, int32_t in_rate, float* out,
+                            int32_t out_stride, int32_t out_frames,
+                            int32_t out_rate);
+#ifdef LE_NATIVE_TESTS
+/* Overrides the decoder's MemAvailable reading (bytes; -1 = unknown). */
+extern int64_t (*le_test_mem_available_hook)(void);
+/* Overrides the decoder's I/O work budget (bytes read plus seeks) when
+ * positive, so a test can prove the bound exists. */
+extern int64_t le_test_decode_budget;
+#endif
+
+/* Library audition voice (#1178, engine_audition.c): frees every
+ * engine-owned audition buffer with the callback stopped and silences the
+ * voice. Control thread, audio thread NOT running (configure, reopen,
+ * destroy). */
+void le_audition_release(le_engine* engine);
+
+/* One bounded timing read. refresh_cache is only true for full snapshots. */
+le_record_timing_readback le_record_timing_read(le_engine* engine,
+                                               int refresh_cache);
+int le_record_timing_valid(const le_record_timing_settings* settings);
+#ifdef LE_NATIVE_TESTS
+/* Deterministic test instrumentation: 1 odd, 2 partial write, 3 copied read,
+ * 4 image FX preparation. No hook exists in production builds. */
+/* Fade: 1 odd publication, 2 snapshot copy, 3 Clear mailbox copy,
+ * 4 Restore posted before control live-slot publication, 5 selected PCM. */
+extern void (*le_test_fade_hook)(le_engine*, int);
+/* 1: Stop intent read the cohort, before its command is posted. */
+extern void (*le_test_stop_record_hook)(le_engine*, int);
+extern void (*le_test_record_timing_hook)(le_engine*, int);
+/* 1: Click mode/result applied, before command publication. */
+extern void (*le_test_click_mode_hook)(le_engine*, int);
+extern void (*le_test_record_start_hook)(le_engine*, int);
+/* 1: le_engine_peel drained events, before it reads a_layer_in_flight (the
+ * window a late retire can land in). */
+extern void (*le_test_peel_hook)(le_engine*, int);
+/* Every dispatch of le_midi_ports_drain, in order (#1228): `kind` is an
+ * le_midi_dispatch_kind; `ev` is the event for LE_MIDI_DISPATCH_EVENT and
+ * NULL otherwise. */
+extern void (*le_test_midi_dispatch_hook)(le_engine*, int port, int kind,
+                                          const le_midi_port_event* ev);
+#endif
+
 
 /* Resets a lane to defaults (routing / volume / mute / effects / metering),
  * clearing DSP state and freeing octaver buffers. Control-thread lifecycle helper
@@ -123,14 +468,86 @@ int32_t le_push_cmd(le_engine* engine, le_command cmd);
  * engine.c as le_monitor_input_reset.) */
 void le_lane_reset(le_lane* ln, int32_t input_channel);
 
+/* The settings half of le_lane_reset: routing, live mix, mute, effects and
+ * cache bookkeeping back to defaults, material (buffers, a_live/a_len/
+ * a_recoverable, source image) untouched. Defined in engine.c. */
+void le_lane_reset_settings(le_lane* ln, int32_t input_channel);
+
+/* Retained reopen (#1140), control-side half — defined in engine_commands.c.
+ * With the device closed and the workers joined, files every completed
+ * overdub pass the audio thread handed off (events still in the ring, a
+ * parked retire, a frozen complete shadow — oldest first) as committed undo
+ * layers, completes an applied Clear's restore point, and drops the posted
+ * shadows and queued undo taps. Tracks in `drop_mask` (bit t = track t) are
+ * about to be dropped whole and are skipped. Runs BEFORE
+ * le_engine_reopen_settle. */
+void le_engine_reopen_file_retired(le_engine* engine, uint32_t drop_mask);
+
+/* Retained reopen (#1140), audio-side half — defined in engine_process.c.
+ * Reverts a partial overdub pass to its pre-pass image, drops a take still
+ * capturing (first recording, seam crossfade or trailing fold) and every
+ * track in `drop_mask` (a state command the audio thread never applied),
+ * parks every other content track STOPPED at the loop head, freezes the Fade
+ * envelopes and republishes the per-track atomics. A drop that empties the
+ * whole rig resets the master, as a clear does. Runs after
+ * le_engine_reopen_file_retired and before le_engine_reset_runtime
+ * re-initialises the rings. */
+void le_engine_reopen_settle(le_engine* engine, uint32_t drop_mask);
+
+/* le_lane_ensure_slot outcomes. Both successes are non-zero, so the plain
+ * `if (!le_lane_ensure_slot(...))` failure check reads as it always did. */
+enum {
+  LE_SLOT_FAILED = 0, /* allocation failed; the slot is left unallocated */
+  LE_SLOT_REUSED = 1, /* the existing buffer was big enough; content is stale */
+  LE_SLOT_FRESH = 2   /* a new buffer: all zeros, and no page touched yet */
+};
+
 /* Ensures lane [ln]'s pool slot [slot] holds a buffer of >= [frames] frames
  * (control thread only; the caller guarantees the audio thread is not reading
  * the slot's CONTENT — an EMPTY track's live slot, or a slot outside
- * live/stacks/outstanding). Growth replaces the buffer (free + fresh calloc);
- * no content survives a regrow by design — snapshots are always written whole
- * before use. Returns 1 on success, 0 on allocation failure (the slot is left
- * unallocated). Defined in engine.c. */
-int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames);
+ * live/stacks/outstanding). Growth replaces the buffer with a fresh, untouched
+ * le_rt_alloc mapping; no content survives a regrow by design — snapshots are
+ * always written whole before use. A caller that needs the slot cleared
+ * clears only a REUSED one: a FRESH one already reads zeros, and clearing it
+ * would make every page of a cap-sized buffer resident (#906). Nothing here
+ * prefaults: the audio thread may write the slot only after
+ * le_track_prefault_capture or a shadow post has. Defined in engine.c. */
+int le_lane_ensure_slot(le_engine* e, le_lane* ln, int32_t slot,
+                        int32_t frames);
+
+/* Faults in the first LE_PREFAULT_HEAD_SECONDS of pool slot [slot]
+ * (engine_prefault.h): what a take can write before the background
+ * prefaulter takes over. Control thread; cheap when already present. */
+void le_lane_prefault_head(le_lane* ln, int32_t slot, int32_t sample_rate);
+
+/* Frees the lane's standby shadow (engine_private.h). The caller first drops
+ * any prefaulter job on it (le_prefault_forget) unless the prefaulter is
+ * already cleared or shut down. Control thread. */
+void le_lane_release_standby(le_engine* e, le_lane_spares* sp);
+
+/* Frees the lane's untouched zero spare (engine_private.h). Control thread. */
+void le_lane_release_zero_spare(le_engine* e, le_lane_spares* sp);
+
+/* The spares of lane [ln] of [e] (le_engine.spares). */
+static inline le_lane_spares* le_lane_spares_of(le_engine* e, const le_lane* ln) {
+  const size_t t = (size_t)((const char*)ln - (const char*)e->tracks) /
+                   sizeof(le_track);
+  const size_t l = (size_t)(ln - e->tracks[t].lanes);
+  return &e->spares[t][l];
+}
+
+/* Frees [buf], a pool buffer the callback may still name (it can be inside a
+ * block that loaded it), once the next command this thread posts has
+ * published: the block that applies it starts after every block that could
+ * have loaded [buf] has ended. A take start replacing an EMPTY track's live
+ * slot uses this, so the munmap neither runs on the press nor can unmap a
+ * buffer an unfenced callback emptying is still reading (#1146's residual).
+ * Control thread. */
+void le_retire_buffer(le_engine* e, float* buf);
+
+/* Frees the retired buffers whose ticket has published, or all of them with
+ * [all] (the device closed). Drain cadence. */
+void le_collect_retired(le_engine* e, int all);
 
 /* Shrinks an over-allocated slot to `frames`, PRESERVING the leading `frames`
  * samples — the counterpart to le_lane_ensure_slot's grow-by-replace, for the
@@ -138,9 +555,18 @@ int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames);
  * pre-armed at the recording cap because the loop length was not yet known.
  * Control thread only, and only for a slot the audio thread no longer holds
  * (never the live slot). No-op when the slot is unallocated or already at or
- * below `frames`; a failed realloc keeps the oversized buffer. Defined in
+ * below `frames`; a failed allocation keeps the oversized buffer. Defined in
  * engine.c. */
-void le_lane_shrink_slot(le_lane* ln, int32_t slot, int32_t frames);
+void le_lane_shrink_slot(le_engine* e, le_lane* ln, int32_t slot,
+                         int32_t frames);
+
+/* Frees a lane audio buffer (a pool slot, a standby, a spare) that the
+ * callback can no longer reach: drops its prefault jobs first, waiting out a
+ * chunk in flight (le_prefault_forget), so the background prefaulter never
+ * faults, and locks, whatever is mapped at that address next. Every such
+ * free goes through here; a buffer the callback may still hold is retired
+ * instead (le_retire_buffer). NULL-safe. */
+void le_free_audio_buffer(le_engine* e, float* buf);
 
 /* ---- Per-input conditioning stage (input conditioning, S1) ----
  * Defined in engine_cond.c. le_cond_seed_defaults runs on the CONTROL thread

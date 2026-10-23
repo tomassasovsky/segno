@@ -6,12 +6,14 @@ library;
 
 export 'src/noop_pedal_link.dart';
 export 'src/pedal_button.dart';
+export 'src/pedal_color.dart';
 export 'src/pedal_ctrl.dart';
 export 'src/pedal_event.dart';
 export 'src/pedal_link.dart';
 export 'src/pedal_link_codec.dart';
 export 'src/pedal_link_message.dart';
 export 'src/pedal_mode.dart';
+export 'src/pedal_power.dart';
 export 'src/pedal_repository.dart';
 export 'src/pedal_state_frame.dart';
 export 'src/uart_pedal_link.dart';

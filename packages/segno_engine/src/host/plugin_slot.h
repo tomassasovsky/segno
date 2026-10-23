@@ -53,6 +53,7 @@ void le_plugin_slot_set_ready(le_plugin_slot* slot, int32_t ready);
  * retracted ready and completed the quiescent handshake first, so the audio
  * thread no longer references the slot. Safe with NULL. */
 void le_plugin_slot_destroy(le_plugin_slot* slot);
+int32_t le_plugin_slot_prepare_param(le_plugin_slot* slot, uint32_t id, double value);
 
 /* Behaviour modes for le_plugin_slot_create_stub. */
 typedef enum le_plugin_stub_mode {

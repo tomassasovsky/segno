@@ -29,6 +29,13 @@ import 'package:looper_repository/looper_repository.dart';
 sealed class FxBindingTarget extends Equatable {
   const FxBindingTarget();
 
+  /// Valid target coordinates, independent of current effect availability.
+  bool get isStructurallyValid => switch (this) {
+    FxChainTarget(:final address) => address.isStructurallyValid,
+    FxSlotTarget(:final address, :final slotId) =>
+      address.isStructurallyValid && slotId.isNotEmpty,
+  };
+
   /// Parses a [canonicalString] back to a target, or `null` when [encoded] is
   /// not a decodable one.
   ///
@@ -47,7 +54,7 @@ sealed class FxBindingTarget extends Equatable {
     final address = FxAddress.fromJson(raw);
     if (address == null) return null;
     final slot = raw['slot'];
-    if (slot == null) return FxChainTarget(address);
+    if (!raw.containsKey('slot')) return FxChainTarget(address);
     // A present-but-unusable `slot` is corruption, not a chain target:
     // silently widening an effect binding to its whole chain would bypass far
     // more than the user asked for on the next stomp.

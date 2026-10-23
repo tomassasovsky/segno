@@ -2,46 +2,303 @@ import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart';
 import 'package:segno_engine/segno_engine.dart' as engine;
 
-/// How a parameter's `0..1` value is read out in the UI, in its own units, when
-/// the bare number isn't meaningful on its own. Domain mirror of the engine's
-/// readout kinds; the UI maps each to a localized string ([none] shows none).
-enum ParamReadout {
-  /// No unit readout — the slider alone is enough.
-  none,
+/// How one chain entry takes the pair it is handed (slice 3e). Domain mirror
+/// of the engine's `FxChannelInput`.
+enum FxChannelInput {
+  /// The default: left and right as they arrive.
+  stereo,
 
-  /// A pitch interval (e.g. "Unison", "+7 st", "-1 oct").
-  pitchShift,
+  /// The incoming left on both sides.
+  left,
 
-  /// The octaver algorithm mode (phase vocoder / PSOLA).
-  octaverMode,
+  /// The incoming right on both sides.
+  right,
+
+  /// Their average on both sides.
+  monoSum,
 }
 
-/// How one effect parameter should be presented in the UI.
+/// How one chain entry hands its result on. Domain mirror of the engine's
+/// `FxChannelOutput`.
+enum FxChannelOutput {
+  /// The default: what the effects made, with the placement as a Balance.
+  stereo,
+
+  /// Averaged to mono, with the placement as a Pan.
+  mono,
+}
+
+/// One chain entry's channel handling and level. Domain mirror of the
+/// engine's `FxChannels`.
 ///
-/// The value itself is always a normalized `0..1` double (see [TrackEffect]);
-/// this only describes the control. [divisions], when set, snaps the slider to
-/// that many discrete steps. [readout] selects a human-readable unit readout
-/// shown live beside the slider.
-class TrackEffectParam extends Equatable {
-  /// Creates a parameter descriptor.
-  const TrackEffectParam(
-    this.label, {
-    this.divisions,
-    this.readout = ParamReadout.none,
+/// The accepted design puts these around each instance: the [input] choice
+/// before its effects, the [output] choice and then the [level] after them.
+/// [defaults] is bit-identical to no channel handling at all.
+class FxChannels extends Equatable {
+  /// Creates an [FxChannels].
+  const FxChannels({
+    this.input = FxChannelInput.stereo,
+    this.output = FxChannelOutput.stereo,
+    this.placement = 0,
+    this.level = 1,
   });
 
-  /// A short name for the control.
-  final String label;
+  /// Stereo in, stereo out, centre, unity.
+  static const FxChannels defaults = FxChannels();
 
-  /// The number of discrete steps the control snaps to, or `null` for a
-  /// continuous control.
-  final int? divisions;
+  /// What the entry's effects are handed.
+  final FxChannelInput input;
 
-  /// How the value should be read out in its own units, or [ParamReadout.none].
-  final ParamReadout readout;
+  /// How the entry hands its result on.
+  final FxChannelOutput output;
+
+  /// Balance (stereo out) or Pan (mono out), `-1..1`, centre `0`.
+  final double placement;
+
+  /// The entry's own gain, applied last: `0..4` (about +12 dB), unity `1`.
+  /// A rack's level is its last entry's, set in dB (see `fxRackLevelGain`).
+  final double level;
+
+  /// Whether this is [defaults].
+  bool get isDefault => this == defaults;
+
+  /// Returns a copy with the given fields replaced.
+  FxChannels copyWith({
+    FxChannelInput? input,
+    FxChannelOutput? output,
+    double? placement,
+    double? level,
+  }) => FxChannels(
+    input: input ?? this.input,
+    output: output ?? this.output,
+    placement: placement ?? this.placement,
+    level: level ?? this.level,
+  );
 
   @override
-  List<Object?> get props => [label, divisions, readout];
+  List<Object?> get props => [input, output, placement, level];
+}
+
+/// The rack a chain entry belongs to. Domain mirror of the engine's `FxRack`.
+///
+/// The accepted design's chain is built out of RACKS — named groups of pedals
+/// the player adds, renames, reorders and removes as one thing. The engine's
+/// chain is a flat run of entries, so the grouping rides the entries: every
+/// module of one rack carries the same [id], and a run of entries sharing an
+/// [id] IS that rack. A `null` rack means a standalone single effect.
+///
+/// `fxChainGroups` (in `fx_chain_group.dart`) turns a chain into the groups
+/// the surfaces draw.
+class FxRack extends Equatable {
+  /// Creates an [FxRack].
+  const FxRack({required this.id, required this.name, this.art});
+
+  /// The rack's identity, shared by every module in it, unique within its
+  /// chain, and never rewritten by a rename or a reorder.
+  final String id;
+
+  /// The rack's name, which the player can change. Renaming it never touches
+  /// the saved preset it came from.
+  final String name;
+
+  /// The catalogue artwork slug the card draws, or `null` when there is none.
+  final String? art;
+
+  /// Returns a copy with the given fields replaced.
+  FxRack copyWith({String? id, String? name, String? art}) =>
+      FxRack(id: id ?? this.id, name: name ?? this.name, art: art ?? this.art);
+
+  @override
+  List<Object?> get props => [id, name, art];
+}
+
+/// Where one chain entry sits relative to the loop player. Domain mirror of
+/// the engine's `FxPlacement`.
+///
+/// A chain is stored [pre] entries first, then [post] entries, so the split is
+/// a single boundary index — [fxPreCount] — and that index is the only thing
+/// the native engine is told.
+///
+/// The accepted design states the consequence in one line each: [pre] is
+/// "recorded into loop", [post] "can ring after Stop". A hardware input's new
+/// entries default to [pre] and a recorded destination's to [post]; the
+/// destination chooses, not this model, whose own default is [post].
+enum FxPlacement {
+  /// Recorded into the loop: part of the take's playable representation, so a
+  /// track Stop stops its tail with the recording.
+  pre,
+
+  /// Downstream of the player: a track Stop leaves its tail to drain.
+  post,
+}
+
+/// The number of leading [FxPlacement.pre] entries in [chain] — the whole
+/// pre/post split of a chain that has crossed a repository write.
+int fxPreCount(List<TrackEffect> chain) {
+  var n = 0;
+  while (n < chain.length && chain[n].placement == FxPlacement.pre) {
+    n++;
+  }
+  return n;
+}
+
+/// Returns [chain] partitioned [FxPlacement.pre] entries first, preserving the
+/// relative order within each stage.
+///
+/// This is the storage invariant every repository chain write establishes, and
+/// it is a STABLE partition on purpose: reorder moves an entry within its own
+/// stage, so re-partitioning an already-ordered chain must be the identity.
+List<TrackEffect> partitionByPlacement(List<TrackEffect> chain) => [
+  for (final fx in chain)
+    if (fx.placement == FxPlacement.pre) fx,
+  for (final fx in chain)
+    if (fx.placement == FxPlacement.post) fx,
+];
+
+/// The unit a built-in parameter's value is shown in. Domain mirror of the
+/// engine's `FxParamUnit`.
+enum FxParamUnit {
+  /// 0..100 percent.
+  percent,
+
+  /// Milliseconds.
+  ms,
+
+  /// Hertz.
+  hz,
+
+  /// A pitch interval in semitones.
+  semitones,
+
+  /// A gain factor, shown with "x".
+  times,
+
+  /// Named positions; the value is the position.
+  choice,
+}
+
+/// How a built-in parameter's value follows its normalized setting. Domain
+/// mirror of the engine's `FxParamCurve`.
+enum FxParamCurve {
+  /// `atMin + (atMax - atMin) * v`.
+  linear,
+
+  /// `atMin * (atMax / atMin) ^ v`.
+  exponential,
+}
+
+/// One built-in effect parameter: what its normalized `0..1` setting means.
+/// Domain mirror of the engine's `FxParamInfo`, which copies the native
+/// `le_fx_param_desc` table.
+///
+/// The setting itself lives on the chain entry (see [TrackEffect]); this
+/// describes it: a stable [key] the app localizes the name by, the [unit] the
+/// value is shown in, the mapping from setting to value ([atMin], [atMax],
+/// [curve]), how many positions it snaps to ([steps]) and where a freshly
+/// engaged effect starts ([defaultValue]).
+class FxParamInfo extends Equatable {
+  /// Creates an [FxParamInfo].
+  const FxParamInfo({
+    required this.key,
+    required this.unit,
+    required this.atMin,
+    required this.atMax,
+    required this.defaultValue,
+    this.steps = 0,
+    this.curve = FxParamCurve.linear,
+    this.taperUnverified = false,
+  }) : _source = null;
+
+  FxParamInfo._fromEngine(engine.FxParamInfo p)
+    : key = p.key,
+      unit = _unitFromEngine(p.unit),
+      atMin = p.atMin,
+      atMax = p.atMax,
+      defaultValue = p.defaultValue,
+      steps = p.steps,
+      curve = _curveFromEngine(p.curve),
+      taperUnverified = p.taperUnverified,
+      _source = p;
+
+  /// The engine descriptor this mirrors, kept so the mapping below does not
+  /// build one per call; `null` for one made with the public constructor.
+  final engine.FxParamInfo? _source;
+
+  /// The stable parameter key (`drive`, `cutoff`, `shift`, ...).
+  final String key;
+
+  /// The unit [valueAt] returns.
+  final FxParamUnit unit;
+
+  /// 0 for a continuous parameter, otherwise the number of positions a
+  /// control snaps it to: position k of n stands for setting `k / (n - 1)`.
+  /// The kernel reads a choice at its nearest position and every other
+  /// parameter as set.
+  final int steps;
+
+  /// The value at setting 0.
+  final double atMin;
+
+  /// The value at setting 1.
+  final double atMax;
+
+  /// How the value follows the setting between [atMin] and [atMax].
+  final FxParamCurve curve;
+
+  /// The setting a freshly engaged effect starts at.
+  final double defaultValue;
+
+  /// Whether the mapping was chosen rather than measured against the effect
+  /// it reproduces.
+  final bool taperUnverified;
+
+  /// Whether the parameter snaps to [steps] positions.
+  bool get isStepped => steps > 1;
+
+  /// The value [setting] (clamped to `0..1`) stands for, mapped as the engine
+  /// maps it: a choice first takes its nearest position.
+  double valueAt(double setting) => (_source ?? _toEngine()).valueAt(setting);
+
+  /// The position (`0..steps-1`) [setting] (clamped to `0..1`) snaps to.
+  ///
+  /// Throws a [StateError] for a continuous parameter, which has no positions.
+  int positionOf(double setting) =>
+      (_source ?? _toEngine()).positionOf(setting);
+
+  /// The engine descriptor, which holds the one implementation of the
+  /// mapping.
+  engine.FxParamInfo _toEngine() => engine.FxParamInfo(
+    key: key,
+    unit: switch (unit) {
+      FxParamUnit.percent => engine.FxParamUnit.percent,
+      FxParamUnit.ms => engine.FxParamUnit.ms,
+      FxParamUnit.hz => engine.FxParamUnit.hz,
+      FxParamUnit.semitones => engine.FxParamUnit.semitones,
+      FxParamUnit.times => engine.FxParamUnit.times,
+      FxParamUnit.choice => engine.FxParamUnit.choice,
+    },
+    atMin: atMin,
+    atMax: atMax,
+    defaultValue: defaultValue,
+    steps: steps,
+    curve: switch (curve) {
+      FxParamCurve.linear => engine.FxParamCurve.linear,
+      FxParamCurve.exponential => engine.FxParamCurve.exponential,
+    },
+    taperUnverified: taperUnverified,
+  );
+
+  @override
+  List<Object?> get props => [
+    key,
+    unit,
+    steps,
+    atMin,
+    atMax,
+    curve,
+    defaultValue,
+    taperUnverified,
+  ];
 }
 
 /// A built-in effect type, the domain mirror of the engine's `le_fx_type`.
@@ -92,20 +349,17 @@ enum TrackEffectType {
   String get label => _engine.label;
 
   /// This type's parameters, in order (length `<=` `kTrackEffectParams`).
-  List<TrackEffectParam> get params => [
-    for (final p in _engine.params)
-      TrackEffectParam(
-        p.label,
-        divisions: p.divisions,
-        readout: _readoutFromEngine(p.readout),
-      ),
-  ];
+  List<FxParamInfo> get params => _params[this]!;
 
-  /// Labels for this type's parameters, in order. A convenience over [params].
-  List<String> get paramLabels => _engine.paramLabels;
+  static final Map<TrackEffectType, List<FxParamInfo>> _params = {
+    for (final t in values)
+      t: List<FxParamInfo>.unmodifiable([
+        for (final p in t._engine.params) FxParamInfo._fromEngine(p),
+      ]),
+  };
 
-  /// The musical default for each of the `kTrackEffectParams` parameters when
-  /// the type is freshly engaged.
+  /// The setting each of the `kTrackEffectParams` parameters starts at when
+  /// the type is freshly engaged: the descriptors' defaults, padded with 0.
   List<double> get defaultParams => _engine.defaultParams;
 }
 
@@ -132,11 +386,14 @@ class PluginRef extends Equatable {
 /// effect ([BuiltInEffect]) or a hosted plugin ([PluginEffect]). Domain mirror
 /// of the engine's sealed `TrackEffect`.
 ///
-/// The chain is non-destructive and stage-addressed (FX v3) — the recording is
-/// always dry and every active, [enabled] entry colors the signal in order.
-/// The same model backs all four stages: a hardware input's live-monitor
-/// chain, a lane's record-route chain, a track's stereo-bus chain, and the
-/// Master insert.
+/// The chain is stage-addressed (FX v3) — the recording is always dry and
+/// every active, [enabled] entry colors the signal in order. The same model
+/// backs all four stages: a hardware input's live-monitor chain, a lane's
+/// record-route chain, a track's stereo-bus chain, and the Master insert.
+///
+/// Each entry also carries a [placement], and a chain that has crossed a
+/// repository write is stored with every [FxPlacement.pre] entry ahead of
+/// every [FxPlacement.post] one.
 sealed class TrackEffect extends Equatable {
   /// Const base constructor for the sealed subtypes.
   const TrackEffect();
@@ -154,6 +411,27 @@ sealed class TrackEffect extends Equatable {
   /// repository write path. Identity, not sound: two entries that sound the
   /// same but carry different ids are different entries (bindings target ids).
   String? get slotId;
+
+  /// Where this entry sits relative to the loop player: [FxPlacement.pre] is
+  /// recorded into the loop, [FxPlacement.post] runs downstream of the player
+  /// and can ring after Stop.
+  FxPlacement get placement;
+
+  /// This entry's channel handling and level.
+  FxChannels get channels;
+
+  /// The rack this entry belongs to, or `null` when it is a standalone single
+  /// effect. Every module of one rack carries the same [FxRack.id].
+  FxRack? get rack;
+
+  /// What the factory catalogue calls this entry, or `null` when it did not
+  /// come from the catalogue. The catalogue maps this one name to both the
+  /// pedal's display name and its artwork.
+  ///
+  /// Kept because the engine effect an entry became is not what the player
+  /// chose: a pedal this build cannot process becomes a passthrough entry, and
+  /// without its own name it would be indistinguishable from every other one.
+  String? get module;
 }
 
 /// A built-in DSP effect: a [type] with its normalized [params].
@@ -165,7 +443,14 @@ class BuiltInEffect extends TrackEffect {
     List<double>? params,
     this.enabled = true,
     this.slotId,
-  }) : params = List<double>.unmodifiable(params ?? type.defaultParams);
+    this.placement = FxPlacement.post,
+    this.channels = FxChannels.defaults,
+    this.rack,
+    this.module,
+    this.presetId,
+    Map<String, double> source = const {},
+  }) : params = List<double>.unmodifiable(params ?? type.defaultParams),
+       source = Map<String, double>.unmodifiable(source);
 
   /// The effect type.
   final TrackEffectType type;
@@ -180,6 +465,30 @@ class BuiltInEffect extends TrackEffect {
   final String? slotId;
 
   @override
+  final FxPlacement placement;
+
+  @override
+  final FxChannels channels;
+
+  @override
+  final FxRack? rack;
+
+  @override
+  final String? module;
+
+  /// The id of the factory preset this entry was built from, or `null` when
+  /// it did not come from one.
+  final String? presetId;
+
+  /// The factory preset's own values for this entry's module, by the
+  /// preset's parameter names.
+  ///
+  /// Kept whatever this build could do with them: a module this build cannot
+  /// process, or can process only partly, still carries everything the player
+  /// loaded, so a later build can rebuild it from the same values.
+  final Map<String, double> source;
+
+  @override
   int get typeCode => type.code;
 
   /// Returns a copy with the given fields replaced. [params] is copied.
@@ -188,15 +497,38 @@ class BuiltInEffect extends TrackEffect {
     List<double>? params,
     bool? enabled,
     String? slotId,
+    FxPlacement? placement,
+    FxChannels? channels,
+    FxRack? rack,
+    String? module,
+    String? presetId,
+    Map<String, double>? source,
   }) => BuiltInEffect(
     type: type ?? this.type,
     params: params ?? this.params,
     enabled: enabled ?? this.enabled,
     slotId: slotId ?? this.slotId,
+    placement: placement ?? this.placement,
+    channels: channels ?? this.channels,
+    rack: rack ?? this.rack,
+    module: module ?? this.module,
+    presetId: presetId ?? this.presetId,
+    source: source ?? this.source,
   );
 
   @override
-  List<Object?> get props => [type, params, enabled, slotId];
+  List<Object?> get props => [
+    type,
+    params,
+    enabled,
+    slotId,
+    placement,
+    channels,
+    rack,
+    module,
+    presetId,
+    source,
+  ];
 }
 
 /// A hosted VST3/CLAP plugin in a chain entry, identified by its [ref]. Carries
@@ -218,6 +550,10 @@ class PluginEffect extends TrackEffect {
     this.loading = false,
     this.enabled = true,
     this.slotId,
+    this.placement = FxPlacement.post,
+    this.channels = FxChannels.defaults,
+    this.rack,
+    this.module,
   });
 
   /// The hosted plugin's identity.
@@ -279,6 +615,18 @@ class PluginEffect extends TrackEffect {
   final String? slotId;
 
   @override
+  final FxPlacement placement;
+
+  @override
+  final FxChannels channels;
+
+  @override
+  final FxRack? rack;
+
+  @override
+  final String? module;
+
+  @override
   int get typeCode => engine.kPluginFxCode;
 
   /// Returns a copy with the given fields replaced.
@@ -294,6 +642,10 @@ class PluginEffect extends TrackEffect {
     bool? loading,
     bool? enabled,
     String? slotId,
+    FxPlacement? placement,
+    FxChannels? channels,
+    FxRack? rack,
+    String? module,
   }) => PluginEffect(
     ref: ref ?? this.ref,
     paramValues: paramValues ?? this.paramValues,
@@ -306,6 +658,10 @@ class PluginEffect extends TrackEffect {
     loading: loading ?? this.loading,
     enabled: enabled ?? this.enabled,
     slotId: slotId ?? this.slotId,
+    placement: placement ?? this.placement,
+    channels: channels ?? this.channels,
+    rack: rack ?? this.rack,
+    module: module ?? this.module,
   );
 
   @override
@@ -321,15 +677,77 @@ class PluginEffect extends TrackEffect {
     loading,
     enabled,
     slotId,
+    placement,
+    channels,
+    rack,
+    module,
   ];
 }
 
-/// Maps an engine readout kind to its domain mirror.
-ParamReadout _readoutFromEngine(engine.ParamReadout readout) =>
-    switch (readout) {
-      engine.ParamReadout.none => ParamReadout.none,
-      engine.ParamReadout.pitchShift => ParamReadout.pitchShift,
-      engine.ParamReadout.octaverMode => ParamReadout.octaverMode,
+/// Maps an engine parameter unit to its domain mirror.
+FxParamUnit _unitFromEngine(engine.FxParamUnit unit) => switch (unit) {
+  engine.FxParamUnit.percent => FxParamUnit.percent,
+  engine.FxParamUnit.ms => FxParamUnit.ms,
+  engine.FxParamUnit.hz => FxParamUnit.hz,
+  engine.FxParamUnit.semitones => FxParamUnit.semitones,
+  engine.FxParamUnit.times => FxParamUnit.times,
+  engine.FxParamUnit.choice => FxParamUnit.choice,
+};
+
+/// Maps an engine parameter curve to its domain mirror.
+FxParamCurve _curveFromEngine(engine.FxParamCurve curve) => switch (curve) {
+  engine.FxParamCurve.linear => FxParamCurve.linear,
+  engine.FxParamCurve.exponential => FxParamCurve.exponential,
+};
+
+/// Maps a domain [FxChannels] to the engine value at the boundary.
+///
+/// Public because the repository hands it straight to the engine's per-entry
+/// channel setters; every other domain-to-engine conversion stays private
+/// behind the chain codecs.
+engine.FxChannels fxChannelsToEngine(FxChannels c) => engine.FxChannels(
+  input: switch (c.input) {
+    FxChannelInput.stereo => engine.FxChannelInput.stereo,
+    FxChannelInput.left => engine.FxChannelInput.left,
+    FxChannelInput.right => engine.FxChannelInput.right,
+    FxChannelInput.monoSum => engine.FxChannelInput.monoSum,
+  },
+  output: switch (c.output) {
+    FxChannelOutput.stereo => engine.FxChannelOutput.stereo,
+    FxChannelOutput.mono => engine.FxChannelOutput.mono,
+  },
+  placement: c.placement,
+  level: c.level,
+);
+
+/// Maps an engine `FxChannels` to its domain mirror.
+FxChannels _channelsFromEngine(engine.FxChannels c) => FxChannels(
+  input: switch (c.input) {
+    engine.FxChannelInput.stereo => FxChannelInput.stereo,
+    engine.FxChannelInput.left => FxChannelInput.left,
+    engine.FxChannelInput.right => FxChannelInput.right,
+    engine.FxChannelInput.monoSum => FxChannelInput.monoSum,
+  },
+  output: switch (c.output) {
+    engine.FxChannelOutput.stereo => FxChannelOutput.stereo,
+    engine.FxChannelOutput.mono => FxChannelOutput.mono,
+  },
+  placement: c.placement,
+  level: c.level,
+);
+
+/// Maps a domain [FxPlacement] to the engine enum at the boundary.
+engine.FxPlacement _placementToEngine(FxPlacement placement) =>
+    switch (placement) {
+      FxPlacement.pre => engine.FxPlacement.pre,
+      FxPlacement.post => engine.FxPlacement.post,
+    };
+
+/// Maps an engine [engine.FxPlacement] to its domain mirror.
+FxPlacement _placementFromEngine(engine.FxPlacement placement) =>
+    switch (placement) {
+      engine.FxPlacement.pre => FxPlacement.pre,
+      engine.FxPlacement.post => FxPlacement.post,
     };
 
 /// Maps a domain [TrackEffectType] to the engine enum at the boundary.
@@ -347,12 +765,24 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
     :final params,
     :final enabled,
     :final slotId,
+    :final placement,
+    :final channels,
+    :final rack,
+    :final module,
+    :final presetId,
+    :final source,
   ) =>
     engine.BuiltInEffect(
       type: trackEffectTypeToEngine(type),
       params: params,
       enabled: enabled,
       slotId: slotId,
+      placement: _placementToEngine(placement),
+      channels: fxChannelsToEngine(channels),
+      rack: _rackToEngine(rack),
+      module: module,
+      presetId: presetId,
+      source: source,
     ),
   PluginEffect(
     :final ref,
@@ -361,6 +791,10 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
     :final name,
     :final enabled,
     :final slotId,
+    :final placement,
+    :final channels,
+    :final rack,
+    :final module,
   ) =>
     engine.PluginEffect(
       ref: engine.PluginRef(
@@ -373,8 +807,21 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
       name: name,
       enabled: enabled,
       slotId: slotId,
+      placement: _placementToEngine(placement),
+      channels: fxChannelsToEngine(channels),
+      rack: _rackToEngine(rack),
+      module: module,
     ),
 };
+
+/// Maps a domain [FxRack] to the engine mirror (boundary; internal).
+engine.FxRack? _rackToEngine(FxRack? rack) => rack == null
+    ? null
+    : engine.FxRack(id: rack.id, name: rack.name, art: rack.art);
+
+/// Maps an engine `FxRack` to its domain mirror (boundary; internal).
+FxRack? _rackFromEngine(engine.FxRack? rack) =>
+    rack == null ? null : FxRack(id: rack.id, name: rack.name, art: rack.art);
 
 /// Maps an ordered domain chain to its engine counterpart, for callers that
 /// must hand a chain to another engine-facing repository verbatim rather than
@@ -400,12 +847,24 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
         :final params,
         :final enabled,
         :final slotId,
+        :final placement,
+        :final channels,
+        :final rack,
+        :final module,
+        :final presetId,
+        :final source,
       ) =>
         BuiltInEffect(
           type: TrackEffectType.fromCode(type.code),
           params: params,
           enabled: enabled,
           slotId: slotId,
+          placement: _placementFromEngine(placement),
+          channels: _channelsFromEngine(channels),
+          rack: _rackFromEngine(rack),
+          module: module,
+          presetId: presetId,
+          source: source,
         ),
       engine.PluginEffect(
         :final ref,
@@ -414,6 +873,10 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
         :final name,
         :final enabled,
         :final slotId,
+        :final placement,
+        :final channels,
+        :final rack,
+        :final module,
       ) =>
         PluginEffect(
           ref: PluginRef(
@@ -426,6 +889,10 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
           name: name,
           enabled: enabled,
           slotId: slotId,
+          placement: _placementFromEngine(placement),
+          channels: _channelsFromEngine(channels),
+          rack: _rackFromEngine(rack),
+          module: module,
         ),
     };
 
@@ -462,9 +929,11 @@ List<TrackEffect> decodeTrackEffects(String? encoded) => [
 /// bit only — the engine's `a_fx_param` holds no plugin params (they live in
 /// the plugin host).
 ///
-/// [TrackEffect.slotId] deliberately does NOT fold: the fingerprint is sound
-/// identity, slot ids are entry identity (A9) — folding them would break the
-/// wet cache's fingerprint-keyed hits on toggle pairs and identical loads.
+/// [TrackEffect.slotId] and [TrackEffect.rack] deliberately do NOT fold: the
+/// fingerprint is sound identity, slot ids are entry identity (A9) and a rack
+/// is a grouping and a name — folding either would break the wet cache's
+/// fingerprint-keyed hits on toggle pairs and identical loads, and renaming a
+/// rack would re-render every take it is printed into.
 int fxChainFingerprint(List<TrackEffect> chain, {bool chainEnabled = true}) {
   var h = engine.FxFingerprint.offset;
   final n = chain.length > engine.kTrackEffectMax

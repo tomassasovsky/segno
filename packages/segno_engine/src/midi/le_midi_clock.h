@@ -87,8 +87,9 @@ void le_midi_clock_reset(le_midi_clock_gen* g);
  * about what "running" means.
  *
  * `gate_open`: whether clock output should be audible at all right now
- * (clock_mode == SEND AND looper_mode in {MULTI, SYNC, BAND} — Song and Free
- * stay silent regardless of clock_mode, per the manual). When false, NOTHING
+ * (the send switch on, the Internal clock source, AND looper_mode in {MULTI,
+ * SYNC, BAND} — Song and Free stay silent whatever the switch says, per the
+ * manual). When false, NOTHING
  * is emitted (not even a wrong-moment Start/Stop) and the generator is held
  * at its idle state — so re-opening the gate later against an
  * already-running transport is treated as a FRESH Start (clock output

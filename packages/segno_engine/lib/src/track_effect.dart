@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:meta/meta.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
@@ -8,19 +9,291 @@ import 'package:segno_engine/src/plugin_descriptor.dart';
 /// every other code is a [BuiltInEffect].
 const int kPluginFxCode = 8;
 
-/// The maximum number of effects a single track's chain can hold. The cap
-/// exists only so the audio thread reads a fixed-size, allocation-free array —
-/// it is far beyond musical need, not a CPU limit. Mirrors the native
-/// `LE_FX_MAX`.
-const int kTrackEffectMax = 8;
+/// The maximum number of effects one chain can hold. The cap exists only so
+/// the audio thread reads a fixed-size, allocation-free array — it is not a
+/// CPU limit: the audio path iterates the ACTIVE count, and an unused slot
+/// allocates no DSP state.
+///
+/// Sixty-four because the accepted FX design builds a chain out of RACKS, and
+/// one factory rack is about six pedals. Mirrors the native `LE_FX_MAX`,
+/// whose own note records what raising it cost.
+const int kTrackEffectMax = 64;
 
 /// The number of normalized (`0..1`) parameters each effect exposes. Mirrors
 /// the native `LE_FX_PARAMS`.
 const int kTrackEffectParams = 4;
 
+/// The ceiling of a chain entry's own level, [FxChannels.level]: `4.0`, about
+/// +12 dB, the top of a factory rack's level. Mirrors the native
+/// `LE_FX_LEVEL_MAX`.
+const double kFxLevelMax = 4;
+
+/// How one chain entry takes the pair it is handed (slice 3e) — the accepted
+/// design's rack input choice, and a single effect's "Effect input".
+enum FxChannelInput {
+  /// The default: left and right as they arrive.
+  stereo,
+
+  /// The incoming left on both sides.
+  left,
+
+  /// The incoming right on both sides.
+  right,
+
+  /// Their average on both sides.
+  monoSum;
+
+  /// Maps an omitted value to [stereo] and rejects an invalid explicit value.
+  static FxChannelInput fromWireName(Object? raw) {
+    if (raw == null) return FxChannelInput.stereo;
+    for (final v in values) {
+      if (v.name == raw) return v;
+    }
+    throw const FormatException('invalid effect channel input');
+  }
+}
+
+/// How one chain entry hands its result on. [stereo] keeps what the effects
+/// made and the placement is a Balance; [mono] averages them and the placement
+/// is a Pan.
+enum FxChannelOutput {
+  /// The default.
+  stereo,
+
+  /// Averaged to mono and placed.
+  mono;
+
+  /// Maps an omitted value to [stereo] and rejects an invalid explicit value.
+  static FxChannelOutput fromWireName(Object? raw) {
+    if (raw == null) return FxChannelOutput.stereo;
+    for (final value in values) {
+      if (value.name == raw) return value;
+    }
+    throw const FormatException('invalid effect channel output');
+  }
+}
+
+/// One chain entry's channel handling and level (slice 3e).
+///
+/// The accepted design puts these around each instance: the [input] choice
+/// before its effects, the [output] choice and then the [level] after them.
+/// [placement] is a Balance when [output] is stereo and a Pan when it is mono,
+/// on the one unity-centre law the lanes, monitors and output buses use — so
+/// [defaults] is bit-identical to no channel handling at all, and is omitted
+/// from a persisted entry.
+@immutable
+final class FxChannels {
+  /// Creates an [FxChannels].
+  const FxChannels({
+    this.input = FxChannelInput.stereo,
+    this.output = FxChannelOutput.stereo,
+    this.placement = 0,
+    this.level = 1,
+  });
+
+  /// Rebuilds an [FxChannels] from its [toJson] map. Omitted fields use their
+  /// defaults; invalid explicit fields reject the saved chain.
+  factory FxChannels.fromJson(Map<String, dynamic> json) {
+    final placement = json['placement'];
+    final level = json['level'];
+    if ((json.containsKey('input') && json['input'] == null) ||
+        (json.containsKey('output') && json['output'] == null) ||
+        (json.containsKey('placement') &&
+            (placement is! num ||
+                !placement.isFinite ||
+                placement < -1 ||
+                placement > 1)) ||
+        (json.containsKey('level') &&
+            (level is! num ||
+                !level.isFinite ||
+                level < 0 ||
+                level > kFxLevelMax))) {
+      throw const FormatException('invalid effect channels');
+    }
+    return FxChannels(
+      input: FxChannelInput.fromWireName(json['input']),
+      output: FxChannelOutput.fromWireName(json['output']),
+      placement: placement is num ? placement.toDouble() : 0,
+      level: level is num ? level.toDouble() : 1,
+    );
+  }
+
+  /// Stereo in, stereo out, centre, unity — what an untouched entry carries.
+  static const FxChannels defaults = FxChannels();
+
+  /// What the entry's effects are handed.
+  final FxChannelInput input;
+
+  /// How the entry hands its result on.
+  final FxChannelOutput output;
+
+  /// Balance (stereo out) or Pan (mono out), `-1..1`, centre `0`.
+  final double placement;
+
+  /// The entry's own gain, applied last: `0..kFxLevelMax`, unity `1`.
+  final double level;
+
+  /// Whether this is [defaults] — the shape the engine reads as "nothing to
+  /// do" and the wire omits.
+  bool get isDefault => this == defaults;
+
+  /// Returns a copy with the given fields replaced.
+  FxChannels copyWith({
+    FxChannelInput? input,
+    FxChannelOutput? output,
+    double? placement,
+    double? level,
+  }) => FxChannels(
+    input: input ?? this.input,
+    output: output ?? this.output,
+    placement: placement ?? this.placement,
+    level: level ?? this.level,
+  );
+
+  /// A JSON-friendly map for persistence.
+  Map<String, dynamic> toJson() => {
+    'input': input.name,
+    'output': output.name,
+    'placement': placement,
+    'level': level,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is FxChannels &&
+      other.input == input &&
+      other.output == output &&
+      other.placement == placement &&
+      other.level == level;
+
+  @override
+  int get hashCode => Object.hash(input, output, placement, level);
+}
+
+/// The rack a chain entry belongs to.
+///
+/// The accepted design's chain is built out of RACKS — named groups of pedals
+/// that the player adds, renames, reorders and removes as one thing. This
+/// engine's chain is a flat run of entries, so the grouping rides the entries:
+/// every module of one rack carries the same [id], and a run of entries
+/// sharing an [id] IS that rack.
+///
+/// Denormalised on purpose. The chain crosses four persistence boundaries (a
+/// session file, a performance arm snapshot, the settings store and the
+/// repository's own maps) as one encoded list, and a field on the entry rides
+/// all of them for free. A rename rewrites every module of the rack; that is
+/// cheaper than a second structure that could fall out of step with the chain
+/// it describes.
+///
+/// A `null` rack means a standalone single effect, which the accepted design
+/// offers beside the racks and which is edited in its own direct editor.
+@immutable
+final class FxRack {
+  /// Creates an [FxRack].
+  const FxRack({required this.id, required this.name, this.art});
+
+  /// Rebuilds an [FxRack] from [toJson] output, or `null` when the map does
+  /// not carry the two fields that make a rack addressable.
+  static FxRack? fromJson(Object? json) {
+    if (json is! Map) return null;
+    final id = json['id'];
+    final name = json['name'];
+    if (id is! String || id.isEmpty || name is! String) return null;
+    final art = json['art'];
+    return FxRack(id: id, name: name, art: art is String ? art : null);
+  }
+
+  /// The rack's identity, shared by every module in it and unique within its
+  /// chain. Minted when the rack is added and never rewritten, so a rename or
+  /// a reorder leaves every binding that names this rack still pointing at it.
+  final String id;
+
+  /// The rack's name, which the player can change. Starts as the preset's own
+  /// name; renaming it never touches the saved preset it came from.
+  final String name;
+
+  /// The catalogue artwork slug the card draws, or `null` when there is none.
+  ///
+  /// A plain string rather than a catalogue type: this package knows nothing
+  /// about the asset catalogue, and a slug whose artwork has since gone simply
+  /// draws nothing.
+  final String? art;
+
+  /// Returns a copy with the given fields replaced.
+  FxRack copyWith({String? id, String? name, String? art}) =>
+      FxRack(id: id ?? this.id, name: name ?? this.name, art: art ?? this.art);
+
+  /// A JSON-friendly map for persistence.
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    if (art != null) 'art': art,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is FxRack &&
+      other.id == id &&
+      other.name == name &&
+      other.art == art;
+
+  @override
+  int get hashCode => Object.hash(id, name, art);
+}
+
+/// Where one chain entry sits relative to the loop player.
+///
+/// The chain is ordered [pre] entries first, then [post] entries, so the split
+/// is a single boundary index — the count of leading [pre] entries — and that
+/// is the only thing the native engine is told (`a_fx_pre_count`).
+///
+/// - [pre]: the entry belongs to what the take plays back. On a hardware
+///   input it is copied onto the lane at record; on a lane it is rendered from
+///   the dry original and engaged at a loop boundary, so a track Stop stops
+///   its tail with the recording.
+/// - [post]: the entry runs downstream of the loop player, so a track Stop
+///   leaves its tail to drain.
+///
+/// [post] is the wire default and is omitted from a persisted entry; a live
+/// input's new entries are created [pre] by the surface that adds them, not by
+/// this model.
+enum FxPlacement {
+  /// Recorded into the loop: part of the take's playable representation.
+  pre,
+
+  /// Downstream of the player: can ring after Stop.
+  post;
+
+  /// The canonical wire name.
+  String get wireName => name;
+
+  /// Maps an omitted value to [post] and rejects an invalid explicit value.
+  static FxPlacement fromWireName(Object? raw) {
+    if (raw == null) return FxPlacement.post;
+    for (final value in values) {
+      if (value.wireName == raw) return value;
+    }
+    throw const FormatException('invalid effect placement');
+  }
+}
+
+/// The number of leading [FxPlacement.pre] entries in [chain].
+///
+/// Every chain that has crossed a repository write is partitioned pre-first,
+/// so this is the whole split. A chain that is not partitioned (only reachable
+/// from a hand-built list in a test) counts its leading run and nothing more,
+/// which is exactly what the engine would see.
+int fxPreCount(List<TrackEffect> chain) {
+  var n = 0;
+  while (n < chain.length && chain[n].placement == FxPlacement.pre) {
+    n++;
+  }
+  return n;
+}
+
 /// A built-in effect type. The integer [code] matches the native
 /// `le_fx_type` enum, and each type interprets its [kTrackEffectParams]
-/// normalized parameters differently (see [paramLabels]).
+/// normalized parameters differently (see [params]).
 enum TrackEffectType {
   /// The entry is bypassed.
   none(0, 'None'),
@@ -61,115 +334,337 @@ enum TrackEffectType {
   static TrackEffectType fromCode(int code) =>
       values.firstWhere((t) => t.code == code, orElse: () => none);
 
-  /// This type's parameters, in order. The list length is the number of
-  /// parameters the type actually uses (`<=` [kTrackEffectParams]); trailing
-  /// unused parameters are omitted. Each entry also carries how it should be
-  /// presented (see [TrackEffectParam]) — most are plain continuous controls,
-  /// but musical parameters like the octaver's pitch snap to discrete values
-  /// and read out in their own units.
-  List<TrackEffectParam> get params => switch (this) {
+  /// This type's parameters, in order: a copy of the engine's descriptor table
+  /// (`le_fx_param_info`, the `LE_FX_*_PARAMS` rows in `engine_fx.c`), with
+  /// the same order and values. The list length is the number of parameters
+  /// the type uses (`<=` [kTrackEffectParams]).
+  ///
+  /// The table is copied rather than read over FFI so widgets and binding
+  /// labels can read it synchronously, with or without the native library.
+  /// `fx_param_info_native_test.dart` compares this copy with the engine
+  /// field by field.
+  List<FxParamInfo> get params => switch (this) {
     TrackEffectType.none => const [],
     TrackEffectType.drive => const [
-      TrackEffectParam('Drive'),
-      TrackEffectParam('Level'),
+      // tanh pre-gain 1 + 29 v
+      FxParamInfo(
+        key: 'drive',
+        unit: FxParamUnit.times,
+        atMin: 1,
+        atMax: 30,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'level',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.8,
+      ),
     ],
     TrackEffectType.filter => const [
-      TrackEffectParam('Cutoff'),
-      TrackEffectParam('Resonance'),
+      // 20 * 900^v Hz, clamped to 0.45 x the sample rate
+      FxParamInfo(
+        key: 'cutoff',
+        unit: FxParamUnit.hz,
+        atMin: 20,
+        atMax: 18000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'resonance',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.2,
+      ),
     ],
     TrackEffectType.delay => const [
-      TrackEffectParam('Time'),
-      TrackEffectParam('Feedback'),
-      TrackEffectParam('Mix'),
+      FxParamInfo(
+        key: 'time',
+        unit: FxParamUnit.ms,
+        atMin: 0,
+        atMax: 1000,
+        defaultValue: 0.35,
+      ),
+      FxParamInfo(
+        key: 'feedback',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 95,
+        defaultValue: 0.35,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.35,
+      ),
     ],
     TrackEffectType.tremolo => const [
-      TrackEffectParam('Rate'),
-      TrackEffectParam('Depth'),
-    ],
-    // Shift snaps to whole semitones across the engine's +-2 octave range, with
-    // a centre detent at unison, and reads out as a pitch interval. Mode is a
-    // two-state toggle (phase vocoder / PSOLA) — stored but inert until the
-    // formant-preserving rewrite reads it.
-    TrackEffectType.octaver => const [
-      TrackEffectParam(
-        'Shift',
-        divisions: 48,
-        readout: ParamReadout.pitchShift,
+      FxParamInfo(
+        key: 'rate',
+        unit: FxParamUnit.hz,
+        atMin: 0.1,
+        atMax: 12,
+        defaultValue: 0.3,
       ),
-      TrackEffectParam('Tone'),
-      TrackEffectParam('Mix'),
-      TrackEffectParam('Mode', divisions: 1, readout: ParamReadout.octaverMode),
+      FxParamInfo(
+        key: 'depth',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.7,
+      ),
+    ],
+    TrackEffectType.octaver => const [
+      // Whole semitones across +-2 octaves, unison at the centre position.
+      FxParamInfo(
+        key: 'shift',
+        unit: FxParamUnit.semitones,
+        steps: 49,
+        atMin: -24,
+        atMax: 24,
+        defaultValue: 0.25,
+      ),
+      FxParamInfo(
+        key: 'tone',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      // Position 0 = phase vocoder, 1 = PSOLA.
+      FxParamInfo(
+        key: 'mode',
+        unit: FxParamUnit.choice,
+        steps: 2,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
     ],
     TrackEffectType.echo => const [
-      TrackEffectParam('Time'),
-      TrackEffectParam('Feedback'),
-      TrackEffectParam('Mix'),
+      FxParamInfo(
+        key: 'time',
+        unit: FxParamUnit.ms,
+        atMin: 0,
+        atMax: 1000,
+        defaultValue: 0.45,
+      ),
+      FxParamInfo(
+        key: 'feedback',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 97,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.35,
+      ),
     ],
     TrackEffectType.reverb => const [
-      TrackEffectParam('Size'),
-      TrackEffectParam('Damping'),
-      TrackEffectParam('Mix'),
+      // comb feedback 0.70 + 0.28 v; feedback low-pass 0.4 v
+      FxParamInfo(
+        key: 'size',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'damping',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.35,
+      ),
     ],
   };
 
-  /// Labels for this type's parameters, in order. A convenience over [params].
-  List<String> get paramLabels => [for (final p in params) p.label];
+  /// The setting each of the [kTrackEffectParams] parameters starts at when
+  /// the type is freshly engaged: each descriptor's
+  /// [FxParamInfo.defaultValue], then 0 for the parameters the type does not
+  /// use. The engine's `le_fx_defaults` reads the same table.
+  List<double> get defaultParams => _defaultParams[this]!;
 
-  /// The musical default for each of the [kTrackEffectParams] parameters when
-  /// the type is freshly engaged. Mirrors the engine's `le_fx_default_params`
-  /// so the UI sliders match what the engine seeds.
-  List<double> get defaultParams => switch (this) {
-    TrackEffectType.none => const [0, 0, 0, 0],
-    TrackEffectType.drive => const [0.5, 0.8, 0, 0],
-    TrackEffectType.filter => const [0.5, 0.2, 0, 0],
-    TrackEffectType.delay => const [0.35, 0.35, 0.35, 0],
-    TrackEffectType.tremolo => const [0.3, 0.7, 0, 0],
-    // p3 = mode: 0 selects the phase vocoder (inert until parts 3-4).
-    TrackEffectType.octaver => const [0.25, 0.5, 0.5, 0],
-    TrackEffectType.echo => const [0.45, 0.5, 0.35, 0],
-    TrackEffectType.reverb => const [0.5, 0.5, 0.35, 0],
+  static final Map<TrackEffectType, List<double>> _defaultParams = {
+    for (final t in values)
+      t: List<double>.unmodifiable([
+        for (final p in t.params) p.defaultValue,
+        for (var i = t.params.length; i < kTrackEffectParams; i++) 0.0,
+      ]),
   };
 }
 
-/// How a parameter's `0..1` value is read out in the UI, in its own units, when
-/// the bare number isn't meaningful on its own. The UI maps each kind to a
-/// localized string; [none] shows no readout.
-enum ParamReadout {
-  /// No unit readout — the slider alone is enough.
-  none,
+/// The unit a built-in parameter's value is shown in. Mirrors the native
+/// `le_fx_param_unit`; [code] is the native value.
+enum FxParamUnit {
+  /// 0..100 percent (`LE_FX_UNIT_PERCENT`).
+  percent(0),
 
-  /// A pitch interval (e.g. "Unison", "+7 st", "-1 oct").
-  pitchShift,
+  /// Milliseconds (`LE_FX_UNIT_MS`).
+  ms(1),
 
-  /// The octaver algorithm mode (phase vocoder / PSOLA).
-  octaverMode,
+  /// Hertz (`LE_FX_UNIT_HZ`).
+  hz(2),
+
+  /// A pitch interval in semitones (`LE_FX_UNIT_SEMITONES`).
+  semitones(3),
+
+  /// A gain factor, shown with "x" (`LE_FX_UNIT_TIMES`).
+  times(4),
+
+  /// Named positions; the value is the position (`LE_FX_UNIT_CHOICE`).
+  choice(5);
+
+  const FxParamUnit(this.code);
+
+  /// The native `le_fx_param_unit` value.
+  final int code;
 }
 
-/// How one effect parameter should be presented in the UI.
+/// How a built-in parameter's value follows its normalized setting. Mirrors
+/// the native `le_fx_param_curve`; [code] is the native value.
+enum FxParamCurve {
+  /// `atMin + (atMax - atMin) * v` (`LE_FX_CURVE_LINEAR`).
+  linear(0),
+
+  /// `atMin * (atMax / atMin) ^ v` (`LE_FX_CURVE_EXPONENTIAL`).
+  exponential(1);
+
+  const FxParamCurve(this.code);
+
+  /// The native `le_fx_param_curve` value.
+  final int code;
+}
+
+/// One built-in effect parameter: what its normalized `0..1` setting means.
+/// The Dart copy of the native `le_fx_param_desc`.
 ///
-/// The value itself is always a normalized `0..1` double (see [TrackEffect]);
-/// this only describes the control. [divisions], when set, snaps the slider to
-/// that many discrete steps so a musical parameter lands on exact values rather
-/// than floating between them. [readout] selects a human-readable unit readout
-/// (e.g. a pitch interval) shown live beside the slider.
+/// The setting itself lives on the chain entry (see [TrackEffect]); this
+/// describes it: a stable [key] the app localizes the name by, the [unit] the
+/// value is shown in, the mapping from setting to value ([atMin], [atMax],
+/// [curve]), how many positions it snaps to ([steps]) and where a freshly
+/// engaged effect starts ([defaultValue]).
 @immutable
-class TrackEffectParam {
-  /// Creates a parameter descriptor.
-  const TrackEffectParam(
-    this.label, {
-    this.divisions,
-    this.readout = ParamReadout.none,
+class FxParamInfo {
+  /// Creates an [FxParamInfo].
+  const FxParamInfo({
+    required this.key,
+    required this.unit,
+    required this.atMin,
+    required this.atMax,
+    required this.defaultValue,
+    this.steps = 0,
+    this.curve = FxParamCurve.linear,
+    this.taperUnverified = false,
   });
 
-  /// A short name for the control.
-  final String label;
+  /// The stable parameter key (`drive`, `cutoff`, `shift`, ...).
+  final String key;
 
-  /// The number of discrete steps the control snaps to, or `null` for a
-  /// continuous control.
-  final int? divisions;
+  /// The unit [valueAt] returns.
+  final FxParamUnit unit;
 
-  /// How the value should be read out in its own units, or [ParamReadout.none].
-  final ParamReadout readout;
+  /// 0 for a continuous parameter, otherwise the number of positions a
+  /// control snaps it to: position k of n stands for setting `k / (n - 1)`.
+  /// The kernel reads a choice at its nearest position and every other
+  /// parameter as set, so a setting between positions (from a dragged slider
+  /// or an expression pedal) plays as set.
+  final int steps;
+
+  /// The value at setting 0.
+  final double atMin;
+
+  /// The value at setting 1.
+  final double atMax;
+
+  /// How the value follows the setting between [atMin] and [atMax].
+  final FxParamCurve curve;
+
+  /// The setting a freshly engaged effect starts at.
+  final double defaultValue;
+
+  /// Whether the mapping was chosen rather than measured against the effect
+  /// it reproduces (the native `LE_FX_PARAM_TAPER_UNVERIFIED` flag).
+  final bool taperUnverified;
+
+  /// Whether the parameter snaps to [steps] positions.
+  bool get isStepped => steps > 1;
+
+  /// The value [setting] (clamped to `0..1`) stands for, mapped as the engine
+  /// maps it: a choice first takes its nearest position, then [curve] runs
+  /// from [atMin] to [atMax].
+  double valueAt(double setting) {
+    var v = setting.isNaN ? 0.0 : setting.clamp(0.0, 1.0);
+    if (unit == FxParamUnit.choice && isStepped) {
+      v = positionOf(v) / (steps - 1);
+    }
+    return switch (curve) {
+      FxParamCurve.exponential => atMin * math.pow(atMax / atMin, v),
+      FxParamCurve.linear => atMin + (atMax - atMin) * v,
+    };
+  }
+
+  /// The position (`0..steps-1`) [setting] (clamped to `0..1`) snaps to.
+  ///
+  /// Throws a [StateError] for a continuous parameter, which has no positions.
+  int positionOf(double setting) {
+    if (!isStepped) throw StateError('$key is continuous');
+    final v = setting.isNaN ? 0.0 : setting.clamp(0.0, 1.0);
+    return (v * (steps - 1) + 0.5).floor();
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is FxParamInfo &&
+      other.key == key &&
+      other.unit == unit &&
+      other.steps == steps &&
+      other.atMin == atMin &&
+      other.atMax == atMax &&
+      other.curve == curve &&
+      other.defaultValue == defaultValue &&
+      other.taperUnverified == taperUnverified;
+
+  @override
+  int get hashCode => Object.hash(
+    key,
+    unit,
+    steps,
+    atMin,
+    atMax,
+    curve,
+    defaultValue,
+    taperUnverified,
+  );
+
+  @override
+  String toString() =>
+      'FxParamInfo($key, ${unit.name}, steps: $steps, '
+      '$atMin..$atMax ${curve.name}, default: $defaultValue'
+      '${taperUnverified ? ', taper unverified' : ''})';
 }
 
 /// The identity of a hosted plugin in a chain entry: its [format], stable [id]
@@ -223,9 +718,11 @@ final class PluginRef {
 /// One entry in an effects chain — a sealed hierarchy of either a built-in DSP
 /// effect ([BuiltInEffect]) or a hosted VST3/CLAP plugin ([PluginEffect]).
 ///
-/// The chain is non-destructive and stageless — the recording is always dry and
-/// every active entry colors playback in order. The same model backs a lane's
-/// record-route chain and a hardware input's live-monitor chain.
+/// The recording is always dry and every active entry colors playback in
+/// order. The same model backs a lane's record-route chain and a hardware
+/// input's live-monitor chain. Each entry carries its own [placement], and the
+/// chain is stored with every [FxPlacement.pre] entry ahead of every
+/// [FxPlacement.post] one.
 sealed class TrackEffect {
   /// Const base constructor for the sealed subtypes.
   const TrackEffect();
@@ -246,6 +743,26 @@ sealed class TrackEffect {
   /// The native `le_fx_type` code for this entry.
   int get typeCode;
 
+  /// Where this entry sits relative to the loop player.
+  FxPlacement get placement;
+
+  /// This entry's channel handling and level.
+  FxChannels get channels;
+
+  /// The rack this entry belongs to, or `null` when it is a standalone single
+  /// effect. Every module of one rack carries the same [FxRack.id].
+  FxRack? get rack;
+
+  /// What the factory catalogue calls this entry, or `null` when it did not
+  /// come from the catalogue.
+  ///
+  /// One string rather than a name and an artwork path, because the catalogue
+  /// maps a module name to both. It is kept because the engine effect an entry
+  /// became is not what the player chose: a pedal this build cannot process at
+  /// all becomes a passthrough entry, and without its own name it would be
+  /// indistinguishable from every other one.
+  String? get module;
+
   /// A JSON-friendly map for persistence (codes, not enum names).
   Map<String, dynamic> toJson();
 }
@@ -260,7 +777,14 @@ final class BuiltInEffect extends TrackEffect {
     List<double>? params,
     this.enabled = true,
     this.slotId,
-  }) : params = List<double>.unmodifiable(params ?? type.defaultParams);
+    this.placement = FxPlacement.post,
+    this.channels = FxChannels.defaults,
+    this.rack,
+    this.module,
+    this.presetId,
+    Map<String, double> source = const {},
+  }) : params = List<double>.unmodifiable(params ?? type.defaultParams),
+       source = Map<String, double>.unmodifiable(source);
 
   /// Rebuilds a [BuiltInEffect] from [toJson] output; unknown codes fall back
   /// to safe defaults. A legacy `stage` key (from the removed pre/post model)
@@ -282,9 +806,42 @@ final class BuiltInEffect extends TrackEffect {
     final enabled = rawEnabled is! bool || rawEnabled;
     final rawSlotId = json['slotId'];
     final slotId = rawSlotId is String ? rawSlotId : null;
+    if (json.containsKey('placement') && json['placement'] == null) {
+      throw const FormatException('invalid effect placement');
+    }
+    final placement = FxPlacement.fromWireName(json['placement']);
+    final rawChannels = json['channels'];
+    if (json.containsKey('channels') && rawChannels is! Map<String, dynamic>) {
+      throw const FormatException('invalid effect channels');
+    }
+    final channels = rawChannels is Map<String, dynamic>
+        ? FxChannels.fromJson(rawChannels)
+        : FxChannels.defaults;
+    final rack = FxRack.fromJson(json['rack']);
+    final rawModule = json['module'];
+    final module = rawModule is String ? rawModule : null;
+    final rawPresetId = json['presetId'];
+    final presetId = rawPresetId is String ? rawPresetId : null;
+    final rawSource = json['source'];
+    final source = <String, double>{
+      if (rawSource is Map)
+        for (final e in rawSource.entries)
+          if (e.key is String && e.value is num)
+            e.key as String: (e.value as num).toDouble(),
+    };
     final rawParams = json['params'];
     if (rawParams is! List) {
-      return BuiltInEffect(type: type, enabled: enabled, slotId: slotId);
+      return BuiltInEffect(
+        type: type,
+        enabled: enabled,
+        slotId: slotId,
+        placement: placement,
+        channels: channels,
+        rack: rack,
+        module: module,
+        presetId: presetId,
+        source: source,
+      );
     }
     final decoded = [for (final v in rawParams) (v as num).toDouble()];
     final defaults = type.defaultParams;
@@ -296,6 +853,12 @@ final class BuiltInEffect extends TrackEffect {
       ],
       enabled: enabled,
       slotId: slotId,
+      placement: placement,
+      channels: channels,
+      rack: rack,
+      module: module,
+      presetId: presetId,
+      source: source,
     );
   }
 
@@ -317,6 +880,27 @@ final class BuiltInEffect extends TrackEffect {
   final String? slotId;
 
   @override
+  final FxPlacement placement;
+
+  @override
+  final FxChannels channels;
+
+  @override
+  final FxRack? rack;
+
+  @override
+  final String? module;
+
+  /// The id of the factory preset this entry was built from, or `null` when
+  /// it did not come from one.
+  final String? presetId;
+
+  /// The factory preset's own values for this entry's module, by the
+  /// preset's parameter names. Kept whatever this build could do with them,
+  /// so a later build can rebuild the module from what the player loaded.
+  final Map<String, double> source;
+
+  @override
   int get typeCode => type.code;
 
   /// Returns a copy with the given fields replaced. [params] is copied.
@@ -325,11 +909,23 @@ final class BuiltInEffect extends TrackEffect {
     List<double>? params,
     bool? enabled,
     String? slotId,
+    FxPlacement? placement,
+    FxChannels? channels,
+    FxRack? rack,
+    String? module,
+    String? presetId,
+    Map<String, double>? source,
   }) => BuiltInEffect(
     type: type ?? this.type,
     params: params ?? this.params,
     enabled: enabled ?? this.enabled,
     slotId: slotId ?? this.slotId,
+    placement: placement ?? this.placement,
+    channels: channels ?? this.channels,
+    rack: rack ?? this.rack,
+    module: module ?? this.module,
+    presetId: presetId ?? this.presetId,
+    source: source ?? this.source,
   );
 
   @override
@@ -339,6 +935,12 @@ final class BuiltInEffect extends TrackEffect {
     // Omitted when default so a pre-FX-v3 chain's encoding is byte-unchanged.
     if (!enabled) 'enabled': false,
     if (slotId != null) 'slotId': slotId,
+    if (placement != FxPlacement.post) 'placement': placement.wireName,
+    if (!channels.isDefault) 'channels': channels.toJson(),
+    if (rack != null) 'rack': rack!.toJson(),
+    if (module != null) 'module': module,
+    if (presetId != null) 'presetId': presetId,
+    if (source.isNotEmpty) 'source': source,
   };
 
   @override
@@ -347,11 +949,37 @@ final class BuiltInEffect extends TrackEffect {
       other.type == type &&
       other.enabled == enabled &&
       other.slotId == slotId &&
-      _listEquals(other.params, params);
+      other.placement == placement &&
+      other.channels == channels &&
+      other.rack == rack &&
+      other.module == module &&
+      other.presetId == presetId &&
+      _listEquals(other.params, params) &&
+      _sourceEquals(other.source, source);
 
   @override
-  int get hashCode =>
-      Object.hash(type, enabled, slotId, Object.hashAll(params));
+  int get hashCode => Object.hash(
+    type,
+    enabled,
+    slotId,
+    placement,
+    channels,
+    rack,
+    module,
+    presetId,
+    Object.hashAll(params),
+    Object.hashAllUnordered([
+      for (final e in source.entries) Object.hash(e.key, e.value),
+    ]),
+  );
+
+  static bool _sourceEquals(Map<String, double> a, Map<String, double> b) {
+    if (a.length != b.length) return false;
+    for (final e in a.entries) {
+      if (b[e.key] != e.value) return false;
+    }
+    return true;
+  }
 
   static bool _listEquals(List<double> a, List<double> b) {
     if (a.length != b.length) return false;
@@ -381,6 +1009,10 @@ final class PluginEffect extends TrackEffect {
     this.name = '',
     this.enabled = true,
     this.slotId,
+    this.placement = FxPlacement.post,
+    this.channels = FxChannels.defaults,
+    this.rack,
+    this.module,
   });
 
   /// Rebuilds a [PluginEffect] from a persisted `{type, plugin, paramValues,
@@ -400,6 +1032,13 @@ final class PluginEffect extends TrackEffect {
     // Same wrong-typed-field tolerance as BuiltInEffect.fromJson.
     final rawEnabled = json['enabled'];
     final rawSlotId = json['slotId'];
+    if (json.containsKey('placement') && json['placement'] == null) {
+      throw const FormatException('invalid effect placement');
+    }
+    if (json.containsKey('channels') &&
+        json['channels'] is! Map<String, dynamic>) {
+      throw const FormatException('invalid effect channels');
+    }
     return PluginEffect(
       ref: PluginRef.fromJson(json['plugin'] as Map<String, dynamic>),
       paramValues: values,
@@ -407,6 +1046,12 @@ final class PluginEffect extends TrackEffect {
       name: (json['name'] as String?) ?? '',
       enabled: rawEnabled is! bool || rawEnabled,
       slotId: rawSlotId is String ? rawSlotId : null,
+      placement: FxPlacement.fromWireName(json['placement']),
+      channels: json['channels'] is Map<String, dynamic>
+          ? FxChannels.fromJson(json['channels'] as Map<String, dynamic>)
+          : FxChannels.defaults,
+      rack: FxRack.fromJson(json['rack']),
+      module: json['module'] is String ? json['module'] as String : null,
     );
   }
 
@@ -442,6 +1087,18 @@ final class PluginEffect extends TrackEffect {
   final String? slotId;
 
   @override
+  final FxPlacement placement;
+
+  @override
+  final FxChannels channels;
+
+  @override
+  final FxRack? rack;
+
+  @override
+  final String? module;
+
+  @override
   int get typeCode => kPluginFxCode;
 
   /// Returns a copy with the given fields replaced.
@@ -453,6 +1110,10 @@ final class PluginEffect extends TrackEffect {
     String? name,
     bool? enabled,
     String? slotId,
+    FxPlacement? placement,
+    FxChannels? channels,
+    FxRack? rack,
+    String? module,
   }) => PluginEffect(
     ref: ref ?? this.ref,
     paramValues: paramValues ?? this.paramValues,
@@ -461,6 +1122,10 @@ final class PluginEffect extends TrackEffect {
     name: name ?? this.name,
     enabled: enabled ?? this.enabled,
     slotId: slotId ?? this.slotId,
+    placement: placement ?? this.placement,
+    channels: channels ?? this.channels,
+    rack: rack ?? this.rack,
+    module: module ?? this.module,
   );
 
   @override
@@ -476,6 +1141,10 @@ final class PluginEffect extends TrackEffect {
     // Omitted when default so a pre-FX-v3 chain's encoding is byte-unchanged.
     if (!enabled) 'enabled': false,
     if (slotId != null) 'slotId': slotId,
+    if (placement != FxPlacement.post) 'placement': placement.wireName,
+    if (!channels.isDefault) 'channels': channels.toJson(),
+    if (rack != null) 'rack': rack!.toJson(),
+    if (module != null) 'module': module,
   };
 
   @override
@@ -486,6 +1155,10 @@ final class PluginEffect extends TrackEffect {
       other.name == name &&
       other.enabled == enabled &&
       other.slotId == slotId &&
+      other.placement == placement &&
+      other.channels == channels &&
+      other.rack == rack &&
+      other.module == module &&
       _mapEquals(other.paramValues, paramValues);
 
   @override
@@ -495,6 +1168,10 @@ final class PluginEffect extends TrackEffect {
     name,
     enabled,
     slotId,
+    placement,
+    channels,
+    rack,
+    module,
     Object.hashAllUnordered([
       for (final e in paramValues.entries) Object.hash(e.key, e.value),
     ]),
@@ -513,18 +1190,19 @@ final class PluginEffect extends TrackEffect {
 String encodeTrackEffects(List<TrackEffect> effects) =>
     jsonEncode([for (final e in effects) e.toJson()]);
 
-/// Decodes a chain produced by [encodeTrackEffects]; malformed input yields an
-/// empty chain.
+/// Decodes a chain produced by [encodeTrackEffects]. Malformed JSON yields an
+/// empty chain; invalid explicit effect metadata rejects the chain.
 List<TrackEffect> decodeTrackEffects(String? encoded) {
   if (encoded == null || encoded.isEmpty) return const [];
+  final Object? raw;
   try {
-    final raw = jsonDecode(encoded);
-    if (raw is! List) return const [];
-    return [
-      for (final item in raw)
-        if (item is Map<String, dynamic>) TrackEffect.fromJson(item),
-    ];
+    raw = jsonDecode(encoded);
   } on FormatException {
     return const [];
   }
+  if (raw is! List) return const [];
+  return [
+    for (final item in raw)
+      if (item is Map<String, dynamic>) TrackEffect.fromJson(item),
+  ];
 }

@@ -1,0 +1,11 @@
+{
+  "provenance": "Accepted populated Fusion 348, direct formed-face and cylinder measurements; mm in assembly world YZ",
+  "main_normal_yz": [-0.21640965505268422, 0.9763026483626777],
+  "rear_normal_yz": [0.413802944301184, 0.9103664774626048],
+  "main_front_yz": [2.35077103484194, 12.944639346538],
+  "main_rear_yz": [391.466078841605, 99.196899065103],
+  "rear_bore_yz": [406.41223020392556, 93.50165458817406],
+  "front_lid_bore_y": -3.410842379,
+  "body_front_straight_z": [3.99999989282041, 10.09477977206156],
+  "lid_front_straight_z": [-0.00027313793368932693, 10.283675413510247]
+}

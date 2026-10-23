@@ -3,6 +3,36 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno_engine/segno_engine.dart';
 
 void main() {
+  test('capture facts survive alongside the configured destination map', () {
+    final configured = BuiltInEffect(type: TrackEffectType.delay);
+    final captured = BuiltInEffect(type: TrackEffectType.drive);
+    final before = PerformanceArmSnapshot(
+      masterGain: 1,
+      limiterEnabled: false,
+      limiterCeiling: 0.99,
+      latencyOffsetFrames: 0,
+      outputChains: [
+        PerformanceOutputChain(bus: 1, effects: [configured]),
+      ],
+    );
+    final finalArm = before.withCapture(
+      followOutput: false,
+      captureBus: 1,
+      captureMask: 12,
+      outputEnabledMask: 12,
+      outputLevel: 0.7,
+      outputMuted: false,
+      outputEffects: [captured],
+      outputChainEnabled: false,
+    );
+    final decoded = PerformanceArmSnapshot.fromJson(finalArm.toJson());
+    expect(decoded.outputChains.single.bus, 1);
+    expect(decoded.outputChains.single.effects.single, configured);
+    expect(decoded.outputEffects.single, captured);
+    expect(decoded.outputChainEnabled, isFalse);
+    expect(decoded.captureMask, 12);
+  });
+
   group('PerformanceLaneSnapshot', () {
     test('round-trips a settled lane through JSON', () {
       final lane = PerformanceLaneSnapshot(
@@ -69,6 +99,7 @@ void main() {
         state: TrackState.playing,
         volume: 0.8,
         muted: true,
+        solo: true,
         multiple: 2,
         lanes: [
           PerformanceLaneSnapshot(lane: 0, lengthFrames: 240, deferred: false),
@@ -79,8 +110,25 @@ void main() {
       expect(decoded.state, TrackState.playing);
       expect(decoded.volume, 0.8);
       expect(decoded.muted, isTrue);
+      expect(decoded.solo, isTrue);
       expect(decoded.multiple, 2);
       expect(decoded.lanes, hasLength(1));
+    });
+
+    test('solo defaults to false and reads as false when absent', () {
+      const track = PerformanceTrackSnapshot(
+        channel: 0,
+        state: TrackState.playing,
+        volume: 1,
+        muted: false,
+        multiple: 1,
+      );
+      expect(track.solo, isFalse);
+      expect(track.toJson()['solo'], isFalse);
+
+      // Manifests written before per-track solo existed carry no key.
+      final legacy = Map<String, dynamic>.from(track.toJson())..remove('solo');
+      expect(PerformanceTrackSnapshot.fromJson(legacy).solo, isFalse);
     });
   });
 
@@ -130,8 +178,168 @@ void main() {
         PerformanceArmSnapshot.currentFxStagesVersion,
       );
       expect(decoded.trackChains, isEmpty);
-      expect(decoded.masterEffects, isEmpty);
-      expect(decoded.masterChainEnabled, isTrue);
+      expect(decoded.outputEffects, isEmpty);
+      expect(decoded.outputChainEnabled, isTrue);
+      // Current captures always name their policy and channel mask.
+      expect(snapshot.toJson()['followOutput'], isFalse);
+      expect(snapshot.toJson().containsKey('captureBus'), isFalse);
+      expect(snapshot.toJson()['captureMask'], 3);
+      expect(snapshot.toJson().containsKey('outputLevel'), isFalse);
+      expect(snapshot.toJson().containsKey('outputMuted'), isFalse);
+      expect(decoded.followOutput, isFalse);
+      expect(decoded.captureBus, 0);
+      expect(decoded.outputLevel, 1);
+      expect(decoded.outputMuted, isFalse);
+    });
+
+    test('round-trips the capture policy and the captured destination and '
+        'its facts (slice 3b) as the keys the renderer reads', () {
+      const snapshot = PerformanceArmSnapshot(
+        masterGain: 1,
+        limiterEnabled: false,
+        limiterCeiling: 0.99,
+        latencyOffsetFrames: 0,
+        followOutput: true,
+        captureBus: 1,
+        captureMask: 0xC,
+        outputLevel: 0.5,
+        outputMuted: true,
+      );
+      final json = snapshot.toJson();
+      expect(json['followOutput'], isTrue);
+      expect(json['captureBus'], 1);
+      expect(json['captureMask'], 0xC);
+      expect(json['outputLevel'], 0.5);
+      expect(json['outputMuted'], isTrue);
+      final decoded = PerformanceArmSnapshot.fromJson(json);
+      expect(decoded.followOutput, isTrue);
+      expect(decoded.captureBus, 1);
+      expect(decoded.captureMask, 0xC);
+      expect(decoded.outputLevel, 0.5);
+      expect(decoded.outputMuted, isTrue);
+    });
+
+    test('a manifest without a capture policy is rejected', () {
+      const snapshot = PerformanceArmSnapshot(
+        masterGain: 0.5,
+        limiterEnabled: true,
+        limiterCeiling: 0.9,
+        latencyOffsetFrames: 0,
+      );
+      final legacy = Map<String, dynamic>.from(snapshot.toJson())
+        ..remove('followOutput');
+      expect(
+        () => PerformanceArmSnapshot.fromJson(legacy),
+        throwsFormatException,
+      );
+    });
+
+    test('capture identity rejects malformed buses and masks', () {
+      const snapshot = PerformanceArmSnapshot(
+        masterGain: 1,
+        limiterEnabled: false,
+        limiterCeiling: 0.99,
+        latencyOffsetFrames: 0,
+      );
+      final valid = snapshot.toJson();
+      for (final bus in <Object?>[
+        null,
+        -1,
+        16,
+        0.5,
+        1.0,
+        double.infinity,
+        '1',
+      ]) {
+        expect(
+          () => PerformanceArmSnapshot.fromJson({
+            ...valid,
+            'captureBus': bus,
+          }),
+          throwsFormatException,
+          reason: 'bus $bus',
+        );
+      }
+      for (final mask in <Object?>[
+        null,
+        0,
+        -1,
+        0.5,
+        1.0,
+        '1',
+        0x100000000,
+        0x4,
+      ]) {
+        expect(
+          () => PerformanceArmSnapshot.fromJson({
+            ...valid,
+            'captureMask': mask,
+          }),
+          throwsFormatException,
+          reason: 'mask $mask',
+        );
+      }
+      expect(
+        () => PerformanceArmSnapshot.fromJson({
+          ...valid,
+          'captureBus': 1,
+          'captureMask': 3,
+        }),
+        throwsFormatException,
+      );
+      expect(
+        PerformanceArmSnapshot.fromJson({
+          ...valid,
+          'captureMask': 1,
+        }).captureMask,
+        1,
+      );
+    });
+
+    test('captured output control seeds reject malformed values', () {
+      const snapshot = PerformanceArmSnapshot(
+        masterGain: 1,
+        limiterEnabled: false,
+        limiterCeiling: 0.99,
+        latencyOffsetFrames: 0,
+      );
+      final valid = snapshot.toJson();
+      for (final mask in <Object?>[null, -1, 0.5, 1.0, '3', 0x100000000]) {
+        expect(
+          () => PerformanceArmSnapshot.fromJson({
+            ...valid,
+            'outputEnabledMask': mask,
+          }),
+          throwsFormatException,
+          reason: 'output enabled mask $mask',
+        );
+      }
+      for (final level in <Object?>[null, -0.1, 1.1, double.nan, '0.5']) {
+        expect(
+          () => PerformanceArmSnapshot.fromJson({
+            ...valid,
+            'outputLevel': level,
+          }),
+          throwsFormatException,
+          reason: 'output level $level',
+        );
+      }
+      for (final mute in <Object?>[null, 1, 'false']) {
+        expect(
+          () => PerformanceArmSnapshot.fromJson({
+            ...valid,
+            'outputMuted': mute,
+          }),
+          throwsFormatException,
+        );
+      }
+      expect(
+        PerformanceArmSnapshot.fromJson({
+          ...valid,
+          'outputEnabledMask': 0,
+        }).outputEnabledMask,
+        0,
+      );
     });
 
     test(
@@ -179,10 +387,10 @@ void main() {
             ),
             const PerformanceTrackChain(channel: 1),
           ],
-          masterEffects: [
+          outputEffects: [
             BuiltInEffect(type: TrackEffectType.filter, enabled: false),
           ],
-          masterChainEnabled: false,
+          outputChainEnabled: false,
         );
 
         final decoded = PerformanceArmSnapshot.fromJson(snapshot.toJson());
@@ -204,10 +412,10 @@ void main() {
         expect(decoded.trackChains[1].effects, isEmpty);
         expect(decoded.trackChains[1].chainEnabled, isTrue);
         expect(
-          (decoded.masterEffects.single as BuiltInEffect).enabled,
+          (decoded.outputEffects.single as BuiltInEffect).enabled,
           isFalse,
         );
-        expect(decoded.masterChainEnabled, isFalse);
+        expect(decoded.outputChainEnabled, isFalse);
       },
     );
 
@@ -222,6 +430,8 @@ void main() {
           'limiterOn': false,
           'limiterCeiling': 0.99,
           'latencyOffsetFrames': 0,
+          'followOutput': false,
+          'captureMask': 3,
           'tracks': [
             {
               'channel': 0,
@@ -261,8 +471,8 @@ void main() {
           PerformanceArmSnapshot.legacyFxStagesVersion,
         );
         expect(decoded.trackChains, isEmpty);
-        expect(decoded.masterEffects, isEmpty);
-        expect(decoded.masterChainEnabled, isTrue);
+        expect(decoded.outputEffects, isEmpty);
+        expect(decoded.outputChainEnabled, isTrue);
         // No tempo field either (#281): a pre-field capture reads back the
         // 0-as-unset sentinel — the exporter's cue that there is no tempo
         // evidence here, same as a capture that never set one.
@@ -321,8 +531,8 @@ void main() {
         final json = snapshot.toJson();
 
         expect(json.containsKey('trackChains'), isFalse);
-        expect(json.containsKey('masterEffects'), isFalse);
-        expect(json.containsKey('masterChainEnabled'), isFalse);
+        expect(json.containsKey('outputEffects'), isFalse);
+        expect(json.containsKey('outputChainEnabled'), isFalse);
         // …but the marker itself is always written, or a current snapshot
         // with no bus FX would be indistinguishable from a legacy one.
         expect(

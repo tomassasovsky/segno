@@ -46,9 +46,8 @@ const List<String> _names = [
   'B',
 ];
 
-/// Concert A. Fixed: neither `TUNER / tuner` nor `TUNER / tuner-mic` draws a
-/// reference-pitch control, and `tuner-mic`'s own numbers only resolve at 440
-/// (E3 = 164.81 Hz, and −9 cents of it is the 163.9 Hz the screen shows).
+/// Concert A by default. The foot Tuner moves it within 420–460 Hz (#1229);
+/// [pitchFromHz] takes the stored value.
 const double kReferenceHz = 440;
 
 /// MIDI note number of A4, the anchor the semitone count is measured from.

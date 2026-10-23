@@ -1,11 +1,25 @@
 #!/bin/sh
-# segno-touch-ctl — privileged touchscreen calibration helper.
+# segno-touch-ctl — per-screen touchscreen calibration (run as root by the app).
+#
+# The console has a touchscreen on each screen:
+#   readout  the 7": the touchscreen whose name contains the `touch_device` of
+#            the readout's view in /etc/segno/homescreen.toml, the same match
+#            ivi-homescreen uses to route its touches to that view
+#   main     every other touchscreen
 #
 # Verbs (stdout = compact JSON; detail on stderr):
-#   status          {"present":bool,"device":str,"calibrated":bool,"matrix":str}
-#   get             {"calibrated":bool,"matrix":str}
-#   set <6 floats>  {"calibrated":true,"matrix":str}   persist + apply now
-#   reset           {"calibrated":false,"matrix":""}   forget the matrix
+#   get <screen>              {"calibrated":bool,"matrix":str}
+#   try <screen> <6 floats>   apply to that screen's touchscreen now, without
+#                             persisting: a reboot, or `restore`, drops it
+#   set <screen> <6 floats>   persist, and apply to that screen's touchscreen now
+#   reset <screen>            forget the matrix, and apply now
+#   restore <screen>          apply what is persisted again, dropping a `try`
+#   apply                     rebuild the udev rule from /data (boot, before the
+#                             app opens its input devices)
+#
+# The app tries a new calibration with `try` and persists it with `set` only
+# when the player keeps it, so a calibration that made a screen untouchable is
+# gone after a power cycle.
 #
 # The matrix is libinput's 6-element affine transform (the first two rows of a
 # 3x3, row-major): "m1 m2 m3 m4 m5 m6" maps device coordinates onto the output.
@@ -13,46 +27,55 @@
 #
 # It lives on /data, not in /etc, because a RAUC A/B update replaces the whole
 # rootfs — a matrix written into /etc is silently lost on the next OTA. Same
-# reason as segno-nm-persist / segno-bt-persist / segno-ssh-persist.
+# reason as segno-nm-persist / segno-ssh-persist.
 #
-# Weston does the measuring: weston-touch-calibrator draws the crosshairs and
-# computes the matrix, then calls the `calibration_helper` from weston.ini
-# (segno-touch-calibration-helper), which lands here as `set`.
+# The app does the measuring (Settings > Displays > Calibrate touch, #1330).
 #
 # See https://github.com/tomassasovsky/segno/issues/659
 set -eu
 
 DATA_DIR="${SEGNO_TOUCH_DIR:-/data/touch}"
-MATRIX_FILE="$DATA_DIR/calibration"
 RULE_FILE="${SEGNO_TOUCH_RULE:-/etc/udev/rules.d/98-segno-touch-calibration.rules}"
+CONFIG="${SEGNO_HOMESCREEN_CONFIG:-/etc/segno/homescreen.toml}"
+INPUT_ROOT="${SEGNO_INPUT_ROOT:-/sys/class/input}"
 
 log() { echo "segno-touch-ctl: $*" >&2; }
 
-# Writing the matrix is unprivileged (weston runs as User=weston and invokes the
-# calibration helper as itself); turning it into a udev rule is not. `set` from
-# an unprivileged caller therefore stores the matrix and lets
-# segno-touch-apply.path notice the write and run `apply` as root.
-is_root() { [ "$(id -u)" = "0" ]; }
+matrix_file() { echo "$DATA_DIR/$1"; }
 
-# Name of the first touchscreen udev knows about, or empty.
-#
-# The name comes from sysfs, not from udevadm: udev sets NAME= for network
-# interfaces, never for input event devices, so parsing `udevadm info` output for
-# it silently yields nothing.
-touch_device_name() {
-    for ev in /dev/input/event*; do
-        [ -e "$ev" ] || continue
-        if udevadm info "$ev" 2>/dev/null | grep -q '^E: ID_INPUT_TOUCHSCREEN=1'; then
-            cat "/sys/class/input/$(basename "$ev")/device/name" 2>/dev/null
-            return 0
-        fi
-    done
-    return 1
+valid_screen() {
+    case "$1" in
+        main | readout) return 0 ;;
+        *) log "unknown screen: '$1' (main or readout)"; return 1 ;;
+    esac
+}
+
+# The readout's touch_device: a substring of its touchscreen's name. The
+# readout is the only view that names one; touch that matches no view goes to
+# the main screen, and so does the main screen's calibration. A name udev would
+# read as a pattern is refused, since udev and this script would then disagree
+# on which touchscreen it names.
+readout_name() {
+    n=$(sed -n "s/^[[:space:]]*touch_device[[:space:]]*=[[:space:]]*['\"]\([^'\"]*\)['\"].*/\1/p" \
+        "$CONFIG" 2>/dev/null | head -n1)
+    case "$n" in
+        *[][*?\|]*) log "touch_device '$n' has a udev pattern character: ignored" ;;
+        *) echo "$n" ;;
+    esac
+}
+
+# The readout's calibration cannot be applied without its touchscreen's name.
+routable() {
+    [ "$1" != readout ] || [ -n "$(readout_name)" ] || {
+        log "no usable touch_device in $CONFIG: the readout cannot be calibrated"
+        return 1
+    }
 }
 
 read_matrix() {
-    [ -f "$MATRIX_FILE" ] || return 1
-    m=$(head -n1 "$MATRIX_FILE" 2>/dev/null | tr -s ' \t' ' ' | sed 's/^ *//;s/ *$//')
+    f=$(matrix_file "$1")
+    [ -f "$f" ] || return 1
+    m=$(head -n1 "$f" 2>/dev/null | tr -s ' \t' ' ' | sed 's/^ *//;s/ *$//')
     [ -n "$m" ] || return 1
     echo "$m"
 }
@@ -77,86 +100,141 @@ validate_matrix() {
     [ "$n" -eq 6 ] || { log "need 6 values, got $n"; return 1; }
 }
 
-# Regenerate the udev rule from the stored matrix and re-trigger input devices
-# so it applies without a reboot. Root only — see is_root().
-apply() {
-    if ! is_root; then
-        log "not root: leaving the udev rule to segno-touch-apply.path"
+# Regenerate the udev rule from the stored matrices, or with [matrix] in place
+# of [screen]'s for a `try`: one line per screen, matched by the touchscreen's
+# name. The main screen's line matches every touchscreen and comes first; the
+# readout's comes after and wins for its touchscreen (a later assignment
+# replaces an earlier one), with the identity when only the main screen is
+# calibrated, so the 7" never takes the main screen's matrix.
+write_rule() {
+    name=$(readout_name)
+    main=$(read_matrix main) || main=""
+    readout=$(read_matrix readout) || readout=""
+    case "${1:-}" in
+        main) main=$2 ;;
+        readout) readout=$2 ;;
+    esac
+    [ -z "$name" ] || [ -n "$readout" ] || [ -z "$main" ] || readout="1 0 0 0 1 0"
+    rules=""
+    if [ -n "$main" ]; then
+        rules="${rules}ACTION==\"add|change\", SUBSYSTEM==\"input\", ENV{ID_INPUT_TOUCHSCREEN}==\"1\", ENV{LIBINPUT_CALIBRATION_MATRIX}=\"$main\"
+"
+    fi
+    if [ -n "$readout" ] && [ -n "$name" ]; then
+        rules="${rules}ACTION==\"add|change\", SUBSYSTEM==\"input\", ENV{ID_INPUT_TOUCHSCREEN}==\"1\", ATTRS{name}==\"*${name}*\", ENV{LIBINPUT_CALIBRATION_MATRIX}=\"$readout\"
+"
+    fi
+    if [ -z "$rules" ]; then
+        rm -f "$RULE_FILE"
         return 0
     fi
-    if ! m=$(read_matrix); then
-        rm -f "$RULE_FILE"
-    else
-        mkdir -p "$(dirname "$RULE_FILE")"
-        cat > "$RULE_FILE" <<EOF
-# Generated by segno-touch-ctl — do not edit by hand.
-# Source of truth is $MATRIX_FILE on the persistent /data partition.
-ACTION=="add|change", SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}=="1", \\
-  ENV{LIBINPUT_CALIBRATION_MATRIX}="$m"
-EOF
-    fi
-    # --reload-rules is asynchronous. Triggering straight after it re-runs the
-    # OLD rule set, so the freshly-written matrix is silently not applied and
-    # `set` reports success on a calibration that never took. Drain the queue to
-    # let the reload land, trigger, then wait for those events to be processed.
+    mkdir -p "$(dirname "$RULE_FILE")"
+    {
+        echo "# Generated by segno-touch-ctl — do not edit by hand."
+        echo "# Source of truth: $DATA_DIR/{main,readout} on the persistent /data partition."
+        printf '%s' "$rules"
+    } > "$RULE_FILE"
+}
+
+# --reload-rules is asynchronous: triggering straight after it re-runs the OLD
+# rule set. Drain the queue to let the reload land before anything triggers.
+reload_rules() {
     udevadm control --reload-rules 2>/dev/null || true
-    udevadm settle --timeout=5 2>/dev/null || true
-    udevadm trigger --subsystem-match=input --action=change 2>/dev/null || true
     udevadm settle --timeout=5 2>/dev/null || true
 }
 
+# Each touchscreen's sysfs path and the screen it belongs to, one per line.
+touchscreens() {
+    name=$(readout_name)
+    for ev in "$INPUT_ROOT"/event*; do
+        [ -e "$ev" ] || continue
+        udevadm info --query=property --path="$ev" 2>/dev/null |
+            grep -q '^ID_INPUT_TOUCHSCREEN=1$' || continue
+        dev_name=$(cat "$ev/device/name" 2>/dev/null || true)
+        screen=main
+        case "$dev_name" in
+            *"$name"*) [ -z "$name" ] || screen=readout ;;
+        esac
+        echo "$screen $ev"
+    done
+}
+
+# libinput reads the calibration matrix when a device is added, and ignores a
+# udev `change`, so a matrix set while the app runs only takes effect if the
+# device is removed and added again; the app's libinput (udev backend) follows
+# both. Only the touchscreen of [screen] is cycled.
+readd() {
+    touchscreens | while read -r screen ev; do
+        [ "$screen" = "$1" ] || continue
+        udevadm trigger --action=remove "$ev" 2>/dev/null || true
+        udevadm settle --timeout=5 2>/dev/null || true
+        udevadm trigger --action=add "$ev" 2>/dev/null || true
+        udevadm settle --timeout=5 2>/dev/null || true
+    done
+}
+
 json_matrix() {
-    if m=$(read_matrix); then
+    if m=$(read_matrix "$1"); then
         printf '{"calibrated":true,"matrix":"%s"}\n' "$m"
     else
         printf '{"calibrated":false,"matrix":""}\n'
     fi
 }
 
-# Backslashes and quotes, so a vendor's free-text device name cannot break the
-# object this verb contracts to print. The matrix needs none of this — it is
-# validated down to digits before it is ever stored.
-json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+normalize() { echo "$*" | tr -s ' \t' ' ' | sed 's/^ *//;s/ *$//'; }
 
-do_status() {
-    if dev=$(touch_device_name); then present=true; else present=false; dev=""; fi
-    if m=$(read_matrix); then cal=true; else cal=false; m=""; fi
-    printf '{"present":%s,"device":"%s","calibrated":%s,"matrix":"%s"}\n' \
-        "$present" "$(json_escape "$dev")" "$cal" "$m"
+do_try() {
+    screen=$1
+    shift
+    m=$(normalize "$@")
+    validate_matrix "$m" || return 2
+    routable "$screen" || return 3
+    write_rule "$screen" "$m"
+    reload_rules
+    readd "$screen"
+    printf '{"calibrated":true,"matrix":"%s"}\n' "$m"
+}
+
+do_restore() {
+    write_rule
+    reload_rules
+    readd "$1"
+    json_matrix "$1"
 }
 
 do_set() {
-    m=$(echo "$*" | tr -s ' \t' ' ' | sed 's/^ *//;s/ *$//')
+    screen=$1
+    shift
+    m=$(normalize "$@")
     validate_matrix "$m" || return 2
-    # mkdir only works as root; when weston calls this the directory already
-    # exists and is owned by the compositor user (segno-touch-persist, which is
-    # ordered Before=weston.service, creates it).
-    if is_root; then
-        mkdir -p "$DATA_DIR"
-    elif [ ! -d "$DATA_DIR" ]; then
-        log "$DATA_DIR missing and not root — is segno-touch-persist enabled?"
-        return 1
-    fi
-    echo "$m" > "$MATRIX_FILE"
-    apply
-    json_matrix
+    routable "$screen" || return 3
+    mkdir -p "$DATA_DIR"
+    echo "$m" > "$(matrix_file "$screen")"
+    write_rule
+    reload_rules
+    readd "$screen"
+    json_matrix "$screen"
 }
 
 do_reset() {
-    # `-f` hides a missing file, not a permission error — and under `set -e` an
-    # EACCES here killed the verb before it printed anything. The matrix is
-    # root-owned once a root-side `set` has run, so an unprivileged reset hits
-    # exactly that. Say so, the way do_set does for its own non-root case.
-    if [ -e "$MATRIX_FILE" ] && ! rm -f "$MATRIX_FILE" 2>/dev/null; then
-        log "cannot remove $MATRIX_FILE — not root?"
-        return 1
-    fi
-    apply
-    json_matrix
+    rm -f "$(matrix_file "$1")"
+    write_rule
+    reload_rules
+    readd "$1"
+    json_matrix "$1"
+}
+
+# At boot nothing has the devices open yet: refresh their udev properties with
+# a `change`, and the app's libinput reads the matrix when it adds them.
+do_apply() {
+    write_rule
+    reload_rules
+    udevadm trigger --subsystem-match=input --action=change 2>/dev/null || true
+    udevadm settle --timeout=5 2>/dev/null || true
 }
 
 usage() {
-    log "usage: $0 status|get|set <m1 m2 m3 m4 m5 m6>|reset|apply"
+    log "usage: $0 get <screen>|try <screen> <m1 m2 m3 m4 m5 m6>|set <screen> <m1 m2 m3 m4 m5 m6>|reset <screen>|restore <screen>|apply  (screen: main, readout)"
     exit 2
 }
 
@@ -165,14 +243,31 @@ verb=$1
 shift
 
 case "$verb" in
-    status) do_status ;;
-    get) json_matrix ;;
+    get)
+        [ $# -eq 1 ] || usage
+        valid_screen "$1" || exit 2
+        json_matrix "$1"
+        ;;
+    try)
+        [ $# -ge 2 ] || usage
+        valid_screen "$1" || exit 2
+        do_try "$@"
+        ;;
     set)
-        [ $# -ge 1 ] || usage
+        [ $# -ge 2 ] || usage
+        valid_screen "$1" || exit 2
         do_set "$@"
         ;;
-    reset) do_reset ;;
-    # Used by segno-touch-persist at boot: re-derive the rule from /data.
-    apply) apply; json_matrix ;;
+    restore)
+        [ $# -eq 1 ] || usage
+        valid_screen "$1" || exit 2
+        do_restore "$1"
+        ;;
+    reset)
+        [ $# -eq 1 ] || usage
+        valid_screen "$1" || exit 2
+        do_reset "$1"
+        ;;
+    apply) do_apply ;;
     *) usage ;;
 esac

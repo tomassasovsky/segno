@@ -1,22 +1,25 @@
 [Unit]
-Description=Segno: retry the saved WiFi network after the boot race (#824)
+Description=Segno: retry the saved WiFi network until it connects, at boot and after a drop (#824, #1326, #1337)
 # After NM is up; the script itself waits a settle period, so by the time it
-# checks, the racy first auto-activation has either succeeded or failed.
+# checks, the first auto-activation has either succeeded or is in flight.
+# Started again by the NetworkManager dispatcher hook when wlan0 goes down
+# while the console runs (#1337); a start while it runs is a no-op.
 After=NetworkManager.service
 Wants=NetworkManager.service
 
 [Service]
-Type=oneshot
-# The settle sleep lives in the script. Worst case with the scan wait is
-# 8 + 3*(16+20) + 2*5 = 126 s; this bound has to sit above that (nmcli's
-# default 90 s wait was not: 8 + 3*90 + 2*5 = 288 s, and systemd would have
-# killed attempt 2 mid-way).
-TimeoutStartSec=180
+# exec, not oneshot: the script keeps retrying for up to 10 minutes, and a
+# oneshot would hold multi-user.target (and every unit ordered after it) for
+# that long. The start job completes once the script is running.
+Type=exec
 ExecStart=/usr/bin/segno-wifi-retry
+# No RuntimeMaxSec: the script bounds its own retrying (settle +
+# SEGNO_WIFI_RETRY_FOR + one attempt, every nmcli call under --wait), but it
+# waits without limit while the app holds it for a performance, and a long
+# show must not get it killed.
 # A give-up is a real signal (saved profile that will not activate) -- let it
 # land in `systemctl --failed` where segno-log-check and the persistent
-# journal (#810) make it diagnosable, but never block or degrade boot:
-# oneshot failure outside the critical path costs nothing else.
+# journal (#810) make it diagnosable, but never block or degrade boot.
 
 [Install]
 WantedBy=multi-user.target

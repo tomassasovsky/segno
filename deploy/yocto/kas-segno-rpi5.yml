@@ -3,9 +3,8 @@
 #
 #   ./kas-container build deploy/yocto/kas-segno-rpi5.yml
 #
-# The Pi 4 / SD variant is kas-segno-rpi4.yml. Everything the two boards share
-# lives in kas-segno-common.yml — put changes there unless they are genuinely
-# board-specific. See README.md for the full flow.
+# What is not specific to the board lives in kas-segno-common.yml. See
+# README.md for the full flow.
 #
 # DEVICE-SIDE PREREQUISITES, not shippable in this image. The bootloader EEPROM
 # lives on the board, not on the drive, so nothing written here can set it — and
@@ -31,9 +30,9 @@ local_conf_header:
     # three can never disagree — see meta-segno/wic/segno-tryboot.wks.in.
     SEGNO_BOOT_DISK = "nvme0n1"
 
-    # RAUC compatible string. Deliberately per-board: a Pi 4 bundle installing
-    # itself onto a Pi 5 would brick the slot it landed in, so the two products
-    # carry different strings and RAUC refuses the mismatch.
+    # RAUC compatible string. Per board: a bundle for another board installing
+    # itself onto this one would brick the slot it landed in, so RAUC refuses
+    # any string but this one.
     SEGNO_RAUC_COMPATIBLE = "segno-raspberrypi5"
 
   rpi5-power: |

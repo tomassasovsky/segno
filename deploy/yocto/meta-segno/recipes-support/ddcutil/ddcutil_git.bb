@@ -1,5 +1,5 @@
-# Vendored from meta-wayland (walnascar) — we don't pull that whole layer in
-# just for brightness. Powers segno-brightness-ctl (DDC/CI VCP 0x10).
+# Vendored from the meta-wayland layer's walnascar recipe; the image uses
+# nothing else from that layer. Powers segno-brightness-ctl (DDC/CI VCP 0x10).
 SUMMARY = "Query and change monitor settings (brightness, etc.) via DDC/CI"
 HOMEPAGE = "https://github.com/rockowitz/ddcutil"
 SECTION = "utils"
@@ -16,7 +16,7 @@ SRCREV = "ca610f91d5483e19bfdae88bb0094973cc81fc95"
 
 inherit autotools pkgconfig
 
-# Headless appliance: DRM + udev + USB; skip X11 (we have Wayland/weston).
+# Appliance: DRM + udev + USB; no X11 (the app draws straight to DRM/KMS).
 PACKAGECONFIG ??= "drm systemd usb"
 PACKAGECONFIG[drm] = "--enable-drm=yes,--enable-drm=no,libdrm"
 PACKAGECONFIG[systemd] = "--enable-udev=yes,--enable-udev=no,udev"

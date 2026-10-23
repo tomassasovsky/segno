@@ -1,0 +1,53 @@
+{
+  "screen": {
+    "silk_count": 715,
+    "text_count": 84,
+    "min_text_height_mm": 1.0,
+    "min_text_stroke_mm": 0.15,
+    "min_stroked_graphic_mm": 0.15,
+    "minimum_mask_gap": {
+      "ref": "C102",
+      "uuid": "72e3efc4-6d02-41ed-9409-f218d3c25e53",
+      "layer": 5,
+      "type": "PCB_SHAPE",
+      "stroke": 0.15,
+      "filled": 1,
+      "mask_gap_mm": 0.15874286930126638
+    },
+    "pad_gap_failures": []
+  },
+  "console": {
+    "silk_count": 1006,
+    "text_count": 96,
+    "min_text_height_mm": 1.0,
+    "min_text_stroke_mm": 0.15,
+    "min_stroked_graphic_mm": 0.15,
+    "minimum_mask_gap": {
+      "ref": "R16",
+      "uuid": "d20feff6-0c11-4c80-b26a-7e21ac7ee345",
+      "layer": 5,
+      "type": "PCB_SHAPE",
+      "stroke": 0.15,
+      "filled": 1,
+      "mask_gap_mm": 0.16499999999999201
+    },
+    "pad_gap_failures": []
+  },
+  "ring": {
+    "silk_count": 278,
+    "text_count": 32,
+    "min_text_height_mm": 1.0,
+    "min_text_stroke_mm": 0.15,
+    "min_stroked_graphic_mm": 0.15,
+    "minimum_mask_gap": {
+      "ref": "ENC1",
+      "uuid": "5f9a1273-c154-421e-b5b2-aad28790cb7f",
+      "layer": 5,
+      "type": "PCB_SHAPE",
+      "stroke": 0.25,
+      "filled": 1,
+      "mask_gap_mm": 0.15870759196573006
+    },
+    "pad_gap_failures": []
+  }
+}

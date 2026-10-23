@@ -1,0 +1,13 @@
+# Test-quality delta review — CI and fixtures
+
+Read-only follow-up to `test-quality-runtime-root-v1.md`, by the same reviewer. It covers only the newly changed CI workflow and the named fixture files; the earlier product/native analysis is not repeated. Exact input hashes are in the private delta binding. No tests, builds or product edits were performed for this review.
+
+## CI route
+
+The previous native-backed Dart skip finding is **closed in the inspected workflow source**. `.github/workflows/main.yaml:336-364` builds a test library, exports its absolute path through `GITHUB_ENV`, then checks that file before explicitly running `test/session/record_timing_persistence_test.dart` from the root and the complete `packages/segno_engine` Dart suite from that package directory. `build_test_lib.sh` prints an absolute path, so changing the working directory for the package suite does not break the override. The explicit file check fails the job if the library is missing, and both test invocations include the prior self-skipped cases. This is a route/source conclusion, not a claim that the modified workflow has run on a published head.
+
+## Fixture delta
+
+No new actionable test-quality finding arose in the named fixtures. `control_cubit_test.dart` derives the mock capture guard from the same track snapshot its scenarios control and marks timing settled; unrelated Control tests use a narrow fake port. `looper_page_test.dart` constructs and loads the actual timing owner before providing it to the page and Control. `looper_bloc_test.dart` verifies the event delegates to that owner and does not write through the repository directly; the actual App and Session tests provide the durable behavior proof. `settings_page_test.dart` constructs a coherent confirmed timing/default-memory mock and awaits owner load inside the widget test zone before toggling. The Session and Performance fake engines replace removed timing setters with the new method only to satisfy their AudioEngine seam; their tests do not claim to prove timing. The native control-sequence fuzzer now settles an accepted timing request before a new recording acquisition, preserving the intended quantized-arm invariants rather than changing expected audio behavior.
+
+The coordinator reported focused Control fixture v3 and LooperPage/Bloc v2 passes; this reviewer did not rerun them. The actual-App compensated-refusal red test and real Session Save test remain separate behavioral evidence. The native author's real-FX regression strengthening and the adversary's forced Dart full-snapshot/get-track interleaving were prepared but had not landed/executed in the bound source; the earlier report's two remaining coverage limitations therefore stay open at this revision.
