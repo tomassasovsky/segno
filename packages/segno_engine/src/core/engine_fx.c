@@ -3355,8 +3355,12 @@ static void fx_spring_kprocess(void* ks, float* l, float* r) {
  * A known difference: the echo density builds faster than the Dub-Verb's
  * (0.6 against 0.4 at 100 ms) and slower than the Amb-Verb's (0.4 against
  * 0.9 at 200 ms). The long lines live in the slot's two
- * one-second rings (fx_verb_prepare); the block holds the filters and
- * write positions. */
+ * one-second rings (fx_stereo_ring_prepare); the block holds the filters and
+ * write positions. A ring can hold another type's audio, or this one's at
+ * another rate (a retype or a rate change keeps the rings): every structure
+ * reads silence until its write position has wrapped once since the block
+ * was cleared, so nothing it did not write ever sounds. Dec glides, and the
+ * lines are redesigned only while it moves. */
 #define LE_VB_LINES 8
 #define LE_VB_APS 2
 #define LE_VB_TN 10
@@ -3493,6 +3497,13 @@ typedef struct le_fx_verb {
   uint32_t hist_w;
   uint32_t ap_w[2][LE_VB_APS];
   uint32_t line_w[LE_VB_LINES];
+  /* Whether each structure has wrapped since the block was cleared: before
+   * that, a read returns silence, not what the ring held. */
+  uint8_t hist_full;
+  uint8_t ap_full[2][LE_VB_APS];
+  uint8_t line_full[LE_VB_LINES];
+  float dec;        /* Dec, gliding toward the setting */
+  float dec_design; /* the Dec the lines were last designed for (-1: none) */
   float gm[LE_VB_LINES];
   float lo[LE_VB_LINES][3]; /* first-order: b0, b1, a1 */
   float hi[LE_VB_LINES][3];
@@ -3644,17 +3655,20 @@ static void fx_verb_update(void* ks, const float* p, int sr, int settle,
   if (!f) return;
   const int rate = sr > 0 ? sr : 48000;
   if (f & LE_FX_DYN_NEW_RATE) {
-    /* A new rate makes the rings another rate's: the positions start over
-     * (the rings were cleared with the block, or are cleared by the
-     * re-enable that follows a rate change). */
+    /* A new rate makes the rings another rate's: the positions start over,
+     * and each structure reads silence until it wraps (le_fx_verb). */
     memset(q->lo_z, 0, sizeof(q->lo_z));
     memset(q->hi_z, 0, sizeof(q->hi_z));
     memset(q->shelf_z, 0, sizeof(q->shelf_z));
     memset(q->peak_z, 0, sizeof(q->peak_z));
     memset(q->ap_w, 0, sizeof(q->ap_w));
     memset(q->line_w, 0, sizeof(q->line_w));
+    memset(q->ap_full, 0, sizeof(q->ap_full));
+    memset(q->line_full, 0, sizeof(q->line_full));
+    q->hist_full = 0;
     q->hist_w = 0;
     q->tail_z = 0.0f;
+    q->dec_design = -1.0f;
     le_vb_geometry(q, rate);
     /* The rings are one second each (le_fx_prepare's cap is the rate). */
     q->ok = q->need[0] <= (uint32_t)rate && q->need[1] <= (uint32_t)rate;
@@ -3666,15 +3680,22 @@ static void fx_verb_update(void* ks, const float* p, int sr, int settle,
       for (int i = 0; i < 5; ++i) q->peak[i] = (float)c[i];
     }
   }
-  if (f & (LE_FX_DYN_CHANGED | LE_FX_DYN_NEW_RATE)) {
+  const float k = settle ? 1.0f : q->h.k;
+  /* Dec glides with the other settings' smoothing; the lines are redesigned
+   * (eight shelf pairs) only while it moves, not when Vol does. */
+  const float dec_tgt = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
+  q->dec += (dec_tgt - q->dec) * k;
+  if (fabsf(dec_tgt - q->dec) < 1e-4f) q->dec = dec_tgt;
+  if (q->dec != q->dec_design) {
     double t[3];
-    le_vb_t(def, p[0] < 0.0f ? 0.0 : p[0] > 1.0f ? 1.0 : (double)p[0], t);
+    le_vb_t(def, (double)q->dec, t);
     for (int i = 0; i < LE_VB_LINES; ++i) le_vb_design_line(q, i, t, rate);
+    q->dec_design = q->dec;
   }
   const double vol = p[1] < 0.0f ? 0.0 : p[1] > 1.0f ? 1.0 : (double)p[1];
-  const float k = settle ? 1.0f : q->h.k;
   int moving = le_fx_glide_step(&q->dry, (float)le_vb_interp(def->dry, vol), k);
   moving |= le_fx_glide_step(&q->wet, (float)le_vb_interp(LE_VB_WET, vol), k);
+  moving |= q->dec != dec_tgt;
   q->h.moving = moving;
 }
 
@@ -3707,26 +3728,36 @@ static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
   float e[2];
   float tap[2] = {0.0f, 0.0f};
   for (int c = 0; c < 2; ++c) {
+    /* Before the history wraps, only the indices up to its write position
+     * hold this block's input. */
     uint32_t at = q->hist_w + q->hist_n - q->pd[c];
     if (at >= q->hist_n) at -= q->hist_n;
-    float u = hist[at];
+    float u = q->hist_full || at <= q->hist_w ? hist[at] : 0.0f;
     if (q->tap[c] != 0u) {
       uint32_t ta = q->hist_w + q->hist_n - q->tap[c];
       if (ta >= q->hist_n) ta -= q->hist_n;
-      tap[c] = d->tap_g[c] * hist[ta];
+      tap[c] = q->hist_full || ta <= q->hist_w ? d->tap_g[c] * hist[ta] : 0.0f;
     }
     for (int k = 0; k < LE_VB_APS; ++k) {
       float* b = ring[c] + q->ap_off[c][k];
       const uint32_t w = q->ap_w[c][k];
-      const float dl = b[w];
+      const float dl = q->ap_full[c][k] ? b[w] : 0.0f;
       const float v = u + d->ap_g * dl;
       u = dl - d->ap_g * v;
       b[w] = fx_sanitize(v);
-      q->ap_w[c][k] = w + 1u >= q->ap_n[c][k] ? 0u : w + 1u;
+      if (w + 1u >= q->ap_n[c][k]) {
+        q->ap_w[c][k] = 0u;
+        q->ap_full[c][k] = 1u;
+      } else {
+        q->ap_w[c][k] = w + 1u;
+      }
     }
     e[c] = u;
   }
-  if (++q->hist_w >= q->hist_n) q->hist_w = 0;
+  if (++q->hist_w >= q->hist_n) {
+    q->hist_w = 0;
+    q->hist_full = 1u;
+  }
   /* The network: each line's output was written line_n samples ago. */
   float o[LE_VB_LINES];
   float sum = 0.0f;
@@ -3734,7 +3765,7 @@ static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
   float orr = 0.0f;
   for (int i = 0; i < LE_VB_LINES; ++i) {
     const int c = i < LE_VB_LINES / 2 ? 0 : 1;
-    o[i] = ring[c][q->line_off[i] + q->line_w[i]];
+    o[i] = q->line_full[i] ? ring[c][q->line_off[i] + q->line_w[i]] : 0.0f;
     sum += o[i];
     ol += (float)d->cl[i] * o[i];
     orr += (float)d->cr[i] * o[i];
@@ -3754,7 +3785,12 @@ static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
     const float inj = (i & 1) == 0 ? e[0] : e[1];
     ring[c][q->line_off[i] + q->line_w[i]] =
         fx_sanitize(q->gm[i] * y2 + (float)d->cin[i] * d->late_g * inj);
-    q->line_w[i] = q->line_w[i] + 1u >= q->line_n[i] ? 0u : q->line_w[i] + 1u;
+    if (q->line_w[i] + 1u >= q->line_n[i]) {
+      q->line_w[i] = 0u;
+      q->line_full[i] = 1u;
+    } else {
+      q->line_w[i] += 1u;
+    }
   }
   const float inv = 0.35355339f; /* 1 / sqrt(8) */
   float w[2] = {inv * ol + d->early_g * e[0] + tap[0],

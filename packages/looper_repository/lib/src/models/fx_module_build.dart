@@ -282,11 +282,13 @@ const FxModuleBuild _dubVerb = FxModuleBuild(
   params: ['Dub-Verb Dec', 'Dub-Verb Vol'],
 );
 
-// Dub Rack: the whole Amb-Verb, decay and volume, and the rack's Amb-Dub Mix,
-// which the source groups with it (and spells its volume key in lower case).
+// Dub Rack: the Amb-Verb's decay and volume (the source spells its volume key
+// in lower case). The rack's Amb-Dub Mix, which the source groups with it,
+// stays unmapped until the rack's parallel paths read it (#1430).
 const FxModuleBuild _ambVerb = FxModuleBuild(
   type: TrackEffectType.ambVerb,
-  params: ['Amb-Verb Dec', 'Amb-verb Vol', 'Amb-Dub Mix'],
+  params: ['Amb-Verb Dec', 'Amb-verb Vol'],
+  unmapped: ['Amb-Dub Mix'],
 );
 
 // Guitar Rack: the whole spring.

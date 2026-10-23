@@ -303,6 +303,38 @@ static void test_dub_verbs_volume(void) {
   }
 }
 
+/* The rings can hold another type's audio (a retype keeps them) or this
+ * type's at another rate: nothing the reverb did not write since its state
+ * was cleared may sound. Rings full of old audio and silence in give
+ * silence out. */
+static void test_dub_verbs_ignore_stale_rings(void) {
+  printf("test_dub_verbs_ignore_stale_rings\n");
+  const int32_t types[2] = {LE_FX_DUB_VERB, LE_FX_AMB_VERB};
+  for (int k = 0; k < 2; ++k) {
+    const int sr = 48000;
+    const int n = 2 * sr;
+    le_fx_state* fx = dyn_state(types[k], sr);
+    for (int c = 0; c < 2; ++c) {
+      CHECK(fx->delay[0][c] != NULL);
+      for (int i = 0; i < sr; ++i) fx->delay[0][c][i] = 0.5f;
+    }
+    float* in = (float*)calloc((size_t)n, sizeof(float));
+    float* out = (float*)calloc((size_t)n, sizeof(float));
+    float p[LE_FX_PARAMS] = {0};
+    le_fx_defaults(types[k], p);
+    p[0] = 0.9f;
+    p[1] = 1.0f;
+    uint32_t clock = 0;
+    dyn_run(fx, types[k], p, sr, in, out, NULL, n, &clock);
+    dyn_free(fx);
+    int loud = 0;
+    for (int i = 0; i < n; ++i) loud += out[i] != 0.0f;
+    CHECK(loud == 0);
+    free(in);
+    free(out);
+  }
+}
+
 /* At the longest Dec, with noise in, both stay finite and bounded. */
 static void test_dub_verbs_stable_at_the_longest_decay(void) {
   printf("test_dub_verbs_stable_at_the_longest_decay\n");
@@ -404,6 +436,7 @@ static void run_verb_tests(void) {
   test_dub_verbs_match_the_captures();
   test_dub_verbs_volume();
   test_dub_verbs_stable_at_the_longest_decay();
+  test_dub_verbs_ignore_stale_rings();
   test_verb_offline_equals_live();
   test_verb_on_a_lane();
 }

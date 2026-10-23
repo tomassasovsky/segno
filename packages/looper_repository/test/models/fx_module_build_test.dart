@@ -969,7 +969,7 @@ void main() {
   });
 
   group('the reverb variants', () {
-    test("the Dub Rack's reverbs copy decay, volume and Amb-Dub Mix", () {
+    test("the Dub Rack's reverbs copy decay and volume", () {
       const preset = FxPreset(
         family: 'Dub Rack',
         name: 'p',
@@ -993,10 +993,11 @@ void main() {
       expect(dub.type.params[0].settingFor(6.25), closeTo(0.8, 1e-9));
       final amb = fxModuleEntry(_module('Ambience'), preset);
       expect(amb.type, TrackEffectType.ambVerb);
-      expect(amb.params.take(3), [0.3, 0.5, 0.404]);
+      expect(amb.params.take(2), [0.3, 0.5]);
+      // Amb-Dub Mix reaches nothing until the rack's parallel paths land.
       expect(
         fxModuleBuild(_module('Ambience')).readiness,
-        FxModuleReadiness.full,
+        FxModuleReadiness.partial,
       );
     });
 
