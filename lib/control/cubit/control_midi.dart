@@ -928,8 +928,9 @@ extension MidiControlEditing on ControlCubit {
     return clamped;
   }
 
-  /// [target]'s parameter when it snaps to positions, so a MIDI value lands
-  /// on one, or `null` for a continuous parameter.
+  /// [target]'s parameter, as its surface shows it ([fxEntryParam]), when it
+  /// snaps to positions, so a MIDI value lands on one, or `null` for a
+  /// continuous parameter.
   FxParamInfo? _midiSteppedParam(FxParamTarget target) {
     for (final effect
         in _looper.chainEntriesAt(target.address) ?? <TrackEffect>[]) {
@@ -937,7 +938,7 @@ extension MidiControlEditing on ControlCubit {
           effect is BuiltInEffect &&
           target.param >= 0 &&
           target.param < effect.type.params.length) {
-        final param = effect.type.params[target.param];
+        final param = fxEntryParam(effect, target.param);
         return param.isStepped ? param : null;
       }
     }

@@ -149,7 +149,11 @@ extension ControlValueResolver on LooperRepository {
     ControlValueTarget target, {
     OwnedValueReadout? owned,
   }) => switch (target) {
-    FxParamTarget(:final param) => _paramSlot(target)?.effect.params[param],
+    // A binding reads the shown setting (fxEntryShownSettingFor).
+    FxParamTarget(:final param) => switch (_paramSlot(target)) {
+      final slot? => fxEntryShownSetting(slot.effect, param),
+      null => null,
+    },
     MixValueTarget() => _readMixValue(target),
     MasterGainTarget() => masterGain,
     OwnedValueTarget() => owned?.read(target),

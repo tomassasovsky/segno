@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
@@ -119,6 +120,29 @@ void main() {
     // list is what bounds a target, not the raw value array.
     param: 1,
   );
+
+  test("reads a Pitch Shift's shift as a setting of its shown range", () {
+    // +7 semitones on the octaver's -24..+24 is 19/24 of the rack's
+    // -12..+12, which is what a binding works in.
+    monitorChains[2] = [
+      fxModuleEntry(
+        kFxModules.firstWhere((m) => m.name == 'Pitch shift'),
+        const FxPreset(
+          family: 'Vocal Rack',
+          name: 'p',
+          id: 'p',
+          type: 0,
+          params: {'Pitch': 1, 'Pitch Shift': 19 / 24, 'Pitch Mix': 1},
+        ),
+      ).copyWith(slotId: 'ps-1'),
+    ];
+    const shift = FxParamTarget(
+      address: FxAddress(stage: FxStage.input, index: 2),
+      slotId: 'ps-1',
+      param: 0,
+    );
+    expect(looper.readValueTarget(shift), closeTo(19 / 24, 1e-6));
+  });
 
   group('availableValueTargets', () {
     test('offers every built-in param, the track volumes, and master gain', () {

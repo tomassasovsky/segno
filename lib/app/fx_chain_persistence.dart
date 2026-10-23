@@ -616,11 +616,16 @@ class FxChainPersistence {
   ) {
     final entries = _looper.chainEntriesAt(address);
     if (entries == null || index < 0 || index >= entries.length) return;
-    final id = entries[index].slotId;
+    final entry = entries[index];
+    final id = entry.slotId;
     if (id == null) return;
+    // The UI writes the kind's setting; a binding holds the shown one
+    // (fxEntryShownSettingFor).
     _ordinaryConfirmed(
       FxParamTarget(address: address, slotId: id, param: parameter),
-      value,
+      entry is BuiltInEffect && parameter < entry.type.params.length
+          ? fxEntryShownSettingFor(entry, parameter, value)
+          : value,
     );
   }
 
@@ -692,12 +697,15 @@ class FxChainPersistence {
         enabled: enabled,
         params: [
           for (var index = 0; index < effect.type.params.length; index++)
-            _parameters[FxParamTarget(
-                  address: address,
-                  slotId: id,
-                  param: index,
-                )] ??
-                effect.params[index],
+            switch (_parameters[FxParamTarget(
+              address: address,
+              slotId: id,
+              param: index,
+            )]) {
+              // A held binding value is a shown setting.
+              final double held => fxEntryKindSetting(effect, index, held),
+              null => effect.params[index],
+            },
         ],
       ),
       PluginEffect() => effect.copyWith(enabled: enabled),
