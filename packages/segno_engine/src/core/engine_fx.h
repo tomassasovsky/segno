@@ -172,17 +172,33 @@ static inline int32_t le_fx_all_tracks_hop_seed(int32_t bus) {
 
 /* --- PSOLA octaver (mode p3 >= 0.5) tuning ---------------------------------- */
 #define LE_PSOLA_AHOP 256    /* re-run pitch detection every this many samples */
-#define LE_PSOLA_WIN 1600    /* YIN analysis window (integration + max lag) */
-#define LE_PSOLA_MAXLAG 800  /* longest lag searched (60 Hz at 48 kHz) */
+#define LE_PSOLA_MAXLAG 800  /* the YIN detector's longest lag (le_yin_begin) */
+/* Pitch detection (#913). A coarse YIN pass runs on the window decimated by
+ * D = round(rate / LE_PSOLA_RATE), 1..LE_PSOLA_DMAX (2 at 48 kHz, 4 at 96
+ * kHz): LE_PSOLA_DWIN decimated samples, about 33 ms, searched from
+ * LE_PSOLA_MIN_HZ to LE_PSOLA_MAX_HZ at every rate. A narrow pass over the
+ * last LE_PSOLA_RAW device samples refines it to a device sample, as the
+ * tuner does. The pass is sliced, LE_PSOLA_WORK_PER_TICK difference-function
+ * iterations a tick, so it finishes inside its hop instead of landing in one
+ * callback: a whole pass is at most ~176k iterations (160k coarse at any
+ * rate, 16k refinement at 96 kHz) against the hop's 256 x 896 = 229k, so the
+ * work spreads over the whole hop with 1.3x headroom. */
+#define LE_PSOLA_RATE 24000 /* LE_PSOLA_DMAX is in engine_private.h */
+#define LE_PSOLA_DWIN 800
+#define LE_PSOLA_MIN_HZ 60
+#define LE_PSOLA_MAX_HZ 1000
+#define LE_PSOLA_RAW 2048
+#define LE_PSOLA_WORK_PER_TICK 896
 #define LE_PSOLA_THRESH 0.15f /* YIN absolute threshold for the first dip */
 #define LE_PSOLA_THMAX 300   /* grain half-width cap: 2*THMAX < LE_PV_N (fits OLA) */
 /* How far behind the head PSOLA reads its input, so its latency matches the
  * split phase vocoder's (LE_PV_LATENCY). */
 #define LE_PSOLA_LAG (LE_PV_LATENCY - LE_PV_N)
-/* The deepest FIFO read of either mode (PSOLA's pitch window, which lies
- * past the dry tap and the PV window): a smaller ring would wrap onto recent
- * input, so fx_octaver passes such a slot through dry. */
-#define LE_OCT_REACH (LE_PSOLA_LAG + LE_PSOLA_WIN)
+/* The deepest FIFO read of either mode (PSOLA's pitch window at the largest
+ * decimation, which lies past the dry tap and the PV window): a smaller ring
+ * would wrap onto recent input, so fx_octaver passes such a slot through
+ * dry. */
+#define LE_OCT_REACH (LE_PSOLA_LAG + LE_PSOLA_DMAX * LE_PSOLA_DWIN)
 
 /* The cadence of a heap-state kind's update hook (le_fx_kinds), in engine
  * frames: it runs once per this many frames of the engine clock, at a phase

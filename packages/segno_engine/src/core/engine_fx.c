@@ -19,7 +19,7 @@
 #include <string.h>
 
 #include "engine_fx.h"
-#include "engine_internal.h" /* le_psola_detect prototype (defined below) */
+#include "engine_internal.h" /* le_psola_detect_band prototype (below) */
 #include "fft.h" /* le_rfft_plan, le_rfft_fwd / le_rfft_inv, le_hann_init */
 #include "rt_alloc.h" /* le_rt_alloc_prefaulted / le_rt_free: the audio thread writes these */
 #include "../host/plugin_slot.h" /* le_plugin_slot_process (LE_FX_PLUGIN row) */
@@ -202,6 +202,11 @@ _Static_assert(LE_PSOLA_AHOP == LE_PV_HOP,
                "PSOLA's YIN cadence must equal the PV hop to share its schedule");
 _Static_assert(LE_OCT_REACH > LE_PV_LATENCY && LE_OCT_REACH > LE_PV_N,
                "the octaver's ring guard covers the dry tap and the PV window");
+_Static_assert(LE_OCT_REACH >= LE_PSOLA_LAG + LE_PSOLA_RAW,
+               "the ring guard covers PSOLA's refinement window");
+_Static_assert(LE_PSOLA_DWIN + LE_PSOLA_DWIN / 2 + 1 + LE_PSOLA_RAW <=
+                   LE_PV_SCRATCH,
+               "PSOLA's detection windows fit the octaver scratch");
 
 /* The analysis-hop PHASE of the octaver in chain slot [slot] of [fx]: the
  * owner's quarter plus the slot, mod 4, on the quarter lattice (engine_fx.h).
@@ -289,6 +294,7 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   o->voiced = 0.0f;
   if (o->out != NULL) memset(o->out, 0, sizeof(float) * LE_PV_OUT);
   o->analysed = 0;
+  o->ps_phase = 0;
   o->frame_ratio = 1.0f;
   o->frame_formants_move = 0;
   if (o->last_phase != NULL) memset(o->last_phase, 0, sizeof(float) * LE_PV_BINS);
@@ -500,23 +506,18 @@ static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int ca
   return y;
 }
 
-/* YIN pitch detector (see engine_internal.h). Plain autocorrelation peak-picking
- * is prone to octave errors — a sub/multiple of the true period correlates nearly
- * as well — and a mis-spaced grain wrecks both pitch and formants, so the modest
- * extra cost of YIN's cumulative-mean normalization is worth it here. */
-int le_psola_detect(const float* x, int n, int sr, float* out_period,
-                    float* out_voiced) {
-  /* The octaver's band, unchanged. Integer division on the same operands as
-   * before the band became a parameter, so the lags are bit-identical. */
-  return le_psola_detect_band(x, n, sr, 60, 1000, out_period, out_voiced);
-}
+/* YIN pitch detection (see engine_internal.h). Plain autocorrelation
+ * peak-picking is prone to octave errors — a sub/multiple of the true period
+ * correlates nearly as well — and a mis-spaced grain wrecks both pitch and
+ * formants, so the modest extra cost of YIN's cumulative-mean normalization
+ * is worth it for the PSOLA octaver. */
 
 /* ---- Resumable YIN pass (see le_yin_pass in engine_private.h) --------------
  *
  * The three steps below ARE le_psola_detect_band, split at the two points a
  * caller can pause at: before the difference function and after it. The
- * octaver runs all three back to back (it needs the answer inside the same
- * grain); the tuner runs le_yin_step a slice at a time across callbacks. The
+ * tuner and the PSOLA octaver run le_yin_step a slice at a time across
+ * callbacks. The
  * arithmetic is byte-identical either way, which is the whole point of the
  * split — there is no second copy of the detector to keep in step. */
 
@@ -650,6 +651,156 @@ int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
   return le_yin_finish(&p, out_period, out_voiced);
 }
 
+/* ---- PSOLA's sliced pitch detection (#913) ---------------------------------
+ *
+ * A whole YIN pass over the old 1600-sample window was ~640k iterations in one
+ * callback every hop: about 1.1 ms on the console, over the 667 us deadline
+ * of a 64-frame period at 96 kHz. The pass now runs on a decimated window
+ * (a boxcar of D samples is the decimator and its own anti-alias filter, as
+ * the tuner's), so it searches 60 Hz at every rate for about a quarter of the
+ * work, then refines at the device rate over a narrow band around the coarse
+ * lag, and both steps are spread over the hop, LE_PSOLA_WORK_PER_TICK
+ * iterations a tick. Its windows are frozen into the scratch when the pass
+ * starts, so the moving ring cannot change them under it. The result lands
+ * within the hop it was started in, a hop at most after the one-shot pass's
+ * would have: the period and the voicing it feeds are smoothed over several
+ * hops anyway. */
+#define LE_PS_WIN(o) ((o)->scratch)
+#define LE_PS_DP(o) ((o)->scratch + LE_PSOLA_DWIN)
+#define LE_PS_RAW(o) ((o)->scratch + LE_PSOLA_DWIN + LE_PSOLA_DWIN / 2 + 1)
+
+/* The decimation for a [sr] Hz input: round(sr / LE_PSOLA_RATE), 1 to
+ * LE_PSOLA_DMAX. */
+static int le_psola_decim(int sr) {
+  int d = (sr + LE_PSOLA_RATE / 2) / LE_PSOLA_RATE;
+  if (d < 1) d = 1;
+  if (d > LE_PSOLA_DMAX) d = LE_PSOLA_DMAX;
+  return d;
+}
+
+/* Feeds a finished detection into the smoothed voicing and period, as the
+ * one-shot pass did: the voicing follows every result, the period only a
+ * pitched one (it holds through gaps). */
+static void le_psola_pass_apply(le_octaver_state* o, float period,
+                                float voiced) {
+  o->voiced += 0.35f * (voiced - o->voiced); /* chatter-free soft gate */
+  if (period > 0.0f) {
+    o->period =
+        o->period <= 0.0f ? period : o->period + 0.5f * (period - o->period);
+  }
+}
+
+/* Starts a detection over the input ending at FIFO index [end]: freezes the
+ * decimated window and the device-rate window into the scratch and opens the
+ * coarse pass. Any pass still in flight is dropped. A silent window settles
+ * at once as unvoiced. */
+static void le_psola_pass_begin(le_octaver_state* o, const float* fifo,
+                                int end, int cap) {
+  const int sr = cap; /* the fx ring is 1 s long, so cap == sample rate */
+  const int d = le_psola_decim(sr);
+  float* win = LE_PS_WIN(o);
+  float* raw = LE_PS_RAW(o);
+  int idx = (end - LE_PSOLA_DWIN * d + 1) % cap;
+  if (idx < 0) idx += cap;
+  const float inv = 1.0f / (float)d;
+  for (int i = 0; i < LE_PSOLA_DWIN; ++i) {
+    float acc = 0.0f;
+    for (int k = 0; k < d; ++k) {
+      acc += fifo[idx];
+      if (++idx == cap) idx = 0;
+    }
+    win[i] = acc * inv;
+  }
+  idx = (end - LE_PSOLA_RAW + 1) % cap;
+  if (idx < 0) idx += cap;
+  for (int i = 0; i < LE_PSOLA_RAW; ++i) {
+    raw[i] = fifo[idx];
+    if (++idx == cap) idx = 0;
+  }
+  o->ps_decim = d;
+  if (!le_yin_begin(&o->ps_yin, win, LE_PSOLA_DWIN, sr / d, LE_PSOLA_MIN_HZ,
+                    LE_PSOLA_MAX_HZ, LE_PS_DP(o), LE_PSOLA_DWIN / 2 + 1)) {
+    o->ps_phase = 0;
+    le_psola_pass_apply(o, 0.0f, 0.0f);
+    return;
+  }
+  o->ps_phase = 1;
+}
+
+/* Hands the finished coarse pass to the refinement, or applies it as it is
+ * when there is nothing to refine (no decimation, or a period too long for
+ * two periods to fit the device-rate window). */
+static void le_psola_coarse_done(le_octaver_state* o) {
+  float period = 0.0f;
+  le_yin_finish(&o->ps_yin, &period, &o->ps_conf);
+  if (period <= 0.0f) {
+    o->ps_phase = 0;
+    le_psola_pass_apply(o, 0.0f, 0.0f);
+    return;
+  }
+  const int d = o->ps_decim;
+  o->ps_coarse = period * (float)d;
+  const int lo = (int)o->ps_coarse - d;
+  const int hi = (int)o->ps_coarse + d + 1;
+  const int integ = LE_PSOLA_RAW - hi;
+  if (d == 1 || lo < 2 || hi >= LE_PSOLA_RAW / 2 || integ < hi) {
+    o->ps_phase = 0;
+    le_psola_pass_apply(o, o->ps_coarse, o->ps_conf);
+    return;
+  }
+  o->ps_lo = lo;
+  o->ps_hi = hi;
+  o->ps_integ = integ;
+  o->ps_tau = lo;
+  o->ps_best = 0;
+  o->ps_phase = 2;
+}
+
+/* Spends about [budget] difference-function iterations on the pass in
+ * flight (a lag is never split), carrying over from the coarse pass into the
+ * refinement, and applies the result once the refinement is in. */
+static void le_psola_pass_slice(le_octaver_state* o, long budget) {
+  while (budget > 0 && o->ps_phase != 0) {
+    if (o->ps_phase == 1) {
+      const int32_t was = o->ps_yin.tau;
+      const int done = le_yin_step(&o->ps_yin, budget);
+      budget -= (long)(o->ps_yin.tau - was) * o->ps_yin.integ;
+      if (!done) return;
+      le_psola_coarse_done(o);
+      continue;
+    }
+    const float* x = LE_PS_RAW(o);
+    while (o->ps_tau <= o->ps_hi && budget > 0) {
+      const int tau = o->ps_tau;
+      double sum = 0.0;
+      for (int i = 0; i < o->ps_integ; ++i) {
+        const float df = x[i] - x[i + tau];
+        sum += (double)df * (double)df;
+      }
+      const int k = tau - o->ps_lo;
+      o->ps_d[k] = (float)sum;
+      if (k == 0 || o->ps_d[k] < o->ps_d[o->ps_best]) o->ps_best = k;
+      ++o->ps_tau;
+      budget -= o->ps_integ;
+    }
+    if (o->ps_tau <= o->ps_hi) return;
+    /* The minimum, interpolated; the coarse period when it sits on an edge
+     * of the searched band. */
+    float period = o->ps_coarse;
+    const int b = o->ps_best;
+    if (b > 0 && b < o->ps_hi - o->ps_lo) {
+      const float s0 = o->ps_d[b - 1];
+      const float s1 = o->ps_d[b];
+      const float s2 = o->ps_d[b + 1];
+      const float denom = s0 + s2 - 2.0f * s1;
+      period = (float)(o->ps_lo + b);
+      if (fabsf(denom) > 1e-9f) period += 0.5f * (s0 - s2) / denom;
+    }
+    o->ps_phase = 0;
+    le_psola_pass_apply(o, period, o->ps_conf);
+  }
+}
+
 /* Added latency (frames) of the active octaver. Single source of truth, read in
  * two places: the dry-delay match in fx_octaver (D2), and — per the part-5 plan —
  * the control thread, which folds it into the published snapshot so the UI can
@@ -695,23 +846,14 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
   o->out[rp] = 0.0f;
   o->out_pos = (rp + 1 >= N) ? 0 : rp + 1;
 
-  /* 2. Periodic pitch analysis: YIN over a contiguous copy of the FIFO tail. */
-  if (--o->hop_count <= 0) {
-    o->hop_count = LE_PSOLA_AHOP;
-    float win[LE_PSOLA_WIN];
-    for (int i = 0; i < LE_PSOLA_WIN; ++i) {
-      int idx = head - lag - (LE_PSOLA_WIN - 1) + i;
-      idx %= cap;
-      if (idx < 0) idx += cap;
-      win[i] = fifo[idx];
+  /* 2. Periodic pitch analysis: a detection starts every hop over the input
+   *    ending `lag` back, and runs a slice every tick (le_psola_pass_*). */
+  if (o->scratch != NULL) {
+    if (--o->hop_count <= 0) {
+      o->hop_count = LE_PSOLA_AHOP;
+      le_psola_pass_begin(o, fifo, head - lag, cap);
     }
-    float p = 0.0f;
-    float vc = 0.0f;
-    le_psola_detect(win, LE_PSOLA_WIN, sr, &p, &vc);
-    o->voiced += 0.35f * (vc - o->voiced); /* smooth -> chatter-free soft gate */
-    if (p > 0.0f) {                        /* hold last period through gaps */
-      o->period = o->period <= 0.0f ? p : o->period + 0.5f * (p - o->period);
-    }
+    if (o->ps_phase != 0) le_psola_pass_slice(o, LE_PSOLA_WORK_PER_TICK);
   }
 
   /* 3. Synthesis: marks recede from the head one sample per tick; at each
@@ -722,7 +864,7 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
   if (--o->out_epoch <= 0) {
     float pf = o->period; /* sub-sample period: sets the grain spacing (pitch) */
     if (pf < 2.0f) pf = 2.0f;
-    if (pf > (float)LE_PSOLA_MAXLAG) pf = (float)LE_PSOLA_MAXLAG;
+    if (pf > (float)(sr / LE_PSOLA_MIN_HZ)) pf = (float)(sr / LE_PSOLA_MIN_HZ);
     float ps = pf / ratio; /* synthesis spacing -> output pitch = ratio * f0 */
     if (ps < 1.0f) ps = 1.0f;
     /* Integer countdown to the next deposit; sub-sample spacing is fine to round
