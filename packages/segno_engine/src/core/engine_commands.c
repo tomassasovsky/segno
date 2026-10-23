@@ -4647,12 +4647,18 @@ static void le_fx_seed_params(_Atomic uint32_t a_param[][LE_FX_PARAMS],
   undo->seeded = 1;
   undo->old_tag =
       atomic_load_explicit(&meta[index].param_type, memory_order_relaxed);
+  /* The tag first: from here the running type no longer matches it, so no
+   * reader runs the old kernel on a half-written row; the type command
+   * makes them match again. */
+  atomic_store_explicit(&meta[index].param_type, type, memory_order_seq_cst);
   float defaults[LE_FX_PARAMS];
   le_fx_defaults(type, defaults);
   for (int p = 0; p < LE_FX_PARAMS; ++p) {
     undo->row[p] = load_f32(&a_param[index][p]);
     store_f32(&a_param[index][p], defaults[p]);
   }
+  /* Republished with release, so a reader that finds it matching the new
+   * type once the command lands also sees the row. */
   atomic_store_explicit(&meta[index].param_type, type, memory_order_release);
 }
 
@@ -4796,6 +4802,7 @@ int32_t le_engine_set_lane_fx_param(le_engine* engine, int32_t channel,
       param >= le_fx_param_width(engine->tracks[channel].lanes[lane].fx_type_pushed[index])) {
     return LE_ERR_INVALID;
   }
+  if (isnan(value)) return LE_ERR_INVALID; /* never published, never logged */
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
   /* Params are plain published atomics read once per buffer; a direct store is
@@ -4939,6 +4946,7 @@ int32_t le_engine_set_monitor_input_fx_param(le_engine* engine, int32_t input,
       param >= le_fx_param_width(engine->monitors[input].fx_type_pushed[index])) {
     return LE_ERR_INVALID;
   }
+  if (isnan(value)) return LE_ERR_INVALID; /* never published, never logged */
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
   store_f32(&engine->monitors[input].a_fx_param[index][param], value);
@@ -5080,6 +5088,7 @@ int32_t le_engine_set_track_fx_param(le_engine* engine, int32_t channel,
       param >= le_fx_param_width(engine->tracks[channel].bus.fx_type_pushed[index])) {
     return LE_ERR_INVALID;
   }
+  if (isnan(value)) return LE_ERR_INVALID; /* never published, never logged */
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
   store_f32(&engine->tracks[channel].bus.a_fx_param[index][param], value);
@@ -5188,6 +5197,7 @@ int32_t le_engine_set_output_fx_param(le_engine* engine, int32_t bus,
       param >= le_fx_param_width(engine->outputs[bus].fx.fx_type_pushed[index])) {
     return LE_ERR_INVALID;
   }
+  if (isnan(value)) return LE_ERR_INVALID; /* never published, never logged */
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
   store_f32(&engine->outputs[bus].fx.a_fx_param[index][param], value);
@@ -5294,6 +5304,7 @@ int32_t le_engine_set_all_tracks_fx_param(le_engine* engine, int32_t index,
       param >= le_fx_param_width(engine->all_tracks.fx_type_pushed[index])) {
     return LE_ERR_INVALID;
   }
+  if (isnan(value)) return LE_ERR_INVALID; /* never published, never logged */
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
   store_f32(&engine->all_tracks.a_fx_param[index][param], value);

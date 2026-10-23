@@ -74,17 +74,11 @@ void le_plog_push(le_engine* e, uint64_t frame, le_command cmd) {
   }
 }
 
-/* A type command landing on slot [index], which ran [old] until now. A
- * granular setter already tagged the row for this type (or for a newer one
- * it has seeded since, which keeps its tag). A row still tagged as [old]
- * nobody seeded (a raw post) becomes this type's. Either way the slot no
- * longer holds the entry a recipe put there (instance). */
-static inline void le_fx_type_landed(le_fx_slot_meta* meta, int32_t index,
-                                     int32_t old, int32_t type) {
-  int32_t expected = old;
-  atomic_compare_exchange_strong_explicit(&meta[index].param_type, &expected,
-                                          type, memory_order_acq_rel,
-                                          memory_order_relaxed);
+/* A type command landing on slot [index]: the slot no longer holds the
+ * entry a recipe put there (instance). The row's tag is the setter's to
+ * write (it seeded the row for this type, le_fx_seed_params); a raw post of
+ * a type command seeds nothing, so its slot sits out (le_fx_slot_type). */
+static inline void le_fx_type_landed(le_fx_slot_meta* meta, int32_t index) {
   atomic_store_explicit(&meta[index].instance, 0u, memory_order_relaxed);
 }
 
@@ -5336,9 +5330,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       }
       le_plog_push(e, frame, *cmd);
       le_lane* ln = &e->tracks[ch].lanes[lane];
-      const int32_t was = load_i32(&ln->a_fx_type[index]);
       store_i32(&ln->a_fx_type[index], cmd->fx.type);
-      le_fx_type_landed(ln->fx_meta, index, was, cmd->fx.type);
+      le_fx_type_landed(ln->fx_meta, index);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&ln->fx, index);
       /* Wet-cache fast path: the published type just moved, so the chain
@@ -5473,9 +5466,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       }
       le_plog_push(e, frame, *cmd);
       le_monitor_input* m = &e->monitors[input];
-      const int32_t was = load_i32(&m->a_fx_type[index]);
       store_i32(&m->a_fx_type[index], cmd->fx.type);
-      le_fx_type_landed(m->fx_meta, index, was, cmd->fx.type);
+      le_fx_type_landed(m->fx_meta, index);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&m->fx, index);
       break;
@@ -5527,9 +5519,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       const int32_t index = cmd->fx.index;
       if (!valid_channel(e, ch) || index < 0 || index >= LE_FX_MAX) break;
       le_fx_bus* b = &e->tracks[ch].bus;
-      const int32_t was = load_i32(&b->a_fx_type[index]);
       store_i32(&b->a_fx_type[index], cmd->fx.type);
-      le_fx_type_landed(b->fx_meta, index, was, cmd->fx.type);
+      le_fx_type_landed(b->fx_meta, index);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&b->fx, index);
       break;
@@ -5552,9 +5543,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
     case LE_CMD_SET_ALL_TRACKS_FX: {
       const int32_t index = cmd->fx.index;
       if (index < 0 || index >= LE_FX_MAX) break;
-      const int32_t was = load_i32(&e->all_tracks.a_fx_type[index]);
       store_i32(&e->all_tracks.a_fx_type[index], cmd->fx.type);
-      le_fx_type_landed(e->all_tracks.fx_meta, index, was, cmd->fx.type);
+      le_fx_type_landed(e->all_tracks.fx_meta, index);
       /* One config, one instance per bus: every instance's DSP state resets,
        * or a destination would keep the previous effect's filter memory. */
       for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
@@ -5575,9 +5565,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) break;
       if (index < 0 || index >= LE_FX_MAX) break;
       le_plog_push(e, frame, *cmd);
-      const int32_t was = load_i32(&e->outputs[bus].fx.a_fx_type[index]);
       store_i32(&e->outputs[bus].fx.a_fx_type[index], cmd->fx.type);
-      le_fx_type_landed(e->outputs[bus].fx.fx_meta, index, was, cmd->fx.type);
+      le_fx_type_landed(e->outputs[bus].fx.fx_meta, index);
       /* As a recipe renews a slot (le_fx_entry_renew), so perf_render can
        * answer every logged output type the one way. */
       le_fx_entry_renew(&e->outputs[bus].fx.fx, index, cmd->fx.type);
