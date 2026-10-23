@@ -1646,11 +1646,17 @@ static void le_eq_rate_axis(double v, double v0, double dv, int32_t n,
   *t = u - (double)k;
 }
 
+/* How close to the stability edge a correction may move a pole. */
+#define LE_EQR_MARGIN 0.9999
+
 /* Adds [shape]'s correction at these settings to the plain design [c], when
  * the rate has one. The grid's own designs are all stable, but the plain
- * design between grid points plus the interpolated correction can land just
- * outside the stable region (a fit with a pole close to the Nyquist
- * frequency); then the correction is halved until it is inside. */
+ * design between grid points plus the interpolated correction could land
+ * close to or past the edge, so the correction is scaled by the largest
+ * s <= 1 that keeps |a2| <= LE_EQR_MARGIN and |a1| <= LE_EQR_MARGIN (1 + a2),
+ * or no further out than the plain design where that already is. Each bound
+ * is linear in s, so s moves continuously with the settings and a glide
+ * never steps (tool/eq_rate_fit.py guarded() is the same). */
 static void le_eq_rate_correct(int shape, double hz, double db, double q,
                                int sr, double c[5]) {
   const le_eq_rate_table* t = le_eq_rate_table_for(shape, sr);
@@ -1672,14 +1678,19 @@ static void le_eq_rate_correct(int shape, double hz, double db, double q,
     const float* e = t->d + 5 * ((fi * t->nq + qi) * t->ng + gi);
     for (int k = 0; k < 5; ++k) d[k] += wt * (double)e[k];
   }
-  for (double s = 1.0; s > 0.01; s *= 0.5) {
-    const double a1 = c[3] + s * d[3];
-    const double a2 = c[4] + s * d[4];
-    if (fabs(a2) < 0.9999 && fabs(a1) < 0.9999 * (1.0 + a2)) {
-      for (int k = 0; k < 5; ++k) c[k] += s * d[k];
-      return;
-    }
+  const double m = LE_EQR_MARGIN;
+  const double a1 = c[3];
+  const double a2 = c[4];
+  const double g0[4] = {a2 - m, -a2 - m, a1 - m * (1.0 + a2),
+                        -a1 - m * (1.0 + a2)};
+  const double dg[4] = {d[4], -d[4], d[3] - m * d[4], -d[3] - m * d[4]};
+  double s = 1.0;
+  for (int k = 0; k < 4; ++k) {
+    const double bound = g0[k] > 0.0 ? g0[k] : 0.0;
+    if (dg[k] > 0.0 && (bound - g0[k]) / dg[k] < s) s = (bound - g0[k]) / dg[k];
   }
+  if (s < 0.0) s = 0.0;
+  for (int k = 0; k < 5; ++k) c[k] += s * d[k];
 }
 
 /* The EQ kind's design of band [b] (LE_EQB_*): the cuts, the outer bands as
