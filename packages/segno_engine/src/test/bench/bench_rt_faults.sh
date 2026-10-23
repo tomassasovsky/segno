@@ -12,6 +12,10 @@
 #   ./bench_rt_faults --seconds 300                 # the app as shipped: no forks
 #   ./bench_rt_faults --seconds 300 --period 32     # the 333 us deadline
 #   ./bench_rt_faults --seconds 120 --fork-ms 50    # the backstop, forced forks
+#   ./bench_rt_faults --seconds 120 --trace-late    # which action came before
+#                                                    # each late period (#1410)
+#   ./bench_rt_faults --seconds 120 --fx-types 3,7,6  # FX flips without the
+#                                                    # octaver (le_fx_type ids)
 #   systemctl start segno.service
 # Exit status 0: with no forks, no page fault and no late period on the
 # callback thread; with forks, at most --max-faults-per-fork (16) faults per

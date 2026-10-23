@@ -65,12 +65,16 @@ void le_rt_set_fork_shield_failure_for_test(int state) {
 
 #if !LE_RT_ALLOC_USES_HEAP
 static size_t le_rt_page_size(void) {
-  static size_t page = 0; /* racing initialisers store the same value */
-  if (page == 0) {
+  /* Racing initialisers store the same value; atomic, because more than one
+   * thread allocates (the control thread, the wet-cache worker). */
+  static _Atomic size_t page = 0;
+  size_t p = atomic_load_explicit(&page, memory_order_relaxed);
+  if (p == 0) {
     const long v = sysconf(_SC_PAGESIZE);
-    page = v > 0 ? (size_t)v : 4096u;
+    p = v > 0 ? (size_t)v : 4096u;
+    atomic_store_explicit(&page, p, memory_order_relaxed);
   }
-  return page;
+  return p;
 }
 
 /* The distance between colours: a page. */
@@ -90,8 +94,9 @@ static size_t le_rt_most_lead(void) {
  * process-wide and segno.log does not rotate. */
 static void le_rt_advise(void* base, size_t total) {
 #if defined(__linux__) && !LE_RT_ALLOC_USES_HEAP
-  static int shield_warned = 0; /* a race prints a line twice: harmless */
-  static int lock_warned = 0;
+  /* Atomic: more than one thread allocates (control, wet-cache worker). */
+  static atomic_int shield_warned = 0;
+  static atomic_int lock_warned = 0;
   /* Transparent huge pages are left to the system's policy. The appliance
    * kernel has none; where THP is "always", turning it off here cost the
    * 64-lane mixer about 8%, and a touched slot rounds up to whole huge pages
@@ -100,8 +105,7 @@ static void le_rt_advise(void* base, size_t total) {
    * forced refusal is silent, so a test never consumes the one line a genuine
    * refusal owns. */
   if (!g_shield_fail_for_test && madvise(base, total, MADV_DONTFORK) != 0 &&
-      !shield_warned) {
-    shield_warned = 1;
+      !atomic_exchange_explicit(&shield_warned, 1, memory_order_relaxed)) {
     fprintf(stderr,
             "segno/rt_alloc: MADV_DONTFORK refused (errno %d); audio buffers "
             "are copy-on-write and a fork will cost the audio thread a fault "
@@ -114,8 +118,8 @@ static void le_rt_advise(void* base, size_t total) {
    * arenas hand memory back with MADV_DONTNEED, which the kernel refuses on
    * locked memory). Needs CAP_IPC_LOCK (the appliance runs as root) or room
    * under RLIMIT_MEMLOCK; without either the buffer is merely unlocked. */
-  if (syscall(SYS_mlock2, base, total, MLOCK_ONFAULT) != 0 && !lock_warned) {
-    lock_warned = 1;
+  if (syscall(SYS_mlock2, base, total, MLOCK_ONFAULT) != 0 &&
+      !atomic_exchange_explicit(&lock_warned, 1, memory_order_relaxed)) {
     fprintf(stderr,
             "segno/rt_alloc: mlock2 refused (errno %d); audio buffers are not "
             "locked and can be reclaimed under memory pressure. Reported "
@@ -186,17 +190,20 @@ int le_rt_prefault_can_run_concurrently(void) {
 #if defined(__linux__) && !LE_RT_ALLOC_USES_HEAP
   /* MADV_POPULATE_WRITE is a kernel-side fault-in: on a range that has since
    * been unmapped it fails with ENOMEM, and on one that was mapped again it
-   * only faults in zero or present pages. Probe it once on a scratch page. */
-  static int verdict = -1;
-  if (verdict < 0) {
+   * only faults in zero or present pages. Probe it once on a scratch page.
+   * Racing probes reach the same verdict; atomic, because more than one
+   * thread allocates (the control thread, the wet-cache worker). */
+  static atomic_int verdict = -1;
+  int v = atomic_load_explicit(&verdict, memory_order_relaxed);
+  if (v < 0) {
     const size_t page = le_rt_page_size();
     void* probe = mmap(NULL, page, PROT_READ | PROT_WRITE,
                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    verdict = probe != MAP_FAILED &&
-              madvise(probe, page, MADV_POPULATE_WRITE) == 0;
+    v = probe != MAP_FAILED && madvise(probe, page, MADV_POPULATE_WRITE) == 0;
     if (probe != MAP_FAILED) munmap(probe, page);
+    atomic_store_explicit(&verdict, v, memory_order_relaxed);
   }
-  return verdict;
+  return v;
 #else
   return 0; /* the fallback writes from user space: never on a stale range */
 #endif

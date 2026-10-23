@@ -252,6 +252,13 @@ void le_fx_octaver_seed_settled(le_fx_state* fx, int slot, const float* params);
 int le_fx_enable_settled_bypassed(const le_fx_state* fx, int slot);
 void le_fx_enable_force_bypass(le_fx_state* fx, int slot);
 
+/* The octaver's formant envelope: the low-quefrency cepstrum of log|X|
+ * (quefrencies below LE_PV_LIFTER) turned back into a magnitude, for the
+ * LE_PV_BINS magnitudes in [mag], into env[LE_PV_BINS]. Reads the shared
+ * octaver tables, so an octaver must have been prepared (le_fx_prepare) first.
+ * Audio thread (the phase-vocoder frame) and the native test. */
+void le_octaver_envelope(const float* mag, float* env);
+
 /* Frees a chain slot's octaver phase-vocoder heap buffers (both channels) and
  * nulls them. Control-thread only (lane/monitor reset, engine destroy). */
 void le_fx_free_octaver(le_fx_state* fx, int slot);
