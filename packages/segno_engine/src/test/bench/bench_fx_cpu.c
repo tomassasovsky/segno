@@ -150,16 +150,20 @@ static void kind_entry(le_fx_recipe* r, int s, int32_t kind) {
 
 static void fx_entry(le_fx_recipe* r, int s) { kind_entry(r, s, g_kind); }
 
-/* --racks: each Looper X rack as this engine builds it today, in the rack's
- * chain order (docs/plan/2026-10-20-looperx-derived-tables.md, "Chain
- * order"), on one monitored input, against the per-rack worst-block increment
- * the racks plan budgets (#1372: 60 us for Drum, Dub, Lo-Fi and Rhythmic, 200
- * us for Ed's, Guitar, Studio and Vocal, 300 us for the Vocal Tuner).
- * Stand-ins, as the racks build them now: the octaver for the Pitch Shift,
- * the chorus for the Mod module (Guitar, Studio), and the engine's delay and
- * reverb for the racks' Delay and Reverb. Left out, not built yet: the
- * Whammy, Amp+Cab, Dub-Verb, Amb-Verb, Slicer, Pumper, Smart Tune and
- * Harmonizer. Each list ends at the first LE_FX_NONE. */
+/* --racks: each Looper X rack's chain, in its chain order
+ * (docs/plan/2026-10-20-looperx-derived-tables.md, "Chain order"), on one
+ * monitored input, against the per-rack worst-block increment the racks plan
+ * budgets (#1372: 60 us for Drum, Dub, Lo-Fi and Rhythmic, 200 us for Ed's,
+ * Guitar, Studio and Vocal, 300 us for the Vocal Tuner). Each slot runs the
+ * kind it has or will have:
+ *  - the octaver for the Pitch Shift (#1441), and the chorus and tremolo for
+ *    the Mod module, which is not built yet (a projection of its cost);
+ *  - the engine's delay and reverb for the racks' Delay and Reverb;
+ *  - every EQ with every band engaged and every compressor working (the
+ *    kinds' heaviest settings, an upper bound for each rack's variant).
+ * Left out, not built yet: the Whammy, Amp+Cab, the Mod module's phaser and
+ * flanger, Dub-Verb, Amb-Verb, Slicer, Pumper, Smart Tune and Harmonizer.
+ * Each list ends at the first LE_FX_NONE. */
 typedef struct {
   const char* name;
   double budget_us;
@@ -181,7 +185,7 @@ static const rack_spec k_racks[] = {
      {LE_FX_OVERDRIVE, LE_FX_WAH, LE_FX_CHORUS, LE_FX_SPRING, LE_FX_DELAY}},
     {"studio", 200.0,
      {LE_FX_OCTAVER, LE_FX_DISTORTION, LE_FX_DOUBLER, LE_FX_CHORUS,
-      LE_FX_DELAY, LE_FX_REVERB, LE_FX_COMPRESSOR, LE_FX_EQ}},
+      LE_FX_TREMOLO, LE_FX_DELAY, LE_FX_REVERB, LE_FX_COMPRESSOR, LE_FX_EQ}},
     {"vocal", 200.0,
      {LE_FX_HP_GATE, LE_FX_OCTAVER, LE_FX_DOUBLER, LE_FX_DELAY, LE_FX_REVERB,
       LE_FX_COMPRESSOR, LE_FX_EQ}},
@@ -195,6 +199,14 @@ static int rack_len(const rack_spec* rack) {
   int n = 0;
   while (n < 10 && rack->kinds[n] != LE_FX_NONE) ++n;
   return n;
+}
+
+/* Whether [rack] holds an octaver, whose work the hop quarters show. */
+static int rack_has_octaver(const rack_spec* rack) {
+  for (int i = 0; i < rack_len(rack); ++i) {
+    if (rack->kinds[i] == LE_FX_OCTAVER) return 1;
+  }
+  return 0;
 }
 static int g_racks;
 
@@ -335,21 +347,23 @@ static int time_rack(const bench_opts* o, float* src, int32_t frames,
 
 /* --racks: each rack timed right after a rig without effects, its increment
  * taken against that run, so drift between runs stays out of it. The budget
- * is a worst-block increment, so the verdict reads the max; it is given only
- * on the console's core (a Cortex-A76, part 0xd0b), the machine the budgets
- * are for, and a proxy prints the numbers without one. */
+ * is a worst-block increment; the verdict reads the p99.9 increment, the
+ * worst block but for a 0.1 % tail, so a single interrupt in either run does
+ * not decide it (the max increment is printed beside it). A verdict is given
+ * only where the budgets apply: the console's core (a Cortex-A76, part
+ * 0xd0b), paced, with the timed loops under SCHED_FIFO. Any other run prints
+ * the numbers without one. A rack the engine refuses gets a row saying so. */
 static int run_racks(const bench_opts* o, float* src, int32_t frames,
                      int blocks, int warm) {
-  const int judged = g_cpu_part == 0xd0b;
   printf("bench_fx_cpu: racks, %s, %d Hz, %d-frame periods (deadline %.1f "
-         "us), %d timed blocks%s%s\n",
+         "us), %d timed blocks%s\n",
          g_cpu_name, o->rate, o->period, g_budget_us, blocks,
-         g_paced ? ", paced" : "",
-         judged ? "" : " (not the console: no verdict)");
-  printf("| rack     |  p50 us |  p99 us |  max us | late | +p99 us | +max us "
-         "| budget us | within | phase 0..3 mean us               |\n");
-  printf("|----------|---------|---------|---------|------|---------|---------"
-         "|-----------|--------|-----------------------------------|\n");
+         g_paced ? ", paced" : "");
+  printf("| rack     |  p50 us |  p99 us |  max us | late | +p99.9 us | +max "
+         "us | budget us | within | phase 0..3 mean us               |\n");
+  printf("|----------|---------|---------|---------|------|-----------|-------"
+         "--|-----------|--------|-----------------------------------|\n");
+  int judged = 0;
   for (size_t k = 0; k < sizeof(k_racks) / sizeof(k_racks[0]); ++k) {
     const rack_spec* rack = &k_racks[k];
     stats base;
@@ -357,19 +371,29 @@ static int run_racks(const bench_opts* o, float* src, int32_t frames,
     double ph[PHASES];
     if (!time_rack(o, src, frames, NULL, blocks, warm, &base, ph) ||
         !time_rack(o, src, frames, rack, blocks, warm, &st, ph)) {
-      fprintf(stderr, "rack %s refused\n", rack->name);
-      return 1;
+      printf("| %-8s | refused by the engine |\n", rack->name);
+      fflush(stdout);
+      continue;
     }
-    const double dmax = st.max - base.max;
-    printf("| %-8s | %7.1f | %7.1f | %7.1f | %4zu | %7.1f | %7.1f | %9.0f | "
-           "%-6s | %7.1f %7.1f %7.1f %7.1f |\n",
-           rack->name, st.p50, st.p99, st.max, st.over, st.p99 - base.p99,
-           dmax, rack->budget_us,
-           !judged ? "-" : dmax <= rack->budget_us ? "yes" : "NO", ph[0],
-           ph[1], ph[2], ph[3]);
+    judged = g_cpu_part == 0xd0b && g_paced &&
+             strstr(g_timed_sched, "SCHED_FIFO") != NULL &&
+             strstr(g_timed_sched, "refused") == NULL;
+    const double d999 = st.p999 - base.p999;
+    char phases[40] = "-";
+    if (rack_has_octaver(rack)) {
+      snprintf(phases, sizeof(phases), "%7.1f %7.1f %7.1f %7.1f", ph[0], ph[1],
+               ph[2], ph[3]);
+    }
+    printf("| %-8s | %7.1f | %7.1f | %7.1f | %4zu | %9.1f | %7.1f | %9.0f | "
+           "%-6s | %-33s |\n",
+           rack->name, st.p50, st.p99, st.max, st.over, d999,
+           st.max - base.max, rack->budget_us,
+           !judged ? "-" : d999 <= rack->budget_us ? "yes" : "NO", phases);
     fflush(stdout);
   }
-  printf("timed loops ran at: %s\n", g_timed_sched);
+  printf("timed loops ran at: %s%s\n", g_timed_sched,
+         judged ? "" : " (no verdict: not paced on the console under "
+                       "SCHED_FIFO)");
   return 0;
 }
 
