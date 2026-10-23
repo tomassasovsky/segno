@@ -431,7 +431,7 @@ static void test_eq_layout_change_glides(void) {
     memcpy(params[0], i < n / 4 ? p : shelves, sizeof(p));
     fx->clock = (uint32_t)i;
     ref->clock = (uint32_t)i;
-    const float x = 0.1f * sinf(2.0f * (float)M_PI * 1000.0f * i / sr);
+    const float x = 0.1f * sinf(2.0f * (float)M_PI * 100.0f * i / sr);
     float l = x, r = x, rl = x, rr = x;
     fx_apply_chain(fx, sr, sr, &l, &r, 1, types, params, NULL);
     fx_apply_chain(ref, sr, sr, &rl, &rr, 1, types, ref_params, NULL);
@@ -439,9 +439,11 @@ static void test_eq_layout_change_glides(void) {
     prev = l;
     if (i > n / 2 && fabsf(l - rl) > worst) worst = fabsf(l - rl);
   }
-  /* The sine's own largest step at unity is 0.1 * 2 sin(pi / 48) = 0.013;
-   * the switch adds nothing beyond the glide. */
-  CHECK(max_step < 0.014f);
+  /* A 100 Hz probe: its own largest step is 0.1 * 2 sin(pi / 480) = 0.0013,
+   * and a bell switched to a shelf at once would jump by about 0.07. The
+   * glide moves the gain in 32-frame updates, the first of which (0.77 dB)
+   * moves the output by about 0.0085. */
+  CHECK(max_step < 0.012f);
   CHECK(worst < 1e-4f);
   eq_free(fx);
   eq_free(ref);

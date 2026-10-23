@@ -1487,7 +1487,7 @@ typedef struct le_fx_eq {
   float tgt_lnq[LE_EQ_BANDS];
   le_eq_band band[LE_EQ_BANDS];
   /* Whether the outer bands are shelves (the Drum layout), as designed and
-   * as the settings ask. A change redesigns both bands at once. */
+   * as the settings ask. They change shape only at 0 dB (fx_eq_update). */
   int32_t shelves;
   int32_t tgt_shelves;
 } le_fx_eq;
