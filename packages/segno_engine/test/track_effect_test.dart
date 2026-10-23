@@ -418,6 +418,11 @@ void main() {
           0.21, 0.5, 0.384476, 0.0, 0.5, 0.3445, 0.174, 0.5, 0.652, //
           0.15557, 0.5, 0.5278, 0.0, 1.0, 0.5,
         ],
+        // Ed's compressor; the transient shaper neutral; the Vocal Rack's
+        // HP/Gate (1 Hz, -120 dB).
+        TrackEffectType.compressor: [0.35, 0.76, 0.5, 0.5, 0.06],
+        TrackEffectType.transient: [0.5, 0.5, 0.5],
+        TrackEffectType.hpGate: [0.0, 0.0],
       };
       for (final type in TrackEffectType.values) {
         expect(type.defaultParams, cells(expected[type]!), reason: type.name);
@@ -442,19 +447,36 @@ void main() {
       expect(mode.steps, 2);
     });
 
-    test('only the chosen EQ mid ranges carry the taper-unverified flag', () {
-      // The seven built-ins are segno's own; the EQ's ranges are the Looper
-      // X's except the two mid frequencies, which span every rack's range.
+    test('only the chosen mappings carry the taper-unverified flag', () {
+      // The seven built-ins are segno's own; the Looper X kinds' ranges are
+      // the Looper X's, except the EQ's two mid frequencies, which span
+      // every rack's range, and the transient shaper's controls, whose
+      // effect is chosen.
       for (final type in TrackEffectType.values) {
         for (final p in type.params) {
           expect(
             p.taperUnverified,
-            type == TrackEffectType.eq &&
-                (p.key == 'lo_mid_freq' || p.key == 'hi_mid_freq'),
+            (type == TrackEffectType.eq &&
+                    (p.key == 'lo_mid_freq' || p.key == 'hi_mid_freq')) ||
+                type == TrackEffectType.transient,
             reason: '${type.name}.${p.key}',
           );
         }
       }
+    });
+
+    test("the compressor's ratio is the Looper X's reciprocal taper", () {
+      // 1 / (1 - v / 1.0101): 1 at 0, 100 at 1, and every Ed's preset's
+      // 0.758 is 4:1.
+      final ratio = TrackEffectType.compressor.params[1];
+      expect(ratio.unit, FxParamUnit.ratio);
+      for (var v = 0.0; v <= 1.0; v += 0.1) {
+        // The two agree to 1e-4 of the value (100 against 100.01 at 1).
+        final want = 1 / (1 - v / 1.0101);
+        expect(ratio.valueAt(v), closeTo(want, want * 1e-4));
+        expect(ratio.settingFor(ratio.valueAt(v)), closeTo(v, 1e-9));
+      }
+      expect(ratio.valueAt(0.758), closeTo(4.0, 0.01));
     });
   });
 
@@ -471,11 +493,13 @@ void main() {
           5,
           6,
           7,
+          8,
         ],
       );
       expect(FxParamUnit.choice.code, 5);
       expect(FxParamCurve.linear.code, 0);
       expect(FxParamCurve.exponential.code, 1);
+      expect(FxParamCurve.reciprocal.code, 2);
     });
   });
 

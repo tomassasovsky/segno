@@ -673,6 +673,19 @@ typedef enum le_fx_type {
    * its lowest setting), a low shelf, two peaking bands, a high shelf, an air
    * shelf at 12 kHz and a 12 dB/octave low-pass (off at its highest). */
   LE_FX_EQ = 9,
+  /* COMPRESSOR: p0 threshold (0 to -60 dB), p1 ratio (1 to 100 : 1), p2
+   * attack (0.01 to 300 ms), p3 release (5 to 4000 ms), p4 make-up (0 to
+   * 30 dB). Feed-forward and stereo-linked: the louder channel's peak level
+   * drives a hard-knee gain computer in dB, smoothed by attack and release. */
+  LE_FX_COMPRESSOR = 10,
+  /* TRANSIENT: p0 attack, p1 attack length, p2 sustain, each 0 to 100 % with
+   * 50 % neutral. Boosts or cuts a sound's onset (attack, over the attack
+   * length) and its decay (sustain) from the difference of two envelope
+   * pairs. */
+  LE_FX_TRANSIENT = 11,
+  /* HP_GATE: p0 high-pass frequency (1 to 1000 Hz, 12 dB/octave), p1 gate
+   * threshold (-120 to 0 dB). The gate keys on the high-passed signal. */
+  LE_FX_HP_GATE = 12,
 } le_fx_type;
 
 /* ---- Built-in effect parameter descriptors (#1378) ----
@@ -695,12 +708,16 @@ typedef enum le_fx_param_unit {
   LE_FX_UNIT_CHOICE = 5,    /* named positions; the value is the position */
   LE_FX_UNIT_DB = 6,        /* decibels */
   LE_FX_UNIT_Q = 7,         /* a filter's Q, a plain number */
+  LE_FX_UNIT_RATIO = 8,     /* a compression ratio, "n : 1" */
 } le_fx_param_unit;
 
 /* How a parameter's value follows its normalized setting v in 0..1. */
 typedef enum le_fx_param_curve {
   LE_FX_CURVE_LINEAR = 0,      /* at_min + (at_max - at_min) * v */
   LE_FX_CURVE_EXPONENTIAL = 1, /* at_min * (at_max / at_min) ^ v */
+  /* 1 / (1 / at_min + (1 / at_max - 1 / at_min) * v): the reciprocal is
+   * linear (the Looper X compressor's ratio, 1 / (1 - v / 1.0101)). */
+  LE_FX_CURVE_RECIPROCAL = 2,
 } le_fx_param_curve;
 
 /* Bit flags for le_fx_param_desc.flags. */
