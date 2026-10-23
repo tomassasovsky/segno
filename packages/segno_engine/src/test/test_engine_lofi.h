@@ -240,6 +240,28 @@ static void test_vinyl_noise(void) {
          over_big / secs, largest);
   CHECK(over_big / secs > 0.7 && over_big / secs < 3.0);
   CHECK(largest > 0.15f && largest <= 0.5f);
+  /* At 96 kHz, the appliance's rate, the clicks come at the same rate and
+   * level: each lasts 1/48000 s whatever the rate. */
+  {
+    const int sr96 = 96000;
+    const int n96 = 10 * sr96;
+    float* y96 = (float*)calloc((size_t)n96, sizeof(float));
+    float* zero96 = (float*)calloc((size_t)n96, sizeof(float));
+    le_fx_state* f96 = dyn_state(LE_FX_VINYL, sr96);
+    uint32_t c96 = 0;
+    dyn_run(f96, LE_FX_VINYL, p, sr96, zero96, y96, NULL, n96, &c96);
+    dyn_free(f96);
+    int big96 = 0;
+    for (int i = 1; i + 1 < n96; ++i) {
+      const float v = fabsf(y96[i]);
+      if (v < fabsf(y96[i - 1]) || v < fabsf(y96[i + 1])) continue;
+      if (v > 0.1f) ++big96;
+    }
+    printf("  at 96 kHz: clicks over 0.1: %.1f/s\n", big96 / 10.0);
+    CHECK(big96 / 10.0 > 0.7 && big96 / 10.0 < 3.0);
+    free(y96);
+    free(zero96);
+  }
   /* Two owners differ, and so do the two sides. */
   a = dyn_state(LE_FX_VINYL, sr);
   le_fx_state* b = dyn_state(LE_FX_VINYL, sr);
@@ -431,6 +453,28 @@ static void test_lpf_oscillates(void) {
     CHECK(peak < 0.32f);
     free(in);
     free(out);
+  }
+  /* A filter that sat in silence until its state left it, then turned past
+   * the oscillation point, starts on its own too. */
+  {
+    const int n = 3 * sr;
+    le_fx_state* fx = dyn_state(LE_FX_LPF, sr);
+    fx->clocked = 1;
+    static float params[LE_FX_MAX][LE_FX_PARAMS];
+    const int32_t types[1] = {LE_FX_LPF};
+    params[0][0] = dyn_setting(LE_FX_LPF, 0, 632.0);
+    float peak = 0.0f;
+    for (int i = 0; i < n; ++i) {
+      params[0][1] = i < sr ? 0.0f : 1.0f;
+      fx->clock = (uint32_t)i;
+      float l = 0.0f;
+      float r = 0.0f;
+      fx_apply_chain(fx, sr, sr, &l, &r, 1, types, params, NULL);
+      if (i >= 2 * sr && fabsf(l) > peak) peak = fabsf(l);
+    }
+    dyn_free(fx);
+    printf("  after 1 s of silence at 0 %%: peak %.3f a second after 100 %%\n", peak);
+    CHECK(peak > 0.2f);
   }
   /* Level: a loud tone above the corner. */
   const double lvl[2][2] = {{-48, -9.7}, {0, -17.1}};

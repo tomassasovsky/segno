@@ -293,12 +293,14 @@ hold.
   Noise 30 %, Tone 90 %: -95.8, -104.5, -112.9, -107.6, -102.8. The tone
   does not lift the bed below its corner. Peaks over 0.1: 1.6 a second
   (Tone 90 %), 1.1 (0 %), 1.6 (50 %); largest 0.43, 0.12, 0.50. With the
-  noise at 0 % the silence is clean (-137 dBFS) at any drive.
+  noise at 0 % the silence is clean (-137 dBFS) at any drive; the -81 dBFS
+  floor with sparse clicks noted in the Vinyl section above did not show in
+  these passes.
 - **Degrade.** The 1 kHz tone: +3.1 dB at Filter 0 % (5000 Hz), +0.8 dB
   at 50 %, +0.1 dB at 100 %; -47.6 dB at Filter 0 % (1581 Hz) and -3.1 dB
   at 100 %. The Filter 0 % responses fit two 2nd-order low-pass sections
   (Q 0.91 and 1.83) at 0.194 x the hold (2.4 dB rms below 0.8 x the hold);
-  Filter 50 % fits the same at 0.89 x. The held path lags the dry by about
+  Filter 50 % fits the same at 0.89 x (3.0 dB rms). The held path lags the dry by about
   10 samples (8-sample impulse peak at 50 kHz, 17 samples of group delay at
   5000 Hz), and Mix 50 % gives -4.2 dB on the 1 kHz tone.
 - **Wah.** Each pedal position fits one state-variable filter with mixed

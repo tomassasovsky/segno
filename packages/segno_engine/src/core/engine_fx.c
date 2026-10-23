@@ -2410,10 +2410,10 @@ static inline float le_unit(uint32_t* s) {
  * is cut to 0.31 and the copy sits at 0.95 (measured 0.9 to 1.0).
  * - The separation sets the longest delay a side draws: 1 ms at 0 %,
  *   50.5 ms at 50 % and 100 ms at 100 % (measured 1.0, 51.2 and 100.8 ms),
- *   the shortest 0.2 ms. The ring holds 100 ms up to 81 kHz; at 96 kHz the
- *   longest delay stops at 85 ms (the spring caps its rate the same way),
- *   which keeps the block at 64 KB: every slot's arena holds one block of
- *   each kind, and a fresh block is cleared on the audio thread.
+ *   the shortest 0.2 ms. The ring holds 100 ms up to 162 kHz, so the
+ *   appliance's 96 kHz gets the whole range; that makes the block 128 KB,
+ *   which every slot's arena holds once and the audio thread clears when a
+ *   slot turns into a doubler.
  * - The mix does not fade the copy: from 50 % up it changes nothing
  *   (Studio, Vocal and Dub alike), and towards 0 % it shrinks the delays
  *   until, at 0 %, the copy sits within 1 ms of the dry signal (the range
@@ -2421,7 +2421,7 @@ static inline float le_unit(uint32_t* s) {
  *   flutter on a steady tone). Between 0 and 50 % the longest delay moves
  *   linearly (chosen; only 0, 50 and 100 % were captured).
  * A new mix or separation applies from the next delay a side draws. */
-#define LE_DBL_RING 8192u /* holds the longest delay up to 81 kHz */
+#define LE_DBL_RING 16384u /* holds the longest delay up to 162 kHz */
 #define LE_DBL_DRY 0.31f
 #define LE_DBL_VOICE 0.95f
 #define LE_DBL_SHORT_MS 0.2
@@ -2995,15 +2995,16 @@ static void fx_distortion_kprocess(void* ks, float* l, float* r) {
  *   the default 40 %). The rectifier's share at 1 kHz was 0.621, 0.600,
  *   0.471 and 0.024 at Freq 251, 50, 1256 and 5000 Hz (the high-pass gives
  *   0.621, 0.601, 0.469 and 0.025), 3.88 at Drive 100 %; the square law's
- *   was 4.3 times the rectifier's at 40 and 100 %. The copy carries the
+ *   was 4.4 and 4.5 times the rectifier's at 40 and 100 % (4.3 times with
+ *   the high-pass's 1.035 at 1 kHz taken out). The copy carries the
  *   rectifier's DC, as the Looper X's output does;
  * - a stereo-linked limiter holds the output's peaks to 0.5: at once on the
  *   way down, back up through a 57 ms release on its peak and 145 ms on its
  *   gain (fit to the recovery after a loud tone within 0.055 of gain);
  * - the noise bed, at Noise 100 %: white hiss at -65.7 dBFS, a rumble that
  *   is the same white noise through a 12 dB/octave low-pass at 80 Hz,
- *   33 dB up (the Looper X's loudest band is 63 Hz), and clicks, single
- *   samples at 10 a second whose sizes fall off as a power law from 0.04
+ *   33 dB up (the Looper X's loudest band is 63 Hz), and clicks 1/48000 s
+ *   long at 10 a second whose sizes fall off as a power law from 0.04
  *   (3 a second over 0.1, up to 0.5). The tone is a 12 dB/octave low-pass
  *   from 5 kHz (0 %) to 21.6 kHz (100 %) over all three. The whole bed
  *   scales as noise^3 (the captured bands fell 20 dB at 50 % and 33 dB at
@@ -3065,6 +3066,9 @@ typedef struct le_fx_vinyl {
   float z_tone[2][2];
   float z_rumble[2];
   uint32_t rng_shared;
+  float click;       /* the click under way */
+  int32_t click_left; /* its samples still to come */
+  int32_t click_len;  /* a click's samples: 1/48000 s at this rate */
 } le_fx_vinyl;
 
 static void fx_vinyl_update(void* ks, const float* p, int sr, int settle) {
@@ -3089,6 +3093,8 @@ static void fx_vinyl_update(void* ks, const float* p, int sr, int settle) {
     /* The hiss keeps its density per Hz at any rate. */
     v->hiss = (float)(LE_VIN_HISS * sqrt((double)rate / 48000.0));
     v->click_odds = (float)(4294967295.0 * LE_VIN_CLICK_HZ / (double)rate);
+    v->click_len = (int32_t)((double)rate / 48000.0 + 0.5);
+    if (v->click_len < 1) v->click_len = 1;
   }
   const le_fx_param_desc* d = LE_FX_VINYL_PARAMS;
   const float drive = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
@@ -3138,13 +3144,20 @@ static void fx_vinyl_kprocess(void* ks, float* l, float* r) {
     const float w = v->hiss * le_noise(&v->rng_shared);
     shared = w + LE_VIN_RUMBLE * le_biquad_tick(v->rumble, v->z_rumble, w);
     /* A click when the draw falls under the odds, at a random sign and a
-     * size from the power law. */
+     * size from the power law. It lasts 1/48000 s at any rate (the
+     * captured clicks were single samples at 48 kHz), so its level under
+     * the tone does not fall as the rate rises. */
     if (le_xorshift(&v->rng_shared) < (uint32_t)v->click_odds) {
       const uint32_t draw = le_xorshift(&v->rng_shared);
       const float u = (float)((draw >> 8) + 1u) * (1.0f / 16777216.0f);
       float size = LE_VIN_CLICK_MIN * powf(u, LE_VIN_CLICK_POW);
       if (size > LE_VIN_CLICK_MAX) size = LE_VIN_CLICK_MAX;
-      shared += (draw & 1u) ? size : -size;
+      v->click = (draw & 1u) ? size : -size;
+      v->click_left = v->click_len;
+    }
+    if (v->click_left > 0) {
+      shared += v->click;
+      --v->click_left;
     }
   }
   for (int ch = 0; ch < 2; ++ch) {
@@ -3303,8 +3316,9 @@ static void fx_degrade_kprocess(void* ks, float* l, float* r) {
  * - a one-pole high-pass at 25.3 Hz in front (-4.2 dB at 20 Hz and -1.0 dB
  *   at 50 Hz; the Looper X's -3.9 and -1.1).
  * An oscillating filter starts on its own: its first stage starts from a
- * 1e-9 offset rather than 0, so it rises out of digital silence in about
- * 0.2 s (632 Hz), as the Looper X's sounds in silence.
+ * 1e-9 offset rather than 0, and gets it again whenever the stages have
+ * died away in silence, so it rises out of digital silence in about 0.2 s
+ * (632 Hz), as the Looper X's sounds in silence.
  * The Looper X's filter also adds a second harmonic (-23 dBc for a
  * -12 dBFS tone above the corner); this one adds none. At the top of the
  * cutoff's range the filter is off (the Looper X's default; its filter
@@ -3327,6 +3341,7 @@ static const le_fx_param_desc LE_FX_LPF_PARAMS[] = {
 #define LE_LPF_SAT 2.4f
 #define LE_LPF_HP_HZ 25.3
 #define LE_LPF_SEED 1e-9f /* the first stage's start, so it can oscillate */
+#define LE_LPF_DEAD 1e-30f /* under this the stages have died away */
 
 /* The resonance from which the ladder oscillates (k > 4). */
 static double le_lpf_osc_reso(void) {
@@ -3350,6 +3365,18 @@ typedef struct le_fx_lpf {
 
 static void fx_lpf_update(void* ks, const float* p, int sr, int settle) {
   le_fx_lpf* q = (le_fx_lpf*)ks;
+  /* Oscillating, a side whose stages have all died away in silence (to 0,
+   * or to the denormal crumbs where growth no longer works) gets the seed
+   * again, so it starts on its own. */
+  if (q->k > 4.0f) {
+    for (int ch = 0; ch < 2; ++ch) {
+      const float* st = q->s[ch];
+      if (fabsf(st[0]) < LE_LPF_DEAD && fabsf(st[1]) < LE_LPF_DEAD &&
+          fabsf(st[2]) < LE_LPF_DEAD && fabsf(st[3]) < LE_LPF_DEAD) {
+        q->s[ch][0] = LE_LPF_SEED;
+      }
+    }
+  }
   const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_LPF_PARAMS_N, sr, settle);
   if (!f) return;
   const float k = settle ? 1.0f : q->h.k;
