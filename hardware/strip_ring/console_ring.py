@@ -41,6 +41,9 @@ import cadquery as cq
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "out_console"
 
+# The cup's wall is sized for 34 LEDs. The fitted strip has 35 (#1075); it fits
+# as printed, with the first and last LEDs overlapping slightly at the seam
+# (owner, bench fit, 2026-10-23), so the geometry stays at 34.
 COUNT = 34
 PITCH = 1000 / 144                 # owner's 144/m strip
 SEAM = 4.0
