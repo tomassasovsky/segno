@@ -459,7 +459,8 @@ void main() {
       // the Looper X's, except the EQ's two mid frequencies, which span
       // every rack's range, and the controls whose effect is chosen or
       // inferred from one capture: the transient shaper, the doubler, the
-      // chorus, the wah, and the drives' tone (captured at 50 % only).
+      // chorus, the wah, the overdrive's tone (captured at 50 % only) and
+      // the distortion (fit to the Studio Rack's, used for Lo-Fi's too).
       for (final type in TrackEffectType.values) {
         for (final p in type.params) {
           expect(
@@ -470,9 +471,8 @@ void main() {
                 type == TrackEffectType.doubler ||
                 type == TrackEffectType.chorus ||
                 type == TrackEffectType.wah ||
-                ((type == TrackEffectType.overdrive ||
-                        type == TrackEffectType.distortion) &&
-                    p.key == 'tone'),
+                type == TrackEffectType.distortion ||
+                (type == TrackEffectType.overdrive && p.key == 'tone'),
             reason: '${type.name}.${p.key}',
           );
         }

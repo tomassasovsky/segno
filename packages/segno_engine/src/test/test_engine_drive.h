@@ -203,9 +203,18 @@ static void test_drive_on_a_lane(void) {
     CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, count - 1, 0.5f) == LE_OK);
     CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, count, 0.5f) == LE_ERR_INVALID);
     CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
+    /* The loop plays a steady 0.5 through the drive: the output is finite
+     * and, past the high-pass's settling, still carries the loop. */
     float out[64];
-    for (int b = 0; b < 200; ++b) process_const(e, 0.0f, 64, out);
-    for (int i = 0; i < 64; ++i) CHECK(isfinite(out[i]));
+    double energy = 0.0;
+    for (int b = 0; b < 200; ++b) {
+      process_const(e, 0.0f, 64, out);
+      for (int i = 0; i < 64; ++i) {
+        CHECK(isfinite(out[i]));
+        if (b < 4) energy += (double)out[i] * out[i];
+      }
+    }
+    CHECK(energy > 0.0);
     le_engine_destroy(e);
   }
 }

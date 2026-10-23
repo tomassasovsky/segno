@@ -28,7 +28,7 @@
  * the drives (part 7) with overdrive or distortion, each set so its whole
  * kernel works; `moving` changes a setting that
  * glides (the threshold, the attack amount, the high-pass corner, the
- * doubler's mix, the chorus's rate, the wah's pedal).
+ * doubler's mix, the chorus's rate, the wah's pedal, the drives' tone).
  *
  * Reported per scenario: p50 / p99 / p99.9 / max per callback, the callbacks
  * over the period's deadline, and the mean cost of the blocks starting in
@@ -141,7 +141,12 @@ static void fx_entry(le_fx_recipe* r, int s) {
  * in the monitor chain alternates every callback, so each entry is always
  * smoothing: the EQ's low-mid gain, the compressor's threshold, the
  * transient shaper's attack, the high-pass corner. */
-static int32_t moving_param(void) { return g_kind == LE_FX_EQ ? 4 : 0; }
+static int32_t moving_param(void) {
+  if (g_kind == LE_FX_EQ) return 4;
+  /* The drives' tone: the setting whose move redesigns a filter. */
+  if (g_kind == LE_FX_OVERDRIVE || g_kind == LE_FX_DISTORTION) return 1;
+  return 0;
+}
 static int g_moving;
 static int g_moving_n;
 

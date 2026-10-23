@@ -80,6 +80,33 @@ static inline void le_svf_tick(float x, float a1, float a2, float a3,
   *ic2 = 2.0f * (*v2) - *ic2;
 }
 
+/* The bilinear prewarp of a corner [hz] at [sr]: tan(pi hz / sr), the
+ * corner held under 0.45 of the rate. Every TPT filter here designs from
+ * it. */
+static double le_prewarp(double hz, int sr) {
+  const double rate = (double)(sr > 0 ? sr : 48000);
+  if (hz > 0.45 * rate) hz = 0.45 * rate;
+  return tan(3.14159265358979323846 * hz / rate);
+}
+
+/* A state-variable filter's coefficients for prewarped corner [g] and
+ * damping [k] (1 / Q), in le_svf_tick's order. */
+static void le_svf_coefs(double g, double k, float* a1, float* a2, float* a3) {
+  const double c = 1.0 / (1.0 + g * (g + k));
+  *a1 = (float)c;
+  *a2 = (float)(g * c);
+  *a3 = (float)(g * g * c);
+}
+
+/* One tick of an a0-normalized biquad (b0 b1 b2 a1 a2) in transposed direct
+ * form II, state [z]. */
+static inline float le_biquad_tick(const float* b, float* z, float x) {
+  const float y = b[0] * x + z[0];
+  z[0] = b[1] * x - b[3] * y + z[1];
+  z[1] = b[2] * x - b[4] * y;
+  return y;
+}
+
 /* Resonant low-pass: a TPT state-variable filter (Cytomic/Zavalishin form).
  * p0 = cutoff (20 Hz .. ~18 kHz, log), p1 = resonance. */
 static float fx_filter(le_fx_state* fx, int slot, int chan, int sr, float x,
@@ -1855,14 +1882,8 @@ typedef struct le_fx_hp_gate {
 } le_fx_hp_gate;
 
 static void le_hpg_design(le_fx_hp_gate* q, int sr) {
-  double hz = exp2((double)q->lhz);
-  const double nyq = 0.49 * (double)(sr > 0 ? sr : 48000);
-  if (hz > nyq) hz = nyq;
-  const double g = tan(3.14159265358979323846 * hz / (double)(sr > 0 ? sr : 48000));
-  const double a1 = 1.0 / (1.0 + g * (g + LE_HPG_K));
-  q->a1 = (float)a1;
-  q->a2 = (float)(g * a1);
-  q->a3 = (float)(g * g * a1);
+  le_svf_coefs(le_prewarp(exp2((double)q->lhz), sr), LE_HPG_K, &q->a1, &q->a2,
+               &q->a3);
 }
 
 static void fx_hp_gate_update(void* ks, const float* p, int sr, int settle) {
@@ -2164,13 +2185,7 @@ static void fx_chorus_kprocess(void* ks, float* l, float* r) {
   for (int ch = 0; ch < 2; ++ch) {
     c->ring[ch][at] = x[ch];
     float v = le_ring_read(c->ring[ch], LE_CHO_RING - 1u, c->w, delay);
-    for (int s = 0; s < 2; ++s) {
-      float* z = c->z[s][ch];
-      const float o = c->lp[0] * v + z[0];
-      z[0] = c->lp[1] * v - c->lp[3] * o + z[1];
-      z[1] = c->lp[2] * v - c->lp[4] * o;
-      v = o;
-    }
+    for (int s = 0; s < 2; ++s) v = le_biquad_tick(c->lp, c->z[s][ch], v);
     y[ch] = dry * x[ch] + wet * v;
   }
   c->w++;
@@ -2211,15 +2226,9 @@ static void fx_wah_update(void* ks, const float* p, int sr, int settle) {
   }
   if (q->lhz != q->tgt_lhz || (f & LE_FX_DYN_NEW_RATE)) {
     le_fx_step_toward(&q->lhz, q->tgt_lhz, settle ? 1.0f : q->h.k);
-    const double rate = (double)(sr > 0 ? sr : 48000);
-    double hz = exp2((double)q->lhz);
-    if (hz > 0.45 * rate) hz = 0.45 * rate;
-    const double g = tan(3.14159265358979323846 * hz / rate);
     const double kq = 1.0 / LE_WAH_Q;
-    const double a1 = 1.0 / (1.0 + g * (g + kq));
-    q->a1 = (float)a1;
-    q->a2 = (float)(g * a1);
-    q->a3 = (float)(g * g * a1);
+    le_svf_coefs(le_prewarp(exp2((double)q->lhz), sr), kq, &q->a1, &q->a2,
+                 &q->a3);
     /* The band output peaks at 1 / k; scale it to the chosen peak. */
     q->gain = (float)(kq * LE_WAH_PEAK);
   }
@@ -2292,9 +2301,8 @@ static inline float le_onepole_lp(float* s, float g1, float x) {
   return y;
 }
 
-static float le_onepole_g1(double hz, double rate) {
-  if (hz > 0.45 * rate) hz = 0.45 * rate;
-  const double g = tan(3.14159265358979323846 * hz / rate);
+static float le_onepole_g1(double hz, int sr) {
+  const double g = le_prewarp(hz, sr);
   return (float)(g / (1.0 + g));
 }
 
@@ -2317,8 +2325,8 @@ static void fx_overdrive_update(void* ks, const float* p, int sr, int settle) {
   if (!f) return;
   const double rate = (double)(sr > 0 ? sr : 48000);
   if (f & LE_FX_DYN_NEW_RATE) {
-    o->hp_g1 = le_onepole_g1(LE_OD_HP_HZ, rate);
-    o->lp2_g1 = le_onepole_g1(LE_OD_LP2_HZ, rate);
+    o->hp_g1 = le_onepole_g1(LE_OD_HP_HZ, sr);
+    o->lp2_g1 = le_onepole_g1(LE_OD_LP2_HZ, sr);
     double c[5];
     le_eq_design(LE_EQ_LOMID, LE_OD_PEAK_HZ, LE_OD_PEAK_DB, LE_OD_PEAK_Q,
                  (int)rate, c);
@@ -2335,7 +2343,7 @@ static void fx_overdrive_update(void* ks, const float* p, int sr, int settle) {
       &o->g, (float)(LE_OD_G0 * exp(LE_OD_GK * d) / LE_OD_C), k);
   if (o->tone_lhz != o->tone_tgt || (f & LE_FX_DYN_NEW_RATE)) {
     le_fx_step_toward(&o->tone_lhz, o->tone_tgt, k);
-    o->tone_g1 = le_onepole_g1(exp2((double)o->tone_lhz), rate);
+    o->tone_g1 = le_onepole_g1(exp2((double)o->tone_lhz), sr);
   }
   moving |= o->tone_lhz != o->tone_tgt;
   o->h.moving = moving;
@@ -2352,11 +2360,8 @@ static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
     /* The tone filter: the 17 Hz high-pass, the 680 Hz rise, the tone
      * corner and the 11 kHz pole. */
     v = v - le_onepole_lp(&o->s_hp[ch], o->hp_g1, v);
-    float* z = o->z_pk[ch];
-    const float pk = o->pk[0] * v + z[0];
-    z[0] = o->pk[1] * v - o->pk[3] * pk + z[1];
-    z[1] = o->pk[2] * v - o->pk[4] * pk;
-    v = le_onepole_lp(&o->s_tone[ch], o->tone_g1, pk);
+    v = le_biquad_tick(o->pk, o->z_pk[ch], v);
+    v = le_onepole_lp(&o->s_tone[ch], o->tone_g1, v);
     v = le_onepole_lp(&o->s_lp2[ch], o->lp2_g1, v);
     io[ch] = -(LE_OD_P / (float)LE_OD_TONE_1K) * v; /* inverted, as captured */
   }
@@ -2383,9 +2388,11 @@ static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
  *   within 0.8 dB rms from 45 Hz to 18 kHz.
  * The Lo-Fi Rack's Dist Tone has no capture: it tilts a 2 kHz shelf
  * +-6 dB, flat at 50 % (#891). */
+/* The drive's law is the Studio Rack's Dist's; the Lo-Fi Rack's Dist is
+ * taken to be the same module, so the drive carries the flag too. */
 static const le_fx_param_desc LE_FX_DISTORTION_PARAMS[] = {
     {"drive", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.2f,
-     0},
+     LE_FX_PARAM_TAPER_UNVERIFIED},
     {"tone", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
      LE_FX_PARAM_TAPER_UNVERIFIED},
 };
@@ -2416,7 +2423,9 @@ typedef struct le_fx_distortion {
   le_fx_glide g;     /* the gain into the curve */
   le_fx_glide level; /* the output level, over the cabinet's 1 kHz gain */
   float norm;        /* 1 / |cabinet at 1 kHz| */
-  float tone_db;     /* the shelf now */
+  float tone_db;     /* the shelf now, gliding to tone_tgt */
+  float tone_tgt;
+  int32_t shelf_on;
   float cab[LE_DIST_SECTIONS][5];
   float shelf[5];
   float z[LE_DIST_SECTIONS + 1][2][2]; /* [section][channel][state] */
@@ -2448,7 +2457,6 @@ static void fx_distortion_update(void* ks, const float* p, int sr, int settle) {
       mag *= le_biquad_mag(c, w1k);
     }
     q->norm = (float)(1.0 / mag);
-    q->tone_db = 1e9f; /* redesign the shelf below */
   }
   const float d = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
   const float t = p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1];
@@ -2457,15 +2465,24 @@ static void fx_distortion_update(void* ks, const float* p, int sr, int settle) {
       &q->g,
       (float)exp(-1.0887 + d * (2.3136 + d * (-3.3444 + d * 6.5117))), k);
   moving |= le_fx_glide_step(&q->level, (1.4512f - 0.4823f * d) * q->norm, k);
-  const float tone_db = (float)(LE_DIST_TONE_DB * (2.0 * t - 1.0));
-  if (tone_db != q->tone_db) {
-    /* The shelf moves in one step: a tone change is a filter change the
-     * state takes without a click at these gains. */
-    q->tone_db = tone_db;
-    double c[5];
-    le_eq_design(LE_EQ_HIGH, LE_DIST_TONE_HZ, tone_db, 0.70710678, rate, c);
-    for (int i = 0; i < 5; ++i) q->shelf[i] = (float)c[i];
+  if (f & LE_FX_DYN_CHANGED) {
+    q->tone_tgt = (float)(LE_DIST_TONE_DB * (2.0 * t - 1.0));
   }
+  if (q->tone_db != q->tone_tgt || (f & LE_FX_DYN_NEW_RATE)) {
+    /* The shelf glides in dB, redesigned while it moves. */
+    le_fx_step_toward(&q->tone_db, q->tone_tgt, k);
+    const int on = q->tone_db != 0.0f;
+    if (!on && q->shelf_on) {
+      memset(q->z[LE_DIST_SECTIONS], 0, sizeof(q->z[LE_DIST_SECTIONS]));
+    }
+    q->shelf_on = on;
+    if (on) {
+      double c[5];
+      le_eq_design(LE_EQ_HIGH, LE_DIST_TONE_HZ, q->tone_db, 0.70710678, rate, c);
+      for (int i = 0; i < 5; ++i) q->shelf[i] = (float)c[i];
+    }
+  }
+  moving |= q->tone_db != q->tone_tgt;
   q->h.moving = moving;
 }
 
@@ -2481,14 +2498,12 @@ static void fx_distortion_kprocess(void* ks, float* l, float* r) {
     const float c = w > 0.0f ? LE_DIST_UP : LE_DIST_DOWN;
     float v = w / powf(1.0f + powf(fabsf(w / c), LE_DIST_KNEE),
                        1.0f / LE_DIST_KNEE);
-    for (int s = 0; s <= LE_DIST_SECTIONS; ++s) {
-      const float* b = s < LE_DIST_SECTIONS ? q->cab[s] : q->shelf;
-      float* z = q->z[s][ch];
-      const float o = b[0] * v + z[0];
-      z[0] = b[1] * v - b[3] * o + z[1];
-      z[1] = b[2] * v - b[4] * o;
-      v = o;
+    for (int s = 0; s < LE_DIST_SECTIONS; ++s) {
+      v = le_biquad_tick(q->cab[s], q->z[s][ch], v);
     }
+    /* The tone shelf, skipped while flat (the Studio Rack's, and the
+     * default); its memory clears so it starts clean when it comes back. */
+    if (q->shelf_on) v = le_biquad_tick(q->shelf, q->z[LE_DIST_SECTIONS][ch], v);
     io[ch] = level * v;
   }
   *l = io[0];
