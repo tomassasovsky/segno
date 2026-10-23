@@ -2513,11 +2513,13 @@ static void fx_distortion_kprocess(void* ks, float* l, float* r) {
  *
  * No Phase 0 capture covers these. The ranges and tapers are the Looper
  * X's (the derived tables); what each control does inside is chosen (#891),
- * so every control carries the flag. */
+ * so every control carries the flag but the LPF's cutoff, whose range and
+ * taper are all it is. */
 
 /* The seed a kind's fresh block was given (fx_kind_state): the owner's
- * hop-stagger seed and the slot, so two owners' noise differs while an
- * offline render, which copies the owner's seed, repeats the live one. */
+ * hop-stagger seed and the slot, so two owners' noise differs and an
+ * owner's is the same from every fresh block (the plan's per-owner
+ * seeding, as the hop phase is). */
 static uint32_t le_fx_kind_seed(const void* ks);
 
 /* xorshift32: the next state, never 0 from a nonzero one. */
@@ -2571,7 +2573,7 @@ typedef struct le_fx_vinyl {
   float tone_l2, tone_tgt;
   float hp[5], lp[5];
   float tone_a1, tone_a2, tone_a3; /* the noise's low-pass, SVF */
-  uint32_t click_odds;             /* a click when the draw is under this */
+  float click_odds;                /* a click per sample, at 100 % noise */
   float click_decay;
   float z_hp[2][2], z_lp[2][2];
   float n_ic1[2], n_ic2[2];
@@ -2604,8 +2606,7 @@ static void fx_vinyl_update(void* ks, const float* p, int sr, int settle) {
     const float t = p[3] < 0.0f ? 0.0f : p[3] > 1.0f ? 1.0f : p[3];
     v->tone_tgt = (float)log2(LE_VIN_TONE_LO_HZ *
                               pow(LE_VIN_TONE_HI_HZ / LE_VIN_TONE_LO_HZ, t));
-    v->click_odds =
-        (uint32_t)(4294967295.0 * LE_VIN_CRACKLE_HZ * noise / (double)rate);
+    v->click_odds = (float)(4294967295.0 * LE_VIN_CRACKLE_HZ / (double)rate);
   }
   int moving = le_fx_glide_step(&v->gain, 1.0f + 9.0f * drive, k);
   moving |= le_fx_glide_step(&v->noise, noise, k);
@@ -2633,10 +2634,15 @@ static void fx_vinyl_kprocess(void* ks, float* l, float* r) {
     float x = le_biquad_tick(v->hp, v->z_hp[ch], io[ch]);
     x = le_biquad_tick(v->lp, v->z_lp[ch], x);
     x = tanhf(g * x) / g;
-    if (noise > 0.0f) {
-      /* A click starts when the draw falls under the odds, at a random
-       * size and sign, then decays. */
-      if (le_xorshift(&v->rng[ch]) < v->click_odds) {
+    if (noise <= 0.0f) {
+      /* Silent: nothing left to come back when the noise is raised. */
+      v->click[ch] = 0.0f;
+      v->n_ic1[ch] = 0.0f;
+      v->n_ic2[ch] = 0.0f;
+    } else {
+      /* A click starts when the draw falls under the odds (they follow the
+       * gliding noise level), at a random size and sign, then decays. */
+      if (le_xorshift(&v->rng[ch]) < (uint32_t)(v->click_odds * noise)) {
         v->click[ch] = LE_VIN_CRACKLE * le_noise(&v->rng[ch]);
       }
       const float n = LE_VIN_HISS * le_noise(&v->rng[ch]) + v->click[ch];
@@ -2735,10 +2741,13 @@ static void fx_degrade_kprocess(void* ks, float* l, float* r) {
  *
  * A resonant 12 dB/octave low-pass (state-variable): the Looper X's cutoff,
  * 20 Hz to 20 kHz, and its resonance from Q 0.71 (0 %) to Q 6 (100 %,
- * +15.6 dB at the corner). The cutoff glides in octaves. The Rhythmic
+ * +15.6 dB at the corner). The cutoff glides in octaves. At the top of its
+ * range the filter is off (the Looper X's default, with resonance at
+ * 100 %: a fresh filter is transparent), gliding in and out as the EQ's
+ * cuts do. The Rhythmic
  * Rack's LFO over the cutoff comes with the tempo context (#887 part 10). */
 static const le_fx_param_desc LE_FX_LPF_PARAMS[] = {
-    {"cutoff", LE_FX_UNIT_HZ, 0, 20.0f, 20000.0f, LE_FX_CURVE_EXPONENTIAL,
+    {"lp_cutoff", LE_FX_UNIT_HZ, 0, 20.0f, 20000.0f, LE_FX_CURVE_EXPONENTIAL,
      1.0f, 0},
     {"resonance", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR,
      1.0f, LE_FX_PARAM_TAPER_UNVERIFIED},
@@ -2752,6 +2761,7 @@ typedef struct le_fx_lpf {
   float last[LE_LPF_PARAMS_N];
   float l2, tgt;   /* the cutoff, log2 Hz */
   float lnq, qtgt; /* the resonance, ln Q */
+  le_fx_glide amount; /* 1 filtering, 0 off (cutoff at the top) */
   float a1, a2, a3;
   float ic1[2], ic2[2];
 } le_fx_lpf;
@@ -2772,17 +2782,27 @@ static void fx_lpf_update(void* ks, const float* p, int sr, int settle) {
     le_svf_coefs(le_prewarp(exp2((double)q->l2), sr), exp(-(double)q->lnq),
                  &q->a1, &q->a2, &q->a3);
   }
-  q->h.moving = q->l2 != q->tgt || q->lnq != q->qtgt;
+  const int moving = le_fx_glide_step(&q->amount, p[0] >= 1.0f ? 0.0f : 1.0f, k);
+  q->h.moving = moving || q->l2 != q->tgt || q->lnq != q->qtgt;
 }
 
 static void fx_lpf_kprocess(void* ks, float* l, float* r) {
   le_fx_lpf* q = (le_fx_lpf*)ks;
+  const float amount = le_fx_glide_next(&q->amount);
   float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
+  if (amount <= 0.0f) {
+    /* Off: the identity, with the filter's memory cleared so it starts
+     * clean when it comes back. */
+    q->ic1[0] = q->ic1[1] = q->ic2[0] = q->ic2[1] = 0.0f;
+    *l = io[0];
+    *r = io[1];
+    return;
+  }
   for (int ch = 0; ch < 2; ++ch) {
     float b1;
     float lp;
     le_svf_tick(io[ch], q->a1, q->a2, q->a3, &q->ic1[ch], &q->ic2[ch], &b1, &lp);
-    io[ch] = lp;
+    io[ch] = amount >= 1.0f ? lp : io[ch] + amount * (lp - io[ch]);
   }
   *l = io[0];
   *r = io[1];
@@ -3107,13 +3127,15 @@ int le_fx_type_free_running(int32_t type) {
          (LE_FX[type].flags & LE_FX_F_FREE_RUNNING) != 0;
 }
 
-int le_fx_entry_free_running(int32_t type, const float* p) {
+int le_fx_entry_free_running(int32_t type, const float* p, int sr) {
   if (!le_fx_type_free_running(type)) return 0;
   switch (type) {
     case LE_FX_VINYL:
       return p[2] > 0.0f; /* the noise */
-    case LE_FX_DEGRADE:
-      return p[0] < 1.0f && p[2] > 0.0f; /* holding, and heard */
+    case LE_FX_DEGRADE: /* holding (below the rate), and heard */
+      return le_fx_desc_value(&LE_FX_DEGRADE_PARAMS[0], p[0]) <
+                 (double)(sr > 0 ? sr : 48000) &&
+             p[2] > 0.0f;
     case LE_FX_DOUBLER:
       return p[0] > 0.0f; /* at 0 % mix the voices add nothing */
     default:
