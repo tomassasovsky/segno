@@ -50,6 +50,9 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   // CI arm64, an eighth of eight in one chain (2.5 us, AB<< at 1/4T so its
   // reads land far back in the ring), x 1.75.
   TrackEffectType.slicer: 68,
+  // Provisional until the CI arm64 row is in: about twice the Slicer on
+  // the Mac bench (RES LO L/R at 1/4, both taps voiced).
+  TrackEffectType.modeDelay: 140,
 };
 
 /// What a kind on the hop charges, in microseconds a block: its frame's work
