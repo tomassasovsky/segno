@@ -288,8 +288,8 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Pumper': {'Rhythmic Rack': _pumper},
   'Slicer': {'Rhythmic Rack': _slicer},
   'Delay': {
-    'Drum Rack': _drumDelay,
     "Ed's Rack": _modeDelay,
+    'Drum Rack': _drumDelay,
     'Guitar Rack': _modeDelay,
     'Lo-Fi Rack': _modeDelay,
     'Rhythmic Rack': _modeDelay,

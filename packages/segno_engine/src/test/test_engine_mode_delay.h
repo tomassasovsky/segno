@@ -4,22 +4,26 @@
 
 #define MD_SR 48000
 
-/* A one-slot Mode delay at 120 BPM (or [t]), its line ready. */
-static le_fx_state* md_state(const le_fx_tempo* t) {
+/* A one-slot Mode delay on [t] at [sr], its line ready. */
+static le_fx_state* md_state_at(const le_fx_tempo* t, int sr) {
   le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
   CHECK(fx != NULL);
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
-  CHECK(le_fx_prepare(fx, 0, LE_FX_MODE_DELAY, MD_SR) == LE_OK);
+  CHECK(le_fx_prepare(fx, 0, LE_FX_MODE_DELAY, sr) == LE_OK);
   le_fx_entry_reset(fx, 0);
   fx->tempo = t;
   fx->clocked = 1;
   return fx;
 }
 
-/* Runs [n] frames of [in] (both sides) through the Mode delay at [p],
- * writing each side's output. */
-static void md_run(le_fx_state* fx, const float* p, const float* in,
-                   float* out_l, float* out_r, int n) {
+static le_fx_state* md_state(const le_fx_tempo* t) {
+  return md_state_at(t, MD_SR);
+}
+
+/* Runs [n] frames of [in] (both sides) through the Mode delay at [p] and
+ * [sr], writing each side's output. */
+static void md_run_at(le_fx_state* fx, int sr, const float* p,
+                      const float* in, float* out_l, float* out_r, int n) {
   static int32_t types[LE_FX_MAX];
   static float params[LE_FX_MAX][LE_FX_PARAMS];
   for (int s = 0; s < LE_FX_MAX; ++s) types[s] = LE_FX_NONE;
@@ -29,10 +33,15 @@ static void md_run(le_fx_state* fx, const float* p, const float* in,
     fx->clock = (uint32_t)i;
     float l = in[i];
     float r = in[i];
-    fx_apply_chain(fx, MD_SR, MD_SR, &l, &r, 1, types, params, NULL);
+    fx_apply_chain(fx, sr, sr, &l, &r, 1, types, params, NULL);
     out_l[i] = l;
     if (out_r) out_r[i] = r;
   }
+}
+
+static void md_run(le_fx_state* fx, const float* p, const float* in,
+                   float* out_l, float* out_r, int n) {
+  md_run_at(fx, MD_SR, p, in, out_l, out_r, n);
 }
 
 /* The stored setting of choice position [k] of [n]. */
@@ -240,19 +249,24 @@ static void test_mode_delay_time_change_crossfades(void) {
   free(y);
 }
 
-/* A reset or a ring clear leaves nothing to hear: the line reads only what
- * was written after it. */
+/* A reset or a ring clear after the first echo leaves nothing old to
+ * hear: either is silent at once, and the second echo never comes. */
 static void test_mode_delay_clear_reads_nothing_old(void) {
   printf("test_mode_delay_clear_reads_nothing_old\n");
   const le_fx_tempo t = rh_tempo(120.0);
   const int n = MD_SR;
+  const int period = MD_SR * 375 / 1000;
+  const int at = 1000 + period + MD_SR / 50; /* inside the first echo */
   float* x = md_burst(250.0, n);
   float* z = (float*)calloc((size_t)n, sizeof(float));
   float* y = (float*)malloc(sizeof(float) * (size_t)n);
   const float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.5f, 0.3f, 0.0f};
   for (int k = 0; k < 2; ++k) {
     le_fx_state* fx = md_state(&t);
-    md_run(fx, p, x, y, NULL, 2000 + MD_SR / 10); /* the burst is in */
+    md_run(fx, p, x, y, NULL, at);
+    float heard = 0.0f;
+    for (int i = at - 2000; i < at; ++i) heard = fmaxf(heard, fabsf(y[i]));
+    CHECK(heard > 0.01f); /* the echo was sounding */
     if (k == 0) {
       le_fx_entry_reset(fx, 0);
     } else {
@@ -267,6 +281,127 @@ static void test_mode_delay_clear_reads_nothing_old(void) {
   }
   free(x);
   free(z);
+  free(y);
+}
+
+/* The taps on an impulse (#891, s4/10-11, gC 36/38): L/R's early tap is
+ * exactly half the time and GRV's 0.837 of it (313.8 ms at 1/8D), and
+ * each side carries the other at the capture's ratio to its own: L/R
+ * left -17.0 dB, right -16.9; GRV left -17.0, right -16.8 (within
+ * 0.5 dB). */
+static void test_mode_delay_taps(void) {
+  printf("test_mode_delay_taps\n");
+  const le_fx_tempo t = rh_tempo(120.0);
+  const int n = MD_SR;
+  const int period = MD_SR * 375 / 1000;
+  float* x = (float*)calloc((size_t)n, sizeof(float));
+  float* yl = (float*)malloc(sizeof(float) * (size_t)n);
+  float* yr = (float*)malloc(sizeof(float) * (size_t)n);
+  x[100] = 1.0f;
+  static const struct {
+    int mode, early;
+    double l_cross, r_cross;
+  } want[2] = {{1, 9000, -17.0, -16.9}, {2, 15062, -17.0, -16.8}};
+  for (int w = 0; w < 2; ++w) {
+    const float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.5f, 0.5f,
+                                   md_choice(want[w].mode, 12)};
+    le_fx_state* fx = md_state(&t);
+    md_run(fx, p, x, yl, yr, n);
+    le_fx_state_free_buffers(fx);
+    free(fx);
+    /* Each tap's peak near where it lands. */
+    int ri = 200;
+    for (int i = 200; i < 100 + period - 500; ++i) {
+      if (fabsf(yr[i]) > fabsf(yr[ri])) ri = i;
+    }
+    float r_main = 0.0f, r_x = 0.0f, l_main = 0.0f, l_x = 0.0f;
+    for (int i = -20; i < 20; ++i) {
+      r_main = fmaxf(r_main, fabsf(yr[100 + want[w].early + i]));
+      l_x = fmaxf(l_x, fabsf(yl[100 + want[w].early + i]));
+      r_x = fmaxf(r_x, fabsf(yr[100 + period + i]));
+      l_main = fmaxf(l_main, fabsf(yl[100 + period + i]));
+    }
+    const double lc = 20.0 * log10(l_x / l_main);
+    const double rc = 20.0 * log10(r_x / r_main);
+    printf("  mode %d: early tap at %d (want %d), left cross %+5.1f (%+5.1f), "
+           "right cross %+5.1f (%+5.1f)\n",
+           want[w].mode, ri - 100, want[w].early, lc, want[w].l_cross, rc,
+           want[w].r_cross);
+    CHECK(abs(ri - 100 - want[w].early) <= 2);
+    CHECK(fabs(lc - want[w].l_cross) < 0.5);
+    CHECK(fabs(rc - want[w].r_cross) < 0.5);
+  }
+  free(x);
+  free(yl);
+  free(yr);
+}
+
+/* At 100 % Feedback a resonant voicing would grow; the line stays under
+ * full scale, so the output stays bounded: under 2.5, the voicing's
+ * +6 dB on top of full scale and a little ringing. */
+static void test_mode_delay_loop_is_bounded(void) {
+  printf("test_mode_delay_loop_is_bounded\n");
+  const le_fx_tempo t = rh_tempo(120.0);
+  const int n = 4 * MD_SR;
+  float* y = (float*)malloc(sizeof(float) * (size_t)n);
+  static const int modes[3] = {0, 6, 9}; /* DIGI, RESO LO, RESO HI */
+  static const double hz[3] = {200.0, 981.0, 2425.0};
+  for (int k = 0; k < 3; ++k) {
+    float* x = md_burst(hz[k], n);
+    const float p[LE_FX_PARAMS] = {md_choice(4, 20), 1.0f, 1.0f,
+                                   md_choice(modes[k], 12)};
+    le_fx_state* fx = md_state(&t);
+    md_run(fx, p, x, y, NULL, n);
+    le_fx_state_free_buffers(fx);
+    free(fx);
+    float peak = 0.0f;
+    for (int i = 0; i < n; ++i) {
+      CHECK(isfinite(y[i]));
+      peak = fmaxf(peak, fabsf(y[i]));
+    }
+    printf("  mode %d at 100 %%: peak %.2f\n", modes[k], (double)peak);
+    CHECK(peak < 2.5f);
+    free(x);
+  }
+  free(y);
+}
+
+/* The voicings hold at 96 kHz: RESO LO's peak and loop at 1 kHz. */
+static void test_mode_delay_at_96k(void) {
+  printf("test_mode_delay_at_96k\n");
+  const int sr = 96000;
+  le_fx_tempo t = rh_tempo(120.0);
+  t.qpf = (float)(2.0 / (double)sr);
+  const int n = 2 * sr;
+  float* x = (float*)calloc((size_t)n, sizeof(float));
+  const int len = sr * 60 / 1000;
+  const int ramp = sr * 5 / 1000;
+  for (int i = 0; i < len; ++i) {
+    double g = 1.0;
+    if (i < ramp) g = (double)i / ramp;
+    if (i > len - ramp) g = (double)(len - i) / ramp;
+    x[1000 + i] = (float)(0.25 * g * sin(2.0 * 3.14159265358979 * 1000.0 * i / sr));
+  }
+  float* y = (float*)malloc(sizeof(float) * (size_t)n);
+  const float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.5f, 0.3f, md_choice(6, 12)};
+  le_fx_state* fx = md_state_at(&t, sr);
+  md_run_at(fx, sr, p, x, y, NULL, n);
+  le_fx_state_free_buffers(fx);
+  free(fx);
+  const int period = sr * 375 / 1000;
+  double e[3] = {0.0, 0.0, 0.0};
+  for (int k = 0; k < 3; ++k) {
+    const int from = 1000 + sr / 100 + k * period;
+    for (int i = from; i < from + sr / 25; ++i) e[k] += (double)y[i] * y[i];
+  }
+  const double first = 10.0 * log10(e[1] / e[0]) - 20.0 * log10(0.36);
+  const double loop = 10.0 * log10(e[2] / e[1]) - 20.0 * log10(0.5);
+  printf("  RESO LO at 1 kHz: first %+5.1f (capture +6.2), loop %+5.1f "
+         "(+1.0)\n",
+         first, loop);
+  CHECK(fabs(first - 6.2) < 0.5);
+  CHECK(fabs(loop - 1.0) < 0.5);
+  free(x);
   free(y);
 }
 
@@ -305,12 +440,28 @@ static void test_mode_delay_drains_its_whole_line(void) {
   le_engine_destroy(e);
 }
 
+/* On the song's tempo, which a print would not keep: a lane holding one
+ * that is heard is never printed. */
+static void test_mode_delay_is_not_printed(void) {
+  printf("test_mode_delay_is_not_printed\n");
+  float p[LE_FX_PARAMS] = {0};
+  le_fx_defaults(LE_FX_MODE_DELAY, p);
+  CHECK(le_fx_type_free_running(LE_FX_MODE_DELAY));
+  CHECK(le_fx_entry_free_running(LE_FX_MODE_DELAY, p, MD_SR));
+  p[2] = 0.0f;
+  CHECK(!le_fx_entry_free_running(LE_FX_MODE_DELAY, p, MD_SR));
+}
+
 static void run_mode_delay_tests(void) {
+  test_mode_delay_is_not_printed();
   test_mode_delay_voicings();
   test_mode_delay_timings();
   test_mode_delay_mix_law();
   test_mode_delay_note_values();
   test_mode_delay_time_change_crossfades();
   test_mode_delay_clear_reads_nothing_old();
+  test_mode_delay_taps();
+  test_mode_delay_loop_is_bounded();
+  test_mode_delay_at_96k();
   test_mode_delay_drains_its_whole_line();
 }

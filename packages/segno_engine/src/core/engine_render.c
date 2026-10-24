@@ -383,10 +383,11 @@ static int64_t le_render_job_bytes(const le_render_job* j) {
     }
   }
   /* An entry of a heap-state kind (le_fx_kinds) adds its slot's arena,
-   * at most a page or so each, and its state's table: counted as both
-   * for every entry, which overstates and never understates. */
+   * at most a page or so each, and its state's table; a Mode delay its
+   * 4 s line (four rings' worth, mono): counted as the larger for every
+   * entry, which overstates and never understates. */
   bytes += states * (int64_t)(sizeof(le_fx_state) + sizeof(le_fx_kinds)) +
-           entries * (2ll * j->cap * (int64_t)sizeof(float) + 16384);
+           entries * (4ll * j->cap * (int64_t)sizeof(float) + 16384);
   return bytes;
 }
 
