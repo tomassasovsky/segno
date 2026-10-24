@@ -459,7 +459,7 @@ void main() {
         // The Lo-Fi Rack's vinyl, degrade and low-pass filter.
         TrackEffectType.vinyl: [0.4, 0.35, 0.3, 0.9],
         TrackEffectType.degrade: [1.0, 1.0, 1.0],
-        TrackEffectType.lpf: [1.0, 1.0],
+        TrackEffectType.lpf: [1.0, 1.0, 0.0, 0.4],
         // The Guitar Rack's spring: 2.00 s, 50 %.
         TrackEffectType.spring: [0.30103, 0.5],
         // The Dub Rack's reverbs as a fresh rack has them: Dub-Verb Dec 0.7,

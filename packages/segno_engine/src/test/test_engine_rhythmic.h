@@ -941,6 +941,304 @@ static void test_slicer_reverse_ends_with_its_source(void) {
   }
 }
 
+/* ---- The Rhythmic LPF's LFO ---- */
+
+/* The capture's level of a -12 dBFS 1 kHz sine through the Rhythmic LPF at
+ * 632 Hz and 50 % resonance, its LFO at rate 2 (a half note, 1 s at
+ * 120 BPM), at every 1/40 of the LFO's period from its start (#891, gD
+ * passes 3 and 4: Depth 50 % and 100 %), in dB against the input. */
+static const float RH_LFO_50[40] = {
+    -12.0f, -6.7f,  -2.3f,  1.1f,   3.1f,   3.9f,   4.1f,   3.9f,
+    3.7f,   3.5f,   3.4f,   3.5f,   3.7f,   3.9f,   4.1f,   3.9f,
+    3.2f,   1.3f,   -2.1f,  -6.6f,  -11.8f, -17.2f, -22.2f, -26.7f,
+    -30.8f, -34.3f, -37.2f, -39.5f, -41.2f, -42.2f, -42.5f, -42.2f,
+    -41.2f, -39.6f, -37.3f, -34.4f, -30.9f, -26.9f, -22.4f, -17.4f};
+static const float RH_LFO_100[40] = {
+    -12.0f, 3.8f,  1.4f,   0.4f,   0.1f,   0.0f,   0.0f,   0.0f,
+    0.0f,   0.0f,  0.0f,   0.0f,   0.0f,   0.0f,   0.0f,   0.0f,
+    0.1f,   0.4f,  1.4f,   3.8f,   -11.2f, -33.8f, -56.2f, -74.1f,
+    -84.0f, -90.0f, -94.9f, -99.1f, -86.2f, -75.3f, -93.8f, -82.0f,
+    -98.9f, -87.1f, -90.0f, -89.3f, -87.7f, -76.1f, -57.0f, -34.6f};
+
+/* The LPF's level of that sine (632 Hz, 50 % resonance) at each 1/40 of
+ * the LFO's period, at Depth [depth] and rate position [rate] (of 16),
+ * whose period is [period] frames at 120 BPM. The beat runs from clock 0,
+ * so a period starts at frame 0; read over the period from frame 2 s, as
+ * the capture's +-4 ms bins. */
+static void rh_lfo_levels(float depth, int rate, int period, float* db) {
+  const int sr = RH_SR;
+  const int n = 2 * sr + period;
+  float* in = (float*)malloc(sizeof(float) * (size_t)n);
+  float* out = (float*)malloc(sizeof(float) * (size_t)n);
+  for (int i = 0; i < n; ++i) {
+    in[i] = 0.2512f * sinf(2.0f * 3.14159265f * 1000.0f * (float)i / sr);
+  }
+  float p[LE_FX_PARAMS] = {0};
+  p[0] = dyn_setting(LE_FX_LPF, 0, 632.0);
+  p[1] = 0.5f;
+  p[2] = depth;
+  p[3] = (float)rate / 15.0f;
+  le_fx_state* fx = dyn_state(LE_FX_LPF, sr);
+  uint32_t clock = 0;
+  dyn_run(fx, LE_FX_LPF, p, sr, in, out, NULL, n, &clock);
+  dyn_free(fx);
+  const int w = sr / 250;
+  for (int k = 0; k < 40; ++k) {
+    const int at = 2 * sr + k * period / 40;
+    double e = 0.0;
+    int m = 0;
+    for (int i = at - w; i < at + w; ++i) {
+      const int j = i < 2 * sr ? i + period : i; /* within the period */
+      e += (double)out[j] * out[j];
+      ++m;
+    }
+    db[k] = (float)(10.0 * log10(2.0 * e / m + 1e-30) - 20.0 * log10(0.2512));
+  }
+  free(in);
+  free(out);
+}
+
+/* The LFO sweeps the cutoff as the capture's does: a sine in log
+ * frequency rising from the start of each period, over the whole cycle
+ * within 2 dB at Depth 50 % and 1.5 dB at 100 % (where the capture is
+ * above -50 dB; below it, the model is too). */
+static void test_lpf_lfo_matches_the_capture(void) {
+  printf("test_lpf_lfo_matches_the_capture\n");
+  float db[40];
+  rh_lfo_levels(0.5f, 6, RH_SR, db); /* 2: a half note, 1 s */
+  double worst = 0.0;
+  for (int k = 0; k < 40; ++k) {
+    const double d = fabs((double)db[k] - RH_LFO_50[k]);
+    if (d > worst) worst = d;
+  }
+  printf("  depth 50 %%: worst %.2f dB off the capture\n", worst);
+  CHECK(worst < 2.0);
+  rh_lfo_levels(1.0f, 6, RH_SR, db);
+  worst = 0.0;
+  for (int k = 0; k < 40; ++k) {
+    if (RH_LFO_100[k] < -50.0f) {
+      CHECK(db[k] < -50.0f);
+      continue;
+    }
+    const double d = fabs((double)db[k] - RH_LFO_100[k]);
+    if (d > worst) worst = d;
+  }
+  printf("  depth 100 %%: worst %.2f dB off the capture above -50 dB\n", worst);
+  CHECK(worst < 1.5);
+}
+
+/* The rate is a note value: at 4 (a quarter, 500 ms at 120 BPM) the same
+ * cycle runs in half the time. */
+static void test_lpf_lfo_rate(void) {
+  printf("test_lpf_lfo_rate\n");
+  float db[40];
+  rh_lfo_levels(0.5f, 9, RH_SR / 2, db);
+  CHECK(db[10] > 2.0f);   /* the cutoff at its top: the resonance's lift */
+  CHECK(db[30] < -35.0f); /* at its bottom */
+  CHECK(fabsf(db[10] - db[30]) > 35.0f);
+}
+
+/* A swept filter is locked to the beat, so its lane is never printed; one
+ * with its LFO at 0, or switched off at the top of the cutoff, still is. */
+static void test_lpf_lfo_is_not_printed(void) {
+  printf("test_lpf_lfo_is_not_printed\n");
+  float p[LE_FX_PARAMS] = {0.5f, 0.2f, 0.5f, 0.4f};
+  CHECK(le_fx_entry_free_running(LE_FX_LPF, p, RH_SR));
+  p[2] = 0.0f;
+  CHECK(!le_fx_entry_free_running(LE_FX_LPF, p, RH_SR));
+  p[2] = 0.5f;
+  p[0] = 1.0f;
+  CHECK(!le_fx_entry_free_running(LE_FX_LPF, p, RH_SR));
+}
+
+/* The LPF's output on a 750 Hz sine (64-frame period) at the Sliced
+ * Breaker's settings (cutoff 0.64, 25 % resonance, LFO 44 % at 1/8D) on
+ * [t], re-anchored at frame [at] to beat [to] (no re-anchor when at < 0). */
+static void rh_lfo_run_p(le_fx_tempo* t, int at, double to, float* out, int n,
+                         const float* p, uint32_t off) {
+  le_fx_state* fx = dyn_state(LE_FX_LPF, RH_SR);
+  fx->tempo = t;
+  fx->clocked = 1;
+  static int32_t types[LE_FX_MAX];
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  for (int k = 0; k < LE_FX_MAX; ++k) types[k] = LE_FX_NONE;
+  types[0] = LE_FX_LPF;
+  for (int q = 0; q < 4; ++q) params[0][q] = p[q];
+  for (int i = 0; i < n; ++i) {
+    if (i == at) {
+      t->anchor_clock = (uint32_t)i + off;
+      t->anchor_beat = to;
+    }
+    fx->clock = (uint32_t)i + off;
+    float l = 0.5f * sinf(2.0f * 3.14159265f * (float)(i % 64) / 64.0f);
+    float r = l;
+    fx_apply_chain(fx, RH_SR, RH_SR, &l, &r, 1, types, params, NULL);
+    out[i] = l;
+  }
+  dyn_free(fx);
+}
+
+static void rh_lfo_run(le_fx_tempo* t, int at, double to, float* out, int n) {
+  const float p[4] = {0.6415f, 0.254f, 0.44f, 10.0f / 15.0f};
+  rh_lfo_run_p(t, at, to, out, n, p, 0);
+}
+
+/* The fastest sweep (1/16 at 240 BPM, Depth 100 %) moves the corner sample
+ * by sample, not in steps at the update cadence: the output's curvature
+ * stays under twice the sine's own at a +3 dB lift (stepping the corner
+ * every 32 frames bends it about three times as hard). */
+static void test_lpf_lfo_fast_sweep_is_smooth(void) {
+  printf("test_lpf_lfo_fast_sweep_is_smooth\n");
+  const int n = RH_SR / 2;
+  float* y = (float*)malloc(sizeof(float) * (size_t)n);
+  le_fx_tempo t = rh_tempo(240.0);
+  const float p[4] = {0.6415f, 0.254f, 1.0f, 1.0f};
+  rh_lfo_run_p(&t, -1, 0.0, y, n, p, 0);
+  float bend = 0.0f;
+  for (int i = RH_SR / 10; i < n; ++i) {
+    bend = fmaxf(bend, fabsf(y[i] - 2.0f * y[i - 1] + y[i - 2]));
+  }
+  const float w = 2.0f * 3.14159265f / 64.0f;
+  printf("  sharpest bend %.5f, the sine's own at +3 dB %.5f\n", (double)bend,
+         (double)(0.5f * 1.41f * w * w));
+  CHECK(bend < 2.0f * 0.5f * 1.41f * w * w);
+  free(y);
+}
+
+/* A loop top that is not a whole number of LFO periods (a one-bar loop at
+ * 1/8D: the phase goes from 1/3 back to 0, about an octave of the corner)
+ * moves the corner over a millisecond or so, not in one sample: the
+ * output's curvature (its second difference, which a step in the corner
+ * would spike) stays within the swept filter's own. */
+static void test_lpf_lfo_reanchor_is_smooth(void) {
+  printf("test_lpf_lfo_reanchor_is_smooth\n");
+  const int bar = 2 * RH_SR; /* 4/4 at 120 BPM */
+  const int n = bar + RH_SR / 4;
+  float* y = (float*)malloc(sizeof(float) * (size_t)n);
+  le_fx_tempo t = rh_tempo(120.0);
+  rh_lfo_run(&t, bar, 0.0, y, n);
+  float steady = 0.0f;
+  for (int i = RH_SR / 2; i < bar; ++i) {
+    steady = fmaxf(steady, fabsf(y[i] - 2.0f * y[i - 1] + y[i - 2]));
+  }
+  float jump = 0.0f;
+  for (int i = bar; i < bar + RH_SR / 100; ++i) {
+    jump = fmaxf(jump, fabsf(y[i] - 2.0f * y[i - 1] + y[i - 2]));
+  }
+  printf("  sharpest bend: %.5f across the loop top, %.5f before\n",
+         (double)jump, (double)steady);
+  CHECK(jump < 1.5f * steady);
+  free(y);
+}
+
+/* The LFO reads the beat from the tempo, not from its state's clock: the
+ * same anchors on a clock 32 x 1000 frames later (the same update phase)
+ * give the same output, sample for sample. */
+static void test_lpf_lfo_follows_the_tempo_not_the_clock(void) {
+  printf("test_lpf_lfo_follows_the_tempo_not_the_clock\n");
+  const int n = RH_SR;
+  float* a = (float*)malloc(sizeof(float) * (size_t)n);
+  float* b = (float*)malloc(sizeof(float) * (size_t)n);
+  const float p[4] = {0.6415f, 0.254f, 0.44f, 10.0f / 15.0f};
+  le_fx_tempo t1 = rh_tempo(97.0);
+  t1.anchor_beat = 0.3;
+  rh_lfo_run_p(&t1, n / 3, 1.75, a, n, p, 0);
+  const uint32_t off = 32u * 1000u;
+  le_fx_tempo t2 = rh_tempo(97.0);
+  t2.anchor_clock = off;
+  t2.anchor_beat = 0.3;
+  rh_lfo_run_p(&t2, n / 3, 1.75, b, n, p, off);
+  for (int i = 0; i < n; ++i) CHECK(a[i] == b[i]);
+  free(a);
+  free(b);
+}
+
+/* A jump across the whole swing (Depth 100 %, from the top of the cycle to
+ * the bottom: about 14 octaves of corner) takes milliseconds, at the slew
+ * limit, not the 32 frames of one update: a 1 kHz tone takes over 2 ms to
+ * fall 20 dB (about 4; half a millisecond without the limit). */
+static void test_lpf_lfo_jump_is_slewed(void) {
+  printf("test_lpf_lfo_jump_is_slewed\n");
+  const int n = 2 * RH_SR;
+  const int at = RH_SR + RH_SR / 4; /* phase 0.25 of the 1 s period */
+  le_fx_state* fx = dyn_state(LE_FX_LPF, RH_SR);
+  le_fx_tempo t = rh_tempo(120.0);
+  fx->tempo = &t;
+  fx->clocked = 1;
+  static int32_t types[LE_FX_MAX];
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  for (int k = 0; k < LE_FX_MAX; ++k) types[k] = LE_FX_NONE;
+  types[0] = LE_FX_LPF;
+  params[0][0] = dyn_setting(LE_FX_LPF, 0, 632.0);
+  params[0][1] = 0.5f;
+  params[0][2] = 1.0f;
+  params[0][3] = 6.0f / 15.0f;
+  float* y = (float*)malloc(sizeof(float) * (size_t)n);
+  for (int i = 0; i < n; ++i) {
+    if (i == at) {
+      t.anchor_clock = (uint32_t)i;
+      t.anchor_beat = 1.5; /* phase 0.75 */
+    }
+    fx->clock = (uint32_t)i;
+    float l = 0.2512f * sinf(2.0f * 3.14159265f * 1000.0f * (float)i / RH_SR);
+    float r = l;
+    fx_apply_chain(fx, RH_SR, RH_SR, &l, &r, 1, types, params, NULL);
+    y[i] = l;
+  }
+  dyn_free(fx);
+  /* The tone's own level over each cycle (its in-phase and quadrature
+   * parts), so what the sweep leaves ringing at the corner does not count. */
+  const int w = RH_SR / 1000;
+  double before = 0.0;
+  int fell = -1;
+  for (int i = at - w; i + w < n && fell < 0; ++i) {
+    double c = 0.0;
+    double q = 0.0;
+    for (int k = i; k < i + w; ++k) {
+      const double ph = 2.0 * 3.14159265358979 * 1000.0 * k / RH_SR;
+      c += y[k] * cos(ph);
+      q += y[k] * sin(ph);
+    }
+    const double e = c * c + q * q;
+    if (i == at - w) {
+      before = e;
+    } else if (i >= at && 10.0 * log10(e / before + 1e-30) < -20.0) {
+      fell = i - at;
+    }
+  }
+  printf("  20 dB down %.2f ms after the jump\n", 1000.0 * fell / RH_SR);
+  CHECK(fell > 2 * RH_SR / 1000);
+  CHECK(fell < 10 * RH_SR / 1000);
+  free(y);
+}
+
+/* A lane holding a swept LPF stays live (it is locked to the beat, not the
+ * lap); at depth 0 it prints. */
+static void test_lpf_lfo_lane_stays_live(void) {
+  printf("test_lpf_lfo_lane_stays_live\n");
+  le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  cache_record_loop(a, CACHE_LOOP, 1.0f);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_LPF) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(a, 0, 0, 0, 0, 0.5f) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(a, 0, 0, 0, 1, 0.2f) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(a, 0, 0, 0, 2, 0.5f) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1, 1) == LE_OK);
+  drain(a);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  pump_frames(a, 0.0f, CACHE_LOOP);
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  CHECK(info.state == LE_CACHE_GAVE_UP);
+  CHECK(info.reason == LE_CACHE_REASON_FREE_RUNNING);
+  CHECK(le_engine_set_lane_fx_param(a, 0, 0, 0, 2, 0.0f) == LE_OK);
+  drain(a);
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+  le_engine_destroy(a);
+}
+
 static void run_rhythmic_tests(void) {
   test_pumper_matches_the_capture();
   test_pumper_rates_and_depths();
@@ -966,4 +1264,12 @@ static void run_rhythmic_tests(void) {
   test_slicer_change_waits_for_a_replay();
   test_slicer_cuts_stay_under_the_input();
   test_slicer_reverse_ends_with_its_source();
+  test_lpf_lfo_matches_the_capture();
+  test_lpf_lfo_rate();
+  test_lpf_lfo_is_not_printed();
+  test_lpf_lfo_reanchor_is_smooth();
+  test_lpf_lfo_fast_sweep_is_smooth();
+  test_lpf_lfo_follows_the_tempo_not_the_clock();
+  test_lpf_lfo_jump_is_slewed();
+  test_lpf_lfo_lane_stays_live();
 }

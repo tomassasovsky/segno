@@ -36,7 +36,9 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   TrackEffectType.distortion: 227,
   TrackEffectType.vinyl: 97,
   TrackEffectType.degrade: 47,
-  TrackEffectType.lpf: 55,
+  // The console's 55 for the still filter, x 1.08: the swept one (its
+  // ladder redesigned every sample) over the still one on CI arm64.
+  TrackEffectType.lpf: 59,
   TrackEffectType.spring: 95,
   // CI arm64, an eighth of eight in one chain (6.2 and 6.1 us), x 1.75.
   TrackEffectType.dubVerb: 170,

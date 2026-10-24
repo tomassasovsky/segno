@@ -463,6 +463,8 @@
     "effectSlicer": "Slicer",
     "paramPattern": "Patrón",
     "paramStep": "Paso",
+    "paramLfoDepth": "Profundidad del LFO",
+    "paramLfoRate": "Velocidad del LFO",
     "noteValueBar": "Compás",
     "paramFrequency": "Frecuencia",
     "paramNoise": "Ruido",

@@ -874,6 +874,14 @@
     "@paramStep": {
         "description": "The note value of one step of the Slicer's pattern."
     },
+    "paramLfoDepth": "LFO depth",
+    "@paramLfoDepth": {
+        "description": "How far the low-pass filter's LFO sweeps its cutoff."
+    },
+    "paramLfoRate": "LFO rate",
+    "@paramLfoRate": {
+        "description": "The note value of one cycle of the low-pass filter's LFO."
+    },
     "noteValueBar": "Bar",
     "@noteValueBar": {
         "description": "A note value one bar long, as a tempo-synced rate."
