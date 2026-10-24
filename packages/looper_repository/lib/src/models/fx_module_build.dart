@@ -712,8 +712,9 @@ FxModuleBuild? _findEntryBuild(BuiltInEffect entry) {
   FxModuleBuild? build;
   var best = -1;
   for (final v in variants.values) {
-    // The keys it places and the ones it knows it drops: a variant that
-    // drops a key (the Rhythmic Rack's LFO) is that rack's alone.
+    // The keys it places and the ones it knows it drops: the variant with
+    // the most of them that the entry carries is its rack's (the Rhythmic
+    // Rack's LPF, with its LFO keys, over the Lo-Fi Rack's).
     final keys = [...v.params.whereType<String>(), ...v.unmapped];
     if (keys.length > best && keys.every(entry.source.containsKey)) {
       best = keys.length;

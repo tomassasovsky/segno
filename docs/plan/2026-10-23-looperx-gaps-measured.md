@@ -51,7 +51,8 @@ segno `LE_FX_LPF`: 12 dB/octave SVF, Q 0.71..3 (+9.5 dB peak at 100 %), no
 self-oscillation, no high-pass, Rhythmic LFO unmapped. Needs: 4-pole ladder,
 k ~ 0.2 + 3.8 Reso with self-oscillation at 100 % (both racks' presets
 default to Reso 100 % with the cutoff at 20 kHz, where it is inaudible),
-the 25 Hz high-pass, and the LFO.
+the 25 Hz high-pass, and the LFO. (Since landed: the ladder and high-pass
+in #1445, the LFO in #1462.)
 
 ## Vinyl (Lo-Fi)
 

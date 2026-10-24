@@ -3767,7 +3767,9 @@ static double le_lpf_osc_reso(void) {
 }
 
 /* The LFO's period at each rate position, in quarter notes: 8/4, 6/4, 5/4,
- * 4/4, 3/4, 1T, 2, 4D, 2T, 4, 8D, 4T, 8, 16D, 8T, 16. */
+ * 4/4, 3/4, 1T, 2, 4D, 2T, 4, 8D, 4T, 8, 16D, 8T, 16, the order of the
+ * Looper X binary's 16-entry note-value table for the LFO (NoteDiv16,
+ * longest first); the capture confirmed position 6 (2, 1 s at 120 BPM). */
 static const double LE_LPF_LFO_QUARTERS[16] = {
     8.0, 6.0, 5.0,       4.0,  3.0,       8.0 / 3.0, 2.0,   1.5,
     4.0 / 3.0, 1.0, 0.75, 2.0 / 3.0, 0.5, 0.375,     1.0 / 3.0, 0.25};
@@ -3782,12 +3784,15 @@ static const double LE_LPF_LFO_QUARTERS[16] = {
 typedef struct le_fx_lpf {
   le_fx_dyn_head h;
   float last[LE_LPF_PARAMS_N];
-  double beat;      /* the beat of the coming update (fx_lpf_beat) */
+  double beat;      /* the beat the coming update lands on (fx_lpf_beat) */
   float l2, tgt;    /* the corner, log2 Hz, without the LFO */
   float lfo;        /* the LFO's offset to the corner now, octaves */
+  float lfo_max;    /* the most the offset moves in an update, octaves */
   float k, ktgt;    /* the feedback */
   le_fx_glide amount; /* 1 filtering, 0 off (cutoff at the top) */
-  float g;     /* the one-pole's G = g / (1 + g) */
+  float g;     /* the one-pole's G = g / (1 + g), now */
+  float g_inc; /* its step a frame toward the update's G */
+  int32_t g_n; /* the frames that step still runs */
   float sb[4]; /* each stage state's share of the output */
   float g4;    /* G^4 */
   float inv;   /* 1 / (1 + k G^4) */
@@ -3795,6 +3800,26 @@ typedef struct le_fx_lpf {
   float s[2][4];
   float sh[2];
 } le_fx_lpf;
+
+/* The fastest the LFO's offset moves, octaves a second: above the fastest
+ * sweep (1/16 at 240 BPM, Depth 100 %: about 720), so a sweep runs as
+ * computed, while a beat that jumps (a loop top that is not a whole number
+ * of periods, a new rate or depth) moves the corner over a millisecond or
+ * so rather than at once. */
+#define LE_LPF_LFO_MAX_OCT_S 1000.0
+
+/* [q]'s ladder coefficients for the one-pole G [G]. */
+static void le_lpf_coefs(le_fx_lpf* q, double G) {
+  /* The output from the stages' states: y = G^4 u + sum sb[i] s[i]. */
+  q->g = (float)G;
+  q->sb[0] = (float)(G * G * G * (1.0 - G));
+  q->sb[1] = (float)(G * G * (1.0 - G));
+  q->sb[2] = (float)(G * (1.0 - G));
+  q->sb[3] = (float)(1.0 - G);
+  const double g4 = G * G * G * G;
+  q->g4 = (float)g4;
+  q->inv = (float)(1.0 / (1.0 + (double)q->k * g4));
+}
 
 static void fx_lpf_update(void* ks, const float* p, int sr, int settle) {
   le_fx_lpf* q = (le_fx_lpf*)ks;
@@ -3823,43 +3848,66 @@ static void fx_lpf_update(void* ks, const float* p, int sr, int settle) {
   if (f & LE_FX_DYN_NEW_RATE) {
     const double gh = le_prewarp(LE_LPF_HP_HZ, sr);
     q->gh = (float)(gh / (1.0 + gh));
+    q->lfo_max = (float)(LE_LPF_LFO_MAX_OCT_S * (double)LE_FX_UPDATE_FRAMES /
+                         (double)sr);
   }
+  const int sweeping = p[2] > 0.0f && p[0] < 1.0f;
+  const float l2_was = q->l2;
+  const float k_was = q->k;
+  le_fx_step_toward(&q->l2, q->tgt, k);
+  le_fx_step_toward(&q->k, q->ktgt, k);
   /* The LFO (#891, gD): a sine in log frequency, rising from the start of
-   * each period (the beat's), that swings the stored cutoff by
-   * LE_LPF_LFO_SWING Depth^LE_LPF_LFO_EXP, held to the cutoff's range. It
-   * moves the corner at every update rather than gliding. */
+   * each period of the beat, that swings the stored cutoff by
+   * LE_LPF_LFO_SWING Depth^LE_LPF_LFO_EXP, held to the cutoff's range
+   * around the corner as it glides. */
   float lfo = 0.0f;
-  if (p[2] > 0.0f) {
-    const double c = p[0] < 0.0f ? 0.0 : p[0] > 1.0f ? 1.0 : p[0];
+  if (sweeping) {
     const double d = p[2] > 1.0f ? 1.0 : p[2];
     int ri = (int)(p[3] * 15.0f + 0.5f);
     ri = ri < 0 ? 0 : ri > 15 ? 15 : ri;
     double ph = fmod(q->beat / LE_LPF_LFO_QUARTERS[ri], 1.0);
     if (ph < 0.0) ph += 1.0;
-    double m = c + LE_LPF_LFO_SWING * pow(d, LE_LPF_LFO_EXP) *
-                       sin(2.0 * 3.14159265358979323846 * ph);
-    m = m < 0.0 ? 0.0 : m > 1.0 ? 1.0 : m;
-    lfo = (float)((m - c) * LE_LPF_RANGE_OCT);
+    const double swing = LE_LPF_LFO_SWING * pow(d, LE_LPF_LFO_EXP) *
+                         LE_LPF_RANGE_OCT *
+                         sin(2.0 * 3.14159265358979323846 * ph);
+    /* The range's ends, log2 Hz, at the corner's ratio to the cutoff. */
+    const double ratio_l2 =
+        (double)q->tgt - log2(le_fx_desc_value(&LE_FX_LPF_PARAMS[0], p[0]));
+    const double lo = log2(20.0) + ratio_l2;
+    const double hi = log2(20000.0) + ratio_l2;
+    double corner = (double)q->l2 + swing;
+    corner = corner < lo ? lo : corner > hi ? hi : corner;
+    lfo = (float)(corner - (double)q->l2);
   }
-  if (q->l2 != q->tgt || q->k != q->ktgt || lfo != q->lfo ||
-      (f & LE_FX_DYN_NEW_RATE)) {
-    le_fx_step_toward(&q->l2, q->tgt, k);
-    le_fx_step_toward(&q->k, q->ktgt, k);
+  const float lfo_was = q->lfo;
+  if (settle) {
     q->lfo = lfo;
+  } else {
+    const float d = lfo - q->lfo;
+    q->lfo += d > q->lfo_max ? q->lfo_max : d < -q->lfo_max ? -q->lfo_max : d;
+  }
+  if (q->l2 != l2_was || q->k != k_was || q->lfo != lfo_was || settle ||
+      (f & LE_FX_DYN_CHANGED) || q->g_n > 0) {
     const double g = le_prewarp(exp2((double)(q->l2 + q->lfo)), sr);
     const double G = g / (1.0 + g);
-    /* The output from the stages' states: y = G^4 u + sum sb[i] s[i]. */
-    q->g = (float)G;
-    q->sb[0] = (float)(G * G * G * (1.0 - G));
-    q->sb[1] = (float)(G * G * (1.0 - G));
-    q->sb[2] = (float)(G * (1.0 - G));
-    q->sb[3] = (float)(1.0 - G);
-    const double g4 = G * G * G * G;
-    q->g4 = (float)g4;
-    q->inv = (float)(1.0 / (1.0 + (double)q->k * g4));
+    if (settle || (f & LE_FX_DYN_NEW_RATE)) {
+      le_lpf_coefs(q, G);
+      q->g_inc = 0.0f;
+      q->g_n = 0;
+    } else {
+      /* The samples up to the next update ramp G onto it. */
+      q->g_inc = (float)((G - (double)q->g) / (double)LE_FX_UPDATE_FRAMES);
+      q->g_n = LE_FX_UPDATE_FRAMES;
+      if (q->g + q->g_inc == q->g) { /* closer than a step can show */
+        le_lpf_coefs(q, G);
+        q->g_inc = 0.0f;
+        q->g_n = 0;
+      }
+    }
   }
   const int moving = le_fx_glide_step(&q->amount, p[0] >= 1.0f ? 0.0f : 1.0f, k);
-  q->h.moving = moving || q->l2 != q->tgt || q->k != q->ktgt || p[2] > 0.0f;
+  q->h.moving = moving || q->l2 != q->tgt || q->k != q->ktgt || sweeping ||
+                q->lfo != 0.0f || q->g_n > 0;
 }
 
 static void fx_lpf_beat(void* ks, double beat) {
@@ -3879,6 +3927,10 @@ static void fx_lpf_kprocess(void* ks, float* l, float* r) {
     *l = io[0];
     *r = io[1];
     return;
+  }
+  if (q->g_n > 0) {
+    le_lpf_coefs(q, (double)(q->g + q->g_inc));
+    --q->g_n;
   }
   const float G = q->g;
   const float fb = q->k;
@@ -4626,9 +4678,10 @@ typedef struct le_fx_vtable {
    * rings it has written, so the rings are never cleared for it. */
   void (*rkprocess)(void* ks, float* r0, float* r1, int cap, float* l,
                     float* r);
-  /* A heap-state kind locked to the beat (the Rhythmic LPF's LFO): given
-   * the beat, in quarter notes, of the frame each `update` runs on, just
-   * before it. NULL for the rest. */
+  /* A heap-state kind locked to the beat (the Rhythmic LPF's LFO): given,
+   * just before each `update`, the beat in quarter notes at the end of the
+   * frames that update covers (where a setting it ramps toward lands). NULL
+   * for the rest. */
   void (*beat)(void* ks, double beat);
 } le_fx_vtable;
 
@@ -4887,7 +4940,8 @@ static void* fx_kind_state(le_fx_state* fx, int s, int32_t ty, int sr,
     if (LE_FX[ty].beat != NULL) {
       float qpf;
       int32_t num, den;
-      LE_FX[ty].beat(st, le_fx_beat_now(fx, sr, &qpf, &num, &den));
+      const double now = le_fx_beat_now(fx, sr, &qpf, &num, &den);
+      LE_FX[ty].beat(st, now + (double)LE_FX_UPDATE_FRAMES * (double)qpf);
     }
     LE_FX[ty].update(st, p, sr, b->settle);
     b->settle = 0;

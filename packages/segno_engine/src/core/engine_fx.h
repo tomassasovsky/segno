@@ -316,7 +316,7 @@ int le_fx_type_drains(int32_t type);
 
 /* Whether [type] runs a free-running modulator (the chorus's LFO, the
  * doubler's random delays, the vinyl's noise, the degrade's hold, the LPF's
- * self-oscillation), which sounds different on each lap of a loop: a chain
+ * self-oscillation or its beat-locked LFO), which sounds different on each lap of a loop: a chain
  * holding one is never wet-cached, since one lap's print would repeat where
  * live does not. Any thread. */
 int le_fx_type_free_running(int32_t type);
@@ -325,7 +325,7 @@ int le_fx_type_free_running(int32_t type);
  * le_fx_param_width(type) cells), at engine rate [sr], runs a free-running
  * modulator that is heard: le_fx_type_free_running, with its mix (or the
  * vinyl's noise, the degrade's hold below [sr], the LPF's resonance past
- * its oscillation point) actually doing something; the doubler always is.
+ * its oscillation point or its LFO depth above 0) actually doing something; the doubler always is.
  * Any thread. */
 int le_fx_entry_free_running(int32_t type, const float* p, int sr);
 
