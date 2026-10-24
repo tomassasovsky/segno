@@ -424,6 +424,116 @@ static void test_pumper_bar_follows_the_signature(void) {
   free(fx);
 }
 
+/* ---- The Rhythmic LPF's LFO ---- */
+
+/* The capture's level of a -12 dBFS 1 kHz sine through the Rhythmic LPF at
+ * 632 Hz and 50 % resonance, its LFO at rate 2 (a half note, 1 s at
+ * 120 BPM), at every 1/40 of the LFO's period from its start (#891, gD
+ * passes 3 and 4: Depth 50 % and 100 %), in dB against the input. */
+static const float RH_LFO_50[40] = {
+    -12.0f, -6.7f,  -2.3f,  1.1f,   3.1f,   3.9f,   4.1f,   3.9f,
+    3.7f,   3.5f,   3.4f,   3.5f,   3.7f,   3.9f,   4.1f,   3.9f,
+    3.2f,   1.3f,   -2.1f,  -6.6f,  -11.8f, -17.2f, -22.2f, -26.7f,
+    -30.8f, -34.3f, -37.2f, -39.5f, -41.2f, -42.2f, -42.5f, -42.2f,
+    -41.2f, -39.6f, -37.3f, -34.4f, -30.9f, -26.9f, -22.4f, -17.4f};
+static const float RH_LFO_100[40] = {
+    -12.0f, 3.8f,  1.4f,   0.4f,   0.1f,   0.0f,   0.0f,   0.0f,
+    0.0f,   0.0f,  0.0f,   0.0f,   0.0f,   0.0f,   0.0f,   0.0f,
+    0.1f,   0.4f,  1.4f,   3.8f,   -11.2f, -33.8f, -56.2f, -74.1f,
+    -84.0f, -90.0f, -94.9f, -99.1f, -86.2f, -75.3f, -93.8f, -82.0f,
+    -98.9f, -87.1f, -90.0f, -89.3f, -87.7f, -76.1f, -57.0f, -34.6f};
+
+/* The LPF's level of that sine (632 Hz, 50 % resonance) at each 1/40 of
+ * the LFO's period, at Depth [depth] and rate position [rate] (of 16),
+ * whose period is [period] frames at 120 BPM. The beat runs from clock 0,
+ * so a period starts at frame 0; read over the period from frame 2 s, as
+ * the capture's +-4 ms bins. */
+static void rh_lfo_levels(float depth, int rate, int period, float* db) {
+  const int sr = RH_SR;
+  const int n = 2 * sr + period;
+  float* in = (float*)malloc(sizeof(float) * (size_t)n);
+  float* out = (float*)malloc(sizeof(float) * (size_t)n);
+  for (int i = 0; i < n; ++i) {
+    in[i] = 0.2512f * sinf(2.0f * 3.14159265f * 1000.0f * (float)i / sr);
+  }
+  float p[LE_FX_PARAMS] = {0};
+  p[0] = dyn_setting(LE_FX_LPF, 0, 632.0);
+  p[1] = 0.5f;
+  p[2] = depth;
+  p[3] = (float)rate / 15.0f;
+  le_fx_state* fx = dyn_state(LE_FX_LPF, sr);
+  uint32_t clock = 0;
+  dyn_run(fx, LE_FX_LPF, p, sr, in, out, NULL, n, &clock);
+  dyn_free(fx);
+  const int w = sr / 250;
+  for (int k = 0; k < 40; ++k) {
+    const int at = 2 * sr + k * period / 40;
+    double e = 0.0;
+    int m = 0;
+    for (int i = at - w; i < at + w; ++i) {
+      const int j = i < 2 * sr ? i + period : i; /* within the period */
+      e += (double)out[j] * out[j];
+      ++m;
+    }
+    db[k] = (float)(10.0 * log10(2.0 * e / m + 1e-30) - 20.0 * log10(0.2512));
+  }
+  free(in);
+  free(out);
+}
+
+/* The LFO sweeps the cutoff as the capture's does: a sine in log
+ * frequency rising from the start of each period, over the whole cycle
+ * within 2 dB at Depth 50 % and 1.5 dB at 100 % (where the capture is
+ * above -50 dB; below it, the model is too). */
+static void test_lpf_lfo_matches_the_capture(void) {
+  printf("test_lpf_lfo_matches_the_capture\n");
+  float db[40];
+  rh_lfo_levels(0.5f, 6, RH_SR, db); /* 2: a half note, 1 s */
+  double worst = 0.0;
+  for (int k = 0; k < 40; ++k) {
+    const double d = fabs((double)db[k] - RH_LFO_50[k]);
+    if (d > worst) worst = d;
+  }
+  printf("  depth 50 %%: worst %.2f dB off the capture\n", worst);
+  CHECK(worst < 2.0);
+  rh_lfo_levels(1.0f, 6, RH_SR, db);
+  worst = 0.0;
+  for (int k = 0; k < 40; ++k) {
+    if (RH_LFO_100[k] < -50.0f) {
+      CHECK(db[k] < -50.0f);
+      continue;
+    }
+    const double d = fabs((double)db[k] - RH_LFO_100[k]);
+    if (d > worst) worst = d;
+  }
+  printf("  depth 100 %%: worst %.2f dB off the capture above -50 dB\n", worst);
+  CHECK(worst < 1.5);
+}
+
+/* The rate is a note value: at 4 (a quarter, 500 ms at 120 BPM) the same
+ * cycle runs in half the time. */
+static void test_lpf_lfo_rate(void) {
+  printf("test_lpf_lfo_rate\n");
+  float db[40];
+  rh_lfo_levels(0.5f, 9, RH_SR / 2, db);
+  CHECK(db[10] > 2.0f);   /* the cutoff at its top: the resonance's lift */
+  CHECK(db[30] < -35.0f); /* at its bottom */
+  CHECK(fabsf(db[10] - db[30]) > 35.0f);
+}
+
+/* A swept filter is locked to the beat, so its lane is never printed; one
+ * with its LFO at 0, or switched off at the top of the cutoff, still is. */
+static void test_lpf_lfo_is_not_printed(void) {
+  printf("test_lpf_lfo_is_not_printed\n");
+  float p[LE_FX_PARAMS] = {0.5f, 0.2f, 0.5f, 0.4f};
+  CHECK(le_fx_entry_free_running(LE_FX_LPF, p, RH_SR));
+  p[2] = 0.0f;
+  CHECK(!le_fx_entry_free_running(LE_FX_LPF, p, RH_SR));
+  p[2] = 0.5f;
+  p[0] = 1.0f;
+  CHECK(!le_fx_entry_free_running(LE_FX_LPF, p, RH_SR));
+}
+
 static void run_rhythmic_tests(void) {
   test_pumper_matches_the_capture();
   test_pumper_rates_and_depths();
@@ -433,4 +543,7 @@ static void run_rhythmic_tests(void) {
   test_pumper_renders_from_the_logged_anchors();
   test_fx_beat_follows_the_loop();
   test_pumper_bar_follows_the_signature();
+  test_lpf_lfo_matches_the_capture();
+  test_lpf_lfo_rate();
+  test_lpf_lfo_is_not_printed();
 }

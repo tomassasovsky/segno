@@ -387,12 +387,11 @@ const FxModuleBuild _lpf = FxModuleBuild(
   params: ['LPF Cutoff', 'LPF Reso'],
 );
 
-// Rhythmic Rack: cutoff and resonance; its LFO over the cutoff lands with
-// the tempo context (#887 part 10), so until then it is partial.
+// Rhythmic Rack: cutoff and resonance, and the LFO over the cutoff (depth,
+// and rate, a note value).
 const FxModuleBuild _rhythmicLpf = FxModuleBuild(
   type: TrackEffectType.lpf,
-  params: ['LPF Cutoff', 'LPF Reso'],
-  unmapped: ['LPF LFO Depth', 'LPF LFO Rate'],
+  params: ['LPF Cutoff', 'LPF Reso', 'LPF LFO Depth', 'LPF LFO Rate'],
 );
 
 // Lo-Fi Rack: drive and tone.

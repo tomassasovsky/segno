@@ -136,6 +136,8 @@ static void dynamics_entry(le_fx_recipe* r, int s, int32_t kind) {
     r->params[s][0] = 0.4f; /* holding at 3.2 kHz */
   } else if (kind == LE_FX_LPF) {
     r->params[s][0] = 0.6f; /* 1.2 kHz */
+    r->params[s][2] = 0.8f; /* swept by its LFO, redesigned every update */
+    r->params[s][3] = 0.8f; /* at 1/8 */
   } else if (kind == LE_FX_WHAMMY) {
     r->params[s][0] = 0.5f; /* half the pedal */
     r->params[s][1] = 1.0f; /* up */
