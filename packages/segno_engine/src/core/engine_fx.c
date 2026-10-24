@@ -424,9 +424,11 @@ static void le_pv_stage_envelope(le_octaver_state* o) {
  * it to it, and rebuild the half spectrum. Holding the formants, each bin is
  * whitened (mag/env) and the envelope re-applied at the DESTINATION bin, so
  * the formants stay fixed in frequency; moving them, the magnitude goes over
- * as it is, envelope and all. */
+ * as it is, envelope and all. [drop_dc] also drops a region whose peak
+ * lands below bin 1 (the second voice's, two octaves down; the first voice
+ * keeps the shipped octaver's behaviour). */
 static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
-                             float* re, float* im) {
+                             float* re, float* im, int drop_dc) {
   const float* mag = LE_PV_S_MAG(o);
   const float* freq = LE_PV_S_FREQ(o);
   const float* env = LE_PV_S_ENV(o);
@@ -464,7 +466,7 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
     const int peak = peaks[r];
     const int end = r + 1 < np ? (peak + peaks[r + 1] + 1) / 2 : LE_PV_BINS;
     const int to = (int)((float)peak * ratio + 0.5f);
-    if (to >= LE_PV_BINS || (ratio < 1.0f && to < 1)) {
+    if (to >= LE_PV_BINS || (drop_dc && to < 1)) {
       /* the peak leaves the band (above it, or down onto DC): drop its
        * region */
       start = end;
@@ -497,14 +499,14 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
 
 static void le_pv_stage_shift(le_octaver_state* o) {
   le_pv_shift_into(o, o->frame_ratio, o->sum_phase, LE_PV_S_RE(o),
-                   LE_PV_S_IM(o));
+                   LE_PV_S_IM(o), 0);
 }
 
 /* The second voice's shift (#1464): the same analysis at its own ratio,
  * into its own spectrum and phases. */
 static void le_pv_stage_shift2(le_octaver_state* o) {
   le_pv_shift_into(o, o->frame_ratio2, LE_PV_S_PHASE2(o), LE_PV_S_RE2(o),
-                   LE_PV_S_IM2(o));
+                   LE_PV_S_IM2(o), o->frame_ratio2 < 1.0f);
 }
 
 /* Stage 3: inverse transform, synthesis-window, and overlap-add from the

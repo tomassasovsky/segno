@@ -17,10 +17,9 @@ static double do_amp(const float* y, int n, double hz) {
   return 2.0 * sqrt(c * c + s * s) / w;
 }
 
-/* A second of a 1 kHz sine at -12 dBFS through the Dual Octaver at [p];
- * the amplitudes at 500 Hz, 1 kHz, 2 kHz, 250 Hz and 4 kHz over its second
- * half, in dB against the input's. */
-static void do_levels(const float* p, double* db) {
+/* A second of a [hz] sine at -12 dBFS through the Dual Octaver at [p];
+ * returns the output (malloc'd, do_sr frames). */
+static float* do_render(const float* p, double hz) {
   le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
   CHECK(fx != NULL);
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
@@ -36,13 +35,22 @@ static void do_levels(const float* p, double* db) {
   float* y = (float*)malloc(sizeof(float) * (size_t)n);
   for (int i = 0; i < n; ++i) {
     fx->clock = (uint32_t)i;
-    float l = 0.2512f * sinf(2.0f * 3.14159265f * 1000.0f * (float)i / do_sr);
+    float l = 0.2512f * (float)sin(2.0 * 3.14159265358979 * hz * i / do_sr);
     float r = l;
     fx_apply_chain(fx, do_sr, do_sr, &l, &r, 1, types, params, NULL);
     y[i] = l;
   }
   le_fx_state_free_buffers(fx);
   free(fx);
+  return y;
+}
+
+/* do_render's 1 kHz tone with [p] throughout; the amplitudes at 500 Hz,
+ * 1 kHz, 2 kHz, 250 Hz and 4 kHz over its second half, in dB against the
+ * input's. */
+static void do_levels(const float* p, double* db) {
+  const int n = do_sr;
+  float* y = do_render(p, 1000.0);
   static const double hz[5] = {500.0, 1000.0, 2000.0, 250.0, 4000.0};
   for (int k = 0; k < 5; ++k) {
     db[k] = 20.0 * log10(do_amp(y + n / 2, n / 2, hz[k]) / 0.2512 + 1e-12);
@@ -198,7 +206,40 @@ static void test_dual_octaver_trims_at_96k(void) {
   CHECK(fabs(db[4] - -0.7) < 0.3);
 }
 
+/* The RMS below 15 Hz (a one-pole low-pass) over [y]'s second half. */
+static double do_sub15(const float* y, int n) {
+  const double a = 1.0 - exp(-2.0 * 3.14159265358979 * 15.0 / do_sr);
+  double lp = 0.0, sum = 0.0;
+  for (int i = 0; i < n; ++i) {
+    lp += a * (y[i] - lp);
+    if (i >= n / 2) sum += lp * lp;
+  }
+  return sqrt(sum / (n / 2));
+}
+
+/* Octave 2 down on low bass at the appliance's rate: its target falls
+ * below the first bin (41 Hz two down is 10 Hz; a bin is 93.75 Hz), and
+ * that region is dropped rather than shifted onto DC, so Octave 2 adds no
+ * subsonic content. Octave 1 keeps the shipped octaver's shift. */
+static void test_dual_octaver_low_voice_skips_dc(void) {
+  printf("test_dual_octaver_low_voice_skips_dc\n");
+  do_sr = 96000;
+  const int n = do_sr;
+  const float off[LE_FX_PARAMS] = {0.0f, 1.0f, 1.0f, 0.0f};
+  float* a = do_render(off, 41.0);
+  const float on[LE_FX_PARAMS] = {0.0f, 1.0f, 1.0f, 1.0f};
+  float* b = do_render(on, 41.0);
+  const double sa = do_sub15(a, n), sb = do_sub15(b, n);
+  do_sr = DO_SR;
+  printf("  below 15 Hz: Octave 2 off %.4f, on %.4f\n", sa, sb);
+  /* Shifted onto DC instead, Octave 2 put 0.121 here (against 0.062). */
+  CHECK(sb < sa * 1.2 + 1e-6);
+  free(a);
+  free(b);
+}
+
 static void run_dual_octaver_tests(void) {
+  test_dual_octaver_low_voice_skips_dc();
   test_dual_octaver_trims_at_96k();
   test_dual_octaver_mode_switch_does_not_sweep();
   test_dual_octaver_second_voice();
