@@ -1077,7 +1077,7 @@ void main() {
           // Ed's Rack's measured order, with Reverb before Delay.
           TrackEffectType.compressor,
           TrackEffectType.reverb,
-          TrackEffectType.delay,
+          TrackEffectType.modeDelay,
         ],
       );
       // The preset's own values reach the parameters they feed.

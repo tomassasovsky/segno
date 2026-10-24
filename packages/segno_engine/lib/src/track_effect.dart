@@ -457,7 +457,12 @@ enum TrackEffectType {
   /// The Looper X's Slicer (#887 part 10): a pattern of live and replayed
   /// slices on the beat, fit to the Rhythmic Rack's. The three Fd patterns
   /// are not modelled and pass the input.
-  slicer(26, 'Slicer');
+  slicer(26, 'Slicer'),
+
+  /// The Looper X's delay (#887 part 10): a note value at the song tempo,
+  /// its voicings and stereo timings fit to the captures, on a line of up
+  /// to 4 s.
+  modeDelay(27, 'Mode delay');
 
   const TrackEffectType(this.code, this.label);
 
@@ -1088,6 +1093,43 @@ enum TrackEffectType {
     // ABC_, A_C_, A_CC, A___C___, ABcccc, AAccdd, AB__dd, AA__dd, ABC<, AB_<,
     // AA_<, A_B_C<, AB<<, <<<<, AABB Fd1, AABB Fd2, AABB Fd3), the step (1/4,
     // 1/4T, 1/8, 1/8T, 1/16, 1/16T, 1/32, 1/32T, 1/64), the mix.
+    // The Looper X's delay (#891): the time a note value (1/32, 1/16T,
+    // 1/32D, 1/16, 1/8T, 1/16D, 1/8, 1/4T, 1/8D, 1/4, 2/4T, 1/4D, 2/4, 5/8,
+    // 3/4, 7/8, 4/4, 5/4, 6/4, 8/4), feedback, mix, and the mode (DIGI,
+    // DIGI L/R, DIGI GRV, DAMPED, DAMPED L/R, DAMPED GRV, RESO LO, RES LO
+    // L/R, RES LO GRV, RESO HI, RES HI L/R, RES HI GRV).
+    TrackEffectType.modeDelay => const [
+      FxParamInfo(
+        key: 'delay_time',
+        unit: FxParamUnit.choice,
+        steps: 20,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 8 / 19,
+      ),
+      FxParamInfo(
+        key: 'feedback',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.2,
+      ),
+      FxParamInfo(
+        key: 'delay_mode',
+        unit: FxParamUnit.choice,
+        steps: 12,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
+    ],
     TrackEffectType.slicer => const [
       FxParamInfo(
         key: 'slicer_pattern',

@@ -78,7 +78,7 @@ final _rackRig = LooperState(
         _fx('p1', TrackEffectType.filter, placement: FxPlacement.pre),
         _module(
           'r1a',
-          TrackEffectType.delay,
+          TrackEffectType.modeDelay,
           rackId: 'R1',
           module: 'Delay',
         ),
@@ -469,7 +469,12 @@ void main() {
     await presets.save(
       name: 'Warm rhythmic guitar',
       entries: [
-        _module('a', TrackEffectType.delay, rackId: 'X', module: 'Delay'),
+        _module(
+          'a',
+          TrackEffectType.modeDelay,
+          rackId: 'X',
+          module: 'Delay',
+        ),
         _module('b', TrackEffectType.reverb, rackId: 'X', module: 'Reverb'),
       ],
       art: 'guitar',
