@@ -363,6 +363,25 @@ static void test_mode_delay_loop_is_bounded(void) {
     CHECK(peak < 2.5f);
     free(x);
   }
+  /* A sustained full-scale tone: the line holds at most the input plus a
+   * full-scale feedback, so the output stays under 4.5 (its +6 dB on top). */
+  {
+    float* x = (float*)malloc(sizeof(float) * (size_t)n);
+    for (int i = 0; i < n; ++i) {
+      x[i] = sinf(2.0f * 3.14159265f * 2425.0f * (float)i / MD_SR);
+    }
+    const float p[LE_FX_PARAMS] = {md_choice(9, 20), 1.0f, 1.0f,
+                                   md_choice(9, 12)};
+    le_fx_state* fx = md_state(&t);
+    md_run(fx, p, x, y, NULL, n);
+    le_fx_state_free_buffers(fx);
+    free(fx);
+    float peak = 0.0f;
+    for (int i = 0; i < n; ++i) peak = fmaxf(peak, fabsf(y[i]));
+    printf("  RESO HI, sustained full scale: peak %.2f\n", (double)peak);
+    CHECK(peak < 4.5f);
+    free(x);
+  }
   free(y);
 }
 
@@ -452,10 +471,11 @@ static void test_mode_delay_is_not_printed(void) {
   CHECK(!le_fx_entry_free_running(LE_FX_MODE_DELAY, p, MD_SR));
 }
 
-/* Bypassed until its tail has drained, a Mode delay re-enters clean: the
- * reset on the re-enable edge empties its line, so no old echo sounds. */
-static void test_mode_delay_reenable_is_clean(void) {
-  printf("test_mode_delay_reenable_is_clean\n");
+/* A Mode delay's re-enable empties its line at once (an O(1) reset), so
+ * it neither waits on the ring-clear spacing a stomp leaves nor sets it:
+ * with the spacing running, it starts its ramp on the edge's own sample. */
+static void test_mode_delay_reenable_skips_the_spacing(void) {
+  printf("test_mode_delay_reenable_skips_the_spacing\n");
   const le_fx_tempo t = rh_tempo(120.0);
   le_fx_state* fx = md_state(&t);
   static int32_t types[LE_FX_MAX];
@@ -463,25 +483,27 @@ static void test_mode_delay_reenable_is_clean(void) {
   static int32_t enabled[LE_FX_MAX];
   for (int s = 0; s < LE_FX_MAX; ++s) types[s] = LE_FX_NONE;
   types[0] = LE_FX_MODE_DELAY;
-  /* No feedback: one echo at 375 ms, then the quiet the drain waits out. */
   const float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.0f, 0.5f, 0.0f};
   for (int q = 0; q < LE_FX_PARAMS; ++q) params[0][q] = p[q];
-  const int n = 8 * MD_SR;
-  float peak_after = 0.0f;
-  int settled = -1;
-  for (int i = 0; i < n; ++i) {
-    enabled[0] = i < MD_SR / 2 || i >= 7 * MD_SR ? 1 : 0;
+  /* Bypassed long enough to have settled. */
+  enabled[0] = 0;
+  int i = 0;
+  for (; i < 5 * MD_SR; ++i) {
     fx->clock = (uint32_t)i;
     float l = i >= 1000 && i < 1100 ? 0.5f : 0.0f;
     float r = l;
     fx_apply_chain(fx, MD_SR, MD_SR, &l, &r, 1, types, params, enabled);
-    if (settled < 0 && i > MD_SR / 2 && fx->enable_drain[0] == 0) settled = i;
-    if (i >= 7 * MD_SR) peak_after = fmaxf(peak_after, fabsf(l));
   }
-  printf("  drained at %.2f s; after re-enabling: peak %.2e\n",
-         (double)settled / MD_SR, (double)peak_after);
-  CHECK(settled > 4 * MD_SR && settled < 7 * MD_SR); /* its 4 s line */
-  CHECK(peak_after == 0.0f);
+  CHECK(fx->enable_drain[0] == 0);
+  fx->enable_clear_cooldown = 128; /* LE_FX_ENABLE_CLEAR_SPACING */
+  enabled[0] = 1;
+  fx->clock = (uint32_t)i;
+  float l = 0.0f, r = 0.0f;
+  fx_apply_chain(fx, MD_SR, MD_SR, &l, &r, 1, types, params, enabled);
+  CHECK(fx->enable_target[0] == 1);
+  CHECK(fx->enable_mix[0] > 0.0f);
+  /* The spacing ran on by the one sample, not restarted. */
+  CHECK(fx->enable_clear_cooldown == 127);
   le_fx_state_free_buffers(fx);
   free(fx);
 }
@@ -567,7 +589,7 @@ static void run_mode_delay_tests(void) {
   test_mode_delay_taps();
   test_mode_delay_loop_is_bounded();
   test_mode_delay_at_96k();
-  test_mode_delay_reenable_is_clean();
+  test_mode_delay_reenable_skips_the_spacing();
   test_mode_delay_timing_switch_is_clean();
   test_mode_delay_hot_input_unshaped();
   test_mode_delay_drains_its_whole_line();
