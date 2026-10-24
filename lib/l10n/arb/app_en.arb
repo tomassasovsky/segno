@@ -876,6 +876,10 @@
     "@paramOctave1Level": {
         "description": "The level of the Dual Octaver's first octave voice."
     },
+    "paramOctave2Level": "Octave 2 level",
+    "@paramOctave2Level": {
+        "description": "The level of the Dual Octaver's second octave voice."
+    },
     "paramPattern": "Pattern",
     "@paramPattern": {
         "description": "The Slicer's pattern of slices, rests and reversals."

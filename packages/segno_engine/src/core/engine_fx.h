@@ -77,8 +77,10 @@ extern "C" {
  * its last element. */
 #define LE_PV_OUT LE_PV_LATENCY
 /* A frame's state between stages, per channel: the window (reused for the
- * inverse transform), the spectrum, magnitude, true frequency and envelope. */
-#define LE_PV_SCRATCH (LE_PV_N + 5 * LE_PV_BINS)
+ * inverse transform), the spectrum, magnitude, true frequency and envelope;
+ * then a second voice's synthesis spectrum and its running phases (the Dual
+ * Octaver's Octave 2, #1464), which persist from frame to frame. */
+#define LE_PV_SCRATCH (LE_PV_N + 8 * LE_PV_BINS)
 
 /* Analysis-hop stagger (#915). Every octaver instance used to start its hop
  * counter at 0, so all instances ran their four length-LE_PV_N FFTs on the
@@ -377,10 +379,11 @@ int le_fx_type_hops(int32_t type);
 void le_fx_pumper_seed_settled(le_fx_state* fx, int slot, const float* params,
                                int sr);
 /* The octaver settings slot [s] of [type] runs: [params] themselves for the
- * octaver (cells 5 and 6 zero: no cut, a linear mix), the Whammy's pedal and
- * range mapped for the Whammy, and the Dual Octaver's high mode, Octave 1
- * level and mix mapped for it (its cut, and 1 in cell 6: an equal-power
- * mix and a switched shift). [out] holds LE_FX_PARAMS. */
+ * octaver (cells 5 to 7 zero: no cut, a linear mix, no second voice), the
+ * Whammy's pedal and range mapped for the Whammy, and the Dual Octaver's
+ * high mode, Octave 1 level, mix and Octave 2 level mapped for it (its cut,
+ * 1 in cell 6: an equal-power mix, a switched shift and a second voice, and
+ * Octave 2's level in cell 7). [out] holds LE_FX_PARAMS. */
 void le_fx_octaver_settings(int32_t type, const float* params, float* out);
 
 /* Settles chain slot [slot]'s enable-crossfade runtime at fully BYPASSED.

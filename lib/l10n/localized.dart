@@ -58,6 +58,7 @@ extension EngineLocalizations on AppLocalizations {
     'delay_mode' => paramMode,
     'oct_high_mode' => paramHighMode,
     'octave_1_vol' => paramOctave1Level,
+    'octave_2_vol' => paramOctave2Level,
     'decay' => paramDecay,
     'volume' => paramVolume,
     'amb_dub_mix' => paramAmbDubMix,

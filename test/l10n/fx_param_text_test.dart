@@ -93,6 +93,7 @@ const _english = <String, List<String>>{
   'dualOctaver.oct_high_mode': ['Off', 'Off', 'On'],
   'dualOctaver.octave_1_vol': ['0%', '100%', '100%'],
   'dualOctaver.mix': ['0%', '100%', '100%'],
+  'dualOctaver.octave_2_vol': ['0%', '0%', '100%'],
 };
 
 /// The same in Spanish: a decimal comma, and the Spanish mode name.
@@ -184,6 +185,7 @@ const _spanish = <String, List<String>>{
   'dualOctaver.oct_high_mode': ['No', 'No', 'Sí'],
   'dualOctaver.octave_1_vol': ['0%', '100%', '100%'],
   'dualOctaver.mix': ['0%', '100%', '100%'],
+  'dualOctaver.octave_2_vol': ['0%', '0%', '100%'],
 };
 
 void main() {
