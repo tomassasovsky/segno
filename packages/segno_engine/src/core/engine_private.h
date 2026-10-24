@@ -500,7 +500,7 @@ typedef struct le_fx_slice_voice {
   float step;   /* fading out: the gain it loses each frame */
 } le_fx_slice_voice;
 
-/* A slot's Slicer runtime: the slice playing (id 0: none) and the one
+/* A slot's Slicer runtime: the slice playing (id 0: none) and up to two
  * fading out after being cut short, the pattern and step in force (a new
  * one waits for the slice playing to end), the gliding mix, how far the
  * output has crossfaded to the input (an Fd pattern, no tempo) and the
@@ -509,7 +509,7 @@ typedef struct le_fx_slice_state {
   double id;
   double last_beat;
   le_fx_slice_voice cur;
-  le_fx_slice_voice out;
+  le_fx_slice_voice out[2];
   int32_t primed;
   int32_t patt;
   int32_t step;
