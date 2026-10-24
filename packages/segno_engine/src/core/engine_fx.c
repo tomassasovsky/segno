@@ -1179,7 +1179,8 @@ static void le_mdly_clear(struct le_fx_line* line);
 static int32_t le_mdly_frames(const struct le_fx_line* line);
 
 void le_fx_entry_reset(le_fx_state* fx, int slot) {
-  struct le_fx_line* line = __atomic_load_n(&fx->line[slot], __ATOMIC_ACQUIRE);
+  struct le_fx_line* line =
+      atomic_load_explicit(&fx->line[slot], memory_order_acquire);
   if (line != NULL) le_mdly_reset(line);
   for (int chan = 0; chan < 2; ++chan) {
     fx->svf_ic1[slot][chan] = 0.0f;
@@ -1234,7 +1235,8 @@ void le_fx_octaver_seed_settled(le_fx_state* fx, int slot,
 void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap) {
   /* The Mode delay's line reads nothing older than its clear: no zeroing
    * of its seconds of ring on the audio thread. */
-  struct le_fx_line* line = __atomic_load_n(&fx->line[slot], __ATOMIC_ACQUIRE);
+  struct le_fx_line* line =
+      atomic_load_explicit(&fx->line[slot], memory_order_acquire);
   if (line != NULL) le_mdly_clear(line);
   for (int chan = 0; chan < 2; ++chan) {
     if (fx->delay[slot][chan] != NULL) {
@@ -1327,8 +1329,8 @@ void le_fx_free_delay(le_fx_state* fx, int slot) {
   fx->delay[slot][0] = NULL;
   le_rt_free(fx->delay[slot][1]);
   fx->delay[slot][1] = NULL;
-  le_rt_free(fx->line[slot]);
-  fx->line[slot] = NULL;
+  le_rt_free(atomic_load_explicit(&fx->line[slot], memory_order_relaxed));
+  atomic_store_explicit(&fx->line[slot], NULL, memory_order_relaxed);
 }
 
 void le_fx_free_slot(le_fx_state* fx, int slot) {
@@ -1944,7 +1946,7 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
  *   0.750 + 0.116 Feedback, with 0.126 / 0.113 of the other. The timings
  *   were measured on DIGI and RES HI, and are the same on both; the DAMPED
  *   and RESO LO ones are composed from them.
- * What the line holds is kept under full scale with a soft knee, and a 5 Hz
+ * What feeds back is kept under full scale with a soft knee, and a 5 Hz
  * DC blocker sits in the loop: a resonant voicing (or DIGI at DC) at 100 %
  * Feedback would otherwise grow. Its tempo is the live song's, which a
  * print would not keep, so a lane holding one is never printed. */
@@ -2061,7 +2063,9 @@ static void le_mdly_reset(le_fx_line* line) {
 }
 
 static int32_t fx_mode_delay_prepare(le_fx_state* fx, int slot, int cap) {
-  if (fx->line[slot] != NULL) return LE_OK;
+  if (atomic_load_explicit(&fx->line[slot], memory_order_relaxed) != NULL) {
+    return LE_OK;
+  }
   /* LE_MDLY_LINE_S seconds ([cap] is the chain's one-second ring), and a
    * little. */
   const int32_t frames = LE_MDLY_LINE_S * (cap > 0 ? cap : 48000) + 4;
@@ -2071,7 +2075,7 @@ static int32_t fx_mode_delay_prepare(le_fx_state* fx, int slot, int cap) {
   line->cap = frames;
   le_mdly_reset(line);
   /* Published whole: an audio-thread reset of the slot may see it. */
-  __atomic_store_n(&fx->line[slot], line, __ATOMIC_RELEASE);
+  atomic_store_explicit(&fx->line[slot], line, memory_order_release);
   return LE_OK;
 }
 
@@ -2093,7 +2097,8 @@ static inline float le_mdly_read(const le_fx_line* line, int back) {
 static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
                                   float* l, float* r, const float* p) {
   (void)cap;
-  le_fx_line* line = __atomic_load_n(&fx->line[slot], __ATOMIC_ACQUIRE);
+  le_fx_line* line =
+      atomic_load_explicit(&fx->line[slot], memory_order_acquire);
   if (line == NULL) return;
   const int32_t rate = sr > 0 ? sr : 48000;
   int mode = (int)(p[3] * 11.0f + 0.5f);
@@ -2167,18 +2172,17 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
   const float ve = timing != 0 ? le_mdly_bq_run(&line->voice[1], te) : 0.0f;
 
   /* The loop: the on-time echo, voiced, fed back at Feedback, a DC
-   * blocker far under the band (5 Hz: 0.04 dB at 50 Hz), and what the
-   * line holds kept under full scale with a soft knee from 0.8. */
-  const float back = line->fb * line->loop_g *
-                     le_mdly_pole_lp(&line->lp_loop,
-                                     le_mdly_pole_hp(&line->dc, vp));
-  float w = 0.5f * (*l + *r) + back;
-  const float aw = fabsf(w);
-  if (aw > LE_MDLY_KNEE) {
-    const float over = (aw - LE_MDLY_KNEE) / (1.0f - LE_MDLY_KNEE);
-    w = copysignf(LE_MDLY_KNEE + (1.0f - LE_MDLY_KNEE) * tanhf(over), w);
+   * blocker far under the band (5 Hz: 0.04 dB at 50 Hz), and the fed-back
+   * part kept under full scale with a soft knee from 0.8; the input goes
+   * in as it is. */
+  float back = line->fb * line->loop_g *
+               le_mdly_pole_lp(&line->lp_loop, le_mdly_pole_hp(&line->dc, vp));
+  const float ab = fabsf(back);
+  if (ab > LE_MDLY_KNEE) {
+    const float over = (ab - LE_MDLY_KNEE) / (1.0f - LE_MDLY_KNEE);
+    back = copysignf(LE_MDLY_KNEE + (1.0f - LE_MDLY_KNEE) * tanhf(over), back);
   }
-  line->ring[line->pos] = w;
+  line->ring[line->pos] = 0.5f * (*l + *r) + back;
   line->pos = line->pos + 1 >= line->cap ? 0 : line->pos + 1;
   if (line->fill < line->cap) ++line->fill;
 
@@ -5609,7 +5613,9 @@ static inline void fx_run(le_fx_state* fx, int s, int32_t ty, int sr, int cap,
 static int le_fx_holds_tail(const le_fx_state* fx, int s, int32_t type) {
   if (type <= LE_FX_NONE || type >= LE_FX_TYPE_COUNT) return 0;
   if (LE_FX[type].state_size != 0) return (LE_FX[type].flags & LE_FX_F_DRAINS) != 0;
-  if (type == LE_FX_MODE_DELAY) return fx->line[s] != NULL;
+  if (type == LE_FX_MODE_DELAY) {
+    return atomic_load_explicit(&fx->line[s], memory_order_acquire) != NULL;
+  }
   return LE_FX[type].prepare != NULL &&
          (fx->delay[s][0] != NULL || fx->delay[s][1] != NULL);
 }
@@ -5645,6 +5651,8 @@ int le_fx_entry_free_running(int32_t type, const float* p, int sr) {
              ((double)p[1] > le_lpf_osc_reso() || p[2] > 0.0f);
     case LE_FX_PUMPER: /* ducking at all */
       return p[1] > 0.0f;
+    case LE_FX_MODE_DELAY: /* heard (its time is the live tempo's) */
+      return p[2] > 0.0f;
     case LE_FX_SLICER: /* slicing, and heard */
       return p[2] > 0.0f && le_slice_pattern(p[0]) != NULL;
     default:
@@ -5989,15 +5997,15 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
            * (`rkprocess`, the reverbs) skips the ring clear: its cleared
            * block marks every structure unwrapped, so it reads silence
            * until it has written there again. */
-          const int needs_clear = le_fx_holds_tail(fx, s, ty);
+          /* The Mode delay reads only its own line, which the reset
+           * empties at once: no ring to clear, no spacing to wait on, and
+           * any 1 s rings an earlier kind left stay as they are, unread. */
+          const int needs_clear =
+              ty != LE_FX_MODE_DELAY && le_fx_holds_tail(fx, s, ty);
           if (needs_clear && fx->enable_clear_cooldown > 0) goto slot_done;
           le_fx_entry_reset(fx, s);
           if (needs_clear) {
-            /* The Mode delay reads only its own line, which the reset just
-             * emptied: any 1 s rings an earlier kind left stay as they
-             * are, unread. */
-            if (LE_FX[ty].prepare != NULL && LE_FX[ty].rkprocess == NULL &&
-                ty != LE_FX_MODE_DELAY)
+            if (LE_FX[ty].prepare != NULL && LE_FX[ty].rkprocess == NULL)
               le_fx_entry_clear_rings(fx, s, cap);
             fx->enable_clear_cooldown = LE_FX_ENABLE_CLEAR_SPACING;
           }
@@ -6108,9 +6116,12 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
           const int32_t minimum = sr > 0 ? (sr * LE_FX_DRAIN_QUIET_MS) / 1000 : 1;
           int32_t quiet_n = cap > minimum ? cap : minimum;
           /* The Mode delay remembers its own line's length. */
-          if (ty == LE_FX_MODE_DELAY && fx->line[s] != NULL &&
-              le_mdly_frames(fx->line[s]) > quiet_n) {
-            quiet_n = le_mdly_frames(fx->line[s]);
+          const struct le_fx_line* line =
+              ty == LE_FX_MODE_DELAY
+                  ? atomic_load_explicit(&fx->line[s], memory_order_acquire)
+                  : NULL;
+          if (line != NULL && le_mdly_frames(line) > quiet_n) {
+            quiet_n = le_mdly_frames(line);
           }
           if (fx->enable_quiet[s] >= quiet_n) {
             fx->enable_drain[s] = 0;

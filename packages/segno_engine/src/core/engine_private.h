@@ -562,7 +562,7 @@ typedef struct le_fx_state {
   /* The Mode delay's line (fx_mode_delay_process): its own seconds-long
    * ring and runtime, allocated by its prepare for the slots that hold
    * one; NULL elsewhere. */
-  struct le_fx_line* line[LE_FX_MAX];
+  struct le_fx_line *_Atomic line[LE_FX_MAX];
   /* Per-slot enable-crossfade runtime (fx_apply_chain). DSP state — owned by
    * whichever thread runs the chain (the audio thread live; the render thread
    * offline), NOT published config: the published flags live on the chain
