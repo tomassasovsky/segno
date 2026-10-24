@@ -442,6 +442,11 @@ typedef struct le_octaver_state {
   float frame_ratio;
   int32_t frame_formants_move;
   int32_t analysed;
+  /* The second voice's ratio and both voices' levels, read with the frame
+   * (the phase vocoder's synthesis applies the levels; 0 skips voice 2). */
+  float frame_ratio2;
+  float frame_level1;
+  float frame_level2;
 } le_octaver_state;
 
 /* Per-kind DSP state for the kinds that keep it on the heap (#887 part 4).

@@ -330,13 +330,11 @@ const FxModuleBuild _dubDelay = FxModuleBuild(
   path: FxModulePath.dub,
 );
 
-// Ed's Rack: the Dual Octaver's high mode, Octave 1's level and the mix.
-// Its second voice is not built yet (#1464), so Octave 2 Vol stays named
-// and unmapped.
+// Ed's Rack: the whole Dual Octaver, high mode, both octaves' levels and
+// the mix.
 const FxModuleBuild _dualOctaver = FxModuleBuild(
   type: TrackEffectType.dualOctaver,
-  params: ['Oct High Mode', 'Octave 1 Vol', 'Octave Mix'],
-  unmapped: ['Octave 2 Vol'],
+  params: ['Oct High Mode', 'Octave 1 Vol', 'Octave Mix', 'Octave 2 Vol'],
 );
 
 // The seven racks with the Looper X's mode delay: time (a note value),

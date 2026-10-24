@@ -143,6 +143,8 @@ static void dynamics_entry(le_fx_recipe* r, int s, int32_t kind) {
       r->params[s][2] = 0.8f; /* swept by its LFO */
       r->params[s][3] = 0.8f; /* at 1/8 */
     }
+  } else if (kind == LE_FX_DUAL_OCTAVER) {
+    r->params[s][3] = 0.6f; /* both voices: Bass Octave Layer's Octave 2 */
   } else if (kind == LE_FX_MODE_DELAY) {
     r->params[s][0] = 9.0f / 19.0f; /* 1/4 */
     r->params[s][3] = 7.0f / 11.0f; /* RES LO L/R: both taps voiced */

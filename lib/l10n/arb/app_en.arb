@@ -873,6 +873,10 @@
         "description": "The Dual Octaver's octave up (on) or down (off)."
     },
     "paramOctave1Level": "Octave 1 level",
+    "paramOctave2Level": "Octave 2 level",
+    "@paramOctave2Level": {
+        "description": "The level of the Dual Octaver's second octave voice."
+    },
     "@paramOctave1Level": {
         "description": "The level of the Dual Octaver's first octave voice."
     },
