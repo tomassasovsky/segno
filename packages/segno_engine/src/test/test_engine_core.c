@@ -24527,9 +24527,9 @@ static void test_perf_render_wet_octaver_matches_lane_hop_phase(void) {
    * wet, or it would start dry (#1451). */
   const float whammy[4] = {1.0f, 0.0f, 0.0f, 0.0f};
   run_perf_render_octaver_case("wet-whammy", LE_FX_WHAMMY, whammy);
-  /* The Dual Octaver up, Octave 1 at 50 %, half mixed: the render seeds its
-   * mapped level and law, and its switched shift. */
-  const float dual[4] = {1.0f, 0.5f, 0.5f, 0.0f};
+  /* The Dual Octaver down, half mixed: the render seeds its mapped level
+   * and law, and its switched shift. */
+  const float dual[4] = {0.0f, 1.0f, 0.5f, 0.0f};
   run_perf_render_octaver_case("wet-dual-octaver", LE_FX_DUAL_OCTAVER, dual);
 }
 
