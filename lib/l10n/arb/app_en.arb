@@ -864,6 +864,11 @@
     "effectDubVerb": "Dub reverb",
     "effectAmbVerb": "Ambience",
     "effectWhammy": "Whammy",
+    "effectPumper": "Pumper",
+    "noteValueBar": "Bar",
+    "@noteValueBar": {
+        "description": "A note value one bar long, as a tempo-synced rate."
+    },
     "paramFrequency": "Frequency",
     "paramNoise": "Noise",
     "paramNoiseTone": "Noise tone",

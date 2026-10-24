@@ -468,6 +468,8 @@ void main() {
         TrackEffectType.ambVerb: [0.2, 0.4, 0.4],
         // The Guitar Rack's Whammy: heel down, range -12.
         TrackEffectType.whammy: [0.0, 0.0],
+        // The Rhythmic Rack's Pumper: 1/4, 70 %.
+        TrackEffectType.pumper: [0.3, 0.7],
       };
       for (final type in TrackEffectType.values) {
         expect(type.defaultParams, cells(expected[type]!), reason: type.name);

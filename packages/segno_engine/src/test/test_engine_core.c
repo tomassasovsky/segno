@@ -10127,7 +10127,7 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * (#405); 2 = an aborted take logs LE_PLOG_RECORD_ABORT; 1 = it logged a
  * RECORD_END (every capture written before #264). See the format doc's "What
  * `version` means". */
-#define LE_TEST_EVENTS_VERSION 13
+#define LE_TEST_EVENTS_VERSION 14
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {
@@ -20517,7 +20517,7 @@ static void test_fx_params_past_count_are_inert(void) {
                            LE_FX_CHORUS,     LE_FX_WAH,       LE_FX_OVERDRIVE, LE_FX_DISTORTION,
                            LE_FX_VINYL,      LE_FX_DEGRADE,   LE_FX_LPF,
                            LE_FX_SPRING,     LE_FX_DUB_VERB,  LE_FX_AMB_VERB,
-                           LE_FX_WHAMMY};
+                           LE_FX_WHAMMY,     LE_FX_PUMPER};
   for (int t = 0; t < (int)(sizeof(types) / sizeof(types[0])); ++t) {
     le_engine* a = make_configured_engine();
     le_engine* b = make_configured_engine();
@@ -21814,9 +21814,9 @@ static void test_fx_param_descriptors_match_kernels(void) {
 
   /* Counts: the parameters each kernel reads; none for NONE and PLUGIN. */
   const int32_t counts[] = {0, 2, 2, 3, 2, 5, 3, 3, 0, 15, 5, 3,
-                            2, 2, 3, 1, 2, 2, 4, 3, 2, 2, 2, 3, 2};
-  for (int32_t t = 0; t < 25; ++t) CHECK(le_fx_param_count(t) == counts[t]);
-  CHECK(le_fx_param_count(25) == LE_ERR_INVALID);
+                            2, 2, 3, 1, 2, 2, 4, 3, 2, 2, 2, 3, 2, 2};
+  for (int32_t t = 0; t < 26; ++t) CHECK(le_fx_param_count(t) == counts[t]);
+  CHECK(le_fx_param_count(26) == LE_ERR_INVALID);
   CHECK(le_fx_param_count(-1) == LE_ERR_INVALID);
   le_fx_param_desc scratch;
   CHECK(le_fx_param_info(LE_FX_DELAY, 3, &scratch) == LE_ERR_INVALID);
@@ -34956,9 +34956,10 @@ static void test_output_fx_logs_exact_edits_track_fx_stays_manifest_only(void) {
   static unsigned char buf[16384];
   const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
   CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
-  /* Arm + complete Fade images + five output facts: no track FX setter leaks. */
+  /* Arm + the chains' musical time + complete Fade images + five output
+   * facts: no track FX setter leaks. */
   const size_t entries = log_entry_count(n);
-  CHECK(entries == 6 + LE_MAX_TRACKS);
+  CHECK(entries == 7 + LE_MAX_TRACKS);
   const int codes[] = {LE_PLOG_PERF_ARMED, LE_CMD_SET_OUTPUT_FX,
     LE_CMD_SET_OUTPUT_FX_COUNT, LE_PLOG_SET_OUTPUT_FX_PARAM,
     LE_PLOG_SET_OUTPUT_FX_ENABLED, LE_PLOG_SET_OUTPUT_FX_CHAIN_ENABLED};
@@ -38878,6 +38879,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_lofi.h"
 #include "test_engine_verb.h"
 #include "test_engine_rack_paths.h"
+#include "test_engine_rhythmic.h"
 #include "test_engine_fx_publish.h"
 #include "test_engine_bounce.h"
 #include "test_engine_clock.h"
@@ -38965,6 +38967,7 @@ int main(void) {
   run_lofi_tests();
   run_verb_tests();
   run_rack_path_tests();
+  run_rhythmic_tests();
   run_fx_publish_tests();
   run_bounce_tests();
   if (getenv("SEGNO_PEEL_TESTS_ONLY")) return g_failures ? 1 : 0;

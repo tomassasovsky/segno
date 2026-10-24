@@ -475,6 +475,21 @@ typedef struct le_fx_kinds {
  * two stereo banks into the single ring delay[slot][0] (delay[slot][1] stays
  * NULL), reading both banks from xl / xr — see fx_reverb. The rev_* arrays
  * already hold both banks (LE_REV_BANKS == 2) and stay per-slot. */
+/* The musical time an effect chain runs at (#887 part 10, Architecture 7):
+ * the beat, in quarter notes, of FX clock frame [anchor_clock], and the
+ * quarter notes each frame advances, so the beat at clock c is
+ * anchor_beat + (c - anchor_clock) * qpf. The live engine re-anchors it
+ * whenever the beat leaves that line (a loop top, a tempo change) and logs
+ * each anchor (LE_PLOG_FX_TEMPO), so a render sees the same beat at the
+ * same frame. [num]/[den] are the time signature (a bar is num * 4 / den
+ * quarters). With no tempo set the engine runs at 120 BPM. */
+typedef struct le_fx_tempo {
+  uint32_t anchor_clock;
+  double anchor_beat;
+  float qpf;
+  int32_t num, den;
+} le_fx_tempo;
+
 typedef struct le_fx_state {
   /* Octaver hop-stagger seed (#915): this CHAIN's quarter of the octaver
    * hop, in samples (0, 64, 128 or 192). le_engine_create gives each chain
@@ -496,6 +511,10 @@ typedef struct le_fx_state {
    * processors) stays at 0, and its phase then counts from its reset. */
   const _Atomic uint32_t* clock_src;
   uint32_t clock;
+  /* The musical time the chain runs at (le_fx_tempo): the engine's for a
+   * live owner, a render's own for an offline one, NULL for a state nobody
+   * clocks (120 BPM from its clock 0). */
+  const le_fx_tempo* tempo;
   /* 1 when [clock] is set every frame (the offline renders), so the octaver
    * checks its counter against it as a live chain does; 0 for a state
    * nobody clocks. */
@@ -2859,6 +2878,13 @@ struct le_engine {
    * reset reads the frame atomically. */
   uint32_t fx_clock_base;
   _Atomic uint32_t a_fx_frame;
+  /* The chains' musical time (le_fx_tempo), callback-owned: re-anchored by
+   * le_fx_tempo_tick at the top of each frame. fx_tempo_set is 0 until the
+   * first anchor, and fx_tempo_log asks the next tick to log the anchor it
+   * runs on (a performance arm). */
+  le_fx_tempo fx_tempo;
+  int32_t fx_tempo_set;
+  int32_t fx_tempo_log;
 
   /* Latency harness (audio-thread-local + published state). The measurement
    * captures the input-magnitude envelope into lat_buf for a fixed window after

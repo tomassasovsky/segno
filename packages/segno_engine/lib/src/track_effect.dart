@@ -448,7 +448,11 @@ enum TrackEffectType {
   /// The Looper X's Whammy (#1433): the octaver's phase vocoder, fully wet,
   /// shifted by the range times pedal^1.39 with the formants moving; fit to
   /// the Guitar Rack's.
-  whammy(24, 'Whammy');
+  whammy(24, 'Whammy'),
+
+  /// The Looper X's Pumper (#887 part 10): a duck on every note value at the
+  /// song tempo, of the Rhythmic Rack's measured shape.
+  pumper(25, 'Pumper');
 
   const TrackEffectType(this.code, this.label);
 
@@ -1035,6 +1039,25 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.2,
+      ),
+    ],
+    // The Rhythmic Rack's Pumper (#891): the rate a note value (Bar, 1/2,
+    // 1/2T, 1/4, 1/4T, 1/8, 1/8T, 1/16, 1/16T, 1/32, 1/32T), the depth.
+    TrackEffectType.pumper => const [
+      FxParamInfo(
+        key: 'pumper_rate',
+        unit: FxParamUnit.choice,
+        steps: 11,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0.3,
+      ),
+      FxParamInfo(
+        key: 'depth',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.7,
       ),
     ],
     // The Guitar Rack's Whammy (#891): the pedal, and the range (position 0
