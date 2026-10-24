@@ -381,7 +381,7 @@ static int64_t le_render_job_bytes(const le_render_job* j) {
   /* The heap effect states the job prepares: one per lane, track and Mix
    * FX chain (and one transient per print), each entry's rings at most a
    * stereo delay line of fx_delay_frames, or a Mode delay's 4 s mono line
-   * (four rings' worth). */
+   * (two stereo rings' worth). */
   int64_t entries = le_render_ring_entries(&j->mix);
   int64_t states = 1;
   for (int32_t i = 0; i < j->nsrc; ++i) {
