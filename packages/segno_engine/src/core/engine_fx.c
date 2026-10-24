@@ -1621,8 +1621,9 @@ static void fx_pumper_process(le_fx_state* fx, int slot, int sr, int cap,
  *
  * Each slice fixes where it reads when it starts (a distance back, or the
  * point it mirrors about), so a tempo change under a slice does not move
- * it; a slice cut short (a beat that jumps, a setting that changes) fades
- * out over the 4 ms while the next one starts. The source is the slot's
+ * it. A new pattern or step waits for the slice playing to end. A slice
+ * cut short (a beat that jumps) fades out over the 4 ms while the next one
+ * fades in. The source is the slot's
  * delay ring: a slice whose source is not all within it is silent. With
  * the 1 s ring the quarter-step factory presets (a one-step replay) hold
  * above 60 BPM, and Reverse (two 1/16 steps back) above 30 BPM. */
@@ -1635,10 +1636,15 @@ static const char* const LE_SLICE_PATTERNS[20] = {
     "ABcccc", "AAccdd", "AB__dd", "AA__dd", "ABC<", "AB_<", "AA_<",
     "A_B_C<", "AB<<", "<<<<",  NULL,     NULL,   NULL};
 
+/* The pattern position a stored choice value names, 0..19. */
+static int le_slice_index(float v) {
+  const int i = (int)(v * 19.0f + 0.5f);
+  return i < 0 ? 0 : i > 19 ? 19 : i;
+}
+
 /* The pattern a stored choice value names; NULL when not modelled. */
 static const char* le_slice_pattern(float v) {
-  const int i = (int)(v * 19.0f + 0.5f);
-  return LE_SLICE_PATTERNS[i < 0 ? 0 : i > 19 ? 19 : i];
+  return LE_SLICE_PATTERNS[le_slice_index(v)];
 }
 
 /* Each step position's length in quarter notes: 1/4, 1/4T, 1/8, 1/8T,
@@ -1697,6 +1703,7 @@ static float le_slice_read(const float* ring, int cap, int pos,
   } else if (v->mode == LE_SLICE_MIRROR) {
     int n = pos - v->arg;
     if (n < 0) n += cap;
+    if (n > v->len) n = v->len; /* never past the length it was latched for */
     back = 2 * n;
   } else {
     return 0.0f;
@@ -1705,6 +1712,18 @@ static float le_slice_read(const float* ring, int cap, int pos,
   int at = pos - back;
   if (at < 0) at += cap;
   return ring[at];
+}
+
+/* Ends slot [st]'s slice early: it carries on as the voice that fades out
+ * over the 4 ms ([fade] frames), unless a louder one is already fading. */
+static void le_slice_cut(le_fx_slice_state* st, double fade) {
+  if (st->cur.mode != LE_SLICE_SILENT && st->cur.gain > st->out.gain) {
+    st->out = st->cur;
+    st->out.step = st->cur.gain / (float)fade;
+  }
+  st->cur.mode = LE_SLICE_SILENT;
+  st->cur.gain = 0.0f;
+  st->id = 0.0;
 }
 
 static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
@@ -1718,76 +1737,116 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
   ring[1][pos] = in[1];
   fx->delay_pos[slot][0] = pos + 1 >= cap ? 0 : pos + 1;
 
-  const char* pat = le_slice_pattern(p[0]);
-  if (pat == NULL) return; /* not modelled: the input passes */
+  le_fx_slice_state* st = &fx->slice[slot];
+  const double fade4 = LE_SLICE_FADE_S * (double)rate;
+  const float mix_to = p[2] < 0.0f ? 0.0f : p[2] > 1.0f ? 1.0f : p[2];
+  if (!st->primed) {
+    st->primed = 1;
+    st->mix = mix_to;
+    st->patt = le_slice_index(p[0]);
+    st->step = -1;
+    st->pass = LE_SLICE_PATTERNS[st->patt] == NULL ? 1.0f : 0.0f;
+  }
+  /* Mix glides over about 10 ms, so a moving control never steps. */
+  st->mix += (mix_to - st->mix) * (float)(1.0 / (0.010 * (double)rate));
+  /* A new pattern or step waits for the slice playing to end: a setting
+   * change never cuts a slice. */
   int si = (int)(p[1] * 8.0f + 0.5f);
   si = si < 0 ? 0 : si > 8 ? 8 : si;
+  if (st->cur.gain <= 0.0f) {
+    st->patt = le_slice_index(p[0]);
+    st->step = si;
+  }
+  const char* pat = LE_SLICE_PATTERNS[st->patt];
   float qpf;
   int32_t num, den;
   const double beat = le_fx_beat_now(fx, rate, &qpf, &num, &den);
-  if (!(qpf > 0.0f) || !isfinite(beat)) return;
-  const double half_q = LE_SLICE_STEP[si] * 0.5;
-  const double cycle_q = (double)le_slice_cycle(pat) * half_q;
-  const double cycles = floor(beat / cycle_q);
-  const double pos_q = beat - cycles * cycle_q;
-  int index, start, len, first;
-  const char tok =
-      le_slice_token(pat, pos_q / half_q, &index, &start, &len, &first);
-  const double into = pos_q - (double)start * half_q; /* quarter notes */
-  const double fpq = 1.0 / (double)qpf;              /* frames a quarter */
-  const double len_f = (double)len * half_q * fpq;    /* the slice, frames */
-  const double fade_f = fmin(LE_SLICE_FADE_S * (double)rate, 0.5 * len_f);
+  /* Not modelled (the Fd patterns) or no usable tempo: the input passes,
+   * crossfaded to over the 4 ms. */
+  const int passes = pat == NULL || !(qpf > 0.0f) || !isfinite(beat);
+  if (passes) {
+    le_slice_cut(st, fade4);
+  } else if (beat < st->last_beat) {
+    le_slice_cut(st, fade4); /* the beat went back: a new slice */
+  }
+  st->last_beat = passes ? 0.0 : beat;
 
-  le_fx_slice_state* st = &fx->slice[slot];
-  /* Which slice this is (0 is none): its cycle, token and settings. */
-  const double id =
-      1.0 + ((cycles * 32.0 + (double)index) * 20.0 +
-             (double)(p[0] * 19.0f + 0.5f)) * 9.0 + (double)si;
-  if (id != st->id) {
-    /* The slice before fades out over the 4 ms from wherever it was: at
-     * its planned end that is already nothing. */
-    if (st->cur.gain > st->out.gain) {
-      st->out = st->cur;
-      st->out.step = st->cur.gain / (float)(LE_SLICE_FADE_S * (double)rate);
-    }
-    le_fx_slice_voice v = {LE_SLICE_SILENT, 0, 1.0f, 0.0f};
-    if (tok == '<') {
-      /* The step before, backwards: at n frames into the slice, 2n back,
-       * so the whole slice needs twice its length of ring. */
-      if (2.0 * len_f < (double)(cap - 1)) {
-        long n0 = lround(into * fpq);
-        long e = (long)pos - n0;
-        while (e < 0) e += cap;
-        v.mode = LE_SLICE_MIRROR;
-        v.arg = (int32_t)e;
+  if (!passes) {
+    const double half_q = LE_SLICE_STEP[st->step] * 0.5;
+    const double cycle_q = (double)le_slice_cycle(pat) * half_q;
+    const double cycles = floor(beat / cycle_q);
+    const double pos_q = beat - cycles * cycle_q;
+    int index, start, len, first;
+    const char tok =
+        le_slice_token(pat, pos_q / half_q, &index, &start, &len, &first);
+    const double into = pos_q - (double)start * half_q; /* quarter notes */
+    const double fpq = 1.0 / (double)qpf;              /* frames a quarter */
+    const double len_f = (double)len * half_q * fpq;    /* the slice */
+    const double fade_f = fmin(fade4, 0.5 * len_f);
+    /* Which slice this is (0 is none): its cycle, token and settings. */
+    const double id =
+        1.0 + ((cycles * 32.0 + (double)index) * 20.0 + (double)st->patt) *
+                  9.0 +
+        (double)st->step;
+    if (id != st->id) {
+      le_fx_slice_voice v = {LE_SLICE_SILENT, 0, 0, 1.0f, 0.0f};
+      if (tok == '<') {
+        /* The step before, backwards: at n frames into the slice, 2n
+         * back, so the whole slice needs twice its length of ring. */
+        if (2.0 * len_f < (double)(cap - 1)) {
+          const long n0 = lround(into * fpq);
+          long e = (long)pos - n0;
+          while (e < 0) e += cap;
+          v.mode = LE_SLICE_MIRROR;
+          v.arg = (int32_t)e;
+          v.len = (int32_t)ceil(len_f);
+        }
+      } else if (tok != '_') {
+        const double back = (double)(start - first) * half_q * fpq;
+        if (back >= 0.0 && back < (double)cap - 0.5) {
+          v.mode = LE_SLICE_BACK;
+          v.arg = (int32_t)(back + 0.5);
+        }
       }
-    } else if (tok != '_') {
-      const double back = (double)(start - first) * half_q * fpq;
-      if (back >= 0.0 && back < (double)cap - 0.5) {
-        v.mode = LE_SLICE_BACK;
-        v.arg = (int32_t)(back + 0.5);
+      if (st->cur.mode == LE_SLICE_BACK && v.mode == LE_SLICE_BACK &&
+          st->cur.arg == v.arg && st->cur.gain > 0.0f) {
+        /* The same audio from the same point (a live slice into a live
+         * one across a jump): it plays on. */
+        v.gain = st->cur.gain;
+      } else {
+        if (st->cur.gain > 0.0f) le_slice_cut(st, fade4);
+        /* Under a slice fading out, the new one fades in as it fades:
+         * on time, nothing fades and the new slice starts at once. */
+        v.gain = 1.0f - st->out.gain;
       }
+      st->cur = v;
+      st->id = id;
     }
-    st->cur = v;
-    st->id = id;
+    if (st->cur.mode != LE_SLICE_SILENT) {
+      /* The slice's end fades out over 4 ms (half the slice, if shorter);
+       * the gain moves no faster than that either way, so a beat that
+       * jumps or a tempo that changes near the end still fades. */
+      const double left = len_f - into * fpq;
+      const float want = left >= fade_f ? 1.0f
+                         : left > 0.0   ? (float)(left / fade_f)
+                                        : 0.0f;
+      const float d = (float)(1.0 / fade_f);
+      const float g =
+          fminf(fmaxf(want, st->cur.gain - d), st->cur.gain + d);
+      /* A slice that reached its end on time has nothing left to fade
+       * out after its last frame. */
+      st->cur.gain = left > 1.5 || g > want + 1e-3f ? g : 0.0f;
+      st->wet_g = g;
+    } else {
+      st->cur.gain = 0.0f;
+      st->wet_g = 0.0f;
+    }
   }
 
   float wet[2] = {0.0f, 0.0f};
-  if (st->cur.mode != LE_SLICE_SILENT) {
-    /* The slice's end fades out over 4 ms (half the slice, if shorter),
-     * and never faster: a beat that jumps to near its end still fades. */
-    const double left = len_f - into * fpq;
-    const float want = left >= fade_f ? 1.0f
-                       : left > 0.0   ? (float)(left / fade_f)
-                                      : 0.0f;
-    const float g = fmaxf(want, st->cur.gain - (float)(1.0 / fade_f));
-    wet[0] = g * le_slice_read(ring[0], cap, pos, &st->cur);
-    wet[1] = g * le_slice_read(ring[1], cap, pos, &st->cur);
-    /* A slice that reached its end on time has nothing left to fade out
-     * after its last frame. */
-    st->cur.gain = left > 1.5 || g > want + 1e-3f ? g : 0.0f;
-  } else {
-    st->cur.gain = 0.0f;
+  if (st->cur.mode != LE_SLICE_SILENT && !passes) {
+    wet[0] = st->wet_g * le_slice_read(ring[0], cap, pos, &st->cur);
+    wet[1] = st->wet_g * le_slice_read(ring[1], cap, pos, &st->cur);
   }
   if (st->out.gain > 0.0f) {
     st->out.gain -= st->out.step;
@@ -1800,10 +1859,15 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
   }
   /* Mix (#891): 100 % is the slices alone; 50 % keeps the dry whole and
    * adds the slices at half. */
-  const float m = p[2] < 0.0f ? 0.0f : p[2] > 1.0f ? 1.0f : p[2];
+  const float m = st->mix;
   const float dry = m > 0.5f ? 2.0f * (1.0f - m) : 1.0f;
-  *l = in[0] * dry + wet[0] * m;
-  *r = in[1] * dry + wet[1] * m;
+  float o[2] = {in[0] * dry + wet[0] * m, in[1] * dry + wet[1] * m};
+  /* Toward the input when it passes, over the 4 ms. */
+  const float fd_step = (float)(1.0 / fade4);
+  st->pass = passes ? fminf(1.0f, st->pass + fd_step)
+                    : fmaxf(0.0f, st->pass - fd_step);
+  *l = o[0] + st->pass * (in[0] - o[0]);
+  *r = o[1] + st->pass * (in[1] - o[1]);
 }
 
 static void fx_echo_process(le_fx_state* fx, int slot, int sr, int cap, float* l,

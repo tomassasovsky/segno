@@ -45,9 +45,9 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   TrackEffectType.whammy: 0,
   // As the tremolo, which it matches eight for eight on the bench.
   TrackEffectType.pumper: 37,
-  // CI arm64, an eighth of eight in one chain (2.15 us; AB<< at 1/4T, its
-  // reads far back in the ring), x 1.75.
-  TrackEffectType.slicer: 59,
+  // CI arm64, an eighth of eight in one chain (2.5 us, AB<< at 1/4T so its
+  // reads land far back in the ring), x 1.75.
+  TrackEffectType.slicer: 68,
 };
 
 /// What a kind on the hop charges, in microseconds a block: its frame's work
