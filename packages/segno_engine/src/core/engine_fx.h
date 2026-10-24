@@ -367,9 +367,12 @@ void le_fx_octaver_seed_settled(le_fx_state* fx, int slot, const float* params);
 /* Whether [type] runs the octaver's kernel on the hop clock (the octaver and
  * the Whammy): what the prints and caches key the hop phase on. */
 int le_fx_type_hops(int32_t type);
-/* Puts a Pumper slot's depth glide at [params]'s, as a slot that has been
- * running is: what an offline render seeds an arm-time Pumper with. */
-void le_fx_pumper_seed_settled(le_fx_state* fx, int slot, const float* params);
+/* Puts a Pumper slot's depth glide at [params]'s, and its duck at the one
+ * the beat of the frame [fx] is at gives, as a slot that has been running
+ * is: what an offline render seeds a Pumper with, once its tempo and clock
+ * are set. */
+void le_fx_pumper_seed_settled(le_fx_state* fx, int slot, const float* params,
+                               int sr);
 /* The octaver settings slot [s] of [type] runs: [params] themselves for the
  * octaver, the Whammy's pedal and range mapped for the Whammy. [out] holds
  * LE_FX_PARAMS. */

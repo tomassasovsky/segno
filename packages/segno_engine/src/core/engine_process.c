@@ -1058,10 +1058,13 @@ static inline void le_fx_tempo_tick(le_engine* e, uint32_t clock,
   int32_t den = load_i32(&e->a_ts_den);
   if (num <= 0 || num > 255) num = 4;
   if (den <= 0 || den > 255) den = 4;
-  /* A held transport (a loop, nothing playing) pins the position at 0: the
-   * beat runs on its line instead of resetting every frame. */
-  const int loop =
-      !free_or_song && e->clock.length > 0 && !e->transport_held;
+  /* A held transport (a loop, nothing playing) pins the position at 0, and
+   * the latency harness stops it while it owns the frames: in both the beat
+   * runs on its line instead of resetting every frame. (The latch clears at
+   * the end of the first frame played after a hold, so the beat re-anchors
+   * at the second.) */
+  const int loop = !free_or_song && e->clock.length > 0 &&
+                   !e->transport_held && !e->lat_active;
   const float qpf =
       loop && e->grid_total_beats > 0
           ? (float)((double)e->grid_total_beats * 4.0 / (double)den /
