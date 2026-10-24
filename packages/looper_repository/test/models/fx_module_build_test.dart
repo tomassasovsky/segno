@@ -199,17 +199,17 @@ void main() {
 
     test('a parameter the preset says nothing about keeps the engine default, '
         'rather than falling to zero', () {
-      // The catalogue's octaver is two fixed voices with their own levels
-      // where this engine's is one continuously shifted voice, so its shift
-      // has nothing to read. Zero would be two octaves down, which is a sound
-      // nobody asked for.
+      // A preset without Octave 1 Vol keeps the kind's own 100 %, not 0,
+      // which would silence the voice.
       final entry = fxModuleEntry(
         _module('Octaver'),
-        _preset(const {'Oct': 1, 'Octave Mix': 1}),
+        _preset(const {'Oct': 1, 'Oct High Mode': 0, 'Octave Mix': 1}),
       );
-      final engineDefault = BuiltInEffect(type: TrackEffectType.octaver);
+      final engineDefault = BuiltInEffect(type: TrackEffectType.dualOctaver);
 
-      expect(entry.params[0], engineDefault.params[0]);
+      expect(entry.type, TrackEffectType.dualOctaver);
+      expect(entry.params[1], engineDefault.params[1]);
+      expect(entry.params[1], 1.0);
       expect(entry.params[2], 1.0);
     });
 

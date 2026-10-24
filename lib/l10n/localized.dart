@@ -39,6 +39,7 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.pumper => effectPumper,
     TrackEffectType.slicer => effectSlicer,
     TrackEffectType.modeDelay => effectModeDelay,
+    TrackEffectType.dualOctaver => effectDualOctaver,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
@@ -55,6 +56,8 @@ extension EngineLocalizations on AppLocalizations {
     'time' => paramTime,
     'delay_time' => paramTime,
     'delay_mode' => paramMode,
+    'oct_high_mode' => paramHighMode,
+    'octave_1_vol' => paramOctave1Level,
     'decay' => paramDecay,
     'volume' => paramVolume,
     'amb_dub_mix' => paramAmbDubMix,
@@ -171,7 +174,8 @@ extension EngineLocalizations on AppLocalizations {
   /// The name of position [position] of choice parameter [p]: the octaver's
   /// mode or formants, the EQ's layout, the Whammy's range, the Pumper's
   /// rate, the Slicer's pattern or step, the LPF's LFO rate, or the Mode
-  /// delay's time or mode. Any other reads as its 1-based number.
+  /// delay's time or mode, or the Dual Octaver's high mode. Any other reads
+  /// as its 1-based number.
   String _choiceName(FxParamInfo p, int position) =>
       switch ((p.key, position)) {
         ('mode', 0) => octaverModePhaseVocoder,
@@ -187,6 +191,8 @@ extension EngineLocalizations on AppLocalizations {
         ('lfo_rate', final i) => _lfoRates[i],
         ('delay_time', final i) => _delayTimes[i],
         ('delay_mode', final i) => _delayModes[i],
+        ('oct_high_mode', 0) => toggleOff,
+        ('oct_high_mode', _) => toggleOn,
         ('layout', 0) => eqLayoutShelves,
         ('layout', 1) => eqLayoutBellsCuts,
         ('layout', 2) => eqLayoutBells,

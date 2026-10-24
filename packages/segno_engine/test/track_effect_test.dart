@@ -474,6 +474,8 @@ void main() {
         TrackEffectType.slicer: [0.0, 0.5, 1.0],
         // The Looper X's delay: 1/8D, 50 %, 20 %, DIGI.
         TrackEffectType.modeDelay: [8 / 19, 0.5, 0.2, 0.0],
+        // Ed's Rack's Dual Octaver: down, Octave 1 at 100 %, all wet.
+        TrackEffectType.dualOctaver: [0.0, 1.0, 1.0],
       };
       for (final type in TrackEffectType.values) {
         expect(type.defaultParams, cells(expected[type]!), reason: type.name);
@@ -511,15 +513,18 @@ void main() {
       // the Looper X's, and the EQ, dynamics, doubler, wah, vinyl, degrade
       // and low-pass filter are measured (#891, #1445). The controls whose
       // effect is chosen or inferred from one capture carry it: the chorus,
-      // the overdrive's tone (captured at 50 % only) and the distortion
-      // (fit to the Studio Rack's, used for Lo-Fi's too).
+      // the overdrive's tone (captured at 50 % only), the distortion (fit to
+      // the Studio Rack's, used for Lo-Fi's too) and the Dual Octaver's
+      // Octave 1 level (every factory preset sits at 100 %).
       for (final type in TrackEffectType.values) {
         for (final p in type.params) {
           expect(
             p.taperUnverified,
             type == TrackEffectType.chorus ||
                 type == TrackEffectType.distortion ||
-                (type == TrackEffectType.overdrive && p.key == 'tone'),
+                (type == TrackEffectType.overdrive && p.key == 'tone') ||
+                (type == TrackEffectType.dualOctaver &&
+                    p.key == 'octave_1_vol'),
             reason: '${type.name}.${p.key}',
           );
         }

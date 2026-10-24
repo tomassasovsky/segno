@@ -90,6 +90,9 @@ const _english = <String, List<String>>{
   'modeDelay.feedback': ['0%', '50%', '100%'],
   'modeDelay.mix': ['0%', '20%', '100%'],
   'modeDelay.delay_mode': ['DIGI', 'DIGI', 'RES HI GRV'],
+  'dualOctaver.oct_high_mode': ['Off', 'Off', 'On'],
+  'dualOctaver.octave_1_vol': ['0%', '100%', '100%'],
+  'dualOctaver.mix': ['0%', '100%', '100%'],
 };
 
 /// The same in Spanish: a decimal comma, and the Spanish mode name.
@@ -178,6 +181,9 @@ const _spanish = <String, List<String>>{
   'modeDelay.feedback': ['0%', '50%', '100%'],
   'modeDelay.mix': ['0%', '20%', '100%'],
   'modeDelay.delay_mode': ['DIGI', 'DIGI', 'RES HI GRV'],
+  'dualOctaver.oct_high_mode': ['No', 'No', 'Sí'],
+  'dualOctaver.octave_1_vol': ['0%', '100%', '100%'],
+  'dualOctaver.mix': ['0%', '100%', '100%'],
 };
 
 void main() {
