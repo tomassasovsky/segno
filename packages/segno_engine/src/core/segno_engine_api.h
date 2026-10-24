@@ -3643,7 +3643,9 @@ typedef enum le_cache_reason {
                             * lap's render equals live (#941) */
   LE_CACHE_REASON_FREE_RUNNING = 6, /* the print holds a free-running
                                      * modulator (a chorus or doubler LFO,
-                                     * vinyl noise, a degrade's hold), which
+                                     * vinyl noise, a degrade's hold) or a
+                                     * kind on the song's beat (the Pumper,
+                                     * Slicer, swept LPF, Mode delay), which
                                      * sounds different each lap */
 } le_cache_reason;
 

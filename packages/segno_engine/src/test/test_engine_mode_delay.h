@@ -452,6 +452,110 @@ static void test_mode_delay_is_not_printed(void) {
   CHECK(!le_fx_entry_free_running(LE_FX_MODE_DELAY, p, MD_SR));
 }
 
+/* Bypassed until its tail has drained, a Mode delay re-enters clean: the
+ * reset on the re-enable edge empties its line, so no old echo sounds. */
+static void test_mode_delay_reenable_is_clean(void) {
+  printf("test_mode_delay_reenable_is_clean\n");
+  const le_fx_tempo t = rh_tempo(120.0);
+  le_fx_state* fx = md_state(&t);
+  static int32_t types[LE_FX_MAX];
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  static int32_t enabled[LE_FX_MAX];
+  for (int s = 0; s < LE_FX_MAX; ++s) types[s] = LE_FX_NONE;
+  types[0] = LE_FX_MODE_DELAY;
+  /* No feedback: one echo at 375 ms, then the quiet the drain waits out. */
+  const float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.0f, 0.5f, 0.0f};
+  for (int q = 0; q < LE_FX_PARAMS; ++q) params[0][q] = p[q];
+  const int n = 8 * MD_SR;
+  float peak_after = 0.0f;
+  int settled = -1;
+  for (int i = 0; i < n; ++i) {
+    enabled[0] = i < MD_SR / 2 || i >= 7 * MD_SR ? 1 : 0;
+    fx->clock = (uint32_t)i;
+    float l = i >= 1000 && i < 1100 ? 0.5f : 0.0f;
+    float r = l;
+    fx_apply_chain(fx, MD_SR, MD_SR, &l, &r, 1, types, params, enabled);
+    if (settled < 0 && i > MD_SR / 2 && fx->enable_drain[0] == 0) settled = i;
+    if (i >= 7 * MD_SR) peak_after = fmaxf(peak_after, fabsf(l));
+  }
+  printf("  drained at %.2f s; after re-enabling: peak %.2e\n",
+         (double)settled / MD_SR, (double)peak_after);
+  CHECK(settled > 4 * MD_SR && settled < 7 * MD_SR); /* its 4 s line */
+  CHECK(peak_after == 0.0f);
+  le_fx_state_free_buffers(fx);
+  free(fx);
+}
+
+/* The early tap's voicing starts clean when L/R comes back after a spell
+ * of the plain timing: switched in over silence, the right side stays
+ * silent (stale state there would ring out). */
+static void test_mode_delay_timing_switch_is_clean(void) {
+  printf("test_mode_delay_timing_switch_is_clean\n");
+  const le_fx_tempo t = rh_tempo(120.0);
+  le_fx_state* fx = md_state(&t);
+  const int n = 6 * MD_SR;
+  float* x = (float*)calloc((size_t)n, sizeof(float));
+  for (int i = 0; i < MD_SR / 2; ++i) {
+    x[i] = 0.5f * sinf(2.0f * 3.14159265f * 981.0f * (float)i / MD_SR);
+  }
+  float* yl = (float*)malloc(sizeof(float) * (size_t)n);
+  float* yr = (float*)malloc(sizeof(float) * (size_t)n);
+  const float lr[LE_FX_PARAMS] = {md_choice(8, 20), 0.0f, 0.5f,
+                                  md_choice(7, 12)}; /* RES LO L/R */
+  const float plain[LE_FX_PARAMS] = {md_choice(8, 20), 0.0f, 0.5f,
+                                     md_choice(6, 12)}; /* RESO LO */
+  md_run(fx, lr, x, yl, yr, MD_SR / 2 + 100); /* the early tap ringing */
+  static int32_t types[LE_FX_MAX];
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  for (int s = 0; s < LE_FX_MAX; ++s) types[s] = LE_FX_NONE;
+  types[0] = LE_FX_MODE_DELAY;
+  float peak = 0.0f;
+  for (int i = MD_SR / 2 + 100; i < n; ++i) {
+    const float* p = i < 5 * MD_SR ? plain : lr;
+    for (int q = 0; q < LE_FX_PARAMS; ++q) params[0][q] = p[q];
+    fx->clock = (uint32_t)i;
+    float l = x[i];
+    float r = x[i];
+    fx_apply_chain(fx, MD_SR, MD_SR, &l, &r, 1, types, params, NULL);
+    if (i >= 5 * MD_SR) peak = fmaxf(peak, fabsf(r));
+  }
+  printf("  right side after the switch: peak %.2e\n", (double)peak);
+  CHECK(peak < 1e-9f);
+  le_fx_state_free_buffers(fx);
+  free(fx);
+  free(x);
+  free(yl);
+  free(yr);
+}
+
+/* A hot input goes into the line as it is: at Feedback 0 a 0.95 impulse
+ * echoes at its own level (the knee is on what feeds back). */
+static void test_mode_delay_hot_input_unshaped(void) {
+  printf("test_mode_delay_hot_input_unshaped\n");
+  const le_fx_tempo t = rh_tempo(120.0);
+  const int n = MD_SR;
+  float* x = (float*)calloc((size_t)n, sizeof(float));
+  float* y = (float*)malloc(sizeof(float) * (size_t)n);
+  for (int i = 100; i < 4900; ++i) {
+    x[i] = 0.95f * sinf(2.0f * 3.14159265f * 250.0f * (float)i / MD_SR);
+  }
+  const float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.0f, 0.5f, 0.0f};
+  le_fx_state* fx = md_state(&t);
+  md_run(fx, p, x, y, NULL, n);
+  le_fx_state_free_buffers(fx);
+  free(fx);
+  const int period = MD_SR * 375 / 1000;
+  float in_pk = 0.0f, out_pk = 0.0f;
+  for (int i = 1000; i < 4000; ++i) {
+    in_pk = fmaxf(in_pk, fabsf(x[i]));
+    out_pk = fmaxf(out_pk, fabsf(y[i + period]));
+  }
+  printf("  echo %.4f of a %.4f input\n", (double)out_pk, (double)in_pk);
+  CHECK(fabsf(out_pk / in_pk - 1.0f) < 0.01f);
+  free(x);
+  free(y);
+}
+
 static void run_mode_delay_tests(void) {
   test_mode_delay_is_not_printed();
   test_mode_delay_voicings();
@@ -463,5 +567,8 @@ static void run_mode_delay_tests(void) {
   test_mode_delay_taps();
   test_mode_delay_loop_is_bounded();
   test_mode_delay_at_96k();
+  test_mode_delay_reenable_is_clean();
+  test_mode_delay_timing_switch_is_clean();
+  test_mode_delay_hot_input_unshaped();
   test_mode_delay_drains_its_whole_line();
 }
