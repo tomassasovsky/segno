@@ -447,7 +447,10 @@ enum TrackEffectType {
   whammy(24),
 
   /// The Looper X's Pumper (#887 part 10).
-  pumper(25);
+  pumper(25),
+
+  /// The Looper X's Slicer (#887 part 10).
+  slicer(26);
 
   const TrackEffectType(this.code);
 

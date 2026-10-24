@@ -490,6 +490,34 @@ typedef struct le_fx_tempo {
   int32_t num, den;
 } le_fx_tempo;
 
+/* A Slicer voice (fx_slicer_process): what it reads and how loud. */
+enum { LE_SLICE_SILENT = 0, LE_SLICE_BACK = 1, LE_SLICE_MIRROR = 2 };
+typedef struct le_fx_slice_voice {
+  int32_t mode; /* LE_SLICE_* */
+  int32_t arg;  /* BACK: the frames back; MIRROR: the ring index it mirrors */
+  int32_t len;  /* MIRROR: the frames it was latched for */
+  float gain;   /* the gain it last played at */
+  float step;   /* fading out: the gain it loses each frame */
+} le_fx_slice_voice;
+
+/* A slot's Slicer runtime: the slice playing (id 0: none) and up to two
+ * fading out after being cut short, the pattern and step in force (a new
+ * one waits for the slice playing to end), the gliding mix, how far the
+ * output has crossfaded to the input (an Fd pattern, no tempo) and the
+ * beat last seen. */
+typedef struct le_fx_slice_state {
+  double id;
+  double last_beat;
+  le_fx_slice_voice cur;
+  le_fx_slice_voice out[2];
+  int32_t primed;
+  int32_t patt;
+  int32_t step;
+  float mix;
+  float pass;
+  float wet_g; /* the playing slice's gain this frame */
+} le_fx_slice_state;
+
 typedef struct le_fx_state {
   /* Octaver hop-stagger seed (#915): this CHAIN's quarter of the octaver
    * hop, in samples (0, 64, 128 or 192). le_engine_create gives each chain
@@ -529,6 +557,8 @@ typedef struct le_fx_state {
   int32_t rev_comb_pos[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
   float rev_comb_lp[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
   int32_t rev_ap_pos[LE_FX_MAX][LE_REV_APS * LE_REV_BANKS];
+  /* The Slicer's runtime (fx_slicer_process). */
+  le_fx_slice_state slice[LE_FX_MAX];
   /* Per-slot enable-crossfade runtime (fx_apply_chain). DSP state — owned by
    * whichever thread runs the chain (the audio thread live; the render thread
    * offline), NOT published config: the published flags live on the chain

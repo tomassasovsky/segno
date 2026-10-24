@@ -93,7 +93,11 @@ gain = 10^((24v − 12)/20).
   LARGE CHAMBER, SMALL STUDIO, LARGE STUDIO (default), SCORING STAGE,
   PHILHARMONIC, CONCERT HALL, CHURCH, OPERA HOUSE, VINTAGE 1, VINTAGE 2.
 - Slicer pattern (first 11): AABB (default), ABCC, AACD, ABC_, A_C_, A_CC,
-  A._C._, ABcccc, AAccdd, AB_dd, AA_dd.
+  A._C._, ABcccc, AAccdd, AB_dd, AA_dd, as read off the screen. The
+  binary's 20-entry SlicerPattern table spells them AABB, ABCC, AACD, ABC_,
+  A_C_, A_CC, A___C___, ABcccc, AAccdd, AB__dd, AA__dd, ABC<, AB_<, AA_<,
+  A_B_C<, AB<<, <<<<, AABB Fd1, AABB Fd2, AABB Fd3; the screen's font draws
+  runs of underscores short. The Slicer (#1461) uses the binary's spelling.
 - Del Time divisions follow the enum table from the earlier session. The
   default 1/8D gives 375 ms at 120 BPM.
 - Smart Tune at C Major pulls a 1 kHz tone to 988 Hz (B5). With
