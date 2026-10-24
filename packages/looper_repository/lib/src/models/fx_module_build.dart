@@ -171,15 +171,6 @@ const Map<String, FxModuleBuild> kFxModuleBuilds = {
       'Rev Tail/ER',
     ],
   ),
-  // p0 shift, p1 tone, p2 mix, p3 mode, p4 formants. Only the mix has a
-  // preset key: the catalogue's octaver is two fixed voices with their own
-  // levels, where this engine's is one continuously shifted voice, so its
-  // shift has nothing to read and keeps the engine default.
-  'Octaver': FxModuleBuild(
-    type: TrackEffectType.octaver,
-    params: [null, null, 'Octave Mix'],
-    unmapped: ['Oct High Mode', 'Octave 1 Vol', 'Octave 2 Vol'],
-  ),
 };
 
 /// What a rack control applies at each setting (see
@@ -287,6 +278,7 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Whammy': {'Guitar Rack': _whammy},
   'Pumper': {'Rhythmic Rack': _pumper},
   'Slicer': {'Rhythmic Rack': _slicer},
+  'Octaver': {"Ed's Rack": _dualOctaver},
   'Delay': {
     "Ed's Rack": _modeDelay,
     'Drum Rack': _drumDelay,
@@ -336,6 +328,15 @@ const FxModuleBuild _dubDelay = FxModuleBuild(
   unmapped: ['Del Damp', 'Del L/R Ratio', 'Del Res-Freq', 'Del Reso'],
   fixed: {2: 100},
   path: FxModulePath.dub,
+);
+
+// Ed's Rack: the Dual Octaver's high mode, Octave 1's level and the mix.
+// Its second voice is not built yet (#1464), so Octave 2 Vol stays named
+// and unmapped.
+const FxModuleBuild _dualOctaver = FxModuleBuild(
+  type: TrackEffectType.dualOctaver,
+  params: ['Oct High Mode', 'Octave 1 Vol', 'Octave Mix'],
+  unmapped: ['Octave 2 Vol'],
 );
 
 // The seven racks with the Looper X's mode delay: time (a note value),

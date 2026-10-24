@@ -429,6 +429,7 @@ typedef struct le_octaver_state {
   float sm_shift;
   float sm_tone;
   float sm_mix;
+  float sm_level; /* the wet voice's level (the Dual Octaver's Octave 1 Vol) */
   int32_t cur_mode; /* 0 = phase vocoder, 1 = PSOLA */
   float xfade;      /* equal-power gain-dip envelope during a mode switch (1 = steady) */
   /* The hop split's frame state (LE_PV_SCRATCH floats, engine_fx.h; PSOLA's

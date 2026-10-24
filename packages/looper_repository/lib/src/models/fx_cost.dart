@@ -45,6 +45,7 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   TrackEffectType.ambVerb: 167,
   // On the hop, as the octaver whose kernel it runs ([kFxHopCostUs]).
   TrackEffectType.whammy: 0,
+  TrackEffectType.dualOctaver: 0,
   // As the tremolo, which it matches eight for eight on the bench.
   TrackEffectType.pumper: 37,
   // CI arm64, an eighth of eight in one chain (2.5 us, AB<< at 1/4T so its
@@ -65,6 +66,8 @@ const Map<TrackEffectType, double> kFxHopCostUs = {
   // The octaver's phase vocoder, its settings mapped; CI measures the two
   // alike (41 against 40 us alone).
   TrackEffectType.whammy: 69,
+  // The octaver's phase vocoder, one voice, its settings mapped.
+  TrackEffectType.dualOctaver: 69,
 };
 
 /// The octaver in PSOLA mode (its mode setting at 1), per block.
