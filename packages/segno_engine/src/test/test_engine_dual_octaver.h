@@ -78,8 +78,10 @@ static void test_dual_octaver_matches_the_capture(void) {
 }
 
 /* High mode is a switch: flipped under a tone, the voice dips out and comes
- * back an octave pair away, never sweeping through the octaves between
- * (no energy at unison, 1 kHz, on the way). */
+ * back an octave pair away, never sweeping through the octaves between. The
+ * shift the vocoder runs at is only ever one octave down or up once the
+ * start's dip is over, and nothing between 600 and 1800 Hz sounds across
+ * the switch (a glide put -14 dB at 1750 Hz there). */
 static void test_dual_octaver_mode_switch_does_not_sweep(void) {
   printf("test_dual_octaver_mode_switch_does_not_sweep\n");
   le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
@@ -94,6 +96,7 @@ static void test_dual_octaver_mode_switch_does_not_sweep(void) {
   types[0] = LE_FX_DUAL_OCTAVER;
   const int n = DO_SR;
   float* y = (float*)malloc(sizeof(float) * (size_t)n);
+  int between = 0;
   for (int i = 0; i < n; ++i) {
     params[0][0] = i < n / 2 ? 0.0f : 1.0f;
     params[0][1] = 1.0f;
@@ -103,14 +106,22 @@ static void test_dual_octaver_mode_switch_does_not_sweep(void) {
     float r = l;
     fx_apply_chain(fx, DO_SR, DO_SR, &l, &r, 1, types, params, NULL);
     y[i] = l;
+    const float sh = fx->oct[0][0].sm_shift;
+    if (i > DO_SR / 10 && sh != 0.25f && sh != 0.75f) ++between;
   }
   le_fx_state_free_buffers(fx);
   free(fx);
-  /* Around the switch (and the vocoder's latency after it). */
-  const double through = 20.0 * log10(do_amp(y + n / 2, n / 10, 1000.0) /
-                                      0.2512 + 1e-12);
-  printf("  1 kHz across the switch: %+5.1f dB\n", through);
-  CHECK(through < -30.0);
+  CHECK(between == 0);
+  /* The worst 25 Hz bin from 600 to 1800 Hz over the 50 ms after the
+   * switch (and the vocoder's latency). */
+  double worst = -200.0;
+  for (double hz = 600.0; hz <= 1800.0; hz += 25.0) {
+    const double db =
+        20.0 * log10(do_amp(y + n / 2, DO_SR / 20, hz) / 0.2512 + 1e-12);
+    if (db > worst) worst = db;
+  }
+  printf("  600-1800 Hz across the switch: worst %+5.1f dB\n", worst);
+  CHECK(worst < -30.0);
   free(y);
 }
 
