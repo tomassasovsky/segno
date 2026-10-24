@@ -918,6 +918,27 @@ static void test_slicer_reverse_ends_with_its_source(void) {
   free(fx);
   free(in);
   free(o);
+  /* Six times slower at 1/8: the slice outlasts the 1 s ring, and stays
+   * silent past it rather than starting again on the newer audio. */
+  {
+    const int st8 = RH_SR / 4; /* 1/8 at 120 BPM */
+    const int m = 2 * st8 + 3 * RH_SR / 2;
+    le_fx_tempo t2 = rh_tempo(120.0);
+    const float p8[LE_FX_PARAMS] = {rh_patt(16), rh_step(2), 1.0f};
+    le_fx_state* fx2 = rh_slicer_at(&t2, RH_SR);
+    float* in2 = (float*)malloc(sizeof(float) * (size_t)m);
+    float* o2 = (float*)malloc(sizeof(float) * (size_t)m);
+    for (int i = 0; i < m; ++i) in2[i] = 0.5f;
+    rh_slice_run_at(fx2, RH_SR, p8, in2, o2, m, &t2, st8 + 10, 0.0, 20.0f);
+    float late = 0.0f;
+    for (int i = st8 + RH_SR / 2; i < m; ++i) late = fmaxf(late, fabsf(o2[i]));
+    CHECK(o2[st8 + st8 / 2] != 0.0f); /* the slice played */
+    CHECK(late == 0.0f);               /* and never came back */
+    le_fx_state_free_buffers(fx2);
+    free(fx2);
+    free(in2);
+    free(o2);
+  }
 }
 
 static void run_rhythmic_tests(void) {

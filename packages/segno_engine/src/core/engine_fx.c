@@ -1762,8 +1762,10 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
     st->mix = mix_to;
   }
   /* Mix glides over about 10 ms, so a moving control never steps. */
-  st->mix += (mix_to - st->mix) * (float)(1.0 / (0.010 * (double)rate));
-  if (fabsf(mix_to - st->mix) < 1e-5f) st->mix = mix_to;
+  const float mix_next =
+      st->mix + (mix_to - st->mix) * (float)(1.0 / (0.010 * (double)rate));
+  /* Landing once a step no longer moves it. */
+  st->mix = mix_next == st->mix ? mix_to : mix_next;
   /* A new pattern or step waits for the slice playing to end: a setting
    * change never cuts a slice. */
   int si = (int)(p[1] * 8.0f + 0.5f);
@@ -1843,12 +1845,14 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
        * the gain moves no faster than that either way, so a beat that
        * jumps or a tempo that changes near the end still fades. */
       double left = len_f - into * fpq;
+      int src_out = 0;
       if (st->cur.mode == LE_SLICE_MIRROR) {
         /* A reversed slice ends where its latched source does, should the
-         * tempo drop under it. */
+         * tempo drop under it; once that has run out it stays silent. */
         int n = pos - st->cur.arg;
         if (n < 0) n += cap;
         left = fmin(left, (double)(st->cur.len - n));
+        src_out = st->cur.len - n <= 0;
       }
       const float want = left >= fade_f ? 1.0f
                          : left > 0.0   ? (float)(left / fade_f)
@@ -1862,6 +1866,7 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
        * out after its last frame. */
       st->cur.gain = left > 1.5 || g > want + 1e-3f ? g : 0.0f;
       st->wet_g = g;
+      if (src_out && st->cur.gain <= 0.0f) st->cur.mode = LE_SLICE_SILENT;
     } else {
       st->cur.gain = 0.0f;
       st->wet_g = 0.0f;
