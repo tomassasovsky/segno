@@ -1118,6 +1118,38 @@ void main() {
       );
     });
 
+    test("Ed's Octaver copies high mode, Octave 1 and the mix", () {
+      // Bass Octave Layer, with high mode on: Octave 2 (60 %) waits for
+      // its voice (#1464), named and unmapped.
+      final e = fxModuleEntry(
+        _module('Octaver'),
+        const FxPreset(
+          family: "Ed's Rack",
+          name: 'Bass Octave Layer',
+          id: 'b',
+          type: 0,
+          params: {
+            'Oct': 1,
+            'Oct High Mode': 1,
+            'Octave 1 Vol': 1,
+            'Octave 2 Vol': 0.6,
+            'Octave Mix': 1,
+          },
+        ),
+      );
+      expect(e.type, TrackEffectType.dualOctaver);
+      expect(e.params.take(3), [1.0, 1.0, 1.0]);
+      final build = fxEntryBuild(e)!;
+      expect(build.readiness, FxModuleReadiness.partial);
+      expect(build.unmapped, ['Octave 2 Vol']);
+      expect(build.exposed, [0, 1, 2]);
+      expect(fxEntryControls(e).keys, [
+        'oct_high_mode',
+        'octave_1_vol',
+        'mix',
+      ]);
+    });
+
     test("the Rhythmic Rack's Slicer copies pattern, step and mix", () {
       final e = fxModuleEntry(
         _module('Slicer'),

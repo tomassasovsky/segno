@@ -1044,16 +1044,20 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
 
   /* Zipper-free param smoothing (~5 ms one-pole; cap == sample rate). */
   const float sc = 1.0f / (0.005f * (float)cap);
-  o->sm_shift += sc * (p[0] - o->sm_shift);
+  /* The Dual Octaver's shift is a switch (p6): it changes in the gain dip
+   * below, never through a glide (which would sweep two octaves). */
+  const int dual = p[6] >= 0.5f;
+  if (!dual) o->sm_shift += sc * (p[0] - o->sm_shift);
   o->sm_tone += sc * (p[1] - o->sm_tone);
   o->sm_mix += sc * (p[2] - o->sm_mix);
-  o->sm_level += sc * (p[5] - o->sm_level);
+  o->sm_level += sc * ((1.0f - p[5]) - o->sm_level);
 
   /* Mode switch (D1): equal-power gain dip, ~15 ms per leg — fade the wet out,
    * reset the DSP runtime at the bottom, then fade back in on the new mode. */
   const int requested = p[3] >= 0.5f ? 1 : 0;
   const float xstep = 1.0f / (0.015f * (float)cap);
-  if (requested != o->cur_mode) {
+  const int shift_jump = dual && o->sm_shift != p[0];
+  if (requested != o->cur_mode || shift_jump) {
     o->xfade -= xstep;
     if (o->xfade <= 0.0f) {
       o->xfade = 0.0f;
@@ -1063,6 +1067,7 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
        * and move it off the instance's quarter. */
       const int ticks = le_oct_ticks_to_work(o);
       o->cur_mode = requested;
+      o->sm_shift = dual ? p[0] : o->sm_shift;
       le_pv_reset_runtime(fx, slot, chan, ticks);
     }
   } else if (o->xfade < 1.0f) {
@@ -1093,8 +1098,13 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
   const float g = sinf(o->xfade * 0.5f * LE_PI);
   const float mix = o->sm_mix;
   const float wet_out = g * lp * o->sm_level;
-  if (p[6] >= 0.5f) { /* an equal-power mix */
-    return dry * cosf(mix * 0.5f * LE_PI) + wet_out * sinf(mix * 0.5f * LE_PI);
+  if (dual) { /* an equal-power mix, its gains kept until the mix moves */
+    if (mix != o->ep_mix) {
+      o->ep_mix = mix;
+      o->ep_dry = cosf(mix * 0.5f * LE_PI);
+      o->ep_wet = sinf(mix * 0.5f * LE_PI);
+    }
+    return dry * o->ep_dry + wet_out * o->ep_wet;
   }
   return dry * (1.0f - mix) + wet_out * mix;
 }
@@ -1198,6 +1208,7 @@ void le_fx_entry_reset(le_fx_state* fx, int slot) {
     o->sm_tone = 0.0f;
     o->sm_mix = 0.0f; /* starts dry, so the param ramp-in is inaudible */
     o->sm_level = 1.0f;
+    o->ep_mix = -1.0f; /* the equal-power gains are computed at first use */
     o->cur_mode = 0;  /* phase vocoder */
     o->xfade = 1.0f;  /* steady (no gain dip) */
     le_pv_reset_runtime(fx, slot, chan, le_oct_seeded_ticks(fx, slot));
@@ -1224,7 +1235,7 @@ void le_fx_octaver_seed_settled(le_fx_state* fx, int slot,
     o->sm_shift = params[0];
     o->sm_tone = params[1];
     o->sm_mix = params[2];
-    o->sm_level = params[5];
+    o->sm_level = 1.0f - params[5];
     o->xfade = 1.0f; /* steady: no gain dip on the first sample */
     if (mode != o->cur_mode) {
       /* Land on the requested mode without fx_octaver's ~15 ms dip, and
@@ -1467,7 +1478,10 @@ static void fx_tremolo_process(le_fx_state* fx, int slot, int sr, int cap,
   *l = fx_tremolo(fx, slot, 0, sr, *l, p);
   *r = fx_tremolo(fx, slot, 1, sr, *r, p);
 }
-/* The octaver's kernel on its seven settings (le_fx_octaver_settings). */
+/* The octaver's kernel on its seven settings (le_fx_octaver_settings):
+ * shift, tone, mix, mode, formants, the wet voice's cut (0: none, so a
+ * zeroed tail is the plain octaver) and 1 for the Dual Octaver (an
+ * equal-power mix and a switched shift) or 0. */
 static void fx_octaver_run(le_fx_state* fx, int slot, int cap, float* l,
                            float* r, const float* q) {
   *l = fx_octaver(fx, slot, 0, cap, *l, q);
@@ -1477,7 +1491,7 @@ static void fx_octaver_run(le_fx_state* fx, int slot, int cap, float* l,
 static void fx_octaver_process(le_fx_state* fx, int slot, int sr, int cap,
                                float* l, float* r, const float* p) {
   (void)sr;
-  const float q[7] = {p[0], p[1], p[2], p[3], p[4], 1.0f, 0.0f};
+  const float q[7] = {p[0], p[1], p[2], p[3], p[4], 0.0f, 0.0f};
   fx_octaver_run(fx, slot, cap, l, r, q);
 }
 
@@ -1518,14 +1532,14 @@ static void le_doct_settings(const float* p, float* out) {
   out[2] = p[2] < 0.0f ? 0.0f : p[2] > 1.0f ? 1.0f : p[2];
   out[3] = 0.0f; /* the phase vocoder */
   out[4] = 1.0f; /* the formants move with the pitch */
-  out[5] = vol * (high ? LE_DOCT_UP_LEVEL : LE_DOCT_DOWN_LEVEL);
-  out[6] = 1.0f; /* equal power */
+  out[5] = 1.0f - vol * (high ? LE_DOCT_UP_LEVEL : LE_DOCT_DOWN_LEVEL);
+  out[6] = 1.0f; /* the Dual Octaver: equal power, a switched shift */
 }
 
 void le_fx_octaver_settings(int32_t type, const float* params, float* out) {
   for (int k = 0; k < LE_FX_PARAMS; ++k) out[k] = params[k];
-  out[5] = 1.0f; /* the wet voice at its own level */
-  out[6] = 0.0f; /* a linear mix */
+  out[5] = 0.0f; /* the wet voice's cut: none */
+  out[6] = 0.0f; /* the plain octaver: a linear mix, a gliding shift */
   if (type == LE_FX_DUAL_OCTAVER) {
     le_doct_settings(params, out);
     return;
@@ -1542,7 +1556,7 @@ static void fx_whammy_process(le_fx_state* fx, int slot, int sr, int cap,
                               float* l, float* r, const float* p) {
   (void)sr;
   /* The seven settings the octaver's kernel reads (le_fx_octaver_settings). */
-  const float q[7] = {le_whammy_shift(p), 1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f};
+  const float q[7] = {le_whammy_shift(p), 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f};
   fx_octaver_run(fx, slot, cap, l, r, q);
 }
 
