@@ -495,16 +495,27 @@ enum { LE_SLICE_SILENT = 0, LE_SLICE_BACK = 1, LE_SLICE_MIRROR = 2 };
 typedef struct le_fx_slice_voice {
   int32_t mode; /* LE_SLICE_* */
   int32_t arg;  /* BACK: the frames back; MIRROR: the ring index it mirrors */
+  int32_t len;  /* MIRROR: the frames it was latched for */
   float gain;   /* the gain it last played at */
   float step;   /* fading out: the gain it loses each frame */
 } le_fx_slice_voice;
 
-/* A slot's Slicer runtime: the slice playing (0 none) and the one fading
- * out after being cut short. */
+/* A slot's Slicer runtime: the slice playing (id 0: none) and the one
+ * fading out after being cut short, the pattern and step in force (a new
+ * one waits for the slice playing to end), the gliding mix, how far the
+ * output has crossfaded to the input (an Fd pattern, no tempo) and the
+ * beat last seen. */
 typedef struct le_fx_slice_state {
   double id;
+  double last_beat;
   le_fx_slice_voice cur;
   le_fx_slice_voice out;
+  int32_t primed;
+  int32_t patt;
+  int32_t step;
+  float mix;
+  float pass;
+  float wet_g; /* the playing slice's gain this frame */
 } le_fx_slice_state;
 
 typedef struct le_fx_state {

@@ -432,8 +432,8 @@ static float rh_step(int k) { return (float)k / 8.0f; }
 
 
 /* The Slicer's output on [in] (both channels, the right inverted) for [n]
- * frames from clock 0 at [sr], with the tempo [t] (which the caller may
- * change through [hook] at frame [at]). */
+ * frames from clock 0 at [sr], on the tempo [t]: at frame [at], the beat
+ * moves by [jump] and the tempo becomes [bpm]. */
 static void rh_slice_run_at(le_fx_state* fx, int sr, const float* p3,
                             const float* in, float* out, int n,
                             le_fx_tempo* t, int at, double jump, float bpm) {
@@ -743,6 +743,89 @@ static void test_slicer_at_96k(void) {
   free(o);
 }
 
+/* The Slicer at 120 BPM on [in], its settings [a] until frame [at] and [b]
+ * from there (and, from frame [back], its beat back at 0). */
+static void rh_slice_sched(const float* a, const float* b, int at, int back,
+                           const float* in, float* out, int n) {
+  le_fx_tempo t = rh_tempo(120.0);
+  le_fx_state* fx = rh_slicer_at(&t, RH_SR);
+  static int32_t types[LE_FX_MAX];
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  for (int k = 0; k < LE_FX_MAX; ++k) types[k] = LE_FX_NONE;
+  types[0] = LE_FX_SLICER;
+  for (int i = 0; i < n; ++i) {
+    for (int q = 0; q < LE_FX_PARAMS; ++q) params[0][q] = i < at ? a[q] : b[q];
+    if (i == back) {
+      t.anchor_clock = (uint32_t)i;
+      t.anchor_beat = 0.0;
+    }
+    fx->clock = (uint32_t)i;
+    float l = in[i];
+    float r = in[i];
+    fx_apply_chain(fx, RH_SR, RH_SR, &l, &r, 1, types, params, NULL);
+    out[i] = l;
+  }
+  le_fx_state_free_buffers(fx);
+  free(fx);
+}
+
+/* A beat that jumps from one live slice into another (a loop top back to
+ * A from B) fades the old out as the new one fades in: never louder than
+ * the input. */
+static void test_slicer_cut_never_doubles(void) {
+  printf("test_slicer_cut_never_doubles\n");
+  const int step = RH_SR / 8;
+  const int n = 4 * step;
+  float* in = (float*)malloc(sizeof(float) * (size_t)n);
+  float* o = (float*)malloc(sizeof(float) * (size_t)n);
+  for (int i = 0; i < n; ++i) in[i] = 0.5f;
+  const float p[LE_FX_PARAMS] = {rh_patt(0), rh_step(4), 1.0f};
+  rh_slice_sched(p, p, n, 2 * step + step / 2, in, o, n); /* B, then A */
+  float peak = 0.0f;
+  for (int i = 2 * step; i < 3 * step; ++i) peak = fmaxf(peak, fabsf(o[i]));
+  printf("  peak across the jump %.4f (input 0.5)\n", (double)peak);
+  CHECK(peak <= 0.5f + 1e-4f);
+  free(in);
+  free(o);
+}
+
+/* A new pattern waits for the slice playing to end: AABB turned to A_C_
+ * half way through A plays A out, then A_C_'s rest. A pattern that is
+ * not modelled then crossfades to the input over 4 ms; a moving mix
+ * glides. */
+static void test_slicer_settings_wait_for_the_slice(void) {
+  printf("test_slicer_settings_wait_for_the_slice\n");
+  const int step = RH_SR / 8;
+  const int n = 3 * step;
+  float* in = (float*)malloc(sizeof(float) * (size_t)n);
+  float* o = (float*)malloc(sizeof(float) * (size_t)n);
+  for (int i = 0; i < n; ++i) in[i] = (float)i / (float)RH_SR;
+  const float aabb[LE_FX_PARAMS] = {rh_patt(0), rh_step(4), 1.0f};
+  const float acac[LE_FX_PARAMS] = {rh_patt(4), rh_step(4), 1.0f};
+  rh_slice_sched(aabb, acac, step / 2, -1, in, o, n);
+  CHECK(rh_is_frame(o[step - step / 4], step - step / 4, 0.5)); /* A on */
+  CHECK(o[step + step / 2] == 0.0f); /* A_C_'s rest, not AABB's replay */
+  const float fd[LE_FX_PARAMS] = {rh_patt(17), rh_step(4), 1.0f};
+  rh_slice_sched(aabb, fd, step / 2, -1, in, o, n);
+  CHECK(rh_is_frame(o[step - step / 4], step - step / 4, 0.5)); /* A on */
+  const int fade = 4 * RH_SR / 1000;
+  CHECK(o[step + fade / 2] < 0.75f * in[step + fade / 2]); /* crossfading */
+  CHECK(o[step + fade / 2] > 0.25f * in[step + fade / 2]);
+  CHECK(o[step + fade + 2] == in[step + fade + 2]); /* then the input */
+  const float dry[LE_FX_PARAMS] = {rh_patt(0), rh_step(4), 0.0f};
+  /* In A's replay, where the slice (one step back) and the dry differ by
+   * 0.125: unglided, that is the step. */
+  rh_slice_sched(aabb, dry, step + step / 2, -1, in, o, n);
+  float worst = 0.0f;
+  for (int i = step + step / 2; i < step + step / 2 + RH_SR / 50; ++i) {
+    worst = fmaxf(worst, fabsf(o[i] - o[i - 1]));
+  }
+  printf("  mix 100 %% to 0 %%: largest step %.5f\n", (double)worst);
+  CHECK(worst < 0.001f);
+  free(in);
+  free(o);
+}
+
 static void run_rhythmic_tests(void) {
   test_pumper_matches_the_capture();
   test_pumper_rates_and_depths();
@@ -763,4 +846,6 @@ static void run_rhythmic_tests(void) {
   test_slicer_ring_limit();
   test_slicer_tempo_change_and_cut();
   test_slicer_at_96k();
+  test_slicer_cut_never_doubles();
+  test_slicer_settings_wait_for_the_slice();
 }
