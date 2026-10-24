@@ -460,6 +460,8 @@
     "effectAmbVerb": "Ambiente",
     "effectWhammy": "Whammy",
     "effectPumper": "Pumper",
+    "paramLfoDepth": "Profundidad del LFO",
+    "paramLfoRate": "Velocidad del LFO",
     "noteValueBar": "Compás",
     "paramFrequency": "Frecuencia",
     "paramNoise": "Ruido",
