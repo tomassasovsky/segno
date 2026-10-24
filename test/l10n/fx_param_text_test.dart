@@ -81,6 +81,9 @@ const _english = <String, List<String>>{
   'whammy.whammy_range': ['-1 oct', '-1 oct', '+1 oct'],
   'pumper.pumper_rate': ['Bar', '1/4', '1/32T'],
   'pumper.depth': ['0%', '70%', '100%'],
+  'slicer.slicer_pattern': ['AABB', 'AABB', 'AABB Fd3'],
+  'slicer.slicer_step': ['1/4', '1/16', '1/64'],
+  'slicer.mix': ['0%', '100%', '100%'],
 };
 
 /// The same in Spanish: a decimal comma, and the Spanish mode name.
@@ -160,6 +163,9 @@ const _spanish = <String, List<String>>{
   'whammy.whammy_range': ['-1 oct', '-1 oct', '+1 oct'],
   'pumper.pumper_rate': ['Compás', '1/4', '1/32T'],
   'pumper.depth': ['0%', '70%', '100%'],
+  'slicer.slicer_pattern': ['AABB', 'AABB', 'AABB Fd3'],
+  'slicer.slicer_step': ['1/4', '1/16', '1/64'],
+  'slicer.mix': ['0%', '100%', '100%'],
 };
 
 void main() {

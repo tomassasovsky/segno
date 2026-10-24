@@ -24,10 +24,10 @@ void main() {
       // module is shown and processes nothing. The accepted design forbids
       // substituting another effect and calling that parity.
       expect(
-        fxModuleBuild(_module('Slicer')).readiness,
+        fxModuleBuild(_module('Smart tune')).readiness,
         FxModuleReadiness.unavailable,
       );
-      expect(fxModuleBuild(_module('Slicer')).type, isNull);
+      expect(fxModuleBuild(_module('Smart tune')).type, isNull);
 
       expect(
         [
@@ -38,7 +38,6 @@ void main() {
         [
           'Amp',
           'Modulation',
-          'Slicer',
           'Harmonizer',
           'Smart tune',
         ],
@@ -118,6 +117,7 @@ void main() {
           'Pitch Shift',
           'Pumper',
           'Reverb',
+          'Slicer',
           'Spring Reverb',
           'Transient',
           'Vinyl',
@@ -205,8 +205,8 @@ void main() {
       // A rack is what the player loaded, not what this build can run — so
       // the pedal is there, and it is a passthrough rather than absent.
       final entry = fxModuleEntry(
-        _module('Slicer'),
-        _preset(const {'Slicer': 1, 'Slic Mix': 0.8}),
+        _module('Smart tune'),
+        _preset(const {'Smart Tune': 1}),
       );
 
       expect(entry.type, TrackEffectType.none);
@@ -1100,6 +1100,35 @@ void main() {
           null,
           null,
         ],
+      );
+    });
+
+    test("the Rhythmic Rack's Slicer copies pattern, step and mix", () {
+      final e = fxModuleEntry(
+        _module('Slicer'),
+        const FxPreset(
+          family: 'Rhythmic Rack',
+          name: 'Reverse',
+          id: 'r',
+          type: 0,
+          params: {
+            'Slicer': 1,
+            'Slic Patt': 0.8421052694320679,
+            'Slic Step Len': 0.5,
+            'Slic Mix': 1,
+          },
+        ),
+      );
+
+      expect(e.type, TrackEffectType.slicer);
+      expect(e.enabled, isTrue);
+      expect(e.params[1], 0.5);
+      expect(e.params[2], 1);
+      // Position 16 of 20: <<<<, the factory Reverse.
+      expect(e.type.params[0].positionOf(e.params[0]), 16);
+      expect(
+        fxModuleBuild(_module('Slicer')).readiness,
+        FxModuleReadiness.full,
       );
     });
 

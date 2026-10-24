@@ -470,6 +470,8 @@ void main() {
         TrackEffectType.whammy: [0.0, 0.0],
         // The Rhythmic Rack's Pumper: 1/4, 70 %.
         TrackEffectType.pumper: [0.3, 0.7],
+        // The Rhythmic Rack's Slicer: AABB, 1/16, 100 %.
+        TrackEffectType.slicer: [0.0, 0.5, 1.0],
       };
       for (final type in TrackEffectType.values) {
         expect(type.defaultParams, cells(expected[type]!), reason: type.name);
