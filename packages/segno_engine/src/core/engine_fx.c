@@ -1555,30 +1555,39 @@ static float le_pump_depth(float d) {
   return 1.0f - powf(10.0f, -db / 20.0f);
 }
 
-void le_fx_pumper_seed_settled(le_fx_state* fx, int slot,
-                               const float* params) {
+
+/* The measured shape at the frame [fx] is processing, for the rate
+ * setting [rate_setting]. */
+static float le_pump_shape_now(const le_fx_state* fx, int sr,
+                               float rate_setting) {
+  float qpf;
+  int32_t num, den;
+  const double beat = le_fx_beat_now(fx, sr, &qpf, &num, &den);
+  int pos = (int)(rate_setting * 10.0f + 0.5f);
+  if (pos < 0) pos = 0;
+  if (pos > 10) pos = 10;
+  const double period = pos == 0 ? (double)num * 4.0 / (double)den
+                                 : LE_PUMP_PERIOD[pos];
+  double into = fmod(beat, period); /* quarter notes since the beat */
+  if (into < 0.0) into += period;
+  return le_pump_shape(into / period);
+}
+
+void le_fx_pumper_seed_settled(le_fx_state* fx, int slot, const float* params,
+                               int sr) {
   if (fx == NULL || params == NULL || slot < 0 || slot >= LE_FX_MAX) return;
   fx->lfo[slot][0] = le_pump_depth(params[1]);
   fx->lfo[slot][1] = fx->lfo[slot][0];
   fx->fx_lp[slot][0] = params[1];
+  fx->fx_lp[slot][1] =
+      fx->lfo[slot][0] * le_pump_shape_now(fx, sr > 0 ? sr : 48000, params[0]);
 }
 
 static void fx_pumper_process(le_fx_state* fx, int slot, int sr, int cap,
                               float* l, float* r, const float* p) {
   (void)cap;
   const int32_t rate = sr > 0 ? sr : 48000;
-  float qpf;
-  int32_t num, den;
-  const double beat = le_fx_beat_now(fx, rate, &qpf, &num, &den);
-  int pos = (int)(p[0] * 10.0f + 0.5f);
-  if (pos < 0) pos = 0;
-  if (pos > 10) pos = 10;
-  const double period = pos == 0 ? (double)num * 4.0 / (double)den
-                                 : LE_PUMP_PERIOD[pos];
-  (void)qpf;
-  double into = fmod(beat, period); /* quarter notes since the beat */
-  if (into < 0.0) into += period;
-  const float e = le_pump_shape(into / period);
+  const float e = le_pump_shape_now(fx, rate, p[0]);
   /* The depth glides (about 10 ms), so a moving control never steps. Its
    * target is worked out only when the setting moves: lfo[slot][1] holds
    * it for the setting in fx_lp[slot][0] (both 0 after a reset, which is

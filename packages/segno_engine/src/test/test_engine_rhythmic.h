@@ -19,9 +19,9 @@ static le_fx_state* rh_pumper(const le_fx_tempo* tempo, const float* p) {
   CHECK(fx != NULL);
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
   le_fx_entry_reset(fx, 0);
-  le_fx_pumper_seed_settled(fx, 0, p);
   fx->tempo = tempo;
   fx->clocked = 1;
+  le_fx_pumper_seed_settled(fx, 0, p, RH_SR);
   return fx;
 }
 
@@ -388,6 +388,21 @@ static void test_fx_beat_follows_the_loop(void) {
   const uint32_t anchored = e->fx_tempo.anchor_clock;
   for (int b = 0; b < 50; ++b) le_engine_process(e, out, in, 64);
   CHECK(e->fx_tempo.anchor_clock == anchored);
+  /* Played again: back on the loop's line from the top. */
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  int resumed = 0;
+  for (int b = 0; b < 100; ++b) {
+    le_engine_process(e, out, in, 64);
+    if (e->transport_held) continue;
+    const le_fx_tempo* t = &e->fx_tempo;
+    const uint32_t clock = e->fx_clock_base + 64u;
+    const double beat = t->anchor_beat + (double)(uint32_t)(clock -
+                                                            t->anchor_clock) *
+                                             (double)t->qpf;
+    CHECK(fabs(beat - (double)e->clock.position * (double)t->qpf) < 1e-9);
+    resumed++;
+  }
+  CHECK(resumed > 50);
   le_engine_destroy(e);
 }
 
