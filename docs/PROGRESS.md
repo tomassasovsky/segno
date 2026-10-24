@@ -28,6 +28,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1430 | Looper X racks part 8: Dub-Verb and Amb-Verb (fit to the captures) and the Dub Rack's parallel paths | in-review | merge-gate | `claude/fx-dub-verbs-1430*`, `claude/dub-rack-paths-1430` |
 | #1388 | MODE footswitch moves from GP5 to GP12 (firmware 2.4; design PR separate) | in-review | auto | `claude/console-mode-gp12-1388-fw` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
+| #887 | Looper X factory racks: build plan and parts | plan | plan-gate | `claude/looperx-racks-plan-887` |
 | #900, #906 | The audio thread never faults or copies on write (replaces #907, #914) | in-review | blocked-verify | `claude/zero-stall-memory-907-914` |
 | #1299 | Appliance slowdown profiler | in-review | merge-gate | `claude/appliance-responsiveness-08d39b` |
 | #1301 | Idle console redraws at 60 fps | build | merge-gate | `claude/idle-redraw-1301` |

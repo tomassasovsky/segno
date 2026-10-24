@@ -25,7 +25,20 @@
     "**/third_party/vst3sdk/**"
   ],
   "words": [
+    "RETIME",
+    "Fdbk",
+    "Reso",
+    "Lowcut",
+    "MADV",
+    "DONTFORK",
+    "prefaulted",
     "crossfades",
+    "looperx",
+    "Slic",
+    "Patt",
+    "rodata",
+    "biquads",
+    "SCHED",
     "oversampled",
     "abertura",
     "sgno",
@@ -1394,12 +1407,10 @@
     "Highpass",
     "normaliser",
     "RESO",
-    "Slic",
     "Giannoulis",
     "Chamberlin",
     "Zolzer",
     "biquad",
-    "looperx",
     "stopband"
   ],
   "overrides": [
