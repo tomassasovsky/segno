@@ -17,8 +17,8 @@ static double do_amp(const float* y, int n, double hz) {
 }
 
 /* A second of a 1 kHz sine at -12 dBFS through the Dual Octaver at [p];
- * the amplitudes at 500 Hz, 1 kHz and 2 kHz over its second half, in dB
- * against the input's. */
+ * the amplitudes at 500 Hz, 1 kHz, 2 kHz, 250 Hz and 4 kHz over its second
+ * half, in dB against the input's. */
 static void do_levels(const float* p, double* db) {
   le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
   CHECK(fx != NULL);
@@ -42,8 +42,8 @@ static void do_levels(const float* p, double* db) {
   }
   le_fx_state_free_buffers(fx);
   free(fx);
-  static const double hz[3] = {500.0, 1000.0, 2000.0};
-  for (int k = 0; k < 3; ++k) {
+  static const double hz[5] = {500.0, 1000.0, 2000.0, 250.0, 4000.0};
+  for (int k = 0; k < 5; ++k) {
     db[k] = 20.0 * log10(do_amp(y + n / 2, n / 2, hz[k]) / 0.2512 + 1e-12);
   }
   free(y);
@@ -54,7 +54,7 @@ static void do_levels(const float* p, double* db) {
  * voice each 3 dB down (s5/7, an equal-power mix). */
 static void test_dual_octaver_matches_the_capture(void) {
   printf("test_dual_octaver_matches_the_capture\n");
-  double db[3];
+  double db[5];
   const float down[LE_FX_PARAMS] = {0.0f, 1.0f, 1.0f};
   do_levels(down, db);
   printf("  off: 500 Hz %+5.1f (capture -1.5), 1 kHz %+5.1f\n", db[0], db[1]);
@@ -77,6 +77,31 @@ static void test_dual_octaver_matches_the_capture(void) {
   CHECK(fabs(db[0] - (-1.5 + 20.0 * log10(0.5))) < 0.5);
 }
 
+/* Octave 2 (#1464), from the same analysis: two octaves up in high mode,
+ * level with Octave 1 (s5/6: both -0.7 dB against the dry); two octaves
+ * down without it (inferred), at Octave 1's level; and Octave 1 as it was
+ * alone. */
+static void test_dual_octaver_second_voice(void) {
+  printf("test_dual_octaver_second_voice\n");
+  double db[5];
+  const float up[LE_FX_PARAMS] = {1.0f, 1.0f, 1.0f, 1.0f};
+  do_levels(up, db);
+  printf("  on: 2 kHz %+5.1f, 4 kHz %+5.1f (capture -0.7, -0.7)\n", db[2],
+         db[4]);
+  CHECK(fabs(db[2] + 0.7) < 0.5);
+  CHECK(fabs(db[4] + 0.7) < 0.5);
+  const float down[LE_FX_PARAMS] = {0.0f, 1.0f, 1.0f, 1.0f};
+  do_levels(down, db);
+  printf("  off: 500 Hz %+5.1f, 250 Hz %+5.1f (inferred: as Octave 1)\n",
+         db[0], db[3]);
+  CHECK(fabs(db[0] + 1.5) < 0.5);
+  CHECK(fabs(db[3] - db[0]) < 1.0);
+  const float half[LE_FX_PARAMS] = {1.0f, 1.0f, 1.0f, 0.5f};
+  do_levels(half, db);
+  CHECK(fabs(db[4] - (-0.7 + 20.0 * log10(0.5))) < 0.5);
+}
+
 static void run_dual_octaver_tests(void) {
+  test_dual_octaver_second_voice();
   test_dual_octaver_matches_the_capture();
 }

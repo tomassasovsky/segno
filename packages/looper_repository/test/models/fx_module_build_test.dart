@@ -1118,6 +1118,32 @@ void main() {
       );
     });
 
+    test("Ed's Octaver copies both octaves, high mode and the mix", () {
+      // Bass Octave Layer: down, Octave 1 at 100 %, Octave 2 at 60 %.
+      final e = fxModuleEntry(
+        _module('Octaver'),
+        const FxPreset(
+          family: "Ed's Rack",
+          name: 'Bass Octave Layer',
+          id: 'b',
+          type: 0,
+          params: {
+            'Oct': 1,
+            'Oct High Mode': 0,
+            'Octave 1 Vol': 1,
+            'Octave 2 Vol': 0.6,
+            'Octave Mix': 1,
+          },
+        ),
+      );
+      expect(e.type, TrackEffectType.dualOctaver);
+      expect(e.params.take(4), [0.0, 1.0, 1.0, closeTo(0.6, 1e-9)]);
+      expect(
+        fxModuleBuild(_module('Octaver'), family: "Ed's Rack").readiness,
+        FxModuleReadiness.full,
+      );
+    });
+
     test("the Rhythmic Rack's Slicer copies pattern, step and mix", () {
       final e = fxModuleEntry(
         _module('Slicer'),
