@@ -89,6 +89,9 @@ static int32_t g_kind = LE_FX_OCTAVER;
 /* An octaver recipe entry: one octave up, tone open, full wet, phase vocoder.
  * Full wet keeps the wet path (the FFTs) the whole output. */
 static int g_psola; /* --kind psola: the octaver in PSOLA mode */
+/* --kind lpflfo, and the Rhythmic rack: the LPF swept by its LFO, which
+ * redesigns the ladder at every sample */
+static int g_lpf_lfo;
 
 static void octaver_entry(le_fx_recipe* r, int s) {
   r->type[s] = LE_FX_OCTAVER;
@@ -136,8 +139,10 @@ static void dynamics_entry(le_fx_recipe* r, int s, int32_t kind) {
     r->params[s][0] = 0.4f; /* holding at 3.2 kHz */
   } else if (kind == LE_FX_LPF) {
     r->params[s][0] = 0.6f; /* 1.2 kHz */
-    r->params[s][2] = 0.8f; /* swept by its LFO, redesigned every update */
-    r->params[s][3] = 0.8f; /* at 1/8 */
+    if (g_lpf_lfo) {
+      r->params[s][2] = 0.8f; /* swept by its LFO */
+      r->params[s][3] = 0.8f; /* at 1/8 */
+    }
   } else if (kind == LE_FX_WHAMMY) {
     r->params[s][0] = 0.5f; /* half the pedal */
     r->params[s][1] = 1.0f; /* up */
@@ -294,6 +299,7 @@ static stats time_blocks(rig* r, int blocks, int warm, double phase_mean[PHASES]
 
 static const char* kind_name(void) {
   if (g_kind == LE_FX_OCTAVER && g_psola) return "psola";
+  if (g_kind == LE_FX_LPF && g_lpf_lfo) return "lpflfo";
   switch (g_kind) {
     case LE_FX_EQ: return "eq";
     case LE_FX_COMPRESSOR: return "comp";
@@ -393,8 +399,13 @@ static int run_racks(const bench_opts* o, float* src, int32_t frames,
     stats base;
     stats st;
     double ph[PHASES];
-    if (!time_rack(o, src, frames, NULL, blocks, warm, &base, ph) ||
-        !time_rack(o, src, frames, rack, blocks, warm, &st, ph)) {
+    /* The Rhythmic Rack's LPF runs its LFO; the Lo-Fi Rack's has none. */
+    g_lpf_lfo = !strcmp(rack->name, "rhythmic");
+    const int timed =
+        time_rack(o, src, frames, NULL, blocks, warm, &base, ph) &&
+        time_rack(o, src, frames, rack, blocks, warm, &st, ph);
+    g_lpf_lfo = 0;
+    if (!timed) {
       printf("| %-8s | refused by the engine |\n", rack->name);
       fflush(stdout);
       continue;
@@ -433,7 +444,7 @@ static int run_racks(const bench_opts* o, float* src, int32_t frames,
 typedef struct {
   const char* name;
   int32_t type;
-  int psola;
+  int variant; /* 1: PSOLA for the octaver, the LFO for the LPF */
 } table_kind;
 
 static const table_kind k_table[] = {
@@ -447,6 +458,7 @@ static const table_kind k_table[] = {
     {"wah", LE_FX_WAH, 0},              {"overdrive", LE_FX_OVERDRIVE, 0},
     {"distortion", LE_FX_DISTORTION, 0}, {"vinyl", LE_FX_VINYL, 0},
     {"degrade", LE_FX_DEGRADE, 0},      {"lpf", LE_FX_LPF, 0},
+    {"lpflfo", LE_FX_LPF, 1},
     {"spring", LE_FX_SPRING, 0},        {"dubverb", LE_FX_DUB_VERB, 0},
     {"ambverb", LE_FX_AMB_VERB, 0},     {"whammy", LE_FX_WHAMMY, 0},
     {"pumper", LE_FX_PUMPER, 0},
@@ -463,9 +475,11 @@ static int time_kinds(const bench_opts* o, float* src, int32_t frames,
     memset(&rec, 0, sizeof(rec));
     rec.enabled = 1;
     rec.count = n;
-    g_psola = kind->psola;
+    g_psola = kind->type == LE_FX_OCTAVER && kind->variant;
+    g_lpf_lfo = kind->type == LE_FX_LPF && kind->variant;
     for (int s = 0; s < n; ++s) kind_entry(&rec, s, kind->type);
     g_psola = 0;
+    g_lpf_lfo = 0;
     if (le_engine_set_fx_recipe(r.e, LE_FX_OWNER_MONITOR, 0, 0, 1, &rec) !=
         LE_OK) {
       rig_destroy(&r);
@@ -565,6 +579,9 @@ int main(int argc, char** argv) {
         g_kind = LE_FX_DEGRADE;
       } else if (!strcmp(kind, "lpf")) {
         g_kind = LE_FX_LPF;
+      } else if (!strcmp(kind, "lpflfo")) {
+        g_kind = LE_FX_LPF;
+        g_lpf_lfo = 1;
       } else if (!strcmp(kind, "spring")) {
         g_kind = LE_FX_SPRING;
       } else if (!strcmp(kind, "psola")) {
@@ -594,7 +611,7 @@ int main(int argc, char** argv) {
         fprintf(stderr,
                 "unknown --kind %s (octaver, psola, eq, comp, transient, "
                 "hpgate, doubler, chorus, wah, overdrive, distortion, vinyl, "
-                "degrade, lpf, spring, drive, filter, delay, tremolo, echo, "
+                "degrade, lpf, lpflfo, spring, drive, filter, delay, tremolo, echo, "
                 "reverb, dubverb, ambverb, whammy, pumper)\n",
                 kind);
         return 2;
@@ -623,7 +640,7 @@ int main(int argc, char** argv) {
               "[--period FRAMES] "
               "[--blocks N] [--cpu N] "
               "[--kind octaver|psola|eq|comp|transient|hpgate|doubler|chorus|"
-              "wah|overdrive|distortion|vinyl|degrade|lpf|spring|drive|filter|"
+              "wah|overdrive|distortion|vinyl|degrade|lpf|lpflfo|spring|drive|filter|"
               "delay|tremolo|echo|reverb|dubverb|ambverb|whammy|"
               "pumper] [--table]\n",
               argv[0]);
