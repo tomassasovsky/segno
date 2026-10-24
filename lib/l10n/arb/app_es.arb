@@ -465,6 +465,7 @@
     "effectDualOctaver": "Octaver doble",
     "paramHighMode": "Modo alto",
     "paramOctave1Level": "Nivel de octava 1",
+    "paramOctave2Level": "Nivel de octava 2",
     "paramPattern": "Patrón",
     "paramStep": "Paso",
     "paramLfoDepth": "Profundidad del LFO",

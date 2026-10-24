@@ -21816,7 +21816,7 @@ static void test_fx_param_descriptors_match_kernels(void) {
 
   /* Counts: the parameters each kernel reads; none for NONE and PLUGIN. */
   const int32_t counts[] = {0, 2, 2, 3, 2, 5, 3, 3, 0, 15, 5, 3,
-                            2, 2, 3, 1, 2, 2, 4, 3, 4, 2, 2, 3, 2, 2, 3, 4, 3};
+                            2, 2, 3, 1, 2, 2, 4, 3, 4, 2, 2, 3, 2, 2, 3, 4, 4};
   for (int32_t t = 0; t < 29; ++t) CHECK(le_fx_param_count(t) == counts[t]);
   CHECK(le_fx_param_count(29) == LE_ERR_INVALID);
   CHECK(le_fx_param_count(-1) == LE_ERR_INVALID);
@@ -24531,6 +24531,10 @@ static void test_perf_render_wet_octaver_matches_lane_hop_phase(void) {
    * and law, and its switched shift. */
   const float dual[4] = {0.0f, 1.0f, 0.5f, 0.0f};
   run_perf_render_octaver_case("wet-dual-octaver", LE_FX_DUAL_OCTAVER, dual);
+  /* With Octave 2 at 60 %: both voices from the one analysis (#1464). */
+  const float dual2[4] = {1.0f, 0.5f, 0.5f, 0.6f};
+  run_perf_render_octaver_case("wet-dual-octaver-2", LE_FX_DUAL_OCTAVER,
+                               dual2);
 }
 
 /* The stem render settles each arm-time slot at its EFFECTIVE bit, as the
