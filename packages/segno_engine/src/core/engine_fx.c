@@ -1485,6 +1485,128 @@ static void fx_whammy_process(le_fx_state* fx, int slot, int sr, int cap,
   const float q[5] = {le_whammy_shift(p), 1.0f, 1.0f, 0.0f, 1.0f};
   fx_octaver_process(fx, slot, sr, cap, l, r, q);
 }
+/* The beat (quarter notes) of the frame [fx] is processing, the quarter
+ * notes a frame advances and the time signature (le_fx_tempo, #887 part
+ * 10). A state with no tempo runs at 120 BPM in 4/4 from its clock 0. */
+static inline double le_fx_beat_now(const le_fx_state* fx, int sr, float* qpf,
+                                    int32_t* num, int32_t* den) {
+  const uint32_t now = le_fx_now(fx);
+  const le_fx_tempo* t = fx->tempo;
+  if (t == NULL) {
+    *qpf = (float)(2.0 / (double)(sr > 0 ? sr : 48000));
+    *num = 4;
+    *den = 4;
+    return (double)now * (double)*qpf;
+  }
+  *qpf = t->qpf;
+  *num = t->num > 0 ? t->num : 4;
+  *den = t->den > 0 ? t->den : 4;
+  return t->anchor_beat + (double)(uint32_t)(now - t->anchor_clock) *
+                              (double)t->qpf;
+}
+
+/* ---- Pumper (LE_FX_PUMPER, #887 part 10) ----
+ *
+ * gain = 1 - a(depth) e(phase), phase 0 on the beat of the note value
+ * (#891, docs/plan/2026-10-23-looperx-gaps-measured.md). */
+
+/* Each rate position's period in quarter notes; Bar is the bar's (-1). The
+ * order is the binary's 11-entry note-value table (Bar, 1/2, 1/2T, ...,
+ * 1/32T), which the presets' 11-step grid matches; the capture confirmed
+ * Bar, 1/2, 1/4, 1/8 and 1/16 (#891). */
+static const double LE_PUMP_PERIOD[11] = {
+    -1.0, 2.0, 4.0 / 3.0, 1.0, 2.0 / 3.0, 0.5, 1.0 / 3.0, 0.25, 1.0 / 6.0,
+    0.125, 1.0 / 12.0};
+
+/* e(phase) every 1/20 of the period from the beat, as measured; 0 from three
+ * quarters on. */
+static const float LE_PUMP_SHAPE[16] = {
+    1.000f, 0.994f, 0.984f, 0.970f, 0.948f, 0.918f, 0.876f, 0.820f,
+    0.746f, 0.654f, 0.544f, 0.418f, 0.284f, 0.153f, 0.045f, 0.0f};
+
+/* The dip in dB against depth, as measured at 30, 70 and 100 % (a = 0.50,
+ * 0.901, 0.990), linear between. */
+static const float LE_PUMP_DIP_AT[4] = {0.0f, 0.3f, 0.7f, 1.0f};
+static const float LE_PUMP_DIP_DB[4] = {0.0f, 6.0206f, 20.0877f, 40.0f};
+
+/* The duck is smoothed with this time constant: the measured shape is at
+ * full depth on the beat, and a gain step is a click (#813), whether at the
+ * beat or where an anchor moves the phase (a loop top that is not a whole
+ * number of periods). */
+#define LE_PUMP_SMOOTH_S 0.00025
+
+static float le_pump_shape(double phase) {
+  const double x = phase * 20.0;
+  if (x >= 15.0) return 0.0f;
+  const int i = (int)x;
+  const float f = (float)(x - (double)i);
+  return LE_PUMP_SHAPE[i] + (LE_PUMP_SHAPE[i + 1] - LE_PUMP_SHAPE[i]) * f;
+}
+
+static float le_pump_depth(float d) {
+  if (!(d > 0.0f)) return 0.0f;
+  if (d >= 1.0f) d = 1.0f;
+  int i = 1;
+  while (i < 3 && d > LE_PUMP_DIP_AT[i]) ++i;
+  const float f = (d - LE_PUMP_DIP_AT[i - 1]) /
+                  (LE_PUMP_DIP_AT[i] - LE_PUMP_DIP_AT[i - 1]);
+  const float db =
+      LE_PUMP_DIP_DB[i - 1] + (LE_PUMP_DIP_DB[i] - LE_PUMP_DIP_DB[i - 1]) * f;
+  return 1.0f - powf(10.0f, -db / 20.0f);
+}
+
+
+/* The measured shape at the frame [fx] is processing, for the rate
+ * setting [rate_setting]. */
+static float le_pump_shape_now(const le_fx_state* fx, int sr,
+                               float rate_setting) {
+  float qpf;
+  int32_t num, den;
+  const double beat = le_fx_beat_now(fx, sr, &qpf, &num, &den);
+  int pos = (int)(rate_setting * 10.0f + 0.5f);
+  if (pos < 0) pos = 0;
+  if (pos > 10) pos = 10;
+  const double period = pos == 0 ? (double)num * 4.0 / (double)den
+                                 : LE_PUMP_PERIOD[pos];
+  double into = fmod(beat, period); /* quarter notes since the beat */
+  if (into < 0.0) into += period;
+  return le_pump_shape(into / period);
+}
+
+void le_fx_pumper_seed_settled(le_fx_state* fx, int slot, const float* params,
+                               int sr) {
+  if (fx == NULL || params == NULL || slot < 0 || slot >= LE_FX_MAX) return;
+  fx->lfo[slot][0] = le_pump_depth(params[1]);
+  fx->lfo[slot][1] = fx->lfo[slot][0];
+  fx->fx_lp[slot][0] = params[1];
+  fx->fx_lp[slot][1] =
+      fx->lfo[slot][0] * le_pump_shape_now(fx, sr > 0 ? sr : 48000, params[0]);
+}
+
+static void fx_pumper_process(le_fx_state* fx, int slot, int sr, int cap,
+                              float* l, float* r, const float* p) {
+  (void)cap;
+  const int32_t rate = sr > 0 ? sr : 48000;
+  const float e = le_pump_shape_now(fx, rate, p[0]);
+  /* The depth glides (about 10 ms), so a moving control never steps. Its
+   * target is worked out only when the setting moves: lfo[slot][1] holds
+   * it for the setting in fx_lp[slot][0] (both 0 after a reset, which is
+   * a(0)). */
+  if (p[1] != fx->fx_lp[slot][0]) {
+    fx->fx_lp[slot][0] = p[1];
+    fx->lfo[slot][1] = le_pump_depth(p[1]);
+  }
+  float* a = &fx->lfo[slot][0];
+  *a += (fx->lfo[slot][1] - *a) * (100.0f / (float)rate);
+  /* The duck itself, smoothed (fx_lp[slot][1], 0 after a reset). */
+  float* duck = &fx->fx_lp[slot][1];
+  *duck += (*a * e - *duck) /
+           (1.0f + (float)(LE_PUMP_SMOOTH_S * (double)rate));
+  const float g = 1.0f - *duck;
+  *l *= g;
+  *r *= g;
+}
+
 static void fx_echo_process(le_fx_state* fx, int slot, int sr, int cap, float* l,
                             float* r, const float* p) {
   *l = fx_echo(fx, slot, 0, sr, cap, *l, p);
@@ -1651,6 +1773,13 @@ static const le_fx_param_desc LE_FX_WHAMMY_PARAMS[] = {
     {"pedal", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.0f, 0},
     {"whammy_range", LE_FX_UNIT_CHOICE, 2, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f,
      0},
+};
+/* The Rhythmic Rack's Pumper (#891): the rate a note value (positions in
+ * LE_PUMP_PERIOD's order), the depth the dip. */
+static const le_fx_param_desc LE_FX_PUMPER_PARAMS[] = {
+    {"pumper_rate", LE_FX_UNIT_CHOICE, 11, 0.0f, 1.0f, LE_FX_CURVE_LINEAR,
+     0.3f, 0},
+    {"depth", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.7f, 0},
 };
 static const le_fx_param_desc LE_FX_ECHO_PARAMS[] = {
     {"time", LE_FX_UNIT_MS, 0, 0.0f, 1000.0f, LE_FX_CURVE_LINEAR, 0.45f, 0},
@@ -4403,6 +4532,7 @@ LE_FX_ROWS_FIT(LE_FX_SPRING_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_DUB_VERB_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_AMB_VERB_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_WHAMMY_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_PUMPER_PARAMS);
 
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
  * published for this chain entry (NULL / not-ready => dry passthrough; the slot
@@ -4532,6 +4662,9 @@ static const le_fx_vtable LE_FX[] = {
     /* The octaver's kernel and state, its settings mapped (fx_whammy_process). */
     [LE_FX_WHAMMY] = {fx_whammy_process, fx_octaver_latency_vt,
                       fx_octaver_prepare, LE_FX_WHAMMY_PARAMS},
+    /* Locked to the beat: a print could not stand for it lap after lap. */
+    [LE_FX_PUMPER] = {fx_pumper_process, NULL, NULL, LE_FX_PUMPER_PARAMS,
+                      LE_FX_F_FREE_RUNNING},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -4584,6 +4717,7 @@ const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
     [LE_FX_DUB_VERB] = LE_FX_ROW_COUNT(LE_FX_DUB_VERB_PARAMS),
     [LE_FX_AMB_VERB] = LE_FX_ROW_COUNT(LE_FX_AMB_VERB_PARAMS),
     [LE_FX_WHAMMY] = LE_FX_ROW_COUNT(LE_FX_WHAMMY_PARAMS),
+    [LE_FX_PUMPER] = LE_FX_ROW_COUNT(LE_FX_PUMPER_PARAMS),
 };
 
 /* ---- per-kind state (le_fx_kinds, engine_private.h) ---- */
@@ -4763,6 +4897,8 @@ int le_fx_entry_free_running(int32_t type, const float* p, int sr) {
       return 1; /* even at 0 % mix its copy wanders within 1 ms */
     case LE_FX_LPF: /* on, and oscillating */
       return p[0] < 1.0f && (double)p[1] > le_lpf_osc_reso();
+    case LE_FX_PUMPER: /* ducking at all */
+      return p[1] > 0.0f;
     default:
       return p[2] > 0.0f; /* the chorus's mix */
   }

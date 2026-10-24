@@ -96,6 +96,12 @@ struct le_render_job {
   le_render_src src[LE_MAX_TRACKS];
   le_fx_frozen_chain mix;
   le_fx_state* mixfx;
+  /* The chains' musical time (le_fx_tempo): the song tempo when the job was
+   * posted (the loop's grid rate when it has one), beat 0 at the render's
+   * frame 0, the loop top it starts from, and again at every loop top
+   * ([loop_len] frames apart; 0 with no shared loop), as live. */
+  le_fx_tempo tempo;
+  int32_t loop_len;
   int32_t mix_bits[LE_FX_MAX];
   int mix_on;
   int64_t bytes;  /* what the job holds, against LE_RENDER_BUDGET_BYTES */
@@ -139,6 +145,17 @@ static int64_t le_render_mod(int64_t v, int64_t m) {
 static float le_render_tempo(le_engine* e) {
   return bits_to_f32(
       atomic_load_explicit(&e->a_tempo_bpm_bits, memory_order_acquire));
+}
+
+/* Seeds [fx]'s Pumpers settled at its tempo and clock, as a running chain
+ * is (le_fx_pumper_seed_settled). */
+static void le_render_seed_pumpers(le_fx_state* fx, const le_fx_frozen_chain* c,
+                                   int32_t sr) {
+  for (int32_t s = 0; s < c->count && s < LE_FX_MAX; ++s) {
+    if (c->type[s] == LE_FX_PUMPER) {
+      le_fx_pumper_seed_settled(fx, s, c->params[s], sr);
+    }
+  }
 }
 
 static int le_render_engine_ok(le_engine* e) {
@@ -399,6 +416,30 @@ int32_t le_engine_render_begin(le_engine* engine,
   j->plan = plan;
   j->frames = plan.frames;
   j->sample_rate = engine->sample_rate;
+  {
+    float bpm = le_render_tempo(engine);
+    if (!(bpm > 0.0f)) bpm = 120.0f;
+    int32_t num = atomic_load_explicit(&engine->a_ts_num, memory_order_acquire);
+    int32_t den = atomic_load_explicit(&engine->a_ts_den, memory_order_acquire);
+    if (num <= 0 || num > 255) num = 4;
+    if (den <= 0 || den > 255) den = 4;
+    const int32_t sr = engine->sample_rate > 0 ? engine->sample_rate : 48000;
+    const int32_t mode =
+        atomic_load_explicit(&engine->a_looper_mode, memory_order_acquire);
+    const int32_t len =
+        atomic_load_explicit(&engine->a_master_len, memory_order_acquire);
+    const int32_t beats =
+        atomic_load_explicit(&engine->a_loop_beats, memory_order_acquire);
+    j->loop_len = mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG
+                      ? 0
+                      : (len > 0 ? len : 0);
+    j->tempo.qpf =
+        j->loop_len > 0 && beats > 0
+            ? (float)((double)beats * 4.0 / (double)den / (double)j->loop_len)
+            : (float)((double)bpm / 60.0 / (double)sr * 4.0 / (double)den);
+    j->tempo.num = num;
+    j->tempo.den = den;
+  }
   j->cap = engine->fx_delay_frames;
   j->passes = request->tails == LE_RENDER_WRAP ? 2 : 1;
   if (request->target == LE_RENDER_TARGET_FILE) {
@@ -844,6 +885,8 @@ static void le_render_setup_unit(le_render_job* j) {
         le_render_worker_fail(j, LE_ERR_INVALID);
         return;
       }
+      ln->fx->tempo = &j->tempo;
+      le_render_seed_pumpers(ln->fx, &ln->chain, j->sample_rate);
     }
     if (s->track_has) {
       s->tfx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
@@ -854,6 +897,8 @@ static void le_render_setup_unit(le_render_job* j) {
         le_render_worker_fail(j, LE_ERR_INVALID);
         return;
       }
+      s->tfx->tempo = &j->tempo;
+      le_render_seed_pumpers(s->tfx, &s->track, j->sample_rate);
     }
   }
   if (j->mix_on) {
@@ -864,6 +909,8 @@ static void le_render_setup_unit(le_render_job* j) {
       le_render_worker_fail(j, LE_ERR_INVALID);
       return;
     }
+    j->mixfx->tempo = &j->tempo;
+    le_render_seed_pumpers(j->mixfx, &j->mix, j->sample_rate);
   }
   const size_t out_frames = j->req.target == LE_RENDER_TARGET_MEMORY
                                 ? (size_t)j->frames
@@ -892,6 +939,10 @@ static void le_render_window(le_render_job* j, int32_t from, int32_t n,
      * pass, so the kept pass continues the warm-up pass's hop instead of
      * finding the clock moved back and restarting. */
     const uint32_t clock = (uint32_t)((int64_t)j->pass * j->frames + f);
+    if (j->loop_len > 0 && clock % (uint32_t)j->loop_len == 0) {
+      j->tempo.anchor_clock = clock; /* a loop top: beat 0 again */
+      j->tempo.anchor_beat = 0.0;
+    }
     float ml = 0.0f;
     float mr = 0.0f;
     for (int32_t i = 0; i < j->nsrc; ++i) {

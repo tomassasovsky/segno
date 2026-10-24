@@ -1239,9 +1239,7 @@ void main() {
       // stored Pre-first, so an added Pre entry lands before the input's
       // existing Post one.
       expect(pushed, hasLength(3));
-      final added = pushed.firstWhere(
-        (e) => e is BuiltInEffect && e.type == TrackEffectType.none,
-      );
+      final added = pushed.firstWhere((e) => e.module == 'Pumper');
       expect(added.placement, FxPlacement.pre);
       expect(find.byType(FxRackEditor), findsOneWidget);
       verifyNever(

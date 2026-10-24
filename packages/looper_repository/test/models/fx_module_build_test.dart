@@ -24,10 +24,10 @@ void main() {
       // module is shown and processes nothing. The accepted design forbids
       // substituting another effect and calling that parity.
       expect(
-        fxModuleBuild(_module('Pumper')).readiness,
+        fxModuleBuild(_module('Slicer')).readiness,
         FxModuleReadiness.unavailable,
       );
-      expect(fxModuleBuild(_module('Pumper')).type, isNull);
+      expect(fxModuleBuild(_module('Slicer')).type, isNull);
 
       expect(
         [
@@ -38,7 +38,6 @@ void main() {
         [
           'Amp',
           'Modulation',
-          'Pumper',
           'Slicer',
           'Harmonizer',
           'Smart tune',
@@ -117,6 +116,7 @@ void main() {
           'Overdrive',
           'Parametric EQ',
           'Pitch Shift',
+          'Pumper',
           'Reverb',
           'Spring Reverb',
           'Transient',
@@ -205,8 +205,8 @@ void main() {
       // A rack is what the player loaded, not what this build can run — so
       // the pedal is there, and it is a passthrough rather than absent.
       final entry = fxModuleEntry(
-        _module('Pumper'),
-        _preset(const {'Pumper': 1, 'Pumper Depth': 0.8}),
+        _module('Slicer'),
+        _preset(const {'Slicer': 1, 'Slic Mix': 0.8}),
       );
 
       expect(entry.type, TrackEffectType.none);
@@ -1100,6 +1100,27 @@ void main() {
           null,
           null,
         ],
+      );
+    });
+
+    test("the Rhythmic Rack's Pumper copies rate and depth", () {
+      final e = fxModuleEntry(
+        _module('Pumper'),
+        const FxPreset(
+          family: 'Rhythmic Rack',
+          name: 'p',
+          id: 'p',
+          type: 0,
+          params: {'Pumper': 1, 'Pumper Rate': 0.7, 'Pumper Depth': 0.35},
+        ),
+      );
+      expect(e.type, TrackEffectType.pumper);
+      expect(e.params.take(2), [0.7, 0.35]);
+      // Position 7 of 11: 1/16.
+      expect(e.type.params[0].positionOf(0.7), 7);
+      expect(
+        fxModuleBuild(_module('Pumper')).readiness,
+        FxModuleReadiness.full,
       );
     });
 
