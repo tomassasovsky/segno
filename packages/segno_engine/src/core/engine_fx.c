@@ -275,6 +275,13 @@ static int le_oct_seeded_ticks(const le_fx_state* fx, int slot) {
   return (int)to_go + 1;
 }
 
+/* The second voice's regions in the octaver scratch (LE_PV_SCRATCH, after
+ * the frame arrays listed at le_pv_stage_analyse): its synthesis spectrum,
+ * and its running phases, which persist from frame to frame (#1464). */
+#define LE_PV_S_RE2(o) ((o)->scratch + LE_PV_N + 5 * LE_PV_BINS)
+#define LE_PV_S_IM2(o) ((o)->scratch + LE_PV_N + 6 * LE_PV_BINS)
+#define LE_PV_S_PHASE2(o) ((o)->scratch + LE_PV_N + 7 * LE_PV_BINS)
+
 /* Zeros the octaver's per-mode DSP runtime (phase history, synthesis
  * accumulator, hop counter) without touching the heap-buffer allocation or the
  * smoothed params / current mode. Used on a mode switch and on entry reset; safe
@@ -309,8 +316,7 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   if (o->last_phase != NULL) memset(o->last_phase, 0, sizeof(float) * LE_PV_BINS);
   if (o->sum_phase != NULL) memset(o->sum_phase, 0, sizeof(float) * LE_PV_BINS);
   if (o->scratch != NULL) {
-    /* The second voice's phases (LE_PV_S_PHASE2, below). */
-    memset(o->scratch + LE_PV_N + 7 * LE_PV_BINS, 0, sizeof(float) * LE_PV_BINS);
+    memset(LE_PV_S_PHASE2(o), 0, sizeof(float) * LE_PV_BINS);
   }
 }
 
@@ -349,6 +355,7 @@ void le_octaver_envelope(const float* mag, float* env) {
  *   mag  [LE_PV_BINS] magnitude
  *   freq [LE_PV_BINS] true frequency, in bins
  *   env  [LE_PV_BINS] the formant envelope
+ *   re2, im2, phase2   a second voice's (LE_PV_S_RE2 ...)
  *
  * The frame shifts the harmonic structure by `ratio`, holding the cepstral
  * formant envelope fixed in frequency or, with p4 (formants) moved, letting
@@ -358,7 +365,9 @@ void le_octaver_envelope(const float* mag, float* env) {
  *
  * Cost per hop per channel: four length-N real FFTs, one per stage but the
  * shift (analysis, the two cepstrum transforms, synthesis; two with the
- * formants moved, which skips the envelope stage), on the shared plan
+ * formants moved, which skips the envelope stage). A second voice (the Dual
+ * Octaver's Octave 2) adds a second shift in the envelope's quarter and
+ * sums into the one synthesis transform. All on the shared plan
  * le_pv_fft (fft.h). On the console a stereo frame cost ~170 us in one
  * callback (#1410). The stages are not equal: measured on the dev machine
  * the analysis, envelope, shift and synthesis take about 30, 31, 26 and 13 %
@@ -371,9 +380,6 @@ void le_octaver_envelope(const float* mag, float* env) {
 #define LE_PV_S_MAG(o) ((o)->scratch + LE_PV_N + 2 * LE_PV_BINS)
 #define LE_PV_S_FREQ(o) ((o)->scratch + LE_PV_N + 3 * LE_PV_BINS)
 #define LE_PV_S_ENV(o) ((o)->scratch + LE_PV_N + 4 * LE_PV_BINS)
-#define LE_PV_S_RE2(o) ((o)->scratch + LE_PV_N + 5 * LE_PV_BINS)
-#define LE_PV_S_IM2(o) ((o)->scratch + LE_PV_N + 6 * LE_PV_BINS)
-#define LE_PV_S_PHASE2(o) ((o)->scratch + LE_PV_N + 7 * LE_PV_BINS)
 
 /* Stage 0: Hann-window the newest N samples (win[N-1] is the freshest),
  * transform, and read each bin's magnitude and true frequency from its phase
@@ -458,7 +464,9 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
     const int peak = peaks[r];
     const int end = r + 1 < np ? (peak + peaks[r + 1] + 1) / 2 : LE_PV_BINS;
     const int to = (int)((float)peak * ratio + 0.5f);
-    if (to >= LE_PV_BINS) { /* the peak leaves the band: drop its region */
+    if (to >= LE_PV_BINS || (ratio < 1.0f && to < 1)) {
+      /* the peak leaves the band (above it, or down onto DC): drop its
+       * region */
       start = end;
       continue;
     }
@@ -502,8 +510,23 @@ static void le_pv_stage_shift2(le_octaver_state* o) {
 /* Stage 3: inverse transform, synthesis-window, and overlap-add from the
  * accumulator element this tick emits (the Hann x Hann windows at 4x overlap
  * sum to 1.5: divide for unity). */
-static void le_pv_synth_from(le_octaver_state* o, const float* re,
-                             const float* im, float level) {
+static void le_pv_stage_synth(le_octaver_state* o) {
+  float* re = LE_PV_S_RE(o);
+  float* im = LE_PV_S_IM(o);
+  float level = o->frame_level1;
+  if (o->frame_level2 > 0.0f) {
+    /* The second voice's spectrum summed in at its level relative to the
+     * first's: one inverse transform for both (it is linear). */
+    const float l1 = o->frame_level1;
+    const float l2 = o->frame_level2;
+    const float* re2 = LE_PV_S_RE2(o);
+    const float* im2 = LE_PV_S_IM2(o);
+    for (int k = 0; k < LE_PV_BINS; ++k) {
+      re[k] = l1 * re[k] + l2 * re2[k];
+      im[k] = l1 * im[k] + l2 * im2[k];
+    }
+    level = 1.0f;
+  }
   float* win = LE_PV_S_WIN(o);
   le_rfft_inv(&le_pv_fft, re, im, win);
   const float norm = level / 1.5f;
@@ -511,16 +534,6 @@ static void le_pv_synth_from(le_octaver_state* o, const float* re,
   for (int i = 0; i < LE_PV_N; ++i) {
     out[i] += win[i] * le_hann[i] * norm;
   }
-}
-
-static void le_pv_stage_synth(le_octaver_state* o) {
-  le_pv_synth_from(o, LE_PV_S_RE(o), LE_PV_S_IM(o), o->frame_level1);
-}
-
-/* The second voice's synthesis, into the same accumulator at its own level;
- * it runs before the first's tick, so it lands on the same samples. */
-static void le_pv_stage_synth2(le_octaver_state* o) {
-  le_pv_synth_from(o, LE_PV_S_RE2(o), LE_PV_S_IM2(o), o->frame_level2);
 }
 
 /* Emits one phase-vocoder output sample (latency LE_PV_LATENCY), running a
@@ -562,17 +575,21 @@ static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int ca
       o->frame_formants_move = formants_move;
       o->frame_ratio2 = ratio2;
       o->frame_level1 = level1;
-      /* A second voice (the Dual Octaver's Octave 2, #1464) takes the
-       * envelope's quarter, so only with the formants moving. */
-      o->frame_level2 = formants_move ? level2 : 0.0f;
+      {
+        /* A second voice (the Dual Octaver's Octave 2, #1464) takes the
+         * envelope's quarter, so only with the formants moving; coming
+         * back from silence it starts its phases afresh. */
+        const float l2 = formants_move ? level2 : 0.0f;
+        if (l2 > 0.0f && o->frame_level2 <= 0.0f) {
+          memset(LE_PV_S_PHASE2(o), 0, sizeof(float) * LE_PV_BINS);
+        }
+        o->frame_level2 = l2;
+      }
       o->analysed = 1;
       break;
     case LE_PV_HOP / 4:
       if (o->analysed && !o->frame_formants_move) le_pv_stage_envelope(o);
       if (o->analysed && o->frame_level2 > 0.0f) le_pv_stage_shift2(o);
-      break;
-    case 3 * LE_PV_HOP / 8:
-      if (o->analysed && o->frame_level2 > 0.0f) le_pv_stage_synth2(o);
       break;
     case LE_PV_HOP / 2:
       if (o->analysed) le_pv_stage_shift(o);
@@ -1041,6 +1058,12 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
   return wv * y + (1.0f - wv) * dry;
 }
 
+/* Octave 2's trims: up, where the capture's sits (-0.7 dB against the dry,
+ * level with Octave 1; the vocoder alone gives -3.6 at +24); down, level
+ * with Octave 1 down (no capture; the vocoder alone gives 0.0 at -24). */
+#define LE_DOCT_UP2_LEVEL 1.396f   /* +2.9 dB */
+#define LE_DOCT_DOWN2_LEVEL 0.841f /* -1.5 dB */
+
 /* Formant-preserving octaver. Writes the newest sample to the slot's FIFO ring,
  * then mixes a delay-matched dry tap (LE_PV_LATENCY back) with a wet voice from the
  * phase vocoder (mode p3 < 0.5) or PSOLA (part 4, currently silent). p0 = shift
@@ -1116,11 +1139,15 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
   }
 
   const float ratio = powf(2.0f, (o->sm_shift - 0.5f) * 48.0f / 12.0f);
+  /* The Dual Octaver's Octave 2 (p7, its level; #1464) is Octave 1 squared,
+   * two octaves where Octave 1 is one, so it switches with Octave 1's
+   * latched shift in the dip, its trim with it. */
+  const int up = o->sm_shift > 0.5f;
+  const float level2 =
+      dual ? p[7] * (up ? LE_DOCT_UP2_LEVEL : LE_DOCT_DOWN2_LEVEL) : 0.0f;
   const float wet = o->cur_mode == 0
                         ? le_pv_tick(o, buf, head, cap, ratio, p[4] >= 0.5f,
-                                     powf(2.0f, (p[7] - 0.5f) * 4.0f),
-                                     1.0f - p[5],
-                                     p[8])
+                                     ratio * ratio, 1.0f - p[5], level2)
                         : le_psola_tick(o, buf, head, cap, ratio);
 
   /* Tone: a one-pole low-pass on the wet voice that opens up as p1 rises. */
@@ -1523,11 +1550,11 @@ static void fx_tremolo_process(le_fx_state* fx, int slot, int sr, int cap,
   *l = fx_tremolo(fx, slot, 0, sr, *l, p);
   *r = fx_tremolo(fx, slot, 1, sr, *r, p);
 }
-/* The octaver's kernel on its nine settings (le_fx_octaver_settings):
+/* The octaver's kernel on its eight settings (le_fx_octaver_settings):
  * shift, tone, mix, mode, formants, the wet voice's cut (0: none), 1 for
- * the Dual Octaver (an equal-power mix and a switched shift) or 0, and a
- * second voice's shift and level (0: none) — so a zeroed tail is the plain
- * octaver. */
+ * the Dual Octaver (an equal-power mix, a switched shift, and a second
+ * voice two octaves out) or 0, and that second voice's level (0: none) —
+ * so a zeroed tail is the plain octaver. */
 static void fx_octaver_run(le_fx_state* fx, int slot, int cap, float* l,
                            float* r, const float* q) {
   *l = fx_octaver(fx, slot, 0, cap, *l, q);
@@ -1537,7 +1564,7 @@ static void fx_octaver_run(le_fx_state* fx, int slot, int cap, float* l,
 static void fx_octaver_process(le_fx_state* fx, int slot, int sr, int cap,
                                float* l, float* r, const float* p) {
   (void)sr;
-  const float q[9] = {p[0], p[1], p[2], p[3], p[4], 0.0f, 0.0f, 0.0f, 0.0f};
+  const float q[8] = {p[0], p[1], p[2], p[3], p[4], 0.0f, 0.0f, 0.0f};
   fx_octaver_run(fx, slot, cap, l, r, q);
 }
 
@@ -1569,11 +1596,6 @@ int le_fx_type_hops(int32_t type) {
  * capture's 50 % puts dry and wet each 3 dB down). */
 #define LE_DOCT_DOWN_LEVEL 1.0f
 #define LE_DOCT_UP_LEVEL 0.977f /* -0.2 dB */
-/* Octave 2's trims: up, where the capture's sits (-0.7 dB against the dry,
- * level with Octave 1; the vocoder alone gives -3.6 at +24); down, level
- * with Octave 1 down (no capture; the vocoder alone gives 0.0 at -24). */
-#define LE_DOCT_UP2_LEVEL 1.396f   /* +2.9 dB */
-#define LE_DOCT_DOWN2_LEVEL 0.841f /* -1.5 dB */
 
 static void le_doct_settings(const float* p, float* out) {
   const int high = p[0] >= 0.5f;
@@ -1585,11 +1607,10 @@ static void le_doct_settings(const float* p, float* out) {
   out[4] = 1.0f; /* the formants move with the pitch */
   out[5] = 1.0f - vol * (high ? LE_DOCT_UP_LEVEL : LE_DOCT_DOWN_LEVEL);
   out[6] = 1.0f; /* the Dual Octaver: equal power, a switched shift */
-  /* Octave 2 (#1464): two octaves up in high mode (measured, s5/6), two
-   * down without it (inferred: no capture). */
-  const float vol2 = p[3] < 0.0f ? 0.0f : p[3] > 1.0f ? 1.0f : p[3];
-  out[7] = high ? 1.0f : 0.0f; /* +24 or -24 */
-  out[8] = vol2 * (high ? LE_DOCT_UP2_LEVEL : LE_DOCT_DOWN2_LEVEL);
+  /* Octave 2's level (#1464): its voice, two octaves up in high mode
+   * (measured, s5/6) or down without it (inferred: no capture), and its
+   * trim follow Octave 1's shift in the kernel. */
+  out[7] = p[3] < 0.0f ? 0.0f : p[3] > 1.0f ? 1.0f : p[3];
 }
 
 void le_fx_octaver_settings(int32_t type, const float* params, float* out) {
@@ -1597,7 +1618,6 @@ void le_fx_octaver_settings(int32_t type, const float* params, float* out) {
   out[5] = 0.0f; /* the wet voice's cut: none */
   out[6] = 0.0f; /* the plain octaver: a linear mix, a gliding shift */
   out[7] = 0.0f; /* no second voice */
-  out[8] = 0.0f;
   if (type == LE_FX_DUAL_OCTAVER) {
     le_doct_settings(params, out);
     return;
@@ -1613,9 +1633,9 @@ void le_fx_octaver_settings(int32_t type, const float* params, float* out) {
 static void fx_whammy_process(le_fx_state* fx, int slot, int sr, int cap,
                               float* l, float* r, const float* p) {
   (void)sr;
-  /* The nine settings the octaver's kernel reads (le_fx_octaver_settings). */
-  const float q[9] = {le_whammy_shift(p), 1.0f, 1.0f, 0.0f, 1.0f,
-                      0.0f, 0.0f, 0.0f, 0.0f};
+  /* The eight settings the octaver's kernel reads (le_fx_octaver_settings). */
+  const float q[8] = {le_whammy_shift(p), 1.0f, 1.0f, 0.0f, 1.0f,
+                      0.0f, 0.0f, 0.0f};
   fx_octaver_run(fx, slot, cap, l, r, q);
 }
 
@@ -1623,7 +1643,7 @@ static void fx_dual_octaver_process(le_fx_state* fx, int slot, int sr,
                                     int cap, float* l, float* r,
                                     const float* p) {
   (void)sr;
-  float q[9];
+  float q[8];
   le_doct_settings(p, q);
   fx_octaver_run(fx, slot, cap, l, r, q);
 }

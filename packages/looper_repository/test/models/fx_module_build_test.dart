@@ -1119,7 +1119,7 @@ void main() {
     });
 
     test("Ed's Octaver copies both octaves, high mode and the mix", () {
-      // Bass Octave Layer, with high mode on: Octave 2 at 60 %.
+      // Bass Octave Layer as shipped: high mode off, Octave 2 at 60 %.
       final e = fxModuleEntry(
         _module('Octaver'),
         const FxPreset(
@@ -1129,7 +1129,7 @@ void main() {
           type: 0,
           params: {
             'Oct': 1,
-            'Oct High Mode': 1,
+            'Oct High Mode': 0,
             'Octave 1 Vol': 1,
             'Octave 2 Vol': 0.6,
             'Octave Mix': 1,
@@ -1137,7 +1137,7 @@ void main() {
         ),
       );
       expect(e.type, TrackEffectType.dualOctaver);
-      expect(e.params.take(4), [1.0, 1.0, 1.0, closeTo(0.6, 1e-9)]);
+      expect(e.params.take(4), [0.0, 1.0, 1.0, closeTo(0.6, 1e-9)]);
       final build = fxEntryBuild(e)!;
       expect(build.readiness, FxModuleReadiness.full);
       expect(build.exposed, [0, 1, 2, 3]);
