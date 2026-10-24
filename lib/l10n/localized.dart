@@ -38,6 +38,7 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.whammy => effectWhammy,
     TrackEffectType.pumper => effectPumper,
     TrackEffectType.slicer => effectSlicer,
+    TrackEffectType.modeDelay => effectModeDelay,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
@@ -52,6 +53,8 @@ extension EngineLocalizations on AppLocalizations {
     'cutoff' => paramCutoff,
     'resonance' => paramResonance,
     'time' => paramTime,
+    'delay_time' => paramTime,
+    'delay_mode' => paramMode,
     'decay' => paramDecay,
     'volume' => paramVolume,
     'amb_dub_mix' => paramAmbDubMix,
@@ -167,8 +170,8 @@ extension EngineLocalizations on AppLocalizations {
 
   /// The name of position [position] of choice parameter [p]: the octaver's
   /// mode or formants, the EQ's layout, the Whammy's range, the Pumper's
-  /// rate, the Slicer's pattern or step, or the LPF's LFO rate. Any other
-  /// reads as its 1-based number.
+  /// rate, the Slicer's pattern or step, the LPF's LFO rate, or the Mode
+  /// delay's time or mode. Any other reads as its 1-based number.
   String _choiceName(FxParamInfo p, int position) =>
       switch ((p.key, position)) {
         ('mode', 0) => octaverModePhaseVocoder,
@@ -182,6 +185,8 @@ extension EngineLocalizations on AppLocalizations {
         ('slicer_pattern', final i) => _slicerPatterns[i],
         ('slicer_step', final i) => _slicerSteps[i],
         ('lfo_rate', final i) => _lfoRates[i],
+        ('delay_time', final i) => _delayTimes[i],
+        ('delay_mode', final i) => _delayModes[i],
         ('layout', 0) => eqLayoutShelves,
         ('layout', 1) => eqLayoutBellsCuts,
         ('layout', 2) => eqLayoutBells,
@@ -239,6 +244,46 @@ extension EngineLocalizations on AppLocalizations {
     '1/32',
     '1/32T',
     '1/64',
+  ];
+
+  /// The Mode delay's times, shortest first, in its time's order.
+  static const List<String> _delayTimes = [
+    '1/32',
+    '1/16T',
+    '1/32D',
+    '1/16',
+    '1/8T',
+    '1/16D',
+    '1/8',
+    '1/4T',
+    '1/8D',
+    '1/4',
+    '2/4T',
+    '1/4D',
+    '2/4',
+    '5/8',
+    '3/4',
+    '7/8',
+    '4/4',
+    '5/4',
+    '6/4',
+    '8/4',
+  ];
+
+  /// The Mode delay's modes, as the Looper X names them.
+  static const List<String> _delayModes = [
+    'DIGI',
+    'DIGI L/R',
+    'DIGI GRV',
+    'DAMPED',
+    'DAMPED L/R',
+    'DAMPED GRV',
+    'RESO LO',
+    'RES LO L/R',
+    'RES LO GRV',
+    'RESO HI',
+    'RES HI L/R',
+    'RES HI GRV',
   ];
 
   /// The Rhythmic LPF's LFO periods, longest first, in its rate's order:

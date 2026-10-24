@@ -866,6 +866,7 @@
     "effectWhammy": "Whammy",
     "effectPumper": "Pumper",
     "effectSlicer": "Slicer",
+    "effectModeDelay": "Mode delay",
     "paramPattern": "Pattern",
     "@paramPattern": {
         "description": "The Slicer's pattern of slices, rests and reversals."

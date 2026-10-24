@@ -559,6 +559,10 @@ typedef struct le_fx_state {
   int32_t rev_ap_pos[LE_FX_MAX][LE_REV_APS * LE_REV_BANKS];
   /* The Slicer's runtime (fx_slicer_process). */
   le_fx_slice_state slice[LE_FX_MAX];
+  /* The Mode delay's line (fx_mode_delay_process): its own seconds-long
+   * ring and runtime, allocated by its prepare for the slots that hold
+   * one; NULL elsewhere. */
+  struct le_fx_line *_Atomic line[LE_FX_MAX];
   /* Per-slot enable-crossfade runtime (fx_apply_chain). DSP state — owned by
    * whichever thread runs the chain (the audio thread live; the render thread
    * offline), NOT published config: the published flags live on the chain

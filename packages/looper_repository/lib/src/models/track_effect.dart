@@ -450,7 +450,10 @@ enum TrackEffectType {
   pumper(25),
 
   /// The Looper X's Slicer (#887 part 10).
-  slicer(26);
+  slicer(26),
+
+  /// The Looper X's delay (#887 part 10).
+  modeDelay(27);
 
   const TrackEffectType(this.code);
 

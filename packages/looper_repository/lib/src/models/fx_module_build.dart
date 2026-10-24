@@ -155,15 +155,6 @@ class FxModuleBuild {
 /// from this map or [kFxModuleVariants] is [FxModuleReadiness.unavailable]:
 /// the catalogue names twenty-six modules and the engine builds fewer.
 const Map<String, FxModuleBuild> kFxModuleBuilds = {
-  // p0 time, p1 feedback, p2 mix — the three the preset names, so nothing is
-  // dropped. Its mode (and the Drum Rack's feedback filter frequency) are
-  // Looper X's own shaping and have no engine parameter, which is what makes
-  // it partial.
-  'Delay': FxModuleBuild(
-    type: TrackEffectType.delay,
-    params: ['Del Time', 'Del Feedback', 'Del Mix'],
-    unmapped: ['Del Freq', 'Del Mode'],
-  ),
   // p0 size, p1 damping, p2 mix. `Rev Bright` is brightness where the engine
   // wants damping, which is its complement, so it is NOT wired here: inverting
   // someone else's control into ours is the silent substitution the accepted
@@ -296,6 +287,16 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Whammy': {'Guitar Rack': _whammy},
   'Pumper': {'Rhythmic Rack': _pumper},
   'Slicer': {'Rhythmic Rack': _slicer},
+  'Delay': {
+    "Ed's Rack": _modeDelay,
+    'Drum Rack': _drumDelay,
+    'Guitar Rack': _modeDelay,
+    'Lo-Fi Rack': _modeDelay,
+    'Rhythmic Rack': _modeDelay,
+    'Studio Rack': _modeDelay,
+    'Vocal Rack': _modeDelay,
+    'Vocal Tuner Rack': _modeDelay,
+  },
   'Pitch shift': {'Studio Rack': _pitchShift, 'Vocal Rack': _pitchShift},
 };
 
@@ -324,16 +325,32 @@ const FxModuleBuild _pitchShift = FxModuleBuild(
   },
 );
 
-// Dub Rack: the delay's time and feedback, on the Dub path. It passes echoes
-// only (#891), so its mix is held at 100 %: the path's dry is the rack's
-// paths' to give. Its damping, stereo ratio and resonance are the dub delay's
-// own shaping and have no engine parameter.
+// Dub Rack: the delay's time (a note value) and feedback on the Mode delay,
+// on the Dub path. It passes echoes only (#891), so its mix is held at
+// 100 %: the path's dry is the rack's paths' to give. Its damping, stereo
+// ratio and resonance are not measured, so they stay named and unmapped,
+// and it plays DIGI.
 const FxModuleBuild _dubDelay = FxModuleBuild(
-  type: TrackEffectType.delay,
+  type: TrackEffectType.modeDelay,
   params: ['Del Time', 'Del Feedback'],
   unmapped: ['Del Damp', 'Del L/R Ratio', 'Del Res-Freq', 'Del Reso'],
   fixed: {2: 100},
   path: FxModulePath.dub,
+);
+
+// The seven racks with the Looper X's mode delay: time (a note value),
+// feedback, mix and mode.
+const FxModuleBuild _modeDelay = FxModuleBuild(
+  type: TrackEffectType.modeDelay,
+  params: ['Del Time', 'Del Feedback', 'Del Mix', 'Del Mode'],
+);
+
+// Drum Rack: time, feedback and mix; its feedback filter frequency is not
+// measured, so it stays named and unmapped, and the delay plays DIGI.
+const FxModuleBuild _drumDelay = FxModuleBuild(
+  type: TrackEffectType.modeDelay,
+  params: ['Del Time', 'Del Feedback', 'Del Mix'],
+  unmapped: ['Del Freq'],
 );
 
 // Dub Rack: the whole Dub-Verb, decay and volume, on the Dub path.

@@ -46,19 +46,28 @@ void main() {
 
     test('a module the engine builds but cannot carry every control of is '
         'PARTIAL, with the stranded controls named', () {
-      final delay = fxModuleBuild(_module('Delay'));
+      final delay = fxModuleBuild(_module('Delay'), family: 'Drum Rack');
 
       expect(delay.readiness, FxModuleReadiness.partial);
-      expect(delay.type, TrackEffectType.delay);
+      expect(delay.type, TrackEffectType.modeDelay);
       // Kept and named, so a surface can show them and say they do not reach
       // the sound rather than drawing a control that does nothing.
-      expect(delay.unmapped, ['Del Freq', 'Del Mode']);
+      expect(delay.unmapped, ['Del Freq']);
+      // The seven racks with the mode delay carry every control.
+      final mode = fxModuleBuild(_module('Delay'), family: 'Guitar Rack');
+      expect(mode.readiness, FxModuleReadiness.full);
+      expect(mode.params, [
+        'Del Time',
+        'Del Feedback',
+        'Del Mix',
+        'Del Mode',
+      ]);
     });
 
     test("the Dub Rack's delay builds from its own power key and keys", () {
       final dub = fxModuleBuild(_module('Dub delay'));
 
-      expect(dub.type, TrackEffectType.delay);
+      expect(dub.type, TrackEffectType.modeDelay);
       expect(dub.readiness, FxModuleReadiness.partial);
       expect(dub.unmapped, contains('Del Damp'));
 
@@ -151,10 +160,14 @@ void main() {
         }),
       );
 
-      expect(entry.type, TrackEffectType.delay);
+      expect(entry.type, TrackEffectType.modeDelay);
       expect(entry.params[0], closeTo(0.42, 1e-9));
       expect(entry.params[1], closeTo(0.35, 1e-9));
       expect(entry.params[2], closeTo(0.25, 1e-9));
+      expect(entry.params[3], closeTo(0.545, 1e-9));
+      // 1/8D and RESO LO, positions 8 and 6.
+      expect(entry.type.params[0].positionOf(entry.params[0]), 8);
+      expect(entry.type.params[3].positionOf(entry.params[3]), 6);
     });
 
     test("follows the preset's own power key", () {

@@ -354,6 +354,16 @@ static void le_render_fail(le_render_job* j, int32_t result) {
 
 /* ---- begin ---- */
 
+/* [c]'s entries in units of one stereo 1 s ring (fx_delay_frames x 2):
+ * two for a Mode delay, whose mono line holds 4 s. */
+static int64_t le_render_ring_entries(const le_fx_frozen_chain* c) {
+  int64_t n = 0;
+  for (int32_t s = 0; s < c->count && s < LE_FX_MAX; ++s) {
+    n += c->type[s] == LE_FX_MODE_DELAY ? 2 : 1;
+  }
+  return n;
+}
+
 static int64_t le_render_job_bytes(const le_render_job* j) {
   int64_t bytes = 0;
   for (int32_t i = 0; i < j->nsrc; ++i) {
@@ -370,15 +380,16 @@ static int64_t le_render_job_bytes(const le_render_job* j) {
                : 2ll * LE_RENDER_SLICE_FRAMES * 4;
   /* The heap effect states the job prepares: one per lane, track and Mix
    * FX chain (and one transient per print), each entry's rings at most a
-   * stereo delay line of fx_delay_frames. */
-  int64_t entries = j->mix.count;
+   * stereo delay line of fx_delay_frames, or a Mode delay's 4 s mono line
+   * (two stereo rings' worth). */
+  int64_t entries = le_render_ring_entries(&j->mix);
   int64_t states = 1;
   for (int32_t i = 0; i < j->nsrc; ++i) {
     const le_render_src* s = &j->src[i];
-    entries += s->track.count;
+    entries += le_render_ring_entries(&s->track);
     states += 2;
     for (int32_t l = 0; l < s->lanes; ++l) {
-      entries += s->lane[l].chain.count;
+      entries += le_render_ring_entries(&s->lane[l].chain);
       states += 2;
     }
   }
