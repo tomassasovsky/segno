@@ -749,9 +749,8 @@ typedef enum le_fx_type {
   /* SLICER: p0 pattern (a choice of 20, in the Looper X's order: AABB,
    * ABCC, AACD, ABC_, A_C_, A_CC, A___C___, ABcccc, AAccdd, AB__dd, AA__dd,
    * ABC<, AB_<, AA_<, A_B_C<, AB<<, <<<<, AABB Fd1, AABB Fd2, AABB Fd3),
-   * p1 step (a
-   * choice of 9 note values: 1/4, 1/4T, 1/8, 1/8T, 1/16, 1/16T, 1/32,
-   * 1/32T, 1/64), p2 mix. Plays the pattern on the beat: a capital letter
+   * p1 step (a choice of 9 note values: 1/4, 1/4T, 1/8, 1/8T, 1/16, 1/16T,
+   * 1/32, 1/32T, 1/64), p2 mix. Plays the pattern on the beat: a capital letter
    * is a step and a lower-case one half a step; a letter's first slice is
    * the live input and each repeat replays it from its start; _ silences a
    * step; < plays the step before backwards. A slice ends with a 4 ms fade
