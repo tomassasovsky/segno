@@ -144,7 +144,8 @@ static void dynamics_entry(le_fx_recipe* r, int s, int32_t kind) {
       r->params[s][3] = 0.8f; /* at 1/8 */
     }
   } else if (kind == LE_FX_DUAL_OCTAVER) {
-    r->params[s][3] = 0.6f; /* both voices: Bass Octave Layer's Octave 2 */
+    /* Bass Octave Layer: high mode off, Octave 2 (two down) at 60 %. */
+    r->params[s][3] = 0.6f;
   } else if (kind == LE_FX_MODE_DELAY) {
     r->params[s][0] = 9.0f / 19.0f; /* 1/4 */
     r->params[s][3] = 7.0f / 11.0f; /* RES LO L/R: both taps voiced */
@@ -177,7 +178,7 @@ static void fx_entry(le_fx_recipe* r, int s) { kind_entry(r, s, g_kind); }
  * budgets (#1372: 60 us for Drum, Dub, Lo-Fi and Rhythmic, 200 us for Ed's,
  * Guitar, Studio and Vocal, 300 us for the Vocal Tuner). Each slot runs the
  * kind it has or will have:
- *  - the Dual Octaver (one voice, #1464 adds the second) for Ed's Octaver,
+ *  - the Dual Octaver (both voices) for Ed's Octaver,
  *    the octaver for the Pitch Shift (#1441), and the chorus and tremolo for
  *    the Mod module, which is not built yet (a projection of its cost);
  *  - the Mode delay for the racks' Delay and Dub Delay, and the engine's
