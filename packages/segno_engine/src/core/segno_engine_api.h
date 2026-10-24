@@ -764,7 +764,8 @@ typedef enum le_fx_type {
    * DIGI, DIGI L/R, DIGI GRV, DAMPED, DAMPED L/R, DAMPED GRV, RESO LO,
    * RES LO L/R, RES LO GRV, RESO HI, RES HI L/R, RES HI GRV). The Looper X's
    * delay at the song tempo, its voicings and stereo timings fit to the
-   * captures (#891), on a line of up to 4 s (longer times hold at 4 s). */
+   * captures (#891), on a line of up to 4 s (longer times hold at 4 s).
+   * On the song's tempo, so a lane holding one is never printed. */
   LE_FX_MODE_DELAY = 27,
 } le_fx_type;
 

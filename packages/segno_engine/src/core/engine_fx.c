@@ -1179,7 +1179,8 @@ static void le_mdly_clear(struct le_fx_line* line);
 static int32_t le_mdly_frames(const struct le_fx_line* line);
 
 void le_fx_entry_reset(le_fx_state* fx, int slot) {
-  if (fx->line[slot] != NULL) le_mdly_reset(fx->line[slot]);
+  struct le_fx_line* line = __atomic_load_n(&fx->line[slot], __ATOMIC_ACQUIRE);
+  if (line != NULL) le_mdly_reset(line);
   for (int chan = 0; chan < 2; ++chan) {
     fx->svf_ic1[slot][chan] = 0.0f;
     fx->svf_ic2[slot][chan] = 0.0f;
@@ -1233,7 +1234,8 @@ void le_fx_octaver_seed_settled(le_fx_state* fx, int slot,
 void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap) {
   /* The Mode delay's line reads nothing older than its clear: no zeroing
    * of its seconds of ring on the audio thread. */
-  if (fx->line[slot] != NULL) le_mdly_clear(fx->line[slot]);
+  struct le_fx_line* line = __atomic_load_n(&fx->line[slot], __ATOMIC_ACQUIRE);
+  if (line != NULL) le_mdly_clear(line);
   for (int chan = 0; chan < 2; ++chan) {
     if (fx->delay[slot][chan] != NULL) {
       memset(fx->delay[slot][chan], 0, (size_t)cap * sizeof(float));
@@ -1942,8 +1944,10 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
  *   0.750 + 0.116 Feedback, with 0.126 / 0.113 of the other. The timings
  *   were measured on DIGI and RES HI, and are the same on both; the DAMPED
  *   and RESO LO ones are composed from them.
- * The loop is held under full scale (a resonant voicing at 100 % Feedback
- * would otherwise grow). */
+ * What the line holds is kept under full scale with a soft knee, and a 5 Hz
+ * DC blocker sits in the loop: a resonant voicing (or DIGI at DC) at 100 %
+ * Feedback would otherwise grow. Its tempo is the live song's, which a
+ * print would not keep, so a lane holding one is never printed. */
 
 static const double LE_MDLY_QUARTERS[20] = {
     0.125, 1.0 / 6.0, 0.1875, 0.25, 1.0 / 3.0, 0.375, 0.5, 2.0 / 3.0, 0.75, 1.0,
@@ -1955,6 +1959,8 @@ static const double LE_MDLY_QUARTERS[20] = {
 #define LE_MDLY_LOOP_LP_HZ 14832.0
 #define LE_MDLY_DAMP_HZ 13203.0
 #define LE_MDLY_GRV 0.8368
+#define LE_MDLY_DC_HZ 5.0  /* the loop's DC blocker */
+#define LE_MDLY_KNEE 0.8f  /* the line's soft knee, ceiling 1 */
 #define LE_MDLY_LINE_S 4 /* the line holds 4 s (#1372 Architecture 7) */
 
 /* A voicing: a peak (gain dB 0 for none) or a damping one-pole, and the
@@ -2041,16 +2047,16 @@ typedef struct le_fx_line {
   int32_t xf;           /* frames of that crossfade left */
   float fb, mix;        /* gliding */
   le_mdly_bq voice[2];  /* on the on-time tap and the early one */
-  le_mdly_pole hp[2], lp_out[2], lp_loop;
+  le_mdly_pole hp[2], lp_out[2], lp_loop, dc;
+  int32_t timing; /* the last frame's: plain, L/R or GRV */
   float loop_g;
   float ring[];
 } le_fx_line;
 
-/* Resets [line]'s runtime, keeping its ring (fill 0: nothing is read). */
+/* Resets [line]'s runtime, keeping its ring (fill 0: nothing is read) and
+ * its length, which is never rewritten. */
 static void le_mdly_reset(le_fx_line* line) {
-  const int32_t cap = line->cap;
-  memset(line, 0, offsetof(le_fx_line, ring));
-  line->cap = cap;
+  memset(&line->pos, 0, offsetof(le_fx_line, ring) - offsetof(le_fx_line, pos));
   line->mode = -1;
 }
 
@@ -2064,11 +2070,14 @@ static int32_t fx_mode_delay_prepare(le_fx_state* fx, int slot, int cap) {
   if (line == NULL) return LE_ERR_INVALID;
   line->cap = frames;
   le_mdly_reset(line);
-  fx->line[slot] = line;
+  /* Published whole: an audio-thread reset of the slot may see it. */
+  __atomic_store_n(&fx->line[slot], line, __ATOMIC_RELEASE);
   return LE_OK;
 }
 
-static void le_mdly_clear(le_fx_line* line) { line->fill = 0; }
+/* A clear is a reset of the line: the ring's old frames are never read
+ * again, and nothing the filters hold feeds back into it. */
+static void le_mdly_clear(le_fx_line* line) { le_mdly_reset(line); }
 
 static int32_t le_mdly_frames(const le_fx_line* line) { return line->cap; }
 
@@ -2084,7 +2093,7 @@ static inline float le_mdly_read(const le_fx_line* line, int back) {
 static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
                                   float* l, float* r, const float* p) {
   (void)cap;
-  le_fx_line* line = fx->line[slot];
+  le_fx_line* line = __atomic_load_n(&fx->line[slot], __ATOMIC_ACQUIRE);
   if (line == NULL) return;
   const int32_t rate = sr > 0 ? sr : 48000;
   int mode = (int)(p[3] * 11.0f + 0.5f);
@@ -2094,6 +2103,7 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
   if (line->sr != rate || line->mode != voice) {
     if (line->sr != rate) {
       le_mdly_pole_set(&line->lp_loop, LE_MDLY_LOOP_LP_HZ, rate, 0);
+      le_mdly_pole_set(&line->dc, LE_MDLY_DC_HZ, rate, 1);
       for (int c = 0; c < 2; ++c) {
         le_mdly_pole_set(&line->hp[c], LE_MDLY_HP_HZ, rate, 1);
         le_mdly_pole_set(&line->lp_out[c], LE_MDLY_OUT_LP_HZ, rate, 0);
@@ -2123,6 +2133,11 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
     line->mix = mix_to;
     line->tap = want > 0 ? want : 1;
   }
+  /* The early tap's voicing starts clean when it comes into use. */
+  if (timing != 0 && line->timing == 0) {
+    line->voice[1].z1 = line->voice[1].z2 = 0.0f;
+  }
+  line->timing = timing;
   const float glide = (float)(1.0 / (LE_MDLY_GLIDE_S * (double)rate));
   line->fb += (fb_to - line->fb) * glide;
   line->mix += (mix_to - line->mix) * glide;
@@ -2151,12 +2166,19 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
   const float vp = le_mdly_bq_run(&line->voice[0], tp);
   const float ve = timing != 0 ? le_mdly_bq_run(&line->voice[1], te) : 0.0f;
 
-  /* The loop: the on-time echo, voiced, fed back at Feedback, held under
-   * full scale. */
-  float back = line->fb * line->loop_g * le_mdly_pole_lp(&line->lp_loop, vp);
-  if (back > 1.0f) back = 1.0f + tanhf(back - 1.0f);
-  if (back < -1.0f) back = -1.0f + tanhf(back + 1.0f);
-  line->ring[line->pos] = 0.5f * (*l + *r) + back;
+  /* The loop: the on-time echo, voiced, fed back at Feedback, a DC
+   * blocker far under the band (5 Hz: 0.04 dB at 50 Hz), and what the
+   * line holds kept under full scale with a soft knee from 0.8. */
+  const float back = line->fb * line->loop_g *
+                     le_mdly_pole_lp(&line->lp_loop,
+                                     le_mdly_pole_hp(&line->dc, vp));
+  float w = 0.5f * (*l + *r) + back;
+  const float aw = fabsf(w);
+  if (aw > LE_MDLY_KNEE) {
+    const float over = (aw - LE_MDLY_KNEE) / (1.0f - LE_MDLY_KNEE);
+    w = copysignf(LE_MDLY_KNEE + (1.0f - LE_MDLY_KNEE) * tanhf(over), w);
+  }
+  line->ring[line->pos] = w;
   line->pos = line->pos + 1 >= line->cap ? 0 : line->pos + 1;
   if (line->fill < line->cap) ++line->fill;
 
@@ -5376,7 +5398,8 @@ static const le_fx_vtable LE_FX[] = {
                       LE_FX_SLICER_PARAMS, LE_FX_F_FREE_RUNNING},
     /* Its own seconds-long line (fx->line), drained on bypass. */
     [LE_FX_MODE_DELAY] = {fx_mode_delay_process, NULL, fx_mode_delay_prepare,
-                          LE_FX_MODE_DELAY_PARAMS, LE_FX_F_DRAINS},
+                          LE_FX_MODE_DELAY_PARAMS,
+                          LE_FX_F_DRAINS | LE_FX_F_FREE_RUNNING},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -5586,6 +5609,7 @@ static inline void fx_run(le_fx_state* fx, int s, int32_t ty, int sr, int cap,
 static int le_fx_holds_tail(const le_fx_state* fx, int s, int32_t type) {
   if (type <= LE_FX_NONE || type >= LE_FX_TYPE_COUNT) return 0;
   if (LE_FX[type].state_size != 0) return (LE_FX[type].flags & LE_FX_F_DRAINS) != 0;
+  if (type == LE_FX_MODE_DELAY) return fx->line[s] != NULL;
   return LE_FX[type].prepare != NULL &&
          (fx->delay[s][0] != NULL || fx->delay[s][1] != NULL);
 }
@@ -5969,7 +5993,11 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
           if (needs_clear && fx->enable_clear_cooldown > 0) goto slot_done;
           le_fx_entry_reset(fx, s);
           if (needs_clear) {
-            if (LE_FX[ty].prepare != NULL && LE_FX[ty].rkprocess == NULL)
+            /* The Mode delay reads only its own line, which the reset just
+             * emptied: any 1 s rings an earlier kind left stay as they
+             * are, unread. */
+            if (LE_FX[ty].prepare != NULL && LE_FX[ty].rkprocess == NULL &&
+                ty != LE_FX_MODE_DELAY)
               le_fx_entry_clear_rings(fx, s, cap);
             fx->enable_clear_cooldown = LE_FX_ENABLE_CLEAR_SPACING;
           }
