@@ -42,8 +42,8 @@ The Dub Doubler and Ed's Wah were measured with the reverb stimulus
   more (below 60 Hz to above 12.8 kHz). Two points fit a swing of
   0.5 x Depth^2 in the stored cutoff value (+-1.25 and +-5 octaves).
   Refit over the whole cycle of a 1 kHz tone (#887 part 10c): a swing of
-  0.72 x Depth^2.2 (+-1.57 and +-7.2 octaves, held to the cutoff's range)
-  matches within 1.7 dB at 50 % and 1.1 dB at 100 % (above -50 dB). The
+  0.72 x Depth^2.2 (+-1.56 and +-7.2 octaves, held to the cutoff's range)
+  matches within 1.7 dB at 50 % and 1.2 dB at 100 % (above -50 dB). The
   sine rises from the start of each period: at 1/2 it crosses its centre,
   rising, on the bar line.
 

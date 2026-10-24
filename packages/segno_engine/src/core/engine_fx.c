@@ -3777,7 +3777,7 @@ static const double LE_LPF_LFO_QUARTERS[16] = {
 #define LE_LPF_RANGE_OCT 9.965784284662087
 /* The LFO's swing in the stored cutoff: LE_LPF_LFO_SWING Depth^LE_LPF_LFO_EXP
  * either side, fit to the capture's whole cycle at Depth 50 and 100 % (#891,
- * gD passes 3 and 4): +-1.57 and +-7.2 octaves. */
+ * gD passes 3 and 4): +-1.56 and +-7.2 octaves. */
 #define LE_LPF_LFO_SWING 0.72
 #define LE_LPF_LFO_EXP 2.2
 
@@ -3802,11 +3802,11 @@ typedef struct le_fx_lpf {
 } le_fx_lpf;
 
 /* The fastest the LFO's offset moves, octaves a second: above the fastest
- * sweep (1/16 at 240 BPM, Depth 100 %: about 720), so a sweep runs as
+ * sweep (1/16 at 300 BPM, Depth 100 %: about 900), so a sweep runs as
  * computed, while a beat that jumps (a loop top that is not a whole number
  * of periods, a new rate or depth) moves the corner over a millisecond or
  * so rather than at once. */
-#define LE_LPF_LFO_MAX_OCT_S 1000.0
+#define LE_LPF_LFO_MAX_OCT_S 1500.0
 
 /* [q]'s ladder coefficients for the one-pole G [G]. */
 static void le_lpf_coefs(le_fx_lpf* q, double G) {
@@ -3920,7 +3920,13 @@ static void fx_lpf_kprocess(void* ks, float* l, float* r) {
   float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
   if (amount <= 0.0f) {
     /* Off: the identity, with the filter's memory cleared (but for the
-     * seed) so it starts clean when it comes back. */
+     * seed) so it starts clean when it comes back, and any ramp of G
+     * landed so the updates go idle. */
+    if (q->g_n > 0) {
+      le_lpf_coefs(q, (double)(q->g + q->g_inc * (float)q->g_n));
+      q->g_inc = 0.0f;
+      q->g_n = 0;
+    }
     memset(q->s, 0, sizeof(q->s));
     q->s[0][0] = q->s[1][0] = LE_LPF_SEED;
     q->sh[0] = q->sh[1] = 0.0f;
@@ -4679,9 +4685,9 @@ typedef struct le_fx_vtable {
   void (*rkprocess)(void* ks, float* r0, float* r1, int cap, float* l,
                     float* r);
   /* A heap-state kind locked to the beat (the Rhythmic LPF's LFO): given,
-   * just before each `update`, the beat in quarter notes at the end of the
-   * frames that update covers (where a setting it ramps toward lands). NULL
-   * for the rest. */
+   * just before each `update`, the beat in quarter notes of the last frame
+   * that update covers (where a setting it ramps toward lands). NULL for
+   * the rest. */
   void (*beat)(void* ks, double beat);
 } le_fx_vtable;
 
@@ -4941,7 +4947,8 @@ static void* fx_kind_state(le_fx_state* fx, int s, int32_t ty, int sr,
       float qpf;
       int32_t num, den;
       const double now = le_fx_beat_now(fx, sr, &qpf, &num, &den);
-      LE_FX[ty].beat(st, now + (double)LE_FX_UPDATE_FRAMES * (double)qpf);
+      LE_FX[ty].beat(st,
+                     now + (double)(LE_FX_UPDATE_FRAMES - 1) * (double)qpf);
     }
     LE_FX[ty].update(st, p, sr, b->settle);
     b->settle = 0;
