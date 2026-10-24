@@ -175,7 +175,8 @@ static void fx_entry(le_fx_recipe* r, int s) { kind_entry(r, s, g_kind); }
  * budgets (#1372: 60 us for Drum, Dub, Lo-Fi and Rhythmic, 200 us for Ed's,
  * Guitar, Studio and Vocal, 300 us for the Vocal Tuner). Each slot runs the
  * kind it has or will have:
- *  - the octaver for the Pitch Shift (#1441), and the chorus and tremolo for
+ *  - the Dual Octaver (one voice, #1464 adds the second) for Ed's Octaver,
+ *    the octaver for the Pitch Shift (#1441), and the chorus and tremolo for
  *    the Mod module, which is not built yet (a projection of its cost);
  *  - the Mode delay for the racks' Delay and Dub Delay, and the engine's
  *    reverb for their Reverb;
@@ -203,7 +204,7 @@ static const rack_spec k_racks[] = {
      {LE_FX_LPF, LE_FX_SLICER, LE_FX_PUMPER, LE_FX_EQ, LE_FX_MODE_DELAY,
       LE_FX_REVERB}},
     {"eds", 200.0,
-     {LE_FX_OCTAVER, LE_FX_WAH, LE_FX_COMPRESSOR, LE_FX_OVERDRIVE,
+     {LE_FX_DUAL_OCTAVER, LE_FX_WAH, LE_FX_COMPRESSOR, LE_FX_OVERDRIVE,
       LE_FX_CHORUS, LE_FX_REVERB, LE_FX_MODE_DELAY, LE_FX_EQ}},
     {"guitar", 200.0,
      {LE_FX_WHAMMY, LE_FX_OVERDRIVE, LE_FX_WAH, LE_FX_CHORUS, LE_FX_SPRING,
@@ -334,6 +335,7 @@ static const char* kind_name(void) {
     case LE_FX_PUMPER: return "pumper";
     case LE_FX_SLICER: return "slicer";
     case LE_FX_MODE_DELAY: return "modedelay";
+    case LE_FX_DUAL_OCTAVER: return "dualoct";
     default: return "octaver";
   }
 }
@@ -472,7 +474,7 @@ static const table_kind k_table[] = {
     {"spring", LE_FX_SPRING, 0},        {"dubverb", LE_FX_DUB_VERB, 0},
     {"ambverb", LE_FX_AMB_VERB, 0},     {"whammy", LE_FX_WHAMMY, 0},
     {"pumper", LE_FX_PUMPER, 0},        {"slicer", LE_FX_SLICER, 0},
-    {"modedelay", LE_FX_MODE_DELAY, 0},
+    {"modedelay", LE_FX_MODE_DELAY, 0}, {"dualoct", LE_FX_DUAL_OCTAVER, 0},
 };
 
 /* The monitor rig with [n] instances of [kind] in one chain, timed. */
@@ -618,6 +620,8 @@ int main(int argc, char** argv) {
         g_kind = LE_FX_WHAMMY;
       } else if (!strcmp(kind, "pumper")) {
         g_kind = LE_FX_PUMPER;
+      } else if (!strcmp(kind, "dualoct")) {
+        g_kind = LE_FX_DUAL_OCTAVER;
       } else if (!strcmp(kind, "modedelay")) {
         g_kind = LE_FX_MODE_DELAY;
       } else if (!strcmp(kind, "slicer")) {
@@ -628,7 +632,7 @@ int main(int argc, char** argv) {
                 "hpgate, doubler, chorus, wah, overdrive, distortion, vinyl, "
                 "degrade, lpf, lpflfo, spring, drive, filter, delay, tremolo, echo, "
                 "reverb, dubverb, ambverb, whammy, pumper, slicer, "
-                "modedelay)\n",
+                "modedelay, dualoct)\n",
                 kind);
         return 2;
       }
@@ -658,7 +662,7 @@ int main(int argc, char** argv) {
               "[--kind octaver|psola|eq|comp|transient|hpgate|doubler|chorus|"
               "wah|overdrive|distortion|vinyl|degrade|lpf|lpflfo|spring|drive|filter|"
               "delay|tremolo|echo|reverb|dubverb|ambverb|whammy|"
-              "pumper|slicer|modedelay] [--table]\n",
+              "pumper|slicer|modedelay|dualoct] [--table]\n",
               argv[0]);
       return 2;
     }

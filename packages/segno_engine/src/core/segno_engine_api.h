@@ -767,6 +767,11 @@ typedef enum le_fx_type {
    * captures (#891), on a line of up to 4 s (longer times hold at 4 s).
    * On the song's tempo, so a lane holding one is never printed. */
   LE_FX_MODE_DELAY = 27,
+  /* DUAL_OCTAVER: p0 high mode (a choice of 2: off, on), p1 Octave 1 level,
+   * p2 mix. The Looper X's Dual Octaver on the octaver's phase vocoder
+   * (#891): its first voice one octave down (off) or up (on), the mix an
+   * equal-power crossfade. Its second voice (Octave 2) is #1464. */
+  LE_FX_DUAL_OCTAVER = 28,
 } le_fx_type;
 
 /* ---- Built-in effect parameter descriptors (#1378) ----

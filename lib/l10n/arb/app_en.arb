@@ -867,6 +867,15 @@
     "effectPumper": "Pumper",
     "effectSlicer": "Slicer",
     "effectModeDelay": "Mode delay",
+    "effectDualOctaver": "Dual octaver",
+    "paramHighMode": "High mode",
+    "@paramHighMode": {
+        "description": "The Dual Octaver's octave up (on) or down (off)."
+    },
+    "paramOctave1Level": "Octave 1 level",
+    "@paramOctave1Level": {
+        "description": "The level of the Dual Octaver's first octave voice."
+    },
     "paramPattern": "Pattern",
     "@paramPattern": {
         "description": "The Slicer's pattern of slices, rests and reversals."
