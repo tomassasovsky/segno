@@ -1004,6 +1004,25 @@ enum TrackEffectType {
         atMax: 100,
         defaultValue: 1,
       ),
+      // The Rhythmic Rack's LFO over the cutoff (#891): its depth (0 keeps
+      // the cutoff still, as the Lo-Fi Rack's is) and its rate, a note value
+      // (8/4, 6/4, 5/4, 4/4, 3/4, 1/1T, 1/2, 1/4D, 1/2T, 1/4, 1/8D, 1/4T,
+      // 1/8, 1/16D, 1/8T, 1/16).
+      FxParamInfo(
+        key: 'lfo_depth',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'lfo_rate',
+        unit: FxParamUnit.choice,
+        steps: 16,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0.4,
+      ),
     ],
     // Fit to the Guitar Rack's Spring (#891); the Looper X's ranges.
     TrackEffectType.spring => const [

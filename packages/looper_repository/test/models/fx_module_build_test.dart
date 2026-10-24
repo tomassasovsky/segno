@@ -715,13 +715,9 @@ void main() {
             final e = fxModuleEntry(module, p);
             final build = fxEntryBuild(e);
             expect(build, isNotNull, reason: '${p.name} ${module.name}');
-            // The Rhythmic Rack's low-pass filter drops its LFO until the
-            // tempo context lands (#887 part 10); everything else is full.
             expect(
               build!.readiness,
-              p.family == 'Rhythmic Rack' && module.name == 'Low-pass filter'
-                  ? FxModuleReadiness.partial
-                  : FxModuleReadiness.full,
+              FxModuleReadiness.full,
               reason: '${p.name} ${module.name}',
             );
             // Every key the preset gives the module, but its power key, has
@@ -882,8 +878,8 @@ void main() {
       expect(degrade.params.take(3), [0.45, 0.6, 0.7]);
     });
 
-    test("the low-pass filter: the Lo-Fi Rack's is full, the Rhythmic Rack's "
-        'drops its LFO until part 10', () {
+    test("the low-pass filter: both racks' are full, the Rhythmic Rack's "
+        'with its LFO', () {
       final lofi = fxModuleEntry(
         _module('Low-pass filter'),
         preset('Lo-Fi Rack', const {
@@ -904,8 +900,14 @@ void main() {
           'LPF LFO Rate': 0.6,
         }),
       );
-      expect(fxEntryBuild(rhythmic)!.readiness, FxModuleReadiness.partial);
-      expect(rhythmic.params.take(2), [0.6, 0.3]);
+      expect(fxEntryBuild(rhythmic)!.readiness, FxModuleReadiness.full);
+      expect(rhythmic.params.take(4), [0.6, 0.3, 0.8, 0.6]);
+      // Position 9 of 16: 4, a quarter note.
+      expect(rhythmic.type.params[3].positionOf(0.6), 9);
+      expect(fxEntryBuild(rhythmic)!.exposed, [0, 1, 2, 3]);
+      // The Lo-Fi Rack's has no LFO: its depth stays at 0 and it shows two.
+      expect(lofi.params[2], 0);
+      expect(fxEntryBuild(lofi)!.exposed, [0, 1]);
     });
   });
 
