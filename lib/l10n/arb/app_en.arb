@@ -865,6 +865,15 @@
     "effectAmbVerb": "Ambience",
     "effectWhammy": "Whammy",
     "effectPumper": "Pumper",
+    "effectSlicer": "Slicer",
+    "paramPattern": "Pattern",
+    "@paramPattern": {
+        "description": "The Slicer's pattern of slices, rests and reversals."
+    },
+    "paramStep": "Step",
+    "@paramStep": {
+        "description": "The note value of one step of the Slicer's pattern."
+    },
     "noteValueBar": "Bar",
     "@noteValueBar": {
         "description": "A note value one bar long, as a tempo-synced rate."

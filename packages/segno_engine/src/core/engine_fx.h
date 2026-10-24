@@ -458,7 +458,7 @@ int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap);
  *
  * LE_FX_WIDTHS is one past the last le_fx_type code; engine_fx.c checks it
  * against its effect table. */
-#define LE_FX_WIDTHS 26
+#define LE_FX_WIDTHS 27
 extern const uint8_t le_fx_widths[LE_FX_WIDTHS];
 static inline int32_t le_fx_param_width(int32_t type) {
   return type > 0 && type < LE_FX_WIDTHS ? (int32_t)le_fx_widths[type] : 0;

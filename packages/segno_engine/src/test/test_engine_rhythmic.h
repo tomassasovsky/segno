@@ -424,6 +424,160 @@ static void test_pumper_bar_follows_the_signature(void) {
   free(fx);
 }
 
+/* ---- Slicer ---- */
+
+/* The stored value of pattern [i] (of 20) and step position [k] (of 9). */
+static float rh_patt(int i) { return (float)i / 19.0f; }
+static float rh_step(int k) { return (float)k / 8.0f; }
+
+/* A one-slot Slicer state on [tempo], its rings ready. */
+static le_fx_state* rh_slicer(const le_fx_tempo* tempo) {
+  le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+  CHECK(fx != NULL);
+  for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
+  CHECK(le_fx_prepare(fx, 0, LE_FX_SLICER, RH_SR) == LE_OK);
+  le_fx_entry_reset(fx, 0);
+  fx->tempo = tempo;
+  fx->clocked = 1;
+  return fx;
+}
+
+/* The Slicer's output on a ramp (frame i is i / RH_SR, so a frame's value
+ * names it) for [n] frames from clock 0, on both channels. */
+static void rh_slice_run(le_fx_state* fx, const float* p3, float* out,
+                         int n) {
+  static int32_t types[LE_FX_MAX];
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  for (int s = 0; s < LE_FX_MAX; ++s) types[s] = LE_FX_NONE;
+  types[0] = LE_FX_SLICER;
+  for (int q = 0; q < LE_FX_PARAMS; ++q) params[0][q] = p3[q];
+  for (int i = 0; i < n; ++i) {
+    fx->clock = (uint32_t)i;
+    float l = (float)i / (float)RH_SR;
+    float r = -l;
+    fx_apply_chain(fx, RH_SR, RH_SR, &l, &r, 1, types, params, NULL);
+    CHECK(r == -l);
+    out[i] = l;
+  }
+}
+
+/* Whether [v] is the ramp's frame [i], within [slack] frames. */
+static int rh_is_frame(float v, double i, double slack) {
+  return fabs((double)v * RH_SR - i) <= slack;
+}
+
+static float* rh_slice(int patt, int step, float mix, int n) {
+  const le_fx_tempo t = rh_tempo(120.0);
+  const float p[LE_FX_PARAMS] = {rh_patt(patt), rh_step(step), mix};
+  le_fx_state* fx = rh_slicer(&t);
+  float* out = (float*)malloc(sizeof(float) * (size_t)n);
+  rh_slice_run(fx, p, out, n);
+  le_fx_state_free_buffers(fx);
+  free(fx);
+  return out;
+}
+
+/* AABB at 1/16 and 120 BPM (#891, seg21): a 125 ms step; A's first slice
+ * plays live and its second replays it from its start, one step back. */
+static void test_slicer_replays_a_repeat(void) {
+  printf("test_slicer_replays_a_repeat\n");
+  const int step = RH_SR / 8; /* a 1/16 at 120 BPM */
+  const int n = 8 * step;     /* two cycles */
+  float* o = rh_slice(0, 4, 1.0f, n);
+  for (int c = 0; c < 2; ++c) {
+    const int at = c * 4 * step;
+    for (int k = 0; k < 4; ++k) {
+      const int mid = at + k * step + step / 2;
+      const int back = (k % 2) ? step : 0; /* A A B B */
+      CHECK(rh_is_frame(o[mid], mid - back, 0.5));
+    }
+  }
+  free(o);
+  /* At 1/8 the step (and so the replay) is twice as long. */
+  o = rh_slice(0, 2, 1.0f, 4 * step);
+  CHECK(rh_is_frame(o[3 * step], 3 * step - 2 * step, 0.5));
+  free(o);
+}
+
+/* ABcccc (seg24): lower case is half a step; c plays live once, then each
+ * later c replays it from its start. */
+static void test_slicer_half_steps(void) {
+  printf("test_slicer_half_steps\n");
+  const int half = RH_SR / 16;
+  float* o = rh_slice(7, 4, 1.0f, 8 * half);
+  CHECK(rh_is_frame(o[4 * half + half / 2], 4 * half + half / 2, 0.5));
+  for (int k = 5; k < 8; ++k) {
+    const int mid = k * half + half / 2;
+    CHECK(rh_is_frame(o[mid], mid - (k - 4) * half, 0.5));
+  }
+  free(o);
+}
+
+/* A_C_ (seg23): a rest is silent; a slice ends with a 4 ms fade and starts
+ * without one. */
+static void test_slicer_rests_and_fades(void) {
+  printf("test_slicer_rests_and_fades\n");
+  const int step = RH_SR / 8;
+  const int fade = 4 * RH_SR / 1000;
+  float* o = rh_slice(4, 4, 1.0f, 4 * step);
+  CHECK(o[step + step / 2] == 0.0f);
+  CHECK(rh_is_frame(o[step - fade - 1], step - fade - 1, 0.5)); /* whole */
+  const float g = o[step - fade / 2] / ((float)(step - fade / 2) / RH_SR);
+  CHECK(fabsf(g - 0.5f) < 0.02f); /* half way down */
+  CHECK(fabsf(o[step - 1]) < 0.01f);
+  /* No fade in (a frame on, as the beat's float rate may land a boundary a
+   * frame late). */
+  CHECK(rh_is_frame(o[2 * step + 1], 2 * step + 1, 0.5));
+  free(o);
+}
+
+/* <<<< (the factory Reverse): each step plays the step before backwards. */
+static void test_slicer_reverses(void) {
+  printf("test_slicer_reverses\n");
+  const int step = RH_SR / 8;
+  float* o = rh_slice(16, 4, 1.0f, 3 * step);
+  for (int k = 10; k < step - 400; k += 997) {
+    CHECK(rh_is_frame(o[2 * step + k], 2 * step - k, 1.5));
+  }
+  free(o);
+}
+
+/* Mix (seg22): the slices at Mix, the dry whole up to 50 % and fading to
+ * nothing at 100 %. */
+static void test_slicer_mix_law(void) {
+  printf("test_slicer_mix_law\n");
+  const int step = RH_SR / 8;
+  const int mid = step + step / 2; /* A's replay, one step back */
+  const float x = (float)mid / RH_SR;
+  const float w = (float)(mid - step) / RH_SR;
+  static const float mix[3][3] = {
+      {0.5f, 1.0f, 0.5f}, {0.75f, 0.5f, 0.75f}, {0.25f, 1.0f, 0.25f}};
+  for (int m = 0; m < 3; ++m) {
+    float* o = rh_slice(0, 4, mix[m][0], 2 * step);
+    CHECK(fabsf(o[mid] - (x * mix[m][1] + w * mix[m][2])) < 1e-5f);
+    free(o);
+  }
+}
+
+/* The Fd patterns are not modelled: the input passes. A slicing Slicer is
+ * locked to the beat, so its lane is never printed. */
+static void test_slicer_fd_passes_and_is_not_printed(void) {
+  printf("test_slicer_fd_passes_and_is_not_printed\n");
+  const int step = RH_SR / 8;
+  for (int i = 17; i < 20; ++i) {
+    float* o = rh_slice(i, 4, 1.0f, 2 * step);
+    for (int k = 0; k < 2 * step; k += 101) CHECK(rh_is_frame(o[k], k, 0.5));
+    free(o);
+    const float p[LE_FX_PARAMS] = {rh_patt(i), 0.5f, 1.0f};
+    CHECK(!le_fx_entry_free_running(LE_FX_SLICER, p, RH_SR));
+  }
+  CHECK(le_fx_type_free_running(LE_FX_SLICER));
+  const float on[LE_FX_PARAMS] = {rh_patt(0), 0.5f, 1.0f};
+  const float off[LE_FX_PARAMS] = {rh_patt(0), 0.5f, 0.0f};
+  CHECK(le_fx_entry_free_running(LE_FX_SLICER, on, RH_SR));
+  CHECK(!le_fx_entry_free_running(LE_FX_SLICER, off, RH_SR));
+}
+
 static void run_rhythmic_tests(void) {
   test_pumper_matches_the_capture();
   test_pumper_rates_and_depths();
@@ -433,4 +587,10 @@ static void run_rhythmic_tests(void) {
   test_pumper_renders_from_the_logged_anchors();
   test_fx_beat_follows_the_loop();
   test_pumper_bar_follows_the_signature();
+  test_slicer_replays_a_repeat();
+  test_slicer_half_steps();
+  test_slicer_rests_and_fades();
+  test_slicer_reverses();
+  test_slicer_mix_law();
+  test_slicer_fd_passes_and_is_not_printed();
 }

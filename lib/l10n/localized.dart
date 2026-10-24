@@ -37,6 +37,7 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.ambVerb => effectAmbVerb,
     TrackEffectType.whammy => effectWhammy,
     TrackEffectType.pumper => effectPumper,
+    TrackEffectType.slicer => effectSlicer,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
@@ -66,6 +67,8 @@ extension EngineLocalizations on AppLocalizations {
     'formants' => paramFormants,
     'whammy_range' => paramRange,
     'pumper_rate' => paramRate,
+    'slicer_pattern' => paramPattern,
+    'slicer_step' => paramStep,
     'low_cut' => paramLowCut,
     'low_gain' => paramLowGain,
     'low_freq' => paramLowFreq,
@@ -161,8 +164,9 @@ extension EngineLocalizations on AppLocalizations {
   }
 
   /// The name of position [position] of choice parameter [p]: the octaver's
-  /// mode or formants, the EQ's layout, or the Whammy's range. Any other
-  /// reads as its 1-based number.
+  /// mode or formants, the EQ's layout, the Whammy's range, the Pumper's
+  /// rate, or the Slicer's pattern or step. Any other reads as its 1-based
+  /// number.
   String _choiceName(FxParamInfo p, int position) =>
       switch ((p.key, position)) {
         ('mode', 0) => octaverModePhaseVocoder,
@@ -173,6 +177,8 @@ extension EngineLocalizations on AppLocalizations {
         ('whammy_range', 1) => pitchOctaves('+', 1),
         ('pumper_rate', 0) => noteValueBar,
         ('pumper_rate', final i) => _pumperRates[i - 1],
+        ('slicer_pattern', final i) => _slicerPatterns[i],
+        ('slicer_step', final i) => _slicerSteps[i],
         ('layout', 0) => eqLayoutShelves,
         ('layout', 1) => eqLayoutBellsCuts,
         ('layout', 2) => eqLayoutBells,
@@ -191,6 +197,45 @@ extension EngineLocalizations on AppLocalizations {
     '1/16T',
     '1/32',
     '1/32T',
+  ];
+
+  /// The Slicer's patterns, as the Looper X writes them: a capital letter a
+  /// step, a lower-case one half a step, `_` a rest, `<` the step before
+  /// backwards.
+  static const List<String> _slicerPatterns = [
+    'AABB',
+    'ABCC',
+    'AACD',
+    'ABC_',
+    'A_C_',
+    'A_CC',
+    'A___C___',
+    'ABcccc',
+    'AAccdd',
+    'AB__dd',
+    'AA__dd',
+    'ABC<',
+    'AB_<',
+    'AA_<',
+    'A_B_C<',
+    'AB<<',
+    '<<<<',
+    'AABB Fd1',
+    'AABB Fd2',
+    'AABB Fd3',
+  ];
+
+  /// The Slicer's step note values, in its step's order.
+  static const List<String> _slicerSteps = [
+    '1/4',
+    '1/4T',
+    '1/8',
+    '1/8T',
+    '1/16',
+    '1/16T',
+    '1/32',
+    '1/32T',
+    '1/64',
   ];
 
   String loopbackKindLabel(LoopbackKind kind) => switch (kind) {

@@ -452,7 +452,12 @@ enum TrackEffectType {
 
   /// The Looper X's Pumper (#887 part 10): a duck on every note value at the
   /// song tempo, of the Rhythmic Rack's measured shape.
-  pumper(25, 'Pumper');
+  pumper(25, 'Pumper'),
+
+  /// The Looper X's Slicer (#887 part 10): a pattern of live and replayed
+  /// slices on the beat, fit to the Rhythmic Rack's. The three Fd patterns
+  /// are not modelled and pass the input.
+  slicer(26, 'Slicer');
 
   const TrackEffectType(this.code, this.label);
 
@@ -1058,6 +1063,35 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.7,
+      ),
+    ],
+    // The Rhythmic Rack's Slicer (#891): the pattern (AABB, ABCC, AACD,
+    // ABC_, A_C_, A_CC, A___C___, ABcccc, AAccdd, AB__dd, AA__dd, ABC<, AB_<,
+    // AA_<, A_B_C<, AB<<, <<<<, AABB Fd1, AABB Fd2, AABB Fd3), the step (1/4,
+    // 1/4T, 1/8, 1/8T, 1/16, 1/16T, 1/32, 1/32T, 1/64), the mix.
+    TrackEffectType.slicer => const [
+      FxParamInfo(
+        key: 'slicer_pattern',
+        unit: FxParamUnit.choice,
+        steps: 20,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'slicer_step',
+        unit: FxParamUnit.choice,
+        steps: 9,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
       ),
     ],
     // The Guitar Rack's Whammy (#891): the pedal, and the range (position 0

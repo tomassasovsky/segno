@@ -1607,6 +1607,138 @@ static void fx_pumper_process(le_fx_state* fx, int slot, int sr, int cap,
   *r *= g;
 }
 
+/* ---- Slicer (LE_FX_SLICER, #887 part 10) ----
+ *
+ * Measured (#891, the s4 captures): a capital letter is one step and a
+ * lower-case one half a step; a letter's first slice plays the live input
+ * and each later one replays it from its start (AABB at 1/16 and 120 BPM
+ * replays A at a 125 ms delay; ABcccc plays A, B, then c live and replays
+ * that half step three times); _ silences a step (48 dB down); a slice ends
+ * with a 4 ms fade and starts without one. < plays the step before
+ * backwards (the factory "Reverse" preset is <<<<). The Fd patterns are not
+ * modelled.
+ *
+ * The source is the slot's delay ring, so a replay older than the ring is
+ * silent: with the 1 s ring the quarter-step factory presets (a one-step
+ * replay) hold from 60 BPM up, and Reverse (two 1/16 steps back) from
+ * 30 BPM. */
+
+/* The patterns, in the choice's order; NULL for one not modelled. */
+static const char* const LE_SLICE_PATTERNS[20] = {
+    "AABB", "ABCC",   "AACD",   "ABC_",   "A_C_", "A_CC", "A___C___",
+    "ABcccc", "AAccdd", "AB__dd", "AA__dd", "ABC<", "AB_<", "AA_<",
+    "A_B_C<", "AB<<", "<<<<",  NULL,     NULL,   NULL};
+
+/* The pattern a stored choice value names; NULL when not modelled. */
+static const char* le_slice_pattern(float v) {
+  const int i = (int)(v * 19.0f + 0.5f);
+  return LE_SLICE_PATTERNS[i < 0 ? 0 : i > 19 ? 19 : i];
+}
+
+/* Each step position's length in quarter notes. */
+static const double LE_SLICE_STEP[9] = {1.0,       2.0 / 3.0, 0.5,
+                                        1.0 / 3.0, 0.25,      1.0 / 6.0,
+                                        0.125,     1.0 / 12.0, 0.0625};
+
+/* The slice end's fade (#891: about 4 ms). */
+#define LE_SLICE_FADE_S 0.004
+
+/* A token's length in half steps: lower case is half a step. */
+static int le_slice_len(char c) { return c >= 'a' && c <= 'z' ? 1 : 2; }
+
+static int le_slice_cycle(const char* pat) {
+  int n = 0;
+  for (const char* c = pat; *c; ++c) n += le_slice_len(*c);
+  return n;
+}
+
+/* The token pattern [pat] plays [half] half steps into its cycle: its
+ * start, its length and where its letter first sounds (all in half
+ * steps). */
+static char le_slice_token(const char* pat, double half, int* start, int* len,
+                           int* first) {
+  int at = 0;
+  for (const char* c = pat; *c; ++c) {
+    const int n = le_slice_len(*c);
+    if (half < (double)(at + n) || c[1] == '\0') {
+      *start = at;
+      *len = n;
+      *first = at;
+      int f = 0;
+      for (const char* d = pat; d < c; ++d) {
+        if ((*d | 0x20) == (*c | 0x20) && *c != '_' && *c != '<') {
+          *first = f;
+          break;
+        }
+        f += le_slice_len(*d);
+      }
+      return *c;
+    }
+    at += n;
+  }
+  *start = *len = *first = 0;
+  return '_';
+}
+
+static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
+                              float* l, float* r, const float* p) {
+  float* ring[2] = {fx->delay[slot][0], fx->delay[slot][1]};
+  if (ring[0] == NULL || ring[1] == NULL || cap <= 1) return;
+  const int32_t rate = sr > 0 ? sr : 48000;
+  const float in[2] = {*l, *r};
+  int pos = fx->delay_pos[slot][0];
+  ring[0][pos] = in[0];
+  ring[1][pos] = in[1];
+  fx->delay_pos[slot][0] = pos + 1 >= cap ? 0 : pos + 1;
+
+  const char* pat = le_slice_pattern(p[0]);
+  if (pat == NULL) return; /* not modelled: the input passes */
+  int si = (int)(p[1] * 8.0f + 0.5f);
+  if (si < 0) si = 0;
+  if (si > 8) si = 8;
+  float qpf;
+  int32_t num, den;
+  const double beat = le_fx_beat_now(fx, rate, &qpf, &num, &den);
+  const double half_q = LE_SLICE_STEP[si] * 0.5;
+  const double cycle_q = (double)le_slice_cycle(pat) * half_q;
+  double pos_q = fmod(beat, cycle_q);
+  if (pos_q < 0.0) pos_q += cycle_q;
+  int start, len, first;
+  const char tok = le_slice_token(pat, pos_q / half_q, &start, &len, &first);
+  const double into = pos_q - (double)start * half_q; /* quarter notes */
+  const double fpq = 1.0 / (double)qpf;              /* frames a quarter */
+  float wet[2] = {0.0f, 0.0f};
+  if (tok != '_') {
+    double delay; /* frames back into the ring */
+    if (tok == '<') {
+      delay = 2.0 * into * fpq; /* the step before, backwards */
+    } else {
+      delay = (double)(start - first) * half_q * fpq;
+    }
+    const long d = lround(delay);
+    if (d < cap) {
+      long at = (long)pos - d;
+      if (at < 0) at += cap;
+      wet[0] = ring[0][at];
+      wet[1] = ring[1][at];
+    }
+    /* The slice's end fades out over 4 ms. */
+    const double left = ((double)len * half_q - into) * fpq;
+    const double fade = LE_SLICE_FADE_S * (double)rate;
+    if (left < fade) {
+      const float g = left > 0.0 ? (float)(left / fade) : 0.0f;
+      wet[0] *= g;
+      wet[1] *= g;
+    }
+  }
+  /* Mix (#891): 100 % is the slices alone; 50 % keeps the dry whole and
+   * adds the slices at half. */
+  const float m = p[2] < 0.0f ? 0.0f : p[2] > 1.0f ? 1.0f : p[2];
+  const float dry = m > 0.5f ? 2.0f * (1.0f - m) : 1.0f;
+  *l = in[0] * dry + wet[0] * m;
+  *r = in[1] * dry + wet[1] * m;
+}
+
 static void fx_echo_process(le_fx_state* fx, int slot, int sr, int cap, float* l,
                             float* r, const float* p) {
   *l = fx_echo(fx, slot, 0, sr, cap, *l, p);
@@ -1780,6 +1912,15 @@ static const le_fx_param_desc LE_FX_PUMPER_PARAMS[] = {
     {"pumper_rate", LE_FX_UNIT_CHOICE, 11, 0.0f, 1.0f, LE_FX_CURVE_LINEAR,
      0.3f, 0},
     {"depth", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.7f, 0},
+};
+/* The Rhythmic Rack's Slicer (#891): the pattern and the step in the
+ * orders of LE_SLICE_PATTERNS and LE_SLICE_STEP; the mix. */
+static const le_fx_param_desc LE_FX_SLICER_PARAMS[] = {
+    {"slicer_pattern", LE_FX_UNIT_CHOICE, 20, 0.0f, 1.0f, LE_FX_CURVE_LINEAR,
+     0.0f, 0},
+    {"slicer_step", LE_FX_UNIT_CHOICE, 9, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     0},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 1.0f, 0},
 };
 static const le_fx_param_desc LE_FX_ECHO_PARAMS[] = {
     {"time", LE_FX_UNIT_MS, 0, 0.0f, 1000.0f, LE_FX_CURVE_LINEAR, 0.45f, 0},
@@ -4533,6 +4674,7 @@ LE_FX_ROWS_FIT(LE_FX_DUB_VERB_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_AMB_VERB_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_WHAMMY_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_PUMPER_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_SLICER_PARAMS);
 
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
  * published for this chain entry (NULL / not-ready => dry passthrough; the slot
@@ -4665,6 +4807,9 @@ static const le_fx_vtable LE_FX[] = {
     /* Locked to the beat: a print could not stand for it lap after lap. */
     [LE_FX_PUMPER] = {fx_pumper_process, NULL, NULL, LE_FX_PUMPER_PARAMS,
                       LE_FX_F_FREE_RUNNING},
+    /* Its input history in the slot's rings; locked to the beat. */
+    [LE_FX_SLICER] = {fx_slicer_process, NULL, fx_stereo_ring_prepare,
+                      LE_FX_SLICER_PARAMS, LE_FX_F_FREE_RUNNING},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -4718,6 +4863,7 @@ const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
     [LE_FX_AMB_VERB] = LE_FX_ROW_COUNT(LE_FX_AMB_VERB_PARAMS),
     [LE_FX_WHAMMY] = LE_FX_ROW_COUNT(LE_FX_WHAMMY_PARAMS),
     [LE_FX_PUMPER] = LE_FX_ROW_COUNT(LE_FX_PUMPER_PARAMS),
+    [LE_FX_SLICER] = LE_FX_ROW_COUNT(LE_FX_SLICER_PARAMS),
 };
 
 /* ---- per-kind state (le_fx_kinds, engine_private.h) ---- */
@@ -4899,6 +5045,8 @@ int le_fx_entry_free_running(int32_t type, const float* p, int sr) {
       return p[0] < 1.0f && (double)p[1] > le_lpf_osc_reso();
     case LE_FX_PUMPER: /* ducking at all */
       return p[1] > 0.0f;
+    case LE_FX_SLICER: /* slicing, and heard */
+      return p[2] > 0.0f && le_slice_pattern(p[0]) != NULL;
     default:
       return p[2] > 0.0f; /* the chorus's mix */
   }
