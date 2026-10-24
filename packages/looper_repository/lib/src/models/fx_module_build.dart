@@ -295,6 +295,7 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Ambience': {'Dub Rack': _ambVerb},
   'Whammy': {'Guitar Rack': _whammy},
   'Pumper': {'Rhythmic Rack': _pumper},
+  'Slicer': {'Rhythmic Rack': _slicer},
   'Pitch shift': {'Studio Rack': _pitchShift, 'Vocal Rack': _pitchShift},
 };
 
@@ -355,6 +356,12 @@ const FxModuleBuild _ambVerb = FxModuleBuild(
 const FxModuleBuild _pumper = FxModuleBuild(
   type: TrackEffectType.pumper,
   params: ['Pumper Rate', 'Pumper Depth'],
+);
+
+// Rhythmic Rack: the whole Slicer, pattern, step (a note value) and mix.
+const FxModuleBuild _slicer = FxModuleBuild(
+  type: TrackEffectType.slicer,
+  params: ['Slic Patt', 'Slic Step Len', 'Slic Mix'],
 );
 
 // Guitar Rack: the whole Whammy, pedal and range.

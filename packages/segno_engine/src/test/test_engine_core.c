@@ -20517,7 +20517,7 @@ static void test_fx_params_past_count_are_inert(void) {
                            LE_FX_CHORUS,     LE_FX_WAH,       LE_FX_OVERDRIVE, LE_FX_DISTORTION,
                            LE_FX_VINYL,      LE_FX_DEGRADE,   LE_FX_LPF,
                            LE_FX_SPRING,     LE_FX_DUB_VERB,  LE_FX_AMB_VERB,
-                           LE_FX_WHAMMY,     LE_FX_PUMPER};
+                           LE_FX_WHAMMY,     LE_FX_PUMPER,    LE_FX_SLICER};
   for (int t = 0; t < (int)(sizeof(types) / sizeof(types[0])); ++t) {
     le_engine* a = make_configured_engine();
     le_engine* b = make_configured_engine();
@@ -21814,9 +21814,9 @@ static void test_fx_param_descriptors_match_kernels(void) {
 
   /* Counts: the parameters each kernel reads; none for NONE and PLUGIN. */
   const int32_t counts[] = {0, 2, 2, 3, 2, 5, 3, 3, 0, 15, 5, 3,
-                            2, 2, 3, 1, 2, 2, 4, 3, 4, 2, 2, 3, 2, 2};
-  for (int32_t t = 0; t < 26; ++t) CHECK(le_fx_param_count(t) == counts[t]);
-  CHECK(le_fx_param_count(26) == LE_ERR_INVALID);
+                            2, 2, 3, 1, 2, 2, 4, 3, 4, 2, 2, 3, 2, 2, 3};
+  for (int32_t t = 0; t < 27; ++t) CHECK(le_fx_param_count(t) == counts[t]);
+  CHECK(le_fx_param_count(27) == LE_ERR_INVALID);
   CHECK(le_fx_param_count(-1) == LE_ERR_INVALID);
   le_fx_param_desc scratch;
   CHECK(le_fx_param_info(LE_FX_DELAY, 3, &scratch) == LE_ERR_INVALID);

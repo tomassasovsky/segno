@@ -865,6 +865,15 @@
     "effectAmbVerb": "Ambience",
     "effectWhammy": "Whammy",
     "effectPumper": "Pumper",
+    "effectSlicer": "Slicer",
+    "paramPattern": "Pattern",
+    "@paramPattern": {
+        "description": "The Slicer's pattern of slices, rests and reversals."
+    },
+    "paramStep": "Step",
+    "@paramStep": {
+        "description": "The note value of one step of the Slicer's pattern."
+    },
     "paramLfoDepth": "LFO depth",
     "@paramLfoDepth": {
         "description": "How far the low-pass filter's LFO sweeps its cutoff."
