@@ -58,23 +58,60 @@ static void test_dual_octaver_matches_the_capture(void) {
   const float down[LE_FX_PARAMS] = {0.0f, 1.0f, 1.0f};
   do_levels(down, db);
   printf("  off: 500 Hz %+5.1f (capture -1.5), 1 kHz %+5.1f\n", db[0], db[1]);
-  CHECK(fabs(db[0] + 1.5) < 0.5);
+  CHECK(fabs(db[0] + 1.5) < 0.1);
   CHECK(db[1] < -30.0);
   const float up[LE_FX_PARAMS] = {1.0f, 1.0f, 1.0f};
   do_levels(up, db);
   printf("  on: 2 kHz %+5.1f (capture -0.6), 1 kHz %+5.1f\n", db[2], db[1]);
-  CHECK(fabs(db[2] + 0.6) < 0.5);
+  CHECK(fabs(db[2] + 0.6) < 0.1);
   CHECK(db[1] < -30.0);
   const float half[LE_FX_PARAMS] = {1.0f, 1.0f, 0.5f};
   do_levels(half, db);
   printf("  on at 50 %%: 1 kHz %+5.1f (capture -3.0), 2 kHz %+5.1f (-3.6)\n",
          db[1], db[2]);
-  CHECK(fabs(db[1] + 3.0) < 0.5);
-  CHECK(fabs(db[2] + 3.6) < 0.5);
+  CHECK(fabs(db[1] + 3.0) < 0.1);
+  CHECK(fabs(db[2] + 3.6) < 0.1);
   /* Octave 1 Vol scales the voice (its taper unmeasured: linear here). */
   const float quiet[LE_FX_PARAMS] = {0.0f, 0.5f, 1.0f};
   do_levels(quiet, db);
-  CHECK(fabs(db[0] - (-1.5 + 20.0 * log10(0.5))) < 0.5);
+  CHECK(fabs(db[0] - (-1.5 + 20.0 * log10(0.5))) < 0.1);
+}
+
+/* High mode is a switch: flipped under a tone, the voice dips out and comes
+ * back an octave pair away, never sweeping through the octaves between
+ * (no energy at unison, 1 kHz, on the way). */
+static void test_dual_octaver_mode_switch_does_not_sweep(void) {
+  printf("test_dual_octaver_mode_switch_does_not_sweep\n");
+  le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+  CHECK(fx != NULL);
+  for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
+  CHECK(le_fx_prepare(fx, 0, LE_FX_DUAL_OCTAVER, DO_SR) == LE_OK);
+  le_fx_entry_reset(fx, 0);
+  fx->clocked = 1;
+  static int32_t types[LE_FX_MAX];
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  for (int s = 0; s < LE_FX_MAX; ++s) types[s] = LE_FX_NONE;
+  types[0] = LE_FX_DUAL_OCTAVER;
+  const int n = DO_SR;
+  float* y = (float*)malloc(sizeof(float) * (size_t)n);
+  for (int i = 0; i < n; ++i) {
+    params[0][0] = i < n / 2 ? 0.0f : 1.0f;
+    params[0][1] = 1.0f;
+    params[0][2] = 1.0f;
+    fx->clock = (uint32_t)i;
+    float l = 0.2512f * sinf(2.0f * 3.14159265f * 1000.0f * (float)i / DO_SR);
+    float r = l;
+    fx_apply_chain(fx, DO_SR, DO_SR, &l, &r, 1, types, params, NULL);
+    y[i] = l;
+  }
+  le_fx_state_free_buffers(fx);
+  free(fx);
+  /* Around the switch (and the vocoder's latency after it). */
+  const double through = 20.0 * log10(do_amp(y + n / 2, n / 10, 1000.0) /
+                                      0.2512 + 1e-12);
+  printf("  1 kHz across the switch: %+5.1f dB\n", through);
+  CHECK(through < -30.0);
+  free(y);
 }
 
 /* Octave 2 (#1464), from the same analysis: two octaves up in high mode,
@@ -88,20 +125,21 @@ static void test_dual_octaver_second_voice(void) {
   do_levels(up, db);
   printf("  on: 2 kHz %+5.1f, 4 kHz %+5.1f (capture -0.7, -0.7)\n", db[2],
          db[4]);
-  CHECK(fabs(db[2] + 0.7) < 0.5);
-  CHECK(fabs(db[4] + 0.7) < 0.5);
+  CHECK(fabs(db[2] + 0.7) < 0.2);
+  CHECK(fabs(db[4] + 0.7) < 0.2);
   const float down[LE_FX_PARAMS] = {0.0f, 1.0f, 1.0f, 1.0f};
   do_levels(down, db);
   printf("  off: 500 Hz %+5.1f, 250 Hz %+5.1f (inferred: as Octave 1)\n",
          db[0], db[3]);
-  CHECK(fabs(db[0] + 1.5) < 0.5);
-  CHECK(fabs(db[3] - db[0]) < 1.0);
+  CHECK(fabs(db[0] + 1.5) < 0.1);
+  CHECK(fabs(db[3] - db[0]) < 0.2);
   const float half[LE_FX_PARAMS] = {1.0f, 1.0f, 1.0f, 0.5f};
   do_levels(half, db);
-  CHECK(fabs(db[4] - (-0.7 + 20.0 * log10(0.5))) < 0.5);
+  CHECK(fabs(db[4] - (-0.7 + 20.0 * log10(0.5))) < 0.2);
 }
 
 static void run_dual_octaver_tests(void) {
+  test_dual_octaver_mode_switch_does_not_sweep();
   test_dual_octaver_second_voice();
   test_dual_octaver_matches_the_capture();
 }
