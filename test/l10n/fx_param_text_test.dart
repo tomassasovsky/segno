@@ -86,6 +86,10 @@ const _english = <String, List<String>>{
   'slicer.slicer_pattern': ['AABB', 'AABB', 'AABB Fd3'],
   'slicer.slicer_step': ['1/4', '1/16', '1/64'],
   'slicer.mix': ['0%', '100%', '100%'],
+  'modeDelay.delay_time': ['1/32', '1/8D', '8/4'],
+  'modeDelay.feedback': ['0%', '50%', '100%'],
+  'modeDelay.mix': ['0%', '20%', '100%'],
+  'modeDelay.delay_mode': ['DIGI', 'DIGI', 'RES HI GRV'],
 };
 
 /// The same in Spanish: a decimal comma, and the Spanish mode name.
@@ -170,6 +174,10 @@ const _spanish = <String, List<String>>{
   'slicer.slicer_pattern': ['AABB', 'AABB', 'AABB Fd3'],
   'slicer.slicer_step': ['1/4', '1/16', '1/64'],
   'slicer.mix': ['0%', '100%', '100%'],
+  'modeDelay.delay_time': ['1/32', '1/8D', '8/4'],
+  'modeDelay.feedback': ['0%', '50%', '100%'],
+  'modeDelay.mix': ['0%', '20%', '100%'],
+  'modeDelay.delay_mode': ['DIGI', 'DIGI', 'RES HI GRV'],
 };
 
 void main() {

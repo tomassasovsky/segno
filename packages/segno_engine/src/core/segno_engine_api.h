@@ -758,6 +758,14 @@ typedef enum le_fx_type {
    * factory preset uses them): they pass the input through. Locked to the
    * beat, so a lane holding one is never printed. */
   LE_FX_SLICER = 26,
+  /* MODE_DELAY: p0 time (a choice of 20 note values: 1/32, 1/16T, 1/32D,
+   * 1/16, 1/8T, 1/16D, 1/8, 1/4T, 1/8D, 1/4, 2/4T, 1/4D, 2/4, 5/8, 3/4, 7/8,
+   * 4/4, 5/4, 6/4, 8/4), p1 feedback, p2 mix, p3 mode (a choice of 12:
+   * DIGI, DIGI L/R, DIGI GRV, DAMPED, DAMPED L/R, DAMPED GRV, RESO LO,
+   * RES LO L/R, RES LO GRV, RESO HI, RES HI L/R, RES HI GRV). The Looper X's
+   * delay at the song tempo, its voicings and stereo timings fit to the
+   * captures (#891), on a line of up to 4 s (longer times hold at 4 s). */
+  LE_FX_MODE_DELAY = 27,
 } le_fx_type;
 
 /* ---- Built-in effect parameter descriptors (#1378) ----

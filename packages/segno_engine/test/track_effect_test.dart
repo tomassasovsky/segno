@@ -472,6 +472,8 @@ void main() {
         TrackEffectType.pumper: [0.3, 0.7],
         // The Rhythmic Rack's Slicer: AABB, 1/16, 100 %.
         TrackEffectType.slicer: [0.0, 0.5, 1.0],
+        // The Looper X's delay: 1/8D, 50 %, 20 %, DIGI.
+        TrackEffectType.modeDelay: [8 / 19, 0.5, 0.2, 0.0],
       };
       for (final type in TrackEffectType.values) {
         expect(type.defaultParams, cells(expected[type]!), reason: type.name);
