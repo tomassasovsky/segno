@@ -136,6 +136,9 @@ static void dynamics_entry(le_fx_recipe* r, int s, int32_t kind) {
     r->params[s][0] = 0.4f; /* holding at 3.2 kHz */
   } else if (kind == LE_FX_LPF) {
     r->params[s][0] = 0.6f; /* 1.2 kHz */
+  } else if (kind == LE_FX_SLICER) {
+    r->params[s][0] = 15.0f / 19.0f; /* AB<<: replays and reversals */
+    r->params[s][1] = 1.0f / 8.0f;   /* 1/4T: reads far back in the ring */
   } else if (kind == LE_FX_WHAMMY) {
     r->params[s][0] = 0.5f; /* half the pedal */
     r->params[s][1] = 1.0f; /* up */
