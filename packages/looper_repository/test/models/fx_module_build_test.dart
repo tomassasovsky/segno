@@ -199,17 +199,17 @@ void main() {
 
     test('a parameter the preset says nothing about keeps the engine default, '
         'rather than falling to zero', () {
-      // The catalogue's octaver is two fixed voices with their own levels
-      // where this engine's is one continuously shifted voice, so its shift
-      // has nothing to read. Zero would be two octaves down, which is a sound
-      // nobody asked for.
+      // A preset without Octave 1 Vol keeps the kind's own 100 %, not 0,
+      // which would silence the voice.
       final entry = fxModuleEntry(
         _module('Octaver'),
-        _preset(const {'Oct': 1, 'Octave Mix': 1}),
+        _preset(const {'Oct': 1, 'Oct High Mode': 0, 'Octave Mix': 1}),
       );
-      final engineDefault = BuiltInEffect(type: TrackEffectType.octaver);
+      final engineDefault = BuiltInEffect(type: TrackEffectType.dualOctaver);
 
-      expect(entry.params[0], engineDefault.params[0]);
+      expect(entry.type, TrackEffectType.dualOctaver);
+      expect(entry.params[1], engineDefault.params[1]);
+      expect(entry.params[1], 1.0);
       expect(entry.params[2], 1.0);
     });
 
@@ -1116,6 +1116,38 @@ void main() {
           null,
         ],
       );
+    });
+
+    test("Ed's Octaver copies high mode, Octave 1 and the mix", () {
+      // Bass Octave Layer, with high mode on: Octave 2 (60 %) waits for
+      // its voice (#1464), named and unmapped.
+      final e = fxModuleEntry(
+        _module('Octaver'),
+        const FxPreset(
+          family: "Ed's Rack",
+          name: 'Bass Octave Layer',
+          id: 'b',
+          type: 0,
+          params: {
+            'Oct': 1,
+            'Oct High Mode': 1,
+            'Octave 1 Vol': 1,
+            'Octave 2 Vol': 0.6,
+            'Octave Mix': 1,
+          },
+        ),
+      );
+      expect(e.type, TrackEffectType.dualOctaver);
+      expect(e.params.take(3), [1.0, 1.0, 1.0]);
+      final build = fxEntryBuild(e)!;
+      expect(build.readiness, FxModuleReadiness.partial);
+      expect(build.unmapped, ['Octave 2 Vol']);
+      expect(build.exposed, [0, 1, 2]);
+      expect(fxEntryControls(e).keys, [
+        'oct_high_mode',
+        'octave_1_vol',
+        'mix',
+      ]);
     });
 
     test("the Rhythmic Rack's Slicer copies pattern, step and mix", () {

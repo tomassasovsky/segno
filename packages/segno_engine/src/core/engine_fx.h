@@ -362,11 +362,13 @@ void le_fx_rack_reset(le_fx_state* fx, int slot);
  * The analysis-hop schedule needs no settling: it follows the clock the
  * render sets (le_fx_state::clock), which reproduces the live one. Caller
  * passes a slot on the hop (le_fx_type_hops) and the octaver settings it
- * runs (le_fx_octaver_settings); no type check. Control thread / offline
- * only, after le_fx_entry_reset. */
+ * runs (le_fx_octaver_settings, whose cell 5 is the wet voice's cut, so raw
+ * octaver params, zero there, seed it at full level); no type check.
+ * Control thread / offline only, after le_fx_entry_reset. */
 void le_fx_octaver_seed_settled(le_fx_state* fx, int slot, const float* params);
-/* Whether [type] runs the octaver's kernel on the hop clock (the octaver and
- * the Whammy): what the prints and caches key the hop phase on. */
+/* Whether [type] runs the octaver's kernel on the hop clock (the octaver,
+ * the Whammy and the Dual Octaver): what the prints and caches key the hop
+ * phase on. */
 int le_fx_type_hops(int32_t type);
 /* Puts a Pumper slot's depth glide at [params]'s, and its duck at the one
  * the beat of the frame [fx] is at gives, as a slot that has been running
@@ -375,8 +377,10 @@ int le_fx_type_hops(int32_t type);
 void le_fx_pumper_seed_settled(le_fx_state* fx, int slot, const float* params,
                                int sr);
 /* The octaver settings slot [s] of [type] runs: [params] themselves for the
- * octaver, the Whammy's pedal and range mapped for the Whammy. [out] holds
- * LE_FX_PARAMS. */
+ * octaver (cells 5 and 6 zero: no cut, a linear mix), the Whammy's pedal and
+ * range mapped for the Whammy, and the Dual Octaver's high mode, Octave 1
+ * level and mix mapped for it (its cut, and 1 in cell 6: an equal-power
+ * mix and a switched shift). [out] holds LE_FX_PARAMS. */
 void le_fx_octaver_settings(int32_t type, const float* params, float* out);
 
 /* Settles chain slot [slot]'s enable-crossfade runtime at fully BYPASSED.
@@ -459,7 +463,7 @@ int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap);
  *
  * LE_FX_WIDTHS is one past the last le_fx_type code; engine_fx.c checks it
  * against its effect table. */
-#define LE_FX_WIDTHS 28
+#define LE_FX_WIDTHS 29
 extern const uint8_t le_fx_widths[LE_FX_WIDTHS];
 static inline int32_t le_fx_param_width(int32_t type) {
   return type > 0 && type < LE_FX_WIDTHS ? (int32_t)le_fx_widths[type] : 0;

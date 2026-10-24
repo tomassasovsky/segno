@@ -20518,7 +20518,7 @@ static void test_fx_params_past_count_are_inert(void) {
                            LE_FX_VINYL,      LE_FX_DEGRADE,   LE_FX_LPF,
                            LE_FX_SPRING,     LE_FX_DUB_VERB,  LE_FX_AMB_VERB,
                            LE_FX_WHAMMY,     LE_FX_PUMPER,    LE_FX_SLICER,
-                           LE_FX_MODE_DELAY};
+                           LE_FX_MODE_DELAY, LE_FX_DUAL_OCTAVER};
   for (int t = 0; t < (int)(sizeof(types) / sizeof(types[0])); ++t) {
     le_engine* a = make_configured_engine();
     le_engine* b = make_configured_engine();
@@ -20767,7 +20767,8 @@ static void test_whammy_taper_and_pitch(void) {
   const float p_heel[LE_FX_PARAMS] = {0.0f, 1.0f};
   le_fx_octaver_settings(LE_FX_WHAMMY, p_heel, q);
   CHECK(q[0] == 0.5f); /* unison */
-  CHECK(le_fx_type_hops(LE_FX_WHAMMY) && le_fx_type_hops(LE_FX_OCTAVER));
+  CHECK(le_fx_type_hops(LE_FX_WHAMMY) && le_fx_type_hops(LE_FX_OCTAVER) &&
+        le_fx_type_hops(LE_FX_DUAL_OCTAVER));
   CHECK(!le_fx_type_hops(LE_FX_DELAY));
 
   /* The sound: a 220 Hz harmonic tone. */
@@ -21815,9 +21816,9 @@ static void test_fx_param_descriptors_match_kernels(void) {
 
   /* Counts: the parameters each kernel reads; none for NONE and PLUGIN. */
   const int32_t counts[] = {0, 2, 2, 3, 2, 5, 3, 3, 0, 15, 5, 3,
-                            2, 2, 3, 1, 2, 2, 4, 3, 4, 2, 2, 3, 2, 2, 3, 4};
-  for (int32_t t = 0; t < 28; ++t) CHECK(le_fx_param_count(t) == counts[t]);
-  CHECK(le_fx_param_count(28) == LE_ERR_INVALID);
+                            2, 2, 3, 1, 2, 2, 4, 3, 4, 2, 2, 3, 2, 2, 3, 4, 3};
+  for (int32_t t = 0; t < 29; ++t) CHECK(le_fx_param_count(t) == counts[t]);
+  CHECK(le_fx_param_count(29) == LE_ERR_INVALID);
   CHECK(le_fx_param_count(-1) == LE_ERR_INVALID);
   le_fx_param_desc scratch;
   CHECK(le_fx_param_info(LE_FX_DELAY, 3, &scratch) == LE_ERR_INVALID);
@@ -24340,13 +24341,16 @@ static void test_perf_render_wet_fx_sweep(void) {
   le_engine_destroy(e);
 }
 
-/* Runs `n` frames of `dry` through a one-slot octaver chain on a fresh heap
+/* Runs `n` frames of `dry` through a one-slot chain of `type` (a kind on
+ * the octaver's kernel) at its own settings `raw` on a fresh heap
  * le_fx_state seeded with `hop_seed`, as le_pr_render_wet_track does (unity
  * volume, unmuted, all-effective bits), and returns the wet. The engine's own
  * DSP: the only things this controls are the seed and whether the octaver
- * runtime is settled at `params4` or left at le_fx_entry_reset's state. */
+ * runtime is settled at the mapped `params4` or left at le_fx_entry_reset's
+ * state. */
 static float* oct_reference_wet(const float* dry, int32_t n, int32_t sr,
-                                int32_t hop_seed, const float* params4,
+                                int32_t hop_seed, int32_t type,
+                                const float* raw, const float* params4,
                                 int settle) {
   le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
   CHECK(fx != NULL);
@@ -24354,7 +24358,7 @@ static float* oct_reference_wet(const float* dry, int32_t n, int32_t sr,
   fx->hop_seed = hop_seed;
   fx->clock = 0; /* capture frame 0 of a log without a PERF_ARMED clock */
   le_fx_entry_reset(fx, 0);
-  CHECK(le_fx_prepare(fx, 0, LE_FX_OCTAVER, sr) == LE_OK);
+  CHECK(le_fx_prepare(fx, 0, type, sr) == LE_OK);
   if (settle) le_fx_octaver_seed_settled(fx, 0, params4);
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
   static int32_t types[LE_FX_MAX];
@@ -24365,8 +24369,8 @@ static float* oct_reference_wet(const float* dry, int32_t n, int32_t sr,
     enabled[s] = 1;
     for (int q = 0; q < LE_FX_PARAMS; ++q) params[s][q] = 0.0f;
   }
-  types[0] = LE_FX_OCTAVER;
-  for (int q = 0; q < LE_FX_PARAMS; ++q) params[0][q] = params4[q];
+  types[0] = type;
+  for (int q = 0; q < LE_FX_PARAMS; ++q) params[0][q] = raw[q];
   float* wet = (float*)malloc((size_t)n * sizeof(float));
   CHECK(wet != NULL);
   if (wet != NULL) {
@@ -24401,7 +24405,8 @@ static void run_perf_render_octaver_case(const char* name, int32_t type,
   const int32_t loop_len = 1024;
   const int32_t capture_frames = 8192; /* well past the LE_PV_LATENCY warmup */
   /* The manifest carries [type]'s own settings ([raw4]); the reference runs
-   * the octaver at the settings they map to (le_fx_octaver_settings). */
+   * [type] on them, seeded at the settings they map to
+   * (le_fx_octaver_settings), as the render does. */
   float raw[LE_FX_PARAMS] = {0};
   for (int q = 0; q < 4; ++q) raw[q] = raw4[q];
   float params4[LE_FX_PARAMS];
@@ -24473,10 +24478,13 @@ static void run_perf_render_octaver_case(const char* name, int32_t type,
         capture_frames);
 
   float* ref = oct_reference_wet(dry, capture_frames, sr,
-                                 le_fx_lane_hop_seed(channel, 0), params4, 1);
-  float* wrong_seed = oct_reference_wet(dry, capture_frames, sr, 0, params4, 1);
-  float* unsettled = oct_reference_wet(
-      dry, capture_frames, sr, le_fx_lane_hop_seed(channel, 0), params4, 0);
+                                 le_fx_lane_hop_seed(channel, 0), type, raw,
+                                 params4, 1);
+  float* wrong_seed =
+      oct_reference_wet(dry, capture_frames, sr, 0, type, raw, params4, 1);
+  float* unsettled =
+      oct_reference_wet(dry, capture_frames, sr,
+                        le_fx_lane_hop_seed(channel, 0), type, raw, params4, 0);
   CHECK(ref != NULL && wrong_seed != NULL && unsettled != NULL);
   if (ref != NULL && wrong_seed != NULL && unsettled != NULL) {
     float d_ref = 0.0f;
@@ -24519,6 +24527,10 @@ static void test_perf_render_wet_octaver_matches_lane_hop_phase(void) {
    * wet, or it would start dry (#1451). */
   const float whammy[4] = {1.0f, 0.0f, 0.0f, 0.0f};
   run_perf_render_octaver_case("wet-whammy", LE_FX_WHAMMY, whammy);
+  /* The Dual Octaver down, half mixed: the render seeds its mapped level
+   * and law, and its switched shift. */
+  const float dual[4] = {0.0f, 1.0f, 0.5f, 0.0f};
+  run_perf_render_octaver_case("wet-dual-octaver", LE_FX_DUAL_OCTAVER, dual);
 }
 
 /* The stem render settles each arm-time slot at its EFFECTIVE bit, as the
@@ -38882,6 +38894,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_rack_paths.h"
 #include "test_engine_rhythmic.h"
 #include "test_engine_mode_delay.h"
+#include "test_engine_dual_octaver.h"
 #include "test_engine_fx_publish.h"
 #include "test_engine_bounce.h"
 #include "test_engine_clock.h"
@@ -38971,6 +38984,7 @@ int main(void) {
   run_rack_path_tests();
   run_rhythmic_tests();
   run_mode_delay_tests();
+  run_dual_octaver_tests();
   run_fx_publish_tests();
   run_bounce_tests();
   if (getenv("SEGNO_PEEL_TESTS_ONLY")) return g_failures ? 1 : 0;
