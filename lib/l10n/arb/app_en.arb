@@ -916,6 +916,26 @@
     "@paramDensity": {
         "description": "How smooth the reverb's tail is: lower settings leave separate echoes."
     },
+    "effectSmartTune": "Smart Tune",
+    "@effectSmartTune": {
+        "description": "The Vocal Tuner's pitch correction: it retunes a voice to the nearest note of a scale."
+    },
+    "paramSpeed": "Speed",
+    "@paramSpeed": {
+        "description": "How long Smart Tune takes to move a voice onto its note: short is the hard, stepped sound, long a gentle pull."
+    },
+    "paramScaleRoot": "Scale root",
+    "@paramScaleRoot": {
+        "description": "The note Smart Tune's scale starts on."
+    },
+    "paramScaleType": "Scale type",
+    "@paramScaleType": {
+        "description": "Which notes Smart Tune's scale holds: major, minor, a mode, chromatic, pentatonic, a triad, or the root alone."
+    },
+    "paramReference": "Reference",
+    "@paramReference": {
+        "description": "The pitch of A that Smart Tune tunes to, in hertz."
+    },
     "paramBass": "Bass",
     "@paramBass": {
         "description": "The amp's low-frequency tone control."

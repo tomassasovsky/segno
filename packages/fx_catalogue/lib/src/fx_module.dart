@@ -24,7 +24,7 @@ class FxModule {
     required this.enables,
     required this.groups,
     required this.artwork,
-    this.shared = const [],
+    this.keys = const [],
     this.families,
   });
 
@@ -56,15 +56,16 @@ class FxModule {
   /// the gap stays visible rather than looking like a choice.
   final List<String> artwork;
 
-  /// Whole parameter names this module reads although another module of the
-  /// same rack reads them too.
+  /// Whole parameter names that belong to this module where a prefix group
+  /// cannot say so.
   ///
-  /// The Vocal Tuner's Smart Tune and Harmonizer both read the tuning mode,
-  /// the source that drives them, the key and the scale type: presets with
-  /// Smart Tune off still set them for the Harmonizer ("Midi Harm" sets Auto
-  /// Source to 1, "Scale Harm" sets Mode to 1 and Key to 3/11). A prefix group
-  /// cannot say that, because it gives each key to one module.
-  final List<String> shared;
+  /// The Vocal Tuner's `Scale Root` and `Scale Type` are Smart Tune's and its
+  /// `Scale` is the Harmonizer's, one word apart; `Mode`, `Auto Source` and
+  /// `Key` are single words no other key starts with. Each module's screen on
+  /// the Looper X shows which are its own (#891 s6pitch): Smart Tune's Speed,
+  /// Tracking, Scale Root, Scale Type, Audio Type and Reference, and the
+  /// Harmonizer's Mode, Auto Source, Key, Scale, Stereo and Tightness.
+  final List<String> keys;
 
   /// The rack families this module appears in, or `null` for every family.
   ///
@@ -79,7 +80,7 @@ class FxModule {
 
   /// Whether the parameter [key] belongs to this module.
   bool owns(String key) {
-    if (shared.contains(key)) return true;
+    if (keys.contains(key)) return true;
     final prefix = key.split(' ').first;
     return groups.contains(prefix);
   }
@@ -117,14 +118,6 @@ const Set<String> _delayFamilies = {
 };
 
 const Set<String> _vocalTunerFamilies = {'Vocal Tuner Rack'};
-
-/// The Vocal Tuner parameters that both Smart Tune and the Harmonizer read.
-const List<String> _vocalTunerShared = [
-  'Mode',
-  'Auto Source',
-  'Key',
-  'Scale Type',
-];
 
 /// Every module the factory catalogue names, with the evidence for each.
 ///
@@ -315,23 +308,25 @@ const List<FxModule> kFxModules = [
   FxModule(
     name: 'Harmonizer',
     enables: ['Harmonize'],
-    groups: ['Harm', 'Voice', 'Lead', 'Low', 'Mid', 'High', 'Scale'],
-    shared: _vocalTunerShared,
+    groups: [
+      'Harm',
+      'Voice',
+      'Lead',
+      'Low',
+      'Mid',
+      'High',
+      'Stereo',
+      'Tightness',
+    ],
+    keys: ['Mode', 'Auto Source', 'Key', 'Scale'],
     artwork: ['Harmonise20'],
     families: _vocalTunerFamilies,
   ),
   FxModule(
     name: 'Smart tune',
     enables: ['Smart Tune'],
-    groups: [
-      'Audio',
-      'Reference',
-      'Speed',
-      'Stereo',
-      'Tightness',
-      'Tracking',
-    ],
-    shared: _vocalTunerShared,
+    groups: ['Audio', 'Reference', 'Speed', 'Tracking'],
+    keys: ['Scale Root', 'Scale Type'],
     artwork: ['SmartTune2'],
     families: _vocalTunerFamilies,
   ),
@@ -487,9 +482,9 @@ String? fxModuleArt(String name) {
 /// The modules of a [family] rack that own [key] as a parameter, in table
 /// order.
 ///
-/// Usually one, and two for a key in [FxModule.shared]. Ownership is by
-/// prefix, so a one-word power key whose word is also one of its module's
-/// groups (`Wah`, `Comp`, `LPF`) is owned by that module too; a power key
+/// At most one. Ownership is by prefix or by a whole name ([FxModule.keys]),
+/// so a one-word power key whose word is also one of its module's groups
+/// (`Wah`, `Comp`, `LPF`) is owned by that module too; a power key
 /// spelled differently from its group (`Delay` for `Del`) and a key the table
 /// leaves unclaimed on purpose have no owner.
 List<FxModule> fxModulesOwning(String key, String family) => [

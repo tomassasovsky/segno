@@ -296,8 +296,8 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   o->out_pos = 0;
   /* PSOLA's analysis marks start at its nominal source distance (dn in
    * le_psola_tick), so the first deposit has nothing to snap. */
-  o->in_epoch = LE_PV_N - LE_PV_N / 2 + LE_PSOLA_LAG;
-  o->out_epoch = 0;
+  o->in_epoch = (float)(LE_PV_N - LE_PV_N / 2 + LE_PSOLA_LAG);
+  o->out_epoch = 0.0f;
   o->period = 0.0f;
   o->voiced = 0.0f;
   if (o->out != NULL) memset(o->out, 0, sizeof(float) * LE_PV_OUT);
@@ -313,6 +313,9 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   o->frame_ratio2 = 1.0f;
   o->frame_level1 = 1.0f;
   o->frame_level2 = 0.0f;
+  o->tune_c = 0.0f;
+  o->tune_at[0] = -1.0f;
+  o->tune_held = 0;
   if (o->last_phase != NULL) memset(o->last_phase, 0, sizeof(float) * LE_PV_BINS);
   if (o->sum_phase != NULL) memset(o->sum_phase, 0, sizeof(float) * LE_PV_BINS);
   if (o->scratch != NULL) {
@@ -1005,30 +1008,41 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
    *    synthesis mark deposit a Hann grain whose source snaps to the nearest
    *    analysis mark, so the grain spacing (pitch) changes by `ratio` while the
    *    grain shape (formant envelope) does not. */
-  o->in_epoch += 1;
-  if (--o->out_epoch <= 0) {
+  o->in_epoch += 1.0f;
+  o->out_epoch -= 1.0f;
+  if (o->out_epoch <= 0.0f) {
     float pf = o->period; /* sub-sample period: sets the grain spacing (pitch) */
     if (pf < 2.0f) pf = 2.0f;
     if (pf > (float)(sr / LE_PSOLA_MIN_HZ)) pf = (float)(sr / LE_PSOLA_MIN_HZ);
     float ps = pf / ratio; /* synthesis spacing -> output pitch = ratio * f0 */
     if (ps < 1.0f) ps = 1.0f;
-    /* Integer countdown to the next deposit; sub-sample spacing is fine to round
-     * here — the pitch error is < 1 sample over a period and is inaudible. */
-    o->out_epoch += (int)(ps + 0.5f);
+    /* Both marks keep their fractions (#1480): the synthesis mark fell
+     * [late] samples before this tick, so the grain is laid that much
+     * earlier, and the analysis marks step by the period itself, so each
+     * grain's source lies whole periods after the last one's. The grains
+     * then repeat the input's own waveform at the new spacing, and the
+     * output is the input times the ratio. Rounded to whole samples, either
+     * put a 880 Hz voice at 48 kHz up to 16 cents off the ratio. */
+    float late = -o->out_epoch;
+    if (late > 1.0f) late = 1.0f;
+    o->out_epoch += ps;
 
-    const int pi = (int)(pf + 0.5f); /* integer period: the analysis-mark grid step */
-    int th = pi;
+    int th = (int)(pf + 0.5f);
     if (th > LE_PSOLA_THMAX) th = LE_PSOLA_THMAX;
     const int c = N / 2;  /* grain center offset ahead of the read pointer */
-    const int dn = N - c + lag; /* nominal source distance behind the head */
+    const float dn = (float)(N - c + lag); /* nominal source distance behind the head */
     /* Snap the analysis mark to the nearest of the period-spaced grid near dn. */
-    while (o->in_epoch - dn > pi / 2) o->in_epoch -= pi;
-    while (dn - o->in_epoch > pi / 2) o->in_epoch += pi;
+    while (o->in_epoch - dn > 0.5f * pf) o->in_epoch -= pf;
+    while (dn - o->in_epoch > 0.5f * pf) o->in_epoch += pf;
     /* Keep the grain read causal: a mark too near the head moves on by whole
      * periods, so it stays on the period grid (a long period at a high rate
      * can snap it under th). */
-    while (o->in_epoch < th) o->in_epoch += pi;
-    if (o->in_epoch > cap - 1 - th) o->in_epoch = cap - 1 - th;
+    while (o->in_epoch < (float)(th + 1)) o->in_epoch += pf;
+    if (o->in_epoch > (float)(cap - 1 - th)) o->in_epoch = (float)(cap - 1 - th);
+    /* The grain's source centre, a whole sample and the fraction past it. */
+    const float at = late - o->in_epoch;
+    const int base = (int)floorf(at);
+    const float fr = at - (float)base;
 
     /* COLA gain: Hann area (= th) over the hop (= ps) keeps the overlap-add near
      * unity across the shift; clamp so a clamped grain cannot blow up. */
@@ -1037,13 +1051,14 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
     for (int j = -th; j <= th; ++j) {
       const float wf =
           0.5f - 0.5f * cosf(LE_PI * (float)(j + th) / (float)th); /* Hann */
-      int src = head - o->in_epoch + j;
+      int src = head + base + j;
       src %= cap;
       if (src < 0) src += cap;
+      const int next = src + 1 >= cap ? 0 : src + 1;
       int dst = rp + c + j;
       dst %= N;
       if (dst < 0) dst += N;
-      o->out[dst] += gain * wf * fifo[src];
+      o->out[dst] += gain * wf * (fifo[src] + fr * (fifo[next] - fifo[src]));
     }
   }
 
@@ -1595,7 +1610,7 @@ static float le_whammy_shift(const float* p) {
 
 int le_fx_type_hops(int32_t type) {
   return type == LE_FX_OCTAVER || type == LE_FX_WHAMMY ||
-         type == LE_FX_DUAL_OCTAVER;
+         type == LE_FX_DUAL_OCTAVER || type == LE_FX_SMART_TUNE;
 }
 
 /* The Dual Octaver's first voice (#891, s5/4-7 and s6v 25-28): one octave
@@ -1624,6 +1639,131 @@ static void le_doct_settings(const float* p, float* out) {
   out[7] = p[3] < 0.0f ? 0.0f : p[3] > 1.0f ? 1.0f : p[3];
 }
 
+/* ---- Smart Tune (LE_FX_SMART_TUNE, #1480) ----
+ *
+ * The Vocal Tuner's Smart Tune, against the #891 captures (s6pitch 0-22, a
+ * 50-cent staircase from 440 to 880 Hz, and s5/8-11, 1 kHz bursts): the
+ * output goes to the nearest note of the scale (Scale Root and Scale Type;
+ * a pitch exactly between two goes up), and glides there in cents with a
+ * time constant of half the Speed (17 ms at 32 ms, 78 at 179, about 500 at
+ * 1000). A note after silence starts from the input's pitch. The octaver's
+ * PSOLA does the shifting, fully wet: its detection gives the period, and
+ * its grains are laid at the period the target asks for, so the output
+ * lands on the note. */
+
+/* Each scale type's notes, bit d for d semitones above the root, in the
+ * Looper X's order. Locrian is Phrygian's notes, as the device plays it
+ * (s6pitch 8 against 5: G, not Gb); Penta is the minor pentatonic
+ * (s6pitch 10). Min Triad and Root are off the device's screen, so their
+ * notes come from their names. */
+static const uint16_t LE_ST_SCALES[14] = {
+    0xAB5, /* Major */
+    0x5AD, /* Minor */
+    0x9AD, /* Harm Min */
+    0xAAD, /* Melo Min */
+    0x6AD, /* Dorian */
+    0x5AB, /* Phrygian */
+    0xAD5, /* Lydian */
+    0x6B5, /* Mixo */
+    0x5AB, /* Locrian */
+    0xFFF, /* Chromatic */
+    0x4A9, /* Penta */
+    0x091, /* Maj Triad */
+    0x089, /* Min Triad */
+    0x001, /* Root */
+};
+
+static float le_st_unit(float v) { return v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v; }
+
+/* How much nearer, in semitones, another note of the scale must be before
+ * the held one gives way to it: a voice that sits between two notes stays
+ * on one, as the captures' steps exactly between two do. The captured
+ * glide (s6pitch 15, 220 to 440 Hz in 3 s) leaves a whole tone 0 to 3
+ * cents past the midpoint and a semitone 10 to 12 past it. */
+#define LE_ST_HOLD 0.1
+
+/* The correction, in cents, that takes channel [o]'s pitch of period [pf]
+ * (device samples at [cap] Hz) to the nearest note of [p]'s scale, or to
+ * the note it holds while that is within LE_ST_HOLD of as near. */
+static float le_st_want(le_octaver_state* o, float pf, int cap,
+                        const float* p) {
+  const double ref = 420.0 + 40.0 * (double)le_st_unit(p[3]);
+  const int root = (int)(le_st_unit(p[1]) * 11.0f + 0.5f);
+  const int type = (int)(le_st_unit(p[2]) * 13.0f + 0.5f);
+  const unsigned mask = LE_ST_SCALES[type];
+  /* Semitones above the root (A is 9 above C). */
+  const double x = 12.0 * log2((double)cap / (double)pf / ref) + 9.0 - root;
+  const int b = (int)floor(x);
+  int best = b;
+  double gap = 1e9;
+  for (int k = b - 12; k <= b + 12; ++k) {
+    if (((mask >> (((k % 12) + 12) % 12)) & 1u) == 0u) continue;
+    const double d = fabs(x - (double)k);
+    if (d <= gap) { /* ascending, so a tie keeps the higher note */
+      gap = d;
+      best = k;
+    }
+  }
+  const int held = o->tune_note;
+  if (o->tune_held && ((mask >> (((held % 12) + 12) % 12)) & 1u) != 0u &&
+      fabs(x - (double)held) <= gap + LE_ST_HOLD) {
+    best = held;
+  }
+  o->tune_note = best;
+  o->tune_held = 1;
+  return (float)(100.0 * ((double)best - x));
+}
+
+/* Channel [o]'s shift setting this sample: its correction glided one step
+ * toward the one the detected pitch asks for, or none while the input is
+ * unvoiced (PSOLA plays the dry then), so a new note starts from its own
+ * pitch. A note starts correcting once PSOLA's voicing reaches 0.6, its
+ * third detection, when the period it smooths has left the last note's. */
+static float le_st_shift(le_octaver_state* o, const float* p, int cap) {
+  const float pf = o->period;
+  const float gate = o->tune_held ? 0.3f : 0.6f;
+  if (o->cur_mode != 1 || pf <= 0.0f || o->voiced < gate) {
+    o->tune_c = 0.0f;
+    o->tune_held = 0;
+    return 0.5f;
+  }
+  if (pf != o->tune_at[0] || p[0] != o->tune_at[1] || p[1] != o->tune_at[2] ||
+      p[2] != o->tune_at[3] || p[3] != o->tune_at[4]) {
+    o->tune_at[0] = pf;
+    for (int k = 0; k < 4; ++k) o->tune_at[k + 1] = p[k];
+    o->tune_want = le_st_want(o, pf, cap, p);
+    const double tau = 0.0005 * pow(1000.0, (double)le_st_unit(p[0]));
+    o->tune_a = (float)(1.0 - exp(-1.0 / (tau * (double)cap)));
+  }
+  o->tune_c += o->tune_a * (o->tune_want - o->tune_c);
+  return 0.5f + o->tune_c / 4800.0f;
+}
+
+/* The octaver settings Smart Tune runs: PSOLA, fully wet with the tone open,
+ * at unison until it hears a pitch. */
+static void le_st_settings(float* out) {
+  out[0] = 0.5f;
+  out[1] = 1.0f;
+  out[2] = 1.0f;
+  out[3] = 1.0f;
+  out[4] = 0.0f;
+}
+
+static void fx_smart_tune_process(le_fx_state* fx, int slot, int sr, int cap,
+                                  float* l, float* r, const float* p) {
+  (void)sr;
+  float q[8] = {0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+  le_st_settings(q);
+  float* x[2] = {l, r};
+  for (int chan = 0; chan < 2; ++chan) {
+    le_octaver_state* o = &fx->oct[slot][chan];
+    /* The shift is set, not smoothed: the glide is the correction's own. */
+    q[0] = le_st_shift(o, p, cap);
+    o->sm_shift = q[0];
+    *x[chan] = fx_octaver(fx, slot, chan, cap, *x[chan], q);
+  }
+}
+
 void le_fx_octaver_settings(int32_t type, const float* params, float* out) {
   for (int k = 0; k < LE_FX_PARAMS; ++k) out[k] = params[k];
   out[5] = 0.0f; /* the wet voice's cut: none */
@@ -1631,6 +1771,10 @@ void le_fx_octaver_settings(int32_t type, const float* params, float* out) {
   out[7] = 0.0f; /* no second voice */
   if (type == LE_FX_DUAL_OCTAVER) {
     le_doct_settings(params, out);
+    return;
+  }
+  if (type == LE_FX_SMART_TUNE) {
+    le_st_settings(out);
     return;
   }
   if (type != LE_FX_WHAMMY) return;
@@ -2812,6 +2956,20 @@ static const le_fx_param_desc LE_FX_DUAL_OCTAVER_PARAMS[] = {
     {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 1.0f, 0},
     {"octave_2_vol", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR,
      0.0f, 0},
+};
+/* The Vocal Tuner's Smart Tune (#1480): the speed 1 to 1000 ms (6, 32, 179
+ * and 994 on the Looper X's screen at 25, 50, 75 and 100 %), the scale root
+ * C to B, the scale type in LE_ST_SCALES's order, and the reference 420 to
+ * 460 Hz (459.9 at 99.6 %). */
+static const le_fx_param_desc LE_FX_SMART_TUNE_PARAMS[] = {
+    {"speed", LE_FX_UNIT_MS, 0, 1.0f, 1000.0f, LE_FX_CURVE_EXPONENTIAL, 0.5f,
+     0},
+    {"scale_root", LE_FX_UNIT_CHOICE, 12, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f,
+     0},
+    {"scale_type", LE_FX_UNIT_CHOICE, 14, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f,
+     0},
+    {"reference", LE_FX_UNIT_HZ, 0, 420.0f, 460.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     0},
 };
 /* The Guitar Rack's Whammy (#891): position 0 of the range is -12, 1 is
  * +12 semitones, the Looper X's two. */
@@ -7143,6 +7301,7 @@ LE_FX_ROWS_FIT(LE_FX_MODE_DELAY_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_DUAL_OCTAVER_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_AMP_CAB_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_MOD_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_SMART_TUNE_PARAMS);
 
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
  * published for this chain entry (NULL / not-ready => dry passthrough; the slot
@@ -7300,6 +7459,10 @@ static const le_fx_vtable LE_FX[] = {
                          LE_FX_ROOM_VERB_PARAMS, LE_FX_F_DRAINS,
                          sizeof(le_fx_rverb), fx_room_verb_update, NULL,
                          fx_room_verb_rkprocess},
+    /* The octaver's kernel and state, its shift following the detected
+     * pitch (fx_smart_tune_process). */
+    [LE_FX_SMART_TUNE] = {fx_smart_tune_process, fx_octaver_latency_vt,
+                          fx_octaver_prepare, LE_FX_SMART_TUNE_PARAMS},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -7361,6 +7524,7 @@ const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
     [LE_FX_AMP_CAB] = LE_FX_ROW_COUNT(LE_FX_AMP_CAB_PARAMS),
     [LE_FX_MOD] = LE_FX_ROW_COUNT(LE_FX_MOD_PARAMS),
     [LE_FX_ROOM_VERB] = LE_FX_ROW_COUNT(LE_FX_ROOM_VERB_PARAMS),
+    [LE_FX_SMART_TUNE] = LE_FX_ROW_COUNT(LE_FX_SMART_TUNE_PARAMS),
 };
 
 /* ---- per-kind state (le_fx_kinds, engine_private.h) ---- */

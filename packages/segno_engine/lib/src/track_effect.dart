@@ -480,7 +480,11 @@ enum TrackEffectType {
   /// The Looper X's Reverb (#1476), fit to the captures: four modes (HALL,
   /// STADIUM, ROOM, BOX) with Bright, and the Drum Rack's twelve ER rooms
   /// with Lo/Hi, Tail/ER and Density, on one network at each room's size.
-  roomVerb(31, 'Room reverb');
+  roomVerb(31, 'Room reverb'),
+
+  /// The Looper X's Smart Tune (#1480), fit to the captures: a voice
+  /// retuned to the nearest note of a scale, gliding there at its speed.
+  smartTune(32, 'Smart Tune');
 
   const TrackEffectType(this.code, this.label);
 
@@ -1377,6 +1381,42 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 1,
+      ),
+    ],
+    // The Vocal Tuner's Smart Tune (#1480): the speed (6, 32, 179 and 994 ms
+    // on the Looper X's screen at 25, 50, 75 and 100 %), the scale root C to
+    // B, the scale type, and the reference (459.9 Hz at 99.6 %).
+    TrackEffectType.smartTune => const [
+      FxParamInfo(
+        key: 'speed',
+        unit: FxParamUnit.ms,
+        atMin: 1,
+        atMax: 1000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'scale_root',
+        unit: FxParamUnit.choice,
+        steps: 12,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'scale_type',
+        unit: FxParamUnit.choice,
+        steps: 14,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'reference',
+        unit: FxParamUnit.hz,
+        atMin: 420,
+        atMax: 460,
+        defaultValue: 0.5,
       ),
     ],
     // The Guitar Rack's Whammy (#891): the pedal, and the range (position 0

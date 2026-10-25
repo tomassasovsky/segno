@@ -211,7 +211,8 @@ static void fx_entry(le_fx_recipe* r, int s) { kind_entry(r, s, g_kind); }
  *    kinds' heaviest settings, an upper bound for each rack's variant).
  *  - the Amp+Cab for Ed's and the Guitar racks' Amp, at heavy drive on the
  *    4x12" cabinet.
- * Left out, not built yet: Smart Tune and Harmonizer.
+ *  - Smart Tune for the Vocal Tuner's.
+ * Left out, not built yet: the Harmonizer.
  * Each list ends at the first LE_FX_NONE. */
 typedef struct {
   const char* name;
@@ -244,7 +245,7 @@ static const rack_spec k_racks[] = {
      {LE_FX_HP_GATE, LE_FX_OCTAVER, LE_FX_DOUBLER, LE_FX_MODE_DELAY, LE_FX_ROOM_VERB,
       LE_FX_COMPRESSOR, LE_FX_EQ}},
     {"vtuner", 300.0,
-     {LE_FX_HP_GATE, LE_FX_DOUBLER, LE_FX_MODE_DELAY, LE_FX_ROOM_VERB,
+     {LE_FX_HP_GATE, LE_FX_SMART_TUNE, LE_FX_DOUBLER, LE_FX_MODE_DELAY, LE_FX_ROOM_VERB,
       LE_FX_COMPRESSOR, LE_FX_EQ}},
 };
 
@@ -373,6 +374,7 @@ static const char* kind_name(void) {
     case LE_FX_AMP_CAB: return "ampcab";
     case LE_FX_MOD: return "mod";
     case LE_FX_ROOM_VERB: return "roomverb";
+    case LE_FX_SMART_TUNE: return "smarttune";
     default: return "octaver";
   }
 }
@@ -518,7 +520,7 @@ static const table_kind k_table[] = {
     {"modedelay", LE_FX_MODE_DELAY, 0}, {"drumdelay", LE_FX_MODE_DELAY, 1},
     {"dubdelay", LE_FX_MODE_DELAY, 2},  {"dualoct", LE_FX_DUAL_OCTAVER, 0},
     {"ampcab", LE_FX_AMP_CAB, 0},       {"mod", LE_FX_MOD, 0},
-    {"roomverb", LE_FX_ROOM_VERB, 0},
+    {"roomverb", LE_FX_ROOM_VERB, 0},  {"smarttune", LE_FX_SMART_TUNE, 0},
 };
 
 /* The monitor rig with [n] instances of [kind] in one chain, timed. */
@@ -674,6 +676,8 @@ int main(int argc, char** argv) {
         g_kind = LE_FX_MOD;
       } else if (!strcmp(kind, "roomverb")) {
         g_kind = LE_FX_ROOM_VERB;
+      } else if (!strcmp(kind, "smarttune")) {
+        g_kind = LE_FX_SMART_TUNE;
       } else if (!strcmp(kind, "modedelay")) {
         g_kind = LE_FX_MODE_DELAY;
         g_mdly_own = 0;
@@ -692,7 +696,7 @@ int main(int argc, char** argv) {
                 "degrade, lpf, lpflfo, spring, drive, filter, delay, tremolo, echo, "
                 "reverb, dubverb, ambverb, whammy, pumper, slicer, "
                 "modedelay, drumdelay, dubdelay, dualoct, ampcab, mod, "
-                "roomverb)\n",
+                "roomverb, smarttune)\n",
                 kind);
         return 2;
       }

@@ -489,12 +489,29 @@ void main() {
       },
     );
 
-    test('Smart Tune and the Harmonizer both read the shared Vocal Tuner '
-        'parameters', () {
-      for (final key in ['Mode', 'Auto Source', 'Key', 'Scale Type']) {
+    test('gives the Vocal Tuner keys to the module whose screen shows them',
+        () {
+      // #891 s6pitch: Smart Tune's page shows Speed, Tracking, Scale Root,
+      // Scale Type, Audio Type and Reference; the Harmonizer's Mode, Auto
+      // Source, Key, Scale, Stereo and Tightness.
+      const owners = {
+        'Speed': 'Smart tune',
+        'Tracking': 'Smart tune',
+        'Scale Root': 'Smart tune',
+        'Scale Type': 'Smart tune',
+        'Audio Type': 'Smart tune',
+        'Reference': 'Smart tune',
+        'Mode': 'Harmonizer',
+        'Auto Source': 'Harmonizer',
+        'Key': 'Harmonizer',
+        'Scale': 'Harmonizer',
+        'Stereo': 'Harmonizer',
+        'Tightness': 'Harmonizer',
+      };
+      for (final MapEntry(:key, :value) in owners.entries) {
         expect(
           fxModulesOwning(key, 'Vocal Tuner Rack').map((m) => m.name),
-          ['Harmonizer', 'Smart tune'],
+          [value],
           reason: key,
         );
       }
@@ -614,9 +631,8 @@ void main() {
       }
     });
 
-    test('gives each key to the modules it builds: one owner per key, two '
-        'for a shared Vocal Tuner key, none for Master Vol', () {
-      const shared = {'Mode', 'Auto Source', 'Key', 'Scale Type'};
+    test('gives each key to the modules it builds: one owner per key, none '
+        'for Master Vol', () {
       for (final preset in catalogue.presets) {
         final modules = fxPresetModules(preset);
         for (final key in preset.params.keys) {
@@ -627,9 +643,6 @@ void main() {
           final reason = '${preset.family} / ${preset.name} / $key';
           if (key == 'Master Vol') {
             expect(owners, isEmpty, reason: reason);
-          } else if (shared.contains(key)) {
-            // In rack order: Smart Tune runs before the Harmonizer.
-            expect(owners, ['Smart tune', 'Harmonizer'], reason: reason);
           } else {
             expect(owners, hasLength(1), reason: reason);
           }
@@ -659,8 +672,8 @@ void main() {
       expect(-12 + 24 * atmos.params['Master Vol']!, closeTo(10.6, 0.01));
     });
 
-    test('a Vocal Tuner preset with Smart Tune off still sets the shared '
-        'keys the Harmonizer reads', () {
+    test('a Vocal Tuner preset with Smart Tune off still holds Smart Tune '
+        'and sets the Harmonizer', () {
       final family = catalogue.family('Vocal Tuner Rack')!;
       final midi = family.presets.firstWhere((p) => p.name == 'Midi Harm Mid');
       final scale = family.presets.firstWhere(

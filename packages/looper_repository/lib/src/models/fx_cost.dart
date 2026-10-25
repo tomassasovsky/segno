@@ -86,6 +86,9 @@ const Map<TrackEffectType, double> kFxHopCostUs = {
   // formants (the Dual Octaver moves them), and both voices share one
   // inverse FFT, so the heaviest quarter stays the octaver's.
   TrackEffectType.dualOctaver: 69,
+  // The octaver's PSOLA ([kFxPsolaCostUs]), its shift worked out once a
+  // detection lands.
+  TrackEffectType.smartTune: 84,
 };
 
 /// The octaver in PSOLA mode (its mode setting at 1), per block.

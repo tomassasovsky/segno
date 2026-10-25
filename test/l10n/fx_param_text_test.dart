@@ -115,6 +115,10 @@ const _english = <String, List<String>>{
   'roomVerb.lo_hi': ['0%', '50%', '100%'],
   'roomVerb.tail_er': ['0%', '30%', '100%'],
   'roomVerb.density': ['0%', '100%', '100%'],
+  'smartTune.speed': ['1.0 ms', '31.6 ms', '1000 ms'],
+  'smartTune.scale_root': ['C', 'C', 'B'],
+  'smartTune.scale_type': ['Major', 'Major', 'Root'],
+  'smartTune.reference': ['420 Hz', '440 Hz', '460 Hz'],
 };
 
 /// The same in Spanish: a decimal comma, and the Spanish mode name.
@@ -228,6 +232,10 @@ const _spanish = <String, List<String>>{
   'roomVerb.lo_hi': ['0%', '50%', '100%'],
   'roomVerb.tail_er': ['0%', '30%', '100%'],
   'roomVerb.density': ['0%', '100%', '100%'],
+  'smartTune.speed': ['1,0 ms', '31,6 ms', '1000 ms'],
+  'smartTune.scale_root': ['C', 'C', 'B'],
+  'smartTune.scale_type': ['Major', 'Major', 'Root'],
+  'smartTune.reference': ['420 Hz', '440 Hz', '460 Hz'],
 };
 
 void main() {

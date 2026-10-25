@@ -13,7 +13,7 @@
 #          hpgate|doubler|chorus|wah|overdrive|distortion|vinyl|degrade|lpf|
 #          spring|drive|filter|delay|tremolo|echo|reverb|dubverb|ambverb|
 #          whammy|pumper|slicer|lpflfo|modedelay|drumdelay|dubdelay|dualoct|
-#          ampcab|mod|roomverb]
+#          ampcab|mod|roomverb|smarttune]
 # The binary lands in packages/segno_engine/build/bench/, which is not
 # tracked.
 set -euo pipefail
