@@ -2830,8 +2830,8 @@ static const le_fx_param_desc LE_FX_PUMPER_PARAMS[] = {
 /* The Rhythmic Rack's Slicer (#891): the pattern and the step in the
  * orders of LE_SLICE_PATTERNS and LE_SLICE_STEP; the mix. */
 static const le_fx_param_desc LE_FX_SLICER_PARAMS[] = {
-    {"slicer_pattern", LE_FX_UNIT_CHOICE, LE_SLICE_PATTERN_N, 0.0f, 1.0f, LE_FX_CURVE_LINEAR,
-     0.0f, 0},
+    {"slicer_pattern", LE_FX_UNIT_CHOICE, LE_SLICE_PATTERN_N, 0.0f, 1.0f,
+     LE_FX_CURVE_LINEAR, 0.0f, 0},
     {"slicer_step", LE_FX_UNIT_CHOICE, 9, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.5f,
      0},
     {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 1.0f, 0},
