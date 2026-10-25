@@ -24,10 +24,10 @@ void main() {
       // module is shown and processes nothing. The accepted design forbids
       // substituting another effect and calling that parity.
       expect(
-        fxModuleBuild(_module('Smart tune')).readiness,
+        fxModuleBuild(_module('Harmonizer')).readiness,
         FxModuleReadiness.unavailable,
       );
-      expect(fxModuleBuild(_module('Smart tune')).type, isNull);
+      expect(fxModuleBuild(_module('Harmonizer')).type, isNull);
 
       expect(
         [
@@ -35,10 +35,7 @@ void main() {
             if (fxModuleBuild(m).readiness == FxModuleReadiness.unavailable)
               m.name,
         ],
-        [
-          'Harmonizer',
-          'Smart tune',
-        ],
+        ['Harmonizer'],
       );
     });
 
@@ -143,6 +140,7 @@ void main() {
           'Pumper',
           'Reverb',
           'Slicer',
+          'Smart Tune',
           'Spring Reverb',
           'Transient',
           'Vinyl',
@@ -266,8 +264,8 @@ void main() {
       // A rack is what the player loaded, not what this build can run — so
       // the pedal is there, and it is a passthrough rather than absent.
       final entry = fxModuleEntry(
-        _module('Smart tune'),
-        _preset(const {'Smart Tune': 1}),
+        _module('Harmonizer'),
+        _preset(const {'Harmonize': 1}),
       );
 
       expect(entry.type, TrackEffectType.none);
@@ -293,10 +291,8 @@ void main() {
       expect(decodeTrackEffects(encodeTrackEffects([entry])).single, entry);
     });
 
-    test('carries the shared Vocal Tuner keys to both Smart Tune and the '
-        'Harmonizer', () {
-      // Vocal Tuner Rack / Midi Harm Mid, trimmed: Smart Tune is off, and
-      // the Harmonizer still reads the shared keys.
+    test('gives Smart Tune and the Harmonizer their own Vocal Tuner keys', () {
+      // Vocal Tuner Rack / Midi Harm Mid, trimmed: Smart Tune is off.
       const preset = FxPreset(
         family: 'Vocal Tuner Rack',
         name: 'Midi Harm Mid',
@@ -308,25 +304,33 @@ void main() {
           'Mode': 0,
           'Auto Source': 1,
           'Key': 0,
+          'Scale': 0,
+          'Scale Root': 9 / 11,
           'Scale Type': 1 / 13,
           'Speed': 0.4,
           'Voice 1 Vol': 0.7,
         },
       );
-      const shared = {
-        'Mode': 0,
-        'Auto Source': 1,
-        'Key': 0,
-        'Scale Type': 1 / 13,
-      };
 
       final tune = fxModuleEntry(_module('Smart tune'), preset);
       final harm = fxModuleEntry(_module('Harmonizer'), preset);
 
       expect(tune.enabled, isFalse);
-      expect(tune.source, {'Smart Tune': 0, ...shared, 'Speed': 0.4});
+      expect(tune.source, {
+        'Smart Tune': 0,
+        'Scale Root': 9 / 11,
+        'Scale Type': 1 / 13,
+        'Speed': 0.4,
+      });
       expect(harm.enabled, isTrue);
-      expect(harm.source, {'Harmonize': 1, ...shared, 'Voice 1 Vol': 0.7});
+      expect(harm.source, {
+        'Harmonize': 1,
+        'Mode': 0,
+        'Auto Source': 1,
+        'Key': 0,
+        'Scale': 0,
+        'Voice 1 Vol': 0.7,
+      });
     });
 
     test('an out-of-range preset value is clamped rather than pushed on', () {
@@ -1304,6 +1308,49 @@ void main() {
         'mix',
         'octave_2_vol',
       ]);
+    });
+
+    test('builds Smart Tune on its kind, Tracking and Audio Type unmapped', () {
+      // Vocal Tuner Rack / Retune Slow Wet, trimmed: A minor, Speed 63 ms.
+      final e = fxModuleEntry(
+        _module('Smart tune'),
+        const FxPreset(
+          family: 'Vocal Tuner Rack',
+          name: 'Retune Slow Wet',
+          id: 'p',
+          type: 7,
+          params: {
+            'Smart Tune': 1,
+            'Speed': 0.6,
+            'Tracking': 0.25,
+            'Scale Root': 9 / 11,
+            'Scale Type': 1 / 13,
+            'Audio Type': 0.5,
+            'Reference': 0.5,
+          },
+        ),
+      );
+      expect(e.type, TrackEffectType.smartTune);
+      expect(e.enabled, isTrue);
+      expect(e.params.take(4), [
+        closeTo(0.6, 1e-9),
+        closeTo(9 / 11, 1e-9),
+        closeTo(1 / 13, 1e-9),
+        closeTo(0.5, 1e-9),
+      ]);
+      final build = fxEntryBuild(e)!;
+      expect(build.readiness, FxModuleReadiness.partial);
+      expect(build.unmapped, ['Tracking', 'Audio Type']);
+      expect(fxEntryControls(e).keys, [
+        'speed',
+        'scale_root',
+        'scale_type',
+        'reference',
+      ]);
+      expect(
+        e.type.params[2].positionOf(e.params[2]),
+        1, // Minor
+      );
     });
 
     group('the Room reverb', () {

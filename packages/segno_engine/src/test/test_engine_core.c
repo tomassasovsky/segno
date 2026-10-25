@@ -20519,7 +20519,7 @@ static void test_fx_params_past_count_are_inert(void) {
                            LE_FX_SPRING,     LE_FX_DUB_VERB,  LE_FX_AMB_VERB,
                            LE_FX_WHAMMY,     LE_FX_PUMPER,    LE_FX_SLICER,
                            LE_FX_MODE_DELAY, LE_FX_DUAL_OCTAVER, LE_FX_AMP_CAB,
-                           LE_FX_MOD,        LE_FX_ROOM_VERB};
+                           LE_FX_MOD,        LE_FX_ROOM_VERB, LE_FX_SMART_TUNE};
   for (int t = 0; t < (int)(sizeof(types) / sizeof(types[0])); ++t) {
     le_engine* a = make_configured_engine();
     le_engine* b = make_configured_engine();
@@ -20769,7 +20769,8 @@ static void test_whammy_taper_and_pitch(void) {
   le_fx_octaver_settings(LE_FX_WHAMMY, p_heel, q);
   CHECK(q[0] == 0.5f); /* unison */
   CHECK(le_fx_type_hops(LE_FX_WHAMMY) && le_fx_type_hops(LE_FX_OCTAVER) &&
-        le_fx_type_hops(LE_FX_DUAL_OCTAVER));
+        le_fx_type_hops(LE_FX_DUAL_OCTAVER) &&
+        le_fx_type_hops(LE_FX_SMART_TUNE));
   CHECK(!le_fx_type_hops(LE_FX_DELAY));
 
   /* The sound: a 220 Hz harmonic tone. */
@@ -21818,9 +21819,9 @@ static void test_fx_param_descriptors_match_kernels(void) {
   /* Counts: the parameters each kernel reads; none for NONE and PLUGIN. */
   const int32_t counts[] = {0, 2, 2, 3, 2, 5, 3, 3, 0, 15, 5, 3,
                             2, 2, 3, 1, 2, 2, 4, 3, 4, 2, 2, 3, 2, 2, 3, 9, 4,
-                            5, 4, 7};
-  for (int32_t t = 0; t < 32; ++t) CHECK(le_fx_param_count(t) == counts[t]);
-  CHECK(le_fx_param_count(32) == LE_ERR_INVALID);
+                            5, 4, 7, 4};
+  for (int32_t t = 0; t < 33; ++t) CHECK(le_fx_param_count(t) == counts[t]);
+  CHECK(le_fx_param_count(33) == LE_ERR_INVALID);
   CHECK(le_fx_param_count(-1) == LE_ERR_INVALID);
   le_fx_param_desc scratch;
   CHECK(le_fx_param_info(LE_FX_DELAY, 3, &scratch) == LE_ERR_INVALID);
@@ -24400,7 +24401,8 @@ static float* oct_reference_wet(const float* dry, int32_t n, int32_t sr,
  * unsettled references are asserted to differ, so the comparison cannot pass
  * by being insensitive to either. */
 static void run_perf_render_octaver_case(const char* name, int32_t type,
-                                         const float* raw4) {
+                                         const float* raw4,
+                                         int settles_itself) {
   const char* dir = render_test_dir(name);
   const int32_t sr = 48000;
   const int32_t channel = 3;
@@ -24505,7 +24507,9 @@ static void run_perf_render_octaver_case(const char* name, int32_t type,
            name, (double)d_ref, (double)d_seed, (double)d_unsettled);
     CHECK(d_ref < 1e-6f);       /* the render used THIS lane's hop phase */
     CHECK(d_seed > 0.01f);      /* and can tell a wrong seed */
-    CHECK(d_unsettled > 0.01f); /* and a start-up state the lane was not in */
+    /* and a start-up state the lane was not in; Smart Tune lands on its
+     * mode at its first sample, so it has none. */
+    if (!settles_itself) CHECK(d_unsettled > 0.01f);
   }
   free(ref);
   free(wrong_seed);
@@ -24523,20 +24527,23 @@ static void test_perf_render_wet_octaver_matches_lane_hop_phase(void) {
   /* -1 octave, tone open, full wet, in each mode. */
   const float pv[4] = {0.25f, 1.0f, 1.0f, 0.0f};
   const float psola[4] = {0.25f, 1.0f, 1.0f, 1.0f};
-  run_perf_render_octaver_case("wet-octaver-phase", LE_FX_OCTAVER, pv);
-  run_perf_render_octaver_case("wet-octaver-psola", LE_FX_OCTAVER, psola);
+  run_perf_render_octaver_case("wet-octaver-phase", LE_FX_OCTAVER, pv, 0);
+  run_perf_render_octaver_case("wet-octaver-psola", LE_FX_OCTAVER, psola, 0);
   /* The Whammy toe down at -12: the render seeds its MAPPED settings, fully
    * wet, or it would start dry (#1451). */
   const float whammy[4] = {1.0f, 0.0f, 0.0f, 0.0f};
-  run_perf_render_octaver_case("wet-whammy", LE_FX_WHAMMY, whammy);
+  run_perf_render_octaver_case("wet-whammy", LE_FX_WHAMMY, whammy, 0);
   /* The Dual Octaver down, half mixed: the render seeds its mapped level
    * and law, and its switched shift. */
   const float dual[4] = {0.0f, 1.0f, 0.5f, 0.0f};
-  run_perf_render_octaver_case("wet-dual-octaver", LE_FX_DUAL_OCTAVER, dual);
+  run_perf_render_octaver_case("wet-dual-octaver", LE_FX_DUAL_OCTAVER, dual, 0);
+  /* Smart Tune at its defaults: the render seeds its PSOLA, fully wet. */
+  const float tune[4] = {0.5f, 0.0f, 0.0f, 0.5f};
+  run_perf_render_octaver_case("wet-smart-tune", LE_FX_SMART_TUNE, tune, 1);
   /* With Octave 2 at 60 %: both voices from the one analysis (#1464). */
   const float dual2[4] = {1.0f, 0.5f, 0.5f, 0.6f};
   run_perf_render_octaver_case("wet-dual-octaver-2", LE_FX_DUAL_OCTAVER,
-                               dual2);
+                               dual2, 0);
 }
 
 /* The stem render settles each arm-time slot at its EFFECTIVE bit, as the
@@ -35357,6 +35364,7 @@ static void test_cache_octaver_on_a_partial_hop_loop_stays_live(void) {
   printf("test_cache_octaver_on_a_partial_hop_loop_stays_live\n");
   cache_hop_stays_live(LE_FX_OCTAVER);
   cache_hop_stays_live(LE_FX_WHAMMY); /* the same kernel, on the same hop */
+  cache_hop_stays_live(LE_FX_SMART_TUNE);
 }
 
 /* A bypassed octaver passes the signal dry, whatever its hop, so the same
@@ -35428,7 +35436,7 @@ static void test_cache_cached_matches_live_every_builtin(void) {
                            LE_FX_TRANSIENT,  LE_FX_HP_GATE,   LE_FX_WAH,
                            LE_FX_OVERDRIVE, LE_FX_DISTORTION, LE_FX_LPF,
                            LE_FX_SPRING,    LE_FX_DUB_VERB,   LE_FX_AMB_VERB,
-                           LE_FX_WHAMMY};
+                           LE_FX_WHAMMY,    LE_FX_SMART_TUNE};
   /* The doubler and the chorus are free-running and never print
    * (test_cache_free_running_stays_live). */
   for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); ++i) {
@@ -38904,6 +38912,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_amp_cab.h"
 #include "test_engine_modulation.h"
 #include "test_engine_room_verb.h"
+#include "test_engine_smart_tune.h"
 #include "test_engine_fx_publish.h"
 #include "test_engine_bounce.h"
 #include "test_engine_clock.h"
@@ -38997,6 +39006,7 @@ int main(void) {
   run_amp_cab_tests();
   run_modulation_tests();
   run_room_verb_tests();
+  run_smart_tune_tests();
   run_fx_publish_tests();
   run_bounce_tests();
   if (getenv("SEGNO_PEEL_TESTS_ONLY")) return g_failures ? 1 : 0;
