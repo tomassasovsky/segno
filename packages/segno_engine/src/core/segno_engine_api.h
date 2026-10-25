@@ -753,7 +753,8 @@ typedef enum le_fx_type {
    * 1/32, 1/32T, 1/64), p2 mix. Plays the pattern on the beat: a capital letter
    * is a step and a lower-case one half a step; a letter's first slice is
    * the live input and each repeat replays it from its start; _ silences a
-   * step; < plays the step before backwards. A slice ends with a 4 ms fade
+   * step, or half a step in a pattern with a lower-case letter; < plays the
+   * step before backwards. A slice ends with a 4 ms fade
    * (#891). The three Fd patterns are not modelled (no capture and no
    * factory preset uses them): they pass the input through. Locked to the
    * beat, so a lane holding one is never printed. */

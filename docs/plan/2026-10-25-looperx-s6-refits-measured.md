@@ -18,6 +18,7 @@ way on the capture and on the kernel.
 | High off, Octave 2 alone (256 Hz) | -0.16 dB | -1.50 | -0.16 |
 | High off, Octave 2 at 50 % | -6.18 dB | -7.52 | -6.18 |
 | High on, Octave 1 (2 kHz) | -0.04 dB | -0.60 | -0.04 |
+| High on, Octave 2 alone (4 kHz, s6v 28) | -0.15 dB | -0.69 | -0.15 |
 | High on, both: 2 kHz, 4 kHz | -0.04, -0.15 dB | -0.60, -0.69 | -0.04, -0.15 |
 | High on, both, Mix 50 %: 1, 2, 4 kHz | -3.02, -3.05, -3.16 dB | -3.0, -3.6, -3.7 | -3.01, -3.05, -3.16 |
 
@@ -51,7 +52,13 @@ way on the capture and on the kernel.
 
   With them the kernel reads 0.0, -0.7 and -2.95 dB above, tracks the 100 %
   pass's level within 0.6 dB over 9 s (the old knee at 0.8, ceiling 1, was
-  off by 5 dB rms), and the 50 % ladder within 0.3 dB.
+  off by 5 dB rms), and the 50 % ladder within 0.3 dB. A single tanh limit
+  cannot hit both -0.2 and -3.1 dB; this one splits the error.
+- Every saturation pass is DIGI, so where the echo's limit sits relative
+  to the voicings (RESO LO and HI peak +6 dB) and to the L/R and GRV side
+  gains is not measured. The kernel limits the voiced echo, before the
+  side gains: a RESO echo saturates from about -11 dBFS in at its peak.
+  One hot RESO pass and one hot L/R pass would settle it.
 
 ## Slicer (#1461)
 

@@ -364,8 +364,9 @@ void le_fx_rack_reset(le_fx_state* fx, int slot);
  * The analysis-hop schedule needs no settling: it follows the clock the
  * render sets (le_fx_state::clock), which reproduces the live one. Caller
  * passes a slot on the hop (le_fx_type_hops) and the octaver settings it
- * runs (le_fx_octaver_settings, whose cell 5 is the wet voice's cut, so raw
- * octaver params, zero there, seed it at full level); no type check.
+ * runs (le_fx_octaver_settings, whose cell 5 sets the wet voice's level as
+ * 1 minus it, below 0 for a boost, so raw octaver params, zero there, seed
+ * it at full level); no type check.
  * Control thread / offline only, after le_fx_entry_reset. */
 void le_fx_octaver_seed_settled(le_fx_state* fx, int slot, const float* params);
 /* Whether [type] runs the octaver's kernel on the hop clock (the octaver,
@@ -381,8 +382,9 @@ void le_fx_pumper_seed_settled(le_fx_state* fx, int slot, const float* params,
 /* The octaver settings slot [s] of [type] runs: [params] themselves for the
  * octaver (cells 5 to 7 zero: no cut, a linear mix, no second voice), the
  * Whammy's pedal and range mapped for the Whammy, and the Dual Octaver's
- * high mode, Octave 1 level, mix and Octave 2 level mapped for it (its cut,
- * 1 in cell 6: an equal-power mix, a switched shift and a second voice, and
+ * high mode, Octave 1 level, mix and Octave 2 level mapped for it (the
+ * voice's level as 1 minus cell 5, which goes below 0 where its trim
+ * boosts; 1 in cell 6: an equal-power mix, a switched shift and a second voice, and
  * Octave 2's level in cell 7). [out] holds LE_FX_PARAMS. */
 void le_fx_octaver_settings(int32_t type, const float* params, float* out);
 
