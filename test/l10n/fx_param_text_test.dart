@@ -99,6 +99,10 @@ const _english = <String, List<String>>{
   'ampCab.treble': ['0%', '50%', '100%'],
   'ampCab.modern': ['0%', '50%', '100%'],
   'ampCab.cabinet': ['D.I.', '4x12"', 'RADIO'],
+  'mod.rate': ['0%', '50%', '100%'],
+  'mod.depth': ['0%', '50%', '100%'],
+  'mod.mix': ['0%', '50%', '100%'],
+  'mod.mod_mode': ['CHORUS', 'CHORUS', 'Tremolo'],
 };
 
 /// The same in Spanish: a decimal comma, and the Spanish mode name.
@@ -196,6 +200,10 @@ const _spanish = <String, List<String>>{
   'ampCab.treble': ['0%', '50%', '100%'],
   'ampCab.modern': ['0%', '50%', '100%'],
   'ampCab.cabinet': ['D.I.', '4x12"', 'RADIO'],
+  'mod.rate': ['0%', '50%', '100%'],
+  'mod.depth': ['0%', '50%', '100%'],
+  'mod.mix': ['0%', '50%', '100%'],
+  'mod.mod_mode': ['CHORUS', 'CHORUS', 'Tremolo'],
 };
 
 void main() {

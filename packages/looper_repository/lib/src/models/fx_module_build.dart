@@ -280,6 +280,7 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Slicer': {'Rhythmic Rack': _slicer},
   'Octaver': {"Ed's Rack": _dualOctaver},
   'Amp': {"Ed's Rack": _ampCab, 'Guitar Rack': _ampCab},
+  'Modulation': {'Guitar Rack': _guitarMod, 'Studio Rack': _studioMod},
   'Delay': {
     "Ed's Rack": _modeDelay,
     'Drum Rack': _drumDelay,
@@ -335,6 +336,44 @@ const FxModuleBuild _dubDelay = FxModuleBuild(
 const FxModuleBuild _ampCab = FxModuleBuild(
   type: TrackEffectType.ampCab,
   params: ['Amp Drive', 'Amp Bass', 'Amp Treble', 'Amp Modern', 'Cab'],
+);
+
+// Guitar Rack: the whole Mod, its rate, depth, mix and mode. The rack's
+// modes are the kind's first three (CHORUS, PHASER, FLANGER), so its control
+// shows those and a preset's 0, 0.5 and 1 land on them.
+const FxModuleBuild _guitarMod = FxModuleBuild(
+  type: TrackEffectType.mod,
+  params: ['Mod Rate', 'Mod Depth', 'Mod Mix', 'Mod Mode'],
+  shown: {
+    3: FxParamInfo(
+      key: 'mod_mode',
+      unit: FxParamUnit.choice,
+      steps: 3,
+      atMin: 0,
+      atMax: 2 / 3,
+      defaultValue: 0,
+    ),
+  },
+);
+
+// Studio Rack: rate, depth and mode, Chorus or Tremolo (the kind's first
+// and last). It shows no mix: its chorus is the Guitar Rack's at 50 %
+// (#891, the voice at the same share of the dry). Its Doubler Mix belongs
+// to the Doubler module.
+const FxModuleBuild _studioMod = FxModuleBuild(
+  type: TrackEffectType.mod,
+  params: ['Mod Rate', 'Mod Depth', null, 'Mod Mode'],
+  fixed: {2: 50},
+  shown: {
+    3: FxParamInfo(
+      key: 'studio_mod_mode',
+      unit: FxParamUnit.choice,
+      steps: 2,
+      atMin: 0,
+      atMax: 1,
+      defaultValue: 0,
+    ),
+  },
 );
 
 // Ed's Rack: the whole Dual Octaver, high mode, both octaves' levels and

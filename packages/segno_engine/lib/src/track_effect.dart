@@ -471,7 +471,11 @@ enum TrackEffectType {
 
   /// The Looper X's Amp with its cabinet (#887 part 12), fit to the
   /// captures: drive, Bass, Treble, Modern and twelve cabinets.
-  ampCab(29, 'Amp');
+  ampCab(29, 'Amp'),
+
+  /// The Looper X's Mod pedal (#887 part 13), fit to the captures: the
+  /// chorus, a phaser, a flanger and a square tremolo, one at a time.
+  mod(30, 'Modulation');
 
   const TrackEffectType(this.code, this.label);
 
@@ -853,8 +857,8 @@ enum TrackEffectType {
     // Shown as the Looper X shows them; what each percent does is measured
     // (the doubler and the wah in #1445, the doubler's mix at 0, 50 and
     // 100 % with the line between chosen), except the chorus's, measured on
-    // the Guitar Rack's at two settings (#891). The Dub Rack's doubler, Ed's
-    // chorus and Ed's wah defaults.
+    // the Guitar Rack's at 0, 25, 50, 75 and 100 % (#891). The Dub Rack's
+    // doubler, Ed's chorus and Ed's wah defaults.
     TrackEffectType.doubler => const [
       FxParamInfo(
         key: 'mix',
@@ -878,7 +882,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.45,
-        taperUnverified: true,
       ),
       FxParamInfo(
         key: 'depth',
@@ -886,7 +889,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.21,
-        taperUnverified: true,
       ),
       FxParamInfo(
         key: 'mix',
@@ -894,7 +896,40 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.5,
-        taperUnverified: true,
+      ),
+    ],
+    // The Looper X's Mod (#891): Rate, Depth and Mix, each measured at 0,
+    // 25, 50, 75 and 100 % in every mode, and the mode (CHORUS, PHASER,
+    // FLANGER, Tremolo).
+    TrackEffectType.mod => const [
+      FxParamInfo(
+        key: 'rate',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'depth',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'mod_mode',
+        unit: FxParamUnit.choice,
+        steps: 4,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
       ),
     ],
     TrackEffectType.wah => const [
