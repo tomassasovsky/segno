@@ -94,6 +94,11 @@ const _english = <String, List<String>>{
   'dualOctaver.octave_1_vol': ['0%', '100%', '100%'],
   'dualOctaver.mix': ['0%', '100%', '100%'],
   'dualOctaver.octave_2_vol': ['0%', '0%', '100%'],
+  'ampCab.drive': ['0%', '50%', '100%'],
+  'ampCab.bass': ['0%', '50%', '100%'],
+  'ampCab.treble': ['0%', '50%', '100%'],
+  'ampCab.modern': ['0%', '50%', '100%'],
+  'ampCab.cabinet': ['D.I.', '4x12"', 'RADIO'],
 };
 
 /// The same in Spanish: a decimal comma, and the Spanish mode name.
@@ -186,6 +191,11 @@ const _spanish = <String, List<String>>{
   'dualOctaver.octave_1_vol': ['0%', '100%', '100%'],
   'dualOctaver.mix': ['0%', '100%', '100%'],
   'dualOctaver.octave_2_vol': ['0%', '0%', '100%'],
+  'ampCab.drive': ['0%', '50%', '100%'],
+  'ampCab.bass': ['0%', '50%', '100%'],
+  'ampCab.treble': ['0%', '50%', '100%'],
+  'ampCab.modern': ['0%', '50%', '100%'],
+  'ampCab.cabinet': ['D.I.', '4x12"', 'RADIO'],
 };
 
 void main() {

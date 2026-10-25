@@ -571,6 +571,8 @@ typedef struct le_fx_state {
    * ring and runtime, allocated by its prepare for the slots that hold
    * one; NULL elsewhere. */
   struct le_fx_line *_Atomic line[LE_FX_MAX];
+  /* The Amp+Cab's instance (engine_fx.c), allocated only for that kind. */
+  struct le_fx_amp *_Atomic amp[LE_FX_MAX];
   /* Per-slot enable-crossfade runtime (fx_apply_chain). DSP state — owned by
    * whichever thread runs the chain (the audio thread live; the render thread
    * offline), NOT published config: the published flags live on the chain

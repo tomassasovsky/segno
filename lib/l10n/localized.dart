@@ -40,6 +40,7 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.slicer => effectSlicer,
     TrackEffectType.modeDelay => effectModeDelay,
     TrackEffectType.dualOctaver => effectDualOctaver,
+    TrackEffectType.ampCab => effectAmpCab,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
@@ -59,6 +60,10 @@ extension EngineLocalizations on AppLocalizations {
     'oct_high_mode' => paramHighMode,
     'octave_1_vol' => paramOctave1Level,
     'octave_2_vol' => paramOctave2Level,
+    'bass' => paramBass,
+    'treble' => paramTreble,
+    'modern' => paramModern,
+    'cabinet' => paramCabinet,
     'decay' => paramDecay,
     'volume' => paramVolume,
     'amb_dub_mix' => paramAmbDubMix,
@@ -192,6 +197,7 @@ extension EngineLocalizations on AppLocalizations {
         ('lfo_rate', final i) => _lfoRates[i],
         ('delay_time', final i) => _delayTimes[i],
         ('delay_mode', final i) => _delayModes[i],
+        ('cabinet', final i) => _cabinets[i],
         ('oct_high_mode', 0) => toggleOff,
         ('oct_high_mode', _) => toggleOn,
         ('layout', 0) => eqLayoutShelves,
@@ -275,6 +281,22 @@ extension EngineLocalizations on AppLocalizations {
     '5/4',
     '6/4',
     '8/4',
+  ];
+
+  /// The Amp's cabinets, as the Looper X names them.
+  static const List<String> _cabinets = [
+    'D.I.',
+    'BRIT',
+    '1x8"',
+    '1x12"',
+    '2x10"',
+    '2x12"',
+    '4x10"',
+    '4x12"',
+    '1x15"',
+    'BASS',
+    '4x10"',
+    'RADIO',
   ];
 
   /// The Mode delay's modes, as the Looper X names them.
