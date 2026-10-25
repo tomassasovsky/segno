@@ -148,31 +148,6 @@ class FxModuleBuild {
   }
 }
 
-/// What this engine can build for each catalogue module, by module name.
-///
-/// Written against the parameter names that are actually in the catalogue
-/// files, not against a guess at what a module ought to carry. A module absent
-/// from this map or [kFxModuleVariants] is [FxModuleReadiness.unavailable]:
-/// the catalogue names twenty-six modules and the engine builds fewer.
-const Map<String, FxModuleBuild> kFxModuleBuilds = {
-  // p0 size, p1 damping, p2 mix. `Rev Bright` is brightness where the engine
-  // wants damping, which is its complement, so it is NOT wired here: inverting
-  // someone else's control into ours is the silent substitution the accepted
-  // design forbids. It stays unmapped and visible.
-  'Reverb': FxModuleBuild(
-    type: TrackEffectType.reverb,
-    params: ['Rev Length', null, 'Rev Mix'],
-    unmapped: [
-      'Rev Bright',
-      'Rev Density',
-      'Rev ER',
-      'Rev Lo/Hi',
-      'Rev Mode',
-      'Rev Tail/ER',
-    ],
-  ),
-};
-
 /// What a rack control applies at each setting (see
 /// [FxModuleBuild.scales]).
 class FxSourceScale {
@@ -292,7 +267,86 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
     'Vocal Tuner Rack': _modeDelay,
   },
   'Pitch shift': {'Studio Rack': _pitchShift, 'Vocal Rack': _pitchShift},
+  // Vocal before Ed's: their reverbs carry the same keys, and an entry
+  // outside its rack that cannot tell them apart keeps a Mode that works.
+  'Reverb': {
+    'Vocal Rack': _modeVerbBright,
+    "Ed's Rack": _edsVerb,
+    'Vocal Tuner Rack': _modeVerbBright,
+    'Studio Rack': _modeVerb,
+    'Rhythmic Rack': _modeVerb,
+    'Drum Rack': _drumVerb,
+  },
 };
+
+// The Room reverb's modes as the racks show them: HALL, STADIUM, ROOM and
+// BOX, the kind's first four rooms. A preset stores one of four positions.
+const FxParamInfo _verbMode = FxParamInfo(
+  key: 'room_mode',
+  unit: FxParamUnit.choice,
+  steps: 4,
+  atMin: 0,
+  atMax: 3 / 15,
+  defaultValue: 0,
+);
+
+// Vocal and Vocal Tuner racks: Length, Mix, the mode and Bright.
+const FxModuleBuild _modeVerbBright = FxModuleBuild(
+  type: TrackEffectType.roomVerb,
+  params: ['Rev Length', 'Rev Mix', 'Rev Mode', 'Rev Bright'],
+  shown: {2: _verbMode},
+);
+
+// Studio and Rhythmic racks: Length, Mix and the mode, with Bright at the
+// 75 % their captures read (#891 s6rev 48-53, s14: the two racks' HALL is
+// the same to the sample).
+const FxModuleBuild _modeVerb = FxModuleBuild(
+  type: TrackEffectType.roomVerb,
+  params: ['Rev Length', 'Rev Mix', 'Rev Mode'],
+  fixed: {3: 75},
+  shown: {2: _verbMode},
+);
+
+// Ed's Rack: Length, Mix and Bright on HALL. Its Rev Mode does not reach
+// the sound on the Looper X (#1476: the four modes, chosen live or loaded
+// from a preset, play HALL to -139 dB), so it stays unmapped.
+const FxModuleBuild _edsVerb = FxModuleBuild(
+  type: TrackEffectType.roomVerb,
+  params: ['Rev Length', 'Rev Mix', null, 'Rev Bright'],
+  unmapped: ['Rev Mode'],
+  fixed: {2: 0},
+);
+
+// Drum Rack: Length, Mix, the ER room, Lo/Hi, Tail/ER and Density. The
+// rack's list has 15 rooms; the last three (OPERA HOUSE, VINTAGE 1,
+// VINTAGE 2) are off the Looper X's screen and unmeasured, so ours lists
+// the 12 before them, the kind's rooms 4 to 15, and a preset's stored 12
+// to 14 (of 15 positions) reads as the last, CHURCH.
+const FxModuleBuild _drumVerb = FxModuleBuild(
+  type: TrackEffectType.roomVerb,
+  params: [
+    'Rev Length',
+    'Rev Mix',
+    'Rev ER',
+    null,
+    'Rev Lo/Hi',
+    'Rev Tail/ER',
+    'Rev Density',
+  ],
+  scales: {
+    2: FxSourceScale.table([(0, 4 / 15), (11 / 14, 1), (1, 1)]),
+  },
+  shown: {
+    2: FxParamInfo(
+      key: 'er_room',
+      unit: FxParamUnit.choice,
+      steps: 12,
+      atMin: 4 / 15,
+      atMax: 1,
+      defaultValue: 7 / 11,
+    ),
+  },
+);
 
 // Studio and Vocal racks: the shift and the mix, on the octaver's phase
 // vocoder with the tone open. The shift reads -12..+12 semitones in whole
@@ -770,10 +824,8 @@ List<BuiltInEffect> fxRackEntries(FxPreset preset) {
 /// module has variants (its default variant without a family).
 FxModuleBuild fxModuleBuild(FxModule module, {String? family}) {
   final variants = kFxModuleVariants[module.name];
-  if (variants != null) {
-    return variants[family] ?? variants.values.first;
-  }
-  return kFxModuleBuilds[module.name] ?? const FxModuleBuild.unavailable();
+  if (variants == null) return const FxModuleBuild.unavailable();
+  return variants[family] ?? variants.values.first;
 }
 
 /// The rack variant [entry] was built as, or `null` when it is not one: an
@@ -801,12 +853,17 @@ FxModuleBuild? _findEntryBuild(BuiltInEffect entry) {
   if (variants == null) return null;
   FxModuleBuild? build;
   var best = -1;
-  for (final v in variants.values) {
+  for (final MapEntry(key: family, value: v) in variants.entries) {
     // The keys it places and the ones it knows it drops: the variant with
     // the most of them that the entry carries is its rack's (the Rhythmic
-    // Rack's LPF, with its LFO keys, over the Lo-Fi Rack's).
+    // Rack's LPF, with its LFO keys, over the Lo-Fi Rack's). Where two
+    // carry the same keys (Ed's and the Vocal Rack's reverbs), the one
+    // whose family the entry's rack was built from.
     final keys = [...v.params.whereType<String>(), ...v.unmapped];
-    if (keys.length > best && keys.every(entry.source.containsKey)) {
+    if (!keys.every(entry.source.containsKey)) continue;
+    final own =
+        entry.rack?.art != null && kFxFamilySlugs[family] == entry.rack!.art;
+    if (keys.length > best || (keys.length == best && own)) {
       best = keys.length;
       build = v;
     }
