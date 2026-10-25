@@ -39,7 +39,9 @@ way on the capture and on the kernel.
   kernel within 0.3 dB. Nothing changes.
 - **DIGI at 100 % Feedback** (s6v 18). From the impulse, the second echo is
   0.996 of the first: the loop loses nothing per repeat, as the kernel has
-  it. Under the sweep, though, the Looper X settles 7 to 9 dB lower than
+  it (the tail's per-repeat loss is under 0.1 dB from 40 Hz to 3 kHz and
+  0.5 and 1.6 dB at 3-8 and 8-16 kHz, the kernel's within 0.3 dB of
+  those). Under the sweep, though, the Looper X holds 7 to 9 dB lower than
   the kernel did, and at Feedback 0 % a hot echo saturates (s6v 17):
 
   | tone (1 kHz) | -6 dBFS | -3 dBFS | 0 dBFS |
@@ -50,10 +52,21 @@ way on the capture and on the kernel.
   - the voiced echo, from 0.55 toward a ceiling of 0.60 (tanh);
   - what feeds back, from 0.20 toward 0.40.
 
-  With them the kernel reads 0.0, -0.7 and -2.95 dB above, tracks the 100 %
-  pass's level within 0.6 dB over 9 s (the old knee at 0.8, ceiling 1, was
-  off by 5 dB rms), and the 50 % ladder within 0.3 dB. A single tanh limit
-  cannot hit both -0.2 and -3.1 dB; this one splits the error.
+  With them the kernel reads 0.0, -0.7 and -2.95 dB above, and the 50 %
+  ladder within 0.3 dB. A single tanh limit cannot hit both -0.2 and
+  -3.1 dB; this one splits the error. The 100 % pass, rms over each second
+  (the old knee at 0.8, ceiling 1, was off by 5 dB rms):
+
+  | from (s) | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
+  |---|---|---|---|---|---|---|---|---|---|
+  | capture, dB | -18.1 | -14.5 | -14.1 | -13.9 | -13.9 | -14.3 | -17.9 | -23.3 | -24.2 |
+  | kernel, dB | -18.1 | -14.4 | -13.9 | -13.7 | -13.6 | -13.7 | -16.2 | -23.7 | -24.4 |
+
+  The second the sweep ends in (7 s) is 1.7 dB off; the others within
+  0.6 dB. Above its knee the feedback limit gives back less than it takes,
+  so a hot loop with no new input decays toward the knee (0.297 peak 3 s
+  after a hot tone, 0.255 after 20 s). The capture's input does not stop
+  after 9 s (the ladder and plucks follow), so that decay is unmeasured.
 - Every saturation pass is DIGI, so where the echo's limit sits relative
   to the voicings (RESO LO and HI peak +6 dB) and to the L/R and GRV side
   gains is not measured. The kernel limits the voiced echo, before the

@@ -590,11 +590,11 @@ static void test_mode_delay_hot_echo_saturates(void) {
 }
 
 /* DIGI at 100 % Feedback (#891 s6v 18): a quiet 500 Hz burst's repeats
- * lose nothing (the second at least 0.99 of the first: the capture loses
- * under 0.1 dB a repeat below 3 kHz),
- * and a hot tone's repeats, once it stops, settle under the feedback's
- * 0.40 ceiling (DIGI's loop filters ring a little over it) rather than at
- * the echo's 0.60. */
+ * lose nothing (the second within 1 % of the first; the capture's impulse
+ * gave 0.996), and a hot tone's repeats, held by the feedback's limit,
+ * are at the fit's level 3 s after the tone stops (0.297, within 0.6 dB;
+ * with no limit they would sit at the echo's 0.60). They go on decaying
+ * toward the knee after that. */
 static void test_mode_delay_full_feedback(void) {
   printf("test_mode_delay_full_feedback\n");
   const le_fx_tempo t = rh_tempo(120.0);
@@ -620,7 +620,7 @@ static void test_mode_delay_full_feedback(void) {
     }
     const double ratio = sqrt(e2 / e1);
     printf("  second echo %.4f of the first\n", ratio);
-    CHECK(ratio > 0.99);
+    CHECK(fabs(ratio - 1.0) < 0.01);
     free(x);
     free(y);
   }
@@ -637,8 +637,8 @@ static void test_mode_delay_full_feedback(void) {
     free(fx);
     float peak = 0.0f;
     for (int i = 4 * MD_SR; i < n; ++i) peak = fmaxf(peak, fabsf(y[i]));
-    printf("  repeats after the tone: peak %.3f\n", (double)peak);
-    CHECK(peak > 0.2f && peak < 0.45f);
+    printf("  repeats 3 s after the tone: peak %.3f (fit 0.297)\n", (double)peak);
+    CHECK(fabs(20.0 * log10(peak / 0.297)) < 0.6);
     free(x);
     free(y);
   }

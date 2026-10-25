@@ -2124,12 +2124,15 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
  * saturates from 0.55 toward 0.60 (at Feedback 0 % a 0 dBFS tone's echo
  * comes back 3.1 dB down on the capture and 2.95 dB here, a -3 dBFS one
  * 0.2 dB and 0.7 dB down), and what feeds back from 0.20 toward 0.40,
- * which holds DIGI at 100 % Feedback to the level the Looper X settles at
- * under a sweep (its loop alone loses nothing per repeat). The captures
- * are all DIGI, so placing the echo's limit after the voicing and before
- * the L/R and GRV side gains is assumed. A 5 Hz DC blocker sits in the loop. Its tempo is the live
- * song's, which a print would not keep, so a lane holding one is never
- * printed. */
+ * which holds DIGI at 100 % Feedback to the Looper X's level under a sweep
+ * (within 0.4 dB a second over 9 s, but for the second the sweep ends in).
+ * Its loop alone loses nothing per repeat; above the knee the limit
+ * always gives back less than it takes, so a hot loop decays toward the
+ * knee, and past the 9 s the capture covers that is unmeasured. The
+ * captures are all DIGI, so placing the echo's limit after the voicing
+ * and before the L/R and GRV side gains is assumed. A 5 Hz DC blocker sits
+ * in the loop. Its tempo is the live song's, which a print would not keep,
+ * so a lane holding one is never printed. */
 
 static const double LE_MDLY_QUARTERS[20] = {
     0.125, 1.0 / 6.0, 0.1875, 0.25, 1.0 / 3.0, 0.375, 0.5, 2.0 / 3.0, 0.75, 1.0,
