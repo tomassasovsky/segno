@@ -168,6 +168,11 @@ static void dynamics_entry(le_fx_recipe* r, int s, int32_t kind) {
     } else {
       r->params[s][3] = 7.0f / 13.0f; /* RES LO L/R: both taps voiced */
     }
+  } else if (kind == LE_FX_ROOM_VERB) {
+    /* BOX, the room with the most early taps (63 and 64 a side). The Drum
+     * rooms run fewer (49 and 50) plus their ER taps and the low cut, and
+     * cost no more than BOX on the M4 bench (#1479). */
+    r->params[s][2] = 3.0f / 15.0f;
   } else if (kind == LE_FX_SLICER) {
     r->params[s][0] = 15.0f / 19.0f; /* AB<<: replays and reversals */
     r->params[s][1] = 1.0f / 8.0f;   /* 1/4T: reads far back in the ring */
@@ -201,7 +206,7 @@ static void fx_entry(le_fx_recipe* r, int s) { kind_entry(r, s, g_kind); }
  *    Pitch Shift (#1441), and the Mod in its phaser mode for the Guitar and
  *    Studio racks' Mod;
  *  - the Mode delay for the racks' Delay and Dub Delay (the Drum's and the
- *    Dub's in their own voicings), and the engine's reverb for their Reverb;
+ *    Dub's in their own voicings), and the Room reverb for their Reverb;
  *  - every EQ with every band engaged and every compressor working (the
  *    kinds' heaviest settings, an upper bound for each rack's variant).
  *  - the Amp+Cab for Ed's and the Guitar racks' Amp, at heavy drive on the
@@ -216,7 +221,7 @@ typedef struct {
 
 static const rack_spec k_racks[] = {
     {"drum", 60.0,
-     {LE_FX_TRANSIENT, LE_FX_MODE_DELAY, LE_FX_REVERB, LE_FX_EQ, LE_FX_COMPRESSOR}},
+     {LE_FX_TRANSIENT, LE_FX_MODE_DELAY, LE_FX_ROOM_VERB, LE_FX_EQ, LE_FX_COMPRESSOR}},
     {"dub", 60.0,
      {LE_FX_DOUBLER, LE_FX_MODE_DELAY, LE_FX_DUB_VERB, LE_FX_AMB_VERB,
       LE_FX_COMPRESSOR, LE_FX_EQ}},
@@ -225,21 +230,21 @@ static const rack_spec k_racks[] = {
       LE_FX_MODE_DELAY}},
     {"rhythmic", 60.0,
      {LE_FX_LPF, LE_FX_SLICER, LE_FX_PUMPER, LE_FX_EQ, LE_FX_MODE_DELAY,
-      LE_FX_REVERB}},
+      LE_FX_ROOM_VERB}},
     {"eds", 200.0,
      {LE_FX_DUAL_OCTAVER, LE_FX_WAH, LE_FX_COMPRESSOR, LE_FX_OVERDRIVE,
-      LE_FX_AMP_CAB, LE_FX_CHORUS, LE_FX_REVERB, LE_FX_MODE_DELAY, LE_FX_EQ}},
+      LE_FX_AMP_CAB, LE_FX_CHORUS, LE_FX_ROOM_VERB, LE_FX_MODE_DELAY, LE_FX_EQ}},
     {"guitar", 200.0,
      {LE_FX_WHAMMY, LE_FX_OVERDRIVE, LE_FX_WAH, LE_FX_AMP_CAB, LE_FX_MOD,
       LE_FX_SPRING, LE_FX_MODE_DELAY}},
     {"studio", 200.0,
      {LE_FX_OCTAVER, LE_FX_DISTORTION, LE_FX_DOUBLER, LE_FX_MOD,
-      LE_FX_MODE_DELAY, LE_FX_REVERB, LE_FX_COMPRESSOR, LE_FX_EQ}},
+      LE_FX_MODE_DELAY, LE_FX_ROOM_VERB, LE_FX_COMPRESSOR, LE_FX_EQ}},
     {"vocal", 200.0,
-     {LE_FX_HP_GATE, LE_FX_OCTAVER, LE_FX_DOUBLER, LE_FX_MODE_DELAY, LE_FX_REVERB,
+     {LE_FX_HP_GATE, LE_FX_OCTAVER, LE_FX_DOUBLER, LE_FX_MODE_DELAY, LE_FX_ROOM_VERB,
       LE_FX_COMPRESSOR, LE_FX_EQ}},
     {"vtuner", 300.0,
-     {LE_FX_HP_GATE, LE_FX_DOUBLER, LE_FX_MODE_DELAY, LE_FX_REVERB,
+     {LE_FX_HP_GATE, LE_FX_DOUBLER, LE_FX_MODE_DELAY, LE_FX_ROOM_VERB,
       LE_FX_COMPRESSOR, LE_FX_EQ}},
 };
 
@@ -367,6 +372,7 @@ static const char* kind_name(void) {
     case LE_FX_DUAL_OCTAVER: return "dualoct";
     case LE_FX_AMP_CAB: return "ampcab";
     case LE_FX_MOD: return "mod";
+    case LE_FX_ROOM_VERB: return "roomverb";
     default: return "octaver";
   }
 }
@@ -512,6 +518,7 @@ static const table_kind k_table[] = {
     {"modedelay", LE_FX_MODE_DELAY, 0}, {"drumdelay", LE_FX_MODE_DELAY, 1},
     {"dubdelay", LE_FX_MODE_DELAY, 2},  {"dualoct", LE_FX_DUAL_OCTAVER, 0},
     {"ampcab", LE_FX_AMP_CAB, 0},       {"mod", LE_FX_MOD, 0},
+    {"roomverb", LE_FX_ROOM_VERB, 0},
 };
 
 /* The monitor rig with [n] instances of [kind] in one chain, timed. */
@@ -665,6 +672,8 @@ int main(int argc, char** argv) {
         g_kind = LE_FX_AMP_CAB;
       } else if (!strcmp(kind, "mod")) {
         g_kind = LE_FX_MOD;
+      } else if (!strcmp(kind, "roomverb")) {
+        g_kind = LE_FX_ROOM_VERB;
       } else if (!strcmp(kind, "modedelay")) {
         g_kind = LE_FX_MODE_DELAY;
         g_mdly_own = 0;
@@ -682,7 +691,8 @@ int main(int argc, char** argv) {
                 "hpgate, doubler, chorus, wah, overdrive, distortion, vinyl, "
                 "degrade, lpf, lpflfo, spring, drive, filter, delay, tremolo, echo, "
                 "reverb, dubverb, ambverb, whammy, pumper, slicer, "
-                "modedelay, drumdelay, dubdelay, dualoct, ampcab, mod)\n",
+                "modedelay, drumdelay, dubdelay, dualoct, ampcab, mod, "
+                "roomverb)\n",
                 kind);
         return 2;
       }
@@ -712,7 +722,7 @@ int main(int argc, char** argv) {
               "[--kind octaver|psola|eq|comp|transient|hpgate|doubler|chorus|"
               "wah|overdrive|distortion|vinyl|degrade|lpf|lpflfo|spring|drive|filter|"
               "delay|tremolo|echo|reverb|dubverb|ambverb|whammy|"
-              "pumper|slicer|modedelay|drumdelay|dubdelay|dualoct] "
+              "pumper|slicer|modedelay|drumdelay|dubdelay|dualoct|roomverb] "
               "[--table]\n",
               argv[0]);
       return 2;

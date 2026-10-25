@@ -42,6 +42,7 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.dualOctaver => effectDualOctaver,
     TrackEffectType.ampCab => effectAmpCab,
     TrackEffectType.mod => effectMod,
+    TrackEffectType.roomVerb => effectRoomVerb,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
@@ -72,6 +73,14 @@ extension EngineLocalizations on AppLocalizations {
     'cabinet' => paramCabinet,
     'mod_mode' => paramMode,
     'studio_mod_mode' => paramMode,
+    'length' => paramLength,
+    'room' => paramRoom,
+    'room_mode' => paramMode,
+    'er_room' => paramEarlyRoom,
+    'bright' => paramBright,
+    'lo_hi' => paramLoHi,
+    'tail_er' => paramTailEr,
+    'density' => paramDensity,
     'decay' => paramDecay,
     'volume' => paramVolume,
     'amb_dub_mix' => paramAmbDubMix,
@@ -207,6 +216,8 @@ extension EngineLocalizations on AppLocalizations {
         ('delay_mode', final i) => _delayModes[i],
         ('cabinet', final i) => _cabinets[i],
         ('mod_mode', final i) => _modModes[i],
+        ('room' || 'room_mode', final i) => _rooms[i],
+        ('er_room', final i) => _rooms[4 + i],
         ('studio_mod_mode', 0) => 'Chorus',
         ('studio_mod_mode', _) => 'Tremolo',
         ('oct_high_mode', 0) => toggleOff,
@@ -305,6 +316,27 @@ extension EngineLocalizations on AppLocalizations {
     'BASS',
     '4x10"',
     'RADIO',
+  ];
+
+  /// The Room reverb's rooms, as the Looper X names them: the four modes,
+  /// then the Drum Rack's ER rooms.
+  static const List<String> _rooms = [
+    'HALL',
+    'STADIUM',
+    'ROOM',
+    'BOX',
+    'BOOTH',
+    'CLUB',
+    'ROOM',
+    'SMALL CHAMBER',
+    'Med CHAMBER',
+    'LARGE CHAMBER',
+    'SMALL STUDIO',
+    'LARGE STUDIO',
+    'SCORING STAGE',
+    'PHILHARMONIC',
+    'CONCERT HALL',
+    'CHURCH',
   ];
 
   /// The Mod's modes, as the Looper X names them: the Guitar Rack's three,

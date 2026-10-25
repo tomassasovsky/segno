@@ -6194,12 +6194,13 @@ static void fx_spring_kprocess(void* ks, float* l, float* r) {
  * was cleared, so nothing it did not write ever sounds. Dec glides, and the
  * lines are redesigned only while it moves. */
 #define LE_VB_LINES 8
-#define LE_VB_APS 2
+#define LE_VB_APS 6 /* the most diffusers a side runs (the Dub reverbs run 2) */
 #define LE_VB_TN 10
 #define LE_VB_WN 7
 
 typedef struct {
   double pd_ms[2];
+  int aps; /* diffusers a side runs (0: 2) */
   double ap_ms[2][LE_VB_APS];
   float ap_g;
   float early_g;
@@ -6227,6 +6228,7 @@ typedef struct {
   double law_exp;  /* mid above the table: (display ratio)^law_exp */
   int hi_by_rate;  /* above the table, 8 kHz keeps its excess decay rate */
   double dry[LE_VB_WN]; /* the dry gain at LE_VB_WV */
+  double lg[LE_VB_TN];  /* a room's late gain at tv (0: none, 1 throughout) */
 } le_verb_def;
 
 /* The Vol points the dry and wet laws are tabulated at, and the wet law
@@ -6321,6 +6323,7 @@ typedef struct le_fx_verb {
   uint32_t hist_n;
   uint32_t pd[2];
   uint32_t tap[2];
+  int aps;
   uint32_t ap_n[2][LE_VB_APS];
   uint32_t ap_off[2][LE_VB_APS];
   uint32_t line_n[LE_VB_LINES];
@@ -6349,6 +6352,17 @@ typedef struct le_fx_verb {
   float peak[5];
   float peak_z[2][2];
   float tail_z;
+  float late_k;  /* the late network's output gain (1 but for the rooms) */
+  float ap_g;    /* the diffusers' gain and the early part's (the def's, */
+  float early_g; /* or a room's at its Density) */
+  uint32_t reach;    /* the history a room's early taps read, at least */
+  /* A redesign while Dec (or Length) glides ramps the lines' gains and
+   * shelves to it over the LE_FX_UPDATE_FRAMES frames after, so the
+   * recirculating signal never steps. */
+  int32_t line_ramp;
+  float gm_to[LE_VB_LINES], gm_d[LE_VB_LINES];
+  float lo_to[LE_VB_LINES][3], lo_d[LE_VB_LINES][3];
+  float hi_to[LE_VB_LINES][3], hi_d[LE_VB_LINES][3];
 } le_fx_verb;
 
 /* A corner [hz] prewarped for the bilinear transform at [sr]. */
@@ -6434,6 +6448,19 @@ static void le_vb_t(const le_verb_def* d, double v, double t[3]) {
              : mid * d->thi[n - 1] / d->tmid[n - 1];
 }
 
+/* A table [y] at the def's tv points, read at [v] log-linearly between
+ * them and held past the ends. */
+static double le_vb_t_at(const le_verb_def* d, const double* y, double v) {
+  if (v <= d->tv[0]) return y[0];
+  for (int i = 1; i < d->tn; ++i) {
+    if (v <= d->tv[i]) {
+      const double f = (v - d->tv[i - 1]) / (d->tv[i] - d->tv[i - 1]);
+      return y[i - 1] * pow(y[i] / y[i - 1], f);
+    }
+  }
+  return y[d->tn - 1];
+}
+
 /* Line [i]'s shelves and gain for the decay times [t] (s). The shelves'
  * gains are corrected four times for their leakage at the other anchors. */
 static void le_vb_design_line(le_fx_verb* q, int i, const double t[3],
@@ -6468,17 +6495,21 @@ static uint32_t le_vb_len(double ms, int sr) {
  * ring. */
 static void le_vb_geometry(le_fx_verb* q, int sr) {
   const le_verb_def* d = q->def;
+  q->aps = d->aps > 0 && d->aps <= LE_VB_APS ? d->aps : 2;
   q->pd[0] = le_vb_len(d->pd_ms[0], sr);
   q->pd[1] = le_vb_len(d->pd_ms[1], sr);
   q->tap[0] = d->tap_ms[0] > 0.0 ? le_vb_len(d->tap_ms[0], sr) : 0u;
   q->tap[1] = d->tap_ms[1] > 0.0 ? le_vb_len(d->tap_ms[1], sr) : 0u;
   uint32_t reach = q->pd[0] > q->pd[1] ? q->pd[0] : q->pd[1];
+  if (q->reach > reach) reach = q->reach;
   if (q->tap[0] > reach) reach = q->tap[0];
   if (q->tap[1] > reach) reach = q->tap[1];
   q->hist_n = reach + 2u;
-  uint32_t at[2] = {q->hist_n, 0u};
+  /* The history is written twice, hist_n apart, so a tap reads it without
+   * wrapping (le_rv_taps). */
+  uint32_t at[2] = {2u * q->hist_n, 0u};
   for (int c = 0; c < 2; ++c) {
-    for (int k = 0; k < LE_VB_APS; ++k) {
+    for (int k = 0; k < q->aps; ++k) {
       q->ap_n[c][k] = le_vb_len(d->ap_ms[c][k], sr);
       q->ap_off[c][k] = at[c];
       at[c] += q->ap_n[c][k];
@@ -6494,6 +6525,85 @@ static void le_vb_geometry(le_fx_verb* q, int sr) {
   q->need[1] = at[1];
 }
 
+/* Lays [q]'s network out for [def] at [rate]: the positions start over and
+ * each structure reads silence until it wraps (le_fx_verb), as after a new
+ * rate, whose rings hold another rate's audio. */
+static void le_vb_lay(le_fx_verb* q, const le_verb_def* def, int rate) {
+  q->def = def;
+  memset(q->lo_z, 0, sizeof(q->lo_z));
+  memset(q->hi_z, 0, sizeof(q->hi_z));
+  memset(q->shelf_z, 0, sizeof(q->shelf_z));
+  memset(q->peak_z, 0, sizeof(q->peak_z));
+  memset(q->ap_w, 0, sizeof(q->ap_w));
+  memset(q->line_w, 0, sizeof(q->line_w));
+  memset(q->ap_full, 0, sizeof(q->ap_full));
+  memset(q->line_full, 0, sizeof(q->line_full));
+  q->hist_full = 0;
+  q->hist_w = 0;
+  q->tail_z = 0.0f;
+  q->dec_design = -1.0f;
+  le_vb_geometry(q, rate);
+  q->warp[0] = le_vb_warp(def->lo_hz, rate);
+  q->warp[1] = le_vb_warp(def->hi_hz, rate);
+  static const double anchor_hz[3] = {125.0, 1000.0, 8000.0};
+  for (int a = 0; a < 3; ++a) {
+    const double w = 2.0 * LE_PI * anchor_hz[a] / (double)rate;
+    q->anchor[a][0] = cos(w);
+    q->anchor[a][1] = sin(w);
+  }
+  le_vb_shelf(le_vb_warp(def->shelf_hz, rate), def->shelf_k, 1, q->shelf);
+  if (def->peak_db != 0.0) {
+    double c[5];
+    le_eq_design(LE_EQ_LOMID, def->peak_hz, def->peak_db, def->peak_q, rate,
+                 c);
+    for (int i = 0; i < 5; ++i) q->peak[i] = (float)c[i];
+  }
+  q->late_k = 1.0f;
+  q->ap_g = def->ap_g;
+  q->early_g = def->early_g;
+  q->line_ramp = 0;
+}
+
+/* Dec (or Length) one smoothing step [k] toward [dec_tgt] (0..1); the
+ * lines are redesigned (eight shelf pairs) only while it moves. A def with
+ * a late gain table sets the late network's gain with it. */
+static void le_vb_glide_dec(le_fx_verb* q, float dec_tgt, float k, int rate) {
+  const le_verb_def* def = q->def;
+  const int first = q->dec_design < 0.0f;
+  le_fx_step_toward(&q->dec, dec_tgt, k);
+  if (q->dec == q->dec_design) return;
+  double t[3];
+  le_vb_t(def, (double)q->dec, t);
+  float gm[LE_VB_LINES], lo[LE_VB_LINES][3], hi[LE_VB_LINES][3];
+  if (!first) {
+    memcpy(gm, q->gm, sizeof gm);
+    memcpy(lo, q->lo, sizeof lo);
+    memcpy(hi, q->hi, sizeof hi);
+  }
+  for (int i = 0; i < LE_VB_LINES; ++i) le_vb_design_line(q, i, t, rate);
+  q->dec_design = q->dec;
+  q->line_ramp = 0;
+  if (!first) {
+    /* Back to where they stood, ramping to the new design. */
+    const float per = 1.0f / (float)LE_FX_UPDATE_FRAMES;
+    for (int i = 0; i < LE_VB_LINES; ++i) {
+      q->gm_to[i] = q->gm[i];
+      q->gm_d[i] = (q->gm[i] - gm[i]) * per;
+      q->gm[i] = gm[i];
+      for (int j = 0; j < 3; ++j) {
+        q->lo_to[i][j] = q->lo[i][j];
+        q->lo_d[i][j] = (q->lo[i][j] - lo[i][j]) * per;
+        q->lo[i][j] = lo[i][j];
+        q->hi_to[i][j] = q->hi[i][j];
+        q->hi_d[i][j] = (q->hi[i][j] - hi[i][j]) * per;
+        q->hi[i][j] = hi[i][j];
+      }
+    }
+    q->line_ramp = LE_FX_UPDATE_FRAMES;
+  }
+  if (def->lg[0] > 0.0) q->late_k = (float)le_vb_t_at(def, def->lg, q->dec);
+}
+
 static void fx_verb_update(void* ks, const float* p, int sr, int settle,
                            const le_verb_def* def) {
   le_fx_verb* q = (le_fx_verb*)ks;
@@ -6501,49 +6611,11 @@ static void fx_verb_update(void* ks, const float* p, int sr, int settle,
   const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_VB_PARAMS_N, sr, settle);
   if (!f) return;
   const int rate = sr > 0 ? sr : 48000;
-  if (f & LE_FX_DYN_NEW_RATE) {
-    /* A new rate makes the rings another rate's: the positions start over,
-     * and each structure reads silence until it wraps (le_fx_verb). */
-    memset(q->lo_z, 0, sizeof(q->lo_z));
-    memset(q->hi_z, 0, sizeof(q->hi_z));
-    memset(q->shelf_z, 0, sizeof(q->shelf_z));
-    memset(q->peak_z, 0, sizeof(q->peak_z));
-    memset(q->ap_w, 0, sizeof(q->ap_w));
-    memset(q->line_w, 0, sizeof(q->line_w));
-    memset(q->ap_full, 0, sizeof(q->ap_full));
-    memset(q->line_full, 0, sizeof(q->line_full));
-    q->hist_full = 0;
-    q->hist_w = 0;
-    q->tail_z = 0.0f;
-    q->dec_design = -1.0f;
-    le_vb_geometry(q, rate);
-    q->warp[0] = le_vb_warp(def->lo_hz, rate);
-    q->warp[1] = le_vb_warp(def->hi_hz, rate);
-    static const double anchor_hz[3] = {125.0, 1000.0, 8000.0};
-    for (int a = 0; a < 3; ++a) {
-      const double w = 2.0 * LE_PI * anchor_hz[a] / (double)rate;
-      q->anchor[a][0] = cos(w);
-      q->anchor[a][1] = sin(w);
-    }
-    le_vb_shelf(le_vb_warp(def->shelf_hz, rate), def->shelf_k, 1, q->shelf);
-    if (def->peak_db != 0.0) {
-      double c[5];
-      le_eq_design(LE_EQ_LOMID, def->peak_hz, def->peak_db, def->peak_q, rate,
-                   c);
-      for (int i = 0; i < 5; ++i) q->peak[i] = (float)c[i];
-    }
-  }
+  if (f & LE_FX_DYN_NEW_RATE) le_vb_lay(q, def, rate);
   const float k = settle ? 1.0f : q->h.k;
-  /* Dec glides with the other settings' smoothing; the lines are redesigned
-   * (eight shelf pairs) only while it moves, not when Vol does. */
+  /* Dec glides with the other settings' smoothing, not when Vol does. */
   const float dec_tgt = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
-  le_fx_step_toward(&q->dec, dec_tgt, k);
-  if (q->dec != q->dec_design) {
-    double t[3];
-    le_vb_t(def, (double)q->dec, t);
-    for (int i = 0; i < LE_VB_LINES; ++i) le_vb_design_line(q, i, t, rate);
-    q->dec_design = q->dec;
-  }
+  le_vb_glide_dec(q, dec_tgt, k, rate);
   const double vol = p[1] < 0.0f ? 0.0 : p[1] > 1.0f ? 1.0 : (double)p[1];
   int moving = le_fx_glide_step(&q->dry, (float)le_vb_interp(def->dry, vol), k);
   moving |= le_fx_glide_step(&q->wet, (float)le_vb_interp(LE_VB_WET, vol), k);
@@ -6558,23 +6630,16 @@ static void fx_amb_verb_update(void* ks, const float* p, int sr, int settle) {
   fx_verb_update(ks, p, sr, settle, &LE_AMB_VERB_DEF);
 }
 
-static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
-                              float* r) {
-  le_fx_verb* q = (le_fx_verb*)ks;
+/* One sample of [q]'s network: the mono input [m] into its history, and
+ * the wet left and right into [w], before any dry. */
+static inline void le_vb_network(le_fx_verb* q, float* r0, float* r1, float m,
+                                 float w[2]) {
   const le_verb_def* d = q->def;
-  /* Rings too short for the geometry: the input passes untouched, as it
-   * does when the slot has no rings (fx_run). */
-  if (d == NULL || (uint32_t)cap < q->need[0] || (uint32_t)cap < q->need[1])
-    return;
-  const float dry = le_fx_glide_next(&q->dry);
-  const float wet = le_fx_glide_next(&q->wet);
-  const float x0 = fx_sanitize(*l);
-  const float x1 = fx_sanitize(*r);
   float* ring[2] = {r0, r1};
-  const float m = 0.5f * (x0 + x1);
   /* The input history: the pre-delays and the strong taps read it. */
   float* hist = r0;
   hist[q->hist_w] = m;
+  hist[q->hist_w + q->hist_n] = m;
   float e[2];
   float tap[2] = {0.0f, 0.0f};
   for (int c = 0; c < 2; ++c) {
@@ -6588,12 +6653,12 @@ static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
       if (ta >= q->hist_n) ta -= q->hist_n;
       tap[c] = q->hist_full || ta <= q->hist_w ? d->tap_g[c] * hist[ta] : 0.0f;
     }
-    for (int k = 0; k < LE_VB_APS; ++k) {
+    for (int k = 0; k < q->aps; ++k) {
       float* b = ring[c] + q->ap_off[c][k];
       const uint32_t w = q->ap_w[c][k];
       const float dl = q->ap_full[c][k] ? b[w] : 0.0f;
-      const float v = u + d->ap_g * dl;
-      u = dl - d->ap_g * v;
+      const float v = u + q->ap_g * dl;
+      u = dl - q->ap_g * v;
       b[w] = fx_sanitize(v);
       if (w + 1u >= q->ap_n[c][k]) {
         q->ap_w[c][k] = 0u;
@@ -6621,6 +6686,16 @@ static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
     orr += (float)d->cr[i] * o[i];
   }
   const float house = 2.0f / (float)LE_VB_LINES * sum;
+  if (q->line_ramp > 0) {
+    const int last = --q->line_ramp == 0;
+    for (int i = 0; i < LE_VB_LINES; ++i) {
+      q->gm[i] = last ? q->gm_to[i] : q->gm[i] + q->gm_d[i];
+      for (int j = 0; j < 3; ++j) {
+        q->lo[i][j] = last ? q->lo_to[i][j] : q->lo[i][j] + q->lo_d[i][j];
+        q->hi[i][j] = last ? q->hi_to[i][j] : q->hi[i][j] + q->hi_d[i][j];
+      }
+    }
+  }
   for (int i = 0; i < LE_VB_LINES; ++i) {
     const int c = i < LE_VB_LINES / 2 ? 0 : 1;
     const float y = le_vb_tick(q->lo[i], q->lo_z[i], o[i] - house);
@@ -6635,9 +6710,9 @@ static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
       q->line_w[i] += 1u;
     }
   }
-  const float inv = 0.35355339f; /* 1 / sqrt(8) */
-  float w[2] = {inv * ol + d->early_g * e[0] + tap[0],
-                inv * orr + d->early_g * e[1] + tap[1]};
+  const float inv = 0.35355339f * q->late_k; /* 1 / sqrt(8) */
+  w[0] = inv * ol + q->early_g * e[0] + tap[0];
+  w[1] = inv * orr + q->early_g * e[1] + tap[1];
   for (int c = 0; c < 2; ++c) {
     if (d->peak_db != 0.0) w[c] = le_biquad_tick(q->peak, q->peak_z[c], w[c]);
     w[c] = le_vb_tick(q->shelf, q->shelf_z[c], w[c]);
@@ -6647,6 +6722,388 @@ static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
     const float t = d->tail_g * (q->tail_z - m);
     w[0] += t;
     w[1] += t;
+  }
+}
+
+static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
+                              float* r) {
+  le_fx_verb* q = (le_fx_verb*)ks;
+  /* Rings too short for the geometry: the input passes untouched, as it
+   * does when the slot has no rings (fx_run). */
+  if (q->def == NULL || (uint32_t)cap < q->need[0] ||
+      (uint32_t)cap < q->need[1])
+    return;
+  const float dry = le_fx_glide_next(&q->dry);
+  const float wet = le_fx_glide_next(&q->wet);
+  const float x0 = fx_sanitize(*l);
+  const float x1 = fx_sanitize(*r);
+  float w[2];
+  le_vb_network(q, r0, r1, 0.5f * (x0 + x1), w);
+  *l = dry * x0 + wet * w[0];
+  *r = dry * x1 + wet * w[1];
+}
+
+/* ---- Reverb (LE_FX_ROOM_VERB, #1476) ----
+ *
+ * The Looper X's Reverb module, fit to its #891 captures (s6rev, s8, s14;
+ * docs/plan/2026-10-25-looperx-reverb-measured.md). Its racks show it two
+ * ways: the Drum Rack's, with ER rooms, Lo/Hi, Tail/ER and Density (twelve
+ * of its fifteen rooms: the last three are off the Looper X's screen and
+ * unmeasured); and the others', with four modes (HALL, STADIUM, ROOM, BOX)
+ * and Bright. The captures put one network behind every room, the
+ * Dub-Verb's (its arrivals match to the sample): HALL's delays are 0.841
+ * of the Drum's, STADIUM's the same behind 72 ms, ROOM's 0.43. Each room:
+ * - its first 40 to 50 ms are the capture's own taps (up to LE_RV_FIR a
+ *   side, read off the input history; the Drum tail's at five Density
+ *   points), which do not move with Length on any capture;
+ * - behind them a le_verb_def network at the room's size: three diffusers
+ *   at the network's own delays, heard as they ring and feeding eight
+ *   lines with the room's decay table against Length and a late gain
+ *   table, fit to the captures' envelopes at every captured Length;
+ * - the Drum's rooms add their ER taps (16 a side, from the ER-only
+ *   captures);
+ * - a first-order low-pass on the whole wet at 1010 x 20.5^Bright Hz
+ *   (bilinear, the same corner at every rate; within 0.2 kHz of the seven
+ *   captured Bright settings); Lo/Hi sets it from its own five captured
+ *   corners, and moves a low cut that is always in on those rooms;
+ * - the Drum's Tail/ER and Mix are equal-power over a quarter turn (at
+ *   Mix 100 % the dry is still 0.707); the modes' Mix over a half turn.
+ * What a setting moves ramps per frame; a room change fades the old room
+ * out, lays the network out again (its geometry is the room's) and fades
+ * the new room's input in. The lines live in the slot's two one-second
+ * rings. */
+#define LE_RV_ROOMS 16
+#define LE_RV_ER 16
+#define LE_RV_FIR 64 /* the most taps a network's early part runs a side */
+#define LE_RV_PARAMS_N 7
+
+/* A network's early part, read off the captures as taps (delay, and gain
+ * at each Density point 0, 25, 50, 75 and 100 %; a mode's at one), the
+ * same at every Length: the captures' first tens of milliseconds do not
+ * move with it. */
+typedef struct le_rv_fir {
+  int n[2];
+  int nd; /* Density points held: 1, or 5 evenly from 0 to 100 % */
+  double ms[2][LE_RV_FIR];
+  const float (*g)[2][LE_RV_FIR]; /* [nd] */
+} le_rv_fir;
+
+typedef struct le_rv_room {
+  const le_verb_def* tail;
+  const le_rv_fir* fir;
+  int drum; /* a Drum Rack ER room: Lo/Hi, Tail/ER, Density, its Mix law */
+  int er_n[2];
+  double er_ms[2][LE_RV_ER]; /* the ER taps: delay (ms) and gain */
+  float er_g[2][LE_RV_ER];
+} le_rv_room;
+
+static const le_fx_param_desc LE_FX_ROOM_VERB_PARAMS[] = {
+    {"length", LE_FX_UNIT_SECONDS, 0, 0.45f, 144.0f, LE_FX_CURVE_REVERB_TIME,
+     0.4f, 0},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.15f, 0},
+    /* HALL, STADIUM, ROOM, BOX, then the Drum Rack's ER rooms: BOOTH, CLUB,
+     * ROOM, SMALL CHAMBER, Med CHAMBER, LARGE CHAMBER, SMALL STUDIO,
+     * LARGE STUDIO, SCORING STAGE, PHILHARMONIC, CONCERT HALL, CHURCH */
+    {"room", LE_FX_UNIT_CHOICE, LE_RV_ROOMS, 0.0f, 1.0f, LE_FX_CURVE_LINEAR,
+     0.0f, 0},
+    {"bright", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.8f, 0},
+    {"lo_hi", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"tail_er", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.3f,
+     0},
+    {"density", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 1.0f,
+     0},
+};
+
+/* LE_RV_ROOM_TABLE: the rooms, filled from the captures below. */
+#include "engine_fx_rooms.inc"
+
+typedef struct le_fx_rverb {
+  le_fx_verb v; /* the room's network; its own head and last are unused */
+  le_fx_dyn_head h;
+  float last[LE_RV_PARAMS_N];
+  int room;    /* the room laid out, -1 for none */
+  int rate;    /* the rate it is laid out at */
+  uint32_t er_n[2];
+  uint32_t er_at[2][LE_RV_ER];
+  float er_g[2][LE_RV_ER];
+  uint32_t fir_n[2];
+  uint32_t fir_at[2][LE_RV_FIR];
+  float fir_g[2][LE_RV_FIR]; /* at the Density they were set for */
+  float fir_d;               /* that Density (-1: none) */
+  float dens;                /* Density, gliding */
+  le_fx_glide in_g;          /* the input's fade-in after a room change */
+  /* What each update moves (the early taps' gains, the low-pass, the
+   * diffusers' gain, the late network's output gain) ramps to its new value
+   * over the LE_FX_UPDATE_FRAMES frames after it, so nothing steps. */
+  int32_t ramp;
+  float fir_d_g[2][LE_RV_FIR];
+  float fir_to[2][LE_RV_FIR];
+  float tone_d[3], tone_to[3];
+  float apg_d, apg_to;
+  float latek_d, latek_to;
+  le_fx_glide er_k;  /* the early taps' weight (Tail/ER) */
+  le_fx_glide tail_k; /* the network's weight (Tail/ER) */
+  le_fx_glide dip;   /* the wet's dip across a room change */
+  float tone_v;      /* the tone setting the filter is designed for */
+  float tone_tgt;
+  float tone[3];     /* first-order low-pass: b0, b1, a1 */
+  float tone_z[2][2];
+  int cut;          /* Lo/Hi's low cut runs (a Drum room) */
+  double cut_hz;    /* the corner it is designed for (0: not yet) */
+  float lc[5];
+  float lc_to[5], lc_d[5];
+  float lc_z[2][2];
+} le_fx_rverb;
+
+/* Lo/Hi's low-pass corner (Hz) at 0, 25, 50, 75 and 100 %, read off the
+ * Drum captures' first tap; log-linear between. */
+static const double LE_RV_LOHI_HZ[5] = {1348.0, 2481.0, 4492.0, 9432.0,
+                                        20700.0};
+
+/* The low-pass's corner (Hz) at tone setting [v]: Bright's law (within
+ * 0.2 kHz of its seven captured settings), or Lo/Hi's table on a Drum
+ * room. */
+static double le_rv_tone_hz(double v, int drum) {
+  if (!drum) return 1010.0 * pow(20.5, v < 0.0 ? 0.0 : v > 1.0 ? 1.0 : v);
+  const double x = (v < 0.0 ? 0.0 : v > 1.0 ? 1.0 : v) * 4.0;
+  const int i = x >= 4.0 ? 3 : (int)x;
+  return LE_RV_LOHI_HZ[i] * pow(LE_RV_LOHI_HZ[i + 1] / LE_RV_LOHI_HZ[i],
+                                x - (double)i);
+}
+
+/* The room's network and taps laid out at [rate]. */
+static void le_rv_lay(le_fx_rverb* q, int room, int rate) {
+  const le_rv_room* rm = &LE_RV_ROOM_TABLE[room];
+  uint32_t reach = 0;
+  for (int c = 0; c < 2; ++c) {
+    q->er_n[c] = (uint32_t)rm->er_n[c];
+    for (int i = 0; i < rm->er_n[c]; ++i) {
+      q->er_at[c][i] = le_vb_len(rm->er_ms[c][i], rate);
+      q->er_g[c][i] = rm->er_g[c][i];
+      if (q->er_at[c][i] > reach) reach = q->er_at[c][i];
+    }
+  }
+  const le_rv_fir* fir = rm->fir;
+  for (int c = 0; c < 2; ++c) {
+    q->fir_n[c] = (uint32_t)fir->n[c];
+    for (uint32_t i = 0; i < q->fir_n[c]; ++i) {
+      q->fir_at[c][i] = (uint32_t)(fir->ms[c][i] * (double)rate / 1000.0 + 0.5);
+      if (q->fir_at[c][i] > reach) reach = q->fir_at[c][i];
+    }
+  }
+  q->fir_d = -1.0f;
+  q->v.reach = reach + 1u;
+  le_vb_lay(&q->v, rm->tail, rate);
+  memset(q->tone_z, 0, sizeof(q->tone_z));
+  memset(q->lc_z, 0, sizeof(q->lc_z));
+  q->tone_v = -1.0f;
+  q->cut = 0;
+  q->cut_hz = 0.0;
+  q->room = room;
+  q->rate = rate;
+}
+
+/* The tone filter at setting [v] (the Drum's Lo/Hi or the modes' Bright),
+ * and for a Drum room Lo/Hi's low cut: a 12 dB/octave high-pass at
+ * LE_RV_CUT_HZ at 100 %, LE_RV_CUT_STEP times lower each quarter below
+ * (the captures put it at 65 Hz at 100 % and under 8 Hz at 75 %). */
+static void le_rv_tone(le_fx_rverb* q, float v, int drum, int rate) {
+  double hz = le_rv_tone_hz((double)v, drum);
+  if (hz > 0.45 * (double)rate) hz = 0.45 * (double)rate;
+  const double t = le_vb_warp(hz, rate);
+  q->tone_to[0] = (float)(t / (1.0 + t));
+  q->tone_to[1] = q->tone_to[0];
+  q->tone_to[2] = (float)((t - 1.0) / (1.0 + t));
+  q->tone_v = v;
+  q->cut = drum;
+  if (!drum) return;
+  /* Always in on a Drum room, so it never switches: below 8 Hz (Lo/Hi
+   * under about 78 %) it holds there, which reads as the 75 % capture's
+   * -0.9 dB at 12 Hz. The captures read Lo/Hi against 50 %, so a corner
+   * held at every lower setting does not show in them. */
+  double cut = LE_RV_CUT_HZ * pow(LE_RV_CUT_STEP, 4.0 * ((double)v - 1.0));
+  if (cut < 8.0) cut = 8.0;
+  if (cut == q->cut_hz) return;
+  double c[5];
+  le_eq_design(LE_EQ_LOWCUT, cut, 0.0, LE_EQ_CUT_Q, rate, c);
+  for (int i = 0; i < 5; ++i) q->lc_to[i] = (float)c[i];
+  q->cut_hz = cut;
+}
+
+static void fx_room_verb_update(void* ks, const float* p, int sr, int settle) {
+  le_fx_rverb* q = (le_fx_rverb*)ks;
+  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_RV_PARAMS_N, sr, settle);
+  if (!f) return;
+  const int rate = sr > 0 ? sr : 48000;
+  int room = (int)(p[2] * (float)(LE_RV_ROOMS - 1) + 0.5f);
+  room = room < 0 ? 0 : room >= LE_RV_ROOMS ? LE_RV_ROOMS - 1 : room;
+  const float k = settle ? 1.0f : q->h.k;
+  int moving = 0;
+  /* A new rate, a first update or a settle lays the room out at once; a
+   * room change dips the wet first. */
+  const int fresh = (f & LE_FX_DYN_NEW_RATE) || q->v.def == NULL || settle;
+  int laid = 0;
+  if (fresh) {
+    if (q->v.def == NULL || q->room != room || q->rate != rate) {
+      le_rv_lay(q, room, rate);
+      laid = 1;
+    }
+    le_fx_glide_step(&q->dip, 1.0f, 1.0f);
+    le_fx_glide_step(&q->in_g, 1.0f, 1.0f);
+  } else if (room != q->room) {
+    /* The old room fades out, the new one is laid out empty, and its input
+     * fades in: neither the old tail nor the new taps step. */
+    moving |= le_fx_glide_step(&q->dip, 0.0f, k);
+    if (q->dip.v == 0.0f && q->dip.g == 0.0f) {
+      le_rv_lay(q, room, rate);
+      laid = 1;
+      le_fx_glide_step(&q->dip, 1.0f, 1.0f);
+      le_fx_glide_step(&q->in_g, 0.0f, 1.0f);
+      moving = 1;
+    }
+  } else {
+    moving |= le_fx_glide_step(&q->dip, 1.0f, k);
+    moving |= le_fx_glide_step(&q->in_g, 1.0f, k);
+  }
+  const int instant = fresh || laid || q->tone_v < 0.0f;
+  const float latek_was = q->v.late_k;
+  const le_rv_room* rm = &LE_RV_ROOM_TABLE[q->room];
+  const float len = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
+  le_vb_glide_dec(&q->v, len, q->v.dec_design < 0.0f ? 1.0f : k, rate);
+  moving |= q->v.dec != len;
+  q->latek_to = q->v.late_k;
+  q->v.late_k = instant ? q->latek_to : latek_was;
+  /* The tone: the Drum's Lo/Hi or the modes' Bright, gliding. */
+  const float tv = rm->drum ? p[4] : p[3];
+  q->tone_tgt = tv < 0.0f ? 0.0f : tv > 1.0f ? 1.0f : tv;
+  const int design = q->tone_v < 0.0f;
+  if (design) q->tone_v = q->tone_tgt;
+  float tone = q->tone_v;
+  le_fx_step_toward(&tone, q->tone_tgt, k);
+  if (tone != q->tone_v || design) le_rv_tone(q, tone, rm->drum, rate);
+  moving |= q->tone_v != q->tone_tgt;
+  /* Mix: equal-power, over a quarter turn on the Drum, a half on the
+   * modes; Tail/ER equal-power over a quarter turn (the Drum's alone). */
+  const double m = p[1] < 0.0f ? 0.0 : p[1] > 1.0f ? 1.0 : (double)p[1];
+  const double turn = rm->drum ? 0.25 * LE_PI : 0.5 * LE_PI;
+  moving |= le_fx_glide_step(&q->v.dry, (float)cos(m * turn), k);
+  moving |= le_fx_glide_step(&q->v.wet, (float)(sin(m * turn) / sin(turn)), k);
+  double er = 1.0, tail = 1.0;
+  if (rm->drum) {
+    const double te = p[5] < 0.0f ? 0.0 : p[5] > 1.0f ? 1.0 : (double)p[5];
+    er = cos((1.0 - te) * 0.25 * LE_PI);
+    tail = sin((1.0 - te) * 0.25 * LE_PI) / sin(0.25 * LE_PI);
+  }
+  moving |= le_fx_glide_step(&q->er_k, (float)er, k);
+  moving |= le_fx_glide_step(&q->tail_k, (float)tail, k);
+  /* Density (the Drum's): the early part's taps between the captured
+   * points, and the diffusers' gain with it. */
+  const float dt = !rm->drum ? 1.0f : p[6] < 0.0f ? 0.0f : p[6] > 1.0f ? 1.0f : p[6];
+  le_fx_step_toward(&q->dens, dt, q->fir_d < 0.0f ? 1.0f : k);
+  moving |= q->dens != dt;
+  const float d = q->dens;
+  if (d != q->fir_d) {
+    const le_rv_fir* fir = rm->fir;
+    int i0 = 0;
+    float t = 0.0f;
+    if (fir->nd > 1) {
+      const float x = d * (float)(fir->nd - 1);
+      i0 = (int)x < fir->nd - 1 ? (int)x : fir->nd - 2;
+      t = x - (float)i0;
+    }
+    for (int c = 0; c < 2; ++c) {
+      for (uint32_t i = 0; i < q->fir_n[c]; ++i) {
+        const float a = fir->g[i0][c][i];
+        q->fir_to[c][i] = fir->nd > 1 ? a + t * (fir->g[i0 + 1][c][i] - a) : a;
+      }
+    }
+    q->fir_d = d;
+    q->apg_to = rm->tail->ap_g * d;
+  }
+  /* Ramp from where each stands to its new value over the next update. */
+  const float per = 1.0f / (float)LE_FX_UPDATE_FRAMES;
+  for (int c = 0; c < 2; ++c) {
+    for (uint32_t i = 0; i < q->fir_n[c]; ++i) {
+      if (instant) q->fir_g[c][i] = q->fir_to[c][i];
+      q->fir_d_g[c][i] = (q->fir_to[c][i] - q->fir_g[c][i]) * per;
+    }
+  }
+  for (int i = 0; i < 3; ++i) {
+    if (instant) q->tone[i] = q->tone_to[i];
+    q->tone_d[i] = (q->tone_to[i] - q->tone[i]) * per;
+  }
+  for (int i = 0; q->cut && i < 5; ++i) {
+    if (instant) q->lc[i] = q->lc_to[i];
+    q->lc_d[i] = (q->lc_to[i] - q->lc[i]) * per;
+  }
+  if (instant) q->v.ap_g = q->apg_to;
+  q->apg_d = (q->apg_to - q->v.ap_g) * per;
+  q->latek_d = (q->latek_to - q->v.late_k) * per;
+  q->ramp = instant ? 0 : LE_FX_UPDATE_FRAMES;
+  q->h.moving = moving;
+}
+
+/* [n] taps (delays [at], gains [g]) off the history [hist], whose newest
+ * sample is at [now]: once it has wrapped, straight reads of its second
+ * copy; before, only what it holds since it was cleared. */
+static inline float le_rv_taps(const float* hist, uint32_t now,
+                               const le_fx_verb* v, const uint32_t* at,
+                               const float* g, uint32_t n) {
+  float acc = 0.0f;
+  if (v->hist_full) {
+    const float* h = hist + now + v->hist_n;
+    for (uint32_t i = 0; i < n; ++i) acc += g[i] * h[-(int32_t)at[i]];
+  } else {
+    for (uint32_t i = 0; i < n; ++i) {
+      if (at[i] <= now) acc += g[i] * hist[now - at[i]];
+    }
+  }
+  return acc;
+}
+
+static void fx_room_verb_rkprocess(void* ks, float* r0, float* r1, int cap,
+                                   float* l, float* r) {
+  le_fx_rverb* q = (le_fx_rverb*)ks;
+  le_fx_verb* v = &q->v;
+  if (v->def == NULL || (uint32_t)cap < v->need[0] || (uint32_t)cap < v->need[1])
+    return;
+  const float dry = le_fx_glide_next(&v->dry);
+  const float wet = le_fx_glide_next(&v->wet) * le_fx_glide_next(&q->dip);
+  const float erk = le_fx_glide_next(&q->er_k);
+  const float tk = le_fx_glide_next(&q->tail_k);
+  const float in_g = le_fx_glide_next(&q->in_g);
+  if (q->ramp > 0) {
+    const int last = --q->ramp == 0;
+    for (int c = 0; c < 2; ++c) {
+      for (uint32_t i = 0; i < q->fir_n[c]; ++i) {
+        q->fir_g[c][i] = last ? q->fir_to[c][i] : q->fir_g[c][i] + q->fir_d_g[c][i];
+      }
+    }
+    for (int i = 0; i < 3; ++i) {
+      q->tone[i] = last ? q->tone_to[i] : q->tone[i] + q->tone_d[i];
+    }
+    for (int i = 0; q->cut && i < 5; ++i) {
+      q->lc[i] = last ? q->lc_to[i] : q->lc[i] + q->lc_d[i];
+    }
+    v->ap_g = last ? q->apg_to : v->ap_g + q->apg_d;
+    v->late_k = last ? q->latek_to : v->late_k + q->latek_d;
+  }
+  const float x0 = fx_sanitize(*l);
+  const float x1 = fx_sanitize(*r);
+  float w[2];
+  le_vb_network(v, r0, r1, 0.5f * (x0 + x1) * in_g, w);
+  /* The early taps read the history the network just wrote: the newest
+   * sample sits one behind its write position. */
+  const float* hist = r0;
+  const uint32_t now = v->hist_w == 0u ? v->hist_n - 1u : v->hist_w - 1u;
+  for (int c = 0; c < 2; ++c) {
+    const float e = le_rv_taps(hist, now, v, q->er_at[c], q->er_g[c], q->er_n[c]);
+    const float f =
+        le_rv_taps(hist, now, v, q->fir_at[c], q->fir_g[c], q->fir_n[c]);
+    float y = erk * e + tk * (w[c] + f);
+    y = le_vb_tick(q->tone, q->tone_z[c], y);
+    if (q->cut) y = le_biquad_tick(q->lc, q->lc_z[c], y);
+    w[c] = y;
   }
   *l = dry * x0 + wet * w[0];
   *r = dry * x1 + wet * w[1];
@@ -6678,6 +7135,7 @@ LE_FX_ROWS_FIT(LE_FX_LPF_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_SPRING_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_DUB_VERB_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_AMB_VERB_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_ROOM_VERB_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_WHAMMY_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_PUMPER_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_SLICER_PARAMS);
@@ -6838,6 +7296,10 @@ static const le_fx_vtable LE_FX[] = {
                           LE_FX_F_DRAINS | LE_FX_F_FREE_RUNNING},
     [LE_FX_MOD] = {NULL, NULL, NULL, LE_FX_MOD_PARAMS, LE_FX_F_FREE_RUNNING,
                    sizeof(le_fx_mod), fx_mod_update, fx_mod_kprocess},
+    [LE_FX_ROOM_VERB] = {NULL, NULL, fx_stereo_ring_prepare,
+                         LE_FX_ROOM_VERB_PARAMS, LE_FX_F_DRAINS,
+                         sizeof(le_fx_rverb), fx_room_verb_update, NULL,
+                         fx_room_verb_rkprocess},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -6863,7 +7325,8 @@ _Static_assert(LE_COMP_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_COMPRESSOR_PARAMS) &&
                    LE_LPF_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_LPF_PARAMS) &&
                    LE_SPR_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_SPRING_PARAMS) &&
                    LE_VB_PARAMS_N >= LE_FX_ROW_COUNT(LE_FX_DUB_VERB_PARAMS) &&
-                   LE_VB_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_AMB_VERB_PARAMS),
+                   LE_VB_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_AMB_VERB_PARAMS) &&
+                   LE_RV_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_ROOM_VERB_PARAMS),
                "each Looper X kind's `last` holds every setting");
 _Static_assert(LE_FX_WIDTHS == sizeof(LE_FX) / sizeof(LE_FX[0]),
                "LE_FX_WIDTHS must be one past the last le_fx_type code");
@@ -6897,6 +7360,7 @@ const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
     [LE_FX_DUAL_OCTAVER] = LE_FX_ROW_COUNT(LE_FX_DUAL_OCTAVER_PARAMS),
     [LE_FX_AMP_CAB] = LE_FX_ROW_COUNT(LE_FX_AMP_CAB_PARAMS),
     [LE_FX_MOD] = LE_FX_ROW_COUNT(LE_FX_MOD_PARAMS),
+    [LE_FX_ROOM_VERB] = LE_FX_ROW_COUNT(LE_FX_ROOM_VERB_PARAMS),
 };
 
 /* ---- per-kind state (le_fx_kinds, engine_private.h) ---- */

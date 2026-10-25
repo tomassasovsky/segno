@@ -1076,7 +1076,7 @@ void main() {
         [
           // Ed's Rack's measured order, with Reverb before Delay.
           TrackEffectType.compressor,
-          TrackEffectType.reverb,
+          TrackEffectType.roomVerb,
           TrackEffectType.modeDelay,
         ],
       );
