@@ -58,32 +58,33 @@ static void do_levels(const float* p, double* db) {
   free(y);
 }
 
-/* High mode off: one octave down at -1.5 dB against the dry; on: one
- * octave up at -0.6 dB (s5/4-5, Mix 100 %); Mix 50 %: the dry and the
- * voice each 3 dB down (s5/7, an equal-power mix). */
+/* High mode off: one octave down at -0.3 dB against the dry; on: one
+ * octave up at 0.0 dB (s5/4-5 and s6v 25, Mix 100 %, each read at its own
+ * frequency); Mix 50 %: the dry and the voice each 3 dB down (s5/7, an
+ * equal-power mix). */
 static void test_dual_octaver_matches_the_capture(void) {
   printf("test_dual_octaver_matches_the_capture\n");
   double db[5];
   const float down[LE_FX_PARAMS] = {0.0f, 1.0f, 1.0f};
   do_levels(down, db);
-  printf("  off: 500 Hz %+5.1f (capture -1.5), 1 kHz %+5.1f\n", db[0], db[1]);
-  CHECK(fabs(db[0] + 1.5) < 0.1);
+  printf("  off: 500 Hz %+5.1f (capture -0.3), 1 kHz %+5.1f\n", db[0], db[1]);
+  CHECK(fabs(db[0] + 0.26) < 0.1);
   CHECK(db[1] < -30.0);
   const float up[LE_FX_PARAMS] = {1.0f, 1.0f, 1.0f};
   do_levels(up, db);
-  printf("  on: 2 kHz %+5.1f (capture -0.6), 1 kHz %+5.1f\n", db[2], db[1]);
-  CHECK(fabs(db[2] + 0.6) < 0.1);
+  printf("  on: 2 kHz %+5.1f (capture 0.0), 1 kHz %+5.1f\n", db[2], db[1]);
+  CHECK(fabs(db[2] + 0.04) < 0.1);
   CHECK(db[1] < -30.0);
   const float half[LE_FX_PARAMS] = {1.0f, 1.0f, 0.5f};
   do_levels(half, db);
-  printf("  on at 50 %%: 1 kHz %+5.1f (capture -3.0), 2 kHz %+5.1f (-3.6)\n",
+  printf("  on at 50 %%: 1 kHz %+5.1f (capture -3.0), 2 kHz %+5.1f (-3.0)\n",
          db[1], db[2]);
   CHECK(fabs(db[1] + 3.0) < 0.1);
-  CHECK(fabs(db[2] + 3.6) < 0.1);
+  CHECK(fabs(db[2] + 3.04) < 0.1);
   /* Octave 1 Vol scales the voice (its taper unmeasured: linear here). */
   const float quiet[LE_FX_PARAMS] = {0.0f, 0.5f, 1.0f};
   do_levels(quiet, db);
-  CHECK(fabs(db[0] - (-1.5 + 20.0 * log10(0.5))) < 0.1);
+  CHECK(fabs(db[0] - (-0.26 + 20.0 * log10(0.5))) < 0.1);
 }
 
 /* High mode is a switch: flipped under a tone, the voice dips out and comes
@@ -159,37 +160,41 @@ static void test_dual_octaver_mode_switch_does_not_sweep(void) {
   do_switch(1.0f);
 }
 
-/* Octave 2 (#1464), from the same analysis: two octaves up in high mode,
- * level with Octave 1 (s5/6: both -0.7 dB against the dry); two octaves
- * down without it (inferred), at Octave 1's level; and Octave 1 as it was
- * alone. */
+/* Octave 2 (#1464), from the same analysis: two octaves up in high mode
+ * (s5/6: 0.0 and -0.2 dB against the dry); two octaves down without it
+ * (s6v 25-27: -0.3 and -0.2 dB, and -6.2 dB at Octave 2 Vol 50 %); and
+ * Octave 1 as it was alone. */
 static void test_dual_octaver_second_voice(void) {
   printf("test_dual_octaver_second_voice\n");
   double db[5];
   const float up[LE_FX_PARAMS] = {1.0f, 1.0f, 1.0f, 1.0f};
   do_levels(up, db);
-  printf("  on: 2 kHz %+5.1f, 4 kHz %+5.1f (capture -0.7, -0.7)\n", db[2],
+  printf("  on: 2 kHz %+5.1f, 4 kHz %+5.1f (capture -0.0, -0.2)\n", db[2],
          db[4]);
-  CHECK(fabs(db[2] + 0.7) < 0.2);
-  CHECK(fabs(db[4] + 0.7) < 0.2);
+  CHECK(fabs(db[2] + 0.04) < 0.2);
+  CHECK(fabs(db[4] + 0.15) < 0.2);
   const float down[LE_FX_PARAMS] = {0.0f, 1.0f, 1.0f, 1.0f};
   do_levels(down, db);
-  printf("  off: 500 Hz %+5.1f, 250 Hz %+5.1f (inferred: as Octave 1)\n",
+  printf("  off: 500 Hz %+5.1f, 250 Hz %+5.1f (capture -0.3, -0.2)\n",
          db[0], db[3]);
-  CHECK(fabs(db[0] + 1.5) < 0.1);
-  CHECK(fabs(db[3] - db[0]) < 0.2);
+  CHECK(fabs(db[0] + 0.25) < 0.1);
+  CHECK(fabs(db[3] + 0.14) < 0.1);
+  const float down_half[LE_FX_PARAMS] = {0.0f, 0.0f, 1.0f, 0.5f};
+  do_levels(down_half, db);
+  printf("  Octave 2 alone at 50 %%: 250 Hz %+5.1f (capture -6.2)\n", db[3]);
+  CHECK(fabs(db[3] + 6.18) < 0.15);
   const float half[LE_FX_PARAMS] = {1.0f, 1.0f, 1.0f, 0.5f};
   do_levels(half, db);
-  CHECK(fabs(db[4] - (-0.7 + 20.0 * log10(0.5))) < 0.2);
+  CHECK(fabs(db[4] - (-0.15 + 20.0 * log10(0.5))) < 0.2);
   /* s5/7: both voices at Mix 50 %, the dry 3 dB down. */
   const float mixed[LE_FX_PARAMS] = {1.0f, 1.0f, 0.5f, 1.0f};
   do_levels(mixed, db);
-  printf("  at 50 %%: 1 kHz %+5.1f (capture -3.0), 2 kHz %+5.1f (-3.7), "
-         "4 kHz %+5.1f (-3.6)\n",
+  printf("  at 50 %%: 1 kHz %+5.1f (capture -3.0), 2 kHz %+5.1f (-3.1), "
+         "4 kHz %+5.1f (-3.2)\n",
          db[1], db[2], db[4]);
-  CHECK(fabs(db[1] + 3.0) < 0.2);
-  CHECK(fabs(db[2] + 3.7) < 0.2);
-  CHECK(fabs(db[4] + 3.6) < 0.2);
+  CHECK(fabs(db[1] + 3.02) < 0.2);
+  CHECK(fabs(db[2] + 3.05) < 0.2);
+  CHECK(fabs(db[4] + 3.16) < 0.2);
 }
 
 /* The appliance runs at 96 kHz and the trims were fit at 48 kHz. Both up
@@ -201,9 +206,9 @@ static void test_dual_octaver_trims_at_96k(void) {
   const float up[LE_FX_PARAMS] = {1.0f, 1.0f, 1.0f, 1.0f};
   do_levels(up, db);
   do_sr = DO_SR;
-  printf("  2 kHz %+.1f, 4 kHz %+.1f (capture -0.7, -0.7)\n", db[2], db[4]);
-  CHECK(fabs(db[2] - -0.7) < 0.3);
-  CHECK(fabs(db[4] - -0.7) < 0.3);
+  printf("  2 kHz %+.1f, 4 kHz %+.1f (capture -0.0, -0.2)\n", db[2], db[4]);
+  CHECK(fabs(db[2] - -0.04) < 0.3);
+  CHECK(fabs(db[4] - -0.15) < 0.3);
 }
 
 /* The RMS below 15 Hz (a one-pole low-pass) over [y]'s second half. */

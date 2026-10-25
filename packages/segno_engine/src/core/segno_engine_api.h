@@ -770,7 +770,7 @@ typedef enum le_fx_type {
   /* DUAL_OCTAVER: p0 high mode (a choice of 2: off, on), p1 Octave 1 level,
    * p2 mix, p3 Octave 2 level. The Looper X's Dual Octaver on the octaver's
    * phase vocoder (#891): Octave 1 one octave down (off) or up (on),
-   * Octave 2 two octaves down or up (down inferred, #1464), both voices
+   * Octave 2 two octaves down or up (#1464), both voices
    * from one analysis, the mix an equal-power crossfade. */
   LE_FX_DUAL_OCTAVER = 28,
   /* AMP_CAB: p0 drive, p1 bass, p2 treble, p3 modern, p4 cabinet (a choice

@@ -1060,11 +1060,12 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
   return wv * y + (1.0f - wv) * dry;
 }
 
-/* Octave 2's trims: up, where the capture's sits (-0.7 dB against the dry,
- * level with Octave 1; the vocoder alone gives -3.6 at +24); down, level
- * with Octave 1 down (no capture; the vocoder alone gives 0.0 at -24). */
-#define LE_DOCT_UP2_LEVEL 1.396f   /* +2.9 dB */
-#define LE_DOCT_DOWN2_LEVEL 0.841f /* -1.5 dB */
+/* Octave 2's trims, where the capture's voice sits against the dry, each
+ * read at its own frequency (#891): up, -0.2 dB (s5/6; the vocoder alone
+ * gives -3.6 at +24); down, -0.2 dB (s6v 26; the vocoder alone gives 0.0
+ * at -24). */
+#define LE_DOCT_UP2_LEVEL 1.485f   /* +3.4 dB */
+#define LE_DOCT_DOWN2_LEVEL 0.982f /* -0.2 dB */
 
 /* Formant-preserving octaver. Writes the newest sample to the slot's FIFO ring,
  * then mixes a delay-matched dry tap (LE_PV_LATENCY back) with a wet voice from the
@@ -1597,14 +1598,15 @@ int le_fx_type_hops(int32_t type) {
          type == LE_FX_DUAL_OCTAVER;
 }
 
-/* The Dual Octaver's first voice (#891, s5/4-7): one octave down with high
- * mode off (1 kHz to 510 Hz) and up with it on (2 kHz), at Octave 1 Vol
- * times a trim that puts the phase vocoder's voice where the capture's
- * sits against the dry (-1.5 dB down, -0.6 dB up; the vocoder alone gives
- * -1.5 and -0.4 on a 1 kHz tone); Octave Mix an equal-power crossfade (the
- * capture's 50 % puts dry and wet each 3 dB down). */
-#define LE_DOCT_DOWN_LEVEL 1.0f
-#define LE_DOCT_UP_LEVEL 0.977f /* -0.2 dB */
+/* The Dual Octaver's first voice (#891, s5/4-7 and s6v 25-28): one octave
+ * down with high mode off (1 kHz to 505 Hz) and up with it on (2 kHz), at
+ * Octave 1 Vol times a trim that puts the phase vocoder's voice where the
+ * capture's sits against the dry (-0.3 dB down, 0.0 dB up, each read at
+ * its own frequency; the vocoder alone gives -1.5 and -0.4 on a 1 kHz
+ * tone); Octave Mix an equal-power crossfade (the capture's 50 % puts dry
+ * and wet each 3 dB down). */
+#define LE_DOCT_DOWN_LEVEL 1.159f /* +1.3 dB */
+#define LE_DOCT_UP_LEVEL 1.042f   /* +0.4 dB */
 
 static void le_doct_settings(const float* p, float* out) {
   const int high = p[0] >= 0.5f;
@@ -1616,9 +1618,9 @@ static void le_doct_settings(const float* p, float* out) {
   out[4] = 1.0f; /* the formants move with the pitch */
   out[5] = 1.0f - vol * (high ? LE_DOCT_UP_LEVEL : LE_DOCT_DOWN_LEVEL);
   out[6] = 1.0f; /* the Dual Octaver: equal power, a switched shift */
-  /* Octave 2's level (#1464): its voice, two octaves up in high mode
-   * (measured, s5/6) or down without it (inferred: no capture), and its
-   * trim follow Octave 1's shift in the kernel. */
+  /* Octave 2's level (#1464), linear (s6v: -6.2 dB at 50 %): its voice,
+   * two octaves up in high mode (s5/6) or down without it (s6v 26-27), and
+   * its trim follow Octave 1's shift in the kernel. */
   out[7] = p[3] < 0.0f ? 0.0f : p[3] > 1.0f ? 1.0f : p[3];
 }
 
@@ -1784,8 +1786,10 @@ static void fx_pumper_process(le_fx_state* fx, int slot, int sr, int cap,
  * one step and a lower-case one half a step; a letter's first slice plays
  * the live input and each later one replays it from its start (AABB
  * replays A at a 125 ms delay; ABcccc plays A, B, then c live and replays
- * that half step three times); _ rests for a step (the capture reads 48 to
- * 54 dB down; this one is silent); a slice ends with a 4 ms fade and starts
+ * that half step three times); _ rests for a step, or half a step in a
+ * pattern with lower-case letters (s6v: AB__dd and AA__dd; the capture
+ * reads 48 to 54 dB down; this one is silent); a slice ends with a 4 ms
+ * fade and starts
  * without one. < plays the step before backwards (the factory "Reverse"
  * preset is <<<<). The Fd patterns are not modelled.
  *
@@ -1826,12 +1830,22 @@ static const double LE_SLICE_STEP[9] = {1.0,       2.0 / 3.0, 0.5,
 /* The slice end's fade (#891: about 4 ms). */
 #define LE_SLICE_FADE_S 0.004
 
-/* A token's length in half steps: lower case is half a step. */
-static int le_slice_len(char c) { return c >= 'a' && c <= 'z' ? 1 : 2; }
+/* A token's length in half steps: a capital letter or < is a step, a
+ * lower-case letter half a step, and _ a step, or half a step in a pattern
+ * that holds a lower-case letter (#891 s6v: AB__dd and AA__dd rest one
+ * step between B and d, as A_C_ rests a step after each letter). */
+static int le_slice_len(const char* pat, char c) {
+  if (c >= 'a' && c <= 'z') return 1;
+  if (c != '_') return 2;
+  for (const char* d = pat; *d; ++d) {
+    if (*d >= 'a' && *d <= 'z') return 1;
+  }
+  return 2;
+}
 
 static int le_slice_cycle(const char* pat) {
   int n = 0;
-  for (const char* c = pat; *c; ++c) n += le_slice_len(*c);
+  for (const char* c = pat; *c; ++c) n += le_slice_len(pat, *c);
   return n;
 }
 
@@ -1842,7 +1856,7 @@ static char le_slice_token(const char* pat, double half, int* index,
                            int* start, int* len, int* first) {
   int at = 0;
   for (const char* c = pat; *c; ++c) {
-    const int n = le_slice_len(*c);
+    const int n = le_slice_len(pat, *c);
     if (half < (double)(at + n) || c[1] == '\0') {
       *index = (int)(c - pat);
       *start = at;
@@ -1854,7 +1868,7 @@ static char le_slice_token(const char* pat, double half, int* index,
           *first = f;
           break;
         }
-        f += le_slice_len(*d);
+        f += le_slice_len(pat, *d);
       }
       return *c;
     }
@@ -2099,11 +2113,16 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
  *   GRV the right at 0.837 of the time (0.871) and the left on time at
  *   0.750 + 0.116 Feedback, with 0.126 / 0.113 of the other. The timings
  *   were measured on DIGI and RES HI, and are the same on both; the DAMPED
- *   and RESO LO ones are composed from them.
- * What feeds back is kept under full scale with a soft knee, and a 5 Hz
- * DC blocker sits in the loop: a resonant voicing (or DIGI at DC) at 100 %
- * Feedback would otherwise grow. Its tempo is the live song's, which a
- * print would not keep, so a lane holding one is never printed. */
+ *   and RESO LO ones, composed from them, match their own captures (s6v
+ *   9-16) within 0.3 dB through the fourth repeat.
+ * Two limits, measured (s6v 17-18, with s4/4): the voiced echo saturates
+ * from 0.55 toward 0.60 (an echo of a 0 dBFS tone comes back 3.1 dB down,
+ * of a -3 dBFS one 0.2 dB down, at Feedback 0 %), and what feeds back
+ * from 0.20 toward 0.40, which holds DIGI at 100 % Feedback to the level
+ * the Looper X settles at under a sweep (its loop alone loses nothing per
+ * repeat). A 5 Hz DC blocker sits in the loop. Its tempo is the live
+ * song's, which a print would not keep, so a lane holding one is never
+ * printed. */
 
 static const double LE_MDLY_QUARTERS[20] = {
     0.125, 1.0 / 6.0, 0.1875, 0.25, 1.0 / 3.0, 0.375, 0.5, 2.0 / 3.0, 0.75, 1.0,
@@ -2116,7 +2135,10 @@ static const double LE_MDLY_QUARTERS[20] = {
 #define LE_MDLY_DAMP_HZ 13203.0
 #define LE_MDLY_GRV 0.8368
 #define LE_MDLY_DC_HZ 5.0  /* the loop's DC blocker */
-#define LE_MDLY_KNEE 0.8f  /* the line's soft knee, ceiling 1 */
+#define LE_MDLY_ECHO_KNEE 0.55f /* the voiced echo's limit: knee, ceiling */
+#define LE_MDLY_ECHO_CEIL 0.60f
+#define LE_MDLY_FB_KNEE 0.20f /* what feeds back: knee, ceiling */
+#define LE_MDLY_FB_CEIL 0.40f
 #define LE_MDLY_LINE_S 4 /* the line holds 4 s (#1372 Architecture 7) */
 
 /* A voicing: a peak (gain dB 0 for none) or a damping one-pole, and the
@@ -2154,6 +2176,14 @@ static inline float le_mdly_pole_hp(le_mdly_pole* f, float x) {
   f->x1 = x;
   f->y1 = y;
   return y;
+}
+
+/* [x] past [knee] bends toward [ceil] (tanh), the sign kept. */
+static inline float le_mdly_limit(float x, float knee, float ceil) {
+  const float ab = fabsf(x);
+  if (ab <= knee) return x;
+  return copysignf(knee + (ceil - knee) * tanhf((ab - knee) / (ceil - knee)),
+                   x);
 }
 
 /* A biquad, transposed direct form II. */
@@ -2322,20 +2352,20 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
     }
     --line->xf;
   }
-  const float vp = le_mdly_bq_run(&line->voice[0], tp);
-  const float ve = timing != 0 ? le_mdly_bq_run(&line->voice[1], te) : 0.0f;
+  const float vp = le_mdly_limit(le_mdly_bq_run(&line->voice[0], tp),
+                                 LE_MDLY_ECHO_KNEE, LE_MDLY_ECHO_CEIL);
+  const float ve = timing != 0 ? le_mdly_limit(le_mdly_bq_run(&line->voice[1], te),
+                                               LE_MDLY_ECHO_KNEE,
+                                               LE_MDLY_ECHO_CEIL)
+                               : 0.0f;
 
-  /* The loop: the on-time echo, voiced, fed back at Feedback, a DC
-   * blocker far under the band (5 Hz: 0.04 dB at 50 Hz), and the fed-back
-   * part kept under full scale with a soft knee from 0.8; the input goes
-   * in as it is. */
-  float back = line->fb * line->loop_g *
-               le_mdly_pole_lp(&line->lp_loop, le_mdly_pole_hp(&line->dc, vp));
-  const float ab = fabsf(back);
-  if (ab > LE_MDLY_KNEE) {
-    const float over = (ab - LE_MDLY_KNEE) / (1.0f - LE_MDLY_KNEE);
-    back = copysignf(LE_MDLY_KNEE + (1.0f - LE_MDLY_KNEE) * tanhf(over), back);
-  }
+  /* The loop: the on-time echo, voiced and limited, fed back at Feedback
+   * through a DC blocker far under the band (5 Hz: 0.04 dB at 50 Hz), and
+   * limited again; the input goes in as it is. */
+  const float back = le_mdly_limit(
+      line->fb * line->loop_g *
+          le_mdly_pole_lp(&line->lp_loop, le_mdly_pole_hp(&line->dc, vp)),
+      LE_MDLY_FB_KNEE, LE_MDLY_FB_CEIL);
   line->ring[line->pos] = 0.5f * (*l + *r) + back;
   line->pos = line->pos + 1 >= line->cap ? 0 : line->pos + 1;
   if (line->fill < line->cap) ++line->fill;
@@ -2523,8 +2553,7 @@ static const le_fx_param_desc LE_FX_OCTAVER_PARAMS[] = {
 };
 /* Ed's Rack's Dual Octaver (#891): high mode off or on, Octave 1's level
  * (its taper unmeasured: every factory preset sits at 100 %), the mix, and
- * Octave 2's level (its taper unmeasured, and two octaves down inferred,
- * #1464). */
+ * Octave 2's level (linear, s6v: -6.2 dB at 50 %). */
 static const le_fx_param_desc LE_FX_DUAL_OCTAVER_PARAMS[] = {
     {"oct_high_mode", LE_FX_UNIT_CHOICE, 2, 0.0f, 1.0f, LE_FX_CURVE_LINEAR,
      0.0f, 0},
@@ -2532,7 +2561,7 @@ static const le_fx_param_desc LE_FX_DUAL_OCTAVER_PARAMS[] = {
      1.0f, LE_FX_PARAM_TAPER_UNVERIFIED},
     {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 1.0f, 0},
     {"octave_2_vol", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR,
-     0.0f, LE_FX_PARAM_TAPER_UNVERIFIED},
+     0.0f, 0},
 };
 /* The Guitar Rack's Whammy (#891): position 0 of the range is -12, 1 is
  * +12 semitones, the Looper X's two. */

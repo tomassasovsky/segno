@@ -550,32 +550,44 @@ static void test_mode_delay_timing_switch_is_clean(void) {
   free(yr);
 }
 
-/* A hot input goes into the line as it is: at Feedback 0 a 0.95 impulse
- * echoes at its own level (the knee is on what feeds back). */
-static void test_mode_delay_hot_input_unshaped(void) {
-  printf("test_mode_delay_hot_input_unshaped\n");
+/* A hot echo saturates (#891 s6v 17, DIGI at Feedback 0 %): a -3 dBFS
+ * 1 kHz tone echoes 0.2 dB down and a 0 dBFS one 3.1 dB down (its
+ * fundamental), within 0.6 dB; a -6 dBFS one echoes at its own level. */
+static void test_mode_delay_hot_echo_saturates(void) {
+  printf("test_mode_delay_hot_echo_saturates\n");
   const le_fx_tempo t = rh_tempo(120.0);
   const int n = MD_SR;
-  float* x = (float*)calloc((size_t)n, sizeof(float));
-  float* y = (float*)malloc(sizeof(float) * (size_t)n);
-  for (int i = 100; i < 4900; ++i) {
-    x[i] = 0.95f * sinf(2.0f * 3.14159265f * 250.0f * (float)i / MD_SR);
+  const double amp[3] = {0.5012, 0.7079, 1.0};
+  const double want[3] = {0.0, -0.2, -3.1};
+  for (int k = 0; k < 3; ++k) {
+    float* x = (float*)calloc((size_t)n, sizeof(float));
+    float* y = (float*)malloc(sizeof(float) * (size_t)n);
+    for (int i = 100; i < 100 + MD_SR / 4; ++i) {
+      x[i] = (float)(amp[k] * sin(2.0 * 3.14159265358979 * 1000.0 * i / MD_SR));
+    }
+    const float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.0f, 0.5f, 0.0f};
+    le_fx_state* fx = md_state(&t);
+    md_run(fx, p, x, y, NULL, n);
+    le_fx_state_free_buffers(fx);
+    free(fx);
+    /* The echo of the tone's middle, after the tone has ended. */
+    const int period = MD_SR * 375 / 1000;
+    const int from = 100 + MD_SR / 8, len = MD_SR / 10;
+    double re = 0.0, im = 0.0, xr = 0.0, xi = 0.0;
+    for (int i = from; i < from + len; ++i) {
+      const double ph = 2.0 * 3.14159265358979 * 1000.0 * i / MD_SR;
+      re += y[i + period] * cos(ph);
+      im += y[i + period] * sin(ph);
+      xr += x[i] * cos(ph);
+      xi += x[i] * sin(ph);
+    }
+    const double db = 10.0 * log10((re * re + im * im) / (xr * xr + xi * xi));
+    printf("  %+.1f dBFS: echo %+.2f dB (capture %+.1f)\n",
+           20.0 * log10(amp[k]), db, want[k]);
+    CHECK(fabs(db - want[k]) < 0.6);
+    free(x);
+    free(y);
   }
-  const float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.0f, 0.5f, 0.0f};
-  le_fx_state* fx = md_state(&t);
-  md_run(fx, p, x, y, NULL, n);
-  le_fx_state_free_buffers(fx);
-  free(fx);
-  const int period = MD_SR * 375 / 1000;
-  float in_pk = 0.0f, out_pk = 0.0f;
-  for (int i = 1000; i < 4000; ++i) {
-    in_pk = fmaxf(in_pk, fabsf(x[i]));
-    out_pk = fmaxf(out_pk, fabsf(y[i + period]));
-  }
-  printf("  echo %.4f of a %.4f input\n", (double)out_pk, (double)in_pk);
-  CHECK(fabsf(out_pk / in_pk - 1.0f) < 0.01f);
-  free(x);
-  free(y);
 }
 
 static void run_mode_delay_tests(void) {
@@ -591,6 +603,6 @@ static void run_mode_delay_tests(void) {
   test_mode_delay_at_96k();
   test_mode_delay_reenable_skips_the_spacing();
   test_mode_delay_timing_switch_is_clean();
-  test_mode_delay_hot_input_unshaped();
+  test_mode_delay_hot_echo_saturates();
   test_mode_delay_drains_its_whole_line();
 }
