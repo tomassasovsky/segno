@@ -157,7 +157,7 @@ static void dynamics_entry(le_fx_recipe* r, int s, int32_t kind) {
     r->params[s][3] = 0.6f;
   } else if (kind == LE_FX_MODE_DELAY) {
     r->params[s][0] = 9.0f / 19.0f; /* 1/4 */
-    r->params[s][3] = 7.0f / 11.0f; /* RES LO L/R: both taps voiced */
+    r->params[s][3] = 7.0f / 13.0f; /* RES LO L/R: both taps voiced */
   } else if (kind == LE_FX_SLICER) {
     r->params[s][0] = 15.0f / 19.0f; /* AB<<: replays and reversals */
     r->params[s][1] = 1.0f / 8.0f;   /* 1/4T: reads far back in the ring */

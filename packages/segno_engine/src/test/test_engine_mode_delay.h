@@ -92,7 +92,7 @@ static void test_mode_delay_voicings(void) {
   float* y = (float*)malloc(sizeof(float) * (size_t)n);
   for (int v = 0; v < 4; ++v) {
     const float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.5f, 0.3f,
-                                   md_choice(3 * v, 12)};
+                                   md_choice(3 * v, 14)};
     for (int k = 0; k < 3; ++k) {
       float* x = md_burst(hz[k], n);
       le_fx_state* fx = md_state(&t);
@@ -139,7 +139,7 @@ static void test_mode_delay_timings(void) {
   };
   for (int w = 0; w < 4; ++w) {
     const float p[LE_FX_PARAMS] = {md_choice(8, 20), want[w].fb, 0.3f,
-                                   md_choice(want[w].mode, 12)};
+                                   md_choice(want[w].mode, 14)};
     le_fx_state* fx = md_state(&t);
     md_run(fx, p, x, yl, yr, n);
     le_fx_state_free_buffers(fx);
@@ -304,7 +304,7 @@ static void test_mode_delay_taps(void) {
   } want[2] = {{1, 9000, -17.0, -16.9}, {2, 15062, -17.0, -16.8}};
   for (int w = 0; w < 2; ++w) {
     const float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.5f, 0.5f,
-                                   md_choice(want[w].mode, 12)};
+                                   md_choice(want[w].mode, 14)};
     le_fx_state* fx = md_state(&t);
     md_run(fx, p, x, yl, yr, n);
     le_fx_state_free_buffers(fx);
@@ -349,7 +349,7 @@ static void test_mode_delay_loop_is_bounded(void) {
   for (int k = 0; k < 3; ++k) {
     float* x = md_burst(hz[k], n);
     const float p[LE_FX_PARAMS] = {md_choice(4, 20), 1.0f, 1.0f,
-                                   md_choice(modes[k], 12)};
+                                   md_choice(modes[k], 14)};
     le_fx_state* fx = md_state(&t);
     md_run(fx, p, x, y, NULL, n);
     le_fx_state_free_buffers(fx);
@@ -370,7 +370,7 @@ static void test_mode_delay_loop_is_bounded(void) {
       x[i] = sinf(2.0f * 3.14159265f * 2425.0f * (float)i / MD_SR);
     }
     const float p[LE_FX_PARAMS] = {md_choice(9, 20), 1.0f, 1.0f,
-                                   md_choice(9, 12)};
+                                   md_choice(9, 14)};
     le_fx_state* fx = md_state(&t);
     md_run(fx, p, x, y, NULL, n);
     le_fx_state_free_buffers(fx);
@@ -401,7 +401,7 @@ static void test_mode_delay_at_96k(void) {
     x[1000 + i] = (float)(0.25 * g * sin(2.0 * 3.14159265358979 * 1000.0 * i / sr));
   }
   float* y = (float*)malloc(sizeof(float) * (size_t)n);
-  const float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.5f, 0.3f, md_choice(6, 12)};
+  const float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.5f, 0.3f, md_choice(6, 14)};
   le_fx_state* fx = md_state_at(&t, sr);
   md_run_at(fx, sr, p, x, y, NULL, n);
   le_fx_state_free_buffers(fx);
@@ -522,9 +522,9 @@ static void test_mode_delay_timing_switch_is_clean(void) {
   float* yl = (float*)malloc(sizeof(float) * (size_t)n);
   float* yr = (float*)malloc(sizeof(float) * (size_t)n);
   const float lr[LE_FX_PARAMS] = {md_choice(8, 20), 0.0f, 0.5f,
-                                  md_choice(7, 12)}; /* RES LO L/R */
+                                  md_choice(7, 14)}; /* RES LO L/R */
   const float plain[LE_FX_PARAMS] = {md_choice(8, 20), 0.0f, 0.5f,
-                                     md_choice(6, 12)}; /* RESO LO */
+                                     md_choice(6, 14)}; /* RESO LO */
   md_run(fx, lr, x, yl, yr, MD_SR / 2 + 100); /* the early tap ringing */
   static int32_t types[LE_FX_MAX];
   static float params[LE_FX_MAX][LE_FX_PARAMS];
@@ -644,6 +644,165 @@ static void test_mode_delay_full_feedback(void) {
   }
 }
 
+/* The level, dB, at [hz] of the echo of an impulse of 1 at frame 0 found
+ * [at] frames into [y], read as the captures were: 200 frames before it to
+ * 4000 after, a Tukey window tapering 5 % at each end. */
+static double md_echo_db(const float* y, int n, int at, double hz) {
+  const int a = at - 200, len = 4200, taper = len / 20;
+  double re = 0.0, im = 0.0;
+  for (int k = 0; k < len; ++k) {
+    const int i = a + k;
+    if (i < 0 || i >= n) continue;
+    double w = 1.0;
+    if (k < taper) w = 0.5 - 0.5 * cos(3.14159265358979 * k / taper);
+    if (k > len - 1 - taper) {
+      w = 0.5 - 0.5 * cos(3.14159265358979 * (len - 1 - k) / taper);
+    }
+    const double t = 2.0 * 3.14159265358979 * hz * (i - at) / MD_SR;
+    re += w * y[i] * cos(t);
+    im -= w * y[i] * sin(t);
+  }
+  return 20.0 * log10(sqrt(re * re + im * im) + 1e-30);
+}
+
+/* An impulse through the Mode delay at [p] (1/8D at 120 BPM, Mix 100 %):
+ * both sides, [n] frames, scaled back to an impulse of 1. It is 0.05, the
+ * captures' own, so no echo reaches the limits. */
+static void md_impulse(const float* p, float* yl, float* yr, int n) {
+  const le_fx_tempo t = rh_tempo(120.0);
+  float* x = (float*)calloc((size_t)n, sizeof(float));
+  x[0] = 0.05f;
+  le_fx_state* fx = md_state(&t);
+  md_run(fx, p, x, yl, yr, n);
+  le_fx_state_free_buffers(fx);
+  free(fx);
+  free(x);
+  for (int i = 0; i < n; ++i) {
+    yl[i] *= 20.0f;
+    if (yr) yr[i] *= 20.0f;
+  }
+}
+
+/* The Drum Rack's delay (#891 s6rev 22-27): its first echo against the
+ * impulse, and the second against the first at Feedback 50 %, within 1 dB
+ * of the captures at the frequencies they were read at. */
+static void test_mode_delay_drum_matches_the_capture(void) {
+  printf("test_mode_delay_drum_matches_the_capture\n");
+  const int period = MD_SR * 375 / 1000; /* 1/8D */
+  const int n = 3 * period;
+  float* yl = (float*)malloc(sizeof(float) * (size_t)n);
+  static const struct {
+    float freq;
+    double hz[4], db[4];
+  } echo1[3] = {
+      {0.0f, {50, 100, 316, 3160}, {-1.7, 1.3, 0.1, -4.3}},
+      {0.25f, {100, 316, 1000, 5000}, {-0.5, 1.9, -0.4, -7.2}},
+      {1.0f, {316, 2000, 5000, 8000}, {-0.2, -2.1, -6.5, -9.1}},
+  };
+  for (int k = 0; k < 3; ++k) {
+    const float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.0f, 1.0f,
+                                   md_choice(12, 14), echo1[k].freq};
+    md_impulse(p, yl, NULL, n);
+    for (int j = 0; j < 4; ++j) {
+      const double got = md_echo_db(yl, n, period, echo1[k].hz[j]);
+      printf("  Freq %.0f %%, %5.0f Hz: %+.1f dB (capture %+.1f)\n",
+             echo1[k].freq * 100.0, echo1[k].hz[j], got, echo1[k].db[j]);
+      CHECK(fabs(got - echo1[k].db[j]) < 1.0);
+    }
+  }
+  /* Feedback 50 %, Freq 25 %: the second echo against the first. */
+  const float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.5f, 1.0f,
+                                 md_choice(12, 14), 0.25f};
+  md_impulse(p, yl, NULL, n);
+  const double hz[4] = {200, 316, 1000, 3160};
+  const double loop[4] = {-6.3, -5.6, -7.9, -11.7};
+  for (int j = 0; j < 4; ++j) {
+    const double got = md_echo_db(yl, n, 2 * period, hz[j]) -
+                       md_echo_db(yl, n, period, hz[j]);
+    printf("  second / first at %4.0f Hz: %+.1f dB (capture %+.1f)\n", hz[j],
+           got, loop[j]);
+    CHECK(fabs(got - loop[j]) < 1.0);
+  }
+  free(yl);
+}
+
+/* The Dub Rack's delay (#891 s6rev 28-37, Feedback 50 %): its default
+ * voicing (Damp 35 %, Reso 80 % at Res-Freq 35 %), Damp at its ends, Reso
+ * 100 % at Res-Freq 0 % and 100 %, and L/R Ratio 50 and 100 % (the right
+ * echo 0.75 and 0.5 of the time, each side with 0.143 of the other's),
+ * within 1 dB of the captures (1.5 dB at Damp 100 %). */
+static void test_mode_delay_dub_matches_the_capture(void) {
+  printf("test_mode_delay_dub_matches_the_capture\n");
+  const int period = MD_SR * 375 / 1000;
+  const int n = 3 * period;
+  float* yl = (float*)malloc(sizeof(float) * (size_t)n);
+  float* yr = (float*)malloc(sizeof(float) * (size_t)n);
+  /* damp, ratio, reso, res-freq; the side and echo read; four levels */
+  static const struct {
+    float damp, ratio, reso, rf;
+    int right, early;
+    double hz[4], db[4], tol;
+  } c[6] = {
+      {0.35f, 0.0f, 0.8f, 0.35f, 0, 0, {100, 500, 2000, 5000},
+       {-2.6, 4.6, 0.0, -2.1}, 1.0},
+      {0.0f, 0.0f, 0.8f, 0.35f, 0, 0, {500, 2000, 5000, 10000},
+       {4.6, 0.3, -0.9, -3.2}, 1.0},
+      {1.0f, 0.0f, 0.8f, 0.35f, 0, 0, {500, 1000, 2000, 5000},
+       {3.7, -1.1, -6.6, -14.4}, 1.5},
+      {0.35f, 1.0f, 1.0f, 0.0f, 1, 1, {50, 100, 200, 1000},
+       {-2.8, 8.0, 2.9, -1.1}, 1.0},
+      {0.35f, 1.0f, 1.0f, 1.0f, 1, 1, {1000, 3160, 5000, 10000},
+       {-1.2, -0.4, 0.9, 5.5}, 1.0},
+      {0.35f, 0.5f, 0.8f, 0.35f, 1, 1, {100, 500, 2000, 5000},
+       {-3.8, 3.4, -1.1, -3.1}, 1.0},
+  };
+  for (int k = 0; k < 6; ++k) {
+    const float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.5f, 1.0f,
+                                   md_choice(13, 14), 0.25f, c[k].damp,
+                                   c[k].ratio, c[k].reso, c[k].rf};
+    md_impulse(p, yl, yr, n);
+    const int at = c[k].early
+                       ? (int)(period * (1.0 - 0.5 * c[k].ratio) + 0.5)
+                       : period;
+    for (int j = 0; j < 4; ++j) {
+      const double got = md_echo_db(c[k].right ? yr : yl, n, at, c[k].hz[j]);
+      printf("  case %d, %5.0f Hz: %+.1f dB (capture %+.1f)\n", k, c[k].hz[j],
+             got, c[k].db[j]);
+      CHECK(fabs(got - c[k].db[j]) < c[k].tol);
+    }
+  }
+  /* The default's loop: the second echo against the first. */
+  const float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.5f, 1.0f,
+                                 md_choice(13, 14), 0.25f, 0.35f, 0.0f,
+                                 0.8f, 0.35f};
+  md_impulse(p, yl, yr, n);
+  const double hz[3] = {316, 500, 2000};
+  const double loop[3] = {-6.6, -4.8, -9.5};
+  for (int j = 0; j < 3; ++j) {
+    const double got = md_echo_db(yl, n, 2 * period, hz[j]) -
+                       md_echo_db(yl, n, period, hz[j]);
+    printf("  second / first at %4.0f Hz: %+.1f dB (capture %+.1f)\n", hz[j],
+           got, loop[j]);
+    CHECK(fabs(got - loop[j]) < 1.0);
+  }
+  /* Ratio 50 %: the left on time at 0.66 of plain, with 0.143 of the
+   * right's early echo; the right early, with 0.143 of the left's. */
+  const float q[LE_FX_PARAMS] = {md_choice(8, 20), 0.5f, 1.0f,
+                                 md_choice(13, 14), 0.25f, 0.35f, 0.5f,
+                                 0.8f, 0.35f};
+  md_impulse(q, yl, yr, n);
+  const int early = (int)(period * 0.75 + 0.5);
+  const double cross_l = md_echo_db(yl, n, early, 500.0) -
+                         md_echo_db(yl, n, period, 500.0);
+  const double cross_r = md_echo_db(yr, n, period, 500.0) -
+                         md_echo_db(yr, n, early, 500.0);
+  printf("  ratio 50 %%: cross left %+.1f, right %+.1f dB (capture -16.9)\n",
+         cross_l, cross_r);
+  CHECK(fabs(cross_l + 16.9) < 0.5 && fabs(cross_r + 16.9) < 0.5);
+  free(yl);
+  free(yr);
+}
+
 static void run_mode_delay_tests(void) {
   test_mode_delay_is_not_printed();
   test_mode_delay_voicings();
@@ -659,5 +818,7 @@ static void run_mode_delay_tests(void) {
   test_mode_delay_timing_switch_is_clean();
   test_mode_delay_hot_echo_saturates();
   test_mode_delay_full_feedback();
+  test_mode_delay_drum_matches_the_capture();
+  test_mode_delay_dub_matches_the_capture();
   test_mode_delay_drains_its_whole_line();
 }

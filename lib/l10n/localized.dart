@@ -58,6 +58,11 @@ extension EngineLocalizations on AppLocalizations {
     'time' => paramTime,
     'delay_time' => paramTime,
     'delay_mode' => paramMode,
+    'delay_freq' => paramFrequency,
+    'damp' => paramDamping,
+    'lr_ratio' => paramLrRatio,
+    'reso' => paramResonance,
+    'res_freq' => paramResFreq,
     'oct_high_mode' => paramHighMode,
     'octave_1_vol' => paramOctave1Level,
     'octave_2_vol' => paramOctave2Level,
@@ -328,6 +333,8 @@ extension EngineLocalizations on AppLocalizations {
     'RESO HI',
     'RES HI L/R',
     'RES HI GRV',
+    'DRUM',
+    'DUB',
   ];
 
   /// The Rhythmic LPF's LFO periods, longest first, in its rate's order:
