@@ -43,6 +43,7 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.ampCab => effectAmpCab,
     TrackEffectType.mod => effectMod,
     TrackEffectType.roomVerb => effectRoomVerb,
+    TrackEffectType.smartTune => effectSmartTune,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
@@ -81,6 +82,10 @@ extension EngineLocalizations on AppLocalizations {
     'lo_hi' => paramLoHi,
     'tail_er' => paramTailEr,
     'density' => paramDensity,
+    'speed' => paramSpeed,
+    'scale_root' => paramScaleRoot,
+    'scale_type' => paramScaleType,
+    'reference' => paramReference,
     'decay' => paramDecay,
     'volume' => paramVolume,
     'amb_dub_mix' => paramAmbDubMix,
@@ -218,6 +223,8 @@ extension EngineLocalizations on AppLocalizations {
         ('mod_mode', final i) => _modModes[i],
         ('room' || 'room_mode', final i) => _rooms[i],
         ('er_room', final i) => _rooms[4 + i],
+        ('scale_root', final i) => _notes[i],
+        ('scale_type', final i) => _scaleTypes[i],
         ('studio_mod_mode', 0) => 'Chorus',
         ('studio_mod_mode', _) => 'Tremolo',
         ('oct_high_mode', 0) => toggleOff,
@@ -316,6 +323,40 @@ extension EngineLocalizations on AppLocalizations {
     'BASS',
     '4x10"',
     'RADIO',
+  ];
+
+  /// The notes from C, as the Looper X names Smart Tune's scale root.
+  static const List<String> _notes = [
+    'C',
+    'C#',
+    'D',
+    'D#',
+    'E',
+    'F',
+    'F#',
+    'G',
+    'G#',
+    'A',
+    'A#',
+    'B',
+  ];
+
+  /// Smart Tune's scale types, as the Looper X names them.
+  static const List<String> _scaleTypes = [
+    'Major',
+    'Minor',
+    'Harm Min',
+    'Melo Min',
+    'Dorian',
+    'Phrygian',
+    'Lydian',
+    'Mixo',
+    'Locrian',
+    'Chromatic',
+    'Penta',
+    'Maj Triad',
+    'Min Triad',
+    'Root',
   ];
 
   /// The Room reverb's rooms, as the Looper X names them: the four modes,

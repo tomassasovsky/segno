@@ -465,7 +465,10 @@ enum TrackEffectType {
   mod(30),
 
   /// The Looper X's Reverb (#1476).
-  roomVerb(31);
+  roomVerb(31),
+
+  /// The Looper X's Smart Tune (#1480).
+  smartTune(32);
 
   const TrackEffectType(this.code);
 

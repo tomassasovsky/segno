@@ -270,6 +270,7 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
     'Vocal Tuner Rack': _modeDelay,
   },
   'Pitch shift': {'Studio Rack': _pitchShift, 'Vocal Rack': _pitchShift},
+  'Smart tune': {'Vocal Tuner Rack': _smartTune},
   // Vocal before Ed's: their reverbs carry the same keys, and an entry
   // outside its rack that cannot tell them apart keeps a Mode that works.
   'Reverb': {
@@ -513,6 +514,16 @@ const FxModuleBuild _slicer = FxModuleBuild(
 );
 
 // Guitar Rack: the whole Whammy, pedal and range.
+// Vocal Tuner Rack: Speed, Scale Root, Scale Type and Reference, each on
+// the kind's own scale. Tracking and Audio Type only change, on the
+// captures' tones, which way the Looper X's detector tips a note, by no
+// rule they show (#1480), so they stay unmapped.
+const FxModuleBuild _smartTune = FxModuleBuild(
+  type: TrackEffectType.smartTune,
+  params: ['Speed', 'Scale Root', 'Scale Type', 'Reference'],
+  unmapped: ['Tracking', 'Audio Type'],
+);
+
 const FxModuleBuild _whammy = FxModuleBuild(
   type: TrackEffectType.whammy,
   params: ['Whammy Pedal', 'Whammy Range'],
