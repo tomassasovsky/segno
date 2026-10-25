@@ -53,10 +53,10 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   TrackEffectType.slicer: 68,
   // CI arm64, an eighth of eight in one chain (2.15 us, RES LO L/R at 1/4
   // with both taps voiced), x 1.75, scaled by the Dub voicing's heaviest
-  // case: gliding a filter setting at L/R Ratio 50 %, which redesigns its
-  // filters every 32 frames, runs 4.55 us an instance where RES LO L/R runs 3.84 in
-  // the same run (#1477).
-  TrackEffectType.modeDelay: 70,
+  // case: gliding Res-Freq at L/R Ratio 50 %, which redesigns its filters
+  // every 32 frames, runs 4.89 us an instance where RES LO L/R runs 3.93
+  // in the same run (#1477).
+  TrackEffectType.modeDelay: 73,
   // CI arm64, an eighth of eight in one chain (13.75 us, drive 93.5 % on
   // the 4x12"), x 1.75. A cabinet change runs both cabinets for 1024
   // frames, about a third more for those blocks.
