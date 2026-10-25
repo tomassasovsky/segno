@@ -279,6 +279,7 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Pumper': {'Rhythmic Rack': _pumper},
   'Slicer': {'Rhythmic Rack': _slicer},
   'Octaver': {"Ed's Rack": _dualOctaver},
+  'Amp': {"Ed's Rack": _ampCab, 'Guitar Rack': _ampCab},
   'Delay': {
     "Ed's Rack": _modeDelay,
     'Drum Rack': _drumDelay,
@@ -328,6 +329,12 @@ const FxModuleBuild _dubDelay = FxModuleBuild(
   unmapped: ['Del Damp', 'Del L/R Ratio', 'Del Res-Freq', 'Del Reso'],
   fixed: {2: 100},
   path: FxModulePath.dub,
+);
+
+// Ed's and Guitar racks: the whole Amp, its four controls and the cabinet.
+const FxModuleBuild _ampCab = FxModuleBuild(
+  type: TrackEffectType.ampCab,
+  params: ['Amp Drive', 'Amp Bass', 'Amp Treble', 'Amp Modern', 'Cab'],
 );
 
 // Ed's Rack: the whole Dual Octaver, high mode, both octaves' levels and

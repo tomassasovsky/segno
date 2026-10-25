@@ -456,7 +456,10 @@ enum TrackEffectType {
   modeDelay(27),
 
   /// The Looper X's Dual Octaver (#887 part 11).
-  dualOctaver(28);
+  dualOctaver(28),
+
+  /// The Looper X's Amp with its cabinet (#887 part 12).
+  ampCab(29);
 
   const TrackEffectType(this.code);
 

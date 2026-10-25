@@ -1266,11 +1266,16 @@ static void le_fx_clear_reverb(le_fx_state* fx, int s) {
 static void le_mdly_reset(struct le_fx_line* line);
 static void le_mdly_clear(struct le_fx_line* line);
 static int32_t le_mdly_frames(const struct le_fx_line* line);
+/* The Amp+Cab's instance (defined with its kernel). */
+static void le_amp_reset(struct le_fx_amp* a);
 
 void le_fx_entry_reset(le_fx_state* fx, int slot) {
   struct le_fx_line* line =
       atomic_load_explicit(&fx->line[slot], memory_order_acquire);
   if (line != NULL) le_mdly_reset(line);
+  struct le_fx_amp* amp =
+      atomic_load_explicit(&fx->amp[slot], memory_order_acquire);
+  if (amp != NULL) le_amp_reset(amp);
   for (int chan = 0; chan < 2; ++chan) {
     fx->svf_ic1[slot][chan] = 0.0f;
     fx->svf_ic2[slot][chan] = 0.0f;
@@ -1423,6 +1428,8 @@ void le_fx_free_delay(le_fx_state* fx, int slot) {
   fx->delay[slot][1] = NULL;
   le_rt_free(atomic_load_explicit(&fx->line[slot], memory_order_relaxed));
   atomic_store_explicit(&fx->line[slot], NULL, memory_order_relaxed);
+  le_rt_free(atomic_load_explicit(&fx->amp[slot], memory_order_relaxed));
+  atomic_store_explicit(&fx->amp[slot], NULL, memory_order_relaxed);
 }
 
 void le_fx_free_slot(le_fx_state* fx, int slot) {
@@ -2561,6 +2568,20 @@ static const le_fx_param_desc LE_FX_MODE_DELAY_PARAMS[] = {
     {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.2f, 0},
     {"delay_mode", LE_FX_UNIT_CHOICE, 12, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f,
      0},
+};
+/* The Amp+Cab's controls. Drive, Bass, Treble and Modern were captured at
+ * 0, 25, 50, 75 and 100 % and interpolate between (#1468). */
+static const le_fx_param_desc LE_FX_AMP_CAB_PARAMS[] = {
+    {"drive", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"bass", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"treble", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     0},
+    {"modern", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     0},
+    /* D.I., BRIT, 1x8", 1x12", 2x10", 2x12", 4x10", 4x12", 1x15", BASS,
+     * 4x10", RADIO; 4x12" by default */
+    {"cabinet", LE_FX_UNIT_CHOICE, 12, 0.0f, 1.0f, LE_FX_CURVE_LINEAR,
+     7.0f / 11.0f, 0},
 };
 static const le_fx_param_desc LE_FX_ECHO_PARAMS[] = {
     {"time", LE_FX_UNIT_MS, 0, 0.0f, 1000.0f, LE_FX_CURVE_LINEAR, 0.45f, 0},
@@ -4028,6 +4049,514 @@ static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
   *r = io[1];
 }
 
+/* ---- Amp+Cab (LE_FX_AMP_CAB, #887 part 12) ----
+ *
+ * The Looper X's Amp pedal (Ed's and Guitar racks), fit to the #891 rig
+ * captures (s3/1-3, s4/16-20, and s6: drive, tone and every cabinet). Mono:
+ * the Looper X's amp is (its outputs are identical), so the pair's average
+ * goes in and the result goes to both sides.
+ *
+ *   input voicing  an 81 Hz high-pass, +6.4 dB at 4.5 kHz and +1 dB at
+ *                  415 Hz (the small-signal response at drive 0)
+ *   drive, first   a gain, then a square-law term: the even harmonic every
+ *                  pass shows below clipping, sized by Modern
+ *   Modern         a low shelf, a broad rise near 5 kHz, a high shelf and a
+ *                  level, all before the clipper: Modern moves how hard it
+ *                  is driven, not the clipped level
+ *   drive, second  a gain with the drive's own treble loss (a 9 kHz shelf,
+ *                  0 to -13 dB from 0 to 100 %), into a clipper whose two
+ *                  sides limit at different levels
+ *   tone           Bass and Treble shelves after the clipper (a saturated
+ *                  sweep shows them in full)
+ *   output         a 10.1 kHz low-pass and the output level
+ *   cabinet        one of eleven measured responses, or none (D.I.), as
+ *                  zero-latency partitioned convolution
+ *
+ * Drive, Bass, Treble and Modern were captured at 0, 25, 50, 75 and 100 %
+ * (s6); between those the settings interpolate linearly (gains in dB,
+ * corners in octaves), the plainest reading of five points. */
+
+#include "engine_fx_cabs.inc"
+
+#define LE_AMP_PARAMS_N 5
+#define LE_CAB_B 64               /* partition length, frames */
+#define LE_CAB_NB (LE_CAB_B + 1)  /* half-spectrum bins of a 2B transform */
+#define LE_CAB_MAX_PARTS 64       /* 4160 taps: the 4096 a cabinet needs at 96 kHz */
+#define LE_CAB_XF_FRAMES 1024     /* a cabinet change crossfades this long */
+
+/* The cabinets at one sample rate, built off the audio thread and read-only
+ * after: each row's first B taps (run directly) and the spectra of the
+ * partitions after them. */
+typedef struct le_cab_bank {
+  int32_t sr, parts;
+  float head[LE_CAB_ROWS][LE_CAB_B];
+  float re[LE_CAB_ROWS][LE_CAB_MAX_PARTS][LE_CAB_NB];
+  float im[LE_CAB_ROWS][LE_CAB_MAX_PARTS][LE_CAB_NB];
+} le_cab_bank;
+
+#define LE_CAB_BANKS 4 /* rates in one process: 44.1, 48, 88.2 and 96 kHz */
+static le_cab_bank* _Atomic le_cab_banks[LE_CAB_BANKS];
+static pthread_mutex_t le_cab_banks_mu = PTHREAD_MUTEX_INITIALIZER;
+static le_rfft_plan le_cab_fft;
+
+/* The bank for [sr], or NULL when none was built. Any thread. */
+static const le_cab_bank* le_cab_bank_find(int32_t sr) {
+  for (int i = 0; i < LE_CAB_BANKS; ++i) {
+    const le_cab_bank* b =
+        atomic_load_explicit(&le_cab_banks[i], memory_order_acquire);
+    if (b != NULL && b->sr == sr) return b;
+  }
+  return NULL;
+}
+
+/* Builds the bank for [sr] once (control thread; tens of ms). Each 48 kHz
+ * response is resampled through its spectrum: the rate's impulse response
+ * is the inverse transform of the 48 kHz bins (everything below 24 kHz, on
+ * their own spacing) evaluated at the rate's sample times, so nothing is
+ * added above 24 kHz, where every cabinet is already 40 dB or more down. */
+static le_rfft_plan le_cab_fft48;
+static const le_cab_bank* le_cab_bank_get(int32_t sr) {
+  if (sr <= 0) sr = 48000;
+  const le_cab_bank* found = le_cab_bank_find(sr);
+  if (found != NULL) return found;
+  pthread_mutex_lock(&le_cab_banks_mu);
+  found = le_cab_bank_find(sr);
+  int slot = -1;
+  for (int i = 0; found == NULL && i < LE_CAB_BANKS; ++i) {
+    if (atomic_load_explicit(&le_cab_banks[i], memory_order_relaxed) == NULL) {
+      slot = i;
+      break;
+    }
+  }
+  if (found != NULL || slot < 0) {
+    pthread_mutex_unlock(&le_cab_banks_mu);
+    return found;
+  }
+  const int n48 = LE_CAB_TAPS48;
+  const int half = n48 / 2;
+  const int max_taps = LE_CAB_B * (LE_CAB_MAX_PARTS + 1);
+  int m = (int)((double)n48 * (double)sr / 48000.0 + 0.5);
+  if (m > max_taps) m = max_taps; /* past 96 kHz the tail is cut */
+  le_cab_bank* b = (le_cab_bank*)calloc(1, sizeof(*b));
+  float* h = (float*)malloc(sizeof(float) * (size_t)m);
+  double* acc = (double*)malloc(sizeof(double) * (size_t)m);
+  float xr[LE_CAB_TAPS48 / 2 + 1], xi[LE_CAB_TAPS48 / 2 + 1];
+  if (b == NULL || h == NULL || acc == NULL ||
+      !le_rfft_plan_init(&le_cab_fft, 2 * LE_CAB_B) ||
+      !le_rfft_plan_init(&le_cab_fft48, n48)) {
+    free(b);
+    free(h);
+    free(acc);
+    pthread_mutex_unlock(&le_cab_banks_mu);
+    return NULL;
+  }
+  b->sr = sr;
+  b->parts = (m - LE_CAB_B + LE_CAB_B - 1) / LE_CAB_B;
+  if (b->parts > LE_CAB_MAX_PARTS) b->parts = LE_CAB_MAX_PARTS;
+  const double step = 2.0 * 3.14159265358979323846 * 48000.0 /
+                      ((double)n48 * (double)sr); /* one bin, one sample */
+  float frame[2 * LE_CAB_B];
+  for (int row = 0; row < LE_CAB_ROWS; ++row) {
+    le_rfft_fwd(&le_cab_fft48, LE_CAB_IR48[row], xr, xi);
+    for (int t = 0; t < m; ++t) acc[t] = 0.0;
+    for (int k = 0; k <= half; ++k) {
+      /* bin k at the rate's sample times, by a rotating phasor */
+      const double w = (k == 0 || k == half) ? 1.0 : 2.0;
+      const double cr = cos(step * (double)k), ci = sin(step * (double)k);
+      double zr = 1.0, zi = 0.0;
+      const double ar = w * (double)xr[k], ai = w * (double)xi[k];
+      for (int t = 0; t < m; ++t) {
+        acc[t] += ar * zr - ai * zi;
+        const double nr = zr * cr - zi * ci;
+        zi = zr * ci + zi * cr;
+        zr = nr;
+      }
+    }
+    for (int t = 0; t < m; ++t) h[t] = (float)acc[t]; /* le_rfft_fwd is unscaled; 1/n48 below */
+    for (int t = 0; t < m; ++t) h[t] *= 1.0f / (float)n48;
+    for (int t = 0; t < LE_CAB_B; ++t) b->head[row][t] = t < m ? h[t] : 0.0f;
+    for (int p = 0; p < b->parts; ++p) {
+      for (int t = 0; t < 2 * LE_CAB_B; ++t) {
+        const int k = LE_CAB_B + p * LE_CAB_B + t;
+        frame[t] = t < LE_CAB_B && k < m ? h[k] : 0.0f;
+      }
+      le_rfft_fwd(&le_cab_fft, frame, b->re[row][p], b->im[row][p]);
+    }
+  }
+  free(h);
+  free(acc);
+  atomic_store_explicit(&le_cab_banks[slot], b, memory_order_release);
+  pthread_mutex_unlock(&le_cab_banks_mu);
+  return b;
+}
+
+/* ---- the amp's voicing, fit to the s6 captures (scratch analysis) ---- */
+/* The input voicing: a high-pass and two rises. */
+#define LE_AMP_HP_HZ 81.2
+#define LE_AMP_HP_Q 0.655
+#define LE_AMP_PK1_HZ 4542.0
+#define LE_AMP_PK1_DB 6.44
+#define LE_AMP_PK1_Q 0.80
+#define LE_AMP_PK2_HZ 415.0
+#define LE_AMP_PK2_DB 1.06
+#define LE_AMP_PK2_Q 0.64
+#define LE_AMP_DC_HZ 5.0        /* the coupling after the square-law stage */
+#define LE_AMP_POST_HP_HZ 1 /* the coupling after the clipper */
+#define LE_AMP_LP1_HZ 10099.0
+#define LE_AMP_LP1_Q 0.945
+#define LE_AMP_LP2_HZ 22083.0
+#define LE_AMP_LP2_Q 0.30
+#define LE_AMP_CLIP_POS 1.2071f  /* the clipper's two limits */
+#define LE_AMP_CLIP_NEG 0.52724f
+/* Interpolation points: settings 0, 25, 50, 75 and 100 %. */
+#define LE_AMP_PTS 5
+/* Drive: the gain into the square-law stage, the one into the clipper and
+ * the output level, dB. */
+static const float LE_AMP_GA_DB[LE_AMP_PTS] = {3.119f, 12.62f, 9.896f, 11.61f, 21.15f};
+static const float LE_AMP_GB_DB[LE_AMP_PTS] = {-9.026f, -0.7326f, 9.114f, 14.53f, 17.76f};
+static const float LE_AMP_OUT_DB[LE_AMP_PTS] = {-2.482f, -17.02f, -18.34f, -19.3f, -18.89f};
+/* The drive's treble loss before the clipper (the quiet sweeps): a high
+ * shelf per drive point, none at 0 %. */
+static const float LE_AMP_DRIVE_HS[LE_AMP_PTS][3] = {
+    {0.0f, 0.0f, 0.0f}, {9332.0f, -2.76f, 0.51f}, {9004.0f, -4.35f, 0.51f},
+    {8378.0f, -7.44f, 0.50f}, {9506.0f, -13.12f, 0.33f}};
+/* Modern: the square-law coefficient; the low shelf (34 Hz, Q 0.54), the
+ * 5.3 kHz rise (Q 0.22) and the high shelf (2.55 kHz, Q 1.3), dB; its level
+ * into the clipper and after it, dB. */
+#define LE_AMP_MLS_HZ 34.0
+#define LE_AMP_MLS_Q 0.54
+#define LE_AMP_MPK_HZ 5281.0
+#define LE_AMP_MPK_Q 0.22
+#define LE_AMP_MHS_HZ 2553.0
+#define LE_AMP_MHS_Q 1.30
+static const float LE_AMP_K[LE_AMP_PTS] = {0.3399f, 0.3853f, 0.1617f, 0.2122f, 0.1038f};
+static const float LE_AMP_MLS_DB[LE_AMP_PTS] = {-0.78f, 0.60f, 0.0f, 5.20f, 7.99f};
+static const float LE_AMP_MPK_DB[LE_AMP_PTS] = {-3.55f, -2.69f, 0.0f, 4.00f, 8.34f};
+static const float LE_AMP_MHS_DB[LE_AMP_PTS] = {-2.09f, -1.21f, 0.0f, 0.44f, 0.07f};
+static const float LE_AMP_MPRE_DB[LE_AMP_PTS] = {-1.763f, -0.4865f, 0.0f, 3.377f, 6.943f};
+static const float LE_AMP_MPOST_DB[LE_AMP_PTS] = {-3.187f, -1.593f, 0.0f, -1.137f, -2.273f};
+/* Bass and Treble: each setting's shelf (corner Hz, gain dB, Q). 50 % is
+ * flat: between 25 and 75 % the gain goes to 0 dB on its neighbour's corner
+ * and Q. */
+static const float LE_AMP_BASS[LE_AMP_PTS][3] = {
+    {74.0f, -22.60f, 0.410f}, {40.0f, -12.04f, 0.471f}, {0.0f, 0.0f, 0.0f},
+    {179.0f, 8.31f, 0.436f}, {263.0f, 12.88f, 0.441f}};
+static const float LE_AMP_TREBLE[LE_AMP_PTS][3] = {
+    {2608.0f, -8.90f, 0.869f}, {2809.0f, -6.28f, 0.846f}, {0.0f, 0.0f, 0.0f},
+    {4229.0f, 6.65f, 0.920f}, {5179.0f, 13.41f, 0.864f}};
+
+/* [t] (0..1) on a five-point table, linearly between the points. */
+static float le_amp_lerp(const float* tab, float t) {
+  const float x = (t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t) * (float)(LE_AMP_PTS - 1);
+  int i = (int)x;
+  if (i > LE_AMP_PTS - 2) i = LE_AMP_PTS - 2;
+  const float f = x - (float)i;
+  return tab[i] + f * (tab[i + 1] - tab[i]);
+}
+
+/* A shelf setting on a five-point table: log2 corner, gain, Q. The row
+ * [flat] is no shelf: next to it the gain fades to 0 dB on the neighbouring
+ * row's corner and Q. */
+static void le_amp_shelf(const float tab[LE_AMP_PTS][3], int flat, float t,
+                         float out[3]) {
+  const float x = (t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t) * (float)(LE_AMP_PTS - 1);
+  int i = (int)x;
+  if (i > LE_AMP_PTS - 2) i = LE_AMP_PTS - 2;
+  const float f = x - (float)i;
+  const float* r0 = tab[i == flat ? i + 1 : i];
+  const float* r1 = tab[i + 1 == flat ? i : i + 1];
+  const float g0 = i == flat ? 0.0f : r0[1];
+  const float g1 = i + 1 == flat ? 0.0f : r1[1];
+  out[0] = log2f(r0[0]) + f * (log2f(r1[0]) - log2f(r0[0]));
+  out[1] = g0 + f * (g1 - g0);
+  out[2] = r0[2] + f * (r1[2] - r0[2]);
+}
+
+/* The clipper's knee: z / (1 + z^4)^(1/4), limiting at +-1 (two square
+ * roots, no powf). */
+static inline float le_amp_knee(float z) {
+  const float a = z * z;
+  return z / sqrtf(sqrtf(1.0f + a * a));
+}
+
+/* One instance (mono). */
+typedef struct le_fx_amp {
+  int32_t sr;                 /* what the filters and the bank are for; 0: unset */
+  int32_t settle;             /* the next update lands every glide at once */
+  int32_t tick;               /* frames to the next update */
+  int32_t cab, cab_from;      /* the cabinet index heard, the one fading out */
+  int32_t xf;                 /* crossfade frames left */
+  float last[LE_AMP_PARAMS_N];
+  float k;                    /* glide factor per update */
+  /* glides, in their own units (dB, octaves, a coefficient) */
+  float ga, gb, kq, mpre, mpost, mls, mpk, mhs;
+  float bass[3], treble[3], dhs[3]; /* log2 Hz, dB, Q */
+  float ga_lin, gb_lin, out_lin, mpre_lin;
+  /* filters, a0-normalized biquads and their states */
+  float pre_hp[5], pre_pk1[5], pre_pk2[5], dc_b0, dc_a1;
+  float m_ls[5], m_pk[5], m_hs[5], d_hs[5];
+  float post_hp_b0, post_hp_a1, t_bass[5], t_treb[5], lp1[5], lp2[5];
+  float z_pre[3][2], z_dc[2], z_m[3][2], z_dhs[2], z_post_hp[2], z_tone[2][2], z_lp[2][2];
+  /* the cabinet: head history (doubled), the block being filled, the
+   * frequency-domain delay line, and the tail each running cabinet adds to
+   * the next block */
+  const le_cab_bank* bank;
+  int32_t hp, j, fpos;
+  float hist[2 * LE_CAB_B];
+  float frame[2 * LE_CAB_B];
+  float tail[2][LE_CAB_B];
+  float fre[LE_CAB_MAX_PARTS][LE_CAB_NB], fim[LE_CAB_MAX_PARTS][LE_CAB_NB];
+  float wr[LE_CAB_NB], wi[LE_CAB_NB], tmp[2 * LE_CAB_B];
+} le_fx_amp;
+
+static void le_amp_design(int kind, double hz, double db, double q, int sr,
+                          float c[5]) {
+  double d[5];
+  le_eq_design(kind, hz, db, q, sr, d);
+  for (int i = 0; i < 5; ++i) c[i] = (float)d[i];
+}
+
+/* A one-pole high-pass's coefficients (bilinear, prewarped). */
+static void le_amp_hp1(double hz, int sr, float* b0, float* a1) {
+  const double k = le_prewarp(hz, sr);
+  *b0 = (float)(1.0 / (1.0 + k));
+  *a1 = (float)((k - 1.0) / (k + 1.0));
+}
+
+static inline float le_amp_hp1_tick(float b0, float a1, float* z, float x) {
+  /* y[n] = b0 (x[n] - x[n-1]) - a1 y[n-1]; z = {x[n-1], y[n-1]} */
+  const float y = b0 * (x - z[0]) - a1 * z[1];
+  z[0] = x;
+  z[1] = y;
+  return y;
+}
+
+/* Clears what the instance plays from (filters, the cabinet's history),
+ * keeping its rate and coefficients; the next update settles. */
+static void le_amp_reset(le_fx_amp* a) {
+  memset(a->z_pre, 0, sizeof(a->z_pre));
+  memset(a->z_dc, 0, sizeof(a->z_dc));
+  memset(a->z_m, 0, sizeof(a->z_m));
+  memset(a->z_dhs, 0, sizeof(a->z_dhs));
+  memset(a->z_post_hp, 0, sizeof(a->z_post_hp));
+  memset(a->z_tone, 0, sizeof(a->z_tone));
+  memset(a->z_lp, 0, sizeof(a->z_lp));
+  memset(a->hist, 0, sizeof(a->hist));
+  memset(a->frame, 0, sizeof(a->frame));
+  memset(a->tail, 0, sizeof(a->tail));
+  memset(a->fre, 0, sizeof(a->fre));
+  memset(a->fim, 0, sizeof(a->fim));
+  a->hp = a->j = a->fpos = 0;
+  a->xf = 0;
+  a->cab_from = a->cab;
+  a->tick = 0;
+  a->settle = 1;
+}
+
+/* The settings' targets, glided at the update cadence; filters redesigned
+ * when a setting they read moved. */
+static void le_amp_update(le_fx_amp* a, const float* p, int sr) {
+  const int new_rate = a->sr != sr;
+  if (new_rate) {
+    a->sr = sr;
+    a->k = le_fx_smooth_k(sr);
+    le_amp_design(LE_EQ_LOWCUT, LE_AMP_HP_HZ, 0.0, LE_AMP_HP_Q, sr, a->pre_hp);
+    le_amp_design(LE_EQ_LOMID, LE_AMP_PK1_HZ, LE_AMP_PK1_DB, LE_AMP_PK1_Q, sr,
+                  a->pre_pk1);
+    le_amp_design(LE_EQ_LOMID, LE_AMP_PK2_HZ, LE_AMP_PK2_DB, LE_AMP_PK2_Q, sr,
+                  a->pre_pk2);
+    le_amp_hp1(LE_AMP_DC_HZ, sr, &a->dc_b0, &a->dc_a1);
+    le_amp_hp1(LE_AMP_POST_HP_HZ, sr, &a->post_hp_b0, &a->post_hp_a1);
+    le_amp_design(LE_EQ_HIGHCUT, LE_AMP_LP1_HZ, 0.0, LE_AMP_LP1_Q, sr, a->lp1);
+    le_amp_design(LE_EQ_HIGHCUT, LE_AMP_LP2_HZ, 0.0, LE_AMP_LP2_Q, sr, a->lp2);
+    a->bank = le_cab_bank_find(sr);
+  }
+  const float k = a->settle ? 1.0f : a->k;
+  const float drive = p[0], bass = p[1], treble = p[2], modern = p[3];
+  int cab = (int)(p[4] * 11.0f + 0.5f);
+  cab = cab < 0 ? 0 : cab > 11 ? 11 : cab;
+  if (a->settle) {
+    a->cab = a->cab_from = cab;
+    a->xf = 0;
+  } else if (cab != a->cab && a->xf == 0) {
+    /* Fade the old one out over the next frames: it keeps its tail, and
+     * the new one's builds from the next block. */
+    memcpy(a->tail[1], a->tail[0], sizeof(a->tail[0]));
+    a->cab_from = a->cab;
+    a->cab = cab;
+    a->xf = LE_CAB_XF_FRAMES;
+  }
+  float tb[3], tt[3];
+  le_amp_shelf(LE_AMP_BASS, 2, bass, tb);
+  le_amp_shelf(LE_AMP_TREBLE, 2, treble, tt);
+  float td[3];
+  le_amp_shelf(LE_AMP_DRIVE_HS, 0, drive, td);
+  const float tgt[8] = {le_amp_lerp(LE_AMP_GA_DB, drive),
+                        le_amp_lerp(LE_AMP_GB_DB, drive),
+                        le_amp_lerp(LE_AMP_K, modern),
+                        le_amp_lerp(LE_AMP_MPRE_DB, modern),
+                        le_amp_lerp(LE_AMP_MPOST_DB, modern) +
+                            le_amp_lerp(LE_AMP_OUT_DB, drive),
+                        le_amp_lerp(LE_AMP_MLS_DB, modern),
+                        le_amp_lerp(LE_AMP_MPK_DB, modern),
+                        le_amp_lerp(LE_AMP_MHS_DB, modern)};
+  float* cur[8] = {&a->ga, &a->gb, &a->kq, &a->mpre, &a->mpost,
+                   &a->mls, &a->mpk, &a->mhs};
+  int moved_m = new_rate, moved_t = new_rate;
+  for (int i = 0; i < 8; ++i) {
+    const float before = *cur[i];
+    le_fx_step_toward(cur[i], tgt[i], k);
+    if (i >= 5 && *cur[i] != before) moved_m = 1;
+  }
+  int moved_d = new_rate;
+  for (int i = 0; i < 3; ++i) {
+    const float b0 = a->bass[i], t0 = a->treble[i], d0 = a->dhs[i];
+    le_fx_step_toward(&a->bass[i], tb[i], k);
+    le_fx_step_toward(&a->treble[i], tt[i], k);
+    le_fx_step_toward(&a->dhs[i], td[i], k);
+    if (a->bass[i] != b0 || a->treble[i] != t0) moved_t = 1;
+    if (a->dhs[i] != d0) moved_d = 1;
+  }
+  if (a->settle) moved_m = moved_t = moved_d = 1;
+  if (moved_d) {
+    le_amp_design(LE_EQ_HIGH, exp2((double)a->dhs[0]), a->dhs[1], a->dhs[2], sr,
+                  a->d_hs);
+  }
+  a->ga_lin = powf(10.0f, a->ga / 20.0f);
+  a->gb_lin = powf(10.0f, a->gb / 20.0f);
+  a->mpre_lin = powf(10.0f, a->mpre / 20.0f);
+  a->out_lin = powf(10.0f, a->mpost / 20.0f);
+  if (moved_m) {
+    le_amp_design(LE_EQ_LOW, LE_AMP_MLS_HZ, a->mls, LE_AMP_MLS_Q, sr, a->m_ls);
+    le_amp_design(LE_EQ_LOMID, LE_AMP_MPK_HZ, a->mpk, LE_AMP_MPK_Q, sr, a->m_pk);
+    le_amp_design(LE_EQ_HIGH, LE_AMP_MHS_HZ, a->mhs, LE_AMP_MHS_Q, sr, a->m_hs);
+  }
+  if (moved_t) {
+    le_amp_design(LE_EQ_LOW, exp2((double)a->bass[0]), a->bass[1], a->bass[2],
+                  sr, a->t_bass);
+    le_amp_design(LE_EQ_HIGH, exp2((double)a->treble[0]), a->treble[1],
+                  a->treble[2], sr, a->t_treb);
+  }
+  a->settle = 0;
+}
+
+/* One sample through the cabinet, both cabinets while one fades into the
+ * other; at a block's end the partitions' spectra make the next block's
+ * tails. */
+static float le_amp_cab(le_fx_amp* a, float x) {
+  const le_cab_bank* bk = a->bank;
+  const int rn = LE_CAB_ROW[a->cab];
+  const int ro = LE_CAB_ROW[a->cab_from];
+  if (bk == NULL) return x;
+  a->hist[a->hp] = x;
+  a->hist[a->hp + LE_CAB_B] = x;
+  const float* hx = a->hist + a->hp + LE_CAB_B; /* hx[-t]: t frames ago */
+  float yn = 0.0f, yo = 0.0f;
+  if (rn < 0) {
+    yn = x;
+  } else {
+    const float* h = bk->head[rn];
+    for (int t = 0; t < LE_CAB_B; ++t) yn += h[t] * hx[-t];
+    yn += a->tail[0][a->j];
+  }
+  const int fading = a->xf > 0;
+  if (fading) {
+    if (ro < 0) {
+      yo = x;
+    } else {
+      const float* h = bk->head[ro];
+      for (int t = 0; t < LE_CAB_B; ++t) yo += h[t] * hx[-t];
+      yo += a->tail[1][a->j];
+    }
+  }
+  a->hp = (a->hp + 1) & (LE_CAB_B - 1);
+  a->frame[LE_CAB_B + a->j] = x;
+  if (++a->j == LE_CAB_B) {
+    a->j = 0;
+    const int parts = bk->parts;
+    a->fpos = a->fpos + 1 >= parts ? 0 : a->fpos + 1;
+    le_rfft_fwd(&le_cab_fft, a->frame, a->fre[a->fpos], a->fim[a->fpos]);
+    memmove(a->frame, a->frame + LE_CAB_B, sizeof(float) * LE_CAB_B);
+    for (int which = 0; which < 2; ++which) {
+      const int row = which == 0 ? rn : ro;
+      if (which == 1 && a->xf <= LE_CAB_B) break; /* no tail past the fade */
+      if (row < 0) {
+        memset(a->tail[which], 0, sizeof(a->tail[which]));
+        continue;
+      }
+      memset(a->wr, 0, sizeof(a->wr));
+      memset(a->wi, 0, sizeof(a->wi));
+      for (int pp = 0; pp < parts; ++pp) {
+        int s = a->fpos - pp;
+        if (s < 0) s += parts;
+        const float* xr = a->fre[s];
+        const float* xi = a->fim[s];
+        const float* hr = bk->re[row][pp];
+        const float* hi = bk->im[row][pp];
+        for (int q = 0; q < LE_CAB_NB; ++q) {
+          a->wr[q] += xr[q] * hr[q] - xi[q] * hi[q];
+          a->wi[q] += xr[q] * hi[q] + xi[q] * hr[q];
+        }
+      }
+      le_rfft_inv(&le_cab_fft, a->wr, a->wi, a->tmp);
+      memcpy(a->tail[which], a->tmp + LE_CAB_B, sizeof(float) * LE_CAB_B);
+    }
+  }
+  if (!fading) return yn;
+  const float w = (float)a->xf / (float)LE_CAB_XF_FRAMES; /* the old one's share */
+  if (--a->xf == 0) a->cab_from = a->cab;
+  return yn + w * (yo - yn);
+}
+
+static void fx_amp_cab_process(le_fx_state* fx, int slot, int sr, int cap,
+                               float* l, float* r, const float* p) {
+  (void)cap;
+  le_fx_amp* a = atomic_load_explicit(&fx->amp[slot], memory_order_acquire);
+  if (a == NULL) return;
+  const int rate = sr > 0 ? sr : 48000;
+  if (a->tick <= 0 || a->sr != rate) {
+    le_amp_update(a, p, rate);
+    a->tick = LE_FX_UPDATE_FRAMES;
+  }
+  --a->tick;
+  const float x = 0.5f * (fx_sanitize(*l) + fx_sanitize(*r));
+  float u = le_biquad_tick(a->pre_hp, a->z_pre[0], x);
+  u = le_biquad_tick(a->pre_pk1, a->z_pre[1], u);
+  u = le_biquad_tick(a->pre_pk2, a->z_pre[2], u);
+  u *= a->ga_lin;
+  float v = u + a->kq * u * u;
+  v = le_amp_hp1_tick(a->dc_b0, a->dc_a1, a->z_dc, v);
+  v = le_biquad_tick(a->m_ls, a->z_m[0], v);
+  v = le_biquad_tick(a->m_pk, a->z_m[1], v);
+  v = le_biquad_tick(a->m_hs, a->z_m[2], v);
+  v = le_biquad_tick(a->d_hs, a->z_dhs, v);
+  const float w = v * a->mpre_lin * a->gb_lin;
+  float y = w >= 0.0f ? LE_AMP_CLIP_POS * le_amp_knee(w / LE_AMP_CLIP_POS)
+                      : LE_AMP_CLIP_NEG * le_amp_knee(w / LE_AMP_CLIP_NEG);
+  y = le_amp_hp1_tick(a->post_hp_b0, a->post_hp_a1, a->z_post_hp, y);
+  y = le_biquad_tick(a->t_bass, a->z_tone[0], y);
+  y = le_biquad_tick(a->t_treb, a->z_tone[1], y);
+  y = le_biquad_tick(a->lp1, a->z_lp[0], y);
+  y = le_biquad_tick(a->lp2, a->z_lp[1], y);
+  y = le_amp_cab(a, y * a->out_lin);
+  *l = y;
+  *r = y;
+}
+
+/* Control thread: the slot's instance, and the cabinets at this rate. */
+static int32_t fx_amp_cab_prepare(le_fx_state* fx, int slot, int cap) {
+  if (le_cab_bank_get(cap > 0 ? cap : 48000) == NULL) return LE_ERR_INVALID;
+  if (atomic_load_explicit(&fx->amp[slot], memory_order_relaxed) != NULL) {
+    return LE_OK;
+  }
+  le_fx_amp* a = (le_fx_amp*)le_rt_alloc_prefaulted(sizeof(le_fx_amp));
+  if (a == NULL) return LE_ERR_INVALID;
+  memset(a, 0, sizeof(*a));
+  le_amp_reset(a);
+  atomic_store_explicit(&fx->amp[slot], a, memory_order_release);
+  return LE_OK;
+}
+
 /* ---- Distortion (LE_FX_DISTORTION, #887 part 7) ----
  *
  * The Looper X's amp simulator, which the Studio Rack labels Dist (the
@@ -5420,6 +5949,7 @@ LE_FX_ROWS_FIT(LE_FX_PUMPER_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_SLICER_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_MODE_DELAY_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_DUAL_OCTAVER_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_AMP_CAB_PARAMS);
 
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
  * published for this chain entry (NULL / not-ready => dry passthrough; the slot
@@ -5558,6 +6088,9 @@ static const le_fx_vtable LE_FX[] = {
     /* The octaver's kernel and state, its settings mapped (le_doct_settings). */
     [LE_FX_DUAL_OCTAVER] = {fx_dual_octaver_process, fx_octaver_latency_vt,
                             fx_octaver_prepare, LE_FX_DUAL_OCTAVER_PARAMS},
+    /* The amp and its cabinet, in its own per-slot instance (fx->amp). */
+    [LE_FX_AMP_CAB] = {fx_amp_cab_process, NULL, fx_amp_cab_prepare,
+                       LE_FX_AMP_CAB_PARAMS},
     /* Locked to the beat: a print could not stand for it lap after lap. */
     [LE_FX_PUMPER] = {fx_pumper_process, NULL, NULL, LE_FX_PUMPER_PARAMS,
                       LE_FX_F_FREE_RUNNING},
@@ -5624,6 +6157,7 @@ const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
     [LE_FX_SLICER] = LE_FX_ROW_COUNT(LE_FX_SLICER_PARAMS),
     [LE_FX_MODE_DELAY] = LE_FX_ROW_COUNT(LE_FX_MODE_DELAY_PARAMS),
     [LE_FX_DUAL_OCTAVER] = LE_FX_ROW_COUNT(LE_FX_DUAL_OCTAVER_PARAMS),
+    [LE_FX_AMP_CAB] = LE_FX_ROW_COUNT(LE_FX_AMP_CAB_PARAMS),
 };
 
 /* ---- per-kind state (le_fx_kinds, engine_private.h) ---- */
