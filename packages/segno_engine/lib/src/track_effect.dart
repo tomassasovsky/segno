@@ -475,7 +475,12 @@ enum TrackEffectType {
 
   /// The Looper X's Mod pedal (#887 part 13), fit to the captures: the
   /// chorus, a phaser, a flanger and a square tremolo, one at a time.
-  mod(30, 'Modulation');
+  mod(30, 'Modulation'),
+
+  /// The Looper X's Reverb (#1476), fit to the captures: four modes (HALL,
+  /// STADIUM, ROOM, BOX) with Bright, and the Drum Rack's twelve ER rooms
+  /// with Lo/Hi, Tail/ER and Density, on one network at each room's size.
+  roomVerb(31, 'Room reverb');
 
   const TrackEffectType(this.code, this.label);
 
@@ -1097,6 +1102,64 @@ enum TrackEffectType {
       ),
     ],
     // Fit to the Dub Rack's Dub-Verb (#891); the Looper X's ranges.
+    // The Looper X's Reverb (#891 s6rev, s8): the length (its reverb-time
+    // display), the mix, the room (HALL, STADIUM, ROOM, BOX, then the Drum
+    // Rack's ER rooms BOOTH to CHURCH), Bright (the modes'), Lo/Hi, Tail/ER
+    // and Density (the ER rooms'). Every control measured at three or more
+    // settings.
+    TrackEffectType.roomVerb => const [
+      FxParamInfo(
+        key: 'length',
+        unit: FxParamUnit.seconds,
+        atMin: 0.45,
+        atMax: 144,
+        curve: FxParamCurve.reverbTime,
+        defaultValue: 0.4,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.15,
+      ),
+      FxParamInfo(
+        key: 'room',
+        unit: FxParamUnit.choice,
+        steps: 16,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'bright',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.8,
+      ),
+      FxParamInfo(
+        key: 'lo_hi',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'tail_er',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.3,
+      ),
+      FxParamInfo(
+        key: 'density',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
+      ),
+    ],
     TrackEffectType.dubVerb => const [
       FxParamInfo(
         key: 'decay',
