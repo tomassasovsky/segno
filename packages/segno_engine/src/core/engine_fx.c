@@ -3756,8 +3756,11 @@ static void fx_doubler_kprocess(void* ks, float* l, float* r) {
  *   LE_CHO_SPAN_MS times the square of Depth (2.45 ms at 50 %, 9.7 ms at
  *   100 %, and the s3 capture's 0.141 ms at 12 %);
  * - the rate is a line, 0.40 Hz at 0 % to 3.20 Hz at 100 %;
- * - the voice is low-passed by two 2nd-order sections at 6.7 kHz, Q 0.65:
- *   -1.8 dB at 4 kHz, -10.5 dB at 8 kHz and -21 dB at 12 kHz, as measured;
+ * - the voice is low-passed by two 2nd-order sections at 6.7 kHz, Q 0.65,
+ *   fitted to s3 (-2.0, -11.2 and -23 dB at 4, 8 and 12 kHz; these give
+ *   -1.9, -11.2 and -23.1 at 96 kHz). s6 read -1.8, -10.5 and -21 dB
+ *   through the rig's 48 kHz resampling, which this does not follow above
+ *   8 kHz;
  * - the dry gain is 1 - 0.29 mix and the voice's 0.83 mix (1.0 and 0,
  *   0.855 and 0.43, 0.71 and 0.82 at 0, 50 and 100 %).
  * Ed's Rack's Chorus is taken to be the same module (#891), and the Mod
@@ -3888,12 +3891,13 @@ static void fx_chorus_kprocess(void* ks, float* l, float* r) {
 enum { LE_MOD_CHORUS, LE_MOD_PHASER, LE_MOD_FLANGER, LE_MOD_TREMOLO,
        LE_MOD_MODES };
 #define LE_MOD_RING LE_CHO_RING
+#define LE_FLA_RING 2048u /* the flanger's 6.84 ms at 192 kHz */
 #define LE_MOD_FADE 1024
 #define LE_PHA_SPREAD 1.4263
 #define LE_PHA_SHAPE 0.87
 #define LE_PHA_CORNER_HZ 654.0
 #define LE_PHA_OCTAVES 5.87 /* the sweep at Depth 100 %, octaves */
-#define LE_PHA_MEAN 0.467 /* the shaped sine's mean: the sweep centres on the corner */
+#define LE_PHA_MEAN 0.467 /* fitted: where on the shaped sine the corner sits */
 #define LE_PHA_COEF_FRAMES 16 /* the phaser's corners are recomputed this often */
 #define LE_FLA_FB 1.03f
 #define LE_FLA_HP_HZ 1560.0
@@ -4005,7 +4009,7 @@ typedef struct le_fx_mod {
   float trm_ka, trm_kr;
   uint32_t w;
   float ring[2][LE_MOD_RING]; /* the chorus's input */
-  float fring[2][LE_MOD_RING]; /* the flanger's input and repeats */
+  float fring[2][LE_FLA_RING]; /* the flanger's input and repeats */
 } le_fx_mod;
 
 /* The targets mode [m] glides to at settings [p] (each 0..1). */
@@ -4033,7 +4037,7 @@ static int le_mod_targets(le_fx_mod* q, int m, const float* p, float k) {
       a *= q->rate * 1e-3f;
       b *= q->rate * 1e-3f;
       if (a < 1.0f) a = 1.0f; /* the voice reads only past samples */
-      if (b > q->max_delay) b = q->max_delay;
+      if (b > (float)(LE_FLA_RING - 2u)) b = (float)(LE_FLA_RING - 2u);
       break;
     default: /* LE_MOD_TREMOLO */
       le_mod_table(LE_TRM_DEPTH, LE_MOD_POINTS(LE_TRM_DEPTH), depth, &a, NULL);
@@ -4163,11 +4167,11 @@ static void le_mod_flanger(le_fx_mod* q, const float* x, float* y) {
   const float wet = le_fx_glide_next(&o->wet);
   o->ph = le_lfo_step(o->ph, inc);
   const float delay = lo + (hi - lo) * 0.5f * (1.0f + le_tri((float)o->ph));
-  const uint32_t at = q->w & (LE_MOD_RING - 1u);
+  const uint32_t at = q->w & (LE_FLA_RING - 1u);
   for (int ch = 0; ch < 2; ++ch) {
     /* The delay is at least a sample (le_mod_targets), so this reads only
      * what earlier samples wrote. */
-    const float v = le_ring_read(q->fring[ch], LE_MOD_RING - 1u, q->w, delay);
+    const float v = le_ring_read(q->fring[ch], LE_FLA_RING - 1u, q->w, delay);
     /* The repeat: high-passed, then low-passed. */
     const float hp = 0.5f * (v - le_ap1_tick(q->fla_hp, &q->fla_hz[ch], v));
     const float lp = 0.5f * (hp + le_ap1_tick(q->fla_lp, &q->fla_lz[ch], hp));
@@ -4217,8 +4221,9 @@ static void fx_mod_kprocess(void* ks, float* l, float* r) {
   }
   if (q->mode != LE_MOD_FLANGER && q->from != LE_MOD_FLANGER) {
     /* Kept current, so the flanger never starts on old audio. */
-    q->fring[0][at] = x[0];
-    q->fring[1][at] = x[1];
+    const uint32_t fat = q->w & (LE_FLA_RING - 1u);
+    q->fring[0][fat] = x[0];
+    q->fring[1][fat] = x[1];
   }
   q->w++;
   *l = y[0];
@@ -6790,8 +6795,9 @@ int le_fx_entry_free_running(int32_t type, const float* p, int sr) {
       return p[1] > 0.0f;
     case LE_FX_MODE_DELAY: /* heard (its time is the live tempo's) */
       return p[2] > 0.0f;
-    case LE_FX_MOD: /* the tremolo dipping, or the others heard */
-      return le_mod_mode(p[3]) == LE_MOD_TREMOLO ? p[1] > 0.0f : p[2] > 0.0f;
+    case LE_FX_MOD: /* the tremolo dipping, or the others swept and heard */
+      return le_mod_mode(p[3]) == LE_MOD_TREMOLO ? p[1] > 0.0f
+                                                  : p[1] > 0.0f && p[2] > 0.0f;
     case LE_FX_SLICER: /* slicing, and heard */
       return p[2] > 0.0f && le_slice_pattern(p[0]) != NULL;
     default:

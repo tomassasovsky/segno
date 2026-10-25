@@ -74,9 +74,9 @@ Mix 25, 75 %); 10-17 FLANGER (50 % again, Depth 25, 75, 10, 90 %, Rate
   at 258 and 1652 Hz at Depth 0 %, below -40 dB at Mix 50 %.
 - The rate is 0.1 x 100^Rate Hz, within 2 % (exact at 75 and 100 %).
 - The sweep is 5.87 x Depth octaves. The corners move along
-  u^0.87, u = (1 + sin) / 2, centred so the shaped sine's mean (0.467)
-  sits at 654 Hz: within 0.02 octave of every tracked window (a plain sine
-  in octaves misses by 0.05-0.08).
+  u^0.87, u = (1 + sin) / 2, with u^0.87 = 0.467 at 654 Hz (a fitted
+  offset; the shaped sine's mean is 0.527): within 0.02 octave of every
+  tracked window (a plain sine in octaves misses by 0.05-0.08).
 - Mix: dry and wet fitted to the 1 kHz tone over whole sweeps (the table
   above). The 1 kHz gain peaks at +3.99 dB at Mix 50 % and is notched
   below -35 dB.
