@@ -4061,14 +4061,15 @@ static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
  *   drive, first   a gain, then a square-law term: the even harmonic every
  *                  pass shows below clipping, sized by Modern
  *   Modern         a low shelf, a broad rise near 5 kHz, a high shelf and a
- *                  level, all before the clipper: Modern moves how hard it
- *                  is driven, not the clipped level
+ *                  level before the clipper (Modern mostly moves how hard it
+ *                  is driven), and a smaller level after it (0 to -3 dB)
  *   drive, second  a gain with the drive's own treble loss (a 9 kHz shelf,
  *                  0 to -13 dB from 0 to 100 %), into a clipper whose two
  *                  sides limit at different levels
  *   tone           Bass and Treble shelves after the clipper (a saturated
  *                  sweep shows them in full)
- *   output         a 10.1 kHz low-pass and the output level
+ *   output         a 10.1 kHz low-pass, a gentle one at 22 kHz, and the
+ *                  output level
  *   cabinet        one of eleven measured responses, or none (D.I.), as
  *                  zero-latency partitioned convolution
  *
@@ -4094,7 +4095,7 @@ typedef struct le_cab_bank {
   float im[LE_CAB_ROWS][LE_CAB_MAX_PARTS][LE_CAB_NB];
 } le_cab_bank;
 
-#define LE_CAB_BANKS 4 /* rates in one process: 44.1, 48, 88.2 and 96 kHz */
+#define LE_CAB_BANKS 6 /* 44.1, 48, 88.2, 96, 176.4 and 192 kHz */
 static le_cab_bank* _Atomic le_cab_banks[LE_CAB_BANKS];
 static pthread_mutex_t le_cab_banks_mu = PTHREAD_MUTEX_INITIALIZER;
 static le_rfft_plan le_cab_fft;
@@ -4109,12 +4110,18 @@ static const le_cab_bank* le_cab_bank_find(int32_t sr) {
   return NULL;
 }
 
-/* Builds the bank for [sr] once (control thread; tens of ms). Each 48 kHz
- * response is resampled through its spectrum: the rate's impulse response
- * is the inverse transform of the 48 kHz bins (everything below 24 kHz, on
- * their own spacing) evaluated at the rate's sample times, so nothing is
- * added above 24 kHz, where every cabinet is already 40 dB or more down. */
+/* Builds the bank for [sr] once (control thread). Each 48 kHz response is
+ * resampled through its spectrum: the rate's impulse response is the
+ * inverse transform of the 48 kHz bins (everything below 24 kHz, on their
+ * own spacing) at the rate's sample times, scaled by 48000 / sr so the
+ * cabinet's gain does not change with the rate. Nothing is added above
+ * 24 kHz, where every cabinet is already 40 dB or more down. At 48 kHz that
+ * is the response itself, and at 96 kHz one zero-padded inverse FFT (about
+ * a millisecond); other rates sum the bins directly (tens of ms, once).
+ * Past 96 kHz the response is cut at LE_CAB_MAX_PARTS partitions, with a
+ * fade over its last quarter. */
 static le_rfft_plan le_cab_fft48;
+static le_rfft_plan le_cab_fft96;
 static const le_cab_bank* le_cab_bank_get(int32_t sr) {
   if (sr <= 0) sr = 48000;
   const le_cab_bank* found = le_cab_bank_find(sr);
@@ -4136,7 +4143,8 @@ static const le_cab_bank* le_cab_bank_get(int32_t sr) {
   const int half = n48 / 2;
   const int max_taps = LE_CAB_B * (LE_CAB_MAX_PARTS + 1);
   int m = (int)((double)n48 * (double)sr / 48000.0 + 0.5);
-  if (m > max_taps) m = max_taps; /* past 96 kHz the tail is cut */
+  const int cut = m > max_taps; /* past 96 kHz the tail is cut */
+  if (cut) m = max_taps;
   le_cab_bank* b = (le_cab_bank*)calloc(1, sizeof(*b));
   float* h = (float*)malloc(sizeof(float) * (size_t)m);
   double* acc = (double*)malloc(sizeof(double) * (size_t)m);
@@ -4156,7 +4164,26 @@ static const le_cab_bank* le_cab_bank_get(int32_t sr) {
   const double step = 2.0 * 3.14159265358979323846 * 48000.0 /
                       ((double)n48 * (double)sr); /* one bin, one sample */
   float frame[2 * LE_CAB_B];
+  const int fft96 = !cut && m == 2 * n48 && 2 * n48 <= LE_FFT_MAX_N &&
+                    le_rfft_plan_init(&le_cab_fft96, 2 * n48);
   for (int row = 0; row < LE_CAB_ROWS; ++row) {
+    if (m == n48) {
+      memcpy(h, LE_CAB_IR48[row], sizeof(float) * (size_t)n48);
+    } else if (fft96) {
+      /* The 48 kHz bins, zero-padded to twice the length: 24 kHz becomes an
+       * inner bin, so it carries half its weight; le_rfft_inv's 1 / 2n48
+       * is the 48000 / sr scale. */
+      static float zr[LE_FFT_MAX_N / 2 + 1], zi[LE_FFT_MAX_N / 2 + 1];
+      le_rfft_fwd(&le_cab_fft48, LE_CAB_IR48[row], xr, xi);
+      memset(zr, 0, sizeof(zr));
+      memset(zi, 0, sizeof(zi));
+      for (int k = 0; k <= half; ++k) {
+        const float w = k == half ? 0.5f : 1.0f;
+        zr[k] = w * xr[k];
+        zi[k] = w * xi[k];
+      }
+      le_rfft_inv(&le_cab_fft96, zr, zi, h);
+    } else {
     le_rfft_fwd(&le_cab_fft48, LE_CAB_IR48[row], xr, xi);
     for (int t = 0; t < m; ++t) acc[t] = 0.0;
     for (int k = 0; k <= half; ++k) {
@@ -4172,8 +4199,17 @@ static const le_cab_bank* le_cab_bank_get(int32_t sr) {
         zr = nr;
       }
     }
-    for (int t = 0; t < m; ++t) h[t] = (float)acc[t]; /* le_rfft_fwd is unscaled; 1/n48 below */
-    for (int t = 0; t < m; ++t) h[t] *= 1.0f / (float)n48;
+    /* le_rfft_fwd is unscaled: 1 / n48, and 48000 / sr for the rate */
+    const double scale = 48000.0 / ((double)n48 * (double)sr);
+    for (int t = 0; t < m; ++t) h[t] = (float)(acc[t] * scale);
+    }
+    if (cut) {
+      const int r = m / 4;
+      for (int t = m - r; t < m; ++t) {
+        const double c = cos(1.5707963267948966 * (double)(t - (m - r)) / r);
+        h[t] *= (float)(c * c);
+      }
+    }
     for (int t = 0; t < LE_CAB_B; ++t) b->head[row][t] = t < m ? h[t] : 0.0f;
     for (int p = 0; p < b->parts; ++p) {
       for (int t = 0; t < 2 * LE_CAB_B; ++t) {
@@ -4286,6 +4322,7 @@ typedef struct le_fx_amp {
   int32_t tick;               /* frames to the next update */
   int32_t cab, cab_from;      /* the cabinet index heard, the one fading out */
   int32_t xf;                 /* crossfade frames left */
+  int32_t moving;             /* a glide has not landed */
   float last[LE_AMP_PARAMS_N];
   float k;                    /* glide factor per update */
   /* glides, in their own units (dB, octaves, a coefficient) */
@@ -4357,6 +4394,12 @@ static void le_amp_reset(le_fx_amp* a) {
  * when a setting they read moved. */
 static void le_amp_update(le_fx_amp* a, const float* p, int sr) {
   const int new_rate = a->sr != sr;
+  /* Settled and unchanged: nothing to do. */
+  if (!new_rate && !a->settle && !a->moving &&
+      memcmp(a->last, p, sizeof(a->last)) == 0) {
+    return;
+  }
+  memcpy(a->last, p, sizeof(a->last));
   if (new_rate) {
     a->sr = sr;
     a->k = le_fx_smooth_k(sr);
@@ -4417,6 +4460,12 @@ static void le_amp_update(le_fx_amp* a, const float* p, int sr) {
     if (a->bass[i] != b0 || a->treble[i] != t0) moved_t = 1;
     if (a->dhs[i] != d0) moved_d = 1;
   }
+  int moving = cab != a->cab; /* a change waiting for a fade to end */
+  for (int i = 0; i < 8; ++i) moving |= *cur[i] != tgt[i];
+  for (int i = 0; i < 3; ++i) {
+    moving |= a->bass[i] != tb[i] || a->treble[i] != tt[i] || a->dhs[i] != td[i];
+  }
+  a->moving = moving;
   if (a->settle) moved_m = moved_t = moved_d = 1;
   if (moved_d) {
     le_amp_design(LE_EQ_HIGH, exp2((double)a->dhs[0]), a->dhs[1], a->dhs[2], sr,
@@ -4479,7 +4528,7 @@ static float le_amp_cab(le_fx_amp* a, float x) {
     memmove(a->frame, a->frame + LE_CAB_B, sizeof(float) * LE_CAB_B);
     for (int which = 0; which < 2; ++which) {
       const int row = which == 0 ? rn : ro;
-      if (which == 1 && a->xf <= LE_CAB_B) break; /* no tail past the fade */
+      if (which == 1 && a->xf <= 1) break; /* the fade ends on this frame */
       if (row < 0) {
         memset(a->tail[which], 0, sizeof(a->tail[which]));
         continue;

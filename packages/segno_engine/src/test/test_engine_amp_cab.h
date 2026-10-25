@@ -192,7 +192,87 @@ static void test_amp_cabinet_change_does_not_click(void) {
   CHECK(worst < 2.0f * steady);
 }
 
+/* A cabinet's gain does not depend on the rate: its 1 kHz level against the
+ * D.I.'s matches at 44.1, 48, 88.2 and 96 kHz within 0.3 dB. */
+static double amp_cab_gain(int sr, float cab) {
+  const int n = sr / 2;
+  float* x = (float*)malloc(sizeof(float) * (size_t)n);
+  float* y0 = (float*)malloc(sizeof(float) * (size_t)n);
+  float* y1 = (float*)malloc(sizeof(float) * (size_t)n);
+  for (int i = 0; i < n; ++i) x[i] = 0.01f * sinf(2.0f * (float)M_PI * 1000.0f * i / sr);
+  const float pd[LE_FX_PARAMS] = {0.0f, 0.5f, 0.5f, 0.5f, 0.0f};
+  const float pc[LE_FX_PARAMS] = {0.0f, 0.5f, 0.5f, 0.5f, cab};
+  amp_run(pd, sr, x, y0, NULL, n);
+  amp_run(pc, sr, x, y1, NULL, n);
+  const double g = 20.0 * log10(amp_tone(y1 + n / 2, n / 2, 1000.0, sr) /
+                                amp_tone(y0 + n / 2, n / 2, 1000.0, sr));
+  free(x);
+  free(y0);
+  free(y1);
+  return g;
+}
+
+static void test_amp_cabinet_gain_is_rate_free(void) {
+  printf("test_amp_cabinet_gain_is_rate_free\n");
+  static const int rates[4] = {44100, 48000, 88200, 96000};
+  const float cabs[2] = {7.0f / 11.0f, 9.0f / 11.0f}; /* 4x12", BASS */
+  for (int c = 0; c < 2; ++c) {
+    const double ref = amp_cab_gain(48000, cabs[c]);
+    for (int k = 0; k < 4; ++k) {
+      const double g = amp_cab_gain(rates[k], cabs[c]);
+      printf("  cabinet %.0f at %d Hz: %+.2f dB (48 kHz %+.2f)\n",
+             cabs[c] * 11.0f, rates[k], g, ref);
+      CHECK(fabs(g - ref) < 0.3);
+    }
+  }
+}
+
+/* A cabinet change made while another fades in is not lost: picked during
+ * the fade, it plays once that fade ends. */
+static void test_amp_cabinet_change_during_a_fade_lands(void) {
+  printf("test_amp_cabinet_change_during_a_fade_lands\n");
+  const int sr = 48000;
+  const int n = sr;
+  float* x = (float*)malloc(sizeof(float) * (size_t)n);
+  for (int i = 0; i < n; ++i) x[i] = 0.05f * sinf(2.0f * (float)M_PI * 300.0f * i / sr);
+  float* want = (float*)malloc(sizeof(float) * (size_t)n);
+  const float pf[LE_FX_PARAMS] = {0.0f, 0.5f, 0.5f, 0.5f, 9.0f / 11.0f};
+  amp_run(pf, sr, x, want, NULL, n);
+  le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+  CHECK(fx != NULL);
+  for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
+  CHECK(le_fx_prepare(fx, 0, LE_FX_AMP_CAB, sr) == LE_OK);
+  le_fx_entry_reset(fx, 0);
+  static int32_t types[LE_FX_MAX];
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  for (int s = 0; s < LE_FX_MAX; ++s) types[s] = LE_FX_NONE;
+  types[0] = LE_FX_AMP_CAB;
+  const float p[LE_FX_PARAMS] = {0.0f, 0.5f, 0.5f, 0.5f, 7.0f / 11.0f};
+  for (int q = 0; q < LE_FX_PARAMS; ++q) params[0][q] = p[q];
+  double err = 0.0, ref = 0.0;
+  for (int i = 0; i < n; ++i) {
+    if (i == sr / 10) params[0][4] = 0.0f;               /* to D.I. ... */
+    if (i == sr / 10 + 200) params[0][4] = 9.0f / 11.0f;  /* ... then BASS */
+    fx->clock = (uint32_t)i;
+    float a = x[i], b = x[i];
+    fx_apply_chain(fx, sr, sr, &a, &b, 1, types, params, NULL);
+    if (i > sr / 2) {
+      err += (a - want[i]) * (a - want[i]);
+      ref += want[i] * want[i];
+    }
+  }
+  le_fx_state_free_buffers(fx);
+  free(fx);
+  free(x);
+  free(want);
+  const double db = 10.0 * log10(err / ref + 1e-30);
+  printf("  BASS after both changes: %.1f dB from BASS alone\n", db);
+  CHECK(db < -80.0);
+}
+
 static void run_amp_cab_tests(void) {
+  test_amp_cabinet_gain_is_rate_free();
+  test_amp_cabinet_change_during_a_fade_lands();
   test_amp_first_4x10_is_the_2x12();
   test_amp_cabinet_is_the_measured_response();
   test_amp_cabinet_change_does_not_click();
