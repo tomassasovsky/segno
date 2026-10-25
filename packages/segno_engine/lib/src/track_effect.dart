@@ -1139,9 +1139,6 @@ enum TrackEffectType {
         defaultValue: 0,
       ),
     ],
-    // Ed's Rack's Dual Octaver (#891): high mode (off, on), Octave 1's
-    // level (its taper unmeasured), the mix, Octave 2's level (its taper
-    // unmeasured, two octaves down inferred).
     // The Looper X's Amp (#891): drive, Bass, Treble and Modern (each
     // captured at 0, 25, 50, 75 and 100 %), and the cabinet (D.I., BRIT,
     // 1x8", 1x12", 2x10", 2x12", 4x10", 4x12", 1x15", BASS, 4x10", RADIO).
@@ -1183,6 +1180,9 @@ enum TrackEffectType {
         defaultValue: 7 / 11,
       ),
     ],
+    // Ed's Rack's Dual Octaver (#891): high mode (off, on), Octave 1's
+    // level (its taper unmeasured), the mix, Octave 2's level (its taper
+    // unmeasured, two octaves down inferred).
     TrackEffectType.dualOctaver => const [
       FxParamInfo(
         key: 'oct_high_mode',
