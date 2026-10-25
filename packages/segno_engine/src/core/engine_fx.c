@@ -3892,6 +3892,10 @@ enum { LE_MOD_CHORUS, LE_MOD_PHASER, LE_MOD_FLANGER, LE_MOD_TREMOLO,
        LE_MOD_MODES };
 #define LE_MOD_RING LE_CHO_RING
 #define LE_FLA_RING 2048u /* the flanger's 6.84 ms at 192 kHz */
+_Static_assert(LE_FLA_RING - 2u >= 1313u,
+               "the flanger's ring holds 6.836 ms at 192 kHz");
+_Static_assert(LE_CHO_RING - 2u >= 2218u,
+               "the chorus's ring holds 1.771 + 9.78 ms at 192 kHz");
 #define LE_MOD_FADE 1024
 #define LE_PHA_SPREAD 1.4263
 #define LE_PHA_SHAPE 0.87
