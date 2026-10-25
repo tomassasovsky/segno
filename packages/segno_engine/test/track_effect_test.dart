@@ -490,6 +490,9 @@ void main() {
         TrackEffectType.ampCab: [0.5, 0.5, 0.5, 0.5, 7 / 11],
         // The Mod: every control at 50 %, the chorus.
         TrackEffectType.mod: [0.5, 0.5, 0.5, 0.0],
+        // The Room reverb: the modes' racks' Length (1.42 s) and Mix, HALL,
+        // Bright 80 %, and the Drum's Lo/Hi, Tail/ER and Density defaults.
+        TrackEffectType.roomVerb: [0.4, 0.15, 0.0, 0.8, 0.5, 0.3, 1.0],
       };
       for (final type in TrackEffectType.values) {
         expect(type.defaultParams, cells(expected[type]!), reason: type.name);

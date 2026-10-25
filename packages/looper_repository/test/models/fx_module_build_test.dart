@@ -44,13 +44,14 @@ void main() {
 
     test('a module the engine builds but cannot carry every control of is '
         'PARTIAL, with the stranded controls named', () {
-      final reverb = fxModuleBuild(_module('Reverb'));
+      final reverb = fxModuleBuild(_module('Reverb'), family: "Ed's Rack");
 
       expect(reverb.readiness, FxModuleReadiness.partial);
-      expect(reverb.type, TrackEffectType.reverb);
+      expect(reverb.type, TrackEffectType.roomVerb);
       // Kept and named, so a surface can show them and say they do not reach
-      // the sound rather than drawing a control that does nothing.
-      expect(reverb.unmapped, contains('Rev ER'));
+      // the sound rather than drawing a control that does nothing: Ed's Rev
+      // Mode, which does not change the Looper X's sound either (#1476).
+      expect(reverb.unmapped, ['Rev Mode']);
       // The Drum Rack's delay carries its Freq on the Drum's own delay
       // (#1473), and the seven racks with the mode delay every control.
       final drum = fxModuleBuild(_module('Delay'), family: 'Drum Rack');
@@ -151,14 +152,45 @@ void main() {
       },
     );
 
-    test("the reverb's brightness is NOT wired into the engine's damping", () {
-      final reverb = fxModuleBuild(_module('Reverb'));
-
-      // Brightness is damping's complement, and inverting someone else's
-      // control into ours is exactly the silent substitution the accepted
-      // design forbids. It stays unmapped and visible.
-      expect(reverb.params[1], isNull);
-      expect(reverb.unmapped, contains('Rev Bright'));
+    test("each rack's reverb carries the controls its rack shows", () {
+      Map<String, List<String?>> params(String family) => {
+        family: fxModuleBuild(_module('Reverb'), family: family).params,
+      };
+      // The modes' racks: Length, Mix, the mode and (where shown) Bright;
+      // Ed's plays HALL; the Drum Rack's ER rooms and their controls.
+      expect(params('Vocal Rack'), {
+        'Vocal Rack': ['Rev Length', 'Rev Mix', 'Rev Mode', 'Rev Bright'],
+      });
+      expect(params('Studio Rack'), {
+        'Studio Rack': ['Rev Length', 'Rev Mix', 'Rev Mode'],
+      });
+      expect(params("Ed's Rack"), {
+        "Ed's Rack": ['Rev Length', 'Rev Mix', null, 'Rev Bright'],
+      });
+      expect(params('Drum Rack'), {
+        'Drum Rack': [
+          'Rev Length',
+          'Rev Mix',
+          'Rev ER',
+          null,
+          'Rev Lo/Hi',
+          'Rev Tail/ER',
+          'Rev Density',
+        ],
+      });
+      for (final family in [
+        'Vocal Rack',
+        'Vocal Tuner Rack',
+        'Studio Rack',
+        'Rhythmic Rack',
+        'Drum Rack',
+      ]) {
+        expect(
+          fxModuleBuild(_module('Reverb'), family: family).readiness,
+          FxModuleReadiness.full,
+          reason: family,
+        );
+      }
     });
   });
 
@@ -1272,6 +1304,122 @@ void main() {
         'mix',
         'octave_2_vol',
       ]);
+    });
+
+    group('the Room reverb', () {
+      BuiltInEffect verb(String family, Map<String, double> params) =>
+          fxModuleEntry(
+            _module('Reverb'),
+            FxPreset(
+              family: family,
+              name: 'p',
+              id: 'p',
+              type: 0,
+              params: {'Reverb': 1, ...params},
+            ),
+          );
+      int room(BuiltInEffect e) => e.type.params[2].positionOf(e.params[2]);
+
+      test(
+        "reads a mode rack's stored mode as the kind's first four rooms",
+        () {
+          for (var k = 0; k < 4; k++) {
+            final e = verb('Studio Rack', {'Rev Mode': k / 3});
+            expect(room(e), k);
+            // Studio and Rhythmic hide Bright and play the 75 % they read.
+            expect(e.params[3], closeTo(0.75, 1e-9));
+          }
+          expect(room(verb('Vocal Rack', {'Rev Mode': 2 / 3})), 2);
+        },
+      );
+
+      test("plays HALL on Ed's whatever its stored mode", () {
+        final e = verb("Ed's Rack", {'Rev Mode': 1, 'Rev Bright': 0.8});
+        expect(room(e), 0);
+        expect(e.params[3], closeTo(0.8, 1e-9));
+      });
+
+      test("reads the Drum Rack's ER rooms, and 12 to 14 as CHURCH", () {
+        // A preset stores one of the Looper X's 15 positions (k / 14); the
+        // kind's ER rooms are its rooms 4 to 15.
+        for (var k = 0; k < 15; k++) {
+          final e = verb('Drum Rack', {
+            'Rev Length': 0.16,
+            'Rev Mix': 0.3,
+            'Rev ER': k / 14,
+            'Rev Lo/Hi': 0.5,
+            'Rev Tail/ER': 0.3,
+            'Rev Density': 1,
+          });
+          expect(room(e), 4 + (k < 12 ? k : 11), reason: 'position $k');
+          expect(
+            fxEntryShownSetting(e, 2),
+            closeTo((k < 12 ? k : 11) / 11, 1e-9),
+          );
+        }
+      });
+
+      test('names the room control Mode on the mode racks, ER on the Drum', () {
+        final drum = {
+          'Rev Length': 0.16,
+          'Rev Mix': 0.3,
+          'Rev ER': 0.5,
+          'Rev Lo/Hi': 0.5,
+          'Rev Tail/ER': 0.3,
+          'Rev Density': 1.0,
+        };
+        for (final (family, params, keys) in [
+          (
+            'Studio Rack',
+            {'Rev Length': 0.4, 'Rev Mix': 0.1, 'Rev Mode': 0.0},
+            ['length', 'mix', 'room_mode'],
+          ),
+          (
+            'Vocal Rack',
+            {
+              'Rev Length': 0.4,
+              'Rev Mix': 0.1,
+              'Rev Mode': 0.0,
+              'Rev Bright': 0.8,
+            },
+            ['length', 'mix', 'room_mode', 'bright'],
+          ),
+          (
+            'Drum Rack',
+            drum,
+            ['length', 'mix', 'er_room', 'lo_hi', 'tail_er', 'density'],
+          ),
+        ]) {
+          expect(
+            fxEntryControls(verb(family, params)).keys,
+            keys,
+            reason: family,
+          );
+        }
+      });
+
+      test('a Drum preset without its ER room plays LARGE STUDIO', () {
+        expect(room(verb('Drum Rack', {'Rev Length': 0.16})), 4 + 7);
+      });
+
+      test("tells Ed's reverb from the Vocal Rack's by its rack", () {
+        // Their keys are the same; the rack each was built in decides.
+        final keys = {
+          'Rev Length': 0.4,
+          'Rev Mix': 0.1,
+          'Rev Mode': 0.0,
+          'Rev Bright': 0.8,
+        };
+        for (final (family, exposed) in [
+          ("Ed's Rack", [0, 1, 3]),
+          ('Vocal Rack', [0, 1, 2, 3]),
+        ]) {
+          final e = verb(family, keys).copyWith(
+            rack: FxRack(id: 'r', name: 'r', art: kFxFamilySlugs[family]),
+          );
+          expect(fxEntryBuild(e)?.exposed, exposed, reason: family);
+        }
+      });
     });
 
     test("the Rhythmic Rack's Slicer copies pattern, step and mix", () {

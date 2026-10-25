@@ -108,6 +108,13 @@ const _english = <String, List<String>>{
   'mod.depth': ['0%', '50%', '100%'],
   'mod.mix': ['0%', '50%', '100%'],
   'mod.mod_mode': ['CHORUS', 'CHORUS', 'Tremolo'],
+  'roomVerb.length': ['0.45 s', '1.42 s', '144.00 s'],
+  'roomVerb.mix': ['0%', '15%', '100%'],
+  'roomVerb.room': ['HALL', 'HALL', 'CHURCH'],
+  'roomVerb.bright': ['0%', '80%', '100%'],
+  'roomVerb.lo_hi': ['0%', '50%', '100%'],
+  'roomVerb.tail_er': ['0%', '30%', '100%'],
+  'roomVerb.density': ['0%', '100%', '100%'],
 };
 
 /// The same in Spanish: a decimal comma, and the Spanish mode name.
@@ -214,6 +221,13 @@ const _spanish = <String, List<String>>{
   'mod.depth': ['0%', '50%', '100%'],
   'mod.mix': ['0%', '50%', '100%'],
   'mod.mod_mode': ['CHORUS', 'CHORUS', 'Tremolo'],
+  'roomVerb.length': ['0,45 s', '1,42 s', '144,00 s'],
+  'roomVerb.mix': ['0%', '15%', '100%'],
+  'roomVerb.room': ['HALL', 'HALL', 'CHURCH'],
+  'roomVerb.bright': ['0%', '80%', '100%'],
+  'roomVerb.lo_hi': ['0%', '50%', '100%'],
+  'roomVerb.tail_er': ['0%', '30%', '100%'],
+  'roomVerb.density': ['0%', '100%', '100%'],
 };
 
 void main() {

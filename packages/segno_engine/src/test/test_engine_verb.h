@@ -405,6 +405,7 @@ static void test_verb_offline_equals_live(void) {
   verb_offline_equals_live(LE_FX_SPRING);
   verb_offline_equals_live(LE_FX_DUB_VERB);
   verb_offline_equals_live(LE_FX_AMB_VERB);
+  verb_offline_equals_live(LE_FX_ROOM_VERB);
 }
 
 static void verb_on_a_lane(int32_t ty) {
@@ -428,6 +429,7 @@ static void test_verb_on_a_lane(void) {
   verb_on_a_lane(LE_FX_SPRING);
   verb_on_a_lane(LE_FX_DUB_VERB);
   verb_on_a_lane(LE_FX_AMB_VERB);
+  verb_on_a_lane(LE_FX_ROOM_VERB);
 }
 
 static void run_verb_tests(void) {

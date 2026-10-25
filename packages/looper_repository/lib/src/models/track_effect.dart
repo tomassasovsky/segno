@@ -462,7 +462,10 @@ enum TrackEffectType {
   ampCab(29),
 
   /// The Looper X's Mod pedal (#887 part 13).
-  mod(30);
+  mod(30),
+
+  /// The Looper X's Reverb (#1476).
+  roomVerb(31);
 
   const TrackEffectType(this.code);
 
