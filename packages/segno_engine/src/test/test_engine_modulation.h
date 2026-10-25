@@ -360,9 +360,8 @@ static void test_mod_tremolo_matches_the_capture(void) {
 /* ---- Every mode ---- */
 
 /* A mode change crossfades: through a 900 Hz sine at 0.2, no sample steps
- * further than the sine's own largest step allows (0.118, plus what the
- * modes' gains add), and a change picked during a fade lands once it
- * ends. */
+ * further than 0.06 (the sine's own largest step is 0.024; the same changes
+ * made at once step 0.12). */
 static void test_mod_change_crossfades(void) {
   printf("test_mod_change_crossfades\n");
   const int n = MOD_SR;
@@ -378,8 +377,6 @@ static void test_mod_change_crossfades(void) {
                           MOD_CHORUS};
   for (int i = 0; i < n; ++i) {
     p[3] = modes[i / (n / 5)];
-    /* A second change 100 frames after the first, inside its fade. */
-    if (i % (n / 5) >= 100 && i / (n / 5) == 2) p[3] = MOD_FLANGER;
     memcpy(params[0], p, sizeof(p));
     fx->clock = (uint32_t)i;
     const float x = 0.2f * sinf(2.0f * (float)M_PI * 900.0f * (float)i / MOD_SR);
@@ -394,11 +391,80 @@ static void test_mod_change_crossfades(void) {
   }
   dyn_free(fx);
   printf("  largest step %.3f\n", max_step);
-  CHECK(max_step < 0.3f);
+  CHECK(max_step < 0.06f);
 }
 
-/* Every mode runs at 44.1, 96 and 192 kHz without a non-finite sample, and
- * the chorus's longest delay (11.5 ms at Depth 100 %) fits its ring. */
+/* A change picked during a fade lands once it ends: from the chorus to the
+ * phaser, then to the tremolo 100 frames into that fade. On a steady
+ * input the phaser holds level, so only the tremolo's off part reaches
+ * silence. */
+static void test_mod_change_during_a_fade_lands(void) {
+  printf("test_mod_change_during_a_fade_lands\n");
+  const int n = MOD_SR;
+  float* in = (float*)malloc(sizeof(float) * (size_t)n);
+  for (int i = 0; i < n; ++i) in[i] = 0.5f;
+  le_fx_state* fx = dyn_state(LE_FX_MOD, MOD_SR);
+  fx->clocked = 1;
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  float p[LE_FX_PARAMS];
+  mod_params(p, 0.5f, 1.0f, 0.5f, MOD_CHORUS);
+  const int32_t types[1] = {LE_FX_MOD};
+  float least = 1.0f;
+  for (int i = 0; i < n; ++i) {
+    if (i == 1000) p[3] = MOD_PHASER;
+    if (i == 1100) p[3] = MOD_TREMOLO;
+    memcpy(params[0], p, sizeof(p));
+    fx->clock = (uint32_t)i;
+    float l = in[i], r = in[i];
+    fx_apply_chain(fx, MOD_SR, MOD_SR, &l, &r, 1, types, params, NULL);
+    if (i > n / 3 && fabsf(l) < least) least = fabsf(l);
+  }
+  dyn_free(fx);
+  free(in);
+  printf("  quietest %.4f\n", least);
+  CHECK(least < 0.01f);
+}
+
+/* The Mod is the identity, and a lane holding it prints, where it does
+ * nothing: Depth or Mix at 0 % in the chorus, phaser and flanger (no sweep,
+ * or no voice), Depth 0 % in the tremolo (whose Mix does nothing). */
+static void test_mod_free_running_rule(void) {
+  printf("test_mod_free_running_rule\n");
+  float p[LE_FX_PARAMS];
+  const float modes[3] = {MOD_CHORUS, MOD_PHASER, MOD_FLANGER};
+  for (int m = 0; m < 3; ++m) {
+    mod_params(p, 0.5f, 0.5f, 0.5f, modes[m]);
+    CHECK(le_fx_entry_free_running(LE_FX_MOD, p, MOD_SR));
+    p[1] = 0.0f;
+    CHECK(!le_fx_entry_free_running(LE_FX_MOD, p, MOD_SR));
+    p[1] = 0.5f;
+    p[2] = 0.0f;
+    CHECK(!le_fx_entry_free_running(LE_FX_MOD, p, MOD_SR));
+  }
+  mod_params(p, 0.5f, 0.5f, 0.0f, MOD_TREMOLO);
+  CHECK(le_fx_entry_free_running(LE_FX_MOD, p, MOD_SR));
+  p[1] = 0.0f;
+  p[2] = 1.0f;
+  CHECK(!le_fx_entry_free_running(LE_FX_MOD, p, MOD_SR));
+  /* Still, each is the identity: a steady sine comes back unchanged. */
+  const int n = MOD_SR / 4;
+  float* x = (float*)malloc(sizeof(float) * (size_t)n);
+  float* y = (float*)malloc(sizeof(float) * (size_t)n);
+  for (int i = 0; i < n; ++i) x[i] = 0.3f * sinf(0.05f * (float)i);
+  for (int m = 0; m < 3; ++m) {
+    mod_params(p, 0.5f, 0.5f, 0.0f, modes[m]);
+    mod_run(p, x, y, n);
+    for (int i = 0; i < n; ++i) CHECK(y[i] == x[i]);
+  }
+  mod_params(p, 0.5f, 0.0f, 1.0f, MOD_TREMOLO);
+  mod_run(p, x, y, n);
+  for (int i = 0; i < n; ++i) CHECK(y[i] == x[i]);
+  free(x);
+  free(y);
+}
+
+/* Every mode runs at 44.1, 96 and 192 kHz at its extremes without a
+ * non-finite sample or a runaway. */
 static void test_mod_runs_at_every_rate(void) {
   printf("test_mod_runs_at_every_rate\n");
   const int rates[3] = {44100, 96000, 192000};
@@ -436,5 +502,7 @@ static void run_modulation_tests(void) {
   test_mod_flanger_tone_matches_the_capture();
   test_mod_tremolo_matches_the_capture();
   test_mod_change_crossfades();
+  test_mod_change_during_a_fade_lands();
+  test_mod_free_running_rule();
   test_mod_runs_at_every_rate();
 }
