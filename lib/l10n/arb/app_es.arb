@@ -465,6 +465,8 @@
     "effectDualOctaver": "Octaver doble",
     "effectAmpCab": "Amplificador",
     "effectMod": "Modulación",
+    "paramLrRatio": "Relación I/D",
+    "paramResFreq": "Frecuencia de resonancia",
     "paramBass": "Graves",
     "paramTreble": "Agudos",
     "paramModern": "Moderno",

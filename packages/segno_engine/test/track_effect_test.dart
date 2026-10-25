@@ -473,7 +473,17 @@ void main() {
         // The Rhythmic Rack's Slicer: AABB, 1/16, 100 %.
         TrackEffectType.slicer: [0.0, 0.5, 1.0],
         // The Looper X's delay: 1/8D, 50 %, 20 %, DIGI.
-        TrackEffectType.modeDelay: [8 / 19, 0.5, 0.2, 0.0],
+        TrackEffectType.modeDelay: [
+          8 / 19,
+          0.5,
+          0.2,
+          0.0,
+          0.25,
+          0.35,
+          0.0,
+          0.8,
+          0.35,
+        ],
         // Ed's Rack's Dual Octaver: down, Octave 1 at 100 %, all wet.
         TrackEffectType.dualOctaver: [0.0, 1.0, 1.0, 0.0],
         // The Guitar Rack's Amp: every control at 50 %, the 4x12".
