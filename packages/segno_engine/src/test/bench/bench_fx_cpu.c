@@ -92,6 +92,9 @@ static int g_psola; /* --kind psola: the octaver in PSOLA mode */
 /* --kind lpflfo, and the Rhythmic rack: the LPF swept by its LFO, which
  * redesigns the ladder at every sample */
 static int g_lpf_lfo;
+/* --kind drumdelay or dubdelay, and the Drum and Dub racks: the Mode delay
+ * in the Drum's voicing (1) or the Dub's (2) */
+static int g_mdly_own;
 
 static void octaver_entry(le_fx_recipe* r, int s) {
   r->type[s] = LE_FX_OCTAVER;
@@ -157,7 +160,14 @@ static void dynamics_entry(le_fx_recipe* r, int s, int32_t kind) {
     r->params[s][3] = 0.6f;
   } else if (kind == LE_FX_MODE_DELAY) {
     r->params[s][0] = 9.0f / 19.0f; /* 1/4 */
-    r->params[s][3] = 7.0f / 13.0f; /* RES LO L/R: both taps voiced */
+    if (g_mdly_own == 1) {
+      r->params[s][3] = 12.0f / 13.0f; /* DRUM: its bell at Del Freq */
+    } else if (g_mdly_own == 2) {
+      r->params[s][3] = 1.0f; /* DUB at L/R Ratio 50 %: both taps voiced */
+      r->params[s][6] = 0.5f;
+    } else {
+      r->params[s][3] = 7.0f / 13.0f; /* RES LO L/R: both taps voiced */
+    }
   } else if (kind == LE_FX_SLICER) {
     r->params[s][0] = 15.0f / 19.0f; /* AB<<: replays and reversals */
     r->params[s][1] = 1.0f / 8.0f;   /* 1/4T: reads far back in the ring */
@@ -190,8 +200,8 @@ static void fx_entry(le_fx_recipe* r, int s) { kind_entry(r, s, g_kind); }
  *  - the Dual Octaver (both voices) for Ed's Octaver, the octaver for the
  *    Pitch Shift (#1441), and the Mod in its phaser mode for the Guitar and
  *    Studio racks' Mod;
- *  - the Mode delay for the racks' Delay and Dub Delay, and the engine's
- *    reverb for their Reverb;
+ *  - the Mode delay for the racks' Delay and Dub Delay (the Drum's and the
+ *    Dub's in their own voicings), and the engine's reverb for their Reverb;
  *  - every EQ with every band engaged and every compressor working (the
  *    kinds' heaviest settings, an upper bound for each rack's variant).
  *  - the Amp+Cab for Ed's and the Guitar racks' Amp, at heavy drive on the
@@ -322,6 +332,8 @@ static stats time_blocks(rig* r, int blocks, int warm, double phase_mean[PHASES]
 static const char* kind_name(void) {
   if (g_kind == LE_FX_OCTAVER && g_psola) return "psola";
   if (g_kind == LE_FX_LPF && g_lpf_lfo) return "lpflfo";
+  if (g_kind == LE_FX_MODE_DELAY && g_mdly_own == 1) return "drumdelay";
+  if (g_kind == LE_FX_MODE_DELAY && g_mdly_own == 2) return "dubdelay";
   switch (g_kind) {
     case LE_FX_EQ: return "eq";
     case LE_FX_COMPRESSOR: return "comp";
@@ -428,10 +440,13 @@ static int run_racks(const bench_opts* o, float* src, int32_t frames,
     double ph[PHASES];
     /* The Rhythmic Rack's LPF runs its LFO; the Lo-Fi Rack's has none. */
     g_lpf_lfo = !strcmp(rack->name, "rhythmic");
+    /* The Drum and Dub racks' delays run their own voicings. */
+    g_mdly_own = !strcmp(rack->name, "drum") ? 1 : !strcmp(rack->name, "dub") ? 2 : 0;
     const int timed =
         time_rack(o, src, frames, NULL, blocks, warm, &base, ph) &&
         time_rack(o, src, frames, rack, blocks, warm, &st, ph);
     g_lpf_lfo = 0;
+    g_mdly_own = 0;
     if (!timed) {
       printf("| %-8s | refused by the engine |\n", rack->name);
       fflush(stdout);
@@ -471,7 +486,8 @@ static int run_racks(const bench_opts* o, float* src, int32_t frames,
 typedef struct {
   const char* name;
   int32_t type;
-  int variant; /* 1: PSOLA for the octaver, the LFO for the LPF */
+  int variant; /* 1: PSOLA for the octaver, the LFO for the LPF, the Drum
+                 voicing for the Mode delay; 2: the Dub voicing */
 } table_kind;
 
 static const table_kind k_table[] = {
@@ -489,7 +505,8 @@ static const table_kind k_table[] = {
     {"spring", LE_FX_SPRING, 0},        {"dubverb", LE_FX_DUB_VERB, 0},
     {"ambverb", LE_FX_AMB_VERB, 0},     {"whammy", LE_FX_WHAMMY, 0},
     {"pumper", LE_FX_PUMPER, 0},        {"slicer", LE_FX_SLICER, 0},
-    {"modedelay", LE_FX_MODE_DELAY, 0}, {"dualoct", LE_FX_DUAL_OCTAVER, 0},
+    {"modedelay", LE_FX_MODE_DELAY, 0}, {"drumdelay", LE_FX_MODE_DELAY, 1},
+    {"dubdelay", LE_FX_MODE_DELAY, 2},  {"dualoct", LE_FX_DUAL_OCTAVER, 0},
     {"ampcab", LE_FX_AMP_CAB, 0},       {"mod", LE_FX_MOD, 0},
 };
 
@@ -506,9 +523,11 @@ static int time_kinds(const bench_opts* o, float* src, int32_t frames,
     rec.count = n;
     g_psola = kind->type == LE_FX_OCTAVER && kind->variant;
     g_lpf_lfo = kind->type == LE_FX_LPF && kind->variant;
+    g_mdly_own = kind->type == LE_FX_MODE_DELAY ? kind->variant : 0;
     for (int s = 0; s < n; ++s) kind_entry(&rec, s, kind->type);
     g_psola = 0;
     g_lpf_lfo = 0;
+    g_mdly_own = 0;
     if (le_engine_set_fx_recipe(r.e, LE_FX_OWNER_MONITOR, 0, 0, 1, &rec) !=
         LE_OK) {
       rig_destroy(&r);
@@ -644,6 +663,12 @@ int main(int argc, char** argv) {
         g_kind = LE_FX_MOD;
       } else if (!strcmp(kind, "modedelay")) {
         g_kind = LE_FX_MODE_DELAY;
+      } else if (!strcmp(kind, "drumdelay")) {
+        g_kind = LE_FX_MODE_DELAY;
+        g_mdly_own = 1;
+      } else if (!strcmp(kind, "dubdelay")) {
+        g_kind = LE_FX_MODE_DELAY;
+        g_mdly_own = 2;
       } else if (!strcmp(kind, "slicer")) {
         g_kind = LE_FX_SLICER;
       } else {
@@ -652,7 +677,7 @@ int main(int argc, char** argv) {
                 "hpgate, doubler, chorus, wah, overdrive, distortion, vinyl, "
                 "degrade, lpf, lpflfo, spring, drive, filter, delay, tremolo, echo, "
                 "reverb, dubverb, ambverb, whammy, pumper, slicer, "
-                "modedelay, dualoct, ampcab, mod)\n",
+                "modedelay, drumdelay, dubdelay, dualoct, ampcab, mod)\n",
                 kind);
         return 2;
       }
@@ -682,7 +707,8 @@ int main(int argc, char** argv) {
               "[--kind octaver|psola|eq|comp|transient|hpgate|doubler|chorus|"
               "wah|overdrive|distortion|vinyl|degrade|lpf|lpflfo|spring|drive|filter|"
               "delay|tremolo|echo|reverb|dubverb|ambverb|whammy|"
-              "pumper|slicer|modedelay|dualoct] [--table]\n",
+              "pumper|slicer|modedelay|drumdelay|dubdelay|dualoct] "
+              "[--table]\n",
               argv[0]);
       return 2;
     }
