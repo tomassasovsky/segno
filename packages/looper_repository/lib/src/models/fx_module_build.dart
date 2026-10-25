@@ -295,6 +295,7 @@ const FxModuleBuild _modeVerbBright = FxModuleBuild(
   type: TrackEffectType.roomVerb,
   params: ['Rev Length', 'Rev Mix', 'Rev Mode', 'Rev Bright'],
   shown: {2: _verbMode},
+  labels: {2: 'room_mode'},
 );
 
 // Studio and Rhythmic racks: Length, Mix and the mode, with Bright at the
@@ -305,6 +306,7 @@ const FxModuleBuild _modeVerb = FxModuleBuild(
   params: ['Rev Length', 'Rev Mix', 'Rev Mode'],
   fixed: {3: 75},
   shown: {2: _verbMode},
+  labels: {2: 'room_mode'},
 );
 
 // Ed's Rack: Length, Mix and Bright on HALL. Its Rev Mode does not reach
@@ -346,6 +348,7 @@ const FxModuleBuild _drumVerb = FxModuleBuild(
       defaultValue: 7 / 11,
     ),
   },
+  labels: {2: 'er_room'},
 );
 
 // Studio and Vocal racks: the shift and the mix, on the octaver's phase

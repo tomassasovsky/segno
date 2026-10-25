@@ -169,7 +169,7 @@ static void dynamics_entry(le_fx_recipe* r, int s, int32_t kind) {
       r->params[s][3] = 7.0f / 13.0f; /* RES LO L/R: both taps voiced */
     }
   } else if (kind == LE_FX_ROOM_VERB) {
-    /* BOX, the room with the most early taps (96 a side). */
+    /* BOX, the room with the most early taps (63 and 64 a side). */
     r->params[s][2] = 3.0f / 15.0f;
   } else if (kind == LE_FX_SLICER) {
     r->params[s][0] = 15.0f / 19.0f; /* AB<<: replays and reversals */

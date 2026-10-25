@@ -6232,8 +6232,6 @@ typedef struct {
   int hi_by_rate;  /* above the table, 8 kHz keeps its excess decay rate */
   double dry[LE_VB_WN]; /* the dry gain at LE_VB_WV */
   double lg[LE_VB_TN];  /* a room's late gain at tv (0: none, 1 throughout) */
-  double imm_ms; /* a room's immediate tap, off the input history (gain 0: */
-  float imm_g;   /* none) */
 } le_verb_def;
 
 /* The Vol points the dry and wet laws are tabulated at, and the wet law
@@ -6361,7 +6359,6 @@ typedef struct le_fx_verb {
   float ap_g;    /* the diffusers' gain and the early part's (the def's, */
   float early_g; /* or a room's at its Density) */
   uint32_t reach;    /* the history a room's early taps read, at least */
-  uint32_t imm;      /* the immediate tap's delay */
   /* A redesign while Dec (or Length) glides ramps the lines' gains and
    * shelves to it over the LE_FX_UPDATE_FRAMES frames after, so the
    * recirculating signal never steps. */
@@ -6508,8 +6505,6 @@ static void le_vb_geometry(le_fx_verb* q, int sr) {
   q->tap[1] = d->tap_ms[1] > 0.0 ? le_vb_len(d->tap_ms[1], sr) : 0u;
   uint32_t reach = q->pd[0] > q->pd[1] ? q->pd[0] : q->pd[1];
   if (q->reach > reach) reach = q->reach;
-  q->imm = (uint32_t)(d->imm_ms * (double)sr / 1000.0 + 0.5);
-  if (q->imm > reach) reach = q->imm;
   if (q->tap[0] > reach) reach = q->tap[0];
   if (q->tap[1] > reach) reach = q->tap[1];
   q->hist_n = reach + 2u;
@@ -6677,12 +6672,6 @@ static inline void le_vb_network(le_fx_verb* q, float* r0, float* r1, float m,
     }
     e[c] = u;
   }
-  float imm = 0.0f;
-  if (d->imm_g != 0.0f) {
-    uint32_t ia = q->hist_w + q->hist_n - q->imm;
-    if (ia >= q->hist_n) ia -= q->hist_n;
-    imm = q->hist_full || ia <= q->hist_w ? d->imm_g * hist[ia] : 0.0f;
-  }
   if (++q->hist_w >= q->hist_n) {
     q->hist_w = 0;
     q->hist_full = 1u;
@@ -6725,8 +6714,8 @@ static inline void le_vb_network(le_fx_verb* q, float* r0, float* r1, float m,
     }
   }
   const float inv = 0.35355339f * q->late_k; /* 1 / sqrt(8) */
-  w[0] = inv * ol + q->early_g * e[0] + tap[0] + imm;
-  w[1] = inv * orr + q->early_g * e[1] + tap[1] + imm;
+  w[0] = inv * ol + q->early_g * e[0] + tap[0];
+  w[1] = inv * orr + q->early_g * e[1] + tap[1];
   for (int c = 0; c < 2; ++c) {
     if (d->peak_db != 0.0) w[c] = le_biquad_tick(q->peak, q->peak_z[c], w[c]);
     w[c] = le_vb_tick(q->shelf, q->shelf_z[c], w[c]);
@@ -6779,7 +6768,7 @@ static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
  * - a first-order low-pass on the whole wet at 1010 x 20.5^Bright Hz
  *   (bilinear, the same corner at every rate; within 0.2 kHz of the seven
  *   captured Bright settings); Lo/Hi sets it from its own five captured
- *   corners, and above 50 % adds a low cut;
+ *   corners, and moves a low cut that is always in on those rooms;
  * - the Drum's Tail/ER and Mix are equal-power over a quarter turn (at
  *   Mix 100 % the dry is still 0.707); the modes' Mix over a half turn.
  * What a setting moves ramps per frame; a room change fades the old room
@@ -6789,11 +6778,7 @@ static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
 #define LE_RV_ROOMS 16
 #define LE_RV_ER 16
 #define LE_RV_FIR 64 /* the most taps a network's early part runs a side */
-#define LE_RV_DENS 5  /* Density points a network's early part is read at */
 #define LE_RV_PARAMS_N 7
-#ifndef LE_RV_CONST
-#define LE_RV_CONST const
-#endif
 
 /* A network's early part, read off the captures as taps (delay, and gain
  * at each Density point 0, 25, 50, 75 and 100 %; a mode's at one), the
@@ -6801,14 +6786,14 @@ static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
  * move with it. */
 typedef struct le_rv_fir {
   int n[2];
-  int nd; /* Density points held: 1 or LE_RV_DENS */
+  int nd; /* Density points held: 1, or 5 evenly from 0 to 100 % */
   double ms[2][LE_RV_FIR];
-  float g[LE_RV_DENS][2][LE_RV_FIR];
+  const float (*g)[2][LE_RV_FIR]; /* [nd] */
 } le_rv_fir;
 
 typedef struct le_rv_room {
-  LE_RV_CONST le_verb_def* tail;
-  LE_RV_CONST le_rv_fir* fir;
+  const le_verb_def* tail;
+  const le_rv_fir* fir;
   int drum; /* a Drum Rack ER room: Lo/Hi, Tail/ER, Density, its Mix law */
   int er_n[2];
   double er_ms[2][LE_RV_ER]; /* the ER taps: delay (ms) and gain */
@@ -6840,7 +6825,6 @@ typedef struct le_fx_rverb {
   le_fx_dyn_head h;
   float last[LE_RV_PARAMS_N];
   int room;    /* the room laid out, -1 for none */
-  int want;    /* the room the setting asks for */
   int rate;    /* the rate it is laid out at */
   uint32_t er_n[2];
   uint32_t er_at[2][LE_RV_ER];
@@ -6903,7 +6887,7 @@ static void le_rv_lay(le_fx_rverb* q, int room, int rate) {
   }
   const le_rv_fir* fir = rm->fir;
   for (int c = 0; c < 2; ++c) {
-    q->fir_n[c] = fir != NULL ? (uint32_t)fir->n[c] : 0u;
+    q->fir_n[c] = (uint32_t)fir->n[c];
     for (uint32_t i = 0; i < q->fir_n[c]; ++i) {
       q->fir_at[c][i] = (uint32_t)(fir->ms[c][i] * (double)rate / 1000.0 + 0.5);
       if (q->fir_at[c][i] > reach) reach = q->fir_at[c][i];
@@ -6921,8 +6905,8 @@ static void le_rv_lay(le_fx_rverb* q, int room, int rate) {
 }
 
 /* The tone filter at setting [v] (the Drum's Lo/Hi or the modes' Bright),
- * and for a Drum room above 50 % Lo/Hi's low cut: a 12 dB/octave high-pass
- * at LE_RV_CUT_HZ at 100 %, LE_RV_CUT_STEP times lower each quarter below
+ * and for a Drum room Lo/Hi's low cut: a 12 dB/octave high-pass at
+ * LE_RV_CUT_HZ at 100 %, LE_RV_CUT_STEP times lower each quarter below
  * (the captures put it at 65 Hz at 100 % and under 8 Hz at 75 %). */
 static void le_rv_tone(le_fx_rverb* q, float v, int drum, int rate) {
   double hz = le_rv_tone_hz((double)v, drum);
@@ -6954,7 +6938,6 @@ static void fx_room_verb_update(void* ks, const float* p, int sr, int settle) {
   const int rate = sr > 0 ? sr : 48000;
   int room = (int)(p[2] * (float)(LE_RV_ROOMS - 1) + 0.5f);
   room = room < 0 ? 0 : room >= LE_RV_ROOMS ? LE_RV_ROOMS - 1 : room;
-  q->want = room;
   const float k = settle ? 1.0f : q->h.k;
   int moving = 0;
   /* A new rate, a first update or a settle lays the room out at once; a
@@ -7019,7 +7002,7 @@ static void fx_room_verb_update(void* ks, const float* p, int sr, int settle) {
   le_fx_step_toward(&q->dens, dt, q->fir_d < 0.0f ? 1.0f : k);
   moving |= q->dens != dt;
   const float d = q->dens;
-  if (d != q->fir_d && rm->fir != NULL) {
+  if (d != q->fir_d) {
     const le_rv_fir* fir = rm->fir;
     int i0 = 0;
     float t = 0.0f;
