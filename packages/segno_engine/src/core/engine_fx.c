@@ -1148,16 +1148,30 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
   o->sm_mix += sc * (p[2] - o->sm_mix);
   o->sm_level += sc * ((1.0f - p[5]) - o->sm_level);
 
-  /* For a latency after a reset the wet voice has played nothing yet: the
-   * mode, and the Dual Octaver's shift, follow the settings at once. Through
-   * the dip below, a PSOLA-mode octaver dropped its wet voice for 30 ms on
-   * every engage (#1482). The window, not just the first sample, so a
-   * setting that lands a callback after the type still takes it. */
+  /* For a latency after a reset, a phase vocoder has played nothing yet:
+   * the mode, and the Dual Octaver's shift, follow the settings at once,
+   * where the dip below dropped a PSOLA-mode octaver's wet voice for 30 ms on
+   * every engage (#1482). A window, not just the first sample, so a setting
+   * that lands up to a latency (1216 frames) after the type still takes
+   * it. PSOLA plays its dry fallback from its first tick, so leaving it takes
+   * the dip as before. On the window's first tick the runtime is the reset's
+   * own, so only the counter changes modes; later a switch clears the frames
+   * analysed at the old settings. */
   const int requested = p[3] >= 0.5f ? 1 : 0;
   if (o->fresh > 0) {
+    const int first = o->fresh == LE_PV_LATENCY;
     --o->fresh;
-    if (requested != o->cur_mode) le_oct_switch_mode(fx, slot, chan, requested);
-    if (dual) o->sm_shift = p[0];
+    const int jump = dual && o->sm_shift != p[0];
+    if (o->cur_mode == 0 && (requested == 1 || jump)) {
+      if (first) {
+        const int ticks = le_oct_ticks_to_work(o);
+        o->cur_mode = requested;
+        le_oct_set_ticks_to_work(o, ticks);
+      } else {
+        le_oct_switch_mode(fx, slot, chan, requested);
+      }
+      if (dual) o->sm_shift = p[0];
+    }
   }
 
   /* Mode switch (D1): equal-power gain dip, ~15 ms per leg — fade the wet out,
@@ -1346,7 +1360,7 @@ void le_fx_octaver_seed_settled(le_fx_state* fx, int slot,
                                 const float* params) {
   if (fx == NULL || params == NULL || slot < 0 || slot >= LE_FX_MAX) return;
   /* The mode needs no seeding: a slot just reset takes its settings' mode
-   * at its first sample (fx_octaver, #1482). */
+   * within a latency of its reset (fx_octaver, #1482). */
   for (int chan = 0; chan < 2; ++chan) {
     le_octaver_state* o = &fx->oct[slot][chan];
     o->sm_shift = params[0];
@@ -7325,12 +7339,17 @@ static void fx_smart_tune_process(le_fx_state* fx, int slot, int sr, int cap,
   float q[8] = {0.0f};
   le_st_settings(q);
   le_octaver_state* o = fx->oct[slot];
-  /* Its tone, mix and level are the kind's own, fixed: held there, not
-   * ramped from a reset's dry, dark state. */
+  /* Its tone, mix and level are the kind's own, fixed: set there after a
+   * reset, not ramped from its dry, dark state. And it always runs PSOLA: a
+   * slot found off it (a state prepared without a reset) takes it at once,
+   * as a reset slot does, not through the mode-switch dip. */
   for (int chan = 0; chan < 2; ++chan) {
-    o[chan].sm_tone = q[1];
-    o[chan].sm_mix = q[2];
-    o[chan].sm_level = 1.0f;
+    if (o[chan].cur_mode != 1 && o[chan].fresh == 0) o[chan].fresh = 1;
+    if (o[chan].fresh > 0) {
+      o[chan].sm_tone = q[1];
+      o[chan].sm_mix = q[2];
+      o[chan].sm_level = 1.0f;
+    }
   }
   const int in = o[1].voiced > o[0].voiced + 0.1f ? 1 : 0;
   q[0] = 0.5f + le_st_correct(&o[0], &o[in], p, cap) / 4800.0f;
