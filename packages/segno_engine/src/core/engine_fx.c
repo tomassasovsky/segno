@@ -6759,27 +6759,33 @@ static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
 
 /* ---- Reverb (LE_FX_ROOM_VERB, #1476) ----
  *
- * The Looper X's Reverb module, fit to its #891 captures (s6rev, s8;
- * docs/plan/2026-10-26-looperx-reverb-measured.md). Its racks show it two
- * ways: the Drum Rack's, with fifteen ER rooms, Lo/Hi, Tail/ER and
- * Density (its other three, which its screen cannot reach, are not
- * measured); and the others', with four modes (HALL, STADIUM, ROOM, BOX) and
- * Bright. The captures put one network behind every room, the Dub-Verb's
- * (its arrivals match to the sample): HALL's delays are 0.841 of the
- * Drum's, STADIUM's the same behind 72 ms, ROOM's 0.43. So each room is:
- * - a le_verb_def for that network at the room's size and pre-delay, with
- *   the room's decay table against Length and a late gain table that holds
- *   its energy near level across Length, as measured;
- * - its own early taps, read off the input history;
+ * The Looper X's Reverb module, fit to its #891 captures (s6rev, s8, s14;
+ * docs/plan/2026-10-25-looperx-reverb-measured.md). Its racks show it two
+ * ways: the Drum Rack's, with ER rooms, Lo/Hi, Tail/ER and Density (twelve
+ * of its fifteen rooms: the last three are off the Looper X's screen and
+ * unmeasured); and the others', with four modes (HALL, STADIUM, ROOM, BOX)
+ * and Bright. The captures put one network behind every room, the
+ * Dub-Verb's (its arrivals match to the sample): HALL's delays are 0.841
+ * of the Drum's, STADIUM's the same behind 72 ms, ROOM's 0.43. Each room:
+ * - its first 40 to 50 ms are the capture's own taps (up to LE_RV_FIR a
+ *   side, read off the input history; the Drum tail's at five Density
+ *   points), which do not move with Length on any capture;
+ * - behind them a le_verb_def network at the room's size: three diffusers
+ *   at the network's own delays, heard as they ring and feeding eight
+ *   lines with the room's decay table against Length and a late gain
+ *   table, fit to the captures' envelopes at every captured Length;
+ * - the Drum's rooms add their ER taps (16 a side, from the ER-only
+ *   captures);
  * - a first-order low-pass on the whole wet at 1010 x 20.5^Bright Hz
  *   (bilinear, the same corner at every rate; within 0.2 kHz of the seven
- *   captured Bright settings); Lo/Hi sets the same filter from its own
- *   five captured corners, and above 50 % adds a low cut;
+ *   captured Bright settings); Lo/Hi sets it from its own five captured
+ *   corners, and above 50 % adds a low cut;
  * - the Drum's Tail/ER and Mix are equal-power over a quarter turn (at
  *   Mix 100 % the dry is still 0.707); the modes' Mix over a half turn.
- * A room change dips the wet over the smoothing time and lays the network
- * out again for the new room (its geometry is the room's): the tail
- * restarts. The lines live in the slot's two one-second rings. */
+ * What a setting moves ramps per frame; a room change fades the old room
+ * out, lays the network out again (its geometry is the room's) and fades
+ * the new room's input in. The lines live in the slot's two one-second
+ * rings. */
 #define LE_RV_ROOMS 16
 #define LE_RV_ER 16
 #define LE_RV_FIR 64 /* the most taps a network's early part runs a side */

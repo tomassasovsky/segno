@@ -65,6 +65,10 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   // (3.27 us, the phaser at full depth, its heaviest mode), x 1.75. A mode
   // change runs both modes for 1024 frames.
   TrackEffectType.mod: 90,
+  // A first estimate from the M4 Pro bench (BOX, the most early taps, its
+  // Length gliding) scaled by the Dub reverb's CI-to-M4 ratio, x 1.75;
+  // CI arm64's own table replaces it.
+  TrackEffectType.roomVerb: 700,
 };
 
 /// What a kind on the hop charges, in microseconds a block: its frame's work
