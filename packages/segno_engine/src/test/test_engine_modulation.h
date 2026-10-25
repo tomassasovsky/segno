@@ -425,9 +425,11 @@ static void test_mod_change_during_a_fade_lands(void) {
   CHECK(least < 0.01f);
 }
 
-/* The Mod is the identity, and a lane holding it prints, where it does
- * nothing: Depth or Mix at 0 % in the chorus, phaser and flanger (no sweep,
- * or no voice), Depth 0 % in the tremolo (whose Mix does nothing). */
+/* A lane holding the Mod prints where nothing in it moves: at Mix 0 % the
+ * chorus, phaser and flanger are the identity, and so is the tremolo at
+ * Depth 0 % (its Mix does nothing); at Depth 0 % the chorus, phaser and
+ * flanger are fixed filters, their output the same whatever the LFO's
+ * phase, even after a Depth that swept has glided down to 0 %. */
 static void test_mod_free_running_rule(void) {
   printf("test_mod_free_running_rule\n");
   float p[LE_FX_PARAMS];
@@ -461,6 +463,38 @@ static void test_mod_free_running_rule(void) {
   for (int i = 0; i < n; ++i) CHECK(y[i] == x[i]);
   free(x);
   free(y);
+  /* Depth swept at 60 %, then 0 %: a second on, two impulse responses
+   * 0.37 s apart (no whole number of LFO periods) are the same. */
+  const int len = 20000, gap = MOD_SR * 37 / 100;
+  const int total = 2 * MOD_SR + gap + len;
+  float* in = (float*)calloc((size_t)total, sizeof(float));
+  float* out = (float*)malloc(sizeof(float) * (size_t)total);
+  const int at1 = 2 * MOD_SR, at2 = at1 + gap;
+  in[at1] = 1.0f;
+  in[at2] = 1.0f;
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  const int32_t types[1] = {LE_FX_MOD};
+  for (int m = 0; m < 3; ++m) {
+    le_fx_state* fx = dyn_state(LE_FX_MOD, MOD_SR);
+    fx->clocked = 1;
+    mod_params(p, 0.5f, 0.6f, 0.5f, modes[m]);
+    for (int i = 0; i < total; ++i) {
+      if (i == MOD_SR / 4) p[1] = 0.0f;
+      memcpy(params[0], p, sizeof(p));
+      fx->clock = (uint32_t)i;
+      float l = in[i], r = in[i];
+      fx_apply_chain(fx, MOD_SR, MOD_SR, &l, &r, 1, types, params, NULL);
+      out[i] = l;
+    }
+    dyn_free(fx);
+    int same = 1;
+    for (int i = 0; i < gap && i < len; ++i) {
+      if (out[at1 + i] != out[at2 + i]) same = 0;
+    }
+    CHECK(same);
+  }
+  free(in);
+  free(out);
 }
 
 /* Every mode runs at 44.1, 96 and 192 kHz at its extremes without a
