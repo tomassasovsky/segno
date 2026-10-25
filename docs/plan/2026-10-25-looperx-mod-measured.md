@@ -1,4 +1,4 @@
-# The Looper X's Mod pedal, measured (#891 sessions s6trem and s6mod)
+# The Looper X's Mod pedal, measured (#891 sessions `s6trem` and `s6mod`)
 
 Measured on the owner's emulated Looper X 1.0.2 in the rebuilt #891 rig on
 2026-10-24 and 2026-10-25. Numbers and formulas only: no vendor code,
@@ -9,7 +9,7 @@ these is `LE_FX_MOD` (#1470).
 
 Gated passes through Track 1 PRE, one pedal on, Master Vol 0.0 dB, the
 Guitar Rack (CHORUS, PHASER, FLANGER) or the Studio Rack (Chorus,
-Tremolo) with no preset loaded. Stimulus `tremstim` (48 kHz): an impulse,
+Tremolo) with no preset loaded. Stimulus `tremstim`, the tremolo stimulus (48 kHz): an impulse,
 12 s of a steady 1 kHz sine at -12 dBFS, then 6 s of white noise. The
 Looper X's output reaches the capture 2 samples after its input; every
 delay below has that removed. Both outputs are identical for the mono
@@ -28,13 +28,13 @@ input in every Guitar pass.
 
 ## Passes
 
-s6trem: 0-7 CHORUS, 8-15 PHASER, 16-23 FLANGER (each at Rate, Depth, Mix
+`s6trem`: 0-7 CHORUS, 8-15 PHASER, 16-23 FLANGER (each at Rate, Depth, Mix
 50 %, then Rate 0, 100, 25 %, Depth 0, 100 %, Mix 0, 100 %); 24-29 Studio
 chorus (24-27 with Doubler Mix 100 %, 28-29 at 0 %); 30-40 Studio tremolo
 (30-34 Rate 25 % at Depth 0, 25, 50, 75, 100 %; 35-38 Depth 100 % at Rate
 0, 50, 75, 100 %; 39-40 with Doubler Mix 100 %).
 
-s6mod (the settings s6trem left between): 0-3 CHORUS (50 % again, Depth
+`s6mod` (the settings `s6trem` left between): 0-3 CHORUS (50 % again, Depth
 25, 75 %, Rate 75 %); 4-9 PHASER (50 % again, Depth 25, 75 %, Rate 75 %,
 Mix 25, 75 %); 10-17 FLANGER (50 % again, Depth 25, 75, 10, 90 %, Rate
 75 %, Mix 25, 75 %). The repeated 50 % passes match the first ones.
