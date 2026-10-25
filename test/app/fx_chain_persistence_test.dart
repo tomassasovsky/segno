@@ -294,6 +294,30 @@ void main() {
     expect((result.entries.single as BuiltInEffect).params.first, .8);
   });
 
+  test('an on-screen chain power write supersedes a held pedal binding on '
+      'the same chain once the engine confirms it, and tells the '
+      'controller (#1452)', () async {
+    when(
+      () => looper.settleFxRecipes(
+        waitForCallback: true,
+        cancelled: any(named: 'cancelled'),
+      ),
+    ).thenAnswer((_) async => EngineResult.ok);
+    final told = <(Object, double)>[];
+    projection
+      ..onOrdinaryWrite = ((target, value) => told.add((target, value)))
+      ..replace(powers: {const FxChainTarget(address): false}, parameters: {})
+      ..ordinaryChain(address, enabled: true);
+    await pumpEventQueue();
+
+    final result = projection.project(
+      address,
+      FxChainEnvelope(entries: [held]),
+    );
+    expect(result.chainEnabled, isTrue);
+    expect(told, [(const FxChainTarget(address), 1.0)]);
+  });
+
   test('session replacement cancels stale awaited settings capture', () async {
     final ticket = projection.beginPending();
     final saving = saveTrackFxChain(

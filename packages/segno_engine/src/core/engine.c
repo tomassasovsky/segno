@@ -1344,6 +1344,7 @@ void le_engine_mark_device_lost(le_engine* engine) {
 static void le_fx_seed_owner(le_fx_state* fx, le_engine* engine, int32_t seed) {
   fx->hop_seed = seed;
   fx->clock_src = &engine->a_fx_frame;
+  fx->tempo = &engine->fx_tempo;
 }
 
 le_engine* le_engine_create(void) {

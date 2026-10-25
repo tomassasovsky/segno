@@ -324,7 +324,7 @@ static uint64_t le_ca_snapshot_fp(int32_t count, int32_t chain_on,
    * hop the print is rendered against (#941), as le_lane_pre_fx_fingerprint
    * folds it. */
   for (int32_t i = 0; i < count && chain_on; ++i) {
-    if (types[i] == LE_FX_OCTAVER && enabled[i]) {
+    if (le_fx_type_hops(types[i]) && enabled[i]) {
       h = le_fx_fp_u32(h, top & (uint32_t)(LE_PV_HOP - 1));
       break;
     }
@@ -634,7 +634,7 @@ static int le_ca_pre_has_octaver(_Atomic int32_t* a_type,
   if (pre > count) pre = count;
   if (pre > LE_FX_MAX) pre = LE_FX_MAX;
   for (int32_t s = 0; s < pre; ++s) {
-    if (load_i32(&a_type[s]) == LE_FX_OCTAVER && load_i32(&a_enabled[s])) {
+    if (le_fx_type_hops(load_i32(&a_type[s])) && load_i32(&a_enabled[s])) {
       return 1;
     }
   }
@@ -849,7 +849,7 @@ static int le_cache_hop_unprintable(const int32_t* types,
                                     int32_t count, int32_t len) {
   if (!chain_on || len <= 0 || len % LE_PV_HOP == 0) return 0;
   for (int32_t s = 0; s < count; ++s) {
-    if (types[s] == LE_FX_OCTAVER && enabled[s]) return 1;
+    if (le_fx_type_hops(types[s]) && enabled[s]) return 1;
   }
   return 0;
 }
@@ -857,9 +857,10 @@ static int le_cache_hop_unprintable(const int32_t* types,
 /* Whether a printed run holds a free-running modulator (#887 part 6: the
  * chorus's and the doubler's LFOs run on whatever the loop does): each lap
  * of it sounds different, so one lap's print would repeat where live does
- * not. Such a chain plays live. A bypassed one, one at 0 % mix, or a chain
- * switched off prints, as the signal passes through it; turning it back up
- * changes the key and re-checks. */
+ * not. Such a chain plays live. A bypassed one, one at 0 % mix (or, for
+ * the Mod, at 0 % depth, where it is a fixed filter), or a chain switched
+ * off prints, as nothing in it moves; turning it back up changes the key
+ * and re-checks. */
 static int le_cache_free_running(const int32_t* types, const int32_t* enabled,
                                   const float params[LE_FX_MAX][LE_FX_PARAMS],
                                   int32_t chain_on, int32_t count, int sr) {

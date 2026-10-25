@@ -188,6 +188,31 @@ void main() {
       expect(fx, isNot(equals(fx.copyWith(source: const {'Mode': 0}))));
     });
 
+    test('the rack path round-trips by name, counts in equality and is '
+        'omitted on no path', () {
+      final fx = BuiltInEffect(
+        type: TrackEffectType.ambVerb,
+        rackPath: FxRackPath.amb,
+      );
+      final json = fx.toJson();
+      expect(json['rackPath'], 'amb');
+      final decoded = BuiltInEffect.fromJson(
+        jsonDecode(jsonEncode(json)) as Map<String, dynamic>,
+      );
+      expect(decoded, fx);
+      expect(decoded.hashCode, fx.hashCode);
+      expect(fx, isNot(equals(fx.copyWith(rackPath: FxRackPath.dub))));
+      final none = BuiltInEffect(type: TrackEffectType.ambVerb).toJson();
+      expect(none.containsKey('rackPath'), isFalse);
+      expect(BuiltInEffect.fromJson(none).rackPath, FxRackPath.none);
+      expect(
+        BuiltInEffect.fromJson(const {'type': 23, 'rackPath': 7}).rackPath,
+        FxRackPath.none,
+      );
+      // The native path bits (le_fx_rack_edge).
+      expect([for (final p in FxRackPath.values) p.bits], [0, 4, 8]);
+    });
+
     test('an entry with no preset writes neither key and decodes to none', () {
       final json = BuiltInEffect(type: TrackEffectType.drive).toJson();
 
@@ -434,9 +459,27 @@ void main() {
         // The Lo-Fi Rack's vinyl, degrade and low-pass filter.
         TrackEffectType.vinyl: [0.4, 0.35, 0.3, 0.9],
         TrackEffectType.degrade: [1.0, 1.0, 1.0],
-        TrackEffectType.lpf: [1.0, 1.0],
+        TrackEffectType.lpf: [1.0, 1.0, 0.0, 0.4],
         // The Guitar Rack's spring: 2.00 s, 50 %.
         TrackEffectType.spring: [0.30103, 0.5],
+        // The Dub Rack's reverbs as a fresh rack has them: Dub-Verb Dec 0.7,
+        // Vol 20 %; Amb-Verb Dec 0.2, Vol 40 %, Amb-Dub Mix 40 %.
+        TrackEffectType.dubVerb: [0.7, 0.2],
+        TrackEffectType.ambVerb: [0.2, 0.4, 0.4],
+        // The Guitar Rack's Whammy: heel down, range -12.
+        TrackEffectType.whammy: [0.0, 0.0],
+        // The Rhythmic Rack's Pumper: 1/4, 70 %.
+        TrackEffectType.pumper: [0.3, 0.7],
+        // The Rhythmic Rack's Slicer: AABB, 1/16, 100 %.
+        TrackEffectType.slicer: [0.0, 0.5, 1.0],
+        // The Looper X's delay: 1/8D, 50 %, 20 %, DIGI.
+        TrackEffectType.modeDelay: [8 / 19, 0.5, 0.2, 0.0],
+        // Ed's Rack's Dual Octaver: down, Octave 1 at 100 %, all wet.
+        TrackEffectType.dualOctaver: [0.0, 1.0, 1.0, 0.0],
+        // The Guitar Rack's Amp: every control at 50 %, the 4x12".
+        TrackEffectType.ampCab: [0.5, 0.5, 0.5, 0.5, 7 / 11],
+        // The Mod: every control at 50 %, the chorus.
+        TrackEffectType.mod: [0.5, 0.5, 0.5, 0.0],
       };
       for (final type in TrackEffectType.values) {
         expect(type.defaultParams, cells(expected[type]!), reason: type.name);
@@ -471,18 +514,22 @@ void main() {
 
     test('only the chosen mappings carry the taper-unverified flag', () {
       // The seven built-ins are segno's own; the Looper X kinds' ranges are
-      // the Looper X's, and the EQ, dynamics, doubler, wah, vinyl, degrade
-      // and low-pass filter are measured (#891, #1445). The controls whose
-      // effect is chosen or inferred from one capture carry it: the chorus,
-      // the overdrive's tone (captured at 50 % only) and the distortion
-      // (fit to the Studio Rack's, used for Lo-Fi's too).
+      // the Looper X's, and the EQ, dynamics, doubler, chorus, wah, vinyl,
+      // degrade, low-pass filter and Mod are measured (#891, #1445). The
+      // controls whose
+      // effect is chosen or inferred from one capture carry it: the
+      // overdrive's tone (captured at 50 % only), the distortion (fit to
+      // the Studio Rack's, used for Lo-Fi's too) and the Dual Octaver's
+      // levels (Octave 1 always at 100 % in the presets; Octave 2's down
+      // voice inferred).
       for (final type in TrackEffectType.values) {
         for (final p in type.params) {
           expect(
             p.taperUnverified,
-            type == TrackEffectType.chorus ||
-                type == TrackEffectType.distortion ||
-                (type == TrackEffectType.overdrive && p.key == 'tone'),
+            type == TrackEffectType.distortion ||
+                (type == TrackEffectType.overdrive && p.key == 'tone') ||
+                (type == TrackEffectType.dualOctaver &&
+                    (p.key == 'octave_1_vol' || p.key == 'octave_2_vol')),
             reason: '${type.name}.${p.key}',
           );
         }
@@ -501,6 +548,21 @@ void main() {
         expect(ratio.settingFor(ratio.valueAt(v)), closeTo(v, 1e-9));
       }
       expect(ratio.valueAt(0.758), closeTo(4.0, 0.01));
+    });
+
+    test("the reverbs' decay is the Looper X's reverb-time taper", () {
+      // (v + 0.45) / (1 - v), capped at 144 s; a time outside the range
+      // clamps to its end.
+      final decay = TrackEffectType.dubVerb.params[0];
+      expect(decay.unit, FxParamUnit.seconds);
+      for (var v = 0.0; v < 0.99; v += 0.1) {
+        expect(decay.valueAt(v), closeTo((v + 0.45) / (1 - v), 1e-9));
+        expect(decay.settingFor(decay.valueAt(v)), closeTo(v, 1e-9));
+      }
+      expect(decay.valueAt(1), 144);
+      expect(decay.settingFor(-5), 0);
+      expect(decay.settingFor(0.1), 0);
+      expect(decay.settingFor(1000), decay.settingFor(144));
     });
   });
 

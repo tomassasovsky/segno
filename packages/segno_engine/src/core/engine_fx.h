@@ -77,8 +77,10 @@ extern "C" {
  * its last element. */
 #define LE_PV_OUT LE_PV_LATENCY
 /* A frame's state between stages, per channel: the window (reused for the
- * inverse transform), the spectrum, magnitude, true frequency and envelope. */
-#define LE_PV_SCRATCH (LE_PV_N + 5 * LE_PV_BINS)
+ * inverse transform), the spectrum, magnitude, true frequency and envelope;
+ * then a second voice's synthesis spectrum and its running phases (the Dual
+ * Octaver's Octave 2, #1464), which persist from frame to frame. */
+#define LE_PV_SCRATCH (LE_PV_N + 8 * LE_PV_BINS)
 
 /* Analysis-hop stagger (#915). Every octaver instance used to start its hop
  * counter at 0, so all instances ran their four length-LE_PV_N FFTs on the
@@ -172,17 +174,50 @@ static inline int32_t le_fx_all_tracks_hop_seed(int32_t bus) {
 
 /* --- PSOLA octaver (mode p3 >= 0.5) tuning ---------------------------------- */
 #define LE_PSOLA_AHOP 256    /* re-run pitch detection every this many samples */
-#define LE_PSOLA_WIN 1600    /* YIN analysis window (integration + max lag) */
-#define LE_PSOLA_MAXLAG 800  /* longest lag searched (60 Hz at 48 kHz) */
+#define LE_PSOLA_MAXLAG 800  /* the YIN detector's longest lag (le_yin_begin) */
+/* Pitch detection (#913). A coarse YIN pass runs on the window decimated by
+ * D = ceil(rate / LE_PSOLA_RATE), 1..LE_PSOLA_DMAX (2 at 44.1 and 48 kHz, 4 at
+ * 96 kHz, 8 at 192 kHz): LE_PSOLA_DWIN decimated samples, 33 ms or more,
+ * searched from LE_PSOLA_MIN_HZ to LE_PSOLA_MAX_HZ at every rate up to
+ * 192 kHz. A narrow pass over the last LE_PSOLA_RAW device samples refines a
+ * voiced one to a device sample, as the tuner does. A pass starts every
+ * max(1, D / 2) hops, about every 5 ms at every rate, and averages
+ * LE_PSOLA_WORK_PER_TICK / max(1, D / 2) iterations a tick (a credit, carried
+ * tick to tick), so it spreads over its hops instead of landing in one
+ * callback: a whole pass is at most ~202k (the decimation, 160k of coarse
+ * lags, the device-rate copy and up to 33k of refinement at 192 kHz) against
+ * 256 x 896 = 229k a span. A 64-frame callback carries at most 64 x 896 =
+ * 57k of it (at 48 kHz; 29k at 96 kHz), plus one lag of overshoot. */
+#define LE_PSOLA_RATE 24000 /* LE_PSOLA_DMAX is in engine_private.h */
+#define LE_PSOLA_DWIN 800
+#define LE_PSOLA_MIN_HZ 60
+#define LE_PSOLA_MAX_HZ 1000
+#define LE_PSOLA_RAW 2048
+#define LE_PSOLA_WORK_PER_TICK 896
+/* Where PSOLA's detection state starts in the octaver scratch (16-byte
+ * aligned, after the frame arrays), and the scratch's whole length. */
+#define LE_PS_STATE_OFF ((LE_PV_SCRATCH + 3) & ~3)
+#define LE_PV_SCRATCH_ALLOC \
+  (LE_PS_STATE_OFF + (int)((sizeof(le_psola_pass) + 3) / 4))
+static inline le_psola_pass* le_ps(le_octaver_state* o) {
+  return (le_psola_pass*)(void*)(o->scratch + LE_PS_STATE_OFF);
+}
 #define LE_PSOLA_THRESH 0.15f /* YIN absolute threshold for the first dip */
-#define LE_PSOLA_THMAX 300   /* grain half-width cap: 2*THMAX < LE_PV_N (fits OLA) */
+/* Grain half-width cap. A grain is laid around LE_PV_N / 2 ahead of the read
+ * pointer in the LE_PV_N-long OLA accumulator, so its half-width must stay
+ * under LE_PV_N / 2: 500 keeps grains overlapping for periods up to 1000
+ * samples (48 Hz at 48 kHz, 96 Hz at 96 kHz). A longer period, which the
+ * detector reaches at 96 kHz and up, is rebuilt from grains that no longer
+ * meet; covering it would take a longer latency. */
+#define LE_PSOLA_THMAX 500
 /* How far behind the head PSOLA reads its input, so its latency matches the
  * split phase vocoder's (LE_PV_LATENCY). */
 #define LE_PSOLA_LAG (LE_PV_LATENCY - LE_PV_N)
-/* The deepest FIFO read of either mode (PSOLA's pitch window, which lies
- * past the dry tap and the PV window): a smaller ring would wrap onto recent
- * input, so fx_octaver passes such a slot through dry. */
-#define LE_OCT_REACH (LE_PSOLA_LAG + LE_PSOLA_WIN)
+/* The deepest FIFO read of either mode (PSOLA's pitch window at the largest
+ * decimation, which lies past the dry tap and the PV window): a smaller ring
+ * would wrap onto recent input, so fx_octaver passes such a slot through
+ * dry. */
+#define LE_OCT_REACH (LE_PSOLA_LAG + LE_PSOLA_DMAX * LE_PSOLA_DWIN)
 
 /* The cadence of a heap-state kind's update hook (le_fx_kinds), in engine
  * frames: it runs once per this many frames of the engine clock, at a phase
@@ -261,32 +296,40 @@ void le_fx_entry_reset(le_fx_state* fx, int slot);
  * callers space these (see LE_FX_ENABLE_CLEAR_SPACING). */
 void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap);
 
-/* Settles slot [slot] for an entry that has just replaced another there (a
- * recipe's renewed slot): its DSP state is reset, and a slot holding a tail
- * (delay rings, or a draining kind's ring) re-enters through the enable
- * edge, which clears them spaced by
- * LE_FX_ENABLE_CLEAR_SPACING and ramps the new entry in, so the old entry's
- * tail never sounds through the new one and no one callback clears every
- * ring. Audio thread (le_fx_recipe_apply). */
-void le_fx_entry_renew(le_fx_state* fx, int slot, int32_t type);
+/* Settles slot [slot] for an entry of [type] that has just replaced another
+ * there (a recipe's renewed slot): its DSP state is reset, and the slot
+ * re-enters through the enable edge when it was [sounding] (inside the chain's
+ * active count, so the chain was running the entry it held) or holds a tail
+ * (delay rings, or a draining kind's ring). The edge ramps the new entry in
+ * over LE_FX_ENABLE_RAMP_MS, so it never switches in at full in one sample
+ * over the one the chain was running (#1452), and clears the rings spaced by
+ * LE_FX_ENABLE_CLEAR_SPACING, so the old entry's tail never sounds through
+ * the new one and no one callback clears every ring. A slot past the old
+ * count keeps its ramp: a slot leaving the chain dropped its enabled bit, so
+ * the per-buffer sweep parked it at bypass, and a slot that never held an
+ * entry takes the new one settled from its first frame, as a render seeds it.
+ * Audio thread (le_fx_recipe_apply). */
+void le_fx_entry_renew(le_fx_state* fx, int slot, int32_t type, int sounding);
 
 /* Whether a bypassed slot of [type] drains its tail (a ring-owning type with
  * no reported latency: delay, echo, reverb) rather than crossfading out
  * (memoryless or latency-bearing types, and hosted plugins). */
 int le_fx_type_drains(int32_t type);
 
-/* Whether [type] runs a free-running modulator (the chorus's LFO, the
- * doubler's random delays, the vinyl's noise, the degrade's hold, the LPF's
- * self-oscillation), which sounds different on each lap of a loop: a chain
- * holding one is never wet-cached, since one lap's print would repeat where
- * live does not. Any thread. */
+/* Whether [type] runs a free-running modulator (the chorus's and the Mod's
+ * LFOs, the doubler's random delays, the vinyl's noise, the degrade's hold, the
+ * LPF's self-oscillation or its beat-locked LFO), which sounds different
+ * on each lap of a loop: a chain holding one is never wet-cached, since one
+ * lap's print would repeat where live does not. Any thread. */
 int le_fx_type_free_running(int32_t type);
 
 /* Whether an entry of [type] at settings [p] (its first
  * le_fx_param_width(type) cells), at engine rate [sr], runs a free-running
  * modulator that is heard: le_fx_type_free_running, with its mix (or the
  * vinyl's noise, the degrade's hold below [sr], the LPF's resonance past
- * its oscillation point) actually doing something; the doubler always is.
+ * its oscillation point or its LFO depth above 0; the Mod's depth and mix,
+ * or the depth alone for its tremolo) actually doing something; the
+ * doubler always is.
  * Any thread. */
 int le_fx_entry_free_running(int32_t type, const float* p, int sr);
 
@@ -321,9 +364,28 @@ void le_fx_rack_reset(le_fx_state* fx, int slot);
  *
  * The analysis-hop schedule needs no settling: it follows the clock the
  * render sets (le_fx_state::clock), which reproduces the live one. Caller
- * passes an octaver slot (no type check). Control thread / offline only,
- * after le_fx_entry_reset. */
+ * passes a slot on the hop (le_fx_type_hops) and the octaver settings it
+ * runs (le_fx_octaver_settings, whose cell 5 is the wet voice's cut, so raw
+ * octaver params, zero there, seed it at full level); no type check.
+ * Control thread / offline only, after le_fx_entry_reset. */
 void le_fx_octaver_seed_settled(le_fx_state* fx, int slot, const float* params);
+/* Whether [type] runs the octaver's kernel on the hop clock (the octaver,
+ * the Whammy and the Dual Octaver): what the prints and caches key the hop
+ * phase on. */
+int le_fx_type_hops(int32_t type);
+/* Puts a Pumper slot's depth glide at [params]'s, and its duck at the one
+ * the beat of the frame [fx] is at gives, as a slot that has been running
+ * is: what an offline render seeds a Pumper with, once its tempo and clock
+ * are set. */
+void le_fx_pumper_seed_settled(le_fx_state* fx, int slot, const float* params,
+                               int sr);
+/* The octaver settings slot [s] of [type] runs: [params] themselves for the
+ * octaver (cells 5 to 7 zero: no cut, a linear mix, no second voice), the
+ * Whammy's pedal and range mapped for the Whammy, and the Dual Octaver's
+ * high mode, Octave 1 level, mix and Octave 2 level mapped for it (its cut,
+ * 1 in cell 6: an equal-power mix, a switched shift and a second voice, and
+ * Octave 2's level in cell 7). [out] holds LE_FX_PARAMS. */
+void le_fx_octaver_settings(int32_t type, const float* params, float* out);
 
 /* Settles chain slot [slot]'s enable-crossfade runtime at fully BYPASSED.
  * For a slot the chain will NOT process while its effective enabled bit is 0
@@ -405,7 +467,7 @@ int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap);
  *
  * LE_FX_WIDTHS is one past the last le_fx_type code; engine_fx.c checks it
  * against its effect table. */
-#define LE_FX_WIDTHS 22
+#define LE_FX_WIDTHS 31
 extern const uint8_t le_fx_widths[LE_FX_WIDTHS];
 static inline int32_t le_fx_param_width(int32_t type) {
   return type > 0 && type < LE_FX_WIDTHS ? (int32_t)le_fx_widths[type] : 0;
@@ -428,8 +490,9 @@ void le_fx_defaults(int32_t type, float out[LE_FX_PARAMS]);
  * le_psola_detect_band split at its two pausable points, so a caller that
  * cannot afford the whole (lags x integration) difference function in one
  * callback can spread it. See le_yin_pass in engine_private.h for why, and
- * tuner_slice in engine_process.c for the only sliced caller. All three run on
- * the audio thread and allocate nothing.
+ * tuner_slice in engine_process.c and le_psola_pass_tick in engine_fx.c for
+ * the two sliced callers. All three run on the audio thread and allocate
+ * nothing.
  *
  * Sets up a pass over `n` contiguous samples of `x` at `sr` Hz, searching
  * [min_hz, max_hz]. `dp` is the caller's d'(tau) scratch, `dp_cap` its length
@@ -453,6 +516,30 @@ int le_yin_step(le_yin_pass* p, long budget);
  * samples to *out_period and the voicing confidence in [0,1] to *out_voiced,
  * and returns 1 when the frame reads as confidently voiced. */
 int le_yin_finish(const le_yin_pass* p, float* out_period, float* out_voiced);
+
+/* --- Device-rate refinement of a coarse period ------------------------------
+ *
+ * A coarse period from a decimated pass is accurate to a fraction of a
+ * DECIMATED sample. The refinement walks the plain difference function at the
+ * device rate over lags [coarse - span, coarse + span + 1] and interpolates
+ * the minimum. Plain difference rather than YIN's normalized form: the octave
+ * decision is the coarse pass's, and this pass only locates a minimum it is
+ * already next to. Shared by the tuner and the PSOLA octaver; all three run
+ * on the audio thread and allocate nothing.
+ *
+ * Opens a refinement of [coarse] (device samples) over a window of [n]
+ * samples. Returns 0, nothing to refine, when the lags would fall under 2 or
+ * past n / 2 (fewer than two periods in the window): the caller keeps the
+ * coarse period. [span] is at most LE_REFINE_SPAN_MAX. */
+int le_refine_begin(le_lag_refine* r, float coarse, int span, int n);
+
+/* Accumulates lags over window [x] until at least [budget] inner iterations
+ * are spent (one whole lag always runs). Returns 1 once every lag is in. */
+int le_refine_step(le_lag_refine* r, const float* x, long budget);
+
+/* The completed refinement's minimum, interpolated, or [coarse] when the
+ * minimum sits on an edge of the searched band. */
+float le_refine_finish(const le_lag_refine* r, float coarse);
 
 #ifdef __cplusplus
 }

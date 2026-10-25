@@ -722,6 +722,73 @@ typedef enum le_fx_type {
    * recirculating, dispersive spring, band-limited to 200 Hz - 4 kHz; fit to
    * the Guitar Rack's Spring (#891). Drains its tail on bypass. */
   LE_FX_SPRING = 21,
+  /* DUB_VERB: p0 decay (the Looper X's 0.45 to 144 s display), p1 volume (a
+   * partial crossfade: the dry falls to 0.66 as the wet rises). A bright,
+   * slowly thickening reverb fit to the Dub Rack's Dub-Verb (#891). Drains
+   * its tail on bypass. */
+  LE_FX_DUB_VERB = 22,
+  /* AMB_VERB: p0 decay (as DUB_VERB's), p1 volume (the dry falls to 0.71),
+   * p2 Amb-Dub Mix, which the kernel does not read: it mixes the Dub Rack's
+   * parallel paths (LE_FX_RACK_DUB_PATH). A reverb with a strong early echo and
+   * shorter lows, fit to the Dub Rack's Amb-Verb (#891). Drains its tail on
+   * bypass. */
+  LE_FX_AMB_VERB = 23,
+  /* WHAMMY: p0 pedal (0..100 %), p1 range (a choice: -12 or +12
+   * semitones). The octaver's phase vocoder, fully wet with the tone open
+   * and the formants moving with the pitch, shifted by range x pedal^1.39:
+   * the Guitar Rack's Whammy, whose pedal at 50 % gives 4.6 of its 12
+   * semitones (#891). */
+  LE_FX_WHAMMY = 24,
+  /* PUMPER: p0 rate (a choice of 11 note values: Bar, 1/2, 1/2T, 1/4, 1/4T,
+   * 1/8, 1/8T, 1/16, 1/16T, 1/32, 1/32T), p1 depth. A ducking envelope on
+   * the beat, one per note value at the song tempo (120 BPM with none), of
+   * the Rhythmic Rack's measured shape: a dip of 6, 20 and 40 dB at 30, 70
+   * and 100 % depth that recovers by three quarters of the period (#891).
+   * Locked to the beat, so a lane holding one is never printed. */
+  LE_FX_PUMPER = 25,
+  /* SLICER: p0 pattern (a choice of 20, in the Looper X's order: AABB,
+   * ABCC, AACD, ABC_, A_C_, A_CC, A___C___, ABcccc, AAccdd, AB__dd, AA__dd,
+   * ABC<, AB_<, AA_<, A_B_C<, AB<<, <<<<, AABB Fd1, AABB Fd2, AABB Fd3),
+   * p1 step (a choice of 9 note values: 1/4, 1/4T, 1/8, 1/8T, 1/16, 1/16T,
+   * 1/32, 1/32T, 1/64), p2 mix. Plays the pattern on the beat: a capital letter
+   * is a step and a lower-case one half a step; a letter's first slice is
+   * the live input and each repeat replays it from its start; _ silences a
+   * step; < plays the step before backwards. A slice ends with a 4 ms fade
+   * (#891). The three Fd patterns are not modelled (no capture and no
+   * factory preset uses them): they pass the input through. Locked to the
+   * beat, so a lane holding one is never printed. */
+  LE_FX_SLICER = 26,
+  /* MODE_DELAY: p0 time (a choice of 20 note values: 1/32, 1/16T, 1/32D,
+   * 1/16, 1/8T, 1/16D, 1/8, 1/4T, 1/8D, 1/4, 2/4T, 1/4D, 2/4, 5/8, 3/4, 7/8,
+   * 4/4, 5/4, 6/4, 8/4), p1 feedback, p2 mix, p3 mode (a choice of 12:
+   * DIGI, DIGI L/R, DIGI GRV, DAMPED, DAMPED L/R, DAMPED GRV, RESO LO,
+   * RES LO L/R, RES LO GRV, RESO HI, RES HI L/R, RES HI GRV). The Looper X's
+   * delay at the song tempo, its voicings and stereo timings fit to the
+   * captures (#891), on a line of up to 4 s (longer times hold at 4 s).
+   * On the song's tempo, so a lane holding one is never printed. */
+  LE_FX_MODE_DELAY = 27,
+  /* DUAL_OCTAVER: p0 high mode (a choice of 2: off, on), p1 Octave 1 level,
+   * p2 mix, p3 Octave 2 level. The Looper X's Dual Octaver on the octaver's
+   * phase vocoder (#891): Octave 1 one octave down (off) or up (on),
+   * Octave 2 two octaves down or up (down inferred, #1464), both voices
+   * from one analysis, the mix an equal-power crossfade. */
+  LE_FX_DUAL_OCTAVER = 28,
+  /* AMP_CAB: p0 drive, p1 bass, p2 treble, p3 modern, p4 cabinet (a choice
+   * of 12: D.I., BRIT, 1x8", 1x12", 2x10", 2x12", 4x10", 4x12", 1x15",
+   * BASS, 4x10", RADIO). The Looper X's Amp, fit to the #891 captures: an
+   * input voicing, a square-law stage, Modern's voicing, a clipper whose
+   * sides limit at different levels, Bass and Treble shelves after it, and
+   * the cabinet's measured response (zero-latency convolution; the first
+   * 4x10" plays the 2x12", as on the Looper X). Mono: the pair's average in,
+   * both sides out. */
+  LE_FX_AMP_CAB = 29,
+  /* MOD: p0 rate, p1 depth, p2 mix, p3 mode (a choice of 4: CHORUS, PHASER,
+   * FLANGER, Tremolo). The Looper X's Mod pedal, fit to the #891 captures:
+   * the chorus kind's voice; a four-stage phaser; a flanger whose repeats
+   * lose their bass and treble; and a square tremolo with a fast rise and a
+   * 30 ms fall, whose Depth sets the gain of its off part (Mix does nothing
+   * there). A mode change crossfades over 1024 frames. */
+  LE_FX_MOD = 30,
 } le_fx_type;
 
 /* ---- Built-in effect parameter descriptors (#1378) ----
@@ -755,6 +822,9 @@ typedef enum le_fx_param_curve {
   /* 1 / (1 / at_min + (1 / at_max - 1 / at_min) * v): the reciprocal is
    * linear (the Looper X compressor's ratio, 1 / (1 - v / 1.0101)). */
   LE_FX_CURVE_RECIPROCAL = 2,
+  /* (v + at_min) / (1 - v), at most at_max: the Looper X's reverb time
+   * display (0.45 s at 0, 144 s near 1). */
+  LE_FX_CURVE_REVERB_TIME = 3,
 } le_fx_param_curve;
 
 /* Bit flags for le_fx_param_desc.flags. */
@@ -995,10 +1065,26 @@ typedef struct le_plugin_slot le_plugin_slot;
  * the chain off, the rack passes its input through untouched, except that a
  * tail still draining out of one of its entries keeps the rack's output side
  * it was heard with. Every other entry's channel handling stays its own and
- * applies around its effect, as before. */
+ * applies around its effect, as before.
+ *
+ * LE_FX_RACK_DUB_PATH and LE_FX_RACK_AMB_PATH (at most one per entry) put an
+ * entry on one of the Dub Rack's two parallel paths (#1430). A run of
+ * entries that carry a path bit, inside one rack, is a parallel section:
+ * both paths start from the pair the section is handed, each runs its own
+ * entries in chain order, and the section hands on A(m) times the Amb path
+ * plus D(m) times the Dub path, with D(m) = min(1, (2m)^2) and A(m) = 1 up
+ * to m = 0.5, 1 - (2m - 1)^2 above. m is the section's AMB_VERB's Amb-Dub
+ * Mix (p2), or that parameter's default when the section has none. The
+ * boost the two dry signals add (A + D - 1 of the input) follows the rack's
+ * on/off fade, so a rack with every entry off still passes its input
+ * through untouched. Path entries outside any rack still form a section,
+ * with the boost in full (there is no rack fade to follow); segno sets the
+ * bits only inside racks. */
 typedef enum le_fx_rack_edge {
   LE_FX_RACK_FIRST = 1,
   LE_FX_RACK_LAST = 2,
+  LE_FX_RACK_DUB_PATH = 4,
+  LE_FX_RACK_AMB_PATH = 8,
 } le_fx_rack_edge;
 
 /* Complete structural recipe, copied before admission. Hosted pointers must
@@ -3574,7 +3660,9 @@ typedef enum le_cache_reason {
                             * lap's render equals live (#941) */
   LE_CACHE_REASON_FREE_RUNNING = 6, /* the print holds a free-running
                                      * modulator (a chorus or doubler LFO,
-                                     * vinyl noise, a degrade's hold), which
+                                     * vinyl noise, a degrade's hold) or a
+                                     * kind on the song's beat (the Pumper,
+                                     * Slicer, swept LPF, Mode delay), which
                                      * sounds different each lap */
 } le_cache_reason;
 

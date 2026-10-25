@@ -337,6 +337,69 @@ typedef struct le_fx_snapshot {
 #define LE_REV_APS 4
 #define LE_REV_BANKS 2
 
+/* ---- Resumable YIN difference-function pass -------------------------------
+ *
+ * The cumulative-mean-normalized difference function is (lags x integration)
+ * serial double accumulates: at 96 kHz the tuner's is 384 x 384 = 147k, which
+ * on one callback is the entire 333 us budget of a 32-frame period on the
+ * appliance's A76. The pass is therefore resumable — the tuner advances it a
+ * slice at a time across callbacks, and its result is consumed at a ~43 ms
+ * cadence, so spreading it over a few dozen blocks changes nothing observable.
+ * The PSOLA octaver slices its own pass the same way, across each hop (#913).
+ *
+ * le_psola_detect_band is le_yin_begin + one unbounded le_yin_step +
+ * le_yin_finish, so the sliced and the one-shot paths run the same arithmetic
+ * in the same order and cannot drift apart. `x` and `dp` are borrowed, not
+ * owned: the caller keeps both alive and unchanged for the life of the pass
+ * (the one-shot form uses stack buffers; the tuner uses a frozen snapshot in
+ * le_tuner_pass, the PSOLA octaver one in its scratch). No array member, so this type carries none of the octaver's
+ * tuning constants and can live beside the rest of the DSP state here. */
+typedef struct le_yin_pass {
+  const float* x; /* analysis window; maxlag + integ contiguous samples */
+  float* dp;      /* d'(tau) output, at least maxlag + 1 floats */
+  int32_t minlag;
+  int32_t maxlag;
+  int32_t integ; /* difference-function integration length (n - maxlag) */
+  int32_t tau;   /* next lag to accumulate; > maxlag once the pass is done */
+  double cum;    /* running sum of d(1..tau-1) — YIN's normalizer */
+} le_yin_pass;
+
+/* A coarse period refined at the device rate (le_refine_*, engine_fx.c): the
+ * plain difference function over lags [lo, hi] around it, `integ` samples
+ * long, resumable a lag at a time. Shared by the tuner and the PSOLA octaver,
+ * whose coarse passes run decimated by up to LE_REFINE_SPAN_MAX. */
+#define LE_REFINE_SPAN_MAX 8
+typedef struct le_lag_refine {
+  int32_t lo;
+  int32_t hi;
+  int32_t integ;
+  int32_t tau;  /* next lag to accumulate */
+  int32_t best; /* index into d[] of the smallest lag seen so far */
+  float d[2 * LE_REFINE_SPAN_MAX + 2];
+} le_lag_refine;
+
+/* The PSOLA octaver's pitch detection in flight (#913), sliced across its
+ * hops: a coarse YIN pass over a decimated window, then a narrow device-rate
+ * refinement (le_psola_pass_*, engine_fx.c). It lives at the end of the
+ * octaver's heap scratch (le_ps, engine_fx.h), with the windows it reads, so
+ * only octaver slots carry it. */
+typedef struct le_psola_pass {
+  int32_t phase;  /* 0 idle, 1 coarse, 2 refinement */
+  int32_t decim;  /* the pass's decimation factor */
+  int32_t end;    /* the ring index the pass's input ends at */
+  int32_t credit; /* iterations the pass may spend, carried tick to tick */
+  int32_t hops;   /* hops since the last pass started */
+  float conf;     /* the coarse pass's voicing confidence */
+  float coarse;   /* the coarse period, in device samples */
+  le_yin_pass yin;
+  le_lag_refine ref;
+} le_psola_pass;
+
+/* The PSOLA octaver's largest pitch-detection decimation (the detection
+ * geometry is in engine_fx.h, which includes this file); its refinement spans
+ * that many lags either side of the coarse one. */
+#define LE_PSOLA_DMAX 8
+
 /* The OCTAVER's phase-vocoder (and, in part 4, PSOLA) working set for one chain
  * slot on one channel. The three pointers are heap buffers the control thread
  * allocates when the slot becomes OCTAVER (sized by the LE_PV_* constants in
@@ -345,15 +408,19 @@ typedef struct le_fx_snapshot {
  * part 4, so that PR needs no struct/ABI change. */
 typedef struct le_octaver_state {
   float* out;        /* synthesis overlap-add accumulator, LE_PV_OUT long */
-  float* last_phase; /* previous analysis phase per bin, length LE_PV_BINS */
+  /* Each bin's phase at the latest analysis, length LE_PV_BINS: the next
+   * analysis reads it as the previous frame's, the shift stage as this
+   * frame's. */
+  float* last_phase;
   float* sum_phase;  /* accumulated synthesis phase per bin, length LE_PV_BINS */
   /* Samples into the current hop: PV counts up to LE_PV_HOP and runs one
    * stage of a frame at each quarter; PSOLA counts down to its next YIN pass. Seeded so the heavy
    * ticks land on this instance's frames of the engine clock, not at 0
    * (le_oct_seeded_ticks, engine_fx.c). */
   int32_t hop_count;
-  int32_t out_pos;   /* reserved read/write phase (PSOLA, part 4) */
-  /* PSOLA (part 4; zero-initialized and unused here). */
+  int32_t out_pos;   /* PSOLA's read/write phase in the OLA accumulator */
+  /* PSOLA: the smoothed period (device samples) and voicing, and the grain
+   * marks. */
   float period;
   float voiced;
   int32_t in_epoch;
@@ -362,9 +429,14 @@ typedef struct le_octaver_state {
   float sm_shift;
   float sm_tone;
   float sm_mix;
+  float sm_level; /* the wet voice's level (the Dual Octaver's Octave 1 Vol) */
+  /* The equal-power mix's gains, for the sm_mix they were computed at. */
+  float ep_mix, ep_dry, ep_wet;
   int32_t cur_mode; /* 0 = phase vocoder, 1 = PSOLA */
   float xfade;      /* equal-power gain-dip envelope during a mode switch (1 = steady) */
-  /* The hop split's frame state (LE_PV_SCRATCH floats, engine_fx.h), the
+  /* The hop split's frame state (LE_PV_SCRATCH floats, engine_fx.h; PSOLA's
+   * detection windows and its le_psola_pass instead in PSOLA mode, since the
+   * two modes never run together), the
    * shift ratio and formant setting read when the frame was analysed, and
    * whether a frame has been analysed since the last reset (the later stages
    * wait for one, so a reset never synthesises a stale scratch). */
@@ -372,6 +444,11 @@ typedef struct le_octaver_state {
   float frame_ratio;
   int32_t frame_formants_move;
   int32_t analysed;
+  /* The second voice's ratio and both voices' levels, read with the frame
+   * (the phase vocoder's synthesis applies the levels; 0 skips voice 2). */
+  float frame_ratio2;
+  float frame_level1;
+  float frame_level2;
 } le_octaver_state;
 
 /* Per-kind DSP state for the kinds that keep it on the heap (#887 part 4).
@@ -406,6 +483,49 @@ typedef struct le_fx_kinds {
  * two stereo banks into the single ring delay[slot][0] (delay[slot][1] stays
  * NULL), reading both banks from xl / xr — see fx_reverb. The rev_* arrays
  * already hold both banks (LE_REV_BANKS == 2) and stay per-slot. */
+/* The musical time an effect chain runs at (#887 part 10, Architecture 7):
+ * the beat, in quarter notes, of FX clock frame [anchor_clock], and the
+ * quarter notes each frame advances, so the beat at clock c is
+ * anchor_beat + (c - anchor_clock) * qpf. The live engine re-anchors it
+ * whenever the beat leaves that line (a loop top, a tempo change) and logs
+ * each anchor (LE_PLOG_FX_TEMPO), so a render sees the same beat at the
+ * same frame. [num]/[den] are the time signature (a bar is num * 4 / den
+ * quarters). With no tempo set the engine runs at 120 BPM. */
+typedef struct le_fx_tempo {
+  uint32_t anchor_clock;
+  double anchor_beat;
+  float qpf;
+  int32_t num, den;
+} le_fx_tempo;
+
+/* A Slicer voice (fx_slicer_process): what it reads and how loud. */
+enum { LE_SLICE_SILENT = 0, LE_SLICE_BACK = 1, LE_SLICE_MIRROR = 2 };
+typedef struct le_fx_slice_voice {
+  int32_t mode; /* LE_SLICE_* */
+  int32_t arg;  /* BACK: the frames back; MIRROR: the ring index it mirrors */
+  int32_t len;  /* MIRROR: the frames it was latched for */
+  float gain;   /* the gain it last played at */
+  float step;   /* fading out: the gain it loses each frame */
+} le_fx_slice_voice;
+
+/* A slot's Slicer runtime: the slice playing (id 0: none) and up to two
+ * fading out after being cut short, the pattern and step in force (a new
+ * one waits for the slice playing to end), the gliding mix, how far the
+ * output has crossfaded to the input (an Fd pattern, no tempo) and the
+ * beat last seen. */
+typedef struct le_fx_slice_state {
+  double id;
+  double last_beat;
+  le_fx_slice_voice cur;
+  le_fx_slice_voice out[2];
+  int32_t primed;
+  int32_t patt;
+  int32_t step;
+  float mix;
+  float pass;
+  float wet_g; /* the playing slice's gain this frame */
+} le_fx_slice_state;
+
 typedef struct le_fx_state {
   /* Octaver hop-stagger seed (#915): this CHAIN's quarter of the octaver
    * hop, in samples (0, 64, 128 or 192). le_engine_create gives each chain
@@ -427,6 +547,10 @@ typedef struct le_fx_state {
    * processors) stays at 0, and its phase then counts from its reset. */
   const _Atomic uint32_t* clock_src;
   uint32_t clock;
+  /* The musical time the chain runs at (le_fx_tempo): the engine's for a
+   * live owner, a render's own for an offline one, NULL for a state nobody
+   * clocks (120 BPM from its clock 0). */
+  const le_fx_tempo* tempo;
   /* 1 when [clock] is set every frame (the offline renders), so the octaver
    * checks its counter against it as a live chain does; 0 for a state
    * nobody clocks. */
@@ -441,6 +565,14 @@ typedef struct le_fx_state {
   int32_t rev_comb_pos[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
   float rev_comb_lp[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
   int32_t rev_ap_pos[LE_FX_MAX][LE_REV_APS * LE_REV_BANKS];
+  /* The Slicer's runtime (fx_slicer_process). */
+  le_fx_slice_state slice[LE_FX_MAX];
+  /* The Mode delay's line (fx_mode_delay_process): its own seconds-long
+   * ring and runtime, allocated by its prepare for the slots that hold
+   * one; NULL elsewhere. */
+  struct le_fx_line *_Atomic line[LE_FX_MAX];
+  /* The Amp+Cab's instance (engine_fx.c), allocated only for that kind. */
+  struct le_fx_amp *_Atomic amp[LE_FX_MAX];
   /* Per-slot enable-crossfade runtime (fx_apply_chain). DSP state — owned by
    * whichever thread runs the chain (the audio thread live; the render thread
    * offline), NOT published config: the published flags live on the chain
@@ -477,6 +609,14 @@ typedef struct le_fx_state {
    * engaging all start there, so none of them fades. Callback-owned. */
   float rack_mix[LE_FX_MAX];
   int32_t rack_primed[LE_FX_MAX];
+  /* A parallel section's path gains (LE_FX_RACK_DUB_PATH and
+   * LE_FX_RACK_AMB_PATH), kept on its
+   * first entry: [0] the Amb path's A(m), [1] the Dub path's D(m), each
+   * slewed toward its target at the enable rate so a moving Amb-Dub Mix
+   * never steps. path_primed 0 settles them at their targets on the next
+   * use, as rack_primed does. Callback-owned. */
+  float path_gain[LE_FX_MAX][2];
+  int32_t path_primed[LE_FX_MAX];
   /* For an LE_FX_PLUGIN slot: the hosted-plugin slot handle the audio thread
    * forwards to, or NULL. The control thread publishes/retracts it
    * (engine_plugin.c); the audio thread only loads it (fx_plugin_process). A
@@ -1867,31 +2007,6 @@ typedef struct le_render_freeze {
  * length of overshoot (a lag is never split). See tuner_slice. */
 #define LE_TUNER_WORK_PER_FRAME 192
 
-/* ---- Resumable YIN difference-function pass -------------------------------
- *
- * The cumulative-mean-normalized difference function is (lags x integration)
- * serial double accumulates: at 96 kHz the tuner's is 384 x 384 = 147k, which
- * on one callback is the entire 333 us budget of a 32-frame period on the
- * appliance's A76. The pass is therefore resumable — the tuner advances it a
- * slice at a time across callbacks, and its result is consumed at a ~43 ms
- * cadence, so spreading it over a few dozen blocks changes nothing observable.
- *
- * le_psola_detect_band is le_yin_begin + one unbounded le_yin_step +
- * le_yin_finish, so the sliced and the one-shot paths run the same arithmetic
- * in the same order and cannot drift apart. `x` and `dp` are borrowed, not
- * owned: the caller keeps both alive and unchanged for the life of the pass
- * (the one-shot form uses stack buffers; the tuner uses a frozen snapshot in
- * le_tuner_pass). No array member, so this type carries none of the octaver's
- * tuning constants and can live beside the rest of the DSP state here. */
-typedef struct le_yin_pass {
-  const float* x; /* analysis window; maxlag + integ contiguous samples */
-  float* dp;      /* d'(tau) output, at least maxlag + 1 floats */
-  int32_t minlag;
-  int32_t maxlag;
-  int32_t integ; /* difference-function integration length (n - maxlag) */
-  int32_t tau;   /* next lag to accumulate; > maxlag once the pass is done */
-  double cum;    /* running sum of d(1..tau-1) — YIN's normalizer */
-} le_yin_pass;
 
 /* Where a sliced tuner detection has got to. IDLE also means "no pass in
  * flight", which is what a hop boundary tests before starting one. */
@@ -1919,13 +2034,7 @@ typedef struct le_tuner_pass {
   float dp[LE_TUNER_WIN / 2 + 1]; /* the tuner's maxlag is clamped to n/2 */
   float conf;   /* coarse voicing confidence, published with the refined Hz */
   float coarse; /* coarse period, rescaled to DEVICE-rate samples */
-  /* Refinement state (tuner_refine_*): lags [lo, hi] over `integ` samples. */
-  int32_t lo;
-  int32_t hi;
-  int32_t integ;
-  int32_t tau;  /* next lag to accumulate */
-  int32_t best; /* index into d[] of the smallest lag seen so far */
-  float d[2 * LE_TUNER_DECIM + 2];
+  le_lag_refine ref; /* the device-rate refinement (le_refine_*) */
 } le_tuner_pass;
 
 /* One backing read head (#1200): see le_engine.backing_cur. */
@@ -2813,6 +2922,13 @@ struct le_engine {
    * reset reads the frame atomically. */
   uint32_t fx_clock_base;
   _Atomic uint32_t a_fx_frame;
+  /* The chains' musical time (le_fx_tempo), callback-owned: re-anchored by
+   * le_fx_tempo_tick at the top of each frame. fx_tempo_set is 0 until the
+   * first anchor, and fx_tempo_log asks the next tick to log the anchor it
+   * runs on (a performance arm). */
+  le_fx_tempo fx_tempo;
+  int32_t fx_tempo_set;
+  int32_t fx_tempo_log;
 
   /* Latency harness (audio-thread-local + published state). The measurement
    * captures the input-magnitude envelope into lat_buf for a fixed window after

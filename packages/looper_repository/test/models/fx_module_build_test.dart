@@ -24,10 +24,10 @@ void main() {
       // module is shown and processes nothing. The accepted design forbids
       // substituting another effect and calling that parity.
       expect(
-        fxModuleBuild(_module('Pumper')).readiness,
+        fxModuleBuild(_module('Smart tune')).readiness,
         FxModuleReadiness.unavailable,
       );
-      expect(fxModuleBuild(_module('Pumper')).type, isNull);
+      expect(fxModuleBuild(_module('Smart tune')).type, isNull);
 
       expect(
         [
@@ -36,13 +36,6 @@ void main() {
               m.name,
         ],
         [
-          'Amp',
-          'Modulation',
-          'Whammy',
-          'Ambience',
-          'Dub reverb',
-          'Pumper',
-          'Slicer',
           'Harmonizer',
           'Smart tune',
         ],
@@ -51,19 +44,28 @@ void main() {
 
     test('a module the engine builds but cannot carry every control of is '
         'PARTIAL, with the stranded controls named', () {
-      final delay = fxModuleBuild(_module('Delay'));
+      final delay = fxModuleBuild(_module('Delay'), family: 'Drum Rack');
 
       expect(delay.readiness, FxModuleReadiness.partial);
-      expect(delay.type, TrackEffectType.delay);
+      expect(delay.type, TrackEffectType.modeDelay);
       // Kept and named, so a surface can show them and say they do not reach
       // the sound rather than drawing a control that does nothing.
-      expect(delay.unmapped, ['Del Freq', 'Del Mode']);
+      expect(delay.unmapped, ['Del Freq']);
+      // The seven racks with the mode delay carry every control.
+      final mode = fxModuleBuild(_module('Delay'), family: 'Guitar Rack');
+      expect(mode.readiness, FxModuleReadiness.full);
+      expect(mode.params, [
+        'Del Time',
+        'Del Feedback',
+        'Del Mix',
+        'Del Mode',
+      ]);
     });
 
     test("the Dub Rack's delay builds from its own power key and keys", () {
       final dub = fxModuleBuild(_module('Dub delay'));
 
-      expect(dub.type, TrackEffectType.delay);
+      expect(dub.type, TrackEffectType.modeDelay);
       expect(dub.readiness, FxModuleReadiness.partial);
       expect(dub.unmapped, contains('Del Damp'));
 
@@ -74,7 +76,15 @@ void main() {
           name: 'Light',
           id: 'dub',
           type: 4,
-          params: {'Dub Delay': 0, 'Del Time': 0.3, 'Del Feedback': 0.6},
+          params: {
+            'Dub Delay': 0,
+            'Del Time': 0.3,
+            'Del Feedback': 0.6,
+            'Del Damp': 0.5,
+            'Del L/R Ratio': 0.5,
+            'Del Res-Freq': 0.5,
+            'Del Reso': 0.5,
+          },
         ),
       );
       // Powered by `Dub Delay`, which the dub reverb used to take as one of
@@ -82,6 +92,10 @@ void main() {
       expect(entry.enabled, isFalse);
       expect(entry.params[0], closeTo(0.3, 1e-9));
       expect(entry.params[1], closeTo(0.6, 1e-9));
+      // Echoes only: the Dub path's dry comes from the rack's paths (#891).
+      expect(entry.params[2], 1);
+      expect(fxEntryBuild(entry)?.exposed, [0, 1]);
+      expect(dub.path, FxModulePath.dub);
     });
 
     test(
@@ -94,6 +108,7 @@ void main() {
         ];
 
         expect(playable, [
+          'Amp',
           'Chorus',
           'Compressor',
           'Degrade',
@@ -104,15 +119,19 @@ void main() {
           'Four-band EQ',
           'HP / Gate',
           'Low-pass Filter',
+          'Modulation',
           'Octaver',
           'Overdrive',
           'Parametric EQ',
           'Pitch Shift',
+          'Pumper',
           'Reverb',
+          'Slicer',
           'Spring Reverb',
           'Transient',
           'Vinyl',
           'Wah',
+          'Whammy',
         ]);
       },
     );
@@ -141,10 +160,14 @@ void main() {
         }),
       );
 
-      expect(entry.type, TrackEffectType.delay);
+      expect(entry.type, TrackEffectType.modeDelay);
       expect(entry.params[0], closeTo(0.42, 1e-9));
       expect(entry.params[1], closeTo(0.35, 1e-9));
       expect(entry.params[2], closeTo(0.25, 1e-9));
+      expect(entry.params[3], closeTo(0.545, 1e-9));
+      // 1/8D and RESO LO, positions 8 and 6.
+      expect(entry.type.params[0].positionOf(entry.params[0]), 8);
+      expect(entry.type.params[3].positionOf(entry.params[3]), 6);
     });
 
     test("follows the preset's own power key", () {
@@ -176,17 +199,17 @@ void main() {
 
     test('a parameter the preset says nothing about keeps the engine default, '
         'rather than falling to zero', () {
-      // The catalogue's octaver is two fixed voices with their own levels
-      // where this engine's is one continuously shifted voice, so its shift
-      // has nothing to read. Zero would be two octaves down, which is a sound
-      // nobody asked for.
+      // A preset without Octave 1 Vol keeps the kind's own 100 %, not 0,
+      // which would silence the voice.
       final entry = fxModuleEntry(
         _module('Octaver'),
-        _preset(const {'Oct': 1, 'Octave Mix': 1}),
+        _preset(const {'Oct': 1, 'Oct High Mode': 0, 'Octave Mix': 1}),
       );
-      final engineDefault = BuiltInEffect(type: TrackEffectType.octaver);
+      final engineDefault = BuiltInEffect(type: TrackEffectType.dualOctaver);
 
-      expect(entry.params[0], engineDefault.params[0]);
+      expect(entry.type, TrackEffectType.dualOctaver);
+      expect(entry.params[1], engineDefault.params[1]);
+      expect(entry.params[1], 1.0);
       expect(entry.params[2], 1.0);
     });
 
@@ -195,8 +218,8 @@ void main() {
       // A rack is what the player loaded, not what this build can run — so
       // the pedal is there, and it is a passthrough rather than absent.
       final entry = fxModuleEntry(
-        _module('Pumper'),
-        _preset(const {'Pumper': 1, 'Pumper Depth': 0.8}),
+        _module('Smart tune'),
+        _preset(const {'Smart Tune': 1}),
       );
 
       expect(entry.type, TrackEffectType.none);
@@ -699,19 +722,16 @@ void main() {
               'Degrade',
               'Low-pass filter',
               'Spring reverb',
+              'Modulation',
             ].contains(module.name)) {
               continue;
             }
             final e = fxModuleEntry(module, p);
             final build = fxEntryBuild(e);
             expect(build, isNotNull, reason: '${p.name} ${module.name}');
-            // The Rhythmic Rack's low-pass filter drops its LFO until the
-            // tempo context lands (#887 part 10); everything else is full.
             expect(
               build!.readiness,
-              p.family == 'Rhythmic Rack' && module.name == 'Low-pass filter'
-                  ? FxModuleReadiness.partial
-                  : FxModuleReadiness.full,
+              FxModuleReadiness.full,
               reason: '${p.name} ${module.name}',
             );
             // Every key the preset gives the module, but its power key, has
@@ -734,14 +754,16 @@ void main() {
       // Guitar. Drives (part 7): the overdrive in 36 Ed's and 14 Guitar; the
       // distortion in 15 Lo-Fi and 19 Studio. Lo-fi (part 7): the vinyl, the
       // degrade and the low-pass filter in 15 Lo-Fi, the filter in 10
-      // Rhythmic. Reverbs (part 8): the spring in 14 Guitar.
+      // Rhythmic. Reverbs (part 8): the spring in 14 Guitar. The Mod (part
+      // 13) in 14 Guitar and 19 Studio.
       expect(
         built,
         (36 + 24 + 11 + 19 + 34 + 50) +
             (11 + 19 + 17 + 25 + 72 + 14) +
             (36 + 14 + 15 + 19) +
             (45 + 10) +
-            14,
+            14 +
+            (14 + 19),
       );
     });
   });
@@ -771,6 +793,72 @@ void main() {
         expect(fxEntryBuild(e)!.exposed, [0], reason: family);
         expect(e.params.take(2), [0.4, 0.5], reason: family);
       }
+    });
+
+    test("the Guitar Rack's Mod copies its four controls, its modes the "
+        "kind's first three", () {
+      // Rhythm Wet+Dirty as shipped: PHASER (0.5, the middle of three),
+      // Rate 36.5 %, Depth 93.4 %, Mix 69.8 %.
+      final e = fxModuleEntry(
+        _module('Modulation'),
+        preset('Guitar Rack', const {
+          'Mod': 1,
+          'Mod Rate': 0.365,
+          'Mod Depth': 0.934,
+          'Mod Mix': 0.698,
+          'Mod Mode': 0.5,
+        }),
+      );
+      expect(e.type, TrackEffectType.mod);
+      expect(e.params.take(3), [
+        closeTo(0.365, 1e-9),
+        closeTo(0.934, 1e-9),
+        closeTo(0.698, 1e-9),
+      ]);
+      // The PHASER: the kind's second of four.
+      expect(e.params[3], closeTo(1 / 3, 1e-9));
+      final build = fxEntryBuild(e)!;
+      expect(build.readiness, FxModuleReadiness.full);
+      expect(build.exposed, [0, 1, 2, 3]);
+      expect(fxEntryControls(e).keys, ['rate', 'depth', 'mix', 'mod_mode']);
+      final mode = fxEntryParam(e, 3);
+      expect(mode.steps, 3);
+      expect(fxEntryShownSetting(e, 3), closeTo(0.5, 1e-9));
+      // Its FLANGER is the kind's third.
+      expect(fxEntryKindSetting(e, 3, 1), closeTo(2 / 3, 1e-9));
+    });
+
+    test("the Studio Rack's Mod shows rate, depth and Chorus or Tremolo, "
+        'its chorus at half mix', () {
+      // Studio Tremolo as shipped: Tremolo, Rate 82.7 %, Depth 100 %.
+      final e = fxModuleEntry(
+        _module('Modulation'),
+        preset('Studio Rack', const {
+          'Mod': 1,
+          'Mod Rate': 0.827,
+          'Mod Depth': 1,
+          'Mod Mode': 1,
+        }),
+      );
+      expect(e.type, TrackEffectType.mod);
+      expect(e.params.take(3), [closeTo(0.827, 1e-9), 1, 0.5]);
+      // Tremolo: the kind's last.
+      expect(e.params[3], 1);
+      final build = fxEntryBuild(e)!;
+      expect(build.readiness, FxModuleReadiness.full);
+      expect(build.exposed, [0, 1, 3]);
+      expect(fxEntryParam(e, 3).steps, 2);
+      expect(fxEntryKindSetting(e, 3, 0), 0);
+      final chorus = fxModuleEntry(
+        _module('Modulation'),
+        preset('Studio Rack', const {
+          'Mod': 1,
+          'Mod Rate': 0.272,
+          'Mod Depth': 0.511,
+          'Mod Mode': 0,
+        }),
+      );
+      expect(chorus.params[3], 0);
     });
 
     test("Ed's chorus and both racks' wah copy every control", () {
@@ -872,8 +960,8 @@ void main() {
       expect(degrade.params.take(3), [0.45, 0.6, 0.7]);
     });
 
-    test("the low-pass filter: the Lo-Fi Rack's is full, the Rhythmic Rack's "
-        'drops its LFO until part 10', () {
+    test("the low-pass filter: both racks' are full, the Rhythmic Rack's "
+        'with its LFO', () {
       final lofi = fxModuleEntry(
         _module('Low-pass filter'),
         preset('Lo-Fi Rack', const {
@@ -894,8 +982,14 @@ void main() {
           'LPF LFO Rate': 0.6,
         }),
       );
-      expect(fxEntryBuild(rhythmic)!.readiness, FxModuleReadiness.partial);
-      expect(rhythmic.params.take(2), [0.6, 0.3]);
+      expect(fxEntryBuild(rhythmic)!.readiness, FxModuleReadiness.full);
+      expect(rhythmic.params.take(4), [0.6, 0.3, 0.8, 0.6]);
+      // Position 9 of 16: 4, a quarter note.
+      expect(rhythmic.type.params[3].positionOf(0.6), 9);
+      expect(fxEntryBuild(rhythmic)!.exposed, [0, 1, 2, 3]);
+      // The Lo-Fi Rack's has no LFO: its depth stays at 0 and it shows two.
+      expect(lofi.params[2], 0);
+      expect(fxEntryBuild(lofi)!.exposed, [0, 1]);
     });
   });
 
@@ -919,10 +1013,11 @@ void main() {
       expect(e.type, TrackEffectType.octaver);
       expect(e.type.params[0].valueAt(e.params[0]), closeTo(7, 1e-4));
       expect(e.params[2], closeTo(0.402, 1e-9));
-      // Tone open, the phase vocoder, the formants held.
+      // Tone open, the phase vocoder, the formants moving with the pitch
+      // (measured, #891).
       expect(e.params[1], 1);
       expect(e.params[3], 0);
-      expect(e.params[4], 0);
+      expect(e.params[4], 1);
     });
 
     test('shows the shift and the mix, the shift on the rack range', () {
@@ -971,6 +1066,268 @@ void main() {
   });
 
   group('the reverb variants', () {
+    test("the Dub Rack's reverbs copy decay and volume", () {
+      const preset = FxPreset(
+        family: 'Dub Rack',
+        name: 'p',
+        id: 'p',
+        type: 0,
+        params: {
+          'Dub-Verb': 1,
+          'Dub-Verb Dec': 0.8,
+          'Dub-Verb Vol': 0.35,
+          'Amb-Verb': 1,
+          'Amb-Verb Dec': 0.3,
+          'Amb-verb Vol': 0.5,
+          'Amb-Dub Mix': 0.404,
+        },
+      );
+      final dub = fxModuleEntry(_module('Dub reverb'), preset);
+      expect(dub.type, TrackEffectType.dubVerb);
+      expect(dub.params.take(2), [0.8, 0.35]);
+      // The Looper X's display at Dec 0.8: (0.8 + 0.45) / 0.2 = 6.25 s.
+      expect(dub.type.params[0].valueAt(0.8), closeTo(6.25, 1e-9));
+      expect(dub.type.params[0].settingFor(6.25), closeTo(0.8, 1e-9));
+      final amb = fxModuleEntry(_module('Ambience'), preset);
+      expect(amb.type, TrackEffectType.ambVerb);
+      // The Amb-Dub Mix rides the Amb-Verb, which mixes the rack's paths.
+      expect(amb.params.take(3), [0.3, 0.5, 0.404]);
+      expect(
+        fxModuleBuild(_module('Ambience')).readiness,
+        FxModuleReadiness.full,
+      );
+    });
+
+    test("the Dub Rack's paths: Amb-Verb on one, the rest of the Dub "
+        'pedals on the other, every other module on none', () {
+      final preset = FxPreset.tryParse(
+        'Dub Rack',
+        File(
+          '../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset',
+        ).readAsStringSync(),
+      )!;
+      const rack = FxRack(id: 'r', name: 'Dub FX 1');
+      final entries = [
+        for (final e in fxRackEntries(preset)) e.copyWith(rack: rack),
+      ];
+      expect(
+        {
+          for (final (i, p) in fxEntryPaths(entries).indexed)
+            entries[i].module: p,
+        },
+        {
+          'Doubler': FxModulePath.dub,
+          'Dub delay': FxModulePath.dub,
+          'Dub reverb': FxModulePath.dub,
+          'Ambience': FxModulePath.amb,
+          'Compressor': null,
+          'Parametric EQ': null,
+        },
+      );
+      // Outside a rack an entry runs on no path, and so does a Dub path
+      // module in a rack without the Amb-Verb that mixes the paths.
+      final verb = fxRackEntries(preset).firstWhere(
+        (e) => e.module == 'Dub reverb',
+      );
+      expect(fxEntryPaths([verb]), [null]);
+      expect(
+        fxEntryPaths([
+          for (final e in entries)
+            if (e.module != 'Ambience') e,
+        ]),
+        everyElement(isNull),
+      );
+      // A Dub Rack beside a rack holding a stray Dub module: only the Dub
+      // Rack has paths.
+      final stray = [
+        for (final e in entries)
+          if (e.module == 'Doubler')
+            e.copyWith(
+              rack: const FxRack(id: 'other', name: 'Other'),
+            ),
+      ];
+      expect(fxEntryPaths([...entries, ...stray]), [
+        FxModulePath.dub,
+        FxModulePath.dub,
+        FxModulePath.dub,
+        FxModulePath.amb,
+        null,
+        null,
+        null,
+      ]);
+      // Every other family's modules run on none, the Studio, Vocal and Vocal
+      // Tuner doublers included (their presets carry no Doubler Sep).
+      final dir = Directory('../fx_catalogue/assets/presets');
+      for (final family in dir.listSync().whereType<Directory>()) {
+        final name = family.uri.pathSegments.lastWhere((s) => s.isNotEmpty);
+        if (name == 'Dub Rack') continue;
+        for (final file in family.listSync().whereType<File>()) {
+          final p = FxPreset.tryParse(name, file.readAsStringSync())!;
+          expect(
+            fxEntryPaths([
+              for (final e in fxRackEntries(p)) e.copyWith(rack: rack),
+            ]),
+            everyElement(isNull),
+            reason: file.path,
+          );
+        }
+      }
+      // And the engine model carries it for the performance render.
+      final engine = trackEffectsToEngine(entries);
+      expect(
+        [for (final e in engine) e.toJson()['rackPath']],
+        [
+          'dub',
+          'dub',
+          'dub',
+          'amb',
+          null,
+          null,
+        ],
+      );
+    });
+
+    test('the Guitar Amp copies drive, tone, Modern and the cabinet', () {
+      // Lead Crunch as shipped: drive 22.7 %, Bass 60 %, Treble 50 %,
+      // Modern 66.7 %, the 4x12" (7 of 0..11).
+      final e = fxModuleEntry(
+        _module('Amp'),
+        const FxPreset(
+          family: 'Guitar Rack',
+          name: 'Lead Crunch',
+          id: 'l',
+          type: 0,
+          params: {
+            'Amp': 1,
+            'Amp Drive': 0.227,
+            'Amp Bass': 0.6,
+            'Amp Treble': 0.5,
+            'Amp Modern': 0.667,
+            'Cab': 7 / 11,
+          },
+        ),
+      );
+      expect(e.type, TrackEffectType.ampCab);
+      expect(e.params.take(5), [
+        closeTo(0.227, 1e-9),
+        closeTo(0.6, 1e-9),
+        0.5,
+        closeTo(0.667, 1e-9),
+        closeTo(7 / 11, 1e-9),
+      ]);
+      final build = fxEntryBuild(e)!;
+      expect(build.readiness, FxModuleReadiness.full);
+      expect(build.exposed, [0, 1, 2, 3, 4]);
+      expect(fxEntryControls(e).keys, [
+        'drive',
+        'bass',
+        'treble',
+        'modern',
+        'cabinet',
+      ]);
+    });
+
+    test("Ed's Octaver copies both octaves, high mode and the mix", () {
+      // Bass Octave Layer as shipped: high mode off, Octave 2 at 60 %.
+      final e = fxModuleEntry(
+        _module('Octaver'),
+        const FxPreset(
+          family: "Ed's Rack",
+          name: 'Bass Octave Layer',
+          id: 'b',
+          type: 0,
+          params: {
+            'Oct': 1,
+            'Oct High Mode': 0,
+            'Octave 1 Vol': 1,
+            'Octave 2 Vol': 0.6,
+            'Octave Mix': 1,
+          },
+        ),
+      );
+      expect(e.type, TrackEffectType.dualOctaver);
+      expect(e.params.take(4), [0.0, 1.0, 1.0, closeTo(0.6, 1e-9)]);
+      final build = fxEntryBuild(e)!;
+      expect(build.readiness, FxModuleReadiness.full);
+      expect(build.exposed, [0, 1, 2, 3]);
+      expect(fxEntryControls(e).keys, [
+        'oct_high_mode',
+        'octave_1_vol',
+        'mix',
+        'octave_2_vol',
+      ]);
+    });
+
+    test("the Rhythmic Rack's Slicer copies pattern, step and mix", () {
+      final e = fxModuleEntry(
+        _module('Slicer'),
+        const FxPreset(
+          family: 'Rhythmic Rack',
+          name: 'Reverse',
+          id: 'r',
+          type: 0,
+          params: {
+            'Slicer': 1,
+            'Slic Patt': 0.8421052694320679,
+            'Slic Step Len': 0.5,
+            'Slic Mix': 1,
+          },
+        ),
+      );
+
+      expect(e.type, TrackEffectType.slicer);
+      expect(e.enabled, isTrue);
+      expect(e.params[1], 0.5);
+      expect(e.params[2], 1);
+      // Position 16 of 20: <<<<, the factory Reverse.
+      expect(e.type.params[0].positionOf(e.params[0]), 16);
+      expect(
+        fxModuleBuild(_module('Slicer')).readiness,
+        FxModuleReadiness.full,
+      );
+    });
+
+    test("the Rhythmic Rack's Pumper copies rate and depth", () {
+      final e = fxModuleEntry(
+        _module('Pumper'),
+        const FxPreset(
+          family: 'Rhythmic Rack',
+          name: 'p',
+          id: 'p',
+          type: 0,
+          params: {'Pumper': 1, 'Pumper Rate': 0.7, 'Pumper Depth': 0.35},
+        ),
+      );
+      expect(e.type, TrackEffectType.pumper);
+      expect(e.params.take(2), [0.7, 0.35]);
+      // Position 7 of 11: 1/16.
+      expect(e.type.params[0].positionOf(0.7), 7);
+      expect(
+        fxModuleBuild(_module('Pumper')).readiness,
+        FxModuleReadiness.full,
+      );
+    });
+
+    test("the Guitar Rack's Whammy copies pedal and range", () {
+      final e = fxModuleEntry(
+        _module('Whammy'),
+        const FxPreset(
+          family: 'Guitar Rack',
+          name: 'p',
+          id: 'p',
+          type: 0,
+          params: {'Whammy': 1, 'Whammy Pedal': 0.5, 'Whammy Range': 1},
+        ),
+      );
+      expect(e.type, TrackEffectType.whammy);
+      expect(e.enabled, isTrue);
+      expect(e.params.take(2), [0.5, 1.0]);
+      expect(
+        fxModuleBuild(_module('Whammy')).readiness,
+        FxModuleReadiness.full,
+      );
+    });
+
     test("the Guitar Rack's spring copies time and mix", () {
       final e = fxModuleEntry(
         _module('Spring reverb'),

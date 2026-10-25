@@ -28,6 +28,49 @@ enum FxModuleReadiness {
   unavailable,
 }
 
+/// Which of the Dub Rack's two parallel paths a module runs on (#1430).
+///
+/// The rack's path entries form a parallel section: both paths start from
+/// what the section is handed, each runs its own modules in chain order, and
+/// the Amb-Verb's Amb-Dub Mix m sums them, the [amb] path at A(m) (1 up to
+/// 50 %, then 1 - (2m - 1)^2) and the [dub] path at D(m) (min(1, (2m)^2)).
+/// Each path carries its own dry, so with every path module off the rack
+/// still passes A(m) + D(m) of its input: 1.64 at the default 40 %.
+enum FxModulePath {
+  /// The Doubler, the Dub Delay and the Dub-Verb.
+  dub,
+
+  /// The Amb-Verb.
+  amb,
+}
+
+/// The rack path each entry of [chain] runs on, by index: a built-in entry's
+/// rack variant's ([fxEntryBuild], [FxModuleBuild.path]) when its rack also
+/// holds an Amb-Verb (a module on the [FxModulePath.amb] path), `null` for
+/// any other. Derived, never stored, so it always agrees with the variant
+/// the entry's controls come from.
+///
+/// So the paths exist only in a rack that has the Amb-Verb that mixes them.
+/// A Dub path module anywhere else runs in series, as the module itself is:
+/// the Dub delay passes its echoes only.
+List<FxModulePath?> fxEntryPaths(List<TrackEffect> chain) {
+  final own = [
+    for (final fx in chain)
+      if (fx is BuiltInEffect && fx.rack != null)
+        fxEntryBuild(fx)?.path
+      else
+        null,
+  ];
+  final mixed = {
+    for (var i = 0; i < chain.length; i++)
+      if (own[i] == FxModulePath.amb) chain[i].rack!.id,
+  };
+  return [
+    for (var i = 0; i < chain.length; i++)
+      if (mixed.contains(chain[i].rack?.id)) own[i] else null,
+  ];
+}
+
 /// What building one catalogue module on this engine amounts to: the effect
 /// type, which preset key feeds each of its parameters, and which of the
 /// preset's own controls have nowhere to go.
@@ -41,6 +84,7 @@ class FxModuleBuild {
     this.fixed = const {},
     this.labels = const {},
     this.shown = const {},
+    this.path,
   });
 
   /// A module this engine cannot build at all.
@@ -84,6 +128,10 @@ class FxModuleBuild {
   /// [fxEntryKindSetting]).
   final Map<int, FxParamInfo> shown;
 
+  /// The rack path this variant runs on, or `null` for none: in series, as
+  /// every module outside the Dub Rack's paths.
+  final FxModulePath? path;
+
   /// The engine parameters this variant shows, in order: those a preset key
   /// feeds.
   List<int> get exposed => [
@@ -107,23 +155,6 @@ class FxModuleBuild {
 /// from this map or [kFxModuleVariants] is [FxModuleReadiness.unavailable]:
 /// the catalogue names twenty-six modules and the engine builds fewer.
 const Map<String, FxModuleBuild> kFxModuleBuilds = {
-  // p0 time, p1 feedback, p2 mix — the three the preset names, so nothing is
-  // dropped. Its mode (and the Drum Rack's feedback filter frequency) are
-  // Looper X's own shaping and have no engine parameter, which is what makes
-  // it partial.
-  'Delay': FxModuleBuild(
-    type: TrackEffectType.delay,
-    params: ['Del Time', 'Del Feedback', 'Del Mix'],
-    unmapped: ['Del Freq', 'Del Mode'],
-  ),
-  // The Dub Rack's delay: p0 time and p1 feedback. It has no mix control, so
-  // the mix keeps the engine default. Its damping, stereo ratio and resonance
-  // are the dub delay's own shaping and have no engine parameter.
-  'Dub delay': FxModuleBuild(
-    type: TrackEffectType.delay,
-    params: ['Del Time', 'Del Feedback'],
-    unmapped: ['Del Damp', 'Del L/R Ratio', 'Del Res-Freq', 'Del Reso'],
-  ),
   // p0 size, p1 damping, p2 mix. `Rev Bright` is brightness where the engine
   // wants damping, which is its complement, so it is NOT wired here: inverting
   // someone else's control into ours is the silent substitution the accepted
@@ -139,15 +170,6 @@ const Map<String, FxModuleBuild> kFxModuleBuilds = {
       'Rev Mode',
       'Rev Tail/ER',
     ],
-  ),
-  // p0 shift, p1 tone, p2 mix, p3 mode, p4 formants. Only the mix has a
-  // preset key: the catalogue's octaver is two fixed voices with their own
-  // levels, where this engine's is one continuously shifted voice, so its
-  // shift has nothing to read and keeps the engine default.
-  'Octaver': FxModuleBuild(
-    type: TrackEffectType.octaver,
-    params: [null, null, 'Octave Mix'],
-    unmapped: ['Oct High Mode', 'Octave 1 Vol', 'Octave 2 Vol'],
   ),
 };
 
@@ -250,18 +272,41 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Degrade': {'Lo-Fi Rack': _degrade},
   'Low-pass filter': {'Rhythmic Rack': _rhythmicLpf, 'Lo-Fi Rack': _lpf},
   'Spring reverb': {'Guitar Rack': _spring},
+  'Dub delay': {'Dub Rack': _dubDelay},
+  'Dub reverb': {'Dub Rack': _dubVerb},
+  'Ambience': {'Dub Rack': _ambVerb},
+  'Whammy': {'Guitar Rack': _whammy},
+  'Pumper': {'Rhythmic Rack': _pumper},
+  'Slicer': {'Rhythmic Rack': _slicer},
+  'Octaver': {"Ed's Rack": _dualOctaver},
+  'Amp': {"Ed's Rack": _ampCab, 'Guitar Rack': _ampCab},
+  'Modulation': {'Guitar Rack': _guitarMod, 'Studio Rack': _studioMod},
+  'Delay': {
+    "Ed's Rack": _modeDelay,
+    'Drum Rack': _drumDelay,
+    'Guitar Rack': _modeDelay,
+    'Lo-Fi Rack': _modeDelay,
+    'Rhythmic Rack': _modeDelay,
+    'Studio Rack': _modeDelay,
+    'Vocal Rack': _modeDelay,
+    'Vocal Tuner Rack': _modeDelay,
+  },
   'Pitch shift': {'Studio Rack': _pitchShift, 'Vocal Rack': _pitchShift},
 };
 
 // Studio and Vocal racks: the shift and the mix, on the octaver's phase
 // vocoder with the tone open. The shift reads -12..+12 semitones in whole
 // steps (linear), the rack's own range, inside the octaver's +-24, and
-// starts at unison. The formants are held, as the octaver holds them, until a
-// capture of the Looper X shows whether its pitch shifter moves them (#1433).
+// starts at unison. The formants move with the pitch: measured on the Looper
+// X (#891, docs/plan/2026-10-23-looperx-gaps-measured.md), the Studio Rack's
+// Pitch pedal and the Whammy move the spectral envelope by the pitch ratio to
+// within 1 % at 0, +-6 and +-12 semitones, a resampling-type shifter; the
+// Vocal Rack's pedal is the same Pitch shift module. Its +12 lands 8 cents
+// sharp there (ratio 2.009), which this keeps at the display's 2.0.
 const FxModuleBuild _pitchShift = FxModuleBuild(
   type: TrackEffectType.octaver,
   params: ['Pitch Shift', null, 'Pitch Mix'],
-  fixed: {1: 100, 3: 0, 4: 0},
+  fixed: {1: 100, 3: 0, 4: 1},
   shown: {
     0: FxParamInfo(
       key: 'shift',
@@ -272,6 +317,119 @@ const FxModuleBuild _pitchShift = FxModuleBuild(
       defaultValue: 0.5,
     ),
   },
+);
+
+// Dub Rack: the delay's time (a note value) and feedback on the Mode delay,
+// on the Dub path. It passes echoes only (#891), so its mix is held at
+// 100 %: the path's dry is the rack's paths' to give. Its damping, stereo
+// ratio and resonance are not measured, so they stay named and unmapped,
+// and it plays DIGI.
+const FxModuleBuild _dubDelay = FxModuleBuild(
+  type: TrackEffectType.modeDelay,
+  params: ['Del Time', 'Del Feedback'],
+  unmapped: ['Del Damp', 'Del L/R Ratio', 'Del Res-Freq', 'Del Reso'],
+  fixed: {2: 100},
+  path: FxModulePath.dub,
+);
+
+// Ed's and Guitar racks: the whole Amp, its four controls and the cabinet.
+const FxModuleBuild _ampCab = FxModuleBuild(
+  type: TrackEffectType.ampCab,
+  params: ['Amp Drive', 'Amp Bass', 'Amp Treble', 'Amp Modern', 'Cab'],
+);
+
+// Guitar Rack: the whole Mod, its rate, depth, mix and mode. The rack's
+// modes are the kind's first three (CHORUS, PHASER, FLANGER), so its control
+// shows those and a preset's 0, 0.5 and 1 land on them.
+const FxModuleBuild _guitarMod = FxModuleBuild(
+  type: TrackEffectType.mod,
+  params: ['Mod Rate', 'Mod Depth', 'Mod Mix', 'Mod Mode'],
+  shown: {
+    3: FxParamInfo(
+      key: 'mod_mode',
+      unit: FxParamUnit.choice,
+      steps: 3,
+      atMin: 0,
+      atMax: 2 / 3,
+      defaultValue: 0,
+    ),
+  },
+);
+
+// Studio Rack: rate, depth and mode, Chorus or Tremolo (the kind's first
+// and last). It shows no mix: its chorus is the Guitar Rack's at 50 %
+// (#891, the voice at the same share of the dry). Its Doubler Mix belongs
+// to the Doubler module.
+const FxModuleBuild _studioMod = FxModuleBuild(
+  type: TrackEffectType.mod,
+  params: ['Mod Rate', 'Mod Depth', null, 'Mod Mode'],
+  fixed: {2: 50},
+  shown: {
+    3: FxParamInfo(
+      key: 'studio_mod_mode',
+      unit: FxParamUnit.choice,
+      steps: 2,
+      atMin: 0,
+      atMax: 1,
+      defaultValue: 0,
+    ),
+  },
+);
+
+// Ed's Rack: the whole Dual Octaver, high mode, both octaves' levels and
+// the mix.
+const FxModuleBuild _dualOctaver = FxModuleBuild(
+  type: TrackEffectType.dualOctaver,
+  params: ['Oct High Mode', 'Octave 1 Vol', 'Octave Mix', 'Octave 2 Vol'],
+);
+
+// The seven racks with the Looper X's mode delay: time (a note value),
+// feedback, mix and mode.
+const FxModuleBuild _modeDelay = FxModuleBuild(
+  type: TrackEffectType.modeDelay,
+  params: ['Del Time', 'Del Feedback', 'Del Mix', 'Del Mode'],
+);
+
+// Drum Rack: time, feedback and mix; its feedback filter frequency is not
+// measured, so it stays named and unmapped, and the delay plays DIGI.
+const FxModuleBuild _drumDelay = FxModuleBuild(
+  type: TrackEffectType.modeDelay,
+  params: ['Del Time', 'Del Feedback', 'Del Mix'],
+  unmapped: ['Del Freq'],
+);
+
+// Dub Rack: the whole Dub-Verb, decay and volume, on the Dub path.
+const FxModuleBuild _dubVerb = FxModuleBuild(
+  type: TrackEffectType.dubVerb,
+  params: ['Dub-Verb Dec', 'Dub-Verb Vol'],
+  path: FxModulePath.dub,
+);
+
+// Dub Rack: the Amb-Verb's decay and volume (the source spells its volume key
+// in lower case) and the rack's Amb-Dub Mix, which the source groups with
+// it and which mixes the rack's two paths. On the Amb path.
+const FxModuleBuild _ambVerb = FxModuleBuild(
+  type: TrackEffectType.ambVerb,
+  params: ['Amb-Verb Dec', 'Amb-verb Vol', 'Amb-Dub Mix'],
+  path: FxModulePath.amb,
+);
+
+// Rhythmic Rack: the whole Pumper, rate (a note value) and depth.
+const FxModuleBuild _pumper = FxModuleBuild(
+  type: TrackEffectType.pumper,
+  params: ['Pumper Rate', 'Pumper Depth'],
+);
+
+// Rhythmic Rack: the whole Slicer, pattern, step (a note value) and mix.
+const FxModuleBuild _slicer = FxModuleBuild(
+  type: TrackEffectType.slicer,
+  params: ['Slic Patt', 'Slic Step Len', 'Slic Mix'],
+);
+
+// Guitar Rack: the whole Whammy, pedal and range.
+const FxModuleBuild _whammy = FxModuleBuild(
+  type: TrackEffectType.whammy,
+  params: ['Whammy Pedal', 'Whammy Range'],
 );
 
 // Guitar Rack: the whole spring.
@@ -298,12 +456,11 @@ const FxModuleBuild _lpf = FxModuleBuild(
   params: ['LPF Cutoff', 'LPF Reso'],
 );
 
-// Rhythmic Rack: cutoff and resonance; its LFO over the cutoff lands with
-// the tempo context (#887 part 10), so until then it is partial.
+// Rhythmic Rack: cutoff and resonance, and the LFO over the cutoff (depth,
+// and rate, a note value).
 const FxModuleBuild _rhythmicLpf = FxModuleBuild(
   type: TrackEffectType.lpf,
-  params: ['LPF Cutoff', 'LPF Reso'],
-  unmapped: ['LPF LFO Depth', 'LPF LFO Rate'],
+  params: ['LPF Cutoff', 'LPF Reso', 'LPF LFO Depth', 'LPF LFO Rate'],
 );
 
 // Lo-Fi Rack: drive and tone.
@@ -325,10 +482,11 @@ const FxModuleBuild _overdrive = FxModuleBuild(
   params: ['OD Drive', 'OD Tone'],
 );
 
-// Dub Rack: mix and separation.
+// Dub Rack: mix and separation, on the Dub path.
 const FxModuleBuild _dubDoubler = FxModuleBuild(
   type: TrackEffectType.doubler,
   params: ['Doubler Mix', 'Doubler Sep'],
+  path: FxModulePath.dub,
 );
 
 // Studio, Vocal and Vocal Tuner racks: the mix, the separation held at
@@ -623,8 +781,9 @@ FxModuleBuild? _findEntryBuild(BuiltInEffect entry) {
   FxModuleBuild? build;
   var best = -1;
   for (final v in variants.values) {
-    // The keys it places and the ones it knows it drops: a variant that
-    // drops a key (the Rhythmic Rack's LFO) is that rack's alone.
+    // The keys it places and the ones it knows it drops: the variant with
+    // the most of them that the entry carries is its rack's (the Rhythmic
+    // Rack's LPF, with its LFO keys, over the Lo-Fi Rack's).
     final keys = [...v.params.whereType<String>(), ...v.unmapped];
     if (keys.length > best && keys.every(entry.source.containsKey)) {
       best = keys.length;
@@ -658,11 +817,21 @@ FxParamInfo fxEntryParam(BuiltInEffect entry, int index) =>
 
 /// [entry]'s parameter [index] as a setting of [fxEntryParam]: the setting
 /// that stands for the same value as the kind's.
-double fxEntryShownSetting(BuiltInEffect entry, int index) {
-  final setting = entry.params[index];
+double fxEntryShownSetting(BuiltInEffect entry, int index) =>
+    fxEntryShownSettingFor(entry, index, entry.params[index]);
+
+/// The setting of [fxEntryParam] that stands for the same value as
+/// [kindSetting], a setting of [entry]'s parameter [index] (the entry's own
+/// or another one, such as a value about to be written to it). A setting
+/// outside the shown range clamps to its end.
+double fxEntryShownSettingFor(
+  BuiltInEffect entry,
+  int index,
+  double kindSetting,
+) {
   final shown = fxEntryBuild(entry)?.shown[index];
-  if (shown == null) return setting;
-  return shown.settingFor(entry.type.params[index].valueAt(setting));
+  if (shown == null) return kindSetting;
+  return shown.settingFor(entry.type.params[index].valueAt(kindSetting));
 }
 
 /// The kind's setting for parameter [index] of [entry] that stands for the
@@ -680,9 +849,8 @@ double fxEntryKindSetting(BuiltInEffect entry, int index, double shownSetting) {
 /// in the chain and passes signal through untouched.
 ///
 /// The entry's enabled bit follows the preset's own power key when it carries
-/// one. New instances arriving bypassed is the ADDING surface's rule, applied
-/// where the instance is added rather than here, so this stays a faithful read
-/// of the preset.
+/// one, and an added rack keeps it: the pedals arrive on or off as the preset
+/// sets them, as the Looper X loads them.
 BuiltInEffect fxModuleEntry(FxModule module, FxPreset preset) {
   final build = fxModuleBuild(module, family: preset.family);
   final type = build.type ?? TrackEffectType.none;

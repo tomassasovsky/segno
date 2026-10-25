@@ -15,11 +15,12 @@
  */
 #include <math.h>
 #include <pthread.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "engine_fx.h"
-#include "engine_internal.h" /* le_psola_detect prototype (defined below) */
+#include "engine_internal.h" /* le_psola_detect_band prototype (below) */
 #include "fft.h" /* le_rfft_plan, le_rfft_fwd / le_rfft_inv, le_hann_init */
 #include "rt_alloc.h" /* le_rt_alloc_prefaulted / le_rt_free: the audio thread writes these */
 #include "../host/plugin_slot.h" /* le_plugin_slot_process (LE_FX_PLUGIN row) */
@@ -202,6 +203,11 @@ _Static_assert(LE_PSOLA_AHOP == LE_PV_HOP,
                "PSOLA's YIN cadence must equal the PV hop to share its schedule");
 _Static_assert(LE_OCT_REACH > LE_PV_LATENCY && LE_OCT_REACH > LE_PV_N,
                "the octaver's ring guard covers the dry tap and the PV window");
+_Static_assert(LE_OCT_REACH >= LE_PSOLA_LAG + LE_PSOLA_RAW,
+               "the ring guard covers PSOLA's refinement window");
+_Static_assert(LE_PSOLA_DWIN + LE_PSOLA_DWIN / 2 + 1 + LE_PSOLA_RAW <=
+                   LE_PV_SCRATCH,
+               "PSOLA's detection windows fit the octaver scratch");
 
 /* The analysis-hop PHASE of the octaver in chain slot [slot] of [fx]: the
  * owner's quarter plus the slot, mod 4, on the quarter lattice (engine_fx.h).
@@ -269,6 +275,13 @@ static int le_oct_seeded_ticks(const le_fx_state* fx, int slot) {
   return (int)to_go + 1;
 }
 
+/* The second voice's regions in the octaver scratch (LE_PV_SCRATCH, after
+ * the frame arrays listed at le_pv_stage_analyse): its synthesis spectrum,
+ * and its running phases, which persist from frame to frame (#1464). */
+#define LE_PV_S_RE2(o) ((o)->scratch + LE_PV_N + 5 * LE_PV_BINS)
+#define LE_PV_S_IM2(o) ((o)->scratch + LE_PV_N + 6 * LE_PV_BINS)
+#define LE_PV_S_PHASE2(o) ((o)->scratch + LE_PV_N + 7 * LE_PV_BINS)
+
 /* Zeros the octaver's per-mode DSP runtime (phase history, synthesis
  * accumulator, hop counter) without touching the heap-buffer allocation or the
  * smoothed params / current mode. Used on a mode switch and on entry reset; safe
@@ -289,10 +302,22 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   o->voiced = 0.0f;
   if (o->out != NULL) memset(o->out, 0, sizeof(float) * LE_PV_OUT);
   o->analysed = 0;
+  if (o->scratch != NULL) {
+    le_psola_pass* ps = le_ps(o);
+    ps->phase = 0;
+    ps->credit = 0;
+    ps->hops = 0;
+  }
   o->frame_ratio = 1.0f;
   o->frame_formants_move = 0;
+  o->frame_ratio2 = 1.0f;
+  o->frame_level1 = 1.0f;
+  o->frame_level2 = 0.0f;
   if (o->last_phase != NULL) memset(o->last_phase, 0, sizeof(float) * LE_PV_BINS);
   if (o->sum_phase != NULL) memset(o->sum_phase, 0, sizeof(float) * LE_PV_BINS);
+  if (o->scratch != NULL) {
+    memset(LE_PV_S_PHASE2(o), 0, sizeof(float) * LE_PV_BINS);
+  }
 }
 
 /* The formant envelope (engine_fx.h). */
@@ -330,6 +355,7 @@ void le_octaver_envelope(const float* mag, float* env) {
  *   mag  [LE_PV_BINS] magnitude
  *   freq [LE_PV_BINS] true frequency, in bins
  *   env  [LE_PV_BINS] the formant envelope
+ *   re2, im2, phase2   a second voice's (LE_PV_S_RE2 ...)
  *
  * The frame shifts the harmonic structure by `ratio`, holding the cepstral
  * formant envelope fixed in frequency or, with p4 (formants) moved, letting
@@ -339,10 +365,12 @@ void le_octaver_envelope(const float* mag, float* env) {
  *
  * Cost per hop per channel: four length-N real FFTs, one per stage but the
  * shift (analysis, the two cepstrum transforms, synthesis; two with the
- * formants moved, which skips the envelope stage), on the shared plan
+ * formants moved, which skips the envelope stage). A second voice (the Dual
+ * Octaver's Octave 2) adds a second shift in the envelope's quarter and
+ * sums into the one synthesis transform. All on the shared plan
  * le_pv_fft (fft.h). On the console a stereo frame cost ~170 us in one
  * callback (#1410). The stages are not equal: measured on the dev machine
- * the analysis, envelope, shift and synthesis take about 29, 34, 22 and 15 %
+ * the analysis, envelope, shift and synthesis take about 30, 31, 26 and 13 %
  * of a frame, so the heaviest callback carries about a third of it. The
  * frame's arrays live in the heap scratch, so the stack holds only each
  * stage's own temporaries. */
@@ -391,50 +419,119 @@ static void le_pv_stage_envelope(le_octaver_state* o) {
   le_octaver_envelope(LE_PV_S_MAG(o), LE_PV_S_ENV(o));
 }
 
-/* Stage 2: shift bins by the ratio read at analysis, advance the synthesis
- * phase (2*pi*freq*HOP/N a hop) and rebuild the half spectrum. Holding the
- * formants, each bin is whitened (mag/env) and the envelope re-applied at the
- * DESTINATION bin, so the formants stay fixed in frequency; moving them, the
- * magnitude goes over as it is, envelope and all. */
-static void le_pv_stage_shift(le_octaver_state* o) {
-  const float ratio = o->frame_ratio;
-  float* re = LE_PV_S_RE(o);
-  float* im = LE_PV_S_IM(o);
+/* Stage 2: move each peak region by the ratio read at analysis, advance each
+ * moved peak's synthesis phase (2*pi*freq*HOP/N a hop), lock the bins around
+ * it to it, and rebuild the half spectrum. Holding the formants, each bin is
+ * whitened (mag/env) and the envelope re-applied at the DESTINATION bin, so
+ * the formants stay fixed in frequency; moving them, the magnitude goes over
+ * as it is, envelope and all. [drop_dc] also drops a region whose peak
+ * lands below bin 1 (the second voice's, two octaves down; the first voice
+ * keeps the shipped octaver's behaviour). */
+static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
+                             float* re, float* im, int drop_dc) {
   const float* mag = LE_PV_S_MAG(o);
   const float* freq = LE_PV_S_FREQ(o);
   const float* env = LE_PV_S_ENV(o);
+  const float* in_phase = o->last_phase; /* this frame's, from the analysis */
+  const float advance = 2.0f * LE_PI * (float)LE_PV_HOP / (float)LE_PV_N;
   float syn_mag[LE_PV_BINS];
-  float syn_freq[LE_PV_BINS];
+  float syn_phase[LE_PV_BINS];
+  float syn_best[LE_PV_BINS];
   for (int k = 0; k < LE_PV_BINS; ++k) {
     syn_mag[k] = 0.0f;
-    syn_freq[k] = 0.0f;
+    syn_phase[k] = sum_phase[k];
+    syn_best[k] = -1.0f;
   }
-  for (int k = 0; k < LE_PV_BINS; ++k) {
-    const int j = (int)((float)k * ratio + 0.5f);
-    if (j >= 0 && j < LE_PV_BINS) {
-      if (o->frame_formants_move) {
-        syn_mag[j] += mag[k];
-      } else {
-        syn_mag[j] += mag[k] / (env[k] + 1e-9f) * env[j];
-      }
-      syn_freq[j] = freq[k] * ratio;
+  /* Peak-region shifting with identity phase locking (Laroche and Dolson,
+   * 1999): each spectral peak moves to its shifted frequency carrying the
+   * bins around it, and those bins keep their phases relative to the peak.
+   * A partial keeps its main lobe's shape, and with it its level, at any
+   * ratio; scaling each bin's index instead spread an up-shifted lobe over
+   * every other bin and lost up to 13 dB at a fifth. A region runs from
+   * halfway after the previous peak to halfway before the next; where two
+   * regions land on one bin, the louder source sets its phase. */
+  int peaks[LE_PV_BINS];
+  int np = 0;
+  for (int q = 0; q < LE_PV_BINS; ++q) {
+    const float m = mag[q];
+    if ((q < 1 || m > mag[q - 1]) && (q < 2 || m > mag[q - 2]) &&
+        (q + 1 >= LE_PV_BINS || m >= mag[q + 1]) &&
+        (q + 2 >= LE_PV_BINS || m >= mag[q + 2])) {
+      peaks[np++] = q;
     }
   }
-  for (int k = 0; k < LE_PV_BINS; ++k) {
-    o->sum_phase[k] +=
-        2.0f * LE_PI * syn_freq[k] * (float)LE_PV_HOP / (float)LE_PV_N;
-    re[k] = syn_mag[k] * cosf(o->sum_phase[k]);
-    im[k] = syn_mag[k] * sinf(o->sum_phase[k]);
+  if (np == 0) peaks[np++] = 0; /* NaN magnitudes only: one region */
+  int start = 0;
+  for (int r = 0; r < np; ++r) {
+    const int peak = peaks[r];
+    const int end = r + 1 < np ? (peak + peaks[r + 1] + 1) / 2 : LE_PV_BINS;
+    const int to = (int)((float)peak * ratio + 0.5f);
+    if (to >= LE_PV_BINS || (drop_dc && to < 1)) {
+      /* the peak leaves the band (above it, or down onto DC): drop its
+       * region */
+      start = end;
+      continue;
+    }
+    const int shift = to - peak;
+    /* The peak's phase at its new bin: last frame's there, advanced by the
+     * shifted frequency. */
+    const float peak_phase = sum_phase[to] + advance * freq[peak] * ratio;
+    for (int k = start; k < end; ++k) {
+      const int j = k + shift;
+      if (j < 0 || j >= LE_PV_BINS) continue;
+      syn_mag[j] += o->frame_formants_move
+                        ? mag[k]
+                        : mag[k] / (env[k] + 1e-9f) * env[j];
+      if (mag[k] > syn_best[j]) {
+        syn_best[j] = mag[k];
+        syn_phase[j] =
+            le_wrap_pi(peak_phase + (in_phase[k] - in_phase[peak]));
+      }
+    }
+    start = end;
   }
+  for (int b = 0; b < LE_PV_BINS; ++b) {
+    sum_phase[b] = syn_phase[b];
+    re[b] = syn_mag[b] * cosf(syn_phase[b]);
+    im[b] = syn_mag[b] * sinf(syn_phase[b]);
+  }
+}
+
+static void le_pv_stage_shift(le_octaver_state* o) {
+  le_pv_shift_into(o, o->frame_ratio, o->sum_phase, LE_PV_S_RE(o),
+                   LE_PV_S_IM(o), 0);
+}
+
+/* The second voice's shift (#1464): the same analysis at its own ratio,
+ * into its own spectrum and phases. */
+static void le_pv_stage_shift2(le_octaver_state* o) {
+  le_pv_shift_into(o, o->frame_ratio2, LE_PV_S_PHASE2(o), LE_PV_S_RE2(o),
+                   LE_PV_S_IM2(o), o->frame_ratio2 < 1.0f);
 }
 
 /* Stage 3: inverse transform, synthesis-window, and overlap-add from the
  * accumulator element this tick emits (the Hann x Hann windows at 4x overlap
  * sum to 1.5: divide for unity). */
 static void le_pv_stage_synth(le_octaver_state* o) {
+  float* re = LE_PV_S_RE(o);
+  float* im = LE_PV_S_IM(o);
+  float level = o->frame_level1;
+  if (o->frame_level2 > 0.0f) {
+    /* The second voice's spectrum summed in at its level relative to the
+     * first's: one inverse transform for both (it is linear). */
+    const float l1 = o->frame_level1;
+    const float l2 = o->frame_level2;
+    const float* re2 = LE_PV_S_RE2(o);
+    const float* im2 = LE_PV_S_IM2(o);
+    for (int k = 0; k < LE_PV_BINS; ++k) {
+      re[k] = l1 * re[k] + l2 * re2[k];
+      im[k] = l1 * im[k] + l2 * im2[k];
+    }
+    level = 1.0f;
+  }
   float* win = LE_PV_S_WIN(o);
-  le_rfft_inv(&le_pv_fft, LE_PV_S_RE(o), LE_PV_S_IM(o), win);
-  const float norm = 1.0f / 1.5f;
+  le_rfft_inv(&le_pv_fft, re, im, win);
+  const float norm = level / 1.5f;
   float* out = o->out + LE_PV_SYNTH_TICK;
   for (int i = 0; i < LE_PV_N; ++i) {
     out[i] += win[i] * le_hann[i] * norm;
@@ -470,17 +567,31 @@ static void le_pv_stage_synth(le_octaver_state* o) {
  * A stage whose tick comes before the first analysis after a reset is
  * skipped (o->analysed), so a reset never synthesises a stale frame. */
 static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int cap,
-                        float ratio, int formants_move) {
+                        float ratio, int formants_move, float ratio2,
+                        float level1, float level2) {
   if (o->out == NULL || o->scratch == NULL) return 0.0f;
   switch (o->hop_count) {
     case 0:
       le_pv_stage_analyse(o, fifo, head, cap);
       o->frame_ratio = ratio;
       o->frame_formants_move = formants_move;
+      o->frame_ratio2 = ratio2;
+      o->frame_level1 = level1;
+      {
+        /* A second voice (the Dual Octaver's Octave 2, #1464) takes the
+         * envelope's quarter, so only with the formants moving; coming
+         * back from silence it starts its phases afresh. */
+        const float l2 = formants_move ? level2 : 0.0f;
+        if (l2 > 0.0f && o->frame_level2 <= 0.0f) {
+          memset(LE_PV_S_PHASE2(o), 0, sizeof(float) * LE_PV_BINS);
+        }
+        o->frame_level2 = l2;
+      }
       o->analysed = 1;
       break;
     case LE_PV_HOP / 4:
       if (o->analysed && !o->frame_formants_move) le_pv_stage_envelope(o);
+      if (o->analysed && o->frame_level2 > 0.0f) le_pv_stage_shift2(o);
       break;
     case LE_PV_HOP / 2:
       if (o->analysed) le_pv_stage_shift(o);
@@ -500,23 +611,18 @@ static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int ca
   return y;
 }
 
-/* YIN pitch detector (see engine_internal.h). Plain autocorrelation peak-picking
- * is prone to octave errors — a sub/multiple of the true period correlates nearly
- * as well — and a mis-spaced grain wrecks both pitch and formants, so the modest
- * extra cost of YIN's cumulative-mean normalization is worth it here. */
-int le_psola_detect(const float* x, int n, int sr, float* out_period,
-                    float* out_voiced) {
-  /* The octaver's band, unchanged. Integer division on the same operands as
-   * before the band became a parameter, so the lags are bit-identical. */
-  return le_psola_detect_band(x, n, sr, 60, 1000, out_period, out_voiced);
-}
+/* YIN pitch detection (see engine_internal.h). Plain autocorrelation
+ * peak-picking is prone to octave errors — a sub/multiple of the true period
+ * correlates nearly as well — and a mis-spaced grain wrecks both pitch and
+ * formants, so the modest extra cost of YIN's cumulative-mean normalization
+ * is worth it for the PSOLA octaver. */
 
 /* ---- Resumable YIN pass (see le_yin_pass in engine_private.h) --------------
  *
  * The three steps below ARE le_psola_detect_band, split at the two points a
  * caller can pause at: before the difference function and after it. The
- * octaver runs all three back to back (it needs the answer inside the same
- * grain); the tuner runs le_yin_step a slice at a time across callbacks. The
+ * tuner and the PSOLA octaver run le_yin_step a slice at a time across
+ * callbacks. The
  * arithmetic is byte-identical either way, which is the whole point of the
  * split — there is no second copy of the detector to keep in step. */
 
@@ -634,6 +740,48 @@ int le_yin_finish(const le_yin_pass* p, float* out_period, float* out_voiced) {
   return conf > 0.5f ? 1 : 0;
 }
 
+int le_refine_begin(le_lag_refine* r, float coarse, int span, int n) {
+  if (span < 1 || span > LE_REFINE_SPAN_MAX) return 0;
+  const int lo = (int)coarse - span;
+  const int hi = (int)coarse + span + 1;
+  if (lo < 2 || hi >= n / 2) return 0;
+  r->lo = lo;
+  r->hi = hi;
+  r->integ = n - hi;
+  r->tau = lo;
+  r->best = 0;
+  return 1;
+}
+
+int le_refine_step(le_lag_refine* r, const float* x, long budget) {
+  while (r->tau <= r->hi) {
+    const int tau = r->tau;
+    double sum = 0.0;
+    for (int i = 0; i < r->integ; ++i) {
+      const float df = x[i] - x[i + tau];
+      sum += (double)df * (double)df;
+    }
+    const int k = tau - r->lo;
+    r->d[k] = (float)sum;
+    if (tau == r->lo || r->d[k] < r->d[r->best]) r->best = k;
+    ++r->tau;
+    budget -= r->integ;
+    if (budget <= 0) break;
+  }
+  return r->tau > r->hi;
+}
+
+float le_refine_finish(const le_lag_refine* r, float coarse) {
+  if (r->best == 0 || r->best == r->hi - r->lo) return coarse;
+  const float s0 = r->d[r->best - 1];
+  const float s1 = r->d[r->best];
+  const float s2 = r->d[r->best + 1];
+  const float denom = s0 + s2 - 2.0f * s1;
+  float refined = (float)(r->lo + r->best);
+  if (fabsf(denom) > 1e-9f) refined += 0.5f * (s0 - s2) / denom;
+  return refined;
+}
+
 int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
                          float* out_period, float* out_voiced) {
   *out_period = 0.0f;
@@ -642,12 +790,164 @@ int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
   const int dp_cap = (int)(sizeof(dp) / sizeof(dp[0]));
   le_yin_pass p;
   if (!le_yin_begin(&p, x, n, sr, min_hz, max_hz, dp, dp_cap)) return 0;
-  /* Unbounded: the octaver needs the answer now. A negative budget always
-   * completes, so the check can only ever pass -- it is here so the one-shot
-   * path states the precondition le_yin_finish relies on rather than assuming
-   * it. */
+  /* Unbounded: a one-shot caller (the detector's tests, its oracle) wants
+   * the answer now. A negative budget always completes, so the check can only
+   * ever pass -- it is here so the one-shot path states the precondition
+   * le_yin_finish relies on rather than assuming it. */
   if (!le_yin_step(&p, -1)) return 0;
   return le_yin_finish(&p, out_period, out_voiced);
+}
+
+/* ---- PSOLA's sliced pitch detection (#913) ---------------------------------
+ *
+ * A whole YIN pass over the old 1600-sample window was ~640k iterations in one
+ * callback every hop: about 1.1 ms on the console, over the 667 us deadline
+ * of a 64-frame period at 96 kHz. The pass now runs on a decimated window
+ * (a boxcar of D samples is the decimator and its own anti-alias filter, as
+ * the tuner's), so it searches 60 Hz at every rate for about a quarter of the
+ * work, then refines at the device rate around the coarse lag (le_refine_*),
+ * and both are spread over the hop: each tick adds LE_PSOLA_WORK_PER_TICK to
+ * a credit the pass spends, and a lag that overshoots it leaves a debt the
+ * next ticks pay, so the pass averages exactly that much a tick. The
+ * decimated window is frozen into the scratch when the pass starts, and the
+ * device-rate one when the refinement starts (the 1 s ring still holds it),
+ * so the moving ring cannot change either under the pass. The result lands
+ * within the hop it was started in, a hop at most after the one-shot pass's
+ * would have: the period and the voicing it feeds are smoothed over several
+ * hops anyway. */
+#define LE_PS_WIN(o) ((o)->scratch)
+#define LE_PS_DP(o) ((o)->scratch + LE_PSOLA_DWIN)
+#define LE_PS_RAW(o) ((o)->scratch + LE_PSOLA_DWIN + LE_PSOLA_DWIN / 2 + 1)
+_Static_assert(LE_PSOLA_DMAX <= LE_REFINE_SPAN_MAX,
+               "PSOLA's refinement span fits le_lag_refine");
+
+/* The decimation for a [sr] Hz input: ceil(sr / LE_PSOLA_RATE), 1 to
+ * LE_PSOLA_DMAX, so the analysis rate is at most LE_PSOLA_RATE and its
+ * window holds two periods of LE_PSOLA_MIN_HZ (up to 192 kHz). */
+static int le_psola_decim(int sr) {
+  int d = (sr + LE_PSOLA_RATE - 1) / LE_PSOLA_RATE;
+  if (d < 1) d = 1;
+  if (d > LE_PSOLA_DMAX) d = LE_PSOLA_DMAX;
+  return d;
+}
+
+/* Feeds a finished detection into the smoothed voicing and period, as the
+ * one-shot pass did: the voicing follows every result, the period only a
+ * pitched one (it holds through gaps). */
+static void le_psola_pass_apply(le_octaver_state* o, float period,
+                                float voiced) {
+  le_ps(o)->phase = 0;
+  o->voiced += 0.35f * (voiced - o->voiced); /* chatter-free soft gate */
+  if (period > 0.0f) {
+    o->period =
+        o->period <= 0.0f ? period : o->period + 0.5f * (period - o->period);
+  }
+}
+
+/* Hops between pass starts at [sr] Hz: max(1, D / 2), so a pass starts about
+ * every 5 ms at every rate. */
+static int le_psola_every(int sr) {
+  const int every = le_psola_decim(sr) / 2;
+  return every < 1 ? 1 : every;
+}
+
+/* Starts a detection over the input ending at FIFO index [end]: freezes the
+ * decimated window into the scratch and opens the coarse pass, charging the
+ * decimation to the pass's credit. Any pass still in flight is dropped. A
+ * silent window settles at once as unvoiced. */
+static void le_psola_pass_begin(le_octaver_state* o, const float* fifo,
+                                int end, int cap) {
+  le_psola_pass* ps = le_ps(o);
+  const int sr = cap; /* the fx ring is 1 s long, so cap == sample rate */
+  const int d = le_psola_decim(sr);
+  float* win = LE_PS_WIN(o);
+  end %= cap;
+  if (end < 0) end += cap;
+  int idx = (end - LE_PSOLA_DWIN * d + 1) % cap;
+  if (idx < 0) idx += cap;
+  const float inv = 1.0f / (float)d;
+  for (int i = 0; i < LE_PSOLA_DWIN; ++i) {
+    float acc = 0.0f;
+    for (int k = 0; k < d; ++k) {
+      acc += fifo[idx];
+      if (++idx == cap) idx = 0;
+    }
+    win[i] = acc * inv;
+  }
+  ps->decim = d;
+  ps->end = end;
+  ps->credit -= LE_PSOLA_DWIN * d;
+  if (!le_yin_begin(&ps->yin, win, LE_PSOLA_DWIN, sr / d, LE_PSOLA_MIN_HZ,
+                    LE_PSOLA_MAX_HZ, LE_PS_DP(o), LE_PSOLA_DWIN / 2 + 1)) {
+    le_psola_pass_apply(o, 0.0f, 0.0f);
+    return;
+  }
+  ps->phase = 1;
+}
+
+/* Hands the finished coarse pass to the refinement, freezing the device-rate
+ * window it walks, or applies the coarse period as it is when refining would
+ * not change what plays: no decimation, a period too long for two of it to
+ * fit the device-rate window, or a frame under the voicing gate (fx_octaver's
+ * dry fallback takes it whatever its period). */
+static void le_psola_coarse_done(le_octaver_state* o, const float* fifo,
+                                 int cap) {
+  le_psola_pass* ps = le_ps(o);
+  float period = 0.0f;
+  le_yin_finish(&ps->yin, &period, &ps->conf);
+  if (period <= 0.0f) {
+    le_psola_pass_apply(o, 0.0f, 0.0f);
+    return;
+  }
+  const int d = ps->decim;
+  ps->coarse = period * (float)d;
+  if (d == 1 || ps->conf < 0.3f ||
+      !le_refine_begin(&ps->ref, ps->coarse, d, LE_PSOLA_RAW)) {
+    le_psola_pass_apply(o, ps->coarse, ps->conf);
+    return;
+  }
+  float* raw = LE_PS_RAW(o);
+  int idx = (ps->end - LE_PSOLA_RAW + 1) % cap;
+  if (idx < 0) idx += cap;
+  for (int i = 0; i < LE_PSOLA_RAW; ++i) {
+    raw[i] = fifo[idx];
+    if (++idx == cap) idx = 0;
+  }
+  ps->credit -= LE_PSOLA_RAW;
+  ps->phase = 2;
+}
+
+/* One tick of detection: starts a pass on its hop, adds the tick's work to
+ * the credit and, while it is positive, spends it on lags (a lag is never
+ * split, so the last one may overshoot into a debt), carrying from the coarse
+ * pass into the refinement, and applies the result once the refinement is
+ * in. [hop] is set on the tick a PSOLA hop begins. */
+static void le_psola_pass_tick(le_octaver_state* o, const float* fifo, int end,
+                               int cap, int hop) {
+  le_psola_pass* ps = le_ps(o);
+  const int every = le_psola_every(cap);
+  if (hop && ++ps->hops >= every) {
+    ps->hops = 0;
+    le_psola_pass_begin(o, fifo, end, cap);
+  }
+  const int32_t work = LE_PSOLA_WORK_PER_TICK / every;
+  ps->credit += work;
+  if (ps->credit > work) ps->credit = work; /* no banking while idle */
+  while (ps->credit > 0 && ps->phase != 0) {
+    if (ps->phase == 1) {
+      const int32_t was = ps->yin.tau;
+      const int done = le_yin_step(&ps->yin, ps->credit);
+      ps->credit -= (ps->yin.tau - was) * ps->yin.integ;
+      if (done) le_psola_coarse_done(o, fifo, cap);
+      continue;
+    }
+    const int32_t was = ps->ref.tau;
+    const int done = le_refine_step(&ps->ref, LE_PS_RAW(o), ps->credit);
+    ps->credit -= (ps->ref.tau - was) * ps->ref.integ;
+    if (done) {
+      le_psola_pass_apply(o, le_refine_finish(&ps->ref, ps->coarse), ps->conf);
+    }
+  }
 }
 
 /* Added latency (frames) of the active octaver. Single source of truth, read in
@@ -695,24 +995,11 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
   o->out[rp] = 0.0f;
   o->out_pos = (rp + 1 >= N) ? 0 : rp + 1;
 
-  /* 2. Periodic pitch analysis: YIN over a contiguous copy of the FIFO tail. */
-  if (--o->hop_count <= 0) {
-    o->hop_count = LE_PSOLA_AHOP;
-    float win[LE_PSOLA_WIN];
-    for (int i = 0; i < LE_PSOLA_WIN; ++i) {
-      int idx = head - lag - (LE_PSOLA_WIN - 1) + i;
-      idx %= cap;
-      if (idx < 0) idx += cap;
-      win[i] = fifo[idx];
-    }
-    float p = 0.0f;
-    float vc = 0.0f;
-    le_psola_detect(win, LE_PSOLA_WIN, sr, &p, &vc);
-    o->voiced += 0.35f * (vc - o->voiced); /* smooth -> chatter-free soft gate */
-    if (p > 0.0f) {                        /* hold last period through gaps */
-      o->period = o->period <= 0.0f ? p : o->period + 0.5f * (p - o->period);
-    }
-  }
+  /* 2. Periodic pitch analysis: a detection starts every hop over the input
+   *    ending `lag` back, and runs a slice every tick (le_psola_pass_*). */
+  const int hop = --o->hop_count <= 0;
+  if (hop) o->hop_count = LE_PSOLA_AHOP;
+  le_psola_pass_tick(o, fifo, head - lag, cap, hop);
 
   /* 3. Synthesis: marks recede from the head one sample per tick; at each
    *    synthesis mark deposit a Hann grain whose source snaps to the nearest
@@ -722,7 +1009,7 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
   if (--o->out_epoch <= 0) {
     float pf = o->period; /* sub-sample period: sets the grain spacing (pitch) */
     if (pf < 2.0f) pf = 2.0f;
-    if (pf > (float)LE_PSOLA_MAXLAG) pf = (float)LE_PSOLA_MAXLAG;
+    if (pf > (float)(sr / LE_PSOLA_MIN_HZ)) pf = (float)(sr / LE_PSOLA_MIN_HZ);
     float ps = pf / ratio; /* synthesis spacing -> output pitch = ratio * f0 */
     if (ps < 1.0f) ps = 1.0f;
     /* Integer countdown to the next deposit; sub-sample spacing is fine to round
@@ -737,7 +1024,10 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
     /* Snap the analysis mark to the nearest of the period-spaced grid near dn. */
     while (o->in_epoch - dn > pi / 2) o->in_epoch -= pi;
     while (dn - o->in_epoch > pi / 2) o->in_epoch += pi;
-    if (o->in_epoch < th) o->in_epoch = th; /* keep the grain read causal */
+    /* Keep the grain read causal: a mark too near the head moves on by whole
+     * periods, so it stays on the period grid (a long period at a high rate
+     * can snap it under th). */
+    while (o->in_epoch < th) o->in_epoch += pi;
     if (o->in_epoch > cap - 1 - th) o->in_epoch = cap - 1 - th;
 
     /* COLA gain: Hann area (= th) over the hop (= ps) keeps the overlap-add near
@@ -769,6 +1059,12 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
   if (wv > 1.0f) wv = 1.0f;
   return wv * y + (1.0f - wv) * dry;
 }
+
+/* Octave 2's trims: up, where the capture's sits (-0.7 dB against the dry,
+ * level with Octave 1; the vocoder alone gives -3.6 at +24); down, level
+ * with Octave 1 down (no capture; the vocoder alone gives 0.0 at -24). */
+#define LE_DOCT_UP2_LEVEL 1.396f   /* +2.9 dB */
+#define LE_DOCT_DOWN2_LEVEL 0.841f /* -1.5 dB */
 
 /* Formant-preserving octaver. Writes the newest sample to the slot's FIFO ring,
  * then mixes a delay-matched dry tap (LE_PV_LATENCY back) with a wet voice from the
@@ -813,15 +1109,20 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
 
   /* Zipper-free param smoothing (~5 ms one-pole; cap == sample rate). */
   const float sc = 1.0f / (0.005f * (float)cap);
-  o->sm_shift += sc * (p[0] - o->sm_shift);
+  /* The Dual Octaver's shift is a switch (p6): it changes in the gain dip
+   * below, never through a glide (which would sweep two octaves). */
+  const int dual = p[6] >= 0.5f;
+  if (!dual) o->sm_shift += sc * (p[0] - o->sm_shift);
   o->sm_tone += sc * (p[1] - o->sm_tone);
   o->sm_mix += sc * (p[2] - o->sm_mix);
+  o->sm_level += sc * ((1.0f - p[5]) - o->sm_level);
 
   /* Mode switch (D1): equal-power gain dip, ~15 ms per leg — fade the wet out,
    * reset the DSP runtime at the bottom, then fade back in on the new mode. */
   const int requested = p[3] >= 0.5f ? 1 : 0;
   const float xstep = 1.0f / (0.015f * (float)cap);
-  if (requested != o->cur_mode) {
+  const int shift_jump = dual && o->sm_shift != p[0];
+  if (requested != o->cur_mode || shift_jump) {
     o->xfade -= xstep;
     if (o->xfade <= 0.0f) {
       o->xfade = 0.0f;
@@ -831,6 +1132,7 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
        * and move it off the instance's quarter. */
       const int ticks = le_oct_ticks_to_work(o);
       o->cur_mode = requested;
+      o->sm_shift = dual ? p[0] : o->sm_shift;
       le_pv_reset_runtime(fx, slot, chan, ticks);
     }
   } else if (o->xfade < 1.0f) {
@@ -839,8 +1141,15 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
   }
 
   const float ratio = powf(2.0f, (o->sm_shift - 0.5f) * 48.0f / 12.0f);
+  /* The Dual Octaver's Octave 2 (p7, its level; #1464) is Octave 1 squared,
+   * two octaves where Octave 1 is one, so it switches with Octave 1's
+   * latched shift in the dip, its trim with it. */
+  const int up = o->sm_shift > 0.5f;
+  const float level2 =
+      dual ? p[7] * (up ? LE_DOCT_UP2_LEVEL : LE_DOCT_DOWN2_LEVEL) : 0.0f;
   const float wet = o->cur_mode == 0
-                        ? le_pv_tick(o, buf, head, cap, ratio, p[4] >= 0.5f)
+                        ? le_pv_tick(o, buf, head, cap, ratio, p[4] >= 0.5f,
+                                     ratio * ratio, 1.0f - p[5], level2)
                         : le_psola_tick(o, buf, head, cap, ratio);
 
   /* Tone: a one-pole low-pass on the wet voice that opens up as p1 rises. */
@@ -860,7 +1169,18 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
   /* Equal-power gain-dip envelope on the wet leg (g == 1 when steady). */
   const float g = sinf(o->xfade * 0.5f * LE_PI);
   const float mix = o->sm_mix;
-  return dry * (1.0f - mix) + g * lp * mix;
+  /* The phase vocoder applies the voices' levels in its synthesis (two
+   * voices share one accumulator); PSOLA's one voice takes it here. */
+  const float wet_out = g * lp * (o->cur_mode == 0 ? 1.0f : o->sm_level);
+  if (dual) { /* an equal-power mix, its gains kept until the mix moves */
+    if (mix != o->ep_mix) {
+      o->ep_mix = mix;
+      o->ep_dry = cosf(mix * 0.5f * LE_PI);
+      o->ep_wet = sinf(mix * 0.5f * LE_PI);
+    }
+    return dry * o->ep_dry + wet_out * o->ep_wet;
+  }
+  return dry * (1.0f - mix) + wet_out * mix;
 }
 
 /* Tape-style echo. Three things set it apart from the clean digital delay: a
@@ -942,7 +1262,20 @@ static void le_fx_clear_reverb(le_fx_state* fx, int s) {
  * buffers (~9 KB/channel; the frame scratch is not cleared, see
  * le_octaver_state::analysed). That is bounded and fires only on a discrete type-change
  * event (never per sample), consistent with the existing reverb-line clears. */
+/* The Mode delay's line (defined with its kernel). */
+static void le_mdly_reset(struct le_fx_line* line);
+static void le_mdly_clear(struct le_fx_line* line);
+static int32_t le_mdly_frames(const struct le_fx_line* line);
+/* The Amp+Cab's instance (defined with its kernel). */
+static void le_amp_reset(struct le_fx_amp* a);
+
 void le_fx_entry_reset(le_fx_state* fx, int slot) {
+  struct le_fx_line* line =
+      atomic_load_explicit(&fx->line[slot], memory_order_acquire);
+  if (line != NULL) le_mdly_reset(line);
+  struct le_fx_amp* amp =
+      atomic_load_explicit(&fx->amp[slot], memory_order_acquire);
+  if (amp != NULL) le_amp_reset(amp);
   for (int chan = 0; chan < 2; ++chan) {
     fx->svf_ic1[slot][chan] = 0.0f;
     fx->svf_ic2[slot][chan] = 0.0f;
@@ -953,11 +1286,14 @@ void le_fx_entry_reset(le_fx_state* fx, int slot) {
     o->sm_shift = 0.5f; /* unison: the smoother ramps up from no shift, not -2 oct */
     o->sm_tone = 0.0f;
     o->sm_mix = 0.0f; /* starts dry, so the param ramp-in is inaudible */
+    o->sm_level = 1.0f;
+    o->ep_mix = -1.0f; /* the equal-power gains are computed at first use */
     o->cur_mode = 0;  /* phase vocoder */
     o->xfade = 1.0f;  /* steady (no gain dip) */
     le_pv_reset_runtime(fx, slot, chan, le_oct_seeded_ticks(fx, slot));
   }
   le_fx_clear_reverb(fx, slot);
+  memset(&fx->slice[slot], 0, sizeof(fx->slice[slot]));
   /* A heap-state kind starts clean too: its block is cleared and settled
    * the next time the slot runs (fx_kind_state). */
   le_fx_kinds* kinds = atomic_load_explicit(&fx->kinds, memory_order_acquire);
@@ -978,6 +1314,7 @@ void le_fx_octaver_seed_settled(le_fx_state* fx, int slot,
     o->sm_shift = params[0];
     o->sm_tone = params[1];
     o->sm_mix = params[2];
+    o->sm_level = 1.0f - params[5];
     o->xfade = 1.0f; /* steady: no gain dip on the first sample */
     if (mode != o->cur_mode) {
       /* Land on the requested mode without fx_octaver's ~15 ms dip, and
@@ -993,6 +1330,11 @@ void le_fx_octaver_seed_settled(le_fx_state* fx, int slot,
  * le_fx_entry_reset leaves out. Shared by the settled-bypass re-enable edge
  * and Cut all sound; one ring is cap floats, so callers decide the spacing. */
 void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap) {
+  /* The Mode delay's line reads nothing older than its clear: no zeroing
+   * of its seconds of ring on the audio thread. */
+  struct le_fx_line* line =
+      atomic_load_explicit(&fx->line[slot], memory_order_acquire);
+  if (line != NULL) le_mdly_clear(line);
   for (int chan = 0; chan < 2; ++chan) {
     if (fx->delay[slot][chan] != NULL) {
       memset(fx->delay[slot][chan], 0, (size_t)cap * sizeof(float));
@@ -1019,6 +1361,7 @@ void le_fx_enable_seed_settled(le_fx_state* fx, int slot) {
 
 void le_fx_rack_reset(le_fx_state* fx, int slot) {
   fx->rack_primed[slot] = 0;
+  fx->path_primed[slot] = 0;
 }
 
 void le_fx_enable_seed_at(le_fx_state* fx, int slot, int effective) {
@@ -1074,6 +1417,7 @@ void le_fx_free_octaver(le_fx_state* fx, int slot) {
     o->sum_phase = NULL;
     le_rt_free(o->scratch);
     o->scratch = NULL;
+    o->analysed = 0; /* no frame outlives the scratch it is in */
   }
 }
 
@@ -1082,6 +1426,10 @@ void le_fx_free_delay(le_fx_state* fx, int slot) {
   fx->delay[slot][0] = NULL;
   le_rt_free(fx->delay[slot][1]);
   fx->delay[slot][1] = NULL;
+  le_rt_free(atomic_load_explicit(&fx->line[slot], memory_order_relaxed));
+  atomic_store_explicit(&fx->line[slot], NULL, memory_order_relaxed);
+  le_rt_free(atomic_load_explicit(&fx->amp[slot], memory_order_relaxed));
+  atomic_store_explicit(&fx->amp[slot], NULL, memory_order_relaxed);
 }
 
 void le_fx_free_slot(le_fx_state* fx, int slot) {
@@ -1211,12 +1559,808 @@ static void fx_tremolo_process(le_fx_state* fx, int slot, int sr, int cap,
   *l = fx_tremolo(fx, slot, 0, sr, *l, p);
   *r = fx_tremolo(fx, slot, 1, sr, *r, p);
 }
+/* The octaver's kernel on its eight settings (le_fx_octaver_settings):
+ * shift, tone, mix, mode, formants, the wet voice's cut (0: none), 1 for
+ * the Dual Octaver (an equal-power mix, a switched shift, and a second
+ * voice two octaves out) or 0, and that second voice's level (0: none) —
+ * so a zeroed tail is the plain octaver. */
+static void fx_octaver_run(le_fx_state* fx, int slot, int cap, float* l,
+                           float* r, const float* q) {
+  *l = fx_octaver(fx, slot, 0, cap, *l, q);
+  *r = fx_octaver(fx, slot, 1, cap, *r, q);
+}
+
 static void fx_octaver_process(le_fx_state* fx, int slot, int sr, int cap,
                                float* l, float* r, const float* p) {
   (void)sr;
-  *l = fx_octaver(fx, slot, 0, cap, *l, p);
-  *r = fx_octaver(fx, slot, 1, cap, *r, p);
+  const float q[8] = {p[0], p[1], p[2], p[3], p[4], 0.0f, 0.0f, 0.0f};
+  fx_octaver_run(fx, slot, cap, l, r, q);
 }
+
+/* The Whammy's taper: the pedal's share of the range, pedal^1.39. The
+ * captures put 50 % at 4.57 of the 12 semitones (-4.57 / -4.52 down, +4.61 /
+ * +4.57 up), and 0 and 100 % at the ends (#891). The earlier 1 kHz pass read
+ * 99.8 % as -11.8 semitones, where the taper gives -11.97; one point, read
+ * off a single tone, so the fit keeps the three-point sweep. */
+#define LE_WHAMMY_TAPER 1.39f
+
+/* The Whammy's shift as the octaver's shift setting: -24 + 48 v semitones
+ * for range x pedal^taper. */
+static float le_whammy_shift(const float* p) {
+  const float pedal = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
+  const float range = p[1] >= 0.5f ? 12.0f : -12.0f;
+  return 0.5f + range * powf(pedal, LE_WHAMMY_TAPER) / 48.0f;
+}
+
+int le_fx_type_hops(int32_t type) {
+  return type == LE_FX_OCTAVER || type == LE_FX_WHAMMY ||
+         type == LE_FX_DUAL_OCTAVER;
+}
+
+/* The Dual Octaver's first voice (#891, s5/4-7): one octave down with high
+ * mode off (1 kHz to 510 Hz) and up with it on (2 kHz), at Octave 1 Vol
+ * times a trim that puts the phase vocoder's voice where the capture's
+ * sits against the dry (-1.5 dB down, -0.6 dB up; the vocoder alone gives
+ * -1.5 and -0.4 on a 1 kHz tone); Octave Mix an equal-power crossfade (the
+ * capture's 50 % puts dry and wet each 3 dB down). */
+#define LE_DOCT_DOWN_LEVEL 1.0f
+#define LE_DOCT_UP_LEVEL 0.977f /* -0.2 dB */
+
+static void le_doct_settings(const float* p, float* out) {
+  const int high = p[0] >= 0.5f;
+  const float vol = p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1];
+  out[0] = high ? 0.75f : 0.25f; /* +12 or -12 of the octaver's +-24 */
+  out[1] = 1.0f;                 /* the tone open */
+  out[2] = p[2] < 0.0f ? 0.0f : p[2] > 1.0f ? 1.0f : p[2];
+  out[3] = 0.0f; /* the phase vocoder */
+  out[4] = 1.0f; /* the formants move with the pitch */
+  out[5] = 1.0f - vol * (high ? LE_DOCT_UP_LEVEL : LE_DOCT_DOWN_LEVEL);
+  out[6] = 1.0f; /* the Dual Octaver: equal power, a switched shift */
+  /* Octave 2's level (#1464): its voice, two octaves up in high mode
+   * (measured, s5/6) or down without it (inferred: no capture), and its
+   * trim follow Octave 1's shift in the kernel. */
+  out[7] = p[3] < 0.0f ? 0.0f : p[3] > 1.0f ? 1.0f : p[3];
+}
+
+void le_fx_octaver_settings(int32_t type, const float* params, float* out) {
+  for (int k = 0; k < LE_FX_PARAMS; ++k) out[k] = params[k];
+  out[5] = 0.0f; /* the wet voice's cut: none */
+  out[6] = 0.0f; /* the plain octaver: a linear mix, a gliding shift */
+  out[7] = 0.0f; /* no second voice */
+  if (type == LE_FX_DUAL_OCTAVER) {
+    le_doct_settings(params, out);
+    return;
+  }
+  if (type != LE_FX_WHAMMY) return;
+  out[0] = le_whammy_shift(params);
+  out[1] = 1.0f;              /* the tone open */
+  out[2] = 1.0f;              /* fully wet */
+  out[3] = 0.0f;              /* the phase vocoder */
+  out[4] = 1.0f;              /* the formants move with the pitch */
+}
+
+static void fx_whammy_process(le_fx_state* fx, int slot, int sr, int cap,
+                              float* l, float* r, const float* p) {
+  (void)sr;
+  /* The eight settings the octaver's kernel reads (le_fx_octaver_settings). */
+  const float q[8] = {le_whammy_shift(p), 1.0f, 1.0f, 0.0f, 1.0f,
+                      0.0f, 0.0f, 0.0f};
+  fx_octaver_run(fx, slot, cap, l, r, q);
+}
+
+static void fx_dual_octaver_process(le_fx_state* fx, int slot, int sr,
+                                    int cap, float* l, float* r,
+                                    const float* p) {
+  (void)sr;
+  float q[8];
+  le_doct_settings(p, q);
+  fx_octaver_run(fx, slot, cap, l, r, q);
+}
+/* The beat (quarter notes) of the frame [fx] is processing, the quarter
+ * notes a frame advances and the time signature (le_fx_tempo, #887 part
+ * 10). A state with no tempo runs at 120 BPM in 4/4 from its clock 0. */
+static inline double le_fx_beat_now(const le_fx_state* fx, int sr, float* qpf,
+                                    int32_t* num, int32_t* den) {
+  const uint32_t now = le_fx_now(fx);
+  const le_fx_tempo* t = fx->tempo;
+  if (t == NULL) {
+    *qpf = (float)(2.0 / (double)(sr > 0 ? sr : 48000));
+    *num = 4;
+    *den = 4;
+    return (double)now * (double)*qpf;
+  }
+  *qpf = t->qpf;
+  *num = t->num > 0 ? t->num : 4;
+  *den = t->den > 0 ? t->den : 4;
+  return t->anchor_beat + (double)(uint32_t)(now - t->anchor_clock) *
+                              (double)t->qpf;
+}
+
+/* ---- Pumper (LE_FX_PUMPER, #887 part 10) ----
+ *
+ * gain = 1 - a(depth) e(phase), phase 0 on the beat of the note value
+ * (#891, docs/plan/2026-10-23-looperx-gaps-measured.md). */
+
+/* Each rate position's period in quarter notes; Bar is the bar's (-1). The
+ * order is the binary's 11-entry note-value table (Bar, 1/2, 1/2T, ...,
+ * 1/32T), which the presets' 11-step grid matches; the capture confirmed
+ * Bar, 1/2, 1/4, 1/8 and 1/16 (#891). */
+static const double LE_PUMP_PERIOD[11] = {
+    -1.0, 2.0, 4.0 / 3.0, 1.0, 2.0 / 3.0, 0.5, 1.0 / 3.0, 0.25, 1.0 / 6.0,
+    0.125, 1.0 / 12.0};
+
+/* e(phase) every 1/20 of the period from the beat, as measured; 0 from three
+ * quarters on. */
+static const float LE_PUMP_SHAPE[16] = {
+    1.000f, 0.994f, 0.984f, 0.970f, 0.948f, 0.918f, 0.876f, 0.820f,
+    0.746f, 0.654f, 0.544f, 0.418f, 0.284f, 0.153f, 0.045f, 0.0f};
+
+/* The dip in dB against depth, as measured at 30, 70 and 100 % (a = 0.50,
+ * 0.901, 0.990), linear between. */
+static const float LE_PUMP_DIP_AT[4] = {0.0f, 0.3f, 0.7f, 1.0f};
+static const float LE_PUMP_DIP_DB[4] = {0.0f, 6.0206f, 20.0877f, 40.0f};
+
+/* The duck is smoothed with this time constant: the measured shape is at
+ * full depth on the beat, and a gain step is a click (#813), whether at the
+ * beat or where an anchor moves the phase (a loop top that is not a whole
+ * number of periods). */
+#define LE_PUMP_SMOOTH_S 0.00025
+
+static float le_pump_shape(double phase) {
+  const double x = phase * 20.0;
+  if (x >= 15.0) return 0.0f;
+  const int i = (int)x;
+  const float f = (float)(x - (double)i);
+  return LE_PUMP_SHAPE[i] + (LE_PUMP_SHAPE[i + 1] - LE_PUMP_SHAPE[i]) * f;
+}
+
+static float le_pump_depth(float d) {
+  if (!(d > 0.0f)) return 0.0f;
+  if (d >= 1.0f) d = 1.0f;
+  int i = 1;
+  while (i < 3 && d > LE_PUMP_DIP_AT[i]) ++i;
+  const float f = (d - LE_PUMP_DIP_AT[i - 1]) /
+                  (LE_PUMP_DIP_AT[i] - LE_PUMP_DIP_AT[i - 1]);
+  const float db =
+      LE_PUMP_DIP_DB[i - 1] + (LE_PUMP_DIP_DB[i] - LE_PUMP_DIP_DB[i - 1]) * f;
+  return 1.0f - powf(10.0f, -db / 20.0f);
+}
+
+
+/* The measured shape at the frame [fx] is processing, for the rate
+ * setting [rate_setting]. */
+static float le_pump_shape_now(const le_fx_state* fx, int sr,
+                               float rate_setting) {
+  float qpf;
+  int32_t num, den;
+  const double beat = le_fx_beat_now(fx, sr, &qpf, &num, &den);
+  int pos = (int)(rate_setting * 10.0f + 0.5f);
+  if (pos < 0) pos = 0;
+  if (pos > 10) pos = 10;
+  const double period = pos == 0 ? (double)num * 4.0 / (double)den
+                                 : LE_PUMP_PERIOD[pos];
+  double into = fmod(beat, period); /* quarter notes since the beat */
+  if (into < 0.0) into += period;
+  return le_pump_shape(into / period);
+}
+
+void le_fx_pumper_seed_settled(le_fx_state* fx, int slot, const float* params,
+                               int sr) {
+  if (fx == NULL || params == NULL || slot < 0 || slot >= LE_FX_MAX) return;
+  fx->lfo[slot][0] = le_pump_depth(params[1]);
+  fx->lfo[slot][1] = fx->lfo[slot][0];
+  fx->fx_lp[slot][0] = params[1];
+  fx->fx_lp[slot][1] =
+      fx->lfo[slot][0] * le_pump_shape_now(fx, sr > 0 ? sr : 48000, params[0]);
+}
+
+static void fx_pumper_process(le_fx_state* fx, int slot, int sr, int cap,
+                              float* l, float* r, const float* p) {
+  (void)cap;
+  const int32_t rate = sr > 0 ? sr : 48000;
+  const float e = le_pump_shape_now(fx, rate, p[0]);
+  /* The depth glides (about 10 ms), so a moving control never steps. Its
+   * target is worked out only when the setting moves: lfo[slot][1] holds
+   * it for the setting in fx_lp[slot][0] (both 0 after a reset, which is
+   * a(0)). */
+  if (p[1] != fx->fx_lp[slot][0]) {
+    fx->fx_lp[slot][0] = p[1];
+    fx->lfo[slot][1] = le_pump_depth(p[1]);
+  }
+  float* a = &fx->lfo[slot][0];
+  *a += (fx->lfo[slot][1] - *a) * (100.0f / (float)rate);
+  /* The duck itself, smoothed (fx_lp[slot][1], 0 after a reset). */
+  float* duck = &fx->fx_lp[slot][1];
+  *duck += (*a * e - *duck) /
+           (1.0f + (float)(LE_PUMP_SMOOTH_S * (double)rate));
+  const float g = 1.0f - *duck;
+  *l *= g;
+  *r *= g;
+}
+
+/* ---- Slicer (LE_FX_SLICER, #887 part 10) ----
+ *
+ * Measured (#891, the s4 captures at 1/16 and 120 BPM): a capital letter is
+ * one step and a lower-case one half a step; a letter's first slice plays
+ * the live input and each later one replays it from its start (AABB
+ * replays A at a 125 ms delay; ABcccc plays A, B, then c live and replays
+ * that half step three times); _ rests for a step (the capture reads 48 to
+ * 54 dB down; this one is silent); a slice ends with a 4 ms fade and starts
+ * without one. < plays the step before backwards (the factory "Reverse"
+ * preset is <<<<). The Fd patterns are not modelled.
+ *
+ * Each slice fixes where it reads when it starts (a distance back, or the
+ * point it mirrors about), so a tempo change under a slice does not move
+ * it. A new pattern or step waits for the slice playing to end. A slice
+ * cut short (a beat that jumps) fades out over the 4 ms while the next one
+ * fades in. The source is the slot's
+ * delay ring: a slice whose source is not all within it is silent. With
+ * the 1 s ring the quarter-step factory presets (a one-step replay) hold
+ * above 60 BPM, and Reverse (two 1/16 steps back) above 30 BPM. */
+
+/* The patterns, in the choice's order (the Looper X's SlicerPattern table,
+ * read from its binary; docs/plan/2026-10-20-looperx-derived-tables.md);
+ * NULL for one not modelled. */
+static const char* const LE_SLICE_PATTERNS[20] = {
+    "AABB", "ABCC",   "AACD",   "ABC_",   "A_C_", "A_CC", "A___C___",
+    "ABcccc", "AAccdd", "AB__dd", "AA__dd", "ABC<", "AB_<", "AA_<",
+    "A_B_C<", "AB<<", "<<<<",  NULL,     NULL,   NULL};
+
+/* The pattern position a stored choice value names, 0..19. */
+static int le_slice_index(float v) {
+  const int i = (int)(v * 19.0f + 0.5f);
+  return i < 0 ? 0 : i > 19 ? 19 : i;
+}
+
+/* The pattern a stored choice value names; NULL when not modelled. */
+static const char* le_slice_pattern(float v) {
+  return LE_SLICE_PATTERNS[le_slice_index(v)];
+}
+
+/* Each step position's length in quarter notes: 1/4, 1/4T, 1/8, 1/8T,
+ * 1/16, 1/16T, 1/32, 1/32T, 1/64. */
+static const double LE_SLICE_STEP[9] = {1.0,       2.0 / 3.0, 0.5,
+                                        1.0 / 3.0, 0.25,      1.0 / 6.0,
+                                        0.125,     1.0 / 12.0, 0.0625};
+
+/* The slice end's fade (#891: about 4 ms). */
+#define LE_SLICE_FADE_S 0.004
+
+/* A token's length in half steps: lower case is half a step. */
+static int le_slice_len(char c) { return c >= 'a' && c <= 'z' ? 1 : 2; }
+
+static int le_slice_cycle(const char* pat) {
+  int n = 0;
+  for (const char* c = pat; *c; ++c) n += le_slice_len(*c);
+  return n;
+}
+
+/* The token pattern [pat] plays [half] half steps into its cycle: its
+ * index, its start, its length and where its letter first sounds (the
+ * last three in half steps). */
+static char le_slice_token(const char* pat, double half, int* index,
+                           int* start, int* len, int* first) {
+  int at = 0;
+  for (const char* c = pat; *c; ++c) {
+    const int n = le_slice_len(*c);
+    if (half < (double)(at + n) || c[1] == '\0') {
+      *index = (int)(c - pat);
+      *start = at;
+      *len = n;
+      *first = at;
+      int f = 0;
+      for (const char* d = pat; d < c; ++d) {
+        if ((*d | 0x20) == (*c | 0x20) && *c != '_' && *c != '<') {
+          *first = f;
+          break;
+        }
+        f += le_slice_len(*d);
+      }
+      return *c;
+    }
+    at += n;
+  }
+  *index = *start = *len = *first = 0;
+  return '_';
+}
+
+/* What voice [v] reads from [ring] with the newest frame at [pos]. */
+static float le_slice_read(const float* ring, int cap, int pos,
+                           const le_fx_slice_voice* v) {
+  int back;
+  if (v->mode == LE_SLICE_BACK) {
+    back = v->arg;
+  } else if (v->mode == LE_SLICE_MIRROR) {
+    int n = pos - v->arg;
+    if (n < 0) n += cap;
+    if (n > v->len) n = v->len; /* never past the length it was latched for */
+    back = 2 * n;
+  } else {
+    return 0.0f;
+  }
+  if (back < 0 || back >= cap) return 0.0f;
+  int at = pos - back;
+  if (at < 0) at += cap;
+  return ring[at];
+}
+
+/* Ends slot [st]'s slice early: it carries on as a voice fading out at
+ * the 4 ms rate ([fade] frames from full), in whichever of the two fading
+ * voices is free or quieter (a third voice, quieter than both, is
+ * dropped: with the gains summing to at most 1, it is at most a third). */
+static void le_slice_cut(le_fx_slice_state* st, double fade) {
+  if (st->cur.mode != LE_SLICE_SILENT && st->cur.gain > 0.0f) {
+    const int k = st->out[0].gain <= st->out[1].gain ? 0 : 1;
+    if (st->cur.gain > st->out[k].gain) {
+      st->out[k] = st->cur;
+      st->out[k].step = (float)(1.0 / fade);
+    }
+  }
+  st->cur.mode = LE_SLICE_SILENT;
+  st->cur.gain = 0.0f;
+  st->id = 0.0;
+}
+
+/* The fading voices' gains together, now or ([next]) after this frame's
+ * step. */
+static float le_slice_fading(const le_fx_slice_state* st, int next) {
+  float sum = 0.0f;
+  for (int k = 0; k < 2; ++k) {
+    const float g = st->out[k].gain - (next ? st->out[k].step : 0.0f);
+    if (g > 0.0f) sum += g;
+  }
+  return sum;
+}
+
+static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
+                              float* l, float* r, const float* p) {
+  float* ring[2] = {fx->delay[slot][0], fx->delay[slot][1]};
+  if (ring[0] == NULL || ring[1] == NULL || cap <= 1) return;
+  const int32_t rate = sr > 0 ? sr : 48000;
+  const float in[2] = {*l, *r};
+  const int pos = fx->delay_pos[slot][0];
+  ring[0][pos] = in[0];
+  ring[1][pos] = in[1];
+  fx->delay_pos[slot][0] = pos + 1 >= cap ? 0 : pos + 1;
+
+  le_fx_slice_state* st = &fx->slice[slot];
+  const double fade4 = LE_SLICE_FADE_S * (double)rate;
+  const float mix_to = p[2] < 0.0f ? 0.0f : p[2] > 1.0f ? 1.0f : p[2];
+  const int fresh = !st->primed;
+  if (fresh) {
+    st->primed = 1;
+    st->mix = mix_to;
+  }
+  /* Mix glides over about 10 ms, so a moving control never steps. */
+  const float mix_next =
+      st->mix + (mix_to - st->mix) * (float)(1.0 / (0.010 * (double)rate));
+  /* Landing once a step no longer moves it. */
+  st->mix = mix_next == st->mix ? mix_to : mix_next;
+  /* A new pattern or step waits for the slice playing to end: a setting
+   * change never cuts a slice. */
+  int si = (int)(p[1] * 8.0f + 0.5f);
+  si = si < 0 ? 0 : si > 8 ? 8 : si;
+  if (st->cur.gain <= 0.0f) {
+    st->patt = le_slice_index(p[0]);
+    st->step = si;
+  }
+  const char* pat = LE_SLICE_PATTERNS[st->patt];
+  float qpf;
+  int32_t num, den;
+  const double beat = le_fx_beat_now(fx, rate, &qpf, &num, &den);
+  /* Not modelled (the Fd patterns) or no usable tempo: the input passes,
+   * crossfaded to over the 4 ms. */
+  const int passes = pat == NULL || !(qpf > 0.0f) || !isfinite(beat);
+  if (passes) {
+    le_slice_cut(st, fade4);
+  } else if (beat < st->last_beat) {
+    le_slice_cut(st, fade4); /* the beat went back: a new slice */
+  }
+  st->last_beat = passes ? 0.0 : beat;
+  if (fresh) st->pass = passes ? 1.0f : 0.0f;
+
+  if (!passes) {
+    const double half_q = LE_SLICE_STEP[st->step] * 0.5;
+    const double cycle_q = (double)le_slice_cycle(pat) * half_q;
+    const double cycles = floor(beat / cycle_q);
+    const double pos_q = beat - cycles * cycle_q;
+    int index, start, len, first;
+    const char tok =
+        le_slice_token(pat, pos_q / half_q, &index, &start, &len, &first);
+    const double into = pos_q - (double)start * half_q; /* quarter notes */
+    const double fpq = 1.0 / (double)qpf;              /* frames a quarter */
+    const double len_f = (double)len * half_q * fpq;    /* the slice */
+    const double fade_f = fmin(fade4, 0.5 * len_f);
+    /* Which slice this is (0 is none): its cycle, token and settings. */
+    const double id =
+        1.0 + ((cycles * 32.0 + (double)index) * 20.0 + (double)st->patt) *
+                  9.0 +
+        (double)st->step;
+    if (id != st->id) {
+      le_fx_slice_voice v = {LE_SLICE_SILENT, 0, 0, 1.0f, 0.0f};
+      if (tok == '<') {
+        /* The step before, backwards: at n frames into the slice, 2n
+         * back, so the whole slice needs twice its length of ring. */
+        if (2.0 * len_f < (double)(cap - 1)) {
+          const long n0 = lround(into * fpq);
+          long e = (long)pos - n0;
+          while (e < 0) e += cap;
+          v.mode = LE_SLICE_MIRROR;
+          v.arg = (int32_t)e;
+          v.len = (int32_t)ceil(len_f);
+        }
+      } else if (tok != '_') {
+        const double back = (double)(start - first) * half_q * fpq;
+        if (back >= 0.0 && back < (double)cap - 0.5) {
+          v.mode = LE_SLICE_BACK;
+          v.arg = (int32_t)(back + 0.5);
+        }
+      }
+      if (st->cur.mode == LE_SLICE_BACK && v.mode == LE_SLICE_BACK &&
+          st->cur.arg == v.arg && st->cur.gain > 0.0f) {
+        /* The same audio from the same point (a live slice into a live
+         * one across a jump): it plays on. */
+        v.gain = st->cur.gain;
+      } else {
+        if (st->cur.gain > 0.0f) le_slice_cut(st, fade4);
+        /* Under slices fading out, the new one fades in as they fade: on
+         * time, nothing fades and the new slice starts at once. */
+        v.gain = 1.0f - le_slice_fading(st, 0);
+      }
+      st->cur = v;
+      st->id = id;
+    }
+    if (st->cur.mode != LE_SLICE_SILENT) {
+      /* The slice's end fades out over 4 ms (half the slice, if shorter);
+       * the gain moves no faster than that either way, so a beat that
+       * jumps or a tempo that changes near the end still fades. */
+      double left = len_f - into * fpq;
+      int src_out = 0;
+      if (st->cur.mode == LE_SLICE_MIRROR) {
+        /* A reversed slice ends where its latched source does, should the
+         * tempo drop under it; once that has run out it stays silent. */
+        int n = pos - st->cur.arg;
+        if (n < 0) n += cap;
+        left = fmin(left, (double)(st->cur.len - n));
+        src_out = st->cur.len - n <= 0;
+      }
+      const float want = left >= fade_f ? 1.0f
+                         : left > 0.0   ? (float)(left / fade_f)
+                                        : 0.0f;
+      const float d = (float)(1.0 / fade_f);
+      /* With the fading voices, never more than the input. */
+      const float g = fminf(fminf(fmaxf(want, st->cur.gain - d),
+                                  st->cur.gain + d),
+                            1.0f - le_slice_fading(st, 1));
+      /* A slice that reached its end on time has nothing left to fade
+       * out after its last frame. */
+      st->cur.gain = left > 1.5 || g > want + 1e-3f ? g : 0.0f;
+      st->wet_g = g;
+      if (src_out && st->cur.gain <= 0.0f) st->cur.mode = LE_SLICE_SILENT;
+    } else {
+      st->cur.gain = 0.0f;
+      st->wet_g = 0.0f;
+    }
+  }
+
+  float wet[2] = {0.0f, 0.0f};
+  if (st->cur.mode != LE_SLICE_SILENT && !passes) {
+    wet[0] = st->wet_g * le_slice_read(ring[0], cap, pos, &st->cur);
+    wet[1] = st->wet_g * le_slice_read(ring[1], cap, pos, &st->cur);
+  }
+  for (int k = 0; k < 2; ++k) {
+    le_fx_slice_voice* v = &st->out[k];
+    if (v->gain <= 0.0f) continue;
+    v->gain -= v->step;
+    if (v->gain <= 0.0f) {
+      v->gain = 0.0f;
+      v->mode = LE_SLICE_SILENT;
+      continue;
+    }
+    wet[0] += v->gain * le_slice_read(ring[0], cap, pos, v);
+    wet[1] += v->gain * le_slice_read(ring[1], cap, pos, v);
+  }
+  /* Mix (#891): 100 % is the slices alone; 50 % keeps the dry whole and
+   * adds the slices at half. */
+  const float m = st->mix;
+  const float dry = m > 0.5f ? 2.0f * (1.0f - m) : 1.0f;
+  float o[2] = {in[0] * dry + wet[0] * m, in[1] * dry + wet[1] * m};
+  /* Toward the input when it passes, over the 4 ms. */
+  const float fd_step = (float)(1.0 / fade4);
+  st->pass = passes ? fminf(1.0f, st->pass + fd_step)
+                    : fmaxf(0.0f, st->pass - fd_step);
+  *l = o[0] + st->pass * (in[0] - o[0]);
+  *r = o[1] + st->pass * (in[1] - o[1]);
+}
+
+/* ---- Mode delay (LE_FX_MODE_DELAY, #887 part 10) ----
+ *
+ * The Looper X's delay, fit to the #891 captures (s4/4, 10-15 at 1/8D,
+ * Feedback 50 %, Mix 30 %; gC passes at Feedback 0 %; s3/8 at 2/4, 29 %,
+ * 9 %), measured on the deconvolved sweep:
+ * - the time is the note value at the song tempo (1/8D at 120 BPM is
+ *   375 ms); the line holds 4 s, so a longer time holds at 4 s (#1372
+ *   Architecture 7), and a new time crossfades from the old over 20 ms;
+ * - the dry stays whole and the wet is (2 Mix)^2 (0.36 at 30 %, 0.0324 at
+ *   9 %: both within 0.2 dB); above 50 % the wet holds at 1 and the dry
+ *   falls as 1 - (2 Mix - 1)^2, the Dub Rack's measured law (assumed here:
+ *   no capture above 30 %);
+ * - each repeat is Feedback of the one before (-6.0 dB at 50 %);
+ * - the input is summed to mono (the captures fed both sides alike);
+ * - the voicings, on every echo and again in the loop (rms fit error
+ *   0.02-0.27 dB to 8 kHz): DIGI flat; DAMPED a one-pole at 13.2 kHz;
+ *   RESO LO a +6.1 dB peak at 981 Hz (Q 0.80) and RESO HI +6.1 dB at
+ *   2425 Hz (Q 0.85), whose loops also lose 4.9 and 4.8 dB; every echo
+ *   passes a 32 Hz high-pass and a 10.9 kHz one-pole, the loop a 14.8 kHz
+ *   one-pole;
+ * - the timings: the plain modes put the echo on both sides; L/R the right
+ *   one half the time early (0.881) with the left on time at
+ *   0.219 + 0.666 Feedback, each with 0.126 / 0.143 of the other side's;
+ *   GRV the right at 0.837 of the time (0.871) and the left on time at
+ *   0.750 + 0.116 Feedback, with 0.126 / 0.113 of the other. The timings
+ *   were measured on DIGI and RES HI, and are the same on both; the DAMPED
+ *   and RESO LO ones are composed from them.
+ * What feeds back is kept under full scale with a soft knee, and a 5 Hz
+ * DC blocker sits in the loop: a resonant voicing (or DIGI at DC) at 100 %
+ * Feedback would otherwise grow. Its tempo is the live song's, which a
+ * print would not keep, so a lane holding one is never printed. */
+
+static const double LE_MDLY_QUARTERS[20] = {
+    0.125, 1.0 / 6.0, 0.1875, 0.25, 1.0 / 3.0, 0.375, 0.5, 2.0 / 3.0, 0.75, 1.0,
+    4.0 / 3.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 8.0};
+#define LE_MDLY_XFADE_S 0.020 /* a new time crossfades over 20 ms */
+#define LE_MDLY_GLIDE_S 0.010 /* feedback and mix glide over 10 ms */
+#define LE_MDLY_HP_HZ 32.1
+#define LE_MDLY_OUT_LP_HZ 10917.0
+#define LE_MDLY_LOOP_LP_HZ 14832.0
+#define LE_MDLY_DAMP_HZ 13203.0
+#define LE_MDLY_GRV 0.8368
+#define LE_MDLY_DC_HZ 5.0  /* the loop's DC blocker */
+#define LE_MDLY_KNEE 0.8f  /* the line's soft knee, ceiling 1 */
+#define LE_MDLY_LINE_S 4 /* the line holds 4 s (#1372 Architecture 7) */
+
+/* A voicing: a peak (gain dB 0 for none) or a damping one-pole, and the
+ * loop's own loss. */
+static const struct {
+  double peak_hz, peak_db, peak_q, damp_hz, loop_db;
+} LE_MDLY_VOICE[4] = {
+    {0.0, 0.0, 1.0, 0.0, 0.0},             /* DIGI */
+    {0.0, 0.0, 1.0, LE_MDLY_DAMP_HZ, 0.0}, /* DAMPED */
+    {981.0, 6.12, 0.801, 0.0, -4.92},      /* RESO LO */
+    {2425.0, 6.08, 0.853, 0.0, -4.81},     /* RESO HI */
+};
+
+/* A one-pole low- or high-pass, bilinear: y = b0 (x + x1) - a1 y1 (low) or
+ * b0 (x - x1) - a1 y1 (high). */
+typedef struct le_mdly_pole {
+  float b0, a1, x1, y1;
+} le_mdly_pole;
+
+static void le_mdly_pole_set(le_mdly_pole* f, double hz, int sr, int high) {
+  const double k = le_prewarp(hz, sr);
+  f->b0 = (float)(high ? 1.0 / (1.0 + k) : k / (1.0 + k));
+  f->a1 = (float)((k - 1.0) / (k + 1.0));
+}
+
+static inline float le_mdly_pole_lp(le_mdly_pole* f, float x) {
+  const float y = f->b0 * (x + f->x1) - f->a1 * f->y1;
+  f->x1 = x;
+  f->y1 = y;
+  return y;
+}
+
+static inline float le_mdly_pole_hp(le_mdly_pole* f, float x) {
+  const float y = f->b0 * (x - f->x1) - f->a1 * f->y1;
+  f->x1 = x;
+  f->y1 = y;
+  return y;
+}
+
+/* A biquad, transposed direct form II. */
+typedef struct le_mdly_bq {
+  float b0, b1, b2, a1, a2, z1, z2;
+} le_mdly_bq;
+
+static inline float le_mdly_bq_run(le_mdly_bq* f, float x) {
+  const float y = f->b0 * x + f->z1;
+  f->z1 = f->b1 * x - f->a1 * y + f->z2;
+  f->z2 = f->b2 * x - f->a2 * y;
+  return y;
+}
+
+/* The voicing [v] as a biquad at [sr]: an RBJ peak, a one-pole low-pass, or
+ * the identity. */
+static void le_mdly_voice_set(le_mdly_bq* f, int v, int sr) {
+  const double rate = (double)(sr > 0 ? sr : 48000);
+  f->b0 = 1.0f;
+  f->b1 = f->b2 = f->a1 = f->a2 = 0.0f;
+  if (LE_MDLY_VOICE[v].peak_db != 0.0) {
+    const double A = pow(10.0, LE_MDLY_VOICE[v].peak_db / 40.0);
+    const double w0 = 2.0 * 3.14159265358979323846 *
+                      LE_MDLY_VOICE[v].peak_hz / rate;
+    const double al = sin(w0) / (2.0 * LE_MDLY_VOICE[v].peak_q);
+    const double a0 = 1.0 + al / A;
+    f->b0 = (float)((1.0 + al * A) / a0);
+    f->b1 = (float)(-2.0 * cos(w0) / a0);
+    f->b2 = (float)((1.0 - al * A) / a0);
+    f->a1 = (float)(-2.0 * cos(w0) / a0);
+    f->a2 = (float)((1.0 - al / A) / a0);
+  } else if (LE_MDLY_VOICE[v].damp_hz > 0.0) {
+    const double k = le_prewarp(LE_MDLY_VOICE[v].damp_hz, sr);
+    f->b0 = f->b1 = (float)(k / (1.0 + k));
+    f->a1 = (float)((k - 1.0) / (k + 1.0));
+  }
+}
+
+/* A slot's Mode delay: its runtime, then its mono line. */
+typedef struct le_fx_line {
+  int32_t cap;  /* the line's frames */
+  int32_t pos;  /* where the next frame is written */
+  int32_t fill; /* frames written since it was cleared (nothing older is read) */
+  int32_t primed;
+  int32_t sr, mode;     /* what the filters are set for */
+  int32_t tap, tap_old; /* the time, frames, and the one fading out */
+  int32_t xf;           /* frames of that crossfade left */
+  float fb, mix;        /* gliding */
+  le_mdly_bq voice[2];  /* on the on-time tap and the early one */
+  le_mdly_pole hp[2], lp_out[2], lp_loop, dc;
+  int32_t timing; /* the last frame's: plain, L/R or GRV */
+  float loop_g;
+  float ring[];
+} le_fx_line;
+
+/* Resets [line]'s runtime, keeping its ring (fill 0: nothing is read) and
+ * its length, which is never rewritten. */
+static void le_mdly_reset(le_fx_line* line) {
+  memset(&line->pos, 0, offsetof(le_fx_line, ring) - offsetof(le_fx_line, pos));
+  line->mode = -1;
+}
+
+static int32_t fx_mode_delay_prepare(le_fx_state* fx, int slot, int cap) {
+  if (atomic_load_explicit(&fx->line[slot], memory_order_relaxed) != NULL) {
+    return LE_OK;
+  }
+  /* LE_MDLY_LINE_S seconds ([cap] is the chain's one-second ring), and a
+   * little. */
+  const int32_t frames = LE_MDLY_LINE_S * (cap > 0 ? cap : 48000) + 4;
+  le_fx_line* line = (le_fx_line*)le_rt_alloc_prefaulted(
+      sizeof(le_fx_line) + (size_t)frames * sizeof(float));
+  if (line == NULL) return LE_ERR_INVALID;
+  line->cap = frames;
+  le_mdly_reset(line);
+  /* Published whole: an audio-thread reset of the slot may see it. */
+  atomic_store_explicit(&fx->line[slot], line, memory_order_release);
+  return LE_OK;
+}
+
+/* A clear is a reset of the line: the ring's old frames are never read
+ * again, and nothing the filters hold feeds back into it. */
+static void le_mdly_clear(le_fx_line* line) { le_mdly_reset(line); }
+
+static int32_t le_mdly_frames(const le_fx_line* line) { return line->cap; }
+
+/* The line [back] frames behind the next write, or silence past what it
+ * has been written since it was cleared. */
+static inline float le_mdly_read(const le_fx_line* line, int back) {
+  if (back < 1 || back > line->fill) return 0.0f;
+  int at = line->pos - back;
+  if (at < 0) at += line->cap;
+  return line->ring[at];
+}
+
+static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
+                                  float* l, float* r, const float* p) {
+  (void)cap;
+  le_fx_line* line =
+      atomic_load_explicit(&fx->line[slot], memory_order_acquire);
+  if (line == NULL) return;
+  const int32_t rate = sr > 0 ? sr : 48000;
+  int mode = (int)(p[3] * 11.0f + 0.5f);
+  mode = mode < 0 ? 0 : mode > 11 ? 11 : mode;
+  const int voice = mode / 3;  /* DIGI, DAMPED, RESO LO, RESO HI */
+  const int timing = mode % 3; /* plain, L/R, GRV */
+  if (line->sr != rate || line->mode != voice) {
+    if (line->sr != rate) {
+      le_mdly_pole_set(&line->lp_loop, LE_MDLY_LOOP_LP_HZ, rate, 0);
+      le_mdly_pole_set(&line->dc, LE_MDLY_DC_HZ, rate, 1);
+      for (int c = 0; c < 2; ++c) {
+        le_mdly_pole_set(&line->hp[c], LE_MDLY_HP_HZ, rate, 1);
+        le_mdly_pole_set(&line->lp_out[c], LE_MDLY_OUT_LP_HZ, rate, 0);
+      }
+    }
+    for (int c = 0; c < 2; ++c) le_mdly_voice_set(&line->voice[c], voice, rate);
+    line->loop_g = (float)pow(10.0, LE_MDLY_VOICE[voice].loop_db / 20.0);
+    line->sr = rate;
+    line->mode = voice;
+  }
+  const float fb_to = p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1];
+  const float mix_to = p[2] < 0.0f ? 0.0f : p[2] > 1.0f ? 1.0f : p[2];
+  int div = (int)(p[0] * 19.0f + 0.5f);
+  div = div < 0 ? 0 : div > 19 ? 19 : div;
+  float qpf;
+  int32_t num, den;
+  (void)le_fx_beat_now(fx, rate, &qpf, &num, &den);
+  int32_t want = line->tap;
+  if (qpf > 0.0f && isfinite(qpf)) {
+    const double frames = LE_MDLY_QUARTERS[div] / (double)qpf;
+    const double most = (double)(line->cap - 2);
+    want = (int32_t)(frames < 1.0 ? 1.0 : frames > most ? most : frames + 0.5);
+  }
+  if (!line->primed) {
+    line->primed = 1;
+    line->fb = fb_to;
+    line->mix = mix_to;
+    line->tap = want > 0 ? want : 1;
+  }
+  /* The early tap's voicing starts clean when it comes into use. */
+  if (timing != 0 && line->timing == 0) {
+    line->voice[1].z1 = line->voice[1].z2 = 0.0f;
+  }
+  line->timing = timing;
+  const float glide = (float)(1.0 / (LE_MDLY_GLIDE_S * (double)rate));
+  line->fb += (fb_to - line->fb) * glide;
+  line->mix += (mix_to - line->mix) * glide;
+  const int32_t xf_n = (int32_t)(LE_MDLY_XFADE_S * (double)rate);
+  if (want != line->tap && line->xf == 0) {
+    line->tap_old = line->tap;
+    line->tap = want;
+    line->xf = xf_n;
+  }
+
+  /* The taps: on time, and early (L/R half the time, GRV 0.837 of it),
+   * crossfading from the old time to the new. */
+  const float t_new = line->xf > 0 ? 1.0f - (float)line->xf / (float)xf_n : 1.0f;
+  float tp = le_mdly_read(line, line->tap);
+  float te = 0.0f;
+  const double early = timing == 1 ? 0.5 : LE_MDLY_GRV;
+  if (timing != 0) te = le_mdly_read(line, (int)(line->tap * early + 0.5));
+  if (line->xf > 0) {
+    tp = t_new * tp + (1.0f - t_new) * le_mdly_read(line, line->tap_old);
+    if (timing != 0) {
+      te = t_new * te + (1.0f - t_new) *
+                            le_mdly_read(line, (int)(line->tap_old * early + 0.5));
+    }
+    --line->xf;
+  }
+  const float vp = le_mdly_bq_run(&line->voice[0], tp);
+  const float ve = timing != 0 ? le_mdly_bq_run(&line->voice[1], te) : 0.0f;
+
+  /* The loop: the on-time echo, voiced, fed back at Feedback, a DC
+   * blocker far under the band (5 Hz: 0.04 dB at 50 Hz), and the fed-back
+   * part kept under full scale with a soft knee from 0.8; the input goes
+   * in as it is. */
+  float back = line->fb * line->loop_g *
+               le_mdly_pole_lp(&line->lp_loop, le_mdly_pole_hp(&line->dc, vp));
+  const float ab = fabsf(back);
+  if (ab > LE_MDLY_KNEE) {
+    const float over = (ab - LE_MDLY_KNEE) / (1.0f - LE_MDLY_KNEE);
+    back = copysignf(LE_MDLY_KNEE + (1.0f - LE_MDLY_KNEE) * tanhf(over), back);
+  }
+  line->ring[line->pos] = 0.5f * (*l + *r) + back;
+  line->pos = line->pos + 1 >= line->cap ? 0 : line->pos + 1;
+  if (line->fill < line->cap) ++line->fill;
+
+  float wl, wr;
+  const float fb = line->fb;
+  if (timing == 0) {
+    wl = wr = vp;
+  } else if (timing == 1) { /* L/R */
+    const float gl = 0.219f + 0.666f * fb;
+    wl = gl * (vp + 0.143f * ve);
+    wr = 0.881f * ve + 0.126f * vp;
+  } else { /* GRV */
+    wl = (0.750f + 0.116f * fb) * vp + 0.1135f * ve;
+    wr = 0.871f * ve + 0.126f * vp;
+  }
+  wl = le_mdly_pole_lp(&line->lp_out[0], le_mdly_pole_hp(&line->hp[0], wl));
+  wr = le_mdly_pole_lp(&line->lp_out[1], le_mdly_pole_hp(&line->hp[1], wr));
+  const float m = line->mix;
+  const float wet = m <= 0.5f ? 4.0f * m * m : 1.0f;
+  const float dry = m <= 0.5f ? 1.0f : 1.0f - (2.0f * m - 1.0f) * (2.0f * m - 1.0f);
+  *l = *l * dry + wl * wet;
+  *r = *r * dry + wr * wet;
+}
+
 static void fx_echo_process(le_fx_state* fx, int slot, int sr, int cap, float* l,
                             float* r, const float* p) {
   *l = fx_echo(fx, slot, 0, sr, cap, *l, p);
@@ -1316,9 +2460,11 @@ static int32_t fx_octaver_prepare(le_fx_state* fx, int slot, int cap) {
     }
     if (o->scratch == NULL) {
       o->scratch =
-          (float*)le_rt_alloc_prefaulted((size_t)LE_PV_SCRATCH * sizeof(float));
+          (float*)le_rt_alloc_prefaulted((size_t)LE_PV_SCRATCH_ALLOC *
+                                         sizeof(float));
       if (o->scratch == NULL) goto oom;
       owned[n++] = &o->scratch;
+      o->analysed = 0; /* a fresh (zeroed) scratch holds no frame or pass */
     }
   }
   return LE_OK;
@@ -1374,6 +2520,68 @@ static const le_fx_param_desc LE_FX_OCTAVER_PARAMS[] = {
      * frequency), 1 = moved with the pitch; the phase vocoder only */
     {"formants", LE_FX_UNIT_CHOICE, 2, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f,
      0},
+};
+/* Ed's Rack's Dual Octaver (#891): high mode off or on, Octave 1's level
+ * (its taper unmeasured: every factory preset sits at 100 %), the mix, and
+ * Octave 2's level (its taper unmeasured, and two octaves down inferred,
+ * #1464). */
+static const le_fx_param_desc LE_FX_DUAL_OCTAVER_PARAMS[] = {
+    {"oct_high_mode", LE_FX_UNIT_CHOICE, 2, 0.0f, 1.0f, LE_FX_CURVE_LINEAR,
+     0.0f, 0},
+    {"octave_1_vol", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR,
+     1.0f, LE_FX_PARAM_TAPER_UNVERIFIED},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 1.0f, 0},
+    {"octave_2_vol", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR,
+     0.0f, LE_FX_PARAM_TAPER_UNVERIFIED},
+};
+/* The Guitar Rack's Whammy (#891): position 0 of the range is -12, 1 is
+ * +12 semitones, the Looper X's two. */
+static const le_fx_param_desc LE_FX_WHAMMY_PARAMS[] = {
+    {"pedal", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.0f, 0},
+    {"whammy_range", LE_FX_UNIT_CHOICE, 2, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f,
+     0},
+};
+/* The Rhythmic Rack's Pumper (#891): the rate a note value (positions in
+ * LE_PUMP_PERIOD's order), the depth the dip. */
+static const le_fx_param_desc LE_FX_PUMPER_PARAMS[] = {
+    {"pumper_rate", LE_FX_UNIT_CHOICE, 11, 0.0f, 1.0f, LE_FX_CURVE_LINEAR,
+     0.3f, 0},
+    {"depth", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.7f, 0},
+};
+/* The Rhythmic Rack's Slicer (#891): the pattern and the step in the
+ * orders of LE_SLICE_PATTERNS and LE_SLICE_STEP; the mix. */
+static const le_fx_param_desc LE_FX_SLICER_PARAMS[] = {
+    {"slicer_pattern", LE_FX_UNIT_CHOICE, 20, 0.0f, 1.0f, LE_FX_CURVE_LINEAR,
+     0.0f, 0},
+    {"slicer_step", LE_FX_UNIT_CHOICE, 9, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     0},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 1.0f, 0},
+};
+/* The Looper X's delay (#891): the time a note value (in
+ * LE_MDLY_QUARTERS's order), feedback, mix and mode (LE_MDLY_VOICE's
+ * voicings, each plain, L/R and GRV). */
+static const le_fx_param_desc LE_FX_MODE_DELAY_PARAMS[] = {
+    {"delay_time", LE_FX_UNIT_CHOICE, 20, 0.0f, 1.0f, LE_FX_CURVE_LINEAR,
+     8.0f / 19.0f, 0},
+    {"feedback", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     0},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.2f, 0},
+    {"delay_mode", LE_FX_UNIT_CHOICE, 12, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f,
+     0},
+};
+/* The Amp+Cab's controls. Drive, Bass, Treble and Modern were captured at
+ * 0, 25, 50, 75 and 100 % and interpolate between (#1468). */
+static const le_fx_param_desc LE_FX_AMP_CAB_PARAMS[] = {
+    {"drive", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"bass", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"treble", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     0},
+    {"modern", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
+     0},
+    /* D.I., BRIT, 1x8", 1x12", 2x10", 2x12", 4x10", 4x12", 1x15", BASS,
+     * 4x10", RADIO; 4x12" by default */
+    {"cabinet", LE_FX_UNIT_CHOICE, 12, 0.0f, 1.0f, LE_FX_CURVE_LINEAR,
+     7.0f / 11.0f, 0},
 };
 static const le_fx_param_desc LE_FX_ECHO_PARAMS[] = {
     {"time", LE_FX_UNIT_MS, 0, 0.0f, 1000.0f, LE_FX_CURVE_LINEAR, 0.45f, 0},
@@ -1592,6 +2800,11 @@ static double le_fx_desc_value(const le_fx_param_desc* d, float v) {
   if (d->curve == LE_FX_CURVE_RECIPROCAL) {
     const double lo = 1.0 / (double)d->at_min;
     return 1.0 / (lo + (1.0 / (double)d->at_max - lo) * v);
+  }
+  if (d->curve == LE_FX_CURVE_REVERB_TIME) {
+    const double t =
+        v >= 1.0f ? (double)d->at_max : ((double)v + d->at_min) / (1.0 - v);
+    return t < (double)d->at_max ? t : (double)d->at_max;
   }
   return (double)d->at_min + ((double)d->at_max - (double)d->at_min) * v;
 }
@@ -2333,12 +3546,18 @@ static const le_fx_param_desc LE_FX_DOUBLER_PARAMS[] = {
      1.0f, 0},
 };
 static const le_fx_param_desc LE_FX_CHORUS_PARAMS[] = {
-    {"rate", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.45f,
-     LE_FX_PARAM_TAPER_UNVERIFIED},
-    {"depth", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.21f,
-     LE_FX_PARAM_TAPER_UNVERIFIED},
-    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
-     LE_FX_PARAM_TAPER_UNVERIFIED},
+    {"rate", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.45f, 0},
+    {"depth", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.21f, 0},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+};
+/* The Mod's controls, each measured at 0, 25, 50, 75 and 100 % (#1470).
+ * Its modes: CHORUS, PHASER, FLANGER (the Guitar Rack's) and Tremolo (the
+ * Studio Rack's). */
+static const le_fx_param_desc LE_FX_MOD_PARAMS[] = {
+    {"rate", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"depth", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"mod_mode", LE_FX_UNIT_CHOICE, 4, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f, 0},
 };
 static const le_fx_param_desc LE_FX_WAH_PARAMS[] = {
     {"pedal", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.619f,
@@ -2529,40 +3748,61 @@ static void fx_doubler_kprocess(void* ks, float* l, float* r) {
 /* ---- Chorus (LE_FX_CHORUS) ----
  *
  * One modulated voice per channel, mixed with the dry signal. Measured on
- * the Guitar Rack's chorus, the Phase 0 captures (#891, s3/4 and s3/5):
- * - the voice's delay is a triangle about 1.875 ms, swinging +-0.0704 ms at
- *   12 % depth, taken here as proportional, 0.587 ms at 100 %;
- * - the rate was 1.313 Hz at 32.6 % and 2.638 Hz at 79.7 %, taken here as
- *   the line through them, 0.396 Hz at 0 % to 3.209 Hz at 100 %;
- * - the voice is low-passed by about two 2nd-order sections at 6.7 kHz,
- *   Q 0.65 (fitted within 0.1 dB to 16 kHz);
- * - at 33.2 % mix the dry gain was 0.904 and the voice's 0.276: dry
- *   1 - 0.29 mix, voice 0.83 mix.
- * With these, a model of this kernel fitted only for the LFO's phase nulls
- * both captures to -40 dB over 7 s of plucks and chords. Ed's Rack's Chorus
- * is taken to be the same module (#891). Both channels share the LFO. */
-#define LE_CHO_RING 1024u /* holds 5.3 ms at 192 kHz */
-#define LE_CHO_CENTRE_MS 1.875
-#define LE_CHO_DEPTH_MS 0.587
-#define LE_CHO_RATE_MIN_HZ 0.3959
-#define LE_CHO_RATE_SPAN_HZ 2.8132
+ * the Guitar Rack's chorus (#891: s3/4 and s3/5 on plucks and chords, and
+ * s6trem and s6mod with each control at 0, 25, 50, 75 and 100 %,
+ * docs/plan/2026-10-25-looperx-mod-measured.md):
+ * - the voice's delay is a triangle from LE_CHO_BASE_MS (1.767 ms measured
+ *   at 0 % depth, held to whole samples at the common rates) up, its swing
+ *   LE_CHO_SPAN_MS times the square of Depth (2.45 ms at 50 %, 9.7 ms at
+ *   100 %, and the s3 capture's 0.141 ms at 12 %);
+ * - the rate is a line, 0.40 Hz at 0 % to 3.20 Hz at 100 %;
+ * - the voice is low-passed by two 2nd-order sections at 6.7 kHz, Q 0.65,
+ *   fitted to s3 (-2.0, -11.2 and -23 dB at 4, 8 and 12 kHz; these give
+ *   -1.9, -11.2 and -23.1 at 96 kHz). s6 read -1.8, -10.5 and -21 dB
+ *   through the rig's 48 kHz resampling, which this does not follow above
+ *   8 kHz;
+ * - the dry gain is 1 - 0.29 mix and the voice's 0.83 mix (1.0 and 0,
+ *   0.855 and 0.43, 0.71 and 0.82 at 0, 50 and 100 %).
+ * Ed's Rack's Chorus is taken to be the same module (#891), and the Mod
+ * kind's chorus mode is this voice. Both channels share the LFO. */
+#define LE_CHO_RING 4096u /* holds the 11.5 ms of 100 % at 192 kHz */
+#define LE_CHO_BASE_MS (85.0 / 48.0) /* 1.771 ms: whole samples at 48, 96 and 192 kHz */
+#define LE_CHO_SPAN_MS 9.78
+#define LE_CHO_RATE_MIN_HZ 0.4005
+#define LE_CHO_RATE_SPAN_HZ 2.799
 #define LE_CHO_LP_HZ 6700.0
 #define LE_CHO_LP_Q 0.65
 #define LE_CHO_DRY_DROP 0.29f
 #define LE_CHO_VOICE 0.83f
 
+/* The voice's low-pass at [rate]: RBJ, the design le_eq_design uses for a
+ * cut, a0-normalized b0 b1 b2 a1 a2. */
+static void le_cho_lowpass(float* lp, double rate) {
+  const double w0 = 2.0 * 3.14159265358979323846 *
+                    (LE_CHO_LP_HZ < 0.45 * rate ? LE_CHO_LP_HZ : 0.45 * rate) /
+                    rate;
+  const double cw = cos(w0);
+  const double alpha = sin(w0) / (2.0 * LE_CHO_LP_Q);
+  const double a0 = 1.0 + alpha;
+  lp[0] = (float)((1.0 - cw) / 2.0 / a0);
+  lp[1] = (float)((1.0 - cw) / a0);
+  lp[2] = lp[0];
+  lp[3] = (float)(-2.0 * cw / a0);
+  lp[4] = (float)((1.0 - alpha) / a0);
+}
+
 typedef struct le_fx_chorus {
   le_fx_dyn_head h;
   float last[LE_CHO_PARAMS_N];
   le_fx_glide rate;  /* LFO rate, Hz */
-  le_fx_glide swing; /* the delay's swing, samples */
+  le_fx_glide swing; /* the delay's swing above the base, samples */
   le_fx_glide dry;
   le_fx_glide wet;
-  float centre; /* samples */
-  float max_swing; /* what the ring holds past the centre */
+  float base; /* the shortest delay, samples */
+  float max_swing; /* what the ring holds past the base */
   float inv_sr;
   double ph;
-  float lp[5];       /* the voice low-pass, a0-normalized b0 b1 b2 a1 a2 */
+  float lp[5];       /* the voice low-pass */
   float z[2][2][2];  /* [section][channel][state] */
   uint32_t w;
   float ring[2][LE_CHO_RING];
@@ -2574,21 +3814,10 @@ static void fx_chorus_update(void* ks, const float* p, int sr, int settle) {
   if (!f) return;
   const double rate = (double)(sr > 0 ? sr : 48000);
   if (f & LE_FX_DYN_NEW_RATE) {
-    c->centre = (float)(LE_CHO_CENTRE_MS * 1e-3 * rate);
-    c->max_swing = (float)(LE_CHO_RING - 2u) - c->centre;
+    c->base = (float)(LE_CHO_BASE_MS * 1e-3 * rate);
+    c->max_swing = (float)(LE_CHO_RING - 2u) - c->base;
     c->inv_sr = (float)(1.0 / rate);
-    /* RBJ low-pass, the same design le_eq_design uses for a cut. */
-    const double w0 = 2.0 * 3.14159265358979323846 *
-                      (LE_CHO_LP_HZ < 0.45 * rate ? LE_CHO_LP_HZ : 0.45 * rate) /
-                      rate;
-    const double cw = cos(w0);
-    const double alpha = sin(w0) / (2.0 * LE_CHO_LP_Q);
-    const double a0 = 1.0 + alpha;
-    c->lp[0] = (float)((1.0 - cw) / 2.0 / a0);
-    c->lp[1] = (float)((1.0 - cw) / a0);
-    c->lp[2] = c->lp[0];
-    c->lp[3] = (float)(-2.0 * cw / a0);
-    c->lp[4] = (float)((1.0 - alpha) / a0);
+    le_cho_lowpass(c->lp, rate);
   }
   const float k = settle ? 1.0f : c->h.k;
   const float v[3] = {
@@ -2598,7 +3827,7 @@ static void fx_chorus_update(void* ks, const float* p, int sr, int settle) {
   };
   int moving = le_fx_glide_step(
       &c->rate, (float)(LE_CHO_RATE_MIN_HZ + LE_CHO_RATE_SPAN_HZ * v[0]), k);
-  float swing = (float)(LE_CHO_DEPTH_MS * 1e-3 * rate * v[1]);
+  float swing = (float)(LE_CHO_SPAN_MS * 1e-3 * rate) * v[1] * v[1];
   if (swing > c->max_swing) swing = c->max_swing;
   moving |= le_fx_glide_step(&c->swing, swing, k);
   moving |= le_fx_glide_step(&c->dry, 1.0f - LE_CHO_DRY_DROP * v[2], k);
@@ -2614,7 +3843,7 @@ static void fx_chorus_kprocess(void* ks, float* l, float* r) {
   const float dry = le_fx_glide_next(&c->dry);
   const float wet = le_fx_glide_next(&c->wet);
   c->ph = le_lfo_step(c->ph, inc);
-  const float delay = c->centre + swing * le_tri((float)c->ph);
+  const float delay = c->base + swing * 0.5f * (1.0f + le_tri((float)c->ph));
   const uint32_t at = c->w & (LE_CHO_RING - 1u);
   float y[2];
   for (int ch = 0; ch < 2; ++ch) {
@@ -2624,6 +3853,383 @@ static void fx_chorus_kprocess(void* ks, float* l, float* r) {
     y[ch] = dry * x[ch] + wet * v;
   }
   c->w++;
+  *l = y[0];
+  *r = y[1];
+}
+
+/* ---- Modulation (LE_FX_MOD, #887 part 13) ----
+ *
+ * The Looper X's Mod pedal: the Guitar Rack's CHORUS, PHASER and FLANGER
+ * and the Studio Rack's Chorus and Tremolo, one mode at a time. Measured on
+ * the #891 rig (s6trem and s6mod, docs/plan/2026-10-25-looperx-mod-measured.md)
+ * with each control at 0, 25, 50, 75 and 100 % (and the flanger's depth at
+ * 10 and 90 %). Both sides run the same LFO, as the Looper X does (its
+ * outputs are identical for a mono input).
+ *
+ * - CHORUS: the chorus kind's voice (fx_chorus_*, the same measurements).
+ *   The Studio Rack's chorus is this one at Mix 50 %.
+ * - PHASER: four first-order allpass stages whose corners sit LE_PHA_SPREAD
+ *   apart around 654 Hz, mixed with the dry signal (Mix is a measured
+ *   table). The LFO, 0.1 x 100^Rate Hz, moves the corners by up to
+ *   5.87 x Depth octaves along a sine raised to LE_PHA_SHAPE, which tracks
+ *   the swept notches within 0.02 octave. The Looper X's wet signal is
+ *   up to 1.2 dB louder between the notches than an allpass; that is not
+ *   modelled.
+ * - FLANGER: one voice on a triangle delay, its shortest and longest a
+ *   measured table against Depth, its rate 0.0166 x 604^Rate Hz; dry
+ *   1 - Mix, the voice 0.88 Mix. Each repeat feeds back through a
+ *   first-order high-pass and low-pass, so the repeats lose their bass and
+ *   treble while the first one keeps its full range.
+ * - Tremolo: a square LFO, 0.255 x 51^Rate Hz, on for LE_TRM_DUTY of each
+ *   cycle, through a gain that rises with a 13 ms and falls with a 30.5 ms
+ *   time constant. Depth sets the gain of the off part (a measured table).
+ *   Mix does nothing in this mode.
+ *
+ * A mode change crossfades over LE_MOD_FADE frames, with both modes
+ * running for that time. */
+#define LE_MOD_PARAMS_N 4
+enum { LE_MOD_CHORUS, LE_MOD_PHASER, LE_MOD_FLANGER, LE_MOD_TREMOLO,
+       LE_MOD_MODES };
+#define LE_MOD_RING LE_CHO_RING
+#define LE_FLA_RING 2048u /* the flanger's 6.84 ms at 192 kHz */
+_Static_assert(LE_FLA_RING - 2u >= 1313u,
+               "the flanger's ring holds 6.836 ms at 192 kHz");
+_Static_assert(LE_CHO_RING - 2u >= 2218u,
+               "the chorus's ring holds 1.771 + 9.78 ms at 192 kHz");
+#define LE_MOD_FADE 1024
+#define LE_PHA_SPREAD 1.4263
+#define LE_PHA_SHAPE 0.87
+#define LE_PHA_CORNER_HZ 654.0
+#define LE_PHA_OCTAVES 5.87 /* the sweep at Depth 100 %, octaves */
+#define LE_PHA_MEAN 0.467 /* fitted: where on the shaped sine the corner sits */
+#define LE_PHA_COEF_FRAMES 16 /* the phaser's corners are recomputed this often */
+#define LE_FLA_FB 1.03f
+#define LE_FLA_HP_HZ 1560.0
+#define LE_FLA_LP_HZ 6150.0
+#define LE_FLA_VOICE 0.88f
+#define LE_TRM_DUTY 0.58
+#define LE_TRM_ATTACK_S 0.013
+#define LE_TRM_RELEASE_S 0.0305
+
+/* A first-order allpass (bilinear): its coefficient for corner [hz] at
+ * [rate] (the corner held under 0.45 of the rate), and one tick,
+ * y = a u + z, z = u - a y. */
+static float le_ap1_coef(double hz, double rate) {
+  if (hz > 0.45 * rate) hz = 0.45 * rate;
+  const double t = tan(3.14159265358979323846 * hz / rate);
+  return (float)((t - 1.0) / (t + 1.0));
+}
+
+static inline float le_ap1_tick(float a, float* z, float u) {
+  const float y = a * u + *z;
+  *z = fx_sanitize(u - a * y);
+  return y;
+}
+
+/* A point of a measured setting table: the setting and up to two values. */
+typedef struct le_mod_point {
+  float at, a, b;
+} le_mod_point;
+
+/* Linear interpolation of a table at setting [v] (0..1). */
+static void le_mod_table(const le_mod_point* t, int n, float v, float* a,
+                         float* b) {
+  int i = 0;
+  while (i < n - 2 && v > t[i + 1].at) ++i;
+  float f = (v - t[i].at) / (t[i + 1].at - t[i].at);
+  f = f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f;
+  *a = t[i].a + f * (t[i + 1].a - t[i].a);
+  if (b != NULL) *b = t[i].b + f * (t[i + 1].b - t[i].b);
+}
+
+/* The phaser's dry and wet gains against Mix. */
+static const le_mod_point LE_PHA_MIX[] = {{0.0f, 1.0f, 0.0f},
+                                          {0.25f, 0.963f, 0.470f},
+                                          {0.5f, 0.789f, 0.798f},
+                                          {0.75f, 0.481f, 0.993f},
+                                          {1.0f, 0.043f, 1.048f}};
+/* The flanger's shortest and longest delay, ms, against Depth. */
+static const le_mod_point LE_FLA_DEPTH[] = {
+    {0.0f, 0.805f, 0.805f}, {0.1f, 0.662f, 2.062f}, {0.25f, 0.494f, 3.515f},
+    {0.5f, 0.279f, 5.361f}, {0.75f, 0.151f, 6.467f}, {0.9f, 0.116f, 6.775f},
+    {1.0f, 0.109f, 6.836f}};
+/* The tremolo's gain in its off part against Depth. */
+static const le_mod_point LE_TRM_DEPTH[] = {{0.0f, 1.0f, 0},
+                                            {0.25f, 0.880f, 0},
+                                            {0.5f, 0.564f, 0},
+                                            {0.75f, 0.194f, 0},
+                                            {1.0f, 0.0f, 0}};
+#define LE_MOD_POINTS(t) ((int)(sizeof(t) / sizeof(t[0])))
+
+/* The LFO rate, Hz, mode [m] runs at Rate [v]. */
+static double le_mod_rate_hz(int m, double v) {
+  switch (m) {
+    case LE_MOD_PHASER: return 0.1 * pow(100.0, v);
+    case LE_MOD_FLANGER: return 0.01657 * pow(604.0, v);
+    case LE_MOD_TREMOLO: return 0.2551 * pow(50.97, v);
+    default: return LE_CHO_RATE_MIN_HZ + LE_CHO_RATE_SPAN_HZ * v;
+  }
+}
+
+static int le_mod_mode(float v) {
+  const int m = (int)lrintf((v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v) *
+                            (float)(LE_MOD_MODES - 1));
+  return m;
+}
+
+/* One mode's settings, glided; the mode fading out keeps its own. */
+typedef struct le_mod_voice {
+  le_fx_glide inc;  /* LFO phase step a sample */
+  le_fx_glide dry;
+  le_fx_glide wet;
+  le_fx_glide a;    /* chorus: swing; phaser: octaves; flanger: shortest;
+                     * tremolo: the off gain */
+  le_fx_glide b;    /* flanger: longest */
+  double ph;
+} le_mod_voice;
+
+typedef struct le_fx_mod {
+  le_fx_dyn_head h;
+  float last[LE_MOD_PARAMS_N];
+  int32_t mode;
+  int32_t from; /* the mode fading out, or -1 */
+  int32_t fade; /* frames of the crossfade left */
+  float rate;   /* the sample rate */
+  float base;   /* the chorus's shortest delay, samples */
+  float max_delay;
+  le_mod_voice v[LE_MOD_MODES];
+  float cho_lp[5];
+  float cho_z[2][2][2];
+  /* phaser: the stage coefficients now and their per-sample steps */
+  float pha_a[4], pha_da[4];
+  float pha_z[2][4];
+  int32_t pha_left; /* samples until the next corner */
+  /* flanger: the repeats' high-pass and low-pass, first-order (bilinear),
+   * each the half-sum or half-difference of an allpass and its input */
+  float fla_hp, fla_lp; /* the allpasses' coefficients */
+  float fla_hz[2], fla_lz[2];
+  /* tremolo */
+  float trm_g;
+  float trm_ka, trm_kr;
+  uint32_t w;
+  float ring[2][LE_MOD_RING]; /* the chorus's input */
+  float fring[2][LE_FLA_RING]; /* the flanger's input and repeats */
+} le_fx_mod;
+
+/* The targets mode [m] glides to at settings [p] (each 0..1). */
+static int le_mod_targets(le_fx_mod* q, int m, const float* p, float k) {
+  le_mod_voice* o = &q->v[m];
+  const float rate = p[0], depth = p[1], mix = p[2];
+  int moving = le_fx_glide_step(
+      &o->inc, (float)(le_mod_rate_hz(m, rate) / (double)q->rate), k);
+  float dry = 1.0f, wet = 0.0f, a = 0.0f, b = 0.0f;
+  switch (m) {
+    case LE_MOD_CHORUS:
+      dry = 1.0f - LE_CHO_DRY_DROP * mix;
+      wet = LE_CHO_VOICE * mix;
+      a = (float)(LE_CHO_SPAN_MS * 1e-3 * q->rate) * depth * depth;
+      if (a > q->max_delay - q->base) a = q->max_delay - q->base;
+      break;
+    case LE_MOD_PHASER:
+      le_mod_table(LE_PHA_MIX, LE_MOD_POINTS(LE_PHA_MIX), mix, &dry, &wet);
+      a = (float)LE_PHA_OCTAVES * depth;
+      break;
+    case LE_MOD_FLANGER:
+      dry = 1.0f - mix;
+      wet = LE_FLA_VOICE * mix;
+      le_mod_table(LE_FLA_DEPTH, LE_MOD_POINTS(LE_FLA_DEPTH), depth, &a, &b);
+      a *= q->rate * 1e-3f;
+      b *= q->rate * 1e-3f;
+      if (a < 1.0f) a = 1.0f; /* the voice reads only past samples */
+      if (b > (float)(LE_FLA_RING - 2u)) b = (float)(LE_FLA_RING - 2u);
+      break;
+    default: /* LE_MOD_TREMOLO */
+      le_mod_table(LE_TRM_DEPTH, LE_MOD_POINTS(LE_TRM_DEPTH), depth, &a, NULL);
+      break;
+  }
+  moving |= le_fx_glide_step(&o->dry, dry, k);
+  moving |= le_fx_glide_step(&o->wet, wet, k);
+  moving |= le_fx_glide_step(&o->a, a, k);
+  moving |= le_fx_glide_step(&o->b, b, k);
+  return moving;
+}
+
+/* The phaser's four corners at LFO phase [ph] with a sweep of [span]
+ * octaves. */
+static void le_mod_phaser_corners(const le_fx_mod* q, double ph, float span,
+                                  float* a) {
+  const double u = 0.5 * (1.0 + sin(2.0 * 3.14159265358979323846 * ph));
+  const double oct = (double)span * (pow(u, LE_PHA_SHAPE) - LE_PHA_MEAN);
+  const double c = LE_PHA_CORNER_HZ * exp2(oct);
+  for (int s = 0; s < 4; ++s) {
+    a[s] = le_ap1_coef(c * pow(LE_PHA_SPREAD, (double)s - 1.5), q->rate);
+  }
+}
+
+/* The phaser's corners land where its settings are now, with no ramp: a
+ * fresh block, or the mode a change fades in. */
+static void le_mod_phaser_land(le_fx_mod* q) {
+  const le_mod_voice* o = &q->v[LE_MOD_PHASER];
+  le_mod_phaser_corners(q, o->ph, o->a.v, q->pha_a);
+  for (int s = 0; s < 4; ++s) q->pha_da[s] = 0.0f;
+  q->pha_left = 0;
+}
+
+static void fx_mod_update(void* ks, const float* p, int sr, int settle) {
+  le_fx_mod* q = (le_fx_mod*)ks;
+  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_MOD_PARAMS_N, sr, settle);
+  if (!f) return;
+  if (f & LE_FX_DYN_NEW_RATE) {
+    const double rate = (double)(sr > 0 ? sr : 48000);
+    q->rate = (float)rate;
+    q->base = (float)(LE_CHO_BASE_MS * 1e-3 * rate);
+    q->max_delay = (float)(LE_MOD_RING - 2u);
+    le_cho_lowpass(q->cho_lp, rate);
+    q->fla_hp = le_ap1_coef(LE_FLA_HP_HZ, rate);
+    q->fla_lp = le_ap1_coef(LE_FLA_LP_HZ, rate);
+    q->trm_ka = (float)(1.0 - exp(-1.0 / (LE_TRM_ATTACK_S * rate)));
+    q->trm_kr = (float)(1.0 - exp(-1.0 / (LE_TRM_RELEASE_S * rate)));
+  }
+  const float v[3] = {
+      p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0],
+      p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1],
+      p[2] < 0.0f ? 0.0f : p[2] > 1.0f ? 1.0f : p[2],
+  };
+  const int m = le_mod_mode(p[3]);
+  if (settle) {
+    q->mode = m;
+    q->from = -1;
+    q->fade = 0;
+    q->trm_g = 1.0f;
+  } else if (m != q->mode && q->fade == 0) {
+    /* A change picked during a fade waits for it (h.moving keeps the
+     * update running until then). */
+    q->from = q->mode;
+    q->mode = m;
+    q->fade = LE_MOD_FADE;
+    le_mod_targets(q, m, v, 1.0f); /* the incoming mode starts set */
+    if (m == LE_MOD_PHASER) le_mod_phaser_land(q);
+    if (m == LE_MOD_TREMOLO) q->trm_g = 1.0f;
+  }
+  const float k = settle ? 1.0f : q->h.k;
+  int moving = le_mod_targets(q, q->mode, v, k);
+  if (settle) le_mod_phaser_land(q);
+  q->h.moving = moving || q->fade > 0 || m != q->mode;
+}
+
+/* The chorus mode on one sample of both sides. */
+static void le_mod_chorus(le_fx_mod* q, const float* x, float* y) {
+  le_mod_voice* o = &q->v[LE_MOD_CHORUS];
+  const double inc = (double)le_fx_glide_next(&o->inc);
+  const float swing = le_fx_glide_next(&o->a);
+  const float dry = le_fx_glide_next(&o->dry);
+  const float wet = le_fx_glide_next(&o->wet);
+  le_fx_glide_next(&o->b);
+  o->ph = le_lfo_step(o->ph, inc);
+  const float delay = q->base + swing * 0.5f * (1.0f + le_tri((float)o->ph));
+  for (int ch = 0; ch < 2; ++ch) {
+    float v = le_ring_read(q->ring[ch], LE_MOD_RING - 1u, q->w, delay);
+    for (int s = 0; s < 2; ++s) v = le_biquad_tick(q->cho_lp, q->cho_z[s][ch], v);
+    y[ch] = dry * x[ch] + wet * v;
+  }
+}
+
+static void le_mod_phaser(le_fx_mod* q, const float* x, float* y) {
+  le_mod_voice* o = &q->v[LE_MOD_PHASER];
+  const double inc = (double)le_fx_glide_next(&o->inc);
+  const float span = le_fx_glide_next(&o->a);
+  const float dry = le_fx_glide_next(&o->dry);
+  const float wet = le_fx_glide_next(&o->wet);
+  le_fx_glide_next(&o->b);
+  o->ph = le_lfo_step(o->ph, inc);
+  if (q->pha_left <= 0) {
+    /* Where the corners land LE_PHA_COEF_FRAMES samples on; the samples
+     * between step there in a line. */
+    float to[4];
+    le_mod_phaser_corners(q, o->ph + inc * (double)LE_PHA_COEF_FRAMES, span,
+                          to);
+    for (int s = 0; s < 4; ++s) {
+      q->pha_da[s] = (to[s] - q->pha_a[s]) * (1.0f / (float)LE_PHA_COEF_FRAMES);
+    }
+    q->pha_left = LE_PHA_COEF_FRAMES;
+  }
+  q->pha_left--;
+  for (int s = 0; s < 4; ++s) q->pha_a[s] += q->pha_da[s];
+  for (int ch = 0; ch < 2; ++ch) {
+    float u = x[ch];
+    for (int s = 0; s < 4; ++s) u = le_ap1_tick(q->pha_a[s], &q->pha_z[ch][s], u);
+    y[ch] = dry * x[ch] + wet * u;
+  }
+}
+
+static void le_mod_flanger(le_fx_mod* q, const float* x, float* y) {
+  le_mod_voice* o = &q->v[LE_MOD_FLANGER];
+  const double inc = (double)le_fx_glide_next(&o->inc);
+  const float lo = le_fx_glide_next(&o->a);
+  const float hi = le_fx_glide_next(&o->b);
+  const float dry = le_fx_glide_next(&o->dry);
+  const float wet = le_fx_glide_next(&o->wet);
+  o->ph = le_lfo_step(o->ph, inc);
+  const float delay = lo + (hi - lo) * 0.5f * (1.0f + le_tri((float)o->ph));
+  const uint32_t at = q->w & (LE_FLA_RING - 1u);
+  for (int ch = 0; ch < 2; ++ch) {
+    /* The delay is at least a sample (le_mod_targets), so this reads only
+     * what earlier samples wrote. */
+    const float v = le_ring_read(q->fring[ch], LE_FLA_RING - 1u, q->w, delay);
+    /* The repeat: high-passed, then low-passed. */
+    const float hp = 0.5f * (v - le_ap1_tick(q->fla_hp, &q->fla_hz[ch], v));
+    const float lp = 0.5f * (hp + le_ap1_tick(q->fla_lp, &q->fla_lz[ch], hp));
+    q->fring[ch][at] = x[ch] + LE_FLA_FB * lp;
+    y[ch] = dry * x[ch] + wet * v;
+  }
+}
+
+static void le_mod_tremolo(le_fx_mod* q, const float* x, float* y) {
+  le_mod_voice* o = &q->v[LE_MOD_TREMOLO];
+  const double inc = (double)le_fx_glide_next(&o->inc);
+  const float off = le_fx_glide_next(&o->a);
+  le_fx_glide_next(&o->b);
+  le_fx_glide_next(&o->dry);
+  le_fx_glide_next(&o->wet);
+  o->ph = le_lfo_step(o->ph, inc);
+  const float tgt = o->ph < LE_TRM_DUTY ? 1.0f : off;
+  q->trm_g += (tgt > q->trm_g ? q->trm_ka : q->trm_kr) * (tgt - q->trm_g);
+  y[0] = q->trm_g * x[0];
+  y[1] = q->trm_g * x[1];
+}
+
+static void le_mod_run(le_fx_mod* q, int m, const float* x, float* y) {
+  switch (m) {
+    case LE_MOD_PHASER: le_mod_phaser(q, x, y); return;
+    case LE_MOD_FLANGER: le_mod_flanger(q, x, y); return;
+    case LE_MOD_TREMOLO: le_mod_tremolo(q, x, y); return;
+    default: le_mod_chorus(q, x, y); return;
+  }
+}
+
+static void fx_mod_kprocess(void* ks, float* l, float* r) {
+  le_fx_mod* q = (le_fx_mod*)ks;
+  const float x[2] = {fx_sanitize(*l), fx_sanitize(*r)};
+  const uint32_t at = q->w & (LE_MOD_RING - 1u);
+  q->ring[0][at] = x[0];
+  q->ring[1][at] = x[1];
+  float y[2];
+  le_mod_run(q, q->mode, x, y);
+  if (q->fade > 0) {
+    float z[2];
+    le_mod_run(q, q->from, x, z);
+    const float g = (float)q->fade * (1.0f / (float)LE_MOD_FADE);
+    y[0] += g * (z[0] - y[0]);
+    y[1] += g * (z[1] - y[1]);
+    if (--q->fade == 0) q->from = -1;
+  }
+  if (q->mode != LE_MOD_FLANGER && q->from != LE_MOD_FLANGER) {
+    /* Kept current, so the flanger never starts on old audio. */
+    const uint32_t fat = q->w & (LE_FLA_RING - 1u);
+    q->fring[0][fat] = x[0];
+    q->fring[1][fat] = x[1];
+  }
+  q->w++;
   *l = y[0];
   *r = y[1];
 }
@@ -2834,6 +4440,563 @@ static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
   }
   *l = io[0];
   *r = io[1];
+}
+
+/* ---- Amp+Cab (LE_FX_AMP_CAB, #887 part 12) ----
+ *
+ * The Looper X's Amp pedal (Ed's and Guitar racks), fit to the #891 rig
+ * captures (s3/1-3, s4/16-20, and s6: drive, tone and every cabinet). Mono:
+ * the Looper X's amp is (its outputs are identical), so the pair's average
+ * goes in and the result goes to both sides.
+ *
+ *   input voicing  an 81 Hz high-pass, +6.4 dB at 4.5 kHz and +1 dB at
+ *                  415 Hz (the small-signal response at drive 0)
+ *   drive, first   a gain, then a square-law term: the even harmonic every
+ *                  pass shows below clipping, sized by Modern
+ *   Modern         a low shelf, a broad rise near 5 kHz, a high shelf and a
+ *                  level before the clipper (Modern mostly moves how hard it
+ *                  is driven), and a smaller level after it (0 to -3 dB)
+ *   drive, second  a gain with the drive's own treble loss (a 9 kHz shelf,
+ *                  0 to -13 dB from 0 to 100 %), into a clipper whose two
+ *                  sides limit at different levels
+ *   tone           Bass and Treble shelves after the clipper (a saturated
+ *                  sweep shows them in full)
+ *   output         a 10.1 kHz low-pass, a gentle one at 22 kHz, and the
+ *                  output level
+ *   cabinet        one of eleven measured responses, or none (D.I.), as
+ *                  zero-latency partitioned convolution
+ *
+ * Drive, Bass, Treble and Modern were captured at 0, 25, 50, 75 and 100 %
+ * (s6); between those the settings interpolate linearly (gains in dB,
+ * corners in octaves), the plainest reading of five points. */
+
+#include "engine_fx_cabs.inc"
+
+#define LE_AMP_PARAMS_N 5
+#define LE_CAB_B 64               /* partition length, frames */
+#define LE_CAB_NB (LE_CAB_B + 1)  /* half-spectrum bins of a 2B transform */
+#define LE_CAB_MAX_PARTS 64       /* 4160 taps: the 4096 a cabinet needs at 96 kHz */
+#define LE_CAB_XF_FRAMES 1024     /* a cabinet change crossfades this long */
+
+/* The cabinets at one sample rate, built off the audio thread and read-only
+ * after: each row's first B taps (run directly) and the spectra of the
+ * partitions after them. */
+typedef struct le_cab_bank {
+  int32_t sr, parts;
+  float head[LE_CAB_ROWS][LE_CAB_B];
+  float re[LE_CAB_ROWS][LE_CAB_MAX_PARTS][LE_CAB_NB];
+  float im[LE_CAB_ROWS][LE_CAB_MAX_PARTS][LE_CAB_NB];
+} le_cab_bank;
+
+#define LE_CAB_BANKS 6 /* 44.1, 48, 88.2, 96, 176.4 and 192 kHz */
+static le_cab_bank* _Atomic le_cab_banks[LE_CAB_BANKS];
+static pthread_mutex_t le_cab_banks_mu = PTHREAD_MUTEX_INITIALIZER;
+static le_rfft_plan le_cab_fft;
+
+/* The bank for [sr], or NULL when none was built. Any thread. */
+static const le_cab_bank* le_cab_bank_find(int32_t sr) {
+  for (int i = 0; i < LE_CAB_BANKS; ++i) {
+    const le_cab_bank* b =
+        atomic_load_explicit(&le_cab_banks[i], memory_order_acquire);
+    if (b != NULL && b->sr == sr) return b;
+  }
+  return NULL;
+}
+
+/* Builds the bank for [sr] once (control thread). Each 48 kHz response is
+ * resampled through its spectrum: the rate's impulse response is the
+ * inverse transform of the 48 kHz bins (everything below 24 kHz, on their
+ * own spacing) at the rate's sample times, scaled by 48000 / sr so the
+ * cabinet's gain does not change with the rate. Nothing is added above
+ * 24 kHz, where every cabinet is already 40 dB or more down. At 48 kHz that
+ * is the response itself, and at 96 kHz one zero-padded inverse FFT (about
+ * a millisecond); other rates sum the bins directly (tens of ms, once).
+ * Past 96 kHz the response is cut at LE_CAB_MAX_PARTS partitions, with a
+ * fade over its last quarter. */
+static le_rfft_plan le_cab_fft48;
+static le_rfft_plan le_cab_fft96;
+static const le_cab_bank* le_cab_bank_get(int32_t sr) {
+  if (sr <= 0) sr = 48000;
+  const le_cab_bank* found = le_cab_bank_find(sr);
+  if (found != NULL) return found;
+  pthread_mutex_lock(&le_cab_banks_mu);
+  found = le_cab_bank_find(sr);
+  int slot = -1;
+  for (int i = 0; found == NULL && i < LE_CAB_BANKS; ++i) {
+    if (atomic_load_explicit(&le_cab_banks[i], memory_order_relaxed) == NULL) {
+      slot = i;
+      break;
+    }
+  }
+  if (found != NULL || slot < 0) {
+    pthread_mutex_unlock(&le_cab_banks_mu);
+    return found;
+  }
+  const int n48 = LE_CAB_TAPS48;
+  const int half = n48 / 2;
+  const int max_taps = LE_CAB_B * (LE_CAB_MAX_PARTS + 1);
+  int m = (int)((double)n48 * (double)sr / 48000.0 + 0.5);
+  const int cut = m > max_taps; /* past 96 kHz the tail is cut */
+  if (cut) m = max_taps;
+  le_cab_bank* b = (le_cab_bank*)calloc(1, sizeof(*b));
+  float* h = (float*)malloc(sizeof(float) * (size_t)m);
+  double* acc = (double*)malloc(sizeof(double) * (size_t)m);
+  float xr[LE_CAB_TAPS48 / 2 + 1], xi[LE_CAB_TAPS48 / 2 + 1];
+  if (b == NULL || h == NULL || acc == NULL ||
+      !le_rfft_plan_init(&le_cab_fft, 2 * LE_CAB_B) ||
+      !le_rfft_plan_init(&le_cab_fft48, n48)) {
+    free(b);
+    free(h);
+    free(acc);
+    pthread_mutex_unlock(&le_cab_banks_mu);
+    return NULL;
+  }
+  b->sr = sr;
+  b->parts = (m - LE_CAB_B + LE_CAB_B - 1) / LE_CAB_B;
+  if (b->parts > LE_CAB_MAX_PARTS) b->parts = LE_CAB_MAX_PARTS;
+  const double step = 2.0 * 3.14159265358979323846 * 48000.0 /
+                      ((double)n48 * (double)sr); /* one bin, one sample */
+  float frame[2 * LE_CAB_B];
+  const int fft96 = !cut && m == 2 * n48 && 2 * n48 <= LE_FFT_MAX_N &&
+                    le_rfft_plan_init(&le_cab_fft96, 2 * n48);
+  for (int row = 0; row < LE_CAB_ROWS; ++row) {
+    if (m == n48) {
+      memcpy(h, LE_CAB_IR48[row], sizeof(float) * (size_t)n48);
+    } else if (fft96) {
+      /* The 48 kHz bins, zero-padded to twice the length: 24 kHz becomes an
+       * inner bin, so it carries half its weight; le_rfft_inv's 1 / 2n48
+       * is the 48000 / sr scale. */
+      static float zr[LE_FFT_MAX_N / 2 + 1], zi[LE_FFT_MAX_N / 2 + 1];
+      le_rfft_fwd(&le_cab_fft48, LE_CAB_IR48[row], xr, xi);
+      memset(zr, 0, sizeof(zr));
+      memset(zi, 0, sizeof(zi));
+      for (int k = 0; k <= half; ++k) {
+        const float w = k == half ? 0.5f : 1.0f;
+        zr[k] = w * xr[k];
+        zi[k] = w * xi[k];
+      }
+      le_rfft_inv(&le_cab_fft96, zr, zi, h);
+    } else {
+    le_rfft_fwd(&le_cab_fft48, LE_CAB_IR48[row], xr, xi);
+    for (int t = 0; t < m; ++t) acc[t] = 0.0;
+    for (int k = 0; k <= half; ++k) {
+      /* bin k at the rate's sample times, by a rotating phasor */
+      const double w = (k == 0 || k == half) ? 1.0 : 2.0;
+      const double cr = cos(step * (double)k), ci = sin(step * (double)k);
+      double zr = 1.0, zi = 0.0;
+      const double ar = w * (double)xr[k], ai = w * (double)xi[k];
+      for (int t = 0; t < m; ++t) {
+        acc[t] += ar * zr - ai * zi;
+        const double nr = zr * cr - zi * ci;
+        zi = zr * ci + zi * cr;
+        zr = nr;
+      }
+    }
+    /* le_rfft_fwd is unscaled: 1 / n48, and 48000 / sr for the rate */
+    const double scale = 48000.0 / ((double)n48 * (double)sr);
+    for (int t = 0; t < m; ++t) h[t] = (float)(acc[t] * scale);
+    }
+    if (cut) {
+      const int r = m / 4;
+      for (int t = m - r; t < m; ++t) {
+        const double c = cos(1.5707963267948966 * (double)(t - (m - r)) / r);
+        h[t] *= (float)(c * c);
+      }
+    }
+    for (int t = 0; t < LE_CAB_B; ++t) b->head[row][t] = t < m ? h[t] : 0.0f;
+    for (int p = 0; p < b->parts; ++p) {
+      for (int t = 0; t < 2 * LE_CAB_B; ++t) {
+        const int k = LE_CAB_B + p * LE_CAB_B + t;
+        frame[t] = t < LE_CAB_B && k < m ? h[k] : 0.0f;
+      }
+      le_rfft_fwd(&le_cab_fft, frame, b->re[row][p], b->im[row][p]);
+    }
+  }
+  free(h);
+  free(acc);
+  atomic_store_explicit(&le_cab_banks[slot], b, memory_order_release);
+  pthread_mutex_unlock(&le_cab_banks_mu);
+  return b;
+}
+
+/* ---- the amp's voicing, fit to the s6 captures (scratch analysis) ---- */
+/* The input voicing: a high-pass and two rises. */
+#define LE_AMP_HP_HZ 81.2
+#define LE_AMP_HP_Q 0.655
+#define LE_AMP_PK1_HZ 4542.0
+#define LE_AMP_PK1_DB 6.44
+#define LE_AMP_PK1_Q 0.80
+#define LE_AMP_PK2_HZ 415.0
+#define LE_AMP_PK2_DB 1.06
+#define LE_AMP_PK2_Q 0.64
+#define LE_AMP_DC_HZ 5.0        /* the coupling after the square-law stage */
+#define LE_AMP_POST_HP_HZ 1 /* the coupling after the clipper */
+#define LE_AMP_LP1_HZ 10099.0
+#define LE_AMP_LP1_Q 0.945
+#define LE_AMP_LP2_HZ 22083.0
+#define LE_AMP_LP2_Q 0.30
+#define LE_AMP_CLIP_POS 1.2071f  /* the clipper's two limits */
+#define LE_AMP_CLIP_NEG 0.52724f
+/* Interpolation points: settings 0, 25, 50, 75 and 100 %. */
+#define LE_AMP_PTS 5
+/* Drive: the gain into the square-law stage, the one into the clipper and
+ * the output level, dB. */
+static const float LE_AMP_GA_DB[LE_AMP_PTS] = {3.119f, 12.62f, 9.896f, 11.61f, 21.15f};
+static const float LE_AMP_GB_DB[LE_AMP_PTS] = {-9.026f, -0.7326f, 9.114f, 14.53f, 17.76f};
+static const float LE_AMP_OUT_DB[LE_AMP_PTS] = {-2.482f, -17.02f, -18.34f, -19.3f, -18.89f};
+/* The drive's treble loss before the clipper (the quiet sweeps): a high
+ * shelf per drive point, none at 0 %. */
+static const float LE_AMP_DRIVE_HS[LE_AMP_PTS][3] = {
+    {0.0f, 0.0f, 0.0f}, {9332.0f, -2.76f, 0.51f}, {9004.0f, -4.35f, 0.51f},
+    {8378.0f, -7.44f, 0.50f}, {9506.0f, -13.12f, 0.33f}};
+/* Modern: the square-law coefficient; the low shelf (34 Hz, Q 0.54), the
+ * 5.3 kHz rise (Q 0.22) and the high shelf (2.55 kHz, Q 1.3), dB; its level
+ * into the clipper and after it, dB. */
+#define LE_AMP_MLS_HZ 34.0
+#define LE_AMP_MLS_Q 0.54
+#define LE_AMP_MPK_HZ 5281.0
+#define LE_AMP_MPK_Q 0.22
+#define LE_AMP_MHS_HZ 2553.0
+#define LE_AMP_MHS_Q 1.30
+static const float LE_AMP_K[LE_AMP_PTS] = {0.3399f, 0.3853f, 0.1617f, 0.2122f, 0.1038f};
+static const float LE_AMP_MLS_DB[LE_AMP_PTS] = {-0.78f, 0.60f, 0.0f, 5.20f, 7.99f};
+static const float LE_AMP_MPK_DB[LE_AMP_PTS] = {-3.55f, -2.69f, 0.0f, 4.00f, 8.34f};
+static const float LE_AMP_MHS_DB[LE_AMP_PTS] = {-2.09f, -1.21f, 0.0f, 0.44f, 0.07f};
+static const float LE_AMP_MPRE_DB[LE_AMP_PTS] = {-1.763f, -0.4865f, 0.0f, 3.377f, 6.943f};
+static const float LE_AMP_MPOST_DB[LE_AMP_PTS] = {-3.187f, -1.593f, 0.0f, -1.137f, -2.273f};
+/* Bass and Treble: each setting's shelf (corner Hz, gain dB, Q). 50 % is
+ * flat: between 25 and 75 % the gain goes to 0 dB on its neighbour's corner
+ * and Q. */
+static const float LE_AMP_BASS[LE_AMP_PTS][3] = {
+    {74.0f, -22.60f, 0.410f}, {40.0f, -12.04f, 0.471f}, {0.0f, 0.0f, 0.0f},
+    {179.0f, 8.31f, 0.436f}, {263.0f, 12.88f, 0.441f}};
+static const float LE_AMP_TREBLE[LE_AMP_PTS][3] = {
+    {2608.0f, -8.90f, 0.869f}, {2809.0f, -6.28f, 0.846f}, {0.0f, 0.0f, 0.0f},
+    {4229.0f, 6.65f, 0.920f}, {5179.0f, 13.41f, 0.864f}};
+
+/* [t] (0..1) on a five-point table, linearly between the points. */
+static float le_amp_lerp(const float* tab, float t) {
+  const float x = (t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t) * (float)(LE_AMP_PTS - 1);
+  int i = (int)x;
+  if (i > LE_AMP_PTS - 2) i = LE_AMP_PTS - 2;
+  const float f = x - (float)i;
+  return tab[i] + f * (tab[i + 1] - tab[i]);
+}
+
+/* A shelf setting on a five-point table: log2 corner, gain, Q. The row
+ * [flat] is no shelf: next to it the gain fades to 0 dB on the neighbouring
+ * row's corner and Q. */
+static void le_amp_shelf(const float tab[LE_AMP_PTS][3], int flat, float t,
+                         float out[3]) {
+  const float x = (t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t) * (float)(LE_AMP_PTS - 1);
+  int i = (int)x;
+  if (i > LE_AMP_PTS - 2) i = LE_AMP_PTS - 2;
+  const float f = x - (float)i;
+  const float* r0 = tab[i == flat ? i + 1 : i];
+  const float* r1 = tab[i + 1 == flat ? i : i + 1];
+  const float g0 = i == flat ? 0.0f : r0[1];
+  const float g1 = i + 1 == flat ? 0.0f : r1[1];
+  out[0] = log2f(r0[0]) + f * (log2f(r1[0]) - log2f(r0[0]));
+  out[1] = g0 + f * (g1 - g0);
+  out[2] = r0[2] + f * (r1[2] - r0[2]);
+}
+
+/* The clipper's knee: z / (1 + z^4)^(1/4), limiting at +-1 (two square
+ * roots, no powf). */
+static inline float le_amp_knee(float z) {
+  const float a = z * z;
+  return z / sqrtf(sqrtf(1.0f + a * a));
+}
+
+/* One instance (mono). */
+typedef struct le_fx_amp {
+  int32_t sr;                 /* what the filters and the bank are for; 0: unset */
+  int32_t settle;             /* the next update lands every glide at once */
+  int32_t tick;               /* frames to the next update */
+  int32_t cab, cab_from;      /* the cabinet index heard, the one fading out */
+  int32_t xf;                 /* crossfade frames left */
+  int32_t moving;             /* a glide has not landed */
+  float last[LE_AMP_PARAMS_N];
+  float k;                    /* glide factor per update */
+  /* glides, in their own units (dB, octaves, a coefficient) */
+  float ga, gb, kq, mpre, mpost, mls, mpk, mhs;
+  float bass[3], treble[3], dhs[3]; /* log2 Hz, dB, Q */
+  float ga_lin, gb_lin, out_lin, mpre_lin;
+  /* filters, a0-normalized biquads and their states */
+  float pre_hp[5], pre_pk1[5], pre_pk2[5], dc_b0, dc_a1;
+  float m_ls[5], m_pk[5], m_hs[5], d_hs[5];
+  float post_hp_b0, post_hp_a1, t_bass[5], t_treb[5], lp1[5], lp2[5];
+  float z_pre[3][2], z_dc[2], z_m[3][2], z_dhs[2], z_post_hp[2], z_tone[2][2], z_lp[2][2];
+  /* the cabinet: head history (doubled), the block being filled, the
+   * frequency-domain delay line, and the tail each running cabinet adds to
+   * the next block */
+  const le_cab_bank* bank;
+  int32_t hp, j, fpos;
+  float hist[2 * LE_CAB_B];
+  float frame[2 * LE_CAB_B];
+  float tail[2][LE_CAB_B];
+  float fre[LE_CAB_MAX_PARTS][LE_CAB_NB], fim[LE_CAB_MAX_PARTS][LE_CAB_NB];
+  float wr[LE_CAB_NB], wi[LE_CAB_NB], tmp[2 * LE_CAB_B];
+} le_fx_amp;
+
+static void le_amp_design(int kind, double hz, double db, double q, int sr,
+                          float c[5]) {
+  double d[5];
+  le_eq_design(kind, hz, db, q, sr, d);
+  for (int i = 0; i < 5; ++i) c[i] = (float)d[i];
+}
+
+/* A one-pole high-pass's coefficients (bilinear, prewarped). */
+static void le_amp_hp1(double hz, int sr, float* b0, float* a1) {
+  const double k = le_prewarp(hz, sr);
+  *b0 = (float)(1.0 / (1.0 + k));
+  *a1 = (float)((k - 1.0) / (k + 1.0));
+}
+
+static inline float le_amp_hp1_tick(float b0, float a1, float* z, float x) {
+  /* y[n] = b0 (x[n] - x[n-1]) - a1 y[n-1]; z = {x[n-1], y[n-1]} */
+  const float y = b0 * (x - z[0]) - a1 * z[1];
+  z[0] = x;
+  z[1] = y;
+  return y;
+}
+
+/* Clears what the instance plays from (filters, the cabinet's history),
+ * keeping its rate and coefficients; the next update settles. */
+static void le_amp_reset(le_fx_amp* a) {
+  memset(a->z_pre, 0, sizeof(a->z_pre));
+  memset(a->z_dc, 0, sizeof(a->z_dc));
+  memset(a->z_m, 0, sizeof(a->z_m));
+  memset(a->z_dhs, 0, sizeof(a->z_dhs));
+  memset(a->z_post_hp, 0, sizeof(a->z_post_hp));
+  memset(a->z_tone, 0, sizeof(a->z_tone));
+  memset(a->z_lp, 0, sizeof(a->z_lp));
+  memset(a->hist, 0, sizeof(a->hist));
+  memset(a->frame, 0, sizeof(a->frame));
+  memset(a->tail, 0, sizeof(a->tail));
+  memset(a->fre, 0, sizeof(a->fre));
+  memset(a->fim, 0, sizeof(a->fim));
+  a->hp = a->j = a->fpos = 0;
+  a->xf = 0;
+  a->cab_from = a->cab;
+  a->tick = 0;
+  a->settle = 1;
+}
+
+/* The settings' targets, glided at the update cadence; filters redesigned
+ * when a setting they read moved. */
+static void le_amp_update(le_fx_amp* a, const float* p, int sr) {
+  const int new_rate = a->sr != sr;
+  /* Settled and unchanged: nothing to do. */
+  if (!new_rate && !a->settle && !a->moving &&
+      memcmp(a->last, p, sizeof(a->last)) == 0) {
+    return;
+  }
+  memcpy(a->last, p, sizeof(a->last));
+  if (new_rate) {
+    a->sr = sr;
+    a->k = le_fx_smooth_k(sr);
+    le_amp_design(LE_EQ_LOWCUT, LE_AMP_HP_HZ, 0.0, LE_AMP_HP_Q, sr, a->pre_hp);
+    le_amp_design(LE_EQ_LOMID, LE_AMP_PK1_HZ, LE_AMP_PK1_DB, LE_AMP_PK1_Q, sr,
+                  a->pre_pk1);
+    le_amp_design(LE_EQ_LOMID, LE_AMP_PK2_HZ, LE_AMP_PK2_DB, LE_AMP_PK2_Q, sr,
+                  a->pre_pk2);
+    le_amp_hp1(LE_AMP_DC_HZ, sr, &a->dc_b0, &a->dc_a1);
+    le_amp_hp1(LE_AMP_POST_HP_HZ, sr, &a->post_hp_b0, &a->post_hp_a1);
+    le_amp_design(LE_EQ_HIGHCUT, LE_AMP_LP1_HZ, 0.0, LE_AMP_LP1_Q, sr, a->lp1);
+    le_amp_design(LE_EQ_HIGHCUT, LE_AMP_LP2_HZ, 0.0, LE_AMP_LP2_Q, sr, a->lp2);
+    a->bank = le_cab_bank_find(sr);
+  }
+  const float k = a->settle ? 1.0f : a->k;
+  const float drive = p[0], bass = p[1], treble = p[2], modern = p[3];
+  int cab = (int)(p[4] * 11.0f + 0.5f);
+  cab = cab < 0 ? 0 : cab > 11 ? 11 : cab;
+  if (a->settle) {
+    a->cab = a->cab_from = cab;
+    a->xf = 0;
+  } else if (cab != a->cab && a->xf == 0) {
+    /* Fade the old one out over the next frames: it keeps its tail, and
+     * the new one's builds from the next block. */
+    memcpy(a->tail[1], a->tail[0], sizeof(a->tail[0]));
+    a->cab_from = a->cab;
+    a->cab = cab;
+    a->xf = LE_CAB_XF_FRAMES;
+  }
+  float tb[3], tt[3];
+  le_amp_shelf(LE_AMP_BASS, 2, bass, tb);
+  le_amp_shelf(LE_AMP_TREBLE, 2, treble, tt);
+  float td[3];
+  le_amp_shelf(LE_AMP_DRIVE_HS, 0, drive, td);
+  const float tgt[8] = {le_amp_lerp(LE_AMP_GA_DB, drive),
+                        le_amp_lerp(LE_AMP_GB_DB, drive),
+                        le_amp_lerp(LE_AMP_K, modern),
+                        le_amp_lerp(LE_AMP_MPRE_DB, modern),
+                        le_amp_lerp(LE_AMP_MPOST_DB, modern) +
+                            le_amp_lerp(LE_AMP_OUT_DB, drive),
+                        le_amp_lerp(LE_AMP_MLS_DB, modern),
+                        le_amp_lerp(LE_AMP_MPK_DB, modern),
+                        le_amp_lerp(LE_AMP_MHS_DB, modern)};
+  float* cur[8] = {&a->ga, &a->gb, &a->kq, &a->mpre, &a->mpost,
+                   &a->mls, &a->mpk, &a->mhs};
+  int moved_m = new_rate, moved_t = new_rate;
+  for (int i = 0; i < 8; ++i) {
+    const float before = *cur[i];
+    le_fx_step_toward(cur[i], tgt[i], k);
+    if (i >= 5 && *cur[i] != before) moved_m = 1;
+  }
+  int moved_d = new_rate;
+  for (int i = 0; i < 3; ++i) {
+    const float b0 = a->bass[i], t0 = a->treble[i], d0 = a->dhs[i];
+    le_fx_step_toward(&a->bass[i], tb[i], k);
+    le_fx_step_toward(&a->treble[i], tt[i], k);
+    le_fx_step_toward(&a->dhs[i], td[i], k);
+    if (a->bass[i] != b0 || a->treble[i] != t0) moved_t = 1;
+    if (a->dhs[i] != d0) moved_d = 1;
+  }
+  int moving = cab != a->cab; /* a change waiting for a fade to end */
+  for (int i = 0; i < 8; ++i) moving |= *cur[i] != tgt[i];
+  for (int i = 0; i < 3; ++i) {
+    moving |= a->bass[i] != tb[i] || a->treble[i] != tt[i] || a->dhs[i] != td[i];
+  }
+  a->moving = moving;
+  if (a->settle) moved_m = moved_t = moved_d = 1;
+  if (moved_d) {
+    le_amp_design(LE_EQ_HIGH, exp2((double)a->dhs[0]), a->dhs[1], a->dhs[2], sr,
+                  a->d_hs);
+  }
+  a->ga_lin = powf(10.0f, a->ga / 20.0f);
+  a->gb_lin = powf(10.0f, a->gb / 20.0f);
+  a->mpre_lin = powf(10.0f, a->mpre / 20.0f);
+  a->out_lin = powf(10.0f, a->mpost / 20.0f);
+  if (moved_m) {
+    le_amp_design(LE_EQ_LOW, LE_AMP_MLS_HZ, a->mls, LE_AMP_MLS_Q, sr, a->m_ls);
+    le_amp_design(LE_EQ_LOMID, LE_AMP_MPK_HZ, a->mpk, LE_AMP_MPK_Q, sr, a->m_pk);
+    le_amp_design(LE_EQ_HIGH, LE_AMP_MHS_HZ, a->mhs, LE_AMP_MHS_Q, sr, a->m_hs);
+  }
+  if (moved_t) {
+    le_amp_design(LE_EQ_LOW, exp2((double)a->bass[0]), a->bass[1], a->bass[2],
+                  sr, a->t_bass);
+    le_amp_design(LE_EQ_HIGH, exp2((double)a->treble[0]), a->treble[1],
+                  a->treble[2], sr, a->t_treb);
+  }
+  a->settle = 0;
+}
+
+/* One sample through the cabinet, both cabinets while one fades into the
+ * other; at a block's end the partitions' spectra make the next block's
+ * tails. */
+static float le_amp_cab(le_fx_amp* a, float x) {
+  const le_cab_bank* bk = a->bank;
+  const int rn = LE_CAB_ROW[a->cab];
+  const int ro = LE_CAB_ROW[a->cab_from];
+  if (bk == NULL) return x;
+  a->hist[a->hp] = x;
+  a->hist[a->hp + LE_CAB_B] = x;
+  const float* hx = a->hist + a->hp + LE_CAB_B; /* hx[-t]: t frames ago */
+  float yn = 0.0f, yo = 0.0f;
+  if (rn < 0) {
+    yn = x;
+  } else {
+    const float* h = bk->head[rn];
+    for (int t = 0; t < LE_CAB_B; ++t) yn += h[t] * hx[-t];
+    yn += a->tail[0][a->j];
+  }
+  const int fading = a->xf > 0;
+  if (fading) {
+    if (ro < 0) {
+      yo = x;
+    } else {
+      const float* h = bk->head[ro];
+      for (int t = 0; t < LE_CAB_B; ++t) yo += h[t] * hx[-t];
+      yo += a->tail[1][a->j];
+    }
+  }
+  a->hp = (a->hp + 1) & (LE_CAB_B - 1);
+  a->frame[LE_CAB_B + a->j] = x;
+  if (++a->j == LE_CAB_B) {
+    a->j = 0;
+    const int parts = bk->parts;
+    a->fpos = a->fpos + 1 >= parts ? 0 : a->fpos + 1;
+    le_rfft_fwd(&le_cab_fft, a->frame, a->fre[a->fpos], a->fim[a->fpos]);
+    memmove(a->frame, a->frame + LE_CAB_B, sizeof(float) * LE_CAB_B);
+    for (int which = 0; which < 2; ++which) {
+      const int row = which == 0 ? rn : ro;
+      if (which == 1 && a->xf <= 1) break; /* the fade ends on this frame */
+      if (row < 0) {
+        memset(a->tail[which], 0, sizeof(a->tail[which]));
+        continue;
+      }
+      memset(a->wr, 0, sizeof(a->wr));
+      memset(a->wi, 0, sizeof(a->wi));
+      for (int pp = 0; pp < parts; ++pp) {
+        int s = a->fpos - pp;
+        if (s < 0) s += parts;
+        const float* xr = a->fre[s];
+        const float* xi = a->fim[s];
+        const float* hr = bk->re[row][pp];
+        const float* hi = bk->im[row][pp];
+        for (int q = 0; q < LE_CAB_NB; ++q) {
+          a->wr[q] += xr[q] * hr[q] - xi[q] * hi[q];
+          a->wi[q] += xr[q] * hi[q] + xi[q] * hr[q];
+        }
+      }
+      le_rfft_inv(&le_cab_fft, a->wr, a->wi, a->tmp);
+      memcpy(a->tail[which], a->tmp + LE_CAB_B, sizeof(float) * LE_CAB_B);
+    }
+  }
+  if (!fading) return yn;
+  const float w = (float)a->xf / (float)LE_CAB_XF_FRAMES; /* the old one's share */
+  if (--a->xf == 0) a->cab_from = a->cab;
+  return yn + w * (yo - yn);
+}
+
+static void fx_amp_cab_process(le_fx_state* fx, int slot, int sr, int cap,
+                               float* l, float* r, const float* p) {
+  (void)cap;
+  le_fx_amp* a = atomic_load_explicit(&fx->amp[slot], memory_order_acquire);
+  if (a == NULL) return;
+  const int rate = sr > 0 ? sr : 48000;
+  if (a->tick <= 0 || a->sr != rate) {
+    le_amp_update(a, p, rate);
+    a->tick = LE_FX_UPDATE_FRAMES;
+  }
+  --a->tick;
+  const float x = 0.5f * (fx_sanitize(*l) + fx_sanitize(*r));
+  float u = le_biquad_tick(a->pre_hp, a->z_pre[0], x);
+  u = le_biquad_tick(a->pre_pk1, a->z_pre[1], u);
+  u = le_biquad_tick(a->pre_pk2, a->z_pre[2], u);
+  u *= a->ga_lin;
+  float v = u + a->kq * u * u;
+  v = le_amp_hp1_tick(a->dc_b0, a->dc_a1, a->z_dc, v);
+  v = le_biquad_tick(a->m_ls, a->z_m[0], v);
+  v = le_biquad_tick(a->m_pk, a->z_m[1], v);
+  v = le_biquad_tick(a->m_hs, a->z_m[2], v);
+  v = le_biquad_tick(a->d_hs, a->z_dhs, v);
+  const float w = v * a->mpre_lin * a->gb_lin;
+  float y = w >= 0.0f ? LE_AMP_CLIP_POS * le_amp_knee(w / LE_AMP_CLIP_POS)
+                      : LE_AMP_CLIP_NEG * le_amp_knee(w / LE_AMP_CLIP_NEG);
+  y = le_amp_hp1_tick(a->post_hp_b0, a->post_hp_a1, a->z_post_hp, y);
+  y = le_biquad_tick(a->t_bass, a->z_tone[0], y);
+  y = le_biquad_tick(a->t_treb, a->z_tone[1], y);
+  y = le_biquad_tick(a->lp1, a->z_lp[0], y);
+  y = le_biquad_tick(a->lp2, a->z_lp[1], y);
+  y = le_amp_cab(a, y * a->out_lin);
+  *l = y;
+  *r = y;
+}
+
+/* Control thread: the slot's instance, and the cabinets at this rate. */
+static int32_t fx_amp_cab_prepare(le_fx_state* fx, int slot, int cap) {
+  if (le_cab_bank_get(cap > 0 ? cap : 48000) == NULL) return LE_ERR_INVALID;
+  if (atomic_load_explicit(&fx->amp[slot], memory_order_relaxed) != NULL) {
+    return LE_OK;
+  }
+  le_fx_amp* a = (le_fx_amp*)le_rt_alloc_prefaulted(sizeof(le_fx_amp));
+  if (a == NULL) return LE_ERR_INVALID;
+  memset(a, 0, sizeof(*a));
+  le_amp_reset(a);
+  atomic_store_explicit(&fx->amp[slot], a, memory_order_release);
+  return LE_OK;
 }
 
 /* ---- Distortion (LE_FX_DISTORTION, #887 part 7) ----
@@ -3324,15 +5487,22 @@ static void fx_degrade_kprocess(void* ks, float* l, float* r) {
  * cutoff's range the filter is off (the Looper X's default; its filter
  * there is within 0.3 dB to 12 kHz), gliding in and out as the EQ's cuts
  * do. An oscillating filter sounds on its own, so it never prints. The
- * Rhythmic Rack's LFO over the cutoff comes with the tempo context (#887
- * part 10). */
+ * Rhythmic Rack's LFO over the cutoff runs on the beat (#887 part 10; see
+ * fx_lpf_update). */
 static const le_fx_param_desc LE_FX_LPF_PARAMS[] = {
     {"cutoff", LE_FX_UNIT_HZ, 0, 20.0f, 20000.0f, LE_FX_CURVE_EXPONENTIAL,
      1.0f, LE_FX_PARAM_OFF_AT_MAX},
     {"resonance", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR,
      1.0f, 0},
+    /* The Rhythmic Rack's LFO over the cutoff: its depth (0 leaves the
+     * cutoff still, as the Lo-Fi Rack's has it) and its rate, a note value
+     * in LE_LPF_LFO_QUARTERS's order. */
+    {"lfo_depth", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR,
+     0.0f, 0},
+    {"lfo_rate", LE_FX_UNIT_CHOICE, 16, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.4f,
+     0},
 };
-#define LE_LPF_PARAMS_N 2
+#define LE_LPF_PARAMS_N 4
 #define LE_LPF_K0 0.2
 #define LE_LPF_K1 4.2
 #define LE_LPF_K_POW 1.15
@@ -3348,13 +5518,33 @@ static double le_lpf_osc_reso(void) {
   return pow((4.0 - LE_LPF_K0) / LE_LPF_K1, 1.0 / LE_LPF_K_POW);
 }
 
+/* The LFO's period at each rate position, in quarter notes: 8/4, 6/4, 5/4,
+ * 4/4, 3/4, 1T, 2, 4D, 2T, 4, 8D, 4T, 8, 16D, 8T, 16, the order of the
+ * Looper X binary's 16-entry note-value table for the LFO (NoteDiv16,
+ * longest first); the capture confirmed position 6 (2, 1 s at 120 BPM). */
+static const double LE_LPF_LFO_QUARTERS[16] = {
+    8.0, 6.0, 5.0,       4.0,  3.0,       8.0 / 3.0, 2.0,   1.5,
+    4.0 / 3.0, 1.0, 0.75, 2.0 / 3.0, 0.5, 0.375,     1.0 / 3.0, 0.25};
+/* The octaves the cutoff's whole range spans (20 Hz to 20 kHz). */
+#define LE_LPF_RANGE_OCT 9.965784284662087
+/* The LFO's swing in the stored cutoff: LE_LPF_LFO_SWING Depth^LE_LPF_LFO_EXP
+ * either side, fit to the capture's whole cycle at Depth 50 and 100 % (#891,
+ * gD passes 3 and 4): +-1.56 and +-7.2 octaves. */
+#define LE_LPF_LFO_SWING 0.72
+#define LE_LPF_LFO_EXP 2.2
+
 typedef struct le_fx_lpf {
   le_fx_dyn_head h;
   float last[LE_LPF_PARAMS_N];
-  float l2, tgt;    /* the corner, log2 Hz */
+  double beat;      /* the beat the coming update lands on (fx_lpf_beat) */
+  float l2, tgt;    /* the corner, log2 Hz, without the LFO */
+  float lfo;        /* the LFO's offset to the corner now, octaves */
+  float lfo_max;    /* the most the offset moves in an update, octaves */
   float k, ktgt;    /* the feedback */
   le_fx_glide amount; /* 1 filtering, 0 off (cutoff at the top) */
-  float g;     /* the one-pole's G = g / (1 + g) */
+  float g;     /* the one-pole's G = g / (1 + g), now */
+  float g_inc; /* its step a frame toward the update's G */
+  int32_t g_n; /* the frames that step still runs */
   float sb[4]; /* each stage state's share of the output */
   float g4;    /* G^4 */
   float inv;   /* 1 / (1 + k G^4) */
@@ -3362,6 +5552,26 @@ typedef struct le_fx_lpf {
   float s[2][4];
   float sh[2];
 } le_fx_lpf;
+
+/* The fastest the LFO's offset moves, octaves a second: above the fastest
+ * sweep (1/16 at 300 BPM, Depth 100 %: about 900), so a sweep runs as
+ * computed, while a beat that jumps (a loop top that is not a whole number
+ * of periods, a new rate or depth) moves the corner over a millisecond or
+ * so rather than at once. */
+#define LE_LPF_LFO_MAX_OCT_S 1500.0
+
+/* [q]'s ladder coefficients for the one-pole G [G]. */
+static void le_lpf_coefs(le_fx_lpf* q, double G) {
+  /* The output from the stages' states: y = G^4 u + sum sb[i] s[i]. */
+  q->g = (float)G;
+  q->sb[0] = (float)(G * G * G * (1.0 - G));
+  q->sb[1] = (float)(G * G * (1.0 - G));
+  q->sb[2] = (float)(G * (1.0 - G));
+  q->sb[3] = (float)(1.0 - G);
+  const double g4 = G * G * G * G;
+  q->g4 = (float)g4;
+  q->inv = (float)(1.0 / (1.0 + (double)q->k * g4));
+}
 
 static void fx_lpf_update(void* ks, const float* p, int sr, int settle) {
   le_fx_lpf* q = (le_fx_lpf*)ks;
@@ -3390,24 +5600,70 @@ static void fx_lpf_update(void* ks, const float* p, int sr, int settle) {
   if (f & LE_FX_DYN_NEW_RATE) {
     const double gh = le_prewarp(LE_LPF_HP_HZ, sr);
     q->gh = (float)(gh / (1.0 + gh));
+    q->lfo_max = (float)(LE_LPF_LFO_MAX_OCT_S * (double)LE_FX_UPDATE_FRAMES /
+                         (double)sr);
   }
-  if (q->l2 != q->tgt || q->k != q->ktgt || (f & LE_FX_DYN_NEW_RATE)) {
-    le_fx_step_toward(&q->l2, q->tgt, k);
-    le_fx_step_toward(&q->k, q->ktgt, k);
-    const double g = le_prewarp(exp2((double)q->l2), sr);
+  const int sweeping = p[2] > 0.0f && p[0] < 1.0f;
+  const float l2_was = q->l2;
+  const float k_was = q->k;
+  le_fx_step_toward(&q->l2, q->tgt, k);
+  le_fx_step_toward(&q->k, q->ktgt, k);
+  /* The LFO (#891, gD): a sine in log frequency, rising from the start of
+   * each period of the beat, that swings the stored cutoff by
+   * LE_LPF_LFO_SWING Depth^LE_LPF_LFO_EXP, held to the cutoff's range
+   * around the corner as it glides. */
+  float lfo = 0.0f;
+  if (sweeping) {
+    const double d = p[2] > 1.0f ? 1.0 : p[2];
+    int ri = (int)(p[3] * 15.0f + 0.5f);
+    ri = ri < 0 ? 0 : ri > 15 ? 15 : ri;
+    double ph = fmod(q->beat / LE_LPF_LFO_QUARTERS[ri], 1.0);
+    if (ph < 0.0) ph += 1.0;
+    const double swing = LE_LPF_LFO_SWING * pow(d, LE_LPF_LFO_EXP) *
+                         LE_LPF_RANGE_OCT *
+                         sin(2.0 * 3.14159265358979323846 * ph);
+    /* The range's ends, log2 Hz, at the corner's ratio to the cutoff. */
+    const double ratio_l2 =
+        (double)q->tgt - log2(le_fx_desc_value(&LE_FX_LPF_PARAMS[0], p[0]));
+    const double lo = log2(20.0) + ratio_l2;
+    const double hi = log2(20000.0) + ratio_l2;
+    double corner = (double)q->l2 + swing;
+    corner = corner < lo ? lo : corner > hi ? hi : corner;
+    lfo = (float)(corner - (double)q->l2);
+  }
+  const float lfo_was = q->lfo;
+  if (settle) {
+    q->lfo = lfo;
+  } else {
+    const float d = lfo - q->lfo;
+    q->lfo += d > q->lfo_max ? q->lfo_max : d < -q->lfo_max ? -q->lfo_max : d;
+  }
+  if (q->l2 != l2_was || q->k != k_was || q->lfo != lfo_was || settle ||
+      (f & LE_FX_DYN_CHANGED) || q->g_n > 0) {
+    const double g = le_prewarp(exp2((double)(q->l2 + q->lfo)), sr);
     const double G = g / (1.0 + g);
-    /* The output from the stages' states: y = G^4 u + sum sb[i] s[i]. */
-    q->g = (float)G;
-    q->sb[0] = (float)(G * G * G * (1.0 - G));
-    q->sb[1] = (float)(G * G * (1.0 - G));
-    q->sb[2] = (float)(G * (1.0 - G));
-    q->sb[3] = (float)(1.0 - G);
-    const double g4 = G * G * G * G;
-    q->g4 = (float)g4;
-    q->inv = (float)(1.0 / (1.0 + (double)q->k * g4));
+    if (settle || (f & LE_FX_DYN_NEW_RATE)) {
+      le_lpf_coefs(q, G);
+      q->g_inc = 0.0f;
+      q->g_n = 0;
+    } else {
+      /* The samples up to the next update ramp G onto it. */
+      q->g_inc = (float)((G - (double)q->g) / (double)LE_FX_UPDATE_FRAMES);
+      q->g_n = LE_FX_UPDATE_FRAMES;
+      if (q->g + q->g_inc == q->g) { /* closer than a step can show */
+        le_lpf_coefs(q, G);
+        q->g_inc = 0.0f;
+        q->g_n = 0;
+      }
+    }
   }
   const int moving = le_fx_glide_step(&q->amount, p[0] >= 1.0f ? 0.0f : 1.0f, k);
-  q->h.moving = moving || q->l2 != q->tgt || q->k != q->ktgt;
+  q->h.moving = moving || q->l2 != q->tgt || q->k != q->ktgt || sweeping ||
+                q->lfo != 0.0f || q->g_n > 0;
+}
+
+static void fx_lpf_beat(void* ks, double beat) {
+  ((le_fx_lpf*)ks)->beat = beat;
 }
 
 static void fx_lpf_kprocess(void* ks, float* l, float* r) {
@@ -3416,13 +5672,23 @@ static void fx_lpf_kprocess(void* ks, float* l, float* r) {
   float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
   if (amount <= 0.0f) {
     /* Off: the identity, with the filter's memory cleared (but for the
-     * seed) so it starts clean when it comes back. */
+     * seed) so it starts clean when it comes back, and any ramp of G
+     * landed so the updates go idle. */
+    if (q->g_n > 0) {
+      le_lpf_coefs(q, (double)(q->g + q->g_inc * (float)q->g_n));
+      q->g_inc = 0.0f;
+      q->g_n = 0;
+    }
     memset(q->s, 0, sizeof(q->s));
     q->s[0][0] = q->s[1][0] = LE_LPF_SEED;
     q->sh[0] = q->sh[1] = 0.0f;
     *l = io[0];
     *r = io[1];
     return;
+  }
+  if (q->g_n > 0) {
+    le_lpf_coefs(q, (double)(q->g + q->g_inc));
+    --q->g_n;
   }
   const float G = q->g;
   const float fb = q->k;
@@ -3602,6 +5868,498 @@ static void fx_spring_kprocess(void* ks, float* l, float* r) {
   *r = dry * x1 + wet * u;
 }
 
+/* ---- Dub-Verb and Amb-Verb (LE_FX_DUB_VERB, LE_FX_AMB_VERB, #1430) ----
+ *
+ * Fit to the Phase 0 captures of the Dub Rack's two reverbs (#891,
+ * docs/plan/2026-10-23-looperx-dub-reverbs-measured.md): impulse responses
+ * at every Dec from 0 to 0.9 and Vol from 0 to 1. One structure serves both,
+ * from a definition per kind (le_verb_def):
+ * - the mono input, a pre-delay per side and a two-stage all-pass diffuser
+ *   per side, heard directly (the early part, the same at every Dec, as
+ *   measured) and fed into
+ * - an eight-line feedback delay network (Householder mixing), each line
+ *   with a first-order low shelf, a first-order high shelf and a gain
+ *   designed so it decays at the measured T30 at 125 Hz, mid (500 Hz - 1 kHz)
+ *   and 8 kHz for the Dec setting (le_verb_t, the capture's table, extended
+ *   above Dec 0.9 by the doc's power law);
+ * - an output equalizer for the wet spectrum, and the Amb-Verb's two strong
+ *   early taps (32.79 ms left, 40.48 ms right) and the Dub-Verb's small
+ *   negative tail right after the dry;
+ * - the Vol law: a dry gain that falls (to 0.66, 0.71) and a wet gain, both
+ *   interpolated from the captures.
+ * Measured against the captures at Dec 0.1, 0.5 and 0.8 (Dub) and 0.2, 0.5
+ * and 0.8 (Amb): wet energy within 0.4 dB, the first 90 ms within 0.2 dB,
+ * the octave-band T30 from 125 Hz to 8 kHz within 14 % (most within 6 %),
+ * the octave-band spectrum within 1 dB, the first arrivals to a sample,
+ * left and right uncorrelated (test_dub_verbs_match_the_captures).
+ * A known difference: the echo density builds faster than the Dub-Verb's
+ * (0.6 against 0.4 at 100 ms) and slower than the Amb-Verb's (0.4 against
+ * 0.9 at 200 ms). The long lines live in the slot's two
+ * one-second rings (fx_stereo_ring_prepare); the block holds the filters and
+ * write positions. A ring can hold another type's audio, or this one's at
+ * another rate (a retype or a rate change keeps the rings): every structure
+ * reads silence until its write position has wrapped once since the block
+ * was cleared, so nothing it did not write ever sounds. Dec glides, and the
+ * lines are redesigned only while it moves. */
+#define LE_VB_LINES 8
+#define LE_VB_APS 2
+#define LE_VB_TN 10
+#define LE_VB_WN 7
+
+typedef struct {
+  double pd_ms[2];
+  double ap_ms[2][LE_VB_APS];
+  float ap_g;
+  float early_g;
+  float late_g;
+  double tap_ms[2]; /* the Amb-Verb's strong early taps; 0 for none */
+  float tap_g[2];
+  double line_ms[LE_VB_LINES];
+  signed char cin[LE_VB_LINES]; /* injection signs (even lines take left) */
+  signed char cl[LE_VB_LINES];  /* output signs, over sqrt(8) */
+  signed char cr[LE_VB_LINES];
+  double lo_hz; /* the lines' shelf corners */
+  double hi_hz;
+  double shelf_hz; /* the output's first-order high shelf */
+  double shelf_k;
+  double peak_hz; /* the output's peaking cut; 0 dB for none */
+  double peak_db;
+  double peak_q;
+  float tail_g; /* the immediate tail, tail_g * tail_p^k at lag k >= 1 */
+  float tail_p;
+  int tn; /* the decay table: T30 (s) at 125 Hz, mid and 8 kHz against Dec */
+  double tv[LE_VB_TN];
+  double tlo[LE_VB_TN];
+  double tmid[LE_VB_TN];
+  double thi[LE_VB_TN];
+  double law_exp;  /* mid above the table: (display ratio)^law_exp */
+  int hi_by_rate;  /* above the table, 8 kHz keeps its excess decay rate */
+  double dry[LE_VB_WN]; /* the dry gain at LE_VB_WV */
+} le_verb_def;
+
+/* The Vol points the dry and wet laws are tabulated at, and the wet law
+ * (the same for both reverbs, measured to 0.01). */
+static const double LE_VB_WV[LE_VB_WN] = {0.0, 0.1, 0.3, 0.5, 0.7, 0.85, 1.0};
+static const double LE_VB_WET[LE_VB_WN] = {0.0,   0.124, 0.346, 0.552,
+                                            0.753, 0.895, 1.0};
+
+static const le_verb_def LE_DUB_VERB_DEF = {
+    .pd_ms = {10.19, 10.65},
+    .ap_ms = {{7.13, 11.31}, {6.71, 12.07}},
+    .ap_g = 0.5f,
+    .early_g = 0.40f,
+    .late_g = 0.18f,
+    .line_ms = {31.3, 33.9, 36.7, 38.9, 41.3, 44.6, 47.3, 51.1},
+    .cin = {-1, -1, -1, -1, 1, -1, -1, -1},
+    .cl = {1, -1, -1, -1, -1, 1, 1, 1},
+    .cr = {1, 1, -1, 1, 1, 1, -1, 1},
+    .lo_hz = 200.0,
+    .hi_hz = 4000.0,
+    .shelf_hz = 5000.0,
+    .shelf_k = 0.35,
+    .tail_g = -0.162f,
+    .tail_p = 0.415f,
+    .tn = 10,
+    .tv = {0.0, 0.02, 0.05, 0.1, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9},
+    .tlo = {0.413, 0.533, 0.711, 0.834, 1.555, 2.653, 3.403, 4.772, 7.534,
+            14.361},
+    .tmid = {0.356, 0.491, 0.679, 0.832, 1.556, 2.635, 3.370, 4.745, 7.408,
+             14.132},
+    .thi = {0.386, 0.451, 0.638, 0.786, 1.318, 2.036, 2.526, 3.114, 3.967,
+            5.564},
+    .law_exp = 0.845,
+    .hi_by_rate = 1,
+    .dry = {1.0, 1.0, 0.9742, 0.8959, 0.8324, 0.7588, 0.6616},
+};
+
+static const le_verb_def LE_AMB_VERB_DEF = {
+    .pd_ms = {24.58, 24.58},
+    .ap_ms = {{1.73, 3.11}, {2.41, 4.07}},
+    .ap_g = 0.5f,
+    .early_g = 0.35f,
+    .late_g = 0.20f,
+    .tap_ms = {32.79, 40.48},
+    .tap_g = {0.30f, 0.33f},
+    .line_ms = {52.1, 59.7, 63.4, 68.5, 71.0, 76.1, 78.5, 94.1},
+    .cin = {1, -1, -1, -1, 1, -1, -1, -1},
+    .cl = {1, 1, -1, 1, -1, 1, 1, -1},
+    .cr = {1, -1, -1, -1, 1, 1, -1, -1},
+    .lo_hz = 150.0,
+    .hi_hz = 6000.0,
+    .shelf_hz = 8000.0,
+    .shelf_k = 0.85,
+    .peak_hz = 320.0,
+    .peak_db = -2.5,
+    .peak_q = 0.9,
+    .tn = 8,
+    .tv = {0.0, 0.1, 0.2, 0.3, 0.5, 0.6, 0.8, 0.9},
+    .tlo = {0.351, 0.386, 0.445, 0.533, 0.747, 0.830, 1.166, 1.379},
+    .tmid = {0.429, 0.509, 0.613, 0.769, 1.206, 1.586, 3.232, 5.834},
+    .thi = {0.440, 0.529, 0.641, 0.818, 1.304, 1.744, 3.805, 7.603},
+    .law_exp = 0.811,
+    .hi_by_rate = 0,
+    .dry = {1.0, 0.9962, 0.9702, 0.9204, 0.8492, 0.7777, 0.7062},
+};
+
+static const le_fx_param_desc LE_FX_DUB_VERB_PARAMS[] = {
+    {"decay", LE_FX_UNIT_SECONDS, 0, 0.45f, 144.0f, LE_FX_CURVE_REVERB_TIME,
+     0.7f, 0},
+    {"volume", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.2f,
+     0},
+};
+static const le_fx_param_desc LE_FX_AMB_VERB_PARAMS[] = {
+    {"decay", LE_FX_UNIT_SECONDS, 0, 0.45f, 144.0f, LE_FX_CURVE_REVERB_TIME,
+     0.2f, 0},
+    {"volume", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.4f,
+     0},
+    /* The Dub Rack's Amb-Dub Mix: read by the chain's parallel paths, not
+     * by this kernel. */
+    {"amb_dub_mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR,
+     0.4f, 0},
+};
+#define LE_VB_PARAMS_N 3
+
+typedef struct le_fx_verb {
+  le_fx_dyn_head h;
+  float last[LE_VB_PARAMS_N];
+  le_fx_glide dry;
+  le_fx_glide wet;
+  const le_verb_def* def;
+  uint32_t need[2]; /* the samples each ring must hold */
+  uint32_t hist_n;
+  uint32_t pd[2];
+  uint32_t tap[2];
+  uint32_t ap_n[2][LE_VB_APS];
+  uint32_t ap_off[2][LE_VB_APS];
+  uint32_t line_n[LE_VB_LINES];
+  uint32_t line_off[LE_VB_LINES]; /* lines 0-3 in ring 0, 4-7 in ring 1 */
+  uint32_t hist_w;
+  uint32_t ap_w[2][LE_VB_APS];
+  uint32_t line_w[LE_VB_LINES];
+  /* Whether each structure has wrapped since the block was cleared: before
+   * that, a read returns silence, not what the ring held. */
+  uint8_t hist_full;
+  uint8_t ap_full[2][LE_VB_APS];
+  uint8_t line_full[LE_VB_LINES];
+  float dec;        /* Dec, gliding toward the setting */
+  float dec_design; /* the Dec the lines were last designed for (-1: none) */
+  /* Per rate: the line shelves' prewarped corners (lo, hi) and the anchors'
+   * cos and sin (125 Hz, 1 kHz, 8 kHz), so a redesign calls no trig. */
+  double warp[2];
+  double anchor[3][2];
+  float gm[LE_VB_LINES];
+  float lo[LE_VB_LINES][3]; /* first-order: b0, b1, a1 */
+  float hi[LE_VB_LINES][3];
+  float lo_z[LE_VB_LINES][2]; /* x1, y1 */
+  float hi_z[LE_VB_LINES][2];
+  float shelf[3];
+  float shelf_z[2][2];
+  float peak[5];
+  float peak_z[2][2];
+  float tail_z;
+} le_fx_verb;
+
+/* A corner [hz] prewarped for the bilinear transform at [sr]. */
+static double le_vb_warp(double hz, int sr) {
+  return tan(LE_PI * hz / (double)sr);
+}
+
+/* A first-order shelf (bilinear): gain [k] at DC (low) or Nyquist (high),
+ * unity at the other end, at the prewarped corner [t]. */
+static void le_vb_shelf(double t, double k, int high, float c[3]) {
+  if (high) {
+    c[0] = (float)((k + t) / (1.0 + t));
+    c[1] = (float)((t - k) / (1.0 + t));
+  } else {
+    c[0] = (float)((1.0 + k * t) / (1.0 + t));
+    c[1] = (float)((k * t - 1.0) / (1.0 + t));
+  }
+  c[2] = (float)((t - 1.0) / (1.0 + t));
+}
+
+/* A first-order section's gain at the frequency whose cos and sin are
+ * [cs]. */
+static double le_vb_mag(const float c[3], const double cs[2]) {
+  const double nr = c[0] + c[1] * cs[0], ni = -c[1] * cs[1];
+  const double dr = 1.0 + c[2] * cs[0], di = -c[2] * cs[1];
+  return sqrt((nr * nr + ni * ni) / (dr * dr + di * di));
+}
+
+/* One sample through a first-order section [c] (b0, b1, a1) with state [z]
+ * (x1, y1). */
+static inline float le_vb_tick(const float c[3], float z[2], float x) {
+  const float y = c[0] * x + c[1] * z[0] - c[2] * z[1];
+  z[0] = x;
+  z[1] = y;
+  return y;
+}
+
+/* The table's value at Vol [v] (linear between the points). */
+static double le_vb_interp(const double* y, double v) {
+  if (v <= 0.0) return y[0];
+  for (int i = 1; i < LE_VB_WN; ++i) {
+    if (v <= LE_VB_WV[i]) {
+      const double t = (v - LE_VB_WV[i - 1]) / (LE_VB_WV[i] - LE_VB_WV[i - 1]);
+      return y[i - 1] + (y[i] - y[i - 1]) * t;
+    }
+  }
+  return y[LE_VB_WN - 1];
+}
+
+/* The reverb time display at Dec [v] (s), as the descriptor shows it. */
+static double le_vb_display(double v) {
+  return le_fx_desc_value(&LE_FX_DUB_VERB_PARAMS[0], (float)v);
+}
+
+/* T30 at 125 Hz, mid and 8 kHz for Dec [v]: the table, log-linear between
+ * its points, and above its last point the doc's power law on the display
+ * for mid, the low band at its last ratio, and 8 kHz at its last excess
+ * decay rate (Dub) or ratio (Amb). */
+static void le_vb_t(const le_verb_def* d, double v, double t[3]) {
+  const int n = d->tn;
+  if (v <= d->tv[0]) {
+    t[0] = d->tlo[0];
+    t[1] = d->tmid[0];
+    t[2] = d->thi[0];
+    return;
+  }
+  for (int i = 1; i < n; ++i) {
+    if (v <= d->tv[i]) {
+      const double f = (v - d->tv[i - 1]) / (d->tv[i] - d->tv[i - 1]);
+      t[0] = d->tlo[i - 1] * pow(d->tlo[i] / d->tlo[i - 1], f);
+      t[1] = d->tmid[i - 1] * pow(d->tmid[i] / d->tmid[i - 1], f);
+      t[2] = d->thi[i - 1] * pow(d->thi[i] / d->thi[i - 1], f);
+      return;
+    }
+  }
+  const double vl = d->tv[n - 1];
+  const double mid =
+      d->tmid[n - 1] * pow(le_vb_display(v) / le_vb_display(vl), d->law_exp);
+  t[1] = mid;
+  t[0] = mid * d->tlo[n - 1] / d->tmid[n - 1];
+  t[2] = d->hi_by_rate
+             ? 1.0 / (1.0 / mid + 1.0 / d->thi[n - 1] - 1.0 / d->tmid[n - 1])
+             : mid * d->thi[n - 1] / d->tmid[n - 1];
+}
+
+/* Line [i]'s shelves and gain for the decay times [t] (s). The shelves'
+ * gains are corrected four times for their leakage at the other anchors. */
+static void le_vb_design_line(le_fx_verb* q, int i, const double t[3],
+                              int sr) {
+  const double len = (double)q->line_n[i];
+  const double(*a)[2] = q->anchor; /* 125 Hz, 1 kHz, 8 kHz */
+  const double glo = pow(10.0, -3.0 * len / (t[0] * sr));
+  const double gmid = pow(10.0, -3.0 * len / (t[1] * sr));
+  const double ghi = pow(10.0, -3.0 * len / (t[2] * sr));
+  double klo = glo / gmid;
+  double khi = ghi / gmid;
+  for (int it = 0; it < 4; ++it) {
+    le_vb_shelf(q->warp[0], klo, 0, q->lo[i]);
+    le_vb_shelf(q->warp[1], khi, 1, q->hi[i]);
+    const double gm =
+        gmid / (le_vb_mag(q->lo[i], a[1]) * le_vb_mag(q->hi[i], a[1]));
+    klo *= glo / (gm * le_vb_mag(q->lo[i], a[0]) * le_vb_mag(q->hi[i], a[0]));
+    khi *= ghi / (gm * le_vb_mag(q->lo[i], a[2]) * le_vb_mag(q->hi[i], a[2]));
+  }
+  le_vb_shelf(q->warp[0], klo, 0, q->lo[i]);
+  le_vb_shelf(q->warp[1], khi, 1, q->hi[i]);
+  q->gm[i] = (float)(gmid / (le_vb_mag(q->lo[i], a[1]) *
+                             le_vb_mag(q->hi[i], a[1])));
+}
+
+static uint32_t le_vb_len(double ms, int sr) {
+  const double n = ms * (double)sr / 1000.0 + 0.5;
+  return n < 1.0 ? 1u : (uint32_t)n;
+}
+
+/* The geometry at [sr]: every length, and where each stage sits in its
+ * ring. */
+static void le_vb_geometry(le_fx_verb* q, int sr) {
+  const le_verb_def* d = q->def;
+  q->pd[0] = le_vb_len(d->pd_ms[0], sr);
+  q->pd[1] = le_vb_len(d->pd_ms[1], sr);
+  q->tap[0] = d->tap_ms[0] > 0.0 ? le_vb_len(d->tap_ms[0], sr) : 0u;
+  q->tap[1] = d->tap_ms[1] > 0.0 ? le_vb_len(d->tap_ms[1], sr) : 0u;
+  uint32_t reach = q->pd[0] > q->pd[1] ? q->pd[0] : q->pd[1];
+  if (q->tap[0] > reach) reach = q->tap[0];
+  if (q->tap[1] > reach) reach = q->tap[1];
+  q->hist_n = reach + 2u;
+  uint32_t at[2] = {q->hist_n, 0u};
+  for (int c = 0; c < 2; ++c) {
+    for (int k = 0; k < LE_VB_APS; ++k) {
+      q->ap_n[c][k] = le_vb_len(d->ap_ms[c][k], sr);
+      q->ap_off[c][k] = at[c];
+      at[c] += q->ap_n[c][k];
+    }
+  }
+  for (int i = 0; i < LE_VB_LINES; ++i) {
+    const int c = i < LE_VB_LINES / 2 ? 0 : 1;
+    q->line_n[i] = le_vb_len(d->line_ms[i], sr);
+    q->line_off[i] = at[c];
+    at[c] += q->line_n[i];
+  }
+  q->need[0] = at[0];
+  q->need[1] = at[1];
+}
+
+static void fx_verb_update(void* ks, const float* p, int sr, int settle,
+                           const le_verb_def* def) {
+  le_fx_verb* q = (le_fx_verb*)ks;
+  q->def = def;
+  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_VB_PARAMS_N, sr, settle);
+  if (!f) return;
+  const int rate = sr > 0 ? sr : 48000;
+  if (f & LE_FX_DYN_NEW_RATE) {
+    /* A new rate makes the rings another rate's: the positions start over,
+     * and each structure reads silence until it wraps (le_fx_verb). */
+    memset(q->lo_z, 0, sizeof(q->lo_z));
+    memset(q->hi_z, 0, sizeof(q->hi_z));
+    memset(q->shelf_z, 0, sizeof(q->shelf_z));
+    memset(q->peak_z, 0, sizeof(q->peak_z));
+    memset(q->ap_w, 0, sizeof(q->ap_w));
+    memset(q->line_w, 0, sizeof(q->line_w));
+    memset(q->ap_full, 0, sizeof(q->ap_full));
+    memset(q->line_full, 0, sizeof(q->line_full));
+    q->hist_full = 0;
+    q->hist_w = 0;
+    q->tail_z = 0.0f;
+    q->dec_design = -1.0f;
+    le_vb_geometry(q, rate);
+    q->warp[0] = le_vb_warp(def->lo_hz, rate);
+    q->warp[1] = le_vb_warp(def->hi_hz, rate);
+    static const double anchor_hz[3] = {125.0, 1000.0, 8000.0};
+    for (int a = 0; a < 3; ++a) {
+      const double w = 2.0 * LE_PI * anchor_hz[a] / (double)rate;
+      q->anchor[a][0] = cos(w);
+      q->anchor[a][1] = sin(w);
+    }
+    le_vb_shelf(le_vb_warp(def->shelf_hz, rate), def->shelf_k, 1, q->shelf);
+    if (def->peak_db != 0.0) {
+      double c[5];
+      le_eq_design(LE_EQ_LOMID, def->peak_hz, def->peak_db, def->peak_q, rate,
+                   c);
+      for (int i = 0; i < 5; ++i) q->peak[i] = (float)c[i];
+    }
+  }
+  const float k = settle ? 1.0f : q->h.k;
+  /* Dec glides with the other settings' smoothing; the lines are redesigned
+   * (eight shelf pairs) only while it moves, not when Vol does. */
+  const float dec_tgt = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
+  le_fx_step_toward(&q->dec, dec_tgt, k);
+  if (q->dec != q->dec_design) {
+    double t[3];
+    le_vb_t(def, (double)q->dec, t);
+    for (int i = 0; i < LE_VB_LINES; ++i) le_vb_design_line(q, i, t, rate);
+    q->dec_design = q->dec;
+  }
+  const double vol = p[1] < 0.0f ? 0.0 : p[1] > 1.0f ? 1.0 : (double)p[1];
+  int moving = le_fx_glide_step(&q->dry, (float)le_vb_interp(def->dry, vol), k);
+  moving |= le_fx_glide_step(&q->wet, (float)le_vb_interp(LE_VB_WET, vol), k);
+  moving |= q->dec != dec_tgt;
+  q->h.moving = moving;
+}
+
+static void fx_dub_verb_update(void* ks, const float* p, int sr, int settle) {
+  fx_verb_update(ks, p, sr, settle, &LE_DUB_VERB_DEF);
+}
+static void fx_amb_verb_update(void* ks, const float* p, int sr, int settle) {
+  fx_verb_update(ks, p, sr, settle, &LE_AMB_VERB_DEF);
+}
+
+static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
+                              float* r) {
+  le_fx_verb* q = (le_fx_verb*)ks;
+  const le_verb_def* d = q->def;
+  /* Rings too short for the geometry: the input passes untouched, as it
+   * does when the slot has no rings (fx_run). */
+  if (d == NULL || (uint32_t)cap < q->need[0] || (uint32_t)cap < q->need[1])
+    return;
+  const float dry = le_fx_glide_next(&q->dry);
+  const float wet = le_fx_glide_next(&q->wet);
+  const float x0 = fx_sanitize(*l);
+  const float x1 = fx_sanitize(*r);
+  float* ring[2] = {r0, r1};
+  const float m = 0.5f * (x0 + x1);
+  /* The input history: the pre-delays and the strong taps read it. */
+  float* hist = r0;
+  hist[q->hist_w] = m;
+  float e[2];
+  float tap[2] = {0.0f, 0.0f};
+  for (int c = 0; c < 2; ++c) {
+    /* Before the history wraps, only the indices up to its write position
+     * hold this block's input. */
+    uint32_t at = q->hist_w + q->hist_n - q->pd[c];
+    if (at >= q->hist_n) at -= q->hist_n;
+    float u = q->hist_full || at <= q->hist_w ? hist[at] : 0.0f;
+    if (q->tap[c] != 0u) {
+      uint32_t ta = q->hist_w + q->hist_n - q->tap[c];
+      if (ta >= q->hist_n) ta -= q->hist_n;
+      tap[c] = q->hist_full || ta <= q->hist_w ? d->tap_g[c] * hist[ta] : 0.0f;
+    }
+    for (int k = 0; k < LE_VB_APS; ++k) {
+      float* b = ring[c] + q->ap_off[c][k];
+      const uint32_t w = q->ap_w[c][k];
+      const float dl = q->ap_full[c][k] ? b[w] : 0.0f;
+      const float v = u + d->ap_g * dl;
+      u = dl - d->ap_g * v;
+      b[w] = fx_sanitize(v);
+      if (w + 1u >= q->ap_n[c][k]) {
+        q->ap_w[c][k] = 0u;
+        q->ap_full[c][k] = 1u;
+      } else {
+        q->ap_w[c][k] = w + 1u;
+      }
+    }
+    e[c] = u;
+  }
+  if (++q->hist_w >= q->hist_n) {
+    q->hist_w = 0;
+    q->hist_full = 1u;
+  }
+  /* The network: each line's output was written line_n samples ago. */
+  float o[LE_VB_LINES];
+  float sum = 0.0f;
+  float ol = 0.0f;
+  float orr = 0.0f;
+  for (int i = 0; i < LE_VB_LINES; ++i) {
+    const int c = i < LE_VB_LINES / 2 ? 0 : 1;
+    o[i] = q->line_full[i] ? ring[c][q->line_off[i] + q->line_w[i]] : 0.0f;
+    sum += o[i];
+    ol += (float)d->cl[i] * o[i];
+    orr += (float)d->cr[i] * o[i];
+  }
+  const float house = 2.0f / (float)LE_VB_LINES * sum;
+  for (int i = 0; i < LE_VB_LINES; ++i) {
+    const int c = i < LE_VB_LINES / 2 ? 0 : 1;
+    const float y = le_vb_tick(q->lo[i], q->lo_z[i], o[i] - house);
+    const float y2 = le_vb_tick(q->hi[i], q->hi_z[i], y);
+    const float inj = (i & 1) == 0 ? e[0] : e[1];
+    ring[c][q->line_off[i] + q->line_w[i]] =
+        fx_sanitize(q->gm[i] * y2 + (float)d->cin[i] * d->late_g * inj);
+    if (q->line_w[i] + 1u >= q->line_n[i]) {
+      q->line_w[i] = 0u;
+      q->line_full[i] = 1u;
+    } else {
+      q->line_w[i] += 1u;
+    }
+  }
+  const float inv = 0.35355339f; /* 1 / sqrt(8) */
+  float w[2] = {inv * ol + d->early_g * e[0] + tap[0],
+                inv * orr + d->early_g * e[1] + tap[1]};
+  for (int c = 0; c < 2; ++c) {
+    if (d->peak_db != 0.0) w[c] = le_biquad_tick(q->peak, q->peak_z[c], w[c]);
+    w[c] = le_vb_tick(q->shelf, q->shelf_z[c], w[c]);
+  }
+  if (d->tail_g != 0.0f) {
+    q->tail_z = fx_sanitize(d->tail_p * q->tail_z + m);
+    const float t = d->tail_g * (q->tail_z - m);
+    w[0] += t;
+    w[1] += t;
+  }
+  *l = dry * x0 + wet * w[0];
+  *r = dry * x1 + wet * w[1];
+}
+
 /* A type's rows are the parameters an entry holds, so none may outgrow it. */
 #define LE_FX_ROWS_FIT(t)                                  \
   _Static_assert(sizeof(t) / sizeof(t[0]) <= LE_FX_PARAMS, \
@@ -3626,6 +6384,15 @@ LE_FX_ROWS_FIT(LE_FX_VINYL_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_DEGRADE_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_LPF_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_SPRING_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_DUB_VERB_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_AMB_VERB_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_WHAMMY_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_PUMPER_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_SLICER_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_MODE_DELAY_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_DUAL_OCTAVER_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_AMP_CAB_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_MOD_PARAMS);
 
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
  * published for this chain entry (NULL / not-ready => dry passthrough; the slot
@@ -3667,6 +6434,18 @@ typedef struct le_fx_vtable {
   size_t state_size;
   void (*update)(void* ks, const float* p, int sr, int settle);
   void (*kprocess)(void* ks, float* l, float* r);
+  /* A heap-state kind whose long lines live in the slot's two rings, which
+   * its `prepare` allocates (the reverbs): run instead of `kprocess`, with
+   * both rings and their length (the sample rate). A slot without both
+   * rings passes the input untouched. Its block tracks which parts of the
+   * rings it has written, so the rings are never cleared for it. */
+  void (*rkprocess)(void* ks, float* r0, float* r1, int cap, float* l,
+                    float* r);
+  /* A heap-state kind locked to the beat (the Rhythmic LPF's LFO): given,
+   * just before each `update`, the beat in quarter notes of the last frame
+   * that update covers (where a setting it ramps toward lands). NULL for
+   * the rest. */
+  void (*beat)(void* ks, double beat);
 } le_fx_vtable;
 
 /* Bypass drains the tail instead of crossfading out: a linear kind that
@@ -3730,11 +6509,43 @@ static const le_fx_vtable LE_FX[] = {
                        LE_FX_F_FREE_RUNNING, sizeof(le_fx_degrade),
                        fx_degrade_update, fx_degrade_kprocess},
     [LE_FX_LPF] = {NULL, NULL, NULL, LE_FX_LPF_PARAMS, LE_FX_F_FREE_RUNNING,
-                   sizeof(le_fx_lpf), fx_lpf_update, fx_lpf_kprocess},
+                   sizeof(le_fx_lpf), fx_lpf_update, fx_lpf_kprocess, NULL,
+                   fx_lpf_beat},
     /* The spring drains its tail on bypass, as the delay and reverb do. */
     [LE_FX_SPRING] = {NULL, NULL, NULL, LE_FX_SPRING_PARAMS, LE_FX_F_DRAINS,
                       sizeof(le_fx_spring), fx_spring_update,
                       fx_spring_kprocess},
+    /* The reverbs keep their filters in the block and their lines in the
+     * slot's rings, and drain their tails on bypass. */
+    [LE_FX_DUB_VERB] = {NULL, NULL, fx_stereo_ring_prepare,
+                        LE_FX_DUB_VERB_PARAMS, LE_FX_F_DRAINS,
+                        sizeof(le_fx_verb), fx_dub_verb_update, NULL,
+                        fx_verb_rkprocess},
+    [LE_FX_AMB_VERB] = {NULL, NULL, fx_stereo_ring_prepare,
+                        LE_FX_AMB_VERB_PARAMS, LE_FX_F_DRAINS,
+                        sizeof(le_fx_verb), fx_amb_verb_update, NULL,
+                        fx_verb_rkprocess},
+    /* The octaver's kernel and state, its settings mapped (fx_whammy_process). */
+    [LE_FX_WHAMMY] = {fx_whammy_process, fx_octaver_latency_vt,
+                      fx_octaver_prepare, LE_FX_WHAMMY_PARAMS},
+    /* The octaver's kernel and state, its settings mapped (le_doct_settings). */
+    [LE_FX_DUAL_OCTAVER] = {fx_dual_octaver_process, fx_octaver_latency_vt,
+                            fx_octaver_prepare, LE_FX_DUAL_OCTAVER_PARAMS},
+    /* The amp and its cabinet, in its own per-slot instance (fx->amp). */
+    [LE_FX_AMP_CAB] = {fx_amp_cab_process, NULL, fx_amp_cab_prepare,
+                       LE_FX_AMP_CAB_PARAMS},
+    /* Locked to the beat: a print could not stand for it lap after lap. */
+    [LE_FX_PUMPER] = {fx_pumper_process, NULL, NULL, LE_FX_PUMPER_PARAMS,
+                      LE_FX_F_FREE_RUNNING},
+    /* Its input history in the slot's rings; locked to the beat. */
+    [LE_FX_SLICER] = {fx_slicer_process, NULL, fx_stereo_ring_prepare,
+                      LE_FX_SLICER_PARAMS, LE_FX_F_FREE_RUNNING},
+    /* Its own seconds-long line (fx->line), drained on bypass. */
+    [LE_FX_MODE_DELAY] = {fx_mode_delay_process, NULL, fx_mode_delay_prepare,
+                          LE_FX_MODE_DELAY_PARAMS,
+                          LE_FX_F_DRAINS | LE_FX_F_FREE_RUNNING},
+    [LE_FX_MOD] = {NULL, NULL, NULL, LE_FX_MOD_PARAMS, LE_FX_F_FREE_RUNNING,
+                   sizeof(le_fx_mod), fx_mod_update, fx_mod_kprocess},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -3751,13 +6562,16 @@ _Static_assert(LE_COMP_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_COMPRESSOR_PARAMS) &&
                    LE_HPG_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_HP_GATE_PARAMS) &&
                    LE_DBL_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_DOUBLER_PARAMS) &&
                    LE_CHO_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_CHORUS_PARAMS) &&
+                   LE_MOD_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_MOD_PARAMS) &&
                    LE_WAH_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_WAH_PARAMS) &&
                    LE_OD_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_OVERDRIVE_PARAMS) &&
                    LE_DIST_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_DISTORTION_PARAMS) &&
                    LE_VIN_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_VINYL_PARAMS) &&
                    LE_DEG_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_DEGRADE_PARAMS) &&
                    LE_LPF_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_LPF_PARAMS) &&
-                   LE_SPR_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_SPRING_PARAMS),
+                   LE_SPR_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_SPRING_PARAMS) &&
+                   LE_VB_PARAMS_N >= LE_FX_ROW_COUNT(LE_FX_DUB_VERB_PARAMS) &&
+                   LE_VB_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_AMB_VERB_PARAMS),
                "each Looper X kind's `last` holds every setting");
 _Static_assert(LE_FX_WIDTHS == sizeof(LE_FX) / sizeof(LE_FX[0]),
                "LE_FX_WIDTHS must be one past the last le_fx_type code");
@@ -3782,6 +6596,15 @@ const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
     [LE_FX_DEGRADE] = LE_FX_ROW_COUNT(LE_FX_DEGRADE_PARAMS),
     [LE_FX_LPF] = LE_FX_ROW_COUNT(LE_FX_LPF_PARAMS),
     [LE_FX_SPRING] = LE_FX_ROW_COUNT(LE_FX_SPRING_PARAMS),
+    [LE_FX_DUB_VERB] = LE_FX_ROW_COUNT(LE_FX_DUB_VERB_PARAMS),
+    [LE_FX_AMB_VERB] = LE_FX_ROW_COUNT(LE_FX_AMB_VERB_PARAMS),
+    [LE_FX_WHAMMY] = LE_FX_ROW_COUNT(LE_FX_WHAMMY_PARAMS),
+    [LE_FX_PUMPER] = LE_FX_ROW_COUNT(LE_FX_PUMPER_PARAMS),
+    [LE_FX_SLICER] = LE_FX_ROW_COUNT(LE_FX_SLICER_PARAMS),
+    [LE_FX_MODE_DELAY] = LE_FX_ROW_COUNT(LE_FX_MODE_DELAY_PARAMS),
+    [LE_FX_DUAL_OCTAVER] = LE_FX_ROW_COUNT(LE_FX_DUAL_OCTAVER_PARAMS),
+    [LE_FX_AMP_CAB] = LE_FX_ROW_COUNT(LE_FX_AMP_CAB_PARAMS),
+    [LE_FX_MOD] = LE_FX_ROW_COUNT(LE_FX_MOD_PARAMS),
 };
 
 /* ---- per-kind state (le_fx_kinds, engine_private.h) ---- */
@@ -3898,6 +6721,13 @@ static void* fx_kind_state(le_fx_state* fx, int s, int32_t ty, int sr,
   if (b->settle ||
       ((le_fx_now(fx) + le_fx_update_phase(fx, s)) &
        (uint32_t)(LE_FX_UPDATE_FRAMES - 1)) == 0) {
+    if (LE_FX[ty].beat != NULL) {
+      float qpf;
+      int32_t num, den;
+      const double now = le_fx_beat_now(fx, sr, &qpf, &num, &den);
+      LE_FX[ty].beat(st,
+                     now + (double)(LE_FX_UPDATE_FRAMES - 1) * (double)qpf);
+    }
     LE_FX[ty].update(st, p, sr, b->settle);
     b->settle = 0;
   }
@@ -3910,7 +6740,14 @@ static inline void fx_run(le_fx_state* fx, int s, int32_t ty, int sr, int cap,
                           float* l, float* r, const float* p) {
   if (LE_FX[ty].state_size) {
     void* st = fx_kind_state(fx, s, ty, sr, p);
-    if (st != NULL) LE_FX[ty].kprocess(st, l, r);
+    if (st == NULL) return;
+    if (LE_FX[ty].rkprocess != NULL) {
+      float* r0 = fx->delay[s][0];
+      float* r1 = fx->delay[s][1];
+      if (r0 != NULL && r1 != NULL) LE_FX[ty].rkprocess(st, r0, r1, cap, l, r);
+      return;
+    }
+    LE_FX[ty].kprocess(st, l, r);
     return;
   }
   LE_FX[ty].process(fx, s, sr, cap, l, r, p);
@@ -3922,13 +6759,21 @@ static inline void fx_run(le_fx_state* fx, int s, int32_t ty, int sr, int cap,
 static int le_fx_holds_tail(const le_fx_state* fx, int s, int32_t type) {
   if (type <= LE_FX_NONE || type >= LE_FX_TYPE_COUNT) return 0;
   if (LE_FX[type].state_size != 0) return (LE_FX[type].flags & LE_FX_F_DRAINS) != 0;
+  if (type == LE_FX_MODE_DELAY) {
+    return atomic_load_explicit(&fx->line[s], memory_order_acquire) != NULL;
+  }
   return LE_FX[type].prepare != NULL &&
          (fx->delay[s][0] != NULL || fx->delay[s][1] != NULL);
 }
 
-void le_fx_entry_renew(le_fx_state* fx, int slot, int32_t type) {
+void le_fx_entry_renew(le_fx_state* fx, int slot, int32_t type, int sounding) {
   le_fx_entry_reset(fx, slot);
-  if (le_fx_holds_tail(fx, slot, type)) le_fx_enable_force_bypass(fx, slot);
+  /* An entry replacing one the chain was running enters through the enable
+   * edge: handed the old entry's settled ramp, it would switch in at full in
+   * one sample (#1452). */
+  if (sounding || le_fx_holds_tail(fx, slot, type)) {
+    le_fx_enable_force_bypass(fx, slot);
+  }
 }
 
 int le_fx_type_free_running(int32_t type) {
@@ -3947,8 +6792,18 @@ int le_fx_entry_free_running(int32_t type, const float* p, int sr) {
              p[2] > 0.0f;
     case LE_FX_DOUBLER:
       return 1; /* even at 0 % mix its copy wanders within 1 ms */
-    case LE_FX_LPF: /* on, and oscillating */
-      return p[0] < 1.0f && (double)p[1] > le_lpf_osc_reso();
+    case LE_FX_LPF: /* on, and oscillating or swept by the beat */
+      return p[0] < 1.0f &&
+             ((double)p[1] > le_lpf_osc_reso() || p[2] > 0.0f);
+    case LE_FX_PUMPER: /* ducking at all */
+      return p[1] > 0.0f;
+    case LE_FX_MODE_DELAY: /* heard (its time is the live tempo's) */
+      return p[2] > 0.0f;
+    case LE_FX_MOD: /* the tremolo dipping, or the others swept and heard */
+      return le_mod_mode(p[3]) == LE_MOD_TREMOLO ? p[1] > 0.0f
+                                                  : p[1] > 0.0f && p[2] > 0.0f;
+    case LE_FX_SLICER: /* slicing, and heard */
+      return p[2] > 0.0f && le_slice_pattern(p[0]) != NULL;
     default:
       return p[2] > 0.0f; /* the chorus's mix */
   }
@@ -4143,6 +6998,92 @@ static inline void fx_rack_output(const le_fx_state* fx, int s, float dl,
   }
 }
 
+#define LE_FX_RACK_PATHS (LE_FX_RACK_DUB_PATH | LE_FX_RACK_AMB_PATH)
+
+/* A parallel section being walked (LE_FX_RACK_DUB_PATH and
+ * LE_FX_RACK_AMB_PATH): its first entry
+ * (-1 outside one), the pair it was handed, each path's running pair ([0]
+ * Amb, [1] Dub) and its Amb-Dub Mix. */
+typedef struct fx_section {
+  int at;
+  int has_mix;
+  float mix;
+  float x[2];
+  float p[2][2];
+} fx_section;
+
+/* The Amb-Dub Mix law at [m]: the Amb path's gain [0], the Dub path's [1]. */
+static inline void fx_path_targets(float m, float g[2]) {
+  const float d = 2.0f * (m < 0.0f ? 0.0f : m > 1.0f ? 1.0f : m);
+  g[1] = d < 1.0f ? d * d : 1.0f;
+  g[0] = d > 1.0f ? 1.0f - (d - 1.0f) * (d - 1.0f) : 1.0f;
+}
+
+/* Entry [s] of a section ([sec]) takes its path's running pair, opening
+ * the section at its first entry. Returns the path (0 Amb, 1 Dub). */
+static inline int fx_section_enter(fx_section* sec, int s, int32_t bits,
+                                   int32_t ty, const float* p, float* xl,
+                                   float* xr) {
+  if (sec->at < 0) {
+    sec->at = s;
+    sec->has_mix = 0;
+    sec->mix = LE_FX_AMB_VERB_PARAMS[2].def;
+    sec->x[0] = sec->p[0][0] = sec->p[1][0] = *xl;
+    sec->x[1] = sec->p[0][1] = sec->p[1][1] = *xr;
+  }
+  /* Read here, ahead of anything that skips the entry: a bypassed
+   * Amb-Verb's Amb-Dub Mix still sets the mix. */
+  if (ty == LE_FX_AMB_VERB && !sec->has_mix) {
+    sec->mix = p[2];
+    sec->has_mix = 1;
+  }
+  const int path = (bits & LE_FX_RACK_AMB_PATH) ? 0 : 1;
+  *xl = sec->p[path][0];
+  *xr = sec->p[path][1];
+  return path;
+}
+
+/* Whether the section ends after entry [s]: the chain, the rack or the run
+ * of path entries ends there. */
+static inline int fx_section_ends(const le_fx_state* fx, int s, int count) {
+  return s + 1 >= count || (fx->chan[s].rack & LE_FX_RACK_LAST) ||
+         (fx->chan[s + 1].rack & LE_FX_RACK_FIRST) ||
+         !(fx->chan[s + 1].rack & LE_FX_RACK_PATHS);
+}
+
+/* A section's output: x + A (amb - x) + D (dub - x) + rm (A + D - 1) x,
+ * which is A amb + D dub with the rack on (rack crossfade [rm] 1) and, with
+ * it off, the input plus whatever each path added (a draining tail) at its
+ * path's gain. So a section whose entries are all settled off, in a rack
+ * that is off, hands on its input exactly. */
+static inline void fx_section_merge(le_fx_state* fx, const fx_section* sec,
+                                    int sr, float rm, float* xl, float* xr) {
+  float tgt[2];
+  fx_path_targets(sec->mix, tgt);
+  float* g = fx->path_gain[sec->at];
+  if (!fx->path_primed[sec->at]) {
+    g[0] = tgt[0];
+    g[1] = tgt[1];
+    fx->path_primed[sec->at] = 1;
+  } else if (g[0] != tgt[0] || g[1] != tgt[1]) {
+    const float step =
+        sr > 0 ? 1000.0f / ((float)LE_FX_ENABLE_RAMP_MS * (float)sr) : 1.0f;
+    for (int i = 0; i < 2; ++i) {
+      const float d = tgt[i] - g[i];
+      g[i] = d > step ? g[i] + step : d < -step ? g[i] - step : tgt[i];
+    }
+  }
+  const float boost = rm * (g[0] + g[1] - 1.0f);
+  float out[2];
+  for (int c = 0; c < 2; ++c) {
+    const float x = sec->x[c];
+    out[c] = x + g[0] * (sec->p[0][c] - x) + g[1] * (sec->p[1][c] - x);
+    if (boost != 0.0f) out[c] += boost * x;
+  }
+  *xl = out[0];
+  *xr = out[1];
+}
+
 void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float* r,
                     int count, const int32_t* types,
                     const float params[LE_FX_MAX][LE_FX_PARAMS],
@@ -4154,17 +7095,34 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
   int rack_tail = -1;
   float rack_dl = 0.0f;
   float rack_dr = 0.0f;
+  fx_section sec;
+  sec.at = -1;
   if (fx->enable_clear_cooldown > 0) fx->enable_clear_cooldown--;
   for (int s = 0; s < count; ++s) {
-    if (s == gain_at) { xl *= gain; xr *= gain; }
+    if (s == gain_at) {
+      xl *= gain;
+      xr *= gain;
+      if (sec.at >= 0) { /* the merge is linear: scale what it will sum */
+        for (int c = 0; c < 2; ++c) {
+          sec.x[c] *= gain;
+          sec.p[0][c] *= gain;
+          sec.p[1][c] *= gain;
+        }
+      }
+    }
     if (fx->chan_any && (fx->chan[s].rack & LE_FX_RACK_FIRST)) {
       rack_dl = xl;
       rack_dr = xr;
       rack_tail = fx_rack_head(fx, s, count, enabled, sr, &xl, &xr);
     }
     const int32_t ty = types[s];
+    const int32_t path_bits =
+        fx->chan_any ? fx->chan[s].rack & LE_FX_RACK_PATHS : 0;
+    const int path = path_bits ? fx_section_enter(&sec, s, path_bits, ty,
+                                                  params[s], &xl, &xr)
+                               : -1;
     if (ty > LE_FX_NONE && ty < LE_FX_TYPE_COUNT &&
-        (LE_FX[ty].process || LE_FX[ty].kprocess)) {
+        (LE_FX[ty].process || LE_FX[ty].kprocess || LE_FX[ty].rkprocess)) {
       /* Plugin installation can replace a draining built-in without a ring
        * command. Its obsolete tail state belongs to this callback, never
        * to the concurrent installer. Plugins use crossfade, not drain. */
@@ -4182,14 +7140,22 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
            * discontinue a still-audible tail.
            * Only ring-OWNING types (vtable `prepare` non-NULL) pay the ring
            * clear, and those are spaced by the cooldown: a deferred slot
-           * simply stays bypassed and retries next sample. */
-          /* A draining kind keeps its ring in its block, which the reset
-           * below clears: it is spaced the same way. */
-          const int needs_clear = le_fx_holds_tail(fx, s, ty);
+           * simply stays bypassed and retries next sample. A draining
+           * heap-state kind is spaced the same way: the reset clears its
+           * block (the spring's ring lives there). A ring kernel
+           * (`rkprocess`, the reverbs) skips the ring clear: its cleared
+           * block marks every structure unwrapped, so it reads silence
+           * until it has written there again. */
+          /* The Mode delay reads only its own line, which the reset
+           * empties at once: no ring to clear, no spacing to wait on, and
+           * any 1 s rings an earlier kind left stay as they are, unread. */
+          const int needs_clear =
+              ty != LE_FX_MODE_DELAY && le_fx_holds_tail(fx, s, ty);
           if (needs_clear && fx->enable_clear_cooldown > 0) goto slot_done;
           le_fx_entry_reset(fx, s);
           if (needs_clear) {
-            if (LE_FX[ty].state_size == 0) le_fx_entry_clear_rings(fx, s, cap);
+            if (LE_FX[ty].prepare != NULL && LE_FX[ty].rkprocess == NULL)
+              le_fx_entry_clear_rings(fx, s, cap);
             fx->enable_clear_cooldown = LE_FX_ENABLE_CLEAR_SPACING;
           }
           fx->enable_warmup[s] = le_fx_added_latency(fx, s, ty);
@@ -4297,7 +7263,15 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
            * about a pending sparse echo. Observe a complete ring horizon,
            * with no arbitrary lifetime cutoff for audible feedback tails. */
           const int32_t minimum = sr > 0 ? (sr * LE_FX_DRAIN_QUIET_MS) / 1000 : 1;
-          const int32_t quiet_n = cap > minimum ? cap : minimum;
+          int32_t quiet_n = cap > minimum ? cap : minimum;
+          /* The Mode delay remembers its own line's length. */
+          const struct le_fx_line* line =
+              ty == LE_FX_MODE_DELAY
+                  ? atomic_load_explicit(&fx->line[s], memory_order_acquire)
+                  : NULL;
+          if (line != NULL && le_mdly_frames(line) > quiet_n) {
+            quiet_n = le_mdly_frames(line);
+          }
           if (fx->enable_quiet[s] >= quiet_n) {
             fx->enable_drain[s] = 0;
           }
@@ -4305,6 +7279,18 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
       }
     }
   slot_done:
+    /* Whatever the entry did, a path entry hands its result back to its
+     * path, and the section's last one merges the paths. */
+    if (path >= 0) {
+      sec.p[path][0] = xl;
+      sec.p[path][1] = xr;
+      if (fx_section_ends(fx, s, count)) {
+        fx_section_merge(fx, &sec, sr,
+                         rack_tail >= 0 ? fx->rack_mix[rack_tail] : 1.0f, &xl,
+                         &xr);
+        sec.at = -1;
+      }
+    }
     /* Whatever the entry did — processed, passed through as LE_FX_NONE,
      * skipped as a settled bypass — a rack's last entry hands on through the
      * rack's output side. */
@@ -4334,7 +7320,12 @@ int le_fx_added_latency(const le_fx_state* fx, int slot, int32_t type) {
 
 int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap) {
   if (type <= LE_FX_NONE || type >= LE_FX_TYPE_COUNT) return LE_OK;
-  if (LE_FX[type].state_size) return le_fx_kind_prepare(fx, slot, type);
+  if (LE_FX[type].state_size) {
+    const int32_t rc = le_fx_kind_prepare(fx, slot, type);
+    /* A kind with rings too (the reverbs) allocates them as the delay does. */
+    if (rc != LE_OK || LE_FX[type].prepare == NULL) return rc;
+    return LE_FX[type].prepare(fx, slot, cap);
+  }
   if (LE_FX[type].prepare == NULL) return LE_OK; /* needs no heap */
   return LE_FX[type].prepare(fx, slot, cap);
 }
