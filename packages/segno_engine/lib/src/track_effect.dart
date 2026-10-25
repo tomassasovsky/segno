@@ -1165,13 +1165,54 @@ enum TrackEffectType {
         atMax: 100,
         defaultValue: 0.2,
       ),
+      // The seven racks' twelve modes, then the Drum Rack's and the Dub
+      // Rack's own delays.
       FxParamInfo(
         key: 'delay_mode',
         unit: FxParamUnit.choice,
-        steps: 12,
+        steps: 14,
         atMin: 0,
         atMax: 1,
         defaultValue: 0,
+      ),
+      // The Drum Rack's Del Freq, its bell's centre.
+      FxParamInfo(
+        key: 'delay_freq',
+        unit: FxParamUnit.hz,
+        atMin: 100,
+        atMax: 10000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.25,
+      ),
+      // The Dub Rack's Del Damp, L/R Ratio, Reso and Res-Freq.
+      FxParamInfo(
+        key: 'damp',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.35,
+      ),
+      FxParamInfo(
+        key: 'lr_ratio',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'reso',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.8,
+      ),
+      FxParamInfo(
+        key: 'res_freq',
+        unit: FxParamUnit.hz,
+        atMin: 100,
+        atMax: 10000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.35,
       ),
     ],
     // The Looper X's Amp (#891): drive, Bass, Treble and Modern (each

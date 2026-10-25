@@ -67,11 +67,9 @@ way on the capture and on the kernel.
   so a hot loop with no new input decays toward the knee (0.297 peak 3 s
   after a hot tone, 0.255 after 20 s). The capture's input does not stop
   after 9 s (the ladder and plucks follow), so that decay is unmeasured.
-- Every saturation pass is DIGI, so where the echo's limit sits relative
-  to the voicings (RESO LO and HI peak +6 dB) and to the L/R and GRV side
-  gains is not measured. The kernel limits the voiced echo, before the
-  side gains: a RESO echo saturates from about -11 dBFS in at its peak.
-  One hot RESO pass and one hot L/R pass would settle it.
+- Where the echo's limit sits was settled after this part by s7dly
+  (docs/plan/2026-10-25-looperx-delay-voicings-measured.md): after the
+  voicing and before the L/R and GRV side gains, as the kernel has it.
 
 ## Slicer (#1461)
 
