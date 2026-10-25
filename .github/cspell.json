@@ -1409,7 +1409,8 @@
     "revstim",
     "pitchstim",
     "trem",
-    "tremstim"
+    "tremstim",
+    "Tukey"
   ],
   "overrides": [
     {
