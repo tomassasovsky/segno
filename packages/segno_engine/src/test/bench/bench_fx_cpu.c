@@ -271,6 +271,9 @@ static int32_t moving_param(void) {
       g_kind == LE_FX_VINYL) {
     return 1; /* the drives' tone, the vinyl's frequency */
   }
+  /* The Drum's and Dub's voicings: Del Freq, whose glide redesigns their
+   * filters every 32 frames and ramps the coefficients between. */
+  if (g_kind == LE_FX_MODE_DELAY && g_mdly_own) return 4;
   return 0;
 }
 static int g_moving;
