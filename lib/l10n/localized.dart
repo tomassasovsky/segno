@@ -158,6 +158,9 @@ extension EngineLocalizations on AppLocalizations {
     }
     final value = p.valueAt(setting);
     final tenths = (value * 10).round() / 10;
+    // Smart Tune's reference reads to a tenth, as the Looper X shows it:
+    // its whole range is 40 Hz, and A = 441 or 442 is what it is for.
+    if (p.key == 'reference') return fxValueHzFine(tenths);
     return switch (p.unit) {
       FxParamUnit.percent => fxValuePercent(value.round()),
       FxParamUnit.ms =>
@@ -201,9 +204,10 @@ extension EngineLocalizations on AppLocalizations {
 
   /// The name of position [position] of choice parameter [p]: the octaver's
   /// mode or formants, the EQ's layout, the Whammy's range, the Pumper's
-  /// rate, the Slicer's pattern or step, the LPF's LFO rate, or the Mode
-  /// delay's time or mode, or the Dual Octaver's high mode. Any other reads
-  /// as its 1-based number.
+  /// rate, the Slicer's pattern or step, the LPF's LFO rate, the Mode
+  /// delay's time or mode, the Dual Octaver's high mode, the Amp's cabinet,
+  /// the Mod's mode, the Room reverb's room, or Smart Tune's scale root or
+  /// type. Any other reads as its 1-based number.
   String _choiceName(FxParamInfo p, int position) =>
       switch ((p.key, position)) {
         ('mode', 0) => octaverModePhaseVocoder,

@@ -368,9 +368,7 @@ void le_fx_rack_reset(le_fx_state* fx, int slot);
  * runs (le_fx_octaver_settings, whose cell 5 sets the wet voice's level as
  * 1 minus it, below 0 for a boost, so raw octaver params, zero there, seed
  * it at full level); no type check.
- * Control thread / offline, after le_fx_entry_reset; Smart Tune's kernel
- * also runs it on the audio thread for a slot just reset (it allocates
- * nothing). */
+ * Control thread / offline only, after le_fx_entry_reset. */
 void le_fx_octaver_seed_settled(le_fx_state* fx, int slot, const float* params);
 /* Whether [type] runs the octaver's kernel on the hop clock (the octaver,
  * the Whammy, the Dual Octaver and Smart Tune): what the prints and caches
