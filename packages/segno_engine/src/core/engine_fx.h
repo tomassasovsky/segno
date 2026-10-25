@@ -359,8 +359,9 @@ void le_fx_rack_reset(le_fx_state* fx, int slot);
  * standing in for a lane whose octaver has been running since before the
  * capture: from
  * le_fx_entry_reset's state the shift, tone and mix smoothers ramp for
- * ~5 ms from unison and dry, which the live lane was not doing. The mode
- * needs no seeding: a slot just reset takes it at its first sample.
+ * ~5 ms from unison and dry, which the live lane was not doing. The mode,
+ * and the Dual Octaver's switched shift, need no seeding: a slot just reset
+ * takes them within a latency (fx_octaver, #1482).
  *
  * The analysis-hop schedule needs no settling: it follows the clock the
  * render sets (le_fx_state::clock), which reproduces the live one. Caller

@@ -21629,12 +21629,16 @@ static void test_octaver_psola_voice_and_fallback(void) {
  * edge), with a 440 Hz tone running. */
 static void test_octaver_psola_engages_without_a_dip(void) {
   printf("test_octaver_psola_engages_without_a_dip\n");
+  /* [late]: the type lands on the phase vocoder and the PSOLA mode one
+   * 256-frame callback later, as on the legacy SET_LANE_FX path. */
   static const struct {
     int32_t type;
     float params[4];
+    int late;
   } cases[] = {
-      {LE_FX_OCTAVER, {0.75f, 1.0f, 1.0f, 1.0f}},       /* PSOLA, up 12 */
-      {LE_FX_DUAL_OCTAVER, {1.0f, 1.0f, 1.0f, 0.0f}},  /* up an octave */
+      {LE_FX_OCTAVER, {0.75f, 1.0f, 1.0f, 1.0f}, 0},      /* PSOLA, up 12 */
+      {LE_FX_OCTAVER, {0.75f, 1.0f, 1.0f, 1.0f}, 1},      /* the same, late */
+      {LE_FX_DUAL_OCTAVER, {1.0f, 1.0f, 1.0f, 0.0f}, 0},  /* up an octave */
   };
   for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); ++c) {
     le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
@@ -21658,21 +21662,23 @@ static void test_octaver_psola_engages_without_a_dip(void) {
     for (int i = 0; i < n; ++i) {
       fx->clock = (uint32_t)i;
       if (i == n / 2) le_fx_entry_reset(fx, 0); /* engaged again */
+      const int since = i < n / 2 ? i : i - n / 2;
+      if (cases[c].late) params[0][3] = since < 256 ? 0.0f : 1.0f;
       float l = 0.25f * sinf(2.0f * LE_FFT_PI * 440.0f * (float)i / OCT_SR);
       float r = l;
       fx_apply_chain(fx, OCT_SR, OCT_SR, &l, &r, 1, types, params, NULL);
-      const int since = i < n / 2 ? i : i - n / 2;
       if (since < OCT_SR / 25) { /* the first 40 ms of each engage */
         for (int ch = 0; ch < 2; ++ch) {
           const le_octaver_state* o = &fx->oct[0][ch];
           min_xfade = fminf(min_xfade, o->xfade);
-          on_mode &= o->cur_mode == mode;
+          on_mode &= o->cur_mode == (cases[c].late && since < 256 ? 0 : mode);
           on_shift &= q8[6] < 0.5f || o->sm_shift == q8[0];
         }
       }
     }
-    printf("  type %d: lowest wet gain %.3f in the first 40 ms\n",
-           (int)cases[c].type, (double)min_xfade);
+    printf("  type %d%s: lowest wet gain %.3f in the first 40 ms\n",
+           (int)cases[c].type, cases[c].late ? ", mode late" : "",
+           (double)min_xfade);
     CHECK(min_xfade == 1.0f);
     CHECK(on_mode);
     CHECK(on_shift);
