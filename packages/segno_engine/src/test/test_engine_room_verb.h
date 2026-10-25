@@ -392,13 +392,14 @@ static void test_room_verb_at_96k(void) {
   }
   const int low[2] = {22050, 32000};
   for (int k = 0; k < 2; ++k) {
-    for (int room = 0; room < 16; room += 11) {
+    for (int room = 0; room < 16; ++room) {
       float p[LE_FX_PARAMS];
       rv_params(p, 0.5f, 1.0f, room, 1.0f, 1.0f, 0.3f, 1.0f);
       verb_ir h = rv_run_at(p, low[k], low[k]);
       int finite = 1;
       for (int i = 0; i < h.n; ++i) {
         finite &= isfinite(h.l[i]) && fabsf(h.l[i]) < 4.0f;
+        finite &= isfinite(h.r[i]) && fabsf(h.r[i]) < 4.0f;
       }
       CHECK(finite);
       verb_free(h);
