@@ -617,8 +617,10 @@ static void test_slicer_patterns(void) {
       {6, 16, {0, 0, R, R, R, R, R, R, 0, 0, R, R, R, R, R, R}},
       {7, 8, {0, 0, 0, 0, 0, 1, 2, 3}},
       {8, 8, {0, 0, 2, 2, 0, 1, 0, 1}},
-      {9, 10, {0, 0, 0, 0, R, R, R, R, 0, 1}},
-      {10, 10, {0, 0, 2, 2, R, R, R, R, 0, 1}},
+      /* AB__dd and AA__dd: each _ half a step beside the half-step d
+       * (#891 s6v 21-24: one step of rest, a 4-step cycle). */
+      {9, 8, {0, 0, 0, 0, R, R, 0, 1}},
+      {10, 8, {0, 0, 2, 2, R, R, 0, 1}},
       {11, 8, {0, 0, 0, 0, 0, 0, V, V}},
       {12, 8, {0, 0, 0, 0, R, R, V, V}},
       {13, 8, {0, 0, 2, 2, R, R, V, V}},

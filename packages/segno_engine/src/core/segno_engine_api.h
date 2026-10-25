@@ -753,7 +753,8 @@ typedef enum le_fx_type {
    * 1/32, 1/32T, 1/64), p2 mix. Plays the pattern on the beat: a capital letter
    * is a step and a lower-case one half a step; a letter's first slice is
    * the live input and each repeat replays it from its start; _ silences a
-   * step; < plays the step before backwards. A slice ends with a 4 ms fade
+   * step, or half a step in a pattern with a lower-case letter; < plays the
+   * step before backwards. A slice ends with a 4 ms fade
    * (#891). The three Fd patterns are not modelled (no capture and no
    * factory preset uses them): they pass the input through. Locked to the
    * beat, so a lane holding one is never printed. */
@@ -770,7 +771,7 @@ typedef enum le_fx_type {
   /* DUAL_OCTAVER: p0 high mode (a choice of 2: off, on), p1 Octave 1 level,
    * p2 mix, p3 Octave 2 level. The Looper X's Dual Octaver on the octaver's
    * phase vocoder (#891): Octave 1 one octave down (off) or up (on),
-   * Octave 2 two octaves down or up (down inferred, #1464), both voices
+   * Octave 2 two octaves down or up (#1464), both voices
    * from one analysis, the mix an equal-power crossfade. */
   LE_FX_DUAL_OCTAVER = 28,
   /* AMP_CAB: p0 drive, p1 bass, p2 treble, p3 modern, p4 cabinet (a choice
