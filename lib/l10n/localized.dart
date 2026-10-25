@@ -41,6 +41,7 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.modeDelay => effectModeDelay,
     TrackEffectType.dualOctaver => effectDualOctaver,
     TrackEffectType.ampCab => effectAmpCab,
+    TrackEffectType.mod => effectMod,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
@@ -64,6 +65,8 @@ extension EngineLocalizations on AppLocalizations {
     'treble' => paramTreble,
     'modern' => paramModern,
     'cabinet' => paramCabinet,
+    'mod_mode' => paramMode,
+    'studio_mod_mode' => paramMode,
     'decay' => paramDecay,
     'volume' => paramVolume,
     'amb_dub_mix' => paramAmbDubMix,
@@ -198,6 +201,9 @@ extension EngineLocalizations on AppLocalizations {
         ('delay_time', final i) => _delayTimes[i],
         ('delay_mode', final i) => _delayModes[i],
         ('cabinet', final i) => _cabinets[i],
+        ('mod_mode', final i) => _modModes[i],
+        ('studio_mod_mode', 0) => 'Chorus',
+        ('studio_mod_mode', _) => 'Tremolo',
         ('oct_high_mode', 0) => toggleOff,
         ('oct_high_mode', _) => toggleOn,
         ('layout', 0) => eqLayoutShelves,
@@ -297,6 +303,15 @@ extension EngineLocalizations on AppLocalizations {
     'BASS',
     '4x10"',
     'RADIO',
+  ];
+
+  /// The Mod's modes, as the Looper X names them: the Guitar Rack's three,
+  /// then the Studio Rack's tremolo.
+  static const List<String> _modModes = [
+    'CHORUS',
+    'PHASER',
+    'FLANGER',
+    'Tremolo',
   ];
 
   /// The Mode delay's modes, as the Looper X names them.

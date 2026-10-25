@@ -872,6 +872,10 @@
     "@effectAmpCab": {
         "description": "The amplifier with its cabinet, from Ed's and the Guitar racks."
     },
+    "effectMod": "Modulation",
+    "@effectMod": {
+        "description": "The Mod pedal of the Guitar and Studio racks: a chorus, phaser, flanger or tremolo, one at a time."
+    },
     "paramBass": "Bass",
     "@paramBass": {
         "description": "The amp's low-frequency tone control."

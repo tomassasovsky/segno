@@ -782,6 +782,13 @@ typedef enum le_fx_type {
    * 4x10" plays the 2x12", as on the Looper X). Mono: the pair's average in,
    * both sides out. */
   LE_FX_AMP_CAB = 29,
+  /* MOD: p0 rate, p1 depth, p2 mix, p3 mode (a choice of 4: CHORUS, PHASER,
+   * FLANGER, Tremolo). The Looper X's Mod pedal, fit to the #891 captures:
+   * the chorus kind's voice; a four-stage phaser; a flanger whose repeats
+   * lose their bass and treble; and a square tremolo with a fast rise and a
+   * 30 ms fall, whose Depth sets the gain of its off part (Mix does nothing
+   * there). A mode change crossfades over 1024 frames. */
+  LE_FX_MOD = 30,
 } le_fx_type;
 
 /* ---- Built-in effect parameter descriptors (#1378) ----
