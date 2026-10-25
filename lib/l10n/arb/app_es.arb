@@ -464,6 +464,7 @@
     "effectModeDelay": "Delay con modos",
     "effectDualOctaver": "Octaver doble",
     "effectAmpCab": "Amplificador",
+    "effectMod": "Modulación",
     "paramBass": "Graves",
     "paramTreble": "Agudos",
     "paramModern": "Moderno",

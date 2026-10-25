@@ -147,6 +147,11 @@ static void dynamics_entry(le_fx_recipe* r, int s, int32_t kind) {
     /* Full Drive Power (Guitar): drive 93.5 %, the 4x12" cabinet. */
     r->params[s][0] = 0.935f;
     r->params[s][4] = 7.0f / 11.0f;
+  } else if (kind == LE_FX_MOD) {
+    /* The phaser, its heaviest mode: its corners redesigned every 16
+     * samples, at full depth. */
+    r->params[s][1] = 1.0f;
+    r->params[s][3] = 1.0f / 3.0f;
   } else if (kind == LE_FX_DUAL_OCTAVER) {
     /* Bass Octave Layer: high mode off, Octave 2 (two down) at 60 %. */
     r->params[s][3] = 0.6f;
@@ -182,17 +187,16 @@ static void fx_entry(le_fx_recipe* r, int s) { kind_entry(r, s, g_kind); }
  * budgets (#1372: 60 us for Drum, Dub, Lo-Fi and Rhythmic, 200 us for Ed's,
  * Guitar, Studio and Vocal, 300 us for the Vocal Tuner). Each slot runs the
  * kind it has or will have:
- *  - the Dual Octaver (both voices) for Ed's Octaver,
- *    the octaver for the Pitch Shift (#1441), and the chorus and tremolo for
- *    the Mod module, which is not built yet (a projection of its cost);
+ *  - the Dual Octaver (both voices) for Ed's Octaver, the octaver for the
+ *    Pitch Shift (#1441), and the Mod in its phaser mode for the Guitar and
+ *    Studio racks' Mod;
  *  - the Mode delay for the racks' Delay and Dub Delay, and the engine's
  *    reverb for their Reverb;
  *  - every EQ with every band engaged and every compressor working (the
  *    kinds' heaviest settings, an upper bound for each rack's variant).
  *  - the Amp+Cab for Ed's and the Guitar racks' Amp, at heavy drive on the
  *    4x12" cabinet.
- * Left out, not built yet: the Mod module's phaser and flanger, Smart Tune
- * and Harmonizer.
+ * Left out, not built yet: Smart Tune and Harmonizer.
  * Each list ends at the first LE_FX_NONE. */
 typedef struct {
   const char* name;
@@ -216,11 +220,11 @@ static const rack_spec k_racks[] = {
      {LE_FX_DUAL_OCTAVER, LE_FX_WAH, LE_FX_COMPRESSOR, LE_FX_OVERDRIVE,
       LE_FX_AMP_CAB, LE_FX_CHORUS, LE_FX_REVERB, LE_FX_MODE_DELAY, LE_FX_EQ}},
     {"guitar", 200.0,
-     {LE_FX_WHAMMY, LE_FX_OVERDRIVE, LE_FX_WAH, LE_FX_AMP_CAB, LE_FX_CHORUS,
+     {LE_FX_WHAMMY, LE_FX_OVERDRIVE, LE_FX_WAH, LE_FX_AMP_CAB, LE_FX_MOD,
       LE_FX_SPRING, LE_FX_MODE_DELAY}},
     {"studio", 200.0,
-     {LE_FX_OCTAVER, LE_FX_DISTORTION, LE_FX_DOUBLER, LE_FX_CHORUS,
-      LE_FX_TREMOLO, LE_FX_MODE_DELAY, LE_FX_REVERB, LE_FX_COMPRESSOR, LE_FX_EQ}},
+     {LE_FX_OCTAVER, LE_FX_DISTORTION, LE_FX_DOUBLER, LE_FX_MOD,
+      LE_FX_MODE_DELAY, LE_FX_REVERB, LE_FX_COMPRESSOR, LE_FX_EQ}},
     {"vocal", 200.0,
      {LE_FX_HP_GATE, LE_FX_OCTAVER, LE_FX_DOUBLER, LE_FX_MODE_DELAY, LE_FX_REVERB,
       LE_FX_COMPRESSOR, LE_FX_EQ}},
@@ -346,6 +350,7 @@ static const char* kind_name(void) {
     case LE_FX_MODE_DELAY: return "modedelay";
     case LE_FX_DUAL_OCTAVER: return "dualoct";
     case LE_FX_AMP_CAB: return "ampcab";
+    case LE_FX_MOD: return "mod";
     default: return "octaver";
   }
 }
@@ -485,7 +490,7 @@ static const table_kind k_table[] = {
     {"ambverb", LE_FX_AMB_VERB, 0},     {"whammy", LE_FX_WHAMMY, 0},
     {"pumper", LE_FX_PUMPER, 0},        {"slicer", LE_FX_SLICER, 0},
     {"modedelay", LE_FX_MODE_DELAY, 0}, {"dualoct", LE_FX_DUAL_OCTAVER, 0},
-    {"ampcab", LE_FX_AMP_CAB, 0},
+    {"ampcab", LE_FX_AMP_CAB, 0},       {"mod", LE_FX_MOD, 0},
 };
 
 /* The monitor rig with [n] instances of [kind] in one chain, timed. */
@@ -635,6 +640,8 @@ int main(int argc, char** argv) {
         g_kind = LE_FX_DUAL_OCTAVER;
       } else if (!strcmp(kind, "ampcab")) {
         g_kind = LE_FX_AMP_CAB;
+      } else if (!strcmp(kind, "mod")) {
+        g_kind = LE_FX_MOD;
       } else if (!strcmp(kind, "modedelay")) {
         g_kind = LE_FX_MODE_DELAY;
       } else if (!strcmp(kind, "slicer")) {
@@ -645,7 +652,7 @@ int main(int argc, char** argv) {
                 "hpgate, doubler, chorus, wah, overdrive, distortion, vinyl, "
                 "degrade, lpf, lpflfo, spring, drive, filter, delay, tremolo, echo, "
                 "reverb, dubverb, ambverb, whammy, pumper, slicer, "
-                "modedelay, dualoct, ampcab)\n",
+                "modedelay, dualoct, ampcab, mod)\n",
                 kind);
         return 2;
       }

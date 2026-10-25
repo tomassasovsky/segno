@@ -77,12 +77,17 @@ static void test_chorus_matches_the_capture(void) {
   free(in);
   free(out);
 
-  /* The rate line passes through both captures' rates. (The kernel's own
-   * period was checked above at 32.6 %.) */
+  /* The rate line passes within 1 % of every capture's rate: s6 at 0, 25,
+   * 50 and 100 %, s3 at 32.6 and 79.7 %. (The kernel's own period was
+   * checked above at 32.6 %.) */
   const le_fx_param_desc rate = fxd_get(LE_FX_CHORUS, 0);
-  CHECK(rate.flags & LE_FX_PARAM_TAPER_UNVERIFIED);
-  CHECK(fabs((0.3959 + 2.8132 * 0.797) - 2.638) < 0.001 * 2.638);
-  CHECK(fabs((0.3959 + 2.8132 * 0.326) - 1.313) < 0.001 * 1.313);
+  CHECK(!(rate.flags & LE_FX_PARAM_TAPER_UNVERIFIED));
+  const double rates[6][2] = {{0.0, 0.4005}, {0.25, 1.1107}, {0.5, 1.7998},
+                              {1.0, 3.1994}, {0.326, 1.313},  {0.797, 2.638}};
+  for (int i = 0; i < 6; ++i) {
+    const double got = 0.4005 + 2.799 * rates[i][0]; /* the kernel's line */
+    CHECK(fabs(got - rates[i][1]) < 0.01 * rates[i][1]);
+  }
 
   /* The voice's response, from one impulse at a whole-sample delay
    * (depth 0): the capture's wet path was -2.0 dB at 4 kHz, -11.2 dB at
@@ -369,14 +374,14 @@ static void test_wah_matches_the_capture(void) {
   free(in);
 }
 
-/* ---- all three ---- */
+/* ---- all four, the Mod kind (test_engine_modulation.h) included ---- */
 
 static void test_mod_offline_equals_live(void) {
   printf("test_mod_offline_equals_live\n");
-  const int32_t kinds[3] = {LE_FX_DOUBLER, LE_FX_CHORUS, LE_FX_WAH};
+  const int32_t kinds[4] = {LE_FX_DOUBLER, LE_FX_CHORUS, LE_FX_WAH, LE_FX_MOD};
   const int sr = 48000;
   const int n = 4096;
-  for (int k = 0; k < 3; ++k) {
+  for (int k = 0; k < 4; ++k) {
     const int32_t ty = kinds[k];
     _Atomic uint32_t frame = 1000;
     le_fx_state* live = dyn_state(ty, sr);
@@ -405,14 +410,14 @@ static void test_mod_offline_equals_live(void) {
   }
 }
 
-/* A chain holding a chorus or a doubler sounds different each lap, so the
- * lane stays live and says why, until that entry is bypassed (or, for the
- * chorus, its mix is at 0 %; the doubler's copy wanders even then); a wah
- * prints. */
+/* A chain holding a chorus, a doubler or the Mod sounds different each
+ * lap, so the lane stays live and says why, until that entry is bypassed
+ * (or, for the chorus and the Mod's chorus, its mix is at 0 %; the
+ * doubler's copy wanders even then); a wah prints. */
 static void test_cache_free_running_stays_live(void) {
   printf("test_cache_free_running_stays_live\n");
-  const int32_t kinds[3] = {LE_FX_CHORUS, LE_FX_DOUBLER, LE_FX_WAH};
-  for (int k = 0; k < 3; ++k) {
+  const int32_t kinds[4] = {LE_FX_CHORUS, LE_FX_DOUBLER, LE_FX_WAH, LE_FX_MOD};
+  for (int k = 0; k < 4; ++k) {
     le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
     cache_record_loop(a, CACHE_LOOP, 1.0f);
     CHECK(le_engine_set_lane_fx(a, 0, 0, 0, kinds[k]) == LE_OK);
@@ -431,7 +436,7 @@ static void test_cache_free_running_stays_live(void) {
       CHECK(info.renders == 0);
       /* A chorus at 0 % mix is the identity, so the lane prints; and
        * bypassed at full mix, the same. */
-      if (kinds[k] == LE_FX_CHORUS) {
+      if (kinds[k] == LE_FX_CHORUS || kinds[k] == LE_FX_MOD) {
         CHECK(le_engine_set_lane_fx_param(a, 0, 0, 0, 2, 0.0f) == LE_OK);
         drain(a);
         le_engine_get_lane_cache(a, 0, 0, &info); /* sees the new key */
@@ -451,8 +456,8 @@ static void test_cache_free_running_stays_live(void) {
 
 static void test_mod_on_a_lane(void) {
   printf("test_mod_on_a_lane\n");
-  const int32_t kinds[3] = {LE_FX_DOUBLER, LE_FX_CHORUS, LE_FX_WAH};
-  for (int k = 0; k < 3; ++k) {
+  const int32_t kinds[4] = {LE_FX_DOUBLER, LE_FX_CHORUS, LE_FX_WAH, LE_FX_MOD};
+  for (int k = 0; k < 4; ++k) {
     const int32_t ty = kinds[k];
     const int32_t count = le_fx_param_count(ty);
     le_engine* e = make_configured_engine();
