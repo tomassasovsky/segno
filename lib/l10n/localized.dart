@@ -252,9 +252,6 @@ extension EngineLocalizations on AppLocalizations {
     'A_B_C<',
     'AB<<',
     '<<<<',
-    'AABB Fd1',
-    'AABB Fd2',
-    'AABB Fd3',
   ];
 
   /// The Slicer's step note values, in its step's order.

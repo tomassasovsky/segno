@@ -1295,12 +1295,35 @@ void main() {
       expect(e.enabled, isTrue);
       expect(e.params[1], 0.5);
       expect(e.params[2], 1);
-      // Position 16 of 20: <<<<, the factory Reverse.
+      // The Looper X's position 16 of 20: <<<<, the factory Reverse, our
+      // last.
       expect(e.type.params[0].positionOf(e.params[0]), 16);
       expect(
         fxModuleBuild(_module('Slicer')).readiness,
         FxModuleReadiness.full,
       );
+    });
+
+    test("the Rhythmic Rack's Slicer reads a stored Fd pattern as <<<<", () {
+      // A preset stores one of the Looper X's 20 positions (k / 19); ours
+      // stop at <<<< (16), so 17 to 19 play it and the rest stay put.
+      int position(double stored) {
+        final e = fxModuleEntry(
+          _module('Slicer'),
+          FxPreset(
+            family: 'Rhythmic Rack',
+            name: 'p',
+            id: 'p',
+            type: 0,
+            params: {'Slicer': 1, 'Slic Patt': stored},
+          ),
+        );
+        return e.type.params[0].positionOf(e.params[0]);
+      }
+
+      for (var k = 0; k < 20; k++) {
+        expect(position(k / 19), k < 17 ? k : 16, reason: 'position $k');
+      }
     });
 
     test("the Rhythmic Rack's Pumper copies rate and depth", () {

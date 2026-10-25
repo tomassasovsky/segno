@@ -511,7 +511,7 @@ typedef struct le_fx_slice_voice {
 /* A slot's Slicer runtime: the slice playing (id 0: none) and up to two
  * fading out after being cut short, the pattern and step in force (a new
  * one waits for the slice playing to end), the gliding mix, how far the
- * output has crossfaded to the input (an Fd pattern, no tempo) and the
+ * output has crossfaded to the input (with no tempo) and the
  * beat last seen. */
 typedef struct le_fx_slice_state {
   double id;
