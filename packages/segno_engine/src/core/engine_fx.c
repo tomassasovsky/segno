@@ -1834,18 +1834,22 @@ static const double LE_SLICE_STEP[9] = {1.0,       2.0 / 3.0, 0.5,
  * lower-case letter half a step, and _ a step, or half a step in a pattern
  * that holds a lower-case letter (#891 s6v: AB__dd and AA__dd rest one
  * step between B and d, as A_C_ rests a step after each letter). */
-static int le_slice_len(const char* pat, char c) {
-  if (c >= 'a' && c <= 'z') return 1;
-  if (c != '_') return 2;
+static int le_slice_half_rest(const char* pat) {
   for (const char* d = pat; *d; ++d) {
     if (*d >= 'a' && *d <= 'z') return 1;
   }
-  return 2;
+  return 0;
+}
+
+static inline int le_slice_len(int half_rest, char c) {
+  if (c >= 'a' && c <= 'z') return 1;
+  return c == '_' && half_rest ? 1 : 2;
 }
 
 static int le_slice_cycle(const char* pat) {
+  const int hr = le_slice_half_rest(pat);
   int n = 0;
-  for (const char* c = pat; *c; ++c) n += le_slice_len(pat, *c);
+  for (const char* c = pat; *c; ++c) n += le_slice_len(hr, *c);
   return n;
 }
 
@@ -1854,9 +1858,10 @@ static int le_slice_cycle(const char* pat) {
  * last three in half steps). */
 static char le_slice_token(const char* pat, double half, int* index,
                            int* start, int* len, int* first) {
+  const int hr = le_slice_half_rest(pat);
   int at = 0;
   for (const char* c = pat; *c; ++c) {
-    const int n = le_slice_len(pat, *c);
+    const int n = le_slice_len(hr, *c);
     if (half < (double)(at + n) || c[1] == '\0') {
       *index = (int)(c - pat);
       *start = at;
@@ -1868,7 +1873,7 @@ static char le_slice_token(const char* pat, double half, int* index,
           *first = f;
           break;
         }
-        f += le_slice_len(pat, *d);
+        f += le_slice_len(hr, *d);
       }
       return *c;
     }
@@ -2115,12 +2120,14 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
  *   were measured on DIGI and RES HI, and are the same on both; the DAMPED
  *   and RESO LO ones, composed from them, match their own captures (s6v
  *   9-16) within 0.3 dB through the fourth repeat.
- * Two limits, measured (s6v 17-18, with s4/4): the voiced echo saturates
- * from 0.55 toward 0.60 (an echo of a 0 dBFS tone comes back 3.1 dB down,
- * of a -3 dBFS one 0.2 dB down, at Feedback 0 %), and what feeds back
- * from 0.20 toward 0.40, which holds DIGI at 100 % Feedback to the level
- * the Looper X settles at under a sweep (its loop alone loses nothing per
- * repeat). A 5 Hz DC blocker sits in the loop. Its tempo is the live
+ * Two limits, fit to DIGI passes (s6v 17-18, with s4/4): the echo
+ * saturates from 0.55 toward 0.60 (at Feedback 0 % a 0 dBFS tone's echo
+ * comes back 3.1 dB down on the capture and 2.95 dB here, a -3 dBFS one
+ * 0.2 dB and 0.7 dB down), and what feeds back from 0.20 toward 0.40,
+ * which holds DIGI at 100 % Feedback to the level the Looper X settles at
+ * under a sweep (its loop alone loses nothing per repeat). The captures
+ * are all DIGI, so placing the echo's limit after the voicing and before
+ * the L/R and GRV side gains is assumed. A 5 Hz DC blocker sits in the loop. Its tempo is the live
  * song's, which a print would not keep, so a lane holding one is never
  * printed. */
 

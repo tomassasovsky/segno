@@ -336,9 +336,9 @@ static void test_mode_delay_taps(void) {
   free(yr);
 }
 
-/* At 100 % Feedback a resonant voicing would grow; the line stays under
- * full scale, so the output stays bounded: under 2.5, the voicing's
- * +6 dB on top of full scale and a little ringing. */
+/* At 100 % Feedback a resonant voicing would grow; the echo's limit holds
+ * every echo under its 0.60 ceiling, so the output stays under 0.65 (the
+ * ceiling and the output filters' ringing). */
 static void test_mode_delay_loop_is_bounded(void) {
   printf("test_mode_delay_loop_is_bounded\n");
   const le_fx_tempo t = rh_tempo(120.0);
@@ -360,11 +360,10 @@ static void test_mode_delay_loop_is_bounded(void) {
       peak = fmaxf(peak, fabsf(y[i]));
     }
     printf("  mode %d at 100 %%: peak %.2f\n", modes[k], (double)peak);
-    CHECK(peak < 2.5f);
+    CHECK(peak < 0.65f);
     free(x);
   }
-  /* A sustained full-scale tone: the line holds at most the input plus a
-   * full-scale feedback, so the output stays under 4.5 (its +6 dB on top). */
+  /* A sustained full-scale tone, voiced +6 dB: still under 0.65. */
   {
     float* x = (float*)malloc(sizeof(float) * (size_t)n);
     for (int i = 0; i < n; ++i) {
@@ -379,7 +378,7 @@ static void test_mode_delay_loop_is_bounded(void) {
     float peak = 0.0f;
     for (int i = 0; i < n; ++i) peak = fmaxf(peak, fabsf(y[i]));
     printf("  RESO HI, sustained full scale: peak %.2f\n", (double)peak);
-    CHECK(peak < 4.5f);
+    CHECK(peak < 0.65f);
     free(x);
   }
   free(y);
@@ -590,6 +589,61 @@ static void test_mode_delay_hot_echo_saturates(void) {
   }
 }
 
+/* DIGI at 100 % Feedback (#891 s6v 18): a quiet 500 Hz burst's repeats
+ * lose nothing (the second at least 0.99 of the first: the capture loses
+ * under 0.1 dB a repeat below 3 kHz),
+ * and a hot tone's repeats, once it stops, settle under the feedback's
+ * 0.40 ceiling (DIGI's loop filters ring a little over it) rather than at
+ * the echo's 0.60. */
+static void test_mode_delay_full_feedback(void) {
+  printf("test_mode_delay_full_feedback\n");
+  const le_fx_tempo t = rh_tempo(120.0);
+  const int period = MD_SR * 375 / 1000;
+  const float p[LE_FX_PARAMS] = {md_choice(8, 20), 1.0f, 0.5f, 0.0f};
+  {
+    const int n = 3 * period + 1000;
+    float* x = (float*)calloc((size_t)n, sizeof(float));
+    float* y = (float*)malloc(sizeof(float) * (size_t)n);
+    const int len = MD_SR * 40 / 1000;
+    for (int i = 0; i < len; ++i) {
+      const double w = 0.5 - 0.5 * cos(2.0 * 3.14159265358979 * i / len);
+      x[100 + i] = (float)(0.1 * w * sin(2.0 * 3.14159265358979 * 500.0 * i / MD_SR));
+    }
+    le_fx_state* fx = md_state(&t);
+    md_run(fx, p, x, y, NULL, n);
+    le_fx_state_free_buffers(fx);
+    free(fx);
+    double e1 = 0.0, e2 = 0.0;
+    for (int k = -200; k < len + 400; ++k) {
+      e1 += (double)y[100 + period + k] * y[100 + period + k];
+      e2 += (double)y[100 + 2 * period + k] * y[100 + 2 * period + k];
+    }
+    const double ratio = sqrt(e2 / e1);
+    printf("  second echo %.4f of the first\n", ratio);
+    CHECK(ratio > 0.99);
+    free(x);
+    free(y);
+  }
+  {
+    const int n = 6 * MD_SR;
+    float* x = (float*)calloc((size_t)n, sizeof(float));
+    float* y = (float*)malloc(sizeof(float) * (size_t)n);
+    for (int i = 0; i < MD_SR; ++i) {
+      x[i] = 0.5f * sinf(2.0f * 3.14159265f * 1000.0f * (float)i / MD_SR);
+    }
+    le_fx_state* fx = md_state(&t);
+    md_run(fx, p, x, y, NULL, n);
+    le_fx_state_free_buffers(fx);
+    free(fx);
+    float peak = 0.0f;
+    for (int i = 4 * MD_SR; i < n; ++i) peak = fmaxf(peak, fabsf(y[i]));
+    printf("  repeats after the tone: peak %.3f\n", (double)peak);
+    CHECK(peak > 0.2f && peak < 0.45f);
+    free(x);
+    free(y);
+  }
+}
+
 static void run_mode_delay_tests(void) {
   test_mode_delay_is_not_printed();
   test_mode_delay_voicings();
@@ -604,5 +658,6 @@ static void run_mode_delay_tests(void) {
   test_mode_delay_reenable_skips_the_spacing();
   test_mode_delay_timing_switch_is_clean();
   test_mode_delay_hot_echo_saturates();
+  test_mode_delay_full_feedback();
   test_mode_delay_drains_its_whole_line();
 }
