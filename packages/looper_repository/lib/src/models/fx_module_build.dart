@@ -445,6 +445,11 @@ const FxModuleBuild _pumper = FxModuleBuild(
 const FxModuleBuild _slicer = FxModuleBuild(
   type: TrackEffectType.slicer,
   params: ['Slic Patt', 'Slic Step Len', 'Slic Mix'],
+  // A preset stores the pattern as one of the Looper X's 20 positions; ours
+  // stop at <<<< (16), so a stored Fd pattern (17 to 19) reads as <<<<.
+  scales: {
+    0: FxSourceScale.table([(0, 0), (16 / 19, 1), (1, 1)]),
+  },
 );
 
 // Guitar Rack: the whole Whammy, pedal and range.
