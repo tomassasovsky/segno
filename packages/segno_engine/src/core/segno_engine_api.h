@@ -804,6 +804,14 @@ typedef enum le_fx_type {
    * turn on the modes and a quarter on the ER rooms (their dry is 0.707 at
    * 100 %). Drains its tail on bypass. */
   LE_FX_ROOM_VERB = 31,
+  /* SMART_TUNE: p0 speed (1 to 1000 ms), p1 scale root (a choice of 12, C
+   * to B), p2 scale type (a choice of 14: Major, Minor, Harm Min, Melo Min,
+   * Dorian, Phrygian, Lydian, Mixo, Locrian, Chromatic, Penta, Maj Triad,
+   * Min Triad, Root), p3 reference (420 to 460 Hz). The Vocal Tuner's
+   * Smart Tune, fit to the #891 captures: the octaver's PSOLA, fully wet,
+   * retunes a voiced input to the nearest note of the scale, gliding there
+   * with a time constant of half the speed. */
+  LE_FX_SMART_TUNE = 32,
 } le_fx_type;
 
 /* ---- Built-in effect parameter descriptors (#1378) ----

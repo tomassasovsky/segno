@@ -420,11 +420,12 @@ typedef struct le_octaver_state {
   int32_t hop_count;
   int32_t out_pos;   /* PSOLA's read/write phase in the OLA accumulator */
   /* PSOLA: the smoothed period (device samples) and voicing, and the grain
-   * marks. */
+   * marks: the analysis mark's distance behind the head, and the samples
+   * until the next synthesis mark, each to a fraction of a sample. */
   float period;
   float voiced;
-  int32_t in_epoch;
-  int32_t out_epoch;
+  float in_epoch;
+  float out_epoch;
   /* Shared: per-sample param smoothing + mode-switch gain-dip (D1/D2/H3). */
   float sm_shift;
   float sm_tone;
@@ -449,6 +450,16 @@ typedef struct le_octaver_state {
   float frame_ratio2;
   float frame_level1;
   float frame_level2;
+  /* Smart Tune (LE_FX_SMART_TUNE): the correction it applies and the one
+   * its target note asks for, in cents; the glide's per-sample step; and
+   * the period and settings those two were worked out at (the period, then
+   * the four settings; -1: not yet). */
+  float tune_c;
+  float tune_want;
+  float tune_a;
+  float tune_at[5];
+  int32_t tune_note; /* the note it holds, semitones above the root */
+  int32_t tune_held; /* whether it holds one (none after silence) */
 } le_octaver_state;
 
 /* Per-kind DSP state for the kinds that keep it on the heap (#887 part 4).
