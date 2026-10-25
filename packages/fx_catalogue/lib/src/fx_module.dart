@@ -57,14 +57,12 @@ class FxModule {
   final List<String> artwork;
 
   /// Whole parameter names that belong to this module where a prefix group
-  /// cannot say so.
+  /// cannot say so, because keys with the same first word belong to two
+  /// modules.
   ///
   /// The Vocal Tuner's `Scale Root` and `Scale Type` are Smart Tune's and its
-  /// `Scale` is the Harmonizer's, one word apart; `Mode`, `Auto Source` and
-  /// `Key` are single words no other key starts with. Each module's screen on
-  /// the Looper X shows which are its own (#891 s6pitch): Smart Tune's Speed,
-  /// Tracking, Scale Root, Scale Type, Audio Type and Reference, and the
-  /// Harmonizer's Mode, Auto Source, Key, Scale, Stereo and Tightness.
+  /// `Scale` is the Harmonizer's, as each module's screen on the Looper X
+  /// shows (#891 s6pitch).
   final List<String> keys;
 
   /// The rack families this module appears in, or `null` for every family.
@@ -317,8 +315,11 @@ const List<FxModule> kFxModules = [
       'High',
       'Stereo',
       'Tightness',
+      'Mode',
+      'Auto',
+      'Key',
     ],
-    keys: ['Mode', 'Auto Source', 'Key', 'Scale'],
+    keys: ['Scale'],
     artwork: ['Harmonise20'],
     families: _vocalTunerFamilies,
   ),

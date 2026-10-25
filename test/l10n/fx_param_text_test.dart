@@ -118,7 +118,7 @@ const _english = <String, List<String>>{
   'smartTune.speed': ['1.0 ms', '31.6 ms', '1000 ms'],
   'smartTune.scale_root': ['C', 'C', 'B'],
   'smartTune.scale_type': ['Major', 'Major', 'Root'],
-  'smartTune.reference': ['420 Hz', '440 Hz', '460 Hz'],
+  'smartTune.reference': ['420.0 Hz', '440.0 Hz', '460.0 Hz'],
 };
 
 /// The same in Spanish: a decimal comma, and the Spanish mode name.
@@ -235,7 +235,7 @@ const _spanish = <String, List<String>>{
   'smartTune.speed': ['1,0 ms', '31,6 ms', '1000 ms'],
   'smartTune.scale_root': ['C', 'C', 'B'],
   'smartTune.scale_type': ['Major', 'Major', 'Root'],
-  'smartTune.reference': ['420 Hz', '440 Hz', '460 Hz'],
+  'smartTune.reference': ['420,0 Hz', '440,0 Hz', '460,0 Hz'],
 };
 
 void main() {

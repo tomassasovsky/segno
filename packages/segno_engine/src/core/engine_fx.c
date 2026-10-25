@@ -7268,15 +7268,16 @@ static float le_st_want(le_octaver_state* o, float pf, int cap,
   return (float)(100.0 * ((double)best - x));
 }
 
-/* The correction channel [o] applies this sample, in cents: glided one step
- * toward the one its detected pitch asks for, or none while the input is
+/* The correction this sample, in cents, in [o]'s glide: one step toward the
+ * one the pitch channel [in] detects asks for, or none while that input is
  * unvoiced (PSOLA plays the dry then), so a new note starts from its own
  * pitch. A note starts correcting once PSOLA's voicing reaches 0.6, its
  * third detection, when the period it smooths has left the last note's. */
-static float le_st_correct(le_octaver_state* o, const float* p, int cap) {
-  const float pf = o->period;
+static float le_st_correct(le_octaver_state* o, const le_octaver_state* in,
+                           const float* p, int cap) {
+  const float pf = in->period;
   const float gate = o->tune_held ? 0.3f : 0.6f;
-  if (o->cur_mode != 1 || pf <= 0.0f || o->voiced < gate) {
+  if (in->cur_mode != 1 || pf <= 0.0f || in->voiced < gate) {
     o->tune_c = 0.0f;
     o->tune_held = 0;
     o->tune_at[0] = -1.0f; /* the next note works its target out afresh */
@@ -7290,6 +7291,8 @@ static float le_st_correct(le_octaver_state* o, const float* p, int cap) {
   }
   if (pf != o->tune_at[0] || p[1] != o->tune_at[2] || p[2] != o->tune_at[3] ||
       p[3] != o->tune_at[4]) {
+    /* A new root or scale makes the held note another pitch: hold none. */
+    if (p[1] != o->tune_at[2] || p[2] != o->tune_at[3]) o->tune_held = 0;
     o->tune_at[0] = pf;
     for (int k = 2; k < 5; ++k) o->tune_at[k] = p[k - 1];
     o->tune_want = le_st_want(o, pf, cap, p);
@@ -7298,28 +7301,39 @@ static float le_st_correct(le_octaver_state* o, const float* p, int cap) {
   return o->tune_c;
 }
 
-/* Smart Tune always runs PSOLA. A slot just reset is on the phase vocoder
- * with an empty runtime, so it lands on PSOLA at once, settled as an
- * offline render seeds it (le_fx_octaver_seed_settled), without the mode
- * switch's gain dip, which would take the fully wet voice out for 30 ms on
- * every engage. The left channel's correction drives both, so a stereo
- * input never splits across two notes. */
+/* Puts channel [o] of a slot just reset (on the phase vocoder, its runtime
+ * empty) on PSOLA, settled at Smart Tune's settings: its hop schedule kept,
+ * and no mode-switch gain dip, which would take the fully wet voice out for
+ * 30 ms on every engage. An offline render seeds the same state
+ * (le_fx_octaver_seed_settled). */
+static void le_st_land(le_octaver_state* o) {
+  const int ticks = le_oct_ticks_to_work(o);
+  o->cur_mode = 1;
+  le_oct_set_ticks_to_work(o, ticks);
+  o->sm_tone = 1.0f;
+  o->sm_mix = 1.0f;
+  o->sm_level = 1.0f;
+  o->xfade = 1.0f;
+}
+
+/* One correction drives both channels, so a stereo input never splits
+ * across two notes. It follows the channel more clearly voiced (the left
+ * unless the right is so by 0.1), so a voice on either side is tuned. */
 static void fx_smart_tune_process(le_fx_state* fx, int slot, int sr, int cap,
                                   float* l, float* r, const float* p) {
   (void)sr;
-  float q[LE_FX_PARAMS] = {0.0f};
+  float q[8] = {0.0f};
   le_st_settings(q);
-  if (fx->oct[slot][0].cur_mode != 1 || fx->oct[slot][1].cur_mode != 1) {
-    le_fx_octaver_seed_settled(fx, slot, q);
-  }
-  const float cents = le_st_correct(&fx->oct[slot][0], p, cap);
-  q[0] = 0.5f + cents / 4800.0f;
-  float* x[2] = {l, r};
+  le_octaver_state* o = fx->oct[slot];
   for (int chan = 0; chan < 2; ++chan) {
-    /* The shift is set, not smoothed: the glide is the correction's own. */
-    fx->oct[slot][chan].sm_shift = q[0];
-    *x[chan] = fx_octaver(fx, slot, chan, cap, *x[chan], q);
+    if (o[chan].cur_mode != 1) le_st_land(&o[chan]);
   }
+  const int in = o[1].voiced > o[0].voiced + 0.1f ? 1 : 0;
+  q[0] = 0.5f + le_st_correct(&o[0], &o[in], p, cap) / 4800.0f;
+  /* The shift is set, not smoothed: the glide is the correction's own. */
+  o[0].sm_shift = q[0];
+  o[1].sm_shift = q[0];
+  fx_octaver_run(fx, slot, cap, l, r, q);
 }
 
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot

@@ -7,9 +7,11 @@
 static int st_sr = ST_SR; /* the rate st_render runs at */
 
 /* [n] frames of [in] through Smart Tune at [p], from a fresh state, as
- * fx_apply_chain runs it; returns the left output (malloc'd). The right
- * channel must match the left: the input is mono. */
-static float* st_render(const float* p, const float* in, int n) {
+ * fx_apply_chain runs it, on both channels (the right output must match the
+ * left), or on the right alone with the left silent ([right_only]);
+ * returns the output carrying it (malloc'd). */
+static float* st_render_on(const float* p, const float* in, int n,
+                           int right_only) {
   le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
   CHECK(fx != NULL);
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
@@ -25,16 +27,20 @@ static float* st_render(const float* p, const float* in, int n) {
   int same = 1;
   for (int i = 0; i < n; ++i) {
     fx->clock = (uint32_t)i;
-    float l = in[i];
-    float r = l;
+    float l = right_only ? 0.0f : in[i];
+    float r = in[i];
     fx_apply_chain(fx, st_sr, st_sr, &l, &r, 1, types, params, NULL);
-    same &= l == r;
-    y[i] = l;
+    same &= right_only || l == r;
+    y[i] = r;
   }
   CHECK(same);
   le_fx_state_free_buffers(fx);
   free(fx);
   return y;
+}
+
+static float* st_render(const float* p, const float* in, int n) {
+  return st_render_on(p, in, n, 0);
 }
 
 /* Smart Tune's settings: [speed] (0..1), the root (0 = C .. 11 = B), the
@@ -301,6 +307,14 @@ static void test_smart_tune_reference_and_level(void) {
   printf("  reference 460: %.1f Hz (capture 1032), level %+.2f dB\n", hz, db);
   CHECK(fabs(hz - 987.767 * 460.0 / 440.0) < 1.0);
   CHECK(fabs(db) < 0.5);
+  free(y);
+  /* A voice on the right alone is tuned too: the correction follows the
+   * voiced channel. */
+  st_params(p, 0.5f, 0, 0, 0.5f);
+  y = st_render_on(p, x, n, 1);
+  const double c = st_cents(st_freq(y, a, len));
+  printf("  right alone: %+.1f c from B5\n", c - 1400.0);
+  CHECK(fabs(c - 1400.0) < 3.0);
   free(y);
   free(x);
 }
