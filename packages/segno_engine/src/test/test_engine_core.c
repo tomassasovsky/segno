@@ -21656,8 +21656,8 @@ static void test_octaver_psola_engages_without_a_dip(void) {
     int on_mode = 1, on_shift = 1;
     const int n = OCT_SR;
     for (int i = 0; i < n; ++i) {
-      if (i == n / 2) le_fx_entry_reset(fx, 0); /* engaged again */
       fx->clock = (uint32_t)i;
+      if (i == n / 2) le_fx_entry_reset(fx, 0); /* engaged again */
       float l = 0.25f * sinf(2.0f * LE_FFT_PI * 440.0f * (float)i / OCT_SR);
       float r = l;
       fx_apply_chain(fx, OCT_SR, OCT_SR, &l, &r, 1, types, params, NULL);
@@ -22789,13 +22789,13 @@ static void test_octaver_hop_resyncs_after_a_count_gap(void) {
 }
 
 /* The two octaver modes run one counter in opposite directions (PV up to its
- * frame, PSOLA down to its YIN pass). A slot resets into PV and a PSOLA slot
- * flips mode ~15 ms later; if the flip re-seeded the counter from the phase,
- * the PSOLA schedule would be anchored to that later instant and leave the
- * slot's quarter. The flip keeps the schedule instead, so a PV slot and a
- * PSOLA slot of one chain run their heavy ticks a quarter apart, as their
- * phases say. Pinned by counting, per 64-frame block of one hop, the blocks
- * in which each slot's heavy tick fell. */
+ * frame, PSOLA down to its YIN pass). A running PV slot switched to PSOLA
+ * flips mode at the bottom of its ~15 ms gain dip; if the flip re-seeded the
+ * counter from the phase, the PSOLA schedule would be anchored to that
+ * instant and leave the slot's quarter. The flip keeps the schedule instead,
+ * so a PV slot and a PSOLA slot of one chain run their heavy ticks a quarter
+ * apart, as their phases say. Pinned from the counters once the switch is
+ * through. */
 static void test_octaver_hop_schedule_survives_mode_switch(void) {
   printf("test_octaver_hop_schedule_survives_mode_switch\n");
   le_engine* e = le_engine_create();
@@ -22815,12 +22815,16 @@ static void test_octaver_hop_schedule_survives_mode_switch(void) {
     r.level[s] = 1.0f;
   }
   r.params[0][3] = 0.0f; /* PV */
-  r.params[1][3] = 1.0f; /* PSOLA */
+  r.params[1][3] = 0.0f; /* PV, until it switches below */
   CHECK(le_engine_set_fx_recipe(e, LE_FX_OWNER_MONITOR, 0, 0, 1, &r) == LE_OK);
   float in[64];
   float out[64];
   for (int i = 0; i < 64; ++i) in[i] = 0.3f * sinf((float)i * 0.2f);
-  /* Past the PSOLA slot's ~30 ms switch. */
+  /* Running, then slot 1 switches to PSOLA mid-stream, through its ~30 ms
+   * gain dip (a slot just reset takes its mode at once, #1482, so the
+   * switch has to come after that window). */
+  for (int b = 0; b < 200; ++b) le_engine_process(e, out, in, 64);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 1, 3, 1.0f) == LE_OK);
   for (int b = 0; b < 200; ++b) le_engine_process(e, out, in, 64);
   const le_fx_state* fx = &e->monitors[0].fx;
   CHECK(fx->oct[0][0].cur_mode == 0);
@@ -24462,7 +24466,7 @@ static float* oct_reference_wet(const float* dry, int32_t n, int32_t sr,
  * by being insensitive to either. */
 static void run_perf_render_octaver_case(const char* name, int32_t type,
                                          const float* raw4,
-                                         int settles_itself) {
+                                         float unsettled_min) {
   const char* dir = render_test_dir(name);
   const int32_t sr = 48000;
   const int32_t channel = 3;
@@ -24567,11 +24571,11 @@ static void run_perf_render_octaver_case(const char* name, int32_t type,
            name, (double)d_ref, (double)d_seed, (double)d_unsettled);
     CHECK(d_ref < 1e-6f);       /* the render used THIS lane's hop phase */
     CHECK(d_seed > 0.01f);      /* and can tell a wrong seed */
-    /* and a start-up state the lane was not in. A kind that keeps one mode
-     * and a switched shift (the Dual Octaver, Smart Tune) lands on them at
-     * its first sample from a reset (#1482), leaving only the 5 ms
-     * smoothers, so it has no such state to tell. */
-    if (!settles_itself) CHECK(d_unsettled > 0.01f);
+    /* and a start-up state the lane was not in. A slot just reset lands on
+     * its mode and switched shift at once (#1482), so the Dual Octaver's
+     * start differs only by its 5 ms mix and level smoothers, and Smart
+     * Tune, which holds its fixed tone, mix and level, not at all. */
+    if (unsettled_min > 0.0f) CHECK(d_unsettled > unsettled_min);
   }
   free(ref);
   free(wrong_seed);
@@ -24589,22 +24593,22 @@ static void test_perf_render_wet_octaver_matches_lane_hop_phase(void) {
   /* -1 octave, tone open, full wet, in each mode. */
   const float pv[4] = {0.25f, 1.0f, 1.0f, 0.0f};
   const float psola[4] = {0.25f, 1.0f, 1.0f, 1.0f};
-  run_perf_render_octaver_case("wet-octaver-phase", LE_FX_OCTAVER, pv, 0);
-  run_perf_render_octaver_case("wet-octaver-psola", LE_FX_OCTAVER, psola, 0);
+  run_perf_render_octaver_case("wet-octaver-phase", LE_FX_OCTAVER, pv, 0.01f);
+  run_perf_render_octaver_case("wet-octaver-psola", LE_FX_OCTAVER, psola, 0.01f);
   /* The Whammy toe down at -12: the render seeds its MAPPED settings, fully
    * wet, or it would start dry (#1451). */
   const float whammy[4] = {1.0f, 0.0f, 0.0f, 0.0f};
-  run_perf_render_octaver_case("wet-whammy", LE_FX_WHAMMY, whammy, 0);
+  run_perf_render_octaver_case("wet-whammy", LE_FX_WHAMMY, whammy, 0.01f);
   /* The Dual Octaver down, half mixed: the render seeds its mapped level
    * and law, and its switched shift. */
   const float dual[4] = {0.0f, 1.0f, 0.5f, 0.0f};
-  run_perf_render_octaver_case("wet-dual-octaver", LE_FX_DUAL_OCTAVER, dual, 1);
+  run_perf_render_octaver_case("wet-dual-octaver", LE_FX_DUAL_OCTAVER, dual, 1e-3f);
   /* Smart Tune at its defaults: the render seeds its PSOLA, fully wet. */
   const float tune[4] = {0.5f, 0.0f, 0.0f, 0.5f};
-  run_perf_render_octaver_case("wet-smart-tune", LE_FX_SMART_TUNE, tune, 1);
+  run_perf_render_octaver_case("wet-smart-tune", LE_FX_SMART_TUNE, tune, 0.0f);
   /* With Octave 2 at 60 %: both voices from the one analysis (#1464). */
   const float dual2[4] = {1.0f, 0.5f, 0.5f, 0.6f};
-  run_perf_render_octaver_case("wet-dual-octaver-2", LE_FX_DUAL_OCTAVER, dual2, 1);
+  run_perf_render_octaver_case("wet-dual-octaver-2", LE_FX_DUAL_OCTAVER, dual2, 1e-3f);
 }
 
 /* The stem render settles each arm-time slot at its EFFECTIVE bit, as the

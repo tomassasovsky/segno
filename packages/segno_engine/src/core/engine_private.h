@@ -434,9 +434,10 @@ typedef struct le_octaver_state {
   /* The equal-power mix's gains, for the sm_mix they were computed at. */
   float ep_mix, ep_dry, ep_wet;
   int32_t cur_mode; /* 0 = phase vocoder, 1 = PSOLA */
-  /* Set by le_fx_entry_reset: the runtime is empty, so the next sample
-   * takes the mode (and the Dual Octaver's shift) its settings ask for at
-   * once, with no gain dip (#1482). */
+  /* Ticks left in the window after le_fx_entry_reset (LE_PV_LATENCY long)
+   * in which the wet voice has played nothing yet, so the mode (and the
+   * Dual Octaver's shift) follows the settings at once, with no gain dip
+   * (#1482). */
   int32_t fresh;
   float xfade;      /* equal-power gain-dip envelope during a mode switch (1 = steady) */
   /* The hop split's frame state (LE_PV_SCRATCH floats, engine_fx.h; PSOLA's

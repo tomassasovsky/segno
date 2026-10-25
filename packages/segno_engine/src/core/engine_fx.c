@@ -282,6 +282,20 @@ static int le_oct_seeded_ticks(const le_fx_state* fx, int slot) {
 #define LE_PV_S_IM2(o) ((o)->scratch + LE_PV_N + 6 * LE_PV_BINS)
 #define LE_PV_S_PHASE2(o) ((o)->scratch + LE_PV_N + 7 * LE_PV_BINS)
 
+static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
+                                int ticks);
+
+/* Puts channel [chan] of octaver slot [slot] on [mode] with its runtime
+ * reset, keeping its hop schedule: the new mode's heavy tick lands where the
+ * old mode's next one would have. Re-seeding from the phase instead would
+ * anchor it to this instant and move it off the instance's quarter. */
+static void le_oct_switch_mode(le_fx_state* fx, int slot, int chan, int mode) {
+  le_octaver_state* o = &fx->oct[slot][chan];
+  const int ticks = le_oct_ticks_to_work(o);
+  o->cur_mode = mode;
+  le_pv_reset_runtime(fx, slot, chan, ticks);
+}
+
 /* Zeros the octaver's per-mode DSP runtime (phase history, synthesis
  * accumulator, hop counter) without touching the heap-buffer allocation or the
  * smoothed params / current mode. Used on a mode switch and on entry reset; safe
@@ -1134,18 +1148,15 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
   o->sm_mix += sc * (p[2] - o->sm_mix);
   o->sm_level += sc * ((1.0f - p[5]) - o->sm_level);
 
-  /* A runtime just reset is empty: it takes the mode, and the Dual
-   * Octaver its shift, at once, keeping its hop schedule. Through the dip
-   * below, a PSOLA-mode octaver would drop its wet voice for 30 ms on every
-   * engage (#1482). */
+  /* For a latency after a reset the wet voice has played nothing yet: the
+   * mode, and the Dual Octaver's shift, follow the settings at once. Through
+   * the dip below, a PSOLA-mode octaver dropped its wet voice for 30 ms on
+   * every engage (#1482). The window, not just the first sample, so a
+   * setting that lands a callback after the type still takes it. */
   const int requested = p[3] >= 0.5f ? 1 : 0;
-  if (o->fresh) {
-    o->fresh = 0;
-    if (requested != o->cur_mode) {
-      const int ticks = le_oct_ticks_to_work(o);
-      o->cur_mode = requested;
-      le_oct_set_ticks_to_work(o, ticks);
-    }
+  if (o->fresh > 0) {
+    --o->fresh;
+    if (requested != o->cur_mode) le_oct_switch_mode(fx, slot, chan, requested);
     if (dual) o->sm_shift = p[0];
   }
 
@@ -1157,14 +1168,8 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
     o->xfade -= xstep;
     if (o->xfade <= 0.0f) {
       o->xfade = 0.0f;
-      /* Keep the hop schedule across the switch: the new mode's heavy tick
-       * lands where the old mode's next one would have. Re-seeding from the
-       * phase here would anchor it to this instant, ~15 ms after the reset,
-       * and move it off the instance's quarter. */
-      const int ticks = le_oct_ticks_to_work(o);
-      o->cur_mode = requested;
+      le_oct_switch_mode(fx, slot, chan, requested);
       o->sm_shift = dual ? p[0] : o->sm_shift;
-      le_pv_reset_runtime(fx, slot, chan, ticks);
     }
   } else if (o->xfade < 1.0f) {
     o->xfade += xstep;
@@ -1319,8 +1324,8 @@ void le_fx_entry_reset(le_fx_state* fx, int slot) {
     o->sm_mix = 0.0f; /* starts dry, so the param ramp-in is inaudible */
     o->sm_level = 1.0f;
     o->ep_mix = -1.0f; /* the equal-power gains are computed at first use */
-    o->cur_mode = 0;  /* phase vocoder, until the first sample's settings */
-    o->fresh = 1;
+    o->cur_mode = 0;  /* phase vocoder, until the settings say otherwise */
+    o->fresh = LE_PV_LATENCY;
     o->xfade = 1.0f;  /* steady (no gain dip) */
     le_pv_reset_runtime(fx, slot, chan, le_oct_seeded_ticks(fx, slot));
   }
@@ -1340,7 +1345,8 @@ void le_fx_entry_reset(le_fx_state* fx, int slot) {
 void le_fx_octaver_seed_settled(le_fx_state* fx, int slot,
                                 const float* params) {
   if (fx == NULL || params == NULL || slot < 0 || slot >= LE_FX_MAX) return;
-  const int mode = params[3] >= 0.5f ? 1 : 0;
+  /* The mode needs no seeding: a slot just reset takes its settings' mode
+   * at its first sample (fx_octaver, #1482). */
   for (int chan = 0; chan < 2; ++chan) {
     le_octaver_state* o = &fx->oct[slot][chan];
     o->sm_shift = params[0];
@@ -1348,12 +1354,6 @@ void le_fx_octaver_seed_settled(le_fx_state* fx, int slot,
     o->sm_mix = params[2];
     o->sm_level = 1.0f - params[5];
     o->xfade = 1.0f; /* steady: no gain dip on the first sample */
-    if (mode != o->cur_mode) {
-      /* Land on the requested mode without fx_octaver's ~15 ms dip, and
-       * re-seed the runtime as that switch would, hop phase included. */
-      o->cur_mode = mode;
-      le_pv_reset_runtime(fx, slot, chan, le_oct_seeded_ticks(fx, slot));
-    }
   }
 }
 
@@ -7325,6 +7325,13 @@ static void fx_smart_tune_process(le_fx_state* fx, int slot, int sr, int cap,
   float q[8] = {0.0f};
   le_st_settings(q);
   le_octaver_state* o = fx->oct[slot];
+  /* Its tone, mix and level are the kind's own, fixed: held there, not
+   * ramped from a reset's dry, dark state. */
+  for (int chan = 0; chan < 2; ++chan) {
+    o[chan].sm_tone = q[1];
+    o[chan].sm_mix = q[2];
+    o[chan].sm_level = 1.0f;
+  }
   const int in = o[1].voiced > o[0].voiced + 0.1f ? 1 : 0;
   q[0] = 0.5f + le_st_correct(&o[0], &o[in], p, cap) / 4800.0f;
   /* The shift is set, not smoothed: the glide is the correction's own. */
