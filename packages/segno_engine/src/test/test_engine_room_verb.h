@@ -176,7 +176,16 @@ static void test_room_verb_mix_and_tail_er_laws(void) {
   }
   const float tes[4] = {0.0f, 0.3f, 0.7f, 1.0f};
   const int er_tap = 1574; /* LARGE STUDIO's strongest early tap, left */
+  /* The ER's at 100 % and the tail's at 0 are the references. */
   float imm1 = 0.0f, er1 = 0.0f;
+  {
+    float p[LE_FX_PARAMS];
+    rv_params(p, 0.16f, 1.0f, 11, 0.8f, 0.5f, 0.0f, 1.0f);
+    verb_ir h = rv_run(p, 2048);
+    imm1 = h.l[1];
+    verb_free(h);
+    CHECK(fabsf(imm1) > 1e-3f);
+  }
   for (int k = 3; k >= 0; --k) {
     float p[LE_FX_PARAMS];
     rv_params(p, 0.16f, 1.0f, 11, 0.8f, 0.5f, tes[k], 1.0f);
@@ -188,11 +197,8 @@ static void test_room_verb_mix_and_tail_er_laws(void) {
       CHECK(fabsf(imm) < 1e-6f); /* no tail at 100 % */
     } else {
       const double th = (1.0 - tes[k]) * 0.25 * pi;
-      if (k == 0) imm1 = imm;
       CHECK(fabs(tap / er1 - cos(th)) < 0.01);
-      if (imm1 != 0.0f) {
-        CHECK(fabs(imm / imm1 - sin(th) / sin(0.25 * pi)) < 0.01);
-      }
+      CHECK(fabs(imm / imm1 - sin(th) / sin(0.25 * pi)) < 0.01);
     }
     verb_free(h);
   }

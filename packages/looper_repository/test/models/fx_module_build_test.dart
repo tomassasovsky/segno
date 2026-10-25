@@ -1359,6 +1359,45 @@ void main() {
         }
       });
 
+      test('names the room control Mode on the mode racks, ER on the Drum', () {
+        final drum = {
+          'Rev Length': 0.16,
+          'Rev Mix': 0.3,
+          'Rev ER': 0.5,
+          'Rev Lo/Hi': 0.5,
+          'Rev Tail/ER': 0.3,
+          'Rev Density': 1.0,
+        };
+        for (final (family, params, keys) in [
+          (
+            'Studio Rack',
+            {'Rev Length': 0.4, 'Rev Mix': 0.1, 'Rev Mode': 0.0},
+            ['length', 'mix', 'room_mode'],
+          ),
+          (
+            'Vocal Rack',
+            {
+              'Rev Length': 0.4,
+              'Rev Mix': 0.1,
+              'Rev Mode': 0.0,
+              'Rev Bright': 0.8,
+            },
+            ['length', 'mix', 'room_mode', 'bright'],
+          ),
+          (
+            'Drum Rack',
+            drum,
+            ['length', 'mix', 'er_room', 'lo_hi', 'tail_er', 'density'],
+          ),
+        ]) {
+          expect(
+            fxEntryControls(verb(family, params)).keys,
+            keys,
+            reason: family,
+          );
+        }
+      });
+
       test('a Drum preset without its ER room plays LARGE STUDIO', () {
         expect(room(verb('Drum Rack', {'Rev Length': 0.16})), 4 + 7);
       });

@@ -1101,7 +1101,6 @@ enum TrackEffectType {
         defaultValue: 0.5,
       ),
     ],
-    // Fit to the Dub Rack's Dub-Verb (#891); the Looper X's ranges.
     // The Looper X's Reverb (#891 s6rev, s8): the length (its reverb-time
     // display), the mix, the room (HALL, STADIUM, ROOM, BOX, then the Drum
     // Rack's ER rooms BOOTH to CHURCH), Bright (the modes'), Lo/Hi, Tail/ER
@@ -1160,6 +1159,7 @@ enum TrackEffectType {
         defaultValue: 1,
       ),
     ],
+    // Fit to the Dub Rack's Dub-Verb (#891); the Looper X's ranges.
     TrackEffectType.dubVerb => const [
       FxParamInfo(
         key: 'decay',
