@@ -467,7 +467,11 @@ enum TrackEffectType {
   /// The Looper X's Dual Octaver (#887 part 11) on the octaver's phase
   /// vocoder: Octave 1 one octave down, or up in high mode, Octave 2 two
   /// (down inferred), both from one analysis, mixed equal-power.
-  dualOctaver(28, 'Dual octaver');
+  dualOctaver(28, 'Dual octaver'),
+
+  /// The Looper X's Amp with its cabinet (#887 part 12), fit to the
+  /// captures: drive, Bass, Treble, Modern and twelve cabinets.
+  ampCab(29, 'Amp');
 
   const TrackEffectType(this.code, this.label);
 
@@ -1138,6 +1142,47 @@ enum TrackEffectType {
     // Ed's Rack's Dual Octaver (#891): high mode (off, on), Octave 1's
     // level (its taper unmeasured), the mix, Octave 2's level (its taper
     // unmeasured, two octaves down inferred).
+    // The Looper X's Amp (#891): drive, Bass, Treble and Modern (each
+    // captured at 0, 25, 50, 75 and 100 %), and the cabinet (D.I., BRIT,
+    // 1x8", 1x12", 2x10", 2x12", 4x10", 4x12", 1x15", BASS, 4x10", RADIO).
+    TrackEffectType.ampCab => const [
+      FxParamInfo(
+        key: 'drive',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'bass',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'treble',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'modern',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'cabinet',
+        unit: FxParamUnit.choice,
+        steps: 12,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 7 / 11,
+      ),
+    ],
     TrackEffectType.dualOctaver => const [
       FxParamInfo(
         key: 'oct_high_mode',

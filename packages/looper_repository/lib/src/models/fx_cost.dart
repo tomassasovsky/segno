@@ -54,6 +54,9 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   // CI arm64, an eighth of eight in one chain (2.15 us, RES LO L/R at 1/4
   // with both taps voiced), x 1.75.
   TrackEffectType.modeDelay: 59,
+  // Provisional until the CI arm64 row is in: the Mac bench's 111 ns per
+  // frame (drive 93.5 %, the 4x12"), x 1.75.
+  TrackEffectType.ampCab: 195,
 };
 
 /// What a kind on the hop charges, in microseconds a block: its frame's work

@@ -36,7 +36,6 @@ void main() {
               m.name,
         ],
         [
-          'Amp',
           'Modulation',
           'Harmonizer',
           'Smart tune',
@@ -110,6 +109,7 @@ void main() {
         ];
 
         expect(playable, [
+          'Amp',
           'Chorus',
           'Compressor',
           'Degrade',
@@ -1116,6 +1116,46 @@ void main() {
           null,
         ],
       );
+    });
+
+    test('the Guitar Amp copies drive, tone, Modern and the cabinet', () {
+      // Lead Crunch as shipped: drive 22.7 %, Bass 60 %, Treble 50 %,
+      // Modern 66.7 %, the 4x12" (7 of 0..11).
+      final e = fxModuleEntry(
+        _module('Amp'),
+        const FxPreset(
+          family: 'Guitar Rack',
+          name: 'Lead Crunch',
+          id: 'l',
+          type: 0,
+          params: {
+            'Amp': 1,
+            'Amp Drive': 0.227,
+            'Amp Bass': 0.6,
+            'Amp Treble': 0.5,
+            'Amp Modern': 0.667,
+            'Cab': 7 / 11,
+          },
+        ),
+      );
+      expect(e.type, TrackEffectType.ampCab);
+      expect(e.params.take(5), [
+        closeTo(0.227, 1e-9),
+        closeTo(0.6, 1e-9),
+        0.5,
+        closeTo(0.667, 1e-9),
+        closeTo(7 / 11, 1e-9),
+      ]);
+      final build = fxEntryBuild(e)!;
+      expect(build.readiness, FxModuleReadiness.full);
+      expect(build.exposed, [0, 1, 2, 3, 4]);
+      expect(fxEntryControls(e).keys, [
+        'drive',
+        'bass',
+        'treble',
+        'modern',
+        'cabinet',
+      ]);
     });
 
     test("Ed's Octaver copies both octaves, high mode and the mix", () {

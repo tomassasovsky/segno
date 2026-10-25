@@ -868,6 +868,26 @@
     "effectSlicer": "Slicer",
     "effectModeDelay": "Mode delay",
     "effectDualOctaver": "Dual octaver",
+    "effectAmpCab": "Amp",
+    "@effectAmpCab": {
+        "description": "The amplifier with its cabinet, from Ed's and the Guitar racks."
+    },
+    "paramBass": "Bass",
+    "@paramBass": {
+        "description": "The amp's low-frequency tone control."
+    },
+    "paramTreble": "Treble",
+    "@paramTreble": {
+        "description": "The amp's high-frequency tone control."
+    },
+    "paramModern": "Modern",
+    "@paramModern": {
+        "description": "The amp's voicing control: more gain and upper mids toward its top, a fuller, cleaner even-harmonic sound toward its bottom."
+    },
+    "paramCabinet": "Cabinet",
+    "@paramCabinet": {
+        "description": "The speaker cabinet the amp plays through, or D.I. for none."
+    },
     "paramHighMode": "High mode",
     "@paramHighMode": {
         "description": "The Dual Octaver's octave up (on) or down (off)."

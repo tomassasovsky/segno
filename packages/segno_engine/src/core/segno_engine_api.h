@@ -773,6 +773,15 @@ typedef enum le_fx_type {
    * Octave 2 two octaves down or up (down inferred, #1464), both voices
    * from one analysis, the mix an equal-power crossfade. */
   LE_FX_DUAL_OCTAVER = 28,
+  /* AMP_CAB: p0 drive, p1 bass, p2 treble, p3 modern, p4 cabinet (a choice
+   * of 12: D.I., BRIT, 1x8", 1x12", 2x10", 2x12", 4x10", 4x12", 1x15",
+   * BASS, 4x10", RADIO). The Looper X's Amp, fit to the #891 captures: an
+   * input voicing, a square-law stage, Modern's voicing, a clipper whose
+   * sides limit at different levels, Bass and Treble shelves after it, and
+   * the cabinet's measured response (zero-latency convolution; the first
+   * 4x10" plays the 2x12", as on the Looper X). Mono: the pair's average in,
+   * both sides out. */
+  LE_FX_AMP_CAB = 29,
 } le_fx_type;
 
 /* ---- Built-in effect parameter descriptors (#1378) ----
