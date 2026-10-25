@@ -316,8 +316,8 @@ void le_fx_entry_renew(le_fx_state* fx, int slot, int32_t type, int sounding);
  * (memoryless or latency-bearing types, and hosted plugins). */
 int le_fx_type_drains(int32_t type);
 
-/* Whether [type] runs a free-running modulator (the chorus's LFO, the
- * doubler's random delays, the vinyl's noise, the degrade's hold, the
+/* Whether [type] runs a free-running modulator (the chorus's and the Mod's
+ * LFOs, the doubler's random delays, the vinyl's noise, the degrade's hold, the
  * LPF's self-oscillation or its beat-locked LFO), which sounds different
  * on each lap of a loop: a chain holding one is never wet-cached, since one
  * lap's print would repeat where live does not. Any thread. */
@@ -327,8 +327,9 @@ int le_fx_type_free_running(int32_t type);
  * le_fx_param_width(type) cells), at engine rate [sr], runs a free-running
  * modulator that is heard: le_fx_type_free_running, with its mix (or the
  * vinyl's noise, the degrade's hold below [sr], the LPF's resonance past
- * its oscillation point or its LFO depth above 0) actually doing
- * something; the doubler always is.
+ * its oscillation point or its LFO depth above 0; the Mod's depth and mix,
+ * or the depth alone for its tremolo) actually doing something; the
+ * doubler always is.
  * Any thread. */
 int le_fx_entry_free_running(int32_t type, const float* p, int sr);
 
@@ -468,7 +469,7 @@ int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap);
  *
  * LE_FX_WIDTHS is one past the last le_fx_type code; engine_fx.c checks it
  * against its effect table. */
-#define LE_FX_WIDTHS 30
+#define LE_FX_WIDTHS 31
 extern const uint8_t le_fx_widths[LE_FX_WIDTHS];
 static inline int32_t le_fx_param_width(int32_t type) {
   return type > 0 && type < LE_FX_WIDTHS ? (int32_t)le_fx_widths[type] : 0;

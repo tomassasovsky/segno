@@ -857,9 +857,10 @@ static int le_cache_hop_unprintable(const int32_t* types,
 /* Whether a printed run holds a free-running modulator (#887 part 6: the
  * chorus's and the doubler's LFOs run on whatever the loop does): each lap
  * of it sounds different, so one lap's print would repeat where live does
- * not. Such a chain plays live. A bypassed one, one at 0 % mix, or a chain
- * switched off prints, as the signal passes through it; turning it back up
- * changes the key and re-checks. */
+ * not. Such a chain plays live. A bypassed one, one at 0 % mix (or, for
+ * the Mod, at 0 % depth, where it is a fixed filter), or a chain switched
+ * off prints, as nothing in it moves; turning it back up changes the key
+ * and re-checks. */
 static int le_cache_free_running(const int32_t* types, const int32_t* enabled,
                                   const float params[LE_FX_MAX][LE_FX_PARAMS],
                                   int32_t chain_on, int32_t count, int sr) {
