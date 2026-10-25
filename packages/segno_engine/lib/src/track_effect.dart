@@ -465,8 +465,8 @@ enum TrackEffectType {
   modeDelay(27, 'Mode delay'),
 
   /// The Looper X's Dual Octaver (#887 part 11) on the octaver's phase
-  /// vocoder: Octave 1 one octave down, or up in high mode, Octave 2 two
-  /// (down inferred), both from one analysis, mixed equal-power.
+  /// vocoder: Octave 1 one octave down, or up in high mode, Octave 2 two,
+  /// both from one analysis, mixed equal-power.
   dualOctaver(28, 'Dual octaver'),
 
   /// The Looper X's Amp with its cabinet (#887 part 12), fit to the
@@ -1181,8 +1181,8 @@ enum TrackEffectType {
       ),
     ],
     // Ed's Rack's Dual Octaver (#891): high mode (off, on), Octave 1's
-    // level (its taper unmeasured), the mix, Octave 2's level (its taper
-    // unmeasured, two octaves down inferred).
+    // level (its taper unmeasured), the mix, Octave 2's level (linear,
+    // measured at 50 and 100 %).
     TrackEffectType.dualOctaver => const [
       FxParamInfo(
         key: 'oct_high_mode',
@@ -1213,7 +1213,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0,
-        taperUnverified: true,
       ),
     ],
     TrackEffectType.slicer => const [
