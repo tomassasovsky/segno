@@ -876,6 +876,14 @@
     "@effectMod": {
         "description": "The Mod pedal of the Guitar and Studio racks: a chorus, phaser, flanger or tremolo, one at a time."
     },
+    "paramLrRatio": "L/R ratio",
+    "@paramLrRatio": {
+        "description": "The Dub delay's stereo spread: how much earlier the right echo comes than the left."
+    },
+    "paramResFreq": "Resonance frequency",
+    "@paramResFreq": {
+        "description": "Where the Dub delay's resonant peak sits."
+    },
     "paramBass": "Bass",
     "@paramBass": {
         "description": "The amp's low-frequency tone control."

@@ -319,16 +319,23 @@ const FxModuleBuild _pitchShift = FxModuleBuild(
   },
 );
 
-// Dub Rack: the delay's time (a note value) and feedback on the Mode delay,
+// Dub Rack: the whole Dub delay, on the Mode delay's Dub position (#1473),
 // on the Dub path. It passes echoes only (#891), so its mix is held at
-// 100 %: the path's dry is the rack's paths' to give. Its damping, stereo
-// ratio and resonance are not measured, so they stay named and unmapped,
-// and it plays DIGI.
+// 100 %: the path's dry is the rack's paths' to give.
 const FxModuleBuild _dubDelay = FxModuleBuild(
   type: TrackEffectType.modeDelay,
-  params: ['Del Time', 'Del Feedback'],
-  unmapped: ['Del Damp', 'Del L/R Ratio', 'Del Res-Freq', 'Del Reso'],
-  fixed: {2: 100},
+  params: [
+    'Del Time',
+    'Del Feedback',
+    null,
+    null,
+    null,
+    'Del Damp',
+    'Del L/R Ratio',
+    'Del Reso',
+    'Del Res-Freq',
+  ],
+  fixed: {2: 100, 3: _dubDelayMode},
   path: FxModulePath.dub,
 );
 
@@ -383,19 +390,33 @@ const FxModuleBuild _dualOctaver = FxModuleBuild(
   params: ['Oct High Mode', 'Octave 1 Vol', 'Octave Mix', 'Octave 2 Vol'],
 );
 
+// The kind's Drum and Dub positions, its last two of fourteen.
+const double _drumDelayMode = 12 / 13;
+const double _dubDelayMode = 1;
+
 // The seven racks with the Looper X's mode delay: time (a note value),
-// feedback, mix and mode.
+// feedback, mix and mode. Their mode shows the kind's first twelve, the
+// Looper X's twelve.
 const FxModuleBuild _modeDelay = FxModuleBuild(
   type: TrackEffectType.modeDelay,
   params: ['Del Time', 'Del Feedback', 'Del Mix', 'Del Mode'],
+  shown: {
+    3: FxParamInfo(
+      key: 'delay_mode',
+      unit: FxParamUnit.choice,
+      steps: 12,
+      atMin: 0,
+      atMax: 11 / 13,
+      defaultValue: 0,
+    ),
+  },
 );
 
-// Drum Rack: time, feedback and mix; its feedback filter frequency is not
-// measured, so it stays named and unmapped, and the delay plays DIGI.
+// Drum Rack: time, feedback, mix and Freq, on the Drum's own delay (#1473).
 const FxModuleBuild _drumDelay = FxModuleBuild(
   type: TrackEffectType.modeDelay,
-  params: ['Del Time', 'Del Feedback', 'Del Mix'],
-  unmapped: ['Del Freq'],
+  params: ['Del Time', 'Del Feedback', 'Del Mix', null, 'Del Freq'],
+  fixed: {3: _drumDelayMode},
 );
 
 // Dub Rack: the whole Dub-Verb, decay and volume, on the Dub path.

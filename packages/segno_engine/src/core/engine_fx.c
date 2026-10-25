@@ -2232,6 +2232,81 @@ static void le_mdly_voice_set(le_mdly_bq* f, int v, int sr) {
   }
 }
 
+/* RBJ sections at [rate] into [f]: a peak of [db] at [hz], Q [q]; a
+ * low-pass or high-pass at [hz], Q [q]; a bilinear one-pole low-pass or
+ * high-pass at [hz]; or the identity. The state is kept. */
+static void le_mdly_bq_rbj(le_mdly_bq* f, int kind, double hz, double q,
+                           double db, int sr) {
+  const double rate = (double)(sr > 0 ? sr : 48000);
+  if (hz > 0.45 * rate) hz = 0.45 * rate;
+  const double w0 = 2.0 * 3.14159265358979323846 * hz / rate;
+  const double c = cos(w0);
+  const double al = sin(w0) / (2.0 * q);
+  double b0, b1, b2, a0, a1, a2;
+  if (kind == 0) { /* peak */
+    const double A = pow(10.0, db / 40.0);
+    b0 = 1.0 + al * A; b1 = -2.0 * c; b2 = 1.0 - al * A;
+    a0 = 1.0 + al / A; a1 = -2.0 * c; a2 = 1.0 - al / A;
+  } else if (kind == 1) { /* low-pass */
+    b0 = (1.0 - c) / 2.0; b1 = 1.0 - c; b2 = b0;
+    a0 = 1.0 + al; a1 = -2.0 * c; a2 = 1.0 - al;
+  } else if (kind == 2) { /* high-pass */
+    b0 = (1.0 + c) / 2.0; b1 = -(1.0 + c); b2 = b0;
+    a0 = 1.0 + al; a1 = -2.0 * c; a2 = 1.0 - al;
+  } else if (kind == 3 || kind == 4) { /* one-pole low- or high-pass */
+    const double k = le_prewarp(hz, sr);
+    b0 = kind == 3 ? k / (1.0 + k) : 1.0 / (1.0 + k);
+    b1 = kind == 3 ? b0 : -b0; b2 = 0.0;
+    a0 = 1.0; a1 = (k - 1.0) / (k + 1.0); a2 = 0.0;
+  } else {
+    b0 = 1.0; b1 = b2 = a1 = a2 = 0.0; a0 = 1.0;
+  }
+  f->b0 = (float)(b0 / a0); f->b1 = (float)(b1 / a0); f->b2 = (float)(b2 / a0);
+  f->a1 = (float)(a1 / a0); f->a2 = (float)(a2 / a0);
+}
+
+/* The Drum Rack's delay (#891 s6rev 22-27, #1473): a one-pole low-pass at
+ * 3.3 kHz and a bell of +2.25 dB, Q 1, at Del Freq on every echo and again
+ * in the loop, which loses 1.83 dB more; the echoes alone also pass a
+ * one-pole high-pass at 19 Hz, at 0.964. Fit within 0.6 dB rms, 40 Hz to
+ * 12 kHz, at Freq 0, 25, 50, 75 and 100 %; the bell's centre runs
+ * 98 Hz to 10.6 kHz there, within 6 % of the control's 100 Hz to 10 kHz,
+ * which the kernel uses. */
+#define LE_MDLY_DRUM_LP_HZ 3307.0
+#define LE_MDLY_DRUM_BELL_DB 2.25
+#define LE_MDLY_DRUM_BELL_Q 1.0
+#define LE_MDLY_DRUM_HP_HZ 19.4
+#define LE_MDLY_DRUM_LEVEL 0.964f
+#define LE_MDLY_DRUM_LOOP_DB (-1.83)
+
+/* The Dub Rack's delay (#891 s6rev 28-37, #1473): a low-pass that Damp
+ * sets (a table: its corner and Q at 0, 35 and 100 %) and a peak of
+ * 11.0 dB x Reso^2.72 at Res-Freq (6.0 dB at the default 80 %), Q
+ * 0.69 + 0.05 Reso, on every echo and
+ * again in the loop, which loses 4.45 dB more; the echoes alone also pass
+ * a 14 Hz high-pass (Q 0.2). Fit within 0.6 dB rms (0.9 at Damp 100 %),
+ * 40 Hz to 12 kHz. L/R Ratio puts the right echo at 1 - Ratio / 2 of the
+ * time, each side with 0.143 of the other's, at side gains measured at
+ * Ratio 0, 50 and 100 % (Feedback 50 % only: the Mode delay's L/R left
+ * gain moves with Feedback, the Dub's was not captured at others). */
+#define LE_MDLY_DUB_PEAK_DB 11.02
+#define LE_MDLY_DUB_PEAK_POW 2.72 /* 6.0 dB at Reso 80 %, 11.0 at 100 % */
+#define LE_MDLY_DUB_PEAK_Q0 0.69
+#define LE_MDLY_DUB_PEAK_Q1 0.05
+#define LE_MDLY_DUB_HP_HZ 14.06
+#define LE_MDLY_DUB_HP_Q 0.20
+#define LE_MDLY_DUB_LOOP_DB (-4.45)
+#define LE_MDLY_DUB_CROSS 0.143f
+static const double LE_MDLY_DUB_DAMP[3][3] = {
+    {0.0, 11866.0, 1.015}, {0.35, 21600.0, 0.141}, {1.0, 10788.0, 0.100}};
+static const float LE_MDLY_DUB_SIDES[3][3] = {
+    {0.0f, 0.751f, 0.750f}, {0.5f, 0.659f, 0.754f}, {1.0f, 0.533f, 0.852f}};
+
+/* The Drum's or Dub's voicing [v] (4, 5) at the settings [p] (cells 4-8)
+ * into [line] at [sr]. */
+static void le_mdly_own_voice_set(struct le_fx_line* line, int v,
+                                  const float* p, int sr);
+
 /* A slot's Mode delay: its runtime, then its mono line. */
 typedef struct le_fx_line {
   int32_t cap;  /* the line's frames */
@@ -2243,6 +2318,10 @@ typedef struct le_fx_line {
   int32_t xf;           /* frames of that crossfade left */
   float fb, mix;        /* gliding */
   le_mdly_bq voice[2];  /* on the on-time tap and the early one */
+  le_mdly_bq voice2[2]; /* the Drum's and Dub's second section (else 1) */
+  le_mdly_bq out_hp[2]; /* the Drum's and Dub's high-pass, echoes only */
+  float out_g;          /* the Drum's level on its echoes (else 1) */
+  float set[5];         /* the freq, damp, ratio, reso, res-freq set for */
   le_mdly_pole hp[2], lp_out[2], lp_loop, dc;
   int32_t timing; /* the last frame's: plain, L/R or GRV */
   float loop_g;
@@ -2254,6 +2333,47 @@ typedef struct le_fx_line {
 static void le_mdly_reset(le_fx_line* line) {
   memset(&line->pos, 0, offsetof(le_fx_line, ring) - offsetof(le_fx_line, pos));
   line->mode = -1;
+}
+
+static float le_mdly_clamp01(float v) {
+  return v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
+}
+
+static void le_mdly_own_voice_set(le_fx_line* line, int v, const float* p,
+                                  int sr) {
+  if (v == 4) { /* Drum */
+    const double hz = 100.0 * pow(100.0, (double)le_mdly_clamp01(p[4]));
+    for (int c = 0; c < 2; ++c) {
+      le_mdly_bq_rbj(&line->voice[c], 3, LE_MDLY_DRUM_LP_HZ, 0.707, 0.0, sr);
+      le_mdly_bq_rbj(&line->voice2[c], 0, hz, LE_MDLY_DRUM_BELL_Q,
+                     LE_MDLY_DRUM_BELL_DB, sr);
+      le_mdly_bq_rbj(&line->out_hp[c], 4, LE_MDLY_DRUM_HP_HZ, 0.707, 0.0, sr);
+    }
+    line->out_g = LE_MDLY_DRUM_LEVEL;
+    line->loop_g = (float)pow(10.0, LE_MDLY_DRUM_LOOP_DB / 20.0);
+    return;
+  }
+  /* Dub: the damping table, its corner and Q between points in octaves. */
+  const double d = (double)le_mdly_clamp01(p[5]);
+  const int i = d <= LE_MDLY_DUB_DAMP[1][0] ? 0 : 1;
+  const double t = (d - LE_MDLY_DUB_DAMP[i][0]) /
+                   (LE_MDLY_DUB_DAMP[i + 1][0] - LE_MDLY_DUB_DAMP[i][0]);
+  const double lp_hz = LE_MDLY_DUB_DAMP[i][1] *
+                       pow(LE_MDLY_DUB_DAMP[i + 1][1] / LE_MDLY_DUB_DAMP[i][1], t);
+  const double lp_q = LE_MDLY_DUB_DAMP[i][2] *
+                      pow(LE_MDLY_DUB_DAMP[i + 1][2] / LE_MDLY_DUB_DAMP[i][2], t);
+  const double reso = (double)le_mdly_clamp01(p[7]);
+  const double rf = 100.0 * pow(100.0, (double)le_mdly_clamp01(p[8]));
+  for (int c = 0; c < 2; ++c) {
+    le_mdly_bq_rbj(&line->voice[c], 1, lp_hz, lp_q, 0.0, sr);
+    le_mdly_bq_rbj(&line->voice2[c], 0, rf,
+                   LE_MDLY_DUB_PEAK_Q0 + LE_MDLY_DUB_PEAK_Q1 * reso,
+                   LE_MDLY_DUB_PEAK_DB * pow(reso, LE_MDLY_DUB_PEAK_POW), sr);
+    le_mdly_bq_rbj(&line->out_hp[c], 2, LE_MDLY_DUB_HP_HZ, LE_MDLY_DUB_HP_Q,
+                   0.0, sr);
+  }
+  line->out_g = 1.0f;
+  line->loop_g = (float)pow(10.0, LE_MDLY_DUB_LOOP_DB / 20.0);
 }
 
 static int32_t fx_mode_delay_prepare(le_fx_state* fx, int slot, int cap) {
@@ -2295,11 +2415,18 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
       atomic_load_explicit(&fx->line[slot], memory_order_acquire);
   if (line == NULL) return;
   const int32_t rate = sr > 0 ? sr : 48000;
-  int mode = (int)(p[3] * 11.0f + 0.5f);
-  mode = mode < 0 ? 0 : mode > 11 ? 11 : mode;
-  const int voice = mode / 3;  /* DIGI, DAMPED, RESO LO, RESO HI */
-  const int timing = mode % 3; /* plain, L/R, GRV */
-  if (line->sr != rate || line->mode != voice) {
+  int mode = (int)(p[3] * 13.0f + 0.5f);
+  mode = mode < 0 ? 0 : mode > 13 ? 13 : mode;
+  /* DIGI, DAMPED, RESO LO, RESO HI, then the Drum's and the Dub's own */
+  const int voice = mode < 12 ? mode / 3 : mode - 8;
+  /* plain, L/R, GRV, or the Dub's L/R Ratio */
+  const int timing = mode < 12 ? mode % 3 : mode == 13 ? 3 : 0;
+  const int own = voice >= 4;
+  int moved = 0;
+  if (own) {
+    for (int k = 0; k < 5; ++k) moved |= line->set[k] != p[4 + k];
+  }
+  if (line->sr != rate || line->mode != voice || moved) {
     if (line->sr != rate) {
       le_mdly_pole_set(&line->lp_loop, LE_MDLY_LOOP_LP_HZ, rate, 0);
       le_mdly_pole_set(&line->dc, LE_MDLY_DC_HZ, rate, 1);
@@ -2308,8 +2435,18 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
         le_mdly_pole_set(&line->lp_out[c], LE_MDLY_OUT_LP_HZ, rate, 0);
       }
     }
-    for (int c = 0; c < 2; ++c) le_mdly_voice_set(&line->voice[c], voice, rate);
-    line->loop_g = (float)pow(10.0, LE_MDLY_VOICE[voice].loop_db / 20.0);
+    if (own) {
+      le_mdly_own_voice_set(line, voice, p, rate);
+      for (int k = 0; k < 5; ++k) line->set[k] = p[4 + k];
+    } else {
+      for (int c = 0; c < 2; ++c) {
+        le_mdly_voice_set(&line->voice[c], voice, rate);
+        le_mdly_bq_rbj(&line->voice2[c], 5, 0.0, 1.0, 0.0, rate);
+        le_mdly_bq_rbj(&line->out_hp[c], 5, 0.0, 1.0, 0.0, rate);
+      }
+      line->out_g = 1.0f;
+      line->loop_g = (float)pow(10.0, LE_MDLY_VOICE[voice].loop_db / 20.0);
+    }
     line->sr = rate;
     line->mode = voice;
   }
@@ -2335,6 +2472,7 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
   /* The early tap's voicing starts clean when it comes into use. */
   if (timing != 0 && line->timing == 0) {
     line->voice[1].z1 = line->voice[1].z2 = 0.0f;
+    line->voice2[1].z1 = line->voice2[1].z2 = 0.0f;
   }
   line->timing = timing;
   const float glide = (float)(1.0 / (LE_MDLY_GLIDE_S * (double)rate));
@@ -2352,7 +2490,9 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
   const float t_new = line->xf > 0 ? 1.0f - (float)line->xf / (float)xf_n : 1.0f;
   float tp = le_mdly_read(line, line->tap);
   float te = 0.0f;
-  const double early = timing == 1 ? 0.5 : LE_MDLY_GRV;
+  const double early = timing == 1   ? 0.5
+                       : timing == 2 ? LE_MDLY_GRV
+                                     : 1.0 - 0.5 * (double)le_mdly_clamp01(p[6]);
   if (timing != 0) te = le_mdly_read(line, (int)(line->tap * early + 0.5));
   if (line->xf > 0) {
     tp = t_new * tp + (1.0f - t_new) * le_mdly_read(line, line->tap_old);
@@ -2362,12 +2502,15 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
     }
     --line->xf;
   }
-  const float vp = le_mdly_limit(le_mdly_bq_run(&line->voice[0], tp),
-                                 LE_MDLY_ECHO_KNEE, LE_MDLY_ECHO_CEIL);
-  const float ve = timing != 0 ? le_mdly_limit(le_mdly_bq_run(&line->voice[1], te),
-                                               LE_MDLY_ECHO_KNEE,
-                                               LE_MDLY_ECHO_CEIL)
-                               : 0.0f;
+  const float vp = le_mdly_limit(
+      le_mdly_bq_run(&line->voice2[0], le_mdly_bq_run(&line->voice[0], tp)),
+      LE_MDLY_ECHO_KNEE, LE_MDLY_ECHO_CEIL);
+  const float ve =
+      timing != 0
+          ? le_mdly_limit(le_mdly_bq_run(&line->voice2[1],
+                                         le_mdly_bq_run(&line->voice[1], te)),
+                          LE_MDLY_ECHO_KNEE, LE_MDLY_ECHO_CEIL)
+          : 0.0f;
 
   /* The loop: the on-time echo, voiced and limited, fed back at Feedback
    * through a DC blocker far under the band (5 Hz: 0.04 dB at 50 Hz), and
@@ -2388,9 +2531,23 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
     const float gl = 0.219f + 0.666f * fb;
     wl = gl * (vp + 0.143f * ve);
     wr = 0.881f * ve + 0.126f * vp;
-  } else { /* GRV */
+  } else if (timing == 2) { /* GRV */
     wl = (0.750f + 0.116f * fb) * vp + 0.1135f * ve;
     wr = 0.871f * ve + 0.126f * vp;
+  } else { /* the Dub's L/R Ratio */
+    const float ra = le_mdly_clamp01(p[6]);
+    const int i = ra <= 0.5f ? 0 : 1;
+    const float t = (ra - LE_MDLY_DUB_SIDES[i][0]) * 2.0f;
+    const float gl = LE_MDLY_DUB_SIDES[i][1] +
+                     t * (LE_MDLY_DUB_SIDES[i + 1][1] - LE_MDLY_DUB_SIDES[i][1]);
+    const float gr = LE_MDLY_DUB_SIDES[i][2] +
+                     t * (LE_MDLY_DUB_SIDES[i + 1][2] - LE_MDLY_DUB_SIDES[i][2]);
+    wl = gl * (vp + LE_MDLY_DUB_CROSS * ve);
+    wr = gr * (ve + LE_MDLY_DUB_CROSS * vp);
+  }
+  if (own) {
+    wl = line->out_g * le_mdly_bq_run(&line->out_hp[0], wl);
+    wr = line->out_g * le_mdly_bq_run(&line->out_hp[1], wr);
   }
   wl = le_mdly_pole_lp(&line->lp_out[0], le_mdly_pole_hp(&line->hp[0], wl));
   wr = le_mdly_pole_lp(&line->lp_out[1], le_mdly_pole_hp(&line->hp[1], wr));
@@ -2605,8 +2762,21 @@ static const le_fx_param_desc LE_FX_MODE_DELAY_PARAMS[] = {
     {"feedback", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
      0},
     {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.2f, 0},
-    {"delay_mode", LE_FX_UNIT_CHOICE, 12, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f,
+    /* DIGI, DIGI L/R, DIGI GRV, DAMPED, DAMPED L/R, DAMPED GRV, RESO LO,
+     * RES LO L/R, RES LO GRV, RESO HI, RES HI L/R, RES HI GRV (the seven
+     * racks' twelve), then the Drum Rack's and the Dub Rack's own delays */
+    {"delay_mode", LE_FX_UNIT_CHOICE, 14, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f,
      0},
+    /* the Drum Rack's Del Freq: its bell's centre */
+    {"delay_freq", LE_FX_UNIT_HZ, 0, 100.0f, 10000.0f, LE_FX_CURVE_EXPONENTIAL,
+     0.25f, 0},
+    /* the Dub Rack's Del Damp, Del L/R Ratio, Del Reso and Del Res-Freq */
+    {"damp", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.35f, 0},
+    {"lr_ratio", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.0f,
+     0},
+    {"reso", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.8f, 0},
+    {"res_freq", LE_FX_UNIT_HZ, 0, 100.0f, 10000.0f, LE_FX_CURVE_EXPONENTIAL,
+     0.35f, 0},
 };
 /* The Amp+Cab's controls. Drive, Bass, Treble and Modern were captured at
  * 0, 25, 50, 75 and 100 % and interpolate between (#1468). */

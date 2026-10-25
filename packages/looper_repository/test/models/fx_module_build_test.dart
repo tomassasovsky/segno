@@ -44,14 +44,25 @@ void main() {
 
     test('a module the engine builds but cannot carry every control of is '
         'PARTIAL, with the stranded controls named', () {
-      final delay = fxModuleBuild(_module('Delay'), family: 'Drum Rack');
+      final reverb = fxModuleBuild(_module('Reverb'));
 
-      expect(delay.readiness, FxModuleReadiness.partial);
-      expect(delay.type, TrackEffectType.modeDelay);
+      expect(reverb.readiness, FxModuleReadiness.partial);
+      expect(reverb.type, TrackEffectType.reverb);
       // Kept and named, so a surface can show them and say they do not reach
       // the sound rather than drawing a control that does nothing.
-      expect(delay.unmapped, ['Del Freq']);
-      // The seven racks with the mode delay carry every control.
+      expect(reverb.unmapped, contains('Rev ER'));
+      // The Drum Rack's delay carries its Freq on the Drum's own delay
+      // (#1473), and the seven racks with the mode delay every control.
+      final drum = fxModuleBuild(_module('Delay'), family: 'Drum Rack');
+      expect(drum.readiness, FxModuleReadiness.full);
+      expect(drum.params, [
+        'Del Time',
+        'Del Feedback',
+        'Del Mix',
+        null,
+        'Del Freq',
+      ]);
+      expect(drum.fixed, {3: 12 / 13});
       final mode = fxModuleBuild(_module('Delay'), family: 'Guitar Rack');
       expect(mode.readiness, FxModuleReadiness.full);
       expect(mode.params, [
@@ -66,8 +77,8 @@ void main() {
       final dub = fxModuleBuild(_module('Dub delay'));
 
       expect(dub.type, TrackEffectType.modeDelay);
-      expect(dub.readiness, FxModuleReadiness.partial);
-      expect(dub.unmapped, contains('Del Damp'));
+      expect(dub.readiness, FxModuleReadiness.full);
+      expect(dub.unmapped, isEmpty);
 
       final entry = fxModuleEntry(
         _module('Dub delay'),
@@ -94,7 +105,11 @@ void main() {
       expect(entry.params[1], closeTo(0.6, 1e-9));
       // Echoes only: the Dub path's dry comes from the rack's paths (#891).
       expect(entry.params[2], 1);
-      expect(fxEntryBuild(entry)?.exposed, [0, 1]);
+      // The Dub's own delay (#1473), the kind's last position, with its
+      // damping, ratio, resonance and resonance frequency.
+      expect(entry.params[3], 1);
+      expect(entry.params.sublist(5, 9), [0.5, 0.5, 0.5, 0.5]);
+      expect(fxEntryBuild(entry)?.exposed, [0, 1, 5, 6, 7, 8]);
       expect(dub.path, FxModulePath.dub);
     });
 
@@ -164,7 +179,8 @@ void main() {
       expect(entry.params[0], closeTo(0.42, 1e-9));
       expect(entry.params[1], closeTo(0.35, 1e-9));
       expect(entry.params[2], closeTo(0.25, 1e-9));
-      expect(entry.params[3], closeTo(0.545, 1e-9));
+      // The preset's 6 of 0..11 lands on the kind's 6 of 0..13.
+      expect(entry.params[3], closeTo(6 / 13, 1e-9));
       // 1/8D and RESO LO, positions 8 and 6.
       expect(entry.type.params[0].positionOf(entry.params[0]), 8);
       expect(entry.type.params[3].positionOf(entry.params[3]), 6);
