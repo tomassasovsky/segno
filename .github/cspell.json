@@ -1402,7 +1402,14 @@
     "Zolzer",
     "biquad",
     "looperx",
-    "stopband"
+    "stopband",
+    "voicings",
+    "stim",
+    "ampstim",
+    "revstim",
+    "pitchstim",
+    "trem",
+    "tremstim"
   ],
   "overrides": [
     {
