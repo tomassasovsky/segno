@@ -426,8 +426,8 @@ static void test_pumper_bar_follows_the_signature(void) {
 
 /* ---- Slicer ---- */
 
-/* The stored value of pattern [i] (of 20) and step position [k] (of 9). */
-static float rh_patt(int i) { return (float)i / 19.0f; }
+/* The stored value of pattern [i] (of 17) and step position [k] (of 9). */
+static float rh_patt(int i) { return (float)i / 16.0f; }
 static float rh_step(int k) { return (float)k / 8.0f; }
 
 
@@ -579,18 +579,19 @@ static void test_slicer_mix_law(void) {
   }
 }
 
-/* The Fd patterns are not modelled: the input passes. A slicing Slicer is
- * locked to the beat, so its lane is never printed. */
-static void test_slicer_fd_passes_and_is_not_printed(void) {
-  printf("test_slicer_fd_passes_and_is_not_printed\n");
+/* The list stops at <<<<, and a value past it plays <<<<. A heard Slicer
+ * is locked to the beat, so its lane is never printed. */
+static void test_slicer_list_ends_and_is_not_printed(void) {
+  printf("test_slicer_list_ends_and_is_not_printed\n");
+  CHECK(le_fx_param_count(LE_FX_SLICER) == 3);
+  le_fx_param_desc d;
+  CHECK(le_fx_param_info(LE_FX_SLICER, 0, &d) == LE_OK && d.steps == 17);
   const int step = RH_SR / 8;
-  for (int i = 17; i < 20; ++i) {
-    float* o = rh_slice(i, 4, 1.0f, 2 * step);
-    for (int k = 0; k < 2 * step; k += 101) CHECK(rh_is_frame(o[k], k, 0.5));
-    free(o);
-    const float p[LE_FX_PARAMS] = {rh_patt(i), 0.5f, 1.0f};
-    CHECK(!le_fx_entry_free_running(LE_FX_SLICER, p, RH_SR));
-  }
+  float* last = rh_slice(16, 4, 1.0f, 2 * step);
+  float* past = rh_slice(20, 4, 1.0f, 2 * step); /* a stored 1.25 */
+  for (int k = 0; k < 2 * step; ++k) CHECK(last[k] == past[k]);
+  free(last);
+  free(past);
   CHECK(le_fx_type_free_running(LE_FX_SLICER));
   const float on[LE_FX_PARAMS] = {rh_patt(0), 0.5f, 1.0f};
   const float off[LE_FX_PARAMS] = {rh_patt(0), 0.5f, 0.0f};
@@ -792,8 +793,7 @@ static void test_slicer_cut_never_doubles(void) {
 }
 
 /* A new pattern waits for the slice playing to end: AABB turned to A_C_
- * half way through A plays A out, then A_C_'s rest. A pattern that is
- * not modelled then crossfades to the input over 4 ms; a moving mix
+ * half way through A plays A out, then A_C_'s rest. A moving mix
  * glides. */
 static void test_slicer_settings_wait_for_the_slice(void) {
   printf("test_slicer_settings_wait_for_the_slice\n");
@@ -807,13 +807,6 @@ static void test_slicer_settings_wait_for_the_slice(void) {
   rh_slice_sched(aabb, acac, step / 2, -1, in, o, n);
   CHECK(rh_is_frame(o[step - step / 4], step - step / 4, 0.5)); /* A on */
   CHECK(o[step + step / 2] == 0.0f); /* A_C_'s rest, not AABB's replay */
-  const float fd[LE_FX_PARAMS] = {rh_patt(17), rh_step(4), 1.0f};
-  rh_slice_sched(aabb, fd, step / 2, -1, in, o, n);
-  CHECK(rh_is_frame(o[step - step / 4], step - step / 4, 0.5)); /* A on */
-  const int fade = 4 * RH_SR / 1000;
-  CHECK(o[step + fade / 2] < 0.75f * in[step + fade / 2]); /* crossfading */
-  CHECK(o[step + fade / 2] > 0.25f * in[step + fade / 2]);
-  CHECK(o[step + fade + 2] == in[step + fade + 2]); /* then the input */
   const float dry[LE_FX_PARAMS] = {rh_patt(0), rh_step(4), 0.0f};
   /* In A's replay, where the slice (one step back) and the dry differ by
    * 0.125: unglided, that is the step. */
@@ -1255,7 +1248,7 @@ static void run_rhythmic_tests(void) {
   test_slicer_rests_and_fades();
   test_slicer_reverses();
   test_slicer_mix_law();
-  test_slicer_fd_passes_and_is_not_printed();
+  test_slicer_list_ends_and_is_not_printed();
   test_slicer_patterns();
   test_slicer_step_lengths();
   test_slicer_ring_limit();

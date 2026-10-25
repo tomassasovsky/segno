@@ -746,18 +746,18 @@ typedef enum le_fx_type {
    * and 100 % depth that recovers by three quarters of the period (#891).
    * Locked to the beat, so a lane holding one is never printed. */
   LE_FX_PUMPER = 25,
-  /* SLICER: p0 pattern (a choice of 20, in the Looper X's order: AABB,
+  /* SLICER: p0 pattern (a choice of 17, in the Looper X's order: AABB,
    * ABCC, AACD, ABC_, A_C_, A_CC, A___C___, ABcccc, AAccdd, AB__dd, AA__dd,
-   * ABC<, AB_<, AA_<, A_B_C<, AB<<, <<<<, AABB Fd1, AABB Fd2, AABB Fd3),
+   * ABC<, AB_<, AA_<, A_B_C<, AB<<, <<<<),
    * p1 step (a choice of 9 note values: 1/4, 1/4T, 1/8, 1/8T, 1/16, 1/16T,
    * 1/32, 1/32T, 1/64), p2 mix. Plays the pattern on the beat: a capital letter
    * is a step and a lower-case one half a step; a letter's first slice is
    * the live input and each repeat replays it from its start; _ silences a
    * step, or half a step in a pattern with a lower-case letter; < plays the
    * step before backwards. A slice ends with a 4 ms fade
-   * (#891). The three Fd patterns are not modelled (no capture and no
-   * factory preset uses them): they pass the input through. Locked to the
-   * beat, so a lane holding one is never printed. */
+   * (#891). The Looper X's three Fd patterns after <<<< are not modelled
+   * (no capture and no factory preset uses them), so the list stops before
+   * them. Locked to the beat, so a lane holding one is never printed. */
   LE_FX_SLICER = 26,
   /* MODE_DELAY: p0 time (a choice of 20 note values: 1/32, 1/16T, 1/32D,
    * 1/16, 1/8T, 1/16D, 1/8, 1/4T, 1/8D, 1/4, 2/4T, 1/4D, 2/4, 5/8, 3/4, 7/8,

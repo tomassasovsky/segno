@@ -455,8 +455,8 @@ enum TrackEffectType {
   pumper(25, 'Pumper'),
 
   /// The Looper X's Slicer (#887 part 10): a pattern of live and replayed
-  /// slices on the beat, fit to the Rhythmic Rack's. The three Fd patterns
-  /// are not modelled and pass the input.
+  /// slices on the beat, fit to the Rhythmic Rack's. The list stops at
+  /// <<<<: the Looper X's three Fd patterns after it are not modelled.
   slicer(26, 'Slicer'),
 
   /// The Looper X's delay (#887 part 10): a note value at the song tempo,
@@ -1135,7 +1135,7 @@ enum TrackEffectType {
     ],
     // The Rhythmic Rack's Slicer (#891): the pattern (AABB, ABCC, AACD,
     // ABC_, A_C_, A_CC, A___C___, ABcccc, AAccdd, AB__dd, AA__dd, ABC<, AB_<,
-    // AA_<, A_B_C<, AB<<, <<<<, AABB Fd1, AABB Fd2, AABB Fd3), the step (1/4,
+    // AA_<, A_B_C<, AB<<, <<<<), the step (1/4,
     // 1/4T, 1/8, 1/8T, 1/16, 1/16T, 1/32, 1/32T, 1/64), the mix.
     // The Looper X's delay (#891): the time a note value (1/32, 1/16T,
     // 1/32D, 1/16, 1/8T, 1/16D, 1/8, 1/4T, 1/8D, 1/4, 2/4T, 1/4D, 2/4, 5/8,
@@ -1295,7 +1295,7 @@ enum TrackEffectType {
       FxParamInfo(
         key: 'slicer_pattern',
         unit: FxParamUnit.choice,
-        steps: 20,
+        steps: 17,
         atMin: 0,
         atMax: 1,
         defaultValue: 0,

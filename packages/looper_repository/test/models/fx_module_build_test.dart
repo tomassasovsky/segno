@@ -1295,7 +1295,8 @@ void main() {
       expect(e.enabled, isTrue);
       expect(e.params[1], 0.5);
       expect(e.params[2], 1);
-      // Position 16 of 20: <<<<, the factory Reverse.
+      // The Looper X's position 16 of 20: <<<<, the factory Reverse, our
+      // last.
       expect(e.type.params[0].positionOf(e.params[0]), 16);
       expect(
         fxModuleBuild(_module('Slicer')).readiness,
