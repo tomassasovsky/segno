@@ -43,6 +43,7 @@
  *   ./bench_fx_cpu.sh --kind eq            # the EQ instead of the octaver
  *   ./bench_fx_cpu.sh --racks              # each rack as built today on one
  *                                          # input, against its budget
+ *   ./bench_fx_cpu.sh --table              # each kind's admission charge
  *   ./bench_fx_cpu.sh --kind comp          # or transient, hpgate, doubler,
  *                                          # chorus, wah, overdrive,
  *                                          # distortion, vinyl, degrade,
@@ -87,13 +88,18 @@ static int32_t g_kind = LE_FX_OCTAVER;
 
 /* An octaver recipe entry: one octave up, tone open, full wet, phase vocoder.
  * Full wet keeps the wet path (the FFTs) the whole output. */
+static int g_psola; /* --kind psola: the octaver in PSOLA mode */
+/* --kind lpflfo, and the Rhythmic rack: the LPF swept by its LFO, which
+ * redesigns the ladder at every sample */
+static int g_lpf_lfo;
+
 static void octaver_entry(le_fx_recipe* r, int s) {
   r->type[s] = LE_FX_OCTAVER;
   r->slot_enabled[s] = 1;
   r->params[s][0] = 0.75f;
   r->params[s][1] = 1.0f;
   r->params[s][2] = 1.0f;
-  r->params[s][3] = 0.0f;
+  r->params[s][3] = g_psola ? 1.0f : 0.0f;
   r->level[s] = 1.0f;
 }
 
@@ -133,6 +139,31 @@ static void dynamics_entry(le_fx_recipe* r, int s, int32_t kind) {
     r->params[s][0] = 0.4f; /* holding at 3.2 kHz */
   } else if (kind == LE_FX_LPF) {
     r->params[s][0] = 0.6f; /* 1.2 kHz */
+    if (g_lpf_lfo) {
+      r->params[s][2] = 0.8f; /* swept by its LFO */
+      r->params[s][3] = 0.8f; /* at 1/8 */
+    }
+  } else if (kind == LE_FX_AMP_CAB) {
+    /* Full Drive Power (Guitar): drive 93.5 %, the 4x12" cabinet. */
+    r->params[s][0] = 0.935f;
+    r->params[s][4] = 7.0f / 11.0f;
+  } else if (kind == LE_FX_MOD) {
+    /* The phaser, its heaviest mode: its corners redesigned every 16
+     * samples, at full depth. */
+    r->params[s][1] = 1.0f;
+    r->params[s][3] = 1.0f / 3.0f;
+  } else if (kind == LE_FX_DUAL_OCTAVER) {
+    /* Bass Octave Layer: high mode off, Octave 2 (two down) at 60 %. */
+    r->params[s][3] = 0.6f;
+  } else if (kind == LE_FX_MODE_DELAY) {
+    r->params[s][0] = 9.0f / 19.0f; /* 1/4 */
+    r->params[s][3] = 7.0f / 11.0f; /* RES LO L/R: both taps voiced */
+  } else if (kind == LE_FX_SLICER) {
+    r->params[s][0] = 15.0f / 19.0f; /* AB<<: replays and reversals */
+    r->params[s][1] = 1.0f / 8.0f;   /* 1/4T: reads far back in the ring */
+  } else if (kind == LE_FX_WHAMMY) {
+    r->params[s][0] = 0.5f; /* half the pedal */
+    r->params[s][1] = 1.0f; /* up */
   } /* the doubler, chorus, wah, drives, delay and reverb run at their
      * defaults */
   r->level[s] = 1.0f;
@@ -156,13 +187,16 @@ static void fx_entry(le_fx_recipe* r, int s) { kind_entry(r, s, g_kind); }
  * budgets (#1372: 60 us for Drum, Dub, Lo-Fi and Rhythmic, 200 us for Ed's,
  * Guitar, Studio and Vocal, 300 us for the Vocal Tuner). Each slot runs the
  * kind it has or will have:
- *  - the octaver for the Pitch Shift (#1441), and the chorus and tremolo for
- *    the Mod module, which is not built yet (a projection of its cost);
- *  - the engine's delay and reverb for the racks' Delay and Reverb;
+ *  - the Dual Octaver (both voices) for Ed's Octaver, the octaver for the
+ *    Pitch Shift (#1441), and the Mod in its phaser mode for the Guitar and
+ *    Studio racks' Mod;
+ *  - the Mode delay for the racks' Delay and Dub Delay, and the engine's
+ *    reverb for their Reverb;
  *  - every EQ with every band engaged and every compressor working (the
  *    kinds' heaviest settings, an upper bound for each rack's variant).
- * Left out, not built yet: the Whammy, Amp+Cab, the Mod module's phaser and
- * flanger, Dub-Verb, Amb-Verb, Slicer, Pumper, Smart Tune and Harmonizer.
+ *  - the Amp+Cab for Ed's and the Guitar racks' Amp, at heavy drive on the
+ *    4x12" cabinet.
+ * Left out, not built yet: Smart Tune and Harmonizer.
  * Each list ends at the first LE_FX_NONE. */
 typedef struct {
   const char* name;
@@ -172,25 +206,30 @@ typedef struct {
 
 static const rack_spec k_racks[] = {
     {"drum", 60.0,
-     {LE_FX_TRANSIENT, LE_FX_DELAY, LE_FX_REVERB, LE_FX_EQ, LE_FX_COMPRESSOR}},
-    {"dub", 60.0, {LE_FX_DOUBLER, LE_FX_DELAY, LE_FX_COMPRESSOR, LE_FX_EQ}},
+     {LE_FX_TRANSIENT, LE_FX_MODE_DELAY, LE_FX_REVERB, LE_FX_EQ, LE_FX_COMPRESSOR}},
+    {"dub", 60.0,
+     {LE_FX_DOUBLER, LE_FX_MODE_DELAY, LE_FX_DUB_VERB, LE_FX_AMB_VERB,
+      LE_FX_COMPRESSOR, LE_FX_EQ}},
     {"lofi", 60.0,
      {LE_FX_LPF, LE_FX_VINYL, LE_FX_DEGRADE, LE_FX_DISTORTION, LE_FX_EQ,
-      LE_FX_DELAY}},
-    {"rhythmic", 60.0, {LE_FX_LPF, LE_FX_EQ, LE_FX_DELAY, LE_FX_REVERB}},
+      LE_FX_MODE_DELAY}},
+    {"rhythmic", 60.0,
+     {LE_FX_LPF, LE_FX_SLICER, LE_FX_PUMPER, LE_FX_EQ, LE_FX_MODE_DELAY,
+      LE_FX_REVERB}},
     {"eds", 200.0,
-     {LE_FX_OCTAVER, LE_FX_WAH, LE_FX_COMPRESSOR, LE_FX_OVERDRIVE,
-      LE_FX_CHORUS, LE_FX_REVERB, LE_FX_DELAY, LE_FX_EQ}},
+     {LE_FX_DUAL_OCTAVER, LE_FX_WAH, LE_FX_COMPRESSOR, LE_FX_OVERDRIVE,
+      LE_FX_AMP_CAB, LE_FX_CHORUS, LE_FX_REVERB, LE_FX_MODE_DELAY, LE_FX_EQ}},
     {"guitar", 200.0,
-     {LE_FX_OVERDRIVE, LE_FX_WAH, LE_FX_CHORUS, LE_FX_SPRING, LE_FX_DELAY}},
+     {LE_FX_WHAMMY, LE_FX_OVERDRIVE, LE_FX_WAH, LE_FX_AMP_CAB, LE_FX_MOD,
+      LE_FX_SPRING, LE_FX_MODE_DELAY}},
     {"studio", 200.0,
-     {LE_FX_OCTAVER, LE_FX_DISTORTION, LE_FX_DOUBLER, LE_FX_CHORUS,
-      LE_FX_TREMOLO, LE_FX_DELAY, LE_FX_REVERB, LE_FX_COMPRESSOR, LE_FX_EQ}},
+     {LE_FX_OCTAVER, LE_FX_DISTORTION, LE_FX_DOUBLER, LE_FX_MOD,
+      LE_FX_MODE_DELAY, LE_FX_REVERB, LE_FX_COMPRESSOR, LE_FX_EQ}},
     {"vocal", 200.0,
-     {LE_FX_HP_GATE, LE_FX_OCTAVER, LE_FX_DOUBLER, LE_FX_DELAY, LE_FX_REVERB,
+     {LE_FX_HP_GATE, LE_FX_OCTAVER, LE_FX_DOUBLER, LE_FX_MODE_DELAY, LE_FX_REVERB,
       LE_FX_COMPRESSOR, LE_FX_EQ}},
     {"vtuner", 300.0,
-     {LE_FX_HP_GATE, LE_FX_DOUBLER, LE_FX_DELAY, LE_FX_REVERB,
+     {LE_FX_HP_GATE, LE_FX_DOUBLER, LE_FX_MODE_DELAY, LE_FX_REVERB,
       LE_FX_COMPRESSOR, LE_FX_EQ}},
 };
 
@@ -201,10 +240,11 @@ static int rack_len(const rack_spec* rack) {
   return n;
 }
 
-/* Whether [rack] holds an octaver, whose work the hop quarters show. */
+/* Whether [rack] holds a kind on the hop (the octaver, the Whammy), whose
+ * work the hop quarters show. */
 static int rack_has_octaver(const rack_spec* rack) {
   for (int i = 0; i < rack_len(rack); ++i) {
-    if (rack->kinds[i] == LE_FX_OCTAVER) return 1;
+    if (le_fx_type_hops(rack->kinds[i])) return 1;
   }
   return 0;
 }
@@ -280,6 +320,8 @@ static stats time_blocks(rig* r, int blocks, int warm, double phase_mean[PHASES]
 }
 
 static const char* kind_name(void) {
+  if (g_kind == LE_FX_OCTAVER && g_psola) return "psola";
+  if (g_kind == LE_FX_LPF && g_lpf_lfo) return "lpflfo";
   switch (g_kind) {
     case LE_FX_EQ: return "eq";
     case LE_FX_COMPRESSOR: return "comp";
@@ -294,6 +336,21 @@ static const char* kind_name(void) {
     case LE_FX_DEGRADE: return "degrade";
     case LE_FX_LPF: return "lpf";
     case LE_FX_SPRING: return "spring";
+    case LE_FX_DRIVE: return "drive";
+    case LE_FX_FILTER: return "filter";
+    case LE_FX_DELAY: return "delay";
+    case LE_FX_TREMOLO: return "tremolo";
+    case LE_FX_ECHO: return "echo";
+    case LE_FX_REVERB: return "reverb";
+    case LE_FX_DUB_VERB: return "dubverb";
+    case LE_FX_AMB_VERB: return "ambverb";
+    case LE_FX_WHAMMY: return "whammy";
+    case LE_FX_PUMPER: return "pumper";
+    case LE_FX_SLICER: return "slicer";
+    case LE_FX_MODE_DELAY: return "modedelay";
+    case LE_FX_DUAL_OCTAVER: return "dualoct";
+    case LE_FX_AMP_CAB: return "ampcab";
+    case LE_FX_MOD: return "mod";
     default: return "octaver";
   }
 }
@@ -369,8 +426,13 @@ static int run_racks(const bench_opts* o, float* src, int32_t frames,
     stats base;
     stats st;
     double ph[PHASES];
-    if (!time_rack(o, src, frames, NULL, blocks, warm, &base, ph) ||
-        !time_rack(o, src, frames, rack, blocks, warm, &st, ph)) {
+    /* The Rhythmic Rack's LPF runs its LFO; the Lo-Fi Rack's has none. */
+    g_lpf_lfo = !strcmp(rack->name, "rhythmic");
+    const int timed =
+        time_rack(o, src, frames, NULL, blocks, warm, &base, ph) &&
+        time_rack(o, src, frames, rack, blocks, warm, &st, ph);
+    g_lpf_lfo = 0;
+    if (!timed) {
       printf("| %-8s | refused by the engine |\n", rack->name);
       fflush(stdout);
       continue;
@@ -397,8 +459,112 @@ static int run_racks(const bench_opts* o, float* src, int32_t frames,
   return 0;
 }
 
+/* --table: what admission control charges each kind (#887 part 9): one
+ * instance's share of the worst block, in ns per frame, on the monitor rig.
+ * Eight instances in one chain show the steady share, an eighth of their
+ * p99 increment over the rig alone. A kind on the hop clock (the phase
+ * vocoder, PSOLA) can land a whole frame in one block, so it is charged the
+ * larger of that and one instance's own p99 increment (p99 rather than the
+ * racks' p99.9: a share of eight is steadier there). Prints a row per kind,
+ * then the charges for kFxKindCostNs and kFxHopCostUs (looper_repository).
+ * Run it paced on the console; elsewhere the numbers are only a proxy. */
+typedef struct {
+  const char* name;
+  int32_t type;
+  int variant; /* 1: PSOLA for the octaver, the LFO for the LPF */
+} table_kind;
+
+static const table_kind k_table[] = {
+    {"drive", LE_FX_DRIVE, 0},          {"filter", LE_FX_FILTER, 0},
+    {"delay", LE_FX_DELAY, 0},          {"tremolo", LE_FX_TREMOLO, 0},
+    {"octaver", LE_FX_OCTAVER, 0},      {"psola", LE_FX_OCTAVER, 1},
+    {"echo", LE_FX_ECHO, 0},            {"reverb", LE_FX_REVERB, 0},
+    {"eq", LE_FX_EQ, 0},                {"comp", LE_FX_COMPRESSOR, 0},
+    {"transient", LE_FX_TRANSIENT, 0},  {"hpgate", LE_FX_HP_GATE, 0},
+    {"doubler", LE_FX_DOUBLER, 0},      {"chorus", LE_FX_CHORUS, 0},
+    {"wah", LE_FX_WAH, 0},              {"overdrive", LE_FX_OVERDRIVE, 0},
+    {"distortion", LE_FX_DISTORTION, 0}, {"vinyl", LE_FX_VINYL, 0},
+    {"degrade", LE_FX_DEGRADE, 0},      {"lpf", LE_FX_LPF, 0},
+    {"lpflfo", LE_FX_LPF, 1},
+    {"spring", LE_FX_SPRING, 0},        {"dubverb", LE_FX_DUB_VERB, 0},
+    {"ambverb", LE_FX_AMB_VERB, 0},     {"whammy", LE_FX_WHAMMY, 0},
+    {"pumper", LE_FX_PUMPER, 0},        {"slicer", LE_FX_SLICER, 0},
+    {"modedelay", LE_FX_MODE_DELAY, 0}, {"dualoct", LE_FX_DUAL_OCTAVER, 0},
+    {"ampcab", LE_FX_AMP_CAB, 0},       {"mod", LE_FX_MOD, 0},
+};
+
+/* The monitor rig with [n] instances of [kind] in one chain, timed. */
+static int time_kinds(const bench_opts* o, float* src, int32_t frames,
+                      const table_kind* kind, int n, int blocks, int warm,
+                      stats* out) {
+  rig r;
+  if (!monitor_rig(&r, o, src, frames)) return 0;
+  if (n > 0) {
+    le_fx_recipe rec;
+    memset(&rec, 0, sizeof(rec));
+    rec.enabled = 1;
+    rec.count = n;
+    g_psola = kind->type == LE_FX_OCTAVER && kind->variant;
+    g_lpf_lfo = kind->type == LE_FX_LPF && kind->variant;
+    for (int s = 0; s < n; ++s) kind_entry(&rec, s, kind->type);
+    g_psola = 0;
+    g_lpf_lfo = 0;
+    if (le_engine_set_fx_recipe(r.e, LE_FX_OWNER_MONITOR, 0, 0, 1, &rec) !=
+        LE_OK) {
+      rig_destroy(&r);
+      return 0;
+    }
+  }
+  double ph[PHASES];
+  *out = time_blocks(&r, blocks, warm, ph);
+  rig_destroy(&r);
+  return 1;
+}
+
+static int run_table(const bench_opts* o, float* src, int32_t frames,
+                     int blocks, int warm) {
+  printf("bench_fx_cpu: cost table, %s, %d Hz, %d-frame periods, %d timed "
+         "blocks%s\n",
+         g_cpu_name, o->rate, o->period, blocks, g_paced ? ", paced" : "");
+  printf("| kind       | base p99 us | 1 x +us | 8 x +us | charge ns/frame |\n");
+  printf("|------------|-------------|---------|---------|-----------------|\n");
+  double ns[sizeof(k_table) / sizeof(k_table[0])];
+  stats base;
+  if (!time_kinds(o, src, frames, &k_table[0], 0, blocks, warm, &base)) {
+    fprintf(stderr, "the rig alone refused\n");
+    return 1;
+  }
+  for (size_t k = 0; k < sizeof(k_table) / sizeof(k_table[0]); ++k) {
+    const table_kind* kind = &k_table[k];
+    stats one, eight;
+    if (!time_kinds(o, src, frames, kind, 1, blocks, warm, &one) ||
+        !time_kinds(o, src, frames, kind, 8, blocks, warm, &eight)) {
+      fprintf(stderr, "%s refused\n", kind->name);
+      return 1;
+    }
+    const double d1 = one.p99 - base.p99;
+    const double d8 = (eight.p99 - base.p99) / 8.0;
+    const int hops = le_fx_type_hops(kind->type);
+    const double us = hops && d1 > d8 ? d1 : d8;
+    ns[k] = us > 0.0 ? 1000.0 * us / (double)o->period : 0.0;
+    printf("| %-10s | %11.1f | %7.1f | %7.1f | %15.0f |%s\n", kind->name,
+           base.p99, d1, 8.0 * d8, ns[k],
+           ns[k] <= 0.0 ? " lost in the noise: rerun" : "");
+    fflush(stdout);
+  }
+  /* kFxKindCostNs takes these per frame; the octaver and PSOLA go to
+   * kFxHopCostUs and kFxPsolaCostUs per block (1 x +us). */
+  printf("charges, ns per frame:");
+  for (size_t k = 0; k < sizeof(k_table) / sizeof(k_table[0]); ++k) {
+    printf(" %s=%.0f", k_table[k].name, ns[k]);
+  }
+  printf("\ntimed loops ran at: %s\n", g_timed_sched);
+  return 0;
+}
+
 int main(int argc, char** argv) {
   bench_opts o;
+  int table = 0;
   memset(&o, 0, sizeof(o));
   o.rate = 96000;
   o.period = 64;
@@ -412,6 +578,8 @@ int main(int argc, char** argv) {
       g_paced = 1;
     } else if (!strcmp(argv[i], "--racks")) {
       g_racks = 1;
+    } else if (!strcmp(argv[i], "--table")) {
+      table = 1;
     } else if (!strcmp(argv[i], "--kind") && i + 1 < argc) {
       const char* kind = argv[++i];
       if (!strcmp(kind, "octaver")) {
@@ -440,13 +608,51 @@ int main(int argc, char** argv) {
         g_kind = LE_FX_DEGRADE;
       } else if (!strcmp(kind, "lpf")) {
         g_kind = LE_FX_LPF;
+      } else if (!strcmp(kind, "lpflfo")) {
+        g_kind = LE_FX_LPF;
+        g_lpf_lfo = 1;
       } else if (!strcmp(kind, "spring")) {
         g_kind = LE_FX_SPRING;
+      } else if (!strcmp(kind, "psola")) {
+        g_kind = LE_FX_OCTAVER;
+        g_psola = 1;
+      } else if (!strcmp(kind, "drive")) {
+        g_kind = LE_FX_DRIVE;
+      } else if (!strcmp(kind, "filter")) {
+        g_kind = LE_FX_FILTER;
+      } else if (!strcmp(kind, "delay")) {
+        g_kind = LE_FX_DELAY;
+      } else if (!strcmp(kind, "tremolo")) {
+        g_kind = LE_FX_TREMOLO;
+      } else if (!strcmp(kind, "echo")) {
+        g_kind = LE_FX_ECHO;
+      } else if (!strcmp(kind, "reverb")) {
+        g_kind = LE_FX_REVERB;
+      } else if (!strcmp(kind, "dubverb")) {
+        g_kind = LE_FX_DUB_VERB;
+      } else if (!strcmp(kind, "ambverb")) {
+        g_kind = LE_FX_AMB_VERB;
+      } else if (!strcmp(kind, "whammy")) {
+        g_kind = LE_FX_WHAMMY;
+      } else if (!strcmp(kind, "pumper")) {
+        g_kind = LE_FX_PUMPER;
+      } else if (!strcmp(kind, "dualoct")) {
+        g_kind = LE_FX_DUAL_OCTAVER;
+      } else if (!strcmp(kind, "ampcab")) {
+        g_kind = LE_FX_AMP_CAB;
+      } else if (!strcmp(kind, "mod")) {
+        g_kind = LE_FX_MOD;
+      } else if (!strcmp(kind, "modedelay")) {
+        g_kind = LE_FX_MODE_DELAY;
+      } else if (!strcmp(kind, "slicer")) {
+        g_kind = LE_FX_SLICER;
       } else {
         fprintf(stderr,
-                "unknown --kind %s (octaver, eq, comp, transient, hpgate, "
-                "doubler, chorus, wah, overdrive, distortion, vinyl, degrade, "
-                "lpf, spring)\n",
+                "unknown --kind %s (octaver, psola, eq, comp, transient, "
+                "hpgate, doubler, chorus, wah, overdrive, distortion, vinyl, "
+                "degrade, lpf, lpflfo, spring, drive, filter, delay, tremolo, echo, "
+                "reverb, dubverb, ambverb, whammy, pumper, slicer, "
+                "modedelay, dualoct, ampcab, mod)\n",
                 kind);
         return 2;
       }
@@ -473,8 +679,10 @@ int main(int argc, char** argv) {
               "usage: %s [--smoke] [--paced] [--racks] [--rate HZ] "
               "[--period FRAMES] "
               "[--blocks N] [--cpu N] "
-              "[--kind octaver|eq|comp|transient|hpgate|doubler|chorus|wah|"
-              "overdrive|distortion|vinyl|degrade|lpf|spring]\n",
+              "[--kind octaver|psola|eq|comp|transient|hpgate|doubler|chorus|"
+              "wah|overdrive|distortion|vinyl|degrade|lpf|lpflfo|spring|drive|filter|"
+              "delay|tremolo|echo|reverb|dubverb|ambverb|whammy|"
+              "pumper|slicer|modedelay|dualoct] [--table]\n",
               argv[0]);
       return 2;
     }
@@ -487,8 +695,9 @@ int main(int argc, char** argv) {
   if (src == NULL) return 1;
 
   const int warm = 600;
-  if (g_racks) {
-    const int rc = run_racks(&o, src, frames, blocks, warm);
+  if (g_racks || table) {
+    const int rc = table ? run_table(&o, src, frames, blocks, warm)
+                         : run_racks(&o, src, frames, blocks, warm);
     free(src);
     return rc;
   }

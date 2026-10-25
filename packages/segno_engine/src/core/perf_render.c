@@ -1550,10 +1550,10 @@ static int le_pr_reset_slot(le_fx_state* fx, int s, int32_t type,
  * it (le_fx_entry_renew): its buffers, then the renewal, which clears its
  * rings through the enable edge. Returns 0 on an allocation failure. */
 static int le_pr_renew_slot(le_fx_state* fx, int s, int32_t type,
-                            int32_t sample_rate) {
+                            int sounding, int32_t sample_rate) {
   const int ok = type == LE_FX_NONE ||
                  le_fx_prepare(fx, s, type, sample_rate) == LE_OK;
-  le_fx_entry_renew(fx, s, type);
+  le_fx_entry_renew(fx, s, type, sounding);
   return ok;
 }
 
@@ -1566,7 +1566,12 @@ static int le_pr_renew_slot(le_fx_state* fx, int s, int32_t type,
 static int le_pr_arm_slot(le_fx_state* fx, int s, int32_t type,
                           const float* params, int32_t sample_rate) {
   const int ok = le_pr_reset_slot(fx, s, type, sample_rate);
-  if (type == LE_FX_OCTAVER) le_fx_octaver_seed_settled(fx, s, params);
+  if (type == LE_FX_PUMPER) le_fx_pumper_seed_settled(fx, s, params, sample_rate);
+  if (le_fx_type_hops(type)) {
+    float q[LE_FX_PARAMS];
+    le_fx_octaver_settings(type, params, q);
+    le_fx_octaver_seed_settled(fx, s, q);
+  }
   return ok;
 }
 
@@ -1593,6 +1598,9 @@ static void le_pr_seed_channels(le_fx_state* fx, const le_json_value* effects,
                                 int count) {
   static const char* const kIn[] = {"stereo", "left", "right", "monoSum"};
   static const char* const kOut[] = {"stereo", "mono"};
+  static const char* const kPath[] = {"none", "dub", "amb"};
+  static const int32_t kPathBits[] = {0, LE_FX_RACK_DUB_PATH,
+                                      LE_FX_RACK_AMB_PATH};
   char ids[LE_FX_MAX][128];
   int racked[LE_FX_MAX] = {0};
   if (count > LE_FX_MAX) count = LE_FX_MAX;
@@ -1617,6 +1625,11 @@ static void le_pr_seed_channels(le_fx_state* fx, const le_json_value* effects,
     c->level = level;
     racked[s] = le_json_string(le_json_get(le_json_get(entry, "rack"), "id"),
                                ids[s], sizeof(ids[s]));
+    /* A path counts inside a rack only, as the live recipe sets it. */
+    if (racked[s]) {
+      c->rack = kPathBits[le_pr_wire_index(le_json_get(entry, "rackPath"),
+                                           kPath, 3)];
+    }
     /* The live snapshot's rule: a rack edge sets it too. */
     if (c->in_mode != LE_FX_CHAN_IN_STEREO ||
         c->out_mode != LE_FX_CHAN_OUT_STEREO || c->gl != 1.0f ||
@@ -1674,6 +1687,47 @@ static void le_pr_seed_channels(le_fx_state* fx, const le_json_value* effects,
  * `dry`, which carries the play and tail fades of the transport facts it
  * does replay) is this render's only audibility gate beyond mute, solo and
  * Cut (which silences at once, live and here). */
+/* The render's chains' musical time (le_fx_tempo, #887 part 10): what the
+ * live engine runs before its first anchor, 120 BPM in 4/4 from beat 0 at
+ * capture frame 0, until the log's first LE_PLOG_FX_TEMPO (version 14). */
+static void le_pr_tempo_init(le_fx_tempo* t, const le_pr_manifest* m) {
+  const int32_t sr = m->sample_rate > 0 ? m->sample_rate : 48000;
+  t->anchor_clock = m->perf_arm_fx_clock;
+  t->anchor_beat = 0.0;
+  t->qpf = (float)((double)120.0f / 60.0 / (double)sr * 4.0 / 4.0);
+  t->num = 4;
+  t->den = 4;
+}
+
+/* Moves [t] to a logged anchor at the frame whose FX clock is [clock]. */
+static void le_pr_tempo_apply(le_fx_tempo* t, const le_log_command* cmd,
+                              uint32_t clock);
+
+/* [t] at capture frame 0: the anchors logged there (the arm's), so an
+ * arm-time Pumper is seeded at the beat the live one was on. */
+static void le_pr_tempo_at_zero(le_fx_tempo* t, const le_pr_manifest* m,
+                                const le_pr_log_entry* log, int log_count) {
+  for (int i = 0; i < log_count && log[i].frame == 0; ++i) {
+    if (log[i].cmd.code == LE_PLOG_FX_TEMPO) {
+      le_pr_tempo_apply(t, &log[i].cmd, m->perf_arm_fx_clock);
+    }
+  }
+}
+
+/* Moves [t] to a logged anchor at the frame whose FX clock is [clock]. */
+static void le_pr_tempo_apply(le_fx_tempo* t, const le_log_command* cmd,
+                              uint32_t clock) {
+  const uint64_t bits = (uint64_t)cmd->fx_tempo_log.beat_lo |
+                        ((uint64_t)cmd->fx_tempo_log.beat_hi << 32);
+  double beat;
+  memcpy(&beat, &bits, sizeof(beat));
+  t->anchor_clock = clock;
+  t->anchor_beat = beat;
+  t->qpf = cmd->fx_tempo_log.qpf;
+  t->num = cmd->fx_tempo_log.num;
+  t->den = cmd->fx_tempo_log.den;
+}
+
 static float* le_pr_render_wet_track(const le_pr_manifest* m,
                                      const le_pr_log_entry* log, int log_count,
                                      int32_t channel, const float* dry,
@@ -1728,6 +1782,10 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
    * anchor octaver hops where the live chain did. */
   fx->clock = m->perf_arm_fx_clock;
   fx->clocked = 1;
+  le_fx_tempo tempo;
+  le_pr_tempo_init(&tempo, m);
+  fx->tempo = &tempo;
+  le_pr_tempo_at_zero(&tempo, m, log, log_count);
   /* Seed the enable-crossfade runtime SETTLED at each slot's effective arm
    * bit, as the wet cache does (le_fx_frozen_state_init): a calloc'd zero
    * state would fade the whole chain in over the ramp window at frame 0, and
@@ -1916,6 +1974,9 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
             solo[cmd->arg_i] = cmd->arg_f != 0.0f;
           }
           break;
+        case LE_PLOG_FX_TEMPO:
+          le_pr_tempo_apply(&tempo, cmd, fx->clock);
+          break;
         default:
           break;
       }
@@ -2020,6 +2081,10 @@ static int le_pr_render_master(const le_pr_manifest* m,
   fx->hop_seed = le_fx_output_hop_seed(m->arm_capture_bus);
   fx->clock = m->perf_arm_fx_clock; /* see le_pr_render_wet_track */
   fx->clocked = 1;
+  le_fx_tempo tempo;
+  le_pr_tempo_init(&tempo, m);
+  fx->tempo = &tempo;
+  le_pr_tempo_at_zero(&tempo, m, log, log_count);
   le_pr_seed_channels(fx, effects, chain.count); /* see le_pr_render_wet_track */
   int ok = 1;
   for (int i = 0; i < LE_FX_MAX; ++i) {
@@ -2037,7 +2102,9 @@ static int le_pr_render_master(const le_pr_manifest* m,
     fx->clock = m->perf_arm_fx_clock + (uint32_t)f; /* the live frame */
     while (at < log_count && log[at].frame <= f) {
       const le_log_command* cmd = &log[at++].cmd;
-      if (cmd->code == LE_CMD_SET_OUTPUT_LEVEL && cmd->lanef.channel == m->arm_capture_bus)
+      if (cmd->code == LE_PLOG_FX_TEMPO)
+        le_pr_tempo_apply(&tempo, cmd, fx->clock);
+      else if (cmd->code == LE_CMD_SET_OUTPUT_LEVEL && cmd->lanef.channel == m->arm_capture_bus)
         level = cmd->lanef.value;
       else if (cmd->code == LE_CMD_SET_OUTPUT_MUTE && cmd->lanef.channel == m->arm_capture_bus)
         muted = cmd->lanef.value != 0;
@@ -2051,7 +2118,8 @@ static int le_pr_render_master(const le_pr_manifest* m,
         /* lane 1: a recipe kept the entry there (same identity and type),
          * so its state goes on; otherwise the slot renews, as live. */
         if (cmd->fx.lane != 1 &&
-            !le_pr_renew_slot(fx, i, chain.type[i], m->sample_rate)) {
+            !le_pr_renew_slot(fx, i, chain.type[i], i < chain.count,
+                              m->sample_rate)) {
           ok = 0;
         }
       } else if (cmd->code == LE_CMD_SET_OUTPUT_FX_COUNT && cmd->fxcount.channel == m->arm_capture_bus) {

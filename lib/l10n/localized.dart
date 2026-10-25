@@ -33,6 +33,15 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.degrade => effectDegrade,
     TrackEffectType.lpf => effectLpf,
     TrackEffectType.spring => effectSpring,
+    TrackEffectType.dubVerb => effectDubVerb,
+    TrackEffectType.ambVerb => effectAmbVerb,
+    TrackEffectType.whammy => effectWhammy,
+    TrackEffectType.pumper => effectPumper,
+    TrackEffectType.slicer => effectSlicer,
+    TrackEffectType.modeDelay => effectModeDelay,
+    TrackEffectType.dualOctaver => effectDualOctaver,
+    TrackEffectType.ampCab => effectAmpCab,
+    TrackEffectType.mod => effectMod,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
@@ -47,6 +56,20 @@ extension EngineLocalizations on AppLocalizations {
     'cutoff' => paramCutoff,
     'resonance' => paramResonance,
     'time' => paramTime,
+    'delay_time' => paramTime,
+    'delay_mode' => paramMode,
+    'oct_high_mode' => paramHighMode,
+    'octave_1_vol' => paramOctave1Level,
+    'octave_2_vol' => paramOctave2Level,
+    'bass' => paramBass,
+    'treble' => paramTreble,
+    'modern' => paramModern,
+    'cabinet' => paramCabinet,
+    'mod_mode' => paramMode,
+    'studio_mod_mode' => paramMode,
+    'decay' => paramDecay,
+    'volume' => paramVolume,
+    'amb_dub_mix' => paramAmbDubMix,
     'feedback' => paramFeedback,
     'mix' => paramMix,
     'rate' => paramRate,
@@ -57,6 +80,12 @@ extension EngineLocalizations on AppLocalizations {
     'damping' => paramDamping,
     'mode' => paramMode,
     'formants' => paramFormants,
+    'whammy_range' => paramRange,
+    'pumper_rate' => paramRate,
+    'slicer_pattern' => paramPattern,
+    'slicer_step' => paramStep,
+    'lfo_depth' => paramLfoDepth,
+    'lfo_rate' => paramLfoRate,
     'low_cut' => paramLowCut,
     'low_gain' => paramLowGain,
     'low_freq' => paramLowFreq,
@@ -152,19 +181,175 @@ extension EngineLocalizations on AppLocalizations {
   }
 
   /// The name of position [position] of choice parameter [p]: the octaver's
-  /// mode or formants, or the EQ's layout. Any other reads as its 1-based
-  /// number.
+  /// mode or formants, the EQ's layout, the Whammy's range, the Pumper's
+  /// rate, the Slicer's pattern or step, the LPF's LFO rate, or the Mode
+  /// delay's time or mode, or the Dual Octaver's high mode. Any other reads
+  /// as its 1-based number.
   String _choiceName(FxParamInfo p, int position) =>
       switch ((p.key, position)) {
         ('mode', 0) => octaverModePhaseVocoder,
         ('mode', 1) => octaverModePsola,
         ('formants', 0) => octaverFormantsHeld,
         ('formants', 1) => octaverFormantsMoved,
+        ('whammy_range', 0) => pitchOctaves('-', 1),
+        ('whammy_range', 1) => pitchOctaves('+', 1),
+        ('pumper_rate', 0) => noteValueBar,
+        ('pumper_rate', final i) => _pumperRates[i - 1],
+        ('slicer_pattern', final i) => _slicerPatterns[i],
+        ('slicer_step', final i) => _slicerSteps[i],
+        ('lfo_rate', final i) => _lfoRates[i],
+        ('delay_time', final i) => _delayTimes[i],
+        ('delay_mode', final i) => _delayModes[i],
+        ('cabinet', final i) => _cabinets[i],
+        ('mod_mode', final i) => _modModes[i],
+        ('studio_mod_mode', 0) => 'Chorus',
+        ('studio_mod_mode', _) => 'Tremolo',
+        ('oct_high_mode', 0) => toggleOff,
+        ('oct_high_mode', _) => toggleOn,
         ('layout', 0) => eqLayoutShelves,
         ('layout', 1) => eqLayoutBellsCuts,
         ('layout', 2) => eqLayoutBells,
         _ => '${position + 1}',
       };
+
+  /// The Pumper's note values after Bar, in its rate's order.
+  static const List<String> _pumperRates = [
+    '1/2',
+    '1/2T',
+    '1/4',
+    '1/4T',
+    '1/8',
+    '1/8T',
+    '1/16',
+    '1/16T',
+    '1/32',
+    '1/32T',
+  ];
+
+  /// The Slicer's patterns, as the Looper X writes them: a capital letter a
+  /// step, a lower-case one half a step, `_` a rest, `<` the step before
+  /// backwards.
+  static const List<String> _slicerPatterns = [
+    'AABB',
+    'ABCC',
+    'AACD',
+    'ABC_',
+    'A_C_',
+    'A_CC',
+    'A___C___',
+    'ABcccc',
+    'AAccdd',
+    'AB__dd',
+    'AA__dd',
+    'ABC<',
+    'AB_<',
+    'AA_<',
+    'A_B_C<',
+    'AB<<',
+    '<<<<',
+    'AABB Fd1',
+    'AABB Fd2',
+    'AABB Fd3',
+  ];
+
+  /// The Slicer's step note values, in its step's order.
+  static const List<String> _slicerSteps = [
+    '1/4',
+    '1/4T',
+    '1/8',
+    '1/8T',
+    '1/16',
+    '1/16T',
+    '1/32',
+    '1/32T',
+    '1/64',
+  ];
+
+  /// The Mode delay's times, shortest first, in its time's order.
+  static const List<String> _delayTimes = [
+    '1/32',
+    '1/16T',
+    '1/32D',
+    '1/16',
+    '1/8T',
+    '1/16D',
+    '1/8',
+    '1/4T',
+    '1/8D',
+    '1/4',
+    '2/4T',
+    '1/4D',
+    '2/4',
+    '5/8',
+    '3/4',
+    '7/8',
+    '4/4',
+    '5/4',
+    '6/4',
+    '8/4',
+  ];
+
+  /// The Amp's cabinets, as the Looper X names them.
+  static const List<String> _cabinets = [
+    'D.I.',
+    'BRIT',
+    '1x8"',
+    '1x12"',
+    '2x10"',
+    '2x12"',
+    '4x10"',
+    '4x12"',
+    '1x15"',
+    'BASS',
+    '4x10"',
+    'RADIO',
+  ];
+
+  /// The Mod's modes, as the Looper X names them: the Guitar Rack's three,
+  /// then the Studio Rack's tremolo.
+  static const List<String> _modModes = [
+    'CHORUS',
+    'PHASER',
+    'FLANGER',
+    'Tremolo',
+  ];
+
+  /// The Mode delay's modes, as the Looper X names them.
+  static const List<String> _delayModes = [
+    'DIGI',
+    'DIGI L/R',
+    'DIGI GRV',
+    'DAMPED',
+    'DAMPED L/R',
+    'DAMPED GRV',
+    'RESO LO',
+    'RES LO L/R',
+    'RES LO GRV',
+    'RESO HI',
+    'RES HI L/R',
+    'RES HI GRV',
+  ];
+
+  /// The Rhythmic LPF's LFO periods, longest first, in its rate's order:
+  /// whole numbers of quarters, then note values.
+  static const List<String> _lfoRates = [
+    '8/4',
+    '6/4',
+    '5/4',
+    '4/4',
+    '3/4',
+    '1/1T',
+    '1/2',
+    '1/4D',
+    '1/2T',
+    '1/4',
+    '1/8D',
+    '1/4T',
+    '1/8',
+    '1/16D',
+    '1/8T',
+    '1/16',
+  ];
 
   String loopbackKindLabel(LoopbackKind kind) => switch (kind) {
     LoopbackKind.backendLoopback => loopbackKindBackend,
