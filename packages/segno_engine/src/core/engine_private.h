@@ -452,8 +452,8 @@ typedef struct le_octaver_state {
   float frame_level2;
   /* Smart Tune (LE_FX_SMART_TUNE): the correction it applies and the one
    * its target note asks for, in cents; the glide's per-sample step; and
-   * the period and settings those two were worked out at (tune_at[0] < 0:
-   * not yet). */
+   * the period and settings those two were worked out at (the period, then
+   * the four settings; -1: not yet). */
   float tune_c;
   float tune_want;
   float tune_a;

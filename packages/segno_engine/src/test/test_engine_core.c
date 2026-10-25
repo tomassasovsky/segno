@@ -24401,7 +24401,8 @@ static float* oct_reference_wet(const float* dry, int32_t n, int32_t sr,
  * unsettled references are asserted to differ, so the comparison cannot pass
  * by being insensitive to either. */
 static void run_perf_render_octaver_case(const char* name, int32_t type,
-                                         const float* raw4) {
+                                         const float* raw4,
+                                         int settles_itself) {
   const char* dir = render_test_dir(name);
   const int32_t sr = 48000;
   const int32_t channel = 3;
@@ -24506,7 +24507,9 @@ static void run_perf_render_octaver_case(const char* name, int32_t type,
            name, (double)d_ref, (double)d_seed, (double)d_unsettled);
     CHECK(d_ref < 1e-6f);       /* the render used THIS lane's hop phase */
     CHECK(d_seed > 0.01f);      /* and can tell a wrong seed */
-    CHECK(d_unsettled > 0.01f); /* and a start-up state the lane was not in */
+    /* and a start-up state the lane was not in; Smart Tune lands on its
+     * mode at its first sample, so it has none. */
+    if (!settles_itself) CHECK(d_unsettled > 0.01f);
   }
   free(ref);
   free(wrong_seed);
@@ -24524,23 +24527,23 @@ static void test_perf_render_wet_octaver_matches_lane_hop_phase(void) {
   /* -1 octave, tone open, full wet, in each mode. */
   const float pv[4] = {0.25f, 1.0f, 1.0f, 0.0f};
   const float psola[4] = {0.25f, 1.0f, 1.0f, 1.0f};
-  run_perf_render_octaver_case("wet-octaver-phase", LE_FX_OCTAVER, pv);
-  run_perf_render_octaver_case("wet-octaver-psola", LE_FX_OCTAVER, psola);
+  run_perf_render_octaver_case("wet-octaver-phase", LE_FX_OCTAVER, pv, 0);
+  run_perf_render_octaver_case("wet-octaver-psola", LE_FX_OCTAVER, psola, 0);
   /* The Whammy toe down at -12: the render seeds its MAPPED settings, fully
    * wet, or it would start dry (#1451). */
   const float whammy[4] = {1.0f, 0.0f, 0.0f, 0.0f};
-  run_perf_render_octaver_case("wet-whammy", LE_FX_WHAMMY, whammy);
+  run_perf_render_octaver_case("wet-whammy", LE_FX_WHAMMY, whammy, 0);
   /* The Dual Octaver down, half mixed: the render seeds its mapped level
    * and law, and its switched shift. */
   const float dual[4] = {0.0f, 1.0f, 0.5f, 0.0f};
-  run_perf_render_octaver_case("wet-dual-octaver", LE_FX_DUAL_OCTAVER, dual);
+  run_perf_render_octaver_case("wet-dual-octaver", LE_FX_DUAL_OCTAVER, dual, 0);
   /* Smart Tune at its defaults: the render seeds its PSOLA, fully wet. */
   const float tune[4] = {0.5f, 0.0f, 0.0f, 0.5f};
-  run_perf_render_octaver_case("wet-smart-tune", LE_FX_SMART_TUNE, tune);
+  run_perf_render_octaver_case("wet-smart-tune", LE_FX_SMART_TUNE, tune, 1);
   /* With Octave 2 at 60 %: both voices from the one analysis (#1464). */
   const float dual2[4] = {1.0f, 0.5f, 0.5f, 0.6f};
   run_perf_render_octaver_case("wet-dual-octaver-2", LE_FX_DUAL_OCTAVER,
-                               dual2);
+                               dual2, 0);
 }
 
 /* The stem render settles each arm-time slot at its EFFECTIVE bit, as the

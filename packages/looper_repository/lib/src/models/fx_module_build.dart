@@ -513,7 +513,6 @@ const FxModuleBuild _slicer = FxModuleBuild(
   },
 );
 
-// Guitar Rack: the whole Whammy, pedal and range.
 // Vocal Tuner Rack: Speed, Scale Root, Scale Type and Reference, each on
 // the kind's own scale. Tracking and Audio Type only change, on the
 // captures' tones, which way the Looper X's detector tips a note, by no
@@ -524,6 +523,7 @@ const FxModuleBuild _smartTune = FxModuleBuild(
   unmapped: ['Tracking', 'Audio Type'],
 );
 
+// Guitar Rack: the whole Whammy, pedal and range.
 const FxModuleBuild _whammy = FxModuleBuild(
   type: TrackEffectType.whammy,
   params: ['Whammy Pedal', 'Whammy Range'],
