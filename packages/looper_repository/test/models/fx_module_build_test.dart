@@ -1359,6 +1359,10 @@ void main() {
         }
       });
 
+      test('a Drum preset without its ER room plays LARGE STUDIO', () {
+        expect(room(verb('Drum Rack', {'Rev Length': 0.16})), 4 + 7);
+      });
+
       test("tells Ed's reverb from the Vocal Rack's by its rack", () {
         // Their keys are the same; the rack each was built in decides.
         final keys = {

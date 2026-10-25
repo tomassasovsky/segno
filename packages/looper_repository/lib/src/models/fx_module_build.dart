@@ -940,10 +940,12 @@ BuiltInEffect fxModuleEntry(FxModule module, FxPreset preset) {
   for (var i = 0; i < build.params.length && i < type.params.length; i++) {
     final key = build.params[i];
     final shown = build.shown[i];
-    final value =
-        (key == null ? null : preset.params[key]) ?? shown?.defaultValue;
+    final stored = key == null ? null : preset.params[key];
+    final value = stored ?? shown?.defaultValue;
     if (value == null) continue;
-    final scale = build.scales[i];
+    // A stored value is read on the rack's scale; the shown default is a
+    // setting of the shown parameter.
+    final scale = stored != null ? build.scales[i] : null;
     params[i] = scale != null
         ? type.params[i].settingFor(scale.valueAt(value))
         : shown != null
