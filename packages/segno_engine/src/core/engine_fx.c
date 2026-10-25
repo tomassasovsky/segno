@@ -1791,7 +1791,9 @@ static void fx_pumper_process(le_fx_state* fx, int slot, int sr, int cap,
  * reads 48 to 54 dB down; this one is silent); a slice ends with a 4 ms
  * fade and starts
  * without one. < plays the step before backwards (the factory "Reverse"
- * preset is <<<<). The Fd patterns are not modelled.
+ * preset is <<<<). The list stops at <<<<: the Looper X's three Fd
+ * patterns after it are not modelled (no capture, no factory preset), so
+ * they are not offered.
  *
  * Each slice fixes where it reads when it starts (a distance back, or the
  * point it mirrors about), so a tempo change under a slice does not move
@@ -1803,22 +1805,18 @@ static void fx_pumper_process(le_fx_state* fx, int slot, int sr, int cap,
  * above 60 BPM, and Reverse (two 1/16 steps back) above 30 BPM. */
 
 /* The patterns, in the choice's order (the Looper X's SlicerPattern table,
- * read from its binary; docs/plan/2026-10-20-looperx-derived-tables.md);
- * NULL for one not modelled. */
-static const char* const LE_SLICE_PATTERNS[20] = {
+ * read from its binary, up to <<<<; docs/plan/2026-10-20-looperx-derived-
+ * tables.md). */
+#define LE_SLICE_PATTERN_N 17
+static const char* const LE_SLICE_PATTERNS[LE_SLICE_PATTERN_N] = {
     "AABB", "ABCC",   "AACD",   "ABC_",   "A_C_", "A_CC", "A___C___",
     "ABcccc", "AAccdd", "AB__dd", "AA__dd", "ABC<", "AB_<", "AA_<",
-    "A_B_C<", "AB<<", "<<<<",  NULL,     NULL,   NULL};
+    "A_B_C<", "AB<<", "<<<<"};
 
-/* The pattern position a stored choice value names, 0..19. */
+/* The pattern position a stored choice value names. */
 static int le_slice_index(float v) {
-  const int i = (int)(v * 19.0f + 0.5f);
-  return i < 0 ? 0 : i > 19 ? 19 : i;
-}
-
-/* The pattern a stored choice value names; NULL when not modelled. */
-static const char* le_slice_pattern(float v) {
-  return LE_SLICE_PATTERNS[le_slice_index(v)];
+  const int i = (int)(v * (float)(LE_SLICE_PATTERN_N - 1) + 0.5f);
+  return i < 0 ? 0 : i >= LE_SLICE_PATTERN_N ? LE_SLICE_PATTERN_N - 1 : i;
 }
 
 /* Each step position's length in quarter notes: 1/4, 1/4T, 1/8, 1/8T,
@@ -1967,9 +1965,8 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
   float qpf;
   int32_t num, den;
   const double beat = le_fx_beat_now(fx, rate, &qpf, &num, &den);
-  /* Not modelled (the Fd patterns) or no usable tempo: the input passes,
-   * crossfaded to over the 4 ms. */
-  const int passes = pat == NULL || !(qpf > 0.0f) || !isfinite(beat);
+  /* No usable tempo: the input passes, crossfaded to over the 4 ms. */
+  const int passes = !(qpf > 0.0f) || !isfinite(beat);
   if (passes) {
     le_slice_cut(st, fade4);
   } else if (beat < st->last_beat) {
@@ -2833,7 +2830,7 @@ static const le_fx_param_desc LE_FX_PUMPER_PARAMS[] = {
 /* The Rhythmic Rack's Slicer (#891): the pattern and the step in the
  * orders of LE_SLICE_PATTERNS and LE_SLICE_STEP; the mix. */
 static const le_fx_param_desc LE_FX_SLICER_PARAMS[] = {
-    {"slicer_pattern", LE_FX_UNIT_CHOICE, 20, 0.0f, 1.0f, LE_FX_CURVE_LINEAR,
+    {"slicer_pattern", LE_FX_UNIT_CHOICE, LE_SLICE_PATTERN_N, 0.0f, 1.0f, LE_FX_CURVE_LINEAR,
      0.0f, 0},
     {"slicer_step", LE_FX_UNIT_CHOICE, 9, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.5f,
      0},
@@ -7097,8 +7094,8 @@ int le_fx_entry_free_running(int32_t type, const float* p, int sr) {
     case LE_FX_MOD: /* the tremolo dipping, or the others swept and heard */
       return le_mod_mode(p[3]) == LE_MOD_TREMOLO ? p[1] > 0.0f
                                                   : p[1] > 0.0f && p[2] > 0.0f;
-    case LE_FX_SLICER: /* slicing, and heard */
-      return p[2] > 0.0f && le_slice_pattern(p[0]) != NULL;
+    case LE_FX_SLICER: /* heard */
+      return p[2] > 0.0f;
     default:
       return p[2] > 0.0f; /* the chorus's mix */
   }
