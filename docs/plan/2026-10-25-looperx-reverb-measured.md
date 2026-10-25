@@ -78,7 +78,7 @@ LARGE STUDIO's ER is the Amb-Verb's early pattern: 24.58 ms, then 32.79 ms on th
   |---|---|---|---|---|---|
   | corner, kHz | 1.35 | 2.48 | 4.49 | 9.43 | open |
 
-  At 100 % it also cuts the lows like a 12 dB/octave high-pass at 65 Hz: -12.4 dB at 31.5 Hz against 50 %. At 75 % there is no cut (under 1 dB at 12 Hz). The kernel moves the cut's corner 11 times lower per quarter below 100 %.
+  At 100 % it also cuts the lows like a 12 dB/octave high-pass at 65 Hz: -12.4 dB at 31.5 Hz against 50 %. At 75 % there is no cut (under 1 dB at 12 Hz). The kernel moves the cut's corner 11 times lower per quarter below 100 %, and holds it at 8 Hz from about 78 % down, so the cut never switches in or out.
 - **Length** follows each room's own decay table.
   - The wet's energy stays nearly level across Length: HALL's moves 5 dB from Length 0 to 0.9, while a fixed injection would move it 14 dB.
   - The HALL's 8 kHz decays faster at long Lengths. The ROOM's and BOX's do not.

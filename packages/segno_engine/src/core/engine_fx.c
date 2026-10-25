@@ -6577,7 +6577,7 @@ static void le_vb_lay(le_fx_verb* q, const le_verb_def* def, int rate) {
  * a late gain table sets the late network's gain with it. */
 static void le_vb_glide_dec(le_fx_verb* q, float dec_tgt, float k, int rate) {
   const le_verb_def* def = q->def;
-  const int first = q->dec_design < 0.0f;
+  const int first = q->dec_design < 0.0f || k >= 1.0f; /* lands at once */
   le_fx_step_toward(&q->dec, dec_tgt, k);
   if (q->dec == q->dec_design) return;
   double t[3];
@@ -6867,8 +6867,9 @@ typedef struct le_fx_rverb {
   float tone_tgt;
   float tone[3];     /* first-order low-pass: b0, b1, a1 */
   float tone_z[2][2];
-  float cut_v;      /* Lo/Hi's low cut, designed for (-1: none) */
+  float cut_v;      /* Lo/Hi's low cut, designed for (-1: not yet; 0: none) */
   float lc[5];
+  float lc_to[5], lc_d[5];
   float lc_z[2][2];
 } le_fx_rverb;
 
@@ -6881,7 +6882,7 @@ static const double LE_RV_LOHI_HZ[5] = {1348.0, 2481.0, 4492.0, 9432.0,
  * 0.2 kHz of its seven captured settings), or Lo/Hi's table on a Drum
  * room. */
 static double le_rv_tone_hz(double v, int drum) {
-  if (!drum) return 1010.0 * pow(20.5, v);
+  if (!drum) return 1010.0 * pow(20.5, v < 0.0 ? 0.0 : v > 1.0 ? 1.0 : v);
   const double x = (v < 0.0 ? 0.0 : v > 1.0 ? 1.0 : v) * 4.0;
   const int i = x >= 4.0 ? 3 : (int)x;
   return LE_RV_LOHI_HZ[i] * pow(LE_RV_LOHI_HZ[i + 1] / LE_RV_LOHI_HZ[i],
@@ -6924,23 +6925,26 @@ static void le_rv_lay(le_fx_rverb* q, int room, int rate) {
  * at LE_RV_CUT_HZ at 100 %, LE_RV_CUT_STEP times lower each quarter below
  * (the captures put it at 65 Hz at 100 % and under 8 Hz at 75 %). */
 static void le_rv_tone(le_fx_rverb* q, float v, int drum, int rate) {
-  const double t = le_vb_warp(le_rv_tone_hz((double)v, drum), rate);
+  double hz = le_rv_tone_hz((double)v, drum);
+  if (hz > 0.45 * (double)rate) hz = 0.45 * (double)rate;
+  const double t = le_vb_warp(hz, rate);
   q->tone_to[0] = (float)(t / (1.0 + t));
   q->tone_to[1] = q->tone_to[0];
   q->tone_to[2] = (float)((t - 1.0) / (1.0 + t));
   q->tone_v = v;
-  const double hz =
-      LE_RV_CUT_HZ * pow(LE_RV_CUT_STEP, 4.0 * ((double)v - 1.0));
-  /* Under 2 Hz the cut is nothing a recording holds: none. */
-  const float cv = drum && v > 0.5f && hz >= 2.0 ? v : 0.0f;
-  if (cv != q->cut_v) {
-    if (cv > 0.0f) {
-      double c[5];
-      le_eq_design(LE_EQ_LOWCUT, hz, 0.0, LE_EQ_CUT_Q, rate, c);
-      for (int i = 0; i < 5; ++i) q->lc[i] = (float)c[i];
-    }
-    q->cut_v = cv;
+  if (!drum) {
+    q->cut_v = 0.0f;
+    return;
   }
+  /* Always in on a Drum room, so it never switches: below 8 Hz (Lo/Hi
+   * under about 78 %) it holds there, which reads as the 75 % capture's
+   * -0.9 dB at 12 Hz. */
+  double cut = LE_RV_CUT_HZ * pow(LE_RV_CUT_STEP, 4.0 * ((double)v - 1.0));
+  if (cut < 8.0) cut = 8.0;
+  double c[5];
+  le_eq_design(LE_EQ_LOWCUT, cut, 0.0, LE_EQ_CUT_Q, rate, c);
+  for (int i = 0; i < 5; ++i) q->lc_to[i] = (float)c[i];
+  q->cut_v = v > 0.0f ? v : 1e-6f;
 }
 
 static void fx_room_verb_update(void* ks, const float* p, int sr, int settle) {
@@ -7045,6 +7049,10 @@ static void fx_room_verb_update(void* ks, const float* p, int sr, int settle) {
     if (instant) q->tone[i] = q->tone_to[i];
     q->tone_d[i] = (q->tone_to[i] - q->tone[i]) * per;
   }
+  for (int i = 0; i < 5; ++i) {
+    if (instant) q->lc[i] = q->lc_to[i];
+    q->lc_d[i] = (q->lc_to[i] - q->lc[i]) * per;
+  }
   if (instant) q->v.ap_g = q->apg_to;
   q->apg_d = (q->apg_to - q->v.ap_g) * per;
   q->latek_d = (q->latek_to - q->v.late_k) * per;
@@ -7090,6 +7098,9 @@ static void fx_room_verb_rkprocess(void* ks, float* r0, float* r1, int cap,
     }
     for (int i = 0; i < 3; ++i) {
       q->tone[i] = last ? q->tone_to[i] : q->tone[i] + q->tone_d[i];
+    }
+    for (int i = 0; i < 5; ++i) {
+      q->lc[i] = last ? q->lc_to[i] : q->lc[i] + q->lc_d[i];
     }
     v->ap_g = last ? q->apg_to : v->ap_g + q->apg_d;
     v->late_k = last ? q->latek_to : v->late_k + q->latek_d;

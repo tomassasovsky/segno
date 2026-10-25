@@ -271,23 +271,38 @@ static void test_room_verb_bright_and_lo_hi(void) {
   verb_free(high);
 }
 
-/* Density scales the network's three diffusers (s8drm 12-15): the
- * immediate tap goes as Density cubed, 0.017, 0.127 and 0.42 of its full
- * value at 25, 50 and 75 %, and none at 0. */
+/* Density (s8drm 12-15): the early taps play the captured Density points
+ * (the immediate tap 0.017, 0.127 and 0.42 of its full value at 25, 50
+ * and 75 %, none at 0: the cube the three diffusers' gain gives) and
+ * straight lines between them; the whole wet, early taps and the network
+ * behind them, within 0.5 dB of each capture. */
 static void test_room_verb_density(void) {
   printf("test_room_verb_density\n");
-  const float ds[5] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
-  const double want[5] = {0.0, 0.017, 0.127, 0.42, 1.0};
+  const float ds[6] = {1.0f, 0.75f, 0.6f, 0.5f, 0.25f, 0.0f};
+  const double want[6] = {1.0, 0.42, 0.127 + 0.4 * (0.42 - 0.127), 0.127,
+                          0.017, 0.0};
+  /* Tail/ER 0 % (the tail, and the ER at 0.707), Length 0.16, Lo/Hi 50 %:
+   * the wet's energy to 3 s as captured. */
+  const double e_cap[6] = {0.13318, 0.13089, -1.0, 0.13050, 0.13055,
+                           0.13060};
   float full = 0.0f;
-  for (int k = 4; k >= 0; --k) {
+  for (int k = 0; k < 6; ++k) {
     float p[LE_FX_PARAMS];
     rv_params(p, 0.16f, 1.0f, 11, 0.8f, 0.5f, 0.0f, ds[k]);
-    verb_ir h = rv_run(p, 64);
+    verb_ir h = rv_run(p, 3 * RV_SR);
     const float imm = h.l[1];
-    if (k == 4) full = imm;
-    printf("  Density %.0f %%: immediate tap %.3f of full (capture %.3f)\n",
+    if (k == 0) full = imm;
+    printf("  Density %.0f %%: immediate tap %.3f of full (want %.3f)\n",
            100.0 * ds[k], (double)(imm / full), want[k]);
-    CHECK(fabs(imm / full - want[k]) < 0.02);
+    CHECK(fabs(imm / full - want[k]) < 0.01);
+    if (e_cap[k] > 0.0) {
+      h.l[0] -= 0.70710678f;
+      h.r[0] -= 0.70710678f;
+      const double e =
+          0.5 * (verb_energy(h.l, 0, h.n) + verb_energy(h.r, 0, h.n));
+      printf("    wet %+.2f dB against the capture\n", 10.0 * log10(e / e_cap[k]));
+      CHECK(fabs(10.0 * log10(e / e_cap[k])) < 0.5);
+    }
     verb_free(h);
   }
 }
@@ -306,13 +321,14 @@ static void test_room_verb_changes_are_smooth(void) {
   static const struct {
     int param;
     float from, to;
-  } c[4] = {{2, 0.0f, 3.0f / 15.0f},
+  } c[5] = {{2, 0.0f, 3.0f / 15.0f},
             {0, 0.2f, 0.8f},
             {3, 0.0f, 1.0f},
-            {6, 1.0f, 0.0f}};
-  for (int k = 0; k < 4; ++k) {
+            {6, 1.0f, 0.0f},
+            {4, 1.0f, 0.5f}};
+  for (int k = 0; k < 5; ++k) {
     float a[LE_FX_PARAMS], b[LE_FX_PARAMS];
-    rv_params(a, 0.3f, 0.5f, k == 3 ? 11 : 0, 0.8f, 0.5f, 0.3f, 1.0f);
+    rv_params(a, 0.3f, 0.5f, k >= 3 ? 11 : 0, 0.8f, 0.5f, 0.3f, 1.0f);
     a[c[k].param] = c[k].from;
     memcpy(b, a, sizeof b);
     b[c[k].param] = c[k].to;
@@ -344,7 +360,8 @@ static void test_room_verb_changes_are_smooth(void) {
 }
 
 /* At 96 kHz each room keeps its 48 kHz decay and band levels: the taps sit
- * at the same times, the low-pass at the same corner. */
+ * at the same times, the low-pass at the same corner. At 22.05 and
+ * 32 kHz, where the brightest corners pass Nyquist, it stays finite. */
 static void test_room_verb_at_96k(void) {
   printf("test_room_verb_at_96k\n");
   const int rooms[3] = {0, 3, 11};
@@ -366,6 +383,20 @@ static void test_room_verb_at_96k(void) {
     CHECK(abs(fb - 2 * fa) <= 2);
     verb_free(a);
     verb_free(b);
+  }
+  const int low[2] = {22050, 32000};
+  for (int k = 0; k < 2; ++k) {
+    for (int room = 0; room < 16; room += 11) {
+      float p[LE_FX_PARAMS];
+      rv_params(p, 0.5f, 1.0f, room, 1.0f, 1.0f, 0.3f, 1.0f);
+      verb_ir h = rv_run_at(p, low[k], low[k]);
+      int finite = 1;
+      for (int i = 0; i < h.n; ++i) {
+        finite &= isfinite(h.l[i]) && fabsf(h.l[i]) < 4.0f;
+      }
+      CHECK(finite);
+      verb_free(h);
+    }
   }
 }
 
