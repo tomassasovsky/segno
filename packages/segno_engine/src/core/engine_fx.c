@@ -315,6 +315,7 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   o->frame_level2 = 0.0f;
   o->tune_c = 0.0f;
   o->tune_at[0] = -1.0f;
+  o->tune_at[1] = -1.0f;
   o->tune_held = 0;
   if (o->last_phase != NULL) memset(o->last_phase, 0, sizeof(float) * LE_PV_BINS);
   if (o->sum_phase != NULL) memset(o->sum_phase, 0, sizeof(float) * LE_PV_BINS);
@@ -1639,129 +1640,15 @@ static void le_doct_settings(const float* p, float* out) {
   out[7] = p[3] < 0.0f ? 0.0f : p[3] > 1.0f ? 1.0f : p[3];
 }
 
-/* ---- Smart Tune (LE_FX_SMART_TUNE, #1480) ----
- *
- * The Vocal Tuner's Smart Tune, against the #891 captures (s6pitch 0-22, a
- * 50-cent staircase from 440 to 880 Hz, and s5/8-11, 1 kHz bursts): the
- * output goes to the nearest note of the scale (Scale Root and Scale Type;
- * a pitch exactly between two goes up), and glides there in cents with a
- * time constant of half the Speed (17 ms at 32 ms, 78 at 179, about 500 at
- * 1000). A note after silence starts from the input's pitch. The octaver's
- * PSOLA does the shifting, fully wet: its detection gives the period, and
- * its grains are laid at the period the target asks for, so the output
- * lands on the note. */
-
-/* Each scale type's notes, bit d for d semitones above the root, in the
- * Looper X's order. Locrian is Phrygian's notes, as the device plays it
- * (s6pitch 8 against 5: G, not Gb); Penta is the minor pentatonic
- * (s6pitch 10). Min Triad and Root are off the device's screen, so their
- * notes come from their names. */
-static const uint16_t LE_ST_SCALES[14] = {
-    0xAB5, /* Major */
-    0x5AD, /* Minor */
-    0x9AD, /* Harm Min */
-    0xAAD, /* Melo Min */
-    0x6AD, /* Dorian */
-    0x5AB, /* Phrygian */
-    0xAD5, /* Lydian */
-    0x6B5, /* Mixo */
-    0x5AB, /* Locrian */
-    0xFFF, /* Chromatic */
-    0x4A9, /* Penta */
-    0x091, /* Maj Triad */
-    0x089, /* Min Triad */
-    0x001, /* Root */
-};
-
-static float le_st_unit(float v) { return v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v; }
-
-/* How much nearer, in semitones, another note of the scale must be before
- * the held one gives way to it: a voice that sits between two notes stays
- * on one, as the captures' steps exactly between two do. The captured
- * glide (s6pitch 15, 220 to 440 Hz in 3 s) leaves a whole tone 0 to 3
- * cents past the midpoint and a semitone 10 to 12 past it. */
-#define LE_ST_HOLD 0.1
-
-/* The correction, in cents, that takes channel [o]'s pitch of period [pf]
- * (device samples at [cap] Hz) to the nearest note of [p]'s scale, or to
- * the note it holds while that is within LE_ST_HOLD of as near. */
-static float le_st_want(le_octaver_state* o, float pf, int cap,
-                        const float* p) {
-  const double ref = 420.0 + 40.0 * (double)le_st_unit(p[3]);
-  const int root = (int)(le_st_unit(p[1]) * 11.0f + 0.5f);
-  const int type = (int)(le_st_unit(p[2]) * 13.0f + 0.5f);
-  const unsigned mask = LE_ST_SCALES[type];
-  /* Semitones above the root (A is 9 above C). */
-  const double x = 12.0 * log2((double)cap / (double)pf / ref) + 9.0 - root;
-  const int b = (int)floor(x);
-  int best = b;
-  double gap = 1e9;
-  for (int k = b - 12; k <= b + 12; ++k) {
-    if (((mask >> (((k % 12) + 12) % 12)) & 1u) == 0u) continue;
-    const double d = fabs(x - (double)k);
-    if (d <= gap) { /* ascending, so a tie keeps the higher note */
-      gap = d;
-      best = k;
-    }
-  }
-  const int held = o->tune_note;
-  if (o->tune_held && ((mask >> (((held % 12) + 12) % 12)) & 1u) != 0u &&
-      fabs(x - (double)held) <= gap + LE_ST_HOLD) {
-    best = held;
-  }
-  o->tune_note = best;
-  o->tune_held = 1;
-  return (float)(100.0 * ((double)best - x));
-}
-
-/* Channel [o]'s shift setting this sample: its correction glided one step
- * toward the one the detected pitch asks for, or none while the input is
- * unvoiced (PSOLA plays the dry then), so a new note starts from its own
- * pitch. A note starts correcting once PSOLA's voicing reaches 0.6, its
- * third detection, when the period it smooths has left the last note's. */
-static float le_st_shift(le_octaver_state* o, const float* p, int cap) {
-  const float pf = o->period;
-  const float gate = o->tune_held ? 0.3f : 0.6f;
-  if (o->cur_mode != 1 || pf <= 0.0f || o->voiced < gate) {
-    o->tune_c = 0.0f;
-    o->tune_held = 0;
-    return 0.5f;
-  }
-  if (pf != o->tune_at[0] || p[0] != o->tune_at[1] || p[1] != o->tune_at[2] ||
-      p[2] != o->tune_at[3] || p[3] != o->tune_at[4]) {
-    o->tune_at[0] = pf;
-    for (int k = 0; k < 4; ++k) o->tune_at[k + 1] = p[k];
-    o->tune_want = le_st_want(o, pf, cap, p);
-    const double tau = 0.0005 * pow(1000.0, (double)le_st_unit(p[0]));
-    o->tune_a = (float)(1.0 - exp(-1.0 / (tau * (double)cap)));
-  }
-  o->tune_c += o->tune_a * (o->tune_want - o->tune_c);
-  return 0.5f + o->tune_c / 4800.0f;
-}
-
-/* The octaver settings Smart Tune runs: PSOLA, fully wet with the tone open,
- * at unison until it hears a pitch. */
+/* The octaver settings Smart Tune runs (LE_FX_SMART_TUNE, its kernel with
+ * the parameter tables below): PSOLA, fully wet with the tone open, at
+ * unison until it hears a pitch. */
 static void le_st_settings(float* out) {
   out[0] = 0.5f;
   out[1] = 1.0f;
   out[2] = 1.0f;
   out[3] = 1.0f;
   out[4] = 0.0f;
-}
-
-static void fx_smart_tune_process(le_fx_state* fx, int slot, int sr, int cap,
-                                  float* l, float* r, const float* p) {
-  (void)sr;
-  float q[8] = {0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-  le_st_settings(q);
-  float* x[2] = {l, r};
-  for (int chan = 0; chan < 2; ++chan) {
-    le_octaver_state* o = &fx->oct[slot][chan];
-    /* The shift is set, not smoothed: the glide is the correction's own. */
-    q[0] = le_st_shift(o, p, cap);
-    o->sm_shift = q[0];
-    *x[chan] = fx_octaver(fx, slot, chan, cap, *x[chan], q);
-  }
 }
 
 void le_fx_octaver_settings(int32_t type, const float* params, float* out) {
@@ -7302,6 +7189,138 @@ LE_FX_ROWS_FIT(LE_FX_DUAL_OCTAVER_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_AMP_CAB_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_MOD_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_SMART_TUNE_PARAMS);
+
+/* ---- Smart Tune (LE_FX_SMART_TUNE, #1480) ----
+ *
+ * The Vocal Tuner's Smart Tune, against the #891 captures (s6pitch 0-22, a
+ * 50-cent staircase from 440 to 880 Hz, and s5/8-11, 1 kHz bursts): the
+ * output goes to the nearest note of the scale (Scale Root and Scale Type;
+ * a pitch exactly between two goes up), and glides there in cents with a
+ * time constant of half the Speed (17 ms at 32 ms, 78 at 179, about 500 at
+ * 1000). A note after silence starts from the input's pitch. The octaver's
+ * PSOLA does the shifting, fully wet: its detection gives the period, and
+ * its grains are laid at the period the target asks for, so the output
+ * lands on the note. */
+
+/* Each scale type's notes, bit d for d semitones above the root, in the
+ * Looper X's order. Locrian is Phrygian's notes, as the device plays it
+ * (s6pitch 8 against 5: G, not Gb); Penta is the minor pentatonic
+ * (s6pitch 10). Min Triad and Root are off the device's screen, so their
+ * notes come from their names. */
+static const uint16_t LE_ST_SCALES[14] = {
+    0xAB5, /* Major */
+    0x5AD, /* Minor */
+    0x9AD, /* Harm Min */
+    0xAAD, /* Melo Min */
+    0x6AD, /* Dorian */
+    0x5AB, /* Phrygian */
+    0xAD5, /* Lydian */
+    0x6B5, /* Mixo */
+    0x5AB, /* Locrian */
+    0xFFF, /* Chromatic */
+    0x4A9, /* Penta */
+    0x091, /* Maj Triad */
+    0x089, /* Min Triad */
+    0x001, /* Root */
+};
+
+/* How much nearer, in semitones, another note of the scale must be before
+ * the held one gives way to it: a voice that sits between two notes stays
+ * on one, as the captures' steps exactly between two do. The captured
+ * glide (s6pitch 15, 220 to 440 Hz in 3 s) leaves a whole tone 0 to 3
+ * cents past the midpoint and a semitone 10 to 12 past it. */
+#define LE_ST_HOLD 0.1
+
+/* Whether note [k] (semitones above the root) is in [mask]. */
+static int le_st_in(unsigned mask, int k) {
+  return ((mask >> (((k % 12) + 12) % 12)) & 1u) != 0u;
+}
+
+/* The correction, in cents, that takes channel [o]'s pitch of period [pf]
+ * (device samples at [cap] Hz) to the nearest note of [p]'s scale, or to
+ * the note it holds while that is within LE_ST_HOLD of as near. */
+static float le_st_want(le_octaver_state* o, float pf, int cap,
+                        const float* p) {
+  const le_fx_param_desc* d = LE_FX_SMART_TUNE_PARAMS;
+  const double ref = le_fx_desc_value(&d[3], p[3]);
+  const int root = (int)(le_mdly_clamp01(p[1]) * 11.0f + 0.5f);
+  const int type = (int)(le_mdly_clamp01(p[2]) * 13.0f + 0.5f);
+  const unsigned mask = LE_ST_SCALES[type];
+  /* Semitones above the root (A is 9 above C). */
+  const double x = 12.0 * log2((double)cap / (double)pf / ref) + 9.0 - root;
+  const int b = (int)floor(x);
+  int best = b;
+  double gap = 1e9;
+  for (int k = b - 12; k <= b + 12; ++k) {
+    if (!le_st_in(mask, k)) continue;
+    const double dist = fabs(x - (double)k);
+    if (dist <= gap) { /* ascending, so a tie keeps the higher note */
+      gap = dist;
+      best = k;
+    }
+  }
+  if (o->tune_held && le_st_in(mask, o->tune_note) &&
+      fabs(x - (double)o->tune_note) <= gap + LE_ST_HOLD) {
+    best = o->tune_note;
+  }
+  o->tune_note = best;
+  o->tune_held = 1;
+  return (float)(100.0 * ((double)best - x));
+}
+
+/* The correction channel [o] applies this sample, in cents: glided one step
+ * toward the one its detected pitch asks for, or none while the input is
+ * unvoiced (PSOLA plays the dry then), so a new note starts from its own
+ * pitch. A note starts correcting once PSOLA's voicing reaches 0.6, its
+ * third detection, when the period it smooths has left the last note's. */
+static float le_st_correct(le_octaver_state* o, const float* p, int cap) {
+  const float pf = o->period;
+  const float gate = o->tune_held ? 0.3f : 0.6f;
+  if (o->cur_mode != 1 || pf <= 0.0f || o->voiced < gate) {
+    o->tune_c = 0.0f;
+    o->tune_held = 0;
+    o->tune_at[0] = -1.0f; /* the next note works its target out afresh */
+    return 0.0f;
+  }
+  if (p[0] != o->tune_at[1]) {
+    o->tune_at[1] = p[0];
+    const double tau =
+        0.5e-3 * le_fx_desc_value(&LE_FX_SMART_TUNE_PARAMS[0], p[0]);
+    o->tune_a = (float)(1.0 - exp(-1.0 / (tau * (double)cap)));
+  }
+  if (pf != o->tune_at[0] || p[1] != o->tune_at[2] || p[2] != o->tune_at[3] ||
+      p[3] != o->tune_at[4]) {
+    o->tune_at[0] = pf;
+    for (int k = 2; k < 5; ++k) o->tune_at[k] = p[k - 1];
+    o->tune_want = le_st_want(o, pf, cap, p);
+  }
+  o->tune_c += o->tune_a * (o->tune_want - o->tune_c);
+  return o->tune_c;
+}
+
+/* Smart Tune always runs PSOLA. A slot just reset is on the phase vocoder
+ * with an empty runtime, so it lands on PSOLA at once, settled as an
+ * offline render seeds it (le_fx_octaver_seed_settled), without the mode
+ * switch's gain dip, which would take the fully wet voice out for 30 ms on
+ * every engage. The left channel's correction drives both, so a stereo
+ * input never splits across two notes. */
+static void fx_smart_tune_process(le_fx_state* fx, int slot, int sr, int cap,
+                                  float* l, float* r, const float* p) {
+  (void)sr;
+  float q[LE_FX_PARAMS] = {0.0f};
+  le_st_settings(q);
+  if (fx->oct[slot][0].cur_mode != 1 || fx->oct[slot][1].cur_mode != 1) {
+    le_fx_octaver_seed_settled(fx, slot, q);
+  }
+  const float cents = le_st_correct(&fx->oct[slot][0], p, cap);
+  q[0] = 0.5f + cents / 4800.0f;
+  float* x[2] = {l, r};
+  for (int chan = 0; chan < 2; ++chan) {
+    /* The shift is set, not smoothed: the glide is the correction's own. */
+    fx->oct[slot][chan].sm_shift = q[0];
+    *x[chan] = fx_octaver(fx, slot, chan, cap, *x[chan], q);
+  }
+}
 
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
  * published for this chain entry (NULL / not-ready => dry passthrough; the slot

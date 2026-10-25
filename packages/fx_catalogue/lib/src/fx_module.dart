@@ -479,18 +479,20 @@ String? fxModuleArt(String name) {
   return fxStompAsset(artwork.first);
 }
 
-/// The modules of a [family] rack that own [key] as a parameter, in table
-/// order.
+/// The module of a [family] rack that owns [key] as a parameter, or `null`.
 ///
-/// At most one. Ownership is by prefix or by a whole name ([FxModule.keys]),
-/// so a one-word power key whose word is also one of its module's groups
-/// (`Wah`, `Comp`, `LPF`) is owned by that module too; a power key
-/// spelled differently from its group (`Delay` for `Del`) and a key the table
-/// leaves unclaimed on purpose have no owner.
-List<FxModule> fxModulesOwning(String key, String family) => [
-  for (final module in kFxModules)
-    if (module.appearsIn(family) && module.owns(key)) module,
-];
+/// Ownership is by prefix or by a whole name ([FxModule.keys]), so a
+/// one-word power key whose word is also one of its module's groups (`Wah`,
+/// `Comp`, `LPF`) is owned by that module too; a power key spelled
+/// differently from its group (`Delay` for `Del`) and a key the table leaves
+/// unclaimed on purpose have no owner. No two modules of a family claim one
+/// key, which the catalogue's tests pin.
+FxModule? fxModuleOwning(String key, String family) {
+  for (final module in kFxModules) {
+    if (module.appearsIn(family) && module.owns(key)) return module;
+  }
+  return null;
+}
 
 /// The modules [preset] holds, in the order its rack runs them
 /// ([kFxRackOrders]), keeping only those the preset actually names.

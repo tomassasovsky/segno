@@ -1310,8 +1310,7 @@ void main() {
       ]);
     });
 
-    test('builds Smart Tune on its kind, Tracking and Audio Type unmapped',
-        () {
+    test('builds Smart Tune on its kind, Tracking and Audio Type unmapped', () {
       // Vocal Tuner Rack / Retune Slow Wet, trimmed: A minor, Speed 63 ms.
       final e = fxModuleEntry(
         _module('Smart tune'),

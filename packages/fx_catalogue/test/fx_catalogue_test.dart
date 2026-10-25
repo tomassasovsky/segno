@@ -346,7 +346,7 @@ void main() {
         for (final key in preset.params.keys) {
           final prefix = key.split(' ').first;
           if (kFxUnclaimedGroups.contains(prefix)) continue;
-          if (fxModulesOwning(key, preset.family).isNotEmpty) continue;
+          if (fxModuleOwning(key, preset.family) != null) continue;
           if (fxModuleFor(key, preset.family) != null) continue;
           unaccounted.add(key);
         }
@@ -411,11 +411,11 @@ void main() {
 
       expect(fxModuleFor('Delay', "Ed's Rack")!.name, 'Delay');
       expect(
-        fxModulesOwning('Del Feedback', "Ed's Rack").map((m) => m.name),
-        ['Delay'],
+        fxModuleOwning('Del Feedback', "Ed's Rack")?.name,
+        'Delay',
       );
       // And the power key is not a parameter of its own module.
-      expect(fxModulesOwning('Delay', "Ed's Rack"), isEmpty);
+      expect(fxModuleOwning('Delay', "Ed's Rack"), isNull);
     });
 
     test("the rack's own level belongs to no pedal", () {
@@ -423,7 +423,7 @@ void main() {
       // the rack, so claiming it for a module would put it on the wrong
       // control.
       for (final family in kFxFamilySlugs.keys) {
-        expect(fxModulesOwning('Master Vol', family), isEmpty);
+        expect(fxModuleOwning('Master Vol', family), isNull);
       }
       expect(kFxUnclaimedGroups, {'Master'});
     });
@@ -431,14 +431,14 @@ void main() {
     test("the Dub Rack's delay is the dub delay, powered by `Dub Delay`", () {
       expect(fxModuleFor('Dub Delay', 'Dub Rack')!.name, 'Dub delay');
       expect(
-        fxModulesOwning('Del Feedback', 'Dub Rack').map((m) => m.name),
-        ['Dub delay'],
+        fxModuleOwning('Del Feedback', 'Dub Rack')?.name,
+        'Dub delay',
       );
       // The dub reverb no longer takes the delay's power key as a parameter.
-      expect(fxModulesOwning('Dub Delay', 'Dub Rack'), isEmpty);
+      expect(fxModuleOwning('Dub Delay', 'Dub Rack'), isNull);
       expect(
-        fxModulesOwning('Dub-Verb Dec', 'Dub Rack').map((m) => m.name),
-        ['Dub reverb'],
+        fxModuleOwning('Dub-Verb Dec', 'Dub Rack')?.name,
+        'Dub reverb',
       );
     });
 
@@ -446,13 +446,13 @@ void main() {
       for (final family in ['Dub Rack', 'Lo-Fi Rack']) {
         expect(fxModuleFor('Para EQ', family)!.name, 'Parametric EQ');
         expect(
-          fxModulesOwning('EQ Mid Q', family).map((m) => m.name),
-          ['Parametric EQ'],
+          fxModuleOwning('EQ Mid Q', family)?.name,
+          'Parametric EQ',
         );
       }
       expect(
-        fxModulesOwning('EQ Mid Freq', 'Drum Rack').map((m) => m.name),
-        ['Four-band EQ'],
+        fxModuleOwning('EQ Mid Freq', 'Drum Rack')?.name,
+        'Four-band EQ',
       );
     });
 
@@ -462,8 +462,8 @@ void main() {
       // is a four-band EQ's.
       expect(fxModuleFor('EQ', 'Rhythmic Rack')!.name, 'Parametric EQ');
       expect(
-        fxModulesOwning('EQ Mid Gain', 'Rhythmic Rack').map((m) => m.name),
-        ['Parametric EQ'],
+        fxModuleOwning('EQ Mid Gain', 'Rhythmic Rack')?.name,
+        'Parametric EQ',
       );
       expect(fxModuleFor('EQ', 'Drum Rack')!.name, 'Four-band EQ');
     });
@@ -478,10 +478,10 @@ void main() {
       () {
         for (final family in kFxFamilySlugs.keys) {
           if (family == 'Vocal Tuner Rack') continue;
-          expect(fxModulesOwning('Mode', family), isEmpty, reason: family);
+          expect(fxModuleOwning('Mode', family), isNull, reason: family);
           expect(
-            fxModulesOwning('Voice 1 Vol', family),
-            isEmpty,
+            fxModuleOwning('Voice 1 Vol', family),
+            isNull,
             reason: family,
           );
           expect(fxModuleFor('Smart Tune', family), isNull, reason: family);
@@ -489,33 +489,35 @@ void main() {
       },
     );
 
-    test('gives the Vocal Tuner keys to the module whose screen shows them',
-        () {
-      // #891 s6pitch: Smart Tune's page shows Speed, Tracking, Scale Root,
-      // Scale Type, Audio Type and Reference; the Harmonizer's Mode, Auto
-      // Source, Key, Scale, Stereo and Tightness.
-      const owners = {
-        'Speed': 'Smart tune',
-        'Tracking': 'Smart tune',
-        'Scale Root': 'Smart tune',
-        'Scale Type': 'Smart tune',
-        'Audio Type': 'Smart tune',
-        'Reference': 'Smart tune',
-        'Mode': 'Harmonizer',
-        'Auto Source': 'Harmonizer',
-        'Key': 'Harmonizer',
-        'Scale': 'Harmonizer',
-        'Stereo': 'Harmonizer',
-        'Tightness': 'Harmonizer',
-      };
-      for (final MapEntry(:key, :value) in owners.entries) {
-        expect(
-          fxModulesOwning(key, 'Vocal Tuner Rack').map((m) => m.name),
-          [value],
-          reason: key,
-        );
-      }
-    });
+    test(
+      'gives the Vocal Tuner keys to the module whose screen shows them',
+      () {
+        // #891 s6pitch: Smart Tune's page shows Speed, Tracking, Scale Root,
+        // Scale Type, Audio Type and Reference; the Harmonizer's Mode, Auto
+        // Source, Key, Scale, Stereo and Tightness.
+        const owners = {
+          'Speed': 'Smart tune',
+          'Tracking': 'Smart tune',
+          'Scale Root': 'Smart tune',
+          'Scale Type': 'Smart tune',
+          'Audio Type': 'Smart tune',
+          'Reference': 'Smart tune',
+          'Mode': 'Harmonizer',
+          'Auto Source': 'Harmonizer',
+          'Key': 'Harmonizer',
+          'Scale': 'Harmonizer',
+          'Stereo': 'Harmonizer',
+          'Tightness': 'Harmonizer',
+        };
+        for (final MapEntry(:key, :value) in owners.entries) {
+          expect(
+            fxModuleOwning(key, 'Vocal Tuner Rack')?.name,
+            value,
+            reason: key,
+          );
+        }
+      },
+    );
   });
 
   group('every factory preset', () {
