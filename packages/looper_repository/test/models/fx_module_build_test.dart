@@ -1304,6 +1304,28 @@ void main() {
       );
     });
 
+    test("the Rhythmic Rack's Slicer reads a stored Fd pattern as <<<<", () {
+      // A preset stores one of the Looper X's 20 positions (k / 19); ours
+      // stop at <<<< (16), so 17 to 19 play it and the rest stay put.
+      int position(double stored) {
+        final e = fxModuleEntry(
+          _module('Slicer'),
+          FxPreset(
+            family: 'Rhythmic Rack',
+            name: 'p',
+            id: 'p',
+            type: 0,
+            params: {'Slicer': 1, 'Slic Patt': stored},
+          ),
+        );
+        return e.type.params[0].positionOf(e.params[0]);
+      }
+
+      for (var k = 0; k < 20; k++) {
+        expect(position(k / 19), k < 17 ? k : 16, reason: 'position $k');
+      }
+    });
+
     test("the Rhythmic Rack's Pumper copies rate and depth", () {
       final e = fxModuleEntry(
         _module('Pumper'),
