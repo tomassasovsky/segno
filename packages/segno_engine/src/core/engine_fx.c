@@ -2336,6 +2336,7 @@ typedef struct le_fx_line {
   int32_t tick;   /* frames to the next glide step */
   int32_t ramp;   /* frames of the voicing's coefficient ramp left */
   float ramp_d[4][5]; /* per frame: voice[0], voice[1], voice2[0], voice2[1] */
+  le_mdly_bq ramp_to[4]; /* where it lands */
   int32_t etap, etap_old; /* the early tap, frames, and the one fading out */
   le_mdly_pole hp[2], lp_out[2], lp_loop, dc;
   int32_t timing; /* the last frame's: plain, L/R or GRV */
@@ -2461,6 +2462,7 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
     }
   }
   if (fresh || moved) {
+    if (fresh) line->ramp = 0; /* a new voicing or rate lands at once */
     if (line->sr != rate) {
       line->k = le_fx_smooth_k(rate);
       le_mdly_pole_set(&line->lp_loop, LE_MDLY_LOOP_LP_HZ, rate, 0);
@@ -2482,8 +2484,8 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
       le_mdly_own_voice_set(line, voice, line->cur, rate);
       /* A glide step ramps the coefficients there over the frames to the
        * next one, so the filters never jump. */
-      line->ramp = fresh ? 0 : LE_FX_UPDATE_FRAMES;
       if (!fresh) {
+        line->ramp = LE_FX_UPDATE_FRAMES;
         const float per = 1.0f / (float)LE_FX_UPDATE_FRAMES;
         for (int j = 0; j < 4; ++j) {
           const le_mdly_bq* to = swept[j];
@@ -2493,6 +2495,7 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
           line->ramp_d[j][2] = (to->b2 - f->b2) * per;
           line->ramp_d[j][3] = (to->a1 - f->a1) * per;
           line->ramp_d[j][4] = (to->a2 - f->a2) * per;
+          line->ramp_to[j] = *to;
           *swept[j] = *f;
         }
       }
@@ -2517,6 +2520,13 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
       swept[j]->b2 += line->ramp_d[j][2];
       swept[j]->a1 += line->ramp_d[j][3];
       swept[j]->a2 += line->ramp_d[j][4];
+      if (line->ramp == 1) { /* land on the design itself */
+        swept[j]->b0 = line->ramp_to[j].b0;
+        swept[j]->b1 = line->ramp_to[j].b1;
+        swept[j]->b2 = line->ramp_to[j].b2;
+        swept[j]->a1 = line->ramp_to[j].a1;
+        swept[j]->a2 = line->ramp_to[j].a2;
+      }
     }
     --line->ramp;
   }

@@ -892,6 +892,43 @@ static void test_mode_delay_dub_changes_are_smooth(void) {
   }
 }
 
+/* Leaving the Dub mid-glide for DAMPED lands on DAMPED's own filters: an
+ * impulse afterwards echoes exactly as through a fresh DAMPED, with no ramp
+ * of the Dub's carried over. */
+static void test_mode_delay_voicing_switch_drops_the_ramp(void) {
+  printf("test_mode_delay_voicing_switch_drops_the_ramp\n");
+  const le_fx_tempo t = rh_tempo(120.0);
+  const int n = MD_SR;
+  float* z = (float*)calloc((size_t)n, sizeof(float));
+  float* x = (float*)calloc((size_t)n, sizeof(float));
+  float* y = (float*)malloc(sizeof(float) * (size_t)n);
+  float* ref = (float*)malloc(sizeof(float) * (size_t)n);
+  x[100] = 0.05f;
+  float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.0f, 1.0f, md_choice(13, 14),
+                           0.25f, 0.35f, 0.0f, 0.8f, 0.0f};
+  le_fx_state* fx = md_state(&t);
+  md_run(fx, p, z, y, NULL, 100);
+  p[5] = 1.0f; /* Damp and Res-Freq start to glide */
+  p[8] = 1.0f;
+  md_run(fx, p, z, y, NULL, 40);
+  p[3] = md_choice(3, 14); /* DAMPED */
+  md_run(fx, p, x, y, NULL, n);
+  le_fx_state_free_buffers(fx);
+  free(fx);
+  fx = md_state(&t);
+  md_run(fx, p, x, ref, NULL, n);
+  le_fx_state_free_buffers(fx);
+  free(fx);
+  float worst = 0.0f;
+  for (int i = 0; i < n; ++i) worst = fmaxf(worst, fabsf(y[i] - ref[i]));
+  printf("  largest difference from a fresh DAMPED: %.2e\n", (double)worst);
+  CHECK(worst < 1e-6f);
+  free(z);
+  free(x);
+  free(y);
+  free(ref);
+}
+
 static void run_mode_delay_tests(void) {
   test_mode_delay_is_not_printed();
   test_mode_delay_voicings();
@@ -910,5 +947,6 @@ static void run_mode_delay_tests(void) {
   test_mode_delay_drum_matches_the_capture();
   test_mode_delay_dub_matches_the_capture();
   test_mode_delay_dub_changes_are_smooth();
+  test_mode_delay_voicing_switch_drops_the_ramp();
   test_mode_delay_drains_its_whole_line();
 }
