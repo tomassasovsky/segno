@@ -40,7 +40,7 @@ way on the capture and on the kernel.
 - **DIGI at 100 % Feedback** (s6v 18). From the impulse, the second echo is
   0.996 of the first: the loop loses nothing per repeat, as the kernel has
   it (the tail's per-repeat loss is under 0.1 dB from 40 Hz to 3 kHz and
-  0.5 and 1.6 dB at 3-8 and 8-16 kHz, the kernel's within 0.3 dB of
+  0.5 and 1.6 dB at 3-8 and 8-16 kHz, the kernel's within 0.4 dB of
   those). Under the sweep, though, the Looper X holds 7 to 9 dB lower than
   the kernel did, and at Feedback 0 % a hot echo saturates (s6v 17):
 
