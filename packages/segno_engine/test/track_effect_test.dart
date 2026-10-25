@@ -476,6 +476,8 @@ void main() {
         TrackEffectType.modeDelay: [8 / 19, 0.5, 0.2, 0.0],
         // Ed's Rack's Dual Octaver: down, Octave 1 at 100 %, all wet.
         TrackEffectType.dualOctaver: [0.0, 1.0, 1.0, 0.0],
+        // The Guitar Rack's Amp: every control at 50 %, the 4x12".
+        TrackEffectType.ampCab: [0.5, 0.5, 0.5, 0.5, 7 / 11],
       };
       for (final type in TrackEffectType.values) {
         expect(type.defaultParams, cells(expected[type]!), reason: type.name);
