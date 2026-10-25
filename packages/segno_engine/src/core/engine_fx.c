@@ -6572,7 +6572,7 @@ static void le_vb_lay(le_fx_verb* q, const le_verb_def* def, int rate) {
  * a late gain table sets the late network's gain with it. */
 static void le_vb_glide_dec(le_fx_verb* q, float dec_tgt, float k, int rate) {
   const le_verb_def* def = q->def;
-  const int first = q->dec_design < 0.0f || k >= 1.0f; /* lands at once */
+  const int first = q->dec_design < 0.0f;
   le_fx_step_toward(&q->dec, dec_tgt, k);
   if (q->dec == q->dec_design) return;
   double t[3];
@@ -6851,7 +6851,8 @@ typedef struct le_fx_rverb {
   float tone_tgt;
   float tone[3];     /* first-order low-pass: b0, b1, a1 */
   float tone_z[2][2];
-  float cut_v;      /* Lo/Hi's low cut, designed for (-1: not yet; 0: none) */
+  int cut;          /* Lo/Hi's low cut runs (a Drum room) */
+  double cut_hz;    /* the corner it is designed for (0: not yet) */
   float lc[5];
   float lc_to[5], lc_d[5];
   float lc_z[2][2];
@@ -6899,7 +6900,8 @@ static void le_rv_lay(le_fx_rverb* q, int room, int rate) {
   memset(q->tone_z, 0, sizeof(q->tone_z));
   memset(q->lc_z, 0, sizeof(q->lc_z));
   q->tone_v = -1.0f;
-  q->cut_v = -1.0f;
+  q->cut = 0;
+  q->cut_hz = 0.0;
   q->room = room;
   q->rate = rate;
 }
@@ -6916,19 +6918,19 @@ static void le_rv_tone(le_fx_rverb* q, float v, int drum, int rate) {
   q->tone_to[1] = q->tone_to[0];
   q->tone_to[2] = (float)((t - 1.0) / (1.0 + t));
   q->tone_v = v;
-  if (!drum) {
-    q->cut_v = 0.0f;
-    return;
-  }
+  q->cut = drum;
+  if (!drum) return;
   /* Always in on a Drum room, so it never switches: below 8 Hz (Lo/Hi
    * under about 78 %) it holds there, which reads as the 75 % capture's
-   * -0.9 dB at 12 Hz. */
+   * -0.9 dB at 12 Hz. The captures read Lo/Hi against 50 %, so a corner
+   * held at every lower setting does not show in them. */
   double cut = LE_RV_CUT_HZ * pow(LE_RV_CUT_STEP, 4.0 * ((double)v - 1.0));
   if (cut < 8.0) cut = 8.0;
+  if (cut == q->cut_hz) return;
   double c[5];
   le_eq_design(LE_EQ_LOWCUT, cut, 0.0, LE_EQ_CUT_Q, rate, c);
   for (int i = 0; i < 5; ++i) q->lc_to[i] = (float)c[i];
-  q->cut_v = v > 0.0f ? v : 1e-6f;
+  q->cut_hz = cut;
 }
 
 static void fx_room_verb_update(void* ks, const float* p, int sr, int settle) {
@@ -6977,10 +6979,11 @@ static void fx_room_verb_update(void* ks, const float* p, int sr, int settle) {
   /* The tone: the Drum's Lo/Hi or the modes' Bright, gliding. */
   const float tv = rm->drum ? p[4] : p[3];
   q->tone_tgt = tv < 0.0f ? 0.0f : tv > 1.0f ? 1.0f : tv;
-  if (q->tone_v < 0.0f) q->tone_v = q->tone_tgt;
+  const int design = q->tone_v < 0.0f;
+  if (design) q->tone_v = q->tone_tgt;
   float tone = q->tone_v;
   le_fx_step_toward(&tone, q->tone_tgt, k);
-  if (tone != q->tone_v || q->cut_v < 0.0f) le_rv_tone(q, tone, rm->drum, rate);
+  if (tone != q->tone_v || design) le_rv_tone(q, tone, rm->drum, rate);
   moving |= q->tone_v != q->tone_tgt;
   /* Mix: equal-power, over a quarter turn on the Drum, a half on the
    * modes; Tail/ER equal-power over a quarter turn (the Drum's alone). */
@@ -7032,7 +7035,7 @@ static void fx_room_verb_update(void* ks, const float* p, int sr, int settle) {
     if (instant) q->tone[i] = q->tone_to[i];
     q->tone_d[i] = (q->tone_to[i] - q->tone[i]) * per;
   }
-  for (int i = 0; i < 5; ++i) {
+  for (int i = 0; q->cut && i < 5; ++i) {
     if (instant) q->lc[i] = q->lc_to[i];
     q->lc_d[i] = (q->lc_to[i] - q->lc[i]) * per;
   }
@@ -7082,7 +7085,7 @@ static void fx_room_verb_rkprocess(void* ks, float* r0, float* r1, int cap,
     for (int i = 0; i < 3; ++i) {
       q->tone[i] = last ? q->tone_to[i] : q->tone[i] + q->tone_d[i];
     }
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; q->cut && i < 5; ++i) {
       q->lc[i] = last ? q->lc_to[i] : q->lc[i] + q->lc_d[i];
     }
     v->ap_g = last ? q->apg_to : v->ap_g + q->apg_d;
@@ -7102,7 +7105,7 @@ static void fx_room_verb_rkprocess(void* ks, float* r0, float* r1, int cap,
         le_rv_taps(hist, now, v, q->fir_at[c], q->fir_g[c], q->fir_n[c]);
     float y = erk * e + tk * (w[c] + f);
     y = le_vb_tick(q->tone, q->tone_z[c], y);
-    if (q->cut_v > 0.0f) y = le_biquad_tick(q->lc, q->lc_z[c], y);
+    if (q->cut) y = le_biquad_tick(q->lc, q->lc_z[c], y);
     w[c] = y;
   }
   *l = dry * x0 + wet * w[0];

@@ -122,7 +122,10 @@ class FxModuleBuild {
   /// narrower than the kind's (the Pitch Shift's -12..+12 semitones in 25
   /// steps on the octaver's -24..+24). It is also the rack's own scale: a
   /// preset value is read on it (its [FxParamInfo.defaultValue] when the
-  /// preset lacks the key), so it needs no entry in [scales]. Its control
+  /// preset lacks the key), so it needs no entry in [scales]. Where the
+  /// preset stores more positions than the rack shows (the Drum Rack's 15 ER
+  /// rooms, 12 of them shown), an entry in [scales] reads the stored value
+  /// instead, and the default still reads on this parameter. Its control
   /// works in this parameter's settings and writes the kind's setting for
   /// the same value ([fxEntryParam], [fxEntryShownSetting],
   /// [fxEntryKindSetting]).

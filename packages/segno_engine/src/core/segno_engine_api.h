@@ -795,14 +795,14 @@ typedef enum le_fx_type {
    * Rack's ER rooms BOOTH, CLUB, ROOM, SMALL CHAMBER, Med CHAMBER,
    * LARGE CHAMBER, SMALL STUDIO, LARGE STUDIO, SCORING STAGE, PHILHARMONIC,
    * CONCERT HALL, CHURCH; its last three, which the Looper X's screen
-   * cannot reach, are not measured), p3 bright,
-   * p4 lo/hi, p5 tail/ER, p6 density. The Looper X's Reverb, fit to the
-   * #891 captures: one network at each room's size behind its pre-delay,
-   * the room's early taps, and a low-pass the tone sets. The four modes
-   * read Bright; the ER rooms read Lo/Hi (which also moves a low cut,
-   * 65 Hz at 100 % down to an 8 Hz floor), Tail/ER and Density. Mix is equal-power, over a half turn on
-   * the modes and a quarter on the ER rooms (their dry is 0.707 at 100 %).
-   * Drains its tail on bypass. */
+   * cannot reach, are not measured), p3 bright, p4 lo/hi, p5 tail/ER,
+   * p6 density. The Looper X's Reverb, fit to the #891 captures: one
+   * network at each room's size behind its pre-delay, the room's early
+   * taps, and a low-pass the tone sets. The four modes read Bright; the ER
+   * rooms read Lo/Hi (which also moves a low cut, 65 Hz at 100 % down to
+   * an 8 Hz floor), Tail/ER and Density. Mix is equal-power, over a half
+   * turn on the modes and a quarter on the ER rooms (their dry is 0.707 at
+   * 100 %). Drains its tail on bypass. */
   LE_FX_ROOM_VERB = 31,
 } le_fx_type;
 
