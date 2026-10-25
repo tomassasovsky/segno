@@ -1134,9 +1134,23 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
   o->sm_mix += sc * (p[2] - o->sm_mix);
   o->sm_level += sc * ((1.0f - p[5]) - o->sm_level);
 
+  /* A runtime just reset is empty: it takes the mode, and the Dual
+   * Octaver its shift, at once, keeping its hop schedule. Through the dip
+   * below, a PSOLA-mode octaver would drop its wet voice for 30 ms on every
+   * engage (#1482). */
+  const int requested = p[3] >= 0.5f ? 1 : 0;
+  if (o->fresh) {
+    o->fresh = 0;
+    if (requested != o->cur_mode) {
+      const int ticks = le_oct_ticks_to_work(o);
+      o->cur_mode = requested;
+      le_oct_set_ticks_to_work(o, ticks);
+    }
+    if (dual) o->sm_shift = p[0];
+  }
+
   /* Mode switch (D1): equal-power gain dip, ~15 ms per leg — fade the wet out,
    * reset the DSP runtime at the bottom, then fade back in on the new mode. */
-  const int requested = p[3] >= 0.5f ? 1 : 0;
   const float xstep = 1.0f / (0.015f * (float)cap);
   const int shift_jump = dual && o->sm_shift != p[0];
   if (requested != o->cur_mode || shift_jump) {
@@ -1305,7 +1319,8 @@ void le_fx_entry_reset(le_fx_state* fx, int slot) {
     o->sm_mix = 0.0f; /* starts dry, so the param ramp-in is inaudible */
     o->sm_level = 1.0f;
     o->ep_mix = -1.0f; /* the equal-power gains are computed at first use */
-    o->cur_mode = 0;  /* phase vocoder */
+    o->cur_mode = 0;  /* phase vocoder, until the first sample's settings */
+    o->fresh = 1;
     o->xfade = 1.0f;  /* steady (no gain dip) */
     le_pv_reset_runtime(fx, slot, chan, le_oct_seeded_ticks(fx, slot));
   }
@@ -7301,21 +7316,6 @@ static float le_st_correct(le_octaver_state* o, const le_octaver_state* in,
   return o->tune_c;
 }
 
-/* Puts channel [o] of a slot just reset (on the phase vocoder, its runtime
- * empty) on PSOLA, settled at Smart Tune's settings: its hop schedule kept,
- * and no mode-switch gain dip, which would take the fully wet voice out for
- * 30 ms on every engage. An offline render seeds the same state
- * (le_fx_octaver_seed_settled). */
-static void le_st_land(le_octaver_state* o) {
-  const int ticks = le_oct_ticks_to_work(o);
-  o->cur_mode = 1;
-  le_oct_set_ticks_to_work(o, ticks);
-  o->sm_tone = 1.0f;
-  o->sm_mix = 1.0f;
-  o->sm_level = 1.0f;
-  o->xfade = 1.0f;
-}
-
 /* One correction drives both channels, so a stereo input never splits
  * across two notes. It follows the channel more clearly voiced (the left
  * unless the right is so by 0.1), so a voice on either side is tuned. */
@@ -7325,9 +7325,6 @@ static void fx_smart_tune_process(le_fx_state* fx, int slot, int sr, int cap,
   float q[8] = {0.0f};
   le_st_settings(q);
   le_octaver_state* o = fx->oct[slot];
-  for (int chan = 0; chan < 2; ++chan) {
-    if (o[chan].cur_mode != 1) le_st_land(&o[chan]);
-  }
   const int in = o[1].voiced > o[0].voiced + 0.1f ? 1 : 0;
   q[0] = 0.5f + le_st_correct(&o[0], &o[in], p, cap) / 4800.0f;
   /* The shift is set, not smoothed: the glide is the correction's own. */
