@@ -2129,9 +2129,11 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
  * Its loop alone loses nothing per repeat; above the knee the limit
  * always gives back less than it takes, so a hot loop decays toward the
  * knee, and past the 9 s the capture covers that is unmeasured. The
- * captures are all DIGI, so placing the echo's limit after the voicing
- * and before the L/R and GRV side gains is assumed. A 5 Hz DC blocker sits
- * in the loop. Its tempo is the live song's, which a print would not keep,
+ * echo's limit sits after the voicing and before the L/R and GRV side
+ * gains (s7dly: RESO LO's echo saturates from -6 dBFS in, 3 dB earlier
+ * than DIGI's, and DIGI L/R's left echo, at 0.219, saturates at 0 dBFS as
+ * if at full level; the kernel within 0.5 dB on every ladder step). A
+ * 5 Hz DC blocker sits in the loop. Its tempo is the live song's, which a print would not keep,
  * so a lane holding one is never printed. */
 
 static const double LE_MDLY_QUARTERS[20] = {
