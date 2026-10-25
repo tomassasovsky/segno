@@ -3546,12 +3546,18 @@ static const le_fx_param_desc LE_FX_DOUBLER_PARAMS[] = {
      1.0f, 0},
 };
 static const le_fx_param_desc LE_FX_CHORUS_PARAMS[] = {
-    {"rate", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.45f,
-     LE_FX_PARAM_TAPER_UNVERIFIED},
-    {"depth", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.21f,
-     LE_FX_PARAM_TAPER_UNVERIFIED},
-    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
-     LE_FX_PARAM_TAPER_UNVERIFIED},
+    {"rate", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.45f, 0},
+    {"depth", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.21f, 0},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+};
+/* The Mod's controls, each measured at 0, 25, 50, 75 and 100 % (#1470).
+ * Its modes: CHORUS, PHASER, FLANGER (the Guitar Rack's) and Tremolo (the
+ * Studio Rack's). */
+static const le_fx_param_desc LE_FX_MOD_PARAMS[] = {
+    {"rate", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"depth", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"mod_mode", LE_FX_UNIT_CHOICE, 4, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.0f, 0},
 };
 static const le_fx_param_desc LE_FX_WAH_PARAMS[] = {
     {"pedal", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.619f,
@@ -3742,40 +3748,61 @@ static void fx_doubler_kprocess(void* ks, float* l, float* r) {
 /* ---- Chorus (LE_FX_CHORUS) ----
  *
  * One modulated voice per channel, mixed with the dry signal. Measured on
- * the Guitar Rack's chorus, the Phase 0 captures (#891, s3/4 and s3/5):
- * - the voice's delay is a triangle about 1.875 ms, swinging +-0.0704 ms at
- *   12 % depth, taken here as proportional, 0.587 ms at 100 %;
- * - the rate was 1.313 Hz at 32.6 % and 2.638 Hz at 79.7 %, taken here as
- *   the line through them, 0.396 Hz at 0 % to 3.209 Hz at 100 %;
- * - the voice is low-passed by about two 2nd-order sections at 6.7 kHz,
- *   Q 0.65 (fitted within 0.1 dB to 16 kHz);
- * - at 33.2 % mix the dry gain was 0.904 and the voice's 0.276: dry
- *   1 - 0.29 mix, voice 0.83 mix.
- * With these, a model of this kernel fitted only for the LFO's phase nulls
- * both captures to -40 dB over 7 s of plucks and chords. Ed's Rack's Chorus
- * is taken to be the same module (#891). Both channels share the LFO. */
-#define LE_CHO_RING 1024u /* holds 5.3 ms at 192 kHz */
-#define LE_CHO_CENTRE_MS 1.875
-#define LE_CHO_DEPTH_MS 0.587
-#define LE_CHO_RATE_MIN_HZ 0.3959
-#define LE_CHO_RATE_SPAN_HZ 2.8132
+ * the Guitar Rack's chorus (#891: s3/4 and s3/5 on plucks and chords, and
+ * s6trem and s6mod with each control at 0, 25, 50, 75 and 100 %,
+ * docs/plan/2026-10-25-looperx-mod-measured.md):
+ * - the voice's delay is a triangle from LE_CHO_BASE_MS (1.767 ms measured
+ *   at 0 % depth, held to whole samples at the common rates) up, its swing
+ *   LE_CHO_SPAN_MS times the square of Depth (2.45 ms at 50 %, 9.7 ms at
+ *   100 %, and the s3 capture's 0.141 ms at 12 %);
+ * - the rate is a line, 0.40 Hz at 0 % to 3.20 Hz at 100 %;
+ * - the voice is low-passed by two 2nd-order sections at 6.7 kHz, Q 0.65,
+ *   fitted to s3 (-2.0, -11.2 and -23 dB at 4, 8 and 12 kHz; these give
+ *   -1.9, -11.2 and -23.1 at 96 kHz). s6 read -1.8, -10.5 and -21 dB
+ *   through the rig's 48 kHz resampling, which this does not follow above
+ *   8 kHz;
+ * - the dry gain is 1 - 0.29 mix and the voice's 0.83 mix (1.0 and 0,
+ *   0.855 and 0.43, 0.71 and 0.82 at 0, 50 and 100 %).
+ * Ed's Rack's Chorus is taken to be the same module (#891), and the Mod
+ * kind's chorus mode is this voice. Both channels share the LFO. */
+#define LE_CHO_RING 4096u /* holds the 11.5 ms of 100 % at 192 kHz */
+#define LE_CHO_BASE_MS (85.0 / 48.0) /* 1.771 ms: whole samples at 48, 96 and 192 kHz */
+#define LE_CHO_SPAN_MS 9.78
+#define LE_CHO_RATE_MIN_HZ 0.4005
+#define LE_CHO_RATE_SPAN_HZ 2.799
 #define LE_CHO_LP_HZ 6700.0
 #define LE_CHO_LP_Q 0.65
 #define LE_CHO_DRY_DROP 0.29f
 #define LE_CHO_VOICE 0.83f
 
+/* The voice's low-pass at [rate]: RBJ, the design le_eq_design uses for a
+ * cut, a0-normalized b0 b1 b2 a1 a2. */
+static void le_cho_lowpass(float* lp, double rate) {
+  const double w0 = 2.0 * 3.14159265358979323846 *
+                    (LE_CHO_LP_HZ < 0.45 * rate ? LE_CHO_LP_HZ : 0.45 * rate) /
+                    rate;
+  const double cw = cos(w0);
+  const double alpha = sin(w0) / (2.0 * LE_CHO_LP_Q);
+  const double a0 = 1.0 + alpha;
+  lp[0] = (float)((1.0 - cw) / 2.0 / a0);
+  lp[1] = (float)((1.0 - cw) / a0);
+  lp[2] = lp[0];
+  lp[3] = (float)(-2.0 * cw / a0);
+  lp[4] = (float)((1.0 - alpha) / a0);
+}
+
 typedef struct le_fx_chorus {
   le_fx_dyn_head h;
   float last[LE_CHO_PARAMS_N];
   le_fx_glide rate;  /* LFO rate, Hz */
-  le_fx_glide swing; /* the delay's swing, samples */
+  le_fx_glide swing; /* the delay's swing above the base, samples */
   le_fx_glide dry;
   le_fx_glide wet;
-  float centre; /* samples */
-  float max_swing; /* what the ring holds past the centre */
+  float base; /* the shortest delay, samples */
+  float max_swing; /* what the ring holds past the base */
   float inv_sr;
   double ph;
-  float lp[5];       /* the voice low-pass, a0-normalized b0 b1 b2 a1 a2 */
+  float lp[5];       /* the voice low-pass */
   float z[2][2][2];  /* [section][channel][state] */
   uint32_t w;
   float ring[2][LE_CHO_RING];
@@ -3787,21 +3814,10 @@ static void fx_chorus_update(void* ks, const float* p, int sr, int settle) {
   if (!f) return;
   const double rate = (double)(sr > 0 ? sr : 48000);
   if (f & LE_FX_DYN_NEW_RATE) {
-    c->centre = (float)(LE_CHO_CENTRE_MS * 1e-3 * rate);
-    c->max_swing = (float)(LE_CHO_RING - 2u) - c->centre;
+    c->base = (float)(LE_CHO_BASE_MS * 1e-3 * rate);
+    c->max_swing = (float)(LE_CHO_RING - 2u) - c->base;
     c->inv_sr = (float)(1.0 / rate);
-    /* RBJ low-pass, the same design le_eq_design uses for a cut. */
-    const double w0 = 2.0 * 3.14159265358979323846 *
-                      (LE_CHO_LP_HZ < 0.45 * rate ? LE_CHO_LP_HZ : 0.45 * rate) /
-                      rate;
-    const double cw = cos(w0);
-    const double alpha = sin(w0) / (2.0 * LE_CHO_LP_Q);
-    const double a0 = 1.0 + alpha;
-    c->lp[0] = (float)((1.0 - cw) / 2.0 / a0);
-    c->lp[1] = (float)((1.0 - cw) / a0);
-    c->lp[2] = c->lp[0];
-    c->lp[3] = (float)(-2.0 * cw / a0);
-    c->lp[4] = (float)((1.0 - alpha) / a0);
+    le_cho_lowpass(c->lp, rate);
   }
   const float k = settle ? 1.0f : c->h.k;
   const float v[3] = {
@@ -3811,7 +3827,7 @@ static void fx_chorus_update(void* ks, const float* p, int sr, int settle) {
   };
   int moving = le_fx_glide_step(
       &c->rate, (float)(LE_CHO_RATE_MIN_HZ + LE_CHO_RATE_SPAN_HZ * v[0]), k);
-  float swing = (float)(LE_CHO_DEPTH_MS * 1e-3 * rate * v[1]);
+  float swing = (float)(LE_CHO_SPAN_MS * 1e-3 * rate) * v[1] * v[1];
   if (swing > c->max_swing) swing = c->max_swing;
   moving |= le_fx_glide_step(&c->swing, swing, k);
   moving |= le_fx_glide_step(&c->dry, 1.0f - LE_CHO_DRY_DROP * v[2], k);
@@ -3827,7 +3843,7 @@ static void fx_chorus_kprocess(void* ks, float* l, float* r) {
   const float dry = le_fx_glide_next(&c->dry);
   const float wet = le_fx_glide_next(&c->wet);
   c->ph = le_lfo_step(c->ph, inc);
-  const float delay = c->centre + swing * le_tri((float)c->ph);
+  const float delay = c->base + swing * 0.5f * (1.0f + le_tri((float)c->ph));
   const uint32_t at = c->w & (LE_CHO_RING - 1u);
   float y[2];
   for (int ch = 0; ch < 2; ++ch) {
@@ -3837,6 +3853,383 @@ static void fx_chorus_kprocess(void* ks, float* l, float* r) {
     y[ch] = dry * x[ch] + wet * v;
   }
   c->w++;
+  *l = y[0];
+  *r = y[1];
+}
+
+/* ---- Modulation (LE_FX_MOD, #887 part 13) ----
+ *
+ * The Looper X's Mod pedal: the Guitar Rack's CHORUS, PHASER and FLANGER
+ * and the Studio Rack's Chorus and Tremolo, one mode at a time. Measured on
+ * the #891 rig (s6trem and s6mod, docs/plan/2026-10-25-looperx-mod-measured.md)
+ * with each control at 0, 25, 50, 75 and 100 % (and the flanger's depth at
+ * 10 and 90 %). Both sides run the same LFO, as the Looper X does (its
+ * outputs are identical for a mono input).
+ *
+ * - CHORUS: the chorus kind's voice (fx_chorus_*, the same measurements).
+ *   The Studio Rack's chorus is this one at Mix 50 %.
+ * - PHASER: four first-order allpass stages whose corners sit LE_PHA_SPREAD
+ *   apart around 654 Hz, mixed with the dry signal (Mix is a measured
+ *   table). The LFO, 0.1 x 100^Rate Hz, moves the corners by up to
+ *   5.87 x Depth octaves along a sine raised to LE_PHA_SHAPE, which tracks
+ *   the swept notches within 0.02 octave. The Looper X's wet signal is
+ *   up to 1.2 dB louder between the notches than an allpass; that is not
+ *   modelled.
+ * - FLANGER: one voice on a triangle delay, its shortest and longest a
+ *   measured table against Depth, its rate 0.0166 x 604^Rate Hz; dry
+ *   1 - Mix, the voice 0.88 Mix. Each repeat feeds back through a
+ *   first-order high-pass and low-pass, so the repeats lose their bass and
+ *   treble while the first one keeps its full range.
+ * - Tremolo: a square LFO, 0.255 x 51^Rate Hz, on for LE_TRM_DUTY of each
+ *   cycle, through a gain that rises with a 13 ms and falls with a 30.5 ms
+ *   time constant. Depth sets the gain of the off part (a measured table).
+ *   Mix does nothing in this mode.
+ *
+ * A mode change crossfades over LE_MOD_FADE frames, with both modes
+ * running for that time. */
+#define LE_MOD_PARAMS_N 4
+enum { LE_MOD_CHORUS, LE_MOD_PHASER, LE_MOD_FLANGER, LE_MOD_TREMOLO,
+       LE_MOD_MODES };
+#define LE_MOD_RING LE_CHO_RING
+#define LE_FLA_RING 2048u /* the flanger's 6.84 ms at 192 kHz */
+_Static_assert(LE_FLA_RING - 2u >= 1313u,
+               "the flanger's ring holds 6.836 ms at 192 kHz");
+_Static_assert(LE_CHO_RING - 2u >= 2218u,
+               "the chorus's ring holds 1.771 + 9.78 ms at 192 kHz");
+#define LE_MOD_FADE 1024
+#define LE_PHA_SPREAD 1.4263
+#define LE_PHA_SHAPE 0.87
+#define LE_PHA_CORNER_HZ 654.0
+#define LE_PHA_OCTAVES 5.87 /* the sweep at Depth 100 %, octaves */
+#define LE_PHA_MEAN 0.467 /* fitted: where on the shaped sine the corner sits */
+#define LE_PHA_COEF_FRAMES 16 /* the phaser's corners are recomputed this often */
+#define LE_FLA_FB 1.03f
+#define LE_FLA_HP_HZ 1560.0
+#define LE_FLA_LP_HZ 6150.0
+#define LE_FLA_VOICE 0.88f
+#define LE_TRM_DUTY 0.58
+#define LE_TRM_ATTACK_S 0.013
+#define LE_TRM_RELEASE_S 0.0305
+
+/* A first-order allpass (bilinear): its coefficient for corner [hz] at
+ * [rate] (the corner held under 0.45 of the rate), and one tick,
+ * y = a u + z, z = u - a y. */
+static float le_ap1_coef(double hz, double rate) {
+  if (hz > 0.45 * rate) hz = 0.45 * rate;
+  const double t = tan(3.14159265358979323846 * hz / rate);
+  return (float)((t - 1.0) / (t + 1.0));
+}
+
+static inline float le_ap1_tick(float a, float* z, float u) {
+  const float y = a * u + *z;
+  *z = fx_sanitize(u - a * y);
+  return y;
+}
+
+/* A point of a measured setting table: the setting and up to two values. */
+typedef struct le_mod_point {
+  float at, a, b;
+} le_mod_point;
+
+/* Linear interpolation of a table at setting [v] (0..1). */
+static void le_mod_table(const le_mod_point* t, int n, float v, float* a,
+                         float* b) {
+  int i = 0;
+  while (i < n - 2 && v > t[i + 1].at) ++i;
+  float f = (v - t[i].at) / (t[i + 1].at - t[i].at);
+  f = f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f;
+  *a = t[i].a + f * (t[i + 1].a - t[i].a);
+  if (b != NULL) *b = t[i].b + f * (t[i + 1].b - t[i].b);
+}
+
+/* The phaser's dry and wet gains against Mix. */
+static const le_mod_point LE_PHA_MIX[] = {{0.0f, 1.0f, 0.0f},
+                                          {0.25f, 0.963f, 0.470f},
+                                          {0.5f, 0.789f, 0.798f},
+                                          {0.75f, 0.481f, 0.993f},
+                                          {1.0f, 0.043f, 1.048f}};
+/* The flanger's shortest and longest delay, ms, against Depth. */
+static const le_mod_point LE_FLA_DEPTH[] = {
+    {0.0f, 0.805f, 0.805f}, {0.1f, 0.662f, 2.062f}, {0.25f, 0.494f, 3.515f},
+    {0.5f, 0.279f, 5.361f}, {0.75f, 0.151f, 6.467f}, {0.9f, 0.116f, 6.775f},
+    {1.0f, 0.109f, 6.836f}};
+/* The tremolo's gain in its off part against Depth. */
+static const le_mod_point LE_TRM_DEPTH[] = {{0.0f, 1.0f, 0},
+                                            {0.25f, 0.880f, 0},
+                                            {0.5f, 0.564f, 0},
+                                            {0.75f, 0.194f, 0},
+                                            {1.0f, 0.0f, 0}};
+#define LE_MOD_POINTS(t) ((int)(sizeof(t) / sizeof(t[0])))
+
+/* The LFO rate, Hz, mode [m] runs at Rate [v]. */
+static double le_mod_rate_hz(int m, double v) {
+  switch (m) {
+    case LE_MOD_PHASER: return 0.1 * pow(100.0, v);
+    case LE_MOD_FLANGER: return 0.01657 * pow(604.0, v);
+    case LE_MOD_TREMOLO: return 0.2551 * pow(50.97, v);
+    default: return LE_CHO_RATE_MIN_HZ + LE_CHO_RATE_SPAN_HZ * v;
+  }
+}
+
+static int le_mod_mode(float v) {
+  const int m = (int)lrintf((v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v) *
+                            (float)(LE_MOD_MODES - 1));
+  return m;
+}
+
+/* One mode's settings, glided; the mode fading out keeps its own. */
+typedef struct le_mod_voice {
+  le_fx_glide inc;  /* LFO phase step a sample */
+  le_fx_glide dry;
+  le_fx_glide wet;
+  le_fx_glide a;    /* chorus: swing; phaser: octaves; flanger: shortest;
+                     * tremolo: the off gain */
+  le_fx_glide b;    /* flanger: longest */
+  double ph;
+} le_mod_voice;
+
+typedef struct le_fx_mod {
+  le_fx_dyn_head h;
+  float last[LE_MOD_PARAMS_N];
+  int32_t mode;
+  int32_t from; /* the mode fading out, or -1 */
+  int32_t fade; /* frames of the crossfade left */
+  float rate;   /* the sample rate */
+  float base;   /* the chorus's shortest delay, samples */
+  float max_delay;
+  le_mod_voice v[LE_MOD_MODES];
+  float cho_lp[5];
+  float cho_z[2][2][2];
+  /* phaser: the stage coefficients now and their per-sample steps */
+  float pha_a[4], pha_da[4];
+  float pha_z[2][4];
+  int32_t pha_left; /* samples until the next corner */
+  /* flanger: the repeats' high-pass and low-pass, first-order (bilinear),
+   * each the half-sum or half-difference of an allpass and its input */
+  float fla_hp, fla_lp; /* the allpasses' coefficients */
+  float fla_hz[2], fla_lz[2];
+  /* tremolo */
+  float trm_g;
+  float trm_ka, trm_kr;
+  uint32_t w;
+  float ring[2][LE_MOD_RING]; /* the chorus's input */
+  float fring[2][LE_FLA_RING]; /* the flanger's input and repeats */
+} le_fx_mod;
+
+/* The targets mode [m] glides to at settings [p] (each 0..1). */
+static int le_mod_targets(le_fx_mod* q, int m, const float* p, float k) {
+  le_mod_voice* o = &q->v[m];
+  const float rate = p[0], depth = p[1], mix = p[2];
+  int moving = le_fx_glide_step(
+      &o->inc, (float)(le_mod_rate_hz(m, rate) / (double)q->rate), k);
+  float dry = 1.0f, wet = 0.0f, a = 0.0f, b = 0.0f;
+  switch (m) {
+    case LE_MOD_CHORUS:
+      dry = 1.0f - LE_CHO_DRY_DROP * mix;
+      wet = LE_CHO_VOICE * mix;
+      a = (float)(LE_CHO_SPAN_MS * 1e-3 * q->rate) * depth * depth;
+      if (a > q->max_delay - q->base) a = q->max_delay - q->base;
+      break;
+    case LE_MOD_PHASER:
+      le_mod_table(LE_PHA_MIX, LE_MOD_POINTS(LE_PHA_MIX), mix, &dry, &wet);
+      a = (float)LE_PHA_OCTAVES * depth;
+      break;
+    case LE_MOD_FLANGER:
+      dry = 1.0f - mix;
+      wet = LE_FLA_VOICE * mix;
+      le_mod_table(LE_FLA_DEPTH, LE_MOD_POINTS(LE_FLA_DEPTH), depth, &a, &b);
+      a *= q->rate * 1e-3f;
+      b *= q->rate * 1e-3f;
+      if (a < 1.0f) a = 1.0f; /* the voice reads only past samples */
+      if (b > (float)(LE_FLA_RING - 2u)) b = (float)(LE_FLA_RING - 2u);
+      break;
+    default: /* LE_MOD_TREMOLO */
+      le_mod_table(LE_TRM_DEPTH, LE_MOD_POINTS(LE_TRM_DEPTH), depth, &a, NULL);
+      break;
+  }
+  moving |= le_fx_glide_step(&o->dry, dry, k);
+  moving |= le_fx_glide_step(&o->wet, wet, k);
+  moving |= le_fx_glide_step(&o->a, a, k);
+  moving |= le_fx_glide_step(&o->b, b, k);
+  return moving;
+}
+
+/* The phaser's four corners at LFO phase [ph] with a sweep of [span]
+ * octaves. */
+static void le_mod_phaser_corners(const le_fx_mod* q, double ph, float span,
+                                  float* a) {
+  const double u = 0.5 * (1.0 + sin(2.0 * 3.14159265358979323846 * ph));
+  const double oct = (double)span * (pow(u, LE_PHA_SHAPE) - LE_PHA_MEAN);
+  const double c = LE_PHA_CORNER_HZ * exp2(oct);
+  for (int s = 0; s < 4; ++s) {
+    a[s] = le_ap1_coef(c * pow(LE_PHA_SPREAD, (double)s - 1.5), q->rate);
+  }
+}
+
+/* The phaser's corners land where its settings are now, with no ramp: a
+ * fresh block, or the mode a change fades in. */
+static void le_mod_phaser_land(le_fx_mod* q) {
+  const le_mod_voice* o = &q->v[LE_MOD_PHASER];
+  le_mod_phaser_corners(q, o->ph, o->a.v, q->pha_a);
+  for (int s = 0; s < 4; ++s) q->pha_da[s] = 0.0f;
+  q->pha_left = 0;
+}
+
+static void fx_mod_update(void* ks, const float* p, int sr, int settle) {
+  le_fx_mod* q = (le_fx_mod*)ks;
+  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_MOD_PARAMS_N, sr, settle);
+  if (!f) return;
+  if (f & LE_FX_DYN_NEW_RATE) {
+    const double rate = (double)(sr > 0 ? sr : 48000);
+    q->rate = (float)rate;
+    q->base = (float)(LE_CHO_BASE_MS * 1e-3 * rate);
+    q->max_delay = (float)(LE_MOD_RING - 2u);
+    le_cho_lowpass(q->cho_lp, rate);
+    q->fla_hp = le_ap1_coef(LE_FLA_HP_HZ, rate);
+    q->fla_lp = le_ap1_coef(LE_FLA_LP_HZ, rate);
+    q->trm_ka = (float)(1.0 - exp(-1.0 / (LE_TRM_ATTACK_S * rate)));
+    q->trm_kr = (float)(1.0 - exp(-1.0 / (LE_TRM_RELEASE_S * rate)));
+  }
+  const float v[3] = {
+      p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0],
+      p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1],
+      p[2] < 0.0f ? 0.0f : p[2] > 1.0f ? 1.0f : p[2],
+  };
+  const int m = le_mod_mode(p[3]);
+  if (settle) {
+    q->mode = m;
+    q->from = -1;
+    q->fade = 0;
+    q->trm_g = 1.0f;
+  } else if (m != q->mode && q->fade == 0) {
+    /* A change picked during a fade waits for it (h.moving keeps the
+     * update running until then). */
+    q->from = q->mode;
+    q->mode = m;
+    q->fade = LE_MOD_FADE;
+    le_mod_targets(q, m, v, 1.0f); /* the incoming mode starts set */
+    if (m == LE_MOD_PHASER) le_mod_phaser_land(q);
+    if (m == LE_MOD_TREMOLO) q->trm_g = 1.0f;
+  }
+  const float k = settle ? 1.0f : q->h.k;
+  int moving = le_mod_targets(q, q->mode, v, k);
+  if (settle) le_mod_phaser_land(q);
+  q->h.moving = moving || q->fade > 0 || m != q->mode;
+}
+
+/* The chorus mode on one sample of both sides. */
+static void le_mod_chorus(le_fx_mod* q, const float* x, float* y) {
+  le_mod_voice* o = &q->v[LE_MOD_CHORUS];
+  const double inc = (double)le_fx_glide_next(&o->inc);
+  const float swing = le_fx_glide_next(&o->a);
+  const float dry = le_fx_glide_next(&o->dry);
+  const float wet = le_fx_glide_next(&o->wet);
+  le_fx_glide_next(&o->b);
+  o->ph = le_lfo_step(o->ph, inc);
+  const float delay = q->base + swing * 0.5f * (1.0f + le_tri((float)o->ph));
+  for (int ch = 0; ch < 2; ++ch) {
+    float v = le_ring_read(q->ring[ch], LE_MOD_RING - 1u, q->w, delay);
+    for (int s = 0; s < 2; ++s) v = le_biquad_tick(q->cho_lp, q->cho_z[s][ch], v);
+    y[ch] = dry * x[ch] + wet * v;
+  }
+}
+
+static void le_mod_phaser(le_fx_mod* q, const float* x, float* y) {
+  le_mod_voice* o = &q->v[LE_MOD_PHASER];
+  const double inc = (double)le_fx_glide_next(&o->inc);
+  const float span = le_fx_glide_next(&o->a);
+  const float dry = le_fx_glide_next(&o->dry);
+  const float wet = le_fx_glide_next(&o->wet);
+  le_fx_glide_next(&o->b);
+  o->ph = le_lfo_step(o->ph, inc);
+  if (q->pha_left <= 0) {
+    /* Where the corners land LE_PHA_COEF_FRAMES samples on; the samples
+     * between step there in a line. */
+    float to[4];
+    le_mod_phaser_corners(q, o->ph + inc * (double)LE_PHA_COEF_FRAMES, span,
+                          to);
+    for (int s = 0; s < 4; ++s) {
+      q->pha_da[s] = (to[s] - q->pha_a[s]) * (1.0f / (float)LE_PHA_COEF_FRAMES);
+    }
+    q->pha_left = LE_PHA_COEF_FRAMES;
+  }
+  q->pha_left--;
+  for (int s = 0; s < 4; ++s) q->pha_a[s] += q->pha_da[s];
+  for (int ch = 0; ch < 2; ++ch) {
+    float u = x[ch];
+    for (int s = 0; s < 4; ++s) u = le_ap1_tick(q->pha_a[s], &q->pha_z[ch][s], u);
+    y[ch] = dry * x[ch] + wet * u;
+  }
+}
+
+static void le_mod_flanger(le_fx_mod* q, const float* x, float* y) {
+  le_mod_voice* o = &q->v[LE_MOD_FLANGER];
+  const double inc = (double)le_fx_glide_next(&o->inc);
+  const float lo = le_fx_glide_next(&o->a);
+  const float hi = le_fx_glide_next(&o->b);
+  const float dry = le_fx_glide_next(&o->dry);
+  const float wet = le_fx_glide_next(&o->wet);
+  o->ph = le_lfo_step(o->ph, inc);
+  const float delay = lo + (hi - lo) * 0.5f * (1.0f + le_tri((float)o->ph));
+  const uint32_t at = q->w & (LE_FLA_RING - 1u);
+  for (int ch = 0; ch < 2; ++ch) {
+    /* The delay is at least a sample (le_mod_targets), so this reads only
+     * what earlier samples wrote. */
+    const float v = le_ring_read(q->fring[ch], LE_FLA_RING - 1u, q->w, delay);
+    /* The repeat: high-passed, then low-passed. */
+    const float hp = 0.5f * (v - le_ap1_tick(q->fla_hp, &q->fla_hz[ch], v));
+    const float lp = 0.5f * (hp + le_ap1_tick(q->fla_lp, &q->fla_lz[ch], hp));
+    q->fring[ch][at] = x[ch] + LE_FLA_FB * lp;
+    y[ch] = dry * x[ch] + wet * v;
+  }
+}
+
+static void le_mod_tremolo(le_fx_mod* q, const float* x, float* y) {
+  le_mod_voice* o = &q->v[LE_MOD_TREMOLO];
+  const double inc = (double)le_fx_glide_next(&o->inc);
+  const float off = le_fx_glide_next(&o->a);
+  le_fx_glide_next(&o->b);
+  le_fx_glide_next(&o->dry);
+  le_fx_glide_next(&o->wet);
+  o->ph = le_lfo_step(o->ph, inc);
+  const float tgt = o->ph < LE_TRM_DUTY ? 1.0f : off;
+  q->trm_g += (tgt > q->trm_g ? q->trm_ka : q->trm_kr) * (tgt - q->trm_g);
+  y[0] = q->trm_g * x[0];
+  y[1] = q->trm_g * x[1];
+}
+
+static void le_mod_run(le_fx_mod* q, int m, const float* x, float* y) {
+  switch (m) {
+    case LE_MOD_PHASER: le_mod_phaser(q, x, y); return;
+    case LE_MOD_FLANGER: le_mod_flanger(q, x, y); return;
+    case LE_MOD_TREMOLO: le_mod_tremolo(q, x, y); return;
+    default: le_mod_chorus(q, x, y); return;
+  }
+}
+
+static void fx_mod_kprocess(void* ks, float* l, float* r) {
+  le_fx_mod* q = (le_fx_mod*)ks;
+  const float x[2] = {fx_sanitize(*l), fx_sanitize(*r)};
+  const uint32_t at = q->w & (LE_MOD_RING - 1u);
+  q->ring[0][at] = x[0];
+  q->ring[1][at] = x[1];
+  float y[2];
+  le_mod_run(q, q->mode, x, y);
+  if (q->fade > 0) {
+    float z[2];
+    le_mod_run(q, q->from, x, z);
+    const float g = (float)q->fade * (1.0f / (float)LE_MOD_FADE);
+    y[0] += g * (z[0] - y[0]);
+    y[1] += g * (z[1] - y[1]);
+    if (--q->fade == 0) q->from = -1;
+  }
+  if (q->mode != LE_MOD_FLANGER && q->from != LE_MOD_FLANGER) {
+    /* Kept current, so the flanger never starts on old audio. */
+    const uint32_t fat = q->w & (LE_FLA_RING - 1u);
+    q->fring[0][fat] = x[0];
+    q->fring[1][fat] = x[1];
+  }
+  q->w++;
   *l = y[0];
   *r = y[1];
 }
@@ -5999,6 +6392,7 @@ LE_FX_ROWS_FIT(LE_FX_SLICER_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_MODE_DELAY_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_DUAL_OCTAVER_PARAMS);
 LE_FX_ROWS_FIT(LE_FX_AMP_CAB_PARAMS);
+LE_FX_ROWS_FIT(LE_FX_MOD_PARAMS);
 
 /* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
  * published for this chain entry (NULL / not-ready => dry passthrough; the slot
@@ -6150,6 +6544,8 @@ static const le_fx_vtable LE_FX[] = {
     [LE_FX_MODE_DELAY] = {fx_mode_delay_process, NULL, fx_mode_delay_prepare,
                           LE_FX_MODE_DELAY_PARAMS,
                           LE_FX_F_DRAINS | LE_FX_F_FREE_RUNNING},
+    [LE_FX_MOD] = {NULL, NULL, NULL, LE_FX_MOD_PARAMS, LE_FX_F_FREE_RUNNING,
+                   sizeof(le_fx_mod), fx_mod_update, fx_mod_kprocess},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -6166,6 +6562,7 @@ _Static_assert(LE_COMP_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_COMPRESSOR_PARAMS) &&
                    LE_HPG_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_HP_GATE_PARAMS) &&
                    LE_DBL_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_DOUBLER_PARAMS) &&
                    LE_CHO_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_CHORUS_PARAMS) &&
+                   LE_MOD_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_MOD_PARAMS) &&
                    LE_WAH_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_WAH_PARAMS) &&
                    LE_OD_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_OVERDRIVE_PARAMS) &&
                    LE_DIST_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_DISTORTION_PARAMS) &&
@@ -6207,6 +6604,7 @@ const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
     [LE_FX_MODE_DELAY] = LE_FX_ROW_COUNT(LE_FX_MODE_DELAY_PARAMS),
     [LE_FX_DUAL_OCTAVER] = LE_FX_ROW_COUNT(LE_FX_DUAL_OCTAVER_PARAMS),
     [LE_FX_AMP_CAB] = LE_FX_ROW_COUNT(LE_FX_AMP_CAB_PARAMS),
+    [LE_FX_MOD] = LE_FX_ROW_COUNT(LE_FX_MOD_PARAMS),
 };
 
 /* ---- per-kind state (le_fx_kinds, engine_private.h) ---- */
@@ -6401,6 +6799,9 @@ int le_fx_entry_free_running(int32_t type, const float* p, int sr) {
       return p[1] > 0.0f;
     case LE_FX_MODE_DELAY: /* heard (its time is the live tempo's) */
       return p[2] > 0.0f;
+    case LE_FX_MOD: /* the tremolo dipping, or the others swept and heard */
+      return le_mod_mode(p[3]) == LE_MOD_TREMOLO ? p[1] > 0.0f
+                                                  : p[1] > 0.0f && p[2] > 0.0f;
     case LE_FX_SLICER: /* slicing, and heard */
       return p[2] > 0.0f && le_slice_pattern(p[0]) != NULL;
     default:

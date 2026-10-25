@@ -36,7 +36,6 @@ void main() {
               m.name,
         ],
         [
-          'Modulation',
           'Harmonizer',
           'Smart tune',
         ],
@@ -120,6 +119,7 @@ void main() {
           'Four-band EQ',
           'HP / Gate',
           'Low-pass Filter',
+          'Modulation',
           'Octaver',
           'Overdrive',
           'Parametric EQ',
@@ -722,6 +722,7 @@ void main() {
               'Degrade',
               'Low-pass filter',
               'Spring reverb',
+              'Modulation',
             ].contains(module.name)) {
               continue;
             }
@@ -753,14 +754,16 @@ void main() {
       // Guitar. Drives (part 7): the overdrive in 36 Ed's and 14 Guitar; the
       // distortion in 15 Lo-Fi and 19 Studio. Lo-fi (part 7): the vinyl, the
       // degrade and the low-pass filter in 15 Lo-Fi, the filter in 10
-      // Rhythmic. Reverbs (part 8): the spring in 14 Guitar.
+      // Rhythmic. Reverbs (part 8): the spring in 14 Guitar. The Mod (part
+      // 13) in 14 Guitar and 19 Studio.
       expect(
         built,
         (36 + 24 + 11 + 19 + 34 + 50) +
             (11 + 19 + 17 + 25 + 72 + 14) +
             (36 + 14 + 15 + 19) +
             (45 + 10) +
-            14,
+            14 +
+            (14 + 19),
       );
     });
   });
@@ -790,6 +793,72 @@ void main() {
         expect(fxEntryBuild(e)!.exposed, [0], reason: family);
         expect(e.params.take(2), [0.4, 0.5], reason: family);
       }
+    });
+
+    test("the Guitar Rack's Mod copies its four controls, its modes the "
+        "kind's first three", () {
+      // Rhythm Wet+Dirty as shipped: PHASER (0.5, the middle of three),
+      // Rate 36.5 %, Depth 93.4 %, Mix 69.8 %.
+      final e = fxModuleEntry(
+        _module('Modulation'),
+        preset('Guitar Rack', const {
+          'Mod': 1,
+          'Mod Rate': 0.365,
+          'Mod Depth': 0.934,
+          'Mod Mix': 0.698,
+          'Mod Mode': 0.5,
+        }),
+      );
+      expect(e.type, TrackEffectType.mod);
+      expect(e.params.take(3), [
+        closeTo(0.365, 1e-9),
+        closeTo(0.934, 1e-9),
+        closeTo(0.698, 1e-9),
+      ]);
+      // The PHASER: the kind's second of four.
+      expect(e.params[3], closeTo(1 / 3, 1e-9));
+      final build = fxEntryBuild(e)!;
+      expect(build.readiness, FxModuleReadiness.full);
+      expect(build.exposed, [0, 1, 2, 3]);
+      expect(fxEntryControls(e).keys, ['rate', 'depth', 'mix', 'mod_mode']);
+      final mode = fxEntryParam(e, 3);
+      expect(mode.steps, 3);
+      expect(fxEntryShownSetting(e, 3), closeTo(0.5, 1e-9));
+      // Its FLANGER is the kind's third.
+      expect(fxEntryKindSetting(e, 3, 1), closeTo(2 / 3, 1e-9));
+    });
+
+    test("the Studio Rack's Mod shows rate, depth and Chorus or Tremolo, "
+        'its chorus at half mix', () {
+      // Studio Tremolo as shipped: Tremolo, Rate 82.7 %, Depth 100 %.
+      final e = fxModuleEntry(
+        _module('Modulation'),
+        preset('Studio Rack', const {
+          'Mod': 1,
+          'Mod Rate': 0.827,
+          'Mod Depth': 1,
+          'Mod Mode': 1,
+        }),
+      );
+      expect(e.type, TrackEffectType.mod);
+      expect(e.params.take(3), [closeTo(0.827, 1e-9), 1, 0.5]);
+      // Tremolo: the kind's last.
+      expect(e.params[3], 1);
+      final build = fxEntryBuild(e)!;
+      expect(build.readiness, FxModuleReadiness.full);
+      expect(build.exposed, [0, 1, 3]);
+      expect(fxEntryParam(e, 3).steps, 2);
+      expect(fxEntryKindSetting(e, 3, 0), 0);
+      final chorus = fxModuleEntry(
+        _module('Modulation'),
+        preset('Studio Rack', const {
+          'Mod': 1,
+          'Mod Rate': 0.272,
+          'Mod Depth': 0.511,
+          'Mod Mode': 0,
+        }),
+      );
+      expect(chorus.params[3], 0);
     });
 
     test("Ed's chorus and both racks' wah copy every control", () {

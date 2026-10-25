@@ -58,6 +58,10 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   // the 4x12"), x 1.75. A cabinet change runs both cabinets for 1024
   // frames, about a third more for those blocks.
   TrackEffectType.ampCab: 376,
+  // CI arm64, an eighth of eight in one chain while their settings move
+  // (3.27 us, the phaser at full depth, its heaviest mode), x 1.75. A mode
+  // change runs both modes for 1024 frames.
+  TrackEffectType.mod: 90,
 };
 
 /// What a kind on the hop charges, in microseconds a block: its frame's work
