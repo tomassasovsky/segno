@@ -532,7 +532,6 @@ extension EngineLocalizations on AppLocalizations {
     1 => setupBlurbInput,
     _ => setupBlurbReady,
   };
-
 }
 
 /// What `TracksCubit` STORES for a track nobody has renamed.
