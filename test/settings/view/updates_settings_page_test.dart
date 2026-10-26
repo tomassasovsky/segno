@@ -332,9 +332,8 @@ void main() {
       verifyNever(update.check);
     });
 
-    testWidgets('a read-only boot partition says so and offers no retry', (
-      tester,
-    ) async {
+    testWidgets('a read-only boot partition says so, and its action is the '
+        "power flow's restart, not a retry", (tester) async {
       await pump(
         tester,
         _running.copyWith(
@@ -348,7 +347,16 @@ void main() {
       expect(find.text(l10n.updatesPageBootReadOnly), findsOneWidget);
       expect(find.text(l10n.updatesPageDownloadFailed), findsNothing);
       expect(find.byKey(const Key('updates_retry')), findsNothing);
-      expect(focused(tester, 'updates_check'), isTrue);
+      expect(focused(tester, 'updates_restart'), isTrue);
+
+      await tester.tap(find.byKey(const Key('updates_restart')));
+      await tester.pumpAndSettle();
+      verify(
+        () => power.restart(
+          const PowerSnapshot(currentSessionName: 'set'),
+          save: any(named: 'save'),
+        ),
+      ).called(1);
     });
 
     testWidgets('a failed check says so, and its retry is the check', (

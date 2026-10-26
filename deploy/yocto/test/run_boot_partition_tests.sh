@@ -7,7 +7,7 @@
 # them is silent until the next power cut:
 #
 #   - RAUC's data directory lives on the ext4 /data partition, and rauc.service
-#     waits for /data and /boot. RAUC creates the directory itself at start.
+#     requires /data and wants /boot. RAUC creates the directory itself.
 #   - boot.mount pulls in the fsck unit for its own device, so the name must
 #     be the systemd-escaped What= path, and the image must carry the fsck
 #     wrapper and fsck.vfat. Without them systemd-fsck skips the check without
@@ -62,8 +62,10 @@ check "no system.conf path is on /boot" no \
     "$(yes_if grep -qE '^[^#]*=/boot(/|$)' "$SYSTEM_CONF")"
 
 echo "rauc.service waits for its mounts"
-check "requires the /data/rauc and /boot mounts" "/data/rauc /boot" \
+check "requires the /data/rauc mount" "/data/rauc" \
     "$(value "$DROP_IN" RequiresMountsFor)"
+check "wants the /boot mount without requiring it" "/boot" \
+    "$(value "$DROP_IN" WantsMountsFor)"
 check "rauc-conf ships the drop-in" yes \
     "$(yes_if grep -qF 'file://10-segno-data.conf' "$RAUC_CONF")"
 check "rauc-conf installs it into rauc.service.d" yes \
