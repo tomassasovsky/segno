@@ -734,8 +734,18 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
           _repository.play(channel: track.channel);
         }
       }
+      // A section that already sounds needs no Play: the engine reads a Play
+      // on it as a cancel of the section waiting to follow it.
       final section = looper.sectionToStart(sections);
-      if (section != null) _repository.play(channel: section);
+      final sounding = switch (section == null
+          ? null
+          : looper.tracks[section].state) {
+        TrackState.playing || TrackState.overdubbing => true,
+        _ => false,
+      };
+      if (section != null && !sounding) {
+        _repository.play(channel: section);
+      }
     });
     on<LooperStopAllPressed>((_, _) {
       for (final track in state.tracks) {

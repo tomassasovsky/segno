@@ -2937,6 +2937,27 @@ void main() {
         );
         cubit.recPlay();
         verifyNever(() => looper.play(channel: 1));
+        // A muted primary comes back, and the sounding section gets no Play:
+        // the engine would read it as a cancel of the waiting section.
+        clearInteractions(looper);
+        setEngine(
+          _tracksWith(const [
+            Track(
+              state: TrackState.playing,
+              lengthFrames: 48000,
+              muted: true,
+            ),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 2, state: TrackState.playing, lengthFrames: 48000),
+          ]),
+          looperMode: LooperMode.band,
+          primaryTrack: 0,
+          songQueuedTrack: 1,
+        );
+        cubit.recPlay();
+        verify(() => looper.setMute(muted: false)).called(1);
+        verifyNever(() => looper.play(channel: 1));
+        verifyNever(() => looper.play(channel: 2));
       });
 
       test('Multi and Free Record-mode presses only select', () {
