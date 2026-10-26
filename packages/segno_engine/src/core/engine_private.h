@@ -2482,7 +2482,6 @@ struct le_engine {
    * 24 bits the fraction played, so a reader never pairs one request's
    * target with another's kind or progress. */
   int32_t song_source, song_target;
-  int song_record, song_edge;
   int64_t song_elapsed;
   _Atomic uint32_t a_song_queue;
   /* The Song section that sounded most recently (#1077), -1 for none. It
@@ -3073,6 +3072,10 @@ struct le_engine {
   _Atomic uint32_t fx_param_store[LE_FX_PARAM_OWNERS][LE_FX_MAX][LE_FX_PARAMS];
   /* Per slot of the same owners, by the same rows (each owner's fx_meta). */
   le_fx_slot_meta fx_slot_meta[LE_FX_PARAM_OWNERS][LE_FX_MAX];
+  /* The Song and Band handoff's kind and Band edge latch (#1323), documented
+   * with song_source above. Appended here, after the mixer's state, so they
+   * move no offset the callback reads every frame. */
+  int song_record, song_edge;
 };
 
 /* Points every chain owner at its rows of fx_param_store and fx_slot_meta, in
