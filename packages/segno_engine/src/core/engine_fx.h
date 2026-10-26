@@ -353,14 +353,15 @@ void le_fx_enable_seed_at(le_fx_state* fx, int slot, int effective);
  * applying it at once. le_fx_enable_seed_settled does it too. */
 void le_fx_rack_reset(le_fx_state* fx, int slot);
 
-/* Seeds slot [slot]'s OCTAVER runtime settled at [params]: the three param
- * smoothers already at their targets and the mode crossfade already resolved
- * onto the mode params[3] selects. The octaver's analogue of
- * le_fx_enable_seed_settled, for an offline render standing in for a lane
- * whose octaver has been running since before the capture: from
- * le_fx_entry_reset's state the shift smoother ramps ~5 ms up from unison,
- * and a PSOLA slot spends ~15 ms fading the wet leg out and ~15 ms back in
- * before the mode flips, none of which the live lane was doing.
+/* Seeds slot [slot]'s OCTAVER runtime settled at [params]: its param
+ * smoothers already at their targets and no mode crossfade under way. The
+ * octaver's analogue of le_fx_enable_seed_settled, for an offline render
+ * standing in for a lane whose octaver has been running since before the
+ * capture: from
+ * le_fx_entry_reset's state the shift, tone and mix smoothers ramp for
+ * ~5 ms from unison and dry, which the live lane was not doing. The mode,
+ * and the Dual Octaver's switched shift, need no seeding: a slot just reset
+ * takes them within a latency (fx_octaver, #1482).
  *
  * The analysis-hop schedule needs no settling: it follows the clock the
  * render sets (le_fx_state::clock), which reproduces the live one. Caller
