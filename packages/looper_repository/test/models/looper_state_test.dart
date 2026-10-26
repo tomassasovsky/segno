@@ -185,6 +185,23 @@ void main() {
       );
     });
 
+    test('with every section muted, keeps the same preference among them', () {
+      const running = Track(
+        channel: 4,
+        state: TrackState.playing,
+        lengthFrames: 100,
+        muted: true,
+      );
+      expect(rig().sectionToStart([muted, running]), 4);
+      const otherMuted = Track(
+        channel: 5,
+        state: TrackState.stopped,
+        lengthFrames: 100,
+        muted: true,
+      );
+      expect(rig(last: 5).sectionToStart([muted, otherMuted]), 5);
+    });
+
     test('passes over a sounding section that is muted', () {
       expect(
         rig().sectionToStart([

@@ -174,12 +174,12 @@ class LooperState extends Equatable {
   /// one is muted. Null with no candidates.
   int? sectionToStart(Iterable<Track> candidates) {
     final content = candidates.where((track) => track.hasContent).toList();
-    final audible = content.where((track) => !track.muted);
     final last = transport.songLastSection;
-    return (audible.where((track) => track.isRunning).firstOrNull ??
-            audible.where((track) => track.channel == last).firstOrNull ??
-            audible.firstOrNull ??
-            content.firstOrNull)
+    Track? pick(Iterable<Track> pool) =>
+        pool.where((track) => track.isRunning).firstOrNull ??
+        pool.where((track) => track.channel == last).firstOrNull ??
+        pool.firstOrNull;
+    return (pick(content.where((track) => !track.muted)) ?? pick(content))
         ?.channel;
   }
 
