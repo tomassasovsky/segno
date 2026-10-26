@@ -3338,7 +3338,9 @@ static void le_handoff_record_now(le_engine* e, int32_t ch, uint64_t frame) {
 
 /* LE_CMD_ARM trigger 3: a Record waiting for the handoff (le_engine_record
  * prepared it). The target may have moved since the press; with nothing
- * sounding any more it records at once. */
+ * sounding any more it records at once, except a Band section's first take
+ * on a running rig: that one waits for the primary's top, as le_engine_record
+ * arms it with no other section sounding. */
 static void le_handoff_record_request(le_engine* e, int32_t ch,
                                       uint64_t frame) {
   le_track* t = &e->tracks[ch];
@@ -3348,6 +3350,14 @@ static void le_handoff_record_request(le_engine* e, int32_t ch,
     return;
   }
   if (!le_handoff_wait(e, ch, 1)) {
+    if (load_i32(&t->a_state) == LE_TRACK_EMPTY && le_band_section(e, ch) &&
+        !le_transport_held(e)) {
+      t->pending_record = 1;
+      t->pending_trigger = 0;
+      store_i32(&t->a_pending_trigger, 0);
+      atomic_store_explicit(&t->a_pending, 1, memory_order_release);
+      return;
+    }
     le_handoff_record_now(e, ch, frame);
     return;
   }
@@ -3362,25 +3372,33 @@ static void le_handoff_record_request(le_engine* e, int32_t ch,
 }
 
 /* The handoff: stop every sounding section (Band's primary aside), start the
- * target. The caller passes the frame the target's first sample sounds on. */
+ * target. The caller passes the frame the target's first sample sounds on.
+ *
+ * The target starts before the sections stop, so the rig never reads held in
+ * between: a held rig would count a Record in, or unpark a Band primary the
+ * user stopped. The log still reads the stops first, as a replay needs. */
 static void le_song_commit(le_engine* e, uint64_t frame) {
   const int32_t target = e->song_target;
   const int record = e->song_record;
   const int32_t primary = le_handoff_primary(e);
   le_song_cancel(e);
+  uint32_t sounding = 0;
   for (int32_t c = 0; c < e->track_count; ++c) {
     const int32_t st = load_i32(&e->tracks[c].a_state);
     if (c == primary || c == target ||
         (st != LE_TRACK_PLAYING && st != LE_TRACK_OVERDUBBING)) {
       continue;
     }
+    sounding |= 1u << c;
     le_plog_push(e, frame, (le_command){.code = LE_CMD_STOP, .arg_i = c});
-    handle_stop(e, c, frame);
   }
   if (record) {
     le_handoff_record_now(e, target, frame);
   } else {
     le_handoff_play_now(e, target, frame);
+  }
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    if (sounding & (1u << c)) handle_stop(e, c, frame);
   }
 }
 

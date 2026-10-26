@@ -27839,6 +27839,33 @@ static void test_song_record_requests_wait(void) {
   le_engine_destroy(e);
 }
 
+/* The handoff is a waiting Record's boundary (#1323): with a Count-in set,
+ * the take still starts on the sample the source ends. The commit starts the
+ * target before it stops the source, so the rig never reads held and nothing
+ * counts in. */
+static void test_song_record_handoff_skips_count_in(void) {
+  printf("test_song_record_handoff_skips_count_in\n");
+  le_engine* e = song_queue_fixture();
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  tg_advance(e, 30);
+  CHECK(le_engine_record(e, 3) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == 3 && s.song_queue_record == 1);
+  CHECK(s.counting_in == 0);
+  tg_advance(e, 71); /* past the lap edge at 100 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.tracks[3].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(e->tracks[3].record_pos == 1);
+  le_engine_destroy(e);
+}
+
 /* A waiting Record keeps what its press prepared (#1323): the take the
  * handoff starts carries the capture image the press posted, as a grid
  * arm's take does when it fires. */
@@ -31630,6 +31657,50 @@ static void test_band_one_section_handoff(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[3].pending == 0 && s.tracks[3].state == LE_TRACK_EMPTY);
   CHECK(s.song_queued_track == -1);
+  le_engine_destroy(e);
+}
+
+/* A Band handoff leaves a primary the user stopped alone (#1323): the
+ * target starts before the sounding section stops, so the rig never reads
+ * held and nothing unparks the primary. */
+static void test_band_handoff_keeps_a_stopped_primary_stopped(void) {
+  printf("test_band_handoff_keeps_a_stopped_primary_stopped\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
+  drain(e);
+  sb_make_primary(e, 1.0f);
+  sb_arm_and_start(e, 1);
+  process_const(e, 2.0f, SB_BASE, out);
+  le_engine_record(e, 1); /* one base loop */
+  drain(e);
+  CHECK(le_engine_stop_track(e, 1) == LE_OK);
+  drain(e);
+  sb_arm_and_start(e, 2);
+  process_const(e, 3.0f, SB_BASE, out);
+  le_engine_record(e, 2); /* one base loop */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].state == LE_TRACK_PLAYING);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK); /* the primary */
+  drain(e);
+  process_const(e, 0.0f, 3, out);
+  CHECK(load_i32(&e->tracks[2].a_state) == LE_TRACK_PLAYING);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == 1);
+  int frames = 0;
+  while (load_i32(&e->tracks[1].a_state) == LE_TRACK_STOPPED &&
+         frames < 4 * SB_BASE) {
+    tg_advance(e, 1);
+    ++frames;
+  }
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[2].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
   le_engine_destroy(e);
 }
 
@@ -40100,6 +40171,7 @@ int main(void) {
   test_song_queue_logs_committed_handoff_only();
   test_song_record_requests_wait();
   test_song_record_handoff_keeps_its_image();
+  test_song_record_handoff_skips_count_in();
   test_song_record_handoff_logs_at_the_edge();
   test_song_mode_independent_lengths_wraps();
   test_song_mode_one_capturer_handoff_finalizes_to_own_length();
@@ -40213,6 +40285,7 @@ int main(void) {
   test_band_section_start_stop_quantized_to_primary_top();
   test_band_one_section_handoff();
   test_band_handoff_overdub_once_and_hold();
+  test_band_handoff_keeps_a_stopped_primary_stopped();
   test_band_section_toggle_rejected_when_primary_not_established();
   test_band_section_pending_toggle_survives_record_press();
   test_band_section_pending_record_survives_toggle_press();
