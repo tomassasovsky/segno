@@ -65,10 +65,11 @@ class ConsoleReadoutView extends StatelessWidget {
               // The stage's one standing loss condition — the audio interface
               // is gone — echoed here because the performer is looking down,
               // not at the main screen (`c/device-lost`, #453).
-              if (readout.deviceLost) ...[
+              if (readout.lossLine.isNotEmpty) ...[
                 SizedBox(height: 16 * s),
                 _ConnectivityEcho(
                   key: const Key('console_readout_deviceLost'),
+                  line: readout.lossLine,
                   s: s,
                 ),
               ],
@@ -289,10 +290,12 @@ class _Footer extends StatelessWidget {
 }
 
 /// The device-lost line, in readout-scale type: the pen's `c/device-lost`
-/// idiom echoed on the small display. No action — the readout stays inert.
+/// idiom echoed on the small display, word for word what the stage strip
+/// says. No action — the readout stays inert.
 class _ConnectivityEcho extends StatelessWidget {
-  const _ConnectivityEcho({required this.s, super.key});
+  const _ConnectivityEcho({required this.line, required this.s, super.key});
 
+  final String line;
   final double s;
 
   @override
@@ -305,15 +308,21 @@ class _ConnectivityEcho extends StatelessWidget {
         borderRadius: BorderRadius.circular(10 * s),
         border: Border.all(color: surface.rec),
       ),
-      child: AppText(
-        context.l10n.deviceLostBanner,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontFamily: SurfaceTheme.displayFont,
-          color: surface.textPrimary,
-          fontSize: 24 * s,
-          height: 1.2,
+      // One line, never cut: a long interface name shrinks the line to fit
+      // the 7" rather than losing the half that says what happens next.
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: AppText(
+          line,
+          maxLines: 1,
+          softWrap: false,
+          style: TextStyle(
+            fontFamily: SurfaceTheme.displayFont,
+            color: surface.textPrimary,
+            fontSize: 24 * s,
+            height: 1.2,
+          ),
         ),
       ),
     );

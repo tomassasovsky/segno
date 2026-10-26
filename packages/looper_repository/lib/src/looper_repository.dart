@@ -2766,6 +2766,13 @@ class LooperRepository {
       _stopReconnectPolling();
       return _applyOutcome(AudioApplyStatus.refused, result, verdict);
     }
+    if (_isPinned) {
+      // Keep the previous config pinned and the running intent set, and
+      // supervise it exactly as after an interface loss (D17): disarming
+      // here would leave the console silent until someone opened setup.
+      _startReconnectPolling();
+      return _applyOutcome(AudioApplyStatus.waiting, result, verdict);
+    }
     stopEngine();
     return _applyOutcome(AudioApplyStatus.failed, result, verdict);
   }

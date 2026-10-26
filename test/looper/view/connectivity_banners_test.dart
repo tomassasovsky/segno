@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart'
@@ -89,6 +90,97 @@ void main() {
     await pump(tester);
 
     expect(find.byKey(deviceKey), findsNothing);
+  });
+
+  group('one strip per cause (#1270 Part 5)', () {
+    testWidgets('the lost line names the device and says audio comes back', (
+      tester,
+    ) async {
+      whenListen(
+        audioSetup,
+        const Stream<AudioSetupState>.empty(),
+        initialState: deviceLostState,
+      );
+      await pump(tester);
+
+      expect(
+        find.text(l10n.deviceLostNamedBanner('Scarlett 2i2')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('with no name known it falls back to the plain line', (
+      tester,
+    ) async {
+      whenListen(
+        audioSetup,
+        const Stream<AudioSetupState>.empty(),
+        initialState: const AudioSetupState(
+          deviceConnectivity: DeviceConnectivity.lost,
+        ),
+      );
+      await pump(tester);
+
+      expect(find.text(l10n.deviceLostBanner), findsOneWidget);
+    });
+
+    testWidgets('a boot that waits for the interface holds the same strip', (
+      tester,
+    ) async {
+      whenListen(
+        audioSetup,
+        const Stream<AudioSetupState>.empty(),
+        initialState: const AudioSetupState(
+          deviceConnectivity: DeviceConnectivity.waiting,
+        ),
+      );
+      await pump(tester);
+
+      const waitingKey = Key('connectivity_banner_waiting');
+      expect(find.byKey(waitingKey), findsOneWidget);
+      expect(find.text(l10n.audioRecoveryWaitingBanner), findsOneWidget);
+      expect(find.text(l10n.deviceLostBannerAction), findsOneWidget);
+      expect(decorationOf(tester, waitingKey).color, surface(tester).recTint);
+    });
+
+    testWidgets('Open setup is reachable with the encoder alone', (
+      tester,
+    ) async {
+      whenListen(
+        audioSetup,
+        const Stream<AudioSetupState>.empty(),
+        initialState: deviceLostState,
+      );
+      await pump(tester);
+
+      // The encoder walks focus as Tab does; the strip's one action is on
+      // that walk, so recovery never needs a touch (D16).
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      final focused = FocusManager.instance.primaryFocus?.context;
+      expect(focused, isNotNull);
+      expect(
+        find
+                .ancestor(
+                  of: find.byElementPredicate((e) => e == focused),
+                  matching: find.byKey(
+                    const Key('connectivity_banner_device_action'),
+                  ),
+                )
+                .evaluate()
+                .isNotEmpty ||
+            find
+                .descendant(
+                  of: find.byKey(
+                    const Key('connectivity_banner_device_action'),
+                  ),
+                  matching: find.byElementPredicate((e) => e == focused),
+                )
+                .evaluate()
+                .isNotEmpty,
+        isTrue,
+      );
+    });
   });
 
   group('material cleared on reconnect (#1140)', () {
@@ -261,7 +353,10 @@ void main() {
       await pump(tester);
 
       expect(find.byKey(deviceKey), findsOneWidget);
-      expect(find.text(l10n.deviceLostBanner), findsOneWidget);
+      expect(
+        find.text(l10n.deviceLostNamedBanner('Scarlett 2i2')),
+        findsOneWidget,
+      );
       expect(find.text(l10n.deviceLostBannerAction), findsOneWidget);
 
       // A standing condition, not an event: no auto-hide, ever. 30 seconds
@@ -290,6 +385,13 @@ void main() {
         const Stream<AudioSetupState>.empty(),
         initialState: deviceLostState,
       );
+      // The 15.6" stage's width: the named sentence fills the default 800px
+      // test surface on its own.
+      tester.view
+        ..physicalSize = const Size(1920, 1080)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       await pump(tester);
 
       // The button sits right after the sentence — no wall of dead space
@@ -297,7 +399,7 @@ void main() {
       // gap from its right edge to the button is the layout's fixed 10px
       // spacer, not the banner's whole free width.
       final messageRight = tester
-          .getBottomRight(find.text(l10n.deviceLostBanner))
+          .getBottomRight(find.text(l10n.deviceLostNamedBanner('Scarlett 2i2')))
           .dx;
       const actionKey = Key('connectivity_banner_device_action');
       final actionLeft = tester.getTopLeft(find.byKey(actionKey)).dx;

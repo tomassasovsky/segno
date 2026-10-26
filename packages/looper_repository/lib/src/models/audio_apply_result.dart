@@ -12,8 +12,13 @@ enum AudioApplyStatus {
   refused,
 
   /// The new config could not be opened, and neither could the previous one:
-  /// the engine is stopped.
+  /// the engine is stopped. Also an open whose replay rolled back.
   failed,
+
+  /// Neither config would open, and the previous one pins an interface: it
+  /// stays pinned and the reconnect supervisor reopens it when the interface
+  /// answers, as after an unplug (#1270 D17).
+  waiting,
 }
 
 /// The outcome of `LooperRepository.applyAudioConfig`.

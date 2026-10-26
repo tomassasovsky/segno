@@ -127,6 +127,11 @@ enum DeviceConnectivity {
   /// standing notice of the return, with the Sessions action, until the user
   /// acts (#1140).
   restoredCleared,
+
+  /// The console booted with its pinned interface absent and waits for it:
+  /// audio starts on its own when it appears (`AudioRecoveryCubit`). The
+  /// stage holds the same red strip as [lost], with the waiting sentence.
+  waiting,
 }
 
 /// State for the audio setup feature: the user's requested device options plus
