@@ -2193,7 +2193,7 @@ static le_record_admission le_classify_record(le_engine* e, int channel) {
   if (e->armed[channel] && load_i32(&t->a_pending)) {
     const int trigger = e->armed_trigger[channel];
     if ((sound && trigger == 1) || (!sound && quantized && trigger == 0)) return LE_RECORD_CANCEL;
-    if (trigger == 2 || sound || quantized || handoff) return LE_RECORD_REFUSE;
+    if (trigger == 2 || sound || quantized) return LE_RECORD_REFUSE;
   }
   return LE_RECORD_ACQUIRE;
 }
