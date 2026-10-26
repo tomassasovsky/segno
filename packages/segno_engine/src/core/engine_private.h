@@ -416,7 +416,8 @@ typedef struct le_oct_low_voice {
 } le_oct_low_voice;
 
 /* The Dual Octaver's low band for one channel (#1467): the input below the
- * crossover, shifted down in the time domain (le_low_tick, engine_fx.c). A
+ * crossover, shifted down in the time domain (le_low_write, le_low_follow
+ * and le_low_play, engine_fx.c). A
  * heap block the control thread allocates for a Dual Octaver slot
  * (le_rt_alloc_prefaulted), its ring trailing it, and publishes through
  * le_octaver_state::low; the audio thread owns every field after that. */
@@ -450,8 +451,15 @@ typedef struct le_oct_low {
   float e_in;
   float e_low;
   float ek;
+  /* Per-rate constants: the 10 ms and 5 ms one-poles' steps, and the
+   * shortest and longest periods searched, device samples. */
+  float k10;
+  float k5;
+  float per_min;
+  float per_max;
   le_yin_pass yin;
   float period; /* device samples (0: none heard yet) */
+  float f0;     /* the same as a frequency, Hz (0: none) */
   float voiced; /* the smoothed confidence */
   float gate;   /* the band's weight, per sample (0: the vocoder plays it) */
   float boost;  /* its gain over the crossover's loss at the pitch */
@@ -533,6 +541,7 @@ typedef struct le_octaver_state {
   le_oct_low *_Atomic low;
   float frame_low_w;
   float frame_low_g;
+  float frame_low_kc; /* the crossover, in bins */
   /* Smart Tune (LE_FX_SMART_TUNE): the correction it applies and the one
    * its target note asks for, in cents; the glide's per-sample step; and
    * the period and settings those two were worked out at (the period, then

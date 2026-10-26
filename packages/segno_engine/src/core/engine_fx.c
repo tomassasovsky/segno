@@ -331,6 +331,7 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   o->frame_level2 = 0.0f;
   o->frame_low_w = 0.0f;
   o->frame_low_g = 1.0f;
+  o->frame_low_kc = 1.0f;
   le_oct_low* low = atomic_load_explicit(&o->low, memory_order_acquire);
   if (low != NULL) le_low_reset_runtime(low);
   o->tune_c = 0.0f;
@@ -461,10 +462,7 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
    * or with no band, which leaves the vocoder as it was. */
   const float low_w = o->frame_low_w;
   const float low_g = o->frame_low_g;
-  const float kc =
-      low_w > 0.0f
-          ? atomic_load_explicit(&o->low, memory_order_relaxed)->kc
-          : 1.0f;
+  const float kc = o->frame_low_kc;
   const float* mag = LE_PV_S_MAG(o);
   const float* freq = LE_PV_S_FREQ(o);
   const float* env = LE_PV_S_ENV(o);
@@ -614,7 +612,7 @@ static void le_pv_stage_synth(le_octaver_state* o) {
 static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int cap,
                         float ratio, int formants_move, float ratio2,
                         float level1, float level2, float low_w,
-                        float low_g) {
+                        float low_g, float low_kc) {
   if (o->out == NULL || o->scratch == NULL) return 0.0f;
   switch (o->hop_count) {
     case 0:
@@ -625,6 +623,7 @@ static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int ca
       o->frame_level1 = level1;
       o->frame_low_w = low_w;
       o->frame_low_g = low_g;
+      o->frame_low_kc = low_kc;
       {
         /* A second voice (the Dual Octaver's Octave 2, #1464) takes the
          * envelope's quarter, so only with the formants moving; coming
@@ -1159,17 +1158,24 @@ static void le_low_reset_runtime(le_oct_low* L) {
   }
 }
 
-/* le_low_reset_runtime, and the crossover, both rings and the detection
- * cleared: no pitch heard, the band silent (the vocoder plays all of it). */
-static void le_low_clear(le_oct_low* L) {
+/* The detection back to a reset's: no pitch heard, the band silent (the
+ * vocoder plays all of it). */
+static void le_low_forget(le_oct_low* L) {
   L->hops = 0;
   L->busy = 0;
   L->credit = 0;
   L->period = 0.0f;
+  L->f0 = 0.0f;
   L->voiced = 0.0f;
   L->gate = 0.0f;
   L->boost = 1.0f;
   L->ramp = 0.0f;
+}
+
+/* le_low_reset_runtime and le_low_forget, and the crossover and both rings
+ * cleared. */
+static void le_low_clear(le_oct_low* L) {
+  le_low_forget(L);
   memset(L->z, 0, sizeof(L->z));
   memset(L->ring, 0, sizeof(float) * (size_t)(L->mask + 1));
   memset(L->dring, 0, sizeof(L->dring));
@@ -1206,6 +1212,10 @@ static void le_low_init(le_oct_low* L, int sr, int32_t len) {
   L->every = sr / 48000 < 1 ? 1 : sr / 48000;
   L->work = 0;
   L->ek = 20.0f / (float)sr; /* 50 ms */
+  L->k10 = 100.0f / (float)sr;
+  L->k5 = 200.0f / (float)sr;
+  L->per_min = (float)sr / (float)LE_OCT_LOW_MAX_HZ;
+  L->per_max = (float)sr / (float)LE_OCT_LOW_MIN_HZ;
   le_low_clear(L);
 }
 
@@ -1245,7 +1255,7 @@ static float le_low_read(const le_oct_low* L, float d) {
  * a confident one, and it steps to a new note rather than gliding there (a
  * tap jumping by a period between two notes' would not land on a repeat of
  * the waveform). */
-static void le_low_apply(le_oct_low* L, float period, float conf) {
+static void le_low_apply(le_oct_low* L, int sr, float period, float conf) {
   L->voiced += 0.35f * (conf - L->voiced);
   if (period <= 0.0f || conf < 0.5f) return;
   if (L->period <= 0.0f || fabsf(period - L->period) > 0.03f * L->period) {
@@ -1253,6 +1263,9 @@ static void le_low_apply(le_oct_low* L, float period, float conf) {
   } else {
     L->period += 0.5f * (period - L->period);
   }
+  if (L->period < L->per_min) L->period = L->per_min;
+  if (L->period > L->per_max) L->period = L->per_max;
+  L->f0 = (float)sr / L->period;
 }
 
 /* One tick of detection: on every `every`-th analysis tick of the vocoder
@@ -1266,7 +1279,7 @@ static void le_low_detect(le_oct_low* L, int sr, int analysis) {
     L->hops = 0;
     if (L->e_low < 0.05f * L->e_in) {
       L->busy = 0;
-      le_low_apply(L, 0.0f, 0.0f);
+      le_low_apply(L, sr, 0.0f, 0.0f);
       return;
     }
     int32_t k = L->dhead; /* the oldest decimated sample */
@@ -1283,7 +1296,7 @@ static void le_low_detect(le_oct_low* L, int sr, int analysis) {
       const int32_t ticks = L->every * LE_PV_HOP;
       L->work = (5 * L->yin.maxlag * L->yin.integ) / (4 * ticks) + 1;
     } else {
-      le_low_apply(L, 0.0f, 0.0f); /* silence */
+      le_low_apply(L, sr, 0.0f, 0.0f); /* silence */
     }
   }
   if (!L->busy) return;
@@ -1305,7 +1318,7 @@ static void le_low_detect(le_oct_low* L, int sr, int analysis) {
           period <= (float)(L->yin.minlag + 1)) {
         conf = 0.0f;
       }
-      le_low_apply(L, period * (float)L->decim, conf);
+      le_low_apply(L, sr, period * (float)L->decim, conf);
     }
   }
 }
@@ -1371,7 +1384,7 @@ static void le_low_follow(le_oct_low* L, int sr, int analysis) {
   float want = (L->voiced - 0.3f) / 0.3f; /* PSOLA's soft gate */
   if (want < 0.0f) want = 0.0f;
   if (want > 1.0f) want = 1.0f;
-  const float f0 = L->period > 0.0f ? (float)sr / L->period : 0.0f;
+  const float f0 = L->f0;
   float in = (f0 - (float)LE_OCT_LOW_MIN_HZ) /
              (LE_OCT_LOW_FULL_HZ - (float)LE_OCT_LOW_MIN_HZ);
   if (in < 0.0f) in = 0.0f;
@@ -1384,7 +1397,7 @@ static void le_low_follow(le_oct_low* L, int sr, int analysis) {
   } else {
     want *= x >= 1.15f ? 0.0f : (1.15f - x) / 0.15f;
   }
-  const float k = 100.0f / (float)sr;
+  const float k = L->k10;
   L->gate += (want - L->gate) * k;
   if (want == 0.0f && L->gate < 1e-4f) L->gate = 0.0f;
   L->boost += (boost - L->boost) * k;
@@ -1408,7 +1421,7 @@ static void le_low_follow(le_oct_low* L, int sr, int analysis) {
  * band with no weight plays nothing, and stops reading. */
 static float le_low_play(le_oct_low* L, int sr, int ticks, float level1,
                          float level2) {
-  const float k = 200.0f / (float)sr; /* 5 ms */
+  const float k = L->k5;
   L->level1 += (level1 - L->level1) * k;
   L->level2 += (level2 - L->level2) * k;
   const float back = (float)(LE_OCT_LOW_HOLD - ticks) / (float)LE_PV_HOP;
@@ -1417,11 +1430,9 @@ static float le_low_play(le_oct_low* L, int sr, int ticks, float level1,
   const float a = L->hold[(L->hold_at - j) & 3];
   const float w = a + frac * (L->hold[(L->hold_at - j - 1) & 3] - a);
   if (w <= 0.0f) return 0.0f;
-  const float fmin = (float)sr / (float)LE_OCT_LOW_MAX_HZ;
-  const float fmax = (float)sr / (float)LE_OCT_LOW_MIN_HZ;
-  float per = L->period > 0.0f ? L->period : (float)sr / 100.0f;
-  if (per < fmin) per = fmin;
-  if (per > fmax) per = fmax;
+  /* Before any pitch is heard (the weight is then 0 anyway), a 100 Hz
+   * period keeps the taps moving. */
+  const float per = L->period > 0.0f ? L->period : 0.01f * (float)sr;
   float y = L->level1 * le_low_voice(L, &L->v[0], 0.5f, per);
   if (L->level2 > 1e-4f) y += L->level2 * le_low_voice(L, &L->v[1], 0.25f, per);
   return w * y;
@@ -1465,6 +1476,9 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
     const int ticks = le_oct_seeded_ticks(fx, slot);
     if (le_oct_ticks_to_work(o) != ticks) {
       le_pv_reset_runtime(fx, slot, chan, ticks);
+      /* The band heard nothing while the slot was not ticked either. */
+      le_oct_low* low = atomic_load_explicit(&o->low, memory_order_acquire);
+      if (low != NULL) le_low_forget(low);
     }
   }
 
@@ -1546,16 +1560,18 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
     float band = 0.0f;
     float low_w = 0.0f;
     float low_g = 1.0f;
+    float low_kc = 1.0f;
     if (low != NULL) {
       le_low_follow(low, cap, o->hop_count == 0);
       if (!up) { /* each voice at its Vol, untrimmed (le_doct_settings) */
         band = le_low_play(low, cap, o->hop_count, p[8], p[7]);
         low_w = low->gate;
         low_g = low->boost;
+        low_kc = low->kc;
       }
     }
     wet = le_pv_tick(o, buf, head, cap, ratio, p[4] >= 0.5f, ratio * ratio,
-                     1.0f - p[5], level2, low_w, low_g) +
+                     1.0f - p[5], level2, low_w, low_g, low_kc) +
           band;
   } else {
     wet = le_psola_tick(o, buf, head, cap, ratio);

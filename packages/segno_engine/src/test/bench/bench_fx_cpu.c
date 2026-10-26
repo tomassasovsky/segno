@@ -599,15 +599,19 @@ static int run_table(const bench_opts* o, float* src, int32_t frames,
     return 1;
   }
   stats base_bass;
-  if (!time_kinds(o, g_bass, frames, &k_table[0], 0, blocks, warm,
-                  &base_bass)) {
-    fprintf(stderr, "the rig alone refused\n");
-    return 1;
-  }
+  int have_base_bass = 0;
   for (size_t k = 0; k < sizeof(k_table) / sizeof(k_table[0]); ++k) {
     const table_kind* kind = &k_table[k];
     stats one, eight;
     float* in = source_for(kind->type, src);
+    if (in == g_bass && !have_base_bass) { /* the rig alone on the bass */
+      if (!time_kinds(o, g_bass, frames, &k_table[0], 0, blocks, warm,
+                      &base_bass)) {
+        fprintf(stderr, "the rig alone refused\n");
+        return 1;
+      }
+      have_base_bass = 1;
+    }
     if (!time_kinds(o, in, frames, kind, 1, blocks, warm, &one) ||
         !time_kinds(o, in, frames, kind, 8, blocks, warm, &eight)) {
       fprintf(stderr, "%s refused\n", kind->name);
