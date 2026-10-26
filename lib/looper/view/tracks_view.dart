@@ -123,7 +123,10 @@ class _TracksViewState extends State<TracksView> {
     // condition holds, and the stage never says it twice (#453). A stopped
     // engine with a device still present keeps the generic banner.
     final deviceLost = context.select<AudioSetupCubit, bool>(
-      (cubit) => cubit.state.deviceConnectivity == DeviceConnectivity.lost,
+      (cubit) => switch (cubit.state.deviceConnectivity) {
+        DeviceConnectivity.lost || DeviceConnectivity.waiting => true,
+        _ => false,
+      },
     );
 
     final bankTracks = [
