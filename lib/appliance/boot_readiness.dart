@@ -81,29 +81,28 @@ class BootReadiness {
   /// How often the heartbeat goes out.
   final Duration interval;
 
-  Timer? _timer;
   var _started = false;
+  var _ready = false;
   var _beating = false;
   var _alive = 0;
   var _readoutAnswers = 0;
   var _sendFailed = false;
 
   /// Waits for the first frame, says `READY=1` with the first status, then
-  /// sends the heartbeat every [interval] until [stop]. Idempotent.
+  /// sends the heartbeat every [interval] for the life of the process.
+  /// Idempotent.
+  ///
+  /// `READY=1` rides every send until one goes through: a lost datagram
+  /// would otherwise leave the unit activating until systemd kills a working
+  /// app at `TimeoutStartSec`. systemd ignores a repeated `READY=1`.
   Future<void> start() async {
     if (_started) return;
     _started = true;
     await _firstFrame;
     final status = await _status(ping: false);
-    _send('READY=1\nSTATUS=$status');
-    AppLog.info('boot health: ready ($status)');
-    _timer = Timer.periodic(interval, (_) => unawaited(_beat()));
-  }
-
-  /// Stops the heartbeat.
-  void stop() {
-    _timer?.cancel();
-    _timer = null;
+    _send(status);
+    AppLog.info('boot health: first frame drawn ($status)');
+    Timer.periodic(interval, (_) => unawaited(_beat()));
   }
 
   Future<void> _beat() async {
@@ -113,27 +112,42 @@ class BootReadiness {
     _beating = true;
     try {
       _alive++;
-      _send('STATUS=${await _status(ping: true)}');
+      _send(await _status(ping: true));
     } finally {
       _beating = false;
     }
   }
 
+  /// The status line. Nothing in it can throw: a part that cannot be read
+  /// reads as the unhealthy answer, so a beat is never lost to an error.
   Future<String> _status({required bool ping}) async {
-    bool connected;
+    var connected = false;
     try {
       connected = await _readoutConnected();
     } on Object catch (error) {
       AppLog.warn('boot health: readout connector unreadable: $error');
-      connected = false;
     }
-    if (connected && ping && await _pingReadout()) _readoutAnswers++;
+    if (connected && ping) {
+      try {
+        if (await _pingReadout()) _readoutAnswers++;
+      } on Object catch (error) {
+        AppLog.warn('boot health: readout ping failed: $error');
+      }
+    }
+    var audio = BootAudio.refused;
+    try {
+      audio = _audio();
+    } on Object catch (error) {
+      AppLog.warn('boot health: audio state unreadable: $error');
+    }
     final readout = connected ? '$_readoutAnswers' : 'none';
-    return 'alive $_alive readout $readout audio ${_audio().name}';
+    return 'alive $_alive readout $readout audio ${audio.name}';
   }
 
-  void _send(String state) {
+  void _send(String status) {
+    final state = _ready ? 'STATUS=$status' : 'READY=1\nSTATUS=$status';
     final sent = _notify(state);
+    if (sent) _ready = true;
     // Once per change, not every beat: a socket that stays unreachable would
     // otherwise fill the log.
     if (sent == !_sendFailed) return;
