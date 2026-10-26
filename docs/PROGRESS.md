@@ -62,7 +62,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 An unclean power-off twice left a broken cluster chain in RAUC's
 `/boot/rauc/central.raucs`. The kernel remounted the FAT `/boot` read-only and
 every install failed. RAUC's `data-directory` is now `/data/rauc` on ext4, and a
-`rauc.service` drop-in waits for `/data` and `/boot` and creates the directory.
+`rauc.service` drop-in waits for `/data` and `/boot`. RAUC creates the
+directory itself when it starts.
 `boot.mount` pulls in `systemd-fsck@` for its device, so `fsck.vfat -a` repairs
 the partition before it mounts and logs what it changed to the journal.
 `segno-update-ctl install` exits 3 when `/boot` is read-only, and the Updates
@@ -72,8 +73,8 @@ Shell tests cover the helper under bash and dash, and a static test covers the
 RAUC and fsck wiring. Dart tests cover the env, cubit and page. Device checks
 are owed: `rauc status` reads the new file, the boot journal shows the fsck
 unit, and an install followed by mark-good succeeds. Existing units start with
-an empty status file. The stale `/boot/rauc` directory is left in place,
-because nothing reads it.
+an empty status file. The old `/boot/rauc` directory stays: a rollback to a
+build older than this change still keeps its status there.
 
 ## October 2026 Clear history and Fade (#1142)
 

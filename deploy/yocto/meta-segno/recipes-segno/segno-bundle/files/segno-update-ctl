@@ -184,9 +184,12 @@ record_staged_boot_id() {
 
 do_install() {
     command -v rauc >/dev/null 2>&1 || { log "rauc not installed"; return 1; }
-    # Before the download: the new slot is committed through /boot, so a
-    # 30-minute download would be wasted. The install itself writes nothing
-    # there (the status file is on /data), so this is the one check.
+    # Fail safe: a read-only /boot means the kernel found damage on the FAT
+    # that holds autoboot.txt, the file that picks the slot and that the
+    # commit after the trial boot rewrites. Refuse to stage a new slot until a
+    # restart has run the boot-time fsck. Staging itself writes nothing to
+    # /boot (the status file is on /data), so this is the one check, and it
+    # runs before the download.
     if boot_read_only; then
         log "the boot partition is read-only; restart to repair it"
         return "$EXIT_BOOT_READ_ONLY"
