@@ -1,6 +1,6 @@
 # Device and appliance pages: Device, interface loss, Displays, Power, Updates, Network, About
 
-<!-- cspell:ignore dpwx yyqr Ulrb orpd pbdiy OZOP JEHXY Cksr Xyzrn devicetree EDID edid setvcp Licences tmpfiles libsystemd raucb statvfs fdtget prefault -->
+<!-- cspell:ignore dpwx yyqr Ulrb orpd pbdiy OZOP JEHXY Cksr Xyzrn devicetree EDID edid setvcp Licences tmpfiles libsystemd raucb statvfs fdtget prefault datagram sendto -->
 
 Tracking: #1270, `stage:build`. This plan covers the Device, Network, Displays and Updates
 tiles of the Settings home, the About page and the Power button. They replace the interim
