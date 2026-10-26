@@ -350,6 +350,7 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
     }
     final device = refusal.refusedDevice;
     if (device != null) return l10n.audioDeviceRefused(device);
+    if (refusal.settingsRefused) return l10n.audioSettingsRefused;
     return l10n.operationBusy(refusal.busyKind ?? 'other');
   }
 

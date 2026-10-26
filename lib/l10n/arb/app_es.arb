@@ -1387,6 +1387,7 @@
     "audioApplyConfirm": "Detener el audio y aplicar",
     "audioEffectsOverBudgetRate": "Tus efectos necesitan más procesamiento del que deja {rate}. Quitá algunos efectos primero.",
     "audioDeviceRefused": "No se pudo abrir {device}. La interfaz anterior vuelve a funcionar.",
+    "audioSettingsRefused": "La interfaz no se abrió con estos ajustes. Vuelven a funcionar los anteriores.",
     "systemThisConsoleGroup": "ESTA CONSOLA",
     "systemHousekeepingGroup": "MANTENIMIENTO",
     "systemHardwareGroup": "HARDWARE",

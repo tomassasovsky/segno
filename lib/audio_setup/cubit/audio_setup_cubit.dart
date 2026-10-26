@@ -345,13 +345,19 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       case AudioApplyStatus.refused
           when askedRate == state.sampleRate &&
               askedBuffer == state.bufferFrames:
-        // A device (or loop cap) the interface would not open: naming rates
-        // that did not move would say nothing. The previous one runs again.
+        // Naming rates that did not move would say nothing. A device the
+        // interface would not open is named; anything else (a loop cap, a
+        // retry) says the settings were refused. The previous config runs.
+        final deviceMoved =
+            next.playbackDeviceId != state.playbackDeviceId ||
+            next.captureDeviceId != state.captureDeviceId;
         emit(
           state.copyWith(
             status: AudioSetupStatus.running,
             clearError: true,
-            refusal: ApplyRefusal.deviceRefused(_deviceName(next)),
+            refusal: deviceMoved
+                ? ApplyRefusal.deviceRefused(_deviceName(next))
+                : const ApplyRefusal.settingsRefused(),
             phase: ConfigPhase.settled,
             deviceConnectivity: notice,
           ),
@@ -478,16 +484,15 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     asioDriver: config.asioDriver,
   );
 
-  /// The loop cap to open [config] with, in frames: the cap open now when
-  /// neither the cap nor the rate moves, because a cap recomputed from a
-  /// rounded minute count or another rate would differ from it and make the
-  /// reopen clear the loops (`LE_REOPEN_CLEARED_CAP`) on a change that must
-  /// keep them.
+  /// The loop cap to open [config] with, in frames: the cap open now
+  /// whenever the cap does not move, because one recomputed from a rounded
+  /// minute count, or from a rate the device did not run, would differ from
+  /// it and make the reopen clear the loops (`LE_REOPEN_CLEARED_CAP`) on a
+  /// change that must keep them. With material the rate is locked; without
+  /// it, a clear loses nothing.
   int _loopCapFrames(AudioSetupState config) {
     final open = _repository.lastEngineConfig;
-    if (open != null &&
-        config.maxLoopMinutes == state.maxLoopMinutes &&
-        config.sampleRate == open.sampleRate) {
+    if (open != null && config.maxLoopMinutes == state.maxLoopMinutes) {
       return open.maxLoopFrames;
     }
     return _maxLoopFrames(config.maxLoopMinutes, config.sampleRate);
