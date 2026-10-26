@@ -187,9 +187,10 @@ do_install() {
     # Fail safe: a read-only /boot means the kernel found damage on the FAT
     # that holds autoboot.txt, the file that picks the slot and that the
     # commit after the trial boot rewrites. Refuse to stage a new slot until a
-    # restart has run the boot-time fsck. Staging itself writes nothing to
-    # /boot (the status file is on /data), so this is the one check, and it
-    # runs before the download.
+    # restart has run the boot-time fsck, and refuse before the download.
+    # Staging usually writes nothing to /boot (the status file is on /data).
+    # The exception is an install from an uncommitted trial slot: RAUC then
+    # marks the committed slot bad, and the backend swaps autoboot.txt.
     if boot_read_only; then
         log "the boot partition is read-only; restart to repair it"
         return "$EXIT_BOOT_READ_ONLY"

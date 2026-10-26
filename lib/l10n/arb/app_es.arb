@@ -2557,6 +2557,7 @@
     "updatesPagePercent": "{percent} %",
     "updatesPageDownload": "Descargar e instalar",
     "updatesPageInstallRestart": "Instalar y reiniciar",
+    "updatesPageRestart": "Reiniciar",
     "updatesPageRetry": "Reintentar",
     "updatesPageCancel": "Cancelar",
     "updatesPageRollback": "Segno {attempted} no arrancó, así que la consola volvió a {restored}.",

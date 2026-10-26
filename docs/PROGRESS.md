@@ -67,7 +67,8 @@ directory itself when it starts.
 `boot.mount` pulls in `systemd-fsck@` for its device, so `fsck.vfat -a` repairs
 the partition before it mounts and logs what it changed to the journal.
 `segno-update-ctl install` exits 3 when `/boot` is read-only, and the Updates
-page then tells the player to restart instead of reporting a failed download.
+page then tells the player to restart, with a Restart button through the power
+flow, instead of reporting a failed download.
 
 Shell tests cover the helper under bash and dash, and a static test covers the
 RAUC and fsck wiring. Dart tests cover the env, cubit and page. Device checks

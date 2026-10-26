@@ -6787,6 +6787,10 @@
     "@updatesPageInstallRestart": {
         "description": "Updates page button that restarts into the staged build through the power flow."
     },
+    "updatesPageRestart": "Restart",
+    "@updatesPageRestart": {
+        "description": "Updates page button that restarts the console through the power flow, so the boot-time check repairs a read-only boot partition."
+    },
     "updatesPageRetry": "Retry",
     "@updatesPageRetry": {
         "description": "Updates page button that retries a failed or cut-off download."
