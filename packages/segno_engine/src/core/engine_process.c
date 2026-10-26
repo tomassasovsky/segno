@@ -3404,7 +3404,10 @@ static void le_song_commit(le_engine* e, uint64_t frame) {
     le_handoff_play_now(e, target, frame);
   }
   for (int32_t c = 0; c < e->track_count; ++c) {
-    if (sounding & (1u << c)) handle_stop(e, c, frame);
+    if (!(sounding & (1u << c))) continue;
+    handle_stop(e, c, frame);
+    /* A quantized overdub queued on it would start it again. */
+    if (e->tracks[c].pending_record) le_handoff_disarm(e, c);
   }
 }
 
@@ -3419,10 +3422,16 @@ static void le_band_handoff_tick(le_engine* e, int wrapped, uint64_t frame) {
   }
   le_track* src = &e->tracks[e->song_source];
   const int32_t st = load_i32(&src->a_state);
-  if ((st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING) &&
-      load_i32(&src->lanes[0].a_len) > 0) {
+  const int32_t len = load_i32(&src->lanes[0].a_len);
+  if ((st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING) && len > 0) {
     e->song_elapsed++;
-    if (le_track_lap_edge(e, src)) e->song_edge = 1;
+    /* Not on the frame the source starts sounding: a take that closes on a
+     * primary top reads its lap edge on that same frame, and it plays a lap
+     * before it hands off, as in Song. sounding_frames, counted after this
+     * in le_shared_clock_one_shots, is still 0 on that frame. */
+    if (le_track_lap_edge(e, src) && src->sounding_frames > 0) {
+      e->song_edge = 1;
+    }
   } else if (e->song_edge) {
     e->song_elapsed++; /* Once stopped it on its edge: the top is near */
   }
@@ -4691,10 +4700,11 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
           le_handoff_record_request(e, cmd->arg_i, frame);
           break;
         }
-        /* Another arm on either end of a waiting request replaces it. */
-        if (cmd->arg_i == e->song_source || cmd->arg_i == e->song_target) {
-          le_song_cancel(e);
-        }
+        /* Another arm on the waiting target replaces its request. An arm on
+         * the source (a quantized overdub or take finish) keeps it, as an
+         * immediate overdub does (#1323); the handoff drops that arm if it
+         * has not fired by then. */
+        if (cmd->arg_i == e->song_target) le_song_cancel(e);
         int64_t sn, sd;
         if (trig == 0 && load_i32(&t->a_state) == LE_TRACK_RECORDING &&
             e->clock.length > 0 &&
@@ -7109,6 +7119,14 @@ static inline void advance_transport_frame(le_engine* e, int tc,
          * one-capturer hand-off. */
         if (boundary &&
             (wrapped || load_i32(&pt->a_state) != LE_TRACK_OVERDUBBING)) {
+          /* Band keeps one section (#1323): a take or a punch-in armed on a
+           * section while none sounded, and another section sounds by its
+           * top, becomes a Record waiting for that section's end. */
+          if (le_band_section(e, qt) && le_handoff_target_ok(pt, 1) &&
+              le_handoff_source(e, qt) >= 0) {
+            le_handoff_record_request(e, qt, frame);
+            continue;
+          }
           pt->pending_record = 0;
           store_i32(&pt->a_pending, 0);
           handle_record(e, qt, frame);
