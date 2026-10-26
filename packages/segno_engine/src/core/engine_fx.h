@@ -219,6 +219,38 @@ static inline le_psola_pass* le_ps(le_octaver_state* o) {
  * dry. */
 #define LE_OCT_REACH (LE_PSOLA_LAG + LE_PSOLA_DMAX * LE_PSOLA_DWIN)
 
+/* --- The Dual Octaver's low band (#1467) -------------------------------------
+ * The vocoder's 1024-point frame cannot part a bass note from the octave
+ * below it (a bin is 93.75 Hz at 96 kHz), so its down voices fell 25 to 40
+ * dB short on bass where the Looper X's sit at 0 dB. Below the crossover the
+ * Dual Octaver's down voices come from the time domain instead: the input
+ * low-passed (a Linkwitz-Riley pair at LE_OCT_LOW_HZ), read back at the
+ * voice's ratio by a tap that jumps forward one detected period whenever it
+ * falls a period behind, a short fade covering each jump (pitch-synchronous
+ * grains, resampled so the formants move with the pitch, as the vocoder's
+ * do here). The vocoder hands over the regions below the crossover in the
+ * same proportion, so the two bands sum to one voice. Detection is YIN on
+ * the band decimated to about LE_OCT_LOW_RATE, from LE_OCT_LOW_MIN_HZ to
+ * LE_OCT_LOW_MAX_HZ (1.25 x the crossover; the band fades out by 1.15 x);
+ * a band it hears no pitch in (silence, a chord) fades out and the vocoder
+ * plays it as before. The taps centre on the octaver's latency less the
+ * crossover's group delay, so the effect's latency stays LE_PV_LATENCY.
+ *
+ * Fit to the s15bass and s7oct captures (#891, #1467). The Looper X's down
+ * voices sit at 0.0 dB from 110 Hz to 4 kHz, 1.3 dB down (Octave 1) and 3.0
+ * dB down (Octave 2) at 82 Hz, and it shifts nothing at 41 or 55 Hz (it
+ * plays the input as it is). So the band starts at 60 Hz and comes in over
+ * a smoothstep to LE_OCT_LOW_FULL_HZ, which puts Octave 1 at -1.3 dB at 82
+ * Hz; below 60 Hz the vocoder plays the down voices as before. The
+ * crossover splits the error on the voice's second harmonic evenly between
+ * the 82 and 110 Hz harmonic tones (the capture: -11.3 and -6.0 dB; 200 Hz
+ * gave -9.0 and -13.2, 250 Hz -7.4 and -9.9, 300 Hz -6.7 and -8.1). */
+#define LE_OCT_LOW_HZ 250.0
+#define LE_OCT_LOW_RATE 3000
+#define LE_OCT_LOW_MIN_HZ 60
+#define LE_OCT_LOW_FULL_HZ 89.0f
+#define LE_OCT_LOW_MAX_HZ 312
+
 /* The cadence of a heap-state kind's update hook (le_fx_kinds), in engine
  * frames: it runs once per this many frames of the engine clock, at a phase
  * set by the owner's hop-stagger seed and the slot, live and offline alike,
