@@ -2980,6 +2980,7 @@ void main() {
       transport: TransportState(
         looperMode: LooperMode.band,
         primaryTrack: 0,
+        primaryDesignation: 0,
         songLastSection: 3,
       ),
       tracks: [
@@ -3006,6 +3007,7 @@ void main() {
       transport: TransportState(
         looperMode: LooperMode.band,
         primaryTrack: 0,
+        primaryDesignation: 0,
         songQueuedTrack: 2,
         songLastSection: 1,
       ),

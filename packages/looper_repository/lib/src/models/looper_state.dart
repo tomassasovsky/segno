@@ -145,14 +145,15 @@ class LooperState extends Equatable {
   );
 
   /// Whether [channel] is a section that plays one at a time (#1077, #1323):
-  /// any Song track, or a Band track other than an established primary (one
-  /// that holds a single-loop take, the engine's `le_band_section`).
+  /// any Song track, or a Band track other than an established primary (the
+  /// designated one, holding a single-loop take: the engine's
+  /// `le_band_section`).
   bool isSection(int channel) {
     switch (transport.looperMode) {
       case LooperMode.song:
         return true;
       case LooperMode.band:
-        final primary = transport.primaryTrack;
+        final primary = transport.primaryDesignation;
         if (primary < 0 || primary >= tracks.length || channel == primary) {
           return false;
         }
@@ -175,13 +176,7 @@ class LooperState extends Equatable {
     final content = candidates.where((track) => track.hasContent).toList();
     final audible = content.where((track) => !track.muted);
     final last = transport.songLastSection;
-    return (audible
-                .where(
-                  (track) =>
-                      track.state == TrackState.playing ||
-                      track.state == TrackState.overdubbing,
-                )
-                .firstOrNull ??
+    return (audible.where((track) => track.isRunning).firstOrNull ??
             audible.where((track) => track.channel == last).firstOrNull ??
             audible.firstOrNull ??
             content.firstOrNull)

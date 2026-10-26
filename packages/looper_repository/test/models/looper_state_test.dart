@@ -96,7 +96,11 @@ void main() {
       LooperMode mode, {
       Track crown = const Track(lengthFrames: 100),
     }) => LooperState(
-      transport: TransportState(looperMode: mode, primaryTrack: 0),
+      transport: TransportState(
+        looperMode: mode,
+        primaryTrack: 0,
+        primaryDesignation: 0,
+      ),
       tracks: [
         crown,
         const Track(channel: 1, lengthFrames: 100),
@@ -120,6 +124,24 @@ void main() {
         rig(LooperMode.band, crown: const Track()).isSection(1),
         isFalse,
       );
+    });
+
+    test('a Band designation on a cleared track leaves no sections, though '
+        'the crown resolves to a sibling', () {
+      const cleared = LooperState(
+        transport: TransportState(
+          looperMode: LooperMode.band,
+          primaryTrack: 1,
+          primaryDesignation: 0,
+        ),
+        tracks: [
+          Track(),
+          Track(channel: 1, lengthFrames: 100),
+          Track(channel: 2, lengthFrames: 100),
+        ],
+      );
+      expect(cleared.isSection(1), isFalse);
+      expect(cleared.isSection(2), isFalse);
     });
 
     test('no other mode has sections', () {

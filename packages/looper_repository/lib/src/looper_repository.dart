@@ -2424,6 +2424,7 @@ class LooperRepository {
       // (the designation survives its own clear while a sibling plays, so
       // its re-record re-establishes it), and none for an empty session.
       primaryTrack: resolvedPrimaryTrack(s.primaryTrack, s.tracks),
+      primaryDesignation: s.primaryTrack,
       songQueuedTrack: s.songQueuedTrack,
       songQueueProgress: s.songQueueProgress,
       songLastSection: s.songLastSection,

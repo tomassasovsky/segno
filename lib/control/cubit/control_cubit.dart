@@ -1885,11 +1885,7 @@ class ControlCubit extends Cubit<ControlState> {
       // A Song or Band section that already sounds needs no Play: the engine
       // reads a Play on it as a cancel of the section waiting to follow it
       // (#1323).
-      final playing = switch (_trackAt(channel)?.state) {
-        TrackState.playing || TrackState.overdubbing => true,
-        _ => false,
-      };
-      if (playing && _l.isSection(channel)) {
+      if ((_trackAt(channel)?.isRunning ?? false) && _l.isSection(channel)) {
         accepted = true;
         continue;
       }
@@ -2073,6 +2069,13 @@ class ControlCubit extends Cubit<ControlState> {
       _switchSection(channel);
     } else if (capturing == channel) {
       _looper.record(channel: channel); // finish the loop
+    } else if (_l.songWaitingSection == channel) {
+      // A press on the section waiting to follow the capture cancels its
+      // request, as it does with nothing capturing, and leaves the capture
+      // running (#1323). A hand-off here would finish the capture and then
+      // cancel the request with the same press.
+      _looper.cancelArm(channel: channel);
+      selectTrack(channel);
     } else {
       _looper
         ..record(channel: capturing) // finalize the running capture
