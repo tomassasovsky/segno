@@ -33,6 +33,9 @@
  * vinyl's frequency, the degrade's hold, the low-pass cutoff, the spring's
  * time).
  *
+ * The Dual Octaver runs on a harmonic bass line instead of the shared
+ * source, in every mode and in Ed's rack, so its low band (#1467) works.
+ *
  * Reported per scenario: p50 / p99 / p99.9 / max per callback, the callbacks
  * over the period's deadline, and the mean cost of the blocks starting in
  * each quarter of the octaver's hop, which is where the FFT work lands.
@@ -195,6 +198,33 @@ static void kind_entry(le_fx_recipe* r, int s, int32_t kind) {
 }
 
 static void fx_entry(le_fx_recipe* r, int s) { kind_entry(r, s, g_kind); }
+
+/* A harmonic bass line (82, 110, 147 and 98 Hz, a quarter second each,
+ * harmonics 1 to 10 at 1/k, -12 dBFS peak) for the Dual Octaver: its low
+ * band (#1467) plays only on a pitched note below its crossover, so the
+ * shared source (inharmonic partials over noise bursts) would time it with
+ * the band idle. Each note change makes the band detect and hand over
+ * again. */
+static float* make_bass_source(int32_t frames, int32_t sr) {
+  float* s = (float*)calloc((size_t)frames, sizeof(float));
+  if (s == NULL) return NULL;
+  static const double notes[4] = {82.41, 110.0, 146.83, 98.0};
+  const int32_t len = sr / 4;
+  double ph = 0.0;
+  for (int32_t i = 0; i < frames; ++i) {
+    ph += 2.0 * M_PI * notes[(i / len) % 4] / sr;
+    double x = 0.0;
+    for (int k = 1; k <= 10; ++k) x += sin(k * ph) / k;
+    s[i] = (float)(0.14 * x); /* about -12 dBFS at the peak */
+  }
+  return s;
+}
+static float* g_bass; /* make_bass_source's, for the Dual Octaver */
+
+/* The source [kind] runs on: the bass line for the Dual Octaver. */
+static float* source_for(int32_t kind, float* src) {
+  return kind == LE_FX_DUAL_OCTAVER ? g_bass : src;
+}
 
 /* --racks: each Looper X rack's chain, in its chain order
  * (docs/plan/2026-10-20-looperx-derived-tables.md, "Chain order"), on one
@@ -454,9 +484,11 @@ static int run_racks(const bench_opts* o, float* src, int32_t frames,
     g_lpf_lfo = !strcmp(rack->name, "rhythmic");
     /* The Drum and Dub racks' delays run their own voicings. */
     g_mdly_own = !strcmp(rack->name, "drum") ? 1 : !strcmp(rack->name, "dub") ? 2 : 0;
+    /* Ed's rack plays the bass line its Dual Octaver's presets are for. */
+    float* in = !strcmp(rack->name, "eds") ? g_bass : src;
     const int timed =
-        time_rack(o, src, frames, NULL, blocks, warm, &base, ph) &&
-        time_rack(o, src, frames, rack, blocks, warm, &st, ph);
+        time_rack(o, in, frames, NULL, blocks, warm, &base, ph) &&
+        time_rack(o, in, frames, rack, blocks, warm, &st, ph);
     g_lpf_lfo = 0;
     g_mdly_own = 0;
     if (!timed) {
@@ -566,16 +598,24 @@ static int run_table(const bench_opts* o, float* src, int32_t frames,
     fprintf(stderr, "the rig alone refused\n");
     return 1;
   }
+  stats base_bass;
+  if (!time_kinds(o, g_bass, frames, &k_table[0], 0, blocks, warm,
+                  &base_bass)) {
+    fprintf(stderr, "the rig alone refused\n");
+    return 1;
+  }
   for (size_t k = 0; k < sizeof(k_table) / sizeof(k_table[0]); ++k) {
     const table_kind* kind = &k_table[k];
     stats one, eight;
-    if (!time_kinds(o, src, frames, kind, 1, blocks, warm, &one) ||
-        !time_kinds(o, src, frames, kind, 8, blocks, warm, &eight)) {
+    float* in = source_for(kind->type, src);
+    if (!time_kinds(o, in, frames, kind, 1, blocks, warm, &one) ||
+        !time_kinds(o, in, frames, kind, 8, blocks, warm, &eight)) {
       fprintf(stderr, "%s refused\n", kind->name);
       return 1;
     }
-    const double d1 = one.p99 - base.p99;
-    const double d8 = (eight.p99 - base.p99) / 8.0;
+    const stats* b = in == g_bass ? &base_bass : &base;
+    const double d1 = one.p99 - b->p99;
+    const double d8 = (eight.p99 - b->p99) / 8.0;
     const int hops = le_fx_type_hops(kind->type);
     const double us = hops && d1 > d8 ? d1 : d8;
     ns[k] = us > 0.0 ? 1000.0 * us / (double)o->period : 0.0;
@@ -737,13 +777,15 @@ int main(int argc, char** argv) {
   detect_cpu();
   const int32_t frames = (int32_t)(o.loop_seconds * o.rate);
   float* src = make_source(frames, o.rate);
-  if (src == NULL) return 1;
+  g_bass = make_bass_source(frames, o.rate);
+  if (src == NULL || g_bass == NULL) return 1;
 
   const int warm = 600;
   if (g_racks || table) {
     const int rc = table ? run_table(&o, src, frames, blocks, warm)
                          : run_racks(&o, src, frames, blocks, warm);
     free(src);
+    free(g_bass);
     return rc;
   }
   const int counts[] = {0, 1, 2, 4, 8};
@@ -760,7 +802,7 @@ int main(int argc, char** argv) {
       const int n = counts[k];
       if (mode > 0 && n == 0) continue;
       rig r;
-      if (!monitor_rig(&r, &o, src, frames)) {
+      if (!monitor_rig(&r, &o, source_for(g_kind, src), frames)) {
         fprintf(stderr, "rig or monitor input 0 refused\n");
         return 1;
       }
@@ -813,5 +855,6 @@ int main(int argc, char** argv) {
   }
   printf("timed loops ran at: %s\n", g_timed_sched);
   free(src);
+  free(g_bass);
   return 0;
 }
