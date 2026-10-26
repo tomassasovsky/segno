@@ -45,18 +45,29 @@ class ApplyRefusal extends Equatable {
   /// operation a device change must not overlap (`capture` for a take).
   const ApplyRefusal.busy(String this.busyKind)
     : overBudgetRate = null,
-      refusedDevice = null;
+      refusedDevice = null,
+      settingsRefused = false;
 
   /// Refused because the effects would not fit at [overBudgetRate] (D19).
   const ApplyRefusal.overBudgetRate(int this.overBudgetRate)
     : busyKind = null,
-      refusedDevice = null;
+      refusedDevice = null,
+      settingsRefused = false;
 
   /// Refused by the interface: [refusedDevice] would not open, and the
   /// previous one runs again.
   const ApplyRefusal.deviceRefused(String this.refusedDevice)
     : busyKind = null,
-      overBudgetRate = null;
+      overBudgetRate = null,
+      settingsRefused = false;
+
+  /// Refused by the interface for a change that moved neither the device nor
+  /// the rates (a loop cap): the previous settings run again.
+  const ApplyRefusal.settingsRefused()
+    : busyKind = null,
+      overBudgetRate = null,
+      refusedDevice = null,
+      settingsRefused = true;
 
   /// The blocking operation's `GuardKind` name, for a busy refusal.
   final String? busyKind;
@@ -67,8 +78,17 @@ class ApplyRefusal extends Equatable {
   /// The interface that would not open.
   final String? refusedDevice;
 
+  /// Whether the interface refused settings that moved neither the device
+  /// nor the rates.
+  final bool settingsRefused;
+
   @override
-  List<Object?> get props => [busyKind, overBudgetRate, refusedDevice];
+  List<Object?> get props => [
+    busyKind,
+    overBudgetRate,
+    refusedDevice,
+    settingsRefused,
+  ];
 }
 
 /// Whether the audio device is currently open.

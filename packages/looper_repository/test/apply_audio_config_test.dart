@@ -4,9 +4,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart'
     show EngineSnapshot, ReopenOutcome;
-import 'package:segno_engine/segno_engine.dart' as le show LatencyState;
+import 'package:segno_engine/segno_engine.dart'
+    as le
+    show AudioDevice, LatencyState;
 
 import 'helpers/fake_audio_engine.dart';
+
+const pinnedDevice = le.AudioDevice(
+  id: 'out-1',
+  name: 'Scarlett 2i2',
+  isDefault: false,
+  isInput: false,
+);
+const otherDevice = le.AudioDevice(
+  id: 'out-2',
+  name: 'Headphones',
+  isDefault: false,
+  isInput: false,
+);
 
 /// `LooperRepository.applyAudioConfig` and `fxRoomAt` (#1270 Part 3a): an
 /// audio-settings change reopens the device and keeps the loops, puts the
@@ -212,6 +227,49 @@ void main() {
 
       expect(outcome.status, AudioApplyStatus.failed);
       expect(outcome.result, EngineResult.device);
+    });
+  });
+
+  group('a reconnect after a failed one', () {
+    test('a clear the failed open made is still told when the next one '
+        'succeeds', () async {
+      final reconnect = StreamController<void>.broadcast();
+      addTearDown(reconnect.close);
+      final repo = LooperRepository(
+        engine: engine,
+        ticker: ticker.stream,
+        reconnectTicker: reconnect.stream,
+      );
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      expect(repo.startEngine(previous), EngineResult.ok);
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(devicePresent: false);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      // The interface returns at another rate (the loops clear) and fails to
+      // start; on the next device list it opens, with nothing left to keep.
+      engine
+        ..devices = const [pinnedDevice]
+        ..reopenResult = (
+          result: EngineResult.device,
+          outcome: ReopenOutcome.clearedRate,
+          droppedTracks: 0,
+        );
+      reconnect.add(null);
+      await Future<void>.delayed(Duration.zero);
+      engine
+        ..devices = const [pinnedDevice, otherDevice]
+        ..reopenResult = (
+          result: EngineResult.ok,
+          outcome: ReopenOutcome.retained,
+          droppedTracks: 0,
+        );
+      reconnect.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(repo.state.status.reopen?.outcome, ReopenOutcome.clearedRate);
     });
   });
 

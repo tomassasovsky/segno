@@ -421,6 +421,22 @@ void main() {
       expect(cubit.state.playbackDeviceId, isEmpty);
     });
 
+    test('a refused loop cap says the settings were refused, not the '
+        'interface', () {
+      seed();
+      when(() => repository.applyAudioConfig(any())).thenReturn(
+        const AudioApplyResult(
+          status: AudioApplyStatus.refused,
+          result: EngineResult.device,
+        ),
+      );
+      final cubit = buildCubit()..setMaxLoopMinutes(5);
+      addTearDown(cubit.close);
+
+      expect(cubit.state.refusal, const ApplyRefusal.settingsRefused());
+      expect(cubit.state.maxLoopMinutes, 0);
+    });
+
     test('a refused apply that cleared the loops still says so', () {
       seed();
       when(() => repository.applyAudioConfig(any())).thenReturn(
@@ -489,6 +505,28 @@ void main() {
               ).captured.single
               as EngineConfig;
       expect(asked.maxLoopFrames, 14399999);
+    });
+
+    test('the open loop cap is kept even when the device runs another rate '
+        'than was asked', () {
+      seed();
+      // Asked 96 kHz, running 48: the cap was opened at 96 kHz frames.
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(
+          sampleRate: 96000,
+          bufferFrames: 128,
+          maxLoopFrames: 28800000,
+        ),
+      );
+      final cubit = buildCubit()..setBufferFrames(256);
+      addTearDown(cubit.close);
+
+      final asked =
+          verify(
+                () => repository.applyAudioConfig(captureAny()),
+              ).captured.single
+              as EngineConfig;
+      expect(asked.maxLoopFrames, 28800000);
     });
 
     test('a reopen that cleared the loops says so (#1140)', () {

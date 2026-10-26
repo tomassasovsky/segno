@@ -2167,6 +2167,10 @@
             }
         }
     },
+    "audioSettingsRefused": "The interface would not open with these settings. The previous settings are running again.",
+    "@audioSettingsRefused": {
+        "description": "Banner when the interface refused a change that moved neither the device nor the rates (a loop cap), and the previous settings were reopened (#1270 Part 3a)."
+    },
     "systemThisConsoleGroup": "THIS CONSOLE",
     "systemHousekeepingGroup": "HOUSEKEEPING",
     "systemHardwareGroup": "HARDWARE",

@@ -2647,6 +2647,10 @@ class LooperRepository {
     if (_startRefused) return EngineResult.notReady;
     // The stopped engine still reports the rate the loops were recorded at.
     final previousRate = _engine.snapshot().sampleRate;
+    // A verdict an earlier attempt left pending (its open failed after
+    // clearing, or its replay rolled back): what this reopen reports must
+    // not hide it behind a "retained" over material that is already gone.
+    final pending = _reopenVerdictPending ? _lastReopen : null;
     _retireEngineLifetime();
     final reopened = _engine.reopen(engineConfigToEngine(config));
     if (!reopened.result.isOk) {
@@ -2654,11 +2658,14 @@ class LooperRepository {
       // (`le_engine_reopen`): a clear is a fact the player must be told at
       // the next start (rule 3), whatever the open did not manage.
       if (!reopened.outcome.keepsMaterial) {
-        _lastReopen = EngineReopened(
-          outcome: reopened.outcome,
-          droppedTracks: reopened.droppedTracks,
-          previousSampleRate: previousRate,
-          sampleRate: _engine.snapshot().sampleRate,
+        _lastReopen = _moreLost(
+          pending,
+          EngineReopened(
+            outcome: reopened.outcome,
+            droppedTracks: reopened.droppedTracks,
+            previousSampleRate: previousRate,
+            sampleRate: _engine.snapshot().sampleRate,
+          ),
         );
         _reopenVerdictPending = true;
       }
@@ -2671,7 +2678,7 @@ class LooperRepository {
       previousSampleRate: previousRate,
       sampleRate: snapshot.sampleRate,
     );
-    _lastReopen = verdict;
+    _lastReopen = _moreLost(pending, verdict);
     final foldedHistory = switch (verdict.outcome) {
       ReopenOutcome.retained => const <(int, int)>{},
       ReopenOutcome.retainedPartial => _foldHistoryFxForChannels(
@@ -2693,7 +2700,9 @@ class LooperRepository {
     if (result.isOk && verdict.keepsMaterial) _drainHistoryFx();
     // Rolled back: the device will not read present again until a deliberate
     // start, which must still tell the player what this reopen did.
-    if (!result.isOk) _reopenVerdictPending = true;
+    // Held for the next deliberate start only while nothing is open to
+    // report it; an open rig reports it on its own status.
+    _reopenVerdictPending = !result.isOk;
     return result;
   }
 
@@ -2731,7 +2740,7 @@ class LooperRepository {
     // A RAW stop, as a reconnect does: stopEngine() would fold the history
     // and disarm the supervisor for what is only a reopen.
     _engine.stop();
-    _lastReopen = null;
+    if (!_reopenVerdictPending) _lastReopen = null;
     final result = _reopenEngine(config);
     if (result.isOk) {
       // The device answered: nothing is lost any more.
@@ -2750,7 +2759,7 @@ class LooperRepository {
     // The new config would not open. Put the previous one back, keeping the
     // loops the same way.
     _engine.stop();
-    _lastReopen = null;
+    if (!_reopenVerdictPending) _lastReopen = null;
     final back = _reopenEngine(previous);
     final verdict = _moreLost(attempt, _lastReopen);
     if (back.isOk) {
@@ -2771,7 +2780,7 @@ class LooperRepository {
   ) {
     _lastReopen = null;
     _reopenVerdictPending = false;
-    if (_intendRunning) _reproject();
+    _reproject();
     return AudioApplyResult(status: status, result: result, reopen: reopen);
   }
 
@@ -2782,7 +2791,7 @@ class LooperRepository {
       ReopenOutcome.retainedPartial => 1,
       ReopenOutcome.clearedRate || ReopenOutcome.clearedCap => 2,
     };
-    return loss(b) > loss(a) ? b : a;
+    return a == null || loss(b) > loss(a) ? b : a;
   }
 
   /// The post-open replay shared by [startEngine] and [_reopenEngine]: every
