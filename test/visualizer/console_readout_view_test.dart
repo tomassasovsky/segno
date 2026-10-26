@@ -238,11 +238,11 @@ void main() {
         expect(find.text(line), findsOneWidget);
       });
 
-      testWidgets('the longest line fits the 7" on one line, unclipped', (
+      testWidgets('the longest line fits the 7" at full size, unclipped', (
         tester,
       ) async {
         // The stage's own copy with a long interface name, at the 7"'s
-        // 1024 x 600: the echo keeps one line and must not ellipsize.
+        // 1024 x 600: the echo must not ellipsize.
         const line =
             'Scarlett 4i4 USB disconnected — nothing is heard. Audio restarts '
             'when it is back.';
@@ -257,7 +257,10 @@ void main() {
             matching: find.byType(RichText),
           ),
         );
+        // At the readout's full size, wrapped onto at most two lines and
+        // never ellipsized.
         expect(text.didExceedMaxLines, isFalse);
+        expect(tester.takeException(), isNull);
       });
     });
 

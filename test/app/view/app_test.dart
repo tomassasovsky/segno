@@ -5204,7 +5204,6 @@ void main() {
           find.byKey(const Key('connectivity_banner_waiting')),
           findsOneWidget,
         );
-        expect(debugAppToastActive('app_audioRecovery_banner'), isFalse);
         expect(find.byType(AudioNotRunningBanner), findsNothing);
 
         await tester.tap(

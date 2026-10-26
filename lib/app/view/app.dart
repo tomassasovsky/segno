@@ -1482,8 +1482,10 @@ class _AppViewState extends State<_AppView> {
           listener: (_, _) => _syncWindow(),
         ),
         BlocListener<AudioSetupCubit, AudioSetupState>(
+          // The readout's line also names the device.
           listenWhen: (previous, current) =>
-              previous.deviceConnectivity != current.deviceConnectivity,
+              previous.deviceConnectivity != current.deviceConnectivity ||
+              previous.connectivityDeviceName != current.connectivityDeviceName,
           listener: (_, state) {
             _updateDisplayContext();
             _showDeviceRestoredToast(state);

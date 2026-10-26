@@ -99,6 +99,11 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// applied once per profile.
   String? _hydratedDeviceKey;
 
+  /// Whether the boot-time recovery still waits for the pinned interface
+  /// ([setWaitingForDevice]), so a refused or failed apply in the meantime
+  /// gives the strip back to the wait.
+  bool _recoveryWaiting = false;
+
   /// The request waiting on the "Apply audio settings?" answer.
   AudioSetupState? _pending;
 
@@ -303,6 +308,11 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       _applyGuarded(next);
     } finally {
       guard.release();
+    }
+    if (_recoveryWaiting &&
+        state.status != AudioSetupStatus.running &&
+        state.deviceConnectivity == DeviceConnectivity.none) {
+      emit(state.copyWith(deviceConnectivity: DeviceConnectivity.waiting));
     }
   }
 
@@ -599,6 +609,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// than a toast beside the engine-stopped banner (#860, #1270 Part 5).
   /// Any other condition already on the strip outranks it.
   void setWaitingForDevice({required bool waiting}) {
+    _recoveryWaiting = waiting;
     final current = state.deviceConnectivity;
     if (waiting && current == DeviceConnectivity.none) {
       emit(state.copyWith(deviceConnectivity: DeviceConnectivity.waiting));
