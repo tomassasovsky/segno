@@ -136,6 +136,14 @@ class LooperState extends Equatable {
   /// Whether any track holds recorded audio.
   bool get hasContent => tracks.any((t) => t.hasContent);
 
+  /// Whether music is moving: a track plays, records or overdubs. The
+  /// engine's loop clock advances exactly then and otherwise waits at the
+  /// loop top. Not [TransportState.deviceRunning], which only says the audio
+  /// device is open.
+  bool get isPlaying => tracks.any(
+    (t) => t.state == TrackState.playing || t.isCapturing,
+  );
+
   /// Whether [channel] is a section that plays one at a time (#1077, #1323):
   /// any Song track, or a Band track other than an established primary (one
   /// that holds a single-loop take, the engine's `le_band_section`).

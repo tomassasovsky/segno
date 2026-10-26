@@ -89,11 +89,12 @@ class LoopModePage extends StatelessWidget {
     },
   };
 
-  /// What the gate reads off a projection: the count-in, and every track's
-  /// state, queued trigger, in-flight layer and length. A change in any of
-  /// them can open or close a card.
+  /// What the gate reads off a projection: whether the audio device is open
+  /// (with it closed every change applies as posted), the count-in, and
+  /// every track's state, queued trigger, in-flight layer and length. A
+  /// change in any of them can open or close a card.
   static int _gateSignature(LooperState state) => Object.hashAll([
-    state.transport.isRunning,
+    state.transport.deviceRunning,
     state.transport.countingIn,
     for (final track in state.tracks) ...[
       track.state,

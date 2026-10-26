@@ -112,6 +112,73 @@ void main() {
       expect(link.sent, [StateMessage(frame)]);
     });
 
+    test('setDimmed resends the current frame and stamps later ones', () async {
+      link.hello();
+      await pumpEventQueue();
+      final frame = PedalStateFrame.blank().copyWith(
+        globalColor: GlobalColor.red,
+      );
+      repo
+        ..pushState(frame)
+        ..setDimmed(dimmed: true);
+      expect(link.sent, [
+        StateMessage(frame),
+        StateMessage(frame.copyWith(dimmed: true)),
+      ]);
+      // Unchanged, it sends nothing; a new frame carries the flag.
+      repo
+        ..setDimmed(dimmed: true)
+        ..pushState(frame.copyWith(globalColor: GlobalColor.green));
+      expect(link.sent, hasLength(3));
+      expect(link.lastFrame!.dimmed, isTrue);
+      repo.setDimmed(dimmed: false);
+      expect(link.lastFrame!.dimmed, isFalse);
+      expect(link.lastFrame!.globalColor, GlobalColor.green);
+    });
+
+    test('setDimmed before any frame only stamps the first one', () async {
+      link.hello();
+      await pumpEventQueue();
+      repo.setDimmed(dimmed: true);
+      expect(link.sent, isEmpty);
+      repo.pushState(PedalStateFrame.blank());
+      expect(link.lastFrame!.dimmed, isTrue);
+    });
+
+    test(
+      'PD status is kept while connected and cleared when the board goes',
+      () {
+        fakeAsync((async) {
+          final link = FakePedalLink();
+          final repo = PedalRepository(link);
+          final changes = <PedalPowerSupply?>[];
+          repo.powerSupplyChanges.listen(changes.add);
+          const supply = PedalPowerSupply(
+            profile: PedalPowerProfile.matches,
+            millivolts: 20000,
+            milliamps: 3000,
+            maxMilliamps: 4700,
+          );
+          // Not trusted before a compatible hello.
+          link.emit(const PdStatusMessage(supply));
+          async.flushMicrotasks();
+          expect(repo.powerSupply, isNull);
+          link
+            ..hello()
+            ..emit(const PdStatusMessage(supply))
+            ..emit(const PdStatusMessage(supply));
+          async.flushMicrotasks();
+          expect(repo.powerSupply, supply);
+          expect(changes, [supply]);
+          async.elapse(repo.helloTimeout);
+          expect(repo.powerSupply, isNull);
+          expect(changes, [supply, null]);
+          unawaited(repo.dispose());
+          async.flushMicrotasks();
+        });
+      },
+    );
+
     test('a frame identical to the last push is not sent again', () async {
       link.hello();
       await pumpEventQueue();

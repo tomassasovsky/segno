@@ -119,6 +119,16 @@ void main() {
     return cubit;
   }
 
+  /// Waits for the preview poll to end the preview. It needs five ticks of
+  /// a 1 ms periodic timer, and a loaded runner can stall the event loop past
+  /// any fixed delay, so this waits on the state with a generous deadline.
+  Future<void> untilPreviewEnds(LibraryAudioCubit cubit) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (cubit.state.preview != null && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+  }
+
   Future<LibraryAudioCubit> withSession(String id, String name) async {
     when(
       () => sessions.listSessions(),
@@ -271,7 +281,7 @@ void main() {
 
       await cubit.preview();
       expect(cubit.state.preview, isNotNull);
-      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await untilPreviewEnds(cubit);
 
       expect(cubit.state.preview, isNull);
     });
@@ -791,7 +801,7 @@ void main() {
         final cubit = await withRecording(take('Evening loop'));
 
         await cubit.preview();
-        await Future<void>.delayed(const Duration(milliseconds: 30));
+        await untilPreviewEnds(cubit);
 
         expect(cubit.state.preview, isNull);
         verify(() => sessions.stopAudition()).called(1);

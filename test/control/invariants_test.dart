@@ -36,7 +36,7 @@ void main() {
     int masterLengthFrames = 0,
   }) => LooperState(
     transport: TransportState(
-      isRunning: true,
+      deviceRunning: true,
       masterLengthFrames: masterLengthFrames,
     ),
     tracks: tracks ?? [for (var i = 0; i < 8; i++) Track(channel: i)],
@@ -502,7 +502,7 @@ void main() {
       bool record = false,
     }) => LooperState(
       transport: TransportState(
-        isRunning: true,
+        deviceRunning: true,
         looperMode: LooperMode.song,
         songQueuedTrack: queued,
         songQueueProgress: progress,
@@ -625,7 +625,7 @@ void main() {
 
   group('transition rules in Song (#1077)', () {
     LooperState rig(LooperMode mode, List<TrackState> states) => LooperState(
-      transport: TransportState(isRunning: true, looperMode: mode),
+      transport: TransportState(deviceRunning: true, looperMode: mode),
       tracks: [
         for (var i = 0; i < states.length; i++)
           Track(channel: i, state: states[i], lengthFrames: 100),

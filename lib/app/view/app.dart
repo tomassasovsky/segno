@@ -27,8 +27,10 @@ import 'package:segno/appliance/idle_dim_cubit.dart';
 import 'package:segno/appliance/idle_dim_host.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/appliance/power_off/power_goodbye.dart';
+import 'package:segno/appliance/power_off/power_host.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
 import 'package:segno/appliance/software_brightness.dart';
+import 'package:segno/appliance/wifi_reconnect_hold_host.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/backing/cubit/backing_cubit.dart';
 import 'package:segno/backing/cubit/backing_mix_cubit.dart';
@@ -53,11 +55,11 @@ import 'package:segno/update/appliance/system_appliance_env.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/visualizer/application/waveform_display_controller.dart';
 import 'package:segno/visualizer/visualizer.dart';
-import 'package:segno/window/window_chrome.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:storage_repository/storage_repository.dart';
 import 'package:toastification/toastification.dart';
+import 'package:touch_calibration_client/touch_calibration_client.dart';
 import 'package:update_repository/update_repository.dart';
 import 'package:usb_storage_client/usb_storage_client.dart';
 import 'package:wifi_repository/wifi_repository.dart';
@@ -67,9 +69,9 @@ class App extends StatefulWidget {
   /// Creates an [App] driven by the injected repositories.
   ///
   /// The repositories and [waveformWindow] are injected so tests can supply
-  /// fakes / a no-op window service instead of the native device and a real
-  /// second OS window. [initialAsioDrivers] is the ASIO driver list enumerated
-  /// at startup, cached by the audio-setup cubit for the picker.
+  /// fakes / a no-op window service instead of the native device and the
+  /// link to the Track display. [initialAsioDrivers] is the ASIO driver list
+  /// enumerated at startup, cached by the audio-setup cubit for the picker.
   const App({
     required this.repository,
     required this.controllerRepository,
@@ -83,8 +85,6 @@ class App extends StatefulWidget {
     required this.backingRepository,
     this.instrumentRepository,
     this.pedalRepository,
-    this.displayCount,
-    this.waveformWindowOpenDelay = Duration.zero,
     this.audioRecoveryConfig,
     this.initialAsioDrivers = const [],
     this.updates = const UpdateRepository(
@@ -93,6 +93,7 @@ class App extends StatefulWidget {
     this.wifi = const WifiRepository(client: UnsupportedWifiClient()),
     this.brightness = const UnsupportedBrightnessClient(),
     this.displayOutputs = const UnknownDisplayOutputs(),
+    this.touchCalibration = const UnsupportedTouchCalibrationClient(),
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
     this.cpuLoad = const CpuLoadRepository.unsupported(),
     this.removableVolumes = const InternalOnlyVolumes(),
@@ -117,6 +118,10 @@ class App extends StatefulWidget {
   /// Which connector each window is shown on and whether a panel is plugged
   /// in. Defaults unknown (a desktop).
   final DisplayOutputs displayOutputs;
+
+  /// Reads and sets each panel's touch calibration. Defaults unsupported,
+  /// which leaves Calibrate touch off the Displays page.
+  final TouchCalibrationClient touchCalibration;
 
   /// Reads what the appliance knows about itself — the disk, the box, and
   /// where it can export to. Defaults to the client that answers "unknown",
@@ -172,15 +177,6 @@ class App extends StatefulWidget {
   /// cubit always exists and its settings picker shows an empty state. Owned by
   /// the [PedalCubit], which disposes it.
   final PedalRepository? pedalRepository;
-
-  /// Reports the number of connected displays, for the dual-display console's
-  /// single-display fallback. `null` (the default) disables the fallback
-  /// (assumes the usual multi-window desktop); the Pi entrypoint wires the real
-  /// platform display count.
-  final int Function()? displayCount;
-
-  /// Startup spacing before the second native view opens under Weston.
-  final Duration waveformWindowOpenDelay;
 
   /// The pinned audio config a boot auto-start could not open, handed to the
   /// [AudioRecoveryCubit] so the engine auto-starts when that device reappears.
@@ -572,6 +568,8 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: widget.wifi),
         RepositoryProvider.value(value: widget.brightness),
         RepositoryProvider.value(value: widget.displayOutputs),
+        RepositoryProvider.value(value: widget.touchCalibration),
+        RepositoryProvider.value(value: widget.waveformWindow),
         RepositoryProvider.value(value: widget.consoleFacts),
         RepositoryProvider.value(value: widget.cpuLoad),
         RepositoryProvider<RemovableVolumes>.value(
@@ -877,8 +875,6 @@ class _AppState extends State<App> {
         child: _AppView(
           controlNotices: _controlNotices,
           waveformWindow: widget.waveformWindow,
-          displayCount: widget.displayCount,
-          waveformWindowOpenDelay: widget.waveformWindowOpenDelay,
         ),
       ),
     );
@@ -891,14 +887,10 @@ class _AppView extends StatefulWidget {
   const _AppView({
     required this.controlNotices,
     required this.waveformWindow,
-    required this.waveformWindowOpenDelay,
-    this.displayCount,
   });
 
   final ControlSettingsNotices controlNotices;
   final WaveformWindowService waveformWindow;
-  final int Function()? displayCount;
-  final Duration waveformWindowOpenDelay;
 
   @override
   State<_AppView> createState() => _AppViewState();
@@ -909,6 +901,12 @@ class _AppViewState extends State<_AppView> {
   StreamSubscription<WaveformDisplayFailure>? _displayFailures;
   StreamSubscription<RecoveryRefusal>? _recoverySub;
   bool _restoreNoticeScheduled = false;
+
+  /// "Not now" on the power-cycle banner holds until the next boot.
+  bool _powerCycleDismissed = false;
+
+  /// The weak-charger toast is said once per boot.
+  bool _weakChargerShown = false;
 
   /// Resolves localized strings from inside [MaterialApp] when this state
   /// sits above it in the tree.
@@ -935,14 +933,10 @@ class _AppViewState extends State<_AppView> {
       repository: context.read<LooperRepository>(),
       window: widget.waveformWindow,
       context: _displayContext(),
-      displayCount: widget.displayCount,
-      openDelay: widget.waveformWindowOpenDelay,
     );
     _displayFailures = _display.failures.listen((failure) {
       if (!mounted) return;
       switch (failure) {
-        case WaveformDisplayFailure.singleDisplay:
-          _showSingleDisplayNotice();
         case WaveformDisplayFailure.openFailed:
           context.read<WaveformWindowCubit>().reportOpenFailed();
           _showWaveformWindowFailedBanner();
@@ -1052,13 +1046,11 @@ class _AppViewState extends State<_AppView> {
     if (!mounted) return;
     _display.start(
       enabled: context.read<WaveformWindowCubit>().state.enabled,
-      title: _l10n.outputWaveformWindowTitle,
     );
   }
 
   void _syncWindow() => _display.setEnabled(
     enabled: context.read<WaveformWindowCubit>().state.enabled,
-    title: _l10n.outputWaveformWindowTitle,
   );
 
   @override
@@ -1206,6 +1198,62 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
+  /// The USB-C contract predates the console profile, so the console runs on
+  /// less than the charger offers until it is unplugged and plugged back in
+  /// (#1352). Nothing breaks meanwhile, so the banner can be put off; Power
+  /// off opens the normal Power options, whose Safe to switch off face says
+  /// to unplug. It clears itself once the new contract is in.
+  void _showPowerCycleBanner(PedalPowerSupply? supply) {
+    if (supply == null || !supply.needsPowerCycle || _powerCycleDismissed) {
+      dismissAppToast(AppToastId.powerCycle);
+      return;
+    }
+    final l10n = _l10n;
+    showAppToast(
+      id: AppToastId.powerCycle,
+      title: AppText(l10n.powerCycleBannerTitle),
+      description: AppText(
+        l10n.powerCycleBannerDescription(
+          wattsText(supply.watts),
+          wattsText(supply.offeredWatts),
+        ),
+      ),
+      icon: const Icon(Icons.power_outlined),
+      actions: [
+        TextButton(
+          key: const Key(AppToastId.powerCycleDismiss),
+          onPressed: () {
+            _powerCycleDismissed = true;
+            dismissAppToast(AppToastId.powerCycle);
+          },
+          child: AppText(l10n.powerCycleBannerDismiss),
+        ),
+        TextButton(
+          key: const Key(AppToastId.powerCyclePowerOff),
+          onPressed: () {
+            dismissAppToast(AppToastId.powerCycle);
+            if (mounted) requestPower(context);
+          },
+          child: AppText(l10n.powerCycleBannerPowerOff),
+        ),
+      ],
+    );
+  }
+
+  /// The charger itself offers too little for the console at full load.
+  /// Said once per boot and never in the way: the console runs, and may
+  /// only brown out at full brightness.
+  void _showWeakChargerNotice(PedalPowerSupply? supply) {
+    if (supply == null || _weakChargerShown || !chargerIsWeak(supply)) return;
+    _weakChargerShown = true;
+    showAppToast(
+      id: AppToastId.weakCharger,
+      type: ToastificationType.warning,
+      title: AppText(_l10n.weakChargerToast(wattsText(supply.offeredWatts))),
+      icon: const Icon(Icons.power_outlined),
+    );
+  }
+
   /// Startup notice that a newer build is available. Skipped when Updates is
   /// already open. "Not now" dismisses that version; "Update…" opens the
   /// Updates settings page.
@@ -1305,17 +1353,6 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
-  /// Only one display on the dual-display console.
-  void _showSingleDisplayNotice() {
-    final l10n = _l10n;
-    showAppToast(
-      id: AppToastId.singleDisplay,
-      type: ToastificationType.warning,
-      title: AppText(l10n.singleDisplayNotice),
-      icon: const Icon(Icons.monitor_outlined),
-    );
-  }
-
   /// Labels come from [_l10n] (above [MaterialApp]), not a builder context —
   /// the menu bar must not live under [MaterialApp] or DevTools / theme
   /// rebuilds remount it and trip the single-delegate lock assertion.
@@ -1353,24 +1390,12 @@ class _AppViewState extends State<_AppView> {
       highContrastTheme: AppTheme.highContrast,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: Builder(
-        builder: (context) {
-          const Widget page = LooperPage();
-          if (!segnoUsesFlutterTitleBar && !segnoUsesCursorAutoHide) {
-            return page;
-          }
-          return SegnoWindowChromeShell(
-            title: context.l10n.appMenuLabel,
-            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-            body: page,
-          );
-        },
-      ),
+      home: const LooperPage(),
       debugShowCheckedModeBanner: false,
       builder: (context, child) {
-        // Console only: weston's kiosk-shell spawns no input panel and the
-        // image ships no IME, so without this every TextField on the
-        // appliance is dead — including this branch's own Wi-Fi password
+        // Console only: the appliance has no input method (ivi-homescreen
+        // brings no text-input panel and the image ships no IME), so without
+        // this every TextField on it is dead — including the Wi-Fi password
         // field. Inside the brightness wrapper so the keys dim with
         // everything else.
         final typed = EncoderNavigation(
@@ -1385,7 +1410,9 @@ class _AppViewState extends State<_AppView> {
           builder: (context, brightness) {
             final dimmed = SoftwareBrightness(
               brightness: brightness.softwareOf(DisplayRole.main),
-              child: IdleDimHost(child: typed),
+              child: IdleDimHost(
+                child: WifiReconnectHoldHost(child: typed),
+              ),
             );
             return BlocBuilder<PowerCubit, PowerState>(
               buildWhen: (previous, current) => previous != current,
@@ -1398,7 +1425,14 @@ class _AppViewState extends State<_AppView> {
                   children: [
                     dimmed,
                     if (face != ReadoutGoodbye.none)
-                      PowerGoodbye(face: face, action: power.action),
+                      PowerGoodbye(
+                        face: face,
+                        action: power.action,
+                        unplugToApply: context.select<PedalCubit, bool>(
+                          (pedal) =>
+                              pedal.state.powerSupply?.needsPowerCycle ?? false,
+                        ),
+                      ),
                   ],
                 );
               },
@@ -1498,6 +1532,14 @@ class _AppViewState extends State<_AppView> {
               current.fellBackFrom != null &&
               previous.fellBackFrom != current.fellBackFrom,
           listener: (_, state) => _showSaveToFellBack(state.fellBackFrom!),
+        ),
+        BlocListener<PedalCubit, PedalState>(
+          listenWhen: (previous, current) =>
+              previous.powerSupply != current.powerSupply,
+          listener: (_, state) {
+            _showPowerCycleBanner(state.powerSupply);
+            _showWeakChargerNotice(state.powerSupply);
+          },
         ),
         BlocListener<UpdateCubit, UpdateState>(
           listenWhen: (previous, current) =>

@@ -51,6 +51,11 @@ class _FakeClient implements WifiClient {
     connectivityChecks++;
     return internet;
   }
+
+  final holds = <bool>[];
+
+  @override
+  Future<void> holdReconnects({required bool hold}) async => holds.add(hold);
 }
 
 void main() {
@@ -83,5 +88,13 @@ void main() {
     final repo = WifiRepository(client: client);
     expect(await repo.checkConnectivity(), isFalse);
     expect(client.connectivityChecks, 1);
+  });
+
+  test('holdReconnects delegates to client', () async {
+    final client = _FakeClient();
+    final repo = WifiRepository(client: client);
+    await repo.holdReconnects(hold: true);
+    await repo.holdReconnects(hold: false);
+    expect(client.holds, [true, false]);
   });
 }

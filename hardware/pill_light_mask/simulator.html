@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eight-LED pill simulator</title>
+<style>
+:root { color-scheme: light dark; --background: light-dark(#faf9f6, #171a1c); --foreground: light-dark(#20252c, #eceee9); --muted-foreground: light-dark(#606975, #aab2bc); --green: #37b96c; --yellow: #e1ad27; --red: #ee5350; --blue: #408ee4; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 24px; background: var(--background); color: var(--foreground); font: 16px/1.5 system-ui, sans-serif; }
+main { max-width: 760px; margin: auto; }
+h1 { font-size: 24px; margin: 0 0 8px; }
+p { color: var(--muted-foreground); }
+.viz-row, .viz-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.viz-controls { margin: 14px 0; }
+.form-label { display: grid; flex: 1; min-width: 210px; gap: 8px; }
+button, select { font: inherit; padding: 8px 14px; border: 1px solid var(--muted-foreground); border-radius: 8px; color: var(--foreground); background: var(--background); }
+button { cursor: pointer; }
+button[aria-pressed="true"] { background: var(--foreground); color: var(--background); }
+button:disabled { opacity: .5; cursor: default; }
+input { width: 100%; accent-color: var(--green); }
+.text-small { font-size: 13px; }
+.text-muted { color: var(--muted-foreground); }
+.tabular-nums { font-variant-numeric: tabular-nums; }
+@media (max-width: 420px) { body { padding: 12px; } }
+</style>
+</head>
+<body>
+<main>
+<h1>Eight-LED pill simulator</h1>
+<p>Compare breathing, steady light and off. The middle two LEDs share the peak; the ends taper down. Diffusion is a visual approximation, not a prediction of printed PLA brightness.</p>
+<div id="eight-led-diffuser">
+  <div class="viz-row sim-heading">
+    <span>8 LEDs · 144/m</span>
+    <span class="text-small text-muted">6.94 mm pitch · enlarged view</span>
+  </div>
+  <div class="viz-controls" role="group" aria-label="LED state">
+    <button class="btn" type="button" data-mode="breathing" aria-pressed="true">Breathing</button>
+    <button class="btn" type="button" data-mode="on" aria-pressed="false">On</button>
+    <button class="btn" type="button" data-mode="off" aria-pressed="false">Off</button>
+    <button class="btn btn-ghost" type="button" id="led-pause">Pause</button>
+  </div>
+  <div class="sim-visual">
+    <div class="viz-row sim-caption text-small">
+      <span>Bare strip</span><span class="text-muted">55.6 mm · relative levels (%)</span>
+    </div>
+    <canvas id="led-bare" role="img" aria-label="Eight LEDs on a strip, all brightening and dimming together.">Eight evenly spaced LEDs.</canvas>
+    <div class="viz-row sim-caption text-small">
+      <span>Through the diffuser</span><span class="text-muted">60 × 6 mm window</span>
+    </div>
+    <canvas id="led-diffused" role="img" aria-label="The same eight LEDs blended through a pill shaped diffuser.">A rounded diffuser blending eight light sources.</canvas>
+  </div>
+  <div class="viz-row sim-readout text-small">
+    <span id="led-status" aria-live="polite">Breathing · all 8 LEDs</span>
+    <span class="tabular-nums">Centre <output id="led-level">0%</output> · ends <output id="led-edge-level">0%</output></span>
+  </div>
+  <div class="viz-controls">
+    <label class="form-label" for="led-brightness">
+      <span class="sim-control-label">Peak brightness <output id="led-brightness-value" class="tabular-nums">75%</output></span>
+      <input class="form-range" id="led-brightness" type="range" min="0" max="100" step="1" value="75">
+    </label>
+    <label class="form-label" for="led-period">
+      <span class="sim-control-label">Breathing cycle <output id="led-period-value" class="tabular-nums">2.4 s</output></span>
+      <input class="form-range" id="led-period" type="range" min="1" max="8" step="0.1" value="2.4">
+    </label>
+  </div>
+  <div class="viz-controls">
+    <label class="form-label" for="led-diffusion">
+      <span class="sim-control-label">Diffusion <output id="led-diffusion-value">Medium</output></span>
+      <input class="form-range" id="led-diffusion" type="range" min="0" max="100" step="1" value="55" aria-valuetext="Medium">
+    </label>
+    <label class="form-label" for="led-edges">
+      <span class="sim-control-label">Ends relative to centre <output id="led-edges-value" class="tabular-nums">15%</output></span>
+      <input class="form-range" id="led-edges" type="range" min="0" max="100" step="1" value="15">
+    </label>
+  </div>
+  <div class="viz-controls">
+    <label class="form-label" for="led-color">LED color
+      <select class="form-select" id="led-color">
+        <option value="green">Green</option>
+        <option value="amber">Amber</option>
+        <option value="red">Red</option>
+        <option value="blue">Blue</option>
+      </select>
+    </label>
+  </div>
+  <span id="led-color-probe" class="text-small" aria-hidden="true"></span>
+</div>
+<style>
+  #eight-led-diffuser { color: var(--foreground); }
+  #eight-led-diffuser .sim-heading { justify-content: space-between; margin-bottom: 16px; }
+  #eight-led-diffuser .sim-visual { margin-top: 22px; }
+  #eight-led-diffuser .sim-caption { justify-content: space-between; gap: 8px; }
+  #eight-led-diffuser canvas { width: 100%; display: block; }
+  #eight-led-diffuser .sim-readout { justify-content: space-between; margin: 2px 0 20px; }
+  #eight-led-diffuser .sim-control-label { display: flex; justify-content: space-between; gap: 10px; }
+  #eight-led-diffuser #led-color-probe { position: absolute; visibility: hidden; pointer-events: none; }
+</style>
+<script>
+(() => {
+  const root = document.getElementById('eight-led-diffuser');
+  const $ = id => root.querySelector('#' + id);
+  const bare = $('led-bare');
+  const diffuser = $('led-diffused');
+  const probe = $('led-color-probe');
+  const brightness = $('led-brightness');
+  const period = $('led-period');
+  const diffusion = $('led-diffusion');
+  const edges = $('led-edges');
+  const color = $('led-color');
+  const pause = $('led-pause');
+  const modeButtons = [...root.querySelectorAll('[data-mode]')];
+  const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const defaults = {mode: 'breathing', brightness: 75, period: 2.4, diffusion: 55, edges: 15, color: 'green', paused: media.matches};
+  let state = {...defaults};
+  let phase = 0.25;
+  let previousTime = null;
+  let frame = null;
+  let palette;
+  let geometry;
+  let diffusionProfile = [];
+  const density = 144;
+  const count = 8;
+  const pitch = 1000 / density;
+  const stripLength = count * pitch;
+  const colors = {green: '--green', amber: '--yellow', red: '--red', blue: '--blue'};
+  const clamp = (x, min, max) => Math.max(min, Math.min(max, x));
+  const safeNumber = (x, fallback, min, max) => typeof x === 'number' && Number.isFinite(x) ? clamp(x, min, max) : fallback;
+  // A cosine falloff with a shared peak for LEDs 4 and 5.
+  function spatialWeight(index) {
+    const distance = (Math.abs(index - (count - 1) / 2) - 0.5) / (count / 2 - 1);
+    const curve = (1 + Math.cos(Math.PI * distance)) / 2;
+    return state.edges / 100 + (1 - state.edges / 100) * curve;
+  }
+
+  function restore(snapshot) {
+    const s = snapshot?.modelContent?.simulator === 'eight-led-diffuser' ? snapshot.modelContent : {};
+    state = {
+      mode: ['breathing', 'on', 'off'].includes(s.mode) ? s.mode : defaults.mode,
+      brightness: safeNumber(s.brightness, defaults.brightness, 0, 100),
+      period: safeNumber(s.period, defaults.period, 1, 8),
+      diffusion: safeNumber(s.diffusion, defaults.diffusion, 0, 100),
+      edges: safeNumber(s.edges, defaults.edges, 0, 100),
+      color: Object.hasOwn(colors, s.color) ? s.color : defaults.color,
+      paused: typeof snapshot?.privateContent?.paused === 'boolean' ? snapshot.privateContent.paused : defaults.paused
+    };
+  }
+  function persist() {
+    if (window.openai?.setWidgetState) {
+      Promise.resolve(window.openai.setWidgetState({
+        modelContent: {simulator: 'eight-led-diffuser', ledCount: count, density, mode: state.mode, brightness: state.brightness, period: state.period, diffusion: state.diffusion, edges: state.edges, color: state.color},
+        privateContent: {paused: state.paused}
+      })).catch(() => {});
+    }
+  }
+  function cssColor(value) {
+    probe.style.color = value;
+    return getComputedStyle(probe).color;
+  }
+  function refreshPalette() {
+    palette = {
+      light: cssColor('var(' + colors[state.color] + ')'),
+      luminous: cssColor('color-mix(in srgb, var(' + colors[state.color] + ') 70%, light-dark(var(--background), var(--foreground)))'),
+      text: cssColor('var(--muted-foreground)'),
+      board: cssColor('color-mix(in srgb, var(--foreground) 10%, var(--background))'),
+      package: cssColor('color-mix(in srgb, var(--foreground) 22%, var(--background))'),
+      off: cssColor('color-mix(in srgb, var(--foreground) 6%, var(--background))'),
+      lens: cssColor('color-mix(in srgb, var(--foreground) 12%, var(--background))'),
+      pad: cssColor('color-mix(in srgb, var(--foreground) 32%, var(--background))'),
+      highlight: cssColor('light-dark(var(--background), var(--foreground))'),
+      font: getComputedStyle(probe).font
+    };
+  }
+  function fit(canvas, width, height) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.height = height + 'px';
+    canvas.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function resize() {
+    const width = root.getBoundingClientRect().width;
+    if (!width) return;
+    const scale = (width - 36) / 60;
+    geometry = {width, scale, bareHeight: 12 * scale + 78, lensHeight: 6 * scale + 58};
+    fit(bare, width, geometry.bareHeight);
+    fit(diffuser, width, geometry.lensHeight);
+    refreshPalette();
+    rebuildDiffusion();
+    draw();
+  }
+  function rebuildDiffusion() {
+    if (!geometry) return;
+    const steps = Math.ceil(60 * geometry.scale);
+    const sigma = 0.7 + state.diffusion / 100 * 4.5;
+    const samples = [];
+    for (let j = 0; j < steps; j++) {
+      const x = -30 + (j + 0.5) * 60 / steps;
+      let sum = 0;
+      for (let i = 0; i < count; i++) {
+        const dx = x - (i - 3.5) * pitch;
+        sum += spatialWeight(i) * Math.exp(-(dx * dx) / (2 * sigma * sigma));
+      }
+      samples.push(sum);
+    }
+    const maximum = Math.max(...samples);
+    diffusionProfile = samples.map(value => value / maximum);
+  }
+  function rounded(ctx, x, y, width, height, radius, fill) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, height, radius);
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+  function glow(ctx, x, y, radius, strength) {
+    if (strength <= 0) return;
+    ctx.save();
+    const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+    gradient.addColorStop(0, palette.light);
+    gradient.addColorStop(1, 'transparent');
+    ctx.globalAlpha = strength;
+    ctx.fillStyle = gradient;
+    ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+    ctx.restore();
+  }
+  function level() {
+    if (state.mode === 'off') return 0;
+    if (state.mode === 'on') return state.brightness / 100;
+    const triangle = phase < 0.5 ? phase * 2 : (1 - phase) * 2;
+    const ease = triangle * triangle * (3 - 2 * triangle);
+    return state.brightness / 100 * (0.15 + 0.85 * ease);
+  }
+  function draw() {
+    if (!geometry || !palette) return;
+    const {width, scale: s, bareHeight, lensHeight} = geometry;
+    const power = level();
+    const ctx = bare.getContext('2d');
+    ctx.clearRect(0, 0, width, bareHeight);
+    const left = (width - stripLength * s) / 2;
+    const y = 21 + 6 * s;
+    rounded(ctx, left, 21, stripLength * s, 12 * s, 2, palette.board);
+    // Eight physical packages at the real nominal pitch, with no extra end pixels.
+    for (let i = 0; i < count; i++) {
+      const x = width / 2 + (i - 3.5) * pitch * s;
+      const ledPower = power * spatialWeight(i);
+      const displayPower = Math.pow(ledPower, 0.7);
+      const size = 5 * s;
+      rounded(ctx, x - size / 2, y - size / 2, size, size, Math.max(1, 0.35 * s), palette.package);
+      rounded(ctx, x - size * 0.35, y - size * 0.35, size * 0.7, size * 0.7, size * 0.35, palette.off);
+      for (const side of [-1, 1]) {
+        rounded(ctx, x - 1.2 * s, y + side * 4.5 * s - 0.5 * s, 2.4 * s, s, 0.2 * s, palette.pad);
+      }
+      glow(ctx, x, y, 5.2 * s, displayPower * 0.8);
+      ctx.globalAlpha = displayPower;
+      rounded(ctx, x - size * 0.34, y - size * 0.34, size * 0.68, size * 0.68, size * 0.34, palette.light);
+      ctx.globalAlpha = displayPower * 0.7;
+      rounded(ctx, x - size * 0.1, y - size * 0.1, size * 0.2, size * 0.2, size * 0.1, palette.highlight);
+      ctx.globalAlpha = 1;
+      ctx.font = palette.font;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = palette.text;
+      ctx.fillText(String(i + 1), x, 21 + 12 * s + 22);
+      ctx.fillText(String(Math.round(spatialWeight(i) * 100)), x, 21 + 12 * s + 39);
+    }
+    const lens = diffuser.getContext('2d');
+    lens.clearRect(0, 0, width, lensHeight);
+    const lensX = 18;
+    const lensY = 25;
+    const lensW = 60 * s;
+    const lensH = 6 * s;
+    for (let i = 0; i < count; i++) {
+      glow(lens, width / 2 + (i - 3.5) * pitch * s, lensY + lensH / 2, 8 * s, Math.pow(power * spatialWeight(i), 0.7) * 0.35);
+    }
+    rounded(lens, lensX, lensY, lensW, lensH, lensH / 2, palette.lens);
+    lens.save();
+    lens.beginPath();
+    lens.roundRect(lensX, lensY, lensW, lensH, lensH / 2);
+    lens.clip();
+    lens.fillStyle = palette.luminous;
+    const step = lensW / diffusionProfile.length;
+    for (let j = 0; j < diffusionProfile.length; j++) {
+      // Display exposure: brighten the preview while preserving zero light in Off.
+      lens.globalAlpha = 1 - Math.exp(-3.2 * power * diffusionProfile[j]);
+      const start = Math.round((lensX + j * step) * (diffuser.width / width)) / (diffuser.width / width);
+      const end = Math.round((lensX + (j + 1) * step) * (diffuser.width / width)) / (diffuser.width / width);
+      lens.fillRect(start, lensY, end - start, lensH);
+    }
+    // A soft lens highlight keeps the unlit shape visible.
+    const sheen = lens.createLinearGradient(0, lensY, 0, lensY + lensH);
+    sheen.addColorStop(0, palette.highlight);
+    sheen.addColorStop(0.5, 'transparent');
+    sheen.addColorStop(1, 'transparent');
+    lens.globalAlpha = 0.22;
+    lens.fillStyle = sheen;
+    lens.fillRect(lensX, lensY, lensW, lensH);
+    lens.restore();
+    $('led-level').textContent = Math.round(power * 100) + '%';
+    $('led-edge-level').textContent = Math.round(power * state.edges) + '%';
+  }
+  function updateControls() {
+    brightness.value = state.brightness;
+    period.value = state.period;
+    diffusion.value = state.diffusion;
+    edges.value = state.edges;
+    color.value = state.color;
+    $('led-brightness-value').textContent = Math.round(state.brightness) + '%';
+    $('led-period-value').textContent = state.period.toFixed(1) + ' s';
+    $('led-edges-value').textContent = Math.round(state.edges) + '%';
+    const softness = state.diffusion < 25 ? 'Low' : state.diffusion < 75 ? 'Medium' : 'High';
+    $('led-diffusion-value').textContent = softness;
+    diffusion.setAttribute('aria-valuetext', softness + ', ' + state.diffusion + '%');
+    modeButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.mode === state.mode)));
+    pause.disabled = state.mode !== 'breathing';
+    pause.textContent = state.paused ? 'Resume' : 'Pause';
+    period.disabled = state.mode !== 'breathing';
+    $('led-status').textContent = state.mode === 'off' ? 'Off · all 8 LEDs' : state.mode === 'on' ? 'Steady on · all 8 LEDs' : (state.paused ? 'Breathing paused' : 'Breathing') + ' · all 8 LEDs';
+    bare.setAttribute('aria-label', state.mode === 'off' ? 'Eight unlit LEDs on a strip.' : 'Eight ' + state.color + ' LEDs, ' + (state.mode === 'on' ? 'steadily lit.' : state.paused ? 'with breathing paused.' : 'brightening and dimming together.') + ' Relative brightness from left to right: ' + Array.from({length: count}, (_, i) => Math.round(spatialWeight(i) * 100) + '%').join(', ') + '.');
+    diffuser.setAttribute('aria-label', 'The same eight LEDs through a 60 by 6 millimeter diffuser. Diffusion: ' + softness.toLowerCase() + '. State: ' + state.mode + '.');
+  }
+  function animate(now) {
+    frame = null;
+    if (previousTime !== null) phase = (phase + Math.min((now - previousTime) / 1000, 0.1) / state.period) % 1;
+    previousTime = now;
+    draw();
+    if (state.mode === 'breathing' && !state.paused && !document.hidden && root.isConnected) frame = requestAnimationFrame(animate);
+  }
+  function schedule() {
+    if (frame !== null) cancelAnimationFrame(frame);
+    frame = null;
+    previousTime = null;
+    draw();
+    if (state.mode === 'breathing' && !state.paused && !document.hidden) frame = requestAnimationFrame(animate);
+  }
+  function change() {
+    updateControls();
+    refreshPalette();
+    rebuildDiffusion();
+    schedule();
+  }
+  modeButtons.forEach(button => button.addEventListener('click', () => {
+    state.mode = button.dataset.mode;
+    change();
+    persist();
+  }));
+  pause.addEventListener('click', () => { state.paused = !state.paused; change(); persist(); });
+  [[brightness, 'brightness'], [period, 'period'], [diffusion, 'diffusion'], [edges, 'edges']].forEach(([input, key]) => {
+    input.addEventListener('input', () => { state[key] = Number(input.value); change(); });
+    input.addEventListener('change', persist);
+  });
+  color.addEventListener('change', () => { state.color = color.value; change(); persist(); });
+  window.addEventListener('openai:set_globals', event => {
+    if (event.detail?.globals && Object.hasOwn(event.detail.globals, 'widgetState')) {
+      restore(event.detail.globals.widgetState);
+      change();
+    }
+  });
+  document.addEventListener('visibilitychange', schedule);
+  media.addEventListener('change', event => { if (event.matches) { state.paused = true; change(); } });
+  new MutationObserver(() => { refreshPalette(); draw(); }).observe(document.documentElement, {attributes: true, attributeFilter: ['class', 'style', 'data-theme']});
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { refreshPalette(); draw(); });
+  restore(window.openai?.widgetState);
+  updateControls();
+  new ResizeObserver(resize).observe(root);
+  resize();
+  schedule();
+})();
+</script>
+
+</main>
+</body>
+</html>

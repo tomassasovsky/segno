@@ -157,6 +157,13 @@ final goldenMessages = <String, PedalLinkMessage>{
       countingIn: true,
     ),
   ),
+  'dimmed': StateMessage(
+    PedalStateFrame.blank().copyWith(
+      globalColor: GlobalColor.green,
+      activeButtonMask: 1,
+      dimmed: true,
+    ),
+  ),
   'fx_mode': StateMessage(
     PedalStateFrame(
       globalColor: GlobalColor.green,
@@ -234,6 +241,19 @@ final goldenMessages = <String, PedalLinkMessage>{
     contact: PedalCtrlContact.ring,
     kind: PedalCtrlKind.switchPedal,
     value: 255,
+  ),
+  // The bench unit before its power cycle (#1352): the profile is in, the
+  // contract still takes 3 A of the 4.7 A on offer.
+  'pd_status_stale': const PdStatusMessage(
+    PedalPowerSupply(
+      profile: PedalPowerProfile.matches,
+      millivolts: 20000,
+      milliamps: 3000,
+      maxMilliamps: 4700,
+    ),
+  ),
+  'pd_status_not_read': const PdStatusMessage(
+    PedalPowerSupply(profile: PedalPowerProfile.notRead),
   ),
   'hello': const HelloMessage(
     protocolVersion: PedalLinkCodec.protocolVersion,

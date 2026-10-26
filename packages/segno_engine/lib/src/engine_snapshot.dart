@@ -354,23 +354,22 @@ enum ClickMode {
 ///
 /// Mirrors the native `le_looper_mode` enum.
 enum LooperMode {
-  /// Independent per-track loops — today's behavior, and the default.
+  /// Every track runs on the one shared loop clock. The default.
   multi,
 
-  /// Primary-track ("crown") sync with multiples and divisions. Semantics
-  /// land in part B3; unimplemented here.
+  /// Primary-track ("crown") sync: other tracks record as whole multiples or
+  /// divisions of the primary track's length.
   sync,
 
   /// Section sequencing: a Play starts one section at a time, and while
   /// another plays it waits for that section's next lap edge (#1077).
   song,
 
-  /// Primary track plus independently start/stoppable, quantized section
-  /// tracks. Semantics land in part B3; unimplemented here.
+  /// A primary track that keeps playing beneath section tracks, which are
+  /// started and stopped on the primary's grid.
   band,
 
-  /// Independent per-track clocks. Semantics land in part B2b;
-  /// unimplemented here.
+  /// Independent per-track clocks: each track loops at its own length.
   free;
 
   /// The native `le_looper_mode` integer for this mode.
@@ -2065,9 +2064,10 @@ class EngineSnapshot {
 
   /// Added latency (frames) of the highest-latency effect engaged in any
   /// audible or monitored lane chain — the maximum across active effects. Today
-  /// only the formant-preserving octaver contributes (~21 ms); `0` when no
-  /// octaver is engaged. Purely informational (see [fxAddedLatencyMs]); never
-  /// feeds [recordOffsetFrames] or any compensation.
+  /// only the octaver and the Whammy (its kernel) contribute (~25 ms at
+  /// 48 kHz); `0` when neither is engaged. Purely informational (see
+  /// [fxAddedLatencyMs]); never feeds [recordOffsetFrames] or any
+  /// compensation.
   final int fxAddedLatencyFrames;
 
   /// [fxAddedLatencyFrames] expressed in milliseconds at the current

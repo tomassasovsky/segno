@@ -75,6 +75,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.frameText,
     required this.frameCrumb,
     required this.frameIcon,
+    required this.touchTarget,
+    required this.touchTargetLine,
     required this.knobFaceTop,
     required this.knobFaceBottom,
     required this.disabledOpacity,
@@ -329,6 +331,14 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   final Color frameCrumb;
   final Color frameIcon;
 
+  /// Touch calibration's target (pen 30, "Displays & touch calibration"): the
+  /// ring, `#d8e8fa`, and [touchTargetLine] its crosshair, `#afc8e8`. Bright
+  /// and cool on the calibration area so the eye finds the centre at once.
+  final Color touchTarget;
+
+  /// Touch calibration target's crosshair; see [touchTarget].
+  final Color touchTargetLine;
+
   final Color knobFaceTop;
   final Color knobFaceBottom;
 
@@ -426,6 +436,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? frameText,
     Color? frameCrumb,
     Color? frameIcon,
+    Color? touchTarget,
+    Color? touchTargetLine,
     Color? knobFaceTop,
     Color? knobFaceBottom,
     double? disabledOpacity,
@@ -489,6 +501,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     frameText: frameText ?? this.frameText,
     frameCrumb: frameCrumb ?? this.frameCrumb,
     frameIcon: frameIcon ?? this.frameIcon,
+    touchTarget: touchTarget ?? this.touchTarget,
+    touchTargetLine: touchTargetLine ?? this.touchTargetLine,
     knobFaceTop: knobFaceTop ?? this.knobFaceTop,
     knobFaceBottom: knobFaceBottom ?? this.knobFaceBottom,
     disabledOpacity: disabledOpacity ?? this.disabledOpacity,
@@ -560,6 +574,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       frameText: c(frameText, other.frameText),
       frameCrumb: c(frameCrumb, other.frameCrumb),
       frameIcon: c(frameIcon, other.frameIcon),
+      touchTarget: c(touchTarget, other.touchTarget),
+      touchTargetLine: c(touchTargetLine, other.touchTargetLine),
       knobFaceTop: c(knobFaceTop, other.knobFaceTop),
       knobFaceBottom: c(knobFaceBottom, other.knobFaceBottom),
       disabledOpacity:
@@ -661,6 +677,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     frameText: Color(0xFFE7EDF6),
     frameCrumb: Color(0xFFB5B5B5),
     frameIcon: Color(0xFFF5F1E9),
+    touchTarget: Color(0xFFD8E8FA),
+    touchTargetLine: Color(0xFFAFC8E8),
     knobFaceTop: Color(0xFF232325),
     knobFaceBottom: Color(0xFF121214),
     disabledOpacity: 0.4,
@@ -753,6 +771,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     frameText: Color(0xFFFFFFFF),
     frameCrumb: Color(0xFFD8D8D8),
     frameIcon: Color(0xFFFFFFFF),
+    touchTarget: Color(0xFFFFFFFF),
+    touchTargetLine: Color(0xFFFFFFFF),
     knobFaceTop: Color(0xFF2E2E30),
     knobFaceBottom: Color(0xFF171719),
     // Dim less than [dark]: a disabled control must still clear the contrast

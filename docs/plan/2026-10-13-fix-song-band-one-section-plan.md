@@ -96,7 +96,8 @@ and the User Guide v1.0.0 (§3.1, §4.2):
   smoothly. When a pill leaves the queue and is still lit, it blends from its
   last fill to the diffused curve over 300 ms. The board keeps no Song or
   bank logic: it reacts to the queued button the app sends. The wire does
-  not change (protocol stays 10); firmware becomes 1.15.
+  not change. Written against firmware 1.14 (protocol 10) as 1.15; ported on
+  2026-10-26 to the v3 console firmware, where it is 2.5 on protocol 12.
 
 ## Decisions where the FAQ is silent
 

@@ -33,7 +33,7 @@ void main() {
         engine.setFxRecipe(owner: FxOwner.track, recipe: old, revision: 3),
         EngineResult.ok,
       );
-      for (final level in [double.nan, double.infinity, -0.1, 2.1]) {
+      for (final level in [double.nan, double.infinity, -0.1, 4.1]) {
         final bad = FxRecipe(
           slots: [
             FxRecipeSlot(
@@ -48,6 +48,25 @@ void main() {
         );
         expect(engine.fxRecipeRevision(owner: FxOwner.track), 3);
         expect(engine.fxRecipes[(FxOwner.track, 0, 0)], same(old));
+      }
+      // A rack level up to +12 dB (gain about 3.98) is admitted.
+      for (final level in [2.1, 3.388, kFxLevelMax]) {
+        expect(
+          engine.setFxRecipe(
+            owner: FxOwner.track,
+            recipe: FxRecipe(
+              slots: [
+                FxRecipeSlot(
+                  type: TrackEffectType.drive,
+                  channels: FxChannels(level: level),
+                ),
+              ],
+            ),
+            revision: 5,
+          ),
+          EngineResult.ok,
+          reason: '$level',
+        );
       }
     },
   );
@@ -76,5 +95,17 @@ void main() {
     );
     expect(engine.snapshot().tracks[0].volume, 0.5);
     expect(engine.snapshot().tracks[0].lanes[0].volume, 0.25);
+  });
+
+  test('fxInstanceId is a stable non-zero 64-bit id, 0 for no id', () {
+    expect(fxInstanceId(null), 0);
+    expect(fxInstanceId('slot-1'), fxInstanceId('slot-1'));
+    expect(fxInstanceId('slot-1'), isNot(fxInstanceId('slot-2')));
+    for (final id in ['', 'a', 'slot-1', 'rack/very-long-id-0123456789']) {
+      expect(fxInstanceId(id), isNot(0));
+    }
+    // 64-bit FNV-1a of "a".
+    // ignore: avoid_js_rounded_ints
+    expect(fxInstanceId('a'), 0xaf63dc4c8601ec8c);
   });
 }

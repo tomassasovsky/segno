@@ -180,6 +180,13 @@ static void check_fixture(const char *dir, const char *name) {
             "%s: an empty jack with a value", name);
       m = pedal_link_encode_ctrl(payload[0], payload[1], payload[2], payload[3], again);
       break;
+    case PEDAL_LINK_TYPE_PD_STATUS:
+      CHECK(len == PEDAL_LINK_PD_STATUS_LEN && payload[0] < PEDAL_PD_PROFILE_COUNT && payload[1] <= 1,
+            "%s: bad pd status payload", name);
+      m = pedal_link_encode_pd_status(payload[0], payload[1], (uint16_t)(payload[2] | payload[3] << 8),
+                                      (uint16_t)(payload[4] | payload[5] << 8),
+                                      (uint16_t)(payload[6] | payload[7] << 8), again);
+      break;
     case PEDAL_LINK_TYPE_HELLO:
       CHECK(len == 3 && payload[0] == PEDAL_LINK_PROTOCOL_VERSION, "%s: bad hello", name);
       m = pedal_link_encode_hello(payload[1], payload[2], again);
@@ -198,6 +205,14 @@ static void check_fixture(const char *dir, const char *name) {
   /* Field checks on the named fixtures, against golden_frames.dart. */
   if (strcmp(name, "hello.bin") == 0) {
     CHECK(payload[1] == 1 && payload[2] == 0, "hello: fw %u.%u, want 1.0", payload[1], payload[2]);
+  } else if (strcmp(name, "pd_status_stale.bin") == 0) {
+    CHECK(payload[0] == PEDAL_PD_PROFILE_MATCHES && payload[1] == 0 &&
+              (payload[2] | payload[3] << 8) == 20000 && (payload[4] | payload[5] << 8) == 3000 &&
+              (payload[6] | payload[7] << 8) == 4700,
+          "pd_status_stale: fields drifted");
+  } else if (strcmp(name, "pd_status_not_read.bin") == 0) {
+    CHECK(payload[0] == PEDAL_PD_PROFILE_NOT_READ && payload[2] == 0 && payload[4] == 0,
+          "pd_status_not_read: fields drifted");
   } else if (strcmp(name, "button_track3_down.bin") == 0) {
     CHECK(payload[0] == PEDAL_BTN_TRACK3 && payload[1] == 1, "button_track3_down: %u %u", payload[0], payload[1]);
   } else if (strcmp(name, "button_bank_up.bin") == 0) {
@@ -245,6 +260,10 @@ static void check_fixture(const char *dir, const char *name) {
     CHECK(st.looper_mode == PEDAL_LOOPER_SONG && st.queued_button == 0 &&
               st.queued_progress == 0,
           "song_queue_none: fields differ");
+  } else if (strcmp(name, "dimmed.bin") == 0) {
+    CHECK(st.dimmed == 1 && st.global_color == PEDAL_GLOBAL_GREEN && st.active_button_mask == 1 &&
+              !st.counting_in && !st.goodbye,
+          "dimmed: fields differ");
   } else if (strcmp(name, "mode_counting_in.bin") == 0) {
     CHECK(st.counting_in == 1 && st.looper_mode == PEDAL_LOOPER_BAND && st.global_color == PEDAL_GLOBAL_RED,
           "mode_counting_in: fields differ");
@@ -313,7 +332,7 @@ static void check_rejections(void) {
   uint8_t *pl = sf + 3;
   pedal_state out;
   CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN, &out) == 1, "blank state rejected");
-  pl[0] = 0x10;
+  pl[0] = 0x20;
   CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN, &out) == 0, "reserved flag accepted");
   pl[0] = 0;
   pl[1] = PEDAL_MODE_CUSTOM;
@@ -329,12 +348,25 @@ static void check_rejections(void) {
   CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN - 1, &out) == 0, "short payload accepted");
 }
 
+/* RING_BRIDGE is the Pi tool's, not the app's, so no Dart fixture covers it:
+ * pin its bytes here. */
+static void check_ring_bridge(void) {
+  uint8_t frame[PEDAL_LINK_MAX_FRAME];
+  const size_t n = pedal_link_encode_ring_bridge(frame);
+  const uint8_t want[6] = {0xA5, 0x12, 0x02, 'R', 'B', 0x12 ^ 0x02 ^ 'R' ^ 'B'};
+  CHECK(n == 6 && memcmp(frame, want, 6) == 0, "ring bridge frame drifted");
+  uint8_t type, len, payload[PEDAL_LINK_MAX_PAYLOAD];
+  CHECK(parse_all(frame, n, &type, payload, &len, NULL) == 1 && type == PEDAL_LINK_TYPE_RING_BRIDGE &&
+            len == 2 && payload[0] == 'R' && payload[1] == 'B',
+        "ring bridge frame does not parse");
+}
+
 static void check_physical_state(void) {
   const uint8_t p[53] = {0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,255,
     0,128,255,165,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,
     18,19,20,21,22,23,254,253,252,1,2,10,200};
   pedal_state state;
-  CHECK(PEDAL_LINK_PROTOCOL_VERSION == 10 && PEDAL_LINK_STATE_LEN == 53,
+  CHECK(PEDAL_LINK_PROTOCOL_VERSION == 12 && PEDAL_LINK_STATE_LEN == 53,
         "wire reservation changed");
   CHECK(pedal_link_decode_state(p,53,&state),"literal RGB state refused");
   CHECK(state.active_button_mask == 0x201 && state.pedal_colors[0].g == 128 &&
@@ -406,6 +438,7 @@ int main(int argc, char **argv) {
   }
   check_rejections();
   check_physical_state();
+  check_ring_bridge();
   if (g_failures) {
     fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

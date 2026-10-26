@@ -1,0 +1,402 @@
+{
+  "status": "PASS",
+  "baseline_board_sha256": "c06e6b35438b2fc7208cdc50feeebee92e6c01a56a00dadd280f697d1e49d79b",
+  "claude_placement_commit": "2547d7dbe3f7c81dada4b824406fb65d396c730e",
+  "layout_semantics_match_claude": true,
+  "layout_source_sha256": "dd471a47b324b206d0471c70b737d878e85410ad66199e14df83ed44af21000f",
+  "route_source_sha256": "cbcc9e5cafb4c0577889beb1bb5d0c70b2fa7555982ee3701b9ff2e8982ee547",
+  "boards": {
+    "screen_power_hand.kicad_pcb": {
+      "sha256": "3b00298277874b1018c55876766d4e771c1fca0e59393271a3e98df1743a80af",
+      "source_front_delta_exact": true,
+      "front_removed": 43,
+      "front_added": 43,
+      "back_removed": 2,
+      "back_added": 10,
+      "new_exposed_turns_over_12_degrees": [],
+      "exposed_turns_over_12_degrees": [],
+      "wider_copper_contained_turns": [
+        {
+          "net": "SWITCHED_5V",
+          "layer": "B.Cu",
+          "at_mm": [
+            46.4,
+            22.6537
+          ],
+          "turn_degrees": 45.0,
+          "widths_mm": [
+            0.25,
+            0.25
+          ],
+          "pads_at_vertex": [],
+          "wider_same_net_copper_margin_mm": 0.9178344247091487
+        }
+      ],
+      "pad_contained_turns_over_12_degrees": [
+        {
+          "net": "HOST2_5V",
+          "layer": "F.Cu",
+          "at_mm": [
+            7.0,
+            64.876
+          ],
+          "turn_degrees": 45.00000000000001,
+          "widths_mm": [
+            0.25,
+            0.25
+          ],
+          "pads_at_vertex": [
+            "J201.1"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        },
+        {
+          "net": "HOST2_5V",
+          "layer": "F.Cu",
+          "at_mm": [
+            16.92,
+            66.08
+          ],
+          "turn_degrees": 45.00000000000001,
+          "widths_mm": [
+            0.25,
+            0.25
+          ],
+          "pads_at_vertex": [
+            "D201.1"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        },
+        {
+          "net": "HOST2_5V",
+          "layer": "F.Cu",
+          "at_mm": [
+            13.0,
+            70.0
+          ],
+          "turn_degrees": 45.00000000000001,
+          "widths_mm": [
+            0.25,
+            0.25
+          ],
+          "pads_at_vertex": [
+            "C201.1"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        },
+        {
+          "net": "SWITCHED_5V",
+          "layer": "F.Cu",
+          "at_mm": [
+            49.35,
+            23.0
+          ],
+          "turn_degrees": 90.0,
+          "widths_mm": [
+            2.5,
+            3.0
+          ],
+          "pads_at_vertex": [
+            "F101.1"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        },
+        {
+          "net": "COMMON_SOURCE",
+          "layer": "F.Cu",
+          "at_mm": [
+            41.46,
+            7.05
+          ],
+          "turn_degrees": 45.00000000000001,
+          "widths_mm": [
+            0.25,
+            2.5
+          ],
+          "pads_at_vertex": [
+            "Q3.3"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        },
+        {
+          "net": "GATE_LED",
+          "layer": "F.Cu",
+          "at_mm": [
+            23.81,
+            23.0
+          ],
+          "turn_degrees": 44.999980384814776,
+          "widths_mm": [
+            0.25,
+            0.25
+          ],
+          "pads_at_vertex": [
+            "R10.1"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        },
+        {
+          "net": "NEG_5V",
+          "layer": "F.Cu",
+          "at_mm": [
+            22.22,
+            8.0
+          ],
+          "turn_degrees": 45.00000000000001,
+          "widths_mm": [
+            0.5,
+            0.5
+          ],
+          "pads_at_vertex": [
+            "C4.2"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        },
+        {
+          "net": "NEG_5V",
+          "layer": "F.Cu",
+          "at_mm": [
+            22.22,
+            11.63
+          ],
+          "turn_degrees": 45.00000000000001,
+          "widths_mm": [
+            0.5,
+            0.5
+          ],
+          "pads_at_vertex": [
+            "U1.5"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        },
+        {
+          "net": "AUX_5V",
+          "layer": "F.Cu",
+          "at_mm": [
+            33.97,
+            26.6
+          ],
+          "turn_degrees": 45.000000000000014,
+          "widths_mm": [
+            0.25,
+            0.25
+          ],
+          "pads_at_vertex": [
+            "R9.1"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        },
+        {
+          "net": "AUX_5V",
+          "layer": "F.Cu",
+          "at_mm": [
+            13.0,
+            8.6
+          ],
+          "turn_degrees": 135.0,
+          "widths_mm": [
+            0.25,
+            0.5
+          ],
+          "pads_at_vertex": [
+            "C5.1"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        },
+        {
+          "net": "BUFFER_BASE",
+          "layer": "F.Cu",
+          "at_mm": [
+            9.0,
+            48.8
+          ],
+          "turn_degrees": 90.0,
+          "widths_mm": [
+            0.25,
+            0.25
+          ],
+          "pads_at_vertex": [
+            "R5.2"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        },
+        {
+          "net": "PI_GPIO17",
+          "layer": "B.Cu",
+          "at_mm": [
+            11.73,
+            18.98
+          ],
+          "turn_degrees": 45.0,
+          "widths_mm": [
+            0.25,
+            0.25
+          ],
+          "pads_at_vertex": [
+            "R1.1"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        },
+        {
+          "net": "HOST1_5V",
+          "layer": "F.Cu",
+          "at_mm": [
+            7.0,
+            39.8319
+          ],
+          "turn_degrees": 45.00000000000001,
+          "widths_mm": [
+            0.25,
+            0.25
+          ],
+          "pads_at_vertex": [
+            "J101.1"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        },
+        {
+          "net": "HOST1_5V",
+          "layer": "F.Cu",
+          "at_mm": [
+            16.92,
+            41.08
+          ],
+          "turn_degrees": 45.00000000000001,
+          "widths_mm": [
+            0.25,
+            0.25
+          ],
+          "pads_at_vertex": [
+            "D101.1"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        },
+        {
+          "net": "HOST1_5V",
+          "layer": "F.Cu",
+          "at_mm": [
+            13.0,
+            45.0
+          ],
+          "turn_degrees": 45.00000000000001,
+          "widths_mm": [
+            0.25,
+            0.25
+          ],
+          "pads_at_vertex": [
+            "C101.1"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        }
+      ],
+      "remaining_rounding": {
+        "touched": 0,
+        "added": 0,
+        "retired": 0,
+        "sharp": [],
+        "chains": 58,
+        "anchors": 74
+      },
+      "rounding_rerun_geometry_unchanged": true
+    },
+    "screen_power_hand.placed.kicad_pcb": {
+      "sha256": "c14921ed198b39ea02ae1413d99dc5b53f258d42e8076e0640f4d6744b51b63a",
+      "source_front_delta_exact": true,
+      "front_removed": 43,
+      "front_added": 43,
+      "back_removed": 0,
+      "back_added": 0,
+      "new_exposed_turns_over_12_degrees": [],
+      "exposed_turns_over_12_degrees": [],
+      "wider_copper_contained_turns": [],
+      "pad_contained_turns_over_12_degrees": [
+        {
+          "net": "SWITCHED_5V",
+          "layer": "F.Cu",
+          "at_mm": [
+            49.35,
+            23.0
+          ],
+          "turn_degrees": 90.0,
+          "widths_mm": [
+            2.5,
+            3.0
+          ],
+          "pads_at_vertex": [
+            "F101.1"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        },
+        {
+          "net": "GATE_LED",
+          "layer": "F.Cu",
+          "at_mm": [
+            23.81,
+            23.0
+          ],
+          "turn_degrees": 44.999980384814776,
+          "widths_mm": [
+            0.25,
+            0.25
+          ],
+          "pads_at_vertex": [
+            "R10.1"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        },
+        {
+          "net": "NEG_5V",
+          "layer": "F.Cu",
+          "at_mm": [
+            22.22,
+            8.0
+          ],
+          "turn_degrees": 45.00000000000001,
+          "widths_mm": [
+            0.5,
+            0.5
+          ],
+          "pads_at_vertex": [
+            "C4.2"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        },
+        {
+          "net": "NEG_5V",
+          "layer": "F.Cu",
+          "at_mm": [
+            22.22,
+            11.63
+          ],
+          "turn_degrees": 45.00000000000001,
+          "widths_mm": [
+            0.5,
+            0.5
+          ],
+          "pads_at_vertex": [
+            "U1.5"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        },
+        {
+          "net": "AUX_5V",
+          "layer": "F.Cu",
+          "at_mm": [
+            13.0,
+            8.6
+          ],
+          "turn_degrees": 135.0,
+          "widths_mm": [
+            0.25,
+            0.5
+          ],
+          "pads_at_vertex": [
+            "C5.1"
+          ],
+          "wider_same_net_copper_margin_mm": null
+        }
+      ]
+    }
+  },
+  "errors": []
+}

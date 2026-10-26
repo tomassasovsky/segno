@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Place -> DSN -> Freerouting -> SES -> refill -> DRC -> gerbers, for console board v2 (#747).
+# Place -> DSN -> Freerouting -> SES -> widen rail -> refill -> DRC -> gerbers,
+# for console board v2 (#747).
 # The recipe is the repo's pcb-layout skill; the gotchas below cost real time to find.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -13,6 +14,13 @@ PLACED="$OUT/console.placed.kicad_pcb"                        # what the generat
 # User, which are ours to read -- the zip shipped 27 files, and every one a CAM
 # operator has to decide about is a chance to decide wrong.
 FAB_LAYERS="F.Cu,B.Cu,F.Mask,B.Mask,F.Paste,B.Paste,F.Silkscreen,B.Silkscreen,Edge.Cuts"
+
+# Placement hand-routes the ring's 2.64 A supply at 1.7 mm before DSN export.
+# Freerouting handles the remaining signals and low-current logic rails.
+# Widening those rails to 0.70 mm must preserve the wider hand-routed branch;
+# console_ring_power.check validates its copper and parallel vias before export.
+POWER_NET="+5V"
+POWER_FINAL_MM=0.70
 
 [ -f "$JAR" ] || { echo "Freerouting jar not found at $JAR"; echo \
   "Get freerouting-1.9.0.jar from github.com/freerouting/freerouting/releases, or set FREEROUTING_JAR."; exit 1; }
@@ -88,6 +96,19 @@ print('   tracks:', len([t for t in m.GetTracks() if t.GetClass()!='PCB_VIA']),
       'vias:', len([t for t in m.GetTracks() if t.GetClass()=='PCB_VIA']))
 sys.exit(0 if ok else 'SES import failed')" 2>&1 | grep -viE "wxApp|memory leak|Debug:" || true
 
+  # BEFORE the pour, and that ordering is the point: a wider track needs the pour
+  # to retreat from it, and the pour only retreats when it is filled. The DRC
+  # below then checks the widened copper rather than being told about it.
+  python3 widen_power.py "$PCB" --net "$POWER_NET" --target "$POWER_FINAL_MM"
+
+  # Round the routed corners once the widths are final and before the pour, on
+  # routed copper only: the hand-routed ring supply is locked and keeps the
+  # geometry console_ring_power's guard demands, and any chain that cannot hold
+  # its clearance with an arc keeps its mitre.
+  # Under KiCad's Python: the clearance an arc is accepted on is measured with
+  # pcbnew's own pad shapes and SHAPE::Collide, not with arithmetic of ours.
+  "$KPY" round_routes.py "$PCB"
+
   # Which stitching vias are useful is decided by the FILL, not by placement: the
   # ones left in islands the fill deleted connect to nothing on either layer. They
   # can only be found here, after routing, so they are pruned here -- this pours,
@@ -110,6 +131,14 @@ print('   violations: %d | unconnected: %d' % (len(v), len(u)), file=__import__(
 for t, n in collections.Counter(x['type'] for x in v).most_common():
     print('      %-26s %d' % (t, n), file=__import__('sys').stderr)
 print(len(v) + len(u))")
+  # A DRC-clean attempt still has to pass the routed-board fab gates, which DRC
+  # knows nothing about. Freerouting once ran two signals through the J3/J24
+  # +5V bar on an otherwise clean attempt (#1388); DRC passed it, and only the
+  # step-6 RING_POWER gate refused it, after the loop had already stopped.
+  if [ "$BAD" -eq 0 ] && ! "$KPY" console_board_pcb.py --check-routed 2>&1 \
+       | grep -viE "wxApp|memory leak|Debug:" | tail -1 | sed 's/^/   /'; then
+    BAD=1
+  fi
   [ "$BAD" -lt "$BEST" ] && BEST=$BAD
   [ "$BAD" -eq 0 ] && break
 done

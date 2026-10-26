@@ -228,6 +228,17 @@ extension MidiControlEditing on ControlCubit {
     );
   });
 
+  /// Removes every control whose key [removes] accepts and saves the
+  /// result; a mapping left with no controls goes with them. Read from the
+  /// latest saved set, inside the write queue.
+  Future<MidiSaveResult> removeMidiControls(
+    bool Function(String key) removes,
+  ) => _serializeMidi(() async {
+    final next = state.midiMappings.withoutControls(removes);
+    if (next == state.midiMappings) return const MidiSaveResult.saved();
+    return _saveMidiConfiguration(next, state.midiControlEnabled);
+  });
+
   /// Confirms a mapping's enabled state while retaining its source reservation.
   Future<MidiSaveResult> setMidiMappingEnabled(
     String id, {
@@ -542,8 +553,8 @@ extension MidiControlEditing on ControlCubit {
     if (target is MixValueTarget) return target.relativeStep;
     if (target is OwnedValueTarget) return target.relativeStep;
     if (target is FxParamTarget) {
-      final divisions = _midiParamDivisions(target);
-      if (divisions != null && divisions > 0) return 1 / divisions;
+      final param = _midiSteppedParam(target);
+      if (param != null) return 1 / (param.steps - 1);
     }
     return 0.01;
   }
@@ -905,26 +916,44 @@ extension MidiControlEditing on ControlCubit {
     _midiTargets.remove(row);
   }
 
+  /// A MIDI value for [target], as what the binding writes: an owned
+  /// value's own coercion, or for an effect parameter the chain's setting for
+  /// the value at that point of the parameter's shown range, snapped to its
+  /// positions (_bindingToChain).
   double _coerceMidiValue(ControlValueTarget target, double value) {
     if (target is OwnedValueTarget) return target.coerce(value);
-    final clamped = value.clamp(0.0, 1.0);
+    var clamped = value.clamp(0.0, 1.0);
     if (target is FxParamTarget) {
-      final divisions = _midiParamDivisions(target);
-      if (divisions != null && divisions > 0) {
-        return (clamped * divisions).round() / divisions;
+      final param = _midiSteppedParam(target);
+      if (param != null) {
+        clamped = param.positionOf(clamped) / (param.steps - 1);
       }
     }
-    return clamped;
+    return _bindingToChain(target, clamped);
   }
 
-  int? _midiParamDivisions(FxParamTarget target) {
+  /// A binding's [value] for [target] as the chain's own: for an effect
+  /// parameter, the setting for the value at that point of the range the rack
+  /// shows (`fxKindSettingFor`); anything else as it is. A controller value (a
+  /// MIDI value, an External button's or expression pedal's) is a point of
+  /// the shown range, as the value it reads back (`readValueTarget`) is; from
+  /// here on, holders, persistence and the chain all hold the chain's
+  /// setting, so a retype or a gone slot never reinterprets one.
+  double _bindingToChain(ControlValueTarget target, double value) =>
+      target is FxParamTarget ? _looper.fxKindSettingFor(target, value) : value;
+
+  /// [target]'s parameter, as its surface shows it ([fxEntryParam]), when it
+  /// snaps to positions, so a MIDI value lands on one, or `null` for a
+  /// continuous parameter.
+  FxParamInfo? _midiSteppedParam(FxParamTarget target) {
     for (final effect
         in _looper.chainEntriesAt(target.address) ?? <TrackEffect>[]) {
       if (effect.slotId == target.slotId &&
           effect is BuiltInEffect &&
           target.param >= 0 &&
           target.param < effect.type.params.length) {
-        return effect.type.params[target.param].divisions;
+        final param = fxEntryParam(effect, target.param);
+        return param.isStepped ? param : null;
       }
     }
     return null;

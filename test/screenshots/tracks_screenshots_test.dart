@@ -971,7 +971,7 @@ void main() {
       seed(
         LooperState(
           transport: const TransportState(
-            isRunning: true,
+            deviceRunning: true,
             masterLengthFrames: 48000,
             loopBars: 2,
           ),

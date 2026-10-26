@@ -81,6 +81,8 @@ void main() {
           EngineResult.ok,
         );
         await settleMix();
+        // The Play fades the loop in over 480 frames (#1400).
+        engine.pump();
         expect(repository.state.tracks[1].state, TrackState.playing);
       }
 
@@ -249,15 +251,20 @@ void main() {
           }
           final position = engine.snapshot().masterPositionFrames;
           expect(repository.setMute(channel: 1, muted: true), EngineResult.ok);
-          engine.pump(input: .25);
+          // A mute and an unmute fade over 480 frames (#1400).
+          engine
+            ..pump(input: .25)
+            ..pump(input: .25);
           expectStereo(left: .125, right: 0);
           expect(repository.state.tracks[1].state, TrackState.playing);
           expect(
             engine.snapshot().masterPositionFrames,
-            (position + 512) % 4096,
+            (position + 1024) % 4096,
           );
           expect(repository.setMute(channel: 1, muted: false), EngineResult.ok);
-          engine.pump(input: .25);
+          engine
+            ..pump(input: .25)
+            ..pump(input: .25);
           expectStereo(left: .125, right: .1875);
           expect(engine.exportTrackLane(1, 0), recorded);
         },

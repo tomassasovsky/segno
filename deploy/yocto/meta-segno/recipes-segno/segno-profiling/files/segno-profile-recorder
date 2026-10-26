@@ -9,20 +9,26 @@
 #   rss_kb          resident memory
 #   threads, fds    counts
 #   cpu_pct         whole process, % of one core over the last interval
-#   main_pct        main thread: GTK and the Dart UI isolate
+#   main_pct        ivi-homescreen's main thread, mostly idle
+#   ui_pct          the io.flutter.ui threads, summed: the Dart UI isolates,
+#                   one per screen
 #   raster_pct      the io.flutter.raster threads, summed
-#   rt_pct          SCHED_FIFO threads, summed (the audio engine)
-#   main_preempt_s  main-thread involuntary context switches per second: high
-#                   means it is runnable and waiting for a core
-#   gsources        sources attached to the main context (segno-prof gsources)
-#   embedder_timeouts  of those, the Flutter task runner's timeouts; more than
-#                   one or two means the #1299 leak is back
-#   idle_sources    idle callbacks waiting to run; a backlog means starvation
-#   source_ids_s    GSources created per second: main-loop churn
+#   rt_pct          SCHED_FIFO and SCHED_RR threads, summed (the audio engine)
+#   ui_preempt_s    involuntary context switches per second on the
+#                   io.flutter.ui threads: high means they are runnable and
+#                   waiting for a core
 #   load1, mem_available_kb  system-wide
 #
-# Every 15 minutes, a folded-stack profile of the main thread
-# (stacks-<time>.folded, segno-prof stack, 1000 samples 10 ms apart).
+# The audio thread inherits the io.flutter.ui name, so ui_pct and ui_preempt_s
+# skip SCHED_FIFO and SCHED_RR threads; rt_pct counts it. The engine's other
+# native threads (render, cache, restore) inherit the name too and run
+# SCHED_OTHER, so they count in ui_pct until the engine names them.
+#
+# Every 15 minutes, a folded-stack profile of the main screen's Dart UI
+# isolate (stacks-<time>.folded, segno-prof stack, 1000 samples 10 ms apart):
+# the io.flutter.ui thread that is not real-time with the lowest tid, the
+# oldest, which is the first engine's, the main screen's (#1318). Lowest by
+# number: the threads are listed in text order, where 1003 comes before 987.
 #
 # Files older than 30 days are deleted. Experimental images only: the unit
 # checks the channel before starting this. Not /data/profile: that is where
@@ -52,8 +58,9 @@ snapshot_threads() {
 }
 
 tick=0
+stack_due=0
+deferred_pid=""
 pid_before=""
-ids_before=""
 uptime_before=""
 while :; do
   pid=$(pidof segno | awk '{print $1}')
@@ -63,7 +70,6 @@ while :; do
   fi
   if [ "$pid" != "$pid_before" ]; then
     : > "$state/threads"
-    ids_before=""
     uptime_before=""
     pid_before=$pid
   fi
@@ -92,34 +98,51 @@ while :; do
       if (!seen || !($1 in ticks)) next
       d = $3 - ticks[$1]
       total += d
-      if ($1 == pid) { main = d; preempt = $5 - nv[$1] }
+      if ($1 == pid) main = d
+      if ($2 == "io.flutter.ui" && $4 != 1 && $4 != 2) {
+        ui += d
+        preempt += $5 - nv[$1]
+      }
       if ($2 ~ /^io\.flutter\.rast/) raster += d
-      if ($4 == 1) rt += d
+      if ($4 == 1 || $4 == 2) rt += d
     }
     END {
-      if (!seen) { print ",,,,"; exit }
+      if (!seen) { print ",,,,,"; exit }
       f = 100 / (secs * hz)
-      printf "%.1f,%.1f,%.1f,%.1f,%.0f", total * f, main * f, raster * f, rt * f, preempt / secs
+      printf "%.1f,%.1f,%.1f,%.1f,%.1f,%.0f", total * f, main * f, ui * f, raster * f, rt * f, preempt / secs
     }' "$state/threads" "$state/threads.now")
   mv "$state/threads.now" "$state/threads"
 
-  census=$(segno-prof gsources "$pid" --csv 2>/dev/null) || census=",,,"
-  ids_now=${census##*,}
-  rate=""
-  if [ -n "$ids_now" ] && [ -n "$ids_before" ]; then
-    rate=$(awk -v d=$(( (ids_now - ids_before + 4294967296) % 4294967296 )) \
-      -v secs="$elapsed" 'BEGIN {printf "%d", d / secs}')
-  fi
-  ids_before=$ids_now
-
   file="$dir/metrics-$(date -u +%Y%m%d).csv"
-  [ -s "$file" ] || echo "time,pid,app_uptime_s,rss_kb,threads,fds,cpu_pct,main_pct,raster_pct,rt_pct,main_preempt_s,gsources,embedder_timeouts,idle_sources,source_ids_s,load1,mem_available_kb" > "$file"
-  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ),$pid,$app_uptime,$rss,$threads,$fds,$cpu,${census%,*},$rate,$load1,$available" >> "$file"
+  header="time,pid,app_uptime_s,rss_kb,threads,fds,cpu_pct,main_pct,ui_pct,raster_pct,rt_pct,ui_preempt_s,load1,mem_available_kb"
+  # A day file an earlier build started has other columns: set it aside
+  # rather than append rows that do not match its header.
+  if [ -s "$file" ] && [ "$(head -n1 "$file")" != "$header" ]; then
+    mv "$file" "${file%.csv}-earlier-build-$(date -u +%H%M%S).csv"
+  fi
+  [ -s "$file" ] || echo "$header" > "$file"
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ),$pid,$app_uptime,$rss,$threads,$fds,$cpu,$load1,$available" >> "$file"
 
-  if [ $(( tick % stack_every )) -eq 0 ]; then
-    segno-prof stack "$pid" "$pid" 1000 10 \
-      > "$dir/stacks-$(date -u +%Y%m%dT%H%M%SZ).folded" 2>/dev/null
-    find "$dir" -type f -mtime +"$keep_days" -exec rm -f {} +
+  [ $(( tick % stack_every )) -eq 0 ] && stack_due=1
+  if [ "$stack_due" = 1 ]; then
+    ui=$(awk '$2 == "io.flutter.ui" && $4 != 1 && $4 != 2 &&
+      (first == "" || $1 + 0 < first + 0) { first = $1 }
+      END { if (first != "") print first }' "$state/threads")
+    # Right after the app starts its UI thread may not exist yet (at boot this
+    # loop's first pass runs before either engine is up). Keep the profile
+    # due and try again next interval rather than sample the wrong thread.
+    if [ -n "$ui" ]; then
+      segno-prof stack "$pid" "$ui" 1000 10 \
+        > "$dir/stacks-$(date -u +%Y%m%dT%H%M%SZ).folded" 2>/dev/null
+      find "$dir" -type f -mtime +"$keep_days" -exec rm -f {} +
+      stack_due=0
+      deferred_pid=""
+    elif [ "$deferred_pid" != "$pid" ]; then
+      # Once per pid, so a missing thread (a renamed UI thread, a crash loop)
+      # shows in the journal instead of as profiles that silently stop.
+      echo "no io.flutter.ui thread in $pid yet; profile deferred" >&2
+      deferred_pid=$pid
+    fi
   fi
   tick=$(( tick + 1 ))
   sleep "$interval"

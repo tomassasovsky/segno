@@ -14,6 +14,8 @@ import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
+import 'package:segno/control/binding/fx_assignments.dart';
+import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/fx_cubit.dart';
@@ -22,6 +24,7 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/model/fx_library_choice.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
+import 'package:segno/looper/view/fx/fx_chain_power.dart';
 import 'package:segno/looper/view/fx/fx_chain_strip.dart';
 import 'package:segno/looper/view/fx/fx_editor_parts.dart';
 import 'package:segno/looper/view/fx/fx_effect_editor.dart';
@@ -381,8 +384,8 @@ class _FxViewState extends State<FxView> {
   /// with what it resolves to joining THIS rack rather than starting a second
   /// one beside it.
   ///
-  /// The new pedals land at the end of the rack and arrive bypassed, like every
-  /// other addition, and Back from the catalogue changes nothing.
+  /// The new pedals land at the end of the rack, on or off as their source
+  /// sets them, and Back from the catalogue changes nothing.
   Future<void> _addToRack(
     BuildContext context,
     FxAddress address,
@@ -405,6 +408,8 @@ class _FxViewState extends State<FxView> {
             catalogue: widget.catalogue ?? FxCatalogue.empty,
             destinationLabel: rack.name,
             freeSlots: kTrackEffectMax - chain.length,
+            roomNs: context.read<LooperRepository>().fxRoomNs,
+            costOf: _costOf(context, chain),
           ),
         ),
       ),
@@ -545,6 +550,17 @@ class _FxViewState extends State<FxView> {
     title: AppText(context.l10n.fxChangeNotApplied),
   );
 
+  /// What adding entries to [chain] would cost
+  /// ([LooperRepository.fxCostOf]).
+  static int Function(List<TrackEffect>) _costOf(
+    BuildContext context,
+    List<TrackEffect> chain,
+  ) {
+    final repository = context.read<LooperRepository>();
+    final base = repository.fxCostOf(chain);
+    return (added) => repository.fxCostOf([...chain, ...added]) - base;
+  }
+
   static bool _committed(FxEditResult result) =>
       result.status == FxEditStatus.applied ||
       result.status == FxEditStatus.unsaved;
@@ -553,6 +569,12 @@ class _FxViewState extends State<FxView> {
     switch (result.status) {
       case FxEditStatus.refused:
         _changeRefused(context);
+      case FxEditStatus.overBudget:
+        showAppSnackToast(
+          id: 'fx-over-budget',
+          type: ToastificationType.error,
+          title: AppText(context.l10n.fxOverBudget),
+        );
       case FxEditStatus.unsaved:
         showAppSnackToast(
           id: 'fx-storage-failed',
@@ -579,6 +601,8 @@ class _FxViewState extends State<FxView> {
     }
 
     return (
+      setChainEnabled: ({required enabled}) =>
+          report(fx.setChainEnabled(address, enabled: enabled)),
       setEnabled: (slotId, {required enabled}) =>
           report(fx.setEffectEnabled(address, slotId, enabled: enabled)),
       setGroupEnabled: (groupId, {required enabled}) =>
@@ -621,6 +645,8 @@ class _FxViewState extends State<FxView> {
             catalogue: widget.catalogue ?? FxCatalogue.empty,
             destinationLabel: _destinationLabel(destination),
             freeSlots: kTrackEffectMax - entries.length,
+            roomNs: context.read<LooperRepository>().fxRoomNs,
+            costOf: _costOf(context, entries),
           ),
         ),
       ),
@@ -637,7 +663,49 @@ class _FxViewState extends State<FxView> {
         (route?.isCurrent ?? false) &&
         selection.state.destination == destination &&
         bloc.hasMixGeneration(generation);
-    final result = await selection.appendChoice(destination, choice);
+    FxEditResult result;
+    final sameRack = choice is FxRackChoice
+        ? fxRackFromPreset(_entriesOf(context, address), choice.preset.id)
+        : null;
+    if (choice is FxRackChoice && sameRack != null) {
+      // The same factory rack again replaces the one built from it. Its
+      // modules get new identities, so the assignments to the old ones are
+      // removed with them: asked first when there are any, and silent when
+      // there are none.
+      final control = context.read<ControlCubit>();
+      final oldSlots = {for (final fx in sameRack.entries) ?fx.slotId};
+      final count = fxAssignmentsTo(control.state, address, oldSlots);
+      if (count > 0) {
+        final l10n = context.l10n;
+        final confirmed = await showConsoleConfirmDialog(
+          context,
+          title: l10n.fxReAddRackTitle(sameRack.rack!.name),
+          body: l10n.fxReAddRackBody(count),
+          confirmLabel: l10n.fxReAddRack,
+        );
+        if (!confirmed || !stillHere()) return;
+      }
+      result = await selection.replaceRack(
+        destination,
+        sameRack.rack!.id,
+        choice,
+      );
+      // Whatever the page does next, the old effects are gone once the
+      // replacement is committed, even when the player has moved on, so
+      // their assignments go now. A store that cannot save is reported with
+      // the edit's own unsaved notice.
+      if (count > 0 && result.committed) {
+        final removed = await control.removeFxAssignments(address, oldSlots);
+        if (!removed && result.status == FxEditStatus.applied) {
+          result = FxEditResult(FxEditStatus.unsaved, groupId: result.groupId);
+        } else if (!removed && result.status == FxEditStatus.stale && mounted) {
+          // A stale result shows nothing below, so the failure is shown here.
+          _notifyEditResult(context, const FxEditResult(FxEditStatus.unsaved));
+        }
+      }
+    } else {
+      result = await selection.appendChoice(destination, choice);
+    }
     if (!mounted || !stillHere()) return;
     _notifyEditResult(context, result);
     if (!_committed(result)) {
@@ -918,8 +986,9 @@ class _InputStrip extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       itemCount: count,
       separatorBuilder: (_, _) => const SizedBox(width: 16),
-      itemBuilder: (context, input) => RoutingSourceCard(
-        key: Key('fx_input_card_$input'),
+      itemBuilder: (context, input) => _FxSourceCard(
+        cardKey: Key('fx_input_card_$input'),
+        address: FxDestination.liveInput(input).address!,
         ordinal: l10n.routingInputOrdinal(input + 1),
         name: l10n.inputName(names.names, input),
         selected: input == selected,
@@ -952,8 +1021,13 @@ class _TrackStrip extends StatelessWidget {
       itemBuilder: (context, i) {
         final isAllTracks = i == count;
         final index = isAllTracks ? FxDestination.allTracksIndex : i;
-        return RoutingSourceCard(
-          key: Key(isAllTracks ? 'fx_all_tracks' : 'fx_track_card_$i'),
+        return _FxSourceCard(
+          cardKey: Key(isAllTracks ? 'fx_all_tracks' : 'fx_track_card_$i'),
+          address:
+              (isAllTracks
+                      ? const FxDestination.allTracks()
+                      : FxDestination.recordedTrack(i))
+                  .address!,
           ordinal: null,
           name: isAllTracks ? l10n.fxAllTracks : l10n.trackName(names, i),
           selected: index == selected,
@@ -983,8 +1057,9 @@ class _OutputStrip extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       itemCount: count,
       separatorBuilder: (_, _) => const SizedBox(width: 16),
-      itemBuilder: (context, bus) => RoutingSourceCard(
-        key: Key('fx_output_card_$bus'),
+      itemBuilder: (context, bus) => _FxSourceCard(
+        cardKey: Key('fx_output_card_$bus'),
+        address: FxDestination.output(bus).address!,
         ordinal: l10n.outputBusLabel(bus, channels: channels),
         name: l10n.outputName(names, bus, channels: channels),
         selected: bus == selected,
@@ -992,6 +1067,44 @@ class _OutputStrip extends StatelessWidget {
       ),
     );
   }
+}
+
+/// One source in a strip, saying "Effects off" while its chain is off, so an
+/// input that sounds dry shows it before it is selected (#1452).
+class _FxSourceCard extends StatelessWidget {
+  const _FxSourceCard({
+    required this.cardKey,
+    required this.address,
+    required this.ordinal,
+    required this.name,
+    required this.selected,
+    required this.onTap,
+    this.width = 264,
+  });
+
+  /// The card's own key, which the page's tests find it by.
+  final Key cardKey;
+  final FxAddress address;
+  final String? ordinal;
+  final String name;
+  final bool selected;
+  final VoidCallback onTap;
+
+  /// The card's width: the track strip's are narrower.
+  final double width;
+
+  @override
+  Widget build(BuildContext context) => RoutingSourceCard(
+    key: cardKey,
+    ordinal: ordinal,
+    name: name,
+    selected: selected,
+    width: width,
+    status: watchFxChainEnabled(context, address)
+        ? null
+        : context.l10n.fxChainOffCard,
+    onTap: onTap,
+  );
 }
 
 /// The row under the strip: what this destination processes, the part picker
@@ -1043,6 +1156,19 @@ class _SoundContext extends StatelessWidget {
               if (destination.kind == FxDestinationKind.recordedTrack &&
                   !destination.isAllTracks)
                 _PartPicker(destination: destination),
+              if (destination.address case final address?) ...[
+                const SizedBox(width: 32),
+                FxChainPower(
+                  address: address,
+                  onChanged: (enabled) => _FxViewState._notifyEditResult(
+                    context,
+                    context.read<FxCubit>().setChainEnabled(
+                      address,
+                      enabled: enabled,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1216,34 +1342,8 @@ class _DestinationChain extends StatelessWidget {
         : context.select<LooperBloc, List<TrackEffect>>(
             (b) => _entriesAt(b.state, address),
           );
-    final chainEnabled = switch (address.stage) {
-      FxStage.input =>
-        context
-            .watch<MonitorCubit>()
-            .state
-            .forInput(address.index)
-            .chainEnabled,
-      FxStage.loop => context.select<LooperBloc, bool>(
-        (b) =>
-            b.state.tracks
-                .elementAtOrNull(address.index)
-                ?.lanes
-                .elementAtOrNull(address.lane ?? 0)
-                ?.chainEnabled ??
-            true,
-      ),
-      FxStage.track => context.select<LooperBloc, bool>(
-        (b) =>
-            b.state.tracks.elementAtOrNull(address.index)?.chainEnabled ?? true,
-      ),
-      FxStage.output => context.select<LooperBloc, bool>(
-        (b) => b.state.outputChainEnabled(address.index),
-      ),
-      FxStage.allTracks => context.select<LooperBloc, bool>(
-        (b) => b.state.allTracksChain.chainEnabled,
-      ),
-    };
-    return FxChainStrip(
+    final chainEnabled = watchFxChainEnabled(context, address);
+    final strip = FxChainStrip(
       key: Key('fx_chain_${address.canonicalString()}'),
       entries: entries,
       chainEnabled: chainEnabled,
@@ -1260,6 +1360,29 @@ class _DestinationChain extends StatelessWidget {
         _FxViewState._notifyEditResult(context, outcome);
       },
       onOpen: (group) => onOpen(destination, group),
+    );
+    // Off: the racks stay dimmed (their own switches still work), and one
+    // band over them says why nothing is heard and turns the chain back on.
+    // One Column either way, so the strip (and its scroll position) stays
+    // mounted when the band comes and goes.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!chainEnabled) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: FxChainOffNotice(
+              message: fxChainOffConsequence(context.l10n, address.stage),
+              onTurnOn: () => _FxViewState._notifyEditResult(
+                context,
+                context.read<FxCubit>().setChainEnabled(address, enabled: true),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        Expanded(child: strip),
+      ],
     );
   }
 

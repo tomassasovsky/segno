@@ -1419,7 +1419,7 @@ void main() {
 
   group('Open asks before it stops playback (D8)', () {
     LooperState withTrack(TrackState state) => LooperState(
-      transport: const TransportState(isRunning: true),
+      transport: const TransportState(deviceRunning: true),
       tracks: [
         Track(state: state, lengthFrames: 48000),
         for (var c = 1; c < 8; c++) Track(channel: c),
@@ -1465,7 +1465,7 @@ void main() {
         await tapOpen(
           tester,
           LooperState(
-            transport: const TransportState(isRunning: true),
+            transport: const TransportState(deviceRunning: true),
             tracks: [
               armed,
               for (var c = 1; c < 8; c++) Track(channel: c),

@@ -3,9 +3,8 @@
 #
 #   ./kas-container build deploy/yocto/kas-segno-rpi5.yml
 #
-# The Pi 4 / SD variant is kas-segno-rpi4.yml. Everything the two boards share
-# lives in kas-segno-common.yml — put changes there unless they are genuinely
-# board-specific. See README.md for the full flow.
+# What is not specific to the board lives in kas-segno-common.yml. See
+# README.md for the full flow.
 #
 # DEVICE-SIDE PREREQUISITES, not shippable in this image. The bootloader EEPROM
 # lives on the board, not on the drive, so nothing written here can set it — and
@@ -31,9 +30,9 @@ local_conf_header:
     # three can never disagree — see meta-segno/wic/segno-tryboot.wks.in.
     SEGNO_BOOT_DISK = "nvme0n1"
 
-    # RAUC compatible string. Deliberately per-board: a Pi 4 bundle installing
-    # itself onto a Pi 5 would brick the slot it landed in, so the two products
-    # carry different strings and RAUC refuses the mismatch.
+    # RAUC compatible string. Per board: a bundle for another board installing
+    # itself onto this one would brick the slot it landed in, so RAUC refuses
+    # any string but this one.
     SEGNO_RAUC_COMPATIBLE = "segno-raspberrypi5"
 
   rpi5-power: |
@@ -128,6 +127,28 @@ local_conf_header:
     #
     # 2712 only; the Pi 4 image has no RTC and no J5. #995.
     RPI_EXTRA_CONFIG:append = "\ndtparam=rtc_bbat_vchg=3000000"
+
+  rpi5-ramoops: |
+    # Keep kernel crash records across a warm reset (#1437). The ramoops
+    # overlay reserves RAM the kernel's pstore writes into: the dmesg of a
+    # panic or oops, and a running copy of the kernel console. A watchdog or
+    # panic reset does not clear DRAM, so the next boot finds the records in
+    # /sys/fs/pstore and systemd-pstore moves them to /data. A power cut does
+    # clear it; that is why the watchdog turns a hang into a reset first.
+    #
+    # `dtoverlay=ramoops` resolves to ramoops-pi4.dtbo on a 2712 through the
+    # firmware's overlay_map, so both files ship. meta-raspberrypi's default
+    # overlay list carries neither. The default base address (0x0b000000,
+    # 176 MiB) sits in ordinary RAM on the Pi 5, outside the firmware's
+    # reservations.
+    #
+    # 1 MiB in all: a 256 KiB console copy, and 128 KiB records for the rest
+    # (six dmesg records). The console copy only holds what the kernel prints
+    # to its console, which the cmdline's loglevel=4 limits to errors and worse
+    # (kas-segno-common.yml). Sizes are powers of two because ramoops rounds
+    # them down to one.
+    RPI_KERNEL_DEVICETREE_OVERLAYS:append = " overlays/ramoops.dtbo overlays/ramoops-pi4.dtbo"
+    RPI_EXTRA_CONFIG:append = "\ndtoverlay=ramoops,total-size=0x100000,record-size=0x20000,console-size=0x40000"
 
   rpi5-console-board: |
     # Console board v2 (#747) on the 40-pin header. uart3 (GPIO8/9, /dev/ttyAMA3)

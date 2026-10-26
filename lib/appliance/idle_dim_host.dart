@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:backing_repository/backing_repository.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -8,19 +9,36 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/idle_dim_cubit.dart';
+import 'package:segno/backing/cubit/backing_cubit.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/performance/performance.dart';
 
-/// Whether the music keeps both panels awake: the transport or a track
-/// playing, a track recording, or a performance recording running.
-bool idleKeepsAwake(LooperState looper, PerformanceRecorderState performance) =>
-    looper.transport.isRunning ||
-    looper.tracks.any(
-      (track) => track.state == TrackState.playing || track.isCapturing,
-    ) ||
+/// Whether the music keeps both panels awake: a track playing or recording,
+/// a count-in, the backing track playing, or a performance recording
+/// running.
+///
+/// Not `TransportState.deviceRunning`: that is the audio device being open,
+/// which on the appliance is always, so it held the panels awake forever
+/// (#1354).
+bool idleKeepsAwake(
+  LooperState looper,
+  PerformanceRecorderState performance,
+  BackingCubitState backing,
+) =>
+    looper.transport.countingIn ||
+    looper.isPlaying ||
+    backing.backing.player.transport == BackingTransport.playing ||
     performance is PerformanceRecorderArmed;
 
-/// Feeds the [IdleDimCubit] and carries its dim to the panels.
+/// [idleKeepsAwake] for the app-wide owners above [context].
+bool musicKeepsAwake(BuildContext context) => idleKeepsAwake(
+  context.read<LooperBloc>().state,
+  context.read<PerformanceRecorderCubit>().state,
+  context.read<BackingCubit>().state,
+);
+
+/// Feeds the [IdleDimCubit] and carries its dim to the panels and the
+/// console's LEDs.
 ///
 /// Activity comes from every way a player acts on the console: touch and
 /// keys (here), the encoder and the pedals (the console board's events) and
@@ -70,12 +88,8 @@ class _IdleDimHostState extends State<IdleDimHost> {
     if (mounted) context.read<IdleDimCubit>().activity();
   }
 
-  void _syncBusy() => context.read<IdleDimCubit>().setBusy(
-    busy: idleKeepsAwake(
-      context.read<LooperBloc>().state,
-      context.read<PerformanceRecorderCubit>().state,
-    ),
-  );
+  void _syncBusy() =>
+      context.read<IdleDimCubit>().setBusy(busy: musicKeepsAwake(context));
 
   @override
   Widget build(BuildContext context) => MultiBlocListener(
@@ -84,11 +98,19 @@ class _IdleDimHostState extends State<IdleDimHost> {
       BlocListener<PerformanceRecorderCubit, PerformanceRecorderState>(
         listener: (_, _) => _syncBusy(),
       ),
+      BlocListener<BackingCubit, BackingCubitState>(
+        listenWhen: (previous, current) =>
+            previous.backing.player.transport !=
+            current.backing.player.transport,
+        listener: (_, _) => _syncBusy(),
+      ),
       BlocListener<IdleDimCubit, IdleDimState>(
         listenWhen: (previous, current) => previous.dimmed != current.dimmed,
-        listener: (context, idle) => context
-            .read<DisplayBrightnessCubit>()
-            .setDimmed(dimmed: idle.dimmed),
+        listener: (context, idle) {
+          context.read<DisplayBrightnessCubit>().setDimmed(dimmed: idle.dimmed);
+          // The console's ring and pills dim with the screens (#1349).
+          context.read<PedalRepository>().setDimmed(dimmed: idle.dimmed);
+        },
       ),
     ],
     child: IdleDimBarrier(child: widget.child),

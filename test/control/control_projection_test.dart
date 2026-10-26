@@ -10,7 +10,7 @@ LooperState _stateWith(
   int sampleRate = 48000,
 }) => LooperState(
   transport: TransportState(
-    isRunning: true,
+    deviceRunning: true,
     masterLengthFrames: masterLengthFrames,
   ),
   tracks: tracks,
@@ -408,7 +408,7 @@ void main() {
       List<Track>? tracks,
     }) => LooperState(
       transport: TransportState(
-        isRunning: true,
+        deviceRunning: true,
         looperMode: mode,
         songQueuedTrack: queued,
         songQueueProgress: progress,

@@ -23,6 +23,52 @@ class SegnoEngineBindings {
     ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName) lookup,
   ) : _lookup = lookup;
 
+  /// The number of parameters built-in [type] uses (0 for LE_FX_NONE and
+  /// LE_FX_PLUGIN, whose parameters come from le_plugin_param_info_at), or
+  /// LE_ERR_INVALID for an unknown type.
+  int le_fx_param_count(
+    int type,
+  ) {
+    return _le_fx_param_count(
+      type,
+    );
+  }
+
+  late final _le_fx_param_countPtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Int32)>>(
+        'le_fx_param_count',
+      );
+  late final _le_fx_param_count = _le_fx_param_countPtr
+      .asFunction<int Function(int)>();
+
+  /// Fills *out with parameter [param] (0..count-1) of built-in [type]. Returns
+  /// LE_OK, or LE_ERR_INVALID for a NULL `out`, an unknown type or a parameter
+  /// out of range.
+  int le_fx_param_info(
+    int type,
+    int param,
+    ffi.Pointer<le_fx_param_desc> out,
+  ) {
+    return _le_fx_param_info(
+      type,
+      param,
+      out,
+    );
+  }
+
+  late final _le_fx_param_infoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<le_fx_param_desc>,
+          )
+        >
+      >('le_fx_param_info');
+  late final _le_fx_param_info = _le_fx_param_infoPtr
+      .asFunction<int Function(int, int, ffi.Pointer<le_fx_param_desc>)>();
+
   /// One bounded command; enqueue is not application. The full snapshot carries
   /// the coherent applied tuple and its even receipt revision/result.
   int le_engine_set_record_timing_settings(
@@ -5094,7 +5140,7 @@ class SegnoEngineBindings {
   /// placement -1..1, centre 0 (default). One unity-centre law, the same the
   /// lanes, monitors and output buses use, so centre is exactly
   /// unity and a hard side is exactly silent.
-  /// level     0..LE_MAX_GAIN, unity 1 (default). Applied last.
+  /// level     0..LE_FX_LEVEL_MAX, unity 1 (default). Applied last.
   ///
   /// Set as one call, because the four values are one control surface and a
   /// half-applied change would be audible. Direct atomic publishes: they change
@@ -5954,7 +6000,8 @@ class SegnoEngineBindings {
   /// ---- effect-chain fingerprints (control thread; FX divergence detection) ---- *
   /// An order-sensitive 64-bit hash of a lane's / monitor's PUBLISHED effect chain:
   /// for each of the a_fx_count active entries, its type, plus (for a built-in) its
-  /// LE_FX_PARAMS float parameter bits — a plugin entry contributes its type only
+  /// float bits of the parameters its type reads (le_fx_param_count; none for an
+  /// unknown code) — a plugin entry contributes its type only
   /// (its params live in the plugin host, not a_fx_param). The empty chain hashes
   /// to the FNV-1a offset basis. This is DETECTION only, not a chain readback: the
   /// Dart repository owns the chain and computes the identical hash over its cache,
@@ -8647,6 +8694,43 @@ enum le_command_code {
   };
 }
 
+/// One built-in parameter. `steps` is 0 for a continuous parameter, otherwise
+/// the number of positions a control snaps it to: position k of n stands for
+/// setting k / (n - 1) and the value at that setting. The kernel reads a
+/// LE_FX_UNIT_CHOICE parameter at its nearest position and every other one as
+/// set, so a setting between positions plays as set. `def` is the setting a
+/// freshly engaged effect starts at (le_fx_defaults).
+final class le_fx_param_desc extends ffi.Struct {
+  @ffi.Array.multi([24])
+  external ffi.Array<ffi.Char> key;
+
+  /// le_fx_param_unit
+  @ffi.Int32()
+  external int unit;
+
+  @ffi.Int32()
+  external int steps;
+
+  /// value at setting 0
+  @ffi.Float()
+  external double at_min;
+
+  /// value at setting 1
+  @ffi.Float()
+  external double at_max;
+
+  /// le_fx_param_curve
+  @ffi.Int32()
+  external int curve;
+
+  @ffi.Float()
+  external double def;
+
+  /// le_fx_param_flags
+  @ffi.Uint32()
+  external int flags;
+}
+
 /// A hardware audio device discovered by enumeration (le_enumerate_*).
 ///
 /// `id` is an opaque, backend-specific token suitable for pinning a device via
@@ -8769,7 +8853,7 @@ final class le_output_fx_snapshot extends ffi.Struct {
   @ffi.Array.multi([64])
   external ffi.Array<ffi.Int32> enabled;
 
-  @ffi.Array.multi([64, 4])
+  @ffi.Array.multi([64, 32])
   external ffi.Array<ffi.Array<ffi.Float>> params;
 }
 
@@ -8892,7 +8976,7 @@ final class le_fx_recipe extends ffi.Struct {
   @ffi.Array.multi([64])
   external ffi.Array<ffi.Int32> slot_enabled;
 
-  @ffi.Array.multi([64, 4])
+  @ffi.Array.multi([64, 32])
   external ffi.Array<ffi.Array<ffi.Float>> params;
 
   @ffi.Array.multi([64])
@@ -8909,6 +8993,17 @@ final class le_fx_recipe extends ffi.Struct {
 
   @ffi.Array.multi([64])
   external ffi.Array<ffi.Pointer<le_plugin_slot>> plugin;
+
+  /// le_fx_rack_edge bits
+  @ffi.Array.multi([64])
+  external ffi.Array<ffi.Int32> rack;
+
+  /// Each entry's stable identity (#887 part 4), 0 for none. A publish
+  /// resets a slot's DSP state only when the entry there is a different one
+  /// (another identity, another type, or 0), so an edit that keeps an entry
+  /// where it was, such as a parameter change, leaves its tail sounding.
+  @ffi.Array.multi([64])
+  external ffi.Array<ffi.Uint64> instance;
 }
 
 /// Source context frozen at the accepted record/arm gesture. The image is
@@ -9493,9 +9588,9 @@ final class le_snapshot extends ffi.Struct {
   /// Added latency (frames) of the highest-latency effect active in any audible
   /// or monitored lane chain — the MAXIMUM across active effects, so it stays
   /// forward-compatible as effects accrue. Today the formant-preserving octaver
-  /// is the only contributor (~LE_PV_N frames; both PV and PSOLA modes report the
-  /// same value); every other effect adds 0, so this reads 0 whenever no octaver
-  /// is engaged. The Dart layer divides by sample_rate to show milliseconds and
+  /// is the only contributor (LE_PV_LATENCY frames, engine_fx.h; both PV and
+  /// PSOLA modes report the same value); every other effect adds 0, so this
+  /// reads 0 whenever no octaver is engaged. The Dart layer divides by sample_rate to show milliseconds and
   /// warn a performer monitoring through the octaver. PURELY informational: this
   /// does NOT feed record_offset_frames or any compensation — it only surfaces
   /// the lag so the UI can suggest the lower-latency choice.
@@ -10311,7 +10406,21 @@ enum le_cache_reason {
 
   /// a Transpose source render does not fit the
   /// cap; the track plays dry (#1179)
-  LE_CACHE_REASON_BUDGET(4);
+  LE_CACHE_REASON_BUDGET(4),
+
+  /// the print holds an octaver and the loop is not a
+  /// whole number of octaver hops (256 frames): its
+  /// hop falls on other frames each lap, so no single
+  /// lap's render equals live (#941)
+  LE_CACHE_REASON_HOP(5),
+
+  /// the print holds a free-running
+  /// modulator (a chorus or doubler LFO,
+  /// vinyl noise, a degrade's hold) or a
+  /// kind on the song's beat (the Pumper,
+  /// Slicer, swept LPF, Mode delay), which
+  /// sounds different each lap
+  LE_CACHE_REASON_FREE_RUNNING(6);
 
   final int value;
   const le_cache_reason(this.value);
@@ -10322,6 +10431,8 @@ enum le_cache_reason {
     2 => LE_CACHE_REASON_RENDER_FAILED,
     3 => LE_CACHE_REASON_PART_POST,
     4 => LE_CACHE_REASON_BUDGET,
+    5 => LE_CACHE_REASON_HOP,
+    6 => LE_CACHE_REASON_FREE_RUNNING,
     _ => throw ArgumentError('Unknown value for le_cache_reason: $value'),
   };
 }
@@ -10764,7 +10875,9 @@ const int LE_LENGTH_PRESET_MAX_BARS = 64;
 
 const int LE_FX_MAX = 64;
 
-const int LE_FX_PARAMS = 4;
+const int LE_FX_PARAMS = 32;
+
+const int LE_FX_PARAM_KEY_CHARS = 24;
 
 const int LE_MAX_TRACKS = 8;
 
@@ -10787,6 +10900,8 @@ const int LE_CLIP_RUN = 4;
 const int LE_CLIP_HOLD_MS = 1500;
 
 const double LE_MAX_GAIN = 2.0;
+
+const double LE_FX_LEVEL_MAX = 4.0;
 
 const double LE_MAX_INPUT_TRIM = 3.981071710586548;
 

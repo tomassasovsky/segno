@@ -19,6 +19,7 @@ import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/external_control_writer.dart';
 import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_pedal.dart';
+import 'package:segno/control/binding/fx_assignments.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/binding/midi_edit.dart';
@@ -477,7 +478,10 @@ class ControlCubit extends Cubit<ControlState> {
       if (position == null) return;
       final parameters = <ControlValueTarget, double>{
         for (final mapping in jack.expression.mappings)
-          mapping.target: mapping.valueAt(position),
+          mapping.target: _bindingToChain(
+            mapping.target,
+            mapping.valueAt(position),
+          ),
       };
       final token = Object();
       _externalTokens[input] = token;
@@ -608,7 +612,10 @@ class ControlCubit extends Cubit<ControlState> {
     for (final row in setup.controls.parameters) {
       final value = row.condition == ExternalValueCondition.onOff ? on : held;
       if (value != null) {
-        parameters[row.target] = value ? row.active : row.inactive;
+        parameters[row.target] = _bindingToChain(
+          row.target,
+          value ? row.active : row.inactive,
+        );
       }
     }
     final token = _externalTokens[input] ?? Object();
@@ -691,7 +698,10 @@ class ControlCubit extends Cubit<ControlState> {
             }
             for (final row in logical.controls.parameters) {
               if (row.condition == ExternalValueCondition.onOff) {
-                parameters[row.target] = nextOn ? row.active : row.inactive;
+                parameters[row.target] = _bindingToChain(
+                  row.target,
+                  nextOn ? row.active : row.inactive,
+                );
               }
             }
           }
@@ -718,8 +728,10 @@ class ControlCubit extends Cubit<ControlState> {
                 excluding: trigger,
               );
               if (survivor != null && !parameters.containsKey(entry.key)) {
-                parameters[entry.key] =
-                    _readControlValue(entry.key) ?? survivor;
+                final now = _readControlValue(entry.key);
+                parameters[entry.key] = now == null
+                    ? survivor
+                    : _bindingToChain(entry.key, now);
               } else if (survivor == null &&
                   !parameters.containsKey(entry.key)) {
                 entry.value.remove(trigger);
@@ -3567,6 +3579,57 @@ class ControlCubit extends Cubit<ControlState> {
     emit(state.copyWith(globalBindings: next));
     _storeFxStopNotice();
     await _settings.savePedalBindings(next.encode());
+  }
+
+  /// Removes every MIDI and pedal assignment to the effects [slotIds] of the
+  /// chain at [address] (the ones `fxAssignmentsTo` counts) and saves each
+  /// store that changed: the session and global pedal bindings, the external
+  /// pedal setup and the MIDI mappings.
+  ///
+  /// What re-adding a rack promises when the player confirms it: the old
+  /// rack's effects are gone, so their assignments go with them. Each store
+  /// is cleaned from its own latest value at its own write, so a change
+  /// queued meanwhile is kept, and every store is cleaned even when an
+  /// earlier one fails to save. Returns whether all of them saved; a failure
+  /// is reported, never thrown. The session set is saved with the session,
+  /// like any other session edit.
+  // ignore: prefer_void_public_cubit_methods
+  Future<bool> removeFxAssignments(
+    FxAddress address,
+    Set<String> slotIds,
+  ) async {
+    bool names(Object? target) => fxTargetNamesEffect(target, address, slotIds);
+    var saved = true;
+    Future<void> attempt(Future<void> Function() write) async {
+      try {
+        await write();
+      } on Object catch (error, trace) {
+        saved = false;
+        addError(error, trace);
+      }
+    }
+
+    final session = state.sessionBindings.withoutTargets(names);
+    if (session != state.sessionBindings) applySessionBindings(session);
+    await attempt(
+      () => setGlobalBindings(state.globalBindings.withoutTargets(names)),
+    );
+    await attempt(
+      () => _enqueuePedalSetup(
+        () => _withLiveLogicalIntent(
+          state.pedalSetup.copyWith(
+            external: state.pedalSetup.external.withoutTargets(names),
+          ),
+        ),
+      ),
+    );
+    await attempt(() async {
+      final midi = await removeMidiControls(
+        (key) => fxMidiKeyNamesEffect(key, address, slotIds),
+      );
+      if (!midi.saved) saved = false;
+    });
+    return saved;
   }
 
   /// Stores the FX notice decision once it is known to be shown, so a later
