@@ -394,8 +394,15 @@ and marked with the PR that carried them out.
     disconnected. `audio` is `ok` while the engine runs, `absent` while the pinned
     interface (or, with nothing pinned, any interface `pickConsoleAudioDevices` would
     pin) is not there, and `refused` otherwise. `segno-mark-good` requires `n` to
-    advance, `m` to advance whenever both samples count it, and `audio` not
-    `refused` in both samples.
+    advance and `m` to advance whenever both samples count it, and refuses when
+    `audio` is `refused` in both samples. With both HDMI connectors forced on
+    (`video=...D`, #821), the appliance may never read `readout none`; the case
+    covers a connector that reads disconnected.
+  - `READY=1` rides every send until one goes through: a lost datagram would leave the
+    unit activating until systemd kills a working app. systemd ignores a repeated
+    `READY=1`.
+  - `multi-user.target` wants `segno.service`, so it is reached once the app draws (or
+    after the timeout); no unit this layer ships is ordered after it.
   - This replaces the marker file: systemd accepts notifications only from `MainPID`
     (`NotifyAccess=main`), so there is no pid to compare and nothing in `/run` to clean.
 - **D8. Update failures are visible.** Shipped in #1287.
@@ -431,14 +438,18 @@ and marked with the PR that carried them out.
   (EBUSY), the open already reports the negotiated rate, and the Scarlett 4i4 supports all
   three listed rates. The dead `asio_*` fields are deleted, not renamed.
 - **D19. An Apply that would put the effects over the budget is refused inline** (owner,
-  2026-10-26, Q5; extends the #887 admission rule). Parts 3a and 4. Before applying, the
-  cubit asks the repository's new `fxRoomAt(sampleRate, bufferFrames)`: `fxBudgetNs` at
-  the new rate and buffer less the cost of every live chain at the new block length (the
-  sum `fxCostNs` makes, at that period). A negative room refuses. Over the budget: nothing is applied or saved, the chips keep the
-  running values, and the row says what will not fit, naming the setting: "Your effects
-  need more processing than 96 kHz leaves. Remove some effects first." or the same with
-  "a 32-frame buffer". A change that only lowers the cost (a lower rate, a larger buffer)
-  is never refused, as an effects removal never is. The check repeats at confirm.
+  2026-10-26, Q5; extends the #887 admission rule). Parts 3a and 4.
+  - The check runs only for a change that shrinks the room: a higher rate, or a buffer
+    smaller than the current one and below 64 frames. A lower rate or a larger buffer is
+    never refused, as an effects removal never is, even when the chains are already over
+    the budget (a take's inherited chain is never refused, so they can be).
+  - It asks the repository's new `fxRoomAt(sampleRate, bufferFrames)`: `fxBudgetNs` at
+    the new rate and buffer, less the cost of every live chain at the new block length
+    (the sum `fxCostNs` makes, at that period). A negative room refuses.
+  - Refused: nothing is applied or saved, the chips keep the running values, and the row
+    says what will not fit, naming the setting: "Your effects need more processing than
+    96 kHz leaves. Remove some effects first." or the same with "a 32-frame buffer".
+  - The check repeats at confirm.
 
 ## 3. Parts
 
@@ -524,14 +535,17 @@ and makes them safe. Part 4 later puts the same path behind a draft and an Apply
   `DeviceAudioTab`. On the appliance this button only ever measured the Scarlett loop
   channels, which Q2 rules out. The latency row keeps showing the restored value. Part 3b
   brings Measure back as the cable test.
-- The ASIO paths in the app, which is #925's list: `setBackend`, `setAsioDriver`,
-  `resolveAsioDriver`, `_asioSelectable`, `asioOnly`, `cachedAsioDrivers`, `asioDriver`,
+- The ASIO selection in the app, which is #925's list: `setBackend`, `setAsioDriver`,
+  `resolveAsioDriver`, the `asioSelectable` parameter and `_asioSelectable`, `asioOnly`,
+  `cachedAsioDrivers`, the state's `asioDrivers`, `isAsio` and `selectedAsioDriver`,
   the `initialAsioDrivers` wiring through `App` and `run_segno.dart` (and the `asioDrivers`
   field of `AutoStartResult`), `_snapRateAndBuffer`, the ASIO branch of
   `sampleRateChoices`, the ASIO group in `device_audio_tab.dart` (93-167, 477 on), the
   ARB keys `asioDriverGroup`, `asioChannelCounts`, `noAsioDriverTitle`,
   `noAsioDriverMessage`, `downloadAsio4all`, `audioAsioDriverGroup`, `audioNoAsioDriver`,
-  `audioOpenAsio4all` and the Windows-only `perfRevealWindows`, in both locales.
+  `audioOpenAsio4all` and the Windows-only `perfRevealWindows`, in both locales. The
+  `backend` and `asioDriver` values the app still passes through to `EngineConfig` and
+  the saved config stay until Part 2 removes those fields.
 
 ```success-criteria
 GOAL: No Device chip can clear the loops, cut a take, save a refused config or play a test burst.
@@ -545,7 +559,7 @@ SUCCESS CRITERIA:
 - After a successful buffer change with no saved offset for the new key, setRecordOffset(0) is called and the row shows "Not measured"; with a saved one, that value is set. saveLatencyOffsetFrames is never called in either case. | verify: same
 - Repository: applyAudioConfig on a started engine calls reopen, not start; clearedRate and retainedPartial are returned, not hidden; _replayRig pushes an offset of 0. | verify: /Users/Tomas/development/flutter/bin/flutter test packages/looper_repository
 - Boot with a saved offset restores it; boot without one sends no measurement command, with or without excluded loop channels. | verify: /Users/Tomas/development/flutter/bin/flutter test test/app
-- No Measure button and no ASIO code remain in the app. | verify: ! grep -rn "setAsioDriver\|setBackend\|_autoMeasureIfLoopback\|loopbackDetectedNote\|measureLatency()" lib && ! grep -rni "asio\|perfRevealWindows" lib
+- No Measure button and no ASIO code remain in the app. | verify: ! grep -rnE "setAsioDriver|setBackend|resolveAsioDriver|asioSelectable|asioOnly|cachedAsioDrivers|initialAsioDrivers|asioDrivers|isAsio|selectedAsioDriver|_snapRateAndBuffer|_autoMeasureIfLoopback|loopbackDetectedNote|measureLatency\(\)|asioDriverGroup|asioChannelCounts|noAsioDriver|downloadAsio4all|audioAsioDriverGroup|audioNoAsioDriver|audioOpenAsio4all|perfRevealWindows" lib
 - Analyzer and Bloc lint clean. | verify: dart analyze --fatal-infos && bloc lint lib test packages
 - HARDWARE: with loops playing on the appliance, tap 256; the dialog appears; confirm; the loops stop, are still there, and play at the same pitch; nothing is heard from any output during the change; after a reboot the console comes up at 256. | verify: manual on device
 ```
@@ -584,7 +598,7 @@ trusted.
   environment; the test checks this).
 - `segno-mark-good.service` drops `After=segno.service` (it keeps `Wants=`). Under
   `Type=notify` that ordering would hold the gate until the app's start job ended, so a
-  never-ready build would roll back after `TimeoutStartSec` plus `WAIT_SECS` (about six
+  never-ready build would roll back after `TimeoutStartSec` plus `WAIT_SECS` (about seven
   minutes) instead of after `WAIT_SECS`.
 - `segno-bundle` RDEPENDS on `dtc` for `fdtget`. Today `dtc` reaches the image only
   through `rauc-rpi-backend`, and a missing `fdtget` would read as "not a trial boot" and
@@ -595,12 +609,16 @@ trusted.
 
 **`segno-mark-good`**
 
-- Wait up to `WAIT_SECS` for `is-active` (which `Type=notify` reaches only after
-  `READY=1`).
+- Wait up to `WAIT_SECS` (240 s) for `is-active` (which `Type=notify` reaches only
+  after `READY=1`). That is a minute past `TimeoutStartSec`: without
+  `After=segno.service` the gate's clock also covers what segno waits for first
+  (`/data`, plymouth, the touch matrix), and a build systemd would still let draw must
+  not be rolled back before it gets to.
 - Record `MainPID`, `NRestarts` and `StatusText`. Wait `STABLE_SECS`. Require the same
   `MainPID`, the same `NRestarts`, `is-active`, and a `StatusText` whose main counter
   advanced, whose readout counter advanced when both samples counted it, and whose audio
-  state is not `refused` in both samples. One `refused` sample is not enough: an Apply
+  state is not `refused` in both samples (it refuses when both are). One `refused`
+  sample is not enough: an Apply
   (stop, then reopen) or a supervisor reconnect (#740) passes through the same state for
   a moment. A failed enumeration or engine read reports `refused`, never `absent`.
 - A readout that stops answering on a trial boot also reboots, even though the main
@@ -737,8 +755,13 @@ The command uses its own union member in `le_command`, like `click` and `record_
 - `le_enumerate_asio_drivers`, the four `asio_*` fields of `le_device_info`,
   `le_audio_backend`, `le_config.backend`, `AudioDevice.bufferSizes` and `.sampleRates`,
   the repository's `asioDrivers()`, `EngineStatus.activeBackend`, and the three
-  `AudioBackend` enums with the persisted backend key. A stored backend value is ignored on load (no compatibility layer,
-  AGENTS.md).
+  `AudioBackend` enums with the persisted backend key, `EngineConfig.asioDriver` and the
+  saved config's `asioDriver`, with the values `lib` still passes through. A stored
+  backend value is ignored on load (no compatibility layer, AGENTS.md).
+- The comments that still name ASIO are reworded or removed: the sample-format names in
+  `engine_internal.h` and `engine_convert.c`, `ASIOGetBufferSize`, `ASIOGetChannelInfo`
+  (`le_device_backend.h`), `kAsioOverload` (`segno_engine_api.h`), and the mentions in
+  `engine_telemetry.h` and `engine.c`.
 - After the header change: `dart run ffigen --config ffigen.yaml` and `dart format`.
 
 ```success-criteria
@@ -752,7 +775,7 @@ SUCCESS CRITERIA:
 - Cancel with request 7 after 1000 frames: CANCELLED, offset still 77, every output sample after the cancel frame is 0.0f with no monitors enabled; cancel with request 6 is ignored. Device lost mid-window: CANCELLED, offset 77. | verify: same
 - Track 0 recording when 140 arrives: CANCELLED, out ch1 never carries the burst, the take's captured PCM equals its input samples exactly. | verify: same
 - Reopen with keep_material at another negotiated rate: LE_ERR_WOULD_CLEAR, lane PCM and history byte-identical, tracks stopped; without the flag, LE_REOPEN_CLEARED_RATE as before. | verify: same
-- Command 1, le_engine_measure_latency and every ASIO symbol are gone. | verify: ! grep -rn "LE_CMD_MEASURE_LATENCY\b\|le_engine_measure_latency\b\|AudioBackend" packages lib --include='*.c' --include='*.h' --include='*.dart' && ! grep -rni "asio" packages/*/lib packages/segno_engine/src/core lib --include='*.c' --include='*.h' --include='*.dart' --include='*.arb'
+- Command 1, le_engine_measure_latency and every ASIO symbol are gone. | verify: ! grep -rn "LE_CMD_MEASURE_LATENCY\b\|le_engine_measure_latency\b\|AudioBackend" packages lib --include='*.c' --include='*.h' --include='*.dart' && ! grep -rniE "(^|[^c])asio" packages/*/lib packages/segno_engine/src/core lib --include='*.c' --include='*.h' --include='*.dart' --include='*.arb'
 - Dart wrappers and the mock: measureLatencyPath forwards (1, 0, 0.25, 7); cancelLatency publishes cancelled with its request. | verify: /Users/Tomas/development/flutter/bin/flutter test packages/segno_engine packages/looper_repository
 - ASAN suite and bindings regenerated with no format churn. | verify: bash packages/segno_engine/src/test/run_native_tests.sh && git diff --stat packages/segno_engine/lib/src/generated
 ```
@@ -871,8 +894,8 @@ SUCCESS CRITERIA:
 
 ### Part 8: update from USB (about 450 lines; helper, `lib/update`, `storage_repository`)
 
-Pen 33: `w3lUKE`/`xlAif` (Load a USB package). Trunk-based, after #1398. The helper is started with
-`spawn_process`'s `startProcess` (#1373), as `install` already is in
+Pen 33: `w3lUKE`/`xlAif` (Load a USB package). Trunk-based, after #1398. The helper is
+started with `spawn_process`'s `startProcess` (#1373), as `install` already is in
 `system_appliance_env.dart`. `install_bundle` keeps #1398's read-only `/boot` check (exit
 3) for both verbs.
 
