@@ -43,10 +43,20 @@ enum ApplyPhase {
 class ApplyRefusal extends Equatable {
   /// Refused because [busyKind] is in flight: the guard table's name of the
   /// operation a device change must not overlap (`capture` for a take).
-  const ApplyRefusal.busy(String this.busyKind) : overBudgetRate = null;
+  const ApplyRefusal.busy(String this.busyKind)
+    : overBudgetRate = null,
+      refusedDevice = null;
 
   /// Refused because the effects would not fit at [overBudgetRate] (D19).
-  const ApplyRefusal.overBudgetRate(int this.overBudgetRate) : busyKind = null;
+  const ApplyRefusal.overBudgetRate(int this.overBudgetRate)
+    : busyKind = null,
+      refusedDevice = null;
+
+  /// Refused by the interface: [refusedDevice] would not open, and the
+  /// previous one runs again.
+  const ApplyRefusal.deviceRefused(String this.refusedDevice)
+    : busyKind = null,
+      overBudgetRate = null;
 
   /// The blocking operation's `GuardKind` name, for a busy refusal.
   final String? busyKind;
@@ -54,8 +64,11 @@ class ApplyRefusal extends Equatable {
   /// The sample rate the effects would not fit at.
   final int? overBudgetRate;
 
+  /// The interface that would not open.
+  final String? refusedDevice;
+
   @override
-  List<Object?> get props => [busyKind, overBudgetRate];
+  List<Object?> get props => [busyKind, overBudgetRate, refusedDevice];
 }
 
 /// Whether the audio device is currently open.
@@ -236,9 +249,8 @@ class AudioSetupState extends Equatable {
   /// The round-trip latency [bufferFrames] costs at [sampleRate], in ms.
   ///
   /// **An estimate, and said to be one**: two buffer periods, one in and one
-  /// out. It cannot include the converter's own delay, which no host reports —
-  /// the MEASURED figure lives on the Status tab, where a loopback actually
-  /// measures it.
+  /// out. It cannot include the converter's own delay, which no host reports;
+  /// only a cable measurement does.
   ///
   /// It exists because `AUDIO / settings-rate` gives **every** buffer option
   /// its own cost, not only the chosen one: a list where the current pick is

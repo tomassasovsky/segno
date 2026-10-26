@@ -348,6 +348,8 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
     if (rate != null) {
       return l10n.audioEffectsOverBudgetRate(l10n.sampleRateKhzLabel(rate));
     }
+    final device = refusal.refusedDevice;
+    if (device != null) return l10n.audioDeviceRefused(device);
     return l10n.operationBusy(refusal.busyKind ?? 'other');
   }
 

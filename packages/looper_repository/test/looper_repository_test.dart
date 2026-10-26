@@ -2693,8 +2693,8 @@ void main() {
       final sub = repo.looperState.listen((_) {});
       addTearDown(sub.cancel);
 
-      // A measurement auto-sets the engine's offset (not via setRecordOffset);
-      // the poll must mirror it into the remembered value.
+      // A measurement that completes sets the engine's offset itself (not via
+      // setRecordOffset); the poll must mirror it into the remembered value.
       engine.nextSnapshot = const EngineSnapshot(
         isRunning: true,
         sampleRate: 48000,
@@ -2704,7 +2704,7 @@ void main() {
         inputRms: 0,
         inputPeak: 0,
         outputRms: 0,
-        latencyState: le.LatencyState.idle,
+        latencyState: le.LatencyState.done,
         measuredLatencyMs: -1,
         recordOffsetFrames: 240,
       );

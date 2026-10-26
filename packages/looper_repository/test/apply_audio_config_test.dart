@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart'
     show EngineSnapshot, ReopenOutcome;
+import 'package:segno_engine/segno_engine.dart' as le show LatencyState;
 
 import 'helpers/fake_audio_engine.dart';
 
@@ -141,6 +142,55 @@ void main() {
       },
     );
 
+    test('a failed attempt that cleared the loops is told even when the '
+        'previous config comes back', () {
+      final repo = running();
+      // The new interface negotiated another rate (every loop cleared), then
+      // would not start; the previous one reopens with nothing left to keep.
+      engine.reopenResult = (
+        result: EngineResult.device,
+        outcome: ReopenOutcome.clearedRate,
+        droppedTracks: 0,
+      );
+      var reopens = 0;
+      engine.afterSnapshot = () {
+        if (count('reopen') > reopens) {
+          reopens = count('reopen');
+          engine.reopenResult = (
+            result: EngineResult.ok,
+            outcome: ReopenOutcome.retained,
+            droppedTracks: 0,
+          );
+        }
+      };
+
+      final outcome = repo.applyAudioConfig(next);
+
+      expect(outcome.status, AudioApplyStatus.refused);
+      expect(outcome.reopen?.outcome, ReopenOutcome.clearedRate);
+      // Told once, here: the next start is an ordinary one.
+      expect(repo.state.status.reopen, isNull);
+      repo.stopEngine();
+      expect(repo.startEngine(previous), EngineResult.ok);
+      expect(repo.state.status.reopen, isNull);
+    });
+
+    test('a replay that rolls back fails without reopening anything else', () {
+      final repo = running();
+      engine.mixResult = EngineResult.invalid;
+
+      final outcome = repo.applyAudioConfig(next);
+
+      expect(outcome.status, AudioApplyStatus.failed);
+      expect(outcome.reopen?.outcome, ReopenOutcome.retained);
+      expect(count('reopen'), 1);
+      expect(repo.sessionTransport.deviceRunning, isFalse);
+      // Told once, here, not again at the next start.
+      engine.mixResult = EngineResult.ok;
+      expect(repo.startEngine(previous), EngineResult.ok);
+      expect(repo.state.status.reopen, isNull);
+    });
+
     test('a cold engine is started', () {
       final repo = LooperRepository(engine: engine, ticker: ticker.stream);
       addTearDown(repo.dispose);
@@ -178,6 +228,45 @@ void main() {
 
     test('the remembered offset is replayed on a reopen', () {
       final repo = running()..setRecordOffset(150);
+      engine.lastRecordOffset = null;
+
+      repo.applyAudioConfig(next);
+
+      expect(engine.lastRecordOffset, 150);
+    });
+  });
+
+  group('the measured-offset mirror', () {
+    test('a queued 0 is not undone by a poll that still reads the old '
+        'figure', () async {
+      final repo = running();
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      // A profile measured earlier: the engine still reports its figure, and
+      // the 0 the audio setup sets has not reached the audio thread yet.
+      repo.setRecordOffset(0);
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(
+        recordOffsetFrames: 150,
+      );
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      engine.lastRecordOffset = null;
+
+      repo.applyAudioConfig(next);
+
+      expect(engine.lastRecordOffset, 0);
+    });
+
+    test('a measurement that completes is remembered', () async {
+      final repo = running();
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(
+        recordOffsetFrames: 150,
+        latencyState: le.LatencyState.done,
+      );
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
       engine.lastRecordOffset = null;
 
       repo.applyAudioConfig(next);

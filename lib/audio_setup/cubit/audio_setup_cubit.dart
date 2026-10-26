@@ -110,13 +110,13 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
 
   /// Selects the requested sample rate and applies it (see [AudioSetupCubit]).
   void setSampleRate(int sampleRate) {
-    if (sampleRate == state.sampleRate) return;
+    if (sampleRate == state.sampleRate && !_failed) return;
     _requestApply(state.copyWith(sampleRate: sampleRate));
   }
 
   /// Selects the requested buffer size and applies it.
   void setBufferFrames(int bufferFrames) {
-    if (bufferFrames == state.bufferFrames) return;
+    if (bufferFrames == state.bufferFrames && !_failed) return;
     _requestApply(state.copyWith(bufferFrames: bufferFrames));
   }
 
@@ -124,7 +124,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// default) and applies it: the engine reserves the loop memory when the
   /// device opens.
   void setMaxLoopMinutes(int minutes) {
-    if (minutes == state.maxLoopMinutes) return;
+    if (minutes == state.maxLoopMinutes && !_failed) return;
     _requestApply(state.copyWith(maxLoopMinutes: minutes));
   }
 
@@ -147,7 +147,8 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     required String captureDeviceId,
   }) {
     if (playbackDeviceId == state.playbackDeviceId &&
-        captureDeviceId == state.captureDeviceId) {
+        captureDeviceId == state.captureDeviceId &&
+        !_failed) {
       return;
     }
     _requestApply(
@@ -176,6 +177,10 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       ),
     );
   }
+
+  /// Whether the last open failed and nothing runs: then the selection on
+  /// screen is not running either, and tapping it again is how to retry.
+  bool get _failed => state.status == AudioSetupStatus.error;
 
   /// Applies [next] now, or asks first when music is playing (pen 28/04).
   void _requestApply(AudioSetupState next) {
@@ -312,18 +317,43 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     final askedBuffer = next.bufferFrames;
     final outcome = _repository.applyAudioConfig(_engineConfig(next));
     final live = _repository.state.status;
+    // What the attempt did with the loops is told whatever else happened
+    // (rule 3: no silent changes).
+    final lost = _restoredConnectivity(outcome.reopen);
+    final notice = lost == DeviceConnectivity.restored
+        ? DeviceConnectivity.none
+        : lost;
     switch (outcome.status) {
       case AudioApplyStatus.failed:
-        // Nothing opened: the selection stays what it was, nothing is saved,
-        // and the refusal is the fact to surface.
+        // Nothing runs: the selection stays what it was, nothing is saved,
+        // and the failure is the fact to surface.
         emit(
           state.copyWith(
             status: AudioSetupStatus.error,
             phase: ConfigPhase.settled,
             error: AudioSetupError.openDeviceFailed,
             errorDetail: outcome.result.name,
-            deviceConnectivity: DeviceConnectivity.none,
+            deviceConnectivity: notice,
             clearRefusal: true,
+          ),
+        );
+      case AudioApplyStatus.refused
+          when outcome.result == EngineResult.notReady:
+        // The repository would not reopen at all (a Session apply, a boot
+        // fence, a settings recovery): nothing was touched.
+        emit(state.copyWith(refusal: const ApplyRefusal.busy('other')));
+      case AudioApplyStatus.refused
+          when askedRate == state.sampleRate &&
+              askedBuffer == state.bufferFrames:
+        // A device (or loop cap) the interface would not open: naming rates
+        // that did not move would say nothing. The previous one runs again.
+        emit(
+          state.copyWith(
+            status: AudioSetupStatus.running,
+            clearError: true,
+            refusal: ApplyRefusal.deviceRefused(_deviceName(next)),
+            phase: ConfigPhase.settled,
+            deviceConnectivity: notice,
           ),
         );
       case AudioApplyStatus.refused:
@@ -343,12 +373,23 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
             actualBuffer: live.bufferFrames > 0
                 ? live.bufferFrames
                 : state.bufferFrames,
-            deviceConnectivity: DeviceConnectivity.none,
+            deviceConnectivity: notice,
           ),
         );
       case AudioApplyStatus.applied:
         _settle(next, live: live, reopen: outcome.reopen);
     }
+  }
+
+  /// The name the host gives the interface [config] pins, or its id.
+  String _deviceName(AudioSetupState config) {
+    final id = config.playbackDeviceId.isNotEmpty
+        ? config.playbackDeviceId
+        : config.captureDeviceId;
+    for (final device in state.devices) {
+      if (device.id == id) return device.name;
+    }
+    return id.isNotEmpty ? id : _lastPresentDeviceName;
   }
 
   /// The opened config: the selection follows what the device negotiated,
@@ -423,7 +464,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     bufferFrames: config.bufferFrames,
     // Channel counts left at 0 (device default): a multichannel interface
     // opens with all its channels; the negotiated counts are reported back.
-    maxLoopFrames: _maxLoopFrames(config.maxLoopMinutes, config.sampleRate),
+    maxLoopFrames: _loopCapFrames(config),
     // An explicitly chosen input device always wins: only auto-route capture to
     // a detected loopback when the user has not pinned a capture device.
     // Otherwise, on hosts where every output exposes a "monitor" capture source
@@ -436,6 +477,21 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     backend: config.backend,
     asioDriver: config.asioDriver,
   );
+
+  /// The loop cap to open [config] with, in frames: the cap open now when
+  /// neither the cap nor the rate moves, because a cap recomputed from a
+  /// rounded minute count or another rate would differ from it and make the
+  /// reopen clear the loops (`LE_REOPEN_CLEARED_CAP`) on a change that must
+  /// keep them.
+  int _loopCapFrames(AudioSetupState config) {
+    final open = _repository.lastEngineConfig;
+    if (open != null &&
+        config.maxLoopMinutes == state.maxLoopMinutes &&
+        config.sampleRate == open.sampleRate) {
+      return open.maxLoopFrames;
+    }
+    return _maxLoopFrames(config.maxLoopMinutes, config.sampleRate);
+  }
 
   /// The persisted form of [config].
   StoredAudioConfig _storedConfig(AudioSetupState config) => StoredAudioConfig(
