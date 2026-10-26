@@ -116,6 +116,9 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # networkmanager-nmcli: segno-wifi-ctl (NM owns wpa_supplicant via -wifi plugin).
 # ddcutil: segno-brightness-ctl. No BlueZ: Bluetooth was retired (#1199).
 # util-linux mount tools: the USB storage service.
+# dosfstools + util-linux-fsck: systemd-fsck checks the FAT /boot before
+# boot.mount mounts it (#1397). It runs the `fsck` wrapper, which runs
+# fsck.vfat, and it skips the check without an error when fsck.vfat is missing.
 # dtc: fdtget, which segno-mark-good reads the firmware's tryboot flag with
 # (#976). rauc-rpi-backend also pulls it in, but a missing fdtget would read as
 # "not a trial boot" and silently disable the rollback reboot, so it is named.
@@ -126,6 +129,7 @@ RDEPENDS:${PN} = "mesa alsa-lib libstdc++ dtc \
                   ddcutil \
                   iw \
                   util-linux-mount util-linux-umount util-linux-blkid util-linux-flock \
+                  dosfstools util-linux-fsck \
                   coreutils python3-core python3-io python3-gpiod \
                   ivi-homescreen flutter-engine-prebuilt"
 

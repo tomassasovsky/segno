@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:segno/update/appliance/appliance_env.dart';
 import 'package:segno/update/appliance/system_appliance_env.dart';
+import 'package:update_repository/update_repository.dart';
 
 /// Tests for [SystemApplianceEnv]'s helper plumbing. The class is excluded
 /// from coverage as an I/O boundary, so these drive a REAL `Process.start` of
@@ -88,6 +90,27 @@ void main() {
         ),
       );
     });
+
+    test(
+      'throws BootPartitionReadOnlyException on the read-only exit',
+      () async {
+        final env = SystemApplianceEnv(
+          helperPath: stub(
+            '#!/bin/sh\necho "read-only" >&2\nexit $kBootReadOnlyExitCode\n',
+          ),
+        );
+        await expectLater(
+          env.stage('0.7.0').toList(),
+          throwsA(
+            isA<BootPartitionReadOnlyException>().having(
+              (e) => e.detail,
+              'detail',
+              'read-only',
+            ),
+          ),
+        );
+      },
+    );
   });
 
   group('updateAttempt', () {
