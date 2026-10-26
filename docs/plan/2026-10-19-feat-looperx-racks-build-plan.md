@@ -1,5 +1,30 @@
 # Looper X factory racks: build plan (#887)
 
+> **Outcome (2026-10-26).** Every part below is merged into
+> `claude/segno-integration` except the Harmonizer, which is parked: the
+> emulated Looper X renders no harmony voices (#891), so it stays a
+> pass-through with no controls until a device or another rig gives a
+> reference. Part W did not wait on the device after all; the s6 to s8 rig
+> sessions measured it. What remains is the console: the Pi CPU benches and the
+> owner's by-ear sign-off, both listed on #1459.
+>
+> | part | merged as |
+> |---|---|
+> | 0 Phase 0 capture | #891 rig; tables in `docs/plan/2026-10-2*-looperx-*-measured.md` and `2026-10-20-looperx-derived-tables.md` |
+> | 1 Octaver hop stagger | #1377, #1420, #1435 |
+> | 2 Descriptors | #1381 |
+> | 3 Catalogue fixes, chain order | #1383, #1387, #1444 |
+> | 4 Engine room and EQ | #1401, #1404, #1418, #1439 |
+> | 5 Compressor, Transient, HP/Gate | #1423, #1432 |
+> | 6 Doubler, Chorus, Wah | #1425, #1448 |
+> | 7 Overdrive, Distortion, Vinyl, Degrade, LPF | #1427, #1428, #1448 |
+> | 8 Spring, Dub-Verb, Amb-Verb, Dub paths | #1431, #1449, #1450 |
+> | 9 Pitch groundwork, Pitch Shift, admission | #1434, #1441, #1443, #1446, #1454 |
+> | 10 Tempo, Pumper, Slicer, LPF LFO, delays | #1460, #1461, #1462, #1463, #1475, #1477, #1478 |
+> | 11 Dual Octaver | #1465, #1466, #1483 |
+> | W Whammy, Amp+Cab, Mod, Reverb, Smart Tune, refits | #1451, #1469, #1471, #1474, #1479, #1481 |
+> | W Harmonizer | parked (#891) |
+
 Status: **build plan, revision 2.** Direction approved 2026-08-27 (full sound
 reproduction, naming deferred). Revised 2026-10-20 after four reviews of PR
 #1372 (claims, real time and CPU, design and scope, fidelity and UX) and the
