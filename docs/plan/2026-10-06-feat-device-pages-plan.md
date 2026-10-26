@@ -126,13 +126,31 @@ readout) has not changed since `a37926236`, so its line references hold. What ch
   `looper_repository.dart` moved by 3 lines: `_superviseDevice` 2289,
   `_attemptReconnect` 2346, `_reopenEngine` 2637, `_replayRig` 2682, the `> 0` gate 2724.
   `audio_bootstrap.dart`'s restore and automatic measurement are at 310-321.
-- **The effects budget (new, needs the owner): Q5.** Admission control (#887,
-  `fx_cost.dart`, `LooperRepository.fxRoomNs`) refuses an effects edit that would not fit
-  80 % of a block at the running rate and buffer. The budget shrinks when the rate goes up
-  (48 to 96 kHz halves the time per frame) and when the buffer drops below 64 frames. An
-  Apply in Part 3a or Part 4 can therefore put chains that fit today over the budget, and
-  nothing refuses or warns. This plan does not decide it; see §6 Q5. It affects Parts 3a
-  and 4 only.
+- **The effects budget: Q5, answered by the owner on 2026-10-26.** Admission control
+  (#887, `fx_cost.dart`, `LooperRepository.fxRoomNs`) refuses an effects edit that would
+  not fit 80 % of a block at the running rate and buffer. The budget shrinks when the rate
+  goes up (48 to 96 kHz halves the time per frame) and when the buffer drops below 64
+  frames, so an Apply in Part 3a or Part 4 could put chains that fit today over the
+  budget, with nothing refusing or warning. The owner chose to refuse such an Apply
+  inline (D19, §6 Q5).
+- **Part 1's readiness, revised to fail safe.** As written, `READY=1` also waited for the
+  readout's first raster and for an engine start that was OK or refused with the interface
+  absent. Under `Type=notify` and `TimeoutStartSec=180` that kills the app every 180 s,
+  on a committed slot too, whenever the 7" engine does not draw or the Scarlett is
+  present but refuses to open (#740 has it cycling on the USB bus). The check now lives
+  where it can only refuse a commit, never restart a working app: `READY=1` waits for the
+  main screen's first raster only, and the heartbeat carries the readout and the audio
+  state for `segno-mark-good` to judge (D7, Part 1). A build that cannot draw the readout
+  or open the present interface is still never committed, and a trial boot still rolls
+  back. The first-run gap (nothing pinned, no interface) is handled by the same audio
+  state: `absent`, not `refused`.
+- **Part 1 notifies over the socket, not through `libsystemd`.** Nothing in the image
+  names `libsystemd.so.0` as a dependency, and if it were missing the app could never
+  send `READY=1` and would be killed every 180 s. The notify protocol is a datagram to
+  `$NOTIFY_SOCKET`, which systemd documents as a stable interface to reimplement
+  (`sd_notify(3)`), so the app sends it with libc's `socket` and `sendto` through
+  `dart:ffi`, as `spawn_process` already calls libc. systemd attaches the sender's
+  credentials itself, so `NotifyAccess=main` still holds.
 - **Nothing in the effects work touched the open path** beyond a stack prefault at device
   start (`engine_miniaudio.c`, `rt_stack_ready`). `le_config`, `le_engine_start`,
   `le_engine_reopen` and the latency harness are unchanged in behaviour.
@@ -361,16 +379,19 @@ and marked with the PR that carried them out.
 - **D6. Power follows the accepted pen 32**: a failed save offers only Stay on and Retry.
   Shipped in #1284.
 - **D7. #976 uses systemd's own readiness and status.** Part 1.
-  - `segno.service` becomes `Type=notify`. The app calls `sd_notify` from
-    `libsystemd.so.0` through `dart:ffi`; it is a no-op when `NOTIFY_SOCKET` is unset.
-  - `READY=1` is sent once, when the main screen has rasterized its first frame, the
-    readout has reported its first raster over the screen link (when its connector reads
-    connected), and the first engine start has returned OK, or was refused while the
-    pinned interface is absent (or, with nothing pinned, while no interface is there to
-    pin; §0a).
-  - Every 5 s the main isolate sends `STATUS=alive <n> readout <m>`: `n` counts its own
-    timer, `m` the readout's last answer to a screen-link ping. `segno-mark-good` requires
-    both to advance during the window.
+  - `segno.service` becomes `Type=notify`. The app sends the notify datagram to
+    `$NOTIFY_SOCKET` with libc through `dart:ffi` (§0a); it is a no-op when
+    `NOTIFY_SOCKET` is unset.
+  - `READY=1` is sent once, when the main screen has rasterized its first frame (§0a: the
+    readout and audio checks moved into the heartbeat).
+  - From then on, every 5 s, the main isolate sends
+    `STATUS=alive <n> readout <m|none> audio <ok|absent|refused>`. `n` counts its own
+    timer. `m` counts the readout's answers to a screen-link ping, which the readout gives
+    only after its own first raster; it is `none` while the readout connector reads
+    disconnected. `audio` is `ok` while the engine runs, `absent` while the pinned
+    interface (or, with nothing pinned, any interface `pickConsoleAudioDevices` would
+    pin) is not there, and `refused` otherwise. `segno-mark-good` requires `n` to
+    advance, `m` to advance whenever both samples count it, and `audio` not `refused`.
   - This replaces the marker file: systemd accepts notifications only from `MainPID`
     (`NotifyAccess=main`), so there is no pid to compare and nothing in `/run` to clean.
 - **D8. Update failures are visible.** Shipped in #1287.
@@ -405,6 +426,15 @@ and marked with the PR that carried them out.
   appliance it would probe the Scarlett's ALSA hw device while the engine holds it
   (EBUSY), the open already reports the negotiated rate, and the Scarlett 4i4 supports all
   three listed rates. The dead `asio_*` fields are deleted, not renamed.
+- **D19. An Apply that would put the effects over the budget is refused inline** (owner,
+  2026-10-26, Q5; extends the #887 admission rule). Parts 3a and 4. Before applying, the
+  cubit compares the cost of the current chains at the new block length
+  (`fxChainCostNs` over every chain, as `fxCostNs` sums them) with `fxBudgetNs` at the new
+  rate and buffer. Over the budget: nothing is applied or saved, the chips keep the
+  running values, and the row says what will not fit, naming the setting: "Your effects
+  need more processing than 96 kHz leaves. Remove some effects first." or the same with
+  "a 32-frame buffer". A change that only lowers the cost (a lower rate, a larger buffer)
+  is never refused, as an effects removal never is. The check repeats at confirm.
 
 ## 3. Parts
 
@@ -413,7 +443,7 @@ either starts from the trunk or stacks on one open part whose own base is the tr
 
 ```
 order  part                          base                          size   state
-1      P3a live audio-settings fixes trunk (after Q5)             ~350   open
+1      P3a live audio-settings fixes trunk                         ~350   open
 1      P1  boot health gate (#976)   trunk after #1398 (or #1398's  ~200   open
                                      branch while it is open)
 2      P5  interface-loss fixes      trunk, after P3a merges        ~200   open
@@ -462,10 +492,13 @@ and makes them safe. Part 4 later puts the same path behind a draft and an Apply
   2. Lock (D2). A rate or max-loop change while `LooperState.hasContent` is ignored; the
      chips are disabled with "Clear the tracks to change the sample rate." or "Clear the
      tracks to change the maximum loop length."
-  3. Transport or backing running: `ApplyPhase.confirming`, which shows pen 28/04's
+  3. Effects budget (D19). A rate or buffer change whose effects would not fit is
+     refused inline with the reason; nothing changes. The repository exposes the check
+     (`fxRoomAt(sampleRate, bufferFrames)`, the room left at that rate and block length).
+  4. Transport or backing running: `ApplyPhase.confirming`, which shows pen 28/04's
      "Apply audio settings?" with Cancel and "Stop audio and apply". Encoder focus starts
      on Cancel.
-  4. `confirmApply()` repeats steps 1 and 2 against the current state, stops the
+  5. `confirmApply()` repeats steps 1 to 3 against the current state, stops the
      transport and the backing track, enters `GuardKind.deviceChange` for the duration,
      and calls `applyAudioConfig`.
 - On success the requested config is saved (D1). Then the record offset is set from the
@@ -498,6 +531,7 @@ SUCCESS CRITERIA:
 - The same tap while a track plays emits ApplyPhase.confirming and calls nothing; confirmApply stops transport and backing, then applies; Cancel leaves playback untouched. | verify: same
 - With a track recording, overdubbing or waiting on a count-in, every setter is refused with operationBusy(capture) and applyAudioConfig is never called; the same when a take starts while the confirm dialog is open and confirmApply runs. | verify: same
 - With material on track 2, setSampleRate and setMaxLoopMinutes are ignored, the chips are disabled (not hidden) and expose the lock reason to a screen reader; with every track empty they apply. | verify: same
+- With chains that fit at 48 kHz but not at 96 kHz, setSampleRate(96000) calls nothing, saves nothing, keeps the chip on 48 kHz and shows "Your effects need more processing than 96 kHz leaves. Remove some effects first."; the same for a buffer under 64 frames; a change to a lower rate or a larger buffer is never refused; an effect added while the confirm dialog is open makes confirmApply refuse. | verify: /Users/Tomas/development/flutter/bin/flutter test test/audio_setup packages/looper_repository
 - Refused by the device: saveAudioConfig is never called, the engine is reopened on the previous config, the chips show it, and the row shows "The device could not open at 96 kHz. Running at 48 kHz." | verify: same
 - After a successful buffer change with no saved offset for the new key, setRecordOffset(0) is called and the row shows "Not measured"; with a saved one, that value is set. saveLatencyOffsetFrames is never called in either case. | verify: same
 - Repository: applyAudioConfig on a started engine calls reopen, not start; clearedRate and retainedPartial are returned, not hidden; _replayRig pushes an offset of 0. | verify: /Users/Tomas/development/flutter/bin/flutter test packages/looper_repository
@@ -521,20 +555,19 @@ trusted.
 
 **Readiness and heartbeat (D7)**
 
-- `lib/appliance/systemd_notify.dart`: `sd_notify(0, text)` through `dart:ffi` from
-  `libsystemd.so.0`. When `NOTIFY_SOCKET` is unset or the library is missing, every call
-  is a no-op (desktop builds and tests).
+- `lib/appliance/systemd_notify.dart`: the notify datagram to `$NOTIFY_SOCKET` (a path,
+  or `@` for the abstract namespace) through libc's `socket` and `sendto` in
+  `dart:ffi` (§0a). When `NOTIFY_SOCKET` is unset or off Linux, every call is a no-op
+  (desktop builds and tests).
 - `lib/appliance/boot_readiness.dart`, on the main screen only:
-  - waits for `WidgetsBinding.instance.waitUntilFirstFrameRasterized`;
-  - waits for the readout's first-raster message over the screen link, when the readout
-    connector reads connected in `/sys/class/drm`; the readout sends it after its own
-    `waitUntilFirstFrameRasterized`;
-  - waits for the first engine start to return OK, or a refusal while the pinned
-    interface is absent, or a refusal with nothing pinned while `pickConsoleAudioDevices`
-    finds no interface; a refusal with the interface present never counts as ready;
-  - then sends `READY=1`, once.
-  - After that, a 5 s timer sends `STATUS=alive <n> readout <m>` and a ping to the
-    readout; `m` is the sequence of the readout's last answer.
+  - waits for `WidgetsBinding.instance.waitUntilFirstFrameRasterized`, then sends
+    `READY=1` with the first status, once;
+  - then every 5 s pings the readout over the screen link when its connector reads
+    connected, and sends `STATUS=alive <n> readout <m|none> audio <state>` (D7). The
+    readout answers a ping only after its own first raster.
+  - The audio state comes from the looper status, the last started config (or the
+    boot's pinned config when nothing started) and, only when the engine is not running,
+    one device enumeration.
 - `segno.service`: `Type=notify`, `NotifyAccess=main`, `TimeoutStartSec=180`. A build that
   never becomes ready is killed at 180 s and restarted, which the gate sees. No watchdog:
   a systemd watchdog would kill a slow but working app in the middle of a performance.
@@ -547,7 +580,8 @@ trusted.
   `READY=1`).
 - Record `MainPID`, `NRestarts` and `StatusText`. Wait `STABLE_SECS`. Require the same
   `MainPID`, the same `NRestarts`, `is-active`, and a `StatusText` whose main counter
-  advanced, and whose readout counter advanced when the readout connector is connected.
+  advanced, whose readout counter advanced when both samples counted it, and whose audio
+  state is not `refused`.
 - On a health refusal, when the boot is a trial boot (`fdtget /sys/firmware/fdt
   /chosen/bootloader tryboot` reads 1, the flag the RAUC backend's `get-state` reads),
   reboot with plain `systemctl reboot`. The tryboot flag is one-shot, so the firmware
@@ -571,7 +605,9 @@ SUCCESS CRITERIA:
 - Each health refusal on a trial boot (fdtget stub reads 1) calls "reboot" once; the same refusal on a committed boot (0) or with fdtget failing calls no reboot; a rauc mark-good failure after a healthy window calls no reboot. | verify: same
 - The stub distinguishes properties: a test where NRestarts is constant but MainPID changes is refused. | verify: same
 - CI runs the suite under bash and dash. | verify: grep -n "run_mark_good_tests" .github/workflows/main.yaml
-- READY=1 is sent once, only after the first raster, the readout's first raster (when connected) and an OK start; a refused start with the interface present never sends it; a refused start with the pinned interface absent, or with nothing pinned and no interface found, does; with NOTIFY_SOCKET unset nothing is called. | verify: /Users/Tomas/development/flutter/bin/flutter test test/appliance/boot_readiness_test.dart
+- READY=1 is sent once, only after the main screen's first raster; the status after it advances alive every tick, counts readout answers only while the readout is connected (none otherwise), and reports audio ok, absent (pinned interface gone; nothing pinned and no interface) or refused (interface present, engine not running); with NOTIFY_SOCKET unset nothing is sent. | verify: /Users/Tomas/development/flutter/bin/flutter test test/appliance
+- The readout answers a ping only after its first raster. | verify: /Users/Tomas/development/flutter/bin/flutter test test/visualizer
+- Audio refused in the last sample, and a frozen readout counter while both samples count it: each refused. | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_mark_good_tests.sh
 - Analyzer and Bloc lint clean. | verify: dart analyze --fatal-infos && bloc lint lib test packages
 - HARDWARE: install a bundle whose app throws before runApp; the console reboots by itself into the previous slot with no SSH. Install a bundle that crash-loops after its first frame; same result. Install a good bundle; it is committed after the window. | verify: manual on device
 ```
@@ -762,8 +798,9 @@ Part 3b) and `btTbs`/`jUlrb` (04 Apply). 02 is not built (Q2); 05–07 are not b
 
 - `AudioDraft {deviceId, sampleRate, bufferFrames, maxLoopMinutes}` with `editRate`,
   `editBuffer`, `editDevice`, `editMaxLoop` and `discardDraft`. Editing calls nothing.
-- Apply runs Part 3a's path on the whole draft: take check, lock, confirm when the
-  transport or the backing track runs, re-check at confirm, one `applyAudioConfig`.
+- Apply runs Part 3a's path on the whole draft: take check, lock, effects budget (D19),
+  confirm when the transport or the backing track runs, re-check at confirm, one
+  `applyAudioConfig`.
 - The immediate-apply setters are deleted once the page is the only caller.
 
 **Page body**
@@ -1034,7 +1071,7 @@ For the open parts:
   which stays the rule. With Part 3a.
 - 28/01: the locked sample-rate and max-loop reasons (D2), the chips drawn disabled; the
   Max loop length and Audio routing rows under the two columns; Measure's disabled and
-  "Measuring…" states. With Parts 3a and 4.
+  "Measuring…" states; the effects-budget refusal line (D19). With Parts 3a and 4.
 - 28/03: the "Playback stops while measuring." line and the no-return state with Retry.
   With Part 3b.
 - `STAGE / device-lost`: the banner text that names the device and says audio restarts,
@@ -1056,8 +1093,7 @@ the pen is not in the worktree, and the PRs say the frames were not in the repo'
 
 ## 6. Owner questions
 
-Q1 to Q4 are answered. Q5 is open (2026-10-26 refresh) and holds Parts 3a and 4; it
-does not hold Parts 1, 2, 5 or 8.
+All answered. Q5 was raised by the 2026-10-26 refresh and answered the same day.
 
 1. **Q1. Section 28's amber chip and explicit reconnect.** Answered 2026-10-19: not
    accepted; keep automatic reconnect and the red banner (D17, Part 5).
@@ -1079,7 +1115,10 @@ does not hold Parts 1, 2, 5 or 8.
    - (b) Apply, and say under the Apply row that the effects are over the budget and may
      click.
    - (c) Apply, and leave it to the effects screens' existing over-budget state.
-   Default if unanswered: none; Parts 3a and 4 wait.
+
+   Answered 2026-10-26: (a). Refuse the Apply inline, with a reason naming what will not
+   fit at the new rate or buffer; this extends the #887 admission rule (D19, Parts 3a
+   and 4).
 
 ## 7. Review findings and what this revision does with them
 
