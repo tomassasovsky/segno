@@ -62,8 +62,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 An unclean power-off twice left a broken cluster chain in RAUC's
 `/boot/rauc/central.raucs`. The kernel remounted the FAT `/boot` read-only and
 every install failed. RAUC's `data-directory` is now `/data/rauc` on ext4, and a
-`rauc.service` drop-in waits for `/data` and `/boot`. RAUC creates the
-directory itself when it starts.
+`rauc.service` drop-in requires the `/data` mount. RAUC creates the directory
+itself when it starts.
 `boot.mount` pulls in `systemd-fsck@` for its device, so `fsck.vfat -a` repairs
 the partition before it mounts and logs what it changed to the journal.
 `segno-update-ctl install` exits 3 when `/boot` is read-only, and the Updates
