@@ -50,6 +50,7 @@ stop a late addition renumbering C1..C15 and invalidating a started layout):
     J9  Pi power-button pads (through-lead)                 J10..J19 footswitches
     J20/J21 CTRL 1/2    U1  74AHCT125      U2  H11L1
     R14..R16 idle-state pull-downs (U1's inputs)            R17/R18 link series
+    R23..R32 footswitch series (#1391)  D2..D6 footswitch clamps (#1391)
 """
 import json
 import os
@@ -96,8 +97,8 @@ C_FP = "Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P2.50mm"
 JST = "Connector_JST:JST_XH_B%dB-XH-A_1x%02d_P2.50mm_Vertical"
 
 
-def R(value, **kw):
-    return Part("Device", "R", value=value, footprint=R_FP, **kw)
+def R(value, fp=R_FP, **kw):
+    return Part("Device", "R", value=value, footprint=fp, **kw)
 
 
 def C(value, fp=C_FP, **kw):
@@ -349,25 +350,61 @@ ctrl1_present, ctrl2_present = Net("CTRL1_PRESENT"), Net("CTRL2_PRESENT")
 pico[PICO[GPIO["CTRL1_PRESENT"]]] += ctrl1_present
 pico[PICO[GPIO["CTRL2_PRESENT"]]] += ctrl2_present
 
-# ---- J10..J19: footswitches -- 100nF debounce + one 2-pin JST per pedal ------
-sw_nets = {}
+# ---- J10..J19: footswitches -- clamp, 1k series, 100nF debounce, one JST each -
+sw_nets = {}       # name -> the Pico side: GPIO, debounce cap, resistor
+sw_ext = {}        # name -> the cable side: JST pin 1, clamp, resistor
+fsw_jacks = {}     # name -> its JST, so the gates read the PART
 # THE FIRMWARE OWNS HALF OF THIS CIRCUIT. There is no external pull-up: each
-# footswitch is a bare contact to GND with a 100nF cap, and the idle-high level
-# comes from the RP2350's INTERNAL pull-up. Forget to enable it and all ten inputs
-# float with a capacitor on them, which reads as noise, not as "always released".
+# footswitch is a bare contact to GND, and the idle-high level comes from the
+# RP2350's INTERNAL pull-up. Forget to enable it and all ten inputs float with a
+# capacitor on them, which reads as noise, not as "always released".
 #
-# It also sets the timing: the internal pull-up is ~50-80k, so with 100nF the
-# RELEASE edge is an RC of ~5-8 ms while the press is instant (the switch shorts
-# the cap to ground). That asymmetry is why the debounce wants to trigger on the
-# leading edge -- the slow side is the one that does not matter.
+# THE CABLE IS PROTECTED (#1391). v3 ran JST pin 1 straight to the GPIO, and the
+# first console lost GP5 that way (#1388): the pin sat near 0 V against its own
+# pull-up after something arrived down the MODE cable -- ESD from a foot on the
+# pedal, or a supply rail touching the line. Each input is now, from the cable in:
+#
+#   JST pin 1 --+-- 1k (R23..R32) --+-- GPIO
+#               |                   |
+#         clamp to GND         100nF to GND
+#         (D2..D6, at the      (C1..C10, at the
+#          connector)           Pico side)
+#
+# The clamp is a PESD5V2S2UT, two unidirectional TVS diodes with a common anode
+# in SOT-23, so one part covers two neighbouring inputs (TVS_PAIRS below). It
+# takes the ESD current at the connector and returns it to the cable's own GND
+# pin; the IEC 61000-4-2 pulse it is rated for (level 4: 8 kV contact, 30 A
+# peak) is far beyond the 4 kV HBM component rating of the RP2350's FT pins.
+# Low capacitance is not a selection criterion here: the line already carries
+# 100 nF. Leakage is, because the only thing holding the line high is a 32-86k
+# pull-up -- see TVS_SPECS and the FSW_PROTECT gate.
+#
+# The cap sits AFTER the resistor, on the Pico side, for two reasons. The 1k and
+# 100nF make a 100 us low-pass behind the clamp, so the clamp's residual (up to
+# 20 V for ~100 ns) moves the pin by about 20 mV. And the switch no longer shorts
+# the cap directly: the discharge goes through the 1k. With the cap on the cable
+# side the pin would sit behind 1k and its own ~5 pF, which filters nothing.
+#
+# Timing, with RP2350 RPU 32-86k and VIL 0.8 V / VIH 2.0 V at IOVDD 3.3 V:
+#   * PRESS: the cap discharges through the 1k, tau = 0.1 ms, below VIL in
+#     0.14 ms. Held, the pin sits at 3.3 V x 1k / (1k + RPU) <= 0.10 V.
+#   * RELEASE: the pull-up recharges the cap through RPU + 1k, tau 3.3-8.7 ms,
+#     crossing VIH after 0.93 tau = 3.1-8.1 ms. The 1k adds about 2% to the
+#     pull-up, so this is v3's release edge unchanged.
+#   The firmware reports an edge once the pin has held for 8 ms (stable-edge
+#   debounce), so presses report at ~8 ms and releases at ~11-16 ms, as on v3.
+#   A2 erratum E9 needs a low-driving source of 8.2k or less; switch plus 1k is.
 for _i, _name in enumerate(FSW_ORDER):
     n = Net("SW_" + _name)
+    ext = Net("SW_" + _name + "_EXT")
     pico[PICO[GPIO["SW_" + _name]]] += n
     C("100nF")[1, 2] += n, gnd
     j = jst(2, "J%d" % (10 + _i), "FSW_" + _name)
-    j[1] += n
+    j[1] += ext
     j[2] += gnd
     sw_nets[_name] = n
+    sw_ext[_name] = ext
+    fsw_jacks[_name] = j
 
 # EVERY RESISTOR IS PINNED to the designator it had when the board was first
 # fabbed and documented (v2): the soldering guide, the placement table and the
@@ -755,6 +792,50 @@ for _ref, (_ref_net, _ring) in zip(("R19", "R20"), _ring_sense):
 for _ref, (_rn, _present) in zip(("R21", "R22"), _presence):
     R("4.7k", ref=_ref)[1, 2] += _rn, _present
 
+# Footswitch input protection (#1391; the circuit and its timing are under
+# J10..J19 above). Pinned like every other resistor here, R23..R32 in FSW_ORDER,
+# the order J10..J19 and C1..C10 already follow: J13, C4 and R26 are MODE's.
+#
+# SURFACE-MOUNT, on the back, and the only SMD parts on the board with D2..D6.
+# The front has no room for twenty more parts at the 9.33 mm footswitch pitch;
+# the back of the strip between each debounce cap and its header is empty, and
+# that is exactly where "cap pin 1 -- 1k -- header pin 1" runs (placement in
+# console_board_pcb.py). 1206 on hand-solder pads: the easiest SMD size to fit
+# with an iron. It carries microamps in use and ~15 mA at worst in a fault.
+FSW_SERIES = "1k"
+FSW_SERIES_FP = "Resistor_SMD:R_1206_3216Metric_Pad1.30x1.75mm_HandSolder"
+FSW_SERIES_REFS = {_n: "R%d" % (23 + _i) for _i, _n in enumerate(FSW_ORDER)}
+fsw_series = {}
+for _name in FSW_ORDER:
+    fsw_series[_name] = R(FSW_SERIES, fp=FSW_SERIES_FP, ref=FSW_SERIES_REFS[_name])
+    fsw_series[_name][1, 2] += sw_ext[_name], sw_nets[_name]
+
+# The clamps. One dual part serves two inputs that are NEIGHBOURS ON THE BOARD,
+# so they pair in Pico pad order, which is the header order the CROSSING gate in
+# console_board_pcb.py enforces: REC+STOP, UNDO+TRK1, TRK2+TRK3, TRK4+CLR and
+# BANK+MODE. Each sits on the bottom side between its two headers.
+#
+# The datasheet values the FSW_PROTECT gate reasons from, keyed by the part value
+# the BOM prints. Nexperia PESD5V2S2UT (SOT-23, pin 1 K1, pin 2 K2, pin 3 common
+# anode): VRWM 5.2 V, IRM 1 uA max at VRWM, V(CL) 20 V at 18 A (8/20 us), IEC
+# 61000-4-2 level 4. Only parts that pass the gate belong here; the self-test
+# brings its own leaky counter-example.
+TVS_SPECS = {
+    "PESD5V2S2UT": {"vrwm": 5.2, "irm": 1e-6, "vcl": 20.0},
+}
+FSW_TVS = "PESD5V2S2UT"
+FSW_BY_PAD = sorted(FSW_ORDER, key=lambda _n: PICO[GPIO["SW_" + _n]])
+TVS_PAIRS = list(zip(FSW_BY_PAD[0::2], FSW_BY_PAD[1::2]))
+fsw_tvs = {}       # name -> the clamp part protecting it
+for _k, (_a, _b) in enumerate(TVS_PAIRS):
+    _d = Part("Device", "D_Dual_CommonAnode_KKA", value=FSW_TVS,
+              footprint="Package_TO_SOT_SMD:SOT-23_Handsoldering",
+              ref="D%d" % (2 + _k))
+    _d[1] += sw_ext[_a]
+    _d[2] += sw_ext[_b]
+    _d[3] += gnd
+    fsw_tvs[_a] = fsw_tvs[_b] = _d
+
 # ---- J2: the Pi ribbon (2x20, SHROUDED and KEYED) ---------------------------
 # Reversed, a 2x20 puts 5 V onto GND pins -- specify a shrouded header with a
 # polarising notch and a keyed IDC socket. Cheapest mistake on the board to
@@ -861,6 +942,14 @@ STATION_NOT_ON_BOARD = {     # ...and the ones that deliberately never touch it
 }
 
 
+def _value_si(value, unit):
+    """'1k' -> 1000.0, '100nF' -> 1e-07, '6.8k' -> 6800.0."""
+    m = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)([pnumkM]?)" + unit + "?", str(value))
+    assert m, f"VALUE: cannot read {value!r} as a {unit} value"
+    scale = {"p": 1e-12, "n": 1e-9, "u": 1e-6, "m": 1e-3, "": 1.0, "k": 1e3, "M": 1e6}
+    return float(m[1]) * scale[m[2]]
+
+
 def _check(strict_stations=True):
     """Prove the pin budget and the connector set before any copper is laid."""
     used = {}
@@ -884,10 +973,8 @@ def _check(strict_stations=True):
     # Check electrical limits, not just a remembered BOM value: increasing R18
     # revives A2 E9; reducing it too far loses the retained 1 mA fault bound.
     _rx_series = next((p for p in default_circuit.parts if p.ref == "R18"), None)
-    _rx_value = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)k",
-                             str(_rx_series.value) if _rx_series is not None else "")
-    assert _rx_value, "LINK_RX_DRIVE: R18 must name its resistance in kOhm"
-    _rx_ohms = float(_rx_value[1]) * 1000
+    assert _rx_series is not None, "LINK_RX_DRIVE: R18 is missing"
+    _rx_ohms = _value_si(_rx_series.value, "R")
     assert _rx_ohms * 1.01 <= 8200, (
         "LINK_RX_DRIVE: R18 exceeds RP2350 A2 E9's 8.2 kOhm low-drive limit")
     assert _rx_ohms > 0 and 3.63 / (_rx_ohms * 0.99) <= 0.001, (
@@ -1084,6 +1171,78 @@ def _check(strict_stations=True):
         f"MIDI_CLAMP: D1's anode is on {_clamp_a}, expected the opto's LED cathode "
         f"{_led_k}")
 
+    # FSW_PROTECT (#1391): every footswitch reaches its GPIO only through a series
+    # resistor, with the clamp on the cable side and the debounce cap on the Pico
+    # side, and the parts' own numbers keep the input readable. Read off the nets,
+    # not off the loop that built them: a header wired straight to its GPIO again
+    # passes ERC and DRC alike, and is the board that lost GP5.
+    _rpu_min, _rpu_max = 32e3, 86e3     # RP2350 RPU at IOVDD 3.3 V (datasheet 14.9.4)
+    _vil, _vih = 0.8, 2.0               # same table, IOVDD 3.3 V
+    _iovdd_min, _iovdd_max = 3.135, 3.63
+    _esd_s = 100e-9                     # an IEC 61000-4-2 pulse is over in ~100 ns
+    for _name in FSW_ORDER:
+        _j = fsw_jacks[_name]
+        _gpio = pico[PICO[GPIO["SW_" + _name]]].nets
+        _ext = _j[1].nets
+        assert len(_gpio) == 1 and len(_ext) == 1, (
+            f"FSW_PROTECT: {_j.ref} pin 1 or its GPIO is on {len(_ext)}/{len(_gpio)} nets")
+        _gpio, _ext = _gpio[0], _ext[0]
+        _ext_parts = {p.part for p in _ext.get_pins()}
+        _gpio_parts = {p.part for p in _gpio.get_pins()}
+        assert pico not in _ext_parts and _j not in _gpio_parts, (
+            f"FSW_PROTECT: {_j.ref} pin 1 reaches GP{GPIO['SW_' + _name]} with no "
+            "series resistor -- the cable lands on the bare pin, which is how GP5 died")
+        _series = [p for p in _ext_parts & _gpio_parts if len(p.pins) == 2]
+        assert len(_series) == 1 and _series[0].name == "R", (
+            f"FSW_PROTECT: {_name} has {[p.ref for p in _series]} between its header "
+            "and its GPIO, expected exactly one resistor")
+        _r = _series[0]
+        _caps = [p for p in _ext_parts | _gpio_parts if p.name == "C"]
+        assert [c for c in _caps if c in _gpio_parts and c not in _ext_parts] == _caps \
+            and len(_caps) == 1, (
+                f"FSW_PROTECT: {_name}'s debounce cap {[c.ref for c in _caps]} must be "
+                "one capacitor on the Pico side of the resistor -- on the cable side "
+                "the pin sits behind 1k and its own few pF, and nothing filters the "
+                "clamp's residual")
+        _c = _caps[0]
+        assert {n.name for pin in _c.pins for n in pin.nets} == {_gpio.name, "GND"}, (
+            f"FSW_PROTECT: {_c.ref} is not from {_gpio.name} to GND")
+        _clamps = [pin.part for pin in _ext.get_pins() if pin.name == "K"]
+        assert len(_clamps) == 1 and len(_ext_parts) == 3, (
+            f"FSW_PROTECT: {_name}'s cable side carries {sorted(p.ref for p in _ext_parts)}"
+            ", expected only its header, its resistor and one clamp cathode")
+        _d = _clamps[0]
+        assert {n.name for pin in _d.pins if pin.name == "A" for n in pin.nets} == {"GND"}, (
+            f"FSW_PROTECT: {_d.ref}'s anode is not on GND -- a clamp fitted the other "
+            "way round conducts at 0.7 V and holds the footswitch pressed")
+        _spec = TVS_SPECS.get(str(_d.value))
+        assert _spec is not None, (
+            f"FSW_PROTECT: {_d.ref} is a {_d.value}, which TVS_SPECS has no datasheet "
+            "values for, so nothing below can check it")
+        _ohms, _farads = _value_si(_r.value, "R"), _value_si(_c.value, "F")
+        assert _ohms * 1.01 <= 8200, (
+            f"FSW_PROTECT: {_r.ref} is {_r.value}; with the switch it must drive the "
+            "pin low through 8.2 kOhm or less (RP2350 A2 erratum E9)")
+        _held = _iovdd_max * _ohms * 1.01 / (_ohms * 1.01 + _rpu_min)
+        assert _held <= _vil / 2, (
+            f"FSW_PROTECT: a held {_name} reads {_held:.2f} V through {_r.value} "
+            f"against the minimum pull-up, over half of VIL ({_vil} V)")
+        assert _ohms * _farads <= 1e-3, (
+            f"FSW_PROTECT: {_r.value} x {_c.value} = {_ohms * _farads * 1e3:.1f} ms; "
+            "the press must reach the pin well inside the 8 ms debounce")
+        _residual = _spec["vcl"] * _esd_s / (_ohms * _farads)
+        assert _residual <= 0.5, (
+            f"FSW_PROTECT: {_r.value} x {_c.value} lets {_residual:.2f} V of the "
+            f"clamp's {_spec['vcl']} V residual through to the pin")
+        assert _spec["vrwm"] >= _iovdd_max, (
+            f"FSW_PROTECT: {_d.value} stands off {_spec['vrwm']} V, under the "
+            f"{_iovdd_max} V a released input can sit at")
+        _released = _iovdd_min - _spec["irm"] * (_rpu_max + _ohms)
+        assert _released >= _vih + 0.5, (
+            f"FSW_PROTECT: {_d.value} leaks up to {_spec['irm'] * 1e6:.0f} uA; against "
+            f"the weakest pull-up a released {_name} reads {_released:.2f} V, too "
+            f"close to VIH ({_vih} V) or under it")
+
     # Read off the PART, not off the SWD_PADS literal two lines above it. Asserting
     # against the dict that made the connections is a tautology, and it passed with
     # SWCLK and SWDIO swapped -- which is the mistake that actually happens, and
@@ -1243,7 +1402,7 @@ def _check(strict_stations=True):
     # this asserts identity: no suffixed strays, and each pinned ref carries the
     # value it was declared with.
     _strays = sorted(p.ref for p in default_circuit.parts
-                     if re.match(r"R1[4-8]_", p.ref))
+                     if re.match(r"(R1[4-8]|R19|R2[0-9]|R3[0-2]|D[1-6])_", p.ref))
     assert not _strays, (
         f"PIN_REFS: {_strays} exist -- a pinned ref collided with the auto "
         "counter and SKiDL renamed it; declare pinned parts after the last "
@@ -1259,7 +1418,12 @@ def _check(strict_stations=True):
             ("R19", "4.7k", {"J20_REF", "CTRL1_RING"}),
             ("R20", "4.7k", {"J21_REF", "CTRL2_RING"}),
             ("R21", "4.7k", {"J20_RN", "CTRL1_PRESENT"}),
-            ("R22", "4.7k", {"J21_RN", "CTRL2_PRESENT"})):
+            ("R22", "4.7k", {"J21_RN", "CTRL2_PRESENT"}),
+            *((FSW_SERIES_REFS[_n], FSW_SERIES, {"SW_%s_EXT" % _n, "SW_" + _n})
+              for _n in FSW_ORDER if _n in FSW_SERIES_REFS),
+            *(("D%d" % (2 + _k), FSW_TVS,
+               {"SW_%s_EXT" % _a, "SW_%s_EXT" % _b, "GND"})
+              for _k, (_a, _b) in enumerate(TVS_PAIRS))):
         _p = next((p for p in default_circuit.parts if p.ref == _ref), None)
         assert _p is not None and _p.value == _want_val, (
             f"PIN_REFS: {_ref} is "
@@ -1291,7 +1455,7 @@ def report():
     lay = []
     for name, gp in sorted(GPIO.items(), key=lambda kv: kv[1]):
         lay.append("  GP%-3d pad %-3d %s" % (gp, PICO[gp], name))
-    return ("Segno CONSOLE board v3 (#747, #987)\n"
+    return ("Segno CONSOLE board v3.2 (#747, #987, #1388, #1391)\n"
             "Pico 2 (RP2350) on segno:RaspberryPi_Pico_SMD_or_THT_Debug\n"
             "        (surface-mount pads AND through-holes; solder it either way)\n"
             "\nPin map:\n" + "\n".join(lay) +
@@ -1300,7 +1464,9 @@ def report():
             "+3V3_PICO (Pico pin 36: CTRL bias and ring UART pull-ups)\n"
             "Link  : 3V3 <-> 3V3; R17 TX 10k / R18 RX 6.8k -- no level shifting,\n"
             "        RX satisfies A2 E9; both resistors limit fault current\n"
-            "AHCT  : MIDI OUT and indicators (3V3->5V crossings)\n")
+            "AHCT  : MIDI OUT and indicators (3V3->5V crossings)\n"
+            "FSW   : J10..J19 -> clamp D2..D6 (%s) -> %s R23..R32 -> GPIO + 100nF\n"
+            % (FSW_TVS, FSW_SERIES))
 
 
 def _selftest():
@@ -1471,6 +1637,44 @@ def _selftest():
     def _rx_fault_current():
         next(p for p in default_circuit.parts if p.ref == "R18").value = "1k"
 
+    # The five ways the footswitch protection comes apart, each on MODE: the
+    # input that already lost a pin. The harness's finally block undoes each one.
+    def _fsw_direct():
+        # v3's wiring: the header straight onto the GPIO.
+        fsw_jacks["MODE"][1].disconnect()
+        fsw_jacks["MODE"][1] += sw_nets["MODE"]
+
+    def _fsw_cap_cable_side():
+        _c = next(p for p in default_circuit.parts if p.ref == "C4")
+        _c[1].disconnect()
+        _c[1] += sw_ext["MODE"]
+
+    def _fsw_clamp_reversed():
+        _d = fsw_tvs["MODE"]
+        _d[2].disconnect(); _d[3].disconnect()
+        _d[2] += gnd
+        _d[3] += sw_ext["MODE"]
+
+    def _fsw_series_weak():
+        fsw_series["MODE"].value = "10k"
+
+    def _fsw_leaky_clamp():
+        # A general-purpose 5 V TVS: up to 800 uA at its stand-off voltage,
+        # which holds a footswitch low against a 32-86k pull-up.
+        TVS_SPECS["SMAJ5.0A"] = {"vrwm": 5.0, "irm": 800e-6, "vcl": 9.2}
+        fsw_tvs["MODE"].value = "SMAJ5.0A"
+
+    def _fsw_anode_off_ground():
+        # Cathodes where they belong, common anode on a rail instead of GND.
+        fsw_tvs["MODE"][3].disconnect()
+        fsw_tvs["MODE"][3] += v5
+
+    case("footswitch header wired straight to its GPIO", "FSW_PROTECT:", _fsw_direct)
+    case("debounce cap on the cable side", "FSW_PROTECT:", _fsw_cap_cable_side)
+    case("footswitch clamp fitted backwards", "FSW_PROTECT:", _fsw_clamp_reversed)
+    case("footswitch series resistor past E9", "FSW_PROTECT:", _fsw_series_weak)
+    case("leaky general-purpose TVS as the clamp", "FSW_PROTECT:", _fsw_leaky_clamp)
+    case("footswitch clamp anode off GND", "anode is not on GND", _fsw_anode_off_ground)
     case("CTRL bias connected to Pi supply", "CTRL_SUPPLY:", _ctrl_pi_bias)
     case("ring UART bias connected to Pi supply", "CTRL_SUPPLY:", _ring_pi_bias)
     case("Pico output on wrong supply", "CTRL_SUPPLY:", _ctrl_supply_short)
@@ -1527,6 +1731,26 @@ def _selftest():
             FSW_ORDER[:] = saved[2]
             STATION_HEADERS.clear(); STATION_HEADERS.update(saved[3])
             RING_NET = ring_net_saved
+            if mutate is _fsw_direct:
+                fsw_jacks["MODE"][1].disconnect()
+                fsw_jacks["MODE"][1] += sw_ext["MODE"]
+            if mutate is _fsw_cap_cable_side:
+                _c = next(p for p in default_circuit.parts if p.ref == "C4")
+                _c[1].disconnect()
+                _c[1] += sw_nets["MODE"]
+            if mutate is _fsw_clamp_reversed:
+                _d = fsw_tvs["MODE"]
+                _d[2].disconnect(); _d[3].disconnect()
+                _d[2] += sw_ext["MODE"]
+                _d[3] += gnd
+            if mutate is _fsw_series_weak:
+                fsw_series["MODE"].value = FSW_SERIES
+            if mutate is _fsw_leaky_clamp:
+                fsw_tvs["MODE"].value = FSW_TVS
+                TVS_SPECS.pop("SMAJ5.0A", None)
+            if mutate is _fsw_anode_off_ground:
+                fsw_tvs["MODE"][3].disconnect()
+                fsw_tvs["MODE"][3] += gnd
             if mutate in (_rx_too_weak, _rx_fault_current):
                 next(p for p in default_circuit.parts if p.ref == "R18").value = "6.8k"
             if mutate in (_ctrl_pi_bias, _ring_pi_bias):

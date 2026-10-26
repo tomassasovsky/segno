@@ -272,7 +272,7 @@ unchanged by these console paint allowances.
 | `segno_floor_rail_rear_2` / `_3` | 1 each | as above | **Their own prints** (#1088): the power group stands on the rail between them. Segment 2 has its screws at 21.75 and 64.75 mm from the low-u end, ahead of BUCK_AUX, and three blind Ø8.4 × 2.6 mm pockets in its floor face at 91.24, 145.14 and 162.94 mm; segment 3 keeps the standard screws and has one pocket at 14.55 mm. The pockets take the buck bolts' M4 button heads. **Bolt the bucks before fitting these two segments**, heads from below. Print floor face down, like the others; the pockets need no support. |
 | `segno_lid_prop` | 1 | **BLACK PETG**, ≥40% infill | Mid-field lid prop (issue #1019). A pure compression column, which is why it is printed rather than another shop part number. It stands in the one clear lane between BANK's pedestal and the 16in module body — 31.5 mm wide, so the 24 mm column has 3.7 mm each side and there is no room to improvise on the bench. Two M4 into the floor through the tongue; the top face is already cut to the 12.5° slope, so print it **tongue-down, flat on the bed** and let the sloped face be the top surface. Fit felt on that face to the measured gap after coating, the same rule as the steel beam. Its load qualification remains part of the independent #1019 hold. |
 | `segno_ring_diffuser` | 1 | **WHITE translucent** (exception to the all-black rule: it is a lens) | Ø67-window lens and disc holder for the selected PR #990 Ring 24 on its 2.54 mm pin strip. The open-bottom cavity has eight 1.2 mm ribs in verified component gaps, a 0.25 mm shelf and a 1.05 mm lens roof. Nominal minimum PCB clearance is **0.135 mm**, LED clearance 0.332 mm; qualify one actual print and its light diffusion before ordering a set. Orient and dry-fit it as described below before gluing. |
-| `console_ring_{diffuser,cup,encoder_retainer,encoder_spacer,centre_cap}` (#1075, `hardware/strip_ring/out_console/`) | 1 each | diffuser and cup **WHITE PLA**, the rest **BLACK** | **The selected ring** (owner, 2026-10-13; final count 35 LEDs, 2026-10-19, #1075), replacing `segno_ring_diffuser`. A 35-LED strip on the cup wall, LEDs facing in; the cup's roof is glued to the faceplate underside and the lens sits flush in the unchanged Ø67 window. Three snap arms on the cup click under the Ø80 carrier's edge (0.3 mm play; the encoder nut still sets its height), so the carrier needs no screws (#1090). The v3 carrier hangs 7 mm deeper than with the Ring 24 (J3 unfitted, strip on J2); since the ring moved to v 215.0 (#1090) it clears the printed 7-inch tower with 1.5 mm of air. The aluminium `segno_ring_disc` is glued on its printed centre cap (the cap sits 2 mm lower for it), so the centre matches the lid's coating; order the disc. Check the knob grips the shaft: it enters 8.0 mm. The cup in this package is still drawn for 34 LEDs; #1344 resizes it for 35, so print the cup from #1344 once it lands. |
+| `console_ring_{diffuser,cup,encoder_retainer,encoder_spacer,centre_cap}` (#1075, `hardware/strip_ring/out_console/`) | 1 each | diffuser and cup **WHITE PLA**, the rest **BLACK** | **The selected ring** (owner, 2026-10-13; final count 35 LEDs, 2026-10-19, #1075), replacing `segno_ring_diffuser`. A 35-LED strip on the cup wall, LEDs facing in; the cup's roof is glued to the faceplate underside and the lens sits flush in the unchanged Ø67 window. Three snap arms on the cup click under the Ø80 carrier's edge (0.6 mm overlap, 0.3 mm play; the encoder nut still sets its height), so the carrier needs no screws (#1090). The cup prints roof-down, so the arms stand up with their layers across the way they bend; the first print's thin arms snapped coming off the bed. The arms are now 8 mm wide and taper from 1.8 mm at the root to 1.0 mm at the catch, with a chamfered root, and a full flex strains the root about 0.45 %. Release the part by flexing the bed, not by levering against the arms. A 0.48 mm-deep relief pocket behind each arm keeps it from printing fused to the wall; fully flexed, the arms stay 17 mm clear of the printed 7-inch tower. The v3 carrier hangs 7 mm deeper than with the Ring 24 (J3 unfitted, strip on J2); since the ring moved to v 215.0 (#1090) it clears the printed 7-inch tower with 1.5 mm of air. The aluminium `segno_ring_disc` is glued on its printed centre cap (the cap sits 2 mm lower for it), so the centre matches the lid's coating; order the disc. The carrier hangs from its Same Sky ACZ11 encoder, whose shoulder measured 6.39 mm above the board, so the encoder spacer is 1.695 mm thick (the 3.5 mm one assumed an EC11). Push the knob on until its underside is 1.0 mm above the face, so a full press of the switch (0.8 mm) never bottoms it; the shaft then enters 9.4 mm of the knob's bore. The cup is drawn for 34 LEDs (`COUNT` in `console_ring.py`), and a 35-LED strip fits it as printed: the first and last LEDs overlap slightly at the seam (owner, bench fit, 2026-10-23), so the cup stays as drawn. |
 | `segno_screen7_tower` | 1 | **BLACK PETG**, ≥40% infill | 7-inch screen support tower (#762, closed deck #1070). One piece, closed wedge box, six M3 to the floor through Ø5.5 float holes. The deck is closed: four internal front-to-back ribs carry it, and each cell's ceiling is a 45° gable, so **print it flange-down with no support** (there is no way to get support out of a closed box). The openings are the connector notch on the edge facing the console centre, where the module's HDMI, micro-USB and backlight switch are. The strip-ring notch of #1075 is gone again: the ring moved 14.16 mm down the slope (#1090), so **the tower already printed is the current part**; a generator gate keeps the carrier clear of it. |
 | `segno_screen16_stand_L` | 1 | **BLACK PETG**, ≥40% infill | Left 15.6-inch stand (#1070). |
 | `segno_screen16_stand_R` | 1 | **BLACK PETG**, ≥40% infill | Right 15.6-inch stand: **the exact mirror of `_L`** (either print `_R`, or print `_L` mirrored in the slicer). The halves butt at the screen centre and the splice below joins them. |
@@ -403,8 +403,8 @@ by 2 mm.
 
 | Board | Files | Qty | Notes |
 |---|---|---|---|
-| **Console board v3.1** | `kicad/fab/segno_console_v3_1_gerbers.zip` + `kicad/fab/segno_console_board_bom.csv` | 1 | **Owner review required before ordering (#1388).** 99.5 × 99.5 mm, two layers, 1.6 mm FR4, 1 oz, purple mask / white silk, lead-free HASL. Solder Pico 2 by its castellations as specified in the assembly guide. Use the runtime that reads MODE on GP12. |
-| **Encoder ring carrier** | `kicad/fab/segno_pedal_ring_gerbers.zip` + `kicad/fab/segno_combined_bom_lcsc.csv` | 1 | Ø80 mm, two layers, 1.6 mm FR4, 1 oz, white mask / black silk, lead-free HASL. Selected assembly: the #1075 console strip ring, one 35-LED strip with DIN at J2.3 and direct AUX power; J3/J4 empty (owner, 2026-10-19). The Ring 24 (J3) and 24/16-module footprints remain on the board as alternatives. The populated Fusion console carries this board (`ring_board_v3`). See [assembly](kicad/RING_ASSEMBLY.md). |
+| **Console board v3.2** | `kicad/fab/segno_console_v3_2_gerbers.zip` + `kicad/fab/segno_console_board_bom.csv` | 1 | **Owner review required before ordering (#1388, #1391).** 99.5 × 99.5 mm, two layers, 1.6 mm FR4, 1 oz, purple mask / white silk, lead-free HASL. Solder Pico 2 by its castellations as specified in the assembly guide. Hand-solder the 15 surface-mount protection parts on the back (D2–D6, R23–R32) first. Use the runtime that reads MODE on GP12. |
+| **Encoder ring carrier** | `kicad/fab/segno_pedal_ring_gerbers.zip` + `kicad/fab/segno_combined_bom_lcsc.csv` | 1 | Ø80 mm with the Same Sky ACZ11BR1E-20FD1-20C encoder (measured on the assembled board, 2026-10-16), two layers, 1.6 mm FR4, 1 oz, white mask / black silk, lead-free HASL. Selected assembly: the #1075 console strip ring, one 35-LED strip with DIN at J2.3 and direct AUX power; J3/J4 empty (owner, 2026-10-19). The Ring 24 (J3) and 24/16-module footprints remain on the board as alternatives. The populated Fusion console carries this board (`ring_board_v3`). See [assembly](kicad/RING_ASSEMBLY.md). |
 | **Screen power Rev P** | `kicad/fab/segno_screen_power_rev_p_gerbers.zip` + `kicad/screen_power/hand/bom.csv` + `kicad/screen_power/external_bom.csv` | 1 | 68 × 76 mm, R3 corners, two layers, 1.6 mm FR4, 1 oz, purple mask / white silk, ENIG. Hand-soldered components. Four five-pin XH USB plugs include the shield on pin 5. F1 uses one replaceable 8 A cartridge in its onboard holder; four branch fuses are soldered. See [wiring and assembly](kicad/screen_power/README.md). |
 | LED puck (single WS2812B) | `led_strip/segno_led_strip_gerbers.zip` | 0 | **NOT ORDERED for the console.** Owner call 2026-08-28: the indicators are eight-LED segments cut from a **144 LEDs/m bare IP20 strip**, and the diffuser channel is sized for that (**12 mm wide, 0.53 thick**, 56.96 long), not for this 16×8 board. The design is kept because it is finished and the footprint may suit another build — but ordering it will not fit the current diffuser. |
 
@@ -419,21 +419,59 @@ component assembly is required. The selected 35-LED strip uses the direct AUX
 star harness in [the ring assembly guide](kicad/RING_ASSEMBLY.md); J2 carries
 DIN only. Do not reuse the superseded straight-through console/ring power wiring.
 
-### Console v3.1 and the v3 MODE rework
+### Console v3.2: MODE on GP12 and protected footswitch inputs
 
-Console v3.1 (#1388) is v3 with the MODE footswitch moved from GP5 (Pico
-pin 7) to GP12 (Pico pin 16). The first v3 console's Pico 2 has a dead GP5,
-and the firmware now reads MODE on GP12 on every board. On v3.1 the MODE
-header J13 is the rightmost footswitch header, J22 pin 3 (GP12 on v3) is
-unconnected, GP5 is not brought out, and the silk reads `SEGNO CONSOLE v3.1`. Designators, values and the
-BOM are unchanged. The board was re-routed in full by
-`kicad/route_console_board.sh`, so every track differs from v3: the 0.4 mm
-local reroutes v3 carried on the PWR_BTN pair and the indicator and UART
-receive nets are now 0.6 mm pipeline routes. Its archive, `kicad/fab/segno_console_v3_1_gerbers.zip`
-(SHA-256 `e618d8ab0a446a5aee37c618ab1090a55df7f5a0eeb12893ed015291a8ebe86a`), is not in the manufacturing record above, and it
-needs the owner's review before anyone orders it. The v3 archive that record
-names, `kicad/fab/segno_console_v3_gerbers.zip`, stays unchanged as the record
-of the built v3 boards; do not order it again.
+Console v3.2 is v3 with two changes. Neither has been fabricated yet.
+
+**MODE on GP12 (#1388).** The MODE footswitch moved from GP5 (Pico pin 7) to
+GP12 (Pico pin 16). The first v3 console's Pico 2 has a dead GP5, and the
+firmware now reads MODE on GP12 on every board. The MODE header J13 is the
+rightmost footswitch header, J22 pin 3 (GP12 on v3) is unconnected, and GP5 is
+not brought out.
+
+**Protected footswitch inputs (#1391).** On v3 each footswitch header's pin 1
+ran straight to its GPIO. GP5 most likely died from something arriving down
+the MODE cable: ESD from a foot on the pedal, or a supply rail touching the
+line. The RP2350's footswitch pins are rated 4 kV HBM, a component-handling
+rating far below what a cable can deliver. Each input is now, from the cable
+in: a clamp to GND at the connector, a 1 kΩ series resistor, then the existing
+100 nF cap at the Pico pin.
+
+- **Clamp, D2–D6:** Nexperia PESD5V2S2UT (LCSC C18441), two unidirectional
+  TVS diodes with a common anode in SOT-23, so each part covers two
+  neighbouring footswitches. Stand-off 5.2 V, leakage 1 µA maximum, IEC
+  61000-4-2 level 4 (8 kV contact, 15 kV air), 330 W at 8/20 µs. A
+  general-purpose 5 V TVS such as SMAJ5.0A leaks up to 800 µA and would hold
+  a line low against the Pico's 32–86 kΩ pull-up, so do not substitute one.
+- **Series resistor, R23–R32:** 1 kΩ 1206. With the cap on the Pico side it
+  forms a 100 µs low-pass behind the clamp, so the clamp's residual moves the
+  pin by about 20 mV.
+- **Timing is unchanged.** A press reaches the pin in 0.14 ms and holds it at
+  0.10 V or less. A release crosses the input-high threshold after 3–8 ms, as
+  on v3. The firmware's 8 ms stable-edge debounce is unchanged.
+- **What it covers.** ESD and a 5 V rail touching a line (the pins tolerate
+  5.5 V while powered; the resistor limits current when they are not). A
+  sustained short to the 20 V PD rail drives the clamp past its rating; it
+  normally fails short, so that input reads pressed, while the resistor limits
+  the pin's current to about 15 mA. Keep the 20 V wiring away from the
+  footswitch harness.
+
+The fifteen protection parts are surface-mount, on the back, between each
+debounce cap's pin 1 and its header's pin 1. They are the only SMD parts on
+the board, sized for an iron (1206 and SOT-23 on hand-solder pads). Fit them
+before the through-hole parts, while the board lies flat. The silk reads
+`SEGNO CONSOLE v3.2`.
+
+The board was re-routed in full by `kicad/route_console_board.sh`, so every
+track differs from v3. The 40-LED ring supply's hand-routed back path now
+runs straight down the left edge and changes layer between the TRK1 and TRK2
+columns (x 39.4 instead of 41.8), clear of the new parts. Its archive,
+`kicad/fab/segno_console_v3_2_gerbers.zip` (SHA-256 `4ee0091d5773fc834b965d0adbf15a9e7c4e2c51a483da941e84e53d29fd0b90`), is not in
+the manufacturing record above, and it needs the owner's review before anyone
+orders it. It replaces the v3.1 archive of #1388, which was never ordered. The
+v3 archive that record names, `kicad/fab/segno_console_v3_gerbers.zip`, stays
+unchanged as the record of the built v3 boards; do not order it again. Built
+v3 boards keep unprotected inputs; the MODE rework below is still required.
 
 <a id="console-v3-mode-rework"></a>
 **Rework for a built v3 board** (silk `SEGNO CONSOLE v3`). Do this before

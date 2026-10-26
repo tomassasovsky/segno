@@ -15,7 +15,7 @@ jobs:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/semantic_pull_request.yml@v1
 
   build:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
     with:
       flutter_version: "3.47.x"
       run_bloc_lint: true
@@ -40,7 +40,7 @@ jobs:
   # job above — that job only runs the root app's own test/ dir. It gets its
   # own dart_package.yml job instead. No bloc usage here, so bloc lint is off.
   daw-export:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v2
     with:
       working_directory: packages/daw_export
       run_bloc_lint: false
@@ -49,7 +49,7 @@ jobs:
   # usb_storage_client (#1177) is pure Dart too: it reads the appliance's USB
   # volume records and files eject requests, with no Flutter dependency.
   usb-storage-client:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v2
     with:
       working_directory: packages/usb_storage_client
       run_bloc_lint: false
@@ -60,7 +60,7 @@ jobs:
   # here is the factory's return of the real helper, which only the appliance
   # has installed.
   touch-calibration-client:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v2
     with:
       working_directory: packages/touch_calibration_client
       run_bloc_lint: false
@@ -80,21 +80,21 @@ jobs:
   # Its own job for the same reason as the packages below — the root `build`
   # job runs only the root app's test/ dir.
   fx-catalogue:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
     with:
       flutter_version: "3.47.x"
       working_directory: packages/fx_catalogue
       run_bloc_lint: false
       min_coverage: 100
   looper-repository:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
     with:
       flutter_version: "3.47.x"
       working_directory: packages/looper_repository
       run_bloc_lint: false
       min_coverage: 95
   session-repository:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
     with:
       flutter_version: "3.47.x"
       working_directory: packages/session_repository
@@ -104,7 +104,7 @@ jobs:
   # part-then-rename copy. It takes VolumeSpace from segno_engine, a Flutter
   # plugin, so it runs on flutter_package.yml.
   storage-repository:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
     with:
       flutter_version: "3.47.x"
       working_directory: packages/storage_repository
@@ -115,14 +115,14 @@ jobs:
   # Flutter plugin, so it runs on flutter_package.yml; its native-library test
   # self-skips here (the fuzz job builds the library).
   backing-repository:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
     with:
       flutter_version: "3.47.x"
       working_directory: packages/backing_repository
       run_bloc_lint: false
       min_coverage: 95
   performance-repository:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
     with:
       flutter_version: "3.47.x"
       working_directory: packages/performance_repository
@@ -132,7 +132,7 @@ jobs:
   # others are in flight. Pure Dart, a const table and a registry; every
   # rule pair is pinned by a literal transcription of the plan's table.
   operation-guards:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
     with:
       flutter_version: "3.47.x"
       working_directory: packages/operation_guards
@@ -140,7 +140,7 @@ jobs:
       min_coverage: 100
   # The console's CPU load (#1307): /proc/stat sampling. Pure Dart.
   cpu-load-repository:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
     with:
       flutter_version: "3.47.x"
       working_directory: packages/cpu_load_repository
@@ -151,7 +151,7 @@ jobs:
   # cannot cover here are the two factories, which only pick the real client
   # on the appliance.
   brightness-client:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v2
     with:
       working_directory: packages/brightness_client
       run_bloc_lint: false
@@ -163,7 +163,7 @@ jobs:
   # EPIPE and ECHILD paths rather than racing for them (#1457), so the figure
   # is 89.3% on every run; the floor leaves room for a few lines of change.
   spawn-process:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v2
     with:
       working_directory: packages/spawn_process
       run_bloc_lint: false
@@ -186,14 +186,14 @@ jobs:
       - name: Check the app and its runtime dependencies for dart:io process starts
         run: bash tool/check_no_dart_process.sh
   pedal-repository:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
     with:
       flutter_version: "3.47.x"
       working_directory: packages/pedal_repository
       run_bloc_lint: false
       min_coverage: 96
   controller-repository:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
     with:
       flutter_version: "3.47.x"
       working_directory: packages/controller_repository
@@ -202,7 +202,7 @@ jobs:
   # instrument_repository (#1197): instrument definitions, slots, the route
   # compiler and the engine replay. Its native cases are fuzz-tagged.
   instrument-repository:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
     with:
       flutter_version: "3.47.x"
       working_directory: packages/instrument_repository
@@ -264,7 +264,7 @@ jobs:
           | tee bench-pitch-time-arm64.md
       - name: Upload the harness and its report for the appliance
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bench-pitch-time-arm64
           path: |
@@ -283,7 +283,7 @@ jobs:
           | tee bench-instruments-arm64.md
       - name: Upload the instrument bench and its report for the appliance
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bench-instruments-arm64
           path: |
@@ -324,7 +324,7 @@ jobs:
           | tee bench-pitch-algos-arm64.md
       - name: Upload the effects bench and its report for the appliance
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bench-fx-cpu-arm64
           path: |
@@ -341,7 +341,7 @@ jobs:
         run: bash packages/segno_engine/src/test/bench/bench_rt_faults.sh
       - name: Upload the audio-thread fault bench for the appliance
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bench-rt-faults-arm64
           path: packages/segno_engine/build/bench/bench_rt_faults
@@ -691,7 +691,7 @@ jobs:
         run: TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_update_attempt_tests.sh
 
   spell-check:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v2
     with:
       includes: |
         **/*.md
