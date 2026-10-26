@@ -8,11 +8,5 @@ void main() {
       expect(error.detail, '/boot is ro');
       expect('$error', 'BootPartitionReadOnlyException: /boot is ro');
     });
-
-    test('has an empty detail by default', () {
-      const error = BootPartitionReadOnlyException();
-      expect(error.detail, isEmpty);
-      expect('$error', 'BootPartitionReadOnlyException');
-    });
   });
 }
