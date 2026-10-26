@@ -2999,6 +2999,31 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
+    'LooperPlayAllPressed sends no Play to a section that already sounds, '
+    'so the section waiting to follow it stays queued (#1323)',
+    build: buildBloc,
+    seed: () => const LooperState(
+      transport: TransportState(
+        looperMode: LooperMode.band,
+        primaryTrack: 0,
+        songQueuedTrack: 2,
+        songLastSection: 1,
+      ),
+      tracks: [
+        Track(lengthFrames: 100, state: TrackState.playing),
+        Track(channel: 1, lengthFrames: 100, state: TrackState.playing),
+        Track(channel: 2, lengthFrames: 100, state: TrackState.stopped),
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperPlayAllPressed()),
+    verify: (_) {
+      verify(() => repository.play()).called(1);
+      verifyNever(() => repository.play(channel: 1));
+      verifyNever(() => repository.play(channel: 2));
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
     'LooperPlayAllPressed starts the section that played last in Song '
     '(#1077)',
     build: buildBloc,

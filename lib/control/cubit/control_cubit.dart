@@ -1882,6 +1882,17 @@ class ControlCubit extends Cubit<ControlState> {
     if (!muteAccepted) return false;
     var accepted = false;
     for (final channel in all) {
+      // A Song or Band section that already sounds needs no Play: the engine
+      // reads a Play on it as a cancel of the section waiting to follow it
+      // (#1323).
+      final playing = switch (_trackAt(channel)?.state) {
+        TrackState.playing || TrackState.overdubbing => true,
+        _ => false,
+      };
+      if (playing && _l.isSection(channel)) {
+        accepted = true;
+        continue;
+      }
       accepted = _looper.play(channel: channel).isOk || accepted;
     }
     return accepted;

@@ -458,13 +458,10 @@ final List<ControlTransitionRule> controlTransitionRules = [
   // un-silence.) Holds for every surface and every start path: pedal, bloc,
   // record punch-ins, plain plays, and redo-from-empty resurrection. Song is
   // the exception: it plays one section at a time (#1077). Band resumes its
-  // primary but not its other sections (#1323), so with a crown only the
-  // primary is held to the rule.
+  // primary but not its sections (#1323), so a Band section is not held to
+  // the rule.
   ControlTransitionRule('unpark-on-start', (t) {
     if (t.post.transport.looperMode == LooperMode.song) return null;
-    final bandPrimary = t.post.transport.looperMode == LooperMode.band
-        ? t.post.transport.primaryTrack
-        : -1;
     if (!_transportHeld(t.pre)) return null;
     if (!t.pre.tracks.any((tr) => tr.hasContent)) return null;
     final started = t.post.tracks.any((tr) {
@@ -475,7 +472,7 @@ final List<ControlTransitionRule> controlTransitionRules = [
     });
     if (!started) return null;
     for (final tr in t.post.tracks) {
-      if (bandPrimary >= 0 && tr.channel != bandPrimary) continue;
+      if (t.post.isSection(tr.channel)) continue;
       if (tr.hasContent && tr.state == TrackState.stopped) {
         return 'track ${tr.channel} still parked after a start woke the '
             'transport';
