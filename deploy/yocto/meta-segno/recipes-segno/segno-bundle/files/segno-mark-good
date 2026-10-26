@@ -51,8 +51,12 @@ UNIT="${SEGNO_MARK_GOOD_UNIT:-segno.service}"
 # How long to wait for the app to become ready, and how long it then has to
 # stay healthy. The window is a trade: too short and a slow first boot commits
 # a broken image, too long and a user who reboots quickly loses the update
-# they just installed. 45 s holds nine heartbeats.
-WAIT_SECS="${SEGNO_MARK_GOOD_WAIT_SECS:-180}"
+# they just installed. 45 s holds nine heartbeats. The wait outlasts
+# segno.service's TimeoutStartSec=180 by a minute: this gate starts without
+# waiting for segno (segno-mark-good.service), so its clock also covers what
+# segno waits for first (/data, plymouth, the touch matrix), and a build that
+# systemd would still let draw must not be rolled back before it gets to.
+WAIT_SECS="${SEGNO_MARK_GOOD_WAIT_SECS:-240}"
 STABLE_SECS="${SEGNO_MARK_GOOD_STABLE_SECS:-45}"
 
 log() { echo "segno-mark-good: $*" >&2; }

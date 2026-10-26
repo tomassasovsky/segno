@@ -124,18 +124,15 @@ void main() {
 
     test('says nothing before the main screen has drawn', () {
       fakeAsync((async) {
-        final r = readiness();
-        unawaited(r.start());
+        unawaited(readiness().start());
         async.elapse(const Duration(seconds: 30));
         expect(sent, isEmpty);
-        r.stop();
       });
     });
 
     test('READY=1 once, with the first status, at the first raster', () {
       fakeAsync((async) {
-        final r = readiness();
-        unawaited(r.start());
+        unawaited(readiness().start());
         firstFrame.complete();
         async.flushMicrotasks();
         expect(sent, ['READY=1\nSTATUS=alive 0 readout 0 audio ok']);
@@ -144,7 +141,6 @@ void main() {
 
         async.elapse(const Duration(seconds: 15));
         expect(sent.where((s) => s.contains('READY=1')), hasLength(1));
-        r.stop();
       });
     });
 
@@ -159,14 +155,12 @@ void main() {
           'READY=1\nSTATUS=alive 0 readout 0 audio ok',
           'STATUS=alive 1 readout 1 audio ok',
         ]);
-        r.stop();
       });
     });
 
     test('the heartbeat advances alive and counts readout answers', () {
       fakeAsync((async) {
-        final r = readiness();
-        unawaited(r.start());
+        unawaited(readiness().start());
         firstFrame.complete();
         async.elapse(const Duration(seconds: 15));
         expect(sent.skip(1), [
@@ -174,33 +168,28 @@ void main() {
           'STATUS=alive 2 readout 2 audio ok',
           'STATUS=alive 3 readout 3 audio ok',
         ]);
-        r.stop();
       });
     });
 
     test('a readout that does not answer stops its counter', () {
       fakeAsync((async) {
-        final r = readiness();
-        unawaited(r.start());
+        unawaited(readiness().start());
         firstFrame.complete();
         async.elapse(const Duration(seconds: 5));
         readoutAnswers = false;
         async.elapse(const Duration(seconds: 10));
         expect(sent.last, 'STATUS=alive 3 readout 1 audio ok');
-        r.stop();
       });
     });
 
     test('a disconnected readout reads none and is not pinged', () {
       fakeAsync((async) {
         readoutConnected = false;
-        final r = readiness();
-        unawaited(r.start());
+        unawaited(readiness().start());
         firstFrame.complete();
         async.elapse(const Duration(seconds: 10));
         expect(sent.last, 'STATUS=alive 2 readout none audio ok');
         expect(pings, 0);
-        r.stop();
       });
     });
 
@@ -220,14 +209,12 @@ void main() {
         firstFrame.complete();
         async.elapse(const Duration(seconds: 5));
         expect(sent.last, 'STATUS=alive 1 readout none audio ok');
-        r.stop();
       });
     });
 
     test('the audio state is read on every beat', () {
       fakeAsync((async) {
-        final r = readiness();
-        unawaited(r.start());
+        unawaited(readiness().start());
         firstFrame.complete();
         audio = BootAudio.refused;
         async.elapse(const Duration(seconds: 5));
@@ -235,35 +222,76 @@ void main() {
         audio = BootAudio.absent;
         async.elapse(const Duration(seconds: 5));
         expect(sent.last, 'STATUS=alive 2 readout 2 audio absent');
-        r.stop();
       });
     });
 
-    test('a failed send keeps the heartbeat going', () {
+    test('READY=1 rides every send until one goes through', () {
       fakeAsync((async) {
         notifyWorks = false;
-        final r = readiness();
-        unawaited(r.start());
+        unawaited(readiness().start());
         firstFrame.complete();
         async.elapse(const Duration(seconds: 10));
         notifyWorks = true;
-        async.elapse(const Duration(seconds: 5));
-        expect(sent.last, 'STATUS=alive 3 readout 3 audio ok');
-        r.stop();
+        async.elapse(const Duration(seconds: 10));
+        expect(sent, [
+          'READY=1\nSTATUS=alive 0 readout 0 audio ok',
+          'READY=1\nSTATUS=alive 1 readout 1 audio ok',
+          'READY=1\nSTATUS=alive 2 readout 2 audio ok',
+          'READY=1\nSTATUS=alive 3 readout 3 audio ok',
+          'STATUS=alive 4 readout 4 audio ok',
+        ]);
       });
     });
 
-    test('stop ends the heartbeat', () {
+    test('a ping slower than the beat holds the next beat back', () {
       fakeAsync((async) {
-        final r = readiness();
+        final r = BootReadiness(
+          notify: (state) {
+            sent.add(state);
+            return true;
+          },
+          firstFrame: (firstFrame = Completer<void>()).future,
+          audio: () => audio,
+          readoutConnected: () async => true,
+          pingReadout: () async {
+            pings++;
+            await Future<void>.delayed(const Duration(seconds: 7));
+            return true;
+          },
+        );
         unawaited(r.start());
         firstFrame.complete();
-        async.elapse(const Duration(seconds: 5));
-        r.stop();
-        final count = sent.length;
-        async.elapse(const Duration(seconds: 30));
-        expect(sent, hasLength(count));
+        async.elapse(const Duration(seconds: 15));
+        // Beats at 5 s (answered at 12 s) and 15 s; the one at 10 s found
+        // the 5 s ping still out and sent nothing.
+        expect(pings, 2);
+        expect(sent.skip(1), ['STATUS=alive 1 readout 1 audio ok']);
       });
     });
+
+    test(
+      'a status part that throws reads as unhealthy, not as a lost beat',
+      () {
+        fakeAsync((async) {
+          final r = BootReadiness(
+            notify: (state) {
+              sent.add(state);
+              return true;
+            },
+            firstFrame: (firstFrame = Completer<void>()).future,
+            audio: () => throw StateError('ffi'),
+            readoutConnected: () async => true,
+            pingReadout: () async => throw StateError('link'),
+          );
+          unawaited(r.start());
+          firstFrame.complete();
+          async.elapse(const Duration(seconds: 5));
+          expect(sent, [
+            'READY=1\nSTATUS=alive 0 readout 0 audio refused',
+            'STATUS=alive 1 readout 0 audio refused',
+          ]);
+        });
+      },
+    );
   });
 }

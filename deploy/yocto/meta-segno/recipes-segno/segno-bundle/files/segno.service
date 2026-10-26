@@ -24,7 +24,9 @@ RequiresMountsFor=/data
 # build that never draws is killed after TimeoutStartSec and restarted, which
 # the gate sees. There is deliberately no WatchdogSec=: a slow but working app
 # must never be killed in the middle of a performance. The hardware watchdog
-# for PID 1 (#1437) is a different thing and stays.
+# for PID 1 (#1437) is a different thing and stays. multi-user.target, which
+# wants this unit, is reached once the app draws (or after the timeout);
+# no unit this layer ships is ordered after it.
 Type=notify
 NotifyAccess=main
 TimeoutStartSec=180
