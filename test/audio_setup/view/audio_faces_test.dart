@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
@@ -78,6 +79,11 @@ const _open = EngineStatus(
   latencyState: LatencyState.done,
   measuredLatencyMs: 7.42,
   recordOffsetFrames: 64,
+);
+
+const _applied = AudioApplyResult(
+  status: AudioApplyStatus.applied,
+  result: EngineResult.ok,
 );
 
 void main() {
@@ -192,12 +198,11 @@ void main() {
         captureDeviceId: 'scarlett-in',
       ),
     );
-    when(() => repository.startEngine(any())).thenReturn(EngineResult.ok);
-    when(repository.stopEngine).thenReturn(EngineResult.ok);
-    when(repository.measureLatency).thenReturn(EngineResult.ok);
+    when(() => repository.applyAudioConfig(any())).thenReturn(_applied);
+    when(() => repository.fxRoomAt(any(), any())).thenReturn(1 << 30);
+    when(() => repository.setRecordOffset(any())).thenReturn(EngineResult.ok);
     when(repository.detectLoopback).thenReturn(const LoopbackInfo.none());
     when(repository.devices).thenReturn(_devices);
-    when(repository.asioDrivers).thenReturn(const []);
     when(() => repository.recordTimingFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );
@@ -284,6 +289,8 @@ void main() {
     audio = AudioSetupCubit(
       repository: repository,
       settings: settings,
+      guards: GuardRegistry(),
+      backing: testBackingRepository(),
       // No periodic re-enumeration: a timer live for the length of the test
       // body fails the binding's invariant check before any tearDown runs.
       deviceRefreshInterval: Duration.zero,
@@ -462,8 +469,8 @@ void main() {
 
       expect(audio.state.playbackDeviceId, 'builtin-out');
       expect(audio.state.captureDeviceId, 'builtin-in');
-      // One reopen, not two: the row is one interface.
-      verify(() => repository.startEngine(any())).called(1);
+      // One apply, not two: the row is one interface.
+      verify(() => repository.applyAudioConfig(any())).called(1);
     });
 
     testWidgets('a rate and a buffer reach the engine', (tester) async {
@@ -476,14 +483,14 @@ void main() {
       await tester.tap(find.byKey(const Key('audio_sample_rate_44100')));
       await tester.pumpAndSettle();
       final asked = verify(
-        () => repository.startEngine(captureAny()),
+        () => repository.applyAudioConfig(captureAny()),
       ).captured.cast<EngineConfig>();
       expect(asked.last.sampleRate, 44100);
 
       await tester.tap(find.byKey(const Key('audio_buffer_256')));
       await tester.pumpAndSettle();
       final then = verify(
-        () => repository.startEngine(captureAny()),
+        () => repository.applyAudioConfig(captureAny()),
       ).captured.cast<EngineConfig>();
       expect(then.last.bufferFrames, 256);
     });
@@ -703,179 +710,7 @@ void main() {
       await tester.tap(find.byKey(const Key('audio_device_option_0')));
       await tester.pumpAndSettle();
 
-      verifyNever(() => repository.startEngine(any()));
-    });
-  });
-
-  // -------------------------------------------------------------- ASIO group
-
-  group('Audio — the ASIO group', () {
-    setUp(() {
-      when(repository.asioDrivers).thenReturn(const [
-        AudioDevice(
-          id: 'focusrite',
-          name: 'Focusrite USB ASIO',
-          isDefault: true,
-          isInput: false,
-          inputChannels: 18,
-          outputChannels: 20,
-        ),
-        AudioDevice(
-          id: 'asio4all',
-          name: 'ASIO4ALL v2',
-          isDefault: false,
-          isInput: false,
-          inputChannels: 2,
-          outputChannels: 2,
-        ),
-      ]);
-    });
-
-    /// Windows: ASIO is the only backend, so its driver is a setting of its
-    /// own rather than one of the devices above it.
-    Future<void> pumpWindows(
-      WidgetTester tester, {
-      List<AudioDevice> drivers = const [],
-    }) async {
-      tester.view
-        ..physicalSize = const Size(1920, 1080)
-        ..devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      when(() => bloc.state).thenReturn(const LooperState(status: _open));
-      whenListen(
-        bloc,
-        const Stream<LooperState>.empty(),
-        initialState: const LooperState(status: _open),
-      );
-      settings = SettingsRepository(store: FakeKeyValueStore());
-      audio = AudioSetupCubit(
-        repository: repository,
-        settings: settings,
-        asioSelectable: true,
-        initialAsioDrivers: drivers,
-        deviceRefreshInterval: Duration.zero,
-      );
-      inputs = InputsCubit(settings: settings, repository: repository);
-      final quantizeOwner = RecordTimingSettings(
-        repository: repository,
-        settings: settings,
-      );
-      addTearDown(() => unawaited(quantizeOwner.close()));
-      quantize = RecordTimingCubit(settings: quantizeOwner);
-      await quantizeOwner.load();
-      options = RecordSettings(repository: repository, settings: settings);
-      tempoOwner = TempoSettings(
-        repository: repository,
-        settings: settings,
-      );
-      final closeTempoOwner = tempoOwner.close;
-      addTearDown(() => unawaited(closeTempoOwner()));
-      tempo = TempoCubit(settings: tempoOwner);
-      await tempoOwner.recordStartOwner.load();
-      addTearDown(() => unawaited(audio.close()));
-      addTearDown(() => unawaited(inputs.close()));
-      addTearDown(() => unawaited(quantize.close()));
-      addTearDown(() => unawaited(options.close()));
-      addTearDown(() => unawaited(tempo.close()));
-
-      await tester.pumpWidget(
-        MaterialApp(
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          theme: ThemeData(
-            extensions: [
-              SurfaceTheme.dark,
-              routingGraphThemeFromSurface(SurfaceTheme.dark),
-            ],
-          ),
-          home: RepositoryProvider<LooperRepository>.value(
-            value: repository,
-            child: MultiBlocProvider(
-              providers: [
-                BlocProvider<LooperBloc>.value(value: bloc),
-                BlocProvider.value(value: audio),
-                BlocProvider.value(value: inputs),
-                BlocProvider.value(value: quantize),
-                BlocProvider(
-                  create: (_) => RecordOptionsCubit(settings: options),
-                ),
-                BlocProvider.value(value: tempo),
-              ],
-              child: const Scaffold(
-                body: Padding(
-                  padding: EdgeInsets.all(19),
-                  child: DeviceAudioTab(),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-    }
-
-    testWidgets('the probed drivers are listed with their channel counts', (
-      tester,
-    ) async {
-      await pumpWindows(
-        tester,
-        drivers: const [
-          AudioDevice(
-            id: 'focusrite',
-            name: 'Focusrite USB ASIO',
-            isDefault: true,
-            isInput: false,
-            inputChannels: 18,
-            outputChannels: 20,
-          ),
-        ],
-      );
-      final l10n = l10nOf(tester);
-      // Twice: the pinned caption, and the bottom-edge preview of the group
-      // the viewport has not reached yet.
-      expect(find.text(l10n.audioAsioDriverGroup), findsWidgets);
-      final row = tester.widget<ConsolePickRow>(
-        find.byKey(const Key('audio_asio_driver_0')),
-      );
-      expect(row.title, 'Focusrite USB ASIO');
-      expect(row.state, l10n.audioDeviceChannels(18, 20));
-      expect(row.selected, isTrue);
-    });
-
-    testWidgets('with no driver installed it offers the install note', (
-      tester,
-    ) async {
-      when(repository.asioDrivers).thenReturn(const []);
-      await pumpWindows(tester);
-      final l10n = l10nOf(tester);
-      expect(find.byKey(const Key('audio_no_asio_banner')), findsOneWidget);
-      expect(find.text(l10n.audioNoAsioDriver), findsOneWidget);
-      // Linked, never bundled — the licence forbids redistribution.
-      expect(find.text(l10n.audioOpenAsio4all), findsOneWidget);
-      expect(find.byKey(const Key('audio_asio_driver_0')), findsNothing);
-    });
-
-    testWidgets('the group you have not reached waits at the bottom edge', (
-      tester,
-    ) async {
-      // Two groups and one viewport: the caption you have not scrolled to yet
-      // previews at the bottom. Only reachable on Windows, where the ASIO
-      // group is the second one.
-      await pumpWindows(
-        tester,
-        drivers: const [
-          AudioDevice(
-            id: 'focusrite',
-            name: 'Focusrite USB ASIO',
-            isDefault: true,
-            isInput: false,
-            inputChannels: 18,
-            outputChannels: 20,
-          ),
-        ],
-      );
-      expect(find.byKey(const Key('audio_upcoming_group')), findsOneWidget);
+      verifyNever(() => repository.applyAudioConfig(any()));
     });
   });
 
@@ -923,58 +758,19 @@ void main() {
   // ----------------------------------------------------------- the latency
 
   group('Audio — the measurement', () {
-    testWidgets('lives on Device and keeps an explicit button', (tester) async {
+    testWidgets('shows the restored figure, with no Measure button', (
+      tester,
+    ) async {
+      // On the appliance the button only ever measured the Scarlett's loop
+      // channels, which the owner ruled out (Q2); the cable test brings it
+      // back in Part 3b.
       await pump(tester);
       final l10n = l10nOf(tester);
-      // One row for the figure, the offset and the action — but the action is
-      // a BUTTON, because a bare tappable row says nothing about being one.
       final row = rowOf(tester, const Key('audio_latency_row'));
       expect(row.title, l10n.roundTripLatencyLabel);
       expect(row.subtitle, l10n.audioRecordOffsetSub(64));
-      expect(find.byKey(const Key('audio_measure_button')), findsOneWidget);
+      expect(find.byKey(const Key('audio_measure_button')), findsNothing);
       expect(find.text(l10n.latencyMs('7.42')), findsOneWidget);
-    });
-
-    testWidgets('measuring is what the button does', (tester) async {
-      await pump(tester);
-      await tester.tap(find.byKey(const Key('audio_measure_button')));
-      await tester.pumpAndSettle();
-      verify(repository.measureLatency).called(1);
-    });
-
-    testWidgets('it refuses to restart itself', (tester) async {
-      const measuring = EngineStatus(
-        isConnected: true,
-        deviceName: 'Scarlett 18i20',
-        sampleRate: 48000,
-        bufferFrames: 128,
-        latencyState: LatencyState.measuring,
-      );
-      when(
-        () => repository.state,
-      ).thenReturn(const LooperState(status: measuring));
-      await pump(tester, looper: const LooperState(status: measuring));
-
-      final button = tester.widget<ConsoleSmallButton>(
-        find.byKey(const Key('audio_measure_button')),
-      );
-      expect(button.onPressed, isNull);
-      expect(find.text(l10nOf(tester).measuringEllipsis), findsOneWidget);
-    });
-
-    testWidgets('a timed-out measurement says so', (tester) async {
-      const timedOut = EngineStatus(
-        isConnected: true,
-        deviceName: 'Scarlett 18i20',
-        sampleRate: 48000,
-        bufferFrames: 128,
-        latencyState: LatencyState.timeout,
-      );
-      when(
-        () => repository.state,
-      ).thenReturn(const LooperState(status: timedOut));
-      await pump(tester, looper: const LooperState(status: timedOut));
-      expect(find.text(l10nOf(tester).noSignalDetected), findsOneWidget);
     });
 
     testWidgets('a stopped engine says what it does not know', (tester) async {
@@ -986,8 +782,128 @@ void main() {
 
   // ------------------------------------------------------------ negotiation
 
+  group('Audio — applying (#1270 Part 3a)', () {
+    const playingRig = LooperState(
+      status: _open,
+      tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
+    );
+    const recordedRig = LooperState(
+      status: _open,
+      tracks: [Track(state: TrackState.stopped, lengthFrames: 48000)],
+    );
+
+    setUp(() {
+      when(
+        () => repository.stopTrack(channel: any(named: 'channel')),
+      ).thenReturn(EngineResult.ok);
+    });
+
+    Future<void> openRates(WidgetTester tester) async {
+      await tester.tap(find.byKey(const Key('audio_rate_row')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a change while a track plays asks first, then applies', (
+      tester,
+    ) async {
+      when(() => repository.state).thenReturn(playingRig);
+      await pump(tester, looper: playingRig);
+      await openRates(tester);
+      await tester.tap(find.byKey(const Key('audio_buffer_256')));
+      await tester.pumpAndSettle();
+
+      final l10n = l10nOf(tester);
+      expect(find.text(l10n.audioApplyTitle), findsOneWidget);
+      expect(find.text(l10n.audioApplyConfirm), findsOneWidget);
+      verifyNever(() => repository.applyAudioConfig(any()));
+
+      await tester.tap(find.byKey(const Key('console_confirm_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.audioApplyTitle), findsNothing);
+      verify(() => repository.stopTrack()).called(1);
+      verify(() => repository.applyAudioConfig(any())).called(1);
+    });
+
+    testWidgets('answering no changes nothing', (tester) async {
+      when(() => repository.state).thenReturn(playingRig);
+      await pump(tester, looper: playingRig);
+      await openRates(tester);
+      await tester.tap(find.byKey(const Key('audio_buffer_256')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('console_confirm_cancel')));
+      await tester.pumpAndSettle();
+
+      expect(audio.state.applyPhase, ApplyPhase.idle);
+      expect(audio.state.bufferFrames, 128);
+      verifyNever(() => repository.stopTrack(channel: any(named: 'channel')));
+      verifyNever(() => repository.applyAudioConfig(any()));
+    });
+
+    testWidgets('with material the rate chips stay, locked, with the reason', (
+      tester,
+    ) async {
+      when(() => repository.state).thenReturn(recordedRig);
+      final semantics = tester.ensureSemantics();
+      await pump(tester, looper: recordedRig);
+      await openRates(tester);
+      final l10n = l10nOf(tester);
+
+      expect(find.byKey(const Key('audio_sample_rate_96000')), findsOneWidget);
+      expect(find.text(l10n.audioRateLocked), findsOneWidget);
+      expect(
+        find.bySemanticsLabel(RegExp(RegExp.escape(l10n.audioRateLocked))),
+        findsWidgets,
+      );
+      await tester.tap(find.byKey(const Key('audio_sample_rate_96000')));
+      await tester.pumpAndSettle();
+      verifyNever(() => repository.applyAudioConfig(any()));
+      semantics.dispose();
+    });
+
+    testWidgets('a rate the effects do not fit is refused with the reason', (
+      tester,
+    ) async {
+      when(() => repository.fxRoomAt(96000, 128)).thenReturn(-1);
+      await pump(tester);
+      await openRates(tester);
+      await tester.tap(find.byKey(const Key('audio_sample_rate_96000')));
+      await tester.pumpAndSettle();
+
+      final l10n = l10nOf(tester);
+      expect(
+        find.text(
+          l10n.audioEffectsOverBudgetRate(l10n.sampleRateKhzLabel(96000)),
+        ),
+        findsOneWidget,
+      );
+      verifyNever(() => repository.applyAudioConfig(any()));
+    });
+
+    testWidgets('a take in flight refuses the change and says why', (
+      tester,
+    ) async {
+      const recording = LooperState(
+        status: _open,
+        tracks: [Track(state: TrackState.recording)],
+      );
+      when(() => repository.state).thenReturn(recording);
+      await pump(tester, looper: recording);
+      await openRates(tester);
+      await tester.tap(find.byKey(const Key('audio_buffer_256')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(l10nOf(tester).operationBusy('capture')),
+        findsOneWidget,
+      );
+      verifyNever(() => repository.applyAudioConfig(any()));
+    });
+  });
+
   group('Audio — negotiation', () {
-    // There is deliberately no in-flight test: `startEngine` is a synchronous
+    // There is deliberately no in-flight test: the apply is a synchronous
     // FFI call, so the device is open or failed by the time it returns and a
     // slow driver blocks the isolate rather than yielding a frame. A
     // "reopening…" banner would be unreachable UI — see [ConfigPhase].
@@ -1001,7 +917,7 @@ void main() {
       await tester.tap(find.byKey(const Key('audio_rate_row')));
       await tester.pumpAndSettle();
       // The device gives back exactly what was asked, which is what a real
-      // reopen reports the moment `startEngine` returns.
+      // reopen reports the moment the apply returns.
       when(() => repository.state).thenReturn(
         const LooperState(
           status: EngineStatus(
@@ -1027,16 +943,20 @@ void main() {
       // is opening at. A device pick that fails used to reach the failure
       // branch with nothing requested and say "could not open at 0 kHz" — and
       // then stick there, since only a settled phase clears it.
-      when(() => repository.startEngine(any())).thenReturn(EngineResult.device);
+      when(() => repository.applyAudioConfig(any())).thenReturn(
+        const AudioApplyResult(
+          status: AudioApplyStatus.failed,
+          result: EngineResult.device,
+        ),
+      );
       await pump(tester);
       await tester.tap(find.byKey(const Key('audio_device_row')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('audio_device_option_1')));
       await tester.pumpAndSettle();
 
-      expect(audio.state.phase, ConfigPhase.refused);
-      expect(audio.state.requestedRate, 48000);
-      expect(audio.state.requestedBuffer, 128);
+      // Nothing opened, so the pick does not stick and nothing is saved.
+      expect(audio.state.playbackDeviceId, 'scarlett-out');
       expect(find.textContaining('0 kHz · 0'), findsNothing);
       // And it reports the OPEN, not the config: a device pick moves neither
       // rate nor buffer, so a banner naming them would name the same figures
@@ -1049,8 +969,8 @@ void main() {
       );
 
       // And a later success unsticks it rather than leaving the banner up.
-      when(() => repository.startEngine(any())).thenReturn(EngineResult.ok);
-      await tester.tap(find.byKey(const Key('audio_device_option_0')));
+      when(() => repository.applyAudioConfig(any())).thenReturn(_applied);
+      await tester.tap(find.byKey(const Key('audio_device_option_1')));
       await tester.pumpAndSettle();
       engine.add(const LooperState(status: _open));
       await tester.pumpAndSettle();

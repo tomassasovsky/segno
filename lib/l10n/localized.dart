@@ -432,13 +432,6 @@ extension EngineLocalizations on AppLocalizations {
     '1/16',
   ];
 
-  String loopbackKindLabel(LoopbackKind kind) => switch (kind) {
-    LoopbackKind.backendLoopback => loopbackKindBackend,
-    LoopbackKind.monitor => loopbackKindMonitor,
-    LoopbackKind.virtualDevice => loopbackKindVirtualDevice,
-    LoopbackKind.none => '',
-  };
-
   String latencyStateLabel(EngineStatus status) =>
       switch (status.latencyState) {
         LatencyState.done => latencyMs(
@@ -540,18 +533,6 @@ extension EngineLocalizations on AppLocalizations {
     _ => setupBlurbReady,
   };
 
-  String loopbackNote(LoopbackInfo loopback) {
-    final deviceClause = loopback.deviceName.isNotEmpty
-        ? ' (${loopback.deviceName})'
-        : '';
-    if (loopback.isAutoRoutable) {
-      return loopbackDetectedNote(deviceClause);
-    }
-    return loopbackAvailableNote(
-      loopbackKindLabel(loopback.kind),
-      deviceClause,
-    );
-  }
 }
 
 /// What `TracksCubit` STORES for a track nobody has renamed.

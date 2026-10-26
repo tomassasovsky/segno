@@ -70,8 +70,7 @@ class App extends StatefulWidget {
   ///
   /// The repositories and [waveformWindow] are injected so tests can supply
   /// fakes / a no-op window service instead of the native device and the
-  /// link to the Track display. [initialAsioDrivers] is the ASIO driver list
-  /// enumerated at startup, cached by the audio-setup cubit for the picker.
+  /// link to the Track display.
   const App({
     required this.repository,
     required this.controllerRepository,
@@ -86,7 +85,6 @@ class App extends StatefulWidget {
     this.instrumentRepository,
     this.pedalRepository,
     this.audioRecoveryConfig,
-    this.initialAsioDrivers = const [],
     this.updates = const UpdateRepository(
       backend: UnsupportedPlatformBackend(),
     ),
@@ -191,10 +189,6 @@ class App extends StatefulWidget {
 
   /// Manages the secondary output-waveform window.
   final WaveformWindowService waveformWindow;
-
-  /// The ASIO drivers enumerated at startup, cached by the audio-setup cubit so
-  /// the picker stays populated even while ASIO holds the device (R1).
-  final List<AudioDevice> initialAsioDrivers;
 
   /// The shared session repository (save/load + export), sharing the engine.
   final SessionRepository sessionRepository;
@@ -803,7 +797,8 @@ class _AppState extends State<App> {
             create: (context) => AudioSetupCubit(
               repository: context.read<LooperRepository>(),
               settings: context.read<SettingsRepository>(),
-              initialAsioDrivers: widget.initialAsioDrivers,
+              guards: widget.guards,
+              backing: widget.backingRepository,
             ),
           ),
           // Eager (not lazy): the MIDI-setup cubit performs the launch
