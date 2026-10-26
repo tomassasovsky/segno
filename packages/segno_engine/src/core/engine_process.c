@@ -3194,7 +3194,8 @@ static int32_t le_handoff_restore_state(le_engine* e, int32_t ch,
   return LE_TRACK_STOPPED;
 }
 
-/* Drops the arm a waiting Record holds on [ch]: the DISARM body. */
+/* Drops the arm pending on [ch] with what it prepared: LE_CMD_DISARM, and a
+ * waiting Record whose request was dropped. */
 static void le_handoff_disarm(le_engine* e, int32_t ch) {
   le_track* t = &e->tracks[ch];
   t->pending_image.revision = 0;
@@ -3318,6 +3319,23 @@ static void handle_section_play(le_engine* e, int32_t ch, uint64_t frame) {
   if (!le_handoff_wait(e, ch, 0)) le_handoff_play_now(e, ch, frame);
 }
 
+/* Fires the Record waiting on [ch] now. Like a grid arm firing, it clears
+ * only the arm: the capture image and shadow the press posted belong to the
+ * take it starts. A stopped Song section overdubs from its top, so it is
+ * started there first. */
+static void le_handoff_record_now(le_engine* e, int32_t ch, uint64_t frame) {
+  le_track* t = &e->tracks[ch];
+  t->pending_record = 0;
+  t->pending_trigger = 0;
+  store_i32(&t->a_pending, 0);
+  if (load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_SONG &&
+      load_i32(&t->a_state) == LE_TRACK_STOPPED) {
+    le_song_start(e, ch, frame);
+  }
+  le_plog_push(e, frame, (le_command){.code = LE_CMD_RECORD, .arg_i = ch});
+  handle_record(e, ch, frame);
+}
+
 /* LE_CMD_ARM trigger 3: a Record waiting for the handoff (le_engine_record
  * prepared it). The target may have moved since the press; with nothing
  * sounding any more it records at once. */
@@ -3330,9 +3348,7 @@ static void le_handoff_record_request(le_engine* e, int32_t ch,
     return;
   }
   if (!le_handoff_wait(e, ch, 1)) {
-    le_handoff_disarm(e, ch);
-    le_plog_push(e, frame, (le_command){.code = LE_CMD_RECORD, .arg_i = ch});
-    handle_record(e, ch, frame);
+    le_handoff_record_now(e, ch, frame);
     return;
   }
   if (e->song_target != ch) { /* refused: another section captures */
@@ -3350,7 +3366,6 @@ static void le_handoff_record_request(le_engine* e, int32_t ch,
 static void le_song_commit(le_engine* e, uint64_t frame) {
   const int32_t target = e->song_target;
   const int record = e->song_record;
-  const int song = load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_SONG;
   const int32_t primary = le_handoff_primary(e);
   le_song_cancel(e);
   for (int32_t c = 0; c < e->track_count; ++c) {
@@ -3362,17 +3377,11 @@ static void le_song_commit(le_engine* e, uint64_t frame) {
     le_plog_push(e, frame, (le_command){.code = LE_CMD_STOP, .arg_i = c});
     handle_stop(e, c, frame);
   }
-  if (!record) {
+  if (record) {
+    le_handoff_record_now(e, target, frame);
+  } else {
     le_handoff_play_now(e, target, frame);
-    return;
   }
-  le_handoff_disarm(e, target);
-  /* A Song overdub runs from the section's top: start it, then punch in. */
-  if (song && load_i32(&e->tracks[target].a_state) == LE_TRACK_STOPPED) {
-    le_song_start(e, target, frame);
-  }
-  le_plog_push(e, frame, (le_command){.code = LE_CMD_RECORD, .arg_i = target});
-  handle_record(e, target, frame);
 }
 
 /* Band's per-frame half, run after the shared clock ticked and the grid
@@ -4761,11 +4770,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
                                              .arg_i = cmd->arg_i});
         le_launch_remove(e, cmd->arg_i);
         if (e->launch_grace[cmd->arg_i]) handle_record(e, cmd->arg_i, frame);
-        e->tracks[cmd->arg_i].pending_image.revision = 0;
-        e->tracks[cmd->arg_i].pending_capture_shadow = 0;
-        e->tracks[cmd->arg_i].pending_record = 0;
-        e->tracks[cmd->arg_i].pending_trigger = 0;
-        store_i32(&e->tracks[cmd->arg_i].a_pending, 0);
+        le_handoff_disarm(e, cmd->arg_i);
       }
       break;
     case LE_CMD_STOP:
