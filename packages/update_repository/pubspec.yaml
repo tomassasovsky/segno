@@ -1,7 +1,7 @@
 name: update_repository
 description: >-
-  Platform-agnostic software-update domain: the update manifest, a pluggable
-  platform backend (appliance RAUC / desktop Sparkle), and the check/stage/apply
+  Software-update domain: the update manifest, a pluggable platform backend
+  (the app supplies the appliance RAUC backend), and the check/stage/apply
   orchestration the app's UpdateCubit drives.
 version: 0.1.0
 publish_to: none

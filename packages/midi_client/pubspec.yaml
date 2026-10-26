@@ -1,8 +1,8 @@
 name: midi_client
 description: >-
-  MIDI controller source for Segno: enumerates and opens native USB MIDI input
-  devices over the segno_engine FFI seam and feeds raw inputs to the
-  controller_repository as a ControllerSource.
+  MIDI client for Segno: enumerates and opens the operating system's MIDI
+  input and output ports over the segno_engine FFI seam and feeds raw inputs
+  to the controller_repository as a ControllerSource.
 version: 0.1.0
 publish_to: none
 

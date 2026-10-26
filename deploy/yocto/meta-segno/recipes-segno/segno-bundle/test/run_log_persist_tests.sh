@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for the persistent journal + coredump storage (#438).
+# Tests for the persistent journal, coredump and pstore storage (#438, #1437).
 #
 # Whether the journal really survives a reboot needs a device, and it has been
 # shown on one (`journalctl -b -1` returned 6521 lines of the previous boot).
@@ -21,6 +21,7 @@ set -uo pipefail
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 SCRIPT="$here/../files/segno-log-check"
+KEEP="$here/../files/segno-pstore-keep"
 BB="$here/../segno-bundle.bb"
 FILES_DIR="$here/../files"
 
@@ -42,7 +43,7 @@ check() {
 
 setup() {
     work=$(mktemp -d "${TMPDIR:-/tmp}/log-persist-test.XXXXXX")
-    mkdir -p "$work/journal/3f9a2c" "$work/coredump"
+    mkdir -p "$work/journal/3f9a2c" "$work/coredump" "$work/pstore"
     : > "$work/journal/3f9a2c/system.journal"
     : > "$work/mountinfo"
 }
@@ -58,11 +59,12 @@ mnt() {
         "$1" "$2" "$3" >> "$work/mountinfo"
 }
 
-# The state a working console is in: /data mounted, both bind mounts on it.
+# The state a working console is in: /data mounted, all three bind mounts on it.
 healthy_mounts() {
     mnt 30 179:2 /data
     mnt 31 179:2 "$work/journal"
     mnt 32 179:2 "$work/coredump"
+    mnt 33 179:2 "$work/pstore"
 }
 
 run_check() {
@@ -70,6 +72,7 @@ run_check() {
     SEGNO_DATA_DIR=/data \
     SEGNO_JOURNAL_DIR="$work/journal" \
     SEGNO_COREDUMP_DIR="$work/coredump" \
+    SEGNO_PSTORE_DIR="$work/pstore" \
     SEGNO_LOG_MARKER="$work/marker" \
         sh "$SCRIPT" 2>"$work/stderr"
 }
@@ -83,7 +86,7 @@ healthy_mounts
 run_check; rc=$?
 check "exits 0" 0 "$rc"
 check "leaves no degraded marker" no "$(marker)"
-check "says where the evidence lives" yes "$(said "journal and coredumps are on /data")"
+check "says where the evidence lives" yes "$(said "journal, coredumps and kernel crash records are on /data")"
 teardown
 
 echo "a previous boot was degraded and this one is not"
@@ -98,6 +101,7 @@ echo "the journal bind mount never landed"
 setup
 mnt 30 179:2 /data
 mnt 32 179:2 "$work/coredump"
+mnt 33 179:2 "$work/pstore"
 run_check; rc=$?
 # This is the whole reason the script exists: journald reports success while
 # writing into RAM, so nothing else in the system will ever say this.
@@ -112,6 +116,7 @@ setup
 mnt 30 179:2 /data
 mnt 31 0:22 "$work/journal"
 mnt 32 179:2 "$work/coredump"
+mnt 33 179:2 "$work/pstore"
 run_check; rc=$?
 check "fails" 1 "$rc"
 check "names the wrong device" yes "$(said "is on device 0:22, not on /data")"
@@ -121,9 +126,122 @@ echo "coredump storage never landed"
 setup
 mnt 30 179:2 /data
 mnt 31 179:2 "$work/journal"
+mnt 33 179:2 "$work/pstore"
 run_check; rc=$?
 check "fails" 1 "$rc"
 check "names coredump storage" yes "$(said "coredump storage is not mounted")"
+teardown
+
+echo "pstore storage never landed"
+setup
+mnt 30 179:2 /data
+mnt 31 179:2 "$work/journal"
+mnt 32 179:2 "$work/coredump"
+run_check; rc=$?
+# systemd-pstore would then archive onto the A/B rootfs, and the next OS update
+# would take the record of the crash with it.
+check "fails" 1 "$rc"
+check "names the crash records" yes "$(said "kernel crash record storage is not mounted")"
+teardown
+
+# --- segno-pstore-keep: one directory per archived set ----------------------
+
+run_keep() {
+    SEGNO_PSTORE_DIR="$work/pstore" SEGNO_PSTORE_STAMP="$1" \
+        sh "$KEEP" 2>"$work/stderr"
+}
+
+echo "systemd-pstore archived nothing new"
+setup
+mkdir -p "$work/pstore/20261001T000000Z"
+run_keep 20261023T120000Z; rc=$?
+check "exits 0" 0 "$rc"
+check "makes no empty directory" no \
+    "$([ -d "$work/pstore/20261023T120000Z" ] && echo yes || echo no)"
+teardown
+
+echo "a crash's records are filed under their own directory"
+setup
+printf 'panic\n' > "$work/pstore/dmesg-ramoops-0"
+printf 'console\n' > "$work/pstore/console-ramoops-0"
+run_keep 20261023T120000Z; rc=$?
+check "exits 0" 0 "$rc"
+check "dmesg moved" panic "$(cat "$work/pstore/20261023T120000Z/dmesg-ramoops-0" 2>/dev/null)"
+check "console copy moved" console "$(cat "$work/pstore/20261023T120000Z/console-ramoops-0" 2>/dev/null)"
+check "nothing left at the top" no \
+    "$([ -e "$work/pstore/dmesg-ramoops-0" ] && echo yes || echo no)"
+teardown
+
+echo "the next crash does not replace the last one"
+# The reason the script exists: ramoops numbers its records from 0 every boot,
+# and systemd-pstore copies with COPY_REPLACE, so both crashes are named
+# dmesg-ramoops-0.
+setup
+printf 'first\n' > "$work/pstore/dmesg-ramoops-0"
+run_keep 20261023T120000Z
+printf 'second\n' > "$work/pstore/dmesg-ramoops-0"
+run_keep 20261024T080000Z
+check "first crash kept" first "$(cat "$work/pstore/20261023T120000Z/dmesg-ramoops-0" 2>/dev/null)"
+check "second crash kept" second "$(cat "$work/pstore/20261024T080000Z/dmesg-ramoops-0" 2>/dev/null)"
+check "earlier directories are not moved again" no \
+    "$([ -d "$work/pstore/20261024T080000Z/20261023T120000Z" ] && echo yes || echo no)"
+teardown
+
+# Sets as segno-pstore-keep leaves them: a directory per archive, named by its
+# UTC time, holding a console copy and, for a crash, a dmesg record.
+console_set() { mkdir -p "$work/pstore/$1"; printf 'c\n' > "$work/pstore/$1/console-ramoops-0"; }
+crash_set() { console_set "$1"; printf 'd\n' > "$work/pstore/$1/dmesg-ramoops-0"; }
+sets() { (cd "$work/pstore" && ls -1d [0-9]*T*Z 2>/dev/null | tr '\n' ' '); }
+has_set() { [ -d "$work/pstore/$1" ] && echo yes || echo no; }
+
+echo "console-only sets are pruned to the newest 10"
+setup
+crash_set 20260101T000000Z
+for day in 01 02 03 04 05 06 07 08 09 10 11; do console_set "202602${day}T000000Z"; done
+printf 'console\n' > "$work/pstore/console-ramoops-0"
+run_keep 20261023T120000Z; rc=$?
+check "exits 0" 0 "$rc"
+check "keeps the new set" yes "$(has_set 20261023T120000Z)"
+check "drops the two oldest console-only sets" "no no" \
+    "$(has_set 20260201T000000Z) $(has_set 20260202T000000Z)"
+check "keeps the next one" yes "$(has_set 20260203T000000Z)"
+# Older than every console-only set, and still kept: console pruning never
+# counts or touches a crash.
+check "keeps the old crash set" yes "$(has_set 20260101T000000Z)"
+check "10 console-only sets and 1 crash set remain" 11 \
+    "$(sets | wc -w | tr -d ' ')"
+teardown
+
+echo "crash sets are pruned only once enough newer crashes exist"
+setup
+crash_set 20260101T000000Z
+crash_set 20260201T000000Z
+console_set 20260301T000000Z
+printf 'panic\n' > "$work/pstore/dmesg-ramoops-0"
+SEGNO_PSTORE_KEEP_CRASH=2 run_keep 20261023T120000Z
+check "drops only the oldest crash" "no yes yes" \
+    "$(has_set 20260101T000000Z) $(has_set 20260201T000000Z) $(has_set 20261023T120000Z)"
+check "the console-only set is untouched" yes "$(has_set 20260301T000000Z)"
+teardown
+
+echo "a console-only boot never pushes out a crash"
+setup
+crash_set 20260101T000000Z
+crash_set 20260201T000000Z
+printf 'console\n' > "$work/pstore/console-ramoops-0"
+SEGNO_PSTORE_KEEP_CRASH=2 SEGNO_PSTORE_KEEP_CONSOLE=1 run_keep 20261023T120000Z
+check "both crashes kept" "yes yes" \
+    "$(has_set 20260101T000000Z) $(has_set 20260201T000000Z)"
+teardown
+
+echo "the archive cannot be written"
+setup
+printf 'panic\n' > "$work/pstore/dmesg-ramoops-0"
+chmod 555 "$work/pstore"
+run_keep 20261023T120000Z; rc=$?
+chmod 755 "$work/pstore"
+check "fails loudly" 1 "$rc"
+check "leaves the record where systemd-pstore put it" panic "$(cat "$work/pstore/dmesg-ramoops-0" 2>/dev/null)"
 teardown
 
 echo "/data itself is not mounted"
@@ -178,7 +296,8 @@ enabled() {
 
 echo "the units this feature ships are enabled and packaged"
 for unit in segno-log-dirs.service segno-log-check.service \
-    var-volatile-log-journal.mount var-lib-systemd-coredump.mount; do
+    var-volatile-log-journal.mount var-lib-systemd-coredump.mount \
+    var-lib-systemd-pstore.mount; do
     check "$unit is in SRC_URI" yes \
         "$(grep -qF "file://$unit" "$BB" && echo yes || echo no)"
     check "$unit is installed" yes \
@@ -192,6 +311,21 @@ check "journald drop-in installed under journald.conf.d" yes \
     "$(grep -qF '${sysconfdir}/systemd/journald.conf.d/10-segno.conf' "$BB" && echo yes || echo no)"
 check "coredump drop-in installed under coredump.conf.d" yes \
     "$(grep -qF '${sysconfdir}/systemd/coredump.conf.d/10-segno.conf' "$BB" && echo yes || echo no)"
+check "systemd-pstore drop-in installed under systemd-pstore.service.d" yes \
+    "$(grep -qF '${systemd_system_unitdir}/systemd-pstore.service.d/10-segno.conf' "$BB" && echo yes || echo no)"
+check "the drop-in runs segno-pstore-keep after the archive" yes \
+    "$(grep -qx 'ExecStartPost=/usr/bin/segno-pstore-keep' "$FILES_DIR/systemd-pstore-segno.conf" && echo yes || echo no)"
+check "segno-pstore-keep is installed to bindir" yes \
+    "$(grep -qF '${D}${bindir}/segno-pstore-keep' "$BB" && echo yes || echo no)"
+# The override only wins while its file name sorts before systemd-pstore.conf.
+check "pstore retention installed as 10-segno-pstore.conf" yes \
+    "$(grep -qF '${sysconfdir}/tmpfiles.d/10-segno-pstore.conf' "$BB" && echo yes || echo no)"
+check "pstore retention never cleans" yes \
+    "$(grep -qx 'd /var/lib/systemd/pstore 0755 root root -' "$FILES_DIR/segno-pstore-retention.conf" && echo yes || echo no)"
+check "the pstore mount orders itself before systemd-pstore" yes \
+    "$(grep -E '^Before=' "$FILES_DIR/var-lib-systemd-pstore.mount" | grep -q 'systemd-pstore.service' && echo yes || echo no)"
+check "segno-log-dirs creates the pstore source directory" yes \
+    "$(grep -E '^ExecStart=/bin/mkdir' "$FILES_DIR/segno-log-dirs.service" | grep -q '/data/log/pstore' && echo yes || echo no)"
 
 echo "the policy that keeps the RAM fallback visible and boot un-held"
 # Storage=persistent would make journald build a healthy-looking journal on

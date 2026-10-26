@@ -8,6 +8,8 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:spawn_process/spawn_process.dart';
+import 'package:spawn_process/src/libc.dart' show opaqueBytes;
+import 'package:spawn_process/src/worker.dart' show hasExited;
 import 'package:test/test.dart';
 
 /// These tests start real programs. They must not share the process with a
@@ -186,6 +188,21 @@ void main() {
       expect(await process.exitCode, 0);
     });
 
+    test('stops writing stdin the running child closed', () async {
+      // The child closes stdin unread, says so and runs on until it is
+      // killed. "closed" is written after stdin is closed, so the poll that
+      // reads it also finds stdin's reader gone, and the write it makes in
+      // the same round fails with EPIPE before the worker checks for an
+      // exit. The kill only comes after.
+      final process = await startProcess('/bin/sh', [
+        '-c',
+        'exec 0<&-; echo closed; exec sleep 30',
+      ], stdin: List.filled(1 << 20, 0x78));
+      expect(await process.stdout.transform(utf8.decoder).first, 'closed\n');
+      expect(process.kill(ProcessSignal.sigkill), isTrue);
+      expect(await process.exitCode, -ProcessSignal.sigkill.signalNumber);
+    });
+
     test('kill sends SIGTERM by default', () async {
       final process = await startProcess('/bin/sleep', const ['10']);
       expect(process.kill(), isTrue);
@@ -304,6 +321,21 @@ void main() {
         expect(result.stdout, 'closed\n');
       } finally {
         _close(fd);
+      }
+    });
+  });
+
+  group('hasExited', () {
+    test('counts a child someone else reaped as exited', () async {
+      // The worker's view when another waiter reaped the child before its
+      // next check: waitid fails with ECHILD.
+      final process = await startProcess('/bin/sh', const ['-c', 'exit 0']);
+      expect(await process.exitCode, 0);
+      final info = calloc<Uint8>(opaqueBytes);
+      try {
+        expect(hasExited(process.pid, info), isTrue);
+      } finally {
+        calloc.free(info);
       }
     });
   });

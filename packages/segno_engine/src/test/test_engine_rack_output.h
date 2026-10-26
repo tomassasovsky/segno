@@ -30,6 +30,10 @@ static le_fx_recipe rk_recipe(int32_t pre, int32_t on0, int32_t tail,
   r.slot_enabled[1] = on1;
   r.level[1] = RK_LEVEL;
   r.rack[1] = LE_FX_RACK_LAST;
+  /* Identities, so a publish that keeps an entry keeps its state and its
+   * enable ramp, as the app's recipes do. */
+  r.instance[0] = 1;
+  r.instance[1] = 2;
   return r;
 }
 
@@ -276,7 +280,9 @@ static void rk_render_parity(const le_fx_recipe* r, float* out_first) {
   static float out[2 * 4000];
   CHECK(rr_render(e, &q, out, 4000) == 4000);
   int mismatches = 0;
-  for (int f = 0; f < 3000; ++f) {
+  /* From the end of the Play's fade-in (#1400), which the render does not
+   * have; these racks hold no memory, so the fade ends where it ends. */
+  for (int f = RR_SR / 100; f < 3000; ++f) {
     if (live[2 * f] != out[2 * f] || live[2 * f + 1] != out[2 * f + 1]) {
       mismatches++;
     }
@@ -670,6 +676,7 @@ static void test_rack_edge_moving_while_playing(void) {
   three.slot_enabled[2] = 1;
   three.level[2] = RK_LEVEL;
   three.rack[2] = LE_FX_RACK_LAST;
+  three.instance[2] = 3;
   const float want = tanhf(0.5f) * RK_LEVEL;
   static float out[2 * 512];
   for (int k = 0; k < 2; ++k) {
