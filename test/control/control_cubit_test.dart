@@ -2978,6 +2978,30 @@ void main() {
         verifyNever(() => looper.play(channel: 2));
       });
 
+      test('parked Band keeps one section in the resume set', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 2, state: TrackState.stopped, lengthFrames: 48000),
+          ]),
+          looperMode: LooperMode.band,
+          primaryTrack: 0,
+        );
+        cubit.setMode(InteractionMode.mute);
+        final primary = cubit.state.parkedResume.contains(0);
+        // Take section 1 out if it is in, then add it.
+        if (cubit.state.parkedResume.contains(1)) cubit.trackPressed(1);
+        cubit.trackPressed(1);
+        expect(cubit.state.parkedResume, contains(1));
+        expect(cubit.state.parkedResume, isNot(contains(2)));
+        cubit.trackPressed(2); // replaces section 1
+        expect(cubit.state.parkedResume, contains(2));
+        expect(cubit.state.parkedResume, isNot(contains(1)));
+        // The primary is no section: its membership is untouched.
+        expect(cubit.state.parkedResume.contains(0), primary);
+      });
+
       test('Multi and Free Record-mode presses only select', () {
         for (final mode in [LooperMode.multi, LooperMode.free]) {
           setEngine(sections, looperMode: mode);

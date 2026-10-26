@@ -2137,7 +2137,13 @@ class ControlCubit extends Cubit<ControlState> {
         if (!_setTrackMute(muted: false, channel: channel).isOk) return;
       }
       final next = {...state.parkedResume};
-      if (!next.remove(channel)) next.add(channel);
+      if (!next.remove(channel)) {
+        // Band resumes its primary plus one section (#1323): a section that
+        // joins replaces the one already there, so the parked LEDs show
+        // what Rec/Play will start.
+        if (_l.isSection(channel)) next.removeWhere(_l.isSection);
+        next.add(channel);
+      }
       emit(state.copyWith(parkedResume: next));
       return;
     }
