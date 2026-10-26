@@ -398,9 +398,9 @@ and marked with the PR that carried them out.
     `audio` is `refused` in both samples. With both HDMI connectors forced on
     (`video=...D`, #821), the appliance may never read `readout none`; the case
     covers a connector that reads disconnected.
-  - `READY=1` rides every send until one goes through: a lost datagram would leave the
-    unit activating until systemd kills a working app. systemd ignores a repeated
-    `READY=1`.
+  - `READY=1` goes with every status, so a lost datagram cannot leave the unit
+    activating until systemd kills a working app; systemd ignores a repeated
+    `READY=1`, and a successful `sendto` would not prove systemd took it anyway.
   - `multi-user.target` wants `segno.service`, so it is reached once the app draws (or
     after the timeout); no unit this layer ships is ordered after it.
   - This replaces the marker file: systemd accepts notifications only from `MainPID`
@@ -532,7 +532,7 @@ and makes them safe. Part 4 later puts the same path behind a draft and an Apply
 - `_autoMeasureIfLoopback`, the automatic branch in `lib/app/audio_bootstrap.dart:319-321`
   (the restore at 310-318 stays), the cubit's `measureLatency()`, the Measure button and
   the loopback notes (`loopbackDetectedNote`, `loopbackAvailableNote`) in
-  `DeviceAudioTab`. On the appliance this button only ever measured the Scarlett loop
+  `DeviceAudioTab` and their entries in `lib/l10n/localized.dart` and the ARB files. On the appliance this button only ever measured the Scarlett loop
   channels, which Q2 rules out. The latency row keeps showing the restored value. Part 3b
   brings Measure back as the cable test.
 - The ASIO selection in the app, which is #925's list: `setBackend`, `setAsioDriver`,
@@ -618,9 +618,9 @@ trusted.
   `MainPID`, the same `NRestarts`, `is-active`, and a `StatusText` whose main counter
   advanced, whose readout counter advanced when both samples counted it, and whose audio
   state is not `refused` in both samples (it refuses when both are). One `refused`
-  sample is not enough: an Apply
-  (stop, then reopen) or a supervisor reconnect (#740) passes through the same state for
-  a moment. A failed enumeration or engine read reports `refused`, never `absent`.
+  sample is not enough: an Apply (stop, then reopen) or a supervisor reconnect (#740)
+  passes through the same state for a moment. A failed enumeration or engine read
+  reports `refused`, never `absent`.
 - A readout that stops answering on a trial boot also reboots, even though the main
   screen works: the trial boot is the minutes after an update the musician started, and
   a build whose 7" does not draw is not one to commit.
@@ -696,7 +696,7 @@ SUCCESS CRITERIA:
 - HARDWARE: pull the Scarlett USB cable mid-loop; one red strip on the 15.6" and the same text on the 7"; replug; audio restarts on its own and the loops are present and stopped. | verify: manual on device
 ```
 
-### Part 2: native measurement path, keep-material reopen, ASIO removal (about 300 lines; engine and bindings)
+### Part 2: native measurement path, keep-material reopen, ASIO removal (about 300 lines; engine, bindings, `settings_repository`)
 
 Trunk-based, after Part 3a merges.
 
@@ -758,10 +758,13 @@ The command uses its own union member in `le_command`, like `click` and `record_
   `AudioBackend` enums with the persisted backend key, `EngineConfig.asioDriver` and the
   saved config's `asioDriver`, with the values `lib` still passes through. A stored
   backend value is ignored on load (no compatibility layer, AGENTS.md).
-- The comments that still name ASIO are reworded or removed: the sample-format names in
-  `engine_internal.h` and `engine_convert.c`, `ASIOGetBufferSize`, `ASIOGetChannelInfo`
-  (`le_device_backend.h`), `kAsioOverload` (`segno_engine_api.h`), and the mentions in
-  `engine_telemetry.h` and `engine.c`.
+- Every comment in `packages/segno_engine/src/core` that names ASIO is reworded or
+  removed (among them the sample-format names in `engine_internal.h` and
+  `engine_convert.c`, `ASIOGetBufferSize`, `ASIOGetChannelInfo`, `kAsioOverload`, and
+  the mentions in `engine_devices.c`, `engine_miniaudio.{c,h}`, `engine_platform.h`,
+  `engine_private.h`, `engine_process.c`, `engine_telemetry.h` and `engine.c`).
+- `settings_repository` stops loading and saving `backend` and `asioDriver`, and its
+  `AudioBackend` goes with the other two.
 - After the header change: `dart run ffigen --config ffigen.yaml` and `dart format`.
 
 ```success-criteria
