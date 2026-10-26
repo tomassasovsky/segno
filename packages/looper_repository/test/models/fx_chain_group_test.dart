@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart' show FxRackEdge;
 
@@ -554,6 +557,72 @@ void main() {
       final chain = [_fx('a', rackId: 'r1')];
 
       expect(fxMoveWithinRack(chain, 'nope', 0, 0), same(chain));
+    });
+
+    test("never splits a Dub Rack's parallel paths", () {
+      // Doubler, Dub delay, Dub reverb, Ambience, Compressor, Parametric EQ.
+      final preset = FxPreset.tryParse(
+        'Dub Rack',
+        File(
+          '../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset',
+        ).readAsStringSync(),
+      )!;
+      final chain = [
+        for (final (i, e) in fxRackEntries(preset).indexed)
+          e.copyWith(
+            slotId: '$i',
+            rack: const FxRack(id: 'dub', name: 'Dub FX 1'),
+          ),
+      ];
+      // The Compressor between the Dub reverb and the Ambience: refused.
+      expect(fxMoveWithinRack(chain, 'dub', 4, 3), same(chain));
+      expect(
+        fxOrderRackModules(chain, 'dub', ['0', '1', '2', '4', '3', '5']),
+        same(chain),
+      );
+      // Within the paths, or around them, the modules move.
+      expect(_slots(fxMoveWithinRack(chain, 'dub', 3, 0)), [
+        '3',
+        '0',
+        '1',
+        '2',
+        '4',
+        '5',
+      ]);
+      expect(_slots(fxMoveWithinRack(chain, 'dub', 4, 0)), [
+        '4',
+        '0',
+        '1',
+        '2',
+        '3',
+        '5',
+      ]);
+    });
+
+    test('a Dub Rack added into a Dub Rack joins its paths', () {
+      final preset = FxPreset.tryParse(
+        'Dub Rack',
+        File(
+          '../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset',
+        ).readAsStringSync(),
+      )!;
+      List<BuiltInEffect> rack(String prefix) => [
+        for (final (i, e) in fxRackEntries(preset).indexed)
+          e.copyWith(
+            slotId: '$prefix$i',
+            rack: const FxRack(id: 'dub', name: 'Dub FX 1'),
+          ),
+      ];
+      final joined = fxKeepPathsTogether([...rack('a'), ...rack('b')]);
+      expect(_slots(joined), [
+        'a0', 'a1', 'a2', 'a3', 'b0', 'b1', 'b2', 'b3', //
+        'a4', 'a5', 'b4', 'b5',
+      ]);
+      // The joined rack still reorders: its Compressor and EQ swap.
+      expect(
+        _slots(fxMoveWithinRack(joined, 'dub', 8, 9)).sublist(8),
+        ['a5', 'a4', 'b4', 'b5'],
+      );
     });
   });
 

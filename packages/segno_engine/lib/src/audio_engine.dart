@@ -932,7 +932,8 @@ abstract interface class MasterBusControl {
   /// (`0..kTrackEffectMax`). Count 0 (empty) restores bit-identical output.
   EngineResult setOutputFxCount({required int bus, required int count});
 
-  /// Sets parameter [param] (`0..kTrackEffectParams-1`) of output bus [bus]'s
+  /// Sets parameter [param] (a cell its type reads; others are refused)
+  /// of output bus [bus]'s
   /// chain entry [index] to [value] (clamped to `0..1`). A direct atomic
   /// publish — works whether or not the device is running.
   EngineResult setOutputFxParam({
@@ -1107,7 +1108,8 @@ abstract interface class EffectsControl {
     required FxChannels channels,
   });
 
-  /// Sets parameter [param] (`0..kTrackEffectParams-1`) of chain entry [index]
+  /// Sets parameter [param] (a cell its type reads; others are refused)
+  /// of chain entry [index]
   /// on lane [lane] of track [channel] to [value] (clamped to `0..1`). The
   /// parameter's meaning depends on the entry's effect type.
   EngineResult setLaneFxParam({
@@ -1208,7 +1210,8 @@ abstract interface class EffectsControl {
     int preCount = 0,
   });
 
-  /// Sets parameter [param] (`0..kTrackEffectParams-1`) of track [channel]'s
+  /// Sets parameter [param] (a cell its type reads; others are refused)
+  /// of track [channel]'s
   /// Track-stage chain entry [index] to [value] (clamped to `0..1`). A direct
   /// atomic publish — works whether or not the device is running.
   EngineResult setTrackFxParam({
@@ -1287,7 +1290,8 @@ abstract interface class MonitorControl {
   /// (`0..kTrackEffectMax`): only entries `[0, count)` are processed, in order.
   EngineResult setMonitorInputFxCount({required int input, required int count});
 
-  /// Sets parameter [param] (`0..kTrackEffectParams-1`) of monitor input
+  /// Sets parameter [param] (a cell its type reads; others are refused)
+  /// of monitor input
   /// [input]'s chain entry [index] to [value] (clamped to `0..1`). Its meaning
   /// depends on the entry's effect type.
   EngineResult setMonitorInputFxParam({

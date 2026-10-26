@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://segno.aquiles.dev/sitemap.xml

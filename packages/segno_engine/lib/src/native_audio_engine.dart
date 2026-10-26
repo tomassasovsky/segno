@@ -437,14 +437,17 @@ class NativeAudioEngine implements AudioEngine {
           ? nullptr
           : (plugin as _NativePluginSlotHandle).pointer;
       target.slot_enabled[i] = slot.enabled ? 1 : 0;
-      for (var p = 0; p < slot.params.length; p++) {
+      // The cells the type reads; the calloc'd rest stay 0.
+      final width = plugin == null ? slot.type.params.length : 0;
+      for (var p = 0; p < width && p < slot.params.length; p++) {
         target.params[i][p] = slot.params[p];
       }
       target.input_mode[i] = slot.channels.input.index;
       target.output_mode[i] = slot.channels.output.index;
       target.placement[i] = slot.channels.placement;
       target.level[i] = slot.channels.level;
-      target.rack[i] = slot.rack.bits;
+      target.rack[i] = slot.rack.bits | slot.path.bits;
+      target.instance[i] = slot.instance;
     }
     return true;
   }

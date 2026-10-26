@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:segno_engine/src/fx_fingerprint.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
 import 'package:segno_engine/src/track_effect.dart';
 
@@ -46,6 +49,21 @@ enum FxRackEdge {
   final int bits;
 }
 
+/// The native identity (`le_fx_recipe.instance`) of the chain entry whose
+/// stable id is [slotId]: a 64-bit FNV-1a hash of it, never 0, or 0 for an
+/// entry without one (which the engine treats as new on every publish).
+/// Sixty-four bits, so two entries that follow each other at one slot never
+/// pass for the same one.
+///
+/// The engine keeps a slot's DSP state across a publish only when the entry
+/// there has the same identity and type, so an edit that keeps an entry in
+/// place leaves its tail sounding (#887 part 4).
+int fxInstanceId(String? slotId) {
+  if (slotId == null) return 0;
+  final h = FxFingerprint.mixBytes(FxFingerprint.offset, utf8.encode(slotId));
+  return h == 0 ? 1 : h;
+}
+
 /// A complete effect instance prepared before structural admission.
 class FxRecipeSlot {
   /// Creates a detached, immutable slot description.
@@ -55,7 +73,9 @@ class FxRecipeSlot {
     this.enabled = true,
     this.channels = FxChannels.defaults,
     this.rack = FxRackEdge.none,
+    this.path = FxRackPath.none,
     this.plugin,
+    this.instance = 0,
   }) : params = List.unmodifiable(params);
 
   /// Built-in type; ignored when [plugin] identifies a hosted instance.
@@ -75,13 +95,22 @@ class FxRecipeSlot {
   /// and no granular channel write moves it.
   final FxRackEdge rack;
 
+  /// The rack path this entry runs on. Structural, as [rack] is.
+  final FxRackPath path;
+
   /// A retained owner handle or a detached handle prepared by this engine.
   final PluginSlotHandle? plugin;
+
+  /// The entry's identity ([fxInstanceId]), 0 for none.
+  final int instance;
 
   /// Whether this slot can be represented faithfully by the native recipe.
   bool get isValid =>
       params.length <= kTrackEffectParams &&
-      params.every((v) => v.isFinite && v >= 0 && v <= 1) &&
+      // The cells the type reads: the only ones the recipe carries.
+      params
+          .take(type.params.length)
+          .every((v) => v.isFinite && v >= 0 && v <= 1) &&
       channels.placement.isFinite &&
       channels.placement >= -1 &&
       channels.placement <= 1 &&

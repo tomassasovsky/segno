@@ -10,3 +10,7 @@
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
 SRC_URI += "file://rt.cfg"
+
+# Freeze recovery (#1437): pstore pinned on, reboot on panic, lockup detectors
+# that panic, hung-task detection that only logs. The reasons are in the file.
+SRC_URI += "file://freeze-recovery.cfg"

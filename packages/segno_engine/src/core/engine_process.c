@@ -35,31 +35,6 @@
 #include "perf_log_ring.h" /* le_perf_log_ring_push, le_perf_log_code (perf event log) */
 #include "tempo_grid.h"    /* le_grid_* (pure tempo/bar/subdivision math) */
 
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || \
-    defined(_M_IX86)
-#include <pmmintrin.h> /* _MM_SET_DENORMALS_ZERO_MODE (DAZ) */
-#include <xmmintrin.h> /* _MM_SET_FLUSH_ZERO_MODE (FTZ) */
-#endif
-
-/* Flush denormals to zero on the audio thread. Decaying FX tails (reverb/delay/
- * phase-vocoder) trend toward ~1e-30, and denormal arithmetic can be orders of
- * magnitude slower — a CPU spike that shows up as a buffer underrun (dropout /
- * click), not as wrong audio. FTZ+DAZ make the FPU treat those as zero. Per
- * thread, so we set it each callback (negligible cost). No-op where unsupported;
- * the inaudible denormals simply remain. */
-static inline void le_flush_denormals(void) {
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || \
-    defined(_M_IX86)
-  _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
-  _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
-#elif defined(__aarch64__)
-  uint64_t fpcr;
-  __asm__ __volatile__("mrs %0, fpcr" : "=r"(fpcr));
-  fpcr |= (1ull << 24); /* FZ: flush-to-zero */
-  __asm__ __volatile__("msr fpcr, %0" : : "r"(fpcr));
-#endif
-}
-
 /* The loopback-latency-harness and auto-record tuning constants (LE_LATENCY_* /
  * LE_AUTO_RECORD_THRESHOLD) live in engine_core.h — shared with le_engine_configure
  * (engine.c), which sizes the latency capture buffer from LE_LATENCY_CAPTURE_DIV. */
@@ -97,6 +72,12 @@ void le_plog_push(le_engine* e, uint64_t frame, le_command cmd) {
     atomic_fetch_add_explicit(&e->a_perf_log_overruns, 1u,
                               memory_order_relaxed);
   }
+}
+
+/* A type command landing on slot [index]: the slot no longer holds the
+ * entry a recipe put there (instance), so the next recipe renews it. */
+static inline void le_fx_type_landed(le_fx_slot_meta* meta, int32_t index) {
+  atomic_store_explicit(&meta[index].instance, 0u, memory_order_relaxed);
 }
 
 /* Whether the transport is HELD: no track is playing, recording, or
@@ -1061,6 +1042,72 @@ static void le_apply_length_preset_tempo(le_engine* e, int32_t len,
  * the free-running scheduler re-anchoring at each record press. The loop top
  * starts the count again, so a loop that is not a whole number of beats has
  * a short last beat. */
+/* Moves the chains' musical time (le_fx_tempo, #887 part 10) to the frame
+ * whose FX clock is [clock] ([frame] on the performance log). The beat runs
+ * in quarter notes at the song tempo (120 BPM while none is set), from 0 at
+ * the loop top while a shared loop exists (at its grid's rate when it has
+ * one), and on from wherever it was when none does. It is re-anchored only
+ * when it leaves its line, so the beat is anchor + frames * qpf in every
+ * frame, the very sum a render computes from the logged anchors. */
+static inline void le_fx_tempo_tick(le_engine* e, uint32_t clock,
+                                    uint64_t frame, int free_or_song) {
+  const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  float bpm = load_f32(&e->a_tempo_bpm_bits);
+  if (!(bpm > 0.0f)) bpm = 120.0f;
+  int32_t num = load_i32(&e->a_ts_num);
+  int32_t den = load_i32(&e->a_ts_den);
+  if (num <= 0 || num > 255) num = 4;
+  if (den <= 0 || den > 255) den = 4;
+  /* A held transport (a loop, nothing playing) pins the position at 0, and
+   * the latency harness stops it while it owns the frames: in both the beat
+   * runs on its line instead of resetting every frame. (The latch clears at
+   * the end of the first frame played after a hold, so the beat re-anchors
+   * at the second.) */
+  const int loop = !free_or_song && e->clock.length > 0 &&
+                   !e->transport_held && !e->lat_active;
+  const float qpf =
+      loop && e->grid_total_beats > 0
+          ? (float)((double)e->grid_total_beats * 4.0 / (double)den /
+                    (double)e->clock.length)
+          : (float)((double)bpm / 60.0 / (double)sr * 4.0 / (double)den);
+  le_fx_tempo* t = &e->fx_tempo;
+  const double on_line =
+      e->fx_tempo_set ? t->anchor_beat +
+                            (double)(uint32_t)(clock - t->anchor_clock) *
+                                (double)t->qpf
+                      : 0.0;
+  const double want =
+      loop ? (double)e->clock.position * (double)qpf : on_line;
+  /* An anchor half the FX clock's range old is renewed, so the frame count
+   * from it never wraps. */
+  if (!e->fx_tempo_set || qpf != t->qpf || num != t->num || den != t->den ||
+      fabs(want - on_line) > 1e-6 ||
+      (uint32_t)(clock - t->anchor_clock) >= 0x80000000u) {
+    t->anchor_clock = clock;
+    t->anchor_beat = want;
+    t->qpf = qpf;
+    t->num = num;
+    t->den = den;
+    e->fx_tempo_set = 1;
+    e->fx_tempo_log = 1;
+  }
+  if (e->fx_tempo_log) {
+    /* Re-expressed at this frame, so a render anchors where the log does. */
+    const double beat = t->anchor_beat +
+                        (double)(uint32_t)(clock - t->anchor_clock) *
+                            (double)t->qpf;
+    uint64_t bits;
+    memcpy(&bits, &beat, sizeof(bits));
+    le_plog_push(e, frame,
+                 (le_command){.code = LE_PLOG_FX_TEMPO,
+                              .fx_tempo_log = {(uint32_t)bits,
+                                               (uint32_t)(bits >> 32), qpf,
+                                               (uint8_t)num, (uint8_t)den,
+                                               0}});
+    e->fx_tempo_log = 0;
+  }
+}
+
 static inline void grid_beat_frame(le_engine* e, int32_t pos, int click_on,
                                    int32_t nominal_fpb) {
   if (e->clock.length <= 0) return;
@@ -5348,6 +5395,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       le_plog_push(e, frame, *cmd);
       le_lane* ln = &e->tracks[ch].lanes[lane];
       store_i32(&ln->a_fx_type[index], cmd->fx.type);
+      le_fx_type_landed(ln->fx_meta, index);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&ln->fx, index);
       /* Wet-cache fast path: the published type just moved, so the chain
@@ -5483,6 +5531,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       le_plog_push(e, frame, *cmd);
       le_monitor_input* m = &e->monitors[input];
       store_i32(&m->a_fx_type[index], cmd->fx.type);
+      le_fx_type_landed(m->fx_meta, index);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&m->fx, index);
       break;
@@ -5535,6 +5584,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       if (!valid_channel(e, ch) || index < 0 || index >= LE_FX_MAX) break;
       le_fx_bus* b = &e->tracks[ch].bus;
       store_i32(&b->a_fx_type[index], cmd->fx.type);
+      le_fx_type_landed(b->fx_meta, index);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&b->fx, index);
       break;
@@ -5558,6 +5608,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       const int32_t index = cmd->fx.index;
       if (index < 0 || index >= LE_FX_MAX) break;
       store_i32(&e->all_tracks.a_fx_type[index], cmd->fx.type);
+      le_fx_type_landed(e->all_tracks.fx_meta, index);
       /* One config, one instance per bus: every instance's DSP state resets,
        * or a destination would keep the previous effect's filter memory. */
       for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
@@ -5579,7 +5630,11 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       if (index < 0 || index >= LE_FX_MAX) break;
       le_plog_push(e, frame, *cmd);
       store_i32(&e->outputs[bus].fx.a_fx_type[index], cmd->fx.type);
-      le_fx_entry_reset(&e->outputs[bus].fx.fx, index);
+      le_fx_type_landed(e->outputs[bus].fx.fx_meta, index);
+      /* As a recipe renews a slot (le_fx_entry_renew), so perf_render can
+       * answer every logged output type the one way. */
+      le_fx_entry_renew(&e->outputs[bus].fx.fx, index, cmd->fx.type,
+                        index < load_i32(&e->outputs[bus].fx.a_fx_count));
       break;
     }
     case LE_CMD_SET_OUTPUT_FX_COUNT: {
@@ -5766,6 +5821,15 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
                                      * (events.log version 13, #941) */
                                     .fx_clock = e->fx_clock_base,
                                 }});
+      /* The chains' musical time at capture frame 0 (version 14), logged
+       * with the arm's own facts. */
+      {
+        const int32_t mode = load_i32(&e->a_looper_mode);
+        e->fx_tempo_log = 1;
+        le_fx_tempo_tick(e, e->fx_clock_base, frame,
+                         mode == LE_LOOPER_MODE_FREE ||
+                             mode == LE_LOOPER_MODE_SONG);
+      }
       for (int t = 0; t < e->track_count; ++t) {
         le_fade_log(e, t, frame);
         /* A track already reversed at arm logs its direction and the index
@@ -5989,20 +6053,23 @@ static inline void perf_tap_master_pair(le_engine* e, int bus, float l,
   perf_push_master(e, s);
 }
 
-static inline void snapshot_bus_fx(le_fx_bus* b, int32_t* bus_fx_count,
+static inline void snapshot_bus_fx(le_engine* e, le_fx_bus* b,
+                                   int32_t* bus_fx_count,
                                    int32_t* bus_fx_pre_count,
                                    int32_t bus_fx_type[LE_FX_MAX],
                                    float bus_fx_params[LE_FX_MAX][LE_FX_PARAMS],
                                    int32_t bus_fx_enabled[LE_FX_MAX],
-                                   int* bus_has_fx);
+                                   int* bus_has_fx, int log_bus,
+                                   uint64_t log_frame);
 
 
-static inline void snapshot_output_bus(le_output_bus* ob, int bus, int ch_out,
+static inline void snapshot_output_bus(le_engine* e, le_output_bus* ob,
+                                       int bus, int ch_out,
                                        uint32_t out_enabled,
-                                       le_obus_snap* sn) {
+                                       le_obus_snap* sn, uint64_t log_frame) {
   int32_t unused_pre = 0; /* an output chain is wholly Post */
-  snapshot_bus_fx(&ob->fx, &sn->fx_count, &unused_pre, sn->fx_type,
-                  sn->fx_params, sn->fx_enabled, &sn->has_fx);
+  snapshot_bus_fx(e, &ob->fx, &sn->fx_count, &unused_pre, sn->fx_type,
+                  sn->fx_params, sn->fx_enabled, &sn->has_fx, bus, log_frame);
   sn->level = load_f32(&ob->a_level_bits);
   sn->muted = load_i32(&ob->a_muted);
   sn->mono = load_i32(&ob->a_mono);
@@ -6904,7 +6971,13 @@ static inline void snapshot_lane_fx(
     int32_t fx_count[][LE_MAX_LANES], int32_t fx_pre_count[][LE_MAX_LANES],
     int32_t fx_type[][LE_MAX_LANES][LE_FX_MAX],
     float fx_params[][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS],
-    int32_t fx_enabled[][LE_MAX_LANES][LE_FX_MAX], int has_fx[][LE_MAX_LANES]) {
+    int32_t fx_enabled[][LE_MAX_LANES][LE_FX_MAX], int has_fx[][LE_MAX_LANES],
+    uint64_t log_frame) {
+  /* While a performance is armed, a parameter that differs from the one
+   * this slot held at the last snapshot is logged here, at the frame the
+   * callback first applies it (#887 part 4): the setters' own stamp could
+   * be a block early or late. */
+  const int log = e->perf.armed;
   for (int t = 0; t < tc; ++t) {
     if (!(track_mask & (1u << t))) continue;
     for (int l = 0; l < lane_n[t]; ++l) {
@@ -6925,11 +6998,29 @@ static inline void snapshot_lane_fx(
       const int32_t chain_on = load_i32(&ln->a_fx_chain_enabled);
       for (int s = 0; s < n; ++s) {
         const int32_t ty = load_i32(&ln->a_fx_type[s]);
+        const int same_type = fx_type[t][l][s] == ty;
         fx_type[t][l][s] = ty;
         if (ty != LE_FX_NONE) has_fx[t][l] = 1;
         fx_enabled[t][l][s] = chain_on && load_i32(&ln->a_fx_enabled[s]);
-        for (int p = 0; p < LE_FX_PARAMS; ++p) {
-          fx_params[t][l][s][p] = load_f32(&ln->a_fx_param[s][p]);
+        /* Only what the type reads: the rest of the row is never looked
+         * at, so the width costs nothing here. */
+        const int32_t w = le_fx_param_width(ty);
+        /* A slot retyped by a granular command: the log carries that type
+         * (apply_command), which perf_render answers with its defaults, so
+         * what differs from them is what moved. A lane recipe writes its
+         * own values into this view first (le_fx_recipe_apply), so it never
+         * reaches here retyped. */
+        float base[LE_FX_PARAMS];
+        if (log && !same_type) le_fx_defaults(ty, base);
+        for (int p = 0; p < w; ++p) {
+          const float v = load_f32(&ln->a_fx_param[s][p]);
+          if (log && (same_type ? fx_params[t][l][s][p] : base[p]) != v) {
+            le_plog_push(e, log_frame,
+                         (le_command){.code = LE_PLOG_SET_LANE_FX_PARAM,
+                                      .fx = {t, l, LE_PLOG_FX_PARAM_PACK(s, p),
+                                             (int32_t)f32_to_bits(v)}});
+          }
+          fx_params[t][l][s][p] = v;
         }
       }
       /* A rack runs even when every entry is LE_FX_NONE: its output side
@@ -7001,7 +7092,8 @@ static inline void snapshot_monitor_fx(
       mon_fx_type[c][s] = ty;
       if (ty != LE_FX_NONE) mon_has_fx[c] = 1;
       mon_fx_enabled[c][s] = chain_on && load_i32(&m->a_fx_enabled[s]);
-      for (int p = 0; p < LE_FX_PARAMS; ++p) {
+      const int32_t w = le_fx_param_width(ty); /* see snapshot_lane_fx */
+      for (int p = 0; p < w; ++p) {
         mon_fx_params[c][s][p] = load_f32(&m->a_fx_param[s][p]);
       }
     }
@@ -7035,12 +7127,20 @@ static inline void snapshot_monitor_fx(
  * keys routing off exactly this bit — an empty chain must leave the
  * legacy path untouched (bit-identical), while enabled-ness only ever toggles
  * DSP inside fx_apply_chain, never topology. */
-static inline void snapshot_bus_fx(le_fx_bus* b, int32_t* bus_fx_count,
+static inline void snapshot_bus_fx(le_engine* e, le_fx_bus* b,
+                                   int32_t* bus_fx_count,
                                    int32_t* bus_fx_pre_count,
                                    int32_t bus_fx_type[LE_FX_MAX],
                                    float bus_fx_params[LE_FX_MAX][LE_FX_PARAMS],
                                    int32_t bus_fx_enabled[LE_FX_MAX],
-                                   int* bus_has_fx) {
+                                   int* bus_has_fx, int log_bus,
+                                   uint64_t log_frame) {
+  /* Output bus [log_bus] (-1: no bus to log) logs its parameter changes at
+   * the frame they are applied, as the lanes do (snapshot_lane_fx). A slot
+   * whose type changed logs each parameter that differs from the type's
+   * defaults: whatever retyped it logged the type, which perf_render answers
+   * with those defaults. */
+  const int log = log_bus >= 0 && e->perf.armed;
   *bus_has_fx = 0;
   int32_t n = load_i32(&b->a_fx_count);
   if (n < 0) n = 0;
@@ -7055,11 +7155,24 @@ static inline void snapshot_bus_fx(le_fx_bus* b, int32_t* bus_fx_count,
   const int32_t chain_on = load_i32(&b->a_fx_chain_enabled);
   for (int s = 0; s < n; ++s) {
     const int32_t ty = load_i32(&b->a_fx_type[s]);
+    const int same_type = bus_fx_type[s] == ty;
     bus_fx_type[s] = ty;
     if (ty != LE_FX_NONE) *bus_has_fx = 1;
     bus_fx_enabled[s] = chain_on && load_i32(&b->a_fx_enabled[s]);
-    for (int p = 0; p < LE_FX_PARAMS; ++p) {
-      bus_fx_params[s][p] = load_f32(&b->a_fx_param[s][p]);
+    const int32_t w = le_fx_param_width(ty); /* see snapshot_lane_fx */
+    /* A retyped slot: perf_render seeded the type's defaults when it read
+     * the type, so what differs from them is what moved. */
+    float base[LE_FX_PARAMS];
+    if (log && !same_type) le_fx_defaults(ty, base);
+    for (int p = 0; p < w; ++p) {
+      const float v = load_f32(&b->a_fx_param[s][p]);
+      if (log && (same_type ? bus_fx_params[s][p] : base[p]) != v) {
+        le_plog_push(e, log_frame,
+                     (le_command){.code = LE_PLOG_SET_OUTPUT_FX_PARAM,
+                                  .fx = {log_bus, 0, LE_PLOG_FX_PARAM_PACK(s, p),
+                                         (int32_t)f32_to_bits(v)}});
+      }
+      bus_fx_params[s][p] = v;
     }
   }
   /* A rack runs even when every entry is LE_FX_NONE (snapshot_lane_fx). */
@@ -7117,9 +7230,9 @@ static inline void snapshot_track_fx(
     float trk_fx_params[][LE_FX_MAX][LE_FX_PARAMS],
     int32_t trk_fx_enabled[][LE_FX_MAX], int* trk_has_fx) {
   for (int t = 0; t < tc; ++t) {
-    snapshot_bus_fx(&e->tracks[t].bus, &trk_fx_count[t], &trk_fx_pre_count[t],
-                    trk_fx_type[t], trk_fx_params[t], trk_fx_enabled[t],
-                    &trk_has_fx[t]);
+    snapshot_bus_fx(e, &e->tracks[t].bus, &trk_fx_count[t],
+                    &trk_fx_pre_count[t], trk_fx_type[t], trk_fx_params[t],
+                    trk_fx_enabled[t], &trk_has_fx[t], -1, 0);
   }
 }
 
@@ -7342,66 +7455,8 @@ static inline void tuner_publish(le_engine* e, float hz, float conf) {
   store_f32(&e->a_tuner_conf_bits, conf);
 }
 
-/* Refines a coarse period (in DEVICE-rate samples) against the frozen
- * device-rate window, by walking the plain difference function over a narrow
- * window of lags around it and interpolating the minimum.
- *
- * Plain difference rather than YIN's normalized form: the octave decision has
- * already been made by the coarse pass, and cumulative-mean normalization
- * exists to make that decision. All this pass has to do is locate a minimum it
- * is already sitting next to.
- *
- * Declines (begin returns 0, and the caller publishes the coarse estimate)
- * when the lag is too long for the ring to hold enough of it — which is the
- * low end, where the coarse estimate is already sub-cent. */
-static int tuner_refine_begin(le_tuner_pass* p) {
-  const int n = LE_TUNER_RAW;
-  const int lo = (int)p->coarse - LE_TUNER_DECIM;
-  const int hi = (int)p->coarse + LE_TUNER_DECIM + 1;
-  if (lo < 2 || hi >= n / 2) return 0;
-  const int integ = n - hi;
-  if (integ < hi) return 0; /* fewer than two periods: not worth it */
-  p->lo = lo;
-  p->hi = hi;
-  p->integ = integ;
-  p->tau = lo;
-  p->best = 0;
-  return 1;
-}
-
-/* Accumulates lags until at least `budget` inner iterations are spent (one
- * whole lag always runs). Returns 1 once every lag is in. */
-static int tuner_refine_step(le_tuner_pass* p, long budget) {
-  const float* x = p->raw;
-  while (p->tau <= p->hi) {
-    const int tau = p->tau;
-    double sum = 0.0;
-    for (int i = 0; i < p->integ; ++i) {
-      const float df = x[i] - x[i + tau];
-      sum += (double)df * (double)df;
-    }
-    const int k = tau - p->lo;
-    p->d[k] = (float)sum;
-    if (tau == p->lo || p->d[k] < p->d[p->best]) p->best = k;
-    ++p->tau;
-    budget -= p->integ;
-    if (budget <= 0) break;
-  }
-  return p->tau > p->hi;
-}
-
-/* Interpolates the completed refinement's minimum, or hands back the coarse
- * period when the minimum sits on an edge of the searched band. */
-static float tuner_refine_finish(const le_tuner_pass* p) {
-  if (p->best == 0 || p->best == p->hi - p->lo) return p->coarse;
-  const float s0 = p->d[p->best - 1];
-  const float s1 = p->d[p->best];
-  const float s2 = p->d[p->best + 1];
-  const float denom = s0 + s2 - 2.0f * s1;
-  float refined = (float)(p->lo + p->best);
-  if (fabsf(denom) > 1e-9f) refined += 0.5f * (s0 - s2) / denom;
-  return refined;
-}
+_Static_assert(LE_TUNER_DECIM <= LE_REFINE_SPAN_MAX,
+               "the tuner's refinement span fits le_lag_refine");
 
 /* Starts a detection at a hop boundary: freezes both analysis windows (the
  * live ones keep moving under a pass that outlives this block) and opens the
@@ -7450,7 +7505,10 @@ static void tuner_coarse_done(le_engine* e) {
    * device rate, so scale before handing it over and divide by the device rate
    * on the way out. */
   p->coarse = period * (float)LE_TUNER_DECIM;
-  if (!p->raw_valid || !tuner_refine_begin(p)) {
+  /* The refinement declines the low end, where the lag is too long for the
+   * ring to hold two of it and the coarse estimate is already sub-cent. */
+  if (!p->raw_valid ||
+      !le_refine_begin(&p->ref, p->coarse, LE_TUNER_DECIM, LE_TUNER_RAW)) {
     tuner_publish(e, (float)p->sr / p->coarse, p->conf);
     p->phase = LE_TUNER_PHASE_IDLE;
     return;
@@ -7474,11 +7532,12 @@ static void tuner_slice(le_engine* e, uint32_t frames) {
       if (!done) return;
       tuner_coarse_done(e);
     } else {
-      const int32_t was = p->tau;
-      const int done = tuner_refine_step(p, budget);
-      budget -= (long)(p->tau - was) * p->integ;
+      const int32_t was = p->ref.tau;
+      const int done = le_refine_step(&p->ref, p->raw, budget);
+      budget -= (long)(p->ref.tau - was) * p->ref.integ;
       if (!done) return;
-      tuner_publish(e, (float)p->sr / tuner_refine_finish(p), p->conf);
+      tuner_publish(e, (float)p->sr / le_refine_finish(&p->ref, p->coarse),
+                    p->conf);
       p->phase = LE_TUNER_PHASE_IDLE;
     }
   }
@@ -9447,7 +9506,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   int32_t(*const fx_enabled)[LE_MAX_LANES][LE_FX_MAX] = snap->lane_enabled;
   int(*const has_fx)[LE_MAX_LANES] = snap->lane_has;
   snapshot_lane_fx(e, tc, (1u << tc) - 1u, lane_n, fx_count, fx_pre_count, fx_type, fx_params,
-                   fx_enabled, has_fx);
+                   fx_enabled, has_fx, perf_frame_base);
   /* "Does ANY lane of this track carry a chain?", folded once per buffer.
    * mix_tracks_frame's per-frame idle-track skip needs it (a chain must keep
    * ticking on silence — tails and LFO phase — so a track with one runs its
@@ -9485,8 +9544,9 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   float(*const at_fx_params)[LE_FX_PARAMS] = snap->at_params;
   int32_t* const at_fx_enabled = snap->at_enabled;
   snap->at_pre_count = 0; /* the recorded-mix chain is wholly Post */
-  snapshot_bus_fx(&e->all_tracks, &snap->at_count, &snap->at_pre_count,
-                  at_fx_type, at_fx_params, at_fx_enabled, &snap->at_has);
+  snapshot_bus_fx(e, &e->all_tracks, &snap->at_count, &snap->at_pre_count,
+                  at_fx_type, at_fx_params, at_fx_enabled, &snap->at_has, -1,
+                  0);
   const int32_t at_fx_count = snap->at_count;
   const int at_has_fx = snap->at_has;
   snapshot_all_tracks_instances(e, ch_out, at_fx_count, at_has_fx, at_fx_type);
@@ -9558,7 +9618,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   const int bus_n = (ch_out + 1) / 2;
   le_obus_snap* const obus = snap->obus;
   for (int k = 0; k < bus_n && k < LE_MAX_OUTPUT_BUSES; ++k) {
-    snapshot_output_bus(&e->outputs[k], k, ch_out, out_enabled, &obus[k]);
+    snapshot_output_bus(e, &e->outputs[k], k, ch_out, out_enabled, &obus[k],
+                        perf_frame_base);
   }
   /* Both policies tap the selected bus after its chain. Follow additionally
    * applies the bus level/mute, leaving Mono/Balance and hardware master
@@ -9595,6 +9656,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   e->capture_image_dirty = 0;
   for (uint32_t f = 0; f < frames; ++f) {
     e->perf.tap_frame = perf_frame_base + f;
+    le_fx_tempo_tick(e, e->fx_clock_base + f, perf_frame_base + f,
+                     free_or_song);
     for (int t = 0; t < tc; ++t)
       e->tracks[t].fade_sample = le_fade_tick(&e->tracks[t].fade, sr);
     /* Input metering + sound-activated record + latency harness. When the harness
@@ -9626,7 +9689,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       const uint32_t dirty = e->capture_image_dirty;
       e->capture_image_dirty = 0;
       snapshot_lane_fx(e, tc, dirty, lane_n, fx_count, fx_pre_count, fx_type,
-                       fx_params, fx_enabled, has_fx);
+                       fx_params, fx_enabled, has_fx, perf_frame_base + f);
       for (int t = 0; t < tc; ++t) {
         if (!(dirty & (1u << t))) continue;
         lane_fx_any[t] = 0;
@@ -9638,9 +9701,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         /* Printed playback masks the track Pre bits in this block's view.
          * Restore them too when the image makes that print ineligible, so
          * the live fallback enters the same enable ramp as a split block. */
-        snapshot_bus_fx(&e->tracks[t].bus, &trk_fx_count[t],
-                         &trk_fx_pre_count[t], trk_fx_type[t],
-                         trk_fx_params[t], trk_fx_enabled[t], &trk_has_fx[t]);
+        snapshot_bus_fx(e, &e->tracks[t].bus, &trk_fx_count[t],
+                        &trk_fx_pre_count[t], trk_fx_type[t],
+                        trk_fx_params[t], trk_fx_enabled[t], &trk_has_fx[t],
+                        -1, 0);
       }
     }
 

@@ -7,9 +7,8 @@ SKiDL scripts that emit KiCad netlists. One per board:
 
 | script | board |
 |---|---|
-| `main_board.py` | standalone pedal — Pro Micro (ATmega32U4) |
 | `ring_board.py` | encoder + LED ring + XIAO RP2350, behind the faceplate (4-way link, #987) |
-| `console_board.py` | console v3 — Pico 2 on the Pi's GPIO (#747); v3 adds the 4-way ring link (#987) and the CTRL ring sense |
+| `console_board.py` | console v3.1 — Pico 2 on the Pi's GPIO (#747); v3 adds the 4-way ring link (#987) and the CTRL ring sense; v3.1 moves MODE from GP5 to GP12 (#1388) |
 
 The ring carrier now uses **white solder mask and black silkscreen** for LED
 reflections. See [ring order and assembly notes](RING_ASSEMBLY.md) for the
@@ -72,11 +71,12 @@ The screen planning load is **4.25 A shared**, including both main outputs,
 both touch outputs. Add 60 mA for the bleeder and 150 mA for coils/control,
 for a **4.46 A** screen-board input allowance. The old 6 A expansion allowance is
 retired. The 3 A main and 500 mA touch lead ceilings are not additive or
-simultaneous guarantees. The selected 40-pixel ring uses a separate direct
+simultaneous guarantees. The selected 35-pixel ring uses a separate direct
 AUX branch and does not pass through console power copper or the screen-power relay. See the
 [screen-board assessment](screen_power/README.md#circuit-and-limits).
 
-For **40 LEDs at unrestricted full white**, follow the
+The ring's power is budgeted for **40 LEDs at unrestricted full white**, five
+more than the 35 fitted. Follow the
 [ring assembly guide](RING_ASSEMBLY.md): console J6 pins 3/4 carry UART only,
 with cavities 1/2 empty. Supply strip power and ring J1 pins 1/2 from separate
 short pairs at the near-ring AUX split; ring J2 pin 3 carries DIN only, with

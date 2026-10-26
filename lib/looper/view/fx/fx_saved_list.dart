@@ -24,12 +24,16 @@ class FxSavedList extends StatelessWidget {
   /// Creates an [FxSavedList].
   const FxSavedList({
     required this.freeSlots,
+    required this.fitsRoom,
     required this.onChoose,
     super.key,
   });
 
   /// How many chain entries the destination can still take.
   final int freeSlots;
+
+  /// Whether entries fit the processing left at the destination.
+  final bool Function(List<TrackEffect>) fitsRoom;
 
   /// Reports the preset chosen.
   final ValueChanged<FxLibraryChoice> onChoose;
@@ -66,6 +70,7 @@ class FxSavedList extends StatelessWidget {
                 // A saved sound that would not fit is still listed and still
                 // says why, rather than half-landing or quietly vanishing.
                 fits: preset.entries.length <= freeSlots,
+                roomy: fitsRoom(preset.entries),
                 freeSlots: freeSlots,
                 onChoose: () => onChoose(FxSavedChoice(preset)),
               ),
@@ -81,12 +86,18 @@ class _SavedPreset extends StatelessWidget {
   const _SavedPreset({
     required this.preset,
     required this.fits,
+    required this.roomy,
     required this.freeSlots,
     required this.onChoose,
   });
 
   final FxUserPreset preset;
+
+  /// Whether it fits the slots the destination has left.
   final bool fits;
+
+  /// Whether it fits the processing left.
+  final bool roomy;
   final int freeSlots;
   final VoidCallback onChoose;
 
@@ -147,7 +158,7 @@ class _SavedPreset extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Opacity(
-          opacity: fits ? 1 : surface.disabledOpacity,
+          opacity: fits && roomy ? 1 : surface.disabledOpacity,
           child: Material(
             color: surface.card,
             shape: RoundedRectangleBorder(
@@ -157,7 +168,7 @@ class _SavedPreset extends StatelessWidget {
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               key: Key('fx_saved_${preset.id}'),
-              onTap: fits ? onChoose : null,
+              onTap: fits && roomy ? onChoose : null,
               child: SizedBox(
                 height: 323,
                 child: Padding(
@@ -181,13 +192,15 @@ class _SavedPreset extends StatelessWidget {
                       ),
                       const SizedBox(height: 16),
                       AppText(
-                        fits
-                            ? l10n.fxModuleCount(preset.entries.length)
-                            : l10n.fxRackTooLong(
+                        !fits
+                            ? l10n.fxRackTooLong(
                                 preset.name,
                                 preset.entries.length,
                                 freeSlots,
-                              ),
+                              )
+                            : roomy
+                            ? l10n.fxModuleCount(preset.entries.length)
+                            : l10n.fxNoRoom(preset.name),
                         maxLines: 2,
                         style: TextStyle(
                           color: surface.textTertiary,
