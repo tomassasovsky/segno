@@ -575,6 +575,77 @@ void main() {
       expect(decodeFxChain(chains.monitors.single.encoded).chainEnabled, false);
     });
 
+    test("a rack entry's preset id and source values survive a save and a "
+        'load', () {
+      final entry = BuiltInEffect(
+        type: TrackEffectType.none,
+        enabled: false,
+        slotId: 'tune-1',
+        rack: const FxRack(id: 'rack-1', name: 'Midi Harm Mid'),
+        module: 'Smart tune',
+        presetId: 'midi-harm',
+        source: const {
+          'Smart Tune': 0,
+          'Mode': 0,
+          'Auto Source': 1,
+          'Key': 0,
+          'Scale Type': 1 / 13,
+          'Speed': 0.4,
+        },
+      );
+      when(looper.allLaneChains).thenReturn({
+        (0, 0): FxChainEnvelope(entries: [entry]),
+      });
+
+      final chains = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
+      final written = Session(
+        sampleRate: 48000,
+        channels: 1,
+        baseLengthFrames: 4,
+        tracks: const [
+          SessionTrack(
+            fadeAmount: 1,
+            reversed: false,
+            channel: 0,
+            multiple: 1,
+            lengthFrames: 4,
+            lanes: [
+              SessionLane(
+                lane: 0,
+                volume: 1,
+                muted: false,
+                outputMask: 0x3,
+                inputChannel: 0,
+                layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+                history: TrackHistory.none,
+              ),
+            ],
+          ),
+        ],
+        laneChains: chains.laneChains,
+      );
+      final read = Session.fromJson(
+        jsonDecode(jsonEncode(written.toJson())) as Map<String, dynamic>,
+      );
+
+      final rig = rigFromBundle((
+        session: read,
+        laneStems: {
+          (0, 0): [
+            Float32List.fromList([1, 1, 1, 1]),
+          ],
+        },
+      ));
+
+      final loaded = rig.laneChains[(0, 0)]!.entries.single as BuiltInEffect;
+      expect(loaded, entry);
+      expect(loaded.presetId, 'midi-harm');
+      expect(loaded.source, entry.source);
+    });
+
     test('the All tracks chain round-trips as an envelope, and a rig with '
         'none writes the empty-string spelling (slice 3e)', () {
       when(looper.allTracksChainEnvelope).thenReturn(
@@ -700,7 +771,7 @@ void main() {
 
       final effect = effects.single as le.BuiltInEffect;
       expect(effect.type, le.TrackEffectType.octaver);
-      expect(effect.params, [7, 0.5]);
+      expect(effect.params.take(2), [7, 0.5]);
     });
 
     test('carries a plugin entry ref, state and name across the boundary', () {

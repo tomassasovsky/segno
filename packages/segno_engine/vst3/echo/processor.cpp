@@ -45,10 +45,7 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& newSetup) {
     // fx_stereo_ring_prepare allocates one ring per channel (engine_fx.c) —
     // both must be freed here or [1] would leak on every sample-rate
     // change.
-    free(fx_.delay[0][0]);
-    fx_.delay[0][0] = nullptr;
-    free(fx_.delay[0][1]);
-    fx_.delay[0][1] = nullptr;
+    le_fx_free_delay(&fx_, 0);
     cap_ = newCap;
   }
   if (le_fx_prepare(&fx_, 0, LE_FX_ECHO, cap_) != LE_OK) return kResultFalse;
@@ -59,10 +56,7 @@ tresult PLUGIN_API Processor::terminate() {
   // Slot 0 is fixed to LE_FX_ECHO for this processor's whole lifetime — only
   // fx_stereo_ring_prepare's delay[0][0]/[1] rings are ever allocated (no
   // octaver buffers for this type), so only those two need freeing here.
-  free(fx_.delay[0][0]);
-  fx_.delay[0][0] = nullptr;
-  free(fx_.delay[0][1]);
-  fx_.delay[0][1] = nullptr;
+  le_fx_free_delay(&fx_, 0);
   return AudioEffect::terminate();
 }
 
@@ -137,18 +131,20 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
 
 tresult PLUGIN_API Processor::setState(IBStream* state) {
   if (!state) return kInvalidArgument;
-  float saved[LE_FX_PARAMS];
+  float saved[kSegnoPluginStateParams];
   const int32 n = static_cast<int32>(sizeof(saved));
   int32 read = 0;
   if (state->read(saved, n, &read) != kResultOk || read != n) return kResultFalse;
-  for (int32 i = 0; i < LE_FX_PARAMS; ++i) params_[0][i] = saved[i];
+  for (int32 i = 0; i < kSegnoPluginStateParams; ++i) {
+    params_[0][i] = saved[i];
+  }
   return kResultOk;
 }
 
 tresult PLUGIN_API Processor::getState(IBStream* state) {
   if (!state) return kInvalidArgument;
   int32 written = 0;
-  const int32 n = static_cast<int32>(sizeof(params_[0]));
+  const int32 n = static_cast<int32>(kSegnoPluginStateParams * sizeof(float));
   if (state->write(params_[0], n, &written) != kResultOk || written != n) {
     return kResultFalse;
   }

@@ -20,11 +20,9 @@ import 'package:segno_engine/segno_engine.dart'
         LatencyState,
         LoopbackInfo,
         LoopbackKind,
-        ParamReadout,
         PluginEffect,
         PluginRef,
         TrackEffect,
-        TrackEffectParam,
         TrackEffectType,
         decodeTrackEffects,
         encodeTrackEffects;

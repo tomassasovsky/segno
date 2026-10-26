@@ -287,7 +287,7 @@ class ExpressionDestination extends Equatable {
     group:
         fxSlotName(looper, FxSlotTarget(address: address, slotId: slotId)) ??
         slotId,
-    control: fxParamName(looper, target) ?? '#$param',
+    control: fxParamName(l10n, looper, target) ?? '#$param',
   ),
 };
 

@@ -97,7 +97,7 @@ tresult setupProcessing48k(IAudioProcessor* proc) {
 
 }  // namespace
 
-// Both sides read/write the full LE_FX_PARAMS-length array (p3 always 0,
+// Both sides read/write the kSegnoPluginStateParams-float state (p3 always 0,
 // unused) — Processor::setState/getState and Controller::setComponentState
 // agree on that wire format, so the test data below matches it rather than
 // just the 3 user-facing params.
@@ -110,7 +110,8 @@ static void test_processor_defaults_match_engine() {
 
   MemoryStream stream;
   CHECK(processor.getState(&stream) == kResultOk);
-  CHECK(stream.getSize() == static_cast<TSize>(LE_FX_PARAMS * sizeof(float)));
+  // 16 bytes whatever width the engine array has (plugin_state.h).
+  CHECK(stream.getSize() == static_cast<TSize>(16));
   const float* saved = reinterpret_cast<const float*>(stream.getData());
   // Independently-known engine default (engine_fx.c's fx_echo_defaults),
   // not re-derived from le_fx_defaults here — a real assertion, not a tautology.
@@ -152,7 +153,7 @@ static void test_processor_set_state_restores_params() {
   Processor processor;
   CHECK(processor.initialize(nullptr) == kResultOk);
 
-  const float restored[LE_FX_PARAMS] = {0.2f, 0.8f, 0.6f, 0.0f};
+  const float restored[kSegnoPluginStateParams] = {0.2f, 0.8f, 0.6f, 0.0f};
   MemoryStream in;
   int32 written = 0;
   CHECK(in.write((void*)restored, sizeof(restored), &written) == kResultOk);
@@ -195,7 +196,7 @@ static void test_controller_syncs_from_component_state() {
   Controller controller;
   CHECK(controller.initialize(nullptr) == kResultOk);
 
-  const float saved[LE_FX_PARAMS] = {0.4f, 0.6f, 0.15f, 0.0f};
+  const float saved[kSegnoPluginStateParams] = {0.4f, 0.6f, 0.15f, 0.0f};
   MemoryStream stream;
   int32 written = 0;
   CHECK(stream.write((void*)saved, sizeof(saved), &written) == kResultOk);

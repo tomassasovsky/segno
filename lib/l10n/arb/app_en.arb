@@ -207,7 +207,7 @@
     },
     "a11yTrackFxChainOn": "Track FX chain on",
     "@a11yTrackFxChainOn": {
-        "description": "Announced when a track's Track-stage FX chain is switched on from the tracks surface. Distinct from a11yFxChainOn, which belongs to the FX editor's chain power toggle — two surfaces, two strings, so a copy change to one never rewords the other."
+        "description": "Announced when a track's Track-stage FX chain is switched on from the tracks surface. Distinct from fxChainPowerLabel, the Effects page's own chain power control — two surfaces, two strings, so a copy change to one never rewords the other."
     },
     "a11yTrackFxChainOff": "Track FX chain off",
     "@a11yTrackFxChainOff": {
@@ -630,20 +630,6 @@
     "signalMasterFxLabel": "MASTER",
     "signalEditTrackFx": "Edit the track bus FX chain",
     "signalEditMasterFx": "Edit the master FX chain",
-    "signalChainOff": "Chain off",
-    "signalCardChainOffRun": "Chain off · {run}",
-    "@signalCardChainOffRun": {
-        "description": "A Signal card's chain line while the chain is switched off: the entries, behind the word that says they are not running.",
-        "placeholders": {
-            "run": {
-                "type": "String"
-            }
-        }
-    },
-    "signalChainOn": "Chain on",
-    "@signalChainOn": {
-        "description": "The Signal panel's chain-power pill while the chain is running."
-    },
     "signalShowAllLanes": "All lanes",
     "signalShowRecordedLanes": "Recorded lanes",
     "signalInherited": "Inherited",
@@ -657,12 +643,20 @@
     },
     "fxEffectPowerOnTooltip": "Turn this effect on",
     "fxEffectPowerOffTooltip": "Turn this effect off",
-    "fxChainPowerOnTooltip": "Turn this chain on",
-    "fxChainPowerOffTooltip": "Turn this chain off",
+    "fxChainTurnOn": "Turn effects on",
+    "@fxChainTurnOn": {
+        "description": "The button on the band that says a chain is off (#1452)."
+    },
+    "fxChainPowerLabel": "Effects",
+    "@fxChainPowerLabel": {
+        "description": "The name of the chain-power control (Off / On) on the Effects page and both editors (#1452): switches every effect on this input, take, track, All tracks or output in or out, leaving each rack and pedal as it is."
+    },
+    "fxChainOffCard": "Effects off",
+    "@fxChainOffCard": {
+        "description": "A source card's line while that source's chain is switched off (#1452), so an input that sounds dry shows it before it is selected."
+    },
     "a11yFxEffectOn": "Effect on",
     "a11yFxEffectOff": "Effect off",
-    "a11yFxChainOn": "Chain on",
-    "a11yFxChainOff": "Chain off",
     "fxEditorInputTitle": "Input {number}",
     "@fxEditorInputTitle": {
         "placeholders": {
@@ -684,10 +678,26 @@
     "fxEditorMasterTitle": "Master",
     "fxEditorTrackConsequence": "shapes the whole track, after its lanes",
     "fxEditorMasterConsequence": "shapes the whole mix, before the limiter",
-    "fxChainOffInputConsequence": "chain off — this input monitors dry, and new takes print dry",
-    "fxChainOffLoopConsequence": "chain off — this take plays dry",
-    "fxChainOffTrackConsequence": "chain off — this track passes through its bus dry",
-    "fxChainOffMasterConsequence": "chain off — the whole mix passes through dry",
+    "fxChainOffInputConsequence": "Effects are off for this input: you hear it dry, and new takes record dry.",
+    "@fxChainOffInputConsequence": {
+        "description": "The band over an input's racks while its chain is off (#1452). A take inherits only an enabled input chain (_inheritableChain), so new takes are dry too."
+    },
+    "fxChainOffLoopConsequence": "Effects are off for this take: it plays dry.",
+    "@fxChainOffLoopConsequence": {
+        "description": "The band over a recorded part's racks while its chain is off (#1452)."
+    },
+    "fxChainOffTrackConsequence": "Effects are off for this track: it plays dry.",
+    "@fxChainOffTrackConsequence": {
+        "description": "The band over a track's racks while its chain is off (#1452)."
+    },
+    "fxChainOffAllTracksConsequence": "Effects are off for all tracks: the track mix plays dry.",
+    "@fxChainOffAllTracksConsequence": {
+        "description": "The band over All tracks' racks while its chain is off (#1452)."
+    },
+    "fxChainOffOutputConsequence": "Effects are off for this output: it plays dry.",
+    "@fxChainOffOutputConsequence": {
+        "description": "The band over an output's racks while its chain is off (#1452)."
+    },
     "fxResyncFromInput": "Re-sync from input",
     "fxResyncFromInputTooltip": "Copy the routed input’s chain onto this take again. Other takes are untouched.",
     "fxOverdubMismatchHint": "The input chain no longer matches this take — this overdub is captured dry and does not re-inherit.",
@@ -794,6 +804,9 @@
     "paramCutoff": "Cutoff",
     "paramResonance": "Resonance",
     "paramTime": "Time",
+    "paramDecay": "Decay",
+    "paramVolume": "Volume",
+    "paramAmbDubMix": "Amb-Dub mix",
     "paramFeedback": "Feedback",
     "paramMix": "Mix",
     "paramRate": "Rate",
@@ -803,8 +816,185 @@
     "paramSize": "Size",
     "paramDamping": "Damping",
     "paramMode": "Mode",
+    "paramFormants": "Formants",
+    "effectEq": "EQ",
+    "paramLowCut": "Low cut",
+    "paramLowGain": "Low",
+    "paramLowFreq": "Low freq",
+    "paramLowQ": "Low Q",
+    "paramLoMidGain": "Lo mid",
+    "paramLoMidFreq": "Lo mid freq",
+    "paramLoMidQ": "Lo mid Q",
+    "paramHiMidGain": "Hi mid",
+    "paramHiMidFreq": "Hi mid freq",
+    "paramHiMidQ": "Hi mid Q",
+    "paramHighGain": "High",
+    "paramHighFreq": "High freq",
+    "paramHighQ": "High Q",
+    "paramHighCut": "High cut",
+    "paramAirGain": "Air",
+    "paramEqLayout": "Layout",
+    "eqLayoutBellsCuts": "Bells, cuts",
+    "eqLayoutShelves": "Shelves",
+    "eqLayoutBells": "Bells",
+    "paramMidGain": "Mid",
+    "paramMidFreq": "Mid freq",
+    "paramMidQ": "Mid Q",
+    "effectCompressor": "Compressor",
+    "effectTransient": "Transient",
+    "effectHpGate": "HP / Gate",
+    "paramThreshold": "Threshold",
+    "paramRatio": "Ratio",
+    "paramAttack": "Attack",
+    "paramRelease": "Release",
+    "paramMakeup": "Make-up",
+    "paramAttackLength": "Attack length",
+    "paramSustain": "Sustain",
+    "paramHighpass": "High-pass",
+    "paramGateThreshold": "Gate threshold",
+    "effectDoubler": "Doubler",
+    "effectChorus": "Chorus",
+    "effectWah": "Wah",
+    "effectOverdrive": "Overdrive",
+    "effectDistortion": "Distortion",
+    "effectVinyl": "Vinyl",
+    "effectDegrade": "Degrade",
+    "effectLpf": "Low-pass filter",
+    "effectSpring": "Spring reverb",
+    "effectDubVerb": "Dub reverb",
+    "effectAmbVerb": "Ambience",
+    "effectWhammy": "Whammy",
+    "effectPumper": "Pumper",
+    "effectSlicer": "Slicer",
+    "effectModeDelay": "Mode delay",
+    "effectDualOctaver": "Dual octaver",
+    "effectAmpCab": "Amp",
+    "@effectAmpCab": {
+        "description": "The amplifier with its cabinet, from Ed's and the Guitar racks."
+    },
+    "effectMod": "Modulation",
+    "@effectMod": {
+        "description": "The Mod pedal of the Guitar and Studio racks: a chorus, phaser, flanger or tremolo, one at a time."
+    },
+    "paramLrRatio": "L/R ratio",
+    "@paramLrRatio": {
+        "description": "The Dub delay's stereo spread: how much earlier the right echo comes than the left."
+    },
+    "paramResFreq": "Resonance frequency",
+    "@paramResFreq": {
+        "description": "Where the Dub delay's resonant peak sits."
+    },
+    "effectRoomVerb": "Room reverb",
+    "@effectRoomVerb": {
+        "description": "The Reverb pedal of the Looper X racks: four modes (hall, stadium, room, box), or the Drum Rack's early-reflection rooms."
+    },
+    "paramLength": "Length",
+    "@paramLength": {
+        "description": "How long a reverb rings, as the Looper X shows it in seconds."
+    },
+    "paramRoom": "Room",
+    "@paramRoom": {
+        "description": "The reverb's room: one of its modes, or one of the Drum Rack's early-reflection rooms."
+    },
+    "paramEarlyRoom": "ER",
+    "@paramEarlyRoom": {
+        "description": "The Drum Rack reverb's early-reflection room, as the Looper X labels it (ER)."
+    },
+    "paramBright": "Bright",
+    "@paramBright": {
+        "description": "How much treble the reverb keeps."
+    },
+    "paramLoHi": "Lo/Hi",
+    "@paramLoHi": {
+        "description": "The Drum Rack reverb's tone: darker below the middle, brighter and thinner in the lows above it."
+    },
+    "paramTailEr": "Tail/ER",
+    "@paramTailEr": {
+        "description": "The balance between the reverb's tail and its early reflections."
+    },
+    "paramDensity": "Density",
+    "@paramDensity": {
+        "description": "How smooth the reverb's tail is: lower settings leave separate echoes."
+    },
+    "effectSmartTune": "Smart Tune",
+    "@effectSmartTune": {
+        "description": "The Vocal Tuner's pitch correction: it retunes a voice to the nearest note of a scale."
+    },
+    "paramSpeed": "Speed",
+    "@paramSpeed": {
+        "description": "How long Smart Tune takes to move a voice onto its note: short is the hard, stepped sound, long a gentle pull."
+    },
+    "paramScaleRoot": "Scale root",
+    "@paramScaleRoot": {
+        "description": "The note Smart Tune's scale starts on."
+    },
+    "paramScaleType": "Scale type",
+    "@paramScaleType": {
+        "description": "Which notes Smart Tune's scale holds: major, minor, a mode, chromatic, pentatonic, a triad, or the root alone."
+    },
+    "paramReference": "Reference",
+    "@paramReference": {
+        "description": "The pitch of A that Smart Tune tunes to, in hertz."
+    },
+    "paramBass": "Bass",
+    "@paramBass": {
+        "description": "The amp's low-frequency tone control."
+    },
+    "paramTreble": "Treble",
+    "@paramTreble": {
+        "description": "The amp's high-frequency tone control."
+    },
+    "paramModern": "Modern",
+    "@paramModern": {
+        "description": "The amp's voicing control: more gain and upper mids toward its top, a fuller, cleaner even-harmonic sound toward its bottom."
+    },
+    "paramCabinet": "Cabinet",
+    "@paramCabinet": {
+        "description": "The speaker cabinet the amp plays through, or D.I. for none."
+    },
+    "paramHighMode": "High mode",
+    "@paramHighMode": {
+        "description": "The Dual Octaver's octave up (on) or down (off)."
+    },
+    "paramOctave1Level": "Octave 1 level",
+    "@paramOctave1Level": {
+        "description": "The level of the Dual Octaver's first octave voice."
+    },
+    "paramOctave2Level": "Octave 2 level",
+    "@paramOctave2Level": {
+        "description": "The level of the Dual Octaver's second octave voice."
+    },
+    "paramPattern": "Pattern",
+    "@paramPattern": {
+        "description": "The Slicer's pattern of slices, rests and reversals."
+    },
+    "paramStep": "Step",
+    "@paramStep": {
+        "description": "The note value of one step of the Slicer's pattern."
+    },
+    "paramLfoDepth": "LFO depth",
+    "@paramLfoDepth": {
+        "description": "How far the low-pass filter's LFO sweeps its cutoff."
+    },
+    "paramLfoRate": "LFO rate",
+    "@paramLfoRate": {
+        "description": "The note value of one cycle of the low-pass filter's LFO."
+    },
+    "noteValueBar": "Bar",
+    "@noteValueBar": {
+        "description": "A note value one bar long, as a tempo-synced rate."
+    },
+    "paramFrequency": "Frequency",
+    "paramNoise": "Noise",
+    "paramNoiseTone": "Noise tone",
+    "paramFilter": "Filter",
+    "paramSeparation": "Separation",
+    "paramPedal": "Pedal",
+    "paramRange": "Range",
     "octaverModePhaseVocoder": "Phase Vocoder",
     "octaverModePsola": "PSOLA",
+    "octaverFormantsHeld": "Held",
+    "octaverFormantsMoved": "Follow pitch",
     "pitchUnison": "Unison",
     "pitchOctaves": "{sign}{count} oct",
     "@pitchOctaves": {
@@ -825,6 +1015,22 @@
             },
             "count": {
                 "type": "int"
+            }
+        }
+    },
+    "pitchSemitonesFine": "{sign}{count} st",
+    "@pitchSemitonesFine": {
+        "description": "A pitch interval between whole semitones, with one decimal.",
+        "placeholders": {
+            "sign": {
+                "type": "String"
+            },
+            "count": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
             }
         }
     },
@@ -2172,9 +2378,9 @@
             }
         }
     },
-    "fxChainOffHere": "The whole chain is switched off, so this changes nothing you can hear yet.",
+    "fxChainOffHere": "Effects are off here, so nothing you change on this page is heard until you turn them on.",
     "@fxChainOffHere": {
-        "description": "Shown in the editor when the chain's own power is off (R15). Without it, un-bypassing an entry visibly does nothing and the surface never says why."
+        "description": "The band in the rack and effect editors while the chain is off (#1452): without it, switching a pedal on visibly does nothing and the page never says why."
     },
     "fxAddChip": "+ effect",
     "@fxAddChip": {
@@ -2308,14 +2514,6 @@
     "@signalPanelLevelInputExplain": {
         "description": "The gain row on the INPUT card. The generic string says 'this chain in the mix', but an input's fader is the monitor's own volume — engine mon_vol, applied only in mix_monitors_frame and never recorded. Same argument as the in-mix and chain splits."
     },
-    "signalPanelChainInputExplain": "The effects this input passes through, in order. Switching the chain off leaves the effects loaded, takes them out of what you hear — and prints new takes dry, since a take copies the chain that was on when it started.",
-    "@signalPanelChainInputExplain": {
-        "description": "The chain caption on the INPUT card. The generic string stops at 'out of the sound', which on an input is half the story: _snapshotMonitorChainsOntoLanes bails on a disabled chain, so the take is dry too. Saying so only after the fact — in fxChainOffInputConsequence — tells people once it is too late."
-    },
-    "signalPanelChainExplain": "The effects this signal passes through, in order. Switching the chain off leaves the effects loaded and takes them out of the sound.",
-    "@signalPanelChainExplain": {
-        "description": "Explains the chain strip and what its power switch does."
-    },
     "a11yExplainControl": "What \"{group}\" does",
     "@a11yExplainControl": {
         "description": "Screen-reader label for the ? button beside a group caption.",
@@ -2387,6 +2585,10 @@
     "powerSessionUnnamed": "This session has no name yet. You'll name it before it saves.",
     "@powerSessionUnnamed": {
         "description": "Power options line in place of the session name when the open session is unnamed."
+    },
+    "powerOptionsBodyEmpty": "Playback will stop. This session is empty, so there is nothing to save.",
+    "@powerOptionsBodyEmpty": {
+        "description": "Power options body in place of the save promise and the session line when the open session is unnamed and holds no recorded audio and no backing: Restart and Shut down write no session."
     },
     "powerStagedUpdate": "Segno {version} installs during the restart.",
     "@powerStagedUpdate": {
@@ -3910,6 +4112,19 @@
             }
         }
     },
+    "fxOverBudget": "Not enough processing left to add this",
+    "@fxOverBudget": {
+        "description": "Shown when adding an effect would overload the audio processing, so the add was refused."
+    },
+    "fxNoRoom": "{name} needs more processing than is left",
+    "@fxNoRoom": {
+        "description": "A library row note: adding this rack or effect would overload the audio processing.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
     "fxModulePartial": "Some controls do not reach the sound yet",
     "@fxModulePartial": {
         "description": "Readiness note for an effect the engine builds only partly."
@@ -3998,6 +4213,163 @@
     "@fxScaleUnverified": {
         "description": "Note under a control whose real-world units were never recovered."
     },
+    "fxValuePercent": "{percent}%",
+    "@fxValuePercent": {
+        "description": "A built-in effect parameter's value in whole percent.",
+        "placeholders": {
+            "percent": {
+                "type": "int"
+            }
+        }
+    },
+    "fxValueMs": "{milliseconds} ms",
+    "@fxValueMs": {
+        "description": "A built-in effect parameter's time in whole milliseconds, used at and above 100 ms.",
+        "placeholders": {
+            "milliseconds": {
+                "type": "int"
+            }
+        }
+    },
+    "fxValueMsFine": "{milliseconds} ms",
+    "@fxValueMsFine": {
+        "description": "A built-in effect parameter's time below 100 ms, with one decimal.",
+        "placeholders": {
+            "milliseconds": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "fxValueDb": "{decibels} dB",
+    "@fxValueDb": {
+        "description": "A level in decibels, with one decimal: the rack level, -12 to +12 dB.",
+        "placeholders": {
+            "decibels": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "fxValueHz": "{hertz} Hz",
+    "@fxValueHz": {
+        "description": "A built-in effect parameter's frequency in whole hertz, used from 100 Hz up to 1000 Hz.",
+        "placeholders": {
+            "hertz": {
+                "type": "int"
+            }
+        }
+    },
+    "fxValueHzFine": "{hertz} Hz",
+    "@fxValueHzFine": {
+        "description": "A built-in effect parameter's frequency below 100 Hz, with one decimal.",
+        "placeholders": {
+            "hertz": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "fxValueKhz": "{kilohertz} kHz",
+    "@fxValueKhz": {
+        "description": "A built-in effect parameter's frequency at and above 1000 Hz, in kilohertz with one decimal.",
+        "placeholders": {
+            "kilohertz": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "fxValueTimes": "{factor}x",
+    "@fxValueTimes": {
+        "description": "A built-in effect parameter's gain factor with one decimal, such as the drive amount.",
+        "placeholders": {
+            "factor": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "fxValueMsFiner": "{milliseconds} ms",
+    "@fxValueMsFiner": {
+        "description": "A built-in effect parameter's time below 1 ms, with two decimals (a compressor's fastest attack).",
+        "placeholders": {
+            "milliseconds": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 2
+                }
+            }
+        }
+    },
+    "fxValueSeconds": "{seconds} s",
+    "@fxValueSeconds": {
+        "description": "A built-in effect parameter's time in seconds, with two decimals (a spring reverb's decay).",
+        "placeholders": {
+            "seconds": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 2
+                }
+            }
+        }
+    },
+    "fxValueRatioWhole": "{ratio}:1",
+    "@fxValueRatioWhole": {
+        "description": "A compressor's ratio from 100 up, without a decimal (100:1).",
+        "placeholders": {
+            "ratio": {
+                "type": "int"
+            }
+        }
+    },
+    "fxValueRatio": "{ratio}:1",
+    "@fxValueRatio": {
+        "description": "A compressor's ratio with one decimal, such as 4.0:1.",
+        "placeholders": {
+            "ratio": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "fxValueQ": "{q}",
+    "fxValueOff": "Off",
+    "@fxValueOff": {
+        "description": "An EQ cut at the end of its range, where it filters nothing."
+    },
+    "@fxValueQ": {
+        "description": "A filter's Q, a plain number with two decimals (an EQ band's width).",
+        "placeholders": {
+            "q": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 2
+                }
+            }
+        }
+    },
     "fxPartOrdinal": "Part {number}",
     "@fxPartOrdinal": {
         "description": "A recorded part with no input to name it after.",
@@ -4056,6 +4428,28 @@
     "fxRemoveRackBody": "Sounds you saved from it stay in My presets.",
     "@fxRemoveRackBody": {
         "description": "What removing a rack from a chain does not do."
+    },
+    "fxReAddRackTitle": "Replace {name}?",
+    "@fxReAddRackTitle": {
+        "description": "Asked before a factory rack is added again in place of the one already built from the same preset, when assignments point at it.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "fxReAddRackBody": "{count, plural, =1{Adding it again gives its effects new identities, so 1 MIDI or pedal assignment will be removed.} other{Adding it again gives its effects new identities, so {count} MIDI and pedal assignments will be removed.}}",
+    "@fxReAddRackBody": {
+        "description": "How many MIDI and pedal assignments re-adding a rack removes, and why.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "fxReAddRack": "Replace rack",
+    "@fxReAddRack": {
+        "description": "Confirms re-adding a rack in place of the existing one."
     },
     "fxRemoveEffect": "Remove {name}",
     "@fxRemoveEffect": {

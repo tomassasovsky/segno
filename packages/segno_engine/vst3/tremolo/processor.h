@@ -24,6 +24,8 @@ extern "C" {
 #include "engine_fx.h"
 }
 
+#include "../plugin_state.h"
+
 namespace segno_vst3_tremolo {
 
 class Processor : public Steinberg::Vst::AudioEffect {

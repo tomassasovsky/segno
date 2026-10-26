@@ -212,7 +212,7 @@ void main() {
           l10n.midiLearnTargetParam(
             l10n.pedalAssignStageTrack('TRACK 4'),
             't-1',
-            TrackEffectType.drive.params[1].label,
+            l10n.paramLevel,
           ),
         );
       },

@@ -2039,11 +2039,13 @@ nothing at all.
 ### What a choice becomes
 
 A rack becomes one chain entry per module it names, built through the
-readiness map. **Every entry arrives bypassed, whatever the preset's own power
-keys say** — the accepted design is explicit that a new instance starts
-bypassed, so adding a rack mid-set cannot change the sound until the player
-says so. The preset's power values are not lost; they ride each entry's
-parameters and come back when the chain is engaged. Placement is the
+readiness map. **Each entry arrives on or off as the preset's own power keys
+say**, as the Looper X loads a rack, and a single effect arrives on (owner
+decision, 2026-10-23, #1452). This replaces the earlier rule that every entry
+arrived bypassed so that adding a rack mid-set could not change the sound:
+racks arriving all off left the owner with silent pedals he had to find and
+turn on one by one. A new entry fades in over the engine's 5 ms enable ramp
+rather than switching in at full. Placement is the
 destination's default: Pre on a live input, Post on a recorded one.
 
 **One write, not one per pedal.** A rack is one thing the player chose, and
@@ -2285,8 +2287,9 @@ committing a stale one would drop or duplicate whatever moved in the meantime.
 ### Add an effect to a rack
 
 The same full-page catalogue, with what it resolves to joining THIS rack rather
-than starting a second one beside it. New pedals land at the end of the rack
-and arrive bypassed, like every other addition.
+than starting a second one beside it. New pedals land at the end of the rack,
+on or off as their source sets them, like every other addition (owner
+decision, 2026-10-23, #1452).
 
 ### Checks
 

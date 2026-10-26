@@ -14,7 +14,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."   # tool -> packages/segno_engine
 
 CC="${CC:-gcc}"
-STD="-std=gnu11 -O2 -fPIC -I src/core -I src/midi -I src/asio -I src/miniaudio \
+STD="-std=gnu11 -O2 -fPIC -I src/core -I src/midi -I src/miniaudio \
   -I third_party/rnnoise/include -I third_party/rnnoise/src"
 
 # The C++ runtime is linked for the one C++ engine TU (src/stretch/
@@ -42,7 +42,7 @@ $CC $STD -shared "$OUT_DIR/le_stretch.o" \
   src/core/tempo_grid.c \
   src/core/restore_declip.c src/core/restore_halfband.c \
   src/core/synth_voice.c src/core/synth_patch.c \
-  src/core/audio_ring.c src/core/perf_drain.c src/core/perf_checkpoint.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
+  src/core/audio_ring.c src/core/rt_alloc.c src/core/perf_drain.c src/core/perf_checkpoint.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
   src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c src/midi/le_clock_follow.c \
   third_party/rnnoise/src/denoise.c third_party/rnnoise/src/rnn.c \
   third_party/rnnoise/src/pitch.c third_party/rnnoise/src/kiss_fft.c \

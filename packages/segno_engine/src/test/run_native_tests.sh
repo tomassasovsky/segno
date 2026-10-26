@@ -49,7 +49,10 @@ case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) ENGINE_LIBS="-lole32 -lwinmm -lstdc++ -lm"; MIDI_LIBS="-lwinmm -lm" ;;
   Darwin) ENGINE_LIBS="-framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework CoreFoundation -lpthread -lc++ -lm"
           MIDI_LIBS="-framework CoreMIDI -framework CoreFoundation -lm" ;;
-  *) ENGINE_LIBS="-lpthread -lstdc++ -lm -ldl"; MIDI_LIBS="-lasound -lpthread -lm" ;;  # Linux: miniaudio dlopen()s its backends
+  # Linux: miniaudio dlopen()s its backends; -z now mirrors the shipped
+  # library's BIND_NOW (src/CMakeLists.txt), so the audio-thread fault test
+  # (test_engine_rt_memory.h) runs with the binding the appliance has.
+  *) ENGINE_LIBS="-lpthread -lstdc++ -lm -ldl -Wl,-z,now"; MIDI_LIBS="-lasound -lpthread -lm" ;;
 esac
 # MIDI_LIBS gained -lm above (C1, D15): the midi test binary now also links
 # src/core/tempo_grid.c (le_midi_clock.c's PPQN math depends on
@@ -75,7 +78,7 @@ ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
   src/core/tempo_grid.c \
   src/core/restore_declip.c src/core/restore_halfband.c \
   src/core/synth_voice.c src/core/synth_patch.c \
-  src/core/audio_ring.c src/core/perf_drain.c src/core/perf_checkpoint.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
+  src/core/audio_ring.c src/core/rt_alloc.c src/core/perf_drain.c src/core/perf_checkpoint.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
   src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c \
   src/midi/le_clock_follow.c"
 
@@ -126,9 +129,20 @@ echo "== building plugin runtime race tests =="
 # Real installer and DSP, with a minimal fake host: portable and TSAN-covered.
 # shellcheck disable=SC2086
 $CC $STD $EXTRA_CFLAGS src/test/test_plugin_runtime_races.c \
-  src/core/engine_plugin.c src/core/engine_fx.c -lpthread -lm \
+  src/core/engine_plugin.c src/core/engine_fx.c src/core/rt_alloc.c -lpthread -lm \
   -o "$OUT/segno_plugin_runtime_race_tests.exe"
 "$OUT/segno_plugin_runtime_race_tests.exe"
+
+echo "== building FX table build race tests =="
+# Two threads prepare the process's first octaver at once (#1410): the shared
+# Hann window and FFT plan must be complete before either reads them. Its own
+# binary, since the tables are built once per process. Before the races-only
+# exit so the TSAN job covers it.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_fx_tables_races.c \
+  src/core/engine_fx.c src/core/rt_alloc.c -lpthread -lm \
+  -o "$OUT/segno_fx_tables_race_tests.exe"
+"$OUT/segno_fx_tables_race_tests.exe"
 
 echo "== building FX recipe ownership tests =="
 # Real engine admission, callback publication and retirement with a deterministic
@@ -234,6 +248,8 @@ if [ "$(uname -s)" = "Darwin" ]; then
     -c src/test/test_plugin_slot.c -o "$P3/test.o"
   clang -std=gnu11 -DSEGNO_ENABLE_PLUGINS $CENGINE_INC \
     -c src/core/engine_fx.c -o "$P3/engine_fx.o"
+  clang -std=gnu11 -DSEGNO_ENABLE_PLUGINS $CENGINE_INC \
+    -c src/core/rt_alloc.c -o "$P3/rt_alloc.o"
   clang -std=gnu11 -DSEGNO_ENABLE_PLUGINS $CENGINE_INC \
     -c src/core/engine_plugin.c -o "$P3/engine_plugin.o"
   # shellcheck disable=SC2086

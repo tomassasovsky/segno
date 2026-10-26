@@ -76,6 +76,10 @@ SRC_URI = "file://segno.service \
            file://segno-log-check.service \
            file://var-volatile-log-journal.mount \
            file://var-lib-systemd-coredump.mount \
+           file://var-lib-systemd-pstore.mount \
+           file://segno-pstore-retention.conf \
+           file://segno-pstore-keep \
+           file://systemd-pstore-segno.conf \
            file://segno-usb-ctl \
            file://segno-usb-mount@.service \
            file://segno-usb-eject.path \
@@ -129,7 +133,7 @@ inherit systemd
 # launch and the user triggers install/reboot from Settings (via segno-update-ctl).
 # So segno-ota-check.timer is installed but NOT auto-enabled — no background
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
-SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-touch-persist.service segno-mark-good.service segno-wifi-retry.service segno-iwd-tame.service boot.mount data.mount segno-log-dirs.service segno-log-check.service var-volatile-log-journal.mount var-lib-systemd-coredump.mount segno-usb-eject.path"
+SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-touch-persist.service segno-mark-good.service segno-wifi-retry.service segno-iwd-tame.service boot.mount data.mount segno-log-dirs.service segno-log-check.service var-volatile-log-journal.mount var-lib-systemd-coredump.mount var-lib-systemd-pstore.mount segno-usb-eject.path"
 
 FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${sysconfdir}/segno/homescreen.toml \
@@ -181,9 +185,13 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${systemd_system_unitdir}/segno-log-check.service \
                 ${systemd_system_unitdir}/var-volatile-log-journal.mount \
                 ${systemd_system_unitdir}/var-lib-systemd-coredump.mount \
+                ${systemd_system_unitdir}/var-lib-systemd-pstore.mount \
+                ${systemd_system_unitdir}/systemd-pstore.service.d/10-segno.conf \
+                ${bindir}/segno-pstore-keep \
                 ${sysconfdir}/systemd/journald.conf.d/10-segno.conf \
                 ${sysconfdir}/systemd/coredump.conf.d/10-segno.conf \
                 ${sysconfdir}/tmpfiles.d/10-segno-coredump.conf \
+                ${sysconfdir}/tmpfiles.d/10-segno-pstore.conf \
                 ${sysconfdir}/systemd/system/wpa_supplicant.service \
                 ${sysconfdir}/systemd/system/serial-getty@ttyS0.service \
                 ${sysconfdir}/tmpfiles.d/segno-runtime.conf"
@@ -257,6 +265,16 @@ do_install() {
     # tmpfiles line is overridden: earliest filename wins for a given path.
     install -d ${D}${sysconfdir}/tmpfiles.d
     install -m 0644 ${UNPACKDIR}/segno-coredump-retention.conf ${D}${sysconfdir}/tmpfiles.d/10-segno-coredump.conf
+
+    # Kernel crash records on /data (#1437): the pstore bind mount, the tmpfiles
+    # line that stops systemd deleting records after 14 days, and the
+    # systemd-pstore drop-in that files each set of records in its own
+    # directory. systemd-pstore itself comes from the systemd bbappend.
+    install -m 0644 ${UNPACKDIR}/var-lib-systemd-pstore.mount ${D}${systemd_system_unitdir}/var-lib-systemd-pstore.mount
+    install -m 0644 ${UNPACKDIR}/segno-pstore-retention.conf ${D}${sysconfdir}/tmpfiles.d/10-segno-pstore.conf
+    install -m 0755 ${UNPACKDIR}/segno-pstore-keep ${D}${bindir}/segno-pstore-keep
+    install -d ${D}${systemd_system_unitdir}/systemd-pstore.service.d
+    install -m 0644 ${UNPACKDIR}/systemd-pstore-segno.conf ${D}${systemd_system_unitdir}/systemd-pstore.service.d/10-segno.conf
 
     # OTA update client: timer-driven check that polls the channel manifest on
     # segno.aquiles.dev and rauc-installs newer signed bundles (deferred activation).

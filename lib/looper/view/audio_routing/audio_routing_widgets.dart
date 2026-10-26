@@ -20,6 +20,7 @@ class RoutingSourceCard extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.width = 264,
+    this.status,
     super.key,
   });
 
@@ -38,6 +39,10 @@ class RoutingSourceCard extends StatelessWidget {
 
   /// The pen's card width.
   final double width;
+
+  /// A warning about this source under its name, or `null` (the Effects
+  /// page's "Effects off", #1452).
+  final String? status;
 
   @override
   Widget build(BuildContext context) {
@@ -94,6 +99,18 @@ class RoutingSourceCard extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (status case final status?) ...[
+                  const SizedBox(height: 6),
+                  AppText(
+                    status,
+                    key: const Key('routing_source_status'),
+                    style: TextStyle(
+                      color: surface.warning,
+                      fontSize: 16,
+                      height: 1,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

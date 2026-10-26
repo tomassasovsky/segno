@@ -7,6 +7,7 @@ import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/appliance/power_off/power_dialog.dart';
 import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
+import 'package:segno/backing/cubit/backing_cubit.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -23,6 +24,7 @@ PowerSnapshot currentPowerSnapshot(BuildContext context) => powerSnapshotOf(
   looper: context.read<LooperBloc>().state,
   recorder: context.read<PerformanceRecorderCubit>().state,
   session: context.read<SessionCubit>().state,
+  backing: _maybeRead<BackingCubit>(context)?.state.backing,
   // Asked of the repository at the press: a lease can be taken between two
   // of the Storage page's reads.
   transferInFlight:
@@ -46,8 +48,9 @@ Future<void> Function() saveOpenSession(BuildContext context) {
 void requestPower(BuildContext context) =>
     context.read<PowerCubit>().press(currentPowerSnapshot(context));
 
-/// Restarts through the one guarded path (save first), for an update's
-/// Install and restart, which has asked already.
+/// Restarts through the one guarded path (save first, unless the session is
+/// unnamed and empty), for an update's Install and restart, which has asked
+/// already.
 void requestRestart(BuildContext context) => context.read<PowerCubit>().restart(
   currentPowerSnapshot(context),
   save: saveOpenSession(context),
@@ -168,6 +171,10 @@ class _PowerHostState extends State<PowerHost> {
       snapshot: _snapshot,
       save: saveOpenSession(context),
       stagedUpdate: _stagedUpdate(context),
+      changes: [
+        context.read<LooperBloc>().stream,
+        ?_maybeRead<BackingCubit>(context)?.stream,
+      ],
     );
     if (!mounted) return;
     _dialogOpen = false;

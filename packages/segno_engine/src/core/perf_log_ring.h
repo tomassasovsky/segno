@@ -165,7 +165,10 @@ typedef enum le_perf_log_code {
                                * sampled BEFORE lane capture (the #262 root
                                * cause); it also carries the loop iteration, so
                                * a multi-loop arm image's sub-cycle is no longer
-                               * ambiguous (#260). Exactly one per capture. */
+                               * ambiguous (#260). Exactly one per capture.
+                               * From events.log version 13 it also carries
+                               * fx_clock, the engine frame of capture frame 0
+                               * (#941). */
   LE_PLOG_TRANSPORT_HELD = 316, /* the shared transport became HELD mid-capture:
                                  * nothing is playing/recording/overdubbing, so
                                  * advance_transport_frame pins the loop clock
@@ -218,6 +221,13 @@ typedef enum le_perf_log_code {
                              * before every 328, so a stretch render (Pitch
                              * Unchanged across a retime) replays at its
                              * length. */
+  LE_PLOG_FX_TEMPO = 332, /* fx_tempo_log: the effect chains' musical time
+                           * (#887 part 10, events.log version 14), at every
+                           * anchor the engine moves it to (a loop top, a
+                           * tempo or time-signature change) and at PERF_ARM:
+                           * from this frame the beat is beat + (f - frame)
+                           * * qpf. A render with none runs at 120 BPM from
+                           * beat 0. */
 } le_perf_log_code;
 
 /* Pack/unpack helpers for LE_PLOG_SET_LANE_FX_PARAM / _MONITOR_FX_PARAM's
@@ -275,10 +285,18 @@ typedef struct le_log_command {
       float bpm;
       int32_t length, position, bars;
     } retime_log;
+    struct { /* LE_PLOG_FX_TEMPO: the chains' musical time from this frame
+              * (le_fx_tempo): the beat in quarter notes (a double's bits),
+              * the quarter notes a frame advances and the time signature. */
+      uint32_t beat_lo, beat_hi;
+      float qpf;
+      uint8_t num, den;
+      uint16_t pad;
+    } fx_tempo_log;
     struct { int32_t channel; uint32_t image_id; int32_t state, phase; } restore_log;
     struct { int32_t channel, slot, previous; uint32_t generation; } peel_log;
     struct { int32_t channel, slot, len; uint32_t image_id; } length_log;
-    struct { int32_t position, master_len, iteration; } perf_arm;
+    struct { int32_t position, master_len, iteration; uint32_t fx_clock; } perf_arm;
     struct { int32_t value; uint32_t sequence; } clock;
     struct { int32_t base_frames, loop_beats; } session;
   };

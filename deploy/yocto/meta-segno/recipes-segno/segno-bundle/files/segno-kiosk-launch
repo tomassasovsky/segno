@@ -58,6 +58,12 @@ export SEGNO_ALSA_ONLY=1
 # monitored signal buzzes. Safe now that the ALSA wait loop sleeps (snd_pcm_wait)
 # rather than busy-spinning.
 export SEGNO_RT_AUDIO=1
+# Resolve every dynamic symbol at load, in every library, including the
+# libasound that miniaudio dlopens: a lazy binding resolved for the first time
+# on the audio thread (an xrun recovery path, say) runs ld.so code and writes a
+# GOT page inside the callback (#900). The engine library is linked with
+# -z now as well; this covers the libraries it calls into.
+export LD_BIND_NOW=1
 # ALSA duplex buffer depth (period count). The engine's startup fixes (capture
 # backlog flush + period-aligned reads + self-healing playback resync) make the
 # monitor path robust, but a deeper buffer gives both sides a stable cushion

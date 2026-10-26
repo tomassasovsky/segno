@@ -18,11 +18,18 @@ RequiresMountsFor=/data
 
 [Service]
 Type=simple
-# Real-time audio: the engine puts its ALSA duplex thread on SCHED_FIFO 80 and
-# miniaudio locks its buffers. Without these limits (systemd defaults RTPRIO=0,
-# MEMLOCK=8M) the setschedparam EPERMs and the thread stays SCHED_OTHER -> jitter
-# and xruns. 95 leaves the audio thread (80) room and the USB IRQ thread (rtirq,
-# ~90) above it.
+# Real-time audio. RTPRIO: the engine puts its ALSA duplex thread on SCHED_FIFO
+# 80; without the limit (systemd's default is 0) the setschedparam EPERMs and the
+# thread stays SCHED_OTHER -> jitter and xruns. 95 leaves the audio thread (80)
+# room and the USB IRQ thread (rtirq, ~90) above it. MEMLOCK: the engine locks
+# its own audio memory on fault (mlock2 MLOCK_ONFAULT on each audio buffer, on
+# the code of the engine, libc, libm and libasound, and on the top of the audio
+# thread's stack) so no page the audio thread uses can be reclaimed and faulted
+# back in (#900). Never the whole process: the Dart VM and glibc hand memory
+# back with MADV_DONTNEED, which the kernel refuses on locked memory. This
+# unit runs as root (CAP_IPC_LOCK), so the limit is a second guarantee. The
+# journal says "segno/rt: audio code and data locked", and
+# /proc/<pid>/smaps_rollup shows a non-zero Locked:.
 LimitRTPRIO=95
 LimitMEMLOCK=infinity
 # So a native fault in the engine actually dumps (#438). systemd's default

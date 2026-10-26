@@ -289,12 +289,12 @@ String _deviceChainXml(List<DawEffect> chain, _IdAllocator allocator) {
 </On>
 <ParametersListWrapper>
 <Parameters>''');
-    // effect.params is always padded to kTrackEffectParams (4) in the
-    // persisted manifest (BuiltInEffect's own convention), regardless of how
-    // many of those slots this specific plugin's controller actually
+    // effect.params in the persisted manifest carries the cells the
+    // effect's type reads (BuiltInEffect's own convention), which may differ
+    // from how many this specific plugin's controller actually
     // registers — emit only ref.paramCount entries, matching the real
     // RangeParameter/StringListParameter set (D-PARAM's "must agree
-    // exactly"); the trailing padding values don't correspond to any
+    // exactly"); any further values don't correspond to a
     // parameter the plugin or Ableton knows about.
     for (var i = 0; i < ref.paramCount; i++) {
       final paramId = allocator.next();
