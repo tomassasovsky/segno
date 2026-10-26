@@ -507,6 +507,30 @@ void main() {
       expect(asked.maxLoopFrames, 14399999);
     });
 
+    test('a rate change with the tracks empty recomputes the loop cap', () {
+      seed();
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(
+          sampleRate: 48000,
+          bufferFrames: 128,
+          maxLoopFrames: 14400000,
+        ),
+      );
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      expect(cubit.state.maxLoopMinutes, 5);
+
+      cubit.setSampleRate(96000);
+
+      final asked =
+          verify(
+                () => repository.applyAudioConfig(captureAny()),
+              ).captured.single
+              as EngineConfig;
+      // Five minutes at 96 kHz, not the 48 kHz frame count.
+      expect(asked.maxLoopFrames, 5 * 60 * 96000);
+    });
+
     test('the open loop cap is kept even when the device runs another rate '
         'than was asked', () {
       seed();
