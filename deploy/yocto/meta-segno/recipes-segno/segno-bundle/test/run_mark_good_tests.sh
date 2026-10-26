@@ -270,6 +270,11 @@ check "only the app's own pid may notify" yes \
     "$(grep -qx 'NotifyAccess=main' "$unit" && echo yes || echo no)"
 check "a build that never draws is killed after 180 s" yes \
     "$(grep -qx 'TimeoutStartSec=180' "$unit" && echo yes || echo no)"
+wait_default=$(sed -n 's/^WAIT_SECS="\${SEGNO_MARK_GOOD_WAIT_SECS:-\([0-9]*\)}"$/\1/p' "$SCRIPT")
+start_timeout=$(sed -n 's/^TimeoutStartSec=\([0-9]*\)$/\1/p' "$unit")
+check "the gate outwaits segno's start timeout" yes \
+    "$([ -n "$wait_default" ] && [ -n "$start_timeout" ] &&
+        [ "$wait_default" -gt "$start_timeout" ] && echo yes || echo no)"
 check "no service watchdog (never kill a working app mid-set)" no \
     "$(grep -q '^WatchdogSec=' "$unit" && echo yes || echo no)"
 check "the gate does not wait for segno's start job" no \

@@ -44,7 +44,7 @@ BootAudio bootAudioOf({
 /// Tells systemd the app is up, and keeps telling `segno-mark-good` how it is
 /// (#976, docs/plan/2026-10-06-feat-device-pages-plan.md, Part 1).
 ///
-/// `READY=1` goes out once, when the main screen has rasterized its first
+/// `READY=1` first goes out when the main screen has rasterized its first
 /// frame: `segno.service` is `Type=notify`, so until then the unit is not
 /// active and the gate does not commit. Readiness waits for nothing else, so a
 /// working app on a committed slot is never killed for want of a readout or an
@@ -82,7 +82,6 @@ class BootReadiness {
   final Duration interval;
 
   var _started = false;
-  var _ready = false;
   var _beating = false;
   var _alive = 0;
   var _readoutAnswers = 0;
@@ -92,9 +91,10 @@ class BootReadiness {
   /// sends the heartbeat every [interval] for the life of the process.
   /// Idempotent.
   ///
-  /// `READY=1` rides every send until one goes through: a lost datagram
-  /// would otherwise leave the unit activating until systemd kills a working
-  /// app at `TimeoutStartSec`. systemd ignores a repeated `READY=1`.
+  /// `READY=1` goes with every status: a lost datagram would otherwise leave
+  /// the unit activating until systemd kills a working app at
+  /// `TimeoutStartSec`, and a `sendto` that succeeds does not prove systemd
+  /// took it. systemd ignores a repeated `READY=1`.
   Future<void> start() async {
     if (_started) return;
     _started = true;
@@ -145,9 +145,8 @@ class BootReadiness {
   }
 
   void _send(String status) {
-    final state = _ready ? 'STATUS=$status' : 'READY=1\nSTATUS=$status';
+    final state = 'READY=1\nSTATUS=$status';
     final sent = _notify(state);
-    if (sent) _ready = true;
     // Once per change, not every beat: a socket that stays unreachable would
     // otherwise fill the log.
     if (sent == !_sendFailed) return;

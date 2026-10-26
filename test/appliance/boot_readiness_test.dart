@@ -130,7 +130,7 @@ void main() {
       });
     });
 
-    test('READY=1 once, with the first status, at the first raster', () {
+    test('READY=1 with the first status, at the first raster', () {
       fakeAsync((async) {
         unawaited(readiness().start());
         firstFrame.complete();
@@ -139,8 +139,11 @@ void main() {
         // Readiness pings nothing: the readout gets a beat to link first.
         expect(pings, 0);
 
+        // Every later status carries READY=1 too: systemd ignores the
+        // repeat, and a lost first datagram must not get the app killed.
         async.elapse(const Duration(seconds: 15));
-        expect(sent.where((s) => s.contains('READY=1')), hasLength(1));
+        expect(sent, hasLength(4));
+        expect(sent.every((s) => s.startsWith('READY=1\nSTATUS=')), isTrue);
       });
     });
 
@@ -153,7 +156,7 @@ void main() {
         async.elapse(const Duration(seconds: 5));
         expect(sent, [
           'READY=1\nSTATUS=alive 0 readout 0 audio ok',
-          'STATUS=alive 1 readout 1 audio ok',
+          'READY=1\nSTATUS=alive 1 readout 1 audio ok',
         ]);
       });
     });
@@ -164,9 +167,9 @@ void main() {
         firstFrame.complete();
         async.elapse(const Duration(seconds: 15));
         expect(sent.skip(1), [
-          'STATUS=alive 1 readout 1 audio ok',
-          'STATUS=alive 2 readout 2 audio ok',
-          'STATUS=alive 3 readout 3 audio ok',
+          'READY=1\nSTATUS=alive 1 readout 1 audio ok',
+          'READY=1\nSTATUS=alive 2 readout 2 audio ok',
+          'READY=1\nSTATUS=alive 3 readout 3 audio ok',
         ]);
       });
     });
@@ -178,7 +181,7 @@ void main() {
         async.elapse(const Duration(seconds: 5));
         readoutAnswers = false;
         async.elapse(const Duration(seconds: 10));
-        expect(sent.last, 'STATUS=alive 3 readout 1 audio ok');
+        expect(sent.last, 'READY=1\nSTATUS=alive 3 readout 1 audio ok');
       });
     });
 
@@ -188,7 +191,7 @@ void main() {
         unawaited(readiness().start());
         firstFrame.complete();
         async.elapse(const Duration(seconds: 10));
-        expect(sent.last, 'STATUS=alive 2 readout none audio ok');
+        expect(sent.last, 'READY=1\nSTATUS=alive 2 readout none audio ok');
         expect(pings, 0);
       });
     });
@@ -208,7 +211,7 @@ void main() {
         unawaited(r.start());
         firstFrame.complete();
         async.elapse(const Duration(seconds: 5));
-        expect(sent.last, 'STATUS=alive 1 readout none audio ok');
+        expect(sent.last, 'READY=1\nSTATUS=alive 1 readout none audio ok');
       });
     });
 
@@ -218,28 +221,23 @@ void main() {
         firstFrame.complete();
         audio = BootAudio.refused;
         async.elapse(const Duration(seconds: 5));
-        expect(sent.last, 'STATUS=alive 1 readout 1 audio refused');
+        expect(sent.last, 'READY=1\nSTATUS=alive 1 readout 1 audio refused');
         audio = BootAudio.absent;
         async.elapse(const Duration(seconds: 5));
-        expect(sent.last, 'STATUS=alive 2 readout 2 audio absent');
+        expect(sent.last, 'READY=1\nSTATUS=alive 2 readout 2 audio absent');
       });
     });
 
-    test('READY=1 rides every send until one goes through', () {
+    test('a failed send keeps the heartbeat going', () {
       fakeAsync((async) {
         notifyWorks = false;
         unawaited(readiness().start());
         firstFrame.complete();
         async.elapse(const Duration(seconds: 10));
         notifyWorks = true;
-        async.elapse(const Duration(seconds: 10));
-        expect(sent, [
-          'READY=1\nSTATUS=alive 0 readout 0 audio ok',
-          'READY=1\nSTATUS=alive 1 readout 1 audio ok',
-          'READY=1\nSTATUS=alive 2 readout 2 audio ok',
-          'READY=1\nSTATUS=alive 3 readout 3 audio ok',
-          'STATUS=alive 4 readout 4 audio ok',
-        ]);
+        async.elapse(const Duration(seconds: 5));
+        expect(sent, hasLength(4));
+        expect(sent.last, 'READY=1\nSTATUS=alive 3 readout 3 audio ok');
       });
     });
 
@@ -265,7 +263,7 @@ void main() {
         // Beats at 5 s (answered at 12 s) and 15 s; the one at 10 s found
         // the 5 s ping still out and sent nothing.
         expect(pings, 2);
-        expect(sent.skip(1), ['STATUS=alive 1 readout 1 audio ok']);
+        expect(sent.skip(1), ['READY=1\nSTATUS=alive 1 readout 1 audio ok']);
       });
     });
 
@@ -288,7 +286,7 @@ void main() {
           async.elapse(const Duration(seconds: 5));
           expect(sent, [
             'READY=1\nSTATUS=alive 0 readout 0 audio refused',
-            'STATUS=alive 1 readout 0 audio refused',
+            'READY=1\nSTATUS=alive 1 readout 0 audio refused',
           ]);
         });
       },
