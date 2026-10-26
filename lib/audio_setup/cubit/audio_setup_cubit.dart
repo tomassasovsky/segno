@@ -484,15 +484,19 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     asioDriver: config.asioDriver,
   );
 
-  /// The loop cap to open [config] with, in frames: the cap open now
-  /// whenever the cap does not move, because one recomputed from a rounded
-  /// minute count, or from a rate the device did not run, would differ from
-  /// it and make the reopen clear the loops (`LE_REOPEN_CLEARED_CAP`) on a
-  /// change that must keep them. With material the rate is locked; without
-  /// it, a clear loses nothing.
+  /// The loop cap to open [config] with, in frames: the cap open now while
+  /// neither the cap nor the rate on screen moves, because one recomputed
+  /// from a rounded minute count, or from a rate that was asked for and not
+  /// run (the selection follows the running rate), would differ from it and
+  /// make the reopen clear the loops (`LE_REOPEN_CLEARED_CAP`) on a change
+  /// that must keep them. A real rate change recomputes it: the minutes
+  /// mean more frames at a higher rate, and with material the rate is
+  /// locked anyway.
   int _loopCapFrames(AudioSetupState config) {
     final open = _repository.lastEngineConfig;
-    if (open != null && config.maxLoopMinutes == state.maxLoopMinutes) {
+    if (open != null &&
+        config.maxLoopMinutes == state.maxLoopMinutes &&
+        config.sampleRate == state.sampleRate) {
       return open.maxLoopFrames;
     }
     return _maxLoopFrames(config.maxLoopMinutes, config.sampleRate);
