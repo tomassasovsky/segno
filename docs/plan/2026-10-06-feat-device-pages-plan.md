@@ -15,9 +15,9 @@ The plan was written on 2026-10-06 against `c4b5cf909` and refreshed on 2026-10-
 modes, design and scope, and UX against the pen. Every finding is either adopted or turned
 down with a reason in §7.
 
-File and line references are to `origin/claude/segno-integration` at `a37926236`. Between
-`99b8027c2` (the tree the reviews read) and `a37926236` only docs, agent hooks and the
-#1367 spike changed, so the reviews' references still hold.
+File and line references are to `origin/claude/segno-integration` at `a3f6bc805`, after
+the 2026-10-26 refresh (§0a). The 2026-10-19 revision used `a37926236`; where a reference
+moved since, §0a and §1 carry the new one.
 
 **Shipped.** Five parts merged into `claude/segno-integration` on 2026-10-07. Their specs
 are replaced below by a short record of what shipped and where it differs from the plan;
@@ -66,9 +66,12 @@ merged). Parts 1, 2, 3a, 3b, 4, 5 and 8 are open. None has started.
 
 Every claim, path and dependency below was re-checked against
 `origin/claude/segno-integration` at `a3f6bc805`, 446 commits after `a37926236`. Almost all
-of them are the Looper X effects work. The audio-settings app code (`lib/audio_setup`,
+of them are the Looper X effects work. The audio-settings app code
+(`audio_setup_cubit.dart`, `audio_setup_state.dart`, `device_audio_tab.dart`,
 `lib/app/audio_bootstrap.dart`, `lib/settings`, the banners, `AudioRecoveryCubit`, the
-readout) has not changed since `a37926236`, so its line references hold. What changed:
+readout) has not changed since `a37926236`, so its line references hold. In
+`lib/audio_setup` only `monitor_cubit.dart` changed (effects work); in `lib/appliance`,
+`PowerCubit.restart` and `shutDown` moved to 87 and 94. What changed:
 
 - **#1367 launcher merged** (#1373, 2026-10-20). `packages/spawn_process` has
   `startProcess` and `runProcess`; `lib/update/appliance/system_appliance_env.dart`
@@ -104,28 +107,28 @@ readout) has not changed since `a37926236`, so its line references hold. What ch
 - **ivi-homescreen is built with `-DBUILD_SYSTEMD_WATCHDOG=OFF`**
   (`recipes-graphics/ivi-homescreen/ivi-homescreen_git.bb`), so the embedder sends no
   `sd_notify` of its own. The app's `READY=1` is the only one.
-- **First boot without an interface.** `Type=notify` with `TimeoutStartSec=180` kills an
-  app that never sends `READY=1`. The plan counted a refused start as ready only when the
-  *pinned* interface is absent; a console with no saved config and no interface plugged
-  in (first run, `recoveryConfig` null) would then be killed every 180 s on a committed
-  slot. Part 1 also counts a refused start as ready when nothing is pinned and
-  `pickConsoleAudioDevices` finds no interface to pin. A refusal with an interface
-  present still never counts.
+- **First boot without an interface.** A console with no saved config and no interface
+  plugged in (first run, `recoveryConfig` null) has nothing pinned. Part 1 reports its
+  audio as `absent`, not `refused`, when nothing is pinned and `pickConsoleAudioDevices`
+  finds no interface to pin, so such a console is committed like one whose pinned
+  interface is unplugged. An interface that is present with the engine not running is
+  still `refused`.
 - **ASIO paths are all still there** (`audio_setup_cubit.dart:83, 162-205`,
   `audio_setup_state.dart:224-232`, `le_device_info.asio_*` at
   `segno_engine_api.h:923-931`, `le_enumerate_asio_drivers` at `engine_devices.c:482`).
   #925 (`stage:plan`, `autonomy:auto`) asks for the Dart half of the same removal but
   keeps `LE_BACKEND_ASIO` and `le_enumerate_asio_drivers` as stubs so an old stored
   backend still parses. That conflicts with AGENTS.md (no compatibility layers) and with
-  D18; Parts 3a and 2 do the whole removal and say `Refs #925`, and the part that
-  removes the last of it says `Closes #925`.
+  D18; Parts 3a and 2 do the whole removal, including everything #925 lists (Part 3a's
+  "Removed" names it), and say `Refs #925`; Part 2, which removes the last of it, says
+  `Closes #925`.
 - **Engine line references moved** with the effects work: command 1 is handled at
   `engine_process.c:4388`, the burst amplitude is `LE_LATENCY_PULSE_AMP 0.9f`
   (`engine_core.h:34`), the loopback-or-max input pick is at 7641-7689 and the pulse
-  block at 7691-7725. The highest command is still `LE_CMD_AUDITION_STOP = 137`.
-  `looper_repository.dart` moved by 3 lines: `_superviseDevice` 2289,
-  `_attemptReconnect` 2346, `_reopenEngine` 2637, `_replayRig` 2682, the `> 0` gate 2724.
-  `audio_bootstrap.dart`'s restore and automatic measurement are at 310-321.
+  block at 7691-7730, the skip after `process_input_frame` at 9663-9671. The highest
+  command is still `LE_CMD_AUDITION_STOP = 137`. `looper_repository.dart` moved by 3
+  lines: `_superviseDevice` 2289, `_attemptReconnect` 2346, `_reopenEngine` 2637,
+  `_replayRig` 2682, the `> 0` gate 2724.
 - **The effects budget: Q5, answered by the owner on 2026-10-26.** Admission control
   (#887, `fx_cost.dart`, `LooperRepository.fxRoomNs`) refuses an effects edit that would
   not fit 80 % of a block at the running rate and buffer. The budget shrinks when the rate
@@ -242,10 +245,10 @@ Standing owner decisions that apply:
 - **The latency test is loud and plays on every output.**
   - `LE_CMD_MEASURE_LATENCY` (`engine_process.c:4388`) starts a 10 ms, 1 kHz burst
     at amplitude 0.9 (`engine_core.h:34`).
-  - The pulse block in `process_input_frame` (`engine_process.c:7691-7725`) writes it to
+  - The pulse block in `process_input_frame` (`engine_process.c:7691-7730`) writes it to
     every output channel.
   - While the harness owns a frame, `le_engine_process` skips the transport advance and
-    the mix (`engine_process.c:9663-9670`): the loops go silent and the playhead stops for
+    the mix (`engine_process.c:9663-9671`): the loops go silent and the playhead stops for
     the whole window.
   - It reads the return from the loopback channels when `excluded_input_mask != 0`,
     otherwise from the maximum of all real inputs (7641-7689).
@@ -300,7 +303,7 @@ Standing owner decisions that apply:
 ### Power and updates
 
 - **Power** (shipped by Part 6): `PowerCubit` (`lib/appliance/power_off/power_cubit.dart`)
-  has `restart` (80) and `shutDown` (86).
+  has `restart` (87) and `shutDown` (94).
 - **Updates** (shipped by Part 7): `segno-update-ctl` records the attempt marker, has the
   `attempt` and `clear-attempt` verbs, and passes the reconcile reason through. It is
   network only: `do_install` (164-238) fetches the manifest, downloads to a work dir,
@@ -391,7 +394,8 @@ and marked with the PR that carried them out.
     disconnected. `audio` is `ok` while the engine runs, `absent` while the pinned
     interface (or, with nothing pinned, any interface `pickConsoleAudioDevices` would
     pin) is not there, and `refused` otherwise. `segno-mark-good` requires `n` to
-    advance, `m` to advance whenever both samples count it, and `audio` not `refused`.
+    advance, `m` to advance whenever both samples count it, and `audio` not
+    `refused` in both samples.
   - This replaces the marker file: systemd accepts notifications only from `MainPID`
     (`NotifyAccess=main`), so there is no pid to compare and nothing in `/run` to clean.
 - **D8. Update failures are visible.** Shipped in #1287.
@@ -428,9 +432,9 @@ and marked with the PR that carried them out.
   three listed rates. The dead `asio_*` fields are deleted, not renamed.
 - **D19. An Apply that would put the effects over the budget is refused inline** (owner,
   2026-10-26, Q5; extends the #887 admission rule). Parts 3a and 4. Before applying, the
-  cubit compares the cost of the current chains at the new block length
-  (`fxChainCostNs` over every chain, as `fxCostNs` sums them) with `fxBudgetNs` at the new
-  rate and buffer. Over the budget: nothing is applied or saved, the chips keep the
+  cubit asks the repository's new `fxRoomAt(sampleRate, bufferFrames)`: `fxBudgetNs` at
+  the new rate and buffer less the cost of every live chain at the new block length (the
+  sum `fxCostNs` makes, at that period). A negative room refuses. Over the budget: nothing is applied or saved, the chips keep the
   running values, and the row says what will not fit, naming the setting: "Your effects
   need more processing than 96 kHz leaves. Remove some effects first." or the same with
   "a 32-frame buffer". A change that only lowers the cost (a lower rate, a larger buffer)
@@ -451,8 +455,8 @@ order  part                          base                          size   state
 3      P3b cable measurement         stacked on P2                  ~400   open
 4      P4  Device page               trunk after P3b merges         ~600   open
                                      (or stacked on P3b once P2 has merged)
-any    P8  USB packages              trunk (the #1367 launcher      ~450   open
-                                     merged in #1373)
+any    P8  USB packages              trunk after #1398 (the #1367   ~450   open
+                                     launcher merged in #1373)
 -      P6 Power + Restart                                                  shipped #1284
 -      P7 Updates page                                                     shipped #1287
 -      P9 Displays brightness + dim                                        shipped #1286
@@ -514,15 +518,20 @@ and makes them safe. Part 4 later puts the same path behind a draft and an Apply
 
 **Removed**
 
-- `_autoMeasureIfLoopback`, the automatic branch in `lib/app/audio_bootstrap.dart:318-321`
-  (the restore at 310-317 stays), the cubit's `measureLatency()`, the Measure button and
+- `_autoMeasureIfLoopback`, the automatic branch in `lib/app/audio_bootstrap.dart:319-321`
+  (the restore at 310-318 stays), the cubit's `measureLatency()`, the Measure button and
   the loopback notes (`loopbackDetectedNote`, `loopbackAvailableNote`) in
   `DeviceAudioTab`. On the appliance this button only ever measured the Scarlett loop
   channels, which Q2 rules out. The latency row keeps showing the restored value. Part 3b
   brings Measure back as the cable test.
-- The ASIO paths in the app: `setBackend`, `setAsioDriver`, `_asioSelectable`, the
-  cached driver list, `_snapRateAndBuffer`, the ASIO branch of `sampleRateChoices`, and the
-  ASIO group in `device_audio_tab.dart` (93-167, 477 on).
+- The ASIO paths in the app, which is #925's list: `setBackend`, `setAsioDriver`,
+  `resolveAsioDriver`, `_asioSelectable`, `asioOnly`, `cachedAsioDrivers`, `asioDriver`,
+  the `initialAsioDrivers` wiring through `App` and `run_segno.dart` (and the `asioDrivers`
+  field of `AutoStartResult`), `_snapRateAndBuffer`, the ASIO branch of
+  `sampleRateChoices`, the ASIO group in `device_audio_tab.dart` (93-167, 477 on), the
+  ARB keys `asioDriverGroup`, `asioChannelCounts`, `noAsioDriverTitle`,
+  `noAsioDriverMessage`, `downloadAsio4all`, `audioAsioDriverGroup`, `audioNoAsioDriver`,
+  `audioOpenAsio4all` and the Windows-only `perfRevealWindows`, in both locales.
 
 ```success-criteria
 GOAL: No Device chip can clear the loops, cut a take, save a refused config or play a test burst.
@@ -536,7 +545,7 @@ SUCCESS CRITERIA:
 - After a successful buffer change with no saved offset for the new key, setRecordOffset(0) is called and the row shows "Not measured"; with a saved one, that value is set. saveLatencyOffsetFrames is never called in either case. | verify: same
 - Repository: applyAudioConfig on a started engine calls reopen, not start; clearedRate and retainedPartial are returned, not hidden; _replayRig pushes an offset of 0. | verify: /Users/Tomas/development/flutter/bin/flutter test packages/looper_repository
 - Boot with a saved offset restores it; boot without one sends no measurement command, with or without excluded loop channels. | verify: /Users/Tomas/development/flutter/bin/flutter test test/app
-- No Measure button and no ASIO code remain in the app. | verify: ! grep -rn "setAsioDriver\|setBackend\|_autoMeasureIfLoopback\|loopbackDetectedNote\|measureLatency()" lib
+- No Measure button and no ASIO code remain in the app. | verify: ! grep -rn "setAsioDriver\|setBackend\|_autoMeasureIfLoopback\|loopbackDetectedNote\|measureLatency()" lib && ! grep -rni "asio\|perfRevealWindows" lib
 - Analyzer and Bloc lint clean. | verify: dart analyze --fatal-infos && bloc lint lib test packages
 - HARDWARE: with loops playing on the appliance, tap 256; the dialog appears; confirm; the loops stop, are still there, and play at the same pitch; nothing is heard from any output during the change; after a reboot the console comes up at 256. | verify: manual on device
 ```
@@ -573,6 +582,16 @@ trusted.
   a systemd watchdog would kill a slow but working app in the middle of a performance.
 - `segno-kiosk-launch` keeps `NOTIFY_SOCKET` across its `exec` (it does not clear the
   environment; the test checks this).
+- `segno-mark-good.service` drops `After=segno.service` (it keeps `Wants=`). Under
+  `Type=notify` that ordering would hold the gate until the app's start job ended, so a
+  never-ready build would roll back after `TimeoutStartSec` plus `WAIT_SECS` (about six
+  minutes) instead of after `WAIT_SECS`.
+- `segno-bundle` RDEPENDS on `dtc` for `fdtget`. Today `dtc` reaches the image only
+  through `rauc-rpi-backend`, and a missing `fdtget` would read as "not a trial boot" and
+  silently disable the rollback reboot.
+- Panels absent at boot do not stop the first raster: the kernel command line
+  force-enables both HDMI connectors (`video=HDMI-A-*:...D`, #821), so each engine still
+  draws. A 7" that is absent therefore still answers pings.
 
 **`segno-mark-good`**
 
@@ -581,7 +600,12 @@ trusted.
 - Record `MainPID`, `NRestarts` and `StatusText`. Wait `STABLE_SECS`. Require the same
   `MainPID`, the same `NRestarts`, `is-active`, and a `StatusText` whose main counter
   advanced, whose readout counter advanced when both samples counted it, and whose audio
-  state is not `refused`.
+  state is not `refused` in both samples. One `refused` sample is not enough: an Apply
+  (stop, then reopen) or a supervisor reconnect (#740) passes through the same state for
+  a moment. A failed enumeration or engine read reports `refused`, never `absent`.
+- A readout that stops answering on a trial boot also reboots, even though the main
+  screen works: the trial boot is the minutes after an update the musician started, and
+  a build whose 7" does not draw is not one to commit.
 - On a health refusal, when the boot is a trial boot (`fdtget /sys/firmware/fdt
   /chosen/bootloader tryboot` reads 1, the flag the RAUC backend's `get-state` reads),
   reboot with plain `systemctl reboot`. The tryboot flag is one-shot, so the firmware
@@ -607,7 +631,7 @@ SUCCESS CRITERIA:
 - CI runs the suite under bash and dash. | verify: grep -n "run_mark_good_tests" .github/workflows/main.yaml
 - READY=1 is sent once, only after the main screen's first raster; the status after it advances alive every tick, counts readout answers only while the readout is connected (none otherwise), and reports audio ok, absent (pinned interface gone; nothing pinned and no interface) or refused (interface present, engine not running); with NOTIFY_SOCKET unset nothing is sent. | verify: /Users/Tomas/development/flutter/bin/flutter test test/appliance
 - The readout answers a ping only after its first raster. | verify: /Users/Tomas/development/flutter/bin/flutter test test/visualizer
-- Audio refused in the last sample, and a frozen readout counter while both samples count it: each refused. | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_mark_good_tests.sh
+- Audio refused in both samples, and a frozen readout counter while both samples count it: each refused; audio refused in one sample only commits. | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_mark_good_tests.sh
 - Analyzer and Bloc lint clean. | verify: dart analyze --fatal-infos && bloc lint lib test packages
 - HARDWARE: install a bundle whose app throws before runApp; the console reboots by itself into the previous slot with no SSH. Install a bundle that crash-loops after its first frame; same result. Install a good bundle; it is committed after the window. | verify: manual on device
 ```
@@ -728,7 +752,7 @@ SUCCESS CRITERIA:
 - Cancel with request 7 after 1000 frames: CANCELLED, offset still 77, every output sample after the cancel frame is 0.0f with no monitors enabled; cancel with request 6 is ignored. Device lost mid-window: CANCELLED, offset 77. | verify: same
 - Track 0 recording when 140 arrives: CANCELLED, out ch1 never carries the burst, the take's captured PCM equals its input samples exactly. | verify: same
 - Reopen with keep_material at another negotiated rate: LE_ERR_WOULD_CLEAR, lane PCM and history byte-identical, tracks stopped; without the flag, LE_REOPEN_CLEARED_RATE as before. | verify: same
-- Command 1, le_engine_measure_latency and every ASIO symbol are gone. | verify: ! grep -rn "LE_CMD_MEASURE_LATENCY\b\|le_engine_measure_latency\b\|asio_\|AudioBackend\|asioDrivers" packages lib --include='*.c' --include='*.h' --include='*.dart'
+- Command 1, le_engine_measure_latency and every ASIO symbol are gone. | verify: ! grep -rn "LE_CMD_MEASURE_LATENCY\b\|le_engine_measure_latency\b\|AudioBackend" packages lib --include='*.c' --include='*.h' --include='*.dart' && ! grep -rni "asio" packages/*/lib packages/segno_engine/src/core lib --include='*.c' --include='*.h' --include='*.dart' --include='*.arb'
 - Dart wrappers and the mock: measureLatencyPath forwards (1, 0, 0.25, 7); cancelLatency publishes cancelled with its request. | verify: /Users/Tomas/development/flutter/bin/flutter test packages/segno_engine packages/looper_repository
 - ASAN suite and bindings regenerated with no format churn. | verify: bash packages/segno_engine/src/test/run_native_tests.sh && git diff --stat packages/segno_engine/lib/src/generated
 ```
@@ -847,7 +871,7 @@ SUCCESS CRITERIA:
 
 ### Part 8: update from USB (about 450 lines; helper, `lib/update`, `storage_repository`)
 
-Pen 33: `w3lUKE`/`xlAif` (Load a USB package). Trunk-based. The helper is started with
+Pen 33: `w3lUKE`/`xlAif` (Load a USB package). Trunk-based, after #1398. The helper is started with
 `spawn_process`'s `startProcess` (#1373), as `install` already is in
 `system_appliance_env.dart`. `install_bundle` keeps #1398's read-only `/boot` check (exit
 3) for both verbs.
