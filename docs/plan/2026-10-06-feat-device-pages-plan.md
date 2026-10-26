@@ -532,9 +532,10 @@ and makes them safe. Part 4 later puts the same path behind a draft and an Apply
 - `_autoMeasureIfLoopback`, the automatic branch in `lib/app/audio_bootstrap.dart:319-321`
   (the restore at 310-318 stays), the cubit's `measureLatency()`, the Measure button and
   the loopback notes (`loopbackDetectedNote`, `loopbackAvailableNote`) in
-  `DeviceAudioTab` and their entries in `lib/l10n/localized.dart` and the ARB files. On the appliance this button only ever measured the Scarlett loop
-  channels, which Q2 rules out. The latency row keeps showing the restored value. Part 3b
-  brings Measure back as the cable test.
+  `DeviceAudioTab` and their entries in `lib/l10n/localized.dart` and the ARB files. On
+  the appliance this button only ever measured the Scarlett loop channels, which Q2 rules
+  out. The latency row keeps showing the restored value. Part 3b brings Measure back as
+  the cable test.
 - The ASIO selection in the app, which is #925's list: `setBackend`, `setAsioDriver`,
   `resolveAsioDriver`, the `asioSelectable` parameter and `_asioSelectable`, `asioOnly`,
   `cachedAsioDrivers`, the state's `asioDrivers`, `isAsio` and `selectedAsioDriver`,
