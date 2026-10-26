@@ -75,7 +75,7 @@ TrackEffect _edited(
     BuiltInEffect() => effect.copyWith(
       enabled: enabled,
       params: [
-        for (var p = 0; p < effect.params.length; p++)
+        for (var p = 0; p < effect.type.params.length; p++)
           if (id == null)
             effect.params[p]
           else

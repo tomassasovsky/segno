@@ -93,7 +93,11 @@ gain = 10^((24v − 12)/20).
   LARGE CHAMBER, SMALL STUDIO, LARGE STUDIO (default), SCORING STAGE,
   PHILHARMONIC, CONCERT HALL, CHURCH, OPERA HOUSE, VINTAGE 1, VINTAGE 2.
 - Slicer pattern (first 11): AABB (default), ABCC, AACD, ABC_, A_C_, A_CC,
-  A._C._, ABcccc, AAccdd, AB_dd, AA_dd.
+  A._C._, ABcccc, AAccdd, AB_dd, AA_dd, as read off the screen. The
+  binary's 20-entry SlicerPattern table spells them AABB, ABCC, AACD, ABC_,
+  A_C_, A_CC, A___C___, ABcccc, AAccdd, AB__dd, AA__dd, ABC<, AB_<, AA_<,
+  A_B_C<, AB<<, <<<<, AABB Fd1, AABB Fd2, AABB Fd3; the screen's font draws
+  runs of underscores short. The Slicer (#1461) uses the binary's spelling.
 - Del Time divisions follow the enum table from the earlier session. The
   default 1/8D gives 375 ms at 120 BPM.
 - Smart Tune at C Major pulls a 1 kHz tone to 988 Hz (B5). With
@@ -375,7 +379,7 @@ Kinds #1372 marks as waiting on reference audio, with the settings captured.
 | s5/3 | Reverb | Drum / no preset | ER CONCERT HALL, Density 30.4 % |  |
 | s5/4 | Dual Octaver | Ed's / no preset | Oct High Mode Off, Octave 1 Vol 100 %, Octave 2 Vol 0 %, Mix 100 % | 1 kHz -> 504 Hz (octave down) |
 | s5/5 | Dual Octaver (mode 1) | Ed's / no preset | Oct High Mode On | 1 kHz -> 2 kHz (octave up) |
-| s5/6 | Dual Octaver (mode 1) | Ed's / no preset | High Mode On, Octave 2 Vol 100 % |  |
+| s5/6 | Dual Octaver (mode 1) | Ed's / no preset | High Mode On, Octave 2 Vol 100 % | +12 and +24 both -0.7 dB against the dry |
 | s5/7 | Dual Octaver (mode 1) | Ed's / no preset | High Mode On, Octave 2 Vol 100 %, Mix 50 % | 1 kHz and 2 kHz equal |
 | s5/8 | Smart Tune | Vocal Tuner / no preset | Speed 32 ms, Scale Root C, Major, Audio Type Mid, Tracking Default, Reference 440 Hz | 1 kHz -> 988 Hz (B5) |
 | s5/9 | Smart Tune | Vocal Tuner / no preset | Speed 1 ms | 988 Hz |

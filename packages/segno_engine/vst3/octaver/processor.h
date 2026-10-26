@@ -20,7 +20,7 @@
  *    class of bug part 3 fixed for Reverb, caught here by reading the
  *    kernel's own doc comment rather than assuming Delay's convention.
  * 2. Non-zero, real latency: `fx_octaver`'s phase-vocoder/PSOLA paths both
- *    report `LE_PV_N` (1024) frames via the engine's existing
+ *    report `LE_PV_LATENCY` frames via the engine's existing
  *    `le_fx_added_latency` seam (engine_fx.h) — getLatencySamples()
  *    forwards that unchanged so the host's delay compensation keeps this
  *    track aligned with others, rather than silently reporting zero.

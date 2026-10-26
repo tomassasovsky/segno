@@ -600,9 +600,7 @@ void main() {
           contains('<Uid Value="${segnoVst3Plugins[kFxDelay]!.classId}"/>'),
         );
         // Delay's controller registers exactly 3 real parameters
-        // (Time/Feedback/Mix) — the 4th, always-present padding slot
-        // (kTrackEffectParams) is NOT emitted, since it doesn't correspond
-        // to any parameter Delay's own controller.cpp registers.
+        // (Time/Feedback/Mix), and exactly those are emitted.
         final paramValues = RegExp(
           r'<ParameterValue Value="([\d.]+)"/>',
         ).allMatches(xml).map((m) => double.parse(m.group(1)!)).toList();

@@ -1,24 +1,5 @@
 # Vendored third-party code
 
-## `asiosdk/` — Steinberg ASIO SDK
-
-- **Version:** ASIO SDK 2.3.3 (`asiosdk_2.3.3_2019-06-14`), vendored verbatim.
-- **License:** governed by the Steinberg ASIO SDK Licensing Agreement, kept
-  intact at
-  [`asiosdk/Steinberg ASIO 2.3.3 Licensing Agreement V2.0.3 - 2023.pdf`](asiosdk/).
-  This repository is licensed GPL-3.0-or-later; the SDK is redistributed under
-  that agreement.
-- **Why vendored:** ASIO is the only Windows path to a pro interface's full
-  channel count, and is built **by default** on Windows. Vendoring makes the
-  Windows build reproducible (no user-supplied SDK step). See
-  [docs/WINDOWS_ASIO.md](../../../docs/WINDOWS_ASIO.md).
-- **Used by:** `packages/segno_engine/src/CMakeLists.txt` compiles
-  `common/asio.cpp`, `host/asiodrivers.cpp`, and `host/pc/asiolist.cpp` from
-  here when `SEGNO_ENABLE_ASIO` is on (the Windows default).
-
-Do not edit the SDK sources in place — they are an upstream drop. To upgrade,
-replace the folder with a newer SDK release and update the version above.
-
 ## `vst3sdk/` — Steinberg VST3 SDK (plugin-hosting subset)
 
 - **Version:** VST3 SDK `v3.8.0_build_66` (Oct 2025), assembled from the
@@ -34,7 +15,7 @@ replace the folder with a newer SDK release and update the version above.
   [public.sdk](vst3sdk/public.sdk/LICENSE.txt)). VST3 relicensed to MIT with
   VST 3.8.
 - **Why vendored:** makes the plugin-hosting build reproducible (no
-  user-supplied SDK step), mirroring the ASIO approach above.
+  user-supplied SDK step).
 
 ## `rnnoise/` — Xiph RNNoise (recurrent-neural-net noise suppression)
 
@@ -129,21 +110,11 @@ are **clean for the engine core** and add no copyleft obligation of their own.
 combined binary stays GPLv3 regardless of platform; MIT inputs are compatible
 with that and do not change it.)
 
-They **do not change** the existing platform license posture:
-
-- **Windows is already GPL-3.0-or-later** via the vendored Steinberg ASIO SDK
-  above (built by default on Windows). Adding MIT VST3/CLAP does **not** worsen
-  that — MIT is compatible with GPLv3.
-- **macOS/Linux** ship the miniaudio backend (ASIO off), so the engine there
-  carries only MIT third-party code for plugin hosting.
-
 The vendored VST3/CLAP SDKs are compiled into the engine only when
-`SEGNO_ENABLE_PLUGINS` is defined — ON by default for the macOS SPM/CocoaPods
-builds and for the **Windows** CMake build (part 8: `LoadLibrary`-based scan +
-host with an HWND editor window). It stays OFF for the **Linux** CMake build
-until the X11 port (part 9). The `SEGNO_ENABLE_PLUGINS` env override disables it
-for a non-plugin Windows build. The MIT VST3/CLAP code does not change the
-Windows GPLv3 posture (already GPLv3 via the ASIO SDK above).
+`SEGNO_ENABLE_PLUGINS` is defined: on for the macOS SPM and CocoaPods builds,
+off for the Linux CMake build that the appliance uses. Third-party plugins are
+rarely built for aarch64 Linux, so the appliance does not host them. The
+`SEGNO_ENABLE_PLUGINS` environment variable overrides the CMake option.
 
 Do not edit the vendored sources in place — they are upstream drops (plus, for
 `rnnoise/`, the one documented patch above). To upgrade, replace the folder(s)
@@ -159,9 +130,7 @@ engine package declares each license file as an asset (`pubspec.yaml`) and
 `LicenseRegistry`; `runSegno` calls it once at startup. Vendoring a new
 library means adding its license file to both lists; the app test
 `test/app/vendored_licenses_test.dart` compares every registered entry with
-the file on disk. The ASIO SDK is not listed: it is compiled only into the
-Windows build, and what its agreement asks of a distribution is a separate
-question (follow-up on #1179).
+the file on disk.
 
 ## Vendored code that does **not** live here: `src/miniaudio/`
 

@@ -312,7 +312,8 @@ static uint64_t le_ca_snapshot_fp(int32_t count, int32_t chain_on,
     h = le_fx_fp_u32(h, (uint32_t)types[i]);
     h = le_fx_fp_u32(h, enabled[i] ? 1u : 0u);
     if (types[i] == LE_FX_PLUGIN) continue;
-    for (int32_t p = 0; p < LE_FX_PARAMS; ++p) {
+    const int32_t w = le_fx_param_width(types[i]);
+    for (int32_t p = 0; p < w; ++p) {
       h = le_fx_fp_u32(h, f32_to_bits(params[i][p]));
     }
   }
@@ -322,8 +323,8 @@ static uint64_t le_ca_snapshot_fp(int32_t count, int32_t chain_on,
   /* ...and, for a chain holding an octaver, the loop top's position on the
    * hop the print is rendered against (#941), as le_lane_pre_fx_fingerprint
    * folds it. */
-  for (int32_t i = 0; i < count; ++i) {
-    if (types[i] == LE_FX_OCTAVER) {
+  for (int32_t i = 0; i < count && chain_on; ++i) {
+    if (le_fx_type_hops(types[i]) && enabled[i]) {
       h = le_fx_fp_u32(h, top & (uint32_t)(LE_PV_HOP - 1));
       break;
     }
@@ -620,16 +621,22 @@ static void le_cache_install_entry(le_engine* e, struct le_fx_cache* c,
                         memory_order_release);
 }
 
-/* Whether a Pre run [0, pre) of [a_type] holds an octaver. */
+/* Whether a Pre run [0, pre) of [a_type] holds an octaver that plays: its
+ * slot enabled and the chain on (le_fx_fold_hop_position's rule). */
 static int le_ca_pre_has_octaver(_Atomic int32_t* a_type,
+                                 _Atomic int32_t* a_enabled,
+                                 _Atomic int32_t* a_chain_enabled,
                                  _Atomic int32_t* a_pre,
                                  _Atomic int32_t* a_count) {
+  if (!load_i32(a_chain_enabled)) return 0;
   int32_t pre = load_i32(a_pre);
   const int32_t count = load_i32(a_count);
   if (pre > count) pre = count;
   if (pre > LE_FX_MAX) pre = LE_FX_MAX;
   for (int32_t s = 0; s < pre; ++s) {
-    if (load_i32(&a_type[s]) == LE_FX_OCTAVER) return 1;
+    if (le_fx_type_hops(load_i32(&a_type[s])) && load_i32(&a_enabled[s])) {
+      return 1;
+    }
   }
   return 0;
 }
@@ -643,18 +650,22 @@ static uint32_t le_ca_hop_tag(le_engine* e, const le_cache_job* job) {
   le_track* tr = &e->tracks[job->channel];
   int octaver = 0;
   if (job->kind == LE_CACHE_KIND_TRACK) {
-    octaver = le_ca_pre_has_octaver(tr->bus.a_fx_type, &tr->bus.a_fx_pre_count,
+    octaver = le_ca_pre_has_octaver(tr->bus.a_fx_type, tr->bus.a_fx_enabled,
+                                    &tr->bus.a_fx_chain_enabled,
+                                    &tr->bus.a_fx_pre_count,
                                     &tr->bus.a_fx_count);
     const int32_t lanes = le_lanes_active(tr);
     for (int32_t l = 0; l < lanes && !octaver; ++l) {
       le_lane* ln = &tr->lanes[l];
-      octaver = le_ca_pre_has_octaver(ln->a_fx_type, &ln->a_fx_pre_count,
-                                      &ln->a_fx_count);
+      octaver = le_ca_pre_has_octaver(ln->a_fx_type, ln->a_fx_enabled,
+                                      &ln->a_fx_chain_enabled,
+                                      &ln->a_fx_pre_count, &ln->a_fx_count);
     }
   } else {
     le_lane* ln = &tr->lanes[job->lane];
-    octaver = le_ca_pre_has_octaver(ln->a_fx_type, &ln->a_fx_pre_count,
-                                    &ln->a_fx_count);
+    octaver = le_ca_pre_has_octaver(ln->a_fx_type, ln->a_fx_enabled,
+                                    &ln->a_fx_chain_enabled,
+                                    &ln->a_fx_pre_count, &ln->a_fx_count);
   }
   return octaver ? (job->chain.clock0 & (uint32_t)(LE_PV_HOP - 1)) + 1u : 0u;
 }
@@ -830,12 +841,34 @@ static int le_cache_copy_key_matches(le_engine* e, const le_cache_job* job) {
  * the loop each lap: the live octaver output differs lap to lap, and a print
  * of one lap would step at the loop top where it swaps in. Such a chain
  * plays live. On a loop of whole hops every lap is the same, and the print
- * equals live at whichever loop top it engages. */
-static int le_cache_hop_unprintable(const int32_t* types, int32_t count,
-                                    int32_t len) {
-  if (len <= 0 || len % LE_PV_HOP == 0) return 0;
+ * equals live at whichever loop top it engages. A bypassed octaver, or one in
+ * a chain switched off, passes the signal dry and prints (a rack's
+ * switched-off Pitch Shift); turning it on changes the key and re-checks. */
+static int le_cache_hop_unprintable(const int32_t* types,
+                                    const int32_t* enabled, int32_t chain_on,
+                                    int32_t count, int32_t len) {
+  if (!chain_on || len <= 0 || len % LE_PV_HOP == 0) return 0;
   for (int32_t s = 0; s < count; ++s) {
-    if (types[s] == LE_FX_OCTAVER) return 1;
+    if (le_fx_type_hops(types[s]) && enabled[s]) return 1;
+  }
+  return 0;
+}
+
+/* Whether a printed run holds a free-running modulator (#887 part 6: the
+ * chorus's and the doubler's LFOs run on whatever the loop does): each lap
+ * of it sounds different, so one lap's print would repeat where live does
+ * not. Such a chain plays live. A bypassed one, one at 0 % mix (or, for
+ * the Mod, at 0 % depth, where it is a fixed filter), or a chain switched
+ * off prints, as nothing in it moves; turning it back up changes the key
+ * and re-checks. */
+static int le_cache_free_running(const int32_t* types, const int32_t* enabled,
+                                  const float params[LE_FX_MAX][LE_FX_PARAMS],
+                                  int32_t chain_on, int32_t count, int sr) {
+  if (!chain_on) return 0; /* the print is the dry signal */
+  for (int32_t s = 0; s < count; ++s) {
+    if (enabled[s] && le_fx_entry_free_running(types[s], params[s], sr)) {
+      return 1;
+    }
   }
   return 0;
 }
@@ -866,13 +899,14 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   const int32_t chain_on = load_i32(&ln->a_fx_chain_enabled);
   int32_t types[LE_FX_MAX];
   int32_t raw_en[LE_FX_MAX];
-  float params[LE_FX_MAX][LE_FX_PARAMS];
+  float params[LE_FX_MAX][LE_FX_PARAMS]; /* each type's own cells only */
   int has_builtin = 0;
   int has_plugin = 0;
   for (int32_t s = 0; s < count; ++s) {
     types[s] = load_i32(&ln->a_fx_type[s]);
     raw_en[s] = load_i32(&ln->a_fx_enabled[s]) ? 1 : 0;
-    for (int32_t p = 0; p < LE_FX_PARAMS; ++p) {
+    const int32_t w = le_fx_param_width(types[s]);
+    for (int32_t p = 0; p < w; ++p) {
       params[s][p] = load_f32(&ln->a_fx_param[s][p]);
     }
     if (types[s] == LE_FX_PLUGIN) {
@@ -892,9 +926,12 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
     return;
   }
   const int32_t len = load_i32(&ln->a_len);
-  if (le_cache_hop_unprintable(types, count, len)) {
+  const int free_running = le_cache_free_running(types, raw_en, params, chain_on, count,
+                                                 e->sample_rate);
+  if (free_running || le_cache_hop_unprintable(types, raw_en, chain_on, count, len)) {
     lc->state = LE_CACHE_GAVE_UP;
-    lc->reason = LE_CACHE_REASON_HOP;
+    lc->reason =
+        free_running ? LE_CACHE_REASON_FREE_RUNNING : LE_CACHE_REASON_HOP;
     lc->has_key = 0; /* any later printable chain re-arms, even the old key */
     /* Withdraw an older print still published, so the track scheduler does
      * not read it as a ready part and render a whole-track print it would
@@ -1100,13 +1137,14 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   const int32_t chain_on = load_i32(&b->a_fx_chain_enabled);
   int32_t types[LE_FX_MAX];
   int32_t raw_en[LE_FX_MAX];
-  float params[LE_FX_MAX][LE_FX_PARAMS];
+  float params[LE_FX_MAX][LE_FX_PARAMS]; /* each type's own cells only */
   int has_builtin = 0;
   int has_plugin = 0;
   for (int32_t s = 0; s < count; ++s) {
     types[s] = load_i32(&b->a_fx_type[s]);
     raw_en[s] = load_i32(&b->a_fx_enabled[s]) ? 1 : 0;
-    for (int32_t p = 0; p < LE_FX_PARAMS; ++p) {
+    const int32_t w = le_fx_param_width(types[s]);
+    for (int32_t p = 0; p < w; ++p) {
       params[s][p] = load_f32(&b->a_fx_param[s][p]);
     }
     if (types[s] == LE_FX_PLUGIN) {
@@ -1121,9 +1159,12 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
     return;
   }
   const int32_t len = load_i32(&tr->lanes[0].a_len);
-  if (le_cache_hop_unprintable(types, count, len)) {
+  const int free_running = le_cache_free_running(types, raw_en, params, chain_on, count,
+                                                 e->sample_rate);
+  if (free_running || le_cache_hop_unprintable(types, raw_en, chain_on, count, len)) {
     lc->state = LE_CACHE_GAVE_UP;
-    lc->reason = LE_CACHE_REASON_HOP;
+    lc->reason =
+        free_running ? LE_CACHE_REASON_FREE_RUNNING : LE_CACHE_REASON_HOP;
     lc->has_key = 0; /* any later printable chain re-arms, even the old key */
     atomic_store_explicit(&tr->a_track_wet, NULL, memory_order_release);
     return;
@@ -1575,7 +1616,8 @@ void le_fx_frozen_fill(le_fx_frozen_chain* c, int32_t count, int32_t pre,
   for (int32_t s = 0; s < count; ++s) {
     c->type[s] = types[s];
     c->effective[s] = chain_on && enabled[s];
-    for (int32_t p = 0; p < LE_FX_PARAMS; ++p) c->params[s][p] = params[s][p];
+    const int32_t w = le_fx_param_width(types[s]);
+    for (int32_t p = 0; p < w; ++p) c->params[s][p] = params[s][p];
   }
   c->chan_any = chan_any;
   for (int32_t s = 0; s < LE_FX_MAX; ++s) c->chan[s] = chan[s];
@@ -1594,11 +1636,12 @@ void le_fx_frozen_capture(le_fx_frozen_chain* c, _Atomic int32_t* count,
   if (n > LE_FX_MAX) n = LE_FX_MAX;
   int32_t types[LE_FX_MAX];
   int32_t en[LE_FX_MAX];
-  float params[LE_FX_MAX][LE_FX_PARAMS];
+  float params[LE_FX_MAX][LE_FX_PARAMS]; /* each type's own cells only */
   for (int32_t s = 0; s < n; ++s) {
     types[s] = load_i32(&type[s]);
     en[s] = load_i32(&enabled[s]) ? 1 : 0;
-    for (int32_t p = 0; p < LE_FX_PARAMS; ++p) params[s][p] = load_f32(&param[s][p]);
+    const int32_t w = le_fx_param_width(types[s]);
+    for (int32_t p = 0; p < w; ++p) params[s][p] = load_f32(&param[s][p]);
   }
   le_fx_chan chan[LE_FX_MAX];
   int32_t chan_any = 0;
@@ -1834,6 +1877,7 @@ static void le_cache_render(le_engine* e, struct le_fx_cache* c,
 
 static void le_ca_worker_main(void* arg) {
   le_engine* e = (le_engine*)arg;
+  le_flush_denormals(); /* renders round as the callback does */
   struct le_fx_cache* c = e->cache; /* stable: shutdown joins before free */
 #if defined(__linux__)
   /* E9: SCHED_OTHER at nice +10, so an eight-lane Transpose render yields to

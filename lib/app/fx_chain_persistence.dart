@@ -691,7 +691,7 @@ class FxChainPersistence {
       BuiltInEffect() => effect.copyWith(
         enabled: enabled,
         params: [
-          for (var index = 0; index < effect.params.length; index++)
+          for (var index = 0; index < effect.type.params.length; index++)
             _parameters[FxParamTarget(
                   address: address,
                   slotId: id,

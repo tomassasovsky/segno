@@ -34,6 +34,15 @@ abstract final class FxFingerprint {
     return _f32bits[0];
   }
 
+  /// Folds each of [bytes] into the running hash [h], in order.
+  static int mixBytes(int h, Iterable<int> bytes) {
+    var out = h;
+    for (final b in bytes) {
+      out = (out ^ (b & 0xff)) * _prime;
+    }
+    return out;
+  }
+
   /// Folds one 32-bit [value] into the running hash [h], low byte first (so the
   /// fold is endianness-independent, matching the C mirror).
   static int mixU32(int h, int value) {

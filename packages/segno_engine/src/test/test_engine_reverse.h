@@ -1,6 +1,10 @@
 /* Reverse (#1162): literal-PCM oracles through the production callback. Every
  * fixture imports a ramp (pcm[i] == i), so the dry output IS the read index
  * and a direction claim is a claim about which sample came out. */
+static void rev_process(le_engine* e, float* out, int frames, int block);
+
+/* The fixture plays one whole cycle of the take before returning, so the
+ * Play's fade-in (#1400) is over and the read is back at index 0. */
 static le_engine* reverse_fixture(int sr, int len, int base) {
   le_engine* e = le_engine_create();
   CHECK(le_engine_configure(e, sr, 1, 1, 4000) == LE_OK);
@@ -10,6 +14,8 @@ static le_engine* reverse_fixture(int sr, int len, int base) {
   CHECK(le_engine_commit_session(e, base, 0) == LE_OK);
   CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
+  static float preroll[2048];
+  rev_process(e, preroll, len, 512);
   return e;
 }
 
@@ -42,6 +48,21 @@ static void rev_check(const float* out, int frames, int reversed, int cur,
                       int len, int F) {
   for (int k = 0; k < frames; ++k) {
     CHECK(fabs(out[k] - rev_expect(reversed, cur, k, len, F)) < 2e-3);
+  }
+}
+
+/* test_gate_gain (#1400) under the name these oracles read. */
+static float rev_fade(int sr, int k, int out) {
+  return test_gate_gain(sr, k, out);
+}
+
+/* rev_check for a turn that lands `k0` frames into a Play's fade-in. */
+static void rev_check_fading_in(const float* out, int frames, int reversed,
+                                int cur, int len, int F, int sr, int k0) {
+  for (int k = 0; k < frames; ++k) {
+    const double want =
+        rev_expect(reversed, cur, k, len, F) * rev_fade(sr, k0 + k, 0);
+    CHECK(fabs(out[k] - want) < 2e-3);
   }
 }
 
@@ -85,11 +106,12 @@ static void test_reverse_turn_samples(void) {
     CHECK(s.master_position_frames == (37 + 2 * n) % len);
     /* ... until the transport hold re-locks it. */
     CHECK(le_engine_stop_track(e, 0) == LE_OK);
+    rev_process(e, out, F, blocks[b]); /* the Stop's fade-out (#1400) */
     rev_process(e, out, 8, blocks[b]);
     for (int i = 0; i < 8; ++i) CHECK(out[i] == 0);
     CHECK(le_engine_play(e, 0) == LE_OK);
     rev_process(e, out, 5, blocks[b]);
-    for (int i = 0; i < 5; ++i) CHECK(out[i] == (float)i);
+    for (int i = 0; i < 5; ++i) CHECK(out[i] == (float)i * rev_fade(sr, i, 0));
     le_engine_destroy(e);
   }
 }
@@ -101,7 +123,8 @@ static void test_reverse_stopped_and_install(void) {
   float out[1024];
   rev_process(e, out, 37, 512);
   CHECK(le_engine_stop_track(e, 0) == LE_OK);
-  rev_process(e, out, 10, 512); /* held: the clock parks at 0 */
+  /* Held: the clock parks at 0, and the Stop's fade-out (#1400) ends. */
+  rev_process(e, out, F + 10, 512);
   uint64_t id;
   CHECK(le_engine_toggle_reverse(e, 0, &id) == LE_OK);
   rev_process(e, out, 4, 512);
@@ -115,16 +138,20 @@ static void test_reverse_stopped_and_install(void) {
    * direction flipped. */
   CHECK(le_engine_play(e, 0) == LE_OK);
   rev_process(e, out, 5, 512);
-  for (int i = 0; i < 5; ++i) CHECK(out[i] == (float)(999 - i));
+  for (int i = 0; i < 5; ++i) {
+    CHECK(out[i] == (float)(999 - i) * rev_fade(48000, i, 0));
+  }
   /* Installing the direction a track already has changes nothing. */
   CHECK(le_engine_install_reverse(e, 0, 1, &id) == LE_OK);
   rev_process(e, out, 3, 512);
-  CHECK(out[0] == 994 && out[1] == 993 && out[2] == 992);
+  CHECK(out[0] == 994 * rev_fade(48000, 5, 0) &&
+        out[1] == 993 * rev_fade(48000, 6, 0) &&
+        out[2] == 992 * rev_fade(48000, 7, 0));
   fade_result(e, id, LE_OK);
   /* Installing the other direction turns like a toggle. */
   CHECK(le_engine_install_reverse(e, 0, 0, &id) == LE_OK);
   rev_process(e, out, 600, 512);
-  rev_check(out, 600, 0, 991, len, F);
+  rev_check_fading_in(out, 600, 0, 991, len, F, 48000, 8);
   fade_result(e, id, LE_OK);
   le_engine_get_track(e, 0, &snap);
   CHECK(snap.reversed == 0);
@@ -171,7 +198,12 @@ static void test_reverse_sync_divisions(void) {
    * half division's p % 512 and the quarter's p % 256. */
   CHECK(le_engine_play(e, 1) == LE_OK);
   rev_process(e, out, 600, 512);
-  for (int p = 0; p < 600; ++p) CHECK(out[p] == (float)(p + p % 512 + p % 256));
+  for (int p = 0; p < 600; ++p) {
+    /* Only the primary is long enough to fade in (#1400); the divisions,
+     * under two fades long, snap. */
+    CHECK(fabsf(out[p] - ((float)p * rev_fade(48000, p, 0) +
+                          (float)(p % 512 + p % 256))) < 1e-3f);
+  }
   /* Division 2 mirrors the folded phase; 512 is shorter than two turn
    * windows, so the turn snaps. */
   uint64_t id;
@@ -185,23 +217,26 @@ static void test_reverse_sync_divisions(void) {
   /* With the origin parked by a hold, the reversed lap starts at len - 1 on
    * the primary's loop top and completes exactly two laps per primary cycle. */
   for (int t = 0; t < 3; ++t) CHECK(le_engine_stop_track(e, t) == LE_OK);
-  rev_process(e, out, 4, 512);
+  rev_process(e, out, 480 + 4, 512); /* the Stops' fade-outs (#1400) */
   CHECK(le_engine_play(e, 0) == LE_OK);
   rev_process(e, out, 1024, 512);
   for (int p = 0; p < 1024; ++p) {
-    CHECK(out[p] == (float)(p + 511 - p % 512 + p % 256));
+    CHECK(fabsf(out[p] - ((float)p * rev_fade(48000, p, 0) +
+                          (float)(511 - p % 512 + p % 256))) < 1e-3f);
   }
   /* Division 4, toggled while stopped and launched in the next block: it
    * re-enters at index 0 and runs back; the others keep their directions. */
   for (int t = 0; t < 3; ++t) CHECK(le_engine_stop_track(e, t) == LE_OK);
-  rev_process(e, out, 4, 512);
+  rev_process(e, out, 480 + 4, 512);
   CHECK(le_engine_toggle_reverse(e, 2, &id) == LE_OK);
   drain(e);
   fade_result(e, id, LE_OK);
   CHECK(le_engine_play(e, 2) == LE_OK);
   rev_process(e, out, 600, 512);
   for (int p = 0; p < 600; ++p) {
-    CHECK(out[p] == (float)(p + 511 - p % 512 + (256 - p % 256) % 256));
+    CHECK(fabsf(out[p] - ((float)p * rev_fade(48000, p, 0) +
+                          (float)(511 - p % 512 + (256 - p % 256) % 256))) <
+          1e-3f);
   }
   le_engine_destroy(e);
 }
@@ -224,11 +259,11 @@ static void test_reverse_free_mode_and_once(void) {
   static float out[2048];
   CHECK(le_engine_play(e, 0) == LE_OK);
   rev_process(e, out, 37, 512);
-  for (int i = 0; i < 37; ++i) CHECK(out[i] == (float)i);
+  for (int i = 0; i < 37; ++i) CHECK(out[i] == (float)i * rev_fade(48000, i, 0));
   uint64_t id;
   CHECK(le_engine_toggle_reverse(e, 0, &id) == LE_OK);
   rev_process(e, out, 1100, 512); /* the private clock ticks on, the read runs back */
-  rev_check(out, 1100, 1, 37, len, F);
+  rev_check_fading_in(out, 1100, 1, 37, len, F, 48000, 37);
   fade_result(e, id, LE_OK);
   le_track_snapshot snap;
   le_engine_get_track(e, 0, &snap);
@@ -240,13 +275,20 @@ static void test_reverse_free_mode_and_once(void) {
   const int cur = rev_mod(37 - 1100, len);
   rev_process(e, out, cur + 1, 512);
   for (int k = 0; k <= cur; ++k) CHECK(out[k] == (float)(cur - k));
-  rev_process(e, out, 10, 512);
-  for (int i = 0; i < 10; ++i) CHECK(out[i] == 0);
+  /* The end fades out (#1400) reading on into the next reversed lap, as a
+   * listener would have heard it continue: 999, 998 ... */
+  rev_process(e, out, F + 10, 512);
+  for (int i = 0; i < F; ++i) {
+    CHECK(out[i] == (float)(999 - i) * rev_fade(48000, i, 1));
+  }
+  for (int i = F; i < F + 10; ++i) CHECK(out[i] == 0);
   le_engine_get_track(e, 0, &snap);
   CHECK(snap.state == LE_TRACK_STOPPED && snap.reversed == 1);
   CHECK(le_engine_play(e, 0) == LE_OK);
   rev_process(e, out, 5, 512);
-  for (int i = 0; i < 5; ++i) CHECK(out[i] == (float)(999 - i));
+  for (int i = 0; i < 5; ++i) {
+    CHECK(out[i] == (float)(999 - i) * rev_fade(48000, i, 0));
+  }
   le_engine_destroy(e);
 }
 
@@ -262,14 +304,21 @@ static void test_reverse_shared_once(void) {
   rev_process(e, out, 38, 512); /* 37 .. 0, mixing the turn */
   rev_check(out, 38, 1, 37, len, F);
   fade_result(e, id, LE_OK);
-  rev_process(e, out, 10, 512); /* the next index would be 999: lap end */
-  for (int i = 0; i < 10; ++i) CHECK(out[i] == 0);
+  /* The next index would be 999: lap end. The end fades out (#1400). */
+  rev_process(e, out, F + 10, 512);
+  for (int i = 0; i < F; ++i) {
+    CHECK(out[i] == (float)(999 - i) * rev_fade(48000, i, 1));
+  }
+  for (int i = F; i < F + 10; ++i) CHECK(out[i] == 0);
   le_track_snapshot snap;
   le_engine_get_track(e, 0, &snap);
   CHECK(snap.state == LE_TRACK_STOPPED);
   CHECK(le_engine_play(e, 0) == LE_OK);
   rev_process(e, out, 1000, 512); /* one reversed lap from len - 1 */
-  for (int i = 0; i < 1000; ++i) CHECK(out[i] == (float)(999 - i));
+  for (int i = 0; i < 1000; ++i) {
+    CHECK(out[i] == (float)(999 - i) * rev_fade(48000, i, 0));
+  }
+  rev_process(e, out, F, 512); /* Once again: the end fades */
   rev_process(e, out, 5, 512);
   for (int i = 0; i < 5; ++i) CHECK(out[i] == 0);
   le_engine_destroy(e);
@@ -289,12 +338,15 @@ static void test_reverse_two_lanes(void) {
   drain(e);
   static float out[2048];
   rev_process(e, out, 37, 512);
-  for (int i = 0; i < 37; ++i) CHECK(out[i] == (float)(2 * i));
+  for (int i = 0; i < 37; ++i) {
+    CHECK(out[i] == 2.0f * ((float)i * rev_fade(48000, i, 0)));
+  }
   uint64_t id;
   CHECK(le_engine_toggle_reverse(e, 0, &id) == LE_OK);
   rev_process(e, out, 1100, 512);
   for (int k = 0; k < 1100; ++k) {
-    CHECK(fabs(out[k] - 2 * rev_expect(1, 37, k, len, F)) < 4e-3);
+    CHECK(fabs(out[k] - 2 * rev_expect(1, 37, k, len, F) *
+                            rev_fade(48000, 37 + k, 0)) < 4e-3);
   }
   fade_result(e, id, LE_OK);
   le_engine_destroy(e);
@@ -525,11 +577,14 @@ static void test_reverse_hold_settles_turn(void) {
   rev_check(out, 100, 1, 37, len, F);
   fade_result(e, id, LE_OK);
   CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  rev_process(e, out, F, 512); /* the Stop's fade-out (#1400) */
   rev_process(e, out, 8, 512);
   for (int i = 0; i < 8; ++i) CHECK(out[i] == 0);
   CHECK(le_engine_play(e, 0) == LE_OK);
   rev_process(e, out, 5, 512);
-  for (int i = 0; i < 5; ++i) CHECK(out[i] == (float)(999 - i));
+  for (int i = 0; i < 5; ++i) {
+    CHECK(out[i] == (float)(999 - i) * rev_fade(48000, i, 0));
+  }
   le_engine_destroy(e);
 }
 
@@ -549,7 +604,9 @@ static void test_reverse_commit_parks_install(void) {
   CHECK(le_engine_commit_session(e, len, 0) == LE_OK);
   CHECK(le_engine_play(e, 0) == LE_OK);
   rev_process(e, out, 5, 512);
-  for (int i = 0; i < 5; ++i) CHECK(out[i] == (float)(999 - i));
+  for (int i = 0; i < 5; ++i) {
+    CHECK(out[i] == (float)(999 - i) * rev_fade(48000, i, 0));
+  }
   fade_result(e, id, LE_OK);
   le_track_snapshot snap;
   le_engine_get_track(e, 0, &snap);
@@ -739,7 +796,9 @@ static void test_reverse_restored_image_tracks_phase(void) {
   for (int i = 64; i < 128; ++i) CHECK(live[i] == 0);
   /* The restore re-established the held grid, so the image plays from 0;
    * the toggle at index 128 turns it around. */
-  CHECK(live[129] == 1 && live[256] == 128 && live[257] != 129);
+  /* The restore plays from EMPTY, so it fades in (#1400). */
+  CHECK(live[129] == 1 * rev_fade(48000, 1, 0) &&
+        live[256] == 128 * rev_fade(48000, 128, 0) && live[257] != 129);
   /* One 322 at the restore, and no 323 while the reversed read is continuous. */
   {
     char path[700];
@@ -843,7 +902,9 @@ static void test_reverse_reopen_keeps_direction(void) {
   for (int i = 0; i < 8; ++i) CHECK(out[i] == 0.0f);
   CHECK(le_engine_play(e, 0) == LE_OK);
   rev_process(e, out, 5, 512);
-  for (int i = 0; i < 5; ++i) CHECK(out[i] == (float)(len - 1 - i));
+  for (int i = 0; i < 5; ++i) {
+    CHECK(out[i] == (float)(len - 1 - i) * rev_fade(48000, i, 0));
+  }
   le_engine_destroy(e);
 
   /* The dropped half: a later take reversed while its trailing seam fold

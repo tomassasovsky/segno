@@ -19,6 +19,7 @@ typedef struct le_recipe_target {
   _Atomic int32_t* rack;
   int32_t *pushed_count, *pushed_type;
   _Atomic uint32_t* revision;
+  le_fx_slot_meta* meta;
 } le_recipe_target;
 
 struct le_prepared_fx {
@@ -27,18 +28,36 @@ struct le_prepared_fx {
   uint32_t image_revision, revision;
   int owner, channel, lane, count;
   uint32_t lane_mask;
-  le_fx_recipe recipes[LE_MAX_LANES];
   le_plugin_slot* removed[LE_MAX_LANES * LE_FX_MAX];
   le_plugin_slot* added[LE_MAX_LANES * LE_FX_MAX];
   int removed_count, added_count;
   _Atomic int applied;
+  /* One recipe per lane from the lowest lane the edit names to the highest
+   * (recipes[lane - base_lane], le_prepared_recipe): a recipe is about 13 KB
+   * at 32 parameter cells, so a one-chain edit carries one. */
+  int base_lane;
+  le_fx_recipe recipes[];
 };
+
+/* A zeroed edit with room for lanes [first, last], or NULL. */
+static struct le_prepared_fx* le_prepared_alloc(int first, int last) {
+  struct le_prepared_fx* p = le_rt_alloc_prefaulted(
+      sizeof(*p) + (size_t)(last - first + 1) * sizeof(le_fx_recipe));
+  if (p) p->base_lane = first;
+  return p;
+}
+
+/* Lane [lane]'s recipe; the lane must be one the edit names. */
+static le_fx_recipe* le_prepared_recipe(struct le_prepared_fx* p, int lane) {
+  return &p->recipes[lane - p->base_lane];
+}
 
 #define LE_RECIPE_TARGET(v) (le_recipe_target){ &(v)->fx, &(v)->a_fx_count, \
   NULL, &(v)->a_fx_chain_enabled, (v)->a_fx_type, (v)->a_fx_enabled, \
   (v)->a_fx_chan_in, (v)->a_fx_chan_out, (v)->a_fx_param, \
   (v)->a_fx_chan_pan_bits, (v)->a_fx_chan_gl_bits, (v)->a_fx_chan_gr_bits, \
-  (v)->a_fx_chan_level_bits, (v)->a_fx_chan_rack, &(v)->fx_count_pushed, (v)->fx_type_pushed, &(v)->a_fx_recipe_revision }
+  (v)->a_fx_chan_level_bits, (v)->a_fx_chan_rack, &(v)->fx_count_pushed, (v)->fx_type_pushed, &(v)->a_fx_recipe_revision, \
+  (v)->fx_meta }
 
 static int recipe_target(le_engine* e, int owner, int ch, int lane,
                           le_recipe_target* target) {
@@ -125,14 +144,18 @@ static int prepare_recipe(le_engine* e, struct le_prepared_fx* edit,
        && r->pre_count)) return 0;
   if (le_fx_edit_pending(e, edit->owner, edit->channel, lane)) return 0;
   for (int s = 0; s < r->count; ++s) {
-    if (r->type[s] < LE_FX_NONE || r->type[s] > LE_FX_PLUGIN ||
+    if (r->type[s] < LE_FX_NONE || r->type[s] >= LE_FX_WIDTHS ||
         (r->slot_enabled[s] != 0 && r->slot_enabled[s] != 1) ||
         r->input_mode[s] < 0 || r->input_mode[s] > 3 ||
         r->output_mode[s] < 0 || r->output_mode[s] > 1 ||
         !isfinite(r->placement[s]) || r->placement[s] < -1 || r->placement[s] > 1 ||
         !isfinite(r->level[s]) || r->level[s] < 0 || r->level[s] > LE_FX_LEVEL_MAX ||
-        r->rack[s] < 0 || r->rack[s] > (LE_FX_RACK_FIRST | LE_FX_RACK_LAST)) return 0;
-    for (int k = 0; k < LE_FX_PARAMS; ++k)
+        (r->rack[s] & ~(LE_FX_RACK_FIRST | LE_FX_RACK_LAST | LE_FX_RACK_DUB_PATH |
+                        LE_FX_RACK_AMB_PATH)) != 0 ||
+        (r->rack[s] & (LE_FX_RACK_DUB_PATH | LE_FX_RACK_AMB_PATH)) ==
+            (LE_FX_RACK_DUB_PATH | LE_FX_RACK_AMB_PATH)) return 0;
+    /* The cells the type reads; the rest are never stored. */
+    for (int k = 0; k < le_fx_param_width(r->type[s]); ++k)
       if (!isfinite(r->params[s][k]) || r->params[s][k] < 0 || r->params[s][k] > 1) return 0;
     le_plugin_slot* slot = r->plugin[s];
     if ((r->type[s] == LE_FX_PLUGIN) != (slot != NULL)) return 0;
@@ -162,7 +185,7 @@ static int prepare_recipe(le_engine* e, struct le_prepared_fx* edit,
     le_plugin_slot* old = atomic_load_explicit(&t.fx->plugin[s], memory_order_acquire);
     if (old && !pointer_in_recipe(r, old)) edit->removed[edit->removed_count++] = old;
   }
-  edit->recipes[lane] = *r;
+  *le_prepared_recipe(edit, lane) = *r;
   return 1;
 }
 
@@ -170,7 +193,10 @@ struct le_prepared_fx* le_fx_prepare_capture(le_engine* e, int ch,
                                             const le_record_image* image) {
   if (!image->fx_lane_mask) return NULL;
   if (!image->lane_fx || (image->fx_lane_mask >> LE_MAX_LANES)) return NULL;
-  struct le_prepared_fx* p = le_rt_alloc_prefaulted(sizeof(*p));
+  int first = 0, last = 0;
+  while (!(image->fx_lane_mask & (1u << first))) ++first;
+  while (image->fx_lane_mask >> (last + 1)) ++last;
+  struct le_prepared_fx* p = le_prepared_alloc(first, last);
   if (!p) return NULL;
   p->owner = LE_FX_OWNER_LANE; p->channel = ch; p->lane_mask = image->fx_lane_mask;
   for (int lane = 0; lane < LE_MAX_LANES; ++lane)
@@ -188,12 +214,10 @@ struct le_prepared_fx* le_fx_prepare_chains(le_engine* e, int owner,
   if (owner != LE_FX_OWNER_LANE && owner != LE_FX_OWNER_TRACK) return NULL;
   if (owner == LE_FX_OWNER_TRACK) count = 1;
   if (count < 1 || count > LE_MAX_LANES) return NULL;
-  struct le_prepared_fx* p = le_rt_alloc_prefaulted(sizeof(*p));
+  struct le_prepared_fx* p = le_prepared_alloc(0, count - 1);
   if (!p) return NULL;
   p->owner = owner; p->channel = channel;
-  le_fx_recipe empty;
-  memset(&empty, 0, sizeof(empty));
-  empty.enabled = 1;
+  static const le_fx_recipe empty = {.enabled = 1};
   for (int lane = 0; lane < count; ++lane) {
     const le_fx_recipe* r =
         recipes != NULL && lane < recipe_count ? &recipes[lane] : &empty;
@@ -230,7 +254,7 @@ int32_t le_engine_set_fx_recipe(le_engine* e, int owner, int ch, int lane,
   if (!revision || lane < 0 || lane >= LE_MAX_LANES ||
       (owner != LE_FX_OWNER_LANE && lane != 0) ||
       (owner == LE_FX_OWNER_ALL_TRACKS && ch != 0)) return LE_ERR_INVALID;
-  struct le_prepared_fx* p = le_rt_alloc_prefaulted(sizeof(*p));
+  struct le_prepared_fx* p = le_prepared_alloc(lane, lane);
   if (!p) return LE_ERR_INVALID;
   p->owner = owner; p->channel = ch; p->lane = lane; p->lane_mask = 1u << lane;
   p->revision = revision;
@@ -253,36 +277,86 @@ void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* p, uint64_t frame) 
     if (!(p->lane_mask & (1u << lane))) continue;
     le_recipe_target t;
     if (!recipe_target(e, p->owner, p->channel, lane, &t)) return;
-    const le_fx_recipe* r = &p->recipes[lane];
+    const le_fx_recipe* r = le_prepared_recipe(p, lane);
+    /* Which slots now hold a different entry than before: those reset
+     * (and, on an output bus, log their type for perf_render to reset too).
+     * An entry kept where it was, with its type, keeps its DSP state, so a
+     * publish that only moves settings leaves every tail sounding. */
+    _Static_assert(LE_FX_MAX <= 64, "renewed is one bit per slot");
+    uint64_t renewed = 0;
+    /* The count the chain was running: a renewed slot inside it replaces an
+     * entry that was sounding (le_fx_entry_renew). */
+    const int32_t was_count = load_i32(t.count);
     for (int s = 0; s < LE_FX_MAX; ++s) {
       const int active = s < r->count;
       const int ty = active ? r->type[s] : LE_FX_NONE;
-      atomic_store_explicit(&t.fx->plugin[s], active ? r->plugin[s] : NULL, memory_order_release);
+      const uint64_t id = active ? r->instance[s] : 0u;
+      le_plugin_slot* host = active ? r->plugin[s] : NULL;
+      /* Another hosted plugin under the same entry is another instance. */
+      const int rehosted =
+          atomic_load_explicit(&t.fx->plugin[s], memory_order_relaxed) != host;
+      atomic_store_explicit(&t.fx->plugin[s], host, memory_order_release);
+      const int retyped = load_i32(&t.type[s]) != ty;
+      const int renew =
+          retyped || rehosted || id == 0u ||
+          atomic_load_explicit(&t.meta[s].instance, memory_order_relaxed) != id;
+      atomic_store_explicit(&t.meta[s].instance, id, memory_order_relaxed);
+      if (active) {
+        /* Only what the type reads: this runs in the callback. A retyped row
+         * also clears its tail once, so no cell past the width ever holds
+         * another type's setting. Row and type land in the same callback,
+         * so no kernel runs on another type's settings. */
+        const int32_t width = le_fx_param_width(ty);
+        for (int k = 0; k < width; ++k) store_f32(&t.param[s][k], r->params[s][k]);
+        if (retyped) {
+          for (int k = width; k < LE_FX_PARAMS; ++k) store_f32(&t.param[s][k], 0.0f);
+        }
+      }
       store_i32(&t.type[s], ty);
-      if (!active) continue;
-      for (int k = 0; k < LE_FX_PARAMS; ++k) store_f32(&t.param[s][k], r->params[s][k]);
+      if (!active) {
+        /* A slot leaving the chain drops its enabled bit, so the per-buffer
+         * sweep parks its ramp at bypass and a later entry there starts
+         * from silence (#1452). */
+        store_i32(&t.slot_enabled[s], 0);
+        continue;
+      }
+      if (renew) renewed |= 1ull << s;
       store_i32(&t.slot_enabled[s], r->slot_enabled[s]);
       store_i32(&t.in[s], r->input_mode[s]); store_i32(&t.out[s], r->output_mode[s]);
       store_f32(&t.pan[s], r->placement[s]); store_f32(&t.level[s], r->level[s]);
       float gl, gr; le_pan_gains(r->placement[s], &gl, &gr);
       store_f32(&t.gl[s], gl); store_f32(&t.gr[s], gr);
+      const int rack_moved = load_i32(&t.rack[s]) != r->rack[s];
       store_i32(&t.rack[s], r->rack[s]);
+      if (!renew && !rack_moved) continue;
       const int instances = p->owner == LE_FX_OWNER_ALL_TRACKS ? (e->out_channels + 1) / 2 : 1;
       for (int bus = 0; bus < instances; ++bus) {
         le_fx_state* fx = p->owner == LE_FX_OWNER_ALL_TRACKS ? &e->all_tracks_fx[bus] : t.fx;
-        le_fx_entry_reset(fx, s);
+        if (renew) le_fx_entry_renew(fx, s, ty, s < was_count);
         /* A new structure: a rack edge landing here settles at its rack's
          * state on first use instead of ramping from whatever stood here. */
         le_fx_rack_reset(fx, s);
       }
     }
     if (p->owner == LE_FX_OWNER_OUTPUT) {
+      /* Every slot's type, marked kept (lane 1) where the entry stayed,
+       * so perf_render renews exactly the slots live renewed, then every
+       * described parameter, so perf_render holds this recipe's values
+       * whatever it held before. The snapshot's view takes them too, so it
+       * logs only later granular edits (snapshot_bus_fx). */
+      le_obus_snap* view = &e->fx_snap.obus[p->channel];
       for (int s = 0; s < r->count; ++s) {
+        const int kept = !(renewed & (1ull << s));
         le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_OUTPUT_FX,
-            .fx = {p->channel, 0, s, r->type[s]}});
-        for (int k = 0; k < LE_FX_PARAMS; ++k)
+            .fx = {p->channel, kept, s, r->type[s]}});
+        const int32_t w = le_fx_param_width(r->type[s]);
+        for (int k = 0; k < w; ++k) {
           le_plog_push(e, frame, (le_command){.code = LE_PLOG_SET_OUTPUT_FX_PARAM,
-              .fx = {p->channel, 0, LE_PLOG_FX_PARAM_PACK(s, k), (int32_t)f32_to_bits(r->params[s][k])}});
+              .fx = {p->channel, 0, LE_PLOG_FX_PARAM_PACK(s, k),
+                     (int32_t)f32_to_bits(r->params[s][k])}});
+          view->fx_params[s][k] = r->params[s][k];
+        }
+        view->fx_type[s] = r->type[s];
       }
       le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_OUTPUT_FX_COUNT,
           .fxcount = {p->channel, 0, r->count, 0}});
@@ -291,6 +365,20 @@ void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* p, uint64_t frame) 
             .fx = {p->channel, 0, s, r->slot_enabled[s]}});
       le_plog_push(e, frame, (le_command){.code = LE_PLOG_SET_OUTPUT_FX_CHAIN_ENABLED,
           .arg_i = p->channel, .arg_f = (float)r->enabled});
+    }
+    if (p->owner == LE_FX_OWNER_LANE) {
+      /* A lane recipe is not in the perf log (perf_render keeps the
+       * arm-time lane chain), so its settings must not be logged either:
+       * the snapshot logs a lane parameter that differs from its last view
+       * (snapshot_lane_fx), and this makes the recipe's values that view. */
+      le_fx_snapshot* snap = &e->fx_snap;
+      for (int s = 0; s < r->count; ++s) {
+        snap->lane_type[p->channel][lane][s] = r->type[s];
+        const int32_t w = le_fx_param_width(r->type[s]);
+        for (int k = 0; k < w; ++k) {
+          snap->lane_params[p->channel][lane][s][k] = r->params[s][k];
+        }
+      }
     }
     store_i32(t.count, r->count); if (t.pre) store_i32(t.pre, r->pre_count);
     store_i32(t.enabled, r->enabled);
@@ -319,8 +407,9 @@ void le_fx_recipe_collect(le_engine* e, int quiescent) {
       if (!(p->lane_mask & (1u << lane))) continue;
       le_recipe_target t;
       if (recipe_target(e, p->owner, p->channel, lane, &t)) {
-        *t.pushed_count = p->recipes[lane].count;
-        memcpy(t.pushed_type, p->recipes[lane].type, sizeof(p->recipes[lane].type));
+        const le_fx_recipe* r = le_prepared_recipe(p, lane);
+        *t.pushed_count = r->count;
+        memcpy(t.pushed_type, r->type, sizeof(r->type));
       }
     }
     *link = p->next; le_rt_free(p);

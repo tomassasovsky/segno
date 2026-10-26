@@ -3,6 +3,7 @@ library;
 
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -13,6 +14,10 @@ import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 
 /// The `LE_FX_PARAM_TAPER_UNVERIFIED` bit of `le_fx_param_desc.flags`.
 const int _taperUnverified = 1 << 0;
+
+/// The `LE_FX_PARAM_OFF_AT_MIN` and `LE_FX_PARAM_OFF_AT_MAX` bits.
+const int _offAtMin = 1 << 1;
+const int _offAtMax = 1 << 2;
 
 /// The value a Dart double holds once stored in a C `float`, so the Dart copy
 /// of the table compares exactly against the native one.
@@ -62,7 +67,20 @@ void main() {
             p.taperUnverified,
             reason: reason,
           );
-          expect(native.flags & ~_taperUnverified, 0, reason: reason);
+          expect(
+            native.flags & (_offAtMin | _offAtMax),
+            switch (p.off) {
+              FxParamOff.none => 0,
+              FxParamOff.atMin => _offAtMin,
+              FxParamOff.atMax => _offAtMax,
+            },
+            reason: reason,
+          );
+          expect(
+            native.flags & ~(_taperUnverified | _offAtMin | _offAtMax),
+            0,
+            reason: reason,
+          );
         }
         // One past the last parameter is refused.
         expect(
@@ -73,7 +91,8 @@ void main() {
       }
       // A hosted plugin has no fixed parameters; an unknown type is refused.
       expect(bindings.le_fx_param_count(kPluginFxCode), 0);
-      expect(bindings.le_fx_param_count(kPluginFxCode + 1), lessThan(0));
+      final last = TrackEffectType.values.map((t) => t.code).reduce(math.max);
+      expect(bindings.le_fx_param_count(last + 1), lessThan(0));
     },
     skip: skip,
   );
