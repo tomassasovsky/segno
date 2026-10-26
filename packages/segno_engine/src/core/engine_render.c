@@ -359,7 +359,11 @@ static void le_render_fail(le_render_job* j, int32_t result) {
 static int64_t le_render_ring_entries(const le_fx_frozen_chain* c) {
   int64_t n = 0;
   for (int32_t s = 0; s < c->count && s < LE_FX_MAX; ++s) {
-    n += c->type[s] == LE_FX_MODE_DELAY ? 2 : 1;
+    /* The Mode delay's line, and the Dual Octaver's vocoder buffers with
+     * its low band (#1467, under 100 KB at 96 kHz), as two. */
+    n += c->type[s] == LE_FX_MODE_DELAY || c->type[s] == LE_FX_DUAL_OCTAVER
+             ? 2
+             : 1;
   }
   return n;
 }
