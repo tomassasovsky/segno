@@ -377,6 +377,120 @@ void main() {
       expect(cubit.state.refusal, isNull);
     });
 
+    test('a repository that will not reopen at all refuses as busy', () {
+      seed();
+      when(() => repository.applyAudioConfig(any())).thenReturn(
+        const AudioApplyResult(
+          status: AudioApplyStatus.refused,
+          result: EngineResult.notReady,
+        ),
+      );
+      final cubit = buildCubit()..setBufferFrames(256);
+      addTearDown(cubit.close);
+
+      expect(cubit.state.refusal, const ApplyRefusal.busy('other'));
+      expect(cubit.state.status, AudioSetupStatus.running);
+      expect(cubit.state.phase, ConfigPhase.settled);
+    });
+
+    test('an interface that will not open is named, not its rates', () {
+      seed();
+      when(repository.devices).thenReturn(const [
+        AudioDevice(
+          id: 'b',
+          name: 'Other Interface',
+          isDefault: false,
+          isInput: false,
+        ),
+      ]);
+      when(() => repository.applyAudioConfig(any())).thenReturn(
+        const AudioApplyResult(
+          status: AudioApplyStatus.refused,
+          result: EngineResult.device,
+        ),
+      );
+      final cubit = buildCubit()
+        ..setDevice(playbackDeviceId: 'b', captureDeviceId: 'b');
+      addTearDown(cubit.close);
+
+      expect(
+        cubit.state.refusal,
+        const ApplyRefusal.deviceRefused('Other Interface'),
+      );
+      expect(cubit.state.phase, ConfigPhase.settled);
+      expect(cubit.state.playbackDeviceId, isEmpty);
+    });
+
+    test('a refused apply that cleared the loops still says so', () {
+      seed();
+      when(() => repository.applyAudioConfig(any())).thenReturn(
+        const AudioApplyResult(
+          status: AudioApplyStatus.refused,
+          result: EngineResult.device,
+          reopen: EngineReopened(
+            outcome: ReopenOutcome.clearedRate,
+            droppedTracks: 0,
+            previousSampleRate: 48000,
+            sampleRate: 44100,
+          ),
+        ),
+      );
+      final cubit = buildCubit()
+        ..setDevice(playbackDeviceId: 'b', captureDeviceId: 'b');
+      addTearDown(cubit.close);
+
+      expect(
+        cubit.state.deviceConnectivity,
+        DeviceConnectivity.restoredCleared,
+      );
+    });
+
+    test('after a failed open the same choice can be asked again', () {
+      seed();
+      var calls = 0;
+      when(() => repository.applyAudioConfig(any())).thenAnswer((_) {
+        calls++;
+        return calls == 1
+            ? const AudioApplyResult(
+                status: AudioApplyStatus.failed,
+                result: EngineResult.device,
+              )
+            : _applied;
+      });
+      final cubit = buildCubit()
+        ..setDevice(playbackDeviceId: 'b', captureDeviceId: 'b');
+      addTearDown(cubit.close);
+      expect(cubit.state.status, AudioSetupStatus.error);
+
+      // Nothing runs, so tapping what is shown is the retry.
+      cubit.setBufferFrames(128);
+
+      expect(calls, 2);
+      expect(cubit.state.status, AudioSetupStatus.running);
+    });
+
+    test('a buffer change keeps the loop cap that is open, so the reopen '
+        'keeps the loops', () {
+      seed();
+      // Open at a cap a minute count does not round-trip to.
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(
+          sampleRate: 48000,
+          bufferFrames: 128,
+          maxLoopFrames: 14399999,
+        ),
+      );
+      final cubit = buildCubit()..setBufferFrames(256);
+      addTearDown(cubit.close);
+
+      final asked =
+          verify(
+                () => repository.applyAudioConfig(captureAny()),
+              ).captured.single
+              as EngineConfig;
+      expect(asked.maxLoopFrames, 14399999);
+    });
+
     test('a reopen that cleared the loops says so (#1140)', () {
       seed();
       when(() => repository.applyAudioConfig(any())).thenReturn(

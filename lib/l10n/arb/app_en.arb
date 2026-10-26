@@ -2108,8 +2108,6 @@
         }
     },
     "a11yInputRenameField": "Input name",
-    "a11yAudioMeasureLatency": "Measure round-trip latency. Refuses while a measurement is already running.",
-    "audioMeasure": "Measure",
     "audioRecordOffsetSub": "record offset {frames} frames",
     "@audioRecordOffsetSub": {
         "description": "Subtitle of the round-trip latency row. The offset is a CONSEQUENCE of the measurement, not a setting, so it rides the row that measures it rather than taking one of its own.",
@@ -2156,6 +2154,15 @@
         "description": "Banner when a higher sample rate is refused because the effects would not fit the audio thread's budget (#1270 D19). rate is a formatted rate such as 96 kHz.",
         "placeholders": {
             "rate": {
+                "type": "String"
+            }
+        }
+    },
+    "audioDeviceRefused": "{device} could not be opened. The previous interface is running again.",
+    "@audioDeviceRefused": {
+        "description": "Banner when the interface the player picked would not open and the previous one was reopened (#1270 Part 3a).",
+        "placeholders": {
+            "device": {
                 "type": "String"
             }
         }
