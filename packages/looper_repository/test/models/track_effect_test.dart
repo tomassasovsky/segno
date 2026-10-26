@@ -21,37 +21,77 @@ void main() {
           eng.defaultParams,
           reason: 'defaultParams for ${type.name}',
         );
-        expect(
-          type.paramLabels,
-          eng.paramLabels,
-          reason: 'paramLabels for ${type.name}',
-        );
         expect(type.params.length, eng.params.length);
         for (var i = 0; i < type.params.length; i++) {
-          expect(type.params[i].label, eng.params[i].label);
-          expect(type.params[i].divisions, eng.params[i].divisions);
-          // Readout kinds are distinct enums; parity is by name.
-          expect(type.params[i].readout.name, eng.params[i].readout.name);
+          final d = type.params[i];
+          final e = eng.params[i];
+          final reason = '${type.name}[$i]';
+          expect(d.key, e.key, reason: reason);
+          // The unit and curve are distinct enums; parity is by name.
+          expect(d.unit.name, e.unit.name, reason: reason);
+          expect(d.curve.name, e.curve.name, reason: reason);
+          expect(d.steps, e.steps, reason: reason);
+          expect(d.atMin, e.atMin, reason: reason);
+          expect(d.atMax, e.atMax, reason: reason);
+          expect(d.defaultValue, e.defaultValue, reason: reason);
+          expect(d.taperUnverified, e.taperUnverified, reason: reason);
+          for (final v in [0.0, 0.3, 0.5, 1.0]) {
+            expect(d.valueAt(v), e.valueAt(v), reason: '$reason at $v');
+          }
         }
       }
     });
 
-    test('TrackEffectParam value equality covers label/divisions/readout', () {
-      const a = TrackEffectParam(
-        'Shift',
-        divisions: 48,
-        readout: ParamReadout.pitchShift,
+    test('the domain enums mirror every engine value by name', () {
+      expect(
+        FxParamUnit.values.map((u) => u.name),
+        engine.FxParamUnit.values.map((u) => u.name),
       );
-      const b = TrackEffectParam(
-        'Shift',
-        divisions: 48,
-        readout: ParamReadout.pitchShift,
+      expect(
+        FxParamCurve.values.map((c) => c.name),
+        engine.FxParamCurve.values.map((c) => c.name),
       );
-      const differentReadout = TrackEffectParam('Shift', divisions: 48);
+    });
+
+    test('FxParamInfo value equality covers every field', () {
+      const a = FxParamInfo(
+        key: 'shift',
+        unit: FxParamUnit.semitones,
+        steps: 49,
+        atMin: -24,
+        atMax: 24,
+        defaultValue: 0.25,
+      );
+      const b = FxParamInfo(
+        key: 'shift',
+        unit: FxParamUnit.semitones,
+        steps: 49,
+        atMin: -24,
+        atMax: 24,
+        defaultValue: 0.25,
+      );
+      const continuous = FxParamInfo(
+        key: 'shift',
+        unit: FxParamUnit.semitones,
+        atMin: -24,
+        atMax: 24,
+        defaultValue: 0.25,
+      );
 
       expect(a, b);
-      expect(a, isNot(differentReadout));
-      expect(a, isNot(const TrackEffectParam('Tone')));
+      expect(a, isNot(continuous));
+      expect(a, TrackEffectType.octaver.params.first);
+    });
+
+    test('valueAt and positionOf follow the engine mapping', () {
+      final shift = TrackEffectType.octaver.params.first;
+      expect(shift.isStepped, isTrue);
+      expect(shift.positionOf(0.5), 24);
+      expect(shift.valueAt(0.26), closeTo(-11.52, 1e-9));
+      final cutoff = TrackEffectType.filter.params.first;
+      expect(cutoff.curve, FxParamCurve.exponential);
+      expect(cutoff.valueAt(0.5), closeTo(600, 1e-9));
+      expect(() => cutoff.positionOf(0.5), throwsStateError);
     });
   });
 
@@ -77,7 +117,12 @@ void main() {
         (decoded[0] as BuiltInEffect).params,
         TrackEffectType.filter.defaultParams,
       );
-      expect((decoded[1] as BuiltInEffect).params, [0.3, 0.42, 0.5, 0]);
+      expect((decoded[1] as BuiltInEffect).params, [
+        0.3,
+        0.42,
+        0.5,
+        for (var i = 3; i < kTrackEffectParams; i++) 0,
+      ]);
     });
 
     test('reads a chain written by the engine serializer (wire-format '
@@ -121,7 +166,7 @@ void main() {
       );
     });
 
-    test('copyWith replaces type while keeping params', () {
+    test('copyWith to another type starts at its defaults', () {
       final fx = BuiltInEffect(
         type: TrackEffectType.delay,
         params: const [0.1, 0.2, 0.3, 0.4],
@@ -130,7 +175,8 @@ void main() {
       final swapped = fx.copyWith(type: TrackEffectType.echo);
 
       expect(swapped.type, TrackEffectType.echo);
-      expect(swapped.params, [0.1, 0.2, 0.3, 0.4]);
+      expect(swapped.params, TrackEffectType.echo.defaultParams);
+      expect(fx.copyWith(params: const [0.4]).params.first, 0.4);
     });
   });
 

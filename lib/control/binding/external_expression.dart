@@ -211,6 +211,16 @@ class ExternalExpressionSetup extends Equatable {
     ],
   );
 
+  /// Removes every mapping whose target [removes] accepts.
+  ExternalExpressionSetup withoutTargets(
+    bool Function(Object target) removes,
+  ) => copyWith(
+    mappings: [
+      for (final mapping in mappings)
+        if (!removes(mapping.target)) mapping,
+    ],
+  );
+
   /// Copies this value, allowing a calibration to be cleared explicitly.
   ExternalExpressionSetup copyWith({
     ExpressionCalibration? calibration,

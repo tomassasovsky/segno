@@ -103,8 +103,23 @@ v3 is the same board with the ring-board link (#987) and the CTRL ring sense
 | J20 / J21 `CTRL` | JST-XH 3-pin: tip, ring, sleeve | **JST-XH 4-pin**: tip, ring, sleeve, **RN** (the jack's ring-normal contact; TN/SN remain open). The jacks themselves are **Neutrik NJ6FD-V** (switched, rear-mounted through Ø12 mm holes). The pair sits 2.6 mm further left than on v2 |
 | R21, R22 | — | **4.7 kΩ**, the row under R11/R12, left of R19: presence series parts (RN → GP19/GP22) |
 | R11, R12 | row under the Pico at y 63 | On the slim band right under the Pico's bottom pads, with R20 and R16 |
-| J22 `EXP` | 2×4, right of U2: +3V3, +5V, GP19, GP20, GP21, GP22, GP28, GND | Same place, **2×3**: +3V3, +5V, **GP12, GP15, GP28**, GND. Pin 1 top-left; odd pins are the left column |
+| J22 `EXP` | 2×4, right of U2: +3V3, +5V, GP19, GP20, GP21, GP22, GP28, GND | Same place, **2×3**: +3V3, +5V, **GP12, GP15, GP28**, GND (v3.1: pin 3 **unconnected**, GP15, GP28). Pin 1 top-left; odd pins are the left column |
 | J23 `PD` | — | **JST-XH 3-pin, new**, in the `RING` / `LEDS` row under the Pico's left end, right of `5V IN`: pin 1 GND, 2 SDA (GP0), 3 SCL (GP1). I2C to the STUSB4500 PD trigger, three wires only — do not run the trigger's VDD from this board |
+
+### If you have a v3.1 board
+
+v3.1 (silk `SEGNO CONSOLE v3.1`, #1388) is v3 with the MODE footswitch on
+**GP12** (Pico pad 16) instead of GP5 (pad 7). Pad 16 is at the right end of
+the footswitch run, so **J13 `MODE` is the rightmost footswitch header**: the
+bottom edge reads `REC STOP UNDO TRK1 TRK2 TRK3 TRK4 CLR BANK MODE`
+(J10 J11 J12 J14 J15 J16 J17 J18 J19 J13), and each debounce cap still sits
+above its own header (C4 above J13). J22 pin 3, GP12 on v3, is unconnected,
+and GP5 is not brought out anywhere.
+Designators and values are unchanged from v3.
+
+A built **v3** board needs the jumper rework in
+[the manufacturing notes](MANUFACTURING.md#console-v3-mode-rework) before it
+runs the firmware that reads MODE on GP12.
 
 For v3, add **4.7 kΩ = yellow · violet · black · brown · brown** and
 **6.8 kΩ = blue · grey · black · brown · brown** to the five-band, 1% resistor key.
@@ -224,7 +239,7 @@ housing flat while reheating it, then solder the rest.
 | J3 | 4-pin | `5V IN`, left edge, vertical | **Bottom** (pins run upward 1→4) |
 | J6 | 8-pin | `RING`, under the Pico | Left |
 | J7 | 3-pin | `LEDS`, right of J6 | Left |
-| J10 … J19 | 2-pin | `REC STOP UNDO MODE TRK1 TRK2 TRK3 TRK4 CLR BANK` (bottom edge) | Left |
+| J10 … J19 | 2-pin | `REC STOP UNDO MODE TRK1 TRK2 TRK3 TRK4 CLR BANK` (bottom edge; v3.1 moves `MODE`, J13, to the right end) | Left |
 | J25 | 2-pin | `SCREEN` on the top, beside J25 | Left |
 
 J25 is the screen-power addition to the current console board and is absent
@@ -341,7 +356,7 @@ the two CTRL tips, or those inputs float (see the notes in `console_board.py`).
 | J9 `PI PWR` | to the Pi 5's J2 button pad | GND | | (flying lead, not the 40-pin header) |
 | J20 / J21 `CTRL` | tip (wiper / switch) | ring (3V3 via 1 kΩ) | sleeve (GND) | v3: pin 4 = RN, the NJ6FD-V's ring-normal contact (presence); TN/SN open |
 | J10 … J19 | switch | GND | | one per pedal, REC … BANK |
-| J22 `EXP` | +3V3 | +5V | GP19 (v2) / GP12 (v3) | v2: GP20, GP21, GP22, GP28, GND · v3 (2×3): GP15, GP28, GND |
+| J22 `EXP` | +3V3 | +5V | GP19 (v2) / GP12 (v3) / unconnected (v3.1) | v2: GP20, GP21, GP22, GP28, GND · v3 and v3.1 (2×3): GP15, GP28, GND. On a v3 board with the MODE rework, pin 3 carries MODE: leave it unconnected |
 | J23 `PD` (v3) | GND | SDA (GP0) | SCL (GP1) | I2C to the STUSB4500 trigger; no VDD wire |
 | J2 `PI` (used pins) | 1, 17 = 3V3 | 6, 9, 14, 20, 25, 30, 34, 39 = GND | 8 = MIDI OUT (Pi TXD), 10 = MIDI IN (Pi RXD) | 24 = link RX (Pi GPIO8), 21 = link TX (Pi GPIO9), 18 = SWCLK, 22 = SWDIO |
 

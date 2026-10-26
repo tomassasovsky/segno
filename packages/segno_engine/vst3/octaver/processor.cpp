@@ -42,13 +42,11 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& newSetup) {
     // reallocate them at the new size. fx_octaver_prepare only allocates
     // when a pointer is NULL, so without this the ring would silently stay
     // sized to the OLD rate. The octaver-specific phase-vocoder/PSOLA
-    // buffers (fx_.oct[0][*].out/last_phase/sum_phase) are NOT freed here —
-    // their size is fixed (LE_PV_N/LE_PV_BINS), independent of sample rate,
-    // so they stay valid and are simply reused across a rate change.
-    free(fx_.delay[0][0]);
-    fx_.delay[0][0] = nullptr;
-    free(fx_.delay[0][1]);
-    fx_.delay[0][1] = nullptr;
+    // buffers (fx_.oct[0][*].out/last_phase/sum_phase/scratch) are NOT freed
+    // here — their sizes are fixed (LE_PV_OUT/LE_PV_BINS/LE_PV_SCRATCH),
+    // independent of sample rate, so they stay valid and are simply reused
+    // across a rate change.
+    le_fx_free_delay(&fx_, 0);
     cap_ = newCap;
   }
   if (le_fx_prepare(&fx_, 0, LE_FX_OCTAVER, cap_) != LE_OK) return kResultFalse;
@@ -61,10 +59,7 @@ tresult PLUGIN_API Processor::terminate() {
   // per-channel FIFOs (delay[0][0] AND delay[0][1] — Octaver is not packed
   // like Reverb), and le_fx_free_octaver frees the phase-vocoder/PSOLA
   // buffers (out/last_phase/sum_phase) fx_octaver actually uses.
-  free(fx_.delay[0][0]);
-  fx_.delay[0][0] = nullptr;
-  free(fx_.delay[0][1]);
-  fx_.delay[0][1] = nullptr;
+  le_fx_free_delay(&fx_, 0);
   le_fx_free_octaver(&fx_, 0);
   return AudioEffect::terminate();
 }
@@ -143,18 +138,20 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
 
 tresult PLUGIN_API Processor::setState(IBStream* state) {
   if (!state) return kInvalidArgument;
-  float saved[LE_FX_PARAMS];
+  float saved[kSegnoPluginStateParams];
   const int32 n = static_cast<int32>(sizeof(saved));
   int32 read = 0;
   if (state->read(saved, n, &read) != kResultOk || read != n) return kResultFalse;
-  for (int32 i = 0; i < LE_FX_PARAMS; ++i) params_[0][i] = saved[i];
+  for (int32 i = 0; i < kSegnoPluginStateParams; ++i) {
+    params_[0][i] = saved[i];
+  }
   return kResultOk;
 }
 
 tresult PLUGIN_API Processor::getState(IBStream* state) {
   if (!state) return kInvalidArgument;
   int32 written = 0;
-  const int32 n = static_cast<int32>(sizeof(params_[0]));
+  const int32 n = static_cast<int32>(kSegnoPluginStateParams * sizeof(float));
   if (state->write(params_[0], n, &written) != kResultOk || written != n) {
     return kResultFalse;
   }
@@ -163,12 +160,12 @@ tresult PLUGIN_API Processor::getState(IBStream* state) {
 
 uint32 PLUGIN_API Processor::getLatencySamples() {
   // Both of fx_octaver's modes (phase vocoder and PSOLA) report the same
-  // LE_PV_N-frame latency through the engine's existing le_fx_added_latency
+  // LE_PV_LATENCY-frame latency through the engine's existing le_fx_added_latency
   // seam (engine_fx.h) — forwarded unchanged, not reimplemented or
   // hardcoded, so a future engine-side latency change is picked up here
   // automatically. Safe to call at any time: le_fx_added_latency's LE_FX_
   // OCTAVER row (le_octaver_latency) reads no heap state, just returns the
-  // LE_PV_N constant.
+  // LE_PV_LATENCY constant.
   return static_cast<uint32>(le_fx_added_latency(&fx_, 0, LE_FX_OCTAVER));
 }
 

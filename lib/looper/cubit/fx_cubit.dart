@@ -5,6 +5,7 @@ import 'package:equatable/equatable.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/model/fx_library_choice.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -22,6 +23,10 @@ enum FxEditStatus {
   /// The target or native admission refused the edit.
   refused,
 
+  /// The edit would add more processing than the audio thread has left
+  /// ([LooperRepository.fxRoomNs]); nothing changed.
+  overBudget,
+
   /// The route, selection or engine life changed before completion.
   stale,
 
@@ -31,11 +36,22 @@ enum FxEditStatus {
 
 /// A chain edit's outcome, including the stable identity of an added group.
 final class FxEditResult {
-  /// Creates an [FxEditResult].
-  const FxEditResult(this.status, {this.groupId});
+  /// Creates an [FxEditResult]. An applied or unsaved edit is [committed];
+  /// a stale one is when [chainCommitted] says the chain was written and
+  /// confirmed before the destination moved on.
+  const FxEditResult(this.status, {this.groupId, bool chainCommitted = false})
+    : committed =
+          chainCommitted ||
+          status == FxEditStatus.applied ||
+          status == FxEditStatus.unsaved;
 
   /// The outcome of the edit.
   final FxEditStatus status;
+
+  /// Whether the new chain is live on the engine, whatever [status] the page
+  /// is told: a chain written and confirmed while the player moved to another
+  /// destination is [FxEditStatus.stale] for the page and still committed.
+  final bool committed;
 
   /// New group identity when this was an addition.
   final String? groupId;
@@ -153,6 +169,11 @@ class FxCubit extends Cubit<FxState> {
     if (identical(proposed.entries, current)) {
       return const FxEditResult(FxEditStatus.unchanged);
     }
+    // Admission (#887, Architecture 10): an edit that adds processing must
+    // fit what is left; one that removes it always lands.
+    if (_overBudget(address, current, proposed.entries)) {
+      return const FxEditResult(FxEditStatus.overBudget);
+    }
     if (stale()) return const FxEditResult(FxEditStatus.stale);
     final ticket = _persistence.beginPending();
     var confirmed = false;
@@ -179,8 +200,26 @@ class FxCubit extends Cubit<FxState> {
     } on Object {
       return FxEditResult(FxEditStatus.unsaved, groupId: proposed.groupId);
     }
-    if (stale()) return const FxEditResult(FxEditStatus.stale);
+    if (stale()) {
+      return FxEditResult(
+        FxEditStatus.stale,
+        groupId: proposed.groupId,
+        chainCommitted: true,
+      );
+    }
     return FxEditResult(FxEditStatus.applied, groupId: proposed.groupId);
+  }
+
+  /// Whether [next] would add more processing at [address] than is left
+  /// ([LooperRepository.fxRoomNs]). An edit that removes processing always
+  /// fits.
+  bool _overBudget(
+    FxAddress address,
+    List<TrackEffect> current,
+    List<TrackEffect> next,
+  ) {
+    final grows = _repository.fxCostOf(next) - _repository.fxCostOf(current);
+    return grows > 0 && grows > _repository.fxRoomNs;
   }
 
   /// Appends one library choice to the selected destination as a new group.
@@ -231,20 +270,61 @@ class FxCubit extends Cubit<FxState> {
     if (added.isEmpty || current.length + added.length > kTrackEffectMax) {
       return null;
     }
+    // A Dub Rack's path modules stay one parallel section.
+    final modules = fxKeepPathsTogether([...group.entries, ...added]);
     return (
       entries: fxSetGroupChannels(
         [
-          ...current.sublist(0, group.end),
-          ...added,
+          ...current.sublist(0, group.start),
+          ...modules,
           ...current.sublist(group.end),
         ],
         group.start,
-        group.end + added.length,
+        group.start + modules.length,
         group.channels,
       ),
       groupId: rackId,
     );
   });
+
+  /// Re-adds the factory rack [rackId] was built from: a fresh build of
+  /// [choice] takes the old rack's place and stage.
+  ///
+  /// The new modules get new identities, as any addition does, so bindings
+  /// to the old ones stop resolving. The page asks first when there are any.
+  // ignore: prefer_void_public_cubit_methods
+  Future<FxEditResult> replaceRack(
+    FxDestination destination,
+    String rackId,
+    FxRackChoice choice,
+  ) {
+    final address = destination.address;
+    if (address == null) {
+      return Future.value(const FxEditResult(FxEditStatus.refused));
+    }
+    return _editChain(
+      address,
+      (current) {
+        final group = fxChainGroups(
+          current,
+        ).where((entry) => entry.rack?.id == rackId).firstOrNull;
+        if (group == null) return null;
+        final added = withFreshSlotIds(
+          _entriesFor(choice, placement: group.placement),
+        );
+        if (added.isEmpty) return null;
+        return (
+          entries: [
+            ...current.sublist(0, group.start),
+            ...added,
+            ...current.sublist(group.end),
+          ],
+          groupId: added.first.rack?.id,
+        );
+      },
+      expectedDestination: destination,
+    );
+  }
 
   /// Renames the current rack without changing its stable identity.
   // ignore: prefer_void_public_cubit_methods
@@ -427,6 +507,37 @@ class FxCubit extends Cubit<FxState> {
     );
   }
 
+  /// Switches the whole chain at [address] in or out (its effects power),
+  /// leaving every rack and pedal state as it is.
+  ///
+  /// The screen's one chain-power writer for every stage. It reads and writes
+  /// through the same per-stage dispatch a pedal binding uses
+  /// (`chainEnabledAt`, `setChainEnabledAt`); [FxChainPersistence] records it
+  /// as an ordinary write, so it supersedes a held binding on the same chain
+  /// and the pedal LED follows.
+  ///
+  /// Switching off a chain with no effects changes nothing: there is nothing
+  /// to take out of the sound, and on an input, saving the flag would keep a
+  /// monitor the player never set up, which every later boot would restore.
+  // ignore: prefer_void_public_cubit_methods
+  FxEditResult setChainEnabled(FxAddress address, {required bool enabled}) {
+    final chain = _currentChain(address);
+    if (isClosed || chain == null) {
+      return const FxEditResult(FxEditStatus.refused);
+    }
+    // A chain the rig holds no settings for has never been switched off.
+    final current = _repository.chainEnabledAt(address) ?? true;
+    if (current == enabled || (!enabled && chain.isEmpty)) {
+      return const FxEditResult(FxEditStatus.unchanged);
+    }
+    if (!_repository.setChainEnabledAt(address, enabled: enabled).isOk) {
+      return const FxEditResult(FxEditStatus.refused);
+    }
+    _persistence.ordinaryChain(address, enabled: enabled);
+    _persistence.scheduleSave(address, _settings);
+    return const FxEditResult(FxEditStatus.applied);
+  }
+
   /// Moves one built-in parameter without replacing the DSP chain.
   // ignore: prefer_void_public_cubit_methods
   FxEditResult setParameter(
@@ -443,11 +554,19 @@ class FxCubit extends Cubit<FxState> {
     final effect = chain![index];
     if (effect is! BuiltInEffect ||
         parameter < 0 ||
-        parameter >= effect.params.length) {
+        parameter >= effect.type.params.length) {
       return const FxEditResult(FxEditStatus.refused);
     }
     if (effect.params[parameter] == value) {
       return const FxEditResult(FxEditStatus.unchanged);
+    }
+    // A setting can change what an entry costs (the octaver's mode).
+    if (_overBudget(address, chain, [
+      ...chain.sublist(0, index),
+      effect.copyWith(params: [...effect.params]..[parameter] = value),
+      ...chain.sublist(index + 1),
+    ])) {
+      return const FxEditResult(FxEditStatus.overBudget);
     }
     final result = switch (address.stage) {
       FxStage.input => _repository.setMonitorEffectParam(
@@ -511,6 +630,9 @@ class FxCubit extends Cubit<FxState> {
     return (entries: next, groupId: groupId);
   });
 
+  /// The entries [choice] adds, each in the on/off state its source gives
+  /// it: a factory rack's pedals as the preset sets them (as the Looper X
+  /// loads them), a saved sound as it was saved, and a single effect on.
   static List<TrackEffect> _entriesFor(
     FxLibraryChoice choice, {
     required FxPlacement placement,
@@ -521,7 +643,6 @@ class FxCubit extends Cubit<FxState> {
         return [
           BuiltInEffect(
             type: type,
-            enabled: false,
             placement: placement,
             rack: into,
           ),
@@ -540,12 +661,10 @@ class FxCubit extends Cubit<FxState> {
           for (final effect in preset.entries)
             switch (effect) {
               BuiltInEffect() => effect.copyWith(
-                enabled: false,
                 placement: placement,
                 rack: rack,
               ),
               PluginEffect() => effect.copyWith(
-                enabled: false,
                 placement: placement,
                 rack: rack,
               ),
@@ -560,9 +679,8 @@ class FxCubit extends Cubit<FxState> {
               art: kFxFamilySlugs[preset.family],
             );
         return [
-          for (final module in fxPresetModules(preset))
-            fxModuleEntry(module, preset).copyWith(
-              enabled: false,
+          for (final entry in fxRackEntries(preset))
+            entry.copyWith(
               placement: placement,
               rack: rack,
             ),

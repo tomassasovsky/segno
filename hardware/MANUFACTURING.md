@@ -403,7 +403,7 @@ by 2 mm.
 
 | Board | Files | Qty | Notes |
 |---|---|---|---|
-| **Console board v3** | `kicad/fab/segno_console_v3_gerbers.zip` + `kicad/fab/segno_console_board_bom.csv` | 1 | 99.5 × 99.5 mm, two layers, 1.6 mm FR4, 1 oz, purple mask / white silk, lead-free HASL. Solder Pico 2 by its castellations as specified in the assembly guide. Use the matching v3 runtime described below. |
+| **Console board v3.1** | `kicad/fab/segno_console_v3_1_gerbers.zip` + `kicad/fab/segno_console_board_bom.csv` | 1 | **Owner review required before ordering (#1388).** 99.5 × 99.5 mm, two layers, 1.6 mm FR4, 1 oz, purple mask / white silk, lead-free HASL. Solder Pico 2 by its castellations as specified in the assembly guide. Use the runtime that reads MODE on GP12. |
 | **Encoder ring carrier** | `kicad/fab/segno_pedal_ring_gerbers.zip` + `kicad/fab/segno_combined_bom_lcsc.csv` | 1 | Ø80 mm with the Same Sky ACZ11BR1E-20FD1-20C encoder (measured on the assembled board, 2026-10-16), two layers, 1.6 mm FR4, 1 oz, white mask / black silk, lead-free HASL. Selected assembly: the #1075 console strip ring, one 35-LED strip with DIN at J2.3 and direct AUX power; J3/J4 empty (owner, 2026-10-19). The Ring 24 (J3) and 24/16-module footprints remain on the board as alternatives. The populated Fusion console carries this board (`ring_board_v3`). See [assembly](kicad/RING_ASSEMBLY.md). |
 | **Screen power Rev P** | `kicad/fab/segno_screen_power_rev_p_gerbers.zip` + `kicad/screen_power/hand/bom.csv` + `kicad/screen_power/external_bom.csv` | 1 | 68 × 76 mm, R3 corners, two layers, 1.6 mm FR4, 1 oz, purple mask / white silk, ENIG. Hand-soldered components. Four five-pin XH USB plugs include the shield on pin 5. F1 uses one replaceable 8 A cartridge in its onboard holder; four branch fuses are soldered. See [wiring and assembly](kicad/screen_power/README.md). |
 | LED puck (single WS2812B) | `led_strip/segno_led_strip_gerbers.zip` | 0 | **NOT ORDERED for the console.** Owner call 2026-08-28: the indicators are eight-LED segments cut from a **144 LEDs/m bare IP20 strip**, and the diffuser channel is sized for that (**12 mm wide, 0.53 thick**, 56.96 long), not for this 16×8 board. The design is kept because it is finished and the footprint may suit another build — but ordering it will not fit the current diffuser. |
@@ -418,6 +418,48 @@ records the completed corrections, review coverage and verification. No stencil 
 component assembly is required. The selected 35-LED strip uses the direct AUX
 star harness in [the ring assembly guide](kicad/RING_ASSEMBLY.md); J2 carries
 DIN only. Do not reuse the superseded straight-through console/ring power wiring.
+
+### Console v3.1 and the v3 MODE rework
+
+Console v3.1 (#1388) is v3 with the MODE footswitch moved from GP5 (Pico
+pin 7) to GP12 (Pico pin 16). The first v3 console's Pico 2 has a dead GP5,
+and the firmware now reads MODE on GP12 on every board. On v3.1 the MODE
+header J13 is the rightmost footswitch header, J22 pin 3 (GP12 on v3) is
+unconnected, GP5 is not brought out, and the silk reads `SEGNO CONSOLE v3.1`. Designators, values and the
+BOM are unchanged. The board was re-routed in full by
+`kicad/route_console_board.sh`, so every track differs from v3: the 0.4 mm
+local reroutes v3 carried on the PWR_BTN pair and the indicator and UART
+receive nets are now 0.6 mm pipeline routes. Its archive, `kicad/fab/segno_console_v3_1_gerbers.zip`
+(SHA-256 `e618d8ab0a446a5aee37c618ab1090a55df7f5a0eeb12893ed015291a8ebe86a`), is not in the manufacturing record above, and it
+needs the owner's review before anyone orders it. The v3 archive that record
+names, `kicad/fab/segno_console_v3_gerbers.zip`, stays unchanged as the record
+of the built v3 boards; do not order it again.
+
+<a id="console-v3-mode-rework"></a>
+**Rework for a built v3 board** (silk `SEGNO CONSOLE v3`). Do this before
+running the firmware that reads MODE on GP12, or MODE never registers. Every
+built v3 board needs it, not only one with a dead GP5, because the firmware
+reads MODE on GP12 on every board. It is the rework done on the owner's unit.
+
+1. Power off and unplug the console. If the Pico 2 is socketed, lift it out.
+2. Isolate Pico pin 7 (GP5) from the board. On a socketed module, clip that
+   pin's header pin flush with the module, or pull the matching contact out of
+   the socket strip, so pin 7 no longer reaches the board. On a module
+   soldered by its castellations, unsolder pad 7 and keep it lifted with
+   Kapton tape.
+3. On the underside, solder an insulated jumper (30 AWG wire-wrap wire is
+   enough) from socket pin 7 to socket pin 16. Pin 7 is SW_MODE (J13 pin 1
+   and C4); pin 16 is GP12.
+4. Leave J22 pin 3 unconnected. On v3 it is wired to GP12, so after the
+   rework it carries MODE.
+5. Keep C4 fitted. The owner's unit had one C4 lead cut during the
+   diagnosis; MODE works without it but loses its 100 nF debounce, so
+   resolder it.
+6. Check before refitting the Pico. Console off: J13 pin 1 to socket pin 16
+   is continuous; J13 pin 1 to ground is open. Refit the Pico, then confirm
+   module pin 7 has no continuity to J13 pin 1. With the GP12 firmware
+   installed and the console on, MODE released: socket pin 16 reads about
+   3.3 V. Pressed: 0 V.
 
 Console CTRL J20/J21 use four wires: T / R / S / **RN**, with the Neutrik
 NJ6FD-V's ring-normal terminal on pin 4. Leave TN/SN unconnected. This leaves
@@ -469,10 +511,11 @@ parts are `kicad/fab/segno_console_board_bom.csv`. Headlines:
   Check one thing with calipers before the faceplate is cut: the model assumes a Ø22 × 4.5
   underside relief clearing the encoder's M7 nut. If the real knob's underside is solid it will sit
   ~3 mm proud of where the model puts it.
-- 1× existing **40-LED WS2812B strip**, connected to carrier J2 in its separate
+- 1× fitted **35-LED WS2812B strip** (owner, 2026-10-19, #1075), connected to
+  carrier J2 in its separate
   [strip housing design](https://github.com/tomassasovsky/segno/pull/1083).
   The older `segno_ring_diffuser` and enclosure window described above are the
-  24-LED mechanical variant; they are not a completed 40-strip enclosure release.
+  24-LED alternative, not the selected strip ring.
 - 1× **Panasonic EEUFR1A102**, 1000 µF / 10 V, fitted across the strip's
   own power entry with insulated lead joints; allow its 10 × 16 mm body
   beside the harness. See [polarity and assembly](kicad/RING_ASSEMBLY.md).

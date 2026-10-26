@@ -81,7 +81,7 @@ void main() {
       expect(
         () => decodeFxChain(
           '{"chainEnabled":true,"entries":[{"type":1,'
-          '"channels":{"level":3}}]}',
+          '"channels":{"level":5}}]}',
         ),
         throwsFormatException,
       );

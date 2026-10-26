@@ -275,7 +275,7 @@ void main() {
           expect(halts, 0);
           expect(engine.snapshot().countInBars, 2);
           store.refuse = false;
-          runtime.power.retry(snapshot);
+          runtime.power.retry(snapshot, save: () async {});
           await _until(
             () => halts == 1,
             description: 'Retry must halt after repair',

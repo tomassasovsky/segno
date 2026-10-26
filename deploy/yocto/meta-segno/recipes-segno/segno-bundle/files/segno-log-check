@@ -1,5 +1,6 @@
 #!/bin/sh
-# Say out loud when the persistent journal did not actually land on /data (#438).
+# Say out loud when the persistent journal, the cores or the kernel crash
+# records did not actually land on /data (#438, #1437).
 #
 # The failure this exists to catch is silent by construction. Storage=auto (the
 # journald drop-in) narrows it — journald only goes persistent when
@@ -27,6 +28,7 @@ MOUNTINFO="${SEGNO_MOUNTINFO:-/proc/self/mountinfo}"
 DATA_DIR="${SEGNO_DATA_DIR:-/data}"
 JOURNAL_DIR="${SEGNO_JOURNAL_DIR:-/var/volatile/log/journal}"
 COREDUMP_DIR="${SEGNO_COREDUMP_DIR:-/var/lib/systemd/coredump}"
+PSTORE_DIR="${SEGNO_PSTORE_DIR:-/var/lib/systemd/pstore}"
 MARKER="${SEGNO_LOG_MARKER:-/run/segno-log-degraded}"
 
 log() { echo "segno-log-check: $*" >&2; }
@@ -56,8 +58,8 @@ data_dev=$(dev_of "$DATA_DIR")
 
 # Each bind mount, against /data. No device at all means the path is not a
 # mount point, which on this image means the journal is on the tmpfs and the
-# cores are on the A/B rootfs — gone at the next boot and the next update
-# respectively.
+# cores and crash records are on the A/B rootfs — gone at the next boot and
+# the next update respectively.
 check_on_data() {
     what=$1
     dir=$2
@@ -71,6 +73,7 @@ check_on_data() {
 
 check_on_data "the journal" "$JOURNAL_DIR"
 check_on_data "coredump storage" "$COREDUMP_DIR"
+check_on_data "kernel crash record storage" "$PSTORE_DIR"
 
 # The mount can be right and the journal still be volatile: journald only
 # moves to disk when Storage= allows it and the flush actually ran, so a
@@ -90,4 +93,4 @@ if [ -n "$problems" ]; then
 fi
 
 rm -f "$MARKER"
-log "journal and coredumps are on $DATA_DIR"
+log "journal, coredumps and kernel crash records are on $DATA_DIR"

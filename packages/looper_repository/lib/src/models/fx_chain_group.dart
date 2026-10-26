@@ -1,5 +1,7 @@
 import 'package:equatable/equatable.dart';
+import 'package:looper_repository/src/models/fx_module_build.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
+import 'package:segno_engine/segno_engine.dart' show FxRackEdge;
 
 /// One thing the accepted FX surfaces draw: a rack with its modules, or a
 /// standalone single effect.
@@ -66,6 +68,14 @@ class FxChainGroup extends Equatable {
   /// the FIRST module and the output side of the LAST one. The modules in
   /// between stay at defaults, which is bit-identical to no channel handling
   /// at all, so the rack is transparent between its own pedals.
+  ///
+  /// The recipe marks those two entries ([fxRackEdges]), and the engine
+  /// applies the first one's input choice and the last one's output side as
+  /// the RACK's: around the rack whatever those entries are (a module this
+  /// engine cannot build, or a bypassed pedal), while any pedal of the rack is
+  /// on, fading with the enable ramp. With every pedal off, or the chain off,
+  /// the rack passes its input through untouched, and a tail still draining
+  /// out of it keeps the output side it was heard with.
   FxChannels get channels => FxChannels(
     input: chain[start].channels.input,
     output: chain[end - 1].channels.output,
@@ -100,6 +110,55 @@ List<FxChainGroup> fxChainGroups(List<TrackEffect> chain) {
     i = j;
   }
   return groups;
+}
+
+/// Where each entry of [chain] sits in its rack, for the engine recipe: the
+/// first and last entries of every group [fxChainGroups] calls a rack, by
+/// index. The engine applies a rack's output side (what [FxChainGroup.channels]
+/// reads off the last entry) after that entry whatever the entry is, while any
+/// entry of the rack is on.
+List<FxRackEdge> fxRackEdges(List<TrackEffect> chain) {
+  final edges = List<FxRackEdge>.filled(chain.length, FxRackEdge.none);
+  for (final group in fxChainGroups(chain)) {
+    if (!group.isRack) continue;
+    if (group.length == 1) {
+      edges[group.start] = FxRackEdge.only;
+    } else {
+      edges[group.start] = FxRackEdge.first;
+      edges[group.end - 1] = FxRackEdge.last;
+    }
+  }
+  return edges;
+}
+
+/// How many runs of path modules ([fxEntryPaths]) [modules] (one rack's, in
+/// order) hold. The engine runs each run as a parallel section at its own
+/// mix, so a rack's path modules belong in one: a reorder that would add a
+/// run is refused, and [fxKeepPathsTogether] joins them when modules are
+/// added.
+int _pathRuns(List<TrackEffect> modules) {
+  final paths = fxEntryPaths(modules);
+  var runs = 0;
+  for (var i = 0; i < paths.length; i++) {
+    if (paths[i] != null && (i == 0 || paths[i - 1] == null)) runs++;
+  }
+  return runs;
+}
+
+/// [modules] (one rack's) with every path module ([fxEntryPaths]) moved up
+/// to follow the first run of them, everything else in its order: what a
+/// rack is after modules are added to it, so its paths stay one section.
+List<TrackEffect> fxKeepPathsTogether(List<TrackEffect> modules) {
+  final paths = fxEntryPaths(modules);
+  final first = paths.indexWhere((p) => p != null);
+  if (first < 0) return modules;
+  return [
+    for (var i = 0; i < first; i++) modules[i],
+    for (var i = first; i < modules.length; i++)
+      if (paths[i] != null) modules[i],
+    for (var i = first; i < modules.length; i++)
+      if (paths[i] == null) modules[i],
+  ];
 }
 
 /// A group's stable identity: its rack's id, or its single effect's slot id.
@@ -137,7 +196,8 @@ List<TrackEffect> fxOrderGroups(List<TrackEffect> chain, List<String> ids) {
 /// names.
 ///
 /// Refuses, returning [chain] unchanged, when [slotIds] does not name exactly
-/// that rack's modules — see [fxOrderGroups] for why.
+/// that rack's modules — see [fxOrderGroups] for why — or when the order
+/// would split the rack's path modules ([fxEntryPaths]) into more runs.
 List<TrackEffect> fxOrderRackModules(
   List<TrackEffect> chain,
   String rackId,
@@ -155,6 +215,9 @@ List<TrackEffect> fxOrderRackModules(
       !slotIds.every(byId.containsKey)) {
     return chain;
   }
+  if (_pathRuns([for (final id in slotIds) byId[id]!]) > _pathRuns(modules)) {
+    return chain;
+  }
   return fxSetGroupChannels(
     [
       ...chain.sublist(0, group.start),
@@ -165,6 +228,23 @@ List<TrackEffect> fxOrderRackModules(
     group.end,
     group.channels,
   );
+}
+
+/// The rack in [chain] built from the factory preset [presetId]: the first
+/// rack whose every module carries that preset id, or `null` when there is
+/// none.
+///
+/// Adding that preset again is a re-add of this rack, not a second copy of it.
+FxChainGroup? fxRackFromPreset(List<TrackEffect> chain, String presetId) {
+  for (final group in fxChainGroups(chain)) {
+    if (!group.isRack) continue;
+    if (group.entries.every(
+      (fx) => fx is BuiltInEffect && fx.presetId == presetId,
+    )) {
+      return group;
+    }
+  }
+  return null;
 }
 
 /// Returns [chain] with every module of the rack [rackId] renamed to [name].
@@ -231,7 +311,9 @@ List<TrackEffect> fxMoveGroup(List<TrackEffect> chain, int from, int to) {
 /// to index [to] inside that same rack.
 ///
 /// The rack's own position in the chain does not change, and neither does any
-/// other group: a module can only move among its own rack's pedals.
+/// other group: a module can only move among its own rack's pedals. A move
+/// that would split the rack's path modules ([fxEntryPaths]) into more runs
+/// is refused, returning [chain] unchanged.
 List<TrackEffect> fxMoveWithinRack(
   List<TrackEffect> chain,
   String rackId,
@@ -247,6 +329,7 @@ List<TrackEffect> fxMoveWithinRack(
   if (to < 0 || to >= modules.length) return chain;
   if (from == to) return chain;
   modules.insert(to, modules.removeAt(from));
+  if (_pathRuns(modules) > _pathRuns(group.entries)) return chain;
   return fxSetGroupChannels(
     [
       ...chain.sublist(0, group.start),

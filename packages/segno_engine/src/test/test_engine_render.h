@@ -437,6 +437,9 @@ static void test_render_live_parity_post_chain(void) {
   le_engine* e = rr_engine();
   static float pcm[4000];
   for (int i = 0; i < 4000; ++i) pcm[i] = (float)((i * 7) % 13) / 13.0f - 0.4f;
+  /* The live Play fades in over its first sr / 100 frames (#1400), which a
+   * render of the material does not: silence there keeps the two equal. */
+  for (int i = 0; i < RR_SR / 100; ++i) pcm[i] = 0.0f;
   CHECK(le_engine_import_track(e, 0, pcm, 4000) == LE_OK);
   CHECK(le_engine_commit_session(e, 4000, 0) == LE_OK);
   CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
@@ -826,6 +829,7 @@ static void test_render_track_post_gain_live_parity(void) {
   le_engine* e = rr_engine();
   static float pcm[4000];
   for (int i = 0; i < 4000; ++i) pcm[i] = (float)((i * 5) % 11) / 11.0f - 0.4f;
+  for (int i = 0; i < RR_SR / 100; ++i) pcm[i] = 0.0f; /* the Play's fade */
   CHECK(le_engine_import_track(e, 0, pcm, 4000) == LE_OK);
   CHECK(le_engine_commit_session(e, 4000, 0) == LE_OK);
   CHECK(le_engine_set_track_fx_count(e, 0, 1, 0) == LE_OK); /* track Post */

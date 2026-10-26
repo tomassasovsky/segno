@@ -807,7 +807,7 @@ static void test_length_lanes_fade_reverse_stopped(void) {
   float img[16];
   CHECK(le_engine_export_layer(e, 0, 1, 1, img, 16) == 2 * LOOP_N);
   const int32_t redo_slot = t->redo_stack[0].slot;
-  le_lane_shrink_slot(&t->lanes[1], redo_slot, LOOP_N);
+  le_lane_shrink_slot(e, &t->lanes[1], redo_slot, LOOP_N);
   CHECK(le_engine_export_layer(e, 0, 1, 1, img, 16) == LE_ERR_INVALID);
   le_engine_destroy(e);
 
@@ -1387,7 +1387,7 @@ static void test_length_finalize_lineage(void) {
   CHECK(le_engine_finalize_history(e, 0, kinds, skipped, NULL, 3, 2, lens,
                                    4) == LE_ERR_INVALID);
   /* An image longer than the slot staged for it is torn. */
-  le_lane_shrink_slot(&t->lanes[0], 3, 8);
+  le_lane_shrink_slot(e, &t->lanes[0], 3, 8);
   CHECK(le_engine_finalize_history(e, 0, kinds, skipped, starts, 3, 2, lens,
                                    4) == LE_ERR_INVALID);
   le_snapshot s;
