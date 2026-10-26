@@ -37,7 +37,7 @@ extension ControlValueResolver on LooperRepository {
       for (final fx in entries) {
         final slotId = fx.slotId;
         if (slotId == null || fx is! BuiltInEffect) continue;
-        for (var param = 0; param < fx.type.params.length; param++) {
+        for (final param in fxEntryControls(fx).params) {
           targets.add(
             FxParamTarget(address: address, slotId: slotId, param: param),
           );
@@ -140,8 +140,9 @@ extension ControlValueResolver on LooperRepository {
     OwnedValueTarget() => owned?.resolves(target) ?? false,
   };
 
-  /// The value [target] holds now (normalized `0..1`), or `null` when it does
-  /// not resolve.
+  /// The value [target] holds now (normalized `0..1`, for an effect parameter
+  /// a setting of the range the rack shows: see [fxKindSettingFor]), or
+  /// `null` when it does not resolve.
   ///
   /// What a newly added button parameter starts from on BOTH of its values, so
   /// adding the mapping invents no sound change.
@@ -149,7 +150,10 @@ extension ControlValueResolver on LooperRepository {
     ControlValueTarget target, {
     OwnedValueReadout? owned,
   }) => switch (target) {
-    FxParamTarget(:final param) => _paramSlot(target)?.effect.params[param],
+    FxParamTarget(:final param) => switch (_paramSlot(target)) {
+      final slot? => fxEntryShownSetting(slot.effect, param),
+      null => null,
+    },
     MixValueTarget() => _readMixValue(target),
     MasterGainTarget() => masterGain,
     OwnedValueTarget() => owned?.read(target),
@@ -179,6 +183,22 @@ extension ControlValueResolver on LooperRepository {
     };
     return target.fromDomain(value);
   }
+
+  /// A binding's value for [target], a setting of the parameter's shown range
+  /// ([fxEntryParam]), as the chain's own setting for the same value.
+  ///
+  /// A binding's endpoints and a controller's value (MIDI, an expression
+  /// pedal, an External button) are points of the range the rack shows, which
+  /// for a rack variant can be narrower than the kind's (the Pitch Shift's
+  /// -12..+12 on the octaver's -24..+24), as is what [readValueTarget]
+  /// reports. The control layer converts each controller value with this as
+  /// it comes in; holders, persistence and the chain hold the kind's setting.
+  /// A target that does not resolve passes through.
+  double fxKindSettingFor(FxParamTarget target, double shown) =>
+      switch (_paramSlot(target)) {
+        final slot? => fxEntryKindSetting(slot.effect, target.param, shown),
+        null => shown,
+      };
 
   /// The CURRENT position and entry [target] names, or `null` when the chain,
   /// the slot, or the parameter index is gone (A9).

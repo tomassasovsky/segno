@@ -59,6 +59,7 @@ int main(void) {
     fixture f = {.e = e, .parked = parked};
     e->sample_rate = 1000;
     le_monitor_input* m = &e->monitors[0];
+    le_engine_bind_fx_rows(e); /* as le_engine_create does */
     atomic_store(&m->a_fx_type[0], LE_FX_DELAY);
     atomic_store(&m->a_fx_enabled[0], 0);
     CHECK(le_fx_prepare(&m->fx, 0, LE_FX_DELAY, 1000) == LE_OK);

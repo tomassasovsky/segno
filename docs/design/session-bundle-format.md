@@ -4,7 +4,7 @@
 
 A saved session is a directory (a `.segno` **bundle**) holding a JSON manifest,
 one WAV per audio layer, and a flattened mixdown. This document describes the
-current **v14** schema. Decode accepts the current schema only (see
+current **v16** schema. Decode accepts the current schema only (see
 [Versioning](#versioning)).
 
 Related: the performance-capture path stores retiring layers with its own
@@ -179,11 +179,11 @@ Note what is *not* here: there are no per-flag manifest fields, and no per-flag
 settings keys either. Every enable bit and every slot id lives inside the one
 string per chain.
 
-## Manifest schema (v14)
+## Manifest schema (v16)
 
 ```jsonc
 {
-  "version": 14,
+  "version": 16,
   "sampleRate": 48000,
   "channels": 1,
   "baseLengthFrames": 96000,
@@ -194,7 +194,7 @@ string per chain.
       "lengthFrames": 96000,
       "fadeAmount": 1.0,            // v11: the stationary Fade level, 0..1
       "reversed": false,            // v13: plays reversed (#1162)
-      "spanFrames": 0,              // v14: see "Recorded tempo" below
+      "spanFrames": 0,              // v16: see "Recorded tempo" below
       "lanes": [
         {
           "lane": 0,
@@ -211,6 +211,7 @@ string per chain.
           "history": [                // v12: one entry per undo/redo step
             { "kind": "layer", "skipped": 0 },
             { "kind": "layer", "skipped": 0 }
+            // v14: a length edit also stores "start", its playhead map
           ],
           "undoCount": 1,
           "redoCount": 1
@@ -241,6 +242,7 @@ string per chain.
   "tsDen": 4,
   "quantizeDiv": "off",
   "loopBars": 0,
+  "loopBeats": 0,                   // v14: the grid in beats (#1168)
   "recordTiming": "immediately",
   "overdubDecay": 0,
   "clickMode": "off",
@@ -267,7 +269,18 @@ string per chain.
   "defaultMultiple": 1,
   "pedalBindings": "{…}",           // opaque, app-side model; "" = the global remap
 
-  // --- v14: Audio & tempo (#1179) ---
+  // --- v15: backing player and click pan (#1200) ---
+  "backing": {
+    "prepared": [],                 // [{ "digest": "…", "name": "…" }]
+    "loaded": null,                 // one prepared item, or null
+    "endMode": "stop",              // or "repeat", "next"
+    "level": 1.0,
+    "pan": 0.0,
+    "outputMask": 0
+  },
+  "clickPan": 0.0,
+
+  // --- v16: Audio & tempo (#1179) ---
   "recordedTempoBpm": 0.0,          // 0 with recordedLengthFrames 0: no retime
   "recordedLengthFrames": 0,
   "defaultFollowTempo": true,
@@ -277,7 +290,7 @@ string per chain.
 }
 ```
 
-### Recorded tempo and spans (v14)
+### Recorded tempo and spans (v16)
 
 With Follow tempo on, a song-tempo change retimes the recorded takes: the
 master moves to the bar count at the new tempo while every take keeps its
@@ -303,14 +316,14 @@ channel survives a save.
 
 ## Versioning
 
-Writing is always the current version (v14). `Session.fromJson` accepts the
+Writing is always the current version (v16). `Session.fromJson` accepts the
 current version only: any other `version` fails with
 `SessionUnsupportedVersion`, and a non-integer `version` with a
 `FormatException`. Inside the current schema, fields that `toJson` omits at
 their defaults (`pan`, `balance`, the optional maps) read as those defaults.
 
 Opening a bundle goes through `decodeSessionManifest` (#1196,
-`session_migration.dart`). A manifest from v1 to v13 is converted in memory,
+`session_migration.dart`). A manifest from v1 to v15 is converted in memory,
 one step per schema bump, and must then pass the strict decoder; a newer one
 fails with `SessionUnsupportedVersion` and one that cannot be converted with
 `SessionUnconvertible`, leaving the bundle untouched. Once the converted
@@ -412,11 +425,19 @@ envelope):
   Peel marker, plus the live image.
 - **v13** — each track's playback direction (`tracks[].reversed`, #1162). A
   v12 bundle loads forward, as it always recalled.
-- **v14** — Audio & tempo (#1179): the recorded tempo and master length,
+- **v14** — length edits (#1168): a lane's history stores each length
+  edit's playhead map (`start`), and the grid is counted in beats
+  (`loopBeats`) beside the bars, so a Divide of a sole loop can keep the tempo
+  with a sub-bar loop. An older grid was whole bars, so its beats are the bars
+  times the saved numerator.
+- **v15** — the backing player's setup and the click's pan (#1200): the
+  prepared list, the loaded file, the end mode, level, pan and outputs
+  (`backing`), and `clickPan`. A v14 bundle said nothing about either, so the
+  conversion keeps the player's live setup, or an empty, silent backing and a
+  centred click when there is none.
+- **v16** — Audio & tempo (#1179): the recorded tempo and master length,
   each take's span, and the Follow tempo and Pitch defaults and track
-  overrides. A v13 bundle could not have been retimed, so it loads with no
+  overrides. A v15 bundle could not have been retimed, so it loads with no
   recorded pair and no spans; Follow tempo and Pitch were the player's global
   preferences until then, so the conversion takes the live ones (rule 1, the
-  schema-8 precedent). The number is this branch's next free one: on the
-  trunk after Multiply/Divide and the backing player it lands as v16, its
-  conversion step keyed by 15.
+  schema-8 precedent).

@@ -21,6 +21,8 @@ class FxLibraryPage extends StatefulWidget {
     required this.catalogue,
     required this.destinationLabel,
     required this.onStage,
+    required this.roomNs,
+    required this.costOf,
     this.freeSlots = kTrackEffectMax,
     super.key,
   });
@@ -39,11 +41,24 @@ class FxLibraryPage extends StatefulWidget {
   /// more than this is offered but explains itself rather than half-landing.
   final int freeSlots;
 
+  /// How much processing is left ([LooperRepository.fxRoomNs]), in
+  /// nanoseconds per frame. A choice that would need more is offered but
+  /// explains itself, as one that needs more slots does.
+  final int roomNs;
+
+  /// What adding entries would cost ([LooperRepository.fxCostOf]),
+  /// weighed against [roomNs].
+  final int Function(List<TrackEffect>) costOf;
+
   @override
   State<FxLibraryPage> createState() => _FxLibraryPageState();
 }
 
 class _FxLibraryPageState extends State<FxLibraryPage> {
+  /// Whether [entries] fit the processing left at the destination.
+  bool _fitsRoom(List<TrackEffect> entries) =>
+      widget.costOf(entries) <= widget.roomNs;
+
   /// The family being browsed, or null for the grid.
   ///
   /// Page state rather than a route, so Back from a family lands on the grid
@@ -139,11 +154,16 @@ class _FxLibraryPageState extends State<FxLibraryPage> {
               (final FxFamily f, _, _) => _PresetList(
                 family: f,
                 freeSlots: widget.freeSlots,
+                fitsRoom: _fitsRoom,
                 onChoose: _choose,
               ),
-              (_, true, _) => _SingleList(onChoose: _choose),
+              (_, true, _) => _SingleList(
+                fitsRoom: _fitsRoom,
+                onChoose: _choose,
+              ),
               (_, _, true) => FxSavedList(
                 freeSlots: widget.freeSlots,
+                fitsRoom: _fitsRoom,
                 onChoose: _choose,
               ),
               _ => _LibraryGrid(
@@ -315,11 +335,13 @@ class _PresetList extends StatelessWidget {
   const _PresetList({
     required this.family,
     required this.freeSlots,
+    required this.fitsRoom,
     required this.onChoose,
   });
 
   final FxFamily family;
   final int freeSlots;
+  final bool Function(List<TrackEffect>) fitsRoom;
   final void Function(FxLibraryChoice) onChoose;
 
   @override
@@ -334,13 +356,16 @@ class _PresetList extends StatelessWidget {
         final needed = fxPresetModules(preset).length;
         // Offered whatever the room, and explained when there is not enough:
         // a rack that half-landed would be a sound nobody chose.
-        final fits = needed <= freeSlots;
+        final slots = needed <= freeSlots;
+        final fits = slots && fitsRoom(fxRackEntries(preset));
         return _PresetRow(
           key: Key('fx_preset_${preset.id}'),
           name: preset.name,
-          note: fits
+          note: !slots
+              ? l10n.fxRackTooLong(preset.name, needed, freeSlots)
+              : fits
               ? null
-              : l10n.fxRackTooLong(preset.name, needed, freeSlots),
+              : l10n.fxNoRoom(preset.name),
           onTap: fits ? () => onChoose(FxRackChoice(preset)) : null,
           surface: surface,
         );
@@ -351,30 +376,35 @@ class _PresetList extends StatelessWidget {
 
 /// The standalone effects this engine can build.
 class _SingleList extends StatelessWidget {
-  const _SingleList({required this.onChoose});
+  const _SingleList({required this.fitsRoom, required this.onChoose});
 
+  final bool Function(List<TrackEffect>) fitsRoom;
   final void Function(FxLibraryChoice) onChoose;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final surface = context.surface;
-    // The built-ins, which is what a standalone effect can be here. The
-    // catalogue's own single-effect identities are rack modules, and most of
-    // them have no DSP in this build — offering one as a standalone would be
-    // offering a pedal that does nothing.
+    // The seven built-ins, which is what a standalone effect can be here
+    // (#887: the singles library keeps them only). The Looper X kinds are
+    // rack modules and arrive through a rack or "Add an effect to a rack".
     final types = [
       for (final type in TrackEffectType.values)
-        if (type != TrackEffectType.none) type,
+        if (type != TrackEffectType.none && !type.isRackKind) type,
     ];
     return ListView.separated(
       itemCount: types.length,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
-      itemBuilder: (context, i) => _PresetRow(
-        key: Key('fx_single_${types[i].name}'),
-        name: types[i].label,
-        onTap: () => onChoose(FxSingleChoice(types[i])),
-        surface: surface,
-      ),
+      itemBuilder: (context, i) {
+        final fits = fitsRoom([BuiltInEffect(type: types[i])]);
+        return _PresetRow(
+          key: Key('fx_single_${types[i].name}'),
+          name: types[i].label,
+          note: fits ? null : l10n.fxNoRoom(types[i].label),
+          onTap: fits ? () => onChoose(FxSingleChoice(types[i])) : null,
+          surface: surface,
+        );
+      },
     );
   }
 }

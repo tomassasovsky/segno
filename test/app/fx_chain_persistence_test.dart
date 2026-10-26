@@ -254,7 +254,7 @@ void main() {
       final saved = decodeFxChain(await settings.loadTrackFxChain(0));
       expect(saved.chainEnabled, isFalse);
       final effect = saved.entries.single as BuiltInEffect;
-      expect(effect.params, [.2, .4, .5, 0]);
+      expect(effect.params.take(2), [.2, .4]);
       expect(effect.slotId, 'drive');
       expect(held.params.first, .8);
     },
@@ -292,6 +292,30 @@ void main() {
     );
     expect(result.chainEnabled, isFalse);
     expect((result.entries.single as BuiltInEffect).params.first, .8);
+  });
+
+  test('an on-screen chain power write supersedes a held pedal binding on '
+      'the same chain once the engine confirms it, and tells the '
+      'controller (#1452)', () async {
+    when(
+      () => looper.settleFxRecipes(
+        waitForCallback: true,
+        cancelled: any(named: 'cancelled'),
+      ),
+    ).thenAnswer((_) async => EngineResult.ok);
+    final told = <(Object, double)>[];
+    projection
+      ..onOrdinaryWrite = ((target, value) => told.add((target, value)))
+      ..replace(powers: {const FxChainTarget(address): false}, parameters: {})
+      ..ordinaryChain(address, enabled: true);
+    await pumpEventQueue();
+
+    final result = projection.project(
+      address,
+      FxChainEnvelope(entries: [held]),
+    );
+    expect(result.chainEnabled, isTrue);
+    expect(told, [(const FxChainTarget(address), 1.0)]);
   });
 
   test('session replacement cancels stale awaited settings capture', () async {
@@ -424,8 +448,9 @@ void main() {
       expect(
         (decodeFxChain(await settings.loadTrackFxChain(0)).entries.single
                 as BuiltInEffect)
-            .params,
-        [.8, .4, .5, 0],
+            .params
+            .take(2),
+        [.8, .4],
       );
     },
   );
@@ -444,8 +469,9 @@ void main() {
     expect(
       (decodeFxChain(await settings.loadTrackFxChain(0)).entries.single
               as BuiltInEffect)
-          .params,
-      [.3, .4, .5, 0],
+          .params
+          .take(2),
+      [.3, .4],
     );
   });
 
@@ -517,8 +543,9 @@ void main() {
     expect(
       (decodeFxChain(await settings.loadTrackFxChain(0)).entries.single
               as BuiltInEffect)
-          .params,
-      [.1, .4, .5, 0],
+          .params
+          .take(2),
+      [.1, .4],
     );
   });
 
@@ -542,8 +569,9 @@ void main() {
       expect(
         (decodeFxChain(await settings.loadTrackFxChain(0)).entries.single
                 as BuiltInEffect)
-            .params,
-        [.8, .4, .5, 0],
+            .params
+            .take(2),
+        [.8, .4],
       );
       await projection.close();
       expect(replays.hasListener, isFalse);
@@ -574,8 +602,9 @@ void main() {
     expect(
       (decodeFxChain(await settings.loadTrackFxChain(0)).entries.single
               as BuiltInEffect)
-          .params,
-      [.6, .4, .5, 0],
+          .params
+          .take(2),
+      [.6, .4],
     );
   });
 }

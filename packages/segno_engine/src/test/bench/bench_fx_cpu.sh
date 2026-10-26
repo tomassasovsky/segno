@@ -7,8 +7,13 @@
 # The source list and the per-OS link flags mirror run_native_tests.sh; keep
 # them in sync with it and with src/CMakeLists.txt.
 #
-# Usage: ./bench_fx_cpu.sh [--smoke] [--paced] [--rate HZ] [--period FRAMES]
-#          [--blocks N] [--cpu N]
+# Usage: ./bench_fx_cpu.sh [--smoke] [--paced] [--racks] [--table] [--rate HZ]
+#          [--period FRAMES]
+#          [--blocks N] [--cpu N] [--kind octaver|psola|eq|comp|transient|
+#          hpgate|doubler|chorus|wah|overdrive|distortion|vinyl|degrade|lpf|
+#          spring|drive|filter|delay|tremolo|echo|reverb|dubverb|ambverb|
+#          whammy|pumper|slicer|lpflfo|modedelay|drumdelay|dubdelay|dualoct|
+#          ampcab|mod|roomverb|smarttune]
 # The binary lands in packages/segno_engine/build/bench/, which is not
 # tracked.
 set -euo pipefail

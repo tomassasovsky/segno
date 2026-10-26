@@ -11,6 +11,7 @@ import 'package:segno/theme/theme.dart';
 /// Editor intentions forwarded to the FX owner by stable effect/group ID.
 /// Indices remain a rendering detail and never identify a write.
 typedef FxEdits = ({
+  void Function({required bool enabled}) setChainEnabled,
   void Function(String slotId, {required bool enabled}) setEnabled,
   void Function(String groupId, {required bool enabled}) setGroupEnabled,
   void Function(String slotId, int param, double value) setParam,
@@ -21,20 +22,26 @@ typedef FxEdits = ({
 /// What a built-in parameter's row reads: the value text beside its name and
 /// the note under its slider.
 ///
-/// An entry built from a factory rack module (`effect.module != null`) keeps
-/// the raw two-decimal setting and the "Scale unverified" note: its preset
-/// values were written against the Looper X's own scales, which this build has
-/// not measured, so printing them in this build's units would state numbers
-/// nobody verified. A plain built-in reads in its descriptor's units with no
-/// note, unless the descriptor itself is marked
-/// [FxParamInfo.taperUnverified], in which case it reads like a module's.
+/// An entry built from a factory rack module onto one of the seven built-ins
+/// (`effect.module != null`) keeps the raw two-decimal setting and the "Scale
+/// unverified" note: its preset values were written against the Looper X's
+/// own scales, which the built-in does not share, so printing them in its
+/// units would state numbers nobody verified. A Looper X kind
+/// ([TrackEffectType.isRackKind]) or a rack variant ([fxEntryBuild], the
+/// Pitch Shift on the octaver) carries the module's own scales, and like a
+/// plain built-in reads in its descriptor's units with no note, unless the
+/// descriptor itself is marked [FxParamInfo.taperUnverified], in which case
+/// it reads like a module's.
 ({String valueText, String? note}) fxParamReading(
   AppLocalizations l10n,
   TrackEffect effect,
   FxParamInfo param,
   double setting,
 ) {
-  if (effect.module != null || param.taperUnverified) {
+  final rackKind =
+      effect is BuiltInEffect &&
+      (effect.type.isRackKind || fxEntryBuild(effect) != null);
+  if ((effect.module != null && !rackKind) || param.taperUnverified) {
     return (
       valueText: setting.toStringAsFixed(2),
       note: l10n.fxScaleUnverified,
@@ -52,11 +59,16 @@ class FxBuiltInParamControl extends StatelessWidget {
     required this.index,
     required this.width,
     required this.onChanged,
+    this.labelKey,
     super.key,
   });
 
   /// The entry whose parameter this is.
   final BuiltInEffect effect;
+
+  /// The parameter key to name it by instead of its own, as a rack variant
+  /// renames one (`FxModuleBuild.labels`), or `null`.
+  final String? labelKey;
 
   /// The parameter's index in [effect]'s type.
   final int index;
@@ -70,16 +82,18 @@ class FxBuiltInParamControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final param = effect.type.params[index];
-    final setting = effect.params[index];
+    // A rack variant may show a narrower range than its kind's: the
+    // control works in that range and reports the kind's setting.
+    final param = fxEntryParam(effect, index);
+    final setting = fxEntryShownSetting(effect, index);
     final reading = fxParamReading(l10n, effect, param, setting);
     return FxParamControl(
-      label: l10n.fxParamName(param),
+      label: l10n.fxParamKeyName(labelKey ?? param.key),
       value: setting,
       valueText: reading.valueText,
       width: width,
       note: reading.note,
-      onChanged: onChanged,
+      onChanged: (v) => onChanged(fxEntryKindSetting(effect, index, v)),
     );
   }
 }

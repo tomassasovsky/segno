@@ -159,26 +159,19 @@ int le_label_is_loopback(const char* label);
 int32_t le_channel_memo_for_test(const char* key, int capture,
                                  int32_t (*query)(void* env), void* env);
 
-/* YIN pitch detector for the PSOLA octaver (mode >= 0.5). Runs the cumulative-
- * mean-normalized difference function over `n` contiguous samples of `x` at `sr`
- * Hz, searching the vocal band (~60-1000 Hz), and returns a sub-sample period
- * estimate (parabolic-interpolated, in samples) in *out_period and a voicing
- * confidence in [0,1] (1 = perfectly periodic) in *out_voiced. Returns 1 when the
- * frame reads as confidently voiced, else 0 (silence or aperiodic). Pure (no
- * engine state) and unit-tested directly so the octave-error guard is verifiable
- * independently of the lossy grain synthesis. Defined in engine.c. */
-int le_psola_detect(const float* x, int n, int sr, float* out_period,
-                    float* out_voiced);
-
-/* The same detector over an explicit [min_hz, max_hz] band, which is what the
- * tuner needs and the octaver does not: the band is derived from `sr`, so
+/* YIN pitch detector, one shot: runs the cumulative-mean-normalized
+ * difference function over `n` contiguous samples of `x` at `sr` Hz, searching
+ * [min_hz, max_hz], and returns a sub-sample period estimate
+ * (parabolic-interpolated, in samples) in *out_period and a voicing confidence
+ * in [0,1] (1 = perfectly periodic) in *out_voiced. Returns 1 when the frame
+ * reads as confidently voiced, else 0 (silence or aperiodic). Pure (no engine
+ * state) and unit-tested directly so the octave-error guard is verifiable
+ * independently of any synthesis. The band is derived from `sr`, so
  * decimating the signal rescales BOTH ends and never lowers the floor on its
- * own. Bass low B is 30.87 Hz, well under the octaver's ~60 Hz floor.
- *
- * Lags are `sr/max_hz` .. `sr/min_hz`, so cost is proportional to the WIDTH of
- * the band in samples — which is why the tuner hands it a decimated signal:
- * the same 30 Hz floor is 200 lags at 6 kHz against 1600 at 48 kHz.
- * [le_psola_detect] is this function at (60, 1000). */
+ * own. Lags are `sr/max_hz` .. `sr/min_hz`, so cost is proportional to the
+ * WIDTH of the band in samples, which is why the tuner and the PSOLA octaver
+ * (le_yin_begin and its slices, which run this same arithmetic) hand it a
+ * decimated signal. */
 int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
                          float* out_period, float* out_voiced);
 

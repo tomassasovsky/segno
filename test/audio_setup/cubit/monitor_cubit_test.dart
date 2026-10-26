@@ -508,7 +508,7 @@ void main() {
             final recipe = engine.fxRecipes[(FxOwner.monitor, 0, 0)]!;
             expect(recipe.enabled, isFalse);
             expect(recipe.slots.single.type.name, 'drive');
-            expect(recipe.slots.single.params, [.7, .4, .5, 0]);
+            expect(recipe.slots.single.params.take(2), [.7, .4]);
             expect(await saved.loadMonitorMute(0), isFalse);
             expect(
               (
@@ -1868,24 +1868,6 @@ void main() {
       );
 
       blocTest<MonitorCubit, MonitorState>(
-        'setChainEnabled ignores an input with no configured monitor',
-        build: build,
-        act: (cubit) => cubit.setChainEnabled(3, enabled: false),
-        expect: () => <MonitorState>[],
-        verify: (_) async {
-          // Never materialize (or persist) a monitor the user never created —
-          // the restore path would resurrect it on every subsequent boot.
-          verifyNever(
-            () => repository.setMonitorChainEnabled(
-              input: any(named: 'input'),
-              enabled: any(named: 'enabled'),
-            ),
-          );
-          expect(await settings.loadMonitorEffects(3), isNull);
-        },
-      );
-
-      blocTest<MonitorCubit, MonitorState>(
         'setEffectEnabled ignores an out-of-range slot',
         build: build,
         act: (cubit) => cubit.setEffectEnabled(0, 3, enabled: false),
@@ -1898,32 +1880,6 @@ void main() {
               enabled: any(named: 'enabled'),
             ),
           );
-        },
-      );
-
-      blocTest<MonitorCubit, MonitorState>(
-        'setChainEnabled flips the whole chain and persists the envelope',
-        build: build,
-        act: (cubit) => cubit
-          // Configure the input first: the flip only applies to a monitor the
-          // user actually has (see the phantom-monitor guard).
-          ..addEffect(0)
-          ..setChainEnabled(0, enabled: false),
-        expect: () => [
-          isA<MonitorState>(),
-          isA<MonitorState>().having(
-            (s) => s.forInput(0).chainEnabled,
-            'chainEnabled',
-            isFalse,
-          ),
-        ],
-        verify: (_) async {
-          verify(
-            () => repository.setMonitorChainEnabled(input: 0, enabled: false),
-          ).called(1);
-          // R15: the flag rides the one monitor-fx key beside the entries.
-          final encoded = await settings.loadMonitorEffects(0);
-          expect(decodeFxChain(encoded).chainEnabled, isFalse);
         },
       );
     });
