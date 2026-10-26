@@ -325,7 +325,8 @@ static void le_prefault_around(le_engine* e, float* buf, int32_t wrap,
  * le_post_record_image before any RECORD or ARM it publishes on an EMPTY
  * track, which covers every take start: an immediate one, and a quantized,
  * sound-triggered or clock-launched one that the callback fires later.
- * [loop_top]: a quantized arm, which starts at frame 0.
+ * [loop_top]: a quantized arm or a Song/Band handoff, which starts at
+ * frame 0.
  *
  * Over an existing loop the take starts at the playhead (a sound-triggered
  * one may fire there at once, and anywhere else only after the prefaulter
@@ -2102,7 +2103,10 @@ static int32_t le_post_record_image(le_engine* e, int32_t channel,
     e->capture_seq[channel] = ++e->capture_seq_next; /* le_keep_standbys */
   }
   if (st == LE_TRACK_EMPTY) {
-    le_track_prefault_take(e, channel, action == LE_CMD_ARM && trigger == 0.0f);
+    /* A grid arm and a Song or Band handoff (#1323) both start the take at
+     * its loop top. */
+    le_track_prefault_take(e, channel, action == LE_CMD_ARM &&
+                                           (trigger == 0.0f || trigger == 3.0f));
     if (fresh_shadow >= 0) le_prefault_shadow(e, channel, fresh_shadow, 0, 0, 0);
   }
   if (!image) return clocked ? le_post_clock_command(e, action, channel)

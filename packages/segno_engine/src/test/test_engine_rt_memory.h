@@ -822,6 +822,96 @@ static void test_take_pressed_at_the_loop_end_wraps_faulted_in(void) {
   CHECK(prctl(PR_SET_THP_DISABLE, 0, 0, 0, 0) == 0);
 }
 
+/* Runs whole tenths of a second of callbacks, letting the prefaulter catch
+ * up after each, until track [ch] reaches [state] or [blocks] have run. */
+static void rt_run_until(rt_audio_thread* a, le_engine* e, int32_t ch,
+                         int32_t state, int blocks, float level) {
+  const int tenth = e->sample_rate / 10 / RT_BLOCK;
+  for (int done = 0;
+       done < blocks && load_i32(&e->tracks[ch].a_state) != state;
+       done += tenth) {
+    le_prefault_tick(e);
+    rt_run(a, tenth, level);
+  }
+}
+
+/* A Band Record that waits for the sounding section (#1323) starts its take
+ * at the primary's loop top, the first frame of the take's slot. The press
+ * faults in the head of the take there, not at the playhead, and the take
+ * starts at the handoff without a fault. */
+static void test_band_handoff_take_starts_faulted_in(void) {
+  printf("test_band_handoff_take_starts_faulted_in\n");
+  CHECK(prctl(PR_SET_THP_DISABLE, 1, 0, 0, 0) == 0);
+  const int32_t rate = 96000;
+  const int sec_blocks = rate / RT_BLOCK;
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, rate, 2, 2, rate * 60) == LE_OK);
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
+  rt_audio_thread a;
+  CHECK(rt_audio_start(&a, e));
+  rt_run(&a, 1, 0.0f);
+  CHECK(le_engine_crown_primary(e, 0) == LE_OK);
+  rt_run(&a, 1, 0.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* the primary: a 4 s loop */
+  for (int sec = 0; sec < 4; ++sec) {
+    le_prefault_tick(e);
+    rt_run(&a, sec_blocks, 0.3f);
+  }
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  rt_run(&a, sec_blocks / 2, 0.0f);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s); /* a poll: the zero spares are made */
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  /* Section 1: armed to the primary's top, recorded for one loop. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  rt_run_until(&a, e, 1, LE_TRACK_RECORDING, 5 * sec_blocks, 0.0f);
+  CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_RECORDING);
+  for (int sec = 0; sec < 4; ++sec) {
+    le_prefault_tick(e);
+    rt_run(&a, sec_blocks - (sec == 3 ? sec_blocks / 10 : 0), 0.25f);
+  }
+  CHECK(le_engine_record(e, 1) == LE_OK); /* snaps to one primary loop */
+  rt_run_until(&a, e, 1, LE_TRACK_PLAYING, 5 * sec_blocks, 0.0f);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].multiple == 1);
+  /* Half way through the loop, a Record on empty section 2 waits. */
+  const int32_t loop = load_i32(&e->a_master_len);
+  int32_t p = load_i32(&e->a_master_pos);
+  rt_run(&a, ((loop / 2 - p + loop) % loop) / RT_BLOCK, 0.0f);
+  le_engine_get_snapshot(e, &s);
+  le_prefault_tick(e);
+  p = load_i32(&e->a_master_pos);
+  CHECK(p > loop / 4 && p < 3 * loop / 4);
+  CHECK(le_engine_record(e, 2) == LE_OK);
+  const size_t head = (size_t)rate * LE_PREFAULT_HEAD_SECONDS;
+  for (int l = 0; l < le_lanes_active(&e->tracks[2]); ++l) {
+    le_lane* ln = &e->tracks[2].lanes[l];
+    const float* b = ln->pool[load_i32(&ln->a_live)];
+    CHECK(b != NULL);
+    CHECK(rt_resident_pages(b, head * sizeof(float)) ==
+          rt_pages(b, head * sizeof(float))); /* on the press, at frame 0 */
+  }
+  rt_run(&a, 1, 0.0f);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == 2 && s.song_queue_record == 1);
+  CHECK(s.tracks[2].pending_trigger == 3);
+  /* The handoff, at real-time pace against the real prefaulter thread. */
+  rt_run_paced(&a, 3 * sec_blocks, 0.25f, rate);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(le_engine_record(e, 2) == LE_OK);
+  rt_run(&a, sec_blocks, 0.0f);
+  rt_audio_stop(&a);
+  printf("  a Band handoff take: %ld blocks, %ld faults on the audio thread "
+         "(worst block %ld)\n", a.blocks_run, a.faults, a.worst_block);
+  CHECK(a.faults == 0);
+  le_engine_destroy(e);
+  CHECK(prctl(PR_SET_THP_DISABLE, 0, 0, 0, 0) == 0);
+}
+
 /* Drops track [ch]'s standbys and its claim to one, so its next punch-in
  * takes the fresh-shadow path. */
 static void rt_no_standby(le_engine* e, int ch) {
@@ -1026,6 +1116,7 @@ static void run_rt_memory_tests(void) {
   test_late_take_is_walked_from_the_playhead();
   test_standbys_stay_in_budget();
   test_take_pressed_at_the_loop_end_wraps_faulted_in();
+  test_band_handoff_take_starts_faulted_in();
   test_compensated_punch_in_after_a_segment_start();
   test_stopped_punch_in_on_a_cap_sized_shadow();
   test_freed_buffer_is_never_faulted_again();
