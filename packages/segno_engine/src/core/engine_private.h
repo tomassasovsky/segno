@@ -456,7 +456,13 @@ typedef struct le_oct_low {
   float gate;   /* the band's weight, per sample (0: the vocoder plays it) */
   float boost;  /* its gain over the crossover's loss at the pitch */
   float ramp;   /* the voices' level above the band's floor */
+  float level1; /* Octave 1's level, smoothed */
   float level2; /* Octave 2's level, smoothed */
+  /* The band's weight (gate x boost x ramp) at the vocoder's last four
+   * analysis ticks, newest at hold_at: the voices play it as late as the
+   * vocoder's frames do theirs (le_low_play). */
+  float hold[4];
+  int32_t hold_at;
   le_oct_low_voice v[2];
   float dring[LE_OCT_LOW_DWIN];
   float win[LE_OCT_LOW_DWIN];
