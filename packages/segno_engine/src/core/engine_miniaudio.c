@@ -26,8 +26,16 @@
 #include "engine_private.h"   /* struct le_engine, le_find_loopback, le_resolve_device_id */
 #include "engine_telemetry.h" /* le_now_ns, LE_CALLBACK_TELEMETRY (#722) */
 #include "le_device_backend.h"
+#include "rt_alloc.h" /* le_rt_prefault_stack */
 #include "segno_engine_api.h"
 #include "miniaudio.h"
+
+/* Stack the device thread faults in before its first block. The native fault
+ * test measures the engine's deepest callback stack at about 77 KB across
+ * record, overdub, drain and every ringed FX (test_engine_rt_memory.h, which
+ * also fails if it reaches 128 KB); this leaves room for miniaudio's and
+ * alsa-lib's frames above it, once per device start. */
+#define LE_RT_STACK_PREFAULT_BYTES (256u * 1024u)
 
 /* The miniaudio data callback: forwards one interleaved block straight into the
  * portable real-time core. No allocation, locking, or I/O (see engine.c).
@@ -40,11 +48,21 @@
  * harness and by the ASIO bridge's own conversion wrapper, mixing three
  * different timelines into one gap detector. The cost added to the RT path is
  * two monotonic clock reads (vDSO/commpage, no kernel entry) and ~10 relaxed
- * atomic adds — well under a microsecond against a 667 us period at 64 frames /
- * 96 kHz — and -DLE_CALLBACK_TELEMETRY=0 removes even that. */
+ * atomic adds — well under a microsecond, which is under 1% of the deadline
+ * even at the shortest period the appliance offers (32 frames / 96 kHz =
+ * 333 us; 64 frames is the default, not the floor) — and
+ * -DLE_CALLBACK_TELEMETRY=0 removes even that. */
 static void data_callback(ma_device* device, void* output, const void* input,
                           ma_uint32 frame_count) {
   le_engine* e = (le_engine*)device->pUserData;
+  /* Once per device start, before the first block: fault in the stack the
+   * deepest callback path will use, so no later block takes a first-touch
+   * fault on a stack page (rt_alloc.h). engine_linux.c has locked the top of
+   * this stack before the start, so the pages stay. */
+  if (!e->rt_stack_ready) {
+    le_rt_prefault_stack(LE_RT_STACK_PREFAULT_BYTES);
+    e->rt_stack_ready = 1;
+  }
 #if LE_CALLBACK_TELEMETRY
   const uint64_t entry_ns = le_now_ns();
   le_engine_process(e, (float*)output, (const float*)input, frame_count);
@@ -371,6 +389,7 @@ static int32_t le_miniaudio_start(le_engine* engine) {
   /* Promote the (idle) audio worker to real-time before it starts, so its first
    * reads run at the right priority (see le_platform_after_device_open). */
   le_platform_after_device_open(engine);
+  engine->rt_stack_ready = 0; /* the device thread prefaults its stack first */
   if (ma_device_start(&engine->device) != MA_SUCCESS) {
     return LE_ERR_DEVICE;
   }

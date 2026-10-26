@@ -35,7 +35,7 @@ const _rig = LooperState(
     Track(channel: 2),
   ],
   transport: TransportState(
-    isRunning: true,
+    deviceRunning: true,
     tempoBpm: 120,
     tempoSource: TempoSource.manual,
     masterLengthFrames: 96000,
@@ -1176,6 +1176,58 @@ void main() {
       expect(tempo.state.countInBars, 2);
       await tester.tap(find.byKey(const Key('loop_tempo_tap')));
       verify(repository.tapTempo).called(1);
+    });
+
+    Color beatColor(WidgetTester tester, int beat) {
+      final box = tester.widget<Container>(find.byKey(Key('loop_beat_$beat')));
+      return (box.decoration! as BoxDecoration).color!;
+    }
+
+    testWidgets('the beat strip lights the beat while a track plays', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        initial: LoopSettingsPageId.tempo,
+        state: LooperState(
+          tracks: _rig.tracks,
+          transport: const TransportState(
+            deviceRunning: true,
+            tempoBpm: 120,
+            tempoSource: TempoSource.manual,
+            masterLengthFrames: 96000,
+            currentBeat: 2,
+          ),
+        ),
+      );
+      expect(beatColor(tester, 2), SurfaceTheme.dark.accent);
+    });
+
+    testWidgets('a stopped loop on an open device lights no beat (#1356)', (
+      tester,
+    ) async {
+      // The appliance keeps the device open, and a stopped loop parks the
+      // engine's beat at the downbeat: neither means the music is moving.
+      await pump(
+        tester,
+        initial: LoopSettingsPageId.tempo,
+        state: const LooperState(
+          tracks: [
+            Track(state: TrackState.stopped, lengthFrames: 96000),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 96000),
+            Track(channel: 2),
+          ],
+          transport: TransportState(
+            deviceRunning: true,
+            tempoBpm: 120,
+            tempoSource: TempoSource.manual,
+            masterLengthFrames: 96000,
+          ),
+        ),
+      );
+      for (var beat = 0; beat < 4; beat++) {
+        expect(beatColor(tester, beat), SurfaceTheme.dark.control);
+      }
     });
 
     testWidgets('unknown count-in has no provisional bar selected', (

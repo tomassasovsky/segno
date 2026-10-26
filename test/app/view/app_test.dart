@@ -136,6 +136,15 @@ class _RecordingWindowService implements WaveformWindowService {
   void Function()? onWindowActivity;
 
   @override
+  void Function(({double x, double y}) tap)? onCalibrationTap;
+
+  @override
+  Future<bool> showCalibrationTarget(
+    ({double x, double y})? target, {
+    String label = '',
+  }) async => false;
+
+  @override
   Future<void> pushReadout(PerformanceReadout readout) async {
     readouts.add(readout);
     if (failNextReadoutPushes > 0) {
@@ -152,7 +161,7 @@ class _RecordingWindowService implements WaveformWindowService {
   bool get isOpen => _open;
 
   @override
-  Future<bool> open({String title = 'Segno — Output'}) async {
+  Future<bool> open() async {
     openCalls++;
     _open = openResult;
     return openResult;
@@ -731,8 +740,6 @@ void main() {
       WaveformWindowService windowService, {
       Future<void> Function()? powerOff,
       PowerKeySource? powerKeySource,
-      Duration waveformWindowOpenDelay = Duration.zero,
-      bool settle = true,
       ConsoleFactsClient consoleFacts = const UnsupportedConsoleFactsClient(),
       StorageRepository? storage,
     }) async {
@@ -752,10 +759,9 @@ void main() {
           backingRepository: testBackingRepository(),
           powerOff: powerOff,
           powerKeySource: powerKeySource,
-          waveformWindowOpenDelay: waveformWindowOpenDelay,
         ),
       );
-      if (settle) await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
     }
 
     Future<void> pumpAppWithUpdates(
@@ -1018,7 +1024,7 @@ void main() {
             await tester.pumpAndSettle();
             expect(halted, isFalse);
             store.values.remove('looper.fade_durations');
-            power.retry(_named);
+            power.retry(_named, save: () async {});
             await tester.pumpAndSettle();
             await tester.pump(const Duration(seconds: 6));
             expect(halted, isTrue);
@@ -3565,6 +3571,130 @@ void main() {
       expect(find.text('Loop does not fit this mode'), findsNothing);
     });
 
+    group('USB-C power (#1352)', () {
+      const stale = PedalPowerSupply(
+        profile: PedalPowerProfile.matches,
+        millivolts: 20000,
+        milliamps: 3000,
+        maxMilliamps: 4700,
+      );
+
+      Future<(FakePedalLink, PedalRepository)> pumpWithPedal(
+        WidgetTester tester,
+      ) async {
+        final link = FakePedalLink();
+        final pedal = PedalRepository(link);
+        link.hello();
+        await tester.pumpWidget(
+          App(
+            guards: GuardRegistry(),
+            mixSettings: testMixSettings(repository, settings: settings),
+            repository: repository,
+            controllerRepository: controllerRepository,
+            midiDeviceRepository: midiDeviceRepository,
+            settings: settings,
+            waveformWindow: NoopWaveformWindowService(),
+            sessionRepository: sessionRepository,
+            performanceRepository: performanceRepository,
+            backingRepository: testBackingRepository(),
+            pedalRepository: pedal,
+          ),
+        );
+        await tester.pump();
+        return (link, pedal);
+      }
+
+      Future<void> report(
+        WidgetTester tester,
+        FakePedalLink link,
+        PedalPowerSupply supply,
+      ) async {
+        link
+          ..hello()
+          ..emit(PdStatusMessage(supply));
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('a stale contract raises the power-cycle banner until a '
+          'fresh one arrives', (tester) async {
+        final (link, pedal) = await pumpWithPedal(tester);
+        await report(tester, link, stale);
+        expect(find.byKey(const Key(AppToastId.powerCycle)), findsOneWidget);
+        expect(find.byKey(const Key(AppToastId.weakCharger)), findsNothing);
+
+        await report(
+          tester,
+          link,
+          const PedalPowerSupply(
+            profile: PedalPowerProfile.matches,
+            millivolts: 20000,
+            milliamps: 4700,
+            maxMilliamps: 4700,
+          ),
+        );
+        expect(find.byKey(const Key(AppToastId.powerCycle)), findsNothing);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(pedal.helloTimeout);
+      });
+
+      testWidgets('Not now holds the banner off for the rest of the boot', (
+        tester,
+      ) async {
+        final (link, pedal) = await pumpWithPedal(tester);
+        await report(tester, link, stale);
+        await tester.tap(find.byKey(const Key(AppToastId.powerCycleDismiss)));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key(AppToastId.powerCycle)), findsNothing);
+        // A changed but still stale contract does not bring it back.
+        await report(
+          tester,
+          link,
+          const PedalPowerSupply(
+            profile: PedalPowerProfile.matches,
+            millivolts: 20000,
+            milliamps: 3000,
+            maxMilliamps: 4500,
+          ),
+        );
+        expect(find.byKey(const Key(AppToastId.powerCycle)), findsNothing);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(pedal.helloTimeout);
+      });
+
+      testWidgets('Power off… opens Power options', (tester) async {
+        final (link, pedal) = await pumpWithPedal(tester);
+        await report(tester, link, stale);
+        await tester.tap(find.byKey(const Key(AppToastId.powerCyclePowerOff)));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key(AppToastId.powerCycle)), findsNothing);
+        expect(find.byKey(const Key('power_restart')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('power_cancel')));
+        await tester.pumpAndSettle();
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(pedal.helloTimeout);
+      });
+
+      testWidgets('a charger under 90 W is said once, with no banner', (
+        tester,
+      ) async {
+        final (link, pedal) = await pumpWithPedal(tester);
+        await report(
+          tester,
+          link,
+          const PedalPowerSupply(
+            profile: PedalPowerProfile.matches,
+            millivolts: 20000,
+            milliamps: 3250,
+            maxMilliamps: 3250,
+          ),
+        );
+        expect(find.byKey(const Key(AppToastId.weakCharger)), findsOneWidget);
+        expect(find.byKey(const Key(AppToastId.powerCycle)), findsNothing);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(pedal.helloTimeout);
+      });
+    });
+
     testWidgets('shows the startup update toast when a build is available', (
       tester,
     ) async {
@@ -3778,62 +3908,6 @@ void main() {
         find.byKey(const Key('app_waveformWindowFailed_banner')),
         findsNothing,
       );
-    });
-
-    testWidgets('waits before opening the second native view', (tester) async {
-      final window = _RecordingWindowService();
-      await pumpApp(
-        tester,
-        window,
-        waveformWindowOpenDelay: const Duration(milliseconds: 750),
-        settle: false,
-      );
-      await tester.pump();
-      expect(window.openCalls, 0);
-      await tester.pump(const Duration(milliseconds: 749));
-      expect(window.openCalls, 0);
-      await tester.pump(const Duration(milliseconds: 1));
-      expect(window.openCalls, 1);
-    });
-
-    testWidgets('preference changes cannot bypass the startup wait', (
-      tester,
-    ) async {
-      final window = _RecordingWindowService();
-      await pumpApp(
-        tester,
-        window,
-        waveformWindowOpenDelay: const Duration(milliseconds: 750),
-        settle: false,
-      );
-      await tester.pump();
-      final waveform = tester
-          .element(find.byType(LooperPage))
-          .read<WaveformWindowCubit>();
-      await waveform.setEnabled(value: false);
-      await waveform.setEnabled(value: true);
-      await tester.pump();
-      expect(window.openCalls, 0);
-      await waveform.setEnabled(value: false);
-      await tester.pump(const Duration(milliseconds: 750));
-      expect(window.openCalls, 0);
-      await waveform.setEnabled(value: true);
-      await tester.pump();
-      expect(window.openCalls, 1);
-    });
-
-    testWidgets('unmount cancels the delayed window open', (tester) async {
-      final window = _RecordingWindowService();
-      await pumpApp(
-        tester,
-        window,
-        waveformWindowOpenDelay: const Duration(milliseconds: 750),
-        settle: false,
-      );
-      await tester.pump();
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump(const Duration(seconds: 1));
-      expect(window.openCalls, 0);
     });
 
     testWidgets('does not open the waveform window when it is disabled', (
@@ -4407,44 +4481,6 @@ void main() {
           findsOneWidget,
         );
         // No frames are streamed to a window that never readied.
-        await tester.pump(const Duration(milliseconds: 40));
-        expect(windowService.pushCalls, 0);
-      },
-      // Toast, not a widget. These notifications moved to toastification,
-      // which renders into an overlay this harness does not provide, so the
-      // old widget-key assertions can never match. Coverage is rebuilt with
-      // the persistent-surface work — see #453.
-      skip: true,
-    );
-
-    testWidgets(
-      'shows a single-display notice and skips the waveform window '
-      'when only one display is present',
-      (tester) async {
-        final windowService = _RecordingWindowService();
-        await tester.pumpWidget(
-          App(
-            guards: GuardRegistry(),
-            mixSettings: testMixSettings(repository, settings: settings),
-            repository: repository,
-            controllerRepository: controllerRepository,
-            midiDeviceRepository: midiDeviceRepository,
-            settings: settings,
-            waveformWindow: windowService,
-            sessionRepository: sessionRepository,
-            performanceRepository: performanceRepository,
-            backingRepository: testBackingRepository(),
-            displayCount: () => 1,
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        expect(
-          find.byKey(const Key('app_singleDisplay_banner')),
-          findsOneWidget,
-        );
-        expect(windowService.openCalls, 0);
-        // The push timer never started either.
         await tester.pump(const Duration(milliseconds: 40));
         expect(windowService.pushCalls, 0);
       },

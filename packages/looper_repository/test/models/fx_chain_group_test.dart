@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno_engine/segno_engine.dart' show FxRackEdge;
 
 /// One module of the rack [rackId], or a standalone effect when [rackId] is
 /// null. The slot id makes each entry addressable in an expectation.
@@ -40,6 +44,32 @@ void main() {
       expect(fxGroupChannelWrites(group, channels), {0: channels});
     },
   );
+
+  test("rack edges mark each rack's first and last entry and nothing "
+      'else', () {
+    final chain = [
+      _fx('a'),
+      _fx('b1', rackId: 'B'),
+      _fx('b2', rackId: 'B'),
+      _fx('b3', rackId: 'B'),
+      _fx('c1', rackId: 'C'),
+      _fx('d'),
+      // Two racks back to back are two racks, not one.
+      _fx('e1', rackId: 'E'),
+      _fx('e2', rackId: 'E'),
+    ];
+    expect(fxRackEdges(chain), [
+      FxRackEdge.none,
+      FxRackEdge.first,
+      FxRackEdge.none,
+      FxRackEdge.last,
+      FxRackEdge.only,
+      FxRackEdge.none,
+      FxRackEdge.first,
+      FxRackEdge.last,
+    ]);
+    expect(fxRackEdges(const []), isEmpty);
+  });
 
   test('removing a boundary module keeps the rack channel envelope', () {
     const channels = FxChannels(
@@ -528,6 +558,72 @@ void main() {
 
       expect(fxMoveWithinRack(chain, 'nope', 0, 0), same(chain));
     });
+
+    test("never splits a Dub Rack's parallel paths", () {
+      // Doubler, Dub delay, Dub reverb, Ambience, Compressor, Parametric EQ.
+      final preset = FxPreset.tryParse(
+        'Dub Rack',
+        File(
+          '../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset',
+        ).readAsStringSync(),
+      )!;
+      final chain = [
+        for (final (i, e) in fxRackEntries(preset).indexed)
+          e.copyWith(
+            slotId: '$i',
+            rack: const FxRack(id: 'dub', name: 'Dub FX 1'),
+          ),
+      ];
+      // The Compressor between the Dub reverb and the Ambience: refused.
+      expect(fxMoveWithinRack(chain, 'dub', 4, 3), same(chain));
+      expect(
+        fxOrderRackModules(chain, 'dub', ['0', '1', '2', '4', '3', '5']),
+        same(chain),
+      );
+      // Within the paths, or around them, the modules move.
+      expect(_slots(fxMoveWithinRack(chain, 'dub', 3, 0)), [
+        '3',
+        '0',
+        '1',
+        '2',
+        '4',
+        '5',
+      ]);
+      expect(_slots(fxMoveWithinRack(chain, 'dub', 4, 0)), [
+        '4',
+        '0',
+        '1',
+        '2',
+        '3',
+        '5',
+      ]);
+    });
+
+    test('a Dub Rack added into a Dub Rack joins its paths', () {
+      final preset = FxPreset.tryParse(
+        'Dub Rack',
+        File(
+          '../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset',
+        ).readAsStringSync(),
+      )!;
+      List<BuiltInEffect> rack(String prefix) => [
+        for (final (i, e) in fxRackEntries(preset).indexed)
+          e.copyWith(
+            slotId: '$prefix$i',
+            rack: const FxRack(id: 'dub', name: 'Dub FX 1'),
+          ),
+      ];
+      final joined = fxKeepPathsTogether([...rack('a'), ...rack('b')]);
+      expect(_slots(joined), [
+        'a0', 'a1', 'a2', 'a3', 'b0', 'b1', 'b2', 'b3', //
+        'a4', 'a5', 'b4', 'b5',
+      ]);
+      // The joined rack still reorders: its Compressor and EQ swap.
+      expect(
+        _slots(fxMoveWithinRack(joined, 'dub', 8, 9)).sublist(8),
+        ['a5', 'a4', 'b4', 'b5'],
+      );
+    });
   });
 
   group('fxSetGroupPlacement', () {
@@ -614,6 +710,23 @@ void main() {
         fxChainFingerprint(fxRenameRack(chain, 'r1', 'Verse')),
         fxChainFingerprint(chain),
       );
+    });
+  });
+
+  group('fxRackFromPreset', () {
+    test('finds the rack whose every module came from the preset', () {
+      final chain = [
+        _fx('single'),
+        _fx('a1', rackId: 'A').copyWith(presetId: 'p'),
+        _fx('a2', rackId: 'A').copyWith(presetId: 'p'),
+        // A rack with one module from elsewhere is not that preset's rack.
+        _fx('b1', rackId: 'B').copyWith(presetId: 'p'),
+        _fx('b2', rackId: 'B'),
+      ];
+
+      expect(fxRackFromPreset(chain, 'p')!.rack!.id, 'A');
+      expect(fxRackFromPreset(chain.sublist(3), 'p'), isNull);
+      expect(fxRackFromPreset(chain, 'other'), isNull);
     });
   });
 }

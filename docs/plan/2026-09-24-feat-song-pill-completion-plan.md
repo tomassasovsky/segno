@@ -7,7 +7,7 @@ Tracking: [#1077](https://github.com/tomassasovsky/segno/issues/1077).
 > the Looper X a Record or Overdub on a stopped section waits too, track
 > presses in Record mode switch sections, Mute mode only mutes, and Band
 > keeps the primary plus one section. The waiting pill fills at one level
-> and softens when the section starts (firmware 1.15). See
+> and softens when the section starts (console firmware 2.5). See
 > [the #1323 plan](2026-10-13-fix-song-band-one-section-plan.md); the
 > Behaviour and Control sections below describe #1317 as shipped, not the
 > current rules.

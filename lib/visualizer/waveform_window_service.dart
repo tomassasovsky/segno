@@ -1,25 +1,21 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:desktop_multi_window/desktop_multi_window.dart';
-import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:segno/visualizer/performance_readout.dart';
-import 'package:segno/visualizer/waveform_window_args.dart';
-import 'package:segno/visualizer/waveform_window_channel.dart';
 
-/// Manages the secondary selected-track window: opening/closing it and pushing
-/// waveform frames to it. Injected into the app so tests use a no-op.
+/// Manages the readout on the Track display (the 7"): showing and hiding it and
+/// pushing waveform frames to it. The appliance's is the screen link
+/// (`ScreenLinkWaveformService`); tests and the macOS dev host use the no-op.
 abstract interface class WaveformWindowService {
   /// Whether the waveform window is currently open.
   bool get isOpen;
 
   /// Opens the waveform window (idempotent).
   ///
-  /// [title] sets the OS window title; defaults to English when omitted.
   /// Returns `true` once the window is ready, or `false` if it failed to signal
   /// readiness within the timeout — so the caller can surface the failure
   /// instead of degrading silently.
-  Future<bool> open({String title = 'Segno — Output'});
+  Future<bool> open();
 
   /// Closes the waveform window (idempotent).
   Future<void> close();
@@ -29,7 +25,7 @@ abstract interface class WaveformWindowService {
   ///
   /// [samples] are omitted only after their delivery is acknowledged. The
   /// source spans the selected track's full loop and is refreshed during
-  /// playback. Identical samples need not cross the platform channel again:
+  /// playback. Identical samples need not cross the screen link again:
   /// the window retains the acknowledged shape while samples-free frames
   /// move its playhead. Selection sends the new track's shape even when its
   /// display name matches the previous track.
@@ -60,196 +56,36 @@ abstract interface class WaveformWindowService {
   /// second screen holds stale facts for the rest of the set.
   Future<void> pushReadout(PerformanceReadout readout);
 
-  /// Fired when a sub-window announces it is up — and therefore that it is
+  /// Fired when the readout announces it is up — and therefore that it is
   /// holding NOTHING.
   ///
   /// Both send diffs (here and in any gate the caller keeps in front of this)
-  /// are beliefs about what the second screen already shows, so a window that
-  /// comes back without this side closing it — an orphan reclaimed after a
-  /// hot restart, a sub-window re-announcing itself — invalidates them. The
-  /// service drops its own; this is how the caller hears about it and drops
-  /// the one the service cannot reach.
+  /// are beliefs about what the second screen already shows, so a readout that
+  /// comes back without this side closing it invalidates them. The service
+  /// drops its own; this is how the caller hears about it and drops the one
+  /// the service cannot reach.
   abstract void Function()? onWindowReady;
 
-  /// Fired when a player touches the waveform window: activity on the Track
+  /// Shows a touch calibration [target] on the Track display, a point in its
+  /// normalized coordinates, with [label] saying which step it is; a `null`
+  /// [target] ends calibration there. Returns `false` when the Track display
+  /// cannot be reached, so there is nothing to calibrate.
+  Future<bool> showCalibrationTarget(
+    ({double x, double y})? target, {
+    String label = '',
+  });
+
+  /// Fired with each tap on the Track display while it shows a calibration
+  /// target, as a point in its normalized coordinates.
+  abstract void Function(({double x, double y}) tap)? onCalibrationTap;
+
+  /// Fired when a player touches the readout: activity on the Track
   /// display, which wakes an idle-dimmed console like a touch on the main
   /// one.
   abstract void Function()? onWindowActivity;
 }
 
-/// Opens a real second OS window via `desktop_multi_window` and streams
-/// waveform frames to it over [waveformWindowChannel].
-class DesktopMultiWindowWaveformService implements WaveformWindowService {
-  WindowController? _controller;
-  static Completer<void>? _readyCompleter;
-
-  /// Last acknowledged readout — the diff that keeps the channel quiet.
-  /// Cleared on close so a re-opened window is re-seeded from scratch.
-  /// Static to match [_readyCompleter]: the channel itself is process-wide.
-  static PerformanceReadout? _lastReadout;
-
-  /// Last acknowledged waveform samples, for the same reason and with the
-  /// same lifecycle as [_lastReadout]: a fresh window has no held samples, so
-  /// closing must force the next frame to carry them.
-  static Float32List? _lastSamples;
-  static var _sampleRevision = 0;
-  static var _readoutRevision = 0;
-  static var _mainChannelRegistered = false;
-
-  /// Static like [_readyCompleter]: the channel handler is process-wide, so
-  /// whichever instance last set a handler owns the ready signal.
-  static void Function()? _readyHandler;
-
-  @override
-  void Function()? get onWindowReady => _readyHandler;
-
-  @override
-  set onWindowReady(void Function()? handler) {
-    _readyHandler = handler;
-  }
-
-  /// Static like [_readyHandler], for the same reason.
-  static void Function()? _activityHandler;
-
-  @override
-  void Function()? get onWindowActivity => _activityHandler;
-
-  @override
-  set onWindowActivity(void Function()? handler) {
-    _activityHandler = handler;
-  }
-
-  /// Closes sub-windows left over from a hot restart. Dart state is reset but
-  /// native windows from `desktop_multi_window` survive.
-  static Future<void> closeOrphanWindows() async {
-    await _ensureMainChannelRegistered();
-    final current = await WindowController.fromCurrentEngine();
-    for (final controller in await WindowController.getAll()) {
-      if (controller.windowId == current.windowId) continue;
-      if (WaveformWindowArgs.isWaveformWindow(controller.arguments)) {
-        await waveformWindowChannel
-            .invokeMethod('window_close')
-            .catchError((Object _) => null);
-      }
-    }
-  }
-
-  @override
-  bool get isOpen => _controller != null;
-
-  static Future<void> _ensureMainChannelRegistered() async {
-    if (_mainChannelRegistered) return;
-    await waveformWindowChannel.setMethodCallHandler((call) async {
-      if (call.method == waveformWindowReadyMethod) {
-        // A window announcing itself holds NOTHING yet. Every send diff is a
-        // belief about what is already on the second screen, so they all have
-        // to be dropped here as well as in [close]: a sub-window engine that
-        // comes back without this side closing it (an orphan reclaimed after
-        // a hot restart, a re-announced window) would otherwise be fed
-        // progress-only frames forever and show an empty waveform under a
-        // moving playhead. [onWindowReady] carries the same news to the gate
-        // the caller keeps in front of `pushReadout`, which this side cannot
-        // reach.
-        _lastSamples = null;
-        _lastReadout = null;
-        _sampleRevision++;
-        _readoutRevision++;
-        _readyHandler?.call();
-        // Guarded: a re-announce (the path the comment above names) arrives
-        // with the completer from the last open already completed, and
-        // completing twice throws out of this channel handler.
-        final ready = _readyCompleter;
-        if (ready != null && !ready.isCompleted) ready.complete();
-      }
-      if (call.method == waveformWindowActivityMethod) {
-        _activityHandler?.call();
-      }
-      return null;
-    });
-    _mainChannelRegistered = true;
-  }
-
-  @override
-  Future<bool> open({String title = 'Segno — Output'}) async {
-    if (_controller != null) return true;
-    await closeOrphanWindows();
-    await _ensureMainChannelRegistered();
-
-    _readyCompleter = Completer<void>();
-    final controller = await WindowController.create(
-      WindowConfiguration(
-        arguments: WaveformWindowArgs.encode(title: title),
-      ),
-    );
-    _controller = controller;
-
-    // The sub-window signals readiness over the channel; a timeout means it
-    // never came up. Report that so the caller can show an operator-visible
-    // indicator instead of leaving a dark second screen.
-    var ready = true;
-    await _readyCompleter!.future.timeout(
-      const Duration(seconds: 10),
-      onTimeout: () => ready = false,
-    );
-    await controller.show();
-    return ready;
-  }
-
-  @override
-  Future<void> close() async {
-    _controller = null;
-    _readyCompleter = null;
-    _lastReadout = null;
-    _lastSamples = null;
-    _sampleRevision++;
-    _readoutRevision++;
-    await waveformWindowChannel
-        .invokeMethod('window_close')
-        .catchError((Object _) => null);
-    await closeOrphanWindows();
-  }
-
-  @override
-  Future<void> pushWaveform(
-    Float32List samples,
-    double progress,
-    String selectedTrack,
-  ) async {
-    if (_controller == null) return;
-    final payload = waveformFramePayload(
-      samples: samples,
-      progress: progress,
-      selectedTrack: selectedTrack,
-      lastSent: _lastSamples,
-    );
-    final carriesSamples = payload.containsKey('samples');
-    // An in-flight replacement makes even the old acknowledged value unsafe:
-    // a newer frame may revert to it before this replacement is acknowledged.
-    // Every overlapping replacement therefore carries its own samples.
-    final revision = carriesSamples ? ++_sampleRevision : _sampleRevision;
-    if (carriesSamples) _lastSamples = null;
-    await waveformWindowChannel.invokeMethod('waveform', payload);
-    // Late replies from older sends or a previous window cannot seed the cache.
-    // A failure propagates with the cache still invalid, so retry stays full.
-    if (carriesSamples && revision == _sampleRevision) {
-      _lastSamples = samples;
-    }
-  }
-
-  @override
-  Future<void> pushReadout(PerformanceReadout readout) async {
-    if (_controller == null) return;
-    if (readout == _lastReadout) return;
-    final revision = ++_readoutRevision;
-    _lastReadout = null;
-    await waveformWindowChannel.invokeMethod('readout', readout.toMap());
-    if (revision == _readoutRevision) {
-      _lastReadout = readout;
-    }
-  }
-}
-
-/// A no-op service for tests and platforms without multi-window support.
+/// A no-op service: tests, and the macOS dev host, which has no Track display.
 class NoopWaveformWindowService implements WaveformWindowService {
   @override
   bool get isOpen => false;
@@ -261,7 +97,16 @@ class NoopWaveformWindowService implements WaveformWindowService {
   void Function()? onWindowActivity;
 
   @override
-  Future<bool> open({String title = 'Segno — Output'}) async => true;
+  void Function(({double x, double y}) tap)? onCalibrationTap;
+
+  @override
+  Future<bool> open() async => true;
+
+  @override
+  Future<bool> showCalibrationTarget(
+    ({double x, double y})? target, {
+    String label = '',
+  }) async => false;
 
   @override
   Future<void> close() async {}
@@ -282,16 +127,14 @@ class NoopWaveformWindowService implements WaveformWindowService {
 /// Progress and the track label ride every frame — the playhead is what
 /// actually moves. The peaks ride only when they differ from [lastSent]:
 /// through plain playback the loop-indexed peak buffer stands still, and
-/// re-sending it would copy 2 KB, encode it and hop the platform channel
+/// re-sending it would copy 2 KB, pack it and cross the screen link
 /// thirty times a second to redraw the same shape. Comparing the floats
 /// in-process is far cheaper than shipping them.
 ///
 /// A `null` [lastSent] is never equal to anything: nothing has been sent yet,
 /// so the frame must carry samples to seed the window.
 ///
-/// Pure so the diff can be proven without a second OS window — the same
-/// discipline `waveformWindowPlacement` uses for its own decision.
-@visibleForTesting
+/// Pure so the diff can be proven without a second engine.
 Map<String, Object?> waveformFramePayload({
   required Float32List samples,
   required double progress,

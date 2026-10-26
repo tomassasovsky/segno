@@ -2,6 +2,7 @@
 #include <cstdio>
 
 #include "../console_board/console_board.ino"
+#include "stusb4500_sim.h"
 
 static void at(uint32_t now) {
   fake_arduino::now = now;
@@ -57,205 +58,110 @@ static void buttonEdge(uint8_t button, uint8_t pin, bool down, uint32_t &now) {
   expectButtonEvent(button, down);
 }
 
-static uint32_t ringChannelTotal() {
-  uint32_t total = 0;
-  for (const uint32_t pixel : ring.shown) {
-    total += (pixel >> 16) + ((pixel >> 8) & 255) + (pixel & 255);
-  }
-  return total;
-}
-
-static void expectRingDark() {
-  for (const uint32_t pixel : ring.shown) assert(pixel == 0);
-}
-
-static void sustainedComet() {
-  // Inspect transmitted duty, not the profile constants: a second gamma pass
-  // or a driver brightness reduction would visibly shorten the approved tail.
-  g_ringPhase = 0;
-  paintComet({0, 255, 0});
-  showRing();
-  const auto origin = ring.shown;
-  assert(origin[0] == (192U << 8) && origin[39] == (192U << 8));
-  unsigned lit = 0;
-  unsigned previous = 192;
-  for (unsigned behind = 0; behind < 40; ++behind) {
-    const uint32_t pixel = origin[(40 - behind) % 40];
-    const unsigned duty = (pixel >> 8) & 255;
-    assert((pixel & 0xff00ff) == 0 && duty <= previous);
-    if (behind <= 16) assert(duty >= 96);
-    if (behind >= 30) assert(duty == 0);
-    if (duty) ++lit;
-    previous = duty;
-  }
-  assert(lit == 30);
-  assert(origin[11] == (2U << 8));  // The last lit tail pixel eases into black.
-
-  // Increasing phase moves the bright leading edge toward increasing pixel
-  // indices. Fractional positions blend the two neighboring complete frames,
-  // including the wire-notch boundary between pixels 39 and 0.
-  for (const unsigned base : {0U, 39U}) {
-    g_ringPhase = (float)base;
-    paintComet({0, 255, 0});
-    showRing();
-    const auto before = ring.shown;
-    g_ringPhase = (float)((base + 1) % 40);
-    paintComet({0, 255, 0});
-    showRing();
-    const auto after = ring.shown;
-    assert(after[(base + 1) % 40] == (192U << 8));
-    assert(before[(base + 1) % 40] == 0);
-    for (unsigned quarter = 1; quarter < 4; ++quarter) {
-      g_ringPhase = base + quarter / 4.0f;
-      paintComet({0, 255, 0});
-      showRing();
-      for (unsigned pixel = 0; pixel < 40; ++pixel) {
-        const unsigned a = (before[pixel] >> 8) & 255;
-        const unsigned b = (after[pixel] >> 8) & 255;
-        const unsigned expected = (a * (4 - quarter) + b * quarter + 2) / 4;
-        assert(ring.shown[pixel] == (expected << 8));
+// The ring carrier gets the last ring state the console sent on GP13.
+static ring_link::RingState lastRingState() {
+  ring_link::Parser parser;
+  ring_link::RingState state;
+  bool any = false;
+  for (const auto &frame : ringLink.sent) {
+    for (const uint8_t byte : frame) {
+      uint8_t type;
+      const uint8_t *payload;
+      if (parser.push(byte, type, payload) && type == ring_link::STATE) {
+        state = ring_link::decodeState(payload);
+        any = true;
       }
-      assert(ring.shown[(base + 1) % 40] == ((48U * quarter) << 8));
     }
   }
-
-  // The weaker yellow channel must survive all the way to the tail; dimming
-  // changes duty without adding a second gamma pass or changing the hue.
-  g_ringPhase = 0;
-  paintComet(globalColor(PEDAL_GLOBAL_AMBER));
-  showRing();
-  const unsigned yellowGreen = Adafruit_NeoPixel::gamma8(235);
-  for (unsigned behind = 0; behind < 30; ++behind) {
-    const uint32_t pixel = ring.shown[(40 - behind) % 40];
-    const unsigned red = pixel >> 16;
-    const unsigned green = (pixel >> 8) & 255;
-    assert(red > 0 && green > 0 && green <= red && (pixel & 255) == 0);
-    assert(green == (red * yellowGreen + 127) / 255);
-  }
-
-  // Even a white comet stays below the previous full-white ring ceiling at
-  // every quarter-pixel phase; ordinary animations need no limiter dimming.
-  for (unsigned quarter = 0; quarter < 160; ++quarter) {
-    g_ringPhase = quarter / 4.0f;
-    paintComet({255, 255, 255});
-    const auto requested = ring.pixels;
-    showRing();
-    assert(ring.shown == requested);
-    assert(ringChannelTotal() <= 11520);
-  }
-
-  // Deliberately over-budget frames exercise the actual transfer limiter.
-  for (unsigned i = 0; i < 40; ++i) ring.setPixelColor(i, 0xffffff);
-  showRing();
-  for (const uint32_t pixel : ring.shown) assert(pixel == 0x606060);
-  assert(ringChannelTotal() == 11520);
-  const auto limited = ring.shown;
-  showRing();
-  assert(ring.shown == limited);  // Refreshing cannot repeatedly dim a frame.
-  for (unsigned i = 0; i < 40; ++i) ring.setPixelColor(i, 0xff8040);
-  showRing();
-  assert(ringChannelTotal() <= 11520);
-  for (const uint32_t pixel : ring.shown) {
-    const unsigned red = pixel >> 16;
-    const unsigned green = (pixel >> 8) & 255;
-    const unsigned blue = pixel & 255;
-    assert(red > 0 && red < 255 && green * 2 == red && blue * 4 == red);
-  }
-  const double modeledMilliamps = (11520 + PILL_CHANNEL_BUDGET) * 20.0 / 255 + 120 + 140;
-  assert(modeledMilliamps < 1650);
+  assert(any && parser.dropped == 0);
+  return state;
 }
 
-static void ambientRingOutput() {
-  // Compare with the original brightness-96 driver, covering the startup
-  // green and all possible ambient channel levels without constraining gamma.
-  Adafruit_NeoPixel original(1, PIN_RING, NEO_GRB + NEO_KHZ800);
-  original.setBrightness(96);
-  for (unsigned level = 0; level < 256; ++level) {
-    const uint32_t colour = rgb(level, 255 - level, level / 2);
-    original.setPixelColor(0, colour);
-    original.show();
-    assert(ambientRingColor(colour) == original.shown[0]);
-  }
-  original.setPixelColor(0, rgb(0, 24, 0));
-  original.show();
-  assert(ambientRingColor(rgb(0, 24, 0)) == original.shown[0]);
+static void expectRingDark() { assert(!(lastRingState().flags & ring_link::FLAG_LIVE)); }
 
-  pedal_state state = {};
-  uint32_t now = 48000;  // An exact breathe-cycle boundary.
-  receive(state, now);
-  g_gainArmed = false;
-  unsigned lowest = 255, highest = 0;
-  for (unsigned tick = 0; tick <= 60; ++tick) {
-    at(now += 20);
-    assert(g_ringView == RING_BREATHE);
-    const unsigned green = (ring.shown[0] >> 8) & 255;
-    assert(green > 0 && green <= 96);
-    if (green < lowest) lowest = green;
-    if (green > highest) highest = green;
-    for (const uint32_t pixel : ring.shown) assert(pixel == (green << 8));
-  }
-  assert(highest == 96 && lowest < 16);
-}
-
-static void fortyPixelRing() {
-  assert(PIN_RING == 12 && PIN_ENC_A == 13 && PIN_ENC_B == 14 && PIN_ENC_SW == 15);
-  assert(PIN_IND == 18 && ring.shown.size() == 40 && ring.brightness == 255);
+// What the ring needs from each app frame: the activity colour (yellow as
+// calibrated, #1064), the level, and whether it is live, active and loaded.
+static void ringStateForwarding() {
+  uint32_t now = 400000;
   pedal_state state = {};
   state.global_color = PEDAL_GLOBAL_AMBER;
+  state.master_gain = 200;
   state.loop_length_micros = 1000000;
-  uint32_t now = 50000;
-  receive(state, now);
-  g_gainArmed = false;
-  g_ringPhase = 0;
-  g_ringLastMs = now;
-  at(now += 275);
-  assert(g_ringView == RING_COMET && std::fabs(g_ringPhase - 10.0f) < 0.001f);
-  at(now += 825);
-  assert(std::fabs(g_ringPhase) < 0.001f);  // One continuous loop every 1100 ms.
-  at(now += 20);
-  assert(g_ringPhase > 0.7f && g_ringPhase < 0.8f);
-  const auto playing = ring.shown;
-  const float phase = g_ringPhase;
+  ringLink.sent.clear();
+  receive(state, now += 20);
+  auto ring = lastRingState();
+  assert(ring.r == 255 && ring.g == 235 && ring.b == 0 && ring.gain == 200);
+  assert(ring.flags == (ring_link::FLAG_LIVE | ring_link::FLAG_ACTIVE | ring_link::FLAG_LOADED));
+  // Every frame is forwarded at once, so the gain arc follows without delay.
+  state.master_gain = 201;
+  ringLink.sent.clear();
+  receive(state, now += 1);
+  assert(lastRingState().gain == 201);
+  // Blue is the record-armed hint: coloured, but no comet.
+  state.global_color = PEDAL_GLOBAL_BLUE;
+  receive(state, now += 20);
+  ring = lastRingState();
+  assert(ring.b == 255 && ring.flags == (ring_link::FLAG_LIVE | ring_link::FLAG_LOADED));
+  // Stopped and empty: live only, so the ring breathes.
   state.global_color = PEDAL_GLOBAL_OFF;
+  state.loop_length_micros = 0;
   receive(state, now += 20);
-  assert(g_ringPhase == phase && ring.shown == playing);
-  at(now += 200);
-  assert(g_ringPhase == phase && ring.shown == playing);
-
-  // A level overlay on a stopped, loaded loop must restore the same frozen
-  // comet, including its fractional position and last activity colour.
-  state.master_gain = 255;
-  receive(state, now += 20);
-  assert(g_ringView == RING_ARC);
-  for (const uint32_t pixel : ring.shown) assert(pixel == (96U << 8));
-  at(now += 880);
-  assert(g_ringView == RING_ARC && g_ringPhase == phase);
-  at(now += 20);
-  assert(g_ringView == RING_COMET && g_ringPhase == phase && ring.shown == playing);
-  at(now += 20);
-  assert(ring.shown == playing);
-  state.master_gain = 128;
-  receive(state, now += 20);
-  for (unsigned i = 0; i < 40; ++i)
-    assert(ring.shown[i] == (i < 21 ? (96U << 8) : 0));
-  state.master_gain = 0;
-  receive(state, now += 20);
-  expectRingDark();
-  state.master_gain = 255;
-  receive(state, now += 20);
-  assert(ringChannelTotal() > 0);
-  state.goodbye = 1;
-  receive(state, now += 20);
-  expectRingDark();
-  state.goodbye = 0;
-  state.global_color = PEDAL_GLOBAL_GREEN;
-  state.master_gain = 255;
-  receive(state, now += 20);
-  assert(ringChannelTotal() > 0);
+  assert(lastRingState().flags == ring_link::FLAG_LIVE);
+  // Without frames the state still goes out every 100 ms, and goes dark when
+  // the app is gone.
+  ringLink.sent.clear();
+  at(now += 120);
+  assert(lastRingState().flags == ring_link::FLAG_LIVE);
   at(now += 5001);
   expectRingDark();
-  receive(state, now += 20, true);
-  expectRingDark();
+}
+
+// Every HELLO is followed by the PD trigger's status (#1352). Nothing answers
+// on this bus, so the board reports the trigger as not read, with no contract.
+static void pdStatusFollowsHello() {
+  fake_arduino::sent.clear();
+  at(fake_arduino::now + PEDAL_LINK_HELLO_MS + 1);
+  uint8_t want[PEDAL_LINK_MAX_FRAME];
+  const size_t n = pedal_link_encode_pd_status(PEDAL_PD_PROFILE_NOT_READ, 0, 0, 0, 0, want);
+  bool found = false;
+  for (size_t i = 0; i + 1 < fake_arduino::sent.size(); ++i) {
+    if (fake_arduino::sent[i][1] != PEDAL_LINK_TYPE_HELLO) continue;
+    assert(fake_arduino::sent[i + 1] == std::vector<uint8_t>(want, want + n));
+    found = true;
+  }
+  assert(found);
+}
+
+// A trigger that was not answering is asked again only every tenth hello,
+// and provisioned and reported once it answers (J23 seated after boot).
+static int simWrite(uint8_t reg, const uint8_t *data, uint8_t len) {
+  return stusb_sim::busWrite(nullptr, reg, data, len);
+}
+static int simRead(uint8_t reg, uint8_t *data, uint8_t len) {
+  return stusb_sim::busRead(nullptr, reg, data, len);
+}
+
+static void lateTrigger() {
+  pd_trigger_nvm blank = {}, provisioned;
+  pd_trigger_apply_profile(blank, provisioned);
+  stusb_sim::attachContract(provisioned, 0x400759D6u, 200);
+  Wire.device = {simWrite, simRead};
+  uint8_t want[PEDAL_LINK_MAX_FRAME];
+  const size_t n = pedal_link_encode_pd_status(PEDAL_PD_PROFILE_MATCHES, 0, 20000, 4700, 4700, want);
+  bool reported = false;
+  unsigned hellos = 0;
+  for (; hellos < PD_RETRY_HELLOS && !reported; ++hellos) {
+    const int writesBefore = stusb_sim::chip.writes;
+    fake_arduino::sent.clear();
+    at(fake_arduino::now + PEDAL_LINK_HELLO_MS + 1);
+    for (const auto &frame : fake_arduino::sent)
+      if (frame == std::vector<uint8_t>(want, want + n)) reported = true;
+    // Between retries the bus is left alone.
+    if (!reported) assert(stusb_sim::chip.writes == writesBefore);
+  }
+  assert(reported && hellos <= PD_RETRY_HELLOS);
+  assert(stusb_sim::chip.erased == 0);  // it already held the profile
+  Wire.device = {};
 }
 
 // The Song queue (#1077, #1323): the queued switch's pill fills left to right
@@ -437,6 +343,15 @@ int main() {
   const auto pushes = ind.showCount;
   at(now += 260);
   assert(ind.shown == sparse && ind.showCount > pushes);
+  // Idle (#1349): the pills and the ring dim to ~20 % with the screens, and
+  // come back on the next undimmed frame.
+  state.dimmed = 1;
+  receive(state, now += 20);
+  assert(ind.shown[59] == ((uint32_t)ring_link::dimChannel(191) << 16));
+  assert(lastRingState().flags & ring_link::FLAG_DIMMED);
+  state.dimmed = 0;
+  receive(state, now += 20);
+  assert(ind.shown == sparse && !(lastRingState().flags & ring_link::FLAG_DIMMED));
   state.active_button_mask = 0x3ff;
   state.goodbye = 1;
   receive(state, now += 20);
@@ -449,9 +364,9 @@ int main() {
   expectAllDark();
   receive(state, now += 20);
   for (unsigned group = 0; group < 10; ++group) assert(ind.shown[group*8+3]);
-  sustainedComet();
-  ambientRingOutput();
-  fortyPixelRing();
   songQueueFill();
-  puts("Console v10 ten pills, Song queue fill and sustained ring: all physical groups, host activity, limits and lifecycle pass");
+  ringStateForwarding();
+  pdStatusFollowsHello();
+  lateTrigger();
+  puts("Console v3 ten pills, Song queue fill and ring state: all physical groups, host activity, limits, dimming, PD status and lifecycle pass");
 }

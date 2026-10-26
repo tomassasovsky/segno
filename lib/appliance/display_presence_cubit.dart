@@ -6,9 +6,9 @@ import 'package:segno/appliance/display_role.dart';
 
 /// The panels known to be unplugged, read while the Displays page is open.
 ///
-/// A panel whose presence cannot be read (a desktop, a window the compositor
-/// does not pin) is not reported unplugged: "Not connected" is a fact the
-/// console read, never a guess.
+/// A panel whose presence cannot be read (the macOS dev host, a screen with
+/// no connector in homescreen.toml) is not reported unplugged: "Not
+/// connected" is a fact the console read, never a guess.
 class DisplayPresenceCubit extends Cubit<Set<DisplayRole>> {
   /// Creates a [DisplayPresenceCubit] that re-reads every [interval].
   DisplayPresenceCubit({
@@ -34,7 +34,7 @@ class DisplayPresenceCubit extends Cubit<Set<DisplayRole>> {
 
   /// Reads which panels are unplugged.
   Future<void> refresh() async {
-    final connectors = displayConnectors(await _outputs.appIdConnectors());
+    final connectors = displayConnectors(await _outputs.screenConnectors());
     final unplugged = <DisplayRole>{};
     for (final MapEntry(key: role, value: connector) in connectors.entries) {
       if (await _outputs.isConnected(connector) == false) unplugged.add(role);

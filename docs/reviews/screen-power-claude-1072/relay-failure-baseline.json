@@ -1,0 +1,30 @@
+{
+  "K101": {
+    "actual_pin_nets": {
+      "1": "HOST1_5V",
+      "8": "S1_DATA_COIL_LOW",
+      "2": "S1_UP_N",
+      "4": "S1_DN_N",
+      "7": "S1_UP_P",
+      "5": "S1_DN_P"
+    },
+    "conducting_net_pairs": {
+      "disabled": [],
+      "enabled": []
+    }
+  },
+  "K201": {
+    "actual_pin_nets": {
+      "1": "HOST2_5V",
+      "8": "S2_DATA_COIL_LOW",
+      "2": "S2_UP_N",
+      "4": "S2_DN_N",
+      "7": "S2_UP_P",
+      "5": "S2_DN_P"
+    },
+    "conducting_net_pairs": {
+      "disabled": [],
+      "enabled": []
+    }
+  }
+}

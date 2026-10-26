@@ -17,21 +17,28 @@ class PedalCubit extends Cubit<PedalState> {
           firmwareVersion: pedal.firmwareVersion,
           protocolVersion: pedal.protocolVersion,
           frame: pedal.lastFrame,
+          powerSupply: pedal.powerSupply,
         ),
       ) {
     _statusSub = pedal.statusChanges.listen(_onStatus);
     _frameSub = pedal.frames.listen(_onFrame);
     _eventsSub = pedal.events.listen(_onEvent);
+    _powerSub = pedal.powerSupplyChanges.listen(_onPowerSupply);
   }
   final PedalRepository _pedal;
   late final StreamSubscription<PedalLinkStatus> _statusSub;
   late final StreamSubscription<PedalEvent> _eventsSub;
   late final StreamSubscription<PedalStateFrame> _frameSub;
+  late final StreamSubscription<PedalPowerSupply?> _powerSub;
   bool _closing = false;
   bool get _inactive => _closing || isClosed;
 
   void _onFrame(PedalStateFrame frame) {
     if (!_inactive) emit(state.copyWith(frame: frame));
+  }
+
+  void _onPowerSupply(PedalPowerSupply? supply) {
+    if (!_inactive) emit(state.copyWith(powerSupply: () => supply));
   }
 
   void _onStatus(PedalLinkStatus status) {
@@ -66,6 +73,7 @@ class PedalCubit extends Cubit<PedalState> {
     await _statusSub.cancel();
     await _eventsSub.cancel();
     await _frameSub.cancel();
+    await _powerSub.cancel();
     _pedal.goodbye();
     await _pedal.dispose();
     return super.close();

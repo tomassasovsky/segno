@@ -1,37 +1,98 @@
-# Segno console board v2 — Pico 2 firmware
+# Segno console board v3 — Pico 2 firmware
 
 The console's pedal firmware: `console_board.ino` on the board's Pico 2 (RP2350,
-`hardware/kicad/console_board.py`, #747). A pure thin client, like the pedal it
-replaces — it holds no looper state. It sends raw footswitch and encoder events
-to segno over the link and renders the encoder ring and all ten eight-pixel indicator pills from
-the state frames segno pushes back. segno runs the behavior machine.
+`hardware/kicad/console_board.py`, #1072). A pure thin client, like the pedal it
+replaces — it holds no looper state. It sends raw footswitch, encoder and CTRL
+events to segno over the link, renders all ten eight-pixel indicator pills from
+the state frames segno pushes back, and forwards what the LED ring needs to the
+ring carrier's XIAO ([`firmware/ring_board`](../ring_board/README.md)), which
+runs the encoder and the ring. segno runs the behavior machine.
 
 | Signal | GPIO | Notes |
 |---|---|---|
 | Link TX / RX | GP16 / GP17 | UART0 → Pi uart3 (GPIO8/9, `/dev/ttyAMA3`), 115200 8N1 |
-| Footswitches | GP2–GP11 | REC/PLAY, STOP, UNDO, MODE, TRACK1–4, CLEAR, BANK. Internal pull-up, active low, 8 ms stable-edge debounce |
-| Ring data | GP12 | **v2 only**: via 74AHCT125 → J6 pin 5, one continuous 40-pixel GRB strip. On v3 (#987) the ring board clocks its own LEDs and GP12 is on the expansion header |
-| Encoder A / B / SW | GP13 / GP14 / GP15 | **v2 only**: internal pull-ups plus the board's 10 k to the Pi's 3V3; one message per detent, decoded from pin-change interrupts. The push switch (SW) is active low and debounced like a footswitch (8 ms stable edge), one `ENCODER_BUTTON` message per press and per release |
-| Ring link | GP13 / GP14 | **v3** (#987): full-duplex UART to the ring board's XIAO RP2350 — GP13 drives, GP14 listens, 115200, PIO UART (neither pin is on a free hardware UART). The console board's 10 k pull-ups hold both lines. **Not implemented in this firmware yet**: it still drives GP12 and reads GP13–15 as an encoder, which is the v2 board |
-| Indicator data | GP18 | via 74AHCT125 → J7 pin 2, **80** GRB WS2812 pixels, eight per pill, sent with PIO/DMA |
+| Footswitches | GP2–GP4, GP12, GP6–GP11 | REC/PLAY (GP2), STOP (GP3), UNDO (GP4), MODE (GP12), TRACK1–4 (GP6–GP9), CLEAR (GP10), BANK (GP11). Internal pull-up, active low, 8 ms stable-edge debounce. MODE moved from GP5 in firmware 2.4 (#1388): GP5 died on the first unit, and the board design moves SW_MODE to GP12 too. GP5 is left unconfigured |
+| Ring link | GP13 / GP14 | J6 pins 3/4: PIO UART to the ring carrier's XIAO RP2350, 115200 — GP13 drives, GP14 listens. R11/R12 pull both lines up to the Pico's own 3V3, so the link idles high while the Pi is off. Private protocol: `firmware/libraries/SegnoRing/src/ring_link.h` |
+| Indicator data | GP18 | via 74AHCT125 → J24 (`PILLS`) pin 2, **80** GRB WS2812 pixels, eight per pill, sent with PIO/DMA |
 | CTRL1 / CTRL2 tip | GP26 / GP27 | ADC0 / ADC1: a footswitch at the rails, an expression pedal's wiper between them. The first press on a jack the board has not yet classified is held 200 ms (a plug sliding in drags the tip low the same way); once the jack is known to hold a footswitch, edges are debounced at 8 ms and sent at once |
-| CTRL1 / CTRL2 ring | GP20 / GP21 | On v3 a trace from each jack's ring through 4.7 kΩ (R19/R20). **Not a trace on v2** — one wire from each jack's ring pin to the J22 expansion pads does the same. With it, the B switch of a two-switch pedal (a BOSS FS-6's A&B jack) reports as `CTRL n · footswitch B` (its first press on a jack the board has not yet seen a switch on is held 200 ms, so a plug brushing the contact cannot fake it); without it the pin's internal pull-up holds it open and nothing reports |
-| CTRL1 / CTRL2 present | GP19 / GP22 | Internal pull-down, **present = low**. On v3 the switched jack's tip-normal contact (Neutrik NJ6FD-V, through 4.7 kΩ R21/R22) drives it high only while the jack is empty; an empty jack reports CTRL kind `NONE` and is classified afresh on the next plug. On v2 these are J22's unpopulated pads: they float low, every jack reads "plugged", and the firmware's plug heuristics (a 40% jump starts a 200 ms quiet period; a jump that parks on the top rail for 1 s is an empty jack) do the same job less certainly |
+| CTRL1 / CTRL2 ring | GP20 / GP21 | Each jack's ring through 4.7 kΩ (R19/R20). The B switch of a two-switch pedal (a BOSS FS-6's A&B jack) reports as `CTRL n · footswitch B`; its first press on a jack the board has not yet seen a switch on is held 200 ms, so a plug brushing the contact cannot fake it |
+| CTRL1 / CTRL2 present | GP19 / GP22 | The Neutrik NJ6FD-V's ring-normal contact through 4.7 kΩ (R21/R22): high only while the jack is empty, **present = low** against the internal pull-down. Read through `console_presence.h`, which keeps the pad's input buffer off between samples (RP2350-E9). An empty jack reports CTRL kind `NONE` and is classified afresh on the next plug |
 | SMPS mode | GP23 | Driven high: PWM mode, less ADC ripple |
-| PD trigger I2C | GP0 / GP1 | **v3** (J23): I2C0 SDA/SCL to the STUSB4500 on the SparkFun PD board, to read the negotiated contract (RDO 0x91–0x94, capability mismatch; voltage at 0x21) and report it up the pedal link. **Not implemented in this firmware yet.** On v2 the same read is possible from J22's GP20/GP21 when those pads are free |
+| PD trigger I2C | GP0 / GP1 | J23: I2C0, 100 kHz, to the STUSB4500 on the SparkFun PD board (its own pull-ups). Provisioned at boot and read once a second: see [PD trigger](#pd-trigger-firmware-23) |
+
+## The ring carrier
+
+The encoder and its 35-pixel LED ring are on the ring carrier, run by its own
+XIAO. Over the ring link the Pico sends a five-byte ring state derived from each
+app frame — the activity colour, the master level, and whether the app is live,
+the transport active, a loop loaded and the LEDs dimmed — at once on every frame and every
+100 ms otherwise. The XIAO sends cumulative encoder and button counters every
+20 ms; the Pico turns them into one `ENCODER` frame per click and one
+`ENCODER_BUTTON` frame per edge, exactly what the v2 board sent from its own
+pins. A rebooted or silent XIAO replays no turns and releases a held button.
+Because the ring never sees pedal-link frames, a pedal-link protocol change
+does not need the XIAO reflashed.
+
+### Ring-update bridge (firmware 2.1)
+
+The XIAO has no SWD path, so the Pi updates it through this board (#1342).
+`segno-ring-flash` runs after the console flash and before the app, and sends
+`RING_BRIDGE` (pedal-link type `0x12`, payload `'R' 'B'`); the app never sends
+it. The board then darkens the pills, stops its own HELLO and ring state, and
+copies every byte between the Pi's UART and the ring's in both directions. It
+leaves the bridge on the Pi's `BRIDGE_END` update frame, which it spots in the
+Pi's stream (the ring ignores it), or after 5 s without a byte from the Pi,
+and carries on as before. The update itself is the ring's; see
+[its README](../ring_board/README.md#updates-over-the-console).
+
+### Dimming with the screens (firmware 2.2)
+
+When the console idles and the app dims the screens, the app sets STATE flags
+bit 4 (`dimmed`, pedal-link protocol 11, #1349) until the next touch, key,
+footswitch or playback wakes them. The board then shows the pills at about
+20 % (`ring_link::DIM_LEVEL`, 51/255, applied after the channel budget) and
+sets the ring state's DIMMED flag, so ring firmware 1.1 and later dim the ring
+by the same share.
+
+### PD trigger (firmware 2.3)
+
+The STUSB4500 negotiates the 20 V supply by itself, from the profile in its
+NVM, each time it powers up (#1352). `pd_trigger.c` makes that profile the
+console's and reports what was negotiated:
+
+- **At boot**, before the link starts, the board reads the NVM. If any profile
+  field differs, it erases and programs the NVM with what it read plus the
+  profile, then reads it back and compares it. It writes nothing on a trigger that
+  already matches, so the NVM is written once per trigger. The profile:
+  PDO1 5 V / 0.5 A, PDO2 20 V / 3 A, PDO3 20 V / 5 A, three PDOs,
+  `REQ_SRC_CURRENT` (once a PDO matches, request all the current the source
+  offers at that voltage), power only above 5 V, no external power, no USB
+  comms. Every other NVM field is left as the trigger had it.
+- **After every HELLO** it sends `PD_STATUS` (protocol 12): the profile state
+  (not read, matches, written, write failed) and the live contract from the
+  chip's RDO and negotiated-voltage register.
+
+A profile written at boot governs the next negotiation, which happens only
+when the trigger loses power (the console is unplugged). Until then the
+contract takes less than the source offers, and the app asks for a power
+cycle: a banner on the stage, and a line on the Safe to switch off face.
+
+A trigger that does not answer is asked again every tenth `HELLO`, and is
+provisioned when it does (J23 seated after boot). The write is ST's full-erase
+sequence, the one SparkFun's library proved: all five sectors erased and
+programmed back. A power cut in that second can leave a trigger that no longer
+powers the console; `hardware/console/stusb4500_pdo` reprograms it from an
+Arduino UNO.
+
+`firmware/test/test_pd_trigger.cpp` runs the driver against a simulated
+STUSB4500, NVM controller included (`firmware/test/stusb4500_sim.h`).
 
 ## Physical rendering and source boundary
 
-Firmware 1.15 uses public UART protocol 10: protocol 9 (`ENCODER_BUTTON`)
-with two STATE bytes for the Song queue (#1077). 1.15 changes only how the
-queued pill is drawn (#1323); the wire is unchanged. The physical renderer is
-reconciled from PR #1079 (`ecea3af76fdb0708ca04632e260de5aa3fde09cd`), whose
-old-v2 firmware 1.11 used protocol 7 with a different 21-byte Song queue
-payload. PR #1082 also uses public protocol 7 (and historical 6 for PD
-telemetry), with a separate new-v3 pin map and private ring link. Neither
-format is accepted here. Reconstructed Custom protocol 6 was a software intermediate and is not a
-standalone hardware recommendation. Update this firmware and its matching app
-together; no downgrade or compatibility format is emitted.
+Firmware 2.0 is the v3 board on public UART protocol 10, unchanged from
+firmware 1.14 (the v2 board, which rendered the ring itself on GP12 and read
+the encoder on GP13–15). Update this firmware and its matching app together;
+no downgrade or compatibility format is emitted.
 
 The fitted chain order is Track4, Track3, Track2, Track1, Mode, Undo, Stop,
 Record/Play, Clear, Bank. The first eight groups enter from the right;
@@ -43,37 +104,27 @@ local switch contact, legacy track colors and mode do not override that fact.
 Optical output retains the sourced peak 191, center weights
 38/92/201/255/255/201/92/38, color gamma and total channel budget 6000.
 The limiter recomputes from the source frame so refreshes do not progressively
-dim the display. NeoPixelBus PIO/DMA preserves interrupts during the longer
+dim the display. NeoPixelBus PIO/DMA preserves interrupts during the
 80-pixel transfer. Forced refresh, goodbye and stale-link darkening cover the
 whole chain. RGB black is a valid deliberately dark hue.
-
-The independent 40-pixel ring retains the sourced sustained comet: 1100 ms per
-turn, 30 lit positions, fractional circular interpolation, peak duty 192 and
-color-only gamma. It freezes position/color on a stopped loaded loop, shows
-master gain for 900 ms, and breathes green when empty. Ambient/startup output
-retains brightness 96; every transfer has a total channel budget of 11520.
-The combined estimated current is about 1.635 A including assumed pixel idle
-and logic consumption. This is a planning bound, not a measured guarantee.
-The app's semantic activity fields drive the ring independently of pill hue.
 
 **Song queue (#1077, #1323).** While a Song or Band section waits for the
 sounding one's end, STATE byte 51 names the footswitch whose pill shows it and
 byte 52 how much of the wait has played (0..254 of 255). The board fills that
-pill left to right in the hue and activity the app gave it, every filled
-pixel at one level (110, the mean of the diffused levels, so a full pill
-carries the same light as the section it becomes) with no centre curve; the
-leading pixel fills partially so the edge moves smoothly. Nothing local
-advances the fill, and a queue never lights the whole pill. The engine ends
-the wait by starting the section, and the next frame carries no queue; a pill
-that leaves the queue and stays lit blends from its last fill to the diffused
-curve over 300 ms, and one that goes dark does so at once. The board keeps no
-Song or bank logic: it reacts only to the queued button the app sends
+pill left to right in the hue and activity the app gave it. Since firmware
+2.5, every filled pixel has one level (110, the mean of the diffused levels,
+so a full pill carries the same light as the section it becomes) with no
+centre curve, and the leading pixel fills partially so the edge moves
+smoothly. Nothing local advances the fill, and a queue never lights the whole
+pill. The engine ends the wait by starting the section, and the next frame
+carries no queue. A pill that leaves the queue and stays lit blends from its
+last fill to the diffused curve over 300 ms; one that goes dark does so at
+once. The board keeps no Song or bank logic: it reacts only to the queued
+button the app sends. The wire is unchanged
 ([plan](../../docs/plan/2026-10-13-fix-song-band-one-section-plan.md)).
 
-The physical renderer, its limits and the first Song queue fill are sourced
-from #1079. Its bench diagnostic and CAD are excluded. New-v3 ring UART/PD firmware is a separate hardware
-boundary. No physical deployment or electrical/optical validation is implied
-by the host tests or a successful Arduino compile.
+No physical deployment or electrical/optical validation is implied by the host
+tests or a successful Arduino compile.
 
 ## Wire format: the pedal link
 
@@ -97,9 +148,10 @@ compete with the ten-button mask for physical output.
 | `0x03 HELLO` | board → segno | `protocol, fw major, fw minor` — at boot and once a second; segno counts the board as connected while these keep coming |
 | `0x04 CTRL` | board → segno | `jack, contact, kind, value` (unchanged four bytes) |
 | `0x05 ENCODER_BUTTON` | board → segno | `pressed (0/1)` — the encoder's push switch, one message per debounced edge (protocol 9) |
+| `0x06 PD_STATUS` | board → segno | `profile, mismatch, mV (LE16), mA (LE16), source max mA (LE16)` — after every `HELLO` (protocol 12) |
 | `0x10 STATE` | segno → board | 53 bytes: flags, mode, looper mode, global colour, bank, selected track, 8 track LEDs, loop length µs (LE32), master gain, ten RGB triples, active mask (LE16), queued switch, queue progress — see `pedal_link.h` |
 
-segno answers every compatible protocol-10 `HELLO` with its current `STATE`, so a board that just
+segno answers every compatible `HELLO` with its current `STATE`, so a board that just
 (re)connected is current within a second; the board goes dark if no `STATE`
 arrives for `PEDAL_LINK_FRAME_TIMEOUT_MS` (5 s) and on the goodbye flag, and
 segno reads the board as disconnected after three silent hello intervals. Both
@@ -124,7 +176,7 @@ Needs `arduino-cli`, the arduino-pico core (`rp2040:rp2040`, RP2350 support) and
 ```sh
 arduino-cli core install rp2040:rp2040 --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
 arduino-cli lib install "Adafruit NeoPixel@1.15.5" "NeoPixelBus by Makuna@2.8.4"
-arduino-cli compile --fqbn rp2040:rp2040:rpipico2 firmware/console_board --output-dir firmware/console_board/build
+arduino-cli compile --libraries firmware/libraries --fqbn rp2040:rp2040:rpipico2 firmware/console_board --output-dir firmware/console_board/build
 ```
 
 `build/console_board.ino.elf` is what OpenOCD flashes; `.uf2` is for BOOTSEL drag-and-drop
@@ -164,7 +216,7 @@ without the app, watch the hellos arrive:
 
 ```sh
 stty -F /dev/ttyAMA3 115200 raw -echo
-od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0a 01 0f 04 (HELLO, protocol 10, fw 1.15), once a second
+od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0c 02 05 0b (HELLO, protocol 12, fw 2.5), once a second
 ```
 
 ## Bring-up record

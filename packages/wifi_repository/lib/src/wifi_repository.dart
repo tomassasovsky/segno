@@ -41,4 +41,9 @@ class WifiRepository {
 
   /// Whether the internet answers over the current link.
   Future<bool> checkConnectivity() => _client.checkConnectivity();
+
+  /// Holds the appliance's background reconnect after a WiFi drop while
+  /// [hold] is true (see [WifiClient.holdReconnects]).
+  Future<void> holdReconnects({required bool hold}) =>
+      _client.holdReconnects(hold: hold);
 }

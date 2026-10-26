@@ -117,6 +117,9 @@ class _PageWifiClient implements WifiClient {
 
   @override
   Future<bool> checkConnectivity() async => internet;
+
+  @override
+  Future<void> holdReconnects({required bool hold}) async {}
 }
 
 ThemeData _theme() => ThemeData(

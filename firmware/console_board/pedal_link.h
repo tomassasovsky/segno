@@ -28,7 +28,11 @@ extern "C" {
 #endif
 
 #define PEDAL_LINK_SYNC 0xA5u
-/* 10: STATE53 -- the Song queue (#1077): which footswitch's pill fills, and
+/* 12: PD_STATUS (0x06) -- the USB-C PD contract and whether the trigger's
+ * NVM holds the console profile (#1352).
+ * 11: STATE flags bit 4 is dimmed -- the console idled and the app dimmed the
+ * screens, so the board dims its LEDs too (#1349).
+ * 10: STATE53 -- the Song queue (#1077): which footswitch's pill fills, and
  * how far, while a section waits for the playing one's next lap edge.
  * 9: ENCODER_BUTTON (0x05) -- the encoder's push switch, press and release.
  * 8: ten RGB hues and a ten-bit physical activity mask (STATE51).
@@ -42,7 +46,7 @@ extern "C" {
  * stopped tracking the loop. The board is flashed over SWD independently of
  * the app, so the two can drift; this is what makes that visible instead of
  * silent. */
-#define PEDAL_LINK_PROTOCOL_VERSION 10u
+#define PEDAL_LINK_PROTOCOL_VERSION 12u
 
 /* board -> segno */
 #define PEDAL_LINK_TYPE_BUTTON 0x01u   /* [button, pressed] */
@@ -54,9 +58,22 @@ extern "C" {
 #define PEDAL_LINK_TYPE_HELLO 0x03u    /* [protocol, fw major, fw minor] */
 #define PEDAL_LINK_TYPE_CTRL 0x04u     /* [jack, contact, kind, value] */
 #define PEDAL_LINK_TYPE_ENCODER_BUTTON 0x05u /* [pressed] */
+/* Once a second, after HELLO: [profile, mismatch, mV LE16, mA LE16,
+ * source max mA LE16]. profile is a PEDAL_PD_PROFILE_* value; the contract
+ * fields are zero when the trigger did not answer or holds no PD contract. */
+#define PEDAL_LINK_TYPE_PD_STATUS 0x06u
 /* segno -> board */
 #define PEDAL_LINK_TYPE_STATE 0x10u    /* [PEDAL_LINK_STATE_LEN bytes] */
+/* Pi -> board, from segno-ring-flash before the app starts, never from the
+ * app (PedalLinkCodec does not encode it): bridge this UART to the ring
+ * carrier's, so the Pi can update the ring XIAO (#1342, SegnoRing's
+ * ring_update.h). The payload is a fixed magic, so line noise that passes
+ * the checksum cannot enter the bridge. */
+#define PEDAL_LINK_TYPE_RING_BRIDGE 0x12u /* ['R', 'B'] */
+#define PEDAL_LINK_RING_BRIDGE_MAGIC0 0x52u
+#define PEDAL_LINK_RING_BRIDGE_MAGIC1 0x42u
 
+#define PEDAL_LINK_PD_STATUS_LEN 8u
 #define PEDAL_LINK_STATE_LEN 53u
 #define PEDAL_LINK_MAX_PAYLOAD PEDAL_LINK_STATE_LEN
 #define PEDAL_LINK_MAX_FRAME (4u + PEDAL_LINK_MAX_PAYLOAD)
@@ -144,9 +161,21 @@ enum {
 };
 enum { PEDAL_LED_OFF = 0, PEDAL_LED_GREEN, PEDAL_LED_RED, PEDAL_LED_BLUE, PEDAL_LED_COUNT };
 
+/* Whether the PD trigger's NVM holds the console profile, as the board found
+ * it at boot (pd_trigger.h). WRITTEN means it did not and the board wrote it
+ * and read it back; the new profile governs the next negotiation, after a
+ * power cycle. */
+enum {
+  PEDAL_PD_PROFILE_NOT_READ = 0, /* the trigger did not answer on J23 */
+  PEDAL_PD_PROFILE_MATCHES,
+  PEDAL_PD_PROFILE_WRITTEN,
+  PEDAL_PD_PROFILE_WRITE_FAILED,
+  PEDAL_PD_PROFILE_COUNT
+};
+
 /* The decoded STATE payload. Byte layout (see PedalLinkCodec):
  *   0      flags: bit0 clear_fade, bit1 goodbye, bit2 performance_armed,
- *          bit3 counting_in (bits 4-7 reserved, must be zero)
+ *          bit3 counting_in, bit4 dimmed (bits 5-7 reserved, must be zero)
  *   1      mode          2 looper_mode   3 global_color
  *   4      active_bank   5 selected_track
  *   6..13  track_leds[0..7]
@@ -159,7 +188,7 @@ enum { PEDAL_LED_OFF = 0, PEDAL_LED_GREEN, PEDAL_LED_RED, PEDAL_LED_BLUE, PEDAL_
  * The app picks the button (only a waiting Song or Band section on the
  * plate has one) and lights it like any other; the board only fills that
  * pill left to right by the progress, at one uniform level, and blends it to
- * the diffused curve when a later frame no longer queues it (firmware 1.15,
+ * the diffused curve when a later frame no longer queues it (firmware 2.5,
  * #1323). A full pill is never drawn from a queue: the engine ends the wait
  * by starting the section, and the next frame carries no queue.
  */
@@ -170,6 +199,7 @@ typedef struct pedal_state {
   uint8_t goodbye;
   uint8_t performance_armed;
   uint8_t counting_in;
+  uint8_t dimmed;
   uint8_t mode;
   uint8_t looper_mode;
   uint8_t global_color;
@@ -195,6 +225,9 @@ size_t pedal_link_encode_hello(uint8_t fw_major, uint8_t fw_minor, uint8_t *out)
 size_t pedal_link_encode_ctrl(uint8_t jack, uint8_t contact, uint8_t kind, uint8_t value,
                               uint8_t *out);
 size_t pedal_link_encode_state(const pedal_state *state, uint8_t *out);
+size_t pedal_link_encode_ring_bridge(uint8_t *out);
+size_t pedal_link_encode_pd_status(uint8_t profile, uint8_t mismatch, uint16_t millivolts,
+                                   uint16_t milliamps, uint16_t max_milliamps, uint8_t *out);
 
 /* Decode a STATE payload. Returns 1 on success, 0 for a wrong length, an
  * out-of-range enum, a reserved flag bit, an active_bank > 1, a

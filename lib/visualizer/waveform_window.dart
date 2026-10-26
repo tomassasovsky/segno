@@ -1,102 +1,12 @@
-import 'dart:async';
-
-import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:screen_retriever/screen_retriever.dart';
 import 'package:segno/appliance/power_off/power_goodbye.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
 import 'package:segno/visualizer/performance_readout.dart';
-import 'package:segno/visualizer/waveform_window_args.dart';
-import 'package:segno/visualizer/waveform_window_channel.dart';
 import 'package:segno/visualizer/widgets/waveform_view.dart';
-import 'package:segno/window/window_chrome.dart';
-import 'package:window_manager/window_manager.dart';
-
-/// Where the selected-track window should sit: **full-bleed on a secondary
-/// display** when one is present (the intended second-screen setup), else the
-/// windowed fallback from [args]. Pure over the screen list so it can be
-/// unit-tested without a real multi-monitor desktop.
-///
-/// Each screen's `position`/`size` arrive in that display's **own** logical
-/// pixels (how `screen_retriever` reports them) with its DPI `scale`. The
-/// result is returned in the **primary window's** logical space — what
-/// `window_manager.setBounds` expects for the primary-hosted sub-window — by
-/// rescaling with `scale / primaryScale`. Skipping this drops a secondary at a
-/// different DPI than the primary onto the wrong place: e.g. a 4K@175% display
-/// whose physical origin is x=2560 is reported at own-logical x=1463, a point
-/// *inside* a 100%-scaled primary, so the window lands mid-primary.
-///
-/// The secondary is found by id — macOS/Windows report distinct display ids.
-/// On Linux `screen_retriever_linux` hardcodes every display's id to `""`
-/// (its plugin.cc), so the loop never matches and the window opens with the
-/// windowed fallback — **deliberately**. On the appliance that is correct:
-/// weston's kiosk-shell fullscreens every surface and routes it to the output
-/// whose `app-ids` list names it (the embedder tags this window
-/// `<APPLICATION_ID>.waveform`, weston.ini pins that to HDMI-A-2), overriding
-/// whatever geometry the window asks for. And on a non-kiosk Linux desktop
-/// there is no trustworthy signal to place by: GDK's "primary" is just
-/// monitor 0, arbitrary under Wayland, so guessing a secondary from geometry
-/// can full-bleed the readout over the *main* display.
-@visibleForTesting
-({Offset position, Size size, bool fullscreen}) waveformWindowPlacement({
-  required List<({String id, Offset position, Size size, double scale})>
-  screens,
-  required String primaryId,
-  required double primaryScale,
-  required WaveformWindowArgs args,
-}) {
-  for (final screen in screens) {
-    if (screen.id != primaryId) {
-      final k = screen.scale / primaryScale;
-      return (
-        position: screen.position * k,
-        size: screen.size * k,
-        fullscreen: true,
-      );
-    }
-  }
-  return (
-    position: Offset(args.x, args.y),
-    size: Size(args.width, args.height),
-    fullscreen: false,
-  );
-}
-
-/// Resolves [waveformWindowPlacement] against the live displays, falling back
-/// to the windowed layout if the display query fails (never leave the output
-/// window unplaced).
-Future<({Offset position, Size size, bool fullscreen})> _resolvePlacement(
-  WaveformWindowArgs args,
-) async {
-  try {
-    final displays = await screenRetriever.getAllDisplays();
-    final primary = await screenRetriever.getPrimaryDisplay();
-    return waveformWindowPlacement(
-      screens: [
-        for (final d in displays)
-          (
-            id: d.id,
-            position: d.visiblePosition ?? Offset.zero,
-            size: d.size,
-            scale: d.scaleFactor?.toDouble() ?? 1.0,
-          ),
-      ],
-      primaryId: primary.id,
-      primaryScale: primary.scaleFactor?.toDouble() ?? 1.0,
-      args: args,
-    );
-  } on Object {
-    return (
-      position: Offset(args.x, args.y),
-      size: Size(args.width, args.height),
-      fullscreen: false,
-    );
-  }
-}
 
 /// A loop waveform frame pushed from the main window: the loop peaks plus the
 /// playhead position.
@@ -116,7 +26,6 @@ typedef WaveformFrame = ({
 /// waveform on every frame the peaks did not change, which is most of them.
 ///
 /// Pure so the hold can be proven without a second engine.
-@visibleForTesting
 WaveformFrame waveformFrameFrom(
   Map<Object?, Object?> payload,
   WaveformFrame previous,
@@ -125,11 +34,11 @@ WaveformFrame waveformFrameFrom(
   final selectedTrack = payload['selectedTrack'];
   final samples = payload['samples'];
   return (
-    // `is List` covers the absent key and the garbled value in one test: a
-    // frame with no `samples` is the ordinary progress-only push, and one
-    // carrying something that is not a buffer is a frame that arrived
+    // `is Float32List` covers the absent key and the garbled value in one
+    // test: a frame with no `samples` is the ordinary progress-only push, and
+    // one carrying something that is not a buffer is a frame that arrived
     // damaged. Both hold what is on screen.
-    samples: samples is List ? _toFloat32List(samples) : previous.samples,
+    samples: samples is Float32List ? samples : previous.samples,
     // Every field degrades to what is already on screen rather than throwing
     // OR resetting: this crosses an engine boundary as a loose map, and a
     // malformed frame must neither take the second screen down mid-set nor
@@ -143,103 +52,6 @@ WaveformFrame waveformFrameFrom(
   );
 }
 
-/// Entrypoint for the secondary waveform window — a separate Flutter engine
-/// spawned by `desktop_multi_window`. It owns no audio engine; the main window
-/// pushes `waveform` frames to it over [waveformWindowChannel].
-Future<void> runWaveformWindow(WindowController controller) async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  final args = WaveformWindowArgs.parse(controller.arguments);
-  final title = args.title ?? 'Segno — Track';
-  final frame = ValueNotifier<WaveformFrame>(
-    (samples: Float32List(0), progress: 0, selectedTrack: ''),
-  );
-  final readout = ValueNotifier<PerformanceReadout>(
-    const PerformanceReadout(),
-  );
-
-  // Register the shared channel before any slow init so the main window can
-  // reach us as soon as [WindowController.create] returns.
-  await waveformWindowChannel.setMethodCallHandler((call) async {
-    switch (call.method) {
-      case 'waveform':
-        if (call.arguments is Map) {
-          frame.value = waveformFrameFrom(call.arguments as Map, frame.value);
-        }
-        return null;
-      case 'readout':
-        if (call.arguments is Map) {
-          readout.value = PerformanceReadout.fromMap(
-            call.arguments as Map<Object?, Object?>,
-          );
-        }
-        return null;
-      case 'window_close':
-        await windowManager.close();
-        return null;
-      default:
-        return null;
-    }
-  });
-
-  // Tell the main window the channel handler is live.
-  await waveformWindowChannel
-      .invokeMethod(waveformWindowReadyMethod)
-      .catchError((Object _) => null);
-
-  await windowManager.ensureInitialized();
-  await configureSegnoDesktopWindow(title: title);
-
-  // Full-bleed on a second monitor when there is one; otherwise the windowed
-  // fallback. Two ordering rules make this land on the *second* display:
-  //   1. Move the window onto the target display only *after* it is realized
-  //      (`show`). A `setBounds` issued while the sub-window is still hidden is
-  //      dropped by the Windows layer, so the later `setFullScreen` would fill
-  //      whichever monitor the window defaulted to (the primary).
-  //   2. `setFullScreen` *after* the move: the OS then fills the monitor the
-  //      window is on at its native resolution — which also sidesteps
-  //      window_manager scaling the size by the target display's DPI.
-  final placement = await _resolvePlacement(args);
-  await windowManager.waitUntilReadyToShow(
-    WindowOptions(
-      size: placement.size,
-      title: title,
-      // The OS window's pre-paint colour. Matches AppTheme.neon's scaffold
-      // background so opening the window does not flash a different dark —
-      // it cannot read the theme, since it is set before runApp.
-      backgroundColor: const Color(0xFF060607),
-    ),
-    () async {
-      await windowManager.show();
-      await windowManager.setBounds(
-        null,
-        position: placement.position,
-        size: placement.size,
-      );
-      if (placement.fullscreen) {
-        await windowManager.setFullScreen(true);
-      }
-    },
-  );
-
-  runApp(WaveformWindowApp(frame: frame, readout: readout, title: title));
-}
-
-/// Coerces a method-channel payload (a [Float32List], or a `List` of numbers
-/// after the plugin re-serializes across engines) into a [Float32List].
-Float32List _toFloat32List(Object? raw) {
-  if (raw is Float32List) return raw;
-  if (raw is List) {
-    final out = Float32List(raw.length);
-    for (var i = 0; i < raw.length; i++) {
-      final v = raw[i];
-      out[i] = v is num ? v.toDouble() : 0.0;
-    }
-    return out;
-  }
-  return Float32List(0);
-}
-
 /// The root widget of the waveform window: the selected-track readout
 /// ([ConsoleReadoutView]) over a [WaveformView] driven by frames pushed from
 /// the main window — stage-sized type legible from the floor, full-bleed
@@ -249,9 +61,12 @@ class WaveformWindowApp extends StatelessWidget {
   const WaveformWindowApp({
     required this.frame,
     required this.readout,
-    required this.title,
+    this.onActivity = _noActivity,
     super.key,
   });
+
+  /// Default [onActivity]: drops the touch, for hosts that wire nothing.
+  static void _noActivity() {}
 
   /// The latest waveform frame, updated as the main window pushes new data.
   final ValueListenable<WaveformFrame> frame;
@@ -259,8 +74,9 @@ class WaveformWindowApp extends StatelessWidget {
   /// The latest performance readout, pushed only when it changes.
   final ValueListenable<PerformanceReadout> readout;
 
-  /// OS window title.
-  final String title;
+  /// Called when a player touches the readout; the readout screen sends it to
+  /// the main screen over the screen link.
+  final VoidCallback onActivity;
 
   @override
   Widget build(BuildContext context) {
@@ -272,10 +88,7 @@ class WaveformWindowApp extends StatelessWidget {
     // barrier of its own.
     return Listener(
       behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) => waveformWindowChannel
-          .invokeMethod(waveformWindowActivityMethod)
-          .catchError((Object _) => null)
-          .ignore(),
+      onPointerDown: (_) => onActivity(),
       child: _app(),
     );
   }
@@ -289,50 +102,46 @@ class WaveformWindowApp extends StatelessWidget {
       builder: (context, child) =>
           AppTextDefaults(child: child ?? const SizedBox.shrink()),
       // The Scaffold supplies the Material ancestor (the same job TracksView's
-      // Scaffold does in the main window): SegnoWindowChromeShell only mounts
-      // its own Scaffold on the Windows title-bar path, so without this the
-      // readout renders bare on Linux/macOS — the unthemed fallback style
-      // (yellow double-underlined text) seen live on the appliance's 7".
-      home: SegnoWindowChromeShell(
-        title: title,
-        body: Scaffold(
-          body: ValueListenableBuilder<PerformanceReadout>(
-            valueListenable: readout,
-            builder: (context, readoutData, _) {
-              final selected = readoutData.selected;
-              final waveform = ValueListenableBuilder<WaveformFrame>(
-                valueListenable: frame,
-                builder: (context, data, _) => WaveformView(
-                  samples: data.samples,
-                  progress: data.progress,
-                  bars: selected?.bars ?? 0,
-                  state: readoutMeterStateOf(selected),
-                  semanticLabel: selected == null
-                      ? context.l10n.a11yReadoutNoTrack
-                      : context.l10n.a11ySelectedTrackWaveform(
-                          data.selectedTrack,
-                        ),
-                ),
-              );
-              // Full-bleed: the console view carries its own inset. Dimmed
-              // as its panel is set when the panel cannot dim itself.
-              final face = SoftwareBrightness(
-                brightness: readoutData.brightness,
-                child: ConsoleReadoutView(
-                  readout: readoutData,
-                  waveform: waveform,
-                ),
-              );
-              if (readoutData.goodbye != ReadoutGoodbye.mark) return face;
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  face,
-                  const PowerGoodbye(face: ReadoutGoodbye.mark),
-                ],
-              );
-            },
-          ),
+      // Scaffold does in the main window): without it the readout renders
+      // bare, in the unthemed fallback style (yellow double-underlined text)
+      // once seen live on the appliance's 7".
+      home: Scaffold(
+        body: ValueListenableBuilder<PerformanceReadout>(
+          valueListenable: readout,
+          builder: (context, readoutData, _) {
+            final selected = readoutData.selected;
+            final waveform = ValueListenableBuilder<WaveformFrame>(
+              valueListenable: frame,
+              builder: (context, data, _) => WaveformView(
+                samples: data.samples,
+                progress: data.progress,
+                bars: selected?.bars ?? 0,
+                state: readoutMeterStateOf(selected),
+                semanticLabel: selected == null
+                    ? context.l10n.a11yReadoutNoTrack
+                    : context.l10n.a11ySelectedTrackWaveform(
+                        data.selectedTrack,
+                      ),
+              ),
+            );
+            // Full-bleed: the console view carries its own inset. Dimmed
+            // as its panel is set when the panel cannot dim itself.
+            final face = SoftwareBrightness(
+              brightness: readoutData.brightness,
+              child: ConsoleReadoutView(
+                readout: readoutData,
+                waveform: waveform,
+              ),
+            );
+            if (readoutData.goodbye != ReadoutGoodbye.mark) return face;
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                face,
+                const PowerGoodbye(face: ReadoutGoodbye.mark),
+              ],
+            );
+          },
         ),
       ),
     );

@@ -23,8 +23,8 @@ assert match, "release collection step not found"
 collector = textwrap.dedent(match.group(1))
 version = "0.1.0-experimental.140"
 payload = b"current checked bundle"
-cases = [("raspberrypi4-64", "current"), ("raspberrypi5", "current"),
-         ("raspberrypi5", "missing"), ("raspberrypi5", "empty")]
+cases = [("raspberrypi5", "current"), ("raspberrypi5", "missing"),
+         ("raspberrypi5", "empty")]
 for machine, state in cases:
     with tempfile.TemporaryDirectory(prefix="segno-collection-") as temp:
         root = Path(temp)

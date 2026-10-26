@@ -68,6 +68,17 @@ static inline int32_t comp_pos(int32_t pos, int32_t offset, int32_t len) {
   return p;
 }
 
+/* Where an overdub on a track writes this frame: its segment base plus the
+ * latency-compensated position inside the segment (comp_pos wraps within the
+ * segment, not the whole multiple). The mixer writes there (wdub), and the
+ * control thread's prefault of a punch-in shadow maps the coming second of
+ * play positions through the same function (le_prefault_dub_second), so the
+ * two cannot drift apart. */
+static inline int32_t le_dub_write_index(int32_t seg_base, int32_t pos,
+                                         int32_t offset, int32_t len) {
+  return seg_base + comp_pos(pos, offset, len);
+}
+
 /* A track's active lane count, clamped to a usable range (a track always has at
  * least one lane). */
 static inline int32_t le_lanes_active(const le_track* t) {
@@ -103,7 +114,10 @@ static inline uint64_t le_fx_chan_fold(uint64_t h, const le_fx_chan* c) {
   h = le_fx_fp_u32(h, (uint32_t)c->out_mode);
   h = le_fx_fp_u32(h, f32_to_bits(c->gl));
   h = le_fx_fp_u32(h, f32_to_bits(c->gr));
-  return le_fx_fp_u32(h, f32_to_bits(c->level));
+  h = le_fx_fp_u32(h, f32_to_bits(c->level));
+  /* Where the entry sits in its rack decides where its output side applies.
+   * Folded only when set, so a chain without racks keeps its key. */
+  return c->rack ? le_fx_fp_u32(h, (uint32_t)c->rack) : h;
 }
 
 
@@ -483,14 +497,60 @@ void le_engine_reopen_file_retired(le_engine* engine, uint32_t drop_mask);
  * re-initialises the rings. */
 void le_engine_reopen_settle(le_engine* engine, uint32_t drop_mask);
 
+/* le_lane_ensure_slot outcomes. Both successes are non-zero, so the plain
+ * `if (!le_lane_ensure_slot(...))` failure check reads as it always did. */
+enum {
+  LE_SLOT_FAILED = 0, /* allocation failed; the slot is left unallocated */
+  LE_SLOT_REUSED = 1, /* the existing buffer was big enough; content is stale */
+  LE_SLOT_FRESH = 2   /* a new buffer: all zeros, and no page touched yet */
+};
+
 /* Ensures lane [ln]'s pool slot [slot] holds a buffer of >= [frames] frames
  * (control thread only; the caller guarantees the audio thread is not reading
  * the slot's CONTENT — an EMPTY track's live slot, or a slot outside
- * live/stacks/outstanding). Growth replaces the buffer (free + fresh calloc);
- * no content survives a regrow by design — snapshots are always written whole
- * before use. Returns 1 on success, 0 on allocation failure (the slot is left
- * unallocated). Defined in engine.c. */
-int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames);
+ * live/stacks/outstanding). Growth replaces the buffer with a fresh, untouched
+ * le_rt_alloc mapping; no content survives a regrow by design — snapshots are
+ * always written whole before use. A caller that needs the slot cleared
+ * clears only a REUSED one: a FRESH one already reads zeros, and clearing it
+ * would make every page of a cap-sized buffer resident (#906). Nothing here
+ * prefaults: the audio thread may write the slot only after
+ * le_track_prefault_capture or a shadow post has. Defined in engine.c. */
+int le_lane_ensure_slot(le_engine* e, le_lane* ln, int32_t slot,
+                        int32_t frames);
+
+/* Faults in the first LE_PREFAULT_HEAD_SECONDS of pool slot [slot]
+ * (engine_prefault.h): what a take can write before the background
+ * prefaulter takes over. Control thread; cheap when already present. */
+void le_lane_prefault_head(le_lane* ln, int32_t slot, int32_t sample_rate);
+
+/* Frees the lane's standby shadow (engine_private.h). The caller first drops
+ * any prefaulter job on it (le_prefault_forget) unless the prefaulter is
+ * already cleared or shut down. Control thread. */
+void le_lane_release_standby(le_engine* e, le_lane_spares* sp);
+
+/* Frees the lane's untouched zero spare (engine_private.h). Control thread. */
+void le_lane_release_zero_spare(le_engine* e, le_lane_spares* sp);
+
+/* The spares of lane [ln] of [e] (le_engine.spares). */
+static inline le_lane_spares* le_lane_spares_of(le_engine* e, const le_lane* ln) {
+  const size_t t = (size_t)((const char*)ln - (const char*)e->tracks) /
+                   sizeof(le_track);
+  const size_t l = (size_t)(ln - e->tracks[t].lanes);
+  return &e->spares[t][l];
+}
+
+/* Frees [buf], a pool buffer the callback may still name (it can be inside a
+ * block that loaded it), once the next command this thread posts has
+ * published: the block that applies it starts after every block that could
+ * have loaded [buf] has ended. A take start replacing an EMPTY track's live
+ * slot uses this, so the munmap neither runs on the press nor can unmap a
+ * buffer an unfenced callback emptying is still reading (#1146's residual).
+ * Control thread. */
+void le_retire_buffer(le_engine* e, float* buf);
+
+/* Frees the retired buffers whose ticket has published, or all of them with
+ * [all] (the device closed). Drain cadence. */
+void le_collect_retired(le_engine* e, int all);
 
 /* Shrinks an over-allocated slot to `frames`, PRESERVING the leading `frames`
  * samples — the counterpart to le_lane_ensure_slot's grow-by-replace, for the
@@ -498,9 +558,18 @@ int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames);
  * pre-armed at the recording cap because the loop length was not yet known.
  * Control thread only, and only for a slot the audio thread no longer holds
  * (never the live slot). No-op when the slot is unallocated or already at or
- * below `frames`; a failed realloc keeps the oversized buffer. Defined in
+ * below `frames`; a failed allocation keeps the oversized buffer. Defined in
  * engine.c. */
-void le_lane_shrink_slot(le_lane* ln, int32_t slot, int32_t frames);
+void le_lane_shrink_slot(le_engine* e, le_lane* ln, int32_t slot,
+                         int32_t frames);
+
+/* Frees a lane audio buffer (a pool slot, a standby, a spare) that the
+ * callback can no longer reach: drops its prefault jobs first, waiting out a
+ * chunk in flight (le_prefault_forget), so the background prefaulter never
+ * faults, and locks, whatever is mapped at that address next. Every such
+ * free goes through here; a buffer the callback may still hold is retired
+ * instead (le_retire_buffer). NULL-safe. */
+void le_free_audio_buffer(le_engine* e, float* buf);
 
 /* ---- Per-input conditioning stage (input conditioning, S1) ----
  * Defined in engine_cond.c. le_cond_seed_defaults runs on the CONTROL thread

@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
@@ -22,6 +23,7 @@ import 'package:segno/looper/cubit/fx_presets_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
+import 'package:segno/looper/view/fx/fx_chain_power.dart';
 import 'package:segno/looper/view/fx/fx_chain_strip.dart';
 import 'package:segno/looper/view/fx/fx_effect_editor.dart';
 import 'package:segno/looper/view/fx/fx_page.dart';
@@ -200,6 +202,20 @@ const _catalogue = FxCatalogue(
           type: 6,
           params: {'Pumper': 1, 'Pumper Depth': 0.8},
         ),
+        // Its pumper off and its delay on: the opposite mix to Acoustic
+        // Rhythm 1's, so a rule that kept only one polarity fails one of them.
+        FxPreset(
+          family: 'Rhythmic Rack',
+          name: 'Pump and Echo',
+          id: 'rh-2',
+          type: 6,
+          params: {
+            'Pumper': 0,
+            'Pumper Depth': 0.8,
+            'Delay': 1,
+            'Del Time': 0.3,
+          },
+        ),
       ],
     ),
   ],
@@ -209,10 +225,13 @@ void main() {
   setUpAll(() {
     registerFallbackValue(const LooperInputPanChanged(0, pan: 0));
     registerFallbackValue(MonitorMode.off);
+    registerFallbackValue(const FxAddress(stage: FxStage.track));
+    registerFallbackValue(<String>{});
   });
 
   late _MockLooperBloc bloc;
   late _MockLooperRepository repository;
+  late _MockControlCubit control;
   late SettingsRepository settings;
   late StreamController<int> monitorChanges;
   late StreamController<int> monitorParams;
@@ -291,6 +310,10 @@ void main() {
     when(() => repository.state).thenReturn(_rig);
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.fxRoomNs).thenReturn(1 << 40);
+    when(() => repository.fxCostOf(any())).thenAnswer(
+      (call) => fxChainCostNs(call.positionalArguments[0] as List<TrackEffect>),
+    );
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
     when(() => repository.laneCount(any())).thenReturn(1);
     when(() => repository.fxRecipesSettled).thenReturn(true);
@@ -342,6 +365,7 @@ void main() {
     LooperState? state,
     FxCatalogue? catalogue,
     Stream<LooperState>? updates,
+    ControlState controlState = const ControlState(),
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -572,8 +596,11 @@ void main() {
     await outputs.rename(0, 'Main output');
     await outputs.rename(1, 'Monitor output');
     await tracks.rename(0, 'drums');
-    final control = _MockControlCubit();
-    when(() => control.state).thenReturn(const ControlState());
+    control = _MockControlCubit();
+    when(() => control.state).thenReturn(controlState);
+    when(
+      () => control.removeFxAssignments(any(), any()),
+    ).thenAnswer((_) async => true);
 
     await tester.pumpWidget(
       // Saving a preset confirms with a toast, which needs the app's own
@@ -1047,14 +1074,14 @@ void main() {
       expect(
         appended.entries.map((e) => (e as BuiltInEffect).type),
         [
-          // The table's order, which is not a processing order.
-          TrackEffectType.none, // Compressor, which this engine cannot build
-          TrackEffectType.delay,
-          TrackEffectType.reverb,
+          // Ed's Rack's measured order, with Reverb before Delay.
+          TrackEffectType.compressor,
+          TrackEffectType.roomVerb,
+          TrackEffectType.modeDelay,
         ],
       );
       // The preset's own values reach the parameters they feed.
-      final delay = appended.entries[1] as BuiltInEffect;
+      final delay = appended.entries[2] as BuiltInEffect;
       expect(delay.params[0], closeTo(0.42, 1e-9));
     });
 
@@ -1081,7 +1108,7 @@ void main() {
       // engine could build for it.
       expect(
         appended.entries.map((e) => e.module),
-        ['Compressor', 'Delay', 'Reverb'],
+        ['Compressor', 'Reverb', 'Delay'],
       );
     });
 
@@ -1103,25 +1130,63 @@ void main() {
       },
     );
 
-    testWidgets(
-      'every added entry arrives bypassed, whatever the preset says',
-      (tester) async {
-        await pump(tester, destination: const FxDestination.recordedTrack(0));
-        await tapKey(tester, 'fx_add_effects');
-        await tapKey(tester, 'fx_library_family_edsguitar');
-        await tapKey(tester, 'fx_preset_ed53e7b8');
+    testWidgets("an added factory rack keeps the preset's pedal states", (
+      tester,
+    ) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'fx_library_family_rhythmic');
+      await tapKey(tester, 'fx_preset_rh-2');
 
-        final appended = (
-          entries: lastTrackWrite()
-              .skip(_rig.tracks.first.effects.length)
-              .toList(),
-        );
+      final appended = (
+        entries: lastTrackWrite()
+            .skip(_rig.tracks.first.effects.length)
+            .toList(),
+      );
 
-        // The preset engages its compressor and reverb. Adding a rack mid-set
-        // must not change the sound until the player says so.
-        expect(appended.entries.every((e) => !e.enabled), isTrue);
-      },
-    );
+      // Pump and Echo leaves its pumper off and engages its delay, and the
+      // rack arrives so, as the Looper X loads it.
+      expect(
+        {for (final e in appended.entries) e.module: e.enabled},
+        {'Pumper': false, 'Delay': true},
+      );
+    });
+
+    testWidgets('a factory rack with some pedals off keeps each pedal as the '
+        'preset sets it', (tester) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'fx_library_family_edsguitar');
+      await tapKey(tester, 'fx_preset_ed53e7b8');
+
+      final appended = (
+        entries: lastTrackWrite()
+            .skip(_rig.tracks.first.effects.length)
+            .toList(),
+      );
+
+      // Acoustic Rhythm 1 engages its compressor and reverb and leaves its
+      // delay off.
+      expect(
+        {for (final e in appended.entries) e.module: e.enabled},
+        {'Compressor': true, 'Reverb': true, 'Delay': false},
+      );
+    });
+
+    testWidgets('a single effect arrives on', (tester) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'fx_library_single');
+      await tapKey(tester, 'fx_single_reverb');
+
+      final appended = (
+        entries: lastTrackWrite()
+            .skip(_rig.tracks.first.effects.length)
+            .toList(),
+      );
+
+      expect(appended.entries.single.enabled, isTrue);
+    });
 
     testWidgets("an added entry takes the destination's default placement", (
       tester,
@@ -1174,9 +1239,7 @@ void main() {
       // stored Pre-first, so an added Pre entry lands before the input's
       // existing Post one.
       expect(pushed, hasLength(3));
-      final added = pushed.firstWhere(
-        (e) => e is BuiltInEffect && e.type == TrackEffectType.none,
-      );
+      final added = pushed.firstWhere((e) => e.module == 'Pumper');
       expect(added.placement, FxPlacement.pre);
       expect(find.byType(FxRackEditor), findsOneWidget);
       verifyNever(
@@ -1214,6 +1277,26 @@ void main() {
         find.text(
           l10nOf(tester).fxRackTooLong('Acoustic Rhythm 1', 3, 1),
         ),
+        findsOneWidget,
+      );
+      await tapKey(tester, 'fx_preset_ed53e7b8');
+      verifyNever(
+        () => repository.setTrackEffects(
+          channel: 0,
+          effects: any(named: 'effects'),
+        ),
+      );
+    });
+
+    testWidgets('a rack that needs more processing than is left is offered '
+        'and explains itself', (tester) async {
+      when(() => repository.fxRoomNs).thenReturn(0);
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'fx_library_family_edsguitar');
+
+      expect(
+        find.text(l10nOf(tester).fxNoRoom('Acoustic Rhythm 1')),
         findsOneWidget,
       );
       await tapKey(tester, 'fx_preset_ed53e7b8');
@@ -1274,15 +1357,32 @@ void main() {
       expect(find.byKey(const Key('fx_param_2')), findsOneWidget);
     });
 
-    testWidgets("says a control's scale was never recovered rather than "
-        'printing a unit nobody verified', (tester) async {
+    testWidgets('a plain built-in reads in its own units, without the '
+        'unverified note', (tester) async {
       await pump(tester, destination: const FxDestination.recordedTrack(0));
       await tapKey(tester, 'fx_card_t1');
 
+      // t1 is a filter at its defaults: cutoff 0.5 is 20 x 900^0.5 = 600 Hz,
+      // resonance 0.2 is 20%.
+      final cutoff = find.byKey(const Key('fx_param_0'));
+      final resonance = find.byKey(const Key('fx_param_1'));
       expect(
-        find.text(l10nOf(tester).fxScaleUnverified),
-        findsNWidgets(2),
+        find.descendant(of: cutoff, matching: find.text('600 Hz')),
+        findsOneWidget,
       );
+      expect(
+        find.descendant(of: resonance, matching: find.text('20%')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: cutoff,
+          matching: find.text(l10nOf(tester).paramCutoff),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('0.50'), findsNothing);
+      expect(find.text(l10nOf(tester).fxScaleUnverified), findsNothing);
     });
 
     group('the Pre/Post switch', () {
@@ -1479,6 +1579,32 @@ void main() {
         expect(find.byKey(const Key('fx_pedal_cable_2')), findsOneWidget);
       });
 
+      testWidgets('a factory module keeps the raw setting and says its scale '
+          'was never recovered', (tester) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_card_R1');
+
+        // r1a is the rack's Delay module at its defaults (0.35 each). Its
+        // preset values were written against the Looper X's own scales, so
+        // it does not read in this build's milliseconds and percent.
+        final pedal = find.byKey(const Key('fx_pedal_r1a'));
+        expect(
+          find.descendant(of: pedal, matching: find.text('0.35')),
+          findsNWidgets(3),
+        );
+        expect(
+          find.descendant(
+            of: pedal,
+            matching: find.text(l10nOf(tester).fxScaleUnverified),
+          ),
+          findsNWidgets(3),
+        );
+        expect(
+          find.descendant(of: pedal, matching: find.text('350 ms')),
+          findsNothing,
+        );
+      });
+
       testWidgets("a pedal this build cannot process keeps the catalogue's "
           'name and says so, rather than offering controls that reach '
           'nothing', (tester) async {
@@ -1506,6 +1632,32 @@ void main() {
             enabled: false,
           ),
         ).called(1);
+      });
+
+      testWidgets('the rack level reads in dB, unity at 0.0 dB, and reaches '
+          '+12 dB', (tester) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_card_R1');
+
+        final l10n = l10nOf(tester);
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('fx_rack_level')),
+            matching: find.text(l10n.fxValueDb(0)),
+          ),
+          findsOneWidget,
+        );
+        expect(l10n.fxValueDb(-1.3), '-1.3 dB');
+
+        await tester.drag(
+          find.byKey(const Key('fx_rack_level')),
+          const Offset(400, 0),
+        );
+        await tester.pumpAndSettle();
+
+        final level = lastTrackWrite()[3].channels.level;
+        expect(fxRackLevelDb(level), 12);
+        expect(level, greaterThan(2));
       });
 
       testWidgets('the footer writes the input to the first pedal and the '
@@ -1757,7 +1909,7 @@ void main() {
           name: 'verse',
           entries: [
             _fx('old1', TrackEffectType.echo),
-            _fx('old2', TrackEffectType.reverb),
+            _fx('old2', TrackEffectType.reverb, enabled: false),
           ],
           art: 'guitar',
         );
@@ -1774,14 +1926,14 @@ void main() {
               .toList(),
         );
 
-        // Its own rack, so it is its own thing on the chain; bypassed, like
-        // every other addition; and the destination's placement, because
+        // Its own rack, so it is its own thing on the chain; each pedal on
+        // or off as it was saved; and the destination's placement, because
         // placement belongs to where a sound is used, not to the sound.
         final racks = appended.entries.map((e) => e.rack).toSet();
         expect(racks, hasLength(1));
         expect(racks.single!.name, 'verse');
         expect(racks.single!.id, isNot('R1'));
-        expect(appended.entries.every((e) => !e.enabled), isTrue);
+        expect(appended.entries.map((e) => e.enabled), [true, false]);
         expect(
           appended.entries.every((e) => e.placement == FxPlacement.post),
           isTrue,
@@ -1963,9 +2115,9 @@ void main() {
 
         final written = lastTrackWrite();
         expect(
-          (written.firstWhere((e) => e.slotId == 'r1a') as BuiltInEffect)
-              .params,
-          const [0.41, 0.32, 0.23, 0.14],
+          (written.firstWhere((e) => e.slotId == 'r1a') as BuiltInEffect).params
+              .take(3),
+          const [0.41, 0.32, 0.23],
         );
       });
 
@@ -2024,6 +2176,484 @@ void main() {
           effects: any(named: 'effects'),
         ),
       );
+    });
+  });
+
+  group('adding a factory rack again', () {
+    // Track 0 already holds the rack built from Acoustic Rhythm 1.
+    final withRack = LooperState(
+      tracks: [
+        Track(
+          state: _rig.tracks.first.state,
+          lanes: _rig.tracks.first.lanes,
+          effects: [
+            ..._rig.tracks.first.effects,
+            for (final (i, module) in ['Compressor', 'Reverb', 'Delay'].indexed)
+              BuiltInEffect(
+                type: TrackEffectType.none,
+                slotId: 'old-$i',
+                enabled: false,
+                rack: const FxRack(
+                  id: 'old-rack',
+                  name: 'Acoustic Rhythm 1',
+                  art: 'edsguitar',
+                ),
+                module: module,
+                presetId: 'ed53e7b8',
+              ),
+          ],
+        ),
+        _rig.tracks[1],
+      ],
+      status: _rig.status,
+      outputBusCount: 2,
+    );
+    final bound = ControlState(
+      globalBindings: PedalBindingSet([
+        PedalBinding(
+          key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+          target: const FxSlotTarget(
+            address: FxAddress(stage: FxStage.track),
+            slotId: 'old-1',
+          ).canonicalString(),
+        ),
+      ]),
+    );
+
+    Future<void> chooseTheSameRack(WidgetTester tester) async {
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'fx_library_family_edsguitar');
+      await tapKey(tester, 'fx_preset_ed53e7b8');
+    }
+
+    testWidgets('asks first when assignments point at it, and says how many', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: withRack,
+        controlState: bound,
+      );
+      await chooseTheSameRack(tester);
+
+      final l10n = l10nOf(tester);
+      expect(find.text(l10n.fxReAddRackTitle('Acoustic Rhythm 1')), findsOne);
+      expect(find.text(l10n.fxReAddRackBody(1)), findsOneWidget);
+      await tapKey(tester, 'console_confirm_cancel');
+
+      // Kept: nothing was written, and no assignment was touched.
+      verifyNever(
+        () => repository.setTrackEffects(
+          channel: 0,
+          effects: any(named: 'effects'),
+        ),
+      );
+      verifyNever(() => control.removeFxAssignments(any(), any()));
+    });
+
+    testWidgets('confirmed, it replaces the rack in place with new pedals', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: withRack,
+        controlState: bound,
+      );
+      await chooseTheSameRack(tester);
+      await tapKey(tester, 'console_confirm_confirm');
+
+      final written = lastTrackWrite();
+      expect(written, hasLength(withRack.tracks.first.effects.length));
+      final rack = fxChainGroups(written).last;
+      expect(rack.rack!.id, isNot('old-rack'));
+      expect(rack.entries.map((fx) => fx.slotId), isNot(contains('old-1')));
+      expect(
+        rack.entries.every(
+          (fx) => fx is BuiltInEffect && fx.presetId == 'ed53e7b8',
+        ),
+        isTrue,
+      );
+      // The new pedals take the preset's states, not the old rack's (all
+      // off): the compressor and reverb on, the delay off.
+      expect(
+        {for (final fx in rack.entries) fx.module: fx.enabled},
+        {'Compressor': true, 'Reverb': true, 'Delay': false},
+      );
+      // The old pedals' assignments are removed, as the dialog said.
+      verify(
+        () => control.removeFxAssignments(
+          const FxAddress(stage: FxStage.track),
+          {'old-0', 'old-1', 'old-2'},
+        ),
+      ).called(1);
+    });
+
+    testWidgets('an assignment store that cannot save shows the storage '
+        'notice', (tester) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: withRack,
+        controlState: bound,
+      );
+      when(
+        () => control.removeFxAssignments(any(), any()),
+      ).thenAnswer((_) async => false);
+      await chooseTheSameRack(tester);
+      await tapKey(tester, 'console_confirm_confirm');
+
+      expect(
+        find.text(l10nOf(tester).storageActionFailed),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 4));
+    });
+
+    testWidgets('with no assignments to it, it is replaced without asking', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: withRack,
+      );
+      await chooseTheSameRack(tester);
+
+      expect(find.byKey(const Key('console_confirm_confirm')), findsNothing);
+      final written = lastTrackWrite();
+      expect(written, hasLength(withRack.tracks.first.effects.length));
+      expect(fxChainGroups(written).last.rack!.id, isNot('old-rack'));
+      verifyNever(() => control.removeFxAssignments(any(), any()));
+    });
+  });
+
+  group('effects power (#1452)', () {
+    /// [state] with track 0's Track-stage chain, output 0's chain and the All
+    /// tracks chain switched off as [off] says.
+    LooperState chainsOff(
+      LooperState state, {
+      bool track = false,
+      bool output = false,
+      bool allTracks = false,
+    }) => LooperState(
+      tracks: [
+        for (final (i, t) in state.tracks.indexed)
+          Track(
+            channel: t.channel,
+            state: t.state,
+            lanes: t.lanes,
+            effects: t.effects,
+            chainEnabled: !(track && i == 0),
+          ),
+      ],
+      outputChains: {
+        for (final entry in state.outputChains.entries)
+          entry.key: FxChainEnvelope(
+            entries: entry.value.entries,
+            chainEnabled: !(output && entry.key == 0),
+          ),
+      },
+      allTracksChain: FxChainEnvelope(
+        entries: state.allTracksChain.entries,
+        chainEnabled: !allTracks,
+      ),
+      status: state.status,
+      outputBusCount: state.outputBusCount,
+    );
+
+    /// Input 0's chain, switched as the repository last heard, with every
+    /// write published to the monitor cubit as the repository does.
+    void stageInputs(Map<int, bool> chainOn) {
+      when(
+        () => repository.monitorChainEnabled(any()),
+      ).thenAnswer((call) => chainOn[call.positionalArguments.single] ?? true);
+      when(() => repository.allMonitors()).thenAnswer(
+        (_) => {
+          0: InputMonitor(
+            input: 0,
+            effects: monitorEntries,
+            chainEnabled: chainOn[0] ?? true,
+          ),
+          for (final input in chainOn.keys.where((i) => i != 0))
+            input: InputMonitor(input: input, chainEnabled: chainOn[input]!),
+        },
+      );
+      when(
+        () => repository.setMonitorChainEnabled(
+          input: any(named: 'input'),
+          enabled: any(named: 'enabled'),
+        ),
+      ).thenAnswer((call) {
+        final input = call.namedArguments[#input]! as int;
+        chainOn[input] = call.namedArguments[#enabled]! as bool;
+        monitorChanges.add(input);
+        return EngineResult.ok;
+      });
+    }
+
+    bool selected(WidgetTester tester, String key) =>
+        tester.widget<LoopChoiceButton>(find.byKey(Key(key))).selected;
+
+    testWidgets('an input whose effects are off says so over its racks, and '
+        'Turn effects on brings them back', (tester) async {
+      stageInputs({0: false});
+      await pump(tester, destination: const FxDestination.liveInput(0));
+      final l10n = l10nOf(tester);
+
+      expect(selected(tester, 'fx_chain_power_off'), isTrue);
+      expect(selected(tester, 'fx_chain_power_on'), isFalse);
+      expect(find.byKey(const Key('fx_chain_off_notice')), findsOneWidget);
+      expect(find.text(l10n.fxChainOffInputConsequence), findsOneWidget);
+      // The racks under the band stay dimmed.
+      expect(
+        tester.widget<FxChainStrip>(find.byType(FxChainStrip)).chainEnabled,
+        isFalse,
+      );
+
+      await tapKey(tester, 'fx_chain_turn_on');
+
+      verify(
+        () => repository.setMonitorChainEnabled(input: 0, enabled: true),
+      ).called(1);
+      expect(find.byKey(const Key('fx_chain_off_notice')), findsNothing);
+      expect(selected(tester, 'fx_chain_power_on'), isTrue);
+    });
+
+    testWidgets("Off and On switch the input's effects from the page", (
+      tester,
+    ) async {
+      stageInputs({0: true});
+      await pump(tester, destination: const FxDestination.liveInput(0));
+
+      expect(find.byKey(const Key('fx_chain_off_notice')), findsNothing);
+      await tapKey(tester, 'fx_chain_power_off');
+      verify(
+        () => repository.setMonitorChainEnabled(input: 0, enabled: false),
+      ).called(1);
+      expect(find.byKey(const Key('fx_chain_off_notice')), findsOneWidget);
+
+      await tapKey(tester, 'fx_chain_power_on');
+      verify(
+        () => repository.setMonitorChainEnabled(input: 0, enabled: true),
+      ).called(1);
+      expect(find.byKey(const Key('fx_chain_off_notice')), findsNothing);
+    });
+
+    testWidgets('a source card says Effects off before it is selected', (
+      tester,
+    ) async {
+      stageInputs({0: true, 1: false});
+      await pump(tester, destination: const FxDestination.liveInput(0));
+      final l10n = l10nOf(tester);
+
+      Finder status(String card) => find.descendant(
+        of: find.byKey(Key(card)),
+        matching: find.text(l10n.fxChainOffCard),
+      );
+      expect(status('fx_input_card_1'), findsOneWidget);
+      expect(status('fx_input_card_0'), findsNothing);
+      // Input 0 is on: no band.
+      expect(find.byKey(const Key('fx_chain_off_notice')), findsNothing);
+    });
+
+    for (final (label, destination, off, card)
+        in <
+          (
+            String,
+            FxDestination,
+            LooperState Function(LooperState),
+            String,
+          )
+        >[
+          (
+            'a track',
+            const FxDestination.recordedTrack(0),
+            (s) => chainsOff(s, track: true),
+            'fx_track_card_0',
+          ),
+          (
+            'All tracks',
+            const FxDestination.allTracks(),
+            (s) => chainsOff(s, allTracks: true),
+            'fx_all_tracks',
+          ),
+          (
+            'an output',
+            const FxDestination.output(0),
+            (s) => chainsOff(s, output: true),
+            'fx_output_card_0',
+          ),
+        ]) {
+      testWidgets('$label whose effects are off names its own consequence '
+          'and turns them on through its own writer', (tester) async {
+        when(
+          () => repository.setTrackChainEnabled(
+            channel: any(named: 'channel'),
+            enabled: any(named: 'enabled'),
+          ),
+        ).thenReturn(EngineResult.ok);
+        when(
+          () => repository.setAllTracksChainEnabled(
+            enabled: any(named: 'enabled'),
+          ),
+        ).thenReturn(EngineResult.ok);
+        when(
+          () => repository.setOutputChainEnabled(
+            bus: any(named: 'bus'),
+            enabled: any(named: 'enabled'),
+          ),
+        ).thenReturn(EngineResult.ok);
+        final updates = StreamController<LooperState>.broadcast();
+        addTearDown(updates.close);
+        await pump(
+          tester,
+          destination: destination,
+          state: off(_rig),
+          updates: updates.stream,
+        );
+        // After the pump, which stages every chain on.
+        when(() => repository.trackChainEnabled(0)).thenReturn(false);
+        when(() => repository.allTracksChainEnabled).thenReturn(false);
+        when(() => repository.outputChainEnabled(0)).thenReturn(false);
+        final l10n = l10nOf(tester);
+        final stage = destination.address!.stage;
+        final consequence = fxChainOffConsequence(l10n, stage);
+
+        expect(find.text(consequence), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(Key(card)),
+            matching: find.text(l10n.fxChainOffCard),
+          ),
+          findsOneWidget,
+        );
+
+        await tapKey(tester, 'fx_chain_turn_on');
+
+        verify(switch (stage) {
+          FxStage.track => () => repository.setTrackChainEnabled(
+            channel: 0,
+            enabled: true,
+          ),
+          FxStage.allTracks => () => repository.setAllTracksChainEnabled(
+            enabled: true,
+          ),
+          _ => () => repository.setOutputChainEnabled(bus: 0, enabled: true),
+        }).called(1);
+        // The rig publishes the change; the band goes with it.
+        updates.add(_rig);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('fx_chain_off_notice')), findsNothing);
+      });
+    }
+
+    testWidgets('with the effects on, nothing says they are off', (
+      tester,
+    ) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      final l10n = l10nOf(tester);
+
+      expect(find.byKey(const Key('fx_chain_off_notice')), findsNothing);
+      expect(find.text(l10n.fxChainOffCard), findsNothing);
+      expect(selected(tester, 'fx_chain_power_on'), isTrue);
+    });
+
+    group('in the editors', () {
+      Future<StreamController<LooperState>> openOff(
+        WidgetTester tester,
+        LooperState rig,
+        String card,
+      ) async {
+        when(
+          () => repository.setTrackChainEnabled(
+            channel: any(named: 'channel'),
+            enabled: any(named: 'enabled'),
+          ),
+        ).thenReturn(EngineResult.ok);
+        final updates = StreamController<LooperState>.broadcast();
+        addTearDown(updates.close);
+        await pump(
+          tester,
+          destination: const FxDestination.recordedTrack(0),
+          state: chainsOff(rig, track: true),
+          updates: updates.stream,
+        );
+        when(() => repository.trackChainEnabled(0)).thenReturn(false);
+        await tapKey(tester, card);
+        return updates;
+      }
+
+      testWidgets('the rack editor shows the power and the band, dims the '
+          'pedals, and keeps their switches working', (tester) async {
+        final updates = await openOff(tester, _rackRig, 'fx_card_R1');
+        final l10n = l10nOf(tester);
+
+        expect(find.byType(FxRackEditor), findsOneWidget);
+        expect(selected(tester, 'fx_chain_power_off'), isTrue);
+        expect(find.text(l10n.fxChainOffHere), findsOneWidget);
+        expect(
+          tester
+              .widget<Opacity>(find.byKey(const Key('fx_pedal_strip')))
+              .opacity,
+          lessThan(1),
+        );
+
+        // A pedal's own switch still writes, so a sound can be prepared.
+        when(
+          () => repository.setTrackEffectEnabled(
+            channel: 0,
+            index: any(named: 'index'),
+            enabled: any(named: 'enabled'),
+          ),
+        ).thenReturn(EngineResult.ok);
+        await tapKey(tester, 'fx_pedal_power_r1a');
+        verify(
+          () => repository.setTrackEffectEnabled(
+            channel: 0,
+            index: 1,
+            enabled: false,
+          ),
+        ).called(1);
+
+        await tapKey(tester, 'fx_chain_turn_on');
+        verify(
+          () => repository.setTrackChainEnabled(channel: 0, enabled: true),
+        ).called(1);
+        updates.add(_rackRig);
+        await tester.pumpAndSettle();
+        expect(find.text(l10n.fxChainOffHere), findsNothing);
+        expect(
+          tester
+              .widget<Opacity>(find.byKey(const Key('fx_pedal_strip')))
+              .opacity,
+          1,
+        );
+      });
+
+      testWidgets('the effect editor shows the power and the band, and turns '
+          'the effects on from its header', (tester) async {
+        final updates = await openOff(tester, _rig, 'fx_card_t3');
+        final l10n = l10nOf(tester);
+
+        expect(find.byType(FxEffectEditor), findsOneWidget);
+        expect(find.text(l10n.fxChainOffHere), findsOneWidget);
+        expect(
+          tester
+              .widget<Opacity>(find.byKey(const Key('fx_effect_parameters')))
+              .opacity,
+          lessThan(1),
+        );
+
+        await tapKey(tester, 'fx_chain_power_on');
+        verify(
+          () => repository.setTrackChainEnabled(channel: 0, enabled: true),
+        ).called(1);
+        updates.add(_rig);
+        await tester.pumpAndSettle();
+        expect(find.text(l10n.fxChainOffHere), findsNothing);
+      });
     });
   });
 }

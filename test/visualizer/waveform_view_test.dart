@@ -116,7 +116,7 @@ void main() {
     addTearDown(readout.dispose);
 
     await tester.pumpWidget(
-      WaveformWindowApp(frame: frame, readout: readout, title: 'Output'),
+      WaveformWindowApp(frame: frame, readout: readout),
     );
     await tester.pump();
 
@@ -225,7 +225,7 @@ void main() {
     addTearDown(readout.dispose);
 
     await tester.pumpWidget(
-      WaveformWindowApp(frame: frame, readout: readout, title: 'Output'),
+      WaveformWindowApp(frame: frame, readout: readout),
     );
     await tester.pump();
 

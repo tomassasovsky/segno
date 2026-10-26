@@ -2,6 +2,14 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
+import 'package:segno_engine/src/generated/segno_engine_bindings.dart'
+    show LE_FX_LEVEL_MAX;
+
+/// [head] padded with 0 to the [kTrackEffectParams] cells an entry holds.
+List<double> cells(List<double> head) => [
+  ...head,
+  for (var i = head.length; i < kTrackEffectParams; i++) 0.0,
+];
 
 void main() {
   group('BuiltInEffect', () {
@@ -24,7 +32,17 @@ void main() {
       expect(json.keys, containsAll(<String>['type', 'params']));
       expect(json.containsKey('stage'), isFalse);
       expect(json['type'], TrackEffectType.filter.code);
-      expect(json['params'], [0.1, 0.2, 0.3]);
+      // Only the two cells the filter reads: the third is past its
+      // parameters, so it is 0 in the entry and absent from the wire.
+      expect(json['params'], [0.1, 0.2]);
+    });
+
+    test('holds 0 past the type parameters, whatever it was given', () {
+      final fx = BuiltInEffect(
+        type: TrackEffectType.drive,
+        params: [for (var i = 0; i < kTrackEffectParams; i++) 0.5],
+      );
+      expect(fx.params, cells(const [0.5, 0.5]));
     });
 
     test('typeCode is the native fx code', () {
@@ -43,7 +61,8 @@ void main() {
         'params': [0.4, 0.5, 0.6],
       });
       expect(fx.type, TrackEffectType.tremolo);
-      expect(fx.params, [0.4, 0.5, 0.6, 0]);
+      // The tremolo reads two: the third saved cell is dropped.
+      expect(fx.params, cells(const [0.4, 0.5]));
       expect(fx.placement, FxPlacement.post);
     });
 
@@ -65,8 +84,16 @@ void main() {
         base.copyWith(type: TrackEffectType.filter).type,
         TrackEffectType.filter,
       );
-      expect(base.copyWith(type: TrackEffectType.filter).params, base.params);
-      expect(base.copyWith(params: const [0.9, 0, 0]).params, [0.9, 0, 0]);
+      // Another type starts at its own defaults; the same type keeps them.
+      expect(
+        base.copyWith(type: TrackEffectType.filter).params,
+        TrackEffectType.filter.defaultParams,
+      );
+      expect(base.copyWith(type: TrackEffectType.drive).params, base.params);
+      expect(
+        base.copyWith(params: const [0.9, 0, 0]).params,
+        cells(const [0.9, 0]),
+      );
     });
 
     test('copyWith preserves the unmodifiable params contract', () {
@@ -85,9 +112,9 @@ void main() {
         'params': const [0.25, 0.5, 0.5],
       });
       expect(fx.type, TrackEffectType.octaver);
-      expect(fx.params, [0.25, 0.5, 0.5, 0]);
+      expect(fx.params, cells(const [0.25, 0.5, 0.5, 0]));
       expect(fx.params, hasLength(kTrackEffectParams));
-      expect(fx.params.last, 0.0); // mode == phase vocoder
+      expect(fx.params[3], 0.0); // mode == phase vocoder
     });
 
     test('fromJson pads with the type default, not a blanket zero', () {
@@ -97,7 +124,7 @@ void main() {
         'type': TrackEffectType.delay.code,
         'params': const [0.1, 0.2],
       });
-      expect(fx.params, [0.1, 0.2, 0.35, 0]);
+      expect(fx.params, cells(const [0.1, 0.2, 0.35]));
     });
 
     test('fromJson truncates an over-long params list', () {
@@ -105,7 +132,7 @@ void main() {
         'type': TrackEffectType.drive.code,
         'params': const [0.1, 0.2, 0.3, 0.4, 0.5],
       });
-      expect(fx.params, [0.1, 0.2, 0.3, 0.4]);
+      expect(fx.params, cells(const [0.1, 0.2]));
       expect(fx.params, hasLength(kTrackEffectParams));
     });
 
@@ -138,6 +165,73 @@ void main() {
       );
       expect(a, isNot(equals(a.copyWith(type: TrackEffectType.drive))));
       expect(a, isNot(equals(a.copyWith(params: const [0.9, 0.2, 0.3]))));
+    });
+
+    test('the preset id and source values round-trip and count in '
+        'equality', () {
+      final fx = BuiltInEffect(
+        type: TrackEffectType.none,
+        module: 'Smart tune',
+        presetId: 'preset-id',
+        source: const {'Smart Tune': 0, 'Mode': 1, 'Key': 3 / 11},
+      );
+
+      final decoded = BuiltInEffect.fromJson(
+        jsonDecode(jsonEncode(fx.toJson())) as Map<String, dynamic>,
+      );
+
+      expect(decoded, fx);
+      expect(decoded.hashCode, fx.hashCode);
+      expect(decoded.presetId, 'preset-id');
+      expect(decoded.source, {'Smart Tune': 0, 'Mode': 1, 'Key': 3 / 11});
+      expect(fx, isNot(equals(fx.copyWith(presetId: 'other'))));
+      expect(fx, isNot(equals(fx.copyWith(source: const {'Mode': 0}))));
+    });
+
+    test('the rack path round-trips by name, counts in equality and is '
+        'omitted on no path', () {
+      final fx = BuiltInEffect(
+        type: TrackEffectType.ambVerb,
+        rackPath: FxRackPath.amb,
+      );
+      final json = fx.toJson();
+      expect(json['rackPath'], 'amb');
+      final decoded = BuiltInEffect.fromJson(
+        jsonDecode(jsonEncode(json)) as Map<String, dynamic>,
+      );
+      expect(decoded, fx);
+      expect(decoded.hashCode, fx.hashCode);
+      expect(fx, isNot(equals(fx.copyWith(rackPath: FxRackPath.dub))));
+      final none = BuiltInEffect(type: TrackEffectType.ambVerb).toJson();
+      expect(none.containsKey('rackPath'), isFalse);
+      expect(BuiltInEffect.fromJson(none).rackPath, FxRackPath.none);
+      expect(
+        BuiltInEffect.fromJson(const {'type': 23, 'rackPath': 7}).rackPath,
+        FxRackPath.none,
+      );
+      // The native path bits (le_fx_rack_edge).
+      expect([for (final p in FxRackPath.values) p.bits], [0, 4, 8]);
+    });
+
+    test('an entry with no preset writes neither key and decodes to none', () {
+      final json = BuiltInEffect(type: TrackEffectType.drive).toJson();
+
+      expect(json.containsKey('presetId'), isFalse);
+      expect(json.containsKey('source'), isFalse);
+      final decoded = BuiltInEffect.fromJson(json);
+      expect(decoded.presetId, isNull);
+      expect(decoded.source, isEmpty);
+    });
+
+    test('a wrong-typed preset id or source value decodes to the default', () {
+      final decoded = BuiltInEffect.fromJson(const {
+        'type': 0,
+        'presetId': 7,
+        'source': {'Mode': 'one', 'Key': 0.5},
+      });
+
+      expect(decoded.presetId, isNull);
+      expect(decoded.source, {'Key': 0.5});
     });
   });
 
@@ -275,10 +369,14 @@ void main() {
   });
 
   group('TrackEffectType', () {
+    test('kFxLevelMax mirrors the native LE_FX_LEVEL_MAX', () {
+      expect(kFxLevelMax, LE_FX_LEVEL_MAX);
+    });
+
     test('kTrackEffectParams mirrors the native LE_FX_PARAMS width', () {
       // Pins the Dart side of the cross-language contract (the native test
-      // asserts LE_FX_PARAMS == 4 in turn).
-      expect(kTrackEffectParams, 4);
+      // asserts LE_FX_PARAMS == 32 in turn).
+      expect(kTrackEffectParams, 32);
     });
 
     test('fromCode maps known codes and falls back to none', () {
@@ -288,9 +386,9 @@ void main() {
       expect(TrackEffectType.fromCode(999), TrackEffectType.none);
     });
 
-    test('paramLabels length never exceeds the param cap', () {
+    test('params never exceed the param cap', () {
       for (final type in TrackEffectType.values) {
-        expect(type.paramLabels.length, lessThanOrEqualTo(kTrackEffectParams));
+        expect(type.params.length, lessThanOrEqualTo(kTrackEffectParams));
         expect(type.defaultParams.length, kTrackEffectParams);
       }
     });
@@ -304,9 +402,16 @@ void main() {
     });
 
     test('reverb exposes size, damping and mix', () {
-      expect(TrackEffectType.reverb.paramLabels, ['Size', 'Damping', 'Mix']);
-      // The fourth slot is the inert, shared trailing param.
-      expect(TrackEffectType.reverb.defaultParams, [0.5, 0.5, 0.35, 0]);
+      expect(TrackEffectType.reverb.params.map((p) => p.key), [
+        'size',
+        'damping',
+        'mix',
+      ]);
+      // The cells past its three parameters are inert and stay 0.
+      expect(
+        TrackEffectType.reverb.defaultParams,
+        cells(const [0.5, 0.5, 0.35]),
+      );
     });
 
     test('codes are unique', () {
@@ -314,33 +419,290 @@ void main() {
       expect(codes.toSet(), hasLength(codes.length));
     });
 
-    test('paramLabels stay in sync with params', () {
+    test('keys are unique within a type', () {
       for (final type in TrackEffectType.values) {
-        expect(type.paramLabels, type.params.map((p) => p.label).toList());
+        final keys = type.params.map((p) => p.key).toList();
+        expect(keys.toSet(), hasLength(keys.length), reason: type.name);
       }
     });
 
-    test('the octaver Shift is a discrete, pitch-readout control', () {
-      final shift = TrackEffectType.octaver.params.first;
-      expect(shift.label, 'Shift');
-      expect(shift.divisions, 48); // one step per semitone across +-2 octaves
-      expect(shift.readout, ParamReadout.pitchShift);
-    });
-
-    test('the octaver exposes a discrete two-state Mode control', () {
-      final mode = TrackEffectType.octaver.params.last;
-      expect(mode.label, 'Mode');
-      expect(mode.divisions, 1); // two states: phase vocoder / PSOLA
-      expect(mode.readout, ParamReadout.octaverMode);
-    });
-
-    test('non-octaver params carry no readout', () {
+    test('defaultParams are the descriptor defaults, padded with 0', () {
+      // The settings a freshly engaged effect starts at. Saved chains and the
+      // wet-cache fingerprint depend on these, so they are pinned here.
+      const expected = {
+        TrackEffectType.none: [0.0, 0.0, 0.0, 0.0],
+        TrackEffectType.drive: [0.5, 0.8, 0.0, 0.0],
+        TrackEffectType.filter: [0.5, 0.2, 0.0, 0.0],
+        TrackEffectType.delay: [0.35, 0.35, 0.35, 0.0],
+        TrackEffectType.tremolo: [0.3, 0.7, 0.0, 0.0],
+        TrackEffectType.octaver: [0.25, 0.5, 0.5, 0.0],
+        TrackEffectType.echo: [0.45, 0.5, 0.35, 0.0],
+        TrackEffectType.reverb: [0.5, 0.5, 0.35, 0.0],
+        // Ed's 4-band EQ as it applies (#891): the mids at 101.5 and 3040 Hz
+        // on the kind's 20..20000 Hz range, four bells and both cuts.
+        TrackEffectType.eq: [
+          0.21, 0.5, 0.384476, 0.0, 0.5, 0.235138, 0.174, 0.5, 0.727302, //
+          0.15557, 0.5, 0.5278, 0.0, 1.0, 0.5,
+        ],
+        // Ed's compressor (its 1.8 dB make-up applies 3.25 dB); the transient
+        // shaper neutral; the Vocal Rack's HP/Gate (high-pass off, -120 dB).
+        TrackEffectType.compressor: [0.35, 0.76, 0.5, 0.5, 0.10833334],
+        TrackEffectType.transient: [0.5, 0.5, 0.5],
+        TrackEffectType.hpGate: [0.0, 0.0],
+        // The Dub Rack's doubler, Ed's chorus and wah.
+        TrackEffectType.doubler: [1.0, 1.0],
+        TrackEffectType.chorus: [0.45, 0.21, 0.5],
+        TrackEffectType.wah: [0.619],
+        // Ed's overdrive; the Lo-Fi Rack's distortion.
+        TrackEffectType.overdrive: [0.09, 0.5],
+        TrackEffectType.distortion: [0.2, 0.5],
+        // The Lo-Fi Rack's vinyl, degrade and low-pass filter.
+        TrackEffectType.vinyl: [0.4, 0.35, 0.3, 0.9],
+        TrackEffectType.degrade: [1.0, 1.0, 1.0],
+        TrackEffectType.lpf: [1.0, 1.0, 0.0, 0.4],
+        // The Guitar Rack's spring: 2.00 s, 50 %.
+        TrackEffectType.spring: [0.30103, 0.5],
+        // The Dub Rack's reverbs as a fresh rack has them: Dub-Verb Dec 0.7,
+        // Vol 20 %; Amb-Verb Dec 0.2, Vol 40 %, Amb-Dub Mix 40 %.
+        TrackEffectType.dubVerb: [0.7, 0.2],
+        TrackEffectType.ambVerb: [0.2, 0.4, 0.4],
+        // The Guitar Rack's Whammy: heel down, range -12.
+        TrackEffectType.whammy: [0.0, 0.0],
+        // The Rhythmic Rack's Pumper: 1/4, 70 %.
+        TrackEffectType.pumper: [0.3, 0.7],
+        // The Rhythmic Rack's Slicer: AABB, 1/16, 100 %.
+        TrackEffectType.slicer: [0.0, 0.5, 1.0],
+        // The Looper X's delay: 1/8D, 50 %, 20 %, DIGI.
+        TrackEffectType.modeDelay: [
+          8 / 19,
+          0.5,
+          0.2,
+          0.0,
+          0.25,
+          0.35,
+          0.0,
+          0.8,
+          0.35,
+        ],
+        // Ed's Rack's Dual Octaver: down, Octave 1 at 100 %, all wet.
+        TrackEffectType.dualOctaver: [0.0, 1.0, 1.0, 0.0],
+        // The Guitar Rack's Amp: every control at 50 %, the 4x12".
+        TrackEffectType.ampCab: [0.5, 0.5, 0.5, 0.5, 7 / 11],
+        // The Mod: every control at 50 %, the chorus.
+        TrackEffectType.mod: [0.5, 0.5, 0.5, 0.0],
+        // The Room reverb: the modes' racks' Length (1.42 s) and Mix, HALL,
+        // Bright 80 %, and the Drum's Lo/Hi, Tail/ER and Density defaults.
+        TrackEffectType.roomVerb: [0.4, 0.15, 0.0, 0.8, 0.5, 0.3, 1.0],
+        // Smart Tune: 32 ms, C major, A at 440 Hz.
+        TrackEffectType.smartTune: [0.5, 0.0, 0.0, 0.5],
+      };
       for (final type in TrackEffectType.values) {
-        if (type == TrackEffectType.octaver) continue;
-        for (final p in type.params) {
-          expect(p.readout, ParamReadout.none);
+        expect(type.defaultParams, cells(expected[type]!), reason: type.name);
+        for (var i = 0; i < type.params.length; i++) {
+          expect(type.defaultParams[i], type.params[i].defaultValue);
         }
       }
+    });
+
+    test('the octaver shift snaps to whole semitones across +-2 octaves', () {
+      final shift = TrackEffectType.octaver.params.first;
+      expect(shift.key, 'shift');
+      expect(shift.unit, FxParamUnit.semitones);
+      expect(shift.steps, 49);
+      expect((shift.atMin, shift.atMax), (-24.0, 24.0));
+    });
+
+    test('the octaver mode is a two-position choice', () {
+      final mode = TrackEffectType.octaver.params[3];
+      expect(mode.key, 'mode');
+      expect(mode.unit, FxParamUnit.choice);
+      expect(mode.steps, 2);
+    });
+
+    test('the octaver formants are a two-position choice, held by default', () {
+      final formants = TrackEffectType.octaver.params.last;
+      expect(formants.key, 'formants');
+      expect(formants.unit, FxParamUnit.choice);
+      expect(formants.steps, 2);
+      expect(formants.defaultValue, 0);
+    });
+
+    test('only the chosen mappings carry the taper-unverified flag', () {
+      // The seven built-ins are segno's own; the Looper X kinds' ranges are
+      // the Looper X's, and the EQ, dynamics, doubler, chorus, wah, vinyl,
+      // degrade, low-pass filter and Mod are measured (#891, #1445). The
+      // controls whose
+      // effect is chosen or inferred from one capture carry it: the
+      // overdrive's tone (captured at 50 % only), the distortion (fit to
+      // the Studio Rack's, used for Lo-Fi's too) and the Dual Octaver's
+      // Octave 1 level (always at 100 % in the presets).
+      for (final type in TrackEffectType.values) {
+        for (final p in type.params) {
+          expect(
+            p.taperUnverified,
+            type == TrackEffectType.distortion ||
+                (type == TrackEffectType.overdrive && p.key == 'tone') ||
+                (type == TrackEffectType.dualOctaver &&
+                    p.key == 'octave_1_vol'),
+            reason: '${type.name}.${p.key}',
+          );
+        }
+      }
+    });
+
+    test("the compressor's ratio is the Looper X's reciprocal taper", () {
+      // 1 / (1 - v / 1.0101): 1 at 0, 100 at 1, and every Ed's preset's
+      // 0.758 is 4:1.
+      final ratio = TrackEffectType.compressor.params[1];
+      expect(ratio.unit, FxParamUnit.ratio);
+      for (var v = 0.0; v <= 1.0; v += 0.1) {
+        // The two agree to 1e-4 of the value (100 against 100.01 at 1).
+        final want = 1 / (1 - v / 1.0101);
+        expect(ratio.valueAt(v), closeTo(want, want * 1e-4));
+        expect(ratio.settingFor(ratio.valueAt(v)), closeTo(v, 1e-9));
+      }
+      expect(ratio.valueAt(0.758), closeTo(4.0, 0.01));
+    });
+
+    test("the reverbs' decay is the Looper X's reverb-time taper", () {
+      // (v + 0.45) / (1 - v), capped at 144 s; a time outside the range
+      // clamps to its end.
+      final decay = TrackEffectType.dubVerb.params[0];
+      expect(decay.unit, FxParamUnit.seconds);
+      for (var v = 0.0; v < 0.99; v += 0.1) {
+        expect(decay.valueAt(v), closeTo((v + 0.45) / (1 - v), 1e-9));
+        expect(decay.settingFor(decay.valueAt(v)), closeTo(v, 1e-9));
+      }
+      expect(decay.valueAt(1), 144);
+      expect(decay.settingFor(-5), 0);
+      expect(decay.settingFor(0.1), 0);
+      expect(decay.settingFor(1000), decay.settingFor(144));
+    });
+  });
+
+  group('FxParamUnit and FxParamCurve', () {
+    test('codes match the native enums', () {
+      expect(
+        [for (final u in FxParamUnit.values) u.code],
+        [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+        ],
+      );
+      expect(FxParamUnit.choice.code, 5);
+      expect(FxParamCurve.linear.code, 0);
+      expect(FxParamCurve.exponential.code, 1);
+      expect(FxParamCurve.reciprocal.code, 2);
+    });
+  });
+
+  group('FxParamInfo', () {
+    const linear = FxParamInfo(
+      key: 'time',
+      unit: FxParamUnit.ms,
+      atMin: 0,
+      atMax: 1000,
+      defaultValue: 0.35,
+    );
+    const exponential = FxParamInfo(
+      key: 'cutoff',
+      unit: FxParamUnit.hz,
+      atMin: 20,
+      atMax: 18000,
+      curve: FxParamCurve.exponential,
+      defaultValue: 0.5,
+    );
+    const stepped = FxParamInfo(
+      key: 'shift',
+      unit: FxParamUnit.semitones,
+      steps: 49,
+      atMin: -24,
+      atMax: 24,
+      defaultValue: 0.25,
+    );
+    const choice = FxParamInfo(
+      key: 'mode',
+      unit: FxParamUnit.choice,
+      steps: 2,
+      atMin: 0,
+      atMax: 1,
+      defaultValue: 0,
+    );
+
+    test('valueAt maps a linear parameter', () {
+      expect(linear.valueAt(0), 0);
+      expect(linear.valueAt(0.35), closeTo(350, 1e-9));
+      expect(linear.valueAt(1), 1000);
+    });
+
+    test('valueAt maps an exponential parameter', () {
+      expect(exponential.valueAt(0), closeTo(20, 1e-9));
+      // 20 * 900^0.5 = 600.
+      expect(exponential.valueAt(0.5), closeTo(600, 1e-9));
+      expect(exponential.valueAt(1), closeTo(18000, 1e-6));
+    });
+
+    test('valueAt reads a stepped parameter as set, a choice at its '
+        'nearest position', () {
+      expect(stepped.valueAt(0.25), closeTo(-12, 1e-9));
+      expect(stepped.valueAt(0.5), closeTo(0, 1e-9));
+      // The kernel plays a setting between positions as set: 0.26 is
+      // (0.26 - 0.5) x 48 = -11.52 semitones.
+      expect(stepped.valueAt(0.26), closeTo(-11.52, 1e-9));
+      expect(choice.valueAt(0.49), 0);
+      expect(choice.valueAt(0.5), 1);
+    });
+
+    test('valueAt clamps the setting and reads NaN as 0', () {
+      expect(linear.valueAt(-1), 0);
+      expect(linear.valueAt(2), 1000);
+      expect(linear.valueAt(double.nan), 0);
+      expect(stepped.valueAt(1.5), closeTo(24, 1e-9));
+    });
+
+    test('positionOf returns the snapped position of a stepped parameter', () {
+      expect(stepped.positionOf(0), 0);
+      expect(stepped.positionOf(0.5), 24);
+      expect(stepped.positionOf(1), 48);
+      expect(stepped.positionOf(-0.5), 0);
+      expect(choice.positionOf(0.49), 0);
+      // The octaver kernel reads mode >= 0.5 as PSOLA, position 1.
+      expect(choice.positionOf(0.5), 1);
+    });
+
+    test('positionOf throws for a continuous parameter', () {
+      expect(linear.isStepped, isFalse);
+      expect(() => linear.positionOf(0.5), throwsStateError);
+    });
+
+    test('value equality covers every field', () {
+      const same = FxParamInfo(
+        key: 'time',
+        unit: FxParamUnit.ms,
+        atMin: 0,
+        atMax: 1000,
+        defaultValue: 0.35,
+      );
+      expect(linear, same);
+      expect(linear.hashCode, same.hashCode);
+      const flagged = FxParamInfo(
+        key: 'time',
+        unit: FxParamUnit.ms,
+        atMin: 0,
+        atMax: 1000,
+        defaultValue: 0.35,
+        taperUnverified: true,
+      );
+      expect(linear, isNot(flagged));
+      expect(linear, isNot(exponential));
     });
   });
 
@@ -392,7 +754,7 @@ void main() {
     });
 
     test(
-      'the exact pre-plugin bare-array string still decodes byte-for-byte',
+      'the exact pre-plugin bare-array string still decodes',
       () {
         // Back-compat: a v1 chain is a bare array of {type, params} with no
         // envelope and no plugin entries; it must decode unchanged.
@@ -407,9 +769,15 @@ void main() {
         for (final e in decoded) {
           expect(e, isA<BuiltInEffect>());
         }
-        // Re-encoding yields the identical bare array — no envelope, no plugin
-        // keys — so the built-in wire format is byte-for-byte unchanged.
-        expect(encodeTrackEffects(decoded), v1);
+        // Re-encoding yields a bare array — no envelope, no plugin keys —
+        // carrying only the cells each type reads, which decodes back to the
+        // same entries.
+        expect(
+          encodeTrackEffects(decoded),
+          '[{"type":1,"params":[0.5,0.8]},'
+          '{"type":3,"params":[0.35,0.35,0.35]}]',
+        );
+        expect(decodeTrackEffects(encodeTrackEffects(decoded)), decoded);
       },
     );
 
@@ -425,8 +793,8 @@ void main() {
       expect(decoded, hasLength(1));
       final first = decoded.first as BuiltInEffect;
       expect(first.type, TrackEffectType.filter);
-      // The length-3 legacy params are padded to the current width.
-      expect(first.params, [0.2, 0.3, 0, 0]);
+      // The legacy params are brought to the current width.
+      expect(first.params, cells(const [0.2, 0.3]));
     });
 
     test('empty or malformed input yields an empty chain', () {
@@ -632,7 +1000,7 @@ void main() {
         {'placement': 1.1},
         {'placement': 'left'},
         {'level': -0.1},
-        {'level': 2.1},
+        {'level': 4.1},
         {'level': 'loud'},
       ]) {
         expect(
@@ -641,8 +1009,16 @@ void main() {
         );
       }
       expect(
-        () => decodeTrackEffects('[{"type":1,"channels":{"level":3}}]'),
+        () => decodeTrackEffects('[{"type":1,"channels":{"level":5}}]'),
         throwsFormatException,
+      );
+      // A rack level up to +12 dB is a valid saved level.
+      expect(
+        BuiltInEffect.fromJson(const {
+          'type': 1,
+          'channels': {'level': 3.98},
+        }).channels.level,
+        3.98,
       );
       expect(FxChannels.fromJson(const {}), FxChannels.defaults);
     });

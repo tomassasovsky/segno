@@ -11,6 +11,7 @@ import 'package:segno/theme/theme.dart';
 /// Editor intentions forwarded to the FX owner by stable effect/group ID.
 /// Indices remain a rendering detail and never identify a write.
 typedef FxEdits = ({
+  void Function({required bool enabled}) setChainEnabled,
   void Function(String slotId, {required bool enabled}) setEnabled,
   void Function(String groupId, {required bool enabled}) setGroupEnabled,
   void Function(String slotId, int param, double value) setParam,
@@ -18,13 +19,93 @@ typedef FxEdits = ({
   void Function(String groupId, FxPlacement placement) setPlacement,
 });
 
-/// One parameter: its name, its value, the slider, and the note that says its
-/// real-world scale was never recovered.
+/// What a built-in parameter's row reads: the value text beside its name and
+/// the note under its slider.
+///
+/// An entry built from a factory rack module onto one of the seven built-ins
+/// (`effect.module != null`) keeps the raw two-decimal setting and the "Scale
+/// unverified" note: its preset values were written against the Looper X's
+/// own scales, which the built-in does not share, so printing them in its
+/// units would state numbers nobody verified. A Looper X kind
+/// ([TrackEffectType.isRackKind]) or a rack variant ([fxEntryBuild], the
+/// Pitch Shift on the octaver) carries the module's own scales, and like a
+/// plain built-in reads in its descriptor's units with no note, unless the
+/// descriptor itself is marked [FxParamInfo.taperUnverified], in which case
+/// it reads like a module's.
+({String valueText, String? note}) fxParamReading(
+  AppLocalizations l10n,
+  TrackEffect effect,
+  FxParamInfo param,
+  double setting,
+) {
+  final rackKind =
+      effect is BuiltInEffect &&
+      (effect.type.isRackKind || fxEntryBuild(effect) != null);
+  if ((effect.module != null && !rackKind) || param.taperUnverified) {
+    return (
+      valueText: setting.toStringAsFixed(2),
+      note: l10n.fxScaleUnverified,
+    );
+  }
+  return (valueText: l10n.fxParamValueText(param, setting), note: null);
+}
+
+/// Built-in parameter [index] of [effect] as an [FxParamControl]: its
+/// localized name, and the value text and note [fxParamReading] gives it.
+class FxBuiltInParamControl extends StatelessWidget {
+  /// Creates an [FxBuiltInParamControl].
+  const FxBuiltInParamControl({
+    required this.effect,
+    required this.index,
+    required this.width,
+    required this.onChanged,
+    this.labelKey,
+    super.key,
+  });
+
+  /// The entry whose parameter this is.
+  final BuiltInEffect effect;
+
+  /// The parameter key to name it by instead of its own, as a rack variant
+  /// renames one (`FxModuleBuild.labels`), or `null`.
+  final String? labelKey;
+
+  /// The parameter's index in [effect]'s type.
+  final int index;
+
+  /// How wide the control is drawn.
+  final double width;
+
+  /// Reports a new value.
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    // A rack variant may show a narrower range than its kind's: the
+    // control works in that range and reports the kind's setting.
+    final param = fxEntryParam(effect, index);
+    final setting = fxEntryShownSetting(effect, index);
+    final reading = fxParamReading(l10n, effect, param, setting);
+    return FxParamControl(
+      label: l10n.fxParamKeyName(labelKey ?? param.key),
+      value: setting,
+      valueText: reading.valueText,
+      width: width,
+      note: reading.note,
+      onChanged: (v) => onChanged(fxEntryKindSetting(effect, index, v)),
+    );
+  }
+}
+
+/// One parameter: its name, its value text, the slider, and an optional note
+/// under it.
 class FxParamControl extends StatelessWidget {
   /// Creates an [FxParamControl].
   const FxParamControl({
     required this.label,
     required this.value,
+    required this.valueText,
     required this.width,
     required this.onChanged,
     this.note,
@@ -37,6 +118,9 @@ class FxParamControl extends StatelessWidget {
   /// Its normalized value.
   final double value;
 
+  /// What the row prints beside the name for [value].
+  final String valueText;
+
   /// How wide the control is drawn, which differs between the two editors.
   final double width;
 
@@ -45,10 +129,10 @@ class FxParamControl extends StatelessWidget {
 
   /// The line under the slider, or `null` for a control that needs none.
   ///
-  /// A preset parameter carries the accepted "Scale unverified" note because
-  /// its real-world mapping was never recovered. The rack's own level is not
-  /// one of those: it is a plain gain this build defines, so a note saying its
-  /// scale is unknown would be false.
+  /// A preset parameter carries the accepted "Scale unverified" note when its
+  /// real-world mapping was never recovered (see [fxParamReading]). The rack's
+  /// own level is not one of those: it is a plain gain this build defines, so
+  /// a note saying its scale is unknown would be false.
   final String? note;
 
   @override
@@ -74,7 +158,7 @@ class FxParamControl extends StatelessWidget {
                 ),
               ),
               AppText(
-                value.toStringAsFixed(2),
+                valueText,
                 style: TextStyle(
                   color: surface.textSecondary,
                   fontFamily: SurfaceTheme.monoFont,
@@ -240,9 +324,14 @@ class FxChannelFooter extends StatelessWidget {
             child: FxParamControl(
               key: const Key('fx_rack_level'),
               label: l10n.fxRackLevel,
-              value: channels.level,
+              // The Looper X's Master Vol scale: -12 to +12 dB in 0.1 dB
+              // steps, unity in the middle. Stored as a gain.
+              value: fxRackLevelSetting(channels.level),
+              valueText: l10n.fxValueDb(fxRackLevelDb(channels.level)),
               width: 250,
-              onChanged: (value) => onChannels(channels.copyWith(level: value)),
+              onChanged: (setting) => onChannels(
+                channels.copyWith(level: fxRackLevelGainAt(setting)),
+              ),
             ),
           ),
         ],

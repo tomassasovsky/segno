@@ -1,0 +1,44 @@
+[
+  {
+    "document": "VAMP console (populated)",
+    "version": 360,
+    "modified": false,
+    "unchanged_occurrences": 448,
+    "total_occurrences": 452,
+    "total_bodies": 1002,
+    "warnings_unchanged": true,
+    "warning_count": 8,
+    "source_checks": [
+      {
+        "part": "ring",
+        "native_minus_source_mm3": 0.0,
+        "source_minus_native_mm3": 0.0,
+        "volume_mm3": 165908.17817350352
+      },
+      {
+        "part": "sled",
+        "native_minus_source_mm3": 0.0,
+        "source_minus_native_mm3": 0.0,
+        "volume_mm3": 110919.65190270949
+      }
+    ]
+  },
+  {
+    "document": "VAMP sheet metal",
+    "version": 144,
+    "modified": false,
+    "unchanged_occurrences": 43,
+    "total_occurrences": 45,
+    "total_bodies": 45,
+    "warnings_unchanged": true,
+    "warning_count": 0,
+    "source_checks": [
+      {
+        "part": "ring",
+        "native_minus_source_mm3": 0.0,
+        "source_minus_native_mm3": 0.0,
+        "volume_mm3": 165908.17817350352
+      }
+    ]
+  }
+]

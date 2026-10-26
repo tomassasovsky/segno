@@ -16,7 +16,9 @@ part 'power_state.dart';
 /// transfer is in flight; otherwise stop the transport, flush settings, save
 /// the session, hold [GuardKind.restart], wait for storage leases, then
 /// reboot or halt. A failed save keeps Segno on (Stay on / Retry); there is
-/// no way to halt without saving.
+/// no way to halt without saving. An unnamed session with nothing to lose
+/// ([PowerSnapshot.sessionHasContent] false) skips only the session write:
+/// there is nothing to name and nothing to write.
 ///
 /// Never calls another cubit. Every step is an injected closure, and the
 /// save is handed in at each commit by the host that owns the session.
@@ -54,6 +56,9 @@ class PowerCubit extends Cubit<PowerState> {
 
   /// The save of the commit in progress, kept for Retry.
   Future<void> Function()? _save;
+
+  /// A Retry sent this Save As: its save repairs, as the Retry would have.
+  bool _repairOnSaveAs = false;
   OperationGuard? _guard;
 
   /// How long a halt waits for storage writes and ejects to finish.
@@ -72,17 +77,20 @@ class PowerCubit extends Cubit<PowerState> {
   void dismiss() {
     if (!state.isDismissible) return;
     _save = null;
+    _repairOnSaveAs = false;
     _set(PowerPhase.idle);
   }
 
   /// Saves, then reboots. From Power options, or straight from an update's
-  /// Install and restart (which has asked already).
+  /// Install and restart (which has asked already). An empty unnamed
+  /// session reboots without a save.
   void restart(
     PowerSnapshot snapshot, {
     required Future<void> Function() save,
   }) => _commit(PowerAction.restart, snapshot, save);
 
-  /// Saves, then halts. From Power options.
+  /// Saves, then halts. From Power options. An empty unnamed session halts
+  /// without a save.
   void shutDown(
     PowerSnapshot snapshot, {
     required Future<void> Function() save,
@@ -96,15 +104,26 @@ class PowerCubit extends Cubit<PowerState> {
     if (state.phase != PowerPhase.saveAs) return;
     if (_refused(snapshot)) return;
     _save = save;
-    unawaited(_run(state.action!, retry: false));
+    unawaited(_run(state.action!, retry: _repairOnSaveAs));
   }
 
   /// Retry after a failed save: the same steps, with the settings flush in
-  /// its repairing mode.
-  void retry(PowerSnapshot snapshot) {
+  /// its repairing mode. A commit that chose to write nothing decides again
+  /// from [snapshot], so a session that gained content or a name since then
+  /// is saved: Save As when unnamed, [save] when named. A session write
+  /// already chosen (named, or the Save As name) is kept.
+  void retry(
+    PowerSnapshot snapshot, {
+    required Future<void> Function() save,
+  }) {
     if (state.phase != PowerPhase.saveFailed || _save == null) return;
     if (_refused(snapshot)) return;
-    unawaited(_run(state.action!, retry: true));
+    final action = state.action!;
+    if (_save == _nothingToSave && !_decide(action, snapshot, save)) {
+      _repairOnSaveAs = true;
+      return;
+    }
+    unawaited(_run(action, retry: true));
   }
 
   void _commit(
@@ -116,13 +135,36 @@ class PowerCubit extends Cubit<PowerState> {
       return;
     }
     if (_refused(snapshot)) return;
-    if (snapshot.currentSessionName == null) {
-      emit(PowerState(phase: PowerPhase.saveAs, action: action));
-      return;
-    }
-    _save = save;
+    _repairOnSaveAs = false;
+    if (!_decide(action, snapshot, save)) return;
     unawaited(_run(action, retry: false));
   }
+
+  /// Chooses the session write for [snapshot]: [save] for a named session,
+  /// none for an empty unnamed one. An unnamed session with content goes to
+  /// Save As instead, and this returns false.
+  bool _decide(
+    PowerAction action,
+    PowerSnapshot snapshot,
+    Future<void> Function() save,
+  ) {
+    if (snapshot.currentSessionName != null) {
+      _save = save;
+      return true;
+    }
+    if (snapshot.sessionHasContent) {
+      _save = null;
+      emit(PowerState(phase: PowerPhase.saveAs, action: action));
+      return false;
+    }
+    AppLog.info('power: unnamed session is empty, nothing to save');
+    _save = _nothingToSave;
+    return true;
+  }
+
+  /// The session write of an empty unnamed session: none. Kept as the
+  /// commit's save so Retry works after a failed flush or storage settle.
+  static Future<void> _nothingToSave() async {}
 
   bool _refused(PowerSnapshot snapshot) {
     if (!powerRefused(snapshot)) return false;

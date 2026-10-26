@@ -150,5 +150,54 @@ exit $exitCode
       expect('$error', isNot(contains('n3w-s3cret')));
       expect('$error', isNot(contains('set-password')));
     });
+
+    group('holdReconnects', () {
+      late File hold;
+
+      setUp(() {
+        helper();
+        hold = File('${dir.path}/wifi-hold');
+        client = SystemWifiClient(
+          helperPath: client.helperPath,
+          holdPath: hold.path,
+        );
+      });
+
+      test("holding writes this process's PID to the hold file", () async {
+        await client.holdReconnects(hold: true);
+        expect(hold.readAsStringSync(), '$pid\n');
+        expect(
+          dir.listSync().map((e) => e.path),
+          isNot(contains('${hold.path}.$pid')),
+          reason: 'staged through a sibling, then renamed into place',
+        );
+      });
+
+      test('releasing removes it, and releasing twice is fine', () async {
+        await client.holdReconnects(hold: true);
+        await client.holdReconnects(hold: false);
+        expect(hold.existsSync(), isFalse);
+        await client.holdReconnects(hold: false);
+        expect(hold.existsSync(), isFalse);
+      });
+
+      test('the helper never runs for it', () async {
+        await client.holdReconnects(hold: true);
+        await client.holdReconnects(hold: false);
+        expect(argsLog.readAsStringSync(), isEmpty);
+      });
+    });
+  });
+
+  test('holdReconnects does nothing off the appliance', () async {
+    final dir = Directory.systemTemp.createTempSync('wifi-client-test');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final hold = File('${dir.path}/wifi-hold');
+    final client = SystemWifiClient(
+      helperPath: '${dir.path}/absent',
+      holdPath: hold.path,
+    );
+    await client.holdReconnects(hold: true);
+    expect(hold.existsSync(), isFalse);
   });
 }

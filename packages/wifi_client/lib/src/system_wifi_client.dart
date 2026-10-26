@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:spawn_process/spawn_process.dart';
 import 'package:wifi_client/src/fake_wifi_client.dart';
 import 'package:wifi_client/src/unsupported_wifi_client.dart';
 import 'package:wifi_client/src/wifi_client.dart';
@@ -10,10 +11,17 @@ import 'package:wifi_client/src/wifi_models.dart';
 /// Production [WifiClient]: shells out to `/usr/bin/segno-wifi-ctl`.
 class SystemWifiClient implements WifiClient {
   /// Creates a [SystemWifiClient].
-  const SystemWifiClient({this.helperPath = '/usr/bin/segno-wifi-ctl'});
+  const SystemWifiClient({
+    this.helperPath = '/usr/bin/segno-wifi-ctl',
+    this.holdPath = '/run/segno/wifi-hold',
+  });
 
   /// Path to the WiFi helper.
   final String helperPath;
+
+  /// The file `segno-wifi-retry` holds off on while it exists. It carries this
+  /// process's PID, so a file left behind by a crashed app is ignored.
+  final String holdPath;
 
   @override
   bool get isSupported => File(helperPath).existsSync();
@@ -77,6 +85,25 @@ class SystemWifiClient implements WifiClient {
     return json is Map<String, dynamic> && json['internet'] == true;
   }
 
+  /// Written to a sibling and renamed into place, so the retry never reads a
+  /// half-written PID. Best effort: a hold that cannot be written only means
+  /// the console may reconnect mid-show, so it is not an error to report.
+  @override
+  Future<void> holdReconnects({required bool hold}) async {
+    if (!isSupported) return;
+    try {
+      if (!hold) {
+        await File(holdPath).delete();
+        return;
+      }
+      final staged = File('$holdPath.$pid');
+      await staged.writeAsString('$pid\n', flush: true);
+      await staged.rename(holdPath);
+    } on FileSystemException {
+      // Already released, or no /run/segno to hold in.
+    }
+  }
+
   Future<Object?> _runJson(List<String> args) async {
     final stdout = await _run(args);
     final text = stdout.trim();
@@ -96,17 +123,13 @@ class SystemWifiClient implements WifiClient {
     String? stdin,
     String secret = '',
   }) async {
-    final process = await Process.start(helperPath, args);
-    final stdout = process.stdout.transform(utf8.decoder).join();
-    final stderr = process.stderr.transform(utf8.decoder).join();
-    if (stdin != null) process.stdin.write(stdin);
-    await process.stdin.close();
-    final exitCode = await process.exitCode;
-    if (exitCode == 0) return stdout;
-    var err = (await stderr).trim();
-    if (err.isEmpty) err = 'segno-wifi-ctl failed ($exitCode)';
+    final result = await runProcess(helperPath, args, stdin: stdin);
+    final stdout = result.stdout as String;
+    if (result.exitCode == 0) return stdout;
+    var err = (result.stderr as String).trim();
+    if (err.isEmpty) err = 'segno-wifi-ctl failed (${result.exitCode})';
     if (secret.isNotEmpty) err = err.replaceAll(secret, '***');
-    throw WifiHelperException(err, restored: _restored(await stdout));
+    throw WifiHelperException(err, restored: _restored(stdout));
   }
 
   /// The network a failed join printed as `{"restored":<ssid>}`, if any.

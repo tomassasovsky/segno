@@ -310,19 +310,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       );
       _persistLaneChain(event.channel, event.lane);
     });
-    on<LooperLaneChainEnabledToggled>((event, _) {
-      final result = _repository.setLaneChainEnabled(
-        channel: event.channel,
-        lane: event.lane,
-        enabled: event.enabled,
-      );
-      if (!result.isOk) return;
-      _fxPersistence.ordinaryChain(
-        FxAddress(stage: FxStage.loop, index: event.channel, lane: event.lane),
-        enabled: event.enabled,
-      );
-      _persistLaneChain(event.channel, event.lane);
-    });
     on<LooperLaneChainResyncedFromInput>((event, _) {
       // A re-copy replaces every entry and reseats the lane's slots, so any
       // editor-sync poll keyed by a now-stale chain index must be cancelled —
@@ -522,18 +509,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       );
       _persistTrackChain(event.channel);
     });
-    on<LooperTrackChainEnabledToggled>((event, _) {
-      final result = _repository.setTrackChainEnabled(
-        channel: event.channel,
-        enabled: event.enabled,
-      );
-      if (!result.isOk) return;
-      _fxPersistence.ordinaryChain(
-        FxAddress(stage: FxStage.track, index: event.channel),
-        enabled: event.enabled,
-      );
-      _persistTrackChain(event.channel);
-    });
     on<LooperTrackChainToggled>((event, _) {
       // Resolved here, against the repository's remembered intent — the same
       // truth `ControlCubit` toggles from, and the same shape as the mute
@@ -617,17 +592,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       );
       _persistAllTracksChain();
     });
-    on<LooperAllTracksChainEnabledToggled>((event, _) {
-      final result = _repository.setAllTracksChainEnabled(
-        enabled: event.enabled,
-      );
-      if (!result.isOk) return;
-      _fxPersistence.ordinaryChain(
-        const FxAddress(stage: FxStage.allTracks),
-        enabled: event.enabled,
-      );
-      _persistAllTracksChain();
-    });
     on<LooperAllTracksEffectParamChanged>((event, _) {
       // Granular, NOT a whole-chain push — see the bus param handler: a
       // re-push would reset every slot's DSP state at pointer-move rate.
@@ -655,18 +619,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       _fxPersistence.ordinarySlotAt(
         FxAddress(stage: FxStage.output, index: event.bus),
         event.index,
-        enabled: event.enabled,
-      );
-      _persistAfterFx(FxAddress(stage: FxStage.output, index: event.bus));
-    });
-    on<LooperOutputChainEnabledToggled>((event, _) {
-      final result = _repository.setOutputChainEnabled(
-        bus: event.bus,
-        enabled: event.enabled,
-      );
-      if (!result.isOk) return;
-      _fxPersistence.ordinaryChain(
-        FxAddress(stage: FxStage.output, index: event.bus),
         enabled: event.enabled,
       );
       _persistAfterFx(FxAddress(stage: FxStage.output, index: event.bus));

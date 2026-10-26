@@ -1064,7 +1064,7 @@ void main() {
       seed(
         const LooperState(
           transport: TransportState(
-            isRunning: true,
+            deviceRunning: true,
             masterLengthFrames: 48000,
             loopBeats: 2,
           ),
@@ -1932,13 +1932,6 @@ void main() {
       verify(() => repository.clearAll([0])).called(1);
       verify(() => repository.setMute(muted: false)).called(1);
       await settleToasts(tester); // clearing content raises the undo toast
-    });
-
-    testWidgets('F toggles fullscreen without error', (tester) async {
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
-      await tester.pump();
     });
   });
 

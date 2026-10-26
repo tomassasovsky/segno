@@ -8,6 +8,8 @@ import 'package:looper_repository/src/models/audio_config.dart';
 import 'package:looper_repository/src/models/engine_reopened.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
+import 'package:looper_repository/src/models/fx_chain_group.dart';
+import 'package:looper_repository/src/models/fx_cost.dart';
 import 'package:looper_repository/src/models/fx_slot_ids.dart';
 import 'package:looper_repository/src/models/input_monitor.dart';
 import 'package:looper_repository/src/models/input_setup.dart';
@@ -36,17 +38,18 @@ import 'package:segno_engine/segno_engine.dart'
         FxChannelInput,
         FxChannelOutput,
         FxChannels,
+        FxParamCurve,
+        FxParamInfo,
+        FxParamUnit,
         FxPlacement,
         LatencyState,
         LoopbackInfo,
         LoopbackKind,
-        ParamReadout,
         PluginDescriptor,
         PluginEffect,
         PluginParamInfo,
         PluginRef,
         TrackEffect,
-        TrackEffectParam,
         TrackEffectType,
         fxPreCount;
 
@@ -1562,7 +1565,7 @@ class LooperRepository {
     final live = _last?.transport;
     final useLiveTempo = _intendRunning && live != null && live.tempoBpm > 0;
     return TransportState(
-      isRunning: _intendRunning,
+      deviceRunning: _intendRunning,
       loopBars: live?.loopBars ?? 0,
       loopBeats: live?.loopBeats ?? 0,
       tempoBpm: useLiveTempo ? live.tempoBpm : _tempoBpm,
@@ -2391,7 +2394,7 @@ class LooperRepository {
       muteMask: s.tunerMuteMask,
     ),
     transport: TransportState(
-      isRunning: s.isRunning,
+      deviceRunning: s.isRunning,
       masterLengthFrames: s.masterLengthFrames,
       masterPositionFrames: s.masterPositionFrames,
       tempoBpm: s.tempoBpm,
@@ -3271,10 +3274,12 @@ class LooperRepository {
             if (fx != null) captured.add(fx);
           }
           final copied = withFreshSlotIds(captured);
+          final edges = fxRackEdges(copied);
+          final paths = fxRackPathsToEngine(copied);
           final slots = <FxRecipeSlot>[];
           final handles = <String, PluginSlotHandle>{};
           final loaded = <TrackEffect>[];
-          for (final fx in copied) {
+          for (final (index, fx) in copied.indexed) {
             if (fx is BuiltInEffect) {
               loaded.add(fx);
               slots.add(
@@ -3283,6 +3288,9 @@ class LooperRepository {
                   params: fx.params,
                   enabled: fx.enabled,
                   channels: fxChannelsToEngine(fx.channels),
+                  rack: edges[index],
+                  path: paths[index],
+                  instance: fxInstanceId(fx.slotId),
                 ),
               );
             } else {
@@ -3296,9 +3304,15 @@ class LooperRepository {
                       ? plugin.copyWith(loading: false, unavailable: true)
                       : plugin,
                 );
+                // Inert, but still in its rack: a rack ending here keeps its
+                // output side.
                 slots.add(
                   FxRecipeSlot(
                     type: trackEffectTypeToEngine(TrackEffectType.none),
+                    enabled: plugin.enabled,
+                    channels: fxChannelsToEngine(plugin.channels),
+                    rack: edges[index],
+                    instance: fxInstanceId(plugin.slotId),
                   ),
                 );
                 continue;
@@ -3317,6 +3331,8 @@ class LooperRepository {
                   plugin: handle,
                   enabled: plugin.enabled,
                   channels: fxChannelsToEngine(plugin.channels),
+                  rack: edges[index],
+                  instance: fxInstanceId(plugin.slotId),
                 ),
               );
             }
@@ -6100,7 +6116,9 @@ class LooperRepository {
     final fx = effects[index];
     // Built-in params only — a plugin's parameter surface arrives in part 5.
     if (fx is! BuiltInEffect) return EngineResult.invalid;
-    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    if (param < 0 || param >= fx.type.params.length) {
+      return EngineResult.invalid;
+    }
     final params = List<double>.of(fx.params)..[param] = value;
     if (_intendRunning) {
       final result = _engine.setLaneFxParam(
@@ -6660,7 +6678,9 @@ class LooperRepository {
     }
     final fx = effects[index];
     if (fx is! BuiltInEffect) return EngineResult.invalid;
-    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    if (param < 0 || param >= fx.type.params.length) {
+      return EngineResult.invalid;
+    }
     final params = List<double>.of(fx.params)..[param] = value;
     if (_intendRunning) {
       final result = _engine.setTrackFxParam(
@@ -6733,7 +6753,9 @@ class LooperRepository {
     }
     final fx = effects[index];
     if (fx is! BuiltInEffect) return EngineResult.invalid;
-    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    if (param < 0 || param >= fx.type.params.length) {
+      return EngineResult.invalid;
+    }
     if (_intendRunning) {
       final result = _engine.setOutputFxParam(
         bus: bus,
@@ -6825,6 +6847,8 @@ class LooperRepository {
     if (chainEnabled != null) _allTracksChainEnabled = chainEnabled;
     _allTracksEffects = submitted.effects;
     if (_intendRunning) _recoverUnavailablePlugins();
+    // As setOutputEffects does: the projected state carries the chain.
+    _reproject();
     return submitted.result;
   }
 
@@ -6853,7 +6877,9 @@ class LooperRepository {
     }
     final fx = _allTracksEffects[index];
     if (fx is! BuiltInEffect) return EngineResult.invalid;
-    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    if (param < 0 || param >= fx.type.params.length) {
+      return EngineResult.invalid;
+    }
     if (_intendRunning) {
       final result = _engine.setAllTracksFxParam(
         index: index,
@@ -6896,6 +6922,9 @@ class LooperRepository {
       if (!result.isOk) return result;
     }
     _allTracksChainEnabled = enabled;
+    // The projected state carries the flag (allTracksChain), and the Effects
+    // page reads it from there.
+    _reproject();
     return EngineResult.ok;
   }
 
@@ -7367,8 +7396,10 @@ class LooperRepository {
     final loaded = <TrackEffect>[];
     final slots = <FxRecipeSlot>[];
     var refusal = EngineResult.invalid;
+    final edges = fxRackEdges(effects);
+    final paths = fxRackPathsToEngine(effects);
     try {
-      for (final fx in effects) {
+      for (final (index, fx) in effects.indexed) {
         if (fx is BuiltInEffect) {
           loaded.add(fx);
           slots.add(
@@ -7377,6 +7408,9 @@ class LooperRepository {
               params: fx.params,
               enabled: fx.enabled,
               channels: fxChannelsToEngine(fx.channels),
+              rack: edges[index],
+              path: paths[index],
+              instance: fxInstanceId(fx.slotId),
             ),
           );
           continue;
@@ -7395,8 +7429,16 @@ class LooperRepository {
               loading: false,
             ),
           );
+          // Inert, but still in its rack: a rack ending here keeps its
+          // output side.
           slots.add(
-            FxRecipeSlot(type: trackEffectTypeToEngine(TrackEffectType.none)),
+            FxRecipeSlot(
+              type: trackEffectTypeToEngine(TrackEffectType.none),
+              enabled: plugin.enabled,
+              channels: fxChannelsToEngine(plugin.channels),
+              rack: edges[index],
+              instance: fxInstanceId(plugin.slotId),
+            ),
           );
           continue;
         }
@@ -7429,6 +7471,8 @@ class LooperRepository {
             plugin: handle,
             enabled: plugin.enabled,
             channels: fxChannelsToEngine(plugin.channels),
+            rack: edges[index],
+            instance: fxInstanceId(plugin.slotId),
           ),
         );
       }
@@ -7554,7 +7598,9 @@ class LooperRepository {
     final fx = effects[index];
     // Built-in params only — a plugin's parameter surface arrives in part 5.
     if (fx is! BuiltInEffect) return EngineResult.invalid;
-    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    if (param < 0 || param >= fx.type.params.length) {
+      return EngineResult.invalid;
+    }
     if (_intendRunning) {
       final result = _engine.setMonitorInputFxParam(
         input: input,
@@ -7657,6 +7703,43 @@ class LooperRepository {
     if (updated == null) return false;
     _monitorEffects[input] = List<TrackEffect>.of(effects)..[index] = updated;
     return true;
+  }
+
+  /// The running block length, or the bench's when the engine is stopped.
+  int get _fxPeriod {
+    final frames = _engine.snapshot().bufferFrames;
+    return frames > 0 ? frames : kFxBenchPeriod;
+  }
+
+  /// What [chain] would charge ([fxChainCostNs]), in nanoseconds per frame
+  /// at the running block length.
+  int fxCostOf(List<TrackEffect> chain) =>
+      fxChainCostNs(chain, period: _fxPeriod);
+
+  /// What every chain charges the audio thread's worst block ([fxCostOf]),
+  /// in nanoseconds per frame: the live inputs, the tracks, All tracks, the
+  /// destinations and the lanes. A lane counts in full: its print stands in
+  /// for its Pre entries only between edits, overdubs, evictions and
+  /// renders, and the worst block is the one in between.
+  int get fxCostNs {
+    final period = _fxPeriod;
+    return [
+      for (final c in _monitorEffects.values) fxChainCostNs(c, period: period),
+      for (final c in _trackEffects.values) fxChainCostNs(c, period: period),
+      for (final c in _outputEffects.values) fxChainCostNs(c, period: period),
+      fxChainCostNs(_allTracksEffects, period: period),
+      for (final c in _laneEffects.values) fxChainCostNs(c, period: period),
+    ].fold(0, (a, b) => a + b);
+  }
+
+  /// What is left of the effects budget ([fxBudgetNs]) at the running rate
+  /// and block length, in nanoseconds per frame; negative once the chains
+  /// went over (a removal is never refused, and a take's inherited chain is
+  /// never refused either: a recording is not an edit).
+  int get fxRoomNs {
+    final snapshot = _engine.snapshot();
+    final rate = snapshot.sampleRate > 0 ? snapshot.sampleRate : 96000;
+    return fxBudgetNs(rate, period: _fxPeriod) - fxCostNs;
   }
 
   /// Monitor [input]'s remembered effect chain (empty if none), in processing

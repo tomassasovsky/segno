@@ -5,20 +5,15 @@
  *       Samples one thread's stack through ptrace and prints folded stacks
  *       ("root;...;leaf count", flamegraph.pl input), busiest first. Only that
  *       thread is paused, for microseconds per sample; the audio thread never
- *       is. tid defaults to the main thread, which runs GTK and the Dart UI
- *       isolate. Frames are named from each file's .symtab when it has one
- *       (experimental builds keep libapp.so's Dart symbols) and from .dynsym
- *       otherwise; an address outside every known symbol prints as
- *       file:0x<address>.
- *
- *   segno-prof gsources <pid> [--csv]
- *       Counts the GSources attached to the app's default GLib main context,
- *       grouped by kind and callback. GLib walks every one of them on each
- *       main-loop iteration, which is how #1299 pinned the main thread. --csv
- *       prints one line: attached,embedder_timeouts,idle,next_id.
- *       The context address comes from /run/segno/main-context, which the app
- *       writes at startup. The struct offsets are GLib 2.84's private layout,
- *       so any other version is refused rather than misread.
+ *       is. It is attached only while a sample is taken. Measured on the
+ *       console (#1318): while a thread of the app stayed attached between
+ *       samples, the app did not act on SIGTERM until it was detached (8.3 s
+ *       into a 10 s run, against 0.23 s attaching per sample). tid defaults
+ *       to the main thread, which is idle under ivi-homescreen; the Dart UI
+ *       isolates run on the io.flutter.ui threads, one per screen. Frames are
+ *       named from each file's .symtab when it has one (experimental builds
+ *       keep libapp.so's Dart symbols) and from .dynsym otherwise; an address
+ *       outside every known symbol prints as file:0x<address>.
  *
  * aarch64 only: the frame walk follows the AAPCS64 x29 frame-pointer chain.
  */
@@ -50,18 +45,6 @@ static int peek(uint64_t addr, void *buf, size_t len) {
   struct iovec local = {buf, len};
   struct iovec remote = {(void *)(uintptr_t)addr, len};
   return process_vm_readv(target, &local, 1, &remote, 1, 0) == (ssize_t)len ? 0 : -1;
-}
-
-static uint64_t peek64(uint64_t addr) {
-  uint64_t value = 0;
-  peek(addr, &value, sizeof value);
-  return value;
-}
-
-static uint32_t peek32(uint64_t addr) {
-  uint32_t value = 0;
-  peek(addr, &value, sizeof value);
-  return value;
 }
 
 static void *xcalloc(size_t n, size_t size) {
@@ -108,8 +91,7 @@ static int sym_cmp(const void *a, const void *b) {
   return x->value < y->value ? -1 : x->value > y->value;
 }
 
-/* Reads one symbol table section. Keeps functions and data objects (the
- * census names GLib's exported GSourceFuncs tables). */
+/* Reads one symbol table section, keeping only functions. */
 static void add_symbols(Obj *o, const Elf64_Shdr *sh, const Elf64_Shdr *shdrs,
                         uint16_t nsh) {
   if (sh->sh_link >= nsh || sh->sh_entsize != sizeof(Elf64_Sym)) return;
@@ -124,7 +106,7 @@ static void add_symbols(Obj *o, const Elf64_Shdr *sh, const Elf64_Shdr *shdrs,
   for (size_t i = 0; i < count; i++) {
     unsigned type = ELF64_ST_TYPE(table[i].st_info);
     if (table[i].st_value == 0 || table[i].st_name >= strsh->sh_size) continue;
-    if (type != STT_FUNC && type != STT_OBJECT) continue;
+    if (type != STT_FUNC) continue;
     o->syms[o->nsyms++] = (Sym){table[i].st_value, table[i].st_size,
                                 strings + table[i].st_name};
   }
@@ -280,15 +262,8 @@ static void symbolize(uint64_t addr, char *out, size_t len) {
   snprintf(out, len, "%s:0x%" PRIx64, o->base, vaddr);
 }
 
-/* Whether addr lies in a file whose name starts with prefix. */
-static int addr_in_file(uint64_t addr, const char *prefix) {
-  const Map *m = map_for(addr);
-  return m != NULL && m->obj != NULL &&
-         strncmp(m->obj->base, prefix, strlen(prefix)) == 0;
-}
-
 /* ------------------------------------------------------------------------ */
-/* Counting strings (folded stacks, census groups)                          */
+/* Counting folded stacks                                                   */
 
 typedef struct {
   char *key;
@@ -349,9 +324,11 @@ static void counter_print(Counter *c, FILE *out) {
 
 enum { kMaxDepth = 128 };
 
-/* Saved return addresses can carry a pointer-authentication signature in the
- * bits above the 48-bit user address space (ARMv8.3+; the Pi 5's A76 has no
- * PAC, but GLib is built with paciasp). Strip it before using the address. */
+/* On a core with pointer authentication (ARMv8.3+), saved return addresses
+ * carry a signature in the bits above the 48-bit user address space. The Pi
+ * 5's A76 has none, and the signing instructions run there as no-ops, so this
+ * mask changes nothing on the console; it keeps the walk right on a core that
+ * signs. */
 static const uint64_t kUserAddressMask = (1ULL << 48) - 1;
 
 static volatile sig_atomic_t stop_requested;
@@ -385,16 +362,24 @@ static int cmd_stack(int argc, char **argv) {
 
   signal(SIGINT, on_signal);
   signal(SIGTERM, on_signal);
-  if (ptrace(PTRACE_SEIZE, tid, 0, 0) < 0) {
-    fprintf(stderr, "ptrace seize %d: %s\n", tid, strerror(errno));
-    return 1;
-  }
 
   Counter stacks = {0};
   uint64_t frames[kMaxDepth];
   long taken = 0;
   for (; taken < samples && !stop_requested; taken++) {
-    if (interrupt_thread(tid) < 0) break;
+    /* Attach for this sample only (see the header): seize, stop, read, then
+     * detach before the symbolizing and the sleep. */
+    if (ptrace(PTRACE_SEIZE, tid, 0, 0) < 0) {
+      if (taken == 0 || errno != ESRCH) {
+        fprintf(stderr, "ptrace seize %d: %s\n", tid, strerror(errno));
+        if (taken == 0) return 1;
+      }
+      break; /* ESRCH: the thread has exited */
+    }
+    if (interrupt_thread(tid) < 0) {
+      ptrace(PTRACE_DETACH, tid, 0, 0);
+      break;
+    }
     struct user_regs_struct regs;
     struct iovec io = {&regs, sizeof regs};
     int depth = 0;
@@ -410,8 +395,13 @@ static int cmd_stack(int argc, char **argv) {
         fp = record[0];
       }
     }
-    ptrace(PTRACE_CONT, tid, 0, 0);
-    if (depth == 0) continue;
+    ptrace(PTRACE_DETACH, tid, 0, 0);
+    if (depth == 0) {
+      /* Still wait: a thread that keeps failing must not be stopped back to
+       * back. */
+      if (interval_ms > 0) usleep(interval_ms * 1000);
+      continue;
+    }
 
     char line[kMaxDepth * 96];
     size_t used = 0;
@@ -429,7 +419,6 @@ static int cmd_stack(int argc, char **argv) {
     counter_add(&stacks, line);
     if (interval_ms > 0) usleep(interval_ms * 1000);
   }
-  ptrace(PTRACE_DETACH, tid, 0, 0);
 
   printf("# segno-prof stack pid=%d tid=%d samples=%ld interval_ms=%ld\n", target,
          tid, taken, interval_ms);
@@ -437,129 +426,10 @@ static int cmd_stack(int argc, char **argv) {
   return 0;
 }
 
-/* ------------------------------------------------------------------------ */
-/* gsources                                                                 */
-
-/* GLib 2.84 private layouts (glib/gmain.c, glib/ghash.c). */
-enum {
-  kContextSources = 56, /* GHashTable *sources, keyed by &source->source_id */
-  kContextNextId = 80,  /* guint next_id */
-  kHashSize = 0,
-  kHashNnodes = 16,
-  kHashFlags = 24, /* have_big_keys:1, have_big_values:1 */
-  kHashValues = 48,
-  kHashHashes = 40,
-  kSourceIdOffset = 48, /* GSource.source_id: the hash key points here */
-  kSourceWords = 12,    /* callback_data .. priv */
-};
-
-static int read_context_file(uint64_t *context) {
-  FILE *f = fopen("/run/segno/main-context", "r");
-  if (f == NULL) {
-    fprintf(stderr, "/run/segno/main-context: %s (is the app running?)\n",
-            strerror(errno));
-    return -1;
-  }
-  int pid = 0;
-  char glib[32] = "";
-  int ok = fscanf(f, "%d %31s %" SCNx64, &pid, glib, context) == 3;
-  fclose(f);
-  if (!ok) {
-    fprintf(stderr, "/run/segno/main-context: unreadable\n");
-    return -1;
-  }
-  if (pid != target) {
-    fprintf(stderr, "/run/segno/main-context is for pid %d, not %d\n", pid,
-            target);
-    return -1;
-  }
-  if (strncmp(glib, "2.84.", 5) != 0) {
-    fprintf(stderr, "GLib %s: only 2.84's private layout is known\n", glib);
-    return -1;
-  }
-  return 0;
-}
-
-static int cmd_gsources(int argc, char **argv) {
-  int csv = argc > 3 && strcmp(argv[3], "--csv") == 0;
-  uint64_t context;
-  if (read_context_file(&context) < 0) return 1;
-  load_maps();
-
-  uint64_t table = peek64(context + kContextSources);
-  uint32_t next_id = peek32(context + kContextNextId);
-  uint64_t size = peek64(table + kHashSize);
-  uint32_t flags = peek32(table + kHashFlags);
-  if (table == 0 || size == 0 || size > (1u << 24) || (size & (size - 1)) ||
-      !(flags & 2)) {
-    fprintf(stderr, "main context does not look like GLib 2.84's\n");
-    return 1;
-  }
-  uint32_t *hashes = xcalloc(size, sizeof(uint32_t));
-  uint64_t *values = xcalloc(size, sizeof(uint64_t));
-  if (peek(peek64(table + kHashHashes), hashes, size * 4) < 0 ||
-      peek(peek64(table + kHashValues), values, size * 8) < 0) {
-    fprintf(stderr, "cannot read the source table\n");
-    return 1;
-  }
-
-  Counter groups = {0};
-  unsigned attached = 0, embedder_timeouts = 0, idle = 0, foreign = 0;
-  for (uint64_t i = 0; i < size; i++) {
-    if (hashes[i] < 2) continue; /* 0 empty, 1 tombstone */
-    uint64_t source = values[i] - kSourceIdOffset;
-    uint64_t f[kSourceWords];
-    /* Sources come and go while we read; a vanished one is skipped. */
-    if (peek(source, f, sizeof f) < 0) continue;
-    if (f[4] != context) {
-      foreign++;
-      continue;
-    }
-    if (!((f[5] >> 32) & 1)) continue; /* destroyed */
-    attached++;
-
-    char kind[128], callback[256] = "-", name[48] = "";
-    symbolize(f[2], kind, sizeof kind);
-    if (f[0] != 0 && addr_in_file(f[1], "libglib-2.0.so")) {
-      /* g_source_set_callback's GSourceCallback: ref_count, func, data */
-      uint64_t func = peek64(f[0] + 8);
-      symbolize(func, callback, sizeof callback);
-      if (addr_in_file(func, "libflutter_linux_gtk.so") &&
-          strcmp(kind, "g_timeout_funcs") == 0)
-        embedder_timeouts++;
-    }
-    if (strcmp(kind, "g_idle_funcs") == 0) idle++;
-    if (f[10] != 0 && peek(f[10], name, sizeof name - 1) == 0) {
-      for (char *p = name; *p; p++)
-        if (*p < 32 || *p > 126) *p = '\0';
-    }
-    char key[512];
-    snprintf(key, sizeof key, "%s %s%s%s", kind, callback, name[0] ? " " : "",
-             name);
-    counter_add(&groups, key);
-  }
-  if (attached == 0 && foreign > 0) {
-    fprintf(stderr, "no source points back at the context: layout mismatch\n");
-    return 1;
-  }
-
-  if (csv) {
-    printf("%u,%u,%u,%u\n", attached, embedder_timeouts, idle, next_id);
-    return 0;
-  }
-  printf("# segno-prof gsources pid=%d attached=%u embedder_timeouts=%u idle=%u "
-         "next_id=%u\n",
-         target, attached, embedder_timeouts, idle, next_id);
-  counter_print(&groups, stdout);
-  return 0;
-}
-
 int main(int argc, char **argv) {
   if (argc < 3) {
-    fprintf(stderr,
-            "usage: %s stack <pid> [tid] [samples] [interval-ms]\n"
-            "       %s gsources <pid> [--csv]\n",
-            argv[0], argv[0]);
+    fprintf(stderr, "usage: %s stack <pid> [tid] [samples] [interval-ms]\n",
+            argv[0]);
     return 2;
   }
   target = atoi(argv[2]);
@@ -568,7 +438,6 @@ int main(int argc, char **argv) {
     return 2;
   }
   if (strcmp(argv[1], "stack") == 0) return cmd_stack(argc, argv);
-  if (strcmp(argv[1], "gsources") == 0) return cmd_gsources(argc, argv);
   fprintf(stderr, "unknown command %s\n", argv[1]);
   return 2;
 }

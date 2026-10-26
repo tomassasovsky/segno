@@ -251,6 +251,20 @@ class ExternalJackSetup extends Equatable {
         },
       };
 
+  /// Returns a copy without every activation, parameter and expression
+  /// mapping whose target [removes] accepts, under every type the jack
+  /// stores, not only the active one.
+  ExternalJackSetup withoutTargets(bool Function(Object target) removes) {
+    ExternalSwitchSetup clean(ExternalSwitchSetup setup) =>
+        setup.copyWith(controls: setup.controls.withoutTargets(removes));
+    return copyWith(
+      single: clean(single),
+      dualFirst: clean(dualFirst),
+      dualSecond: clean(dualSecond),
+      expression: expression.withoutTargets(removes),
+    );
+  }
+
   /// Whether anything is configured here, under any type.
   ///
   /// The taught travel counts, like a switch's hardware does: a pedal
@@ -370,6 +384,16 @@ class ExternalPedalSetup extends Equatable {
       next[jack] = setup;
     }
     return ExternalPedalSetup(jacks: next, logicalOn: logicalOn);
+  }
+
+  /// Returns a copy with every jack's assignments to the targets [removes]
+  /// accepts taken out (see [ExternalJackSetup.withoutTargets]).
+  ExternalPedalSetup withoutTargets(bool Function(Object target) removes) {
+    var next = this;
+    for (final entry in jacks.entries) {
+      next = next.withJack(entry.key, entry.value.withoutTargets(removes));
+    }
+    return next;
   }
 
   /// Returns a copy after one confirmed completed press changes logical state.

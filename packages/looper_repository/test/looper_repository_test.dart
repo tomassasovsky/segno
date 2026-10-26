@@ -17,18 +17,19 @@ import 'package:segno_engine/segno_engine.dart'
         FxChannelInput,
         FxChannelOutput,
         FxChannels,
+        FxParamCurve,
+        FxParamInfo,
+        FxParamUnit,
         FxPlacement,
         FxRack,
         LatencyState,
         LoopbackInfo,
         LoopbackKind,
-        ParamReadout,
         PluginEffect,
         PluginFormat,
         PluginParamInfo,
         PluginRef,
         TrackEffect,
-        TrackEffectParam,
         TrackEffectType,
         encodeTrackEffects,
         fxPreCount;
@@ -472,7 +473,7 @@ void main() {
       // Nobody has listened, so nothing has polled and there is no cache. A
       // reader must still see the engine rather than an invented empty rig.
       expect(engine.snapshotCalls, 0);
-      expect(repo.lastState.transport.isRunning, isTrue);
+      expect(repo.lastState.transport.deviceRunning, isTrue);
       expect(engine.snapshotCalls, greaterThan(0));
     });
   });
@@ -624,7 +625,7 @@ void main() {
       final repo = buildRepo();
 
       final state = repo.state;
-      expect(state.transport.isRunning, isTrue);
+      expect(state.transport.deviceRunning, isTrue);
       expect(state.transport.masterLengthFrames, 96000);
       expect(state.transport.masterPositionFrames, 24000);
       expect(state.transport.progress, closeTo(0.25, 1e-6));
@@ -7773,7 +7774,7 @@ void main() {
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
         expect(await abandoned, EngineResult.notReady);
-        expect(repo.sessionTransport.isRunning, isTrue);
+        expect(repo.sessionTransport.deviceRunning, isTrue);
         engine.commandsAreSettled = true;
         expect(await repo.settleLengthSettings(), EngineResult.ok);
         expect(repo.sessionTransport.looperMode, LooperMode.free);
@@ -8068,7 +8069,7 @@ void main() {
         await Future<void>.delayed(Duration.zero);
         expect(reopenCount(), 0);
         expect(stopCount(), 0);
-        expect(repo.sessionTransport.isRunning, isTrue);
+        expect(repo.sessionTransport.deviceRunning, isTrue);
 
         // The fence lifts. The SAME device list now reopens — the refusal must
         // not have burned the one attempt this list gets.
@@ -8229,7 +8230,7 @@ void main() {
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
         expect(reopenCount(), 1);
-        expect(repo.sessionTransport.isRunning, isFalse);
+        expect(repo.sessionTransport.deviceRunning, isFalse);
         expect(repo.state.status.reopen?.outcome, ReopenOutcome.clearedRate);
 
         // The player re-applies: the start that opens the rig again still
@@ -8634,6 +8635,16 @@ void main() {
       expect(fxPreCount(repo.allTracksEffects), 0);
     });
 
+    test('its chain flag reaches the projected state at once (#1452)', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setAllTracksChainEnabled(enabled: false);
+
+      // The Effects page reads All tracks' power from the projection.
+      expect(repo.state.allTracksChain.chainEnabled, isFalse);
+    });
+
     test('re-applies on restart, chain flag included', () {
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
@@ -8824,7 +8835,8 @@ void main() {
 
       final moved = repo.laneEffects(0, 0).single as BuiltInEffect;
       expect(moved.slotId, id);
-      expect(moved.params, const [0.11, 0.22, 0.33, 0.44]);
+      expect(moved.params.take(3), const [0.11, 0.22, 0.33]);
+      expect(moved.params.skip(3), everyElement(0.0));
       expect(moved.enabled, isFalse);
       expect(moved.placement, FxPlacement.pre);
     });
