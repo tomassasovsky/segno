@@ -31,3 +31,16 @@ ConsoleAudioDevices? pickConsoleAudioDevices(List<AudioDevice> devices) {
   }
   return (playbackId: playback.first.id, captureId: capture.first.id);
 }
+
+/// Whether [config] pins a device: a playback or a capture id.
+bool pinsDevice(EngineConfig config) =>
+    config.playbackDeviceId.isNotEmpty || config.captureDeviceId.isNotEmpty;
+
+/// Whether every device [config] pins is among [devices]. An empty id pins
+/// nothing and so is always present.
+bool pinnedDevicesPresent(EngineConfig config, List<AudioDevice> devices) {
+  bool present(String id, {required bool isInput}) =>
+      id.isEmpty || devices.any((d) => d.isInput == isInput && d.id == id);
+  return present(config.playbackDeviceId, isInput: false) &&
+      present(config.captureDeviceId, isInput: true);
+}
