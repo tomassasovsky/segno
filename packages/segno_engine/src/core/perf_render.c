@@ -1559,10 +1559,10 @@ static int le_pr_renew_slot(le_fx_state* fx, int s, int32_t type,
 
 /* Puts arm-time slot [s] of [type] in the state the live owner's slot was in
  * when the type landed: the reset the ring handler ran (a raw calloc zero is
- * not that state; the octaver would ramp its shift up from two octaves down,
- * fade its mode in over ~15 ms and sit at hop phase 0), its buffers, and for
- * an octaver its smoothers and mode already settled at [params], since a slot
- * carrying it at arm is not ramping. Returns 0 on an allocation failure. */
+ * not that state; the octaver would ramp its shift up from two octaves down
+ * and sit at hop phase 0), its buffers, and for an octaver its smoothers
+ * already settled at [params], since a slot carrying it at arm is not
+ * ramping. Returns 0 on an allocation failure. */
 static int le_pr_arm_slot(le_fx_state* fx, int s, int32_t type,
                           const float* params, int32_t sample_rate) {
   const int ok = le_pr_reset_slot(fx, s, type, sample_rate);
