@@ -19,7 +19,7 @@ do_install:append() {
     install -m 0644 ${UNPACKDIR}/ca.cert.pem ${D}${sysconfdir}/rauc/keyring.pem
 
     # Pairs with data-directory= in system.conf, so it ships in the same
-    # package: rauc.service waits for the /data and /boot mounts.
+    # package: rauc.service requires the /data mount.
     install -d ${D}${systemd_system_unitdir}/rauc.service.d
     install -m 0644 ${UNPACKDIR}/10-segno-data.conf ${D}${systemd_system_unitdir}/rauc.service.d/10-segno-data.conf
 
