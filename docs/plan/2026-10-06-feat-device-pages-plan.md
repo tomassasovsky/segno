@@ -1,6 +1,6 @@
 # Device and appliance pages: Device, interface loss, Displays, Power, Updates, Network, About
 
-<!-- cspell:ignore dpwx yyqr Ulrb orpd pbdiy OZOP JEHXY Cksr Xyzrn devicetree EDID edid setvcp Licences tmpfiles libsystemd raucb statvfs -->
+<!-- cspell:ignore dpwx yyqr Ulrb orpd pbdiy OZOP JEHXY Cksr Xyzrn devicetree EDID edid setvcp Licences tmpfiles libsystemd raucb statvfs fdtget prefault -->
 
 Tracking: #1270, `stage:build`. This plan covers the Device, Network, Displays and Updates
 tiles of the Settings home, the About page and the Power button. They replace the interim
@@ -59,8 +59,83 @@ the original specs are in commit `43e4443ef`.
 - Part 8 holds the stick with a read hold, copies through a part file with a free-space
   check, and waits for the posix_spawn launcher (#1367).
 
-**Open.** Parts 1, 2, 3a, 3b, 4, 5 and 8 await the owner's review of this revision. None
-has started.
+**Open.** The owner approved this revision on 2026-10-26 ("refresh, then build"; #1272
+merged). Parts 1, 2, 3a, 3b, 4, 5 and 8 are open. None has started.
+
+## 0a. Refresh of 2026-10-26
+
+Every claim, path and dependency below was re-checked against
+`origin/claude/segno-integration` at `a3f6bc805`, 446 commits after `a37926236`. Almost all
+of them are the Looper X effects work. The audio-settings app code (`lib/audio_setup`,
+`lib/app/audio_bootstrap.dart`, `lib/settings`, the banners, `AudioRecoveryCubit`, the
+readout) has not changed since `a37926236`, so its line references hold. What changed:
+
+- **#1367 launcher merged** (#1373, 2026-10-20). `packages/spawn_process` has
+  `startProcess` and `runProcess`; `lib/update/appliance/system_appliance_env.dart`
+  already uses them; the `no-dart-process` CI job (`tool/check_no_dart_process.sh`) fails
+  on `Process.run`/`Process.start`/`Process.runSync` anywhere in `lib/` and
+  `packages/*/lib`. Part 8 is no longer waiting on anything. #1367 itself stays open for
+  its on-device fork trace.
+- **Freeze recovery merged** (#1438, closes #1437, 2026-10-23). It arms the hardware
+  watchdog for PID 1 (`RuntimeWatchdogSec=60s`), reboots on panic and lockups, keeps
+  pstore records on `/data`, and makes the slot commit durable (`set_primary_persistent`
+  fsyncs `autoboot.txt` and syncs `/boot`). It also verified on the console that the
+  tryboot flag is one-shot: a reset during a trial boot comes back on the committed slot.
+  Part 1 relies on that for its rollback reboot. Part 1's "no watchdog" still holds: it
+  means no `WatchdogSec=` on `segno.service`, which would kill a slow app mid-set; the
+  PID 1 watchdog from #1438 is a different thing and stays.
+- **#1398 (open, being brought up to date by another thread)** moves RAUC's status to
+  `/data/rauc`, fscks `/boot` before mounting it, and makes `segno-update-ctl install`
+  exit 3 on a read-only `/boot`. Part 1 is built on top of it (D7, Part 1 below):
+  - `segno-mark-good` still commits with `rauc status mark-good booted`, which #1398
+    keeps.
+  - Part 1 tells a trial boot from a committed one by the firmware's own flag,
+    `/chosen/bootloader/tryboot` in the device tree, read with `fdtget` exactly as the
+    RAUC backend's `get-state` reads it. It does not parse `rauc status`: that would
+    depend on RAUC's status file (which #1398 moves and starts empty) and on reading
+    `/boot/autoboot.txt` (which #1398's fsck exists to protect).
+  - Only a health refusal reboots. A `rauc` failure on a healthy app (for example a
+    read-only `/boot`) exits 1 without a reboot: the app works, the musician may be
+    playing, and the next reboot rolls back anyway.
+  - Part 8's `install_bundle` shares #1398's read-only `/boot` check.
+- **`run_mark_good_tests.sh` is already in CI** (`appliance-shell-tests`, "Run mark-good
+  tests"). It runs the script with `sh`, which is dash on the runner. Part 1 adds a bash
+  run next to it rather than wiring the suite in.
+- **ivi-homescreen is built with `-DBUILD_SYSTEMD_WATCHDOG=OFF`**
+  (`recipes-graphics/ivi-homescreen/ivi-homescreen_git.bb`), so the embedder sends no
+  `sd_notify` of its own. The app's `READY=1` is the only one.
+- **First boot without an interface.** `Type=notify` with `TimeoutStartSec=180` kills an
+  app that never sends `READY=1`. The plan counted a refused start as ready only when the
+  *pinned* interface is absent; a console with no saved config and no interface plugged
+  in (first run, `recoveryConfig` null) would then be killed every 180 s on a committed
+  slot. Part 1 also counts a refused start as ready when nothing is pinned and
+  `pickConsoleAudioDevices` finds no interface to pin. A refusal with an interface
+  present still never counts.
+- **ASIO paths are all still there** (`audio_setup_cubit.dart:83, 162-205`,
+  `audio_setup_state.dart:224-232`, `le_device_info.asio_*` at
+  `segno_engine_api.h:923-931`, `le_enumerate_asio_drivers` at `engine_devices.c:482`).
+  #925 (`stage:plan`, `autonomy:auto`) asks for the Dart half of the same removal but
+  keeps `LE_BACKEND_ASIO` and `le_enumerate_asio_drivers` as stubs so an old stored
+  backend still parses. That conflicts with AGENTS.md (no compatibility layers) and with
+  D18; Parts 3a and 2 do the whole removal and say `Refs #925`, and the part that
+  removes the last of it says `Closes #925`.
+- **Engine line references moved** with the effects work: command 1 is handled at
+  `engine_process.c:4388`, the burst amplitude is `LE_LATENCY_PULSE_AMP 0.9f`
+  (`engine_core.h:34`), the loopback-or-max input pick is at 7641-7689 and the pulse
+  block at 7691-7725. The highest command is still `LE_CMD_AUDITION_STOP = 137`.
+  `looper_repository.dart` moved by 3 lines: `_superviseDevice` 2289,
+  `_attemptReconnect` 2346, `_reopenEngine` 2637, `_replayRig` 2682, the `> 0` gate 2724.
+  `audio_bootstrap.dart`'s restore and automatic measurement are at 310-321.
+- **The effects budget (new, needs the owner): Q5.** Admission control (#887,
+  `fx_cost.dart`, `LooperRepository.fxRoomNs`) refuses an effects edit that would not fit
+  80 % of a block at the running rate and buffer. The budget shrinks when the rate goes up
+  (48 to 96 kHz halves the time per frame) and when the buffer drops below 64 frames. An
+  Apply in Part 3a or Part 4 can therefore put chains that fit today over the budget, and
+  nothing refuses or warns. This plan does not decide it; see §6 Q5. It affects Parts 3a
+  and 4 only.
+- **Nothing in the effects work touched the open path** beyond a stack prefault at device
+  start (`engine_miniaudio.c`, `rt_stack_ready`). `le_config`, `le_engine_start`,
+  `le_engine_reopen` and the latency harness are unchanged in behaviour.
 
 Pen sources (`segno-ui.pen`, group `p0dpwx` "01 CURRENT UX"):
 
@@ -100,7 +175,7 @@ Standing owner decisions that apply:
 - One surface per cause (owner, #860): a toast for low stakes, a persistent banner for a
   condition that needs action, never two bars for one cause.
 
-## 1. Current state (verified on `a37926236`)
+## 1. Current state (verified on `a37926236`, re-checked on `a3f6bc805`; §0a)
 
 ### Settings pages
 
@@ -123,7 +198,7 @@ Standing owner decisions that apply:
   - `_persistAndApply` saves first (274), then calls `stopEngine()` and
     `startEngine(_engineConfig())` (296-298).
   - `le_engine_start` opens the device fresh and clears the recorded material; the
-    `le_engine_reopen` comment says so (`packages/segno_engine/src/core/segno_engine_api.h:1909-1940`).
+    `le_engine_reopen` comment says so (`packages/segno_engine/src/core/segno_engine_api.h:2166-2215`).
   - There is no draft, no confirmation and no take check. `GuardKind.deviceChange` and
     `GuardKind.calibration` (`packages/operation_guards/lib/src/guard_registry.dart:24,27`)
     are never entered. `GuardKind.capture` is entered only by a performance recording
@@ -132,8 +207,8 @@ Standing owner decisions that apply:
 - **Dead ASIO paths.** `setBackend` and `setAsioDriver` (`audio_setup_cubit.dart:162-184`),
   `_snapRateAndBuffer` and the ASIO branch of `sampleRateChoices`
   (`audio_setup_state.dart:226-232`) remain, and `le_enumerate_asio_drivers` is always
-  empty (`engine_devices.c:479-482`). `le_device_info` still carries `asio_buffer_sizes`,
-  `asio_sample_rates` and their counts (`segno_engine_api.h:700-703`), surfaced as
+  empty (`engine_devices.c:482`). `le_device_info` still carries `asio_buffer_sizes`,
+  `asio_sample_rates` and their counts (`segno_engine_api.h:928-931`), surfaced as
   `AudioDevice.bufferSizes` and `.sampleRates`.
 - **A refused configuration comes back at boot.** The config is saved before the open,
   so a refused request stays on disk (274) while the screen shows the live values.
@@ -141,27 +216,27 @@ Standing owner decisions that apply:
   and brings tracks back STOPPED. It clears the whole engine when the negotiated sample
   rate or the loop cap differs (`LE_REOPEN_CLEARED_RATE`, `_CAP`), and reports
   `LE_REOPEN_RETAINED_PARTIAL` with a dropped-track mask. The repository reaches it only
-  from the private `_reopenEngine` (`packages/looper_repository/lib/src/looper_repository.dart:2634`).
-- **The replay re-applies the old record offset.** `_replayRig` (2679) pushes
-  `_recordOffset` when it is above 0 (2721), whatever the new device, rate or buffer, and
+  from the private `_reopenEngine` (`packages/looper_repository/lib/src/looper_repository.dart:2637`).
+- **The replay re-applies the old record offset.** `_replayRig` (2682) pushes
+  `_recordOffset` when it is above 0 (2724), whatever the new device, rate or buffer, and
   `_syncLatencyPersistence` (`audio_setup_cubit.dart:592`) then saves any offset above 0
   under the new device|rate|buffer key as if it had been measured.
 - **The latency test is loud and plays on every output.**
-  - `LE_CMD_MEASURE_LATENCY` (`engine_process.c:4085-4102`) starts a 10 ms, 1 kHz burst
-    at amplitude 0.9 (`engine_core.h:34-38`).
-  - The pulse block in `process_input_frame` (`engine_process.c:7276-7307`) writes it to
+  - `LE_CMD_MEASURE_LATENCY` (`engine_process.c:4388`) starts a 10 ms, 1 kHz burst
+    at amplitude 0.9 (`engine_core.h:34`).
+  - The pulse block in `process_input_frame` (`engine_process.c:7691-7725`) writes it to
     every output channel.
   - While the harness owns a frame, `le_engine_process` skips the transport advance and
-    the mix (`engine_process.c:8990-8995`): the loops go silent and the playhead stops for
+    the mix (`engine_process.c:9663-9670`): the loops go silent and the playhead stops for
     the whole window.
   - It reads the return from the loopback channels when `excluded_input_mask != 0`,
-    otherwise from the maximum of all real inputs (7219-7226, 7267).
+    otherwise from the maximum of all real inputs (7641-7689).
   - A completed state stays `DONE` in the snapshot, with no request id, so a caller cannot
     tell a new result from the previous one.
-  - `le_engine_begin_latency_for_test` (`engine.c:1719`, `engine_internal.h:265`) drives
+  - `le_engine_begin_latency_for_test` (`engine.c:1894`, `engine_internal.h:259`) drives
     command 1 in eight native tests, including the loopback oracle.
 - **The app measures without asking.**
-  - At boot (`lib/app/audio_bootstrap.dart:306-321`) and after every apply
+  - At boot (`lib/app/audio_bootstrap.dart:310-321`) and after every apply
     (`_autoMeasureIfLoopback`, `audio_setup_cubit.dart:415-420`), the app measures
     whenever a loopback is detected. On the appliance, the Scarlett loop channels set
     `excluded_input_mask`, so this sends the 0.9 burst to every output. The manual
@@ -182,8 +257,8 @@ Standing owner decisions that apply:
 - The 7" readout echoes the lost condition with the same sentence
   (`lib/visualizer/console_readout_view.dart:68-74, 309`).
 - The supervisor reopens automatically when the pinned device returns:
-  `_superviseDevice` (`looper_repository.dart:2286`), `_attemptReconnect` (2343),
-  `_reopenEngine` (2634).
+  `_superviseDevice` (`looper_repository.dart:2289`), `_attemptReconnect` (2346),
+  `_reopenEngine` (2637).
 - At boot, `AudioRecoveryCubit` (`lib/looper/cubit/audio_recovery_cubit.dart:21`) starts
   the engine on the absent→present edge. While it waits, `app.dart:1181-1198` shows a
   warning toast that does not close on its own, and the Stage also shows the generic
@@ -218,9 +293,10 @@ Standing owner decisions that apply:
   the bad slot until someone power-cycles it. #976 (`stage:plan-review`, P0) reports a
   real crash loop that read `NRestarts` 0. `segno-kiosk-launch` now ends in
   `exec /usr/bin/segno`, so `MainPID` is the app.
-- `run_mark_good_tests.sh` exists but is not run by CI (`.github/workflows/main.yaml` has
-  no step for it). Its `systemctl` stub answers every `show` with the next `NRestarts`
-  line, whatever property is asked.
+- `run_mark_good_tests.sh` runs in CI's `appliance-shell-tests` job, with `sh` (dash on
+  the runner); the 2026-10-19 claim that CI skipped it was wrong by 2026-10-26 (§0a). Its
+  `systemctl` stub answers every `show` with the next `NRestarts` line, whatever property
+  is asked.
 
 ### Storage and helpers
 
@@ -235,8 +311,8 @@ Standing owner decisions that apply:
   page does not show.
 - `copyFile` (634) writes a hidden part file, fsyncs and renames, sweeps stale parts once
   per directory, and maps ENOSPC to `StorageFailure.full`.
-- The app starts helpers with `Process.start`, which forks (#1367). The decision is
-  posix_spawn through FFI; the implementation is in flight.
+- The app starts helpers through `packages/spawn_process` (posix_spawn, #1373), and CI
+  bans `dart:io` process calls (§0a).
 
 ### Network and About (shipped by Parts 11 and 12)
 
@@ -290,7 +366,8 @@ and marked with the PR that carried them out.
   - `READY=1` is sent once, when the main screen has rasterized its first frame, the
     readout has reported its first raster over the screen link (when its connector reads
     connected), and the first engine start has returned OK, or was refused while the
-    pinned interface is absent.
+    pinned interface is absent (or, with nothing pinned, while no interface is there to
+    pin; §0a).
   - Every 5 s the main isolate sends `STATUS=alive <n> readout <m>`: `n` counts its own
     timer, `m` the readout's last answer to a screen-link ping. `segno-mark-good` requires
     both to advance during the window.
@@ -336,15 +413,16 @@ either starts from the trunk or stacks on one open part whose own base is the tr
 
 ```
 order  part                          base                          size   state
-1      P3a live audio-settings fixes trunk                         ~350   open
-1      P1  boot health gate (#976)   trunk                         ~200   open
+1      P3a live audio-settings fixes trunk (after Q5)             ~350   open
+1      P1  boot health gate (#976)   trunk after #1398 (or #1398's  ~200   open
+                                     branch while it is open)
 2      P5  interface-loss fixes      trunk, after P3a merges        ~200   open
 2      P2  native measurement path   trunk, after P3a merges        ~300   open
 3      P3b cable measurement         stacked on P2                  ~400   open
 4      P4  Device page               trunk after P3b merges         ~600   open
                                      (or stacked on P3b once P2 has merged)
-any    P8  USB packages              trunk, after the #1367         ~450   open
-                                     launcher merges
+any    P8  USB packages              trunk (the #1367 launcher      ~450   open
+                                     merged in #1373)
 -      P6 Power + Restart                                                  shipped #1284
 -      P7 Updates page                                                     shipped #1287
 -      P9 Displays brightness + dim                                        shipped #1286
@@ -403,8 +481,8 @@ and makes them safe. Part 4 later puts the same path behind a draft and an Apply
 
 **Removed**
 
-- `_autoMeasureIfLoopback`, the automatic branch in `lib/app/audio_bootstrap.dart:319-321`
-  (the restore at 312-318 stays), the cubit's `measureLatency()`, the Measure button and
+- `_autoMeasureIfLoopback`, the automatic branch in `lib/app/audio_bootstrap.dart:318-321`
+  (the restore at 310-317 stays), the cubit's `measureLatency()`, the Measure button and
   the loopback notes (`loopbackDetectedNote`, `loopbackAvailableNote`) in
   `DeviceAudioTab`. On the appliance this button only ever measured the Scarlett loop
   channels, which Q2 rules out. The latency row keeps showing the restored value. Part 3b
@@ -452,7 +530,8 @@ trusted.
     connector reads connected in `/sys/class/drm`; the readout sends it after its own
     `waitUntilFirstFrameRasterized`;
   - waits for the first engine start to return OK, or a refusal while the pinned
-    interface is absent; a refusal with the interface present never counts as ready;
+    interface is absent, or a refusal with nothing pinned while `pickConsoleAudioDevices`
+    finds no interface; a refusal with the interface present never counts as ready;
   - then sends `READY=1`, once.
   - After that, a 5 s timer sends `STATUS=alive <n> readout <m>` and a ping to the
     readout; `m` is the sequence of the readout's last answer.
@@ -469,23 +548,30 @@ trusted.
 - Record `MainPID`, `NRestarts` and `StatusText`. Wait `STABLE_SECS`. Require the same
   `MainPID`, the same `NRestarts`, `is-active`, and a `StatusText` whose main counter
   advanced, and whose readout counter advanced when the readout connector is connected.
-- On refusal, when the booted slot is an uncommitted tryboot (the booted slot is not the
-  primary in `rauc status`), reboot with plain `systemctl reboot`, so the firmware boots
-  the committed slot. A refusal on a committed slot never reboots, so a bad committed slot
+- On a health refusal, when the boot is a trial boot (`fdtget /sys/firmware/fdt
+  /chosen/bootloader tryboot` reads 1, the flag the RAUC backend's `get-state` reads),
+  reboot with plain `systemctl reboot`. The tryboot flag is one-shot, so the firmware
+  boots the committed slot (verified on the console under #1438). A refusal on a
+  committed boot, or when the flag cannot be read, never reboots, so a bad committed slot
   cannot loop.
+- A `rauc status mark-good booted` failure after a healthy window exits 1 and never
+  reboots (§0a: #1398's read-only `/boot`).
+- Built on #1398: it lands after #1398, or is based on #1398's branch while #1398 is
+  open.
 - The test stub answers each `show -p <property>` from its own file (`MainPID`,
-  `NRestarts`, `StatusText`, `ActiveState`) and records `reboot` calls.
-- CI runs `run_mark_good_tests.sh` under bash and dash, next to the other helper suites.
+  `NRestarts`, `StatusText`, `ActiveState`) and records `reboot` calls; an `fdtget` stub
+  answers the tryboot flag.
+- CI already runs `run_mark_good_tests.sh` with `sh` (dash); Part 1 adds a bash run.
 
 ```success-criteria
 GOAL: A build whose app never renders, never reaches the engine, hangs, or restarts during the window is never committed, and an uncommitted bad slot rolls back without anyone touching the console.
 SUCCESS CRITERIA:
 - Active, same MainPID and NRestarts, both StatusText counters advancing: commits (rauc mock called with "status mark-good booted"), no reboot. | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_mark_good_tests.sh
 - Never active within WAIT_SECS; MainPID changes; NRestarts changes; main counter frozen; readout counter frozen with the readout connected: each exits 1 with no rauc call. A frozen readout counter with the readout disconnected still commits. | verify: same
-- Each refusal on a tryboot slot calls "reboot" once; the same refusal on a committed slot calls no reboot. | verify: same
+- Each health refusal on a trial boot (fdtget stub reads 1) calls "reboot" once; the same refusal on a committed boot (0) or with fdtget failing calls no reboot; a rauc mark-good failure after a healthy window calls no reboot. | verify: same
 - The stub distinguishes properties: a test where NRestarts is constant but MainPID changes is refused. | verify: same
 - CI runs the suite under bash and dash. | verify: grep -n "run_mark_good_tests" .github/workflows/main.yaml
-- READY=1 is sent once, only after the first raster, the readout's first raster (when connected) and an OK start; a refused start with the interface present never sends it; with NOTIFY_SOCKET unset nothing is called. | verify: /Users/Tomas/development/flutter/bin/flutter test test/appliance/boot_readiness_test.dart
+- READY=1 is sent once, only after the first raster, the readout's first raster (when connected) and an OK start; a refused start with the interface present never sends it; a refused start with the pinned interface absent, or with nothing pinned and no interface found, does; with NOTIFY_SOCKET unset nothing is called. | verify: /Users/Tomas/development/flutter/bin/flutter test test/appliance/boot_readiness_test.dart
 - Analyzer and Bloc lint clean. | verify: dart analyze --fatal-infos && bloc lint lib test packages
 - HARDWARE: install a bundle whose app throws before runApp; the console reboots by itself into the previous slot with no SSH. Install a bundle that crash-loops after its first frame; same result. Install a good bundle; it is committed after the window. | verify: manual on device
 ```
@@ -577,7 +663,7 @@ The command uses its own union member in `le_command`, like `click` and `record_
 - Command 1 (`LE_CMD_MEASURE_LATENCY`) and `le_engine_measure_latency` are deleted; Part
   3a removed their last caller. `le_engine_begin_latency_for_test` takes the path
   arguments, the eight tests that use it pass them (the loopback oracle with 0xFFFF), and
-  the comments at `engine_process.c:3340` and `7299` name the new command.
+  the comments at `engine_process.c:3643` and `7721` name the new command.
 
 **Keep-material reopen**
 
@@ -724,8 +810,10 @@ SUCCESS CRITERIA:
 
 ### Part 8: update from USB (about 450 lines; helper, `lib/update`, `storage_repository`)
 
-Pen 33: `w3lUKE`/`xlAif` (Load a USB package). Trunk-based, after the #1367 launcher is on
-the trunk: the helper is started through it, never through `Process.start`.
+Pen 33: `w3lUKE`/`xlAif` (Load a USB package). Trunk-based. The helper is started with
+`spawn_process`'s `startProcess` (#1373), as `install` already is in
+`system_appliance_env.dart`. `install_bundle` keeps #1398's read-only `/boot` check (exit
+3) for both verbs.
 
 **Helper**
 
@@ -968,7 +1056,8 @@ the pen is not in the worktree, and the PRs say the frames were not in the repo'
 
 ## 6. Owner questions
 
-All answered.
+Q1 to Q4 are answered. Q5 is open (2026-10-26 refresh) and holds Parts 3a and 4; it
+does not hold Parts 1, 2, 5 or 8.
 
 1. **Q1. Section 28's amber chip and explicit reconnect.** Answered 2026-10-19: not
    accepted; keep automatic reconnect and the red banner (D17, Part 5).
@@ -978,6 +1067,19 @@ All answered.
    rate while any track holds material; no resampling (D2).
 4. **Q4. The accepted Displays screen has no place for four existing controls.** Answered
    by default in #1286: they are in a "Display options" row under Dim while idle.
+5. **Q5. An Apply that puts the effects over the budget.** The effects budget
+   (`fxBudgetNs`) is 80 % of a frame's time at the running rate, less the engine's own
+   cost per frame, which grows below 64-frame blocks. Raising the rate (48 to 96 kHz
+   halves the time per frame) or dropping the buffer under 64 frames can leave chains
+   that fit today over it, and today nothing refuses or warns. Options:
+   - (a) Refuse the Apply inline, with the chips staying on the old value and a reason
+     such as "Your effects need more processing than 96 kHz leaves. Remove some effects
+     first." This extends the owner's admission rule (#887: refuse inline when a chain
+     would not fit) to the audio settings.
+   - (b) Apply, and say under the Apply row that the effects are over the budget and may
+     click.
+   - (c) Apply, and leave it to the effects screens' existing over-budget state.
+   Default if unanswered: none; Parts 3a and 4 wait.
 
 ## 7. Review findings and what this revision does with them
 
