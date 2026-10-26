@@ -414,13 +414,15 @@ int le_fx_type_hops(int32_t type);
 void le_fx_pumper_seed_settled(le_fx_state* fx, int slot, const float* params,
                                int sr);
 /* The octaver settings slot [s] of [type] runs: [params] themselves for the
- * octaver (cells 5 to 7 zero: no cut, a linear mix, no second voice), the
+ * octaver (cells 5 to 8 zero: no cut, a linear mix, no second voice, no low
+ * band), the
  * Whammy's pedal and range mapped for the Whammy, Smart Tune's fully wet
  * PSOLA at unison (its shift follows the detected pitch), and the Dual
  * Octaver's high mode, Octave 1 level, mix and Octave 2 level mapped for it
  * (the voice's level as 1 minus cell 5, which goes below 0 where its trim
  * boosts; 1 in cell 6: an equal-power mix, a switched shift and a second
- * voice, and Octave 2's level in cell 7). [out] holds LE_FX_PARAMS. */
+ * voice, Octave 2's level in cell 7, and Octave 1's level untrimmed in
+ * cell 8, for the low band, #1467). [out] holds LE_FX_PARAMS. */
 void le_fx_octaver_settings(int32_t type, const float* params, float* out);
 
 /* Settles chain slot [slot]'s enable-crossfade runtime at fully BYPASSED.

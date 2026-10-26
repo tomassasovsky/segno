@@ -55,8 +55,8 @@ as before, since the Looper X shifts nothing there.
 
 | input | 48 kHz sine | 48 kHz bass | 96 kHz sine | 96 kHz bass |
 |---|---|---|---|---|
-| 82 Hz | -1.4 (-1.4) | -1.3 (-1.3) | -1.4 (-1.4) | -1.3 (-1.4) |
-| 110 Hz | 0.0 (0.0) | +0.3 (0.0) | 0.0 (0.0) | 0.0 (0.0) |
+| 82 Hz | -1.4 (-1.4) | -1.4 (-1.4) | -1.4 (-1.4) | -1.3 (-1.4) |
+| 110 Hz | 0.0 (0.0) | -0.4 (0.0) | 0.0 (0.0) | 0.0 (0.0) |
 
 - Octave 2 at 82 Hz sits 1.6 dB above the capture: the floor's ramp is fit
   to Octave 1's point and is shared by both voices.
@@ -71,7 +71,14 @@ as before, since the Looper X shifts nothing there.
   sample.
 - The latency stays 1216 frames: the band's taps centre on it less the
   crossover's group delay (173 samples at 96 kHz), and a tone's swell comes
-  out of the band within a millisecond of the latency at 48 and 96 kHz.
+  out of the band within a millisecond of where the vocoder alone puts it,
+  at 48 and 96 kHz. The band's weight is applied as late as the vocoder's
+  frames apply theirs (704 samples after the analysis), so the two still
+  sum to one voice while a note starts or stops.
+- A new note takes one detection to settle: the period is read over the
+  newest 43 ms of the band, which at 96 kHz is centred about 8 ms before
+  the audio the taps play, so the first few jumps of a new note can land
+  off its period, each covered by its fade.
 
 ## Passes
 
