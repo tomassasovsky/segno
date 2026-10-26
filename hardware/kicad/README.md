@@ -8,7 +8,7 @@ SKiDL scripts that emit KiCad netlists. One per board:
 | script | board |
 |---|---|
 | `ring_board.py` | encoder + LED ring + XIAO RP2350, behind the faceplate (4-way link, #987) |
-| `console_board.py` | console v3 — Pico 2 on the Pi's GPIO (#747); v3 adds the 4-way ring link (#987) and the CTRL ring sense |
+| `console_board.py` | console v3.1 — Pico 2 on the Pi's GPIO (#747); v3 adds the 4-way ring link (#987) and the CTRL ring sense; v3.1 moves MODE from GP5 to GP12 (#1388) |
 
 The ring carrier now uses **white solder mask and black silkscreen** for LED
 reflections. See [ring order and assembly notes](RING_ASSEMBLY.md) for the

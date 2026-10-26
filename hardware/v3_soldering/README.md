@@ -1,12 +1,15 @@
 <!-- cspell:words EEUFR IRLZ NPBF Axicom Omron Schurter -->
 # Segno V3 boards: solder order
 
-Covers the three boards in the current fabrication record,
-`docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json`:
+Covers the three current boards. The ring carrier and screen-power archives
+are the ones in the fabrication record,
+`docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json`; the console
+v3.1 archive (#1388) is listed in [the manufacturing notes](../MANUFACTURING.md)
+and needs the owner's review before it is ordered.
 
 | Board | KiCad file | Gerbers |
 |---|---|---|
-| Console v3 (Pico 2) | `hardware/kicad/out_console/segno_console_board.kicad_pcb` | `fab/segno_console_v3_gerbers.zip` |
+| Console v3.1 (Pico 2) | `hardware/kicad/out_console/segno_console_board.kicad_pcb` | `fab/segno_console_v3_1_gerbers.zip` |
 | Ring carrier (XIAO RP2350, white) | `hardware/kicad/segno_pedal_ring.kicad_pcb` | `fab/segno_pedal_ring_gerbers.zip` |
 | Screen power, Rev P | `hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb` | `fab/segno_screen_power_rev_p_gerbers.zip` |
 
@@ -28,11 +31,11 @@ the ring carrier, which has parts on both faces.
 
 ---
 
-## 1. Console v3
+## 1. Console v3.1
 
-![Console v3 solder order](console_order.png)
+![Console v3.1 solder order](console_order.png)
 
-![Console v3, 3D render](console_3d.png)
+![Console v3.1, 3D render](console_3d.png)
 
 Every part goes on the top face. Everything is through-hole except the Pico 2,
 which is soldered flat by its castellations.
@@ -107,7 +110,9 @@ J3 pin 1 to pin 2 (+5V to GND) open. J2 pin 1 to J2 pin 6 (+3V3 to GND) open.
    - Top edge: J8 `PWR BTN`, J5 `MIDI IN`, J4 `MIDI OUT`, J20 `CTRL 1` (4-pin),
      J21 `CTRL 2` (4-pin).
    - Middle row: J23 `PD` (3-pin), J6 `RING` (4-pin), J25 `SCREEN`, J9 `PI PWR`.
-   - Bottom edge: J10-J19, `REC` to `BANK`.
+   - Bottom edge, left to right: `REC STOP UNDO TRK1 TRK2 TRK3 TRK4 CLR BANK MODE`
+     (J10 J11 J12 J14 J15 J16 J17 J18 J19 J13). `MODE` is at the right end on
+     v3.1 because it moved to GP12 (#1388).
 7. **JST VH headers** on the left edge: J3 `5V IN` (2-pin) and J24 `PILLS`
    (3-pin). Both are vertical; **pin 1 is the bottom pin**. J3 pin 1 is +5V;
    J24 pin 1 is GND, pin 2 data, pin 3 +5V.
