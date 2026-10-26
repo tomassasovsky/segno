@@ -451,6 +451,9 @@ void le_octaver_envelope(const float* mag, float* env);
 /* Frees a chain slot's octaver phase-vocoder heap buffers (both channels) and
  * nulls them. Control-thread only (lane/monitor reset, engine destroy). */
 void le_fx_free_octaver(le_fx_state* fx, int slot);
+/* The heap a Dual Octaver slot's low band (#1467) takes at [sr], both
+ * channels, on top of the octaver's buffers. Any thread. */
+size_t le_fx_low_band_bytes(int sr);
 
 /* Frees every heap buffer chain slot [slot] owns: its delay rings, its
  * octaver buffers and its per-kind state. The one call an owner reset or

@@ -359,11 +359,17 @@ static void le_render_fail(le_render_job* j, int32_t result) {
 static int64_t le_render_ring_entries(const le_fx_frozen_chain* c) {
   int64_t n = 0;
   for (int32_t s = 0; s < c->count && s < LE_FX_MAX; ++s) {
-    /* The Mode delay's line, and the Dual Octaver's vocoder buffers with
-     * its low band (#1467, under 100 KB at 96 kHz), as two. */
-    n += c->type[s] == LE_FX_MODE_DELAY || c->type[s] == LE_FX_DUAL_OCTAVER
-             ? 2
-             : 1;
+    n += c->type[s] == LE_FX_MODE_DELAY ? 2 : 1;
+  }
+  return n;
+}
+
+/* The Dual Octaver entries of chain [c], each holding a low band (#1467)
+ * on top of what an entry is charged. */
+static int64_t le_render_dual_octavers(const le_fx_frozen_chain* c) {
+  int64_t n = 0;
+  for (int32_t s = 0; s < c->count && s < LE_FX_MAX; ++s) {
+    n += c->type[s] == LE_FX_DUAL_OCTAVER;
   }
   return n;
 }
@@ -387,13 +393,16 @@ static int64_t le_render_job_bytes(const le_render_job* j) {
    * stereo delay line of fx_delay_frames, or a Mode delay's 4 s mono line
    * (two stereo rings' worth). */
   int64_t entries = le_render_ring_entries(&j->mix);
+  int64_t duals = le_render_dual_octavers(&j->mix);
   int64_t states = 1;
   for (int32_t i = 0; i < j->nsrc; ++i) {
     const le_render_src* s = &j->src[i];
     entries += le_render_ring_entries(&s->track);
+    duals += le_render_dual_octavers(&s->track);
     states += 2;
     for (int32_t l = 0; l < s->lanes; ++l) {
       entries += le_render_ring_entries(&s->lane[l].chain);
+      duals += le_render_dual_octavers(&s->lane[l].chain);
       states += 2;
     }
   }
@@ -401,7 +410,8 @@ static int64_t le_render_job_bytes(const le_render_job* j) {
    * at most a page or so each, and its state's table: counted as both
    * for every entry, which overstates and never understates. */
   bytes += states * (int64_t)(sizeof(le_fx_state) + sizeof(le_fx_kinds)) +
-           entries * (2ll * j->cap * (int64_t)sizeof(float) + 16384);
+           entries * (2ll * j->cap * (int64_t)sizeof(float) + 16384) +
+           duals * (int64_t)le_fx_low_band_bytes(j->cap);
   return bytes;
 }
 

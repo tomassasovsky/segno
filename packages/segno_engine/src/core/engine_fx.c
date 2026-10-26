@@ -1429,7 +1429,8 @@ static float le_low_play(le_oct_low* L, int sr, int ticks, float level1,
   /* Before any pitch is heard (the weight is then 0 anyway), a 100 Hz
    * period keeps the taps moving. */
   const float per = L->period > 0.0f ? L->period : 0.01f * (float)sr;
-  float y = L->level1 * le_low_voice(L, &L->v[0], 0.5f, per);
+  float y = 0.0f;
+  if (L->level1 > 1e-4f) y += L->level1 * le_low_voice(L, &L->v[0], 0.5f, per);
   if (L->level2 > 1e-4f) y += L->level2 * le_low_voice(L, &L->v[1], 0.25f, per);
   return w * y;
 }
@@ -1713,6 +1714,10 @@ void le_fx_entry_reset(le_fx_state* fx, int slot) {
     o->fresh = LE_PV_LATENCY;
     o->xfade = 1.0f;  /* steady (no gain dip) */
     le_pv_reset_runtime(fx, slot, chan, le_oct_seeded_ticks(fx, slot));
+    /* A retyped slot's band starts with nothing heard: it heard nothing
+     * while the slot ran as another kind. */
+    le_oct_low* low = atomic_load_explicit(&o->low, memory_order_acquire);
+    if (low != NULL) le_low_forget(low);
   }
   le_fx_clear_reverb(fx, slot);
   memset(&fx->slice[slot], 0, sizeof(fx->slice[slot]));
@@ -3199,6 +3204,10 @@ oom:
   return LE_ERR_INVALID;
 }
 
+size_t le_fx_low_band_bytes(int sr) {
+  return 2u * (sizeof(le_oct_low) + (size_t)le_low_ring_len(sr) * sizeof(float));
+}
+
 /* DUAL OCTAVER: the octaver's buffers, and its low band's (#1467) per
  * channel, sized for [cap] (the rate). A band set up for another rate is
  * left as it is (fx_octaver skips it): a slot's buffers are freed before it
@@ -3212,7 +3221,7 @@ static int32_t fx_dual_octaver_prepare(le_fx_state* fx, int slot, int cap) {
       continue;
     }
     made[chan] = (le_oct_low*)le_rt_alloc_prefaulted(
-        sizeof(le_oct_low) + (size_t)len * sizeof(float));
+        le_fx_low_band_bytes(cap) / 2u);
     if (made[chan] == NULL) goto oom;
     memset(made[chan], 0, sizeof(le_oct_low));
     le_low_init(made[chan], cap, len);
