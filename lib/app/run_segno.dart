@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:backing_repository/backing_repository.dart';
@@ -18,6 +19,8 @@ import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/monitor_migration.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/app/view/app.dart';
+import 'package:segno/appliance/boot_readiness.dart';
+import 'package:segno/appliance/systemd_notify.dart';
 import 'package:segno/bootstrap.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
@@ -241,6 +244,10 @@ Future<void> runSegno(
     audioRecoveryConfig = result.recoveryConfig;
   }
 
+  // The 7" readout's end of the screen link, on the appliance; the macOS dev
+  // host has no readout.
+  final readoutLink = screen == null ? null : ScreenLinkWaveformService();
+  final displayOutputs = createDisplayOutputs();
   await bootstrap(
     () => App(
       repository: looper,
@@ -250,9 +257,7 @@ Future<void> runSegno(
       audioRecoveryConfig: audioRecoveryConfig,
       settings: settings,
       mixSettings: mixSettings,
-      waveformWindow: screen == null
-          ? NoopWaveformWindowService()
-          : ScreenLinkWaveformService(),
+      waveformWindow: readoutLink ?? NoopWaveformWindowService(),
       sessionRepository: session,
       performanceRepository: performance,
       backingRepository: backing,
@@ -261,7 +266,7 @@ Future<void> runSegno(
       updates: updates,
       wifi: wifi,
       brightness: brightness,
-      displayOutputs: createDisplayOutputs(),
+      displayOutputs: displayOutputs,
       touchCalibration: createTouchCalibrationClient(),
       consoleFacts: consoleFacts,
       cpuLoad: CpuLoadRepository.system(),
@@ -269,6 +274,31 @@ Future<void> runSegno(
       storage: storage,
     ),
   );
+
+  // Under systemd (segno.service is Type=notify): READY=1 once the main
+  // screen draws, then the heartbeat segno-mark-good judges an update by
+  // (#976). Nothing is sent anywhere else.
+  final notify = systemdNotifyFromEnvironment(Platform.environment);
+  if (notify != null) {
+    final readoutConnector = readoutLink == null
+        ? null
+        : (await displayOutputs.screenConnectors())[SegnoScreen.readout.name];
+    unawaited(
+      BootReadiness(
+        notify: notify,
+        firstFrame: WidgetsBinding.instance.waitUntilFirstFrameRasterized,
+        audio: () => bootAudioOf(
+          running: looper.state.status.isConnected,
+          config: looper.lastEngineConfig ?? audioRecoveryConfig,
+          devices: looper.devices,
+        ),
+        readoutConnected: () async =>
+            readoutConnector != null &&
+            (await displayOutputs.isConnected(readoutConnector) ?? false),
+        pingReadout: () async => await readoutLink?.ping() ?? false,
+      ).start(),
+    );
+  }
 }
 
 /// The backing player's managed `Backing tracks` store under the exports

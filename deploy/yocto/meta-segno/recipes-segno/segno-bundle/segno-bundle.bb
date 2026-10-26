@@ -116,7 +116,10 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # networkmanager-nmcli: segno-wifi-ctl (NM owns wpa_supplicant via -wifi plugin).
 # ddcutil: segno-brightness-ctl. No BlueZ: Bluetooth was retired (#1199).
 # util-linux mount tools: the USB storage service.
-RDEPENDS:${PN} = "mesa alsa-lib libstdc++ \
+# dtc: fdtget, which segno-mark-good reads the firmware's tryboot flag with
+# (#976). rauc-rpi-backend also pulls it in, but a missing fdtget would read as
+# "not a trial boot" and silently disable the rollback reboot, so it is named.
+RDEPENDS:${PN} = "mesa alsa-lib libstdc++ dtc \
                   curl jq ca-certificates rauc \
                   parted e2fsprogs-resize2fs \
                   networkmanager-nmcli networkmanager-wifi \
