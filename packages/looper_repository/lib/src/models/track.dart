@@ -255,6 +255,11 @@ class Track extends Equatable {
   bool get isCapturing =>
       state == TrackState.recording || state == TrackState.overdubbing;
 
+  /// Whether the track's loop plays back, muted or not (playing or
+  /// overdubbing).
+  bool get isRunning =>
+      state == TrackState.playing || state == TrackState.overdubbing;
+
   /// Whether undo would do anything: peel an overdub layer, or put back a take
   /// the user cleared.
   bool get canUndo => undoDepth > 0 || clearRestore;

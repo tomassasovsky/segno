@@ -49,6 +49,22 @@ void main() {
       expect(later, isNot(still));
     });
 
+    test('isRunning is playing or overdubbing, muted or not', () {
+      expect(const Track(state: TrackState.playing).isRunning, isTrue);
+      expect(const Track(state: TrackState.overdubbing).isRunning, isTrue);
+      expect(
+        const Track(state: TrackState.playing, muted: true).isRunning,
+        isTrue,
+      );
+      for (final state in [
+        TrackState.empty,
+        TrackState.recording,
+        TrackState.stopped,
+      ]) {
+        expect(Track(state: state).isRunning, isFalse);
+      }
+    });
+
     test('progress is the playhead over the length, 0 without a length', () {
       const playing = Track(
         state: TrackState.playing,

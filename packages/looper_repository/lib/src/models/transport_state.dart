@@ -30,6 +30,7 @@ class TransportState extends Equatable {
     this.countInBeatsLeft = 0,
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
+    this.primaryDesignation = -1,
     this.songQueuedTrack = -1,
     this.songQueueProgress = 0,
     this.songLastSection = -1,
@@ -121,6 +122,12 @@ class TransportState extends Equatable {
   /// `resolvedPrimaryTrack`.
   final int primaryTrack;
 
+  /// The engine's own primary designation ([EngineSnapshot.primaryTrack]),
+  /// or `-1`. Unlike [primaryTrack] it can name an empty track: the
+  /// designation survives the primary's clear while a sibling holds audio,
+  /// and the engine then treats no track as a Band section (#1323).
+  final int primaryDesignation;
+
   /// The Song or Band section waiting for the sounding section's end
   /// (#1077, #1323), or `-1` with none ([EngineSnapshot.songQueuedTrack]).
   final int songQueuedTrack;
@@ -204,6 +211,7 @@ class TransportState extends Equatable {
     countInBeatsLeft,
     looperMode,
     primaryTrack,
+    primaryDesignation,
     songQueuedTrack,
     songQueueProgress,
     songLastSection,

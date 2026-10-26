@@ -107,6 +107,7 @@ LooperState _stateWith(
     countingIn: countingIn,
     looperMode: looperMode,
     primaryTrack: primaryTrack,
+    primaryDesignation: primaryTrack,
     songQueuedTrack: songQueuedTrack,
     songQueueProgress: songQueueProgress,
     songQueueRecord: songQueueRecord,
@@ -2846,6 +2847,23 @@ void main() {
           ),
         );
         verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
+      });
+
+      test('a press on the waiting section while another captures cancels '
+          'the request and leaves the capture running', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.overdubbing, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
+          ]),
+          looperMode: LooperMode.song,
+          songQueuedTrack: 1,
+        );
+        cubit.trackPressed(1);
+        expect(cubit.state.cursor, 1);
+        verify(() => looper.cancelArm(channel: 1)).called(1);
+        verifyNever(() => looper.record(channel: any(named: 'channel')));
+        verifyNever(() => looper.record());
       });
 
       test('a press on the sounding or an empty section only selects it', () {

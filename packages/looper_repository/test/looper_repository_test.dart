@@ -6300,7 +6300,10 @@ void main() {
           primaryTrack: 3,
           tracks: [empty, playing, empty, empty],
         );
-        expect(buildRepo().state.transport.primaryTrack, 1);
+        final transport = buildRepo().state.transport;
+        expect(transport.primaryTrack, 1);
+        // The raw designation stays, for the Band section rule (#1323).
+        expect(transport.primaryDesignation, 3);
       });
     });
 
