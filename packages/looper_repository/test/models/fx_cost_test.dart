@@ -24,6 +24,15 @@ void main() {
         fxEntryCostNs(octaver.copyWith(enabled: false)),
         fxEntryCostNs(octaver),
       );
+      // The Dual Octaver adds its low band to the octaver's vocoder.
+      expect(
+        _cost(TrackEffectType.dualOctaver),
+        (kFxHopCostUs[TrackEffectType.dualOctaver]! * 1000 / 64).ceil(),
+      );
+      expect(
+        _cost(TrackEffectType.dualOctaver),
+        greaterThan(fxEntryCostNs(octaver)),
+      );
       final psola = octaver.copyWith(params: [...octaver.params]..[3] = 1);
       expect(fxEntryCostNs(psola), (kFxPsolaCostUs * 1000 / 64).ceil());
       expect(

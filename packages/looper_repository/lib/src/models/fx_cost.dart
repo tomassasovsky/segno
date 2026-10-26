@@ -82,11 +82,13 @@ const Map<TrackEffectType, double> kFxHopCostUs = {
   // The octaver's phase vocoder, its settings mapped; CI measures the two
   // alike (41 against 40 us alone).
   TrackEffectType.whammy: 69,
-  // The octaver's phase vocoder, its settings mapped. Octave 2's shift runs
-  // in the quarter the octaver spends on its envelope when it holds the
-  // formants (the Dual Octaver moves them), and both voices share one
-  // inverse FFT, so the heaviest quarter stays the octaver's.
-  TrackEffectType.dualOctaver: 69,
+  // The octaver's phase vocoder, its settings mapped, plus its low band
+  // (#1467): a crossover, two taps and a sliced pitch detection on every
+  // sample. CI arm64, one instance on a bass line (44.6 us alone), x 1.75.
+  // Octave 2's shift runs in the quarter the octaver spends on its envelope
+  // (the Dual Octaver moves the formants), and both voices share one
+  // inverse FFT.
+  TrackEffectType.dualOctaver: 78,
   // The octaver's PSOLA, its shift worked out once a detection lands.
   TrackEffectType.smartTune: kFxPsolaCostUs,
 };
