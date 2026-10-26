@@ -285,7 +285,6 @@ static int le_oct_seeded_ticks(const le_fx_state* fx, int slot) {
 static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
                                 int ticks);
 static void le_low_reset_runtime(le_oct_low* L);
-static void le_low_clear(le_oct_low* L);
 
 /* Puts channel [chan] of octaver slot [slot] on [mode] with its runtime
  * reset, keeping its hop schedule: the new mode's heavy tick lands where the
@@ -1159,9 +1158,12 @@ static void le_low_reset_runtime(le_oct_low* L) {
 }
 
 /* The detection back to a reset's: no pitch heard, the band silent (the
- * vocoder plays all of it), and nothing in its window or power followers,
- * so it hears only what comes in from now. */
+ * vocoder plays all of it), and nothing in its crossover, window or power
+ * followers, so it hears only what comes in from now. The ring keeps its
+ * audio: a new note takes a detection window and the hand-over's delay to
+ * reach the voices, by which time the taps read only new input. */
 static void le_low_forget(le_oct_low* L) {
+  memset(L->z, 0, sizeof(L->z));
   memset(L->dring, 0, sizeof(L->dring));
   L->dn = 0;
   L->dacc = 0.0f;
@@ -1183,7 +1185,6 @@ static void le_low_forget(le_oct_low* L) {
  * cleared. */
 static void le_low_clear(le_oct_low* L) {
   le_low_forget(L);
-  memset(L->z, 0, sizeof(L->z));
   memset(L->ring, 0, sizeof(float) * (size_t)(L->mask + 1));
   L->head = 0;
   le_low_reset_runtime(L);
@@ -1247,13 +1248,15 @@ static float le_low_read(const le_oct_low* L, float d) {
   return a + (rp - fl) * (L->ring[(i + 1) & L->mask] - a);
 }
 
-/* A finished detection: the voicing follows every result, the period only
- * a confident one, and it steps to a new note rather than gliding there (a
- * tap jumping by a period between two notes' would not land on a repeat of
- * the waveform). */
+/* A finished detection. Only a confident one counts as voiced, and it
+ * sets the period, so the band never plays at a weight whose pitch it has
+ * not got. The period steps to a new note rather than gliding there (a tap
+ * jumping by a period between two notes' would not land on a repeat of the
+ * waveform). */
 static void le_low_apply(le_oct_low* L, int sr, float period, float conf) {
-  L->voiced += 0.35f * (conf - L->voiced);
-  if (period <= 0.0f || conf < 0.5f) return;
+  const int sure = period > 0.0f && conf >= 0.5f;
+  L->voiced += 0.35f * ((sure ? conf : 0.0f) - L->voiced);
+  if (!sure) return;
   if (L->period <= 0.0f || fabsf(period - L->period) > 0.03f * L->period) {
     L->period = period;
   } else {
@@ -1377,10 +1380,10 @@ static float le_low_voice(le_oct_low* L, le_oct_low_voice* v, float ratio,
  * there, so the vocoder still hands the note over. */
 static void le_low_follow(le_oct_low* L, int sr, int analysis) {
   le_low_detect(L, sr, analysis);
-  float want = (L->voiced - 0.3f) / 0.3f; /* PSOLA's soft gate */
-  if (want < 0.0f) want = 0.0f;
-  if (want > 1.0f) want = 1.0f;
   const float f0 = L->f0;
+  float want = (L->voiced - 0.3f) / 0.3f; /* PSOLA's soft gate */
+  if (want < 0.0f || f0 <= 0.0f) want = 0.0f;
+  if (want > 1.0f) want = 1.0f;
   float in = (f0 - (float)LE_OCT_LOW_MIN_HZ) /
              (LE_OCT_LOW_FULL_HZ - (float)LE_OCT_LOW_MIN_HZ);
   if (in < 0.0f) in = 0.0f;
