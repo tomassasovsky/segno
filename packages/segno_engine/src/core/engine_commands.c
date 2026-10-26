@@ -1602,7 +1602,9 @@ static int le_transport_active(le_engine* engine) {
 /* Whether a Record on [channel] waits for the sounding section's end
  * (#1323): a Song section, or a Band section, that is empty or stopped with
  * a take while another section plays, overdubs or records. Band's primary
- * is never the section it waits for. */
+ * is never the section it waits for. -1 when it would wait but another
+ * section than the one it waits for is capturing: the callback refuses that
+ * request (le_handoff_capture_elsewhere), so the press is refused here. */
 static int le_handoff_waits(le_engine* engine, int32_t channel) {
   const int32_t mode = load_i32(&engine->a_looper_mode);
   const int band = le_band_section(engine, channel);
@@ -1614,21 +1616,23 @@ static int le_handoff_waits(le_engine* engine, int32_t channel) {
     return 0;
   }
   const int32_t primary = band ? load_i32(&engine->a_primary_track) : -1;
+  int waits = 0;
   for (int32_t c = 0; c < engine->track_count; ++c) {
     if (c == channel || c == primary) continue;
     const int32_t other = le_effective_state(&engine->tracks[c]);
-    if (other == LE_TRACK_PLAYING || other == LE_TRACK_OVERDUBBING ||
-        other == LE_TRACK_RECORDING) {
-      return 1;
-    }
+    const int capturing =
+        other == LE_TRACK_OVERDUBBING || other == LE_TRACK_RECORDING;
+    if (waits && capturing) return -1; /* the lowest sounding is the source */
+    if (capturing || other == LE_TRACK_PLAYING) waits = 1;
   }
-  return 0;
+  return waits;
 }
 
 /* Whether a Record on [channel] takes the handoff path: its own handoff arm
  * is pending (a second press cancels it), or no other trigger's arm is and
- * it would wait (le_handoff_waits). Another trigger's pending arm keeps its
- * own rules, so a second press still cancels a grid or Sound arm. */
+ * it would wait (le_handoff_waits; -1 when that request is refused). Another
+ * trigger's pending arm keeps its own rules, so a second press still cancels
+ * a grid or Sound arm. */
 static int le_handoff_record(le_engine* engine, int32_t channel) {
   if (engine->armed[channel] && load_i32(&engine->tracks[channel].a_pending)) {
     return engine->armed_trigger[channel] == 3;
@@ -2177,6 +2181,7 @@ static le_record_admission le_classify_record(le_engine* e, int channel) {
     return LE_RECORD_REFUSE;
   }
   const int handoff = le_handoff_record(e, channel);
+  if (handoff < 0) return LE_RECORD_REFUSE;
   const int has_master = le_rig_effective_master_len(e) > 0 &&
       !(state == LE_TRACK_EMPTY && !le_grid_still_needed(e, channel));
   const int sound = !handoff && (load_i32(&e->a_record_start) < 0) &&
@@ -2333,6 +2338,7 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
    * sounding section's end, ahead of Sound start and quantize — the
    * handoff is its boundary. A second press cancels its own arm. */
   const int handoff_arm = le_handoff_record(engine, channel);
+  if (handoff_arm < 0) return LE_ERR_INVALID;
   const int sound_arm = !handoff_arm &&
       (load_i32(&engine->a_record_start) < 0) && st == LE_TRACK_EMPTY &&
       !(load_i32(&engine->a_record_start) > 0 && !capture_has_master);
@@ -2513,14 +2519,6 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
    * grid / buffers via handle_clear — it does NOT touch lane FX — so the host's
    * pushed chain, queued before this record command, is never clobbered. */
 
-  /* Sound-activated: a record press on an empty track arms a signal-triggered
-   * start (LE_CMD_ARM with trigger 1); the audio thread begins recording the
-   * first frame the input crosses the threshold. A second press cancels. Takes
-   * precedence over quantize for the start — finalize/overdub presses (the
-   * track is no longer EMPTY) fall through to the quantize/immediate paths.
-   * A DEFINING press with count-in enabled skips this arm entirely (D9:
-   * count-in wins when both are somehow set at once) and falls through to the
-   * immediate path, where the audio thread starts the count-in. */
   /* The Song/Band handoff (#1323): the same one-time prep a quantized arm
    * does, deferred to the sounding section's end (LE_CMD_ARM trigger 3),
    * where the callback starts the take, or an overdub from the section's
@@ -2554,6 +2552,14 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
     return rc;
   }
 
+  /* Sound-activated: a record press on an empty track arms a signal-triggered
+   * start (LE_CMD_ARM with trigger 1); the audio thread begins recording the
+   * first frame the input crosses the threshold. A second press cancels. Takes
+   * precedence over quantize for the start — finalize/overdub presses (the
+   * track is no longer EMPTY) fall through to the quantize/immediate paths.
+   * A DEFINING press with count-in enabled skips this arm entirely (D9:
+   * count-in wins when both are somehow set at once) and falls through to the
+   * immediate path, where the audio thread starts the count-in. */
   if (sound_arm) {
     if (engine->armed[channel] && load_i32(&t->a_pending) == 0) {
       engine->armed[channel] = 0; /* spent: the signal already fired it */

@@ -3306,13 +3306,19 @@ static void handle_section_play(le_engine* e, int32_t ch, uint64_t frame) {
     handle_play(e, ch, frame);
     return;
   }
+  /* A Play on the waiting target cancels its request, whatever its kind:
+   * an empty section waiting to record too. */
+  if (ch == e->song_target) {
+    le_song_cancel(e);
+    return;
+  }
   le_track* target = &e->tracks[ch];
   const int32_t state = load_i32(&target->a_state);
   if (load_i32(&target->lanes[0].a_len) <= 0 ||
       (state != LE_TRACK_STOPPED && state != LE_TRACK_PLAYING)) {
     return;
   }
-  if (state == LE_TRACK_PLAYING || ch == e->song_target) {
+  if (state == LE_TRACK_PLAYING) {
     le_song_cancel(e);
     return;
   }

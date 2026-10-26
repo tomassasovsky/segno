@@ -27496,6 +27496,12 @@ static void test_song_queue_several_sounding(void) {
   CHECK(s.counting_in == 0);
   CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
   CHECK(s.tracks[3].state == LE_TRACK_RECORDING);
+  /* While a section other than the lowest sounding one captures, a request
+   * could not land, so a Record on an empty section is refused at once. */
+  CHECK(le_engine_record(e, 0) == LE_ERR_INVALID);
+  drain(e);
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_EMPTY);
+  CHECK(load_i32(&e->tracks[0].a_pending) == 0);
   /* A 45-frame take closes 10 frames later (its seam crossfade, 10 ms at
    * 1 kHz) and then plays from its top: its laps end at 100, 145, ... */
   tg_advance(e, 45);
@@ -27863,6 +27869,31 @@ static void test_song_record_handoff_skips_count_in(void) {
   CHECK(s.tracks[3].state == LE_TRACK_RECORDING);
   CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
   CHECK(e->tracks[3].record_pos == 1);
+  le_engine_destroy(e);
+}
+
+/* A Play on an empty section waiting to record cancels its request, as a
+ * Play on any waiting target does (#1323). */
+static void test_song_play_cancels_a_waiting_record(void) {
+  printf("test_song_play_cancels_a_waiting_record\n");
+  le_engine* e = song_queue_fixture();
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  tg_advance(e, 30);
+  CHECK(le_engine_record(e, 3) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == 3 && s.song_queue_record == 1);
+  CHECK(le_engine_play(e, 3) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == -1);
+  CHECK(s.tracks[3].pending == 0);
+  tg_advance(e, 80);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[3].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
   le_engine_destroy(e);
 }
 
@@ -40171,6 +40202,7 @@ int main(void) {
   test_song_queue_logs_committed_handoff_only();
   test_song_record_requests_wait();
   test_song_record_handoff_keeps_its_image();
+  test_song_play_cancels_a_waiting_record();
   test_song_record_handoff_skips_count_in();
   test_song_record_handoff_logs_at_the_edge();
   test_song_mode_independent_lengths_wraps();
