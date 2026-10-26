@@ -95,7 +95,10 @@ static void test_full_recipe_boundary(void) {
   for (int s = 0; s < LE_FX_MAX; ++s) expected = tanhf(expected);
   CHECK(fabsf(out[126]) < 1e-6f);
   CHECK(fabsf(out[127] - expected * .5f) < 1e-5f);
-  CHECK(load_f32(&e->monitors[0].a_fx_param[last][3]) == .375f);
+  /* Published: what the drive reads. Its cell 3 is past its two
+   * parameters, so the callback never stores it. */
+  CHECK(load_f32(&e->monitors[0].a_fx_param[last][1]) == 1.0f);
+  CHECK(load_f32(&e->monitors[0].a_fx_param[last][3]) == 0.0f);
   CHECK(le_engine_fx_recipe_revision(e, LE_FX_OWNER_MONITOR, 0, 0) == 100);
   r.count = LE_FX_MAX + 1;
   CHECK(le_engine_set_fx_recipe(e, LE_FX_OWNER_MONITOR, 0, 0, 101, &r) == LE_ERR_INVALID);
@@ -129,6 +132,8 @@ int main(void) {
   CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 0, .7f) == LE_ERR_INVALID);
   pump(e, .4f, out); le_engine_drain_events(e);
   CHECK(le_engine_fx_recipe_revision(e, LE_FX_OWNER_MONITOR, 0, 0) == 1);
+  /* A new entry fades in over the 5 ms enable ramp (240 frames). */
+  for (int n = 0; n < 4; ++n) pump(e, .4f, out);
   CHECK(out[126] > .199f && out[126] < .201f);
   CHECK(le_engine_prepare_plugin(e, "fail", &next) == LE_ERR_DEVICE);
   CHECK(destroyed == 0);
@@ -160,6 +165,7 @@ int main(void) {
   le_engine_drain_events(e); CHECK(destroyed == 1);
   pump(e, .4f, out); le_engine_drain_events(e);
   CHECK(destroyed == 2);
+  for (int n = 0; n < 4; ++n) pump(e, .4f, out); /* the new host's ramp */
   CHECK(out[126] > .099f && out[126] < .101f);
   CHECK(le_engine_fx_recipe_revision(e, LE_FX_OWNER_MONITOR, 0, 0) == 3);
 

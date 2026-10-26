@@ -771,7 +771,7 @@ void main() {
 
       final effect = effects.single as le.BuiltInEffect;
       expect(effect.type, le.TrackEffectType.octaver);
-      expect(effect.params, [7, 0.5]);
+      expect(effect.params.take(2), [7, 0.5]);
     });
 
     test('carries a plugin entry ref, state and name across the boundary', () {

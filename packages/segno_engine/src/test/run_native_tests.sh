@@ -133,6 +133,17 @@ $CC $STD $EXTRA_CFLAGS src/test/test_plugin_runtime_races.c \
   -o "$OUT/segno_plugin_runtime_race_tests.exe"
 "$OUT/segno_plugin_runtime_race_tests.exe"
 
+echo "== building FX table build race tests =="
+# Two threads prepare the process's first octaver at once (#1410): the shared
+# Hann window and FFT plan must be complete before either reads them. Its own
+# binary, since the tables are built once per process. Before the races-only
+# exit so the TSAN job covers it.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_fx_tables_races.c \
+  src/core/engine_fx.c src/core/rt_alloc.c -lpthread -lm \
+  -o "$OUT/segno_fx_tables_race_tests.exe"
+"$OUT/segno_fx_tables_race_tests.exe"
+
 echo "== building FX recipe ownership tests =="
 # Real engine admission, callback publication and retirement with a deterministic
 # plugin host. Keep this before the races-only exit so TSAN covers its overlap.

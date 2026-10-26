@@ -42,9 +42,10 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& newSetup) {
     // reallocate them at the new size. fx_octaver_prepare only allocates
     // when a pointer is NULL, so without this the ring would silently stay
     // sized to the OLD rate. The octaver-specific phase-vocoder/PSOLA
-    // buffers (fx_.oct[0][*].out/last_phase/sum_phase) are NOT freed here —
-    // their size is fixed (LE_PV_N/LE_PV_BINS), independent of sample rate,
-    // so they stay valid and are simply reused across a rate change.
+    // buffers (fx_.oct[0][*].out/last_phase/sum_phase/scratch) are NOT freed
+    // here — their sizes are fixed (LE_PV_OUT/LE_PV_BINS/LE_PV_SCRATCH),
+    // independent of sample rate, so they stay valid and are simply reused
+    // across a rate change.
     le_fx_free_delay(&fx_, 0);
     cap_ = newCap;
   }
@@ -159,12 +160,12 @@ tresult PLUGIN_API Processor::getState(IBStream* state) {
 
 uint32 PLUGIN_API Processor::getLatencySamples() {
   // Both of fx_octaver's modes (phase vocoder and PSOLA) report the same
-  // LE_PV_N-frame latency through the engine's existing le_fx_added_latency
+  // LE_PV_LATENCY-frame latency through the engine's existing le_fx_added_latency
   // seam (engine_fx.h) — forwarded unchanged, not reimplemented or
   // hardcoded, so a future engine-side latency change is picked up here
   // automatically. Safe to call at any time: le_fx_added_latency's LE_FX_
   // OCTAVER row (le_octaver_latency) reads no heap state, just returns the
-  // LE_PV_N constant.
+  // LE_PV_LATENCY constant.
   return static_cast<uint32>(le_fx_added_latency(&fx_, 0, LE_FX_OCTAVER));
 }
 

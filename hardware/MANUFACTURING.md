@@ -549,10 +549,11 @@ parts are `kicad/fab/segno_console_board_bom.csv`. Headlines:
   Check one thing with calipers before the faceplate is cut: the model assumes a Ø22 × 4.5
   underside relief clearing the encoder's M7 nut. If the real knob's underside is solid it will sit
   ~3 mm proud of where the model puts it.
-- 1× existing **40-LED WS2812B strip**, connected to carrier J2 in its separate
+- 1× fitted **35-LED WS2812B strip** (owner, 2026-10-19, #1075), connected to
+  carrier J2 in its separate
   [strip housing design](https://github.com/tomassasovsky/segno/pull/1083).
   The older `segno_ring_diffuser` and enclosure window described above are the
-  24-LED mechanical variant; they are not a completed 40-strip enclosure release.
+  24-LED alternative, not the selected strip ring.
 - 1× **Panasonic EEUFR1A102**, 1000 µF / 10 V, fitted across the strip's
   own power entry with insulated lead joints; allow its 10 × 16 mm body
   beside the harness. See [polarity and assembly](kicad/RING_ASSEMBLY.md).

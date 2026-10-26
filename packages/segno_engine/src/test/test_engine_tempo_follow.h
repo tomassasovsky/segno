@@ -46,6 +46,7 @@ static le_engine* tf_fixture(int tracks, int follow, int max_frames) {
   }
   CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
+  tf_process(e, NULL, TF_LEN, 0.0f); /* one lap: the Play's fade-in (#1400) */
   return e;
 }
 
@@ -167,6 +168,7 @@ static void test_follow_off_detaches(void) {
   le_engine* e = tf_fixture(2, 1, 4 * TF_LEN);
   uint64_t id = tf_follow(e, 1, 0);
   CHECK(le_engine_set_track_mute(e, 0, 1) == LE_OK); /* hear track 1 alone */
+  tf_process(e, NULL, TF_LEN, 0.0f); /* a lap: the mute's fade (#1400) ends */
   static float out[2 * TF_LEN];
   tf_process(e, out, 3000, 0.0f);
   fade_result(e, id, LE_OK);

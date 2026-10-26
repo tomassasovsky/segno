@@ -19,9 +19,43 @@ const int kPluginFxCode = 8;
 /// whose own note records what raising it cost.
 const int kTrackEffectMax = 64;
 
-/// The number of normalized (`0..1`) parameters each effect exposes. Mirrors
-/// the native `LE_FX_PARAMS`.
-const int kTrackEffectParams = 4;
+/// The number of normalized (`0..1`) parameter cells each chain entry carries.
+/// Mirrors the native `LE_FX_PARAMS`. A type uses the first
+/// `type.params.length` of them; the rest stay 0 (see [canonicalEffectParams]).
+///
+/// Thirty-two since the Looper X kinds (#887 part 4): each carries its generic
+/// module's whole parameter set, and the four-band EQ alone has fourteen.
+const int kTrackEffectParams = 32;
+
+/// The [kTrackEffectParams] cells an entry of [type] holds for [params]: the
+/// given values for the parameters the type uses, its defaults for any the
+/// list does not reach, and 0 past them.
+///
+/// Every [BuiltInEffect] holds its parameters in this shape, so two entries
+/// that sound the same compare equal however their lists were built, and a
+/// list saved by a narrower build (or trimmed by [BuiltInEffect.toJson])
+/// decodes to the same entry.
+List<double> canonicalEffectParams(
+  TrackEffectType type,
+  List<double>? params,
+) {
+  assert(
+    params == null || params.length <= kTrackEffectParams,
+    'an entry holds at most $kTrackEffectParams parameter cells',
+  );
+  final defaults = type.defaultParams;
+  if (params == null) return defaults; // already canonical and unmodifiable
+  final count = type.params.length;
+  return List<double>.unmodifiable([
+    for (var i = 0; i < kTrackEffectParams; i++)
+      if (i >= count)
+        0.0
+      else if (i < params.length)
+        params[i]
+      else
+        defaults[i],
+  ]);
+}
 
 /// The ceiling of a chain entry's own level, [FxChannels.level]: `4.0`, about
 /// +12 dB, the top of a factory rack's level. Mirrors the native
@@ -241,6 +275,33 @@ final class FxRack {
   int get hashCode => Object.hash(id, name, art);
 }
 
+/// Which of the Dub Rack's two parallel paths a rack entry runs on (#1430),
+/// as the native `le_fx_rack_edge` path bits.
+///
+/// A run of path entries inside one rack is a parallel section: both paths
+/// start from the pair the section is handed, each runs its own entries in
+/// chain order, and the section hands on A(m) times the [amb] path plus D(m)
+/// times the [dub] path, m being the section's Amb-Verb's Amb-Dub Mix.
+enum FxRackPath {
+  /// On no path: in series, as every other entry.
+  none(0),
+
+  /// The Dub path (the Doubler, the Dub Delay and the Dub-Verb).
+  dub(4),
+
+  /// The Amb path (the Amb-Verb).
+  amb(8);
+
+  const FxRackPath(this.bits);
+
+  /// The native bits.
+  final int bits;
+
+  /// The path whose name is [name], or [none] for anything else.
+  static FxRackPath fromWireName(Object? name) =>
+      values.where((p) => p.name == name).firstOrNull ?? none;
+}
+
 /// Where one chain entry sits relative to the loop player.
 ///
 /// The chain is ordered [pre] entries first, then [post] entries, so the split
@@ -319,7 +380,111 @@ enum TrackEffectType {
   /// Schroeder/Freeverb room reverb — a dense, smooth decaying tail. Spreads a
   /// mono source into a stereo tail across the first two channels of its output
   /// route, so it is best placed last in a chain.
-  reverb(7, 'Reverb');
+  reverb(7, 'Reverb'),
+
+  /// The Looper X's generic EQ (#887 part 4): low cut, low shelf, two
+  /// peaking mids, high shelf, air shelf and high cut. A factory rack exposes
+  /// a subset of its fifteen parameters.
+  eq(9, 'EQ'),
+
+  /// The Looper X's compressor (#887 part 5): threshold, ratio, attack,
+  /// release and make-up. Feed-forward and stereo-linked, hard knee.
+  compressor(10, 'Compressor'),
+
+  /// The Looper X's transient shaper (#887 part 5): attack, attack length
+  /// and sustain, each neutral at 50 %.
+  transient(11, 'Transient'),
+
+  /// The Looper X's high-pass gate (#887 part 5): a 12 dB/octave high-pass,
+  /// then a gate keyed on what it passes.
+  hpGate(12, 'HP / Gate'),
+
+  /// The Looper X's doubler (#887 part 6): two slowly drifting delayed
+  /// copies of the input, panned apart by the separation.
+  doubler(13, 'Doubler'),
+
+  /// The Looper X's chorus (#887 part 6): one triangle-modulated voice per
+  /// channel, low-passed, mixed with the dry signal.
+  chorus(14, 'Chorus'),
+
+  /// The Looper X's wah (#887 part 6): a resonant band-pass swept by the
+  /// pedal.
+  wah(15, 'Wah'),
+
+  /// The Looper X's overdrive (#887 part 7): a clean part plus a clipped
+  /// part whose gain the drive sets, then a tone filter; fit to the Guitar
+  /// Rack's OvDrive.
+  overdrive(16, 'Overdrive'),
+
+  /// The Looper X's amp simulator at its defaults, which the Studio Rack
+  /// labels Dist (#887 part 7): an asymmetric curve, then the 4x12"
+  /// cabinet; fit to the Phase 0 amp captures.
+  distortion(17, 'Distortion'),
+
+  /// The Looper X's vinyl (#887 part 7): a high-pass, a roll-off, soft
+  /// saturation, then hiss and crackle.
+  vinyl(18, 'Vinyl'),
+
+  /// The Looper X's degrade (#887 part 7): sample-rate reduction, filtered
+  /// and mixed with the dry signal.
+  degrade(19, 'Degrade'),
+
+  /// The Looper X's low-pass filter (#887 part 7): resonant, 12 dB/octave.
+  lpf(20, 'LPF'),
+
+  /// The Looper X's spring reverb (#887 part 8): one recirculating,
+  /// dispersive spring; fit to the Guitar Rack's Spring.
+  spring(21, 'Spring reverb'),
+
+  /// The Looper X's Dub-Verb (#1430): a bright, slowly thickening reverb with
+  /// a decay and a volume; fit to the Dub Rack's.
+  dubVerb(22, 'Dub reverb'),
+
+  /// The Looper X's Amb-Verb (#1430): a reverb with a strong early echo and
+  /// shorter lows; its third parameter is the Dub Rack's Amb-Dub Mix, which
+  /// sets the rack's parallel paths. Fit to the Dub Rack's.
+  ambVerb(23, 'Ambience'),
+
+  /// The Looper X's Whammy (#1433): the octaver's phase vocoder, fully wet,
+  /// shifted by the range times pedal^1.39 with the formants moving; fit to
+  /// the Guitar Rack's.
+  whammy(24, 'Whammy'),
+
+  /// The Looper X's Pumper (#887 part 10): a duck on every note value at the
+  /// song tempo, of the Rhythmic Rack's measured shape.
+  pumper(25, 'Pumper'),
+
+  /// The Looper X's Slicer (#887 part 10): a pattern of live and replayed
+  /// slices on the beat, fit to the Rhythmic Rack's. The list stops at
+  /// <<<<: the Looper X's three Fd patterns after it are not modelled.
+  slicer(26, 'Slicer'),
+
+  /// The Looper X's delay (#887 part 10): a note value at the song tempo,
+  /// its voicings and stereo timings fit to the captures, on a line of up
+  /// to 4 s.
+  modeDelay(27, 'Mode delay'),
+
+  /// The Looper X's Dual Octaver (#887 part 11) on the octaver's phase
+  /// vocoder: Octave 1 one octave down, or up in high mode, Octave 2 two,
+  /// both from one analysis, mixed equal-power.
+  dualOctaver(28, 'Dual octaver'),
+
+  /// The Looper X's Amp with its cabinet (#887 part 12), fit to the
+  /// captures: drive, Bass, Treble, Modern and twelve cabinets.
+  ampCab(29, 'Amp'),
+
+  /// The Looper X's Mod pedal (#887 part 13), fit to the captures: the
+  /// chorus, a phaser, a flanger and a square tremolo, one at a time.
+  mod(30, 'Modulation'),
+
+  /// The Looper X's Reverb (#1476), fit to the captures: four modes (HALL,
+  /// STADIUM, ROOM, BOX) with Bright, and the Drum Rack's twelve ER rooms
+  /// with Lo/Hi, Tail/ER and Density, on one network at each room's size.
+  roomVerb(31, 'Room reverb'),
+
+  /// The Looper X's Smart Tune (#1480), fit to the captures: a voice
+  /// retuned to the nearest note of a scale, gliding there at its speed.
+  smartTune(32, 'Smart Tune');
 
   const TrackEffectType(this.code, this.label);
 
@@ -452,6 +617,16 @@ enum TrackEffectType {
         atMax: 1,
         defaultValue: 0,
       ),
+      // Position 0 = formants held where they are, 1 = moved with the
+      // pitch. The phase vocoder only: PSOLA's grains hold them.
+      FxParamInfo(
+        key: 'formants',
+        unit: FxParamUnit.choice,
+        steps: 2,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
     ],
     TrackEffectType.echo => const [
       FxParamInfo(
@@ -474,6 +649,820 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.35,
+      ),
+    ],
+    // The values the Looper X applies, as measured (#891): the rack variants
+    // convert the racks' own scales. Ed's 4-band EQ's defaults.
+    TrackEffectType.eq => const [
+      FxParamInfo(
+        key: 'low_cut',
+        unit: FxParamUnit.hz,
+        atMin: 20,
+        atMax: 8000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.21,
+      ),
+      FxParamInfo(
+        key: 'low_gain',
+        unit: FxParamUnit.db,
+        atMin: -18,
+        atMax: 18,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'low_freq',
+        unit: FxParamUnit.hz,
+        atMin: 20,
+        atMax: 1000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.384476,
+      ),
+      FxParamInfo(
+        key: 'low_q',
+        unit: FxParamUnit.q,
+        atMin: 0.4,
+        atMax: 10,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'lo_mid_gain',
+        unit: FxParamUnit.db,
+        atMin: -18,
+        atMax: 18,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'lo_mid_freq',
+        unit: FxParamUnit.hz,
+        atMin: 20,
+        atMax: 20000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.235138,
+      ),
+      FxParamInfo(
+        key: 'lo_mid_q',
+        unit: FxParamUnit.q,
+        atMin: 0.4,
+        atMax: 10,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.174,
+      ),
+      FxParamInfo(
+        key: 'hi_mid_gain',
+        unit: FxParamUnit.db,
+        atMin: -18,
+        atMax: 18,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'hi_mid_freq',
+        unit: FxParamUnit.hz,
+        atMin: 20,
+        atMax: 20000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.727302,
+      ),
+      FxParamInfo(
+        key: 'hi_mid_q',
+        unit: FxParamUnit.q,
+        atMin: 0.4,
+        atMax: 10,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.15557,
+      ),
+      FxParamInfo(
+        key: 'high_gain',
+        unit: FxParamUnit.db,
+        atMin: -18,
+        atMax: 18,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'high_freq',
+        unit: FxParamUnit.hz,
+        atMin: 1200,
+        atMax: 20000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.5278,
+      ),
+      FxParamInfo(
+        key: 'high_q',
+        unit: FxParamUnit.q,
+        atMin: 0.4,
+        atMax: 10,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'high_cut',
+        unit: FxParamUnit.hz,
+        atMin: 120,
+        atMax: 20000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 1,
+      ),
+      // Position 0 = low and high shelves and no cuts, 1 = four bells and
+      // both cuts, 2 = four bells and no cuts.
+      FxParamInfo(
+        key: 'layout',
+        unit: FxParamUnit.choice,
+        steps: 3,
+        atMin: 0,
+        atMax: 2,
+        defaultValue: 0.5,
+      ),
+    ],
+    // The Looper X ranges and tapers (#887 part 5); the ratio's is its own
+    // reciprocal taper. The make-up is the gain applied, which the rack
+    // variants convert from the Looper X's display (#891). Ed's Rack's
+    // defaults.
+    TrackEffectType.compressor => const [
+      FxParamInfo(
+        key: 'threshold',
+        unit: FxParamUnit.db,
+        atMin: 0,
+        atMax: -60,
+        defaultValue: 0.35,
+      ),
+      FxParamInfo(
+        key: 'ratio',
+        unit: FxParamUnit.ratio,
+        atMin: 1,
+        atMax: 100,
+        curve: FxParamCurve.reciprocal,
+        defaultValue: 0.76,
+      ),
+      FxParamInfo(
+        key: 'attack',
+        unit: FxParamUnit.ms,
+        atMin: 0.01,
+        atMax: 300,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'release',
+        unit: FxParamUnit.ms,
+        atMin: 5,
+        atMax: 4000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'makeup',
+        unit: FxParamUnit.db,
+        atMin: 0,
+        atMax: 30,
+        defaultValue: 0.10833334,
+      ),
+    ],
+    // Shown as the Looper X shows them; what each percent does is measured
+    // (#891).
+    TrackEffectType.transient => const [
+      FxParamInfo(
+        key: 'attack',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'attack_length',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'sustain',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+    ],
+    // The corner the high-pass applies, half the Looper X's display, and off
+    // at its lowest, which the Looper X shows as 1 Hz (#891). The Vocal
+    // Rack's defaults: the high-pass off, the gate at -120 dB.
+    TrackEffectType.hpGate => const [
+      FxParamInfo(
+        key: 'highpass',
+        unit: FxParamUnit.hz,
+        atMin: 0.5,
+        atMax: 500,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0,
+        off: FxParamOff.atMin,
+      ),
+      FxParamInfo(
+        key: 'gate_threshold',
+        unit: FxParamUnit.db,
+        atMin: -120,
+        atMax: 0,
+        defaultValue: 0,
+      ),
+    ],
+    // Shown as the Looper X shows them; what each percent does is measured
+    // (the doubler and the wah in #1445, the doubler's mix at 0, 50 and
+    // 100 % with the line between chosen), except the chorus's, measured on
+    // the Guitar Rack's at 0, 25, 50, 75 and 100 % (#891). The Dub Rack's
+    // doubler, Ed's chorus and Ed's wah defaults.
+    TrackEffectType.doubler => const [
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
+      ),
+      FxParamInfo(
+        key: 'separation',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
+      ),
+    ],
+    TrackEffectType.chorus => const [
+      FxParamInfo(
+        key: 'rate',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.45,
+      ),
+      FxParamInfo(
+        key: 'depth',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.21,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+    ],
+    // The Looper X's Mod (#891): Rate, Depth and Mix, each measured at 0,
+    // 25, 50, 75 and 100 % in every mode, and the mode (CHORUS, PHASER,
+    // FLANGER, Tremolo).
+    TrackEffectType.mod => const [
+      FxParamInfo(
+        key: 'rate',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'depth',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'mod_mode',
+        unit: FxParamUnit.choice,
+        steps: 4,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
+    ],
+    TrackEffectType.wah => const [
+      FxParamInfo(
+        key: 'pedal',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.619,
+      ),
+    ],
+    // Fit to the Guitar Rack's OvDrive (#891): the drive's law is measured,
+    // the tone's only at 50 %. Ed's Rack's defaults.
+    TrackEffectType.overdrive => const [
+      FxParamInfo(
+        key: 'drive',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.09,
+      ),
+      FxParamInfo(
+        key: 'tone',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+        taperUnverified: true,
+      ),
+    ],
+    // Fit to the amp captures (#891), the Studio Rack's Dist; the Lo-Fi
+    // Rack's is taken to be the same module, so both carry the flag. The
+    // Lo-Fi Rack's defaults.
+    TrackEffectType.distortion => const [
+      FxParamInfo(
+        key: 'drive',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.2,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'tone',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+        taperUnverified: true,
+      ),
+    ],
+    // The Looper X's ranges and tapers, fit to its captures (#1445). The
+    // Lo-Fi Rack's defaults.
+    TrackEffectType.vinyl => const [
+      FxParamInfo(
+        key: 'drive',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.4,
+      ),
+      FxParamInfo(
+        key: 'frequency',
+        unit: FxParamUnit.hz,
+        atMin: 50,
+        atMax: 5000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.35,
+      ),
+      FxParamInfo(
+        key: 'noise',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.3,
+      ),
+      FxParamInfo(
+        key: 'noise_tone',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.9,
+      ),
+    ],
+    TrackEffectType.degrade => const [
+      FxParamInfo(
+        key: 'frequency',
+        unit: FxParamUnit.hz,
+        atMin: 500,
+        atMax: 50000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 1,
+      ),
+      FxParamInfo(
+        key: 'filter',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
+      ),
+    ],
+    // Fit to the Lo-Fi and Rhythmic racks' (#1445). The cutoff is off at
+    // the top of its range (a fresh filter is transparent, though the Looper
+    // X's default resonance is 100 %).
+    TrackEffectType.lpf => const [
+      FxParamInfo(
+        key: 'cutoff',
+        unit: FxParamUnit.hz,
+        atMin: 20,
+        atMax: 20000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 1,
+        off: FxParamOff.atMax,
+      ),
+      FxParamInfo(
+        key: 'resonance',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
+      ),
+      // The Rhythmic Rack's LFO over the cutoff (#891): its depth (0 keeps
+      // the cutoff still, as the Lo-Fi Rack's is) and its rate, a note value
+      // (8/4, 6/4, 5/4, 4/4, 3/4, 1/1T, 1/2, 1/4D, 1/2T, 1/4, 1/8D, 1/4T,
+      // 1/8, 1/16D, 1/8T, 1/16).
+      FxParamInfo(
+        key: 'lfo_depth',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'lfo_rate',
+        unit: FxParamUnit.choice,
+        steps: 16,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0.4,
+      ),
+    ],
+    // Fit to the Guitar Rack's Spring (#891); the Looper X's ranges.
+    TrackEffectType.spring => const [
+      FxParamInfo(
+        key: 'time',
+        unit: FxParamUnit.seconds,
+        atMin: 1,
+        atMax: 10,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.30103,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+    ],
+    // The Looper X's Reverb (#891 s6rev, s8): the length (its reverb-time
+    // display), the mix, the room (HALL, STADIUM, ROOM, BOX, then the Drum
+    // Rack's ER rooms BOOTH to CHURCH), Bright (the modes'), Lo/Hi, Tail/ER
+    // and Density (the ER rooms'). Every control measured at three or more
+    // settings.
+    TrackEffectType.roomVerb => const [
+      FxParamInfo(
+        key: 'length',
+        unit: FxParamUnit.seconds,
+        atMin: 0.45,
+        atMax: 144,
+        curve: FxParamCurve.reverbTime,
+        defaultValue: 0.4,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.15,
+      ),
+      FxParamInfo(
+        key: 'room',
+        unit: FxParamUnit.choice,
+        steps: 16,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'bright',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.8,
+      ),
+      FxParamInfo(
+        key: 'lo_hi',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'tail_er',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.3,
+      ),
+      FxParamInfo(
+        key: 'density',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
+      ),
+    ],
+    // Fit to the Dub Rack's Dub-Verb (#891); the Looper X's ranges.
+    TrackEffectType.dubVerb => const [
+      FxParamInfo(
+        key: 'decay',
+        unit: FxParamUnit.seconds,
+        atMin: 0.45,
+        atMax: 144,
+        curve: FxParamCurve.reverbTime,
+        defaultValue: 0.7,
+      ),
+      FxParamInfo(
+        key: 'volume',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.2,
+      ),
+    ],
+    // The Rhythmic Rack's Pumper (#891): the rate a note value (Bar, 1/2,
+    // 1/2T, 1/4, 1/4T, 1/8, 1/8T, 1/16, 1/16T, 1/32, 1/32T), the depth.
+    TrackEffectType.pumper => const [
+      FxParamInfo(
+        key: 'pumper_rate',
+        unit: FxParamUnit.choice,
+        steps: 11,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0.3,
+      ),
+      FxParamInfo(
+        key: 'depth',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.7,
+      ),
+    ],
+    // The Rhythmic Rack's Slicer (#891): the pattern (AABB, ABCC, AACD,
+    // ABC_, A_C_, A_CC, A___C___, ABcccc, AAccdd, AB__dd, AA__dd, ABC<, AB_<,
+    // AA_<, A_B_C<, AB<<, <<<<), the step (1/4,
+    // 1/4T, 1/8, 1/8T, 1/16, 1/16T, 1/32, 1/32T, 1/64), the mix.
+    // The Looper X's delay (#891): the time a note value (1/32, 1/16T,
+    // 1/32D, 1/16, 1/8T, 1/16D, 1/8, 1/4T, 1/8D, 1/4, 2/4T, 1/4D, 2/4, 5/8,
+    // 3/4, 7/8, 4/4, 5/4, 6/4, 8/4), feedback, mix, and the mode (DIGI,
+    // DIGI L/R, DIGI GRV, DAMPED, DAMPED L/R, DAMPED GRV, RESO LO, RES LO
+    // L/R, RES LO GRV, RESO HI, RES HI L/R, RES HI GRV).
+    TrackEffectType.modeDelay => const [
+      FxParamInfo(
+        key: 'delay_time',
+        unit: FxParamUnit.choice,
+        steps: 20,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 8 / 19,
+      ),
+      FxParamInfo(
+        key: 'feedback',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.2,
+      ),
+      // The seven racks' twelve modes, then the Drum Rack's and the Dub
+      // Rack's own delays.
+      FxParamInfo(
+        key: 'delay_mode',
+        unit: FxParamUnit.choice,
+        steps: 14,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
+      // The Drum Rack's Del Freq, its bell's centre.
+      FxParamInfo(
+        key: 'delay_freq',
+        unit: FxParamUnit.hz,
+        atMin: 100,
+        atMax: 10000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.25,
+      ),
+      // The Dub Rack's Del Damp, L/R Ratio, Reso and Res-Freq.
+      FxParamInfo(
+        key: 'damp',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.35,
+      ),
+      FxParamInfo(
+        key: 'lr_ratio',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'reso',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.8,
+      ),
+      FxParamInfo(
+        key: 'res_freq',
+        unit: FxParamUnit.hz,
+        atMin: 100,
+        atMax: 10000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.35,
+      ),
+    ],
+    // The Looper X's Amp (#891): drive, Bass, Treble and Modern (each
+    // captured at 0, 25, 50, 75 and 100 %), and the cabinet (D.I., BRIT,
+    // 1x8", 1x12", 2x10", 2x12", 4x10", 4x12", 1x15", BASS, 4x10", RADIO).
+    TrackEffectType.ampCab => const [
+      FxParamInfo(
+        key: 'drive',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'bass',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'treble',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'modern',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'cabinet',
+        unit: FxParamUnit.choice,
+        steps: 12,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 7 / 11,
+      ),
+    ],
+    // Ed's Rack's Dual Octaver (#891): high mode (off, on), Octave 1's
+    // level (its taper unmeasured), the mix, Octave 2's level (linear,
+    // measured at 50 and 100 %).
+    TrackEffectType.dualOctaver => const [
+      FxParamInfo(
+        key: 'oct_high_mode',
+        unit: FxParamUnit.choice,
+        steps: 2,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'octave_1_vol',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
+        taperUnverified: true,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
+      ),
+      FxParamInfo(
+        key: 'octave_2_vol',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0,
+      ),
+    ],
+    TrackEffectType.slicer => const [
+      FxParamInfo(
+        key: 'slicer_pattern',
+        unit: FxParamUnit.choice,
+        steps: 17,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'slicer_step',
+        unit: FxParamUnit.choice,
+        steps: 9,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
+      ),
+    ],
+    // The Vocal Tuner's Smart Tune (#1480): the speed (6, 32, 179 and 994 ms
+    // on the Looper X's screen at 25, 50, 75 and 100 %), the scale root C to
+    // B, the scale type, and the reference (459.9 Hz at 99.6 %).
+    TrackEffectType.smartTune => const [
+      FxParamInfo(
+        key: 'speed',
+        unit: FxParamUnit.ms,
+        atMin: 1,
+        atMax: 1000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'scale_root',
+        unit: FxParamUnit.choice,
+        steps: 12,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'scale_type',
+        unit: FxParamUnit.choice,
+        steps: 14,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'reference',
+        unit: FxParamUnit.hz,
+        atMin: 420,
+        atMax: 460,
+        defaultValue: 0.5,
+      ),
+    ],
+    // The Guitar Rack's Whammy (#891): the pedal, and the range (position 0
+    // -12 semitones, 1 +12).
+    TrackEffectType.whammy => const [
+      FxParamInfo(
+        key: 'pedal',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'whammy_range',
+        unit: FxParamUnit.choice,
+        steps: 2,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
+    ],
+    // Fit to the Dub Rack's Amb-Verb (#891); the Looper X's ranges.
+    TrackEffectType.ambVerb => const [
+      FxParamInfo(
+        key: 'decay',
+        unit: FxParamUnit.seconds,
+        atMin: 0.45,
+        atMax: 144,
+        curve: FxParamCurve.reverbTime,
+        defaultValue: 0.2,
+      ),
+      FxParamInfo(
+        key: 'volume',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.4,
+      ),
+      // The Dub Rack's Amb-Dub Mix: the rack's parallel paths read it, the
+      // kernel does not.
+      FxParamInfo(
+        key: 'amb_dub_mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.4,
       ),
     ],
     TrackEffectType.reverb => const [
@@ -536,7 +1525,19 @@ enum FxParamUnit {
   times(4),
 
   /// Named positions; the value is the position (`LE_FX_UNIT_CHOICE`).
-  choice(5);
+  choice(5),
+
+  /// Decibels (`LE_FX_UNIT_DB`).
+  db(6),
+
+  /// A filter's Q, a plain number (`LE_FX_UNIT_Q`).
+  q(7),
+
+  /// A compression ratio, "n : 1" (`LE_FX_UNIT_RATIO`).
+  ratio(8),
+
+  /// Seconds (`LE_FX_UNIT_SECONDS`).
+  seconds(9);
 
   const FxParamUnit(this.code);
 
@@ -551,12 +1552,33 @@ enum FxParamCurve {
   linear(0),
 
   /// `atMin * (atMax / atMin) ^ v` (`LE_FX_CURVE_EXPONENTIAL`).
-  exponential(1);
+  exponential(1),
+
+  /// `1 / (1 / atMin + (1 / atMax - 1 / atMin) * v)`: the reciprocal is
+  /// linear (`LE_FX_CURVE_RECIPROCAL`, the Looper X compressor's ratio).
+  reciprocal(2),
+
+  /// `(v + atMin) / (1 - v)`, at most [FxParamInfo.atMax]: the Looper X's
+  /// reverb time display (`LE_FX_CURVE_REVERB_TIME`).
+  reverbTime(3);
 
   const FxParamCurve(this.code);
 
   /// The native `le_fx_param_curve` value.
   final int code;
+}
+
+/// Where a built-in parameter turns its effect off (the identity), which a
+/// surface reads as Off. Mirrors the native `LE_FX_PARAM_OFF_AT_*` flags.
+enum FxParamOff {
+  /// Never: every setting does something.
+  none,
+
+  /// At setting 0 (an EQ's low cut).
+  atMin,
+
+  /// At setting 1 (an EQ's high cut, the low-pass filter's cutoff).
+  atMax,
 }
 
 /// One built-in effect parameter: what its normalized `0..1` setting means.
@@ -579,6 +1601,7 @@ class FxParamInfo {
     this.steps = 0,
     this.curve = FxParamCurve.linear,
     this.taperUnverified = false,
+    this.off = FxParamOff.none,
   });
 
   /// The stable parameter key (`drive`, `cutoff`, `shift`, ...).
@@ -610,6 +1633,17 @@ class FxParamInfo {
   /// it reproduces (the native `LE_FX_PARAM_TAPER_UNVERIFIED` flag).
   final bool taperUnverified;
 
+  /// Where the parameter turns its effect off (the native
+  /// `LE_FX_PARAM_OFF_AT_*` flags).
+  final FxParamOff off;
+
+  /// Whether [setting] (clamped to `0..1`) is where the effect is off.
+  bool isOffAt(double setting) => switch (off) {
+    FxParamOff.none => false,
+    FxParamOff.atMin => setting <= 0,
+    FxParamOff.atMax => setting >= 1,
+  };
+
   /// Whether the parameter snaps to [steps] positions.
   bool get isStepped => steps > 1;
 
@@ -623,8 +1657,25 @@ class FxParamInfo {
     }
     return switch (curve) {
       FxParamCurve.exponential => atMin * math.pow(atMax / atMin, v),
+      FxParamCurve.reciprocal => 1 / (1 / atMin + (1 / atMax - 1 / atMin) * v),
+      FxParamCurve.reverbTime =>
+        v >= 1 ? atMax : math.min(atMax, (v + atMin) / (1 - v)),
       FxParamCurve.linear => atMin + (atMax - atMin) * v,
     };
+  }
+
+  /// The setting (`0..1`) that stands for [value], the inverse of [valueAt]
+  /// for a continuous parameter; a value outside the range clamps.
+  double settingFor(double value) {
+    if (value.isNaN) return 0;
+    final x = value.clamp(atMin, atMax);
+    final v = switch (curve) {
+      FxParamCurve.exponential => math.log(x / atMin) / math.log(atMax / atMin),
+      FxParamCurve.reciprocal => (1 / x - 1 / atMin) / (1 / atMax - 1 / atMin),
+      FxParamCurve.reverbTime => (x - atMin) / (x + 1),
+      FxParamCurve.linear => (x - atMin) / (atMax - atMin),
+    };
+    return v.isNaN ? 0.0 : v.clamp(0.0, 1.0);
   }
 
   /// The position (`0..steps-1`) [setting] (clamped to `0..1`) snaps to.
@@ -646,7 +1697,8 @@ class FxParamInfo {
       other.atMax == atMax &&
       other.curve == curve &&
       other.defaultValue == defaultValue &&
-      other.taperUnverified == taperUnverified;
+      other.taperUnverified == taperUnverified &&
+      other.off == off;
 
   @override
   int get hashCode => Object.hash(
@@ -658,6 +1710,7 @@ class FxParamInfo {
     curve,
     defaultValue,
     taperUnverified,
+    off,
   );
 
   @override
@@ -782,21 +1835,36 @@ final class BuiltInEffect extends TrackEffect {
     this.rack,
     this.module,
     this.presetId,
+    this.rackPath = FxRackPath.none,
     Map<String, double> source = const {},
-  }) : params = List<double>.unmodifiable(params ?? type.defaultParams),
+  }) : params = canonicalEffectParams(type, params),
        source = Map<String, double>.unmodifiable(source);
+
+  /// [copyWith] keeping [type]: [params] is already canonical for it.
+  const BuiltInEffect._sameType({
+    required this.type,
+    required this.params,
+    required this.enabled,
+    required this.slotId,
+    required this.placement,
+    required this.channels,
+    required this.rack,
+    required this.module,
+    required this.presetId,
+    required this.rackPath,
+    required this.source,
+  });
 
   /// Rebuilds a [BuiltInEffect] from [toJson] output; unknown codes fall back
   /// to safe defaults. A legacy `stage` key (from the removed pre/post model)
   /// is ignored, so older persisted chains still decode.
   ///
-  /// The decoded `params` are normalized to [kTrackEffectParams]: a list saved
-  /// by a narrower build is padded with the type's own `defaultParams` (so a
-  /// future non-zero default round-trips, and the octaver's new `mode` lands on
-  /// phase vocoder), and an over-long list is truncated. A missing `enabled`
-  /// decodes `true` (every pre-FX-v3 entry was audible — R15's "migration
-  /// defaults every level to enabled"); a missing `slotId` stays null for the
-  /// repository write boundary to mint (A9).
+  /// The decoded `params` go through [canonicalEffectParams], like any
+  /// other list: a short one takes the type's defaults for the cells it does
+  /// not reach, and cells past the type's parameters are dropped. A
+  /// missing `enabled` decodes `true` (every pre-FX-v3 entry was audible —
+  /// R15's "migration defaults every level to enabled"); a missing `slotId`
+  /// stays null for the repository write boundary to mint (A9).
   factory BuiltInEffect.fromJson(Map<String, dynamic> json) {
     final type = TrackEffectType.fromCode((json['type'] as num?)?.toInt() ?? 0);
     // `is`-checks, not casts: a wrong-typed field in a corrupt persisted
@@ -822,6 +1890,7 @@ final class BuiltInEffect extends TrackEffect {
     final module = rawModule is String ? rawModule : null;
     final rawPresetId = json['presetId'];
     final presetId = rawPresetId is String ? rawPresetId : null;
+    final rackPath = FxRackPath.fromWireName(json['rackPath']);
     final rawSource = json['source'];
     final source = <String, double>{
       if (rawSource is Map)
@@ -840,17 +1909,18 @@ final class BuiltInEffect extends TrackEffect {
         rack: rack,
         module: module,
         presetId: presetId,
+        rackPath: rackPath,
         source: source,
       );
     }
-    final decoded = [for (final v in rawParams) (v as num).toDouble()];
-    final defaults = type.defaultParams;
+    // Cells past the width cannot belong to any type: dropped, as a corrupt
+    // or foreign file's extra cells are.
+    final decoded = [
+      for (final v in rawParams.take(kTrackEffectParams)) (v as num).toDouble(),
+    ];
     return BuiltInEffect(
       type: type,
-      params: [
-        for (var i = 0; i < kTrackEffectParams; i++)
-          if (i < decoded.length) decoded[i] else defaults[i],
-      ],
+      params: decoded,
       enabled: enabled,
       slotId: slotId,
       placement: placement,
@@ -858,6 +1928,7 @@ final class BuiltInEffect extends TrackEffect {
       rack: rack,
       module: module,
       presetId: presetId,
+      rackPath: rackPath,
       source: source,
     );
   }
@@ -865,7 +1936,8 @@ final class BuiltInEffect extends TrackEffect {
   /// The effect type.
   final TrackEffectType type;
 
-  /// The normalized parameter values (length [kTrackEffectParams]).
+  /// The normalized parameter values, in [canonicalEffectParams] shape:
+  /// length [kTrackEffectParams], the type's parameters first, 0 after them.
   final List<double> params;
 
   /// Whether this entry is audible (R16): a disabled entry stays in the chain
@@ -895,6 +1967,11 @@ final class BuiltInEffect extends TrackEffect {
   /// it did not come from one.
   final String? presetId;
 
+  /// The rack path this entry runs on ([FxRackPath]): derived by the
+  /// repository from the entry's rack variant, and carried here so the
+  /// performance render routes the rack as the live chain did.
+  final FxRackPath rackPath;
+
   /// The factory preset's own values for this entry's module, by the
   /// preset's parameter names. Kept whatever this build could do with them,
   /// so a later build can rebuild the module from what the player loaded.
@@ -904,6 +1981,10 @@ final class BuiltInEffect extends TrackEffect {
   int get typeCode => type.code;
 
   /// Returns a copy with the given fields replaced. [params] is copied.
+  ///
+  /// A new [type] without new [params] starts at that type's defaults, as
+  /// the engine seeds them on a type change: one type's settings mean
+  /// nothing to another.
   BuiltInEffect copyWith({
     TrackEffectType? type,
     List<double>? params,
@@ -914,25 +1995,45 @@ final class BuiltInEffect extends TrackEffect {
     FxRack? rack,
     String? module,
     String? presetId,
+    FxRackPath? rackPath,
     Map<String, double>? source,
-  }) => BuiltInEffect(
-    type: type ?? this.type,
-    params: params ?? this.params,
-    enabled: enabled ?? this.enabled,
-    slotId: slotId ?? this.slotId,
-    placement: placement ?? this.placement,
-    channels: channels ?? this.channels,
-    rack: rack ?? this.rack,
-    module: module ?? this.module,
-    presetId: presetId ?? this.presetId,
-    source: source ?? this.source,
-  );
+  }) => params == null && (type == null || type == this.type)
+      ? BuiltInEffect._sameType(
+          type: this.type,
+          params: this.params,
+          enabled: enabled ?? this.enabled,
+          slotId: slotId ?? this.slotId,
+          placement: placement ?? this.placement,
+          channels: channels ?? this.channels,
+          rack: rack ?? this.rack,
+          module: module ?? this.module,
+          presetId: presetId ?? this.presetId,
+          rackPath: rackPath ?? this.rackPath,
+          source: source == null
+              ? this.source
+              : Map<String, double>.unmodifiable(source),
+        )
+      : BuiltInEffect(
+          type: type ?? this.type,
+          params: params ?? (type ?? this.type).defaultParams,
+          enabled: enabled ?? this.enabled,
+          slotId: slotId ?? this.slotId,
+          placement: placement ?? this.placement,
+          channels: channels ?? this.channels,
+          rack: rack ?? this.rack,
+          module: module ?? this.module,
+          presetId: presetId ?? this.presetId,
+          rackPath: rackPath ?? this.rackPath,
+          source: source ?? this.source,
+        );
 
   @override
   Map<String, dynamic> toJson() => {
     'type': type.code,
-    'params': params,
-    // Omitted when default so a pre-FX-v3 chain's encoding is byte-unchanged.
+    // Only the cells the type uses: the rest are 0 by construction, and
+    // fromJson restores them.
+    'params': params.sublist(0, type.params.length),
+    // The keys below are omitted at their defaults, keeping the wire short.
     if (!enabled) 'enabled': false,
     if (slotId != null) 'slotId': slotId,
     if (placement != FxPlacement.post) 'placement': placement.wireName,
@@ -940,6 +2041,7 @@ final class BuiltInEffect extends TrackEffect {
     if (rack != null) 'rack': rack!.toJson(),
     if (module != null) 'module': module,
     if (presetId != null) 'presetId': presetId,
+    if (rackPath != FxRackPath.none) 'rackPath': rackPath.name,
     if (source.isNotEmpty) 'source': source,
   };
 
@@ -954,6 +2056,7 @@ final class BuiltInEffect extends TrackEffect {
       other.rack == rack &&
       other.module == module &&
       other.presetId == presetId &&
+      other.rackPath == rackPath &&
       _listEquals(other.params, params) &&
       _sourceEquals(other.source, source);
 
@@ -967,6 +2070,7 @@ final class BuiltInEffect extends TrackEffect {
     rack,
     module,
     presetId,
+    rackPath,
     Object.hashAll(params),
     Object.hashAllUnordered([
       for (final e in source.entries) Object.hash(e.key, e.value),

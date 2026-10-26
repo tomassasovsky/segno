@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
@@ -119,6 +120,48 @@ void main() {
     // list is what bounds a target, not the raw value array.
     param: 1,
   );
+
+  group('a rack variant shown range', () {
+    // A Vocal Rack Pitch Shift on monitor 2, at +7 semitones: the octaver's
+    // -24..+24 shown as the rack's -12..+12.
+    const shift = FxParamTarget(
+      address: FxAddress(stage: FxStage.input, index: 2),
+      slotId: 'ps-2',
+      param: 0,
+    );
+    late BuiltInEffect pitch;
+
+    setUp(() {
+      pitch = fxModuleEntry(
+        kFxModules.firstWhere((m) => m.name == 'Pitch shift'),
+        const FxPreset(
+          family: 'Vocal Rack',
+          name: 'p',
+          id: 'p',
+          type: 0,
+          params: {'Pitch': 1, 'Pitch Shift': 19 / 24, 'Pitch Mix': 1},
+        ),
+      ).copyWith(slotId: 'ps-2');
+      monitorChains[2] = [pitch];
+    });
+
+    test('converts a binding value to the chain setting', () {
+      final kind = looper.fxKindSettingFor(shift, 1);
+      expect(pitch.type.params[0].valueAt(kind), closeTo(12, 1e-4));
+      // A parameter the rack shows as the kind does passes through.
+      const mix = FxParamTarget(
+        address: FxAddress(stage: FxStage.input, index: 2),
+        slotId: 'ps-2',
+        param: 2,
+      );
+      expect(looper.fxKindSettingFor(mix, 0.3), 0.3);
+    });
+
+    test('reads the shift as a setting of the shown range', () {
+      // +7 semitones: 19/24 of -12..+12.
+      expect(looper.readValueTarget(shift), closeTo(19 / 24, 1e-6));
+    });
+  });
 
   group('availableValueTargets', () {
     test('offers every built-in param, the track volumes, and master gain', () {

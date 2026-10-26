@@ -148,6 +148,14 @@ typedef struct le_command {
       float bpm;
       int32_t length, position, bars;
     } retime_log;
+    struct { /* LE_PLOG_FX_TEMPO: the chains' musical time from this frame
+              * (le_fx_tempo): the beat in quarter notes (a double's bits),
+              * the quarter notes a frame advances and the time signature. */
+      uint32_t beat_lo, beat_hi;
+      float qpf;
+      uint8_t num, den;
+      uint16_t pad;
+    } fx_tempo_log;
     struct { /* LE_PLOG_SPEED: a track's head rate as numer/denom, the
               * equal-gain turn window the old head is still mixed over, and
               * the exact index the callback reads at this frame in Q32.32

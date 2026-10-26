@@ -78,7 +78,7 @@ final _rackRig = LooperState(
         _fx('p1', TrackEffectType.filter, placement: FxPlacement.pre),
         _module(
           'r1a',
-          TrackEffectType.delay,
+          TrackEffectType.modeDelay,
           rackId: 'R1',
           module: 'Delay',
         ),
@@ -219,6 +219,10 @@ void main() {
     ).thenAnswer((_) => const Stream.empty());
     when(() => repository.state).thenReturn(_rig);
     when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.fxRoomNs).thenReturn(1 << 40);
+    when(() => repository.fxCostOf(any())).thenAnswer(
+      (call) => fxChainCostNs(call.positionalArguments[0] as List<TrackEffect>),
+    );
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
     when(() => repository.laneCount(any())).thenAnswer((call) {
@@ -465,7 +469,12 @@ void main() {
     await presets.save(
       name: 'Warm rhythmic guitar',
       entries: [
-        _module('a', TrackEffectType.delay, rackId: 'X', module: 'Delay'),
+        _module(
+          'a',
+          TrackEffectType.modeDelay,
+          rackId: 'X',
+          module: 'Delay',
+        ),
         _module('b', TrackEffectType.reverb, rackId: 'X', module: 'Reverb'),
       ],
       art: 'guitar',

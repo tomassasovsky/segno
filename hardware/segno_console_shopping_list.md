@@ -70,7 +70,7 @@ The console Pico drives the pills. The independent XIAO on the ring carrier
 drives the ring and reads its encoder; their level shifters and bulk capacitors
 are on the respective board BOMs.
 
-- [x] **40-LED WS2812B strip**, already fitted to the current pedal. Reuse it
+- [x] **35-LED WS2812B strip**, already fitted (owner, 2026-10-19, #1075). Reuse it
       with the new carrier's J2 pin 3 for DIN and its separate strip housing.
       Feed power directly from the near-ring AUX split: at most 600 mm of
       16 AWG copper pair, then separate ≤50 mm 22 AWG pairs to the strip and
@@ -150,7 +150,7 @@ are on the respective board BOMs.
 Use the current generated/maintained BOMs rather than earlier board lists:
 
 - [Console v3](kicad/fab/segno_console_board_bom.csv).
-- [Ring carrier and selected 40-LED strip](kicad/fab/segno_combined_bom_lcsc.csv).
+- [Ring carrier and selected 35-LED strip](kicad/fab/segno_combined_bom_lcsc.csv).
 - [Screen board](kicad/screen_power/hand/bom.csv) and
   [external harness parts](kicad/screen_power/external_bom.csv).
 
@@ -192,5 +192,5 @@ a waveform, so pick any 7″ HDMI panel; set its `pixel_ratio` in
   appliance drives the interface directly through ALSA (see
   [`docs/RUNNING_ON_RPI.md`](../docs/RUNNING_ON_RPI.md#audio-interface)).
 - Footswitches, CTRL jacks and pill LEDs terminate on console v3; the encoder
-  and 40-LED strip terminate on the independent ring carrier. Pi GPIO14/15
+  and 35-LED strip terminate on the independent ring carrier. Pi GPIO14/15
   carry MIDI, and the pedal link uses uart3 (GPIO8/9) over the ribbon.

@@ -49,14 +49,18 @@ struct Rgb { uint8_t r, g, b; };
 // Major 2: the v3 board (ring on its own XIAO). Same pedal-link protocol.
 // 2.1: the ring-update bridge. 2.2: pills and ring dim with the screens
 // (protocol 11, #1349). 2.3: provisions the PD trigger and reports its
-// contract (protocol 12, #1352).
+// contract (protocol 12, #1352). 2.4: MODE reads GP12 (#1388).
 static const uint8_t FW_MAJOR = 2;
-static const uint8_t FW_MINOR = 3;
+static const uint8_t FW_MINOR = 4;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
 static const uint8_t PIN_PD_SDA = 0, PIN_PD_SCL = 1;
-static const uint8_t FSW_PIN[PEDAL_BTN_COUNT] = {2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+// MODE (PEDAL_BTN_MODE) reads GP12, not GP5: GP5 died on the owner's unit
+// (it sits near 0 V with the pull-up on; reworked with a jumper from SW_MODE
+// to GP12), and the board design moves SW_MODE to GP12 as well (#1388). GP5
+// stays unconfigured.
+static const uint8_t FSW_PIN[PEDAL_BTN_COUNT] = {2, 3, 4, 12, 6, 7, 8, 9, 10, 11};
 // The ring carrier's UART (J6 pins 3/4). R11/R12 pull both lines up to the
 // Pico's own 3V3, so the link idles high while the Pi is off.
 static const uint8_t PIN_RING_TX = 13, PIN_RING_RX = 14;
