@@ -87,22 +87,19 @@ class ConnectivityBanners extends StatelessWidget {
     final Widget banner;
     switch (connectivity) {
       case DeviceConnectivity.lost:
-        banner = _LostBanner(
-          key: const Key('connectivity_banner_device'),
-          // Says what happens next: audio comes back on its own (Q1).
-          message: lossLine!,
-          actionLabel: l10n.deviceLostBannerAction,
-          actionKey: const Key('connectivity_banner_device_action'),
-          onAction: () => unawaited(openDeviceSettings()),
-        );
       case DeviceConnectivity.waiting:
-        // The boot found the pinned interface absent: the same strip, not a
-        // toast beside the engine-stopped banner (one surface per cause).
+        // A boot that waits for the pinned interface holds the same strip as
+        // a loss, not a toast beside the engine-stopped banner (one surface
+        // per cause). The line says what happens next: audio comes back on
+        // its own (Q1).
+        final key = connectivity == DeviceConnectivity.lost
+            ? 'connectivity_banner_device'
+            : 'connectivity_banner_waiting';
         banner = _LostBanner(
-          key: const Key('connectivity_banner_waiting'),
+          key: Key(key),
           message: lossLine!,
           actionLabel: l10n.deviceLostBannerAction,
-          actionKey: const Key('connectivity_banner_waiting_action'),
+          actionKey: Key('${key}_action'),
           onAction: () => unawaited(openDeviceSettings()),
         );
       case DeviceConnectivity.restoredCleared:

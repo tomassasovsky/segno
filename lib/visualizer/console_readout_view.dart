@@ -308,21 +308,18 @@ class _ConnectivityEcho extends StatelessWidget {
         borderRadius: BorderRadius.circular(10 * s),
         border: Border.all(color: surface.rec),
       ),
-      // One line, never cut: a long interface name shrinks the line to fit
-      // the 7" rather than losing the half that says what happens next.
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        alignment: Alignment.centerLeft,
-        child: AppText(
-          line,
-          maxLines: 1,
-          softWrap: false,
-          style: TextStyle(
-            fontFamily: SurfaceTheme.displayFont,
-            color: surface.textPrimary,
-            fontSize: 24 * s,
-            height: 1.2,
-          ),
+      // Up to two lines at full size, never cut: the line names the
+      // interface and says what happens next, which does not fit one line of
+      // the 7" at a readable size (the plan asked for one line; written back).
+      child: AppText(
+        line,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontFamily: SurfaceTheme.displayFont,
+          color: surface.textPrimary,
+          fontSize: 24 * s,
+          height: 1.2,
         ),
       ),
     );

@@ -1024,6 +1024,22 @@ void main() {
       expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
     });
 
+    test('a failed apply during the wait gives the strip back to it', () {
+      when(() => repository.applyAudioConfig(any())).thenReturn(
+        const AudioApplyResult(
+          status: AudioApplyStatus.failed,
+          result: EngineResult.device,
+        ),
+      );
+      final cubit = buildCubit()..setWaitingForDevice(waiting: true);
+      addTearDown(cubit.close);
+
+      cubit.setBufferFrames(256);
+
+      expect(cubit.state.error, AudioSetupError.openDeviceFailed);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.waiting);
+    });
+
     test('the awaited interface coming up ends the wait without a '
         'reconnected notice', () async {
       when(() => repository.lastEngineConfig).thenReturn(

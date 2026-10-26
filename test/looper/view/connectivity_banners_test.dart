@@ -143,7 +143,7 @@ void main() {
       expect(decorationOf(tester, waitingKey).color, surface(tester).recTint);
     });
 
-    testWidgets('Open setup is reachable with the encoder alone', (
+    testWidgets('Open setup is a stop on the focus walk the encoder steps', (
       tester,
     ) async {
       whenListen(
@@ -153,8 +153,10 @@ void main() {
       );
       await pump(tester);
 
-      // The encoder walks focus as Tab does; the strip's one action is on
-      // that walk, so recovery never needs a touch (D16).
+      // The encoder steps focus with FocusNode.nextFocus
+      // (encoder_navigation.dart), the walk Tab takes: the strip's action is
+      // a stop on it, so recovery never needs a touch (D16). Where it falls
+      // in the whole stage's order is the stage's own traversal.
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.pump();
       final focused = FocusManager.instance.primaryFocus?.context;
