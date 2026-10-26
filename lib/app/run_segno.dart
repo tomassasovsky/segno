@@ -223,9 +223,7 @@ Future<void> runSegno(
 
   // Auto-start the engine and lands directly on the looper (no first-run gate).
   // The mock flavor opens a deterministic default config; the native flavor
-  // auto-starts from the saved config or a first-run default and returns the
-  // ASIO drivers enumerated at startup for the audio-setup picker cache.
-  var asioDrivers = const <AudioDevice>[];
+  // auto-starts from the saved config or a first-run default.
   // The pinned config a boot auto-start couldn't open (interface unplugged at
   // boot); the audio-recovery cubit auto-starts when it reappears.
   EngineConfig? audioRecoveryConfig;
@@ -237,7 +235,6 @@ Future<void> runSegno(
       settings: settings,
       mixSettings: mixSettings,
     );
-    asioDrivers = result.asioDrivers;
     audioRecoveryConfig = result.recoveryConfig;
   }
 
@@ -257,7 +254,6 @@ Future<void> runSegno(
       performanceRepository: performance,
       backingRepository: backing,
       instrumentRepository: instruments,
-      initialAsioDrivers: asioDrivers,
       updates: updates,
       wifi: wifi,
       brightness: brightness,

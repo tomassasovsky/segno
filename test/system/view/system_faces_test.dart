@@ -209,6 +209,8 @@ void main() {
     audio = AudioSetupCubit(
       repository: repository,
       settings: settings,
+      guards: GuardRegistry(),
+      backing: testBackingRepository(),
       deviceRefreshInterval: Duration.zero,
     );
     pedal = PedalCubit(
