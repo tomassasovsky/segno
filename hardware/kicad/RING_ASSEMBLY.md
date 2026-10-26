@@ -4,7 +4,7 @@
 
 This is the new XIAO ring/encoder carrier. J3 and J4 are alternative direct
 footprints for purchased 24-LED and 16-LED modules; J2 exposes +5 V, GND, DIN
-and DOUT for the selected external 40-LED strip in its own housing. The current
+and DOUT for the selected external 35-LED strip in its own housing. The current
 old console drives its strip through a passive encoder assembly instead.
 Keep those hardware generations and their firmware pin maps separate.
 
@@ -37,7 +37,7 @@ support pins. Keep these allowances when updating footprints.
 
 ## Assembly
 
-- Connect the selected 40-LED strip **DIN to J2 pin 3 only**. Leave J2
+- Connect the selected 35-LED strip **DIN to J2 pin 3 only**. Leave J2
   pins 1/2/4 unconnected. Feed strip +5 V/GND directly from the near-ring AUX
   split described below; this preserves full-white voltage margin.
   Alternatively fit one 24-LED module at J3 or one 16-LED module at J4, with

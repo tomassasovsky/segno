@@ -58,14 +58,14 @@
 
 /* All platform-specific behavior (CoreAudio channel labels, JACK port-pinning,
  * PipeWire quantum forcing) lives behind the engine_platform.h seam, implemented
- * per OS in engine_apple.c / engine_linux.c / engine_windows.c. This file is
+ * per OS in engine_apple.c / engine_linux.c. This file is
  * platform-agnostic — no #if defined(__APPLE__|__linux__|_WIN32) behavior. */
 
 
 /* struct le_engine and its nested types (le_fx_state, le_lane,
  * le_monitor_input, le_track) plus LE_RING_CAPACITY / LE_POOL_SLOTS now live in
  * engine_private.h, shared with the per-OS translation units (engine_linux.c /
- * engine_apple.c / engine_windows.c). */
+ * engine_apple.c). */
 
 /* The float/double <-> atomic-bits helpers (f32_to_bits / load_f32 / …) and the
  * int32 helpers (load_i32 / store_i32) are static inline in engine_private.h,
@@ -286,6 +286,7 @@ void le_lane_reset_settings(le_lane* ln, int32_t input_channel) {
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       store_f32(&ln->a_fx_param[s][p], 0.0f);
     }
+    atomic_store_explicit(&ln->fx_meta[s].instance, 0u, memory_order_relaxed);
     /* Enable flags default 1 with the crossfade runtime SETTLED at that
      * target, so a fresh chain does not fade in on first use. */
     store_i32(&ln->a_fx_enabled[s], 1);
@@ -299,8 +300,7 @@ void le_lane_reset_settings(le_lane* ln, int32_t input_channel) {
     store_f32(&ln->a_fx_chan_level_bits[s], 1.0f);
     store_i32(&ln->a_fx_chan_rack[s], 0);
     le_fx_enable_seed_settled(&ln->fx, s);
-    le_fx_free_delay(&ln->fx, s);
-    le_fx_free_octaver(&ln->fx, s);
+    le_fx_free_slot(&ln->fx, s);
     le_fx_entry_reset(&ln->fx, s);
     /* Destroy any hosted plugin slot too. Reset runs from le_engine_configure
      * while the device is closed (no audio thread), so a direct destroy is safe
@@ -349,6 +349,7 @@ static void le_monitor_input_reset(le_monitor_input* m) {
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       store_f32(&m->a_fx_param[s][p], 0.0f);
     }
+    atomic_store_explicit(&m->fx_meta[s].instance, 0u, memory_order_relaxed);
     /* Enable flags default 1, crossfade runtime settled (see le_lane_reset). */
     store_i32(&m->a_fx_enabled[s], 1);
     /* Channel handling defaults (slice 3e): stereo in, stereo out, centre and
@@ -361,8 +362,7 @@ static void le_monitor_input_reset(le_monitor_input* m) {
     store_f32(&m->a_fx_chan_level_bits[s], 1.0f);
     store_i32(&m->a_fx_chan_rack[s], 0);
     le_fx_enable_seed_settled(&m->fx, s);
-    le_fx_free_delay(&m->fx, s);
-    le_fx_free_octaver(&m->fx, s);
+    le_fx_free_slot(&m->fx, s);
     le_fx_entry_reset(&m->fx, s);
     /* Destroy any hosted plugin slot too (see le_lane_reset) — otherwise a
      * reconfigure leaks the monitor input's live plugin host + binary. */
@@ -391,6 +391,7 @@ static void le_fx_bus_reset(le_fx_bus* b) {
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       store_f32(&b->a_fx_param[s][p], 0.0f);
     }
+    atomic_store_explicit(&b->fx_meta[s].instance, 0u, memory_order_relaxed);
     /* Enable flags default 1, crossfade runtime settled (see le_lane_reset). */
     store_i32(&b->a_fx_enabled[s], 1);
     /* Channel handling defaults (slice 3e): stereo in, stereo out, centre and
@@ -403,8 +404,7 @@ static void le_fx_bus_reset(le_fx_bus* b) {
     store_f32(&b->a_fx_chan_level_bits[s], 1.0f);
     store_i32(&b->a_fx_chan_rack[s], 0);
     le_fx_enable_seed_settled(&b->fx, s);
-    le_fx_free_delay(&b->fx, s);
-    le_fx_free_octaver(&b->fx, s);
+    le_fx_free_slot(&b->fx, s);
     le_fx_entry_reset(&b->fx, s);
     /* No plugin-slot loading targets the bus owners yet (built-in effects
      * only through the track/master setters), but destroy defensively like
@@ -721,6 +721,12 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
     tr->record_start = 0;
     tr->start_iter = 0;
     tr->od_gain = 0.0f;
+    /* The audibility fades (#1400): a new device session starts with
+     * nothing sounding, so no fade carries over and the gates are set on
+     * the first frame each track is mixed. */
+    engine->trk_play_gain[t] = 0.0f;
+    engine->trk_tail_gain[t] = 0.0f;
+    engine->trk_gate_stale[t] = 1;
     tr->xfade_capture = 0;
     /* ...and the trailing seam overlap (#728), for the same reason and then
      * some. Both are per-take audio-thread deferrals indexed off the OLD
@@ -953,6 +959,9 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   store_i32(&engine->a_limiter_enabled, 0);
   store_f32(&engine->a_limiter_ceiling_bits, 0.99f);
   engine->lim_gain = 1.0f;
+  engine->lim_hold_cur = 1.0f;
+  engine->lim_hold_prev = 1.0f;
+  engine->lim_hold_count = 0;
   store_f32(&engine->a_overdub_fb_bits, 1.0f);
 
   store_i32(&engine->a_sample_rate, sample_rate);
@@ -1042,8 +1051,7 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
     for (int s = 0; s < LE_FX_MAX; ++s) {
       le_fx_entry_reset(&engine->all_tracks_fx[k], s);
       le_fx_enable_seed_settled(&engine->all_tracks_fx[k], s);
-      le_fx_free_delay(&engine->all_tracks_fx[k], s);
-      le_fx_free_octaver(&engine->all_tracks_fx[k], s);
+      le_fx_free_slot(&engine->all_tracks_fx[k], s);
     }
     engine->all_tracks_fx[k].enable_clear_cooldown = 0;
   }
@@ -1236,7 +1244,8 @@ void le_engine_lane_fx_chain_for_test(le_engine* engine, int32_t channel,
   for (int s = 0; s < count; ++s) {
     types[s] = load_i32(&ln->a_fx_type[s]);
     enabled[s] = chain_on && load_i32(&ln->a_fx_enabled[s]);
-    for (int p = 0; p < LE_FX_PARAMS; ++p) {
+    const int32_t w = le_fx_param_width(types[s]);
+    for (int p = 0; p < w; ++p) {
       params[s][p] = load_f32(&ln->a_fx_param[s][p]);
     }
   }
@@ -1335,6 +1344,7 @@ void le_engine_mark_device_lost(le_engine* engine) {
 static void le_fx_seed_owner(le_fx_state* fx, le_engine* engine, int32_t seed) {
   fx->hop_seed = seed;
   fx->clock_src = &engine->a_fx_frame;
+  fx->tempo = &engine->fx_tempo;
 }
 
 le_engine* le_engine_create(void) {
@@ -1363,6 +1373,9 @@ le_engine* le_engine_create(void) {
                              engine->perf.layer_staging_storage,
                              LE_LAYER_STAGING_RING_CAPACITY);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
+  /* The audibility gains (#1400) start at their gates on the first frame each
+   * track is mixed. */
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) engine->trk_gate_stale[t] = 1;
   /* No take has dropped a frame (#1198): 0 would name frame 0. */
   atomic_store_explicit(&engine->a_perf_first_drop_frame, UINT64_MAX,
                         memory_order_relaxed);
@@ -1431,6 +1444,9 @@ le_engine* le_engine_create(void) {
   store_i32(&engine->a_limiter_enabled, 0);     /* off until the app enables it */
   store_f32(&engine->a_limiter_ceiling_bits, 0.99f);
   engine->lim_gain = 1.0f;
+  engine->lim_hold_cur = 1.0f;
+  engine->lim_hold_prev = 1.0f;
+  engine->lim_hold_count = 0;
   store_f32(&engine->a_overdub_fb_bits, 1.0f); /* classic additive overdub */
   atomic_store_explicit(&engine->a_output_enabled_mask, 0xFFFFFFFFu,
                         memory_order_relaxed); /* all outputs on until set */
@@ -1463,6 +1479,7 @@ le_engine* le_engine_create(void) {
     le_fx_seed_owner(&engine->outputs[k].fx.fx, engine, le_fx_output_hop_seed(k));
   }
   le_fx_seed_owner(&engine->all_tracks.fx, engine, le_fx_all_tracks_hop_seed(0));
+  le_engine_bind_fx_rows(engine);
   return engine;
 }
 
@@ -1502,8 +1519,7 @@ void le_engine_destroy(le_engine* engine) {
       le_free_audio_buffer(engine, engine->spares[t][l].standby);
       le_free_audio_buffer(engine, engine->spares[t][l].zero_spare);
       for (int s = 0; s < LE_FX_MAX; ++s) {
-        le_fx_free_delay(&ln->fx, s);
-        le_fx_free_octaver(&ln->fx, s);
+        le_fx_free_slot(&ln->fx, s);
         /* The device is already closed (no audio thread), so any hosted plugin
          * slot — including one left behind by a stalled-callback clear — can be
          * destroyed directly without the quiescent handshake. */
@@ -1513,16 +1529,14 @@ void le_engine_destroy(le_engine* engine) {
     }
     /* Track-stage chain (part 1b): same per-slot teardown as the lanes. */
     for (int s = 0; s < LE_FX_MAX; ++s) {
-      le_fx_free_delay(&engine->tracks[t].bus.fx, s);
-      le_fx_free_octaver(&engine->tracks[t].bus.fx, s);
+      le_fx_free_slot(&engine->tracks[t].bus.fx, s);
       le_plugin_slot_destroy(atomic_load_explicit(
           &engine->tracks[t].bus.fx.plugin[s], memory_order_relaxed));
     }
   }
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     for (int s = 0; s < LE_FX_MAX; ++s) {
-      le_fx_free_delay(&engine->monitors[c].fx, s);
-      le_fx_free_octaver(&engine->monitors[c].fx, s);
+      le_fx_free_slot(&engine->monitors[c].fx, s);
       le_plugin_slot_destroy(atomic_load_explicit(
           &engine->monitors[c].fx.plugin[s], memory_order_relaxed));
     }
@@ -1530,16 +1544,29 @@ void le_engine_destroy(le_engine* engine) {
   /* Output bus chains (slice 3b) and the All tracks instances (slice 3e). */
   for (int s = 0; s < LE_FX_MAX; ++s) {
     for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
-      le_fx_free_delay(&engine->outputs[k].fx.fx, s);
-      le_fx_free_octaver(&engine->outputs[k].fx.fx, s);
-      le_fx_free_delay(&engine->all_tracks_fx[k], s);
-      le_fx_free_octaver(&engine->all_tracks_fx[k], s);
+      le_fx_free_slot(&engine->outputs[k].fx.fx, s);
+      le_fx_free_slot(&engine->all_tracks_fx[k], s);
     }
     for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
       le_plugin_slot_destroy(atomic_load_explicit(
           &engine->outputs[k].fx.fx.plugin[s], memory_order_relaxed));
     }
   }
+  /* The per-kind tables, after every slot's arena went above. */
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    for (int l = 0; l < LE_MAX_LANES; ++l) {
+      le_fx_free_kind_table(&engine->tracks[t].lanes[l].fx);
+    }
+    le_fx_free_kind_table(&engine->tracks[t].bus.fx);
+  }
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    le_fx_free_kind_table(&engine->monitors[c].fx);
+  }
+  for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+    le_fx_free_kind_table(&engine->outputs[k].fx.fx);
+    le_fx_free_kind_table(&engine->all_tracks_fx[k]);
+  }
+  le_fx_free_kind_table(&engine->all_tracks.fx);
   le_rt_free(engine->lat_buf);
   le_rt_free(engine->cond_buf); /* conditioned-copy scratch (input conditioning) */
   le_instruments_destroy(engine); /* the synth and its buses (#1197) */

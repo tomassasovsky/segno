@@ -48,6 +48,7 @@ class LoopSettingsFrame extends StatelessWidget {
     this.crumb,
     this.tabs,
     this.titleLeft = 36,
+    this.titleRight = 36,
     this.actions,
     super.key,
   }) : assert(
@@ -77,6 +78,12 @@ class LoopSettingsFrame extends StatelessWidget {
 
   /// The title's inset from the left edge.
   final double titleLeft;
+
+  /// The title's inset from the right edge. A page that puts its own
+  /// controls in the title row ends the title before them, and a title too
+  /// long for what is left ends in an ellipsis rather than running under
+  /// them.
+  final double titleRight;
 
   /// The page's own actions, drawn at the title's right edge (the Pedals
   /// page's Cancel and Save). Inset by [titleLeft] on the right so the row
@@ -166,13 +173,15 @@ class LoopSettingsFrame extends StatelessWidget {
                 Positioned(
                   left: titleLeft,
                   top: row.top,
-                  right: 36,
+                  right: titleRight,
                   height: row.height,
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: AppText(
                       title,
                       key: const Key('loop_settings_title'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: surface.frameText,
                         fontFamily: SurfaceTheme.frameFont,

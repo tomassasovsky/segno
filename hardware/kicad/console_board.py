@@ -243,10 +243,20 @@ pico[37].do_erc = False          # 3V3_EN -- internal pull-up
 # presence contacts. GP0/GP1, spare on v2, are v3's I2C to the PD trigger
 # (J23): they are row A at the far end of the module, which is the end J3 and
 # the power inlet are on anyway.
-SPARE_GPIO = ()
-# J22 sits beside U2, where it reaches row A (GP12/GP15, pads 16/20) and GP28
-# (pad 34, row B) alike.
-EXPANSION_GPIO = (12, 15, 28)
+#
+# GP5 is the one exception, and it is a routing call rather than an oversight.
+# GP12 left J22 for SW_MODE (#1388, see the pin map below), and GP5, the pin MODE
+# vacated, cannot follow it onto J22: no 0.6 mm track fits between two of the
+# module's through-holes at 2.54 mm pitch, so pad 7 reaches J22 only by going
+# round the module's LEFT end, through the J3/J24 power bar and the CTRL and
+# presence lines beside it. Routed that way, ten Freerouting attempts left nets
+# unconnected, and the one DRC-clean result had cut the +5V bar the ring supply
+# starts from. GP12 made the same trip from pad 16 on v3 and only just fitted.
+# Nothing needs a third expansion GPIO, so J22 pin 3 is left unconnected.
+SPARE_GPIO = (5,)
+# J22 sits beside U2, where it reaches row A (GP15, pad 20) and GP28 (pad 34,
+# row B) alike.
+EXPANSION_GPIO = (15, 28)
 for _gp in SPARE_GPIO:
     pico[PICO[_gp]].do_erc = False
 
@@ -258,8 +268,9 @@ GPIO = {
     # adjacent, and the row is chosen to face the part it talks to:
     #
     #   row A, left  ..  centre ......................  right
-    #   pads 1        4 --------- 15                16 17  19 20
-    #                 the ten footswitches           J6: ring-board link
+    #   pads 1  2     4 ------------------- 16    17  19       20
+    #   J23: PD I2C   the ten footswitches        J6: ring link  J22
+    #                 (pad 7 in the run is GP5, unconnected: see SPARE_GPIO)
     #   row B, left  ..  centre ......................  right
     #   pads 40 39               32 31                 23   22 21
     #   VBUS VSYS <- J3          CTRL2/1                IND  LINK_RX/TX -> J2
@@ -270,9 +281,19 @@ GPIO = {
     # and crossed the whole board. Same for IND_DATA on GP18: it is one of the three
     # signals U1 buffers, and U1 sits off the module's right end.
     "LINK_TX": 16, "LINK_RX": 17,
-    "SW_RECPLAY": 2, "SW_STOP": 3, "SW_UNDO": 4, "SW_MODE": 5,
+    "SW_RECPLAY": 2, "SW_STOP": 3, "SW_UNDO": 4,
     "SW_TRACK1": 6, "SW_TRACK2": 7, "SW_TRACK3": 8, "SW_TRACK4": 9,
     "SW_CLEAR": 10, "SW_BANK": 11,
+    # MODE is on GP12 (pad 16), not GP5 (pad 7), since #1388. The first v3
+    # console's Pico 2 has a dead GP5 (it reads ~0 V against its own pull-up), so
+    # that board was reworked: pad 7 isolated in the socket and jumpered to
+    # pad 16, with the firmware reading MODE on GP12. This board puts the trace
+    # where the jumper is, so a reworked v3 and this revision run the same
+    # firmware. Pad 16 is still row A, but at the RIGHT end of the footswitch
+    # run, so MODE's header J13 sits at the right end of the footswitch row
+    # (FSW_SLOTS in console_board_pcb.py) and the fan-out stays uncrossed. The
+    # designators keep FSW_ORDER below: J13 and C4 are MODE's, as on v3.
+    "SW_MODE": 12,
     # The ring board generates its own WS2812 timing behind a XIAO RP2350 (#987),
     # so the ring cable is a two-wire link. v2 kept GP12 (ring data through the
     # AHCT125's gate B) and GP15 (a spare on J6 pin 8) fitted because that board
@@ -540,19 +561,26 @@ for _pad, _net in SWD_PADS.items():
 
 # ---- J22: expansion -- the three GPIO that are otherwise doing nothing ------
 # Deliberately unpopulated by default. GP28 is an ADC, so it can carry a third
-# pedal input; GP12/GP15 are a PWM pair. Nothing on the board depends on it.
+# pedal input; GP15 is a plain digital pin. Nothing on the board depends on it.
+# Pin 3 is unconnected since GP12 became SW_MODE (#1388; why GP5 does not take
+# it is under SPARE_GPIO). The GPIO pins keep their v3 positions, so the header
+# and its copper are otherwise unchanged; on a reworked v3 board pin 3 carries
+# MODE, which is why it is not reused for anything else.
 # v2's J22 carried GP19/GP20/GP21/GP22 instead: GP20/21 became the CTRL rings'
 # sense lines and GP19/22 the jacks' presence lines, and a pin that is also a
 # jack contact has no business on a header.
-EXP_PINOUT = ["+3V3", "+5V", "GP12", "GP15", "GP28", "GND"]
+EXP_PINOUT = ["+3V3", "+5V", "NC", "GP15", "GP28", "GND"]
 j_exp = Part("Connector_Generic", "Conn_02x03_Odd_Even",
              footprint="Connector_PinHeader_2.54mm:PinHeader_2x03_P2.54mm_Vertical",
              ref="J22", value="EXPANSION")
 j_exp[1] += v3v3
 j_exp[2] += v5
-for _i, _gp in enumerate(EXPANSION_GPIO, start=3):
-    n = Net("EXP_GP%d" % _gp)
-    pico[PICO[_gp]] += n
+for _i, _label in enumerate(EXP_PINOUT[2:-1], start=3):
+    if _label == "NC":
+        j_exp[_i].do_erc = False
+        continue
+    n = Net("EXP_" + _label)
+    pico[PICO[int(_label[2:])]] += n
     j_exp[_i] += n
 j_exp[6] += gnd
 
@@ -899,8 +927,8 @@ def _check(strict_stations=True):
             f"PAD_ROW: {group} straddles both pad rows of the module "
             f"({ {n: PICO[GPIO[n]] for n in group if n in GPIO} }) -- one connector "
             "carries them all, so it would have to reach around the module")
-    # J22 is allowed to straddle the rows since v3: it sits below the module's
-    # middle, where row A's GP12/GP15 (pads 16/20) and row B's GP19/22/28 are
+    # J22 is allowed to straddle the rows since v3: it sits above the module's
+    # middle, where row A's GP5/GP15 (pads 7/20) and row B's GP28 (pad 34) are
     # all within a hop, and HOP in console_board_pcb.py is the gate that proves
     # it. What is still refused is a pin at either far END of the module, which
     # no single header position can reach along with the rest.
@@ -1018,7 +1046,7 @@ def _check(strict_stations=True):
                 "reaches a Pico input puts 5 V on a pin whose absolute maximum is "
                 "3.6 V, and no direct-contact gate can see the path")
 
-    assert len(EXP_PINOUT) == len(EXPANSION_GPIO) + 3 \
+    assert len(EXP_PINOUT) == 6 \
         and EXP_PINOUT[:2] == ["+3V3", "+5V"] and EXP_PINOUT[-1] == "GND", (
             "EXPANSION: J22 must keep power on pins 1/2 and ground on its last pin "
             "-- the pinout is silkscreened and anything plugged in trusts it")
@@ -1026,10 +1054,17 @@ def _check(strict_stations=True):
         assert _gp not in GPIO.values(), (
             f"EXPANSION: GP{_gp} is on J22 AND wired to something on the board -- a "
             "header pin that is also a jack contact is a short waiting for a plug")
-    for _i, _gp in enumerate(EXPANSION_GPIO, start=3):
-        assert EXP_PINOUT[_i - 1] == "GP%d" % _gp, (
-            f"EXPANSION: J22 pin {_i} is labelled {EXP_PINOUT[_i - 1]} but wired to "
-            f"GP{_gp}")
+    _exp_labels = [_l for _l in EXP_PINOUT[2:-1] if _l != "NC"]
+    assert _exp_labels == ["GP%d" % _gp for _gp in EXPANSION_GPIO], (
+        f"EXPANSION: J22 carries {_exp_labels} but EXPANSION_GPIO is "
+        f"{EXPANSION_GPIO}")
+    for _i, _label in enumerate(EXP_PINOUT, start=1):
+        _nets = {n.name for n in j_exp[_i].nets}
+        if _label == "NC":
+            assert not _nets, f"EXPANSION: J22 pin {_i} is labelled NC but is on {_nets}"
+        elif _label.startswith("GP"):
+            assert _nets == {"EXP_" + _label}, (
+                f"EXPANSION: J22 pin {_i} is labelled {_label} but is on {_nets}")
 
     # MIDI IN's clamp diode, by pin NAME. Reversed, the 1N4148 sits in parallel
     # with the opto's LED in the same direction, and its ~0.7 V forward drop shunts

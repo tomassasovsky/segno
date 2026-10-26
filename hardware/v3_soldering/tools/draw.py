@@ -48,7 +48,7 @@ CONSOLE_XH = ["J4", "J5", "J6", "J8", "J9", "J20", "J21", "J23", "J25"] + [f"J{i
 BOARDS = [
     {
         "name": "console", "face": "F", "scale": 13,
-        "title": "Console v3 - solder order (top face)",
+        "title": "Console v3.1 - solder order (top face)",
         "values": CONSOLE_VALUES,
         "steps": [
             ("Pico 2 (J1)", ["J1"], "USB to the left. Tack pads 1 and 21, then all 40 castellations and the 3 SWD holes."),

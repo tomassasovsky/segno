@@ -1,8 +1,9 @@
 name: console_facts_client
 description: >-
-  Data client for the facts only the Segno appliance image knows about itself —
-  what the disk holds, what the box is, and where it can export to. Pure Dart;
-  no Flutter dependency.
+  Data client for the facts only the Segno appliance image knows about itself:
+  disk usage, the console's serial number, image build, panel names, last
+  board flash, and leftover Bluetooth pairings. Pure Dart; no Flutter
+  dependency.
 version: 0.1.0
 publish_to: none
 
