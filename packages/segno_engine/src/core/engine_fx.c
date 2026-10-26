@@ -1159,8 +1159,15 @@ static void le_low_reset_runtime(le_oct_low* L) {
 }
 
 /* The detection back to a reset's: no pitch heard, the band silent (the
- * vocoder plays all of it). */
+ * vocoder plays all of it), and nothing in its window or power followers,
+ * so it hears only what comes in from now. */
 static void le_low_forget(le_oct_low* L) {
+  memset(L->dring, 0, sizeof(L->dring));
+  L->dn = 0;
+  L->dacc = 0.0f;
+  L->dhead = 0;
+  L->e_in = 0.0f;
+  L->e_low = 0.0f;
   L->hops = 0;
   L->busy = 0;
   L->credit = 0;
@@ -1178,13 +1185,7 @@ static void le_low_clear(le_oct_low* L) {
   le_low_forget(L);
   memset(L->z, 0, sizeof(L->z));
   memset(L->ring, 0, sizeof(float) * (size_t)(L->mask + 1));
-  memset(L->dring, 0, sizeof(L->dring));
   L->head = 0;
-  L->dn = 0;
-  L->dacc = 0.0f;
-  L->dhead = 0;
-  L->e_in = 0.0f;
-  L->e_low = 0.0f;
   le_low_reset_runtime(L);
 }
 
@@ -1197,11 +1198,11 @@ static void le_low_init(le_oct_low* L, int sr, int32_t len) {
   const double k = le_prewarp(LE_OCT_LOW_HZ, sr);
   const double r2 = 1.4142135623730951;
   const double n = 1.0 / (1.0 + r2 * k + k * k);
-  L->b0 = (float)(k * k * n);
-  L->b1 = 2.0f * L->b0;
-  L->b2 = L->b0;
-  L->a1 = (float)(2.0 * (k * k - 1.0) * n);
-  L->a2 = (float)((1.0 - r2 * k + k * k) * n);
+  L->lp[0] = (float)(k * k * n);
+  L->lp[1] = 2.0f * L->lp[0];
+  L->lp[2] = L->lp[0];
+  L->lp[3] = (float)(2.0 * (k * k - 1.0) * n);
+  L->lp[4] = (float)((1.0 - r2 * k + k * k) * n);
   L->centre = (float)((double)LE_PV_LATENCY - r2 / k);
   L->kc = (float)(LE_OCT_LOW_HZ * (double)LE_PV_N / (double)sr);
   L->sr = sr;
@@ -1223,13 +1224,8 @@ static void le_low_init(le_oct_low* L, int sr, int32_t len) {
  * decimator, and follows the input's and the band's power. */
 static void le_low_write(le_oct_low* L, float x) {
   L->e_in += (x * x - L->e_in) * L->ek;
-  float y = x;
-  for (int s = 0; s < 2; ++s) { /* transposed direct form II */
-    const float o = L->b0 * y + L->z[s][0];
-    L->z[s][0] = L->b1 * y - L->a1 * o + L->z[s][1];
-    L->z[s][1] = L->b2 * y - L->a2 * o;
-    y = o;
-  }
+  const float y = le_biquad_tick(L->lp, L->z[1],
+                                 le_biquad_tick(L->lp, L->z[0], x));
   L->e_low += (y * y - L->e_low) * L->ek;
   L->head = (L->head + 1) & L->mask;
   L->ring[L->head] = y;

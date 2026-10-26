@@ -424,7 +424,7 @@ typedef struct le_oct_low_voice {
 typedef struct le_oct_low {
   /* The crossover: one 2nd-order Butterworth low-pass section, run twice
    * (a Linkwitz-Riley low-pass), its coefficients for the slot's rate. */
-  float b0, b1, b2, a1, a2;
+  float lp[5]; /* b0 b1 b2 a1 a2, as le_biquad_tick takes them */
   float z[2][2];
   /* The tap delay the voices centre on: the octaver's latency less the
    * low-pass's group delay. */
