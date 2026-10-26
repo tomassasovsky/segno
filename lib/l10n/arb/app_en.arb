@@ -876,6 +876,66 @@
     "@effectMod": {
         "description": "The Mod pedal of the Guitar and Studio racks: a chorus, phaser, flanger or tremolo, one at a time."
     },
+    "paramLrRatio": "L/R ratio",
+    "@paramLrRatio": {
+        "description": "The Dub delay's stereo spread: how much earlier the right echo comes than the left."
+    },
+    "paramResFreq": "Resonance frequency",
+    "@paramResFreq": {
+        "description": "Where the Dub delay's resonant peak sits."
+    },
+    "effectRoomVerb": "Room reverb",
+    "@effectRoomVerb": {
+        "description": "The Reverb pedal of the Looper X racks: four modes (hall, stadium, room, box), or the Drum Rack's early-reflection rooms."
+    },
+    "paramLength": "Length",
+    "@paramLength": {
+        "description": "How long a reverb rings, as the Looper X shows it in seconds."
+    },
+    "paramRoom": "Room",
+    "@paramRoom": {
+        "description": "The reverb's room: one of its modes, or one of the Drum Rack's early-reflection rooms."
+    },
+    "paramEarlyRoom": "ER",
+    "@paramEarlyRoom": {
+        "description": "The Drum Rack reverb's early-reflection room, as the Looper X labels it (ER)."
+    },
+    "paramBright": "Bright",
+    "@paramBright": {
+        "description": "How much treble the reverb keeps."
+    },
+    "paramLoHi": "Lo/Hi",
+    "@paramLoHi": {
+        "description": "The Drum Rack reverb's tone: darker below the middle, brighter and thinner in the lows above it."
+    },
+    "paramTailEr": "Tail/ER",
+    "@paramTailEr": {
+        "description": "The balance between the reverb's tail and its early reflections."
+    },
+    "paramDensity": "Density",
+    "@paramDensity": {
+        "description": "How smooth the reverb's tail is: lower settings leave separate echoes."
+    },
+    "effectSmartTune": "Smart Tune",
+    "@effectSmartTune": {
+        "description": "The Vocal Tuner's pitch correction: it retunes a voice to the nearest note of a scale."
+    },
+    "paramSpeed": "Speed",
+    "@paramSpeed": {
+        "description": "How long Smart Tune takes to move a voice onto its note: short is the hard, stepped sound, long a gentle pull."
+    },
+    "paramScaleRoot": "Scale root",
+    "@paramScaleRoot": {
+        "description": "The note Smart Tune's scale starts on."
+    },
+    "paramScaleType": "Scale type",
+    "@paramScaleType": {
+        "description": "Which notes Smart Tune's scale holds: major, minor, a mode, chromatic, pentatonic, a triad, or the root alone."
+    },
+    "paramReference": "Reference",
+    "@paramReference": {
+        "description": "The pitch of A that Smart Tune tunes to, in hertz."
+    },
     "paramBass": "Bass",
     "@paramBass": {
         "description": "The amp's low-frequency tone control."

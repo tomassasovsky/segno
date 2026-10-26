@@ -1421,7 +1421,12 @@
     "revstim",
     "pitchstim",
     "trem",
-    "tremstim"
+    "tremstim",
+    "Tukey",
+    "Locrian",
+    "Melo",
+    "Mixo",
+    "Penta"
   ],
   "overrides": [
     {

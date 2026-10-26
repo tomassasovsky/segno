@@ -46,14 +46,18 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   // On the hop, as the octaver whose kernel it runs ([kFxHopCostUs]).
   TrackEffectType.whammy: 0,
   TrackEffectType.dualOctaver: 0,
+  TrackEffectType.smartTune: 0,
   // As the tremolo, which it matches eight for eight on the bench.
   TrackEffectType.pumper: 37,
   // CI arm64, an eighth of eight in one chain (2.5 us, AB<< at 1/4T so its
   // reads land far back in the ring), x 1.75.
   TrackEffectType.slicer: 68,
   // CI arm64, an eighth of eight in one chain (2.15 us, RES LO L/R at 1/4
-  // with both taps voiced), x 1.75.
-  TrackEffectType.modeDelay: 59,
+  // with both taps voiced), x 1.75, scaled by the Dub voicing's heaviest
+  // case: gliding Res-Freq at L/R Ratio 50 %, which redesigns its filters
+  // every 32 frames, runs 4.89 us an instance where RES LO L/R runs 3.93
+  // in the same run (#1477).
+  TrackEffectType.modeDelay: 73,
   // CI arm64, an eighth of eight in one chain (13.75 us, drive 93.5 % on
   // the 4x12"), x 1.75. A cabinet change runs both cabinets for 1024
   // frames, about a third more for those blocks.
@@ -62,6 +66,10 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   // (3.27 us, the phaser at full depth, its heaviest mode), x 1.75. A mode
   // change runs both modes for 1024 frames.
   TrackEffectType.mod: 90,
+  // CI arm64, an eighth of eight in one chain while their settings move
+  // (23.5 us, BOX, the most early taps, its Length gliding), x 1.75. Still,
+  // the same eight run 13.5 us an instance.
+  TrackEffectType.roomVerb: 643,
 };
 
 /// What a kind on the hop charges, in microseconds a block: its frame's work
@@ -79,6 +87,8 @@ const Map<TrackEffectType, double> kFxHopCostUs = {
   // formants (the Dual Octaver moves them), and both voices share one
   // inverse FFT, so the heaviest quarter stays the octaver's.
   TrackEffectType.dualOctaver: 69,
+  // The octaver's PSOLA, its shift worked out once a detection lands.
+  TrackEffectType.smartTune: kFxPsolaCostUs,
 };
 
 /// The octaver in PSOLA mode (its mode setting at 1), per block.

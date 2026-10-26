@@ -42,6 +42,8 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.dualOctaver => effectDualOctaver,
     TrackEffectType.ampCab => effectAmpCab,
     TrackEffectType.mod => effectMod,
+    TrackEffectType.roomVerb => effectRoomVerb,
+    TrackEffectType.smartTune => effectSmartTune,
   };
 
   /// The name of a built-in effect parameter, by its stable key. An unknown
@@ -58,6 +60,11 @@ extension EngineLocalizations on AppLocalizations {
     'time' => paramTime,
     'delay_time' => paramTime,
     'delay_mode' => paramMode,
+    'delay_freq' => paramFrequency,
+    'damp' => paramDamping,
+    'lr_ratio' => paramLrRatio,
+    'reso' => paramResonance,
+    'res_freq' => paramResFreq,
     'oct_high_mode' => paramHighMode,
     'octave_1_vol' => paramOctave1Level,
     'octave_2_vol' => paramOctave2Level,
@@ -67,6 +74,18 @@ extension EngineLocalizations on AppLocalizations {
     'cabinet' => paramCabinet,
     'mod_mode' => paramMode,
     'studio_mod_mode' => paramMode,
+    'length' => paramLength,
+    'room' => paramRoom,
+    'room_mode' => paramMode,
+    'er_room' => paramEarlyRoom,
+    'bright' => paramBright,
+    'lo_hi' => paramLoHi,
+    'tail_er' => paramTailEr,
+    'density' => paramDensity,
+    'speed' => paramSpeed,
+    'scale_root' => paramScaleRoot,
+    'scale_type' => paramScaleType,
+    'reference' => paramReference,
     'decay' => paramDecay,
     'volume' => paramVolume,
     'amb_dub_mix' => paramAmbDubMix,
@@ -139,6 +158,9 @@ extension EngineLocalizations on AppLocalizations {
     }
     final value = p.valueAt(setting);
     final tenths = (value * 10).round() / 10;
+    // Smart Tune's reference reads to a tenth, as the Looper X shows it:
+    // its whole range is 40 Hz, and A = 441 or 442 is what it is for.
+    if (p.key == 'reference') return fxValueHzFine(tenths);
     return switch (p.unit) {
       FxParamUnit.percent => fxValuePercent(value.round()),
       FxParamUnit.ms =>
@@ -182,9 +204,10 @@ extension EngineLocalizations on AppLocalizations {
 
   /// The name of position [position] of choice parameter [p]: the octaver's
   /// mode or formants, the EQ's layout, the Whammy's range, the Pumper's
-  /// rate, the Slicer's pattern or step, the LPF's LFO rate, or the Mode
-  /// delay's time or mode, or the Dual Octaver's high mode. Any other reads
-  /// as its 1-based number.
+  /// rate, the Slicer's pattern or step, the LPF's LFO rate, the Mode
+  /// delay's time or mode, the Dual Octaver's high mode, the Amp's cabinet,
+  /// the Mod's mode, the Room reverb's room, or Smart Tune's scale root or
+  /// type. Any other reads as its 1-based number.
   String _choiceName(FxParamInfo p, int position) =>
       switch ((p.key, position)) {
         ('mode', 0) => octaverModePhaseVocoder,
@@ -202,6 +225,10 @@ extension EngineLocalizations on AppLocalizations {
         ('delay_mode', final i) => _delayModes[i],
         ('cabinet', final i) => _cabinets[i],
         ('mod_mode', final i) => _modModes[i],
+        ('room' || 'room_mode', final i) => _rooms[i],
+        ('er_room', final i) => _rooms[4 + i],
+        ('scale_root', final i) => _notes[i],
+        ('scale_type', final i) => _scaleTypes[i],
         ('studio_mod_mode', 0) => 'Chorus',
         ('studio_mod_mode', _) => 'Tremolo',
         ('oct_high_mode', 0) => toggleOff,
@@ -247,9 +274,6 @@ extension EngineLocalizations on AppLocalizations {
     'A_B_C<',
     'AB<<',
     '<<<<',
-    'AABB Fd1',
-    'AABB Fd2',
-    'AABB Fd3',
   ];
 
   /// The Slicer's step note values, in its step's order.
@@ -305,6 +329,61 @@ extension EngineLocalizations on AppLocalizations {
     'RADIO',
   ];
 
+  /// The notes from C, as the Looper X names Smart Tune's scale root.
+  static const List<String> _notes = [
+    'C',
+    'C#',
+    'D',
+    'D#',
+    'E',
+    'F',
+    'F#',
+    'G',
+    'G#',
+    'A',
+    'A#',
+    'B',
+  ];
+
+  /// Smart Tune's scale types, as the Looper X names them.
+  static const List<String> _scaleTypes = [
+    'Major',
+    'Minor',
+    'Harm Min',
+    'Melo Min',
+    'Dorian',
+    'Phrygian',
+    'Lydian',
+    'Mixo',
+    'Locrian',
+    'Chromatic',
+    'Penta',
+    'Maj Triad',
+    'Min Triad',
+    'Root',
+  ];
+
+  /// The Room reverb's rooms, as the Looper X names them: the four modes,
+  /// then the Drum Rack's ER rooms.
+  static const List<String> _rooms = [
+    'HALL',
+    'STADIUM',
+    'ROOM',
+    'BOX',
+    'BOOTH',
+    'CLUB',
+    'ROOM',
+    'SMALL CHAMBER',
+    'Med CHAMBER',
+    'LARGE CHAMBER',
+    'SMALL STUDIO',
+    'LARGE STUDIO',
+    'SCORING STAGE',
+    'PHILHARMONIC',
+    'CONCERT HALL',
+    'CHURCH',
+  ];
+
   /// The Mod's modes, as the Looper X names them: the Guitar Rack's three,
   /// then the Studio Rack's tremolo.
   static const List<String> _modModes = [
@@ -328,6 +407,8 @@ extension EngineLocalizations on AppLocalizations {
     'RESO HI',
     'RES HI L/R',
     'RES HI GRV',
+    'DRUM',
+    'DUB',
   ];
 
   /// The Rhythmic LPF's LFO periods, longest first, in its rate's order:

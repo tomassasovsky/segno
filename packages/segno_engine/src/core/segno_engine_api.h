@@ -746,18 +746,18 @@ typedef enum le_fx_type {
    * and 100 % depth that recovers by three quarters of the period (#891).
    * Locked to the beat, so a lane holding one is never printed. */
   LE_FX_PUMPER = 25,
-  /* SLICER: p0 pattern (a choice of 20, in the Looper X's order: AABB,
+  /* SLICER: p0 pattern (a choice of 17, in the Looper X's order: AABB,
    * ABCC, AACD, ABC_, A_C_, A_CC, A___C___, ABcccc, AAccdd, AB__dd, AA__dd,
-   * ABC<, AB_<, AA_<, A_B_C<, AB<<, <<<<, AABB Fd1, AABB Fd2, AABB Fd3),
+   * ABC<, AB_<, AA_<, A_B_C<, AB<<, <<<<),
    * p1 step (a choice of 9 note values: 1/4, 1/4T, 1/8, 1/8T, 1/16, 1/16T,
    * 1/32, 1/32T, 1/64), p2 mix. Plays the pattern on the beat: a capital letter
    * is a step and a lower-case one half a step; a letter's first slice is
    * the live input and each repeat replays it from its start; _ silences a
    * step, or half a step in a pattern with a lower-case letter; < plays the
    * step before backwards. A slice ends with a 4 ms fade
-   * (#891). The three Fd patterns are not modelled (no capture and no
-   * factory preset uses them): they pass the input through. Locked to the
-   * beat, so a lane holding one is never printed. */
+   * (#891). The Looper X's three Fd patterns after <<<< are not modelled
+   * (no capture and no factory preset uses them), so the list stops before
+   * them. Locked to the beat, so a lane holding one is never printed. */
   LE_FX_SLICER = 26,
   /* MODE_DELAY: p0 time (a choice of 20 note values: 1/32, 1/16T, 1/32D,
    * 1/16, 1/8T, 1/16D, 1/8, 1/4T, 1/8D, 1/4, 2/4T, 1/4D, 2/4, 5/8, 3/4, 7/8,
@@ -790,6 +790,28 @@ typedef enum le_fx_type {
    * 30 ms fall, whose Depth sets the gain of its off part (Mix does nothing
    * there). A mode change crossfades over 1024 frames. */
   LE_FX_MOD = 30,
+  /* ROOM_VERB: p0 length (the Looper X's 0.45 to 144 s display), p1 mix,
+   * p2 room (a choice of 16: HALL, STADIUM, ROOM, BOX, then the Drum
+   * Rack's ER rooms BOOTH, CLUB, ROOM, SMALL CHAMBER, Med CHAMBER,
+   * LARGE CHAMBER, SMALL STUDIO, LARGE STUDIO, SCORING STAGE, PHILHARMONIC,
+   * CONCERT HALL, CHURCH; its last three, which the Looper X's screen
+   * cannot reach, are not measured), p3 bright, p4 lo/hi, p5 tail/ER,
+   * p6 density. The Looper X's Reverb, fit to the #891 captures: one
+   * network at each room's size behind its pre-delay, the room's early
+   * taps, and a low-pass the tone sets. The four modes read Bright; the ER
+   * rooms read Lo/Hi (which also moves a low cut, 65 Hz at 100 % down to
+   * an 8 Hz floor), Tail/ER and Density. Mix is equal-power, over a half
+   * turn on the modes and a quarter on the ER rooms (their dry is 0.707 at
+   * 100 %). Drains its tail on bypass. */
+  LE_FX_ROOM_VERB = 31,
+  /* SMART_TUNE: p0 speed (1 to 1000 ms), p1 scale root (a choice of 12, C
+   * to B), p2 scale type (a choice of 14: Major, Minor, Harm Min, Melo Min,
+   * Dorian, Phrygian, Lydian, Mixo, Locrian, Chromatic, Penta, Maj Triad,
+   * Min Triad, Root), p3 reference (420 to 460 Hz). The Vocal Tuner's
+   * Smart Tune, fit to the #891 captures: the octaver's PSOLA, fully wet,
+   * retunes a voiced input to the nearest note of the scale, gliding there
+   * with a time constant of half the speed. */
+  LE_FX_SMART_TUNE = 32,
 } le_fx_type;
 
 /* ---- Built-in effect parameter descriptors (#1378) ----

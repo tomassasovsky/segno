@@ -455,8 +455,8 @@ enum TrackEffectType {
   pumper(25, 'Pumper'),
 
   /// The Looper X's Slicer (#887 part 10): a pattern of live and replayed
-  /// slices on the beat, fit to the Rhythmic Rack's. The three Fd patterns
-  /// are not modelled and pass the input.
+  /// slices on the beat, fit to the Rhythmic Rack's. The list stops at
+  /// <<<<: the Looper X's three Fd patterns after it are not modelled.
   slicer(26, 'Slicer'),
 
   /// The Looper X's delay (#887 part 10): a note value at the song tempo,
@@ -475,7 +475,16 @@ enum TrackEffectType {
 
   /// The Looper X's Mod pedal (#887 part 13), fit to the captures: the
   /// chorus, a phaser, a flanger and a square tremolo, one at a time.
-  mod(30, 'Modulation');
+  mod(30, 'Modulation'),
+
+  /// The Looper X's Reverb (#1476), fit to the captures: four modes (HALL,
+  /// STADIUM, ROOM, BOX) with Bright, and the Drum Rack's twelve ER rooms
+  /// with Lo/Hi, Tail/ER and Density, on one network at each room's size.
+  roomVerb(31, 'Room reverb'),
+
+  /// The Looper X's Smart Tune (#1480), fit to the captures: a voice
+  /// retuned to the nearest note of a scale, gliding there at its speed.
+  smartTune(32, 'Smart Tune');
 
   const TrackEffectType(this.code, this.label);
 
@@ -1096,6 +1105,64 @@ enum TrackEffectType {
         defaultValue: 0.5,
       ),
     ],
+    // The Looper X's Reverb (#891 s6rev, s8): the length (its reverb-time
+    // display), the mix, the room (HALL, STADIUM, ROOM, BOX, then the Drum
+    // Rack's ER rooms BOOTH to CHURCH), Bright (the modes'), Lo/Hi, Tail/ER
+    // and Density (the ER rooms'). Every control measured at three or more
+    // settings.
+    TrackEffectType.roomVerb => const [
+      FxParamInfo(
+        key: 'length',
+        unit: FxParamUnit.seconds,
+        atMin: 0.45,
+        atMax: 144,
+        curve: FxParamCurve.reverbTime,
+        defaultValue: 0.4,
+      ),
+      FxParamInfo(
+        key: 'mix',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.15,
+      ),
+      FxParamInfo(
+        key: 'room',
+        unit: FxParamUnit.choice,
+        steps: 16,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'bright',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.8,
+      ),
+      FxParamInfo(
+        key: 'lo_hi',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'tail_er',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.3,
+      ),
+      FxParamInfo(
+        key: 'density',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 1,
+      ),
+    ],
     // Fit to the Dub Rack's Dub-Verb (#891); the Looper X's ranges.
     TrackEffectType.dubVerb => const [
       FxParamInfo(
@@ -1135,7 +1202,7 @@ enum TrackEffectType {
     ],
     // The Rhythmic Rack's Slicer (#891): the pattern (AABB, ABCC, AACD,
     // ABC_, A_C_, A_CC, A___C___, ABcccc, AAccdd, AB__dd, AA__dd, ABC<, AB_<,
-    // AA_<, A_B_C<, AB<<, <<<<, AABB Fd1, AABB Fd2, AABB Fd3), the step (1/4,
+    // AA_<, A_B_C<, AB<<, <<<<), the step (1/4,
     // 1/4T, 1/8, 1/8T, 1/16, 1/16T, 1/32, 1/32T, 1/64), the mix.
     // The Looper X's delay (#891): the time a note value (1/32, 1/16T,
     // 1/32D, 1/16, 1/8T, 1/16D, 1/8, 1/4T, 1/8D, 1/4, 2/4T, 1/4D, 2/4, 5/8,
@@ -1165,13 +1232,54 @@ enum TrackEffectType {
         atMax: 100,
         defaultValue: 0.2,
       ),
+      // The seven racks' twelve modes, then the Drum Rack's and the Dub
+      // Rack's own delays.
       FxParamInfo(
         key: 'delay_mode',
         unit: FxParamUnit.choice,
-        steps: 12,
+        steps: 14,
         atMin: 0,
         atMax: 1,
         defaultValue: 0,
+      ),
+      // The Drum Rack's Del Freq, its bell's centre.
+      FxParamInfo(
+        key: 'delay_freq',
+        unit: FxParamUnit.hz,
+        atMin: 100,
+        atMax: 10000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.25,
+      ),
+      // The Dub Rack's Del Damp, L/R Ratio, Reso and Res-Freq.
+      FxParamInfo(
+        key: 'damp',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.35,
+      ),
+      FxParamInfo(
+        key: 'lr_ratio',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'reso',
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
+        defaultValue: 0.8,
+      ),
+      FxParamInfo(
+        key: 'res_freq',
+        unit: FxParamUnit.hz,
+        atMin: 100,
+        atMax: 10000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.35,
       ),
     ],
     // The Looper X's Amp (#891): drive, Bass, Treble and Modern (each
@@ -1254,7 +1362,7 @@ enum TrackEffectType {
       FxParamInfo(
         key: 'slicer_pattern',
         unit: FxParamUnit.choice,
-        steps: 20,
+        steps: 17,
         atMin: 0,
         atMax: 1,
         defaultValue: 0,
@@ -1273,6 +1381,42 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 1,
+      ),
+    ],
+    // The Vocal Tuner's Smart Tune (#1480): the speed (6, 32, 179 and 994 ms
+    // on the Looper X's screen at 25, 50, 75 and 100 %), the scale root C to
+    // B, the scale type, and the reference (459.9 Hz at 99.6 %).
+    TrackEffectType.smartTune => const [
+      FxParamInfo(
+        key: 'speed',
+        unit: FxParamUnit.ms,
+        atMin: 1,
+        atMax: 1000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0.5,
+      ),
+      FxParamInfo(
+        key: 'scale_root',
+        unit: FxParamUnit.choice,
+        steps: 12,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'scale_type',
+        unit: FxParamUnit.choice,
+        steps: 14,
+        atMin: 0,
+        atMax: 1,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'reference',
+        unit: FxParamUnit.hz,
+        atMin: 420,
+        atMax: 460,
+        defaultValue: 0.5,
       ),
     ],
     // The Guitar Rack's Whammy (#891): the pedal, and the range (position 0
