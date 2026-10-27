@@ -1,10 +1,11 @@
 # Test configuration for the segno app.
 #
 # Declare the `screenshots` tag so package:test does not warn about it. The
-# manual golden/screenshot generators in test/screenshots/ self-skip in-test
-# when the local Flutter Material fonts (and matching macOS goldens) are absent
-# — i.e. everywhere but the author's machine — so no unconditional skip is
-# configured here (that would also block an explicit `--tags screenshots` run).
+# screenshot suites in test/screenshots/ render PNGs for review against the
+# design; no goldens are committed, so they self-skip in-test unless run with
+# `--update-goldens` (see rendersScreenshots in test/helpers). CI renders them
+# and uploads the PNGs as the `screenshots` artifact. No unconditional skip is
+# configured here: that would also block an explicit `--tags screenshots` run.
 tags:
   screenshots:
   # The control-sequence fuzzer (test/fuzz/): drives the REAL native engine

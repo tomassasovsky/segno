@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -29,11 +28,9 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 
 /// The accepted Pedals setup, drawn at the console's own size.
 void main() {
-  const fontDir =
-      '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
-  // Author-machine goldens, like the other screenshot suites here: the
-  // Material fonts come from the local SDK, so everywhere else this skips.
-  final hasScreenshotFonts = File('$fontDir/Roboto-Regular.ttf').existsSync();
+  final fontDir = materialFontDir;
+  // Renders only with --update-goldens; see rendersScreenshots.
+  final hasScreenshotFonts = rendersScreenshots;
 
   setUpAll(() async {
     if (!hasScreenshotFonts) return;

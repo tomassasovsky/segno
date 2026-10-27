@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -95,9 +94,8 @@ SessionPreview _previewOf(String id) => switch (id) {
 void main() {
   setUpAll(() => registerFallbackValue(_track(0, 1)));
 
-  final fontDir = Platform.environment['SEGNO_SCREENSHOT_FONT_DIR'];
-  final hasScreenshotFonts =
-      fontDir != null && File('$fontDir/Roboto-Regular.ttf').existsSync();
+  final fontDir = materialFontDir;
+  final hasScreenshotFonts = rendersScreenshots;
 
   setUpAll(() async {
     if (!hasScreenshotFonts) return;

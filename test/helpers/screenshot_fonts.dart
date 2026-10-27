@@ -2,6 +2,28 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+/// The Flutter SDK's Material fonts (Roboto and the Material icons), which
+/// the screenshot suites load.
+///
+/// `flutter test` runs the `flutter_tester` binary from
+/// `<sdk>/bin/cache/artifacts/engine/<platform>/`, so the fonts are in
+/// `<sdk>/bin/cache/artifacts/material_fonts` on any machine with the SDK:
+/// the author's Mac and the Linux CI runner alike.
+final String materialFontDir =
+    '${File(Platform.resolvedExecutable).parent.parent.parent.path}'
+    '/material_fonts';
+
+/// Whether the screenshot suites render.
+///
+/// The PNGs they write are for review against the design, not committed
+/// goldens, so there is nothing to compare against: the suites run only when
+/// asked to write, with `flutter test --tags screenshots --update-goldens`.
+/// CI does that and uploads the result as the `screenshots` artifact.
+bool get rendersScreenshots =>
+    autoUpdateGoldenFiles &&
+    File('$materialFontDir/Roboto-Regular.ttf').existsSync();
 
 /// Registers the font files at [paths] under [family] for a screenshot suite.
 ///

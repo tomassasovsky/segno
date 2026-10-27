@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
@@ -81,24 +80,21 @@ class _MockInputsCubit extends MockCubit<InputsState> implements InputsCubit {}
 /// panel in the Fusion "Segno console (populated)" doc). Renders [TracksView]
 /// exactly as the physical console shows it and captures a 1920x1080 golden.
 ///
-/// It only produces the CONSOLE layout when compiled with the flag on, so it is
-/// Regenerate on the author's machine with:
+/// It only produces the CONSOLE layout when compiled with the flag on.
+/// Render it with:
 ///
 ///   flutter test --tags screenshots \
 ///     --update-goldens test/screenshots/tracks_screenshots_test.dart
 void main() {
   late MixSettingsCoordinator mixSettings;
   late FxChainPersistence fxPersistence;
-  const fontDir =
-      '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
-  // Golden generators load the local SDK's Material fonts and compare against
-  // macOS-rendered goldens, so they only run where those fonts exist (the
-  // author's machine); everywhere else they skip.
-  final hasScreenshotFonts = File('$fontDir/Roboto-Regular.ttf').existsSync();
+  final fontDir = materialFontDir;
+  // Renders only with --update-goldens; see rendersScreenshots.
+  final hasScreenshotFonts = rendersScreenshots;
 
   setUpAll(() async {
     if (!hasScreenshotFonts) return;
-    const robotoTtfs = [
+    final robotoTtfs = [
       '$fontDir/Roboto-Regular.ttf',
       '$fontDir/Roboto-Medium.ttf',
       '$fontDir/Roboto-Bold.ttf',
@@ -469,7 +465,7 @@ void main() {
     }, skip: !hasScreenshotFonts);
   }
 
-  // The accepted Fade Pen frames (docs/design/fade-previews/pen): shared
+  // The accepted Fade Pen frames (segno-design fade-previews/pen): shared
   // Default, a track override, Bank B, and the Spanish strings.
   for (final scene in ['default', 'custom', 'bank', 'spanish']) {
     testWidgets('Foot Fade $scene accepted scene', (tester) async {

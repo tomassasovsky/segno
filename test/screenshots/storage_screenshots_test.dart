@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -19,13 +18,11 @@ import '../helpers/helpers.dart';
 import '../storage/helpers/storage_rig.dart';
 
 /// The six tiles of pen 31 `Storage & safe eject`, at the pen's own numbers,
-/// for eyeballing against the pen. Author-only, like every golden here: the
-/// Material fonts come from the local Flutter SDK
-/// (`SEGNO_SCREENSHOT_FONT_DIR`), and elsewhere these skip.
+/// for eyeballing against the pen. Renders only with `--update-goldens`, like
+/// every suite here.
 void main() {
-  final fontDir = Platform.environment['SEGNO_SCREENSHOT_FONT_DIR'];
-  final hasFonts =
-      fontDir != null && File('$fontDir/Roboto-Regular.ttf').existsSync();
+  final fontDir = materialFontDir;
+  final hasFonts = rendersScreenshots;
 
   setUpAll(() async {
     if (!hasFonts) return;
