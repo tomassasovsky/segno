@@ -408,7 +408,7 @@ by construction).
 - `LE_CMD_SET_SPEED` takes the next free command code at rebase (E13: this
   text assigns no numbers; Reverse holds 83 and Multiply/Divide's plan holds
   `LE_CMD_SET_LENGTH = 84`; the audited table row in
-  `docs/design/performance-event-log-format.md` and the `le_log_extract`
+  `docs/formats/performance-event-log-format.md` and the `le_log_extract`
   exclusion list are the collision check), payload `struct { int32_t numer,
   denom; } speed;` with the five factors as `{1,2} {1,1} {2,1} {4,1} {8,1}`;
   checked, never raw-posted (add to the `le_push` refusal list,

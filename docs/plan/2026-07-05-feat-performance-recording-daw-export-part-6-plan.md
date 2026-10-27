@@ -50,7 +50,7 @@ support for `SessionCubit`), salvage detection, and a state stream the part
   on it and re-exports nothing; existing session tests are the regression
   net.
 - Manifest schema (`performance.json`) documented in
-  `docs/design/performance-manifest-format.md` for `daw_export` fixtures.
+  `docs/formats/performance-manifest-format.md` for `daw_export` fixtures.
 
 ## Acceptance Criteria
 
@@ -85,7 +85,7 @@ support for `SessionCubit`), salvage detection, and a state stream the part
       `PerformanceManifest`, `PerformanceState` stream); `arm/disarm/
       persistLiveLanes/disarmAndFinalize/findUnfinalized`; bundle assembly;
       slug helper.
-- [ ] `docs/design/performance-manifest-format.md` — schema for `daw_export`.
+- [ ] `docs/formats/performance-manifest-format.md` — schema for `daw_export`.
 - [ ] Tests: snapshot completeness (settled/deferred/disarm pass), skip-
       capturing rule, finalize round-trip on temp dirs, slug, salvage,
       partial success. `MockAudioEngine` perf fakes exercised.
@@ -94,7 +94,7 @@ support for `SessionCubit`), salvage detection, and a state stream the part
 
 `packages/wav_codec/*` (new), `packages/performance_repository/*` (new),
 `packages/session_repository/{pubspec.yaml,lib/src/session_repository.dart,lib/src/wav.dart (removed)}`,
-`docs/design/performance-manifest-format.md`.
+`docs/formats/performance-manifest-format.md`.
 
 ## Verification
 

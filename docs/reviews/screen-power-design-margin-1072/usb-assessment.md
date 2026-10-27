@@ -15,7 +15,7 @@ The APROTII controller (`1a86:e5e3`) attaches directly at 12 Mbps. Both screen
 cables plug directly into the Pi, according to the owner. The UPERFECT upstream
 path therefore needs to preserve high-speed USB; its slower touch controller
 does not justify silently restricting the whole path to full speed. See the
-[recorded topology and cable selection](../../../hardware/kicad/screen_power/README.md).
+[recorded topology and cable selection](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/README.md).
 
 Each channel routes both data conductors through an IM02TS relay between
 four-pin JST XH connectors. The approximately 49.71 mm copper route per

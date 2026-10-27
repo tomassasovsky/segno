@@ -33,4 +33,4 @@ No commit, push, supplier message or fabrication release occurred. Dinacut's
 tooling confirmation and the independent #1019 structural/load hold remain,
 along with physical welded fit and front drilling before coating.
 
-[Machine-readable final evidence](../../../hardware/enclosure/reference/welder_corner_preparation_verification.json).
+[Machine-readable final evidence](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/reference/welder_corner_preparation_verification.json).

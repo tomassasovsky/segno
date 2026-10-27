@@ -54,7 +54,7 @@ the estimate is roughly 0.20–0.36 W and 75–87 °C junction temperature per F
 At the 6 A shared design ceiling, the same model gives about 0.81 W and 121 °C
 per FET. These are engineering estimates, not measured assembled temperatures
 or a qualified current rating. Source parameters and assumptions are recorded
-in the [screen-board notes](../../../hardware/kicad/screen_power/README.md) and
+in the [screen-board notes](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/README.md) and
 [Vishay datasheet](https://www.vishay.com/docs/77632/sup70101el.pdf).
 
 The 6 A shared allowance includes both main outputs, both touch outputs and
@@ -88,7 +88,7 @@ complete review of every earlier change in the large stacked PR.
   lists intentionally disabled checks; no new rule suppression was added.
 - Final validator: **36/36 regression controls passed**, including the original
   relay pinout and the independently discovered redundant-via-island fault.
-  See [validation.json](../../../hardware/kicad/screen_power/validation.json).
+  See [validation.json](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/validation.json).
 - Actual USB copper: all four differential pairs have zero nominal length
   mismatch; each upstream route is 23.357803 mm and each downstream route is
   26.351514 mm. Ground-reference sampling covered 5,452 points.

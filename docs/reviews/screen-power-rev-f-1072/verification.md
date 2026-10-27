@@ -51,7 +51,7 @@ no new independent review is claimed.
 
 ## Costs and power-off behavior
 
-The [component estimate](../../../hardware/kicad/screen_power/COSTS.md) accounts
+The [component estimate](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/COSTS.md) accounts
 for every populated BOM reference: 37 parts, 21 unique ordering numbers,
 **US$32.42** at published single-unit distributor prices checked on
 22 September 2026. A US$23–48 external wiring and mounting allowance is
@@ -67,5 +67,5 @@ A software-halted Pi that still has input power needs GPIO17 explicitly
 released or lowered before HDMI stops, with sufficient measured discharge
 time. That software work remains outstanding. Residual HDMI power, cables,
 USB operation, power/thermal behavior and enclosure fit still need actual
-hardware checks. See the [board notes](../../../hardware/kicad/screen_power/README.md).
+hardware checks. See the [board notes](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/README.md).
 Issue #1072 remains `autonomy:blocked-verify`.

@@ -15,4 +15,4 @@ STEP, assembly drawing, BOM and both-side previews.
 
 [Validation](validation.json) records before/after hashes and preserved copper.
 [DRC](drc.json) records the native check. GPIO17 and GND pin assignments remain
-in the [wiring guide](../../../hardware/kicad/README.md).
+in the [wiring guide](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/README.md).

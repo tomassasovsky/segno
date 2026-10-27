@@ -210,7 +210,7 @@ Each phase ≈ one mergeable PR (large ones noted for further splitting). Phases
   - **GPIO input protection:** Pi GPIO is **3.3 V, not 5 V-tolerant** — series resistors / clamping on footswitch + encoder lines (longer internal runs, ESD, contact bounce).
   - **Power & thermals:** single supply budgeted for Pi 5 + two screens + USB interface + LED driver; confirm active cooling prevents throttle under sustained load.
   - **Displays:** spike **7″ HDMI vs official DSI** (HDMI = uniform bus + clean second-window mapping but uses the 2nd micro-HDMI; DSI frees an HDMI port but is 800×480 + needs DSI compositor mapping — resolution matters little for a waveform).
-  - **BOM + shopping list:** mirror [`hardware/segno_pedal_shopping_list.md`](../../hardware/segno_pedal_shopping_list.md) (Argentina-sourced) → new `hardware/segno_console_shopping_list.md`. Include touchscreen 16″, 7″ display, Pi 5 + cooler, USB interface (Scarlett-class), footswitches, EC11 encoder, WS2812 ring + strip, driver MCU, protection passives, PSU, enclosure materials.
+  - **BOM + shopping list:** mirror [`hardware/segno_pedal_shopping_list.md`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/segno_pedal_shopping_list.md) (Argentina-sourced) → new `hardware/segno_console_shopping_list.md`. Include touchscreen 16″, 7″ display, Pi 5 + cooler, USB interface (Scarlett-class), footswitches, EC11 encoder, WS2812 ring + strip, driver MCU, protection passives, PSU, enclosure materials.
   - **On-hardware gates:** re-run the **≤10 ms round-trip latency** target on the chosen USB interface + Pi 5 + PipeWire quantum; ≥2 h thermal soak under audio + dual-display + GPU load in the closed enclosure (no throttle, no xrun regression).
 - **Deliverables:** enclosure design + fab files; protection circuit; power/thermal budget; `hardware/segno_console_shopping_list.md`; spike results; latency + soak reports.
 - **Success criteria:** assembled unit passes latency gate and 2 h soak; no pin damage from miswire test; stompable panel survives stage abuse.
@@ -328,7 +328,7 @@ Each phase ≈ one mergeable PR (large ones noted for further splitting). Phases
 - Audio engine (no changes): [`engine_devices.c`](../../packages/segno_engine/src/core/engine_devices.c), [`engine_linux.c:156`](../../packages/segno_engine/src/platform/engine_linux.c)
 - CI: [`.github/workflows/main.yaml`](../../.github/workflows/main.yaml) (`build-linux`, no ARM64)
 - Audio setup: [`docs/RUNNING_ON_LINUX.md`](../../docs/RUNNING_ON_LINUX.md)
-- Pedal BOM template: [`hardware/segno_pedal_shopping_list.md`](../../hardware/segno_pedal_shopping_list.md)
+- Pedal BOM template: [`hardware/segno_pedal_shopping_list.md`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/segno_pedal_shopping_list.md)
 
 ### Related Work
 

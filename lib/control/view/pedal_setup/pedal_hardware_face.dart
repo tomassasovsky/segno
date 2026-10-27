@@ -240,7 +240,7 @@ class _PedalFacePainter extends CustomPainter {
   }
 
   // ---------------------------------------------------------------------------
-  // The seven measured outlines from docs/design/pedal-hardware-widget.js.
+  // The seven measured outlines from pedal-hardware-widget.js (segno-design).
   // Built once and used without mutation by every rendered face.
   // ---------------------------------------------------------------------------
 

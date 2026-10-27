@@ -66,7 +66,7 @@ Key files:
   `packages/segno_engine/src/test/run_native_tests.sh` — home of the
   mid-capture stomp replay test (Part 1a wired `perf_render`'s per-frame
   switch to replay the enabled plog codes).
-- `docs/design/performance-event-log-format.md` — audit table with a verdict
+- `docs/formats/performance-event-log-format.md` — audit table with a verdict
   row per command (Part 1a added the enabled events; track/master setters
   are **manifest-only, "No replay" with rationale** — pinned) [R3].
 - `docs/RUNNING_ON_RPI.md` — arm64 bundle build steps, on-device bring-up
@@ -124,7 +124,7 @@ Constraints lifted from the index (pinned decisions — do not change):
       arm renders bypassed throughout** (manifest enabled bits seed
       `le_pr_fx_chain_init_from_lane`)
 - [ ] **Audit table final pass** [R3]: every command added by the epic has
-      a verdict row in `docs/design/performance-event-log-format.md`;
+      a verdict row in `docs/formats/performance-event-log-format.md`;
       track/master setter rows read "No replay" with the manifest-only
       rationale — verify, don't re-litigate
 - [ ] **Appliance soak** (manual, Pi console, arm64 bundle per
@@ -213,5 +213,5 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test packages
   see `docs/PROGRESS.md` "How to build / test" for the macOS dylib gotchas
   before touching `run_native_tests.sh`.
 - `fx_chains.dart` documents that effects only ever appear on armSnapshot
-  lane entries (`docs/design/performance-manifest-format.md`) — the new
+  lane entries (`docs/formats/performance-manifest-format.md`) — the new
   track/master fields extend that doc in the same PR as the reader.

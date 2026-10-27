@@ -70,7 +70,7 @@
 #define LE_PR_PATH_MAX 960
 #define LE_PR_FULL_PATH_MAX (LE_PR_PATH_MAX + 64)
 #define LE_PR_EVENTS_ENTRY_BYTES 28 /* matches perf_drain.c's on-disk layout,
-                                    * docs/design/performance-event-log-format.md */
+                                    * docs/formats/performance-event-log-format.md */
 #define LE_PR_MAX_SEGMENTS 4096 /* per-track content-source transitions; a
                                 * scripted-storm session could retire many
                                 * layers, but a single performance realistically
@@ -574,7 +574,7 @@ static int le_pr_load_log(const char* dir, le_pr_log_entry** out_entries) {
     memcpy(&e->cmd.code, raw + 8, 4);
     /* The 16-byte union payload, copied as a block rather than per-arm: every
      * arm is plain 4-byte-aligned int32_t/float/uint32_t fields with no
-     * internal padding (see docs/design/performance-event-log-format.md), so
+     * internal padding (see docs/formats/performance-event-log-format.md), so
      * this is equivalent to memcpy-ing whichever specific arm the entry's
      * `code` actually uses. */
     memcpy(((unsigned char*)&e->cmd) + 4, raw + 12, 16);

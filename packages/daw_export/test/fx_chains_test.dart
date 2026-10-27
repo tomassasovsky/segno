@@ -194,7 +194,7 @@ void main() {
 
     test(
       'reads effects only from armSnapshot — a disarmSnapshot entry never '
-      'carries effects (docs/design/performance-manifest-format.md), and '
+      'carries effects (docs/formats/performance-manifest-format.md), and '
       'even a defensively-malformed one carrying it anyway is ignored',
       () {
         File('${dir.path}/performance.json').writeAsStringSync(

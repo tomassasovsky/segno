@@ -115,7 +115,7 @@ The updated combined Mouser import has 55 lines and 192 units. Its estimate is
 $88.22 before tax, including carried-forward tariffs and shipping assumptions.
 Only the three changed connector/contact products were checked again; this is
 not a refreshed complete quote or a changed cart. See [harness](harness.md) and
-[costs](../../../hardware/kicad/screen_power/COSTS.md).
+[costs](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/COSTS.md).
 
 This is bare-board design and manufacturing-data verification. It does not
 establish assembled USB compliance, relay endurance, startup/shutdown timing,

@@ -23,7 +23,7 @@ exist, and a plan resting on a false premise is worse than no plan.
 
 Console board v2 puts every control behind the RP2350, and every Pi-side signal on
 the 40-way behind a **kernel driver**, not a GPIO line. From the netlist
-([`hardware/kicad/console_board.py:PI_HDR`](../../hardware/kicad/console_board.py)) the
+([`hardware/kicad/console_board.py:PI_HDR`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/console_board.py)) the
 ribbon carries exactly:
 
 | Pi pins | function | who owns it in Linux |
@@ -75,11 +75,11 @@ the record.
 - [`2026-08-17-console-board-v2-brainstorm-doc.md`](2026-08-17-console-board-v2-brainstorm-doc.md)
   — the key-decision bullet, the ribbon-signals line, and **both** affected
   board-content rows (Pi link and Power button).
-- [`hardware/enclosure/segno_enclosure.py`](../../hardware/enclosure/segno_enclosure.py)
+- [`hardware/enclosure/segno_enclosure.py`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/segno_enclosure.py)
   — the power-button part selection, twice ("it drives a Pi GPIO", "a dry contact to a
   3.3 V GPIO"). Missed by two sweeps, because nobody thinks to grep an *enclosure*
   generator for an electrical claim.
-- [`hardware/segno_enclosure_design.md`](../../hardware/segno_enclosure_design.md)
+- [`hardware/segno_enclosure_design.md`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/segno_enclosure_design.md)
   — twice again, and one is the verbatim twin of the sentence above: the generator
   cites this doc as its construction reference, so the two drifted together.
 - [`deploy/rpi/overlayfs/README.md`](../../deploy/rpi/overlayfs/README.md) — a

@@ -13,7 +13,7 @@ upstream-protection entry below.
 It does not certify assembled operation or replace manufacturing-export
 correspondence checks. The detailed independent audit is in
 [raw/system-wiring-audit.md](raw/system-wiring-audit.md); the complete wiring
-instructions are in [hardware/segno_wiring.md](../../../hardware/segno_wiring.md).
+instructions are in [hardware/segno_wiring.md](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/segno_wiring.md).
 
 ## Connections
 

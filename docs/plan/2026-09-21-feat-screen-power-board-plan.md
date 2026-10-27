@@ -43,7 +43,7 @@ therefore need switching before HDMI stops.
   at the through-hole connectors, without data vias, and protected front-side
   ground underneath.
 
-The [assembly guide](../../hardware/kicad/screen_power/README.md) is the exact
+The [assembly guide](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/README.md) is the exact
 source for pin maps, manufacturer parts, current/gate margins, fuse limitations,
 stackup, assembly and physical acceptance. The circuit source and floorplan remain separate.
 

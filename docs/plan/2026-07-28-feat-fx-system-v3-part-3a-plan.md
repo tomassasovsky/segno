@@ -418,7 +418,7 @@ SUCCESS CRITERIA:
 
 NON-GOALS:
 - Part 0 owns the PerformanceRepository.arm() fix + performanceChainsFromLooper + limiter cache [R14] (already standalone).
-- Part 3b owns: session formatVersion 4→5 migration + SessionRig trackEffects/masterEffects + leftover reset [R17]; PerformanceChains/armSnapshot track+master fields + version marker [R20]; flipping the session write sites (session_mapping.dart:19,33) to envelope encode; docs/design/session-bundle-format.md v5 history.
+- Part 3b owns: session formatVersion 4→5 migration + SessionRig trackEffects/masterEffects + leftover reset [R17]; PerformanceChains/armSnapshot track+master fields + version marker [R20]; flipping the session write sites (session_mapping.dart:19,33) to envelope encode; docs/formats/session-bundle-format.md v5 history.
 - Parts 1a/1b own everything native: engine flags, track bus, inserts, plog, native fingerprint folding, ffigen bindings.
 - Part 2 owns the wet cache (this part only guarantees fingerprints it can key on).
 - Part 4 owns all UI: Signal-page stages, power controls, inherited badge + detach action, dead-code deletion, goldens.

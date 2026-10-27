@@ -21,7 +21,7 @@ it does not validate maximum LED load or fabricated v3 hardware.
 Console v3 now uses all 80 pixels, the actual logical-to-physical chain map,
 the two row directions, and the eight-point spatial curve
 `38,92,201,255,255,201,92,38`. The existing 128 brightness cap remains. The
-curve averages 57.45%; the [power budget](../../../hardware/segno_wiring.md)
+curve averages 57.45%; the [power budget](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/segno_wiring.md)
 now includes 104 LEDs and distinguishes the old and new PCB power paths.
 
 - All eight host firmware suites pass, including 54 protocol fixtures.

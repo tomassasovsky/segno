@@ -94,7 +94,7 @@ placement behind CLEAR does not establish final cable/assembly fit.
 
 ## Current manufacturing package
 
-[segno_screen_power_rev_k_gerbers.zip](../../../hardware/kicad/fab/segno_screen_power_rev_k_gerbers.zip)
+[segno_screen_power_rev_k_gerbers.zip](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/fab/segno_screen_power_rev_k_gerbers.zip)
 contains seven Gerber layers, two separate drill files, two drill maps and the
 job file. Select bare PCB, two-layer FR4, 1.6 mm, 1 oz outer copper, ENIG,
 purple solder mask and white silkscreen. No stencil or assembly service.

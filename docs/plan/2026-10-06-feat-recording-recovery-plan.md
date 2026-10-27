@@ -65,7 +65,7 @@ therefore differ from the pen, and are recorded in the write-back list (§9):
 float`, and a full part at 48 kHz stereo lasts 1:26:48, not 1:55:44. The
 part size itself is unchanged: 2,000,000,000 bytes per file, header
 included. The prototype model computes parts the same way with a 44-byte
-header (main checkout `docs/design/performance-recording-model.js:5-8`).
+header (main checkout `docs/formats/performance-recording-model.js:5-8`).
 
 ## 1. Current state (verified)
 
@@ -436,7 +436,7 @@ Owner decision on review H1: the parts are 32-bit IEEE float, not 24-bit.
   (D2).
 - The guarantee (at most the last 5 s lost after a power cut, nothing lost
   after an app crash on a volume that stayed mounted) and the file set are
-  written into `docs/design/performance-manifest-format.md` beside the
+  written into `docs/formats/performance-manifest-format.md` beside the
   `.boot-recovery` contract, as #727 asks.
 
 ### D5. One recoverable publication per Library operation
@@ -924,7 +924,7 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
   increment `perf_checkpoint_failures` (snapshot tail) and leave the other
   slot standing.
 - `le_perf_checkpoint_now_for_test(engine)` for deterministic tests.
-- `docs/design/performance-manifest-format.md`: the slots, the mirror's
+- `docs/formats/performance-manifest-format.md`: the slots, the mirror's
   authority for USB takes, the trust rule (boot, continuous mount, mirror)
   and the 5 s guarantee (#727's "decide what durability is owed").
 
@@ -991,7 +991,7 @@ VERIFICATION COMMAND: (cd packages/wav_codec && /Users/Tomas/development/flutter
 - `_capture` (`session_repository.dart:638`) asks the engine for each
   exported layer's digest through `le_digest_bytes` on the exported buffer
   (one call per layer, off the UI isolate for buffers over 8 MB).
-- `docs/design/session-bundle-format.md`: the identity fields and the
+- `docs/formats/session-bundle-format.md`: the identity fields and the
   unverified rule.
 
 ```success-criteria

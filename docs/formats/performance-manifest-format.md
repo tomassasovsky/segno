@@ -12,7 +12,7 @@ importing engine or Dart code — every field is plain JSON.
 
 `performance.json` sits at the root of a capture's bundle directory
 (`{documents}/exports/perf-YYYYMMDD-HHMMSS/`, D-NAME) alongside `events.log`
-(`docs/design/performance-event-log-format.md`), the master and input audio
+(`docs/formats/performance-event-log-format.md`), the master and input audio
 parts (see "Audio parts" below), and `loops/`. Unlike `events.log`, it is **atomically replaced**,
 not appended to: `perf_drain.c` rewrites it in full every ~250ms while armed,
 and `performance_repository` (`packages/performance_repository`) rewrites it

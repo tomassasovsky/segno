@@ -446,7 +446,7 @@ saving by deleting a required part or counting an existing component twice.
 Relevant prior evidence: [complete earlier three-board review](../code-review/pcb-claude-followup-1072/review.md),
 [existing screen startup assessment](../reviews/screen-power-rev-l-1072/startup.md),
 [USB revision assessment](../reviews/screen-power-usb-revision-1072/review.md),
-and [current screen build/assembly guide](../../hardware/kicad/screen_power/README.md).
+and [current screen build/assembly guide](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/README.md).
 The new relay review replaces obsolete power-stage conclusions while
 preserving unchanged USB and harness evidence. Refresh the purchasing and
 release records only after the implemented circuit and native layout pass

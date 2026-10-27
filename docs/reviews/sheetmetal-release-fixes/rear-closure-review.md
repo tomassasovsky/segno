@@ -47,5 +47,5 @@ metal/painting suppliers remain the chosen process. No supplier was contacted.
 No unresolved actionable defect was found in this correction. This is not a
 physical production qualification: shop stock/tooling, bare corner fit, actual
 hardware/grip/fastener engagement, coating sample and final assembly/load checks
-remain as listed in [the release review](../../../hardware/enclosure/RELEASE_REVIEW.md).
+remain as listed in [the release review](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/RELEASE_REVIEW.md).
 The prior0.61mm corner gap record and0.5–0.8mm fitting instruction are superseded.

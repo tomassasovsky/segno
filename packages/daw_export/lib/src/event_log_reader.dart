@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:daw_export/src/daw_project.dart';
 
 /// Reads `events.log`
-/// (`docs/design/performance-event-log-format.md`) directly — a
+/// (`docs/formats/performance-event-log-format.md`) directly — a
 /// fixed-width binary format, parsed here with no dependency on
 /// `segno_engine` (own-input-model rule, same as `DawManifestReader`'s
 /// `performance.json` reading). Every field offset below mirrors that
@@ -167,7 +167,7 @@ abstract final class EventLogReader {
 /// One raw `events.log` entry: the frame it was logged at, its
 /// `le_command_code`/`le_perf_log_code` value, and its 16-byte union
 /// payload (interpretation keyed on [code], see
-/// `docs/design/performance-event-log-format.md`).
+/// `docs/formats/performance-event-log-format.md`).
 class RawLogEntry {
   /// Creates a [RawLogEntry].
   const RawLogEntry({

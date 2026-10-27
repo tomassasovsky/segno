@@ -8,7 +8,7 @@ import 'package:meta/meta.dart';
 /// This is `daw_export`'s own input model — it is built either directly by a
 /// test fixture or by `DawManifestReader` (`manifest_reader.dart`) from a
 /// finalized performance-recording capture's `performance.json`
-/// (`docs/design/performance-manifest-format.md`), never by importing
+/// (`docs/formats/performance-manifest-format.md`), never by importing
 /// `performance_repository` or `segno_engine` (this package has no
 /// dependency on either, so it can run standalone against just the
 /// documented file formats).

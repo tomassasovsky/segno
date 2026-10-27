@@ -1,7 +1,8 @@
 # Segno console board v3 — Pico 2 firmware
 
 The console's pedal firmware: `console_board.ino` on the board's Pico 2 (RP2350,
-`hardware/kicad/console_board.py`, #1072). A pure thin client, like the pedal it
+[`hardware/kicad/console_board.py`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/console_board.py)
+in segno-hardware, #1072). A pure thin client, like the pedal it
 replaces — it holds no looper state. It sends raw footswitch, encoder and CTRL
 events to segno over the link, renders all ten eight-pixel indicator pills from
 the state frames segno pushes back, and forwards what the LED ring needs to the
@@ -81,8 +82,9 @@ A trigger that does not answer is asked again every tenth `HELLO`, and is
 provisioned when it does (J23 seated after boot). The write is ST's full-erase
 sequence, the one SparkFun's library proved: all five sectors erased and
 programmed back. A power cut in that second can leave a trigger that no longer
-powers the console; `hardware/console/stusb4500_pdo` reprograms it from an
-Arduino UNO.
+powers the console;
+[`hardware/console/stusb4500_pdo`](https://github.com/tomassasovsky/segno-hardware/tree/main/hardware/console/stusb4500_pdo)
+in segno-hardware reprograms it from an Arduino UNO.
 
 `firmware/test/test_pd_trigger.cpp` runs the driver against a simulated
 STUSB4500, NVM controller included (`firmware/test/stusb4500_sim.h`).

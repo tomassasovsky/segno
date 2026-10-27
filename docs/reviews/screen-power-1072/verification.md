@@ -27,7 +27,7 @@ purchased preassembled. The factory board contains 72 footprints. Both are
 
 The combined validation completed at 2026-09-22 02:32:45 UTC. Its source and
 board hashes are recorded in
-[validation.json](../../../hardware/kicad/screen_power/validation.json).
+[validation.json](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/validation.json).
 Each subsequently exported package includes its own fresh passing validation
 and hashes of all inputs and outputs. Native routed PCB hashes:
 
@@ -77,7 +77,7 @@ temperatures, relay life, impedance or enclosure fit. The hand relay coil's
 host-current draw also needs appliance suspend/resume validation. GPIO startup
 and shutdown sequencing is specified but not implemented. The full physical
 acceptance matrix is in the
-[assembly guide](../../../hardware/kicad/screen_power/README.md).
+[assembly guide](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/README.md).
 
 Issue #1072 remains `autonomy:blocked-verify`. No production readiness,
 remote CI, current-head PR merge gate or completed bench test is claimed.

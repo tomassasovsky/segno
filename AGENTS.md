@@ -37,6 +37,19 @@ editing anything substantive.
    (`gh pr list --state open --search "<N>"`; branch names carry the issue
    number), continue that PR or ask the user. Do not start a parallel one.
 
+## Sibling repos
+
+The design file and the hardware have their own repositories:
+
+- [`tomassasovsky/segno-design`](https://github.com/tomassasovsky/segno-design)
+  holds `segno-ui.pen` and the design studies. For UI work, clone it next to
+  this checkout, at `../segno-design`, and run its `tool/setup.sh` once. A UI
+  change updates the pen through a PR there; the two PRs link each other.
+- [`tomassasovsky/segno-hardware`](https://github.com/tomassasovsky/segno-hardware)
+  holds the boards, the enclosure and the printed parts. The firmware and the
+  pedal link contract stay here under `firmware/`. A change to a board's pin
+  map or to the link needs a PR in each repository, linked to each other.
+
 ## Parallel work
 
 - One issue is one thread. Each thread gets its own branch in its own git
@@ -67,6 +80,10 @@ Run these before calling a change done:
 - Pedal link contract test, required when anything under `firmware/` or
   `packages/pedal_repository` changes: `bash firmware/test/run_tests.sh`
 - `dart analyze` must be clean.
+- UI changes: render the screenshot suites with
+  `flutter test --tags screenshots --update-goldens test/screenshots` (same
+  absolute `flutter` path) and compare `test/screenshots/goldens/` against the
+  pen. The PNGs are not tracked; CI uploads them as the `screenshots` artifact.
 - `bloc lint lib test packages` must be clean. CI runs it as the `Bloc Lint`
   step, and it enforces rules `dart analyze` does not (a cubit method
   returning anything but void fails here and passes there).

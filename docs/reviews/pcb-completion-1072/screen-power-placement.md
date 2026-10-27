@@ -15,7 +15,7 @@ assembly.** No PCB outline change is needed for this location.
 Coordinates use the populated Fusion frame: x runs left to right from the left
 floor datum, y runs from front to rear, and z points up. All dimensions are mm;
 the floor's upper surface is z = 2. See the
-[Fusion coordinate contract](../../../hardware/enclosure/FUSION_MODELS.md).
+[Fusion coordinate contract](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/FUSION_MODELS.md).
 
 | Item | Proposed position |
 | --- | --- |
@@ -64,10 +64,10 @@ and SHA-256 hashes of the source files. Measurements used CadQuery 2.8.0 and
 OpenCascade STEP solids.
 
 Sources are the current
-[enclosure generator](../../../hardware/enclosure/segno_enclosure.py), the
+[enclosure generator](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/segno_enclosure.py), the
 exported 7-inch tower, both 15.6-inch stands and front/mid pedal collars under
 `hardware/enclosure/out/`, plus the
-[populated board STEP](../../../hardware/kicad/screen_power/hand/fabrication/board.step).
+[populated board STEP](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/hand/fabrication/board.step).
 The lid plane follows the documented canonical Fusion transform. The tower's
 translation follows its six existing floor-anchor stations.
 

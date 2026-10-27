@@ -620,7 +620,7 @@ class SessionRepository {
   ///
   /// The one place this package looks inside a chain string, and only as far
   /// as counting its entries: the envelope is `{"entries": [...]}` or a bare
-  /// array (`docs/design/session-bundle-format.md`), and the Library's row
+  /// array (`docs/formats/session-bundle-format.md`), and the Library's row
   /// shows the count. Anything else reads as zero.
   static int _fxCountOf(Map<String, dynamic> json) {
     // `masterChain` is the older schemas' spelling of a bus-stage chain.

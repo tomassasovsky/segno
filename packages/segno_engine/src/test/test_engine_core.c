@@ -10180,7 +10180,7 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
   return 0;
 }
 
-/* ---- events.log test helpers (part 3, docs/design/performance-event-log-
+/* ---- events.log test helpers (part 3, docs/formats/performance-event-log-
  * format.md): a 12-byte header, then fixed 28-byte entries. Decoding mirrors
  * perf_drain.c's le_pd_write_log_entry exactly (frame, then code, then the
  * union's raw 16 bytes), so a round-trip through these helpers proves the
@@ -13666,7 +13666,7 @@ static void test_perf_events_log_transport_facts(void) {
    * path once more), then undo PAST the base layer — with no stacked undo
    * layer left, this takes the to-EMPTY branch and posts LE_CMD_UNDO_TO_EMPTY
    * instead of the common swap; both still log LE_PLOG_UNDO, just from a
-   * different code path (see docs/design/performance-event-log-format.md). */
+   * different code path (see docs/formats/performance-event-log-format.md). */
   CHECK(le_engine_undo(e, 0) == LE_OK); /* removes the overdub again */
   drain(e);
   CHECK(le_engine_undo(e, 0) == LE_OK); /* past the base layer -> EMPTY */
@@ -23224,8 +23224,8 @@ static void test_json_read_get_and_length_reject_non_objects(void) {
  * finalized:true are all written by Dart's performance_repository, never by
  * this engine directly) — so these tests hand-construct a capture
  * directory's contents directly, mirroring exactly what that pipeline
- * produces (docs/design/performance-manifest-
- * format.md, docs/design/performance-event-log-format.md), then invoke the
+ * produces (docs/formats/performance-manifest-
+ * format.md, docs/formats/performance-event-log-format.md), then invoke the
  * renderer against the fixture and assert on its output stems. */
 
 #if defined(_WIN32)

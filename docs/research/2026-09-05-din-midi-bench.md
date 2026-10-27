@@ -46,7 +46,7 @@ signal at the DIN socket.
 ## Component to replace
 
 U1 is fitted with **SN74HC125N**. The
-[console-board circuit](../../hardware/kicad/console_board.py) specifies
+[console-board circuit](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/console_board.py) specifies
 **74AHCT125N**, powered from 5 V, with a 3.3 V input from the Pi.
 
 The HC device does not guarantee reliable recognition of the Pi's 3.3 V high

@@ -27,7 +27,7 @@ import 'package:usb_storage_client/usb_storage_client.dart';
 import '../../helpers/helpers.dart';
 
 /// `events.log`'s 12-byte header: `PLEV` magic + 4 reserved bytes + a
-/// little-endian int32 sample rate (docs/design/performance-event-log-format
+/// little-endian int32 sample rate (docs/formats/performance-event-log-format
 /// .md), reproduced here the same way `EventLogReader` itself does, so a test
 /// fixture can write a log with at least one entry.
 Uint8List _eventLogHeader({int sampleRate = 48000}) {

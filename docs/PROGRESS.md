@@ -11,6 +11,10 @@ history.
 Update this as work lands so any session (human or agent) can resume cold.
 
 Repo: https://github.com/tomassasovsky/segno · branch `master`.
+Sibling repos (#1496): [segno-design](https://github.com/tomassasovsky/segno-design)
+(`segno-ui.pen` and the design studies, cloned at `../segno-design`) and
+[segno-hardware](https://github.com/tomassasovsky/segno-hardware) (boards,
+enclosure, printed parts). See **Sibling repos** in `AGENTS.md`.
 
 ---
 
@@ -23,6 +27,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
+| #1496 | Split design and hardware into their own repos, slim this one | in-review | merge-gate | `claude/repo-split-1496` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
 | #887 | Looper X factory racks: all parts merged, Harmonizer parked; Pi benches and by-ear sign-off owed (#1459) | in-review | blocked-verify | trunk |
 | #900, #906 | The audio thread never faults or copies on write (replaces #907, #914) | in-review | blocked-verify | `claude/zero-stall-memory-907-914` |
@@ -661,7 +666,7 @@ The separate full-white ring, normal pills and console bring the AUX budget
 to 7.608 A. Expected screen loads support upright Q3/Q4 without heatsinks under
 the documented thermal estimates. Connector positions, the 68 × 76 mm outline,
 purple mask and two copper layers remain unchanged. The
-[screen-board notes](../hardware/kicad/screen_power/README.md) give the current
+[screen-board notes](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/README.md) give the current
 parts, wiring and post-assembly acceptance checks.
 
 September 25 update: the owner requested unrestricted full-white operation for
@@ -743,7 +748,7 @@ Revision J corrects the contact wiring described above. The
 4.5 V IM02TS relay now improves pickup margin on the 5 V host supply.
 
 See [revision H verification](reviews/screen-power-rev-h-1072/verification.md)
-and the [connector map and assembly notes](../hardware/kicad/screen_power/README.md).
+and the [connector map and assembly notes](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/README.md).
 Revision I superseded those exports, but is itself withdrawn following the
 September 25 relay finding. The historical September 24
 [first-fabrication review](reviews/pcb-completion-1072/first-fabrication.md)
@@ -777,7 +782,7 @@ short-screw mounting patterns and all external interfaces are verified; other
 native geometry and all 42 / 434 positions are preserved. Metal outputs did
 not change. All 134 enclosure tests pass, plus the seven focused mounting
 tests after strengthening the solid-material check. The #1019 physical load
-hold remains. See [evidence](../hardware/enclosure/reference/solid_mid_platform_verification.json).
+hold remains. See [evidence](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/reference/solid_mid_platform_verification.json).
 
 ## Enclosure corner preparation - 2026-09-15
 
@@ -797,8 +802,8 @@ qualified independently before changing its numerical consistency limit to
 
 The separate #1019 structural/load hold remains. Dinacut still needs to confirm
 the relief/tooling assumptions; post-weld fit and front drilling are completed
-before paint. See [current evidence](../hardware/enclosure/reference/welder_corner_preparation_verification.json)
-and [release review](../hardware/enclosure/RELEASE_REVIEW.md).
+before paint. See [current evidence](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/reference/welder_corner_preparation_verification.json)
+and [release review](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/RELEASE_REVIEW.md).
 
 ## September 14 enclosure revision - historical digital evidence
 
@@ -848,8 +853,8 @@ findings; see the [consolidated review](reviews/dinacut-welded-revision/review.m
 Physical fit and strength qualification still block fabrication; no supplier message
 or cutting authorization was sent. See the
 [current plan](plan/2026-09-14-fix-dinacut-manufacturing-tolerances-plan.md),
-[release review](../hardware/enclosure/RELEASE_REVIEW.md) and
-[internal supplier drafts](../hardware/enclosure/SHOP_REVIEW.md).
+[release review](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/RELEASE_REVIEW.md) and
+[internal supplier drafts](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/SHOP_REVIEW.md).
 
 ## Enclosure release corrections — local, 2026-09-05
 
@@ -926,9 +931,9 @@ the preceding reviewed package. No new PDF was authored. See
 pre-coating fitting and the coated fit coupon must be accepted; purchased-part fit, insert/screw lengths,
 knob relief and coating sample still require physical checks. First-piece dry
 and finished assembly and load/retention qualification remain necessary. See
-[the release review](../hardware/enclosure/RELEASE_REVIEW.md),
+[the release review](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/RELEASE_REVIEW.md),
 [verification](reviews/sheetmetal-release-fixes/full-review-verification.json)
-and [short supplier drafts](../hardware/enclosure/SHOP_REVIEW.md).
+and [short supplier drafts](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/SHOP_REVIEW.md).
 No package or supplier message was sent; no commit, push or remote issue/PR state
 was changed by this review.
 
@@ -1156,6 +1161,13 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   env (exit 69, machine-output parser vs Flutter 3.44). Use the working SDK:
   `/Users/Tomas/development/flutter/bin/flutter test`. Codex does not install
   the former Claude hook that blocked bare CLI test commands.
+- **Screenshot suites** (`test/screenshots/`, tag `screenshots`): no goldens
+  are committed. They render only with `--update-goldens`, into
+  `test/screenshots/goldens/` (ignored), using the SDK's Material fonts and the
+  fonts in `assets/fonts`, so they render on Linux CI as well as on a Mac. CI's
+  `design` job uploads them as the `screenshots` artifact and runs
+  `test/control/external_pedal_art_test.dart` against a `../segno-design`
+  clone; without that clone the study checks skip.
 - **Scaffolding:** prefer the Very Good CLI templates for normal packages.
   The Very Good MCP `create` tool only makes federated method-channel plugins. The
   FFI plugin (`segno_engine`) is **hand-authored** (`ffiPlugin: true` + CMake +

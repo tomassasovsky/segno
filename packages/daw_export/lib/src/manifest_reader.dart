@@ -8,8 +8,8 @@ import 'package:daw_export/src/event_log_reader.dart';
 import 'package:daw_export/src/manifest_json.dart';
 
 /// Reads a finalized performance-recording capture directory's
-/// `performance.json` (docs/design/performance-manifest-format.md) and
-/// `events.log` (docs/design/performance-event-log-format.md) directly — no
+/// `performance.json` (docs/formats/performance-manifest-format.md) and
+/// `events.log` (docs/formats/performance-event-log-format.md) directly — no
 /// import of `performance_repository`/`segno_engine`, matching this
 /// package's own-input-model rule — into a [DawProject] whose clips
 /// reference the capture's already-rendered stems (`stems/wet/`, falling

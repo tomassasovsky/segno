@@ -54,7 +54,7 @@ Three ways the press could reach that UI:
 `gpio-shutdown` is not a candidate. The button is not on a GPIO; on a Pi 5
 nothing on the 40-way can wake the machine, which is why the hardware went to
 J2 in the first place
-([`console_board.py` J8 block](../../hardware/kicad/console_board.py)).
+([`console_board.py` J8 block](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/console_board.py)).
 
 ## Key Decisions
 
@@ -86,7 +86,7 @@ J2 in the first place
   wordmark on a black field, on **every window** (stage and waveform). No
   spinner, no "Powering off" copy. Hold long enough to read (~2 s) then
   halt. The screens are the power indicator
-  ([`segno_wiring.md`](../../hardware/segno_wiring.md) § power button).
+  ([`segno_wiring.md`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/segno_wiring.md) § power button).
 - **Second press is ignored** while confirm, Save As, Saving…, or the logo
   hold is up. A bump-bump on the rear panel must not discard.
 - **Committed shutdown sequence:** flush `WriteDebouncer`s / mappings (the
