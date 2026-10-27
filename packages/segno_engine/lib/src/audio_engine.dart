@@ -317,6 +317,10 @@ abstract interface class EngineMetering {
   /// the interface's loopback channels for [latencyLoopbackInput]). The
   /// states of this measurement carry [request] in
   /// [EngineSnapshot.latencyRequest], so the caller waits for its own result.
+  /// The last state is not kept: a start publishes idle under the request,
+  /// and a restored offset done under request 0, so a caller also treats idle
+  /// under its own request, another request id, or the device leaving as the
+  /// end of its measurement, and bounds the wait with its own timeout.
   /// [EngineResult.invalid] for an output or input the device has not got, or
   /// an amplitude outside (0, 0.5].
   EngineResult measureLatencyPath({
