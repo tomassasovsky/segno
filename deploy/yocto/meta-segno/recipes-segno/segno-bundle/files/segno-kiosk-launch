@@ -189,4 +189,7 @@ export SEGNO_ALSA_PERIODS=8
 # /data/profile through this same script, so the profile measures the
 # environment above rather than a copy of it.
 export SEGNO_ENGINE_LIB="${SEGNO_ENGINE_LIB:-/opt/segno/lib/libsegno_engine.so}"
+# exec, never a child: segno.service is Type=notify with NotifyAccess=main, so
+# the app has to BE the unit's main pid, and it needs NOTIFY_SOCKET from this
+# environment, which nothing here clears (#976, run_mark_good_tests.sh).
 exec /usr/bin/segno --config "${SEGNO_HOMESCREEN_CONFIG:-/etc/segno/homescreen.toml}" "$@"

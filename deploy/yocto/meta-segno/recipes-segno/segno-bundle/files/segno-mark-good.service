@@ -1,7 +1,11 @@
 [Unit]
 Description=Segno: commit the booted slot once the app proves healthy
 Wants=segno.service
-After=segno.service
+# Not After=segno.service: segno.service is Type=notify, so that ordering would
+# hold this gate until the app's start job ended, and a build that never draws
+# would roll back after TimeoutStartSec plus the gate's own wait (about six
+# minutes) instead of after the gate's wait. The script waits for is-active
+# itself.
 ConditionPathExists=/usr/bin/rauc
 
 [Service]
