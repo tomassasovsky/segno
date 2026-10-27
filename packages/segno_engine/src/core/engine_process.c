@@ -3382,6 +3382,11 @@ static int le_handoff_convert_arm(le_engine* e, int32_t ch, uint64_t frame);
  * started there first. */
 static void le_handoff_record_now(le_engine* e, int32_t ch, uint64_t frame) {
   le_track* t = &e->tracks[ch];
+  /* A take the engine would refuse starts nothing, not a bare Play. */
+  if (le_capture_refused(e, ch, load_i32(&t->a_state))) {
+    le_handoff_disarm(e, ch);
+    return;
+  }
   t->pending_record = 0;
   t->pending_trigger = 0;
   store_i32(&t->a_pending, 0);
