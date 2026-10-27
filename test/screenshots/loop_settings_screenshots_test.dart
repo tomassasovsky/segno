@@ -60,9 +60,6 @@ const _rig = LooperState(
 
 void main() {
   late TempoSettings tempoOwner;
-  final fontDir = materialFontDir;
-  // Renders only with --update-goldens; see rendersScreenshots.
-  final hasScreenshotFonts = rendersScreenshots;
   final authorCaptureDir = Platform.environment['SEGNO_AUTHOR_CAPTURE_DIR'];
 
   setUpAll(() async {
@@ -72,11 +69,11 @@ void main() {
     registerFallbackValue(GridDivision.bar);
     registerFallbackValue(ClickMode.off);
     registerFallbackValue(RecordStartEditKind.restore);
-    if (!hasScreenshotFonts) return;
+    if (!rendersScreenshots) return;
     await loadScreenshotFont('Roboto', [
-      '$fontDir/Roboto-Regular.ttf',
-      '$fontDir/Roboto-Medium.ttf',
-      '$fontDir/Roboto-Bold.ttf',
+      '$materialFontDir/Roboto-Regular.ttf',
+      '$materialFontDir/Roboto-Medium.ttf',
+      '$materialFontDir/Roboto-Bold.ttf',
     ]);
     await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
@@ -443,7 +440,7 @@ void main() {
       find.byType(LoopSettingsPage),
       matchesGoldenFile('goldens/loop_settings_hub.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Loop mode with a refused card and the stop dialog', (
     tester,
@@ -465,7 +462,7 @@ void main() {
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/loop_settings_mode_confirm.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Recording, and locked while recording', (tester) async {
     await pump(tester, page: LoopSettingsPageId.recording);
@@ -473,7 +470,7 @@ void main() {
       find.byType(LoopSettingsPage),
       matchesGoldenFile('goldens/loop_settings_recording.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Recording locked', (tester) async {
     await pump(
@@ -488,7 +485,7 @@ void main() {
       find.byType(LoopSettingsPage),
       matchesGoldenFile('goldens/loop_settings_recording_locked.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Author recording-start Sound and recovery captures', (
     tester,
@@ -526,7 +523,7 @@ void main() {
       find.byType(LoopSettingsPage),
       matchesGoldenFile('$authorCaptureDir/recording_sound_recovery.png'),
     );
-  }, skip: !hasScreenshotFonts || authorCaptureDir == null);
+  }, skip: !rendersScreenshots || authorCaptureDir == null);
 
   testWidgets('Tempo & click, and the time signature grid', (tester) async {
     await pump(tester, page: LoopSettingsPageId.tempo);
@@ -542,7 +539,7 @@ void main() {
       find.byType(LoopSettingsPage),
       matchesGoldenFile('goldens/loop_settings_signature.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Author Count-in Off and 2-bar captures', (tester) async {
     await pump(tester, page: LoopSettingsPageId.tempo);
@@ -564,7 +561,7 @@ void main() {
       find.byType(LoopSettingsPage),
       matchesGoldenFile('$authorCaptureDir/tempo_count_in_2.png'),
     );
-  }, skip: !hasScreenshotFonts || authorCaptureDir == null);
+  }, skip: !rendersScreenshots || authorCaptureDir == null);
 
   testWidgets('Length & quantize, defaults and a custom track', (
     tester,
@@ -584,7 +581,7 @@ void main() {
       find.byType(LoopSettingsPage),
       matchesGoldenFile('goldens/loop_settings_length_custom.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Playback & overdub, a custom track', (tester) async {
     await pump(tester, page: LoopSettingsPageId.playback);
@@ -594,7 +591,7 @@ void main() {
       find.byType(LoopSettingsPage),
       matchesGoldenFile('goldens/loop_settings_playback_custom.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   // The pen's 07/04 to 07/06 (#1179 Audio & tempo), in English and Spanish.
   for (final locale in const [Locale('en'), Locale('es')]) {
@@ -605,7 +602,7 @@ void main() {
         find.byType(LoopSettingsPage),
         matchesGoldenFile('goldens/loop_settings_audio_tempo$suffix.png'),
       );
-    }, skip: !hasScreenshotFonts);
+    }, skip: !rendersScreenshots);
 
     testWidgets('Audio & tempo, a track whose pitch follows speed (07/05) '
         '$locale', (tester) async {
@@ -626,7 +623,7 @@ void main() {
           'goldens/loop_settings_audio_tempo_pitch_follows$suffix.png',
         ),
       );
-    }, skip: !hasScreenshotFonts);
+    }, skip: !rendersScreenshots);
 
     testWidgets('Audio & tempo, a track that keeps its recorded speed (07/06) '
         '$locale', (tester) async {
@@ -647,6 +644,6 @@ void main() {
           'goldens/loop_settings_audio_tempo_recorded_speed$suffix.png',
         ),
       );
-    }, skip: !hasScreenshotFonts);
+    }, skip: !rendersScreenshots);
   }
 }

@@ -108,7 +108,8 @@ flutter:
     - assets/hardware/external_dual.webp
     - assets/hardware/external_expression.webp
     # The ten Settings tiles' art: the owner's Segno menu set from the design
-    # program (docs/design/settings-art at 56410d148), byte for byte.
+    # program (docs/design/settings-art in segno-design, commit 9a9996d41 on
+    # docs/design-program-2026-09), byte for byte.
     - assets/settings/
     # The bundled fonts' licences, which About's notices show.
     - assets/fonts/LICENSE-Arimo.txt

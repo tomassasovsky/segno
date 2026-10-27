@@ -43,8 +43,11 @@ The design file and the hardware have their own repositories:
 
 - [`tomassasovsky/segno-design`](https://github.com/tomassasovsky/segno-design)
   holds `segno-ui.pen` and the design studies. For UI work, clone it next to
-  this checkout, at `../segno-design`, and run its `tool/setup.sh` once. A UI
-  change updates the pen through a PR there; the two PRs link each other.
+  the main checkout, at `../segno-design` (worktrees find it there too), and
+  run its `tool/setup.sh` once. A UI change updates the pen through a PR
+  there; the two PRs link each other. Give the design branch the same name as
+  this branch: CI's `design` job checks a PR against the segno-design branch
+  of that name, or `main` when there is none.
 - [`tomassasovsky/segno-hardware`](https://github.com/tomassasovsky/segno-hardware)
   holds the boards, the enclosure and the printed parts. The firmware and the
   pedal link contract stay here under `firmware/`. A change to a board's pin
@@ -80,10 +83,11 @@ Run these before calling a change done:
 - Pedal link contract test, required when anything under `firmware/` or
   `packages/pedal_repository` changes: `bash firmware/test/run_tests.sh`
 - `dart analyze` must be clean.
-- UI changes: render the screenshot suites with
+- UI changes: delete `test/screenshots/goldens/` (ignored, so no stale PNG
+  survives), render the screenshot suites with
   `flutter test --tags screenshots --update-goldens test/screenshots` (same
-  absolute `flutter` path) and compare `test/screenshots/goldens/` against the
-  pen. The PNGs are not tracked; CI uploads them as the `screenshots` artifact.
+  absolute `flutter` path), and compare the new PNGs against the pen. CI
+  renders them too and uploads the `screenshots` artifact.
 - `bloc lint lib test packages` must be clean. CI runs it as the `Bloc Lint`
   step, and it enforces rules `dart analyze` does not (a cubit method
   returning anything but void fails here and passes there).

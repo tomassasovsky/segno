@@ -21,9 +21,16 @@ final String materialFontDir =
 /// goldens, so there is nothing to compare against: the suites run only when
 /// asked to write, with `flutter test --tags screenshots --update-goldens`.
 /// CI does that and uploads the result as the `screenshots` artifact.
-bool get rendersScreenshots =>
-    autoUpdateGoldenFiles &&
-    File('$materialFontDir/Roboto-Regular.ttf').existsSync();
+///
+/// Asked to write without the fonts, it throws rather than skipping: a
+/// silent skip would leave older PNGs in place to be reviewed as new.
+bool get rendersScreenshots {
+  if (!autoUpdateGoldenFiles) return false;
+  if (!File('$materialFontDir/Roboto-Regular.ttf').existsSync()) {
+    throw StateError('No Material fonts at $materialFontDir');
+  }
+  return true;
+}
 
 /// Registers the font files at [paths] under [family] for a screenshot suite.
 ///

@@ -281,5 +281,5 @@ per-part platform PDF.
 - Generator: [`hardware/enclosure/segno_enclosure.py`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/segno_enclosure.py)
 - Brainstorm: [`docs/brainstorm/2026-06-27-segno-enclosure-brainstorm-doc.md`](../brainstorm/2026-06-27-segno-enclosure-brainstorm-doc.md)
 - Research (dims + sources): [`docs/research/2026-06-27-segno-components-research.md`](../research/2026-06-27-segno-components-research.md)
-- Board context (controls, power, Pi GPIO): [`hardware/segno_pi_main_pcb_design.md`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/segno_pi_main_pcb_design.md)
+- Board context (controls, power, Pi GPIO): [`hardware/segno_pi_main_pcb_design.md`](../../hardware/segno_pi_main_pcb_design.md)
 - Key dims: Artesia ASP-1 100×75×25 mm; ViewSonic TD1655 355×223×15 mm; Pi 5 ≤12 W, Active Cooler 60/67.5/75 °C.

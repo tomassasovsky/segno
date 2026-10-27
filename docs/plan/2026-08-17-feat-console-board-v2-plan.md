@@ -32,7 +32,7 @@ transport are staged behind it (see Non-goals).
 The Pi 5's four USB-A ports are exactly consumed — two touchscreens, two rear-panel
 couplers — and a hub is ruled out, so the Pro Micro cannot have one. Its only
 hardware UART (`Serial1`, D0/D1) is already the DIN-5 pair
-([`main_board.py:98`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/main_board.py)), the ATmega32U4 has no
+([`main_board.py:98`](../../hardware/kicad/main_board.py)), the ATmega32U4 has no
 second one, and D0 has **no merge gate** (`midi_in_opto += uart_rx`). Every escape
 needs new hardware; this makes that hardware do the whole job instead of patching
 around a USB shortage.
@@ -311,7 +311,7 @@ refs** — land #748 and #717 before opening part 3 rather than stacking.
 
 ## References & Research
 
-- SKiDL conventions, rails, ERC: [`hardware/kicad/main_board.py`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/main_board.py)
+- SKiDL conventions, rails, ERC: [`hardware/kicad/main_board.py`](../../hardware/kicad/main_board.py)
 - MIDI IN/OUT front end to copy: `hardware/kicad/main_board.py:169-197`
 - The constraint that started this: `hardware/kicad/main_board.py:98-99`, `:197`
 - Assertion-suite idiom: [`hardware/enclosure/segno_enclosure.py`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/segno_enclosure.py)

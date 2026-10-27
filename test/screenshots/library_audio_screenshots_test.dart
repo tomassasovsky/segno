@@ -39,9 +39,6 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 /// Author-side images of Library > Audio against pen 18/01 and 20/07 to
 /// 20/12; CI does not claim visual proof.
 void main() {
-  final fontDir = materialFontDir;
-  final hasScreenshotFonts = rendersScreenshots;
-
   setUpAll(() async {
     registerFallbackValue(
       const CaptureSummary(
@@ -52,11 +49,11 @@ void main() {
         parts: [],
       ),
     );
-    if (!hasScreenshotFonts) return;
+    if (!rendersScreenshots) return;
     await loadScreenshotFont('Roboto', [
-      '$fontDir/Roboto-Regular.ttf',
-      '$fontDir/Roboto-Medium.ttf',
-      '$fontDir/Roboto-Bold.ttf',
+      '$materialFontDir/Roboto-Regular.ttf',
+      '$materialFontDir/Roboto-Medium.ttf',
+      '$materialFontDir/Roboto-Bold.ttf',
     ]);
     await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
@@ -70,7 +67,7 @@ void main() {
       'assets/fonts/JetBrainsMono-SemiBold.ttf',
     ]);
     await loadScreenshotFont('MaterialIcons', [
-      '$fontDir/MaterialIcons-Regular.otf',
+      '$materialFontDir/MaterialIcons-Regular.otf',
     ]);
     await loadScreenshotFont('packages/lucide_icons_flutter/Lucide', [
       packageAssetPath('lucide_icons_flutter', 'assets/lucide.ttf'),
@@ -224,19 +221,19 @@ void main() {
   testWidgets('18/01 the two folders', (tester) async {
     await pump(tester);
     await shot('folders');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('20/07 a recording selected', (tester) async {
     await pump(tester);
     await selectFirst(tester);
     await shot('selected');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('the package chooser', (tester) async {
     await pump(tester);
     await exportFirst(tester);
     await shot('chooser');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('20/08 an export running', (tester) async {
     final hold = Completer<void>();
@@ -248,7 +245,7 @@ void main() {
     await shot('exporting');
     hold.complete();
     await tester.pumpAndSettle();
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('20/09 already on USB', (tester) async {
     File('${drive.mount}/Segno/Performances/Evening loop - Take 1.wav')
@@ -259,7 +256,7 @@ void main() {
     await tester.tap(find.byKey(const Key('library_export_choose_recording')));
     await tester.pumpAndSettle();
     await shot('conflict');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('20/10 connect a USB drive', (tester) async {
     await pump(tester, volumes: const InternalOnlyVolumes());
@@ -267,7 +264,7 @@ void main() {
     await tester.tap(find.byKey(const Key('library_export_choose_recording')));
     await tester.pumpAndSettle();
     await shot('connect');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('20/11 not enough space', (tester) async {
     drive.spaceAnswer = const VolumeSpace(totalBytes: 1, freeBytes: 0);
@@ -276,7 +273,7 @@ void main() {
     await tester.tap(find.byKey(const Key('library_export_choose_recording')));
     await tester.pumpAndSettle();
     await shot('full');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('20/12 exported', (tester) async {
     await pump(tester);
@@ -284,5 +281,5 @@ void main() {
     await tester.tap(find.byKey(const Key('library_export_choose_recording')));
     await tester.pumpAndSettle();
     await shot('done');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 }

@@ -10,6 +10,7 @@ export 'fake_record_timing_control.dart';
 export 'fixed_cpu_load.dart';
 export 'pump_app.dart';
 export 'screenshot_fonts.dart';
+export 'segno_design.dart';
 export 'slot_rects.dart';
 export 'test_backing.dart';
 export 'test_fade_settings.dart';
