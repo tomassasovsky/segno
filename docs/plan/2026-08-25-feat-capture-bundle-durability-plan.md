@@ -50,7 +50,7 @@ take.
 ## Decisions for the owner
 
 **D1 — how much tail is a power cut allowed to cost?** This is policy, not
-engineering, and it must land in `docs/design/performance-manifest-format.md`
+engineering, and it must land in `docs/formats/performance-manifest-format.md`
 next to the `.boot-recovery` / `.recovered-at` contract rather than stay
 implicit. Recommended: **a bounded window of 10 s** (configurable constant),
 plus a full barrier at disarm/finalize. 250 ms-grade durability is what
@@ -131,7 +131,7 @@ is the pattern for the CI-side half.
   PCM sync through M returned).
 - **PR 2 — salvage + export consume it** (`autonomy:merge-gate`):
   `PerformanceRepository.runBootRecovery` and `daw_export` clamp to
-  `durable_frames` when present; `docs/design/performance-manifest-format.md`
+  `durable_frames` when present; `docs/formats/performance-manifest-format.md`
   gains the durability contract (D1's number, D3's fields, D4's policy).
 - **PR 3 — bench validation** (`autonomy:blocked-verify`): the D5 run on
   hardware; the bench harness can live with

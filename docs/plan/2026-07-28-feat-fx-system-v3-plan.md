@@ -197,7 +197,7 @@ The foundation everything else stands on.
 - [ ] **Performance event log** [R3]: mirror the params pattern — push
       `LE_PLOG_SET_LANE_FX_ENABLED` / `LE_PLOG_SET_LANE_FX_CHAIN_ENABLED`
       (+ monitor twins) via `le_plog_push_ctrl`; update the
-      `docs/design/performance-event-log-format.md` audit table with a
+      `docs/formats/performance-event-log-format.md` audit table with a
       verdict row for every new command (track/master setters are
       manifest-only per part 9's stems decision — "No replay" with
       rationale); replay the new codes in `perf_render`'s per-frame switch
@@ -695,9 +695,9 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh
 ## Documentation Plan
 
 - [ ] `docs/PROGRESS.md` FX mental model rewrite (part 9)
-- [ ] `docs/design/session-bundle-format.md` — already stale (documents v3,
+- [ ] `docs/formats/session-bundle-format.md` — already stale (documents v3,
       code writes v4); part 3 brings it to v5 with a full history section
-- [ ] `docs/design/performance-event-log-format.md` audit table rows for
+- [ ] `docs/formats/performance-event-log-format.md` audit table rows for
       every new command [R3] (part 1)
 - [ ] `docs/MIDI_FOOT_CONTROLLER.md` refresh (part 7)
 - [ ] Firmware protocol doc v3: mode field, mode indicator, version

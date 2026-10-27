@@ -2,7 +2,7 @@
  * synth_voice.c — the instrument voice pool (#1197 Part 1). See synth_voice.h.
  *
  * Voice models follow the accepted prototype's synthVoice
- * (docs/design/instrument-runtime.js, main checkout):
+ * (segno-design docs/design/instrument-runtime.js):
  *   - melodic: the patch wave at the note, a second partial at `ratio` (sine
  *     for sine patches, else triangle) whose level follows the character,
  *     a third partial at 4x for organs, a 5.4x partial for bells; a low-pass

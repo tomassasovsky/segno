@@ -15,7 +15,7 @@ Saved/reopened Fusion versions are sheet metal 160 and populated 388. Both
 collars match the final STEP in both Boolean directions. All other native
 geometry, positions, appearances, materials and feature health are preserved.
 Only the mid-ring STEP/STL and printing archive changed among output files.
-See [verification](../../../hardware/enclosure/reference/solid_mid_platform_verification.json).
+See [verification](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/reference/solid_mid_platform_verification.json).
 
 This review covers synchronization and nominal geometry/assembly interfaces.
 The existing #1019 physical strength/load hold remains open. No fabrication,

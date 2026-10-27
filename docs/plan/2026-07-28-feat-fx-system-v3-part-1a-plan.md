@@ -59,7 +59,7 @@ Part 1 + Problem Statement), narrowed to the lane/monitor slice:
   Re-enable reuses it.
 - **Performance event log:** control-side plog codes live in
   `perf_log_ring.h:60-89` (last used code: `LE_PLOG_SET_OVERDUB_FEEDBACK = 309`);
-  the audit doc is `docs/design/performance-event-log-format.md` (audited
+  the audit doc is `docs/formats/performance-event-log-format.md` (audited
   command table ~line 85, perf-log-only codes table ~line 138). Every new
   command needs a verdict row [R3].
 - **Fingerprint:** `le_fx_chain_fingerprint` + the lane/monitor entry points
@@ -236,7 +236,7 @@ Part 1 + Problem Statement), narrowed to the lane/monitor slice:
       `LE_PLOG_SET_MONITOR_FX_CHAIN_ENABLED = 313` (`generic` arm:
       `arg_i` = input, `arg_f` = enabled, matching monitor volume/mute).
       Each setter in task 4 pushes its event via `le_plog_push_ctrl`.
-- [ ] `docs/design/performance-event-log-format.md`: one verdict row per new
+- [ ] `docs/formats/performance-event-log-format.md`: one verdict row per new
       code in the perf-log-only table (payload documented as above), with
       explicit replay verdicts — lane codes: "replayed in the lane wet pass";
       monitor codes: "logged for the manifest/reader, not replayed in the

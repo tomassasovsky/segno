@@ -22,7 +22,7 @@ const int kMaxBuiltInEffectType = 7;
 /// One built-in effect entry in a resolved device chain: a `LE_FX_*` [type]
 /// code and its normalized (`0..1`) [params], parsed independently from the
 /// manifest's `TrackEffect.toJson()` shape
-/// (`docs/design/performance-manifest-format.md`) — no import of
+/// (`docs/formats/performance-manifest-format.md`) — no import of
 /// `segno_engine`/`looper_repository`, matching this package's existing
 /// own-input-model rule (`manifest_reader.dart`'s own doc comment).
 ///

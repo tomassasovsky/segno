@@ -7,7 +7,7 @@ import 'package:test/test.dart';
 /// Writes a minimal `events.log` fixture: the 12-byte header (`PLEV`,
 /// version, sample rate) followed by [entries], each a `(frame, code,
 /// payload)` triple where `payload` is exactly 16 bytes — mirroring
-/// `perf_drain.c`'s own on-disk layout (`docs/design/performance-event-log-
+/// `perf_drain.c`'s own on-disk layout (`docs/formats/performance-event-log-
 /// format.md`).
 void _writeLog(
   String path,

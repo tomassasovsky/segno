@@ -148,7 +148,7 @@ Current native board SHA-256:
 `94ffa2a0ad3d428451798306c24dc087cbdf3e122cecefa7753c840033321a2b`.
 Current routing source SHA-256:
 `30b5f8ce2b49e073d40773af9e0791a92cdcf0513d1804e4c46b06d9283d0016`.
-The [validation report](../../../hardware/kicad/screen_power/validation.json)
+The [validation report](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/validation.json)
 matches the on-disk board, routing source, circuit source and checker hashes.
 ERC and DRC report zero findings and unconnected items. No unresolved finding
 remains in this bounded checker follow-up.

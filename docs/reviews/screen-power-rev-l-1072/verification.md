@@ -114,7 +114,7 @@ historical change in the stacked PR.
 
 ## Manufacturing package
 
-[Screen-power Revision L Gerbers](../../../hardware/kicad/fab/segno_screen_power_rev_l_gerbers.zip)
+[Screen-power Revision L Gerbers](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/fab/segno_screen_power_rev_l_gerbers.zip)
 contain seven Gerber layers, separate plated/non-plated drills, two drill maps
 and the job file. Order settings: bare PCB, two-layer FR4, 1.6 mm, 1 oz outer
 copper, ENIG, purple mask, white silkscreen and tented vias. No assembly or
@@ -128,7 +128,7 @@ stencil service. The nominal finished outline is 68 × 76 mm with 3 mm corners.
 The 44 PCB parts total an estimated $41.51 before shipping/tax; allow $45–50.
 The complete board parts, required protection, harness and mounting allowance
 is $72.32–97.32, excluding the bare PCB, shipping and tax. See the dated
-[cost and stock notes](../../../hardware/kicad/screen_power/COSTS.md).
+[cost and stock notes](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/COSTS.md).
 
 ## Qualification boundary
 

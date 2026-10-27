@@ -103,7 +103,7 @@ implementation and evidence; live Fusion verification was performed by the autho
 
 This is local engineering verification, not remote CI or physical manufacturing
 approval. The remaining release conditions are in
-[RELEASE_REVIEW.md](../../../hardware/enclosure/RELEASE_REVIEW.md).
+[RELEASE_REVIEW.md](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/RELEASE_REVIEW.md).
 
 ## Rear-panel follow-up — 2026-09-05
 

@@ -5,8 +5,8 @@
  * Strings, Drums, Percussion), each with three family parameters on a 0..100
  * scale, rendered by one fixed pool of voices into one mono bus per
  * instrument. The definitions follow the accepted prototype
- * (docs/design/instrument-catalogue.js and instrument-runtime.js in the main
- * checkout); the plan is docs/plan/2026-10-06-feat-instruments-plan.md.
+ * (docs/design/instrument-catalogue.js and instrument-runtime.js in
+ * segno-design); the plan is docs/plan/2026-10-06-feat-instruments-plan.md.
  *
  * Pure and real-time safe: no engine types, no atomics, no allocation, no
  * locks and no syscalls. le_synth_init is the only function that may be slow

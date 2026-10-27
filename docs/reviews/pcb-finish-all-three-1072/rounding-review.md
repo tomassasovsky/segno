@@ -2,8 +2,8 @@
 
 This is a bounded code, integration and native-geometry review for issue #1072,
 starting from `2b45a6adb804044baebfe6ecb7b225ac98c97ded`. It covers the new
-[rounding helper](../../../hardware/kicad/round_routes.py), its
-[native regressions](../../../hardware/kicad/test_round_routes.py), and the
+[rounding helper](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/round_routes.py), its
+[native regressions](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/test_round_routes.py), and the
 console, ring and screen build calls. It does **not** mark the whole PR or the
 manufacturing packages approved. Exact source and board hashes, test results
 and limits are in [rounding-regressions.json](rounding-regressions.json).

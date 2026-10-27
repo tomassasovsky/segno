@@ -78,7 +78,7 @@ session, UI, or pedal code changes in this part.
 - `packages/segno_engine/ffigen.yaml` + `packages/segno_engine/lib/src/`
   (`audio_engine.dart`, `native_audio_engine.dart`, `mock_audio_engine.dart`,
   `generated/`) — bindings surface.
-- `docs/design/performance-event-log-format.md` — command audit table [R3].
+- `docs/formats/performance-event-log-format.md` — command audit table [R3].
 
 **Pinned decisions (index is source of truth — do not change):**
 
@@ -105,7 +105,7 @@ session, UI, or pedal code changes in this part.
   (part 1a mechanism, extended to the new owners here).
 - **plog [R3]:** track/master setters are **manifest-only** per part 9's
   stems decision — they push **no** plog events; the audit table in
-  `docs/design/performance-event-log-format.md` gets a "No replay" verdict
+  `docs/formats/performance-event-log-format.md` gets a "No replay" verdict
   row with rationale for every new command. `perf_render` replays nothing
   new from this part.
 
@@ -240,7 +240,7 @@ pinned wording — flag for review, don't silently change):**
       clamp count).
 - [ ] **No plog pushes** from any track/master setter [R3]; instead add a
       verdict row per new command to the audit table in
-      `docs/design/performance-event-log-format.md`: "No replay —
+      `docs/formats/performance-event-log-format.md`: "No replay —
       manifest-only; stems stay per-stage dry-of-downstream (part 9), arm
       manifest carries track/master chains (part 3)."
 - [ ] API doc comments in `segno_engine_api.h` state the pinned semantics:
@@ -326,7 +326,7 @@ API/lifecycle:
 
 ### 7. Docs + PR
 
-- [ ] `docs/design/performance-event-log-format.md`: "No replay" verdict
+- [ ] `docs/formats/performance-event-log-format.md`: "No replay" verdict
       rows for all new commands (task 4).
 - [ ] Child issue for this part under #351, labeled `stage:build` + an
       `autonomy:*` (suggest `autonomy:merge-gate` — hot-path mix changes
@@ -347,7 +347,7 @@ SUCCESS CRITERIA:
 - D-MASTER pinned: master insert sits between mix_tracks_frame and mix_monitors_frame, before master gain/limiter; monitors uncolored by the master chain; empty master chain bit-identical | verify: bash packages/segno_engine/src/test/run_native_tests.sh
 - D-MASTERCH pinned: ch_out==2 wet pair; ch_out>2 first enabled pair wet, others bit-exact dry; ch_out==1 mono as l==r | verify: bash packages/segno_engine/src/test/run_native_tests.sh
 - Full track/master setter family (fx/count/param + enabled/chain-enabled twins) mirrors the lane family: ring for type/count with lockstep DSP reset, direct atomic stores for param/enabled (work while stopped), le_fx_prepare_entry control-thread allocation, validation returns LE_ERR_INVALID | verify: bash packages/segno_engine/src/test/run_native_tests.sh
-- No plog events from track/master setters; audit table in docs/design/performance-event-log-format.md has a "No replay" verdict row per new command | verify: bash packages/segno_engine/src/test/run_native_tests.sh && grep -q "SET_TRACK_FX" docs/design/performance-event-log-format.md
+- No plog events from track/master setters; audit table in docs/formats/performance-event-log-format.md has a "No replay" verdict row per new command | verify: bash packages/segno_engine/src/test/run_native_tests.sh && grep -q "SET_TRACK_FX" docs/formats/performance-event-log-format.md
 - Lifecycle clean: configure/destroy with populated track+master chains is leak-free under ASan | verify: EXTRA_CFLAGS="-fsanitize=address -g" bash packages/segno_engine/src/test/run_native_tests.sh
 - Dart bindings regenerated (ffigen + dart format) and the interface/native/mock trio extended; package suite green | verify: /Users/Tomas/development/flutter/bin/flutter test packages/segno_engine
 

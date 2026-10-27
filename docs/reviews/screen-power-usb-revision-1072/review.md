@@ -37,7 +37,7 @@ feeder remain 2.5 mm wide; the AUX input remains 2.0 mm wide.
 | Manufacturing package | 412 independent assertions; all 12 freshly exported manufacturing files match the published ZIP |
 | Console and ring | Unchanged native/ZIP hashes; separate 175-assertion fabrication verification and 11/7 power fault controls remain valid |
 
-[Full 75-control native report](../../../hardware/kicad/screen_power/validation.json)
+[Full 75-control native report](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/validation.json)
 and [independent CAM comparison](fabrication-verification.json) identify their
 exact production inputs. The full control report is separate from the packaged
 validation, which intentionally reruns readiness without the mutation suite.
@@ -56,7 +56,7 @@ Functional connector labels and pin maps are retained on the finished board.
 - [Cable construction, pin maps and optional donors](cable-assessment.md)
 - [Local shield-drain fit](shield-drain-fit.md)
 - [Coated-field impedance assessment](impedance-assessment.md)
-- [Component costs](../../../hardware/kicad/screen_power/COSTS.md)
+- [Component costs](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/COSTS.md)
 
 ## Release bounds
 

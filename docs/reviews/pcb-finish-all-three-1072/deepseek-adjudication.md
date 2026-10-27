@@ -38,7 +38,7 @@ DRC and filled-copper inspection are the relevant checks; the response wrongly
 calls such contact a same-net join and attributes its detection to pad parity.
 
 A graph of track endpoints, as used for the dedicated feed in
-[ring_power.py](../../../hardware/kicad/ring_power.py), cannot establish
+[ring_power.py](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/ring_power.py), cannot establish
 plane-only ground ties. Use native KiCad connectivity with refreshed zones and
 DRC instead of adding a track-only ground graph.
 

@@ -57,7 +57,7 @@ static void le_speed_reset_if_empty(le_engine* e, uint64_t frame);
 static void le_restore_multiple_or_divisor(le_track* t, int32_t base,
                                            int32_t len);
 
-/* Performance event log (part 3, docs/design/performance-event-log-format.md):
+/* Performance event log (part 3, docs/formats/performance-event-log-format.md):
  * pushes one entry into perf.log_ring, tagged with `frame` — the capture
  * frame it occurred at, same epoch as a_perf_frames/the PCM taps below. No-op
  * when not armed; a full ring drops the entry and bumps a dedicated overrun
@@ -3963,7 +3963,7 @@ static void le_cancel_signal_arms(le_engine* e) {
  * `frame` — the elapsed-frames-since-arm value at the START of the buffer
  * currently being processed (apply_command runs once per le_engine_process
  * call, before the per-frame loop, so this is as fine-grained as a
- * ring-applied command can be tagged; see docs/design/performance-event-log-
+ * ring-applied command can be tagged; see docs/formats/performance-event-log-
  * format.md for why finer isn't meaningful here). Excluded, with the audit
  * rationale: LE_CMD_MEASURE_LATENCY_PATH (a device-calibration workflow, not a
  * performance action); LE_CMD_SET_RECORD_OFFSET (a calibration/config value,

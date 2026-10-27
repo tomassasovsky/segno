@@ -86,7 +86,7 @@ the current normal pill patterns is approximately **9.41 A**:
 
 The normal-pill calculation uses the eight-pixel envelope and brightness 128
 in the separate v3 runtime draft #1082 at `92af127d`: nine maximum single-colour
-pills and the REC/PLAY amber pill. See [system wiring](../../../hardware/segno_wiring.md).
+pills and the REC/PLAY amber pill. See [system wiring](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/segno_wiring.md).
 This gives about 0.59 A nominal margin, not a supply transient or enclosed
 temperature guarantee. All 120 LEDs at unrestricted white together with the
 screens would instead require approximately **13.71 A** and is outside this
@@ -140,5 +140,5 @@ Order five bare boards of each design, FR4, two layers, 1.6 mm, 1 oz, tented
 vias, without assembly or a stencil. Console: 99.5 × 99.5 mm, purple/white,
 lead-free HASL. Ring: 80 mm diameter, white/black, lead-free HASL. Screen:
 68 × 76 mm, purple/white, ENIG. Preserve the supplied finished outlines and
-plated/non-plated drills. See [ring assembly](../../../hardware/kicad/RING_ASSEMBLY.md)
+plated/non-plated drills. See [ring assembly](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/RING_ASSEMBLY.md)
 for the module, wiring and programming instructions.

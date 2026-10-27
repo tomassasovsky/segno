@@ -49,7 +49,7 @@ the established pattern for console-only behavior branches.
 
 **Firmware-ships-with-the-app is genuinely new work.** Nothing in the repo packages,
 versions, or flashes pedal firmware today — it's 100% manual `arduino-cli` per
-[hardware/firmware/segno_pedal_32u4/README.md](../../hardware/firmware/segno_pedal_32u4/README.md).
+[hardware/firmware/segno_pedal_32u4/README.md](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/firmware/segno_pedal_32u4/README.md).
 The appliance OTA system built this session (#304/#306, PR1-PR3b, merged) already has
 the shape this needs: a channel manifest, a signed/verified download, a privileged
 on-device helper (`segno-update-ctl`) driving a PROGRESS-line protocol the Dart layer

@@ -1952,7 +1952,7 @@ typedef struct le_perf_capture {
    * above rather than being control-allocated at arm like the audio rings —
    * a fixed-size field the same way evt_ring is (see le_engine below), just
    * re-initialised (head/tail reset) on every arm so a session never sees a
-   * stale entry from a previous one. See docs/design/performance-event-log-
+   * stale entry from a previous one. See docs/formats/performance-event-log-
    * format.md for the audited command table and on-disk format. */
   le_perf_log_ring log_ring;
   le_perf_log_entry log_storage[LE_PERF_LOG_RING_CAPACITY];

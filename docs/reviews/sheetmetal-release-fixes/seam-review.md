@@ -36,7 +36,7 @@ Shop/tooling acceptance and actual component, coating, shim fitting, thread
 torque and first-piece load/retention checks remain mandatory before release.
 See [current verification](seam-fix-verification.json), [rear review](seam-rear-review.md),
 [front proof](seam-front-proof.json), [pipeline review](seam-pipeline-review.md),
-and the current [release review](../../../hardware/enclosure/RELEASE_REVIEW.md).
+and the current [release review](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/RELEASE_REVIEW.md).
 No supplier message or package has been sent.
 
 ## Original diagnosis — historical, before correction

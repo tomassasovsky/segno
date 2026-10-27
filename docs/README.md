@@ -18,8 +18,11 @@ so it can disagree with the code.
 | [`APPLIANCE_INTEGRATION.md`](APPLIANCE_INTEGRATION.md) | A record of the September 2026 integration of the console link and the update delivery: which release it was built from, what it covers, and what the release pipeline checks. |
 
 The build and layout of the rest of the repository are described in
-[`../hardware`](../hardware/README.md), [`../firmware`](../firmware/README.md)
-and [`../deploy`](../deploy/README.md).
+[`../firmware`](../firmware/README.md) and [`../deploy`](../deploy/README.md).
+The hardware design is in
+[segno-hardware](https://github.com/tomassasovsky/segno-hardware), and the
+Pencil design file and design studies are in
+[segno-design](https://github.com/tomassasovsky/segno-design).
 
 ## Formats
 
@@ -28,9 +31,9 @@ authoritative where a specification and the code disagree.
 
 | Document | Format |
 | --- | --- |
-| [`design/session-bundle-format.md`](design/session-bundle-format.md) | A saved session (`.segno`): a directory with a JSON manifest, one WAV per audio layer and a mixdown. |
-| [`design/performance-manifest-format.md`](design/performance-manifest-format.md) | `performance.json`, the manifest written with each performance recording and read by the DAW export and the offline renderer. |
-| [`design/performance-event-log-format.md`](design/performance-event-log-format.md) | `events.log`, the sample-accurate record of every change made during a performance recording. |
+| [`formats/session-bundle-format.md`](formats/session-bundle-format.md) | A saved session (`.segno`): a directory with a JSON manifest, one WAV per audio layer and a mixdown. |
+| [`formats/performance-manifest-format.md`](formats/performance-manifest-format.md) | `performance.json`, the manifest written with each performance recording and read by the DAW export and the offline renderer. |
+| [`formats/performance-event-log-format.md`](formats/performance-event-log-format.md) | `events.log`, the sample-accurate record of every change made during a performance recording. |
 
 ## Design records
 
@@ -47,7 +50,6 @@ the code supersede earlier ones.
 | [`reviews`](reviews/) | Review and verification evidence, one folder per change. A folder usually has a `review.md`, a `verification.md` or both, plus the JSON data the checks produced. Many cover the circuit boards and the enclosure (folder names ending in `-1072` belong to the PCB work in #1072). | about 70 folders |
 | [`code-review`](code-review/) | Bug-focused code review reports, one `review.md` per folder. Many share a folder name with the matching folder in `reviews/`. | about 55 folders |
 | [`research`](research/) | Research notes: component selection, Raspberry Pi 5 boot, a DIN MIDI bench session and the enclosure stomp-load analysis. | 4 |
-| [`design`](design/) | Besides the formats above: dated UX proposals for the app's screens (`YYYY-MM-DD-<topic>.md`), HTML mockups and prototypes, screen images, the pedal face widget, and the console grounding scheme. | about 20 entries |
 | [`handoff`](handoff/) | Handoff notes for the app redesign: the accepted behavior and a map of where it lands in the code. | 2 |
 | [`reference`](reference/) | A description of the Looper X device's features and UX, used for comparison. | 1 |
 | [`simulations`](simulations/README.md) | Browser previews of approved LED animations. | 1 |

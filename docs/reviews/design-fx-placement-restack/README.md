@@ -16,7 +16,7 @@ plugin lifetime, capture inheritance and session persistence share the same
 application boundary. Original recordings and their edit history remain intact.
 
 The processing contract is in
-[Whole-track Pre](../../design/2026-09-10-whole-track-pre-render.md). FX screens
+[Whole-track Pre](https://github.com/tomassasovsky/segno-design/blob/main/docs/design/2026-09-10-whole-track-pre-render.md). FX screens
 follow in slice 3f. Playback transforms, complete offline rendering and exact
 effect-definition/DSP parity remain later implementation slices.
 

@@ -26,7 +26,7 @@ the inspected Revision L files below.
   model placement and the bipolar capacitors' unmarked polarity are correct.
   The 0.90 mm DIP drills leave a minimum 0.82 mm finished hole and accommodate
   U2's maximum 0.695 mm lead diagonal. Manufacturer dimensions and model
-  limitations are recorded in the [model notes](../../../hardware/kicad/screen_power/models/README.md).
+  limitations are recorded in the [model notes](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/models/README.md).
 - The connector anchors and retaining-wall directions are unchanged. The
   [JST XH drawing](https://www.jst-mfg.com/product/pdf/eng/eXH.pdf) confirms that
   the mating housings fit within the reviewed header envelopes. Relocated Q1

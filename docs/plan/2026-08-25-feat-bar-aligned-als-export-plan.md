@@ -34,7 +34,7 @@ gate the build.
   exists, so a loop that entered the capture mid-phase round-trips into Live
   starting at the wrong beat of itself.
 - The capture records **no grid facts at all**: the audited `events.log`
-  vocabulary (`docs/design/performance-event-log-format.md`) has record/
+  vocabulary (`docs/formats/performance-event-log-format.md`) has record/
   length/layer/FX facts, but `LE_CMD_SET_TEMPO`/`TAP_TEMPO`/
   `SET_TIME_SIGNATURE` are not in it. Today that is sound — tempo is
   **locked** while any track has content and a grid exists

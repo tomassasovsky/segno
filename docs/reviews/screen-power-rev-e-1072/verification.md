@@ -82,5 +82,5 @@ checks. No assembled-board measurements were performed. Early-boot GPIO enable
 and shutdown-before-HDMI software remain outstanding under issue #1072,
 which remains `autonomy:blocked-verify`.
 
-See the [wiring and assembly notes](../../../hardware/kicad/screen_power/README.md)
+See the [wiring and assembly notes](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/README.md)
 for the connector map, selected cable variants and electrical limits.

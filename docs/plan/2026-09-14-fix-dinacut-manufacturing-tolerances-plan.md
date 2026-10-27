@@ -71,7 +71,7 @@ both saved/reopened models and the matching five-part archive. All 126 tests
 and the full generator pass. The implemented fit candidate is rear 10×6 mm
 slots / OD12 washers, disc OD50.70 / bore8.70, and front bare nominal1.10 mm
 with conditional acceptance0.70–1.50 mm. The calculations below preserve their
-planning history; the current source and [release review](../../hardware/enclosure/RELEASE_REVIEW.md)
+planning history; the current source and [release review](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/RELEASE_REVIEW.md)
 record actual dimensions and remaining physical/supplier holds. Broader global
 laser tolerance relaxation was not implemented because the existing connector
 and insert patterns do not all support it.

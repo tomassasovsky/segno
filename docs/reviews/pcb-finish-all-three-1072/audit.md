@@ -35,9 +35,9 @@ These hashes identify the inspected inputs, not the eventual release files.
 | Ring carrier | `3c92dcfd2ab2644ca74f7d82226db84476becbd7fb897ca701ff593ed604a0f2` |
 | Screen power | `94ffa2a0ad3d428451798306c24dc087cbdf3e122cecefa7753c840033321a2b` |
 
-Native sources: [console](../../../hardware/kicad/out_console/segno_console_board.kicad_pcb),
-[ring](../../../hardware/kicad/segno_pedal_ring.kicad_pcb) and
-[screen](../../../hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb).
+Native sources: [console](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/out_console/segno_console_board.kicad_pcb),
+[ring](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/segno_pedal_ring.kicad_pcb) and
+[screen](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb).
 This extends the earlier [Rev L record](../screen-power-rev-l-1072/verification.md);
 its completed checks do not certify these later changes.
 
@@ -61,7 +61,7 @@ defect. The applied correction below preserves the 5 mm two-sided bar,
 1.2 mm thermal spokes and 1.7 mm ring feed while closing the slot.
 
 Remaining signal and power bends are mostly angular. Examples include the
-[ring supply path](../../../hardware/kicad/console_ring_power.py), with front
+[ring supply path](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/console_ring_power.py), with front
 bends at (141.8,134) and (146.8,129). These are requested style improvements,
 not demonstrated electrical faults. A bounded narrow-gap scan and full copper
 review found no second actionable gap. Exact retraced polygon seams, including
@@ -130,7 +130,7 @@ while retaining the rounded main feed.
 The rejected intermediate remains recorded for traceability, not acceptance:
 native SHA-256
 `72634f1c65c3317f17db9aa156034e98746da2b27c03f030663ae211a4ca3cb4`;
-[ring power source](../../../hardware/kicad/ring_power.py) SHA-256
+[ring power source](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/ring_power.py) SHA-256
 `b092c9fe602320b544ed645cc9aae1f0feaa8a1f1ca4702329154e8d53ca9de6`.
 Its unchanged footprints/vias/outline/stack, matching 32 critical source
 segments and sole C5 fillet, zero/zero DRC and seven passing fault controls
@@ -212,7 +212,7 @@ DRC reports **zero violations and zero unconnected items**. Using the maximum
 clearance; actual reference-ink clearance is 0.385 mm.
 
 - C4 checkpoint native SHA-256: `d1f65eacb5d47e4c553b0032f2bc4a9e3f4853bd016f3ce08db4c59300d283f9`
-- [Layout source](../../../hardware/kicad/screen_power/layout.py) SHA-256:
+- [Layout source](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/layout.py) SHA-256:
   `c2c1d43e06e89f045ac8b217402851c7444d74f43410b65fc17647aa5e6bda50`
 
 Subsequent explicit charge-pump, gate/control and relay routes gained circular

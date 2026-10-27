@@ -39,8 +39,8 @@ python3 -m http.server 8766 --directory site/public
 
 Label every picture for what it is. The console renders come from the Fusion
 model, the board view from KiCad, and the interface images from the app's UI
-tests (`test/screenshots/goldens`). None of them is a photo, and the page says
-so. Do not use generated art.
+tests (the `screenshots` artifact of a CI run). None of them is a photo, and
+the page says so. Do not use generated art.
 
 Crop renders so the console sits in the middle of the frame: centre the crop
 on the console's bounding box (the pixels brighter than the black background),

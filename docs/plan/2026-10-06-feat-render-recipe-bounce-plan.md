@@ -959,7 +959,7 @@ Exit or cancel before commit cancels the job and changes nothing.
     missing from its stem. This is the existing limit for every stereo pair,
     not a new one.
 - **events.log version (review L4).** The format doc says the version "covers
-  the code vocabulary" (`docs/design/performance-event-log-format.md:36-39`), so
+  the code vocabulary" (`docs/formats/performance-event-log-format.md:36-39`), so
   Part 4b bumps `perf_drain.c`'s version to the next free number at landing
   and adds its row to the format doc. Pitch/time P2a holds 8.
 - **Reopen (#1158).**
@@ -1486,7 +1486,7 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
 - The intact check and all-member application in 114.
 - The redo-side mirror, and group-wide redo retirement (M8).
 - `LE_PLOG_BOUNCE = 332`, the events.log version bump to the next free number,
-  and the format-doc row (`docs/design/performance-event-log-format.md`).
+  and the format-doc row (`docs/formats/performance-event-log-format.md`).
 - The follow-up issue: Clear All onto the native group.
 
 **Tests:**

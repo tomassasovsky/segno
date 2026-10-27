@@ -241,15 +241,16 @@ systemctl start segno
 
 ## Hardware (enclosure, protection, power, BOM)
 
-The console's hardware design lives under [`hardware/`](../hardware):
+The console's hardware design lives in
+[segno-hardware](https://github.com/tomassasovsky/segno-hardware/tree/main/hardware):
 
-- **BOM / shopping list:** [`hardware/segno_console_shopping_list.md`](../hardware/segno_console_shopping_list.md)
+- **BOM / shopping list:** [`hardware/segno_console_shopping_list.md`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/segno_console_shopping_list.md)
   (Amazon-sourced, decision 2026-08-17) — Pi 5 + active cooler, main
   touchscreen, **7″ HDMI** display, USB interface, footswitches, EC11 encoder,
   WS2812 ring + indicator pills, the 20 V PD power chain, and the console board
   v2's generated BOM (`hardware/kicad/fab/segno_console_board_bom.csv`).
 - **Power/thermal budget + enclosure intent:**
-  [`hardware/console/README.md`](../hardware/console/README.md) — the per-rail
+  [`hardware/console/README.md`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/console/README.md) — the per-rail
   power budget and the active-cooling requirement.
 
 **7″ display decision: HDMI (not DSI).** Both screens are HDMI, so they

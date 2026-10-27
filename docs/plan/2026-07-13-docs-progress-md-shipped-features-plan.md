@@ -119,7 +119,7 @@ tally):
   spell_check.yml`) against `.github/cspell.json` over all `.md` files. New
   vocabulary this plan introduces (`.als`, `Ableton`, `daw_export`, `VST3`,
   `CLAP`, `octaver`, `dlopen`, `ctest`) already appears elsewhere in the
-  committed repo (`docs/design/performance-event-log-format.md`,
+  committed repo (`docs/formats/performance-event-log-format.md`,
   `docs/plan/2026-06-23-feat-vst3-clap-plugin-hosting-plan.md`,
   `.github/cspell.json`'s own word list), so no new unknown-word failures are
   expected. This sandbox's `cspell` invocation with `--config` returns "0

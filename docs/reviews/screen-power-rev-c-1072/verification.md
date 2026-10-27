@@ -44,4 +44,4 @@ Q3/Q4 loss is calculated as 0.27 W per pair at 3 A combined, or 1.08 W at 6 A, u
 - Check HDMI residual power and complete screen darkness with all cables attached.
 - Implement and validate early GPIO enable and power-off before HDMI shutdown, using the measured screen discharge time.
 
-The project remains `autonomy:blocked-verify`. [Assembly and connector map](../../../hardware/kicad/screen_power/README.md) is the wiring authority. [Independent reviews](review.md) cover the final local change; they do not certify hardware performance.
+The project remains `autonomy:blocked-verify`. [Assembly and connector map](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/README.md) is the wiring authority. [Independent reviews](review.md) cover the final local change; they do not certify hardware performance.

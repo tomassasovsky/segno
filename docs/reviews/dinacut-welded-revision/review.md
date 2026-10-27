@@ -16,8 +16,8 @@ corrected and reviewed again. No role failed or remains pending.
 The full generator and 126 tests pass. The executor separately verified the
 saved/reopened native models, preserved component placements, flat geometry,
 individual drawings and exact 15-file metal archive. See the
-[digital verification record](../../../hardware/enclosure/reference/welded_revision_verification.json)
-and [release review](../../../hardware/enclosure/RELEASE_REVIEW.md).
+[digital verification record](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/reference/welded_revision_verification.json)
+and [release review](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/RELEASE_REVIEW.md).
 
 This is a local implementation review, not remote CI or merge approval.
 Structural strength, physical welded/painted fit, purchased hardware and

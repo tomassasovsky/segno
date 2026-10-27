@@ -169,7 +169,7 @@ int32_t le_volume_space(const char* path, uint64_t* out_total_bytes,
 #endif
 }
 
-/* events.log wire format (docs/design/performance-event-log-format.md): a
+/* events.log wire format (docs/formats/performance-event-log-format.md): a
  * 12-byte header (4-byte magic "PLEV", uint32 version, int32 sample_rate)
  * followed by fixed-size 28-byte entries (uint64 frame, int32 code, 16 bytes
  * of raw union payload — le_command's union has no internal padding of its
@@ -717,7 +717,7 @@ typedef struct le_pd_gap {
  * staged layer whose manifest entry survived. `channel`/`slot`/
  * `generation` are the same key events.log's LE_PLOG_LAYER_RETIRED entry
  * carries, for a renderer to cross-reference the sample-accurate frame (see
- * layer_staging_ring.h and docs/design/performance-event-log-format.md). */
+ * layer_staging_ring.h and docs/formats/performance-event-log-format.md). */
 typedef struct le_pd_layer_manifest_entry {
   int32_t channel;
   int32_t kind;
@@ -2000,7 +2000,7 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
    * thread-producer log_ring first, then the control-thread-producer
    * log_ctrl_ring — and append every entry to events.log. Order between the
    * two streams is a file-write-order interleaving, not a global frame sort
-   * (see docs/design/performance-event-log-format.md): each stream is
+   * (see docs/formats/performance-event-log-format.md): each stream is
    * monotonic in frame on its own, but a control-side param change and an
    * audio-thread command from the same drain interval can land in either
    * order in the file.
