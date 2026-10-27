@@ -14,8 +14,8 @@ class DeviceDialog extends StatelessWidget {
   /// Creates a [DeviceDialog].
   const DeviceDialog({
     required this.title,
-    required this.body,
     required this.actions,
+    this.body,
     this.content = const [],
     super.key,
   });
@@ -23,8 +23,8 @@ class DeviceDialog extends StatelessWidget {
   /// The question or the task.
   final String title;
 
-  /// What it does, under the title.
-  final String body;
+  /// What it does, under the title, when it says more than the title.
+  final String? body;
 
   /// What sits between the body and the actions.
   final List<Widget> content;
@@ -66,15 +66,17 @@ class DeviceDialog extends StatelessWidget {
                     height: 1.15,
                   ),
                 ),
-                const SizedBox(height: 24),
-                AppText(
-                  body,
-                  style: TextStyle(
-                    color: surface.textSecondary,
-                    fontSize: 24,
-                    height: 1.5,
+                if (body case final body?) ...[
+                  const SizedBox(height: 24),
+                  AppText(
+                    body,
+                    style: TextStyle(
+                      color: surface.textSecondary,
+                      fontSize: 24,
+                      height: 1.5,
+                    ),
                   ),
-                ),
+                ],
                 ...content,
                 const SizedBox(height: 24),
                 Row(

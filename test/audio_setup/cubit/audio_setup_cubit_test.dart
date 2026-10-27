@@ -1851,6 +1851,46 @@ void main() {
       expect(cubit.state.measurePhase, MeasurePhase.idle);
     });
 
+    test('material landing under a rate draft puts the rate back', () async {
+      seed();
+      final cubit = buildCubit()
+        ..editRate(96000)
+        ..editBuffer(256);
+      addTearDown(cubit.close);
+      const recorded = Track(state: TrackState.stopped, lengthFrames: 48000);
+      stateController.add(
+        const LooperState(
+          status: EngineStatus(
+            deviceName: 'Scarlett',
+            sampleRate: 48000,
+            bufferFrames: 128,
+            isConnected: true,
+            devicePresent: true,
+          ),
+          tracks: [recorded],
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.draft?.sampleRate, 48000);
+      expect(cubit.state.draft?.bufferFrames, 256);
+    });
+
+    test('a repository that touches nothing keeps the draft', () {
+      seed();
+      when(() => repository.applyAudioConfig(any())).thenReturn(
+        const AudioApplyResult(
+          status: AudioApplyStatus.refused,
+          result: EngineResult.notReady,
+        ),
+      );
+      final cubit = buildCubit()
+        ..editBuffer(256)
+        ..applyDraft();
+      addTearDown(cubit.close);
+      expect(cubit.state.refusal, const ApplyRefusal.busy('other'));
+      expect(cubit.state.draft?.bufferFrames, 256);
+    });
+
     test('a refused admission keeps the draft to retry', () {
       seed(tracks: const [Track(state: TrackState.recording)]);
       final cubit = buildCubit()

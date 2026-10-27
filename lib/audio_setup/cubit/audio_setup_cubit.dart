@@ -146,6 +146,29 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     );
   }
 
+  /// Keeps the draft honest as the rig moves under it: material that lands
+  /// locks the rate and the loop cap (D2), so their drafted values go back to
+  /// what runs; and a draft that now equals what runs (a retry the device
+  /// answered on its own) is no draft.
+  void _reconcileDraft() {
+    final draft = state.draft;
+    if (draft == null) return;
+    if (state.hasContent &&
+        (draft.sampleRate != state.sampleRate ||
+            draft.maxLoopMinutes != state.maxLoopMinutes)) {
+      _setDraft(
+        draft.copyWith(
+          sampleRate: state.sampleRate,
+          maxLoopMinutes: state.maxLoopMinutes,
+        ),
+      );
+      return;
+    }
+    if (draft == AudioDraft.of(state) && !_failed) {
+      emit(state.copyWith(clearDraft: true));
+    }
+  }
+
   /// The draft being edited, or what runs when there is none.
   AudioDraft get _draft => state.draft ?? AudioDraft.of(state);
 
@@ -435,10 +458,16 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       return;
     }
     // The draft is being applied: whatever the device does with it, the page
-    // shows what runs from here on.
+    // shows what runs from here on, unless the repository touched nothing.
+    final draft = state.draft;
     emit(state.copyWith(clearDraft: true));
     try {
-      _applyGuarded(next);
+      final outcome = _applyGuarded(next);
+      if (draft != null &&
+          outcome.status == AudioApplyStatus.refused &&
+          outcome.result == EngineResult.notReady) {
+        emit(state.copyWith(draft: draft));
+      }
     } finally {
       guard.release();
     }
@@ -449,7 +478,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     }
   }
 
-  void _applyGuarded(AudioSetupState next) {
+  AudioApplyResult _applyGuarded(AudioSetupState next) {
     // An intentional (re)apply resets the standing connectivity condition
     // (#453): the lost banner must not outlive the user acting on it, and the
     // app's own stop and reopen below must not read as an unplug. The
@@ -566,6 +595,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       case AudioApplyStatus.applied:
         _settle(next, live: live, reopen: outcome.reopen);
     }
+    return outcome;
   }
 
   /// The name the host gives the interface [config] pins, or its id.
@@ -755,6 +785,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
         current: state,
       ).copyWith(playbackRunning: _musicPlaying),
     );
+    _reconcileDraft();
     _detectConnectivity(looper.status);
     unawaited(_syncLatencyPersistence(looper.status));
   }
