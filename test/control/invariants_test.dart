@@ -610,14 +610,15 @@ void main() {
       final shown = ControlContext(
         looper: song(),
         overlay: mute,
-        frame: frame(
-          leds: leds(PedalTrackLed.green),
-          mode: PedalMode.play,
-        ).copyWith(
-          activeButtonMask: lit,
-          queuedButton: PedalButton.track2,
-          queuedProgress: 127,
-        ),
+        frame:
+            frame(
+              leds: leds(PedalTrackLed.green),
+              mode: PedalMode.play,
+            ).copyWith(
+              activeButtonMask: lit,
+              queuedButton: PedalButton.track2,
+              queuedProgress: 127,
+            ),
       );
       expect(violation(shown, 'song-queue-mirrors-engine'), isNotNull);
     });
