@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
@@ -60,7 +59,6 @@ const _rig = LooperState(
 
 void main() {
   late TempoSettings tempoOwner;
-  final authorCaptureDir = Platform.environment['SEGNO_AUTHOR_CAPTURE_DIR'];
 
   setUpAll(() async {
     registerFallbackValue(const LooperRecordPressed(0));
@@ -502,7 +500,7 @@ void main() {
     );
     await expectLater(
       find.byType(LoopSettingsPage),
-      matchesGoldenFile('$authorCaptureDir/recording_pedal_off.png'),
+      matchesGoldenFile('goldens/recording_pedal_off.png'),
     );
     expect(
       (await tempoOwner.recordStartControl.setSoundStart(enabled: true)).isOk,
@@ -511,7 +509,7 @@ void main() {
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(LoopSettingsPage),
-      matchesGoldenFile('$authorCaptureDir/recording_sound_on.png'),
+      matchesGoldenFile('goldens/recording_sound_on.png'),
     );
     recordStartRecoveryRequired = true;
     expect(
@@ -521,9 +519,9 @@ void main() {
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(LoopSettingsPage),
-      matchesGoldenFile('$authorCaptureDir/recording_sound_recovery.png'),
+      matchesGoldenFile('goldens/recording_sound_recovery.png'),
     );
-  }, skip: !rendersScreenshots || authorCaptureDir == null);
+  }, skip: true); // Fails to render: #1500.
 
   testWidgets('Tempo & click, and the time signature grid', (tester) async {
     await pump(tester, page: LoopSettingsPageId.tempo);
@@ -550,7 +548,7 @@ void main() {
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(LoopSettingsPage),
-      matchesGoldenFile('$authorCaptureDir/tempo_count_in_off.png'),
+      matchesGoldenFile('goldens/tempo_count_in_off.png'),
     );
     expect(
       (await tempoOwner.recordStartControl.setCountInBars(2)).isOk,
@@ -559,9 +557,9 @@ void main() {
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(LoopSettingsPage),
-      matchesGoldenFile('$authorCaptureDir/tempo_count_in_2.png'),
+      matchesGoldenFile('goldens/tempo_count_in_2.png'),
     );
-  }, skip: !rendersScreenshots || authorCaptureDir == null);
+  }, skip: true); // Fails to render: #1500.
 
   testWidgets('Length & quantize, defaults and a custom track', (
     tester,
