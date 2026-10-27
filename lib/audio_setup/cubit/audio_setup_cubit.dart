@@ -99,6 +99,11 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// applied once per profile.
   String? _hydratedDeviceKey;
 
+  /// Whether the boot-time recovery still waits for the pinned interface
+  /// ([setWaitingForDevice]), so a refused or failed apply in the meantime
+  /// gives the strip back to the wait.
+  bool _recoveryWaiting = false;
+
   /// The request waiting on the "Apply audio settings?" answer.
   AudioSetupState? _pending;
 
@@ -304,6 +309,11 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     } finally {
       guard.release();
     }
+    if (_recoveryWaiting &&
+        state.status != AudioSetupStatus.running &&
+        state.deviceConnectivity == DeviceConnectivity.none) {
+      emit(state.copyWith(deviceConnectivity: DeviceConnectivity.waiting));
+    }
   }
 
   void _applyGuarded(AudioSetupState next) {
@@ -324,6 +334,22 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
         ? DeviceConnectivity.none
         : lost;
     switch (outcome.status) {
+      case AudioApplyStatus.waiting:
+        // Neither config would open, and the previous one stays pinned and
+        // supervised (D17): the stage shows the loss, and audio comes back on
+        // its own when the interface answers, as after an unplug.
+        _lastDevicePresent = false;
+        emit(
+          state.copyWith(
+            status: AudioSetupStatus.error,
+            phase: ConfigPhase.settled,
+            error: AudioSetupError.openDeviceFailed,
+            errorDetail: outcome.result.name,
+            deviceConnectivity: DeviceConnectivity.lost,
+            connectivityDeviceName: _lastPresentDeviceName,
+            clearRefusal: true,
+          ),
+        );
       case AudioApplyStatus.failed:
         // Nothing runs: the selection stays what it was, nothing is saved,
         // and the failure is the fact to surface.
@@ -578,6 +604,20 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     unawaited(_syncLatencyPersistence(looper.status));
   }
 
+  /// Whether the boot-time recovery waits for the pinned interface
+  /// (`AudioRecoveryCubit`), so the stage says so on its one strip rather
+  /// than a toast beside the engine-stopped banner (#860, #1270 Part 5).
+  /// Any other condition already on the strip outranks it.
+  void setWaitingForDevice({required bool waiting}) {
+    _recoveryWaiting = waiting;
+    final current = state.deviceConnectivity;
+    if (waiting && current == DeviceConnectivity.none) {
+      emit(state.copyWith(deviceConnectivity: DeviceConnectivity.waiting));
+    } else if (!waiting && current == DeviceConnectivity.waiting) {
+      emit(state.copyWith(deviceConnectivity: DeviceConnectivity.none));
+    }
+  }
+
   /// Ends the standing material notice ([DeviceConnectivity.restoredCleared])
   /// once the user has acted on it — opened the Library from its
   /// action — the way a deliberate re-apply ends every connectivity condition.
@@ -604,6 +644,13 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     _lastDevicePresent = present;
     if (present && status.deviceName.isNotEmpty) {
       _lastPresentDeviceName = status.deviceName;
+    }
+    if (present && state.deviceConnectivity == DeviceConnectivity.waiting) {
+      // The awaited interface is here and running: the strip has nothing
+      // left to say, and a "reconnected" toast for a first start would be a
+      // notice with no loss behind it.
+      emit(state.copyWith(deviceConnectivity: DeviceConnectivity.none));
+      return;
     }
     if (!pinned || previous == null || previous == present) return;
     emit(

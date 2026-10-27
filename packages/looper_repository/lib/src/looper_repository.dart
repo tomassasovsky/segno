@@ -2322,6 +2322,13 @@ class LooperRepository {
     // "loops cleared" notice over an intact rig.
     _lastReopen = null;
     _reopenVerdictPending = false;
+    _armReconnect();
+  }
+
+  /// Starts the reconnect poll, once: a second call while it runs would
+  /// orphan the first subscription.
+  void _armReconnect() {
+    if (_isReconnecting) return;
     final ticker = _reconnectTicker;
     if (ticker != null) {
       _reconnectSub = ticker.listen((_) => _attemptReconnect());
@@ -2765,6 +2772,24 @@ class LooperRepository {
     if (back.isOk) {
       _stopReconnectPolling();
       return _applyOutcome(AudioApplyStatus.refused, result, verdict);
+    }
+    if (_isPinned && _intendRunning) {
+      // Neither opened (no replay rolled back): keep the previous config
+      // pinned and the running intent set, and supervise it exactly as after
+      // an interface loss (D17). Disarming here would leave the console
+      // silent until someone opened setup.
+      _lastAttemptSignature = null;
+      _armReconnect();
+      // A clear either attempt made is told when the interface comes back:
+      // it rides the verdict the supervisor's reopen reports (rule 3).
+      _lastReopen = verdict;
+      _reopenVerdictPending = verdict != null && !verdict.retainedAll;
+      _reproject();
+      return AudioApplyResult(
+        status: AudioApplyStatus.waiting,
+        result: result,
+        reopen: verdict,
+      );
     }
     stopEngine();
     return _applyOutcome(AudioApplyStatus.failed, result, verdict);

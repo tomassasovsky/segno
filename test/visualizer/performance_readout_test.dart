@@ -16,7 +16,7 @@ void main() {
     tsDen: 8,
     mode: 'fx',
     activeBank: 1,
-    deviceLost: true,
+    lossLine: 'Scarlett 4i4 disconnected — nothing is heard.',
   );
 
   group('PerformanceReadout wire format', () {
@@ -48,7 +48,7 @@ void main() {
       expect(decoded.hasTempo, isTrue);
       expect(decoded.selected, isNull);
       expect(decoded.activeBank, 0);
-      expect(decoded.deviceLost, isFalse);
+      expect(decoded.lossLine, isEmpty);
       expect(decoded.goodbye, ReadoutGoodbye.none);
       expect(
         PerformanceReadout.fromMap(const {'tempoBpm': 0.0}).hasTempo,

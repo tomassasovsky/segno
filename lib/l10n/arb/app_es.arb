@@ -11,6 +11,7 @@
     "updateBannerDismissAction": "Ahora no",
     "audioDeviceFallbackName": "Dispositivo de audio",
     "deviceLostBanner": "Sin dispositivo de audio — no se oye nada",
+    "deviceLostNamedBanner": "{device} desconectado — no se oye nada. El audio vuelve solo cuando se reconecte.",
     "deviceLostBannerAction": "Abrir configuración",
     "deviceRestoredClearedBanner": "El dispositivo volvió a {sampleRate} Hz en vez de {previousRate} Hz — los loops se borraron. Vuelve a cargar la sesión para recuperarlos.",
     "deviceRestoredClearedCapBanner": "El dispositivo volvió con otro límite de duración de loop — los loops se borraron. Vuelve a cargar la sesión para recuperarlos.",
