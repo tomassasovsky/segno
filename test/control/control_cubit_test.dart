@@ -3118,7 +3118,7 @@ void main() {
         );
       });
 
-      test('Stop cancels an empty section waiting to record, and stops it', () {
+      test('Stop drops an empty section waiting to record', () {
         setEngine(
           _tracksWith(const [
             Track(state: TrackState.playing, lengthFrames: 48000),
@@ -3132,8 +3132,8 @@ void main() {
           ..setMode(InteractionMode.mute)
           ..stop();
         verify(() => looper.stopTrack()).called(1);
-        verify(() => looper.cancelArm(channel: 1)).called(1);
-        // Stopped too, in case the handoff started the take first.
+        // The engine's Stop on the waiting section drops the request and
+        // its arm, or stops the take if the handoff started it.
         verify(() => looper.stopTrack(channel: 1)).called(1);
       });
 

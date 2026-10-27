@@ -3162,8 +3162,10 @@ static int32_t le_handoff_primary(le_engine* e) {
 
 /* The section that sounds now, other than [except]: the lowest one playing,
  * overdubbing or recording, Band's primary aside; -1 for none. Should
- * several sound (a Count-in launch can start more than one), the lowest
- * times the handoff and the commit stops them all. */
+ * several sound (a take and a Play that joined its Count-in), the lowest
+ * times the handoff, and the commit stops every one that plays or
+ * overdubs; while another records, le_handoff_capture_elsewhere refuses
+ * the request instead. */
 static int32_t le_handoff_source(le_engine* e, int32_t except) {
   const int32_t primary = le_handoff_primary(e);
   for (int32_t c = 0; c < e->track_count; ++c) {
