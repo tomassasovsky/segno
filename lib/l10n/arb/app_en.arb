@@ -7499,6 +7499,10 @@
     "@storagePurposeBackup": {
         "description": "What is writing to a drive, after 'in use for' (storageUsbInUse)."
     },
+    "storagePurposeUpdate": "reading an update",
+    "@storagePurposeUpdate": {
+        "description": "What holds a drive, after 'in use for' (storageUsbInUse): an update package is being copied off it (#1270 Part 8)."
+    },
     "powerTransferTitle": "Wait for the transfer",
     "@powerTransferTitle": {
         "description": "Power dialog title while a copy, export, backup or USB eject is in progress. The only action is Keep playing."

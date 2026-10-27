@@ -20,6 +20,10 @@ enum WritePurpose {
 
   /// A backup.
   backup,
+
+  /// Reading an update package off the volume (#1270 Part 8). A read hold:
+  /// a read-only volume may hold it, and eject waits for it all the same.
+  update,
 }
 
 /// A write in progress on a destination: where it goes and what it is for.

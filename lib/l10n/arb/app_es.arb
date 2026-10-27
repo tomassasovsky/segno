@@ -2677,6 +2677,7 @@
     "storagePurposeCopy": "copiar archivos",
     "storagePurposeExport": "exportar",
     "storagePurposeBackup": "hacer una copia de seguridad",
+    "storagePurposeUpdate": "leer una actualización",
     "powerTransferTitle": "Espera a que termine la transferencia",
     "powerTransferBody": "Se está copiando audio o expulsando una unidad USB. Espera a que termine y vuelve a pulsar el botón de encendido si quieres apagar.",
     "storageEjectStuck": "Todavía se está expulsando. Si no termina, desconecta la unidad.",
