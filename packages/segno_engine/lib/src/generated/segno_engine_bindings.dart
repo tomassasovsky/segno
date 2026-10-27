@@ -1496,9 +1496,10 @@ class SegnoEngineBindings {
   /// A request's last state is not kept: a start publishes IDLE under it, and a
   /// restored offset (LE_CMD_SET_RECORD_OFFSET) publishes DONE under request 0,
   /// either of which can land before a poll reads the CANCELLED a stop left. So
-  /// a caller treats IDLE under its own request, another request id in the word,
-  /// or the device leaving as the end of its measurement, and bounds the wait
-  /// with a timeout of its own.
+  /// a caller treats IDLE under its own request, another request id in the word
+  /// once its own MEASURING has been seen, or the device leaving as the end of
+  /// its measurement, and bounds the wait with a timeout of its own (a stop and
+  /// reopen can also drop the request before it is applied).
   ///
   /// Returns LE_OK; LE_ERR_INVALID for an output not below the device's output
   /// count, an input neither below its input count nor LE_LATENCY_LOOPBACK_INPUT
