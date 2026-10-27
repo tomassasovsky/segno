@@ -758,19 +758,172 @@ void main() {
   // ----------------------------------------------------------- the latency
 
   group('Audio — the measurement', () {
-    testWidgets('shows the restored figure, with no Measure button', (
-      tester,
-    ) async {
-      // On the appliance the button only ever measured the Scarlett's loop
-      // channels, which the owner ruled out (Q2); the cable test brings it
-      // back in Part 3b.
+    testWidgets('shows the restored figure beside Measure', (tester) async {
       await pump(tester);
       final l10n = l10nOf(tester);
       final row = rowOf(tester, const Key('audio_latency_row'));
       expect(row.title, l10n.roundTripLatencyLabel);
       expect(row.subtitle, l10n.audioRecordOffsetSub(64));
-      expect(find.byKey(const Key('audio_measure_button')), findsNothing);
       expect(find.text(l10n.latencyMs('7.42')), findsOneWidget);
+      expect(
+        tester
+            .widget<ConsoleSmallButton>(find.byKey(const Key('audio_measure')))
+            .onPressed,
+        isNotNull,
+      );
+    });
+
+    testWidgets('Measure is disabled with the reason while the interface is '
+        'not there', (tester) async {
+      when(() => repository.state).thenReturn(const LooperState());
+      await pump(tester, looper: const LooperState());
+      final l10n = l10nOf(tester);
+      expect(
+        rowOf(tester, const Key('audio_latency_row')).subtitle,
+        l10n.audioMeasureUnavailable,
+      );
+      expect(
+        tester
+            .widget<ConsoleSmallButton>(find.byKey(const Key('audio_measure')))
+            .onPressed,
+        isNull,
+      );
+    });
+
+    group('the cable test (#1270 Part 3b)', () {
+      late Completer<LatencyResult> result;
+
+      setUp(() {
+        when(
+          () => repository.measureLatency(
+            output: any(named: 'output'),
+            input: any(named: 'input'),
+          ),
+          // Made inside the test's zone, where its pumps deliver it.
+        ).thenAnswer((_) => (result = Completer<LatencyResult>()).future);
+        when(repository.cancelLatency).thenReturn(null);
+        when(
+          () => repository.stopTrack(channel: any(named: 'channel')),
+        ).thenReturn(EngineResult.ok);
+      });
+
+      Future<void> open(WidgetTester tester) async {
+        await tester.tap(find.byKey(const Key('audio_measure')));
+        await tester.pumpAndSettle();
+      }
+
+      bool focused(WidgetTester tester, Key key) {
+        final context = FocusManager.instance.primaryFocus?.context;
+        if (context == null) return false;
+        return find
+            .ancestor(
+              of: find.byElementPredicate((e) => e == context),
+              matching: find.byKey(key),
+            )
+            .evaluate()
+            .isNotEmpty;
+      }
+
+      testWidgets('the encoder alone: output, input, Start test, Cancel', (
+        tester,
+      ) async {
+        await pump(tester);
+        await open(tester);
+        expect(find.byKey(const Key('cable_test_dialog')), findsOneWidget);
+        expect(focused(tester, const Key('cable_test_output')), isTrue);
+        for (final key in const [
+          Key('cable_test_input'),
+          Key('cable_test_start'),
+          Key('cable_test_cancel'),
+        ]) {
+          FocusManager.instance.primaryFocus!.nextFocus();
+          await tester.pump();
+          expect(focused(tester, key), isTrue, reason: '$key');
+        }
+      });
+
+      testWidgets('a press steps the jack; Start test measures it, and DONE '
+          'closes the dialog', (tester) async {
+        await pump(tester);
+        await open(tester);
+        for (final jack in const [
+          Key('cable_test_output'),
+          Key('cable_test_output'),
+          Key('cable_test_input'),
+        ]) {
+          await tester.tap(find.byKey(jack));
+          await tester.pump();
+        }
+        await tester.tap(find.byKey(const Key('cable_test_start')));
+        await tester.pump();
+
+        verify(() => repository.measureLatency(output: 2, input: 1)).called(1);
+        expect(find.byKey(const Key('cable_test_measuring')), findsOneWidget);
+        result.complete(
+          const LatencyResult.done(offsetFrames: 240, latencyMs: 5),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('cable_test_dialog')), findsNothing);
+      });
+
+      testWidgets('a route pushed over the dialog survives its closing', (
+        tester,
+      ) async {
+        await pump(tester);
+        await open(tester);
+        await tester.tap(find.byKey(const Key('cable_test_start')));
+        await tester.pump();
+        unawaited(
+          showDialog<void>(
+            context: tester.element(find.byKey(const Key('cable_test_dialog'))),
+            builder: (_) => const Text('power', key: Key('over_the_dialog')),
+          ),
+        );
+        await tester.pumpAndSettle();
+        result.complete(
+          const LatencyResult.done(offsetFrames: 240, latencyMs: 5),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('cable_test_dialog')), findsNothing);
+        expect(find.byKey(const Key('over_the_dialog')), findsOneWidget);
+      });
+
+      testWidgets('the note says playback stops while it plays', (
+        tester,
+      ) async {
+        const playingRig = LooperState(
+          status: _open,
+          tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
+        );
+        when(() => repository.state).thenReturn(playingRig);
+        await pump(tester, looper: playingRig);
+        await open(tester);
+        final l10n = l10nOf(tester);
+        expect(find.text(l10n.audioCableNoteStops), findsOneWidget);
+      });
+
+      testWidgets('no return keeps the dialog open with Retry', (tester) async {
+        await pump(tester);
+        await open(tester);
+        await tester.tap(find.byKey(const Key('cable_test_start')));
+        await tester.pump();
+        result.complete(const LatencyResult(LatencyOutcome.noReturn));
+        await tester.pumpAndSettle();
+        final l10n = l10nOf(tester);
+        expect(find.byKey(const Key('cable_test_dialog')), findsOneWidget);
+        expect(find.text(l10n.audioCableNoReturn), findsOneWidget);
+        expect(find.text(l10n.audioCableRetry), findsOneWidget);
+      });
+
+      testWidgets('leaving the page cancels a run', (tester) async {
+        await pump(tester);
+        await open(tester);
+        await tester.tap(find.byKey(const Key('cable_test_start')));
+        await tester.pump();
+        await tester.pumpWidget(const SizedBox.shrink());
+        verify(repository.cancelLatency).called(1);
+        result.complete(const LatencyResult(LatencyOutcome.cancelled));
+      });
     });
 
     testWidgets('a stopped engine says what it does not know', (tester) async {

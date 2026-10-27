@@ -155,6 +155,7 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
     result: EngineResult.ok,
     outcome: ReopenOutcome.retained,
     droppedTracks: 0,
+    openedRate: 0,
   );
 
   @override

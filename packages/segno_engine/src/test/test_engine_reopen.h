@@ -968,7 +968,7 @@ static void test_reopen_device_lifecycle(void) {
   int32_t outcome = 77;
 
   le_engine* cold = le_engine_create();
-  CHECK(le_engine_reopen(cold, &cfg, &outcome, NULL) == LE_ERR_NOT_RUNNING);
+  CHECK(le_engine_reopen(cold, &cfg, &outcome, NULL, NULL) == LE_ERR_NOT_RUNNING);
   CHECK(le_engine_reopen_configured(cold, 48000, 1, 1, 1000, &outcome, NULL) ==
         LE_ERR_NOT_RUNNING);
   CHECK(outcome == 77);
@@ -979,7 +979,7 @@ static void test_reopen_device_lifecycle(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.running == 1 && s.device_present == 1);
   record_base_loop(e, 1.0f);
-  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL) == LE_ERR_ALREADY_RUNNING);
+  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL, NULL) == LE_ERR_ALREADY_RUNNING);
   CHECK(le_engine_reopen_configured(e, 48000, 1, 1, 1000, &outcome, NULL) ==
         LE_ERR_ALREADY_RUNNING);
   CHECK(le_engine_stop(e) == LE_OK);
@@ -990,7 +990,7 @@ static void test_reopen_device_lifecycle(void) {
   /* Open failure: untouched, still PLAYING-with-content, no outcome. */
   fake_open_result = LE_ERR_DEVICE;
   fake_closes = 0;
-  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL) == LE_ERR_DEVICE);
+  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL, NULL) == LE_ERR_DEVICE);
   CHECK(outcome == 77);
   CHECK(fake_closes == 0);
   le_engine_get_snapshot(e, &s);
@@ -1004,7 +1004,7 @@ static void test_reopen_device_lifecycle(void) {
   /* Start failure after retention: retained, stopped, device closed. */
   fake_open_result = LE_OK;
   fake_start_result = LE_ERR_DEVICE;
-  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL) == LE_ERR_DEVICE);
+  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL, NULL) == LE_ERR_DEVICE);
   CHECK(outcome == LE_REOPEN_RETAINED);
   CHECK(fake_closes == 1);
   le_engine_get_snapshot(e, &s);
@@ -1017,7 +1017,7 @@ static void test_reopen_device_lifecycle(void) {
   fake_start_result = LE_OK;
   outcome = 77;
   int32_t mask = -99;
-  CHECK(le_engine_reopen(e, &cfg, &outcome, &mask) == LE_OK);
+  CHECK(le_engine_reopen(e, &cfg, &outcome, &mask, NULL) == LE_OK);
   CHECK(outcome == LE_REOPEN_RETAINED);
   CHECK(mask == 0);
   le_engine_get_snapshot(e, &s);
@@ -1034,7 +1034,7 @@ static void test_reopen_device_lifecycle(void) {
   /* The device comes back at another rate: cleared, explicitly. */
   CHECK(le_engine_stop(e) == LE_OK);
   fake_rate = 44100;
-  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL) == LE_OK);
+  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL, NULL) == LE_OK);
   CHECK(outcome == LE_REOPEN_CLEARED_RATE);
   le_engine_get_snapshot(e, &s);
   CHECK(s.running == 1);
@@ -1074,8 +1074,11 @@ static void test_reopen_keep_material_refuses_a_clear(void) {
   fake_rate = 44100;
   fake_closes = 0;
   cfg.keep_material = 1;
-  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL) == LE_ERR_WOULD_CLEAR);
+  int32_t opened_rate = 0;
+  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL, &opened_rate) ==
+        LE_ERR_WOULD_CLEAR);
   CHECK(outcome == LE_REOPEN_CLEARED_RATE);
+  CHECK(opened_rate == 44100); /* the rate the refused device would run */
   CHECK(fake_closes == 1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.running == 0);
@@ -1087,7 +1090,7 @@ static void test_reopen_keep_material_refuses_a_clear(void) {
   /* Another loop cap is refused the same way. */
   fake_rate = 48000;
   cfg.max_loop_frames = 2000;
-  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL) == LE_ERR_WOULD_CLEAR);
+  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL, NULL) == LE_ERR_WOULD_CLEAR);
   CHECK(outcome == LE_REOPEN_CLEARED_CAP);
   le_engine_get_snapshot(e, &s);
   CHECK(s.running == 0);
@@ -1097,7 +1100,7 @@ static void test_reopen_keep_material_refuses_a_clear(void) {
   /* What the repository does next: the previous config, with the flag,
    * retains the material and leaves the tracks stopped. */
   cfg.max_loop_frames = 1000;
-  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL) == LE_OK);
+  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL, NULL) == LE_OK);
   CHECK(outcome == LE_REOPEN_RETAINED);
   le_engine_get_snapshot(e, &s);
   CHECK(s.running == 1);
@@ -1109,7 +1112,7 @@ static void test_reopen_keep_material_refuses_a_clear(void) {
   /* The same rate change without the flag clears, as it always did. */
   fake_rate = 44100;
   cfg.keep_material = 0;
-  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL) == LE_OK);
+  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL, NULL) == LE_OK);
   CHECK(outcome == LE_REOPEN_CLEARED_RATE);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_EMPTY);

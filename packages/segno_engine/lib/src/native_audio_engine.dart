@@ -115,6 +115,7 @@ class NativeAudioEngine implements AudioEngine {
     final cfgPtr = calloc<le_config>();
     final outcomePtr = calloc<Int32>();
     final droppedPtr = calloc<Int32>();
+    final ratePtr = calloc<Int32>();
     try {
       config.writeTo(cfgPtr);
       // RETAINED (0), nothing dropped, until the native side writes a
@@ -122,19 +123,28 @@ class NativeAudioEngine implements AudioEngine {
       // material in place.
       outcomePtr.value = 0;
       droppedPtr.value = 0;
+      ratePtr.value = 0;
       final result = EngineResult.fromCode(
-        _bindings.le_engine_reopen(_engine, cfgPtr, outcomePtr, droppedPtr),
+        _bindings.le_engine_reopen(
+          _engine,
+          cfgPtr,
+          outcomePtr,
+          droppedPtr,
+          ratePtr,
+        ),
       );
       return (
         result: result,
         outcome: ReopenOutcome.fromCode(outcomePtr.value),
         droppedTracks: droppedPtr.value,
+        openedRate: ratePtr.value,
       );
     } finally {
       calloc
         ..free(cfgPtr)
         ..free(outcomePtr)
-        ..free(droppedPtr);
+        ..free(droppedPtr)
+        ..free(ratePtr);
     }
   }
 
@@ -3283,6 +3293,7 @@ class PumpedNativeEngine extends NativeAudioEngine {
         result: result,
         outcome: ReopenOutcome.fromCode(outcomePtr.value),
         droppedTracks: droppedPtr.value,
+        openedRate: result.isOk ? sampleRate : 0,
       );
     } finally {
       calloc

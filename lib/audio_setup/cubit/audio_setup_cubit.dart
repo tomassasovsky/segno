@@ -201,6 +201,162 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     emit(state.copyWith(applyPhase: ApplyPhase.idle));
   }
 
+  // ------------------------------------------------------- the cable test
+
+  /// The calibration guard a running cable test holds.
+  OperationGuard? _measureGuard;
+
+  /// Opens the cable test (pen 28/03): refused while a take runs (D3), and
+  /// unavailable while the interface is not there.
+  void openCableTest() {
+    if (!_canMeasure ||
+        state.measurePhase == MeasurePhase.cable ||
+        state.measurePhase == MeasurePhase.running ||
+        state.measurePhase == MeasurePhase.noReturn) {
+      return;
+    }
+    final busy = _busyKind(GuardKind.calibration);
+    if (busy != null) {
+      emit(state.copyWith(refusal: ApplyRefusal.busy(busy)));
+      return;
+    }
+    emit(
+      state.copyWith(
+        measurePhase: MeasurePhase.cable,
+        playbackRunning: _musicPlaying,
+        clearRefusal: true,
+        measureOutput: _clampJack(
+          state.measureOutput,
+          state.engineStatus.outputChannels,
+        ),
+        measureInput: _clampJack(
+          state.measureInput,
+          state.engineStatus.inputChannels,
+        ),
+      ),
+    );
+  }
+
+  /// Measures the cable from [output] to [input] (1-based): checks the take
+  /// again, stops the transport and the backing track (D4), and holds the
+  /// calibration guard for the run, so an Apply, a device change or a take
+  /// is refused meanwhile. Only a pulse that comes back moves the offset; it
+  /// is saved under the device, rate and buffer it was measured on.
+  void startCableTest(int output, int input) {
+    if (state.measurePhase == MeasurePhase.running || !_canMeasure) return;
+    final busy = _busyKind(GuardKind.calibration);
+    if (busy != null) {
+      emit(state.copyWith(refusal: ApplyRefusal.busy(busy)));
+      return;
+    }
+    final OperationGuard guard;
+    try {
+      guard = _guards.enter(
+        GuardKind.calibration,
+        const GuardScope.internal(),
+        purpose: 'latency measurement',
+      );
+    } on GuardRefused catch (refused) {
+      emit(
+        state.copyWith(
+          refusal: ApplyRefusal.busy(refused.blockers.first.kind.name),
+        ),
+      );
+      return;
+    }
+    _measureGuard = guard;
+    for (final track in _repository.state.tracks) {
+      _repository.stopTrack(channel: track.channel);
+    }
+    if (_backing.state.playing) _backing.stop();
+    final status = state.engineStatus;
+    emit(
+      state.copyWith(
+        measurePhase: MeasurePhase.running,
+        measureOutput: output,
+        measureInput: input,
+        clearRefusal: true,
+      ),
+    );
+    unawaited(_runCableTest(guard, status, output, input));
+  }
+
+  Future<void> _runCableTest(
+    OperationGuard guard,
+    EngineStatus status,
+    int output,
+    int input,
+  ) async {
+    final LatencyResult result;
+    try {
+      result = await _repository.measureLatency(
+        output: output - 1,
+        input: input - 1,
+      );
+    } finally {
+      _releaseMeasureGuard(guard);
+    }
+    // Cancelled from here (or the cubit closed) while it ran: that answer
+    // is already on screen.
+    if (isClosed || state.measurePhase != MeasurePhase.running) return;
+    switch (result.outcome) {
+      case LatencyOutcome.done:
+        emit(state.copyWith(measurePhase: MeasurePhase.done));
+        await _settings.saveLatencyOffsetFrames(
+          device: status.deviceName,
+          sampleRate: status.sampleRate,
+          bufferFrames: status.bufferFrames,
+          frames: result.offsetFrames,
+        );
+      case LatencyOutcome.noReturn || LatencyOutcome.timedOut:
+        emit(state.copyWith(measurePhase: MeasurePhase.noReturn));
+      case LatencyOutcome.cancelled || LatencyOutcome.refused:
+        emit(state.copyWith(measurePhase: MeasurePhase.cancelled));
+    }
+  }
+
+  /// Picks the cable's [output] and [input] jacks (1-based) while the
+  /// dialog is open and nothing runs.
+  void chooseCableJacks({int? output, int? input}) {
+    if (state.measurePhase == MeasurePhase.idle ||
+        state.measurePhase == MeasurePhase.running) {
+      return;
+    }
+    emit(
+      state.copyWith(
+        measureOutput: output == null
+            ? null
+            : _clampJack(output, state.engineStatus.outputChannels),
+        measureInput: input == null
+            ? null
+            : _clampJack(input, state.engineStatus.inputChannels),
+      ),
+    );
+  }
+
+  /// Closes the cable test, cancelling a run in flight: the offset stays as
+  /// it was. Leaving the page does this too.
+  void cancelMeasure() {
+    if (isClosed || state.measurePhase == MeasurePhase.idle) return;
+    if (state.measurePhase == MeasurePhase.running) {
+      _repository.cancelLatency();
+    }
+    emit(state.copyWith(measurePhase: MeasurePhase.idle, clearRefusal: true));
+  }
+
+  /// Whether the interface is there to measure.
+  bool get _canMeasure =>
+      state.engineStatus.isConnected && state.engineStatus.devicePresent;
+
+  void _releaseMeasureGuard(OperationGuard guard) {
+    guard.release();
+    if (identical(_measureGuard, guard)) _measureGuard = null;
+  }
+
+  /// [jack] within 1..[count], or 1 when the count is unknown.
+  static int _clampJack(int jack, int count) =>
+      count <= 0 ? 1 : jack.clamp(1, count);
+
   /// Whether music would be cut by an apply: a track plays, or the backing
   /// track does.
   bool get _musicPlaying =>
@@ -210,7 +366,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// D19). A refusal is shown and nothing changes; a locked change is only
   /// ignored, because its control is already drawn disabled with the reason.
   bool _admit(AudioSetupState next) {
-    final busy = _busyKind();
+    final busy = _busyKind(GuardKind.deviceChange);
     if (busy != null) {
       emit(state.copyWith(refusal: ApplyRefusal.busy(busy)));
       return false;
@@ -232,8 +388,8 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// What a take in flight is called in the guard table's terms, or `null`
   /// when nothing would be cut: a track recording, overdubbing, waiting on a
   /// quantized or signal start or on the Count-in, or a performance capture
-  /// (or anything else the table says a device change must not overlap).
-  String? _busyKind() {
+  /// (or anything else the table says [kind] must not overlap).
+  String? _busyKind(GuardKind kind) {
     final looper = _repository.state;
     final takeRunning =
         looper.transport.countingIn ||
@@ -241,10 +397,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
           (t) => t.isCapturing || t.pending || t.pendingLaunch != null,
         );
     if (takeRunning) return GuardKind.capture.name;
-    final blockers = _guards.blockers(
-      GuardKind.deviceChange,
-      const GuardScope.internal(),
-    );
+    final blockers = _guards.blockers(kind, const GuardScope.internal());
     return blockers.isEmpty ? null : blockers.first.kind.name;
   }
 
@@ -339,6 +492,28 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
             errorDetail: outcome.result.name,
             deviceConnectivity: notice,
             clearRefusal: true,
+          ),
+        );
+      case AudioApplyStatus.refused
+          when outcome.result == EngineResult.wouldClear:
+        // The interface would open at another rate, which would clear the
+        // loops: the previous config runs again, and the banner names the
+        // rate the new one would have run (#1270 Part 3b).
+        emit(
+          state.copyWith(
+            status: AudioSetupStatus.running,
+            clearError: true,
+            clearRefusal: true,
+            phase: ConfigPhase.refused,
+            requestedRate: outcome.refusedRate,
+            requestedBuffer: askedBuffer,
+            actualRate: live.sampleRate > 0
+                ? live.sampleRate
+                : state.sampleRate,
+            actualBuffer: live.bufferFrames > 0
+                ? live.bufferFrames
+                : state.bufferFrames,
+            deviceConnectivity: notice,
           ),
         );
       case AudioApplyStatus.refused
@@ -572,7 +747,12 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   }
 
   void _onLooperState(LooperState looper) {
-    emit(_projectFromRepository(looper, current: state));
+    emit(
+      _projectFromRepository(
+        looper,
+        current: state,
+      ).copyWith(playbackRunning: _musicPlaying),
+    );
     _detectConnectivity(looper.status);
     unawaited(_syncLatencyPersistence(looper.status));
   }
@@ -730,6 +910,11 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
 
   @override
   Future<void> close() {
+    if (state.measurePhase == MeasurePhase.running) {
+      _repository.cancelLatency();
+    }
+    final guard = _measureGuard;
+    if (guard != null) _releaseMeasureGuard(guard);
     _deviceRefreshTimer?.cancel();
     unawaited(_subscription.cancel());
     return super.close();

@@ -84,6 +84,7 @@ export 'src/models/fx_user_preset.dart';
 export 'src/models/input_monitor.dart';
 export 'src/models/input_setup.dart';
 export 'src/models/lane.dart';
+export 'src/models/latency_result.dart';
 export 'src/models/looper_state.dart';
 export 'src/models/meter_levels.dart';
 export 'src/models/mix_settings_snapshot.dart';

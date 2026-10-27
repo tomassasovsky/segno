@@ -336,6 +336,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
         result: EngineResult.alreadyRunning,
         outcome: ReopenOutcome.retained,
         droppedTracks: 0,
+        openedRate: 0,
       );
     }
     final previous = _lastSampleRate;
@@ -344,16 +345,30 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
         result: EngineResult.notRunning,
         outcome: ReopenOutcome.retained,
         droppedTracks: 0,
+        openedRate: 0,
       );
     }
     final requested = config.sampleRate > 0 ? config.sampleRate : 48000;
     final outcome = requested == previous
         ? ReopenOutcome.retained
         : ReopenOutcome.clearedRate;
+    if (config.keepMaterial && !outcome.keepsMaterial) {
+      return (
+        result: EngineResult.wouldClear,
+        outcome: outcome,
+        droppedTracks: 0,
+        openedRate: requested,
+      );
+    }
+    final result = _start(
+      config,
+      keepBacking: outcome == ReopenOutcome.retained,
+    );
     return (
-      result: _start(config, keepBacking: outcome == ReopenOutcome.retained),
+      result: result,
       outcome: outcome,
       droppedTracks: 0,
+      openedRate: result.isOk ? requested : 0,
     );
   }
 

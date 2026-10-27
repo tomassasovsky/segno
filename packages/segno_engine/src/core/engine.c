@@ -1625,7 +1625,8 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
 }
 
 int32_t le_engine_reopen(le_engine* engine, const le_config* config,
-                         int32_t* outcome, int32_t* dropped_track_mask) {
+                         int32_t* outcome, int32_t* dropped_track_mask,
+                         int32_t* opened_rate) {
   if (engine == NULL || config == NULL || outcome == NULL) return LE_ERR_INVALID;
   if (atomic_load_explicit(&engine->a_running, memory_order_acquire)) {
     return LE_ERR_ALREADY_RUNNING;
@@ -1641,6 +1642,7 @@ int32_t le_engine_reopen(le_engine* engine, const le_config* config,
   const int32_t open_result = be->open(engine, config, &info);
   if (open_result != LE_OK) return open_result;
   engine->backend = be;
+  if (opened_rate != NULL) *opened_rate = info.sample_rate;
 
   /* keep_material: a reopen that would clear the whole engine is refused
    * before anything is settled, with the device closed again. */
