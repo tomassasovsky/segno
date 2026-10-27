@@ -1818,6 +1818,9 @@ class ConsoleSmallButton extends StatelessWidget {
         borderRadius: 10,
         child: InkWell(
           onTap: onPressed,
+          // The tap target is the one focus stop; a focusable InkWell inside
+          // it would make the encoder stop twice on one button.
+          canRequestFocus: false,
           borderRadius: BorderRadius.circular(10),
           child: Container(
             height: 33,
@@ -3468,6 +3471,9 @@ class ConsoleDialogButton extends StatelessWidget {
       borderRadius: 10,
       child: InkWell(
         onTap: onPressed,
+        // The tap target is the one focus stop; a focusable InkWell inside it
+        // would make the encoder stop twice on one button.
+        canRequestFocus: false,
         borderRadius: BorderRadius.circular(10),
         child: Container(
           height: height,

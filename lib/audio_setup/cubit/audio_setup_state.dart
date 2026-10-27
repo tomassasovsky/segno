@@ -39,6 +39,30 @@ enum ApplyPhase {
   confirming,
 }
 
+/// Where the cable test stands (#1270 Part 3b, pen 28/03).
+enum MeasurePhase {
+  /// No cable test is open.
+  idle,
+
+  /// The cable dialog is open, choosing the output and input.
+  cable,
+
+  /// The pulse is out and the engine listens for it.
+  running,
+
+  /// The pulse came back: the offset is set and saved, and the dialog
+  /// closes.
+  done,
+
+  /// No pulse came back: the dialog stays open to retry. The offset is
+  /// unchanged.
+  noReturn,
+
+  /// The measurement was cancelled by something other than the player (a
+  /// take, a stop, the device leaving). The offset is unchanged.
+  cancelled,
+}
+
 /// Why the last request was refused before anything changed (#1270 Part 3a).
 class ApplyRefusal extends Equatable {
   /// Refused because [busyKind] is in flight: the guard table's name of the
@@ -160,6 +184,10 @@ class AudioSetupState extends Equatable {
     this.applyPhase = ApplyPhase.idle,
     this.refusal,
     this.hasContent = false,
+    this.measurePhase = MeasurePhase.idle,
+    this.measureOutput = 1,
+    this.measureInput = 1,
+    this.playbackRunning = false,
   });
 
   /// Requested sample rate in Hz.
@@ -244,6 +272,19 @@ class AudioSetupState extends Equatable {
   /// engine (D2, the owner's Q3 answer).
   final bool hasContent;
 
+  /// Where the cable test stands.
+  final MeasurePhase measurePhase;
+
+  /// The output the cable test sends on, 1-based as the jack is labelled.
+  final int measureOutput;
+
+  /// The input the cable test listens on, 1-based.
+  final int measureInput;
+
+  /// Whether a track or the backing track plays, so the cable test says it
+  /// will stop them (D4).
+  final bool playbackRunning;
+
   /// Playback (output) devices from [devices].
   List<AudioDevice> get playbackDevices =>
       devices.where((d) => !d.isInput).toList();
@@ -300,6 +341,10 @@ class AudioSetupState extends Equatable {
     ApplyRefusal? refusal,
     bool clearRefusal = false,
     bool? hasContent,
+    MeasurePhase? measurePhase,
+    int? measureOutput,
+    int? measureInput,
+    bool? playbackRunning,
   }) {
     return AudioSetupState(
       sampleRate: sampleRate ?? this.sampleRate,
@@ -326,6 +371,10 @@ class AudioSetupState extends Equatable {
       applyPhase: applyPhase ?? this.applyPhase,
       refusal: clearRefusal ? null : (refusal ?? this.refusal),
       hasContent: hasContent ?? this.hasContent,
+      measurePhase: measurePhase ?? this.measurePhase,
+      measureOutput: measureOutput ?? this.measureOutput,
+      measureInput: measureInput ?? this.measureInput,
+      playbackRunning: playbackRunning ?? this.playbackRunning,
     );
   }
 
@@ -352,5 +401,9 @@ class AudioSetupState extends Equatable {
     applyPhase,
     refusal,
     hasContent,
+    measurePhase,
+    measureOutput,
+    measureInput,
+    playbackRunning,
   ];
 }

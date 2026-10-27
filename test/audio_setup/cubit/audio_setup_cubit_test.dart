@@ -443,7 +443,6 @@ void main() {
           reopen: EngineReopened(
             outcome: ReopenOutcome.clearedRate,
             droppedTracks: 0,
-            openedRate: 0,
             previousSampleRate: 48000,
             sampleRate: 44100,
           ),
@@ -560,7 +559,6 @@ void main() {
           reopen: EngineReopened(
             outcome: ReopenOutcome.clearedRate,
             droppedTracks: 0,
-            openedRate: 0,
             previousSampleRate: 48000,
             sampleRate: 44100,
           ),
@@ -586,7 +584,6 @@ void main() {
           reopen: EngineReopened(
             outcome: ReopenOutcome.retained,
             droppedTracks: 0,
-            openedRate: 0,
             previousSampleRate: 48000,
             sampleRate: 48000,
           ),
@@ -1424,5 +1421,228 @@ void main() {
         expect(cubit.state.error, AudioSetupError.openDeviceFailed);
       },
     );
+  });
+
+  group('cable test (#1270 Part 3b)', () {
+    const playing = Track(state: TrackState.playing, lengthFrames: 48000);
+
+    void seed({
+      List<Track> tracks = const [],
+      bool countingIn = false,
+      bool present = true,
+    }) {
+      when(() => repository.state).thenReturn(
+        LooperState(
+          status: EngineStatus(
+            deviceName: 'Scarlett',
+            sampleRate: 48000,
+            bufferFrames: 128,
+            inputChannels: 4,
+            outputChannels: 4,
+            isConnected: present,
+            devicePresent: present,
+          ),
+          tracks: tracks,
+          transport: TransportState(countingIn: countingIn),
+        ),
+      );
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(sampleRate: 48000, bufferFrames: 128),
+      );
+    }
+
+    Completer<LatencyResult> measuring() {
+      final result = Completer<LatencyResult>();
+      when(
+        () => repository.measureLatency(
+          output: any(named: 'output'),
+          input: any(named: 'input'),
+        ),
+      ).thenAnswer((_) => result.future);
+      when(repository.cancelLatency).thenReturn(null);
+      return result;
+    }
+
+    test('Measure opens the dialog on the jacks the interface has', () {
+      seed();
+      final cubit = buildCubit()..openCableTest();
+      addTearDown(cubit.close);
+      expect(cubit.state.measurePhase, MeasurePhase.cable);
+      cubit.chooseCableJacks(output: 9, input: 3);
+      expect(cubit.state.measureOutput, 4);
+      expect(cubit.state.measureInput, 3);
+    });
+
+    test('nothing opens while the interface is not there', () {
+      seed(present: false);
+      final cubit = buildCubit()..openCableTest();
+      addTearDown(cubit.close);
+      expect(cubit.state.measurePhase, MeasurePhase.idle);
+    });
+
+    for (final (name, tracks, countingIn) in [
+      ('recording', const [Track(state: TrackState.recording)], false),
+      (
+        'overdubbing',
+        const [Track(state: TrackState.overdubbing, lengthFrames: 48000)],
+        false,
+      ),
+      ('counting in', const <Track>[], true),
+    ]) {
+      test('a take $name refuses the test and measures nothing', () {
+        seed(tracks: tracks, countingIn: countingIn);
+        measuring();
+        final cubit = buildCubit()..openCableTest();
+        addTearDown(cubit.close);
+        expect(cubit.state.measurePhase, MeasurePhase.idle);
+        expect(cubit.state.refusal, const ApplyRefusal.busy('capture'));
+        cubit.startCableTest(3, 2);
+        expect(cubit.state.refusal, const ApplyRefusal.busy('capture'));
+        verifyNever(
+          () => repository.measureLatency(
+            output: any(named: 'output'),
+            input: any(named: 'input'),
+          ),
+        );
+      });
+    }
+
+    test('Start test measures the chosen jacks, and its DONE saves the offset '
+        'under the device, rate and buffer', () async {
+      seed();
+      final result = measuring();
+      final cubit = buildCubit()
+        ..openCableTest()
+        ..startCableTest(3, 2);
+      addTearDown(cubit.close);
+
+      verify(() => repository.measureLatency(output: 2, input: 1)).called(1);
+      expect(cubit.state.measurePhase, MeasurePhase.running);
+      result.complete(
+        const LatencyResult.done(offsetFrames: 240, latencyMs: 5),
+      );
+      await pumpEventQueue();
+
+      expect(cubit.state.measurePhase, MeasurePhase.done);
+      expect(
+        await settings.loadLatencyOffsetFrames(
+          device: 'Scarlett',
+          sampleRate: 48000,
+          bufferFrames: 128,
+        ),
+        240,
+      );
+      expect(guards.active, isEmpty);
+    });
+
+    test('Start test stops the tracks and the backing before it measures', () {
+      seed(tracks: const [playing]);
+      when(() => backing.state).thenReturn(
+        const BackingPlayerState(transport: BackingTransport.playing),
+      );
+      measuring();
+      final cubit = buildCubit()
+        ..openCableTest()
+        ..startCableTest(1, 1);
+      addTearDown(cubit.close);
+
+      verifyInOrder([
+        () => repository.stopTrack(),
+        backing.stop,
+        () => repository.measureLatency(output: 0, input: 0),
+      ]);
+    });
+
+    test('an Apply during the run is refused for the calibration, and the '
+        'guard goes with the run', () async {
+      seed();
+      final result = measuring();
+      final cubit = buildCubit()
+        ..openCableTest()
+        ..startCableTest(1, 1)
+        ..setBufferFrames(256);
+      addTearDown(cubit.close);
+
+      expect(cubit.state.refusal, const ApplyRefusal.busy('calibration'));
+      verifyNever(() => repository.applyAudioConfig(any()));
+      result.complete(const LatencyResult(LatencyOutcome.noReturn));
+      await pumpEventQueue();
+      expect(guards.active, isEmpty);
+      cubit.setBufferFrames(256);
+      verify(() => repository.applyAudioConfig(any())).called(1);
+    });
+
+    test('no return keeps the dialog and the saved offset', () async {
+      seed();
+      final result = measuring();
+      final cubit = buildCubit()
+        ..openCableTest()
+        ..startCableTest(1, 1);
+      addTearDown(cubit.close);
+      result.complete(const LatencyResult(LatencyOutcome.timedOut));
+      await pumpEventQueue();
+      expect(cubit.state.measurePhase, MeasurePhase.noReturn);
+      expect(
+        await settings.loadLatencyOffsetFrames(
+          device: 'Scarlett',
+          sampleRate: 48000,
+          bufferFrames: 128,
+        ),
+        isNull,
+      );
+    });
+
+    test('Cancel posts the cancel and keeps the saved offset; a late answer '
+        'changes nothing', () async {
+      seed();
+      final result = measuring();
+      final cubit = buildCubit()
+        ..openCableTest()
+        ..startCableTest(1, 1)
+        ..cancelMeasure();
+      addTearDown(cubit.close);
+      verify(repository.cancelLatency).called(1);
+      expect(cubit.state.measurePhase, MeasurePhase.idle);
+      result.complete(const LatencyResult(LatencyOutcome.cancelled));
+      await pumpEventQueue();
+      expect(cubit.state.measurePhase, MeasurePhase.idle);
+      expect(guards.active, isEmpty);
+    });
+
+    test('closing the cubit mid-run cancels the measurement', () async {
+      seed();
+      measuring();
+      final cubit = buildCubit()
+        ..openCableTest()
+        ..startCableTest(1, 1);
+      await cubit.close();
+      verify(repository.cancelLatency).called(1);
+      expect(guards.active, isEmpty);
+    });
+
+    test('a device change that would clear the loops names the rate it '
+        'would have run, and saves nothing', () async {
+      seed(tracks: const [playing]);
+      when(() => repository.applyAudioConfig(any())).thenReturn(
+        const AudioApplyResult(
+          status: AudioApplyStatus.refused,
+          result: EngineResult.wouldClear,
+          refusedRate: 44100,
+        ),
+      );
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      cubit
+        ..setDevice(playbackDeviceId: 'other', captureDeviceId: 'other')
+        ..confirmApply();
+
+      expect(cubit.state.phase, ConfigPhase.refused);
+      expect(cubit.state.requestedRate, 44100);
+      expect(cubit.state.actualRate, 48000);
+      expect(cubit.state.playbackDeviceId, isNot('other'));
+      await pumpEventQueue();
+      expect(await settings.loadAudioConfig(), isNull);
+    });
   });
 }
