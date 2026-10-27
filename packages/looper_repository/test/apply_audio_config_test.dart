@@ -88,6 +88,7 @@ void main() {
         result: EngineResult.ok,
         outcome: ReopenOutcome.clearedRate,
         droppedTracks: 0,
+        openedRate: 0,
       );
 
       final outcome = repo.applyAudioConfig(next);
@@ -102,6 +103,7 @@ void main() {
         result: EngineResult.ok,
         outcome: ReopenOutcome.retainedPartial,
         droppedTracks: 1 << 2,
+        openedRate: 0,
       );
 
       final outcome = repo.applyAudioConfig(next);
@@ -116,6 +118,7 @@ void main() {
         result: EngineResult.device,
         outcome: ReopenOutcome.retained,
         droppedTracks: 0,
+        openedRate: 0,
       );
       // The second reopen (the previous config) succeeds.
       engine.afterSnapshot = () {
@@ -125,6 +128,7 @@ void main() {
             result: EngineResult.ok,
             outcome: ReopenOutcome.retained,
             droppedTracks: 0,
+            openedRate: 0,
           );
         }
       };
@@ -149,6 +153,7 @@ void main() {
         result: EngineResult.device,
         outcome: ReopenOutcome.clearedRate,
         droppedTracks: 0,
+        openedRate: 0,
       );
       var reopens = 0;
       engine.afterSnapshot = () {
@@ -158,6 +163,7 @@ void main() {
             result: EngineResult.ok,
             outcome: ReopenOutcome.retained,
             droppedTracks: 0,
+            openedRate: 0,
           );
         }
       };
@@ -239,6 +245,7 @@ void main() {
           result: EngineResult.device,
           outcome: ReopenOutcome.clearedRate,
           droppedTracks: 0,
+          openedRate: 0,
         );
       reconnect.add(null);
       await Future<void>.delayed(Duration.zero);
@@ -248,6 +255,7 @@ void main() {
           result: EngineResult.ok,
           outcome: ReopenOutcome.retained,
           droppedTracks: 0,
+          openedRate: 0,
         );
       reconnect.add(null);
       await Future<void>.delayed(Duration.zero);
@@ -273,6 +281,7 @@ void main() {
           result: EngineResult.device,
           outcome: ReopenOutcome.retained,
           droppedTracks: 0,
+          openedRate: 0,
         );
 
       final outcome = repo.applyAudioConfig(next);
@@ -295,6 +304,7 @@ void main() {
           result: EngineResult.ok,
           outcome: ReopenOutcome.retained,
           droppedTracks: 0,
+          openedRate: 0,
         );
       reconnect.add(null);
       await Future<void>.delayed(Duration.zero);
@@ -325,6 +335,7 @@ void main() {
         result: EngineResult.device,
         outcome: ReopenOutcome.retained,
         droppedTracks: 0,
+        openedRate: 0,
       );
       expect(repo.applyAudioConfig(next).status, AudioApplyStatus.waiting);
       engine.calls.clear();
@@ -336,6 +347,7 @@ void main() {
           result: EngineResult.ok,
           outcome: ReopenOutcome.retained,
           droppedTracks: 0,
+          openedRate: 0,
         )
         ..nextSnapshot = engine.nextSnapshot.copyWith(devicePresent: true);
       reconnect.add(null);
@@ -368,6 +380,7 @@ void main() {
           result: EngineResult.device,
           outcome: ReopenOutcome.clearedRate,
           droppedTracks: 0,
+          openedRate: 0,
         );
         expect(repo.applyAudioConfig(next).status, AudioApplyStatus.waiting);
 
@@ -377,6 +390,7 @@ void main() {
             result: EngineResult.ok,
             outcome: ReopenOutcome.retained,
             droppedTracks: 0,
+            openedRate: 0,
           );
         reconnect.add(null);
         await Future<void>.delayed(Duration.zero);
@@ -393,6 +407,7 @@ void main() {
         result: EngineResult.device,
         outcome: ReopenOutcome.retained,
         droppedTracks: 0,
+        openedRate: 0,
       );
       var reopens = 0;
       engine.afterSnapshot = () {
@@ -403,6 +418,7 @@ void main() {
               result: EngineResult.ok,
               outcome: ReopenOutcome.retained,
               droppedTracks: 0,
+              openedRate: 0,
             )
             ..mixResult = EngineResult.invalid;
         }
@@ -423,6 +439,7 @@ void main() {
         result: EngineResult.device,
         outcome: ReopenOutcome.retained,
         droppedTracks: 0,
+        openedRate: 0,
       );
 
       final outcome = repo.applyAudioConfig(

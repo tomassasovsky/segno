@@ -189,11 +189,14 @@ enum ReopenOutcome {
 /// meaningful only when the engine
 /// actually reached its settle step — on a failed open ([EngineResult.device]
 /// with nothing changed) it reads [ReopenOutcome.retained] because the loops
-/// are indeed still there.
+/// are indeed still there. `openedRate` is the sample rate the device opened
+/// at, or 0 when it did not open; on [EngineResult.wouldClear] it is the rate
+/// the refused device would have run.
 typedef ReopenResult = ({
   EngineResult result,
   ReopenOutcome outcome,
   int droppedTracks,
+  int openedRate,
 });
 
 /// Thrown when an [AudioEngine] operation fails.

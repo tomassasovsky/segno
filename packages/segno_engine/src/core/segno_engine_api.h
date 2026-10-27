@@ -2195,6 +2195,10 @@ typedef enum le_reopen_outcome {
  * LE_ERR_WOULD_CLEAR with *outcome naming why; the material stays untouched
  * and stopped.
  *
+ * *opened_rate (may be NULL) receives the sample rate the device opened at,
+ * whenever it opened, the refused open included, so a caller can name the
+ * rate a refused device would have run.
+ *
  * Returns LE_OK or an le_result error. A failed open changes nothing (the
  * material is still held, still stopped, *outcome and the mask untouched), so
  * the caller may retry. A failed start returns LE_ERR_DEVICE with the material
@@ -2202,7 +2206,8 @@ typedef enum le_reopen_outcome {
  * LE_REOPEN_RETAINED / _PARTIAL. */
 LE_EXPORT int32_t le_engine_reopen(le_engine* engine, const le_config* config,
                                    int32_t* outcome,
-                                   int32_t* dropped_track_mask);
+                                   int32_t* dropped_track_mask,
+                                   int32_t* opened_rate);
 
 /* ---- device-free test pump ----
  *
