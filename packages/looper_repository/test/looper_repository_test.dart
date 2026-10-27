@@ -8012,6 +8012,7 @@ void main() {
             result: EngineResult.device,
             outcome: ReopenOutcome.retained,
             droppedTracks: 0,
+            openedRate: 0,
           );
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
@@ -8030,6 +8031,7 @@ void main() {
             result: EngineResult.ok,
             outcome: ReopenOutcome.retained,
             droppedTracks: 0,
+            openedRate: 0,
           )
           ..devices = const [pinned, otherDevice];
         reconnectTicker.add(null);
@@ -8102,6 +8104,7 @@ void main() {
             result: EngineResult.ok,
             outcome: ReopenOutcome.retainedPartial,
             droppedTracks: 1 << 1,
+            openedRate: 0,
           );
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
@@ -8154,6 +8157,7 @@ void main() {
             result: EngineResult.ok,
             outcome: ReopenOutcome.retainedPartial,
             droppedTracks: 1 << 2,
+            openedRate: 0,
           );
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
@@ -8219,6 +8223,7 @@ void main() {
             result: EngineResult.ok,
             outcome: ReopenOutcome.clearedRate,
             droppedTracks: 0,
+            openedRate: 0,
           )
           ..mixResult = EngineResult.invalid;
         reconnectTicker.add(null);
@@ -8261,6 +8266,7 @@ void main() {
           result: EngineResult.device,
           outcome: ReopenOutcome.retained,
           droppedTracks: 0,
+          openedRate: 0,
         );
       reconnectTicker.add(null);
       await Future<void>.delayed(Duration.zero);

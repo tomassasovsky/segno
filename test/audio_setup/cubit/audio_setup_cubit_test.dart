@@ -443,6 +443,7 @@ void main() {
           reopen: EngineReopened(
             outcome: ReopenOutcome.clearedRate,
             droppedTracks: 0,
+            openedRate: 0,
             previousSampleRate: 48000,
             sampleRate: 44100,
           ),
@@ -559,6 +560,7 @@ void main() {
           reopen: EngineReopened(
             outcome: ReopenOutcome.clearedRate,
             droppedTracks: 0,
+            openedRate: 0,
             previousSampleRate: 48000,
             sampleRate: 44100,
           ),
@@ -584,6 +586,7 @@ void main() {
           reopen: EngineReopened(
             outcome: ReopenOutcome.retained,
             droppedTracks: 0,
+            openedRate: 0,
             previousSampleRate: 48000,
             sampleRate: 48000,
           ),
