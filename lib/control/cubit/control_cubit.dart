@@ -1897,14 +1897,11 @@ class ControlCubit extends Cubit<ControlState> {
     if (!muteAccepted) return false;
     var accepted = false;
     for (final channel in all) {
-      // A Song or Band section that already sounds, records or waits needs
-      // no Play: the engine reads a Play on a sounding or waiting section as
-      // a cancel of the waiting request, and a Play on a take in its
-      // count-in grace cancels the take (#1323).
-      final track = _trackAt(channel);
+      // A Song or Band section that already sounds or waits needs no Play:
+      // the engine reads a Play on either as a cancel of the waiting
+      // request (#1323). Capturing sections left the set above.
       if (_l.isSection(channel) &&
-          ((track?.isRunning ?? false) ||
-              (track?.isCapturing ?? false) ||
+          ((_trackAt(channel)?.isRunning ?? false) ||
               channel == _l.songWaitingSection)) {
         accepted = true;
         continue;
@@ -2038,13 +2035,8 @@ class ControlCubit extends Cubit<ControlState> {
     final live = _looper.state;
     final playingNow = _running(live.tracks);
     final waiting = live.transport.songQueuedTrack;
-    final waitingEmpty =
-        waiting >= 0 &&
-        waiting < live.tracks.length &&
-        !live.tracks[waiting].hasContent;
-    // An empty section waiting to record: cancel its arm, and still stop it
-    // in case the handoff starts its take before the cancel lands.
-    if (waitingEmpty) _looper.cancelArm(channel: waiting);
+    // A Stop on the waiting section drops its request (and a waiting
+    // Record's arm) in the engine, or stops it if the handoff started it.
     final stopping = {
       ...running,
       ...playingNow,
