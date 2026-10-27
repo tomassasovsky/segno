@@ -2250,8 +2250,8 @@ static void test_master_gain_resets_on_configure(void) {
   le_engine_destroy(e);
 }
 
-/* le_engine_note_xrun (the device backend's overload hook) tallies into the
- * published snapshot, and a fresh configure resets the per-session count. */
+/* le_engine_note_backend_xrun tallies into the published snapshot, and a
+ * fresh configure resets the per-session count. */
 static void test_xrun_count_tallies_and_resets(void) {
   printf("test_xrun_count_tallies_and_resets\n");
   le_engine* e = make_configured_engine();
@@ -2260,13 +2260,13 @@ static void test_xrun_count_tallies_and_resets(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.xrun_count == 0); /* none yet */
 
-  le_engine_note_xrun(e);
-  le_engine_note_xrun(e);
-  le_engine_note_xrun(e);
+  le_engine_note_backend_xrun(e, LE_XRUN_PLAYBACK_UNDERRUN);
+  le_engine_note_backend_xrun(e, LE_XRUN_PLAYBACK_UNDERRUN);
+  le_engine_note_backend_xrun(e, LE_XRUN_PLAYBACK_UNDERRUN);
   le_engine_get_snapshot(e, &s);
   CHECK(s.xrun_count == 3);
 
-  le_engine_note_xrun(NULL); /* must not crash */
+  le_engine_note_backend_xrun(NULL, LE_XRUN_PLAYBACK_UNDERRUN); /* no crash */
   le_engine_get_snapshot(e, &s);
   CHECK(s.xrun_count == 3);
 
@@ -2751,7 +2751,7 @@ static void test_cb_timing_gate_matches_the_build(void) {
   for (int i = 0; i < LE_CB_BUCKETS; ++i) CHECK(tel.session.buckets[i] == 0);
 #endif
   /* Never gated, in either build: the dropout tally is what keeps xrun_count
-   * explainable, and gating it would take the pre-#722 ASIO counter away too. */
+   * explainable. */
   CHECK(tel.session.xruns[LE_XRUN_PLAYBACK_UNDERRUN] == 1);
 }
 
@@ -2800,8 +2800,8 @@ static void test_cb_timing_armed_window(void) {
   CHECK_TIMING(tel.session.periods == 6);
 }
 
-/* le_engine_note_backend_xrun (the ALSA -EPIPE / resync hook and the ASIO
- * overload hook) tallies per kind into both windows, sums into xrun_count, and
+/* le_engine_note_backend_xrun (the ALSA -EPIPE / resync hook) tallies per kind
+ * into both windows, sums into xrun_count, and
  * — like a_xruns always has — is per device session. */
 static void test_backend_xrun_kinds_tally_and_reset(void) {
   printf("test_backend_xrun_kinds_tally_and_reset\n");
@@ -2813,7 +2813,7 @@ static void test_backend_xrun_kinds_tally_and_reset(void) {
   le_engine_note_backend_xrun(e, LE_XRUN_PLAYBACK_UNDERRUN);
   le_engine_note_backend_xrun(e, LE_XRUN_CAPTURE_OVERRUN);
   le_engine_note_backend_xrun(e, LE_XRUN_PLAYBACK_RESYNC);
-  le_engine_note_xrun(e); /* the ASIO path: an OVERLOAD */
+  le_engine_note_backend_xrun(e, LE_XRUN_BACKEND_OVERLOAD);
   le_engine_note_backend_xrun(e, LE_XRUN_KINDS); /* out of range: ignored */
   le_engine_note_backend_xrun(e, -1);            /* ditto */
   le_engine_note_backend_xrun(NULL, 0);          /* must not crash */
@@ -2831,7 +2831,7 @@ static void test_backend_xrun_kinds_tally_and_reset(void) {
    * contract in segno_engine_api.h — "the kinds sum to xrun_count for every
    * kind this build knows" — and NOT the stronger "exactly" the doc used to
    * claim while this test asserted the opposite. Unreachable today (ALSA
-   * passes 0/1/2, ASIO passes 3); the order is deliberate because the headline
+   * passes 0/1/2); the order is deliberate because the headline
    * number's job is "a real dropout happened". */
   CHECK(s.xrun_count == 7);
   {
@@ -2968,7 +2968,7 @@ static void test_perf_arm_command_resets_armed_window(void) {
   le_engine_destroy(e);
 }
 
-/* le_engine_mark_device_lost (the ASIO reset / sample-rate-change hook) flips
+/* le_engine_mark_device_lost (the test engine's stand-in for a device loss) flips
  * device_present to 0 while leaving running set — the "running-but-disconnected"
  * state the control layer reads to drive reconnection. */
 static void test_device_lost_keeps_running(void) {
@@ -8793,8 +8793,7 @@ static const char* fake_channel_name(void* ctx, int channel) {
 }
 
 /* le_excluded_mask_from_names is the platform-agnostic bit-setting core every
- * label probe (Core Audio today, ASIO on Windows behind SEGNO_ENABLE_ASIO)
- * shares; only the name source is OS-specific. This exercises it with a fake
+ * label probe (Core Audio today) shares; only the name source is OS-specific. This exercises it with a fake
  * provider so the masking logic is covered without any OS calls. */
 static void test_excluded_mask_from_names(void) {
   printf("test_excluded_mask_from_names\n");
@@ -8973,6 +8972,213 @@ static void test_loopback_latency_weak_echo_and_silence(void) {
 
   free(out);
   free(in);
+}
+
+/* ---- latency path measurement (#1270 Part 2) ---- */
+
+/* Pumps `n` frames one at a time on a 2-in / 2-out engine, feeding output
+ * channel `from` back into input channel `to` after `delay` frames, and logs
+ * every output frame (interleaved) into `log` when it is not NULL. */
+static void latency_echo(le_engine* e, int n, int from, int to, int delay,
+                         float* log) {
+  float* sent = calloc((size_t)n + 1, sizeof(float));
+  CHECK(sent != NULL);
+  for (int f = 0; f < n; ++f) {
+    float in[2] = {0.0f, 0.0f};
+    if (f >= delay) in[to] = sent[f - delay];
+    float out[2];
+    le_engine_process(e, out, in, 1);
+    sent[f] = out[from];
+    if (log != NULL) {
+      log[f * 2 + 0] = out[0];
+      log[f * 2 + 1] = out[1];
+    }
+  }
+  free(sent);
+}
+
+static le_engine* latency_engine(void) {
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 2, 2, 100000) == LE_OK);
+  return e;
+}
+
+/* The burst plays on the chosen output only, at the chosen amplitude, returns
+ * on the chosen input, and the result carries its request. */
+static void test_latency_path_one_output_one_input(void) {
+  printf("test_latency_path_one_output_one_input\n");
+  enum { SR = 48000, RET = 150, CAP = SR / 10 };
+  le_engine* e = latency_engine();
+  float* log = calloc((size_t)CAP * 2, sizeof(float));
+  CHECK(log != NULL);
+  CHECK(le_engine_measure_latency_path(e, 1, 0, 0.25f, 7) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_MEASURING);
+  CHECK(s.latency_request == 7u);
+  latency_echo(e, CAP, 1, 0, RET, log);
+  for (int f = 0; f < CAP; ++f) CHECK(log[f * 2 + 0] == 0.0f);
+  const float want = 0.25f * sinf(2.0f * 3.14159265f * LE_LATENCY_TONE_HZ *
+                                  1.0f / (float)SR);
+  CHECK(log[1 * 2 + 1] == want);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_DONE);
+  CHECK(s.latency_request == 7u);
+  CHECK(s.record_offset_frames >= RET && s.record_offset_frames <= RET + 2);
+  free(log);
+  le_engine_destroy(e);
+}
+
+/* A new request never reads the previous one's DONE. */
+static void test_latency_path_request_ids(void) {
+  printf("test_latency_path_request_ids\n");
+  enum { SR = 48000, RET = 150, CAP = SR / 10 };
+  le_engine* e = latency_engine();
+  CHECK(le_engine_measure_latency_path(e, 1, 0, 0.25f, 7) == LE_OK);
+  drain(e);
+  latency_echo(e, CAP, 1, 0, RET, NULL);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_DONE && s.latency_request == 7u);
+
+  CHECK(le_engine_measure_latency_path(e, 1, 0, 0.25f, 8) == LE_OK);
+  drain(e);
+  float* sent = calloc((size_t)CAP + 1, sizeof(float));
+  CHECK(sent != NULL);
+  for (int f = 0; f < CAP; ++f) {
+    le_engine_get_snapshot(e, &s);
+    CHECK(!(s.latency_state == LE_LATENCY_DONE && s.latency_request == 8u));
+    float in[2] = {f >= RET ? sent[f - RET] : 0.0f, 0.0f};
+    float out[2];
+    le_engine_process(e, out, in, 1);
+    sent[f] = out[1];
+  }
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_DONE && s.latency_request == 8u);
+  free(sent);
+  le_engine_destroy(e);
+}
+
+/* The echo on another input than the one asked: a timeout, offset kept. */
+static void test_latency_path_wrong_input_times_out(void) {
+  printf("test_latency_path_wrong_input_times_out\n");
+  enum { SR = 48000, RET = 150, CAP = SR / 10 };
+  le_engine* e = latency_engine();
+  CHECK(le_engine_set_record_offset(e, 77) == LE_OK);
+  CHECK(le_engine_measure_latency_path(e, 1, 0, 0.25f, 7) == LE_OK);
+  drain(e);
+  latency_echo(e, CAP, 1, 1, RET, NULL);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_TIMEOUT);
+  CHECK(s.latency_request == 7u);
+  CHECK(s.record_offset_frames == 77);
+  le_engine_destroy(e);
+}
+
+/* The loopback input needs loopback channels; without them it is refused. */
+static void test_latency_path_loopback_input(void) {
+  printf("test_latency_path_loopback_input\n");
+  le_engine* e = latency_engine();
+  CHECK(le_engine_measure_latency_path(e, 0, LE_LATENCY_LOOPBACK_INPUT, 0.25f,
+                                       1) == LE_ERR_INVALID);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_IDLE);
+  le_engine_destroy(e);
+}
+
+/* Out-of-range paths and amplitudes are refused and post nothing. */
+static void test_latency_path_validates(void) {
+  printf("test_latency_path_validates\n");
+  le_engine* e = latency_engine();
+  CHECK(le_engine_measure_latency_path(e, 2, 0, 0.25f, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_measure_latency_path(e, -1, 0, 0.25f, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_measure_latency_path(e, 0, 5, 0.25f, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_measure_latency_path(e, 0, 0, 0.0f, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_measure_latency_path(e, 0, 0, 0.6f, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_commands_settled(e));
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_IDLE);
+  le_engine_destroy(e);
+}
+
+/* A cancel for this request stops the burst and keeps the offset; one for
+ * another request is ignored; a device loss cancels too. */
+static void test_latency_path_cancel(void) {
+  printf("test_latency_path_cancel\n");
+  enum { SR = 48000, CAP = SR / 10 };
+  le_engine* e = latency_engine();
+  CHECK(le_engine_set_record_offset(e, 77) == LE_OK);
+  CHECK(le_engine_measure_latency_path(e, 1, 0, 0.25f, 7) == LE_OK);
+  drain(e);
+  latency_echo(e, 100, 1, 0, 1000, NULL);
+  CHECK(le_engine_cancel_latency(e, 6) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_MEASURING);
+  CHECK(le_engine_cancel_latency(e, 7) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_CANCELLED);
+  CHECK(s.latency_request == 7u);
+  CHECK(s.record_offset_frames == 77);
+  float* log = calloc((size_t)CAP * 2, sizeof(float));
+  CHECK(log != NULL);
+  latency_echo(e, CAP, 1, 0, 150, log);
+  for (int i = 0; i < CAP * 2; ++i) CHECK(log[i] == 0.0f);
+  free(log);
+  le_engine_destroy(e);
+
+  e = latency_engine();
+  CHECK(le_engine_set_record_offset(e, 77) == LE_OK);
+  CHECK(le_engine_measure_latency_path(e, 1, 0, 0.25f, 9) == LE_OK);
+  drain(e);
+  latency_echo(e, 100, 1, 0, 150, NULL);
+  le_engine_mark_device_lost(e);
+  latency_echo(e, 1, 1, 0, 150, NULL);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_CANCELLED);
+  CHECK(s.latency_request == 9u);
+  CHECK(s.record_offset_frames == 77);
+  le_engine_destroy(e);
+}
+
+/* A request that arrives during a take is cancelled and never plays: the
+ * take records its input, not the burst. */
+static void test_latency_path_never_over_a_take(void) {
+  printf("test_latency_path_never_over_a_take\n");
+  enum { N = 256 };
+  le_engine* e = latency_engine();
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_measure_latency_path(e, 1, 0, 0.25f, 7) == LE_OK);
+  float in[N * 2];
+  float out[N * 2];
+  for (int f = 0; f < N; ++f) {
+    in[f * 2 + 0] = 0.125f;
+    in[f * 2 + 1] = 0.0f;
+  }
+  le_engine_process(e, out, in, N);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_CANCELLED);
+  CHECK(s.latency_request == 7u);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  const float burst = 0.25f * sinf(2.0f * 3.14159265f * LE_LATENCY_TONE_HZ *
+                                   1.0f / 48000.0f);
+  for (int f = 0; f < N; ++f) CHECK(out[f * 2 + 1] != burst || f != 1);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize */
+  drain(e);
+  float take[N];
+  CHECK(le_engine_export_track(e, 0, take, N) == N);
+  for (int f = 0; f < N; ++f) CHECK(take[f] == 0.125f);
+  le_engine_destroy(e);
 }
 
 /* Regression: an empty input mask records silence even with a hot input bus.
@@ -38849,6 +39055,7 @@ int main(void) {
   test_reopen_keeps_length_history();
   test_reopen_fewer_channels_keeps_material();
   test_reopen_device_lifecycle();
+  test_reopen_keep_material_refuses_a_clear();
   test_reopen_ends_performance_capture();
   test_session_commit_stays_stopped_until_play();
   test_fade_clear_boundary();
@@ -39343,6 +39550,13 @@ int main(void) {
   test_excluded_mask_from_names();
   test_loopback_exclusion();
   test_loopback_latency_uses_loopback_channel();
+  test_latency_path_one_output_one_input();
+  test_latency_path_request_ids();
+  test_latency_path_wrong_input_times_out();
+  test_latency_path_loopback_input();
+  test_latency_path_validates();
+  test_latency_path_cancel();
+  test_latency_path_never_over_a_take();
   test_loopback_latency_weak_echo_and_silence();
   test_set_record_offset_publishes_latency();
   test_fx_bypass_is_transparent();

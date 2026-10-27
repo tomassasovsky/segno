@@ -439,7 +439,7 @@ extension EngineLocalizations on AppLocalizations {
         ),
         LatencyState.measuring => measuringLowercase,
         LatencyState.timeout => noLoopback,
-        LatencyState.idle => notMeasured,
+        LatencyState.idle || LatencyState.cancelled => notMeasured,
       };
 
   String displayTrackName(String name, int channel) =>

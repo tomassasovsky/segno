@@ -20,8 +20,7 @@
 extern "C" {
 #endif
 
-/* The miniaudio device backend. Returned by le_select_backend for every backend
- * choice in this build (no ASIO backend exists yet). */
+/* The miniaudio device backend, the one le_select_backend returns. */
 extern const le_device_backend le_miniaudio_backend;
 
 /* Resolves the SEGNO_ALSA_PERIODS env value (the raw string, or NULL when the

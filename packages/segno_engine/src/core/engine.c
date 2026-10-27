@@ -19,7 +19,6 @@
  *   - engine_devices.c   device discovery, loopback detection, backend selection.
  *   - engine_snapshot.c  published-state snapshots + visualization reads.
  *   - engine_session.c   session export / import / commit.
- *   - engine_convert.c   pure sample-format conversion + ASIO buffer math.
  *
  * Multi-track model (unchanged): a shared master loop clock plus N independent
  * tracks; the first to finish recording defines the master length, and one-level
@@ -1254,9 +1253,7 @@ void le_engine_lane_fx_chain_for_test(le_engine* engine, int32_t channel,
 }
 
 /* Loopback detection, device enumeration / id resolution, and backend selection
- * (le_select_backend + the ASIO-driver enumeration stub) moved to
- * engine_devices.c (S1). The ASIO bridge math (deinterleave / interleave /
- * pick_buffer) lives in engine_convert.c. */
+ * (le_select_backend) live in engine_devices.c (S1). */
 
 void le_engine_mark_started(le_engine* engine) {
   if (engine == NULL) return;
@@ -1264,18 +1261,12 @@ void le_engine_mark_started(le_engine* engine) {
   atomic_store_explicit(&engine->a_running, 1, memory_order_release);
 }
 
-void le_engine_note_xrun(le_engine* engine) {
-  le_engine_note_backend_xrun(engine, LE_XRUN_BACKEND_OVERLOAD);
-}
-
 void le_engine_note_backend_xrun(le_engine* engine, int32_t kind) {
   if (engine == NULL) return;
   /* Relaxed throughout: a monotonically-increasing dropout tally read by the
-   * snapshot poller — no other state is ordered against it. Called from a
-   * device backend's own thread (the ASIO message thread for an overload; the
-   * ALSA data-loop thread for an -EPIPE recovery), never from inside
-   * le_engine_process; exists as a C helper so a C++ backend TU need not touch
-   * the _Atomic fields directly (mirrors le_engine_mark_started).
+   * snapshot poller — no other state is ordered against it. Called from the
+   * device backend's own thread (the ALSA data-loop thread for an -EPIPE
+   * recovery), never from inside le_engine_process.
    *
    * The armed flag comes from the PUBLISHED atomic, not engine->perf.armed:
    * that mirror is audio-thread-local and these callers do not own it. Reading
@@ -1290,7 +1281,7 @@ void le_engine_note_backend_xrun(le_engine* engine, int32_t kind) {
    * under-report reality, which is the failure #722 exists to end. The cost is
    * that the kinds sum to xrun_count only for kinds this build knows; that is
    * what segno_engine_api.h documents, and no backend passes anything else
-   * today (ALSA passes 0/1/2, ASIO passes 3). */
+   * today (ALSA passes 0/1/2). */
   atomic_fetch_add_explicit(&engine->a_xruns, 1u, memory_order_relaxed);
   le_cb_timing_note_xrun(
       &engine->cb_timing, kind,
@@ -1335,9 +1326,8 @@ void le_engine_mark_device_lost(le_engine* engine) {
    * presence flag carrying no other state). The Dart layer reads device_present
    * == 0 as "lost" and drives reconnection (stop -> start) from the control
    * thread — the only correct place to tear down and re-open a device, never the
-   * driver's callback/message thread. Used by the ASIO reset-request and
-   * sample-rate-change notifications so a driver reconfigured by another app
-   * recovers instead of going silent. */
+   * driver's callback thread. The device-free test engine calls it to stand in
+   * for a device that left. */
   atomic_store_explicit(&engine->a_device_present, 0, memory_order_relaxed);
   /* A latency measurement over a device that left is cancelled. */
   atomic_fetch_add_explicit(&engine->a_device_losses, 1u,
@@ -1611,13 +1601,9 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
     return LE_ERR_ALREADY_RUNNING;
   }
 
-  /* Open the device through the selected backend (ASIO on Windows, miniaudio on
-   * macOS/Linux). The backend builds the device config, resolves pins/loopback,
-   * opens the device, and reports the negotiated parameters back. A requested
-   * ASIO open that fails (no/missing driver, driver busy, init failure) is NOT
-   * silently retried on another backend: Windows is ASIO-only, so the failure
-   * surfaces (the app lands stopped and shows the no-driver / ASIO4ALL
-   * affordance) rather than dropping to system audio behind the user's back. */
+  /* Open the device through the backend (miniaudio). The backend builds the
+   * device config, resolves pins/loopback, opens the device, and reports the
+   * negotiated parameters back. */
   const le_device_backend* be = le_select_backend();
   le_device_open_result info;
   const int32_t open_result = be->open(engine, config, &info);

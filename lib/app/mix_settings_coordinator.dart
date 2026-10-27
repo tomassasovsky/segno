@@ -662,7 +662,6 @@ class MixSettingsCoordinator {
       'trackPans=$trackPans inputPans=$inputPans '
       'outputChannels=${state?.status.outputChannels} '
       'outputBusCount=${state?.outputBusCount} '
-      'backend=${state?.status.activeBackend.name} '
       'sampleRate=${state?.status.sampleRate} '
       'outputBus0=${state?.outputSetup.of(0)} '
       'monitorPeaks=${levels?.monitorPeaks} '

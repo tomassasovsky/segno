@@ -63,8 +63,13 @@ Future<void> main() async {
     );
 
     // --- Step 2: run the latency harness ---
-    final m = engine.measureLatency();
-    log('measureLatency -> ${m.name}');
+    final m = engine.measureLatencyPath(
+      output: 0,
+      input: 0,
+      amplitude: 0.25,
+      request: 1,
+    );
+    log('measureLatencyPath -> ${m.name}');
 
     var lastState = LatencyState.idle;
     var measured = -1.0;

@@ -1,6 +1,6 @@
 // Reproduces the app's exact engine condition during a latency measurement:
 // passthrough ON (monitorInput default), then watch whether the device drops or
-// the callback stalls across measureLatency() — i.e. the "USB resets on
+// the callback stalls across measureLatencyPath() — i.e. the "USB resets on
 // Measure" report. Logs isRunning + frame advance every 50 ms through the
 // measurement.
 import 'dart:developer';
@@ -33,8 +33,8 @@ Future<void> main() async {
       'running=${engine.snapshot().isRunning}',
     );
 
-    engine.measureLatency();
-    log('--- measureLatency posted ---');
+    engine.measureLatencyPath(output: 0, input: 0, amplitude: 0.25, request: 1);
+    log('--- measureLatencyPath posted ---');
 
     var drops = 0;
     var stalls = 0;

@@ -1353,9 +1353,8 @@ typedef struct le_track_snapshot {
 /* ===================== Audio-callback telemetry (#722) =====================
  *
  * The audio callback measuring its OWN lateness. Until this existed nothing on
- * the miniaudio backends (Linux/macOS) counted a missed deadline: xrun_count was
- * fed only by the Windows ASIO overload notification, so the appliance could not
- * tell a callback that ran long from one that ran fine. Observation only — no
+ * the miniaudio backends (Linux/macOS) counted a missed deadline, so the
+ * appliance could not tell a callback that ran long from one that ran fine. Observation only — no
  * audio behaviour depends on any of it.
  *
  * WHAT IS MEASURED, and where: the device backend's data callback wraps
@@ -1411,12 +1410,13 @@ typedef struct le_track_snapshot {
 
 /* Dropout classes counted per window. The three ALSA ones come from the direct
  * ALSA duplex path (miniaudio's -EPIPE recoveries and the playback-slip resync);
- * OVERLOAD is the Windows ASIO driver's kAsioOverload notification. */
+ * OVERLOAD is a device driver's own overload notification, which no backend in
+ * this build reports. */
 typedef enum le_xrun_kind {
   LE_XRUN_PLAYBACK_UNDERRUN = 0, /* writei() -EPIPE: the card ran out of audio */
   LE_XRUN_CAPTURE_OVERRUN = 1,   /* readi()  -EPIPE: we did not read in time */
   LE_XRUN_PLAYBACK_RESYNC = 2,   /* the slipped-playback drop+prepare resync */
-  LE_XRUN_BACKEND_OVERLOAD = 3,  /* ASIO kAsioOverload */
+  LE_XRUN_BACKEND_OVERLOAD = 3,  /* a driver overload notification */
 } le_xrun_kind;
 
 /* How many le_xrun_kind values there are — the per-window tally array width.
@@ -1483,7 +1483,7 @@ typedef struct le_cb_window_snapshot {
    *
    * Over the session window these sum to xrun_count for every kind THIS BUILD
    * KNOWS — which is every kind any shipping backend produces (ALSA passes
-   * 0/1/2, ASIO passes 3), so the sum holds today. It is not an invariant for
+   * 0/1/2), so the sum holds today. It is not an invariant for
    * all time: a dropout reported with a kind outside le_xrun_kind increments
    * xrun_count but lands in no bucket, deliberately, because the headline
    * number's job is "a real dropout happened" and an unclassifiable one still
@@ -1533,8 +1533,7 @@ typedef struct le_snapshot {
   uint32_t excluded_input_mask;
   uint64_t frames_processed;  /* total frames seen by the callback */
   /* Device dropouts (xruns) since the device started, as reported by the
-   * backend, every class summed. The Windows ASIO backend tallies the driver's
-   * kAsioOverload notifications; the direct ALSA path tallies miniaudio's
+   * backend, every class summed. The direct ALSA path tallies miniaudio's
    * -EPIPE recoveries and its slipped-playback resyncs (#722), so this finally
    * moves on Linux. Still 0 on CoreAudio, which exposes no xrun signal at all —
    * read le_callback_telemetry's gap detector there. The per-class breakdown is

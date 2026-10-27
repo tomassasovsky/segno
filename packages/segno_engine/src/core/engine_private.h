@@ -2154,8 +2154,7 @@ struct le_engine {
    * bucket. cb_timing below carries the same events broken out per kind and
    * per window, and those buckets sum to this only for kinds THIS BUILD KNOWS
    * -- which is every kind any shipping backend produces today (ALSA passes
-   * 0/1/2, ASIO passes 3). Until #722 the ONLY producer was the Windows ASIO
-   * overload notification, so this read a flat 0 on the appliance. */
+   * 0/1/2). */
   _Atomic uint32_t a_xruns;
   /* Audio-callback telemetry (#722): per-callback duration vs the period
    * deadline, the entry-to-entry gap detector, and the per-kind dropout

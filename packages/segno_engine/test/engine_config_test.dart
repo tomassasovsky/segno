@@ -16,28 +16,7 @@ void main() {
       expect(config.outputChannels, 0);
       expect(config.playbackDeviceId, '');
       expect(config.captureDeviceId, '');
-      expect(config.backend, AudioBackend.miniaudio);
-      expect(config.asioDriver, '');
-    });
-  });
-
-  group('AudioBackend', () {
-    test('round-trips through the native integer', () {
-      for (final backend in AudioBackend.values) {
-        expect(AudioBackend.fromNative(backend.toNative()), backend);
-      }
-    });
-
-    test('maps the native enum values explicitly', () {
-      expect(AudioBackend.miniaudio.toNative(), 0);
-      expect(AudioBackend.asio.toNative(), 1);
-      expect(AudioBackend.fromNative(0), AudioBackend.miniaudio);
-      expect(AudioBackend.fromNative(1), AudioBackend.asio);
-    });
-
-    test('unknown native values fall back to miniaudio', () {
-      expect(AudioBackend.fromNative(-1), AudioBackend.miniaudio);
-      expect(AudioBackend.fromNative(99), AudioBackend.miniaudio);
+      expect(config.keepMaterial, isFalse);
     });
   });
 
@@ -52,8 +31,7 @@ void main() {
         useLoopbackCapture: true,
         playbackDeviceId: 'out-device-1',
         captureDeviceId: 'in-device-2',
-        backend: AudioBackend.asio,
-        asioDriver: 'ASIO4ALL v2',
+        keepMaterial: true,
       );
       final ptr = calloc<le_config>();
       try {
@@ -64,22 +42,20 @@ void main() {
         expect(ptr.ref.output_channels, 4);
         expect(ptr.ref.max_loop_frames, 480000);
         expect(ptr.ref.use_loopback_capture, 1);
-        expect(ptr.ref.backend, 1); // AudioBackend.asio
+        expect(ptr.ref.keep_material, 1);
         expect(readNativeString(ptr.ref.playback_device_id), 'out-device-1');
         expect(readNativeString(ptr.ref.capture_device_id), 'in-device-2');
-        expect(readNativeString(ptr.ref.asio_driver), 'ASIO4ALL v2');
       } finally {
         calloc.free(ptr);
       }
     });
 
-    test('defaults write the miniaudio backend and an empty asio driver', () {
+    test('defaults clear the loops on a reopen, as before', () {
       const config = EngineConfig();
       final ptr = calloc<le_config>();
       try {
         config.writeTo(ptr);
-        expect(ptr.ref.backend, 0); // AudioBackend.miniaudio
-        expect(readNativeString(ptr.ref.asio_driver), '');
+        expect(ptr.ref.keep_material, 0);
       } finally {
         calloc.free(ptr);
       }
@@ -134,24 +110,20 @@ void main() {
       expect(c, isNot(equals(d)));
     });
 
-    test('differing backend or asio driver breaks equality', () {
-      const a = EngineConfig(backend: AudioBackend.asio);
+    test('keepMaterial breaks equality', () {
+      const a = EngineConfig(keepMaterial: true);
       const b = EngineConfig();
       expect(a, isNot(equals(b)));
       expect(a.hashCode, isNot(equals(b.hashCode)));
-      const c = EngineConfig(asioDriver: 'ASIO4ALL v2');
-      const d = EngineConfig();
-      expect(c, isNot(equals(d)));
-      expect(c.hashCode, isNot(equals(d.hashCode)));
     });
 
     test('toString surfaces key fields', () {
       const config = EngineConfig(
         sampleRate: 48000,
-        backend: AudioBackend.asio,
+        keepMaterial: true,
       );
       expect(config.toString(), contains('sampleRate: 48000'));
-      expect(config.toString(), contains('backend: asio'));
+      expect(config.toString(), contains('keepMaterial: true'));
     });
   });
 }

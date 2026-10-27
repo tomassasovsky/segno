@@ -26,20 +26,10 @@ void le_latency_publish(le_engine* e, int32_t state);
 const le_device_backend* le_select_backend(void);
 
 /* Publishes the "device present + running" lifecycle flags after a backend's
- * start() succeeds (release stores, mirroring the miniaudio backend). Exists so a
- * device backend implemented in a C++ TU (the opt-in ASIO backend) can mark the
- * engine started without including the _Atomic struct definition in
- * engine_private.h, keeping all atomic access in C. Not part of the FFI surface. */
+ * start() succeeds (release stores). Not part of the FFI surface. */
 void le_engine_mark_started(le_engine* engine);
 
-/* Increments the published xrun (dropout) tally by one, as an
- * LE_XRUN_BACKEND_OVERLOAD. Called from a device backend's overload
- * notification — the ASIO driver's kAsioOverload message. A C helper for the
- * same reason as le_engine_mark_started (C++ backend TUs avoid the _Atomic
- * field). Relaxed atomic; safe off any thread. Not part of the FFI surface. */
-void le_engine_note_xrun(le_engine* engine);
-
-/* The general form of the above: records one backend dropout of `kind` (an
+/* Records one backend dropout of `kind` (an
  * le_xrun_kind) into xrun_count AND into the per-kind telemetry windows (#722).
  * The ALSA data loop calls this through the miniaudio backend's hook for its
  * -EPIPE recoveries and slipped-playback resyncs, which is what finally makes
@@ -98,10 +88,7 @@ void le_engine_configure_callback_budget(le_engine* engine,
 
 /* Publishes "device lost" (a_device_present = 0, a_running untouched) so the
  * control layer drives reconnection. Mirrors the miniaudio device-notification
- * callback; called by the ASIO reset-request / sample-rate-change handlers so a
- * driver reconfigured out from under us recovers via stop -> start rather than
- * going silent. Relaxed atomic; safe off the driver's message thread. Not part
- * of the FFI surface. */
+ * callback. Relaxed atomic; safe off any thread. */
 #ifdef LE_NATIVE_TESTS
 /* Native-test seam: when non-NULL, le_select_backend returns this backend
  * instead of miniaudio, so le_engine_start / le_engine_reopen can be driven
@@ -189,8 +176,8 @@ int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
 int le_tuner_raw_window(const le_engine* e, float* out);
 
 /* Per-channel name provider: returns input channel [channel]'s label (or NULL
- * if unavailable). `ctx` is caller state (e.g. an ASIO driver handle or, in
- * tests, a fixed name table). */
+ * if unavailable). `ctx` is caller state (a platform handle or, in tests, a
+ * fixed name table). */
 typedef const char* (*le_channel_name_fn)(void* ctx, int channel);
 
 /* Builds the excluded-input-channel bitmask from a name provider: bit c is set

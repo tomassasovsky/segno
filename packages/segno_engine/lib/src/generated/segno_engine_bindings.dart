@@ -408,37 +408,6 @@ class SegnoEngineBindings {
         int Function(ffi.Pointer<le_device_info>, int, ffi.Pointer<ffi.Int32>)
       >();
 
-  /// Reserved: always writes *count = 0 and returns LE_OK. ASIO was the Windows
-  /// duplex backend and went with the desktop targets; the symbol stays exported so
-  /// the Dart layer can keep calling it unconditionally. Returns LE_ERR_INVALID for
-  /// a null argument / non-positive `max`.
-  int le_enumerate_asio_drivers(
-    ffi.Pointer<le_device_info> out,
-    int max,
-    ffi.Pointer<ffi.Int32> count,
-  ) {
-    return _le_enumerate_asio_drivers(
-      out,
-      max,
-      count,
-    );
-  }
-
-  late final _le_enumerate_asio_driversPtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(
-            ffi.Pointer<le_device_info>,
-            ffi.Int32,
-            ffi.Pointer<ffi.Int32>,
-          )
-        >
-      >('le_enumerate_asio_drivers');
-  late final _le_enumerate_asio_drivers = _le_enumerate_asio_driversPtr
-      .asFunction<
-        int Function(ffi.Pointer<le_device_info>, int, ffi.Pointer<ffi.Int32>)
-      >();
-
   /// Starts an async scan. Returns LE_OK once the scan thread is launched, or
   /// LE_ERR_INVALID for a null engine, LE_ERR_ALREADY_RUNNING if a scan is already
   /// in progress.
@@ -1115,6 +1084,11 @@ class SegnoEngineBindings {
   /// conditioning, output gates) is reset here too; routes to inputs or outputs
   /// the new device lacks stay silent.
   ///
+  /// With config->keep_material set, a reopen that would clear the whole engine
+  /// (another sample rate or loop cap) closes the device again and returns
+  /// LE_ERR_WOULD_CLEAR with *outcome naming why; the material stays untouched
+  /// and stopped.
+  ///
   /// Returns LE_OK or an le_result error. A failed open changes nothing (the
   /// material is still held, still stopped, *outcome and the mask untouched), so
   /// the caller may retry. A failed start returns LE_ERR_DEVICE with the material
@@ -1508,22 +1482,75 @@ class SegnoEngineBindings {
   late final _le_engine_post_command = _le_engine_post_commandPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int, double)>();
 
-  /// Convenience: triggers a single loopback latency measurement. Requires an
-  /// output->input loopback path.
-  int le_engine_measure_latency(
+  /// Measures the round trip of one chosen path (#1270 Part 2): a 10 ms, 1 kHz
+  /// burst at `amplitude` on hardware output `output` only (every other output
+  /// reads 0.0 while it plays), timed on hardware input `input`, or on the
+  /// interface's loopback channels for LE_LATENCY_LOOPBACK_INPUT. `request` is
+  /// the caller's id, echoed in le_snapshot.latency_request with every state of
+  /// this measurement. While it runs the harness owns the output and the
+  /// transport does not advance. DONE sets the record offset; TIMEOUT and
+  /// CANCELLED leave it unchanged. A request that arrives while a track records
+  /// or overdubs is CANCELLED and plays nothing.
+  ///
+  /// Returns LE_OK; LE_ERR_INVALID for an output not below the device's output
+  /// count, an input neither below its input count nor LE_LATENCY_LOOPBACK_INPUT
+  /// (or the loopback input with no loopback channels), or an amplitude outside
+  /// (0, 0.5]; LE_ERR_NOT_RUNNING when not configured.
+  int le_engine_measure_latency_path(
     ffi.Pointer<le_engine> engine,
+    int output,
+    int input,
+    double amplitude,
+    int request,
   ) {
-    return _le_engine_measure_latency(
+    return _le_engine_measure_latency_path(
       engine,
+      output,
+      input,
+      amplitude,
+      request,
     );
   }
 
-  late final _le_engine_measure_latencyPtr =
-      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
-        'le_engine_measure_latency',
-      );
-  late final _le_engine_measure_latency = _le_engine_measure_latencyPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>)>();
+  late final _le_engine_measure_latency_pathPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+            ffi.Uint32,
+          )
+        >
+      >('le_engine_measure_latency_path');
+  late final _le_engine_measure_latency_path =
+      _le_engine_measure_latency_pathPtr
+          .asFunction<
+            int Function(ffi.Pointer<le_engine>, int, int, double, int)
+          >();
+
+  /// Cancels the measurement `request` started: it publishes CANCELLED and the
+  /// output falls silent. A cancel for another request is ignored. Returns LE_OK
+  /// or LE_ERR_NOT_RUNNING / LE_ERR_INVALID as a post does.
+  int le_engine_cancel_latency(
+    ffi.Pointer<le_engine> engine,
+    int request,
+  ) {
+    return _le_engine_cancel_latency(
+      engine,
+      request,
+    );
+  }
+
+  late final _le_engine_cancel_latencyPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Uint32)
+        >
+      >('le_engine_cancel_latency');
+  late final _le_engine_cancel_latency = _le_engine_cancel_latencyPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   /// ---- looper control (per channel) ---- *
   /// These post ring commands targeting track `channel` (0..track_count-1).
@@ -8029,7 +8056,13 @@ enum le_result {
 
   /// the clock source cannot change while a track
   /// records, overdubs, is armed or counting in
-  LE_ERR_SYNC_LOCKED(-21);
+  LE_ERR_SYNC_LOCKED(-21),
+
+  /// le_engine_reopen with keep_material: the
+  /// device negotiated another sample rate or loop
+  /// cap, which would clear the loops; nothing was
+  /// cleared and the device is closed again
+  LE_ERR_WOULD_CLEAR(-22);
 
   final int value;
   const le_result(this.value);
@@ -8055,6 +8088,7 @@ enum le_result {
     -19 => LE_ERR_TRUNCATED,
     -20 => LE_ERR_EXTERNAL_CLOCK,
     -21 => LE_ERR_SYNC_LOCKED,
+    -22 => LE_ERR_WOULD_CLEAR,
     _ => throw ArgumentError('Unknown value for le_result: $value'),
   };
 }
@@ -8070,7 +8104,12 @@ enum le_latency_state {
   LE_LATENCY_DONE(2),
 
   /// no loopback detected within the window
-  LE_LATENCY_TIMEOUT(3);
+  LE_LATENCY_TIMEOUT(3),
+
+  /// cancelled (le_engine_cancel_latency, a device
+  /// loss, or a take running when it was asked);
+  /// the record offset is unchanged
+  LE_LATENCY_CANCELLED(4);
 
   final int value;
   const le_latency_state(this.value);
@@ -8080,6 +8119,7 @@ enum le_latency_state {
     1 => LE_LATENCY_MEASURING,
     2 => LE_LATENCY_DONE,
     3 => LE_LATENCY_TIMEOUT,
+    4 => LE_LATENCY_CANCELLED,
     _ => throw ArgumentError('Unknown value for le_latency_state: $value'),
   };
 }
@@ -8158,7 +8198,6 @@ final class le_loopback_info extends ffi.Struct {
 /// Command codes posted into the engine's SPSC ring.
 enum le_command_code {
   LE_CMD_NONE(0),
-  LE_CMD_MEASURE_LATENCY(1),
 
   /// record / finalize-loop / toggle overdub
   LE_CMD_RECORD(2),
@@ -8540,6 +8579,13 @@ enum le_command_code {
   LE_CMD_AUDITION_START(136),
   LE_CMD_AUDITION_STOP(137),
 
+  /// latency.output, .input, .amplitude,
+  /// .request
+  LE_CMD_MEASURE_LATENCY_PATH(140),
+
+  /// latency.request
+  LE_CMD_CANCEL_LATENCY(141),
+
   /// render recipe (#1202): the callback records
   /// every source's read law; never raw-posted
   LE_CMD_RENDER_FREEZE(112),
@@ -8577,7 +8623,6 @@ enum le_command_code {
 
   static le_command_code fromValue(int value) => switch (value) {
     0 => LE_CMD_NONE,
-    1 => LE_CMD_MEASURE_LATENCY,
     2 => LE_CMD_RECORD,
     3 => LE_CMD_STOP,
     4 => LE_CMD_PLAY,
@@ -8670,6 +8715,8 @@ enum le_command_code {
     92 => LE_CMD_BACKING_SEEK,
     136 => LE_CMD_AUDITION_START,
     137 => LE_CMD_AUDITION_STOP,
+    140 => LE_CMD_MEASURE_LATENCY_PATH,
+    141 => LE_CMD_CANCEL_LATENCY,
     112 => LE_CMD_RENDER_FREEZE,
     113 => LE_CMD_BOUNCE,
     114 => LE_CMD_BOUNCE_RECOVER,
@@ -8740,7 +8787,7 @@ final class le_device_info extends ffi.Struct {
   /// The device's channel count in the direction it was enumerated in: a
   /// capture device fills input_channels, a playback device output_channels,
   /// and the other stays 0 — a playback device reports what it can play and
-  /// never the other way round. An ASIO driver is duplex and fills both.
+  /// never the other way round.
   /// 0 = UNKNOWN, not "no channels": a device that cannot answer keeps it, and
   /// a count is omitted rather than printed as a zero.
   @ffi.Int32()
@@ -8748,23 +8795,6 @@ final class le_device_info extends ffi.Struct {
 
   @ffi.Int32()
   external int output_channels;
-
-  /// ASIO-only: the driver's selectable buffer sizes and supported sample rates,
-  /// probed by le_enumerate_asio_drivers so the UI can offer the driver's real
-  /// options instead of a generic list. Count 0 for non-ASIO devices (the UI
-  /// then keeps its default lists). Sizes/rates are ascending; the buffer set
-  /// always includes the driver's preferred size.
-  @ffi.Array.multi([8])
-  external ffi.Array<ffi.Int32> asio_buffer_sizes;
-
-  @ffi.Int32()
-  external int asio_buffer_count;
-
-  @ffi.Array.multi([8])
-  external ffi.Array<ffi.Int32> asio_sample_rates;
-
-  @ffi.Int32()
-  external int asio_sample_rate_count;
 }
 
 /// Requested device configuration. Any channel field set to 0 uses the device
@@ -8801,14 +8831,12 @@ final class le_config extends ffi.Struct {
   @ffi.Array.multi([256])
   external ffi.Array<ffi.Char> capture_device_id;
 
-  /// le_audio_backend to open. Every value resolves to miniaudio via
-  /// le_select_backend; the field stays so persisted configs still round-trip.
+  /// le_engine_reopen only: 1 refuses a reopen that would clear the loops
+  /// (another negotiated sample rate or loop cap) with LE_ERR_WOULD_CLEAR,
+  /// leaving the material untouched and stopped. 0 clears as le_engine_start
+  /// does. le_engine_start ignores it.
   @ffi.Int32()
-  external int backend;
-
-  /// Reserved, alongside LE_BACKEND_ASIO. Always empty and ignored.
-  @ffi.Array.multi([256])
-  external ffi.Array<ffi.Char> asio_driver;
+  external int keep_material;
 }
 
 /// Default and fixed-track recording choices: 0 immediately, 1 loop start,
@@ -9345,7 +9373,8 @@ final class le_track_snapshot extends ffi.Struct {
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct
 /// ALSA duplex path (miniaudio's -EPIPE recoveries and the playback-slip resync);
-/// OVERLOAD is the Windows ASIO driver's kAsioOverload notification.
+/// OVERLOAD is a device driver's own overload notification, which no backend in
+/// this build reports.
 enum le_xrun_kind {
   /// writei() -EPIPE: the card ran out of audio
   LE_XRUN_PLAYBACK_UNDERRUN(0),
@@ -9356,7 +9385,7 @@ enum le_xrun_kind {
   /// the slipped-playback drop+prepare resync
   LE_XRUN_PLAYBACK_RESYNC(2),
 
-  /// ASIO kAsioOverload
+  /// a driver overload notification
   LE_XRUN_BACKEND_OVERLOAD(3);
 
   final int value;
@@ -9452,7 +9481,7 @@ final class le_cb_window_snapshot extends ffi.Struct {
   ///
   /// Over the session window these sum to xrun_count for every kind THIS BUILD
   /// KNOWS — which is every kind any shipping backend produces (ALSA passes
-  /// 0/1/2, ASIO passes 3), so the sum holds today. It is not an invariant for
+  /// 0/1/2), so the sum holds today. It is not an invariant for
   /// all time: a dropout reported with a kind outside le_xrun_kind increments
   /// xrun_count but lands in no bucket, deliberately, because the headline
   /// number's job is "a real dropout happened" and an unclassifiable one still
@@ -9528,8 +9557,7 @@ final class le_snapshot extends ffi.Struct {
   external int frames_processed;
 
   /// Device dropouts (xruns) since the device started, as reported by the
-  /// backend, every class summed. The Windows ASIO backend tallies the driver's
-  /// kAsioOverload notifications; the direct ALSA path tallies miniaudio's
+  /// backend, every class summed. The direct ALSA path tallies miniaudio's
   /// -EPIPE recoveries and its slipped-playback resyncs (#722), so this finally
   /// moves on Linux. Still 0 on CoreAudio, which exposes no xrun signal at all —
   /// read le_callback_telemetry's gap detector there. The per-class breakdown is
@@ -9553,6 +9581,12 @@ final class le_snapshot extends ffi.Struct {
   /// le_latency_state
   @ffi.Int32()
   external int latency_state;
+
+  /// The request the latency state belongs to (le_engine_measure_latency_path):
+  /// published together with the state, so a caller waits for its own request
+  /// and never reads a previous measurement's DONE. 0 before any request.
+  @ffi.Uint32()
+  external int latency_request;
 
   /// valid when latency_state == LE_LATENCY_DONE
   @ffi.Double()
@@ -9589,11 +9623,6 @@ final class le_snapshot extends ffi.Struct {
   /// every fresh configure. Set via le_engine_set_master_gain.
   @ffi.Float()
   external double master_gain;
-
-  /// le_audio_backend actually running (negotiated). On Windows this is always
-  /// ASIO; on macOS/Linux it is the miniaudio backend.
-  @ffi.Int32()
-  external int active_backend;
 
   /// Structural output gate, one bit per hardware output channel (bit c => output
   /// c is ENABLED). A disabled output is removed as a mix target — skipped in the
@@ -10396,7 +10425,9 @@ enum le_cache_reason {
 
   /// the print holds a free-running
   /// modulator (a chorus or doubler LFO,
-  /// vinyl noise, a degrade's hold), which
+  /// vinyl noise, a degrade's hold) or a
+  /// kind on the song's beat (the Pumper,
+  /// Slicer, swept LPF, Mode delay), which
   /// sounds different each lap
   LE_CACHE_REASON_FREE_RUNNING(6);
 
@@ -10846,6 +10877,8 @@ final class le_synth_param_desc extends ffi.Struct {
 }
 
 const int LE_MAX_CHANNELS = 32;
+
+const int LE_LATENCY_LOOPBACK_INPUT = 65535;
 
 const int LE_COUNT_IN_MAX_BARS = 4;
 
