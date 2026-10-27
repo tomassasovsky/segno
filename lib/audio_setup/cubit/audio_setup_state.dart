@@ -39,6 +39,67 @@ enum ApplyPhase {
   confirming,
 }
 
+/// The audio settings being edited on the Device page and not yet applied
+/// (#1270 Part 4, pen 28/01). Editing calls nothing; Apply opens the device
+/// once with all of it.
+class AudioDraft extends Equatable {
+  /// Creates an [AudioDraft].
+  const AudioDraft({
+    required this.playbackDeviceId,
+    required this.captureDeviceId,
+    required this.sampleRate,
+    required this.bufferFrames,
+    required this.maxLoopMinutes,
+  });
+
+  /// What [state] runs, as a draft.
+  AudioDraft.of(AudioSetupState state)
+    : playbackDeviceId = state.playbackDeviceId,
+      captureDeviceId = state.captureDeviceId,
+      sampleRate = state.sampleRate,
+      bufferFrames = state.bufferFrames,
+      maxLoopMinutes = state.maxLoopMinutes;
+
+  /// The interface's playback half (empty = system default).
+  final String playbackDeviceId;
+
+  /// The interface's capture half (empty = system default).
+  final String captureDeviceId;
+
+  /// The sample rate in Hz.
+  final int sampleRate;
+
+  /// The buffer in frames.
+  final int bufferFrames;
+
+  /// The maximum loop length in whole minutes (`0` = engine default).
+  final int maxLoopMinutes;
+
+  /// Returns a copy with the given fields replaced.
+  AudioDraft copyWith({
+    String? playbackDeviceId,
+    String? captureDeviceId,
+    int? sampleRate,
+    int? bufferFrames,
+    int? maxLoopMinutes,
+  }) => AudioDraft(
+    playbackDeviceId: playbackDeviceId ?? this.playbackDeviceId,
+    captureDeviceId: captureDeviceId ?? this.captureDeviceId,
+    sampleRate: sampleRate ?? this.sampleRate,
+    bufferFrames: bufferFrames ?? this.bufferFrames,
+    maxLoopMinutes: maxLoopMinutes ?? this.maxLoopMinutes,
+  );
+
+  @override
+  List<Object?> get props => [
+    playbackDeviceId,
+    captureDeviceId,
+    sampleRate,
+    bufferFrames,
+    maxLoopMinutes,
+  ];
+}
+
 /// Where the cable test stands (#1270 Part 3b, pen 28/03).
 enum MeasurePhase {
   /// No cable test is open.
@@ -188,6 +249,7 @@ class AudioSetupState extends Equatable {
     this.measureOutput = 1,
     this.measureInput = 1,
     this.playbackRunning = false,
+    this.draft,
   });
 
   /// Requested sample rate in Hz.
@@ -285,6 +347,13 @@ class AudioSetupState extends Equatable {
   /// will stop them (D4).
   final bool playbackRunning;
 
+  /// The settings edited and not yet applied, or `null` when the page shows
+  /// what runs.
+  final AudioDraft? draft;
+
+  /// What the page shows: the draft, or what runs.
+  AudioDraft get shown => draft ?? AudioDraft.of(this);
+
   /// Playback (output) devices from [devices].
   List<AudioDevice> get playbackDevices =>
       devices.where((d) => !d.isInput).toList();
@@ -345,6 +414,8 @@ class AudioSetupState extends Equatable {
     int? measureOutput,
     int? measureInput,
     bool? playbackRunning,
+    AudioDraft? draft,
+    bool clearDraft = false,
   }) {
     return AudioSetupState(
       sampleRate: sampleRate ?? this.sampleRate,
@@ -375,6 +446,7 @@ class AudioSetupState extends Equatable {
       measureOutput: measureOutput ?? this.measureOutput,
       measureInput: measureInput ?? this.measureInput,
       playbackRunning: playbackRunning ?? this.playbackRunning,
+      draft: clearDraft ? null : (draft ?? this.draft),
     );
   }
 
@@ -405,5 +477,6 @@ class AudioSetupState extends Equatable {
     measureOutput,
     measureInput,
     playbackRunning,
+    draft,
   ];
 }
