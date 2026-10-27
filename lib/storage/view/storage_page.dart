@@ -316,5 +316,6 @@ class _UsbCard extends StatelessWidget {
         WritePurpose.copy => l10n.storagePurposeCopy,
         WritePurpose.export => l10n.storagePurposeExport,
         WritePurpose.backup => l10n.storagePurposeBackup,
+        WritePurpose.update => l10n.storagePurposeUpdate,
       };
 }

@@ -2316,6 +2316,85 @@
     "@deviceApply": {
         "description": "Applies the drafted audio settings."
     },
+    "updatesLoadFromUsb": "Load from USB",
+    "@updatesLoadFromUsb": {
+        "description": "Opens the update packages on a USB drive (#1270 Part 8, pen 33)."
+    },
+    "updatesUsbChoose": "Choose an update",
+    "@updatesUsbChoose": {
+        "description": "Heading of the USB package list."
+    },
+    "updatesUsbNoDrive": "Insert a USB drive with a Segno update.",
+    "@updatesUsbNoDrive": {
+        "description": "The USB list when no drive is plugged in."
+    },
+    "updatesUsbReading": "Reading the drive…",
+    "@updatesUsbReading": {
+        "description": "The USB list while the drive is read."
+    },
+    "updatesUsbEmpty": "No update packages on {drive}.",
+    "@updatesUsbEmpty": {
+        "description": "The USB list when the drive holds no .raucb file.",
+        "placeholders": {
+            "drive": {
+                "type": "String"
+            }
+        }
+    },
+    "updatesUsbMegabytes": "{value} MB",
+    "@updatesUsbMegabytes": {
+        "description": "A package's size.",
+        "placeholders": {
+            "value": {
+                "type": "int"
+            }
+        }
+    },
+    "updatesUsbCopying": "Copying the package…",
+    "@updatesUsbCopying": {
+        "description": "While the package is copied off the drive."
+    },
+    "updatesUsbInstalling": "Installing the package…",
+    "@updatesUsbInstalling": {
+        "description": "While the helper verifies and stages the package."
+    },
+    "updatesUsbUnverified": "This package could not be verified. Nothing was changed.",
+    "@updatesUsbUnverified": {
+        "description": "A package whose signature or compatible string failed."
+    },
+    "updatesUsbNotNewer": "Segno {version} is not newer than the installed {installed}.",
+    "@updatesUsbNotNewer": {
+        "description": "A package that is not newer than the running build.",
+        "placeholders": {
+            "version": {
+                "type": "String"
+            },
+            "installed": {
+                "type": "String"
+            }
+        }
+    },
+    "updatesUsbRemoved": "The USB drive was removed before the package was copied.",
+    "@updatesUsbRemoved": {
+        "description": "The drive went away during the copy."
+    },
+    "updatesUsbNoSpace": "Not enough space for this package. It needs {size} free.",
+    "@updatesUsbNoSpace": {
+        "description": "Internal has no room; size is updatesUsbMegabytes.",
+        "placeholders": {
+            "size": {
+                "type": "String"
+            }
+        }
+    },
+    "updatesUsbFailed": "The package could not be installed. Nothing was changed.",
+    "@updatesUsbFailed": {
+        "description": "Any other failure of a USB install."
+    },
+    "updatesUsbBack": "Back",
+    "@updatesUsbBack": {
+        "description": "Leaves a USB failure for the package list."
+    },
     "systemThisConsoleGroup": "THIS CONSOLE",
     "systemHousekeepingGroup": "HOUSEKEEPING",
     "systemHardwareGroup": "HARDWARE",
@@ -7590,6 +7669,10 @@
     "storagePurposeBackup": "backup",
     "@storagePurposeBackup": {
         "description": "What is writing to a drive, after 'in use for' (storageUsbInUse)."
+    },
+    "storagePurposeUpdate": "reading an update",
+    "@storagePurposeUpdate": {
+        "description": "What holds a drive, after 'in use for' (storageUsbInUse): an update package is being copied off it (#1270 Part 8)."
     },
     "powerTransferTitle": "Wait for the transfer",
     "@powerTransferTitle": {

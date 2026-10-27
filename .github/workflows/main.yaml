@@ -693,6 +693,10 @@ jobs:
         run: TEST_SHELL=bash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_update_attempt_tests.sh
       - name: Run update attempt-marker tests (dash)
         run: TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_update_attempt_tests.sh
+      - name: Run update-from-file tests (bash)
+        run: TEST_SHELL=bash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_update_file_tests.sh
+      - name: Run update-from-file tests (dash)
+        run: TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_update_file_tests.sh
       - name: Run update read-only boot tests (bash)
         run: TEST_SHELL=bash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_boot_read_only_tests.sh
       - name: Run update read-only boot tests (dash)

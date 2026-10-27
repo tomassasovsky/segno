@@ -58,4 +58,16 @@ abstract interface class PlatformUpdateBackend {
   /// Cancelling the subscription stops the work and stages nothing; the
   /// cancel completes once it has stopped.
   Stream<double> downloadAndStage(UpdateManifest manifest);
+
+  /// Where a package from a USB drive is copied before [installPackage]
+  /// (#1270 Part 8); empty where packages are not supported. [recover] sweeps
+  /// it, since nothing can be in flight at startup.
+  String get stagingDirectory;
+
+  /// Verifies the package copied to [path] (in [stagingDirectory]) and stages
+  /// it to the inactive slot, exactly as [downloadAndStage] does, with the same
+  /// progress, errors and cancel. Throws `UpdatePackageRefused` when it is
+  /// unverified, not newer, or outside staging; nothing is changed then. The
+  /// copy is removed however it ends.
+  Stream<double> installPackage(String path);
 }

@@ -58,4 +58,11 @@ class UpdateRepository {
   /// progress in `[0, 1]`. Opt-in: only call in response to a user action.
   Stream<double> downloadAndStage(UpdateManifest manifest) =>
       _backend.downloadAndStage(manifest);
+
+  /// Where a package from a USB drive is copied before [installPackage].
+  String get stagingDirectory => _backend.stagingDirectory;
+
+  /// Verifies and stages the package copied to [path]; see
+  /// [PlatformUpdateBackend.installPackage].
+  Stream<double> installPackage(String path) => _backend.installPackage(path);
 }
