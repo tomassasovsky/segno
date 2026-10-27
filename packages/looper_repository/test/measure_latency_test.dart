@@ -132,6 +132,24 @@ void main() {
       expect(await result, const LatencyResult(LatencyOutcome.cancelled));
     });
 
+    test('a DONE that lands after the cancel is undone', () async {
+      final repo = running()..setRecordOffset(77);
+      final result = repo.measureLatency(output: 0, input: 0);
+      final request = engine.lastLatencyPath!.request;
+      repo.cancelLatency();
+      expect(await result, const LatencyResult(LatencyOutcome.cancelled));
+      // The engine had resolved it in the block the cancel arrived in.
+      engine.lastRecordOffset = null;
+      publish(le.LatencyState.done, request, offset: 240);
+      await Future<void>.delayed(Duration.zero);
+      expect(engine.lastRecordOffset, 77);
+      // Once: the next poll leaves the offset alone.
+      engine.lastRecordOffset = null;
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(engine.lastRecordOffset, isNull);
+    });
+
     test('after the timeout it cancels and completes timedOut', () {
       fakeAsync((async) {
         final repo = LooperRepository(engine: engine, ticker: ticker.stream);

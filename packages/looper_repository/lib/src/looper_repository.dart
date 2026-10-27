@@ -460,6 +460,11 @@ class LooperRepository {
   /// The last request id [measureLatency] posted.
   int _latencyRequest = 0;
 
+  /// A request cancelled or timed out while the engine may already have
+  /// resolved it: a DONE that still arrives under it is undone, so a
+  /// measurement the caller gave up on never moves the offset.
+  int? _abandonedLatency;
+
   /// The device the engine opened at the last reopen, refused or not, so a
   /// reopen refused to keep the loops can name the rate it would have run.
   int _lastOpenedRate = 0;
@@ -3296,8 +3301,9 @@ class LooperRepository {
     required int output,
     required int input,
   }) {
-    _endLatencyWait(const LatencyResult(LatencyOutcome.cancelled));
+    _abandonLatencyWait();
     final request = ++_latencyRequest;
+    _abandonedLatency = null;
     final result = _engine.measureLatencyPath(
       output: output,
       input: input,
@@ -3309,6 +3315,7 @@ class LooperRepository {
       request,
       Timer(latencyTimeout, () {
         _engine.cancelLatency(request: request);
+        _abandonedLatency = request;
         _endLatencyWait(const LatencyResult(LatencyOutcome.timedOut));
       }),
     );
@@ -3318,10 +3325,13 @@ class LooperRepository {
 
   /// Cancels the measurement in flight; its wait completes
   /// [LatencyOutcome.cancelled] and the record offset stays as it was.
-  void cancelLatency() {
+  void cancelLatency() => _abandonLatencyWait();
+
+  void _abandonLatencyWait() {
     final wait = _latencyWait;
     if (wait == null) return;
     _engine.cancelLatency(request: wait.request);
+    _abandonedLatency = wait.request;
     _endLatencyWait(const LatencyResult(LatencyOutcome.cancelled));
   }
 
@@ -3335,6 +3345,15 @@ class LooperRepository {
 
   /// Ends the measurement wait on what [snapshot] says about its request.
   void _settleLatencyWait(EngineSnapshot snapshot) {
+    final abandoned = _abandonedLatency;
+    if (abandoned != null &&
+        snapshot.latencyRequest == abandoned &&
+        latencyStateFromEngine(snapshot.latencyState) == LatencyState.done) {
+      // Resolved in the same block the cancel arrived in: put the
+      // remembered offset back.
+      _abandonedLatency = null;
+      _engine.setRecordOffset(_recordOffset);
+    }
     final wait = _latencyWait;
     if (wait == null) return;
     if (!snapshot.devicePresent) {

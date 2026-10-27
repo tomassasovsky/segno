@@ -56,7 +56,18 @@ class CableTestDialog extends StatelessWidget {
             MeasurePhase.cancelled => true,
             _ => false,
           },
-      listener: (context, _) => Navigator.of(context).pop(),
+      // This dialog's own route, which another (the power prompt) may have
+      // covered: popping the top route would close that one instead.
+      listener: (context, _) {
+        final route = ModalRoute.of(context);
+        if (route == null) return;
+        final navigator = Navigator.of(context);
+        if (route.isCurrent) {
+          navigator.pop();
+        } else {
+          navigator.removeRoute(route);
+        }
+      },
       child: Center(
         child: ConsoleDialogShell(
           key: const Key('cable_test_dialog'),

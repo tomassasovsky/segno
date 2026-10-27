@@ -1609,6 +1609,33 @@ void main() {
       expect(guards.active, isEmpty);
     });
 
+    test('Measure during a run changes nothing', () {
+      seed();
+      measuring();
+      final cubit = buildCubit()
+        ..openCableTest()
+        ..startCableTest(1, 1)
+        ..openCableTest();
+      addTearDown(cubit.close);
+      expect(cubit.state.measurePhase, MeasurePhase.running);
+    });
+
+    test('closing the dialog takes a refusal shown in it along', () {
+      seed();
+      measuring();
+      final cubit = buildCubit()..openCableTest();
+      addTearDown(cubit.close);
+      guards.enter(
+        GuardKind.deviceChange,
+        const GuardScope.internal(),
+        purpose: 'test',
+      );
+      cubit.startCableTest(1, 1);
+      expect(cubit.state.refusal, const ApplyRefusal.busy('deviceChange'));
+      cubit.cancelMeasure();
+      expect(cubit.state.refusal, isNull);
+    });
+
     test('closing the cubit mid-run cancels the measurement', () async {
       seed();
       measuring();
