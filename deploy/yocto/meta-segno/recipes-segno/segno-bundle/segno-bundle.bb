@@ -119,7 +119,10 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # dosfstools + util-linux-fsck: systemd-fsck checks the FAT /boot before
 # boot.mount mounts it (#1397). It runs the `fsck` wrapper, which runs
 # fsck.vfat, and it skips the check without an error when fsck.vfat is missing.
-RDEPENDS:${PN} = "mesa alsa-lib libstdc++ \
+# dtc: fdtget, which segno-mark-good reads the firmware's tryboot flag with
+# (#976). rauc-rpi-backend also pulls it in, but a missing fdtget would read as
+# "not a trial boot" and silently disable the rollback reboot, so it is named.
+RDEPENDS:${PN} = "mesa alsa-lib libstdc++ dtc \
                   curl jq ca-certificates rauc \
                   parted e2fsprogs-resize2fs \
                   networkmanager-nmcli networkmanager-wifi \

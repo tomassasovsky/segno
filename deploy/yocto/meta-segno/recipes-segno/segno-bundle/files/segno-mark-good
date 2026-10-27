@@ -7,62 +7,157 @@
 # tryboot backend never sets — so it is skipped on every boot ("no trigger
 # condition checks were met") and every update silently reverts. Observed live:
 # updated, rebooted, set up Wi-Fi, rebooted again, and the console came back on
-# the previous version.
+# the previous version (#307).
 #
-# The gate is deliberately not "did we boot" — that is exactly the state a
-# black-screen image would also reach. segno.service restarts forever on
-# failure (Restart=always), so a crash-looping app looks active if you only
-# glance once. What cannot be faked is staying up: active now, and the same
-# restart count a minute later.
+# The gate is deliberately not "did we boot": that is exactly the state a
+# black-screen image also reaches. Nor is it process state alone: #976 saw a
+# build crash-loop under its wrapper while is-active read active and NRestarts
+# read 0, and this script committed it. The signals come from the app itself
+# (#976, docs/plan/2026-10-06-feat-device-pages-plan.md, Part 1):
 #
-# Refusing to mark is a real decision, not an error path — it means the next
-# reboot rolls back, which is the whole point of A/B.
+#   - segno.service is Type=notify. The app sends READY=1 once the main
+#     screen has drawn its first frame, so is-active means "it drew".
+#   - Every 5 s the app's main isolate sends
+#       STATUS=alive <n> readout <m|none> audio <ok|absent|refused>
+#     <n> counts its own timer, so a hung UI isolate stops it. <m> counts the
+#     7" readout's answers to a ping over the screen link, or is "none" while
+#     the readout's connector reads disconnected. <audio> is "refused" when an
+#     interface is present and the engine is still not running on it.
 #
-# See https://github.com/tomassasovsky/segno/issues/307
+# Across the window the slot is committed only when the unit stays active with
+# the same MainPID and NRestarts, the alive counter advances, the readout
+# counter advances whenever both samples counted it, and audio was not refused
+# in both samples.
+#
+# Refusing is a real decision, not an error path. On a trial boot it reboots
+# at once: the firmware's tryboot flag is one-shot, so a plain reboot comes
+# back on the committed slot (verified on the console under #1438), with
+# nobody needing to touch the console. On a committed boot it never reboots,
+# so a bad committed slot cannot loop. A rauc failure after a healthy window
+# (a read-only /boot, #1397) never reboots either: the app works, the musician
+# may be playing, and the next reboot rolls back anyway.
+#
+# See https://github.com/tomassasovsky/segno/issues/307 and /976
 set -eu
 
 SYSTEMCTL="${SEGNO_SYSTEMCTL:-systemctl}"
 RAUC="${SEGNO_RAUC:-rauc}"
+# The firmware's own record of a trial boot, the flag the RAUC backend's
+# get-state reads (bootloader-custom-backend). Read here rather than parsed
+# out of `rauc status`, which needs RAUC's status file and /boot/autoboot.txt.
+FDTGET="${SEGNO_FDTGET:-fdtget}"
+FDT="${SEGNO_FDT:-/sys/firmware/fdt}"
 UNIT="${SEGNO_MARK_GOOD_UNIT:-segno.service}"
-# How long to wait for the app to come up at all, and how long it then has to
-# stay up. The window is a trade: too short and a slow first boot commits a
-# broken image, too long and a user who reboots quickly loses the update they
-# just installed.
-WAIT_SECS="${SEGNO_MARK_GOOD_WAIT_SECS:-180}"
+# How long to wait for the app to become ready, and how long it then has to
+# stay healthy. The window is a trade: too short and a slow first boot commits
+# a broken image, too long and a user who reboots quickly loses the update
+# they just installed. 45 s holds nine heartbeats. The wait outlasts
+# segno.service's TimeoutStartSec=180 by a minute: this gate starts without
+# waiting for segno (segno-mark-good.service), so its clock also covers what
+# segno waits for first (/data, plymouth, the touch matrix), and a build that
+# systemd would still let draw must not be rolled back before it gets to.
+WAIT_SECS="${SEGNO_MARK_GOOD_WAIT_SECS:-240}"
 STABLE_SECS="${SEGNO_MARK_GOOD_STABLE_SECS:-45}"
 
 log() { echo "segno-mark-good: $*" >&2; }
 
-restarts() {
-    "$SYSTEMCTL" show -p NRestarts --value "$UNIT" 2>/dev/null || echo ""
+prop() {
+    "$SYSTEMCTL" show -p "$1" --value "$UNIT" 2>/dev/null || true
+}
+
+# The word after $2 in the status text $1, or nothing.
+status_field() {
+    key=$2
+    value=
+    set -f
+    # shellcheck disable=SC2086 # split the status text into words on purpose
+    set -- $1
+    set +f
+    while [ $# -ge 2 ]; do
+        if [ "$1" = "$key" ]; then
+            value=$2
+            break
+        fi
+        shift
+    done
+    printf '%s' "$value"
+}
+
+is_count() {
+    case "$1" in
+        '' | *[!0-9]*) return 1 ;;
+    esac
+    return 0
+}
+
+is_trial_boot() {
+    flag=$("$FDTGET" "$FDT" /chosen/bootloader tryboot 2>/dev/null) || return 1
+    [ "$(printf '%s' "$flag" | tr -d '[:space:]')" = 1 ]
+}
+
+refuse() {
+    log "$*; leaving the slot uncommitted"
+    if is_trial_boot; then
+        log "trial boot: rebooting into the committed slot"
+        "$SYSTEMCTL" reboot
+    fi
+    exit 1
 }
 
 waited=0
 while ! "$SYSTEMCTL" is-active --quiet "$UNIT"; do
     if [ "$waited" -ge "$WAIT_SECS" ]; then
-        log "$UNIT never came up within ${WAIT_SECS}s; leaving the slot uncommitted"
-        exit 1
+        refuse "$UNIT never became ready within ${WAIT_SECS}s"
     fi
     sleep 2
     waited=$((waited + 2))
 done
 
-before=$(restarts)
+pid_before=$(prop MainPID)
+restarts_before=$(prop NRestarts)
+status_before=$(prop StatusText)
 sleep "$STABLE_SECS"
 
 if ! "$SYSTEMCTL" is-active --quiet "$UNIT"; then
-    log "$UNIT stopped during the health window; leaving the slot uncommitted"
-    exit 1
+    refuse "$UNIT stopped during the health window"
 fi
 
-after=$(restarts)
-if [ "$before" != "$after" ]; then
-    log "$UNIT restarted during the health window ($before -> $after); leaving the slot uncommitted"
-    exit 1
+pid_after=$(prop MainPID)
+restarts_after=$(prop NRestarts)
+status_after=$(prop StatusText)
+
+if [ "$pid_before" != "$pid_after" ]; then
+    refuse "$UNIT restarted during the health window (MainPID $pid_before -> $pid_after)"
+fi
+if [ "$restarts_before" != "$restarts_after" ]; then
+    refuse "$UNIT restarted during the health window (NRestarts $restarts_before -> $restarts_after)"
+fi
+
+alive_before=$(status_field "$status_before" alive)
+alive_after=$(status_field "$status_after" alive)
+if ! is_count "$alive_before" || ! is_count "$alive_after" ||
+    [ "$alive_after" -le "$alive_before" ]; then
+    refuse "the app's heartbeat did not advance ('$status_before' -> '$status_after')"
+fi
+
+# A readout plugged in or pulled out during the window counts in only one
+# sample, and proves nothing either way.
+readout_before=$(status_field "$status_before" readout)
+readout_after=$(status_field "$status_after" readout)
+if is_count "$readout_before" && is_count "$readout_after" &&
+    [ "$readout_after" -le "$readout_before" ]; then
+    refuse "the readout stopped answering ('$status_before' -> '$status_after')"
+fi
+
+# Both samples: an Apply (stop, then reopen) or a reconnect passes through
+# "refused" for a moment, and a moment must not throw a good build away.
+if [ "$(status_field "$status_before" audio)" = refused ] &&
+    [ "$(status_field "$status_after" audio)" = refused ]; then
+    refuse "the audio engine is not running on the interface that is present"
 fi
 
 if ! "$RAUC" status mark-good booted; then
-    log "rauc refused to mark the booted slot good"
+    log "rauc refused to mark the booted slot good; not rebooting"
     exit 1
 fi
-log "booted slot committed after ${STABLE_SECS}s of a healthy $UNIT"
+log "booted slot committed after ${STABLE_SECS}s of a healthy $UNIT ($status_after)"
