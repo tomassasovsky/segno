@@ -231,7 +231,7 @@ void main() {
       cubit.choose(package);
       await pumpEventQueue();
       expect(cubit.state.error, UsbUpdateError.busy);
-      expect(cubit.state.busyKind, 'transfer');
+      expect(cubit.state.busyKind, 'other');
     });
 
     test('an unexpected copy failure says so rather than hanging', () async {
