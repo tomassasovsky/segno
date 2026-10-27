@@ -124,14 +124,22 @@ behaviour changes, record every decision). Each goes into the PR body and on
    resumes the segment the grid is on. Song still rewinds its section.
 5. **Song Mute mode LEDs** read green for each section with a take that is
    not muted, so a mute press on a stopped section is visible; the pedal
-   does not show the waiting section in Mute mode.
+   does not show the waiting section in Song's Mute mode. A press on a
+   capturing section does nothing there (a mute would end the pass).
 6. **Band's Mute mode** keeps Multi's rules: the owner's Mute-mode change
    names Song, and a "join" press there now waits like any other request.
+   Revised 2026-10-27: the pedal shows that waiting section in Band's Mute
+   mode too, in the Record map's colours, and a press on it cancels it. A
+   parked Band resume set holds the primary plus one section.
 7. **`le_engine_toggle_section`** (Band trigger-2 transport) is not called
-   by the app and could start several sections. It is left unchanged here;
-   #1324 tracks removing it.
+   by the app. Revised 2026-10-27: its start now waits for a sounding
+   section like any other request, and a toggle on the waiting section
+   cancels it. #1324 still tracks removing it.
 8. **The handoff is the Record's boundary.** A waiting Record starts at the
-   handoff even with Sound start or quantize on; neither applies to it.
+   handoff even with Sound start, quantize or Count-in on; none applies to
+   it. A Sound-start or grid arm set while no section sounded, firing while
+   one does, becomes a waiting Record, unless a newer request already
+   waits.
 9. **Rec/Play on a muted stopped section** keeps the existing meaning in
    every mode (unmute and bring it back), so in Song and Band it is a
    waiting Play, not a Record.
