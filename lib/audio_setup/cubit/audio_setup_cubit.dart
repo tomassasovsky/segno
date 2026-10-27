@@ -209,7 +209,12 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// Opens the cable test (pen 28/03): refused while a take runs (D3), and
   /// unavailable while the interface is not there.
   void openCableTest() {
-    if (!_canMeasure) return;
+    if (!_canMeasure ||
+        state.measurePhase == MeasurePhase.cable ||
+        state.measurePhase == MeasurePhase.running ||
+        state.measurePhase == MeasurePhase.noReturn) {
+      return;
+    }
     final busy = _busyKind(GuardKind.calibration);
     if (busy != null) {
       emit(state.copyWith(refusal: ApplyRefusal.busy(busy)));
@@ -336,7 +341,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     if (state.measurePhase == MeasurePhase.running) {
       _repository.cancelLatency();
     }
-    emit(state.copyWith(measurePhase: MeasurePhase.idle));
+    emit(state.copyWith(measurePhase: MeasurePhase.idle, clearRefusal: true));
   }
 
   /// Whether the interface is there to measure.

@@ -866,6 +866,28 @@ void main() {
         expect(find.byKey(const Key('cable_test_dialog')), findsNothing);
       });
 
+      testWidgets('a route pushed over the dialog survives its closing', (
+        tester,
+      ) async {
+        await pump(tester);
+        await open(tester);
+        await tester.tap(find.byKey(const Key('cable_test_start')));
+        await tester.pump();
+        unawaited(
+          showDialog<void>(
+            context: tester.element(find.byKey(const Key('cable_test_dialog'))),
+            builder: (_) => const Text('power', key: Key('over_the_dialog')),
+          ),
+        );
+        await tester.pumpAndSettle();
+        result.complete(
+          const LatencyResult.done(offsetFrames: 240, latencyMs: 5),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('cable_test_dialog')), findsNothing);
+        expect(find.byKey(const Key('over_the_dialog')), findsOneWidget);
+      });
+
       testWidgets('the note says playback stops while it plays', (
         tester,
       ) async {
