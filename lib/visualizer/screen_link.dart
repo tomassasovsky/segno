@@ -102,6 +102,11 @@ abstract final class ScreenLinkOp {
   /// Readout to main: the message carrying `seq` has been applied.
   static const ack = 'ack';
 
+  /// Main to readout: "are you drawing?", with `seq`. The readout acks it only
+  /// once it has rasterized its first frame, so an answer means the 7" draws.
+  /// The boot health gate counts the answers (#976).
+  static const ping = 'ping';
+
   /// Readout to main: a player touched the readout, which wakes an
   /// idle-dimmed console like a touch on the main screen.
   static const activity = 'activity';
