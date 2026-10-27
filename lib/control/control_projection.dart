@@ -317,7 +317,14 @@ PedalStateFrame projectFrame(
     masterGain: masterGain,
     pedalColors: [
       for (final button in PedalButton.values)
-        _colorOf(overlay, button, lights[button.index]),
+        _colorOf(
+          overlay,
+          button,
+          lights[button.index],
+          // A waiting section fills in the Record map's playing or
+          // recording colour in every mode that shows it (#1323).
+          mode: button == queued.button ? InteractionMode.record : null,
+        ),
     ],
     activeButtonMask: activeButtonMask,
     queuedButton: queued.button,
@@ -464,9 +471,11 @@ List<PedalLedState?> projectPedalLights(
 PedalColor _colorOf(
   ControlState overlay,
   PedalButton button,
-  PedalLedState? state,
-) {
+  PedalLedState? state, {
+  InteractionMode? mode,
+}) {
   final colors = overlay.pedalSetup.leds;
+  final map = mode ?? overlay.mode;
   if (overlay.mode == InteractionMode.custom &&
       !PedalBindingKey.unbindable.contains(button)) {
     return colors.customColorFor(
@@ -479,9 +488,9 @@ PedalColor _colorOf(
   }
   final group = PedalLedMap.groupOf(button);
   return colors.colorFor(
-    overlay.mode,
+    map,
     group,
-    state ?? PedalLedMap.schema(overlay.mode)[group]!.keys.first,
+    state ?? PedalLedMap.schema(map)[group]!.keys.first,
   );
 }
 

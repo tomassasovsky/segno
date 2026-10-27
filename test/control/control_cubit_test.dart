@@ -2980,6 +2980,30 @@ void main() {
         verifyNever(() => looper.play(channel: 2));
       });
 
+      test(
+        'Rec/Play on a muted section that already waits only unmutes it',
+        () {
+          setEngine(
+            _tracksWith(const [
+              Track(state: TrackState.playing, lengthFrames: 48000),
+              Track(
+                channel: 1,
+                state: TrackState.stopped,
+                lengthFrames: 48000,
+                muted: true,
+              ),
+            ]),
+            looperMode: LooperMode.song,
+            songQueuedTrack: 1,
+          );
+          cubit
+            ..selectTrack(1)
+            ..recPlay();
+          verify(() => looper.setMute(muted: false, channel: 1)).called(1);
+          verifyNever(() => looper.play(channel: 1));
+        },
+      );
+
       test("Song's Mute mode leaves a capturing section's pass alone", () {
         setEngine(
           _tracksWith(const [

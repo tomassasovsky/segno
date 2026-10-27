@@ -1791,6 +1791,9 @@ class ControlCubit extends Cubit<ControlState> {
         return false;
       }
       if (!_setTrackMute(muted: false, channel: channel).isOk) return false;
+      // A section already waiting to start only needed its mute: a Play
+      // would cancel its request (#1323).
+      if (channel == _l.songWaitingSection) return true;
       if (track.state == TrackState.stopped) {
         return _looper.play(channel: channel).isOk; // parked -> resume
       } else {
@@ -2105,9 +2108,19 @@ class ControlCubit extends Cubit<ControlState> {
   /// ([LooperState.sectionToStart]). Outside Song and Band, all of them.
   Set<int> _oneSection(Set<int> channels) {
     final looper = _l;
-    final section = looper.sectionToStart(
-      channels.where(looper.isSection).map(_trackAt).nonNulls,
-    );
+    // A section recording its first take has no content yet, but it is the
+    // section that sounds: another would queue to replace it.
+    final taking = _tracks
+        .where(
+          (t) => looper.isSection(t.channel) && t.state == TrackState.recording,
+        )
+        .firstOrNull
+        ?.channel;
+    final section =
+        taking ??
+        looper.sectionToStart(
+          channels.where(looper.isSection).map(_trackAt).nonNulls,
+        );
     return {
       for (final channel in channels)
         if (!looper.isSection(channel)) channel,
