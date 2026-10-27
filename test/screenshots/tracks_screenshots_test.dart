@@ -80,7 +80,6 @@ class _MockInputsCubit extends MockCubit<InputsState> implements InputsCubit {}
 /// panel in the Fusion "Segno console (populated)" doc). Renders [TracksView]
 /// exactly as the physical console shows it and captures a 1920x1080 golden.
 ///
-/// It only produces the CONSOLE layout when compiled with the flag on.
 /// Render it with:
 ///
 ///   flutter test --tags screenshots \

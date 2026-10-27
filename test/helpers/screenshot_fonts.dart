@@ -7,13 +7,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// The Flutter SDK's Material fonts (Roboto and the Material icons), which
 /// the screenshot suites load.
 ///
-/// `flutter test` runs the `flutter_tester` binary from
-/// `<sdk>/bin/cache/artifacts/engine/<platform>/`, so the fonts are in
-/// `<sdk>/bin/cache/artifacts/material_fonts` on any machine with the SDK:
-/// the author's Mac and the Linux CI runner alike.
-final String materialFontDir =
-    '${File(Platform.resolvedExecutable).parent.parent.parent.path}'
-    '/material_fonts';
+/// They are in `<sdk>/bin/cache/artifacts/material_fonts` on any machine with
+/// the SDK, the author's Mac and the Linux CI runner alike. The `flutter`
+/// tool sets `FLUTTER_ROOT` for the tests it runs, also with a local engine.
+String get materialFontDir =>
+    '${Platform.environment['FLUTTER_ROOT']}/bin/cache/artifacts/material_fonts';
 
 /// Whether the screenshot suites render.
 ///
