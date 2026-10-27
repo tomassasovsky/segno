@@ -750,28 +750,6 @@
             }
         }
     },
-    "loopbackDetectedNote": "Loopback detected{deviceClause} — latency is auto-measured on start as a digital-path estimate. Use a cable for the true analog figure.",
-    "@loopbackDetectedNote": {
-        "placeholders": {
-            "deviceClause": {
-                "type": "String"
-            }
-        }
-    },
-    "loopbackAvailableNote": "A {kind} loopback is available{deviceClause} but cannot be auto-routed; use a physical loopback cable to measure latency.",
-    "@loopbackAvailableNote": {
-        "placeholders": {
-            "kind": {
-                "type": "String"
-            },
-            "deviceClause": {
-                "type": "String"
-            }
-        }
-    },
-    "loopbackKindBackend": "loopback",
-    "loopbackKindMonitor": "monitor",
-    "loopbackKindVirtualDevice": "virtual",
     "failedToOpenDevice": "Failed to open device: {errorName}",
     "@failedToOpenDevice": {
         "placeholders": {
@@ -1208,7 +1186,6 @@
     "perfRenderingSubtitle": "Writing the mixdown and the per-track stems. You can keep playing; arming another capture waits until this finishes.",
     "perfHide": "Hide",
     "perfRevealMacos": "Show in Finder",
-    "perfRevealWindows": "Show in File Explorer",
     "perfRevealOther": "Show in file manager",
     "perfPartial": "Some tracks failed to render, but the rest of the capture is intact.",
     "perfStoppedDiskFull": "Capture stopped early — the disk could not be written.",
@@ -2118,12 +2095,6 @@
     "audioSampleRateCost96": "halves the buffer headroom",
     "audioNoInputs": "This device has no inputs.",
     "audioNoOutputsBanner": "No outputs are enabled — nothing will be heard. Tap a greyed output to turn it back on.",
-    "audioAsioDriverGroup": "ASIO DRIVER",
-    "audioNoAsioDriver": "No ASIO driver found. Segno uses ASIO on Windows. Install your interface's ASIO driver, or get a generic one from ASIO4ALL.",
-    "@audioNoAsioDriver": {
-        "description": "Windows with no ASIO driver installed. ASIO4ALL is LINKED and never bundled — its licence forbids redistribution."
-    },
-    "audioOpenAsio4all": "Open asio4all.org",
     "audioMaxLoopTitle": "Maximum loop length",
     "audioMaxLoopSubtitle": "A higher cap reserves more memory per track. Changing it reopens the device.",
     "audioRenameInputTitle": "Rename input",
@@ -2137,8 +2108,6 @@
         }
     },
     "a11yInputRenameField": "Input name",
-    "a11yAudioMeasureLatency": "Measure round-trip latency. Refuses while a measurement is already running.",
-    "audioMeasure": "Measure",
     "audioRecordOffsetSub": "record offset {frames} frames",
     "@audioRecordOffsetSub": {
         "description": "Subtitle of the round-trip latency row. The offset is a CONSEQUENCE of the measurement, not a setting, so it rides the row that measures it rather than taking one of its own.",
@@ -2159,6 +2128,48 @@
                 "type": "String"
             }
         }
+    },
+    "audioRateLocked": "Clear the tracks to change the sample rate.",
+    "@audioRateLocked": {
+        "description": "Under the sample-rate chips, drawn disabled while any track holds material: a rate change would clear the engine (#1270 D2)."
+    },
+    "audioMaxLoopLocked": "Clear the tracks to change the maximum loop length.",
+    "@audioMaxLoopLocked": {
+        "description": "Under the maximum loop length chips, drawn disabled while any track holds material: a new cap would clear the engine (#1270 D2)."
+    },
+    "audioApplyTitle": "Apply audio settings?",
+    "@audioApplyTitle": {
+        "description": "Title of the confirm shown when an audio setting changes while music plays (pen 28/04)."
+    },
+    "audioApplyBody": "Playback stops while the audio interface reopens. Your recordings stay intact.",
+    "@audioApplyBody": {
+        "description": "Body of the Apply audio settings confirm (pen 28/04)."
+    },
+    "audioApplyConfirm": "Stop audio and apply",
+    "@audioApplyConfirm": {
+        "description": "Confirm button of the Apply audio settings dialog (pen 28/04)."
+    },
+    "audioEffectsOverBudgetRate": "Your effects need more processing than {rate} leaves. Remove some effects first.",
+    "@audioEffectsOverBudgetRate": {
+        "description": "Banner when a higher sample rate is refused because the effects would not fit the audio thread's budget (#1270 D19). rate is a formatted rate such as 96 kHz.",
+        "placeholders": {
+            "rate": {
+                "type": "String"
+            }
+        }
+    },
+    "audioDeviceRefused": "{device} could not be opened. The previous interface is running again.",
+    "@audioDeviceRefused": {
+        "description": "Banner when the interface the player picked would not open and the previous one was reopened (#1270 Part 3a).",
+        "placeholders": {
+            "device": {
+                "type": "String"
+            }
+        }
+    },
+    "audioSettingsRefused": "The interface would not open with these settings. The previous settings are running again.",
+    "@audioSettingsRefused": {
+        "description": "Banner when the interface refused a change that moved neither the device nor the rates (a loop cap), and the previous settings were reopened (#1270 Part 3a)."
     },
     "systemThisConsoleGroup": "THIS CONSOLE",
     "systemHousekeepingGroup": "HOUSEKEEPING",

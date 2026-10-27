@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:equatable/equatable.dart';
 
+import 'package:looper_repository/src/models/audio_apply_result.dart';
 import 'package:looper_repository/src/models/audio_config.dart';
 import 'package:looper_repository/src/models/engine_reopened.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
@@ -452,6 +453,10 @@ class LooperRepository {
   /// — a fresh start resets the engine's offset to 0. Zero (no compensation)
   /// until set or measured.
   int _recordOffset = 0;
+
+  /// The latency state the last poll saw, so a completed measurement is
+  /// mirrored once, on its transition to done.
+  LatencyState _lastLatencyState = LatencyState.idle;
 
   /// The tuner's armed input, or `-1` when disarmed. Re-applied on every
   /// (re)start so an arm survives a reconnect under an open Tuner face; `-1`
@@ -2234,14 +2239,18 @@ class LooperRepository {
     _retryRefusedRecord(snapshot);
     _refreshCacheTelemetry();
     _superviseDevice(devicePresent: snapshot.devicePresent);
-    // A measurement auto-sets the engine's offset (it never flows through
-    // setRecordOffset), so mirror it into the remembered value here — otherwise
-    // a restart would re-apply a stale offset. Guard on > 0 so a transient zero
-    // during a restart / in-flight measurement can't clobber a good value; an
-    // explicit "no compensation" (0) still lands via setRecordOffset.
-    if (snapshot.recordOffsetFrames > 0) {
+    // A measurement sets the engine's offset itself (it never flows through
+    // setRecordOffset), so mirror it into the remembered value when one
+    // completes, and only then: a queued setRecordOffset the audio thread
+    // has not applied yet would otherwise read back as the old figure and be
+    // replayed on the next reopen (#1270 Part 3a).
+    final latency = latencyStateFromEngine(snapshot.latencyState);
+    if (latency == LatencyState.done &&
+        _lastLatencyState != LatencyState.done &&
+        snapshot.recordOffsetFrames > 0) {
       _recordOffset = snapshot.recordOffsetFrames;
     }
+    _lastLatencyState = latency;
     _settlePendingClearUndos();
     // Remember retired restore points even when no Undo is waiting. A later
     // individual clear must not re-form an obsolete clear-all group.
@@ -2638,9 +2647,30 @@ class LooperRepository {
     if (_startRefused) return EngineResult.notReady;
     // The stopped engine still reports the rate the loops were recorded at.
     final previousRate = _engine.snapshot().sampleRate;
+    // A verdict an earlier attempt left pending (its open failed after
+    // clearing, or its replay rolled back): what this reopen reports must
+    // not hide it behind a "retained" over material that is already gone.
+    final pending = _reopenVerdictPending ? _lastReopen : null;
     _retireEngineLifetime();
     final reopened = _engine.reopen(engineConfigToEngine(config));
-    if (!reopened.result.isOk) return reopened.result;
+    if (!reopened.result.isOk) {
+      // A failed open has already settled the material per its outcome
+      // (`le_engine_reopen`): a clear is a fact the player must be told at
+      // the next start (rule 3), whatever the open did not manage.
+      if (!reopened.outcome.keepsMaterial) {
+        _lastReopen = _moreLost(
+          pending,
+          EngineReopened(
+            outcome: reopened.outcome,
+            droppedTracks: reopened.droppedTracks,
+            previousSampleRate: previousRate,
+            sampleRate: _engine.snapshot().sampleRate,
+          ),
+        );
+        _reopenVerdictPending = true;
+      }
+      return reopened.result;
+    }
     final snapshot = _engine.snapshot();
     final verdict = EngineReopened(
       outcome: reopened.outcome,
@@ -2648,7 +2678,7 @@ class LooperRepository {
       previousSampleRate: previousRate,
       sampleRate: snapshot.sampleRate,
     );
-    _lastReopen = verdict;
+    _lastReopen = _moreLost(pending, verdict);
     final foldedHistory = switch (verdict.outcome) {
       ReopenOutcome.retained => const <(int, int)>{},
       ReopenOutcome.retainedPartial => _foldHistoryFxForChannels(
@@ -2670,8 +2700,98 @@ class LooperRepository {
     if (result.isOk && verdict.keepsMaterial) _drainHistoryFx();
     // Rolled back: the device will not read present again until a deliberate
     // start, which must still tell the player what this reopen did.
-    if (!result.isOk) _reopenVerdictPending = true;
+    // Held for the next deliberate start only while nothing is open to
+    // report it; an open rig reports it on its own status.
+    _reopenVerdictPending = !result.isOk;
     return result;
+  }
+
+  /// Applies [config] to the audio device, keeping the recorded loops where
+  /// the engine can (#1270 Part 3a, D1).
+  ///
+  /// On a running engine the device is released and reopened through the
+  /// material-preserving path a reconnect uses ([_reopenEngine], #1140): a
+  /// buffer change, or a device change at the same negotiated rate, keeps the
+  /// loops (stopped), and [AudioApplyResult.reopen] says what the reopen did.
+  /// A stopped engine is started.
+  ///
+  /// When [config] cannot be opened, the previous config is reopened the same
+  /// way and the result is [AudioApplyStatus.refused]; when that fails too,
+  /// [AudioApplyStatus.failed] with the engine stopped. A refused admission
+  /// (a Session apply, a boot fence, a settings recovery) changes nothing and
+  /// reads as refused.
+  AudioApplyResult applyAudioConfig(EngineConfig config) {
+    if (_startRefused) {
+      return const AudioApplyResult(
+        status: AudioApplyStatus.refused,
+        result: EngineResult.notReady,
+      );
+    }
+    final previous = _lastEngineConfig;
+    if (!_intendRunning || previous == null) {
+      final result = startEngine(config);
+      return AudioApplyResult(
+        status: result.isOk
+            ? AudioApplyStatus.applied
+            : AudioApplyStatus.failed,
+        result: result,
+      );
+    }
+    // A RAW stop, as a reconnect does: stopEngine() would fold the history
+    // and disarm the supervisor for what is only a reopen.
+    _engine.stop();
+    if (!_reopenVerdictPending) _lastReopen = null;
+    final result = _reopenEngine(config);
+    if (result.isOk) {
+      // The device answered: nothing is lost any more.
+      _stopReconnectPolling();
+      return _applyOutcome(AudioApplyStatus.applied, result, _lastReopen);
+    }
+    // What the failed attempt did with the loops, when it said.
+    final attempt = _lastReopen;
+    if (!_intendRunning) {
+      // The device opened but the replay refused and rolled back through
+      // stopEngine(), as a refused reconnect does: the rig is stopped, and
+      // reopening the previous config over the folded history is not a
+      // state anything was built for.
+      return _applyOutcome(AudioApplyStatus.failed, result, attempt);
+    }
+    // The new config would not open. Put the previous one back, keeping the
+    // loops the same way.
+    _engine.stop();
+    if (!_reopenVerdictPending) _lastReopen = null;
+    final back = _reopenEngine(previous);
+    final verdict = _moreLost(attempt, _lastReopen);
+    if (back.isOk) {
+      _stopReconnectPolling();
+      return _applyOutcome(AudioApplyStatus.refused, result, verdict);
+    }
+    stopEngine();
+    return _applyOutcome(AudioApplyStatus.failed, result, verdict);
+  }
+
+  /// The apply's result, carrying [reopen] to the caller that asked. The
+  /// verdict is taken off the status: the device never left, so no return
+  /// will read it there, and a later start must not report it a second time.
+  AudioApplyResult _applyOutcome(
+    AudioApplyStatus status,
+    EngineResult result,
+    EngineReopened? reopen,
+  ) {
+    _lastReopen = null;
+    _reopenVerdictPending = false;
+    _reproject();
+    return AudioApplyResult(status: status, result: result, reopen: reopen);
+  }
+
+  /// Whichever of two reopen verdicts lost more of the loops.
+  static EngineReopened? _moreLost(EngineReopened? a, EngineReopened? b) {
+    int loss(EngineReopened? v) => switch (v?.outcome) {
+      null || ReopenOutcome.retained => 0,
+      ReopenOutcome.retainedPartial => 1,
+      ReopenOutcome.clearedRate || ReopenOutcome.clearedCap => 2,
+    };
+    return a == null || loss(b) > loss(a) ? b : a;
   }
 
   /// The post-open replay shared by [startEngine] and [_reopenEngine]: every
@@ -2716,12 +2836,11 @@ class LooperRepository {
         // output against driver clipping. No UI yet — the cache holds the
         // safety default.
         ..setLimiter(enabled: _limiterEnabled, ceiling: _limiterCeiling);
-      // Re-apply the remembered record offset only when there IS compensation
-      // to restore: a fresh start already defaults to 0, so pushing 0 is a
-      // no-op that also clobbers the auto-measure boot path (which measures
-      // instead of restoring). A device change / reconnect with a real offset
-      // still gets it back.
-      if (_recordOffset > 0) _engine.setRecordOffset(_recordOffset);
+      // Re-apply the remembered record offset, 0 included: the audio setup
+      // sets the offset the new device, rate and buffer were measured at, or
+      // 0 when they never were, and a reopen must not bring back a figure from
+      // another one (#1270 Part 3a).
+      _engine.setRecordOffset(_recordOffset);
       // Re-arm the tuner only if it is armed RIGHT NOW — see [_tunerInput].
       // Without this a device reconnect under an open Tuner face leaves the
       // engine disarmed, and the face has no way to notice: it armed once, on
@@ -7720,8 +7839,9 @@ class LooperRepository {
   /// destinations and the lanes. A lane counts in full: its print stands in
   /// for its Pre entries only between edits, overdubs, evictions and
   /// renders, and the worst block is the one in between.
-  int get fxCostNs {
-    final period = _fxPeriod;
+  int get fxCostNs => _fxCostAt(_fxPeriod);
+
+  int _fxCostAt(int period) {
     return [
       for (final c in _monitorEffects.values) fxChainCostNs(c, period: period),
       for (final c in _trackEffects.values) fxChainCostNs(c, period: period),
@@ -7739,6 +7859,15 @@ class LooperRepository {
     final snapshot = _engine.snapshot();
     final rate = snapshot.sampleRate > 0 ? snapshot.sampleRate : 96000;
     return fxBudgetNs(rate, period: _fxPeriod) - fxCostNs;
+  }
+
+  /// What would be left of the effects budget at [sampleRate] and
+  /// [bufferFrames]-frame blocks, with every chain as it is now: what an
+  /// audio-settings Apply checks before it moves either (#1270, D19).
+  /// Negative when the chains would not fit.
+  int fxRoomAt(int sampleRate, int bufferFrames) {
+    final period = bufferFrames > 0 ? bufferFrames : kFxBenchPeriod;
+    return fxBudgetNs(sampleRate, period: period) - _fxCostAt(period);
   }
 
   /// Monitor [input]'s remembered effect chain (empty if none), in processing

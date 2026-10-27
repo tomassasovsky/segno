@@ -376,11 +376,6 @@
     "noSignalDetected": "Sin señal detectada",
     "latencyMs": "{milliseconds} ms",
     "bufferFrames": "{frames} fotogramas",
-    "loopbackDetectedNote": "Loopback detectado{deviceClause} — la latencia se mide automáticamente al iniciar como estimación de ruta digital. Usa un cable para la cifra analógica real.",
-    "loopbackAvailableNote": "Hay un loopback {kind} disponible{deviceClause} pero no se puede enrutar automáticamente; usa un cable loopback físico para medir la latencia.",
-    "loopbackKindBackend": "loopback",
-    "loopbackKindMonitor": "monitor",
-    "loopbackKindVirtualDevice": "virtual",
     "failedToOpenDevice": "Error al abrir el dispositivo: {errorName}",
     "maxLoopDefault1m": "Predeterminado (1 min)",
     "maxLoopMinutes": "{minutes} min",
@@ -599,23 +594,6 @@
             }
         }
     },
-    "@loopbackDetectedNote": {
-        "placeholders": {
-            "deviceClause": {
-                "type": "String"
-            }
-        }
-    },
-    "@loopbackAvailableNote": {
-        "placeholders": {
-            "kind": {
-                "type": "String"
-            },
-            "deviceClause": {
-                "type": "String"
-            }
-        }
-    },
     "@failedToOpenDevice": {
         "placeholders": {
             "errorName": {
@@ -771,7 +749,6 @@
     "perfRenderingSubtitle": "Escribiendo la mezcla y los stems por pista. Podés seguir tocando; armar otra captura espera a que esto termine.",
     "perfHide": "Ocultar",
     "perfRevealMacos": "Mostrar en Finder",
-    "perfRevealWindows": "Mostrar en el Explorador de archivos",
     "perfRevealOther": "Mostrar en el gestor de archivos",
     "perfPartial": "Algunas pistas no se pudieron renderizar, pero el resto de la captura está intacto.",
     "perfStoppedDiskFull": "La captura se detuvo antes de tiempo — no se pudo escribir en el disco.",
@@ -1396,18 +1373,21 @@
     "audioSampleRateCost96": "reduce a la mitad el margen del búfer",
     "audioNoInputs": "Este dispositivo no tiene entradas.",
     "audioNoOutputsBanner": "No hay salidas activas: no se oirá nada. Toca una salida atenuada para volver a activarla.",
-    "audioAsioDriverGroup": "CONTROLADOR ASIO",
-    "audioNoAsioDriver": "No se encontró ningún controlador ASIO. Segno usa ASIO en Windows. Instala el controlador ASIO de tu interfaz, u obtén uno genérico de ASIO4ALL.",
-    "audioOpenAsio4all": "Abrir asio4all.org",
     "audioMaxLoopTitle": "Duración máxima del loop",
     "audioMaxLoopSubtitle": "Un tope mayor reserva más memoria por pista. Cambiarlo reabre el dispositivo.",
     "audioRenameInputTitle": "Renombrar entrada",
     "inputOrdinal": "entrada {number}",
     "a11yInputRenameField": "Nombre de la entrada",
-    "a11yAudioMeasureLatency": "Medir la latencia de ida y vuelta. No hace nada mientras ya hay una medición en curso.",
-    "audioMeasure": "Medir",
     "audioRecordOffsetSub": "desfase de grabación {frames} frames",
     "audioRefusedConfig": "El dispositivo no pudo abrirse a {asked}. Funcionando a {actual}.",
+    "audioRateLocked": "Borrá las pistas para cambiar la frecuencia de muestreo.",
+    "audioMaxLoopLocked": "Borrá las pistas para cambiar la duración máxima del loop.",
+    "audioApplyTitle": "¿Aplicar los ajustes de audio?",
+    "audioApplyBody": "La reproducción se detiene mientras la interfaz de audio se vuelve a abrir. Tus grabaciones se conservan.",
+    "audioApplyConfirm": "Detener el audio y aplicar",
+    "audioEffectsOverBudgetRate": "Tus efectos necesitan más procesamiento del que deja {rate}. Quitá algunos efectos primero.",
+    "audioDeviceRefused": "No se pudo abrir {device}. La interfaz anterior vuelve a funcionar.",
+    "audioSettingsRefused": "La interfaz no se abrió con estos ajustes. Vuelven a funcionar los anteriores.",
     "systemThisConsoleGroup": "ESTA CONSOLA",
     "systemHousekeepingGroup": "MANTENIMIENTO",
     "systemHardwareGroup": "HARDWARE",
