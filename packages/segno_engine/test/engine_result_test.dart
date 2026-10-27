@@ -20,6 +20,7 @@ void main() {
       expect(EngineResult.fromCode(-17), EngineResult.tracksChanged);
       expect(EngineResult.fromCode(-14), EngineResult.noInstrument);
       expect(EngineResult.fromCode(-15), EngineResult.unknownPatch);
+      expect(EngineResult.fromCode(-22), EngineResult.wouldClear);
     });
 
     test('maps unknown codes to invalid', () {

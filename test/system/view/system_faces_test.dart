@@ -174,10 +174,8 @@ void main() {
     );
     when(() => repository.startEngine(any())).thenReturn(EngineResult.ok);
     when(repository.stopEngine).thenReturn(EngineResult.ok);
-    when(repository.measureLatency).thenReturn(EngineResult.ok);
     when(repository.detectLoopback).thenReturn(const LoopbackInfo.none());
     when(repository.devices).thenReturn(_devices);
-    when(repository.asioDrivers).thenReturn(const []);
     when(() => repository.setPollInterval(any())).thenReturn(null);
   });
 

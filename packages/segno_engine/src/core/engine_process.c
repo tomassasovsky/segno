@@ -3,7 +3,7 @@
  *
  * Everything the device callback runs lives here and nowhere else: the real-time
  * contract holds for this whole file — no malloc/free, no locks, no syscalls, no
- * unbounded loops. le_engine_process is the block processor the miniaudio / ASIO
+ * unbounded loops. le_engine_process is the block processor the miniaudio
  * data callback pumps; it drains the SPSC command ring (apply_command), advances
  * the transport state machine (the finalize_* / handle_* helpers), records /
  * overdubs / mixes, runs the per-lane effect chains (fx_apply_chain), resolves the
@@ -3640,7 +3640,7 @@ static void le_cancel_signal_arms(le_engine* e) {
  * call, before the per-frame loop, so this is as fine-grained as a
  * ring-applied command can be tagged; see docs/design/performance-event-log-
  * format.md for why finer isn't meaningful here). Excluded, with the audit
- * rationale: LE_CMD_MEASURE_LATENCY (a device-calibration workflow, not a
+ * rationale: LE_CMD_MEASURE_LATENCY_PATH (a device-calibration workflow, not a
  * performance action); LE_CMD_SET_RECORD_OFFSET (a calibration/config value,
  * not something changed mid-performance); LE_CMD_ARM/LE_CMD_DISARM (scheduling
  * intent only — the eventual fire is what's logged, as LE_PLOG_RECORD_START,
@@ -4385,25 +4385,47 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       apply_command_image(e, &action, frame, 1);
       break;
     }
-    case LE_CMD_MEASURE_LATENCY: {
+    case LE_CMD_MEASURE_LATENCY_PATH: {
+      e->lat_request = cmd->latency.request;
+      /* Never over a take: the burst would land in it and cut what is heard
+       * (#1270 D3). Refused here as well as by the host, which cannot see a
+       * capture that starts while the command waits in the ring. */
+      if (le_any_capturing(e)) {
+        e->lat_active = 0;
+        le_latency_publish(e, LE_LATENCY_CANCELLED);
+        break;
+      }
       const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+      e->lat_out = cmd->latency.output;
+      e->lat_in = cmd->latency.input;
+      e->lat_amp = cmd->latency.amplitude;
+      e->lat_losses =
+          atomic_load_explicit(&e->a_device_losses, memory_order_relaxed);
       e->lat_active = 1;
       /* Emit for ~10 ms so the pulse survives D/A → cable → A/D. */
       e->lat_emit_remaining = sr / LE_LATENCY_PULSE_DIV;
       e->lat_buf_pos = 0; /* start a fresh capture window */
-      store_i32(&e->a_latency_state, LE_LATENCY_MEASURING);
-      /* A loopback measurement requires a physical out->in cable, which forms a
-       * feedback loop with input monitoring (out -> cable -> in -> monitor ->
-       * out). No explicit monitor suppression is needed — and we must NOT touch
-       * m->a_enabled here: while measuring, the pulse path takes over the output
-       * and `continue`s each frame (see le_engine_process), bypassing
-       * mix_monitors_frame entirely, so no monitored input ever reaches the
-       * output during the pulse. Snapshotting + zeroing a_enabled here (and
-       * restoring it at completion) used to revert a saved-monitor enable that
-       * the launch restore applies asynchronously mid-measurement, leaving that
-       * input silent until a manual toggle. lat_active alone is the gate. */
+      le_latency_publish(e, LE_LATENCY_MEASURING);
+      /* A cable measurement forms a feedback loop with input monitoring
+       * (out -> cable -> in -> monitor -> out). No explicit monitor
+       * suppression is needed — and we must NOT touch m->a_enabled here:
+       * while measuring, the pulse path takes over the output and returns
+       * before the per-frame mix (see process_input_frame), so no monitored
+       * input ever reaches the output during the pulse. Snapshotting +
+       * zeroing a_enabled here (and restoring it at completion) used to
+       * revert a saved-monitor enable that the launch restore applies
+       * asynchronously mid-measurement, leaving that input silent until a
+       * manual toggle. lat_active alone is the gate. */
       break;
     }
+    case LE_CMD_CANCEL_LATENCY:
+      /* Only the measurement this request started: a late cancel for an
+       * earlier one must not end a newer one. The offset is untouched. */
+      if (e->lat_active && cmd->latency.request == e->lat_request) {
+        e->lat_active = 0;
+        le_latency_publish(e, LE_LATENCY_CANCELLED);
+      }
+      break;
     case LE_CMD_RECORD:
       if (cmd->clock.cancel_count_in &&
           !e->launch_action[cmd->arg_i] && !e->launch_grace[cmd->arg_i]) {
@@ -5344,13 +5366,17 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       /* An explicitly set offset (a restored measurement, or a manual override)
        * is a known round-trip, so publish it as a completed measurement — the
        * UI then shows the loaded latency instead of "not measured". */
-      if (frames > 0) {
+      /* Not while a measurement runs: DONE would carry that request with a
+       * figure it did not measure. A restored figure belongs to no request,
+       * so it is published under request 0. */
+      if (frames > 0 && !e->lat_active) {
+        e->lat_request = 0;
         const int32_t osr = e->sample_rate > 0 ? e->sample_rate : 48000;
         atomic_store_explicit(
             &e->a_latency_ms_bits,
             f64_to_bits((double)frames * 1000.0 / (double)osr),
             memory_order_relaxed);
-        store_i32(&e->a_latency_state, LE_LATENCY_DONE);
+        le_latency_publish(e, LE_LATENCY_DONE);
       }
       break;
     }
@@ -5973,7 +5999,7 @@ static void le_latency_resolve(le_engine* e, int sr) {
   const int32_t m = sr / LE_LATENCY_PULSE_DIV; /* pulse length in frames */
   const int32_t n = e->lat_buf_pos;            /* frames captured */
   if (e->lat_buf == NULL || n <= m) {
-    store_i32(&e->a_latency_state, LE_LATENCY_TIMEOUT);
+    le_latency_publish(e, LE_LATENCY_TIMEOUT);
     return;
   }
   double window = 0.0;
@@ -5996,14 +6022,14 @@ static void le_latency_resolve(le_engine* e, int sr) {
    * level-independent test that works for weak loopback levels; the tiny
    * absolute floor rejects pure silence. */
   if (best < (double)LE_LATENCY_PEAK_RATIO * avg || best / (double)m < 1e-4) {
-    store_i32(&e->a_latency_state, LE_LATENCY_TIMEOUT);
+    le_latency_publish(e, LE_LATENCY_TIMEOUT);
     return;
   }
   store_i32(&e->a_record_offset, best_lag);
   atomic_store_explicit(&e->a_latency_ms_bits,
                         f64_to_bits((double)best_lag * 1000.0 / (double)sr),
                         memory_order_relaxed);
-  store_i32(&e->a_latency_state, LE_LATENCY_DONE);
+  le_latency_publish(e, LE_LATENCY_DONE);
 }
 
 /* ---- per-frame steps of le_engine_process ----
@@ -7611,9 +7637,8 @@ static void tuner_tap_block(le_engine* e, const float* in, uint32_t frames,
      *     in flight and skip it however large the budget is. Raising the
      *     budget would NOT buy headroom here; only a hop longer than the
      *     block does. No shipped path negotiates a period that large: the
-     *     generic chooser offers [64, 128, 256, 512] (bufferSizes in
-     *     audio_setup_state.dart) and an ASIO driver substitutes its own
-     *     list, but none of them lands above a hop. If one ever did, the
+     *     chooser offers [64, 128, 256, 512] (bufferSizes in
+     *     audio_setup_state.dart), and none of them lands above a hop. If one ever did, the
      *     single consequence is that the needle refreshes every second hop
      *     instead of every hop — ~86 ms rather than ~43 ms, still far finer
      *     than a needle needs to look continuous. Nothing is wrong, only
@@ -7657,8 +7682,10 @@ static inline int process_input_frame(le_engine* e, const float* in,
   /* Signal arms listen only to their selected, real recording sources. Input
    * conditioning precedes this buffer; meters/latency above remain raw. Never
    * substitute input zero when a route disappears. Cancellation remains a
-   * control action even when no selected source is currently usable. */
-  for (int qt = 0; qt < tc; ++qt) {
+   * control action even when no selected source is currently usable. While a
+   * latency measurement runs the arms wait: its burst and echo are not the
+   * player (#1270 D3). */
+  for (int qt = 0; qt < tc && !e->lat_active; ++qt) {
     le_track* t = &e->tracks[qt];
     if (!t->pending_record || t->pending_trigger != 1) continue;
     float magnitude = 0.0f;
@@ -7683,20 +7710,23 @@ static inline int process_input_frame(le_engine* e, const float* in,
     }
   }
 
-  /* The latency pulse returns on the loopback channels when the interface has
-   * them (e.g. a Scarlett's "Loop 1/2"); otherwise (a physical cable, or a
-   * routed loopback capture device) it returns on the normal inputs. */
-  const float lat_mag = excluded != 0u ? loop_mag : frame_mag;
-
-  /* Latency harness takes over the output entirely while measuring. It emits a
-   * quiet ~10 ms pulse at the start of a fixed capture window, records the
-   * input-magnitude envelope across that window, then cross-correlates it with
-   * the pulse to find the round-trip by the correlation peak (le_latency_resolve).
-   * The peak — integrated over the whole pulse — locks onto the real echo and
-   * ignores the brief direct/crosstalk bleed a first-over-threshold test
-   * mis-reported (especially on low-latency JACK graphs). */
+  /* Latency harness takes over the output entirely while measuring
+   * (#1270 Part 2): a quiet ~10 ms burst on the ONE chosen output (every
+   * other output reads 0.0), the magnitude of the ONE chosen input (or of
+   * the interface's loopback channels) recorded across a fixed capture
+   * window, then cross-correlated with the pulse to find the round trip by
+   * its peak (le_latency_resolve). The peak — integrated over the whole
+   * pulse — locks onto the real echo and ignores the brief direct/crosstalk
+   * bleed a first-over-threshold test mis-reported. */
+  if (e->lat_active &&
+      atomic_load_explicit(&e->a_device_losses, memory_order_relaxed) !=
+          e->lat_losses) {
+    /* The device left mid-measurement: what returns is not this path. */
+    e->lat_active = 0;
+    le_latency_publish(e, LE_LATENCY_CANCELLED);
+  }
   if (e->lat_active) {
-    float broadcast = 0.0f;
+    float burst = 0.0f;
     if (e->lat_emit_remaining > 0) {
       /* A tone burst (not a DC level): AC-coupled interface inputs high-pass a
        * constant pulse down to edge transients, leaving nothing to correlate.
@@ -7705,9 +7735,14 @@ static inline int process_input_frame(le_engine* e, const float* in,
           (sr / LE_LATENCY_PULSE_DIV) - e->lat_emit_remaining;
       const float phase = 2.0f * 3.14159265f * LE_LATENCY_TONE_HZ *
                           (float)emitted / (float)sr;
-      broadcast = LE_LATENCY_PULSE_AMP * sinf(phase);
+      burst = e->lat_amp * sinf(phase);
       e->lat_emit_remaining--;
     }
+    const float lat_mag =
+        e->lat_in == LE_LATENCY_LOOPBACK_INPUT
+            ? loop_mag
+            : (in != NULL && e->lat_in < ch_in ? fabsf(in[f * ch_in + e->lat_in])
+                                               : 0.0f);
     if (e->lat_buf != NULL && e->lat_buf_pos < e->lat_buf_cap) {
       e->lat_buf[e->lat_buf_pos++] = lat_mag;
     }
@@ -7718,13 +7753,14 @@ static inline int process_input_frame(le_engine* e, const float* in,
       le_latency_resolve(e, sr);
       e->lat_active = 0;
       /* No monitor enable state to restore: the measurement never touched
-       * a_enabled (see the LE_CMD_MEASURE_LATENCY comment). Monitoring resumes
-       * on its own now that lat_active is clear and the per-frame mix — which
-       * the pulse path bypassed — runs again. */
+       * a_enabled (see the LE_CMD_MEASURE_LATENCY_PATH comment). Monitoring
+       * resumes on its own now that lat_active is clear and the per-frame mix
+       * — which the pulse path bypassed — runs again. */
     }
     for (int c = 0; c < ch_out; ++c) {
-      out[f * ch_out + c] = broadcast;
-      *out_sumsq += broadcast * broadcast;
+      const float sample = c == e->lat_out ? burst : 0.0f;
+      out[f * ch_out + c] = sample;
+      *out_sumsq += sample * sample;
     }
     return 1;
   }

@@ -49,6 +49,11 @@ typedef struct le_command {
       int32_t channel;
       uint32_t mask;
     } trackmask;
+    struct { /* MEASURE_LATENCY_PATH / CANCEL_LATENCY (#1270 Part 2) */
+      int32_t output, input;
+      float amplitude;
+      uint32_t request;
+    } latency;
     struct { /* SET_LANE_FX / SET_MONITOR_INPUT_FX (channel = input, lane unused) */
       int32_t channel, lane, index, type;
     } fx;

@@ -414,9 +414,14 @@ class FakePerformanceEngine with SimulatedInstruments implements AudioEngine {
   @override
   List<AudioDevice> enumerateDevices() => const [];
   @override
-  List<AudioDevice> enumerateAsioDrivers() => const [];
+  EngineResult measureLatencyPath({
+    required int output,
+    required int input,
+    required double amplitude,
+    required int request,
+  }) => EngineResult.ok;
   @override
-  EngineResult measureLatency() => EngineResult.ok;
+  EngineResult cancelLatency({required int request}) => EngineResult.ok;
 
   // This capture harness does not apply structural FX or host plugins.
   // Refuse those operations instead of reporting a fictitious publication.

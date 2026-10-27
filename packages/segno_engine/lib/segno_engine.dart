@@ -32,7 +32,8 @@ export 'src/audio_engine.dart'
         ReopenResult,
         RequestAdmission,
         SessionIo,
-        TempoControl;
+        TempoControl,
+        latencyLoopbackInput;
 export 'src/audition.dart'
     show AuditionStart, AuditionState, kAuditionMaxSeconds;
 export 'src/backing.dart'
@@ -48,7 +49,7 @@ export 'src/backing.dart'
         DecodedAudio,
         DecodedAudioOwnership,
         DecodedAudioPayload;
-export 'src/engine_config.dart' show AudioBackend, EngineConfig;
+export 'src/engine_config.dart' show EngineConfig;
 export 'src/engine_snapshot.dart'
     show
         CallbackTelemetry,

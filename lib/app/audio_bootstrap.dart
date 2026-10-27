@@ -1,14 +1,11 @@
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/console_audio_devices.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
-import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/audio_tempo_families.dart';
 import 'package:segno/looper/application/settings_families.dart';
 import 'package:segno/looper/application/settings_owner.dart';
-// Settings owns its own AudioBackend; the looper domain backend is the
-// unprefixed one here.
-import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
+import 'package:settings_repository/settings_repository.dart';
 
 /// The outcome of [tryAutoStartEngine]: whether the engine came up, and the
 /// config that was attempted when a *pinned* device could not be opened —
@@ -125,9 +122,6 @@ Future<AutoStartResult> _tryAutoStartEngine({
     AppLog.info('audio auto-start: first run started=$started');
     return (started: started, recoveryConfig: null);
   }
-  final backend = engineBackendOf(saved.backend);
-  final asioDriver = saved.asioDriver;
-
   // Console heal: empty persisted ids lock every boot onto the system default.
   // When both are empty, try the same non-default duplex pick as first-run.
   var playbackId = saved.playbackDeviceId;
@@ -162,11 +156,6 @@ Future<AutoStartResult> _tryAutoStartEngine({
     useLoopbackCapture: loopback.isAutoRoutable && captureId.isEmpty,
     playbackDeviceId: playbackId,
     captureDeviceId: captureId,
-    // This config assembly is duplicated from the cubit's _engineConfig, so
-    // both must carry backend/asioDriver or an auto-start would diverge from
-    // an interactive start.
-    backend: backend,
-    asioDriver: asioDriver,
   );
   AppLog.info(
     'audio auto-start: opening playback=${config.playbackDeviceId} '
@@ -193,8 +182,6 @@ Future<AutoStartResult> _tryAutoStartEngine({
           ? 0
           : saved.maxLoopMinutes * 60 * saved.sampleRate,
       useLoopbackCapture: loopback.isAutoRoutable,
-      backend: backend,
-      asioDriver: asioDriver,
     );
     result = repository.startEngine(fallback);
     if (result.isOk) {
@@ -208,8 +195,6 @@ Future<AutoStartResult> _tryAutoStartEngine({
           inputChannels: saved.inputChannels,
           outputChannels: saved.outputChannels,
           maxLoopMinutes: saved.maxLoopMinutes,
-          backend: saved.backend,
-          asioDriver: saved.asioDriver,
         ),
       );
     }
@@ -285,8 +270,6 @@ Future<AutoStartResult> _tryAutoStartEngine({
         maxLoopMinutes: saved.maxLoopMinutes,
         playbackDeviceId: playbackId,
         captureDeviceId: captureId,
-        backend: saved.backend,
-        asioDriver: saved.asioDriver,
       ),
     );
   }

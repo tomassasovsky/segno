@@ -19,7 +19,6 @@
  *   - engine_devices.c   device discovery, loopback detection, backend selection.
  *   - engine_snapshot.c  published-state snapshots + visualization reads.
  *   - engine_session.c   session export / import / commit.
- *   - engine_convert.c   pure sample-format conversion + ASIO buffer math.
  *
  * Multi-track model (unchanged): a shared master loop clock plus N independent
  * tracks; the first to finish recording defines the master length, and one-level
@@ -967,9 +966,6 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   store_i32(&engine->a_sample_rate, sample_rate);
   store_i32(&engine->a_in_channels, input_channels);
   store_i32(&engine->a_out_channels, output_channels);
-  /* Default to the miniaudio backend; le_engine_start republishes the negotiated
-   * backend after device open (ASIO on Windows, miniaudio on macOS/Linux). */
-  store_i32(&engine->a_active_backend, LE_BACKEND_MINIAUDIO);
   /* Re-derived per device open in le_engine_start; default to none excluded. */
   atomic_store_explicit(&engine->a_excluded_input_mask, 0u,
                         memory_order_relaxed);
@@ -1257,9 +1253,7 @@ void le_engine_lane_fx_chain_for_test(le_engine* engine, int32_t channel,
 }
 
 /* Loopback detection, device enumeration / id resolution, and backend selection
- * (le_select_backend + the ASIO-driver enumeration stub) moved to
- * engine_devices.c (S1). The ASIO bridge math (deinterleave / interleave /
- * pick_buffer) lives in engine_convert.c. */
+ * (le_select_backend) live in engine_devices.c (S1). */
 
 void le_engine_mark_started(le_engine* engine) {
   if (engine == NULL) return;
@@ -1267,18 +1261,12 @@ void le_engine_mark_started(le_engine* engine) {
   atomic_store_explicit(&engine->a_running, 1, memory_order_release);
 }
 
-void le_engine_note_xrun(le_engine* engine) {
-  le_engine_note_backend_xrun(engine, LE_XRUN_BACKEND_OVERLOAD);
-}
-
 void le_engine_note_backend_xrun(le_engine* engine, int32_t kind) {
   if (engine == NULL) return;
   /* Relaxed throughout: a monotonically-increasing dropout tally read by the
-   * snapshot poller — no other state is ordered against it. Called from a
-   * device backend's own thread (the ASIO message thread for an overload; the
-   * ALSA data-loop thread for an -EPIPE recovery), never from inside
-   * le_engine_process; exists as a C helper so a C++ backend TU need not touch
-   * the _Atomic fields directly (mirrors le_engine_mark_started).
+   * snapshot poller — no other state is ordered against it. Called from the
+   * device backend's own thread (the ALSA data-loop thread for an -EPIPE
+   * recovery), never from inside le_engine_process.
    *
    * The armed flag comes from the PUBLISHED atomic, not engine->perf.armed:
    * that mirror is audio-thread-local and these callers do not own it. Reading
@@ -1293,7 +1281,7 @@ void le_engine_note_backend_xrun(le_engine* engine, int32_t kind) {
    * under-report reality, which is the failure #722 exists to end. The cost is
    * that the kinds sum to xrun_count only for kinds this build knows; that is
    * what segno_engine_api.h documents, and no backend passes anything else
-   * today (ALSA passes 0/1/2, ASIO passes 3). */
+   * today (ALSA passes 0/1/2). */
   atomic_fetch_add_explicit(&engine->a_xruns, 1u, memory_order_relaxed);
   le_cb_timing_note_xrun(
       &engine->cb_timing, kind,
@@ -1325,6 +1313,12 @@ void le_engine_configure_callback_budget(le_engine* engine,
   le_cb_timing_configure(&engine->cb_timing, sample_rate, period_frames);
 }
 
+void le_latency_publish(le_engine* e, int32_t state) {
+  atomic_store_explicit(&e->a_latency_word,
+                        ((uint64_t)e->lat_request << 32) | (uint32_t)state,
+                        memory_order_release);
+}
+
 void le_engine_mark_device_lost(le_engine* engine) {
   if (engine == NULL) return;
   /* Flip presence to 0 while a_running stays 1 (running-but-disconnected),
@@ -1332,10 +1326,12 @@ void le_engine_mark_device_lost(le_engine* engine) {
    * presence flag carrying no other state). The Dart layer reads device_present
    * == 0 as "lost" and drives reconnection (stop -> start) from the control
    * thread — the only correct place to tear down and re-open a device, never the
-   * driver's callback/message thread. Used by the ASIO reset-request and
-   * sample-rate-change notifications so a driver reconfigured by another app
-   * recovers instead of going silent. */
+   * driver's callback thread. The device-free test engine calls it to stand in
+   * for a device that left. */
   atomic_store_explicit(&engine->a_device_present, 0, memory_order_relaxed);
+  /* A latency measurement over a device that left is cancelled. */
+  atomic_fetch_add_explicit(&engine->a_device_losses, 1u,
+                            memory_order_relaxed);
 }
 
 /* Gives a live chain owner's state its hop-stagger seed and the engine frame
@@ -1372,7 +1368,7 @@ le_engine* le_engine_create(void) {
   le_layer_staging_ring_init(&engine->perf.layer_staging_ring,
                              engine->perf.layer_staging_storage,
                              LE_LAYER_STAGING_RING_CAPACITY);
-  store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
+  le_latency_publish(engine, LE_LATENCY_IDLE);
   /* The audibility gains (#1400) start at their gates on the first frame each
    * track is mixed. */
   for (int t = 0; t < LE_MAX_TRACKS; ++t) engine->trk_gate_stale[t] = 1;
@@ -1605,14 +1601,10 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
     return LE_ERR_ALREADY_RUNNING;
   }
 
-  /* Open the device through the selected backend (ASIO on Windows, miniaudio on
-   * macOS/Linux). The backend builds the device config, resolves pins/loopback,
-   * opens the device, and reports the negotiated parameters back. A requested
-   * ASIO open that fails (no/missing driver, driver busy, init failure) is NOT
-   * silently retried on another backend: Windows is ASIO-only, so the failure
-   * surfaces (the app lands stopped and shows the no-driver / ASIO4ALL
-   * affordance) rather than dropping to system audio behind the user's back. */
-  const le_device_backend* be = le_select_backend(config->backend);
+  /* Open the device through the backend (miniaudio). The backend builds the
+   * device config, resolves pins/loopback, opens the device, and reports the
+   * negotiated parameters back. */
+  const le_device_backend* be = le_select_backend();
   le_device_open_result info;
   const int32_t open_result = be->open(engine, config, &info);
   if (open_result != LE_OK) {
@@ -1644,11 +1636,32 @@ int32_t le_engine_reopen(le_engine* engine, const le_config* config,
   /* Open first, exactly as le_engine_start does. A failed open changes
    * NOTHING: the material is still held and still stopped, so the supervisor
    * can simply try again on its next tick. */
-  const le_device_backend* be = le_select_backend(config->backend);
+  const le_device_backend* be = le_select_backend();
   le_device_open_result info;
   const int32_t open_result = be->open(engine, config, &info);
   if (open_result != LE_OK) return open_result;
   engine->backend = be;
+
+  /* keep_material: a reopen that would clear the whole engine is refused
+   * before anything is settled, with the device closed again. */
+  if (config->keep_material) {
+    int32_t sample_rate = info.sample_rate;
+    int32_t input_channels = info.input_channels;
+    int32_t output_channels = info.output_channels;
+    int32_t max_loop_frames = config->max_loop_frames;
+    le_clamp_shape(&sample_rate, &input_channels, &output_channels,
+                   &max_loop_frames);
+    uint32_t drop_mask = 0u;
+    const int32_t decision = le_engine_reopen_outcome(
+        engine, sample_rate, max_loop_frames, &drop_mask);
+    if (decision == LE_REOPEN_CLEARED_RATE ||
+        decision == LE_REOPEN_CLEARED_CAP) {
+      be->close(engine);
+      *outcome = decision;
+      if (dropped_track_mask != NULL) *dropped_track_mask = 0;
+      return LE_ERR_WOULD_CLEAR;
+    }
+  }
 
   const int32_t rc = le_engine_reopen_configured(
       engine, info.sample_rate, info.input_channels, info.output_channels,
@@ -1673,7 +1686,6 @@ static int32_t le_engine_publish_and_start(le_engine* engine,
                                            const le_config* config,
                                            const le_device_open_result* info_p) {
   const le_device_open_result info = *info_p;
-  store_i32(&engine->a_active_backend, info.active_backend);
   store_i32(&engine->a_buffer_frames, info.buffer_frames);
   /* Callback telemetry (#722): arm the instrument at the negotiated rate.
    * le_engine_configure above deliberately left it inert, so this is the single
@@ -1683,7 +1695,7 @@ static int32_t le_engine_publish_and_start(le_engine* engine,
    * be running yet — nothing races this write. */
   le_engine_configure_callback_budget(engine, info.sample_rate,
                                       info.buffer_frames);
-  store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
+  le_latency_publish(engine, LE_LATENCY_IDLE);
   engine->lat_active = 0;
   engine->lat_emit_remaining = 0;
   engine->lat_buf_pos = 0;
@@ -1740,6 +1752,13 @@ int32_t le_engine_stop(le_engine* engine) {
   }
   engine->device_name[0] = '\0';
   le_song_cancel(engine);
+  /* A measurement the stop cut short ends CANCELLED: a device that left stops
+   * its callback, so the frame-side loss check never runs. The callback is
+   * gone, so the control thread owns the latency fields here. */
+  if (engine->lat_active) {
+    engine->lat_active = 0;
+    le_latency_publish(engine, LE_LATENCY_CANCELLED);
+  }
   atomic_store_explicit(&engine->a_device_present, 0, memory_order_release);
   atomic_store_explicit(&engine->a_running, 0, memory_order_release);
   /* Settle every DISABLED fx slot's enable ramp at bypass now that the audio
@@ -1842,6 +1861,10 @@ int32_t le_engine_post_command(le_engine* engine, int32_t code, int32_t arg_i,
   if (code == LE_CMD_AUDITION_START || code == LE_CMD_AUDITION_STOP) {
     return LE_ERR_INVALID;
   }
+  /* The latency path (#1270) is validated by its typed producers. */
+  if (code == LE_CMD_MEASURE_LATENCY_PATH || code == LE_CMD_CANCEL_LATENCY) {
+    return LE_ERR_INVALID;
+  }
   if (code == LE_CMD_SET_LOOPER_MODE) {
     return le_push_cmd(engine, (le_command){.code = code,
                                            .presets = {.mode = arg_i}});
@@ -1850,8 +1873,37 @@ int32_t le_engine_post_command(le_engine* engine, int32_t code, int32_t arg_i,
   return le_push_cmd(engine, cmd);
 }
 
-int32_t le_engine_measure_latency(le_engine* engine) {
-  return le_engine_post_command(engine, LE_CMD_MEASURE_LATENCY, 0, 0.0f);
+int32_t le_engine_measure_latency_path(le_engine* engine, int32_t output,
+                                       int32_t input, float amplitude,
+                                       uint32_t request) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  const int32_t outputs = load_i32(&engine->a_out_channels);
+  const int32_t inputs = load_i32(&engine->a_in_channels);
+  const uint32_t loopback = atomic_load_explicit(
+      &engine->a_excluded_input_mask, memory_order_relaxed);
+  if (output < 0 || output >= outputs) return LE_ERR_INVALID;
+  if (input == LE_LATENCY_LOOPBACK_INPUT) {
+    if (loopback == 0u) return LE_ERR_INVALID;
+  } else if (input < 0 || input >= inputs) {
+    return LE_ERR_INVALID;
+  }
+  if (!(amplitude > 0.0f && amplitude <= 0.5f)) return LE_ERR_INVALID;
+  return le_push_cmd(engine,
+                     (le_command){.code = LE_CMD_MEASURE_LATENCY_PATH,
+                                  .latency = {.output = output,
+                                              .input = input,
+                                              .amplitude = amplitude,
+                                              .request = request}});
+}
+
+int32_t le_engine_cancel_latency(le_engine* engine, uint32_t request) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  return le_push_cmd(engine,
+                     (le_command){.code = LE_CMD_CANCEL_LATENCY,
+                                  .latency = {.request = request}});
 }
 
 /* ---- looper control (push gated on `configured`, so tests work device-free) */
@@ -1891,8 +1943,11 @@ int32_t le_push(le_engine* engine, int32_t code, int32_t arg_i, float arg_f) {
   return le_push_cmd(engine, cmd);
 }
 
-int32_t le_engine_begin_latency_for_test(le_engine* engine) {
-  /* Configured-gated (like the looper commands) so the harness's loopback
-   * detection can be driven without opening a device. */
-  return le_push(engine, LE_CMD_MEASURE_LATENCY, 0, 0.0f);
+int32_t le_engine_begin_latency_for_test(le_engine* engine, int32_t output,
+                                         int32_t input, float amplitude,
+                                         uint32_t request) {
+  /* Configured-gated (like the looper commands) so the harness can be driven
+   * without opening a device. */
+  return le_engine_measure_latency_path(engine, output, input, amplitude,
+                                        request);
 }

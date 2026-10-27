@@ -5,31 +5,9 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
-// Settings owns its own AudioBackend, mapped to/from the looper domain backend
-// at the persistence boundary; prefixed only for that enum so the unprefixed
-// AudioBackend stays the domain one.
-import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
-import 'package:settings_repository/settings_repository.dart'
-    as persisted
-    show AudioBackend;
+import 'package:settings_repository/settings_repository.dart';
 
 part 'audio_setup_state.dart';
-
-/// Maps the looper domain backend to the settings layer's own backend enum.
-/// An exhaustive switch so adding a backend is a compile error here rather than
-/// a runtime failure from a name lookup.
-persisted.AudioBackend settingsBackendOf(AudioBackend backend) =>
-    switch (backend) {
-      AudioBackend.miniaudio => persisted.AudioBackend.miniaudio,
-      AudioBackend.asio => persisted.AudioBackend.asio,
-    };
-
-/// Maps the settings layer's persisted backend to the looper domain backend.
-AudioBackend engineBackendOf(persisted.AudioBackend backend) =>
-    switch (backend) {
-      persisted.AudioBackend.miniaudio => AudioBackend.miniaudio,
-      persisted.AudioBackend.asio => AudioBackend.asio,
-    };
 
 /// Manages the audio device options (device, sample rate, buffer size, maximum
 /// loop length) and surfaces the live engine status.
@@ -506,8 +484,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
         config.loopback.isAutoRoutable && config.captureDeviceId.isEmpty,
     playbackDeviceId: config.playbackDeviceId,
     captureDeviceId: config.captureDeviceId,
-    backend: config.backend,
-    asioDriver: config.asioDriver,
   );
 
   /// The loop cap to open [config] with, in frames: the cap open now while
@@ -535,9 +511,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     maxLoopMinutes: config.maxLoopMinutes,
     playbackDeviceId: config.playbackDeviceId,
     captureDeviceId: config.captureDeviceId,
-    // Map the domain backend to the settings layer's own enum.
-    backend: settingsBackendOf(config.backend),
-    asioDriver: config.asioDriver,
   );
 
   /// Converts a minute cap to engine frames at [sampleRate]; `0` (engine
@@ -735,14 +708,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       captureDeviceId: hydrateConfig
           ? lastConfig?.captureDeviceId ?? current.captureDeviceId
           : current.captureDeviceId,
-      // Carried through to the engine and the saved config until those
-      // fields go (#1270 Part 2).
-      backend: hydrateConfig
-          ? lastConfig?.backend ?? AudioBackend.miniaudio
-          : current.backend,
-      asioDriver: hydrateConfig
-          ? lastConfig?.asioDriver ?? current.asioDriver
-          : current.asioDriver,
       hasContent: looper.hasContent,
       engineStatus: engineStatus,
       status: engineStatus.isConnected

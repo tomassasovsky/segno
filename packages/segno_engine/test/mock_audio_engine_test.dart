@@ -226,36 +226,83 @@ void main() {
       expect(engine.deviceName, contains('18i20o'));
     });
 
-    test('snapshot echoes the requested backend (no fallback in the mock)', () {
-      // Stopped, or started on miniaudio, the negotiated backend is miniaudio.
-      expect(engine.snapshot().activeBackend, AudioBackend.miniaudio);
+    test('a latency path answers at once, with its request', () {
       engine.start(engine.defaultConfig);
-      expect(engine.snapshot().activeBackend, AudioBackend.miniaudio);
-      // Started on ASIO, the mock "succeeds" and reports ASIO as negotiated —
-      // the requested-ASIO/reality-miniaudio fallback is never exercised here.
-      engine
-        ..stop()
-        ..start(
-          const EngineConfig(
-            backend: AudioBackend.asio,
-            asioDriver: 'mock-asio',
-          ),
-        );
-      expect(engine.snapshot().activeBackend, AudioBackend.asio);
+      expect(
+        engine.measureLatencyPath(
+          output: 1,
+          input: 0,
+          amplitude: 0.25,
+          request: 7,
+        ),
+        EngineResult.ok,
+      );
+      expect(engine.lastLatencyPath, (
+        output: 1,
+        input: 0,
+        amplitude: 0.25,
+        request: 7,
+      ));
+      final snapshot = engine.snapshot();
+      expect(snapshot.latencyState, LatencyState.done);
+      expect(snapshot.latencyRequest, 7);
     });
 
-    test('enumerates one duplex ASIO driver with probed channel counts', () {
-      final drivers = engine.enumerateAsioDrivers();
-      expect(drivers, hasLength(1));
-      final driver = drivers.single;
-      // An ASIO driver is one duplex device (never split by direction), so it
-      // is tagged isInput: false and carries the counts the picker shows.
-      expect(driver.isInput, isFalse);
-      expect(driver.inputChannels, 18);
-      expect(driver.outputChannels, 20);
-      // It also carries the driver's selectable buffer sizes / sample rates.
-      expect(driver.bufferSizes, [128, 256, 512]);
-      expect(driver.sampleRates, [48000, 96000]);
+    test('a held measurement is cancelled by its own request only', () {
+      engine
+        ..start(engine.defaultConfig)
+        ..holdLatencyMeasurement = true
+        ..measureLatencyPath(output: 0, input: 0, amplitude: 0.25, request: 3);
+      expect(engine.snapshot().latencyState, LatencyState.measuring);
+      engine.cancelLatency(request: 2);
+      expect(engine.snapshot().latencyState, LatencyState.measuring);
+      engine.cancelLatency(request: 3);
+      expect(engine.snapshot().latencyState, LatencyState.cancelled);
+      expect(engine.snapshot().latencyRequest, 3);
+    });
+
+    test('a jack the interface has not got is refused', () {
+      engine.start(engine.defaultConfig);
+      for (final (output, input) in [
+        (-1, 0),
+        (engine.outputChannels, 0),
+        (0, -1),
+        (0, engine.inputChannels),
+      ]) {
+        expect(
+          engine.measureLatencyPath(
+            output: output,
+            input: input,
+            amplitude: 0.25,
+            request: 1,
+          ),
+          EngineResult.invalid,
+        );
+      }
+      expect(
+        engine.measureLatencyPath(
+          output: 0,
+          input: latencyLoopbackInput,
+          amplitude: 0.25,
+          request: 1,
+        ),
+        EngineResult.ok,
+      );
+    });
+
+    test('an amplitude outside (0, 0.5] is refused', () {
+      engine.start(engine.defaultConfig);
+      for (final amplitude in [0.0, 0.6]) {
+        expect(
+          engine.measureLatencyPath(
+            output: 0,
+            input: 0,
+            amplitude: amplitude,
+            request: 1,
+          ),
+          EngineResult.invalid,
+        );
+      }
     });
 
     test('enumerates a duplex mock device', () {
