@@ -185,6 +185,25 @@ void main() {
       );
     });
 
+    test(
+      'keeps a section recording its first take, though it has no content',
+      () {
+        const taking = LooperState(
+          transport: TransportState(looperMode: LooperMode.song),
+          tracks: [
+            Track(state: TrackState.recording),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 100),
+          ],
+        );
+        expect(
+          taking.sectionToStart(const [
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 100),
+          ]),
+          0,
+        );
+      },
+    );
+
     test('with every section muted, keeps the same preference among them', () {
       const running = Track(
         channel: 4,
