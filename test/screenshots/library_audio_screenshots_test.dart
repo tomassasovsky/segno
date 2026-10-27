@@ -36,8 +36,8 @@ class _MockPedalRepository extends Mock implements PedalRepository {}
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
 
-/// Author-side images of Library > Audio against pen 18/01 and 20/07 to
-/// 20/12; CI does not claim visual proof.
+/// Images of Library > Audio to compare with pen 18/01 and 20/07 to 20/12.
+/// CI renders them into the `screenshots` artifact; nothing compares pixels.
 void main() {
   setUpAll(() async {
     registerFallbackValue(

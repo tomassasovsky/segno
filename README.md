@@ -24,9 +24,11 @@ a desktop app: the musician works it with ten footswitches and an encoder,
 reads it from a 15.6-inch main screen and a 7-inch readout, and never needs a
 computer on stage.
 
-This repository holds all of it: the Flutter application, the C audio engine,
-the console firmware, the circuit boards, the sheet-metal enclosure, and the
-Yocto image that boots the appliance.
+This repository holds the Flutter application, the C audio engine, the console
+firmware and the Yocto image that boots the appliance. The circuit boards and
+the sheet-metal enclosure are in
+[segno-hardware](https://github.com/tomassasovsky/segno-hardware), and the
+design file in [segno-design](https://github.com/tomassasovsky/segno-design).
 
 ![The Tracks view with four tracks, per-track mute, solo, pan and level](docs/images/tracks_mixer_window.png)
 

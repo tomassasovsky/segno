@@ -191,7 +191,8 @@ jobs:
   # renders the screenshot suites on Linux and uploads the PNGs as the
   # `screenshots` artifact, for a reviewer to compare against the pen. No
   # goldens are committed, so no pixels are compared here, but a suite that
-  # fails to render fails the job.
+  # fails to render fails the job. Suites already known to fail are skipped,
+  # each with a comment naming its issue.
   #
   # The clone is the segno-design branch with this PR's branch name when one
   # exists, so a UI change and its pen PR are checked together; otherwise
@@ -205,7 +206,7 @@ jobs:
           BRANCH: ${{ github.head_ref }}
         run: |
           url=https://github.com/tomassasovsky/segno-design.git
-          if [ -n "$BRANCH" ] && git ls-remote --exit-code --heads "$url" "$BRANCH" > /dev/null; then
+          if [ -n "$BRANCH" ] && git ls-remote --exit-code "$url" "refs/heads/$BRANCH" > /dev/null; then
             git clone --depth 1 --branch "$BRANCH" "$url" ../segno-design
           else
             git clone --depth 1 "$url" ../segno-design
@@ -216,8 +217,6 @@ jobs:
           channel: stable
       - name: Resolve the app's dependencies
         run: flutter pub get
-      - name: Check the app against the design studies
-        run: flutter test test/control/external_pedal_art_test.dart
       - name: Render the screenshot suites
         run: flutter test --tags screenshots --update-goldens test/screenshots
       - name: Upload the screenshots
@@ -227,6 +226,9 @@ jobs:
           name: screenshots
           path: test/screenshots/goldens/
           if-no-files-found: error
+      - name: Check the app against the design studies
+        if: always()
+        run: flutter test test/control/external_pedal_art_test.dart
   pedal-repository:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
     with:

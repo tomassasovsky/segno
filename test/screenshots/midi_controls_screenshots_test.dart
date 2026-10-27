@@ -88,7 +88,8 @@ const _connection = MidiConnection(
   status: MidiConnectionStatus.connected,
 );
 
-/// Author-side images of the real MIDI screens; CI does not claim visual proof.
+/// Images of the real MIDI screens for review. CI renders them into the
+/// `screenshots` artifact; nothing compares pixels.
 void main() {
   setUpAll(() async {
     if (!rendersScreenshots) return;

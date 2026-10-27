@@ -42,8 +42,8 @@ final _current = SessionSummary(
   fxCount: 15,
 );
 
-/// Author-side images of pen section 34 (#1178 Part 8); CI does not claim
-/// visual proof.
+/// Images of pen section 34 (#1178 Part 8) for review. CI renders them into
+/// the `screenshots` artifact; nothing compares pixels.
 void main() {
   late Directory temp;
   late FakeDrive drive;
