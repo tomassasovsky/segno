@@ -2224,6 +2224,98 @@
     "@audioCableRetry": {
         "description": "Button that runs the cable test again after no pulse came back."
     },
+    "devicePageTitle": "Audio device",
+    "@devicePageTitle": {
+        "description": "Title of Settings > Device (pen 28/01)."
+    },
+    "deviceInputsOutputs": "{inputs} inputs · {outputs} outputs",
+    "@deviceInputsOutputs": {
+        "description": "The interface's channel counts under its name.",
+        "placeholders": {
+            "inputs": {
+                "type": "int"
+            },
+            "outputs": {
+                "type": "int"
+            }
+        }
+    },
+    "deviceConnected": "Connected",
+    "@deviceConnected": {
+        "description": "Status pill: the interface is open."
+    },
+    "deviceDisconnected": "Disconnected",
+    "@deviceDisconnected": {
+        "description": "Status pill: the interface is not there."
+    },
+    "deviceChangeInterface": "Change interface",
+    "@deviceChangeInterface": {
+        "description": "Opens the interface list; a choice there is drafted."
+    },
+    "deviceSampleRate": "Sample rate",
+    "@deviceSampleRate": {
+        "description": "Heading of the sample rate chips."
+    },
+    "deviceBufferSize": "Buffer size",
+    "@deviceBufferSize": {
+        "description": "Heading of the buffer chips."
+    },
+    "deviceSamples": "samples",
+    "@deviceSamples": {
+        "description": "Unit beside the buffer heading."
+    },
+    "deviceLowerLatency": "Lower latency",
+    "@deviceLowerLatency": {
+        "description": "Under the smallest buffer chip."
+    },
+    "deviceMoreHeadroom": "More headroom",
+    "@deviceMoreHeadroom": {
+        "description": "Under the largest buffer chip."
+    },
+    "deviceMs": "ms",
+    "@deviceMs": {
+        "description": "Milliseconds, after the period figure."
+    },
+    "devicePerBuffer": "per buffer",
+    "@devicePerBuffer": {
+        "description": "After the period figure: how long one buffer lasts."
+    },
+    "deviceMeasureNote": "Measure to align new recordings.",
+    "@deviceMeasureNote": {
+        "description": "Under the latency while nothing is measured."
+    },
+    "deviceApplyBeforeMeasuring": "Apply audio settings before measuring.",
+    "@deviceApplyBeforeMeasuring": {
+        "description": "Why Measure is disabled while settings are drafted."
+    },
+    "deviceDropouts": "Audio dropouts",
+    "@deviceDropouts": {
+        "description": "Health row: dropouts since the interface opened."
+    },
+    "deviceEngine": "Audio engine",
+    "@deviceEngine": {
+        "description": "Health row: whether the engine runs."
+    },
+    "deviceEngineRunning": "Running",
+    "@deviceEngineRunning": {
+        "description": "Audio engine state."
+    },
+    "deviceEngineStopped": "Stopped",
+    "@deviceEngineStopped": {
+        "description": "Audio engine state."
+    },
+    "deviceEngineOffline": "Offline",
+    "@deviceEngineOffline": {
+        "description": "Audio engine state: running but the interface is gone."
+    },
+    "deviceApplyNote": "Changes apply together. Your recordings stay intact.",
+    "@deviceApplyNote": {
+        "description": "The Apply row's note while settings are drafted."
+    },
+    "deviceApply": "Apply",
+    "@deviceApply": {
+        "description": "Applies the drafted audio settings."
+    },
     "systemThisConsoleGroup": "THIS CONSOLE",
     "systemHousekeepingGroup": "HOUSEKEEPING",
     "systemHardwareGroup": "HARDWARE",
