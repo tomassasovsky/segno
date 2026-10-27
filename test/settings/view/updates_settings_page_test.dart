@@ -166,8 +166,8 @@ void main() {
       await tester.tap(find.byKey(const Key('updates_check')));
       await tester.pumpAndSettle();
       verify(update.check).called(1);
-      // Load from USB is Part 8's; nothing stands in for it yet.
-      expect(find.textContaining('USB'), findsNothing);
+      // Load from USB sits beside the check (pen 33).
+      expect(find.byKey(const Key('updates_load_usb')), findsOneWidget);
     });
 
     testWidgets('Update available: the version and its size, one button to '

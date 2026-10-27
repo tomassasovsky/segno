@@ -86,6 +86,12 @@ class _FakeUpdateBackend implements PlatformUpdateBackend {
   @override
   Stream<double> downloadAndStage(UpdateManifest manifest) =>
       Stream.fromIterable(const [1]);
+
+  @override
+  String get stagingDirectory => '';
+
+  @override
+  Stream<double> installPackage(String path) => Stream.fromIterable(const [1]);
 }
 
 /// Same as [_FakeUpdateBackend], but [fetchManifest] waits until [complete] so
