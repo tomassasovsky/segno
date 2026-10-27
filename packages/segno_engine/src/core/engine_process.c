@@ -3334,6 +3334,16 @@ static void handle_section_play(le_engine* e, int32_t ch, uint64_t frame) {
   if (!le_handoff_wait(e, ch, 0)) le_handoff_play_now(e, ch, frame);
 }
 
+/* Arms [t]'s pending Record with [trigger]: the trigger first, then the
+ * flag with release, so the snapshot (acquire on the flag) never pairs the
+ * arm with an older trigger. */
+static void le_handoff_set_arm(le_track* t, int32_t trigger) {
+  t->pending_record = 1;
+  t->pending_trigger = trigger;
+  store_i32(&t->a_pending_trigger, trigger);
+  atomic_store_explicit(&t->a_pending, 1, memory_order_release);
+}
+
 /* Fires the Record waiting on [ch] now. Like a grid arm firing, it clears
  * only the arm: the capture image and shadow the press posted belong to the
  * take it starts. A stopped Song section overdubs from its top, so it is
@@ -3366,10 +3376,7 @@ static void le_handoff_record_request(le_engine* e, int32_t ch,
   }
   if (!le_handoff_wait(e, ch, 1)) {
     if (le_band_section(e, ch) && !le_transport_held(e)) {
-      t->pending_record = 1;
-      t->pending_trigger = 0;
-      store_i32(&t->a_pending_trigger, 0);
-      atomic_store_explicit(&t->a_pending, 1, memory_order_release);
+      le_handoff_set_arm(t, 0);
       return;
     }
     le_handoff_record_now(e, ch, frame);
@@ -3379,10 +3386,7 @@ static void le_handoff_record_request(le_engine* e, int32_t ch,
     le_handoff_disarm(e, ch);
     return;
   }
-  t->pending_record = 1;
-  t->pending_trigger = 3;
-  store_i32(&t->a_pending_trigger, 3);
-  atomic_store_explicit(&t->a_pending, 1, memory_order_release);
+  le_handoff_set_arm(t, 3);
 }
 
 /* The handoff: stop every sounding section (Band's primary aside), start the
@@ -7945,6 +7949,14 @@ static inline int process_input_frame(le_engine* e, const float* in,
       if (value > magnitude) magnitude = value;
     }
     if (magnitude > LE_AUTO_RECORD_THRESHOLD) {
+      /* Song and Band keep one section (#1323): a Sound start armed while
+       * no other section sounded, with one sounding now, waits for its end
+       * instead of recording beside it. */
+      if (le_handoff_section(e, qt) && le_handoff_target_ok(t, 1) &&
+          le_handoff_source(e, qt) >= 0) {
+        le_handoff_record_request(e, qt, perf_frame_base + f);
+        continue;
+      }
       t->pending_record = 0;
       t->pending_trigger = 0;
       store_i32(&t->a_pending, 0);

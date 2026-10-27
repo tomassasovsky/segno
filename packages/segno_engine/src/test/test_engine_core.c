@@ -27897,6 +27897,35 @@ static void test_song_play_cancels_a_waiting_record(void) {
   le_engine_destroy(e);
 }
 
+/* A Sound start armed while no section sounded waits for the section that
+ * sounds by the time the input crosses the threshold (#1323), rather than
+ * recording beside it. */
+static void test_song_sound_start_waits_for_the_sounding_section(void) {
+  printf("test_song_sound_start_waits_for_the_sounding_section\n");
+  le_engine* e = song_queue_fixture();
+  CHECK(record_start_sound(e, 1) == LE_OK);
+  CHECK(le_engine_record(e, 3) == LE_OK); /* nothing sounds: a Sound arm */
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[3].pending == 1 && s.tracks[3].pending_trigger == 1);
+  CHECK(le_engine_play(e, 0) == LE_OK); /* starts at once */
+  drain(e);
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_PLAYING);
+  tg_advance(e, 10);
+  float in[2] = {0.5f, 0.5f}, out[2];
+  le_engine_process(e, out, in, 1); /* the signal */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[3].state == LE_TRACK_EMPTY);
+  CHECK(s.song_queued_track == 3 && s.song_queue_record == 1);
+  CHECK(s.tracks[3].pending_trigger == 3);
+  tg_advance(e, 100);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[3].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  le_engine_destroy(e);
+}
+
 /* A waiting Record keeps what its press prepared (#1323): the take the
  * handoff starts carries the capture image the press posted, as a grid
  * arm's take does when it fires. */
@@ -40372,6 +40401,7 @@ int main(void) {
   test_song_queue_logs_committed_handoff_only();
   test_song_record_requests_wait();
   test_song_record_handoff_keeps_its_image();
+  test_song_sound_start_waits_for_the_sounding_section();
   test_song_play_cancels_a_waiting_record();
   test_song_record_handoff_skips_count_in();
   test_song_record_handoff_logs_at_the_edge();
