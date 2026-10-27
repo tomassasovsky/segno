@@ -2440,9 +2440,11 @@ class LooperRepository {
       // (the designation survives its own clear while a sibling plays, so
       // its re-record re-establishes it), and none for an empty session.
       primaryTrack: resolvedPrimaryTrack(s.primaryTrack, s.tracks),
+      primaryDesignation: s.primaryTrack,
       songQueuedTrack: s.songQueuedTrack,
       songQueueProgress: s.songQueueProgress,
       songLastSection: s.songLastSection,
+      songQueueRecord: s.songQueueRecord,
       recDub: _recDub,
       // The record start and decay defaults are the repository's own
       // re-apply caches (what a stopped engine would be given on start);

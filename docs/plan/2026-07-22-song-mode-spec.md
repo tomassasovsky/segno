@@ -7,6 +7,13 @@ status: APPROVED — plan-gate cleared 2026-07-23
 index: 2026-07-22-feat-tempo-aware-looper-modes-plan.md
 ---
 
+> **Corrected 2026-10-13 (#1323).** Section 2, Q3 and Q4 read the manual's
+> "played back independently" as "simultaneously". That was wrong: on the
+> Looper X, Song plays, records and overdubs **one section at a time**, and
+> Band keeps the primary plus one section. The vendor FAQ is normative for
+> this; see the corrected rows below and
+> [the #1323 plan](2026-10-13-fix-song-band-one-section-plan.md).
+
 > **APPROVED.** Plan-gate cleared by the user 2026-07-23. B4 (Song mode
 > engine) is unblocked. Transcribed from the Sheeran Looper X User Guide
 > v1.0.0 (§3.1, §4.2, §5.9, §6.2). Engine work for Song/Band (B4) must not
@@ -117,16 +124,15 @@ index: 2026-07-22-feat-tempo-aware-looper-modes-plan.md
 |---|----------|--------|
 | 1 | How many sections; what is a section? | A section **is a track** (no separate object). Segno: 8 tracks → up to 8 sections in Song mode; in Band, 1 primary + 7 sections. **[segno decision]** — the Sheeran has 3 non-primary tracks; segno's 8 fall out of the same rule. Manifest `songSections` field is DROPPED (nothing to persist beyond tracks themselves); `bandGroups` likewise — Band grouping is just "primary vs. rest". |
 | 2 | Pedal advance gesture? | **None exists on the Sheeran** — sections are started/stopped directly via their track pedals; there is no "advance to next section" action. **[segno decision]**: drop the planned `advanceSection` LooperAction (D20) in favor of direct section (track) presses, matching the manual. A follow-up convenience action can be added later if wanted. |
-| 3 | Quantized transition point? | Song mode: sections start/stop **independently and immediately** (no primary, no shared grid obligation); quantize setting still governs record start/end. Band mode: section starts/stops quantize to the **primary track's cycle** (STOP semantics: "end of the primary track"). |
-| 4 | In-flight recording at a section switch? | No special rule in the manual; recording follows the normal one-capturer + quantize rules. MIDI Stop (slaved) ends recording. **[segno decision]**: starting another section while one records does a normal hand-off (existing engine behavior). |
+| 3 | Quantized transition point? | **Corrected (#1323).** Song: only one section records, overdubs or plays at a time. Play, Record or Overdub on a stopped section while another sounds **waits for the sounding section's end**, then that section stops and the target starts from its top; overdub on the sounding section is immediate; with nothing sounding a section starts at once (vendor FAQ). Band: the primary plus one section, with the same waiting rule; the handoff lands on the primary's loop top after the sounding section's end. *(Superseded reading: "sections start/stop independently and immediately".)* |
+| 4 | In-flight recording at a section switch? | **Corrected (#1323).** A Record or Play on another section while one records waits for that section's end: the take closes, the section plays its lap, then the target starts. MIDI Stop (slaved) ends recording. *(Superseded: "starting another section while one records does a normal hand-off".)* |
 | 5 | Distinct section lengths? | Yes — Song tracks vary freely in length; Band non-primary tracks must be multiple/division of the primary. |
 | 6 | Distinct tempos per section? | **No** — one session tempo. Confirmed: nothing in the manual gives sections independent tempo. |
 
-**Engine consequences for B4** (unchanged from part-2 otherwise):
-Song mode = per-track independent transport like Free, **plus** the shared
-grid (one tempo/click) and One-Shot-style stop semantics; Band = Sync's
-primary/multiple-division machinery + Song's independent start/stop for
-non-primary tracks. This means B2b's per-track clocks are the substrate for
+**Engine consequences for B4** (unchanged from part-2 otherwise; corrected
+by #1323): Song mode = per-track clocks like Free, but one section sounds at
+a time, with the waiting handoff above; Band = Sync's primary/multiple-
+division machinery + one section beside the primary, with the same handoff. This means B2b's per-track clocks are the substrate for
 **Song and Band too**, not just Free — Band derives non-primary phase from
 the primary rather than the master clock. One Shot per-track (§5.9.4) enters
 scope as a small Song/Band-phase addition (a per-track "play once then

@@ -2973,6 +2973,98 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
+    'LooperPlayAllPressed starts the primary and one section in Band '
+    '(#1323)',
+    build: buildBloc,
+    seed: () => const LooperState(
+      transport: TransportState(
+        looperMode: LooperMode.band,
+        primaryTrack: 0,
+        primaryDesignation: 0,
+        songLastSection: 3,
+      ),
+      tracks: [
+        Track(lengthFrames: 100, state: TrackState.stopped),
+        Track(channel: 1, lengthFrames: 200, state: TrackState.stopped),
+        Track(channel: 2, lengthFrames: 100, state: TrackState.stopped),
+        Track(channel: 3, lengthFrames: 100, state: TrackState.stopped),
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperPlayAllPressed()),
+    verify: (_) {
+      verify(() => repository.play()).called(1);
+      verify(() => repository.play(channel: 3)).called(1);
+      verifyNever(() => repository.play(channel: 1));
+      verifyNever(() => repository.play(channel: 2));
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperPlayAllPressed sends no Play to a section that already sounds, '
+    'so the section waiting to follow it stays queued (#1323)',
+    build: buildBloc,
+    seed: () => const LooperState(
+      transport: TransportState(
+        looperMode: LooperMode.band,
+        primaryTrack: 0,
+        primaryDesignation: 0,
+        songQueuedTrack: 2,
+        songLastSection: 1,
+      ),
+      tracks: [
+        Track(lengthFrames: 100, state: TrackState.playing),
+        Track(channel: 1, lengthFrames: 100, state: TrackState.playing),
+        Track(channel: 2, lengthFrames: 100, state: TrackState.stopped),
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperPlayAllPressed()),
+    verify: (_) {
+      verify(() => repository.play()).called(1);
+      verifyNever(() => repository.play(channel: 1));
+      verifyNever(() => repository.play(channel: 2));
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperPlayAllPressed queues no section behind a first take in progress '
+    '(#1323)',
+    build: buildBloc,
+    seed: () => const LooperState(
+      transport: TransportState(looperMode: LooperMode.song),
+      tracks: [
+        Track(state: TrackState.recording),
+        Track(channel: 1, lengthFrames: 100, state: TrackState.stopped),
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperPlayAllPressed()),
+    verify: (_) {
+      verifyNever(() => repository.play(channel: any(named: 'channel')));
+      verifyNever(() => repository.play());
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperPlayAllPressed sends no Play to the section already waiting '
+    '(#1323)',
+    build: buildBloc,
+    seed: () => const LooperState(
+      transport: TransportState(
+        looperMode: LooperMode.song,
+        songQueuedTrack: 1,
+      ),
+      tracks: [
+        Track(lengthFrames: 100, state: TrackState.playing, muted: true),
+        Track(channel: 1, lengthFrames: 100, state: TrackState.stopped),
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperPlayAllPressed()),
+    verify: (_) {
+      verifyNever(() => repository.play(channel: 1));
+      verifyNever(() => repository.play());
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
     'LooperPlayAllPressed starts the section that played last in Song '
     '(#1077)',
     build: buildBloc,

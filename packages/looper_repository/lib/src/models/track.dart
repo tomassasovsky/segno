@@ -14,13 +14,17 @@ enum ArmTrigger {
   sound,
 
   /// A Band section toggle at the primary's loop top.
-  section;
+  section,
+
+  /// A Song or Band Record waiting for the sounding section's end (#1323).
+  handoff;
 
   /// Decodes the snapshot's `pending_trigger` code; `null` for none.
   static ArmTrigger? fromCode(int code) => switch (code) {
     0 => ArmTrigger.grid,
     1 => ArmTrigger.sound,
     2 => ArmTrigger.section,
+    3 => ArmTrigger.handoff,
     _ => null,
   };
 }
@@ -250,6 +254,11 @@ class Track extends Equatable {
   /// Whether the track is actively capturing (recording or overdubbing).
   bool get isCapturing =>
       state == TrackState.recording || state == TrackState.overdubbing;
+
+  /// Whether the track's loop plays back, muted or not (playing or
+  /// overdubbing).
+  bool get isRunning =>
+      state == TrackState.playing || state == TrackState.overdubbing;
 
   /// Whether undo would do anything: peel an overdub layer, or put back a take
   /// the user cleared.

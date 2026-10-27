@@ -6191,6 +6191,7 @@ void main() {
           songQueuedTrack: 1,
           songQueueProgress: 0.375,
           songLastSection: 2,
+          songQueueRecord: true,
           outputPeak: 0.5,
           // The crown only projects onto a track that holds a completed
           // take (see `resolvedPrimaryTrack`), so give the designated
@@ -6237,6 +6238,7 @@ void main() {
         expect(transport.songQueuedTrack, 1);
         expect(transport.songQueueProgress, 0.375);
         expect(transport.songLastSection, 2);
+        expect(transport.songQueueRecord, isTrue);
       },
     );
 
@@ -6298,7 +6300,10 @@ void main() {
           primaryTrack: 3,
           tracks: [empty, playing, empty, empty],
         );
-        expect(buildRepo().state.transport.primaryTrack, 1);
+        final transport = buildRepo().state.transport;
+        expect(transport.primaryTrack, 1);
+        // The raw designation stays, for the Band section rule (#1323).
+        expect(transport.primaryDesignation, 3);
       });
     });
 

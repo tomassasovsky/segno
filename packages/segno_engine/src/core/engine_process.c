@@ -232,6 +232,9 @@ static void le_unpark_stopped(le_engine* e, uint64_t frame) {
   for (int32_t c = 0; c < e->track_count; ++c) {
     le_track* t = &e->tracks[c];
     if (load_i32(&t->a_state) != LE_TRACK_STOPPED) continue;
+    /* Band keeps the primary plus one section (#1323): the primary resumes,
+     * the other sections stay stopped. */
+    if (le_band_section(e, c)) continue;
     if (e->launch_committing && (e->launch_stopped_mask & (1u << c))) continue;
     if (t->once_ended) continue; /* an automatic end needs its own launch */
     if (load_i32(&t->lanes[0].a_len) <= 0) continue;
@@ -2514,6 +2517,31 @@ static void close_active_capture(le_engine* e, int32_t except_ch,
 
 /* Acts on a record/overdub press: finalizes any other capture (one-capturer
  * hand-off), then advances this track's state machine. */
+/* Whether a take or a punch-in starting on [ch] from [initial] would be
+ * dropped. Overdub is unavailable while Reverse is on (#1162): the write
+ * head, its latency compensation and the per-pass shadow are forward-only,
+ * so a punch-in on a reversed track is dropped whatever queued it — a grid
+ * or sound arm that fired after the toggle, a Count-in member, or a waiting
+ * Song or Band Record (#1323). Control already refuses the press with
+ * LE_ERR_REVERSED; this closes the window. Capture never writes through a
+ * fractional head (#1179): a record or punch-in while Speed is not 1x is
+ * dropped the same way (control: LE_ERR_TRANSFORMED); so is one into a
+ * transposed track (#1179 Part 3a), and one into a take a retime moved off
+ * its span (#1179 Part 4a): the write head lays the clock's frames, the
+ * read head plays the take's. */
+static int le_capture_refused(le_engine* e, int32_t ch, int32_t initial) {
+  const le_track* t = &e->tracks[ch];
+  const int punch_in =
+      initial == LE_TRACK_STOPPED || initial == LE_TRACK_PLAYING;
+  if (punch_in && t->head.reversed) return 1;
+  if ((initial == LE_TRACK_EMPTY || punch_in) &&
+      e->speed_numer != e->speed_denom) {
+    return 1;
+  }
+  if (punch_in && t->transpose_st != 0 && !e->transpose_bypass) return 1;
+  return punch_in && t->span_clock > 0 && t->span_clock != e->clock.length;
+}
+
 static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
   if (!valid_channel(e, ch)) return;
   if (!e->launch_committing && le_launch_remove(e, ch)) return;
@@ -2529,26 +2557,7 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
     return;
   }
   const int initial = load_i32(&e->tracks[ch].a_state);
-  /* Overdub is unavailable while Reverse is on (#1162): the write head, its
-   * latency compensation and the per-pass shadow are forward-only, so a
-   * punch-in on a reversed track is dropped here whatever queued it — a grid
-   * or sound arm that fired after the toggle, or a Count-in member. Control
-   * already refuses the press with LE_ERR_REVERSED; this closes the window. */
-  if ((initial == LE_TRACK_STOPPED || initial == LE_TRACK_PLAYING) &&
-      e->tracks[ch].head.reversed) return;
-  /* Capture never writes through a fractional head (#1179): a record or
-   * punch-in that fires while Speed is not 1x is dropped the same way.
-   * Control refuses the press with LE_ERR_TRANSFORMED. */
-  if ((initial == LE_TRACK_EMPTY || initial == LE_TRACK_STOPPED ||
-       initial == LE_TRACK_PLAYING) && e->speed_numer != e->speed_denom) return;
-  /* ...and into a transposed track (#1179 Part 3a), the Reverse rule. */
-  if ((initial == LE_TRACK_STOPPED || initial == LE_TRACK_PLAYING) &&
-      e->tracks[ch].transpose_st != 0 && !e->transpose_bypass) return;
-  /* ...and into a take a retime moved off its span (#1179 Part 4a): the
-   * write head lays the clock's frames, the read head plays the take's. */
-  if ((initial == LE_TRACK_STOPPED || initial == LE_TRACK_PLAYING) &&
-      e->tracks[ch].span_clock > 0 &&
-      e->tracks[ch].span_clock != e->clock.length) return;
+  if (le_capture_refused(e, ch, initial)) return;
   if ((initial == LE_TRACK_EMPTY || initial == LE_TRACK_STOPPED ||
        initial == LE_TRACK_PLAYING) &&
       le_launch_defer(e, ch, initial == LE_TRACK_EMPTY ? 1 : 3)) return;
@@ -2728,9 +2737,11 @@ static void handle_finalize_take(le_engine* e, int32_t ch, uint64_t frame) {
   finalize_new_track(e, t, LE_TRACK_PLAYING, frame, 1);
 }
 
+static void le_handoff_drop(le_engine* e);
+
 static void handle_stop(le_engine* e, int32_t ch, uint64_t frame) {
   if (!valid_channel(e, ch)) return;
-  if (ch == e->song_source || ch == e->song_target) le_song_cancel(e);
+  if (ch == e->song_source || ch == e->song_target) le_handoff_drop(e);
   /* A stop press during a count-in cancels it (D9). The stop then proceeds
    * normally — a no-op on the idle transport a count-in requires. */
   if (e->count_in_total > 0) le_count_in_reset(e);
@@ -3120,14 +3131,126 @@ static void handle_play(le_engine* e, int32_t ch, uint64_t frame) {
   }
 }
 
-/* ---- Song section handoff (#1077) ----------------------------------------
- * Song plays one section at a time. A Play on a stopped section while another
- * plays does not start it: the request waits for the playing section's next
- * lap edge, where one sample boundary stops every playing section and starts
- * the target from its beginning. Pressing the waiting target again, or a
- * playing section, cancels the request; another stopped section replaces it.
- * A capture anywhere refuses the request rather than cutting a take short.
- * With nothing playing the section starts at once, alone and from its top. */
+/* ---- Song and Band section handoff (#1077, #1323) ------------------------
+ * Song plays, records and overdubs one section at a time, as on the Looper
+ * X; Band keeps its primary plus one section. A Play or a Record on a
+ * stopped (or, for Record, empty) section while another section sounds does
+ * not act: the request waits for the sounding section's next lap edge, where
+ * one sample boundary stops it and starts the target — playing, recording
+ * its first take, or overdubbing from its top. In Band the handoff lands on
+ * the primary's next loop top at or after that edge, and the target starts
+ * in phase with the primary, as Band starts any stopped track. One request
+ * waits at a time: another replaces it, a Play on the waiting target (or on
+ * a playing section) cancels it, and a second Record on a waiting Record
+ * cancels it (its DISARM). Overdub on the sounding section stays immediate
+ * and keeps the request. A capture on any other section drops it. With
+ * nothing sounding a request acts at once: Song starts the section alone
+ * and from its top. */
+
+/* Whether a section in state [st] sounds for the handoff: playing,
+ * overdubbing, or recording its first take (unlike le_song_sounding, which
+ * tracks the last section heard and leaves a first take out). */
+static int le_handoff_sounding_state(int32_t st) {
+  return st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING ||
+         st == LE_TRACK_RECORDING;
+}
+
+/* Whether [ch] takes part in the handoff: any Song track, or a Band
+ * section (never Band's primary). */
+static int le_handoff_section(le_engine* e, int32_t ch) {
+  return load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_SONG ||
+         le_band_section(e, ch);
+}
+
+/* Band's primary, which sounds beside a section; -1 in Song. */
+static int32_t le_handoff_primary(le_engine* e) {
+  return load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_BAND
+             ? load_i32(&e->a_primary_track)
+             : -1;
+}
+
+/* The section that sounds now, other than [except]: the lowest one playing,
+ * overdubbing or recording, Band's primary aside; -1 for none. Should
+ * several sound (a take and a Play that joined its Count-in), the lowest
+ * times the handoff, and the commit stops every one that plays or
+ * overdubs; while another records, le_handoff_capture_elsewhere refuses
+ * the request instead. */
+static int32_t le_handoff_source(le_engine* e, int32_t except) {
+  const int32_t primary = le_handoff_primary(e);
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    if (c == except || c == primary) continue;
+    if (le_handoff_sounding_state(load_i32(&e->tracks[c].a_state))) return c;
+  }
+  return -1;
+}
+
+/* Whether a track other than [source] and Band's primary is capturing: the
+ * rig already has the one section it may hold, so no request waits. */
+static int le_handoff_capture_elsewhere(le_engine* e, int32_t source) {
+  const int32_t primary = le_handoff_primary(e);
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    if (c == source || c == primary) continue;
+    const int32_t st = load_i32(&e->tracks[c].a_state);
+    if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) return 1;
+  }
+  return 0;
+}
+
+/* Whether [t] can be the target of a request of this kind: a stopped
+ * section with a take, or for a Record also an empty one. */
+static int le_handoff_target_ok(le_track* t, int record) {
+  const int32_t st = load_i32(&t->a_state);
+  if (st == LE_TRACK_STOPPED) return load_i32(&t->lanes[0].a_len) > 0;
+  return record && st == LE_TRACK_EMPTY;
+}
+
+/* The state a history restore gives [ch] in place of PLAYING (#1323): a
+ * Song or Band section comes back stopped while another section sounds, so
+ * an undo or redo never makes two sections sound. */
+static int32_t le_handoff_restore_state(le_engine* e, int32_t ch,
+                                        int32_t state) {
+  if (state != LE_TRACK_PLAYING || !le_handoff_section(e, ch) ||
+      le_handoff_source(e, ch) < 0) {
+    return state;
+  }
+  return LE_TRACK_STOPPED;
+}
+
+/* Drops the arm pending on [ch] with what it prepared: LE_CMD_DISARM, and a
+ * waiting Record whose request was dropped. */
+static void le_handoff_disarm(le_engine* e, int32_t ch) {
+  le_track* t = &e->tracks[ch];
+  t->pending_image.revision = 0;
+  t->pending_capture_shadow = 0;
+  t->pending_record = 0;
+  t->pending_trigger = 0;
+  store_i32(&t->a_pending, 0);
+}
+
+/* Song keeps a clock per section (free_clock), and a section whose clock
+ * never got a length never reaches a lap edge: a request may neither wait
+ * on such a source nor start such a target (a stopped one with a take).
+ * Band sections share the primary's clock. */
+static int le_song_clocks_ok(le_engine* e, int32_t source, int32_t target) {
+  if (load_i32(&e->a_looper_mode) != LE_LOOPER_MODE_SONG) return 1;
+  le_track* s = &e->tracks[source];
+  le_track* t = &e->tracks[target];
+  const int32_t sst = load_i32(&s->a_state);
+  if ((sst == LE_TRACK_PLAYING || sst == LE_TRACK_OVERDUBBING) &&
+      s->free_clock.length <= 0) {
+    return 0;
+  }
+  return load_i32(&t->a_state) != LE_TRACK_STOPPED || t->free_clock.length > 0;
+}
+
+/* Drops the waiting request and, for a Record, its arm at once, so nothing
+ * later in the block reads the dropped Record as a live arm. */
+static void le_handoff_drop(le_engine* e) {
+  if (e->song_record && valid_channel(e, e->song_target)) {
+    le_handoff_disarm(e, e->song_target);
+  }
+  le_song_cancel(e);
+}
 
 /* The song frames [t] still sounds before its head next reads its lap start:
  * forward, the rest of the take; reversed, back to its start; both at the
@@ -3144,7 +3267,23 @@ static int64_t le_song_frames_to_lap_edge(le_engine* e, le_track* t) {
   return (int64_t)ceil(left / rate);
 }
 
-/* Starts stopped section [ch] from its beginning. */
+/* The frames until the waiting request lands, or -1 while the source has
+ * no length yet (its first take still records). Band waits on for the
+ * primary's next loop top at or after the source's lap edge. */
+static int64_t le_handoff_frames_left(le_engine* e) {
+  le_track* src = &e->tracks[e->song_source];
+  if (load_i32(&src->lanes[0].a_len) <= 0) return -1;
+  const int64_t edge = e->song_edge ? 0 : le_song_frames_to_lap_edge(e, src);
+  const int32_t base = e->clock.length;
+  if (load_i32(&e->a_looper_mode) != LE_LOOPER_MODE_BAND || base <= 0) {
+    return edge;
+  }
+  const int64_t wrap = base - e->clock.position;
+  if (edge <= wrap) return wrap;
+  return wrap + (edge - wrap + base - 1) / base * base;
+}
+
+/* Starts stopped Song section [ch] from its beginning. */
 static void le_song_start(le_engine* e, int32_t ch, uint64_t frame) {
   le_track* t = &e->tracks[ch];
   le_reset_track_playback(t);
@@ -3154,77 +3293,248 @@ static void le_song_start(le_engine* e, int32_t ch, uint64_t frame) {
   store_i32(&t->a_state, LE_TRACK_PLAYING);
 }
 
+/* Starts stopped section [ch] now: alone and from its top in Song; in
+ * Band in phase with the primary, as any start there. */
+static void le_handoff_play_now(le_engine* e, int32_t ch, uint64_t frame) {
+  if (load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_SONG) {
+    le_song_start(e, ch, frame);
+    return;
+  }
+  le_plog_push(e, frame, (le_command){.code = LE_CMD_PLAY, .arg_i = ch});
+  handle_play(e, ch, frame);
+}
+
 /* Whether the waiting request can still land; drops it when it cannot. Run
- * at the lap edge and when the block publishes, because Clear, Undo, a
- * capture or a mode switch can each invalidate an end of it without going
- * through a Song path. */
+ * at the commit and when the block publishes, because Clear, Undo, a
+ * capture, a crown or a mode switch can each invalidate an end of it without
+ * going through a handoff path. A Band source that Once stopped on its own
+ * lap edge still hands off at the primary's top, while the rig still runs
+ * to reach it; a held rig drops the request. */
 static int le_song_queue_valid(le_engine* e) {
   if (e->song_target < 0) return 0;
-  if (load_i32(&e->a_looper_mode) != LE_LOOPER_MODE_SONG ||
-      !valid_channel(e, e->song_source) || !valid_channel(e, e->song_target) ||
-      load_i32(&e->tracks[e->song_source].a_state) != LE_TRACK_PLAYING ||
-      load_i32(&e->tracks[e->song_target].a_state) != LE_TRACK_STOPPED ||
-      e->tracks[e->song_source].free_clock.length <= 0 ||
-      e->tracks[e->song_target].free_clock.length <= 0 ||
-      le_any_capturing(e)) {
-    le_song_cancel(e);
-    return 0;
+  const int32_t source = e->song_source;
+  const int32_t target = e->song_target;
+  int ok = valid_channel(e, source) && valid_channel(e, target) &&
+           le_handoff_section(e, source) && le_handoff_section(e, target);
+  if (ok) {
+    const int32_t st = load_i32(&e->tracks[source].a_state);
+    le_track* t = &e->tracks[target];
+    ok = (le_handoff_sounding_state(st) ||
+          (e->song_edge && st == LE_TRACK_STOPPED && !le_transport_held(e))) &&
+         le_handoff_target_ok(t, e->song_record) &&
+         (!e->song_record || (t->pending_record && t->pending_trigger == 3)) &&
+         (!e->song_record ||
+          !le_capture_refused(e, target, load_i32(&t->a_state))) &&
+         le_song_clocks_ok(e, source, target) &&
+         !le_handoff_capture_elsewhere(e, source);
   }
+  if (!ok) le_song_cancel(e);
+  return ok;
+}
+
+/* Registers a request of [record]'s kind on [ch]; the caller has checked
+ * the target. Returns 0 when nothing sounds, so the caller acts at once. */
+static int le_handoff_wait(le_engine* e, int32_t ch, int record) {
+  const int32_t source = le_handoff_source(e, ch);
+  /* A request that replaces one on the same source keeps Band's latched
+   * lap end: that source has ended its lap, and only the primary's top is
+   * left. Its fill starts again from empty (#1077). */
+  const int edge =
+      e->song_target >= 0 && e->song_source == source ? e->song_edge : 0;
+  le_song_cancel(e);
+  if (source < 0) return 0;
+  if (le_handoff_capture_elsewhere(e, source)) return 1; /* refused */
+  e->song_source = source;
+  e->song_target = ch;
+  e->song_record = record;
+  e->song_edge = edge;
   return 1;
 }
 
-/* LE_CMD_PLAY in Song. A launch member, a take in its grace and a running
- * Count-in keep the shared launch rules (handle_play). A track with no
- * section to play (empty, or still capturing) is no request at all, so it
- * leaves a waiting one alone. */
-static void handle_song_play(le_engine* e, int32_t ch, uint64_t frame) {
+/* LE_CMD_PLAY on a Song track or a Band section. A launch member, a take in
+ * its grace and a running Count-in keep the shared launch rules
+ * (handle_play). A track with no section to play (empty, or still
+ * capturing) is no request at all, so it leaves a waiting one alone. */
+static void handle_section_play(le_engine* e, int32_t ch, uint64_t frame) {
   if (!valid_channel(e, ch)) return;
   if (e->launch_action[ch] || e->launch_grace[ch] || e->count_in_total > 0) {
     le_plog_push(e, frame, (le_command){.code = LE_CMD_PLAY, .arg_i = ch});
     handle_play(e, ch, frame);
     return;
   }
-  le_track* target = &e->tracks[ch];
-  const int32_t state = load_i32(&target->a_state);
-  if (le_any_capturing(e)) {
-    le_song_cancel(e);
+  /* A Play on the waiting target cancels its request, whatever its kind:
+   * an empty section waiting to record too. */
+  if (ch == e->song_target) {
+    le_handoff_drop(e);
     return;
   }
-  /* An older session can hold several playing sections; the lowest one
-   * times the handoff, and the commit stops them all. */
-  int32_t source = -1;
-  for (int32_t c = 0; c < e->track_count && source < 0; ++c) {
-    if (load_i32(&e->tracks[c].a_state) == LE_TRACK_PLAYING) source = c;
-  }
-  if (target->free_clock.length <= 0 ||
+  le_track* target = &e->tracks[ch];
+  const int32_t state = load_i32(&target->a_state);
+  if (load_i32(&target->lanes[0].a_len) <= 0 ||
       (state != LE_TRACK_STOPPED && state != LE_TRACK_PLAYING)) {
     return;
   }
-  if (state == LE_TRACK_PLAYING || ch == e->song_target) {
+  /* A Song section with no clock of its own could never end its lap. */
+  if (load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_SONG &&
+      target->free_clock.length <= 0) {
+    return;
+  }
+  if (state == LE_TRACK_PLAYING) {
     le_song_cancel(e);
     return;
   }
-  le_song_cancel(e);
-  if (source < 0) {
-    le_song_start(e, ch, frame);
-    return;
-  }
-  e->song_source = source;
-  e->song_target = ch;
-  e->song_elapsed = 0;
+  if (!le_handoff_wait(e, ch, 0)) le_handoff_play_now(e, ch, frame);
 }
 
-/* The source's lap edge: stop every playing section, start the target. The
- * caller passes the frame the target's first sample sounds on. */
+/* Arms [t]'s pending Record with [trigger]: the trigger first, then the
+ * flag with release, so the snapshot (acquire on the flag) never pairs the
+ * arm with an older trigger. */
+static void le_handoff_set_arm(le_track* t, int32_t trigger) {
+  t->pending_record = 1;
+  t->pending_trigger = trigger;
+  store_i32(&t->a_pending_trigger, trigger);
+  atomic_store_explicit(&t->a_pending, 1, memory_order_release);
+}
+
+/* Whether a request other than one on [ch] already waits: an arm made
+ * before it, turning into a section request now, does not replace it. */
+static int le_handoff_newer_waits(le_engine* e, int32_t ch) {
+  return e->song_target >= 0 && e->song_target != ch;
+}
+
+/* An arm on [ch] that would start a take beside a sounding section (a grid
+ * or Sound-start arm set while none sounded): it becomes a Record waiting
+ * for that section's end, unless a request pressed since already waits,
+ * which wins over the older arm. Returns whether it was converted or
+ * dropped; 0 leaves the arm to fire as usual. */
+static int le_handoff_convert_arm(le_engine* e, int32_t ch, uint64_t frame);
+
+/* Fires the Record waiting on [ch] now. Like a grid arm firing, it clears
+ * only the arm: the capture image and shadow the press posted belong to the
+ * take it starts. A stopped Song section overdubs from its top, so it is
+ * started there first. */
+static void le_handoff_record_now(le_engine* e, int32_t ch, uint64_t frame) {
+  le_track* t = &e->tracks[ch];
+  /* A take the engine would refuse starts nothing, not a bare Play. */
+  if (le_capture_refused(e, ch, load_i32(&t->a_state))) {
+    le_handoff_disarm(e, ch);
+    return;
+  }
+  t->pending_record = 0;
+  t->pending_trigger = 0;
+  store_i32(&t->a_pending, 0);
+  if (load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_SONG &&
+      load_i32(&t->a_state) == LE_TRACK_STOPPED) {
+    le_song_start(e, ch, frame);
+  }
+  le_plog_push(e, frame, (le_command){.code = LE_CMD_RECORD, .arg_i = ch});
+  handle_record(e, ch, frame);
+}
+
+/* LE_CMD_ARM trigger 3: a Record waiting for the handoff (le_engine_record
+ * prepared it). The target may have moved since the press; with nothing
+ * sounding any more it records at once, as the handoff is its boundary and
+ * quantize does not apply (a Band punch-in starts in phase). A Band
+ * section's first take on a running rig is the exception: Band always
+ * starts a first take on the primary's top, so it becomes a grid arm. */
+static void le_handoff_record_request(le_engine* e, int32_t ch,
+                                      uint64_t frame) {
+  le_track* t = &e->tracks[ch];
+  if (!le_handoff_section(e, ch) || !le_handoff_target_ok(t, 1)) {
+    if (ch == e->song_target) le_song_cancel(e);
+    le_handoff_disarm(e, ch);
+    return;
+  }
+  if (!le_handoff_wait(e, ch, 1)) {
+    if (load_i32(&t->a_state) == LE_TRACK_EMPTY && le_band_section(e, ch) &&
+        !le_transport_held(e)) {
+      le_handoff_set_arm(t, 0);
+      return;
+    }
+    le_handoff_record_now(e, ch, frame);
+    return;
+  }
+  if (e->song_target != ch) { /* refused: another section captures */
+    le_handoff_disarm(e, ch);
+    return;
+  }
+  le_handoff_set_arm(t, 3);
+}
+
+static int le_handoff_convert_arm(le_engine* e, int32_t ch, uint64_t frame) {
+  if (!le_handoff_target_ok(&e->tracks[ch], 1) ||
+      le_handoff_source(e, ch) < 0) {
+    return 0;
+  }
+  if (le_handoff_newer_waits(e, ch)) {
+    le_handoff_disarm(e, ch);
+  } else {
+    le_handoff_record_request(e, ch, frame);
+  }
+  return 1;
+}
+
+/* The handoff: stop every sounding section (Band's primary aside), start the
+ * target. The caller passes the frame the target's first sample sounds on.
+ *
+ * The target starts before the sections stop, so the rig never reads held in
+ * between: a held rig would count a Record in, or unpark a Band primary the
+ * user stopped. The log still reads the stops first, as a replay needs. */
 static void le_song_commit(le_engine* e, uint64_t frame) {
   const int32_t target = e->song_target;
+  const int record = e->song_record;
+  const int32_t primary = le_handoff_primary(e);
   le_song_cancel(e);
+  uint32_t sounding = 0;
   for (int32_t c = 0; c < e->track_count; ++c) {
-    if (load_i32(&e->tracks[c].a_state) != LE_TRACK_PLAYING) continue;
+    const int32_t st = load_i32(&e->tracks[c].a_state);
+    if (c == primary || c == target ||
+        (st != LE_TRACK_PLAYING && st != LE_TRACK_OVERDUBBING)) {
+      continue;
+    }
+    sounding |= 1u << c;
     le_plog_push(e, frame, (le_command){.code = LE_CMD_STOP, .arg_i = c});
-    handle_stop(e, c, frame);
   }
-  le_song_start(e, target, frame);
+  if (record) {
+    le_handoff_record_now(e, target, frame);
+  } else {
+    le_handoff_play_now(e, target, frame);
+  }
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    if (!(sounding & (1u << c))) continue;
+    handle_stop(e, c, frame);
+    /* A quantized overdub queued on it would start it again. */
+    if (e->tracks[c].pending_record) le_handoff_disarm(e, c);
+  }
+}
+
+/* Band's per-frame half, run after the shared clock ticked and the grid
+ * arms fired: count the source's sounding frames, latch its lap end, and
+ * commit on the primary's loop top at or after it. */
+static void le_band_handoff_tick(le_engine* e, int wrapped, uint64_t frame) {
+  if (e->song_target < 0 ||
+      load_i32(&e->a_looper_mode) != LE_LOOPER_MODE_BAND ||
+      !valid_channel(e, e->song_source)) {
+    return;
+  }
+  le_track* src = &e->tracks[e->song_source];
+  const int32_t st = load_i32(&src->a_state);
+  const int32_t len = load_i32(&src->lanes[0].a_len);
+  if ((st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING) && len > 0) {
+    e->song_elapsed++;
+    /* Not on the frame the source starts sounding: a take that closes on a
+     * primary top reads its lap edge on that same frame, and it plays a lap
+     * before it hands off, as in Song. sounding_frames, counted after this
+     * in le_shared_clock_one_shots, is still 0 on that frame. */
+    if (le_track_lap_edge(e, src) && src->sounding_frames > 0) {
+      e->song_edge = 1;
+    }
+  } else if (e->song_edge) {
+    e->song_elapsed++; /* Once stopped it on its edge: the top is near */
+  }
+  if (wrapped && e->song_edge && le_song_queue_valid(e)) {
+    le_song_commit(e, frame);
+  }
 }
 
 static int le_song_sounding(le_engine* e, int32_t ch) {
@@ -3232,19 +3542,22 @@ static int le_song_sounding(le_engine* e, int32_t ch) {
   return st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING;
 }
 
-/* Keeps the section that sounded most recently: the one sounding now (the
- * remembered one while it still sounds, else the lowest that does), else
- * the last one that did. A track that empties is forgotten. */
+/* Keeps the Song or Band section that sounded most recently: the one
+ * sounding now (the remembered one while it still sounds, else the lowest
+ * that does), else the last one that did. A track that empties, or becomes
+ * Band's primary, is forgotten. */
 static void le_song_note_last(le_engine* e) {
-  if (load_i32(&e->a_looper_mode) != LE_LOOPER_MODE_SONG) return;
+  const int32_t mode = load_i32(&e->a_looper_mode);
+  if (mode != LE_LOOPER_MODE_SONG && mode != LE_LOOPER_MODE_BAND) return;
+  const int32_t primary = le_handoff_primary(e);
   int32_t last = e->song_last;
-  if (last >= e->track_count ||
+  if (last >= e->track_count || last == primary ||
       (last >= 0 && load_i32(&e->tracks[last].a_state) == LE_TRACK_EMPTY)) {
     last = -1;
   }
   if (last < 0 || !le_song_sounding(e, last)) {
     for (int32_t c = 0; c < e->track_count; ++c) {
-      if (le_song_sounding(e, c)) {
+      if (c != primary && le_song_sounding(e, c)) {
         last = c;
         break;
       }
@@ -3259,17 +3572,29 @@ static void le_song_note_last(le_engine* e) {
 /* Publishes the waiting request, once per block: the share of the wait
  * already played, elapsed / (elapsed + what is left now). The fraction never
  * reaches one while the request waits: only the commit ends it, and the
- * commit clears the word. */
+ * commit clears the word. A Record arm left behind by a dropped request is
+ * cleared here, so the arm and the request always go together. */
 static void le_song_publish(le_engine* e) {
   le_song_note_last(e);
-  if (!le_song_queue_valid(e)) return;
-  const int64_t left =
-      le_song_frames_to_lap_edge(e, &e->tracks[e->song_source]);
-  const int64_t total = e->song_elapsed + (left > 0 ? left : 1);
-  uint64_t progress = (uint64_t)e->song_elapsed * 0xFFFFFFu / (uint64_t)total;
-  if (progress >= 0xFFFFFFu) progress = 0xFFFFFEu;
+  const int valid = le_song_queue_valid(e);
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    le_track* t = &e->tracks[c];
+    if (t->pending_record && t->pending_trigger == 3 &&
+        !(valid && e->song_record && c == e->song_target)) {
+      le_handoff_disarm(e, c);
+    }
+  }
+  if (!valid) return;
+  const int64_t left = le_handoff_frames_left(e);
+  uint64_t progress = 0;
+  if (left >= 0) {
+    const int64_t total = e->song_elapsed + (left > 0 ? left : 1);
+    progress = (uint64_t)e->song_elapsed * 0xFFFFFFu / (uint64_t)total;
+    if (progress >= 0xFFFFFFu) progress = 0xFFFFFEu;
+  }
   atomic_store_explicit(&e->a_song_queue,
                         ((uint32_t)progress << 8) |
+                            (e->song_record ? 0x80u : 0u) |
                             (uint32_t)(e->song_target + 1),
                         memory_order_relaxed);
 }
@@ -4435,7 +4760,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
             &e->a_clock_commands_applied, cmd->clock.sequence, memory_order_release);
         break;
       }
-      le_song_cancel(e); /* a take never shares the rig with a handoff */
+      /* A take on the waiting section itself means its request is moot. */
+      if (cmd->arg_i == e->song_target) le_song_cancel(e);
       if (!preserve_image && valid_channel(e, cmd->arg_i))
         e->tracks[cmd->arg_i].pending_image.revision = 0;
       le_plog_push(e, frame, *cmd);
@@ -4481,13 +4807,31 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         e->tracks[cmd->arg_i].pending_image.revision = 0;
       if (valid_channel(e, cmd->arg_i)) {
         le_track* t = &e->tracks[cmd->arg_i];
-        le_song_cancel(e);
         /* arg_f carries the trigger: 0 = grid (quantize), 1 = input level
-         * (sound-activated auto-record), 2 = Band section transport (B3b) —
-         * see LE_CMD_ARM's doc, segno_engine_api.h. Only 0/1/2 are ever
-         * pushed (le_engine_record / le_engine_toggle_section); the >= 1.5
-         * split keeps 1.0f mapping to 1 exactly, unchanged from before B3b. */
-        const int trig = cmd->arg_f >= 1.5f ? 2 : (cmd->arg_f != 0.0f ? 1 : 0);
+         * (sound-activated auto-record), 2 = Band section transport (B3b),
+         * 3 = the Song/Band handoff (#1323) — see LE_CMD_ARM's doc,
+         * segno_engine_api.h. The half-way splits keep 1.0f mapping to 1
+         * exactly, unchanged from before B3b. */
+        const int trig = cmd->arg_f >= 2.5f   ? 3
+                         : cmd->arg_f >= 1.5f ? 2
+                                              : (cmd->arg_f != 0.0f ? 1 : 0);
+        if (trig == 3) {
+          le_handoff_record_request(e, cmd->arg_i, frame);
+          break;
+        }
+        /* A Band section toggle replaces a waiting request, as any newer
+         * request does; on the waiting target itself it cancels its start
+         * (#1323), and arming it would queue the start again at the top. */
+        if (trig == 2 && e->song_target >= 0) {
+          const int self = cmd->arg_i == e->song_target;
+          le_song_cancel(e);
+          if (self) break;
+        }
+        /* Another arm on the waiting target replaces its request. An arm on
+         * the source (a quantized overdub or take finish) keeps it, as an
+         * immediate overdub does (#1323); the handoff drops that arm if it
+         * has not fired by then. */
+        if (cmd->arg_i == e->song_target) le_song_cancel(e);
         int64_t sn, sd;
         if (trig == 0 && load_i32(&t->a_state) == LE_TRACK_RECORDING &&
             e->clock.length > 0 &&
@@ -4568,30 +4912,20 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
             break;
           }
         }
-        t->pending_record = 1;
-        t->pending_trigger = trig;
-        /* Trigger first, then the flag with release: the snapshot reads the
-         * flag with acquire and only then the trigger, so it never pairs a
-         * fresh arm with the previous arm's trigger. */
-        store_i32(&t->a_pending_trigger, trig);
-        atomic_store_explicit(&t->a_pending, 1, memory_order_release);
+        le_handoff_set_arm(t, trig);
       }
       break;
     case LE_CMD_DISARM:
-      if (cmd->arg_i == e->song_source || cmd->arg_i == e->song_target) {
-        le_song_cancel(e);
-      }
+      /* Cancelling the waiting Record drops its request. Cancelling an arm
+       * on the source (a quantized overdub) keeps it, as that arm did. */
+      if (cmd->arg_i == e->song_target) le_song_cancel(e);
       if (valid_channel(e, cmd->arg_i)) {
         if (e->launch_action[cmd->arg_i] == 1)
           le_plog_push(e, frame, (le_command){.code = LE_PLOG_RECORD_ABORT,
                                              .arg_i = cmd->arg_i});
         le_launch_remove(e, cmd->arg_i);
         if (e->launch_grace[cmd->arg_i]) handle_record(e, cmd->arg_i, frame);
-        e->tracks[cmd->arg_i].pending_image.revision = 0;
-        e->tracks[cmd->arg_i].pending_capture_shadow = 0;
-        e->tracks[cmd->arg_i].pending_record = 0;
-        e->tracks[cmd->arg_i].pending_trigger = 0;
-        store_i32(&e->tracks[cmd->arg_i].a_pending, 0);
+        le_handoff_disarm(e, cmd->arg_i);
       }
       break;
     case LE_CMD_STOP:
@@ -4599,10 +4933,11 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       handle_stop(e, cmd->arg_i, frame);
       break;
     case LE_CMD_PLAY:
-      if (load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_SONG) {
+      if (valid_channel(e, cmd->arg_i) &&
+          le_handoff_section(e, cmd->arg_i)) {
         /* Logs what it starts, when it starts it (a waiting request has
          * not been heard yet). */
-        handle_song_play(e, cmd->arg_i, frame);
+        handle_section_play(e, cmd->arg_i, frame);
       } else {
         le_plog_push(e, frame, *cmd);
         handle_play(e, cmd->arg_i, frame);
@@ -4724,7 +5059,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         le_track_set_len(t, len);
         le_head_follow(e, t, frame, 0); /* its span's rate (#1179) */
         t->start_iter = 0;
-        store_i32(&t->a_state, LE_TRACK_PLAYING);
+        store_i32(&t->a_state,
+                  le_handoff_restore_state(e, ch, LE_TRACK_PLAYING));
         le_primary_reconcile(e); /* a redone first take is a first take */
         /* The from-EMPTY edge case of redo (LE_PLOG_REDO — see the UNDO_TO_
          * EMPTY case above for why every redo path logs the same code). */
@@ -4761,7 +5097,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
          * the first frame it mixes the slot PLAYING or STOPPED. */
         if (t->fade_generation != UINT64_MAX) t->fade_generation++;
         le_fade_log(e, ch, frame);
-        store_i32(&t->a_state, cmd->restore.state);
+        store_i32(&t->a_state,
+                  le_handoff_restore_state(e, ch, cmd->restore.state));
         le_primary_reconcile(e); /* a restored only take is crowned again */
         /* The clear-restore edge case of undo: same semantic code as every
          * other undo path (see LE_CMD_UNDO_TO_EMPTY), so a downstream consumer
@@ -6787,7 +7124,15 @@ static inline void le_shared_clock_one_shots(le_engine* e, int tc,
 static void le_fire_section_arm(le_engine* e, int32_t ch, uint64_t frame) {
   const int32_t st = load_i32(&e->tracks[ch].a_state);
   if (st == LE_TRACK_STOPPED) {
-    handle_play(e, ch, frame);
+    /* Band keeps one section (#1323): with another sounding, the start
+     * waits for that section's end like any section request. */
+    if (le_band_section(e, ch) && le_handoff_source(e, ch) >= 0) {
+      /* A request already waiting wins: a newer one on another section,
+       * or a Play on this one, which is what the toggle asks for. */
+      if (e->song_target < 0) handle_section_play(e, ch, frame);
+    } else {
+      handle_play(e, ch, frame);
+    }
   } else if (st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING ||
             st == LE_TRACK_RECORDING) {
     handle_stop(e, ch, frame);
@@ -6907,6 +7252,12 @@ static inline void advance_transport_frame(le_engine* e, int tc,
          * one-capturer hand-off. */
         if (boundary &&
             (wrapped || load_i32(&pt->a_state) != LE_TRACK_OVERDUBBING)) {
+          /* Band keeps one section (#1323): a take or a punch-in armed on a
+           * section while none sounded, and another section sounds by its
+           * top, becomes a Record waiting for that section's end. */
+          if (le_band_section(e, qt) && le_handoff_convert_arm(e, qt, frame)) {
+            continue;
+          }
           pt->pending_record = 0;
           store_i32(&pt->a_pending, 0);
           handle_record(e, qt, frame);
@@ -6931,6 +7282,9 @@ static inline void advance_transport_frame(le_engine* e, int tc,
           }
         }
       }
+      /* Band's one-section handoff (#1323): on the primary's top after the
+       * sounding section's lap end. */
+      le_band_handoff_tick(e, wrapped, frame);
       /* Once (slice 2b): a one-shot track whose own lap ended on this tick
        * stops here, after the arms above have done what they were queued
        * for. */
@@ -7703,6 +8057,13 @@ static inline int process_input_frame(le_engine* e, const float* in,
       if (value > magnitude) magnitude = value;
     }
     if (magnitude > LE_AUTO_RECORD_THRESHOLD) {
+      /* Song and Band keep one section (#1323): a Sound start armed while
+       * no other section sounded, with one sounding now, waits for its end
+       * instead of recording beside it. */
+      if (le_handoff_section(e, qt) &&
+          le_handoff_convert_arm(e, qt, perf_frame_base + f)) {
+        continue;
+      }
       t->pending_record = 0;
       t->pending_trigger = 0;
       store_i32(&t->a_pending, 0);

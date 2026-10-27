@@ -144,18 +144,69 @@ class LooperState extends Equatable {
     (t) => t.state == TrackState.playing || t.isCapturing,
   );
 
-  /// The Song section waiting for the playing one's next lap edge (#1077),
-  /// or null: only in Song, only on a track that holds a take and is not
-  /// capturing. The one rule the pedal projection and the stage both read.
+  /// Whether [channel] is a section that plays one at a time (#1077, #1323):
+  /// any Song track, or a Band track other than an established primary (the
+  /// designated one, holding a single-loop take: the engine's
+  /// `le_band_section`).
+  bool isSection(int channel) {
+    switch (transport.looperMode) {
+      case LooperMode.song:
+        return true;
+      case LooperMode.band:
+        final primary = transport.primaryDesignation;
+        if (primary < 0 || primary >= tracks.length || channel == primary) {
+          return false;
+        }
+        final crown = tracks[primary];
+        return crown.lengthFrames > 0 &&
+            crown.multiple == 1 &&
+            crown.syncDivisor == 0;
+      case LooperMode.multi:
+      case LooperMode.sync:
+      case LooperMode.free:
+        return false;
+    }
+  }
+
+  /// The one section a "start everything" gesture keeps in Song or Band
+  /// (#1077, #1323): a section recording its first take, which has no
+  /// content yet but is the section that sounds; else, of [candidates], the
+  /// one sounding now, else the one that sounded last, else the first. A
+  /// muted section counts only when every one is muted. Null with no
+  /// candidates and no take.
+  int? sectionToStart(Iterable<Track> candidates) {
+    final taking = tracks
+        .where(
+          (track) =>
+              isSection(track.channel) && track.state == TrackState.recording,
+        )
+        .firstOrNull;
+    if (taking != null) return taking.channel;
+    final content = candidates.where((track) => track.hasContent).toList();
+    final last = transport.songLastSection;
+    Track? pick(Iterable<Track> pool) =>
+        pool.where((track) => track.isRunning).firstOrNull ??
+        pool.where((track) => track.channel == last).firstOrNull ??
+        pool.firstOrNull;
+    return (pick(content.where((track) => !track.muted)) ?? pick(content))
+        ?.channel;
+  }
+
+  /// The Song or Band section waiting for the sounding one's end (#1077,
+  /// #1323), or null: only in Song and Band, only on a track that is not
+  /// capturing and holds a take, or is empty with a waiting Record. The one
+  /// rule the pedal projection and the stage both read.
   int? get songWaitingSection {
     final queued = transport.songQueuedTrack;
-    if (transport.looperMode != LooperMode.song ||
+    if ((transport.looperMode != LooperMode.song &&
+            transport.looperMode != LooperMode.band) ||
         queued < 0 ||
         queued >= tracks.length) {
       return null;
     }
     final track = tracks[queued];
-    return track.hasContent && !track.isCapturing ? queued : null;
+    if (track.isCapturing) return null;
+    return track.hasContent || transport.songQueueRecord ? queued : null;
   }
 
   @override
