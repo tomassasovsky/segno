@@ -2978,6 +2978,52 @@ void main() {
         verifyNever(() => looper.play(channel: 2));
       });
 
+      test("Song's Mute mode leaves a capturing section's pass alone", () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.overdubbing, lengthFrames: 48000),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..trackPressed(0);
+        verifyNever(
+          () => looper.setMute(
+            muted: any(named: 'muted'),
+            channel: any(named: 'channel'),
+          ),
+        );
+      });
+
+      test('a muted section keeps its mute when the engine would refuse its '
+          'request', () {
+        // Section 0 sounds first; section 2, beside it, captures.
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(
+              channel: 1,
+              state: TrackState.stopped,
+              lengthFrames: 48000,
+              muted: true,
+            ),
+            Track(channel: 2, state: TrackState.recording),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        cubit.selectTrack(1);
+        clearInteractions(looper);
+        cubit.recPlay();
+        verifyNever(
+          () => looper.setMute(
+            muted: any(named: 'muted'),
+            channel: any(named: 'channel'),
+          ),
+        );
+        verifyNever(() => looper.play(channel: 1));
+      });
+
       test('parked Band keeps one section in the resume set', () {
         setEngine(
           _tracksWith(const [

@@ -1785,6 +1785,12 @@ class ControlCubit extends Cubit<ControlState> {
   bool _recAdvance(int channel) {
     final track = _trackAt(channel);
     if (track != null && track.muted) {
+      // A section the engine would refuse keeps its mute (#1323).
+      if (track.state == TrackState.stopped &&
+          _l.isSection(channel) &&
+          _captureBesideSource(channel)) {
+        return false;
+      }
       if (!_setTrackMute(muted: false, channel: channel).isOk) return false;
       if (track.state == TrackState.stopped) {
         return _looper.play(channel: channel).isOk; // parked -> resume
@@ -1882,10 +1888,12 @@ class ControlCubit extends Cubit<ControlState> {
     if (!muteAccepted) return false;
     var accepted = false;
     for (final channel in all) {
-      // A Song or Band section that already sounds needs no Play: the engine
-      // reads a Play on it as a cancel of the section waiting to follow it
-      // (#1323).
-      if ((_trackAt(channel)?.isRunning ?? false) && _l.isSection(channel)) {
+      // A Song or Band section that already sounds, or already waits, needs
+      // no Play: the engine reads a Play on either as a cancel of the
+      // waiting request (#1323).
+      if (_l.isSection(channel) &&
+          ((_trackAt(channel)?.isRunning ?? false) ||
+              channel == _l.songWaitingSection)) {
         accepted = true;
         continue;
       }
@@ -1920,6 +1928,10 @@ class ControlCubit extends Cubit<ControlState> {
     final track = _trackAt(channel);
     if (!_playable(track)) return false;
     if (!track!.muted) return _looper.play(channel: channel).isOk;
+    // The engine refuses a request while a section other than the one it
+    // would wait on captures (le_handoff_capture_elsewhere); leave the mute
+    // alone for a press that does nothing.
+    if (_captureBesideSource(channel)) return false;
     // A muted section joins the mix, as a press on a muted track does in
     // Multi. A playing one only unmutes: its Play would also drop the
     // section waiting to follow it. A stopped one is unmuted so it is heard
@@ -2115,11 +2127,25 @@ class ControlCubit extends Cubit<ControlState> {
     if (track?.state == TrackState.stopped) _playSongSection(channel);
   }
 
+  /// Whether a section other than the first sounding one, which a request on
+  /// [channel] would wait on, is capturing (#1323): the engine then refuses
+  /// the request.
+  bool _captureBesideSource(int channel) {
+    final sounding = _tracks.where(
+      (t) =>
+          t.channel != channel &&
+          _l.isSection(t.channel) &&
+          (t.isRunning || t.state == TrackState.recording),
+    );
+    return sounding.skip(1).any((t) => t.isCapturing);
+  }
+
   /// Song's Mute mode (#1323): a track press toggles that section's mute and
   /// nothing else — it starts, stops and queues nothing, as on the Looper X.
   void _songMuteTrackPressed(int channel) {
     final track = _trackAt(channel);
-    if (track == null || !track.hasContent) return;
+    // A mute ends a capture, so a capturing section keeps its pass.
+    if (track == null || !track.hasContent || track.isCapturing) return;
     _setTrackMute(muted: !_looper.trackMuted(channel), channel: channel);
   }
 

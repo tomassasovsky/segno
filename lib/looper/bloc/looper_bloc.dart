@@ -734,10 +734,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
           _repository.play(channel: track.channel);
         }
       }
-      // A section that already sounds needs no Play: the engine reads a Play
-      // on it as a cancel of the section waiting to follow it.
+      // A section that already sounds, or already waits, needs no Play: the
+      // engine reads a Play on either as a cancel of the waiting request.
       final section = looper.sectionToStart(sections);
-      if (section != null && !looper.tracks[section].isRunning) {
+      if (section != null &&
+          !looper.tracks[section].isRunning &&
+          section != looper.songWaitingSection) {
         _repository.play(channel: section);
       }
     });
