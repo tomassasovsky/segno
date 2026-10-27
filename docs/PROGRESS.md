@@ -23,11 +23,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
-| #1459 | Looper X racks part 10: tempo context and the synced kinds (Pumper, Slicer, LPF LFO, note-division delays) | build | merge-gate | `claude/*1459*` |
-| #1433 | Looper X racks part 9: pitch groundwork (bench, hop split) and Pitch Shift | in-review | merge-gate | `claude/*1433*` |
-| #1430 | Looper X racks part 8: Dub-Verb and Amb-Verb (fit to the captures) and the Dub Rack's parallel paths | in-review | merge-gate | `claude/fx-dub-verbs-1430*`, `claude/dub-rack-paths-1430` |
-| #1388 | MODE footswitch moves from GP5 to GP12 (firmware 2.4; design PR separate) | in-review | auto | `claude/console-mode-gp12-1388-fw` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
+| #887 | Looper X factory racks: all parts merged, Harmonizer parked; Pi benches and by-ear sign-off owed (#1459) | in-review | blocked-verify | trunk |
 | #900, #906 | The audio thread never faults or copies on write (replaces #907, #914) | in-review | blocked-verify | `claude/zero-stall-memory-907-914` |
 | #1299 | Appliance slowdown profiler | in-review | merge-gate | `claude/appliance-responsiveness-08d39b` |
 | #1301 | Idle console redraws at 60 fps | build | merge-gate | `claude/idle-redraw-1301` |
@@ -51,7 +48,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1200 | Backing player | plan | merge-gate | `claude/backing-1200-*` |
 | #1202 | Shared render recipe, Bounce, Save selected | plan | merge-gate | `claude/render-1202-*` |
 | #1228 | MIDI clock | plan | merge-gate | `claude/midi-clock-1228-*` |
-| #1270 | Device and appliance pages (Parts 6, 7, 9, 11, 12 shipped; revised plan for 1, 2, 3a, 3b, 4, 5 and 8 in review) | build | merge-gate | `claude/device-pages-plan-1270` |
+| #1270 | Device and appliance pages (Parts 6, 7, 9, 11, 12 shipped; plan approved 2026-10-26 and refreshed; Q5 answered: refuse an Apply over the effects budget; P1 boot health gate (#976) next) | build | merge-gate | `claude/device-pages-*1270*` |
 | #1342 | Ring carrier firmware updates from the console | in-review | blocked-verify | `claude/ring-update-1342` |
 | #1437 | Recover from and record a freeze (watchdog, pstore, journal sync, lockup policy) | in-review | auto | `claude/appliance-freeze-recovery-1437` |
 
