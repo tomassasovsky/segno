@@ -1890,11 +1890,14 @@ class ControlCubit extends Cubit<ControlState> {
     if (!muteAccepted) return false;
     var accepted = false;
     for (final channel in all) {
-      // A Song or Band section that already sounds, or already waits, needs
-      // no Play: the engine reads a Play on either as a cancel of the
-      // waiting request (#1323).
+      // A Song or Band section that already sounds, records or waits needs
+      // no Play: the engine reads a Play on a sounding or waiting section as
+      // a cancel of the waiting request, and a Play on a take in its
+      // count-in grace cancels the take (#1323).
+      final track = _trackAt(channel);
       if (_l.isSection(channel) &&
-          ((_trackAt(channel)?.isRunning ?? false) ||
+          ((track?.isRunning ?? false) ||
+              (track?.isCapturing ?? false) ||
               channel == _l.songWaitingSection)) {
         accepted = true;
         continue;
@@ -2024,10 +2027,17 @@ class ControlCubit extends Cubit<ControlState> {
     final live = _looper.state;
     final playingNow = _running(live.tracks);
     final waiting = live.transport.songQueuedTrack;
+    // An empty section waiting to record has nothing to stop: its arm is
+    // cancelled instead, so no Stop marks a take that never began.
+    final waitingEmpty =
+        waiting >= 0 &&
+        waiting < live.tracks.length &&
+        !live.tracks[waiting].hasContent;
+    if (waitingEmpty) _looper.cancelArm(channel: waiting);
     final stopping = {
       ...running,
       ...playingNow,
-      if (waiting >= 0) waiting,
+      if (waiting >= 0 && !waitingEmpty) waiting,
     };
     if (stopping.isEmpty) return true; // Keep the parked resume set.
     final latch = {...(playingNow.isEmpty ? running : playingNow)}
