@@ -108,14 +108,20 @@ dim the display. NeoPixelBus PIO/DMA preserves interrupts during the
 80-pixel transfer. Forced refresh, goodbye and stale-link darkening cover the
 whole chain. RGB black is a valid deliberately dark hue.
 
-**Song queue (#1077).** While a Song section waits for the playing one's next
-lap edge, STATE byte 51 names the footswitch whose pill shows it and byte 52
-how much of the wait has played (0..254 of 255). The board fills that pill
-left to right in the hue and activity the app gave it; nothing local advances
-the fill, and a queue never lights the whole pill. The engine ends the wait by
-starting the section, and the next frame carries no queue
-([plan](../../docs/plan/2026-09-24-feat-song-pill-completion-plan.md),
-[simulation](../../docs/simulations/song-pill-completion.html)).
+**Song queue (#1077, #1323).** While a Song or Band section waits for the
+sounding one's end, STATE byte 51 names the footswitch whose pill shows it and
+byte 52 how much of the wait has played (0..254 of 255). The board fills that
+pill left to right in the hue and activity the app gave it. Since firmware
+2.5, every filled pixel has one level (110, the mean of the diffused levels,
+so a fully filled queued pill has the same total brightness as the diffused
+curve) with no centre curve, and the leading pixel fills partially so the edge moves
+smoothly. Nothing local advances the fill, and a queue never lights the whole
+pill. The engine ends the wait by starting the section, and the next frame
+carries no queue. A pill that leaves the queue and stays lit blends from its
+last fill to the diffused curve over 300 ms; one that goes dark does so at
+once. The board keeps no Song or bank logic: it reacts only to the queued
+button the app sends. The wire is unchanged
+([plan](../../docs/plan/2026-10-13-fix-song-band-one-section-plan.md)).
 
 No physical deployment or electrical/optical validation is implied by the host
 tests or a successful Arduino compile.
@@ -210,7 +216,7 @@ without the app, watch the hellos arrive:
 
 ```sh
 stty -F /dev/ttyAMA3 115200 raw -echo
-od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0c 02 04 0a (HELLO, protocol 12, fw 2.4), once a second
+od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0c 02 05 0b (HELLO, protocol 12, fw 2.5), once a second
 ```
 
 ## Bring-up record
