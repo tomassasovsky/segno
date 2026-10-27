@@ -6,20 +6,53 @@ import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/session/cubit/session_cubit.dart';
 
 void main() {
-  group('powerRefused', () {
+  group('powerRefusal', () {
     test('a take in flight refuses', () {
-      expect(powerRefused(const PowerSnapshot(takeInFlight: true)), isTrue);
+      expect(
+        powerRefusal(const PowerSnapshot(takeInFlight: true)),
+        PowerRefusal.take,
+      );
+    });
+
+    test('an update in flight refuses', () {
+      expect(
+        powerRefusal(const PowerSnapshot(updateInFlight: true)),
+        PowerRefusal.update,
+      );
     });
 
     test('a transfer in flight refuses', () {
-      expect(powerRefused(const PowerSnapshot(transferInFlight: true)), isTrue);
+      expect(
+        powerRefusal(const PowerSnapshot(transferInFlight: true)),
+        PowerRefusal.transfer,
+      );
+    });
+
+    test('a take comes first, then an update, then a transfer', () {
+      expect(
+        powerRefusal(
+          const PowerSnapshot(
+            takeInFlight: true,
+            updateInFlight: true,
+            transferInFlight: true,
+          ),
+        ),
+        PowerRefusal.take,
+      );
+      // A USB update package's copy holds a storage lease too.
+      expect(
+        powerRefusal(
+          const PowerSnapshot(updateInFlight: true, transferInFlight: true),
+        ),
+        PowerRefusal.update,
+      );
     });
 
     test('anything else proceeds, named or not', () {
-      expect(powerRefused(const PowerSnapshot()), isFalse);
+      expect(powerRefusal(const PowerSnapshot()), isNull);
       expect(
-        powerRefused(const PowerSnapshot(currentSessionName: 'set')),
-        isFalse,
+        powerRefusal(const PowerSnapshot(currentSessionName: 'set')),
+        isNull,
       );
     });
   });
@@ -150,6 +183,27 @@ void main() {
       expect(read().transferInFlight, isFalse);
       expect(read(transfer: true).transferInFlight, isTrue);
       expect(read(transfer: true).takeInFlight, isFalse);
+    });
+
+    test('carries the update flag it is given, and none by default', () {
+      PowerSnapshot read({bool? update}) => update == null
+          ? powerSnapshotOf(
+              looper: const LooperState(),
+              recorder: const PerformanceRecorderIdle(),
+              session: const SessionState(),
+              backing: const BackingState(),
+            )
+          : powerSnapshotOf(
+              looper: const LooperState(),
+              recorder: const PerformanceRecorderIdle(),
+              session: const SessionState(),
+              backing: const BackingState(),
+              updateInFlight: update,
+            );
+      expect(read().updateInFlight, isFalse);
+      expect(read(update: true).updateInFlight, isTrue);
+      expect(read(update: true).takeInFlight, isFalse);
+      expect(read(update: true).transferInFlight, isFalse);
     });
 
     test('sessionHasContent: recorded audio, or a prepared or loaded '

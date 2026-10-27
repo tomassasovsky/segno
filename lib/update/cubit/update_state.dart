@@ -114,6 +114,10 @@ class UpdateState extends Equatable {
   /// Whether a newer build is currently on offer (available or staged).
   bool get hasUpdate => available != null;
 
+  /// Whether an update is downloading or installing, online or from a USB
+  /// drive. A restart or shutdown waits for it (#1494).
+  bool get installInFlight => phase == UpdatePhase.downloading || usbInstalling;
+
   /// Whether the startup banner should be shown: an update is available and its
   /// version has not been dismissed.
   bool get shouldNotify =>

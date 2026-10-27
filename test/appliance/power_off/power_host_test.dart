@@ -10,6 +10,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
+import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/appliance/power_off/power_host.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
 import 'package:segno/backing/cubit/backing_cubit.dart';
@@ -19,6 +20,7 @@ import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/session/cubit/session_cubit.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:settings_repository/settings_repository.dart';
 import 'package:storage_repository/storage_repository.dart';
 import 'package:update_repository/update_repository.dart';
 import 'package:usb_storage_client/usb_storage_client.dart';
@@ -41,6 +43,10 @@ class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit {}
 
 class _MockBackingCubit extends MockCubit<BackingCubitState>
     implements BackingCubit {}
+
+class _MockUpdateRepository extends Mock implements UpdateRepository {}
+
+class _MockSettingsRepository extends Mock implements SettingsRepository {}
 
 const _loops = LooperState(
   tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
@@ -244,6 +250,119 @@ void main() {
       keys.emitPress();
       await settle(tester);
       expect(cubit.state.phase, PowerPhase.options);
+    });
+
+    group('an update in flight', () {
+      final offer = UpdateManifest(
+        version: Version.parse('1.1.0'),
+        bundle: 'segno-appliance-1.1.0.raucb',
+      );
+      late StreamController<double> download;
+      late UpdateCubit update;
+
+      setUp(() async {
+        download = StreamController<double>();
+        final updates = _MockUpdateRepository();
+        when(() => updates.isSupported).thenReturn(true);
+        when(() => updates.channel).thenReturn('production');
+        when(
+          updates.currentVersion,
+        ).thenAnswer((_) async => Version.parse('1.0.0'));
+        when(updates.stagedVersion).thenAnswer((_) async => Version.none);
+        when(updates.checkForUpdate).thenAnswer((_) async => offer);
+        when(
+          () => updates.downloadAndStage(offer),
+        ).thenAnswer((_) => download.stream);
+        update = UpdateCubit(
+          updates: updates,
+          settings: _MockSettingsRepository(),
+        );
+        await update.check();
+      });
+
+      tearDown(() async {
+        await update.close();
+        // Not awaited: the done future of a controller nobody listens to
+        // never completes.
+        unawaited(download.close());
+      });
+
+      testWidgets('press while an online update downloads refuses with the '
+          'update words; once the download fails, the same press opens '
+          'Power options', (tester) async {
+        await pumpHost(tester, update: update);
+        await tester.pump();
+        unawaited(update.startDownload());
+        keys.emitPress();
+        await settle(tester);
+
+        expect(cubit.state.refusal, PowerRefusal.update);
+        expect(find.text('Wait for the update'), findsOneWidget);
+        expect(find.byKey(const Key('power_restart')), findsNothing);
+        expect(find.byKey(const Key('power_shut_down')), findsNothing);
+
+        await tester.tap(find.byKey(const Key('power_keep_playing')));
+        await settle(tester);
+        download.addError(Exception('sha mismatch'));
+        await tester.pump();
+        expect(update.state.phase, UpdatePhase.error);
+        keys.emitPress();
+        await settle(tester);
+        expect(cubit.state.phase, PowerPhase.options);
+        expect(log, isEmpty);
+      });
+
+      testWidgets('press during a download refuses; once it has staged, the '
+          'same press opens Power options with the install line', (
+        tester,
+      ) async {
+        await pumpHost(tester, update: update);
+        await tester.pump();
+        unawaited(update.startDownload());
+        download.add(0.7);
+        keys.emitPress();
+        await settle(tester);
+        expect(cubit.state.refusal, PowerRefusal.update);
+
+        await tester.tap(find.byKey(const Key('power_keep_playing')));
+        await settle(tester);
+        unawaited(download.close());
+        await tester.pump();
+        expect(update.state.phase, UpdatePhase.staged);
+        keys.emitPress();
+        await settle(tester);
+        expect(cubit.state.phase, PowerPhase.options);
+        expect(
+          find.text('Segno 1.1.0 installs during the restart.'),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('Install and restart waits for a USB install, and reboots '
+          'once it has ended', (tester) async {
+        named();
+        await pumpHost(tester, update: update);
+        await tester.pump();
+        update.setUsbInstalling(working: true);
+        final context = tester.element(
+          find.byKey(const Key('power_host_child')),
+        );
+        requestRestart(context);
+        await settle(tester);
+
+        expect(cubit.state.refusal, PowerRefusal.update);
+        expect(find.text('Wait for the update'), findsOneWidget);
+        expect(log, isEmpty);
+        verifyNever(() => session.save());
+
+        await tester.tap(find.byKey(const Key('power_keep_playing')));
+        await settle(tester);
+        update.setUsbInstalling(working: false);
+        requestRestart(context);
+        await settle(tester);
+        expect(log, ['stop', 'flush', 'pedal', 'reboot']);
+        verify(() => session.save()).called(1);
+      });
     });
 
     testWidgets('a staged update adds its line', (tester) async {

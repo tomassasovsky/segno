@@ -434,7 +434,7 @@ void main() {
           verify(() => power.press(captureAny<PowerSnapshot>())).captured.single
               as PowerSnapshot;
       expect(pressed.transferInFlight, isTrue);
-      expect(powerRefused(pressed), isTrue);
+      expect(powerRefusal(pressed), PowerRefusal.transfer);
     });
   });
 }

@@ -101,6 +101,76 @@ void main() {
       expect(find.text('Wait for the transfer'), findsNothing);
     });
 
+    testWidgets('an update install refuses with its own words and only Keep '
+        'playing; a take wins over it, and it wins over a transfer', (
+      tester,
+    ) async {
+      final cubit = _cubit();
+      addTearDown(cubit.close);
+      await _pump(
+        tester,
+        cubit,
+        snapshot: const PowerSnapshot(
+          updateInFlight: true,
+          transferInFlight: true,
+        ),
+      );
+
+      expect(find.text('Wait for the update'), findsOneWidget);
+      expect(
+        find.text(
+          'An update is being downloaded or installed. Wait for it to '
+          'finish, then press the power button again if you want to power '
+          'off.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Wait for the transfer'), findsNothing);
+      expect(find.byKey(const Key('power_keep_playing')), findsOneWidget);
+      expect(find.byKey(const Key('power_restart')), findsNothing);
+      expect(find.byKey(const Key('power_shut_down')), findsNothing);
+
+      cubit.dismiss();
+      await tester.pumpAndSettle();
+      await _pump(
+        tester,
+        cubit,
+        snapshot: const PowerSnapshot(takeInFlight: true, updateInFlight: true),
+      );
+      expect(find.text('Stop the take first'), findsOneWidget);
+      expect(find.text('Wait for the update'), findsNothing);
+    });
+
+    testWidgets('the refusal keeps its words when the install ends while it '
+        'is up', (tester) async {
+      final cubit = _cubit();
+      addTearDown(cubit.close);
+      final changes = StreamController<Object?>();
+      addTearDown(changes.close);
+      var snapshot = const PowerSnapshot(updateInFlight: true);
+      cubit.press(snapshot);
+      await tester.pumpApp(
+        BlocProvider.value(
+          value: cubit,
+          child: Scaffold(
+            body: PowerDialog(
+              snapshot: () => snapshot,
+              save: () async {},
+              changes: [changes.stream],
+            ),
+          ),
+        ),
+      );
+      expect(find.text('Wait for the update'), findsOneWidget);
+
+      snapshot = const PowerSnapshot();
+      changes.add(null);
+      await tester.pump();
+
+      expect(find.text('Wait for the update'), findsOneWidget);
+      expect(find.text('Stop the take first'), findsNothing);
+    });
+
     testWidgets('Power options: the save promise, the session name, and '
         'Cancel / Restart / Shut down', (tester) async {
       final cubit = _cubit();
