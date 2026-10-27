@@ -31,16 +31,21 @@ enum UpdatePhase {
 
 /// Which operation put the flow into [UpdatePhase.error].
 ///
-/// The two read differently and retry differently: a check that could not
-/// reach the server is retried by checking, and a download that broke off is
-/// retried by downloading. One error phase with one wording told half the
-/// users the wrong thing and offered all of them the wrong button.
+/// Each reads differently and has its own next step: a check that could not
+/// reach the server is retried by checking, a download that broke off is
+/// retried by downloading, and a read-only boot partition needs a restart.
+/// One error phase with one wording told users the wrong thing and offered
+/// them the wrong button.
 enum UpdateFailure {
   /// The read-only availability check.
   check,
 
   /// The download and stage of an offered bundle.
   download,
+
+  /// The download and stage of an offered bundle, refused because the boot
+  /// partition is read-only. A restart repairs it; retrying does not.
+  bootReadOnly,
 }
 
 /// Immutable state of the update feature.

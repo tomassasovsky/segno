@@ -36,6 +36,7 @@ import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/audio_tempo.dart';
 import 'package:segno/looper/model/owned_setting.dart';
+import 'package:segno/looper/view/tracks_chrome.dart';
 import 'package:segno/performance/cubit/recording_destination_cubit.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/settings/settings.dart';
@@ -4173,7 +4174,7 @@ void main() {
 
         // The 7" readout carries the same condition on the next push tick.
         await tester.pump(const Duration(milliseconds: 40));
-        expect(windowService.readouts.last.deviceLost, isTrue);
+        expect(windowService.readouts.last.lossLine, isNotEmpty);
 
         // Replug: the banner leaves on its own; restored stays a snack toast
         // (an event, not a condition).
@@ -4184,7 +4185,7 @@ void main() {
         expect(find.byKey(deviceBanner), findsNothing);
         expect(debugAppToastActive(AppToastId.deviceRestored), isTrue);
         await tester.pump(const Duration(milliseconds: 40));
-        expect(windowService.readouts.last.deviceLost, isFalse);
+        expect(windowService.readouts.last.lossLine, isEmpty);
 
         // Let the snack's auto-close and removal animations run out so no
         // timer outlives the test.
@@ -5171,12 +5172,13 @@ void main() {
     });
 
     testWidgets(
-      'shows the audio-recovery banner when booted with the pinned '
-      'device absent',
+      'booted with the pinned device absent, the stage holds one strip that '
+      'opens the Device page (#1270 Part 5)',
       (tester) async {
-        // The fake engine reports stopped with no devices, so the pinned config
-        // is absent and the recovery cubit waits (and would auto-start on
-        // arrival). pump (not pumpAndSettle) — the cubit holds a periodic poll.
+        // The fake engine reports stopped with no devices, so the pinned
+        // config is absent and the recovery cubit waits (and would auto-start
+        // on arrival). pump (not pumpAndSettle) — the cubit holds a periodic
+        // poll.
         await tester.pumpWidget(
           App(
             guards: GuardRegistry(),
@@ -5194,62 +5196,28 @@ void main() {
         );
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 10));
+        await tester.pump();
 
+        // One surface for one cause: the red strip, with no toast and no
+        // engine-stopped banner beside it.
         expect(
-          find.byKey(const Key('app_audioRecovery_banner')),
+          find.byKey(const Key('connectivity_banner_waiting')),
           findsOneWidget,
         );
+        expect(find.byType(AudioNotRunningBanner), findsNothing);
+
+        await tester.tap(
+          find.byKey(const Key('connectivity_banner_waiting_action')),
+        );
+        for (var i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(find.byType(DeviceSettingsPage), findsOneWidget);
+
+        // Unmount so the recovery poll stops with the test.
+        await tester.pumpWidget(const SizedBox.shrink());
       },
-      // Toast, not a widget. These notifications moved to toastification,
-      // which renders into an overlay this harness does not provide, so the
-      // old widget-key assertions can never match. Coverage is rebuilt with
-      // the persistent-surface work — see #453.
-      skip: true,
     );
-
-    testWidgets('the audio-recovery toast opens the Device page', (
-      tester,
-    ) async {
-      // The pinned interface is absent, so recovery waits and the toast
-      // stands. Its action is the way to the interface chooser.
-      await tester.pumpWidget(
-        App(
-          guards: GuardRegistry(),
-          mixSettings: testMixSettings(repository, settings: settings),
-          repository: repository,
-          controllerRepository: controllerRepository,
-          midiDeviceRepository: midiDeviceRepository,
-          settings: settings,
-          waveformWindow: NoopWaveformWindowService(),
-          sessionRepository: sessionRepository,
-          performanceRepository: performanceRepository,
-          backingRepository: testBackingRepository(),
-          audioRecoveryConfig: const EngineConfig(playbackDeviceId: 'absent'),
-        ),
-      );
-      // pump, not pumpAndSettle: the recovery cubit holds a periodic poll.
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 10));
-      expect(debugAppToastActive(AppToastId.audioRecovery), isTrue);
-      // Let the toast animate in before tapping its action.
-      for (var i = 0; i < 10; i++) {
-        await tester.pump(const Duration(milliseconds: 100));
-      }
-
-      await tester.tap(
-        find.descendant(
-          of: find.byKey(const Key(AppToastId.audioRecovery)),
-          matching: find.byType(TextButton),
-        ),
-      );
-      for (var i = 0; i < 10; i++) {
-        await tester.pump(const Duration(milliseconds: 100));
-      }
-      expect(find.byType(DeviceSettingsPage), findsOneWidget);
-
-      // Unmount so the recovery poll stops with the test.
-      await tester.pumpWidget(const SizedBox.shrink());
-    });
 
     testWidgets(
       'macOS PlatformMenuBar survives MaterialApp theme rebuild and '
