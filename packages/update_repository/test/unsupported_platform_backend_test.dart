@@ -28,5 +28,27 @@ void main() {
         );
       },
     );
+
+    test('a USB package is refused the same way, with no staging', () {
+      expect(backend.stagingDirectory, isEmpty);
+      expect(
+        backend.installPackage('/staging/segno.raucb'),
+        emitsError(isA<UnsupportedError>()),
+      );
+    });
+
+    test('a package refusal names itself', () {
+      expect(
+        const UpdatePackageRefused(UpdatePackageRefusal.unverified).toString(),
+        'UpdatePackageRefused(unverified)',
+      );
+      expect(
+        UpdatePackageRefused(
+          UpdatePackageRefusal.notNewer,
+          version: Version(0, 9, 0),
+        ).toString(),
+        'UpdatePackageRefused(notNewer, 0.9.0)',
+      );
+    });
   });
 }

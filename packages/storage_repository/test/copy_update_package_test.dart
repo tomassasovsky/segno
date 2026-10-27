@@ -209,4 +209,80 @@ void main() {
 
     expect(h.filesUnder(staging()), ['segno-0.7.0.raucb']);
   });
+
+  group('the paths a copy can fail by', () {
+    Future<void> expectCopy(Matcher matcher, {bool Function()? cancelled}) =>
+        expectLater(
+          repo.copyUpdatePackage(
+            generation: 1,
+            sourcePath: package(1).path,
+            stagingDirectory: staging(),
+            cancelled: cancelled,
+          ),
+          matcher,
+        );
+
+    test(
+      'a cancel that lands as the last byte is written still cancels',
+      () async {
+        var cancel = false;
+        repo = h.build(
+          initial: [h.record(1)],
+          copyBytes: (from, part, shouldAbort) async {
+            await part.writeAsBytes(await from.readAsBytes(), flush: true);
+            cancel = true;
+          },
+        );
+        await pumpEventQueue();
+        await expectCopy(
+          throwsA(const StorageFailure.io('cancelled')),
+          cancelled: () => cancel,
+        );
+        expect(h.filesUnder(staging()), isEmpty);
+      },
+    );
+
+    test(
+      'a write the cancel interrupted is a cancel, not an io error',
+      () async {
+        repo = h.build(
+          initial: [h.record(1)],
+          copyBytes: (from, part, shouldAbort) async {
+            if (shouldAbort()) throw const FileSystemException('aborted');
+          },
+        );
+        await pumpEventQueue();
+        await expectCopy(
+          throwsA(const StorageFailure.io('cancelled')),
+          cancelled: () => true,
+        );
+      },
+    );
+
+    test('a source read broken by the drive leaving is volumeLost', () async {
+      repo = h.build(
+        initial: [h.record(1)],
+        copyBytes: (from, part, shouldAbort) async {
+          h.client.detach(1);
+          await pumpEventQueue();
+          throw SourceReadFailure(osError(5, 'Input/output error'));
+        },
+      );
+      await pumpEventQueue();
+      await expectCopy(throwsA(const StorageFailure.volumeLost(1)));
+      expect(h.filesUnder(staging()), isEmpty);
+    });
+
+    test('a source that cannot be read on a present drive is io', () async {
+      repo = h.build(
+        initial: [h.record(1)],
+        volumeLossGrace: const Duration(milliseconds: 10),
+        copyBytes: (from, part, shouldAbort) async =>
+            throw SourceReadFailure(osError(5, 'Input/output error')),
+      );
+      await pumpEventQueue();
+      await expectCopy(throwsA(const StorageFailure.io('Input/output error')));
+      expect(h.filesUnder(staging()), isEmpty);
+    });
+  });
 }
