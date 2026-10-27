@@ -16,9 +16,9 @@ part 'power_state.dart';
 /// update install or a transfer is in flight; otherwise stop the transport,
 /// flush settings, save the session, hold [GuardKind.restart], wait for
 /// storage leases, then reboot or halt. A failed save keeps Segno on (Stay
-/// on / Retry); there is no way to halt without saving. An unnamed session with nothing to lose
-/// ([PowerSnapshot.sessionHasContent] false) skips only the session write:
-/// there is nothing to name and nothing to write.
+/// on / Retry); there is no way to halt without saving. An unnamed session
+/// with nothing to lose ([PowerSnapshot.sessionHasContent] false) skips only
+/// the session write: there is nothing to name and nothing to write.
 ///
 /// Never calls another cubit. Every step is an injected closure, and the
 /// save is handed in at each commit by the host that owns the session.
