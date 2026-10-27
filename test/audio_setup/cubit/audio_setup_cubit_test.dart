@@ -149,7 +149,9 @@ void main() {
       final cubit = buildCubit();
       addTearDown(cubit.close);
 
-      cubit.setBufferFrames(256);
+      cubit
+        ..editBuffer(256)
+        ..applyDraft();
 
       final asked =
           verify(
@@ -168,7 +170,9 @@ void main() {
       final cubit = buildCubit();
       addTearDown(cubit.close);
 
-      cubit.setBufferFrames(256);
+      cubit
+        ..editBuffer(256)
+        ..applyDraft();
 
       expect(cubit.state.applyPhase, ApplyPhase.confirming);
       expect(cubit.state.bufferFrames, 128);
@@ -182,7 +186,9 @@ void main() {
       when(() => backing.state).thenReturn(
         const BackingPlayerState(transport: BackingTransport.playing),
       );
-      final cubit = buildCubit()..setBufferFrames(256);
+      final cubit = buildCubit()
+        ..editBuffer(256)
+        ..applyDraft();
       addTearDown(cubit.close);
 
       cubit.confirmApply();
@@ -197,7 +203,9 @@ void main() {
 
     test('Cancel leaves playback and the config as they were', () {
       seed(tracks: const [playing]);
-      final cubit = buildCubit()..setBufferFrames(256);
+      final cubit = buildCubit()
+        ..editBuffer(256)
+        ..applyDraft();
       addTearDown(cubit.close);
 
       cubit.cancelApply();
@@ -220,10 +228,14 @@ void main() {
         addTearDown(cubit.close);
 
         cubit
-          ..setBufferFrames(256)
-          ..setDevice(playbackDeviceId: 'a', captureDeviceId: 'a')
-          ..setMaxLoopMinutes(5)
-          ..setSampleRate(96000);
+          ..editBuffer(256)
+          ..applyDraft()
+          ..editDevice(playbackDeviceId: 'a', captureDeviceId: 'a')
+          ..applyDraft()
+          ..editMaxLoop(5)
+          ..applyDraft()
+          ..editRate(96000)
+          ..applyDraft();
 
         expect(cubit.state.refusal, const ApplyRefusal.busy('capture'));
         verifyNever(() => repository.applyAudioConfig(any()));
@@ -241,7 +253,9 @@ void main() {
       final cubit = buildCubit();
       addTearDown(cubit.close);
 
-      cubit.setBufferFrames(256);
+      cubit
+        ..editBuffer(256)
+        ..applyDraft();
 
       expect(cubit.state.refusal, const ApplyRefusal.busy('capture'));
       verifyNever(() => repository.applyAudioConfig(any()));
@@ -252,7 +266,9 @@ void main() {
       seed(tracks: const [playing]);
       final cubit = buildCubit();
       addTearDown(cubit.close);
-      cubit.setBufferFrames(256);
+      cubit
+        ..editBuffer(256)
+        ..applyDraft();
       seed(tracks: const [Track(state: TrackState.recording)]);
 
       cubit.confirmApply();
@@ -272,7 +288,9 @@ void main() {
       final cubit = buildCubit();
       addTearDown(cubit.close);
 
-      cubit.setBufferFrames(256);
+      cubit
+        ..editBuffer(256)
+        ..applyDraft();
 
       expect(during.single.kind, GuardKind.deviceChange);
       expect(guards.active, isEmpty);
@@ -286,14 +304,18 @@ void main() {
       expect(cubit.state.hasContent, isTrue);
 
       cubit
-        ..setSampleRate(96000)
-        ..setMaxLoopMinutes(5);
+        ..editRate(96000)
+        ..applyDraft()
+        ..editMaxLoop(5)
+        ..applyDraft();
       verifyNever(() => repository.applyAudioConfig(any()));
       expect(cubit.state.sampleRate, 48000);
       expect(cubit.state.maxLoopMinutes, 0);
       expect(cubit.state.refusal, isNull);
 
-      cubit.setBufferFrames(256);
+      cubit
+        ..editBuffer(256)
+        ..applyDraft();
       verify(() => repository.applyAudioConfig(any())).called(1);
     });
 
@@ -303,8 +325,10 @@ void main() {
       addTearDown(cubit.close);
 
       cubit
-        ..setSampleRate(44100)
-        ..setMaxLoopMinutes(5);
+        ..editRate(44100)
+        ..applyDraft()
+        ..editMaxLoop(5)
+        ..applyDraft();
 
       verify(() => repository.applyAudioConfig(any())).called(2);
     });
@@ -315,7 +339,9 @@ void main() {
       final cubit = buildCubit();
       addTearDown(cubit.close);
 
-      cubit.setSampleRate(96000);
+      cubit
+        ..editRate(96000)
+        ..applyDraft();
 
       expect(cubit.state.refusal, const ApplyRefusal.overBudgetRate(96000));
       expect(cubit.state.sampleRate, 48000);
@@ -329,8 +355,10 @@ void main() {
       addTearDown(cubit.close);
 
       cubit
-        ..setSampleRate(44100)
-        ..setBufferFrames(512);
+        ..editRate(44100)
+        ..applyDraft()
+        ..editBuffer(512)
+        ..applyDraft();
 
       verifyNever(() => repository.fxRoomAt(any(), any()));
       verify(() => repository.applyAudioConfig(any())).called(2);
@@ -350,7 +378,9 @@ void main() {
       final cubit = buildCubit();
       addTearDown(cubit.close);
 
-      cubit.setSampleRate(96000);
+      cubit
+        ..editRate(96000)
+        ..applyDraft();
 
       expect(cubit.state.sampleRate, 48000);
       expect(cubit.state.status, AudioSetupStatus.running);
@@ -366,10 +396,14 @@ void main() {
       when(() => repository.fxRoomAt(96000, 128)).thenReturn(-1);
       final cubit = buildCubit();
       addTearDown(cubit.close);
-      cubit.setSampleRate(96000);
+      cubit
+        ..editRate(96000)
+        ..applyDraft();
       expect(cubit.state.refusal, isNotNull);
 
-      cubit.setBufferFrames(256);
+      cubit
+        ..editBuffer(256)
+        ..applyDraft();
 
       expect(cubit.state.refusal, isNull);
     });
@@ -382,7 +416,9 @@ void main() {
           result: EngineResult.notReady,
         ),
       );
-      final cubit = buildCubit()..setBufferFrames(256);
+      final cubit = buildCubit()
+        ..editBuffer(256)
+        ..applyDraft();
       addTearDown(cubit.close);
 
       expect(cubit.state.refusal, const ApplyRefusal.busy('other'));
@@ -407,7 +443,8 @@ void main() {
         ),
       );
       final cubit = buildCubit()
-        ..setDevice(playbackDeviceId: 'b', captureDeviceId: 'b');
+        ..editDevice(playbackDeviceId: 'b', captureDeviceId: 'b')
+        ..applyDraft();
       addTearDown(cubit.close);
 
       expect(
@@ -427,7 +464,9 @@ void main() {
           result: EngineResult.device,
         ),
       );
-      final cubit = buildCubit()..setMaxLoopMinutes(5);
+      final cubit = buildCubit()
+        ..editMaxLoop(5)
+        ..applyDraft();
       addTearDown(cubit.close);
 
       expect(cubit.state.refusal, const ApplyRefusal.settingsRefused());
@@ -449,7 +488,8 @@ void main() {
         ),
       );
       final cubit = buildCubit()
-        ..setDevice(playbackDeviceId: 'b', captureDeviceId: 'b');
+        ..editDevice(playbackDeviceId: 'b', captureDeviceId: 'b')
+        ..applyDraft();
       addTearDown(cubit.close);
 
       expect(
@@ -471,12 +511,15 @@ void main() {
             : _applied;
       });
       final cubit = buildCubit()
-        ..setDevice(playbackDeviceId: 'b', captureDeviceId: 'b');
+        ..editDevice(playbackDeviceId: 'b', captureDeviceId: 'b')
+        ..applyDraft();
       addTearDown(cubit.close);
       expect(cubit.state.status, AudioSetupStatus.error);
 
       // Nothing runs, so tapping what is shown is the retry.
-      cubit.setBufferFrames(128);
+      cubit
+        ..editBuffer(128)
+        ..applyDraft();
 
       expect(calls, 2);
       expect(cubit.state.status, AudioSetupStatus.running);
@@ -493,7 +536,9 @@ void main() {
           maxLoopFrames: 14399999,
         ),
       );
-      final cubit = buildCubit()..setBufferFrames(256);
+      final cubit = buildCubit()
+        ..editBuffer(256)
+        ..applyDraft();
       addTearDown(cubit.close);
 
       final asked =
@@ -517,7 +562,9 @@ void main() {
       addTearDown(cubit.close);
       expect(cubit.state.maxLoopMinutes, 5);
 
-      cubit.setSampleRate(96000);
+      cubit
+        ..editRate(96000)
+        ..applyDraft();
 
       final asked =
           verify(
@@ -539,7 +586,9 @@ void main() {
           maxLoopFrames: 28800000,
         ),
       );
-      final cubit = buildCubit()..setBufferFrames(256);
+      final cubit = buildCubit()
+        ..editBuffer(256)
+        ..applyDraft();
       addTearDown(cubit.close);
 
       final asked =
@@ -567,7 +616,9 @@ void main() {
       final cubit = buildCubit();
       addTearDown(cubit.close);
 
-      cubit.setDevice(playbackDeviceId: 'b', captureDeviceId: 'b');
+      cubit
+        ..editDevice(playbackDeviceId: 'b', captureDeviceId: 'b')
+        ..applyDraft();
 
       expect(
         cubit.state.deviceConnectivity,
@@ -592,7 +643,9 @@ void main() {
       final cubit = buildCubit();
       addTearDown(cubit.close);
 
-      cubit.setBufferFrames(256);
+      cubit
+        ..editBuffer(256)
+        ..applyDraft();
 
       expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
       expect(cubit.state.status, AudioSetupStatus.running);
@@ -603,7 +656,9 @@ void main() {
       final cubit = buildCubit();
       addTearDown(cubit.close);
 
-      cubit.setMaxLoopMinutes(5);
+      cubit
+        ..editMaxLoop(5)
+        ..applyDraft();
 
       // 5 min * 60 s * 48000 Hz = 14_400_000 frames.
       verify(
@@ -629,7 +684,9 @@ void main() {
       final cubit = buildCubit();
       addTearDown(cubit.close);
 
-      cubit.setBufferFrames(64);
+      cubit
+        ..editBuffer(64)
+        ..applyDraft();
 
       expect(cubit.state.status, AudioSetupStatus.error);
       expect(cubit.state.error, AudioSetupError.openDeviceFailed);
@@ -652,8 +709,10 @@ void main() {
       addTearDown(cubit.close);
 
       cubit
-        ..setBufferFrames(64)
-        ..setBufferFrames(256);
+        ..editBuffer(64)
+        ..applyDraft()
+        ..editBuffer(256)
+        ..applyDraft();
 
       expect(cubit.state.status, AudioSetupStatus.running);
       expect(cubit.state.error, isNull);
@@ -944,21 +1003,31 @@ void main() {
       });
     });
 
-    test('setPlaybackDevice updates state and persists', () async {
+    test('a drafted playback device applies and persists', () async {
       final cubit = buildCubit();
       addTearDown(cubit.close);
 
-      cubit.setPlaybackDevice('out-1');
+      cubit
+        ..editDevice(
+          playbackDeviceId: 'out-1',
+          captureDeviceId: cubit.state.captureDeviceId,
+        )
+        ..applyDraft();
       expect(cubit.state.playbackDeviceId, 'out-1');
       await Future<void>.delayed(Duration.zero);
       expect((await settings.loadAudioConfig())?.playbackDeviceId, 'out-1');
     });
 
-    test('setCaptureDevice updates state and persists', () async {
+    test('a drafted capture device applies and persists', () async {
       final cubit = buildCubit();
       addTearDown(cubit.close);
 
-      cubit.setCaptureDevice('in-1');
+      cubit
+        ..editDevice(
+          playbackDeviceId: cubit.state.playbackDeviceId,
+          captureDeviceId: 'in-1',
+        )
+        ..applyDraft();
       expect(cubit.state.captureDeviceId, 'in-1');
       await Future<void>.delayed(Duration.zero);
       expect((await settings.loadAudioConfig())?.captureDeviceId, 'in-1');
@@ -974,7 +1043,12 @@ void main() {
       addTearDown(cubit.close);
       expect(cubit.state.status, AudioSetupStatus.running);
 
-      cubit.setPlaybackDevice('out-1');
+      cubit
+        ..editDevice(
+          playbackDeviceId: 'out-1',
+          captureDeviceId: cubit.state.captureDeviceId,
+        )
+        ..applyDraft();
 
       // Reopened through the material-keeping apply, never stop and start.
       verifyNever(repository.stopEngine);
@@ -1003,7 +1077,12 @@ void main() {
           result: EngineResult.device,
         ),
       );
-      cubit.setPlaybackDevice('out-1');
+      cubit
+        ..editDevice(
+          playbackDeviceId: 'out-1',
+          captureDeviceId: cubit.state.captureDeviceId,
+        )
+        ..applyDraft();
 
       expect(cubit.state.status, AudioSetupStatus.error);
       expect(cubit.state.error, AudioSetupError.openDeviceFailed);
@@ -1031,7 +1110,9 @@ void main() {
       final cubit = buildCubit()..setWaitingForDevice(waiting: true);
       addTearDown(cubit.close);
 
-      cubit.setBufferFrames(256);
+      cubit
+        ..editBuffer(256)
+        ..applyDraft();
 
       expect(cubit.state.error, AudioSetupError.openDeviceFailed);
       expect(cubit.state.deviceConnectivity, DeviceConnectivity.waiting);
@@ -1083,7 +1164,9 @@ void main() {
         ),
       );
 
-      cubit.setDevice(playbackDeviceId: 'b', captureDeviceId: 'b');
+      cubit
+        ..editDevice(playbackDeviceId: 'b', captureDeviceId: 'b')
+        ..applyDraft();
 
       expect(cubit.state.deviceConnectivity, DeviceConnectivity.lost);
       expect(cubit.state.connectivityDeviceName, 'Scarlett');
@@ -1272,7 +1355,9 @@ void main() {
         final cubit = buildCubit();
         addTearDown(cubit.close);
         // A different rate than the hydrated one, so this is a real re-apply.
-        cubit.setSampleRate(96000);
+        cubit
+          ..editRate(96000)
+          ..applyDraft();
         verify(() => repository.applyAudioConfig(any())).called(1);
         expect(cubit.state.status, AudioSetupStatus.running);
         expect(
@@ -1300,7 +1385,9 @@ void main() {
       );
       final cubit = buildCubit();
       addTearDown(cubit.close);
-      cubit.setSampleRate(96000);
+      cubit
+        ..editRate(96000)
+        ..applyDraft();
       verify(() => repository.applyAudioConfig(any())).called(1);
       expect(cubit.state.status, AudioSetupStatus.running);
       expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
@@ -1374,7 +1461,12 @@ void main() {
         // The banner's action ends it: un-pinning to the system default IS a
         // resolution — and after it the pinned guard would never clear the
         // enum again, so the apply itself must.
-        cubit.setPlaybackDevice('');
+        cubit
+          ..editDevice(
+            playbackDeviceId: '',
+            captureDeviceId: cubit.state.captureDeviceId,
+          )
+          ..applyDraft();
         expect(cubit.state.playbackDeviceId, isEmpty);
         expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
 
@@ -1406,7 +1498,9 @@ void main() {
             result: EngineResult.device,
           ),
         );
-        cubit.setSampleRate(96000);
+        cubit
+          ..editRate(96000)
+          ..applyDraft();
         expect(cubit.state.status, AudioSetupStatus.error);
 
         // The stopped engine's ticks (default status: not connected, device
@@ -1560,7 +1654,8 @@ void main() {
       final cubit = buildCubit()
         ..openCableTest()
         ..startCableTest(1, 1)
-        ..setBufferFrames(256);
+        ..editBuffer(256)
+        ..applyDraft();
       addTearDown(cubit.close);
 
       expect(cubit.state.refusal, const ApplyRefusal.busy('calibration'));
@@ -1568,7 +1663,9 @@ void main() {
       result.complete(const LatencyResult(LatencyOutcome.noReturn));
       await pumpEventQueue();
       expect(guards.active, isEmpty);
-      cubit.setBufferFrames(256);
+      cubit
+        ..editBuffer(256)
+        ..applyDraft();
       verify(() => repository.applyAudioConfig(any())).called(1);
     });
 
@@ -1661,7 +1758,8 @@ void main() {
       addTearDown(cubit.close);
 
       cubit
-        ..setDevice(playbackDeviceId: 'other', captureDeviceId: 'other')
+        ..editDevice(playbackDeviceId: 'other', captureDeviceId: 'other')
+        ..applyDraft()
         ..confirmApply();
 
       expect(cubit.state.phase, ConfigPhase.refused);
@@ -1670,6 +1768,184 @@ void main() {
       expect(cubit.state.playbackDeviceId, isNot('other'));
       await pumpEventQueue();
       expect(await settings.loadAudioConfig(), isNull);
+    });
+  });
+
+  group('the draft (#1270 Part 4)', () {
+    void seed({List<Track> tracks = const []}) {
+      when(() => repository.state).thenReturn(
+        LooperState(
+          status: const EngineStatus(
+            deviceName: 'Scarlett',
+            sampleRate: 48000,
+            bufferFrames: 128,
+            isConnected: true,
+            devicePresent: true,
+          ),
+          tracks: tracks,
+        ),
+      );
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(sampleRate: 48000, bufferFrames: 128),
+      );
+    }
+
+    test('editing calls nothing, and Cancel shows what runs again', () {
+      seed();
+      final cubit = buildCubit()..editBuffer(256);
+      addTearDown(cubit.close);
+      expect(cubit.state.shown.bufferFrames, 256);
+      expect(cubit.state.bufferFrames, 128);
+      verifyNever(() => repository.applyAudioConfig(any()));
+      cubit.discardDraft();
+      expect(cubit.state.draft, isNull);
+      expect(cubit.state.shown.bufferFrames, 128);
+    });
+
+    test('editing back to what runs leaves no draft', () {
+      seed();
+      final cubit = buildCubit()
+        ..editBuffer(256)
+        ..editBuffer(128);
+      addTearDown(cubit.close);
+      expect(cubit.state.draft, isNull);
+    });
+
+    test('rate and buffer drafted together apply once with both', () {
+      seed();
+      final cubit = buildCubit()
+        ..editRate(96000)
+        ..editBuffer(256)
+        ..editMaxLoop(5)
+        ..applyDraft();
+      addTearDown(cubit.close);
+      final asked =
+          verify(
+                () => repository.applyAudioConfig(captureAny()),
+              ).captured.single
+              as EngineConfig;
+      expect(asked.sampleRate, 96000);
+      expect(asked.bufferFrames, 256);
+      expect(asked.maxLoopFrames, 5 * 60 * 96000);
+      expect(cubit.state.draft, isNull);
+    });
+
+    test('the rate and the loop cap are not drafted while loops hold '
+        'material', () {
+      seed(
+        tracks: const [Track(state: TrackState.stopped, lengthFrames: 48000)],
+      );
+      final cubit = buildCubit()
+        ..editRate(96000)
+        ..editMaxLoop(5);
+      addTearDown(cubit.close);
+      expect(cubit.state.draft, isNull);
+    });
+
+    test('Measure does not open while a draft is pending', () {
+      seed();
+      final cubit = buildCubit()
+        ..editBuffer(256)
+        ..openCableTest();
+      addTearDown(cubit.close);
+      expect(cubit.state.measurePhase, MeasurePhase.idle);
+    });
+
+    test('material landing under a rate draft puts the rate back', () async {
+      seed();
+      final cubit = buildCubit()
+        ..editRate(96000)
+        ..editBuffer(256);
+      addTearDown(cubit.close);
+      const recorded = Track(state: TrackState.stopped, lengthFrames: 48000);
+      stateController.add(
+        const LooperState(
+          status: EngineStatus(
+            deviceName: 'Scarlett',
+            sampleRate: 48000,
+            bufferFrames: 128,
+            isConnected: true,
+            devicePresent: true,
+          ),
+          tracks: [recorded],
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.draft?.sampleRate, 48000);
+      expect(cubit.state.draft?.bufferFrames, 256);
+    });
+
+    test('a take landing while the question is open is answered with the '
+        'draft as it stands', () async {
+      const playing = Track(state: TrackState.playing, lengthFrames: 48000);
+      seed(tracks: const [playing]);
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          status: EngineStatus(
+            deviceName: 'Scarlett',
+            sampleRate: 48000,
+            bufferFrames: 128,
+            isConnected: true,
+            devicePresent: true,
+          ),
+        ),
+      );
+      final cubit = buildCubit()
+        ..editRate(96000)
+        ..editBuffer(256);
+      addTearDown(cubit.close);
+      when(() => backing.state).thenReturn(
+        const BackingPlayerState(transport: BackingTransport.playing),
+      );
+      cubit.applyDraft();
+      expect(cubit.state.applyPhase, ApplyPhase.confirming);
+      const recorded = LooperState(
+        status: EngineStatus(
+          deviceName: 'Scarlett',
+          sampleRate: 48000,
+          bufferFrames: 128,
+          isConnected: true,
+          devicePresent: true,
+        ),
+        tracks: [playing],
+      );
+      when(() => repository.state).thenReturn(recorded);
+      stateController.add(recorded);
+      await Future<void>.delayed(Duration.zero);
+      cubit.confirmApply();
+      final asked =
+          verify(
+                () => repository.applyAudioConfig(captureAny()),
+              ).captured.single
+              as EngineConfig;
+      expect(asked.sampleRate, 48000);
+      expect(asked.bufferFrames, 256);
+    });
+
+    test('a repository that touches nothing keeps the draft', () {
+      seed();
+      when(() => repository.applyAudioConfig(any())).thenReturn(
+        const AudioApplyResult(
+          status: AudioApplyStatus.refused,
+          result: EngineResult.notReady,
+        ),
+      );
+      final cubit = buildCubit()
+        ..editBuffer(256)
+        ..applyDraft();
+      addTearDown(cubit.close);
+      expect(cubit.state.refusal, const ApplyRefusal.busy('other'));
+      expect(cubit.state.draft?.bufferFrames, 256);
+    });
+
+    test('a refused admission keeps the draft to retry', () {
+      seed(tracks: const [Track(state: TrackState.recording)]);
+      final cubit = buildCubit()
+        ..editBuffer(256)
+        ..applyDraft();
+      addTearDown(cubit.close);
+      expect(cubit.state.refusal, const ApplyRefusal.busy('capture'));
+      expect(cubit.state.draft?.bufferFrames, 256);
     });
   });
 }

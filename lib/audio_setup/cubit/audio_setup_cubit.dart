@@ -91,78 +91,99 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   bool? _lastDevicePresent;
   String _lastPresentDeviceName = '';
 
-  /// Selects the requested sample rate and applies it (see [AudioSetupCubit]).
-  void setSampleRate(int sampleRate) {
-    if (sampleRate == state.sampleRate && !_failed) return;
-    _requestApply(state.copyWith(sampleRate: sampleRate));
+  // ------------------------------------------------------------- the draft
+
+  /// Drafts [sampleRate] (pen 28/01). Ignored while the loops lock the rate
+  /// (D2): its chips are drawn disabled with the reason.
+  void editRate(int sampleRate) {
+    if (state.hasContent) return;
+    _setDraft(_draft.copyWith(sampleRate: sampleRate));
   }
 
-  /// Selects the requested buffer size and applies it.
-  void setBufferFrames(int bufferFrames) {
-    if (bufferFrames == state.bufferFrames && !_failed) return;
-    _requestApply(state.copyWith(bufferFrames: bufferFrames));
+  /// Drafts [bufferFrames].
+  void editBuffer(int bufferFrames) =>
+      _setDraft(_draft.copyWith(bufferFrames: bufferFrames));
+
+  /// Drafts the maximum loop length in whole [minutes] (`0` = engine
+  /// default). Ignored while the loops lock it (D2).
+  void editMaxLoop(int minutes) {
+    if (state.hasContent) return;
+    _setDraft(_draft.copyWith(maxLoopMinutes: minutes));
   }
 
-  /// Sets the maximum per-track loop length in whole [minutes] (`0` = engine
-  /// default) and applies it: the engine reserves the loop memory when the
-  /// device opens.
-  void setMaxLoopMinutes(int minutes) {
-    if (minutes == state.maxLoopMinutes && !_failed) return;
-    _requestApply(state.copyWith(maxLoopMinutes: minutes));
-  }
-
-  /// Selects the playback device to open (empty id = system default).
-  void setPlaybackDevice(String deviceId) =>
-      _selectDevice(playbackDeviceId: deviceId);
-
-  /// Selects the capture device to open (empty id = system default).
-  void setCaptureDevice(String deviceId) =>
-      _selectDevice(captureDeviceId: deviceId);
-
-  /// Pins both directions of one interface at once.
-  ///
-  /// The console shows ONE Device row, because an interface is one box even
-  /// though the host lists its playback and capture halves separately. Setting
-  /// them through [setPlaybackDevice] and [setCaptureDevice] in turn would
-  /// apply twice for a single tap.
-  void setDevice({
+  /// Drafts one interface, both directions: the host lists its playback and
+  /// capture halves separately, but it is one box.
+  void editDevice({
     required String playbackDeviceId,
     required String captureDeviceId,
-  }) {
-    if (playbackDeviceId == state.playbackDeviceId &&
-        captureDeviceId == state.captureDeviceId &&
-        !_failed) {
-      return;
-    }
+  }) => _setDraft(
+    _draft.copyWith(
+      playbackDeviceId: playbackDeviceId,
+      captureDeviceId: captureDeviceId,
+    ),
+  );
+
+  /// Cancel on the Apply row: the page shows what runs again.
+  void discardDraft() {
+    if (isClosed || state.draft == null) return;
+    emit(state.copyWith(clearDraft: true));
+  }
+
+  /// Apply on the Apply row: the whole draft through one guarded apply
+  /// (#1270 Part 3a): the take check, the lock, the effects budget, and the
+  /// question first when music is playing.
+  void applyDraft() {
+    final draft = state.draft;
+    if (draft == null) return;
     _requestApply(
       state.copyWith(
-        playbackDeviceId: playbackDeviceId,
-        captureDeviceId: captureDeviceId,
+        sampleRate: draft.sampleRate,
+        bufferFrames: draft.bufferFrames,
+        maxLoopMinutes: draft.maxLoopMinutes,
+        playbackDeviceId: draft.playbackDeviceId,
+        captureDeviceId: draft.captureDeviceId,
       ),
     );
   }
 
-  void _selectDevice({String? playbackDeviceId, String? captureDeviceId}) {
-    assert(
-      (playbackDeviceId != null) ^ (captureDeviceId != null),
-      'Either playbackDeviceId or captureDeviceId must be provided, '
-      'but not both',
-    );
-
-    if (playbackDeviceId == state.playbackDeviceId ||
-        captureDeviceId == state.captureDeviceId) {
+  /// Keeps the draft honest as the rig moves under it: material that lands
+  /// locks the rate and the loop cap (D2), so their drafted values go back to
+  /// what runs; and a draft that now equals what runs (a retry the device
+  /// answered on its own) is no draft.
+  void _reconcileDraft() {
+    final draft = state.draft;
+    if (draft == null) return;
+    if (state.hasContent &&
+        (draft.sampleRate != state.sampleRate ||
+            draft.maxLoopMinutes != state.maxLoopMinutes)) {
+      _setDraft(
+        draft.copyWith(
+          sampleRate: state.sampleRate,
+          maxLoopMinutes: state.maxLoopMinutes,
+        ),
+      );
       return;
     }
-    _requestApply(
-      state.copyWith(
-        playbackDeviceId: playbackDeviceId,
-        captureDeviceId: captureDeviceId,
-      ),
+    if (draft == AudioDraft.of(state) && !_failed) {
+      emit(state.copyWith(clearDraft: true));
+    }
+  }
+
+  /// The draft being edited, or what runs when there is none.
+  AudioDraft get _draft => state.draft ?? AudioDraft.of(state);
+
+  /// Keeps [draft] while it differs from what runs. After a failed open
+  /// nothing runs, so even the same settings are a draft: applying them is
+  /// how to retry.
+  void _setDraft(AudioDraft draft) {
+    final same = draft == AudioDraft.of(state) && !_failed;
+    emit(
+      same ? state.copyWith(clearDraft: true) : state.copyWith(draft: draft),
     );
   }
 
   /// Whether the last open failed and nothing runs: then the selection on
-  /// screen is not running either, and tapping it again is how to retry.
+  /// screen is not running either, and applying it again is how to retry.
   bool get _failed => state.status == AudioSetupStatus.error;
 
   /// Applies [next] now, or asks first when music is playing (pen 28/04).
@@ -182,9 +203,21 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// have started while the question was open), stops the tracks and the
   /// backing track, and applies it.
   void confirmApply() {
-    final next = _pending;
-    if (next == null) return;
+    final asked = _pending;
+    if (asked == null) return;
     _pending = null;
+    // The draft as it stands now: material that landed while the question
+    // was open has put its rate and loop cap back (_reconcileDraft).
+    final draft = state.draft;
+    final next = draft == null
+        ? asked
+        : state.copyWith(
+            sampleRate: draft.sampleRate,
+            bufferFrames: draft.bufferFrames,
+            maxLoopMinutes: draft.maxLoopMinutes,
+            playbackDeviceId: draft.playbackDeviceId,
+            captureDeviceId: draft.captureDeviceId,
+          );
     emit(state.copyWith(applyPhase: ApplyPhase.idle));
     if (!_admit(next)) return;
     for (final track in _repository.state.tracks) {
@@ -210,6 +243,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// unavailable while the interface is not there.
   void openCableTest() {
     if (!_canMeasure ||
+        state.draft != null ||
         state.measurePhase == MeasurePhase.cable ||
         state.measurePhase == MeasurePhase.running ||
         state.measurePhase == MeasurePhase.noReturn) {
@@ -435,8 +469,17 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       );
       return;
     }
+    // The draft is being applied: whatever the device does with it, the page
+    // shows what runs from here on, unless the repository touched nothing.
+    final draft = state.draft;
+    emit(state.copyWith(clearDraft: true));
     try {
-      _applyGuarded(next);
+      final outcome = _applyGuarded(next);
+      if (draft != null &&
+          outcome.status == AudioApplyStatus.refused &&
+          outcome.result == EngineResult.notReady) {
+        emit(state.copyWith(draft: draft));
+      }
     } finally {
       guard.release();
     }
@@ -447,7 +490,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     }
   }
 
-  void _applyGuarded(AudioSetupState next) {
+  AudioApplyResult _applyGuarded(AudioSetupState next) {
     // An intentional (re)apply resets the standing connectivity condition
     // (#453): the lost banner must not outlive the user acting on it, and the
     // app's own stop and reopen below must not read as an unplug. The
@@ -564,6 +607,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       case AudioApplyStatus.applied:
         _settle(next, live: live, reopen: outcome.reopen);
     }
+    return outcome;
   }
 
   /// The name the host gives the interface [config] pins, or its id.
@@ -753,6 +797,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
         current: state,
       ).copyWith(playbackRunning: _musicPlaying),
     );
+    _reconcileDraft();
     _detectConnectivity(looper.status);
     unawaited(_syncLatencyPersistence(looper.status));
   }

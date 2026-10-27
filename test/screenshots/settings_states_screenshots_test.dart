@@ -26,6 +26,7 @@ import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
+import 'package:segno/audio_setup/view/device_page.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/application/record_settings.dart';
@@ -385,6 +386,15 @@ void main() {
     // What `AUDIO / settings-device` draws: an interface the host reports in
     // both directions with its real channel counts, and the built-in pair.
     when(looper.devices).thenReturn(_previewDevices);
+    when(() => looper.fxRoomAt(any(), any())).thenReturn(1 << 30);
+    // The device opens what it is asked for at the rate it already runs:
+    // the negotiation the refused banner reports.
+    when(() => looper.applyAudioConfig(any())).thenReturn(
+      const AudioApplyResult(
+        status: AudioApplyStatus.applied,
+        result: EngineResult.ok,
+      ),
+    );
     when(looper.detectLoopback).thenReturn(
       const LoopbackInfo(
         available: true,
@@ -896,80 +906,81 @@ void main() {
   pumpAudio(WidgetTester tester) async {
     await size(tester);
     final providers = controlProviders(tester, looperState: audioRig);
-    // Two of the eighteen sockets have been given names, which is what the
-    // Device row's `2 named` counts.
-    await providers.inputs.rename(0, 'guitar');
-    await providers.inputs.rename(1, 'mic');
     await pumpPage(
       tester,
-      page: const DeviceSettingsPage(),
+      page: const DevicePage(),
       control: providers,
     );
     await tester.pumpAndSettle();
     return providers;
   }
 
-  testWidgets('Device page, the device list open', (
-    tester,
-  ) async {
+  testWidgets('Device page (pen 28/01)', (tester) async {
     await pumpAudio(tester);
-    // Opened, because the per-device channel counts are the part worth
-    // pinning: they read 0 in / 0 out until the engine started asking.
-    await tester.tap(find.byKey(const Key('audio_device_row')));
-    await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/settings_device_device_list.png'),
+      matchesGoldenFile('goldens/settings_device.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('Device page, the rate and buffer grids', (
+  testWidgets('Device page, a draft waiting on Apply (pen 28/01)', (
     tester,
   ) async {
     await pumpAudio(tester);
-    await tester.tap(find.byKey(const Key('audio_rate_row')));
+    await tester.tap(find.byKey(const Key('device_buffer_256')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/settings_device_rate.png'),
+      matchesGoldenFile('goldens/settings_device_draft.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('Device page, the named inputs', (tester) async {
+  testWidgets('Device page, the interface list', (tester) async {
     await pumpAudio(tester);
-    await tester.tap(find.byKey(const Key('audio_inputs_row')));
+    await tester.tap(find.byKey(const Key('device_change_interface')));
     await tester.pumpAndSettle();
     await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/settings_device_inputs.png'),
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/settings_device_interfaces.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('Device page, the loop cap open', (
-    tester,
-  ) async {
+  testWidgets('Device page, the cable test (pen 28/03)', (tester) async {
     await pumpAudio(tester);
-    await tester.tap(find.byKey(const Key('audio_max_loop_row')));
+    await tester.tap(find.byKey(const Key('audio_measure')));
     await tester.pumpAndSettle();
     await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/settings_device_max_loop.png'),
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/settings_device_cable.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Device page, Apply while playing (pen 28/04)', (tester) async {
+    final providers = await pumpAudio(tester);
+    when(() => providers.looper.state).thenReturn(
+      const LooperState(
+        tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
+        status: _previewStatus,
+      ),
+    );
+    await tester.tap(find.byKey(const Key('device_buffer_256')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('device_apply')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/settings_device_apply.png'),
     );
   }, skip: !hasFonts);
 
   testWidgets('Device page, a config the device refused', (tester) async {
-    // The open SUCCEEDS and the device runs 48 anyway — the negotiation this
-    // banner is for. (A device that will not open at all is a different state
-    // and a different banner: `audio_open_failed_banner`, which names the
-    // engine's error rather than a rate nothing asked to change.) The
-    // selection has snapped back to what the device gave, so the banner is the
-    // only place the request is still named.
+    // The open SUCCEEDS and the device runs 48 anyway: the banner is the only
+    // place the request is still named.
     await pumpAudio(tester);
-    await tester.tap(find.byKey(const Key('audio_rate_row')));
+    await tester.tap(find.byKey(const Key('device_rate_96000')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('audio_sample_rate_96000')));
+    await tester.tap(find.byKey(const Key('device_apply')));
     await tester.pumpAndSettle();
-
     await expectLater(
       find.byType(Scaffold),
       matchesGoldenFile('goldens/settings_device_refused.png'),
