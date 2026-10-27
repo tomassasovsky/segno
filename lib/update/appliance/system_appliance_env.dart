@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import 'package:segno/update/appliance/appliance_env.dart';
 import 'package:spawn_process/spawn_process.dart';
 import 'package:update_repository/update_repository.dart';
@@ -59,6 +61,22 @@ class SystemApplianceEnv implements ApplianceEnv {
   @override
   Stream<double> stage(String version) => _runHelper(['install', version]);
 
+  @override
+  Stream<double> stageFile(String path) => _runHelper(['install-file', path]);
+
+  @override
+  void clearDirectorySync(String path) {
+    final directory = Directory(path);
+    if (!directory.existsSync()) return;
+    for (final entity in directory.listSync(followLinks: false)) {
+      try {
+        entity.deleteSync(recursive: true);
+      } on FileSystemException {
+        // Left for the next start: a sweep must not stop the boot.
+      }
+    }
+  }
+
   /// Runs the privileged helper with [args], republishing its
   /// `PROGRESS <0-100>` lines as `[0, 1]` and failing with the collected
   /// stderr on a non-zero exit: a [BootPartitionReadOnlyException] for
@@ -85,10 +103,12 @@ class SystemApplianceEnv implements ApplianceEnv {
             .transform(const LineSplitter())
             .forEach(stderrLines.add);
         final progress = RegExp(r'^PROGRESS\s+(\d+)');
+        String? refusal;
         await for (final line
             in started.stdout
                 .transform(utf8.decoder)
                 .transform(const LineSplitter())) {
+          if (line.startsWith('{')) refusal = line;
           final match = progress.firstMatch(line);
           if (match != null && !cancelled) {
             controller.add((int.parse(match.group(1)!) / 100).clamp(0.0, 1.0));
@@ -101,11 +121,13 @@ class SystemApplianceEnv implements ApplianceEnv {
           final reason = stderrLines.isEmpty
               ? 'update helper failed'
               : stderrLines.join('\n');
-          controller.addError(
-            code == kBootReadOnlyExitCode
-                ? BootPartitionReadOnlyException(reason)
-                : ProcessException(helperPath, args, reason, code),
-          );
+          controller.addError(switch (code) {
+            kBootReadOnlyExitCode => BootPartitionReadOnlyException(reason),
+            kInstallFileRefusedExitCode when refusal != null => packageRefusal(
+              refusal,
+            ),
+            _ => ProcessException(helperPath, args, reason, code),
+          });
         } else {
           controller.add(1);
         }
@@ -194,4 +216,38 @@ class SystemApplianceEnv implements ApplianceEnv {
       return null;
     }
   }
+}
+
+/// The helper's `install-file` refusal line as the exception the app shows:
+/// `{"error":"unverified"}`, `{"error":"not-newer","version":"<v>"}` or
+/// `{"error":"outside-staging"}`. Anything else reads as unverified: a
+/// package the helper would not take is not one it vouched for.
+@visibleForTesting
+UpdatePackageRefused packageRefusal(String line) {
+  Map<String, dynamic>? json;
+  try {
+    final decoded = jsonDecode(line);
+    if (decoded is Map<String, dynamic>) json = decoded;
+  } on FormatException {
+    json = null;
+  }
+  Version? version;
+  final raw = json?['version'];
+  if (raw is String) {
+    try {
+      version = Version.parse(raw);
+    } on FormatException {
+      version = null;
+    }
+  }
+  return switch (json?['error']) {
+    'not-newer' => UpdatePackageRefused(
+      UpdatePackageRefusal.notNewer,
+      version: version,
+    ),
+    'outside-staging' => const UpdatePackageRefused(
+      UpdatePackageRefusal.outsideStaging,
+    ),
+    _ => const UpdatePackageRefused(UpdatePackageRefusal.unverified),
+  };
 }
