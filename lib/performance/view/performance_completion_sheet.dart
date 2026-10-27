@@ -116,7 +116,6 @@ class _PerformanceCompletionSheetState
 
   static String _revealLabel(AppLocalizations l10n) {
     if (Platform.isMacOS) return l10n.perfRevealMacos;
-    if (Platform.isWindows) return l10n.perfRevealWindows;
     return l10n.perfRevealOther;
   }
 

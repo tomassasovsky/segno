@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart'
     show EngineStatus, LatencyState;
@@ -16,7 +15,6 @@ import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/theme/theme.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 /// Which of the tab's three openable rows is showing its list, if any.
 ///
@@ -90,14 +88,6 @@ class DeviceAudioTab extends StatefulWidget {
 class _DeviceAudioTabState extends State<DeviceAudioTab> {
   _OpenRow _open = _OpenRow.none;
 
-  /// The ASIO4ALL download page — a generic ASIO driver for interfaces without
-  /// their own. Linked, never bundled: its licence forbids redistribution.
-  static final Uri _asio4all = Uri.parse('https://asio4all.org');
-
-  /// The install banner's card: a 61px banner (the sentence plus the button
-  /// that is taller than it) inside a card that insets 1px top and bottom.
-  static const double _bannerCardExtent = 63;
-
   /// What a chip grid inside this card's drawers is inset by.
   static const EdgeInsets _gridInset = EdgeInsets.fromLTRB(
     ConsoleRow.indentedInset,
@@ -124,51 +114,65 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
           List.generate(outputs, looper.isOutputEnabled).every((on) => !on);
     });
 
-    return KeyedSubtree(
-      key: const Key('audio_device_tab'),
-      // This tab IS the device picker, so its lifetime is what re-enumeration
-      // is worth paying for — see [AudioDeviceScanScope].
-      child: AudioDeviceScanScope(
-        child: ConsoleFace(
-          previewKey: const Key('audio_upcoming_group'),
-          lastGroupExtent: state.asioOnly ? _asioExtent(state) : 0,
-          groups: [
-            ConsoleGroup(
-              caption: l10n.audioGroupLabel,
-              blocks: [
-                _card(context, state),
-                if (silent)
-                  ConsoleCard(
-                    key: const Key('audio_no_outputs_card'),
-                    children: [
-                      ConsoleBanner(
-                        key: const Key('audio_no_outputs_banner'),
-                        message: l10n.audioNoOutputsBanner,
-                        tone: ConsoleBannerTone.failure,
-                      ),
-                    ],
-                  ),
-                // The same sentence the setup page shows, so the two surfaces
-                // cannot reach different conclusions about the same rig. Only
-                // when there IS a loopback: the resolver's other branch names a
-                // kind that is not there.
-                if (state.loopback.available)
-                  ConsoleProse(l10n.loopbackNote(state.loopback)),
-                // How long a loop may grow: memory reserved when the device
-                // opens, so it is the device's to say.
-                const MaxLoopLengthCard(),
-                // The way into Audio routing, and the click's level: both are
-                // facts about the rig's jacks, which is what this tab is.
-                const AudioRoutingCard(),
-              ],
-            ),
-            // Windows runs ASIO exclusively, so the driver it opens is a
-            // setting of its own rather than one of the devices above.
-            if (state.asioOnly) _asioGroup(context, state),
-          ],
+    return BlocListener<AudioSetupCubit, AudioSetupState>(
+      listenWhen: (previous, current) =>
+          previous.applyPhase != current.applyPhase &&
+          current.applyPhase == ApplyPhase.confirming,
+      listener: (context, _) => unawaited(_confirmApply(context)),
+      child: KeyedSubtree(
+        key: const Key('audio_device_tab'),
+        // This tab IS the device picker, so its lifetime is what re-enumeration
+        // is worth paying for — see [AudioDeviceScanScope].
+        child: AudioDeviceScanScope(
+          child: ConsoleFace(
+            previewKey: const Key('audio_upcoming_group'),
+            groups: [
+              ConsoleGroup(
+                caption: l10n.audioGroupLabel,
+                blocks: [
+                  _card(context, state),
+                  if (silent)
+                    ConsoleCard(
+                      key: const Key('audio_no_outputs_card'),
+                      children: [
+                        ConsoleBanner(
+                          key: const Key('audio_no_outputs_banner'),
+                          message: l10n.audioNoOutputsBanner,
+                          tone: ConsoleBannerTone.failure,
+                        ),
+                      ],
+                    ),
+                  // How long a loop may grow: memory reserved when the device
+                  // opens, so it is the device's to say.
+                  const MaxLoopLengthCard(),
+                  // The way into Audio routing, and the click's level: both are
+                  // facts about the rig's jacks, which is what this tab is.
+                  const AudioRoutingCard(),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  /// "Apply audio settings?" (pen 28/04), asked when a change would stop the
+  /// music. The cubit holds the request until it hears the answer.
+  Future<void> _confirmApply(BuildContext context) async {
+    final l10n = context.l10n;
+    final cubit = context.read<AudioSetupCubit>();
+    final confirmed = await showConsoleConfirmDialog(
+      context,
+      title: l10n.audioApplyTitle,
+      body: l10n.audioApplyBody,
+      confirmLabel: l10n.audioApplyConfirm,
+    );
+    if (confirmed) {
+      cubit.confirmApply();
+    } else {
+      cubit.cancelApply();
+    }
   }
 
   // ------------------------------------------------------------- the card
@@ -241,8 +245,11 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
               padding: _gridInset,
               child: ConsoleChipGrid<int>(
                 selected: {state.sampleRate},
+                // Locked, never hidden, while a track holds material: a rate
+                // change would clear the engine (D2).
+                disabledReason: state.hasContent ? l10n.audioRateLocked : null,
                 options: [
-                  for (final rate in state.sampleRateChoices)
+                  for (final rate in AudioSetupState.sampleRates)
                     ConsoleSegment(
                       value: rate,
                       label: l10n.sampleRateKhzLabel(rate),
@@ -258,7 +265,7 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
               child: ConsoleChipGrid<int>(
                 selected: {state.bufferFrames},
                 options: [
-                  for (final frames in state.bufferChoices)
+                  for (final frames in AudioSetupState.bufferSizes)
                     ConsoleSegment(
                       value: frames,
                       label: '$frames',
@@ -287,6 +294,16 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
   /// in-flight banner — see [ConfigPhase] for why one would be unreachable.
   Widget? _phaseBanner(BuildContext context, AudioSetupState state) {
     final l10n = context.l10n;
+    // A request refused before anything changed: the rows still say what
+    // runs, and this says why the tap did not take.
+    final refusal = state.refusal;
+    if (refusal != null) {
+      return ConsoleBanner(
+        key: const Key('audio_apply_refused_banner'),
+        message: _refusalMessage(l10n, refusal),
+        tone: ConsoleBannerTone.failure,
+      );
+    }
     // The open FAILED, so the device never came up. Rate and buffer describe
     // none of that — a device pick moves neither, which would leave the config
     // banner naming the same figures on both sides and claiming the rig is
@@ -324,6 +341,17 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
       ),
       tone: ConsoleBannerTone.failure,
     );
+  }
+
+  String _refusalMessage(AppLocalizations l10n, ApplyRefusal refusal) {
+    final rate = refusal.overBudgetRate;
+    if (rate != null) {
+      return l10n.audioEffectsOverBudgetRate(l10n.sampleRateKhzLabel(rate));
+    }
+    final device = refusal.refusedDevice;
+    if (device != null) return l10n.audioDeviceRefused(device);
+    if (refusal.settingsRefused) return l10n.audioSettingsRefused;
+    return l10n.operationBusy(refusal.busyKind ?? 'other');
   }
 
   // ----------------------------------------------------------- the inputs
@@ -413,54 +441,31 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
 
   // ---------------------------------------------------------- the latency
 
-  /// The measurement: what it last reported, what that cost the take, and the
-  /// button that runs it again.
+  /// The measurement: what it last reported and what that costs the take.
   ///
-  /// One row for both. The readout and the action were two rows on the old
-  /// Status tab, which is one row too many for one fact — but the button is
-  /// **explicit**, because a bare tappable row says nothing about being one.
+  /// No Measure button: on the appliance it only ever measured the Scarlett's
+  /// loop channels, which the owner ruled out (Q2). The cable test brings it
+  /// back (#1270 Part 3b); until then the row shows the restored offset.
   Widget _latencyRow(BuildContext context, AudioSetupState state) {
     final l10n = context.l10n;
-    final cubit = context.read<AudioSetupCubit>();
     final status = state.engineStatus;
-    final measuring = status.latencyState == LatencyState.measuring;
     return ConsoleRow(
       key: const Key('audio_latency_row'),
       title: l10n.roundTripLatencyLabel,
       // The offset is a CONSEQUENCE of the measurement, not a setting, so it
       // rides this row rather than taking one of its own.
       subtitle: l10n.audioRecordOffsetSub(status.recordOffsetFrames),
-      semanticLabel: l10n.a11yAudioMeasureLatency,
       showDivider: false,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppText(
-            _latency(l10n, status),
-            style: TextStyle(
-              color: context.surface.textSecondary,
-              fontFamily: SurfaceTheme.monoFont,
-              fontSize: 14,
-              height: 1.14,
-              leadingDistribution: TextLeadingDistribution.even,
-            ),
-          ),
-          const SizedBox(width: kConsoleRowGap),
-          ConsoleSmallButton(
-            key: const Key('audio_measure_button'),
-            label: l10n.audioMeasure,
-            // Refuses while one is in flight rather than restarting the thing
-            // it is reporting.
-            onPressed: measuring ? null : cubit.measureLatency,
-          ),
-        ],
+      trailing: AppText(
+        _latency(l10n, status),
+        style: TextStyle(
+          color: context.surface.textSecondary,
+          fontFamily: SurfaceTheme.monoFont,
+          fontSize: 14,
+          height: 1.14,
+          leadingDistribution: TextLeadingDistribution.even,
+        ),
       ),
-      customSemanticsActions: measuring
-          ? null
-          : {
-              CustomSemanticsAction(label: l10n.audioMeasure):
-                  cubit.measureLatency,
-            },
     );
   }
 
@@ -473,67 +478,6 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
         LatencyState.timeout => l10n.noSignalDetected,
         LatencyState.idle => l10n.notMeasured,
       };
-
-  // ------------------------------------------------------------ ASIO group
-
-  double _asioExtent(AudioSetupState state) {
-    final drivers = state.cachedAsioDrivers.length;
-    return ConsolePinnedGroupLabel.extent +
-        (drivers == 0 ? _bannerCardExtent : kConsoleRowHeight * drivers + 2);
-  }
-
-  ConsoleGroup _asioGroup(BuildContext context, AudioSetupState state) {
-    final l10n = context.l10n;
-    // The cached enumeration, which stays populated even while ASIO holds the
-    // device — re-probing live would tear the stream down (R1).
-    final drivers = state.cachedAsioDrivers;
-    return ConsoleGroup(
-      caption: l10n.audioAsioDriverGroup,
-      blocks: [
-        if (drivers.isEmpty)
-          ConsoleCard(
-            key: const Key('audio_no_asio_card'),
-            children: [
-              ConsoleBanner(
-                key: const Key('audio_no_asio_banner'),
-                message: l10n.audioNoAsioDriver,
-                tone: ConsoleBannerTone.failure,
-                actions: [
-                  ConsoleSmallButton(
-                    key: const Key('audio_asio4all_button'),
-                    label: l10n.audioOpenAsio4all,
-                    onPressed: () => unawaited(
-                      launchUrl(
-                        _asio4all,
-                        mode: LaunchMode.externalApplication,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          )
-        else
-          ConsoleCard(
-            children: [
-              for (final (index, driver) in drivers.indexed)
-                ConsolePickRow(
-                  key: Key('audio_asio_driver_$index'),
-                  title: driver.name,
-                  state: l10n.audioDeviceChannels(
-                    driver.inputChannels,
-                    driver.outputChannels,
-                  ),
-                  selected: driver.id == state.asioDriver,
-                  showDivider: index < drivers.length - 1,
-                  onTap: () =>
-                      context.read<AudioSetupCubit>().setAsioDriver(driver.id),
-                ),
-            ],
-          ),
-      ],
-    );
-  }
 
   // -------------------------------------------------------------- helpers
 

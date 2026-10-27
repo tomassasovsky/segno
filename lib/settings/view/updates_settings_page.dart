@@ -77,7 +77,10 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
     // The check is the state's action whenever the panel has none of its own.
     final checkIsNext = switch (state.phase) {
       UpdatePhase.idle || UpdatePhase.upToDate || UpdatePhase.checking => true,
-      UpdatePhase.error => state.failure != UpdateFailure.download,
+      UpdatePhase.error => switch (state.failure) {
+        UpdateFailure.download || UpdateFailure.bootReadOnly => false,
+        UpdateFailure.check || null => true,
+      },
       _ => false,
     };
 
@@ -368,6 +371,26 @@ class _StatusPanel extends StatelessWidget {
                     width: 200,
                     label: l10n.updatesPageRetry,
                     onTap: () => unawaited(cubit.startDownload()),
+                  ),
+                ],
+              ),
+              // Retrying cannot help until a restart has run the boot-time
+              // check that repairs the partition, so the action is the
+              // restart, not a retry.
+              UpdateFailure.bootReadOnly => (
+                l10n.updatesPanelAvailable,
+                _meta(l10n, offeredVersion, megabytes),
+                l10n.updatesPageBootReadOnly,
+                <Widget>[
+                  LoopOutlinedButton(
+                    key: const Key('updates_restart'),
+                    focusNode: next,
+                    tone: LoopButtonTone.accent,
+                    width: 200,
+                    label: l10n.updatesPageRestart,
+                    // The power flow's restart: refused during a take, and
+                    // the session is saved first.
+                    onTap: () => requestRestart(context),
                   ),
                 ],
               ),

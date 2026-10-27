@@ -2740,6 +2740,7 @@ class ConsoleChipGrid<T> extends StatelessWidget {
     required this.options,
     required this.selected,
     required this.onTap,
+    this.disabledReason,
     super.key,
   });
 
@@ -2751,6 +2752,12 @@ class ConsoleChipGrid<T> extends StatelessWidget {
 
   /// Called with the tapped value.
   final ValueChanged<T> onTap;
+
+  /// Why the grid cannot be changed right now, or `null` when it can. A
+  /// locked grid stays on screen, dimmed and inert, with this sentence under
+  /// it and on every chip for a screen reader: a choice that vanishes says
+  /// nothing about why.
+  final String? disabledReason;
 
   /// The cell width the mockup draws, and the width the grid aims at.
   ///
@@ -2807,7 +2814,8 @@ class ConsoleChipGrid<T> extends StatelessWidget {
       final columns = columnsFor(width, options.length);
       final cell = (width - gutter * (columns - 1)) / columns;
       final twoLine = options.any((option) => option.sublabel != null);
-      return Wrap(
+      final reason = disabledReason;
+      final grid = Wrap(
         spacing: gutter,
         runSpacing: gutter,
         children: [
@@ -2820,9 +2828,30 @@ class ConsoleChipGrid<T> extends StatelessWidget {
                 sublabel: option.sublabel,
                 height: twoLine ? twoLineCellHeight : cellHeight,
                 selected: selected.contains(option.value),
-                onTap: () => onTap(option.value),
+                disabledReason: reason,
+                onTap: reason == null ? () => onTap(option.value) : null,
               ),
             ),
+        ],
+      );
+      if (reason == null) return grid;
+      final surface = context.surface;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Opacity(opacity: surface.disabledOpacity, child: grid),
+          const SizedBox(height: gutter),
+          ExcludeSemantics(
+            child: AppText(
+              reason,
+              style: TextStyle(
+                color: surface.textSecondary,
+                fontSize: 15,
+                height: 1.3,
+                leadingDistribution: TextLeadingDistribution.even,
+              ),
+            ),
+          ),
         ],
       );
     },
@@ -2835,15 +2864,19 @@ class _ConsoleChip extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.sublabel,
+    this.disabledReason,
     this.height = ConsoleChipGrid.cellHeight,
     super.key,
   });
 
   final String label;
   final String? sublabel;
+  final String? disabledReason;
   final double height;
   final bool selected;
-  final VoidCallback onTap;
+
+  /// Null while the grid is locked.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -2860,7 +2893,11 @@ class _ConsoleChip extends StatelessWidget {
       onTap: onTap,
       selected: selected,
       borderRadius: 11,
-      semanticLabel: [label, ?sub].where((text) => text.isNotEmpty).join(', '),
+      semanticLabel: [
+        label,
+        ?sub,
+        ?disabledReason,
+      ].where((text) => text.isNotEmpty).join(', '),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(11),

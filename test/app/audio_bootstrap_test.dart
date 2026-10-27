@@ -1929,7 +1929,7 @@ void main() {
     });
 
     test(
-      'auto-measures when no saved offset and loopback is routable',
+      'never measures by itself, even with a routable loopback (Q2)',
       () async {
         engine.loopback = const le.LoopbackInfo(
           available: true,
@@ -1950,8 +1950,8 @@ void main() {
           settings: settings,
         );
 
-        expect(engine.measureLatencyCalls, 1);
-        expect(engine.lastRecordOffset, isNull); // restored nothing, measured
+        expect(engine.measureLatencyCalls, 0);
+        expect(engine.lastRecordOffset, 0); // nothing saved, nothing measured
       },
     );
 
@@ -1960,7 +1960,7 @@ void main() {
       () async {
         // A routable loopback exists (as on any PipeWire host), but the saved
         // config pins a real input device: capture must not be auto-routed to
-        // the loopback, and the loopback-driven auto-measure must be skipped.
+        // the loopback.
         engine.loopback = const le.LoopbackInfo(
           available: true,
           kind: le.LoopbackKind.virtualDevice,
@@ -1987,10 +1987,10 @@ void main() {
     );
 
     test(
-      'auto-measures when no saved offset and the device has loopback channels',
+      'never measures by itself on an interface with loopback channels (Q2)',
       () async {
-        // No routable loopback device, but the opened interface reports
-        // dedicated loopback channels via the excluded-input mask.
+        // The Scarlett's loop channels (the excluded-input mask): the boot
+        // used to send the 0.9 burst to every output here.
         engine.nextSnapshot = const EngineSnapshot(
           isRunning: true,
           sampleRate: 48000,
@@ -2018,7 +2018,7 @@ void main() {
           settings: settings,
         );
 
-        expect(engine.measureLatencyCalls, 1);
+        expect(engine.measureLatencyCalls, 0);
       },
     );
 

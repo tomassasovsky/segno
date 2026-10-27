@@ -485,6 +485,8 @@ void main() {
     final audio = AudioSetupCubit(
       repository: looper,
       settings: settings,
+      guards: GuardRegistry(),
+      backing: testBackingRepository(),
       // No re-enumeration: the preview's device list never changes, and a
       // periodic timer live for the length of the test body fails the
       // binding's own invariant check before any tearDown can cancel it.

@@ -45,6 +45,22 @@ import 'package:segno/theme/theme.dart';
 /// the audio settings are re-applied. A partial retention (one track dropped
 /// for a press that never applied) is low stakes and goes to a toast instead
 /// (`_showDeviceRestoredToast` in `app.dart`), never a bar.
+/// The line the stage's strip says for [state]'s interface condition, and
+/// the 7" readout echoes word for word, so the two screens never disagree
+/// (#1270 Part 5); `null` when the strip is not about a missing interface.
+String? audioLossLine(AppLocalizations l10n, AudioSetupState state) =>
+    switch (state.deviceConnectivity) {
+      DeviceConnectivity.lost =>
+        state.connectivityDeviceName.isEmpty
+            ? l10n.deviceLostBanner
+            : l10n.deviceLostNamedBanner(state.connectivityDeviceName),
+      DeviceConnectivity.waiting => l10n.audioRecoveryWaitingBanner,
+      DeviceConnectivity.none ||
+      DeviceConnectivity.restored ||
+      DeviceConnectivity.restoredPartial ||
+      DeviceConnectivity.restoredCleared => null,
+    };
+
 class ConnectivityBanners extends StatelessWidget {
   /// Creates a [ConnectivityBanners].
   const ConnectivityBanners({super.key});
@@ -57,21 +73,33 @@ class ConnectivityBanners extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final (connectivity, reopen) = context
-        .select<AudioSetupCubit, (DeviceConnectivity, EngineReopened?)>(
+    final (connectivity, reopen, lossLine) = context
+        .select<
+          AudioSetupCubit,
+          (DeviceConnectivity, EngineReopened?, String?)
+        >(
           (cubit) => (
             cubit.state.deviceConnectivity,
             cubit.state.engineStatus.reopen,
+            audioLossLine(l10n, cubit.state),
           ),
         );
     final Widget banner;
     switch (connectivity) {
       case DeviceConnectivity.lost:
+      case DeviceConnectivity.waiting:
+        // A boot that waits for the pinned interface holds the same strip as
+        // a loss, not a toast beside the engine-stopped banner (one surface
+        // per cause). The line says what happens next: audio comes back on
+        // its own (Q1).
+        final key = connectivity == DeviceConnectivity.lost
+            ? 'connectivity_banner_device'
+            : 'connectivity_banner_waiting';
         banner = _LostBanner(
-          key: const Key('connectivity_banner_device'),
-          message: l10n.deviceLostBanner,
+          key: Key(key),
+          message: lossLine!,
           actionLabel: l10n.deviceLostBannerAction,
-          actionKey: const Key('connectivity_banner_device_action'),
+          actionKey: Key('${key}_action'),
           onAction: () => unawaited(openDeviceSettings()),
         );
       case DeviceConnectivity.restoredCleared:

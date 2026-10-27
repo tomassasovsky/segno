@@ -42,6 +42,7 @@ import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/settings_owner.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/owned_setting.dart';
+import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
@@ -70,8 +71,7 @@ class App extends StatefulWidget {
   ///
   /// The repositories and [waveformWindow] are injected so tests can supply
   /// fakes / a no-op window service instead of the native device and the
-  /// link to the Track display. [initialAsioDrivers] is the ASIO driver list
-  /// enumerated at startup, cached by the audio-setup cubit for the picker.
+  /// link to the Track display.
   const App({
     required this.repository,
     required this.controllerRepository,
@@ -86,7 +86,6 @@ class App extends StatefulWidget {
     this.instrumentRepository,
     this.pedalRepository,
     this.audioRecoveryConfig,
-    this.initialAsioDrivers = const [],
     this.updates = const UpdateRepository(
       backend: UnsupportedPlatformBackend(),
     ),
@@ -191,10 +190,6 @@ class App extends StatefulWidget {
 
   /// Manages the secondary output-waveform window.
   final WaveformWindowService waveformWindow;
-
-  /// The ASIO drivers enumerated at startup, cached by the audio-setup cubit so
-  /// the picker stays populated even while ASIO holds the device (R1).
-  final List<AudioDevice> initialAsioDrivers;
 
   /// The shared session repository (save/load + export), sharing the engine.
   final SessionRepository sessionRepository;
@@ -803,7 +798,8 @@ class _AppState extends State<App> {
             create: (context) => AudioSetupCubit(
               repository: context.read<LooperRepository>(),
               settings: context.read<SettingsRepository>(),
-              initialAsioDrivers: widget.initialAsioDrivers,
+              guards: widget.guards,
+              backing: widget.backingRepository,
             ),
           ),
           // Eager (not lazy): the MIDI-setup cubit performs the launch
@@ -1029,9 +1025,8 @@ class _AppViewState extends State<_AppView> {
       defaultName: name == storedDefaultTrackName(control.cursor),
       mode: control.mode.token,
       bank: control.activeBank,
-      deviceLost:
-          context.read<AudioSetupCubit>().state.deviceConnectivity ==
-          DeviceConnectivity.lost,
+      lossLine:
+          audioLossLine(_l10n, context.read<AudioSetupCubit>().state) ?? '',
       goodbye: readoutGoodbyeOf(context.read<PowerCubit>().state.phase),
       brightness: context.read<DisplayBrightnessCubit>().state.softwareOf(
         DisplayRole.track,
@@ -1133,6 +1128,7 @@ class _AppViewState extends State<_AppView> {
         );
       case DeviceConnectivity.none:
       case DeviceConnectivity.lost:
+      case DeviceConnectivity.waiting:
       case DeviceConnectivity.restoredCleared:
         return;
     }
@@ -1174,28 +1170,6 @@ class _AppViewState extends State<_AppView> {
       case MidiConnectivity.none:
         break;
     }
-  }
-
-  /// Waiting for the pinned audio interface at boot; clears when recovery
-  /// finishes (status returns to idle).
-  void _showAudioRecoveryBanner(AudioRecoveryState state) {
-    final l10n = _l10n;
-    if (state.status != AudioRecoveryStatus.waitingForDevice) {
-      dismissAppToast(AppToastId.audioRecovery);
-      return;
-    }
-    showAppToast(
-      id: AppToastId.audioRecovery,
-      type: ToastificationType.warning,
-      title: AppText(l10n.audioRecoveryWaitingBanner),
-      icon: const Icon(Icons.usb_off_outlined),
-      actions: [
-        TextButton(
-          onPressed: () => unawaited(openDeviceSettings()),
-          child: AppText(l10n.settingsMenuItem),
-        ),
-      ],
-    );
   }
 
   /// The USB-C contract predates the console profile, so the console runs on
@@ -1508,8 +1482,10 @@ class _AppViewState extends State<_AppView> {
           listener: (_, _) => _syncWindow(),
         ),
         BlocListener<AudioSetupCubit, AudioSetupState>(
+          // The readout's line also names the device.
           listenWhen: (previous, current) =>
-              previous.deviceConnectivity != current.deviceConnectivity,
+              previous.deviceConnectivity != current.deviceConnectivity ||
+              previous.connectivityDeviceName != current.connectivityDeviceName,
           listener: (_, state) {
             _updateDisplayContext();
             _showDeviceRestoredToast(state);
@@ -1523,7 +1499,11 @@ class _AppViewState extends State<_AppView> {
         ),
         BlocListener<AudioRecoveryCubit, AudioRecoveryState>(
           listenWhen: (previous, current) => previous.status != current.status,
-          listener: (_, state) => _showAudioRecoveryBanner(state),
+          // The stage's strip says it, not a toast (#1270 Part 5).
+          listener: (context, state) =>
+              context.read<AudioSetupCubit>().setWaitingForDevice(
+                waiting: state.status == AudioRecoveryStatus.waitingForDevice,
+              ),
         ),
         // The drive chosen in Save to went: the next take goes to Internal,
         // and the player is told rather than finding out afterwards.
