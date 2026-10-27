@@ -26,6 +26,7 @@ import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
+import 'package:segno/audio_setup/view/device_page.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/application/record_settings.dart';
@@ -902,7 +903,7 @@ void main() {
     await providers.inputs.rename(1, 'mic');
     await pumpPage(
       tester,
-      page: const DeviceSettingsPage(),
+      page: const DevicePage(),
       control: providers,
     );
     await tester.pumpAndSettle();

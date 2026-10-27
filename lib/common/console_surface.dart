@@ -3057,6 +3057,9 @@ Future<bool> showConsoleConfirmDialog(
                     IntrinsicWidth(
                       child: ConsoleDialogButton(
                         key: const Key('console_confirm_cancel'),
+                        // The encoder starts on the answer that changes
+                        // nothing (pen 28/04).
+                        autofocus: true,
                         label: l10n.consoleKeepIt,
                         onPressed: () => Navigator.of(dialogContext).pop(false),
                       ),
@@ -3417,8 +3420,12 @@ class ConsoleDialogButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.tone = ConsoleDialogTone.neutral,
+    this.autofocus = false,
     super.key,
   });
+
+  /// Whether the encoder starts on this button when its dialog opens.
+  final bool autofocus;
 
   /// Visible caption, and the announced label.
   final String label;
@@ -3467,6 +3474,7 @@ class ConsoleDialogButton extends StatelessWidget {
     };
     return FocusableTapTarget(
       onTap: onPressed,
+      autofocus: autofocus,
       semanticLabel: label,
       borderRadius: 10,
       child: InkWell(
