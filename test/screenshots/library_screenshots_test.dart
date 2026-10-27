@@ -89,8 +89,8 @@ SessionPreview _previewOf(String id) => switch (id) {
   ),
 };
 
-/// Author-side images of the Library against pen 19/01 to 19/05 and 18/06;
-/// CI does not claim visual proof.
+/// Images of the Library to compare with pen 19/01 to 19/05 and 18/06. CI
+/// renders them into the `screenshots` artifact; nothing compares pixels.
 void main() {
   setUpAll(() => registerFallbackValue(_track(0, 1)));
 
