@@ -1879,10 +1879,11 @@ class ControlCubit extends Cubit<ControlState> {
     // Running: expand to every content track unless the full audible set is
     // already in the mix (then the press is a no-op).
     final armed = armedTracks(_l, state);
+    // A section taking its first take is already in the mix.
     final all = _oneSection({
       for (final track in _tracks)
         if (track.hasContent) track.channel,
-    });
+    })..removeWhere((channel) => _trackAt(channel)?.isCapturing ?? false);
     final anyAudible = _tracks.any(
       (t) => armed.contains(t.channel) && !t.muted && isSounding(t),
     );
