@@ -59,6 +59,18 @@ class _FakeBackend implements PlatformUpdateBackend {
     yield 0.5;
     yield 1;
   }
+
+  String? packageArg;
+
+  @override
+  String get stagingDirectory => '/staging';
+
+  @override
+  Stream<double> installPackage(String path) async* {
+    packageArg = path;
+    yield 0.25;
+    yield 1;
+  }
 }
 
 /// Builds a manifest with minor component [minor] (e.g. `_manifest(2)` ==
@@ -185,6 +197,22 @@ void main() {
       await UpdateRepository(backend: backend).clearInterrupted();
       expect(backend.clearInterruptedCount, 1);
     });
+
+    test(
+      'installPackage forwards the path and streams progress',
+      () async {
+        final backend = _FakeBackend();
+        final repo = UpdateRepository(backend: backend);
+
+        expect(repo.stagingDirectory, '/staging');
+        final progress = await repo
+            .installPackage('/staging/segno.raucb')
+            .toList();
+
+        expect(progress, [0.25, 1.0]);
+        expect(backend.packageArg, '/staging/segno.raucb');
+      },
+    );
 
     test(
       'downloadAndStage forwards the manifest and streams progress',
