@@ -1875,6 +1875,53 @@ void main() {
       expect(cubit.state.draft?.bufferFrames, 256);
     });
 
+    test('a take landing while the question is open is answered with the '
+        'draft as it stands', () async {
+      const playing = Track(state: TrackState.playing, lengthFrames: 48000);
+      seed(tracks: const [playing]);
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          status: EngineStatus(
+            deviceName: 'Scarlett',
+            sampleRate: 48000,
+            bufferFrames: 128,
+            isConnected: true,
+            devicePresent: true,
+          ),
+        ),
+      );
+      final cubit = buildCubit()
+        ..editRate(96000)
+        ..editBuffer(256);
+      addTearDown(cubit.close);
+      when(() => backing.state).thenReturn(
+        const BackingPlayerState(transport: BackingTransport.playing),
+      );
+      cubit.applyDraft();
+      expect(cubit.state.applyPhase, ApplyPhase.confirming);
+      const recorded = LooperState(
+        status: EngineStatus(
+          deviceName: 'Scarlett',
+          sampleRate: 48000,
+          bufferFrames: 128,
+          isConnected: true,
+          devicePresent: true,
+        ),
+        tracks: [playing],
+      );
+      when(() => repository.state).thenReturn(recorded);
+      stateController.add(recorded);
+      await Future<void>.delayed(Duration.zero);
+      cubit.confirmApply();
+      final asked =
+          verify(
+                () => repository.applyAudioConfig(captureAny()),
+              ).captured.single
+              as EngineConfig;
+      expect(asked.sampleRate, 48000);
+      expect(asked.bufferFrames, 256);
+    });
+
     test('a repository that touches nothing keeps the draft', () {
       seed();
       when(() => repository.applyAudioConfig(any())).thenReturn(
