@@ -60,11 +60,9 @@ const _rig = LooperState(
 
 void main() {
   late TempoSettings tempoOwner;
-  const fontDir =
-      '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
-  // Author-machine goldens, like the other screenshot suites here: the
-  // Material fonts come from the local SDK, so everywhere else this skips.
-  final hasScreenshotFonts = File('$fontDir/Roboto-Regular.ttf').existsSync();
+  final fontDir = materialFontDir;
+  // Renders only with --update-goldens; see rendersScreenshots.
+  final hasScreenshotFonts = rendersScreenshots;
   final authorCaptureDir = Platform.environment['SEGNO_AUTHOR_CAPTURE_DIR'];
 
   setUpAll(() async {

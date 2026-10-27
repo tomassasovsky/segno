@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -51,11 +50,9 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 
 /// The accepted External pedals screen, drawn at the console's own size.
 void main() {
-  final fontDir = Platform.environment['SEGNO_SCREENSHOT_FONT_DIR'];
-  // Explicit author-side visual checks use the SDK's Material fonts.
-  // Ordinary CI does not claim to have compared these machine-rendered images.
-  final hasScreenshotFonts =
-      fontDir != null && File('$fontDir/Roboto-Regular.ttf').existsSync();
+  final fontDir = materialFontDir;
+  // Renders only with --update-goldens; see rendersScreenshots.
+  final hasScreenshotFonts = rendersScreenshots;
 
   setUpAll(() async {
     if (!hasScreenshotFonts) return;

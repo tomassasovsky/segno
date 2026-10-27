@@ -39,9 +39,8 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 /// Author-side images of Library > Audio against pen 18/01 and 20/07 to
 /// 20/12; CI does not claim visual proof.
 void main() {
-  final fontDir = Platform.environment['SEGNO_SCREENSHOT_FONT_DIR'];
-  final hasScreenshotFonts =
-      fontDir != null && File('$fontDir/Roboto-Regular.ttf').existsSync();
+  final fontDir = materialFontDir;
+  final hasScreenshotFonts = rendersScreenshots;
 
   setUpAll(() async {
     registerFallbackValue(

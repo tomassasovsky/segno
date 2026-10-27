@@ -185,6 +185,37 @@ jobs:
         run: flutter pub get
       - name: Check the app and its runtime dependencies for dart:io process starts
         run: bash tool/check_no_dart_process.sh
+  # The design side of a UI change. segno-ui.pen and the design studies live in
+  # tomassasovsky/segno-design (#1496), cloned next to this checkout as they
+  # are for local UI work. The job runs the checks that read the studies, and
+  # renders the screenshot suites on Linux and uploads the PNGs as the
+  # `screenshots` artifact, for a reviewer to compare against the pen. No
+  # goldens are committed, so nothing is compared here: a suite that fails to
+  # render is reported on the run but does not block the PR.
+  design:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Clone segno-design next to the checkout
+        run: git clone --depth 1 https://github.com/tomassasovsky/segno-design.git ../segno-design
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.x"
+          channel: stable
+      - name: Resolve the app's dependencies
+        run: flutter pub get
+      - name: Check the app against the design studies
+        run: flutter test test/control/external_pedal_art_test.dart
+      - name: Render the screenshot suites
+        continue-on-error: true
+        run: flutter test --tags screenshots --update-goldens test/screenshots
+      - name: Upload the screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots
+          path: test/screenshots/goldens/
+          if-no-files-found: error
   pedal-repository:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
     with:

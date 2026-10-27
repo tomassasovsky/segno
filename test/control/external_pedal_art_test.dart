@@ -12,8 +12,15 @@ import 'package:segno/theme/theme.dart';
 /// the app places its hit targets from them. A hand copy is exactly the kind
 /// of thing that drifts, and a marker a few pixels out is a performer
 /// pointing at the wrong switch.
+///
+/// The study lives in tomassasovsky/segno-design. These checks read it from a
+/// clone at `../segno-design` and skip without one; CI's `design` job clones
+/// it there and runs them.
 void main() {
-  const study = 'docs/design/external-switch-study.js';
+  const study = '../segno-design/docs/design/external-switch-study.js';
+  final studySkip = File(study).existsSync()
+      ? false
+      : 'needs tomassasovsky/segno-design cloned at ../segno-design';
 
   /// The study's `artwork` object, as {name: {width, height, switches, leds}}.
   Map<String, Map<String, Object>> studyArtwork() {
@@ -49,7 +56,7 @@ void main() {
       {'single', 'dual'},
       reason: 'a pedal added to the study needs one here too',
     );
-  });
+  }, skip: studySkip);
 
   test('every switch and indicator sits where the study measured it', () {
     final measured = studyArtwork();
@@ -73,7 +80,7 @@ void main() {
         reason: '${entry.key} indicator centres',
       );
     }
-  });
+  }, skip: studySkip);
 
   testWidgets('a marker lands on its switch whatever size the art is drawn', (
     tester,

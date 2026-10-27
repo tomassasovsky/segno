@@ -52,9 +52,8 @@ void main() {
   late SessionRepository sessions;
   late PedalRepository pedal;
 
-  final fontDir = Platform.environment['SEGNO_SCREENSHOT_FONT_DIR'];
-  final hasScreenshotFonts =
-      fontDir != null && File('$fontDir/Roboto-Regular.ttf').existsSync();
+  final fontDir = materialFontDir;
+  final hasScreenshotFonts = rendersScreenshots;
 
   setUpAll(() async {
     if (!hasScreenshotFonts) return;

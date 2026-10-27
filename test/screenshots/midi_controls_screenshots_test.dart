@@ -90,9 +90,8 @@ const _connection = MidiConnection(
 
 /// Author-side images of the real MIDI screens; CI does not claim visual proof.
 void main() {
-  final fontDir = Platform.environment['SEGNO_SCREENSHOT_FONT_DIR'];
-  final hasFonts =
-      fontDir != null && File('$fontDir/Roboto-Regular.ttf').existsSync();
+  final fontDir = materialFontDir;
+  final hasFonts = rendersScreenshots;
   setUpAll(() async {
     if (!hasFonts) return;
     await loadScreenshotFont('Roboto', [

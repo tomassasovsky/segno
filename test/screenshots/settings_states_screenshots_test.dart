@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:brightness_client/brightness_client.dart';
@@ -232,7 +231,7 @@ class _PreviewWifiClient implements WifiClient {
 
 /// The Settings pages and the FX pedal assignments in the states worth
 /// checking by eye (a list open, a refusal, an update in each phase).
-/// Author-machine goldens, like the other suites here;
+/// Renders only with `--update-goldens`, like the other suites here;
 /// each page's resting state is in `settings_destinations_screenshots_test`.
 void main() {
   late TempoSettings tempoOwner;
@@ -240,9 +239,8 @@ void main() {
     registerFallbackValue(const EngineConfig());
     registerFallbackValue(MonitorMode.off);
   });
-  const fontDir =
-      '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
-  final hasFonts = File('$fontDir/Roboto-Regular.ttf').existsSync();
+  final fontDir = materialFontDir;
+  final hasFonts = rendersScreenshots;
 
   setUpAll(() async {
     if (!hasFonts) return;

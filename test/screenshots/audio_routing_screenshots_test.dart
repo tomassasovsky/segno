@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
@@ -53,10 +52,9 @@ const _rig = LooperState(
 
 void main() {
   late TempoSettings tempoOwner;
-  const fontDir =
-      '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
-  // Author-machine goldens, like the other screenshot suites here.
-  final hasScreenshotFonts = File('$fontDir/Roboto-Regular.ttf').existsSync();
+  final fontDir = materialFontDir;
+  // Renders only with --update-goldens; see rendersScreenshots.
+  final hasScreenshotFonts = rendersScreenshots;
 
   setUpAll(() async {
     registerFallbackValue(const LooperInputPanChanged(0, pan: 0));

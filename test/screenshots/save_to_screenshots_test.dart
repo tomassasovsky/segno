@@ -1,8 +1,6 @@
 @Tags(['screenshots'])
 library;
 
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:routing_graph/routing_graph.dart';
@@ -14,12 +12,11 @@ import 'package:storage_repository/storage_repository.dart';
 import '../helpers/helpers.dart';
 
 /// Pen 48's `Save to` (`cH9UX`, `FwjUV`) and pen `m5XyVv`'s Connect USB
-/// sheet, for eyeballing against the pen. Author-only, like every golden
-/// here (`SEGNO_SCREENSHOT_FONT_DIR`); elsewhere these skip.
+/// sheet, for eyeballing against the pen. Renders only with
+/// `--update-goldens`, like every suite here.
 void main() {
-  final fontDir = Platform.environment['SEGNO_SCREENSHOT_FONT_DIR'];
-  final hasFonts =
-      fontDir != null && File('$fontDir/Roboto-Regular.ttf').existsSync();
+  final fontDir = materialFontDir;
+  final hasFonts = rendersScreenshots;
 
   setUpAll(() async {
     if (!hasFonts) return;

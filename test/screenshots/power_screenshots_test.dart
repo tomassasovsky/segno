@@ -1,8 +1,6 @@
 @Tags(['screenshots'])
 library;
 
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,9 +19,8 @@ import '../helpers/helpers.dart';
 /// Pen 32's five Power screens: Power options, Saving, Save failed, Safe to
 /// switch off and Restarting. No real halt is invoked.
 void main() {
-  final fontDir = Platform.environment['SEGNO_SCREENSHOT_FONT_DIR'];
-  final hasFonts =
-      fontDir != null && File('$fontDir/Roboto-Regular.ttf').existsSync();
+  final fontDir = materialFontDir;
+  final hasFonts = rendersScreenshots;
 
   setUpAll(() async {
     if (!hasFonts) return;
