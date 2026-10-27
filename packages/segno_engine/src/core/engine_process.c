@@ -4804,9 +4804,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       }
       break;
     case LE_CMD_DISARM:
-      if (cmd->arg_i == e->song_source || cmd->arg_i == e->song_target) {
-        le_song_cancel(e);
-      }
+      /* Cancelling the waiting Record drops its request. Cancelling an arm
+       * on the source (a quantized overdub) keeps it, as that arm did. */
+      if (cmd->arg_i == e->song_target) le_song_cancel(e);
       if (valid_channel(e, cmd->arg_i)) {
         if (e->launch_action[cmd->arg_i] == 1)
           le_plog_push(e, frame, (le_command){.code = LE_PLOG_RECORD_ABORT,
@@ -7008,7 +7008,13 @@ static inline void le_shared_clock_one_shots(le_engine* e, int tc,
 static void le_fire_section_arm(le_engine* e, int32_t ch, uint64_t frame) {
   const int32_t st = load_i32(&e->tracks[ch].a_state);
   if (st == LE_TRACK_STOPPED) {
-    handle_play(e, ch, frame);
+    /* Band keeps one section (#1323): with another sounding, the start
+     * waits for that section's end like any section request. */
+    if (le_band_section(e, ch) && le_handoff_source(e, ch) >= 0) {
+      handle_section_play(e, ch, frame);
+    } else {
+      handle_play(e, ch, frame);
+    }
   } else if (st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING ||
             st == LE_TRACK_RECORDING) {
     handle_stop(e, ch, frame);
