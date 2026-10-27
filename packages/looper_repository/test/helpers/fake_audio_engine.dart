@@ -152,18 +152,20 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
     return devices;
   }
 
-  /// Drivers returned by [enumerateAsioDrivers].
-  List<AudioDevice> asioDrivers = const [];
-
   @override
-  List<AudioDevice> enumerateAsioDrivers() {
-    calls.add('enumerateAsioDrivers');
-    return asioDrivers;
+  EngineResult measureLatencyPath({
+    required int output,
+    required int input,
+    required double amplitude,
+    required int request,
+  }) {
+    calls.add('measureLatencyPath');
+    return EngineResult.ok;
   }
 
   @override
-  EngineResult measureLatency() {
-    calls.add('measureLatency');
+  EngineResult cancelLatency({required int request}) {
+    calls.add('cancelLatency');
     return EngineResult.ok;
   }
 
@@ -2245,7 +2247,7 @@ class _LengthSnapshot extends EngineSnapshot {
         tunerConfidence: source.tunerConfidence,
         tunerInput: source.tunerInput,
         tunerMuteMask: source.tunerMuteMask,
-        activeBackend: source.activeBackend,
+        latencyRequest: source.latencyRequest,
         outputEnabledMask: source.outputEnabledMask,
         isPerfArmed: source.isPerfArmed,
         perfFrames: source.perfFrames,

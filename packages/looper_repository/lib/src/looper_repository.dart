@@ -32,7 +32,6 @@ import 'package:looper_repository/src/render_job.dart';
 import 'package:looper_repository/src/settings_receipt.dart';
 import 'package:segno_engine/segno_engine.dart'
     hide
-        AudioBackend,
         AudioDevice,
         BuiltInEffect,
         EngineConfig,
@@ -2563,7 +2562,6 @@ class LooperRepository {
       inputCondMask: s.inputCondMask,
       recordOffsetFrames: s.recordOffsetFrames,
       fxAddedLatencyFrames: s.fxAddedLatencyFrames,
-      activeBackend: audioBackendFromEngine(s.activeBackend),
       reopen: _lastReopen,
     ),
     // From the repository's own re-apply CACHE, not `s.outputEnabledMask`, on
@@ -2589,14 +2587,6 @@ class LooperRepository {
   /// Enumerates the host's audio devices (playback + capture) for the picker.
   List<AudioDevice> devices() =>
       _engine.enumerateDevices().map(audioDeviceFromEngine).toList();
-
-  /// Enumerates the installed ASIO drivers (one duplex [AudioDevice] each) for
-  /// the backend selector's driver picker. Empty off Windows / the default
-  /// build. Must not be called while running on the ASIO backend (the cubit
-  /// enforces this — see the re-entrancy contract on
-  /// [AudioEngine.enumerateAsioDrivers]).
-  List<AudioDevice> asioDrivers() =>
-      _engine.enumerateAsioDrivers().map(audioDeviceFromEngine).toList();
 
   /// Whether a device (re)open must be refused right now: a Session apply or
   /// boot fence is up, or a settings owner still owes its recovery. The one
@@ -3266,9 +3256,6 @@ class LooperRepository {
   /// Detects a cable-free loopback capture path for auto-measuring latency.
   LoopbackInfo detectLoopback() =>
       loopbackInfoFromEngine(_engine.detectLoopback());
-
-  /// Triggers a loopback round-trip latency measurement.
-  EngineResult measureLatency() => _engine.measureLatency();
 
   /// Advances track [channel]: record / finalize loop / toggle overdub.
   ///

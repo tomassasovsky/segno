@@ -9,11 +9,9 @@ import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/looper/looper.dart';
 // Domain audio-config + effect types come from the looper_repository barrel
-// above; the engine-typed fixtures fed to the fake engine use the `le` prefix,
-// and settings owns its own AudioBackend via the `persisted` prefix.
+// above; the engine-typed fixtures fed to the fake engine use the `le` prefix.
 import 'package:segno_engine/segno_engine.dart'
     hide
-        AudioBackend,
         AudioDevice,
         BuiltInEffect,
         EngineConfig,
@@ -29,10 +27,7 @@ import 'package:segno_engine/segno_engine.dart'
 import 'package:segno_engine/segno_engine.dart'
     as le
     show AudioDevice, EngineConfig, LatencyState, LoopbackInfo, LoopbackKind;
-import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
-import 'package:settings_repository/settings_repository.dart'
-    as persisted
-    show AudioBackend;
+import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
 
@@ -1743,29 +1738,6 @@ void main() {
       // all its channels; the negotiated counts come back via the snapshot.
       expect(engine.lastConfig?.inputChannels, 0);
       expect(engine.lastConfig?.outputChannels, 0);
-    });
-
-    test('relaunches into the saved ASIO backend + driver', () async {
-      // The auto-start config assembly is duplicated from the cubit's
-      // _engineConfig; this guards against the two diverging on backend/driver.
-      await settings.saveAudioConfig(
-        const StoredAudioConfig(
-          sampleRate: 48000,
-          bufferFrames: 128,
-          backend: persisted.AudioBackend.asio,
-          asioDriver: 'Focusrite USB ASIO',
-        ),
-      );
-
-      final started = await tryAutoStartEngine(
-        mixSettings: testMixSettings(repository, settings: settings),
-        repository: repository,
-        settings: settings,
-      );
-
-      expect(started.started, isTrue);
-      expect(engine.lastConfig?.backend.name, AudioBackend.asio.name);
-      expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
     });
 
     test("restores every track pan and the open device's input setup "

@@ -385,7 +385,6 @@ void main() {
     // What `AUDIO / settings-device` draws: an interface the host reports in
     // both directions with its real channel counts, and the built-in pair.
     when(looper.devices).thenReturn(_previewDevices);
-    when(looper.asioDrivers).thenReturn(const <AudioDevice>[]);
     when(looper.detectLoopback).thenReturn(
       const LoopbackInfo(
         available: true,
@@ -397,7 +396,6 @@ void main() {
     // the PINNED device without the preview having to open one.
     when(looper.stopEngine).thenReturn(EngineResult.ok);
     when(() => looper.startEngine(any())).thenReturn(EngineResult.ok);
-    when(looper.measureLatency).thenReturn(EngineResult.ok);
     when(() => looper.lastEngineConfig).thenReturn(
       const EngineConfig(
         sampleRate: 48000,

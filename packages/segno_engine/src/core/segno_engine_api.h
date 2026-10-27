@@ -79,6 +79,10 @@ typedef enum le_result {
                                 * source (#1228); select Internal first */
   LE_ERR_SYNC_LOCKED = -21,    /* the clock source cannot change while a track
                                 * records, overdubs, is armed or counting in */
+  LE_ERR_WOULD_CLEAR = -22,    /* le_engine_reopen with keep_material: the
+                                * device negotiated another sample rate or loop
+                                * cap, which would clear the loops; nothing was
+                                * cleared and the device is closed again */
 } le_result;
 
 /* Latency-harness phase, mirrored in le_snapshot.latency_state. */
@@ -87,7 +91,14 @@ typedef enum le_latency_state {
   LE_LATENCY_MEASURING = 1, /* impulse emitted, waiting for it to return */
   LE_LATENCY_DONE = 2,      /* measured_latency_ms is valid */
   LE_LATENCY_TIMEOUT = 3,   /* no loopback detected within the window */
+  LE_LATENCY_CANCELLED = 4, /* cancelled (le_engine_cancel_latency, a device
+                             * loss, or a take running when it was asked);
+                             * the record offset is unchanged */
 } le_latency_state;
+
+/* le_engine_measure_latency_path's `input` for the interface's own loopback
+ * channels (the excluded-input mask) rather than one physical input. */
+#define LE_LATENCY_LOOPBACK_INPUT 0xFFFF
 
 /* Per-track state machine, mirrored in le_snapshot.track_state. */
 typedef enum le_track_state {
@@ -239,7 +250,6 @@ typedef struct le_loopback_info {
 /* Command codes posted into the engine's SPSC ring. */
 typedef enum le_command_code {
   LE_CMD_NONE = 0,
-  LE_CMD_MEASURE_LATENCY = 1,
   LE_CMD_RECORD = 2,    /* record / finalize-loop / toggle overdub */
   LE_CMD_STOP = 3,      /* halt playback (retain buffer) */
   LE_CMD_PLAY = 4,      /* resume playback */
@@ -586,6 +596,11 @@ typedef enum le_command_code {
    * buffer pointer, so raw posts are refused. Never perf-logged. */
   LE_CMD_AUDITION_START = 136, /* buffer */
   LE_CMD_AUDITION_STOP = 137,
+  /* ---- Latency path measurement (#1270 Part 2; 140-141). Typed producers
+   * only (le_engine_measure_latency_path / le_engine_cancel_latency). */
+  LE_CMD_MEASURE_LATENCY_PATH = 140, /* latency.output, .input, .amplitude,
+                                      * .request */
+  LE_CMD_CANCEL_LATENCY = 141,       /* latency.request */
   LE_CMD_RENDER_FREEZE = 112, /* render recipe (#1202): the callback records
                                * every source's read law; never raw-posted */
   LE_CMD_BOUNCE = 113,         /* Bounce (#1202): installs a rendered result on
@@ -890,17 +905,6 @@ LE_EXPORT int32_t le_fx_param_count(int32_t type);
 LE_EXPORT int32_t le_fx_param_info(int32_t type, int32_t param,
                                    le_fx_param_desc* out);
 
-/* Which device backend to open. The default (0) opens miniaudio's default
- * backend for the platform (Core Audio on macOS, the Linux preference list) —
- * the only backend this engine ships. */
-typedef enum le_audio_backend {
-  LE_BACKEND_MINIAUDIO = 0, /* default: miniaudio's default platform backend */
-  /* Reserved. Was Windows ASIO; the backend went with the desktop targets, but
-   * the value stays claimed so a persisted setting written by an older build
-   * still parses instead of being reinterpreted as another backend. */
-  LE_BACKEND_ASIO = 1,
-} le_audio_backend;
-
 /* A hardware audio device discovered by enumeration (le_enumerate_*).
  *
  * `id` is an opaque, backend-specific token suitable for pinning a device via
@@ -915,20 +919,11 @@ typedef struct le_device_info {
   /* The device's channel count in the direction it was enumerated in: a
    * capture device fills input_channels, a playback device output_channels,
    * and the other stays 0 — a playback device reports what it can play and
-   * never the other way round. An ASIO driver is duplex and fills both.
+   * never the other way round.
    * 0 = UNKNOWN, not "no channels": a device that cannot answer keeps it, and
    * a count is omitted rather than printed as a zero. */
   int32_t input_channels;
   int32_t output_channels;
-  /* ASIO-only: the driver's selectable buffer sizes and supported sample rates,
-   * probed by le_enumerate_asio_drivers so the UI can offer the driver's real
-   * options instead of a generic list. Count 0 for non-ASIO devices (the UI
-   * then keeps its default lists). Sizes/rates are ascending; the buffer set
-   * always includes the driver's preferred size. */
-  int32_t asio_buffer_sizes[8];
-  int32_t asio_buffer_count;
-  int32_t asio_sample_rates[8];
-  int32_t asio_sample_rate_count;
 } le_device_info;
 
 /* Requested device configuration. Any channel field set to 0 uses the device
@@ -945,11 +940,11 @@ typedef struct le_config {
    * overrides capture_device_id when a loopback device is detected. */
   char playback_device_id[256];
   char capture_device_id[256];
-  /* le_audio_backend to open. Every value resolves to miniaudio via
-   * le_select_backend; the field stays so persisted configs still round-trip. */
-  int32_t backend;
-  /* Reserved, alongside LE_BACKEND_ASIO. Always empty and ignored. */
-  char asio_driver[256];
+  /* le_engine_reopen only: 1 refuses a reopen that would clear the loops
+   * (another negotiated sample rate or loop cap) with LE_ERR_WOULD_CLEAR,
+   * leaving the material untouched and stopped. 0 clears as le_engine_start
+   * does. le_engine_start ignores it. */
+  int32_t keep_material;
 } le_config;
 
 /* Maximum number of simultaneous looper tracks (two banks of four). */
@@ -1358,9 +1353,8 @@ typedef struct le_track_snapshot {
 /* ===================== Audio-callback telemetry (#722) =====================
  *
  * The audio callback measuring its OWN lateness. Until this existed nothing on
- * the miniaudio backends (Linux/macOS) counted a missed deadline: xrun_count was
- * fed only by the Windows ASIO overload notification, so the appliance could not
- * tell a callback that ran long from one that ran fine. Observation only — no
+ * the miniaudio backends (Linux/macOS) counted a missed deadline, so the
+ * appliance could not tell a callback that ran long from one that ran fine. Observation only — no
  * audio behaviour depends on any of it.
  *
  * WHAT IS MEASURED, and where: the device backend's data callback wraps
@@ -1416,12 +1410,13 @@ typedef struct le_track_snapshot {
 
 /* Dropout classes counted per window. The three ALSA ones come from the direct
  * ALSA duplex path (miniaudio's -EPIPE recoveries and the playback-slip resync);
- * OVERLOAD is the Windows ASIO driver's kAsioOverload notification. */
+ * OVERLOAD is a device driver's own overload notification, which no backend in
+ * this build reports. */
 typedef enum le_xrun_kind {
   LE_XRUN_PLAYBACK_UNDERRUN = 0, /* writei() -EPIPE: the card ran out of audio */
   LE_XRUN_CAPTURE_OVERRUN = 1,   /* readi()  -EPIPE: we did not read in time */
   LE_XRUN_PLAYBACK_RESYNC = 2,   /* the slipped-playback drop+prepare resync */
-  LE_XRUN_BACKEND_OVERLOAD = 3,  /* ASIO kAsioOverload */
+  LE_XRUN_BACKEND_OVERLOAD = 3,  /* a driver overload notification */
 } le_xrun_kind;
 
 /* How many le_xrun_kind values there are — the per-window tally array width.
@@ -1488,7 +1483,7 @@ typedef struct le_cb_window_snapshot {
    *
    * Over the session window these sum to xrun_count for every kind THIS BUILD
    * KNOWS — which is every kind any shipping backend produces (ALSA passes
-   * 0/1/2, ASIO passes 3), so the sum holds today. It is not an invariant for
+   * 0/1/2), so the sum holds today. It is not an invariant for
    * all time: a dropout reported with a kind outside le_xrun_kind increments
    * xrun_count but lands in no bucket, deliberately, because the headline
    * number's job is "a real dropout happened" and an unclassifiable one still
@@ -1538,8 +1533,7 @@ typedef struct le_snapshot {
   uint32_t excluded_input_mask;
   uint64_t frames_processed;  /* total frames seen by the callback */
   /* Device dropouts (xruns) since the device started, as reported by the
-   * backend, every class summed. The Windows ASIO backend tallies the driver's
-   * kAsioOverload notifications; the direct ALSA path tallies miniaudio's
+   * backend, every class summed. The direct ALSA path tallies miniaudio's
    * -EPIPE recoveries and its slipped-playback resyncs (#722), so this finally
    * moves on Linux. Still 0 on CoreAudio, which exposes no xrun signal at all —
    * read le_callback_telemetry's gap detector there. The per-class breakdown is
@@ -1550,6 +1544,10 @@ typedef struct le_snapshot {
   float input_peak;           /* 0..1 */
   float output_rms;           /* 0..1 */
   int32_t latency_state;      /* le_latency_state */
+  /* The request the latency state belongs to (le_engine_measure_latency_path):
+   * published together with the state, so a caller waits for its own request
+   * and never reads a previous measurement's DONE. 0 before any request. */
+  uint32_t latency_request;
   double measured_latency_ms; /* valid when latency_state == LE_LATENCY_DONE */
 
   /* Looper transport (free mode: the first finalized recording sets the one
@@ -1577,10 +1575,6 @@ typedef struct le_snapshot {
    * every track/lane/monitor lane has summed in. 1.0 (unity) by default and on
    * every fresh configure. Set via le_engine_set_master_gain. */
   float master_gain;
-
-  /* le_audio_backend actually running (negotiated). On Windows this is always
-   * ASIO; on macOS/Linux it is the miniaudio backend. */
-  int32_t active_backend;
 
   /* Structural output gate, one bit per hardware output channel (bit c => output
    * c is ENABLED). A disabled output is removed as a mix target — skipped in the
@@ -1972,13 +1966,6 @@ LE_EXPORT int32_t le_enumerate_playback_devices(le_device_info* out, int32_t max
 LE_EXPORT int32_t le_enumerate_capture_devices(le_device_info* out, int32_t max,
                                                int32_t* count);
 
-/* Reserved: always writes *count = 0 and returns LE_OK. ASIO was the Windows
- * duplex backend and went with the desktop targets; the symbol stays exported so
- * the Dart layer can keep calling it unconditionally. Returns LE_ERR_INVALID for
- * a null argument / non-positive `max`. */
-LE_EXPORT int32_t le_enumerate_asio_drivers(le_device_info* out, int32_t max,
-                                            int32_t* count);
-
 /* ---- Plugin scanning (control thread; runs on a dedicated scan thread) ----
  *
  * le_plugin_scan_begin spawns ONE dedicated OS scan thread (the engine has no
@@ -2203,6 +2190,11 @@ typedef enum le_reopen_outcome {
  * conditioning, output gates) is reset here too; routes to inputs or outputs
  * the new device lacks stay silent.
  *
+ * With config->keep_material set, a reopen that would clear the whole engine
+ * (another sample rate or loop cap) closes the device again and returns
+ * LE_ERR_WOULD_CLEAR with *outcome naming why; the material stays untouched
+ * and stopped.
+ *
  * Returns LE_OK or an le_result error. A failed open changes nothing (the
  * material is still held, still stopped, *outcome and the mask untouched), so
  * the caller may retry. A failed start returns LE_ERR_DEVICE with the material
@@ -2304,9 +2296,38 @@ LE_EXPORT const char* le_engine_device_name(le_engine* engine);
 LE_EXPORT int32_t le_engine_post_command(le_engine* engine, int32_t code,
                                          int32_t arg_i, float arg_f);
 
-/* Convenience: triggers a single loopback latency measurement. Requires an
- * output->input loopback path. */
-LE_EXPORT int32_t le_engine_measure_latency(le_engine* engine);
+/* Measures the round trip of one chosen path (#1270 Part 2): a 10 ms, 1 kHz
+ * burst at `amplitude` on hardware output `output` only (every other output
+ * reads 0.0 while it plays), timed on hardware input `input`, or on the
+ * interface's loopback channels for LE_LATENCY_LOOPBACK_INPUT. `request` is
+ * the caller's id, echoed in le_snapshot.latency_request with every state of
+ * this measurement. While it runs the harness owns the output and the
+ * transport does not advance. DONE sets the record offset; TIMEOUT and
+ * CANCELLED leave it unchanged. A request that arrives while a track records
+ * or overdubs is CANCELLED and plays nothing. A stop during the window ends it
+ * CANCELLED.
+ *
+ * A request's last state is not kept: a start publishes IDLE under it, and a
+ * restored offset (LE_CMD_SET_RECORD_OFFSET) publishes DONE under request 0,
+ * either of which can land before a poll reads the CANCELLED a stop left. So
+ * a caller treats IDLE under its own request, another request id in the word
+ * once its own MEASURING has been seen, or the device leaving as the end of
+ * its measurement, and bounds the wait with a timeout of its own (a stop and
+ * reopen can also drop the request before it is applied).
+ *
+ * Returns LE_OK; LE_ERR_INVALID for an output not below the device's output
+ * count, an input neither below its input count nor LE_LATENCY_LOOPBACK_INPUT
+ * (or the loopback input with no loopback channels), or an amplitude outside
+ * (0, 0.5]; LE_ERR_NOT_RUNNING when not configured. */
+LE_EXPORT int32_t le_engine_measure_latency_path(le_engine* engine,
+                                                 int32_t output, int32_t input,
+                                                 float amplitude,
+                                                 uint32_t request);
+
+/* Cancels the measurement `request` started: it publishes CANCELLED and the
+ * output falls silent. A cancel for another request is ignored. Returns LE_OK
+ * or LE_ERR_NOT_RUNNING / LE_ERR_INVALID as a post does. */
+LE_EXPORT int32_t le_engine_cancel_latency(le_engine* engine, uint32_t request);
 
 /* ---- looper control (per channel) ---- *
  * These post ring commands targeting track `channel` (0..track_count-1).

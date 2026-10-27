@@ -148,8 +148,6 @@ class AudioSetupState extends Equatable {
     this.devices = const [],
     this.playbackDeviceId = '',
     this.captureDeviceId = '',
-    this.backend = AudioBackend.miniaudio,
-    this.asioDriver = '',
     this.deviceConnectivity = DeviceConnectivity.none,
     this.connectivityDeviceName = '',
     this.phase = ConfigPhase.settled,
@@ -193,14 +191,6 @@ class AudioSetupState extends Equatable {
   /// Selected capture device id, or empty for the system default.
   final String captureDeviceId;
 
-  /// The saved backend, carried through to the engine and the saved config
-  /// unchanged until those fields go (#1270 Part 2).
-  final AudioBackend backend;
-
-  /// The saved ASIO driver id, carried through on the same terms as
-  /// [backend].
-  final String asioDriver;
-
   /// What the last requested config is doing — the Device tab's own banner.
   final ConfigPhase phase;
 
@@ -226,7 +216,7 @@ class AudioSetupState extends Equatable {
 
   /// The period the device is actually running, on the same terms as
   /// [actualRate]. This is the one that drifts in practice — a negotiated
-  /// buffer is an ALSA quantum or an ASIO granularity step, rarely one of
+  /// buffer is an ALSA quantum or a driver's granularity step, rarely one of
   /// [bufferSizes].
   final int actualBuffer;
 
@@ -296,8 +286,6 @@ class AudioSetupState extends Equatable {
     List<AudioDevice>? devices,
     String? playbackDeviceId,
     String? captureDeviceId,
-    AudioBackend? backend,
-    String? asioDriver,
     DeviceConnectivity? deviceConnectivity,
     String? connectivityDeviceName,
     ConfigPhase? phase,
@@ -323,8 +311,6 @@ class AudioSetupState extends Equatable {
       devices: devices ?? this.devices,
       playbackDeviceId: playbackDeviceId ?? this.playbackDeviceId,
       captureDeviceId: captureDeviceId ?? this.captureDeviceId,
-      backend: backend ?? this.backend,
-      asioDriver: asioDriver ?? this.asioDriver,
       deviceConnectivity: deviceConnectivity ?? this.deviceConnectivity,
       connectivityDeviceName:
           connectivityDeviceName ?? this.connectivityDeviceName,
@@ -354,8 +340,6 @@ class AudioSetupState extends Equatable {
     devices,
     playbackDeviceId,
     captureDeviceId,
-    backend,
-    asioDriver,
     deviceConnectivity,
     connectivityDeviceName,
     phase,

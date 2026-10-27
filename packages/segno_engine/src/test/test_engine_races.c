@@ -8,7 +8,8 @@
  * would be a green light checking nothing. This binary exists to make the
  * contract machine-checkable — it races the exact thread pairs the ownership
  * note names, through the real header functions, with pthreads standing in for
- * the device-callback / device-notification / ASIO-message / control threads:
+ * the device-callback / device-notification / dropout-reporting / control
+ * threads:
  *
  *   1. le_cb_timing_note_timeline_break (notification thread) against a
  *      le_cb_timing_note loop (callback thread), asserting a raised break is
@@ -24,7 +25,7 @@
  *      exchange honest is TSAN plus this file racing the real functions, so
  *      any weakening of the flag to non-atomic state becomes a reported
  *      race.)
- *   2. le_cb_timing_note_xrun (the ASIO message thread's role) against
+ *   2. le_cb_timing_note_xrun (a dropout-reporting thread's role) against
  *      le_cb_timing_reset_armed (the audio thread's arm path) — the documented
  *      multi-writer case for a_xruns[].
  *   3. a control-thread le_cb_timing_read against a running callback loop —
@@ -230,7 +231,7 @@ static void test_race_timeline_break_never_lost(void) {
 }
 
 /* ------------------------------------------------------------------------ */
-/* 2. xrun tally (ASIO message thread) against the arm-path window reset.   */
+/* 2. xrun tally (dropout-reporting thread) against the arm window reset.  */
 /* ------------------------------------------------------------------------ */
 
 typedef struct {

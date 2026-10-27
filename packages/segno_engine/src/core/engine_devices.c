@@ -64,7 +64,7 @@ uint32_t le_excluded_mask_from_names(le_channel_name_fn get_name, void* ctx,
   /* Pure bit-setting core shared by every platform's label probe: walk the
    * input channels, ask the caller's provider for each channel's name, and set
    * the bit for any name le_label_is_loopback matches. The OS-specific part is
-   * only the *source* of the names (Core Audio on macOS, ASIO on Windows), so
+   * only the *source* of the names (Core Audio on macOS), so
    * this stays unit-testable with a fake provider and free of any OS calls.
    * Channels beyond LE_MAX_CHANNELS (the mask's width) are ignored. */
   if (get_name == NULL) return 0;
@@ -322,8 +322,8 @@ static int32_t device_channels(ma_context* ctx, const ma_device_id* id,
 
 static void device_info_copy(le_device_info* dst, const ma_device_info* src,
                              ma_context* ctx, int capture) {
-  /* Zero everything first so the miniaudio path never surfaces stack garbage for
-   * fields it does not fill (the ASIO-only buffer/rate sets). */
+  /* Zero everything first so no field it does not fill carries stack
+   * garbage. */
   memset(dst, 0, sizeof(*dst));
   device_id_to_str(&src->id, dst->id, sizeof(dst->id));
   strncpy(dst->name, src->name, sizeof(dst->name) - 1);
@@ -460,28 +460,16 @@ int le_resolve_device_id(ma_context* ctx, int capture, const char* want,
 
 /* ---- device backend selection ---- */
 
-/* Selects the device backend for a requested le_audio_backend. miniaudio is the
- * only backend this engine ships, so every choice resolves to it. (The ASIO
- * backend was Windows-only and went with the desktop targets; LE_BACKEND_ASIO
- * survives as a reserved value so persisted settings still parse.) */
 #ifdef LE_NATIVE_TESTS
 const le_device_backend* le_test_backend_override = NULL;
 #endif
 
-const le_device_backend* le_select_backend(int32_t backend) {
-  (void)backend;
+/* Selects the device backend: miniaudio, the only one this engine ships (or
+ * the native tests' fake device). */
+const le_device_backend* le_select_backend(void) {
 #ifdef LE_NATIVE_TESTS
   if (le_test_backend_override != NULL) return le_test_backend_override;
 #endif
   return &le_miniaudio_backend;
 }
 
-/* No ASIO backend exists, so enumeration is always empty. The FFI symbol stays
- * defined so the Dart layer can keep calling it unconditionally (it returns
- * [] / count 0). */
-int32_t le_enumerate_asio_drivers(le_device_info* out, int32_t max,
-                                  int32_t* count) {
-  if (out == NULL || count == NULL || max <= 0) return LE_ERR_INVALID;
-  *count = 0;
-  return LE_OK;
-}

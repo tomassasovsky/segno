@@ -1058,44 +1058,31 @@ void main() {
     });
 
     test('does not write the removed audio.exclusive key', () async {
-      // OS-exclusive mode is gone (Windows is ASIO-only); saving must never
-      // resurrect the legacy key.
+      // OS-exclusive mode is gone; saving must never resurrect the legacy
+      // key.
       await repository.saveAudioConfig(
         const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
       );
       expect(store.values.containsKey('audio.exclusive'), isFalse);
     });
 
-    test('round-trips the backend and ASIO driver', () async {
-      const config = StoredAudioConfig(
-        sampleRate: 48000,
-        bufferFrames: 128,
-        backend: AudioBackend.asio,
-        asioDriver: 'Focusrite USB ASIO',
-      );
-      await repository.saveAudioConfig(config);
-      final loaded = await repository.loadAudioConfig();
-      expect(loaded?.backend, AudioBackend.asio);
-      expect(loaded?.asioDriver, 'Focusrite USB ASIO');
-    });
-
-    test('defaults backend to miniaudio and driver empty when unset', () async {
-      await store.setInt('audio.sample_rate', 44100);
-      await store.setInt('audio.buffer_frames', 64);
-      final loaded = await repository.loadAudioConfig();
-      expect(loaded?.backend, AudioBackend.miniaudio);
-      expect(loaded?.asioDriver, '');
-    });
-
-    test('resolves an unknown stored backend name to miniaudio', () async {
-      // Forward-compat: a newer build may write a backend name this build does
-      // not know. It must resolve to miniaudio rather than throwing.
-      await store.setInt('audio.sample_rate', 48000);
-      await store.setInt('audio.buffer_frames', 128);
-      await store.setString('audio.backend', 'some_future_backend');
-      final loaded = await repository.loadAudioConfig();
-      expect(loaded?.backend, AudioBackend.miniaudio);
-    });
+    test(
+      'ignores the removed audio.backend and audio.asioDriver keys',
+      () async {
+        await store.setInt('audio.sample_rate', 48000);
+        await store.setInt('audio.buffer_frames', 128);
+        await store.setString('audio.backend', 'asio');
+        await store.setString('audio.asioDriver', 'Driver');
+        expect(
+          await repository.loadAudioConfig(),
+          const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+        );
+        await repository.saveAudioConfig(
+          const StoredAudioConfig(sampleRate: 44100, bufferFrames: 64),
+        );
+        expect(store.values['audio.backend'], 'asio');
+      },
+    );
 
     test(
       'ignores legacy audio.merge_to_mono / monitor_input keys on load',

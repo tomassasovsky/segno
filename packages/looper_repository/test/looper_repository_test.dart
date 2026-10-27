@@ -10,7 +10,6 @@ import 'package:looper_repository/looper_repository.dart';
 // engine-typed fixtures fed to the fake engine use the `le` prefix.
 import 'package:segno_engine/segno_engine.dart'
     hide
-        AudioBackend,
         AudioDevice,
         BuiltInEffect,
         EngineConfig,
@@ -1811,7 +1810,6 @@ void main() {
         'inputCondMask',
         'recordOffsetFrames',
         'fxAddedLatencyFrames',
-        'activeBackend',
         // Set once per reconnect, cleared by the next deliberate start: it
         // moves at human pace, like a dropout count, never per callback.
         'reopen',
@@ -2154,7 +2152,6 @@ void main() {
         ..undo()
         ..redo()
         ..clear()
-        ..measureLatency()
         ..stopEngine()
         ..setVolume(0.5)
         ..setMute(muted: true);
@@ -2174,7 +2171,6 @@ void main() {
           // The user's clear leaves a way back; only session load erases
           // outright (via the engine's plain `clear`).
           'clearUndoable',
-          'measureLatency',
           'stop',
         ]),
       );
