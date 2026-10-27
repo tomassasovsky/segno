@@ -1628,6 +1628,14 @@ static int le_handoff_waits(le_engine* engine, int32_t channel) {
   return waits;
 }
 
+/* Whether [channel]'s pending arm is a waiting handoff Record: armed as one,
+ * or a grid arm the callback turned into one because a section sounded by
+ * its top (pending_trigger 3, engine_process.c). */
+static int le_handoff_arm(le_engine* engine, int32_t channel) {
+  return engine->armed_trigger[channel] == 3 ||
+         load_i32(&engine->tracks[channel].a_pending_trigger) == 3;
+}
+
 /* Whether a Record on [channel] takes the handoff path: its own handoff arm
  * is pending (a second press cancels it), or no other trigger's arm is and
  * it would wait (le_handoff_waits; -1 when that request is refused). Another
@@ -1635,7 +1643,7 @@ static int le_handoff_waits(le_engine* engine, int32_t channel) {
  * a grid or Sound arm. */
 static int le_handoff_record(le_engine* engine, int32_t channel) {
   if (engine->armed[channel] && load_i32(&engine->tracks[channel].a_pending)) {
-    return engine->armed_trigger[channel] == 3;
+    return le_handoff_arm(engine, channel);
   }
   return le_handoff_waits(engine, channel);
 }
@@ -2171,7 +2179,7 @@ static le_record_admission le_classify_record(le_engine* e, int channel) {
   if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING) return LE_RECORD_FINISH;
   /* A second Record on a section waiting for the handoff cancels it. */
   if (e->armed[channel] && load_i32(&t->a_pending) &&
-      e->armed_trigger[channel] == 3) {
+      le_handoff_arm(e, channel)) {
     return LE_RECORD_CANCEL;
   }
   if (e->armed[channel] && load_i32(&t->a_pending) &&
@@ -2360,7 +2368,7 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
         load_i32(&t->a_pending) &&
         ((sound_arm && engine->armed_trigger[channel] == 1) ||
          (quantized_arm && engine->armed_trigger[channel] == 0) ||
-         (handoff_arm && engine->armed_trigger[channel] == 3));
+         (handoff_arm && le_handoff_arm(engine, channel)));
     if (cancelling_arm) return le_cancel_arm(engine, channel);
     return LE_ERR_INVALID;
   }
@@ -2529,7 +2537,7 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
     }
     if (engine->armed[channel]) {
       /* Reject a DIFFERENT trigger's pending arm (B3b BUG 2's rule). */
-      if (engine->armed_trigger[channel] != 3) return LE_ERR_INVALID;
+      if (!le_handoff_arm(engine, channel)) return LE_ERR_INVALID;
       engine->armed[channel] = 0;
       return le_push(engine, LE_CMD_DISARM, channel, 0.0f);
     }
