@@ -3353,9 +3353,9 @@ static void le_handoff_record_now(le_engine* e, int32_t ch, uint64_t frame) {
 
 /* LE_CMD_ARM trigger 3: a Record waiting for the handoff (le_engine_record
  * prepared it). The target may have moved since the press; with nothing
- * sounding any more it records at once, except a Band section's first take
- * on a running rig: that one waits for the primary's top, as le_engine_record
- * arms it with no other section sounding. */
+ * sounding any more it records at once, except a Band section on a running
+ * rig: its take or punch-in waits for the primary's top, on the grid Band
+ * starts every section on. */
 static void le_handoff_record_request(le_engine* e, int32_t ch,
                                       uint64_t frame) {
   le_track* t = &e->tracks[ch];
@@ -3365,8 +3365,7 @@ static void le_handoff_record_request(le_engine* e, int32_t ch,
     return;
   }
   if (!le_handoff_wait(e, ch, 1)) {
-    if (load_i32(&t->a_state) == LE_TRACK_EMPTY && le_band_section(e, ch) &&
-        !le_transport_held(e)) {
+    if (le_band_section(e, ch) && !le_transport_held(e)) {
       t->pending_record = 1;
       t->pending_trigger = 0;
       store_i32(&t->a_pending_trigger, 0);
