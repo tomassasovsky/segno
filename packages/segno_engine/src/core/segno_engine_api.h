@@ -2309,7 +2309,15 @@ LE_EXPORT int32_t le_engine_post_command(le_engine* engine, int32_t code,
  * this measurement. While it runs the harness owns the output and the
  * transport does not advance. DONE sets the record offset; TIMEOUT and
  * CANCELLED leave it unchanged. A request that arrives while a track records
- * or overdubs is CANCELLED and plays nothing.
+ * or overdubs is CANCELLED and plays nothing. A stop during the window ends it
+ * CANCELLED.
+ *
+ * A request's last state is not kept: a start publishes IDLE under it, and a
+ * restored offset (LE_CMD_SET_RECORD_OFFSET) publishes DONE under request 0,
+ * either of which can land before a poll reads the CANCELLED a stop left. So
+ * a caller treats IDLE under its own request, another request id in the word,
+ * or the device leaving as the end of its measurement, and bounds the wait
+ * with a timeout of its own.
  *
  * Returns LE_OK; LE_ERR_INVALID for an output not below the device's output
  * count, an input neither below its input count nor LE_LATENCY_LOOPBACK_INPUT
