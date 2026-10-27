@@ -2115,14 +2115,14 @@ static int32_t le_post_record_image(le_engine* e, int32_t channel,
     e->capture_seq[channel] = ++e->capture_seq_next; /* le_keep_standbys */
   }
   if (st == LE_TRACK_EMPTY) {
-    /* A grid arm and a Song or Band handoff (#1323) both start the take at
-     * its loop top. */
     /* A Band section's Sound start becomes a handoff from its loop top if a
      * section sounds by the time the signal arrives: fault in that start
      * too, before the window at the playhead the signal may start it at. */
     if (action == LE_CMD_ARM && trigger == 1.0f && le_band_section(e, channel)) {
       le_track_prefault_take(e, channel, 1);
     }
+    /* A grid arm and a Song or Band handoff (#1323) both start the take at
+     * its loop top. */
     le_track_prefault_take(e, channel, action == LE_CMD_ARM &&
                                            (trigger == 0.0f || trigger == 3.0f));
     if (fresh_shadow >= 0) le_prefault_shadow(e, channel, fresh_shadow, 0, 0, 0);
