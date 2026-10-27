@@ -231,6 +231,30 @@ class UpdateCubit extends Cubit<UpdateState> {
     if (done != null && !done.isCompleted) done.complete();
   }
 
+  /// A package installed from a USB drive (#1270 Part 8) lands in Ready to
+  /// install, as a download does.
+  void showStaged() => unawaited(_showStaged());
+
+  Future<void> _showStaged() async {
+    final current = await _updates.currentVersion();
+    final staged = await _updates.stagedVersion();
+    if (isClosed || !(staged > current)) return;
+    emit(
+      state.copyWith(
+        phase: UpdatePhase.staged,
+        available: UpdateManifest(
+          version: staged,
+          bundle: '',
+          channel: _updates.channel,
+        ),
+        currentVersion: current,
+        progress: 1,
+        clearError: true,
+        clearInterrupted: true,
+      ),
+    );
+  }
+
   /// Retries an install that was cut off: forgets the cut-off attempt, looks
   /// again, and downloads what the check offers. The check may find the
   /// build gone or superseded; it then shows what it found instead.
