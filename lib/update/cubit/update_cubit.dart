@@ -191,7 +191,9 @@ class UpdateCubit extends Cubit<UpdateState> {
                 state.copyWith(
                   phase: UpdatePhase.error,
                   errorMessage: '$error',
-                  failure: UpdateFailure.download,
+                  failure: error is BootPartitionReadOnlyException
+                      ? UpdateFailure.bootReadOnly
+                      : UpdateFailure.download,
                 ),
               );
             }

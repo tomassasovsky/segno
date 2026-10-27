@@ -4,6 +4,10 @@ import 'dart:io';
 /// how the app knows it is running on the console rather than a desktop.
 const kApplianceHelperPath = '/usr/bin/segno-update-ctl';
 
+/// The helper's `install` exit status when the boot partition is mounted
+/// read-only (`EXIT_BOOT_READ_ONLY` in `segno-update-ctl`, #1397).
+const kBootReadOnlyExitCode = 3;
+
 /// Whether this process runs on the console: Linux, with the appliance
 /// image's helper installed. The one predicate every appliance-only source
 /// (the pedal link, the power key) is gated on.
@@ -33,9 +37,10 @@ abstract interface class ApplianceEnv {
 
   /// Runs the privileged helper to download + verify + stage semver [version]
   /// (e.g. `"0.2.0"` or `"0.2.0-experimental.7"`) to the inactive slot,
-  /// emitting progress in `[0, 1]`. Throws if the helper fails. Cancelling the
-  /// subscription sends the helper SIGTERM; the cancel completes once it has
-  /// exited.
+  /// emitting progress in `[0, 1]`. Throws if the helper fails, a
+  /// `BootPartitionReadOnlyException` when it found the boot partition
+  /// read-only. Cancelling the subscription sends the helper SIGTERM; the
+  /// cancel completes once it has exited.
   Stream<double> stage(String version);
 
   /// The version of an install the helper recorded and never finished (cut

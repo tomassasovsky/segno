@@ -1014,6 +1014,99 @@ void main() {
     });
   });
 
+  group('waiting for the interface at boot (#1270 Part 5)', () {
+    test('the wait takes the strip only while nothing else holds it', () {
+      final cubit = buildCubit()..setWaitingForDevice(waiting: true);
+      addTearDown(cubit.close);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.waiting);
+
+      cubit.setWaitingForDevice(waiting: false);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
+    });
+
+    test('a failed apply during the wait gives the strip back to it', () {
+      when(() => repository.applyAudioConfig(any())).thenReturn(
+        const AudioApplyResult(
+          status: AudioApplyStatus.failed,
+          result: EngineResult.device,
+        ),
+      );
+      final cubit = buildCubit()..setWaitingForDevice(waiting: true);
+      addTearDown(cubit.close);
+
+      cubit.setBufferFrames(256);
+
+      expect(cubit.state.error, AudioSetupError.openDeviceFailed);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.waiting);
+    });
+
+    test('the awaited interface coming up ends the wait without a '
+        'reconnected notice', () async {
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(playbackDeviceId: 'out-1'),
+      );
+      final cubit = buildCubit()..setWaitingForDevice(waiting: true);
+      addTearDown(cubit.close);
+
+      stateController.add(
+        const LooperState(
+          status: EngineStatus(
+            deviceName: 'Scarlett',
+            isConnected: true,
+            devicePresent: true,
+          ),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
+    });
+
+    test('neither config opening leaves the previous one supervised: the '
+        'stage says lost, and the return clears it (D17)', () async {
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(playbackDeviceId: 'out-1'),
+      );
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      stateController.add(
+        const LooperState(
+          status: EngineStatus(
+            deviceName: 'Scarlett',
+            isConnected: true,
+            devicePresent: true,
+          ),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      when(() => repository.applyAudioConfig(any())).thenReturn(
+        const AudioApplyResult(
+          status: AudioApplyStatus.waiting,
+          result: EngineResult.device,
+        ),
+      );
+
+      cubit.setDevice(playbackDeviceId: 'b', captureDeviceId: 'b');
+
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.lost);
+      expect(cubit.state.connectivityDeviceName, 'Scarlett');
+      expect(cubit.state.error, AudioSetupError.openDeviceFailed);
+
+      // The supervisor reopens the previous config when it answers.
+      stateController.add(
+        const LooperState(
+          status: EngineStatus(
+            deviceName: 'Scarlett',
+            isConnected: true,
+            devicePresent: true,
+          ),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.restored);
+    });
+  });
+
   group('device connectivity', () {
     LooperState present({
       required bool devicePresent,

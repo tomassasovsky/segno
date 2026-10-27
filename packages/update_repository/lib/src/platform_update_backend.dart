@@ -53,7 +53,9 @@ abstract interface class PlatformUpdateBackend {
   /// Downloads [manifest]'s bundle, verifies it, and stages it to the inactive
   /// slot (appliance) or downloads it in the background (desktop). Emits
   /// progress in `[0, 1]`; completes when the update is fully staged. Throws on
-  /// verification or transport failure. Cancelling the subscription stops the
-  /// work and stages nothing; the cancel completes once it has stopped.
+  /// verification or transport failure, and throws a
+  /// `BootPartitionReadOnlyException` when the boot partition is read-only.
+  /// Cancelling the subscription stops the work and stages nothing; the
+  /// cancel completes once it has stopped.
   Stream<double> downloadAndStage(UpdateManifest manifest);
 }

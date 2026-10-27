@@ -140,23 +140,6 @@ void main() {
       expect(repo.state.status.reopen, isNull);
     });
 
-    test(
-      'when the previous config will not open either, it fails and stops',
-      () {
-        final repo = running();
-        engine.reopenResult = (
-          result: EngineResult.device,
-          outcome: ReopenOutcome.retained,
-          droppedTracks: 0,
-        );
-
-        final outcome = repo.applyAudioConfig(next);
-
-        expect(outcome.status, AudioApplyStatus.failed);
-        expect(count('reopen'), 2);
-      },
-    );
-
     test('a failed attempt that cleared the loops is told even when the '
         'previous config comes back', () {
       final repo = running();
@@ -270,6 +253,184 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(repo.state.status.reopen?.outcome, ReopenOutcome.clearedRate);
+    });
+  });
+
+  group('neither config opens (D17)', () {
+    test('a pinned previous config stays pinned and supervised', () async {
+      final reconnect = StreamController<void>.broadcast();
+      addTearDown(reconnect.close);
+      final repo = LooperRepository(
+        engine: engine,
+        ticker: ticker.stream,
+        reconnectTicker: reconnect.stream,
+      );
+      addTearDown(repo.dispose);
+      expect(repo.startEngine(previous), EngineResult.ok);
+      engine
+        ..calls.clear()
+        ..reopenResult = (
+          result: EngineResult.device,
+          outcome: ReopenOutcome.retained,
+          droppedTracks: 0,
+        );
+
+      final outcome = repo.applyAudioConfig(next);
+
+      expect(outcome.status, AudioApplyStatus.waiting);
+      expect(repo.lastEngineConfig, previous);
+      expect(count('reopen'), 2);
+
+      // The stopped engine reads the interface absent: the poll keeps the
+      // supervisor armed rather than standing it down.
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(devicePresent: false);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      // The interface answers: the supervisor reopens the previous config,
+      // as after an unplug.
+      engine
+        ..devices = const [pinnedDevice]
+        ..reopenResult = (
+          result: EngineResult.ok,
+          outcome: ReopenOutcome.retained,
+          droppedTracks: 0,
+        );
+      reconnect.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(count('reopen'), 3);
+      expect(engine.lastConfig?.bufferFrames, 128);
+      expect(repo.sessionTransport.deviceRunning, isTrue);
+    });
+
+    test('an apply during an unplug arms one poll, not a second one', () async {
+      final reconnect = StreamController<void>.broadcast();
+      addTearDown(reconnect.close);
+      final repo = LooperRepository(
+        engine: engine,
+        ticker: ticker.stream,
+        reconnectTicker: reconnect.stream,
+      );
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      expect(repo.startEngine(previous), EngineResult.ok);
+      // Unplugged: the supervisor arms.
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(devicePresent: false);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      // The player opens setup and applies; nothing opens.
+      engine.reopenResult = (
+        result: EngineResult.device,
+        outcome: ReopenOutcome.retained,
+        droppedTracks: 0,
+      );
+      expect(repo.applyAudioConfig(next).status, AudioApplyStatus.waiting);
+      engine.calls.clear();
+
+      // The interface returns: ONE reopen.
+      engine
+        ..devices = const [pinnedDevice]
+        ..reopenResult = (
+          result: EngineResult.ok,
+          outcome: ReopenOutcome.retained,
+          droppedTracks: 0,
+        )
+        ..nextSnapshot = engine.nextSnapshot.copyWith(devicePresent: true);
+      reconnect.add(null);
+      await Future<void>.delayed(Duration.zero);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(count('reopen'), 1);
+
+      // A later change to the device list reopens nothing: no orphaned
+      // poll is left to act on it.
+      engine.devices = const [pinnedDevice, otherDevice];
+      reconnect.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(count('reopen'), 1);
+    });
+
+    test(
+      'a clear either attempt made is told when the interface comes back',
+      () async {
+        final reconnect = StreamController<void>.broadcast();
+        addTearDown(reconnect.close);
+        final repo = LooperRepository(
+          engine: engine,
+          ticker: ticker.stream,
+          reconnectTicker: reconnect.stream,
+        );
+        addTearDown(repo.dispose);
+        expect(repo.startEngine(previous), EngineResult.ok);
+        engine.reopenResult = (
+          result: EngineResult.device,
+          outcome: ReopenOutcome.clearedRate,
+          droppedTracks: 0,
+        );
+        expect(repo.applyAudioConfig(next).status, AudioApplyStatus.waiting);
+
+        engine
+          ..devices = const [pinnedDevice]
+          ..reopenResult = (
+            result: EngineResult.ok,
+            outcome: ReopenOutcome.retained,
+            droppedTracks: 0,
+          );
+        reconnect.add(null);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(repo.state.status.reopen?.outcome, ReopenOutcome.clearedRate);
+      },
+    );
+
+    test('a replay that rolls back is not supervised over folded history', () {
+      final repo = running();
+      // The new config is refused; the previous one opens but its replay
+      // rolls back.
+      engine.reopenResult = (
+        result: EngineResult.device,
+        outcome: ReopenOutcome.retained,
+        droppedTracks: 0,
+      );
+      var reopens = 0;
+      engine.afterSnapshot = () {
+        if (count('reopen') > reopens) {
+          reopens = count('reopen');
+          engine
+            ..reopenResult = (
+              result: EngineResult.ok,
+              outcome: ReopenOutcome.retained,
+              droppedTracks: 0,
+            )
+            ..mixResult = EngineResult.invalid;
+        }
+      };
+
+      final outcome = repo.applyAudioConfig(next);
+
+      expect(outcome.status, AudioApplyStatus.failed);
+      expect(repo.sessionTransport.deviceRunning, isFalse);
+    });
+
+    test('the system default is not supervised: it fails and stops', () {
+      const unpinned = EngineConfig(sampleRate: 48000, bufferFrames: 128);
+      final repo = LooperRepository(engine: engine, ticker: ticker.stream);
+      addTearDown(repo.dispose);
+      expect(repo.startEngine(unpinned), EngineResult.ok);
+      engine.reopenResult = (
+        result: EngineResult.device,
+        outcome: ReopenOutcome.retained,
+        droppedTracks: 0,
+      );
+
+      final outcome = repo.applyAudioConfig(
+        const EngineConfig(sampleRate: 48000, bufferFrames: 256),
+      );
+
+      expect(outcome.status, AudioApplyStatus.failed);
+      expect(repo.sessionTransport.deviceRunning, isFalse);
     });
   });
 

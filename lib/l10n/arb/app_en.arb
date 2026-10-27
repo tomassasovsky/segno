@@ -35,6 +35,15 @@
     "@deviceLostBanner": {
         "description": "Standing red banner on the stage while the pinned audio interface is absent — the engine is stopped (pen: STAGE / device-lost)."
     },
+    "deviceLostNamedBanner": "{device} disconnected — nothing is heard. Audio restarts when it is back.",
+    "@deviceLostNamedBanner": {
+        "description": "Standing red banner on the stage, and its echo on the 7\" readout, while the pinned audio interface is absent and its name is known; audio restarts on its own when it returns (#1270 Part 5).",
+        "placeholders": {
+            "device": {
+                "type": "String"
+            }
+        }
+    },
     "deviceLostBannerAction": "Open setup",
     "@deviceLostBannerAction": {
         "description": "Inline action on the device-lost banner — opens the tray's Audio domain on the Device tab."
@@ -6773,6 +6782,10 @@
     "@updatesPageDownloadFailed": {
         "description": "Updates page status sentence when the download or install failed."
     },
+    "updatesPageBootReadOnly": "The boot partition is read-only, so the update cannot be installed. Restart the console to repair it, then try again. The current software is unchanged.",
+    "@updatesPageBootReadOnly": {
+        "description": "Updates page status sentence when the install was refused because the boot partition is read-only (usually after a power cut). The boot-time check repairs it on restart."
+    },
     "updatesPageInterrupted": "Download interrupted. The current software is unchanged.",
     "@updatesPageInterrupted": {
         "description": "Updates page status sentence when an install was cut off by a crash or power loss."
@@ -6793,6 +6806,10 @@
     "updatesPageInstallRestart": "Install and restart",
     "@updatesPageInstallRestart": {
         "description": "Updates page button that restarts into the staged build through the power flow."
+    },
+    "updatesPageRestart": "Restart",
+    "@updatesPageRestart": {
+        "description": "Updates page button that restarts the console through the power flow, so the boot-time check repairs a read-only boot partition."
     },
     "updatesPageRetry": "Retry",
     "@updatesPageRetry": {
