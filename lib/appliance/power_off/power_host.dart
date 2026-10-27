@@ -29,6 +29,8 @@ PowerSnapshot currentPowerSnapshot(BuildContext context) => powerSnapshotOf(
   // of the Storage page's reads.
   transferInFlight:
       _maybeRead<StorageRepository>(context)?.transferInFlight ?? false,
+  updateInFlight:
+      _maybeRead<UpdateCubit>(context)?.state.installInFlight ?? false,
 );
 
 /// Saves the open named session through [SessionCubit], throwing when the

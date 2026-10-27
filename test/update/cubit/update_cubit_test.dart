@@ -742,4 +742,52 @@ void main() {
       verify: (_) => verify(() => updates.setChannel('experimental')).called(1),
     );
   });
+
+  group('installInFlight', () {
+    blocTest<UpdateCubit, UpdateState>(
+      'holds while a download runs and ends when it stages',
+      seed: () => UpdateState(available: _v2),
+      setUp: () => when(
+        () => updates.downloadAndStage(_v2),
+      ).thenAnswer((_) => Stream.fromIterable([0.5])),
+      build: build,
+      act: (cubit) => cubit.startDownload(),
+      expect: () => [
+        isA<UpdateState>().having((s) => s.installInFlight, 'in flight', true),
+        isA<UpdateState>().having((s) => s.installInFlight, 'in flight', true),
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.staged)
+            .having((s) => s.installInFlight, 'in flight', false),
+      ],
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'ends when the download fails',
+      seed: () => UpdateState(available: _v2),
+      setUp: () => when(
+        () => updates.downloadAndStage(_v2),
+      ).thenAnswer((_) => Stream.error(Exception('sha mismatch'))),
+      build: build,
+      act: (cubit) => cubit.startDownload(),
+      expect: () => [
+        isA<UpdateState>().having((s) => s.installInFlight, 'in flight', true),
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.error)
+            .having((s) => s.installInFlight, 'in flight', false),
+      ],
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'holds while a USB package is copied or installed, staged or not',
+      seed: () => UpdateState(phase: UpdatePhase.staged, available: _v2),
+      build: build,
+      act: (cubit) => cubit
+        ..setUsbInstalling(working: true)
+        ..setUsbInstalling(working: false),
+      expect: () => [
+        isA<UpdateState>().having((s) => s.installInFlight, 'in flight', true),
+        isA<UpdateState>().having((s) => s.installInFlight, 'in flight', false),
+      ],
+    );
+  });
 }
