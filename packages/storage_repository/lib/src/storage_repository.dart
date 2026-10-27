@@ -718,11 +718,13 @@ class StorageRepository implements ActiveOperationSource {
   /// part is deleted: `volumeLost` when the volume goes away during the
   /// copy, `full` (ENOSPC), `busy` when the guard table refuses it, `io` for
   /// the rest. Parts a crash left are swept by the first copy into the
-  /// directory.
+  /// directory. When [cancelled] turns true the copy stops at its next write,
+  /// deletes its part and fails `io`.
   Future<String> copyUpdatePackage({
     required int generation,
     required String sourcePath,
     required String stagingDirectory,
+    bool Function()? cancelled,
   }) async {
     final source = acquire(
       StorageDestination.removable(generation),
@@ -741,8 +743,10 @@ class StorageRepository implements ActiveOperationSource {
         _liveParts.add(part.path);
         try {
           _sweepStaleParts(directory);
-          await _copyBytes(File(sourcePath), part, () => source.isLost);
+          bool stop() => source.isLost || (cancelled?.call() ?? false);
+          await _copyBytes(File(sourcePath), part, stop);
           if (source.isLost) throw StorageFailure.volumeLost(generation);
+          if (stop()) throw const StorageFailure.io('cancelled');
           final written = '${directory.path}/$name';
           part.renameSync(written);
           _io.syncDirectory(directory.path);
@@ -761,6 +765,9 @@ class StorageRepository implements ActiveOperationSource {
         } on FileSystemException catch (e) {
           _discard(part);
           if (source.isLost) throw StorageFailure.volumeLost(generation);
+          if (cancelled?.call() ?? false) {
+            throw const StorageFailure.io('cancelled');
+          }
           throw await _classify(e, const StorageDestination.internal(), target);
         } finally {
           _liveParts.remove(part.path);
