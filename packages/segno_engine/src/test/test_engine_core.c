@@ -31735,6 +31735,54 @@ static void test_band_handoff_keeps_a_stopped_primary_stopped(void) {
   le_engine_destroy(e);
 }
 
+/* The Band section toggle (le_engine_toggle_section, trigger 2) keeps one
+ * section too (#1323): fired on the primary's top while another section
+ * sounds, the start waits for that section's end. */
+static void test_band_section_toggle_waits_for_the_sounding_section(void) {
+  printf("test_band_section_toggle_waits_for_the_sounding_section\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
+  drain(e);
+  sb_make_primary(e, 1.0f);
+  sb_arm_and_start(e, 2);
+  process_const(e, 3.0f, SB_BASE, out);
+  le_engine_record(e, 2); /* one base loop */
+  drain(e);
+  CHECK(le_engine_stop_track(e, 2) == LE_OK);
+  drain(e);
+  sb_arm_and_start(e, 1);
+  process_const(e, 2.0f, 2 * SB_BASE, out);
+  le_engine_record(e, 1); /* two base loops */
+  drain(e);
+  CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_PLAYING);
+  process_const(e, 0.0f, 3, out);
+  CHECK(le_engine_toggle_section(e, 2) == LE_OK);
+  drain(e);
+  while (e->clock.position != 0) tg_advance(e, 1);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  /* Section 1 has a second loop to play: section 2 waits for its end. */
+  if (s.tracks[1].state == LE_TRACK_PLAYING) {
+    CHECK(s.tracks[2].state == LE_TRACK_STOPPED);
+    CHECK(s.song_queued_track == 2);
+  }
+  int frames = 0;
+  while (load_i32(&e->tracks[2].a_state) == LE_TRACK_STOPPED &&
+         frames < 4 * SB_BASE) {
+    CHECK(!(load_i32(&e->tracks[1].a_state) == LE_TRACK_PLAYING &&
+            load_i32(&e->tracks[2].a_state) == LE_TRACK_PLAYING));
+    tg_advance(e, 1);
+    ++frames;
+  }
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  le_engine_destroy(e);
+}
+
 /* Band, more of the one-section rule (#1323):
  * - a quantized overdub on the sounding section keeps the waiting request,
  *   and the handoff drops that arm if it has not fired;
@@ -31764,6 +31812,13 @@ static void test_band_handoff_grid_arms_and_closing_takes(void) {
     le_engine_get_snapshot(e, &s);
     CHECK(s.song_queued_track == 2 && s.song_queue_record == 1);
     CHECK(s.tracks[1].pending == 1 && s.tracks[1].pending_trigger == 0);
+    CHECK(le_engine_record(e, 1) == LE_OK); /* cancels the overdub arm */
+    drain(e);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[1].pending == 0);
+    CHECK(s.song_queued_track == 2 && s.song_queue_record == 1);
+    CHECK(le_engine_record(e, 1) == LE_OK); /* and arms it again */
+    drain(e);
     int frames = 0;
     while (load_i32(&e->tracks[2].a_state) == LE_TRACK_EMPTY &&
            frames < 4 * SB_BASE) {
@@ -40421,6 +40476,7 @@ int main(void) {
   test_band_one_section_handoff();
   test_band_handoff_overdub_once_and_hold();
   test_band_handoff_grid_arms_and_closing_takes();
+  test_band_section_toggle_waits_for_the_sounding_section();
   test_band_handoff_keeps_a_stopped_primary_stopped();
   test_band_section_toggle_rejected_when_primary_not_established();
   test_band_section_pending_toggle_survives_record_press();
