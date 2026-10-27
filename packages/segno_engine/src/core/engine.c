@@ -1752,6 +1752,13 @@ int32_t le_engine_stop(le_engine* engine) {
   }
   engine->device_name[0] = '\0';
   le_song_cancel(engine);
+  /* A measurement the stop cut short ends CANCELLED: a device that left stops
+   * its callback, so the frame-side loss check never runs. The callback is
+   * gone, so the control thread owns the latency fields here. */
+  if (engine->lat_active) {
+    engine->lat_active = 0;
+    le_latency_publish(engine, LE_LATENCY_CANCELLED);
+  }
   atomic_store_explicit(&engine->a_device_present, 0, memory_order_release);
   atomic_store_explicit(&engine->a_running, 0, memory_order_release);
   /* Settle every DISABLED fx slot's enable ramp at bypass now that the audio

@@ -261,6 +261,35 @@ void main() {
       expect(engine.snapshot().latencyRequest, 3);
     });
 
+    test('a jack the interface has not got is refused', () {
+      engine.start(engine.defaultConfig);
+      for (final (output, input) in [
+        (-1, 0),
+        (engine.outputChannels, 0),
+        (0, -1),
+        (0, engine.inputChannels),
+      ]) {
+        expect(
+          engine.measureLatencyPath(
+            output: output,
+            input: input,
+            amplitude: 0.25,
+            request: 1,
+          ),
+          EngineResult.invalid,
+        );
+      }
+      expect(
+        engine.measureLatencyPath(
+          output: 0,
+          input: latencyLoopbackInput,
+          amplitude: 0.25,
+          request: 1,
+        ),
+        EngineResult.ok,
+      );
+    });
+
     test('an amplitude outside (0, 0.5] is refused', () {
       engine.start(engine.defaultConfig);
       for (final amplitude in [0.0, 0.6]) {

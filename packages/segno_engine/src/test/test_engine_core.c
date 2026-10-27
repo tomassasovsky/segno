@@ -9181,6 +9181,53 @@ static void test_latency_path_never_over_a_take(void) {
   le_engine_destroy(e);
 }
 
+/* A take armed on sound waits out a measurement: the burst's echo on its
+ * input does not start it. */
+static void test_latency_path_holds_a_sound_arm(void) {
+  printf("test_latency_path_holds_a_sound_arm\n");
+  enum { SR = 48000, RET = 150, CAP = SR / 10 };
+  le_engine* e = latency_engine();
+  CHECK(record_start_sound(e, 1) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].pending == 1);
+  CHECK(le_engine_measure_latency_path(e, 1, 0, 0.25f, 7) == LE_OK);
+  drain(e);
+  latency_echo(e, CAP, 1, 0, RET, NULL);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_DONE && s.latency_request == 7u);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].pending == 1);
+  le_engine_destroy(e);
+}
+
+/* A restored offset during a measurement does not report DONE for it; one
+ * after it is published under request 0, never relabelling a TIMEOUT. */
+static void test_latency_path_restored_offset(void) {
+  printf("test_latency_path_restored_offset\n");
+  enum { SR = 48000, RET = 150, CAP = SR / 10 };
+  le_engine* e = latency_engine();
+  CHECK(le_engine_measure_latency_path(e, 1, 0, 0.25f, 8) == LE_OK);
+  drain(e);
+  latency_echo(e, 100, 1, 0, RET, NULL);
+  CHECK(le_engine_set_record_offset(e, 77) == LE_OK);
+  latency_echo(e, 1, 1, 0, RET, NULL);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_MEASURING && s.latency_request == 8u);
+  latency_echo(e, CAP, 1, 1, RET, NULL); /* the echo never reaches input 0 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_TIMEOUT && s.latency_request == 8u);
+  CHECK(le_engine_set_record_offset(e, 99) == LE_OK);
+  latency_echo(e, 1, 1, 0, RET, NULL);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_DONE && s.latency_request == 0u);
+  CHECK(s.record_offset_frames == 99);
+  le_engine_destroy(e);
+}
+
 /* Regression: an empty input mask records silence even with a hot input bus.
  * (The single-channel-only case is covered by test_routing_input_mask.) */
 static void test_routing_input_mask_empty_records_silence(void) {
@@ -39056,6 +39103,7 @@ int main(void) {
   test_reopen_fewer_channels_keeps_material();
   test_reopen_device_lifecycle();
   test_reopen_keep_material_refuses_a_clear();
+  test_stop_cancels_a_measurement();
   test_reopen_ends_performance_capture();
   test_session_commit_stays_stopped_until_play();
   test_fade_clear_boundary();
@@ -39557,6 +39605,8 @@ int main(void) {
   test_latency_path_validates();
   test_latency_path_cancel();
   test_latency_path_never_over_a_take();
+  test_latency_path_holds_a_sound_arm();
+  test_latency_path_restored_offset();
   test_loopback_latency_weak_echo_and_silence();
   test_set_record_offset_publishes_latency();
   test_fx_bypass_is_transparent();
