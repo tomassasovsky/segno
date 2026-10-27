@@ -3118,7 +3118,7 @@ void main() {
         );
       });
 
-      test('Stop cancels an empty section waiting to record', () {
+      test('Stop cancels an empty section waiting to record, and stops it', () {
         setEngine(
           _tracksWith(const [
             Track(state: TrackState.playing, lengthFrames: 48000),
@@ -3133,7 +3133,8 @@ void main() {
           ..stop();
         verify(() => looper.stopTrack()).called(1);
         verify(() => looper.cancelArm(channel: 1)).called(1);
-        verifyNever(() => looper.stopTrack(channel: 1));
+        // Stopped too, in case the handoff started the take first.
+        verify(() => looper.stopTrack(channel: 1)).called(1);
       });
 
       test("Band's Stop stops the section waiting to start", () {
