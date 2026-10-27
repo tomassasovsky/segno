@@ -109,7 +109,12 @@ List<AudioInterface> audioInterfacesOf(
   if (!present && (playbackId.isNotEmpty || captureId.isNotEmpty)) {
     devices.add(
       AudioInterface(
-        name: state.connectivityDeviceName.isNotEmpty
+        // The last name it answered to, when it is the running pin: a drafted
+        // interface that left never had that name.
+        name:
+            state.connectivityDeviceName.isNotEmpty &&
+                playbackId == state.playbackDeviceId &&
+                captureId == state.captureDeviceId
             ? state.connectivityDeviceName
             : (playbackId.isNotEmpty ? playbackId : captureId),
         playbackId: playbackId,

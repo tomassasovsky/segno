@@ -263,7 +263,14 @@ class _Header extends StatelessWidget {
       captureId: shown.captureDeviceId,
     );
     final status = state.engineStatus;
-    final present = status.isConnected && status.devicePresent;
+    // The pill speaks for the interface the header names: the running one,
+    // or a drafted one, which is there when the host lists it.
+    final drafted =
+        shown.playbackDeviceId != state.playbackDeviceId ||
+        shown.captureDeviceId != state.captureDeviceId;
+    final present = drafted
+        ? current != null && !current.absent
+        : status.isConnected && status.devicePresent;
     final name =
         current?.name ??
         (status.deviceName.isNotEmpty ? status.deviceName : l10n.systemDefault);
@@ -316,7 +323,7 @@ class _Header extends StatelessWidget {
               key: const Key('device_change_interface'),
               width: 233,
               label: l10n.deviceChangeInterface,
-              onTap: () => unawaited(_chooseInterface(context, devices)),
+              onTap: () => unawaited(_chooseInterface(context)),
             ),
           ),
         ],
@@ -325,49 +332,69 @@ class _Header extends StatelessWidget {
   }
 
   /// The interface list as a dialog: a choice is drafted, not applied.
-  Future<void> _chooseInterface(
-    BuildContext context,
-    List<AudioInterface> devices,
-  ) async {
+  /// The interface list as a dialog that follows the host's list while it is
+  /// open: a choice is drafted, not applied.
+  Future<void> _chooseInterface(BuildContext context) async {
     final cubit = context.read<AudioSetupCubit>();
-    final shown = cubit.state.shown;
-    final current = pinnedAudioInterface(
-      devices,
-      playbackId: shown.playbackDeviceId,
-      captureId: shown.captureDeviceId,
-    );
-    final l10n = context.l10n;
     final chosen = await showDialog<AudioInterface>(
       context: context,
       barrierColor: context.surface.scrim,
-      builder: (dialogContext) => Center(
-        child: ConsoleDialogShell(
-          key: const Key('device_interface_dialog'),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (final (index, device) in devices.indexed)
-                ConsolePickRow(
-                  key: Key('audio_device_option_$index'),
-                  title: device.name,
-                  state: device.absent
-                      ? l10n.audioDeviceUnplugged
-                      : audioChannelCounts(l10n, device),
-                  dimmed: device.absent,
-                  selected: device == current,
-                  showDivider: index < devices.length - 1,
-                  onTap: () => Navigator.of(dialogContext).pop(device),
-                ),
-            ],
-          ),
-        ),
-      ),
+      builder: (_) =>
+          BlocProvider.value(value: cubit, child: const _InterfaceDialog()),
     );
     if (chosen == null) return;
     cubit.editDevice(
       playbackDeviceId: chosen.playbackId,
       captureDeviceId: chosen.captureId,
+    );
+  }
+}
+
+class _InterfaceDialog extends StatelessWidget {
+  const _InterfaceDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final state = context.watch<AudioSetupCubit>().state;
+    final shown = state.shown;
+    final devices = audioInterfacesOf(
+      state,
+      playbackId: shown.playbackDeviceId,
+      captureId: shown.captureDeviceId,
+    );
+    final current = pinnedAudioInterface(
+      devices,
+      playbackId: shown.playbackDeviceId,
+      captureId: shown.captureDeviceId,
+    );
+    return DeviceDialog(
+      key: const Key('device_interface_dialog'),
+      title: l10n.deviceChangeInterface,
+      content: [
+        const SizedBox(height: 24),
+        for (final (index, device) in devices.indexed)
+          ConsolePickRow(
+            key: Key('audio_device_option_$index'),
+            title: device.name,
+            state: device.absent
+                ? l10n.audioDeviceUnplugged
+                : audioChannelCounts(l10n, device),
+            dimmed: device.absent,
+            selected: device == current,
+            showDivider: index < devices.length - 1,
+            onTap: () => Navigator.of(context).pop(device),
+          ),
+      ],
+      actions: [
+        LoopOutlinedButton(
+          key: const Key('device_interface_cancel'),
+          width: 125,
+          label: l10n.cancel,
+          autofocus: true,
+          onTap: () => Navigator.of(context).pop(),
+        ),
+      ],
     );
   }
 }
