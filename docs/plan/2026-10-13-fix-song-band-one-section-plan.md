@@ -87,7 +87,8 @@ and the User Guide v1.0.0 (§3.1, §4.2):
 
 - Stage: the existing queued cue for both kinds: Play at the loop start, or
   Record / Overdub at the loop start.
-- Pedal, Record mode only: the waiting section's pill fills left to right in
+- Pedal, Record mode (and, since 2026-10-27, Band's Mute mode): the waiting
+  section's pill fills left to right in
   the Record map's playing colour for a waiting Play and its recording colour
   for a waiting Record, on the cursor too (owner decision 2026-10-13).
 - Board: while queued, every lit pixel of the pill has the same level, the
@@ -160,8 +161,9 @@ behaviour changes, record every decision). Each goes into the PR body and on
 
 1. Engine (`packages/segno_engine/src/core`):
    - `engine_private.h`, `engine_core.h`: the request gains a kind
-     (`song_record`) and an edge latch for Band; `le_song_cancel` also
-     clears a waiting Record arm. The published word carries the kind
+     (`song_record`) and an edge latch for Band; a dropped Record's arm is
+     cleared by `le_handoff_drop` at once, or by `le_song_publish` at the
+     end of the block. The published word carries the kind
      (bit 7 of the low byte); `le_snapshot.song_queue_record` is a new
      trailing field.
    - `engine_commands.c` `le_record_impl`: in Song, and in Band for a
@@ -212,7 +214,8 @@ SUCCESS CRITERIA:
 NON-GOALS:
 - The 34-LED ring (PR #1320); RING_N stays 40.
 - Removing le_engine_toggle_section (#1324).
-- Band Mute-mode changes.
+- Band Mute-mode rule changes beyond showing and cancelling a waiting
+  section and holding one section in the parked resume set (2026-10-27).
 
 VERIFICATION COMMAND: bash firmware/test/run_tests.sh && bash packages/segno_engine/src/test/run_native_tests.sh && /Users/Tomas/development/flutter/bin/flutter test test/control && dart analyze
 ```

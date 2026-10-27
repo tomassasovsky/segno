@@ -3218,6 +3218,22 @@ static void le_handoff_disarm(le_engine* e, int32_t ch) {
   store_i32(&t->a_pending, 0);
 }
 
+/* Song keeps a clock per section (free_clock), and a section whose clock
+ * never got a length never reaches a lap edge: a request may neither wait
+ * on such a source nor start such a target (a stopped one with a take).
+ * Band sections share the primary's clock. */
+static int le_song_clocks_ok(le_engine* e, int32_t source, int32_t target) {
+  if (load_i32(&e->a_looper_mode) != LE_LOOPER_MODE_SONG) return 1;
+  le_track* s = &e->tracks[source];
+  le_track* t = &e->tracks[target];
+  const int32_t sst = load_i32(&s->a_state);
+  if ((sst == LE_TRACK_PLAYING || sst == LE_TRACK_OVERDUBBING) &&
+      s->free_clock.length <= 0) {
+    return 0;
+  }
+  return load_i32(&t->a_state) != LE_TRACK_STOPPED || t->free_clock.length > 0;
+}
+
 /* Drops the waiting request and, for a Record, its arm at once, so nothing
  * later in the block reads the dropped Record as a live arm. */
 static void le_handoff_drop(le_engine* e) {
@@ -3300,6 +3316,7 @@ static int le_song_queue_valid(le_engine* e) {
          (!e->song_record || (t->pending_record && t->pending_trigger == 3)) &&
          (!e->song_record ||
           !le_capture_refused(e, target, load_i32(&t->a_state))) &&
+         le_song_clocks_ok(e, source, target) &&
          !le_handoff_capture_elsewhere(e, source);
   }
   if (!ok) le_song_cancel(e);
@@ -3346,6 +3363,11 @@ static void handle_section_play(le_engine* e, int32_t ch, uint64_t frame) {
   const int32_t state = load_i32(&target->a_state);
   if (load_i32(&target->lanes[0].a_len) <= 0 ||
       (state != LE_TRACK_STOPPED && state != LE_TRACK_PLAYING)) {
+    return;
+  }
+  /* A Song section with no clock of its own could never end its lap. */
+  if (load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_SONG &&
+      target->free_clock.length <= 0) {
     return;
   }
   if (state == LE_TRACK_PLAYING) {
