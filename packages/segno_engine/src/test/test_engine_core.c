@@ -32010,21 +32010,34 @@ static void test_band_handoff_grid_arms_and_closing_takes(void) {
     drain(e);
     CHECK(le_engine_stop_track(e, 2) == LE_OK);
     drain(e);
-    sb_arm_and_start(e, 1); /* section 1's first take, from a top */
+    /* Section 1's first take, from a top, with a fixed multiple of one: it
+     * closes by itself on the next top, the frame its lap edge also reads,
+     * so the handoff must not take that edge as the take's end. */
+    CHECK(le_engine_set_track_multiple(e, 1, 1) == LE_OK);
+    drain(e);
+    sb_arm_and_start(e, 1);
     CHECK(le_engine_play(e, 2) == LE_OK); /* waits for it */
     drain(e);
     le_engine_get_snapshot(e, &s);
     CHECK(s.song_queued_track == 2 && s.song_queue_record == 0);
-    process_const(e, 2.0f, SB_BASE, out);
-    le_engine_record(e, 1); /* closes on the top */
-    drain(e);
-    int played = 0;
-    while (load_i32(&e->tracks[1].a_state) != LE_TRACK_STOPPED &&
-           played < 4 * SB_BASE) {
-      if (load_i32(&e->tracks[1].a_state) == LE_TRACK_PLAYING) ++played;
-      tg_advance(e, 1);
+    int frames = 0;
+    while (load_i32(&e->tracks[1].a_state) == LE_TRACK_RECORDING &&
+           frames < 2 * SB_BASE) {
+      process_const(e, 2.0f, 1, out);
+      ++frames;
     }
-    CHECK(played >= SB_BASE - 1);
+    CHECK(frames == SB_BASE); /* closed by itself on the top */
+    CHECK(e->clock.position == 0);
+    /* The closed take sounds a whole lap before section 2 replaces it. */
+    int sounded = 0;
+    while ((load_i32(&e->tracks[1].a_state) == LE_TRACK_PLAYING ||
+            load_i32(&e->tracks[1].a_state) == LE_TRACK_OVERDUBBING) &&
+           sounded < 4 * SB_BASE) {
+      tg_advance(e, 1);
+      ++sounded;
+    }
+    CHECK(sounded == SB_BASE);
+    CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_STOPPED);
     CHECK(load_i32(&e->tracks[2].a_state) == LE_TRACK_PLAYING);
     le_engine_destroy(e);
   }
