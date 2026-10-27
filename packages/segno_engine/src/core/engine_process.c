@@ -5366,7 +5366,11 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       /* An explicitly set offset (a restored measurement, or a manual override)
        * is a known round-trip, so publish it as a completed measurement — the
        * UI then shows the loaded latency instead of "not measured". */
-      if (frames > 0) {
+      /* Not while a measurement runs: DONE would carry that request with a
+       * figure it did not measure. A restored figure belongs to no request,
+       * so it is published under request 0. */
+      if (frames > 0 && !e->lat_active) {
+        e->lat_request = 0;
         const int32_t osr = e->sample_rate > 0 ? e->sample_rate : 48000;
         atomic_store_explicit(
             &e->a_latency_ms_bits,
@@ -7678,8 +7682,10 @@ static inline int process_input_frame(le_engine* e, const float* in,
   /* Signal arms listen only to their selected, real recording sources. Input
    * conditioning precedes this buffer; meters/latency above remain raw. Never
    * substitute input zero when a route disappears. Cancellation remains a
-   * control action even when no selected source is currently usable. */
-  for (int qt = 0; qt < tc; ++qt) {
+   * control action even when no selected source is currently usable. While a
+   * latency measurement runs the arms wait: its burst and echo are not the
+   * player (#1270 D3). */
+  for (int qt = 0; qt < tc && !e->lat_active; ++qt) {
     le_track* t = &e->tracks[qt];
     if (!t->pending_record || t->pending_trigger != 1) continue;
     float magnitude = 0.0f;

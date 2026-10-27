@@ -1084,13 +1084,66 @@ static void test_reopen_keep_material_refuses_a_clear(void) {
   CHECK(s.master_length_frames == LOOP_N);
   reopen_check_const(e, 0, 1.5f, LOOP_N);
 
-  /* The same reopen without the flag clears, as it always did. */
+  /* Another loop cap is refused the same way. */
+  fake_rate = 48000;
+  cfg.max_loop_frames = 2000;
+  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL) == LE_ERR_WOULD_CLEAR);
+  CHECK(outcome == LE_REOPEN_CLEARED_CAP);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.running == 0);
+  CHECK(s.tracks[0].undo_depth == undo_before);
+  reopen_check_const(e, 0, 1.5f, LOOP_N);
+
+  /* What the repository does next: the previous config, with the flag,
+   * retains the material and leaves the tracks stopped. */
+  cfg.max_loop_frames = 1000;
+  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL) == LE_OK);
+  CHECK(outcome == LE_REOPEN_RETAINED);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.running == 1);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[0].undo_depth == undo_before);
+  reopen_check_const(e, 0, 1.5f, LOOP_N);
+  CHECK(le_engine_stop(e) == LE_OK);
+
+  /* The same rate change without the flag clears, as it always did. */
+  fake_rate = 44100;
   cfg.keep_material = 0;
   CHECK(le_engine_reopen(e, &cfg, &outcome, NULL) == LE_OK);
   CHECK(outcome == LE_REOPEN_CLEARED_RATE);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
   CHECK(le_engine_stop(e) == LE_OK);
+  le_engine_destroy(e);
+  le_test_backend_override = NULL;
+}
+
+/* A device that leaves stops its callback, so the frame-side loss check
+ * never runs: the stop itself ends the measurement CANCELLED (#1270). */
+static void test_stop_cancels_a_measurement(void) {
+  printf("test_stop_cancels_a_measurement\n");
+  le_test_backend_override = &fake_backend;
+  fake_open_result = LE_OK;
+  fake_start_result = LE_OK;
+  fake_rate = 48000;
+  le_config cfg = {0};
+  cfg.sample_rate = 48000;
+  cfg.input_channels = 1;
+  cfg.output_channels = 1;
+  cfg.max_loop_frames = 1000;
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_start(e, &cfg) == LE_OK);
+  CHECK(le_engine_set_record_offset(e, 77) == LE_OK);
+  CHECK(le_engine_measure_latency_path(e, 0, 0, 0.25f, 5) == LE_OK);
+  float out[64];
+  process_const(e, 0.0f, 64, out);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_MEASURING && s.latency_request == 5u);
+  CHECK(le_engine_stop(e) == LE_OK);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_CANCELLED && s.latency_request == 5u);
+  CHECK(s.record_offset_frames == 77);
   le_engine_destroy(e);
   le_test_backend_override = NULL;
 }

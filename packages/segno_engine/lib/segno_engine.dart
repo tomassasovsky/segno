@@ -32,7 +32,8 @@ export 'src/audio_engine.dart'
         ReopenResult,
         RequestAdmission,
         SessionIo,
-        TempoControl;
+        TempoControl,
+        latencyLoopbackInput;
 export 'src/audition.dart'
     show AuditionStart, AuditionState, kAuditionMaxSeconds;
 export 'src/backing.dart'

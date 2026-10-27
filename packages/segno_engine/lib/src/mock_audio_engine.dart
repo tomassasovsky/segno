@@ -686,6 +686,11 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     required int request,
   }) {
     if (!_running) return EngineResult.notRunning;
+    if (output < 0 || output >= outputChannels) return EngineResult.invalid;
+    if (input != latencyLoopbackInput &&
+        (input < 0 || input >= inputChannels)) {
+      return EngineResult.invalid;
+    }
     if (amplitude <= 0 || amplitude > 0.5) return EngineResult.invalid;
     lastLatencyPath = (
       output: output,

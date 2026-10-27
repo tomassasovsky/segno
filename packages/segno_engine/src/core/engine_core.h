@@ -25,13 +25,10 @@ extern "C" {
 int32_t le_length_presets_check(le_engine* engine, const int32_t* bars,
                                int32_t count);
 
-/* Loopback latency harness tuning. The echo returns only mildly attenuated
- * (~0.9 from a full-scale pulse on a typical interface), so we emit a quiet
- * calibration tone rather than full scale to spare the user's monitors, and
- * detect with a threshold comfortably below the echo yet above the noise floor.
- * Shared by the audio thread (engine_process.c emits + correlates) and the
- * control thread (engine.c's le_engine_configure sizes lat_buf from CAPTURE_DIV). */
-#define LE_LATENCY_PULSE_AMP 0.9f  /* calibration tone amplitude (0..1) */
+/* Loopback latency harness tuning. The tone's amplitude is the caller's
+ * (le_engine_measure_latency_path). Shared by the audio thread
+ * (engine_process.c emits + correlates) and the control thread (engine.c's
+ * le_engine_configure sizes lat_buf from CAPTURE_DIV). */
 #define LE_LATENCY_TONE_HZ 1000.0f /* tone-burst freq (AC: survives AC-coupling) */
 #define LE_LATENCY_PEAK_RATIO 2.5f /* correlation peak must exceed this x baseline */
 #define LE_LATENCY_PULSE_DIV 100   /* pulse length = sample_rate / this (~10ms) */
