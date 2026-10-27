@@ -13,6 +13,7 @@ class PowerSnapshot extends Equatable {
   const PowerSnapshot({
     this.takeInFlight = false,
     this.transferInFlight = false,
+    this.updateInFlight = false,
     this.currentSessionName,
     this.sessionHasContent = true,
   });
@@ -25,6 +26,11 @@ class PowerSnapshot extends Equatable {
   /// is in progress: halting mid-write or mid-unmount is what the guard is
   /// for (accepted behaviour §7.8, "Transfers/eject guard it").
   final bool transferInFlight;
+
+  /// An update is downloading or installing, online or from a USB drive.
+  /// A reboot mid-install leaves the inactive slot half written, and one
+  /// with an earlier build staged boots into that build.
+  final bool updateInFlight;
 
   /// Open named session, or null when the save becomes Save As.
   final String? currentSessionName;
@@ -42,6 +48,7 @@ class PowerSnapshot extends Equatable {
   List<Object?> get props => [
     takeInFlight,
     transferInFlight,
+    updateInFlight,
     currentSessionName,
     sessionHasContent,
   ];
@@ -60,6 +67,7 @@ PowerSnapshot powerSnapshotOf({
   required SessionState session,
   required BackingState? backing,
   bool transferInFlight = false,
+  bool updateInFlight = false,
 }) {
   return PowerSnapshot(
     takeInFlight:
@@ -72,6 +80,7 @@ PowerSnapshot powerSnapshotOf({
         recorder is PerformanceRecorderRendering ||
         (recorder is PerformanceRecorderIdle && recorder.recovering),
     transferInFlight: transferInFlight,
+    updateInFlight: updateInFlight,
     currentSessionName: session.currentSessionName,
     // An unknown backing (no player mounted) counts as content: the save
     // is kept rather than a setup dropped unseen.
@@ -83,8 +92,25 @@ PowerSnapshot powerSnapshotOf({
   );
 }
 
-/// Pure gate: a take or a transfer in flight refuses a restart or shutdown.
-/// Everything else may proceed, and saves first whenever the session holds
-/// anything to save.
-bool powerRefused(PowerSnapshot snapshot) =>
-    snapshot.takeInFlight || snapshot.transferInFlight;
+/// Why a restart or shutdown is refused.
+enum PowerRefusal {
+  /// A take is in flight.
+  take,
+
+  /// An update is downloading or installing.
+  update,
+
+  /// A storage write or a USB eject is in progress.
+  transfer,
+}
+
+/// Pure gate: what refuses a restart or shutdown in [snapshot], or null when
+/// it may proceed (saving first whenever the session holds anything to
+/// save). A take comes first, then an update, then a transfer: a USB update
+/// package's copy is both an update and a transfer, and reads as the update.
+PowerRefusal? powerRefusal(PowerSnapshot snapshot) {
+  if (snapshot.takeInFlight) return PowerRefusal.take;
+  if (snapshot.updateInFlight) return PowerRefusal.update;
+  if (snapshot.transferInFlight) return PowerRefusal.transfer;
+  return null;
+}

@@ -2715,6 +2715,8 @@
     "storagePurposeUpdate": "leer una actualización",
     "powerTransferTitle": "Espera a que termine la transferencia",
     "powerTransferBody": "Se está copiando audio o expulsando una unidad USB. Espera a que termine y vuelve a pulsar el botón de encendido si quieres apagar.",
+    "powerUpdateTitle": "Espera a que termine la actualización",
+    "powerUpdateBody": "Se está descargando o instalando una actualización. Espera a que termine y vuelve a pulsar el botón de encendido si quieres apagar.",
     "storageEjectStuck": "Todavía se está expulsando. Si no termina, desconecta la unidad.",
     "perfStoppedVolumeLost": "La captura se detuvo antes de tiempo — se desconectó la unidad USB. Tus loops siguieron sonando.",
     "perfArmDriveUnavailable": "La grabación no empezó. Ahora no se puede grabar en la unidad USB elegida en Guardar en.",

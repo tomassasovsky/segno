@@ -14,7 +14,8 @@ enum PowerPhase {
   /// No power UI.
   idle,
 
-  /// Take or transfer in flight — Keep playing only.
+  /// A take, an update or a transfer in flight ([PowerState.refusal]) —
+  /// Keep playing only.
   refuse,
 
   /// Power options: Cancel / Restart / Shut down.
@@ -37,13 +38,22 @@ enum PowerPhase {
 /// State of [PowerCubit].
 class PowerState extends Equatable {
   /// Creates a [PowerState].
-  const PowerState({this.phase = PowerPhase.idle, this.action});
+  const PowerState({
+    this.phase = PowerPhase.idle,
+    this.action,
+    this.refusal,
+  });
 
   /// Current phase.
   final PowerPhase phase;
 
   /// The committed action, from Save As onwards; null before a choice.
   final PowerAction? action;
+
+  /// What refused, in [PowerPhase.refuse]; null in every other phase. Kept
+  /// from the press, so the refusal does not change its words when what
+  /// refused ends while it is up.
+  final PowerRefusal? refusal;
 
   /// Any power UI is up — extra `KEY_POWER` is ignored.
   bool get isUiUp => phase != PowerPhase.idle;
@@ -56,5 +66,5 @@ class PowerState extends Equatable {
       phase == PowerPhase.saveFailed;
 
   @override
-  List<Object?> get props => [phase, action];
+  List<Object?> get props => [phase, action, refusal];
 }

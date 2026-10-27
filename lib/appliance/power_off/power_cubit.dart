@@ -12,11 +12,11 @@ part 'power_state.dart';
 /// rear power button, Settings' Power row and the update's Install and
 /// restart.
 ///
-/// Restart and Shut down share one guarded path: refused while a take or a
-/// transfer is in flight; otherwise stop the transport, flush settings, save
-/// the session, hold [GuardKind.restart], wait for storage leases, then
-/// reboot or halt. A failed save keeps Segno on (Stay on / Retry); there is
-/// no way to halt without saving. An unnamed session with nothing to lose
+/// Restart and Shut down share one guarded path: refused while a take, an
+/// update install or a transfer is in flight; otherwise stop the transport,
+/// flush settings, save the session, hold [GuardKind.restart], wait for
+/// storage leases, then reboot or halt. A failed save keeps Segno on (Stay
+/// on / Retry); there is no way to halt without saving. An unnamed session with nothing to lose
 /// ([PowerSnapshot.sessionHasContent] false) skips only the session write:
 /// there is nothing to name and nothing to write.
 ///
@@ -65,11 +65,12 @@ class PowerCubit extends Cubit<PowerState> {
   static const Duration storageSettleLimit = Duration(seconds: 30);
 
   /// A short press of `KEY_POWER`, or Settings' Power row. Opens Power
-  /// options, or the refusal while a take or a transfer is in flight.
-  /// No-op while any power UI is up.
+  /// options, or the refusal while a take, an update install or a transfer
+  /// is in flight. No-op while any power UI is up.
   void press(PowerSnapshot snapshot) {
     if (state.isUiUp) return;
-    _set(powerRefused(snapshot) ? PowerPhase.refuse : PowerPhase.options);
+    if (_refused(snapshot)) return;
+    _set(PowerPhase.options);
   }
 
   /// Cancel, Keep playing or Stay on: drops the power UI. No-op once the
@@ -167,9 +168,10 @@ class PowerCubit extends Cubit<PowerState> {
   static Future<void> _nothingToSave() async {}
 
   bool _refused(PowerSnapshot snapshot) {
-    if (!powerRefused(snapshot)) return false;
+    final refusal = powerRefusal(snapshot);
+    if (refusal == null) return false;
     _save = null;
-    _set(PowerPhase.refuse);
+    emit(PowerState(phase: PowerPhase.refuse, refusal: refusal));
     return true;
   }
 
@@ -229,10 +231,7 @@ class PowerCubit extends Cubit<PowerState> {
     emit(
       PowerState(
         phase: phase,
-        action:
-            phase == PowerPhase.idle ||
-                phase == PowerPhase.refuse ||
-                phase == PowerPhase.options
+        action: phase == PowerPhase.idle || phase == PowerPhase.options
             ? null
             : state.action,
       ),

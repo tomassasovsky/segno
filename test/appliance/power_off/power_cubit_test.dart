@@ -23,6 +23,10 @@ void main() {
     transferInFlight: true,
     currentSessionName: 'set',
   );
+  const update = PowerSnapshot(
+    updateInFlight: true,
+    currentSessionName: 'set',
+  );
 
   group(PowerCubit, () {
     late List<String> log;
@@ -78,14 +82,41 @@ void main() {
         'refuses during a take',
         build: build,
         act: (cubit) => cubit.press(inFlight),
-        expect: () => const [PowerState(phase: PowerPhase.refuse)],
+        expect: () => const [
+          PowerState(phase: PowerPhase.refuse, refusal: PowerRefusal.take),
+        ],
       );
 
       blocTest<PowerCubit, PowerState>(
         'refuses during a transfer',
         build: build,
         act: (cubit) => cubit.press(transfer),
-        expect: () => const [PowerState(phase: PowerPhase.refuse)],
+        expect: () => const [
+          PowerState(phase: PowerPhase.refuse, refusal: PowerRefusal.transfer),
+        ],
+      );
+
+      blocTest<PowerCubit, PowerState>(
+        'refuses during an update install',
+        build: build,
+        act: (cubit) => cubit.press(update),
+        expect: () => const [
+          PowerState(phase: PowerPhase.refuse, refusal: PowerRefusal.update),
+        ],
+      );
+
+      blocTest<PowerCubit, PowerState>(
+        'opens Power options once the install has ended or failed',
+        build: build,
+        act: (cubit) => cubit
+          ..press(update)
+          ..dismiss()
+          ..press(named),
+        expect: () => const [
+          PowerState(phase: PowerPhase.refuse, refusal: PowerRefusal.update),
+          PowerState(),
+          PowerState(phase: PowerPhase.options),
+        ],
       );
 
       blocTest<PowerCubit, PowerState>(
@@ -159,8 +190,54 @@ void main() {
     test('Restart during a take is refused: no save, no reboot', () async {
       final cubit = build()..restart(inFlight, save: save);
       await pumpEventQueue();
-      expect(cubit.state, const PowerState(phase: PowerPhase.refuse));
+      expect(
+        cubit.state,
+        const PowerState(phase: PowerPhase.refuse, refusal: PowerRefusal.take),
+      );
       expect(log, isEmpty);
+      await cubit.close();
+    });
+
+    test('Restart and Shut down during an update install are refused: no '
+        'save, no reboot, no halt', () async {
+      final cubit = build()..restart(update, save: save);
+      await pumpEventQueue();
+      expect(
+        cubit.state,
+        const PowerState(
+          phase: PowerPhase.refuse,
+          refusal: PowerRefusal.update,
+        ),
+      );
+      cubit
+        ..dismiss()
+        ..press(named)
+        ..shutDown(update, save: save);
+      await pumpEventQueue();
+      expect(cubit.state.refusal, PowerRefusal.update);
+      expect(log, isEmpty);
+      await cubit.close();
+    });
+
+    test('an install that ended lets the restart through: Install and '
+        'restart reboots', () async {
+      final cubit = build()..restart(update, save: save);
+      await pumpEventQueue();
+      cubit
+        ..dismiss()
+        ..restart(named, save: save);
+      await pumpEventQueue();
+      expect(log, ['stop', 'flush', 'save', 'storage', 'pedal', 'reboot']);
+      await cubit.close();
+    });
+
+    test('Retry waits for an update install too', () async {
+      final cubit = build()..shutDown(named, save: failingSave);
+      await pumpEventQueue();
+      cubit.retry(update, save: save);
+      await pumpEventQueue();
+      expect(cubit.state.refusal, PowerRefusal.update);
+      expect(log, ['stop', 'flush', 'save']);
       await cubit.close();
     });
 
@@ -238,7 +315,13 @@ void main() {
         await pumpEventQueue();
         cubit.retry(inFlight, save: save);
         await pumpEventQueue();
-        expect(cubit.state, const PowerState(phase: PowerPhase.refuse));
+        expect(
+          cubit.state,
+          const PowerState(
+            phase: PowerPhase.refuse,
+            refusal: PowerRefusal.take,
+          ),
+        );
         expect(log, ['stop', 'flush', 'save']);
         await cubit.close();
       });
@@ -410,7 +493,13 @@ void main() {
             save: save,
           );
         await pumpEventQueue();
-        expect(cubit.state, const PowerState(phase: PowerPhase.refuse));
+        expect(
+          cubit.state,
+          const PowerState(
+            phase: PowerPhase.refuse,
+            refusal: PowerRefusal.take,
+          ),
+        );
         expect(log, isEmpty);
         await cubit.close();
       });
