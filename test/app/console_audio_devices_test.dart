@@ -101,4 +101,47 @@ void main() {
       expect(pickConsoleAudioDevices(devices), isNull);
     });
   });
+
+  group('pinned devices', () {
+    const scarlettOut = AudioDevice(
+      id: 'scarlett',
+      name: 'Scarlett 4i4',
+      isDefault: false,
+      isInput: false,
+    );
+    const scarlettIn = AudioDevice(
+      id: 'scarlett',
+      name: 'Scarlett 4i4',
+      isDefault: false,
+      isInput: true,
+    );
+    const pinned = EngineConfig(
+      playbackDeviceId: 'scarlett',
+      captureDeviceId: 'scarlett',
+    );
+
+    test('pinsDevice is true for either id and false for neither', () {
+      expect(pinsDevice(pinned), isTrue);
+      expect(pinsDevice(const EngineConfig(captureDeviceId: 'x')), isTrue);
+      expect(pinsDevice(const EngineConfig()), isFalse);
+    });
+
+    test('present only when every pinned direction enumerates', () {
+      expect(pinnedDevicesPresent(pinned, [scarlettOut, scarlettIn]), isTrue);
+      expect(pinnedDevicesPresent(pinned, [scarlettOut]), isFalse);
+      // The same id in the wrong direction does not count.
+      expect(pinnedDevicesPresent(pinned, [scarlettIn]), isFalse);
+      expect(pinnedDevicesPresent(pinned, const []), isFalse);
+    });
+
+    test('an empty id pins nothing, so it is always present', () {
+      expect(
+        pinnedDevicesPresent(
+          const EngineConfig(playbackDeviceId: 'scarlett'),
+          [scarlettOut],
+        ),
+        isTrue,
+      );
+    });
+  });
 }

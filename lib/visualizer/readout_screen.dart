@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:isolate';
 import 'dart:typed_data';
 
@@ -20,6 +21,13 @@ Future<void> runReadoutScreen({
   WidgetsFlutterBinding.ensureInitialized();
   final link = ReadoutScreenLink(directory: directory)..start();
   runApp(ReadoutScreen(link: link));
+  // Pings are answered from the first raster on: an answer then says the 7"
+  // draws, which is what the boot health gate needs to know (#976).
+  unawaited(
+    WidgetsBinding.instance.waitUntilFirstFrameRasterized.then(
+      (_) => link.markRastered(),
+    ),
+  );
 }
 
 /// A touch calibration step on the readout: the `target` to tap, in the
@@ -37,6 +45,7 @@ class ReadoutScreenLink {
   final PortDirectory _directory;
   ReceivePort? _inbox;
   SendPort? _main;
+  var _rastered = false;
 
   /// Whether the main screen wants the readout drawn. False until it says so,
   /// so a disabled readout preference never flashes the readout at boot.
@@ -68,6 +77,10 @@ class ReadoutScreenLink {
     _directory.publish(screenLinkReadoutPort, inbox.sendPort);
     _announce();
   }
+
+  /// Records that this screen has rasterized its first frame;
+  /// [ScreenLinkOp.ping] is answered from then on.
+  void markRastered() => _rastered = true;
 
   /// Tells the main screen a player touched the readout. Fire-and-forget: the
   /// next touch says the same thing.
@@ -131,6 +144,8 @@ class ReadoutScreenLink {
           readout.value = PerformanceReadout.fromMap(map);
         }
         _ack(message['seq']);
+      case ScreenLinkOp.ping:
+        if (_rastered) _ack(message['seq']);
       case ScreenLinkOp.calibrate:
         final target = message['target'];
         final label = message['label'];

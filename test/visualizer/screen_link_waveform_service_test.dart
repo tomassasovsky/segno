@@ -407,6 +407,44 @@ void main() {
       });
     }
   });
+
+  group('ping', () {
+    test('a readout that has drawn answers, once linked', () async {
+      startReadout().markRastered();
+      await settle();
+
+      // The readout came up first and announced itself to nobody; this ping
+      // greets it, and the next beat's ping finds it.
+      expect(await service.ping(), isFalse);
+      await settle();
+      expect(await service.ping(), isTrue);
+    });
+
+    test('a readout that has not drawn yet does not answer', () async {
+      startReadout();
+      await settle();
+
+      await service.ping();
+      await settle();
+      expect(await service.ping(), isFalse);
+    });
+
+    test('no readout: no answer', () async {
+      expect(await service.ping(), isFalse);
+    });
+
+    test('a ping does not show a closed readout', () async {
+      final readout = startReadout()..markRastered();
+      await settle();
+
+      await service.ping();
+      await settle();
+      expect(await service.ping(), isTrue);
+      await settle();
+      expect(readout.visible.value, isFalse);
+      expect(service.isOpen, isFalse);
+    });
+  });
 }
 
 /// A readout whose acknowledgements the test sends, so pushes can overlap.

@@ -17,7 +17,19 @@ After=plymouth-quit-wait.service segno-touch-persist.service
 RequiresMountsFor=/data
 
 [Service]
-Type=simple
+# Ready means the app drew: it sends READY=1 to $NOTIFY_SOCKET once the main
+# screen has rasterized its first frame, then a STATUS heartbeat every 5 s that
+# segno-mark-good reads to decide whether to commit an update (#976). Only the
+# app's own pid may notify (segno-kiosk-launch execs it, so it is MainPID). A
+# build that never draws is killed after TimeoutStartSec and restarted, which
+# the gate sees. There is deliberately no WatchdogSec=: a slow but working app
+# must never be killed in the middle of a performance. The hardware watchdog
+# for PID 1 (#1437) is a different thing and stays. multi-user.target, which
+# wants this unit, is reached once the app draws (or after the timeout);
+# no unit this layer ships is ordered after it.
+Type=notify
+NotifyAccess=main
+TimeoutStartSec=180
 # Real-time audio. RTPRIO: the engine puts its ALSA duplex thread on SCHED_FIFO
 # 80; without the limit (systemd's default is 0) the setschedparam EPERMs and the
 # thread stays SCHED_OTHER -> jitter and xruns. 95 leaves the audio thread (80)
