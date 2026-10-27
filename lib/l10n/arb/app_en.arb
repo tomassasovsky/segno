@@ -7682,6 +7682,14 @@
     "@powerTransferBody": {
         "description": "Power refuse body for a transfer in flight (accepted behaviour 7.8: transfers and eject guard power)."
     },
+    "powerUpdateTitle": "Wait for the update",
+    "@powerUpdateTitle": {
+        "description": "Power dialog title while an update downloads or installs, online or from a USB drive (#1494). The only action is Keep playing."
+    },
+    "powerUpdateBody": "An update is being downloaded or installed. Wait for it to finish, then press the power button again if you want to power off.",
+    "@powerUpdateBody": {
+        "description": "Power refuse body for an update in flight: a restart mid-install would leave the new system half written (#1494)."
+    },
     "storageEjectStuck": "Still ejecting. If it does not finish, unplug the drive.",
     "@storageEjectStuck": {
         "description": "Under a drive whose eject the helper took and has not answered after two minutes; pulling the drive is the way out."

@@ -396,8 +396,9 @@ class _StatusPanel extends StatelessWidget {
                   tone: LoopButtonTone.accent,
                   width: UpdatesSettingsPage.controlWidth,
                   label: l10n.updatesPageInstallRestart,
-                  // The power flow's restart: refused during a take, and the
-                  // session is saved before the helper boots the new slot.
+                  // The power flow's restart: refused during a take, an
+                  // update install or a transfer, and the session is saved
+                  // before the helper boots the new slot.
                   onTap: () => requestRestart(context),
                 ),
               ],
@@ -456,8 +457,9 @@ class _StatusPanel extends StatelessWidget {
                     tone: LoopButtonTone.accent,
                     width: 200,
                     label: l10n.updatesPageRestart,
-                    // The power flow's restart: refused during a take, and
-                    // the session is saved first.
+                    // The power flow's restart: refused during a take, an
+                    // update install or a transfer, and the session is saved
+                    // first.
                     onTap: () => requestRestart(context),
                   ),
                 ],
