@@ -113,8 +113,8 @@ sounding one's end, STATE byte 51 names the footswitch whose pill shows it and
 byte 52 how much of the wait has played (0..254 of 255). The board fills that
 pill left to right in the hue and activity the app gave it. Since firmware
 2.5, every filled pixel has one level (110, the mean of the diffused levels,
-so a full pill carries the same light as the section it becomes) with no
-centre curve, and the leading pixel fills partially so the edge moves
+so a fully filled queued pill has the same total brightness as the diffused
+curve) with no centre curve, and the leading pixel fills partially so the edge moves
 smoothly. Nothing local advances the fill, and a queue never lights the whole
 pill. The engine ends the wait by starting the section, and the next frame
 carries no queue. A pill that leaves the queue and stays lit blends from its

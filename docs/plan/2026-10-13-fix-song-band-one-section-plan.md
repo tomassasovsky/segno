@@ -91,8 +91,8 @@ and the User Guide v1.0.0 (§3.1, §4.2):
   the Record map's playing colour for a waiting Play and its recording colour
   for a waiting Record, on the cursor too (owner decision 2026-10-13).
 - Board: while queued, every lit pixel of the pill has the same level, the
-  mean of the diffused curve, so the full pill carries the same light as the
-  section it becomes; the leading pixel fills partially so the fill moves
+  mean of the diffused curve, so a fully filled queued pill has the same total
+  brightness as the diffused curve; the leading pixel fills partially so the fill moves
   smoothly. When a pill leaves the queue and is still lit, it blends from its
   last fill to the diffused curve over 300 ms. The board keeps no Song or
   bank logic: it reacts to the queued button the app sends. The wire does

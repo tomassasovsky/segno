@@ -31780,6 +31780,18 @@ static void test_band_section_toggle_waits_for_the_sounding_section(void) {
   CHECK(s.tracks[2].state == LE_TRACK_PLAYING);
   CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
   CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  /* A toggle on the waiting section cancels its start. */
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == 1);
+  CHECK(le_engine_toggle_section(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == -1);
+  tg_advance(e, 4 * SB_BASE);
+  CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_STOPPED);
+  CHECK(load_i32(&e->tracks[2].a_state) == LE_TRACK_PLAYING);
   le_engine_destroy(e);
 }
 

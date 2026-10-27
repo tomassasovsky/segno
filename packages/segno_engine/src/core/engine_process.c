@@ -4709,6 +4709,12 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
           le_handoff_record_request(e, cmd->arg_i, frame);
           break;
         }
+        /* A Band section toggle on the waiting target cancels its start
+         * (#1323); arming it would queue the start again at the top. */
+        if (trig == 2 && cmd->arg_i == e->song_target) {
+          le_song_cancel(e);
+          break;
+        }
         /* Another arm on the waiting target replaces its request. An arm on
          * the source (a quantized overdub or take finish) keeps it, as an
          * immediate overdub does (#1323); the handoff drops that arm if it
