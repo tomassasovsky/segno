@@ -3,7 +3,7 @@
  *
  * Everything the device callback runs lives here and nowhere else: the real-time
  * contract holds for this whole file — no malloc/free, no locks, no syscalls, no
- * unbounded loops. le_engine_process is the block processor the miniaudio / ASIO
+ * unbounded loops. le_engine_process is the block processor the miniaudio
  * data callback pumps; it drains the SPSC command ring (apply_command), advances
  * the transport state machine (the finalize_* / handle_* helpers), records /
  * overdubs / mixes, runs the per-lane effect chains (fx_apply_chain), resolves the
@@ -7633,9 +7633,8 @@ static void tuner_tap_block(le_engine* e, const float* in, uint32_t frames,
      *     in flight and skip it however large the budget is. Raising the
      *     budget would NOT buy headroom here; only a hop longer than the
      *     block does. No shipped path negotiates a period that large: the
-     *     generic chooser offers [64, 128, 256, 512] (bufferSizes in
-     *     audio_setup_state.dart) and an ASIO driver substitutes its own
-     *     list, but none of them lands above a hop. If one ever did, the
+     *     chooser offers [64, 128, 256, 512] (bufferSizes in
+     *     audio_setup_state.dart), and none of them lands above a hop. If one ever did, the
      *     single consequence is that the needle refreshes every second hop
      *     instead of every hop — ~86 ms rather than ~43 ms, still far finer
      *     than a needle needs to look continuous. Nothing is wrong, only

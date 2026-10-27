@@ -25,7 +25,6 @@ class EngineStatus extends Equatable {
     this.inputCondMask = 0,
     this.recordOffsetFrames = 0,
     this.fxAddedLatencyFrames = 0,
-    this.activeBackend = AudioBackend.miniaudio,
     this.reopen,
   });
 
@@ -55,8 +54,7 @@ class EngineStatus extends Equatable {
   ///
   /// No longer "reserved": the ALSA backend now reports its `-EPIPE`
   /// underrun/overrun recoveries and its slipped-playback resyncs through this
-  /// (native #722), alongside the Windows ASIO overload notification that used
-  /// to be its only producer. Still `0` on CoreAudio, which exposes no xrun
+  /// (native #722). Still `0` on CoreAudio, which exposes no xrun
   /// signal — read the gap detector in [LooperRepository.readCallbackTelemetry]
   /// there instead, which also carries the per-class breakdown.
   ///
@@ -124,11 +122,6 @@ class EngineStatus extends Equatable {
   double get fxAddedLatencyMs =>
       sampleRate > 0 ? fxAddedLatencyFrames * 1000 / sampleRate : 0;
 
-  /// The device backend actually running (negotiated) — the reality behind the
-  /// requested [EngineConfig.backend] intent. On Windows this is always
-  /// [AudioBackend.asio]; on macOS/Linux it is [AudioBackend.miniaudio].
-  final AudioBackend activeBackend;
-
   /// What the most recent device reopen did with the recorded loops, or
   /// `null` when the current session began with a deliberate start. Set by
   /// the reconnect supervisor's reopen and cleared by the next start, so the
@@ -156,7 +149,6 @@ class EngineStatus extends Equatable {
     inputCondMask,
     recordOffsetFrames,
     fxAddedLatencyFrames,
-    activeBackend,
     reopen,
   ];
 }

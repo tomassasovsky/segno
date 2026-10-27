@@ -64,7 +64,7 @@ uint32_t le_excluded_mask_from_names(le_channel_name_fn get_name, void* ctx,
   /* Pure bit-setting core shared by every platform's label probe: walk the
    * input channels, ask the caller's provider for each channel's name, and set
    * the bit for any name le_label_is_loopback matches. The OS-specific part is
-   * only the *source* of the names (Core Audio on macOS, ASIO on Windows), so
+   * only the *source* of the names (Core Audio on macOS), so
    * this stays unit-testable with a fake provider and free of any OS calls.
    * Channels beyond LE_MAX_CHANNELS (the mask's width) are ignored. */
   if (get_name == NULL) return 0;
@@ -322,8 +322,8 @@ static int32_t device_channels(ma_context* ctx, const ma_device_id* id,
 
 static void device_info_copy(le_device_info* dst, const ma_device_info* src,
                              ma_context* ctx, int capture) {
-  /* Zero everything first so the miniaudio path never surfaces stack garbage for
-   * fields it does not fill (the ASIO-only buffer/rate sets). */
+  /* Zero everything first so no field it does not fill carries stack
+   * garbage. */
   memset(dst, 0, sizeof(*dst));
   device_id_to_str(&src->id, dst->id, sizeof(dst->id));
   strncpy(dst->name, src->name, sizeof(dst->name) - 1);

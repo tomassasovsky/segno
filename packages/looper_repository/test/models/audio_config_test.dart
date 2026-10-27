@@ -5,22 +5,6 @@ import 'package:looper_repository/src/models/audio_config.dart';
 import 'package:segno_engine/segno_engine.dart' as le;
 
 void main() {
-  group('AudioBackend', () {
-    test('round-trips through the engine enum for every value', () {
-      for (final backend in AudioBackend.values) {
-        expect(audioBackendFromEngine(audioBackendToEngine(backend)), backend);
-      }
-    });
-
-    test('covers every engine backend value', () {
-      for (final engineBackend in le.AudioBackend.values) {
-        // Mapping engine -> domain -> engine is identity (no value dropped).
-        final domain = audioBackendFromEngine(engineBackend);
-        expect(audioBackendToEngine(domain), engineBackend);
-      }
-    });
-  });
-
   group('enum mirrors cover every engine value (by name)', () {
     test('LatencyState', () {
       for (final state in le.LatencyState.values) {
@@ -37,27 +21,23 @@ void main() {
 
   test('audioDeviceFromEngine preserves every field', () {
     const engineDevice = le.AudioDevice(
-      id: 'asio-1',
-      name: 'Focusrite USB ASIO',
+      id: 'hw:2',
+      name: 'Scarlett 4i4 USB',
       isDefault: true,
       isInput: false,
       inputChannels: 18,
       outputChannels: 20,
-      bufferSizes: [128, 256],
-      sampleRates: [44100, 48000, 96000],
     );
 
     expect(
       audioDeviceFromEngine(engineDevice),
       const AudioDevice(
-        id: 'asio-1',
-        name: 'Focusrite USB ASIO',
+        id: 'hw:2',
+        name: 'Scarlett 4i4 USB',
         isDefault: true,
         isInput: false,
         inputChannels: 18,
         outputChannels: 20,
-        bufferSizes: [128, 256],
-        sampleRates: [44100, 48000, 96000],
       ),
     );
   });
@@ -119,8 +99,6 @@ void main() {
       bufferFrames: 128,
       playbackDeviceId: 'pb',
       captureDeviceId: 'cap',
-      backend: AudioBackend.asio,
-      asioDriver: 'Driver',
       useLoopbackCapture: true,
       maxLoopFrames: 99,
       inputChannels: 2,
@@ -133,8 +111,6 @@ void main() {
     expect(engineConfig.bufferFrames, 128);
     expect(engineConfig.playbackDeviceId, 'pb');
     expect(engineConfig.captureDeviceId, 'cap');
-    expect(engineConfig.backend, le.AudioBackend.asio);
-    expect(engineConfig.asioDriver, 'Driver');
     expect(engineConfig.useLoopbackCapture, isTrue);
     expect(engineConfig.maxLoopFrames, 99);
     expect(engineConfig.inputChannels, 2);

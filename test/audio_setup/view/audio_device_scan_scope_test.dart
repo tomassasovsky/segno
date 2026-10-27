@@ -37,7 +37,6 @@ void main() {
     when(() => repository.state).thenReturn(const LooperState());
     when(() => repository.lastEngineConfig).thenReturn(null);
     when(repository.detectLoopback).thenReturn(const LoopbackInfo.none());
-    when(repository.asioDrivers).thenReturn(const []);
     when(repository.devices).thenReturn(const []);
     cubit = AudioSetupCubit(
       repository: repository,

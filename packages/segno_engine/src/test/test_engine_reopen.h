@@ -1046,6 +1046,55 @@ static void test_reopen_device_lifecycle(void) {
   le_test_backend_override = NULL;
 }
 
+/* keep_material: a reopen that would clear the loops is refused before
+ * anything is settled — material byte-identical, tracks stopped — and the
+ * device closed again; without the flag the same reopen clears (#1270). */
+static void test_reopen_keep_material_refuses_a_clear(void) {
+  printf("test_reopen_keep_material_refuses_a_clear\n");
+  le_test_backend_override = &fake_backend;
+  fake_open_result = LE_OK;
+  fake_start_result = LE_OK;
+  fake_rate = 48000;
+  le_config cfg = {0};
+  cfg.sample_rate = 48000;
+  cfg.input_channels = 1;
+  cfg.output_channels = 1;
+  cfg.max_loop_frames = 1000;
+  le_snapshot s;
+  int32_t outcome = 77;
+
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_start(e, &cfg) == LE_OK);
+  record_base_loop(e, 1.0f);
+  reopen_overdub_pass(e, 0.5f);
+  le_engine_get_snapshot(e, &s);
+  const int32_t undo_before = s.tracks[0].undo_depth;
+  CHECK(le_engine_stop(e) == LE_OK);
+
+  fake_rate = 44100;
+  fake_closes = 0;
+  cfg.keep_material = 1;
+  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL) == LE_ERR_WOULD_CLEAR);
+  CHECK(outcome == LE_REOPEN_CLEARED_RATE);
+  CHECK(fake_closes == 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.running == 0);
+  CHECK(s.sample_rate == 48000);
+  CHECK(s.tracks[0].undo_depth == undo_before);
+  CHECK(s.master_length_frames == LOOP_N);
+  reopen_check_const(e, 0, 1.5f, LOOP_N);
+
+  /* The same reopen without the flag clears, as it always did. */
+  cfg.keep_material = 0;
+  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL) == LE_OK);
+  CHECK(outcome == LE_REOPEN_CLEARED_RATE);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(le_engine_stop(e) == LE_OK);
+  le_engine_destroy(e);
+  le_test_backend_override = NULL;
+}
+
 /* A running performance capture ends at the drop with DEVICE_CHANGED, on the
  * retained path too; the loops themselves are kept. */
 static void test_reopen_ends_performance_capture(void) {

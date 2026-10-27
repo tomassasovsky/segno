@@ -106,6 +106,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   EngineConfig? _activeConfig;
   int _framesProcessed = 0;
   LatencyState _latencyState = LatencyState.idle;
+  int _latencyRequest = 0;
   double _measuredLatencyMs = -1;
   int _recordOffsetFrames = 0;
   double _masterGain = 1;
@@ -404,12 +405,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
       measuredLatencyMs: _measuredLatencyMs,
       recordOffsetFrames: _recordOffsetFrames,
       masterGain: _masterGain,
-      // The mock echoes the requested backend as the negotiated one (ASIO
-      // "succeeds"), so the requested-ASIO/reality-miniaudio fallback is NOT
-      // exercised here — the widget test seeds that state directly.
-      activeBackend: _running
-          ? (_activeConfig?.backend ?? AudioBackend.miniaudio)
-          : AudioBackend.miniaudio,
+      latencyRequest: _latencyRequest,
       isPerfArmed: _perfArmed,
       perfFrames: _perfFrames,
       outputBusCount: (outputs + 1) ~/ 2,
@@ -472,23 +468,6 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
       name: deviceLabel,
       isDefault: true,
       isInput: true,
-    ),
-  ];
-
-  @override
-  List<AudioDevice> enumerateAsioDrivers() => const [
-    // One deterministic fake duplex driver (18 in / 20 out), so UI development
-    // and tests can drive the ASIO backend selector without real hardware. The
-    // buffer/rate sets are a small fake of what a driver probe reports.
-    AudioDevice(
-      id: 'mock-asio',
-      name: 'Mock ASIO Device',
-      isDefault: false,
-      isInput: false,
-      inputChannels: 18,
-      outputChannels: 20,
-      bufferSizes: [128, 256, 512],
-      sampleRates: [48000, 96000],
     ),
   ];
 
@@ -692,11 +671,47 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Whether a measurement stays MEASURING until cancelled, for tests of the
+  /// in-flight states; by default the mock's cable answers at once.
+  bool holdLatencyMeasurement = false;
+
+  /// The last `measureLatencyPath` call, for tests.
+  ({int output, int input, double amplitude, int request})? lastLatencyPath;
+
   @override
-  EngineResult measureLatency() {
+  EngineResult measureLatencyPath({
+    required int output,
+    required int input,
+    required double amplitude,
+    required int request,
+  }) {
     if (!_running) return EngineResult.notRunning;
+    if (amplitude <= 0 || amplitude > 0.5) return EngineResult.invalid;
+    lastLatencyPath = (
+      output: output,
+      input: input,
+      amplitude: amplitude,
+      request: request,
+    );
+    _latencyRequest = request;
+    if (holdLatencyMeasurement) {
+      _latencyState = LatencyState.measuring;
+      return EngineResult.ok;
+    }
+    // The mock's cable answers at once: 5.3 ms.
     _latencyState = LatencyState.done;
     _measuredLatencyMs = 5.3;
+    final rate = _activeConfig?.sampleRate ?? 0;
+    _recordOffsetFrames = ((rate > 0 ? rate : 48000) * 0.0053).round();
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult cancelLatency({required int request}) {
+    if (!_running) return EngineResult.notRunning;
+    if (request == _latencyRequest && _latencyState == LatencyState.measuring) {
+      _latencyState = LatencyState.cancelled;
+    }
     return EngineResult.ok;
   }
 

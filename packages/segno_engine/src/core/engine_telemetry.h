@@ -33,9 +33,9 @@
  *     load-compare-store maxima below: there is no second writer to lose a race
  *     to.
  *   - a_xruns[] is MULTI-writer. le_engine_note_backend_xrun fires from
- *     whichever thread noticed the dropout — the ALSA data-loop thread (same
- *     thread as the callback) but also the ASIO driver's message thread — while
- *     the audio thread may be running le_cb_window_reset for an arm. Both sides
+ *     whichever thread noticed the dropout — today the ALSA data-loop thread
+ *     (the callback's own) — while the audio thread may be running
+ *     le_cb_window_reset for an arm. Both sides
  *     use atomic RMW/store, so no value ever tears; the residual imprecision is
  *     that a dropout landing within a hair of an arm boundary may be counted in
  *     the window on either side of it. A one-event ambiguity at a boundary is
@@ -67,8 +67,7 @@
  * recovery branches — the audio path is then exactly the pre-#722 build. The
  * per-kind DROPOUT TALLY is deliberately NOT gated: it costs two relaxed adds
  * on a path that only runs once a dropout has already happened, it is what
- * keeps the kinds summing to xrun_count in every build, and gating it would
- * silently take the pre-#722 ASIO overload counter away too. Default ON.
+ * keeps the kinds summing to xrun_count in every build. Default ON.
  *
  * Purely internal: NOT part of the FFI surface (only the le_cb_window_snapshot
  * it fills is) and not seen by ffigen.
@@ -140,9 +139,7 @@ extern "C" {
  * steps, not agreement with TAI. The RAW clock would also cost more (it is not
  * always a plain vDSO read) and would drift against every other timestamp in
  * the system for no measurable gain.
- *
- * The Windows arm exists for completeness (the shipping Windows build runs the
- * ASIO backend, which does not call this). */
+ */
 static inline uint64_t le_now_ns(void) {
 #if defined(_WIN32)
   /* QueryPerformanceFrequency is fixed at boot and, since Windows 7, is a
@@ -448,23 +445,22 @@ static inline void le_cb_timing_note(le_cb_timing* t, uint64_t entry_ns,
 
 /* Records one backend dropout of `kind` (le_xrun_kind). Called from whichever
  * thread the backend noticed it on — the ALSA data-loop thread for the -EPIPE
- * recoveries, the ASIO message thread for an overload — so it is relaxed and
- * thread-agnostic (see the ownership note at the top for what that costs).
+ * recoveries — so it is relaxed and thread-agnostic (see the ownership note at the top for what that costs).
  * Unknown kinds are ignored rather than clamped: silently folding a future kind
  * into an existing bucket would corrupt the reading.
  *
  * NOT behind LE_CALLBACK_TELEMETRY, unlike the timing path: this runs only once
  * a dropout has already happened, so it has no steady-state cost; gating it
  * would leave xrun_count moving in a gated build with no breakdown to explain
- * it, and would silently remove the ASIO overload tally that predates #722.
+ * it.
  *
  * The per-kind counts therefore account for every dropout of a kind THIS BUILD
  * KNOWS, but they do not necessarily sum to xrun_count: le_engine_note_backend_
  * xrun bumps the flat tally before this range check, so an unrecognised kind
  * increments xrun_count with no bucket to land in. That is the deliberate
  * order — xrun_count's job is "a real dropout happened", and an unclassifiable
- * one still happened. No backend produces such a kind today (ALSA passes 0/1/2,
- * ASIO passes 3), so the sum holds in practice; it is a guarantee about the
+ * one still happened. No backend produces such a kind today (ALSA passes
+ * 0/1/2), so the sum holds in practice; it is a guarantee about the
  * future, not about today.
  *
  * Also stamps the gap suppressor: the recovery this reports is about to show up

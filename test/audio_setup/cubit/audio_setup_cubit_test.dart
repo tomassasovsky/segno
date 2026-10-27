@@ -7,10 +7,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
-import 'package:settings_repository/settings_repository.dart'
-    as persisted
-    show AudioBackend;
-import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
+import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -1424,16 +1421,5 @@ void main() {
         expect(cubit.state.error, AudioSetupError.openDeviceFailed);
       },
     );
-  });
-
-  group('AudioBackend bridge (domain <-> settings)', () {
-    test('round-trips every value in both directions', () {
-      for (final backend in AudioBackend.values) {
-        expect(engineBackendOf(settingsBackendOf(backend)), backend);
-      }
-      for (final backend in persisted.AudioBackend.values) {
-        expect(settingsBackendOf(engineBackendOf(backend)), backend);
-      }
-    });
   });
 }

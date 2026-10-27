@@ -476,7 +476,7 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
           status.measuredLatencyMs.toStringAsFixed(2),
         ),
         LatencyState.timeout => l10n.noSignalDetected,
-        LatencyState.idle => l10n.notMeasured,
+        LatencyState.idle || LatencyState.cancelled => l10n.notMeasured,
       };
 
   // -------------------------------------------------------------- helpers
