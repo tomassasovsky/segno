@@ -3344,6 +3344,12 @@ static void le_handoff_set_arm(le_track* t, int32_t trigger) {
   atomic_store_explicit(&t->a_pending, 1, memory_order_release);
 }
 
+/* Whether a request other than one on [ch] already waits: an arm made
+ * before it, turning into a section request now, does not replace it. */
+static int le_handoff_newer_waits(le_engine* e, int32_t ch) {
+  return e->song_target >= 0 && e->song_target != ch;
+}
+
 /* Fires the Record waiting on [ch] now. Like a grid arm firing, it clears
  * only the arm: the capture image and shadow the press posted belong to the
  * take it starts. A stopped Song section overdubs from its top, so it is
@@ -7021,7 +7027,8 @@ static void le_fire_section_arm(le_engine* e, int32_t ch, uint64_t frame) {
     /* Band keeps one section (#1323): with another sounding, the start
      * waits for that section's end like any section request. */
     if (le_band_section(e, ch) && le_handoff_source(e, ch) >= 0) {
-      handle_section_play(e, ch, frame);
+      /* A request pressed since the toggle wins over it. */
+      if (!le_handoff_newer_waits(e, ch)) handle_section_play(e, ch, frame);
     } else {
       handle_play(e, ch, frame);
     }
@@ -7150,7 +7157,7 @@ static inline void advance_transport_frame(le_engine* e, int tc,
           if (le_band_section(e, qt) && le_handoff_target_ok(pt, 1) &&
               le_handoff_source(e, qt) >= 0) {
             /* A request pressed since then wins over this older arm. */
-            if (e->song_target >= 0 && e->song_target != qt) {
+            if (le_handoff_newer_waits(e, qt)) {
               le_handoff_disarm(e, qt);
             } else {
               le_handoff_record_request(e, qt, frame);
@@ -7961,7 +7968,7 @@ static inline int process_input_frame(le_engine* e, const float* in,
       if (le_handoff_section(e, qt) && le_handoff_target_ok(t, 1) &&
           le_handoff_source(e, qt) >= 0) {
         /* A request pressed since then wins over this older arm. */
-        if (e->song_target >= 0 && e->song_target != qt) {
+        if (le_handoff_newer_waits(e, qt)) {
           le_handoff_disarm(e, qt);
         } else {
           le_handoff_record_request(e, qt, perf_frame_base + f);
