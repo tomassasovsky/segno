@@ -24,6 +24,12 @@ void main() {
         fxEntryCostNs(octaver.copyWith(enabled: false)),
         fxEntryCostNs(octaver),
       );
+      // The Dual Octaver adds its low band to the octaver's vocoder.
+      expect(_cost(TrackEffectType.dualOctaver), (79 * 1000 / 64).ceil());
+      expect(
+        _cost(TrackEffectType.dualOctaver),
+        greaterThan(fxEntryCostNs(octaver)),
+      );
       final psola = octaver.copyWith(params: [...octaver.params]..[3] = 1);
       expect(fxEntryCostNs(psola), (kFxPsolaCostUs * 1000 / 64).ceil());
       expect(
@@ -57,8 +63,13 @@ void main() {
       expect(fxBudgetNs(96000), 8333 - base);
       // Half the rate, twice the time a frame.
       expect(fxBudgetNs(48000), 16666 - base);
-      // One octaver, the heaviest kind, fits with room to spare.
-      expect(_cost(TrackEffectType.octaver) < fxBudgetNs(96000), isTrue);
+      // One instance of the heaviest kind fits with room to spare.
+      final heaviest = TrackEffectType.values
+          .map(_cost)
+          .reduce(
+            (a, b) => a > b ? a : b,
+          );
+      expect(heaviest < fxBudgetNs(96000), isTrue);
     });
   });
 

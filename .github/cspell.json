@@ -25,6 +25,9 @@
     "**/third_party/vst3sdk/**"
   ],
   "words": [
+    "bassstim",
+    "Linkwitz",
+    "smoothstep",
     "RETIME",
     "Fdbk",
     "Reso",
