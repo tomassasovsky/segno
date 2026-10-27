@@ -2543,9 +2543,9 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
       engine->armed[channel] = 0; /* spent: the handoff fired or dropped it */
     }
     if (engine->armed[channel]) {
-      /* Our own pending handoff arm (le_handoff_record): a second press. */
-      engine->armed[channel] = 0;
-      return le_push(engine, LE_CMD_DISARM, channel, 0.0f);
+      /* Our own pending handoff arm (le_handoff_record): a second press
+       * cancels it, ticketed like every other arm cancel. */
+      return le_cancel_arm(engine, channel);
     }
     if (image && st == LE_TRACK_STOPPED && len > 0 &&
         !le_prepare_image_punch_in(engine, channel)) {
