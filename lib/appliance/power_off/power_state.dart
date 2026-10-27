@@ -42,7 +42,10 @@ class PowerState extends Equatable {
     this.phase = PowerPhase.idle,
     this.action,
     this.refusal,
-  });
+  }) : assert(
+         (phase == PowerPhase.refuse) == (refusal != null),
+         'a refusal names its reason, and only a refusal has one',
+       );
 
   /// Current phase.
   final PowerPhase phase;
