@@ -54,6 +54,7 @@ export 'package:segno_engine/segno_engine.dart'
 // the UI. The engine-typed boundary mappers stay package-internal (not shown).
 export 'src/fx_chain_lookup.dart';
 export 'src/looper_repository.dart';
+export 'src/models/audio_apply_result.dart';
 export 'src/models/audio_config.dart'
     show
         AudioBackend,

@@ -29,6 +29,68 @@ enum ConfigPhase {
   refused,
 }
 
+/// Whether an apply is waiting on "Apply audio settings?" (pen 28/04).
+enum ApplyPhase {
+  /// Nothing is waiting.
+  idle,
+
+  /// Music is playing, so the request waits for "Stop audio and apply" or
+  /// Cancel.
+  confirming,
+}
+
+/// Why the last request was refused before anything changed (#1270 Part 3a).
+class ApplyRefusal extends Equatable {
+  /// Refused because [busyKind] is in flight: the guard table's name of the
+  /// operation a device change must not overlap (`capture` for a take).
+  const ApplyRefusal.busy(String this.busyKind)
+    : overBudgetRate = null,
+      refusedDevice = null,
+      settingsRefused = false;
+
+  /// Refused because the effects would not fit at [overBudgetRate] (D19).
+  const ApplyRefusal.overBudgetRate(int this.overBudgetRate)
+    : busyKind = null,
+      refusedDevice = null,
+      settingsRefused = false;
+
+  /// Refused by the interface: [refusedDevice] would not open, and the
+  /// previous one runs again.
+  const ApplyRefusal.deviceRefused(String this.refusedDevice)
+    : busyKind = null,
+      overBudgetRate = null,
+      settingsRefused = false;
+
+  /// Refused by the interface for a change that moved neither the device nor
+  /// the rates (a loop cap): the previous settings run again.
+  const ApplyRefusal.settingsRefused()
+    : busyKind = null,
+      overBudgetRate = null,
+      refusedDevice = null,
+      settingsRefused = true;
+
+  /// The blocking operation's `GuardKind` name, for a busy refusal.
+  final String? busyKind;
+
+  /// The sample rate the effects would not fit at.
+  final int? overBudgetRate;
+
+  /// The interface that would not open.
+  final String? refusedDevice;
+
+  /// Whether the interface refused settings that moved neither the device
+  /// nor the rates.
+  final bool settingsRefused;
+
+  @override
+  List<Object?> get props => [
+    busyKind,
+    overBudgetRate,
+    refusedDevice,
+    settingsRefused,
+  ];
+}
+
 /// Whether the audio device is currently open.
 enum AudioSetupStatus {
   /// The engine is stopped; the device is closed.
@@ -65,6 +127,11 @@ enum DeviceConnectivity {
   /// standing notice of the return, with the Sessions action, until the user
   /// acts (#1140).
   restoredCleared,
+
+  /// The console booted with its pinned interface absent and waits for it:
+  /// audio starts on its own when it appears (`AudioRecoveryCubit`). The
+  /// stage holds the same red strip as [lost], with the waiting sentence.
+  waiting,
 }
 
 /// State for the audio setup feature: the user's requested device options plus
@@ -83,9 +150,6 @@ class AudioSetupState extends Equatable {
     this.captureDeviceId = '',
     this.backend = AudioBackend.miniaudio,
     this.asioDriver = '',
-    this.asioDrivers = const [],
-    this.cachedAsioDrivers = const [],
-    this.asioOnly = false,
     this.deviceConnectivity = DeviceConnectivity.none,
     this.connectivityDeviceName = '',
     this.phase = ConfigPhase.settled,
@@ -95,6 +159,9 @@ class AudioSetupState extends Equatable {
     this.actualBuffer = 0,
     this.error,
     this.errorDetail,
+    this.applyPhase = ApplyPhase.idle,
+    this.refusal,
+    this.hasContent = false,
   });
 
   /// Requested sample rate in Hz.
@@ -113,8 +180,8 @@ class AudioSetupState extends Equatable {
   /// Live engine/device status from the repository.
   final EngineStatus engineStatus;
 
-  /// The detected cable-free loopback path (if any) used to auto-measure
-  /// latency without a physical cable.
+  /// The detected cable-free loopback path (if any), which capture is routed
+  /// to when no capture device is pinned.
   final LoopbackInfo loopback;
 
   /// The host's enumerated audio devices (playback + capture) for the pickers.
@@ -126,28 +193,13 @@ class AudioSetupState extends Equatable {
   /// Selected capture device id, or empty for the system default.
   final String captureDeviceId;
 
-  /// The requested device backend (intent). Defaults to
-  /// [AudioBackend.miniaudio]; [AudioBackend.asio] is forced on Windows.
-  /// The negotiated reality is read from [engineStatus]'s `activeBackend`.
+  /// The saved backend, carried through to the engine and the saved config
+  /// unchanged until those fields go (#1270 Part 2).
   final AudioBackend backend;
 
-  /// The selected ASIO driver id, or empty when none is chosen. Meaningful only
-  /// when [backend] is [AudioBackend.asio].
+  /// The saved ASIO driver id, carried through on the same terms as
+  /// [backend].
   final String asioDriver;
-
-  /// The installed ASIO drivers (one duplex [AudioDevice] each) for the driver
-  /// picker. Empty off Windows / on the default build.
-  final List<AudioDevice> asioDrivers;
-
-  /// The ASIO drivers enumerated once at process start, cached so the picker
-  /// stays populated even while ASIO holds the device (re-probing live would
-  /// tear the stream down — R1). [asioDrivers] falls back to this while live.
-  final List<AudioDevice> cachedAsioDrivers;
-
-  /// Whether this platform runs ASIO exclusively (Windows): the backend is
-  /// hardwired to ASIO, there is no backend selector or device picker, and the
-  /// no-driver / ASIO4ALL affordances apply. `false` on macOS/Linux.
-  final bool asioOnly;
 
   /// What the last requested config is doing — the Device tab's own banner.
   final ConfigPhase phase;
@@ -168,7 +220,7 @@ class AudioSetupState extends Equatable {
   ///
   /// Distinct from [sampleRate] because the selection can only ever hold a
   /// value the chooser offers: a device that negotiates a rate outside
-  /// [sampleRateChoices] leaves the selection where it was, and this is where
+  /// [sampleRates] leaves the selection where it was, and this is where
   /// the real figure lives so the banner can still name it.
   final int actualRate;
 
@@ -190,6 +242,18 @@ class AudioSetupState extends Equatable {
   /// Engine error detail (e.g. result name) for [error].
   final String? errorDetail;
 
+  /// Whether an apply waits on "Apply audio settings?".
+  final ApplyPhase applyPhase;
+
+  /// Why the last request was refused, or `null`; cleared by the next
+  /// request that applies.
+  final ApplyRefusal? refusal;
+
+  /// Whether any track holds recorded material. While it does, the sample
+  /// rate and the maximum loop length are locked: either would clear the
+  /// engine (D2, the owner's Q3 answer).
+  final bool hasContent;
+
   /// Playback (output) devices from [devices].
   List<AudioDevice> get playbackDevices =>
       devices.where((d) => !d.isInput).toList();
@@ -197,39 +261,6 @@ class AudioSetupState extends Equatable {
   /// Capture (input) devices from [devices].
   List<AudioDevice> get captureDevices =>
       devices.where((d) => d.isInput).toList();
-
-  /// Whether the ASIO backend is the requested intent.
-  bool get isAsio => backend == AudioBackend.asio;
-
-  /// The currently selected ASIO driver from [asioDrivers], or `null` when none
-  /// matches [asioDriver].
-  AudioDevice? get selectedAsioDriver {
-    for (final driver in asioDrivers) {
-      if (driver.id == asioDriver) return driver;
-    }
-    return null;
-  }
-
-  /// The buffer-size options to offer the user: under ASIO, the selected
-  /// driver's real set (probed from the driver — e.g. a Focusrite locked to its
-  /// Focusrite Control setting); otherwise the generic [bufferSizes] list.
-  List<int> get bufferChoices {
-    final driver = selectedAsioDriver;
-    if (isAsio && driver != null && driver.bufferSizes.isNotEmpty) {
-      return driver.bufferSizes;
-    }
-    return bufferSizes;
-  }
-
-  /// The sample-rate options to offer: the selected ASIO driver's supported
-  /// rates under ASIO, otherwise the generic [sampleRates] list.
-  List<int> get sampleRateChoices {
-    final driver = selectedAsioDriver;
-    if (isAsio && driver != null && driver.sampleRates.isNotEmpty) {
-      return driver.sampleRates;
-    }
-    return sampleRates;
-  }
 
   /// Selectable sample rates.
   static const sampleRates = [44100, 48000, 96000];
@@ -243,9 +274,8 @@ class AudioSetupState extends Equatable {
   /// The round-trip latency [bufferFrames] costs at [sampleRate], in ms.
   ///
   /// **An estimate, and said to be one**: two buffer periods, one in and one
-  /// out. It cannot include the converter's own delay, which no host reports —
-  /// the MEASURED figure lives on the Status tab, where a loopback actually
-  /// measures it.
+  /// out. It cannot include the converter's own delay, which no host reports;
+  /// only a cable measurement does.
   ///
   /// It exists because `AUDIO / settings-rate` gives **every** buffer option
   /// its own cost, not only the chosen one: a list where the current pick is
@@ -268,9 +298,6 @@ class AudioSetupState extends Equatable {
     String? captureDeviceId,
     AudioBackend? backend,
     String? asioDriver,
-    List<AudioDevice>? asioDrivers,
-    List<AudioDevice>? cachedAsioDrivers,
-    bool? asioOnly,
     DeviceConnectivity? deviceConnectivity,
     String? connectivityDeviceName,
     ConfigPhase? phase,
@@ -281,6 +308,10 @@ class AudioSetupState extends Equatable {
     AudioSetupError? error,
     String? errorDetail,
     bool clearError = false,
+    ApplyPhase? applyPhase,
+    ApplyRefusal? refusal,
+    bool clearRefusal = false,
+    bool? hasContent,
   }) {
     return AudioSetupState(
       sampleRate: sampleRate ?? this.sampleRate,
@@ -294,9 +325,6 @@ class AudioSetupState extends Equatable {
       captureDeviceId: captureDeviceId ?? this.captureDeviceId,
       backend: backend ?? this.backend,
       asioDriver: asioDriver ?? this.asioDriver,
-      asioDrivers: asioDrivers ?? this.asioDrivers,
-      cachedAsioDrivers: cachedAsioDrivers ?? this.cachedAsioDrivers,
-      asioOnly: asioOnly ?? this.asioOnly,
       deviceConnectivity: deviceConnectivity ?? this.deviceConnectivity,
       connectivityDeviceName:
           connectivityDeviceName ?? this.connectivityDeviceName,
@@ -309,6 +337,9 @@ class AudioSetupState extends Equatable {
       // fields cannot otherwise be cleared through `?? this`.
       error: clearError ? null : (error ?? this.error),
       errorDetail: clearError ? null : (errorDetail ?? this.errorDetail),
+      applyPhase: applyPhase ?? this.applyPhase,
+      refusal: clearRefusal ? null : (refusal ?? this.refusal),
+      hasContent: hasContent ?? this.hasContent,
     );
   }
 
@@ -325,9 +356,6 @@ class AudioSetupState extends Equatable {
     captureDeviceId,
     backend,
     asioDriver,
-    asioDrivers,
-    cachedAsioDrivers,
-    asioOnly,
     deviceConnectivity,
     connectivityDeviceName,
     phase,
@@ -337,5 +365,8 @@ class AudioSetupState extends Equatable {
     actualBuffer,
     error,
     errorDetail,
+    applyPhase,
+    refusal,
+    hasContent,
   ];
 }

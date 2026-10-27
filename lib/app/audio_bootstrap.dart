@@ -10,17 +10,14 @@ import 'package:segno/looper/application/settings_owner.dart';
 // unprefixed one here.
 import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
 
-/// The outcome of [tryAutoStartEngine]: whether the engine came up, the ASIO
-/// drivers enumerated at startup so the audio-setup cubit can cache them for
-/// the picker (it cannot re-enumerate while ASIO holds the device — R1), and
-/// the config that was attempted when a *pinned* device could not be opened —
+/// The outcome of [tryAutoStartEngine]: whether the engine came up, and the
+/// config that was attempted when a *pinned* device could not be opened —
 /// handed to the audio-recovery cubit so the engine auto-starts when that
 /// device reappears (the in-repo supervisor only arms after a good start).
 /// `recoveryConfig` is null when the engine started, on first run, or for the
 /// system default (which is never auto-recovered).
 typedef AutoStartResult = ({
   bool started,
-  List<AudioDevice> asioDrivers,
   EngineConfig? recoveryConfig,
 });
 
@@ -78,7 +75,6 @@ Future<AutoStartResult> tryAutoStartEngine({
     repository.stopEngine();
     return (
       started: false,
-      asioDrivers: const <AudioDevice>[],
       recoveryConfig: null,
     );
   }
@@ -116,8 +112,6 @@ Future<AutoStartResult> _tryAutoStartEngine({
   required LooperRepository repository,
   required SettingsRepository settings,
 }) async {
-  const asioDrivers = <AudioDevice>[];
-
   // Global monitor gain must be valid before either first-run or saved-device
   // startup opens audio. The selected device's full mix is read after opening.
   await settings.loadMixSettings('');
@@ -129,7 +123,7 @@ Future<AutoStartResult> _tryAutoStartEngine({
       settings: settings,
     );
     AppLog.info('audio auto-start: first run started=$started');
-    return (started: started, asioDrivers: asioDrivers, recoveryConfig: null);
+    return (started: started, recoveryConfig: null);
   }
   final backend = engineBackendOf(saved.backend);
   final asioDriver = saved.asioDriver;
@@ -230,7 +224,6 @@ Future<AutoStartResult> _tryAutoStartEngine({
         config.playbackDeviceId.isNotEmpty || config.captureDeviceId.isNotEmpty;
     return (
       started: false,
-      asioDrivers: asioDrivers,
       recoveryConfig: attemptedPin ? config : null,
     );
   }
@@ -301,12 +294,9 @@ Future<AutoStartResult> _tryAutoStartEngine({
   // Restore latency compensation. The interactive flow does this in
   // AudioSetupCubit, but the cubit is not created on the auto-start path, so
   // without this the engine would come up with no record offset (compensation
-  // off) — overdubs would land late by the full hardware round-trip. Restore
-  // the saved per-device offset; if there is none yet, auto-measure when the
-  // capture path loops our output back — a cable-free loopback device or an
-  // interface with dedicated loopback channels (matching the interactive
-  // start). A freshly measured offset is persisted the next time the cubit is
-  // created (or the next interactive measurement).
+  // off) — overdubs would land late by the full hardware round-trip. Only a
+  // saved offset for this device, rate and buffer is restored: nothing is
+  // measured without being asked (#1270, the owner's Q2 answer).
   final status = repository.state.status;
   final savedMix = await settings.loadMixSettings(status.deviceName);
   final savedOffset = await settings.loadLatencyOffsetFrames(
@@ -316,9 +306,6 @@ Future<AutoStartResult> _tryAutoStartEngine({
   );
   if (savedOffset != null && savedOffset > 0) {
     repository.setRecordOffset(savedOffset);
-  } else if ((loopback.isAutoRoutable && captureId.isEmpty) ||
-      status.excludedInputMask != 0) {
-    repository.measureLatency();
   }
 
   // Restore the global default loop multiple (×N). Like the latency offset
@@ -361,7 +348,7 @@ Future<AutoStartResult> _tryAutoStartEngine({
       'result=${mixResult.name}',
     );
     repository.stopEngine();
-    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+    return (started: false, recoveryConfig: null);
   }
 
   // A start may already have replayed remembered chains. Do not issue a
@@ -372,7 +359,7 @@ Future<AutoStartResult> _tryAutoStartEngine({
       'audio auto-start: FX replay refused result=${startupFx.name}',
     );
     repository.stopEngine();
-    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+    return (started: false, recoveryConfig: null);
   }
   final mintedChains = <Future<void> Function()>[];
   bool admitted(EngineResult result) {
@@ -402,7 +389,6 @@ Future<AutoStartResult> _tryAutoStartEngine({
         )) {
           return (
             started: false,
-            asioDrivers: asioDrivers,
             recoveryConfig: null,
           );
         }
@@ -420,7 +406,7 @@ Future<AutoStartResult> _tryAutoStartEngine({
           allowUnavailable: true,
         ),
       )) {
-        return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+        return (started: false, recoveryConfig: null);
       }
       repository.setLaneChainMeta(
         channel: track.channel,
@@ -457,7 +443,7 @@ Future<AutoStartResult> _tryAutoStartEngine({
           allowUnavailable: true,
         ),
       )) {
-        return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+        return (started: false, recoveryConfig: null);
       }
       if (trackChain.entries.any((e) => e.slotId == null)) {
         final channel = track.channel;
@@ -489,7 +475,7 @@ Future<AutoStartResult> _tryAutoStartEngine({
           allowUnavailable: true,
         ),
       )) {
-        return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+        return (started: false, recoveryConfig: null);
       }
       if (outputChain.entries.any((e) => e.slotId == null)) {
         final outputBus = bus;
@@ -518,7 +504,7 @@ Future<AutoStartResult> _tryAutoStartEngine({
         allowUnavailable: true,
       ),
     )) {
-      return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+      return (started: false, recoveryConfig: null);
     }
     if (allTracksChain.entries.any((e) => e.slotId == null)) {
       mintedChains.add(
@@ -539,7 +525,7 @@ Future<AutoStartResult> _tryAutoStartEngine({
       'audio auto-start: saved setting refused result=${restoredFx.name}',
     );
     repository.stopEngine();
-    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+    return (started: false, recoveryConfig: null);
   }
   for (final save in mintedChains) {
     await save();
@@ -564,7 +550,7 @@ Future<AutoStartResult> _tryAutoStartEngine({
   // creates and loads it on every launch), so they are not re-applied here.
   final pinned = playbackId.isNotEmpty || captureId.isNotEmpty;
   AppLog.info('audio auto-start: started ok pinned=$pinned');
-  return (started: true, asioDrivers: asioDrivers, recoveryConfig: null);
+  return (started: true, recoveryConfig: null);
 }
 
 /// Starts the engine on a first run (no saved config) and persists the chosen

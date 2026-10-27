@@ -103,7 +103,7 @@ class PerformanceReadout extends Equatable {
     this.tsDen = 4,
     this.mode = 'record',
     this.activeBank = 0,
-    this.deviceLost = false,
+    this.lossLine = '',
     this.goodbye = ReadoutGoodbye.none,
     this.brightness = 1,
   });
@@ -124,7 +124,7 @@ class PerformanceReadout extends Equatable {
       tsDen: map['tsDen'] as int? ?? 4,
       mode: map['mode'] as String? ?? 'record',
       activeBank: map['activeBank'] as int? ?? 0,
-      deviceLost: map['deviceLost'] as bool? ?? false,
+      lossLine: map['lossLine'] as String? ?? '',
       goodbye: _goodbyeOf(map['goodbye']),
       brightness: (map['brightness'] as num? ?? 1).toDouble(),
     );
@@ -156,11 +156,12 @@ class PerformanceReadout extends Equatable {
   /// address, shown beside the function.
   final int activeBank;
 
-  /// The pinned audio interface is absent (#453): the stage holds a red
-  /// banner, and the readout echoes the same line (`c/device-lost` — the
-  /// performer is looking down, not at the main screen). A boolean, not a
-  /// name: the echoed line is the pen's fixed copy.
-  final bool deviceLost;
+  /// The stage strip's line while the pinned audio interface is absent
+  /// (#453), or while the boot waits for it; empty otherwise. The readout
+  /// echoes it word for word (`c/device-lost` — the performer is looking
+  /// down, not at the main screen), so the line is built once, on the main
+  /// screen, with the device's name (#1270 Part 5).
+  final String lossLine;
 
   /// Committed power-off face. Older senders omit the key → none.
   final ReadoutGoodbye goodbye;
@@ -178,7 +179,7 @@ class PerformanceReadout extends Equatable {
     'tsDen': tsDen,
     'mode': mode,
     'activeBank': activeBank,
-    'deviceLost': deviceLost,
+    'lossLine': lossLine,
     'goodbye': goodbye.name,
     'brightness': brightness,
   };
@@ -192,7 +193,7 @@ class PerformanceReadout extends Equatable {
     tsDen,
     mode,
     activeBank,
-    deviceLost,
+    lossLine,
     goodbye,
     brightness,
   ];

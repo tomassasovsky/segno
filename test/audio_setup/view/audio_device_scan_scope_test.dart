@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/view/audio_device_scan_scope.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -41,6 +42,8 @@ void main() {
     cubit = AudioSetupCubit(
       repository: repository,
       settings: settings,
+      guards: GuardRegistry(),
+      backing: testBackingRepository(),
       deviceRefreshInterval: const Duration(milliseconds: 10),
     );
     addTearDown(cubit.close);

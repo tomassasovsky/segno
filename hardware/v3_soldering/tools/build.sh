@@ -24,6 +24,7 @@ board console out_console/segno_console_board.kicad_pcb
 board ring segno_pedal_ring.kicad_pcb
 board screen screen_power/hand/screen_power_hand.kicad_pcb
 svg console F out_console/segno_console_board.kicad_pcb F.Cu,F.Silkscreen,Edge.Cuts
+svg console B out_console/segno_console_board.kicad_pcb B.Cu,B.Silkscreen,Edge.Cuts --mirror
 svg ring F segno_pedal_ring.kicad_pcb F.Cu,F.Silkscreen,Edge.Cuts
 svg ring B segno_pedal_ring.kicad_pcb B.Cu,B.Silkscreen,Edge.Cuts --mirror
 svg screen F screen_power/hand/screen_power_hand.kicad_pcb F.Cu,F.Silkscreen,Edge.Cuts
