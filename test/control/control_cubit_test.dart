@@ -3096,6 +3096,28 @@ void main() {
         verifyNever(() => looper.play(channel: 1));
       });
 
+      test('Record-mode Stop on the waiting section calls its request off', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1),
+          ]),
+          looperMode: LooperMode.song,
+          songQueuedTrack: 1,
+          songQueueRecord: true,
+        );
+        cubit
+          ..selectTrack(1)
+          ..stop();
+        verify(() => looper.cancelArm(channel: 1)).called(1);
+        verifyNever(
+          () => looper.setMute(
+            muted: any(named: 'muted'),
+            channel: any(named: 'channel'),
+          ),
+        );
+      });
+
       test('Stop cancels an empty section waiting to record', () {
         setEngine(
           _tracksWith(const [
