@@ -7,8 +7,8 @@ import 'package:segno/theme/theme.dart';
 
 /// How long one track's loop may grow: memory the engine reserves per track
 /// when the device opens, so it lives with the device rather than with the
-/// loop settings, and changing it reopens the device (keeping the loops: it
-/// is locked while any track holds material).
+/// loop settings. A pick is drafted with the rest of the Device page and
+/// applied with it; it is locked while any track holds material (D2).
 ///
 /// A row that opens in place onto a chip grid of the offered caps.
 class MaxLoopLengthCard extends StatefulWidget {
@@ -27,7 +27,7 @@ class _MaxLoopLengthCardState extends State<MaxLoopLengthCard> {
     final l10n = context.l10n;
     final surface = context.surface;
     final audio = context.watch<AudioSetupCubit>();
-    final cap = audio.state.maxLoopMinutes;
+    final cap = audio.state.shown.maxLoopMinutes;
     return ConsoleCard(
       children: [
         ConsoleRow(
@@ -61,7 +61,7 @@ class _MaxLoopLengthCardState extends State<MaxLoopLengthCard> {
                 ),
             ],
             onTap: (minutes) {
-              audio.setMaxLoopMinutes(minutes);
+              audio.editMaxLoop(minutes);
               // A pick-one: the question is answered, so it shuts.
               setState(() => _open = false);
             },

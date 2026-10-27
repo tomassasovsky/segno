@@ -20,6 +20,20 @@
 #             (#1397). The kernel's FAT driver remounts /boot
 #             read-only when it finds a damaged filesystem. The boot-time fsck
 #             repairs it, so the remedy is a restart.
+#   install-file <path>
+#             Install a bundle the app copied from a USB drive (#1270 Part 8).
+#             The path must be inside the staging directory
+#             (/data/segno/update-staging); the copy there is removed on exit,
+#             whatever happens. `rauc info` checks the bundle's signature
+#             against the keyring and reads its version and compatible
+#             string. Refusals print one JSON line on stdout and exit 4,
+#             before anything is written:
+#               {"error":"outside-staging"}   the path is not in staging
+#               {"error":"unverified"}        signature or compatible fails
+#               {"error":"not-newer","version":"<v>"}
+#             Otherwise it installs exactly as `install` does: the same
+#             PROGRESS lines, attempt and staged markers, and exit 3 for a
+#             read-only /boot.
 #   attempt   Print the install that was cut off, {"version":"<v>"}, or {}.
 #   clear-attempt
 #             Forget it (the app retried or dropped the cut-off install).
@@ -78,6 +92,14 @@ BOOT_MOUNT="${SEGNO_BOOT_MOUNT:-/boot}"
 # message, so keep it in step with kBootReadOnlyExitCode in
 # lib/update/appliance/appliance_env.dart.
 EXIT_BOOT_READ_ONLY=3
+# A USB bundle refused before anything was written; the JSON line on stdout
+# says why. Keep in step with kInstallFileRefusedExitCode in
+# lib/update/appliance/appliance_env.dart.
+EXIT_REFUSED=4
+# Where the app copies a bundle from a USB drive before `install-file`.
+STAGING_DIR="${SEGNO_UPDATE_STAGING_DIR:-/data/segno/update-staging}"
+# The image's RAUC config, whose compatible string a bundle must carry.
+RAUC_SYSTEM_CONF="${SEGNO_RAUC_SYSTEM_CONF:-/etc/rauc/system.conf}"
 
 log() { echo "segno-update-ctl: $*" >&2; }
 progress() { echo "PROGRESS $1"; }
@@ -92,6 +114,7 @@ child=""
 # A failed install leaves no trace: its work dir and its attempt marker go.
 _on_exit() {
     [ -z "${work:-}" ] || rm -rf "$work"
+    [ -z "${staged_copy:-}" ] || rm -f "$staged_copy"
     [ -z "$attempt_open" ] || rm -f "$ATTEMPT_FILE"
 }
 
@@ -105,6 +128,7 @@ _on_terminate() {
     [ -n "$child" ] || child=${!:-}
     [ -z "$child" ] || kill "$child" 2>/dev/null || true
     [ -z "${work:-}" ] || rm -rf "$work"
+    [ -z "${staged_copy:-}" ] || rm -f "$staged_copy"
     exit 143
 }
 
@@ -218,11 +242,7 @@ do_install() {
         return 1
     fi
 
-    # Best-effort like the staged marker: an install that cannot record its
-    # attempt still installs, it just cannot be reported as cut off.
-    mkdir -p "$(dirname "$ATTEMPT_FILE")" 2>/dev/null || true
-    { printf '%s\n' "$version" > "$ATTEMPT_FILE"; } 2>/dev/null || true
-    attempt_open=1
+    open_attempt "$version"
 
     log "downloading v$version: $bundle"
     progress 5
@@ -241,17 +261,33 @@ do_install() {
         fi
     fi
 
-    # Install to the inactive slot, mapping rauc's own "NN% ..." progress into
-    # the 40..100 band. A fifo preserves rauc's exit code (a plain pipe loses it
-    # under busybox sh, which has no reliable pipefail).
+    install_bundle "$work/$bundle" "$version" 40
+}
+
+# Records the install in progress. Best-effort like the staged marker: an
+# install that cannot record its attempt still installs, it just cannot be
+# reported as cut off.
+open_attempt() {
+    mkdir -p "$(dirname "$ATTEMPT_FILE")" 2>/dev/null || true
+    { printf '%s\n' "$1" > "$ATTEMPT_FILE"; } 2>/dev/null || true
+    attempt_open=1
+}
+
+# install_bundle BUNDLE VERSION FROM: install BUNDLE to the inactive slot,
+# mapping rauc's own "NN% ..." progress into the FROM..100 band, then set the
+# staged markers. Shared by `install` and `install-file`; `work` must hold a
+# directory for the fifo. A fifo preserves rauc's exit code (a plain pipe
+# loses it under busybox sh, which has no reliable pipefail).
+install_bundle() {
+    bundle_path=$1 version=$2 from=$3
     log "installing v$version to the inactive slot"
     fifo="$work/rauc.fifo"
     mkfifo "$fifo"
-    rauc install "$work/$bundle" >"$fifo" 2>&1 &
+    rauc install "$bundle_path" >"$fifo" 2>&1 &
     child=$!
     while IFS= read -r line; do
         pct=$(printf '%s' "$line" | sed -n 's/^ *\([0-9]\{1,3\}\)% .*/\1/p')
-        [ -n "$pct" ] && progress $((40 + pct * 60 / 100))
+        [ -n "$pct" ] && progress $((from + pct * (100 - from) / 100))
         printf '%s\n' "$line" >&2
     done < "$fifo"
     if ! wait "$child"; then
@@ -268,6 +304,66 @@ do_install() {
     attempt_open=""
     progress 100
     log "staged v$version to the inactive slot; reboot to apply"
+}
+
+# A refusal of a USB bundle: one JSON line for the app, then exit 4.
+refuse() {
+    printf '%s\n' "$1"
+    exit "$EXIT_REFUSED"
+}
+
+do_install_file() {
+    [ -n "${1:-}" ] || refuse '{"error":"outside-staging"}'
+    # Resolved, so neither `..` nor a link can point it outside staging.
+    staging=$(readlink -f "$STAGING_DIR" 2>/dev/null || true)
+    # An empty or missing staging dir would make the pattern below match any
+    # absolute path: refuse rather than take (and later delete) it.
+    if [ -z "$staging" ] || [ ! -d "$staging" ]; then
+        log "refusing $1: staging $STAGING_DIR is not a directory"
+        refuse '{"error":"outside-staging"}'
+    fi
+    path=$(readlink -f "$1" 2>/dev/null || true)
+    case "$path" in
+        "$staging"/?*) ;;
+        *) log "refusing $1: not in $STAGING_DIR"
+           refuse '{"error":"outside-staging"}' ;;
+    esac
+    [ -f "$path" ] || refuse '{"error":"outside-staging"}'
+    # From here the copy is ours to remove, whatever happens.
+    staged_copy=$path
+    trap _on_exit EXIT
+    trap _on_terminate INT TERM
+    command -v rauc >/dev/null 2>&1 || { log "rauc not installed"; return 1; }
+    work=$(mktemp -d "${TMPDIR:-/tmp}/segno-update.XXXXXX")
+    if boot_read_only; then
+        log "the boot partition is read-only; restart to repair it"
+        return "$EXIT_BOOT_READ_ONLY"
+    fi
+    progress 0
+
+    # `rauc info` verifies the signature against the keyring before it
+    # prints anything; a bundle it cannot verify is refused here.
+    if ! rauc info --output-format=json "$path" >"$work/info.json" 2>"$work/info.err"; then
+        log "rauc info refused $path: $(cat "$work/info.err" 2>/dev/null)"
+        refuse '{"error":"unverified"}'
+    fi
+    version=$(jq -r '.version // empty' "$work/info.json" 2>/dev/null || true)
+    compatible=$(jq -r '.compatible // empty' "$work/info.json" 2>/dev/null || true)
+    ours=$(sed -n 's/^[[:space:]]*compatible[[:space:]]*=[[:space:]]*//p' \
+        "$RAUC_SYSTEM_CONF" 2>/dev/null | head -n 1 | tr -d '[:space:]')
+    if [ -z "$version" ] || [ -z "$ours" ] || [ "$compatible" != "$ours" ]; then
+        log "refusing $path: compatible '$compatible' is not '$ours'"
+        refuse '{"error":"unverified"}'
+    fi
+    current=$(cat "$CUR_FILE" 2>/dev/null || echo "0.0.0")
+    if ! semver_newer "$current" "$version"; then
+        log "refusing v$version: not newer than $current"
+        refuse "$(jq -cn --arg v "$version" '{error:"not-newer",version:$v}')"
+    fi
+
+    open_attempt "$version"
+    progress 5
+    install_bundle "$path" "$version" 5
 }
 
 clear_staged_marker() { rm -f "$STAGED_FILE" "$STAGED_BOOT_FILE" "$TRYBOOT_FILE"; }
@@ -339,6 +435,7 @@ do_reconcile_staged() {
 
 case "${1:-}" in
     install)          do_install ;;
+    install-file)     do_install_file "${2:-}" ;;
     reconcile-staged) do_reconcile_staged ;;
     attempt)          do_attempt ;;
     clear-attempt)    rm -f "$ATTEMPT_FILE" ;;
@@ -360,5 +457,5 @@ case "${1:-}" in
         exec systemctl reboot
         ;;
     poweroff)         log "powering off"; exec systemctl start poweroff.target ;;
-    *)                log "usage: segno-update-ctl {install|attempt|clear-attempt|reconcile-staged|reboot|poweroff}"; exit 2 ;;
+    *)                log "usage: segno-update-ctl {install|install-file <path>|attempt|clear-attempt|reconcile-staged|reboot|poweroff}"; exit 2 ;;
 esac

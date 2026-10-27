@@ -3,7 +3,7 @@
  * well-defined points; implemented once per OS in engine_<os>.c. Most are no-ops
  * on most platforms — this is a seam for per-OS *capabilities* (CoreAudio
  * channel labels on macOS; JACK port-pinning + PipeWire quantum forcing on
- * Linux; opt-in ASIO on Windows later), not a generic backend vtable.
+ * Linux), not a generic backend vtable.
  *
  * Purely internal: NOT part of the FFI surface (segno_engine_api.h), the Dart
  * loader, or ffigen.

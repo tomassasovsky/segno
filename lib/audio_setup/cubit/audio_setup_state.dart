@@ -39,6 +39,91 @@ enum ApplyPhase {
   confirming,
 }
 
+/// The audio settings being edited on the Device page and not yet applied
+/// (#1270 Part 4, pen 28/01). Editing calls nothing; Apply opens the device
+/// once with all of it.
+class AudioDraft extends Equatable {
+  /// Creates an [AudioDraft].
+  const AudioDraft({
+    required this.playbackDeviceId,
+    required this.captureDeviceId,
+    required this.sampleRate,
+    required this.bufferFrames,
+    required this.maxLoopMinutes,
+  });
+
+  /// What [state] runs, as a draft.
+  AudioDraft.of(AudioSetupState state)
+    : playbackDeviceId = state.playbackDeviceId,
+      captureDeviceId = state.captureDeviceId,
+      sampleRate = state.sampleRate,
+      bufferFrames = state.bufferFrames,
+      maxLoopMinutes = state.maxLoopMinutes;
+
+  /// The interface's playback half (empty = system default).
+  final String playbackDeviceId;
+
+  /// The interface's capture half (empty = system default).
+  final String captureDeviceId;
+
+  /// The sample rate in Hz.
+  final int sampleRate;
+
+  /// The buffer in frames.
+  final int bufferFrames;
+
+  /// The maximum loop length in whole minutes (`0` = engine default).
+  final int maxLoopMinutes;
+
+  /// Returns a copy with the given fields replaced.
+  AudioDraft copyWith({
+    String? playbackDeviceId,
+    String? captureDeviceId,
+    int? sampleRate,
+    int? bufferFrames,
+    int? maxLoopMinutes,
+  }) => AudioDraft(
+    playbackDeviceId: playbackDeviceId ?? this.playbackDeviceId,
+    captureDeviceId: captureDeviceId ?? this.captureDeviceId,
+    sampleRate: sampleRate ?? this.sampleRate,
+    bufferFrames: bufferFrames ?? this.bufferFrames,
+    maxLoopMinutes: maxLoopMinutes ?? this.maxLoopMinutes,
+  );
+
+  @override
+  List<Object?> get props => [
+    playbackDeviceId,
+    captureDeviceId,
+    sampleRate,
+    bufferFrames,
+    maxLoopMinutes,
+  ];
+}
+
+/// Where the cable test stands (#1270 Part 3b, pen 28/03).
+enum MeasurePhase {
+  /// No cable test is open.
+  idle,
+
+  /// The cable dialog is open, choosing the output and input.
+  cable,
+
+  /// The pulse is out and the engine listens for it.
+  running,
+
+  /// The pulse came back: the offset is set and saved, and the dialog
+  /// closes.
+  done,
+
+  /// No pulse came back: the dialog stays open to retry. The offset is
+  /// unchanged.
+  noReturn,
+
+  /// The measurement was cancelled by something other than the player (a
+  /// take, a stop, the device leaving). The offset is unchanged.
+  cancelled,
+}
+
 /// Why the last request was refused before anything changed (#1270 Part 3a).
 class ApplyRefusal extends Equatable {
   /// Refused because [busyKind] is in flight: the guard table's name of the
@@ -148,8 +233,6 @@ class AudioSetupState extends Equatable {
     this.devices = const [],
     this.playbackDeviceId = '',
     this.captureDeviceId = '',
-    this.backend = AudioBackend.miniaudio,
-    this.asioDriver = '',
     this.deviceConnectivity = DeviceConnectivity.none,
     this.connectivityDeviceName = '',
     this.phase = ConfigPhase.settled,
@@ -162,6 +245,11 @@ class AudioSetupState extends Equatable {
     this.applyPhase = ApplyPhase.idle,
     this.refusal,
     this.hasContent = false,
+    this.measurePhase = MeasurePhase.idle,
+    this.measureOutput = 1,
+    this.measureInput = 1,
+    this.playbackRunning = false,
+    this.draft,
   });
 
   /// Requested sample rate in Hz.
@@ -193,14 +281,6 @@ class AudioSetupState extends Equatable {
   /// Selected capture device id, or empty for the system default.
   final String captureDeviceId;
 
-  /// The saved backend, carried through to the engine and the saved config
-  /// unchanged until those fields go (#1270 Part 2).
-  final AudioBackend backend;
-
-  /// The saved ASIO driver id, carried through on the same terms as
-  /// [backend].
-  final String asioDriver;
-
   /// What the last requested config is doing — the Device tab's own banner.
   final ConfigPhase phase;
 
@@ -226,7 +306,7 @@ class AudioSetupState extends Equatable {
 
   /// The period the device is actually running, on the same terms as
   /// [actualRate]. This is the one that drifts in practice — a negotiated
-  /// buffer is an ALSA quantum or an ASIO granularity step, rarely one of
+  /// buffer is an ALSA quantum or a driver's granularity step, rarely one of
   /// [bufferSizes].
   final int actualBuffer;
 
@@ -253,6 +333,26 @@ class AudioSetupState extends Equatable {
   /// rate and the maximum loop length are locked: either would clear the
   /// engine (D2, the owner's Q3 answer).
   final bool hasContent;
+
+  /// Where the cable test stands.
+  final MeasurePhase measurePhase;
+
+  /// The output the cable test sends on, 1-based as the jack is labelled.
+  final int measureOutput;
+
+  /// The input the cable test listens on, 1-based.
+  final int measureInput;
+
+  /// Whether a track or the backing track plays, so the cable test says it
+  /// will stop them (D4).
+  final bool playbackRunning;
+
+  /// The settings edited and not yet applied, or `null` when the page shows
+  /// what runs.
+  final AudioDraft? draft;
+
+  /// What the page shows: the draft, or what runs.
+  AudioDraft get shown => draft ?? AudioDraft.of(this);
 
   /// Playback (output) devices from [devices].
   List<AudioDevice> get playbackDevices =>
@@ -296,8 +396,6 @@ class AudioSetupState extends Equatable {
     List<AudioDevice>? devices,
     String? playbackDeviceId,
     String? captureDeviceId,
-    AudioBackend? backend,
-    String? asioDriver,
     DeviceConnectivity? deviceConnectivity,
     String? connectivityDeviceName,
     ConfigPhase? phase,
@@ -312,6 +410,12 @@ class AudioSetupState extends Equatable {
     ApplyRefusal? refusal,
     bool clearRefusal = false,
     bool? hasContent,
+    MeasurePhase? measurePhase,
+    int? measureOutput,
+    int? measureInput,
+    bool? playbackRunning,
+    AudioDraft? draft,
+    bool clearDraft = false,
   }) {
     return AudioSetupState(
       sampleRate: sampleRate ?? this.sampleRate,
@@ -323,8 +427,6 @@ class AudioSetupState extends Equatable {
       devices: devices ?? this.devices,
       playbackDeviceId: playbackDeviceId ?? this.playbackDeviceId,
       captureDeviceId: captureDeviceId ?? this.captureDeviceId,
-      backend: backend ?? this.backend,
-      asioDriver: asioDriver ?? this.asioDriver,
       deviceConnectivity: deviceConnectivity ?? this.deviceConnectivity,
       connectivityDeviceName:
           connectivityDeviceName ?? this.connectivityDeviceName,
@@ -340,6 +442,11 @@ class AudioSetupState extends Equatable {
       applyPhase: applyPhase ?? this.applyPhase,
       refusal: clearRefusal ? null : (refusal ?? this.refusal),
       hasContent: hasContent ?? this.hasContent,
+      measurePhase: measurePhase ?? this.measurePhase,
+      measureOutput: measureOutput ?? this.measureOutput,
+      measureInput: measureInput ?? this.measureInput,
+      playbackRunning: playbackRunning ?? this.playbackRunning,
+      draft: clearDraft ? null : (draft ?? this.draft),
     );
   }
 
@@ -354,8 +461,6 @@ class AudioSetupState extends Equatable {
     devices,
     playbackDeviceId,
     captureDeviceId,
-    backend,
-    asioDriver,
     deviceConnectivity,
     connectivityDeviceName,
     phase,
@@ -368,5 +473,10 @@ class AudioSetupState extends Equatable {
     applyPhase,
     refusal,
     hasContent,
+    measurePhase,
+    measureOutput,
+    measureInput,
+    playbackRunning,
+    draft,
   ];
 }

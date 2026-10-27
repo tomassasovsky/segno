@@ -9,7 +9,7 @@ library;
 // `GridDivision` / `TempoSource` are the same kind of keeper, now surfaced
 // through `TransportState` (A4b). `LooperMode` joins them (B2a), also
 // surfaced through `TransportState`. The audio-config cluster
-// (AudioBackend/AudioDevice/EngineConfig/…) is wrapped in Part 2b.
+// (AudioDevice/EngineConfig/…) is wrapped in Part 2b.
 export 'package:segno_engine/segno_engine.dart'
     show
         ClickMode,
@@ -56,13 +56,7 @@ export 'src/fx_chain_lookup.dart';
 export 'src/looper_repository.dart';
 export 'src/models/audio_apply_result.dart';
 export 'src/models/audio_config.dart'
-    show
-        AudioBackend,
-        AudioDevice,
-        EngineConfig,
-        LatencyState,
-        LoopbackInfo,
-        LoopbackKind;
+    show AudioDevice, EngineConfig, LatencyState, LoopbackInfo, LoopbackKind;
 export 'src/models/engine_reopened.dart';
 export 'src/models/engine_status.dart';
 // The stage-addressed FX model (FX v3 part 3a): the four-stage address + its
@@ -90,6 +84,7 @@ export 'src/models/fx_user_preset.dart';
 export 'src/models/input_monitor.dart';
 export 'src/models/input_setup.dart';
 export 'src/models/lane.dart';
+export 'src/models/latency_result.dart';
 export 'src/models/looper_state.dart';
 export 'src/models/meter_levels.dart';
 export 'src/models/mix_settings_snapshot.dart';

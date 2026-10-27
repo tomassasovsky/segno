@@ -400,6 +400,84 @@ typedef struct le_psola_pass {
  * that many lags either side of the coarse one. */
 #define LE_PSOLA_DMAX 8
 
+/* The Dual Octaver's low band (#1467): its sizes (the tuning is in
+ * engine_fx.h). The detection window, in samples at the band's decimated
+ * rate (about 3 kHz: 43 ms, two periods of the 60 Hz floor and more). */
+#define LE_OCT_LOW_DWIN 128
+
+/* One of the low band's two voices (Octave 1, Octave 2): a read tap on the
+ * band's ring, moving at the voice's ratio, and the tap it is fading from
+ * after a jump of one input period (le_low_voice, engine_fx.c). */
+typedef struct le_oct_low_voice {
+  float d;      /* the tap's delay behind the ring head, device samples */
+  float d_old;  /* the tap fading out */
+  int32_t fade; /* samples left in the fade (0: none) */
+  int32_t fade_len;
+} le_oct_low_voice;
+
+/* The Dual Octaver's low band for one channel (#1467): the input below the
+ * crossover, shifted down in the time domain (le_low_write, le_low_follow
+ * and le_low_play, engine_fx.c). A
+ * heap block the control thread allocates for a Dual Octaver slot
+ * (le_rt_alloc_prefaulted), its ring trailing it, and publishes through
+ * le_octaver_state::low; the audio thread owns every field after that. */
+typedef struct le_oct_low {
+  /* The crossover: one 2nd-order Butterworth low-pass section, run twice
+   * (a Linkwitz-Riley low-pass), its coefficients for the slot's rate. */
+  float lp[5]; /* b0 b1 b2 a1 a2, as le_biquad_tick takes them */
+  float z[2][2];
+  /* The tap delay the voices centre on: the octaver's latency less the
+   * low-pass's group delay. */
+  float centre;
+  /* The crossover in phase-vocoder bins, where the vocoder hands over. */
+  float kc;
+  int32_t sr;   /* the rate it was set up for */
+  int32_t mask; /* the ring's length less 1 (a power of two) */
+  int32_t head; /* the ring index written last */
+  /* Detection: the band decimated by `decim` (boxcar) into a ring of
+   * LE_OCT_LOW_DWIN, a YIN pass over a frozen copy every `every` hops,
+   * spread over the ticks by a credit. */
+  int32_t decim;
+  int32_t dn;
+  float dacc;
+  int32_t dhead;
+  int32_t every;
+  int32_t hops;
+  int32_t busy; /* a pass in flight */
+  int32_t credit;
+  int32_t work; /* the credit a tick adds */
+  /* The input's power and the band's (one-poles over ek), so a band that
+   * holds no note of its own is not searched. */
+  float e_in;
+  float e_low;
+  float ek;
+  /* Per-rate constants: the 10 ms and 5 ms one-poles' steps, and the
+   * shortest and longest periods searched, device samples. */
+  float k10;
+  float k5;
+  float per_min;
+  float per_max;
+  le_yin_pass yin;
+  float period; /* device samples (0: none heard yet) */
+  float f0;     /* the same as a frequency, Hz (0: none) */
+  float voiced; /* the smoothed confidence */
+  float gate;   /* the band's weight, per sample (0: the vocoder plays it) */
+  float boost;  /* its gain over the crossover's loss at the pitch */
+  float ramp;   /* the voices' level above the band's floor */
+  float level1; /* Octave 1's level, smoothed */
+  float level2; /* Octave 2's level, smoothed */
+  /* The band's weight (gate x boost x ramp) at the vocoder's last four
+   * analysis ticks, newest at hold_at: the voices play it as late as the
+   * vocoder's frames do theirs (le_low_play). */
+  float hold[4];
+  int32_t hold_at;
+  le_oct_low_voice v[2];
+  float dring[LE_OCT_LOW_DWIN];
+  float win[LE_OCT_LOW_DWIN];
+  float dp[LE_OCT_LOW_DWIN / 2 + 1];
+  float* ring; /* mask + 1 floats, right after the block */
+} le_oct_low;
+
 /* The OCTAVER's phase-vocoder (and, in part 4, PSOLA) working set for one chain
  * slot on one channel. The three pointers are heap buffers the control thread
  * allocates when the slot becomes OCTAVER (sized by the LE_PV_* constants in
@@ -455,6 +533,15 @@ typedef struct le_octaver_state {
   float frame_ratio2;
   float frame_level1;
   float frame_level2;
+  /* The Dual Octaver's low band (#1467; NULL for the other kinds), and its
+   * weight and boost read with the frame (le_pv_shift_into; a weight of 0
+   * hands nothing over). Published with release ordering, as fx->line is:
+   * the audio thread may be running the slot as another kind while the
+   * control thread prepares it. */
+  le_oct_low *_Atomic low;
+  float frame_low_w;
+  float frame_low_g;
+  float frame_low_kc; /* the crossover, in bins */
   /* Smart Tune (LE_FX_SMART_TUNE): the correction it applies and the one
    * its target note asks for, in cents; the glide's per-sample step; and
    * the period and settings those two were worked out at (the period, then
@@ -2138,11 +2225,6 @@ struct le_engine {
   _Atomic int32_t a_buffer_frames;
   _Atomic int32_t a_in_channels;    /* negotiated hardware capture channels */
   _Atomic int32_t a_out_channels;   /* negotiated hardware playback channels */
-  /* le_audio_backend actually running, published in the snapshot. Set to
-   * LE_BACKEND_MINIAUDIO in the configure/reset path and republished at device
-   * open from the backend's negotiated le_device_open_result.active_backend
-   * (ASIO on Windows, miniaudio on macOS/Linux). */
-  _Atomic int32_t a_active_backend;
   /* Input channels whose Core Audio label marks them as loopback; never
    * recorded, monitored, or routable. Computed once at device open. */
   _Atomic uint32_t a_excluded_input_mask;
@@ -2160,8 +2242,7 @@ struct le_engine {
    * bucket. cb_timing below carries the same events broken out per kind and
    * per window, and those buckets sum to this only for kinds THIS BUILD KNOWS
    * -- which is every kind any shipping backend produces today (ALSA passes
-   * 0/1/2, ASIO passes 3). Until #722 the ONLY producer was the Windows ASIO
-   * overload notification, so this read a flat 0 on the appliance. */
+   * 0/1/2). */
   _Atomic uint32_t a_xruns;
   /* Audio-callback telemetry (#722): per-callback duration vs the period
    * deadline, the entry-to-entry gap detector, and the per-kind dropout
@@ -2219,8 +2300,14 @@ struct le_engine {
    * track's full recorded length, including multiples and divisions. */
   _Atomic uint32_t a_loop_viz[LE_VIZ_POINTS];
   _Atomic uint32_t a_track_viz[LE_MAX_TRACKS][LE_VIZ_POINTS];
-  _Atomic int32_t a_latency_state;
+  /* The latency state and the request it belongs to, in one word
+   * (request << 32 | state) so a reader never pairs one measurement's state
+   * with another's request (le_latency_publish). */
+  _Atomic uint64_t a_latency_word;
   _Atomic uint64_t a_latency_ms_bits;
+  /* Bumped by every device loss (le_engine_mark_device_lost and the backend's
+   * notification); a measurement that sees it move is cancelled. */
+  _Atomic uint32_t a_device_losses;
 
   /* Per-input live monitors: one independent route per hardware input. Each
    * sounds iff its a_enabled is set (a loopback measurement clears them all to
@@ -2957,6 +3044,11 @@ struct le_engine {
    * round-trip by its peak (robust to crosstalk/noise). */
   int lat_active;
   int32_t lat_emit_remaining;
+  int32_t lat_out;        /* the output the burst plays on */
+  int32_t lat_in;         /* the input it returns on, or the loopback input */
+  float lat_amp;          /* burst amplitude */
+  uint32_t lat_request;   /* the caller's id for the current measurement */
+  uint32_t lat_losses;    /* a_device_losses when it started */
   float* lat_buf;      /* envelope capture (control-thread allocated) */
   int32_t lat_buf_cap; /* capacity in frames */
   int32_t lat_buf_pos; /* write head during a measurement */
@@ -3437,5 +3529,6 @@ static inline int32_t le_mode_base_channel(le_engine* e, int32_t mode) {
   }
   return -1;
 }
+
 
 #endif /* SEGNO_ENGINE_PRIVATE_H */

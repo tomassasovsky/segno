@@ -469,7 +469,10 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
                                               memory_order_relaxed);
   out->input_peak = load_f32(&engine->a_in_peak_bits);
   out->output_rms = load_f32(&engine->a_out_rms_bits);
-  out->latency_state = load_i32(&engine->a_latency_state);
+  const uint64_t latency = atomic_load_explicit(&engine->a_latency_word,
+                                                memory_order_acquire);
+  out->latency_state = (int32_t)(uint32_t)(latency & 0xFFFFFFFFu);
+  out->latency_request = (uint32_t)(latency >> 32);
   out->measured_latency_ms = bits_to_f64(
       atomic_load_explicit(&engine->a_latency_ms_bits, memory_order_relaxed));
   out->master_length_frames = load_i32(&engine->a_master_len);
@@ -477,7 +480,6 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->record_offset_frames = load_i32(&engine->a_record_offset);
   out->fx_added_latency_frames = le_max_fx_latency(engine);
   out->master_gain = load_f32(&engine->a_master_gain_bits);
-  out->active_backend = load_i32(&engine->a_active_backend);
   out->output_enabled_mask =
       atomic_load_explicit(&engine->a_output_enabled_mask, memory_order_relaxed);
   out->perf_armed = load_i32(&engine->a_perf_armed);

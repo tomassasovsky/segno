@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/power_off/power_host.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -10,8 +11,12 @@ import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/settings/view/about_settings_page.dart';
 import 'package:segno/settings/view/settings_fact_panel.dart';
+import 'package:segno/settings/view/updates_usb_panel.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
+import 'package:segno/update/usb/usb_update_cubit.dart';
+import 'package:storage_repository/storage_repository.dart';
+import 'package:update_repository/update_repository.dart';
 
 /// Settings > Updates: the running version, the one panel that carries the
 /// check → download → install flow, the automatic check and channel, and the
@@ -45,6 +50,10 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
   /// focus whenever the state changes.
   final FocusNode _next = FocusNode(debugLabel: 'UpdatesNext');
 
+  /// Whether Load from USB's panel is open. Its cubit (and the drives it
+  /// reads) exists only from the first press.
+  bool _usbOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -73,7 +82,8 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
     final version = state.currentVersion;
     final busy =
         state.phase == UpdatePhase.checking ||
-        state.phase == UpdatePhase.downloading;
+        state.phase == UpdatePhase.downloading ||
+        state.usbInstalling;
     // The check is the state's action whenever the panel has none of its own.
     final checkIsNext = switch (state.phase) {
       UpdatePhase.idle || UpdatePhase.upToDate || UpdatePhase.checking => true,
@@ -111,7 +121,21 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
                         key: const Key('updates_installed'),
                       ),
               ),
-              if (state.supported)
+              if (state.supported) ...[
+                Builder(
+                  builder: (context) => LoopOutlinedButton(
+                    key: const Key('updates_load_usb'),
+                    width: 215,
+                    label: l10n.updatesLoadFromUsb,
+                    onTap: busy
+                        ? null
+                        : () {
+                            setState(() => _usbOpen = true);
+                            context.read<UsbUpdateCubit>().open();
+                          },
+                  ),
+                ),
+                const SizedBox(width: 19),
                 LoopOutlinedButton(
                   key: const Key('updates_check'),
                   focusNode: checkIsNext ? _next : null,
@@ -119,11 +143,34 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
                   label: l10n.updatesPageCheck,
                   onTap: busy ? null : () => unawaited(cubit.check()),
                 ),
+              ],
             ],
           ),
         ),
         const SizedBox(height: 24),
-        _StatusPanel(state: state, cubit: cubit, next: _next),
+        if (_usbOpen) ...[
+          SizedBox(
+            width: AboutSettingsPage.columnWidth,
+            child: UpdatesUsbPanel(
+              onClosed: () => setState(() => _usbOpen = false),
+            ),
+          ),
+          const SizedBox(height: 24),
+        ],
+        // One helper at a time: while a USB package is copied or installed,
+        // the online flow's actions (and its restart) hold off.
+        IgnorePointer(
+          ignoring: state.usbInstalling,
+          child: ExcludeFocus(
+            excluding: state.usbInstalling,
+            child: Opacity(
+              opacity: state.usbInstalling
+                  ? context.surface.disabledOpacity
+                  : 1,
+              child: _StatusPanel(state: state, cubit: cubit, next: _next),
+            ),
+          ),
+        ),
       ],
     );
 
@@ -205,33 +252,54 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
       ],
     );
 
-    return BlocListener<UpdateCubit, UpdateState>(
-      listenWhen: (previous, current) =>
-          previous.phase != current.phase ||
-          previous.failure != current.failure,
-      listener: (_, _) => _focusNext(),
-      child: Scaffold(
-        body: LoopSettingsFrame(
-          crumb: l10n.settingsCrumb(l10n.settingsUpdatesTitle),
-          title: l10n.settingsUpdatesTitle,
-          titleLeft: 100,
-          onBack: () => Navigator.maybePop(context),
-          onStage: () => Navigator.popUntil(context, (route) => route.isFirst),
-          children: [
-            Positioned(
-              left: AboutSettingsPage.columns[0],
-              top: AboutSettingsPage.top,
-              child: left,
-            ),
-            Positioned(
-              left: AboutSettingsPage.columns[1],
-              top: AboutSettingsPage.top,
-              child: right,
-            ),
-          ],
+    return BlocProvider(
+      create: (context) => UsbUpdateCubit(
+        storage: context.read<StorageRepository>(),
+        updates: context.read<UpdateRepository>(),
+        takeRunning: () => _takeRunning(context.read<LooperRepository>()),
+        onlineBusy: () => cubit.state.phase == UpdatePhase.downloading,
+        onWorking: cubit.setUsbInstalling,
+        onStaged: cubit.showStaged,
+      ),
+      child: BlocListener<UpdateCubit, UpdateState>(
+        listenWhen: (previous, current) =>
+            previous.phase != current.phase ||
+            previous.failure != current.failure,
+        listener: (_, _) => _focusNext(),
+        child: Scaffold(
+          body: LoopSettingsFrame(
+            crumb: l10n.settingsCrumb(l10n.settingsUpdatesTitle),
+            title: l10n.settingsUpdatesTitle,
+            titleLeft: 100,
+            onBack: () => Navigator.maybePop(context),
+            onStage: () =>
+                Navigator.popUntil(context, (route) => route.isFirst),
+            children: [
+              Positioned(
+                left: AboutSettingsPage.columns[0],
+                top: AboutSettingsPage.top,
+                child: left,
+              ),
+              Positioned(
+                left: AboutSettingsPage.columns[1],
+                top: AboutSettingsPage.top,
+                child: right,
+              ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  /// Whether a take is recording, overdubbing, waiting to start or counting
+  /// in (D3): a package is not copied over one.
+  static bool _takeRunning(LooperRepository looper) {
+    final state = looper.state;
+    return state.transport.countingIn ||
+        state.tracks.any(
+          (t) => t.isCapturing || t.pending || t.pendingLaunch != null,
+        );
   }
 }
 

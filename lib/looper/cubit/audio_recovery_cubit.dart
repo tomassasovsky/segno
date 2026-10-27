@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/app/console_audio_devices.dart';
 
 part 'audio_recovery_state.dart';
 
@@ -48,9 +49,6 @@ class AudioRecoveryCubit extends Cubit<AudioRecoveryState> {
   var _finished = false;
   var _loaded = false;
 
-  static bool _isPinned(EngineConfig config) =>
-      config.playbackDeviceId.isNotEmpty || config.captureDeviceId.isNotEmpty;
-
   /// Begins watching for the pinned device (no-op when there is nothing to
   /// recover). Idempotent. The first check is deferred to the next event-loop
   /// turn so a `BlocListener` attached on the same frame still sees the initial
@@ -62,7 +60,7 @@ class AudioRecoveryCubit extends Cubit<AudioRecoveryState> {
     if (_loaded) return;
     _loaded = true;
     final config = _config;
-    if (config == null || !_isPinned(config)) return;
+    if (config == null || !pinsDevice(config)) return;
     _subscription = (_ticker ?? Stream<void>.periodic(_interval)).listen(
       (_) => _check(),
     );
@@ -81,7 +79,7 @@ class AudioRecoveryCubit extends Cubit<AudioRecoveryState> {
       _finish();
       return;
     }
-    final present = _pinnedPresent(_config!, _looper.devices());
+    final present = pinnedDevicesPresent(_config!, _looper.devices());
     // Attempt only on the absent->present edge so a present-but-unopenable
     // device can't thrash the engine (mirrors the in-repo supervisor).
     if (present && !_lastPresent) _looper.startEngine(_config);
@@ -99,13 +97,6 @@ class AudioRecoveryCubit extends Cubit<AudioRecoveryState> {
   void _emit(AudioRecoveryStatus status) {
     if (isClosed || state.status == status) return;
     emit(AudioRecoveryState(status: status));
-  }
-
-  static bool _pinnedPresent(EngineConfig config, List<AudioDevice> devices) {
-    bool present(String id, {required bool isInput}) =>
-        id.isEmpty || devices.any((d) => d.isInput == isInput && d.id == id);
-    return present(config.playbackDeviceId, isInput: false) &&
-        present(config.captureDeviceId, isInput: true);
   }
 
   @override

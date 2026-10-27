@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/audio_setup/view/device_page.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/looper/view/tracks_chrome.dart';
@@ -35,7 +36,7 @@ void main() {
       AppLocalizations.of(tester.element(find.byType(Scaffold).first));
 
   final opens = <String, (Future<void> Function(), Type)>{
-    'Device': (openDeviceSettings, DeviceSettingsPage),
+    'Device': (openDeviceSettings, DevicePage),
     'Network': (openNetworkSettings, NetworkSettingsPage),
     'Displays': (openDisplaySettings, DisplaysSettingsPage),
     'Storage': (openStorageSettings, StorageSettingsPage),
@@ -54,9 +55,10 @@ void main() {
         unawaited(open());
         await tester.pumpAndSettle();
         expect(find.byType(page), findsOneWidget);
-        // About, Network, Displays and Updates have their accepted pages; the
-        // others still host a tray body on the interim destination panel.
+        // About, Device, Network, Displays and Updates have their accepted
+        // pages; the others still host a tray body on the interim panel.
         if (page != AboutSettingsPage &&
+            page != DevicePage &&
             page != NetworkSettingsPage &&
             page != DisplaysSettingsPage &&
             page != UpdatesSettingsPage) {
@@ -109,7 +111,7 @@ void main() {
       await pump(tester);
       unawaited(openDeviceSettings());
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('audio_device_tab')), findsOneWidget);
+      expect(find.byKey(const Key('device_page')), findsOneWidget);
       expect(find.byKey(const Key('audio_routing_card')), findsOneWidget);
       expect(find.byKey(const Key('audio_max_loop_row')), findsOneWidget);
       expect(find.byKey(const Key('device_settings_tabs')), findsNothing);
@@ -199,15 +201,15 @@ void main() {
         find.byKey(const Key('connectivity_banner_device_action')),
       );
       await tester.pumpAndSettle();
-      expect(find.byType(DeviceSettingsPage), findsOneWidget);
-      expect(find.byKey(const Key('audio_device_tab')), findsOneWidget);
+      expect(find.byType(DevicePage), findsOneWidget);
+      expect(find.byKey(const Key('device_page')), findsOneWidget);
     });
 
     testWidgets('the engine-stopped banner opens Device', (tester) async {
       await pump(tester, home: const AudioNotRunningBanner());
       await tester.tap(find.byKey(const Key('tracks_audioNotRunning')));
       await tester.pumpAndSettle();
-      expect(find.byType(DeviceSettingsPage), findsOneWidget);
+      expect(find.byType(DevicePage), findsOneWidget);
     });
   });
 }

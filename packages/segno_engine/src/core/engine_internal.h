@@ -16,27 +16,20 @@
 extern "C" {
 #endif
 
-/* Selects the device backend for a requested le_audio_backend (le_config.backend).
- * In this build the only implementation is the miniaudio backend, so every input
- * returns it; the opt-in ASIO branch lands in Part 2. The default build never
- * references an ASIO symbol. Not part of the FFI surface. */
-const le_device_backend* le_select_backend(int32_t backend);
+/* Publishes the latency state together with the request it belongs to
+ * (le_snapshot.latency_request), in one word so a reader never pairs one
+ * measurement's state with another's request. Audio thread, or the control
+ * thread while the callback cannot run. */
+void le_latency_publish(le_engine* e, int32_t state);
+
+/* Selects the device backend: miniaudio (or the native tests' fake). */
+const le_device_backend* le_select_backend(void);
 
 /* Publishes the "device present + running" lifecycle flags after a backend's
- * start() succeeds (release stores, mirroring the miniaudio backend). Exists so a
- * device backend implemented in a C++ TU (the opt-in ASIO backend) can mark the
- * engine started without including the _Atomic struct definition in
- * engine_private.h, keeping all atomic access in C. Not part of the FFI surface. */
+ * start() succeeds (release stores). Not part of the FFI surface. */
 void le_engine_mark_started(le_engine* engine);
 
-/* Increments the published xrun (dropout) tally by one, as an
- * LE_XRUN_BACKEND_OVERLOAD. Called from a device backend's overload
- * notification — the ASIO driver's kAsioOverload message. A C helper for the
- * same reason as le_engine_mark_started (C++ backend TUs avoid the _Atomic
- * field). Relaxed atomic; safe off any thread. Not part of the FFI surface. */
-void le_engine_note_xrun(le_engine* engine);
-
-/* The general form of the above: records one backend dropout of `kind` (an
+/* Records one backend dropout of `kind` (an
  * le_xrun_kind) into xrun_count AND into the per-kind telemetry windows (#722).
  * The ALSA data loop calls this through the miniaudio backend's hook for its
  * -EPIPE recoveries and slipped-playback resyncs, which is what finally makes
@@ -95,10 +88,7 @@ void le_engine_configure_callback_budget(le_engine* engine,
 
 /* Publishes "device lost" (a_device_present = 0, a_running untouched) so the
  * control layer drives reconnection. Mirrors the miniaudio device-notification
- * callback; called by the ASIO reset-request / sample-rate-change handlers so a
- * driver reconfigured out from under us recovers via stop -> start rather than
- * going silent. Relaxed atomic; safe off the driver's message thread. Not part
- * of the FFI surface. */
+ * callback. Relaxed atomic; safe off any thread. */
 #ifdef LE_NATIVE_TESTS
 /* Native-test seam: when non-NULL, le_select_backend returns this backend
  * instead of miniaudio, so le_engine_start / le_engine_reopen can be driven
@@ -185,52 +175,9 @@ int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
  * has filled once. Defined in engine_process.c. */
 int le_tuner_raw_window(const le_engine* e, float* out);
 
-/* ---- ASIO bridge math (pure, platform-agnostic; defined in engine.c) ---- *
- *
- * ASIO hands the device callback non-interleaved, per-channel blocks in the
- * driver's native sample format, whereas le_engine_process works on one
- * interleaved f32 buffer. These two helpers absorb both differences and are the
- * riskiest part of the ASIO backend, so they live in the portable core (no ASIO
- * headers) and are unit-tested off-thread without any hardware. */
-
-/* Native sample format of one ASIO channel block, mirroring the ASIOSampleType
- * values the backend actually handles (all little-endian). */
-typedef enum le_sample_fmt {
-  LE_SMP_I16, /* ASIOSTInt16LSB   — 16-bit signed PCM */
-  LE_SMP_I24, /* ASIOSTInt24LSB   — packed 24-bit signed PCM (3 bytes/sample) */
-  LE_SMP_I32, /* ASIOSTInt32LSB   — 32-bit signed PCM */
-  LE_SMP_F32, /* ASIOSTFloat32LSB — 32-bit float */
-} le_sample_fmt;
-
-/* Scatters one ASIO input channel's native block into the interleaved f32 buffer
- * le_engine_process reads: for each frame f, converts native_block[f] (format
- * `fmt`) to f32 and writes it to out_interleaved[f * channel_count + chan]. The
- * block holds `frames` samples; the source stride is the format's byte width. */
-void le_deinterleave_in(float* out_interleaved, const void* native_block,
-                        le_sample_fmt fmt, int chan, int channel_count,
-                        int frames);
-
-/* Gathers channel `chan` out of the interleaved f32 buffer le_engine_process
- * produced (in_interleaved[f * channel_count + chan]) and writes it, converted
- * to `fmt` (clamped to the format's range), into one ASIO output channel's
- * native block. The inverse of le_deinterleave_in for f32 (exact round-trip). */
-void le_interleave_out(void* native_block, const float* in_interleaved,
-                       le_sample_fmt fmt, int chan, int channel_count,
-                       int frames);
-
-/* Snaps a requested buffer size to a size the ASIO driver actually allows, given
- * its (min, max, preferred, granularity) from ASIOGetBufferSize. granularity:
- *   -1 => powers of two only (snap to the nearest power of two in [min,max]);
- *    0 => the driver offers only `preferred` (always returned);
- *   >0 => linear steps from `min` (snap to the nearest min + k*granularity).
- * A request outside [min,max] (un-honorable) falls back to `preferred`. Pure and
- * unit-tested; used once at open so the device never fails over a chip choice. */
-int32_t le_asio_pick_buffer(int32_t requested, int32_t min, int32_t max,
-                            int32_t preferred, int32_t granularity);
-
 /* Per-channel name provider: returns input channel [channel]'s label (or NULL
- * if unavailable). `ctx` is caller state (e.g. an ASIO driver handle or, in
- * tests, a fixed name table). */
+ * if unavailable). `ctx` is caller state (a platform handle or, in tests, a
+ * fixed name table). */
 typedef const char* (*le_channel_name_fn)(void* ctx, int channel);
 
 /* Builds the excluded-input-channel bitmask from a name provider: bit c is set
@@ -256,7 +203,9 @@ void le_engine_set_excluded_input_mask_for_test(le_engine* engine,
 /* Begins a round-trip latency measurement without a device (configured-gated,
  * like the looper commands), so the harness's loopback-channel detection can be
  * tested deterministically. Not part of the FFI surface. */
-int32_t le_engine_begin_latency_for_test(le_engine* engine);
+int32_t le_engine_begin_latency_for_test(le_engine* engine, int32_t output,
+                                         int32_t input, float amplitude,
+                                         uint32_t request);
 
 /* Whether lane [lane] of track [channel] has its live loop buffer allocated.
  * Lets a test assert lazy lane allocation (idle lanes stay unallocated). Returns

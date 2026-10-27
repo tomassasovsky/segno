@@ -40,4 +40,12 @@ class UnsupportedPlatformBackend implements PlatformUpdateBackend {
       Stream<double>.error(
         UnsupportedError('in-app updates are not supported on this platform'),
       );
+
+  @override
+  String get stagingDirectory => '';
+
+  @override
+  Stream<double> installPackage(String path) => Stream<double>.error(
+    UnsupportedError('in-app updates are not supported on this platform'),
+  );
 }

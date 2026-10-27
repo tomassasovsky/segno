@@ -233,6 +233,24 @@ class ScreenLinkWaveformService implements WaveformWindowService {
     if (revision == _readoutRevision) _lastReadout = readout;
   }
 
+  /// Asks the readout whether it draws: `true` when it answered within
+  /// [ackTimeout], which it does only once it has rasterized its first frame
+  /// (the boot health gate's readout check, #976). `false` when it did not, or
+  /// has not announced itself: a readout that came up first is greeted by this
+  /// call and answers the next one.
+  Future<bool> ping() async {
+    _listen();
+    if (_screen == null) return false;
+    try {
+      await _request({'op': ScreenLinkOp.ping});
+      return true;
+    } on Object {
+      // No answer in time, or the readout restarted while this was in
+      // flight (its pending acks fail then): either way it did not answer.
+      return false;
+    }
+  }
+
   /// Sends [message] with a fresh `seq` and completes when the readout
   /// acknowledges it; throws when it does not within [ackTimeout].
   Future<void> _request(Map<String, Object?> message) async {

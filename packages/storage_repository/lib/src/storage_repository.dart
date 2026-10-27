@@ -198,9 +198,14 @@ class StorageRepository implements ActiveOperationSource {
     // on the tmpfs until the drive is pulled), both fail it.
     for (final held in List.of(_leases)) {
       final target = held.target;
-      if (target is RemovableDestination &&
-          next[target.generation]?.status !=
-              RemovableVolumeRecordStatus.mounted) {
+      if (target is! RemovableDestination) continue;
+      final status = next[target.generation]?.status;
+      // A read hold needs the volume readable; a read-only one serves it.
+      final keeps = held.purpose == WritePurpose.update
+          ? status == RemovableVolumeRecordStatus.mounted ||
+                status == RemovableVolumeRecordStatus.readOnly
+          : status == RemovableVolumeRecordStatus.mounted;
+      if (!keeps) {
         held.markLost(StorageFailure.volumeLost(target.generation));
       }
     }
@@ -275,7 +280,12 @@ class StorageRepository implements ActiveOperationSource {
   /// `recording` lease is not checked or reported (see the class note).
   HeldLease acquire(StorageDestination destination, WritePurpose purpose) {
     if (destination is RemovableDestination) {
-      _checkWritable(destination.generation);
+      // An update is read, not written: a read-only volume serves it.
+      if (purpose == WritePurpose.update) {
+        _checkReadable(destination.generation);
+      } else {
+        _checkWritable(destination.generation);
+      }
     }
     if (purpose != WritePurpose.recording) {
       try {
@@ -340,6 +350,12 @@ class StorageRepository implements ActiveOperationSource {
         throw const StorageFailure.unsupported();
       case RemovableVolumeRecordStatus.ejected:
         throw StorageFailure.volumeLost(generation);
+    }
+  }
+
+  void _checkReadable(int generation) {
+    if (_ejecting(generation) || _mountedPath(generation) == null) {
+      throw StorageFailure.volumeLost(generation);
     }
   }
 
@@ -691,6 +707,81 @@ class StorageRepository implements ActiveOperationSource {
       }
     } finally {
       held.release();
+    }
+  }
+
+  /// Copies the update package at [sourcePath], on removable volume
+  /// [generation], into [stagingDirectory] on Internal, and returns the path
+  /// written (#1270 Part 8).
+  ///
+  /// A read hold (`update`) is kept on the volume for the copy, so eject is
+  /// refused and shutdown waits; a read-only volume serves it. The copy also
+  /// takes a `copy` lease on Internal, so a take recording to Internal
+  /// refuses it, and it refuses such a take, through the guard table. The
+  /// bytes go to a hidden part of the copy's own, are fsynced, and are
+  /// renamed into place; the directory is then synced. On any failure the
+  /// part is deleted: `volumeLost` when the volume goes away during the
+  /// copy, `full` (ENOSPC), `busy` when the guard table refuses it, `io` for
+  /// the rest. Parts a crash left are swept by the first copy into the
+  /// directory. When [cancelled] turns true the copy stops at its next write,
+  /// deletes its part and fails `io`.
+  Future<String> copyUpdatePackage({
+    required int generation,
+    required String sourcePath,
+    required String stagingDirectory,
+    bool Function()? cancelled,
+  }) async {
+    final source = acquire(
+      StorageDestination.removable(generation),
+      WritePurpose.update,
+    );
+    try {
+      final target = acquire(
+        const StorageDestination.internal(),
+        WritePurpose.copy,
+      );
+      try {
+        final name = sourcePath.substring(sourcePath.lastIndexOf('/') + 1);
+        final directory = Directory(stagingDirectory);
+        final part = File('${directory.path}/.$name.${_partId()}.part');
+        _liveParts.add(part.path);
+        try {
+          directory.createSync(recursive: true);
+          _sweepStaleParts(directory);
+          bool stop() => source.isLost || (cancelled?.call() ?? false);
+          await _copyBytes(File(sourcePath), part, stop);
+          if (source.isLost) throw StorageFailure.volumeLost(generation);
+          if (stop()) throw const StorageFailure.io('cancelled');
+          final written = '${directory.path}/$name';
+          part.renameSync(written);
+          _io.syncDirectory(directory.path);
+          return written;
+        } on StorageFailure {
+          _discard(part);
+          rethrow;
+        } on SourceReadFailure catch (e) {
+          _discard(part);
+          final code = e.cause.osError?.errorCode;
+          if (source.isLost ||
+              (_pulledDriveErrors.contains(code) && await _lostSoon(source))) {
+            throw StorageFailure.volumeLost(generation);
+          }
+          throw StorageFailure.io(e.cause.osError?.message ?? e.cause.message);
+        } on FileSystemException catch (e) {
+          _discard(part);
+          if (source.isLost) throw StorageFailure.volumeLost(generation);
+          if (cancelled?.call() ?? false) {
+            throw const StorageFailure.io('cancelled');
+          }
+          throw await _classify(e, const StorageDestination.internal(), target);
+        } finally {
+          _liveParts.remove(part.path);
+        }
+      } finally {
+        target.release();
+      }
+    } finally {
+      source.release();
     }
   }
 

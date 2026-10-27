@@ -84,6 +84,9 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
   /// marker is read first because the reconcile removes it.
   @override
   Future<UpdateRecovery> recover() async {
+    // Nothing is copied or installed at startup: whatever is in staging is a
+    // part or a package a crash left behind.
+    _env.clearDirectorySync(stagingDirectory);
     final staged = _readVersion(stagedFile);
     final reason = await _env.reconcileStaged();
     final attempt = _parse(await _env.updateAttempt());
@@ -129,4 +132,10 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
   @override
   Stream<double> downloadAndStage(UpdateManifest manifest) =>
       _env.stage(manifest.version.toString());
+
+  @override
+  String get stagingDirectory => kUpdateStagingDirectory;
+
+  @override
+  Stream<double> installPackage(String path) => _env.stageFile(path);
 }

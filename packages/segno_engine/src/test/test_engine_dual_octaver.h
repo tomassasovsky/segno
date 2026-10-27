@@ -243,7 +243,221 @@ static void test_dual_octaver_low_voice_skips_dc(void) {
   free(b);
 }
 
+/* ---- The low band (#1467), against the s15bass capture (#891) ---- */
+
+/* Sample [i] of the test tones at -12 dBFS peak: a sine at [hz], or with
+ * [harm] the capture's harmonic bass (harmonics 1 to 10 at 1/k, scaled by
+ * [norm] to the same peak). */
+static double do_tone(int harm, double hz, int i, double norm) {
+  const double t = 2.0 * 3.14159265358979 * hz * i / do_sr;
+  if (!harm) return 0.2512 * sin(t);
+  double y = 0.0;
+  for (int k = 1; k <= 10; ++k) y += sin(k * t) / k;
+  return y * norm;
+}
+
+/* do_render for the low band: two seconds of the tone through the Dual
+ * Octaver at [p], into [y] (do_sr * 2 frames). [am] modulates the tone's
+ * level at 3 Hz by +-50 % (0: steady). With [vocoder_only] the slot is
+ * prepared as the octaver, which carries no band, so the Dual Octaver
+ * runs its vocoder alone. Returns the tone's amplitude at [hz]. */
+static double do_render_low(const float* p, int harm, double hz, double am,
+                            int vocoder_only, float* y) {
+  le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+  CHECK(fx != NULL);
+  for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
+  CHECK(le_fx_prepare(fx, 0, vocoder_only ? LE_FX_OCTAVER : LE_FX_DUAL_OCTAVER,
+                      do_sr) == LE_OK);
+  CHECK(vocoder_only ? fx->oct[0][0].low == NULL : fx->oct[0][0].low != NULL);
+  le_fx_entry_reset(fx, 0);
+  fx->clocked = 1;
+  static int32_t types[LE_FX_MAX];
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  for (int s = 0; s < LE_FX_MAX; ++s) types[s] = LE_FX_NONE;
+  types[0] = LE_FX_DUAL_OCTAVER;
+  for (int q = 0; q < LE_FX_PARAMS; ++q) params[0][q] = p[q];
+  double peak = 0.0;
+  for (int i = 0; i < do_sr; ++i) {
+    const double v = fabs(do_tone(harm, hz, i, 1.0));
+    if (v > peak) peak = v;
+  }
+  const double norm = 0.2512 / peak;
+  for (int i = 0; i < 2 * do_sr; ++i) {
+    fx->clock = (uint32_t)i;
+    const double env =
+        1.0 + am * sin(2.0 * 3.14159265358979 * 3.0 * i / do_sr);
+    float l = (float)(env * do_tone(harm, hz, i, norm));
+    float r = l;
+    fx_apply_chain(fx, do_sr, do_sr, &l, &r, 1, types, params, NULL);
+    y[i] = l;
+  }
+  le_fx_state_free_buffers(fx);
+  free(fx);
+  return harm ? norm : 0.2512; /* the fundamental's amplitude */
+}
+
+/* The level, in dB against the input's fundamental, at [hz] / [div] over
+ * the second second of do_render_low. */
+static double do_low_level(const float* p, int harm, double hz, double div) {
+  float* y = (float*)malloc(sizeof(float) * (size_t)(2 * do_sr));
+  CHECK(y != NULL);
+  const double a = do_render_low(p, harm, hz, 0.0, 0, y);
+  const double db = 20.0 * log10(do_amp(y + do_sr, do_sr, hz / div) / a + 1e-12);
+  free(y);
+  return db;
+}
+
+/* The Looper X's down voices on bass (s15bass, High Mode off, Mix 100 %,
+ * each voice alone at 100 %, read at its own frequency against the input's
+ * fundamental): Octave 1 at -1.3 dB on 82 Hz and 0.0 on 110 Hz, Octave 2
+ * at -3.0 and 0.0, on a sine and on a harmonic bass alike. The vocoder
+ * alone gave -45 and -32 dB here at 96 kHz (#1467). The band's floor is fit
+ * to Octave 1's 82 Hz point, so Octave 2 sits 1.6 dB above the capture
+ * there. Both rates: the appliance runs at 96 kHz. */
+static void test_dual_octaver_low_band_matches_the_capture(void) {
+  printf("test_dual_octaver_low_band_matches_the_capture\n");
+  static const int rates[2] = {48000, 96000};
+  static const double hz[2] = {82.0, 110.0};
+  static const double cap1[2] = {-1.3, 0.0};
+  static const double cap2[2] = {-3.0, 0.0};
+  static const double tol2[2] = {2.0, 0.5};
+  const float oct1[LE_FX_PARAMS] = {0.0f, 1.0f, 1.0f, 0.0f};
+  const float oct2[LE_FX_PARAMS] = {0.0f, 0.0f, 1.0f, 1.0f};
+  for (int r = 0; r < 2; ++r) {
+    do_sr = rates[r];
+    for (int k = 0; k < 2; ++k) {
+      for (int harm = 0; harm < 2; ++harm) {
+        const double d1 = do_low_level(oct1, harm, hz[k], 2.0);
+        const double d2 = do_low_level(oct2, harm, hz[k], 4.0);
+        printf("  %d Hz, %3.0f Hz %s: Octave 1 %+5.1f (capture %+.1f), "
+               "Octave 2 %+5.1f (%+.1f)\n",
+               do_sr, hz[k], harm ? "bass" : "sine", d1, cap1[k], d2, cap2[k]);
+        CHECK(fabs(d1 - cap1[k]) < 0.5);
+        CHECK(fabs(d2 - cap2[k]) < tol2[k]);
+      }
+    }
+  }
+  do_sr = DO_SR;
+}
+
+/* At 41 Hz the Looper X shifts nothing (s15bass: no down voice, the input
+ * played as it is), and the band, whose floor is 60 Hz, stays out: the
+ * Dual Octaver plays its vocoder exactly as it did without the band. So
+ * does a tone above the crossover (1 kHz), where the band hears no pitch
+ * and the vocoder's own voice is untouched. */
+static void test_dual_octaver_low_band_hands_back(void) {
+  printf("test_dual_octaver_low_band_hands_back\n");
+  static const int rates[2] = {48000, 96000};
+  static const double hz[2] = {41.0, 1000.0};
+  const float both[LE_FX_PARAMS] = {0.0f, 1.0f, 1.0f, 0.6f};
+  const int n = 2 * 96000;
+  float* a = (float*)malloc(sizeof(float) * (size_t)n);
+  float* b = (float*)malloc(sizeof(float) * (size_t)n);
+  CHECK(a != NULL && b != NULL);
+  for (int r = 0; r < 2; ++r) {
+    do_sr = rates[r];
+    for (int k = 0; k < 2; ++k) {
+      for (int harm = 0; harm < 2; ++harm) {
+        do_render_low(both, harm, hz[k], 0.0, 0, a);
+        do_render_low(both, harm, hz[k], 0.0, 1, b);
+        int same = 1;
+        for (int i = 0; i < 2 * do_sr; ++i) same &= a[i] == b[i];
+        printf("  %d Hz, %4.0f Hz %s: %s the vocoder alone\n", do_sr, hz[k],
+               harm ? "bass" : "sine", same ? "identical to" : "DIFFERS from");
+        CHECK(same);
+      }
+    }
+  }
+  do_sr = DO_SR;
+  free(a);
+  free(b);
+}
+
+/* The envelope of [y] (do_sr * 2 frames): its square through a two-pole
+ * 15 Hz low-pass, into [e]. */
+static void do_envelope(const float* y, double* e) {
+  const double a = 1.0 - exp(-2.0 * 3.14159265358979 * 15.0 / do_sr);
+  double p1 = 0.0, p2 = 0.0;
+  for (int i = 0; i < 2 * do_sr; ++i) {
+    p1 += a * (2.0 * y[i] * y[i] - p1);
+    p2 += a * (p1 - p2);
+    e[i] = p2;
+  }
+}
+
+/* The lag, in frames (to 4), that best lines envelope [ey] up with [ex]
+ * over the second second, each less its mean. */
+static int do_envelope_lag(const double* ex, const double* ey) {
+  const int span = do_sr / 20;
+  double best = -1e300;
+  int at = 0;
+  for (int lag = 0; lag < span; lag += 4) {
+    double mx = 0.0, my = 0.0;
+    int n = 0;
+    for (int i = do_sr; i < 2 * do_sr - span; i += 8) {
+      mx += ex[i];
+      my += ey[i + lag];
+      ++n;
+    }
+    mx /= n;
+    my /= n;
+    double c = 0.0;
+    for (int i = do_sr; i < 2 * do_sr - span; i += 8) {
+      c += (ex[i] - mx) * (ey[i + lag] - my);
+    }
+    if (c > best) {
+      best = c;
+      at = lag;
+    }
+  }
+  return at;
+}
+
+/* The band is aligned to the vocoder's voice: its taps centre on the
+ * octaver's latency less the crossover's group delay. A 110 Hz tone swells
+ * at 3 Hz; the down voice's swell comes out of the band within a
+ * millisecond of where the vocoder alone puts it, at both rates. (Each
+ * lands about 1.5 ms past LE_PV_LATENCY on this measure, the vocoder too.) */
+static void test_dual_octaver_low_band_keeps_the_latency(void) {
+  printf("test_dual_octaver_low_band_keeps_the_latency\n");
+  static const int rates[2] = {48000, 96000};
+  const float oct1[LE_FX_PARAMS] = {0.0f, 1.0f, 1.0f, 0.0f};
+  for (int r = 0; r < 2; ++r) {
+    do_sr = rates[r];
+    const int n = 2 * do_sr;
+    float* x = (float*)malloc(sizeof(float) * (size_t)n);
+    float* y = (float*)malloc(sizeof(float) * (size_t)n);
+    double* ex = (double*)malloc(sizeof(double) * (size_t)n);
+    double* ey = (double*)malloc(sizeof(double) * (size_t)n);
+    CHECK(x != NULL && y != NULL && ex != NULL && ey != NULL);
+    for (int i = 0; i < n; ++i) {
+      x[i] = (float)((1.0 + 0.5 * sin(2.0 * 3.14159265358979 * 3.0 * i /
+                                      do_sr)) *
+                     do_tone(0, 110.0, i, 0.0));
+    }
+    do_envelope(x, ex);
+    do_render_low(oct1, 0, 110.0, 0.5, 0, y);
+    do_envelope(y, ey);
+    const int band = do_envelope_lag(ex, ey);
+    do_render_low(oct1, 0, 110.0, 0.5, 1, y);
+    do_envelope(y, ey);
+    const int vocoder = do_envelope_lag(ex, ey);
+    printf("  %d Hz: the swell lags %d frames through the band, %d through "
+           "the vocoder alone (latency %d)\n",
+           do_sr, band, vocoder, LE_PV_LATENCY);
+    CHECK(abs(band - vocoder) < do_sr / 1000);
+    free(x);
+    free(y);
+    free(ex);
+    free(ey);
+  }
+  do_sr = DO_SR;
+}
+
 static void run_dual_octaver_tests(void) {
+  test_dual_octaver_low_band_matches_the_capture();
+  test_dual_octaver_low_band_hands_back();
+  test_dual_octaver_low_band_keeps_the_latency();
   test_dual_octaver_low_voice_skips_dc();
   test_dual_octaver_trims_at_96k();
   test_dual_octaver_mode_switch_does_not_sweep();

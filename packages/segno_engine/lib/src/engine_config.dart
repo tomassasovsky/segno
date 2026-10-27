@@ -4,33 +4,6 @@ import 'package:meta/meta.dart';
 import 'package:segno_engine/src/ffi_strings.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 
-/// Which device backend the engine should open.
-///
-/// Mirrors the native `le_audio_backend` enum. On Windows the engine forces
-/// [asio]; [miniaudio] is the cross-platform path used on macOS and Linux.
-enum AudioBackend {
-  /// The platform's default miniaudio backend (Core Audio on macOS, the Linux
-  /// preference list; on Windows the engine forces [asio] instead).
-  miniaudio,
-
-  /// Windows ASIO. Forced on Windows so capture/playback go through the ASIO
-  /// driver rather than the shared OS mixer.
-  asio;
-
-  /// The native `le_audio_backend` integer for this backend.
-  int toNative() => switch (this) {
-    AudioBackend.miniaudio => 0,
-    AudioBackend.asio => 1,
-  };
-
-  /// Maps a native `le_audio_backend` integer to an [AudioBackend]; unknown
-  /// values fall back to [miniaudio].
-  static AudioBackend fromNative(int value) => switch (value) {
-    1 => AudioBackend.asio,
-    _ => AudioBackend.miniaudio,
-  };
-}
-
 /// Requested audio device configuration passed to `AudioEngine.start`.
 ///
 /// Any field left at `0` defers to the device default. This is the pure-Dart
@@ -47,8 +20,7 @@ class EngineConfig {
     this.useLoopbackCapture = false,
     this.playbackDeviceId = '',
     this.captureDeviceId = '',
-    this.backend = AudioBackend.miniaudio,
-    this.asioDriver = '',
+    this.keepMaterial = false,
   });
 
   /// Requested sample rate in Hz, or `0` for the device default.
@@ -85,14 +57,10 @@ class EngineConfig {
   /// default. Ignored when [useLoopbackCapture] resolves a loopback device.
   final String captureDeviceId;
 
-  /// Which device backend to open. Defaults to [AudioBackend.miniaudio] (the
-  /// platform's default miniaudio backend); on Windows the engine forces
-  /// [AudioBackend.asio].
-  final AudioBackend backend;
-
-  /// Selected ASIO driver name, used only when [backend] is
-  /// [AudioBackend.asio]. Empty and ignored on the miniaudio path.
-  final String asioDriver;
+  /// For `AudioEngine.reopen` only: refuse a reopen that would clear the
+  /// recorded loops (the device negotiated another sample rate or loop cap)
+  /// instead of clearing them. `AudioEngine.start` ignores it.
+  final bool keepMaterial;
 
   /// Writes this configuration into a native [le_config] struct in [ptr].
   void writeTo(Pointer<le_config> ptr) {
@@ -103,10 +71,9 @@ class EngineConfig {
       ..output_channels = outputChannels
       ..max_loop_frames = maxLoopFrames
       ..use_loopback_capture = useLoopbackCapture ? 1 : 0
-      ..backend = backend.toNative();
+      ..keep_material = keepMaterial ? 1 : 0;
     writeNativeString(ptr.ref.playback_device_id, playbackDeviceId);
     writeNativeString(ptr.ref.capture_device_id, captureDeviceId);
-    writeNativeString(ptr.ref.asio_driver, asioDriver);
   }
 
   @override
@@ -122,8 +89,7 @@ class EngineConfig {
           useLoopbackCapture == other.useLoopbackCapture &&
           playbackDeviceId == other.playbackDeviceId &&
           captureDeviceId == other.captureDeviceId &&
-          backend == other.backend &&
-          asioDriver == other.asioDriver;
+          keepMaterial == other.keepMaterial;
 
   @override
   int get hashCode => Object.hash(
@@ -135,8 +101,7 @@ class EngineConfig {
     useLoopbackCapture,
     playbackDeviceId,
     captureDeviceId,
-    backend,
-    asioDriver,
+    keepMaterial,
   );
 
   @override
@@ -148,6 +113,5 @@ class EngineConfig {
       'useLoopbackCapture: $useLoopbackCapture, '
       'playbackDeviceId: $playbackDeviceId, '
       'captureDeviceId: $captureDeviceId, '
-      'backend: ${backend.name}, '
-      'asioDriver: $asioDriver)';
+      'keepMaterial: $keepMaterial)';
 }

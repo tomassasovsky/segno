@@ -8,6 +8,15 @@ const kApplianceHelperPath = '/usr/bin/segno-update-ctl';
 /// read-only (`EXIT_BOOT_READ_ONLY` in `segno-update-ctl`, #1397).
 const kBootReadOnlyExitCode = 3;
 
+/// The helper's `install-file` exit status for a package it refused before
+/// writing anything; its JSON line on stdout says why. Keep in step with
+/// EXIT_REFUSED in segno-update-ctl.
+const kInstallFileRefusedExitCode = 4;
+
+/// Where a package from a USB drive is copied for `install-file`; the helper
+/// refuses any other path.
+const kUpdateStagingDirectory = '/data/segno/update-staging';
+
 /// Whether this process runs on the console: Linux, with the appliance
 /// image's helper installed. The one predicate every appliance-only source
 /// (the pedal link, the power key) is gated on.
@@ -42,6 +51,15 @@ abstract interface class ApplianceEnv {
   /// read-only. Cancelling the subscription sends the helper SIGTERM; the
   /// cancel completes once it has exited.
   Stream<double> stage(String version);
+
+  /// Runs the helper's `install-file` on the package at [path], with the same
+  /// progress and errors as [stage]; a refusal fails the stream with an
+  /// `UpdatePackageRefused`.
+  Stream<double> stageFile(String path);
+
+  /// Deletes everything inside [path], which stays; nothing when it is not
+  /// there.
+  void clearDirectorySync(String path);
 
   /// The version of an install the helper recorded and never finished (cut
   /// off by a power loss, a stopped service or a cancel), or `null`. Never
