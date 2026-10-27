@@ -215,18 +215,20 @@ jobs:
           channel: stable
           cache: true
       - name: Resolve the app's dependencies
+        id: pub-get
         run: flutter pub get
       - name: Render the screenshot suites
+        id: render
         run: flutter test --tags screenshots --update-goldens test/screenshots
       - name: Upload the screenshots
-        if: always()
+        if: always() && steps.render.outcome != 'skipped'
         uses: actions/upload-artifact@v7
         with:
           name: screenshots
           path: test/screenshots/goldens/
           if-no-files-found: error
       - name: Check the app against the design studies
-        if: always() && steps.design-clone.outcome == 'success'
+        if: always() && steps.design-clone.outcome == 'success' && steps.pub-get.outcome == 'success'
         run: flutter test test/control/external_pedal_art_test.dart
   pedal-repository:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2

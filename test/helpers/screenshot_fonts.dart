@@ -10,15 +10,13 @@ import 'package:flutter_test/flutter_test.dart';
 /// They are in `<sdk>/bin/cache/artifacts/material_fonts` on any machine with
 /// the SDK, the author's Mac and the Linux CI runner alike. The `flutter`
 /// tool sets `FLUTTER_ROOT` for the tests it runs, also with a local engine.
-String get materialFontDir =>
-    '${Platform.environment['FLUTTER_ROOT']}/bin/cache/artifacts/material_fonts';
-
-/// Whether the SDK's Material fonts are where [materialFontDir] says.
-///
-/// Layout checks that need real glyph metrics (not goldens) run whenever the
-/// fonts are there, which is in every `flutter test` run, CI included.
-bool get screenshotFontsAvailable =>
-    File('$materialFontDir/Roboto-Regular.ttf').existsSync();
+String get materialFontDir {
+  final root = Platform.environment['FLUTTER_ROOT'];
+  if (root == null) {
+    throw StateError('FLUTTER_ROOT is not set: run the tests with `flutter`');
+  }
+  return '$root/bin/cache/artifacts/material_fonts';
+}
 
 /// Whether the screenshot suites render.
 ///
@@ -31,7 +29,7 @@ bool get screenshotFontsAvailable =>
 /// silent skip would leave older PNGs in place to be reviewed as new.
 bool get rendersScreenshots {
   if (!autoUpdateGoldenFiles) return false;
-  if (!screenshotFontsAvailable) {
+  if (!File('$materialFontDir/Roboto-Regular.ttf').existsSync()) {
     throw StateError('No Material fonts at $materialFontDir');
   }
   return true;
