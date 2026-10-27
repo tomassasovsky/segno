@@ -2529,15 +2529,15 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
 
   /* The Song/Band handoff (#1323): the same one-time prep a quantized arm
    * does, deferred to the sounding section's end (LE_CMD_ARM trigger 3),
-   * where the callback starts the take, or an overdub from the section's
-   * top. With nothing sounding by then it starts at once. */
+   * where the callback starts the take, or an overdub (from the section's
+   * top in Song, in phase in Band). With nothing sounding by then it starts
+   * at once. */
   if (handoff_arm) {
     if (engine->armed[channel] && load_i32(&t->a_pending) == 0) {
       engine->armed[channel] = 0; /* spent: the handoff fired or dropped it */
     }
     if (engine->armed[channel]) {
-      /* Reject a DIFFERENT trigger's pending arm (B3b BUG 2's rule). */
-      if (!le_handoff_arm(engine, channel)) return LE_ERR_INVALID;
+      /* Our own pending handoff arm (le_handoff_record): a second press. */
       engine->armed[channel] = 0;
       return le_push(engine, LE_CMD_DISARM, channel, 0.0f);
     }
