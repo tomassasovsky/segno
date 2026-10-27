@@ -3096,6 +3096,24 @@ void main() {
         verifyNever(() => looper.play(channel: 1));
       });
 
+      test('Stop cancels an empty section waiting to record', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1),
+          ]),
+          looperMode: LooperMode.song,
+          songQueuedTrack: 1,
+          songQueueRecord: true,
+        );
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..stop();
+        verify(() => looper.stopTrack()).called(1);
+        verify(() => looper.cancelArm(channel: 1)).called(1);
+        verifyNever(() => looper.stopTrack(channel: 1));
+      });
+
       test("Band's Stop stops the section waiting to start", () {
         setEngine(
           _tracksWith(const [
