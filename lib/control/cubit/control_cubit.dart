@@ -1978,6 +1978,10 @@ class ControlCubit extends Cubit<ControlState> {
   bool _recStop(int channel) {
     final track = _trackAt(channel);
     if (track == null) return false;
+    // Stop on a section waiting to start calls the request off (#1323).
+    if (_l.isSection(channel) && _l.songWaitingSection == channel) {
+      return _looper.cancelArm(channel: channel).isOk;
+    }
     if (!_looper.stopRecordControl(channel: channel).isOk) {
       return false;
     }
