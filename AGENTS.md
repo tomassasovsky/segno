@@ -47,7 +47,9 @@ The design file and the hardware have their own repositories:
   run its `tool/setup.sh` once. A UI change updates the pen through a PR
   there; the two PRs link each other. CI's `design` job checks the app
   against the segno-design commit in `.github/segno-design.sha`; a change
-  that needs a newer study updates that file.
+  that needs a newer study updates that file. Locally the same checks read
+  whatever your clone has checked out, so check out that commit to
+  reproduce CI.
 - [`tomassasovsky/segno-hardware`](https://github.com/tomassasovsky/segno-hardware)
   holds the boards, the enclosure and the printed parts. The firmware and the
   pedal link contract stay here under `firmware/`. A change to a board's pin

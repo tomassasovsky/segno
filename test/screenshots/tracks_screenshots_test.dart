@@ -89,7 +89,7 @@ void main() {
   late FxChainPersistence fxPersistence;
 
   setUpAll(() async {
-    if (!rendersScreenshots) return;
+    if (!screenshotFontsAvailable) return;
     final robotoTtfs = [
       '$materialFontDir/Roboto-Regular.ttf',
       '$materialFontDir/Roboto-Medium.ttf',
@@ -1159,7 +1159,7 @@ void main() {
           expect(box('reverse').right, lessThan(box('fx').left));
           expect(box('layers').left, greaterThan(box('bars').right));
         },
-        skip: !rendersScreenshots,
+        skip: !screenshotFontsAvailable,
       );
     }
   }
