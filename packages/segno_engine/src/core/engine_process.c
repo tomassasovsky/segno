@@ -4810,13 +4810,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
             break;
           }
         }
-        t->pending_record = 1;
-        t->pending_trigger = trig;
-        /* Trigger first, then the flag with release: the snapshot reads the
-         * flag with acquire and only then the trigger, so it never pairs a
-         * fresh arm with the previous arm's trigger. */
-        store_i32(&t->a_pending_trigger, trig);
-        atomic_store_explicit(&t->a_pending, 1, memory_order_release);
+        le_handoff_set_arm(t, trig);
       }
       break;
     case LE_CMD_DISARM:
@@ -7027,8 +7021,11 @@ static void le_fire_section_arm(le_engine* e, int32_t ch, uint64_t frame) {
     /* Band keeps one section (#1323): with another sounding, the start
      * waits for that section's end like any section request. */
     if (le_band_section(e, ch) && le_handoff_source(e, ch) >= 0) {
-      /* A request pressed since the toggle wins over it. */
-      if (!le_handoff_newer_waits(e, ch)) handle_section_play(e, ch, frame);
+      /* A request pressed since the toggle wins over it, and a Play already
+       * waiting on this section is what the toggle asks for. */
+      if (!le_handoff_newer_waits(e, ch) && e->song_target != ch) {
+        handle_section_play(e, ch, frame);
+      }
     } else {
       handle_play(e, ch, frame);
     }
