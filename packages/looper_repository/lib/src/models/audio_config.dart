@@ -202,14 +202,18 @@ LoopbackInfo loopbackInfoFromEngine(engine.LoopbackInfo info) => LoopbackInfo(
 );
 
 /// Maps a domain [EngineConfig] to the engine type at the repository boundary.
-engine.EngineConfig engineConfigToEngine(EngineConfig config) =>
-    engine.EngineConfig(
-      sampleRate: config.sampleRate,
-      bufferFrames: config.bufferFrames,
-      inputChannels: config.inputChannels,
-      outputChannels: config.outputChannels,
-      maxLoopFrames: config.maxLoopFrames,
-      useLoopbackCapture: config.useLoopbackCapture,
-      playbackDeviceId: config.playbackDeviceId,
-      captureDeviceId: config.captureDeviceId,
-    );
+/// [keepMaterial] asks a reopen to refuse rather than clear the loops.
+engine.EngineConfig engineConfigToEngine(
+  EngineConfig config, {
+  bool keepMaterial = false,
+}) => engine.EngineConfig(
+  sampleRate: config.sampleRate,
+  bufferFrames: config.bufferFrames,
+  inputChannels: config.inputChannels,
+  outputChannels: config.outputChannels,
+  maxLoopFrames: config.maxLoopFrames,
+  useLoopbackCapture: config.useLoopbackCapture,
+  playbackDeviceId: config.playbackDeviceId,
+  captureDeviceId: config.captureDeviceId,
+  keepMaterial: keepMaterial,
+);

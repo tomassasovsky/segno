@@ -4272,6 +4272,7 @@ void main() {
             result: EngineResult.ok,
             outcome: ReopenOutcome.retainedPartial,
             droppedTracks: 1 << 2,
+            openedRate: 0,
           );
         reconnectTicker.add(null);
         await tester.pump();

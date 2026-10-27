@@ -2691,8 +2691,10 @@ void main() {
 
       // A measurement that completes sets the engine's offset itself (not via
       // setRecordOffset); the poll must mirror it into the remembered value.
-      engine.nextSnapshot = const EngineSnapshot(
+      final measured = repo.measureLatency(output: 0, input: 0);
+      engine.nextSnapshot = EngineSnapshot(
         isRunning: true,
+        devicePresent: true,
         sampleRate: 48000,
         bufferFrames: 128,
         framesProcessed: 0,
@@ -2701,11 +2703,13 @@ void main() {
         inputPeak: 0,
         outputRms: 0,
         latencyState: le.LatencyState.done,
-        measuredLatencyMs: -1,
+        latencyRequest: engine.lastLatencyPath!.request,
+        measuredLatencyMs: 5,
         recordOffsetFrames: 240,
       );
       ticker.add(null);
       await Future<void>.delayed(Duration.zero);
+      expect((await measured).outcome, LatencyOutcome.done);
 
       // A restart re-applies the CAPTURED offset, not a stale zero.
       engine.lastRecordOffset = null;
@@ -8012,6 +8016,7 @@ void main() {
             result: EngineResult.device,
             outcome: ReopenOutcome.retained,
             droppedTracks: 0,
+            openedRate: 0,
           );
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
@@ -8030,6 +8035,7 @@ void main() {
             result: EngineResult.ok,
             outcome: ReopenOutcome.retained,
             droppedTracks: 0,
+            openedRate: 0,
           )
           ..devices = const [pinned, otherDevice];
         reconnectTicker.add(null);
@@ -8102,6 +8108,7 @@ void main() {
             result: EngineResult.ok,
             outcome: ReopenOutcome.retainedPartial,
             droppedTracks: 1 << 1,
+            openedRate: 0,
           );
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
@@ -8154,6 +8161,7 @@ void main() {
             result: EngineResult.ok,
             outcome: ReopenOutcome.retainedPartial,
             droppedTracks: 1 << 2,
+            openedRate: 0,
           );
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
@@ -8219,6 +8227,7 @@ void main() {
             result: EngineResult.ok,
             outcome: ReopenOutcome.clearedRate,
             droppedTracks: 0,
+            openedRate: 0,
           )
           ..mixResult = EngineResult.invalid;
         reconnectTicker.add(null);
@@ -8261,6 +8270,7 @@ void main() {
           result: EngineResult.device,
           outcome: ReopenOutcome.retained,
           droppedTracks: 0,
+          openedRate: 0,
         );
       reconnectTicker.add(null);
       await Future<void>.delayed(Duration.zero);

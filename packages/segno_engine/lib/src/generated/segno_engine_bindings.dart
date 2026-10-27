@@ -1089,6 +1089,10 @@ class SegnoEngineBindings {
   /// LE_ERR_WOULD_CLEAR with *outcome naming why; the material stays untouched
   /// and stopped.
   ///
+  /// *opened_rate (may be NULL) receives the sample rate the device opened at,
+  /// whenever it opened, the refused open included, so a caller can name the
+  /// rate a refused device would have run.
+  ///
   /// Returns LE_OK or an le_result error. A failed open changes nothing (the
   /// material is still held, still stopped, *outcome and the mask untouched), so
   /// the caller may retry. A failed start returns LE_ERR_DEVICE with the material
@@ -1099,12 +1103,14 @@ class SegnoEngineBindings {
     ffi.Pointer<le_config> config,
     ffi.Pointer<ffi.Int32> outcome,
     ffi.Pointer<ffi.Int32> dropped_track_mask,
+    ffi.Pointer<ffi.Int32> opened_rate,
   ) {
     return _le_engine_reopen(
       engine,
       config,
       outcome,
       dropped_track_mask,
+      opened_rate,
     );
   }
 
@@ -1116,6 +1122,7 @@ class SegnoEngineBindings {
             ffi.Pointer<le_config>,
             ffi.Pointer<ffi.Int32>,
             ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
           )
         >
       >('le_engine_reopen');
@@ -1124,6 +1131,7 @@ class SegnoEngineBindings {
         int Function(
           ffi.Pointer<le_engine>,
           ffi.Pointer<le_config>,
+          ffi.Pointer<ffi.Int32>,
           ffi.Pointer<ffi.Int32>,
           ffi.Pointer<ffi.Int32>,
         )

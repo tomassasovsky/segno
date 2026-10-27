@@ -9,6 +9,7 @@ import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/view/audio_device_scan_scope.dart';
 import 'package:segno/audio_setup/view/console/audio_routing_card.dart';
+import 'package:segno/audio_setup/view/console/cable_test_dialog.dart';
 import 'package:segno/audio_setup/view/console/max_loop_length_card.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
@@ -88,6 +89,23 @@ class DeviceAudioTab extends StatefulWidget {
 class _DeviceAudioTabState extends State<DeviceAudioTab> {
   _OpenRow _open = _OpenRow.none;
 
+  /// Held for [dispose], where the context may no longer be read.
+  late final AudioSetupCubit _cubit;
+
+  @override
+  void initState() {
+    super.initState();
+    _cubit = context.read<AudioSetupCubit>();
+  }
+
+  @override
+  void dispose() {
+    // Leaving the page ends the cable test: a pulse must not keep playing
+    // behind a page that is gone.
+    _cubit.cancelMeasure();
+    super.dispose();
+  }
+
   /// What a chip grid inside this card's drawers is inset by.
   static const EdgeInsets _gridInset = EdgeInsets.fromLTRB(
     ConsoleRow.indentedInset,
@@ -114,11 +132,21 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
           List.generate(outputs, looper.isOutputEnabled).every((on) => !on);
     });
 
-    return BlocListener<AudioSetupCubit, AudioSetupState>(
-      listenWhen: (previous, current) =>
-          previous.applyPhase != current.applyPhase &&
-          current.applyPhase == ApplyPhase.confirming,
-      listener: (context, _) => unawaited(_confirmApply(context)),
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<AudioSetupCubit, AudioSetupState>(
+          listenWhen: (previous, current) =>
+              previous.applyPhase != current.applyPhase &&
+              current.applyPhase == ApplyPhase.confirming,
+          listener: (context, _) => unawaited(_confirmApply(context)),
+        ),
+        BlocListener<AudioSetupCubit, AudioSetupState>(
+          listenWhen: (previous, current) =>
+              previous.measurePhase != current.measurePhase &&
+              current.measurePhase == MeasurePhase.cable,
+          listener: (context, _) => unawaited(showCableTestDialog(context)),
+        ),
+      ],
       child: KeyedSubtree(
         key: const Key('audio_device_tab'),
         // This tab IS the device picker, so its lifetime is what re-enumeration
@@ -441,30 +469,51 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
 
   // ---------------------------------------------------------- the latency
 
-  /// The measurement: what it last reported and what that costs the take.
-  ///
-  /// No Measure button: on the appliance it only ever measured the Scarlett's
-  /// loop channels, which the owner ruled out (Q2). The cable test brings it
-  /// back (#1270 Part 3b); until then the row shows the restored offset.
+  /// The measurement: what it last reported, what that costs the take, and
+  /// the cable test that measures it (#1270 Part 3b): Measure, disabled with
+  /// the reason while the interface is not there, and Cancel while it runs.
   Widget _latencyRow(BuildContext context, AudioSetupState state) {
     final l10n = context.l10n;
     final status = state.engineStatus;
+    final cubit = context.read<AudioSetupCubit>();
+    final running = state.measurePhase == MeasurePhase.running;
+    final present = status.isConnected && status.devicePresent;
     return ConsoleRow(
       key: const Key('audio_latency_row'),
       title: l10n.roundTripLatencyLabel,
       // The offset is a CONSEQUENCE of the measurement, not a setting, so it
       // rides this row rather than taking one of its own.
-      subtitle: l10n.audioRecordOffsetSub(status.recordOffsetFrames),
+      subtitle: present
+          ? l10n.audioRecordOffsetSub(status.recordOffsetFrames)
+          : l10n.audioMeasureUnavailable,
       showDivider: false,
-      trailing: AppText(
-        _latency(l10n, status),
-        style: TextStyle(
-          color: context.surface.textSecondary,
-          fontFamily: SurfaceTheme.monoFont,
-          fontSize: 14,
-          height: 1.14,
-          leadingDistribution: TextLeadingDistribution.even,
-        ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppText(
+            running ? l10n.measuringEllipsis : _latency(l10n, status),
+            style: TextStyle(
+              color: context.surface.textSecondary,
+              fontFamily: SurfaceTheme.monoFont,
+              fontSize: 14,
+              height: 1.14,
+              leadingDistribution: TextLeadingDistribution.even,
+            ),
+          ),
+          const SizedBox(width: 12),
+          if (running)
+            ConsoleSmallButton(
+              key: const Key('audio_measure_cancel'),
+              label: l10n.cancel,
+              onPressed: cubit.cancelMeasure,
+            )
+          else
+            ConsoleSmallButton(
+              key: const Key('audio_measure'),
+              label: l10n.audioMeasure,
+              onPressed: present ? cubit.openCableTest : null,
+            ),
+        ],
       ),
     );
   }
@@ -472,6 +521,10 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
   String _latency(AppLocalizations l10n, EngineStatus status) =>
       switch (status.latencyState) {
         LatencyState.measuring => l10n.measuringEllipsis,
+        // An offset of 0 compensates nothing: whatever figure the engine
+        // still holds was not measured for this profile.
+        LatencyState.done when status.recordOffsetFrames <= 0 =>
+          l10n.notMeasured,
         LatencyState.done => l10n.latencyMs(
           status.measuredLatencyMs.toStringAsFixed(2),
         ),

@@ -94,6 +94,7 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
     result: EngineResult.ok,
     outcome: ReopenOutcome.retained,
     droppedTracks: 0,
+    openedRate: 0,
   );
 
   @override
@@ -160,12 +161,28 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
     required int request,
   }) {
     calls.add('measureLatencyPath');
-    return EngineResult.ok;
+    lastLatencyPath = (
+      output: output,
+      input: input,
+      amplitude: amplitude,
+      request: request,
+    );
+    return measureLatencyResult;
   }
+
+  /// The arguments of the last [measureLatencyPath].
+  ({int output, int input, double amplitude, int request})? lastLatencyPath;
+
+  /// What [measureLatencyPath] answers.
+  EngineResult measureLatencyResult = EngineResult.ok;
+
+  /// The request of the last [cancelLatency].
+  int? lastCancelledLatency;
 
   @override
   EngineResult cancelLatency({required int request}) {
     calls.add('cancelLatency');
+    lastCancelledLatency = request;
     return EngineResult.ok;
   }
 
