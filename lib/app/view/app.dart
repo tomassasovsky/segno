@@ -42,6 +42,7 @@ import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/settings_owner.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/owned_setting.dart';
+import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
@@ -1024,9 +1025,8 @@ class _AppViewState extends State<_AppView> {
       defaultName: name == storedDefaultTrackName(control.cursor),
       mode: control.mode.token,
       bank: control.activeBank,
-      deviceLost:
-          context.read<AudioSetupCubit>().state.deviceConnectivity ==
-          DeviceConnectivity.lost,
+      lossLine:
+          audioLossLine(_l10n, context.read<AudioSetupCubit>().state) ?? '',
       goodbye: readoutGoodbyeOf(context.read<PowerCubit>().state.phase),
       brightness: context.read<DisplayBrightnessCubit>().state.softwareOf(
         DisplayRole.track,
@@ -1128,6 +1128,7 @@ class _AppViewState extends State<_AppView> {
         );
       case DeviceConnectivity.none:
       case DeviceConnectivity.lost:
+      case DeviceConnectivity.waiting:
       case DeviceConnectivity.restoredCleared:
         return;
     }
@@ -1169,28 +1170,6 @@ class _AppViewState extends State<_AppView> {
       case MidiConnectivity.none:
         break;
     }
-  }
-
-  /// Waiting for the pinned audio interface at boot; clears when recovery
-  /// finishes (status returns to idle).
-  void _showAudioRecoveryBanner(AudioRecoveryState state) {
-    final l10n = _l10n;
-    if (state.status != AudioRecoveryStatus.waitingForDevice) {
-      dismissAppToast(AppToastId.audioRecovery);
-      return;
-    }
-    showAppToast(
-      id: AppToastId.audioRecovery,
-      type: ToastificationType.warning,
-      title: AppText(l10n.audioRecoveryWaitingBanner),
-      icon: const Icon(Icons.usb_off_outlined),
-      actions: [
-        TextButton(
-          onPressed: () => unawaited(openDeviceSettings()),
-          child: AppText(l10n.settingsMenuItem),
-        ),
-      ],
-    );
   }
 
   /// The USB-C contract predates the console profile, so the console runs on
@@ -1503,8 +1482,10 @@ class _AppViewState extends State<_AppView> {
           listener: (_, _) => _syncWindow(),
         ),
         BlocListener<AudioSetupCubit, AudioSetupState>(
+          // The readout's line also names the device.
           listenWhen: (previous, current) =>
-              previous.deviceConnectivity != current.deviceConnectivity,
+              previous.deviceConnectivity != current.deviceConnectivity ||
+              previous.connectivityDeviceName != current.connectivityDeviceName,
           listener: (_, state) {
             _updateDisplayContext();
             _showDeviceRestoredToast(state);
@@ -1518,7 +1499,11 @@ class _AppViewState extends State<_AppView> {
         ),
         BlocListener<AudioRecoveryCubit, AudioRecoveryState>(
           listenWhen: (previous, current) => previous.status != current.status,
-          listener: (_, state) => _showAudioRecoveryBanner(state),
+          // The stage's strip says it, not a toast (#1270 Part 5).
+          listener: (context, state) =>
+              context.read<AudioSetupCubit>().setWaitingForDevice(
+                waiting: state.status == AudioRecoveryStatus.waitingForDevice,
+              ),
         ),
         // The drive chosen in Save to went: the next take goes to Internal,
         // and the player is told rather than finding out afterwards.

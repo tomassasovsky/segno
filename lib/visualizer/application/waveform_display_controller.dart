@@ -16,7 +16,7 @@ class WaveformDisplayContext extends Equatable {
     required this.defaultName,
     required this.mode,
     required this.bank,
-    required this.deviceLost,
+    required this.lossLine,
     required this.goodbye,
     this.brightness = 1,
   });
@@ -36,8 +36,9 @@ class WaveformDisplayContext extends Equatable {
   /// Visible pedal bank.
   final int bank;
 
-  /// Whether the selected interface is disconnected.
-  final bool deviceLost;
+  /// The stage strip's line about a missing interface, echoed on the
+  /// readout; empty when there is none.
+  final String lossLine;
 
   /// Current shutdown presentation.
   final ReadoutGoodbye goodbye;
@@ -52,7 +53,7 @@ class WaveformDisplayContext extends Equatable {
     defaultName,
     mode,
     bank,
-    deviceLost,
+    lossLine,
     goodbye,
     brightness,
   ];
@@ -345,7 +346,7 @@ class WaveformDisplayController {
       tsDen: transport.tsDen,
       mode: _context.mode,
       activeBank: _context.bank,
-      deviceLost: _context.deviceLost,
+      lossLine: _context.lossLine,
       goodbye: _context.goodbye,
       brightness: _context.brightness,
     );
