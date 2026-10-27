@@ -5,7 +5,6 @@
 import 'dart:ffi';
 
 import 'package:meta/meta.dart';
-import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 import 'package:segno_engine/src/instruments.dart';
 
@@ -54,7 +53,12 @@ enum LatencyState {
   done,
 
   /// No loopback signal was detected within the measurement window.
-  timeout;
+  timeout,
+
+  /// The measurement was cancelled (`AudioEngine.cancelLatency`, a device
+  /// loss, or a take running when it was asked); the record offset is
+  /// unchanged.
+  cancelled;
 
   /// Maps a native `le_latency_state` integer to a [LatencyState].
   static LatencyState fromCode(int code) => switch (code) {
@@ -62,6 +66,7 @@ enum LatencyState {
     1 => LatencyState.measuring,
     2 => LatencyState.done,
     3 => LatencyState.timeout,
+    4 => LatencyState.cancelled,
     _ => LatencyState.idle,
   };
 }
@@ -1192,7 +1197,8 @@ enum XrunKind {
   /// hardware pointer with no XRUN raised, resynced by the ALSA backend.
   playbackResync,
 
-  /// The Windows ASIO driver's `kAsioOverload` notification.
+  /// A device driver's own overload notification; no backend in this build
+  /// reports one.
   backendOverload,
 }
 
@@ -1477,7 +1483,7 @@ class EngineSnapshot {
     this.tunerConfidence = 0,
     this.tunerInput = -1,
     this.tunerMuteMask = 0,
-    this.activeBackend = AudioBackend.miniaudio,
+    this.latencyRequest = 0,
     this.outputEnabledMask = 0xFFFFFFFF,
     this.isPerfArmed = false,
     this.perfFrames = 0,
@@ -1576,7 +1582,7 @@ class EngineSnapshot {
       recordOffsetFrames = 0,
       fxAddedLatencyFrames = 0,
       masterGain = 1,
-      activeBackend = AudioBackend.miniaudio,
+      latencyRequest = 0,
       outputEnabledMask = 0xFFFFFFFF,
       isPerfArmed = false,
       perfFrames = 0,
@@ -1690,7 +1696,7 @@ class EngineSnapshot {
       recordOffsetFrames: native.record_offset_frames,
       fxAddedLatencyFrames: native.fx_added_latency_frames,
       masterGain: native.master_gain,
-      activeBackend: AudioBackend.fromNative(native.active_backend),
+      latencyRequest: native.latency_request,
       outputEnabledMask: native.output_enabled_mask,
       isPerfArmed: native.perf_armed != 0,
       perfFrames: native.perf_frames,
@@ -1797,7 +1803,7 @@ class EngineSnapshot {
     int? recordOffsetFrames,
     int? fxAddedLatencyFrames,
     double? masterGain,
-    AudioBackend? activeBackend,
+    int? latencyRequest,
     int? outputEnabledMask,
     bool? isPerfArmed,
     int? perfFrames,
@@ -1893,7 +1899,7 @@ class EngineSnapshot {
     recordOffsetFrames: recordOffsetFrames ?? this.recordOffsetFrames,
     fxAddedLatencyFrames: fxAddedLatencyFrames ?? this.fxAddedLatencyFrames,
     masterGain: masterGain ?? this.masterGain,
-    activeBackend: activeBackend ?? this.activeBackend,
+    latencyRequest: latencyRequest ?? this.latencyRequest,
     outputEnabledMask: outputEnabledMask ?? this.outputEnabledMask,
     isPerfArmed: isPerfArmed ?? this.isPerfArmed,
     perfFrames: perfFrames ?? this.perfFrames,
@@ -2009,8 +2015,7 @@ class EngineSnapshot {
   final int framesProcessed;
 
   /// Device dropouts (xruns) since the device started, as reported by the
-  /// backend. The Windows ASIO backend tallies the driver's overload
-  /// notifications; the miniaudio backends (macOS / Linux) expose no portable
+  /// backend: the ALSA path's recoveries and resyncs. CoreAudio exposes no
   /// xrun signal, so this stays `0` there. Monotonic; resets on each start.
   final int xrunCount;
 
@@ -2079,10 +2084,10 @@ class EngineSnapshot {
   /// Unity (`1.0`) by default and after every fresh start.
   final double masterGain;
 
-  /// The device backend actually running (negotiated). Always
-  /// [AudioBackend.miniaudio] today; in Part 2 a requested-ASIO open that fell
-  /// back reports [AudioBackend.miniaudio] here.
-  final AudioBackend activeBackend;
+  /// The request [latencyState] belongs to (`AudioEngine.measureLatencyPath`),
+  /// so a caller waits for its own measurement and never reads a previous
+  /// one's [LatencyState.done]. `0` before any request.
+  final int latencyRequest;
 
   /// Structural output gate: bit c set => hardware output c is enabled (a
   /// routing target). A cleared bit removes it from the mix while its stored
@@ -2449,7 +2454,7 @@ class EngineSnapshot {
           recordOffsetFrames == other.recordOffsetFrames &&
           fxAddedLatencyFrames == other.fxAddedLatencyFrames &&
           masterGain == other.masterGain &&
-          activeBackend == other.activeBackend &&
+          latencyRequest == other.latencyRequest &&
           outputEnabledMask == other.outputEnabledMask &&
           isPerfArmed == other.isPerfArmed &&
           perfFrames == other.perfFrames &&
@@ -2547,7 +2552,7 @@ class EngineSnapshot {
     recordOffsetFrames,
     fxAddedLatencyFrames,
     masterGain,
-    activeBackend,
+    latencyRequest,
     outputEnabledMask,
     isPerfArmed,
     perfFrames,
@@ -2623,7 +2628,7 @@ class EngineSnapshot {
       'EngineSnapshot(running: $isRunning, '
       'devicePresent: $devicePresent, '
       'sampleRate: $sampleRate, tracks: $trackCount, '
-      'backend: ${activeBackend.name}, '
+      'latencyRequest: $latencyRequest, '
       'master: $masterPositionFrames/$masterLengthFrames, '
       'latency: ${latencyState.name}/$measuredLatencyMs ms)';
 }

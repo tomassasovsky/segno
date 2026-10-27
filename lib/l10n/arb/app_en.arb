@@ -2150,7 +2150,7 @@
     "@audioApplyTitle": {
         "description": "Title of the confirm shown when an audio setting changes while music plays (pen 28/04)."
     },
-    "audioApplyBody": "Playback stops while the audio interface reopens. Your recordings stay intact.",
+    "audioApplyBody": "Loops and backing audio will stop. Your recordings stay intact.",
     "@audioApplyBody": {
         "description": "Body of the Apply audio settings confirm (pen 28/04)."
     },
@@ -2179,6 +2179,221 @@
     "audioSettingsRefused": "The interface would not open with these settings. The previous settings are running again.",
     "@audioSettingsRefused": {
         "description": "Banner when the interface refused a change that moved neither the device nor the rates (a loop cap), and the previous settings were reopened (#1270 Part 3a)."
+    },
+    "audioMeasure": "Measure",
+    "@audioMeasure": {
+        "description": "The latency row's button that opens the cable test (#1270 Part 3b)."
+    },
+    "audioMeasureUnavailable": "Connect the interface to measure.",
+    "@audioMeasureUnavailable": {
+        "description": "Why Measure is disabled: the interface is not there."
+    },
+    "audioCableTitle": "Measure latency",
+    "@audioCableTitle": {
+        "description": "Title of the cable test dialog (pen 28/03)."
+    },
+    "audioCableBody": "Automatic measurement unavailable. Connect a spare output to an input with an audio cable.",
+    "@audioCableBody": {
+        "description": "What the cable test needs (pen 28/03)."
+    },
+    "audioCableOutput": "Output",
+    "@audioCableOutput": {
+        "description": "Label of the output the cable test sends on."
+    },
+    "audioCableInput": "Input",
+    "@audioCableInput": {
+        "description": "Label of the input the cable test listens on."
+    },
+    "audioCableNote": "The test sends a pulse through the selected output.",
+    "@audioCableNote": {
+        "description": "The cable test's note while nothing plays."
+    },
+    "audioCableNoteStops": "The test stops playback and sends a pulse through the selected output.",
+    "@audioCableNoteStops": {
+        "description": "The cable test's note while the tracks or the backing track play (pen 28/03)."
+    },
+    "audioCableStart": "Start test",
+    "@audioCableStart": {
+        "description": "Button that starts the cable test."
+    },
+    "audioCableNoReturn": "No pulse came back. Check the cable and the input gain.",
+    "@audioCableNoReturn": {
+        "description": "Shown in the cable dialog when the pulse did not return."
+    },
+    "audioCableRetry": "Retry",
+    "@audioCableRetry": {
+        "description": "Button that runs the cable test again after no pulse came back."
+    },
+    "devicePageTitle": "Audio device",
+    "@devicePageTitle": {
+        "description": "Title of Settings > Device (pen 28/01)."
+    },
+    "deviceInputsOutputs": "{inputs} inputs · {outputs} outputs",
+    "@deviceInputsOutputs": {
+        "description": "The interface's channel counts under its name.",
+        "placeholders": {
+            "inputs": {
+                "type": "int"
+            },
+            "outputs": {
+                "type": "int"
+            }
+        }
+    },
+    "deviceConnected": "Connected",
+    "@deviceConnected": {
+        "description": "Status pill: the interface is open."
+    },
+    "deviceDisconnected": "Disconnected",
+    "@deviceDisconnected": {
+        "description": "Status pill: the interface is not there."
+    },
+    "deviceChangeInterface": "Change interface",
+    "@deviceChangeInterface": {
+        "description": "Opens the interface list; a choice there is drafted."
+    },
+    "deviceSampleRate": "Sample rate",
+    "@deviceSampleRate": {
+        "description": "Heading of the sample rate chips."
+    },
+    "deviceBufferSize": "Buffer size",
+    "@deviceBufferSize": {
+        "description": "Heading of the buffer chips."
+    },
+    "deviceSamples": "samples",
+    "@deviceSamples": {
+        "description": "Unit beside the buffer heading."
+    },
+    "deviceLowerLatency": "Lower latency",
+    "@deviceLowerLatency": {
+        "description": "Under the smallest buffer chip."
+    },
+    "deviceMoreHeadroom": "More headroom",
+    "@deviceMoreHeadroom": {
+        "description": "Under the largest buffer chip."
+    },
+    "deviceMs": "ms",
+    "@deviceMs": {
+        "description": "Milliseconds, after the period figure."
+    },
+    "devicePerBuffer": "per buffer",
+    "@devicePerBuffer": {
+        "description": "After the period figure: how long one buffer lasts."
+    },
+    "deviceMeasureNote": "Measure to align new recordings.",
+    "@deviceMeasureNote": {
+        "description": "Under the latency while nothing is measured."
+    },
+    "deviceApplyBeforeMeasuring": "Apply audio settings before measuring.",
+    "@deviceApplyBeforeMeasuring": {
+        "description": "Why Measure is disabled while settings are drafted."
+    },
+    "deviceDropouts": "Audio dropouts",
+    "@deviceDropouts": {
+        "description": "Health row: dropouts since the interface opened."
+    },
+    "deviceEngine": "Audio engine",
+    "@deviceEngine": {
+        "description": "Health row: whether the engine runs."
+    },
+    "deviceEngineRunning": "Running",
+    "@deviceEngineRunning": {
+        "description": "Audio engine state."
+    },
+    "deviceEngineStopped": "Stopped",
+    "@deviceEngineStopped": {
+        "description": "Audio engine state."
+    },
+    "deviceEngineOffline": "Offline",
+    "@deviceEngineOffline": {
+        "description": "Audio engine state: running but the interface is gone."
+    },
+    "deviceApplyNote": "Changes apply together. Your recordings stay intact.",
+    "@deviceApplyNote": {
+        "description": "The Apply row's note while settings are drafted."
+    },
+    "deviceApply": "Apply",
+    "@deviceApply": {
+        "description": "Applies the drafted audio settings."
+    },
+    "updatesLoadFromUsb": "Load from USB",
+    "@updatesLoadFromUsb": {
+        "description": "Opens the update packages on a USB drive (#1270 Part 8, pen 33)."
+    },
+    "updatesUsbChoose": "Choose an update",
+    "@updatesUsbChoose": {
+        "description": "Heading of the USB package list."
+    },
+    "updatesUsbNoDrive": "Insert a USB drive with a Segno update.",
+    "@updatesUsbNoDrive": {
+        "description": "The USB list when no drive is plugged in."
+    },
+    "updatesUsbReading": "Reading the drive…",
+    "@updatesUsbReading": {
+        "description": "The USB list while the drive is read."
+    },
+    "updatesUsbEmpty": "No update packages on {drive}.",
+    "@updatesUsbEmpty": {
+        "description": "The USB list when the drive holds no .raucb file.",
+        "placeholders": {
+            "drive": {
+                "type": "String"
+            }
+        }
+    },
+    "updatesUsbMegabytes": "{value} MB",
+    "@updatesUsbMegabytes": {
+        "description": "A package's size.",
+        "placeholders": {
+            "value": {
+                "type": "int"
+            }
+        }
+    },
+    "updatesUsbCopying": "Copying the package…",
+    "@updatesUsbCopying": {
+        "description": "While the package is copied off the drive."
+    },
+    "updatesUsbInstalling": "Installing the package…",
+    "@updatesUsbInstalling": {
+        "description": "While the helper verifies and stages the package."
+    },
+    "updatesUsbUnverified": "This package could not be verified. Nothing was changed.",
+    "@updatesUsbUnverified": {
+        "description": "A package whose signature or compatible string failed."
+    },
+    "updatesUsbNotNewer": "Segno {version} is not newer than the installed {installed}.",
+    "@updatesUsbNotNewer": {
+        "description": "A package that is not newer than the running build.",
+        "placeholders": {
+            "version": {
+                "type": "String"
+            },
+            "installed": {
+                "type": "String"
+            }
+        }
+    },
+    "updatesUsbRemoved": "The USB drive was removed before the package was copied.",
+    "@updatesUsbRemoved": {
+        "description": "The drive went away during the copy."
+    },
+    "updatesUsbNoSpace": "Not enough space for this package. It needs {size} free.",
+    "@updatesUsbNoSpace": {
+        "description": "Internal has no room; size is updatesUsbMegabytes.",
+        "placeholders": {
+            "size": {
+                "type": "String"
+            }
+        }
+    },
+    "updatesUsbFailed": "The package could not be installed. Nothing was changed.",
+    "@updatesUsbFailed": {
+        "description": "Any other failure of a USB install."
+    },
+    "updatesUsbBack": "Back",
+    "@updatesUsbBack": {
+        "description": "Leaves a USB failure for the package list."
     },
     "systemThisConsoleGroup": "THIS CONSOLE",
     "systemHousekeepingGroup": "HOUSEKEEPING",
@@ -7454,6 +7669,10 @@
     "storagePurposeBackup": "backup",
     "@storagePurposeBackup": {
         "description": "What is writing to a drive, after 'in use for' (storageUsbInUse)."
+    },
+    "storagePurposeUpdate": "reading an update",
+    "@storagePurposeUpdate": {
+        "description": "What holds a drive, after 'in use for' (storageUsbInUse): an update package is being copied off it (#1270 Part 8)."
     },
     "powerTransferTitle": "Wait for the transfer",
     "@powerTransferTitle": {

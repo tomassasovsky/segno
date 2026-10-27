@@ -63,14 +63,6 @@ class NativeAudioEngine implements AudioEngine {
   /// reported (far more than any realistic host exposes).
   static const int _maxDevices = 64;
 
-  /// Fixed size of the native `asio_buffer_sizes[8]`/`asio_sample_rates[8]`
-  /// arrays (see `le_device_info` in segno_engine_api.h). The accompanying
-  /// `asio_buffer_count`/`asio_sample_rate_count` fields are clamped to this
-  /// before being used as loop bounds so an out-of-range native count can
-  /// never read past the fixed-size arrays (mirrors the defensive clamp in
-  /// [pluginStateGet]).
-  static const int _maxAsioSlots = 8;
-
   final SegnoEngineBindings _bindings;
   late final Pointer<le_engine> _engine;
   late final Pointer<le_snapshot> _snapshotPtr;
@@ -123,6 +115,7 @@ class NativeAudioEngine implements AudioEngine {
     final cfgPtr = calloc<le_config>();
     final outcomePtr = calloc<Int32>();
     final droppedPtr = calloc<Int32>();
+    final ratePtr = calloc<Int32>();
     try {
       config.writeTo(cfgPtr);
       // RETAINED (0), nothing dropped, until the native side writes a
@@ -130,19 +123,28 @@ class NativeAudioEngine implements AudioEngine {
       // material in place.
       outcomePtr.value = 0;
       droppedPtr.value = 0;
+      ratePtr.value = 0;
       final result = EngineResult.fromCode(
-        _bindings.le_engine_reopen(_engine, cfgPtr, outcomePtr, droppedPtr),
+        _bindings.le_engine_reopen(
+          _engine,
+          cfgPtr,
+          outcomePtr,
+          droppedPtr,
+          ratePtr,
+        ),
       );
       return (
         result: result,
         outcome: ReopenOutcome.fromCode(outcomePtr.value),
         droppedTracks: droppedPtr.value,
+        openedRate: ratePtr.value,
       );
     } finally {
       calloc
         ..free(cfgPtr)
         ..free(outcomePtr)
-        ..free(droppedPtr);
+        ..free(droppedPtr)
+        ..free(ratePtr);
     }
   }
 
@@ -253,67 +255,6 @@ class NativeAudioEngine implements AudioEngine {
         ..free(countPtr);
     }
   }
-
-  @override
-  List<AudioDevice> enumerateAsioDrivers() {
-    _checkAlive();
-    // Modeled on _enumerate, but the native call returns DUPLEX drivers (one
-    // driver = all I/O), so each result is tagged isInput: false and carries the
-    // probed channel counts rather than being split by direction. Off Windows /
-    // on the default build the native symbol is a stub returning 0 drivers.
-    final outPtr = calloc<le_device_info>(_maxDevices);
-    final countPtr = calloc<Int32>();
-    try {
-      final code = _bindings.le_enumerate_asio_drivers(
-        outPtr,
-        _maxDevices,
-        countPtr,
-      );
-      if (code != 0) return const [];
-      final count = countPtr.value;
-      return [
-        for (var i = 0; i < count; i++)
-          AudioDevice(
-            id: readNativeString((outPtr + i).ref.id),
-            name: readNativeString((outPtr + i).ref.name),
-            isDefault: (outPtr + i).ref.is_default != 0,
-            isInput: false,
-            inputChannels: (outPtr + i).ref.input_channels,
-            outputChannels: (outPtr + i).ref.output_channels,
-            // Clamp both counts to the arrays' fixed size before using them
-            // as loop bounds: dart:ffi's Array<T> does no bounds checking, so
-            // an out-of-range native count would otherwise read past the
-            // 8-slot arrays into adjacent struct memory.
-            bufferSizes: [
-              for (
-                var b = 0;
-                b < _clampAsioCount((outPtr + i).ref.asio_buffer_count);
-                b++
-              )
-                (outPtr + i).ref.asio_buffer_sizes[b],
-            ],
-            sampleRates: [
-              for (
-                var s = 0;
-                s < _clampAsioCount((outPtr + i).ref.asio_sample_rate_count);
-                s++
-              )
-                (outPtr + i).ref.asio_sample_rates[s],
-            ],
-          ),
-      ];
-    } finally {
-      calloc
-        ..free(outPtr)
-        ..free(countPtr);
-    }
-  }
-
-  /// Clamps a native ASIO buffer/sample-rate count to [_maxAsioSlots] so it
-  /// is always safe to use as a bound when indexing the fixed-size
-  /// `asio_buffer_sizes`/`asio_sample_rates` arrays.
-  static int _clampAsioCount(int count) =>
-      count < _maxAsioSlots ? count : _maxAsioSlots;
 
   @override
   EngineResult scanBegin({bool rescan = false}) {
@@ -746,9 +687,30 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult measureLatency() {
+  EngineResult measureLatencyPath({
+    required int output,
+    required int input,
+    required double amplitude,
+    required int request,
+  }) {
     _checkAlive();
-    return EngineResult.fromCode(_bindings.le_engine_measure_latency(_engine));
+    return EngineResult.fromCode(
+      _bindings.le_engine_measure_latency_path(
+        _engine,
+        output,
+        input,
+        amplitude,
+        request,
+      ),
+    );
+  }
+
+  @override
+  EngineResult cancelLatency({required int request}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_cancel_latency(_engine, request),
+    );
   }
 
   @override
@@ -3331,6 +3293,7 @@ class PumpedNativeEngine extends NativeAudioEngine {
         result: result,
         outcome: ReopenOutcome.fromCode(outcomePtr.value),
         droppedTracks: droppedPtr.value,
+        openedRate: result.isOk ? sampleRate : 0,
       );
     } finally {
       calloc

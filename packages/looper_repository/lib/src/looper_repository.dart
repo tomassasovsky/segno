@@ -15,6 +15,7 @@ import 'package:looper_repository/src/models/fx_slot_ids.dart';
 import 'package:looper_repository/src/models/input_monitor.dart';
 import 'package:looper_repository/src/models/input_setup.dart';
 import 'package:looper_repository/src/models/lane.dart';
+import 'package:looper_repository/src/models/latency_result.dart';
 import 'package:looper_repository/src/models/looper_state.dart';
 import 'package:looper_repository/src/models/meter_levels.dart';
 import 'package:looper_repository/src/models/mix_settings_snapshot.dart';
@@ -32,7 +33,6 @@ import 'package:looper_repository/src/render_job.dart';
 import 'package:looper_repository/src/settings_receipt.dart';
 import 'package:segno_engine/segno_engine.dart'
     hide
-        AudioBackend,
         AudioDevice,
         BuiltInEffect,
         EngineConfig,
@@ -454,9 +454,20 @@ class LooperRepository {
   /// until set or measured.
   int _recordOffset = 0;
 
-  /// The latency state the last poll saw, so a completed measurement is
-  /// mirrored once, on its transition to done.
-  LatencyState _lastLatencyState = LatencyState.idle;
+  /// The cable measurement in flight, if any ([measureLatency]).
+  _LatencyWait? _latencyWait;
+
+  /// The last request id [measureLatency] posted.
+  int _latencyRequest = 0;
+
+  /// A request cancelled or timed out while the engine may already have
+  /// resolved it: a DONE that still arrives under it is undone, so a
+  /// measurement the caller gave up on never moves the offset.
+  int? _abandonedLatency;
+
+  /// The device the engine opened at the last reopen, refused or not, so a
+  /// reopen refused to keep the loops can name the rate it would have run.
+  int _lastOpenedRate = 0;
 
   /// The tuner's armed input, or `-1` when disarmed. Re-applied on every
   /// (re)start so an arm survives a reconnect under an open Tuner face; `-1`
@@ -2239,18 +2250,7 @@ class LooperRepository {
     _retryRefusedRecord(snapshot);
     _refreshCacheTelemetry();
     _superviseDevice(devicePresent: snapshot.devicePresent);
-    // A measurement sets the engine's offset itself (it never flows through
-    // setRecordOffset), so mirror it into the remembered value when one
-    // completes, and only then: a queued setRecordOffset the audio thread
-    // has not applied yet would otherwise read back as the old figure and be
-    // replayed on the next reopen (#1270 Part 3a).
-    final latency = latencyStateFromEngine(snapshot.latencyState);
-    if (latency == LatencyState.done &&
-        _lastLatencyState != LatencyState.done &&
-        snapshot.recordOffsetFrames > 0) {
-      _recordOffset = snapshot.recordOffsetFrames;
-    }
-    _lastLatencyState = latency;
+    _settleLatencyWait(snapshot);
     _settlePendingClearUndos();
     // Remember retired restore points even when no Undo is waiting. A later
     // individual clear must not re-form an obsolete clear-all group.
@@ -2565,7 +2565,6 @@ class LooperRepository {
       inputCondMask: s.inputCondMask,
       recordOffsetFrames: s.recordOffsetFrames,
       fxAddedLatencyFrames: s.fxAddedLatencyFrames,
-      activeBackend: audioBackendFromEngine(s.activeBackend),
       reopen: _lastReopen,
     ),
     // From the repository's own re-apply CACHE, not `s.outputEnabledMask`, on
@@ -2591,14 +2590,6 @@ class LooperRepository {
   /// Enumerates the host's audio devices (playback + capture) for the picker.
   List<AudioDevice> devices() =>
       _engine.enumerateDevices().map(audioDeviceFromEngine).toList();
-
-  /// Enumerates the installed ASIO drivers (one duplex [AudioDevice] each) for
-  /// the backend selector's driver picker. Empty off Windows / the default
-  /// build. Must not be called while running on the ASIO backend (the cubit
-  /// enforces this — see the re-entrancy contract on
-  /// [AudioEngine.enumerateAsioDrivers]).
-  List<AudioDevice> asioDrivers() =>
-      _engine.enumerateAsioDrivers().map(audioDeviceFromEngine).toList();
 
   /// Whether a device (re)open must be refused right now: a Session apply or
   /// boot fence is up, or a settings owner still owes its recovery. The one
@@ -2652,7 +2643,7 @@ class LooperRepository {
   /// no such return comes; the verdict is then carried through the next
   /// successful [startEngine] (see [_reopenVerdictPending]) and surfaced by
   /// the audio setup's re-apply instead.
-  EngineResult _reopenEngine(EngineConfig config) {
+  EngineResult _reopenEngine(EngineConfig config, {bool keepMaterial = false}) {
     if (_startRefused) return EngineResult.notReady;
     // The stopped engine still reports the rate the loops were recorded at.
     final previousRate = _engine.snapshot().sampleRate;
@@ -2661,7 +2652,12 @@ class LooperRepository {
     // not hide it behind a "retained" over material that is already gone.
     final pending = _reopenVerdictPending ? _lastReopen : null;
     _retireEngineLifetime();
-    final reopened = _engine.reopen(engineConfigToEngine(config));
+    final reopened = _engine.reopen(
+      engineConfigToEngine(config, keepMaterial: keepMaterial),
+    );
+    _lastOpenedRate = reopened.openedRate;
+    // Refused before anything was settled: the loops are as they were.
+    if (reopened.result == EngineResult.wouldClear) return reopened.result;
     if (!reopened.result.isOk) {
       // A failed open has already settled the material per its outcome
       // (`le_engine_reopen`): a clear is a fact the player must be told at
@@ -2724,6 +2720,11 @@ class LooperRepository {
   /// loops (stopped), and [AudioApplyResult.reopen] says what the reopen did.
   /// A stopped engine is started.
   ///
+  /// While a track holds material the reopen may not clear it (#1270 Part
+  /// 3b): a config the device would open at another rate is refused
+  /// ([EngineResult.wouldClear], [AudioApplyResult.refusedRate] naming that
+  /// rate) and the previous config is reopened, the loops untouched.
+  ///
   /// When [config] cannot be opened, the previous config is reopened the same
   /// way and the result is [AudioApplyStatus.refused]; when that fails too,
   /// [AudioApplyStatus.failed] with the engine stopped. A refused admission
@@ -2748,9 +2749,11 @@ class LooperRepository {
     }
     // A RAW stop, as a reconnect does: stopEngine() would fold the history
     // and disarm the supervisor for what is only a reopen.
+    final keepMaterial = state.hasContent;
     _engine.stop();
     if (!_reopenVerdictPending) _lastReopen = null;
-    final result = _reopenEngine(config);
+    final result = _reopenEngine(config, keepMaterial: keepMaterial);
+    final refusedRate = result == EngineResult.wouldClear ? _lastOpenedRate : 0;
     if (result.isOk) {
       // The device answered: nothing is lost any more.
       _stopReconnectPolling();
@@ -2767,13 +2770,19 @@ class LooperRepository {
     }
     // The new config would not open. Put the previous one back, keeping the
     // loops the same way.
+    // A wouldClear left the device closed; any other failure may have too.
     _engine.stop();
     if (!_reopenVerdictPending) _lastReopen = null;
-    final back = _reopenEngine(previous);
+    final back = _reopenEngine(previous, keepMaterial: keepMaterial);
     final verdict = _moreLost(attempt, _lastReopen);
     if (back.isOk) {
       _stopReconnectPolling();
-      return _applyOutcome(AudioApplyStatus.refused, result, verdict);
+      return _applyOutcome(
+        AudioApplyStatus.refused,
+        result,
+        verdict,
+        refusedRate: refusedRate,
+      );
     }
     if (_isPinned && _intendRunning) {
       // Neither opened (no replay rolled back): keep the previous config
@@ -2803,12 +2812,18 @@ class LooperRepository {
   AudioApplyResult _applyOutcome(
     AudioApplyStatus status,
     EngineResult result,
-    EngineReopened? reopen,
-  ) {
+    EngineReopened? reopen, {
+    int refusedRate = 0,
+  }) {
     _lastReopen = null;
     _reopenVerdictPending = false;
     _reproject();
-    return AudioApplyResult(status: status, result: result, reopen: reopen);
+    return AudioApplyResult(
+      status: status,
+      result: result,
+      reopen: reopen,
+      refusedRate: refusedRate,
+    );
   }
 
   /// Whichever of two reopen verdicts lost more of the loops.
@@ -3269,8 +3284,112 @@ class LooperRepository {
   LoopbackInfo detectLoopback() =>
       loopbackInfoFromEngine(_engine.detectLoopback());
 
-  /// Triggers a loopback round-trip latency measurement.
-  EngineResult measureLatency() => _engine.measureLatency();
+  /// The level of the measuring burst: -12 dBFS.
+  static const double latencyAmplitude = 0.25;
+
+  /// How long [measureLatency] waits for its result before it cancels.
+  static const Duration latencyTimeout = Duration(seconds: 2);
+
+  /// Measures the round trip of one cable (#1270 Part 3b): a burst on
+  /// hardware [output], timed on hardware [input] (both 0-based).
+  ///
+  /// Completes on this request's own result. The engine keeps only the last
+  /// state, so the wait also ends, cancelled, on idle under this request,
+  /// another request once this one was seen measuring, or the device
+  /// leaving; after [latencyTimeout] it cancels the request and completes
+  /// [LatencyOutcome.timedOut]. A new call cancels the wait of the previous
+  /// one. Only [LatencyOutcome.done] moves the record offset.
+  Future<LatencyResult> measureLatency({
+    required int output,
+    required int input,
+  }) {
+    _abandonLatencyWait();
+    final request = ++_latencyRequest;
+    _abandonedLatency = null;
+    final result = _engine.measureLatencyPath(
+      output: output,
+      input: input,
+      amplitude: latencyAmplitude,
+      request: request,
+    );
+    if (!result.isOk) return Future.value(LatencyResult.refused(result));
+    final wait = _LatencyWait(
+      request,
+      Timer(latencyTimeout, () {
+        _engine.cancelLatency(request: request);
+        _abandonedLatency = request;
+        _endLatencyWait(const LatencyResult(LatencyOutcome.timedOut));
+      }),
+    );
+    _latencyWait = wait;
+    return wait.completer.future;
+  }
+
+  /// Cancels the measurement in flight; its wait completes
+  /// [LatencyOutcome.cancelled] and the record offset stays as it was.
+  void cancelLatency() => _abandonLatencyWait();
+
+  void _abandonLatencyWait() {
+    final wait = _latencyWait;
+    if (wait == null) return;
+    _engine.cancelLatency(request: wait.request);
+    _abandonedLatency = wait.request;
+    _endLatencyWait(const LatencyResult(LatencyOutcome.cancelled));
+  }
+
+  void _endLatencyWait(LatencyResult result) {
+    final wait = _latencyWait;
+    if (wait == null) return;
+    _latencyWait = null;
+    wait.timeout.cancel();
+    wait.completer.complete(result);
+  }
+
+  /// Ends the measurement wait on what [snapshot] says about its request.
+  void _settleLatencyWait(EngineSnapshot snapshot) {
+    final abandoned = _abandonedLatency;
+    if (abandoned != null &&
+        snapshot.latencyRequest == abandoned &&
+        latencyStateFromEngine(snapshot.latencyState) == LatencyState.done) {
+      // Resolved in the same block the cancel arrived in: put the
+      // remembered offset back.
+      _abandonedLatency = null;
+      _engine.setRecordOffset(_recordOffset);
+    }
+    final wait = _latencyWait;
+    if (wait == null) return;
+    if (!snapshot.devicePresent) {
+      _endLatencyWait(const LatencyResult(LatencyOutcome.cancelled));
+      return;
+    }
+    if (snapshot.latencyRequest != wait.request) {
+      if (wait.seen) {
+        _endLatencyWait(const LatencyResult(LatencyOutcome.cancelled));
+      }
+      return;
+    }
+    wait.seen = true;
+    switch (latencyStateFromEngine(snapshot.latencyState)) {
+      case LatencyState.measuring:
+        return;
+      case LatencyState.done:
+        // The engine set the offset itself; remember it so a reopen replays
+        // it (it never went through setRecordOffset).
+        if (snapshot.recordOffsetFrames > 0) {
+          _recordOffset = snapshot.recordOffsetFrames;
+        }
+        _endLatencyWait(
+          LatencyResult.done(
+            offsetFrames: snapshot.recordOffsetFrames,
+            latencyMs: snapshot.measuredLatencyMs,
+          ),
+        );
+      case LatencyState.timeout:
+        _endLatencyWait(const LatencyResult(LatencyOutcome.noReturn));
+      case LatencyState.idle || LatencyState.cancelled:
+        _endLatencyWait(const LatencyResult(LatencyOutcome.cancelled));
+    }
+  }
 
   /// Advances track [channel]: record / finalize loop / toggle overdub.
   ///
@@ -8778,6 +8897,7 @@ class LooperRepository {
 
   /// Releases the repository and the underlying engine.
   Future<void> dispose() async {
+    _endLatencyWait(const LatencyResult(LatencyOutcome.cancelled));
     _renderJob?.release();
     _retireEngineLifetime();
     await _stopPollingAndClose();
@@ -8992,4 +9112,16 @@ final class _OneShotIntent {
   final bool defaultValue;
   final Map<int, bool> overrides;
   bool effective(int channel) => overrides[channel] ?? defaultValue;
+}
+
+/// A cable measurement waiting for its result.
+class _LatencyWait {
+  _LatencyWait(this.request, this.timeout);
+
+  final int request;
+  final Timer timeout;
+  final Completer<LatencyResult> completer = Completer<LatencyResult>();
+
+  /// Whether a snapshot has carried this request yet.
+  bool seen = false;
 }

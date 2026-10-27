@@ -21,6 +21,11 @@ import 'package:segno_engine/src/synth_catalogue.dart';
 import 'package:segno_engine/src/track_effect.dart';
 import 'package:segno_engine/src/volume_space.dart';
 
+/// [AudioEngine.measureLatencyPath]'s `input` for the interface's own
+/// loopback channels rather than one physical input
+/// (`LE_LATENCY_LOOPBACK_INPUT`).
+const int latencyLoopbackInput = 0xFFFF;
+
 /// Result of an [AudioEngine] operation.
 ///
 /// Mirrors the native `le_result` enum.
@@ -84,7 +89,12 @@ enum EngineResult {
 
   /// A patch index this engine build does not define
   /// (`LE_ERR_UNKNOWN_PATCH`).
-  unknownPatch;
+  unknownPatch,
+
+  /// A reopen with [EngineConfig.keepMaterial] that would have cleared the
+  /// recorded loops (`LE_ERR_WOULD_CLEAR`, #1270): nothing was cleared and
+  /// the device is closed again.
+  wouldClear;
 
   /// Maps a native `le_result` integer to an [EngineResult].
   ///
@@ -106,6 +116,7 @@ enum EngineResult {
     -17 => EngineResult.tracksChanged,
     -14 => EngineResult.noInstrument,
     -15 => EngineResult.unknownPatch,
+    -22 => EngineResult.wouldClear,
     _ => EngineResult.invalid,
   };
 
@@ -178,11 +189,14 @@ enum ReopenOutcome {
 /// meaningful only when the engine
 /// actually reached its settle step — on a failed open ([EngineResult.device]
 /// with nothing changed) it reads [ReopenOutcome.retained] because the loops
-/// are indeed still there.
+/// are indeed still there. `openedRate` is the sample rate the device opened
+/// at, or 0 when it did not open; on [EngineResult.wouldClear] it is the rate
+/// the refused device would have run.
 typedef ReopenResult = ({
   EngineResult result,
   ReopenOutcome outcome,
   int droppedTracks,
+  int openedRate,
 });
 
 /// Thrown when an [AudioEngine] operation fails.
@@ -301,26 +315,28 @@ abstract interface class EngineMetering {
   /// an empty list when enumeration fails.
   List<AudioDevice> enumerateDevices();
 
-  /// Enumerates the installed ASIO drivers, each as a single **duplex**
-  /// [AudioDevice] (`isInput: false`) carrying its probed
-  /// [AudioDevice.inputChannels] / [AudioDevice.outputChannels] so the picker
-  /// can show "18 in / 20 out" before the device is opened. One ASIO driver
-  /// drives all I/O, so these are never partitioned by direction like
-  /// [enumerateDevices]. Returns an empty list off Windows, on the default
-  /// (non-ASIO) build, or when no ASIO driver is installed.
-  ///
-  /// RE-ENTRANCY: the ASIO host SDK loads a single process-global driver, so
-  /// this must NOT be called while the engine is running on the ASIO backend —
-  /// probing would tear down the live stream. Call only while stopped or while
-  /// running on the miniaudio backend (the presentation layer enforces this).
-  List<AudioDevice> enumerateAsioDrivers();
+  /// Measures the round trip of one chosen path (#1270): a 10 ms burst at
+  /// [amplitude] on hardware [output] only, timed on hardware [input] (or on
+  /// the interface's loopback channels for [latencyLoopbackInput]). The
+  /// states of this measurement carry [request] in
+  /// [EngineSnapshot.latencyRequest], so the caller waits for its own result.
+  /// The last state is not kept: a start publishes idle under the request,
+  /// and a restored offset done under request 0, so a caller also treats idle
+  /// under its own request, another request id once its own measuring has
+  /// been seen, or the device leaving as the end of its measurement, and
+  /// bounds the wait with its own timeout.
+  /// [EngineResult.invalid] for an output or input the device has not got, or
+  /// an amplitude outside (0, 0.5].
+  EngineResult measureLatencyPath({
+    required int output,
+    required int input,
+    required double amplitude,
+    required int request,
+  });
 
-  /// Triggers a single loopback round-trip latency measurement. The result is
-  /// surfaced asynchronously via [snapshot]'s latency fields.
-  ///
-  /// Requires a loopback path: a physical cable, or a detected loopback device
-  /// when the engine was started with [EngineConfig.useLoopbackCapture].
-  EngineResult measureLatency();
+  /// Cancels the measurement [request] started ([LatencyState.cancelled]); a
+  /// cancel for another request is ignored.
+  EngineResult cancelLatency({required int request});
 
   /// Reads the loop waveform: peaks of the mixed output indexed by position
   /// across one master loop (index 0 = loop start), each in `0..1`. Pair with

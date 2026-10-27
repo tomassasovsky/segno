@@ -5,31 +5,9 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
-// Settings owns its own AudioBackend, mapped to/from the looper domain backend
-// at the persistence boundary; prefixed only for that enum so the unprefixed
-// AudioBackend stays the domain one.
-import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
-import 'package:settings_repository/settings_repository.dart'
-    as persisted
-    show AudioBackend;
+import 'package:settings_repository/settings_repository.dart';
 
 part 'audio_setup_state.dart';
-
-/// Maps the looper domain backend to the settings layer's own backend enum.
-/// An exhaustive switch so adding a backend is a compile error here rather than
-/// a runtime failure from a name lookup.
-persisted.AudioBackend settingsBackendOf(AudioBackend backend) =>
-    switch (backend) {
-      AudioBackend.miniaudio => persisted.AudioBackend.miniaudio,
-      AudioBackend.asio => persisted.AudioBackend.asio,
-    };
-
-/// Maps the settings layer's persisted backend to the looper domain backend.
-AudioBackend engineBackendOf(persisted.AudioBackend backend) =>
-    switch (backend) {
-      persisted.AudioBackend.miniaudio => AudioBackend.miniaudio,
-      persisted.AudioBackend.asio => AudioBackend.asio,
-    };
 
 /// Manages the audio device options (device, sample rate, buffer size, maximum
 /// loop length) and surfaces the live engine status.
@@ -113,78 +91,99 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   bool? _lastDevicePresent;
   String _lastPresentDeviceName = '';
 
-  /// Selects the requested sample rate and applies it (see [AudioSetupCubit]).
-  void setSampleRate(int sampleRate) {
-    if (sampleRate == state.sampleRate && !_failed) return;
-    _requestApply(state.copyWith(sampleRate: sampleRate));
+  // ------------------------------------------------------------- the draft
+
+  /// Drafts [sampleRate] (pen 28/01). Ignored while the loops lock the rate
+  /// (D2): its chips are drawn disabled with the reason.
+  void editRate(int sampleRate) {
+    if (state.hasContent) return;
+    _setDraft(_draft.copyWith(sampleRate: sampleRate));
   }
 
-  /// Selects the requested buffer size and applies it.
-  void setBufferFrames(int bufferFrames) {
-    if (bufferFrames == state.bufferFrames && !_failed) return;
-    _requestApply(state.copyWith(bufferFrames: bufferFrames));
+  /// Drafts [bufferFrames].
+  void editBuffer(int bufferFrames) =>
+      _setDraft(_draft.copyWith(bufferFrames: bufferFrames));
+
+  /// Drafts the maximum loop length in whole [minutes] (`0` = engine
+  /// default). Ignored while the loops lock it (D2).
+  void editMaxLoop(int minutes) {
+    if (state.hasContent) return;
+    _setDraft(_draft.copyWith(maxLoopMinutes: minutes));
   }
 
-  /// Sets the maximum per-track loop length in whole [minutes] (`0` = engine
-  /// default) and applies it: the engine reserves the loop memory when the
-  /// device opens.
-  void setMaxLoopMinutes(int minutes) {
-    if (minutes == state.maxLoopMinutes && !_failed) return;
-    _requestApply(state.copyWith(maxLoopMinutes: minutes));
-  }
-
-  /// Selects the playback device to open (empty id = system default).
-  void setPlaybackDevice(String deviceId) =>
-      _selectDevice(playbackDeviceId: deviceId);
-
-  /// Selects the capture device to open (empty id = system default).
-  void setCaptureDevice(String deviceId) =>
-      _selectDevice(captureDeviceId: deviceId);
-
-  /// Pins both directions of one interface at once.
-  ///
-  /// The console shows ONE Device row, because an interface is one box even
-  /// though the host lists its playback and capture halves separately. Setting
-  /// them through [setPlaybackDevice] and [setCaptureDevice] in turn would
-  /// apply twice for a single tap.
-  void setDevice({
+  /// Drafts one interface, both directions: the host lists its playback and
+  /// capture halves separately, but it is one box.
+  void editDevice({
     required String playbackDeviceId,
     required String captureDeviceId,
-  }) {
-    if (playbackDeviceId == state.playbackDeviceId &&
-        captureDeviceId == state.captureDeviceId &&
-        !_failed) {
-      return;
-    }
+  }) => _setDraft(
+    _draft.copyWith(
+      playbackDeviceId: playbackDeviceId,
+      captureDeviceId: captureDeviceId,
+    ),
+  );
+
+  /// Cancel on the Apply row: the page shows what runs again.
+  void discardDraft() {
+    if (isClosed || state.draft == null) return;
+    emit(state.copyWith(clearDraft: true));
+  }
+
+  /// Apply on the Apply row: the whole draft through one guarded apply
+  /// (#1270 Part 3a): the take check, the lock, the effects budget, and the
+  /// question first when music is playing.
+  void applyDraft() {
+    final draft = state.draft;
+    if (draft == null) return;
     _requestApply(
       state.copyWith(
-        playbackDeviceId: playbackDeviceId,
-        captureDeviceId: captureDeviceId,
+        sampleRate: draft.sampleRate,
+        bufferFrames: draft.bufferFrames,
+        maxLoopMinutes: draft.maxLoopMinutes,
+        playbackDeviceId: draft.playbackDeviceId,
+        captureDeviceId: draft.captureDeviceId,
       ),
     );
   }
 
-  void _selectDevice({String? playbackDeviceId, String? captureDeviceId}) {
-    assert(
-      (playbackDeviceId != null) ^ (captureDeviceId != null),
-      'Either playbackDeviceId or captureDeviceId must be provided, '
-      'but not both',
-    );
-
-    if (playbackDeviceId == state.playbackDeviceId ||
-        captureDeviceId == state.captureDeviceId) {
+  /// Keeps the draft honest as the rig moves under it: material that lands
+  /// locks the rate and the loop cap (D2), so their drafted values go back to
+  /// what runs; and a draft that now equals what runs (a retry the device
+  /// answered on its own) is no draft.
+  void _reconcileDraft() {
+    final draft = state.draft;
+    if (draft == null) return;
+    if (state.hasContent &&
+        (draft.sampleRate != state.sampleRate ||
+            draft.maxLoopMinutes != state.maxLoopMinutes)) {
+      _setDraft(
+        draft.copyWith(
+          sampleRate: state.sampleRate,
+          maxLoopMinutes: state.maxLoopMinutes,
+        ),
+      );
       return;
     }
-    _requestApply(
-      state.copyWith(
-        playbackDeviceId: playbackDeviceId,
-        captureDeviceId: captureDeviceId,
-      ),
+    if (draft == AudioDraft.of(state) && !_failed) {
+      emit(state.copyWith(clearDraft: true));
+    }
+  }
+
+  /// The draft being edited, or what runs when there is none.
+  AudioDraft get _draft => state.draft ?? AudioDraft.of(state);
+
+  /// Keeps [draft] while it differs from what runs. After a failed open
+  /// nothing runs, so even the same settings are a draft: applying them is
+  /// how to retry.
+  void _setDraft(AudioDraft draft) {
+    final same = draft == AudioDraft.of(state) && !_failed;
+    emit(
+      same ? state.copyWith(clearDraft: true) : state.copyWith(draft: draft),
     );
   }
 
   /// Whether the last open failed and nothing runs: then the selection on
-  /// screen is not running either, and tapping it again is how to retry.
+  /// screen is not running either, and applying it again is how to retry.
   bool get _failed => state.status == AudioSetupStatus.error;
 
   /// Applies [next] now, or asks first when music is playing (pen 28/04).
@@ -204,9 +203,21 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// have started while the question was open), stops the tracks and the
   /// backing track, and applies it.
   void confirmApply() {
-    final next = _pending;
-    if (next == null) return;
+    final asked = _pending;
+    if (asked == null) return;
     _pending = null;
+    // The draft as it stands now: material that landed while the question
+    // was open has put its rate and loop cap back (_reconcileDraft).
+    final draft = state.draft;
+    final next = draft == null
+        ? asked
+        : state.copyWith(
+            sampleRate: draft.sampleRate,
+            bufferFrames: draft.bufferFrames,
+            maxLoopMinutes: draft.maxLoopMinutes,
+            playbackDeviceId: draft.playbackDeviceId,
+            captureDeviceId: draft.captureDeviceId,
+          );
     emit(state.copyWith(applyPhase: ApplyPhase.idle));
     if (!_admit(next)) return;
     for (final track in _repository.state.tracks) {
@@ -223,6 +234,163 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     emit(state.copyWith(applyPhase: ApplyPhase.idle));
   }
 
+  // ------------------------------------------------------- the cable test
+
+  /// The calibration guard a running cable test holds.
+  OperationGuard? _measureGuard;
+
+  /// Opens the cable test (pen 28/03): refused while a take runs (D3), and
+  /// unavailable while the interface is not there.
+  void openCableTest() {
+    if (!_canMeasure ||
+        state.draft != null ||
+        state.measurePhase == MeasurePhase.cable ||
+        state.measurePhase == MeasurePhase.running ||
+        state.measurePhase == MeasurePhase.noReturn) {
+      return;
+    }
+    final busy = _busyKind(GuardKind.calibration);
+    if (busy != null) {
+      emit(state.copyWith(refusal: ApplyRefusal.busy(busy)));
+      return;
+    }
+    emit(
+      state.copyWith(
+        measurePhase: MeasurePhase.cable,
+        playbackRunning: _musicPlaying,
+        clearRefusal: true,
+        measureOutput: _clampJack(
+          state.measureOutput,
+          state.engineStatus.outputChannels,
+        ),
+        measureInput: _clampJack(
+          state.measureInput,
+          state.engineStatus.inputChannels,
+        ),
+      ),
+    );
+  }
+
+  /// Measures the cable from [output] to [input] (1-based): checks the take
+  /// again, stops the transport and the backing track (D4), and holds the
+  /// calibration guard for the run, so an Apply, a device change or a take
+  /// is refused meanwhile. Only a pulse that comes back moves the offset; it
+  /// is saved under the device, rate and buffer it was measured on.
+  void startCableTest(int output, int input) {
+    if (state.measurePhase == MeasurePhase.running || !_canMeasure) return;
+    final busy = _busyKind(GuardKind.calibration);
+    if (busy != null) {
+      emit(state.copyWith(refusal: ApplyRefusal.busy(busy)));
+      return;
+    }
+    final OperationGuard guard;
+    try {
+      guard = _guards.enter(
+        GuardKind.calibration,
+        const GuardScope.internal(),
+        purpose: 'latency measurement',
+      );
+    } on GuardRefused catch (refused) {
+      emit(
+        state.copyWith(
+          refusal: ApplyRefusal.busy(refused.blockers.first.kind.name),
+        ),
+      );
+      return;
+    }
+    _measureGuard = guard;
+    for (final track in _repository.state.tracks) {
+      _repository.stopTrack(channel: track.channel);
+    }
+    if (_backing.state.playing) _backing.stop();
+    final status = state.engineStatus;
+    emit(
+      state.copyWith(
+        measurePhase: MeasurePhase.running,
+        measureOutput: output,
+        measureInput: input,
+        clearRefusal: true,
+      ),
+    );
+    unawaited(_runCableTest(guard, status, output, input));
+  }
+
+  Future<void> _runCableTest(
+    OperationGuard guard,
+    EngineStatus status,
+    int output,
+    int input,
+  ) async {
+    final LatencyResult result;
+    try {
+      result = await _repository.measureLatency(
+        output: output - 1,
+        input: input - 1,
+      );
+    } finally {
+      _releaseMeasureGuard(guard);
+    }
+    // Cancelled from here (or the cubit closed) while it ran: that answer
+    // is already on screen.
+    if (isClosed || state.measurePhase != MeasurePhase.running) return;
+    switch (result.outcome) {
+      case LatencyOutcome.done:
+        emit(state.copyWith(measurePhase: MeasurePhase.done));
+        await _settings.saveLatencyOffsetFrames(
+          device: status.deviceName,
+          sampleRate: status.sampleRate,
+          bufferFrames: status.bufferFrames,
+          frames: result.offsetFrames,
+        );
+      case LatencyOutcome.noReturn || LatencyOutcome.timedOut:
+        emit(state.copyWith(measurePhase: MeasurePhase.noReturn));
+      case LatencyOutcome.cancelled || LatencyOutcome.refused:
+        emit(state.copyWith(measurePhase: MeasurePhase.cancelled));
+    }
+  }
+
+  /// Picks the cable's [output] and [input] jacks (1-based) while the
+  /// dialog is open and nothing runs.
+  void chooseCableJacks({int? output, int? input}) {
+    if (state.measurePhase == MeasurePhase.idle ||
+        state.measurePhase == MeasurePhase.running) {
+      return;
+    }
+    emit(
+      state.copyWith(
+        measureOutput: output == null
+            ? null
+            : _clampJack(output, state.engineStatus.outputChannels),
+        measureInput: input == null
+            ? null
+            : _clampJack(input, state.engineStatus.inputChannels),
+      ),
+    );
+  }
+
+  /// Closes the cable test, cancelling a run in flight: the offset stays as
+  /// it was. Leaving the page does this too.
+  void cancelMeasure() {
+    if (isClosed || state.measurePhase == MeasurePhase.idle) return;
+    if (state.measurePhase == MeasurePhase.running) {
+      _repository.cancelLatency();
+    }
+    emit(state.copyWith(measurePhase: MeasurePhase.idle, clearRefusal: true));
+  }
+
+  /// Whether the interface is there to measure.
+  bool get _canMeasure =>
+      state.engineStatus.isConnected && state.engineStatus.devicePresent;
+
+  void _releaseMeasureGuard(OperationGuard guard) {
+    guard.release();
+    if (identical(_measureGuard, guard)) _measureGuard = null;
+  }
+
+  /// [jack] within 1..[count], or 1 when the count is unknown.
+  static int _clampJack(int jack, int count) =>
+      count <= 0 ? 1 : jack.clamp(1, count);
+
   /// Whether music would be cut by an apply: a track plays, or the backing
   /// track does.
   bool get _musicPlaying =>
@@ -232,7 +400,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// D19). A refusal is shown and nothing changes; a locked change is only
   /// ignored, because its control is already drawn disabled with the reason.
   bool _admit(AudioSetupState next) {
-    final busy = _busyKind();
+    final busy = _busyKind(GuardKind.deviceChange);
     if (busy != null) {
       emit(state.copyWith(refusal: ApplyRefusal.busy(busy)));
       return false;
@@ -254,8 +422,8 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// What a take in flight is called in the guard table's terms, or `null`
   /// when nothing would be cut: a track recording, overdubbing, waiting on a
   /// quantized or signal start or on the Count-in, or a performance capture
-  /// (or anything else the table says a device change must not overlap).
-  String? _busyKind() {
+  /// (or anything else the table says [kind] must not overlap).
+  String? _busyKind(GuardKind kind) {
     final looper = _repository.state;
     final takeRunning =
         looper.transport.countingIn ||
@@ -263,10 +431,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
           (t) => t.isCapturing || t.pending || t.pendingLaunch != null,
         );
     if (takeRunning) return GuardKind.capture.name;
-    final blockers = _guards.blockers(
-      GuardKind.deviceChange,
-      const GuardScope.internal(),
-    );
+    final blockers = _guards.blockers(kind, const GuardScope.internal());
     return blockers.isEmpty ? null : blockers.first.kind.name;
   }
 
@@ -304,8 +469,17 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       );
       return;
     }
+    // The draft is being applied: whatever the device does with it, the page
+    // shows what runs from here on, unless the repository touched nothing.
+    final draft = state.draft;
+    emit(state.copyWith(clearDraft: true));
     try {
-      _applyGuarded(next);
+      final outcome = _applyGuarded(next);
+      if (draft != null &&
+          outcome.status == AudioApplyStatus.refused &&
+          outcome.result == EngineResult.notReady) {
+        emit(state.copyWith(draft: draft));
+      }
     } finally {
       guard.release();
     }
@@ -316,7 +490,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     }
   }
 
-  void _applyGuarded(AudioSetupState next) {
+  AudioApplyResult _applyGuarded(AudioSetupState next) {
     // An intentional (re)apply resets the standing connectivity condition
     // (#453): the lost banner must not outlive the user acting on it, and the
     // app's own stop and reopen below must not read as an unplug. The
@@ -361,6 +535,28 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
             errorDetail: outcome.result.name,
             deviceConnectivity: notice,
             clearRefusal: true,
+          ),
+        );
+      case AudioApplyStatus.refused
+          when outcome.result == EngineResult.wouldClear:
+        // The interface would open at another rate, which would clear the
+        // loops: the previous config runs again, and the banner names the
+        // rate the new one would have run (#1270 Part 3b).
+        emit(
+          state.copyWith(
+            status: AudioSetupStatus.running,
+            clearError: true,
+            clearRefusal: true,
+            phase: ConfigPhase.refused,
+            requestedRate: outcome.refusedRate,
+            requestedBuffer: askedBuffer,
+            actualRate: live.sampleRate > 0
+                ? live.sampleRate
+                : state.sampleRate,
+            actualBuffer: live.bufferFrames > 0
+                ? live.bufferFrames
+                : state.bufferFrames,
+            deviceConnectivity: notice,
           ),
         );
       case AudioApplyStatus.refused
@@ -411,6 +607,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       case AudioApplyStatus.applied:
         _settle(next, live: live, reopen: outcome.reopen);
     }
+    return outcome;
   }
 
   /// The name the host gives the interface [config] pins, or its id.
@@ -506,8 +703,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
         config.loopback.isAutoRoutable && config.captureDeviceId.isEmpty,
     playbackDeviceId: config.playbackDeviceId,
     captureDeviceId: config.captureDeviceId,
-    backend: config.backend,
-    asioDriver: config.asioDriver,
   );
 
   /// The loop cap to open [config] with, in frames: the cap open now while
@@ -535,9 +730,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     maxLoopMinutes: config.maxLoopMinutes,
     playbackDeviceId: config.playbackDeviceId,
     captureDeviceId: config.captureDeviceId,
-    // Map the domain backend to the settings layer's own enum.
-    backend: settingsBackendOf(config.backend),
-    asioDriver: config.asioDriver,
   );
 
   /// Converts a minute cap to engine frames at [sampleRate]; `0` (engine
@@ -599,7 +791,13 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   }
 
   void _onLooperState(LooperState looper) {
-    emit(_projectFromRepository(looper, current: state));
+    emit(
+      _projectFromRepository(
+        looper,
+        current: state,
+      ).copyWith(playbackRunning: _musicPlaying),
+    );
+    _reconcileDraft();
     _detectConnectivity(looper.status);
     unawaited(_syncLatencyPersistence(looper.status));
   }
@@ -735,14 +933,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       captureDeviceId: hydrateConfig
           ? lastConfig?.captureDeviceId ?? current.captureDeviceId
           : current.captureDeviceId,
-      // Carried through to the engine and the saved config until those
-      // fields go (#1270 Part 2).
-      backend: hydrateConfig
-          ? lastConfig?.backend ?? AudioBackend.miniaudio
-          : current.backend,
-      asioDriver: hydrateConfig
-          ? lastConfig?.asioDriver ?? current.asioDriver
-          : current.asioDriver,
       hasContent: looper.hasContent,
       engineStatus: engineStatus,
       status: engineStatus.isConnected
@@ -765,6 +955,11 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
 
   @override
   Future<void> close() {
+    if (state.measurePhase == MeasurePhase.running) {
+      _repository.cancelLatency();
+    }
+    final guard = _measureGuard;
+    if (guard != null) _releaseMeasureGuard(guard);
     _deviceRefreshTimer?.cancel();
     unawaited(_subscription.cancel());
     return super.close();

@@ -1,17 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:segno_engine/segno_engine.dart' as engine;
 
-/// Which device backend the engine should open. Domain mirror of the engine's
-/// `AudioBackend`; on Windows the engine forces [asio], [miniaudio] is the
-/// cross-platform path used on macOS and Linux.
-enum AudioBackend {
-  /// The platform's default miniaudio backend.
-  miniaudio,
-
-  /// Windows ASIO.
-  asio,
-}
-
 /// Phase of the round-trip latency measurement harness. Domain mirror of the
 /// engine's `LatencyState`.
 enum LatencyState {
@@ -26,6 +15,9 @@ enum LatencyState {
 
   /// No loopback signal was detected within the measurement window.
   timeout,
+
+  /// The measurement was cancelled; the record offset is unchanged.
+  cancelled,
 }
 
 /// Classification of a cable-free loopback path used to auto-measure latency.
@@ -55,8 +47,6 @@ class AudioDevice extends Equatable {
     required this.isInput,
     this.inputChannels = 0,
     this.outputChannels = 0,
-    this.bufferSizes = const [],
-    this.sampleRates = const [],
   });
 
   /// The backend-specific device id, suitable for pinning via
@@ -78,13 +68,6 @@ class AudioDevice extends Equatable {
   /// The device's hardware playback channel count, or `0` when unknown.
   final int outputChannels;
 
-  /// The driver's selectable buffer sizes (ASIO drivers only; empty otherwise).
-  final List<int> bufferSizes;
-
-  /// The driver's supported sample rates in Hz (ASIO drivers only; empty
-  /// otherwise).
-  final List<int> sampleRates;
-
   @override
   List<Object?> get props => [
     id,
@@ -93,8 +76,6 @@ class AudioDevice extends Equatable {
     isInput,
     inputChannels,
     outputChannels,
-    bufferSizes,
-    sampleRates,
   ];
 }
 
@@ -111,8 +92,6 @@ class EngineConfig extends Equatable {
     this.useLoopbackCapture = false,
     this.playbackDeviceId = '',
     this.captureDeviceId = '',
-    this.backend = AudioBackend.miniaudio,
-    this.asioDriver = '',
   });
 
   /// Requested sample rate in Hz, or `0` for the device default.
@@ -139,12 +118,6 @@ class EngineConfig extends Equatable {
   /// The id of the capture device to open, or empty for the system default.
   final String captureDeviceId;
 
-  /// Which device backend to open.
-  final AudioBackend backend;
-
-  /// Selected ASIO driver name, used only when [backend] is ASIO.
-  final String asioDriver;
-
   @override
   List<Object?> get props => [
     sampleRate,
@@ -155,8 +128,6 @@ class EngineConfig extends Equatable {
     useLoopbackCapture,
     playbackDeviceId,
     captureDeviceId,
-    backend,
-    asioDriver,
   ];
 }
 
@@ -195,20 +166,6 @@ class LoopbackInfo extends Equatable {
 
 // --- Boundary mappers (package-internal; not exported from the barrel). ---
 
-/// Maps an engine `AudioBackend` to its domain mirror.
-AudioBackend audioBackendFromEngine(engine.AudioBackend backend) =>
-    switch (backend) {
-      engine.AudioBackend.miniaudio => AudioBackend.miniaudio,
-      engine.AudioBackend.asio => AudioBackend.asio,
-    };
-
-/// Maps a domain [AudioBackend] to the engine enum at the boundary.
-engine.AudioBackend audioBackendToEngine(AudioBackend backend) =>
-    switch (backend) {
-      AudioBackend.miniaudio => engine.AudioBackend.miniaudio,
-      AudioBackend.asio => engine.AudioBackend.asio,
-    };
-
 /// Maps an engine `LatencyState` to its domain mirror.
 LatencyState latencyStateFromEngine(engine.LatencyState state) =>
     switch (state) {
@@ -216,6 +173,7 @@ LatencyState latencyStateFromEngine(engine.LatencyState state) =>
       engine.LatencyState.measuring => LatencyState.measuring,
       engine.LatencyState.done => LatencyState.done,
       engine.LatencyState.timeout => LatencyState.timeout,
+      engine.LatencyState.cancelled => LatencyState.cancelled,
     };
 
 /// Maps an engine `LoopbackKind` to its domain mirror.
@@ -234,8 +192,6 @@ AudioDevice audioDeviceFromEngine(engine.AudioDevice device) => AudioDevice(
   isInput: device.isInput,
   inputChannels: device.inputChannels,
   outputChannels: device.outputChannels,
-  bufferSizes: device.bufferSizes,
-  sampleRates: device.sampleRates,
 );
 
 /// Maps an engine `LoopbackInfo` to its domain mirror.
@@ -246,16 +202,18 @@ LoopbackInfo loopbackInfoFromEngine(engine.LoopbackInfo info) => LoopbackInfo(
 );
 
 /// Maps a domain [EngineConfig] to the engine type at the repository boundary.
-engine.EngineConfig engineConfigToEngine(EngineConfig config) =>
-    engine.EngineConfig(
-      sampleRate: config.sampleRate,
-      bufferFrames: config.bufferFrames,
-      inputChannels: config.inputChannels,
-      outputChannels: config.outputChannels,
-      maxLoopFrames: config.maxLoopFrames,
-      useLoopbackCapture: config.useLoopbackCapture,
-      playbackDeviceId: config.playbackDeviceId,
-      captureDeviceId: config.captureDeviceId,
-      backend: audioBackendToEngine(config.backend),
-      asioDriver: config.asioDriver,
-    );
+/// [keepMaterial] asks a reopen to refuse rather than clear the loops.
+engine.EngineConfig engineConfigToEngine(
+  EngineConfig config, {
+  bool keepMaterial = false,
+}) => engine.EngineConfig(
+  sampleRate: config.sampleRate,
+  bufferFrames: config.bufferFrames,
+  inputChannels: config.inputChannels,
+  outputChannels: config.outputChannels,
+  maxLoopFrames: config.maxLoopFrames,
+  useLoopbackCapture: config.useLoopbackCapture,
+  playbackDeviceId: config.playbackDeviceId,
+  captureDeviceId: config.captureDeviceId,
+  keepMaterial: keepMaterial,
+);

@@ -11,8 +11,7 @@
  * reused unchanged; the data callback here just pumps le_engine_process.
  *
  * Compiled unconditionally (like the per-OS platform-seam TUs); it is the only
- * device backend this build ships. The opt-in Windows ASIO backend lands later
- * as a second le_device_backend selected by le_select_backend.
+ * device backend this build ships.
  */
 #include <stdatomic.h>
 #include <stdint.h>
@@ -45,8 +44,7 @@
  * device's callback thread spends between being handed a period and giving it
  * back, and the entry stamps form the timeline the DEVICE actually ran on. A
  * clock read inside le_engine_process would also be pumped by the native test
- * harness and by the ASIO bridge's own conversion wrapper, mixing three
- * different timelines into one gap detector. The cost added to the RT path is
+ * harness, mixing two different timelines into one gap detector. The cost added to the RT path is
  * two monotonic clock reads (vDSO/commpage, no kernel entry) and ~10 relaxed
  * atomic adds — well under a microsecond, which is under 1% of the deadline
  * even at the shortest period the appliance offers (32 frames / 96 kHz =
@@ -154,6 +152,8 @@ static void notification_callback(const ma_device_notification* notification) {
     case ma_device_notification_type_rerouted:
     case ma_device_notification_type_interruption_began:
       atomic_store_explicit(&e->a_device_present, 0, memory_order_relaxed);
+      /* A latency measurement over a device that left is cancelled. */
+      atomic_fetch_add_explicit(&e->a_device_losses, 1u, memory_order_relaxed);
       le_engine_note_callback_timeline_break(e);
       break;
     default:
@@ -346,9 +346,7 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
     }
   }
 
-  /* Open the device in shared mode (miniaudio's default on every backend). The
-   * OS mixer owns the device; this is the behaviour on macOS/Linux. On Windows
-   * full device control goes through ASIO instead, not this path. */
+  /* Open the device in shared mode (miniaudio's default on every backend). */
   ma_result init_result = ma_device_init(pContext, &cfg, &engine->device);
   if (init_result != MA_SUCCESS) {
     le_uninit_context(engine);
@@ -373,10 +371,6 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
   out->output_channels = neg_out;
   out->buffer_frames =
       (int32_t)engine->device.playback.internalPeriodSizeInFrames;
-  out->active_backend = LE_BACKEND_MINIAUDIO;
-  /* The loopback-excluded mask is computed in le_engine_start from the resolved
-   * capture-device UID for this path; the backend reports none here. */
-  out->excluded_input_mask = 0;
   strncpy(out->device_name, engine->device.playback.name,
           sizeof(out->device_name) - 1);
   out->device_name[sizeof(out->device_name) - 1] = '\0';
@@ -400,9 +394,7 @@ static int32_t le_miniaudio_start(le_engine* engine) {
 /* Stops + fully releases the device. The running/present flags and the per-OS
  * teardown hook are reset by le_engine_stop above the seam. For miniaudio,
  * le_miniaudio_close stops (explicitly — see the note there) then releases, so
- * stop() and close() coincide and stop() just delegates; the seam keeps them
- * separate because a future backend (ASIO, Part 2) may need a distinct
- * stop-without-release step. */
+ * stop() and close() coincide and stop() just delegates. */
 static int32_t le_miniaudio_stop(le_engine* engine) {
   le_miniaudio_close(engine);
   return LE_OK;

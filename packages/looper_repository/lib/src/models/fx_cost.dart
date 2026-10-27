@@ -43,7 +43,7 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   // CI arm64, an eighth of eight in one chain (6.2 and 6.1 us), x 1.75.
   TrackEffectType.dubVerb: 170,
   TrackEffectType.ambVerb: 167,
-  // On the hop, as the octaver whose kernel it runs ([kFxHopCostUs]).
+  // On the hop, charged per block ([kFxHopCostUs]).
   TrackEffectType.whammy: 0,
   TrackEffectType.dualOctaver: 0,
   TrackEffectType.smartTune: 0,
@@ -82,11 +82,13 @@ const Map<TrackEffectType, double> kFxHopCostUs = {
   // The octaver's phase vocoder, its settings mapped; CI measures the two
   // alike (41 against 40 us alone).
   TrackEffectType.whammy: 69,
-  // The octaver's phase vocoder, its settings mapped. Octave 2's shift runs
-  // in the quarter the octaver spends on its envelope when it holds the
-  // formants (the Dual Octaver moves them), and both voices share one
-  // inverse FFT, so the heaviest quarter stays the octaver's.
-  TrackEffectType.dualOctaver: 69,
+  // The octaver's phase vocoder with both voices, and its low band (#1467:
+  // a crossover, two taps and a sliced pitch detection on every sample),
+  // on a bass line in its heaviest setting (High Mode off, the band
+  // playing; on, the band only listens). CI arm64, one instance alone
+  // (44.6 us), x 1.75 and rounded up, until the console's own table
+  // replaces it.
+  TrackEffectType.dualOctaver: 79,
   // The octaver's PSOLA, its shift worked out once a detection lands.
   TrackEffectType.smartTune: kFxPsolaCostUs,
 };

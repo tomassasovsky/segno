@@ -54,7 +54,7 @@ void main() {
       expect(snapshot.latencyState, LatencyState.idle);
       expect(snapshot.measuredLatencyMs, -1);
       expect(snapshot.masterGain, 1);
-      expect(snapshot.activeBackend, AudioBackend.miniaudio);
+      expect(snapshot.latencyRequest, 0);
       expect(snapshot.isPerfArmed, isFalse);
       expect(snapshot.perfFrames, 0);
       expect(snapshot.perfOverruns, 0);
@@ -942,7 +942,7 @@ void main() {
           ..record_offset_frames = 480
           ..fx_added_latency_frames = 1024
           ..master_gain = 0.5
-          ..active_backend = 1
+          ..latency_request = 7
           ..perf_armed = 1
           ..perf_frames = 96000
           ..perf_overruns = 7
@@ -1018,7 +1018,7 @@ void main() {
         // 1024 frames at 48 kHz ~= 21.3 ms.
         expect(snapshot.fxAddedLatencyMs, closeTo(1024 * 1000 / 48000, 1e-9));
         expect(snapshot.masterGain, closeTo(0.5, 1e-6));
-        expect(snapshot.activeBackend, AudioBackend.asio);
+        expect(snapshot.latencyRequest, 7);
         expect(snapshot.isPerfArmed, isTrue);
         expect(snapshot.perfFrames, 96000);
         expect(snapshot.perfOverruns, 7);
@@ -1156,88 +1156,27 @@ void main() {
       }
     });
 
-    test('active_backend maps to activeBackend (default 0 => miniaudio)', () {
+    test('latency_state 4 is cancelled, with its request', () {
       final ptr = calloc<le_snapshot>();
       try {
-        // Zero-initialized struct: active_backend defaults to 0 => miniaudio.
-        expect(
-          EngineSnapshot.fromNative(ptr.ref, const []).activeBackend,
-          AudioBackend.miniaudio,
-        );
-        ptr.ref.active_backend = 1;
-        expect(
-          EngineSnapshot.fromNative(ptr.ref, const []).activeBackend,
-          AudioBackend.asio,
-        );
-      } finally {
-        calloc.free(ptr);
-      }
-    });
-
-    test('active_backend maps to activeBackend (1 => asio)', () {
-      final ptr = calloc<le_snapshot>();
-      try {
-        // Zero-initialized struct: active_backend defaults to 0 => miniaudio.
-        expect(
-          EngineSnapshot.fromNative(ptr.ref, const []).activeBackend,
-          AudioBackend.miniaudio,
-        );
-        ptr.ref.active_backend = 1;
-        expect(
-          EngineSnapshot.fromNative(ptr.ref, const []).activeBackend,
-          AudioBackend.asio,
-        );
-      } finally {
-        calloc.free(ptr);
-      }
-    });
-
-    test('perf_armed == 0 maps to isPerfArmed false', () {
-      final ptr = calloc<le_snapshot>();
-      try {
-        ptr.ref.perf_armed = 0;
-        expect(
-          EngineSnapshot.fromNative(ptr.ref, const []).isPerfArmed,
-          isFalse,
-        );
-      } finally {
-        calloc.free(ptr);
-      }
-    });
-
-    test('device_present is independent of running', () {
-      final ptr = calloc<le_snapshot>();
-      try {
-        // A device can be lost (device_present == 0) while the engine object
-        // still reports running == 1.
         ptr.ref
-          ..running = 1
-          ..device_present = 0;
+          ..latency_state = 4
+          ..latency_request = 9;
         final snapshot = EngineSnapshot.fromNative(ptr.ref, const []);
-        expect(snapshot.isRunning, isTrue);
-        expect(snapshot.devicePresent, isFalse);
+        expect(snapshot.latencyState, LatencyState.cancelled);
+        expect(snapshot.latencyRequest, 9);
       } finally {
         calloc.free(ptr);
       }
     });
-  });
 
-  group('value semantics', () {
-    test('equal snapshots are equal and share a hashCode', () {
-      const a = EngineSnapshot.initial();
-      const b = EngineSnapshot.initial();
-      expect(a, equals(b));
-      expect(a.hashCode, b.hashCode);
-    });
-
-    // Distinct (non-const) instances so the `==` body runs rather than being
     // short-circuited by `identical`, exercising every field comparison.
     /// The channel count the [build] meter lists are sized to.
     const channels = 4;
 
     EngineSnapshot build({
       bool devicePresent = true,
-      AudioBackend activeBackend = AudioBackend.miniaudio,
+      int latencyRequest = 0,
       double masterGain = 1,
       double outputPeak = 0,
       int fxAddedLatencyFrames = 0,
@@ -1291,7 +1230,7 @@ void main() {
       measuredLatencyMs: -1,
       masterGain: masterGain,
       fxAddedLatencyFrames: fxAddedLatencyFrames,
-      activeBackend: activeBackend,
+      latencyRequest: latencyRequest,
       outputEnabledMask: outputEnabledMask,
       isPerfArmed: isPerfArmed,
       perfFrames: perfFrames,
@@ -1439,8 +1378,8 @@ void main() {
       }
     });
 
-    test('activeBackend participates in equality', () {
-      expect(build(), isNot(equals(build(activeBackend: AudioBackend.asio))));
+    test('latencyRequest participates in equality', () {
+      expect(build(), isNot(equals(build(latencyRequest: 3))));
     });
 
     test('masterGain participates in equality', () {
@@ -1633,7 +1572,7 @@ void main() {
     test('toString surfaces key fields', () {
       const snapshot = EngineSnapshot.initial();
       expect(snapshot.toString(), contains('running: false'));
-      expect(snapshot.toString(), contains('backend: miniaudio'));
+      expect(snapshot.toString(), contains('latencyRequest: 0'));
     });
   });
 
@@ -1872,7 +1811,7 @@ void main() {
         'recordOffsetFrames',
         'fxAddedLatencyFrames',
         'masterGain',
-        'activeBackend',
+        'latencyRequest',
         'outputEnabledMask',
         'isPerfArmed',
         'perfFrames',

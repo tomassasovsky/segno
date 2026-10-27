@@ -13,7 +13,7 @@ cd "$(dirname "$0")/../../.."   # src/test/bench -> packages/segno_engine
 
 CC=${CC:-cc}
 OUT="${TMPDIR:-/tmp}"
-STD="-std=gnu11 -O2 -DNDEBUG -I src/core -I src/midi -I src/asio -I src/miniaudio"
+STD="-std=gnu11 -O2 -DNDEBUG -I src/core -I src/midi -I src/miniaudio"
 
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) LIBS="-lole32 -lwinmm -lm" ;;

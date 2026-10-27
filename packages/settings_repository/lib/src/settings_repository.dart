@@ -13,17 +13,6 @@ typedef RecordTimingCheckpoint = ({
   Map<int, int> trackOverrides,
 });
 
-/// The persisted device-backend intent. A settings-layer domain enum (mirroring
-/// the engine's backend) kept here so this repository holds no data-layer
-/// dependency; the presentation layer maps it to/from the engine backend.
-enum AudioBackend {
-  /// The platform's default miniaudio backend.
-  miniaudio,
-
-  /// Windows ASIO.
-  asio,
-}
-
 /// A pedal setup Save that did not complete durably.
 final class PedalSetupSaveException implements Exception {
   /// Keeps the original storage failure and any checkpoint-restore failure.
@@ -86,8 +75,6 @@ class StoredAudioConfig {
     this.maxLoopMinutes = 0,
     this.playbackDeviceId = '',
     this.captureDeviceId = '',
-    this.backend = AudioBackend.miniaudio,
-    this.asioDriver = '',
   });
 
   /// Requested sample rate in Hz.
@@ -113,15 +100,6 @@ class StoredAudioConfig {
   /// Pinned capture device id (empty => system default).
   final String captureDeviceId;
 
-  /// The persisted device-backend intent. Defaults to [AudioBackend.miniaudio].
-  /// ASIO availability is a presentation-layer decision (Windows + an installed
-  /// driver), so the repository stays platform-agnostic and holds only intent.
-  final AudioBackend backend;
-
-  /// The selected ASIO driver name (used only when [backend] is
-  /// [AudioBackend.asio]). Empty on the default path.
-  final String asioDriver;
-
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -133,9 +111,7 @@ class StoredAudioConfig {
           outputChannels == other.outputChannels &&
           maxLoopMinutes == other.maxLoopMinutes &&
           playbackDeviceId == other.playbackDeviceId &&
-          captureDeviceId == other.captureDeviceId &&
-          backend == other.backend &&
-          asioDriver == other.asioDriver;
+          captureDeviceId == other.captureDeviceId;
 
   @override
   int get hashCode => Object.hash(
@@ -146,8 +122,6 @@ class StoredAudioConfig {
     maxLoopMinutes,
     playbackDeviceId,
     captureDeviceId,
-    backend,
-    asioDriver,
   );
 }
 
@@ -421,8 +395,6 @@ class SettingsRepository {
   static const String _audioMaxLoopMinutesKey = 'audio.max_loop_minutes';
   static const String _audioPlaybackDeviceIdKey = 'audio.playback_device_id';
   static const String _audioCaptureDeviceIdKey = 'audio.capture_device_id';
-  static const String _audioBackendKey = 'audio.backend';
-  static const String _audioAsioDriverKey = 'audio.asioDriver';
 
   /// Loads the last-used audio configuration, or `null` if none has been saved
   /// yet (a first run, so the setup flow should be shown).
@@ -438,16 +410,8 @@ class SettingsRepository {
       maxLoopMinutes: await _store.getInt(_audioMaxLoopMinutesKey) ?? 0,
       playbackDeviceId: await _store.getString(_audioPlaybackDeviceIdKey) ?? '',
       captureDeviceId: await _store.getString(_audioCaptureDeviceIdKey) ?? '',
-      backend: _backendFromName(await _store.getString(_audioBackendKey)),
-      asioDriver: await _store.getString(_audioAsioDriverKey) ?? '',
     );
   }
-
-  /// Resolves a stored backend name to an [AudioBackend], forward-compatibly:
-  /// an unknown name (e.g. a value written by a newer build) resolves to
-  /// [AudioBackend.miniaudio] rather than throwing (a defensive read).
-  AudioBackend _backendFromName(String? name) =>
-      AudioBackend.values.asNameMap()[name] ?? AudioBackend.miniaudio;
 
   /// Loads the legacy global input-monitor flag, or `null` if it was never set.
   /// Only the one-time monitor migration reads this — the live app no longer
@@ -503,8 +467,6 @@ class SettingsRepository {
       config.playbackDeviceId,
     );
     await _store.setString(_audioCaptureDeviceIdKey, config.captureDeviceId);
-    await _store.setString(_audioBackendKey, config.backend.name);
-    await _store.setString(_audioAsioDriverKey, config.asioDriver);
   }
 
   static const String _midiInputDeviceKey = 'midi.input_device';

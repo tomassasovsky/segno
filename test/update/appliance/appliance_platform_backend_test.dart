@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/update/appliance/appliance_env.dart';
 import 'package:segno/update/appliance/appliance_platform_backend.dart';
+import 'package:segno/update/appliance/system_appliance_env.dart';
 import 'package:update_repository/update_repository.dart';
 
 class _FakeEnv implements ApplianceEnv {
@@ -43,6 +44,19 @@ class _FakeEnv implements ApplianceEnv {
     if (stageError != null) return Stream.error(stageError!);
     return Stream.fromIterable(stageProgress);
   }
+
+  String? stagedFileArg;
+  final cleared = <String>[];
+
+  @override
+  Stream<double> stageFile(String path) {
+    stagedFileArg = path;
+    if (stageError != null) return Stream.error(stageError!);
+    return Stream.fromIterable(stageProgress);
+  }
+
+  @override
+  void clearDirectorySync(String path) => cleared.add(path);
 
   @override
   Future<void> reboot() async {
@@ -300,6 +314,50 @@ void main() {
           .drain<void>();
       await backend(env).stagedVersion();
       expect(env.rebootCalls, 0);
+    });
+  });
+
+  group('a package from a USB drive (#1270 Part 8)', () {
+    test(
+      "installs through the helper's install-file, with its progress",
+      () async {
+        final env = _FakeEnv();
+        final b = backend(env);
+        expect(b.stagingDirectory, kUpdateStagingDirectory);
+        final progress = await b
+            .installPackage('$kUpdateStagingDirectory/segno.raucb')
+            .toList();
+        expect(progress, [0.5, 1.0]);
+        expect(env.stagedFileArg, '$kUpdateStagingDirectory/segno.raucb');
+      },
+    );
+
+    test('recover sweeps staging: nothing is copied at startup', () async {
+      final env = _FakeEnv();
+      await backend(env).recover();
+      expect(env.cleared, [kUpdateStagingDirectory]);
+    });
+
+    test("the helper's refusal lines read as their refusal", () {
+      expect(
+        packageRefusal('{"error":"not-newer","version":"0.9.0"}'),
+        isA<UpdatePackageRefused>()
+            .having((r) => r.refusal, 'refusal', UpdatePackageRefusal.notNewer)
+            .having((r) => r.version, 'version', Version(0, 9, 0)),
+      );
+      expect(
+        packageRefusal('{"error":"unverified"}').refusal,
+        UpdatePackageRefusal.unverified,
+      );
+      expect(
+        packageRefusal('{"error":"outside-staging"}').refusal,
+        UpdatePackageRefusal.outsideStaging,
+      );
+      // A line the helper would not vouch for is not a verified package.
+      expect(
+        packageRefusal('garbage').refusal,
+        UpdatePackageRefusal.unverified,
+      );
     });
   });
 }

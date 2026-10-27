@@ -26,6 +26,7 @@ import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/audio_setup/view/device_page.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/logging/app_log.dart';
@@ -85,6 +86,12 @@ class _FakeUpdateBackend implements PlatformUpdateBackend {
   @override
   Stream<double> downloadAndStage(UpdateManifest manifest) =>
       Stream.fromIterable(const [1]);
+
+  @override
+  String get stagingDirectory => '';
+
+  @override
+  Stream<double> installPackage(String path) => Stream.fromIterable(const [1]);
 }
 
 /// Same as [_FakeUpdateBackend], but [fetchManifest] waits until [complete] so
@@ -4272,6 +4279,7 @@ void main() {
             result: EngineResult.ok,
             outcome: ReopenOutcome.retainedPartial,
             droppedTracks: 1 << 2,
+            openedRate: 0,
           );
         reconnectTicker.add(null);
         await tester.pump();
@@ -5212,7 +5220,7 @@ void main() {
         for (var i = 0; i < 10; i++) {
           await tester.pump(const Duration(milliseconds: 100));
         }
-        expect(find.byType(DeviceSettingsPage), findsOneWidget);
+        expect(find.byType(DevicePage), findsOneWidget);
 
         // Unmount so the recovery poll stops with the test.
         await tester.pumpWidget(const SizedBox.shrink());

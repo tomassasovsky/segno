@@ -94,6 +94,7 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
     result: EngineResult.ok,
     outcome: ReopenOutcome.retained,
     droppedTracks: 0,
+    openedRate: 0,
   );
 
   @override
@@ -152,18 +153,36 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
     return devices;
   }
 
-  /// Drivers returned by [enumerateAsioDrivers].
-  List<AudioDevice> asioDrivers = const [];
-
   @override
-  List<AudioDevice> enumerateAsioDrivers() {
-    calls.add('enumerateAsioDrivers');
-    return asioDrivers;
+  EngineResult measureLatencyPath({
+    required int output,
+    required int input,
+    required double amplitude,
+    required int request,
+  }) {
+    calls.add('measureLatencyPath');
+    lastLatencyPath = (
+      output: output,
+      input: input,
+      amplitude: amplitude,
+      request: request,
+    );
+    return measureLatencyResult;
   }
 
+  /// The arguments of the last [measureLatencyPath].
+  ({int output, int input, double amplitude, int request})? lastLatencyPath;
+
+  /// What [measureLatencyPath] answers.
+  EngineResult measureLatencyResult = EngineResult.ok;
+
+  /// The request of the last [cancelLatency].
+  int? lastCancelledLatency;
+
   @override
-  EngineResult measureLatency() {
-    calls.add('measureLatency');
+  EngineResult cancelLatency({required int request}) {
+    calls.add('cancelLatency');
+    lastCancelledLatency = request;
     return EngineResult.ok;
   }
 
@@ -2245,7 +2264,7 @@ class _LengthSnapshot extends EngineSnapshot {
         tunerConfidence: source.tunerConfidence,
         tunerInput: source.tunerInput,
         tunerMuteMask: source.tunerMuteMask,
-        activeBackend: source.activeBackend,
+        latencyRequest: source.latencyRequest,
         outputEnabledMask: source.outputEnabledMask,
         isPerfArmed: source.isPerfArmed,
         perfFrames: source.perfFrames,

@@ -101,8 +101,12 @@ class LoopChoiceButton extends StatelessWidget {
     this.icon,
     this.enabled = true,
     this.fontSize = 24,
+    this.hint,
     super.key,
   });
+
+  /// Why the choice cannot be taken, announced while it is not [enabled].
+  final String? hint;
 
   /// The choice's name.
   final String label;
@@ -137,6 +141,7 @@ class LoopChoiceButton extends StatelessWidget {
       selected: selected,
       enabled: enabled,
       label: label,
+      hint: enabled ? null : hint,
       child: Opacity(
         opacity: enabled ? 1 : surface.disabledOpacity,
         child: LoopFocusable(
@@ -171,12 +176,16 @@ class LoopChoiceButton extends StatelessWidget {
                           Icon(icon, size: 36, color: textColor),
                           const SizedBox(width: 24),
                         ],
-                        AppText(
-                          label,
-                          style: TextStyle(
-                            color: textColor,
-                            fontSize: fontSize,
-                            height: 1,
+                        // The button's own Semantics names it; the visible
+                        // text would read the label a second time.
+                        ExcludeSemantics(
+                          child: AppText(
+                            label,
+                            style: TextStyle(
+                              color: textColor,
+                              fontSize: fontSize,
+                              height: 1,
+                            ),
                           ),
                         ),
                       ],
@@ -545,8 +554,13 @@ class LoopOutlinedButton extends StatelessWidget {
     this.radius = 7,
     this.borderColor,
     this.focusNode,
+    this.autofocus = false,
     super.key,
   });
+
+  /// Whether the encoder starts on this button when its page or dialog
+  /// opens.
+  final bool autofocus;
 
   /// The button's focus node; see [LoopFocusable.focusNode].
   final FocusNode? focusNode;
@@ -644,6 +658,7 @@ class LoopOutlinedButton extends StatelessWidget {
       value: semanticValue,
       child: LoopFocusable(
         focusNode: focusNode,
+        autofocus: autofocus,
         enabled: onTap != null,
         radius: radius,
         onActivate: onTap ?? () {},
