@@ -14,7 +14,9 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 Sibling repos (#1496): [segno-design](https://github.com/tomassasovsky/segno-design)
 (`segno-ui.pen` and the design studies, cloned at `../segno-design`) and
 [segno-hardware](https://github.com/tomassasovsky/segno-hardware) (boards,
-enclosure, printed parts). See **Sibling repos** in `AGENTS.md`.
+enclosure, printed parts). See **Sibling repos** in `AGENTS.md`. Entries
+below that name paths under `hardware/`, `docs/design/` or `segno-ui.pen`
+predate the split and refer to those repositories now.
 
 ---
 
