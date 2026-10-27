@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -29,18 +28,12 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 
 /// The accepted Pedals setup, drawn at the console's own size.
 void main() {
-  const fontDir =
-      '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
-  // Author-machine goldens, like the other screenshot suites here: the
-  // Material fonts come from the local SDK, so everywhere else this skips.
-  final hasScreenshotFonts = File('$fontDir/Roboto-Regular.ttf').existsSync();
-
   setUpAll(() async {
-    if (!hasScreenshotFonts) return;
+    if (!rendersScreenshots) return;
     await loadScreenshotFont('Roboto', [
-      '$fontDir/Roboto-Regular.ttf',
-      '$fontDir/Roboto-Medium.ttf',
-      '$fontDir/Roboto-Bold.ttf',
+      '$materialFontDir/Roboto-Regular.ttf',
+      '$materialFontDir/Roboto-Medium.ttf',
+      '$materialFontDir/Roboto-Bold.ttf',
     ]);
     await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
@@ -188,7 +181,7 @@ void main() {
   ) async {
     await pump(tester);
     await shot(tester, 'tracks');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Track controls, the four track caps as one group', (
     tester,
@@ -197,7 +190,7 @@ void main() {
     await tester.tap(find.byKey(const Key('pedal_setup_cap_track2')));
     await tester.pumpAndSettle();
     await shot(tester, 'tracks_group');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Mode choices', (tester) async {
     await pump(tester);
@@ -207,14 +200,14 @@ void main() {
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/pedal_setup_picker.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Unreadable assignments require a replacement Save', (
     tester,
   ) async {
     await pump(tester, unreadable: true);
     await shot(tester, 'unavailable');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Custom controls on bank B', (tester) async {
     await pump(tester);
@@ -223,7 +216,7 @@ void main() {
     await tester.tap(find.byKey(const Key('pedal_setup_cap_bank')));
     await tester.pumpAndSettle();
     await shot(tester, 'custom_bank_b');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Clear custom assignments asks before it empties the draft', (
     tester,
@@ -243,13 +236,13 @@ void main() {
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/pedal_setup_clear.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
   testWidgets('LED colors: one mode, per group and state', (tester) async {
     await pump(tester);
     await tester.tap(find.byKey(const Key('pedal_setup_context_leds')));
     await tester.pumpAndSettle();
     await shot(tester, 'leds');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('LED color editor', (tester) async {
     await pump(tester);
@@ -261,12 +254,12 @@ void main() {
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/pedal_setup_color_editor.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Custom controls colour each assignment', (tester) async {
     await pump(tester);
     await tester.tap(find.byKey(const Key('pedal_setup_context_custom')));
     await tester.pumpAndSettle();
     await shot(tester, 'leds_custom');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 }

@@ -60,7 +60,7 @@ before #1177 lands.
 - **The save already writes a flattened preview.** Every save writes
   `mixdown.wav`, every unmuted lane's live layer summed at its level, balance
   and track fader (`session_repository.dart:495-504`, `:802-833`;
-  `docs/design/session-bundle-format.md` "Layout"). Nothing plays it: the
+  `docs/formats/session-bundle-format.md` "Layout"). Nothing plays it: the
   engine has no file or preview voice. The click is the only generated voice
   and it is summed before the output buses (`engine_process.c:6563-6579`);
   the performance tap sits inside `output_bus_frame` (`:6580-6586`,
@@ -864,7 +864,7 @@ writes `name`), `models/session.dart` (optional `name`, read at `:745-775`,
 written at `:1018-1020`, `formatVersion` unchanged), `session_name.dart`
 (`sessionSlug` stays for display-name sanitizing; the slug is no longer a
 path), new `session_id.dart` (`newSessionId`, pattern `performance_slug.dart`),
-`docs/design/session-bundle-format.md` (layout, `name`, the empty-mix rule).
+`docs/formats/session-bundle-format.md` (layout, `name`, the empty-mix rule).
 
 Files, app (the id migration the review moved here out of Part 2, so that the
 package change and the one caller change land together and the app keeps

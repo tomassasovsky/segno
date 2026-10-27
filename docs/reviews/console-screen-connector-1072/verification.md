@@ -49,4 +49,4 @@ No new independent review is claimed for this packaging-only delivery.
 The board remains a prototype. Actual harness fit, enclosure clearance and
 electrical behavior still need physical validation. Early GPIO startup and
 shutdown-before-HDMI software remain outstanding, as recorded in the
-[screen-board guide](../../../hardware/kicad/screen_power/README.md).
+[screen-board guide](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/README.md).

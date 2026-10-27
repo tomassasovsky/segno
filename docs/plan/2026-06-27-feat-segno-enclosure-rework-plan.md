@@ -9,7 +9,7 @@ date: 2026-06-27
 ## Overview
 
 Rework the Segno sheet-metal enclosure generator
-([`hardware/enclosure/segno_enclosure.py`](../../hardware/enclosure/segno_enclosure.py))
+([`hardware/enclosure/segno_enclosure.py`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/segno_enclosure.py))
 and its manufacturing package to match the decisions from the brainstorm
 ([`docs/brainstorm/2026-06-27-segno-enclosure-brainstorm-doc.md`](../brainstorm/2026-06-27-segno-enclosure-brainstorm-doc.md))
 and the dimensioned facts from research
@@ -180,7 +180,7 @@ intake clearance); 4 rubber feet.
 - [ ] Add weld + assembly notes to title blocks; render `WELD`/`ACRYLIC` layers.
 
 ### Phase E — Docs & preview
-- [ ] Rewrite [`hardware/segno_enclosure_design.md`](../../hardware/segno_enclosure_design.md):
+- [ ] Rewrite [`hardware/segno_enclosure_design.md`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/segno_enclosure_design.md):
   welded construction + bottom-plate service, integrated-pedal platforms (+ weld
   spec), simplified rear, ventilation, edge-lit PMMA logo, screen mounting, BOM,
   `FSW_*` PROVISIONAL callout, assembly + service sequences.
@@ -278,7 +278,7 @@ per-part platform PDF.
 
 ## References & Research
 
-- Generator: [`hardware/enclosure/segno_enclosure.py`](../../hardware/enclosure/segno_enclosure.py)
+- Generator: [`hardware/enclosure/segno_enclosure.py`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/segno_enclosure.py)
 - Brainstorm: [`docs/brainstorm/2026-06-27-segno-enclosure-brainstorm-doc.md`](../brainstorm/2026-06-27-segno-enclosure-brainstorm-doc.md)
 - Research (dims + sources): [`docs/research/2026-06-27-segno-components-research.md`](../research/2026-06-27-segno-components-research.md)
 - Board context (controls, power, Pi GPIO): [`hardware/segno_pi_main_pcb_design.md`](../../hardware/segno_pi_main_pcb_design.md)

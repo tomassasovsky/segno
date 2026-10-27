@@ -74,7 +74,7 @@ Effects are read from **`armSnapshot` only**
 `fx_chains.dart` precedent
 ([fx_chains.dart:53-59](../../packages/daw_export/lib/src/fx_chains.dart))
 and the manifest format doc's own documented reason
-([performance-manifest-format.md:136-139](../../docs/design/performance-manifest-format.md)):
+([performance-manifest-format.md:136-139](../../docs/formats/performance-manifest-format.md)):
 a disarm snapshot never carries `effects` — in-performance chain edits are
 logged to `events.log`, not re-snapshotted, and reconciling that log against
 the arm snapshot is out of scope here (this resolves the brainstorm's open
@@ -101,7 +101,7 @@ Question).
 - [ ] New `packages/daw_export/lib/src/daw_effect.dart`: `DawEffect`
   (`type` — the `LE_FX_*` integer, `params` — `List<double>`, matching the
   manifest's `TrackEffect.toJson()` shape
-  ([performance-manifest-format.md:80-139](../../docs/design/performance-manifest-format.md))
+  ([performance-manifest-format.md:80-139](../../docs/formats/performance-manifest-format.md))
   parsed independently, no import of `looper_repository`/`segno_engine` per
   this package's existing own-input-model rule
   ([manifest_reader.dart:9-11](../../packages/daw_export/lib/src/manifest_reader.dart))).
@@ -160,7 +160,7 @@ Question).
 - [als_builder.dart:111-190](../../packages/daw_export/lib/src/als_builder.dart) (`<DeviceChain>` block, extended)
 - [fx_chains.dart:53-59](../../packages/daw_export/lib/src/fx_chains.dart) (armSnapshot-only precedent, D-CHAIN-SOURCE)
 - [lane.dart:11-66](../../packages/looper_repository/lib/src/models/lane.dart) (confirms per-lane independent effects chains — read-only reference, no new dependency added)
-- [performance-manifest-format.md:80-139](../../docs/design/performance-manifest-format.md) (`effects` shape, arm-only semantics)
+- [performance-manifest-format.md:80-139](../../docs/formats/performance-manifest-format.md) (`effects` shape, arm-only semantics)
 - [test/corpus/README.md](../../packages/daw_export/test/corpus/README.md) (extended with the new capture + methodology)
 - `packages/segno_engine/vst3/*/ids.h` (GUID source, parts 2/3/5-9)
 

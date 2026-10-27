@@ -10,7 +10,7 @@ issue: 959
 Tracking: [#959](https://github.com/tomassasovsky/segno/issues/959).
 Brainstorm: [`2026-08-31-appliance-power-off-button-brainstorm-doc.md`](../brainstorm/2026-08-31-appliance-power-off-button-brainstorm-doc.md).
 Hardware: console J8 → J9 → Pi 5 J2 PWR pads
-([`console_board.py` J8](../../hardware/kicad/console_board.py)).
+([`console_board.py` J8](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/console_board.py)).
 Gate: `autonomy:blocked-verify` — Flutter UI and the helper verb are
 CI-provable; the J2 → `pwr_button` → halt path is not.
 
@@ -258,7 +258,7 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test test/app
 ## References & Research
 
 - Brainstorm (locked product): [`docs/brainstorm/2026-08-31-appliance-power-off-button-brainstorm-doc.md`](../brainstorm/2026-08-31-appliance-power-off-button-brainstorm-doc.md)
-- Hardware: [`hardware/kicad/console_board.py`](../../hardware/kicad/console_board.py) J8/J9; [`hardware/segno_wiring.md`](../../hardware/segno_wiring.md)
+- Hardware: [`hardware/kicad/console_board.py`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/console_board.py) J8/J9; [`hardware/segno_wiring.md`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/segno_wiring.md)
 - Pi 5 DTS `pwr_button` / `KEY_POWER` 116: https://github.com/raspberrypi/linux/blob/rpi-6.12.y/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b.dts
 - Official power-button page: https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#power-button
 - evdev `EVIOCGBIT` / `EVIOCGRAB`: https://docs.kernel.org/input/input.html

@@ -1,8 +1,6 @@
 @Tags(['screenshots'])
 library;
 
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,16 +19,12 @@ import '../helpers/helpers.dart';
 /// Pen 32's five Power screens: Power options, Saving, Save failed, Safe to
 /// switch off and Restarting. No real halt is invoked.
 void main() {
-  final fontDir = Platform.environment['SEGNO_SCREENSHOT_FONT_DIR'];
-  final hasFonts =
-      fontDir != null && File('$fontDir/Roboto-Regular.ttf').existsSync();
-
   setUpAll(() async {
-    if (!hasFonts) return;
+    if (!rendersScreenshots) return;
     await loadScreenshotFont('Roboto', [
-      '$fontDir/Roboto-Regular.ttf',
-      '$fontDir/Roboto-Medium.ttf',
-      '$fontDir/Roboto-Bold.ttf',
+      '$materialFontDir/Roboto-Regular.ttf',
+      '$materialFontDir/Roboto-Medium.ttf',
+      '$materialFontDir/Roboto-Bold.ttf',
     ]);
     await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
@@ -101,7 +95,7 @@ void main() {
       find.byType(PowerDialog),
       matchesGoldenFile('goldens/power_options.png'),
     );
-  }, skip: !hasFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Save failed: Segno is staying on', (tester) async {
     final power = cubit()
@@ -120,7 +114,7 @@ void main() {
       find.byType(PowerDialog),
       matchesGoldenFile('goldens/power_save_failed.png'),
     );
-  }, skip: !hasFonts);
+  }, skip: !rendersScreenshots);
 
   for (final (name, face, action) in [
     ('power_saving', ReadoutGoodbye.saving, PowerAction.shutDown),
@@ -133,7 +127,7 @@ void main() {
         find.byType(PowerGoodbye),
         matchesGoldenFile('goldens/$name.png'),
       );
-    }, skip: !hasFonts);
+    }, skip: !rendersScreenshots);
   }
 }
 

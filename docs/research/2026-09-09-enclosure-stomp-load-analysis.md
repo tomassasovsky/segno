@@ -1,7 +1,7 @@
 # Can the folded shell take a stomp? — rated-load analysis (issue #1019)
 
 **Date:** 2026-09-09 · **Scope:** `hardware/enclosure`, base plate + faceplate ·
-**Model:** [`hardware/enclosure/_stomp_fea.py`](../../hardware/enclosure/_stomp_fea.py)
+**Model:** [`hardware/enclosure/_stomp_fea.py`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/_stomp_fea.py)
 
 ## Answer
 

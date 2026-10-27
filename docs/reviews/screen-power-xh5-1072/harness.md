@@ -86,5 +86,5 @@ required; do not replace those with five-pin parts. The screen changes take
 the consolidated list from 53 lines / 168 units to **55 lines / 192 units**.
 The incremental estimate is **$88.22 before tax**, carrying forward all other
 prices and the previous shipping estimate. A fresh complete quote was not
-obtained and no cart was changed. See [component costs](../../../hardware/kicad/screen_power/COSTS.md)
+obtained and no cart was changed. See [component costs](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/COSTS.md)
 for the calculation and exclusions.

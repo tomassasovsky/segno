@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -19,20 +18,15 @@ import '../helpers/helpers.dart';
 import '../storage/helpers/storage_rig.dart';
 
 /// The six tiles of pen 31 `Storage & safe eject`, at the pen's own numbers,
-/// for eyeballing against the pen. Author-only, like every golden here: the
-/// Material fonts come from the local Flutter SDK
-/// (`SEGNO_SCREENSHOT_FONT_DIR`), and elsewhere these skip.
+/// for eyeballing against the pen. Renders only with `--update-goldens`, like
+/// every suite here.
 void main() {
-  final fontDir = Platform.environment['SEGNO_SCREENSHOT_FONT_DIR'];
-  final hasFonts =
-      fontDir != null && File('$fontDir/Roboto-Regular.ttf').existsSync();
-
   setUpAll(() async {
-    if (!hasFonts) return;
+    if (!rendersScreenshots) return;
     await loadScreenshotFont('Roboto', [
-      '$fontDir/Roboto-Regular.ttf',
-      '$fontDir/Roboto-Medium.ttf',
-      '$fontDir/Roboto-Bold.ttf',
+      '$materialFontDir/Roboto-Regular.ttf',
+      '$materialFontDir/Roboto-Medium.ttf',
+      '$materialFontDir/Roboto-Bold.ttf',
     ]);
     await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
@@ -108,7 +102,7 @@ void main() {
   testWidgets('Storage overview', (tester) async {
     await pump(tester, volumes: [usbRecord(1)]);
     await shoot(tester, 'storage_overview');
-  }, skip: !hasFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Ejecting USB', (tester) async {
     await pump(tester, volumes: [usbRecord(1)]);
@@ -117,7 +111,7 @@ void main() {
     await shoot(tester, 'storage_ejecting');
     rig.client.settleEject('req-1', ok: true);
     await tester.pumpAndSettle();
-  }, skip: !hasFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Safe to remove', (tester) async {
     await pump(tester, volumes: [usbRecord(1)]);
@@ -126,12 +120,12 @@ void main() {
     rig.client.settleEject('req-1', ok: true);
     await tester.pumpAndSettle();
     await shoot(tester, 'storage_safe_to_remove');
-  }, skip: !hasFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('No USB drive', (tester) async {
     await pump(tester);
     await shoot(tester, 'storage_no_usb');
-  }, skip: !hasFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Eject failed', (tester) async {
     await pump(tester, volumes: [usbRecord(1)]);
@@ -140,10 +134,10 @@ void main() {
     rig.client.settleEject('req-1', ok: false, reason: 'busy');
     await tester.pumpAndSettle();
     await shoot(tester, 'storage_eject_failed');
-  }, skip: !hasFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Low internal space', (tester) async {
     await pump(tester, volumes: [usbRecord(1)], internalFree: 200000000);
     await shoot(tester, 'storage_low_internal');
-  }, skip: !hasFonts);
+  }, skip: !rendersScreenshots);
 }

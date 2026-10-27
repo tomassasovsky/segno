@@ -8,7 +8,7 @@
  * thread (plus a handful of transport facts — record start/end, loop length
  * locked, layer retired) is tagged with the capture frame it occurred at and
  * pushed here, to be drained to disk by perf_drain.c's background thread (see
- * docs/design/performance-event-log-format.md for the on-disk format and the
+ * docs/formats/performance-event-log-format.md for the on-disk format and the
  * full audited command table).
  *
  * Two independent instances of this ring exist per le_perf_capture (see
@@ -43,7 +43,7 @@ extern "C" {
  * two enums are never confused. Values below LE_PLOG_RECORD_START correspond
  * 1:1 to an audited LE_CMD_ code the entry's `cmd.code` field mirrors
  * verbatim (same code, same union arm) — see the audited table in
- * docs/design/performance-event-log-format.md. Values from
+ * docs/formats/performance-event-log-format.md. Values from
  * LE_PLOG_RECORD_START on are transport facts / control-side-only concepts
  * with no corresponding LE_CMD_ code. */
 typedef enum le_perf_log_code {

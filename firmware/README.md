@@ -6,7 +6,8 @@ boards programmed as Arduino sketches on the
 (`rp2040:rp2040`), built with `arduino-cli`. Neither holds looper state: the
 app on the Raspberry Pi runs the looper and sends the boards what to display.
 
-The boards themselves are in [`../hardware`](../hardware/README.md).
+The boards themselves are in
+[segno-hardware](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/README.md).
 
 | Folder | Runs on | Contents |
 | --- | --- | --- |

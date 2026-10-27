@@ -141,13 +141,6 @@ packages/segno_engine/*.exe
 !.claude/skills/
 .portfolio-output/
 
-# KiCad scratch + caches. Underscore-prefixed = scratch experiments; canonical
-# fab outputs live in hardware/kicad/fab/. Loose gerbers/caches are regenerated.
-hardware/kicad/_*
-hardware/kicad/fp-info-cache
-hardware/kicad/gerbers/
-hardware/kicad/*.gbr
-hardware/kicad/*.gbrjob
 __pycache__/
 *.lck
 
@@ -159,11 +152,21 @@ deploy/yocto/prebuilt/
 deploy/yocto/meta-segno/.rauc-keys/
 docs/code-review/
 
-# console board v2 layout: generated, and NOT manufacturable yet (see #747)
-hardware/kicad/out_console/gerbers/
-hardware/kicad/out_console/*.zip
-hardware/kicad/out_console/*.kicad_prl
 
 # Widget Preview related
 .widget_preview/
 ios/Flutter/ephemeral/.swift_pm.lock
+
+# Moved to sibling repositories (#1496): the design file and studies to
+# tomassasovsky/segno-design (cloned at ../segno-design), the hardware to
+# tomassasovsky/segno-hardware. The main checkout keeps untracked design
+# studies, the pen's font cache (fonts/) and hardware tooling (.venv) at these
+# paths; this keeps them out of the index.
+/segno-ui.pen
+/docs/design/
+/fonts/
+/hardware/
+
+# Rendered by the screenshot tests (flutter test --tags screenshots
+# --update-goldens); CI uploads them as the screenshots artifact.
+/test/screenshots/goldens/

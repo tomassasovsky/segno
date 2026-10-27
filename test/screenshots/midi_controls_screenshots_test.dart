@@ -88,17 +88,15 @@ const _connection = MidiConnection(
   status: MidiConnectionStatus.connected,
 );
 
-/// Author-side images of the real MIDI screens; CI does not claim visual proof.
+/// Images of the real MIDI screens for review. CI renders them into the
+/// `screenshots` artifact; nothing compares pixels.
 void main() {
-  final fontDir = Platform.environment['SEGNO_SCREENSHOT_FONT_DIR'];
-  final hasFonts =
-      fontDir != null && File('$fontDir/Roboto-Regular.ttf').existsSync();
   setUpAll(() async {
-    if (!hasFonts) return;
+    if (!rendersScreenshots) return;
     await loadScreenshotFont('Roboto', [
-      '$fontDir/Roboto-Regular.ttf',
-      '$fontDir/Roboto-Medium.ttf',
-      '$fontDir/Roboto-Bold.ttf',
+      '$materialFontDir/Roboto-Regular.ttf',
+      '$materialFontDir/Roboto-Medium.ttf',
+      '$materialFontDir/Roboto-Bold.ttf',
     ]);
     await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
@@ -769,5 +767,5 @@ void main() {
       await tester.pumpAndSettle();
       await shot(tester, 'disconnected');
     });
-  }, skip: !hasFonts);
+  }, skip: !rendersScreenshots);
 }

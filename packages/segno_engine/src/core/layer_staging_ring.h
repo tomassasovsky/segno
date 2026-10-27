@@ -47,7 +47,7 @@ extern "C" {
  * sample-accurate (unlike part 3's event log). Exact-frame correlation is
  * available by cross-referencing events.log's LE_PLOG_LAYER_RETIRED entry,
  * which carries the same (channel, slot, generation) key sample-accurately —
- * see docs/design/performance-event-log-format.md. */
+ * see docs/formats/performance-event-log-format.md. */
 typedef struct le_staged_layer {
   int32_t channel;
   int32_t kind; /* 0: retired overdub layer; 1: immutable Clear restore image */

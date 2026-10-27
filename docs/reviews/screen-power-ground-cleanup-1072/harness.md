@@ -9,7 +9,7 @@ The owner confirmed that the available cables physically reach their installed
 destinations. That confirmation supersedes the earlier unresolved reach concern;
 it does not verify conductor gauge, insulation outside diameter, shielding,
 crimp suitability, strain relief or assembled USB performance. Keep the
-[current cable contract](../../../hardware/kicad/screen_power/README.md#xh-usb-cable-contract)
+[current cable contract](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/README.md#xh-usb-cable-contract)
 when constructing the tails, including the assessed length limits and short
 insulated shield termination into pin 5. No separate drain wire does not imply
 that braid or foil shielding is absent. Unshielded donors remain outside the

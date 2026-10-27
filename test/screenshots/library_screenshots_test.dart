@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -90,21 +89,17 @@ SessionPreview _previewOf(String id) => switch (id) {
   ),
 };
 
-/// Author-side images of the Library against pen 19/01 to 19/05 and 18/06;
-/// CI does not claim visual proof.
+/// Images of the Library to compare with pen 19/01 to 19/05 and 18/06. CI
+/// renders them into the `screenshots` artifact; nothing compares pixels.
 void main() {
   setUpAll(() => registerFallbackValue(_track(0, 1)));
 
-  final fontDir = Platform.environment['SEGNO_SCREENSHOT_FONT_DIR'];
-  final hasScreenshotFonts =
-      fontDir != null && File('$fontDir/Roboto-Regular.ttf').existsSync();
-
   setUpAll(() async {
-    if (!hasScreenshotFonts) return;
+    if (!rendersScreenshots) return;
     await loadScreenshotFont('Roboto', [
-      '$fontDir/Roboto-Regular.ttf',
-      '$fontDir/Roboto-Medium.ttf',
-      '$fontDir/Roboto-Bold.ttf',
+      '$materialFontDir/Roboto-Regular.ttf',
+      '$materialFontDir/Roboto-Medium.ttf',
+      '$materialFontDir/Roboto-Bold.ttf',
     ]);
     await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
@@ -119,7 +114,7 @@ void main() {
       'assets/fonts/JetBrainsMono-SemiBold.ttf',
     ]);
     await loadScreenshotFont('MaterialIcons', [
-      '$fontDir/MaterialIcons-Regular.otf',
+      '$materialFontDir/MaterialIcons-Regular.otf',
     ]);
     await loadScreenshotFont('packages/lucide_icons_flutter/Lucide', [
       packageAssetPath('lucide_icons_flutter', 'assets/lucide.ttf'),
@@ -243,21 +238,21 @@ void main() {
   testWidgets('19/01 the current session selected', (tester) async {
     await pump(tester, current: 's-1');
     await shot('current');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('19/03 another session selected', (tester) async {
     await pump(tester, current: 's-2');
     await tester.tap(find.byKey(const Key('library_row_s-1')));
     await tester.pumpAndSettle();
     await shot('selected');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('18/06 USB without a drive', (tester) async {
     await pump(tester, current: 's-1');
     await tester.tap(find.byKey(const Key('library_location_usb')));
     await tester.pumpAndSettle();
     await shot('usb_disconnected');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Manage on the selected session', (tester) async {
     await pump(tester, current: 's-2');
@@ -266,7 +261,7 @@ void main() {
     await tester.tap(find.byKey(const Key('library_manage')));
     await tester.pumpAndSettle();
     await shot('manage');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('19/04 Rename on the keyboard sheet', (tester) async {
     await pump(tester, current: 's-1');
@@ -275,7 +270,7 @@ void main() {
     await tester.tap(find.byKey(const Key('fx_option_rename')));
     await tester.pumpAndSettle();
     await shot('rename');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Move to folder', (tester) async {
     await pump(tester, current: 's-1');
@@ -284,14 +279,14 @@ void main() {
     await tester.tap(find.byKey(const Key('fx_option_move')));
     await tester.pumpAndSettle();
     await shot('move');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('19/02 the New loop sheet', (tester) async {
     await pump(tester, current: 's-1');
     await tester.tap(find.byKey(const Key('library_new_loop')));
     await tester.pumpAndSettle();
     await shot('new_loop');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Listen on the selected session', (tester) async {
     await pump(tester, current: 's-1');
@@ -299,7 +294,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     await shot('listen');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('19/05 a failed save', (tester) async {
     // The line reports a save taken while the Library is open.
@@ -318,5 +313,5 @@ void main() {
     );
     await tester.pumpAndSettle();
     await shot('save_failed');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 }

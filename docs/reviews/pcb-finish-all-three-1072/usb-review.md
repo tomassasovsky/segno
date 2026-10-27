@@ -6,9 +6,9 @@
 passes. This is layout evidence; final manufacturing-package verification is
 separate, and these calculations do not constitute measured USB compliance.
 
-The applied [source](../../../hardware/kicad/screen_power/route_critical.py)
+The applied [source](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/route_critical.py)
 has SHA-256 `cbcc9e5cafb4c0577889beb1bb5d0c70b2fa7555982ee3701b9ff2e8982ee547`.
-The final [native board](../../../hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb)
+The final [native board](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb)
 is `c06e6b35438b2fc7208cdc50feeebee92e6c01a56a00dadd280f697d1e49d79b`.
 The [numerical record](usb-review.json) separates the independently reviewed
 candidate from the final native board after the shared rounding pass.

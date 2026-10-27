@@ -9,7 +9,7 @@ Base: `7dcdc944bea0d22e2fa1fe32ab4ead4681aa11aa`.
 Target: the final Revision L working changes, including untracked source,
 models and evidence, subsequently committed with this report. Exact production
 source hashes are recorded in the current
-[validation report](../../../hardware/kicad/screen_power/validation.json).
+[validation report](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/validation.json).
 Screen board SHA-256: `94ffa2a0ad3d428451798306c24dc087cbdf3e122cecefa7753c840033321a2b`.
 Screen ZIP SHA-256: `03ce82f332b01c18a1def9772984f28fe49d5641490f315303f4769e8f0187c0`.
 

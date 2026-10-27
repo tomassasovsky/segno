@@ -42,8 +42,8 @@ final _current = SessionSummary(
   fxCount: 15,
 );
 
-/// Author-side images of pen section 34 (#1178 Part 8); CI does not claim
-/// visual proof.
+/// Images of pen section 34 (#1178 Part 8) for review. CI renders them into
+/// the `screenshots` artifact; nothing compares pixels.
 void main() {
   late Directory temp;
   late FakeDrive drive;
@@ -52,16 +52,12 @@ void main() {
   late SessionRepository sessions;
   late PedalRepository pedal;
 
-  final fontDir = Platform.environment['SEGNO_SCREENSHOT_FONT_DIR'];
-  final hasScreenshotFonts =
-      fontDir != null && File('$fontDir/Roboto-Regular.ttf').existsSync();
-
   setUpAll(() async {
-    if (!hasScreenshotFonts) return;
+    if (!rendersScreenshots) return;
     await loadScreenshotFont('Roboto', [
-      '$fontDir/Roboto-Regular.ttf',
-      '$fontDir/Roboto-Medium.ttf',
-      '$fontDir/Roboto-Bold.ttf',
+      '$materialFontDir/Roboto-Regular.ttf',
+      '$materialFontDir/Roboto-Medium.ttf',
+      '$materialFontDir/Roboto-Bold.ttf',
     ]);
     await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
@@ -75,7 +71,7 @@ void main() {
       'assets/fonts/JetBrainsMono-SemiBold.ttf',
     ]);
     await loadScreenshotFont('MaterialIcons', [
-      '$fontDir/MaterialIcons-Regular.otf',
+      '$materialFontDir/MaterialIcons-Regular.otf',
     ]);
     await loadScreenshotFont('packages/lucide_icons_flutter/Lucide', [
       packageAssetPath('lucide_icons_flutter', 'assets/lucide.ttf'),
@@ -181,7 +177,7 @@ void main() {
   testWidgets('Backup in Library', (tester) async {
     await openLibrary(tester);
     await shot('tile');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Inline copy progress', (tester) async {
     final hold = Completer<void>();
@@ -193,7 +189,7 @@ void main() {
     await shot('progress');
     hold.complete();
     await tester.pumpAndSettle();
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('USB session list', (tester) async {
     await openLibrary(tester);
@@ -202,7 +198,7 @@ void main() {
     await tester.tap(find.byKey(const Key('library_backup_$_id')));
     await tester.pumpAndSettle();
     await shot('usb_list');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Matching backup name', (tester) async {
     File('${drive.mount}/Segno/Sessions/$_id/session.json')
@@ -211,7 +207,7 @@ void main() {
     await openLibrary(tester);
     await backUp(tester);
     await shot('conflict');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Restored session selected', (tester) async {
     when(() => sessions.restoreFrom(any())).thenAnswer((_) async => 's-new');
@@ -241,7 +237,7 @@ void main() {
     await tester.tap(find.byKey(const Key('library_restore')));
     await tester.pumpAndSettle();
     await shot('restored');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Retry an interrupted copy', (tester) async {
     drive
@@ -250,5 +246,5 @@ void main() {
     await openLibrary(tester);
     await backUp(tester);
     await shot('interrupted');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 }

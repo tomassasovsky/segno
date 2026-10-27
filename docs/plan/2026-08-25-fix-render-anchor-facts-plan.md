@@ -54,7 +54,7 @@ below.
   zero-payload: reset callback telemetry, set `e->perf.armed = 1`, store the
   atomic. Nothing is logged; the loop clock's position at that instant —
   `e->clock.position`, sitting right there — is discarded.
-- The event-log vocabulary is versioned (`docs/design/performance-event-log-format.md`,
+- The event-log vocabulary is versioned (`docs/formats/performance-event-log-format.md`,
   header `version`, currently `2`; the doc's own table shows version 1→2 was
   exactly this kind of vocabulary change, for #264).
 - `le_pr_record_end_phase` (`perf_render.c:600-680`) already reconstructs a
@@ -140,7 +140,7 @@ Two PRs, both `autonomy:auto` (engine + renderer, mutation-provable, narrow):
    - `perf_log_ring.h`: `LE_PLOG_PERF_ARMED = 315` (+ `TRANSPORT_HELD = 316`
      under decision B-a); `engine_process.c`: push at the `LE_CMD_PERF_ARM`
      case and at the hold site (`:3213`); bump the events.log header version;
-     update `docs/design/performance-event-log-format.md`'s audited table.
+     update `docs/formats/performance-event-log-format.md`'s audited table.
    - `perf_render.c`: prefer the fact over `arm_clock_frame`/`arm_master_len`
      in both consumers (`le_pr_render_track`'s arm segment,
      `le_pr_record_end_phase`'s no-lock branch); delete the KNOWN RESIDUAL
@@ -151,7 +151,7 @@ Two PRs, both `autonomy:auto` (engine + renderer, mutation-provable, narrow):
      in-PR** — the B3 heap-overflow lesson).
    - Dart: `_captureSettledLanes` writes `takeId`;
      `performance_manifest.dart` round-trips it;
-     `docs/design/performance-manifest-format.md` documents it
+     `docs/formats/performance-manifest-format.md` documents it
      (presence-keyed, like the FX stages).
    - Renderer: anchor on the matching id; delete the first-END scan and the
      `!build.has_content` gate; retire the carve-out prose on 301's

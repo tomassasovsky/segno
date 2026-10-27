@@ -3018,7 +3018,7 @@ int32_t le_engine_history_mode_gate(le_engine* engine, uint32_t channels,
   return LE_OK;
 }
 
-/* Performance event log, control-thread side (part 3, docs/design/
+/* Performance event log, control-thread side (part 3, docs/formats/
  * performance-event-log-format.md): the direct-atomic setters below (FX/
  * monitor params, the limiter, overdub feedback) and the common in-track
  * undo/redo swap bypass the command ring entirely, so they push into

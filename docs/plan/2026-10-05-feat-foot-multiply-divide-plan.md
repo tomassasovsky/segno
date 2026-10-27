@@ -336,7 +336,7 @@ shared modes, `pos % L` for a division, `free_clock.position` in Free/Song;
   edit, undo and redo of a LENGTH entry. `LE_CMD_SET_LENGTH` joins the
   `le_log_extract` exclusion list (`:205-211`). Bump the events.log version
   (`perf_drain.c:812-816`) and add the row to
-  `docs/design/performance-event-log-format.md:195-215`.
+  `docs/formats/performance-event-log-format.md:195-215`.
 - Staging: at filing time, when `perf.drain` is armed, `le_stage_retired_layer(ch,
   pool_slot, 0, L', ++perf.next_restore_id)` (`engine_commands.c:535-586`, the
   restore-id shape, which takes an explicit length): one capture-local immutable

@@ -51,7 +51,7 @@ abstract final class FxChainsWriter {
     }
 
     // effects only ever appears on an armSnapshot lane entry —
-    // docs/design/performance-manifest-format.md: "A disarmSnapshot lane
+    // docs/formats/performance-manifest-format.md: "A disarmSnapshot lane
     // entry never carries effects — chain changes made during the
     // performance are already in events.log, not re-snapshotted." No
     // arm/disarm reconciliation is needed (or meaningful) here, unlike

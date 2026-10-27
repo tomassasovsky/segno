@@ -32,7 +32,7 @@ instructions rather than hidden behind the fuse's nominal rating.
 
 R8's new model is a conservative assembly envelope, not manufacturer CAD.
 Its body/coating distinction and simplified formed leads are documented in
-[model notes](../../../hardware/kicad/screen_power/models/README.md).
+[model notes](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/models/README.md).
 This changes only one model assignment in the native PCB: pads, copper, zones,
 outline, component values and connector orientation remain identical.
 

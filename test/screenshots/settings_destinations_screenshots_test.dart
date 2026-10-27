@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,18 +13,14 @@ import '../settings/view/destination_harness.dart';
 
 /// Settings (pen `05 Loop setup / 01 Settings`) and the five interim
 /// destinations, the tray's bodies in the shared Settings frame.
-/// Author-machine goldens, like the other suites here.
+/// Renders only with `--update-goldens`, like the other suites here.
 void main() {
-  const fontDir =
-      '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
-  final hasFonts = File('$fontDir/Roboto-Regular.ttf').existsSync();
-
   setUpAll(() async {
-    if (!hasFonts) return;
+    if (!rendersScreenshots) return;
     await loadScreenshotFont('Roboto', [
-      '$fontDir/Roboto-Regular.ttf',
-      '$fontDir/Roboto-Medium.ttf',
-      '$fontDir/Roboto-Bold.ttf',
+      '$materialFontDir/Roboto-Regular.ttf',
+      '$materialFontDir/Roboto-Medium.ttf',
+      '$materialFontDir/Roboto-Bold.ttf',
     ]);
     await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
@@ -85,6 +80,6 @@ void main() {
         find.byType(MaterialApp),
         matchesGoldenFile('goldens/settings_$name.png'),
       );
-    }, skip: !hasFonts);
+    }, skip: !rendersScreenshots);
   }
 }

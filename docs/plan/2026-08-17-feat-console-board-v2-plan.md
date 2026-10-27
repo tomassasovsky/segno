@@ -314,8 +314,8 @@ refs** — land #748 and #717 before opening part 3 rather than stacking.
 - SKiDL conventions, rails, ERC: [`hardware/kicad/main_board.py`](../../hardware/kicad/main_board.py)
 - MIDI IN/OUT front end to copy: `hardware/kicad/main_board.py:169-197`
 - The constraint that started this: `hardware/kicad/main_board.py:98-99`, `:197`
-- Assertion-suite idiom: [`hardware/enclosure/segno_enclosure.py`](../../hardware/enclosure/segno_enclosure.py)
+- Assertion-suite idiom: [`hardware/enclosure/segno_enclosure.py`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/segno_enclosure.py)
 - WS2812 offload rationale + wire format: [`firmware/led_driver/README.md`](../../firmware/led_driver/README.md)
-- Level shifting, rails, UART assignment: [`hardware/segno_wiring.md`](../../hardware/segno_wiring.md) §2b
+- Level shifting, rails, UART assignment: [`hardware/segno_wiring.md`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/segno_wiring.md) §2b
 - Pi-side transport seam: `packages/pedal_repository/lib/src/pedal_transport.dart`
 - Removed LED client worth recovering rather than rewriting: `git show 94699e89`

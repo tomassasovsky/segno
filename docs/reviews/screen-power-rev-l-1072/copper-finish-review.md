@@ -83,7 +83,7 @@ zero-width polygon seams require no change.
 Independent review of the refilled native board found:
 
 - All eight feed and tap segments match the durable
-  [generator](../../../hardware/kicad/ring_power.py), allowing only its existing
+  [generator](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/ring_power.py), allowing only its existing
   1 nm coordinate-conversion difference. Both fillet outlines match exactly.
 - Changed tracks are confined to front `+5V_LED`. The 1.5 mm rail is split at
   the two tap junctions without changing its path or width. The continuity

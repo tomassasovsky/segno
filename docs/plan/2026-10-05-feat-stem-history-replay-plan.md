@@ -9,7 +9,7 @@ Base: `origin/claude/manifest-failure-1144` at `cee9685ac` (PR #1155, stacked on
 `file:line` below is on that head. Precedent:
 `docs/plan/2026-10-05-feat-fade-clear-history-plan.md` and its
 captured-restoration amendment; format:
-`docs/design/performance-event-log-format.md`.
+`docs/formats/performance-event-log-format.md`.
 
 ## 1. Problem and current boundary
 
@@ -117,7 +117,7 @@ The master is never affected: `master.pcm` and monitors are written by the drain
 
 ### Part 1: exact provenance for callback-applied history images (about 220 production lines)
 
-Files: `packages/segno_engine/src/core/engine_private.h` (table in `le_perf_capture` `:1275-1336`; rename `perf_restore_*` `:977-978`), `engine_core.h:116-120` (release store, `le_publish_live_image`, `le_forget_slot_images`), `engine_commands.c` (helper, call sites `:271`, `:402`, `:1995-2011`, `:2229`, `:2244`, `:963`, arm reset `:4125`; `le_stage_retired_layer` returns int), `engine_session.c:118-136`, `:184-230`, `:289` (E3 sites), `engine_process.c` (`:182-195`, `:1856-1872`, `:2874-2909`, `:3643`, `:5283-5291`, `:5369-5390`), `lockfree_ring.h:122-131`, `perf_log_ring.h:139-140`, `perf_drain.c:812-819`, `perf_render.c:905-935`, `:1056-1059`, `docs/design/performance-event-log-format.md`.
+Files: `packages/segno_engine/src/core/engine_private.h` (table in `le_perf_capture` `:1275-1336`; rename `perf_restore_*` `:977-978`), `engine_core.h:116-120` (release store, `le_publish_live_image`, `le_forget_slot_images`), `engine_commands.c` (helper, call sites `:271`, `:402`, `:1995-2011`, `:2229`, `:2244`, `:963`, arm reset `:4125`; `le_stage_retired_layer` returns int), `engine_session.c:118-136`, `:184-230`, `:289` (E3 sites), `engine_process.c` (`:182-195`, `:1856-1872`, `:2874-2909`, `:3643`, `:5283-5291`, `:5369-5390`), `lockfree_ring.h:122-131`, `perf_log_ring.h:139-140`, `perf_drain.c:812-819`, `perf_render.c:905-935`, `:1056-1059`, `docs/formats/performance-event-log-format.md`.
 
 Tests (patterned literal PCM, distinct per layer, through production entry points; new file `packages/segno_engine/src/test/test_engine_history_replay.h` included like `test_engine_fade.h` at `test_engine_core.c:33032`):
 - `test_history_undo_redo_literal_parity`: base ramp A, overdub passes writing B and C (three distinguishable layers), Clear, arm after the layers exist, Undo (restore), layer Undo, layer Undo, Redo, Redo, Stop, Play, disarm, finalize, render; wet stem equals live output sample for sample (pattern of `test_fade_actual_arm_render`, `test_engine_fade.h:337-375`); segment boundaries at the exact frames; phase nonzero at every swap. A second leg pumped with 128-frame blocks asserts the 322 frame equals the first frame of the block that first mixes the slot (E2). Replaces the `expected 0` in `test_fade_restore_history_replacement` with parity.

@@ -17,7 +17,7 @@ Track/Master stages and per-chain enabled flags [R17], settings persistence of
 the new stages via the part-3a chain envelope string [R15], and the
 performance arm manifest growing track/master fields, a presence-keyed version
 marker [R20], and enabled bits [R3]. Closes with the overdue
-`docs/design/session-bundle-format.md` rewrite (it documents v3 while the code
+`docs/formats/session-bundle-format.md` rewrite (it documents v3 while the code
 writes v4) brought to v5 with a full history section.
 
 ## Dependencies
@@ -80,7 +80,7 @@ Key files (line numbers from the current worktree):
   persistence-write twins are `lib/looper/bloc/looper_bloc.dart:368,382`
   (lanes) and `lib/audio_setup/cubit/monitor_cubit.dart:210,261,283`
   (monitors).
-- `docs/design/session-bundle-format.md` — stale: documents `"version": 3`
+- `docs/formats/session-bundle-format.md` — stale: documents `"version": 3`
   (`:56`) while the code writes v4.
 
 Constraints pinned by the epic index (do not re-litigate):
@@ -211,7 +211,7 @@ Constraints pinned by the epic index (do not re-litigate):
 
 ### Documentation
 
-- [ ] `docs/design/session-bundle-format.md` v5 rewrite: the four stages,
+- [ ] `docs/formats/session-bundle-format.md` v5 rewrite: the four stages,
       the envelope schema (`chainEnabled`/`meta`/`entries`, slotIds,
       legacy bare-array decode), the new track/master manifest fields, the
       presence-keyed migration rules and invariants (fingerprint-identical

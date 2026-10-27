@@ -1,8 +1,9 @@
 <!-- cspell:words Seeed CCITT BOOTSEL TBYB picotool bootrom -->
 # Segno ring carrier — XIAO RP2350 firmware
 
-`ring_board.ino` runs the ring carrier's XIAO RP2350 (`hardware/kicad/ring_board.py`,
-#987): the Same Sky ACZ11 encoder and the 35-pixel console strip ring (#1090).
+`ring_board.ino` runs the ring carrier's XIAO RP2350
+([`hardware/kicad/ring_board.py`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/ring_board.py)
+in segno-hardware, #987): the Same Sky ACZ11 encoder and the 35-pixel console strip ring (#1090).
 It renders a five-byte ring state the console board's Pico sends over the
 private ring link and reports cumulative encoder and button counters back. It
 never sees the app's pedal-link frames, so a pedal-link protocol change does

@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
@@ -53,19 +52,15 @@ const _rig = LooperState(
 
 void main() {
   late TempoSettings tempoOwner;
-  const fontDir =
-      '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
-  // Author-machine goldens, like the other screenshot suites here.
-  final hasScreenshotFonts = File('$fontDir/Roboto-Regular.ttf').existsSync();
 
   setUpAll(() async {
     registerFallbackValue(const LooperInputPanChanged(0, pan: 0));
     registerFallbackValue(MonitorMode.off);
-    if (!hasScreenshotFonts) return;
+    if (!rendersScreenshots) return;
     await loadScreenshotFont('Roboto', [
-      '$fontDir/Roboto-Regular.ttf',
-      '$fontDir/Roboto-Medium.ttf',
-      '$fontDir/Roboto-Bold.ttf',
+      '$materialFontDir/Roboto-Regular.ttf',
+      '$materialFontDir/Roboto-Medium.ttf',
+      '$materialFontDir/Roboto-Bold.ttf',
     ]);
     await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
@@ -239,7 +234,7 @@ void main() {
       find.byType(AudioRoutingPage),
       matchesGoldenFile('goldens/audio_routing_input_setup.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Recording inputs', (tester) async {
     await pump(tester, tab: AudioRoutingTab.record);
@@ -247,7 +242,7 @@ void main() {
       find.byType(AudioRoutingPage),
       matchesGoldenFile('goldens/audio_routing_recording_inputs.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Output routing', (tester) async {
     await pump(tester, tab: AudioRoutingTab.outputs);
@@ -255,7 +250,7 @@ void main() {
       find.byType(AudioRoutingPage),
       matchesGoldenFile('goldens/audio_routing_output_routing.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Output setup', (tester) async {
     await pump(tester, tab: AudioRoutingTab.outputSetup);
@@ -263,7 +258,7 @@ void main() {
       find.byType(AudioRoutingPage),
       matchesGoldenFile('goldens/audio_routing_output_setup.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Input names', (tester) async {
     await pump(tester, tab: AudioRoutingTab.setup);
@@ -273,7 +268,7 @@ void main() {
       find.byType(AudioRoutingPage),
       matchesGoldenFile('goldens/audio_routing_input_names.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Output names', (tester) async {
     await pump(tester, tab: AudioRoutingTab.outputSetup);
@@ -283,5 +278,5 @@ void main() {
       find.byType(AudioRoutingPage),
       matchesGoldenFile('goldens/audio_routing_output_names.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 }

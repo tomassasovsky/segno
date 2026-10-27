@@ -49,7 +49,7 @@ class DeviceChainResolution {
 
 /// Resolves a channel's captured lanes' raw `effects` JSON (each lane's own
 /// `armSnapshot` `lanes[].effects` array — see
-/// `docs/design/performance-manifest-format.md`) into either a single
+/// `docs/formats/performance-manifest-format.md`) into either a single
 /// representable device chain or a reason it couldn't be (umbrella
 /// D-LANE-CHAIN / D-CHAIN-FALLBACK). A pure function, independently
 /// unit-testable from manifest parsing (`manifest_reader.dart` is the sole

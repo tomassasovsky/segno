@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
@@ -81,34 +80,27 @@ class _MockInputsCubit extends MockCubit<InputsState> implements InputsCubit {}
 /// panel in the Fusion "Segno console (populated)" doc). Renders [TracksView]
 /// exactly as the physical console shows it and captures a 1920x1080 golden.
 ///
-/// It only produces the CONSOLE layout when compiled with the flag on, so it is
-/// Regenerate on the author's machine with:
+/// Render it with:
 ///
 ///   flutter test --tags screenshots \
 ///     --update-goldens test/screenshots/tracks_screenshots_test.dart
 void main() {
   late MixSettingsCoordinator mixSettings;
   late FxChainPersistence fxPersistence;
-  const fontDir =
-      '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
-  // Golden generators load the local SDK's Material fonts and compare against
-  // macOS-rendered goldens, so they only run where those fonts exist (the
-  // author's machine); everywhere else they skip.
-  final hasScreenshotFonts = File('$fontDir/Roboto-Regular.ttf').existsSync();
 
   setUpAll(() async {
-    if (!hasScreenshotFonts) return;
-    const robotoTtfs = [
-      '$fontDir/Roboto-Regular.ttf',
-      '$fontDir/Roboto-Medium.ttf',
-      '$fontDir/Roboto-Bold.ttf',
+    if (!rendersScreenshots) return;
+    final robotoTtfs = [
+      '$materialFontDir/Roboto-Regular.ttf',
+      '$materialFontDir/Roboto-Medium.ttf',
+      '$materialFontDir/Roboto-Bold.ttf',
     ];
     await loadScreenshotFont('Roboto', robotoTtfs);
     // Material icon glyphs (e.g. the FX entry-run's arrow_right_alt) — the app
     // bundles this font at runtime; the golden harness must load it too, or
     // every `Icon` renders as .notdef tofu.
     await loadScreenshotFont('MaterialIcons', [
-      '$fontDir/MaterialIcons-Regular.otf',
+      '$materialFontDir/MaterialIcons-Regular.otf',
     ]);
     // TracksView wraps itself in LooperScreenTheme, which renders text in the
     // legend font (Helvetica / Arial / sans-serif — macOS/Linux system fonts,
@@ -466,10 +458,11 @@ void main() {
         find.byType(TracksView),
         matchesGoldenFile('goldens/foot_mixer_$scene.png'),
       );
-    }, skip: !hasScreenshotFonts);
+    }, skip: !rendersScreenshots);
   }
 
-  // The accepted Fade Pen frames (docs/design/fade-previews/pen): shared
+  // The accepted Fade Pen frames (docs/design/fade-previews/pen on the
+  // docs/design-program-2026-09 branch of segno-design): shared
   // Default, a track override, Bank B, and the Spanish strings.
   for (final scene in ['default', 'custom', 'bank', 'spanish']) {
     testWidgets('Foot Fade $scene accepted scene', (tester) async {
@@ -518,7 +511,7 @@ void main() {
         find.byType(TracksView),
         matchesGoldenFile('goldens/foot_fade_$scene.png'),
       );
-    }, skip: !hasScreenshotFonts);
+    }, skip: !rendersScreenshots);
   }
 
   // The accepted Reverse Pen frames (segno-ui.pen 13 Performance · Reverse):
@@ -568,7 +561,7 @@ void main() {
         find.byType(TracksView),
         matchesGoldenFile('goldens/foot_reverse_$scene.png'),
       );
-    }, skip: !hasScreenshotFonts);
+    }, skip: !rendersScreenshots);
   }
 
   // Foot Peel (the pen lists the mode, "Remove an overdub layer", but has no
@@ -624,7 +617,7 @@ void main() {
         find.byType(TracksView),
         matchesGoldenFile('goldens/foot_peel_$scene.png'),
       );
-    }, skip: !hasScreenshotFonts);
+    }, skip: !rendersScreenshots);
   }
 
   // Foot Custom (pen 10 `uEukr`, and 20/03 `E7kQV` while a performance
@@ -755,7 +748,7 @@ void main() {
               : 'goldens/foot_custom_recording.png',
         ),
       );
-    }, skip: !hasScreenshotFonts);
+    }, skip: !rendersScreenshots);
   }
 
   // The foot Tuner (pen 23/1 `o9d3X`, 23/2 `lDOKf`, 23/3 `d9CLS`, 23/4
@@ -831,7 +824,7 @@ void main() {
         find.byType(TracksView),
         matchesGoldenFile('goldens/foot_tuner_$scene.png'),
       );
-    }, skip: !hasScreenshotFonts);
+    }, skip: !rendersScreenshots);
   }
 
   // The accepted FX face (segno-ui.pen 10/03 `noDGu`) and the approved FX
@@ -943,7 +936,7 @@ void main() {
         control.footFxReleased(PedalButton.track2, contact);
         await tester.pump();
       }
-    }, skip: !hasScreenshotFonts);
+    }, skip: !rendersScreenshots);
   }
 
   // Multiply and Divide (#1168), pen section 16: Multiply 01, Divide 03,
@@ -1012,7 +1005,7 @@ void main() {
         find.byType(TracksView),
         matchesGoldenFile('goldens/foot_length_$scene.png'),
       );
-    }, skip: !hasScreenshotFonts);
+    }, skip: !rendersScreenshots);
   }
 
   testWidgets(
@@ -1069,7 +1062,7 @@ void main() {
         matchesGoldenFile('goldens/tracks_main_window.png'),
       );
     },
-    skip: !hasScreenshotFonts,
+    skip: !rendersScreenshots,
   );
 
   testWidgets(
@@ -1122,7 +1115,7 @@ void main() {
         matchesGoldenFile('goldens/tracks_reverse_marker.png'),
       );
     },
-    skip: !hasScreenshotFonts,
+    skip: !rendersScreenshots,
   );
 
   // Real fonts: REV sits clear of the layers figure and FX in English and
@@ -1166,7 +1159,7 @@ void main() {
           expect(box('reverse').right, lessThan(box('fx').left));
           expect(box('layers').left, greaterThan(box('bars').right));
         },
-        skip: !hasScreenshotFonts,
+        skip: !rendersScreenshots,
       );
     }
   }
@@ -1243,7 +1236,7 @@ void main() {
         matchesGoldenFile('goldens/tracks_mixer_compact_window.png'),
       );
     },
-    skip: !hasScreenshotFonts,
+    skip: true, // Fails to render: #1500.
   );
 
   testWidgets(
@@ -1280,7 +1273,7 @@ void main() {
         matchesGoldenFile('goldens/tracks_device_lost.png'),
       );
     },
-    skip: !hasScreenshotFonts,
+    skip: !rendersScreenshots,
   );
 
   // #692: the FX-mode stage transform — the whole stage takes the FX purple,

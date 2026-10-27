@@ -24,11 +24,13 @@ a desktop app: the musician works it with ten footswitches and an encoder,
 reads it from a 15.6-inch main screen and a 7-inch readout, and never needs a
 computer on stage.
 
-This repository holds all of it: the Flutter application, the C audio engine,
-the console firmware, the circuit boards, the sheet-metal enclosure, and the
-Yocto image that boots the appliance.
+This repository holds the Flutter application, the C audio engine, the console
+firmware and the Yocto image that boots the appliance. The circuit boards and
+the sheet-metal enclosure are in
+[segno-hardware](https://github.com/tomassasovsky/segno-hardware), and the
+design file in [segno-design](https://github.com/tomassasovsky/segno-design).
 
-![The Tracks view with four tracks, per-track mute, solo, pan and level](test/screenshots/goldens/tracks_mixer_window.png)
+![The Tracks view with four tracks, per-track mute, solo, pan and level](docs/images/tracks_mixer_window.png)
 
 ## What it does
 
@@ -53,9 +55,9 @@ Yocto image that boots the appliance.
 
 | Library | Loop modes |
 |---|---|
-| ![Library with saved sessions and a waveform preview](test/screenshots/goldens/library_current.png) | ![Loop mode picker with Multi, Sync, Song, Band and Free](test/screenshots/goldens/loop_settings_mode.png) |
+| ![Library with saved sessions and a waveform preview](docs/images/library_current.png) | ![Loop mode picker with Multi, Sync, Song, Band and Free](docs/images/loop_settings_mode.png) |
 
-The screenshots are captures from the application's own UI tests.
+The screenshots are renders from the application's own screenshot tests.
 
 ## Hardware
 
@@ -72,7 +74,7 @@ The console firmware is a thin client. It reports raw switch, encoder and pedal
 events and renders the LED frames the application sends back; all looper
 behavior lives in the application.
 
-See [hardware/](hardware/README.md) for the board designs, enclosure generator
+See [segno-hardware](https://github.com/tomassasovsky/segno-hardware) for the board designs, enclosure generator
 and manufacturing package, and [firmware/](firmware/README.md) for the
 microcontroller code.
 
@@ -114,10 +116,15 @@ flowchart LR
 | [`packages/`](packages) | Repositories, data clients and the audio engine, each with its own README |
 | [`apps/segno_transfer/`](apps/segno_transfer/README.md) | Mac app for downloading performance recordings |
 | [`firmware/`](firmware/README.md) | Console board and LED ring firmware |
-| [`hardware/`](hardware/README.md) | PCBs (KiCad), enclosure generator (Python/CadQuery), manufacturing files |
 | [`deploy/`](deploy/README.md) | Yocto layer and appliance image configuration |
 | [`docs/`](docs/README.md) | Status, design records and file-format specifications |
 | [`test/`](test) | Application tests, including the screenshot tests |
+
+Two sibling repositories hold the rest of the project:
+[segno-hardware](https://github.com/tomassasovsky/segno-hardware) has the PCBs
+(KiCad), the enclosure generator (Python/CadQuery) and the manufacturing files,
+and [segno-design](https://github.com/tomassasovsky/segno-design) has the
+Pencil design file (`segno-ui.pen`) and the design studies.
 
 ## Building
 

@@ -7,7 +7,7 @@ date: 2026-06-22
 ## Unified Signal Surface
 
 > Source brainstorm: [docs/brainstorm/2026-06-22-unified-signal-surface-brainstorm-doc.md](../brainstorm/2026-06-22-unified-signal-surface-brainstorm-doc.md)
-> Design mockup: [docs/design/signal-surface-mockup.html](../design/signal-surface-mockup.html)
+> Design mockup: [docs/design/signal-surface-mockup.html](https://github.com/tomassasovsky/segno-design/blob/main/docs/design/signal-surface-mockup.html)
 > Branch: `feat/unified-signal-surface` · Builds on the unified input FX & routing engine (PR #69).
 >
 > **Design-churn note:** the *visual* details (input-node layout, dock chrome,
@@ -376,7 +376,7 @@ and their now-dead tests (migrating retained coverage onto `SignalView`).
 ## References
 
 - Brainstorm: [docs/brainstorm/2026-06-22-unified-signal-surface-brainstorm-doc.md](../brainstorm/2026-06-22-unified-signal-surface-brainstorm-doc.md)
-- Design mockup: [docs/design/signal-surface-mockup.html](../design/signal-surface-mockup.html)
+- Design mockup: [docs/design/signal-surface-mockup.html](https://github.com/tomassasovsky/segno-design/blob/main/docs/design/signal-surface-mockup.html)
 - Engine foundation: PR #69 (unified input FX & routing) + [docs/plan/2026-06-22-feat-unified-input-fx-routing-plan.md](2026-06-22-feat-unified-input-fx-routing-plan.md)
 - Shared kit: `package:routing_graph` ([packages/routing_graph/lib/routing_graph.dart](../../packages/routing_graph/lib/routing_graph.dart))
 - Surfaces to merge: [monitor_graph/](../../lib/audio_setup/view/monitor_graph/), [tracks_routing_graph/](../../lib/looper/view/tracks_routing_graph/), [lane_graph/](../../lib/looper/view/lane_graph/)

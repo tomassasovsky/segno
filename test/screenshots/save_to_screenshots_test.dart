@@ -1,8 +1,6 @@
 @Tags(['screenshots'])
 library;
 
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:routing_graph/routing_graph.dart';
@@ -14,19 +12,15 @@ import 'package:storage_repository/storage_repository.dart';
 import '../helpers/helpers.dart';
 
 /// Pen 48's `Save to` (`cH9UX`, `FwjUV`) and pen `m5XyVv`'s Connect USB
-/// sheet, for eyeballing against the pen. Author-only, like every golden
-/// here (`SEGNO_SCREENSHOT_FONT_DIR`); elsewhere these skip.
+/// sheet, for eyeballing against the pen. Renders only with
+/// `--update-goldens`, like every suite here.
 void main() {
-  final fontDir = Platform.environment['SEGNO_SCREENSHOT_FONT_DIR'];
-  final hasFonts =
-      fontDir != null && File('$fontDir/Roboto-Regular.ttf').existsSync();
-
   setUpAll(() async {
-    if (!hasFonts) return;
+    if (!rendersScreenshots) return;
     await loadScreenshotFont('Roboto', [
-      '$fontDir/Roboto-Regular.ttf',
-      '$fontDir/Roboto-Medium.ttf',
-      '$fontDir/Roboto-Bold.ttf',
+      '$materialFontDir/Roboto-Regular.ttf',
+      '$materialFontDir/Roboto-Medium.ttf',
+      '$materialFontDir/Roboto-Bold.ttf',
     ]);
     await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
@@ -98,7 +92,7 @@ void main() {
       ),
     );
     await shoot(tester, 'save_to_choose');
-  }, skip: !hasFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Record directly to USB', (tester) async {
     await pump(
@@ -112,7 +106,7 @@ void main() {
       ),
     );
     await shoot(tester, 'save_to_recording');
-  }, skip: !hasFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Connect USB drive', (tester) async {
     await pump(
@@ -121,5 +115,5 @@ void main() {
       inset: EdgeInsets.zero,
     );
     await shoot(tester, 'connect_usb_sheet');
-  }, skip: !hasFonts);
+  }, skip: !rendersScreenshots);
 }

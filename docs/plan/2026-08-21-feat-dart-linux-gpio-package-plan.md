@@ -35,7 +35,7 @@ Decisions taken at the plan gate, recorded so they are not relitigated:
 
 **Segno does not need this, and the plan says so up front.** The first draft of #787
 claimed the console's power button lands on a Pi GPIO. It does not. From the netlist
-([`hardware/kicad/console_board.py`](../../hardware/kicad/console_board.py), `PI_HDR`)
+([`hardware/kicad/console_board.py`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/console_board.py), `PI_HDR`)
 every Pi-side signal on the ribbon belongs to a **kernel driver**: `uart0` (GPIO14/15)
 is MIDI, `uart3` (GPIO8/9) is the link to the Pico 2, and GPIO24/25 are SWCLK/SWDIO
 driven by **openocd** ([console board v2 plan:103](2026-08-17-feat-console-board-v2-plan.md)).
@@ -467,5 +467,5 @@ blocks on this and nothing here blocks Segno.
   `gpiod` 3.0.1 (2022, `<3.0.0`), `dart_periphery` 0.9.20 (BSD-3, c-periphery 2.5.0).
 - `c-periphery/src/gpio.h` — `gpio_config_t` (confirms it does carry `debounce_us`; the
   gap is `seqno` and the blocking API, not v2 support).
-- [`hardware/kicad/console_board.py`](../../hardware/kicad/console_board.py) — `PI_HDR`,
+- [`hardware/kicad/console_board.py`](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/console_board.py) — `PI_HDR`,
   and the J8/J9 power-button path that corrected this thread's premise.

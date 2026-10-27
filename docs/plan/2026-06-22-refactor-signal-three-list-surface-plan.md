@@ -5,7 +5,7 @@
 **Branch:** `feat/unified-signal-surface` (evolves it; supersedes the node-graph
 presentation from PR #70, which is still unmerged)
 **Brainstorm:** [docs/brainstorm/2026-06-22-signal-list-surface-brainstorm-doc.md](../brainstorm/2026-06-22-signal-list-surface-brainstorm-doc.md)
-**Mockup (interactive):** [docs/design/signal-list-surface-mockup.html](../design/signal-list-surface-mockup.html)
+**Mockup (interactive):** [docs/design/signal-list-surface-mockup.html](https://github.com/tomassasovsky/segno-design/blob/main/docs/design/signal-list-surface-mockup.html)
 
 ---
 

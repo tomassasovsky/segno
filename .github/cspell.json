@@ -1449,25 +1449,6 @@
   ],
   "overrides": [
     {
-      "filename": "**/hardware/kicad/screen_power/models/licenses/*-CREDITS.md",
-      "words": [
-        "dshapes",
-        "easyw",
-        "FCAD",
-        "Freecad",
-        "grob",
-        "jkriege",
-        "Kriege",
-        "modles",
-        "molex",
-        "Olsson",
-        "poeschlr",
-        "Tantal",
-        "Terje",
-        "windwos"
-      ]
-    },
-    {
       "filename": "**/docs/reviews/screen-power-claude-1072/original-rev-i-review.md",
       "words": [
         "Aavid",

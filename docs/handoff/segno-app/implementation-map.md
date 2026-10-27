@@ -2,6 +2,11 @@
 
 Verified against the shared checkout on September 9, 2026. This is a codebase map and proposed implementation order, not evidence that the redesign runs in production. No production code was changed for this document.
 
+Paths under `docs/design/` and `segno-ui.pen` below are in
+[segno-design](https://github.com/tomassasovsky/segno-design), cloned at
+`../segno-design` (#1496). Some of the studies are on its
+`docs/design-program-2026-09` branch.
+
 ## Starting contract and transfer
 
 The accepted product is demonstrated by `docs/design/fx-ux-prototype.html`, its local modules, the dated design decisions, and the current sections of `segno-ui.pen`. Use the prototype to exercise complete tasks, including Cancel, failure, release, reload and recovery. Read the latest decision for each flow: older proposals and their screenshots are not equally authoritative. In particular, the accepted completion pass supersedes earlier tail and short-take recovery proposals. An HTML test passing establishes prototype behavior, not native capability.

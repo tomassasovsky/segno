@@ -2,10 +2,11 @@
  * synth_patch.c — the nineteen Segno synthesis patches and their family
  * parameters (#1197), plus the public catalogue reads in segno_engine_api.h.
  *
- * Values are the accepted catalogue's (docs/design/instrument-catalogue.js,
- * main checkout): id, family, first-partial wave, second-partial ratio,
- * transient sustain level and the three defaults per patch; the resonant
- * leads' Q of 2.8 and the extra bells partial come from instrument-runtime.js.
+ * Values are the accepted catalogue's (segno-design
+ * docs/design/instrument-catalogue.js): id, family, first-partial wave,
+ * second-partial ratio, transient sustain level and the three defaults per
+ * patch; the resonant leads' Q of 2.8 and the extra bells partial come from
+ * instrument-runtime.js.
  * Order is the catalogue's and is part of the contract (sessions store the id,
  * the app lists in this order).
  *

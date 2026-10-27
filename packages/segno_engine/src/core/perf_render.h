@@ -11,7 +11,7 @@
  * Reads exclusively from the capture directory — `performance.json`
  * (sample rate, channel layout, arm/disarm snapshots including the master
  * gain/limiter and per-lane FX chain state, retired-layer manifest),
- * `events.log` (docs/design/performance-event-log-format.md), `loops/
+ * `events.log` (docs/formats/performance-event-log-format.md), `loops/
  * track<t>-lane0.wav` (settled lane exports, part 6), and `layer-<channel>-
  * <frame>-<slot>.pcm` (retired overdub layers, part 5) — never the live
  * engine. This is what lets a render run concurrently with live looping and

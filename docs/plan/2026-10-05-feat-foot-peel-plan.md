@@ -95,7 +95,7 @@ History is one tagged stack pair per track, owned by the control thread.
   are written but the stem renderer does not replay in-track swaps (it anchors on
   301, 303, 322 and 323 only, `perf_render.c:881-1000`); general replay is #1143.
   events.log is version 5 (`perf_drain.c:803-813`; audited table
-  `docs/design/performance-event-log-format.md:201`).
+  `docs/formats/performance-event-log-format.md:201`).
 - Dart seam: `AudioEngine.undo/redo` (synchronous `EngineResult`), repository
   `undo()` (`looper_repository.dart:3612-3621`) and `_undoTrack` (`:3656-3686`),
   projection of depths (`:2431-2433`), `Track.undoDepth/clearRestore/redoDepth`
@@ -271,7 +271,7 @@ newer dependent edit and §2.11 says it must be undone before the group; the gro
   1234`). Pushed through `le_plog_push_ctrl` (`engine_commands.c:1942-1955`); the
   undo and redo of a peel log 304/305 like every other history path (events.log doc
   `:201`). Bump the events.log header version (`perf_drain.c:803-813`) and add the row
-  to `docs/design/performance-event-log-format.md:201`.
+  to `docs/formats/performance-event-log-format.md:201`.
 - Offline render: the stem renderer does not reconstruct any in-track swap today
   (304/305 are not read, `perf_render.c:881-1000`); Peel changes the live slot
   without changing state, exactly the case #1143 names. This plan records the fact
@@ -354,7 +354,7 @@ Base take `1.0`, three passes adding `0.5` (fixture of `test_per_pass_undo_layer
       `TrackHistory`, and `undoCount`/`redoCount` derive from it. The JSON
       keeps both fields, and decode cross-checks the stored `redoCount`.
       `SessionRigLane` carries the same value.
-    - Finding 4 (docs). `docs/design/session-bundle-format.md` now describes
+    - Finding 4 (docs). `docs/formats/session-bundle-format.md` now describes
       v12 and the current-only rule, keeps the presence-keyed table as
       history, and lists v8-v12. The `SessionCorruptLayers` comment is
       current.

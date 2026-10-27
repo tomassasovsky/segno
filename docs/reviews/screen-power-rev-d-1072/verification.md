@@ -77,5 +77,5 @@ Thermal behavior, fault coordination, HDMI residual power and enclosure fit
 remain physical gates. Early GPIO enable / shutdown-before-HDMI software
 remains outstanding under issue #1072 (`autonomy:blocked-verify`).
 
-The [assembly README](../../../hardware/kicad/screen_power/README.md) is the
+The [assembly README](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/README.md) is the
 wiring authority and includes the exact selected cable variants and links.
