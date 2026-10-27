@@ -3073,6 +3073,29 @@ void main() {
         expect(cubit.state.parkedResume, containsAll(<int>[0, 1]));
       });
 
+      test("Band's Mute mode only unmutes a muted section that runs", () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(
+              channel: 1,
+              state: TrackState.playing,
+              lengthFrames: 48000,
+              muted: true,
+            ),
+            Track(channel: 2, state: TrackState.stopped, lengthFrames: 48000),
+          ]),
+          looperMode: LooperMode.band,
+          primaryTrack: 0,
+          songQueuedTrack: 2,
+        );
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..trackPressed(1);
+        verify(() => looper.setMute(muted: false, channel: 1)).called(1);
+        verifyNever(() => looper.play(channel: 1));
+      });
+
       test("Band's Stop stops the section waiting to start", () {
         setEngine(
           _tracksWith(const [

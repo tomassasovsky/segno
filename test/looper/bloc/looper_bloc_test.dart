@@ -3026,6 +3026,24 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
+    'LooperPlayAllPressed queues no section behind a first take in progress '
+    '(#1323)',
+    build: buildBloc,
+    seed: () => const LooperState(
+      transport: TransportState(looperMode: LooperMode.song),
+      tracks: [
+        Track(state: TrackState.recording),
+        Track(channel: 1, lengthFrames: 100, state: TrackState.stopped),
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperPlayAllPressed()),
+    verify: (_) {
+      verifyNever(() => repository.play(channel: any(named: 'channel')));
+      verifyNever(() => repository.play());
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
     'LooperPlayAllPressed sends no Play to the section already waiting '
     '(#1323)',
     build: buildBloc,

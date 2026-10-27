@@ -739,6 +739,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       final section = looper.sectionToStart(sections);
       if (section != null &&
           !looper.tracks[section].isRunning &&
+          !looper.tracks[section].isCapturing &&
           section != looper.songWaitingSection) {
         _repository.play(channel: section);
       }

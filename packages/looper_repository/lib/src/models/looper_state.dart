@@ -168,11 +168,20 @@ class LooperState extends Equatable {
     }
   }
 
-  /// The one section of [candidates] a "start everything" gesture starts in
-  /// Song or Band (#1077, #1323): the one sounding now, else the one that
-  /// sounded last, else the first; a muted section counts only when every
-  /// one is muted. Null with no candidates.
+  /// The one section a "start everything" gesture keeps in Song or Band
+  /// (#1077, #1323): a section recording its first take, which has no
+  /// content yet but is the section that sounds; else, of [candidates], the
+  /// one sounding now, else the one that sounded last, else the first. A
+  /// muted section counts only when every one is muted. Null with no
+  /// candidates and no take.
   int? sectionToStart(Iterable<Track> candidates) {
+    final taking = tracks
+        .where(
+          (track) =>
+              isSection(track.channel) && track.state == TrackState.recording,
+        )
+        .firstOrNull;
+    if (taking != null) return taking.channel;
     final content = candidates.where((track) => track.hasContent).toList();
     final last = transport.songLastSection;
     Track? pick(Iterable<Track> pool) =>
