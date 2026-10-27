@@ -3130,7 +3130,10 @@ static void handle_play(le_engine* e, int32_t ch, uint64_t frame) {
  * nothing sounding a request acts at once: Song starts the section alone
  * and from its top. */
 
-static int le_song_sounding_state(int32_t st) {
+/* Whether a section in state [st] sounds for the handoff: playing,
+ * overdubbing, or recording its first take (unlike le_song_sounding, which
+ * tracks the last section heard and leaves a first take out). */
+static int le_handoff_sounding_state(int32_t st) {
   return st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING ||
          st == LE_TRACK_RECORDING;
 }
@@ -3157,7 +3160,7 @@ static int32_t le_handoff_source(le_engine* e, int32_t except) {
   const int32_t primary = le_handoff_primary(e);
   for (int32_t c = 0; c < e->track_count; ++c) {
     if (c == except || c == primary) continue;
-    if (le_song_sounding_state(load_i32(&e->tracks[c].a_state))) return c;
+    if (le_handoff_sounding_state(load_i32(&e->tracks[c].a_state))) return c;
   }
   return -1;
 }
@@ -3272,7 +3275,7 @@ static int le_song_queue_valid(le_engine* e) {
   if (ok) {
     const int32_t st = load_i32(&e->tracks[source].a_state);
     le_track* t = &e->tracks[target];
-    ok = (le_song_sounding_state(st) ||
+    ok = (le_handoff_sounding_state(st) ||
           (e->song_edge && st == LE_TRACK_STOPPED && !le_transport_held(e))) &&
          le_handoff_target_ok(t, e->song_record) &&
          (!e->song_record || (t->pending_record && t->pending_trigger == 3)) &&
@@ -3286,12 +3289,18 @@ static int le_song_queue_valid(le_engine* e) {
  * the target. Returns 0 when nothing sounds, so the caller acts at once. */
 static int le_handoff_wait(le_engine* e, int32_t ch, int record) {
   const int32_t source = le_handoff_source(e, ch);
+  /* A request that replaces one on the same source keeps Band's latched
+   * lap end: that source has ended its lap, and only the primary's top is
+   * left. Its fill starts again from empty (#1077). */
+  const int edge =
+      e->song_target >= 0 && e->song_source == source ? e->song_edge : 0;
   le_song_cancel(e);
   if (source < 0) return 0;
   if (le_handoff_capture_elsewhere(e, source)) return 1; /* refused */
   e->song_source = source;
   e->song_target = ch;
   e->song_record = record;
+  e->song_edge = edge;
   return 1;
 }
 
