@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
-import 'package:segno/common/console_surface.dart';
+import 'package:segno/audio_setup/view/device_dialog.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
 /// Opens the cable test dialog (pen 28/03) over [context]'s
@@ -39,12 +39,6 @@ class CableTestDialog extends StatelessWidget {
     final running = state.measurePhase == MeasurePhase.running;
     final outputs = state.engineStatus.outputChannels;
     final inputs = state.engineStatus.inputChannels;
-    final secondary = TextStyle(
-      color: surface.textSecondary,
-      fontSize: 16,
-      height: 1.4,
-      leadingDistribution: TextLeadingDistribution.even,
-    );
     final refusal = state.refusal?.busyKind;
 
     return BlocListener<AudioSetupCubit, AudioSetupState>(
@@ -68,132 +62,113 @@ class CableTestDialog extends StatelessWidget {
           navigator.removeRoute(route);
         }
       },
-      child: Center(
-        child: ConsoleDialogShell(
+      child: FocusTraversalGroup(
+        policy: OrderedTraversalPolicy(),
+        child: DeviceDialog(
           key: const Key('cable_test_dialog'),
-          child: FocusTraversalGroup(
-            policy: OrderedTraversalPolicy(),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+          title: l10n.audioCableTitle,
+          body: l10n.audioCableBody,
+          content: [
+            const SizedBox(height: 56),
+            Row(
               children: [
-                AppText(
-                  l10n.audioCableTitle,
-                  style: TextStyle(
-                    color: surface.textPrimary,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                AppText(l10n.audioCableBody, style: secondary),
-                const SizedBox(height: 19),
-                Row(
-                  children: [
-                    _JackPicker(
-                      boxKey: const Key('cable_test_output'),
-                      label: l10n.audioCableOutput,
-                      jack: state.measureOutput,
-                      order: 1,
-                      autofocus: true,
-                      onStep: running
-                          ? null
-                          : () => cubit.chooseCableJacks(
-                              output: _next(state.measureOutput, outputs),
-                            ),
-                    ),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        child: Container(
-                          height: 1,
-                          color: surface.borderStrong,
+                _JackPicker(
+                  boxKey: const Key('cable_test_output'),
+                  label: l10n.audioCableOutput,
+                  jack: state.measureOutput,
+                  order: 1,
+                  autofocus: true,
+                  onStep: running
+                      ? null
+                      : () => cubit.chooseCableJacks(
+                          output: _next(state.measureOutput, outputs),
                         ),
-                      ),
-                    ),
-                    _JackPicker(
-                      boxKey: const Key('cable_test_input'),
-                      label: l10n.audioCableInput,
-                      jack: state.measureInput,
-                      order: 2,
-                      onStep: running
-                          ? null
-                          : () => cubit.chooseCableJacks(
-                              input: _next(state.measureInput, inputs),
-                            ),
-                    ),
-                  ],
                 ),
-                const SizedBox(height: 19),
-                AppText(
-                  state.playbackRunning
-                      ? l10n.audioCableNoteStops
-                      : l10n.audioCableNote,
-                  key: const Key('cable_test_note'),
-                  style: secondary,
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 23),
+                    child: Container(height: 2, color: surface.textMuted),
+                  ),
                 ),
-                if (state.measurePhase == MeasurePhase.noReturn) ...[
-                  const SizedBox(height: 10),
-                  ConsoleBanner(
-                    key: const Key('cable_test_no_return'),
-                    message: l10n.audioCableNoReturn,
-                    tone: ConsoleBannerTone.failure,
-                  ),
-                ],
-                if (refusal != null) ...[
-                  const SizedBox(height: 10),
-                  ConsoleBanner(
-                    key: const Key('cable_test_refused'),
-                    message: l10n.operationBusy(refusal),
-                    tone: ConsoleBannerTone.failure,
-                  ),
-                ],
-                const SizedBox(height: 19),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    FocusTraversalOrder(
-                      order: const NumericFocusOrder(4),
-                      child: ConsoleDialogButton(
-                        key: const Key('cable_test_cancel'),
-                        label: l10n.cancel,
-                        onPressed: cubit.cancelMeasure,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    FocusTraversalOrder(
-                      order: const NumericFocusOrder(3),
-                      child: running
-                          ? ExcludeFocus(
-                              child: IgnorePointer(
-                                child: Opacity(
-                                  opacity: surface.disabledOpacity,
-                                  child: ConsoleDialogButton(
-                                    key: const Key('cable_test_measuring'),
-                                    label: l10n.measuringEllipsis,
-                                    tone: ConsoleDialogTone.primary,
-                                    onPressed: () {},
-                                  ),
-                                ),
-                              ),
-                            )
-                          : ConsoleDialogButton(
-                              key: const Key('cable_test_start'),
-                              label: state.measurePhase == MeasurePhase.noReturn
-                                  ? l10n.audioCableRetry
-                                  : l10n.audioCableStart,
-                              tone: ConsoleDialogTone.primary,
-                              onPressed: () => cubit.startCableTest(
-                                state.measureOutput,
-                                state.measureInput,
-                              ),
-                            ),
-                    ),
-                  ],
+                _JackPicker(
+                  boxKey: const Key('cable_test_input'),
+                  label: l10n.audioCableInput,
+                  jack: state.measureInput,
+                  order: 2,
+                  onStep: running
+                      ? null
+                      : () => cubit.chooseCableJacks(
+                          input: _next(state.measureInput, inputs),
+                        ),
                 ),
               ],
             ),
-          ),
+            const SizedBox(height: 56),
+            AppText(
+              state.playbackRunning
+                  ? l10n.audioCableNoteStops
+                  : l10n.audioCableNote,
+              key: const Key('cable_test_note'),
+              style: TextStyle(
+                color: surface.textSecondary,
+                fontSize: 22,
+                height: 1.5,
+              ),
+            ),
+            if (state.measurePhase == MeasurePhase.noReturn) ...[
+              const SizedBox(height: 16),
+              LoopNote(
+                l10n.audioCableNoReturn,
+                key: const Key('cable_test_no_return'),
+                tone: LoopNoteTone.error,
+              ),
+            ],
+            if (refusal != null) ...[
+              const SizedBox(height: 16),
+              LoopNote(
+                l10n.operationBusy(refusal),
+                key: const Key('cable_test_refused'),
+                tone: LoopNoteTone.error,
+              ),
+            ],
+          ],
+          actions: [
+            FocusTraversalOrder(
+              order: const NumericFocusOrder(4),
+              child: LoopOutlinedButton(
+                key: const Key('cable_test_cancel'),
+                width: 125,
+                label: l10n.cancel,
+                onTap: cubit.cancelMeasure,
+              ),
+            ),
+            FocusTraversalOrder(
+              order: const NumericFocusOrder(3),
+              child: running
+                  ? Opacity(
+                      opacity: surface.disabledOpacity,
+                      child: LoopOutlinedButton(
+                        key: const Key('cable_test_measuring'),
+                        width: 155,
+                        label: l10n.measuringEllipsis,
+                        tone: LoopButtonTone.accent,
+                        onTap: null,
+                      ),
+                    )
+                  : LoopOutlinedButton(
+                      key: const Key('cable_test_start'),
+                      width: 155,
+                      label: state.measurePhase == MeasurePhase.noReturn
+                          ? l10n.audioCableRetry
+                          : l10n.audioCableStart,
+                      tone: LoopButtonTone.accent,
+                      onTap: () => cubit.startCableTest(
+                        state.measureOutput,
+                        state.measureInput,
+                      ),
+                    ),
+            ),
+          ],
         ),
       ),
     );
@@ -232,32 +207,39 @@ class _JackPicker extends StatelessWidget {
       children: [
         AppText(
           label,
-          style: TextStyle(color: surface.textPrimary, fontSize: 16),
+          style: TextStyle(color: surface.textPrimary, fontSize: 24),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 24),
         FocusTraversalOrder(
           order: NumericFocusOrder(order),
-          child: FocusableTapTarget(
-            key: boxKey,
-            onTap: onStep,
-            autofocus: autofocus,
-            semanticLabel: '$label $jack',
-            borderRadius: 8,
-            child: Container(
-              width: 50,
-              height: 36,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: surface.control,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: surface.borderStrong),
-              ),
-              child: AppText(
-                '$jack',
-                style: TextStyle(
-                  color: surface.textPrimary,
-                  fontFamily: SurfaceTheme.monoFont,
-                  fontSize: 17,
+          child: Semantics(
+            button: true,
+            label: '$label $jack',
+            child: LoopFocusable(
+              key: boxKey,
+              autofocus: autofocus,
+              enabled: onStep != null,
+              onActivate: onStep ?? () {},
+              child: GestureDetector(
+                onTap: onStep,
+                child: Container(
+                  width: 100,
+                  height: 72,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: surface.card,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: surface.frameControlLine),
+                  ),
+                  child: ExcludeSemantics(
+                    child: AppText(
+                      '$jack',
+                      style: TextStyle(
+                        color: surface.textPrimary,
+                        fontSize: 26,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),

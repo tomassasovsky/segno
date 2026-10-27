@@ -2150,7 +2150,7 @@
     "@audioApplyTitle": {
         "description": "Title of the confirm shown when an audio setting changes while music plays (pen 28/04)."
     },
-    "audioApplyBody": "Playback stops while the audio interface reopens. Your recordings stay intact.",
+    "audioApplyBody": "Loops and backing audio will stop. Your recordings stay intact.",
     "@audioApplyBody": {
         "description": "Body of the Apply audio settings confirm (pen 28/04)."
     },

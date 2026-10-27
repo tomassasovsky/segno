@@ -10,6 +10,7 @@ import 'package:segno/audio_setup/view/audio_interfaces.dart';
 import 'package:segno/audio_setup/view/console/audio_routing_card.dart';
 import 'package:segno/audio_setup/view/console/cable_test_dialog.dart';
 import 'package:segno/audio_setup/view/console/max_loop_length_card.dart';
+import 'package:segno/audio_setup/view/device_dialog.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -114,7 +115,7 @@ class _DevicePageState extends State<DevicePage> {
   /// the music. Focus starts on the dismissive answer.
   Future<void> _confirmApply(BuildContext context) async {
     final l10n = context.l10n;
-    final confirmed = await showConsoleConfirmDialog(
+    final confirmed = await showDeviceConfirmDialog(
       context,
       title: l10n.audioApplyTitle,
       body: l10n.audioApplyBody,
@@ -159,8 +160,9 @@ class _Workspace extends StatelessWidget {
         ],
         const _Header(),
         const SizedBox(height: 40),
-        const SizedBox(
-          height: 441,
+        // As tall as the taller column, so the rule between them runs the
+        // whole way (pen 28/01: 441).
+        const IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -569,13 +571,18 @@ class _LatencyColumn extends StatelessWidget {
                 onTap: cubit.cancelMeasure,
               )
             else
-              LoopOutlinedButton(
-                key: const Key('audio_measure'),
-                width: 144,
-                label: l10n.audioMeasure,
-                onTap: present && state.draft == null
-                    ? cubit.openCableTest
-                    : null,
+              Opacity(
+                opacity: present && state.draft == null
+                    ? 1
+                    : surface.disabledOpacity,
+                child: LoopOutlinedButton(
+                  key: const Key('audio_measure'),
+                  width: 144,
+                  label: l10n.audioMeasure,
+                  onTap: present && state.draft == null
+                      ? cubit.openCableTest
+                      : null,
+                ),
               ),
           ],
         ),
