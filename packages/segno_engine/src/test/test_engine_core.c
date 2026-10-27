@@ -27926,6 +27926,33 @@ static void test_song_sound_start_waits_for_the_sounding_section(void) {
   le_engine_destroy(e);
 }
 
+/* A waiting overdub never meets a transform it cannot record through
+ * (#1323): control refuses Reverse on the waiting section and a Speed
+ * change while its arm is pending, so the request stands and lands. (The
+ * callback also drops a Record it could no longer record, through
+ * le_capture_refused, rather than stop the sounding section for nothing.) */
+static void test_song_record_request_survives_refused_transforms(void) {
+  printf("test_song_record_request_survives_refused_transforms\n");
+  le_engine* e = song_queue_fixture();
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  tg_advance(e, 20);
+  CHECK(le_engine_record(e, 1) == LE_OK); /* an overdub on stopped 1 */
+  drain(e);
+  uint64_t request = 0;
+  CHECK(le_engine_toggle_reverse(e, 1, &request) != LE_OK);
+  CHECK(le_engine_set_speed(e, 1, 2, &request) != LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == 1 && s.song_queue_record == 1);
+  tg_advance(e, 81);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_OVERDUBBING);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  le_engine_destroy(e);
+}
+
 /* A waiting Record keeps what its press prepared (#1323): the take the
  * handoff starts carries the capture image the press posted, as a grid
  * arm's take does when it fires. */
@@ -40401,6 +40428,7 @@ int main(void) {
   test_song_queue_logs_committed_handoff_only();
   test_song_record_requests_wait();
   test_song_record_handoff_keeps_its_image();
+  test_song_record_request_survives_refused_transforms();
   test_song_sound_start_waits_for_the_sounding_section();
   test_song_play_cancels_a_waiting_record();
   test_song_record_handoff_skips_count_in();

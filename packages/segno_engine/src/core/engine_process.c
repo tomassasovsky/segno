@@ -2508,6 +2508,31 @@ static void close_active_capture(le_engine* e, int32_t except_ch,
 
 /* Acts on a record/overdub press: finalizes any other capture (one-capturer
  * hand-off), then advances this track's state machine. */
+/* Whether a take or a punch-in starting on [ch] from [initial] would be
+ * dropped. Overdub is unavailable while Reverse is on (#1162): the write
+ * head, its latency compensation and the per-pass shadow are forward-only,
+ * so a punch-in on a reversed track is dropped whatever queued it — a grid
+ * or sound arm that fired after the toggle, a Count-in member, or a waiting
+ * Song or Band Record (#1323). Control already refuses the press with
+ * LE_ERR_REVERSED; this closes the window. Capture never writes through a
+ * fractional head (#1179): a record or punch-in while Speed is not 1x is
+ * dropped the same way (control: LE_ERR_TRANSFORMED); so is one into a
+ * transposed track (#1179 Part 3a), and one into a take a retime moved off
+ * its span (#1179 Part 4a): the write head lays the clock's frames, the
+ * read head plays the take's. */
+static int le_capture_refused(le_engine* e, int32_t ch, int32_t initial) {
+  const le_track* t = &e->tracks[ch];
+  const int punch_in =
+      initial == LE_TRACK_STOPPED || initial == LE_TRACK_PLAYING;
+  if (punch_in && t->head.reversed) return 1;
+  if ((initial == LE_TRACK_EMPTY || punch_in) &&
+      e->speed_numer != e->speed_denom) {
+    return 1;
+  }
+  if (punch_in && t->transpose_st != 0 && !e->transpose_bypass) return 1;
+  return punch_in && t->span_clock > 0 && t->span_clock != e->clock.length;
+}
+
 static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
   if (!valid_channel(e, ch)) return;
   if (!e->launch_committing && le_launch_remove(e, ch)) return;
@@ -2523,26 +2548,7 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
     return;
   }
   const int initial = load_i32(&e->tracks[ch].a_state);
-  /* Overdub is unavailable while Reverse is on (#1162): the write head, its
-   * latency compensation and the per-pass shadow are forward-only, so a
-   * punch-in on a reversed track is dropped here whatever queued it — a grid
-   * or sound arm that fired after the toggle, or a Count-in member. Control
-   * already refuses the press with LE_ERR_REVERSED; this closes the window. */
-  if ((initial == LE_TRACK_STOPPED || initial == LE_TRACK_PLAYING) &&
-      e->tracks[ch].head.reversed) return;
-  /* Capture never writes through a fractional head (#1179): a record or
-   * punch-in that fires while Speed is not 1x is dropped the same way.
-   * Control refuses the press with LE_ERR_TRANSFORMED. */
-  if ((initial == LE_TRACK_EMPTY || initial == LE_TRACK_STOPPED ||
-       initial == LE_TRACK_PLAYING) && e->speed_numer != e->speed_denom) return;
-  /* ...and into a transposed track (#1179 Part 3a), the Reverse rule. */
-  if ((initial == LE_TRACK_STOPPED || initial == LE_TRACK_PLAYING) &&
-      e->tracks[ch].transpose_st != 0 && !e->transpose_bypass) return;
-  /* ...and into a take a retime moved off its span (#1179 Part 4a): the
-   * write head lays the clock's frames, the read head plays the take's. */
-  if ((initial == LE_TRACK_STOPPED || initial == LE_TRACK_PLAYING) &&
-      e->tracks[ch].span_clock > 0 &&
-      e->tracks[ch].span_clock != e->clock.length) return;
+  if (le_capture_refused(e, ch, initial)) return;
   if ((initial == LE_TRACK_EMPTY || initial == LE_TRACK_STOPPED ||
        initial == LE_TRACK_PLAYING) &&
       le_launch_defer(e, ch, initial == LE_TRACK_EMPTY ? 1 : 3)) return;
@@ -2722,9 +2728,11 @@ static void handle_finalize_take(le_engine* e, int32_t ch, uint64_t frame) {
   finalize_new_track(e, t, LE_TRACK_PLAYING, frame, 1);
 }
 
+static void le_handoff_drop(le_engine* e);
+
 static void handle_stop(le_engine* e, int32_t ch, uint64_t frame) {
   if (!valid_channel(e, ch)) return;
-  if (ch == e->song_source || ch == e->song_target) le_song_cancel(e);
+  if (ch == e->song_source || ch == e->song_target) le_handoff_drop(e);
   /* A stop press during a count-in cancels it (D9). The stop then proceeds
    * normally — a no-op on the idle transport a count-in requires. */
   if (e->count_in_total > 0) le_count_in_reset(e);
@@ -3208,6 +3216,15 @@ static void le_handoff_disarm(le_engine* e, int32_t ch) {
   store_i32(&t->a_pending, 0);
 }
 
+/* Drops the waiting request and, for a Record, its arm at once, so nothing
+ * later in the block reads the dropped Record as a live arm. */
+static void le_handoff_drop(le_engine* e) {
+  if (e->song_record && valid_channel(e, e->song_target)) {
+    le_handoff_disarm(e, e->song_target);
+  }
+  le_song_cancel(e);
+}
+
 /* The song frames [t] still sounds before its head next reads its lap start:
  * forward, the rest of the take; reversed, back to its start; both at the
  * head's rate (#1162, #1179). The commit itself is le_track_lap_edge's; this
@@ -3279,6 +3296,8 @@ static int le_song_queue_valid(le_engine* e) {
           (e->song_edge && st == LE_TRACK_STOPPED && !le_transport_held(e))) &&
          le_handoff_target_ok(t, e->song_record) &&
          (!e->song_record || (t->pending_record && t->pending_trigger == 3)) &&
+         (!e->song_record ||
+          !le_capture_refused(e, target, load_i32(&t->a_state))) &&
          !le_handoff_capture_elsewhere(e, source);
   }
   if (!ok) le_song_cancel(e);
@@ -3318,7 +3337,7 @@ static void handle_section_play(le_engine* e, int32_t ch, uint64_t frame) {
   /* A Play on the waiting target cancels its request, whatever its kind:
    * an empty section waiting to record too. */
   if (ch == e->song_target) {
-    le_song_cancel(e);
+    le_handoff_drop(e);
     return;
   }
   le_track* target = &e->tracks[ch];
@@ -3442,12 +3461,6 @@ static void le_song_commit(le_engine* e, uint64_t frame) {
     le_handoff_record_now(e, target, frame);
   } else {
     le_handoff_play_now(e, target, frame);
-  }
-  /* A start the engine refused (a take at a Speed, Reverse or pitch it
-   * cannot record at) left the target silent: the sounding section keeps
-   * playing. */
-  if (!le_handoff_sounding_state(load_i32(&e->tracks[target].a_state))) {
-    sounding = 0;
   }
   for (int32_t c = 0; c < e->track_count; ++c) {
     if (!(sounding & (1u << c))) continue;
@@ -4746,11 +4759,13 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
           le_handoff_record_request(e, cmd->arg_i, frame);
           break;
         }
-        /* A Band section toggle on the waiting target cancels its start
-         * (#1323); arming it would queue the start again at the top. */
-        if (trig == 2 && cmd->arg_i == e->song_target) {
+        /* A Band section toggle replaces a waiting request, as any newer
+         * request does; on the waiting target itself it cancels its start
+         * (#1323), and arming it would queue the start again at the top. */
+        if (trig == 2 && e->song_target >= 0) {
+          const int self = cmd->arg_i == e->song_target;
           le_song_cancel(e);
-          break;
+          if (self) break;
         }
         /* Another arm on the waiting target replaces its request. An arm on
          * the source (a quantized overdub or take finish) keeps it, as an
