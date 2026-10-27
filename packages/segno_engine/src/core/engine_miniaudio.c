@@ -154,6 +154,8 @@ static void notification_callback(const ma_device_notification* notification) {
     case ma_device_notification_type_rerouted:
     case ma_device_notification_type_interruption_began:
       atomic_store_explicit(&e->a_device_present, 0, memory_order_relaxed);
+      /* A latency measurement over a device that left is cancelled. */
+      atomic_fetch_add_explicit(&e->a_device_losses, 1u, memory_order_relaxed);
       le_engine_note_callback_timeline_break(e);
       break;
     default:
@@ -373,7 +375,6 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
   out->output_channels = neg_out;
   out->buffer_frames =
       (int32_t)engine->device.playback.internalPeriodSizeInFrames;
-  out->active_backend = LE_BACKEND_MINIAUDIO;
   /* The loopback-excluded mask is computed in le_engine_start from the resolved
    * capture-device UID for this path; the backend reports none here. */
   out->excluded_input_mask = 0;

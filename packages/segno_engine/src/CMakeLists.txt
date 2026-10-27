@@ -80,7 +80,6 @@ target_include_directories(segno_dsp_core PUBLIC
 add_library(segno_engine SHARED
   # ---- core/: the portable engine (S1 split into per-concern TUs) ----
   core/engine.c              # residual control-thread core + shared helpers
-  core/engine_convert.c      # pure sample-format conversion
   core/engine_digest.c       # SHA-256, file digests, directory fsync (engine-free)
   # core/engine_fx.c and core/rt_alloc.c live in segno_dsp_core above (linked
   # PRIVATE below) so the VST3 plugin builds can link them too.

@@ -930,7 +930,6 @@ static int32_t fake_open(le_engine* e, const le_config* cfg,
   out->input_channels = 1;
   out->output_channels = 1;
   out->buffer_frames = 64;
-  out->active_backend = LE_BACKEND_MINIAUDIO;
   strncpy(out->device_name, "fake device", sizeof(out->device_name) - 1);
   return LE_OK;
 }

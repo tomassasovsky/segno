@@ -2137,11 +2137,6 @@ struct le_engine {
   _Atomic int32_t a_buffer_frames;
   _Atomic int32_t a_in_channels;    /* negotiated hardware capture channels */
   _Atomic int32_t a_out_channels;   /* negotiated hardware playback channels */
-  /* le_audio_backend actually running, published in the snapshot. Set to
-   * LE_BACKEND_MINIAUDIO in the configure/reset path and republished at device
-   * open from the backend's negotiated le_device_open_result.active_backend
-   * (ASIO on Windows, miniaudio on macOS/Linux). */
-  _Atomic int32_t a_active_backend;
   /* Input channels whose Core Audio label marks them as loopback; never
    * recorded, monitored, or routable. Computed once at device open. */
   _Atomic uint32_t a_excluded_input_mask;
@@ -2218,8 +2213,14 @@ struct le_engine {
    * track's full recorded length, including multiples and divisions. */
   _Atomic uint32_t a_loop_viz[LE_VIZ_POINTS];
   _Atomic uint32_t a_track_viz[LE_MAX_TRACKS][LE_VIZ_POINTS];
-  _Atomic int32_t a_latency_state;
+  /* The latency state and the request it belongs to, in one word
+   * (request << 32 | state) so a reader never pairs one measurement's state
+   * with another's request (le_latency_publish). */
+  _Atomic uint64_t a_latency_word;
   _Atomic uint64_t a_latency_ms_bits;
+  /* Bumped by every device loss (le_engine_mark_device_lost and the backend's
+   * notification); a measurement that sees it move is cancelled. */
+  _Atomic uint32_t a_device_losses;
 
   /* Per-input live monitors: one independent route per hardware input. Each
    * sounds iff its a_enabled is set (a loopback measurement clears them all to
@@ -2952,6 +2953,11 @@ struct le_engine {
    * round-trip by its peak (robust to crosstalk/noise). */
   int lat_active;
   int32_t lat_emit_remaining;
+  int32_t lat_out;        /* the output the burst plays on */
+  int32_t lat_in;         /* the input it returns on, or the loopback input */
+  float lat_amp;          /* burst amplitude */
+  uint32_t lat_request;   /* the caller's id for the current measurement */
+  uint32_t lat_losses;    /* a_device_losses when it started */
   float* lat_buf;      /* envelope capture (control-thread allocated) */
   int32_t lat_buf_cap; /* capacity in frames */
   int32_t lat_buf_pos; /* write head during a measurement */
@@ -3421,5 +3427,6 @@ static inline int32_t le_mode_base_channel(le_engine* e, int32_t mode) {
   }
   return -1;
 }
+
 
 #endif /* SEGNO_ENGINE_PRIVATE_H */

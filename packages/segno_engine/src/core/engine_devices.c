@@ -460,28 +460,16 @@ int le_resolve_device_id(ma_context* ctx, int capture, const char* want,
 
 /* ---- device backend selection ---- */
 
-/* Selects the device backend for a requested le_audio_backend. miniaudio is the
- * only backend this engine ships, so every choice resolves to it. (The ASIO
- * backend was Windows-only and went with the desktop targets; LE_BACKEND_ASIO
- * survives as a reserved value so persisted settings still parse.) */
 #ifdef LE_NATIVE_TESTS
 const le_device_backend* le_test_backend_override = NULL;
 #endif
 
-const le_device_backend* le_select_backend(int32_t backend) {
-  (void)backend;
+/* Selects the device backend: miniaudio, the only one this engine ships (or
+ * the native tests' fake device). */
+const le_device_backend* le_select_backend(void) {
 #ifdef LE_NATIVE_TESTS
   if (le_test_backend_override != NULL) return le_test_backend_override;
 #endif
   return &le_miniaudio_backend;
 }
 
-/* No ASIO backend exists, so enumeration is always empty. The FFI symbol stays
- * defined so the Dart layer can keep calling it unconditionally (it returns
- * [] / count 0). */
-int32_t le_enumerate_asio_drivers(le_device_info* out, int32_t max,
-                                  int32_t* count) {
-  if (out == NULL || count == NULL || max <= 0) return LE_ERR_INVALID;
-  *count = 0;
-  return LE_OK;
-}
