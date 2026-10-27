@@ -157,10 +157,11 @@ docs/code-review/
 .widget_preview/
 ios/Flutter/ephemeral/.swift_pm.lock
 
-# Moved to sibling repositories (#1496). The design file and studies are in
-# tomassasovsky/segno-design, cloned at ../segno-design; the hardware is in
-# tomassasovsky/segno-hardware. Copies left in an older checkout stay out of
-# the index.
+# Moved to sibling repositories (#1496): the design file and studies to
+# tomassasovsky/segno-design (cloned at ../segno-design), the hardware to
+# tomassasovsky/segno-hardware. The main checkout keeps untracked design
+# studies, the pen's font cache (fonts/) and hardware tooling (.venv) at these
+# paths; this keeps them out of the index.
 /segno-ui.pen
 /docs/design/
 /fonts/

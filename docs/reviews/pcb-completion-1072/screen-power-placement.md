@@ -67,7 +67,7 @@ Sources are the current
 [enclosure generator](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/enclosure/segno_enclosure.py), the
 exported 7-inch tower, both 15.6-inch stands and front/mid pedal collars under
 `hardware/enclosure/out/`, plus the
-[populated board STEP](https://github.com/tomassasovsky/segno-hardware/blob/main/hardware/kicad/screen_power/hand/fabrication/board.step).
+[populated board STEP](../../../hardware/kicad/screen_power/hand/fabrication/board.step).
 The lid plane follows the documented canonical Fusion transform. The tower's
 translation follows its six existing floor-anchor stations.
 

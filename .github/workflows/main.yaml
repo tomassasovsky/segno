@@ -190,14 +190,26 @@ jobs:
   # are for local UI work. The job runs the checks that read the studies, and
   # renders the screenshot suites on Linux and uploads the PNGs as the
   # `screenshots` artifact, for a reviewer to compare against the pen. No
-  # goldens are committed, so nothing is compared here: a suite that fails to
-  # render is reported on the run but does not block the PR.
+  # goldens are committed, so no pixels are compared here, but a suite that
+  # fails to render fails the job.
+  #
+  # The clone is the segno-design branch with this PR's branch name when one
+  # exists, so a UI change and its pen PR are checked together; otherwise
+  # main.
   design:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - name: Clone segno-design next to the checkout
-        run: git clone --depth 1 https://github.com/tomassasovsky/segno-design.git ../segno-design
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          url=https://github.com/tomassasovsky/segno-design.git
+          if [ -n "$BRANCH" ] && git ls-remote --exit-code --heads "$url" "$BRANCH" > /dev/null; then
+            git clone --depth 1 --branch "$BRANCH" "$url" ../segno-design
+          else
+            git clone --depth 1 "$url" ../segno-design
+          fi
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.47.x"
@@ -207,7 +219,6 @@ jobs:
       - name: Check the app against the design studies
         run: flutter test test/control/external_pedal_art_test.dart
       - name: Render the screenshot suites
-        continue-on-error: true
         run: flutter test --tags screenshots --update-goldens test/screenshots
       - name: Upload the screenshots
         if: always()

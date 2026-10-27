@@ -15,15 +15,12 @@ import '../helpers/helpers.dart';
 /// sheet, for eyeballing against the pen. Renders only with
 /// `--update-goldens`, like every suite here.
 void main() {
-  final fontDir = materialFontDir;
-  final hasFonts = rendersScreenshots;
-
   setUpAll(() async {
-    if (!hasFonts) return;
+    if (!rendersScreenshots) return;
     await loadScreenshotFont('Roboto', [
-      '$fontDir/Roboto-Regular.ttf',
-      '$fontDir/Roboto-Medium.ttf',
-      '$fontDir/Roboto-Bold.ttf',
+      '$materialFontDir/Roboto-Regular.ttf',
+      '$materialFontDir/Roboto-Medium.ttf',
+      '$materialFontDir/Roboto-Bold.ttf',
     ]);
     await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
@@ -95,7 +92,7 @@ void main() {
       ),
     );
     await shoot(tester, 'save_to_choose');
-  }, skip: !hasFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Record directly to USB', (tester) async {
     await pump(
@@ -109,7 +106,7 @@ void main() {
       ),
     );
     await shoot(tester, 'save_to_recording');
-  }, skip: !hasFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Connect USB drive', (tester) async {
     await pump(
@@ -118,5 +115,5 @@ void main() {
       inset: EdgeInsets.zero,
     );
     await shoot(tester, 'connect_usb_sheet');
-  }, skip: !hasFonts);
+  }, skip: !rendersScreenshots);
 }

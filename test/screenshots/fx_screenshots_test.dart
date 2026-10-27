@@ -162,18 +162,14 @@ const _library = FxCatalogue(
 );
 
 void main() {
-  final fontDir = materialFontDir;
-  // Renders only with --update-goldens; see rendersScreenshots.
-  final hasScreenshotFonts = rendersScreenshots;
-
   setUpAll(() async {
     registerFallbackValue(const LooperInputPanChanged(0, pan: 0));
     registerFallbackValue(MonitorMode.off);
-    if (!hasScreenshotFonts) return;
+    if (!rendersScreenshots) return;
     await loadScreenshotFont('Roboto', [
-      '$fontDir/Roboto-Regular.ttf',
-      '$fontDir/Roboto-Medium.ttf',
-      '$fontDir/Roboto-Bold.ttf',
+      '$materialFontDir/Roboto-Regular.ttf',
+      '$materialFontDir/Roboto-Medium.ttf',
+      '$materialFontDir/Roboto-Bold.ttf',
     ]);
     await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
@@ -370,22 +366,22 @@ void main() {
   testWidgets('Live inputs', (tester) async {
     await pump(tester, destination: const FxDestination.liveInput(0));
     await shoot(tester, 'live_inputs');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Recorded track, whole track', (tester) async {
     await pump(tester, destination: const FxDestination.recordedTrack(0));
     await shoot(tester, 'recorded_track');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('All tracks', (tester) async {
     await pump(tester, destination: const FxDestination.allTracks());
     await shoot(tester, 'all_tracks');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Outputs', (tester) async {
     await pump(tester, destination: const FxDestination.output(0));
     await shoot(tester, 'outputs');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('The effect editor', (tester) async {
     await pump(tester, destination: const FxDestination.recordedTrack(0));
@@ -396,7 +392,7 @@ void main() {
       find.byType(FxEffectEditor),
       matchesGoldenFile('goldens/fx_effect_editor.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('A chain of racks', (tester) async {
     await pump(
@@ -406,7 +402,7 @@ void main() {
     );
 
     await shoot(tester, 'racks');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('The rack editor', (tester) async {
     await pump(
@@ -422,7 +418,7 @@ void main() {
       find.byType(FxRackEditor),
       matchesGoldenFile('goldens/fx_rack_editor.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Reorder', (tester) async {
     await pump(
@@ -438,7 +434,7 @@ void main() {
       find.byType(FxReorderPage),
       matchesGoldenFile('goldens/fx_reorder.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Rack options', (tester) async {
     await pump(
@@ -455,7 +451,7 @@ void main() {
       find.byKey(const Key('fx_options_sheet')),
       matchesGoldenFile('goldens/fx_rack_options.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('My presets', (tester) async {
     await pump(
@@ -493,7 +489,7 @@ void main() {
       find.byType(FxLibraryPage),
       matchesGoldenFile('goldens/fx_my_presets.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   testWidgets('Add effects, the library grid', (tester) async {
     // A stand-in catalogue of the real shape rather than the bundled one, so
@@ -513,5 +509,5 @@ void main() {
       find.byType(FxLibraryPage),
       matchesGoldenFile('goldens/fx_library.png'),
     );
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 }

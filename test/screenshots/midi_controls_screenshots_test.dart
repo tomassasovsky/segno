@@ -90,14 +90,12 @@ const _connection = MidiConnection(
 
 /// Author-side images of the real MIDI screens; CI does not claim visual proof.
 void main() {
-  final fontDir = materialFontDir;
-  final hasFonts = rendersScreenshots;
   setUpAll(() async {
-    if (!hasFonts) return;
+    if (!rendersScreenshots) return;
     await loadScreenshotFont('Roboto', [
-      '$fontDir/Roboto-Regular.ttf',
-      '$fontDir/Roboto-Medium.ttf',
-      '$fontDir/Roboto-Bold.ttf',
+      '$materialFontDir/Roboto-Regular.ttf',
+      '$materialFontDir/Roboto-Medium.ttf',
+      '$materialFontDir/Roboto-Bold.ttf',
     ]);
     await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
@@ -768,5 +766,5 @@ void main() {
       await tester.pumpAndSettle();
       await shot(tester, 'disconnected');
     });
-  }, skip: !hasFonts);
+  }, skip: !rendersScreenshots);
 }

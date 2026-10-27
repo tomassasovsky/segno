@@ -50,16 +50,12 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 
 /// The accepted External pedals screen, drawn at the console's own size.
 void main() {
-  final fontDir = materialFontDir;
-  // Renders only with --update-goldens; see rendersScreenshots.
-  final hasScreenshotFonts = rendersScreenshots;
-
   setUpAll(() async {
-    if (!hasScreenshotFonts) return;
+    if (!rendersScreenshots) return;
     await loadScreenshotFont('Roboto', [
-      '$fontDir/Roboto-Regular.ttf',
-      '$fontDir/Roboto-Medium.ttf',
-      '$fontDir/Roboto-Bold.ttf',
+      '$materialFontDir/Roboto-Regular.ttf',
+      '$materialFontDir/Roboto-Medium.ttf',
+      '$materialFontDir/Roboto-Bold.ttf',
     ]);
     await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
@@ -421,7 +417,7 @@ void main() {
   screenshotTestWidgets('a single switch on CTRL 1', (tester) async {
     await pump(tester);
     await shot(tester, 'single');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   screenshotTestWidgets('a dual switch, editing its second button', (
     tester,
@@ -430,7 +426,7 @@ void main() {
     await tap(tester, 'external_type_dualSwitch');
     await tap(tester, 'external_switch_1');
     await shot(tester, 'dual');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   screenshotTestWidgets('a latching switch, which has one gesture', (
     tester,
@@ -438,7 +434,7 @@ void main() {
     await pump(tester);
     await tap(tester, 'external_hardware_latching');
     await shot(tester, 'latching');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   /// A jack taught its whole travel, sweeping a pedal's parameter and one
   /// track's fader.
@@ -480,7 +476,7 @@ void main() {
       jack: const ExternalJackSetup(type: ExternalJackType.expression),
     );
     await shot(tester, 'expression_empty');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   screenshotTestWidgets('an expression pedal sweeping one control', (
     tester,
@@ -488,7 +484,7 @@ void main() {
     await pump(tester, jack: taught);
     await sweep(tester, 80);
     await shot(tester, 'expression');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   screenshotTestWidgets('teaching an expression pedal its travel', (
     tester,
@@ -499,14 +495,14 @@ void main() {
     await tap(tester, 'expression_capture_heel');
     await sweep(tester, 112);
     await shot(tester, 'expression_calibrate');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   screenshotTestWidgets('choosing where a control lives', (tester) async {
     await pump(tester, jack: taught);
     await tap(tester, 'expression_add');
     await tap(tester, 'expression_kind_recordedTrack');
     await shot(tester, 'expression_destinations');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   screenshotTestWidgets('choosing the control itself', (tester) async {
     await pump(tester, jack: taught);
@@ -514,7 +510,7 @@ void main() {
     await tap(tester, 'expression_kind_recordedTrack');
     await tap(tester, 'expression_destination_track:0');
     await shot(tester, 'expression_controls');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   /// A dual pedal whose first button turns two effects on and off and sets
   /// one parameter.
@@ -557,7 +553,7 @@ void main() {
     await pump(tester, jack: controlled);
     await tap(tester, 'external_panel_controls');
     await shot(tester, 'controls');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   screenshotTestWidgets("a button's controls, with a parameter's values open", (
     tester,
@@ -567,7 +563,7 @@ void main() {
     await tester.tap(find.text('Volume'));
     await tester.pumpAndSettle();
     await shot(tester, 'controls_parameter');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   screenshotTestWidgets('choosing a control for a button', (tester) async {
     await pump(tester, jack: controlled);
@@ -576,7 +572,7 @@ void main() {
     await tap(tester, 'expression_kind_recordedTrack');
     await tap(tester, 'expression_destination_track:0');
     await shot(tester, 'controls_pick');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   screenshotTestWidgets('a button sets track pan while held', (tester) async {
     await pump(
@@ -599,7 +595,7 @@ void main() {
     );
     await tap(tester, 'external_panel_controls');
     await shot(tester, 'mixer_pan');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   screenshotTestWidgets('a button releases Click at unity after a 200% hold', (
     tester,
@@ -638,7 +634,7 @@ void main() {
       findsOneWidget,
     );
     await shot(tester, 'click_held_released');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   screenshotTestWidgets('a button holds Play & record and releases to First', (
     tester,
@@ -681,7 +677,7 @@ void main() {
       findsOneWidget,
     );
     await shot(tester, 'hear_click_held_released');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   screenshotTestWidgets('Count-in button named endpoints at console size', (
     tester,
@@ -714,7 +710,7 @@ void main() {
     expect(find.text('Off'), findsWidgets);
     expect(tester.takeException(), isNull);
     await shot(tester, 'count_in_held_released');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   screenshotTestWidgets('Count-in expression named endpoints at console size', (
     tester,
@@ -737,7 +733,7 @@ void main() {
     expect(find.text('Off'), findsWidgets);
     expect(tester.takeException(), isNull);
     await shot(tester, 'count_in_expression');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   screenshotTestWidgets('a button holds decay and releases to explicit zero', (
     tester,
@@ -768,7 +764,7 @@ void main() {
     expect(find.text('Off · Keep layers'), findsWidgets);
     expect(find.text('75%'), findsWidgets);
     await shot(tester, 'decay_held_released');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   screenshotTestWidgets('a button holds 32 bars and releases to Auto', (
     tester,
@@ -799,7 +795,7 @@ void main() {
     expect(find.text('Auto'), findsWidgets);
     expect(find.text('32 bars'), findsWidgets);
     await shot(tester, 'record_length_held_released');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   screenshotTestWidgets('a button holds quarter and releases Immediately', (
     tester,
@@ -839,7 +835,7 @@ void main() {
       findsOneWidget,
     );
     await shot(tester, 'record_timing_held_released');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   screenshotTestWidgets('a button holds Once and releases to Loop', (
     tester,
@@ -874,7 +870,7 @@ void main() {
     expect(find.text('Loop'), findsWidgets);
     expect(find.text('Once'), findsWidgets);
     await shot(tester, 'playback_held_released');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 
   screenshotTestWidgets('an expression pedal edits track gain in dB', (
     tester,
@@ -895,5 +891,5 @@ void main() {
       ),
     );
     await shot(tester, 'mixer_expression');
-  }, skip: !hasScreenshotFonts);
+  }, skip: !rendersScreenshots);
 }
