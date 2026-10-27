@@ -521,6 +521,10 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
   String _latency(AppLocalizations l10n, EngineStatus status) =>
       switch (status.latencyState) {
         LatencyState.measuring => l10n.measuringEllipsis,
+        // An offset of 0 compensates nothing: whatever figure the engine
+        // still holds was not measured for this profile.
+        LatencyState.done when status.recordOffsetFrames <= 0 =>
+          l10n.notMeasured,
         LatencyState.done => l10n.latencyMs(
           status.measuredLatencyMs.toStringAsFixed(2),
         ),
