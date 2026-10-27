@@ -271,9 +271,16 @@ class _Header extends StatelessWidget {
     final present = drafted
         ? current != null && !current.absent
         : status.isConnected && status.devicePresent;
+    final draftedId = shown.playbackDeviceId.isNotEmpty
+        ? shown.playbackDeviceId
+        : shown.captureDeviceId;
     final name =
         current?.name ??
-        (status.deviceName.isNotEmpty ? status.deviceName : l10n.systemDefault);
+        (drafted && draftedId.isNotEmpty
+            ? draftedId
+            : status.deviceName.isNotEmpty
+            ? status.deviceName
+            : l10n.systemDefault);
     final inputs = current?.inputChannels ?? status.inputChannels;
     final outputs = current?.outputChannels ?? status.outputChannels;
     return Container(

@@ -203,9 +203,21 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// have started while the question was open), stops the tracks and the
   /// backing track, and applies it.
   void confirmApply() {
-    final next = _pending;
-    if (next == null) return;
+    final asked = _pending;
+    if (asked == null) return;
     _pending = null;
+    // The draft as it stands now: material that landed while the question
+    // was open has put its rate and loop cap back (_reconcileDraft).
+    final draft = state.draft;
+    final next = draft == null
+        ? asked
+        : state.copyWith(
+            sampleRate: draft.sampleRate,
+            bufferFrames: draft.bufferFrames,
+            maxLoopMinutes: draft.maxLoopMinutes,
+            playbackDeviceId: draft.playbackDeviceId,
+            captureDeviceId: draft.captureDeviceId,
+          );
     emit(state.copyWith(applyPhase: ApplyPhase.idle));
     if (!_admit(next)) return;
     for (final track in _repository.state.tracks) {
