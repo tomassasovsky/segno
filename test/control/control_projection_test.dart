@@ -459,10 +459,14 @@ void main() {
       expect(overdub.colorFor(PedalButton.track2), ledRed);
     });
 
-    test('a waiting Band section fills too', () {
+    test('a waiting Band section fills too, in Mute mode as well', () {
       final frame = projectFrame(song(mode: LooperMode.band), record);
       expect(frame.queuedButton, PedalButton.track2);
       expect(frame.trackLeds[1], PedalTrackLed.green);
+      // A Mute-mode press on a stopped Band section joins it, which waits.
+      final muted = projectFrame(song(mode: LooperMode.band), mute);
+      expect(muted.queuedButton, PedalButton.track2);
+      expect(muted.trackLeds[1], PedalTrackLed.green);
     });
 
     test('the fill never reaches a full pill', () {
@@ -486,8 +490,8 @@ void main() {
       expect(b.queuedButton, PedalButton.track2);
     });
 
-    test('nothing waits outside Song and Band, outside Record mode or on an '
-        'empty section waiting to play', () {
+    test("nothing waits outside Song and Band, in Song's Mute mode, in other "
+        'modes or on an empty section waiting to play', () {
       for (final (looper, overlay) in [
         (song(mode: LooperMode.multi), record),
         (song(), mute),

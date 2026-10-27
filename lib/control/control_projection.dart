@@ -60,17 +60,26 @@ Set<int> armedTracks(LooperState looper, ControlState overlay) {
 
 /// The Song or Band section waiting for the sounding one's end, as the pedal
 /// shows it (#1077, #1323): in Record mode, where track presses and Rec/Play
-/// ask for sections, and `null` otherwise (Mute mode shows mutes). The engine
-/// owns the queue; this only decides whether the pedal shows it.
+/// ask for sections, and in Band's Mute mode, where a press on a stopped
+/// section joins it and so asks for it too; `null` otherwise (Song's Mute
+/// mode only mutes). The engine owns the queue; this only decides whether
+/// the pedal shows it.
 int? queuedSongTrack(LooperState looper, ControlState overlay) {
   final queued = looper.songWaitingSection;
-  if (overlay.mode != InteractionMode.record ||
+  if (!showsSectionQueue(looper, overlay.mode) ||
       queued == null ||
       queued >= PedalStateFrame.trackCount) {
     return null;
   }
   return queued;
 }
+
+/// Whether the pedal shows a waiting section in [mode] (#1323): Record mode,
+/// and Mute mode in Band.
+bool showsSectionQueue(LooperState looper, InteractionMode mode) =>
+    mode == InteractionMode.record ||
+    (mode == InteractionMode.mute &&
+        looper.transport.looperMode == LooperMode.band);
 
 /// The footswitch that shows [queuedSongTrack] and how far its pill has
 /// filled, `0`..`254` of 255. No switch for a section on the other bank: its
@@ -134,6 +143,13 @@ PedalTrackLed projectTrackLed(
         return track != null && track.hasContent && !track.muted
             ? PedalTrackLed.green
             : PedalTrackLed.off;
+      }
+      // Band: a waiting section reads as what it will become, as in Record
+      // mode, so its pill can fill.
+      if (channel == queuedSongTrack(looper, overlay)) {
+        return looper.transport.songQueueRecord
+            ? PedalTrackLed.red
+            : PedalTrackLed.green;
       }
       final armed = armedTracks(looper, overlay).contains(channel);
       return armed && !(track?.muted ?? false)

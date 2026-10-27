@@ -99,11 +99,16 @@ bool _sounding(Track t) =>
     !t.muted &&
     (t.state == TrackState.playing || t.state == TrackState.overdubbing);
 
-/// The waiting Song or Band section the pedal shows in Record mode: the
-/// model's own fact (`songWaitingSection`), gated by mode and the wire.
+/// The waiting Song or Band section the pedal shows (Record mode, and
+/// Band's Mute mode): the model's own fact (`songWaitingSection`), gated by
+/// mode and the wire.
 int? _queuedSong(ControlContext c) {
   final queued = c.looper.songWaitingSection;
-  if (c.overlay.mode != InteractionMode.record ||
+  final shown =
+      c.overlay.mode == InteractionMode.record ||
+      (c.overlay.mode == InteractionMode.mute &&
+          c.looper.transport.looperMode == LooperMode.band);
+  if (!shown ||
       queued == null ||
       queued >= PedalStateFrame.trackCount) {
     return null;
@@ -295,7 +300,9 @@ final List<ControlInvariant> controlInvariants = [
   }),
   ControlInvariant('muted-dark-in-mute', (c) {
     if (c.overlay.mode != InteractionMode.mute) return null;
+    final queued = _queuedSong(c);
     for (final t in c.looper.tracks) {
+      if (t.channel == queued) continue; // lit to say it is waiting (Band)
       if (t.muted &&
           t.channel < c.frame.trackLeds.length &&
           c.frame.trackLeds[t.channel] != PedalTrackLed.off) {
