@@ -144,7 +144,7 @@ class UsbUpdateCubit extends Cubit<UsbUpdateState> {
       return _fail(UsbUpdateError.busy, busyKind: 'capture');
     }
     if (_onlineBusy()) {
-      return _fail(UsbUpdateError.busy, busyKind: 'transfer');
+      return _fail(UsbUpdateError.busy, busyKind: 'other');
     }
     final needed = package.sizeBytes + kUsbUpdateSpareBytes;
     final space = await _storage.space(const StorageDestination.internal());
