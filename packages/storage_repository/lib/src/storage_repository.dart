@@ -198,9 +198,14 @@ class StorageRepository implements ActiveOperationSource {
     // on the tmpfs until the drive is pulled), both fail it.
     for (final held in List.of(_leases)) {
       final target = held.target;
-      if (target is RemovableDestination &&
-          next[target.generation]?.status !=
-              RemovableVolumeRecordStatus.mounted) {
+      if (target is! RemovableDestination) continue;
+      final status = next[target.generation]?.status;
+      // A read hold needs the volume readable; a read-only one serves it.
+      final keeps = held.purpose == WritePurpose.update
+          ? status == RemovableVolumeRecordStatus.mounted ||
+                status == RemovableVolumeRecordStatus.readOnly
+          : status == RemovableVolumeRecordStatus.mounted;
+      if (!keeps) {
         held.markLost(StorageFailure.volumeLost(target.generation));
       }
     }
@@ -737,11 +742,11 @@ class StorageRepository implements ActiveOperationSource {
       );
       try {
         final name = sourcePath.substring(sourcePath.lastIndexOf('/') + 1);
-        final directory = Directory(stagingDirectory)
-          ..createSync(recursive: true);
+        final directory = Directory(stagingDirectory);
         final part = File('${directory.path}/.$name.${_partId()}.part');
         _liveParts.add(part.path);
         try {
+          directory.createSync(recursive: true);
           _sweepStaleParts(directory);
           bool stop() => source.isLost || (cancelled?.call() ?? false);
           await _copyBytes(File(sourcePath), part, stop);

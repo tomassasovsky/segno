@@ -313,10 +313,15 @@ refuse() {
 }
 
 do_install_file() {
-    command -v rauc >/dev/null 2>&1 || { log "rauc not installed"; return 1; }
     [ -n "${1:-}" ] || refuse '{"error":"outside-staging"}'
     # Resolved, so neither `..` nor a link can point it outside staging.
     staging=$(readlink -f "$STAGING_DIR" 2>/dev/null || true)
+    # An empty or missing staging dir would make the pattern below match any
+    # absolute path: refuse rather than take (and later delete) it.
+    if [ -z "$staging" ] || [ ! -d "$staging" ]; then
+        log "refusing $1: staging $STAGING_DIR is not a directory"
+        refuse '{"error":"outside-staging"}'
+    fi
     path=$(readlink -f "$1" 2>/dev/null || true)
     case "$path" in
         "$staging"/?*) ;;
@@ -326,9 +331,10 @@ do_install_file() {
     [ -f "$path" ] || refuse '{"error":"outside-staging"}'
     # From here the copy is ours to remove, whatever happens.
     staged_copy=$path
-    work=$(mktemp -d "${TMPDIR:-/tmp}/segno-update.XXXXXX")
     trap _on_exit EXIT
     trap _on_terminate INT TERM
+    command -v rauc >/dev/null 2>&1 || { log "rauc not installed"; return 1; }
+    work=$(mktemp -d "${TMPDIR:-/tmp}/segno-update.XXXXXX")
     if boot_read_only; then
         log "the boot partition is read-only; restart to repair it"
         return "$EXIT_BOOT_READ_ONLY"
@@ -352,7 +358,7 @@ do_install_file() {
     current=$(cat "$CUR_FILE" 2>/dev/null || echo "0.0.0")
     if ! semver_newer "$current" "$version"; then
         log "refusing v$version: not newer than $current"
-        refuse "{\"error\":\"not-newer\",\"version\":\"$version\"}"
+        refuse "$(jq -cn --arg v "$version" '{error:"not-newer",version:$v}')"
     fi
 
     open_attempt "$version"

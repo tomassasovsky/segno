@@ -129,6 +129,7 @@ class UpdatesUsbPanel extends StatelessWidget {
           l10n.updatesUsbMegabytes(_megabytes(state.neededBytes ?? 0)),
         ),
         UsbUpdateError.busy => l10n.operationBusy(state.busyKind ?? 'other'),
+        UsbUpdateError.bootReadOnly => l10n.updatesPageBootReadOnly,
         UsbUpdateError.failed || null => l10n.updatesUsbFailed,
       };
 }
