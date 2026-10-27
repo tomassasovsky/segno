@@ -3350,6 +3350,13 @@ static int le_handoff_newer_waits(le_engine* e, int32_t ch) {
   return e->song_target >= 0 && e->song_target != ch;
 }
 
+/* An arm on [ch] that would start a take beside a sounding section (a grid
+ * or Sound-start arm set while none sounded): it becomes a Record waiting
+ * for that section's end, unless a request pressed since already waits,
+ * which wins over the older arm. Returns whether it was converted or
+ * dropped; 0 leaves the arm to fire as usual. */
+static int le_handoff_convert_arm(le_engine* e, int32_t ch, uint64_t frame);
+
 /* Fires the Record waiting on [ch] now. Like a grid arm firing, it clears
  * only the arm: the capture image and shadow the press posted belong to the
  * take it starts. A stopped Song section overdubs from its top, so it is
@@ -3369,10 +3376,10 @@ static void le_handoff_record_now(le_engine* e, int32_t ch, uint64_t frame) {
 
 /* LE_CMD_ARM trigger 3: a Record waiting for the handoff (le_engine_record
  * prepared it). The target may have moved since the press; with nothing
- * sounding any more it records at once, except a Band section on a running
- * rig: it becomes a grid arm, as le_engine_record arms a Band section with
- * no other sounding (a first take on the primary's top, a punch-in on the
- * quantize grid). */
+ * sounding any more it records at once, as the handoff is its boundary and
+ * quantize does not apply (a Band punch-in starts in phase). A Band
+ * section's first take on a running rig is the exception: Band always
+ * starts a first take on the primary's top, so it becomes a grid arm. */
 static void le_handoff_record_request(le_engine* e, int32_t ch,
                                       uint64_t frame) {
   le_track* t = &e->tracks[ch];
@@ -3382,7 +3389,8 @@ static void le_handoff_record_request(le_engine* e, int32_t ch,
     return;
   }
   if (!le_handoff_wait(e, ch, 1)) {
-    if (le_band_section(e, ch) && !le_transport_held(e)) {
+    if (load_i32(&t->a_state) == LE_TRACK_EMPTY && le_band_section(e, ch) &&
+        !le_transport_held(e)) {
       le_handoff_set_arm(t, 0);
       return;
     }
@@ -3394,6 +3402,19 @@ static void le_handoff_record_request(le_engine* e, int32_t ch,
     return;
   }
   le_handoff_set_arm(t, 3);
+}
+
+static int le_handoff_convert_arm(le_engine* e, int32_t ch, uint64_t frame) {
+  if (!le_handoff_target_ok(&e->tracks[ch], 1) ||
+      le_handoff_source(e, ch) < 0) {
+    return 0;
+  }
+  if (le_handoff_newer_waits(e, ch)) {
+    le_handoff_disarm(e, ch);
+  } else {
+    le_handoff_record_request(e, ch, frame);
+  }
+  return 1;
 }
 
 /* The handoff: stop every sounding section (Band's primary aside), start the
@@ -3421,6 +3442,12 @@ static void le_song_commit(le_engine* e, uint64_t frame) {
     le_handoff_record_now(e, target, frame);
   } else {
     le_handoff_play_now(e, target, frame);
+  }
+  /* A start the engine refused (a take at a Speed, Reverse or pitch it
+   * cannot record at) left the target silent: the sounding section keeps
+   * playing. */
+  if (!le_handoff_sounding_state(load_i32(&e->tracks[target].a_state))) {
+    sounding = 0;
   }
   for (int32_t c = 0; c < e->track_count; ++c) {
     if (!(sounding & (1u << c))) continue;
@@ -7021,11 +7048,9 @@ static void le_fire_section_arm(le_engine* e, int32_t ch, uint64_t frame) {
     /* Band keeps one section (#1323): with another sounding, the start
      * waits for that section's end like any section request. */
     if (le_band_section(e, ch) && le_handoff_source(e, ch) >= 0) {
-      /* A request pressed since the toggle wins over it, and a Play already
-       * waiting on this section is what the toggle asks for. */
-      if (!le_handoff_newer_waits(e, ch) && e->song_target != ch) {
-        handle_section_play(e, ch, frame);
-      }
+      /* A request already waiting wins: a newer one on another section,
+       * or a Play on this one, which is what the toggle asks for. */
+      if (e->song_target < 0) handle_section_play(e, ch, frame);
     } else {
       handle_play(e, ch, frame);
     }
@@ -7151,14 +7176,7 @@ static inline void advance_transport_frame(le_engine* e, int tc,
           /* Band keeps one section (#1323): a take or a punch-in armed on a
            * section while none sounded, and another section sounds by its
            * top, becomes a Record waiting for that section's end. */
-          if (le_band_section(e, qt) && le_handoff_target_ok(pt, 1) &&
-              le_handoff_source(e, qt) >= 0) {
-            /* A request pressed since then wins over this older arm. */
-            if (le_handoff_newer_waits(e, qt)) {
-              le_handoff_disarm(e, qt);
-            } else {
-              le_handoff_record_request(e, qt, frame);
-            }
+          if (le_band_section(e, qt) && le_handoff_convert_arm(e, qt, frame)) {
             continue;
           }
           pt->pending_record = 0;
@@ -7962,14 +7980,8 @@ static inline int process_input_frame(le_engine* e, const float* in,
       /* Song and Band keep one section (#1323): a Sound start armed while
        * no other section sounded, with one sounding now, waits for its end
        * instead of recording beside it. */
-      if (le_handoff_section(e, qt) && le_handoff_target_ok(t, 1) &&
-          le_handoff_source(e, qt) >= 0) {
-        /* A request pressed since then wins over this older arm. */
-        if (le_handoff_newer_waits(e, qt)) {
-          le_handoff_disarm(e, qt);
-        } else {
-          le_handoff_record_request(e, qt, perf_frame_base + f);
-        }
+      if (le_handoff_section(e, qt) &&
+          le_handoff_convert_arm(e, qt, perf_frame_base + f)) {
         continue;
       }
       t->pending_record = 0;
