@@ -97,7 +97,8 @@ static const uint8_t PILL_PEAK = 191;
 static const uint8_t PILL_WEIGHTS[PILL_PIXELS] = {38, 92, 201, 255, 255, 201, 92, 38};
 // A waiting Song or Band section (#1323) fills at one level, with no centre
 // curve: the mean of the diffused levels {28, 69, 151, 191, 191, 151, 69, 28}
-// (878 / 8), so the full pill carries the light of the section it becomes.
+// (878 / 8), so a fully filled queued pill has the same total brightness as
+// the diffused curve.
 static const uint8_t PILL_QUEUE_LEVEL = 110;
 // When a pill leaves the queue and stays lit, it blends from its last fill
 // to the diffused curve over this long.
@@ -699,8 +700,9 @@ static bool renderIndicators() {
       lit = true;
       queued = g_frame.queued_button == button + 1;
     }
-    // The queue is the app's word for it; the board only notices the pill
-    // leaving it (the section started, or the request was dropped).
+    // The app decides the queue. The board only records when a pill stops
+    // being queued (the section started, the request was dropped, or the
+    // pill now shows another track) and blends it from there.
     if (queued) {
       g_pillWasQueued[group] = true;
       g_pillSettling[group] = false;
