@@ -167,7 +167,9 @@ class UpdateCubit extends Cubit<UpdateState> {
   /// download is staged, fails, or is cancelled.
   Future<void> startDownload() {
     final manifest = state.available;
-    if (manifest == null || _download != null) return Future.value();
+    if (manifest == null || _download != null || state.usbInstalling) {
+      return Future.value();
+    }
     emit(
       state.copyWith(
         phase: UpdatePhase.downloading,
@@ -229,6 +231,13 @@ class UpdateCubit extends Cubit<UpdateState> {
     final done = _downloadDone;
     _downloadDone = null;
     if (done != null && !done.isCompleted) done.complete();
+  }
+
+  /// Whether a package from a USB drive is being copied or installed
+  /// (#1270 Part 8); the online flow holds off meanwhile.
+  void setUsbInstalling({required bool working}) {
+    if (isClosed || state.usbInstalling == working) return;
+    emit(state.copyWith(usbInstalling: working));
   }
 
   /// A package installed from a USB drive (#1270 Part 8) lands in Ready to

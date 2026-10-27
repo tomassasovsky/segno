@@ -152,6 +152,28 @@ out=$(ctl install-file 2>"$work/stderr"); rc=$?
 check "no path at all exits 4" 4 "$rc"
 teardown
 
+echo "a missing staging directory refuses every path and deletes nothing"
+setup
+printf 'bundle-bytes\n' > "$work/usb/segno-0.7.0.raucb"
+rm -rf "$work/staging"
+out=$(ctl install-file "$work/usb/segno-0.7.0.raucb" 2>"$work/stderr"); rc=$?
+check "exits 4" 4 "$rc"
+check "says outside-staging" '{"error":"outside-staging"}' "$(echo "$out" | grep '^{')"
+nothing_written
+check "leaves the file alone" yes "$(exists "$work/usb/segno-0.7.0.raucb")"
+teardown
+
+echo "a version with a quote still prints valid JSON"
+setup
+echo "9.9.9" > "$work/state/build-version"
+cat > "$work/info.json" <<'JSON'
+{"compatible":"segno-rpi5","version":"1.0.0-a\"b.1"}
+JSON
+out=$(ctl install-file "$work/staging/segno-0.7.0.raucb" 2>"$work/stderr"); rc=$?
+check "exits 4" 4 "$rc"
+check "the line parses" '1.0.0-a"b.1' "$(echo "$out" | grep '^{' | jq -r .version)"
+teardown
+
 echo "a read-only /boot exits 3 before anything is checked"
 setup
 printf '/dev/mmcblk0p1 /boot vfat ro,relatime 0 0\n' > "$work/mounts"

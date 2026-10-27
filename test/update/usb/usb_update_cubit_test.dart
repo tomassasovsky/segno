@@ -19,6 +19,8 @@ void main() {
   late _MockUpdates updates;
   late StreamController<List<RemovableVolume>> volumes;
   late bool takeRunning;
+  late bool onlineBusy;
+  late List<bool> workingLog;
   late int staged;
 
   RemovableVolume volume({
@@ -48,6 +50,8 @@ void main() {
     updates = _MockUpdates();
     volumes = StreamController<List<RemovableVolume>>.broadcast();
     takeRunning = false;
+    onlineBusy = false;
+    workingLog = [];
     staged = 0;
     when(() => storage.volumes).thenAnswer((_) => volumes.stream);
     when(() => storage.current).thenReturn(const []);
@@ -70,6 +74,8 @@ void main() {
       storage: storage,
       updates: updates,
       takeRunning: () => takeRunning,
+      onlineBusy: () => onlineBusy,
+      onWorking: ({required working}) => workingLog.add(working),
       onStaged: () => staged++,
     );
     addTearDown(cubit.close);
@@ -169,6 +175,90 @@ void main() {
       await pumpEventQueue();
       expect(cubit.state.phase, UsbUpdatePhase.closed);
       expect(staged, 1);
+    });
+
+    test('a second press during the run starts nothing, and the online '
+        'flow hears the run start and end', () async {
+      final cubit = await ready();
+      final copy = Completer<String>();
+      when(
+        () => storage.copyUpdatePackage(
+          generation: any(named: 'generation'),
+          sourcePath: any(named: 'sourcePath'),
+          stagingDirectory: any(named: 'stagingDirectory'),
+          cancelled: any(named: 'cancelled'),
+        ),
+      ).thenAnswer((_) => copy.future);
+      when(() => updates.installPackage(any())).thenAnswer(
+        (_) => Stream.fromIterable(const [1.0]),
+      );
+      cubit
+        ..choose(package)
+        ..choose(package);
+      await pumpEventQueue();
+      copy.complete('${root.path}/staging/segno-1.1.0.raucb');
+      await pumpEventQueue();
+      verify(
+        () => storage.copyUpdatePackage(
+          generation: any(named: 'generation'),
+          sourcePath: any(named: 'sourcePath'),
+          stagingDirectory: any(named: 'stagingDirectory'),
+          cancelled: any(named: 'cancelled'),
+        ),
+      ).called(1);
+      expect(workingLog, [true, false]);
+      expect(staged, 1);
+    });
+
+    test('a page closed during the install still reports it staged', () async {
+      final cubit = await ready();
+      copies();
+      final install = StreamController<double>();
+      when(() => updates.installPackage(any())).thenAnswer(
+        (_) => install.stream,
+      );
+      cubit.choose(package);
+      await pumpEventQueue();
+      await cubit.close();
+      await install.close();
+      await pumpEventQueue();
+      expect(staged, 1);
+    });
+
+    test('an online download in flight refuses it', () async {
+      final cubit = await ready();
+      onlineBusy = true;
+      cubit.choose(package);
+      await pumpEventQueue();
+      expect(cubit.state.error, UsbUpdateError.busy);
+      expect(cubit.state.busyKind, 'transfer');
+    });
+
+    test('an unexpected copy failure says so rather than hanging', () async {
+      final cubit = await ready();
+      when(
+        () => storage.copyUpdatePackage(
+          generation: any(named: 'generation'),
+          sourcePath: any(named: 'sourcePath'),
+          stagingDirectory: any(named: 'stagingDirectory'),
+          cancelled: any(named: 'cancelled'),
+        ),
+      ).thenThrow(const FileSystemException('mkdir'));
+      cubit.choose(package);
+      await pumpEventQueue();
+      expect(cubit.state.phase, UsbUpdatePhase.failed);
+      expect(cubit.state.error, UsbUpdateError.failed);
+    });
+
+    test('a read-only /boot says so', () async {
+      final cubit = await ready();
+      copies();
+      when(() => updates.installPackage(any())).thenAnswer(
+        (_) => Stream.error(const BootPartitionReadOnlyException('ro')),
+      );
+      cubit.choose(package);
+      await pumpEventQueue();
+      expect(cubit.state.error, UsbUpdateError.bootReadOnly);
     });
 
     test('a take refuses it before anything is copied', () async {
@@ -284,6 +374,7 @@ void main() {
       expect(cubit.state.phase, UsbUpdatePhase.copying);
       cubit.cancel();
       expect(cancelled?.call(), isTrue);
+      when(() => storage.current).thenReturn([volume()]);
       copy.completeError(const StorageFailure.io('cancelled'));
       await pumpEventQueue();
       expect(cubit.state.phase, UsbUpdatePhase.list);

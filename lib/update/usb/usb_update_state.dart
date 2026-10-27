@@ -41,8 +41,12 @@ enum UsbUpdateError {
   /// Internal has no room for it.
   noSpace,
 
-  /// Something that must not overlap a copy is in flight (a take).
+  /// Something that must not overlap a copy is in flight (a take, an
+  /// online update).
   busy,
+
+  /// The boot partition is read-only; a restart repairs it.
+  bootReadOnly,
 
   /// Anything else.
   failed,

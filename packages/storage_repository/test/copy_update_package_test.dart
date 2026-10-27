@@ -69,6 +69,45 @@ void main() {
     expect(repo.leases, isEmpty);
   });
 
+  test('a read-only drive keeps serving when another drive comes and '
+      'goes', () async {
+    repo = h.build(
+      initial: [h.record(1, status: RemovableVolumeRecordStatus.readOnly)],
+      copyBytes: (from, part, shouldAbort) async {
+        h.client.attach(h.record(2));
+        await pumpEventQueue();
+        if (shouldAbort()) throw const FileSystemException('aborted');
+        await part.writeAsBytes(await from.readAsBytes(), flush: true);
+      },
+    );
+    await pumpEventQueue();
+    final source = package(1);
+
+    final written = await repo.copyUpdatePackage(
+      generation: 1,
+      sourcePath: source.path,
+      stagingDirectory: staging(),
+    );
+    expect(File(written).existsSync(), isTrue);
+  });
+
+  test('a staging path that cannot be made is a typed failure', () async {
+    repo = h.build(initial: [h.record(1)]);
+    await pumpEventQueue();
+    File(staging()).writeAsStringSync('in the way');
+    final source = package(1);
+
+    await expectLater(
+      repo.copyUpdatePackage(
+        generation: 1,
+        sourcePath: source.path,
+        stagingDirectory: '${staging()}/inside',
+      ),
+      throwsA(isA<StorageFailure>()),
+    );
+    expect(repo.leases, isEmpty);
+  });
+
   test('a drive pulled mid-copy is volumeLost and leaves no part', () async {
     repo = h.build(
       initial: [h.record(1)],

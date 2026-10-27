@@ -82,7 +82,8 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
     final version = state.currentVersion;
     final busy =
         state.phase == UpdatePhase.checking ||
-        state.phase == UpdatePhase.downloading;
+        state.phase == UpdatePhase.downloading ||
+        state.usbInstalling;
     // The check is the state's action whenever the panel has none of its own.
     final checkIsNext = switch (state.phase) {
       UpdatePhase.idle || UpdatePhase.upToDate || UpdatePhase.checking => true,
@@ -156,7 +157,20 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
           ),
           const SizedBox(height: 24),
         ],
-        _StatusPanel(state: state, cubit: cubit, next: _next),
+        // One helper at a time: while a USB package is copied or installed,
+        // the online flow's actions (and its restart) hold off.
+        IgnorePointer(
+          ignoring: state.usbInstalling,
+          child: ExcludeFocus(
+            excluding: state.usbInstalling,
+            child: Opacity(
+              opacity: state.usbInstalling
+                  ? context.surface.disabledOpacity
+                  : 1,
+              child: _StatusPanel(state: state, cubit: cubit, next: _next),
+            ),
+          ),
+        ),
       ],
     );
 
@@ -243,6 +257,8 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
         storage: context.read<StorageRepository>(),
         updates: context.read<UpdateRepository>(),
         takeRunning: () => _takeRunning(context.read<LooperRepository>()),
+        onlineBusy: () => cubit.state.phase == UpdatePhase.downloading,
+        onWorking: cubit.setUsbInstalling,
         onStaged: cubit.showStaged,
       ),
       child: BlocListener<UpdateCubit, UpdateState>(

@@ -64,6 +64,7 @@ class UpdateState extends Equatable {
     this.failure,
     this.interrupted,
     this.rollback,
+    this.usbInstalling = false,
   });
 
   /// The current phase of the flow.
@@ -106,6 +107,10 @@ class UpdateState extends Equatable {
   /// `restored`; shown until dismissed, whatever the phase.
   final ({Version attempted, Version restored})? rollback;
 
+  /// Whether a package from a USB drive is being copied or installed: the
+  /// online flow holds off meanwhile, one helper at a time.
+  final bool usbInstalling;
+
   /// Whether a newer build is currently on offer (available or staged).
   bool get hasUpdate => available != null;
 
@@ -135,6 +140,7 @@ class UpdateState extends Equatable {
     bool clearInterrupted = false,
     ({Version attempted, Version restored})? rollback,
     bool clearRollback = false,
+    bool? usbInstalling,
   }) {
     return UpdateState(
       phase: phase ?? this.phase,
@@ -149,6 +155,7 @@ class UpdateState extends Equatable {
       failure: clearError ? null : (failure ?? this.failure),
       interrupted: clearInterrupted ? null : (interrupted ?? this.interrupted),
       rollback: clearRollback ? null : (rollback ?? this.rollback),
+      usbInstalling: usbInstalling ?? this.usbInstalling,
     );
   }
 
@@ -166,5 +173,6 @@ class UpdateState extends Equatable {
     failure,
     interrupted,
     rollback,
+    usbInstalling,
   ];
 }
