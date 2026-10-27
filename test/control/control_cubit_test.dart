@@ -191,6 +191,7 @@ void main() {
       int masterPositionFrames = 0,
       LooperMode looperMode = LooperMode.multi,
       int songQueuedTrack = -1,
+      bool songQueueRecord = false,
       int primaryTrack = -1,
     }) {
       final state = _stateWith(
@@ -198,6 +199,7 @@ void main() {
         masterPositionFrames: masterPositionFrames,
         looperMode: looperMode,
         songQueuedTrack: songQueuedTrack,
+        songQueueRecord: songQueueRecord,
         primaryTrack: primaryTrack,
       );
       when(() => looper.state).thenReturn(state);
@@ -3022,6 +3024,48 @@ void main() {
           ),
         );
         verifyNever(() => looper.play(channel: 1));
+      });
+
+      test("Band's Mute mode cancels the waiting section with a press, and "
+          'enters with one section in the resume set', () {
+        final band = _tracksWith(const [
+          Track(state: TrackState.playing, lengthFrames: 48000),
+          Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+          Track(channel: 2),
+          Track(channel: 3, state: TrackState.stopped, lengthFrames: 48000),
+        ]);
+        setEngine(
+          band,
+          looperMode: LooperMode.band,
+          primaryTrack: 0,
+          songQueuedTrack: 2,
+          songQueueRecord: true,
+        );
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..trackPressed(2); // an empty section waiting to record
+        verify(() => looper.cancelArm(channel: 2)).called(1);
+        expect(cubit.state.parkedResume, isNot(contains(3)));
+        expect(cubit.state.parkedResume, containsAll(<int>[0, 1]));
+      });
+
+      test("Band's Stop stops the section waiting to start", () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 2, state: TrackState.stopped, lengthFrames: 48000),
+          ]),
+          looperMode: LooperMode.band,
+          primaryTrack: 0,
+          songQueuedTrack: 2,
+        );
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..stop();
+        verify(() => looper.stopTrack()).called(1);
+        verify(() => looper.stopTrack(channel: 1)).called(1);
+        verify(() => looper.stopTrack(channel: 2)).called(1);
       });
 
       test('parked Band keeps one section in the resume set', () {

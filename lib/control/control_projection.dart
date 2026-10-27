@@ -41,10 +41,7 @@ bool isParked(LooperState looper) {
 /// Whether [track] is actually sounding in the mix: unmuted recorded content
 /// with a running playhead.
 bool isSounding(Track track) =>
-    track.hasContent &&
-    !track.muted &&
-    (track.state == TrackState.playing ||
-        track.state == TrackState.overdubbing);
+    track.hasContent && !track.muted && track.isRunning;
 
 /// The mute-mode armed set, DERIVED on every read:
 /// `parked ? parkedResume : sounding ∖ excluded`. A redo, an on-screen play,

@@ -1257,9 +1257,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// mute-ignored — what a park must freeze, and what it resumes.
   Set<int> _running([List<Track>? tracks]) => {
     for (final t in tracks ?? _tracks)
-      if (t.hasContent &&
-          (t.state == TrackState.playing || t.state == TrackState.overdubbing))
-        t.channel,
+      if (t.hasContent && t.isRunning) t.channel,
   };
 
   /// Restores the pedal setup, the global bindings and the undo long-press
@@ -1601,10 +1599,11 @@ class ControlCubit extends Cubit<ControlState> {
                 ? (isParked(_l) && state.parkedResume.isNotEmpty
                       ? state.parkedResume
                       : _running())
-                : {
+                // Band resumes its primary plus one section (#1323).
+                : _oneSection({
                     for (final track in _tracks)
                       if (_playable(track)) track.channel,
-                  },
+                  }),
           ),
         );
       case InteractionMode.reverse:
@@ -1995,7 +1994,10 @@ class ControlCubit extends Cubit<ControlState> {
   bool _parkAllAccepted() {
     if (!_looper.cancelCountIn().isOk) return false;
     final running = _running();
-    if (_l.transport.looperMode == LooperMode.song) return _parkSong(running);
+    final mode = _l.transport.looperMode;
+    if (mode == LooperMode.song || mode == LooperMode.band) {
+      return _parkSong(running);
+    }
     if (running.isEmpty) return true; // Keep the parked resume set.
     emit(
       state.copyWith(
@@ -2009,11 +2011,12 @@ class ControlCubit extends Cubit<ControlState> {
     return accepted;
   }
 
-  /// Song's Stop. A section can start between polls (a handoff at a lap
-  /// edge, or a Play from a stopped rig), so the polled [running] set may
-  /// miss the one playing now. Read the engine live: stop what plays there
-  /// and here, and the section still waiting, so a handoff that lands before
-  /// the stops apply is stopped too. Latch what plays now for Rec/Play.
+  /// Song's and Band's Stop (#1077, #1323). A section can start between
+  /// polls (a handoff at a lap edge or a primary top, or a Play from a
+  /// stopped rig), so the polled [running] set may miss the one playing now.
+  /// Read the engine live: stop what plays there and here, and the section
+  /// still waiting, so a handoff that lands before the stops apply is
+  /// stopped too. Latch what plays now for Rec/Play.
   bool _parkSong(Set<int> running) {
     final live = _looper.state;
     final playingNow = _running(live.tracks);
@@ -2024,7 +2027,8 @@ class ControlCubit extends Cubit<ControlState> {
       if (waiting >= 0) waiting,
     };
     if (stopping.isEmpty) return true; // Keep the parked resume set.
-    final latch = playingNow.isEmpty ? running : playingNow;
+    final latch = {...(playingNow.isEmpty ? running : playingNow)}
+      ..removeWhere(state.excluded.contains);
     if (latch.isNotEmpty) emit(state.copyWith(parkedResume: latch));
     var accepted = false;
     for (final channel in stopping) {
@@ -2155,6 +2159,13 @@ class ControlCubit extends Cubit<ControlState> {
   /// resume set (Rec/Play then brings back ALL content) — and a track out of
   /// the mix joins it (un-exclude, unmute, play).
   void _muteTrackPressed(int channel) {
+    // Band: a press on the section waiting to follow the sounding one
+    // cancels its request, a waiting Record on an empty section included
+    // (#1323).
+    if (_l.isSection(channel) && _l.songWaitingSection == channel) {
+      _looper.cancelArm(channel: channel);
+      return;
+    }
     final track = _trackAt(channel);
     if (!_playable(track)) return;
     final t = track!;
@@ -2188,6 +2199,8 @@ class ControlCubit extends Cubit<ControlState> {
         emit(state.copyWith(parkedResume: const <int>{}));
       }
     } else {
+      // A Band section the engine would refuse keeps its mute (#1323).
+      if (_l.isSection(channel) && _captureBesideSource(channel)) return;
       if (!_setTrackMute(muted: false, channel: channel).isOk) return;
       // Joining is the explicit un-exclude.
       if (state.excluded.contains(channel)) {
