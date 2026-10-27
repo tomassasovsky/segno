@@ -3364,8 +3364,9 @@ static void le_handoff_record_now(le_engine* e, int32_t ch, uint64_t frame) {
 /* LE_CMD_ARM trigger 3: a Record waiting for the handoff (le_engine_record
  * prepared it). The target may have moved since the press; with nothing
  * sounding any more it records at once, except a Band section on a running
- * rig: its take or punch-in waits for the primary's top, on the grid Band
- * starts every section on. */
+ * rig: it becomes a grid arm, as le_engine_record arms a Band section with
+ * no other sounding (a first take on the primary's top, a punch-in on the
+ * quantize grid). */
 static void le_handoff_record_request(le_engine* e, int32_t ch,
                                       uint64_t frame) {
   le_track* t = &e->tracks[ch];
@@ -7148,7 +7149,12 @@ static inline void advance_transport_frame(le_engine* e, int tc,
            * top, becomes a Record waiting for that section's end. */
           if (le_band_section(e, qt) && le_handoff_target_ok(pt, 1) &&
               le_handoff_source(e, qt) >= 0) {
-            le_handoff_record_request(e, qt, frame);
+            /* A request pressed since then wins over this older arm. */
+            if (e->song_target >= 0 && e->song_target != qt) {
+              le_handoff_disarm(e, qt);
+            } else {
+              le_handoff_record_request(e, qt, frame);
+            }
             continue;
           }
           pt->pending_record = 0;
@@ -7954,7 +7960,12 @@ static inline int process_input_frame(le_engine* e, const float* in,
        * instead of recording beside it. */
       if (le_handoff_section(e, qt) && le_handoff_target_ok(t, 1) &&
           le_handoff_source(e, qt) >= 0) {
-        le_handoff_record_request(e, qt, perf_frame_base + f);
+        /* A request pressed since then wins over this older arm. */
+        if (e->song_target >= 0 && e->song_target != qt) {
+          le_handoff_disarm(e, qt);
+        } else {
+          le_handoff_record_request(e, qt, perf_frame_base + f);
+        }
         continue;
       }
       t->pending_record = 0;

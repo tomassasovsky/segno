@@ -1905,7 +1905,8 @@ typedef struct le_snapshot {
    * and is never saved with a session. */
   int32_t song_last_section;
   /* Trailing (#1323): 1 when the waiting request is a Record (a new take,
-   * or an overdub from the section's top), 0 for a Play or with none. It,
+   * or an overdub: from the section's top in Song, in phase with the
+   * primary in Band), 0 for a Play or with none. It,
    * the track and the progress are decoded from ONE atomic word, so they
    * always describe the same request. */
   int32_t song_queue_record;
@@ -2345,7 +2346,8 @@ LE_EXPORT int32_t le_engine_stop_track(le_engine* engine, int32_t channel);
  * le_engine_record follows the same rule for an empty or stopped Song
  * section (or Band section) while another section sounds: the Record waits
  * as a deferred arm (pending_trigger 3) and starts the take, or an overdub
- * from the section's top, at the handoff. A second Record on it cancels;
+ * (from the section's top in Song, in phase with the primary in Band), at
+ * the handoff. A second Record on it cancels;
  * a Record on a section waiting to play turns that request into a Record.
  * Overdub and finish on the sounding section stay immediate. */
 LE_EXPORT int32_t le_engine_play(le_engine* engine, int32_t channel);

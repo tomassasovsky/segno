@@ -2275,8 +2275,8 @@ class EngineSnapshot {
   final double songQueueProgress;
 
   /// Whether the waiting request is a Record (#1323): a new take on an empty
-  /// section, or an overdub from the top of a stopped one. `false` for a
-  /// Play, or with none.
+  /// section, or an overdub on a stopped one (from its top in Song, in
+  /// phase with the primary in Band). `false` for a Play, or with none.
   final bool songQueueRecord;
 
   /// The Song section that sounded most recently (#1077), or `-1`. It
