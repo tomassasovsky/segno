@@ -467,6 +467,13 @@ void main() {
       final muted = projectFrame(song(mode: LooperMode.band), mute);
       expect(muted.queuedButton, PedalButton.track2);
       expect(muted.trackLeds[1], PedalTrackLed.green);
+      // In the Record map's colours, as in Record mode.
+      expect(muted.colorFor(PedalButton.track2), ledGreen);
+      final mutedRecord = projectFrame(
+        song(mode: LooperMode.band, record: true),
+        mute,
+      );
+      expect(mutedRecord.colorFor(PedalButton.track2), ledRed);
     });
 
     test('the fill never reaches a full pill', () {

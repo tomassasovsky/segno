@@ -108,9 +108,7 @@ int? _queuedSong(ControlContext c) {
       c.overlay.mode == InteractionMode.record ||
       (c.overlay.mode == InteractionMode.mute &&
           c.looper.transport.looperMode == LooperMode.band);
-  if (!shown ||
-      queued == null ||
-      queued >= PedalStateFrame.trackCount) {
+  if (!shown || queued == null || queued >= PedalStateFrame.trackCount) {
     return null;
   }
   return queued;
@@ -337,7 +335,9 @@ final List<ControlInvariant> controlInvariants = [
         !_parked(c.looper)) {
       return null;
     }
+    final queued = _queuedSong(c);
     for (var ch = 0; ch < c.frame.trackLeds.length; ch++) {
+      if (ch == queued) continue; // lit to say it is waiting (Band)
       final t = _trackAt(c.looper, ch);
       final wantGreen =
           c.overlay.parkedResume.contains(ch) && !(t?.muted ?? false);
