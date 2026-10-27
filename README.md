@@ -57,7 +57,8 @@ design file in [segno-design](https://github.com/tomassasovsky/segno-design).
 |---|---|
 | ![Library with saved sessions and a waveform preview](docs/images/library_current.png) | ![Loop mode picker with Multi, Sync, Song, Band and Free](docs/images/loop_settings_mode.png) |
 
-The screenshots are captures from the application's own UI tests.
+The screenshots are captures from the application's own screenshot tests,
+copied from the `screenshots` artifact of a CI run.
 
 ## Hardware
 
