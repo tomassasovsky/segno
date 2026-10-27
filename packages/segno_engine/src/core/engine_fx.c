@@ -284,6 +284,7 @@ static int le_oct_seeded_ticks(const le_fx_state* fx, int slot) {
 
 static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
                                 int ticks);
+static void le_low_reset_runtime(le_oct_low* L);
 
 /* Puts channel [chan] of octaver slot [slot] on [mode] with its runtime
  * reset, keeping its hop schedule: the new mode's heavy tick lands where the
@@ -327,6 +328,11 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   o->frame_ratio2 = 1.0f;
   o->frame_level1 = 1.0f;
   o->frame_level2 = 0.0f;
+  o->frame_low_w = 0.0f;
+  o->frame_low_g = 1.0f;
+  o->frame_low_kc = 1.0f;
+  le_oct_low* low = atomic_load_explicit(&o->low, memory_order_acquire);
+  if (low != NULL) le_low_reset_runtime(low);
   o->tune_c = 0.0f;
   o->tune_at[0] = -1.0f;
   o->tune_at[1] = -1.0f;
@@ -447,6 +453,15 @@ static void le_pv_stage_envelope(le_octaver_state* o) {
  * keeps the shipped octaver's behaviour). */
 static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
                              float* re, float* im, int drop_dc) {
+  /* The Dual Octaver's low band (#1467) plays this share of each region
+   * below the crossover: the band's weight times what it passes at the
+   * region's peak, its boost over the crossover's low-pass there
+   * (1 / (1 + (f / fc)^4), the Linkwitz-Riley pair), at most all of it, so
+   * the two bands sum to the whole voice. None from 5 fc up (under -45 dB)
+   * or with no band, which leaves the vocoder as it was. */
+  const float low_w = o->frame_low_w;
+  const float low_g = o->frame_low_g;
+  const float kc = o->frame_low_kc;
   const float* mag = LE_PV_S_MAG(o);
   const float* freq = LE_PV_S_FREQ(o);
   const float* env = LE_PV_S_ENV(o);
@@ -491,17 +506,26 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
       continue;
     }
     const int shift = to - peak;
+    float keep = 1.0f;
+    if (low_w > 0.0f) {
+      const float f = freq[peak] / kc;
+      if (f < 5.0f) {
+        float pass = low_g / (1.0f + f * f * f * f);
+        if (pass > 1.0f) pass = 1.0f;
+        keep = 1.0f - low_w * pass;
+      }
+    }
     /* The peak's phase at its new bin: last frame's there, advanced by the
      * shifted frequency. */
     const float peak_phase = sum_phase[to] + advance * freq[peak] * ratio;
     for (int k = start; k < end; ++k) {
       const int j = k + shift;
       if (j < 0 || j >= LE_PV_BINS) continue;
-      syn_mag[j] += o->frame_formants_move
-                        ? mag[k]
-                        : mag[k] / (env[k] + 1e-9f) * env[j];
-      if (mag[k] > syn_best[j]) {
-        syn_best[j] = mag[k];
+      const float m = keep * mag[k]; /* mag[k] exactly, kept whole */
+      syn_mag[j] += o->frame_formants_move ? m
+                                           : m / (env[k] + 1e-9f) * env[j];
+      if (m > syn_best[j]) {
+        syn_best[j] = m;
         syn_phase[j] =
             le_wrap_pi(peak_phase + (in_phase[k] - in_phase[peak]));
       }
@@ -586,7 +610,8 @@ static void le_pv_stage_synth(le_octaver_state* o) {
  * skipped (o->analysed), so a reset never synthesises a stale frame. */
 static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int cap,
                         float ratio, int formants_move, float ratio2,
-                        float level1, float level2) {
+                        float level1, float level2, float low_w,
+                        float low_g, float low_kc) {
   if (o->out == NULL || o->scratch == NULL) return 0.0f;
   switch (o->hop_count) {
     case 0:
@@ -595,6 +620,9 @@ static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int ca
       o->frame_formants_move = formants_move;
       o->frame_ratio2 = ratio2;
       o->frame_level1 = level1;
+      o->frame_low_w = low_w;
+      o->frame_low_g = low_g;
+      o->frame_low_kc = low_kc;
       {
         /* A second voice (the Dual Octaver's Octave 2, #1464) takes the
          * envelope's quarter, so only with the formants moving; coming
@@ -1090,6 +1118,326 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
   return wv * y + (1.0f - wv) * dry;
 }
 
+/* ---- The Dual Octaver's low band (#1467; engine_fx.h) ----------------------
+ *
+ * Per channel: le_low_write low-passes every input sample into the band's
+ * ring and its decimated detection ring, le_low_follow tracks its pitch
+ * and weight, le_low_play plays the two down voices from the ring.
+ *
+ * Why resampled taps and not the octaver's PSOLA grains: below the
+ * crossover a note is nearly one sinusoid, and a grain laid without
+ * resampling keeps its waveform's frequency, so the octaver's PSOLA drops a
+ * 110 Hz sine an octave as 110 Hz at 0 dB and 55 Hz at -6 dB. A tap read
+ * at half speed plays 55 Hz alone, as the Looper X does (55 Hz at 0.0 dB,
+ * 110 Hz at -72 dB in the s7oct capture). */
+
+/* The band's ring length at [sr]: the deepest tap (the centre plus two of
+ * the longest period) to a power of two. */
+static int32_t le_low_ring_len(int sr) {
+  const int need = LE_PV_LATENCY + 2 * (sr / LE_OCT_LOW_MIN_HZ) + 8;
+  int32_t n = 1024;
+  while (n < need) n <<= 1;
+  return n;
+}
+
+/* The voices' runtime back to a reset's, as the vocoder's is on a reset or
+ * a High Mode switch: silent for the frames the vocoder has not analysed
+ * yet, each tap centred. The detection keeps what it heard (it runs in
+ * either mode), so a note held across the switch is handed over at once. */
+static void le_low_reset_runtime(le_oct_low* L) {
+  L->level1 = 0.0f;
+  L->level2 = 0.0f;
+  for (int k = 0; k < 4; ++k) L->hold[k] = 0.0f;
+  L->hold_at = 0;
+  for (int k = 0; k < 2; ++k) {
+    L->v[k].d = L->centre;
+    L->v[k].d_old = L->centre;
+    L->v[k].fade = 0;
+    L->v[k].fade_len = 1;
+  }
+}
+
+/* The detection back to a reset's: no pitch heard, the band silent (the
+ * vocoder plays all of it), and nothing in its crossover, window or power
+ * followers, so it hears only what comes in from now. The ring keeps its
+ * audio: a new note takes a detection window and the hand-over's delay to
+ * reach the voices, by which time the taps read only new input. */
+static void le_low_forget(le_oct_low* L) {
+  memset(L->z, 0, sizeof(L->z));
+  memset(L->dring, 0, sizeof(L->dring));
+  L->dn = 0;
+  L->dacc = 0.0f;
+  L->dhead = 0;
+  L->e_in = 0.0f;
+  L->e_low = 0.0f;
+  L->hops = 0;
+  L->busy = 0;
+  L->credit = 0;
+  L->period = 0.0f;
+  L->f0 = 0.0f;
+  L->voiced = 0.0f;
+  L->gate = 0.0f;
+  L->boost = 1.0f;
+  L->ramp = 0.0f;
+}
+
+/* le_low_reset_runtime and le_low_forget, and the crossover and both rings
+ * cleared. */
+static void le_low_clear(le_oct_low* L) {
+  le_low_forget(L);
+  memset(L->ring, 0, sizeof(float) * (size_t)(L->mask + 1));
+  L->head = 0;
+  le_low_reset_runtime(L);
+}
+
+/* Sets up a zeroed band for [sr] (control thread, before the slot is
+ * published): the crossover's coefficients (the bilinear 2nd-order
+ * Butterworth), the centre (each section delays low frequencies by
+ * sqrt(2) / (2 K) samples), the hand-over bin, and the detection's
+ * decimation and cadence (a pass about every 5 ms). */
+static void le_low_init(le_oct_low* L, int sr, int32_t len) {
+  const double k = le_prewarp(LE_OCT_LOW_HZ, sr);
+  const double r2 = 1.4142135623730951;
+  const double n = 1.0 / (1.0 + r2 * k + k * k);
+  L->lp[0] = (float)(k * k * n);
+  L->lp[1] = 2.0f * L->lp[0];
+  L->lp[2] = L->lp[0];
+  L->lp[3] = (float)(2.0 * (k * k - 1.0) * n);
+  L->lp[4] = (float)((1.0 - r2 * k + k * k) * n);
+  L->centre = (float)((double)LE_PV_LATENCY - r2 / k);
+  L->kc = (float)(LE_OCT_LOW_HZ * (double)LE_PV_N / (double)sr);
+  L->sr = sr;
+  L->ring = (float*)(void*)(L + 1);
+  L->mask = len - 1;
+  L->decim = (sr + LE_OCT_LOW_RATE / 2) / LE_OCT_LOW_RATE;
+  if (L->decim < 1) L->decim = 1;
+  L->every = sr / 48000 < 1 ? 1 : sr / 48000;
+  L->work = 0;
+  L->ek = 20.0f / (float)sr; /* 50 ms */
+  L->k10 = 100.0f / (float)sr;
+  L->k5 = 200.0f / (float)sr;
+  L->per_min = (float)sr / (float)LE_OCT_LOW_MAX_HZ;
+  L->per_max = (float)sr / (float)LE_OCT_LOW_MIN_HZ;
+  le_low_clear(L);
+}
+
+/* Writes input sample [x] through the crossover into the ring, and the
+ * decimator, and follows the input's and the band's power. */
+static void le_low_write(le_oct_low* L, float x) {
+  L->e_in += (x * x - L->e_in) * L->ek;
+  const float y = le_biquad_tick(L->lp, L->z[1],
+                                 le_biquad_tick(L->lp, L->z[0], x));
+  L->e_low += (y * y - L->e_low) * L->ek;
+  L->head = (L->head + 1) & L->mask;
+  L->ring[L->head] = y;
+  L->dacc += y;
+  if (++L->dn >= L->decim) {
+    L->dring[L->dhead] = L->dacc / (float)L->decim;
+    if (++L->dhead >= LE_OCT_LOW_DWIN) L->dhead = 0;
+    L->dacc = 0.0f;
+    L->dn = 0;
+  }
+}
+
+/* The band [d] samples behind its head, linearly interpolated (d >= 1). */
+static float le_low_read(const le_oct_low* L, float d) {
+  const float rp = (float)L->head - d;
+  const float fl = floorf(rp);
+  const int32_t i = (int32_t)fl;
+  const float a = L->ring[i & L->mask];
+  return a + (rp - fl) * (L->ring[(i + 1) & L->mask] - a);
+}
+
+/* A finished detection. Only a confident one counts as voiced, and it
+ * sets the period, so the band never plays at a weight whose pitch it has
+ * not got. The period steps to a new note rather than gliding there (a tap
+ * jumping by a period between two notes' would not land on a repeat of the
+ * waveform). */
+static void le_low_apply(le_oct_low* L, int sr, float period, float conf) {
+  const int sure = period > 0.0f && conf >= 0.5f;
+  L->voiced += 0.35f * ((sure ? conf : 0.0f) - L->voiced);
+  if (!sure) return;
+  if (L->period <= 0.0f || fabsf(period - L->period) > 0.03f * L->period) {
+    L->period = period;
+  } else {
+    L->period += 0.5f * (period - L->period);
+  }
+  if (L->period < L->per_min) L->period = L->per_min;
+  if (L->period > L->per_max) L->period = L->per_max;
+  L->f0 = (float)sr / L->period;
+}
+
+/* One tick of detection: on every `every`-th analysis tick of the vocoder
+ * (the hop's, so the pass runs on the instance's own schedule) freeze the
+ * decimated window and start a YIN pass, then spend the tick's credit on it,
+ * as PSOLA's sliced pass does (le_psola_pass_tick). A band holding under a
+ * twentieth of the input's power carries no note of its own (a tone above
+ * the crossover leaks into it): no pitch, and no pass. */
+static void le_low_detect(le_oct_low* L, int sr, int analysis) {
+  if (analysis && ++L->hops >= L->every) {
+    L->hops = 0;
+    if (L->e_low < 0.05f * L->e_in) {
+      L->busy = 0;
+      le_low_apply(L, sr, 0.0f, 0.0f);
+      return;
+    }
+    int32_t k = L->dhead; /* the oldest decimated sample */
+    for (int i = 0; i < LE_OCT_LOW_DWIN; ++i) {
+      L->win[i] = L->dring[k];
+      if (++k == LE_OCT_LOW_DWIN) k = 0;
+    }
+    L->busy = le_yin_begin(&L->yin, L->win, LE_OCT_LOW_DWIN, sr / L->decim,
+                           LE_OCT_LOW_MIN_HZ, LE_OCT_LOW_MAX_HZ, L->dp,
+                           LE_OCT_LOW_DWIN / 2 + 1);
+    if (L->busy) {
+      /* The pass's lags spread over the ticks until the next one starts,
+       * with a quarter to spare. */
+      const int32_t ticks = L->every * LE_PV_HOP;
+      L->work = (5 * L->yin.maxlag * L->yin.integ) / (4 * ticks) + 1;
+    } else {
+      le_low_apply(L, sr, 0.0f, 0.0f); /* silence */
+    }
+  }
+  if (!L->busy) return;
+  L->credit += L->work;
+  if (L->credit > L->work) L->credit = L->work; /* no banking while idle */
+  while (L->credit > 0 && L->busy) {
+    const int32_t was = L->yin.tau;
+    const int done = le_yin_step(&L->yin, L->credit);
+    L->credit -= (L->yin.tau - was) * L->yin.integ;
+    if (done) {
+      float period = 0.0f;
+      float conf = 0.0f;
+      le_yin_finish(&L->yin, &period, &conf);
+      L->busy = 0;
+      /* A dip still falling at the longest lag is a note below the floor
+       * (a 55 Hz sine reads as 60 Hz there), and one at the shortest a note
+       * above the range read as a multiple of its period: no pitch. */
+      if (period >= (float)(L->yin.maxlag - 1) ||
+          period <= (float)(L->yin.minlag + 1)) {
+        conf = 0.0f;
+      }
+      le_low_apply(L, sr, period * (float)L->decim, conf);
+    }
+  }
+}
+
+/* One sample of a voice at [ratio] (1/2 for Octave 1, 1/4 for Octave 2):
+ * the band read through a tap whose delay grows by 1 - ratio a sample (the
+ * tap moves at the ratio, so the band plays that much lower). Once the
+ * delay reaches the top of its range the tap jumps one input period
+ * [per] nearer the head, where the waveform repeats, and fades from the
+ * old tap over a quarter of the time to the next jump. A tap running from
+ * lo to lo + per with that fade spends its time at lo + 0.625 per on
+ * average, so lo centres it on L->centre. A period too long for that
+ * starts the range at the head instead and plays up to a few ms late: none
+ * from the band's 60 Hz floor up at 96 kHz and below (the centre is 1043
+ * samples there), below 138 Hz at 192 kHz. */
+static float le_low_voice(le_oct_low* L, le_oct_low_voice* v, float ratio,
+                          float per) {
+  float y = le_low_read(L, v->d);
+  const float step = 1.0f - ratio;
+  if (v->fade > 0) {
+    const float t = (float)v->fade / (float)v->fade_len; /* 1 down to 0 */
+    const float w = t * t * (3.0f - 2.0f * t);
+    y += w * (le_low_read(L, v->d_old) - y);
+    v->d_old += step;
+    --v->fade;
+  }
+  v->d += step;
+  float lo = L->centre - 0.625f * per;
+  if (lo < 2.0f) lo = 2.0f;
+  if (v->fade == 0 && v->d >= lo + per) {
+    v->d_old = v->d;
+    v->d -= per;
+    int32_t len = (int32_t)(0.25f * per / step);
+    if (len < 1) len = 1;
+    v->fade_len = len;
+    v->fade = len;
+  }
+  if (v->d > (float)(L->mask - 2) || v->d_old > (float)(L->mask - 2)) {
+    v->d = lo; /* a period change left the tap past the ring: restart */
+    v->d_old = lo;
+    v->fade = 0;
+  }
+  return y;
+}
+
+/* The band's detection and weight for one sample, in either High Mode:
+ * the detection's tick ([analysis]: the vocoder's analysis tick), then the
+ * band's weight (the voicing), its boost and its floor's ramp, each
+ * following in 10 ms (one-pole). On the analysis tick it keeps the product
+ * for the voices, which play it once the frame analysed now is heard.
+ *
+ * The note's fundamental is handed over whole: the band is boosted by the
+ * crossover's loss at the detected pitch (1 + (f0 / fc)^4, up to 2 at the
+ * crossover), and the vocoder gives up the same share of each region
+ * (le_pv_shift_into), so a note near the crossover is not split between two
+ * voices whose phases differ. A note above the crossover is left to the
+ * vocoder, the band fading out by 1.15 fc. The voices come in over a
+ * smoothstep from LE_OCT_LOW_MIN_HZ, where the Looper X's start
+ * (engine_fx.h): their level only, as the Looper X plays no other voice
+ * there, so the vocoder still hands the note over. */
+static void le_low_follow(le_oct_low* L, int sr, int analysis) {
+  le_low_detect(L, sr, analysis);
+  const float f0 = L->f0;
+  float want = (L->voiced - 0.3f) / 0.3f; /* PSOLA's soft gate */
+  if (want < 0.0f || f0 <= 0.0f) want = 0.0f;
+  if (want > 1.0f) want = 1.0f;
+  float in = (f0 - (float)LE_OCT_LOW_MIN_HZ) /
+             (LE_OCT_LOW_FULL_HZ - (float)LE_OCT_LOW_MIN_HZ);
+  if (in < 0.0f) in = 0.0f;
+  if (in > 1.0f) in = 1.0f;
+  in *= in * (3.0f - 2.0f * in);
+  const float x = f0 / (float)LE_OCT_LOW_HZ;
+  float boost = 2.0f;
+  if (x <= 1.0f) {
+    boost = 1.0f + x * x * x * x;
+  } else {
+    want *= x >= 1.15f ? 0.0f : (1.15f - x) / 0.15f;
+  }
+  const float k = L->k10;
+  L->gate += (want - L->gate) * k;
+  if (want == 0.0f && L->gate < 1e-4f) L->gate = 0.0f;
+  L->boost += (boost - L->boost) * k;
+  L->ramp += (in - L->ramp) * k;
+  if (analysis) {
+    L->hold_at = (L->hold_at + 1) & 3;
+    L->hold[L->hold_at] = L->gate * L->boost * L->ramp;
+  }
+}
+
+/* How many samples after its analysis tick the vocoder's frame is heard:
+ * its middle (LE_PV_N / 2 before the tick) leaves the octaver
+ * LE_PV_LATENCY after it went in. */
+#define LE_OCT_LOW_HOLD (LE_PV_LATENCY - LE_PV_N / 2)
+
+/* The low band's two down voices for one sample, at [level1] (Octave 1)
+ * and [level2] (Octave 2), [ticks] after the vocoder's last analysis tick.
+ * They play the band's weight from LE_OCT_LOW_HOLD samples ago (between the
+ * two analysis ticks around then): the share the vocoder's frame playing
+ * now gave up, so the two sum to one voice while the weight moves too. A
+ * band with no weight plays nothing, and stops reading. */
+static float le_low_play(le_oct_low* L, int sr, int ticks, float level1,
+                         float level2) {
+  const float k = L->k5;
+  L->level1 += (level1 - L->level1) * k;
+  L->level2 += (level2 - L->level2) * k;
+  const float back = (float)(LE_OCT_LOW_HOLD - ticks) / (float)LE_PV_HOP;
+  const int j = (int)back; /* whole analysis ticks back: 1 or 2 */
+  const float frac = back - (float)j;
+  const float a = L->hold[(L->hold_at - j) & 3];
+  const float w = a + frac * (L->hold[(L->hold_at - j - 1) & 3] - a);
+  if (w <= 0.0f) return 0.0f;
+  /* Before any pitch is heard (the weight is then 0 anyway), a 100 Hz
+   * period keeps the taps moving. */
+  const float per = L->period > 0.0f ? L->period : 0.01f * (float)sr;
+  float y = 0.0f;
+  if (L->level1 > 1e-4f) y += L->level1 * le_low_voice(L, &L->v[0], 0.5f, per);
+  if (L->level2 > 1e-4f) y += L->level2 * le_low_voice(L, &L->v[1], 0.25f, per);
+  return w * y;
+}
+
 /* Octave 2's trims, where the capture's voice sits against the dry, each
  * read at its own frequency (#891): up, -0.2 dB (s5/6; the vocoder alone
  * gives -3.6 at +24); down, -0.2 dB (s6v 26; the vocoder alone gives 0.0
@@ -1128,6 +1476,9 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
     const int ticks = le_oct_seeded_ticks(fx, slot);
     if (le_oct_ticks_to_work(o) != ticks) {
       le_pv_reset_runtime(fx, slot, chan, ticks);
+      /* The band heard nothing while the slot was not ticked either. */
+      le_oct_low* low = atomic_load_explicit(&o->low, memory_order_acquire);
+      if (low != NULL) le_low_forget(low);
     }
   }
 
@@ -1197,10 +1548,34 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
   const int up = o->sm_shift > 0.5f;
   const float level2 =
       dual ? p[7] * (up ? LE_DOCT_UP2_LEVEL : LE_DOCT_DOWN2_LEVEL) : 0.0f;
-  const float wet = o->cur_mode == 0
-                        ? le_pv_tick(o, buf, head, cap, ratio, p[4] >= 0.5f,
-                                     ratio * ratio, 1.0f - p[5], level2)
-                        : le_psola_tick(o, buf, head, cap, ratio);
+  /* The Dual Octaver's low band (#1467) takes its down voices below the
+   * crossover from the vocoder; it hears every sample, so it has the input
+   * the moment high mode goes off. */
+  le_oct_low* low =
+      dual ? atomic_load_explicit(&o->low, memory_order_acquire) : NULL;
+  if (low != NULL && low->sr != cap) low = NULL;
+  if (low != NULL) le_low_write(low, x);
+  float wet;
+  if (o->cur_mode == 0) {
+    float band = 0.0f;
+    float low_w = 0.0f;
+    float low_g = 1.0f;
+    float low_kc = 1.0f;
+    if (low != NULL) {
+      le_low_follow(low, cap, o->hop_count == 0);
+      if (!up) { /* each voice at its Vol, untrimmed (le_doct_settings) */
+        band = le_low_play(low, cap, o->hop_count, p[8], p[7]);
+        low_w = low->gate;
+        low_g = low->boost;
+        low_kc = low->kc;
+      }
+    }
+    wet = le_pv_tick(o, buf, head, cap, ratio, p[4] >= 0.5f, ratio * ratio,
+                     1.0f - p[5], level2, low_w, low_g, low_kc) +
+          band;
+  } else {
+    wet = le_psola_tick(o, buf, head, cap, ratio);
+  }
 
   /* Tone: a one-pole low-pass on the wet voice that opens up as p1 rises. */
   const float a = 0.05f + 0.9f * o->sm_tone;
@@ -1342,6 +1717,10 @@ void le_fx_entry_reset(le_fx_state* fx, int slot) {
     o->fresh = LE_PV_LATENCY;
     o->xfade = 1.0f;  /* steady (no gain dip) */
     le_pv_reset_runtime(fx, slot, chan, le_oct_seeded_ticks(fx, slot));
+    /* A retyped slot's band starts with nothing heard: it heard nothing
+     * while the slot ran as another kind. */
+    le_oct_low* low = atomic_load_explicit(&o->low, memory_order_acquire);
+    if (low != NULL) le_low_forget(low);
   }
   le_fx_clear_reverb(fx, slot);
   memset(&fx->slice[slot], 0, sizeof(fx->slice[slot]));
@@ -1385,6 +1764,10 @@ void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap) {
     if (fx->delay[slot][chan] != NULL) {
       memset(fx->delay[slot][chan], 0, (size_t)cap * sizeof(float));
     }
+    /* The Dual Octaver's low band reads its own ring (#1467). */
+    le_oct_low* low =
+        atomic_load_explicit(&fx->oct[slot][chan].low, memory_order_acquire);
+    if (low != NULL) le_low_clear(low);
   }
 }
 
@@ -1464,6 +1847,8 @@ void le_fx_free_octaver(le_fx_state* fx, int slot) {
     le_rt_free(o->scratch);
     o->scratch = NULL;
     o->analysed = 0; /* no frame outlives the scratch it is in */
+    le_rt_free(atomic_load_explicit(&o->low, memory_order_relaxed));
+    atomic_store_explicit(&o->low, NULL, memory_order_relaxed);
   }
 }
 
@@ -1605,11 +1990,12 @@ static void fx_tremolo_process(le_fx_state* fx, int slot, int sr, int cap,
   *l = fx_tremolo(fx, slot, 0, sr, *l, p);
   *r = fx_tremolo(fx, slot, 1, sr, *r, p);
 }
-/* The octaver's kernel on its eight settings (le_fx_octaver_settings):
+/* The octaver's kernel on its nine settings (le_fx_octaver_settings):
  * shift, tone, mix, mode, formants, the wet voice's cut (0: none), 1 for
  * the Dual Octaver (an equal-power mix, a switched shift, and a second
- * voice two octaves out) or 0, and that second voice's level (0: none) —
- * so a zeroed tail is the plain octaver. */
+ * voice two octaves out) or 0, that second voice's level (0: none), and
+ * the first voice's level before its trim (the Dual Octaver's low band,
+ * #1467) — so a zeroed tail is the plain octaver. */
 static void fx_octaver_run(le_fx_state* fx, int slot, int cap, float* l,
                            float* r, const float* q) {
   *l = fx_octaver(fx, slot, 0, cap, *l, q);
@@ -1619,7 +2005,7 @@ static void fx_octaver_run(le_fx_state* fx, int slot, int cap, float* l,
 static void fx_octaver_process(le_fx_state* fx, int slot, int sr, int cap,
                                float* l, float* r, const float* p) {
   (void)sr;
-  const float q[8] = {p[0], p[1], p[2], p[3], p[4], 0.0f, 0.0f, 0.0f};
+  const float q[9] = {p[0], p[1], p[2], p[3], p[4], 0.0f, 0.0f, 0.0f, 0.0f};
   fx_octaver_run(fx, slot, cap, l, r, q);
 }
 
@@ -1667,6 +2053,10 @@ static void le_doct_settings(const float* p, float* out) {
    * two octaves up in high mode (s5/6) or down without it (s6v 26-27), and
    * its trim follow Octave 1's shift in the kernel. */
   out[7] = p[3] < 0.0f ? 0.0f : p[3] > 1.0f ? 1.0f : p[3];
+  /* Octave 1 Vol untrimmed, for the low band (#1467), which needs no trim:
+   * a tap passes a tone at 0 dB, where the capture's down voices sit from
+   * 110 Hz up (s15bass, s7oct). */
+  out[8] = vol;
 }
 
 /* The octaver settings Smart Tune runs (LE_FX_SMART_TUNE, its kernel with
@@ -1685,6 +2075,7 @@ void le_fx_octaver_settings(int32_t type, const float* params, float* out) {
   out[5] = 0.0f; /* the wet voice's cut: none */
   out[6] = 0.0f; /* the plain octaver: a linear mix, a gliding shift */
   out[7] = 0.0f; /* no second voice */
+  out[8] = 0.0f; /* no low band */
   if (type == LE_FX_DUAL_OCTAVER) {
     le_doct_settings(params, out);
     return;
@@ -1704,9 +2095,9 @@ void le_fx_octaver_settings(int32_t type, const float* params, float* out) {
 static void fx_whammy_process(le_fx_state* fx, int slot, int sr, int cap,
                               float* l, float* r, const float* p) {
   (void)sr;
-  /* The eight settings the octaver's kernel reads (le_fx_octaver_settings). */
-  const float q[8] = {le_whammy_shift(p), 1.0f, 1.0f, 0.0f, 1.0f,
-                      0.0f, 0.0f, 0.0f};
+  /* The nine settings the octaver's kernel reads (le_fx_octaver_settings). */
+  const float q[9] = {le_whammy_shift(p), 1.0f, 1.0f, 0.0f, 1.0f,
+                      0.0f, 0.0f, 0.0f, 0.0f};
   fx_octaver_run(fx, slot, cap, l, r, q);
 }
 
@@ -1714,7 +2105,7 @@ static void fx_dual_octaver_process(le_fx_state* fx, int slot, int sr,
                                     int cap, float* l, float* r,
                                     const float* p) {
   (void)sr;
-  float q[8];
+  float q[9];
   le_doct_settings(p, q);
   fx_octaver_run(fx, slot, cap, l, r, q);
 }
@@ -2813,6 +3204,42 @@ oom:
     le_rt_free(*owned[i]);
     *owned[i] = NULL;
   }
+  return LE_ERR_INVALID;
+}
+
+size_t le_fx_low_band_bytes(int sr) {
+  return 2u * (sizeof(le_oct_low) + (size_t)le_low_ring_len(sr) * sizeof(float));
+}
+
+/* DUAL OCTAVER: the octaver's buffers, and its low band's (#1467) per
+ * channel, sized for [cap] (the rate). A band set up for another rate is
+ * left as it is (fx_octaver skips it): a slot's buffers are freed before it
+ * runs at a new rate. */
+static int32_t fx_dual_octaver_prepare(le_fx_state* fx, int slot, int cap) {
+  le_oct_low* made[2] = {NULL, NULL};
+  const int32_t len = le_low_ring_len(cap);
+  for (int chan = 0; chan < 2; ++chan) {
+    if (atomic_load_explicit(&fx->oct[slot][chan].low, memory_order_relaxed) !=
+        NULL) {
+      continue;
+    }
+    made[chan] = (le_oct_low*)le_rt_alloc_prefaulted(
+        le_fx_low_band_bytes(cap) / 2u);
+    if (made[chan] == NULL) goto oom;
+    memset(made[chan], 0, sizeof(le_oct_low));
+    le_low_init(made[chan], cap, len);
+  }
+  if (fx_octaver_prepare(fx, slot, cap) != LE_OK) goto oom;
+  for (int chan = 0; chan < 2; ++chan) {
+    if (made[chan] != NULL) {
+      atomic_store_explicit(&fx->oct[slot][chan].low, made[chan],
+                            memory_order_release);
+    }
+  }
+  return LE_OK;
+oom:
+  le_rt_free(made[0]);
+  le_rt_free(made[1]);
   return LE_ERR_INVALID;
 }
 
@@ -7336,7 +7763,7 @@ static float le_st_correct(le_octaver_state* o, const le_octaver_state* in,
 static void fx_smart_tune_process(le_fx_state* fx, int slot, int sr, int cap,
                                   float* l, float* r, const float* p) {
   (void)sr;
-  float q[8] = {0.0f};
+  float q[9] = {0.0f};
   le_st_settings(q);
   le_octaver_state* o = fx->oct[slot];
   /* Its tone, mix and level are the kind's own, fixed: set there after a
@@ -7495,7 +7922,7 @@ static const le_fx_vtable LE_FX[] = {
                       fx_octaver_prepare, LE_FX_WHAMMY_PARAMS},
     /* The octaver's kernel and state, its settings mapped (le_doct_settings). */
     [LE_FX_DUAL_OCTAVER] = {fx_dual_octaver_process, fx_octaver_latency_vt,
-                            fx_octaver_prepare, LE_FX_DUAL_OCTAVER_PARAMS},
+                            fx_dual_octaver_prepare, LE_FX_DUAL_OCTAVER_PARAMS},
     /* The amp and its cabinet, in its own per-slot instance (fx->amp). */
     [LE_FX_AMP_CAB] = {fx_amp_cab_process, NULL, fx_amp_cab_prepare,
                        LE_FX_AMP_CAB_PARAMS},
