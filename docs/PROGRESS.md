@@ -1,7 +1,7 @@
 <!-- cspell:words heatsinks Omron -->
 # Segno — Progress & Roadmap
 
-<!-- cspell:words hashlib manufacturability unassembled Axicom Mbps -->
+<!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs -->
 
 Living status doc for Segno, the live looping appliance (a Raspberry Pi 5
 console). It began as a Flutter desktop loopstation; the original plan is
@@ -53,6 +53,26 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1437 | Recover from and record a freeze (watchdog, pstore, journal sync, lockup policy) | in-review | auto | `claude/appliance-freeze-recovery-1437` |
 
 ---
+
+## October 2026 RAUC status off the FAT boot partition (#1397)
+
+An unclean power-off twice left a broken cluster chain in RAUC's
+`/boot/rauc/central.raucs`. The kernel remounted the FAT `/boot` read-only and
+every install failed. RAUC's `data-directory` is now `/data/rauc` on ext4, and a
+`rauc.service` drop-in requires the `/data` mount. RAUC creates the directory
+itself when it starts.
+`boot.mount` pulls in `systemd-fsck@` for its device, so `fsck.vfat -a` repairs
+the partition before it mounts and logs what it changed to the journal.
+`segno-update-ctl install` exits 3 when `/boot` is read-only, and the Updates
+page then tells the player to restart, with a Restart button through the power
+flow, instead of reporting a failed download.
+
+Shell tests cover the helper under bash and dash, and a static test covers the
+RAUC and fsck wiring. Dart tests cover the env, cubit and page. Device checks
+are owed: `rauc status` reads the new file, the boot journal shows the fsck
+unit, and an install followed by mark-good succeeds. Existing units start with
+an empty status file. The old `/boot/rauc` directory stays: a rollback to a
+build older than this change still keeps its status there.
 
 ## October 2026 Clear history and Fade (#1142)
 
