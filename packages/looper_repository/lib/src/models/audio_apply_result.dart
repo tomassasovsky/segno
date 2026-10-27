@@ -28,6 +28,7 @@ class AudioApplyResult extends Equatable {
     required this.status,
     required this.result,
     this.reopen,
+    this.refusedRate = 0,
   });
 
   /// How the apply ended.
@@ -40,6 +41,10 @@ class AudioApplyResult extends Equatable {
   /// running and was reopened rather than started; `null` for a cold start.
   final EngineReopened? reopen;
 
+  /// For a config refused to keep the loops ([EngineResult.wouldClear]): the
+  /// sample rate the device would have run. 0 otherwise.
+  final int refusedRate;
+
   @override
-  List<Object?> get props => [status, result, reopen];
+  List<Object?> get props => [status, result, reopen, refusedRate];
 }

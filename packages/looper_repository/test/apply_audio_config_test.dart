@@ -4,9 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart'
     show EngineSnapshot, ReopenOutcome;
-import 'package:segno_engine/segno_engine.dart'
-    as le
-    show AudioDevice, LatencyState;
+import 'package:segno_engine/segno_engine.dart' as le show AudioDevice;
 
 import 'helpers/fake_audio_engine.dart';
 
@@ -491,23 +489,6 @@ void main() {
       repo.applyAudioConfig(next);
 
       expect(engine.lastRecordOffset, 0);
-    });
-
-    test('a measurement that completes is remembered', () async {
-      final repo = running();
-      final sub = repo.looperState.listen((_) {});
-      addTearDown(sub.cancel);
-      engine.nextSnapshot = engine.nextSnapshot.copyWith(
-        recordOffsetFrames: 150,
-        latencyState: le.LatencyState.done,
-      );
-      ticker.add(null);
-      await Future<void>.delayed(Duration.zero);
-      engine.lastRecordOffset = null;
-
-      repo.applyAudioConfig(next);
-
-      expect(engine.lastRecordOffset, 150);
     });
   });
 

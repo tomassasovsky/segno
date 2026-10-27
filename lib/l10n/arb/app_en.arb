@@ -2180,6 +2180,50 @@
     "@audioSettingsRefused": {
         "description": "Banner when the interface refused a change that moved neither the device nor the rates (a loop cap), and the previous settings were reopened (#1270 Part 3a)."
     },
+    "audioMeasure": "Measure",
+    "@audioMeasure": {
+        "description": "The latency row's button that opens the cable test (#1270 Part 3b)."
+    },
+    "audioMeasureUnavailable": "Connect the interface to measure.",
+    "@audioMeasureUnavailable": {
+        "description": "Why Measure is disabled: the interface is not there."
+    },
+    "audioCableTitle": "Measure latency",
+    "@audioCableTitle": {
+        "description": "Title of the cable test dialog (pen 28/03)."
+    },
+    "audioCableBody": "Automatic measurement unavailable. Connect a spare output to an input with an audio cable.",
+    "@audioCableBody": {
+        "description": "What the cable test needs (pen 28/03)."
+    },
+    "audioCableOutput": "Output",
+    "@audioCableOutput": {
+        "description": "Label of the output the cable test sends on."
+    },
+    "audioCableInput": "Input",
+    "@audioCableInput": {
+        "description": "Label of the input the cable test listens on."
+    },
+    "audioCableNote": "The test sends a pulse through the selected output.",
+    "@audioCableNote": {
+        "description": "The cable test's note while nothing plays."
+    },
+    "audioCableNoteStops": "The test stops playback and sends a pulse through the selected output.",
+    "@audioCableNoteStops": {
+        "description": "The cable test's note while the tracks or the backing track play (pen 28/03)."
+    },
+    "audioCableStart": "Start test",
+    "@audioCableStart": {
+        "description": "Button that starts the cable test."
+    },
+    "audioCableNoReturn": "No pulse came back. Check the cable and the input gain.",
+    "@audioCableNoReturn": {
+        "description": "Shown in the cable dialog when the pulse did not return."
+    },
+    "audioCableRetry": "Retry",
+    "@audioCableRetry": {
+        "description": "Button that runs the cable test again after no pulse came back."
+    },
     "systemThisConsoleGroup": "THIS CONSOLE",
     "systemHousekeepingGroup": "HOUSEKEEPING",
     "systemHardwareGroup": "HARDWARE",
