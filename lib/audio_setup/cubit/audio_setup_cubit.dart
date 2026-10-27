@@ -125,7 +125,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
 
   /// Cancel on the Apply row: the page shows what runs again.
   void discardDraft() {
-    if (state.draft == null) return;
+    if (isClosed || state.draft == null) return;
     emit(state.copyWith(clearDraft: true));
   }
 

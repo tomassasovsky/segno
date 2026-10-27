@@ -525,10 +525,10 @@ void main() {
 
       final l10n = l10nOf(tester);
       expect(find.text(l10n.audioApplyTitle), findsOneWidget);
-      expect(focused(const Key('console_confirm_cancel')), isTrue);
+      expect(focused(const Key('device_confirm_cancel')), isTrue);
       verifyNever(() => repository.applyAudioConfig(any()));
 
-      await tester.tap(find.byKey(const Key('console_confirm_confirm')));
+      await tester.tap(find.byKey(const Key('device_confirm_confirm')));
       await tester.pumpAndSettle();
       verify(() => repository.stopTrack()).called(1);
       verify(() => repository.applyAudioConfig(any())).called(1);

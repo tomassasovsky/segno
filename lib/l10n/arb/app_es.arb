@@ -1384,7 +1384,7 @@
     "audioRateLocked": "Borrá las pistas para cambiar la frecuencia de muestreo.",
     "audioMaxLoopLocked": "Borrá las pistas para cambiar la duración máxima del loop.",
     "audioApplyTitle": "¿Aplicar los ajustes de audio?",
-    "audioApplyBody": "La reproducción se detiene mientras la interfaz de audio se vuelve a abrir. Tus grabaciones se conservan.",
+    "audioApplyBody": "Los loops y el audio de acompañamiento se detendrán. Tus grabaciones se conservan.",
     "audioApplyConfirm": "Detener el audio y aplicar",
     "audioEffectsOverBudgetRate": "Tus efectos necesitan más procesamiento del que deja {rate}. Quitá algunos efectos primero.",
     "audioDeviceRefused": "No se pudo abrir {device}. La interfaz anterior vuelve a funcionar.",

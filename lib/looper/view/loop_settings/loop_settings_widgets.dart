@@ -554,8 +554,13 @@ class LoopOutlinedButton extends StatelessWidget {
     this.radius = 7,
     this.borderColor,
     this.focusNode,
+    this.autofocus = false,
     super.key,
   });
+
+  /// Whether the encoder starts on this button when its page or dialog
+  /// opens.
+  final bool autofocus;
 
   /// The button's focus node; see [LoopFocusable.focusNode].
   final FocusNode? focusNode;
@@ -653,6 +658,7 @@ class LoopOutlinedButton extends StatelessWidget {
       value: semanticValue,
       child: LoopFocusable(
         focusNode: focusNode,
+        autofocus: autofocus,
         enabled: onTap != null,
         radius: radius,
         onActivate: onTap ?? () {},
