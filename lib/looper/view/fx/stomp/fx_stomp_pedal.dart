@@ -13,9 +13,9 @@ import 'package:segno/theme/theme.dart';
 ///
 /// The pedal keeps its face's proportions and scales to fit the space its
 /// parent gives it. Every part is laid out in the face's fixed drawing space
-/// and the whole is scaled. The enclosure is recorded once per look and
-/// replayed; each knob paints on its own layer, so turning one repaints only
-/// that knob.
+/// and the whole is scaled. The enclosure and the labels are recorded once
+/// per look and replayed, so turning a knob repaints only the knobs over
+/// them.
 class FxStompPedal extends StatelessWidget {
   /// Creates an [FxStompPedal].
   const FxStompPedal({required this.face, super.key});
@@ -23,11 +23,15 @@ class FxStompPedal extends StatelessWidget {
   /// What the pedal shows.
   final FxStompFace face;
 
+  /// The knobs the pedal draws: as many of [face]'s as its face holds.
+  List<FxStompKnob> get drawnKnobs =>
+      face.knobs.take(face.spec.face.maxKnobs).toList();
+
   @override
   Widget build(BuildContext context) {
     final spec = face.spec;
     final kind = spec.face;
-    final knobs = face.knobs.take(kind.maxKnobs).toList();
+    final knobs = drawnKnobs;
     final spots = _KnobSpot.layout(kind, knobs.length);
     final textures = FxStompTextures.instance;
     return RepaintBoundary(
@@ -63,13 +67,15 @@ class FxStompPedal extends StatelessWidget {
                       ),
                     ),
                   ),
-                  for (final (i, knob) in knobs.indexed)
-                    _StompKnob(
-                      spec: spec,
-                      spot: spots[i],
-                      setting: knob.setting,
-                      layered: face.live,
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: _KnobsPainter(
+                        spec: spec,
+                        spots: spots,
+                        settings: [for (final knob in knobs) knob.setting],
+                      ),
                     ),
+                  ),
                 ],
               ),
             ),
@@ -180,7 +186,7 @@ class _LabelsPainter extends CustomPainter {
     required this.labels,
     required this.spots,
     required this.colour,
-  });
+  }) : super(repaint: PaintingBinding.instance.systemFonts);
 
   final List<String> labels;
   final List<_KnobSpot> spots;
@@ -188,13 +194,25 @@ class _LabelsPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Laid out per paint, which is only when the labels change, and let go
-    // of straight after.
-    for (final label in _layOutLabels(labels, spots, colour)) {
-      label
-        ..paint(canvas)
-        ..dispose();
-    }
+    final key = (
+      labels: labels.join('\n'),
+      spots: [
+        for (final spot in spots) (spot.centre, spot.labelSize, spot.wraps),
+      ].join(),
+      colour: colour,
+    );
+    canvas.drawPicture(
+      _StompPictures.instance.labels.putIfAbsent(key, () {
+        final recorder = ui.PictureRecorder();
+        final recording = Canvas(recorder);
+        for (final label in _layOutLabels(labels, spots, colour)) {
+          label
+            ..paint(recording)
+            ..dispose();
+        }
+        return recorder.endRecording();
+      }),
+    );
   }
 
   @override
@@ -207,43 +225,6 @@ class _LabelsPainter extends CustomPainter {
       if (oldDelegate.spots[i].labelSize != spots[i].labelSize) return true;
     }
     return false;
-  }
-}
-
-/// One knob: on its own layer when it can turn ([layered]).
-class _StompKnob extends StatelessWidget {
-  const _StompKnob({
-    required this.spec,
-    required this.spot,
-    required this.setting,
-    required this.layered,
-  });
-
-  final FxStompSpec spec;
-  final _KnobSpot spot;
-  final double setting;
-
-  /// Whether the knob turns with its setting, and so repaints alone.
-  final bool layered;
-
-  @override
-  Widget build(BuildContext context) {
-    final r = spot.radius;
-    final knob = CustomPaint(
-      painter: _KnobPainter(
-        style: spec.knob,
-        cap: spec.knobCap,
-        accent: spec.accent,
-        setting: setting,
-      ),
-    );
-    return Positioned(
-      left: spot.centre.dx - r,
-      top: spot.centre.dy - r,
-      width: r * 2,
-      height: r * 2,
-      child: layered ? RepaintBoundary(child: knob) : knob,
-    );
   }
 }
 
@@ -369,88 +350,157 @@ final class _KnobParts {
   final Paint glint = Paint()..color = const Color(0x40FFFFFF);
 }
 
-/// A knob in one of the design's styles, filling its square box.
-class _KnobPainter extends CustomPainter {
-  _KnobPainter({
-    required this.style,
-    required this.cap,
-    required this.accent,
-    required this.setting,
+/// The knobs of one pedal, at their [settings].
+class _KnobsPainter extends CustomPainter {
+  _KnobsPainter({
+    required this.spec,
+    required this.spots,
+    required this.settings,
   });
 
-  final FxStompKnobStyle style;
-  final Color? cap;
-  final Color accent;
+  final FxStompSpec spec;
+  final List<_KnobSpot> spots;
 
-  /// Where it points, from 0 (fully left) to 1 (fully right).
-  final double setting;
+  /// Where each knob points, from 0 (fully left) to 1 (fully right).
+  final List<double> settings;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final r = size.shortestSide / 2;
-    final parts = _KnobParts.of(r, cap);
-    final c = Offset(r, r);
-    final degrees = (setting.clamp(0.0, 1.0) - .5) * 270;
-    final a = (degrees - 90) * math.pi / 180;
-    final d = Offset(math.cos(a), math.sin(a));
-    void pointer(Color colour, double width) => canvas.drawLine(
-      c + d * (r * .18),
-      c + d * (r * .8),
-      Paint()
-        ..color = colour
-        ..strokeWidth = width
-        ..strokeCap = StrokeCap.round,
-    );
-    canvas.drawOval(parts.shadow, parts.shadowFill);
-    switch (style) {
-      case FxStompKnobStyle.black:
-        canvas
-          ..drawCircle(c + const Offset(0, 3), r, parts.base)
-          ..drawCircle(c, r, parts.skirt)
-          ..drawPath(parts.ridges, parts.ridgeLine)
-          ..drawCircle(c, r * .74, parts.capPaint);
-        pointer(accent, math.max(3, r * .11));
-      case FxStompKnobStyle.dome:
-        canvas
-          ..drawCircle(c, r + 3, parts.domeRim)
-          ..drawCircle(c, r, parts.dome);
-        pointer(const Color(0xFF1A1C20), math.max(3, r * .12));
-      case FxStompKnobStyle.cream:
-        canvas
-          ..drawCircle(c + const Offset(0, 3), r + 4, parts.base)
-          ..drawCircle(c, r + 4, parts.creamSkirt)
-          ..drawCircle(c, r * .8, parts.cream);
-        pointer(const Color(0xFF1A1C20), math.max(3, r * .1));
-      case FxStompKnobStyle.chicken:
-        canvas
-          ..drawCircle(c + const Offset(0, 3), r * .62, parts.base)
-          ..save()
-          ..translate(c.dx, c.dy)
-          ..rotate(degrees * math.pi / 180)
-          ..drawPath(parts.chicken, parts.chickenCream)
-          ..drawPath(parts.chicken, parts.chickenLine)
-          ..drawLine(
-            Offset(0, -r * .95),
-            Offset(0, -r * .35),
-            parts.chickenMark,
-          )
-          ..restore();
-      case FxStompKnobStyle.cap:
-        canvas
-          ..drawCircle(c + const Offset(0, 3), r, parts.base)
-          ..drawCircle(c, r, parts.skirt)
-          ..drawCircle(c, r * .62, parts.colourCap)
-          ..drawCircle(c + Offset(-r * .15, -r * .2), r * .3, parts.glint);
-        pointer(const Color(0xFFF4F6F8), math.max(3, r * .1));
+    for (final (i, setting) in settings.indexed) {
+      final spot = spots[i];
+      canvas
+        ..save()
+        ..translate(
+          spot.centre.dx - spot.radius,
+          spot.centre.dy - spot.radius,
+        );
+      _paintKnob(
+        canvas,
+        spot.radius,
+        style: spec.knob,
+        cap: spec.knobCap,
+        accent: spec.accent,
+        setting: setting,
+      );
+      canvas.restore();
     }
   }
 
   @override
-  bool shouldRepaint(_KnobPainter oldDelegate) =>
-      oldDelegate.setting != setting ||
-      oldDelegate.style != style ||
-      oldDelegate.cap != cap ||
-      oldDelegate.accent != accent;
+  bool shouldRepaint(_KnobsPainter oldDelegate) {
+    if (!identical(oldDelegate.spec, spec)) return true;
+    if (oldDelegate.settings.length != settings.length) return true;
+    for (var i = 0; i < settings.length; i++) {
+      if (oldDelegate.settings[i] != settings[i]) return true;
+      if (oldDelegate.spots[i].centre != spots[i].centre) return true;
+      if (oldDelegate.spots[i].radius != spots[i].radius) return true;
+    }
+    return false;
+  }
+}
+
+/// A knob of radius [r] in one of the design's styles, in the square box at
+/// the canvas origin.
+void _paintKnob(
+  Canvas canvas,
+  double r, {
+  required FxStompKnobStyle style,
+  required Color? cap,
+  required Color accent,
+  required double setting,
+}) {
+  final parts = _KnobParts.of(r, cap);
+  final c = Offset(r, r);
+  final degrees = (setting.clamp(0.0, 1.0) - .5) * 270;
+  final a = (degrees - 90) * math.pi / 180;
+  final d = Offset(math.cos(a), math.sin(a));
+  void pointer(Color colour, double width) => canvas.drawLine(
+    c + d * (r * .18),
+    c + d * (r * .8),
+    Paint()
+      ..color = colour
+      ..strokeWidth = width
+      ..strokeCap = StrokeCap.round,
+  );
+  canvas.drawOval(parts.shadow, parts.shadowFill);
+  switch (style) {
+    case FxStompKnobStyle.black:
+      canvas
+        ..drawCircle(c + const Offset(0, 3), r, parts.base)
+        ..drawCircle(c, r, parts.skirt)
+        ..drawPath(parts.ridges, parts.ridgeLine)
+        ..drawCircle(c, r * .74, parts.capPaint);
+      pointer(accent, math.max(3, r * .11));
+    case FxStompKnobStyle.dome:
+      canvas
+        ..drawCircle(c, r + 3, parts.domeRim)
+        ..drawCircle(c, r, parts.dome);
+      pointer(const Color(0xFF1A1C20), math.max(3, r * .12));
+    case FxStompKnobStyle.cream:
+      canvas
+        ..drawCircle(c + const Offset(0, 3), r + 4, parts.base)
+        ..drawCircle(c, r + 4, parts.creamSkirt)
+        ..drawCircle(c, r * .8, parts.cream);
+      pointer(const Color(0xFF1A1C20), math.max(3, r * .1));
+    case FxStompKnobStyle.chicken:
+      canvas
+        ..drawCircle(c + const Offset(0, 3), r * .62, parts.base)
+        ..save()
+        ..translate(c.dx, c.dy)
+        ..rotate(degrees * math.pi / 180)
+        ..drawPath(parts.chicken, parts.chickenCream)
+        ..drawPath(parts.chicken, parts.chickenLine)
+        ..drawLine(
+          Offset(0, -r * .95),
+          Offset(0, -r * .35),
+          parts.chickenMark,
+        )
+        ..restore();
+    case FxStompKnobStyle.cap:
+      canvas
+        ..drawCircle(c + const Offset(0, 3), r, parts.base)
+        ..drawCircle(c, r, parts.skirt)
+        ..drawCircle(c, r * .62, parts.colourCap)
+        ..drawCircle(c + Offset(-r * .15, -r * .2), r * .3, parts.glint);
+      pointer(const Color(0xFFF4F6F8), math.max(3, r * .1));
+  }
+}
+
+/// What a labels picture is recorded for.
+typedef _LabelsKey = ({String labels, String spots, Color colour});
+
+/// The recorded enclosures and labels every pedal replays.
+///
+/// Dropped whole when the fonts change, so a name recorded before its
+/// typeface was registered is not replayed; and the untextured enclosures
+/// are dropped when the finish tiles arrive, which the pedals then repaint
+/// for.
+final class _StompPictures {
+  _StompPictures._() {
+    PaintingBinding.instance.systemFonts.addListener(_dropAll);
+    FxStompTextures.instance.images.addListener(_dropUntextured);
+  }
+
+  static final _StompPictures instance = _StompPictures._();
+
+  final Map<_EnclosureKey, ui.Picture> enclosures = {};
+  final Map<_LabelsKey, ui.Picture> labels = {};
+
+  void _dropAll() {
+    for (final picture in [...enclosures.values, ...labels.values]) {
+      picture.dispose();
+    }
+    enclosures.clear();
+    labels.clear();
+  }
+
+  void _dropUntextured() {
+    enclosures.removeWhere((key, picture) {
+      if (key.textured) return false;
+      picture.dispose();
+      return true;
+    });
+  }
 }
 
 /// What an enclosure picture is recorded for.
@@ -473,7 +523,7 @@ class _EnclosurePainter extends CustomPainter {
          repaint: Listenable.merge([
            textures,
            // A typeface registered after the first frame: the cache is
-           // dropped ([_watchFonts]) and the pedal draws its name again.
+           // dropped ([_StompPictures]) and the pedal draws its name again.
            PaintingBinding.instance.systemFonts,
          ]),
        );
@@ -481,26 +531,7 @@ class _EnclosurePainter extends CustomPainter {
   final FxStompSpec spec;
   final bool lit;
   final int knobs;
-  final ValueNotifier<Map<FxStompFinish, ui.Image>> textures;
-
-  static final Map<_EnclosureKey, ui.Picture> _pictures = {};
-
-  static bool _watchingFonts = false;
-
-  static bool _untexturedDropped = false;
-
-  /// Drops every recorded enclosure when the fonts change, so a name
-  /// recorded before its typeface was registered is not replayed.
-  static void _watchFonts() {
-    if (_watchingFonts) return;
-    _watchingFonts = true;
-    PaintingBinding.instance.systemFonts.addListener(() {
-      for (final picture in _pictures.values) {
-        picture.dispose();
-      }
-      _pictures.clear();
-    });
-  }
+  final ValueNotifier<Map<String, ui.Image>> textures;
 
   /// The knob count as the enclosure uses it: a box sets its name's height
   /// by it and a module draws a scale around each knob; the other faces do
@@ -512,33 +543,22 @@ class _EnclosurePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    _watchFonts();
-    final texture = textures.value[spec.finish];
+    final tiles = textures.value;
     final key = (
       spec: spec,
       lit: lit,
       knobs: _knobs,
-      textured: texture != null,
+      textured: tiles.isNotEmpty,
     );
-    if (texture != null && !_untexturedDropped) {
-      // The pictures recorded before the textures loaded are not drawn
-      // again.
-      _untexturedDropped = true;
-      _pictures.removeWhere((key, picture) {
-        if (key.textured) return false;
-        picture.dispose();
-        return true;
-      });
-    }
     canvas.drawPicture(
-      _pictures.putIfAbsent(key, () {
+      _StompPictures.instance.enclosures.putIfAbsent(key, () {
         final recorder = ui.PictureRecorder();
         _Enclosure(
           Canvas(recorder),
           spec,
           lit: lit,
           knobs: _knobs,
-          texture: texture,
+          tiles: tiles,
         ).paint();
         return recorder.endRecording();
       }),
@@ -559,14 +579,16 @@ class _Enclosure {
     this.spec, {
     required this.lit,
     required this.knobs,
-    required this.texture,
+    required this.tiles,
   });
 
   final Canvas canvas;
   final FxStompSpec spec;
   final bool lit;
   final int knobs;
-  final ui.Image? texture;
+
+  /// The finish and grain tiles, by name ([FxStompTextures.images]).
+  final Map<String, ui.Image> tiles;
 
   Color get ink => spec.bodyInk;
 
@@ -676,7 +698,10 @@ class _Enclosure {
             const [0, .08, .92, 1],
           ),
       )
-      ..drawRect(r, Paint()..shader = _sheen(r))
+      ..drawRect(r, Paint()..shader = _sheen(r));
+    // The design's grain over every body.
+    _tile(r, FxStompTextures.grain, 1);
+    canvas
       ..restore()
       ..drawRRect(
         RRect.fromRectAndRadius(r.deflate(1.5), Radius.circular(rx - 1)),
@@ -686,15 +711,21 @@ class _Enclosure {
 
   /// The finish's texture tile, repeated over [r], at the design's opacity.
   void _texture(Rect r) {
-    final image = texture;
-    if (image == null) return;
     final opacity = switch (spec.finish) {
       FxStompFinish.flake => .55,
       FxStompFinish.hammer => .5,
       FxStompFinish.marble => .9,
       _ => 1.0,
     };
-    final scale = FxStompTextures.scales[spec.finish] ?? 1;
+    _tile(r, spec.finish.name, opacity);
+  }
+
+  /// The tile called [name], repeated over [r] at [opacity], when it has
+  /// loaded.
+  void _tile(Rect r, String name, double opacity) {
+    final image = tiles[name];
+    if (image == null) return;
+    final scale = FxStompTextures.scales[name] ?? 1;
     canvas.drawRect(
       r,
       Paint()

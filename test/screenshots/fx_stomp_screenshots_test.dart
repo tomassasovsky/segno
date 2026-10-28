@@ -9,7 +9,6 @@ import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_face.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_pedal.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_spec.dart';
-import 'package:segno/looper/view/fx/stomp/fx_stomp_textures.dart';
 import 'package:segno/theme/theme.dart';
 
 import '../helpers/helpers.dart';
@@ -27,7 +26,7 @@ void main() {
       'assets/fonts/Inter-SemiBold.ttf',
       'assets/fonts/Inter-Bold.ttf',
     ]);
-    await loadFxStompFonts();
+    await loadFxStompArt();
   });
 
   testWidgets('Every catalogue pedal', (tester) async {
@@ -36,7 +35,6 @@ void main() {
       ..devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.runAsync(FxStompTextures.instance.load);
     final l10n = await AppLocalizations.delegate.load(const Locale('en'));
     final presets = factoryPresets();
     FxStompFace faceOf(FxModule module) => fxStompFace(

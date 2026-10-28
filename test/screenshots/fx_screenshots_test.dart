@@ -186,6 +186,8 @@ void main() {
     await loadScreenshotFont('packages/lucide_icons_flutter/Lucide', [
       packageAssetPath('lucide_icons_flutter', 'assets/lucide.ttf'),
     ]);
+    // The rack editor and the reorder strip draw catalogue pedals.
+    await loadFxStompArt();
   });
 
   late _MockLooperBloc bloc;

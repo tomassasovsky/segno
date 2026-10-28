@@ -11,7 +11,6 @@ class FxStompFace extends Equatable {
     required this.spec,
     required this.knobs,
     this.lit = true,
-    this.live = true,
   });
 
   /// How the pedal looks.
@@ -24,12 +23,8 @@ class FxStompFace extends Equatable {
   /// Whether the LED is on: the effect is engaged.
   final bool lit;
 
-  /// Whether the knobs follow the effect's settings. A still pedal's never
-  /// move, so they are not given layers of their own.
-  final bool live;
-
   @override
-  List<Object?> get props => [spec, knobs, lit, live];
+  List<Object?> get props => [spec, knobs, lit];
 }
 
 /// One knob on a pedal.
@@ -121,7 +116,6 @@ FxStompFace fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
   );
   return FxStompFace(
     spec: spec,
-    live: live,
     lit: !live || effect.enabled,
     knobs: [
       for (final (n, i) in knobs.indexed)

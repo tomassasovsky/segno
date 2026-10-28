@@ -3,7 +3,7 @@
 The pedal design (segno-design docs/design/own-art/pedal_faces_v3.py) draws
 its hammertone, metal flake, brushed metal and marble finishes with SVG
 feTurbulence filters, which Flutter has no equivalent of. This writes one
-small tile per finish instead: white, with the finish in the alpha channel,
+small tile per finish, and one for the grain over every body, instead: white, with the finish in the alpha channel,
 which the app repeats over a pedal body with an ImageShader.
 
 The noise is filtered in the frequency domain, so every tile wraps without
@@ -28,7 +28,7 @@ SIZE = 256
 # frequencies below are per tile pixel, so they already allow for it.
 SCALES = {'marble': 2}
 
-FINISHES = ('hammer', 'flake', 'brush', 'marble')
+FINISHES = ('hammer', 'flake', 'brush', 'marble', 'grain')
 
 
 def band_noise(size, fx, fy, octaves, seed, turbulence=False):
@@ -81,6 +81,12 @@ def marble(size):
     # Veins where the turbulence is low.
     v = band_noise(size, .006 * 2, .012 * 2, 4, 21, turbulence=True)
     return np.clip(1.25 - 2.4 * v, 0, 1)
+
+
+def grain(size):
+    # The faint grain the design lays over every body: fine noise at 7%.
+    v = band_noise(size, .45, .45, 2, 3)
+    return .07 * v
 
 
 def main():

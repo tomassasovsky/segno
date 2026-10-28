@@ -15,7 +15,7 @@ it and draw its images.
 import 'package:flutter/widgets.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 
-Future<Widget?> guitarRackBanner() async {
+Future<Widget?> guitarRackCard() async {
   final catalogue = await const FxCatalogueLoader().load();
   final family = catalogue.family('Guitar Rack');
   if (family == null) return null;

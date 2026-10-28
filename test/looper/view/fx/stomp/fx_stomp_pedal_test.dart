@@ -148,13 +148,6 @@ void main() {
   });
 }
 
-/// How many knobs the pedal draws: each is a layer of its own.
+/// How many knobs the pedal draws.
 int knobsOf(WidgetTester tester) =>
-    find
-        .descendant(
-          of: find.byType(FxStompPedal),
-          matching: find.byType(RepaintBoundary),
-        )
-        .evaluate()
-        .length -
-    1;
+    tester.widget<FxStompPedal>(find.byType(FxStompPedal)).drawnKnobs.length;

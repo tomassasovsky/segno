@@ -72,6 +72,8 @@ void main() {
     await loadScreenshotFont('packages/lucide_icons_flutter/Lucide', [
       packageAssetPath('lucide_icons_flutter', 'assets/lucide.ttf'),
     ]);
+    // The control rows draw catalogue pedals.
+    await loadFxStompArt();
   });
 
   late _MockLooperRepository looper;

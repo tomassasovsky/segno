@@ -3,11 +3,11 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:segno/looper/view/fx/stomp/fx_stomp_spec.dart';
 
-/// The tiles the textured pedal finishes are painted with, decoded once.
+/// The tiles the textured pedal finishes, and the grain over every pedal,
+/// are painted with, decoded once.
 ///
-/// Small white tiles with the finish in their alpha channel, written by
+/// Small white tiles with the texture in their alpha channel, written by
 /// `tool/stomp_textures.py`: Flutter has no counterpart of the design's
 /// feTurbulence filters, and the appliance's embedder is not known to run
 /// fragment shaders. A pedal draws without its texture until they have
@@ -18,23 +18,25 @@ class FxStompTextures {
   /// The one set of tiles.
   static final FxStompTextures instance = FxStompTextures._();
 
-  /// The asset each textured finish is painted with.
-  static const Map<FxStompFinish, String> assets = {
-    FxStompFinish.hammer: 'assets/images/stomp/hammer.png',
-    FxStompFinish.flake: 'assets/images/stomp/flake.png',
-    FxStompFinish.brush: 'assets/images/stomp/brush.png',
-    FxStompFinish.marble: 'assets/images/stomp/marble.png',
+  /// The tile the grain over every pedal body is painted with.
+  static const String grain = 'grain';
+
+  /// The asset each tile is read from, by name: a textured finish's
+  /// (`FxStompFinish.name`), and [grain].
+  static const Map<String, String> assets = {
+    'hammer': 'assets/images/stomp/hammer.png',
+    'flake': 'assets/images/stomp/flake.png',
+    'brush': 'assets/images/stomp/brush.png',
+    'marble': 'assets/images/stomp/marble.png',
+    grain: 'assets/images/stomp/grain.png',
   };
 
-  /// How many drawing-space units one pixel of each tile covers.
-  static const Map<FxStompFinish, double> scales = {
-    FxStompFinish.marble: 2,
-  };
+  /// How many drawing-space units one pixel of a tile covers, where it is
+  /// not 1.
+  static const Map<String, double> scales = {'marble': 2};
 
-  /// The decoded tiles: empty until they have loaded.
-  final ValueNotifier<Map<FxStompFinish, ui.Image>> images = ValueNotifier(
-    const {},
-  );
+  /// The decoded tiles, by name: empty until they have loaded.
+  final ValueNotifier<Map<String, ui.Image>> images = ValueNotifier(const {});
 
   Future<void>? _loading;
 
@@ -46,11 +48,11 @@ class FxStompTextures {
 
   Future<void> _load(AssetBundle bundle) async {
     final loaded = await Future.wait([
-      for (final MapEntry(key: finish, value: asset) in assets.entries)
-        _decode(bundle, asset).then((image) => (finish, image)),
+      for (final MapEntry(key: name, value: asset) in assets.entries)
+        _decode(bundle, asset).then((image) => (name, image)),
     ]);
     images.value = Map.unmodifiable({
-      for (final (finish, image) in loaded) finish: ?image,
+      for (final (name, image) in loaded) name: ?image,
     });
   }
 

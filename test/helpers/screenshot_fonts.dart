@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:segno/looper/view/fx/stomp/fx_stomp_textures.dart';
 
 /// The Flutter SDK's Material fonts (Roboto and the Material icons), which
 /// the screenshot suites load.
@@ -111,4 +112,11 @@ Future<void> loadFxStompFonts() async {
     }
     await loadScreenshotFont(family, [path]);
   }
+}
+
+/// Loads everything a code-drawn pedal needs to look as designed in a
+/// screenshot: its typefaces ([loadFxStompFonts]) and its finish tiles.
+Future<void> loadFxStompArt() async {
+  await loadFxStompFonts();
+  await FxStompTextures.instance.load();
 }
