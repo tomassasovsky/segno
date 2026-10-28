@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/model/fx_destination.dart';
+import 'package:segno/looper/view/fx/fx_art_view.dart';
 import 'package:segno/looper/view/fx/fx_chain_power.dart';
 import 'package:segno/looper/view/fx/fx_editor_parts.dart';
-import 'package:segno/looper/view/fx/stomp/fx_stomp_face.dart';
-import 'package:segno/looper/view/fx/stomp/fx_stomp_pedal.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -335,7 +335,7 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
     final effect = widget.effect;
     final built = effect is BuiltInEffect ? effect : null;
     final name = fxPedalName(l10n, effect);
-    final face = built == null ? null : fxStompFace(l10n, built);
+    final art = fxEntryArt(effect);
     final params = built?.type.params ?? const <FxParamInfo>[];
     // A rack variant shows the controls its rack shows, under its names; any
     // other entry shows every parameter of its type.
@@ -359,9 +359,9 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
             height: 180,
             child: Opacity(
               opacity: effect.enabled ? 1 : surface.disabledOpacity,
-              child: face == null
+              child: art == null
                   ? _mark(surface, lit: effect.enabled)
-                  : FxStompPedal(face: face),
+                  : FxArtView(art: art),
             ),
           ),
           const SizedBox(height: 18),

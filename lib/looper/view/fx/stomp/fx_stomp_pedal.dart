@@ -23,7 +23,7 @@ class FxStompPedal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ink = _inkOn(face.colour);
-    final knobs = face.knobs;
+    final knobs = face.knobs.take(kFxStompMaxKnobs).toList();
     return RepaintBoundary(
       // A picture: the name and the controls it shows are on the surface
       // around it, which is what a screen reader reads.

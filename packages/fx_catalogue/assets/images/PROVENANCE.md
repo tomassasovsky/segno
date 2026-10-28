@@ -4,6 +4,11 @@ All 19 source images in `source/` were generated on 2026-10-28 with OpenAI
 `gpt-image-2.5` (Figma's `generate_image`, model id `gpt-image-2.5-sunburst`).
 The owner approved the set the same day. The images replace the Looper X rig art.
 
+`source/`, the review sheet and the approved pedal template are not in this
+repository: they are in tomassasovsky/segno-design, under
+`docs/design/own-art/`. The `assets/` crops below are the `strip/`,
+`selector/` and `footswitch/` folders here.
+
 `assets/` holds the crops used by the app, at twice the slot size:
 - strip: 582x458, from `flat-*`
 - selector: 452x250, from `flat-*`
@@ -70,6 +75,6 @@ Every photo prompt uses the same frame:
   cards round them, as the old images had the corners baked in.
 - The 38 stomp pedals are no longer images. The app draws each pedal in code
   from one template (the approved V2 design), in the colour of the Looper X
-  illustration it replaces (`FxModule.colour`).
+  illustration it replaces (`kFxStompColours` in the app).
 - `assets/manifest.json` records only the presets now: the image entries
   named Looper X files and checksums these images no longer match.

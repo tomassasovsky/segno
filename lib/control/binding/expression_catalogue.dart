@@ -410,7 +410,8 @@ List<ExpressionDestination> expressionDestinations(
 FxArt? expressionTargetArt(LooperRepository looper, Object target) {
   FxArt? entryArt(FxAddress address, String slotId) {
     for (final fx in looper.chainEntriesAt(address) ?? const <TrackEffect>[]) {
-      if (fx.slotId == slotId) return fxEntryArt(fx);
+      // Not live: these rows do not rebuild when a setting changes.
+      if (fx.slotId == slotId) return fxEntryArt(fx, live: false);
     }
     return null;
   }

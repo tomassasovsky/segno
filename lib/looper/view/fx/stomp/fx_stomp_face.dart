@@ -3,6 +3,8 @@ import 'package:flutter/painting.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/fx_art.dart';
+import 'package:segno/looper/view/fx/stomp/fx_stomp_colours.dart';
 
 /// The most knobs a pedal has room for.
 const int kFxStompMaxKnobs = 4;
@@ -54,21 +56,21 @@ class FxStompKnob extends Equatable {
 ///
 /// Every control while there are at most [kFxStompMaxKnobs]. A variant with
 /// more shows the first four in the order the rack editor lists them, except
-/// where [_kFxStompKnobKeys] names the four a module's pedal shows instead.
+/// where [kFxStompKnobKeys] names the four a module's pedal shows instead.
 List<int> fxStompKnobs(
   String module,
   ({List<int> params, List<String> keys}) controls,
 ) {
   final count = controls.keys.length;
   if (count <= kFxStompMaxKnobs) return [for (var i = 0; i < count; i++) i];
-  final preferred = _kFxStompKnobKeys[module];
-  if (preferred != null) {
-    final picked = [
-      for (var i = 0; i < count; i++)
-        if (preferred.contains(controls.keys[i])) i,
-    ];
-    if (picked.length == kFxStompMaxKnobs) return picked;
-  }
+  final preferred = kFxStompKnobKeys[module];
+  final picked = [
+    for (var i = 0; i < count; i++)
+      if (preferred?.contains(controls.keys[i]) ?? false) i,
+  ];
+  // A table entry that no longer names four of the variant's controls is
+  // caught by the factory-pedal test; the pedal still draws meanwhile.
+  if (picked.length == kFxStompMaxKnobs) return picked;
   return [for (var i = 0; i < kFxStompMaxKnobs; i++) i];
 }
 
@@ -81,42 +83,60 @@ List<int> fxStompKnobs(
 /// - Ed's Rack's compressor lists makeup fifth. Every other compressor
 ///   variant keeps makeup (the Drum Rack's keeps threshold, attack and
 ///   makeup), so the pedal shows makeup and leaves out release.
-const Map<String, Set<String>> _kFxStompKnobKeys = {
+const Map<String, Set<String>> kFxStompKnobKeys = {
   'Four-band EQ': {'low_gain', 'lo_mid_gain', 'hi_mid_gain', 'high_gain'},
   'Compressor': {'threshold', 'ratio', 'attack', 'makeup'},
 };
 
-/// The face of the pedal [effect] is drawn as, or `null` when it is not one
-/// of the catalogue's pedals.
+/// Where a knob points when the pedal does not show its settings
+/// ([FxPedalPicture.live] is false), left to right.
+const List<double> _kRestingSettings = [.35, .6, .45, .7];
+
+/// The face [pedal] is drawn with.
 ///
-/// The knobs are the entry's own controls ([fxStompKnobs]) at their current
-/// settings, so a pedal never shows a control that does not exist. The
-/// subtitle is the factory rack the entry came from, when it came from one.
-FxStompFace? fxStompFace(AppLocalizations l10n, BuiltInEffect effect) {
-  final name = effect.module;
-  final module = name == null ? null : fxModuleNamed(name);
-  if (module == null) return null;
+/// The knobs are the entry's own controls ([fxStompKnobs]), so a pedal never
+/// shows a control that does not exist; they point at the entry's settings
+/// when the pedal is live. The subtitle is the factory rack whose variant
+/// the entry is ([_variantFamily]), when it is one.
+FxStompFace fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
+  final FxPedalPicture(:effect, :module, :live) = pedal;
   final controls = fxEntryControls(effect);
+  final knobs = fxStompKnobs(module.name, controls);
   return FxStompFace(
     name: module.name.toUpperCase(),
-    subtitle: _family(effect)?.toUpperCase(),
-    colour: module.colour,
+    subtitle: _variantFamily(effect)?.toUpperCase(),
+    colour: kFxStompColours[module.name] ?? kFxStompFallbackColour,
     knobs: [
-      for (final i in fxStompKnobs(module.name, controls))
+      for (final (n, i) in knobs.indexed)
         FxStompKnob(
           label: l10n.fxParamKeyName(controls.keys[i]).toUpperCase(),
-          setting: fxEntryShownSetting(effect, controls.params[i]),
+          setting: live
+              ? fxEntryShownSetting(effect, controls.params[i])
+              : _kRestingSettings[n],
         ),
     ],
   );
 }
 
-/// The factory family of [effect]'s rack, by its artwork slug, or `null`.
-String? _family(BuiltInEffect effect) {
+/// The factory rack family whose variant of its module [effect] is
+/// ([fxEntryBuild]), or `null` when it is none.
+///
+/// Read from the controls the entry carries, not from the rack it sits in: a
+/// pedal added to another family's rack keeps its own family. Where several
+/// families share one variant, the family of the rack the entry sits in, if
+/// it is one of them, and otherwise the first.
+String? _variantFamily(BuiltInEffect effect) {
+  final build = fxEntryBuild(effect);
+  final variants = kFxModuleVariants[effect.module];
+  if (build == null || variants == null) return null;
+  final families = [
+    for (final MapEntry(:key, :value) in variants.entries)
+      if (identical(value, build)) key,
+  ];
+  if (families.isEmpty) return null;
   final slug = effect.rack?.art;
-  if (slug == null) return null;
-  for (final MapEntry(:key, :value) in kFxFamilySlugs.entries) {
-    if (value == slug) return key;
+  for (final family in families) {
+    if (kFxFamilySlugs[family] == slug) return family;
   }
-  return null;
+  return families.first;
 }

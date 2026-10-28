@@ -1,9 +1,7 @@
-import 'dart:ui' show Color;
-
 import 'package:fx_catalogue/src/fx_preset.dart';
 
 /// One pedal a factory rack can hold: how the source spells its power, which
-/// parameter groups belong to it, and the colour its pedal is drawn in.
+/// parameter groups belong to it, and which rack families carry it.
 ///
 /// **This table is a READING of the data, not something recovered from it.**
 /// A preset is a flat map of parameter names to values; it never says which
@@ -22,7 +20,6 @@ class FxModule {
     required this.name,
     required this.enables,
     required this.groups,
-    required this.colour,
     this.keys = const [],
     this.families,
   });
@@ -45,16 +42,6 @@ class FxModule {
   /// power key: `Delay` enables `Del *`, `Reverb` enables `Rev *`, `OvDrive`
   /// enables `OD *`.
   final List<String> groups;
-
-  /// The enclosure colour the pedal is drawn in.
-  ///
-  /// Each is the colour of the pedal's former Looper X illustration (the
-  /// first of its numbered variants, which is the one a surface drew),
-  /// sampled as the most common opaque colour after the rubber-pad grey every
-  /// illustration shares. The Transient takes its green top plate rather than
-  /// its near-black body, which would draw it as an overdrive. The pedal
-  /// itself is drawn in code (#1501); this keeps each effect recognisable.
-  final Color colour;
 
   /// Whole parameter names that belong to this module where a prefix group
   /// cannot say so, because keys with the same first word belong to two
@@ -129,31 +116,26 @@ const List<FxModule> kFxModules = [
     // power key but continuous, so it is a parameter that happens to be
     // spelled without one.
     groups: ['Amp', 'Cab'],
-    colour: Color(0xFFE7AD42),
   ),
   FxModule(
     name: 'Compressor',
     enables: ['Comp', 'Compressor'],
     groups: ['Comp'],
-    colour: Color(0xFF001021),
   ),
   FxModule(
     name: 'Overdrive',
     enables: ['OvDrive'],
     groups: ['OD'],
-    colour: Color(0xFF090909),
   ),
   FxModule(
     name: 'Distortion',
     enables: ['Dist', 'Distort'],
     groups: ['Dist'],
-    colour: Color(0xFF627EC5),
   ),
   FxModule(
     name: 'Four-band EQ',
     enables: ['EQ', 'EQ 4-Band'],
     groups: ['EQ'],
-    colour: Color(0xFF020202),
     families: _fourBandEqFamilies,
   ),
   FxModule(
@@ -166,59 +148,47 @@ const List<FxModule> kFxModules = [
     // The controls are what the pedal is, so it is this module.
     enables: ['Para EQ', 'EQ'],
     groups: ['EQ'],
-    // EQ5's colour: the binary's single-effect artwork list runs in
-    // effect-name order and puts EQ5 between Overdrive2 and PitchShift2,
-    // where Parametric EQ falls.
-    colour: Color(0xFFB0AFB0),
     families: _paraEqFamilies,
   ),
   FxModule(
     name: 'Low-pass filter',
     enables: ['LPF'],
     groups: ['LPF'],
-    colour: Color(0xFFB0AFB0),
   ),
   FxModule(
     name: 'Wah',
     enables: ['Wah'],
     groups: ['Wah'],
-    colour: Color(0xFF0E0E0E),
   ),
   FxModule(
     name: 'Chorus',
     enables: ['Chor'],
     groups: ['Chor'],
-    colour: Color(0xFF52C986),
   ),
   FxModule(
     name: 'Modulation',
     enables: ['Mod'],
     groups: ['Mod'],
-    colour: Color(0xFF744AC9),
   ),
   FxModule(
     name: 'Octaver',
     enables: ['Oct'],
     groups: ['Oct', 'Octave'],
-    colour: Color(0xFFFAB055),
   ),
   FxModule(
     name: 'Pitch shift',
     enables: ['Pitch'],
     groups: ['Pitch'],
-    colour: Color(0xFF4FBCD9),
   ),
   FxModule(
     name: 'Whammy',
     enables: ['Whammy'],
     groups: ['Whammy'],
-    colour: Color(0xFF9B2025),
   ),
   FxModule(
     name: 'Delay',
     enables: ['Delay'],
     groups: ['Del'],
-    colour: Color(0xFF2BC8CF),
     families: _delayFamilies,
   ),
   FxModule(
@@ -227,23 +197,17 @@ const List<FxModule> kFxModules = [
     // `Del` prefix the plain delay uses elsewhere.
     enables: ['Dub Delay'],
     groups: ['Del'],
-    // Delay6's colour: the binary's single-effect artwork list runs in
-    // effect-name order and puts Delay6 between Doubler1 and the four-band
-    // EQ, where Dub Delay falls.
-    colour: Color(0xFFD18B94),
     families: _dubDelayFamilies,
   ),
   FxModule(
     name: 'Reverb',
     enables: ['Reverb'],
     groups: ['Rev'],
-    colour: Color(0xFF377085),
   ),
   FxModule(
     name: 'Spring reverb',
     enables: ['Spring'],
     groups: ['Spring'],
-    colour: Color(0xFF142438),
   ),
   FxModule(
     name: 'Ambience',
@@ -251,19 +215,16 @@ const List<FxModule> kFxModules = [
     // one that differs only in case.
     enables: ['Amb-Verb'],
     groups: ['Amb-Verb', 'Amb-verb', 'Amb-Dub'],
-    colour: Color(0xFF060D3E),
   ),
   FxModule(
     name: 'Dub reverb',
     enables: ['Dub-Verb'],
     groups: ['Dub-Verb'],
-    colour: Color(0xFF9A0E0C),
   ),
   FxModule(
     name: 'Doubler',
     enables: ['Doubler'],
     groups: ['Doubler'],
-    colour: Color(0xFFCBCBCC),
   ),
   FxModule(
     name: 'High-pass gate',
@@ -272,37 +233,31 @@ const List<FxModule> kFxModules = [
     // because both are space-free, and the test pins only the binary one.
     enables: ['HP/Gate'],
     groups: ['Gate', 'Highpass'],
-    colour: Color(0xFFFEFCFE),
   ),
   FxModule(
     name: 'Transient',
     enables: ['Transient'],
     groups: ['Attack', 'Sustain'],
-    colour: Color(0xFF7BB96C),
   ),
   FxModule(
     name: 'Pumper',
     enables: ['Pumper'],
     groups: ['Pumper'],
-    colour: Color(0xFF012468),
   ),
   FxModule(
     name: 'Slicer',
     enables: ['Slicer'],
     groups: ['Slic'],
-    colour: Color(0xFFEAE3CF),
   ),
   FxModule(
     name: 'Vinyl',
     enables: ['Vinyl'],
     groups: ['Vinyl'],
-    colour: Color(0xFF001021),
   ),
   FxModule(
     name: 'Degrade',
     enables: ['Degrade'],
     groups: ['Degrade'],
-    colour: Color(0xFF873E0B),
   ),
   FxModule(
     name: 'Harmonizer',
@@ -321,7 +276,6 @@ const List<FxModule> kFxModules = [
       'Key',
     ],
     keys: ['Scale'],
-    colour: Color(0xFFC5E7E2),
     families: _vocalTunerFamilies,
   ),
   FxModule(
@@ -329,7 +283,6 @@ const List<FxModule> kFxModules = [
     enables: ['Smart Tune'],
     groups: ['Audio', 'Reference', 'Speed', 'Tracking'],
     keys: ['Scale Root', 'Scale Type'],
-    colour: Color(0xFFE4E6E6),
     families: _vocalTunerFamilies,
   ),
 ];

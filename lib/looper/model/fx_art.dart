@@ -23,23 +23,34 @@ final class FxRackPicture extends FxArt {
 }
 
 /// A catalogue pedal, drawn in code from its [effect]: its module's colour,
-/// its controls and their current values.
+/// its controls and, when [live], their current settings.
+///
+/// Made by [fxEntryArt], which resolves the [module].
 final class FxPedalPicture extends FxArt {
-  /// Creates an [FxPedalPicture].
-  const FxPedalPicture(this.effect);
+  const FxPedalPicture._(this.effect, this.module, {required this.live});
 
   /// The chain entry the pedal stands for.
   final BuiltInEffect effect;
 
+  /// The catalogue module it is.
+  final FxModule module;
+
+  /// Whether its knobs show [effect]'s settings. A surface that does not
+  /// rebuild when a setting changes draws them at fixed positions instead,
+  /// so they never show a stale value.
+  final bool live;
+
   @override
-  List<Object?> get props => [effect];
+  List<Object?> get props => [effect, module.name, live];
 }
 
 /// The pedal [effect] is drawn as, or `null` when it is not one of the
-/// catalogue's pedals.
-FxPedalPicture? fxEntryArt(TrackEffect effect) {
+/// catalogue's pedals. Pass `live: false` from a surface that does not
+/// rebuild when the effect's settings change ([FxPedalPicture.live]).
+FxPedalPicture? fxEntryArt(TrackEffect effect, {bool live = true}) {
   if (effect is! BuiltInEffect) return null;
-  final module = effect.module;
-  if (module == null || fxModuleNamed(module) == null) return null;
-  return FxPedalPicture(effect);
+  final name = effect.module;
+  final module = name == null ? null : fxModuleNamed(name);
+  if (module == null) return null;
+  return FxPedalPicture._(effect, module, live: live);
 }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_face.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_pedal.dart';
 import 'package:segno/theme/theme.dart';
@@ -37,13 +38,13 @@ void main() {
       for (final module in kFxModules)
         fxStompFace(
           l10n,
-          factoryPedal(
-            module,
-            presets.firstWhere(
-              (p) => fxPresetModules(p).contains(module),
+          fxEntryArt(
+            factoryPedal(
+              module,
+              presets.firstWhere((p) => fxPresetModules(p).contains(module)),
             ),
-          ),
-        )!,
+          )!,
+        ),
     ];
 
     await tester.pumpWidget(

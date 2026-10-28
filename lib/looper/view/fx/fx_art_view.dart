@@ -27,11 +27,10 @@ class FxArtView extends StatelessWidget {
           fit: BoxFit.contain,
           errorBuilder: (_, _, _) => const SizedBox.shrink(),
         );
-      case FxPedalPicture(:final effect):
-        final face = fxStompFace(context.l10n, effect);
-        return face == null
-            ? const SizedBox.shrink()
-            : Center(child: FxStompPedal(face: face));
+      case final FxPedalPicture pedal:
+        return Center(
+          child: FxStompPedal(face: fxStompFace(context.l10n, pedal)),
+        );
     }
   }
 }

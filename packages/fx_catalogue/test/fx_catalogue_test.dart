@@ -356,14 +356,6 @@ void main() {
       },
     );
 
-    test('every module has an opaque pedal colour', () {
-      // Opaque because the pedal's enclosure is drawn in it whole; two
-      // modules may share one, as their Looper X illustrations did.
-      for (final module in kFxModules) {
-        expect(module.colour.a, 1, reason: module.name);
-      }
-    });
-
     test('the power key and the parameter prefix are usually different '
         'words, which is why the table exists', () {
       final delay = kFxModules.firstWhere((m) => m.name == 'Delay');

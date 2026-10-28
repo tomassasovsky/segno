@@ -155,7 +155,9 @@ void main() {
       trackChains = {
         0: [pedal('d-1', 'Overdrive')],
       };
-      final stomp = FxPedalPicture(trackChains[0]!.first as BuiltInEffect);
+      final stomp = fxEntryArt(trackChains[0]!.first, live: false);
+      // Not live: the rows do not rebuild when a setting changes.
+      expect(stomp, isNotNull);
       expect(
         expressionTargetArt(
           looper,
@@ -235,7 +237,7 @@ void main() {
       expect(track.activations.first.art, const FxRackPicture('guitar'));
       expect(
         track.controls.firstWhere((c) => c.target is FxParamTarget).art,
-        FxPedalPicture(trackChains[0]!.first as BuiltInEffect),
+        fxEntryArt(trackChains[0]!.first, live: false),
       );
       expect(
         track.controls.firstWhere((c) => c.target is TrackVolumeTarget).art,
