@@ -104,7 +104,7 @@ FxStompFace fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
   final knobs = fxStompKnobs(module.name, controls);
   return FxStompFace(
     name: module.name.toUpperCase(),
-    subtitle: _variantFamily(effect)?.toUpperCase(),
+    subtitle: _variantFamily(effect, module)?.toUpperCase(),
     colour: kFxStompColours[module.name] ?? kFxStompFallbackColour,
     knobs: [
       for (final (n, i) in knobs.indexed)
@@ -118,25 +118,33 @@ FxStompFace fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
   );
 }
 
-/// The factory rack family whose variant of its module [effect] is
+/// The factory rack family whose variant of [module] [effect] is
 /// ([fxEntryBuild]), or `null` when it is none.
 ///
 /// Read from the controls the entry carries, not from the rack it sits in: a
 /// pedal added to another family's rack keeps its own family. Where several
 /// families share one variant, the family of the rack the entry sits in, if
-/// it is one of them, and otherwise the first.
-String? _variantFamily(BuiltInEffect effect) {
+/// it is one of them, and otherwise the first. A module this build has no
+/// variant of at all (the Harmonizer) takes its rack's family when the
+/// module belongs there.
+String? _variantFamily(BuiltInEffect effect, FxModule module) {
+  final slug = effect.rack?.art;
+  final variants = kFxModuleVariants[module.name];
+  if (variants == null) {
+    for (final MapEntry(key: family, value: familySlug)
+        in kFxFamilySlugs.entries) {
+      if (familySlug == slug && module.appearsIn(family)) return family;
+    }
+    return null;
+  }
   final build = fxEntryBuild(effect);
-  final variants = kFxModuleVariants[effect.module];
-  if (build == null || variants == null) return null;
+  if (build == null) return null;
   final families = [
     for (final MapEntry(:key, :value) in variants.entries)
       if (identical(value, build)) key,
   ];
-  if (families.isEmpty) return null;
-  final slug = effect.rack?.art;
   for (final family in families) {
     if (kFxFamilySlugs[family] == slug) return family;
   }
-  return families.first;
+  return families.firstOrNull;
 }

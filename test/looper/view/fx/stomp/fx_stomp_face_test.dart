@@ -168,6 +168,7 @@ void main() {
 
     expect(face.knobs, isEmpty);
     expect(face.name, 'HARMONIZER');
+    expect(face.subtitle, 'VOCAL TUNER RACK');
   });
 
   test('an entry that is no factory variant has no subtitle', () {
