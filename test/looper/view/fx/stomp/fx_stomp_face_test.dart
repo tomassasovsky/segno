@@ -116,6 +116,28 @@ void main() {
       ]);
     });
 
+    test('tops the table up from the front until the face is full', () {
+      // Only the four gains of the table, among eight controls.
+      const controls = (
+        params: [0, 1, 2, 3, 4, 5, 6, 7],
+        keys: [
+          'low_freq',
+          'low_gain',
+          'lo_mid_freq',
+          'lo_mid_gain',
+          'hi_mid_freq',
+          'hi_mid_gain',
+          'high_freq',
+          'high_gain',
+        ],
+      );
+
+      expect(
+        fxStompKnobs('Four-band EQ', controls, room: 6),
+        [0, 1, 2, 3, 5, 7],
+      );
+    });
+
     test('otherwise shows the first ones the rack editor lists', () {
       final face = faceOf(pedal('Dub delay', 'Dub Rack'));
 
@@ -159,8 +181,8 @@ void main() {
 
     expect(faceOf(entry.copyWith(enabled: true)).lit, isTrue);
     expect(faceOf(entry.copyWith(enabled: false)).lit, isFalse);
-    // A still picture shows the state it was made with.
-    expect(faceOf(entry.copyWith(enabled: false), live: false).lit, isFalse);
+    // A still picture shows no state: its surface does not follow the rig.
+    expect(faceOf(entry.copyWith(enabled: false), live: false).lit, isTrue);
   });
 
   test('a still picture is the same picture whatever the settings', () {

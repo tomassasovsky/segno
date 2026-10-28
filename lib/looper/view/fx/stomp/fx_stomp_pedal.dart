@@ -36,7 +36,11 @@ class FxStompPedal extends StatelessWidget {
       child: ExcludeSemantics(
         child: AspectRatio(
           aspectRatio: kind.size.aspectRatio,
+          // Clipped to the face, as the design's viewBox clips it: the body's
+          // blurred shadow stops at its edge rather than on the surface
+          // around it.
           child: FittedBox(
+            clipBehavior: Clip.hardEdge,
             child: SizedBox.fromSize(
               size: kind.size,
               child: Stack(
@@ -188,18 +192,20 @@ class _LabelsPainter extends CustomPainter {
   final List<_KnobSpot> spots;
   final Color colour;
 
+  /// What the labels' recording is kept under.
+  late final _LabelsKey _key = (
+    labels: labels.join('\n'),
+    spots: [
+      for (final spot in spots)
+        (spot.centre, spot.labelBaseline, spot.labelSize, spot.wraps),
+    ].join(),
+    colour: colour,
+  );
+
   @override
   void paint(Canvas canvas, Size size) {
-    final key = (
-      labels: labels.join('\n'),
-      spots: [
-        for (final spot in spots)
-          (spot.centre, spot.labelBaseline, spot.labelSize, spot.wraps),
-      ].join(),
-      colour: colour,
-    );
     canvas.drawPicture(
-      _StompPictures.instance.labels.putIfAbsent(key, () {
+      _StompPictures.instance.labels.putIfAbsent(_key, () {
         final recorder = ui.PictureRecorder();
         final recording = Canvas(recorder);
         for (final label in _layOutLabels(labels, spots, colour)) {
@@ -349,6 +355,17 @@ final class _KnobParts {
     ..strokeWidth = 3
     ..strokeCap = StrokeCap.round;
   final Paint glint = Paint()..color = const Color(0x40FFFFFF);
+
+  final Map<(Color, double), Paint> _pointers = {};
+
+  /// The pointer stroke in [colour], [width] wide.
+  Paint pointer(Color colour, double width) => _pointers.putIfAbsent(
+    (colour, width),
+    () => Paint()
+      ..color = colour
+      ..strokeWidth = width
+      ..strokeCap = StrokeCap.round,
+  );
 }
 
 /// The knobs of one pedal, at their [settings].
@@ -418,10 +435,7 @@ void _paintKnob(
   void pointer(Color colour, double width) => canvas.drawLine(
     c + d * (r * .18),
     c + d * (r * .8),
-    Paint()
-      ..color = colour
-      ..strokeWidth = width
-      ..strokeCap = StrokeCap.round,
+    parts.pointer(colour, width),
   );
   canvas.drawOval(parts.shadow, parts.shadowFill);
   switch (style) {

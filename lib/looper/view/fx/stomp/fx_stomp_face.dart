@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -58,17 +60,21 @@ List<int> fxStompKnobs(
 }) {
   final count = controls.keys.length;
   if (count <= room) return [for (var i = 0; i < count; i++) i];
-  final preferred = kFxStompKnobKeys[module];
+  final preferred = kFxStompKnobKeys[module] ?? const <String>{};
   final picked = [
     for (var i = 0; i < count; i++)
-      if (preferred?.contains(controls.keys[i]) ?? false) i,
+      if (preferred.contains(controls.keys[i])) i,
   ];
-  // The table names [room] of the variant's controls, which a test keeps
-  // true; capped and filled from the front so a face never holds more or
-  // goes empty if it drifts.
-  return picked.isEmpty
-      ? [for (var i = 0; i < room; i++) i]
-      : picked.take(room).toList();
+  // The table's controls first, then the rest in order until the face is
+  // full: a face never holds more than [room], nor fewer while there are
+  // controls left.
+  return [
+    ...picked.take(room),
+    ...[
+      for (var i = 0; i < count; i++)
+        if (!picked.contains(i)) i,
+    ].take(room - math.min(room, picked.length)),
+  ]..sort();
 }
 
 /// The controls a module's pedal shows when its variant has more than its
@@ -106,8 +112,8 @@ const List<double> _kRestingSettings = [
 ///
 /// The knobs are the entry's own controls ([fxStompKnobs]), so a pedal never
 /// shows a control that does not exist; they point at the entry's settings
-/// when the pedal is live. The LED is on while the effect is engaged, as it
-/// was when the picture was made for a still pedal.
+/// when the pedal is live. A live pedal's LED is on while the effect is
+/// engaged; a still pedal shows no state, so its LED rests on.
 FxStompFace? fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
   final FxPedalPicture(:effect, :module, :controls, :live) = pedal;
   final spec = kFxStompSpecs[module.name];
@@ -120,7 +126,7 @@ FxStompFace? fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
   );
   return FxStompFace(
     spec: spec,
-    lit: effect.enabled,
+    lit: !live || effect.enabled,
     knobs: [
       for (final (n, i) in knobs.indexed)
         FxStompKnob(

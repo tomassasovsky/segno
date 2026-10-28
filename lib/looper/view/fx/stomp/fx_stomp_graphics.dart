@@ -106,20 +106,8 @@ Shader fxStompDome(Rect r) => fxStompBoxRadial(
   const [0, .35, .8, 1],
 );
 
-Path _poly(Iterable<Offset> points, {bool close = false}) {
-  final path = Path();
-  var first = true;
-  for (final p in points) {
-    if (first) {
-      path.moveTo(p.dx, p.dy);
-      first = false;
-    } else {
-      path.lineTo(p.dx, p.dy);
-    }
-  }
-  if (close) path.close();
-  return path;
-}
+Path _poly(List<Offset> points, {bool close = false}) =>
+    Path()..addPolygon(points, close);
 
 /// The design's `wave()`: a sine sampled every [step] across `x0..x1`.
 List<Offset> _wave(
