@@ -86,6 +86,11 @@ void main() {
     final cubit = build()..open();
     volumes.add(on);
     await pumpEventQueue();
+    // The drive is read with real file I/O, which the event queue does not
+    // wait for, so a loaded machine can still be reading here.
+    while (cubit.state.phase == UsbUpdatePhase.reading) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
     return cubit;
   }
 

@@ -75,6 +75,11 @@ The design file and the hardware have their own repositories:
 
 ## Verify loop
 
+Run the full suites once, before pushing. While iterating, run only the tests
+for the code you touched (`flutter test <paths>`), and leave the rest to CI,
+which runs everything on every push. Do not rerun the full Flutter suite after
+each small fix.
+
 Run these before calling a change done:
 
 - Dart/Flutter tests: run `flutter test` through the absolute path in
@@ -103,8 +108,9 @@ Run these before calling a change done:
 
 ## Tracking
 
-Pipeline stages, autonomy labels, the merge gate (CI green and `/code-review`
-clean), and auto-merge rules are defined in `docs/TRACKING.md`. Follow it as
+Pipeline stages, autonomy labels, the merge gate (CI green and no correctness
+findings from `/code-review`, run once at the end and at most twice), and
+auto-merge rules are defined in `docs/TRACKING.md`. Follow it as
 written. If an `autonomy:auto` item turns out to need a design call, relabel
 it `autonomy:plan-gate` and stop.
 
