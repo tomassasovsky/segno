@@ -97,7 +97,8 @@ Files are published with an exclusive rename only after length and SHA-256
 verification. The app never interprets a failed transfer as a completed file.
 
 The Mac companion uses native window controls and spacing. Its layout and the
-reason for differing from appliance geometry are recorded in `segno-ui.pen`.
+reason for differing from appliance geometry are recorded in the design file
+(the Penpot file segno-ui, converted from `segno-ui.pen`).
 Its terminology follows the instrument's main performance/input/loop concepts.
 Offline-rendered tracks can be musically incomplete even when their WAV
 container is complete; this utility preserves their bytes rather than rendering

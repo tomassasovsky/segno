@@ -21,8 +21,8 @@ The build and layout of the rest of the repository are described in
 [`../firmware`](../firmware/README.md) and [`../deploy`](../deploy/README.md).
 The hardware design is in
 [segno-hardware](https://github.com/tomassasovsky/segno-hardware), and the
-Pencil design file and design studies are in
-[segno-design](https://github.com/tomassasovsky/segno-design).
+snapshots of the Penpot design file, the frozen Pencil file and the design
+studies are in [segno-design](https://github.com/tomassasovsky/segno-design).
 
 ## Formats
 

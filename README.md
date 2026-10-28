@@ -124,7 +124,9 @@ Two sibling repositories hold the rest of the project:
 [segno-hardware](https://github.com/tomassasovsky/segno-hardware) has the PCBs
 (KiCad), the enclosure generator (Python/CadQuery) and the manufacturing files,
 and [segno-design](https://github.com/tomassasovsky/segno-design) has the
-Pencil design file (`segno-ui.pen`) and the design studies.
+design's history and studies. The UI design itself is a Penpot file on a
+self-hosted Penpot server; segno-design keeps snapshots of it, and the
+earlier Pencil file (`segno-ui.pen`), now frozen.
 
 ## Building
 
