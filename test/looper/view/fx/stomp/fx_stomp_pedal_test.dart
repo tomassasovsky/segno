@@ -38,10 +38,12 @@ void main() {
   /// What is drawn, not the box: a tight box is filled and the pedal
   /// centred in it.
   Rect drawn(WidgetTester tester) => tester.getRect(
-    find.descendant(
-      of: find.byType(FxStompPedal),
-      matching: find.byType(Stack),
-    ),
+    find
+        .descendant(
+          of: find.byType(FxStompPedal),
+          matching: find.byType(Stack),
+        )
+        .first,
   );
 
   for (final (module, kind) in const [
@@ -90,7 +92,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  test('no knob label overlaps another, or another knob, on any face', () {
+  test('no knob label overlaps another label, another knob or its scale, '
+      'or leaves its panel, on any face', () {
     // The longest real controls, in the test font, whose glyphs are wider
     // than the app's.
     const long = [
@@ -104,7 +107,22 @@ void main() {
     for (final kind in FxStompFaceKind.values) {
       for (var count = 1; count <= kind.maxKnobs; count++) {
         final rects = fxStompLabelBounds(kind, long.take(count).toList());
-        final knobs = fxStompKnobBounds(kind, count);
+        // A module's knobs carry a scale out to 56 around their 38.
+        final scale = kind == FxStompFaceKind.module ? 56.0 - 38 : 0.0;
+        final knobs = [
+          for (final knob in fxStompKnobBounds(kind, count))
+            knob.inflate(scale),
+        ];
+        // A window's labels print on its panel, which ends at 350.
+        if (kind == FxStompFaceKind.window) {
+          for (final (i, label) in rects.indexed) {
+            expect(
+              label.bottom,
+              lessThanOrEqualTo(350),
+              reason: '${kind.name} with $count knobs: ${long[i]}',
+            );
+          }
+        }
         for (final (i, label) in rects.indexed) {
           for (final (k, knob) in knobs.indexed) {
             if (k == i) continue;

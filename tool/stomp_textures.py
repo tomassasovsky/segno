@@ -30,6 +30,9 @@ SCALES = {'marble': 2}
 
 FINISHES = ('hammer', 'flake', 'brush', 'marble', 'grain')
 
+# Tiles written black rather than white.
+DARK = {'grain'}
+
 
 def band_noise(size, fx, fy, octaves, seed, turbulence=False):
     """Periodic noise with energy near spatial frequency (fx, fy) cycles per px."""
@@ -71,7 +74,8 @@ def hammer(size):
 def flake(size):
     # Sparse bright specks.
     v = band_noise(size, .5, .5, 1, 11)
-    return np.clip((v - .80) * 9, 0, 1)
+    # The design's alpha row: 9 * noise - 7.6.
+    return np.clip(9 * v - 7.6, 0, 1)
 
 
 def brush(size):
@@ -87,7 +91,8 @@ def marble(size):
 
 
 def grain(size):
-    # The faint grain the design lays over every body: fine noise at 7%.
+    # The faint grain the design lays over every body: fine noise at 7%, in
+    # black (the design's filter zeroes the colour).
     v = band_noise(size, .45, .45, 2, 3)
     return .07 * v
 
@@ -97,7 +102,8 @@ def main():
     for name in FINISHES:
         alpha = globals()[name](SIZE)
         a = np.round(alpha * 255).astype(np.uint8)
-        white = np.full_like(a, 255)
+        # White with the texture in its alpha; the grain is black.
+        white = np.full_like(a, 0 if name in DARK else 255)
         path = os.path.join(OUT, f'{name}.png')
         Image.fromarray(np.stack([white, a], axis=-1), 'LA').save(path, optimize=True)
         print(path, os.path.getsize(path), 'bytes')

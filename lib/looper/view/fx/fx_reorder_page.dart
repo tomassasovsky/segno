@@ -231,6 +231,14 @@ class _Card extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
+    // What a card with no picture, or a pedal with no look, shows.
+    final mark = Center(
+      child: Icon(
+        LucideIcons.audioWaveform,
+        size: 56,
+        color: surface.textTertiary,
+      ),
+    );
     final tag = card.stageTag;
     return Semantics(
       button: true,
@@ -270,14 +278,8 @@ class _Card extends StatelessWidget {
                   const SizedBox(height: 20),
                   Expanded(
                     child: switch (card.art) {
-                      final art? => FxArtView(art: art),
-                      null => Center(
-                        child: Icon(
-                          LucideIcons.audioWaveform,
-                          size: 56,
-                          color: surface.textTertiary,
-                        ),
-                      ),
+                      final art? => FxArtView(art: art, fallback: mark),
+                      null => mark,
                     },
                   ),
                   const SizedBox(height: 20),

@@ -79,6 +79,7 @@ Future<void> runSegno(
     await runReadoutScreen();
     return;
   }
+
   // Durable logfile under $HOME/log (→ /data/log on the appliance). Before
   // audio auto-start so open failures leave a breadcrumb, and AFTER the
   // readout branch above: the readout is a second Flutter engine in this

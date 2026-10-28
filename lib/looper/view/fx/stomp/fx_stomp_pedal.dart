@@ -14,8 +14,8 @@ import 'package:segno/theme/theme.dart';
 /// The pedal keeps its face's proportions and scales to fit the space its
 /// parent gives it. Every part is laid out in the face's fixed drawing space
 /// and the whole is scaled. The enclosure and the labels are recorded once
-/// per look and replayed, so turning a knob repaints only the knobs over
-/// them.
+/// per look and kept on a layer of their own, so turning a knob repaints
+/// only the knobs over them.
 class FxStompPedal extends StatelessWidget {
   /// Creates an [FxStompPedal].
   const FxStompPedal({required this.face, super.key});
@@ -46,28 +46,37 @@ class FxStompPedal extends StatelessWidget {
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
+                  // The enclosure and labels on a layer of their own, so a
+                  // turning knob neither re-records nor re-rasterizes them.
                   Positioned.fill(
-                    // Complex and still: the raster cache may keep it while
-                    // only the knobs over it change.
-                    child: CustomPaint(
-                      isComplex: true,
-                      painter: _EnclosurePainter(
-                        spec: spec,
-                        led: face.led,
-                        knobs: knobs.length,
-                        textures: textures.images,
-                      ),
-                    ),
-                  ),
-                  Positioned.fill(
-                    child: CustomPaint(
-                      isComplex: true,
-                      painter: _LabelsPainter(
-                        labels: [for (final knob in knobs) knob.label],
-                        spots: spots,
-                        colour: kind == FxStompFaceKind.window
-                            ? spec.panelInk
-                            : spec.bodyInk,
+                    child: RepaintBoundary(
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Positioned.fill(
+                            child: CustomPaint(
+                              isComplex: true,
+                              painter: _EnclosurePainter(
+                                spec: spec,
+                                led: face.led,
+                                knobs: knobs.length,
+                                textures: textures.images,
+                              ),
+                            ),
+                          ),
+                          Positioned.fill(
+                            child: CustomPaint(
+                              isComplex: true,
+                              painter: _LabelsPainter(
+                                labels: [for (final knob in knobs) knob.label],
+                                spots: spots,
+                                colour: kind == FxStompFaceKind.window
+                                    ? spec.panelInk
+                                    : spec.bodyInk,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -925,7 +934,8 @@ class _Enclosure {
         shadows: [
           Shadow(
             offset: const Offset(0, 1.5),
-            blurRadius: 1.2,
+            // Sigma 0.6, the design's stdDeviation.
+            blurRadius: .17,
             color: Colors.black.withValues(alpha: .35),
           ),
         ],
