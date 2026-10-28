@@ -845,6 +845,15 @@ void main() {
     );
 
     blocTest<UpdateCubit, UpdateState>(
+      'startDownload holds off while RAUC is still writing',
+      seed: () => UpdateState(available: _v2, raucInstalling: true),
+      build: polling,
+      act: (cubit) => cubit.startDownload(),
+      expect: () => const <UpdateState>[],
+      verify: (_) => verifyNever(() => updates.downloadAndStage(any())),
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
       'stops asking once closed',
       setUp: () {
         when(

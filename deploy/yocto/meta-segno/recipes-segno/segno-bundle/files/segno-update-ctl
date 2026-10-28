@@ -124,12 +124,26 @@ log() { echo "segno-update-ctl: $*" >&2; }
 # writes a slot only from its daemon, and a daemon that does not answer the
 # bus is not running an install for anyone.
 rauc_installing() {
-    operation=$(busctl get-property de.pengutronix.rauc / \
+    # Bounded: a wedged daemon must not hold a reset (or the app's Saving
+    # face) for busctl's default 25 s.
+    operation=$(busctl --timeout=5 get-property de.pengutronix.rauc / \
         de.pengutronix.rauc.Installer Operation 2>/dev/null) || {
         log "could not read RAUC's operation; treating it as idle"
         return 1
     }
     [ "$operation" = 's "installing"' ]
+}
+
+# Refuses a second install while RAUC is writing the slot for an earlier one
+# (a run the app no longer knows about, #1498). RAUC would refuse it too, but
+# only after the download, and the failure would remove the attempt marker
+# that still speaks for the install in progress.
+refuse_second_install() {
+    if rauc_installing; then
+        log "RAUC is already installing an update; not starting another"
+        return 0
+    fi
+    return 1
 }
 
 # Refuses a reset while RAUC is writing the inactive slot.
@@ -256,6 +270,7 @@ do_install() {
         log "the boot partition is read-only; restart to repair it"
         return "$EXIT_BOOT_READ_ONLY"
     fi
+    refuse_second_install && return 1
     channel=$(resolve_channel)
     current=$(cat "$CUR_FILE" 2>/dev/null || echo "0.0.0")
 
@@ -318,6 +333,11 @@ open_attempt() {
 install_bundle() {
     bundle_path=$1 version=$2 from=$3
     log "installing v$version to the inactive slot"
+    # The slot an earlier build was staged to is about to be overwritten.
+    # Its markers go first, so a reset after this install fails or is cut
+    # off never tries the half-written slot as that build.
+    clear_staged_marker
+    rm -f "$PENDING_FLAG"
     fifo="$work/rauc.fifo"
     mkfifo "$fifo"
     rauc install "$bundle_path" >"$fifo" 2>&1 &
@@ -376,6 +396,7 @@ do_install_file() {
         log "the boot partition is read-only; restart to repair it"
         return "$EXIT_BOOT_READ_ONLY"
     fi
+    refuse_second_install && return 1
     progress 0
 
     # `rauc info` verifies the signature against the keyring before it

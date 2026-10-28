@@ -184,11 +184,15 @@ class UpdateCubit extends Cubit<UpdateState> {
 
   /// Downloads and stages the available bundle to the inactive slot, tracking
   /// progress. Opt-in — call only from an explicit user action. No-op when no
-  /// update is available or one is already downloading. Completes when the
+  /// update is available, one is already downloading, or another install is
+  /// running (a USB package, or one RAUC is still writing). Completes when the
   /// download is staged, fails, or is cancelled.
   Future<void> startDownload() {
     final manifest = state.available;
-    if (manifest == null || _download != null || state.usbInstalling) {
+    if (manifest == null ||
+        _download != null ||
+        state.usbInstalling ||
+        state.raucInstalling) {
       return Future.value();
     }
     emit(

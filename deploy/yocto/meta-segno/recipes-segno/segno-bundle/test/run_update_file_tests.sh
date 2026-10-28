@@ -47,6 +47,13 @@ esac
 exit 0
 STUB
     chmod +x "$work/bin/rauc"
+    # RAUC's D-Bus Operation (#1498): idle unless a test writes
+    # "$work/operation".
+    cat > "$work/bin/busctl" <<STUB
+#!/bin/sh
+printf 's "%s"\\n' "\$(cat "$work/operation" 2>/dev/null || echo idle)"
+STUB
+    chmod +x "$work/bin/busctl"
     printf 'bundle-bytes\n' > "$work/staging/segno-0.7.0.raucb"
 }
 
@@ -172,6 +179,15 @@ JSON
 out=$(ctl install-file "$work/staging/segno-0.7.0.raucb" 2>"$work/stderr"); rc=$?
 check "exits 4" 4 "$rc"
 check "the line parses" '1.0.0-a"b.1' "$(echo "$out" | grep '^{' | jq -r .version)"
+teardown
+
+echo "RAUC still installing an earlier run's install: install-file refuses"
+setup
+echo installing > "$work/operation"
+ctl install-file "$work/staging/segno-0.7.0.raucb" >/dev/null 2>"$work/stderr"; rc=$?
+check "exits non-zero" 1 "$rc"
+nothing_written
+check "removes the staging copy" no "$(exists "$work/staging/segno-0.7.0.raucb")"
 teardown
 
 echo "a read-only /boot exits 3 before anything is checked"

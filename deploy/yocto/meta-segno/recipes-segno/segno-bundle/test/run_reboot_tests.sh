@@ -135,7 +135,7 @@ check "keeps the staged marker" yes \
 check "says why" yes \
     "$(grep -q 'RAUC is installing' "$work/stderr" && echo yes || echo no)"
 check "asks RAUC's Installer for its Operation" \
-    "get-property de.pengutronix.rauc / de.pengutronix.rauc.Installer Operation" \
+    "--timeout=5 get-property de.pengutronix.rauc / de.pengutronix.rauc.Installer Operation" \
     "$(tr '\n' ' ' < "$work/busctl-args" | sed 's/ *$//')"
 teardown
 
