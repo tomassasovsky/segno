@@ -61,16 +61,31 @@ human click for that class; `merge-gate` and above still end on a human merge.
 architecture/direction call, stop and relabel it `plan-gate` rather than pushing
 through.
 
-## The merge gate — "clean = CI AND code-review"
+## The merge gate — "clean = CI AND no correctness findings"
 
 A PR is only mergeable when **both** are green. Two labels track it:
 
 - `ci:red` → `ci:green` — from `gh pr checks`.
-- `review:pending` → `review:clean` — after the `/code-review` skill runs and comes
-  back empty.
+- `review:pending` → `review:clean` — after the `/code-review` skill runs and
+  reports **no correctness findings**.
 
 Only when both are green does the PR get `ready-to-merge`. CI green alone is not
-enough — the code-review skill must also be clean.
+enough.
+
+How the review runs:
+
+- **Once, when the work is complete**, not after every fix. Fix what it finds,
+  then run it a second time at most. Two rounds is the cap.
+- **Correctness findings block the merge.** A correctness finding is wrong
+  behaviour: a bug, a crash, data loss, a broken contract, or something wrong
+  on screen.
+- **Cleanup findings do not block.** Reuse, simplification, efficiency,
+  altitude and style findings go into the PR body under "Follow-ups", or into
+  a follow-up issue when they are worth doing. The review mode reports several
+  findings every time, so "comes back empty" is not the bar.
+- If correctness findings remain after the second round, the PR stays at
+  `review:pending` and the agent reports them instead of starting a third
+  round.
 
 ## Keeping it current (agent responsibilities each session)
 
@@ -82,16 +97,19 @@ enough — the code-review skill must also be clean.
 - Stage changed, merged, or parked? Update the issue label and the thread's
   **Active threads** row. The PR that closes the issue removes its row.
 - Opening a PR? Add `stage:in-review`, `Closes #N`, `ci:*` + `review:pending`.
-- After running `/code-review` on a PR: set `review:clean` (or leave `pending` if
-  it has findings). If `ci:green` too, add `ready-to-merge`.
+- After running `/code-review` on a PR: set `review:clean` when no correctness
+  findings remain (or leave `pending` and report them). List the cleanup
+  findings under "Follow-ups" in the PR body. If `ci:green` too, add
+  `ready-to-merge`.
 - Finished a part of an `epic`? Tick its checklist box.
 - Merged? The `Closes #N` closes the issue automatically.
 
 ## Auto-merge (ON)
 
 Agents **merge `autonomy:auto` PRs** with `gh pr merge --squash` the moment they
-reach `ready-to-merge` (CI green AND `/code-review` clean). No human click for
-that class. Everything `merge-gate` and above still ends on a human merge — those
-labels *mean* "a human owns this call" (taste, blast radius, direction).
+reach `ready-to-merge` (CI green AND no correctness findings from
+`/code-review`). No human click for that class. Everything `merge-gate` and
+above still ends on a human merge — those labels *mean* "a human owns this
+call" (taste, blast radius, direction).
 
 To pause auto-merge on a specific PR, relabel it `autonomy:merge-gate`.
