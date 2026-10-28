@@ -47,10 +47,13 @@ class FxStompPedal extends StatelessWidget {
                 clipBehavior: Clip.none,
                 children: [
                   Positioned.fill(
+                    // Complex and still: the raster cache may keep it while
+                    // only the knobs over it change.
                     child: CustomPaint(
+                      isComplex: true,
                       painter: _EnclosurePainter(
                         spec: spec,
-                        lit: face.lit,
+                        led: face.led,
                         knobs: knobs.length,
                         textures: textures.images,
                       ),
@@ -58,6 +61,7 @@ class FxStompPedal extends StatelessWidget {
                   ),
                   Positioned.fill(
                     child: CustomPaint(
+                      isComplex: true,
                       painter: _LabelsPainter(
                         labels: [for (final knob in knobs) knob.label],
                         spots: spots,
@@ -521,7 +525,7 @@ final class _StompPictures {
 /// What an enclosure picture is recorded for.
 typedef _EnclosureKey = ({
   FxStompSpec spec,
-  bool lit,
+  FxStompLed led,
   int knobs,
   bool textured,
 });
@@ -531,7 +535,7 @@ typedef _EnclosureKey = ({
 class _EnclosurePainter extends CustomPainter {
   _EnclosurePainter({
     required this.spec,
-    required this.lit,
+    required this.led,
     required this.knobs,
     required this.textures,
   }) : super(
@@ -544,7 +548,7 @@ class _EnclosurePainter extends CustomPainter {
        );
 
   final FxStompSpec spec;
-  final bool lit;
+  final FxStompLed led;
   final int knobs;
   final ValueNotifier<Map<String, ui.Image>> textures;
 
@@ -561,7 +565,7 @@ class _EnclosurePainter extends CustomPainter {
     final tiles = textures.value;
     final key = (
       spec: spec,
-      lit: lit,
+      led: led,
       knobs: _knobs,
       textured: tiles.isNotEmpty,
     );
@@ -571,7 +575,7 @@ class _EnclosurePainter extends CustomPainter {
         _Enclosure(
           Canvas(recorder),
           spec,
-          lit: lit,
+          led: led,
           knobs: _knobs,
           tiles: tiles,
         ).paint();
@@ -583,7 +587,7 @@ class _EnclosurePainter extends CustomPainter {
   @override
   bool shouldRepaint(_EnclosurePainter oldDelegate) =>
       !identical(oldDelegate.spec, spec) ||
-      oldDelegate.lit != lit ||
+      oldDelegate.led != led ||
       oldDelegate._knobs != _knobs;
 }
 
@@ -592,14 +596,14 @@ class _Enclosure {
   _Enclosure(
     this.canvas,
     this.spec, {
-    required this.lit,
+    required this.led,
     required this.knobs,
     required this.tiles,
   });
 
   final Canvas canvas;
   final FxStompSpec spec;
-  final bool lit;
+  final FxStompLed led;
   final int knobs;
 
   /// The finish and grain tiles, by name ([FxStompTextures.images]).
@@ -775,20 +779,23 @@ class _Enclosure {
 
   void _led(Offset at) {
     final colour = spec.led;
-    if (lit) canvas.drawCircle(at, 15, _blur(colour, .55, 5));
-    final Paint lens;
-    if (lit) {
-      lens = Paint()
-        ..shader = fxStompBoxRadial(
-          Rect.fromCircle(center: at, radius: 6),
-          const Offset(.4, .35),
-          .7,
-          [Colors.white, colour, fxStompShade(colour, -.25)],
-          const [0, .45, 1],
-        );
-    } else {
-      lens = fxStompFill(fxStompShade(colour, -.38));
+    if (led == FxStompLed.on) {
+      canvas.drawCircle(at, 15, _blur(colour, .55, 5));
     }
+    final lens = switch (led) {
+      FxStompLed.on =>
+        Paint()
+          ..shader = fxStompBoxRadial(
+            Rect.fromCircle(center: at, radius: 6),
+            const Offset(.4, .35),
+            .7,
+            [Colors.white, colour, fxStompShade(colour, -.25)],
+            const [0, .45, 1],
+          ),
+      // The lens's own colour, with no light behind it.
+      FxStompLed.still => fxStompFill(fxStompShade(colour, -.15)),
+      FxStompLed.off => fxStompFill(fxStompShade(colour, -.38)),
+    };
     canvas
       ..drawCircle(
         at,

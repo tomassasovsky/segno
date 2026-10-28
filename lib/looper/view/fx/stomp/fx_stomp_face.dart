@@ -12,7 +12,7 @@ class FxStompFace extends Equatable {
   FxStompFace({
     required this.spec,
     required this.knobs,
-    this.lit = true,
+    this.led = FxStompLed.on,
   }) : assert(
          knobs.length <= spec.face.maxKnobs,
          'a face draws at most its maxKnobs knobs',
@@ -25,11 +25,24 @@ class FxStompFace extends Equatable {
   /// [FxStompFaceKind.maxKnobs].
   final List<FxStompKnob> knobs;
 
-  /// Whether the LED is on: the effect is engaged.
-  final bool lit;
+  /// What the LED shows.
+  final FxStompLed led;
 
   @override
-  List<Object?> get props => [spec, knobs, lit];
+  List<Object?> get props => [spec, knobs, led];
+}
+
+/// What a pedal's LED shows.
+enum FxStompLed {
+  /// Lit, with its glow: the effect is engaged.
+  on,
+
+  /// Dark: the effect is bypassed.
+  off,
+
+  /// Its lens, unlit and not dark: a still pedal, which shows no state
+  /// because its surface does not follow the rig.
+  still,
 }
 
 /// One knob on a pedal.
@@ -113,7 +126,7 @@ const List<double> _kRestingSettings = [
 /// The knobs are the entry's own controls ([fxStompKnobs]), so a pedal never
 /// shows a control that does not exist; they point at the entry's settings
 /// when the pedal is live. A live pedal's LED is on while the effect is
-/// engaged; a still pedal shows no state, so its LED rests on.
+/// engaged; a still pedal shows no state ([FxStompLed.still]).
 FxStompFace? fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
   final FxPedalPicture(:effect, :module, :controls, :live) = pedal;
   final spec = kFxStompSpecs[module.name];
@@ -126,7 +139,11 @@ FxStompFace? fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
   );
   return FxStompFace(
     spec: spec,
-    lit: !live || effect.enabled,
+    led: !live
+        ? FxStompLed.still
+        : effect.enabled
+        ? FxStompLed.on
+        : FxStompLed.off,
     knobs: [
       for (final (n, i) in knobs.indexed)
         FxStompKnob(

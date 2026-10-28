@@ -42,11 +42,10 @@ class FxStompTextures {
 
   Future<void>? _loading;
 
-  /// Decodes the tiles from [bundle], once: the app starts it at launch, and
-  /// a screenshot suite awaits it before drawing. A tile that fails to load
-  /// is left out, and its finish draws plain.
-  Future<void> load([AssetBundle? bundle]) =>
-      _loading ??= _load(bundle ?? rootBundle);
+  /// Decodes the tiles from the app bundle, once: the app starts it at launch,
+  /// and a screenshot suite awaits it before drawing. A tile that fails to
+  /// load is left out, and its finish draws plain.
+  Future<void> load() => _loading ??= _load(rootBundle);
 
   Future<void> _load(AssetBundle bundle) async {
     final loaded = await Future.wait([

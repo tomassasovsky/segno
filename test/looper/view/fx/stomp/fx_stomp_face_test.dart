@@ -179,10 +179,13 @@ void main() {
   test('the LED is on while the effect is engaged', () {
     final entry = pedal('Overdrive', "Ed's Rack");
 
-    expect(faceOf(entry.copyWith(enabled: true)).lit, isTrue);
-    expect(faceOf(entry.copyWith(enabled: false)).lit, isFalse);
+    expect(faceOf(entry.copyWith(enabled: true)).led, FxStompLed.on);
+    expect(faceOf(entry.copyWith(enabled: false)).led, FxStompLed.off);
     // A still picture shows no state: its surface does not follow the rig.
-    expect(faceOf(entry.copyWith(enabled: false), live: false).lit, isTrue);
+    expect(
+      faceOf(entry.copyWith(enabled: false), live: false).led,
+      FxStompLed.still,
+    );
   });
 
   test('a still picture is the same picture whatever the settings', () {

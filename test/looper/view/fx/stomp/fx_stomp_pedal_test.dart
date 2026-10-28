@@ -9,9 +9,13 @@ import '../../../../helpers/helpers.dart';
 void main() {
   const labels = ['LEVEL', 'TONE', 'TIME', 'MIX', 'SIZE', 'DECAY'];
 
-  FxStompFace face(String module, int knobs, {bool lit = true}) => FxStompFace(
+  FxStompFace face(
+    String module,
+    int knobs, {
+    FxStompLed led = FxStompLed.on,
+  }) => FxStompFace(
     spec: kFxStompSpecs[module]!,
-    lit: lit,
+    led: led,
     knobs: [
       for (var i = 0; i < knobs; i++)
         FxStompKnob(label: labels[i], setting: i / 5),
@@ -79,7 +83,8 @@ void main() {
   }
 
   testWidgets('a bypassed pedal still draws', (tester) async {
-    await pump(tester, face('Delay', 3, lit: false));
+    await pump(tester, face('Delay', 3, led: FxStompLed.off));
+    await pump(tester, face('Delay', 3, led: FxStompLed.still));
 
     expect(find.byType(FxStompPedal), findsOneWidget);
     expect(tester.takeException(), isNull);

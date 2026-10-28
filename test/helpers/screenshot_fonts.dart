@@ -84,40 +84,31 @@ String packageAssetPath(String package, String asset) {
   throw StateError('$package is not in the package config');
 }
 
-/// The file each display typeface is bundled as under `assets/fonts/`, by
-/// family.
-const Map<String, String> kFxStompFontFiles = {
-  'Audiowide': 'Audiowide-Regular.ttf',
-  'Bebas Neue': 'BebasNeue-Regular.ttf',
-  'Bungee': 'Bungee-Regular.ttf',
-  'Fascinate': 'Fascinate-Regular.ttf',
-  'Lobster': 'Lobster-Regular.ttf',
-  'Monoton': 'Monoton-Regular.ttf',
-  'Pacifico': 'Pacifico-Regular.ttf',
-  'Press Start 2P': 'PressStart2P-Regular.ttf',
-  'Righteous': 'Righteous-Regular.ttf',
-  'Rubik Mono One': 'RubikMonoOne-Regular.ttf',
-  'Rye': 'Rye-Regular.ttf',
-  'Shrikhand': 'Shrikhand-Regular.ttf',
-  'Space Mono': 'SpaceMono-Bold.ttf',
-};
-
 /// Registers every typeface a stomp pedal's look names, for a screenshot
-/// suite: the set is read from the looks themselves, not kept by hand.
+/// suite, from the font files the app bundles for it.
 ///
-/// Throws when one has no file rather than skipping it: a pedal printed in
-/// the test font's boxes is a golden that hides the gap.
+/// Both sides are read rather than listed: the families from the looks, the
+/// files from the font manifest the test build writes from the pubspec.
+/// Throws when a family has no file rather than skipping it: a pedal printed
+/// in the test font's boxes is a golden that hides the gap.
 Future<void> loadFxStompFonts() async {
-  final families = {
-    for (final spec in kFxStompSpecs.values) spec.font,
-  }..remove('Inter');
-  for (final family in families) {
-    final file = kFxStompFontFiles[family];
-    final path = 'assets/fonts/$file';
-    if (file == null || !File(path).existsSync()) {
+  final manifest =
+      jsonDecode(await rootBundle.loadString('FontManifest.json'))
+          as List<dynamic>;
+  final files = {
+    for (final entry in manifest.cast<Map<String, dynamic>>())
+      entry['family'] as String: [
+        for (final font
+            in (entry['fonts'] as List<dynamic>).cast<Map<String, dynamic>>())
+          font['asset'] as String,
+      ],
+  };
+  for (final family in {for (final spec in kFxStompSpecs.values) spec.font}) {
+    final assets = files[family];
+    if (assets == null || assets.isEmpty) {
       throw StateError('The stomp typeface $family is not bundled');
     }
-    await loadScreenshotFont(family, [path]);
+    await loadScreenshotFont(family, assets);
   }
 }
 
