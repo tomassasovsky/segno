@@ -8,13 +8,16 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_face.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_pedal.dart';
+import 'package:segno/looper/view/fx/stomp/fx_stomp_spec.dart';
+import 'package:segno/looper/view/fx/stomp/fx_stomp_textures.dart';
 import 'package:segno/theme/theme.dart';
 
 import '../helpers/helpers.dart';
 import '../looper/view/fx/stomp/factory_pedals.dart';
 
-/// Every catalogue pedal on one sheet, each as the first factory preset that
-/// holds it loads it: the review sheet for the pedals drawn in code (#1501).
+/// Every catalogue pedal, each as the first factory preset that holds it
+/// loads it, grouped by face as the approved design sheet groups them: the
+/// review sheet for the pedals drawn in code (#1501).
 void main() {
   setUpAll(() async {
     if (!rendersScreenshots) return;
@@ -24,43 +27,52 @@ void main() {
       'assets/fonts/Inter-SemiBold.ttf',
       'assets/fonts/Inter-Bold.ttf',
     ]);
+    await loadFxStompFonts();
   });
 
   testWidgets('Every catalogue pedal', (tester) async {
     tester.view
-      ..physicalSize = const Size(1680, 1440)
+      ..physicalSize = const Size(2000, 1900)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.runAsync(FxStompTextures.instance.load);
     final l10n = await AppLocalizations.delegate.load(const Locale('en'));
     final presets = factoryPresets();
-    final faces = [
-      for (final module in kFxModules)
-        fxStompFace(
-          l10n,
-          fxEntryArt(
-            factoryPedal(
-              module,
-              presets.firstWhere((p) => fxPresetModules(p).contains(module)),
-            ),
-          )!,
+    FxStompFace faceOf(FxModule module) => fxStompFace(
+      l10n,
+      fxEntryArt(
+        factoryPedal(
+          module,
+          presets.firstWhere((p) => fxPresetModules(p).contains(module)),
         ),
-    ];
+      )!,
+    );
 
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(extensions: const [SurfaceTheme.dark]),
         home: ColoredBox(
           color: SurfaceTheme.dark.background,
-          child: Wrap(
+          child: Column(
+            key: const Key('stomp_sheet'),
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final face in faces)
+              for (final kind in FxStompFaceKind.values)
                 Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: SizedBox(
-                    width: 220,
-                    height: 340,
-                    child: FxStompPedal(face: face),
+                  padding: const EdgeInsets.all(8),
+                  child: Wrap(
+                    spacing: 12,
+                    crossAxisAlignment: WrapCrossAlignment.end,
+                    children: [
+                      for (final module in kFxModules)
+                        if (kFxStompSpecs[module.name]!.face == kind)
+                          SizedBox(
+                            width: 180,
+                            height: 180 / kind.size.aspectRatio,
+                            child: FxStompPedal(face: faceOf(module)),
+                          ),
+                    ],
                   ),
                 ),
             ],
@@ -68,9 +80,10 @@ void main() {
         ),
       ),
     );
+    await tester.pump();
 
     await expectLater(
-      find.byType(Wrap),
+      find.byKey(const Key('stomp_sheet')),
       matchesGoldenFile('goldens/fx_stomp_pedals.png'),
     );
   }, skip: !rendersScreenshots);

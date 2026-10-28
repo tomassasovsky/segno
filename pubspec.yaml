@@ -111,6 +111,9 @@ flutter:
     # program (docs/design/settings-art in segno-design, commit 9a9996d41 on
     # docs/design-program-2026-09), byte for byte.
     - assets/settings/
+    # The stomp pedals' finish tiles (hammertone, flake, brushed metal,
+    # marble), written by tool/stomp_textures.py.
+    - assets/images/stomp/
     # The bundled fonts' licences, which About's notices show.
     - assets/fonts/LICENSE-Arimo.txt
     - assets/fonts/OFL-Inter.txt

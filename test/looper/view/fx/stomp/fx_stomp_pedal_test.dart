@@ -2,31 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_face.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_pedal.dart';
+import 'package:segno/looper/view/fx/stomp/fx_stomp_spec.dart';
 
 import '../../../../helpers/helpers.dart';
 
 void main() {
-  const knobLabels = ['LEVEL', 'TONE', 'TIME', 'MIX'];
+  const labels = ['LEVEL', 'TONE', 'TIME', 'MIX', 'SIZE', 'DECAY'];
 
-  FxStompFace face({
-    String name = 'DELAY',
-    String? subtitle = "ED'S RACK",
-    int knobs = 3,
-    Color colour = const Color(0xFF2BC8CF),
-  }) => FxStompFace(
-    name: name,
-    subtitle: subtitle,
-    colour: colour,
+  FxStompFace face(String module, int knobs, {bool lit = true}) => FxStompFace(
+    spec: kFxStompSpecs[module]!,
+    lit: lit,
     knobs: [
       for (var i = 0; i < knobs; i++)
-        FxStompKnob(label: knobLabels[i], setting: i / 3),
+        FxStompKnob(label: labels[i], setting: i / 5),
     ],
   );
 
   Future<void> pump(
     WidgetTester tester,
     FxStompFace face, {
-    Size box = const Size(225, 331),
+    Size box = const Size(300, 300),
   }) => tester.pumpApp(
     Center(
       child: SizedBox.fromSize(
@@ -36,74 +31,88 @@ void main() {
     ),
   );
 
-  for (final count in [1, 2, 3, 4]) {
-    testWidgets('a pedal with $count knobs labels each one', (tester) async {
-      await pump(tester, face(knobs: count));
+  /// What is drawn, not the box: a tight box is filled and the pedal
+  /// centred in it.
+  Rect drawn(WidgetTester tester) => tester.getRect(
+    find.descendant(
+      of: find.byType(FxStompPedal),
+      matching: find.byType(Stack),
+    ),
+  );
 
-      for (var i = 0; i < 4; i++) {
-        expect(
-          find.text(knobLabels[i]),
-          i < count ? findsOneWidget : findsNothing,
-        );
-      }
-      expect(find.text('DELAY'), findsOneWidget);
-      expect(find.text('CHECK'), findsOneWidget);
+  for (final (module, kind) in const [
+    ('Delay', FxStompFaceKind.treadle),
+    ('Reverb', FxStompFaceKind.box),
+    ('Pumper', FxStompFaceKind.window),
+    ('Compressor', FxStompFaceKind.module),
+    ('Wah', FxStompFaceKind.rocker),
+  ]) {
+    testWidgets('a ${kind.name} face keeps its own proportions', (
+      tester,
+    ) async {
+      expect(kFxStompSpecs[module]!.face, kind);
+      await pump(tester, face(module, kind.maxKnobs));
+
+      final rect = drawn(tester);
+      expect(rect.width / rect.height, closeTo(kind.size.aspectRatio, .01));
+      expect(rect.center, tester.getCenter(find.byType(FxStompPedal)));
       expect(tester.takeException(), isNull);
     });
   }
 
-  testWidgets('a long name shrinks to fit the treadle', (tester) async {
-    await pump(tester, face(name: 'LOW-PASS FILTER', knobs: 4));
+  for (final count in [1, 2, 3, 4]) {
+    testWidgets('a treadle with $count knobs draws each one', (tester) async {
+      await pump(tester, face('Delay', count));
 
-    final pedal = tester.getRect(find.byType(FxStompPedal));
-    final name = tester.getRect(find.text('LOW-PASS FILTER'));
-    // The treadle is 386 of the pedal's 450 units wide.
-    expect(name.width, lessThanOrEqualTo(pedal.width * 386 / 450));
-    expect(name.left, greaterThan(pedal.left));
-    expect(name.right, lessThan(pedal.right));
+      expect(knobsOf(tester), count);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final count in [4, 5, 6]) {
+    testWidgets('a box and a module with $count knobs draw each one', (
+      tester,
+    ) async {
+      await pump(tester, face('Reverb', count));
+      expect(knobsOf(tester), count);
+
+      await pump(tester, face('Compressor', count));
+      expect(knobsOf(tester), count);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('a face never draws more knobs than it holds', (tester) async {
+    await pump(tester, face('Delay', 6));
+    expect(knobsOf(tester), 4);
+
+    await pump(tester, face('Whammy', 2));
+    expect(knobsOf(tester), 0);
+  });
+
+  testWidgets('a bypassed pedal still draws', (tester) async {
+    await pump(tester, face('Delay', 3, lit: false));
+
+    expect(find.byType(FxStompPedal), findsOneWidget);
     expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('a pedal with no subtitle prints only its name', (tester) async {
-    await pump(tester, face(subtitle: null));
-
-    expect(find.text('DELAY'), findsOneWidget);
-    expect(find.text("ED'S RACK"), findsNothing);
-  });
-
-  testWidgets('a pedal keeps its proportions in any box', (tester) async {
-    await pump(tester, face(), box: const Size(300, 300));
-
-    // What is drawn, not the box: a tight box is filled and the pedal
-    // centred in it.
-    final drawn = tester.getRect(
-      find.descendant(
-        of: find.byType(FxStompPedal),
-        matching: find.byType(Stack),
-      ),
-    );
-    expect(drawn.height, closeTo(300, 0.5));
-    expect(drawn.width, closeTo(300 * 450 / 662, 0.5));
-    expect(drawn.center, tester.getCenter(find.byType(FxStompPedal)));
-  });
-
-  testWidgets('a light enclosure is printed dark, a dark one light', (
-    tester,
-  ) async {
-    Color ink() => tester.widget<Text>(find.text('DELAY')).style!.color!;
-
-    await pump(tester, face(colour: const Color(0xFFFEFCFE)));
-    expect(ink().computeLuminance(), lessThan(.1));
-
-    await pump(tester, face(colour: const Color(0xFF001021)));
-    expect(ink().computeLuminance(), greaterThan(.8));
   });
 
   testWidgets('the pedal is a picture to a screen reader', (tester) async {
     final semantics = tester.ensureSemantics();
-    await pump(tester, face());
+    await pump(tester, face('Delay', 3));
 
-    expect(find.bySemanticsLabel('DELAY'), findsNothing);
+    expect(find.bySemanticsLabel('LEVEL'), findsNothing);
     semantics.dispose();
   });
 }
+
+/// How many knobs the pedal draws: each is a layer of its own.
+int knobsOf(WidgetTester tester) =>
+    find
+        .descendant(
+          of: find.byType(FxStompPedal),
+          matching: find.byType(RepaintBoundary),
+        )
+        .evaluate()
+        .length -
+    1;

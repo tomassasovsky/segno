@@ -81,3 +81,30 @@ String packageAssetPath(String package, String asset) {
   }
   throw StateError('$package is not in the package config');
 }
+
+/// The display typefaces the stomp pedals print their names in, by family,
+/// and the file each is bundled as under `assets/fonts/`.
+const List<(String, String)> kFxStompFontFiles = [
+  ('Audiowide', 'Audiowide-Regular.ttf'),
+  ('Bebas Neue', 'BebasNeue-Regular.ttf'),
+  ('Bungee', 'Bungee-Regular.ttf'),
+  ('Fascinate', 'Fascinate-Regular.ttf'),
+  ('Lobster', 'Lobster-Regular.ttf'),
+  ('Monoton', 'Monoton-Regular.ttf'),
+  ('Pacifico', 'Pacifico-Regular.ttf'),
+  ('Press Start 2P', 'PressStart2P-Regular.ttf'),
+  ('Righteous', 'Righteous-Regular.ttf'),
+  ('Rubik Mono One', 'RubikMonoOne-Regular.ttf'),
+  ('Rye', 'Rye-Regular.ttf'),
+  ('Shrikhand', 'Shrikhand-Regular.ttf'),
+  ('Space Mono', 'SpaceMono-Bold.ttf'),
+];
+
+/// Registers the stomp pedals' display typefaces that are bundled, for a
+/// screenshot suite.
+Future<void> loadFxStompFonts() async {
+  for (final (family, file) in kFxStompFontFiles) {
+    final path = 'assets/fonts/$file';
+    if (File(path).existsSync()) await loadScreenshotFont(family, [path]);
+  }
+}

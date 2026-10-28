@@ -4,8 +4,8 @@ import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/fx_art.dart';
-import 'package:segno/looper/view/fx/stomp/fx_stomp_colours.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_face.dart';
+import 'package:segno/looper/view/fx/stomp/fx_stomp_spec.dart';
 
 import 'factory_pedals.dart';
 
@@ -33,44 +33,46 @@ void main() {
     );
   }
 
-  test('every catalogue module has an opaque pedal colour', () {
-    for (final module in kFxModules) {
-      expect(kFxStompColours[module.name]?.a, 1, reason: module.name);
-    }
+  test('every catalogue module has a look, and only they do', () {
     expect(
-      kFxStompColours.keys.toSet(),
+      kFxStompSpecs.keys.toSet(),
       kFxModules.map((m) => m.name).toSet(),
-      reason: 'no colour for a module the catalogue does not have',
     );
   });
 
+  test('names and labels print dark on a light body, light on a dark one, '
+      'unless the design sets the ink', () {
+    expect(kFxStompSpecs['High-pass gate']!.bodyInk, kFxStompDarkInk);
+    expect(kFxStompSpecs['Delay']!.bodyInk, kFxStompLightInk);
+    expect(kFxStompSpecs['Amp']!.bodyInk, const Color(0xFF2A1A08));
+    expect(kFxStompSpecs['Spring reverb']!.bodyInk, const Color(0xFFF1D39A));
+    // A window face's labels print on its panel.
+    expect(kFxStompSpecs['Pitch shift']!.panelInk, kFxStompDarkInk);
+  });
+
   group('every factory pedal', () {
-    test('is drawn in its module colour with at most four of its own '
-        'controls', () {
+    test('wears its look and shows only its own controls, as many as its '
+        'face holds', () {
       final drawn = <String>{};
       for (final preset in presets) {
         for (final module in fxPresetModules(preset)) {
           final entry = factoryPedal(module, preset);
           final face = faceOf(entry);
           final where = '${module.name} in ${preset.family}/${preset.name}';
-          expect(face.colour, kFxStompColours[module.name], reason: where);
-          expect(face.name, module.name.toUpperCase(), reason: where);
+          expect(face.spec, kFxStompSpecs[module.name], reason: where);
+          final room = face.spec.face.maxKnobs;
           // A real control, never one the pedal does not have.
           final controls = fxEntryControls(entry);
           final count = controls.keys.length;
-          expect(
-            face.knobs.length,
-            count.clamp(0, kFxStompMaxKnobs),
-            reason: where,
-          );
+          expect(face.knobs.length, count.clamp(0, room), reason: where);
           expect(
             controls.keys.map(label),
             containsAll(face.knobs.map((k) => k.label)),
             reason: where,
           );
-          // A module the table picks four for gets exactly those four.
+          // A module the table picks for gets exactly those controls.
           final preferred = kFxStompKnobKeys[module.name];
-          if (preferred != null && count > kFxStompMaxKnobs) {
+          if (preferred != null && count > room) {
             expect(
               face.knobs.map((k) => k.label).toSet(),
               preferred.map(label).toSet(),
@@ -84,71 +86,27 @@ void main() {
       // loop above has drawn each of them.
       expect(drawn, kFxModules.map((m) => m.name).toSet());
     });
-
-    test('says which factory rack its variant is', () {
-      expect(faceOf(pedal('Delay', 'Drum Rack')).subtitle, 'DRUM RACK');
-      expect(faceOf(pedal('Compressor', "Ed's Rack")).subtitle, "ED'S RACK");
-    });
-
-    test("keeps its own family in another family's rack", () {
-      final eds = pedal('Compressor', "Ed's Rack");
-      final moved = eds.copyWith(
-        rack: const FxRack(id: 'dub', name: 'Dub', art: 'dub'),
-      );
-
-      expect(faceOf(moved).subtitle, "ED'S RACK");
-    });
-
-    test('names no family when a shared variant leaves its rack', () {
-      // The Studio, Vocal and Vocal Tuner racks share one four-band EQ: on
-      // its own, its controls cannot say which of them it came from.
-      final vocal = pedal('Four-band EQ', 'Vocal Rack');
-
-      expect(faceOf(vocal).subtitle, 'VOCAL RACK');
-      expect(
-        faceOf(
-          vocal.copyWith(
-            rack: const FxRack(id: 'd', name: 'D', art: 'dub'),
-          ),
-        ).subtitle,
-        isNull,
-      );
-    });
   });
 
-  group('a variant with more than four controls', () {
-    test("shows the four-band EQ's gains, not its whole low band", () {
+  group('a variant with more controls than its face holds', () {
+    test("shows the four-band EQ's gains and cuts, not its whole low band", () {
       final eq = pedal('Four-band EQ', "Ed's Rack");
 
       expect(fxEntryControls(eq).keys, hasLength(14));
-      expect(fxEntryControls(eq).keys.take(4), [
-        'low_cut',
-        'low_gain',
-        'low_freq',
-        'low_q',
-      ]);
       expect(faceOf(eq).knobs.map((k) => k.label), [
+        label('low_cut'),
         label('low_gain'),
         label('lo_mid_gain'),
         label('hi_mid_gain'),
         label('high_gain'),
+        label('high_cut'),
       ]);
     });
 
-    test("keeps the compressor's makeup, which every other variant keeps", () {
-      final face = faceOf(pedal('Compressor', "Ed's Rack"));
-
-      expect(face.knobs.map((k) => k.label), [
-        label('threshold'),
-        label('ratio'),
-        label('attack'),
-        label('makeup'),
-      ]);
-    });
-
-    test('otherwise shows the first four the rack editor lists', () {
+    test('otherwise shows the first ones the rack editor lists', () {
       final face = faceOf(pedal('Dub delay', 'Dub Rack'));
 
+      expect(face.spec.face, FxStompFaceKind.treadle);
       expect(face.knobs.map((k) => k.label), [
         label('delay_time'),
         label('feedback'),
@@ -156,6 +114,20 @@ void main() {
         label('lr_ratio'),
       ]);
     });
+
+    test('a rocker shows none', () {
+      final face = faceOf(pedal('Whammy', 'Guitar Rack'));
+
+      expect(fxEntryControls(pedal('Whammy', 'Guitar Rack')).keys, isNotEmpty);
+      expect(face.knobs, isEmpty);
+    });
+  });
+
+  test('a box face holds six', () {
+    final face = faceOf(pedal('Reverb', 'Drum Rack'));
+
+    expect(face.spec.face, FxStompFaceKind.box);
+    expect(face.knobs, hasLength(6));
   });
 
   test('a live knob points where its control is set', () {
@@ -182,12 +154,6 @@ void main() {
 
     expect(fxEntryArt(turned, live: false), fxEntryArt(entry, live: false));
     expect(fxEntryArt(turned), isNot(fxEntryArt(entry)));
-  });
-
-  test('a pedal that is not live rests its knobs whatever the settings', () {
-    final entry = pedal('Overdrive', "Ed's Rack");
-    final turned = entry.copyWith(params: [...entry.params]..[0] = 0);
-
     expect(
       faceOf(turned, live: false).knobs,
       faceOf(entry, live: false).knobs,
@@ -198,19 +164,7 @@ void main() {
     final face = faceOf(pedal('Harmonizer', 'Vocal Tuner Rack'));
 
     expect(face.knobs, isEmpty);
-    expect(face.name, 'HARMONIZER');
-    expect(face.subtitle, 'VOCAL TUNER RACK');
-  });
-
-  test('an entry that is no factory variant has no subtitle', () {
-    // An EQ entry carrying none of a variant's controls: every parameter of
-    // its type, and no family to name.
-    final bare = BuiltInEffect(
-      type: TrackEffectType.eq,
-      module: 'Four-band EQ',
-    );
-
-    expect(faceOf(bare).subtitle, isNull);
+    expect(face.spec.name, 'Harmony');
   });
 
   test('an effect that is not a catalogue pedal has no picture', () {

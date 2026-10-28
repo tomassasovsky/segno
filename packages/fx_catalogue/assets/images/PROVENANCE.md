@@ -30,7 +30,7 @@ Every flat prompt uses the same frame:
 |---|---|---|
 | drum | generic five-piece drum kit with two cymbals, front view | azure #1e6ff0 |
 | dub | bass speaker cone with concentric sound-wave rings and echo arcs | magenta-purple #b012e0 |
-| edsguitar | small-body acoustic guitar standing upright | amber #f5a400 |
+| edsguitar | small-body acoustic guitar lying sideways, horizontal, neck pointing to the right, body on the left, seen from the front | amber #f5a400 |
 | guitar | solid-body electric guitar, diagonal, three-a-side symmetric headstock, original double-cutaway body | sky blue #7aa6dc |
 | lo-fi | retro cassette in front of warped waveform lines | lime green #3dbb00 |
 | rhythmic | top-down drum machine and mixer surface: pads, faders, knobs | cyan #12d6f0 |
@@ -51,7 +51,7 @@ Every photo prompt uses the same frame:
 |---|---|
 | drum | drum kit on a dark stage, magenta and pink stage light through haze |
 | dub | wall of stacked vintage speaker cabinets, warm low light, purple shadows |
-| edsguitar | small-body acoustic guitar against a dark wall, warm amber raking light |
+| edsguitar | small-body acoustic guitar lying sideways, horizontal across the frame, neck to the right, resting on a dark surface against a dark wall, warm amber raking light |
 | guitar | glossy blue electric guitar body, red rim light from the left and blue from the right, original body outline |
 | lo-fi | cassette deck and tapes on a desk at night, teal and magenta neon, film grain |
 | rhythmic | drum machine and console at a low angle, pads glowing magenta and cyan |
@@ -59,22 +59,27 @@ Every photo prompt uses the same frame:
 | vocal | handheld mic lying on a glossy dark stage floor under a teal spotlight |
 | vocaltuner | mic grille rising under a glowing tuner arc with a green needle, blue haze |
 
+The edsguitar pair was regenerated the same day with the guitar lying sideways, at the owner's request; the upright originals are in `source/superseded/`.
+
 ## What the app ships
 
 - `strip/`, `selector/` and `footswitch/` hold the crops above under the
   slugs the Looper X art used, so `FxFamily.stripAsset`, `selectorAsset` and
   `footswitchAsset` resolve as before.
 - `selector/edsguitar.png` is 1004x246, twice the 502x123 wide card the
-  library gives Ed's Rack. It is the same vertical band of `flat-edsguitar`
-  the 452x250 selector crop shows, scaled to 246 high and widened to 1004 by
-  extending each row's edge colour; the background is a vertical gradient, so
-  the extension has no seam.
+  library gives Ed's Rack. It is the band of the sideways `flat-edsguitar`
+  that holds the whole guitar (rows 240 to 780 of 1024), scaled to 246 high
+  and widened to 1004 by extending each row's edge colour; the background is
+  a vertical gradient, so the extension has no seam. `strip/` and
+  `footswitch/edsguitar.png` are the regenerated sideways crops as they are.
 - `selector/my-presets.png` is our own art from 2026-10-01 and is not part of
   this set.
 - The new images are square-cornered. The widgets that draw the selector
   cards round them, as the old images had the corners baked in.
 - The 38 stomp pedals are no longer images. The app draws each pedal in code
-  from one template (the approved V2 design), in the colour of the Looper X
-  illustration it replaces (`kFxStompColours` in the app).
+  from the approved pedal design (`pedal_faces_v3.py` in segno-design): five
+  enclosure faces, and a look per module (`kFxStompSpecs` in the app). The
+  hammertone, flake, brushed metal and marble finishes are small tiles in the
+  app's `assets/images/stomp/`, written by `tool/stomp_textures.py`.
 - `assets/manifest.json` records only the presets now: the image entries
   named Looper X files and checksums these images no longer match.
