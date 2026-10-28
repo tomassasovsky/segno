@@ -25,7 +25,8 @@ class FxFamily {
   /// The wide banner the library draws this family with.
   String get stripAsset => 'assets/images/strip/$slug.png';
 
-  /// The square illustration the family chooser draws.
+  /// The card illustration the family chooser draws. Ed's Rack's is the
+  /// wide banner its card is drawn at.
   String get selectorAsset => 'assets/images/selector/$slug.png';
 
   /// The footswitch illustration.
@@ -56,57 +57,3 @@ const Map<String, String> kFxFamilySlugs = {
 /// The illustration for the standalone single-effect entry, which has no
 /// family of its own.
 const String kFxSingleSelectorAsset = 'assets/images/selector/singlefx.png';
-
-/// The pedal illustration for a module named [module], or `null` when the
-/// catalogue carries none.
-///
-/// The source files an illustration per pedal IDENTITY (`Delay3`, `Reverb5`),
-/// not per module-name prefix, so this resolves only what [kFxStompAssets]
-/// actually names.
-String? fxStompAsset(String module) =>
-    kFxStompAssets.contains(module) ? 'assets/images/stomps/$module.png' : null;
-
-/// Every pedal illustration the catalogue carries, by its source name.
-///
-/// The set is the source's own inventory, not a list of effects this engine
-/// can build: an entry here means an image exists, nothing more.
-const Set<String> kFxStompAssets = {
-  'AmbiVerb2',
-  'Amp4',
-  'Chorus3',
-  'Compressor2',
-  'Compressor3',
-  'Compressor4',
-  'Degrade3',
-  'Delay3',
-  'Delay4',
-  'Delay6',
-  'Distort1',
-  'Distort2',
-  'Doubler1',
-  'Doubler2',
-  'DubVerb2',
-  'EQ3',
-  'EQ4',
-  'EQ5',
-  'EQ8',
-  'HPFGate2',
-  'Harmonise20',
-  'LPF2',
-  'LPF4',
-  'Mod3',
-  'Octaver3',
-  'Overdrive2',
-  'PitchShift2',
-  'Pumper2',
-  'Reverb2',
-  'Reverb3',
-  'Reverb5',
-  'Slicer2',
-  'SmartTune2',
-  'SpringRev2',
-  'Transient3',
-  'Vinyl4',
-  'Wah1',
-  'Wham2',
-};

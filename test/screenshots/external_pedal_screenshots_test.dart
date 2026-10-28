@@ -390,16 +390,13 @@ void main() {
         const AssetImage(ExpressionPositionPanel.asset),
         context,
       );
-      for (final art in [
-        fxModuleArt('Overdrive')!,
-        fxModuleArt('Reverb')!,
-        fxFootswitchAsset('guitar'),
-      ]) {
-        await precacheImage(
-          AssetImage(art, package: FxCatalogueLoader.package),
-          context,
-        );
-      }
+      await precacheImage(
+        AssetImage(
+          fxFootswitchAsset('guitar'),
+          package: FxCatalogueLoader.package,
+        ),
+        context,
+      );
     });
     await tester.pumpAndSettle();
   }

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/fx_art.dart';
+import 'package:segno/looper/view/fx/fx_art_view.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -22,8 +23,8 @@ class FxReorderCard {
   /// What it is called.
   final String name;
 
-  /// Its artwork asset in the catalogue package, or `null`.
-  final String? art;
+  /// Its picture, or `null`.
+  final FxArt? art;
 
   /// The stage this card sits in, drawn beside its position number when the
   /// strip holds both stages. Absent when every card is in the same one — a
@@ -268,20 +269,16 @@ class _Card extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
                   Expanded(
-                    child: card.art == null
-                        ? Center(
-                            child: Icon(
-                              LucideIcons.audioWaveform,
-                              size: 56,
-                              color: surface.textTertiary,
-                            ),
-                          )
-                        : Image.asset(
-                            card.art!,
-                            package: FxCatalogueLoader.package,
-                            fit: BoxFit.contain,
-                            errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                          ),
+                    child: switch (card.art) {
+                      final art? => FxArtView(art: art),
+                      null => Center(
+                        child: Icon(
+                          LucideIcons.audioWaveform,
+                          size: 56,
+                          color: surface.textTertiary,
+                        ),
+                      ),
+                    },
                   ),
                   const SizedBox(height: 20),
                   AppText(

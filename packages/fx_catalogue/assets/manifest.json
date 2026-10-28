@@ -1,29 +1,5 @@
 [
   {
-    "source": "AppUI/img/Effects/selector/singlefx.png",
-    "destination": "images/selector/singlefx.png",
-    "sha256": "7c5d520b15f9e90e3a43068fe252390654072dd031b769ae6c765cb309d720da",
-    "bytes": 4670
-  },
-  {
-    "source": "AppUI/img/Effects/selector/edsguitar.png",
-    "destination": "images/selector/edsguitar.png",
-    "sha256": "2e18bada7bc1eff30e3e3a2a2129fa16c04a8471b084f18b43d77c7cad498dbe",
-    "bytes": 17241
-  },
-  {
-    "source": "AppUI/img/Effects/footswitch/edsguitar.png",
-    "destination": "images/footswitch/edsguitar.png",
-    "sha256": "4a9c08ccf7765d143395f63891c9047751f8580fdf45bcc4fffc9e39aa2b7201",
-    "bytes": 19269
-  },
-  {
-    "source": "AppUI/img/Effects/strip/edsguitar.png",
-    "destination": "images/strip/edsguitar.png",
-    "sha256": "09ef3bf378423c43843dc70dfe4d414e57554fce44b7e46fe1844807aadf4b3e",
-    "bytes": 12674
-  },
-  {
     "source": "FxPresets/Ed's Rack/Acoustic Rhythm 1.fxpreset",
     "destination": "presets/Ed's Rack/Acoustic Rhythm 1.fxpreset",
     "sha256": "388b454a800f06a55a8c986f99125f8a93a7362b71bd5c15f39ad8481c3ed811",
@@ -240,24 +216,6 @@
     "bytes": 1521
   },
   {
-    "source": "AppUI/img/Effects/selector/vocal.png",
-    "destination": "images/selector/vocal.png",
-    "sha256": "87df90d82cbbcc7e5b9c8cd1f5cf2d73966a7b8f903edad74521bb31da3ef5eb",
-    "bytes": 15739
-  },
-  {
-    "source": "AppUI/img/Effects/footswitch/vocal.png",
-    "destination": "images/footswitch/vocal.png",
-    "sha256": "b7bcfd030b44d5eca621225bf990e81a2c4eac6b50b7825bddc2ff6dbf58e819",
-    "bytes": 49965
-  },
-  {
-    "source": "AppUI/img/Effects/strip/vocal.png",
-    "destination": "images/strip/vocal.png",
-    "sha256": "8c47ed035bfe525cf052b3e157eb5a996953c34bea6bb153b929a92a97754114",
-    "bytes": 23114
-  },
-  {
     "source": "FxPresets/Vocal Rack/Close Reverb.fxpreset",
     "destination": "presets/Vocal Rack/Close Reverb.fxpreset",
     "sha256": "08d8bafc1ef663264deebe3a687ac4db25223593ddca422cfb2d41073f136999",
@@ -360,24 +318,6 @@
     "bytes": 753
   },
   {
-    "source": "AppUI/img/Effects/selector/guitar.png",
-    "destination": "images/selector/guitar.png",
-    "sha256": "399374789c9c3d778d11d76cfd9c94185d4016c0da340ef392e9c20f5e7799da",
-    "bytes": 24417
-  },
-  {
-    "source": "AppUI/img/Effects/footswitch/guitar.png",
-    "destination": "images/footswitch/guitar.png",
-    "sha256": "243aadad55f6cb8e6d3d171721b55990741ed8732d9ca484c501d4952fe5eaec",
-    "bytes": 39365
-  },
-  {
-    "source": "AppUI/img/Effects/strip/guitar.png",
-    "destination": "images/strip/guitar.png",
-    "sha256": "783d94a132604db8e67427157440775aa699c397400e3b02d5597544b40632ec",
-    "bytes": 45357
-  },
-  {
     "source": "FxPresets/Guitar Rack/Clean Rhythm.fxpreset",
     "destination": "presets/Guitar Rack/Clean Rhythm.fxpreset",
     "sha256": "df3540c3bb47b9f2f504e33815d37a005ed2b39a182fb3dc3c26d0bb57b31b3a",
@@ -460,24 +400,6 @@
     "destination": "presets/Guitar Rack/Rhythm Wet+Dirty.fxpreset",
     "sha256": "2b3db33c86d637554bf7a58106cdc5eff8c7b995379c81cf076f41264cec6f50",
     "bytes": 812
-  },
-  {
-    "source": "AppUI/img/Effects/selector/lo-fi.png",
-    "destination": "images/selector/lo-fi.png",
-    "sha256": "ef1d4eec3e740e7d9159e47015608f9187d7d9f1d5962bbf1dd8a4e60a5d9cb8",
-    "bytes": 52686
-  },
-  {
-    "source": "AppUI/img/Effects/footswitch/lo-fi.png",
-    "destination": "images/footswitch/lo-fi.png",
-    "sha256": "051c208048fc00566ccdfcc8c97f5bb4973b500fdcbb348405a55acb3eb34648",
-    "bytes": 62788
-  },
-  {
-    "source": "AppUI/img/Effects/strip/lo-fi.png",
-    "destination": "images/strip/lo-fi.png",
-    "sha256": "88469ac4872a8f97d54dfdc8e8803c4346277d141630da4b53f4a8b947642f95",
-    "bytes": 101630
   },
   {
     "source": "FxPresets/Lo-Fi Rack/Bright Echo.fxpreset",
@@ -570,24 +492,6 @@
     "bytes": 868
   },
   {
-    "source": "AppUI/img/Effects/selector/drum.png",
-    "destination": "images/selector/drum.png",
-    "sha256": "eb7b42fd7d79274e8ce1f3c9886d1f00fa2080407451769be3ae833d556d96fa",
-    "bytes": 18965
-  },
-  {
-    "source": "AppUI/img/Effects/footswitch/drum.png",
-    "destination": "images/footswitch/drum.png",
-    "sha256": "37a42078c9c096efa82e8999816d08ccd8798aeaeca6e6afbe0fcaebed46351c",
-    "bytes": 47883
-  },
-  {
-    "source": "AppUI/img/Effects/strip/drum.png",
-    "destination": "images/strip/drum.png",
-    "sha256": "0d1da5253cd941f93af1d43c5495888bcbeba33b7a3ad51a4d75fc83fe9753be",
-    "bytes": 23256
-  },
-  {
     "source": "FxPresets/Drum Rack/Ballad.fxpreset",
     "destination": "presets/Drum Rack/Ballad.fxpreset",
     "sha256": "b4c4569c0062535aa9a905c6933401b78e20d2602b8648c03bad2425bdaa2d73",
@@ -660,24 +564,6 @@
     "bytes": 799
   },
   {
-    "source": "AppUI/img/Effects/selector/dub.png",
-    "destination": "images/selector/dub.png",
-    "sha256": "48820e3a3f1d77b84d10b93e6e0206ddf503b8786ffd0338e428784a7f10f606",
-    "bytes": 25231
-  },
-  {
-    "source": "AppUI/img/Effects/footswitch/dub.png",
-    "destination": "images/footswitch/dub.png",
-    "sha256": "60c6fd8a373196e807748b2c3f16edb2b8a2dcc73a081d3ae6013f217202d619",
-    "bytes": 68766
-  },
-  {
-    "source": "AppUI/img/Effects/strip/dub.png",
-    "destination": "images/strip/dub.png",
-    "sha256": "ea74b70ff256c20c2f6271e56ffd98fe22148062c6a72e4233e6261ff5b12170",
-    "bytes": 28997
-  },
-  {
     "source": "FxPresets/Dub Rack/Big Clouds 1.fxpreset",
     "destination": "presets/Dub Rack/Big Clouds 1.fxpreset",
     "sha256": "5fa903c603facf8333dacd464677b1c169526ffd071d3bc2f75d612933d681a9",
@@ -742,24 +628,6 @@
     "destination": "presets/Dub Rack/Wide Echoes.fxpreset",
     "sha256": "fdb1c0301d74aa6c0dd9820eaaf094a994d25df17d94502f3d2e09b24a5fda85",
     "bytes": 854
-  },
-  {
-    "source": "AppUI/img/Effects/selector/studio.png",
-    "destination": "images/selector/studio.png",
-    "sha256": "3ee5618f66863c7ce7c47b01010ff9195bb1877b03ae5845183c5fa06076e2ef",
-    "bytes": 8092
-  },
-  {
-    "source": "AppUI/img/Effects/footswitch/studio.png",
-    "destination": "images/footswitch/studio.png",
-    "sha256": "bbfb3dc6386081bad9a62b3e6dfbb7fa829c2003b01109df7e8df82494f4f959",
-    "bytes": 43185
-  },
-  {
-    "source": "AppUI/img/Effects/strip/studio.png",
-    "destination": "images/strip/studio.png",
-    "sha256": "997f7c940ebba4cee37ffbece7fe54218b13aff14cf4e277b973e312b55b3c44",
-    "bytes": 8998
   },
   {
     "source": "FxPresets/Studio Rack/AC Guitar Chorus.fxpreset",
@@ -876,24 +744,6 @@
     "bytes": 754
   },
   {
-    "source": "AppUI/img/Effects/selector/rhythmic.png",
-    "destination": "images/selector/rhythmic.png",
-    "sha256": "264419169333e7f29f7e3ca52e2bc5be441b55f13d350ba3ca9bb79e890a6378",
-    "bytes": 14472
-  },
-  {
-    "source": "AppUI/img/Effects/footswitch/rhythmic.png",
-    "destination": "images/footswitch/rhythmic.png",
-    "sha256": "b443dc79f209ae4c2bf0c3942faf4ff922ef70e63df3abb7987faf9f85edda8b",
-    "bytes": 53134
-  },
-  {
-    "source": "AppUI/img/Effects/strip/rhythmic.png",
-    "destination": "images/strip/rhythmic.png",
-    "sha256": "b8482b19b312a9573ce103d375d98cd335c3f3d32f420db4bf8d8cc8b96e5229",
-    "bytes": 21099
-  },
-  {
     "source": "FxPresets/Rhythmic Rack/Funk Wah.fxpreset",
     "destination": "presets/Rhythmic Rack/Funk Wah.fxpreset",
     "sha256": "7ed1b008c2f8aa61e08445b1f3e986536ec66c186e7cb8149ebaf618bd4e3cf7",
@@ -952,24 +802,6 @@
     "destination": "presets/Rhythmic Rack/Thin Swinger.fxpreset",
     "sha256": "163c79a771b1465d25d6a09c8e4cee656bbf7e49b6d6aa64dbccfb2f61436065",
     "bytes": 853
-  },
-  {
-    "source": "AppUI/img/Effects/selector/vocaltuner.png",
-    "destination": "images/selector/vocaltuner.png",
-    "sha256": "5de258558954c205a5cd69997ebc5c96d483f6d8715a52a7a37a8d160d7374d2",
-    "bytes": 13929
-  },
-  {
-    "source": "AppUI/img/Effects/footswitch/vocaltuner.png",
-    "destination": "images/footswitch/vocaltuner.png",
-    "sha256": "a973c0f09c85345e083f321786b369b3ae246cd91de3afdde78ead06ee0faad1",
-    "bytes": 58119
-  },
-  {
-    "source": "AppUI/img/Effects/strip/vocaltuner.png",
-    "destination": "images/strip/vocaltuner.png",
-    "sha256": "99320ae07a2f848e91bb43c7755dd28f0b21ea8632f231b0fc93522e71698706",
-    "bytes": 17271
   },
   {
     "source": "FxPresets/Vocal Tuner Rack/Auto Harm Hi Dry.fxpreset",
@@ -1120,233 +952,5 @@
     "destination": "presets/Vocal Tuner Rack/Scale Harm Lo Wet.fxpreset",
     "sha256": "a3c113dbe807c7eeec9f3c3391d83855744efbf76b716a9555d39cc19541c07b",
     "bytes": 1500
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/AmbiVerb2.png",
-    "destination": "images/stomps/AmbiVerb2.png",
-    "sha256": "492805763a522f9a47a66c1177e0e2e90d0dbc2d3c93ac276a05238eaeed8f2e",
-    "bytes": 138877
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Amp4.png",
-    "destination": "images/stomps/Amp4.png",
-    "sha256": "52b533a9f881aec4b38fad74b5f9306f16755792a955e7a9cb39946217e40d0c",
-    "bytes": 142219
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Chorus3.png",
-    "destination": "images/stomps/Chorus3.png",
-    "sha256": "04c7f425e7dad3a3183bcccbe5f2ae19192bd93ed12320e5c89e4f79c9a97a1e",
-    "bytes": 142090
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Compressor2.png",
-    "destination": "images/stomps/Compressor2.png",
-    "sha256": "229e43137e0239622326ac6c833b49a3820460928022eba87ffd7bd214ba863c",
-    "bytes": 140791
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Compressor3.png",
-    "destination": "images/stomps/Compressor3.png",
-    "sha256": "229e43137e0239622326ac6c833b49a3820460928022eba87ffd7bd214ba863c",
-    "bytes": 140791
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Compressor4.png",
-    "destination": "images/stomps/Compressor4.png",
-    "sha256": "476b1f79ee6d681fd6b0b7aaa7dccbfcc9041e4d0a0795597940cd3ae58b4399",
-    "bytes": 13942
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Degrade3.png",
-    "destination": "images/stomps/Degrade3.png",
-    "sha256": "0b4650356e4d463322881e6f2232dfda0cbd41a0e08a6cdfbb511019cbb28b45",
-    "bytes": 172538
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Delay3.png",
-    "destination": "images/stomps/Delay3.png",
-    "sha256": "6dfab0abef05e9ab6347b10293c04f07b5c7f2b9c3884fc4c38360428ab6d47c",
-    "bytes": 120885
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Delay4.png",
-    "destination": "images/stomps/Delay4.png",
-    "sha256": "6dfab0abef05e9ab6347b10293c04f07b5c7f2b9c3884fc4c38360428ab6d47c",
-    "bytes": 120885
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Delay6.png",
-    "destination": "images/stomps/Delay6.png",
-    "sha256": "06bdf216b0ee05349d5b2ca73472c13c4eeec4e39b8fb82a337aaaeccef6a1ad",
-    "bytes": 137767
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Distort1.png",
-    "destination": "images/stomps/Distort1.png",
-    "sha256": "6824cbafb88ea98a1b827e1d329b2adee838193f1c5dd223864c0b4675bb457a",
-    "bytes": 133978
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Distort2.png",
-    "destination": "images/stomps/Distort2.png",
-    "sha256": "1b2a66fc160cd16b666802a882ca2fea602bc2bd5453e67a48f4361c09f1d559",
-    "bytes": 133478
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Doubler1.png",
-    "destination": "images/stomps/Doubler1.png",
-    "sha256": "6ba33ee8b60f1aa50d82282ed882d48991ac30e16c3b53d43c17e41e93bbfdd2",
-    "bytes": 120707
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Doubler2.png",
-    "destination": "images/stomps/Doubler2.png",
-    "sha256": "6ba33ee8b60f1aa50d82282ed882d48991ac30e16c3b53d43c17e41e93bbfdd2",
-    "bytes": 120707
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/DubVerb2.png",
-    "destination": "images/stomps/DubVerb2.png",
-    "sha256": "e6c219d75e50bdba586e0f1c30f9d429f4d7e0fc12fa77815f59a65863d93792",
-    "bytes": 143391
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/EQ3.png",
-    "destination": "images/stomps/EQ3.png",
-    "sha256": "67721a1f8dc17e8041eed98426e602ab9add6d9b3f10add5a99298c9767b3b5c",
-    "bytes": 7830
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/EQ4.png",
-    "destination": "images/stomps/EQ4.png",
-    "sha256": "dadc88510e247f098f63dc62e1e5a5040dfebc4d909bfb6a9ff9cdc9e8f09123",
-    "bytes": 167390
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/EQ5.png",
-    "destination": "images/stomps/EQ5.png",
-    "sha256": "a8ae94912a5b8c7426a2c7725be895658e11573c8a4f20a456209c0faff5e900",
-    "bytes": 169548
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/EQ8.png",
-    "destination": "images/stomps/EQ8.png",
-    "sha256": "dadc88510e247f098f63dc62e1e5a5040dfebc4d909bfb6a9ff9cdc9e8f09123",
-    "bytes": 167390
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/HPFGate2.png",
-    "destination": "images/stomps/HPFGate2.png",
-    "sha256": "f463d071f74af5233c9590cd869c3fccba9f45b5505bbe2e880fbd535623ae33",
-    "bytes": 91146
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Harmonise20.png",
-    "destination": "images/stomps/Harmonise20.png",
-    "sha256": "585adc1d58fbef07aa2166cda20835693c9975069c901fdac0323ce679a02588",
-    "bytes": 117189
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/LPF2.png",
-    "destination": "images/stomps/LPF2.png",
-    "sha256": "90d7e2e00d7f011c369d92f69a25fdddfec183927e27c676ccfc5109e7988cfa",
-    "bytes": 167130
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/LPF4.png",
-    "destination": "images/stomps/LPF4.png",
-    "sha256": "90d7e2e00d7f011c369d92f69a25fdddfec183927e27c676ccfc5109e7988cfa",
-    "bytes": 167130
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Mod3.png",
-    "destination": "images/stomps/Mod3.png",
-    "sha256": "4d056c00da7753ab9fd735865e4bd11d8a4cdb95d82b6005613e71169a12cd5e",
-    "bytes": 141865
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Octaver3.png",
-    "destination": "images/stomps/Octaver3.png",
-    "sha256": "655840c7b35a48f3c4a764a21d681aeb8481f9b46a67c7ab583a71c098ff17b8",
-    "bytes": 131265
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Overdrive2.png",
-    "destination": "images/stomps/Overdrive2.png",
-    "sha256": "7628aaf97122a08a76426d7bb55cbcfd2394b246a9c324560328ba29c5daae1a",
-    "bytes": 135058
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/PitchShift2.png",
-    "destination": "images/stomps/PitchShift2.png",
-    "sha256": "49774f94601f2a3225844de7866d1d8dfe407ad4fbc0b3e2a46aa747e3d07506",
-    "bytes": 143255
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Pumper2.png",
-    "destination": "images/stomps/Pumper2.png",
-    "sha256": "cf5246e7a8cc48236f229f69d8a078ebf61a18533e67194290b8ae1b6ceea5e6",
-    "bytes": 125184
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Reverb2.png",
-    "destination": "images/stomps/Reverb2.png",
-    "sha256": "1fe2a4c324e6896ed6ed4dc919aff63577636fec6c470c6d023f727d56914daf",
-    "bytes": 122271
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Reverb3.png",
-    "destination": "images/stomps/Reverb3.png",
-    "sha256": "1fe2a4c324e6896ed6ed4dc919aff63577636fec6c470c6d023f727d56914daf",
-    "bytes": 122271
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Reverb5.png",
-    "destination": "images/stomps/Reverb5.png",
-    "sha256": "1fe2a4c324e6896ed6ed4dc919aff63577636fec6c470c6d023f727d56914daf",
-    "bytes": 122271
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Slicer2.png",
-    "destination": "images/stomps/Slicer2.png",
-    "sha256": "67657cda27b5753c781b030f7c7b4eac9fc725085e5787612e07e08ac56ccf17",
-    "bytes": 121194
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/SmartTune2.png",
-    "destination": "images/stomps/SmartTune2.png",
-    "sha256": "5b3123673549b03aa5b5b4a7f2bcec923fe79fa6842835fcbfc93d653e16b076",
-    "bytes": 94503
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/SpringRev2.png",
-    "destination": "images/stomps/SpringRev2.png",
-    "sha256": "23dcee4d87ca7460647826c63d799aaafb82c218dec8ecc0af7b313512266342",
-    "bytes": 141936
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Transient3.png",
-    "destination": "images/stomps/Transient3.png",
-    "sha256": "71d3c5a69079765a9c1f6da58e14c141b5da1afd66fd7cb88f9a34602efe5d18",
-    "bytes": 109265
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Vinyl4.png",
-    "destination": "images/stomps/Vinyl4.png",
-    "sha256": "be7c19e93bc55314c7b13384af1bf9be178ec7b904ab75a8462a9c51a4800b83",
-    "bytes": 140356
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Wah1.png",
-    "destination": "images/stomps/Wah1.png",
-    "sha256": "b37d68d126c3ff3cdf3557a74af8aec1d0039d5ab34c205ab072980eefa79c89",
-    "bytes": 109942
-  },
-  {
-    "source": "AppUI/img/Effects/NewEditor/Stomps/Wham2.png",
-    "destination": "images/stomps/Wham2.png",
-    "sha256": "9001e1f2c4d0be9b0517397854139bdae28dd5cc45621ff5c83de3dfe3d3cb22",
-    "bytes": 124967
   }
 ]

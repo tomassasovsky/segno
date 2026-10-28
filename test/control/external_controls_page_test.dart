@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
@@ -30,9 +29,11 @@ import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/click_mode.dart';
+import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_start.dart';
+import 'package:segno/looper/view/fx/fx_art_view.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
@@ -1046,8 +1047,12 @@ void main() {
     final art = find.byKey(const Key('control_row_art'));
     expect(art, findsOne, reason: 'the effect has a picture; the fader not');
     expect(
-      (tester.widget<Image>(art).image as AssetImage).assetName,
-      fxModuleArt('Overdrive'),
+      tester.widget<FxArtView>(art).art,
+      isA<FxPedalPicture>().having(
+        (p) => p.effect.module,
+        'module',
+        'Overdrive',
+      ),
     );
   });
 

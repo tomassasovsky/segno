@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:segno/looper/model/fx_art.dart';
+import 'package:segno/looper/view/fx/fx_art_view.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -39,9 +40,9 @@ class ControlRowTile extends StatelessWidget {
   /// The key of the value text, for a test to read it by.
   final Key? valueKey;
 
-  /// The pedal or rack picture, as a path in the catalogue package, or `null`
-  /// for a row the pen draws without one.
-  final String? art;
+  /// The pedal or rack picture, or `null` for a row the pen draws without
+  /// one.
+  final FxArt? art;
 
   /// The box the picture is fitted into — 68 square in a button's list, 52 by
   /// 68 in the expression pedal's.
@@ -101,20 +102,13 @@ class ControlRowTile extends StatelessWidget {
                   child: LayoutBuilder(
                     builder: (context, box) => Row(
                       children: [
-                        if (art case final asset?) ...[
+                        if (art case final art?) ...[
                           SizedBox.fromSize(
                             size: artSize,
                             child: ExcludeSemantics(
-                              child: Image.asset(
-                                asset,
+                              child: FxArtView(
                                 key: const Key('control_row_art'),
-                                package: FxCatalogueLoader.package,
-                                fit: BoxFit.contain,
-                                // A picture that fails to load leaves its
-                                // space, so every row's names stay in one
-                                // column.
-                                errorBuilder: (_, _, _) =>
-                                    const SizedBox.shrink(),
+                                art: art,
                               ),
                             ),
                           ),

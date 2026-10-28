@@ -1,9 +1,9 @@
-import 'package:fx_catalogue/src/fx_family.dart';
+import 'dart:ui' show Color;
+
 import 'package:fx_catalogue/src/fx_preset.dart';
 
 /// One pedal a factory rack can hold: how the source spells its power, which
-/// parameter groups belong to it, and which illustrations the catalogue
-/// carries for it.
+/// parameter groups belong to it, and the colour its pedal is drawn in.
 ///
 /// **This table is a READING of the data, not something recovered from it.**
 /// A preset is a flat map of parameter names to values; it never says which
@@ -15,15 +15,14 @@ import 'package:fx_catalogue/src/fx_preset.dart';
 ///
 /// What IS checked against the data, by test: every [enables] key appears in
 /// the catalogue and is binary everywhere it appears, every [groups] prefix
-/// appears, every [artwork] name is a file that exists, and no two modules
-/// claim the same key or group.
+/// appears, and no two modules claim the same key or group.
 class FxModule {
   /// Creates an [FxModule].
   const FxModule({
     required this.name,
     required this.enables,
     required this.groups,
-    required this.artwork,
+    required this.colour,
     this.keys = const [],
     this.families,
   });
@@ -47,14 +46,15 @@ class FxModule {
   /// enables `OD *`.
   final List<String> groups;
 
-  /// The illustrations the catalogue carries for this pedal, lowest variant
-  /// first.
+  /// The enclosure colour the pedal is drawn in.
   ///
-  /// Several because the source ships numbered variants (`Delay3`, `Delay4`,
-  /// `Delay6`) and nothing in the preset data says which variant a given
-  /// family used. The first is what a surface draws; the rest are recorded so
-  /// the gap stays visible rather than looking like a choice.
-  final List<String> artwork;
+  /// Each is the colour of the pedal's former Looper X illustration (the
+  /// first of its numbered variants, which is the one a surface drew),
+  /// sampled as the most common opaque colour after the rubber-pad grey every
+  /// illustration shares. The Transient takes its green top plate rather than
+  /// its near-black body, which would draw it as an overdrive. The pedal
+  /// itself is drawn in code (#1501); this keeps each effect recognisable.
+  final Color colour;
 
   /// Whole parameter names that belong to this module where a prefix group
   /// cannot say so, because keys with the same first word belong to two
@@ -129,31 +129,31 @@ const List<FxModule> kFxModules = [
     // power key but continuous, so it is a parameter that happens to be
     // spelled without one.
     groups: ['Amp', 'Cab'],
-    artwork: ['Amp4'],
+    colour: Color(0xFFE7AD42),
   ),
   FxModule(
     name: 'Compressor',
     enables: ['Comp', 'Compressor'],
     groups: ['Comp'],
-    artwork: ['Compressor2', 'Compressor3', 'Compressor4'],
+    colour: Color(0xFF001021),
   ),
   FxModule(
     name: 'Overdrive',
     enables: ['OvDrive'],
     groups: ['OD'],
-    artwork: ['Overdrive2'],
+    colour: Color(0xFF090909),
   ),
   FxModule(
     name: 'Distortion',
     enables: ['Dist', 'Distort'],
     groups: ['Dist'],
-    artwork: ['Distort1', 'Distort2'],
+    colour: Color(0xFF627EC5),
   ),
   FxModule(
     name: 'Four-band EQ',
     enables: ['EQ', 'EQ 4-Band'],
     groups: ['EQ'],
-    artwork: ['EQ3', 'EQ4', 'EQ5', 'EQ8'],
+    colour: Color(0xFF020202),
     families: _fourBandEqFamilies,
   ),
   FxModule(
@@ -166,58 +166,59 @@ const List<FxModule> kFxModules = [
     // The controls are what the pedal is, so it is this module.
     enables: ['Para EQ', 'EQ'],
     groups: ['EQ'],
-    // The binary's single-effect artwork list runs in effect-name order and
-    // puts EQ5 between Overdrive2 and PitchShift2, where Parametric EQ falls.
-    artwork: ['EQ5'],
+    // EQ5's colour: the binary's single-effect artwork list runs in
+    // effect-name order and puts EQ5 between Overdrive2 and PitchShift2,
+    // where Parametric EQ falls.
+    colour: Color(0xFFB0AFB0),
     families: _paraEqFamilies,
   ),
   FxModule(
     name: 'Low-pass filter',
     enables: ['LPF'],
     groups: ['LPF'],
-    artwork: ['LPF2', 'LPF4'],
+    colour: Color(0xFFB0AFB0),
   ),
   FxModule(
     name: 'Wah',
     enables: ['Wah'],
     groups: ['Wah'],
-    artwork: ['Wah1'],
+    colour: Color(0xFF0E0E0E),
   ),
   FxModule(
     name: 'Chorus',
     enables: ['Chor'],
     groups: ['Chor'],
-    artwork: ['Chorus3'],
+    colour: Color(0xFF52C986),
   ),
   FxModule(
     name: 'Modulation',
     enables: ['Mod'],
     groups: ['Mod'],
-    artwork: ['Mod3'],
+    colour: Color(0xFF744AC9),
   ),
   FxModule(
     name: 'Octaver',
     enables: ['Oct'],
     groups: ['Oct', 'Octave'],
-    artwork: ['Octaver3'],
+    colour: Color(0xFFFAB055),
   ),
   FxModule(
     name: 'Pitch shift',
     enables: ['Pitch'],
     groups: ['Pitch'],
-    artwork: ['PitchShift2'],
+    colour: Color(0xFF4FBCD9),
   ),
   FxModule(
     name: 'Whammy',
     enables: ['Whammy'],
     groups: ['Whammy'],
-    artwork: ['Wham2'],
+    colour: Color(0xFF9B2025),
   ),
   FxModule(
     name: 'Delay',
     enables: ['Delay'],
     groups: ['Del'],
-    artwork: ['Delay3', 'Delay4', 'Delay6'],
+    colour: Color(0xFF2BC8CF),
     families: _delayFamilies,
   ),
   FxModule(
@@ -226,23 +227,23 @@ const List<FxModule> kFxModules = [
     // `Del` prefix the plain delay uses elsewhere.
     enables: ['Dub Delay'],
     groups: ['Del'],
-    // The binary's single-effect artwork list runs in effect-name order and
-    // puts Delay6 between Doubler1 and the four-band EQ, where Dub Delay
-    // falls.
-    artwork: ['Delay6'],
+    // Delay6's colour: the binary's single-effect artwork list runs in
+    // effect-name order and puts Delay6 between Doubler1 and the four-band
+    // EQ, where Dub Delay falls.
+    colour: Color(0xFFD18B94),
     families: _dubDelayFamilies,
   ),
   FxModule(
     name: 'Reverb',
     enables: ['Reverb'],
     groups: ['Rev'],
-    artwork: ['Reverb2', 'Reverb3', 'Reverb5'],
+    colour: Color(0xFF377085),
   ),
   FxModule(
     name: 'Spring reverb',
     enables: ['Spring'],
     groups: ['Spring'],
-    artwork: ['SpringRev2'],
+    colour: Color(0xFF142438),
   ),
   FxModule(
     name: 'Ambience',
@@ -250,19 +251,19 @@ const List<FxModule> kFxModules = [
     // one that differs only in case.
     enables: ['Amb-Verb'],
     groups: ['Amb-Verb', 'Amb-verb', 'Amb-Dub'],
-    artwork: ['AmbiVerb2'],
+    colour: Color(0xFF060D3E),
   ),
   FxModule(
     name: 'Dub reverb',
     enables: ['Dub-Verb'],
     groups: ['Dub-Verb'],
-    artwork: ['DubVerb2'],
+    colour: Color(0xFF9A0E0C),
   ),
   FxModule(
     name: 'Doubler',
     enables: ['Doubler'],
     groups: ['Doubler'],
-    artwork: ['Doubler1', 'Doubler2'],
+    colour: Color(0xFFCBCBCC),
   ),
   FxModule(
     name: 'High-pass gate',
@@ -271,37 +272,37 @@ const List<FxModule> kFxModules = [
     // because both are space-free, and the test pins only the binary one.
     enables: ['HP/Gate'],
     groups: ['Gate', 'Highpass'],
-    artwork: ['HPFGate2'],
+    colour: Color(0xFFFEFCFE),
   ),
   FxModule(
     name: 'Transient',
     enables: ['Transient'],
     groups: ['Attack', 'Sustain'],
-    artwork: ['Transient3'],
+    colour: Color(0xFF7BB96C),
   ),
   FxModule(
     name: 'Pumper',
     enables: ['Pumper'],
     groups: ['Pumper'],
-    artwork: ['Pumper2'],
+    colour: Color(0xFF012468),
   ),
   FxModule(
     name: 'Slicer',
     enables: ['Slicer'],
     groups: ['Slic'],
-    artwork: ['Slicer2'],
+    colour: Color(0xFFEAE3CF),
   ),
   FxModule(
     name: 'Vinyl',
     enables: ['Vinyl'],
     groups: ['Vinyl'],
-    artwork: ['Vinyl4'],
+    colour: Color(0xFF001021),
   ),
   FxModule(
     name: 'Degrade',
     enables: ['Degrade'],
     groups: ['Degrade'],
-    artwork: ['Degrade3'],
+    colour: Color(0xFF873E0B),
   ),
   FxModule(
     name: 'Harmonizer',
@@ -320,7 +321,7 @@ const List<FxModule> kFxModules = [
       'Key',
     ],
     keys: ['Scale'],
-    artwork: ['Harmonise20'],
+    colour: Color(0xFFC5E7E2),
     families: _vocalTunerFamilies,
   ),
   FxModule(
@@ -328,7 +329,7 @@ const List<FxModule> kFxModules = [
     enables: ['Smart Tune'],
     groups: ['Audio', 'Reference', 'Speed', 'Tracking'],
     keys: ['Scale Root', 'Scale Type'],
-    artwork: ['SmartTune2'],
+    colour: Color(0xFFE4E6E6),
     families: _vocalTunerFamilies,
   ),
 ];
@@ -470,14 +471,6 @@ FxModule? fxModuleNamed(String name) {
     if (module.name == name) return module;
   }
   return null;
-}
-
-/// The illustration for the module called [name], or `null` when the
-/// catalogue names none.
-String? fxModuleArt(String name) {
-  final artwork = fxModuleNamed(name)?.artwork;
-  if (artwork == null || artwork.isEmpty) return null;
-  return fxStompAsset(artwork.first);
 }
 
 /// The module of a [family] rack that owns [key] as a parameter, or `null`.

@@ -268,6 +268,11 @@ class _LibraryCard extends StatelessWidget {
     super.key,
   });
 
+  /// The corner radius of the card's picture. The images are
+  /// square-cornered; the Looper X art they replaced had these corners baked
+  /// in (13 of its 125 px), which this keeps at the size the card draws it.
+  static const double artRadius = 20;
+
   final String label;
   final String? asset;
   final double width;
@@ -299,10 +304,15 @@ class _LibraryCard extends StatelessWidget {
                   Expanded(
                     child: asset == null
                         ? const SizedBox.shrink()
-                        : Image.asset(
-                            asset!,
-                            package: FxCatalogueLoader.package,
-                            fit: BoxFit.contain,
+                        : Center(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(artRadius),
+                              child: Image.asset(
+                                asset!,
+                                package: FxCatalogueLoader.package,
+                                fit: BoxFit.contain,
+                              ),
+                            ),
                           ),
                   ),
                   const SizedBox(height: 8),

@@ -21,6 +21,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/fx_cubit.dart';
 import 'package:segno/looper/cubit/fx_presets_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/model/fx_library_choice.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
@@ -276,7 +277,7 @@ class _FxViewState extends State<FxView> {
                   FxReorderCard(
                     id: fx.slotId ?? '',
                     name: fxPedalName(l10n, fx),
-                    art: fx.module == null ? null : fxModuleArt(fx.module!),
+                    art: fxEntryArt(fx),
                   ),
               ],
             ),
@@ -359,9 +360,10 @@ class _FxViewState extends State<FxView> {
               FxReorderCard(
                 id: fxGroupId(groups[i]),
                 name: fxGroupName(l10n, groups[i]),
-                art: groups[i].rack?.art == null
-                    ? null
-                    : fxFootswitchAsset(groups[i].rack!.art!),
+                art: switch (groups[i].rack?.art) {
+                  final slug? => FxRackPicture(slug),
+                  null => null,
+                },
                 stageTag: !showStage
                     ? null
                     : groups[i].placement == FxPlacement.pre

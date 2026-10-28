@@ -39,7 +39,10 @@ Future<Widget?> guitarRackBanner() async {
   a flat parameter map that does not name its pedals. Tests check it against
   the bundled data.
 - Image paths such as `FxFamily.stripAsset` are relative to this package;
-  pass `package: FxCatalogueLoader.package` when drawing them.
+  pass `package: FxCatalogueLoader.package` when drawing them. The images are
+  our own; `assets/images/PROVENANCE.md` says how they were made.
+- Pedals have no image. The app draws each one in code, in the module's
+  `FxModule.colour`.
 
 ## Testing
 

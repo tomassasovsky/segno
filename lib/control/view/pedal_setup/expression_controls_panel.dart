@@ -7,6 +7,7 @@ import 'package:segno/control/view/named_value_endpoint_choice.dart';
 import 'package:segno/control/view/pedal_setup/control_row_list.dart';
 import 'package:segno/control/view/playback_endpoint_choice.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -25,8 +26,8 @@ class ExpressionRow {
   /// The mapping itself.
   final ExpressionMapping mapping;
 
-  /// The picture of the pedal it sweeps, in the catalogue package, or `null`.
-  final String? art;
+  /// The picture of the pedal it sweeps, or `null`.
+  final FxArt? art;
 
   /// Where it points — shown above the control's own name.
   final String destination;

@@ -9,6 +9,7 @@ import 'package:segno/control/view/named_value_endpoint_choice.dart';
 import 'package:segno/control/view/pedal_setup/control_row_list.dart';
 import 'package:segno/control/view/playback_endpoint_choice.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -52,8 +53,8 @@ class ExternalControlRow {
   /// Temporary owner lock; this saved target remains valid.
   final String? disabledReason;
 
-  /// The picture of the pedal or rack, in the catalogue package, or `null`.
-  final String? art;
+  /// The picture of the pedal or rack, or `null`.
+  final FxArt? art;
 
   /// The row's identity: its target.
   Object get target => activation?.target ?? parameter!.target;
@@ -573,7 +574,7 @@ class ExternalControlTargetList extends StatelessWidget {
           ({
             Object target,
             String name,
-            String? art,
+            FxArt? art,
             String? disabledReason,
             VoidCallback pick,
           })
