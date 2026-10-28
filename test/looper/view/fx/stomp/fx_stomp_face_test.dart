@@ -146,6 +146,8 @@ void main() {
 
     expect(faceOf(entry.copyWith(enabled: true)).lit, isTrue);
     expect(faceOf(entry.copyWith(enabled: false)).lit, isFalse);
+    // A still picture shows no state: its rows do not follow the rig.
+    expect(faceOf(entry.copyWith(enabled: false), live: false).lit, isTrue);
   });
 
   test('a still picture is the same picture whatever the settings', () {

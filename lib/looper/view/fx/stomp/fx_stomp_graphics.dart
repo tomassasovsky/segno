@@ -73,13 +73,38 @@ Shader fxStompBoxLinear(
   ]),
 );
 
-Paint _stroke(Color colour, double width, {double opacity = 1}) => Paint()
-  ..color = _a(colour, opacity)
-  ..style = PaintingStyle.stroke
-  ..strokeWidth = width;
+/// A stroke of [colour] at [opacity], [width] wide.
+Paint fxStompStroke(Color colour, double width, [double opacity = 1]) =>
+    fxStompFill(colour, opacity)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = width;
 
-Paint _fill(Color colour, {double opacity = 1}) =>
+/// A fill of [colour] at [opacity].
+Paint fxStompFill(Color colour, [double opacity = 1]) =>
     Paint()..color = _a(colour, opacity);
+
+/// The polished metal of screws, bezels, badges and hex nuts, over [r].
+Shader fxStompMetal(Rect r) => fxStompBoxRadial(
+  r,
+  const Offset(.35, .3),
+  .8,
+  const [Color(0xFFF2F4F6), Color(0xFFA7ADB5), Color(0xFF6C727A)],
+  const [0, .6, 1],
+);
+
+/// The metal dome of switches and dome knobs, over [r].
+Shader fxStompDome(Rect r) => fxStompBoxRadial(
+  r,
+  const Offset(.36, .28),
+  .85,
+  const [
+    Color(0xFFFFFFFF),
+    Color(0xFFD4D8DD),
+    Color(0xFF8E949C),
+    Color(0xFF5F656D),
+  ],
+  const [0, .35, .8, 1],
+);
 
 Path _poly(Iterable<Offset> points, {bool close = false}) {
   final path = Path();
@@ -222,7 +247,7 @@ void _flames(Canvas canvas, double x, double y, double w, double h) {
     points.add(Offset(x + w, y + h));
     canvas.drawPath(
       _poly(points, close: true),
-      _fill(colour, opacity: opacity),
+      fxStompFill(colour, opacity),
     );
   }
 }
@@ -240,11 +265,11 @@ void _clip(Canvas canvas, double x, double y, double w, double h, Color c) {
   canvas
     ..drawPath(
       _poly(points),
-      _stroke(c, 9, opacity: .9)..strokeJoin = StrokeJoin.miter,
+      fxStompStroke(c, 9, .9)..strokeJoin = StrokeJoin.miter,
     )
     ..drawPath(
       _dashed(_poly(_wave(x, x + w, yc, h * .45, w / 4, step: 3)), 6, 8),
-      _stroke(c, 3, opacity: .5),
+      fxStompStroke(c, 3, .5),
     );
 }
 
@@ -257,7 +282,7 @@ void _sines(Canvas canvas, double x, double y, double w, double h) {
   for (final (phase, colour) in strands) {
     canvas.drawPath(
       _poly(_wave(x, x + w, y + h / 2, h * .32, w / 2.2, phase: phase)),
-      _stroke(colour, 7, opacity: .75)..strokeCap = StrokeCap.round,
+      fxStompStroke(colour, 7, .75)..strokeCap = StrokeCap.round,
     );
   }
 }
@@ -274,7 +299,7 @@ void _swirl(Canvas canvas, double x, double y, double w, double h, Color c) {
           return Offset(cx + r * math.cos(t), cy + r * math.sin(t) * .8);
         }(),
     ]),
-    _stroke(c, 6, opacity: .45),
+    fxStompStroke(c, 6, .45),
   );
 }
 
@@ -283,10 +308,10 @@ void _ripples(Canvas canvas, double x, double y, double w, double h, Color c) {
   for (var r = 20; r < 420; r += 34) {
     canvas.drawOval(
       Rect.fromCenter(center: centre, width: r * 2.0, height: r * .84),
-      _stroke(
+      fxStompStroke(
         c,
         math.max(1.5, 7 - r / 40),
-        opacity: math.max(.08, .6 - r / 500),
+        math.max(.08, .6 - r / 500),
       ),
     );
   }
@@ -322,7 +347,7 @@ void _stars(Canvas canvas, double x, double y, double w, double h) {
     canvas.drawCircle(
       centre,
       radius,
-      _fill(const Color(0xFFFFFFFF), opacity: opacity),
+      fxStompFill(const Color(0xFFFFFFFF), opacity),
     );
   }
   for (final (fx, fy) in const [(.78, .22), (.18, .7), (.86, .8)]) {
@@ -339,7 +364,7 @@ void _stars(Canvas canvas, double x, double y, double w, double h) {
         Offset(px - 10, py),
         Offset(px - 2, py - 2),
       ], close: true),
-      _fill(const Color(0xFFFFFFFF)),
+      fxStompFill(const Color(0xFFFFFFFF)),
     );
   }
 }
@@ -357,14 +382,14 @@ void _octaves(Canvas canvas, double x, double y, double w, double h) {
     canvas.drawCircle(
       centre,
       w * .75 - i * w * .13,
-      _fill(colour, opacity: .85),
+      fxStompFill(colour, .85),
     );
   }
 }
 
 void _tweed(Canvas canvas, double x, double y, double w, double h) {
-  final dark = _stroke(const Color(0xFF5A3D12), 3, opacity: .35);
-  final light = _stroke(const Color(0xFFFFF3CF), 2, opacity: .25);
+  final dark = fxStompStroke(const Color(0xFF5A3D12), 3, .35);
+  final light = fxStompStroke(const Color(0xFFFFF3CF), 2, .25);
   for (var i = 0.0; i < w + h; i += 9) {
     canvas.drawLine(Offset(x + i, y), Offset(x + i - h, y + h), dark);
   }
@@ -374,7 +399,7 @@ void _tweed(Canvas canvas, double x, double y, double w, double h) {
 }
 
 void _slices(Canvas canvas, double x, double y, double w, double h) {
-  final paint = _fill(const Color(0xFF16181C), opacity: .9);
+  final paint = fxStompFill(const Color(0xFF16181C), .9);
   for (var i = -300.0; i < w; i += 90) {
     canvas.drawPath(
       _poly([
@@ -405,9 +430,9 @@ void _echo(Canvas canvas, FxStompSpec spec) {
 }
 
 void _reels(Canvas canvas, double x, double y, double w, double h, Color c) {
-  final stroke5 = _stroke(c, 5, opacity: .55);
-  final stroke4 = _stroke(c, 4, opacity: .55);
-  final fill = _fill(c, opacity: .55);
+  final stroke5 = fxStompStroke(c, 5, .55);
+  final stroke4 = fxStompStroke(c, 4, .55);
+  final fill = fxStompFill(c, .55);
   for (final cx in [x + w * .3, x + w * .7]) {
     final centre = Offset(cx, y + h / 2);
     canvas
@@ -436,7 +461,7 @@ void _spring(Canvas canvas, double x, double y, double w, double h) {
           y + h / 2 + math.sin(i / 1200 * 2 * math.pi * 16) * h * .28,
         ),
     ]),
-    _stroke(const Color(0xFFE9C46A), 4, opacity: .85),
+    fxStompStroke(const Color(0xFFE9C46A), 4, .85),
   );
 }
 
@@ -453,18 +478,18 @@ void _gate(Canvas canvas, double x, double y, double w, double h, Color c) {
   points.add(Offset(x + w, y + h * .8));
   canvas.drawPath(
     _poly(points),
-    _stroke(c, 8, opacity: .85)..strokeJoin = StrokeJoin.round,
+    fxStompStroke(c, 8, .85)..strokeJoin = StrokeJoin.round,
   );
 }
 
 void _staff(Canvas canvas, double x, double y, double w, double h, Color c) {
-  final line = _stroke(c, 2.5, opacity: .45);
+  final line = fxStompStroke(c, 2.5, .45);
   for (var i = 0; i < 5; i++) {
     final ly = y + h * .2 + i * h * .15;
     canvas.drawLine(Offset(x, ly), Offset(x + w, ly), line);
   }
-  final note = _fill(c, opacity: .7);
-  final stem = _stroke(c, 3, opacity: .7);
+  final note = fxStompFill(c, .7);
+  final stem = fxStompStroke(c, 3, .7);
   for (final (k, px) in [x + w * .22, x + w * .5, x + w * .78].indexed) {
     for (final step in const [0, 2, 4]) {
       final py = y + h * .8 - (step + k) * h * .075;
@@ -491,22 +516,22 @@ void _tuner(Canvas canvas, double x, double y, double w, double h, Color c) {
     canvas.drawLine(
       _polar(centre, r * .82, a),
       _polar(centre, r, a),
-      _stroke(
+      fxStompStroke(
         inTune ? const Color(0xFF18A558) : c,
         inTune ? 6 : 3,
-        opacity: .8,
+        .8,
       ),
     );
   }
   canvas.drawLine(
     centre,
     _polar(centre, r * .9, -84),
-    _stroke(const Color(0xFFE8433A), 4),
+    fxStompStroke(const Color(0xFFE8433A), 4),
   );
 }
 
 void _arrows(Canvas canvas, double x, double y, double w, double h, Color c) {
-  final paint = _stroke(c, 9, opacity: .55)
+  final paint = fxStompStroke(c, 9, .55)
     ..strokeCap = StrokeCap.round
     ..strokeJoin = StrokeJoin.round;
   for (final (dx, up) in const [(.25, true), (.5, false), (.75, true)]) {
@@ -543,7 +568,7 @@ void _pump(Canvas canvas, double x, double y, double w, double h, Color c) {
   }
   canvas.drawPath(
     path,
-    _stroke(c, 8, opacity: .55)..strokeJoin = StrokeJoin.round,
+    fxStompStroke(c, 8, .55)..strokeJoin = StrokeJoin.round,
   );
 }
 
@@ -562,7 +587,7 @@ void _spike(Canvas canvas, double x, double y, double w, double h, Color c) {
           );
         }(),
     ]),
-    _stroke(c, 5, opacity: .6),
+    fxStompStroke(c, 5, .6),
   );
 }
 
@@ -571,7 +596,7 @@ void _double(Canvas canvas, double x, double y, double w, double h, Color c) {
     canvas.drawCircle(
       Offset(x + w * .5 + dx, y + h * .5),
       h * .38,
-      _stroke(c, 7, opacity: .45),
+      fxStompStroke(c, 7, .45),
     );
   }
 }
@@ -584,20 +609,22 @@ void _chevrons(Canvas canvas, double x, double y, double w) {
         Offset(x + w / 2, y + 578 - i * 60),
         Offset(x + w / 2 + 18, y + 600 - i * 60),
       ]),
-      _stroke(const Color(0xFFFFFFFF), 6, opacity: .5 - i * .12)
+      fxStompStroke(const Color(0xFFFFFFFF), 6, .5 - i * .12)
         ..strokeCap = StrokeCap.round,
     );
   }
 }
 
 /// Paints [text] centred on [baseline]'s x, its alphabetic baseline on
-/// [baseline]'s y, as the design's `text-anchor="middle"` places it.
+/// [baseline]'s y, as the design's `text-anchor="middle"` places it, shrunk
+/// to [maxWidth] when it is wider.
 void fxStompPaintText(
   Canvas canvas,
   String text,
   Offset baseline,
-  TextStyle style,
-) {
+  TextStyle style, {
+  double maxWidth = double.infinity,
+}) {
   final painter = TextPainter(
     text: TextSpan(text: text, style: style),
     textDirection: TextDirection.ltr,
@@ -605,9 +632,15 @@ void fxStompPaintText(
   final ascent = painter.computeDistanceToActualBaseline(
     TextBaseline.alphabetic,
   );
-  painter
-    ..paint(canvas, baseline - Offset(painter.width / 2, ascent))
-    ..dispose();
+  final scale = math.min(1, maxWidth / painter.width).toDouble();
+  canvas
+    ..save()
+    ..translate(baseline.dx, baseline.dy)
+    ..scale(scale)
+    ..translate(-painter.width / 2, -ascent);
+  painter.paint(canvas, Offset.zero);
+  canvas.restore();
+  painter.dispose();
 }
 
 /// Paints a module face's screen at [r]: the bezel, the grid, [display] in
@@ -618,10 +651,10 @@ void paintFxStompScreen(Canvas canvas, Rect r, FxStompDisplay display) {
   canvas
     ..drawRRect(
       RRect.fromRectAndRadius(r.inflate(4), const Radius.circular(12)),
-      _fill(const Color(0xFF000000), opacity: .5),
+      fxStompFill(const Color(0xFF000000), .5),
     )
-    ..drawRRect(glass, _fill(const Color(0xFF07090B)));
-  final grid = _stroke(const Color(0xFF3A4A40), 1, opacity: .25);
+    ..drawRRect(glass, fxStompFill(const Color(0xFF07090B)));
+  final grid = fxStompStroke(const Color(0xFF3A4A40), 1, .25);
   for (var k = 1; k < 5; k++) {
     canvas.drawLine(
       Offset(x, y + k * h / 5),
@@ -662,7 +695,7 @@ void paintFxStompScreen(Canvas canvas, Rect r, FxStompDisplay display) {
         Rect.fromLTWH(x, y, w, h * .45),
         const Radius.circular(9),
       ),
-      _fill(const Color(0xFFFFFFFF), opacity: .05),
+      fxStompFill(const Color(0xFFFFFFFF), .05),
     );
 }
 
@@ -674,13 +707,16 @@ void _vu(Canvas canvas, double x, double y, double w, double h) {
       Rect.fromLTWH(x, y, w, h),
       const Radius.circular(9),
     ),
-    _fill(const Color(0xFFEFE2BD)),
+    fxStompFill(const Color(0xFFEFE2BD)),
   );
   for (var a = -130.0; a < -49; a += 8) {
     canvas.drawLine(
       _polar(centre, r * .85, a),
       _polar(centre, r, a),
-      _stroke(a > -60 ? const Color(0xFFFF4A3A) : const Color(0xFF2A2620), 3),
+      fxStompStroke(
+        a > -60 ? const Color(0xFFFF4A3A) : const Color(0xFF2A2620),
+        3,
+      ),
     );
   }
   fxStompPaintText(
@@ -696,7 +732,7 @@ void _vu(Canvas canvas, double x, double y, double w, double h) {
   canvas.drawLine(
     centre,
     _polar(centre, r * .95, -72),
-    _stroke(const Color(0xFF16181C), 3),
+    fxStompStroke(const Color(0xFF16181C), 3),
   );
 }
 
@@ -734,32 +770,32 @@ void _curve(
         ...points,
         Offset(x + w - 10, y + h),
       ], close: true),
-      _fill(colour, opacity: .18),
+      fxStompFill(colour, .18),
     )
     // The design's neon: a blurred copy under the line.
     ..drawPath(
       line,
-      _stroke(colour, 4)
+      fxStompStroke(colour, 4)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
     )
-    ..drawPath(line, _stroke(colour, 4));
+    ..drawPath(line, fxStompStroke(colour, 4));
 }
 
 void _record(Canvas canvas, double x, double y, double w, double h) {
   final centre = Offset(x + w / 2, y + h * .82);
-  canvas.drawCircle(centre, w * .48, _fill(const Color(0xFF0A0A0A)));
-  final groove = _stroke(const Color(0xFF3A3A3A), 1.4);
+  canvas.drawCircle(centre, w * .48, fxStompFill(const Color(0xFF0A0A0A)));
+  final groove = fxStompStroke(const Color(0xFF3A3A3A), 1.4);
   for (var r = 40; r < (w * .48).truncate(); r += 7) {
     canvas.drawCircle(centre, r.toDouble(), groove);
   }
   canvas
-    ..drawCircle(centre, 34, _fill(const Color(0xFFE8433A)))
-    ..drawCircle(centre, 4, _fill(const Color(0xFF0A0A0A)))
+    ..drawCircle(centre, 34, fxStompFill(const Color(0xFFE8433A)))
+    ..drawCircle(centre, 4, fxStompFill(const Color(0xFF0A0A0A)))
     ..drawPath(
       Path()
         ..moveTo(x + w * .15, y + h * .35)
         ..quadraticBezierTo(centre.dx, y + h * .05, x + w * .85, y + h * .35),
-      _stroke(const Color(0xFFFFFFFF), 10, opacity: .18),
+      fxStompStroke(const Color(0xFFFFFFFF), 10, .18),
     );
 }
 
@@ -772,7 +808,7 @@ void _pixels(Canvas canvas, double x, double y, double w, double h, Color c) {
     for (var j = 0; j < bars; j++) {
       canvas.drawRect(
         Rect.fromLTWH(x + 12 + i * cw, y + h - 14 - j * ch, cw - 3, ch - 3),
-        _fill(c, opacity: .5 + j * .08),
+        fxStompFill(c, .5 + j * .08),
       );
     }
   }

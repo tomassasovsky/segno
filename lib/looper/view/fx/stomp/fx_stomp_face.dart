@@ -104,7 +104,8 @@ FxStompSpec fxStompSpec(String module) =>
 ///
 /// The knobs are the entry's own controls ([fxStompKnobs]), so a pedal never
 /// shows a control that does not exist; they point at the entry's settings
-/// when the pedal is live. The LED is on while the effect is engaged.
+/// when the pedal is live. A live pedal's LED is on while the effect is
+/// engaged; a still one shows no state, so its LED rests on.
 FxStompFace fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
   final FxPedalPicture(:effect, :module, :live) = pedal;
   final spec = fxStompSpec(module.name);
@@ -116,7 +117,7 @@ FxStompFace fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
   );
   return FxStompFace(
     spec: spec,
-    lit: effect.enabled,
+    lit: !live || effect.enabled,
     knobs: [
       for (final (n, i) in knobs.indexed)
         FxStompKnob(

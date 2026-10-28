@@ -580,10 +580,17 @@ const Map<String, FxStompSpec> kFxStompSpecs = {
 /// How a pedal of a module missing from [kFxStompSpecs] looks: a plain grey
 /// treadle under the module's name, so it still draws. A test keeps the
 /// table complete.
-FxStompSpec fxStompFallbackSpec(String module) => FxStompSpec(
-  face: FxStompFaceKind.treadle,
-  name: module.toUpperCase(),
-  base: const Color(0xFF6C727A),
-  font: 'Inter',
-  size: 56,
+///
+/// One look per module, kept, so a pedal's recorded enclosure is reused.
+FxStompSpec fxStompFallbackSpec(String module) => _fallbacks.putIfAbsent(
+  module,
+  () => FxStompSpec(
+    face: FxStompFaceKind.treadle,
+    name: module.toUpperCase(),
+    base: const Color(0xFF6C727A),
+    font: 'Inter',
+    size: 56,
+  ),
 );
+
+final Map<String, FxStompSpec> _fallbacks = {};

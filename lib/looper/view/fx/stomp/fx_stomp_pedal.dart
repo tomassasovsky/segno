@@ -224,6 +224,8 @@ class _LabelsPainter extends CustomPainter {
     if (oldDelegate.labels.length != labels.length) return true;
     for (var i = 0; i < labels.length; i++) {
       if (oldDelegate.labels[i] != labels[i]) return true;
+      if (oldDelegate.spots[i].centre != spots[i].centre) return true;
+      if (oldDelegate.spots[i].labelSize != spots[i].labelSize) return true;
     }
     return false;
   }
@@ -307,19 +309,7 @@ final class _KnobParts {
         ],
         const [0, .6, 1],
       );
-    dome = Paint()
-      ..shader = radial(
-        r,
-        const Offset(.36, .28),
-        .85,
-        const [
-          Color(0xFFFFFFFF),
-          Color(0xFFD4D8DD),
-          Color(0xFF8E949C),
-          Color(0xFF5F656D),
-        ],
-        const [0, .35, .8, 1],
-      );
+    dome = Paint()..shader = fxStompDome(Rect.fromCircle(center: c, radius: r));
     cream = Paint()
       ..shader = radial(
         r * .8,
@@ -506,10 +496,32 @@ class _EnclosurePainter extends CustomPainter {
 
   static final Map<_EnclosureKey, ui.Picture> _pictures = {};
 
+  /// The knob count as the enclosure uses it: a box sets its name's height
+  /// by it and a module draws a scale around each knob; the other faces do
+  /// not depend on it, so they share one picture.
+  int get _knobs => switch (spec.face) {
+    FxStompFaceKind.box || FxStompFaceKind.module => knobs,
+    _ => 0,
+  };
+
   @override
   void paint(Canvas canvas, Size size) {
     final texture = textures.value[spec.finish];
-    final key = (spec: spec, lit: lit, knobs: knobs, textured: texture != null);
+    final key = (
+      spec: spec,
+      lit: lit,
+      knobs: _knobs,
+      textured: texture != null,
+    );
+    if (texture != null) {
+      // The picture recorded before the texture loaded is not drawn again.
+      _pictures.remove((
+        spec: spec,
+        lit: lit,
+        knobs: _knobs,
+        textured: false,
+      ))?.dispose();
+    }
     canvas.drawPicture(
       _pictures.putIfAbsent(key, () {
         final recorder = ui.PictureRecorder();
@@ -517,7 +529,7 @@ class _EnclosurePainter extends CustomPainter {
           Canvas(recorder),
           spec,
           lit: lit,
-          knobs: knobs,
+          knobs: _knobs,
           texture: texture,
         ).paint();
         return recorder.endRecording();
@@ -529,7 +541,7 @@ class _EnclosurePainter extends CustomPainter {
   bool shouldRepaint(_EnclosurePainter oldDelegate) =>
       !identical(oldDelegate.spec, spec) ||
       oldDelegate.lit != lit ||
-      oldDelegate.knobs != knobs;
+      oldDelegate._knobs != _knobs;
 }
 
 /// Draws one enclosure, as the design's face functions do.
@@ -565,38 +577,9 @@ class _Enclosure {
     }
   }
 
-  static Paint _fill(Color colour, [double opacity = 1]) =>
-      Paint()..color = colour.withValues(alpha: colour.a * opacity);
-
   static Paint _blur(Color colour, double opacity, double sigma) =>
-      _fill(colour, opacity)
+      fxStompFill(colour, opacity)
         ..maskFilter = MaskFilter.blur(BlurStyle.normal, sigma);
-
-  static Paint _line(Color colour, double width, [double opacity = 1]) =>
-      _fill(colour, opacity)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = width;
-
-  static Shader _metal(Rect r) => fxStompBoxRadial(
-    r,
-    const Offset(.35, .3),
-    .8,
-    const [Color(0xFFF2F4F6), Color(0xFFA7ADB5), Color(0xFF6C727A)],
-    const [0, .6, 1],
-  );
-
-  static Shader _dome(Rect r) => fxStompBoxRadial(
-    r,
-    const Offset(.36, .28),
-    .85,
-    const [
-      Color(0xFFFFFFFF),
-      Color(0xFFD4D8DD),
-      Color(0xFF8E949C),
-      Color(0xFF5F656D),
-    ],
-    const [0, .35, .8, 1],
-  );
 
   static Shader _metalV(Rect r) => fxStompBoxLinear(
     r,
@@ -689,7 +672,7 @@ class _Enclosure {
       ..restore()
       ..drawRRect(
         RRect.fromRectAndRadius(r.deflate(1.5), Radius.circular(rx - 1)),
-        _line(Colors.white, 2, .28),
+        fxStompStroke(Colors.white, 2, .28),
       );
   }
 
@@ -721,16 +704,18 @@ class _Enclosure {
   void _screw(Offset at) {
     final head = at - const Offset(0, .5);
     canvas
-      ..drawCircle(at, 7.5, _fill(Colors.black, .25))
+      ..drawCircle(at, 7.5, fxStompFill(Colors.black, .25))
       ..drawCircle(
         head,
         6.5,
-        Paint()..shader = _metal(Rect.fromCircle(center: head, radius: 6.5)),
+        Paint()
+          ..shader = fxStompMetal(Rect.fromCircle(center: head, radius: 6.5)),
       )
       ..drawLine(
         at + const Offset(-4, 2),
         at + const Offset(4, -3),
-        _line(const Color(0xFF55595F), 1.8)..strokeCap = StrokeCap.round,
+        fxStompStroke(const Color(0xFF55595F), 1.8)
+          ..strokeCap = StrokeCap.round,
       );
   }
 
@@ -748,24 +733,24 @@ class _Enclosure {
           const [0, .45, 1],
         );
     } else {
-      lens = _fill(fxStompShade(colour, -.38));
+      lens = fxStompFill(fxStompShade(colour, -.38));
     }
     canvas
       ..drawCircle(
         at,
         9,
-        Paint()..shader = _metal(Rect.fromCircle(center: at, radius: 9)),
+        Paint()..shader = fxStompMetal(Rect.fromCircle(center: at, radius: 9)),
       )
       ..drawCircle(at, 6, lens)
-      ..drawCircle(at - const Offset(2, 2), 1.8, _fill(Colors.white, .8));
+      ..drawCircle(at - const Offset(2, 2), 1.8, fxStompFill(Colors.white, .8));
   }
 
   /// The segno mark, at [at], [scale] times its drawn size.
   void _logo(Offset at, double scale, Color colour, [double opacity = 1]) {
-    final stroke = _line(colour, 5, opacity)
+    final stroke = fxStompStroke(colour, 5, opacity)
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
-    final dot = _fill(colour, opacity);
+    final dot = fxStompFill(colour, opacity);
     canvas
       ..save()
       ..translate(at.dx, at.dy)
@@ -801,27 +786,33 @@ class _Enclosure {
       ..drawCircle(c + const Offset(0, 6), r + 16, _blur(Colors.black, .35, 4))
       ..drawPath(
         hex,
-        Paint()..shader = _metal(Rect.fromCircle(center: c, radius: r + 14)),
+        Paint()
+          ..shader = fxStompMetal(Rect.fromCircle(center: c, radius: r + 14)),
       )
-      ..drawPath(hex, _line(Colors.black, 1, .35))
-      ..drawCircle(c + const Offset(0, 4), r, _fill(const Color(0xFF3A3E44)))
+      ..drawPath(hex, fxStompStroke(Colors.black, 1, .35))
+      ..drawCircle(
+        c + const Offset(0, 4),
+        r,
+        fxStompFill(const Color(0xFF3A3E44)),
+      )
       ..drawCircle(
         c,
         r,
-        Paint()..shader = _dome(Rect.fromCircle(center: c, radius: r)),
+        Paint()..shader = fxStompDome(Rect.fromCircle(center: c, radius: r)),
       )
-      ..drawCircle(c, r * .62, _line(Colors.black, 2, .15));
+      ..drawCircle(c, r * .62, fxStompStroke(Colors.black, 2, .15));
   }
 
   /// A round footswitch: a dark well and a dome lifted [lift] in it.
   void _domeSwitch(Offset c, double outer, double inner, double lift) {
     final top = c - Offset(0, lift);
     canvas
-      ..drawCircle(c, outer, _fill(const Color(0xFF0D0E10)))
+      ..drawCircle(c, outer, fxStompFill(const Color(0xFF0D0E10)))
       ..drawCircle(
         top,
         inner,
-        Paint()..shader = _dome(Rect.fromCircle(center: top, radius: inner)),
+        Paint()
+          ..shader = fxStompDome(Rect.fromCircle(center: top, radius: inner)),
       );
   }
 
@@ -829,6 +820,14 @@ class _Enclosure {
   /// turned by [tilt] degrees (the spec's own when not given).
   void _title(double x, double y, {double? tilt}) {
     final turn = tilt ?? spec.tilt;
+    // The width the name has on its face: across the treadle, box, panel or
+    // module, or along the rocker's side band.
+    final room = switch (spec.face) {
+      FxStompFaceKind.treadle => 360.0,
+      FxStompFaceKind.box || FxStompFaceKind.window => 350.0,
+      FxStompFaceKind.module => 330.0,
+      FxStompFaceKind.rocker => 560.0,
+    };
     final style = TextStyle(
       fontFamily: spec.font,
       fontSize: spec.size,
@@ -845,6 +844,7 @@ class _Enclosure {
         canvas,
         spec.name,
         Offset(x, y),
+        maxWidth: room,
         style.copyWith(
           foreground: Paint()
             ..color = outline
@@ -858,6 +858,7 @@ class _Enclosure {
       canvas,
       spec.name,
       Offset(x, y),
+      maxWidth: room,
       style.copyWith(
         color: ink,
         shadows: [
@@ -899,7 +900,7 @@ class _Enclosure {
     _screw(const Offset(398, 44));
     _led(const Offset(225, 52));
     canvas
-      ..drawRRect(_rounded(30, 292, 390, 8, 4), _fill(Colors.black, .45))
+      ..drawRRect(_rounded(30, 292, 390, 8, 4), fxStompFill(Colors.black, .45))
       ..drawRRect(
         treadShape,
         Paint()
@@ -925,13 +926,16 @@ class _Enclosure {
     }
     canvas
       ..drawRRect(treadShape, Paint()..shader = _sheen(tread, .5))
-      ..drawRRect(_rounded(33, 299, 384, 332, 21), _line(Colors.white, 2, .22));
+      ..drawRRect(
+        _rounded(33, 299, 384, 332, 21),
+        fxStompStroke(Colors.white, 2, .22),
+      );
     _title(225, spec.titleY ?? 392);
     const pad = Rect.fromLTWH(62, 432, 326, 178);
     canvas
       ..drawRRect(
         _rounded(58, 428, 334, 186, 16),
-        _fill(const Color(0xFF0D0E10)),
+        fxStompFill(const Color(0xFF0D0E10)),
       )
       ..drawRRect(
         RRect.fromRectAndRadius(pad, const Radius.circular(13)),
@@ -948,15 +952,19 @@ class _Enclosure {
       }
     }
     canvas
-      ..drawPath(ribs, _fill(const Color(0xFF2C3037)))
-      ..drawCircle(badge, 45, _fill(const Color(0xFF0D0E10)))
+      ..drawPath(ribs, fxStompFill(const Color(0xFF2C3037)))
+      ..drawCircle(badge, 45, fxStompFill(const Color(0xFF0D0E10)))
       ..drawCircle(
         badge,
         41,
-        Paint()..shader = _metal(Rect.fromCircle(center: badge, radius: 41)),
+        Paint()
+          ..shader = fxStompMetal(Rect.fromCircle(center: badge, radius: 41)),
       );
     _logo(badge, 1.25, const Color(0xFF2A2E34));
-    canvas.drawRRect(_rounded(24, 626, 402, 14, 6), _fill(Colors.black, .3));
+    canvas.drawRRect(
+      _rounded(24, 626, 402, 14, 6),
+      fxStompFill(Colors.black, .3),
+    );
   }
 
   void _box() {
@@ -994,7 +1002,10 @@ class _Enclosure {
     paintFxStompGraphic(canvas, spec.graphic, panel, spec);
     canvas
       ..restore()
-      ..drawRRect(_rounded(67, 51, 316, 298, 43), _line(Colors.white, 2, .35))
+      ..drawRRect(
+        _rounded(67, 51, 316, 298, 43),
+        fxStompStroke(Colors.white, 2, .35),
+      )
       ..drawRRect(panelShape, Paint()..shader = _sheen(panel, .7));
     _logo(const Offset(225, 80), .55, spec.panelInk, .7);
     _title(225, spec.titleY ?? 470);
@@ -1017,7 +1028,7 @@ class _Enclosure {
       spec.display,
     );
     // The scale around each knob.
-    final tick = _line(ink, 2.2, .75)..strokeCap = StrokeCap.round;
+    final tick = fxStompStroke(ink, 2.2, .75)..strokeCap = StrokeCap.round;
     for (final spot in _KnobSpot.layout(FxStompFaceKind.module, knobs)) {
       for (var i = 0; i < 11; i++) {
         final a = (-225 + i * 27) * math.pi / 180;
@@ -1045,7 +1056,7 @@ class _Enclosure {
       ..drawRRect(_rounded(58, 40, 262, 560, 20), _blur(Colors.black, .55, 4))
       ..drawRRect(
         _rounded(56, 34, 262, 560, 20),
-        _fill(const Color(0xFF0D0E10)),
+        fxStompFill(const Color(0xFF0D0E10)),
       )
       ..drawRRect(
         RRect.fromRectAndRadius(rubber, const Radius.circular(17)),
@@ -1061,8 +1072,8 @@ class _Enclosure {
     }
     const bar = Rect.fromLTWH(56, 560, 262, 34);
     canvas
-      ..drawPath(ribs, _fill(const Color(0xFF2C3037)))
-      ..saveLayer(bar.inflate(1), _fill(Colors.white, .85))
+      ..drawPath(ribs, fxStompFill(const Color(0xFF2C3037)))
+      ..saveLayer(bar.inflate(1), fxStompFill(Colors.white, .85))
       ..drawRRect(
         RRect.fromRectAndRadius(bar, const Radius.circular(12)),
         Paint()..shader = _metalV(bar),

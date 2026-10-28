@@ -7,8 +7,10 @@ small tile per finish instead: white, with the finish in the alpha channel,
 which the app repeats over a pedal body with an ImageShader.
 
 The noise is filtered in the frequency domain, so every tile wraps without
-a seam. Each tile is drawn at the scale the app paints it at (TILE_SCALE),
-in the pedal's 450-wide drawing space.
+a seam. A tile pixel is one unit of the pedal's 450-wide drawing space,
+except marble's, which the app paints at twice that (its large veins at
+half the resolution): keep FxStompTextures.scales in
+lib/looper/view/fx/stomp/fx_stomp_textures.dart in step with SCALES.
 
 Usage: python3 tool/stomp_textures.py   (needs numpy and Pillow)
 """
@@ -19,8 +21,14 @@ from PIL import Image
 
 OUT = os.path.join(os.path.dirname(__file__), '..', 'assets', 'images', 'stomp')
 
-# Tile size in pixels, and how many drawing-space units one pixel covers.
-TILES = {'hammer': (256, 1), 'flake': (256, 1), 'brush': (256, 1), 'marble': (256, 2)}
+# Tile size in pixels.
+SIZE = 256
+
+# Drawing-space units per tile pixel, where it is not 1. The noise
+# frequencies below are per tile pixel, so they already allow for it.
+SCALES = {'marble': 2}
+
+FINISHES = ('hammer', 'flake', 'brush', 'marble')
 
 
 def band_noise(size, fx, fy, octaves, seed, turbulence=False):
@@ -77,8 +85,8 @@ def marble(size):
 
 def main():
     os.makedirs(OUT, exist_ok=True)
-    for name, (size, _) in TILES.items():
-        alpha = globals()[name](size)
+    for name in FINISHES:
+        alpha = globals()[name](SIZE)
         a = np.round(alpha * 255).astype(np.uint8)
         white = np.full_like(a, 255)
         path = os.path.join(OUT, f'{name}.png')
