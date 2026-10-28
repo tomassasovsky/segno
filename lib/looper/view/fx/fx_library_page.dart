@@ -268,11 +268,6 @@ class _LibraryCard extends StatelessWidget {
     super.key,
   });
 
-  /// The corner radius of the card's picture. The images are
-  /// square-cornered; the Looper X art they replaced had these corners baked
-  /// in (13 of its 125 px), which this keeps at the size the card draws it.
-  static const double artRadius = 20;
-
   final String label;
   final String? asset;
   final double width;
@@ -306,7 +301,7 @@ class _LibraryCard extends StatelessWidget {
                         ? const SizedBox.shrink()
                         : Center(
                             child: ClipRRect(
-                              borderRadius: BorderRadius.circular(artRadius),
+                              clipper: const _ArtCorners(),
                               child: Image.asset(
                                 asset!,
                                 package: FxCatalogueLoader.package,
@@ -496,4 +491,23 @@ class _PresetRow extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// The rounded corners of a library card's picture, in proportion to the
+/// height it is drawn at.
+///
+/// The images are square-cornered. The Looper X art they replaced had its
+/// corners baked in, 13 of every 125 px of height, and this keeps that
+/// proportion at whatever size the card draws the picture.
+class _ArtCorners extends CustomClipper<RRect> {
+  const _ArtCorners();
+
+  @override
+  RRect getClip(Size size) => RRect.fromRectAndRadius(
+    Offset.zero & size,
+    Radius.circular(size.height * 13 / 125),
+  );
+
+  @override
+  bool shouldReclip(_ArtCorners oldClipper) => false;
 }

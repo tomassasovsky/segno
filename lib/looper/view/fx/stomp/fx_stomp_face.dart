@@ -18,6 +18,7 @@ class FxStompFace extends Equatable {
     required this.colour,
     required this.knobs,
     this.subtitle,
+    this.lit = true,
   }) : assert(knobs.length <= kFxStompMaxKnobs, 'a pedal has four knobs');
 
   /// The pedal's name, as the treadle prints it.
@@ -32,8 +33,11 @@ class FxStompFace extends Equatable {
   /// The knobs, left to right.
   final List<FxStompKnob> knobs;
 
+  /// Whether the LED is on: the effect is engaged.
+  final bool lit;
+
   @override
-  List<Object?> get props => [name, subtitle, colour, knobs];
+  List<Object?> get props => [name, subtitle, colour, knobs, lit];
 }
 
 /// One knob on a pedal.
@@ -106,6 +110,7 @@ FxStompFace fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
     name: module.name.toUpperCase(),
     subtitle: _variantFamily(effect, module)?.toUpperCase(),
     colour: kFxStompColours[module.name] ?? kFxStompFallbackColour,
+    lit: effect.enabled,
     knobs: [
       for (final (n, i) in knobs.indexed)
         FxStompKnob(
@@ -124,9 +129,9 @@ FxStompFace fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
 /// Read from the controls the entry carries, not from the rack it sits in: a
 /// pedal added to another family's rack keeps its own family. Where several
 /// families share one variant, the family of the rack the entry sits in, if
-/// it is one of them, and otherwise the first. A module this build has no
-/// variant of at all (the Harmonizer) takes its rack's family when the
-/// module belongs there.
+/// it is one of them, and otherwise none: the controls cannot say which. A
+/// module this build has no variant of at all (the Harmonizer) takes its
+/// rack's family when the module belongs there.
 String? _variantFamily(BuiltInEffect effect, FxModule module) {
   final slug = effect.rack?.art;
   final variants = kFxModuleVariants[module.name];
@@ -143,8 +148,9 @@ String? _variantFamily(BuiltInEffect effect, FxModule module) {
     for (final MapEntry(:key, :value) in variants.entries)
       if (identical(value, build)) key,
   ];
+  if (families.length == 1) return families.single;
   for (final family in families) {
     if (kFxFamilySlugs[family] == slug) return family;
   }
-  return families.firstOrNull;
+  return null;
 }

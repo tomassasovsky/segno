@@ -98,6 +98,22 @@ void main() {
 
       expect(faceOf(moved).subtitle, "ED'S RACK");
     });
+
+    test('names no family when a shared variant leaves its rack', () {
+      // The Studio, Vocal and Vocal Tuner racks share one four-band EQ: on
+      // its own, its controls cannot say which of them it came from.
+      final vocal = pedal('Four-band EQ', 'Vocal Rack');
+
+      expect(faceOf(vocal).subtitle, 'VOCAL RACK');
+      expect(
+        faceOf(
+          vocal.copyWith(
+            rack: const FxRack(id: 'd', name: 'D', art: 'dub'),
+          ),
+        ).subtitle,
+        isNull,
+      );
+    });
   });
 
   group('a variant with more than four controls', () {
@@ -151,6 +167,21 @@ void main() {
     );
 
     expect(faceOf(turned).knobs.map((k) => k.setting), [0, 1]);
+  });
+
+  test('the LED is on while the effect is engaged', () {
+    final entry = pedal('Overdrive', "Ed's Rack");
+
+    expect(faceOf(entry.copyWith(enabled: true)).lit, isTrue);
+    expect(faceOf(entry.copyWith(enabled: false)).lit, isFalse);
+  });
+
+  test('a still picture is the same picture whatever the settings', () {
+    final entry = pedal('Overdrive', "Ed's Rack");
+    final turned = entry.copyWith(params: [...entry.params]..[0] = 0);
+
+    expect(fxEntryArt(turned, live: false), fxEntryArt(entry, live: false));
+    expect(fxEntryArt(turned), isNot(fxEntryArt(entry)));
   });
 
   test('a pedal that is not live rests its knobs whatever the settings', () {

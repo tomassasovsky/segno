@@ -40,8 +40,12 @@ final class FxPedalPicture extends FxArt {
   /// so they never show a stale value.
   final bool live;
 
+  /// A live picture is its effect's settings; a still one is only which
+  /// pedal it is, so a setting change does not make it a different picture.
   @override
-  List<Object?> get props => [effect, module.name, live];
+  List<Object?> get props => live
+      ? [effect, module.name, live]
+      : [effect.slotId, effect.rack?.art, module.name, live];
 }
 
 /// The pedal [effect] is drawn as, or `null` when it is not one of the

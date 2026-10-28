@@ -38,7 +38,7 @@ class FxStompPedal extends StatelessWidget {
                 children: [
                   Positioned.fill(
                     child: CustomPaint(
-                      painter: _EnclosurePainter(face.colour),
+                      painter: _EnclosurePainter(face.colour, lit: face.lit),
                     ),
                   ),
                   _CheckLabel(ink: ink),
@@ -211,6 +211,7 @@ final class _EnclosureParts {
   screws = [];
   late final Paint bezel;
   late final Paint lens;
+  final Paint lensOff = _fill(const Color(0xFF4A1410));
   late final Paint jackNut;
 
   final Rect ground = Rect.fromCenter(
@@ -262,17 +263,26 @@ final _EnclosureParts _enclosure = _EnclosureParts();
 /// The enclosure: its shadow, side jacks, coloured body with its shading,
 /// sheen and bevel, the two screws and the LED.
 class _EnclosurePainter extends CustomPainter {
-  _EnclosurePainter(this.colour);
+  _EnclosurePainter(this.colour, {required this.lit});
 
   final Color colour;
 
-  late final Paint _body = Paint()
-    ..shader = ui.Gradient.linear(
-      _kBody.topCenter,
-      _kBody.bottomCenter,
-      [_shade(colour, .10), colour, _shade(colour, -.10)],
-      const [0, .55, 1],
-    );
+  /// Whether the LED is on: the effect is engaged.
+  final bool lit;
+
+  /// The body gradient per colour, shared by every pedal of that colour.
+  static final Map<Color, Paint> _bodies = {};
+
+  Paint get _body => _bodies.putIfAbsent(
+    colour,
+    () => Paint()
+      ..shader = ui.Gradient.linear(
+        _kBody.topCenter,
+        _kBody.bottomCenter,
+        [_shade(colour, .10), colour, _shade(colour, -.10)],
+        const [0, .55, 1],
+      ),
+  );
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -295,16 +305,16 @@ class _EnclosurePainter extends CustomPainter {
         ..drawCircle(screw.head, 6.5, screw.metal)
         ..drawLine(screw.slotFrom, screw.slotTo, parts.screwSlot);
     }
+    if (lit) canvas.drawCircle(_kLed, 16, parts.ledGlow);
     canvas
-      ..drawCircle(_kLed, 16, parts.ledGlow)
       ..drawCircle(_kLed, 10, parts.bezel)
-      ..drawCircle(_kLed, 7, parts.lens)
+      ..drawCircle(_kLed, 7, lit ? parts.lens : parts.lensOff)
       ..drawCircle(_kLed - const Offset(2.5, 2.5), 2, parts.ledGlint);
   }
 
   @override
   bool shouldRepaint(_EnclosurePainter oldDelegate) =>
-      oldDelegate.colour != colour;
+      oldDelegate.colour != colour || oldDelegate.lit != lit;
 }
 
 /// The parts of the treadle every pedal shares, built once.
@@ -412,12 +422,18 @@ class _TreadlePainter extends CustomPainter {
 
   final Color colour;
 
-  late final Paint _plate = Paint()
-    ..shader = ui.Gradient.linear(
-      _kTreadle.topCenter,
-      _kTreadle.bottomCenter,
-      [colour, _shade(colour, -.20)],
-    );
+  /// The plate gradient per colour, shared by every pedal of that colour.
+  static final Map<Color, Paint> _plates = {};
+
+  Paint get _plate => _plates.putIfAbsent(
+    colour,
+    () => Paint()
+      ..shader = ui.Gradient.linear(
+        _kTreadle.topCenter,
+        _kTreadle.bottomCenter,
+        [colour, _shade(colour, -.20)],
+      ),
+  );
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -492,7 +508,11 @@ class _StompKnob extends StatelessWidget {
         children: [
           SizedBox.square(
             dimension: r * 2,
-            child: CustomPaint(painter: _KnobPainter(knob.setting)),
+            // Its own layer: a knob that turns repaints alone, not the
+            // enclosure and treadle under it.
+            child: RepaintBoundary(
+              child: CustomPaint(painter: _KnobPainter(knob.setting)),
+            ),
           ),
           SizedBox(height: 18, width: slot.labelWidth),
           _PedalPrint(
