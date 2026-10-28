@@ -11,6 +11,7 @@ class FxStompFace extends Equatable {
     required this.spec,
     required this.knobs,
     this.lit = true,
+    this.live = true,
   });
 
   /// How the pedal looks.
@@ -23,8 +24,12 @@ class FxStompFace extends Equatable {
   /// Whether the LED is on: the effect is engaged.
   final bool lit;
 
+  /// Whether the knobs follow the effect's settings. A still pedal's never
+  /// move, so they are not given layers of their own.
+  final bool live;
+
   @override
-  List<Object?> get props => [spec, knobs, lit];
+  List<Object?> get props => [spec, knobs, lit, live];
 }
 
 /// One knob on a pedal.
@@ -107,9 +112,8 @@ FxStompSpec fxStompSpec(String module) =>
 /// when the pedal is live. A live pedal's LED is on while the effect is
 /// engaged; a still one shows no state, so its LED rests on.
 FxStompFace fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
-  final FxPedalPicture(:effect, :module, :live) = pedal;
+  final FxPedalPicture(:effect, :module, :controls, :live) = pedal;
   final spec = fxStompSpec(module.name);
-  final controls = fxEntryControls(effect);
   final knobs = fxStompKnobs(
     module.name,
     controls,
@@ -117,12 +121,13 @@ FxStompFace fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
   );
   return FxStompFace(
     spec: spec,
+    live: live,
     lit: !live || effect.enabled,
     knobs: [
       for (final (n, i) in knobs.indexed)
         FxStompKnob(
           label: l10n.fxParamKeyName(controls.keys[i]).toUpperCase(),
-          setting: live
+          setting: live && effect is BuiltInEffect
               ? fxEntryShownSetting(effect, controls.params[i])
               : _kRestingSettings[n % _kRestingSettings.length],
         ),

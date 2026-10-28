@@ -335,7 +335,7 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
     final effect = widget.effect;
     final built = effect is BuiltInEffect ? effect : null;
     final name = fxPedalName(l10n, effect);
-    final art = fxEntryArt(effect);
+    final art = fxEntryArt(effect, live: true);
     final params = built?.type.params ?? const <FxParamInfo>[];
     // A rack variant shows the controls its rack shows, under its names; any
     // other entry shows every parameter of its type.

@@ -155,7 +155,10 @@ void main() {
     final turned = entry.copyWith(params: [...entry.params]..[0] = 0);
 
     expect(fxEntryArt(turned, live: false), fxEntryArt(entry, live: false));
-    expect(fxEntryArt(turned), isNot(fxEntryArt(entry)));
+    expect(
+      fxEntryArt(turned, live: true),
+      isNot(fxEntryArt(entry, live: true)),
+    );
     expect(
       faceOf(turned, live: false).knobs,
       faceOf(entry, live: false).knobs,
@@ -169,11 +172,30 @@ void main() {
     expect(face.spec.name, 'Harmony');
   });
 
+  test(
+    'a catalogue pedal this build runs as a plugin draws, without knobs',
+    () {
+      const plugin = PluginEffect(
+        ref: PluginRef(format: PluginFormat.vst3, id: 'harmony'),
+        module: 'Harmonizer',
+      );
+
+      final art = fxEntryArt(plugin, live: true);
+      expect(art, isNotNull);
+      expect(fxStompFace(l10n, art!).knobs, isEmpty);
+      expect(fxStompFace(l10n, art).spec, kFxStompSpecs['Harmonizer']);
+    },
+  );
+
   test('an effect that is not a catalogue pedal has no picture', () {
-    expect(fxEntryArt(BuiltInEffect(type: TrackEffectType.eq)), isNull);
+    expect(
+      fxEntryArt(BuiltInEffect(type: TrackEffectType.eq), live: true),
+      isNull,
+    );
     expect(
       fxEntryArt(
         BuiltInEffect(type: TrackEffectType.eq, module: 'Removed module'),
+        live: true,
       ),
       isNull,
     );

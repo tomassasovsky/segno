@@ -46,6 +46,7 @@ void main() {
           module,
           presets.firstWhere((p) => fxPresetModules(p).contains(module)),
         ),
+        live: true,
       )!,
     );
 

@@ -59,7 +59,9 @@ class FxStompTextures {
   static Future<ui.Image?> _decode(AssetBundle bundle, String asset) async {
     try {
       final data = await bundle.load(asset);
-      final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+      final codec = await ui.instantiateImageCodec(
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+      );
       try {
         return (await codec.getNextFrame()).image;
       } finally {

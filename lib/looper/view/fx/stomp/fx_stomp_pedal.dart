@@ -68,6 +68,7 @@ class FxStompPedal extends StatelessWidget {
                       spec: spec,
                       spot: spots[i],
                       setting: knob.setting,
+                      layered: face.live,
                     ),
                 ],
               ),
@@ -209,36 +210,39 @@ class _LabelsPainter extends CustomPainter {
   }
 }
 
-/// One knob, on its own layer.
+/// One knob: on its own layer when it can turn ([layered]).
 class _StompKnob extends StatelessWidget {
   const _StompKnob({
     required this.spec,
     required this.spot,
     required this.setting,
+    required this.layered,
   });
 
   final FxStompSpec spec;
   final _KnobSpot spot;
   final double setting;
 
+  /// Whether the knob turns with its setting, and so repaints alone.
+  final bool layered;
+
   @override
   Widget build(BuildContext context) {
     final r = spot.radius;
+    final knob = CustomPaint(
+      painter: _KnobPainter(
+        style: spec.knob,
+        cap: spec.knobCap,
+        accent: spec.accent,
+        setting: setting,
+      ),
+    );
     return Positioned(
       left: spot.centre.dx - r,
       top: spot.centre.dy - r,
       width: r * 2,
       height: r * 2,
-      child: RepaintBoundary(
-        child: CustomPaint(
-          painter: _KnobPainter(
-            style: spec.knob,
-            cap: spec.knobCap,
-            accent: spec.accent,
-            setting: setting,
-          ),
-        ),
-      ),
+      child: layered ? RepaintBoundary(child: knob) : knob,
     );
   }
 }
@@ -465,7 +469,14 @@ class _EnclosurePainter extends CustomPainter {
     required this.lit,
     required this.knobs,
     required this.textures,
-  }) : super(repaint: textures);
+  }) : super(
+         repaint: Listenable.merge([
+           textures,
+           // A typeface registered after the first frame: the cache is
+           // dropped ([_watchFonts]) and the pedal draws its name again.
+           PaintingBinding.instance.systemFonts,
+         ]),
+       );
 
   final FxStompSpec spec;
   final bool lit;
@@ -475,6 +486,8 @@ class _EnclosurePainter extends CustomPainter {
   static final Map<_EnclosureKey, ui.Picture> _pictures = {};
 
   static bool _watchingFonts = false;
+
+  static bool _untexturedDropped = false;
 
   /// Drops every recorded enclosure when the fonts change, so a name
   /// recorded before its typeface was registered is not replayed.
@@ -507,14 +520,15 @@ class _EnclosurePainter extends CustomPainter {
       knobs: _knobs,
       textured: texture != null,
     );
-    if (texture != null) {
-      // The picture recorded before the texture loaded is not drawn again.
-      _pictures.remove((
-        spec: spec,
-        lit: lit,
-        knobs: _knobs,
-        textured: false,
-      ))?.dispose();
+    if (texture != null && !_untexturedDropped) {
+      // The pictures recorded before the textures loaded are not drawn
+      // again.
+      _untexturedDropped = true;
+      _pictures.removeWhere((key, picture) {
+        if (key.textured) return false;
+        picture.dispose();
+        return true;
+      });
     }
     canvas.drawPicture(
       _pictures.putIfAbsent(key, () {

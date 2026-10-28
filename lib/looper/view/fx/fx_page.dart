@@ -277,7 +277,9 @@ class _FxViewState extends State<FxView> {
                   FxReorderCard(
                     id: fx.slotId ?? '',
                     name: fxPedalName(l10n, fx),
-                    art: fxEntryArt(fx),
+                    // Still: the reorder page is not rebuilt when a setting
+                    // changes.
+                    art: fxEntryArt(fx, live: false),
                   ),
               ],
             ),

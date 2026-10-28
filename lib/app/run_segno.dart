@@ -70,9 +70,6 @@ Future<void> runSegno(
   registerVendoredLicenses();
   // And the typefaces bundled with the app.
   registerFontLicenses();
-  // The pedals' finish tiles, decoded in the background: a pedal drawn
-  // before they are ready draws plain and repaints when they are.
-  unawaited(FxStompTextures.instance.load());
 
   // On the appliance ivi-homescreen runs one engine per screen and names each
   // one's role in its Dart arguments (homescreen.toml). With no screen named
@@ -82,6 +79,10 @@ Future<void> runSegno(
     await runReadoutScreen();
     return;
   }
+  // The pedals' finish tiles, decoded in the background: a pedal drawn
+  // before they are ready draws plain and repaints when they are. The
+  // readout screen draws no pedal, so it returned above.
+  unawaited(FxStompTextures.instance.load());
 
   // Durable logfile under $HOME/log (→ /data/log on the appliance). Before
   // audio auto-start so open failures leave a breadcrumb, and AFTER the
