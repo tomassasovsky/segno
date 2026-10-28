@@ -854,6 +854,62 @@ void main() {
     );
 
     blocTest<UpdateCubit, UpdateState>(
+      "a download whose helper died follows RAUC's install to its end",
+      seed: () => UpdateState(available: _v2),
+      setUp: () {
+        when(
+          () => updates.downloadAndStage(_v2),
+        ).thenAnswer((_) => Stream.error(Exception('helper killed')));
+        final answers = [true, false];
+        when(
+          () => updates.installInProgress(),
+        ).thenAnswer((_) async => answers.removeAt(0));
+      },
+      build: polling,
+      act: (cubit) async {
+        await cubit.startDownload();
+        await pumpEventQueue();
+      },
+      expect: () => [
+        isA<UpdateState>().having((s) => s.installInFlight, 'in flight', true),
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.error)
+            .having((s) => s.raucInstalling, 'rauc installing', false),
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.error)
+            .having((s) => s.installInFlight, 'in flight', true),
+        isA<UpdateState>()
+            .having((s) => s.raucInstalling, 'rauc installing', false)
+            .having((s) => s.installInFlight, 'in flight', false),
+      ],
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'a USB run that ends with RAUC still writing keeps installInFlight',
+      setUp: () {
+        final answers = [true, false];
+        when(
+          () => updates.installInProgress(),
+        ).thenAnswer((_) async => answers.removeAt(0));
+      },
+      build: polling,
+      act: (cubit) async {
+        cubit
+          ..setUsbInstalling(working: true)
+          ..setUsbInstalling(working: false);
+        await pumpEventQueue();
+      },
+      expect: () => [
+        isA<UpdateState>().having((s) => s.usbInstalling, 'usb', true),
+        isA<UpdateState>()
+            .having((s) => s.usbInstalling, 'usb', false)
+            .having((s) => s.installInFlight, 'in flight', false),
+        isA<UpdateState>().having((s) => s.installInFlight, 'in flight', true),
+        isA<UpdateState>().having((s) => s.installInFlight, 'in flight', false),
+      ],
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
       'stops asking once closed',
       setUp: () {
         when(

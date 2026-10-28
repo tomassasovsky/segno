@@ -109,6 +109,18 @@ class UpdateCubit extends Cubit<UpdateState> {
     }
   }
 
+  /// After this run's own install ended without staging (its helper died
+  /// past the download, or a USB run failed), RAUC may still be writing:
+  /// asks once, and follows it while it is.
+  Future<void> _recheckRaucInstall() async {
+    if (state.raucInstalling) return;
+    final installing = await _updates.installInProgress();
+    // Another path may have started following meanwhile.
+    if (!installing || isClosed || state.raucInstalling) return;
+    emit(state.copyWith(raucInstalling: true));
+    await _followRaucInstall();
+  }
+
   /// Asks RAUC again every poll interval until it no longer reports
   /// an install, then clears [UpdateState.raucInstalling].
   Future<void> _followRaucInstall() async {
@@ -223,6 +235,7 @@ class UpdateCubit extends Cubit<UpdateState> {
                       : UpdateFailure.download,
                 ),
               );
+              unawaited(_recheckRaucInstall());
             }
           },
           onDone: () {
@@ -263,6 +276,7 @@ class UpdateCubit extends Cubit<UpdateState> {
   void setUsbInstalling({required bool working}) {
     if (isClosed || state.usbInstalling == working) return;
     emit(state.copyWith(usbInstalling: working));
+    if (!working) unawaited(_recheckRaucInstall());
   }
 
   /// A package installed from a USB drive (#1270 Part 8) lands in Ready to

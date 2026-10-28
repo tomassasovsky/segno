@@ -47,8 +47,14 @@ setup() {
     staged="$work/staged-version"
     echo idle > "$work/operation"
 
+    # `systemctl is-active` answers from "$work/rauc-active" and is not
+    # recorded: only the reset is.
     cat > "$work/bin/systemctl" <<STUB
 #!/bin/sh
+if [ "\$1" = is-active ]; then
+    [ -f "$work/rauc-active" ]
+    exit
+fi
 printf '%s\n' "\$@" > "$work/systemctl-args"
 exit 0
 STUB
@@ -162,10 +168,10 @@ check "full argv" "start poweroff.target" \
     "$(tr '\n' ' ' < "$work/systemctl-args" | sed 's/ *$//')"
 teardown
 
-# A daemon or bus that does not answer is not writing a slot, and refusing
-# then would leave no way to restart from the console at all.
+# RAUC writes a slot only from its daemon: one that is not running is not
+# installing, and refusing then would leave no way to restart at all.
 echo
-echo "reboot when RAUC's state cannot be read: reboots"
+echo "reboot when RAUC is not running and its state cannot be read: reboots"
 setup
 rm -f "$work/operation"
 run_reboot
@@ -177,6 +183,22 @@ check "logs that it could not tell" yes \
     "$(grep -q "could not read RAUC's operation" "$work/stderr" && echo yes || echo no)"
 teardown
 
+# A running daemon that does not answer within the timeout may be busy
+# writing the slot (the install itself saturates the card): fail closed.
+echo
+echo "reboot when RAUC is running but does not answer: refuses"
+setup
+rm -f "$work/operation"
+: > "$work/rauc-active"
+run_reboot
+status=$?
+check "exits 5" 5 "$status"
+check "never resets" no \
+    "$([ -e "$work/systemctl-args" ] && echo yes || echo no)"
+check "says why" yes \
+    "$(grep -q 'treating it as installing' "$work/stderr" && echo yes || echo no)"
+teardown
+
 echo
 echo "install-state: reports RAUC's own operation"
 setup
@@ -185,9 +207,12 @@ check "installing" '{"installing":true}' "$(run_verb install-state)"
 echo idle > "$work/operation"
 check "idle" '{"installing":false}' "$(run_verb install-state)"
 rm -f "$work/operation"
-check "unreadable reads as not installing" '{"installing":false}' \
+check "unreadable, RAUC not running: not installing" '{"installing":false}' \
     "$(run_verb install-state)"
 check "unreadable still exits 0" 0 "$(run_verb install-state >/dev/null; echo $?)"
+: > "$work/rauc-active"
+check "unreadable, RAUC running: installing" '{"installing":true}' \
+    "$(run_verb install-state)"
 teardown
 
 echo

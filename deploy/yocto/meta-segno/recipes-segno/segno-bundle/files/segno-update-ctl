@@ -42,8 +42,9 @@
 #             {"installing":true} or {"installing":false}, read from the
 #             daemon's D-Bus Operation property (#1498). It outlives this
 #             helper: RAUC has no cancel, so an install keeps writing the slot
-#             after its client is killed (the app crashed or restarted). A
-#             state that cannot be read prints false.
+#             after its client is killed (the app crashed or restarted). When
+#             the property cannot be read, a running rauc.service counts as
+#             installing and a stopped one as idle.
 #   reboot    Reboot into the staged slot (the user's explicit "Restart to apply").
 #             The reset MUST carry the tryboot argument. Staging arms the Pi's
 #             one-shot tryboot flag (RAUC's backend calls `vcmailbox 0x00038064
@@ -119,19 +120,25 @@ RAUC_SYSTEM_CONF="${SEGNO_RAUC_SYSTEM_CONF:-/etc/rauc/system.conf}"
 log() { echo "segno-update-ctl: $*" >&2; }
 
 # Whether RAUC reports an install in progress: its D-Bus Operation property
-# is "installing" (busctl prints `s "installing"`). Anything else, including
-# a daemon or bus that does not answer, is not an install in progress: RAUC
-# writes a slot only from its daemon, and a daemon that does not answer the
-# bus is not running an install for anyone.
+# is "installing" (busctl prints `s "installing"`). When the property cannot
+# be read, the daemon decides: RAUC writes a slot only from rauc.service, so
+# a daemon that is not running is not installing, while one that is running
+# but does not answer may be busy writing (an SD card saturated by the
+# install itself) and counts as installing.
 rauc_installing() {
     # Bounded: a wedged daemon must not hold a reset (or the app's Saving
     # face) for busctl's default 25 s.
-    operation=$(busctl --timeout=5 get-property de.pengutronix.rauc / \
-        de.pengutronix.rauc.Installer Operation 2>/dev/null) || {
-        log "could not read RAUC's operation; treating it as idle"
-        return 1
-    }
-    [ "$operation" = 's "installing"' ]
+    if operation=$(busctl --timeout=5 get-property de.pengutronix.rauc / \
+        de.pengutronix.rauc.Installer Operation 2>/dev/null); then
+        [ "$operation" = 's "installing"' ]
+        return
+    fi
+    if systemctl is-active --quiet rauc.service; then
+        log "RAUC is running but did not say what it is doing; treating it as installing"
+        return 0
+    fi
+    log "could not read RAUC's operation and RAUC is not running; treating it as idle"
+    return 1
 }
 
 # Refuses a second install while RAUC is writing the slot for an earlier one

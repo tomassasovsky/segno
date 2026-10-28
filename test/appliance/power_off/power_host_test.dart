@@ -271,6 +271,7 @@ void main() {
         ).thenAnswer((_) async => Version.parse('1.0.0'));
         when(updates.stagedVersion).thenAnswer((_) async => Version.none);
         when(updates.checkForUpdate).thenAnswer((_) async => offer);
+        when(updates.installInProgress).thenAnswer((_) async => false);
         when(
           () => updates.downloadAndStage(offer),
         ).thenAnswer((_) => download.stream);
