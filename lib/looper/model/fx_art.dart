@@ -32,10 +32,15 @@ final class FxPedalPicture extends FxArt {
     this.module,
     this.controls, {
     required this.live,
+    this.chainOn = true,
   });
 
   /// The chain entry the pedal stands for.
   final TrackEffect effect;
+
+  /// Whether the chain the entry is in is switched on. A live pedal in a
+  /// chain switched off is not engaged, whatever its own power.
+  final bool chainOn;
 
   /// The catalogue module it is.
   final FxModule module;
@@ -54,7 +59,7 @@ final class FxPedalPicture extends FxArt {
   /// picture.
   @override
   List<Object?> get props => live
-      ? [effect, module.name, live]
+      ? [effect, module.name, live, chainOn]
       : [
           effect.slotId,
           effect.rack?.art,
@@ -70,7 +75,11 @@ final class FxPedalPicture extends FxArt {
 ///
 /// [live] says whether the surface asking rebuilds when the effect's
 /// settings change ([FxPedalPicture.live]).
-FxPedalPicture? fxEntryArt(TrackEffect effect, {required bool live}) {
+FxPedalPicture? fxEntryArt(
+  TrackEffect effect, {
+  required bool live,
+  bool chainOn = true,
+}) {
   final name = effect.module;
   final module = name == null ? null : fxModuleNamed(name);
   if (module == null) return null;
@@ -81,5 +90,6 @@ FxPedalPicture? fxEntryArt(TrackEffect effect, {required bool live}) {
         ? fxEntryControls(effect)
         : (params: const <int>[], keys: const <String>[]),
     live: live,
+    chainOn: chainOn,
   );
 }

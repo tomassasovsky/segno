@@ -170,6 +170,7 @@ class FxRackEditor extends StatelessWidget {
                         key: Key('fx_pedal_${entries[i].slotId ?? i}'),
                         height: pedalHeight,
                         effect: entries[i],
+                        chainOn: chainOn,
                         onTogglePower: () {
                           final id = entries[i].slotId;
                           if (id != null) {
@@ -296,8 +297,13 @@ class FxPedalColumn extends StatefulWidget {
     required this.onTogglePower,
     required this.onParam,
     this.height = kFxPedalHeight,
+    this.chainOn = true,
     super.key,
   });
+
+  /// Whether the rack's chain is switched on: the pedal's LED is dark while
+  /// it is off, as nothing passes through it.
+  final bool chainOn;
 
   /// How tall the column is: the pen's strip, less the chain-off band when
   /// it shows.
@@ -335,7 +341,7 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
     final effect = widget.effect;
     final built = effect is BuiltInEffect ? effect : null;
     final name = fxPedalName(l10n, effect);
-    final art = fxEntryArt(effect, live: true);
+    final art = fxEntryArt(effect, live: true, chainOn: widget.chainOn);
     final params = built?.type.params ?? const <FxParamInfo>[];
     // A rack variant shows the controls its rack shows, under its names; any
     // other entry shows every parameter of its type.

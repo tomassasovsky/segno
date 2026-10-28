@@ -186,6 +186,11 @@ void main() {
 
     expect(faceOf(entry.copyWith(enabled: true)).led, FxStompLed.on);
     expect(faceOf(entry.copyWith(enabled: false)).led, FxStompLed.off);
+    // A chain switched off passes nothing through its pedals.
+    expect(
+      fxStompFace(l10n, fxEntryArt(entry, live: true, chainOn: false)!)!.led,
+      FxStompLed.off,
+    );
     // A still picture shows no state: its surface does not follow the rig.
     expect(
       faceOf(entry.copyWith(enabled: false), live: false).led,

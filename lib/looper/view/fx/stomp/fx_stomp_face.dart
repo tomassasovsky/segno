@@ -147,7 +147,7 @@ FxStompFace? fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
     live: live,
     led: !live
         ? FxStompLed.still
-        : effect.enabled
+        : effect.enabled && pedal.chainOn
         ? FxStompLed.on
         : FxStompLed.off,
     knobs: [
