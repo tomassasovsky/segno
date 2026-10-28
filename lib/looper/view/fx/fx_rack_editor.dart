@@ -361,7 +361,10 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
               opacity: effect.enabled ? 1 : surface.disabledOpacity,
               child: art == null
                   ? _mark(surface, lit: effect.enabled)
-                  : FxArtView(art: art),
+                  : FxArtView(
+                      art: art,
+                      fallback: _mark(surface, lit: effect.enabled),
+                    ),
             ),
           ),
           const SizedBox(height: 18),

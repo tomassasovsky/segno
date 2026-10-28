@@ -79,11 +79,6 @@ Future<void> runSegno(
     await runReadoutScreen();
     return;
   }
-  // The pedals' finish tiles, decoded in the background: a pedal drawn
-  // before they are ready draws plain and repaints when they are. The
-  // readout screen draws no pedal, so it returned above.
-  unawaited(FxStompTextures.instance.load());
-
   // Durable logfile under $HOME/log (→ /data/log on the appliance). Before
   // audio auto-start so open failures leave a breadcrumb, and AFTER the
   // readout branch above: the readout is a second Flutter engine in this
@@ -92,6 +87,12 @@ Future<void> runSegno(
   // other's out from under it. It keeps the stderr/journald mirror, which is
   // where its lines were read from anyway.
   await initAppLogging();
+
+  // The pedals' finish tiles, decoded in the background: a pedal drawn
+  // before they are ready draws plain and repaints when they are. After the
+  // logfile, so a tile that fails to load leaves a line in it; the readout
+  // screen draws no pedal, so it returned above.
+  unawaited(FxStompTextures.instance.load());
 
   // One engine instance, shared by the looper (which owns its lifecycle) and
   // the session repository (which only reads/writes its loop PCM). On the

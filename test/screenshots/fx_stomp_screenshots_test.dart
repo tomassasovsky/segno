@@ -46,7 +46,7 @@ void main() {
         ),
         live: true,
       )!,
-    );
+    )!;
 
     await tester.pumpWidget(
       MaterialApp(

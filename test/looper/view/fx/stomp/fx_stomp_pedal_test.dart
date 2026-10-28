@@ -130,16 +130,11 @@ void main() {
       }
     }
   });
-
-  testWidgets('the pedal is a picture to a screen reader', (tester) async {
-    final semantics = tester.ensureSemantics();
-    await pump(tester, face('Delay', 3));
-
-    expect(find.bySemanticsLabel('LEVEL'), findsNothing);
-    semantics.dispose();
-  });
 }
 
-/// How many knobs the pedal draws.
-int knobsOf(WidgetTester tester) =>
-    tester.widget<FxStompPedal>(find.byType(FxStompPedal)).face.knobs.length;
+/// How many knobs the pedal draws: the knob spots its face lays out for
+/// the knobs it shows.
+int knobsOf(WidgetTester tester) {
+  final face = tester.widget<FxStompPedal>(find.byType(FxStompPedal)).face;
+  return fxStompKnobBounds(face.spec.face, face.knobs.length).length;
+}

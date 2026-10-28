@@ -8,8 +8,9 @@ import 'package:segno/looper/view/fx/stomp/fx_stomp_pedal.dart';
 /// Draws [art] in the space its parent gives it, keeping its proportions: a
 /// rack's footswitch picture, or a pedal drawn in code.
 ///
-/// A picture that fails to load draws [fallback] in its space, empty unless
-/// given, so the names beside it stay where they are.
+/// A picture that fails to load, or a pedal with no look, draws [fallback]
+/// in its space, empty unless given, so the names beside it stay where they
+/// are.
 class FxArtView extends StatelessWidget {
   /// Creates an [FxArtView].
   const FxArtView({
@@ -35,9 +36,10 @@ class FxArtView extends StatelessWidget {
           errorBuilder: (_, _, _) => fallback,
         );
       case final FxPedalPicture pedal:
-        return Center(
-          child: FxStompPedal(face: fxStompFace(context.l10n, pedal)),
-        );
+        final face = fxStompFace(context.l10n, pedal);
+        return face == null
+            ? fallback
+            : Center(child: FxStompPedal(face: face));
     }
   }
 }

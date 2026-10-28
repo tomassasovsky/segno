@@ -59,13 +59,16 @@ List<int> fxStompKnobs(
   final count = controls.keys.length;
   if (count <= room) return [for (var i = 0; i < count; i++) i];
   final preferred = kFxStompKnobKeys[module];
-  if (preferred == null) return [for (var i = 0; i < room; i++) i];
-  // The controls the table names, which a test keeps to [room] on every
-  // variant it applies to.
-  return [
+  final picked = [
     for (var i = 0; i < count; i++)
-      if (preferred.contains(controls.keys[i])) i,
+      if (preferred?.contains(controls.keys[i]) ?? false) i,
   ];
+  // The table names [room] of the variant's controls, which a test keeps
+  // true; capped and filled from the front so a face never holds more or
+  // goes empty if it drifts.
+  return picked.isEmpty
+      ? [for (var i = 0; i < room; i++) i]
+      : picked.take(room).toList();
 }
 
 /// The controls a module's pedal shows when its variant has more than its
@@ -98,16 +101,18 @@ const List<double> _kRestingSettings = [
   .5 - 100 / 270,
 ];
 
-/// The face [pedal] is drawn with.
+/// The face [pedal] is drawn with, or `null` for a module with no look in
+/// [kFxStompSpecs].
 ///
 /// The knobs are the entry's own controls ([fxStompKnobs]), so a pedal never
 /// shows a control that does not exist; they point at the entry's settings
 /// when the pedal is live. The LED is on while the effect is engaged, as it
 /// was when the picture was made for a still pedal.
-FxStompFace fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
+FxStompFace? fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
   final FxPedalPicture(:effect, :module, :controls, :live) = pedal;
-  // Every catalogue module has a look; a test keeps the table complete.
-  final spec = kFxStompSpecs[module.name]!;
+  final spec = kFxStompSpecs[module.name];
+  // A module with no look draws no pedal; a test keeps the table complete.
+  if (spec == null) return null;
   final knobs = fxStompKnobs(
     module.name,
     controls,

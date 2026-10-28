@@ -20,7 +20,7 @@ void main() {
   String label(String key) => l10n.fxParamKeyName(key).toUpperCase();
 
   FxStompFace faceOf(BuiltInEffect effect, {bool live = true}) =>
-      fxStompFace(l10n, fxEntryArt(effect, live: live)!);
+      fxStompFace(l10n, fxEntryArt(effect, live: live)!)!;
 
   /// The first factory preset of [family] that holds [module].
   BuiltInEffect pedal(String module, String family) {
@@ -182,8 +182,8 @@ void main() {
 
       final art = fxEntryArt(plugin, live: true);
       expect(art, isNotNull);
-      expect(fxStompFace(l10n, art!).knobs, isEmpty);
-      expect(fxStompFace(l10n, art).spec, kFxStompSpecs['Harmonizer']);
+      expect(fxStompFace(l10n, art!)!.knobs, isEmpty);
+      expect(fxStompFace(l10n, art)!.spec, kFxStompSpecs['Harmonizer']);
     },
   );
 
