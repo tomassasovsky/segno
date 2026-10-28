@@ -7686,9 +7686,9 @@
     "@powerUpdateTitle": {
         "description": "Power dialog title while an update downloads or installs, online or from a USB drive (#1494). The only action is Keep playing."
     },
-    "powerUpdateBody": "An update is still being installed. Segno can't restart or power off until it finishes. The Updates page in Settings shows its progress: it has finished when it says Ready to install, or shows an error.",
+    "powerUpdateBody": "An update is still being downloaded or installed. Segno can't restart or power off until it has finished. Press the power button again later: once it opens Power options, the update has finished.",
     "@powerUpdateBody": {
-        "description": "Power refuse body for an update in flight, online or from a USB drive: a restart mid-install would leave the new system half written (#1494). Says what is happening, that restart and power off are blocked until it ends, and how to tell it has ended. 'Updates' and 'Settings' name the page and its parent (settingsUpdatesTitle, stageSettings), and 'Ready to install' is updatesPanelReady; keep them in step."
+        "description": "Power refuse body for an update in flight, online or from a USB drive: a restart mid-install would leave the new system half written (#1494). Says what is happening, that restart and power off are blocked until it ends, and how to tell it has ended: the power button opens Power options again. 'Power options' is powerOptionsTitle; keep them in step. It does not point at the Updates page, which shows neither a USB install's progress nor its failure once the player has left the page."
     },
     "storageEjectStuck": "Still ejecting. If it does not finish, unplug the drive.",
     "@storageEjectStuck": {
