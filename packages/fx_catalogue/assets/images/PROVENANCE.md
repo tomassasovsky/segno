@@ -9,7 +9,9 @@ repository: they are in tomassasovsky/segno-design, under
 `docs/design/own-art/`. Of the `assets/` crops below, the `selector/` and
 `footswitch/` folders here are the ones the app ships.
 
-`assets/` holds the crops used by the app, at twice the slot size:
+The art drop's `assets/` holds the crops it made, at twice the slot size
+(what this folder ships of them, and where it differs, is under "What the
+app ships" below):
 - strip: 582x458, from `flat-*`
 - selector: 452x250, from `flat-*`
 - footswitch: 580x250, from `photo-*`

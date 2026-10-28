@@ -985,7 +985,7 @@ class _Enclosure {
         _rounded(33, 299, 384, 332, 21),
         fxStompStroke(Colors.white, 2, .22),
       );
-    _title(225, spec.titleY ?? 392);
+    _title(225, spec.titleY ?? kFxStompTreadleTitleY);
     const pad = Rect.fromLTWH(62, 432, 326, 178);
     canvas
       ..drawRRect(

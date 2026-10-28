@@ -53,9 +53,9 @@ class FxStompTextures {
       for (final MapEntry(key: name, value: asset) in assets.entries)
         _decode(bundle, asset).then((image) => (name, image)),
     ]);
-    images.value = Map.unmodifiable({
-      for (final (name, image) in loaded) name: ?image,
-    });
+    final tiles = {for (final (name, image) in loaded) name: ?image};
+    // Nothing loaded is no change: the pedals keep their recordings.
+    if (tiles.isNotEmpty) images.value = Map.unmodifiable(tiles);
   }
 
   /// The tile at [asset], or `null` when it cannot be read: its finish

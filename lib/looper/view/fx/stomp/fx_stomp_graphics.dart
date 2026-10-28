@@ -210,6 +210,9 @@ void paintFxStompGraphic(
 /// The width a name has across a treadle.
 const double kFxStompTreadleTitleRoom = 360;
 
+/// A treadle name's baseline, where its look does not move it.
+const double kFxStompTreadleTitleY = 392;
+
 /// Whether [graphic] is drawn on a treadle face's treadle rather than on
 /// its body.
 bool fxStompGraphicOnTreadle(FxStompGraphic graphic) =>
@@ -406,7 +409,7 @@ void _slices(Canvas canvas, double x, double y, double w, double h) {
 
 void _echo(Canvas canvas, FxStompSpec spec) {
   // The name again, fading up and to the right behind itself.
-  final y = spec.titleY ?? 392;
+  final y = spec.titleY ?? kFxStompTreadleTitleY;
   for (final i in const [3, 2, 1]) {
     fxStompPaintText(
       canvas,
