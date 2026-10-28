@@ -45,7 +45,14 @@ final class FxPedalPicture extends FxArt {
   @override
   List<Object?> get props => live
       ? [effect, module.name, live]
-      : [effect.slotId, effect.rack?.art, module.name, live];
+      : [
+          effect.slotId,
+          effect.rack?.art,
+          module.name,
+          effect.type,
+          ...fxEntryControls(effect).keys,
+          live,
+        ];
 }
 
 /// The pedal [effect] is drawn as, or `null` when it is not one of the

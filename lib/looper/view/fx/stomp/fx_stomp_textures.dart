@@ -38,24 +38,35 @@ class FxStompTextures {
 
   Future<void>? _loading;
 
-  /// Decodes the tiles from [bundle], once. A tile that fails to load is
-  /// left out, and its finish draws plain.
+  /// Decodes the tiles from [bundle], once: the app starts it at launch, and
+  /// a screenshot suite awaits it before drawing. A tile that fails to load
+  /// is left out, and its finish draws plain.
   Future<void> load([AssetBundle? bundle]) =>
       _loading ??= _load(bundle ?? rootBundle);
 
   Future<void> _load(AssetBundle bundle) async {
-    final loaded = <FxStompFinish, ui.Image>{};
-    for (final MapEntry(key: finish, value: asset) in assets.entries) {
+    final loaded = await Future.wait([
+      for (final MapEntry(key: finish, value: asset) in assets.entries)
+        _decode(bundle, asset).then((image) => (finish, image)),
+    ]);
+    images.value = Map.unmodifiable({
+      for (final (finish, image) in loaded) finish: ?image,
+    });
+  }
+
+  /// The tile at [asset], or `null` when it cannot be read: its finish
+  /// draws plain.
+  static Future<ui.Image?> _decode(AssetBundle bundle, String asset) async {
+    try {
+      final data = await bundle.load(asset);
+      final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
       try {
-        final data = await bundle.load(asset);
-        final codec = await ui.instantiateImageCodec(
-          data.buffer.asUint8List(),
-        );
-        loaded[finish] = (await codec.getNextFrame()).image;
-      } on Object catch (_) {
-        // A missing or unreadable tile: the finish draws plain.
+        return (await codec.getNextFrame()).image;
+      } finally {
+        codec.dispose();
       }
+    } on Object catch (_) {
+      return null;
     }
-    images.value = Map.unmodifiable(loaded);
   }
 }

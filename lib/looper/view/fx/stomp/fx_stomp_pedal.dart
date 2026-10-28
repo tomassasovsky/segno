@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -31,7 +30,6 @@ class FxStompPedal extends StatelessWidget {
     final knobs = face.knobs.take(kind.maxKnobs).toList();
     final spots = _KnobSpot.layout(kind, knobs.length);
     final textures = FxStompTextures.instance;
-    unawaited(textures.load());
     return RepaintBoundary(
       // A picture: the name and the controls it shows are on the surface
       // around it, which is what a screen reader reads.
@@ -83,12 +81,21 @@ class FxStompPedal extends StatelessWidget {
 
 /// Where a knob sits on a face, and where its label prints.
 class _KnobSpot {
-  const _KnobSpot(this.centre, this.radius, this.labelBaseline, this.labelSize);
+  const _KnobSpot(
+    this.centre,
+    this.radius,
+    this.labelBaseline,
+    this.labelSize, {
+    this.wraps = false,
+  });
 
   final Offset centre;
   final double radius;
   final double labelBaseline;
   final double labelSize;
+
+  /// Whether the label has room for a second line under it.
+  final bool wraps;
 
   /// The design's `place_knobs()`: [count] knobs in rows of [cols], each row
   /// centred on [cx], [dx] apart, rows [dy] apart from [top].
@@ -112,7 +119,12 @@ class _KnobSpot {
   /// Every knob spot of a [kind] face holding [count] knobs.
   static List<_KnobSpot> layout(FxStompFaceKind kind, int count) {
     if (count == 0) return const [];
-    _KnobSpot under(Offset c, double r) => _KnobSpot(c, r, c.dy + r + 26, 14);
+    // A treadle's or a box's label may take a second line; a window's top
+    // row has a knob under it.
+    final wraps =
+        kind == FxStompFaceKind.treadle || kind == FxStompFaceKind.box;
+    _KnobSpot under(Offset c, double r) =>
+        _KnobSpot(c, r, c.dy + r + 26, 14, wraps: wraps);
     switch (kind) {
       case FxStompFaceKind.treadle:
         final r = const {1: 44.0, 2: 42.0, 3: 36.0, 4: 31.0}[count]!;
@@ -175,8 +187,12 @@ class _LabelsPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Laid out per paint, which is only when the labels change, and let go
+    // of straight after.
     for (final label in _layOutLabels(labels, spots, colour)) {
-      label.paint(canvas);
+      label
+        ..paint(canvas)
+        ..dispose();
     }
   }
 
@@ -458,6 +474,21 @@ class _EnclosurePainter extends CustomPainter {
 
   static final Map<_EnclosureKey, ui.Picture> _pictures = {};
 
+  static bool _watchingFonts = false;
+
+  /// Drops every recorded enclosure when the fonts change, so a name
+  /// recorded before its typeface was registered is not replayed.
+  static void _watchFonts() {
+    if (_watchingFonts) return;
+    _watchingFonts = true;
+    PaintingBinding.instance.systemFonts.addListener(() {
+      for (final picture in _pictures.values) {
+        picture.dispose();
+      }
+      _pictures.clear();
+    });
+  }
+
   /// The knob count as the enclosure uses it: a box sets its name's height
   /// by it and a module draws a scale around each knob; the other faces do
   /// not depend on it, so they share one picture.
@@ -468,6 +499,7 @@ class _EnclosurePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    _watchFonts();
     final texture = textures.value[spec.finish];
     final key = (
       spec: spec,
@@ -785,7 +817,7 @@ class _Enclosure {
     // The width the name has on its face: across the treadle, box, panel or
     // module, or along the rocker's side band.
     final room = switch (spec.face) {
-      FxStompFaceKind.treadle => 360.0,
+      FxStompFaceKind.treadle => kFxStompTreadleTitleRoom,
       FxStompFaceKind.box || FxStompFaceKind.window => 350.0,
       FxStompFaceKind.module => 330.0,
       FxStompFaceKind.rocker => 560.0,
@@ -1076,6 +1108,12 @@ class _LabelLayout {
     );
   }
 
+  void dispose() {
+    for (final line in lines) {
+      line.dispose();
+    }
+  }
+
   void paint(Canvas canvas) {
     for (final (n, line) in lines.indexed) {
       final ascent = line.computeDistanceToActualBaseline(
@@ -1102,6 +1140,12 @@ List<_LabelLayout> _layOutLabels(
   List<_KnobSpot> spots,
   Color colour,
 ) {
+  void disposeAll(List<TextPainter>? painters) {
+    for (final painter in painters ?? const <TextPainter>[]) {
+      painter.dispose();
+    }
+  }
+
   TextPainter line(String text, _KnobSpot spot) => TextPainter(
     text: TextSpan(
       text: text,
@@ -1126,12 +1170,10 @@ List<_LabelLayout> _layOutLabels(
         final one = line(label, spot);
         final oneScale = math.min(1, room / one.width).toDouble();
         final words = label.split(' ');
-        // A module's knobs sit a scale's width apart, with no room for a
-        // second line: its labels only shrink.
         // A label that fits stays on one line; one that does not goes on
-        // two when that lets it print larger, so a pedal's labels read at
-        // one size where they can.
-        if (oneScale >= 1 || words.length < 2 || spot.labelSize > 14) {
+        // two when its face has room for that ([_KnobSpot.wraps]) and it
+        // lets the label print larger.
+        if (oneScale >= 1 || words.length < 2 || !spot.wraps) {
           return _LabelLayout([one], spot, oneScale);
         }
         // The split that leaves the longer line shortest.
@@ -1144,12 +1186,19 @@ List<_LabelLayout> _layOutLabels(
           ];
           final width = math.max(pair[0].width, pair[1].width);
           if (width < bestWidth) {
+            disposeAll(best);
             best = pair;
             bestWidth = width;
+          } else {
+            disposeAll(pair);
           }
         }
         final twoScale = math.min(1, room / bestWidth).toDouble();
-        if (twoScale <= oneScale) return _LabelLayout([one], spot, oneScale);
+        if (twoScale <= oneScale) {
+          disposeAll(best);
+          return _LabelLayout([one], spot, oneScale);
+        }
+        one.dispose();
         return _LabelLayout(best!, spot, twoScale);
       }(),
   ];
@@ -1167,12 +1216,23 @@ double _labelRoom(_KnobSpot spot, List<_KnobSpot> spots) {
 }
 
 /// Where the labels of a [kind] face carrying [labels] are drawn, for a
-/// test to check that none overlaps another.
+/// test to check that none overlaps another or a knob.
 @visibleForTesting
 List<Rect> fxStompLabelBounds(FxStompFaceKind kind, List<String> labels) {
   final spots = _KnobSpot.layout(kind, labels.length);
   return [
     for (final label in _layOutLabels(labels, spots, kFxStompDarkInk))
-      label.bounds,
+      () {
+        final bounds = label.bounds;
+        label.dispose();
+        return bounds;
+      }(),
   ];
 }
+
+/// Where the knobs of a [kind] face holding [count] are drawn, for a test.
+@visibleForTesting
+List<Rect> fxStompKnobBounds(FxStompFaceKind kind, int count) => [
+  for (final spot in _KnobSpot.layout(kind, count))
+    Rect.fromCircle(center: spot.centre, radius: spot.radius),
+];
