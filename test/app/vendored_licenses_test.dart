@@ -94,7 +94,7 @@ void main() {
 
         expect(
           byFont.keys,
-          unorderedEquals(['Arimo', 'Inter', 'JetBrains Mono']),
+          unorderedEquals(bundledFontLicenses.map((entry) => entry.$1)),
         );
         for (final (font, path) in bundledFontLicenses) {
           expect(
@@ -121,7 +121,18 @@ void main() {
       );
       for (final (font, path) in bundledFontLicenses) {
         final text = File(path).readAsStringSync();
-        expect(text, contains(font == 'Arimo' ? 'Google' : 'Project Authors'));
+        // The notice the licence asks every copy to carry: its copyright
+        // line, which names the authors in each font's own words.
+        expect(text, contains('Copyright'), reason: font);
+        // Its own notice, not another font's copied over: no two bundled
+        // typefaces carry the same licence text.
+        expect(
+          bundledFontLicenses
+              .where((other) => other.$1 != font)
+              .map((other) => File(other.$2).readAsStringSync()),
+          isNot(contains(text)),
+          reason: font,
+        );
         expect(
           text,
           contains(

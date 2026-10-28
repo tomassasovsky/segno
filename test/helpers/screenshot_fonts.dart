@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:segno/looper/view/fx/stomp/fx_stomp_spec.dart';
+import 'package:segno/looper/view/fx/stomp/fx_stomp_textures.dart';
 
 /// The Flutter SDK's Material fonts (Roboto and the Material icons), which
 /// the screenshot suites load.
@@ -80,4 +82,39 @@ String packageAssetPath(String package, String asset) {
     throw StateError('$package has no $asset (looked in $path)');
   }
   throw StateError('$package is not in the package config');
+}
+
+/// Registers every typeface a stomp pedal's look names, for a screenshot
+/// suite, from the font files the app bundles for it.
+///
+/// Both sides are read rather than listed: the families from the looks, the
+/// files from the font manifest the test build writes from the pubspec.
+/// Throws when a family has no file rather than skipping it: a pedal printed
+/// in the test font's boxes is a golden that hides the gap.
+Future<void> loadFxStompFonts() async {
+  final manifest =
+      jsonDecode(await rootBundle.loadString('FontManifest.json'))
+          as List<dynamic>;
+  final files = {
+    for (final entry in manifest.cast<Map<String, dynamic>>())
+      entry['family'] as String: [
+        for (final font
+            in (entry['fonts'] as List<dynamic>).cast<Map<String, dynamic>>())
+          font['asset'] as String,
+      ],
+  };
+  for (final family in {for (final spec in kFxStompSpecs.values) spec.font}) {
+    final assets = files[family];
+    if (assets == null || assets.isEmpty) {
+      throw StateError('The stomp typeface $family is not bundled');
+    }
+    await loadScreenshotFont(family, assets);
+  }
+}
+
+/// Loads everything a code-drawn pedal needs to look as designed in a
+/// screenshot: its typefaces ([loadFxStompFonts]) and its finish tiles.
+Future<void> loadFxStompArt() async {
+  await loadFxStompFonts();
+  await FxStompTextures.instance.load();
 }

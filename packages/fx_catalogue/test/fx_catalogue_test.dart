@@ -100,7 +100,6 @@ void main() {
       // slug derived rather than mapped would draw the wrong rack.
       for (final family in catalogue.families) {
         for (final asset in [
-          family.stripAsset,
           family.selectorAsset,
           family.footswitchAsset,
         ]) {
@@ -111,6 +110,7 @@ void main() {
           );
         }
       }
+      expect(File('${root.path}/$kFxSingleSelectorAsset').existsSync(), isTrue);
     });
 
     test('loads all 159 presets the import verified', () {
@@ -190,33 +190,12 @@ void main() {
       expect(preset.moduleNames.toSet(), hasLength(preset.moduleNames.length));
     });
 
-    test('a stomp illustration resolves only for a name the catalogue '
-        'actually carries', () {
-      expect(fxStompAsset('Delay3'), 'assets/images/stomps/Delay3.png');
-      expect(
-        File('${root.path}/${fxStompAsset('Delay3')}').existsSync(),
-        isTrue,
-      );
-      // Not every module prefix has one: the source files artwork per pedal
-      // IDENTITY, so a prefix with no image gets null rather than a path that
-      // fails to load.
-      expect(fxStompAsset('Del'), isNull);
-      expect(fxStompAsset('NotAPedal'), isNull);
-    });
-
-    test('saved display names resolve to their artwork, not power aliases', () {
+    test('saved display names resolve to their module, not power aliases', () {
       final overdrive = fxModuleNamed('Overdrive');
       expect(overdrive, isNotNull);
       expect(overdrive!.enables, contains('OvDrive'));
-      expect(fxModuleArt('Overdrive'), 'assets/images/stomps/Overdrive2.png');
-      expect(
-        File('${root.path}/${fxModuleArt('Overdrive')}').existsSync(),
-        isTrue,
-      );
       expect(fxModuleNamed('OvDrive'), isNull);
-      expect(fxModuleArt('OvDrive'), isNull);
       expect(fxModuleNamed('Removed module'), isNull);
-      expect(fxModuleArt('Removed module'), isNull);
     });
   });
 
@@ -375,33 +354,6 @@ void main() {
         }
       },
     );
-
-    test('every illustration the table names is a file that is here', () {
-      for (final module in kFxModules) {
-        expect(module.artwork, isNotEmpty, reason: module.name);
-        for (final art in module.artwork) {
-          expect(
-            kFxStompAssets,
-            contains(art),
-            reason: '${module.name} names $art',
-          );
-          expect(
-            File('${root.path}/${fxStompAsset(art)}').existsSync(),
-            isTrue,
-            reason: '${module.name} names $art',
-          );
-        }
-      }
-    });
-
-    test('a module with several illustrations records them all, because the '
-        'data does not say which variant a family used', () {
-      final delay = kFxModules.firstWhere((m) => m.name == 'Delay');
-
-      expect(delay.artwork, ['Delay3', 'Delay4', 'Delay6']);
-      // The first is what a surface draws; the rest keep the gap visible.
-      expect(delay.artwork.first, 'Delay3');
-    });
 
     test('the power key and the parameter prefix are usually different '
         'words, which is why the table exists', () {

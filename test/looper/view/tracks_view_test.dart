@@ -1153,16 +1153,22 @@ void main() {
   testWidgets('G reaches the Effects route', (
     tester,
   ) async {
+    setSegnoFxCatalogueForTest(FxCatalogue.empty);
+    addTearDown(() => setSegnoFxCatalogueForTest(null));
     seed(const LooperState(tracks: [Track()]));
-    await pump(tester);
+    final pushed = <Route<dynamic>>[];
+    await pump(tester, navigatorObservers: [_PushObserver(pushed.add)]);
+    pushed.clear();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
-    await tester.pumpAndSettle();
 
-    // Effects is a full-screen route. The route itself needs the app's root
-    // navigator, which this harness does not install, so what this pins is
-    // that the handler runs cleanly.
     expect(tester.takeException(), isNull);
+    expect(pushed, hasLength(1));
+    expect(pushed.single.settings.name, segnoFxRouteName);
+    // The editor itself is covered by its own tests; take the route down
+    // before it builds against this test's providers.
+    segnoNavigatorKey.currentState!.removeRoute(pushed.single);
+    await tester.pumpAndSettle();
   });
 
   testWidgets('tapping a tile only selects that channel in record mode', (

@@ -15,6 +15,15 @@ const _allowed = <String, String>{
   'lib/control/view/pedal_setup/pedal_hardware_face.dart':
       'Fusion pedal artwork — hardware replica',
 
+  'lib/looper/view/fx/stomp/fx_stomp_pedal.dart':
+      'stomp pedal artwork — the approved pedal design, drawn in code (#1501)',
+
+  'lib/looper/view/fx/stomp/fx_stomp_spec.dart':
+      'stomp pedal looks — the approved pedal design table (#1501)',
+
+  'lib/looper/view/fx/stomp/fx_stomp_graphics.dart':
+      'stomp pedal face pictures — the approved pedal design (#1501)',
+
   // Drop shadows. The design system has no shadow tokens at all; these are not
   // palette drift, they are a gap on the DS side.
   'lib/app/app_toasts.dart': 'drop shadow — DS defines no shadow tokens',

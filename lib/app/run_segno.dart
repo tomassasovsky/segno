@@ -23,6 +23,7 @@ import 'package:segno/appliance/boot_readiness.dart';
 import 'package:segno/appliance/systemd_notify.dart';
 import 'package:segno/bootstrap.dart';
 import 'package:segno/logging/app_log.dart';
+import 'package:segno/looper/view/fx/stomp/fx_stomp_textures.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno/session_directory.dart';
 import 'package:segno/update/appliance/appliance_env.dart';
@@ -67,7 +68,7 @@ Future<void> runSegno(
   // The engine's vendored native code (Signalsmith Stretch, RNNoise,
   // miniaudio, VST3, CLAP) for System > About's open-source notices.
   registerVendoredLicenses();
-  // And the typefaces bundled with the app (Arimo, Inter, JetBrains Mono).
+  // And the typefaces bundled with the app.
   registerFontLicenses();
 
   // On the appliance ivi-homescreen runs one engine per screen and names each
@@ -87,6 +88,12 @@ Future<void> runSegno(
   // other's out from under it. It keeps the stderr/journald mirror, which is
   // where its lines were read from anyway.
   await initAppLogging();
+
+  // The pedals' finish tiles, decoded in the background: a pedal drawn
+  // before they are ready draws plain and repaints when they are. After the
+  // logfile, so a tile that fails to load leaves a line in it; the readout
+  // screen draws no pedal, so it returned above.
+  unawaited(FxStompTextures.instance.load());
 
   // One engine instance, shared by the looper (which owns its lifecycle) and
   // the session repository (which only reads/writes its loop PCM). On the

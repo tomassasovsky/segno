@@ -299,10 +299,18 @@ class _LibraryCard extends StatelessWidget {
                   Expanded(
                     child: asset == null
                         ? const SizedBox.shrink()
-                        : Image.asset(
-                            asset!,
-                            package: FxCatalogueLoader.package,
-                            fit: BoxFit.contain,
+                        // Scaled to fit the slot either way, and rounded at
+                        // the size it is drawn.
+                        : FittedBox(
+                            child: ClipRRect(
+                              clipper: const _ArtCorners(),
+                              child: Image.asset(
+                                asset!,
+                                package: FxCatalogueLoader.package,
+                                errorBuilder: (_, _, _) =>
+                                    const SizedBox.shrink(),
+                              ),
+                            ),
                           ),
                   ),
                   const SizedBox(height: 8),
@@ -486,4 +494,25 @@ class _PresetRow extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// The rounded corners of a library card's picture, in proportion to the
+/// height it is drawn at.
+///
+/// The images are square-cornered. The Looper X art they replaced had its
+/// corners baked in, 13 of every 125 px of height, and this keeps that
+/// proportion at whatever size the card draws the picture.
+/// My presets' picture is rounded too: its own corners are black, which
+/// read as rounded on the old cards.
+class _ArtCorners extends CustomClipper<RRect> {
+  const _ArtCorners();
+
+  @override
+  RRect getClip(Size size) => RRect.fromRectAndRadius(
+    Offset.zero & size,
+    Radius.circular(size.height * 13 / 125),
+  );
+
+  @override
+  bool shouldReclip(_ArtCorners oldClipper) => false;
 }

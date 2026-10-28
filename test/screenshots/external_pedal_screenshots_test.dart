@@ -72,6 +72,8 @@ void main() {
     await loadScreenshotFont('packages/lucide_icons_flutter/Lucide', [
       packageAssetPath('lucide_icons_flutter', 'assets/lucide.ttf'),
     ]);
+    // The control rows draw catalogue pedals.
+    await loadFxStompArt();
   });
 
   late _MockLooperRepository looper;
@@ -390,16 +392,13 @@ void main() {
         const AssetImage(ExpressionPositionPanel.asset),
         context,
       );
-      for (final art in [
-        fxModuleArt('Overdrive')!,
-        fxModuleArt('Reverb')!,
-        fxFootswitchAsset('guitar'),
-      ]) {
-        await precacheImage(
-          AssetImage(art, package: FxCatalogueLoader.package),
-          context,
-        );
-      }
+      await precacheImage(
+        AssetImage(
+          fxFootswitchAsset('guitar'),
+          package: FxCatalogueLoader.package,
+        ),
+        context,
+      );
     });
     await tester.pumpAndSettle();
   }

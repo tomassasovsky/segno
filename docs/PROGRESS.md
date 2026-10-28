@@ -30,6 +30,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
 | #1496 | Split design and hardware into their own repos, slim this one | in-review | merge-gate | `claude/repo-split-1496` |
+| #1501 | Our own art: rig images replaced, stomp pedals drawn in code; pen update owed | in-review | merge-gate | `claude/own-art-1501` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
 | #887 | Looper X factory racks: all parts merged, Harmonizer parked; Pi benches and by-ear sign-off owed (#1459) | in-review | blocked-verify | trunk |
 | #900, #906 | The audio thread never faults or copies on write (replaces #907, #914) | in-review | blocked-verify | `claude/zero-stall-memory-907-914` |

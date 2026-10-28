@@ -1,5 +1,4 @@
 import 'package:equatable/equatable.dart';
-import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/binding_labels.dart';
 import 'package:segno/control/binding/control_availability.dart';
@@ -8,6 +7,7 @@ import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/binding/owned_value_control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/fx_art.dart';
 
 /// Picker categories; Loop controls are separate from FX stage categories.
 enum ExpressionDestinationKind {
@@ -43,9 +43,9 @@ class ExpressionControl extends Equatable {
   /// Its name within its group — the parameter, not the chain around it.
   final String label;
 
-  /// The picture of the effect it belongs to, in the catalogue package, or
-  /// `null` for a control that is not an effect's.
-  final String? art;
+  /// The picture of the effect it belongs to, or `null` for a control that
+  /// is not an effect's.
+  final FxArt? art;
 
   /// Temporary owner lock; the target still exists and remains identifiable.
   final String? disabledReason;
@@ -85,8 +85,8 @@ class ExpressionActivation extends Equatable {
   /// Its name within the destination.
   final String label;
 
-  /// Its picture in the catalogue package, or `null`.
-  final String? art;
+  /// Its picture, or `null`.
+  final FxArt? art;
 
   @override
   List<Object?> get props => [target, label, art];
@@ -330,6 +330,16 @@ List<ExpressionDestination> expressionDestinations(
   OwnedValueSnapshots owned = const OwnedValueSnapshots(),
 }) {
   final drafts = <String, _Draft>{};
+  // One picture per pedal, however many of its parameters are listed.
+  final arts = <Object, FxArt?>{};
+  FxArt? artOf(Object target) => arts.putIfAbsent(
+    switch (target) {
+      FxParamTarget(:final address, :final slotId) ||
+      FxSlotTarget(:final address, :final slotId) => (address, slotId),
+      _ => target,
+    },
+    () => expressionTargetArt(looper, target),
+  );
   _Draft draftFor(
     ({String id, ExpressionDestinationKind kind, int order}) place,
     String label,
@@ -354,7 +364,7 @@ List<ExpressionDestination> expressionDestinations(
           ExpressionControl(
             target: target,
             label: names.control,
-            art: expressionTargetArt(looper, target),
+            art: artOf(target),
             disabledReason: controlEditBlockLabel(
               l10n,
               availability.blockedBy(target),
@@ -373,7 +383,7 @@ List<ExpressionDestination> expressionDestinations(
         ExpressionActivation(
           target: target,
           label: expressionActivationName(l10n, looper, target),
-          art: expressionTargetArt(looper, target),
+          art: artOf(target),
         ),
       );
     }
@@ -395,11 +405,10 @@ List<ExpressionDestination> expressionDestinations(
   ];
 }
 
-/// The picture a row draws for [target], as a path in the `fx_catalogue`
-/// package, or `null` for a target with none.
+/// The picture a row draws for [target], or `null` for a target with none.
 ///
-/// The catalogue's own factory illustrations, resolved the way the Effects
-/// page resolves them, so a pedal in a row here is the pedal on that page:
+/// Resolved the way the Effects page resolves it, so a pedal in a row here is
+/// the pedal on that page:
 ///
 /// - a parameter, or one effect, draws the pedal it belongs to;
 /// - a whole chain draws its rack's picture when the chain IS one rack, and
@@ -408,12 +417,11 @@ List<ExpressionDestination> expressionDestinations(
 ///
 /// A target the rig no longer has draws nothing: there is no entry left to
 /// ask what it was.
-String? expressionTargetArt(LooperRepository looper, Object target) {
-  String? entryArt(FxAddress address, String slotId) {
+FxArt? expressionTargetArt(LooperRepository looper, Object target) {
+  FxArt? entryArt(FxAddress address, String slotId) {
     for (final fx in looper.chainEntriesAt(address) ?? const <TrackEffect>[]) {
-      if (fx.slotId != slotId) continue;
-      final module = fx.module;
-      return module == null ? null : fxModuleArt(module);
+      // Not live: these rows do not rebuild when a setting changes.
+      if (fx.slotId == slotId) return fxEntryArt(fx, live: false);
     }
     return null;
   }
@@ -426,7 +434,7 @@ String? expressionTargetArt(LooperRepository looper, Object target) {
   };
 }
 
-String? _rackArt(LooperRepository looper, FxAddress address) {
+FxArt? _rackArt(LooperRepository looper, FxAddress address) {
   final entries = looper.chainEntriesAt(address);
   if (entries == null || entries.isEmpty) return null;
   final rack = entries.first.rack;
@@ -434,7 +442,7 @@ String? _rackArt(LooperRepository looper, FxAddress address) {
   if (rack == null || art == null) return null;
   // One rack, end to end: anything else is a chain the picture would misname.
   if (entries.any((fx) => fx.rack?.id != rack.id)) return null;
-  return fxFootswitchAsset(art);
+  return FxRackPicture(art);
 }
 
 /// Names an activation within its destination: the effect's own name, or the

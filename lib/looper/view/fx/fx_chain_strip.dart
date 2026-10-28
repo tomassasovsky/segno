@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/fx_art.dart';
+import 'package:segno/looper/view/fx/fx_art_view.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -285,11 +286,9 @@ class FxRackArt extends StatelessWidget {
         ),
         child: slug == null
             ? _fallback(surface)
-            : Image.asset(
-                fxFootswitchAsset(slug),
-                package: FxCatalogueLoader.package,
-                fit: BoxFit.contain,
-                errorBuilder: (_, _, _) => _fallback(surface),
+            : FxArtView(
+                art: FxRackPicture(slug),
+                fallback: _fallback(surface),
               ),
       ),
     );

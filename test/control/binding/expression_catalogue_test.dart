@@ -1,6 +1,5 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
@@ -10,6 +9,7 @@ import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/binding/owned_value_control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/click_mode.dart';
+import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_start.dart';
@@ -155,7 +155,8 @@ void main() {
       trackChains = {
         0: [pedal('d-1', 'Overdrive')],
       };
-      final stomp = fxModuleArt('Overdrive');
+      final stomp = fxEntryArt(trackChains[0]!.first, live: false);
+      // Not live: the rows do not rebuild when a setting changes.
       expect(stomp, isNotNull);
       expect(
         expressionTargetArt(
@@ -179,7 +180,7 @@ void main() {
       };
       expect(
         expressionTargetArt(looper, const FxChainTarget(address)),
-        fxFootswitchAsset('guitar'),
+        const FxRackPicture('guitar'),
       );
     });
 
@@ -233,10 +234,10 @@ void main() {
         looper,
         withActivations: true,
       ).firstWhere((d) => d.id == 'track:0');
-      expect(track.activations.first.art, fxFootswitchAsset('guitar'));
+      expect(track.activations.first.art, const FxRackPicture('guitar'));
       expect(
         track.controls.firstWhere((c) => c.target is FxParamTarget).art,
-        fxModuleArt('Overdrive'),
+        fxEntryArt(trackChains[0]!.first, live: false),
       );
       expect(
         track.controls.firstWhere((c) => c.target is TrackVolumeTarget).art,

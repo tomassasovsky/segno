@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/model/fx_destination.dart';
+import 'package:segno/looper/view/fx/fx_art_view.dart';
 import 'package:segno/looper/view/fx/fx_chain_power.dart';
 import 'package:segno/looper/view/fx/fx_editor_parts.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
@@ -169,6 +170,7 @@ class FxRackEditor extends StatelessWidget {
                         key: Key('fx_pedal_${entries[i].slotId ?? i}'),
                         height: pedalHeight,
                         effect: entries[i],
+                        chainOn: chainOn,
                         onTogglePower: () {
                           final id = entries[i].slotId;
                           if (id != null) {
@@ -295,8 +297,13 @@ class FxPedalColumn extends StatefulWidget {
     required this.onTogglePower,
     required this.onParam,
     this.height = kFxPedalHeight,
+    this.chainOn = true,
     super.key,
   });
+
+  /// Whether the rack's chain is switched on: the pedal's LED is dark while
+  /// it is off, as nothing passes through it.
+  final bool chainOn;
 
   /// How tall the column is: the pen's strip, less the chain-off band when
   /// it shows.
@@ -334,11 +341,14 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
     final effect = widget.effect;
     final built = effect is BuiltInEffect ? effect : null;
     final name = fxPedalName(l10n, effect);
-    final art = effect.module == null ? null : fxModuleArt(effect.module!);
+    final art = fxEntryArt(effect, live: true, chainOn: widget.chainOn);
     final params = built?.type.params ?? const <FxParamInfo>[];
     // A rack variant shows the controls its rack shows, under its names; any
     // other entry shows every parameter of its type.
-    final controls = built == null ? null : fxEntryControls(built);
+    // The pedal's controls, worked out once with its picture.
+    final controls = built == null
+        ? null
+        : art?.controls ?? fxEntryControls(built);
     final shown = controls?.params ?? const <int>[];
     return SizedBox(
       width: kFxPedalWidth,
@@ -360,12 +370,9 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
               opacity: effect.enabled ? 1 : surface.disabledOpacity,
               child: art == null
                   ? _mark(surface, lit: effect.enabled)
-                  : Image.asset(
-                      art,
-                      package: FxCatalogueLoader.package,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) =>
-                          _mark(surface, lit: effect.enabled),
+                  : FxArtView(
+                      art: art,
+                      fallback: _mark(surface, lit: effect.enabled),
                     ),
             ),
           ),

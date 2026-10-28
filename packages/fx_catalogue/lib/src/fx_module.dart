@@ -1,9 +1,7 @@
-import 'package:fx_catalogue/src/fx_family.dart';
 import 'package:fx_catalogue/src/fx_preset.dart';
 
 /// One pedal a factory rack can hold: how the source spells its power, which
-/// parameter groups belong to it, and which illustrations the catalogue
-/// carries for it.
+/// parameter groups belong to it, and which rack families carry it.
 ///
 /// **This table is a READING of the data, not something recovered from it.**
 /// A preset is a flat map of parameter names to values; it never says which
@@ -15,15 +13,13 @@ import 'package:fx_catalogue/src/fx_preset.dart';
 ///
 /// What IS checked against the data, by test: every [enables] key appears in
 /// the catalogue and is binary everywhere it appears, every [groups] prefix
-/// appears, every [artwork] name is a file that exists, and no two modules
-/// claim the same key or group.
+/// appears, and no two modules claim the same key or group.
 class FxModule {
   /// Creates an [FxModule].
   const FxModule({
     required this.name,
     required this.enables,
     required this.groups,
-    required this.artwork,
     this.keys = const [],
     this.families,
   });
@@ -46,15 +42,6 @@ class FxModule {
   /// power key: `Delay` enables `Del *`, `Reverb` enables `Rev *`, `OvDrive`
   /// enables `OD *`.
   final List<String> groups;
-
-  /// The illustrations the catalogue carries for this pedal, lowest variant
-  /// first.
-  ///
-  /// Several because the source ships numbered variants (`Delay3`, `Delay4`,
-  /// `Delay6`) and nothing in the preset data says which variant a given
-  /// family used. The first is what a surface draws; the rest are recorded so
-  /// the gap stays visible rather than looking like a choice.
-  final List<String> artwork;
 
   /// Whole parameter names that belong to this module where a prefix group
   /// cannot say so, because keys with the same first word belong to two
@@ -129,31 +116,26 @@ const List<FxModule> kFxModules = [
     // power key but continuous, so it is a parameter that happens to be
     // spelled without one.
     groups: ['Amp', 'Cab'],
-    artwork: ['Amp4'],
   ),
   FxModule(
     name: 'Compressor',
     enables: ['Comp', 'Compressor'],
     groups: ['Comp'],
-    artwork: ['Compressor2', 'Compressor3', 'Compressor4'],
   ),
   FxModule(
     name: 'Overdrive',
     enables: ['OvDrive'],
     groups: ['OD'],
-    artwork: ['Overdrive2'],
   ),
   FxModule(
     name: 'Distortion',
     enables: ['Dist', 'Distort'],
     groups: ['Dist'],
-    artwork: ['Distort1', 'Distort2'],
   ),
   FxModule(
     name: 'Four-band EQ',
     enables: ['EQ', 'EQ 4-Band'],
     groups: ['EQ'],
-    artwork: ['EQ3', 'EQ4', 'EQ5', 'EQ8'],
     families: _fourBandEqFamilies,
   ),
   FxModule(
@@ -166,58 +148,47 @@ const List<FxModule> kFxModules = [
     // The controls are what the pedal is, so it is this module.
     enables: ['Para EQ', 'EQ'],
     groups: ['EQ'],
-    // The binary's single-effect artwork list runs in effect-name order and
-    // puts EQ5 between Overdrive2 and PitchShift2, where Parametric EQ falls.
-    artwork: ['EQ5'],
     families: _paraEqFamilies,
   ),
   FxModule(
     name: 'Low-pass filter',
     enables: ['LPF'],
     groups: ['LPF'],
-    artwork: ['LPF2', 'LPF4'],
   ),
   FxModule(
     name: 'Wah',
     enables: ['Wah'],
     groups: ['Wah'],
-    artwork: ['Wah1'],
   ),
   FxModule(
     name: 'Chorus',
     enables: ['Chor'],
     groups: ['Chor'],
-    artwork: ['Chorus3'],
   ),
   FxModule(
     name: 'Modulation',
     enables: ['Mod'],
     groups: ['Mod'],
-    artwork: ['Mod3'],
   ),
   FxModule(
     name: 'Octaver',
     enables: ['Oct'],
     groups: ['Oct', 'Octave'],
-    artwork: ['Octaver3'],
   ),
   FxModule(
     name: 'Pitch shift',
     enables: ['Pitch'],
     groups: ['Pitch'],
-    artwork: ['PitchShift2'],
   ),
   FxModule(
     name: 'Whammy',
     enables: ['Whammy'],
     groups: ['Whammy'],
-    artwork: ['Wham2'],
   ),
   FxModule(
     name: 'Delay',
     enables: ['Delay'],
     groups: ['Del'],
-    artwork: ['Delay3', 'Delay4', 'Delay6'],
     families: _delayFamilies,
   ),
   FxModule(
@@ -226,23 +197,17 @@ const List<FxModule> kFxModules = [
     // `Del` prefix the plain delay uses elsewhere.
     enables: ['Dub Delay'],
     groups: ['Del'],
-    // The binary's single-effect artwork list runs in effect-name order and
-    // puts Delay6 between Doubler1 and the four-band EQ, where Dub Delay
-    // falls.
-    artwork: ['Delay6'],
     families: _dubDelayFamilies,
   ),
   FxModule(
     name: 'Reverb',
     enables: ['Reverb'],
     groups: ['Rev'],
-    artwork: ['Reverb2', 'Reverb3', 'Reverb5'],
   ),
   FxModule(
     name: 'Spring reverb',
     enables: ['Spring'],
     groups: ['Spring'],
-    artwork: ['SpringRev2'],
   ),
   FxModule(
     name: 'Ambience',
@@ -250,19 +215,16 @@ const List<FxModule> kFxModules = [
     // one that differs only in case.
     enables: ['Amb-Verb'],
     groups: ['Amb-Verb', 'Amb-verb', 'Amb-Dub'],
-    artwork: ['AmbiVerb2'],
   ),
   FxModule(
     name: 'Dub reverb',
     enables: ['Dub-Verb'],
     groups: ['Dub-Verb'],
-    artwork: ['DubVerb2'],
   ),
   FxModule(
     name: 'Doubler',
     enables: ['Doubler'],
     groups: ['Doubler'],
-    artwork: ['Doubler1', 'Doubler2'],
   ),
   FxModule(
     name: 'High-pass gate',
@@ -271,37 +233,31 @@ const List<FxModule> kFxModules = [
     // because both are space-free, and the test pins only the binary one.
     enables: ['HP/Gate'],
     groups: ['Gate', 'Highpass'],
-    artwork: ['HPFGate2'],
   ),
   FxModule(
     name: 'Transient',
     enables: ['Transient'],
     groups: ['Attack', 'Sustain'],
-    artwork: ['Transient3'],
   ),
   FxModule(
     name: 'Pumper',
     enables: ['Pumper'],
     groups: ['Pumper'],
-    artwork: ['Pumper2'],
   ),
   FxModule(
     name: 'Slicer',
     enables: ['Slicer'],
     groups: ['Slic'],
-    artwork: ['Slicer2'],
   ),
   FxModule(
     name: 'Vinyl',
     enables: ['Vinyl'],
     groups: ['Vinyl'],
-    artwork: ['Vinyl4'],
   ),
   FxModule(
     name: 'Degrade',
     enables: ['Degrade'],
     groups: ['Degrade'],
-    artwork: ['Degrade3'],
   ),
   FxModule(
     name: 'Harmonizer',
@@ -320,7 +276,6 @@ const List<FxModule> kFxModules = [
       'Key',
     ],
     keys: ['Scale'],
-    artwork: ['Harmonise20'],
     families: _vocalTunerFamilies,
   ),
   FxModule(
@@ -328,7 +283,6 @@ const List<FxModule> kFxModules = [
     enables: ['Smart Tune'],
     groups: ['Audio', 'Reference', 'Speed', 'Tracking'],
     keys: ['Scale Root', 'Scale Type'],
-    artwork: ['SmartTune2'],
     families: _vocalTunerFamilies,
   ),
 ];
@@ -470,14 +424,6 @@ FxModule? fxModuleNamed(String name) {
     if (module.name == name) return module;
   }
   return null;
-}
-
-/// The illustration for the module called [name], or `null` when the
-/// catalogue names none.
-String? fxModuleArt(String name) {
-  final artwork = fxModuleNamed(name)?.artwork;
-  if (artwork == null || artwork.isEmpty) return null;
-  return fxStompAsset(artwork.first);
 }
 
 /// The module of a [family] rack that owns [key] as a parameter, or `null`.
