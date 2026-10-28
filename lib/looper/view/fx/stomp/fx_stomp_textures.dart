@@ -9,7 +9,8 @@ import 'package:segno/logging/app_log.dart';
 /// The tiles the textured pedal finishes, and the grain over every pedal,
 /// are painted with, decoded once.
 ///
-/// Small white tiles with the texture in their alpha channel, written by
+/// Small tiles with the texture in their alpha channel, white except the
+/// grain, which is black as the design's grain is; written by
 /// `tool/stomp_textures.py`: Flutter has no counterpart of the design's
 /// feTurbulence filters, and the appliance's embedder is not known to run
 /// fragment shaders. A pedal draws without its texture until they have

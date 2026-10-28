@@ -362,14 +362,10 @@ class _FxViewState extends State<FxView> {
               FxReorderCard(
                 id: fxGroupId(groups[i]),
                 name: fxGroupName(l10n, groups[i]),
-                // A rack's picture, or a lone effect's pedal, still: the
-                // reorder page is not rebuilt when a setting changes.
+                // The chain's own cards, as the strip draws them: a rack's
+                // picture, and the mark for a lone effect.
                 art: switch (groups[i].rack?.art) {
                   final slug? => FxRackPicture(slug),
-                  null when !groups[i].isRack => fxEntryArt(
-                    groups[i].entries.single,
-                    live: false,
-                  ),
                   null => null,
                 },
                 stageTag: !showStage

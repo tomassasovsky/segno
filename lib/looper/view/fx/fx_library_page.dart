@@ -500,6 +500,8 @@ class _PresetRow extends StatelessWidget {
 /// The images are square-cornered. The Looper X art they replaced had its
 /// corners baked in, 13 of every 125 px of height, and this keeps that
 /// proportion at whatever size the card draws the picture.
+/// My presets' picture is rounded too: its own corners are black, which
+/// read as rounded on the old cards.
 class _ArtCorners extends CustomClipper<RRect> {
   const _ArtCorners();
 
