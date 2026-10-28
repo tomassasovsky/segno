@@ -307,6 +307,8 @@ class _LibraryCard extends StatelessWidget {
                               child: Image.asset(
                                 asset!,
                                 package: FxCatalogueLoader.package,
+                                errorBuilder: (_, _, _) =>
+                                    const SizedBox.shrink(),
                               ),
                             ),
                           ),

@@ -73,9 +73,7 @@ class FxStompPedal extends StatelessWidget {
                   // nor re-rasterizes them. A still pedal's knobs never
                   // turn, so it keeps one layer.
                   Positioned.fill(
-                    child: face.led == FxStompLed.still
-                        ? layer
-                        : RepaintBoundary(child: layer),
+                    child: face.live ? RepaintBoundary(child: layer) : layer,
                   ),
                   Positioned.fill(
                     child: CustomPaint(

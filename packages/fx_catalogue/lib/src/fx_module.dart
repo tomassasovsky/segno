@@ -148,6 +148,10 @@ const List<FxModule> kFxModules = [
     // The controls are what the pedal is, so it is this module.
     enables: ['Para EQ', 'EQ'],
     groups: ['EQ'],
+    // The Looper X's single-effect artwork list, which runs in effect-name
+    // order, also had a picture of its own for it (EQ5, between Overdrive2
+    // and PitchShift2, where Parametric EQ falls): a pedal of its own, not
+    // the four-band EQ.
     families: _paraEqFamilies,
   ),
   FxModule(
@@ -197,6 +201,9 @@ const List<FxModule> kFxModules = [
     // `Del` prefix the plain delay uses elsewhere.
     enables: ['Dub Delay'],
     groups: ['Del'],
+    // The single-effect artwork list also had a picture of its own for it
+    // (Delay6, between Doubler1 and the four-band EQ, where Dub Delay
+    // falls).
     families: _dubDelayFamilies,
   ),
   FxModule(

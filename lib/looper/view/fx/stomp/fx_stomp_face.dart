@@ -13,6 +13,7 @@ class FxStompFace extends Equatable {
     required this.spec,
     required this.knobs,
     this.led = FxStompLed.on,
+    this.live = true,
   }) : assert(
          knobs.length <= spec.face.maxKnobs,
          'a face draws at most its maxKnobs knobs',
@@ -28,8 +29,12 @@ class FxStompFace extends Equatable {
   /// What the LED shows.
   final FxStompLed led;
 
+  /// Whether the knobs follow the effect, so they turn on a layer of their
+  /// own. A still pedal's never turn.
+  final bool live;
+
   @override
-  List<Object?> get props => [spec, knobs, led];
+  List<Object?> get props => [spec, knobs, led, live];
 }
 
 /// What a pedal's LED shows.
@@ -139,6 +144,7 @@ FxStompFace? fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
   );
   return FxStompFace(
     spec: spec,
+    live: live,
     led: !live
         ? FxStompLed.still
         : effect.enabled
