@@ -43,6 +43,7 @@ class FxStompPedal extends StatelessWidget {
         CustomPaint(
           isComplex: true,
           painter: _LabelsPainter(
+            kind: kind,
             labels: [for (final knob in knobs) knob.label],
             spots: spots,
             colour: kind == FxStompFaceKind.window
@@ -102,6 +103,8 @@ class _KnobSpot {
     this.labelBaseline,
     this.labelSize, {
     this.wraps = false,
+    this.labelLeft = 0,
+    this.labelRight = 450,
   });
 
   final Offset centre;
@@ -111,6 +114,11 @@ class _KnobSpot {
 
   /// Whether the label has room for a second line under it.
   final bool wraps;
+
+  /// How far left and right the label may reach: a window's labels stay on
+  /// its panel, clear of its rounded corners.
+  final double labelLeft;
+  final double labelRight;
 
   /// The design's `place_knobs()`: [count] knobs in rows of [cols], each row
   /// centred on [cx], [dx] apart, rows [dy] apart from [top].
@@ -165,6 +173,16 @@ class _KnobSpot {
         ];
       case FxStompFaceKind.window:
         final r = count <= 3 ? 36.0 : 32.0;
+        // The panel spans 66..384 with 44 corners; a label 7 above its
+        // bottom edge has 90..360.
+        _KnobSpot onPanel(Offset c) => _KnobSpot(
+          c,
+          r,
+          c.dy + r + 26,
+          14,
+          labelLeft: 90,
+          labelRight: 360,
+        );
         const spots = {
           1: [Offset(225, 200)],
           2: [Offset(160, 200), Offset(290, 200)],
@@ -176,7 +194,7 @@ class _KnobSpot {
             Offset(300, 285),
           ],
         };
-        return [for (final c in spots[count]!) under(c, r)];
+        return [for (final c in spots[count]!) onPanel(c)];
       case FxStompFaceKind.module:
         return [
           for (final c in _place(count, 225, 400, 2, 180, 150))
@@ -191,22 +209,22 @@ class _KnobSpot {
 /// The labels under the knobs.
 class _LabelsPainter extends CustomPainter {
   _LabelsPainter({
+    required this.kind,
     required this.labels,
     required this.spots,
     required this.colour,
   }) : super(repaint: PaintingBinding.instance.systemFonts);
 
+  /// The face, which with the label count fixes where each label goes.
+  final FxStompFaceKind kind;
   final List<String> labels;
   final List<_KnobSpot> spots;
   final Color colour;
 
   /// What the labels' recording is kept under.
   late final _LabelsKey _key = (
+    kind: kind,
     labels: labels.join('\n'),
-    spots: [
-      for (final spot in spots)
-        (spot.centre, spot.labelBaseline, spot.labelSize, spot.wraps),
-    ].join(),
     colour: colour,
   );
 
@@ -477,7 +495,7 @@ void _paintKnob(
 }
 
 /// What a labels picture is recorded for.
-typedef _LabelsKey = ({String labels, String spots, Color colour});
+typedef _LabelsKey = ({FxStompFaceKind kind, String labels, Color colour});
 
 /// The recorded enclosures and labels every pedal replays.
 ///
@@ -515,7 +533,7 @@ final class _StompPictures {
 
 /// What an enclosure picture is recorded for.
 typedef _EnclosureKey = ({
-  FxStompSpec spec,
+  String spec,
   FxStompLed led,
   int knobs,
   bool textured,
@@ -553,8 +571,9 @@ class _EnclosurePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final tiles = FxStompTextures.instance.images.value;
+    // By the look's printed name, which the look table keeps unique.
     final key = (
-      spec: spec,
+      spec: spec.name,
       led: led,
       knobs: _knobs,
       textured: tiles.isNotEmpty,
@@ -1259,7 +1278,16 @@ List<_LabelLayout> _layOutLabels(
 /// The width a label at [spot] has: the gap to its nearest neighbour on the
 /// same row, less a margin.
 double _labelRoom(_KnobSpot spot, List<_KnobSpot> spots) {
-  var room = 200.0;
+  var room = math
+      .min(
+        200,
+        2 *
+            math.min(
+              spot.centre.dx - spot.labelLeft,
+              spot.labelRight - spot.centre.dx,
+            ),
+      )
+      .toDouble();
   for (final other in spots) {
     if (identical(other, spot) || other.centre.dy != spot.centre.dy) continue;
     room = math.min(room, (other.centre.dx - spot.centre.dx).abs() - 8);

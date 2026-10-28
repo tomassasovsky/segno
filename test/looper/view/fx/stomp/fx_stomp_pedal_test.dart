@@ -121,6 +121,13 @@ void main() {
               lessThanOrEqualTo(350),
               reason: '${kind.name} with $count knobs: ${long[i]}',
             );
+            expect(
+              label.left >= 90 && label.right <= 360,
+              isTrue,
+              reason:
+                  '${kind.name} with $count knobs: ${long[i]} leaves '
+                  'the panel',
+            );
           }
         }
         for (final (i, label) in rects.indexed) {

@@ -53,6 +53,11 @@ void main() {
     }
   });
 
+  test('every look prints a name of its own', () {
+    final names = [for (final spec in kFxStompSpecs.values) spec.name];
+    expect(names.toSet(), hasLength(names.length));
+  });
+
   test('names and labels print dark on a light body, light on a dark one, '
       'unless the design sets the ink', () {
     expect(kFxStompSpecs['High-pass gate']!.bodyInk, kFxStompDarkInk);

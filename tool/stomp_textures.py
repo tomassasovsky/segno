@@ -86,7 +86,9 @@ def brush(size):
 
 def marble(size):
     # Veins where the turbulence is low.
-    v = band_noise(size, .006 * 2, .012 * 2, 4, 21, turbulence=True)
+    # The design's frequencies, per drawing-space unit, per tile pixel.
+    k = SCALES['marble']
+    v = band_noise(size, .006 * k, .012 * k, 4, 21, turbulence=True)
     return np.clip(1.25 - 2.4 * v, 0, 1)
 
 
