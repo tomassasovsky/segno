@@ -33,6 +33,9 @@ class UnsupportedPlatformBackend implements PlatformUpdateBackend {
   Future<void> clearInterrupted() async {}
 
   @override
+  Future<bool> installInProgress() async => false;
+
+  @override
   Future<UpdateManifest?> fetchManifest() async => null;
 
   @override

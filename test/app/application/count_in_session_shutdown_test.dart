@@ -159,6 +159,7 @@ void main() {
           backing: testBackingRepository(),
           powerOff: () async => halts++,
           reboot: () async => halts++,
+          updateInstalling: () async => false,
           storageSettled: () async {},
         );
         addTearDown(() async {

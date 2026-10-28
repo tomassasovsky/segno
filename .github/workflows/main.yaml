@@ -716,8 +716,10 @@ jobs:
         run: TEST_SHELL=bash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_mark_good_tests.sh
       - name: Run mark-good tests (dash)
         run: TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_mark_good_tests.sh
-      - name: Run update-ctl reboot tryboot tests
-        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_reboot_tests.sh
+      - name: Run update-ctl reboot and poweroff tests (bash)
+        run: TEST_SHELL=bash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_reboot_tests.sh
+      - name: Run update-ctl reboot and poweroff tests (dash)
+        run: TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_reboot_tests.sh
       - name: Run log-persistence tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_log_persist_tests.sh
       - name: Run kernel cmdline tests

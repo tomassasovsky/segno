@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tests for `segno-update-ctl reboot` — the verb behind "Restart to apply" (#974).
+# Tests for `segno-update-ctl reboot` — the verb behind "Restart to apply" (#974)
+# — and for the check that `reboot` and `poweroff` share: neither resets while
+# RAUC reports an install in progress (#1498), and `install-state` reports it.
 #
 # Staging an update arms the Raspberry Pi one-shot tryboot flag (RAUC's custom
 # backend calls `vcmailbox 0x00038064 4 0 1`). That flag alone is not enough:
@@ -34,12 +36,16 @@ fail=0
 
 # Stub systemctl so the test records the reset it was asked for instead of
 # performing one. The script `exec`s systemctl, so a stub earlier on PATH is
-# all that is needed.
+# all that is needed. busctl is stubbed too: it answers RAUC's Operation
+# property with whatever "$work/operation" holds (idle unless a test says
+# otherwise), records its arguments, and fails when the file is missing, as
+# busctl does when the daemon does not answer.
 setup() {
     work=$(mktemp -d "${TMPDIR:-/tmp}/update-ctl-reboot-test.XXXXXX")
     mkdir -p "$work/bin"
     # The verb branches on the staged marker: tryboot only when one exists.
     staged="$work/staged-version"
+    echo idle > "$work/operation"
 
     cat > "$work/bin/systemctl" <<STUB
 #!/bin/sh
@@ -47,16 +53,26 @@ printf '%s\n' "\$@" > "$work/systemctl-args"
 exit 0
 STUB
     chmod +x "$work/bin/systemctl"
+
+    cat > "$work/bin/busctl" <<STUB
+#!/bin/sh
+printf '%s\n' "\$@" > "$work/busctl-args"
+[ -f "$work/operation" ] || exit 1
+printf 's "%s"\n' "\$(cat "$work/operation")"
+STUB
+    chmod +x "$work/bin/busctl"
 }
 
 teardown() { rm -rf "$work"; }
 
-run_reboot() {
+run_verb() {
     PATH="$work/bin:$PATH" \
     SEGNO_STAGED_FILE="$staged" \
     SEGNO_TRYBOOT_REQUESTED_FILE="$work/tryboot-requested" \
-        "$TEST_SHELL" "$SCRIPT" reboot 2>"$work/stderr"
+        "$TEST_SHELL" "$SCRIPT" "$@" 2>"$work/stderr"
 }
+
+run_reboot() { run_verb reboot; }
 
 check() {
     label=$1 expected=$2 actual=$3
@@ -100,6 +116,88 @@ args=$(tr '\n' ' ' < "$work/systemctl-args" | sed 's/ *$//')
 check "full argv is a bare reboot" "reboot" "$args"
 check "says why" yes \
     "$(grep -q 'no update staged' "$work/stderr" && echo yes || echo no)"
+teardown
+
+echo
+echo "reboot while RAUC is installing: refuses, resets nothing"
+setup
+echo "0.1.0-experimental.99" > "$staged"
+echo installing > "$work/operation"
+run_reboot
+status=$?
+check "exits 5" 5 "$status"
+check "never calls systemctl" no \
+    "$([ -e "$work/systemctl-args" ] && echo yes || echo no)"
+check "does not record a tryboot request" no \
+    "$([ -e "$work/tryboot-requested" ] && echo yes || echo no)"
+check "keeps the staged marker" yes \
+    "$([ -s "$staged" ] && echo yes || echo no)"
+check "says why" yes \
+    "$(grep -q 'RAUC is installing' "$work/stderr" && echo yes || echo no)"
+check "asks RAUC's Installer for its Operation" \
+    "get-property de.pengutronix.rauc / de.pengutronix.rauc.Installer Operation" \
+    "$(tr '\n' ' ' < "$work/busctl-args" | sed 's/ *$//')"
+teardown
+
+echo
+echo "poweroff while RAUC is installing: refuses, halts nothing"
+setup
+echo installing > "$work/operation"
+run_verb poweroff
+status=$?
+check "exits 5" 5 "$status"
+check "never calls systemctl" no \
+    "$([ -e "$work/systemctl-args" ] && echo yes || echo no)"
+check "says why" yes \
+    "$(grep -q 'refusing to power off' "$work/stderr" && echo yes || echo no)"
+teardown
+
+echo
+echo "poweroff while RAUC is idle: halts"
+setup
+run_verb poweroff
+status=$?
+check "exits 0" 0 "$status"
+check "full argv" "start poweroff.target" \
+    "$(tr '\n' ' ' < "$work/systemctl-args" | sed 's/ *$//')"
+teardown
+
+# A daemon or bus that does not answer is not writing a slot, and refusing
+# then would leave no way to restart from the console at all.
+echo
+echo "reboot when RAUC's state cannot be read: reboots"
+setup
+rm -f "$work/operation"
+run_reboot
+status=$?
+check "exits 0" 0 "$status"
+check "full argv is a bare reboot" "reboot" \
+    "$(tr '\n' ' ' < "$work/systemctl-args" | sed 's/ *$//')"
+check "logs that it could not tell" yes \
+    "$(grep -q "could not read RAUC's operation" "$work/stderr" && echo yes || echo no)"
+teardown
+
+echo
+echo "install-state: reports RAUC's own operation"
+setup
+echo installing > "$work/operation"
+check "installing" '{"installing":true}' "$(run_verb install-state)"
+echo idle > "$work/operation"
+check "idle" '{"installing":false}' "$(run_verb install-state)"
+rm -f "$work/operation"
+check "unreadable reads as not installing" '{"installing":false}' \
+    "$(run_verb install-state)"
+check "unreadable still exits 0" 0 "$(run_verb install-state >/dev/null; echo $?)"
+teardown
+
+echo
+echo "the helper and the app agree on the installing exit status"
+work=$(mktemp -d "${TMPDIR:-/tmp}/update-ctl-reboot-test.XXXXXX")
+app_env="$here/../../../../../../lib/update/appliance/appliance_env.dart"
+helper_code=$(sed -n 's/^EXIT_INSTALLING=\([0-9]*\)$/\1/p' "$SCRIPT")
+app_code=$(sed -n 's/^const kUpdateInstallingExitCode = \([0-9]*\);$/\1/p' "$app_env")
+check "the helper defines it" 5 "$helper_code"
+check "the app maps the same status" "$helper_code" "$app_code"
 teardown
 
 echo

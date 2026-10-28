@@ -13,6 +13,11 @@ const kBootReadOnlyExitCode = 3;
 /// EXIT_REFUSED in segno-update-ctl.
 const kInstallFileRefusedExitCode = 4;
 
+/// The helper's `reboot` and `poweroff` exit status when RAUC reports an
+/// install in progress (#1498); nothing was reset. Keep in step with
+/// EXIT_INSTALLING in segno-update-ctl.
+const kUpdateInstallingExitCode = 5;
+
 /// Where a package from a USB drive is copied for `install-file`; the helper
 /// refuses any other path.
 const kUpdateStagingDirectory = '/data/segno/update-staging';
@@ -69,13 +74,23 @@ abstract interface class ApplianceEnv {
   /// Forgets the install [updateAttempt] reports. Never throws.
   Future<void> clearUpdateAttempt();
 
+  /// Whether RAUC itself reports an install in progress (its D-Bus
+  /// `Operation` is `installing`), through the helper's `install-state`.
+  /// RAUC keeps writing the slot after the app that started it is gone.
+  /// False when the helper cannot tell. Never throws.
+  Future<bool> raucInstalling();
+
   /// Runs the privileged helper to reboot, into the staged slot when one is
-  /// staged. Throws on failure. Only `PowerCubit` calls it, after the save.
+  /// staged. Throws on failure, an `UpdateInstallingException` when the
+  /// helper refused because RAUC is installing. Only `PowerCubit` calls it,
+  /// after the save.
   Future<void> reboot();
 
   /// Runs the privileged helper to halt the appliance
-  /// (`systemctl start poweroff.target`). Throws on failure. The caller
-  /// freezes on the goodbye mark rather than retrying.
+  /// (`systemctl start poweroff.target`). Throws on failure, an
+  /// `UpdateInstallingException` when the helper refused because RAUC is
+  /// installing. The caller freezes on the goodbye mark on any other
+  /// failure rather than retrying.
   Future<void> powerOff();
 
   /// Clears a staged-version marker that cannot be applied: a tryboot that

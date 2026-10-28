@@ -65,6 +65,7 @@ class UpdateState extends Equatable {
     this.interrupted,
     this.rollback,
     this.usbInstalling = false,
+    this.raucInstalling = false,
   });
 
   /// The current phase of the flow.
@@ -111,12 +112,20 @@ class UpdateState extends Equatable {
   /// online flow holds off meanwhile, one helper at a time.
   final bool usbInstalling;
 
+  /// Whether RAUC itself reported an install in progress at startup, and has
+  /// not finished it yet (#1498). Its daemon keeps writing the slot after
+  /// the app that started the install is gone, so a crash or an app restart
+  /// mid-install leaves no download or USB run in this state to say so.
+  final bool raucInstalling;
+
   /// Whether a newer build is currently on offer (available or staged).
   bool get hasUpdate => available != null;
 
   /// Whether an update is downloading or installing, online or from a USB
-  /// drive. A restart or shutdown waits for it (#1494).
-  bool get installInFlight => phase == UpdatePhase.downloading || usbInstalling;
+  /// drive, or RAUC is still installing one an earlier run started. A
+  /// restart or shutdown waits for it (#1494, #1498).
+  bool get installInFlight =>
+      phase == UpdatePhase.downloading || usbInstalling || raucInstalling;
 
   /// Whether the startup banner should be shown: an update is available and its
   /// version has not been dismissed.
@@ -145,6 +154,7 @@ class UpdateState extends Equatable {
     ({Version attempted, Version restored})? rollback,
     bool clearRollback = false,
     bool? usbInstalling,
+    bool? raucInstalling,
   }) {
     return UpdateState(
       phase: phase ?? this.phase,
@@ -160,6 +170,7 @@ class UpdateState extends Equatable {
       interrupted: clearInterrupted ? null : (interrupted ?? this.interrupted),
       rollback: clearRollback ? null : (rollback ?? this.rollback),
       usbInstalling: usbInstalling ?? this.usbInstalling,
+      raucInstalling: raucInstalling ?? this.raucInstalling,
     );
   }
 
@@ -178,5 +189,6 @@ class UpdateState extends Equatable {
     interrupted,
     rollback,
     usbInstalling,
+    raucInstalling,
   ];
 }

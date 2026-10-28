@@ -29,12 +29,18 @@ class UpdateCubit extends Cubit<UpdateState> {
   UpdateCubit({
     required UpdateRepository updates,
     required SettingsRepository settings,
+    Duration installPollInterval = const Duration(seconds: 2),
   }) : _updates = updates,
        _settings = settings,
+       _installPollInterval = installPollInterval,
        super(const UpdateState());
 
   final UpdateRepository _updates;
   final SettingsRepository _settings;
+
+  /// How often RAUC is asked again while it reports an install that an
+  /// earlier run started ([UpdateState.raucInstalling]).
+  final Duration _installPollInterval;
   Future<void>? _loadFuture;
 
   /// The download in flight, so [cancelDownload] can stop it.
@@ -78,6 +84,9 @@ class UpdateCubit extends Cubit<UpdateState> {
       await _updates.clearInterrupted();
       interrupted = null;
     }
+    // Nothing in this run has started an install yet, so an install RAUC
+    // reports now was started by an earlier one and is still writing.
+    final raucInstalling = await _updates.installInProgress();
     if (isClosed) return;
     emit(
       state.copyWith(
@@ -89,13 +98,25 @@ class UpdateCubit extends Cubit<UpdateState> {
         rollback: rollback,
         interrupted: interrupted,
         phase: interrupted == null ? null : UpdatePhase.interrupted,
+        raucInstalling: raucInstalling,
       ),
     );
+    if (raucInstalling) unawaited(_followRaucInstall());
     // An interrupted install waits for the player's Retry or Cancel; a check
     // now would paper over it with a fresh offer.
     if (autoCheck && _updates.isSupported && interrupted == null) {
       await check();
     }
+  }
+
+  /// Asks RAUC again every poll interval until it no longer reports
+  /// an install, then clears [UpdateState.raucInstalling].
+  Future<void> _followRaucInstall() async {
+    do {
+      await Future<void>.delayed(_installPollInterval);
+      if (isClosed) return;
+    } while (await _updates.installInProgress());
+    if (!isClosed) emit(state.copyWith(raucInstalling: false));
   }
 
   /// Runs a read-only availability check (no download, no install). No-op on an

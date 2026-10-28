@@ -37,6 +37,13 @@
 #   attempt   Print the install that was cut off, {"version":"<v>"}, or {}.
 #   clear-attempt
 #             Forget it (the app retried or dropped the cut-off install).
+#   install-state
+#             Print whether RAUC itself reports an install in progress,
+#             {"installing":true} or {"installing":false}, read from the
+#             daemon's D-Bus Operation property (#1498). It outlives this
+#             helper: RAUC has no cancel, so an install keeps writing the slot
+#             after its client is killed (the app crashed or restarted). A
+#             state that cannot be read prints false.
 #   reboot    Reboot into the staged slot (the user's explicit "Restart to apply").
 #             The reset MUST carry the tryboot argument. Staging arms the Pi's
 #             one-shot tryboot flag (RAUC's backend calls `vcmailbox 0x00038064
@@ -50,6 +57,11 @@
 #             also works on the retained walnascar target. See #974 and tests.
 #   poweroff  Clean halt (`systemctl start poweroff.target`). Does not go through
 #             logind — this image has none — so `systemctl poweroff` would fail.
+#             Both `reboot` and `poweroff` exit 5 without doing anything while
+#             RAUC reports an install in progress (#1498): a reset then leaves
+#             the inactive slot half written, and `reboot` would try it. This
+#             is the last check before the reset, so it covers every way an
+#             install starts, including one the app no longer knows about.
 #   reconcile-staged
 #             Clear /data/.ota-staged-version when it cannot be applied: already
 #             running that version, or the marker was written in an earlier
@@ -96,12 +108,37 @@ EXIT_BOOT_READ_ONLY=3
 # says why. Keep in step with kInstallFileRefusedExitCode in
 # lib/update/appliance/appliance_env.dart.
 EXIT_REFUSED=4
+# `reboot` or `poweroff` refused because RAUC is installing. Keep in step with
+# kUpdateInstallingExitCode in lib/update/appliance/appliance_env.dart.
+EXIT_INSTALLING=5
 # Where the app copies a bundle from a USB drive before `install-file`.
 STAGING_DIR="${SEGNO_UPDATE_STAGING_DIR:-/data/segno/update-staging}"
 # The image's RAUC config, whose compatible string a bundle must carry.
 RAUC_SYSTEM_CONF="${SEGNO_RAUC_SYSTEM_CONF:-/etc/rauc/system.conf}"
 
 log() { echo "segno-update-ctl: $*" >&2; }
+
+# Whether RAUC reports an install in progress: its D-Bus Operation property
+# is "installing" (busctl prints `s "installing"`). Anything else, including
+# a daemon or bus that does not answer, is not an install in progress: RAUC
+# writes a slot only from its daemon, and a daemon that does not answer the
+# bus is not running an install for anyone.
+rauc_installing() {
+    operation=$(busctl get-property de.pengutronix.rauc / \
+        de.pengutronix.rauc.Installer Operation 2>/dev/null) || {
+        log "could not read RAUC's operation; treating it as idle"
+        return 1
+    }
+    [ "$operation" = 's "installing"' ]
+}
+
+# Refuses a reset while RAUC is writing the inactive slot.
+refuse_while_installing() {
+    if rauc_installing; then
+        log "RAUC is installing an update; refusing to $1 until it finishes"
+        exit "$EXIT_INSTALLING"
+    fi
+}
 progress() { echo "PROGRESS $1"; }
 
 # Set while the attempt marker belongs to a run that can still fail
@@ -439,7 +476,15 @@ case "${1:-}" in
     reconcile-staged) do_reconcile_staged ;;
     attempt)          do_attempt ;;
     clear-attempt)    rm -f "$ATTEMPT_FILE" ;;
+    install-state)
+        if rauc_installing; then
+            echo '{"installing":true}'
+        else
+            echo '{"installing":false}'
+        fi
+        ;;
     reboot)
+        refuse_while_installing reboot
         # Tryboot only when an update is actually staged. The reboot argument
         # itself triggers the firmware's one-shot tryboot, and autoboot.txt
         # statically maps [tryboot] to the inactive slot — passed
@@ -456,6 +501,10 @@ case "${1:-}" in
         log "no update staged; plain reboot"
         exec systemctl reboot
         ;;
-    poweroff)         log "powering off"; exec systemctl start poweroff.target ;;
-    *)                log "usage: segno-update-ctl {install|install-file <path>|attempt|clear-attempt|reconcile-staged|reboot|poweroff}"; exit 2 ;;
+    poweroff)
+        refuse_while_installing "power off"
+        log "powering off"
+        exec systemctl start poweroff.target
+        ;;
+    *)                log "usage: segno-update-ctl {install|install-file <path>|attempt|clear-attempt|reconcile-staged|install-state|reboot|poweroff}"; exit 2 ;;
 esac

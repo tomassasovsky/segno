@@ -157,6 +157,7 @@ void main() {
       backing: backing = _CountingBacking(),
       powerOff: () async => halts++,
       reboot: () async => halts++,
+      updateInstalling: () async => false,
       storageSettled: () async {},
     );
     addTearDown(() async {

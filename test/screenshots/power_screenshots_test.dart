@@ -74,6 +74,7 @@ void main() {
     pedalGoodbye: () {},
     powerOff: () async {},
     reboot: () async {},
+    updateInstalling: () async => false,
     markHold: Duration.zero,
   );
 

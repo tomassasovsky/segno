@@ -45,6 +45,12 @@ abstract interface class PlatformUpdateBackend {
   /// Forgets an install that was cut off, once it is retried or dropped.
   Future<void> clearInterrupted();
 
+  /// Whether the installer itself reports an install in progress. On the
+  /// appliance this is RAUC's own state, which outlives the app's record of
+  /// an install: RAUC keeps writing the slot after the app restarts. False
+  /// when it cannot tell. Never throws.
+  Future<bool> installInProgress();
+
   /// Fetches and parses the channel manifest. Read-only — no download, no
   /// install — so it is safe to call automatically. Returns `null` when the
   /// server is unreachable or publishes nothing parseable.

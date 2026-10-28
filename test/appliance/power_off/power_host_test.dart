@@ -78,6 +78,7 @@ void main() {
         pedalGoodbye: () => log.add('pedal'),
         powerOff: () async => log.add('powerOff'),
         reboot: () async => log.add('reboot'),
+        updateInstalling: () async => false,
         markHold: Duration.zero,
       );
       looper = _MockLooperBloc();
