@@ -273,7 +273,7 @@ class ExpressionControlPicker extends StatelessWidget {
                         SizedBox(
                           width: 42,
                           height: 54,
-                          child: ExcludeSemantics(child: FxArtView(art: art)),
+                          child: FxArtView(art: art),
                         ),
                         const SizedBox(width: 18),
                       ],

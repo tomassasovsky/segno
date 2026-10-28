@@ -105,11 +105,10 @@ class ControlRowTile extends StatelessWidget {
                         if (art case final art?) ...[
                           SizedBox.fromSize(
                             size: artSize,
-                            child: ExcludeSemantics(
-                              child: FxArtView(
-                                key: const Key('control_row_art'),
-                                art: art,
-                              ),
+                            // Silent: the row's text names the effect.
+                            child: FxArtView(
+                              key: const Key('control_row_art'),
+                              art: art,
                             ),
                           ),
                           const SizedBox(width: 24),

@@ -622,18 +622,31 @@ void fxStompPaintText(
     text: TextSpan(text: text, style: style),
     textDirection: TextDirection.ltr,
   )..layout();
-  final ascent = painter.computeDistanceToActualBaseline(
-    TextBaseline.alphabetic,
+  fxStompPaintLine(
+    canvas,
+    painter,
+    baseline,
+    math.min(1, maxWidth / painter.width).toDouble(),
   );
-  final scale = math.min(1, maxWidth / painter.width).toDouble();
+  painter.dispose();
+}
+
+/// Paints the laid-out [line] centred on [baseline]'s x, its alphabetic
+/// baseline on [baseline]'s y, at [scale].
+void fxStompPaintLine(
+  Canvas canvas,
+  TextPainter line,
+  Offset baseline,
+  double scale,
+) {
+  final ascent = line.computeDistanceToActualBaseline(TextBaseline.alphabetic);
   canvas
     ..save()
     ..translate(baseline.dx, baseline.dy)
     ..scale(scale)
-    ..translate(-painter.width / 2, -ascent);
-  painter.paint(canvas, Offset.zero);
+    ..translate(-line.width / 2, -ascent);
+  line.paint(canvas, Offset.zero);
   canvas.restore();
-  painter.dispose();
 }
 
 /// Paints a module face's screen at [r]: the bezel, the grid, [display] in

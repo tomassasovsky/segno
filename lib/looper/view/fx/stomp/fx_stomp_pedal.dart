@@ -29,7 +29,29 @@ class FxStompPedal extends StatelessWidget {
     final kind = spec.face;
     final knobs = face.knobs;
     final spots = _KnobSpot.layout(kind, knobs.length);
-    final textures = FxStompTextures.instance;
+    final layer = Stack(
+      fit: StackFit.expand,
+      children: [
+        CustomPaint(
+          isComplex: true,
+          painter: _EnclosurePainter(
+            spec: spec,
+            led: face.led,
+            knobs: knobs.length,
+          ),
+        ),
+        CustomPaint(
+          isComplex: true,
+          painter: _LabelsPainter(
+            labels: [for (final knob in knobs) knob.label],
+            spots: spots,
+            colour: kind == FxStompFaceKind.window
+                ? spec.panelInk
+                : spec.bodyInk,
+          ),
+        ),
+      ],
+    );
     return RepaintBoundary(
       // A picture: the name and the controls it shows are on the surface
       // around it, which is what a screen reader reads.
@@ -52,68 +74,8 @@ class FxStompPedal extends StatelessWidget {
                   // turn, so it keeps one layer.
                   Positioned.fill(
                     child: face.led == FxStompLed.still
-                        ? Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              Positioned.fill(
-                                child: CustomPaint(
-                                  isComplex: true,
-                                  painter: _EnclosurePainter(
-                                    spec: spec,
-                                    led: face.led,
-                                    knobs: knobs.length,
-                                    textures: textures.images,
-                                  ),
-                                ),
-                              ),
-                              Positioned.fill(
-                                child: CustomPaint(
-                                  isComplex: true,
-                                  painter: _LabelsPainter(
-                                    labels: [
-                                      for (final knob in knobs) knob.label,
-                                    ],
-                                    spots: spots,
-                                    colour: kind == FxStompFaceKind.window
-                                        ? spec.panelInk
-                                        : spec.bodyInk,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          )
-                        : RepaintBoundary(
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                Positioned.fill(
-                                  child: CustomPaint(
-                                    isComplex: true,
-                                    painter: _EnclosurePainter(
-                                      spec: spec,
-                                      led: face.led,
-                                      knobs: knobs.length,
-                                      textures: textures.images,
-                                    ),
-                                  ),
-                                ),
-                                Positioned.fill(
-                                  child: CustomPaint(
-                                    isComplex: true,
-                                    painter: _LabelsPainter(
-                                      labels: [
-                                        for (final knob in knobs) knob.label,
-                                      ],
-                                      spots: spots,
-                                      colour: kind == FxStompFaceKind.window
-                                          ? spec.panelInk
-                                          : spec.bodyInk,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                        ? layer
+                        : RepaintBoundary(child: layer),
                   ),
                   Positioned.fill(
                     child: CustomPaint(
@@ -267,20 +229,7 @@ class _LabelsPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_LabelsPainter oldDelegate) {
-    if (oldDelegate.colour != colour) return true;
-    if (oldDelegate.labels.length != labels.length) return true;
-    for (var i = 0; i < labels.length; i++) {
-      if (oldDelegate.labels[i] != labels[i]) return true;
-      if (oldDelegate.spots[i].centre != spots[i].centre) return true;
-      if (oldDelegate.spots[i].labelSize != spots[i].labelSize) return true;
-      if (oldDelegate.spots[i].labelBaseline != spots[i].labelBaseline) {
-        return true;
-      }
-      if (oldDelegate.spots[i].wraps != spots[i].wraps) return true;
-    }
-    return false;
-  }
+  bool shouldRepaint(_LabelsPainter oldDelegate) => oldDelegate._key != _key;
 }
 
 /// The paints of one knob look at one radius, built once.
@@ -581,7 +530,6 @@ class _EnclosurePainter extends CustomPainter {
     required this.spec,
     required this.led,
     required this.knobs,
-    required this.textures,
   }) : super(repaint: _repaint);
 
   /// What a recorded enclosure is dropped for: the tiles arriving, or a
@@ -595,7 +543,6 @@ class _EnclosurePainter extends CustomPainter {
   final FxStompSpec spec;
   final FxStompLed led;
   final int knobs;
-  final ValueNotifier<Map<String, ui.Image>> textures;
 
   /// The knob count as the enclosure uses it: a box sets its name's height
   /// by it and a module draws a scale around each knob; the other faces do
@@ -607,7 +554,7 @@ class _EnclosurePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final tiles = textures.value;
+    final tiles = FxStompTextures.instance.images.value;
     final key = (
       spec: spec,
       led: led,
@@ -1230,19 +1177,12 @@ class _LabelLayout {
 
   void paint(Canvas canvas) {
     for (final (n, line) in lines.indexed) {
-      final ascent = line.computeDistanceToActualBaseline(
-        TextBaseline.alphabetic,
+      fxStompPaintLine(
+        canvas,
+        line,
+        Offset(spot.centre.dx, spot.labelBaseline + n * _lineHeight * scale),
+        scale,
       );
-      canvas
-        ..save()
-        ..translate(
-          spot.centre.dx,
-          spot.labelBaseline + n * _lineHeight * scale,
-        )
-        ..scale(scale)
-        ..translate(-line.width / 2, -ascent);
-      line.paint(canvas, Offset.zero);
-      canvas.restore();
     }
   }
 }
