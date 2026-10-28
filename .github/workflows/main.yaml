@@ -185,18 +185,21 @@ jobs:
         run: flutter pub get
       - name: Check the app and its runtime dependencies for dart:io process starts
         run: bash tool/check_no_dart_process.sh
-  # The design side of a UI change. segno-ui.pen and the design studies live in
-  # tomassasovsky/segno-design (#1496), cloned next to this checkout as they
-  # are for local UI work. The job runs the checks that read the studies, and
-  # renders the screenshot suites on Linux and uploads the PNGs as the
-  # `screenshots` artifact, for a reviewer to compare against the pen. No
-  # goldens are committed, so no pixels are compared here, but a suite that
-  # fails to render fails the job. Suites already known to fail are skipped,
-  # each with a comment naming its issue.
+  # The design side of a UI change. The design is the Penpot file segno-ui
+  # (#1503); its snapshots, the frozen segno-ui.pen and the design studies
+  # live in tomassasovsky/segno-design (#1496), cloned next to this checkout
+  # as they are for local UI work. The job runs the checks that read the
+  # studies, and renders the screenshot suites on Linux and uploads the PNGs
+  # as the `screenshots` artifact, for a reviewer to compare against the
+  # Penpot file. No goldens are committed, so no pixels are compared here,
+  # but a suite that fails to render fails the job. Suites already known to
+  # fail are skipped, each with a comment naming its issue.
   #
   # The clone is the segno-design commit in .github/segno-design.sha, so the
   # result depends only on this commit. A change that needs a newer study
-  # (normally a UI change and its pen PR) updates that file.
+  # (normally a UI change and its design PR) updates that file. Only
+  # docs/design/ is checked out, and only its blobs are downloaded: the
+  # Penpot snapshot (about 117,000 files) and the pen are not needed here.
   design:
     runs-on: ubuntu-latest
     steps:
@@ -205,10 +208,13 @@ jobs:
         id: design-clone
         run: |
           git init -q ../segno-design
-          git -C ../segno-design fetch -q --depth 1 \
-            https://github.com/tomassasovsky/segno-design.git \
-            "$(cat .github/segno-design.sha)"
+          git -C ../segno-design remote add origin \
+            https://github.com/tomassasovsky/segno-design.git
+          git -C ../segno-design sparse-checkout set --no-cone /docs/design/
+          git -C ../segno-design fetch -q --depth 1 --filter=blob:none \
+            origin "$(cat .github/segno-design.sha)"
           git -C ../segno-design checkout -q FETCH_HEAD
+          test -f ../segno-design/docs/design/external-switch-study.js
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.47.x"
