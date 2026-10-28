@@ -64,6 +64,7 @@ void main() {
       backing: testBackingRepository(),
       powerOff: () async {},
       reboot: () async {},
+      updateInstalling: () async => false,
       storageSettled: () async {},
       instruments: repository,
     );

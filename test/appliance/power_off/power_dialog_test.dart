@@ -21,6 +21,7 @@ PowerCubit _cubit({List<String>? log}) => PowerCubit(
   pedalGoodbye: () {},
   powerOff: () async => log?.add('powerOff'),
   reboot: () async => log?.add('reboot'),
+  updateInstalling: () async => false,
   markHold: Duration.zero,
 );
 

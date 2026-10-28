@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/appliance/power_off/power_gate.dart';
+import 'package:update_repository/update_repository.dart';
 
 void main() {
   const named = PowerSnapshot(currentSessionName: 'set');
@@ -41,6 +42,8 @@ void main() {
       FutureOr<void> Function({required bool retry})? flush,
       Future<void> Function()? storageSettled,
       Future<void> Function()? powerOff,
+      Future<void> Function()? reboot,
+      Future<bool> Function()? updateInstalling,
       Duration markHold = Duration.zero,
     }) {
       return PowerCubit(
@@ -58,7 +61,17 @@ void main() {
             () async {
               log.add('powerOff');
             },
-        reboot: () async => log.add('reboot'),
+        reboot:
+            reboot ??
+            () async {
+              log.add('reboot');
+            },
+        updateInstalling:
+            updateInstalling ??
+            () async {
+              log.add('installer');
+              return false;
+            },
         markHold: markHold,
       );
     }
@@ -148,7 +161,15 @@ void main() {
           ..press(named)
           ..restart(named, save: save);
         await pumpEventQueue();
-        expect(log, ['stop', 'flush', 'save', 'storage', 'pedal', 'reboot']);
+        expect(log, [
+          'stop',
+          'flush',
+          'save',
+          'storage',
+          'installer',
+          'pedal',
+          'reboot',
+        ]);
         expect(
           cubit.state,
           const PowerState(
@@ -165,7 +186,15 @@ void main() {
         ..press(named)
         ..shutDown(named, save: save);
       await pumpEventQueue();
-      expect(log, ['stop', 'flush', 'save', 'storage', 'pedal', 'powerOff']);
+      expect(log, [
+        'stop',
+        'flush',
+        'save',
+        'storage',
+        'installer',
+        'pedal',
+        'powerOff',
+      ]);
       expect(cubit.state.action, PowerAction.shutDown);
       await cubit.close();
     });
@@ -175,7 +204,15 @@ void main() {
       () async {
         final cubit = build()..restart(named, save: save);
         await pumpEventQueue();
-        expect(log, ['stop', 'flush', 'save', 'storage', 'pedal', 'reboot']);
+        expect(log, [
+          'stop',
+          'flush',
+          'save',
+          'storage',
+          'installer',
+          'pedal',
+          'reboot',
+        ]);
         await cubit.close();
       },
     );
@@ -183,7 +220,15 @@ void main() {
     test('a named session saves even when it holds nothing', () async {
       final cubit = build()..restart(namedEmpty, save: save);
       await pumpEventQueue();
-      expect(log, ['stop', 'flush', 'save', 'storage', 'pedal', 'reboot']);
+      expect(log, [
+        'stop',
+        'flush',
+        'save',
+        'storage',
+        'installer',
+        'pedal',
+        'reboot',
+      ]);
       await cubit.close();
     });
 
@@ -227,7 +272,15 @@ void main() {
         ..dismiss()
         ..restart(named, save: save);
       await pumpEventQueue();
-      expect(log, ['stop', 'flush', 'save', 'storage', 'pedal', 'reboot']);
+      expect(log, [
+        'stop',
+        'flush',
+        'save',
+        'storage',
+        'installer',
+        'pedal',
+        'reboot',
+      ]);
       await cubit.close();
     });
 
@@ -304,6 +357,7 @@ void main() {
           'stop',
           'save',
           'storage',
+          'installer',
           'pedal',
           'reboot',
         ]);
@@ -356,7 +410,15 @@ void main() {
           save: () async => log.add('saveAs'),
         );
         await pumpEventQueue();
-        expect(log, ['stop', 'flush', 'saveAs', 'storage', 'pedal', 'reboot']);
+        expect(log, [
+          'stop',
+          'flush',
+          'saveAs',
+          'storage',
+          'installer',
+          'pedal',
+          'reboot',
+        ]);
         await cubit.close();
       });
 
@@ -376,7 +438,14 @@ void main() {
           ..press(empty)
           ..restart(empty, save: () async => log.add('save'));
         await pumpEventQueue();
-        expect(log, ['stop', 'flush', 'storage', 'pedal', 'reboot']);
+        expect(log, [
+          'stop',
+          'flush',
+          'storage',
+          'installer',
+          'pedal',
+          'reboot',
+        ]);
         expect(states.map((s) => s.phase), [
           PowerPhase.options,
           PowerPhase.saving,
@@ -400,7 +469,14 @@ void main() {
         final cubit = build()
           ..shutDown(empty, save: () async => log.add('save'));
         await pumpEventQueue();
-        expect(log, ['stop', 'flush', 'storage', 'pedal', 'powerOff']);
+        expect(log, [
+          'stop',
+          'flush',
+          'storage',
+          'installer',
+          'pedal',
+          'powerOff',
+        ]);
         expect(
           cubit.state,
           const PowerState(
@@ -425,7 +501,14 @@ void main() {
         cubit.retry(empty, save: save);
         await pumpEventQueue();
         expect(attempts, [false, true]);
-        expect(log, ['stop', 'stop', 'storage', 'pedal', 'powerOff']);
+        expect(log, [
+          'stop',
+          'stop',
+          'storage',
+          'installer',
+          'pedal',
+          'powerOff',
+        ]);
         await cubit.close();
       });
 
@@ -462,6 +545,7 @@ void main() {
           'flush',
           'saveAs',
           'storage',
+          'installer',
           'pedal',
           'reboot',
         ]);
@@ -482,7 +566,15 @@ void main() {
         failFlush = false;
         cubit.retry(namedEmpty, save: () async => log.add('save'));
         await pumpEventQueue();
-        expect(log, ['stop', 'stop', 'save', 'storage', 'pedal', 'powerOff']);
+        expect(log, [
+          'stop',
+          'stop',
+          'save',
+          'storage',
+          'installer',
+          'pedal',
+          'powerOff',
+        ]);
         await cubit.close();
       });
 
@@ -535,7 +627,15 @@ void main() {
         ..retry(named, save: save);
       saving.complete();
       await pumpEventQueue();
-      expect(log, ['stop', 'flush', 'save', 'storage', 'pedal', 'powerOff']);
+      expect(log, [
+        'stop',
+        'flush',
+        'save',
+        'storage',
+        'installer',
+        'pedal',
+        'powerOff',
+      ]);
       await cubit.close();
     });
 
@@ -554,7 +654,15 @@ void main() {
         expect(cubit.state.phase, PowerPhase.saving);
         released.complete();
         await pumpEventQueue();
-        expect(log, ['stop', 'flush', 'save', 'storage', 'pedal', 'reboot']);
+        expect(log, [
+          'stop',
+          'flush',
+          'save',
+          'storage',
+          'installer',
+          'pedal',
+          'reboot',
+        ]);
         await cubit.close();
       },
     );
@@ -634,6 +742,105 @@ void main() {
       await pumpEventQueue();
       expect(cubit.state.phase, PowerPhase.goodbye);
       await cubit.close();
+    });
+
+    group("RAUC's own install (#1498)", () {
+      for (final (name, commit) in [
+        (
+          'Restart',
+          (PowerCubit cubit) => cubit.restart(named, save: save),
+        ),
+        (
+          'Shut down',
+          (PowerCubit cubit) => cubit.shutDown(named, save: save),
+        ),
+      ]) {
+        test('$name: an install found after the save refuses before the '
+            'goodbye face, and releases the restart guard', () async {
+          final cubit = build(
+            updateInstalling: () async {
+              log.add('installer');
+              return true;
+            },
+          );
+          final phases = <PowerPhase>[];
+          final sub = cubit.stream.listen((s) => phases.add(s.phase));
+          commit(cubit);
+          await pumpEventQueue();
+
+          expect(
+            cubit.state,
+            const PowerState(
+              phase: PowerPhase.refuse,
+              refusal: PowerRefusal.update,
+            ),
+          );
+          expect(phases, isNot(contains(PowerPhase.goodbye)));
+          expect(log, ['stop', 'flush', 'save', 'storage', 'installer']);
+          expect(guards.active, isEmpty);
+
+          // Keep playing returns to the rig, and the next press asks again.
+          cubit.dismiss();
+          expect(cubit.state.phase, PowerPhase.idle);
+          await sub.cancel();
+          await cubit.close();
+        });
+      }
+
+      test('a helper refusal at the reset leaves the goodbye face for the '
+          'update refusal', () async {
+        final cubit = build(
+          reboot: () async {
+            log.add('reboot');
+            throw const UpdateInstallingException('RAUC is installing');
+          },
+        )..restart(named, save: save);
+        await pumpEventQueue();
+
+        expect(
+          cubit.state,
+          const PowerState(
+            phase: PowerPhase.refuse,
+            refusal: PowerRefusal.update,
+          ),
+        );
+        expect(log, [
+          'stop',
+          'flush',
+          'save',
+          'storage',
+          'installer',
+          'pedal',
+          'reboot',
+        ]);
+        expect(guards.active, isEmpty);
+        await cubit.close();
+      });
+
+      test('a failed question reads as no install: the helper asks again '
+          'at the reset', () async {
+        final cubit = build(
+          updateInstalling: () async => throw StateError('no helper'),
+        )..shutDown(named, save: save);
+        await pumpEventQueue();
+
+        expect(cubit.state.phase, PowerPhase.goodbye);
+        expect(log.last, 'powerOff');
+        await cubit.close();
+      });
+
+      test('closing while the installer is asked sends no halt', () async {
+        final answer = Completer<bool>();
+        final cubit = build(updateInstalling: () => answer.future)
+          ..shutDown(named, save: save);
+        await pumpEventQueue();
+        await cubit.close();
+        answer.complete(false);
+        await pumpEventQueue();
+
+        expect(log, isNot(contains('pedal')));
+        expect(log, isNot(contains('powerOff')));
+      });
     });
 
     test('markHold delays the halt until after the terminal face', () {

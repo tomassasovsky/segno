@@ -255,6 +255,8 @@ class _AppState extends State<App> {
       instruments: widget.instrumentRepository,
       powerOff: widget.powerOff ?? const SystemApplianceEnv().powerOff,
       reboot: widget.reboot ?? const SystemApplianceEnv().reboot,
+      // RAUC's own state, asked again before the goodbye face (#1498).
+      updateInstalling: widget.updates.installInProgress,
       storageSettled: _storage.settled,
       guards: widget.guards,
     );

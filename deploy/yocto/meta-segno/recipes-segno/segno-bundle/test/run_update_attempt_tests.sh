@@ -41,6 +41,13 @@ echo "100% installing done."
 exit 0
 STUB
     chmod +x "$work/bin/rauc"
+    # RAUC's D-Bus Operation (#1498): idle unless a test writes
+    # "$work/operation".
+    cat > "$work/bin/busctl" <<STUB
+#!/bin/sh
+printf 's "%s"\\n' "\$(cat "$work/operation" 2>/dev/null || echo idle)"
+STUB
+    chmod +x "$work/bin/busctl"
 
     cat > "$work/bin/curl" <<STUB
 #!/bin/sh
@@ -183,6 +190,37 @@ ctl clear-attempt 2>"$work/stderr"; rc=$?
 check "clear-attempt exits 0" 0 "$rc"
 check "clear-attempt forgets it" no "$(has_attempt)"
 check "attempt then prints {}" '{}' "$(ctl attempt 2>/dev/null)"
+teardown
+
+echo "RAUC still installing an earlier run's install: install refuses first"
+setup
+mkdir -p "$work/state/segno"
+echo "0.6.5" > "$work/state/segno/update-attempt"
+echo installing > "$work/operation"
+ctl install >/dev/null 2>"$work/stderr"; rc=$?
+check "exits non-zero" 1 "$rc"
+check "keeps the earlier attempt marker" "0.6.5" "$(attempt)"
+check "says why" yes \
+    "$(grep -q 'already installing' "$work/stderr" && echo yes || echo no)"
+check "stages nothing" no "$([ -f "$work/state/ota-staged-version" ] && echo yes || echo no)"
+check "leaves no work dir" 0 "$(work_dirs)"
+teardown
+
+echo "starting an install drops an earlier staged build's markers"
+setup
+echo "0.6.9" > "$work/state/ota-staged-version"
+echo "boot-a" > "$work/state/ota-staged-boot-id"
+: > "$work/state/update-pending"
+printf '#!/bin/sh\necho "rauc: failed"\nexit 1\n' > "$work/bin/rauc"
+ctl install >/dev/null 2>"$work/stderr"; rc=$?
+check "exits non-zero" 1 "$rc"
+# The slot that held 0.6.9 was being overwritten: a reset must not try it.
+check "the staged marker is gone" no \
+    "$([ -f "$work/state/ota-staged-version" ] && echo yes || echo no)"
+check "the staged boot id is gone" no \
+    "$([ -f "$work/state/ota-staged-boot-id" ] && echo yes || echo no)"
+check "the pending flag is gone" no \
+    "$([ -f "$work/state/update-pending" ] && echo yes || echo no)"
 teardown
 
 echo "attempt with no marker"

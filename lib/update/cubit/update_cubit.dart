@@ -29,12 +29,18 @@ class UpdateCubit extends Cubit<UpdateState> {
   UpdateCubit({
     required UpdateRepository updates,
     required SettingsRepository settings,
+    Duration installPollInterval = const Duration(seconds: 2),
   }) : _updates = updates,
        _settings = settings,
+       _installPollInterval = installPollInterval,
        super(const UpdateState());
 
   final UpdateRepository _updates;
   final SettingsRepository _settings;
+
+  /// How often RAUC is asked again while it reports an install that an
+  /// earlier run started ([UpdateState.raucInstalling]).
+  final Duration _installPollInterval;
   Future<void>? _loadFuture;
 
   /// The download in flight, so [cancelDownload] can stop it.
@@ -78,6 +84,9 @@ class UpdateCubit extends Cubit<UpdateState> {
       await _updates.clearInterrupted();
       interrupted = null;
     }
+    // Nothing in this run has started an install yet, so an install RAUC
+    // reports now was started by an earlier one and is still writing.
+    final raucInstalling = await _updates.installInProgress();
     if (isClosed) return;
     emit(
       state.copyWith(
@@ -89,13 +98,37 @@ class UpdateCubit extends Cubit<UpdateState> {
         rollback: rollback,
         interrupted: interrupted,
         phase: interrupted == null ? null : UpdatePhase.interrupted,
+        raucInstalling: raucInstalling,
       ),
     );
+    if (raucInstalling) unawaited(_followRaucInstall());
     // An interrupted install waits for the player's Retry or Cancel; a check
     // now would paper over it with a fresh offer.
     if (autoCheck && _updates.isSupported && interrupted == null) {
       await check();
     }
+  }
+
+  /// After this run's own install ended without staging (its helper died
+  /// past the download, or a USB run failed), RAUC may still be writing:
+  /// asks once, and follows it while it is.
+  Future<void> _recheckRaucInstall() async {
+    if (state.raucInstalling) return;
+    final installing = await _updates.installInProgress();
+    // Another path may have started following meanwhile.
+    if (!installing || isClosed || state.raucInstalling) return;
+    emit(state.copyWith(raucInstalling: true));
+    await _followRaucInstall();
+  }
+
+  /// Asks RAUC again every poll interval until it no longer reports
+  /// an install, then clears [UpdateState.raucInstalling].
+  Future<void> _followRaucInstall() async {
+    do {
+      await Future<void>.delayed(_installPollInterval);
+      if (isClosed) return;
+    } while (await _updates.installInProgress());
+    if (!isClosed) emit(state.copyWith(raucInstalling: false));
   }
 
   /// Runs a read-only availability check (no download, no install). No-op on an
@@ -163,11 +196,15 @@ class UpdateCubit extends Cubit<UpdateState> {
 
   /// Downloads and stages the available bundle to the inactive slot, tracking
   /// progress. Opt-in — call only from an explicit user action. No-op when no
-  /// update is available or one is already downloading. Completes when the
+  /// update is available, one is already downloading, or another install is
+  /// running (a USB package, or one RAUC is still writing). Completes when the
   /// download is staged, fails, or is cancelled.
   Future<void> startDownload() {
     final manifest = state.available;
-    if (manifest == null || _download != null || state.usbInstalling) {
+    if (manifest == null ||
+        _download != null ||
+        state.usbInstalling ||
+        state.raucInstalling) {
       return Future.value();
     }
     emit(
@@ -198,6 +235,7 @@ class UpdateCubit extends Cubit<UpdateState> {
                       : UpdateFailure.download,
                 ),
               );
+              unawaited(_recheckRaucInstall());
             }
           },
           onDone: () {
@@ -238,6 +276,7 @@ class UpdateCubit extends Cubit<UpdateState> {
   void setUsbInstalling({required bool working}) {
     if (isClosed || state.usbInstalling == working) return;
     emit(state.copyWith(usbInstalling: working));
+    if (!working) unawaited(_recheckRaucInstall());
   }
 
   /// A package installed from a USB drive (#1270 Part 8) lands in Ready to

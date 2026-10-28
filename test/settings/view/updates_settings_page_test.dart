@@ -15,6 +15,7 @@ import 'package:segno/looper/view/loop_settings/loop_select.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/session/cubit/session_cubit.dart';
 import 'package:segno/settings/view/updates_settings_page.dart';
+import 'package:segno/settings/view/updates_usb_panel.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:update_repository/update_repository.dart';
@@ -186,6 +187,44 @@ void main() {
       expect(focused(tester, 'updates_download'), isTrue);
       verifyNever(update.startDownload);
 
+      await tester.tap(find.byKey(const Key('updates_download')));
+      await tester.pumpAndSettle();
+      verify(update.startDownload).called(1);
+    });
+
+    testWidgets('an install RAUC is still writing for an earlier run holds '
+        'the online flow and the USB load off (#1498)', (tester) async {
+      await pump(
+        tester,
+        _running.copyWith(
+          phase: UpdatePhase.available,
+          available: _offer,
+          raucInstalling: true,
+        ),
+      );
+
+      await tester.tap(
+        find.byKey(const Key('updates_download')),
+        warnIfMissed: false,
+      );
+      await tester.tap(
+        find.byKey(const Key('updates_check')),
+        warnIfMissed: false,
+      );
+      await tester.tap(
+        find.byKey(const Key('updates_load_usb')),
+        warnIfMissed: false,
+      );
+      await tester.pumpAndSettle();
+      verifyNever(update.startDownload);
+      verifyNever(update.check);
+      expect(find.byType(UpdatesUsbPanel), findsNothing);
+
+      // Once RAUC is idle the offer is live again.
+      await emit(
+        tester,
+        _running.copyWith(phase: UpdatePhase.available, available: _offer),
+      );
       await tester.tap(find.byKey(const Key('updates_download')));
       await tester.pumpAndSettle();
       verify(update.startDownload).called(1);

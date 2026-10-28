@@ -5,6 +5,7 @@ import 'package:equatable/equatable.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/logging/app_log.dart';
+import 'package:update_repository/update_repository.dart';
 
 part 'power_state.dart';
 
@@ -15,10 +16,17 @@ part 'power_state.dart';
 /// Restart and Shut down share one guarded path: refused while a take, an
 /// update install or a transfer is in flight; otherwise stop the transport,
 /// flush settings, save the session, hold [GuardKind.restart], wait for
-/// storage leases, then reboot or halt. A failed save keeps Segno on (Stay
-/// on / Retry); there is no way to halt without saving. An unnamed session
-/// with nothing to lose ([PowerSnapshot.sessionHasContent] false) skips only
-/// the session write: there is nothing to name and nothing to write.
+/// storage leases, ask the installer again, then reboot or halt. A failed
+/// save keeps Segno on (Stay on / Retry); there is no way to halt without
+/// saving. An unnamed session with nothing to lose
+/// ([PowerSnapshot.sessionHasContent] false) skips only the session write:
+/// there is nothing to name and nothing to write.
+///
+/// The press only sees the app's record of an update. RAUC's own state can
+/// outlive it (#1498), so it is asked again once the save has landed, before
+/// the goodbye face: an install there refuses with the update refusal
+/// instead of showing Restarting or Safe to switch off. The helper asks it
+/// once more at the reset itself, and its refusal reads the same way.
 ///
 /// Never calls another cubit. Every step is an injected closure, and the
 /// save is handed in at each commit by the host that owns the session.
@@ -34,6 +42,7 @@ class PowerCubit extends Cubit<PowerState> {
     required void Function() pedalGoodbye,
     required Future<void> Function() powerOff,
     required Future<void> Function() reboot,
+    required Future<bool> Function() updateInstalling,
     Duration markHold = const Duration(seconds: 2),
   }) : _stopTransport = stopTransport,
        _flush = flush,
@@ -42,6 +51,7 @@ class PowerCubit extends Cubit<PowerState> {
        _pedalGoodbye = pedalGoodbye,
        _powerOff = powerOff,
        _reboot = reboot,
+       _updateInstalling = updateInstalling,
        _markHold = markHold,
        super(const PowerState());
 
@@ -52,6 +62,7 @@ class PowerCubit extends Cubit<PowerState> {
   final void Function() _pedalGoodbye;
   final Future<void> Function() _powerOff;
   final Future<void> Function() _reboot;
+  final Future<bool> Function() _updateInstalling;
   final Duration _markHold;
 
   /// The save of the commit in progress, kept for Retry.
@@ -213,6 +224,12 @@ class PowerCubit extends Cubit<PowerState> {
       return;
     }
     if (isClosed) return;
+    if (await _installerBusy()) {
+      AppLog.warn('power: the installer reports an update in progress');
+      _refuseForUpdate();
+      return;
+    }
+    if (isClosed) return;
     _pedalGoodbye();
     _set(PowerPhase.goodbye);
     if (_markHold > Duration.zero) {
@@ -221,10 +238,40 @@ class PowerCubit extends Cubit<PowerState> {
     if (isClosed) return;
     try {
       await (action == PowerAction.restart ? _reboot() : _powerOff());
+    } on UpdateInstallingException catch (error) {
+      // An install started during the goodbye hold. Nothing was reset, so
+      // the face must not stay on Restarting or Safe to switch off. The
+      // pedal keeps its goodbye mark until the next restart.
+      AppLog.warn('power: $error');
+      _refuseForUpdate();
     } on Object catch (error, stack) {
       // Freeze on the face. Do not retry.
       AppLog.error('power: helper failed', error: error, stack: stack);
     }
+  }
+
+  /// Whether the installer reports an update in progress. A question that
+  /// fails reads as no: the helper asks again at the reset and refuses
+  /// there, and the Saving face must not hang on the question.
+  Future<bool> _installerBusy() async {
+    try {
+      return await _updateInstalling();
+    } on Object catch (error, stack) {
+      AppLog.error('power: installer check failed', error: error, stack: stack);
+      return false;
+    }
+  }
+
+  /// Leaves a committed restart or shutdown for the update refusal: the
+  /// session is saved, the restart guard goes, and Segno stays on.
+  void _refuseForUpdate() {
+    _guard?.release();
+    _guard = null;
+    _save = null;
+    if (isClosed) return;
+    emit(
+      const PowerState(phase: PowerPhase.refuse, refusal: PowerRefusal.update),
+    );
   }
 
   void _set(PowerPhase phase) {

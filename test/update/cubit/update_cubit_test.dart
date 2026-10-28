@@ -55,6 +55,7 @@ void main() {
       () => updates.recover(),
     ).thenAnswer((_) async => const UpdateRecovery());
     when(() => updates.clearInterrupted()).thenAnswer((_) async {});
+    when(() => updates.installInProgress()).thenAnswer((_) async => false);
     when(() => settings.loadUpdateRollback()).thenAnswer((_) async => null);
     when(
       () => settings.saveUpdateRollback(
@@ -788,6 +789,148 @@ void main() {
         isA<UpdateState>().having((s) => s.installInFlight, 'in flight', true),
         isA<UpdateState>().having((s) => s.installInFlight, 'in flight', false),
       ],
+    );
+  });
+
+  group('an install RAUC is still writing at startup (#1498)', () {
+    UpdateCubit polling() => UpdateCubit(
+      updates: updates,
+      settings: settings,
+      installPollInterval: Duration.zero,
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'holds installInFlight until RAUC stops reporting it',
+      setUp: () {
+        when(
+          () => settings.loadUpdateAutoCheck(),
+        ).thenAnswer((_) async => false);
+        final answers = [true, true, false];
+        when(
+          () => updates.installInProgress(),
+        ).thenAnswer((_) async => answers.removeAt(0));
+      },
+      build: polling,
+      act: (cubit) async {
+        await cubit.load();
+        await pumpEventQueue();
+      },
+      expect: () => [
+        isA<UpdateState>()
+            .having((s) => s.raucInstalling, 'rauc installing', true)
+            .having((s) => s.installInFlight, 'in flight', true),
+        isA<UpdateState>()
+            .having((s) => s.raucInstalling, 'rauc installing', false)
+            .having((s) => s.installInFlight, 'in flight', false),
+      ],
+      verify: (_) => verify(() => updates.installInProgress()).called(3),
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'asks once and never again when RAUC is idle',
+      setUp: () => when(
+        () => settings.loadUpdateAutoCheck(),
+      ).thenAnswer((_) async => false),
+      build: polling,
+      act: (cubit) async {
+        await cubit.load();
+        await pumpEventQueue();
+      },
+      expect: () => [
+        isA<UpdateState>()
+            .having((s) => s.raucInstalling, 'rauc installing', false)
+            .having((s) => s.installInFlight, 'in flight', false),
+      ],
+      verify: (_) => verify(() => updates.installInProgress()).called(1),
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'startDownload holds off while RAUC is still writing',
+      seed: () => UpdateState(available: _v2, raucInstalling: true),
+      build: polling,
+      act: (cubit) => cubit.startDownload(),
+      expect: () => const <UpdateState>[],
+      verify: (_) => verifyNever(() => updates.downloadAndStage(any())),
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      "a download whose helper died follows RAUC's install to its end",
+      seed: () => UpdateState(available: _v2),
+      setUp: () {
+        when(
+          () => updates.downloadAndStage(_v2),
+        ).thenAnswer((_) => Stream.error(Exception('helper killed')));
+        final answers = [true, false];
+        when(
+          () => updates.installInProgress(),
+        ).thenAnswer((_) async => answers.removeAt(0));
+      },
+      build: polling,
+      act: (cubit) async {
+        await cubit.startDownload();
+        await pumpEventQueue();
+      },
+      expect: () => [
+        isA<UpdateState>().having((s) => s.installInFlight, 'in flight', true),
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.error)
+            .having((s) => s.raucInstalling, 'rauc installing', false),
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.error)
+            .having((s) => s.installInFlight, 'in flight', true),
+        isA<UpdateState>()
+            .having((s) => s.raucInstalling, 'rauc installing', false)
+            .having((s) => s.installInFlight, 'in flight', false),
+      ],
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'a USB run that ends with RAUC still writing keeps installInFlight',
+      setUp: () {
+        final answers = [true, false];
+        when(
+          () => updates.installInProgress(),
+        ).thenAnswer((_) async => answers.removeAt(0));
+      },
+      build: polling,
+      act: (cubit) async {
+        cubit
+          ..setUsbInstalling(working: true)
+          ..setUsbInstalling(working: false);
+        await pumpEventQueue();
+      },
+      expect: () => [
+        isA<UpdateState>().having((s) => s.usbInstalling, 'usb', true),
+        isA<UpdateState>()
+            .having((s) => s.usbInstalling, 'usb', false)
+            .having((s) => s.installInFlight, 'in flight', false),
+        isA<UpdateState>().having((s) => s.installInFlight, 'in flight', true),
+        isA<UpdateState>().having((s) => s.installInFlight, 'in flight', false),
+      ],
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'stops asking once closed',
+      setUp: () {
+        when(
+          () => settings.loadUpdateAutoCheck(),
+        ).thenAnswer((_) async => false);
+        when(() => updates.installInProgress()).thenAnswer((_) async => true);
+      },
+      build: polling,
+      act: (cubit) async {
+        await cubit.load();
+        await cubit.close();
+        await pumpEventQueue();
+      },
+      expect: () => [
+        isA<UpdateState>().having(
+          (s) => s.raucInstalling,
+          'rauc installing',
+          true,
+        ),
+      ],
+      verify: (_) => verify(() => updates.installInProgress()).called(1),
     );
   });
 }

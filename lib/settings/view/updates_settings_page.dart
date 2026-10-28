@@ -80,10 +80,13 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
     final state = context.watch<UpdateCubit>().state;
     final cubit = context.read<UpdateCubit>();
     final version = state.currentVersion;
+    // One install at a time: a USB package, or one RAUC is still writing
+    // for an earlier run (#1498), holds the online flow off.
+    final installing = state.usbInstalling || state.raucInstalling;
     final busy =
         state.phase == UpdatePhase.checking ||
         state.phase == UpdatePhase.downloading ||
-        state.usbInstalling;
+        installing;
     // The check is the state's action whenever the panel has none of its own.
     final checkIsNext = switch (state.phase) {
       UpdatePhase.idle || UpdatePhase.upToDate || UpdatePhase.checking => true,
@@ -158,15 +161,14 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
           const SizedBox(height: 24),
         ],
         // One helper at a time: while a USB package is copied or installed,
-        // the online flow's actions (and its restart) hold off.
+        // or RAUC is still writing an earlier run's install, the online
+        // flow's actions (and its restart) hold off.
         IgnorePointer(
-          ignoring: state.usbInstalling,
+          ignoring: installing,
           child: ExcludeFocus(
-            excluding: state.usbInstalling,
+            excluding: installing,
             child: Opacity(
-              opacity: state.usbInstalling
-                  ? context.surface.disabledOpacity
-                  : 1,
+              opacity: installing ? context.surface.disabledOpacity : 1,
               child: _StatusPanel(state: state, cubit: cubit, next: _next),
             ),
           ),
@@ -257,7 +259,9 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
         storage: context.read<StorageRepository>(),
         updates: context.read<UpdateRepository>(),
         takeRunning: () => _takeRunning(context.read<LooperRepository>()),
-        onlineBusy: () => cubit.state.phase == UpdatePhase.downloading,
+        onlineBusy: () =>
+            cubit.state.phase == UpdatePhase.downloading ||
+            cubit.state.raucInstalling,
         onWorking: cubit.setUsbInstalling,
         onStaged: cubit.showStaged,
       ),

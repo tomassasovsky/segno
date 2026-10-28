@@ -10,6 +10,7 @@ export 'src/boot_partition_read_only_exception.dart'
 export 'src/platform_update_backend.dart' show PlatformUpdateBackend;
 export 'src/unsupported_platform_backend.dart' show UnsupportedPlatformBackend;
 export 'src/update_channel.dart' show normalizeUpdateChannel;
+export 'src/update_installing_exception.dart' show UpdateInstallingException;
 export 'src/update_manifest.dart' show UpdateManifest;
 export 'src/update_package_refused.dart'
     show UpdatePackageRefusal, UpdatePackageRefused;

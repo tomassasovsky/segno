@@ -46,6 +46,13 @@ echo "100% installing done."
 exit 0
 STUB
     chmod +x "$work/bin/rauc"
+    # RAUC's D-Bus Operation (#1498): idle unless a test writes
+    # "$work/operation".
+    cat > "$work/bin/busctl" <<STUB
+#!/bin/sh
+printf 's "%s"\\n' "\$(cat "$work/operation" 2>/dev/null || echo idle)"
+STUB
+    chmod +x "$work/bin/busctl"
 
     cat > "$work/bin/curl" <<STUB
 #!/bin/sh

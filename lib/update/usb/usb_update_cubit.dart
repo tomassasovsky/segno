@@ -23,9 +23,10 @@ const int kUsbUpdateSpareBytes = 64 * 1024 * 1024;
 class UsbUpdateCubit extends Cubit<UsbUpdateState> {
   /// Creates a [UsbUpdateCubit]. [takeRunning] says whether a take is
   /// recording, overdubbing, waiting or counting in; [onlineBusy] whether an
-  /// online update is downloading; [onWorking] hears when a copy or an
-  /// install starts and ends, so the online flow and restart hold off; and
-  /// [onStaged] runs once a package is staged, even if this cubit has closed.
+  /// online update is downloading, or another install is still running;
+  /// [onWorking] hears when a copy or an install starts and ends, so the
+  /// online flow and restart hold off; and [onStaged] runs once a package is
+  /// staged, even if this cubit has closed.
   UsbUpdateCubit({
     required StorageRepository storage,
     required UpdateRepository updates,

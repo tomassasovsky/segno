@@ -106,6 +106,10 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # /usr/bin/segno) and the engine it dlopens. It reads the libinput calibration
 # matrix segno-touch-ctl persists.
 # curl/jq/ca-certificates: the OTA client (segno-ota-check). rauc: the installer.
+# systemd: busctl, which segno-update-ctl uses to ask RAUC whether it is
+# installing before a reboot or halt (#1498). It is the init system anyway,
+# but a missing busctl would make that check refuse every reset while RAUC
+# runs, so it is named.
 # parted + e2fsprogs-resize2fs: segno-data-grow (expand /data to fill the SD card).
 # coreutils: the app's pedal link configures the pedal UART with stty.
 # iw: segno-wifi-regdom. NOT wireless-regdb — packagegroup-base-wifi already
@@ -123,7 +127,7 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # (#976). rauc-rpi-backend also pulls it in, but a missing fdtget would read as
 # "not a trial boot" and silently disable the rollback reboot, so it is named.
 RDEPENDS:${PN} = "mesa alsa-lib libstdc++ dtc \
-                  curl jq ca-certificates rauc \
+                  curl jq ca-certificates rauc systemd \
                   parted e2fsprogs-resize2fs \
                   networkmanager-nmcli networkmanager-wifi \
                   ddcutil \

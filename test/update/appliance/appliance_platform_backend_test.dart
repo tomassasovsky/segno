@@ -85,6 +85,10 @@ class _FakeEnv implements ApplianceEnv {
 
   String? attempt;
   int clearAttemptCalls = 0;
+  bool installing = false;
+
+  @override
+  Future<bool> raucInstalling() async => installing;
 
   @override
   Future<String?> updateAttempt() async => attempt;
@@ -244,6 +248,16 @@ void main() {
 
       expect(env.clearAttemptCalls, 1);
       expect(env.attempt, isNull);
+    });
+  });
+
+  group('installInProgress', () {
+    test("reports RAUC's own state through the helper", () async {
+      final env = _FakeEnv()..installing = true;
+
+      expect(await backend(env).installInProgress(), isTrue);
+      env.installing = false;
+      expect(await backend(env).installInProgress(), isFalse);
     });
   });
 

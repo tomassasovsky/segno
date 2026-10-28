@@ -101,6 +101,9 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
   @override
   Future<void> clearInterrupted() => _env.clearUpdateAttempt();
 
+  @override
+  Future<bool> installInProgress() => _env.raucInstalling();
+
   Version _readVersion(String path) => _parse(_env.readTextSync(path));
 
   Version _parse(String? raw) {

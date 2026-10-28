@@ -47,6 +47,15 @@ class _FakeBackend implements PlatformUpdateBackend {
   @override
   Future<void> clearInterrupted() async => clearInterruptedCount++;
 
+  bool installing = false;
+  int installInProgressCount = 0;
+
+  @override
+  Future<bool> installInProgress() async {
+    installInProgressCount++;
+    return installing;
+  }
+
   @override
   Future<UpdateManifest?> fetchManifest() async {
     fetchCount++;
@@ -190,6 +199,23 @@ void main() {
 
       expect(await repo.recover(), const UpdateRecovery());
       expect(backend.recoverCount, 0);
+    });
+
+    test("installInProgress reports the backend's installer", () async {
+      final backend = _FakeBackend()..installing = true;
+      final repo = UpdateRepository(backend: backend);
+
+      expect(await repo.installInProgress(), isTrue);
+      backend.installing = false;
+      expect(await repo.installInProgress(), isFalse);
+    });
+
+    test('installInProgress never asks an unsupported backend', () async {
+      final backend = _FakeBackend(isSupported: false)..installing = true;
+      final repo = UpdateRepository(backend: backend);
+
+      expect(await repo.installInProgress(), isFalse);
+      expect(backend.installInProgressCount, 0);
     });
 
     test('clearInterrupted forwards to the backend', () async {

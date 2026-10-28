@@ -38,6 +38,12 @@ class UpdateRepository {
   /// Forgets an install that was cut off.
   Future<void> clearInterrupted() => _backend.clearInterrupted();
 
+  /// Whether the installer itself reports an install in progress; see
+  /// [PlatformUpdateBackend.installInProgress]. False where updates are not
+  /// supported.
+  Future<bool> installInProgress() =>
+      _backend.isSupported ? _backend.installInProgress() : Future.value(false);
+
   /// Read-only availability check. Returns the manifest only when it advertises
   /// a version with strictly greater semver precedence than both the running
   /// and any already-staged version; otherwise (up to date, already staged, or

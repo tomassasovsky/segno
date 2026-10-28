@@ -170,29 +170,32 @@ class SystemApplianceEnv implements ApplianceEnv {
   }
 
   @override
-  Future<void> reboot() async {
-    final result = await runProcess(helperPath, const ['reboot']);
-    if (result.exitCode != 0) {
-      throw ProcessException(
-        helperPath,
-        const ['reboot'],
-        '${result.stderr}',
-        result.exitCode,
-      );
-    }
+  Future<bool> raucInstalling() async {
+    final json = await _runJson(const ['install-state']);
+    return json?['installing'] == true;
   }
 
   @override
-  Future<void> powerOff() async {
-    final result = await runProcess(helperPath, const ['poweroff']);
-    if (result.exitCode != 0) {
-      throw ProcessException(
-        helperPath,
-        const ['poweroff'],
-        '${result.stderr}',
-        result.exitCode,
-      );
+  Future<void> reboot() => _runPowerVerb('reboot');
+
+  @override
+  Future<void> powerOff() => _runPowerVerb('poweroff');
+
+  /// Runs `reboot` or `poweroff`. They return only on a refusal or a
+  /// failure: an [UpdateInstallingException] when RAUC is installing, a
+  /// [ProcessException] otherwise.
+  Future<void> _runPowerVerb(String verb) async {
+    final result = await runProcess(helperPath, [verb]);
+    if (result.exitCode == 0) return;
+    if (result.exitCode == kUpdateInstallingExitCode) {
+      throw UpdateInstallingException('${result.stderr}'.trim());
     }
+    throw ProcessException(
+      helperPath,
+      [verb],
+      '${result.stderr}',
+      result.exitCode,
+    );
   }
 
   @override

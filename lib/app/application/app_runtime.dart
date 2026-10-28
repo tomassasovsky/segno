@@ -54,6 +54,7 @@ class AppRuntime {
     required BackingRepository backing,
     required Future<void> Function() powerOff,
     required Future<void> Function() reboot,
+    required Future<bool> Function() updateInstalling,
     required Future<void> Function() storageSettled,
     required GuardRegistry guards,
     InstrumentRepository? instruments,
@@ -113,6 +114,7 @@ class AppRuntime {
       pedalGoodbye: pedal.goodbye,
       powerOff: powerOff,
       reboot: reboot,
+      updateInstalling: updateInstalling,
     );
     looper = LooperBloc(
       repository: repository,

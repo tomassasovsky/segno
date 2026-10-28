@@ -78,6 +78,8 @@ class _FakeUpdateBackend implements PlatformUpdateBackend {
   @override
   Future<void> clearInterrupted() async {}
   @override
+  Future<bool> installInProgress() async => false;
+  @override
   Future<UpdateManifest?> fetchManifest() async => UpdateManifest(
     version: Version.parse('0.2.0'),
     bundle: 'b.raucb',

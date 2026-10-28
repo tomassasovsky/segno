@@ -32,6 +32,72 @@ void main() {
     });
   });
 
+  group('the helper refuses a reset while RAUC is installing', () {
+    for (final (verb, reset) in [
+      ('reboot', (SystemApplianceEnv env) => env.reboot()),
+      ('poweroff', (SystemApplianceEnv env) => env.powerOff()),
+    ]) {
+      test('$verb: exit 5 throws UpdateInstallingException', () async {
+        final env = SystemApplianceEnv(
+          helperPath: stub(
+            '#!/bin/sh\necho "RAUC is installing" >&2\nexit 5\n',
+          ),
+        );
+        await expectLater(
+          reset(env),
+          throwsA(
+            isA<UpdateInstallingException>().having(
+              (e) => e.detail,
+              'detail',
+              'RAUC is installing',
+            ),
+          ),
+        );
+      });
+
+      test('$verb: any other failure is a ProcessException', () async {
+        final env = SystemApplianceEnv(
+          helperPath: stub('#!/bin/sh\necho "no systemd" >&2\nexit 1\n'),
+        );
+        await expectLater(
+          reset(env),
+          throwsA(
+            isA<ProcessException>()
+                .having((e) => e.errorCode, 'errorCode', 1)
+                .having((e) => e.arguments, 'arguments', [verb]),
+          ),
+        );
+      });
+    }
+  });
+
+  group('raucInstalling', () {
+    test('runs the install-state verb and reads its answer', () async {
+      final argsFile = '${dir.path}/args.txt';
+      final env = SystemApplianceEnv(
+        helperPath: stub(
+          '#!/bin/sh\necho "\$@" > "$argsFile"\n'
+          'echo \'{"installing":true}\'\n',
+        ),
+      );
+      expect(await env.raucInstalling(), isTrue);
+      expect(File(argsFile).readAsStringSync().trim(), 'install-state');
+    });
+
+    test('is false when idle, on a failure or from an old helper', () async {
+      for (final body in [
+        'echo \'{"installing":false}\'',
+        'exit 1',
+        'echo "usage: segno-update-ctl"; exit 2',
+      ]) {
+        final env = SystemApplianceEnv(helperPath: stub('#!/bin/sh\n$body\n'));
+        expect(await env.raucInstalling(), isFalse, reason: body);
+      }
+      const missing = SystemApplianceEnv(helperPath: '/nonexistent/helper');
+      expect(await missing.raucInstalling(), isFalse);
+    });
+  });
+
   group('stage', () {
     test('runs the helper install verb with the version', () async {
       final argsFile = '${dir.path}/args.txt';
