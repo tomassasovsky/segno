@@ -46,12 +46,12 @@ class FxStompTextures {
   /// Decodes the tiles from the app bundle, once: the app starts it at launch,
   /// and a screenshot suite awaits it before drawing. A tile that fails to
   /// load is left out, and its finish draws plain.
-  Future<void> load() => _loading ??= _load(rootBundle);
+  Future<void> load() => _loading ??= _load();
 
-  Future<void> _load(AssetBundle bundle) async {
+  Future<void> _load() async {
     final loaded = await Future.wait([
       for (final MapEntry(key: name, value: asset) in assets.entries)
-        _decode(bundle, asset).then((image) => (name, image)),
+        _decode(asset).then((image) => (name, image)),
     ]);
     final tiles = {for (final (name, image) in loaded) name: ?image};
     // Nothing loaded is no change: the pedals keep their recordings.
@@ -60,9 +60,9 @@ class FxStompTextures {
 
   /// The tile at [asset], or `null` when it cannot be read: its finish
   /// draws plain for the session, and the failure is logged.
-  static Future<ui.Image?> _decode(AssetBundle bundle, String asset) async {
+  static Future<ui.Image?> _decode(String asset) async {
     try {
-      final data = await bundle.load(asset);
+      final data = await rootBundle.load(asset);
       return await decodeImageFromList(
         data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
       );

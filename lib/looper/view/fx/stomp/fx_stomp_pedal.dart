@@ -63,29 +63,30 @@ class FxStompPedal extends StatelessWidget {
           // blurred shadow stops at its edge rather than on the surface
           // around it.
           child: FittedBox(
-            clipBehavior: Clip.hardEdge,
-            child: SizedBox.fromSize(
-              size: kind.size,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  // The enclosure and labels on a layer of their own under a
-                  // live pedal's knobs, so a turning knob neither re-records
-                  // nor re-rasterizes them. A still pedal's knobs never
-                  // turn, so it keeps one layer.
-                  Positioned.fill(
-                    child: face.live ? RepaintBoundary(child: layer) : layer,
-                  ),
-                  Positioned.fill(
-                    child: CustomPaint(
-                      painter: _KnobsPainter(
-                        spec: spec,
-                        spots: spots,
-                        settings: [for (final knob in knobs) knob.setting],
+            child: ClipRect(
+              child: SizedBox.fromSize(
+                size: kind.size,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // The enclosure and labels on a layer of their own under a
+                    // live pedal's knobs, so a turning knob neither re-records
+                    // nor re-rasterizes them. A still pedal's knobs never
+                    // turn, so it keeps one layer.
+                    Positioned.fill(
+                      child: face.live ? RepaintBoundary(child: layer) : layer,
+                    ),
+                    Positioned.fill(
+                      child: CustomPaint(
+                        painter: _KnobsPainter(
+                          spec: spec,
+                          spots: spots,
+                          settings: [for (final knob in knobs) knob.setting],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -533,7 +534,7 @@ final class _StompPictures {
 
 /// What an enclosure picture is recorded for.
 typedef _EnclosureKey = ({
-  String spec,
+  FxStompSpec spec,
   FxStompLed led,
   int knobs,
   bool textured,
@@ -571,9 +572,9 @@ class _EnclosurePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final tiles = FxStompTextures.instance.images.value;
-    // By the look's printed name, which the look table keeps unique.
+    // By the look itself: every look is a const of the look table.
     final key = (
-      spec: spec.name,
+      spec: spec,
       led: led,
       knobs: _knobs,
       textured: tiles.isNotEmpty,

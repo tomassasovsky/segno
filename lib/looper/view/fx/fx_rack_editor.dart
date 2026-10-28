@@ -339,7 +339,10 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
     final params = built?.type.params ?? const <FxParamInfo>[];
     // A rack variant shows the controls its rack shows, under its names; any
     // other entry shows every parameter of its type.
-    final controls = built == null ? null : fxEntryControls(built);
+    // The pedal's controls, worked out once with its picture.
+    final controls = built == null
+        ? null
+        : art?.controls ?? fxEntryControls(built);
     final shown = controls?.params ?? const <int>[];
     return SizedBox(
       width: kFxPedalWidth,

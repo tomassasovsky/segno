@@ -330,6 +330,16 @@ List<ExpressionDestination> expressionDestinations(
   OwnedValueSnapshots owned = const OwnedValueSnapshots(),
 }) {
   final drafts = <String, _Draft>{};
+  // One picture per pedal, however many of its parameters are listed.
+  final arts = <Object, FxArt?>{};
+  FxArt? artOf(Object target) => arts.putIfAbsent(
+    switch (target) {
+      FxParamTarget(:final address, :final slotId) ||
+      FxSlotTarget(:final address, :final slotId) => (address, slotId),
+      _ => target,
+    },
+    () => expressionTargetArt(looper, target),
+  );
   _Draft draftFor(
     ({String id, ExpressionDestinationKind kind, int order}) place,
     String label,
@@ -354,7 +364,7 @@ List<ExpressionDestination> expressionDestinations(
           ExpressionControl(
             target: target,
             label: names.control,
-            art: expressionTargetArt(looper, target),
+            art: artOf(target),
             disabledReason: controlEditBlockLabel(
               l10n,
               availability.blockedBy(target),
@@ -373,7 +383,7 @@ List<ExpressionDestination> expressionDestinations(
         ExpressionActivation(
           target: target,
           label: expressionActivationName(l10n, looper, target),
-          art: expressionTargetArt(looper, target),
+          art: artOf(target),
         ),
       );
     }
