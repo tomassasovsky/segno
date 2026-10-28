@@ -22,9 +22,6 @@ class FxFamily {
   /// The family's presets, in name order.
   final List<FxPreset> presets;
 
-  /// The wide banner the library draws this family with.
-  String get stripAsset => 'assets/images/strip/$slug.png';
-
   /// The card illustration the family chooser draws. Ed's Rack's is the
   /// wide banner its card is drawn at.
   String get selectorAsset => 'assets/images/selector/$slug.png';

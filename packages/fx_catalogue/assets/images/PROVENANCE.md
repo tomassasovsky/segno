@@ -6,8 +6,8 @@ The owner approved the set the same day. The images replace the Looper X rig art
 
 `source/`, the review sheet and the approved pedal template are not in this
 repository: they are in tomassasovsky/segno-design, under
-`docs/design/own-art/`. The `assets/` crops below are the `strip/`,
-`selector/` and `footswitch/` folders here.
+`docs/design/own-art/`. Of the `assets/` crops below, the `selector/` and
+`footswitch/` folders here are the ones the app ships.
 
 `assets/` holds the crops used by the app, at twice the slot size:
 - strip: 582x458, from `flat-*`
@@ -63,15 +63,16 @@ The edsguitar pair was regenerated the same day with the guitar lying sideways, 
 
 ## What the app ships
 
-- `strip/`, `selector/` and `footswitch/` hold the crops above under the
-  slugs the Looper X art used, so `FxFamily.stripAsset`, `selectorAsset` and
-  `footswitchAsset` resolve as before.
+- `selector/` and `footswitch/` hold the crops above under the slugs the
+  Looper X art used, so `FxFamily.selectorAsset` and `footswitchAsset`
+  resolve as before. The app draws no strip, so the strip crops are not
+  shipped; they stay with the sources in segno-design.
 - `selector/edsguitar.png` is 1004x246, twice the 502x123 wide card the
   library gives Ed's Rack. It is the band of the sideways `flat-edsguitar`
   that holds the whole guitar (rows 240 to 780 of 1024), scaled to 246 high
   and widened to 1004 by extending each row's edge colour; the background is
-  a vertical gradient, so the extension has no seam. `strip/` and
-  `footswitch/edsguitar.png` are the regenerated sideways crops as they are.
+  a vertical gradient, so the extension has no seam.
+  `footswitch/edsguitar.png` is the regenerated sideways crop as it is.
 - `selector/my-presets.png` is our own art from 2026-10-01 and is not part of
   this set.
 - The new images are square-cornered. The widgets that draw the selector

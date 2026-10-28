@@ -100,7 +100,6 @@ void main() {
       // slug derived rather than mapped would draw the wrong rack.
       for (final family in catalogue.families) {
         for (final asset in [
-          family.stripAsset,
           family.selectorAsset,
           family.footswitchAsset,
         ]) {

@@ -94,17 +94,21 @@ const List<(String, String)> kFxStompFontFiles = [
   ('Pacifico', 'Pacifico-Regular.ttf'),
   ('Press Start 2P', 'PressStart2P-Regular.ttf'),
   ('Righteous', 'Righteous-Regular.ttf'),
-  ('Rubik Mono One', 'RubikMonoOne-Regular.ttf'),
   ('Rye', 'Rye-Regular.ttf'),
   ('Shrikhand', 'Shrikhand-Regular.ttf'),
   ('Space Mono', 'SpaceMono-Bold.ttf'),
 ];
 
-/// Registers the stomp pedals' display typefaces that are bundled, for a
-/// screenshot suite.
+/// Registers the stomp pedals' display typefaces for a screenshot suite.
+///
+/// Throws when one is missing rather than skipping it: a pedal printed in
+/// the test font's boxes is a golden that hides the gap.
 Future<void> loadFxStompFonts() async {
   for (final (family, file) in kFxStompFontFiles) {
     final path = 'assets/fonts/$file';
-    if (File(path).existsSync()) await loadScreenshotFont(family, [path]);
+    if (!File(path).existsSync()) {
+      throw StateError('The stomp typeface $family is not at $path');
+    }
+    await loadScreenshotFont(family, [path]);
   }
 }

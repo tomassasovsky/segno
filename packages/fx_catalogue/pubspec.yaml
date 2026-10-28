@@ -23,7 +23,6 @@ flutter:
   assets:
     - assets/manifest.json
     - assets/images/selector/
-    - assets/images/strip/
     - assets/images/footswitch/
     - assets/presets/Drum Rack/
     - assets/presets/Dub Rack/

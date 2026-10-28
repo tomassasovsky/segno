@@ -192,6 +192,10 @@ class FxStompSpec {
   final FxStompFaceKind face;
 
   /// The name printed on the pedal.
+  ///
+  /// The same in every locale, as a real pedal's name is printed on its
+  /// enclosure: it is the pedal's artwork, not a label of the interface
+  /// (owner, #1501).
   final String name;
 
   /// The enclosure colour.

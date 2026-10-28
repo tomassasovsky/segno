@@ -12,6 +12,19 @@ const List<(String, String)> bundledFontLicenses = [
   ('Arimo', 'assets/fonts/LICENSE-Arimo.txt'),
   ('Inter', 'assets/fonts/OFL-Inter.txt'),
   ('JetBrains Mono', 'assets/fonts/OFL-JetBrainsMono.txt'),
+  // The stomp pedals' display typefaces (#1501).
+  ('Audiowide', 'assets/fonts/OFL-Audiowide.txt'),
+  ('Bebas Neue', 'assets/fonts/OFL-BebasNeue.txt'),
+  ('Bungee', 'assets/fonts/OFL-Bungee.txt'),
+  ('Fascinate', 'assets/fonts/OFL-Fascinate.txt'),
+  ('Lobster', 'assets/fonts/OFL-Lobster.txt'),
+  ('Monoton', 'assets/fonts/OFL-Monoton.txt'),
+  ('Pacifico', 'assets/fonts/OFL-Pacifico.txt'),
+  ('Press Start 2P', 'assets/fonts/OFL-PressStart2P.txt'),
+  ('Righteous', 'assets/fonts/OFL-Righteous.txt'),
+  ('Rye', 'assets/fonts/OFL-Rye.txt'),
+  ('Shrikhand', 'assets/fonts/OFL-Shrikhand.txt'),
+  ('Space Mono', 'assets/fonts/OFL-SpaceMono.txt'),
 ];
 
 /// Adds the bundled fonts' licences to [LicenseRegistry], so System > About's

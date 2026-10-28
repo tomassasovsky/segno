@@ -97,6 +97,35 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  test('no two knob labels overlap, however long, on any face', () {
+    // The longest real controls, in the test font, whose glyphs are wider
+    // than the app's.
+    const long = [
+      'OCTAVE 1 LEVEL',
+      'GATE THRESHOLD',
+      'AMB-DUB MIX',
+      'ATTACK LENGTH',
+      'SCALE ROOT',
+      'OCTAVE 2 LEVEL',
+    ];
+    for (final kind in FxStompFaceKind.values) {
+      for (var count = 1; count <= kind.maxKnobs; count++) {
+        final rects = fxStompLabelBounds(kind, long.take(count).toList());
+        for (var a = 0; a < rects.length; a++) {
+          for (var b = a + 1; b < rects.length; b++) {
+            expect(
+              rects[a].overlaps(rects[b]),
+              isFalse,
+              reason:
+                  '${kind.name} with $count knobs: ${long[a]} and '
+                  '${long[b]}',
+            );
+          }
+        }
+      }
+    }
+  });
+
   testWidgets('the pedal is a picture to a screen reader', (tester) async {
     final semantics = tester.ensureSemantics();
     await pump(tester, face('Delay', 3));

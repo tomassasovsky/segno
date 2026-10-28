@@ -118,6 +118,18 @@ flutter:
     - assets/fonts/LICENSE-Arimo.txt
     - assets/fonts/OFL-Inter.txt
     - assets/fonts/OFL-JetBrainsMono.txt
+    - assets/fonts/OFL-Audiowide.txt
+    - assets/fonts/OFL-BebasNeue.txt
+    - assets/fonts/OFL-Bungee.txt
+    - assets/fonts/OFL-Fascinate.txt
+    - assets/fonts/OFL-Lobster.txt
+    - assets/fonts/OFL-Monoton.txt
+    - assets/fonts/OFL-Pacifico.txt
+    - assets/fonts/OFL-PressStart2P.txt
+    - assets/fonts/OFL-Righteous.txt
+    - assets/fonts/OFL-Rye.txt
+    - assets/fonts/OFL-Shrikhand.txt
+    - assets/fonts/OFL-SpaceMono.txt
   fonts:
     - family: Inter
       fonts:
@@ -138,3 +150,42 @@ flutter:
           weight: 500
         - asset: assets/fonts/JetBrainsMono-SemiBold.ttf
           weight: 600
+    # The stomp pedals' display typefaces (#1501), from google/fonts, each
+    # under the SIL Open Font Licence beside it.
+    - family: Audiowide
+      fonts:
+        - asset: assets/fonts/Audiowide-Regular.ttf
+    - family: Bebas Neue
+      fonts:
+        - asset: assets/fonts/BebasNeue-Regular.ttf
+    - family: Bungee
+      fonts:
+        - asset: assets/fonts/Bungee-Regular.ttf
+    - family: Fascinate
+      fonts:
+        - asset: assets/fonts/Fascinate-Regular.ttf
+    - family: Lobster
+      fonts:
+        - asset: assets/fonts/Lobster-Regular.ttf
+    - family: Monoton
+      fonts:
+        - asset: assets/fonts/Monoton-Regular.ttf
+    - family: Pacifico
+      fonts:
+        - asset: assets/fonts/Pacifico-Regular.ttf
+    - family: Press Start 2P
+      fonts:
+        - asset: assets/fonts/PressStart2P-Regular.ttf
+    - family: Righteous
+      fonts:
+        - asset: assets/fonts/Righteous-Regular.ttf
+    - family: Rye
+      fonts:
+        - asset: assets/fonts/Rye-Regular.ttf
+    - family: Shrikhand
+      fonts:
+        - asset: assets/fonts/Shrikhand-Regular.ttf
+    - family: Space Mono
+      fonts:
+        - asset: assets/fonts/SpaceMono-Bold.ttf
+          weight: 700

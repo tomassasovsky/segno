@@ -175,47 +175,9 @@ class _LabelsPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (final (i, label) in labels.indexed) {
-      final spot = spots[i];
-      final painter = TextPainter(
-        text: TextSpan(
-          text: label,
-          style: TextStyle(
-            fontFamily: SurfaceTheme.displayFont,
-            fontWeight: FontWeight.w700,
-            fontSize: spot.labelSize,
-            letterSpacing: 1.5,
-            color: colour.withValues(alpha: .9),
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-        maxLines: 1,
-      )..layout();
-      // Shrunk to the space beside it rather than run into the next label.
-      final scale = math.min(1, _room(spot) / painter.width).toDouble();
-      final ascent = painter.computeDistanceToActualBaseline(
-        TextBaseline.alphabetic,
-      );
-      canvas
-        ..save()
-        ..translate(spot.centre.dx, spot.labelBaseline)
-        ..scale(scale)
-        ..translate(-painter.width / 2, -ascent);
-      painter.paint(canvas, Offset.zero);
-      canvas.restore();
-      painter.dispose();
+    for (final label in _layOutLabels(labels, spots, colour)) {
+      label.paint(canvas);
     }
-  }
-
-  /// The width a label at [spot] has: the gap to its nearest neighbour on
-  /// the same row.
-  double _room(_KnobSpot spot) {
-    var room = 200.0;
-    for (final other in spots) {
-      if (identical(other, spot) || other.centre.dy != spot.centre.dy) continue;
-      room = math.min(room, (other.centre.dx - spot.centre.dx).abs() - 8);
-    }
-    return room;
   }
 
   @override
@@ -1084,4 +1046,133 @@ class _Enclosure {
     _led(const Offset(372, 700));
     _domeSwitch(const Offset(188, 686), 34, 29, 2);
   }
+}
+
+/// One knob label, laid out: on one line, or on two when it does not fit on
+/// one, and scaled to the width its knob's column has.
+class _LabelLayout {
+  _LabelLayout(this.lines, this.spot, this.scale);
+
+  final List<TextPainter> lines;
+  final _KnobSpot spot;
+  final double scale;
+
+  double get _lineHeight => spot.labelSize * 1.15;
+
+  /// Where the label is drawn, in the face's drawing space.
+  Rect get bounds {
+    final width = lines.map((l) => l.width).reduce(math.max) * scale;
+    final ascent = lines.first.computeDistanceToActualBaseline(
+      TextBaseline.alphabetic,
+    );
+    final top = spot.labelBaseline - ascent * scale;
+    final bottom =
+        top + ((lines.length - 1) * _lineHeight + lines.last.height) * scale;
+    return Rect.fromLTRB(
+      spot.centre.dx - width / 2,
+      top,
+      spot.centre.dx + width / 2,
+      bottom,
+    );
+  }
+
+  void paint(Canvas canvas) {
+    for (final (n, line) in lines.indexed) {
+      final ascent = line.computeDistanceToActualBaseline(
+        TextBaseline.alphabetic,
+      );
+      canvas
+        ..save()
+        ..translate(
+          spot.centre.dx,
+          spot.labelBaseline + n * _lineHeight * scale,
+        )
+        ..scale(scale)
+        ..translate(-line.width / 2, -ascent);
+      line.paint(canvas, Offset.zero);
+      canvas.restore();
+    }
+  }
+}
+
+/// Lays out [labels] under the knobs at [spots], each in the width its own
+/// column has, so no two ever overlap.
+List<_LabelLayout> _layOutLabels(
+  List<String> labels,
+  List<_KnobSpot> spots,
+  Color colour,
+) {
+  TextPainter line(String text, _KnobSpot spot) => TextPainter(
+    text: TextSpan(
+      text: text,
+      style: TextStyle(
+        fontFamily: SurfaceTheme.displayFont,
+        fontWeight: FontWeight.w700,
+        fontSize: spot.labelSize,
+        letterSpacing: 1.5,
+        height: 1,
+        color: colour.withValues(alpha: .9),
+      ),
+    ),
+    textDirection: TextDirection.ltr,
+    maxLines: 1,
+  )..layout();
+
+  return [
+    for (final (i, label) in labels.indexed)
+      () {
+        final spot = spots[i];
+        final room = _labelRoom(spot, spots);
+        final one = line(label, spot);
+        final oneScale = math.min(1, room / one.width).toDouble();
+        final words = label.split(' ');
+        // A module's knobs sit a scale's width apart, with no room for a
+        // second line: its labels only shrink.
+        // A label that fits stays on one line; one that does not goes on
+        // two when that lets it print larger, so a pedal's labels read at
+        // one size where they can.
+        if (oneScale >= 1 || words.length < 2 || spot.labelSize > 14) {
+          return _LabelLayout([one], spot, oneScale);
+        }
+        // The split that leaves the longer line shortest.
+        List<TextPainter>? best;
+        var bestWidth = double.infinity;
+        for (var k = 1; k < words.length; k++) {
+          final pair = [
+            line(words.take(k).join(' '), spot),
+            line(words.skip(k).join(' '), spot),
+          ];
+          final width = math.max(pair[0].width, pair[1].width);
+          if (width < bestWidth) {
+            best = pair;
+            bestWidth = width;
+          }
+        }
+        final twoScale = math.min(1, room / bestWidth).toDouble();
+        if (twoScale <= oneScale) return _LabelLayout([one], spot, oneScale);
+        return _LabelLayout(best!, spot, twoScale);
+      }(),
+  ];
+}
+
+/// The width a label at [spot] has: the gap to its nearest neighbour on the
+/// same row, less a margin.
+double _labelRoom(_KnobSpot spot, List<_KnobSpot> spots) {
+  var room = 200.0;
+  for (final other in spots) {
+    if (identical(other, spot) || other.centre.dy != spot.centre.dy) continue;
+    room = math.min(room, (other.centre.dx - spot.centre.dx).abs() - 8);
+  }
+  return room;
+}
+
+/// Where the labels of a [kind] face carrying [labels] are drawn, for a
+/// test to check that none overlaps another.
+@visibleForTesting
+List<Rect> fxStompLabelBounds(FxStompFaceKind kind, List<String> labels) {
+  final spots = _KnobSpot.layout(kind, labels.length);
+  return [
+    for (final label in _layOutLabels(labels, spots, kFxStompDarkInk))
+      label.bounds,
+  ];
 }

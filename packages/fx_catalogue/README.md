@@ -24,7 +24,7 @@ Future<Widget?> guitarRackBanner() async {
     final modules = fxPresetModules(preset).map((m) => m.name);
     print('${preset.name}: ${modules.join(', ')}');
   }
-  return Image.asset(family.stripAsset, package: FxCatalogueLoader.package);
+  return Image.asset(family.selectorAsset, package: FxCatalogueLoader.package);
 }
 ```
 
@@ -38,7 +38,7 @@ Future<Widget?> guitarRackBanner() async {
 - `kFxModules` is a hand-written reading of the presets, because a preset is
   a flat parameter map that does not name its pedals. Tests check it against
   the bundled data.
-- Image paths such as `FxFamily.stripAsset` are relative to this package;
+- Image paths such as `FxFamily.selectorAsset` are relative to this package;
   pass `package: FxCatalogueLoader.package` when drawing them. The images are
   our own; `assets/images/PROVENANCE.md` says how they were made.
 - Pedals have no image: the app draws each one in code.
