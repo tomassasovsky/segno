@@ -82,14 +82,6 @@ void main() {
     });
   }
 
-  testWidgets('a face never draws more knobs than it holds', (tester) async {
-    await pump(tester, face('Delay', 6));
-    expect(knobsOf(tester), 4);
-
-    await pump(tester, face('Whammy', 2));
-    expect(knobsOf(tester), 0);
-  });
-
   testWidgets('a bypassed pedal still draws', (tester) async {
     await pump(tester, face('Delay', 3, lit: false));
 
@@ -150,4 +142,4 @@ void main() {
 
 /// How many knobs the pedal draws.
 int knobsOf(WidgetTester tester) =>
-    tester.widget<FxStompPedal>(find.byType(FxStompPedal)).drawnKnobs.length;
+    tester.widget<FxStompPedal>(find.byType(FxStompPedal)).face.knobs.length;

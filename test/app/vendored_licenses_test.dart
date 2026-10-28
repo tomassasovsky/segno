@@ -124,6 +124,15 @@ void main() {
         // The notice the licence asks every copy to carry: its copyright
         // line, which names the authors in each font's own words.
         expect(text, contains('Copyright'), reason: font);
+        // Its own notice, not another font's copied over: no two bundled
+        // typefaces carry the same licence text.
+        expect(
+          bundledFontLicenses
+              .where((other) => other.$1 != font)
+              .map((other) => File(other.$2).readAsStringSync()),
+          isNot(contains(text)),
+          reason: font,
+        );
         expect(
           text,
           contains(

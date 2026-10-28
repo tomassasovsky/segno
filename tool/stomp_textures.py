@@ -56,7 +56,10 @@ def hammer(size):
     # A bumpy surface lit from the top left (azimuth 235, elevation 55), as
     # the design's diffuse lighting; white where the dents fall in shadow.
     h = band_noise(size, .03, .03, 3, 5) * 2.2 * 8
-    gy, gx = np.gradient(h)
+    # Central differences that wrap, so the shading is as seamless as the
+    # height map.
+    gx = (np.roll(h, -1, 1) - np.roll(h, 1, 1)) / 2
+    gy = (np.roll(h, -1, 0) - np.roll(h, 1, 0)) / 2
     az, el = np.radians(235), np.radians(55)
     light = np.array([np.cos(az) * np.cos(el), np.sin(az) * np.cos(el), np.sin(el)])
     n = np.stack([-gx, -gy, np.ones_like(h)])

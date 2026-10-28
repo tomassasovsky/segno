@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart';
+import 'package:segno/logging/app_log.dart';
 
 /// The tiles the textured pedal finishes, and the grain over every pedal,
 /// are painted with, decoded once.
@@ -57,19 +59,15 @@ class FxStompTextures {
   }
 
   /// The tile at [asset], or `null` when it cannot be read: its finish
-  /// draws plain.
+  /// draws plain, and the failure is logged.
   static Future<ui.Image?> _decode(AssetBundle bundle, String asset) async {
     try {
       final data = await bundle.load(asset);
-      final codec = await ui.instantiateImageCodec(
+      return await decodeImageFromList(
         data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
       );
-      try {
-        return (await codec.getNextFrame()).image;
-      } finally {
-        codec.dispose();
-      }
-    } on Object catch (_) {
+    } on Object catch (error) {
+      AppLog.error('stomp pedal tile $asset did not load: $error');
       return null;
     }
   }

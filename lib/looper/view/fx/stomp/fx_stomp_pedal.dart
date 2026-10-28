@@ -23,15 +23,11 @@ class FxStompPedal extends StatelessWidget {
   /// What the pedal shows.
   final FxStompFace face;
 
-  /// The knobs the pedal draws: as many of [face]'s as its face holds.
-  List<FxStompKnob> get drawnKnobs =>
-      face.knobs.take(face.spec.face.maxKnobs).toList();
-
   @override
   Widget build(BuildContext context) {
     final spec = face.spec;
     final kind = spec.face;
-    final knobs = drawnKnobs;
+    final knobs = face.knobs;
     final spots = _KnobSpot.layout(kind, knobs.length);
     final textures = FxStompTextures.instance;
     return RepaintBoundary(
@@ -197,7 +193,8 @@ class _LabelsPainter extends CustomPainter {
     final key = (
       labels: labels.join('\n'),
       spots: [
-        for (final spot in spots) (spot.centre, spot.labelSize, spot.wraps),
+        for (final spot in spots)
+          (spot.centre, spot.labelBaseline, spot.labelSize, spot.wraps),
       ].join(),
       colour: colour,
     );
@@ -223,6 +220,10 @@ class _LabelsPainter extends CustomPainter {
       if (oldDelegate.labels[i] != labels[i]) return true;
       if (oldDelegate.spots[i].centre != spots[i].centre) return true;
       if (oldDelegate.spots[i].labelSize != spots[i].labelSize) return true;
+      if (oldDelegate.spots[i].labelBaseline != spots[i].labelBaseline) {
+        return true;
+      }
+      if (oldDelegate.spots[i].wraps != spots[i].wraps) return true;
     }
     return false;
   }
