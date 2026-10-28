@@ -7686,9 +7686,9 @@
     "@powerUpdateTitle": {
         "description": "Power dialog title while an update downloads or installs, online or from a USB drive (#1494). The only action is Keep playing."
     },
-    "powerUpdateBody": "An update is still being downloaded or installed. Segno can't restart or power off until it has finished. Press the power button again later: once it opens Power options, the update has finished.",
+    "powerUpdateBody": "An update is still being downloaded or installed. Segno cannot restart or power off until it finishes. To check, press the power button again later: when Power options open, it has finished. If it succeeded, the Updates page in Settings says Ready to install.",
     "@powerUpdateBody": {
-        "description": "Power refuse body for an update in flight, online or from a USB drive: a restart mid-install would leave the new system half written (#1494). Says what is happening, that restart and power off are blocked until it ends, and how to tell it has ended: the power button opens Power options again. 'Power options' is powerOptionsTitle; keep them in step. It does not point at the Updates page, which shows neither a USB install's progress nor its failure once the player has left the page."
+        "description": "Power refuse body for an update in flight, online or from a USB drive: a restart mid-install would leave the new system half written (#1494). Says what is happening, that restart and power off are blocked until it ends, and how to tell it has ended: the power button opens Power options again, whether the update succeeded or failed. Only a success shows Ready to install on the Updates page, which shows neither a USB install's progress nor its failure once the player has left the page. 'Power options', 'Updates', 'Settings' and 'Ready to install' are powerOptionsTitle, settingsUpdatesTitle, stageSettings and updatesPanelReady; keep them in step."
     },
     "storageEjectStuck": "Still ejecting. If it does not finish, unplug the drive.",
     "@storageEjectStuck": {

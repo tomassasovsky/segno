@@ -119,10 +119,10 @@ void main() {
       expect(find.text('Wait for the update'), findsOneWidget);
       expect(
         find.text(
-          'An update is still being downloaded or installed. Segno '
-          "can't restart or power off until it has finished. Press the "
-          'power button again later: once it opens Power options, the '
-          'update has finished.',
+          'An update is still being downloaded or installed. Segno cannot '
+          'restart or power off until it finishes. To check, press the power '
+          'button again later: when Power options open, it has finished. If '
+          'it succeeded, the Updates page in Settings says Ready to install.',
         ),
         findsOneWidget,
       );
