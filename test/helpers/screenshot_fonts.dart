@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:segno/looper/view/fx/stomp/fx_stomp_spec.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_textures.dart';
 
 /// The Flutter SDK's Material fonts (Roboto and the Material icons), which
@@ -83,32 +84,38 @@ String packageAssetPath(String package, String asset) {
   throw StateError('$package is not in the package config');
 }
 
-/// The display typefaces the stomp pedals print their names in, by family,
-/// and the file each is bundled as under `assets/fonts/`.
-const List<(String, String)> kFxStompFontFiles = [
-  ('Audiowide', 'Audiowide-Regular.ttf'),
-  ('Bebas Neue', 'BebasNeue-Regular.ttf'),
-  ('Bungee', 'Bungee-Regular.ttf'),
-  ('Fascinate', 'Fascinate-Regular.ttf'),
-  ('Lobster', 'Lobster-Regular.ttf'),
-  ('Monoton', 'Monoton-Regular.ttf'),
-  ('Pacifico', 'Pacifico-Regular.ttf'),
-  ('Press Start 2P', 'PressStart2P-Regular.ttf'),
-  ('Righteous', 'Righteous-Regular.ttf'),
-  ('Rye', 'Rye-Regular.ttf'),
-  ('Shrikhand', 'Shrikhand-Regular.ttf'),
-  ('Space Mono', 'SpaceMono-Bold.ttf'),
-];
+/// The file each display typeface is bundled as under `assets/fonts/`, by
+/// family.
+const Map<String, String> kFxStompFontFiles = {
+  'Audiowide': 'Audiowide-Regular.ttf',
+  'Bebas Neue': 'BebasNeue-Regular.ttf',
+  'Bungee': 'Bungee-Regular.ttf',
+  'Fascinate': 'Fascinate-Regular.ttf',
+  'Lobster': 'Lobster-Regular.ttf',
+  'Monoton': 'Monoton-Regular.ttf',
+  'Pacifico': 'Pacifico-Regular.ttf',
+  'Press Start 2P': 'PressStart2P-Regular.ttf',
+  'Righteous': 'Righteous-Regular.ttf',
+  'Rubik Mono One': 'RubikMonoOne-Regular.ttf',
+  'Rye': 'Rye-Regular.ttf',
+  'Shrikhand': 'Shrikhand-Regular.ttf',
+  'Space Mono': 'SpaceMono-Bold.ttf',
+};
 
-/// Registers the stomp pedals' display typefaces for a screenshot suite.
+/// Registers every typeface a stomp pedal's look names, for a screenshot
+/// suite: the set is read from the looks themselves, not kept by hand.
 ///
-/// Throws when one is missing rather than skipping it: a pedal printed in
+/// Throws when one has no file rather than skipping it: a pedal printed in
 /// the test font's boxes is a golden that hides the gap.
 Future<void> loadFxStompFonts() async {
-  for (final (family, file) in kFxStompFontFiles) {
+  final families = {
+    for (final spec in kFxStompSpecs.values) spec.font,
+  }..remove('Inter');
+  for (final family in families) {
+    final file = kFxStompFontFiles[family];
     final path = 'assets/fonts/$file';
-    if (!File(path).existsSync()) {
-      throw StateError('The stomp typeface $family is not at $path');
+    if (file == null || !File(path).existsSync()) {
+      throw StateError('The stomp typeface $family is not bundled');
     }
     await loadScreenshotFont(family, [path]);
   }

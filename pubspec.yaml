@@ -127,6 +127,7 @@ flutter:
     - assets/fonts/OFL-Pacifico.txt
     - assets/fonts/OFL-PressStart2P.txt
     - assets/fonts/OFL-Righteous.txt
+    - assets/fonts/OFL-RubikMonoOne.txt
     - assets/fonts/OFL-Rye.txt
     - assets/fonts/OFL-Shrikhand.txt
     - assets/fonts/OFL-SpaceMono.txt
@@ -179,6 +180,9 @@ flutter:
     - family: Righteous
       fonts:
         - asset: assets/fonts/Righteous-Regular.ttf
+    - family: Rubik Mono One
+      fonts:
+        - asset: assets/fonts/RubikMonoOne-Regular.ttf
     - family: Rye
       fonts:
         - asset: assets/fonts/Rye-Regular.ttf

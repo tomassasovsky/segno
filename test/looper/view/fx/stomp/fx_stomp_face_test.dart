@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
@@ -38,6 +40,17 @@ void main() {
       kFxStompSpecs.keys.toSet(),
       kFxModules.map((m) => m.name).toSet(),
     );
+  });
+
+  test('every typeface a look names is bundled with the app', () {
+    final pubspec = File('pubspec.yaml').readAsStringSync();
+    final families = RegExp(
+      r'^    - family: (.+)$',
+      multiLine: true,
+    ).allMatches(pubspec).map((m) => m.group(1)!.trim()).toSet();
+    for (final MapEntry(key: module, value: spec) in kFxStompSpecs.entries) {
+      expect(families, contains(spec.font), reason: module);
+    }
   });
 
   test('names and labels print dark on a light body, light on a dark one, '

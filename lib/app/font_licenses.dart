@@ -22,6 +22,7 @@ const List<(String, String)> bundledFontLicenses = [
   ('Pacifico', 'assets/fonts/OFL-Pacifico.txt'),
   ('Press Start 2P', 'assets/fonts/OFL-PressStart2P.txt'),
   ('Righteous', 'assets/fonts/OFL-Righteous.txt'),
+  ('Rubik Mono One', 'assets/fonts/OFL-RubikMonoOne.txt'),
   ('Rye', 'assets/fonts/OFL-Rye.txt'),
   ('Shrikhand', 'assets/fonts/OFL-Shrikhand.txt'),
   ('Space Mono', 'assets/fonts/OFL-SpaceMono.txt'),
