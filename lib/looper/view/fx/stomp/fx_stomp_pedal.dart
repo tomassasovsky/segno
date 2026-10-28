@@ -46,39 +46,74 @@ class FxStompPedal extends StatelessWidget {
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  // The enclosure and labels on a layer of their own, so a
-                  // turning knob neither re-records nor re-rasterizes them.
+                  // The enclosure and labels on a layer of their own under a
+                  // live pedal's knobs, so a turning knob neither re-records
+                  // nor re-rasterizes them. A still pedal's knobs never
+                  // turn, so it keeps one layer.
                   Positioned.fill(
-                    child: RepaintBoundary(
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Positioned.fill(
-                            child: CustomPaint(
-                              isComplex: true,
-                              painter: _EnclosurePainter(
-                                spec: spec,
-                                led: face.led,
-                                knobs: knobs.length,
-                                textures: textures.images,
+                    child: face.led == FxStompLed.still
+                        ? Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              Positioned.fill(
+                                child: CustomPaint(
+                                  isComplex: true,
+                                  painter: _EnclosurePainter(
+                                    spec: spec,
+                                    led: face.led,
+                                    knobs: knobs.length,
+                                    textures: textures.images,
+                                  ),
+                                ),
                               ),
+                              Positioned.fill(
+                                child: CustomPaint(
+                                  isComplex: true,
+                                  painter: _LabelsPainter(
+                                    labels: [
+                                      for (final knob in knobs) knob.label,
+                                    ],
+                                    spots: spots,
+                                    colour: kind == FxStompFaceKind.window
+                                        ? spec.panelInk
+                                        : spec.bodyInk,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        : RepaintBoundary(
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Positioned.fill(
+                                  child: CustomPaint(
+                                    isComplex: true,
+                                    painter: _EnclosurePainter(
+                                      spec: spec,
+                                      led: face.led,
+                                      knobs: knobs.length,
+                                      textures: textures.images,
+                                    ),
+                                  ),
+                                ),
+                                Positioned.fill(
+                                  child: CustomPaint(
+                                    isComplex: true,
+                                    painter: _LabelsPainter(
+                                      labels: [
+                                        for (final knob in knobs) knob.label,
+                                      ],
+                                      spots: spots,
+                                      colour: kind == FxStompFaceKind.window
+                                          ? spec.panelInk
+                                          : spec.bodyInk,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          Positioned.fill(
-                            child: CustomPaint(
-                              isComplex: true,
-                              painter: _LabelsPainter(
-                                labels: [for (final knob in knobs) knob.label],
-                                spots: spots,
-                                colour: kind == FxStompFaceKind.window
-                                    ? spec.panelInk
-                                    : spec.bodyInk,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   ),
                   Positioned.fill(
                     child: CustomPaint(
@@ -547,14 +582,15 @@ class _EnclosurePainter extends CustomPainter {
     required this.led,
     required this.knobs,
     required this.textures,
-  }) : super(
-         repaint: Listenable.merge([
-           textures,
-           // A typeface registered after the first frame: the cache is
-           // dropped ([_StompPictures]) and the pedal draws its name again.
-           PaintingBinding.instance.systemFonts,
-         ]),
-       );
+  }) : super(repaint: _repaint);
+
+  /// What a recorded enclosure is dropped for: the tiles arriving, or a
+  /// typeface registered after the first frame ([_StompPictures]). One for
+  /// every pedal, so a rebuild does not resubscribe.
+  static final Listenable _repaint = Listenable.merge([
+    FxStompTextures.instance.images,
+    PaintingBinding.instance.systemFonts,
+  ]);
 
   final FxStompSpec spec;
   final FxStompLed led;
@@ -908,6 +944,12 @@ class _Enclosure {
       ..translate(x, y)
       ..rotate(turn * math.pi / 180)
       ..translate(-x, -y);
+    final printShadow = Shadow(
+      offset: const Offset(0, 1.5),
+      // Sigma 0.6, the design's stdDeviation.
+      blurRadius: .17,
+      color: Colors.black.withValues(alpha: .35),
+    );
     final outline = spec.outline;
     if (outline != null) {
       fxStompPaintText(
@@ -921,6 +963,8 @@ class _Enclosure {
             ..style = PaintingStyle.stroke
             ..strokeWidth = 8
             ..strokeJoin = StrokeJoin.round,
+          // The design's print shadow falls under the outline too.
+          shadows: [printShadow],
         ),
       );
     }
@@ -931,14 +975,7 @@ class _Enclosure {
       maxWidth: room,
       style.copyWith(
         color: ink,
-        shadows: [
-          Shadow(
-            offset: const Offset(0, 1.5),
-            // Sigma 0.6, the design's stdDeviation.
-            blurRadius: .17,
-            color: Colors.black.withValues(alpha: .35),
-          ),
-        ],
+        shadows: [printShadow],
       ),
     );
     canvas.restore();

@@ -55,6 +55,8 @@ class FxStompTextures {
     images.value = Map.unmodifiable({
       for (final (name, image) in loaded) name: ?image,
     });
+    // A tile that failed is tried again on the next load.
+    if (loaded.any((tile) => tile.$2 == null)) _loading = null;
   }
 
   /// The tile at [asset], or `null` when it cannot be read: its finish

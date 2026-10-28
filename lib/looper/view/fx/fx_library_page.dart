@@ -299,13 +299,14 @@ class _LibraryCard extends StatelessWidget {
                   Expanded(
                     child: asset == null
                         ? const SizedBox.shrink()
-                        : Center(
+                        // Scaled to fit the slot either way, and rounded at
+                        // the size it is drawn.
+                        : FittedBox(
                             child: ClipRRect(
                               clipper: const _ArtCorners(),
                               child: Image.asset(
                                 asset!,
                                 package: FxCatalogueLoader.package,
-                                fit: BoxFit.contain,
                               ),
                             ),
                           ),
