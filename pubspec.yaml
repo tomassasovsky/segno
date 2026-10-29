@@ -61,7 +61,7 @@ dependencies:
     path: packages/settings_repository
   storage_repository:
     path: packages/storage_repository
-  toastification: ^3.2.0
+  toastification: ^3.2.2
   touch_calibration_client:
     path: packages/touch_calibration_client
   update_repository:
