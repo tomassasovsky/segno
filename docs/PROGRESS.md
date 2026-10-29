@@ -67,7 +67,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1228 | MIDI clock | plan | merge-gate | `claude/midi-clock-1228-*` |
 | #1270 | Device and appliance pages (Parts 6, 7, 9, 11, 12 shipped; plan approved 2026-10-26 and refreshed; Q5 answered: refuse an Apply over the effects budget; P1, P2, P3a, P3b, P4 and P5 merged; P8 update from USB in review; all parts built; on-device checks listed on the issue) | build | merge-gate | `claude/device-pages-*1270*` |
 | #1342 | Ring carrier firmware updates from the console | in-review | blocked-verify | `claude/ring-update-1342` |
-| #1513 | Ed's setup: a one-step loop template in the New loop sheet (plan; owner questions Q1 to Q4) | plan | plan-gate | `claude/eds-setup-1513` |
+| #1513 | Ed's setup: a one-step loop template in the New loop sheet (plan; owner questions Q1 to Q5) | plan | plan-gate | `claude/eds-setup-1513` |
 | #1437 | Recover from and record a freeze (watchdog, pstore, journal sync, lockup policy) | in-review | auto | `claude/appliance-freeze-recovery-1437` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 

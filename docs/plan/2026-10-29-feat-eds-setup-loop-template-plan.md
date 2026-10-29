@@ -138,53 +138,61 @@ chosen. There is nothing to ask before overwriting inside a session, because
 no saved session is changed. The one change outside the session is the
 track names (Q3).
 
-**D3. All or nothing.** The template is resolved and checked in two places,
-both before anything changes:
+**D3. All or nothing.** The template is resolved in the app layer and checked
+twice, the last time on the exact chains that will be applied:
 
-- **The sheet.** Choosing Ed's setup loads the catalogue
-  (`segnoFxCatalogue`, lazy and async). While it loads, the summary line
-  reads "Loading the Ed's Rack sounds…" and Start new loop is disabled. When
-  a preset is missing or the template does not fit, the line says why and
-  Start stays disabled. Empty tracks never waits for the catalogue.
-- **`newLoop` itself**, as its first step, before it ends a take or saves the
-  outgoing session, checks again against the live rig, because the chains
-  can change between the sheet and the tap. A refusal there is a new
-  `SessionError` (`templateDoesNotFit`) and nothing else happens: no take
-  ends, nothing is saved, no loop starts.
+- **The sheet.** Choosing Ed's setup reads the four `.fxpreset` assets
+  directly (`FxPreset.tryParse` on `FxCatalogueLoader.assetKey(...)`), not the
+  whole 6 MB catalogue. Until they are read, the summary line says the sounds
+  are loading and Start new loop is disabled. When a preset is missing or the
+  template does not fit, the line says why and Start stays disabled, and
+  nothing changes. Empty tracks never waits for them.
+- **`newLoop`, on the applied rig.** Inside the existing exclusive section,
+  after `_endCaptures` (which can copy an input chain onto a lane of tracks 5
+  to 8) and after the live chains are captured, `newLoop` checks the rig it is
+  about to apply, then applies it. When that check refuses, no new loop
+  starts and the refusal is a new `SessionError` (`templateDoesNotFit`). By
+  then the take in progress has ended and the outgoing session has been
+  saved, as for any New loop: both are safe and lose nothing, and the sheet's
+  check makes this case rare (the rig changed after the sheet checked).
 
-The budget rule is the one every effects edit uses (`FxCubit._overBudget`):
-refuse only when the template's rig costs more than the live rig and more
-than the budget at the open rate. A rig already over budget that the template
-makes lighter is not refused, as Empty tracks is not. The repository gains
-one method beside `fxRoomAt` that prices a proposed set of chains, so the
-rule is not re-derived in the session layer.
+The budget rule is the one every effects edit uses (`FxCubit._overBudget`),
+with the repository's existing `fxCostOf` and `fxRoomNs` at the running rate:
+the growth is the cost of the four racks less the cost of the track and lane
+chains of channels 0 to 3 they replace, and the template is refused only when
+that growth is positive and larger than `fxRoomNs`. A rig already over budget
+that the template makes lighter is not refused, as Empty tracks is not.
 
 The rack chains go into the rig New loop applies (one apply, one save), not as
 edits after it, so a failed apply leaves no half-built loop. The names are
-written inside the same `newLoop` run, after the apply (including when the
-loop started but its first save failed, `newLoopNotSaved`), through a port
-the app wires to `TracksCubit` (as `SessionCubit` already takes ports for
-Fade and the backing player). A name write that fails is a new
-`SessionError` (`trackNamesNotSaved`) shown like `newLoopNotSaved`; it does
-not undo the loop. The sheet therefore needs no result back from `newLoop`.
+written in the same `newLoop` run, right after the apply and before the first
+save, through a port the app wires to `TracksCubit` (as `SessionCubit`
+already takes ports for Fade and the backing player). A failed name write
+does not undo the loop and is not a refusal: it rides the outcome as a
+notice, the way a session conversion notice does, so it never hides the
+`newLoop` outcome, the refreshed session list, or a later
+`newLoopNotSaved`. The sheet needs no result back from `newLoop`.
 
 **D4. One built-in template, as data.** A const list of four entries
-(channel, name, preset name) in the app, read by the sheet and by
-`SessionCubit.newLoop`. No template file format, no "save as template", no
-template list. Users already have templates in the form the Looper X and the
+(channel, name, preset name) in the app layer. The sheet resolves it (reads
+the presets and builds the four chains) and hands `SessionCubit.newLoop` the
+resolved chains and names; the session layer never sees the catalogue. No
+template file format, no "save as template", no template list. Users already have templates in the form the Looper X and the
 RC-600 use: a saved session in the Library, from which New loop keeps the
 effects. If a second built-in template is ever wanted, the pick-one gains a
 value; nothing here is built for it in advance.
 
 **D5. The racks are built the way Add effects builds them.** The rack-building
-branch of `FxCubit` (`fx_cubit.dart:672-688`: a fresh `FxRack` id, the
+branch of `FxCubit` (`fx_cubit.dart:673-688`: a fresh `FxRack` id, the
 preset's name, art `kFxFamilySlugs[family]`, the entries of `fxRackEntries`
 with the destination's placement) moves into one pure function that both
-`FxCubit` and the template call, so a template rack cannot differ from a rack
-added by hand. Placement is Post, the recorded-track default. Slot ids are
-fresh (`withFreshSlotIds`). Under Q1 (a) the function takes the modules to
-keep and drops the others **before** the preset's Master Vol is applied, so
-the rack level always lands on the rack's last kept entry.
+`FxCubit` and the template call, so the rack fields, parameters and level are
+built one way. Placement is Post, the recorded-track default. Slot ids are
+fresh (`withFreshSlotIds`). Under Q1 (a), `fxRackEntries` itself gains a
+parameter to keep only the modules the preset turns on; it filters before it
+puts the preset's Master Vol on the last entry, so the level lands on the
+last kept entry. A trimmed rack then differs from a hand-added one only by
+the pedals left out (Q1).
 
 Post means the rack is heard on playback, after the loop player. While a take
 is being recorded the player hears the input (and the input's chain), not the
@@ -235,7 +243,9 @@ hand. Q1 asks how to resolve it.
   the full preset does. The cost: the pedals the preset leaves off are not
   in the rack, and their preset settings go with them (Bass Octave 1's
   delay time and mix, say). Switching one on mid-song is not possible; Add
-  effect adds that pedal with its own defaults, not the preset's values.
+  effect adds that pedal with its own defaults, not the preset's values. A
+  user who adds a full Ed's Rack by hand still meets the same budget limit
+  at the third rack; only (c) changes that for both.
 - (b) Four full nine-pedal racks, and Ed's setup is unavailable at 96 kHz (the
   sheet says why). It works only at 48 kHz and below, which the console does
   not run.
@@ -270,13 +280,17 @@ Today a track name is a global setting, not part of a session. After Ed's
 setup, reopening an older session shows its tracks named Guitar, Boom, RC20
 and Vox, and names the user had typed for tracks 1 to 4 are replaced.
 
-- **Recommended: keep names global for this issue, and say so.** When any of
-  tracks 1 to 4 has a name other than its default or the template's, the
-  sheet adds a line naming them: "Track names are shared by every session:
-  Lead, Keys, Bass and Pad are replaced." Nothing changes silently.
+- **Recommended: keep names global for this issue, and say so every time.**
+  While Ed's setup is chosen, the sheet always adds the line "Track names are
+  shared by every session." When any of tracks 1 to 4 has a name other than
+  its default or the template's, the line also names them: "Lead, Keys, Bass
+  and Pad are replaced." Older sessions, and a later Empty tracks New loop,
+  then show Guitar, Boom, RC20 and Vox until the user renames them; the line
+  is what makes that a stated change, not a silent one.
 - Alternative: make track names part of the session, as the Looper X does
-  (5.2). That is a session-schema change with its own migration (#1196's
-  path), and it changes every session, not only this template. It belongs in
+  (5.2). That is a session-schema change (sessions saved before it open with
+  the default names, with no migration), and it changes every session, not
+  only this template. It belongs in
   its own issue if the owner wants it, and Ed's setup would then write the
   names into the new loop only.
 
@@ -296,29 +310,27 @@ be heard without the rack.
 
 ## 8. Implementation (one PR)
 
-1. **Rack building** (`lib/looper/model/` or `looper_repository`): extract the
-   FxRackChoice branch of `FxCubit` into a pure function; `FxCubit` calls it.
-   With Q1 (a), it keeps only the modules the preset turns on, filtering
-   before the rack level is applied (D5).
-2. **Template data** (`lib/session/`): `edsSetup`, four (channel, name, preset
-   name) entries, and a resolver that reads the presets from the loaded
-   catalogue and returns the four chains or a refusal (preset missing, over
-   budget).
-3. **Repository** (`looper_repository.dart`): a method beside `fxRoomAt` that
-   prices a proposed set of chains against the budget at the open rate.
-4. **Session** (`session_cubit.dart`, `session_mapping.dart`,
-   `session_state.dart`): `newLoop` takes an optional resolved template. Its
-   first step is the budget check (D3), before `_endCaptures`.
+1. **Rack building**: extract the FxRackChoice branch of `FxCubit` into a pure
+   function; `FxCubit` calls it. With Q1 (a), `fxRackEntries`
+   (`fx_module_build.dart`) gains the keep-enabled-modules parameter (D5).
+2. **Template data** (`lib/library/`, beside the sheet): `edsSetup`, four
+   (channel, name, preset name) entries, and a resolver that reads the four
+   preset assets and returns the four chains or a refusal (preset missing,
+   over budget).
+3. **Session** (`session_cubit.dart`, `session_mapping.dart`,
+   `session_state.dart`): `newLoop` takes an optional resolved template (the
+   four chains and names). Inside the exclusive section, after the capture,
+   it checks the rig it will apply with `fxCostOf` and `fxRoomNs` (D3).
    `rigForNewLoop` replaces the track chains of channels 0 to 3 and drops
-   their lane chains. After the apply, the names go through a new port wired
-   in `app_runtime.dart` to `TracksCubit`. New errors `templateDoesNotFit`
-   and `trackNamesNotSaved`, with their messages where the Library shows
-   session errors.
-5. **Sheet** (`new_loop_sheet.dart`): the Start with pick-one (the designed
-   pick-one control), the catalogue load with its pending line, the summary
+   their lane chains. After the apply and before the first save, the names
+   go through a new port wired in `app_runtime.dart` to `TracksCubit`. A new
+   error `templateDoesNotFit`, and a `trackNamesNotSaved` notice on the
+   outcome, each with its message where the Library shows session results.
+4. **Sheet** (`new_loop_sheet.dart`): the Start with pick-one (the designed
+   pick-one control), the preset load with its pending line, the summary
    line, the Q3 line, the refusal line, and Start disabled while pending or
    refused. Keys `new_loop_template_empty`, `new_loop_template_eds`.
-6. **Strings**: `app_en.arb`, `app_es.arb`.
+5. **Strings**: `app_en.arb`, `app_es.arb`.
 
 About 350 production lines in all.
 
@@ -333,23 +345,26 @@ About 350 production lines in all.
    their lane chains are empty; every other chain, tempo, mode and the pedal
    binding set are the same as Empty tracks would give.
 3. Cancel changes nothing: no save, no new loop, no rename.
-4. While the catalogue loads, Start new loop is disabled for Ed's setup and
+4. While the presets load, Start new loop is disabled for Ed's setup and
    the sheet says so. When a preset is missing or the template does not fit
    the budget at the open rate, the sheet says why, Start new loop is
    disabled for Ed's setup, and nothing changes. When the rig changes after
-   the sheet checked and `newLoop` refuses, no take ends, nothing is saved
-   and the refusal is shown. With Q1 (a), the template fits at 96 kHz with
+   the sheet checked and `newLoop` refuses on the rig it would apply, no new
+   loop starts and the refusal is shown (the take has ended and the
+   outgoing session is saved, as for any New loop). With Q1 (a), the template fits at 96 kHz with
    no other effects in the rig.
-5. Under Q3's recommendation, the sheet names the track names it will replace
-   when tracks 1 to 4 carry other names, and shows no such line when they do
-   not.
+5. Under Q3's recommendation, the sheet always says track names are shared
+   by every session while Ed's setup is chosen, and also names the names it
+   replaces when tracks 1 to 4 carry custom ones.
 6. Under Q2's recommendation, the global and session binding sets after the
    new loop starts are the ones Empty tracks gives.
 7. The racks are the ones Add effects builds from the same preset (same
    entries, parameters and rack fields apart from ids), filtered per Q1, and
    each rack's level is the preset's Master Vol on its last kept entry.
-8. A failed name write after a started loop is shown as
-   `trackNamesNotSaved`; the loop stays started.
+8. A failed name write after a started loop is shown as the
+   `trackNamesNotSaved` notice; the loop stays started, the `newLoop`
+   outcome and session list are still published, and a `newLoopNotSaved`
+   error is not hidden.
 9. The sheet matches Penpot `19 Sessions · New loop & recall` /
    `07 / New loop / Ed's setup`.
 
@@ -363,19 +378,20 @@ About 350 production lines in all.
   gave before the move (existing `FxCubit` tests stay green); with a module
   filter, the level sits on the last kept entry, including for a preset whose
   last module is off and whose Master Vol is not 0 dB.
-- **Repository**: the new pricing method against `fxRoomAt` for the same
-  chains, and the growth rule (a lighter template on an over-budget rig is
-  not refused).
 - **Session** (`session_cubit_test.dart`): `newLoop(template: edsSetup)`
   applies a rig whose track chains 0 to 3 are the four racks and whose lane
   chains 0 to 3 are empty, with every other field equal to `rigForNewLoop`'s;
   the outgoing rig is saved before the apply; the names port runs after the
-  apply, also on `newLoopNotSaved`; a refused template ends no capture,
-  saves nothing, applies nothing and emits `templateDoesNotFit`; a failing
-  names port emits `trackNamesNotSaved` with the loop started.
+  apply and before the first save; a template that does not fit the
+  captured rig applies nothing and emits `templateDoesNotFit`, including when
+  ending a take on track 5 added a lane chain after the sheet's check; a
+  lighter template on an over-budget rig is not refused; a failing names port
+  gives the `newLoop` outcome with the `trackNamesNotSaved` notice, and with
+  a failing save as well, `newLoopNotSaved` is still the error.
 - **Sheet** (`new_loop_sheet_test.dart`): default selection; the pending
-  line while the catalogue loads; the summary line per choice; the Q3 line
-  with and without custom names; Start disabled while pending or refused;
+  line while the presets load; the summary line per choice; the Q3 line
+  always under Ed's setup, with the replaced names only when there are
+  custom ones; Start disabled while pending or refused;
   Start runs the template; Cancel runs nothing.
 - **Bindings**: after an Ed's setup new loop, `globalBindings` and
   `sessionBindings` equal what Empty tracks produces.
