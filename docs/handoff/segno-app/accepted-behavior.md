@@ -5,7 +5,9 @@ Implementation handoff · 9 September 2026 · Appliance UX programme, issue 919.
 Paths under `docs/design/` and `segno-ui.pen` below are in
 [segno-design](https://github.com/tomassasovsky/segno-design), cloned at
 `../segno-design` (#1496). Some of the studies are on its
-`docs/design-program-2026-09` branch.
+`docs/design-program-2026-09` branch. The pen is frozen since #1503: its
+frames now live in the Penpot file segno-ui (**Design source** in
+`AGENTS.md`).
 
 This is the product contract distilled from the owner's accepted iterations,
 the latest design records and the current integrated prototype. It specifies

@@ -39,21 +39,46 @@ editing anything substantive.
 
 ## Sibling repos
 
-The design file and the hardware have their own repositories:
+The design's history and studies, and the hardware, have their own
+repositories:
 
 - [`tomassasovsky/segno-design`](https://github.com/tomassasovsky/segno-design)
-  holds `segno-ui.pen` and the design studies. For UI work, clone it next to
-  the main checkout, at `../segno-design` (worktrees find it there too), and
-  run its `tool/setup.sh` once. A UI change updates the pen through a PR
-  there; the two PRs link each other. CI's `design` job checks the app
-  against the segno-design commit in `.github/segno-design.sha`; a change
-  that needs a newer study updates that file. Locally the same checks read
-  whatever your clone has checked out, so check out that commit to
-  reproduce CI.
+  holds the design's history and studies. For UI work, clone it next to the
+  main checkout, at `../segno-design` (worktrees find it there too), and run
+  its `tool/setup.sh` once. CI's `design` job checks the app against the
+  segno-design commit in `.github/segno-design.sha`; a change that needs a
+  newer study updates that file. Locally the same checks read whatever your
+  clone has checked out, so check out that commit to reproduce CI.
 - [`tomassasovsky/segno-hardware`](https://github.com/tomassasovsky/segno-hardware)
   holds the boards, the enclosure and the printed parts. The firmware and the
   pedal link contract stay here under `firmware/`. A change to a board's pin
   map or to the link needs a PR in each repository, linked to each other.
+
+## Design source
+
+The UI design is the Penpot file **segno-ui** in project **Segno** on the
+self-hosted Penpot at http://192.168.50.122:9001 (VM 100, home network only,
+inside the VM's nightly backup; down for a few minutes from 22:00 ART while
+the backup runs). Each page is one design area, and the `c/`
+notes on a screen card record the reasoning behind that screen.
+`segno-ui.pen` in segno-design is the frozen last pen.dev version, kept for
+history: do not edit it, and do not use Pencil or the pencil MCP tools. Code
+comments, plans and reviews that cite pen frames (`segno-ui.pen`, "the
+pen's", `AREA / name`) mean the same frames in the Penpot file.
+
+- **A UI change updates the design.** Edit the Penpot file, then open a PR in
+  segno-design that refreshes the snapshot (`tool/penpot-snapshot`, then
+  commit `penpot/`), and link the two PRs to each other. A shipped departure
+  from the design is a design change: write it into the Penpot file
+  (geometry and a `c/` note) in the same pair of PRs, never only in the app.
+- **Agents edit through Penpot's MCP server**, configured in Claude Code as
+  `penpot` (user scope). It works only while a browser tab logged in to the
+  server has the file open with the MCP plugin connected (the toolbar's MCP
+  button). Writes apply only to the active page, so call
+  `penpot.openPage(page)` before editing a page. With no such tab, ask the
+  owner to open one; do not fall back to another tool.
+- **API access** (snapshots, imports) uses the owner's access token in
+  `~/development/penpot-server/.penpot-token`. Never print or commit it.
 
 ## Parallel work
 
@@ -93,8 +118,8 @@ Run these before calling a change done:
 - UI changes: delete `test/screenshots/goldens/` (ignored, so no stale PNG
   survives), render the screenshot suites with
   `flutter test --tags screenshots --update-goldens test/screenshots` (same
-  absolute `flutter` path), and compare the new PNGs against the pen. CI
-  renders them too and uploads the `screenshots` artifact.
+  absolute `flutter` path), and compare the new PNGs against the Penpot
+  file. CI renders them too and uploads the `screenshots` artifact.
 - `bloc lint lib test packages` must be clean. CI runs it as the `Bloc Lint`
   step, and it enforces rules `dart analyze` does not (a cubit method
   returning anything but void fails here and passes there).

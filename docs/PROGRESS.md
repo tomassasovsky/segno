@@ -12,11 +12,20 @@ Update this as work lands so any session (human or agent) can resume cold.
 
 Repo: https://github.com/tomassasovsky/segno · branch `master`.
 Sibling repos (#1496): [segno-design](https://github.com/tomassasovsky/segno-design)
-(`segno-ui.pen` and the design studies, cloned at `../segno-design`) and
+(design snapshots, the frozen `segno-ui.pen` and the design studies, cloned
+at `../segno-design`) and
 [segno-hardware](https://github.com/tomassasovsky/segno-hardware) (boards,
 enclosure, printed parts). See **Sibling repos** in `AGENTS.md`. Entries
-below that name paths under `hardware/`, `docs/design/` or `segno-ui.pen`
-predate the split and refer to those repositories now.
+below that name paths under `hardware/` or `docs/design/` predate the split
+and refer to those repositories now.
+
+Design source (#1503): the Penpot file **segno-ui** (project **Segno**) on the
+self-hosted Penpot at http://192.168.50.122:9001, home network only. It was
+converted from `segno-ui.pen` at segno-design 7c77cc4 on 2026-10-28; the pen
+is frozen since then and kept for history. Entries below that name pen
+frames (`AREA / name`, `c/` notes) refer to the same frames in the Penpot
+file, where each area is a page. Workflow, MCP preconditions and snapshots:
+**Design source** in `AGENTS.md`.
 
 ---
 
@@ -30,7 +39,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
 | #1496 | Split design and hardware into their own repos, slim this one | in-review | merge-gate | `claude/repo-split-1496` |
-| #1501 | Our own art: rig images replaced, stomp pedals drawn in code; pen update owed | in-review | merge-gate | `claude/own-art-1501` |
+| #1501 | Our own art: rig images replaced, stomp pedals drawn in code; Penpot write-back owed | in-review | merge-gate | `claude/own-art-1501` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
 | #887 | Looper X factory racks: all parts merged, Harmonizer parked; Pi benches and by-ear sign-off owed (#1459) | in-review | blocked-verify | trunk |
 | #900, #906 | The audio thread never faults or copies on write (replaces #907, #914) | in-review | blocked-verify | `claude/zero-stall-memory-907-914` |
@@ -1172,7 +1181,9 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   `design` job uploads them as the `screenshots` artifact (a suite that fails
   to render fails the job) and runs `test/control/external_pedal_art_test.dart`
   against a segno-design clone next to the main checkout; without that clone
-  the study checks skip.
+  the study checks skip. CI clones only segno-design's `docs/design/` (sparse,
+  blobless), at the commit in `.github/segno-design.sha`. Compare the PNGs
+  against the Penpot file.
 - **Scaffolding:** prefer the Very Good CLI templates for normal packages.
   The Very Good MCP `create` tool only makes federated method-channel plugins. The
   FFI plugin (`segno_engine`) is **hand-authored** (`ffiPlugin: true` + CMake +

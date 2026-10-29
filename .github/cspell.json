@@ -1447,7 +1447,9 @@
     "Locrian",
     "Melo",
     "Mixo",
-    "Penta"
+    "Penta",
+    "penpot",
+    "blobless"
   ],
   "overrides": [
     {
