@@ -214,7 +214,6 @@ jobs:
           git -C ../segno-design fetch -q --depth 1 --filter=blob:none \
             origin "$(cat .github/segno-design.sha)"
           git -C ../segno-design checkout -q FETCH_HEAD
-          test -f ../segno-design/docs/design/external-switch-study.js
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.47.x"

@@ -60,7 +60,9 @@ self-hosted Penpot at http://192.168.50.122:9001 (VM 100, home network only,
 inside the VM's nightly backup). Each page is one design area, and the `c/`
 notes on a screen card record the reasoning behind that screen.
 `segno-ui.pen` in segno-design is the frozen last pen.dev version, kept for
-history: do not edit it, and do not use Pencil or the pencil MCP tools.
+history: do not edit it, and do not use Pencil or the pencil MCP tools. Code
+comments, plans and reviews that cite pen frames (`segno-ui.pen`, "the
+pen's", `AREA / name`) mean the same frames in the Penpot file.
 
 - **A UI change updates the design.** Edit the Penpot file, then open a PR in
   segno-design that refreshes the snapshot (`tool/penpot-snapshot`, then
@@ -115,8 +117,7 @@ Run these before calling a change done:
   survives), render the screenshot suites with
   `flutter test --tags screenshots --update-goldens test/screenshots` (same
   absolute `flutter` path), and compare the new PNGs against the Penpot
-  design. CI
-  renders them too and uploads the `screenshots` artifact.
+  file. CI renders them too and uploads the `screenshots` artifact.
 - `bloc lint lib test packages` must be clean. CI runs it as the `Bloc Lint`
   step, and it enforces rules `dart analyze` does not (a cubit method
   returning anything but void fails here and passes there).
