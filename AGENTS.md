@@ -39,7 +39,8 @@ editing anything substantive.
 
 ## Sibling repos
 
-The design file and the hardware have their own repositories:
+The design's history and studies, and the hardware, have their own
+repositories:
 
 - [`tomassasovsky/segno-design`](https://github.com/tomassasovsky/segno-design)
   holds the design's history and studies. For UI work, clone it next to the
@@ -57,7 +58,8 @@ The design file and the hardware have their own repositories:
 
 The UI design is the Penpot file **segno-ui** in project **Segno** on the
 self-hosted Penpot at http://192.168.50.122:9001 (VM 100, home network only,
-inside the VM's nightly backup). Each page is one design area, and the `c/`
+inside the VM's nightly backup; down for a few minutes from 22:00 ART while
+the backup runs). Each page is one design area, and the `c/`
 notes on a screen card record the reasoning behind that screen.
 `segno-ui.pen` in segno-design is the frozen last pen.dev version, kept for
 history: do not edit it, and do not use Pencil or the pencil MCP tools. Code
