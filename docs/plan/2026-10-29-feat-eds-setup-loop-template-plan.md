@@ -177,9 +177,9 @@ notice, the way a session conversion notice does, so it never hides the
 (channel, name, preset name) in the app layer. The sheet resolves it (reads
 the presets and builds the four chains) and hands `SessionCubit.newLoop` the
 resolved chains and names; the session layer never sees the catalogue. No
-template file format, no "save as template", no template list. Users already have templates in the form the Looper X and the
-RC-600 use: a saved session in the Library, from which New loop keeps the
-effects. If a second built-in template is ever wanted, the pick-one gains a
+template file format, no "save as template", no template list. Users
+already have templates in the form the Looper X and the RC-600 use: a saved
+session in the Library, from which New loop keeps the effects. If a second built-in template is ever wanted, the pick-one gains a
 value; nothing here is built for it in advance.
 
 **D5. The racks are built the way Add effects builds them.** The rack-building
