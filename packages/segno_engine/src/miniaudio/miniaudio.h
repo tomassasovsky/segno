@@ -27668,6 +27668,8 @@ static ma_result ma_device_init_by_type__alsa(ma_device* pDevice, const ma_devic
     int pollDescriptorCount;
     struct pollfd* pPollDescriptors;
     int wakeupfd;
+    int segnoStream = (deviceType == ma_device_type_playback) ? 0 : 1;   /* SEGNO PATCH (#1516): index into the saved parameters. */
+    ma_bool32 segnoHWParamsSaved;
 
     MA_ASSERT(pConfig != NULL);
     MA_ASSERT(deviceType != ma_device_type_duplex); /* This function should only be called for playback _or_ capture, never duplex. */
@@ -27876,12 +27878,12 @@ static ma_result ma_device_init_by_type__alsa(ma_device* pDevice, const ma_devic
 
     /* SEGNO PATCH (#1516): keep what was just applied, for ma_device_reset_stalled__alsa
      * (completed with the software parameters below). */
+    segnoHWParamsSaved = MA_FALSE;
     {
-        int iStream = (deviceType == ma_device_type_playback) ? 0 : 1;
         size_t hwSize = ((ma_snd_pcm_hw_params_sizeof_proc)pDevice->pContext->alsa.snd_pcm_hw_params_sizeof)();
-        pDevice->alsa.segnoParamsSaved[iStream] = MA_FALSE;
-        if (hwSize <= sizeof(pDevice->alsa.segnoHWParams[iStream])) {
-            MA_COPY_MEMORY(pDevice->alsa.segnoHWParams[iStream], pHWParams, hwSize);
+        if (hwSize <= sizeof(pDevice->alsa.segnoHWParams[segnoStream])) {
+            MA_COPY_MEMORY(pDevice->alsa.segnoHWParams[segnoStream], pHWParams, hwSize);
+            segnoHWParamsSaved = MA_TRUE;
         }
     }
 
@@ -28011,13 +28013,12 @@ static ma_result ma_device_init_by_type__alsa(ma_device* pDevice, const ma_devic
     }
 
     /* SEGNO PATCH (#1516): and the software parameters, completing the saved pair. */
+    pDevice->alsa.segnoParamsSaved[segnoStream] = MA_FALSE;
     {
-        int iStream = (deviceType == ma_device_type_playback) ? 0 : 1;
-        size_t hwSize = ((ma_snd_pcm_hw_params_sizeof_proc)pDevice->pContext->alsa.snd_pcm_hw_params_sizeof)();
         size_t swSize = ((ma_snd_pcm_sw_params_sizeof_proc)pDevice->pContext->alsa.snd_pcm_sw_params_sizeof)();
-        if (hwSize <= sizeof(pDevice->alsa.segnoHWParams[iStream]) && swSize <= sizeof(pDevice->alsa.segnoSWParams[iStream])) {
-            MA_COPY_MEMORY(pDevice->alsa.segnoSWParams[iStream], pSWParams, swSize);
-            pDevice->alsa.segnoParamsSaved[iStream] = MA_TRUE;
+        if (segnoHWParamsSaved && swSize <= sizeof(pDevice->alsa.segnoSWParams[segnoStream])) {
+            MA_COPY_MEMORY(pDevice->alsa.segnoSWParams[segnoStream], pSWParams, swSize);
+            pDevice->alsa.segnoParamsSaved[segnoStream] = MA_TRUE;
         }
     }
 
@@ -28318,9 +28319,13 @@ started here and playback starts through its start_threshold as the loop
 writes, exactly as after ma_device_start__alsa. Playback is freed first and
 configured last because it holds the capture endpoint as its clock.
 
-A reset that fails leaves the device unusable, so the callers return its error:
-miniaudio's data loop ends, the device posts its stopped notification, and the
-host sees the device go away instead of a loop that waits forever.
+The callers bound it. MA_NOT_IMPLEMENTED (no saved parameters, or an
+alsa-lib without snd_pcm_hw_free) changes nothing, so they keep waiting as
+before. Any other failure leaves the device without a configuration, and three
+resets in a row with no audio between them mean the reset is not helping;
+either way the caller returns an error, miniaudio's data loop ends, and the
+device posts its stopped notification, so the host sees the device go away
+instead of a loop that waits forever.
 
 Only ever called on that failure path, never per period. snd_pcm_hw_params
 does allocate (the kernel sets up a fresh DMA buffer), which is acceptable on a
@@ -28364,6 +28369,7 @@ static ma_result ma_device_reset_stalled__alsa(ma_device* pDevice)
     if (pDevice->alsa.pPCMCapture != NULL) {
         resultALSA = ((ma_snd_pcm_start_proc)pDevice->pContext->alsa.snd_pcm_start)((ma_snd_pcm_t*)pDevice->alsa.pPCMCapture);
         if (resultALSA < 0) { return ma_result_from_errno(-resultALSA); }
+        pDevice->alsa.segnoCaptureFlushPending = MA_TRUE;   /* as ma_device_start__alsa does */
     }
 
     return MA_SUCCESS;
@@ -28413,8 +28419,9 @@ static ma_result ma_device_wait__alsa(ma_device* pDevice, ma_snd_pcm_t* pPCM, st
      * four rings, and never less than 50 ms. A healthy stream is ready within a
      * period. */
     {
-        ma_uint32 rate = pDevice->sampleRate > 0 ? pDevice->sampleRate : 48000;
+        ma_uint32 rate = (requiredEvent == POLLIN) ? pDevice->capture.internalSampleRate : pDevice->playback.internalSampleRate;
         ma_uint32 periods = (requiredEvent == POLLIN) ? pDevice->capture.internalPeriods : pDevice->playback.internalPeriods;
+        if (rate == 0) { rate = 48000; }
         stallSeconds = 4.0 * periodFrames * periods / rate;
         if (stallSeconds < 0.05) { stallSeconds = 0.05; }
     }
@@ -28511,6 +28518,15 @@ static ma_result ma_device_wait__alsa(ma_device* pDevice, ma_snd_pcm_t* pPCM, st
          * nothing logged. Hand it back to the read or write path, which counts
          * it and resets the device. */
         if (ma_timer_get_time_in_seconds(&waitTimer) > stallSeconds) {
+            /* Look again before giving up: the time may have gone to this
+             * thread being preempted (an overload), not to the stream. A
+             * stream that is ready now, or that is no longer RUNNING, is the
+             * ordinary paths' to handle. */
+            ma_snd_pcm_state_t st = ((ma_snd_pcm_state_proc)pDevice->pContext->alsa.snd_pcm_state)(pPCM);
+            availResult = ((ma_snd_pcm_avail_proc)pDevice->pContext->alsa.snd_pcm_avail)(pPCM);
+            if (availResult < 0 || availResult >= ((requiredEvent == POLLIN) ? (ma_snd_pcm_sframes_t)periodFrames : 1) || st != MA_SND_PCM_STATE_RUNNING) {
+                break;
+            }
             return MA_TIMEOUT;
         }
         (void)periodFrames;
@@ -28539,6 +28555,7 @@ static ma_result ma_device_read__alsa(ma_device* pDevice, void* pFramesOut, ma_u
      * thousands of xruns for one physical overrun. */
     int segnoXrunReported = 0;
 #endif
+    int segnoResets = 0;   /* SEGNO PATCH (#1516): device resets in this call; see ma_device_reset_stalled__alsa. */
 
     MA_ASSERT(pDevice != NULL);
     MA_ASSERT(pFramesOut != NULL);
@@ -28576,10 +28593,17 @@ static ma_result ma_device_read__alsa(ma_device* pDevice, void* pFramesOut, ma_u
                 ma_segno_xrun_callback(pDevice->pUserData, 1);
             }
 #endif
+            if (segnoResets == 3) {
+                return MA_ERROR;   /* resetting is not bringing it back */
+            }
             result = ma_device_reset_stalled__alsa(pDevice);
+            if (result == MA_NOT_IMPLEMENTED) {
+                continue;   /* no reset on this build: keep waiting, as before */
+            }
             if (result != MA_SUCCESS) {
                 return result;
             }
+            segnoResets += 1;
             continue;
         }
         if (result != MA_SUCCESS) {
@@ -28644,6 +28668,7 @@ static ma_result ma_device_write__alsa(ma_device* pDevice, const void* pFrames, 
 #if !defined(LE_CALLBACK_TELEMETRY) || LE_CALLBACK_TELEMETRY
     int segnoXrunReported = 0; /* SEGNO PATCH (#722): see ma_device_read__alsa. */
 #endif
+    int segnoResets = 0;       /* SEGNO PATCH (#1516): see ma_device_read__alsa. */
 
     MA_ASSERT(pDevice != NULL);
     MA_ASSERT(pFrames != NULL);
@@ -28709,10 +28734,17 @@ static ma_result ma_device_write__alsa(ma_device* pDevice, const void* pFrames, 
                 ma_segno_xrun_callback(pDevice->pUserData, 0);
             }
 #endif
+            if (segnoResets == 3) {
+                return MA_ERROR;   /* resetting is not bringing it back */
+            }
             result = ma_device_reset_stalled__alsa(pDevice);
+            if (result == MA_NOT_IMPLEMENTED) {
+                continue;   /* no reset on this build: keep waiting, as before */
+            }
             if (result != MA_SUCCESS) {
                 return result;
             }
+            segnoResets += 1;
             continue;
         }
         if (result != MA_SUCCESS) {

@@ -34,18 +34,18 @@ where they are, this tells you why they must survive an upgrade.
 **On upgrade: re-apply every cluster below, or prove upstream fixed it.** A
 plain drop-in replacement silently reverts all of them.
 
-The 33 markers split 19 / 4 / 7 / 3 across the four clusters below. If you are
+The 36 markers split 22 / 4 / 7 / 3 across the four clusters below. If you are
 auditing by hand, that split is the number to check against — a cluster that
 comes up short is a patch that did not survive.
 
-### 1. ALSA duplex hardening (appliance) — 19 markers
+### 1. ALSA duplex hardening (appliance) — 22 markers
 
 Ten markers predate #1516: one `ma_bool8` state field
 (`segnoCaptureFlushPending`) added to the ALSA device struct, plus nine code
 sites across `ma_device_init_by_type__alsa`,
 `ma_device_start__alsa`, `ma_device_wait__alsa`, `ma_device_read__alsa` and
 `ma_device_write__alsa` (two markers each in `read`/`write`, for the arm/flush
-and the two xrun retries). The stalled-transfer reset adds nine more (last
+and the two xrun retries). The stalled-transfer reset adds twelve more (last
 item below). Together they make the direct-ALSA appliance path survive a real
 USB interface:
 
@@ -59,21 +59,22 @@ USB interface:
   full-duplex needs, instead of upstream's fixed two periods (#809) — so a
   caller asking for more `periods` gets a deeper cushion on the playback side
   and not only on the capture side;
-- a **stalled-transfer reset** (#1516), nine markers: `ma_device_wait__alsa`
+- a **stalled-transfer reset** (#1516), twelve markers: `ma_device_wait__alsa`
   gives up on a stream that reads RUNNING but has not become ready for four
   rings (at least 50 ms), and the read or write path counts it through the
   dropout hook and calls `ma_device_reset_stalled__alsa`, which frees and
   reapplies both streams' hardware configuration (what a reopen does, in
-  place). It needs `snd_pcm_hw_free` in the context's function table and the
+  place). Three resets in a row with no audio between them, or a reset that
+  fails, end the data loop so the device reports itself stopped. It needs `snd_pcm_hw_free` in the context's function table and the
   hardware and software parameters `ma_device_init_by_type__alsa` applied,
   saved in the device struct. The Scarlett 4i4 needs it: after an overload's
   xrun recoveries its capture endpoint can stop completing transfers while
   ALSA still reads RUNNING, and only a reconfiguration brings it back.
 
 The start threshold sits outside the data loop, in
-`ma_device_init_by_type__alsa`'s `sw_params` block, and so do four of the reset's
-markers (the function-table entry, the saved-parameter fields, and the two saves
-in `ma_device_init_by_type__alsa`). It couples to the
+`ma_device_init_by_type__alsa`'s `sw_params` block, and so do five of the reset's
+markers (the function-table entry, the saved-parameter fields, and the locals and
+two saves in `ma_device_init_by_type__alsa`). The threshold couples to the
 slip-resync above — a resync restarts through that threshold, so raising it
 lengthens each resync's silent gap — and the two carry cross-references to each
 other. Note it is a no-op below 5 periods, where the two-period floor still
@@ -219,8 +220,8 @@ first.
 ## Auditing an upgrade
 
 ```sh
-grep -c "SEGNO PATCH" packages/segno_engine/src/miniaudio/miniaudio.h   # expect 33
+grep -c "SEGNO PATCH" packages/segno_engine/src/miniaudio/miniaudio.h   # expect 36
 ```
 
-with 19 in the ALSA cluster, 4 in the Pulse one, 7 in the dropout hook and 3
+with 22 in the ALSA cluster, 4 in the Pulse one, 7 in the dropout hook and 3
 in the decoder uninit.
