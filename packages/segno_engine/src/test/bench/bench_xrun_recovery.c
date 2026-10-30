@@ -83,7 +83,8 @@ static void sleep_ms(int ms) {
   nanosleep(&ts, NULL);
 }
 
-/* The callback thread: the one task of this process on SCHED_FIFO. */
+/* The callback thread: the task of this process on SCHED_FIFO 80
+ * (engine_linux.c's le_alsa_set_rt_priority). */
 static long find_rt_task(void) {
   DIR* d = opendir("/proc/self/task");
   if (d == NULL) return -1;
@@ -94,7 +95,7 @@ static long find_rt_task(void) {
     if (tid <= 0) continue;
     struct sched_param sp;
     if (sched_getscheduler((pid_t)tid) == SCHED_FIFO &&
-        sched_getparam((pid_t)tid, &sp) == 0) {
+        sched_getparam((pid_t)tid, &sp) == 0 && sp.sched_priority == 80) {
       found = tid;
     }
   }
@@ -364,9 +365,8 @@ int main(int argc, char** argv) {
       return 2;
     }
   }
-  if (o.slice_us <= 0) o.slice_us = (int)(1e6 * o.period / o.rate);
-  if (o.repeats < 1 || o.window_ms < 100 || o.settle_ms < 0 ||
-      o.duty <= 0.0 || o.duty > 1.0) {
+  if (o.rate <= 0 || o.period <= 0 || o.repeats < 1 || o.window_ms < 100 ||
+      o.settle_ms < 0 || o.duty <= 0.0 || o.duty > 1.0) {
     usage();
     return 2;
   }
@@ -374,6 +374,14 @@ int main(int argc, char** argv) {
   setenv("SEGNO_ALSA_ONLY", "1", 0);
   setenv("SEGNO_RT_AUDIO", "1", 0);
   setenv("SEGNO_ALSA_PERIODS", "8", 0);
+  /* The engine ignores a value outside [2, 8]; refuse one rather than judge
+   * against a ring the device does not have. */
+  const int periods = atoi(getenv("SEGNO_ALSA_PERIODS"));
+  if (periods < 2 || periods > 8) {
+    fprintf(stderr, "SEGNO_ALSA_PERIODS must be 2 to 8\n");
+    return 2;
+  }
+  if (o.slice_us <= 0) o.slice_us = (int)(1e6 * o.period / o.rate);
 
   g_e = le_engine_create();
   if (!open_device(&o)) return 2;
@@ -413,8 +421,7 @@ int main(int argc, char** argv) {
       const int flowing = ratio >= 0.5 && strcmp(pb, "RUNNING") == 0;
       /* A stall shorter than the ring can pass without a dropout; one twice
        * as long as the ring cannot, and must be counted. */
-      const double ring_ms =
-          1000.0 * o.period * atoi(getenv("SEGNO_ALSA_PERIODS")) / o.rate;
+      const double ring_ms = 1000.0 * o.period * periods / o.rate;
       const int must_count = o.duty >= 1.0 && ms > 2.0 * ring_ms;
       const int ok = flowing && (!must_count || counted > 0);
       ++runs;

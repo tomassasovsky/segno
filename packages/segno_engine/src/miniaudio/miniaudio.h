@@ -6815,8 +6815,8 @@ latch), otherwise a single stuck stream would manufacture thousands of counted
 xruns and thousands of cross-TU calls from the real-time thread.
 
 Global rather than per-device so it needs no ma_device_config field (keeping the
-patch to a declaration, a definition, and three call sites). NULL = no hook, the
-stock behaviour.
+patch to a declaration, a definition, and three call sites; the #1516 stall
+reset adds two more). NULL = no hook, the stock behaviour.
 
 INSTALL ONCE, NEVER RETRACT. Set it before the first ma_device_init and then
 leave it alone for the life of the process. Do NOT null it on device close: the
@@ -26789,7 +26789,7 @@ typedef int                  (* ma_snd_pcm_hw_params_test_format_proc)         (
 typedef int                  (* ma_snd_pcm_hw_params_test_channels_proc)       (ma_snd_pcm_t *pcm, ma_snd_pcm_hw_params_t *params, unsigned int val);
 typedef int                  (* ma_snd_pcm_hw_params_test_rate_proc)           (ma_snd_pcm_t *pcm, ma_snd_pcm_hw_params_t *params, unsigned int val, int dir);
 typedef int                  (* ma_snd_pcm_hw_params_proc)                     (ma_snd_pcm_t *pcm, ma_snd_pcm_hw_params_t *params);
-typedef int                  (* ma_snd_pcm_hw_free_proc)                       (ma_snd_pcm_t *pcm);
+typedef int                  (* ma_snd_pcm_hw_free_proc)                       (ma_snd_pcm_t *pcm);   /* SEGNO PATCH (#1516) */
 typedef size_t               (* ma_snd_pcm_sw_params_sizeof_proc)              (void);
 typedef int                  (* ma_snd_pcm_sw_params_current_proc)             (ma_snd_pcm_t *pcm, ma_snd_pcm_sw_params_t *params);
 typedef int                  (* ma_snd_pcm_sw_params_get_boundary_proc)        (const ma_snd_pcm_sw_params_t *params, ma_snd_pcm_uframes_t* val);
@@ -28322,10 +28322,22 @@ configured last because it holds the capture endpoint as its clock.
 The callers bound it. MA_NOT_IMPLEMENTED (no saved parameters, or an
 alsa-lib without snd_pcm_hw_free) changes nothing, so they keep waiting as
 before. Any other failure leaves the device without a configuration, and three
-resets in a row with no audio between them mean the reset is not helping;
-either way the caller returns an error, miniaudio's data loop ends, and the
-device posts its stopped notification, so the host sees the device go away
-instead of a loop that waits forever.
+resets in one read or write call, with not one period of audio between them,
+mean the reset is not helping; either way the caller returns an error,
+miniaudio's data loop ends, and the device posts its stopped notification, so
+the host sees the device go away instead of a loop that waits forever. The cap
+is per call on purpose: a reset after which audio flows again did its job, even
+if the endpoint stalls again later (a sustained overload wedges it again and
+again, and each reset cures it), and stopping the device instead hands it to
+segno's reconnect supervisor, which polls once a second and does not retry an
+unchanged device list. That is also why this resets in place rather than
+ending the loop and letting the host reopen: tens of milliseconds of silence
+here against at least a second there.
+
+The reset reports through the dropout hook under the existing kinds (a capture
+overrun or a playback underrun), from the two call sites in
+ma_device_read__alsa and ma_device_write__alsa; a kind of its own is a
+follow-up (#1516).
 
 Only ever called on that failure path, never per period. snd_pcm_hw_params
 does allocate (the kernel sets up a fresh DMA buffer), which is acceptable on a
@@ -28369,7 +28381,6 @@ static ma_result ma_device_reset_stalled__alsa(ma_device* pDevice)
     if (pDevice->alsa.pPCMCapture != NULL) {
         resultALSA = ((ma_snd_pcm_start_proc)pDevice->pContext->alsa.snd_pcm_start)((ma_snd_pcm_t*)pDevice->alsa.pPCMCapture);
         if (resultALSA < 0) { return ma_result_from_errno(-resultALSA); }
-        pDevice->alsa.segnoCaptureFlushPending = MA_TRUE;   /* as ma_device_start__alsa does */
     }
 
     return MA_SUCCESS;
@@ -28900,7 +28911,7 @@ static ma_result ma_context_init__alsa(ma_context* pContext, const ma_context_co
     pContext->alsa.snd_pcm_hw_params_test_channels        = (ma_proc)ma_dlsym(ma_context_get_log(pContext), pContext->alsa.asoundSO, "snd_pcm_hw_params_test_channels");
     pContext->alsa.snd_pcm_hw_params_test_rate            = (ma_proc)ma_dlsym(ma_context_get_log(pContext), pContext->alsa.asoundSO, "snd_pcm_hw_params_test_rate");
     pContext->alsa.snd_pcm_hw_params                      = (ma_proc)ma_dlsym(ma_context_get_log(pContext), pContext->alsa.asoundSO, "snd_pcm_hw_params");
-    pContext->alsa.snd_pcm_hw_free                        = (ma_proc)ma_dlsym(ma_context_get_log(pContext), pContext->alsa.asoundSO, "snd_pcm_hw_free");
+    pContext->alsa.snd_pcm_hw_free                        = (ma_proc)ma_dlsym(ma_context_get_log(pContext), pContext->alsa.asoundSO, "snd_pcm_hw_free");   /* SEGNO PATCH (#1516) */
     pContext->alsa.snd_pcm_sw_params_sizeof               = (ma_proc)ma_dlsym(ma_context_get_log(pContext), pContext->alsa.asoundSO, "snd_pcm_sw_params_sizeof");
     pContext->alsa.snd_pcm_sw_params_current              = (ma_proc)ma_dlsym(ma_context_get_log(pContext), pContext->alsa.asoundSO, "snd_pcm_sw_params_current");
     pContext->alsa.snd_pcm_sw_params_get_boundary         = (ma_proc)ma_dlsym(ma_context_get_log(pContext), pContext->alsa.asoundSO, "snd_pcm_sw_params_get_boundary");
@@ -28969,7 +28980,7 @@ static ma_result ma_context_init__alsa(ma_context* pContext, const ma_context_co
     ma_snd_pcm_hw_params_test_channels_proc        _snd_pcm_hw_params_test_channels        = snd_pcm_hw_params_test_channels;
     ma_snd_pcm_hw_params_test_rate_proc            _snd_pcm_hw_params_test_rate            = snd_pcm_hw_params_test_rate;
     ma_snd_pcm_hw_params_proc                      _snd_pcm_hw_params                      = snd_pcm_hw_params;
-    ma_snd_pcm_hw_free_proc                        _snd_pcm_hw_free                        = snd_pcm_hw_free;
+    ma_snd_pcm_hw_free_proc                        _snd_pcm_hw_free                        = snd_pcm_hw_free;   /* SEGNO PATCH (#1516) */
     ma_snd_pcm_sw_params_sizeof_proc               _snd_pcm_sw_params_sizeof               = snd_pcm_sw_params_sizeof;
     ma_snd_pcm_sw_params_current_proc              _snd_pcm_sw_params_current              = snd_pcm_sw_params_current;
     ma_snd_pcm_sw_params_get_boundary_proc         _snd_pcm_sw_params_get_boundary         = snd_pcm_sw_params_get_boundary;
@@ -29037,7 +29048,7 @@ static ma_result ma_context_init__alsa(ma_context* pContext, const ma_context_co
     pContext->alsa.snd_pcm_hw_params_test_channels        = (ma_proc)_snd_pcm_hw_params_test_channels;
     pContext->alsa.snd_pcm_hw_params_test_rate            = (ma_proc)_snd_pcm_hw_params_test_rate;
     pContext->alsa.snd_pcm_hw_params                      = (ma_proc)_snd_pcm_hw_params;
-    pContext->alsa.snd_pcm_hw_free                        = (ma_proc)_snd_pcm_hw_free;
+    pContext->alsa.snd_pcm_hw_free                        = (ma_proc)_snd_pcm_hw_free;   /* SEGNO PATCH (#1516) */
     pContext->alsa.snd_pcm_sw_params_sizeof               = (ma_proc)_snd_pcm_sw_params_sizeof;
     pContext->alsa.snd_pcm_sw_params_current              = (ma_proc)_snd_pcm_sw_params_current;
     pContext->alsa.snd_pcm_sw_params_get_boundary         = (ma_proc)_snd_pcm_sw_params_get_boundary;
