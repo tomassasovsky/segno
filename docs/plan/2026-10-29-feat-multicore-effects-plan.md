@@ -115,9 +115,8 @@ What to take from them:
 **Adopted:** fork-join inside the period, one job per chain owner (a monitor
 input, later a whole track), SCHED_FIFO workers pinned one per core, the
 callback claiming jobs alongside the workers and spinning for the last one
-(Tracktion), workers sleeping on a private futex between periods and woken at
-the top of the period, before the callback's own serial work (so the wake
-overlaps it).
+(Tracktion), and workers sleeping on a private futex until the callback
+releases the period's jobs.
 
 **Rejected:**
 
@@ -234,9 +233,15 @@ section 8 shows it does not.
 ## 5. Decisions
 
 **D1. Fork-join inside the callback's period.** Each period: the callback
-wakes the workers, runs phase A, releases the period's jobs, claims jobs
+runs phase A, releases the period's jobs and wakes the workers, claims jobs
 itself until none is left, spins until every job is done, then runs phase B.
-No latency is added anywhere.
+No latency is added anywhere. The workers sleep through phase A: waking them
+at the top of the period instead (as the spike did) hides their wake latency
+behind phase A, but then they spin at SCHED_FIFO 79 for all of phase A every
+period, about 11 % of each worker core that the UI could otherwise use. A
+late wake costs the parallel section at most the wake latency, which the
+spike measured at 3 to 5 us (p99), and the callback is claiming jobs
+meanwhile. Part 1's telemetry measures both orders before this is final.
 
 **D2. A job is one chain owner's whole serial work for the block.** Part 1:
 one monitor input's chain. Part 2: one track's lane chains and track chain
@@ -260,8 +265,8 @@ holds unchanged.
 callback is pinned to core 3, and core 0 stays with the interrupts, the UI and
 the OS. 79 puts the workers below the callback (80), above the MIDI thread
 (70) and the threaded IRQs (50), and below the sound card's IRQ thread (90).
-The worker count is an engine setting, 0 on the desktop and in the tests,
-fixed while the device runs (changing it restarts the audio engine, like a
+The worker count is an engine setting, 0 by default (the desktop, and every
+test that does not set it; part 1's tests set 1 to 3 explicitly), fixed while the device runs (changing it restarts the audio engine, like a
 device change). Section 10 asks the owner about a third worker.
 
 **D6. A late worker is waited for.** There is no fallback to dry or to
@@ -289,20 +294,19 @@ never refused.
 - `segno-rtirq` also pins the sound card's IRQ thread (FIFO 90) to core 0,
   where its hardware interrupt already arrives. Unpinned, it can land on a
   worker's core and preempt a job in the middle of the period.
-- No `isolcpus` or `nohz_full`. Workers sleep between periods (in the spike,
-  two workers with no chains to run used 5.3 % of the machine together, all of
-  it the wake and the wait for phase A), and isolation would keep the UI off
-  those cores for the rest of each period. The scheduler already gives a
+- No `isolcpus` or `nohz_full`. Workers sleep between periods and through
+  phase A (D1), and isolation would keep the UI off those cores for the rest
+  of each period. (In the spike, which woke them before phase A, two workers
+  with no chains to run used 5.3 % of the machine together, all of it the wait
+  for phase A; D1 removes that.) The scheduler already gives a
   SCHED_FIFO 79 thread its core over any SCHED_OTHER thread.
 
 ### 6.2 The handoff
 
-- **Wake:** the callback bumps a 32-bit generation word and calls
-  `FUTEX_WAKE_PRIVATE` once, at the top of the period, before its own phase A.
-  Workers wait in `FUTEX_WAIT_PRIVATE` on that word.
-- **Release:** after phase A, a release store publishes the epoch and index
-  0 in the claim word (D3). Workers that woke early spin on it for at most
-  phase A's length.
+- **Release and wake:** after phase A, a release store publishes the epoch and
+  index 0 in the claim word (D3); then the callback bumps a 32-bit generation
+  word and calls `FUTEX_WAKE_PRIVATE` once. Workers wait in
+  `FUTEX_WAIT_PRIVATE` on that word.
 - **Join:** the callback spins on the done count with the `yield` hint. No
   syscall.
 - **Ordering:** the release store and each job's release increment of the done
@@ -380,23 +384,27 @@ A + B + S + h + J/C + (1 - 1/C) * p  <=  0.8 x frame
   time and never needs to be known in Dart.
 - **Switching a pedal on is never refused:** every pedal is still charged
   whether it is on or off, and a toggle changes neither J nor p.
-- h is the measured cost of the handoff (section 8), charged per block and
-  spread over its frames like the base.
+- h is the handoff's cost per frame (section 8): the wake call, the claims and
+  the join, 2.5 us a block, plus the workers' late start. W workers that start
+  w after the release lose W x w of parallel time, which the C cores share, so
+  h = (2.5 us + (W / C) x w) / 64 frames, with w the measured p99 wake (3.0,
+  3.8 and 4.9 us for one, two and three workers). That is 70, 81 and 97 ns a
+  frame.
 - `fx_cost.dart` keeps its per-kind table. #1508 replaces the table's numbers
   with the console's; this plan changes only how they are summed.
 
 What the rule gives at 96 kHz / 64 frames with Ed's Rack at today's charge
-(2,665 ns a frame) and h = 39 ns a frame (2.5 us a block, section 8). The
-room is C x 8,333 ns (80 % of each core's 10,417 ns frame) less the base and h; it is
-the most the effects can use when no single job is large. The racks column
-applies the rule, critical path included:
+(2,665 ns a frame). The room is C x (8,333 ns - base - h): every core loses
+the base, because no job can start before phase A ends or run after phase B
+starts. It is the most the effects can use when no single job is large. The
+racks column applies the rule, critical path included:
 
 | Cores (C) | Room for effects, ns a frame | Room, whole machine | Ed's Racks the rule admits | Ed's Racks the spike ran with no period over budget |
 |---|---|---|---|---|
 | 1 (today) | 7,192 | 17 % | 2 | 2 |
-| 2 (one worker) | 15,486 | 37 % | 4 | 4 |
-| 3 (two workers, D5) | 23,819 | 57 % | 6 | 6 |
-| 4 (three workers) | 32,152 | 77 % | 7 | 8 |
+| 2 (one worker) | 14,244 | 34 % | 4 | 4 |
+| 3 (two workers, D5) | 21,333 | 51 % | 6 | 6 |
+| 4 (three workers) | 28,380 | 68 % | 7 | 8 |
 
 With the spike's own measured cost of one rack (158 us a block, 2,469 ns a
 frame) and base (78 us, 1,219 ns a frame) in place of the charges, the rule
@@ -416,7 +424,8 @@ PR, links the real engine sources, as `bench_fx_cpu` does. Once per period,
 paced to the period like a device:
 
 1. The callback thread wakes the workers (`FUTEX_WAKE_PRIVATE`), then runs
-   the engine's own work: `bench_common.h`'s playing 8-track rig with no
+   the engine's own work (D1 moves the wake after this step; the wake
+   latencies below are measured from the wake call, so they carry over): `bench_common.h`'s playing 8-track rig with no
    effects (the console's base, 69 us median).
 2. It releases the period's jobs, and it and the workers claim them through
    the epoch-and-index word (D3) until none is left.

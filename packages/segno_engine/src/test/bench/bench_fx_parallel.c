@@ -178,6 +178,8 @@ static _Atomic int g_quit;
 static _Atomic uint64_t g_wake_ns[WAKE_RING];
 /* The hog's own stop flag: g_quit is reset for every scenario. */
 static _Atomic int g_hog_quit;
+/* 1 once the hog has its buffers and is copying, -1 when it could not. */
+static _Atomic int g_hog_running;
 
 static int g_jobs;
 
@@ -412,13 +414,15 @@ static void claim_jobs(uint32_t epoch) {
 typedef struct {
   int index;
   pthread_t thread;
-  double* wake_us; /* per wake */
+  double* wake_us;   /* per wake */
+  uint32_t* wake_gen; /* the generation each wake sample belongs to */
   size_t periods;
   _Atomic size_t n;
   /* periods this worker slept through entirely (woken after a later
    * generation had already started) */
   size_t skipped;
   double cpu_us0, cpu_us1;
+  double wall_us0, wall_us1; /* when this worker took its samples */
   long flt0, flt1;
   _Atomic int mark; /* 1: sample start, 2: sample end */
 } worker;
@@ -453,14 +457,17 @@ static void* worker_main(void* arg) {
     const size_t n = atomic_load_explicit(&w->n, memory_order_relaxed);
     if (n < w->periods) {
       w->wake_us[n] = woke > at ? (double)(woke - at) / 1e3 : 0.0;
+      w->wake_gen[n] = g;
       atomic_store_explicit(&w->n, n + 1, memory_order_relaxed);
     }
     const int m = atomic_exchange_explicit(&w->mark, 0, memory_order_relaxed);
     if (m == 1) {
       w->cpu_us0 = thread_cpu_us();
+      w->wall_us0 = now_us();
       w->flt0 = thread_faults();
     } else if (m == 2) {
       w->cpu_us1 = thread_cpu_us();
+      w->wall_us1 = now_us();
       w->flt1 = thread_faults();
     }
     /* Wait for this epoch's release (the callback is doing the engine's own
@@ -484,8 +491,14 @@ static void* hog_main(void* arg) {
   const size_t n = 32u << 20;
   char* a = (char*)malloc(n);
   char* b = (char*)malloc(n);
-  if (a == NULL || b == NULL) return NULL;
+  if (a == NULL || b == NULL) {
+    free(a);
+    free(b);
+    atomic_store(&g_hog_running, -1);
+    return NULL;
+  }
   memset(a, 1, n);
+  atomic_store(&g_hog_running, 1);
   while (!atomic_load_explicit(&g_hog_quit, memory_order_relaxed)) {
     memcpy(b, a, n);
     memcpy(a, b, n);
@@ -519,18 +532,47 @@ static int run_scenario(const bench_opts* o, rig* r, int jobs, int workers,
   const size_t periods = (size_t)(seconds * o->rate / o->period);
   const size_t warm = (size_t)(0.5 * o->rate / o->period);
   double* svc = (double*)malloc(sizeof(double) * periods);
-  if (svc == NULL) return 0;
+  double* all = (double*)malloc(sizeof(double) * (periods + warm + 8) *
+                                (size_t)(workers > 0 ? workers : 1));
+  if (svc == NULL || all == NULL) {
+    free(svc);
+    free(all);
+    return 0;
+  }
   atomic_store(&g_quit, 0);
   atomic_store(&g_gen, 0);
   atomic_store(&g_claim, 0);
+  int started = 0;
   for (int w = 0; w < workers; ++w) {
     worker* wk = &g_worker[w];
     memset(wk, 0, sizeof(*wk));
     wk->index = w;
     wk->periods = periods + warm + 8;
     wk->wake_us = (double*)calloc(wk->periods, sizeof(double));
-    if (wk->wake_us == NULL) return 0;
-    if (pthread_create(&wk->thread, NULL, worker_main, wk) != 0) return 0;
+    wk->wake_gen = (uint32_t*)calloc(wk->periods, sizeof(uint32_t));
+    if (wk->wake_us == NULL || wk->wake_gen == NULL ||
+        pthread_create(&wk->thread, NULL, worker_main, wk) != 0) {
+      free(wk->wake_us);
+      free(wk->wake_gen);
+      break;
+    }
+    ++started;
+  }
+  if (started < workers) {
+    /* Stop and join the workers already running before anything reuses
+     * their state. */
+    atomic_store(&g_quit, 1);
+    atomic_fetch_add(&g_gen, 1);
+    futex_wake_all();
+    for (int w = 0; w < started; ++w) {
+      pthread_join(g_worker[w].thread, NULL);
+      free(g_worker[w].wake_us);
+      free(g_worker[w].wake_gen);
+    }
+    free(svc);
+    free(all);
+    fprintf(stderr, "worker %d could not start\n", started);
+    return 0;
   }
   if (!pin_to(g_cpu) || !fifo(BENCH_RT_PRIO)) {
     atomic_fetch_add(&g_sched_refused, 1);
@@ -615,20 +657,28 @@ static int run_scenario(const bench_opts* o, rig* r, int jobs, int workers,
   const int cpus = ncpus();
   out->cb_pct = 100.0 * (cpu1 - cpu0) / (wall * cpus);
   out->faults = flt1 - flt0;
-  double wsum = 0;
-  double* all = (double*)malloc(sizeof(double) * (periods + warm + 8) *
-                                (size_t)(workers > 0 ? workers : 1));
+  double wpct = 0;
   size_t na = 0;
+  /* The timed periods are generations warm + 1 .. periods + warm (the
+   * callback's period k runs generation k + 1). */
+  const uint32_t first_gen = (uint32_t)warm + 1u;
+  const uint32_t last_gen = (uint32_t)(periods + warm);
   for (int w = 0; w < workers; ++w) {
     worker* wk = &g_worker[w];
-    wsum += wk->cpu_us1 - wk->cpu_us0;
+    const double ww = wk->wall_us1 - wk->wall_us0;
+    if (ww > 0) wpct += 100.0 * (wk->cpu_us1 - wk->cpu_us0) / (ww * cpus);
     out->faults += wk->flt1 - wk->flt0;
     out->skipped += wk->skipped;
     const size_t n = atomic_load(&wk->n);
-    for (size_t i = warm < n ? warm : n; i < n; ++i) all[na++] = wk->wake_us[i];
+    for (size_t i = 0; i < n; ++i) {
+      if (wk->wake_gen[i] >= first_gen && wk->wake_gen[i] <= last_gen) {
+        all[na++] = wk->wake_us[i];
+      }
+    }
     free(wk->wake_us);
+    free(wk->wake_gen);
   }
-  out->worker_pct = 100.0 * wsum / (wall * cpus);
+  out->worker_pct = wpct;
   if (na > 0) {
     const stats ws = stats_of(all, na);
     out->wake_p99 = ws.p99;
@@ -701,8 +751,13 @@ int main(int argc, char** argv) {
     }
   }
   if (workers < 0 || workers > MAX_WORKERS || chains < 0 ||
-      chains > MAX_JOBS || max_chains > MAX_JOBS) {
+      chains > MAX_JOBS || max_chains < 1 || max_chains > MAX_JOBS) {
     fprintf(stderr, "workers 0..%d, chains 0..%d\n", MAX_WORKERS, MAX_JOBS);
+    return 2;
+  }
+  if (o.rate < 8000 || o.rate > 384000 || o.period < 1 || o.period > 4096 ||
+      !(seconds > 0)) {
+    fprintf(stderr, "rate 8000..384000, period 1..4096, seconds > 0\n");
     return 2;
   }
   detect_cpu();
@@ -736,7 +791,18 @@ int main(int argc, char** argv) {
   }
 #endif
   pthread_t hog;
-  if (g_hog_cpu >= 0) pthread_create(&hog, NULL, hog_main, NULL);
+  if (g_hog_cpu >= 0) {
+    if (pthread_create(&hog, NULL, hog_main, NULL) != 0) {
+      fprintf(stderr, "the memory load could not start\n");
+      return 3;
+    }
+    while (atomic_load(&g_hog_running) == 0) sched_yield();
+    if (atomic_load(&g_hog_running) < 0) {
+      fprintf(stderr, "the memory load could not allocate its buffers\n");
+      pthread_join(hog, NULL);
+      return 3;
+    }
+  }
 
   const double period_us = 1e6 * o.period / o.rate;
   printf("bench_fx_parallel: %s, %d CPUs, %d Hz, %d-frame periods (period "

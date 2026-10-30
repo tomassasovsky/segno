@@ -52,6 +52,10 @@ echo "== building bench_fx_parallel ==" >&2
 # shellcheck disable=SC2086
 $CC $STD ${EXTRA_CFLAGS:-} src/test/bench/bench_fx_parallel.c $ENGINE_SRC "$OUT_DIR/le_stretch.o" \
   $LIBS ${STATIC:+-static} -o "$OUT_DIR/bench_fx_parallel"
-echo "binary: $(pwd)/$OUT_DIR/bench_fx_parallel" >&2
+case "$OUT_DIR" in
+  /*) BIN="$OUT_DIR/bench_fx_parallel" ;;
+  *) BIN="$(pwd)/$OUT_DIR/bench_fx_parallel" ;;
+esac
+echo "binary: $BIN" >&2
 
-"./$OUT_DIR/bench_fx_parallel" "$@"
+"$BIN" "$@"
