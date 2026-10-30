@@ -439,6 +439,11 @@ jobs:
       # console, not from CI.
       - name: Smoke-run the effects bench
         run: bash packages/segno_engine/src/test/bench/bench_fx_cpu.sh --smoke
+      # The #1515 multi-core effects spike (src/test/bench/bench_fx_parallel.{c,sh}),
+      # kept compiling against the engine's internals; its numbers come from
+      # the console, not from CI.
+      - name: Smoke-run the multi-core effects spike
+        run: bash packages/segno_engine/src/test/bench/bench_fx_parallel.sh --smoke --chains 2 --workers 1
       - name: Check macOS RNNoise include/forwarder wiring
         run: bash packages/segno_engine/tool/test/run_macos_rnnoise_wiring_tests.sh
       - name: Build + run the pedal-link contract test (firmware C vs Dart fixtures)
