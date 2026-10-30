@@ -1,7 +1,7 @@
 <!-- cspell:words heatsinks Omron -->
 # Segno — Progress & Roadmap
 
-<!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs -->
+<!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore -->
 
 Living status doc for Segno, the live looping appliance (a Raspberry Pi 5
 console). It began as a Flutter desktop loopstation; the original plan is
@@ -69,6 +69,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1342 | Ring carrier firmware updates from the console | in-review | blocked-verify | `claude/ring-update-1342` |
 | #1437 | Recover from and record a freeze (watchdog, pstore, journal sync, lockup policy) | in-review | auto | `claude/appliance-freeze-recovery-1437` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
+| #1515 | Effects on more than one core: plan and spike (worker cores, per-core admission) | plan | plan-gate | `claude/fx-multicore-1515` |
 
 ---
 
