@@ -7995,9 +7995,17 @@ class LooperRepository {
   }
 
   /// The effects workers the engine runs beside the callback (#1515): 0 on
-  /// the desktop, and whenever the kernel refused them, which shows a rig
-  /// admitted with them as over budget rather than dropping any effect.
-  int get _fxWorkers => _engine.fxWorkersTelemetry().running;
+  /// the desktop, and fewer than asked for when the kernel refused them,
+  /// which shows a rig admitted with them as over budget rather than
+  /// dropping any effect. While the engine is stopped (a device lost, an
+  /// audio-settings apply) the count it asked for, so the rig's verdict does
+  /// not flip with the device.
+  int get _fxWorkers {
+    final workers = _engine.fxWorkersTelemetry();
+    final live =
+        workers.running > 0 || (_intendRunning && _engine.snapshot().isRunning);
+    return live ? workers.running : workers.requested;
+  }
 
   /// [fxLoadNs] for every chain as it is, or with the chain at [at] replaced
   /// by [chain].
@@ -8030,7 +8038,10 @@ class LooperRepository {
     ].fold(0, (a, b) => a + b);
     return fxLoadNs(
       serial: serial,
-      jobs: [for (final c in monitors.values) cost(c)],
+      jobs: [
+        for (final c in monitors.values)
+          if (c.isNotEmpty) cost(c),
+      ],
       workers: _fxWorkers,
       period: period,
     );

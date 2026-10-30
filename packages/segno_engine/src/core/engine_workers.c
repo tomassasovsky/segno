@@ -327,7 +327,8 @@ void le_fx_pool_start(le_engine* e) {
   atomic_store_explicit(&p->a_quit, 0, memory_order_relaxed);
   atomic_store_explicit(&p->a_claim, 0u, memory_order_relaxed);
   atomic_store_explicit(&p->a_done, 0u, memory_order_relaxed);
-  const int32_t want = e->fx_workers_req;
+  const int32_t want =
+      atomic_load_explicit(&e->fx_workers_req, memory_order_relaxed);
   if (want <= 0) return;
   struct le_fx_pool* pool =
       (struct le_fx_pool*)calloc(1, sizeof(struct le_fx_pool));
@@ -345,15 +346,16 @@ void le_fx_pool_start(le_engine* e) {
     }
   }
   /* Each worker says whether the kernel gave it its core and priority; that
-   * takes microseconds, and two seconds is far past any healthy start. */
+   * takes microseconds, and two seconds for all of them together is far past
+   * any healthy start. */
   int32_t running = 0;
+  int tries = 0;
   for (int32_t k = 0; k < want; ++k) {
     le_fx_worker* w = &pool->w[k];
-    int32_t s = 0;
-    for (int tries = 0; tries < 20000; ++tries) {
-      s = atomic_load_explicit(&w->a_state, memory_order_acquire);
-      if (s != 0) break;
+    int32_t s = atomic_load_explicit(&w->a_state, memory_order_acquire);
+    while (s == 0 && tries++ < 20000) {
       le_fx_sleep_us(100);
+      s = atomic_load_explicit(&w->a_state, memory_order_acquire);
     }
     if (s == 1) {
       ++running;
@@ -405,12 +407,13 @@ int32_t le_engine_set_fx_workers(le_engine* engine, int32_t count,
   if (atomic_load_explicit(&engine->a_running, memory_order_acquire)) {
     return LE_ERR_ALREADY_RUNNING;
   }
-  if (count == engine->fx_workers_req &&
+  if (count == atomic_load_explicit(&engine->fx_workers_req,
+                                   memory_order_relaxed) &&
       memcmp(want, engine->fx_cores, sizeof(want)) == 0) {
     return LE_OK;
   }
   le_fx_pool_stop(engine);
-  engine->fx_workers_req = count;
+  atomic_store_explicit(&engine->fx_workers_req, count, memory_order_relaxed);
   memcpy(engine->fx_cores, want, sizeof(want));
   /* A configured engine (the device-free one the tests pump) starts them
    * now; otherwise the next configure or start does. */
@@ -424,7 +427,8 @@ void le_engine_get_fx_workers_telemetry(le_engine* engine,
                                         le_fx_workers_telemetry* out) {
   if (engine == NULL || out == NULL) return;
   memset(out, 0, sizeof(*out));
-  out->requested = engine->fx_workers_req;
+  out->requested =
+      atomic_load_explicit(&engine->fx_workers_req, memory_order_relaxed);
   out->running =
       atomic_load_explicit(&engine->fx_par.a_workers, memory_order_relaxed);
   const le_fx_round_tm* rt = &engine->fx_round_tm;

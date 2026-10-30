@@ -237,10 +237,10 @@ abstract interface class EngineLifecycle {
   /// Asks for [count] effects workers (0 to 3; 0, the default, runs the
   /// monitor chains on the audio callback) and, in [cores], where to run them:
   /// the callback's core first, then one per worker, -1 for "not pinned";
-  /// null pins nothing (#1515). They start with the next [start]; while the
-  /// device runs the count is fixed ([EngineResult.alreadyRunning]). The
-  /// output is the same with or without them;
-  /// [EngineMetering.fxWorkersTelemetry] reports how many run.
+  /// null pins nothing (#1515). They start at once on a configured engine,
+  /// otherwise with the next [start]; while the device runs the count is
+  /// fixed ([EngineResult.alreadyRunning]). The output is the same with or
+  /// without them; [EngineMetering.fxWorkersTelemetry] reports how many run.
   EngineResult setFxWorkers({required int count, List<int>? cores});
 
   /// Reopens the device after a loss WITHOUT discarding the recorded loops.

@@ -162,7 +162,12 @@ void main() {
       expect(fxLoadNs(serial: 500, jobs: [rackNs, rackNs]), 500 + 2 * rackNs);
       // One job is run on the callback, workers or not: no handoff.
       expect(fxLoadNs(serial: 500, jobs: [rackNs], workers: 2), 500 + rackNs);
-      expect(fxLoadNs(serial: 0, jobs: [0, rackNs], workers: 2), rackNs);
+      // A chain that charges nothing is still a job the engine releases a
+      // round for: the handoff is paid.
+      expect(
+        fxLoadNs(serial: 0, jobs: [0, rackNs], workers: 2),
+        81 + ((rackNs + 2 * rackNs) / 3).ceil(),
+      );
     });
 
     test('with workers, the critical path and the handoff', () {

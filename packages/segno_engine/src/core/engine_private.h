@@ -3296,7 +3296,7 @@ struct le_engine {
   le_fx_worker_tm fx_worker_tm[LE_FX_WORKERS_MAX];
   le_fx_round_tm fx_round_tm;
   struct le_fx_pool* fx_pool;
-  int32_t fx_workers_req;
+  _Atomic int32_t fx_workers_req; /* read by any thread's telemetry pull */
   int32_t fx_cores[1 + LE_FX_WORKERS_MAX];
 };
 
