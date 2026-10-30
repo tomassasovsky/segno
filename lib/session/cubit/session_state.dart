@@ -100,6 +100,11 @@ enum SessionError {
   /// A New loop started and is current, but its empty bundle could not be
   /// written yet: the first Save writes it.
   newLoopNotSaved,
+
+  /// A New loop with a template (#1513) was refused because the template
+  /// would go over the effects budget. The take in progress has ended and
+  /// the outgoing session is saved; no new loop started.
+  templateDoesNotFit,
 }
 
 /// State of the [SessionCubit].
@@ -127,6 +132,7 @@ class SessionState extends Equatable {
     this.conversion,
     this.refusedBy,
     this.failureCount = 0,
+    this.trackNamesNotSaved = false,
   });
 
   /// The current action status.
@@ -173,6 +179,10 @@ class SessionState extends Equatable {
   /// Per-transition, like [error].
   final GuardKind? refusedBy;
 
+  /// Whether a New loop with a template started but could not write its
+  /// track names (#1513). A per-transition result, like [conversion].
+  final bool trackNamesNotSaved;
+
   /// How many actions have failed so far. Durable: a later emit that only
   /// re-lists the catalog keeps it, so a view can tell a failure it has
   /// already seen from a new one.
@@ -181,11 +191,11 @@ class SessionState extends Equatable {
   /// Returns a copy for the next emit.
   ///
   /// The **result** fields ([outcome] / [error] / [errorMessage] /
-  /// [failedSessionId] / [conversion]) are per-transition: they default to
-  /// `null` (cleared) unless passed, so a fresh status never carries a stale
-  /// result. The **durable** fields ([currentSessionId] /
-  /// [currentSessionName] / [sessions] / [folders]) are preserved unless
-  /// overridden.
+  /// [failedSessionId] / [conversion] / [trackNamesNotSaved]) are
+  /// per-transition: they default to `null` or false (cleared) unless passed,
+  /// so a fresh status never carries a stale result. The **durable** fields
+  /// ([currentSessionId] / [currentSessionName] / [sessions] / [folders]) are
+  /// preserved unless overridden.
   SessionState copyWith({
     SessionStatus? status,
     SessionOutcome? outcome,
@@ -200,6 +210,7 @@ class SessionState extends Equatable {
     SessionConversionNotice? conversion,
     GuardKind? refusedBy,
     int? failureCount,
+    bool trackNamesNotSaved = false,
   }) => SessionState(
     status: status ?? this.status,
     outcome: outcome,
@@ -214,6 +225,7 @@ class SessionState extends Equatable {
     conversion: conversion,
     refusedBy: refusedBy,
     failureCount: failureCount ?? this.failureCount,
+    trackNamesNotSaved: trackNamesNotSaved,
   );
 
   @override
@@ -231,6 +243,7 @@ class SessionState extends Equatable {
     conversion,
     refusedBy,
     failureCount,
+    trackNamesNotSaved,
   ];
 }
 

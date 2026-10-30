@@ -407,7 +407,10 @@ void showSessionOutcome(BuildContext context, SessionState state) {
         null => l10n.sessionLoaded,
         final notice => sessionConversionMessage(l10n, notice),
       },
-      // The stage's header names the new loop (19/06); no toast over it.
+      // The stage's header names the new loop (19/06); no toast over it,
+      // unless a template's track names could not be written (#1513).
+      SessionOutcome.newLoop when state.trackNamesNotSaved =>
+        l10n.sessionTrackNamesNotSaved,
       SessionOutcome.newLoop ||
       // The catalog outcomes happen in the Library, which shows its own
       // result; no SnackBar behind it.
@@ -433,6 +436,7 @@ void showSessionOutcome(BuildContext context, SessionState state) {
       SessionError.currentSessionProtected => l10n.libraryDeleteCurrentRefused,
       SessionError.folderNotEmpty => l10n.libraryFolderNotEmpty,
       SessionError.captureInProgress => l10n.libraryTakeStillRunning,
+      SessionError.templateDoesNotFit => l10n.sessionTemplateDoesNotFit,
       SessionError.newLoopNotSaved => l10n.sessionNewLoopNotSaved(
         state.currentSessionName ?? '',
       ),

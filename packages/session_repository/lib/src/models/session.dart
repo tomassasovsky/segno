@@ -1319,14 +1319,20 @@ class Session {
   /// Each field is named here on purpose, with no copy helper: a field added
   /// to [Session] later reads its default until its New loop fate is written
   /// into this constructor call, and the field-table test fails until it is.
-  Session forNewLoop() => Session(
+  ///
+  /// A loop template (#1513) passes its own [trackChains] and [laneChains]
+  /// in place of this session's.
+  Session forNewLoop({
+    List<SessionTrackChain>? trackChains,
+    List<SessionLaneChain>? laneChains,
+  }) => Session(
     sampleRate: sampleRate,
     channels: channels,
     baseLengthFrames: 0,
     tracks: const [],
-    laneChains: laneChains,
+    laneChains: laneChains ?? this.laneChains,
     monitors: monitors,
-    trackChains: trackChains,
+    trackChains: trackChains ?? this.trackChains,
     outputChains: outputChains,
     allTracksChain: allTracksChain,
     tempoBpm: tempoBpm,

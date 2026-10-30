@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
-import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
@@ -673,20 +672,7 @@ class FxCubit extends Cubit<FxState> {
             },
         ];
       case FxRackChoice(:final preset):
-        final rack =
-            into ??
-            FxRack(
-              id: SlotIds.mint(),
-              name: preset.name,
-              art: kFxFamilySlugs[preset.family],
-            );
-        return [
-          for (final entry in fxRackEntries(preset))
-            entry.copyWith(
-              placement: placement,
-              rack: rack,
-            ),
-        ];
+        return fxFactoryRack(preset, placement: placement, into: into);
     }
   }
 

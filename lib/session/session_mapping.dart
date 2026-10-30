@@ -7,6 +7,7 @@ import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
+import 'package:segno/session/new_loop_template.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -367,8 +368,30 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
 /// the tracks, and Fade and Reverse reset with the material
 /// (`LE_CMD_RESET_TRANSFORMS`). Speed and Transpose resets belong in that same
 /// apply path when they land, not here.
-SessionRig rigForNewLoop(Session live) =>
-    rigFromBundle((session: live.forNewLoop(), laneStems: const {}));
+///
+/// A [template] (#1513 D2) replaces the track chains of its channels with
+/// its own and drops their lane chains; every other chain stays.
+SessionRig rigForNewLoop(Session live, {NewLoopTemplate? template}) {
+  final channels = template?.trackChains.keys.toSet() ?? const <int>{};
+  final session = template == null
+      ? live.forNewLoop()
+      : live.forNewLoop(
+          trackChains: [
+            for (final chain in live.trackChains)
+              if (!channels.contains(chain.channel)) chain,
+            for (final entry in template.trackChains.entries)
+              SessionTrackChain(
+                channel: entry.key,
+                encoded: encodeFxChain(entry.value),
+              ),
+          ],
+          laneChains: [
+            for (final chain in live.laneChains)
+              if (!channels.contains(chain.channel)) chain,
+          ],
+        );
+  return rigFromBundle((session: session, laneStems: const {}));
+}
 
 /// Projects one manifest monitor + its decoded chain into the rig's Input-stage
 /// model. The monitor carries routing/mix of its own, so the envelope is

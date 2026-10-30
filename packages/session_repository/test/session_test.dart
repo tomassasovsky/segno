@@ -1491,5 +1491,21 @@ void main() {
         ..['primaryTrack'] = -1;
       expect(jsonEncode(source.forNewLoop().toJson()), jsonEncode(json));
     });
+
+    test("a template's chains replace the session's (#1513)", () {
+      const trackChains = [SessionTrackChain(channel: 0, encoded: 'rack')];
+      const laneChains = [
+        SessionLaneChain(channel: 5, lane: 0, encoded: 'lane'),
+      ];
+
+      final next = session.forNewLoop(
+        trackChains: trackChains,
+        laneChains: laneChains,
+      );
+
+      expect(next.trackChains, trackChains);
+      expect(next.laneChains, laneChains);
+      expect(next.allTracksChain, session.allTracksChain);
+    });
   });
 }
