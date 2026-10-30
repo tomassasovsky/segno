@@ -366,13 +366,13 @@ costs at or below their charges). So:
 
 ```
 A + B + S + h + J/C + (1 - 1/C) * p  <=  0.8 x frame
-p                                    <=  0.8 x frame - A - B - S - h
 ```
 
 - C = 1 gives today's rule exactly (h = 0, J + S = every chain).
-- The second line is Ableton's critical-path limit: one chain owner's work
-  never splits across cores, so no single job may be heavier than one core's
-  room.
+- The `(1 - 1/C) * p` term is Ableton's critical-path limit: one chain
+  owner's work never splits across cores. No separate check is needed: since
+  J >= p, the rule's left side is at least A + B + S + h + p, so any rig it
+  admits already fits its largest job on one core.
 - The repository computes it from the charges it already has
   (`LooperRepository.fxRoomNs`, `looper_repository.dart:8004`), grouped by
   job: per monitor input in part 1, per track in part 2. It needs the engine's
@@ -612,7 +612,7 @@ block it.
    The coordinator's bench shows four full Ed's Racks at 51 % of the period at
    48 kHz / 32 frames against 90 % at 96 kHz / 64, with the round trip 6.19
    against 6.05 ms. At 48 kHz every core has about twice the room, and the
-   two levers multiply. Recommended: decide the rate on its own issue; this
+   gains from the lower rate and from more cores multiply. Recommended: decide the rate on its own issue; this
    plan works at either rate.
 3. **Which parts to build.** Recommended: build parts 1 and 2 now and part 3
    only when racks on outputs or All tracks need it.
