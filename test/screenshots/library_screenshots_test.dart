@@ -219,7 +219,7 @@ void main() {
     );
     // The effects budget Ed's setup is checked against.
     final looperRepository = _MockLooperRepository();
-    when(() => looperRepository.fxCostOf(any())).thenReturn(100);
+    when(() => looperRepository.fxGrowthNs(any())).thenReturn(100);
     when(() => looperRepository.fxRoomNs).thenReturn(fxRoomNs);
     when(looperRepository.allTrackChains).thenReturn(const {});
     when(looperRepository.allLaneChains).thenReturn(const {});

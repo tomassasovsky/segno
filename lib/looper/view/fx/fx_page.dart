@@ -564,7 +564,9 @@ class _FxViewState extends State<FxView> {
     List<TrackEffect> chain,
   ) {
     final repository = context.read<LooperRepository>();
-    return (added) => repository.fxGrowthNs(address, [...chain, ...added]);
+    return (added) => repository.fxGrowthNs({
+      address: [...chain, ...added],
+    });
   }
 
   static bool _committed(FxEditResult result) =>

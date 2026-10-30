@@ -166,7 +166,7 @@ void main() {
     registerFallbackValue(const LooperInputPanChanged(0, pan: 0));
     registerFallbackValue(MonitorMode.off);
     registerFallbackValue(const FxAddress(stage: FxStage.track));
-    registerFallbackValue(<TrackEffect>[]);
+    registerFallbackValue(<FxAddress, List<TrackEffect>>{});
     if (!rendersScreenshots) return;
     await loadScreenshotFont('Roboto', [
       '$materialFontDir/Roboto-Regular.ttf',
@@ -218,8 +218,12 @@ void main() {
     when(() => repository.state).thenReturn(_rig);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.fxRoomNs).thenReturn(1 << 40);
-    when(() => repository.fxGrowthNs(any(), any())).thenAnswer(
-      (call) => fxChainCostNs(call.positionalArguments[1] as List<TrackEffect>),
+    when(() => repository.fxGrowthNs(any())).thenAnswer(
+      (call) => fxChainCostNs(
+        (call.positionalArguments[0] as Map<FxAddress, List<TrackEffect>>)
+            .values
+            .expand((chain) => chain),
+      ),
     );
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());

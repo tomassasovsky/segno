@@ -108,13 +108,13 @@ void main() {
       expect(repo.fxRoomNs, room - cost);
       // An edit is weighed by what it adds.
       expect(
-        repo.fxGrowthNs(const FxAddress(stage: FxStage.output), [
-          _fx(TrackEffectType.reverb),
-        ]),
+        repo.fxGrowthNs({
+          const FxAddress(stage: FxStage.output): [_fx(TrackEffectType.reverb)],
+        }),
         _cost(TrackEffectType.reverb),
       );
       expect(
-        repo.fxGrowthNs(const FxAddress(stage: FxStage.track), const []),
+        repo.fxGrowthNs({const FxAddress(stage: FxStage.track): const []}),
         -cost,
       );
     });
@@ -218,10 +218,9 @@ void main() {
         putRacks(6);
         expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
         // A seventh is weighed by what it adds to the critical path.
-        final seventh = repo.fxGrowthNs(
-          const FxAddress(stage: FxStage.input, index: 6),
-          rack,
-        );
+        final seventh = repo.fxGrowthNs({
+          const FxAddress(stage: FxStage.input, index: 6): rack,
+        });
         expect(seventh, greaterThan(repo.fxRoomNs));
         putRacks(7);
         expect(repo.fxRoomNs, lessThan(0));
@@ -229,14 +228,12 @@ void main() {
 
       test('a rack on a track runs on the callback: it charges in full', () {
         putRacks(2);
-        final onInput = repo.fxGrowthNs(
-          const FxAddress(stage: FxStage.input, index: 2),
-          rack,
-        );
-        final onTrack = repo.fxGrowthNs(
-          const FxAddress(stage: FxStage.track),
-          rack,
-        );
+        final onInput = repo.fxGrowthNs({
+          const FxAddress(stage: FxStage.input, index: 2): rack,
+        });
+        final onTrack = repo.fxGrowthNs({
+          const FxAddress(stage: FxStage.track): rack,
+        });
         expect(onTrack, rackNs);
         expect(onInput, lessThan(onTrack));
       });
@@ -245,7 +242,7 @@ void main() {
         putRacks(6);
         final off = [for (final fx in rack) fx.copyWith(enabled: false)];
         expect(
-          repo.fxGrowthNs(const FxAddress(stage: FxStage.input), off),
+          repo.fxGrowthNs({const FxAddress(stage: FxStage.input): off}),
           0,
         );
       });

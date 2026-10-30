@@ -2,6 +2,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/library/application/eds_setup.dart';
+import 'package:segno/session/new_loop_template.dart';
+import 'package:segno_engine/segno_engine.dart' show MockAudioEngine;
 
 /// The app's bundle with one of Ed's setup's presets missing from it.
 class _WithoutBoomDry extends CachingAssetBundle {
@@ -82,6 +84,35 @@ void main() {
       );
 
       expect(cost, lessThanOrEqualTo(fxBudgetNs(96000)));
+    });
+
+    test('fits a 96 kHz rig through the admission every edit uses, and a '
+        'template four times as heavy does not', () async {
+      final template = (await loadEdsSetup())!;
+      final engine = MockAudioEngine();
+      final looper = LooperRepository(engine: engine)
+        ..startEngine(const EngineConfig(sampleRate: 96000));
+      addTearDown(looper.dispose);
+
+      expect(newLoopTemplateFits(looper, template), isTrue);
+      // Each rack four times over: past the budget on the callback.
+      final heavy = NewLoopTemplate(
+        trackChains: {
+          for (final MapEntry(:key, :value) in template.trackChains.entries)
+            key: FxChainEnvelope(
+              entries: [for (var i = 0; i < 4; i++) ...value.entries],
+            ),
+        },
+        names: const {},
+      );
+      expect(
+        heavy.trackChains.values.fold(
+          0,
+          (sum, chain) => sum + fxChainCostNs(chain.entries),
+        ),
+        greaterThan(fxBudgetNs(96000)),
+      );
+      expect(newLoopTemplateFits(looper, heavy), isFalse);
     });
 
     test('a missing preset gives no template', () async {

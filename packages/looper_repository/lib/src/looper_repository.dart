@@ -7986,12 +7986,14 @@ class LooperRepository {
   /// switching one on is never refused.
   int get fxCostNs => _fxLoadAt(_fxPeriod);
 
-  /// How much [fxCostNs] would grow, in nanoseconds per frame, with the chain
-  /// at [address] replaced by [chain] (negative when it would shrink): what
-  /// an edit there is weighed by against [fxRoomNs].
-  int fxGrowthNs(FxAddress address, List<TrackEffect> chain) {
+  /// How much [fxCostNs] would grow, in nanoseconds per frame, with the
+  /// chain at each address of [chains] replaced by its value (an empty one
+  /// removes it); negative when it would shrink. What an edit is weighed by
+  /// against [fxRoomNs]: one chain for an effects edit, several for a New
+  /// loop template.
+  int fxGrowthNs(Map<FxAddress, List<TrackEffect>> chains) {
     final period = _fxPeriod;
-    return _fxLoadAt(period, address, chain) - _fxLoadAt(period);
+    return _fxLoadAt(period, chains) - _fxLoadAt(period);
   }
 
   /// The effects workers the engine runs beside the callback (#1515): 0 on
@@ -8007,16 +8009,19 @@ class LooperRepository {
     return live ? workers.running : workers.requested;
   }
 
-  /// [fxLoadNs] for every chain as it is, or with the chain at [at] replaced
-  /// by [chain].
-  int _fxLoadAt(int period, [FxAddress? at, List<TrackEffect>? chain]) {
+  /// [fxLoadNs] for every chain as it is, or with the chains at the
+  /// addresses of [replaced] replaced by its values.
+  int _fxLoadAt(
+    int period, [
+    Map<FxAddress, List<TrackEffect>> replaced = const {},
+  ]) {
     int cost(List<TrackEffect> c) => fxChainCostNs(c, period: period);
     final monitors = {..._monitorEffects};
     final tracks = {..._trackEffects};
     final outputs = {..._outputEffects};
     final lanes = {..._laneEffects};
     var allTracks = _allTracksEffects;
-    if (at != null && chain != null) {
+    for (final MapEntry(key: at, value: chain) in replaced.entries) {
       switch (at.stage) {
         case FxStage.input:
           monitors[at.index] = chain;

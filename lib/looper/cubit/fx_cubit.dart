@@ -218,8 +218,8 @@ class FxCubit extends Cubit<FxState> {
     List<TrackEffect> next,
   ) {
     final grows =
-        _repository.fxGrowthNs(address, next) -
-        _repository.fxGrowthNs(address, current);
+        _repository.fxGrowthNs({address: next}) -
+        _repository.fxGrowthNs({address: current});
     return grows > 0 && grows > _repository.fxRoomNs;
   }
 
