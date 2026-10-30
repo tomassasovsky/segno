@@ -35,7 +35,7 @@ void main() {
   var room = 1 << 40;
 
   setUpAll(() {
-    registerFallbackValue(<TrackEffect>[]);
+    registerFallbackValue(<FxAddress, List<TrackEffect>>{});
     registerFallbackValue(const FxAddress(stage: FxStage.track));
   });
 
@@ -50,8 +50,12 @@ void main() {
     when(() => repository.mixGeneration).thenAnswer((_) => generation);
     when(() => repository.sessionRevision).thenAnswer((_) => session);
     when(() => repository.fxRoomNs).thenAnswer((_) => room);
-    when(() => repository.fxCostOf(any())).thenAnswer(
-      (call) => fxChainCostNs(call.positionalArguments[0] as List<TrackEffect>),
+    when(() => repository.fxGrowthNs(any())).thenAnswer(
+      (call) => fxChainCostNs(
+        (call.positionalArguments[0] as Map<FxAddress, List<TrackEffect>>)
+            .values
+            .expand((chain) => chain),
+      ),
     );
     when(() => repository.state).thenReturn(
       const LooperState(

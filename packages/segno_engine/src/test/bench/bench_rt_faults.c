@@ -28,6 +28,14 @@
  *     many and which control action came last, and sums them per action at
  *     the end; --timeline adds one line per poll with the track states and
  *     that poll's service histogram;
+ *   - --fx-workers N runs the monitor chains on N effects workers (#1515),
+ *     pinned where --fx-cores C,W1,.. says (the callback's core first), and
+ *     --racks N puts Ed's Rack (bench_fx_parallel's) on monitored inputs
+ *     0..N-1; the monitor flips then stomp a rack's pedal instead of
+ *     retyping the chain. The workers' faults are judged with the
+ *     callback's, and the report adds their telemetry, the CPU the callback
+ *     and the workers used and the whole machine's, as shares of the whole
+ *     machine (100 % = every core), and the SoC temperature;
  *   - the window runs from --warmup to --seconds: at each end it samples the
  *     callback thread's own minflt/majflt from /proc/self/task/<tid>/stat, and
  *     the engine's callback telemetry. Both samples are taken on time, not at
@@ -75,6 +83,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "engine_fx.h"       /* le_fx_defaults (--racks) */
 #include "engine_platform.h" /* le_platform_fork_count */
 #include "segno_engine_api.h"
 
@@ -88,6 +97,10 @@ typedef struct {
   int32_t period;
   const char* playback;
   const char* capture;
+  int32_t fx_workers;
+  int32_t fx_cores[1 + LE_FX_WORKERS_MAX];
+  int fx_cores_n;
+  int racks;
 } rt_opts;
 
 static double now_s(void) {
@@ -104,7 +117,8 @@ static void sleep_ms(int ms) {
 /* Fields of /proc/self/task/<tid>/stat, counted from 1 as proc(5) does. */
 typedef struct {
   long minflt, majflt;
-  int policy;
+  long ticks; /* utime + stime, in clock ticks */
+  int policy, rt_priority;
 } rt_task_stat;
 
 static int read_task_stat(long tid, rt_task_stat* out) {
@@ -130,25 +144,83 @@ static int read_task_stat(long tid, rt_task_stat* out) {
   }
   out->minflt = v[10];
   out->majflt = v[12];
+  out->ticks = v[14] + v[15];
+  out->rt_priority = (int)v[40];
   out->policy = (int)v[41];
   return 1;
 }
 
-/* The callback thread: the one task of this process on SCHED_FIFO. */
+/* The callback thread: the task of this process on SCHED_FIFO at the highest
+ * priority (80; the effects workers run at 79). */
 static long find_rt_task(void) {
   DIR* d = opendir("/proc/self/task");
   if (d == NULL) return -1;
   long found = -1;
+  int best = -1;
   struct dirent* de;
   while ((de = readdir(d)) != NULL) {
     const long tid = strtol(de->d_name, NULL, 10);
     rt_task_stat st;
-    if (tid > 0 && read_task_stat(tid, &st) && st.policy == 1 /* FIFO */) {
+    if (tid > 0 && read_task_stat(tid, &st) && st.policy == 1 /* FIFO */ &&
+        st.rt_priority > best) {
       found = tid;
+      best = st.rt_priority;
     }
   }
   closedir(d);
   return found;
+}
+
+/* The effects workers (#1515), by their names (segno-fx-N); returns how many
+ * it found. */
+static int find_fx_workers(long* tids, int max) {
+  DIR* d = opendir("/proc/self/task");
+  if (d == NULL) return 0;
+  int n = 0;
+  struct dirent* de;
+  while ((de = readdir(d)) != NULL && n < max) {
+    const long tid = strtol(de->d_name, NULL, 10);
+    if (tid <= 0) continue;
+    char path[64], comm[32] = {0};
+    snprintf(path, sizeof(path), "/proc/self/task/%ld/comm", tid);
+    FILE* f = fopen(path, "r");
+    if (f == NULL) continue;
+    if (fgets(comm, sizeof(comm), f) != NULL &&
+        strncmp(comm, "segno-fx-", 9) == 0) {
+      tids[n++] = tid;
+    }
+    fclose(f);
+  }
+  closedir(d);
+  return n;
+}
+
+/* The whole machine's busy and total jiffies (the aggregate cpu line of
+ * /proc/stat), as the console's CPU indicator reads them (#1307). */
+static int read_machine(long long* busy, long long* total) {
+  FILE* f = fopen("/proc/stat", "r");
+  if (f == NULL) return 0;
+  long long v[10] = {0};
+  const int n = fscanf(f, "cpu %lld %lld %lld %lld %lld %lld %lld %lld %lld %lld",
+                       &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7],
+                       &v[8], &v[9]);
+  fclose(f);
+  if (n < 8) return 0;
+  long long t = 0;
+  for (int i = 0; i < 8; ++i) t += v[i];
+  *total = t;
+  *busy = t - v[3] - v[4]; /* less idle and iowait */
+  return 1;
+}
+
+/* The SoC temperature, in degrees C, or -1. */
+static double read_temp_c(void) {
+  FILE* f = fopen("/sys/class/thermal/thermal_zone0/temp", "r");
+  if (f == NULL) return -1.0;
+  long m = -1;
+  if (fscanf(f, "%ld", &m) != 1) m = -1;
+  fclose(f);
+  return m < 0 ? -1.0 : (double)m / 1000.0;
 }
 
 /* ---- the forker: Dart's Process.start, minus Dart ---- */
@@ -190,6 +262,45 @@ static int g_fx_type_count = 4; /* --fx-types */
 
 static le_engine* g_e;
 static int g_fx_turn = 0;
+
+/* --racks: Ed's Rack on monitored inputs 0..N-1 (bench_fx_parallel's, at its
+ * heavy settings), and the recipe revision each publish takes. */
+static int g_racks = 0;
+static le_fx_recipe g_rack[LE_MAX_CHANNELS];
+static uint32_t g_rack_rev = 1;
+
+static void eds_rack(le_fx_recipe* r, int input) {
+  static const int32_t kinds[] = {LE_FX_DUAL_OCTAVER, LE_FX_WAH,
+                                  LE_FX_COMPRESSOR,   LE_FX_OVERDRIVE,
+                                  LE_FX_AMP_CAB,      LE_FX_CHORUS,
+                                  LE_FX_ROOM_VERB,    LE_FX_MODE_DELAY,
+                                  LE_FX_EQ};
+  memset(r, 0, sizeof(*r));
+  r->enabled = 1;
+  r->count = (int32_t)(sizeof(kinds) / sizeof(kinds[0]));
+  for (int s = 0; s < r->count; ++s) {
+    const int32_t k = kinds[s];
+    r->type[s] = k;
+    r->slot_enabled[s] = 1;
+    r->level[s] = 1.0f;
+    r->instance[s] = (uint64_t)(100 * (input + 1) + s);
+    le_fx_defaults(k, r->params[s]);
+    if (k == LE_FX_DUAL_OCTAVER) {
+      r->params[s][3] = 0.6f; /* Octave 2 at 60 % */
+    } else if (k == LE_FX_COMPRESSOR) {
+      r->params[s][0] = 0.5f;
+      r->params[s][4] = 0.3f;
+    } else if (k == LE_FX_AMP_CAB) {
+      r->params[s][0] = 0.935f; /* Full Drive Power, the 4x12" */
+      r->params[s][4] = 7.0f / 11.0f;
+    } else if (k == LE_FX_ROOM_VERB) {
+      r->params[s][2] = 3.0f / 15.0f; /* BOX: the most early taps */
+    } else if (k == LE_FX_MODE_DELAY) {
+      r->params[s][0] = 9.0f / 19.0f;
+      r->params[s][3] = 7.0f / 13.0f; /* RES LO L/R: both taps voiced */
+    }
+  }
+}
 
 /* ---- --trace-late: which control action preceded each late period ---- */
 
@@ -266,9 +377,17 @@ typedef struct {
   rt_task_stat st;
   le_callback_telemetry tel;
   long forks;
+  int wst_ok; /* every worker's stat was read */
+  rt_task_stat wst[LE_FX_WORKERS_MAX];
+  le_fx_workers_telemetry fxw;
+  int machine_ok;
+  long long busy, total;
+  double temp_c;
 } rt_sample;
 
 static long g_tid;
+static long g_wtid[LE_FX_WORKERS_MAX];
+static int g_workers_found = 0;
 static double g_window_start; /* the end of the warm-up */
 static double g_deadline;     /* the end of the run */
 static int g_sampled = 0;
@@ -279,6 +398,13 @@ static void take_sample(rt_sample* out) {
   out->st_ok = read_task_stat(g_tid, &out->st);
   le_engine_get_callback_telemetry(g_e, &out->tel);
   out->forks = g_forks;
+  out->wst_ok = 1;
+  for (int w = 0; w < g_workers_found; ++w) {
+    out->wst_ok &= read_task_stat(g_wtid[w], &out->wst[w]);
+  }
+  le_engine_get_fx_workers_telemetry(g_e, &out->fxw);
+  out->machine_ok = read_machine(&out->busy, &out->total);
+  out->temp_c = read_temp_c();
 }
 
 /* Whether the run has time left. Also takes the window's start sample the
@@ -322,6 +448,15 @@ static void play_for(int ms, int fx_ms, int track) {
           le_engine_set_lane_fx_enabled(g_e, track, lane, 0, 1);
           break;
         default:
+          if (g_racks > 0) { /* a stomp on one rack's wah */
+            note_action("fx-monitor-stomp");
+            le_fx_recipe* r = &g_rack[(turn / 4) % g_racks];
+            r->slot_enabled[1] = !r->slot_enabled[1];
+            le_engine_set_fx_recipe(g_e, LE_FX_OWNER_MONITOR,
+                                    (int32_t)((turn / 4) % g_racks), 0,
+                                    ++g_rack_rev, r);
+            break;
+          }
           note_action("fx-monitor");
           le_engine_set_monitor_input_fx(g_e, 0, 0,
                                          k_fx_types[(turn / 4 + 1) % g_fx_type_count]);
@@ -366,7 +501,8 @@ static void usage(void) {
           "         [--max-faults-per-fork N]\n"
           "         [--fx-ms N] [--fx-types T,T,...] [--rate HZ]\n"
           "         [--period FRAMES] [--trace-late] [--timeline]\n"
-          "         [--playback ID] [--capture ID] [--list]\n");
+          "         [--playback ID] [--capture ID] [--list]\n"
+          "         [--fx-workers N] [--fx-cores C,W1,..] [--racks N]\n");
 }
 
 static void list_devices(void) {
@@ -385,7 +521,7 @@ static void list_devices(void) {
 }
 
 int main(int argc, char** argv) {
-  rt_opts o = {120.0, 5.0, 0, 16, 500, 96000, 64, "", ""};
+  rt_opts o = {120.0, 5.0, 0, 16, 500, 96000, 64, "", "", 0, {0}, 0, 0};
   for (int i = 1; i < argc; ++i) {
     const char* a = argv[i];
     const char* v = i + 1 < argc ? argv[i + 1] : NULL;
@@ -434,6 +570,19 @@ int main(int argc, char** argv) {
       o.playback = v, ++i;
     } else if (v != NULL && strcmp(a, "--capture") == 0) {
       o.capture = v, ++i;
+    } else if (v != NULL && strcmp(a, "--fx-workers") == 0) {
+      o.fx_workers = atoi(v), ++i;
+    } else if (v != NULL && strcmp(a, "--racks") == 0) {
+      o.racks = atoi(v), ++i;
+    } else if (v != NULL && strcmp(a, "--fx-cores") == 0) {
+      const char* q = v;
+      while (o.fx_cores_n <= LE_FX_WORKERS_MAX) {
+        char* e;
+        o.fx_cores[o.fx_cores_n++] = (int32_t)strtol(q, &e, 10);
+        if (*e != ',') break;
+        q = e + 1;
+      }
+      ++i;
     } else {
       usage();
       return 2;
@@ -453,6 +602,17 @@ int main(int argc, char** argv) {
   setenv("SEGNO_ALSA_PERIODS", "8", 0);
 
   g_e = le_engine_create();
+  if (o.fx_cores_n != 0 && o.fx_cores_n != o.fx_workers + 1) {
+    fprintf(stderr, "--fx-cores takes the callback's core and one per "
+                    "worker\n");
+    return 2;
+  }
+  if (le_engine_set_fx_workers(g_e, o.fx_workers,
+                               o.fx_cores_n > 0 ? o.fx_cores : NULL) !=
+      LE_OK) {
+    fprintf(stderr, "--fx-workers takes 0 to %d\n", LE_FX_WORKERS_MAX);
+    return 2;
+  }
   le_config cfg;
   memset(&cfg, 0, sizeof(cfg));
   cfg.sample_rate = o.rate;
@@ -482,6 +642,22 @@ int main(int argc, char** argv) {
          le_engine_device_name(g_e), s.sample_rate, (int)o.period,
          getenv("SEGNO_ALSA_PERIODS"), g_tid);
   le_engine_set_monitor_input(g_e, 0, 1);
+  g_racks = o.racks;
+  if (g_racks > s.input_channels) g_racks = s.input_channels;
+  for (int c = 0; c < g_racks; ++c) {
+    eds_rack(&g_rack[c], c);
+    le_engine_set_monitor_input(g_e, c, 1);
+    le_engine_set_fx_recipe(g_e, LE_FX_OWNER_MONITOR, c, 0, ++g_rack_rev,
+                            &g_rack[c]);
+  }
+  if (o.racks > 0) printf("Ed's Rack on %d monitored inputs\n", g_racks);
+  g_workers_found = find_fx_workers(g_wtid, LE_FX_WORKERS_MAX);
+  {
+    le_fx_workers_telemetry w;
+    le_engine_get_fx_workers_telemetry(g_e, &w);
+    printf("effects workers: %d running of %d asked for, %d found by name\n",
+           (int)w.running, (int)w.requested, g_workers_found);
+  }
 
   pthread_t forker;
   if (o.fork_ms > 0) pthread_create(&forker, NULL, forker_main, &o.fork_ms);
@@ -512,7 +688,12 @@ int main(int argc, char** argv) {
   const rt_task_stat st0 = g_s0.st, st1 = s1.st;
   const le_callback_telemetry t0 = g_s0.tel, t1 = s1.tel;
   const double window_s = s1.at - g_s0.at;
-  const long faults = (st1.minflt - st0.minflt) + (st1.majflt - st0.majflt);
+  long faults = (st1.minflt - st0.minflt) + (st1.majflt - st0.majflt);
+  long worker_faults = 0;
+  for (int w = 0; w < g_workers_found; ++w) {
+    worker_faults += (s1.wst[w].minflt - g_s0.wst[w].minflt) +
+                     (s1.wst[w].majflt - g_s0.wst[w].majflt);
+  }
   const uint64_t periods = t1.session.periods - t0.session.periods;
   const uint64_t late = t1.session.late_periods - t0.session.late_periods;
   uint64_t dx[LE_XRUN_KINDS];
@@ -534,6 +715,76 @@ int main(int argc, char** argv) {
          le_platform_fork_count());
   printf("callback thread faults: %ld minor, %ld major\n",
          st1.minflt - st0.minflt, st1.majflt - st0.majflt);
+  if (g_workers_found > 0) {
+    printf("effects worker faults (minor + major):");
+    for (int w = 0; w < g_workers_found; ++w) {
+      printf(" %ld", (s1.wst[w].minflt - g_s0.wst[w].minflt) +
+                         (s1.wst[w].majflt - g_s0.wst[w].majflt));
+    }
+    printf("\n");
+  }
+  {
+    /* Shares of the whole machine: 100 % = every core busy (#1307). */
+    const long hz = sysconf(_SC_CLK_TCK);
+    const long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+    const double denom = window_s * (double)(hz > 0 ? hz : 100) *
+                         (double)(ncpu > 0 ? ncpu : 1);
+    double audio = (double)(st1.ticks - st0.ticks);
+    printf("CPU, whole machine: callback %.1f %%",
+           100.0 * (double)(st1.ticks - st0.ticks) / denom);
+    for (int w = 0; w < g_workers_found; ++w) {
+      const double d = (double)(s1.wst[w].ticks - g_s0.wst[w].ticks);
+      audio += d;
+      printf(", worker %d %.1f %%", w, 100.0 * d / denom);
+    }
+    printf(", audio threads %.1f %%", 100.0 * audio / denom);
+    if (g_s0.machine_ok && s1.machine_ok && s1.total > g_s0.total) {
+      printf(", the machine %.1f %%",
+             100.0 * (double)(s1.busy - g_s0.busy) /
+                 (double)(s1.total - g_s0.total));
+    }
+    printf("\n");
+  }
+  if (g_s0.temp_c >= 0.0 && s1.temp_c >= 0.0) {
+    printf("SoC temperature: %.1f C at the window's start, %.1f C at its "
+           "end\n",
+           g_s0.temp_c, s1.temp_c);
+  }
+  if (s1.fxw.running > 0) {
+    const le_fx_workers_telemetry* a = &g_s0.fxw;
+    const le_fx_workers_telemetry* b = &s1.fxw;
+    printf("rounds: %llu, jobs on the callback %llu, join waits %llu (worst "
+           "%u ns since start)\n",
+           (unsigned long long)(b->rounds - a->rounds),
+           (unsigned long long)(b->callback_jobs - a->callback_jobs),
+           (unsigned long long)(b->join_waits - a->join_waits),
+           b->join_wait_max_ns);
+    for (int w = 0; w < LE_FX_WORKERS_MAX && w < b->running; ++w) {
+      const le_fx_worker_snapshot* x = &a->worker[w];
+      const le_fx_worker_snapshot* y = &b->worker[w];
+      const uint64_t wakes = y->wakes - x->wakes;
+      /* The 99th percentile's bucket: the first whose running count passes
+       * 99 % of the wakes. */
+      uint64_t run = 0;
+      int p99 = LE_FX_WAKE_BUCKETS - 1;
+      for (int k = 0; k < LE_FX_WAKE_BUCKETS; ++k) {
+        run += y->wake_buckets[k] - x->wake_buckets[k];
+        if (wakes > 0 && run * 100u >= wakes * 99u) {
+          p99 = k;
+          break;
+        }
+      }
+      printf("worker %d: %llu wakes, p99 under %d us, worst %u ns since "
+             "start; %llu jobs, worst %u ns\n",
+             w, (unsigned long long)wakes,
+             (p99 + 1) * LE_FX_WAKE_BUCKET_NS / 1000, y->wake_max_ns,
+             (unsigned long long)(y->jobs - x->jobs), y->job_max_ns);
+    }
+  }
+  printf("over the effects budget's share (80 %%): %llu periods\n",
+         (unsigned long long)(t1.session.over_share_periods -
+                              t0.session.over_share_periods));
+  faults += worker_faults;
   const double expected =
       t1.budget_us > 0 ? window_s * 1e6 / t1.budget_us : 0.0;
   printf("periods: %llu (about %.0f expected), late: %llu, worst service "
@@ -562,16 +813,17 @@ int main(int argc, char** argv) {
            (unsigned long long)g_other_late);
   }
   int ok;
-  if (!g_s0.st_ok || !s1.st_ok) {
+  if (!g_s0.st_ok || !s1.st_ok || !g_s0.wst_ok || !s1.wst_ok) {
     ok = 0;
-    printf("FAIL: the callback thread's stat could not be read\n");
+    printf("FAIL: the callback's or a worker's stat could not be read\n");
   } else if (periods == 0 || (double)periods < expected / 2) {
     ok = 0;
     printf("FAIL: the window holds too few periods to prove anything\n");
   } else if (forks == 0) {
     ok = faults == 0 && late == 0 && xruns == 0;
     if (ok) {
-      printf("PASS: no fault, no late period and no xrun on the callback\n");
+      printf("PASS: no fault, no late period and no xrun on the callback%s\n",
+             g_workers_found > 0 ? " and the workers" : "");
     } else if (faults != 0 || late != 0) {
       printf("FAIL: the callback faulted or ran late%s\n",
              xruns != 0 ? ", and the device dropped out" : "");

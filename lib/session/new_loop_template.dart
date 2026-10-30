@@ -22,25 +22,20 @@ class NewLoopTemplate extends Equatable {
 }
 
 /// Whether [template] fits the effects budget on [looper]'s live chains,
-/// by the rule every effects edit uses: the growth is what the template's
-/// chains cost less what the track and lane chains of its channels cost,
-/// and only a growth larger than [LooperRepository.fxRoomNs] is refused. A
-/// template that makes an over-budget rig lighter is never refused.
+/// by the rule every effects edit uses ([LooperRepository.fxGrowthNs]): the
+/// growth is the template's chains in place of its channels' track chains,
+/// with those channels' lane chains dropped, and only a growth larger than
+/// [LooperRepository.fxRoomNs] is refused. A template that makes an
+/// over-budget rig lighter is never refused.
 bool newLoopTemplateFits(LooperRepository looper, NewLoopTemplate template) {
   final channels = template.trackChains.keys.toSet();
-  var growth = 0;
-  for (final chain in template.trackChains.values) {
-    growth += looper.fxCostOf(chain.entries);
-  }
-  for (final entry in looper.allTrackChains().entries) {
-    if (channels.contains(entry.key)) {
-      growth -= looper.fxCostOf(entry.value.entries);
-    }
-  }
-  for (final entry in looper.allLaneChains().entries) {
-    if (channels.contains(entry.key.$1)) {
-      growth -= looper.fxCostOf(entry.value.entries);
-    }
-  }
+  final growth = looper.fxGrowthNs({
+    for (final MapEntry(key: channel, value: chain)
+        in template.trackChains.entries)
+      FxAddress(stage: FxStage.track, index: channel): chain.entries,
+    for (final (channel, lane) in looper.allLaneChains().keys)
+      if (channels.contains(channel))
+        FxAddress(stage: FxStage.loop, index: channel, lane: lane): const [],
+  });
   return growth <= 0 || growth <= looper.fxRoomNs;
 }

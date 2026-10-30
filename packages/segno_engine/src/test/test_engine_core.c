@@ -39839,10 +39839,13 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_bounce.h"
 #include "test_engine_clock.h"
 #include "test_engine_rt_memory.h"
+#include "test_engine_fx_workers.h"
 
 int main(void) {
   run_rt_memory_tests();
   if (getenv("SEGNO_RT_MEMORY_TESTS_ONLY")) return g_failures ? 1 : 0;
+  run_fx_workers_tests();
+  if (getenv("SEGNO_FX_WORKERS_TESTS_ONLY")) return g_failures ? 1 : 0;
   if (getenv("SEGNO_FADE_STAGING_TESTS_ONLY")) {
     test_fade_restore_staging_and_manifest_capacity();
     return g_failures ? 1 : 0;

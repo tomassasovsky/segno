@@ -53,6 +53,7 @@ class NativeAudioEngine implements AudioEngine {
     }
     _snapshotPtr = calloc<le_snapshot>();
     _telemetryPtr = calloc<le_callback_telemetry>();
+    _fxWorkersPtr = calloc<le_fx_workers_telemetry>();
     _trackPtr = calloc<le_track_snapshot>();
     _lanePtr = calloc<le_lane_snapshot>();
     _cachesPtr = calloc<le_lane_cache_info>(LE_MAX_TRACKS * LE_MAX_LANES);
@@ -67,6 +68,7 @@ class NativeAudioEngine implements AudioEngine {
   late final Pointer<le_engine> _engine;
   late final Pointer<le_snapshot> _snapshotPtr;
   late final Pointer<le_callback_telemetry> _telemetryPtr;
+  late final Pointer<le_fx_workers_telemetry> _fxWorkersPtr;
   late final Pointer<le_track_snapshot> _trackPtr;
   late final Pointer<le_lane_snapshot> _lanePtr;
   late final Pointer<le_lane_cache_info> _cachesPtr;
@@ -107,6 +109,28 @@ class NativeAudioEngine implements AudioEngine {
   EngineResult stop() {
     _checkAlive();
     return EngineResult.fromCode(_bindings.le_engine_stop(_engine));
+  }
+
+  @override
+  EngineResult setFxWorkers({required int count, List<int>? cores}) {
+    _checkAlive();
+    if (cores == null) {
+      return EngineResult.fromCode(
+        _bindings.le_engine_set_fx_workers(_engine, count, nullptr),
+      );
+    }
+    if (cores.length != count + 1) return EngineResult.invalid;
+    final ptr = calloc<Int32>(cores.length);
+    try {
+      for (var i = 0; i < cores.length; i++) {
+        ptr[i] = cores[i];
+      }
+      return EngineResult.fromCode(
+        _bindings.le_engine_set_fx_workers(_engine, count, ptr),
+      );
+    } finally {
+      calloc.free(ptr);
+    }
   }
 
   @override
@@ -195,6 +219,13 @@ class NativeAudioEngine implements AudioEngine {
     // relaxed atomic loads, with no track or lane walk.
     _bindings.le_engine_get_callback_telemetry(_engine, _telemetryPtr);
     return CallbackTelemetry.fromNative(_telemetryPtr.ref);
+  }
+
+  @override
+  FxWorkersTelemetry fxWorkersTelemetry() {
+    _checkAlive();
+    _bindings.le_engine_get_fx_workers_telemetry(_engine, _fxWorkersPtr);
+    return FxWorkersTelemetry.fromNative(_fxWorkersPtr.ref);
   }
 
   @override
@@ -3168,6 +3199,7 @@ class NativeAudioEngine implements AudioEngine {
     _bindings.le_engine_destroy(_engine);
     calloc
       ..free(_telemetryPtr)
+      ..free(_fxWorkersPtr)
       ..free(_snapshotPtr)
       ..free(_trackPtr)
       ..free(_lanePtr)

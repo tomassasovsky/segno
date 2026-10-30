@@ -31,13 +31,15 @@
 #include <sys/stat.h>  /* stat() — probe /proc/asound/cardN pcm direction */
 #include <unistd.h>    /* sysconf(_SC_PAGESIZE) */
 
-#include <sys/syscall.h> /* SYS_mlock2 */
+#include <linux/futex.h> /* FUTEX_WAIT_PRIVATE, FUTEX_WAKE_PRIVATE (#1515) */
+#include <sys/syscall.h> /* SYS_mlock2, SYS_futex */
 #ifndef MLOCK_ONFAULT
 #define MLOCK_ONFAULT 1 /* kernel ABI; older libc headers lack the name */
 #endif
 
 #include "engine_internal.h"  /* le_engine_process: a probe address in the engine */
 #include "engine_platform.h"  /* the seam */
+#include "engine_workers.h"   /* LE_FX_WORKER_PRIO */
 
 /* The top of the audio thread's stack that is faulted in and locked before the
  * device starts. data_callback touches 256 KB below ITS frame
@@ -849,17 +851,77 @@ void le_platform_before_context_init(const le_config* config) {
  * service) so the interrupt delivering a period always preempts the thread
  * consuming it. Cross-thread setschedparam is fine. Needs LimitRTPRIO/MEMLOCK on
  * segno.service; without them it EPERMs and is a harmless no-op. */
-static void le_alsa_set_rt_priority(le_engine* engine) {
-  if (!le_alsa_only() || !engine->device_initialised) return;
-  /* Opt-in via SEGNO_RT_AUDIO=1 (set by the kiosk launcher once the ALSA path is
-   * validated). Gated so a misbehaving audio loop cannot hard-starve the machine
-   * at SCHED_FIFO before it has been proven to sleep between periods. */
+/* Whether the audio runs real-time: the ALSA appliance, opted in with
+ * SEGNO_RT_AUDIO=1 (set by the kiosk launcher once the ALSA path is
+ * validated). Gated so a misbehaving audio loop cannot hard-starve the machine
+ * at SCHED_FIFO before it has been proven to sleep between periods. */
+static int le_rt_audio(void) {
+  if (!le_alsa_only()) return 0;
   const char* rt = getenv("SEGNO_RT_AUDIO");
-  if (rt == NULL || rt[0] != '1') return;
+  return rt != NULL && rt[0] == '1';
+}
+
+static void le_alsa_set_rt_priority(le_engine* engine) {
+  if (!engine->device_initialised || !le_rt_audio()) return;
   struct sched_param sp;
   memset(&sp, 0, sizeof(sp));
   sp.sched_priority = 80;
   (void)pthread_setschedparam(engine->device.thread, SCHED_FIFO, &sp);
+}
+
+/* Pins the callback thread to the core le_engine_set_fx_workers names for it
+ * (#1515): the workers take their own cores, so none of them ever queues
+ * behind the callback. */
+static void le_pin_callback(le_engine* engine) {
+  const int32_t core = engine->fx_cores[0];
+  if (core < 0 || !engine->device_initialised ||
+      engine->device.thread == (ma_thread)0) {
+    return;
+  }
+  cpu_set_t set;
+  CPU_ZERO(&set);
+  CPU_SET(core, &set);
+  const int rc = pthread_setaffinity_np(engine->device.thread, sizeof(set),
+                                        &set);
+  if (rc != 0) {
+    fprintf(stderr, "segno/rt: the audio thread could not be pinned to core "
+                    "%d (error %d)\n",
+            (int)core, rc);
+  }
+}
+
+int le_platform_rt_audio(void) { return le_rt_audio(); }
+
+int le_platform_fx_worker_setup(int32_t core, int rt) {
+  /* Its whole stack, faulted in and locked like the callback's top: a fault
+   * on it would take the mm lock (#710). */
+  le_prepare_thread_stack(pthread_self(), LE_FX_WORKER_STACK_BYTES);
+  if (core >= 0) {
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    CPU_SET(core, &set);
+    if (pthread_setaffinity_np(pthread_self(), sizeof(set), &set) != 0) {
+      return 0;
+    }
+  }
+  if (rt) {
+    struct sched_param sp;
+    memset(&sp, 0, sizeof(sp));
+    sp.sched_priority = LE_FX_WORKER_PRIO;
+    if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) != 0) return 0;
+  }
+  return 1;
+}
+
+void le_platform_fx_wait(_Atomic uint32_t* word, uint32_t seen) {
+  (void)syscall(SYS_futex, (uint32_t*)word, FUTEX_WAIT_PRIVATE, seen, NULL,
+                NULL, 0);
+}
+
+void le_platform_fx_wake(_Atomic uint32_t* word, int n) {
+  if (n <= 0) return;
+  (void)syscall(SYS_futex, (uint32_t*)word, FUTEX_WAKE_PRIVATE, n, NULL, NULL,
+                0);
 }
 
 void le_platform_after_device_open(le_engine* engine) {
@@ -867,6 +929,7 @@ void le_platform_after_device_open(le_engine* engine) {
    * while it is still idle, so it never runs its deadline-critical first reads
    * at normal priority (which overruns the capture at tiny buffers). */
   le_alsa_set_rt_priority(engine);
+  le_pin_callback(engine);
   /* And map in, and lock, the code it is about to run and the top of its
    * stack (engine_platform.h). */
   le_platform_prefault_audio_code();

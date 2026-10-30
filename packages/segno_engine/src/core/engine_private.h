@@ -601,6 +601,119 @@ typedef struct le_fx_tempo {
   int32_t num, den;
 } le_fx_tempo;
 
+/* The FX clock and musical time of a chain that does not run inside the
+ * callback's first frame loop (#1515): a monitor chain, run as a job on a
+ * worker or inline, and the output buses, run in the second loop. Its
+ * le_fx_state reads [a_frame] through clock_src and [tempo] through tempo,
+ * as a lane reads le_engine::a_fx_frame and fx_tempo. Whoever runs the chain
+ * sets both to the frame it processes, from the block's tempo events
+ * (le_fx_par), so the chain sees exactly the clock and beat a lane sees at
+ * that frame. The callback sets [a_frame] to the block's first frame before
+ * its command drain, as it sets a_fx_frame, so a reset there seeds against
+ * the same frame. The control thread only ever reads [a_frame]. */
+typedef struct le_fx_time {
+  _Atomic uint32_t a_frame;
+  le_fx_tempo tempo;
+} le_fx_time;
+
+/* ---- Effects on more than one core (#1515) ----
+ *
+ * The callback's frame loop runs in blocks of up to LE_FX_BLOCK frames, each
+ * in three steps: the first loop (the tempo, the input, the tracks, the
+ * click's schedule, the transport), then the block's jobs, then the second
+ * loop (the monitors, the click, the backing, the output buses, the
+ * audition, the master bus). A job is one monitor input's whole chain over
+ * the block. With no workers the callback runs the jobs itself, in job
+ * order; with workers it releases them and claims them alongside the
+ * workers, then waits until every one is done (docs/plan/
+ * 2026-10-29-feat-multicore-effects-plan.md, section 5). The device's
+ * period on the console (64 frames) is one block. */
+#define LE_FX_BLOCK 256
+
+/* le_fx_par.viz: the loop viz tap's decision at a frame, made in the first
+ * loop (where the loop length and the cursor's resets live) and carried out
+ * in the second (where the frame's output peak is known). Otherwise the
+ * bucket the cursor left, whose peak is stored (or nothing, when it is out of
+ * range). */
+#define LE_FX_VIZ_NONE INT32_MIN         /* no loop: no tap */
+#define LE_FX_VIZ_SAME (INT32_MIN + 1)   /* the same bucket: accumulate */
+
+/* What one block's jobs read and write. The callback writes everything
+ * above [mon_l] before it releases the jobs; the jobs write [mon_l] and
+ * [mon_r] (each its own rows) and their monitors' chain states; the callback
+ * reads them after the join. The release store of [a_claim] and each job's
+ * release increment of [a_done], paired with acquire loads, order all of it.
+ * Everything from [click_l] on is the callback's own record of the first
+ * loop for the second. Lives in the engine (locked and fork-shielded,
+ * rt_alloc.h), never on a stack. */
+typedef struct le_fx_par {
+  /* (epoch << 32) | the next job to claim. The epoch is the [a_gen] value
+   * the round was released under, so a thread can never claim a job of
+   * another round. */
+  _Atomic uint64_t a_claim;
+  unsigned char pad_claim[56];
+  _Atomic uint32_t a_done; /* jobs of the current round finished */
+  unsigned char pad_done[60];
+  /* The futex word the workers sleep on: bumped once per released round. */
+  _Atomic uint32_t a_gen;
+  unsigned char pad_gen[60];
+  /* When the callback last woke the workers (le_now_ns), for their wake
+   * latency (telemetry). */
+  _Atomic uint64_t a_wake_ns;
+  _Atomic int32_t a_quit;
+  /* The workers running. Written by the control thread while no callback
+   * can run (the pool's start and stop); read by the callback. */
+  _Atomic int32_t a_workers;
+
+  uint32_t f0;    /* the block's first frame in the callback's buffer */
+  uint32_t n;     /* its frames */
+  uint32_t clock; /* the FX clock of frame f0 */
+  const float* in; /* the conditioned input (in_c) */
+  int32_t ch_in, sr, fx_cap;
+  int32_t jobs;
+  int32_t job_mon[LE_MAX_MONITORED_INPUTS]; /* the monitor each job runs */
+  /* The chains' tempo before the block's first frame, and every anchor the
+   * first loop set: tev[k] from frame tev_at[k] of the block on. */
+  le_fx_tempo tempo0;
+  int32_t tev_n;
+  int32_t tev_at[LE_FX_BLOCK];
+  le_fx_tempo tev[LE_FX_BLOCK];
+  uint8_t owned[LE_FX_BLOCK]; /* 1: the latency harness owned the frame */
+  /* Each job's output, by monitor: its chain's output before the monitor's
+   * volume and pan. */
+  float mon_l[LE_MAX_MONITORED_INPUTS][LE_FX_BLOCK];
+  float mon_r[LE_MAX_MONITORED_INPUTS][LE_FX_BLOCK];
+  /* The click's sample at each frame, when it sounds there (click_frame). */
+  float click_l[LE_FX_BLOCK];
+  float click_r[LE_FX_BLOCK];
+  uint8_t click_sounds[LE_FX_BLOCK];
+  int32_t viz[LE_FX_BLOCK]; /* LE_FX_VIZ_* or the bucket to store */
+} le_fx_par;
+
+/* One worker's telemetry, written by that worker only (le_fx_workers_
+ * telemetry has the meaning), plus the test hook that holds it. */
+typedef struct le_fx_worker_tm {
+  _Atomic uint64_t a_wakes;
+  _Atomic uint64_t a_wake_ns_total;
+  _Atomic uint32_t a_wake_ns_max;
+  _Atomic uint64_t a_wake_hist[LE_FX_WAKE_BUCKETS];
+  _Atomic uint64_t a_jobs;
+  _Atomic uint64_t a_job_ns_total;
+  _Atomic uint32_t a_job_ns_max;
+  /* le_engine_hold_fx_worker_for_test: 1 keeps the worker from claiming. */
+  _Atomic int32_t a_hold;
+  unsigned char pad[64];
+} le_fx_worker_tm;
+
+/* The callback's side of the same telemetry, written by the callback only. */
+typedef struct le_fx_round_tm {
+  _Atomic uint64_t a_rounds;
+  _Atomic uint64_t a_callback_jobs;
+  _Atomic uint64_t a_join_waits;
+  _Atomic uint64_t a_join_ns_total;
+  _Atomic uint32_t a_join_ns_max;
+} le_fx_round_tm;
+
 /* A Slicer voice (fx_slicer_process): what it reads and how loud. */
 enum { LE_SLICE_SILENT = 0, LE_SLICE_BACK = 1, LE_SLICE_MIRROR = 2 };
 typedef struct le_fx_slice_voice {
@@ -1094,6 +1207,9 @@ typedef struct le_monitor_input {
   /* Control-thread-owned pushed-count/type shadows (see le_lane). */
   int32_t fx_count_pushed;
   int32_t fx_type_pushed[LE_FX_MAX];
+  /* The chain's own clock and tempo (le_fx_time): it runs as a job, on a
+   * worker or inline, after the callback's first frame loop (#1515). */
+  le_fx_time fx_time;
   le_fx_state fx;
 } le_monitor_input;
 
@@ -3168,6 +3284,20 @@ struct le_engine {
    * with song_source above. Appended here, after the mixer's state, so they
    * move no offset the callback reads every frame. */
   int song_record, song_edge;
+  /* Effects on more than one core (#1515), at the end so they move no offset
+   * the callback reads every frame. fx_par is what a block's jobs share;
+   * obus_time the output buses' clock and tempo in the second loop
+   * (le_fx_time); fx_pool the worker threads (engine_workers.c, control
+   * thread only). fx_workers_req and fx_cores are the request
+   * (le_engine_set_fx_workers): the workers and the cores, the callback's
+   * first, -1 for none. */
+  le_fx_par fx_par;
+  le_fx_time obus_time;
+  le_fx_worker_tm fx_worker_tm[LE_FX_WORKERS_MAX];
+  le_fx_round_tm fx_round_tm;
+  struct le_fx_pool* fx_pool;
+  _Atomic int32_t fx_workers_req; /* read by any thread's telemetry pull */
+  int32_t fx_cores[1 + LE_FX_WORKERS_MAX];
 };
 
 /* Points every chain owner at its rows of fx_param_store and fx_slot_meta, in

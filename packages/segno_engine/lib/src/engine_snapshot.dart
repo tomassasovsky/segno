@@ -1228,6 +1228,7 @@ class CallbackWindowStats {
     this.maxGapUs = 0,
     this.buckets = const [0, 0, 0, 0, 0, 0, 0, 0],
     this.xruns = const [0, 0, 0, 0],
+    this.overSharePeriods = 0,
   });
 
   /// Projects a native `le_cb_window_snapshot`.
@@ -1242,6 +1243,7 @@ class CallbackWindowStats {
         maxGapUs: native.max_gap_us,
         buckets: [for (var i = 0; i < LE_CB_BUCKETS; i++) native.buckets[i]],
         xruns: [for (var i = 0; i < LE_XRUN_KINDS; i++) native.xruns[i]],
+        overSharePeriods: native.over_share_periods,
       );
 
   /// The all-zero window: no device has run, so nothing was measured.
@@ -1324,6 +1326,12 @@ class CallbackWindowStats {
   /// dropping it would under-report reality.
   final List<int> xruns;
 
+  /// Services longer than the effects budget's share of their deadline (80 %,
+  /// `kFxBudgetShare`): blocks the effects admission promises never happen
+  /// (#1515). Every late period is one of these too. **Zero on a rig the
+  /// admission let in, on healthy hardware.**
+  final int overSharePeriods;
+
   /// Dropouts of [kind] in this window.
   int xrunsOf(XrunKind kind) =>
       kind.index < xruns.length ? xruns[kind.index] : 0;
@@ -1348,7 +1356,8 @@ class CallbackWindowStats {
           meanUs == other.meanUs &&
           maxGapUs == other.maxGapUs &&
           _listEquals(buckets, other.buckets) &&
-          _listEquals(xruns, other.xruns);
+          _listEquals(xruns, other.xruns) &&
+          overSharePeriods == other.overSharePeriods;
 
   @override
   int get hashCode => Object.hash(
@@ -1361,13 +1370,15 @@ class CallbackWindowStats {
     maxGapUs,
     Object.hashAll(buckets),
     Object.hashAll(xruns),
+    overSharePeriods,
   );
 
   @override
   String toString() =>
       'CallbackWindowStats(calls: $calls, periods: $periods, '
-      'late: $latePeriods, gaps: $gapEvents, max: ${maxUs}us, '
-      'mean: ${meanUs}us, xruns: $xrunTotal)';
+      'late: $latePeriods, over share: $overSharePeriods, '
+      'gaps: $gapEvents, max: ${maxUs}us, mean: ${meanUs}us, '
+      'xruns: $xrunTotal)';
 }
 
 /// Both telemetry windows plus the deadline they were judged against — the
@@ -1444,6 +1455,184 @@ class CallbackTelemetry {
   String toString() =>
       'CallbackTelemetry(budget: ${budgetUs}us, session: $session, '
       'armed: $armed)';
+}
+
+/// One effects worker's telemetry (#1515): how quickly it woke for the
+/// rounds it was woken for, and the jobs it ran.
+@immutable
+class FxWorkerStats {
+  /// Creates an [FxWorkerStats].
+  const FxWorkerStats({
+    this.wakes = 0,
+    this.wakeMeanNs = 0,
+    this.wakeMaxNs = 0,
+    this.wakeBuckets = const [],
+    this.jobs = 0,
+    this.jobMeanNs = 0,
+    this.jobMaxNs = 0,
+    this.jobTotalNs = 0,
+  });
+
+  /// Projects a native `le_fx_worker_snapshot`.
+  factory FxWorkerStats.fromNative(le_fx_worker_snapshot native) =>
+      FxWorkerStats(
+        wakes: native.wakes,
+        wakeMeanNs: native.wake_mean_ns,
+        wakeMaxNs: native.wake_max_ns,
+        wakeBuckets: [
+          for (var i = 0; i < LE_FX_WAKE_BUCKETS; i++) native.wake_buckets[i],
+        ],
+        jobs: native.jobs,
+        jobMeanNs: native.job_mean_ns,
+        jobMaxNs: native.job_max_ns,
+        jobTotalNs: native.job_total_ns,
+      );
+
+  /// The rounds this worker woke for.
+  final int wakes;
+
+  /// How long after the callback's wake it was running: mean and worst, in
+  /// nanoseconds.
+  final int wakeMeanNs;
+
+  /// See [wakeMeanNs].
+  final int wakeMaxNs;
+
+  /// The wake latencies, `LE_FX_WAKE_BUCKET_NS` (2 us) a bucket; the last also
+  /// holds everything later.
+  final List<int> wakeBuckets;
+
+  /// The jobs it ran.
+  final int jobs;
+
+  /// How long a job took: mean and worst, in nanoseconds.
+  final int jobMeanNs;
+
+  /// See [jobMeanNs].
+  final int jobMaxNs;
+
+  /// Every job's time summed, in nanoseconds.
+  final int jobTotalNs;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FxWorkerStats &&
+          wakes == other.wakes &&
+          wakeMeanNs == other.wakeMeanNs &&
+          wakeMaxNs == other.wakeMaxNs &&
+          _listEquals(wakeBuckets, other.wakeBuckets) &&
+          jobs == other.jobs &&
+          jobMeanNs == other.jobMeanNs &&
+          jobMaxNs == other.jobMaxNs &&
+          jobTotalNs == other.jobTotalNs;
+
+  @override
+  int get hashCode => Object.hash(
+    wakes,
+    wakeMeanNs,
+    wakeMaxNs,
+    Object.hashAll(wakeBuckets),
+    jobs,
+    jobMeanNs,
+    jobMaxNs,
+    jobTotalNs,
+  );
+}
+
+/// The effects workers' telemetry (#1515): how many run, and how the
+/// rounds they share with the audio callback went. A diagnostic pull, like
+/// [CallbackTelemetry].
+@immutable
+class FxWorkersTelemetry {
+  /// Creates an [FxWorkersTelemetry].
+  const FxWorkersTelemetry({
+    this.requested = 0,
+    this.running = 0,
+    this.rounds = 0,
+    this.callbackJobs = 0,
+    this.joinWaits = 0,
+    this.joinWaitMeanNs = 0,
+    this.joinWaitMaxNs = 0,
+    this.workers = const [],
+  });
+
+  /// Projects a native `le_fx_workers_telemetry`.
+  factory FxWorkersTelemetry.fromNative(le_fx_workers_telemetry native) =>
+      FxWorkersTelemetry(
+        requested: native.requested,
+        running: native.running,
+        rounds: native.rounds,
+        callbackJobs: native.callback_jobs,
+        joinWaits: native.join_waits,
+        joinWaitMeanNs: native.join_wait_mean_ns,
+        joinWaitMaxNs: native.join_wait_max_ns,
+        workers: [
+          for (var i = 0; i < LE_FX_WORKERS_MAX; i++)
+            FxWorkerStats.fromNative(native.worker[i]),
+        ],
+      );
+
+  /// No workers: the desktop, and every engine that was not asked for any.
+  static const FxWorkersTelemetry empty = FxWorkersTelemetry();
+
+  /// The workers asked for.
+  final int requested;
+
+  /// The workers running: fewer than [requested] when the kernel refused one
+  /// its core or its real-time priority, and 0 before the engine runs. What
+  /// the effects admission counts.
+  final int running;
+
+  /// Rounds released to the workers, and the jobs the callback ran itself in
+  /// them.
+  final int rounds;
+
+  /// See [rounds].
+  final int callbackJobs;
+
+  /// Rounds whose join waited for a job a worker had started, and how long:
+  /// mean and worst, in nanoseconds.
+  final int joinWaits;
+
+  /// See [joinWaits].
+  final int joinWaitMeanNs;
+
+  /// See [joinWaits].
+  final int joinWaitMaxNs;
+
+  /// Each worker slot's own figures, `LE_FX_WORKERS_MAX` of them.
+  final List<FxWorkerStats> workers;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FxWorkersTelemetry &&
+          requested == other.requested &&
+          running == other.running &&
+          rounds == other.rounds &&
+          callbackJobs == other.callbackJobs &&
+          joinWaits == other.joinWaits &&
+          joinWaitMeanNs == other.joinWaitMeanNs &&
+          joinWaitMaxNs == other.joinWaitMaxNs &&
+          _listEquals(workers, other.workers);
+
+  @override
+  int get hashCode => Object.hash(
+    requested,
+    running,
+    rounds,
+    callbackJobs,
+    joinWaits,
+    joinWaitMeanNs,
+    joinWaitMaxNs,
+    Object.hashAll(workers),
+  );
+
+  @override
+  String toString() =>
+      'FxWorkersTelemetry(running: $running of $requested, rounds: $rounds, '
+      'join waits: $joinWaits, worst join: ${joinWaitMaxNs}ns)';
 }
 
 /// An immutable, lock-free snapshot of the native audio engine's state.

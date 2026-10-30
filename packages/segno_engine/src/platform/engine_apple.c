@@ -138,6 +138,30 @@ void le_platform_after_device_start(le_engine* engine, const le_config* config) 
 
 void le_platform_after_device_open(le_engine* engine) { (void)engine; }
 
+/* The private wait-on-address calls libc++ builds std::atomic::wait on. */
+extern int __ulock_wait(uint32_t operation, void* addr, uint64_t value,
+                        uint32_t timeout_us);
+extern int __ulock_wake(uint32_t operation, void* addr, uint64_t wake_value);
+#define LE_UL_COMPARE_AND_WAIT 1u
+#define LE_ULF_WAKE_ALL 0x00000100u
+
+int le_platform_rt_audio(void) { return 0; }
+
+int le_platform_fx_worker_setup(int32_t core, int rt) {
+  (void)rt;
+  /* No way to pin a thread to a core here; the desktop never asks. */
+  return core < 0;
+}
+
+void le_platform_fx_wait(_Atomic uint32_t* word, uint32_t seen) {
+  (void)__ulock_wait(LE_UL_COMPARE_AND_WAIT, (void*)word, seen, 0);
+}
+
+void le_platform_fx_wake(_Atomic uint32_t* word, int n) {
+  if (n <= 0) return;
+  (void)__ulock_wake(LE_UL_COMPARE_AND_WAIT | LE_ULF_WAKE_ALL, (void*)word, 0);
+}
+
 void le_platform_on_engine_teardown(void) {}
 
 /* macOS is a development host: no PREEMPT_RT kernel to defend, and no fork

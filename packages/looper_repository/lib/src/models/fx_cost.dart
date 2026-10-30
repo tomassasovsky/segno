@@ -133,6 +133,46 @@ int fxBudgetNs(int sampleRate, {int period = kFxBenchPeriod}) =>
     (kFxBudgetShare * 1e9 / sampleRate).floor() -
     (kFxBaseCostUs * 1000 / _perBlock(period)).ceil();
 
+/// What handing the monitor chains to the effects workers costs the
+/// callback's block, in microseconds, by the number of workers (#1515): the
+/// wake, the claims and the join (2.5 us a block in the spike), plus the time
+/// the workers lose to their late start, shared by every core
+/// (docs/plan/2026-10-29-feat-multicore-effects-plan.md, section 7: 70, 81
+/// and 97 ns a frame at 64-frame blocks).
+const Map<int, double> kFxHandoffUs = {1: 4.48, 2: 5.184, 3: 6.208};
+
+/// What the effects charge the audio thread's worst block, in nanoseconds
+/// per frame, at [period]-frame blocks with [workers] effects workers
+/// beside the callback (#1515): the chains that stay on the callback
+/// ([serial]) plus the critical path of the [jobs], the chains the workers
+/// share (one monitor input's non-empty chain each).
+///
+/// With C cores (the callback and the workers) any greedy claiming finishes
+/// the jobs within J/C + (1 - 1/C) p of their release (Graham's bound for
+/// list scheduling, in any order), J their sum and p the largest, plus the
+/// handoff ([kFxHandoffUs]). One job's work never splits across cores, which
+/// the second term pays for. With no workers, or fewer than two jobs (the
+/// engine then runs them on the callback), it is every chain summed: the
+/// rule before #1515.
+int fxLoadNs({
+  required int serial,
+  required Iterable<int> jobs,
+  int workers = 0,
+  int period = kFxBenchPeriod,
+}) {
+  // Every chain is a job, a free one too (a hosted plugin, a rack of
+  // passthroughs): the engine releases a round for it all the same.
+  final costs = jobs.toList();
+  final sum = costs.fold(0, (a, b) => a + b);
+  final handoffUs = kFxHandoffUs[workers > 3 ? 3 : workers];
+  if (handoffUs == null || costs.length < 2) return serial + sum;
+  final cores = workers + 1;
+  final largest = costs.reduce((a, b) => a > b ? a : b);
+  final handoff = (handoffUs * 1000 / _perBlock(period)).ceil();
+  final path = (sum + (cores - 1) * largest + cores - 1) ~/ cores;
+  return serial + handoff + path;
+}
+
 /// The frames a per-block cost spreads over: the block below the bench's
 /// 64, where a hop quarter and the engine's fixed work land in every
 /// block; the bench's 64 above it, where a longer block runs several hop

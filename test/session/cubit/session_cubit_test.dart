@@ -2337,15 +2337,31 @@ void main() {
         /// The names the port was handed.
         late List<Map<int, String>> renamed;
 
-        setUpAll(() => registerFallbackValue(<TrackEffect>[]));
+        setUpAll(
+          () => registerFallbackValue(<FxAddress, List<TrackEffect>>{}),
+        );
 
         setUp(() {
           room = 1000;
           renamed = [];
-          // Each entry costs 100.
-          when(() => looper.fxCostOf(any())).thenAnswer(
-            (inv) => (inv.positionalArguments.first as List).length * 100,
-          );
+          // Each entry costs 100: a chain grows by its entries less the
+          // ones it replaces.
+          when(() => looper.fxGrowthNs(any())).thenAnswer((inv) {
+            final chains =
+                inv.positionalArguments.first
+                    as Map<FxAddress, List<TrackEffect>>;
+            var growth = 0;
+            for (final MapEntry(key: at, value: chain) in chains.entries) {
+              final current = switch (at.stage) {
+                FxStage.track => looper.allTrackChains()[at.index]?.entries,
+                FxStage.loop =>
+                  looper.allLaneChains()[(at.index, at.lane!)]?.entries,
+                _ => null,
+              };
+              growth += (chain.length - (current?.length ?? 0)) * 100;
+            }
+            return growth;
+          });
           when(() => looper.fxRoomNs).thenAnswer((_) => room);
         });
 

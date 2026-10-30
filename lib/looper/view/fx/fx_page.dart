@@ -415,7 +415,7 @@ class _FxViewState extends State<FxView> {
             destinationLabel: rack.name,
             freeSlots: kTrackEffectMax - chain.length,
             roomNs: context.read<LooperRepository>().fxRoomNs,
-            costOf: _costOf(context, chain),
+            costOf: _costOf(context, address, _entriesOf(context, address)),
           ),
         ),
       ),
@@ -556,15 +556,17 @@ class _FxViewState extends State<FxView> {
     title: AppText(context.l10n.fxChangeNotApplied),
   );
 
-  /// What adding entries to [chain] would cost
-  /// ([LooperRepository.fxCostOf]).
+  /// What adding entries to [chain], the chain at [address], would cost
+  /// ([LooperRepository.fxGrowthNs]).
   static int Function(List<TrackEffect>) _costOf(
     BuildContext context,
+    FxAddress address,
     List<TrackEffect> chain,
   ) {
     final repository = context.read<LooperRepository>();
-    final base = repository.fxCostOf(chain);
-    return (added) => repository.fxCostOf([...chain, ...added]) - base;
+    return (added) => repository.fxGrowthNs({
+      address: [...chain, ...added],
+    });
   }
 
   static bool _committed(FxEditResult result) =>
@@ -652,7 +654,7 @@ class _FxViewState extends State<FxView> {
             destinationLabel: _destinationLabel(destination),
             freeSlots: kTrackEffectMax - entries.length,
             roomNs: context.read<LooperRepository>().fxRoomNs,
-            costOf: _costOf(context, entries),
+            costOf: _costOf(context, address, entries),
           ),
         ),
       ),

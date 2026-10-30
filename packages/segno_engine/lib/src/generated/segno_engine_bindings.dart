@@ -1342,6 +1342,74 @@ class SegnoEngineBindings {
             )
           >();
 
+  /// Asks for [count] effects workers (0..LE_FX_WORKERS_MAX; 0, the default,
+  /// runs the monitor chains on the callback) and where to run them: [cores]
+  /// NULL leaves every thread where the scheduler puts it, otherwise it holds
+  /// count + 1 core numbers, the callback's first and then one per worker, -1
+  /// for "not pinned". The workers start when the engine is next configured or
+  /// started, and run at SCHED_FIFO 79, one below the callback, where the
+  /// callback runs real-time (the ALSA appliance). A worker the kernel refuses
+  /// its core or its priority is not started: le_engine_get_fx_workers_
+  /// telemetry reports how many run. Fixed while the device runs, like the
+  /// device itself: LE_ERR_ALREADY_RUNNING then, LE_ERR_INVALID for a count or
+  /// core out of range.
+  int le_engine_set_fx_workers(
+    ffi.Pointer<le_engine> engine,
+    int count,
+    ffi.Pointer<ffi.Int32> cores,
+  ) {
+    return _le_engine_set_fx_workers(
+      engine,
+      count,
+      cores,
+    );
+  }
+
+  late final _le_engine_set_fx_workersPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_engine_set_fx_workers');
+  late final _le_engine_set_fx_workers = _le_engine_set_fx_workersPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<ffi.Int32>)
+      >();
+
+  /// Copies the effects workers' telemetry (#1515) into *out. No-op if either
+  /// pointer is NULL. Relaxed loads only; safe from any thread at any time.
+  void le_engine_get_fx_workers_telemetry(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_fx_workers_telemetry> out,
+  ) {
+    return _le_engine_get_fx_workers_telemetry(
+      engine,
+      out,
+    );
+  }
+
+  late final _le_engine_get_fx_workers_telemetryPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_fx_workers_telemetry>,
+          )
+        >
+      >('le_engine_get_fx_workers_telemetry');
+  late final _le_engine_get_fx_workers_telemetry =
+      _le_engine_get_fx_workers_telemetryPtr
+          .asFunction<
+            void Function(
+              ffi.Pointer<le_engine>,
+              ffi.Pointer<le_fx_workers_telemetry>,
+            )
+          >();
+
   /// Copies track `channel`'s snapshot into *out. Out-of-range channels yield an
   /// empty track. No-op if either pointer is NULL.
   void le_engine_get_track(
@@ -9520,6 +9588,12 @@ final class le_cb_window_snapshot extends ffi.Struct {
   /// breakdown; dropping it entirely would under-report reality.
   @ffi.Array.multi([4])
   external ffi.Array<ffi.Uint64> xruns;
+
+  /// Services longer than the effects budget's share of their deadline (80 %,
+  /// kFxBudgetShare in fx_cost.dart): what the admission model promises never
+  /// happens (#1515). Every late period is one of these too.
+  @ffi.Uint64()
+  external int over_share_periods;
 }
 
 /// The whole instrument, read through le_engine_get_callback_telemetry.
@@ -9544,6 +9618,68 @@ final class le_callback_telemetry extends ffi.Struct {
 
   /// since the most recent le_perf_arm
   external le_cb_window_snapshot armed;
+}
+
+final class le_fx_worker_snapshot extends ffi.Struct {
+  /// Rounds this worker woke for, and how long after the callback's wake it
+  /// was running (mean, worst, histogram).
+  @ffi.Uint64()
+  external int wakes;
+
+  @ffi.Uint32()
+  external int wake_mean_ns;
+
+  @ffi.Uint32()
+  external int wake_max_ns;
+
+  @ffi.Array.multi([16])
+  external ffi.Array<ffi.Uint64> wake_buckets;
+
+  /// Jobs it ran, and how long each took (mean, worst, sum).
+  @ffi.Uint64()
+  external int jobs;
+
+  @ffi.Uint32()
+  external int job_mean_ns;
+
+  @ffi.Uint32()
+  external int job_max_ns;
+
+  @ffi.Uint64()
+  external int job_total_ns;
+}
+
+final class le_fx_workers_telemetry extends ffi.Struct {
+  /// le_engine_set_fx_workers's count
+  @ffi.Int32()
+  external int requested;
+
+  /// The workers running: 0 until the engine is configured or started, and
+  /// fewer than requested when the kernel refused one its core or its
+  /// real-time priority. What the effects admission counts.
+  @ffi.Int32()
+  external int running;
+
+  /// Since the workers started: the rounds released to them, the jobs the
+  /// callback ran itself in those rounds, and the rounds whose join waited
+  /// for a job a worker had started (how long: mean, worst).
+  @ffi.Uint64()
+  external int rounds;
+
+  @ffi.Uint64()
+  external int callback_jobs;
+
+  @ffi.Uint64()
+  external int join_waits;
+
+  @ffi.Uint32()
+  external int join_wait_mean_ns;
+
+  @ffi.Uint32()
+  external int join_wait_max_ns;
+
+  @ffi.Array.multi([3])
+  external ffi.Array<le_fx_worker_snapshot> worker;
 }
 
 /// Lock-free snapshot of engine state, published by the audio thread and read by
@@ -10960,6 +11096,12 @@ const int LE_VIZ_POINTS = 512;
 const int LE_CB_BUCKETS = 8;
 
 const int LE_XRUN_KINDS = 4;
+
+const int LE_FX_WORKERS_MAX = 3;
+
+const int LE_FX_WAKE_BUCKETS = 16;
+
+const int LE_FX_WAKE_BUCKET_NS = 2000;
 
 const int LE_BACKING_MAX_BUFFERS = 4;
 

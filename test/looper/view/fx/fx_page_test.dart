@@ -227,6 +227,7 @@ void main() {
     registerFallbackValue(MonitorMode.off);
     registerFallbackValue(const FxAddress(stage: FxStage.track));
     registerFallbackValue(<String>{});
+    registerFallbackValue(<FxAddress, List<TrackEffect>>{});
   });
 
   late _MockLooperBloc bloc;
@@ -311,8 +312,12 @@ void main() {
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.fxRoomNs).thenReturn(1 << 40);
-    when(() => repository.fxCostOf(any())).thenAnswer(
-      (call) => fxChainCostNs(call.positionalArguments[0] as List<TrackEffect>),
+    when(() => repository.fxGrowthNs(any())).thenAnswer(
+      (call) => fxChainCostNs(
+        (call.positionalArguments[0] as Map<FxAddress, List<TrackEffect>>)
+            .values
+            .expand((chain) => chain),
+      ),
     );
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
     when(() => repository.laneCount(any())).thenReturn(1);

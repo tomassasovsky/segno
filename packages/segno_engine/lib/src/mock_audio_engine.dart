@@ -375,6 +375,22 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   @override
   CallbackTelemetry callbackTelemetry() => nextCallbackTelemetry;
 
+  @override
+  FxWorkersTelemetry fxWorkersTelemetry() => FxWorkersTelemetry(
+    requested: _fxWorkers,
+    running: _running ? _fxWorkers : 0,
+  );
+
+  int _fxWorkers = 0;
+
+  @override
+  EngineResult setFxWorkers({required int count, List<int>? cores}) {
+    if (count < 0 || count > 3) return EngineResult.invalid;
+    if (_running) return EngineResult.alreadyRunning;
+    _fxWorkers = count;
+    return EngineResult.ok;
+  }
+
   /// The value [callbackTelemetry] returns. Settable so a caller can rehearse
   /// a reading (a late-callback window, a dropout count) without a device.
   CallbackTelemetry nextCallbackTelemetry = CallbackTelemetry.empty;

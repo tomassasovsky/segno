@@ -26,6 +26,7 @@
 #include "engine_fx.h"       /* fx_apply_chain, le_fx_entry_reset */
 #include "engine_instruments.h" /* le_instruments_block / _cut (#1197) */
 #include "engine_internal.h" /* le_engine_process prototype */
+#include "engine_workers.h"  /* le_fx_jobs_run (#1515) */
 #include "engine_private.h"  /* le_engine + the published atomics */
 #include "le_midi_clock.h"   /* le_midi_clock_advance (C1 24-PPQN clock-send) */
 #include "le_clock_follow.h" /* the MIDI clock follower (#1228 Part 2) */
@@ -1051,9 +1052,11 @@ static void le_apply_length_preset_tempo(le_engine* e, int32_t len,
  * the loop top while a shared loop exists (at its grid's rate when it has
  * one), and on from wherever it was when none does. It is re-anchored only
  * when it leaves its line, so the beat is anchor + frames * qpf in every
- * frame, the very sum a render computes from the logged anchors. */
-static inline void le_fx_tempo_tick(le_engine* e, uint32_t clock,
-                                    uint64_t frame, int free_or_song) {
+ * frame, the very sum a render computes from the logged anchors. Returns 1
+ * when it re-anchored, which the frame loop records for the chains that run
+ * after it (le_fx_par). */
+static inline int le_fx_tempo_tick(le_engine* e, uint32_t clock,
+                                   uint64_t frame, int free_or_song) {
   const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
   float bpm = load_f32(&e->a_tempo_bpm_bits);
   if (!(bpm > 0.0f)) bpm = 120.0f;
@@ -1074,6 +1077,7 @@ static inline void le_fx_tempo_tick(le_engine* e, uint32_t clock,
                     (double)e->clock.length)
           : (float)((double)bpm / 60.0 / (double)sr * 4.0 / (double)den);
   le_fx_tempo* t = &e->fx_tempo;
+  int moved = 0;
   const double on_line =
       e->fx_tempo_set ? t->anchor_beat +
                             (double)(uint32_t)(clock - t->anchor_clock) *
@@ -1093,6 +1097,7 @@ static inline void le_fx_tempo_tick(le_engine* e, uint32_t clock,
     t->den = den;
     e->fx_tempo_set = 1;
     e->fx_tempo_log = 1;
+    moved = 1;
   }
   if (e->fx_tempo_log) {
     /* Re-expressed at this frame, so a render anchors where the log does. */
@@ -1109,6 +1114,7 @@ static inline void le_fx_tempo_tick(le_engine* e, uint32_t clock,
                                                0}});
     e->fx_tempo_log = 0;
   }
+  return moved;
 }
 
 static inline void grid_beat_frame(le_engine* e, int32_t pos, int click_on,
@@ -6189,7 +6195,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       {
         const int32_t mode = load_i32(&e->a_looper_mode);
         e->fx_tempo_log = 1;
-        le_fx_tempo_tick(e, e->fx_clock_base, frame,
+        (void)le_fx_tempo_tick(e, e->fx_clock_base, frame,
                          mode == LE_LOOPER_MODE_FREE ||
                              mode == LE_LOOPER_MODE_SONG);
       }
@@ -6760,13 +6766,15 @@ static void le_count_in_commit(le_engine* e, uint64_t frame) {
   e->click_free_beat = 0;
 }
 
-/* Advances the count-in / free-running click schedulers and synthesizes the
- * click voice into the masked output channels for one frame. `click_on` is
- * the frame's audibility gate (le_click_gate). Dormant cost with the
- * defaults: the single fused compare at the top (all three terms are
- * audio-thread-local ints that read 0). */
-static inline void click_frame(le_engine* e, float* out, uint32_t f,
-                               int ch_out, int click_on, uint32_t mask,
+/* Advances the count-in / free-running click schedulers and synthesizes one
+ * frame of the click voice, in the first frame loop: a count-in's downbeat
+ * starts recordings, which the next frame's mix must see. The sample is kept
+ * for block frame [i] of le_fx_par, and the second loop sums it into the
+ * masked output channels where the click always summed in. `click_on` is the
+ * frame's audibility gate (le_click_gate). Dormant cost with the defaults:
+ * the single fused compare at the top (all three terms are audio-thread-local
+ * ints that read 0). */
+static inline void click_frame(le_engine* e, uint32_t i, int click_on,
                                float vol, float gl, float gr, int sr,
                                uint64_t frame) {
   /* click_free_running joins the fuse so a gate that fell while no burst was
@@ -6841,12 +6849,12 @@ static inline void click_frame(le_engine* e, float* out, uint32_t f,
     e->click_phase += LE_CLICK_TWO_PI * e->click_freq / (float)sr;
     if (e->click_phase > LE_CLICK_TWO_PI) e->click_phase -= LE_CLICK_TWO_PI;
     e->click_remaining--;
-    if (mask != 0u) {
-      /* The routed fan-out every source uses: at the centre (gl == gr == 1)
-       * each masked channel gets exactly s, the unpanned click. */
-      le_fx_route_frame(out + (size_t)f * (size_t)ch_out, ch_out, mask,
-                        s * gl, s * gr);
-    }
+    /* Routed in the second loop through the fan-out every source uses: at
+     * the centre (gl == gr == 1) each masked channel gets exactly s, the
+     * unpanned click. */
+    e->fx_par.click_l[i] = s * gl;
+    e->fx_par.click_r[i] = s * gr;
+    e->fx_par.click_sounds[i] = 1;
   }
 }
 
@@ -6942,18 +6950,28 @@ static inline void audition_frame(le_engine* e, float* out, uint32_t f,
 }
 
 /* Mixed output follows the master clock. Track waveforms below use their
- * own full read coordinates, matching the playhead published in the snapshot. */
-static inline void viz_tap_frame(le_engine* e, int32_t pos,
-                                 float frame_out_peak) {
-  if (e->clock.length <= 0) return;
+ * own full read coordinates, matching the playhead published in the
+ * snapshot. Two halves: the cursor moves in the first frame loop, where the
+ * loop length and the commands that reset the cursor live, and returns what
+ * the second loop must do at this frame (le_fx_par.viz); the second loop
+ * accumulates the frame's output peak, which only it knows. */
+static inline int32_t viz_cursor_frame(le_engine* e, int32_t pos) {
+  if (e->clock.length <= 0) return LE_FX_VIZ_NONE;
   int32_t bucket = (int32_t)((int64_t)pos * LE_VIZ_POINTS / e->clock.length);
   if (bucket >= LE_VIZ_POINTS) bucket = LE_VIZ_POINTS - 1;
-  if (bucket != e->loop_viz_bucket) {
-    const int32_t prev = e->loop_viz_bucket;
-    if (prev >= 0 && prev < LE_VIZ_POINTS) {
-      store_f32(&e->a_loop_viz[prev], e->loop_viz_accum);
+  if (bucket == e->loop_viz_bucket) return LE_FX_VIZ_SAME;
+  const int32_t prev = e->loop_viz_bucket;
+  e->loop_viz_bucket = bucket;
+  return prev;
+}
+
+static inline void viz_tap_frame(le_engine* e, int32_t viz,
+                                 float frame_out_peak) {
+  if (viz == LE_FX_VIZ_NONE) return;
+  if (viz != LE_FX_VIZ_SAME) {
+    if (viz >= 0 && viz < LE_VIZ_POINTS) {
+      store_f32(&e->a_loop_viz[viz], e->loop_viz_accum);
     }
-    e->loop_viz_bucket = bucket;
     e->loop_viz_accum = 0.0f;
   }
   if (frame_out_peak > e->loop_viz_accum) e->loop_viz_accum = frame_out_peak;
@@ -8014,7 +8032,6 @@ static inline int process_input_frame(le_engine* e, const float* in,
                                       int ch_in, int ch_out, int tc,
                                       int sr, uint32_t excluded, float* in_sumsq,
                                       float* in_peak, float* in_peak_ch,
-                                      float* out_sumsq,
                                       uint64_t perf_frame_base) {
   float frame_mag = 0.0f; /* max |input| over real (non-loopback) channels */
   float loop_mag = 0.0f;  /* max |input| over loopback channels (latency tap) */
@@ -8118,62 +8135,60 @@ static inline int process_input_frame(le_engine* e, const float* in,
        * resumes on its own now that lat_active is clear and the per-frame mix
        * — which the pulse path bypassed — runs again. */
     }
+    /* The output meter takes these in the second frame loop, in frame
+     * order with the others (le_engine_process). */
     for (int c = 0; c < ch_out; ++c) {
-      const float sample = c == e->lat_out ? burst : 0.0f;
-      out[f * ch_out + c] = sample;
-      *out_sumsq += sample * sample;
+      out[f * ch_out + c] = c == e->lat_out ? burst : 0.0f;
     }
     return 1;
   }
   return 0;
 }
 
-/* Per-frame live monitoring: each enabled hardware input runs its clean live
- * sample through its single (stageless) effect chain at its volume and sums into
- * the outputs its mask selects — an empty chain routes the clean sample (the dry
- * path), an FX chain its processed signal (stereo-aware: a reverb spreads across
- * the first two masked outputs). [out_enabled] is the structural output gate,
- * intersected with the mask so a disabled output is never a target. Live and
- * independent of every track; never recorded. Effects run every frame so delay
- * tails / LFO phase stay continuous. */
+/* Per-frame live monitoring, in the second frame loop: each enabled input's
+ * live sample through its single (stageless) effect chain, at its volume,
+ * summed into the outputs its mask selects — an empty chain routes the clean
+ * sample (the dry path), an FX chain its processed signal (stereo-aware: a
+ * reverb spreads across the first two masked outputs). The chains ran over
+ * the block before this loop, as jobs (le_fx_monitor_job), so a chain's
+ * output for block frame [i] is read from le_fx_par. [out_enabled] is the
+ * structural output gate, intersected with the mask so a disabled output is
+ * never a target. Live and independent of every track; never recorded. */
 static inline void mix_monitors_frame(
-    le_engine* e, const float* in, float* out, uint32_t f, int ch_in, int ch_out,
-    int sr, int fx_cap, uint32_t out_enabled, const int* mon_on,
-    const int* mon_mut, const int* mon_has_fx, const int32_t* mon_fx_count,
-    int32_t mon_fx_type[][LE_FX_MAX],
-    float mon_fx_params[][LE_FX_MAX][LE_FX_PARAMS],
-    int32_t mon_fx_enabled[][LE_FX_MAX], const float* mon_vol,
+    le_engine* e, const float* in, float* out, uint32_t f, uint32_t i,
+    int ch_in, int ch_out, uint32_t out_enabled, const int* mon_on,
+    const int* mon_mut, const int* mon_has_fx, const float* mon_vol,
     const uint32_t* mon_out, const float* mon_gl, const float* mon_gr,
     float* mon_peak) {
-  {
-    /* The device's channels (when there is input), then every instrument
-     * source (#1197), whose bus stands in for the input. */
-    for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-      const int instrument = c >= LE_INSTRUMENT_SOURCE_BASE;
-      if (!instrument && (in == NULL || c >= ch_in)) continue;
-      const int captured =
-          e->perf.armed && (e->perf.input_mask & (UINT64_C(1) << c)) != 0;
-      if (!mon_on[c] || mon_mut[c]) {
-        if (captured) perf_tap_monitor_frame(e, c, 0.0f, 0.0f);
-        continue;
-      }
-      const float clean = instrument ? le_instrument_source_sample(e, c, f)
-                                     : in[f * ch_in + c];
-      float ml = clean;
-      float mr = clean;
-      if (mon_has_fx[c]) {
-        fx_apply_chain(&e->monitors[c].fx, sr, fx_cap, &ml, &mr, mon_fx_count[c],
-                       mon_fx_type[c], mon_fx_params[c], mon_fx_enabled[c]);
-      }
-      ml *= mon_vol[c] * mon_gl[c];
-      mr *= mon_vol[c] * mon_gr[c];
-      if (captured) perf_tap_monitor_frame(e, c, ml, mr);
-      const uint32_t routed = mon_out[c] & out_enabled;
-      le_fx_route(out, f, ch_out, routed, ml, mr);
-      if (routed) {
-        const float ma = fabsf(ml) > fabsf(mr) ? fabsf(ml) : fabsf(mr);
-        if (ma > mon_peak[c]) mon_peak[c] = ma;
-      }
+  const le_fx_par* par = &e->fx_par;
+  /* The device's channels (when there is input), then every instrument
+   * source (#1197), whose bus stands in for the input. */
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    const int instrument = c >= LE_INSTRUMENT_SOURCE_BASE;
+    if (!instrument && (in == NULL || c >= ch_in)) continue;
+    const int captured =
+        e->perf.armed && (e->perf.input_mask & (UINT64_C(1) << c)) != 0;
+    if (!mon_on[c] || mon_mut[c]) {
+      if (captured) perf_tap_monitor_frame(e, c, 0.0f, 0.0f);
+      continue;
+    }
+    float ml, mr;
+    if (mon_has_fx[c]) {
+      ml = par->mon_l[c][i];
+      mr = par->mon_r[c][i];
+    } else {
+      ml = instrument ? le_instrument_source_sample(e, c, f)
+                      : in[f * ch_in + c];
+      mr = ml;
+    }
+    ml *= mon_vol[c] * mon_gl[c];
+    mr *= mon_vol[c] * mon_gr[c];
+    if (captured) perf_tap_monitor_frame(e, c, ml, mr);
+    const uint32_t routed = mon_out[c] & out_enabled;
+    le_fx_route(out, f, ch_out, routed, ml, mr);
+    if (routed) {
+      const float ma = fabsf(ml) > fabsf(mr) ? fabsf(ml) : fabsf(mr);
+      if (ma > mon_peak[c]) mon_peak[c] = ma;
     }
   }
 }
@@ -9673,6 +9688,14 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   e->fx_clock_base = (uint32_t)atomic_load_explicit(&e->a_frames,
                                                     memory_order_relaxed);
   atomic_store_explicit(&e->a_fx_frame, e->fx_clock_base, memory_order_relaxed);
+  /* The chains that run after the first frame loop keep clocks of their own
+   * (le_fx_time, #1515), which read the same frame here. */
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    atomic_store_explicit(&e->monitors[c].fx_time.a_frame, e->fx_clock_base,
+                          memory_order_relaxed);
+  }
+  atomic_store_explicit(&e->obus_time.a_frame, e->fx_clock_base,
+                        memory_order_relaxed);
 
   le_command cmd;
   while (le_ring_pop(&e->ring, &cmd)) {
@@ -10048,144 +10071,223 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     if (solo[t]) any_solo = 1;
   }
 
+  /* The block's jobs (#1515): every monitor input whose chain runs this
+   * callback, in input order, which is the order the second loop mixes them
+   * in, so the output is the same however the jobs are shared out. */
+  le_fx_par* const par = &e->fx_par;
+  par->jobs = 0;
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    const int instrument = c >= LE_INSTRUMENT_SOURCE_BASE;
+    if (!instrument && (in_c == NULL || c >= ch_in)) continue;
+    if (mon_on[c] && !mon_mut[c] && mon_has_fx[c]) par->job_mon[par->jobs++] = c;
+  }
+  par->in = in_c;
+  par->ch_in = ch_in;
+  par->sr = sr;
+  par->fx_cap = fx_cap;
+  const uint32_t click_route = click_mask & out_enabled;
+
   /* Command-drain publications are already included above. Deferred sound,
    * grid and count-in starts can publish another image inside this block. */
   e->capture_image_dirty = 0;
-  for (uint32_t f = 0; f < frames; ++f) {
-    e->perf.tap_frame = perf_frame_base + f;
-    le_fx_tempo_tick(e, e->fx_clock_base + f, perf_frame_base + f,
-                     free_or_song);
-    for (int t = 0; t < tc; ++t)
-      e->tracks[t].fade_sample = le_fade_tick(&e->tracks[t].fade, sr);
-    /* Input metering + sound-activated record + latency harness. When the harness
-     * owns the frame it has already written `out`, so skip the rest. */
-    if (process_input_frame(e, in, in_c, out, f, ch_in, ch_out, tc, sr,
-                            excluded, &in_sumsq, &in_peak, in_peak_ch,
-                            &out_sumsq, perf_frame_base)) {
-      /* The FX clock still moves on to the next frame (#941). */
+  /* The frame loop, a block of up to LE_FX_BLOCK frames at a time, in three
+   * steps (le_fx_par): the first loop runs everything up to the tracks' mix
+   * and the transport, the jobs run the monitor chains over the block, and
+   * the second loop runs everything that sums onto the outputs after the
+   * tracks, in the order the one loop ran it before, so every sum into `out`
+   * happens in the same order. Nothing in the second loop changes what the
+   * first reads: its sources (the monitors, the click's samples, the
+   * backing, the audition) and its chains (the output buses) own their
+   * state, and the click's schedule, the cursors and the transport stay in
+   * the first. */
+  for (uint32_t b0 = 0; b0 < frames; b0 += LE_FX_BLOCK) {
+    const uint32_t b1 =
+        frames - b0 > LE_FX_BLOCK ? b0 + LE_FX_BLOCK : frames;
+    par->f0 = b0;
+    par->n = b1 - b0;
+    par->clock = e->fx_clock_base + b0;
+    par->tempo0 = e->fx_tempo;
+    par->tev_n = 0;
+    for (uint32_t f = b0; f < b1; ++f) {
+      const uint32_t i = f - b0;
+      e->perf.tap_frame = perf_frame_base + f;
+      if (le_fx_tempo_tick(e, e->fx_clock_base + f, perf_frame_base + f,
+                           free_or_song)) {
+        par->tev_at[par->tev_n] = (int32_t)i;
+        par->tev[par->tev_n++] = e->fx_tempo;
+      }
+      for (int t = 0; t < tc; ++t)
+        e->tracks[t].fade_sample = le_fade_tick(&e->tracks[t].fade, sr);
+      par->click_sounds[i] = 0;
+      par->viz[i] = LE_FX_VIZ_NONE;
+      /* Input metering + sound-activated record + latency harness. When the
+       * harness owns the frame it has already written `out`, so skip the
+       * rest (in both loops). */
+      par->owned[i] = (uint8_t)process_input_frame(
+          e, in, in_c, out, f, ch_in, ch_out, tc, sr, excluded, &in_sumsq,
+          &in_peak, in_peak_ch, perf_frame_base);
+      if (par->owned[i]) {
+        /* The FX clock still moves on to the next frame (#941). */
+        atomic_store_explicit(&e->a_fx_frame, e->fx_clock_base + f + 1u,
+                              memory_order_relaxed);
+        continue;
+      }
+
+      /* The playhead, read before the transport advances below; also feeds
+       * the viz taps. Per-frame outputs of the mix step: st[] (states, for
+       * the transport) and the per-track peaks (for the track viz tap). */
+      const int32_t pos = e->clock.position;
+      int32_t st[LE_MAX_TRACKS];
+      float frame_trk_peak[LE_MAX_TRACKS] = {0};
+
+      /* A deferred image becomes audible at its actual start frame,
+       * independent of callback size. Refresh only the affected lane recipes
+       * (including channel and enable views); old printed entries must not
+       * survive that source/recipe change. Grid/count-in starts after mixing
+       * are seen here on the following frame, sound starts above on this
+       * same frame. */
+      if (e->capture_image_dirty) {
+        const uint32_t dirty = e->capture_image_dirty;
+        e->capture_image_dirty = 0;
+        snapshot_lane_fx(e, tc, dirty, lane_n, fx_count, fx_pre_count, fx_type,
+                         fx_params, fx_enabled, has_fx, perf_frame_base + f);
+        for (int t = 0; t < tc; ++t) {
+          if (!(dirty & (1u << t))) continue;
+          lane_fx_any[t] = 0;
+          for (int l = 0; l < lane_n[t]; ++l) {
+            lane_fx_any[t] |= has_fx[t][l];
+            cache_ent[t][l] = NULL;
+          }
+          track_cache_ent[t] = NULL;
+          /* Printed playback masks the track Pre bits in this block's view.
+           * Restore them too when the image makes that print ineligible, so
+           * the live fallback enters the same enable ramp as a split block. */
+          snapshot_bus_fx(e, &e->tracks[t].bus, &trk_fx_count[t],
+                          &trk_fx_pre_count[t], trk_fx_type[t],
+                          trk_fx_params[t], trk_fx_enabled[t], &trk_has_fx[t],
+                          -1, 0);
+        }
+      }
+
+      /* Per-lane capture + additive playback mix (see mix_tracks_frame).
+       * Reads the CONDITIONED input (in_c): the conditioning stage sits
+       * upstream of the lane write by design (WYSIWYG). */
+      mix_tracks_frame(e, in_c, out, f, ch_in, ch_out, tc, sr, fx_cap, excluded,
+                       out_enabled, overdub_fb, free_or_song, od_step,
+                       od_fade_frames, pos,
+                       lane_n, lane_fx_any, has_fx, fx_count, fx_pre_count,
+                       fx_type, fx_params, fx_enabled,
+                       trk_has_fx, trk_fx_count, trk_fx_type, trk_fx_params,
+                       trk_fx_enabled, trk_fx_pre_count, track_cache_ent,
+                       at_has_fx, at_fx_count, at_fx_type,
+                       at_fx_params, at_fx_enabled, cache_ent, lane_sumsq,
+                       lane_peak, st,
+                       frame_trk_peak, trk_sumsq, trk_peak, trk_lpeak, trk_rpeak,
+                       in_trim, solo, any_solo, perf_frame_base);
+
+      /* The click's schedule and voice (its sample sums in during the
+       * second loop), the loop viz cursor, the track viz taps, then the
+       * transport — see the static-inline step definitions above
+       * le_engine_process. The latency-calibration pulse path bypassed all
+       * of this via `continue` above. Dormant click cost: the click_on
+       * ternary here plus click_frame's fused compare. */
+      const int click_on =
+          click_mode != LE_CLICK_OFF ? le_click_gate(e, click_mode, tc, st) : 0;
+      grid_beat_frame(e, pos, click_on, nominal_fpb); /* dormant-grid cost: one int compare */
+      click_frame(e, i, click_on, click_vol, click_gl, click_gr, sr,
+                  perf_frame_base + f);
+      par->viz[i] = viz_cursor_frame(e, pos);
+      track_viz_tap_frame(e, tc, st, frame_trk_peak);
+      /* The FX clock's one store per frame (#941): the command drain set it
+       * to the block's first frame, and from here on it reads the next one,
+       * so the transport resets below (a quantized record start applying a
+       * capture image), the next iteration's chains and a block-end install
+       * (a bounce) all see the frame they first process. */
       atomic_store_explicit(&e->a_fx_frame, e->fx_clock_base + f + 1u,
                             memory_order_relaxed);
-      continue;
+      advance_transport_frame(e, tc, st, perf_frame_base + f, free_or_song);
     }
 
-    /* The playhead, read before the transport advances below; also feeds the viz
-     * tap. Per-frame outputs of the mix step: st[] (states, for the transport)
-     * and the per-track / per-output peaks (for the viz tap — frame_out_peak is
-     * filled later by master_bus_frame). */
-    const int32_t pos = e->clock.position;
-    int32_t st[LE_MAX_TRACKS];
-    float frame_out_peak = 0.0f;
-    float frame_trk_peak[LE_MAX_TRACKS] = {0};
+    /* The monitor chains over the block: on the workers and the callback,
+     * or on the callback alone (le_fx_jobs_run). */
+    if (par->jobs > 0) le_fx_jobs_run(e);
 
-    /* A deferred image becomes audible at its actual start frame, independent
-     * of callback size. Refresh only the affected lane recipes (including
-     * channel and enable views); old printed entries must not survive that
-     * source/recipe change. Grid/count-in starts after mixing are seen here on
-     * the following frame, sound starts above on this same frame. */
-    if (e->capture_image_dirty) {
-      const uint32_t dirty = e->capture_image_dirty;
-      e->capture_image_dirty = 0;
-      snapshot_lane_fx(e, tc, dirty, lane_n, fx_count, fx_pre_count, fx_type,
-                       fx_params, fx_enabled, has_fx, perf_frame_base + f);
-      for (int t = 0; t < tc; ++t) {
-        if (!(dirty & (1u << t))) continue;
-        lane_fx_any[t] = 0;
-        for (int l = 0; l < lane_n[t]; ++l) {
-          lane_fx_any[t] |= has_fx[t][l];
-          cache_ent[t][l] = NULL;
-        }
-        track_cache_ent[t] = NULL;
-        /* Printed playback masks the track Pre bits in this block's view.
-         * Restore them too when the image makes that print ineligible, so
-         * the live fallback enters the same enable ramp as a split block. */
-        snapshot_bus_fx(e, &e->tracks[t].bus, &trk_fx_count[t],
-                        &trk_fx_pre_count[t], trk_fx_type[t],
-                        trk_fx_params[t], trk_fx_enabled[t], &trk_has_fx[t],
-                        -1, 0);
+    /* The output buses' chains run here, at the frame each one processes:
+     * their clock and tempo follow the block as a lane's did in the first
+     * loop (le_fx_time). */
+    le_fx_time* const ot = &e->obus_time;
+    ot->tempo = par->tempo0;
+    int32_t tev = 0;
+    for (uint32_t f = b0; f < b1; ++f) {
+      const uint32_t i = f - b0;
+      while (tev < par->tev_n && par->tev_at[tev] <= (int32_t)i) {
+        ot->tempo = par->tev[tev++];
       }
+      if (par->owned[i]) {
+        /* The harness's frame: only its output meter, in frame order. */
+        for (int c = 0; c < ch_out; ++c) {
+          const float sample = out[f * ch_out + c];
+          out_sumsq += sample * sample;
+        }
+        continue;
+      }
+      e->perf.tap_frame = perf_frame_base + f;
+      atomic_store_explicit(&ot->a_frame, par->clock + i, memory_order_relaxed);
+      float frame_out_peak = 0.0f;
+
+      /* Per-input live monitoring (see mix_monitors_frame). Reads the
+       * CONDITIONED input (in_c): conditioned-clean IS the input's clean,
+       * for every consumer at once (WYSIWYG with the lane capture). */
+      mix_monitors_frame(e, in_c, out, f, i, ch_in, ch_out, out_enabled,
+                         mon_on, mon_mut, mon_has_fx, mon_vol, mon_out, mon_gl,
+                         mon_gr, mon_peak);
+
+      /* The click, THEN the output buses, then the master bus (gain +
+       * limiter + output metering), then the loop-viz tap.
+       *
+       * The click sums in BEFORE the buses (slice 3b): a destination's
+       * chain, level and mute process every source routed there, the click
+       * included (accepted design), and the master gain, the limiter, the
+       * output metering and the loop viz all see it, where before slice 3b
+       * none of them did. click_mask & out_enabled: a structurally disabled
+       * output never carries click energy, like every other source's
+       * fan-out. */
+      if (par->click_sounds[i] && click_route != 0u) {
+        le_fx_route_frame(out + (size_t)f * (size_t)ch_out, ch_out,
+                          click_route, par->click_l[i], par->click_r[i]);
+      }
+      /* The backing (#1200) sums in at the same point, for the same reasons;
+       * dormant cost while nothing sounds: this one compare. */
+      if (backing_live) {
+        backing_frame(e, out, f, ch_out, backing_mask & out_enabled,
+                      backing_level, backing_gl, backing_gr, backing_end);
+        backing_live = e->backing_fade.buf != NULL ||
+                       (e->backing_cur.buf != NULL &&
+                        e->backing_state == LE_BACKING_PLAYING);
+      }
+      /* Output buses (slice 3b): chain, the pre-level capture tap, level,
+       * Mono, balance, mute, per pair, over everything summed above. */
+      for (int k = 0; k < bus_n && k < LE_MAX_OUTPUT_BUSES; ++k) {
+        const int tap_here = k == perf_bus;
+        if (!obus[k].active && !tap_here) continue;
+        output_bus_frame(e, out, f, ch_out, sr, fx_cap, k, &obus[k], tap_here);
+      }
+      /* The audition (#1178) joins here, past every bus and its capture tap:
+       * no destination level, mute or chain, no performance capture; the
+       * master gain and the limiter below still shape it. */
+      if (audition_live) {
+        audition_frame(e, out, f, ch_out, audition_outputs);
+        audition_live = e->audition_buf != NULL;
+      }
+      master_bus_frame(e, out, f, ch_out, master_gain, limiter_on,
+                       limiter_ceiling, lim_hold, lim_attack, lim_release,
+                       &out_sumsq, &frame_out_peak, out_peak_ch);
+      if (frame_out_peak > out_peak) out_peak = frame_out_peak;
+      viz_tap_frame(e, par->viz[i], frame_out_peak);
     }
-
-    /* Per-lane capture + additive playback mix (see mix_tracks_frame).
-     * Reads the CONDITIONED input (in_c): the conditioning stage sits
-     * upstream of the lane write by design (WYSIWYG). */
-    mix_tracks_frame(e, in_c, out, f, ch_in, ch_out, tc, sr, fx_cap, excluded,
-                     out_enabled, overdub_fb, free_or_song, od_step,
-                     od_fade_frames, pos,
-                     lane_n, lane_fx_any, has_fx, fx_count, fx_pre_count,
-                     fx_type, fx_params, fx_enabled,
-                     trk_has_fx, trk_fx_count, trk_fx_type, trk_fx_params,
-                     trk_fx_enabled, trk_fx_pre_count, track_cache_ent,
-                     at_has_fx, at_fx_count, at_fx_type,
-                     at_fx_params, at_fx_enabled, cache_ent, lane_sumsq,
-                     lane_peak, st,
-                     frame_trk_peak, trk_sumsq, trk_peak, trk_lpeak, trk_rpeak,
-                     in_trim, solo, any_solo, perf_frame_base);
-
-
-    /* Per-input live monitoring (see mix_monitors_frame). Reads the
-     * CONDITIONED input (in_c): conditioned-clean IS the input's clean, for
-     * every consumer at once (WYSIWYG with the lane capture above). */
-    mix_monitors_frame(e, in_c, out, f, ch_in, ch_out, sr, fx_cap, out_enabled,
-                       mon_on, mon_mut, mon_has_fx, mon_fx_count, mon_fx_type,
-                       mon_fx_params, mon_fx_enabled, mon_vol, mon_out, mon_gl,
-                       mon_gr, mon_peak);
-
-    /* The click, THEN the output buses, then the master bus (gain + limiter
-     * + output metering), then the loop-viz tap, then advance the record
-     * heads and master transport — see the static-inline step definitions
-     * above le_engine_process. The latency-calibration pulse path bypassed
-     * all of this via `continue` above. Dormant click cost: the click_on
-     * ternary here plus click_frame's fused compare.
-     *
-     * The click sums in BEFORE the buses (slice 3b): a destination's chain,
-     * level and mute process every source routed there, the click included
-     * (accepted design), and the master gain, the limiter, the output
-     * metering and the loop viz all see it, where before slice 3b none of
-     * them did. click_mask & out_enabled: a structurally disabled output
-     * never carries click energy, like every other source's fan-out. */
-    const int click_on =
-        click_mode != LE_CLICK_OFF ? le_click_gate(e, click_mode, tc, st) : 0;
-    grid_beat_frame(e, pos, click_on, nominal_fpb); /* dormant-grid cost: one int compare */
-    click_frame(e, out, f, ch_out, click_on, click_mask & out_enabled,
-                click_vol, click_gl, click_gr, sr, perf_frame_base + f);
-    /* The backing (#1200) sums in at the same point, for the same reasons;
-     * dormant cost while nothing sounds: this one compare. */
-    if (backing_live) {
-      backing_frame(e, out, f, ch_out, backing_mask & out_enabled,
-                    backing_level, backing_gl, backing_gr, backing_end);
-      backing_live = e->backing_fade.buf != NULL ||
-                     (e->backing_cur.buf != NULL &&
-                      e->backing_state == LE_BACKING_PLAYING);
-    }
-    /* Output buses (slice 3b): chain, the pre-level capture tap, level,
-     * Mono, balance, mute, per pair, over everything summed above. */
-    for (int k = 0; k < bus_n && k < LE_MAX_OUTPUT_BUSES; ++k) {
-      const int tap_here = k == perf_bus;
-      if (!obus[k].active && !tap_here) continue;
-      output_bus_frame(e, out, f, ch_out, sr, fx_cap, k, &obus[k], tap_here);
-    }
-    /* The audition (#1178) joins here, past every bus and its capture tap:
-     * no destination level, mute or chain, no performance capture; the
-     * master gain and the limiter below still shape it. */
-    if (audition_live) {
-      audition_frame(e, out, f, ch_out, audition_outputs);
-      audition_live = e->audition_buf != NULL;
-    }
-    master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
-                     lim_hold, lim_attack, lim_release, &out_sumsq,
-                     &frame_out_peak, out_peak_ch);
-    if (frame_out_peak > out_peak) out_peak = frame_out_peak;
-
-    viz_tap_frame(e, pos, frame_out_peak);
-    track_viz_tap_frame(e, tc, st, frame_trk_peak);
-    /* The FX clock's one store per frame (#941): the command drain set it
-     * to the block's first frame, and from here on it reads the next one,
-     * so the transport resets below (a quantized record start applying a
-     * capture image), the next iteration's chains and a block-end install
-     * (a bounce) all see the frame they first process. */
-    atomic_store_explicit(&e->a_fx_frame, e->fx_clock_base + f + 1u,
+    while (tev < par->tev_n) ot->tempo = par->tev[tev++];
+    atomic_store_explicit(&ot->a_frame, par->clock + par->n,
                           memory_order_relaxed);
-    advance_transport_frame(e, tc, st, perf_frame_base + f, free_or_song);
   }
 
   if (backing_ran) {

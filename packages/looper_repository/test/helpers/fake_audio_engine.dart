@@ -132,6 +132,24 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   @override
   CallbackTelemetry callbackTelemetry() => nextCallbackTelemetry;
 
+  @override
+  FxWorkersTelemetry fxWorkersTelemetry() => FxWorkersTelemetry(
+    requested: fxWorkersRequested,
+    running: fxWorkersRunning,
+  );
+
+  /// What [setFxWorkers] last asked for.
+  int fxWorkersRequested = 0;
+
+  /// What [fxWorkersTelemetry] reports running.
+  int fxWorkersRunning = 0;
+
+  @override
+  EngineResult setFxWorkers({required int count, List<int>? cores}) {
+    fxWorkersRequested = count;
+    return EngineResult.ok;
+  }
+
   /// The value [callbackTelemetry] returns.
   CallbackTelemetry nextCallbackTelemetry = CallbackTelemetry.empty;
 

@@ -44,6 +44,7 @@
 #include "engine_miniaudio.h"
 #include "engine_platform.h"
 #include "engine_prefault.h" /* the background prefaulter (#900) */
+#include "engine_workers.h" /* the effects workers (#1515) */
 #include "engine_private.h"
 #include "le_midi_clock.h" /* le_midi_clock_reset (C1 clock-send generator) */
 #include "lockfree_ring.h"
@@ -1081,6 +1082,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     le_lane_prefault_head(&engine->tracks[t].lanes[0], 0, sample_rate);
   }
   le_prefault_start(engine); /* so no take start pays for the thread */
+  le_fx_pool_start(engine);  /* the effects workers, if any were asked for */
   return LE_OK;
 }
 
@@ -1343,6 +1345,16 @@ static void le_fx_seed_owner(le_fx_state* fx, le_engine* engine, int32_t seed) {
   fx->tempo = &engine->fx_tempo;
 }
 
+/* The same for an owner whose chain runs after the callback's first frame
+ * loop, on a clock and tempo of its own (le_fx_time, #1515): the monitors,
+ * as jobs, and the output buses, in the second loop. */
+static void le_fx_seed_timed_owner(le_fx_state* fx, le_fx_time* time,
+                                   int32_t seed) {
+  fx->hop_seed = seed;
+  fx->clock_src = &time->a_frame;
+  fx->tempo = &time->tempo;
+}
+
 le_engine* le_engine_create(void) {
   /* Count forks of the process from here on (engine_platform.h); once per
    * process. */
@@ -1467,15 +1479,20 @@ le_engine* le_engine_create(void) {
     le_fx_seed_owner(&engine->tracks[t].bus.fx, engine, le_fx_bus_hop_seed(t));
   }
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    le_fx_seed_owner(&engine->monitors[c].fx, engine, le_fx_monitor_hop_seed(c));
+    le_fx_seed_timed_owner(&engine->monitors[c].fx,
+                           &engine->monitors[c].fx_time,
+                           le_fx_monitor_hop_seed(c));
   }
   for (int32_t k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
     le_fx_seed_owner(&engine->all_tracks_fx[k], engine,
                      le_fx_all_tracks_hop_seed(k));
-    le_fx_seed_owner(&engine->outputs[k].fx.fx, engine, le_fx_output_hop_seed(k));
+    le_fx_seed_timed_owner(&engine->outputs[k].fx.fx, &engine->obus_time,
+                           le_fx_output_hop_seed(k));
   }
   le_fx_seed_owner(&engine->all_tracks.fx, engine, le_fx_all_tracks_hop_seed(0));
   le_engine_bind_fx_rows(engine);
+  /* No effects workers and nothing pinned until le_engine_set_fx_workers. */
+  for (int k = 0; k <= LE_FX_WORKERS_MAX; ++k) engine->fx_cores[k] = -1;
   return engine;
 }
 
@@ -1492,6 +1509,7 @@ void le_engine_destroy(le_engine* engine) {
   if (engine->backend != NULL) {
     engine->backend->close(engine);
   }
+  le_fx_pool_stop(engine); /* no callback left to release a round */
   /* Loop-stage wet cache (part 2, [R2](d)): the device is closed (no audio
    * thread), so join the render worker and free every cache allocation
    * BEFORE the pool frees below — a destroy that lands mid-render must
@@ -1719,8 +1737,12 @@ static int32_t le_engine_publish_and_start(le_engine* engine,
   atomic_store_explicit(&engine->a_excluded_input_mask, excluded_mask,
                         memory_order_relaxed);
 
+  /* The effects workers (#1515), before the first callback: configure
+   * started them, unless a reopen kept the material and skipped it. */
+  le_fx_pool_start(engine);
   if (be->start(engine) != LE_OK) {
     be->close(engine);
+    le_fx_pool_stop(engine);
     return LE_ERR_DEVICE;
   }
   /* Per-OS post-start hook: Linux repins the JACK ports to the selected
@@ -1752,6 +1774,7 @@ int32_t le_engine_stop(le_engine* engine) {
   if (engine->backend != NULL) {
     engine->backend->stop(engine);
   }
+  le_fx_pool_stop(engine); /* joined once no callback can release a round */
   engine->device_name[0] = '\0';
   le_song_cancel(engine);
   /* A measurement the stop cut short ends CANCELLED: a device that left stops
