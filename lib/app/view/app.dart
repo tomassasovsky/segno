@@ -633,15 +633,7 @@ class _AppState extends State<App> {
           BlocProvider<SessionCubit>.value(value: _runtime.session),
           BlocProvider<BackingCubit>.value(value: _runtime.backingView),
           BlocProvider<BackingMixCubit>.value(value: _runtime.backingMixView),
-          BlocProvider(
-            create: (context) {
-              final cubit = TracksCubit(
-                settings: context.read<SettingsRepository>(),
-              );
-              unawaited(cubit.load());
-              return cubit;
-            },
-          ),
+          BlocProvider<TracksCubit>.value(value: _runtime.tracks),
           // The player's saved sounds. Three FX surfaces touch the same list —
           // the two editors save into it, the library recalls from it, and My
           // presets renames and deletes in it — so it is owned once, here,

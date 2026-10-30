@@ -2318,6 +2318,297 @@ void main() {
           ),
         );
       });
+      group('with a template (#1513)', () {
+        final rack = [BuiltInEffect(type: TrackEffectType.drive)];
+        final template = NewLoopTemplate(
+          trackChains: {
+            0: FxChainEnvelope(entries: rack),
+            1: FxChainEnvelope(entries: rack),
+          },
+          names: const {0: 'Guitar', 1: 'Boom'},
+        );
+        final outgoing = FxChainEnvelope(
+          entries: [BuiltInEffect(type: TrackEffectType.reverb)],
+        );
+
+        /// What is left of the budget, read when New loop checks.
+        late int room;
+
+        /// The names the port was handed.
+        late List<Map<int, String>> renamed;
+
+        setUpAll(() => registerFallbackValue(<TrackEffect>[]));
+
+        setUp(() {
+          room = 1000;
+          renamed = [];
+          // Each entry costs 100.
+          when(() => looper.fxCostOf(any())).thenAnswer(
+            (inv) => (inv.positionalArguments.first as List).length * 100,
+          );
+          when(() => looper.fxRoomNs).thenAnswer((_) => room);
+        });
+
+        void stubLiveChains() {
+          when(
+            () => repository.liveSession(
+              settings: any(named: 'settings'),
+              chains: any(named: 'chains'),
+              pedalBindings: any(named: 'pedalBindings'),
+            ),
+          ).thenAnswer((inv) {
+            events.add('capture');
+            return Session(
+              name: 'A',
+              sampleRate: 48000,
+              channels: 1,
+              baseLengthFrames: 96000,
+              tracks: const [],
+              trackChains: [
+                SessionTrackChain(channel: 0, encoded: encodeFxChain(outgoing)),
+                SessionTrackChain(channel: 5, encoded: encodeFxChain(outgoing)),
+              ],
+              laneChains: [
+                SessionLaneChain(
+                  channel: 1,
+                  lane: 0,
+                  encoded: encodeFxChain(outgoing),
+                ),
+                SessionLaneChain(
+                  channel: 5,
+                  lane: 0,
+                  encoded: encodeFxChain(outgoing),
+                ),
+              ],
+              pedalBindings: inv.namedArguments[#pedalBindings] as String,
+            );
+          });
+        }
+
+        SessionCubit buildWithNames({
+          Future<void> Function(Map<int, String>)? renameTracks,
+          void Function(String)? onPedalBindings,
+        }) => SessionCubit(
+          guards: GuardRegistry(),
+          captureSettings: captureSettings,
+          fxPersistence: fxPersistence,
+          settings: settings,
+          repository: repository,
+          looper: looper,
+          performance: performance,
+          mixSettings: mixSettings,
+          mixPersistence: mixPersistence,
+          // A remap is only installed back when there is one; the save stub
+          // takes none.
+          currentPedalBindings: onPedalBindings == null
+              ? () => ''
+              : () => 'remap',
+          onPedalBindings: onPedalBindings ?? (_) {},
+          renameTracks:
+              renameTracks ??
+              (names) async {
+                events.add('rename');
+                renamed.add(names);
+              },
+        );
+
+        test('puts its chains on its tracks, drops their lane chains, keeps '
+            'every other chain, and names the tracks after the apply and '
+            'before the save', () async {
+          stubNewLoop();
+          stubLiveChains();
+          when(
+            () => repository.save(
+              any(),
+              chains: any(named: 'chains'),
+              settings: any(named: 'settings'),
+              pedalBindings: any(named: 'pedalBindings'),
+              name: any(named: 'name'),
+              captureStillValid: any(named: 'captureStillValid'),
+            ),
+          ).thenAnswer((_) async {
+            events.add('save');
+            return _session;
+          });
+          final cubit = buildWithNames();
+          addTearDown(cubit.close);
+          await cubit.recordBaseline();
+          events.clear();
+
+          await cubit.newLoop(template: template);
+
+          final rig = applied.single;
+          expect(rig.trackChains.keys, unorderedEquals([0, 1, 5]));
+          expect(rig.trackChains[0]!.entries, rack);
+          expect(rig.trackChains[0]!.chainEnabled, isTrue);
+          expect(rig.trackChains[1]!.entries, rack);
+          expect(rig.trackChains[5]!.entries, outgoing.entries);
+          expect(rig.laneChains.keys, [(5, 0)]);
+          expect(rig.tracks, isEmpty);
+          expect(renamed, [template.names]);
+          expect(events, containsAllInOrder(['apply', 'rename', 'save']));
+          expect(cubit.state.status, SessionStatus.success);
+          expect(cubit.state.outcome, SessionOutcome.newLoop);
+          expect(cubit.state.trackNamesNotSaved, isFalse);
+        });
+
+        test('without a template the chains are left as they were', () async {
+          stubNewLoop();
+          stubLiveChains();
+          final cubit = buildWithNames();
+          addTearDown(cubit.close);
+          await cubit.recordBaseline();
+
+          await cubit.newLoop();
+
+          final rig = applied.single;
+          expect(rig.trackChains.keys, unorderedEquals([0, 5]));
+          expect(rig.laneChains.keys, unorderedEquals([(1, 0), (5, 0)]));
+          expect(renamed, isEmpty);
+        });
+
+        test('a template that does not fit applies nothing, names nothing, '
+            'and says why, after saving the outgoing session', () async {
+          stubNewLoop();
+          stubLiveChains();
+          // Two racks of one entry: 200, less nothing on tracks 0 and 1 live.
+          room = 150;
+          final cubit = buildWithNames();
+          addTearDown(cubit.close);
+          cubit.emit(
+            const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+          );
+          await cubit.save();
+          clearInteractions(repository);
+          liveFingerprint = 'edited';
+
+          await cubit.newLoop(template: template);
+
+          verifySavedTo('/root/A', name: 'A').called(1);
+          verifyNever(() => looper.applySession(any()));
+          verifyNever(repository.newSessionId);
+          expect(renamed, isEmpty);
+          expect(cubit.state.status, SessionStatus.failure);
+          expect(cubit.state.error, SessionError.templateDoesNotFit);
+          expect(cubit.state.currentSessionId, 'A');
+        });
+
+        test('the check is on the chains once the take has ended', () async {
+          stubNewLoop();
+          stubLiveChains();
+          LooperState rigWith(TrackState track4) => LooperState(
+            tracks: [
+              for (var c = 0; c < 4; c++) Track(channel: c),
+              Track(channel: 4, state: track4, lengthFrames: 24000),
+              for (var c = 5; c < 8; c++) Track(channel: c),
+            ],
+          );
+          var live = rigWith(TrackState.recording);
+          when(() => looper.state).thenAnswer((_) => live);
+          when(() => looper.laneCount(any())).thenReturn(1);
+          // Ending the take on track 5 copies its input chain onto a lane,
+          // which uses up the room the sheet saw.
+          when(
+            () => looper.stopRecordControl(channel: any(named: 'channel')),
+          ).thenAnswer((_) {
+            live = rigWith(TrackState.playing);
+            room = 100;
+            return EngineResult.ok;
+          });
+          final cubit = buildWithNames();
+          addTearDown(cubit.close);
+
+          await cubit.newLoop(template: template);
+
+          verify(() => looper.stopRecordControl(channel: 4)).called(1);
+          verifyNever(() => looper.applySession(any()));
+          expect(cubit.state.error, SessionError.templateDoesNotFit);
+        });
+
+        test('a template lighter than the chains it replaces is not refused '
+            'on a rig already over budget', () async {
+          stubNewLoop();
+          stubLiveChains();
+          room = -500;
+          // Tracks 0 and 1 carry three entries each now: 600 against 200.
+          final heavy = FxChainEnvelope(
+            entries: [
+              BuiltInEffect(type: TrackEffectType.reverb),
+              BuiltInEffect(type: TrackEffectType.delay),
+              BuiltInEffect(type: TrackEffectType.chorus),
+            ],
+          );
+          when(looper.allTrackChains).thenReturn({0: heavy, 1: heavy});
+          final cubit = buildWithNames();
+          addTearDown(cubit.close);
+          await cubit.recordBaseline();
+
+          await cubit.newLoop(template: template);
+
+          verify(() => looper.applySession(any())).called(1);
+          expect(cubit.state.outcome, SessionOutcome.newLoop);
+        });
+
+        test('names that cannot be written keep the loop started and ride '
+            'its outcome', () async {
+          stubNewLoop();
+          final cubit = buildWithNames(
+            renameTracks: (_) async => throw StateError('store refused'),
+          );
+          addTearDown(cubit.close);
+          await cubit.recordBaseline();
+
+          await cubit.newLoop(template: template);
+
+          verifySavedTo('/root/new', name: 'New loop 3').called(1);
+          expect(cubit.state.status, SessionStatus.success);
+          expect(cubit.state.outcome, SessionOutcome.newLoop);
+          expect(cubit.state.trackNamesNotSaved, isTrue);
+          expect(cubit.state.currentSessionName, 'New loop 3');
+          expect(cubit.state.sessions, summaries);
+        });
+
+        test(
+          'a failed save is still the error when the names failed too',
+          () async {
+            stubNewLoop();
+            when(
+              () => repository.save(
+                '/root/new',
+                chains: any(named: 'chains'),
+                settings: any(named: 'settings'),
+                pedalBindings: any(named: 'pedalBindings'),
+                name: any(named: 'name'),
+                captureStillValid: any(named: 'captureStillValid'),
+              ),
+            ).thenThrow(const FileSystemException('disk full'));
+            final cubit = buildWithNames(
+              renameTracks: (_) async => throw StateError('store refused'),
+            );
+            addTearDown(cubit.close);
+            await cubit.recordBaseline();
+
+            await cubit.newLoop(template: template);
+
+            expect(cubit.state.status, SessionStatus.failure);
+            expect(cubit.state.error, SessionError.newLoopNotSaved);
+            expect(cubit.state.currentSessionId, 'new');
+          },
+        );
+
+        test('installs the same pedal bindings Empty tracks does', () async {
+          stubNewLoop();
+          final installed = <String>[];
+          final cubit = buildWithNames(onPedalBindings: installed.add);
+          addTearDown(cubit.close);
+          await cubit.recordBaseline();
+
+          await cubit.newLoop();
+          await cubit.newLoop(template: template);
+
+          expect(installed, ['remap', 'remap']);
+        });
+      });
     });
 
     blocTest<SessionCubit, SessionState>(

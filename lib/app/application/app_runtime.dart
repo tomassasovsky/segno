@@ -27,6 +27,7 @@ import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/settings_owners.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/session/application/session_settings_coordinator.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/storage/cubit/storage_cubit.dart';
@@ -150,6 +151,7 @@ class AppRuntime {
       takeLocked: () => takeLocked,
       inputLocked: () => _closing || fxPersistence.sessionTransitionActive,
     );
+    tracks = TracksCubit(settings: settings);
     session = SessionCubit(
       repository: sessions,
       looper: repository,
@@ -177,6 +179,11 @@ class AppRuntime {
       onPedalBindings: (encoded) =>
           control.applySessionBindings(PedalBindingSet.decode(encoded)),
       releaseHeldBindings: control.releaseAllMomentary,
+      renameTracks: (names) async {
+        for (final MapEntry(key: channel, value: name) in names.entries) {
+          await tracks.rename(channel, name);
+        }
+      },
       guards: guards,
     );
     backingView = BackingCubit(player: backingPlayer);
@@ -221,6 +228,10 @@ class AppRuntime {
   late final LooperBloc looper;
   late final ControlCubit control;
   late final SessionCubit session;
+
+  /// The track names and stage view. Owned here rather than by the widget
+  /// tree because a New loop template writes track names (#1513).
+  late final TracksCubit tracks;
   late final PowerCubit power;
 
   /// Volumes, capacity, eject, and whether a transfer is in flight.
@@ -248,6 +259,7 @@ class AppRuntime {
       backingPlayer.start(),
       ?instruments?.load(),
       control.load(),
+      tracks.load(),
     ]).then((_) => session.recordBaseline());
   }
 
@@ -312,6 +324,7 @@ class AppRuntime {
       () => sessionClosed,
       control.close,
       looper.close,
+      tracks.close,
       storage.close,
       // UI teardown starts debounced saves; confirm them while their owners
       // and the repository still live. A failure must not skip disposal.

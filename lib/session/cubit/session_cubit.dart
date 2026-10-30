@@ -7,6 +7,7 @@ import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/session/application/session_settings_coordinator.dart';
+import 'package:segno/session/new_loop_template.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -38,6 +39,9 @@ class SessionCubit extends Cubit<SessionState> {
   /// reason: a cubit never calls a cubit, and the binding model belongs to the
   /// control layer. Each defaults to a no-op, which is exactly the pre-6b
   /// behavior.
+  ///
+  /// [renameTracks] writes a loop template's track names (#1513), which are
+  /// global settings outside the session; it defaults to a no-op.
   SessionCubit({
     required SessionRepository repository,
     required LooperRepository looper,
@@ -51,6 +55,7 @@ class SessionCubit extends Cubit<SessionState> {
     String Function() currentPedalBindings = _noBindings,
     void Function(String encoded) onPedalBindings = _ignoreBindings,
     void Function() releaseHeldBindings = _noRelease,
+    Future<void> Function(Map<int, String> names) renameTracks = _noRename,
     Duration captureEndTimeout = const Duration(seconds: 20),
   }) : _captureEndTimeout = captureEndTimeout,
        _repository = repository,
@@ -65,6 +70,7 @@ class SessionCubit extends Cubit<SessionState> {
        _currentPedalBindings = currentPedalBindings,
        _onPedalBindings = onPedalBindings,
        _releaseHeldBindings = releaseHeldBindings,
+       _renameTracks = renameTracks,
        super(const SessionState());
 
   /// The default `currentPedalBindings`: no session remap, so the global set
@@ -79,6 +85,9 @@ class SessionCubit extends Cubit<SessionState> {
   /// surface.
   static void _noRelease() {}
 
+  /// The default `renameTracks`: no track names to write.
+  static Future<void> _noRename(Map<int, String> _) async {}
+
   final SessionRepository _repository;
   final LooperRepository _looper;
   final PerformanceRepository _performance;
@@ -90,6 +99,7 @@ class SessionCubit extends Cubit<SessionState> {
   final String Function() _currentPedalBindings;
   final void Function(String encoded) _onPedalBindings;
   final void Function() _releaseHeldBindings;
+  final Future<void> Function(Map<int, String> names) _renameTracks;
 
   /// The app's one guard table (accepted behaviour 6.12). Applying a session
   /// holds a `sessionApply` guard from its commit to the end of its boot, so
@@ -555,7 +565,16 @@ class SessionCubit extends Cubit<SessionState> {
   /// started and current under its new name, the failure is
   /// [SessionError.newLoopNotSaved], and the first Save writes it. A take in
   /// progress is ended first and saved with the outgoing rig, as for Open.
-  Future<void> newLoop() => _run(
+  ///
+  /// A [template] (#1513) puts its chains on its tracks in the rig applied
+  /// and drops their lane chains ([rigForNewLoop]). It is checked against the
+  /// effects budget on the live chains once the take has ended
+  /// ([newLoopTemplateFits]); when it does not fit, nothing is applied and
+  /// the failure is [SessionError.templateDoesNotFit], with the outgoing
+  /// session already saved. Its names are written after the apply and before
+  /// the first save; a failed write keeps the loop and rides the outcome as
+  /// [SessionState.trackNamesNotSaved].
+  Future<void> newLoop({NewLoopTemplate? template}) => _run(
     () async {
       SessionId? reserved;
       var applied = false;
@@ -581,6 +600,11 @@ class SessionCubit extends Cubit<SessionState> {
             chains: captured.chains,
             pedalBindings: _currentPedalBindings(),
           );
+          // Checked on the chains as they are now: ending a take can have
+          // copied an input chain onto a lane since the sheet checked.
+          if (template != null && !newLoopTemplateFits(_looper, template)) {
+            throw const _SessionRefusal(SessionError.templateDoesNotFit);
+          }
           final name = await _repository.nextAutomaticName(
             automaticNamePrefix,
           );
@@ -588,7 +612,7 @@ class SessionCubit extends Cubit<SessionState> {
           await _applyRig(
             id: id,
             name: name,
-            rig: rigForNewLoop(live),
+            rig: rigForNewLoop(live, template: template),
             fade: FadeDurations(
               defaultMs: live.defaultFadeDurationMs,
               overrides: live.trackFadeDurationOverrides,
@@ -596,6 +620,16 @@ class SessionCubit extends Cubit<SessionState> {
             pedalBindings: live.pedalBindings,
           );
           applied = true;
+          var namesSaved = true;
+          if (template != null) {
+            try {
+              await _renameTracks(template.names);
+            } on Object catch (error) {
+              // The loop is started; only the names are missing.
+              AppLog.warn('new loop track names not saved: $error');
+              namesSaved = false;
+            }
+          }
           // The outgoing rig's fingerprint no longer describes anything.
           _savedFingerprint = null;
           try {
@@ -617,6 +651,7 @@ class SessionCubit extends Cubit<SessionState> {
             currentId: id,
             currentName: name,
             sessions: await _repository.listSessions(),
+            trackNamesNotSaved: !namesSaved,
           );
         });
       } on _SessionBootException {
@@ -1089,6 +1124,7 @@ class SessionCubit extends Cubit<SessionState> {
           folders: folders,
           bootRecoveryRequired: false,
           conversion: result.conversion,
+          trackNamesNotSaved: result.trackNamesNotSaved,
         ),
       );
     } on _SessionRefusal catch (refusal) {
@@ -1197,6 +1233,7 @@ class _ActionResult {
     this.currentName,
     this.sessions,
     this.conversion,
+    this.trackNamesNotSaved = false,
   });
 
   final SessionOutcome outcome;
@@ -1204,4 +1241,5 @@ class _ActionResult {
   final String? currentName;
   final List<SessionSummary>? sessions;
   final SessionConversionNotice? conversion;
+  final bool trackNamesNotSaved;
 }
