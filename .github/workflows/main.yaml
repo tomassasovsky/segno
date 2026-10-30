@@ -396,6 +396,17 @@ jobs:
           name: bench-rt-faults-arm64
           path: packages/segno_engine/build/bench/bench_rt_faults
           if-no-files-found: error
+      # The xrun recovery bench (#1516): build only, for the same reason.
+      - name: Build the xrun recovery bench
+        if: always()
+        run: bash packages/segno_engine/src/test/bench/bench_xrun_recovery.sh
+      - name: Upload the xrun recovery bench for the appliance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: bench-xrun-recovery-arm64
+          path: packages/segno_engine/build/bench/bench_xrun_recovery
+          if-no-files-found: error
 
   # The native C engine + MIDI unit tests (the deterministic golden gate). They
   # need no audio device, so they run on Linux with just a C toolchain + ALSA
