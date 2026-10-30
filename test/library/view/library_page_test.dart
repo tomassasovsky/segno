@@ -18,6 +18,7 @@ import 'package:segno/library/view/library_page.dart';
 import 'package:segno/library/view/library_preview_card.dart';
 import 'package:segno/library/view/library_sessions_tab.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -34,6 +35,10 @@ class _MockPedalRepository extends Mock implements PedalRepository {}
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
+
+class _MockLooperRepository extends Mock implements LooperRepository {}
+
+class _MockTracksCubit extends MockCubit<TracksState> implements TracksCubit {}
 
 final _saved = DateTime(2026, 9, 7, 10);
 
@@ -100,6 +105,7 @@ SessionPreview _previewOf(String id) => switch (id) {
 void main() {
   late SessionCubit session;
   late SessionRepository repository;
+  late LooperRepository looperRepository;
   late PedalRepository pedal;
   late StreamController<PedalEvent> pedalEvents;
   late AppLocalizations l10n;
@@ -107,6 +113,7 @@ void main() {
   setUpAll(() async {
     l10n = await AppLocalizations.delegate.load(const Locale('en'));
     registerFallbackValue(_track(0, 1));
+    registerFallbackValue(<TrackEffect>[]);
   });
 
   setUp(() {
@@ -142,6 +149,13 @@ void main() {
     pedalEvents = StreamController<PedalEvent>.broadcast();
     pedal = _MockPedalRepository();
     when(() => pedal.events).thenAnswer((_) => pedalEvents.stream);
+    // The effects budget New loop's Ed's setup is checked against: room for
+    // anything, with no chains on the tracks.
+    looperRepository = _MockLooperRepository();
+    when(() => looperRepository.fxCostOf(any())).thenReturn(100);
+    when(() => looperRepository.fxRoomNs).thenReturn(100000);
+    when(looperRepository.allTrackChains).thenReturn(const {});
+    when(looperRepository.allLaneChains).thenReturn(const {});
   });
 
   tearDown(() => pedalEvents.close());
@@ -155,9 +169,16 @@ void main() {
     RemovableVolumes volumes = const InternalOnlyVolumes(),
     LooperState looperState = const LooperState(),
     Stream<LooperState> looperStates = const Stream.empty(),
+    List<String>? trackNames,
   }) async {
     final looper = _MockLooperBloc();
     whenListen(looper, looperStates, initialState: looperState);
+    final tracks = _MockTracksCubit();
+    when(() => tracks.state).thenReturn(
+      TracksState(
+        names: trackNames ?? List.generate(8, (c) => 'TRACK ${c + 1}'),
+      ),
+    );
     tester.view
       ..physicalSize = const Size(1920, 1080)
       ..devicePixelRatio = 1;
@@ -180,6 +201,7 @@ void main() {
         providers: [
           RepositoryProvider<SessionRepository>.value(value: repository),
           RepositoryProvider<PedalRepository>.value(value: pedal),
+          RepositoryProvider<LooperRepository>.value(value: looperRepository),
           RepositoryProvider<GuardRegistry>.value(value: GuardRegistry()),
           RepositoryProvider<RemovableVolumes>.value(
             value: volumes,
@@ -189,6 +211,7 @@ void main() {
           providers: [
             BlocProvider<SessionCubit>.value(value: session),
             BlocProvider<LooperBloc>.value(value: looper),
+            BlocProvider<TracksCubit>.value(value: tracks),
           ],
           child: Navigator(
             onGenerateRoute: (_) => MaterialPageRoute<void>(
@@ -1340,6 +1363,15 @@ void main() {
       expect(find.text(l10n.libraryActionFailed), findsOneWidget);
     });
 
+    testWidgets("Ed's setup refused at the start says why on the line", (
+      tester,
+    ) async {
+      await failWith(tester, SessionError.templateDoesNotFit);
+      expect(find.text(l10n.sessionTemplateDoesNotFit), findsOneWidget);
+      // A refusal starts no loop: the Library stays.
+      expect(find.byKey(const Key('library_page')), findsOneWidget);
+    });
+
     testWidgets('an Open refused for any reason stays off the line', (
       tester,
     ) async {
@@ -1536,13 +1568,17 @@ void main() {
       SessionState? state,
       Stream<SessionState> states = const Stream.empty(),
       LooperState looperState = const LooperState(),
+      List<String>? trackNames,
     }) async {
-      when(session.newLoop).thenAnswer((_) async {});
+      when(
+        () => session.newLoop(template: any(named: 'template')),
+      ).thenAnswer((_) async {});
       await openLibrary(
         tester,
         state: state,
         states: states,
         looperState: looperState,
+        trackNames: trackNames,
       );
       await tester.tap(find.byKey(const Key('library_new_loop')));
       await tester.pumpAndSettle();
@@ -1584,7 +1620,9 @@ void main() {
       for (var c = 0; c < 8; c++) {
         expect(slot('new_loop_after', c, 'empty'), findsOneWidget);
       }
-      verifyNever(session.newLoop);
+      verifyNever(
+        () => session.newLoop(template: any(named: 'template')),
+      );
     });
 
     testWidgets('a loop with no name yet is the current loop', (tester) async {
@@ -1604,7 +1642,9 @@ void main() {
 
       expect(find.byKey(const Key('new_loop_sheet')), findsNothing);
       expect(find.byKey(const Key('library_page')), findsOneWidget);
-      verifyNever(session.newLoop);
+      verifyNever(
+        () => session.newLoop(template: any(named: 'template')),
+      );
     });
 
     testWidgets('Start new loop starts it', (tester) async {
@@ -1613,7 +1653,158 @@ void main() {
       await tester.tap(find.byKey(const Key('new_loop_start')));
       await tester.pumpAndSettle();
 
-      verify(session.newLoop).called(1);
+      verify(() => session.newLoop()).called(1);
+    });
+
+    group('Start with (#1513, 19/07)', () {
+      Finder slot(int channel, String look) => find.descendant(
+        of: find.byKey(const Key('new_loop_after')),
+        matching: find.byKey(Key('library_strip_${channel}_$look')),
+      );
+
+      bool selected(WidgetTester tester, String key) =>
+          tester.widget<LoopChoiceButton>(find.byKey(Key(key))).selected;
+
+      Future<void> chooseEds(WidgetTester tester) async {
+        // The presets are read from the asset bundle, off the fake clock.
+        await tester.runAsync(() async {
+          await tester.tap(find.byKey(const Key('new_loop_template_eds')));
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+        });
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('opens on Empty tracks, the plain New loop', (tester) async {
+        await tapNewLoop(tester);
+
+        expect(selected(tester, 'new_loop_template_empty'), isTrue);
+        expect(selected(tester, 'new_loop_template_eds'), isFalse);
+        expect(find.text(l10n.libraryNewLoopKeeps), findsOneWidget);
+        expect(find.byKey(const Key('new_loop_names')), findsNothing);
+      });
+
+      testWidgets("Ed's setup says what it does, outlines tracks 1 to 4, "
+          'says names are shared, and starts with its template', (
+        tester,
+      ) async {
+        await tapNewLoop(tester);
+
+        await chooseEds(tester);
+
+        expect(selected(tester, 'new_loop_template_eds'), isTrue);
+        expect(find.text(l10n.libraryNewLoopEdsSummary), findsOneWidget);
+        expect(find.text(l10n.libraryNewLoopKeeps), findsNothing);
+        expect(find.text(l10n.libraryNewLoopNamesShared), findsOneWidget);
+        for (var c = 0; c < 8; c++) {
+          expect(slot(c, c < 4 ? 'setup' : 'empty'), findsOneWidget);
+        }
+
+        await tester.tap(find.byKey(const Key('new_loop_start')));
+        await tester.pumpAndSettle();
+
+        final template =
+            verify(
+                  () =>
+                      session.newLoop(template: captureAny(named: 'template')),
+                ).captured.single
+                as NewLoopTemplate;
+        expect(template.names, {0: 'Guitar', 1: 'Boom', 2: 'RC20', 3: 'Vox'});
+        expect(template.trackChains.keys, [0, 1, 2, 3]);
+      });
+
+      testWidgets('names the custom track names it replaces', (tester) async {
+        await tapNewLoop(
+          tester,
+          trackNames: [
+            'Lead',
+            'Keys',
+            'TRACK 3',
+            'Vox',
+            for (var c = 4; c < 8; c++) 'Pad $c',
+          ],
+        );
+
+        await chooseEds(tester);
+
+        expect(
+          find.text(
+            '${l10n.libraryNewLoopNamesShared} '
+            '${l10n.libraryNewLoopNamesReplaced('Lead', 'Keys')}',
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('one custom name is named on its own', (tester) async {
+        await tapNewLoop(
+          tester,
+          trackNames: [
+            'TRACK 1',
+            'Bass',
+            for (var c = 2; c < 8; c++) 'TRACK ${c + 1}',
+          ],
+        );
+
+        await chooseEds(tester);
+
+        expect(
+          find.text(
+            '${l10n.libraryNewLoopNamesShared} '
+            '${l10n.libraryNewLoopNameReplaced('Bass')}',
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('waits for its sounds before it can start', (tester) async {
+        await tapNewLoop(tester);
+
+        await tester.tap(find.byKey(const Key('new_loop_template_eds')));
+        await tester.pump();
+
+        expect(find.text(l10n.libraryNewLoopEdsLoading), findsOneWidget);
+        await tester.tap(find.byKey(const Key('new_loop_start')));
+        await tester.pump();
+        expect(find.byKey(const Key('new_loop_sheet')), findsOneWidget);
+        verifyNever(
+          () => session.newLoop(template: any(named: 'template')),
+        );
+      });
+
+      testWidgets('over the effects budget it says so and cannot start, '
+          'while Empty tracks still can', (tester) async {
+        when(() => looperRepository.fxRoomNs).thenReturn(0);
+        await tapNewLoop(tester);
+
+        await chooseEds(tester);
+
+        expect(find.text(l10n.libraryNewLoopEdsOverBudget), findsOneWidget);
+        await tester.tap(find.byKey(const Key('new_loop_start')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('new_loop_sheet')), findsOneWidget);
+        verifyNever(
+          () => session.newLoop(template: any(named: 'template')),
+        );
+
+        await tester.tap(find.byKey(const Key('new_loop_template_empty')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('new_loop_start')));
+        await tester.pumpAndSettle();
+        verify(() => session.newLoop()).called(1);
+      });
+
+      testWidgets('Cancel after choosing it changes nothing', (tester) async {
+        await tapNewLoop(tester);
+        await chooseEds(tester);
+
+        await tester.tap(find.byKey(const Key('new_loop_cancel')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('new_loop_sheet')), findsNothing);
+        verifyNever(
+          () => session.newLoop(template: any(named: 'template')),
+        );
+      });
     });
 
     testWidgets('a started new loop is played on the stage (19/06)', (
@@ -1788,7 +1979,9 @@ void main() {
     });
 
     testWidgets('New loop stops it', (tester) async {
-      when(session.newLoop).thenAnswer((_) async {});
+      when(
+        () => session.newLoop(template: any(named: 'template')),
+      ).thenAnswer((_) async {});
       await openLibrary(tester);
       await listen(tester);
 
@@ -1797,7 +1990,10 @@ void main() {
       await tester.tap(find.byKey(const Key('new_loop_start')));
       await tester.pump();
 
-      verifyInOrder([() => repository.stopAudition(), session.newLoop]);
+      verifyInOrder([
+        () => repository.stopAudition(),
+        () => session.newLoop(),
+      ]);
     });
 
     testWidgets('a track that starts recording stops it', (tester) async {

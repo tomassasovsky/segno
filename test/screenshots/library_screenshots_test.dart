@@ -16,6 +16,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/view/library_page.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
 
@@ -27,6 +28,10 @@ class _MockSessionCubit extends MockCubit<SessionState>
 class _MockSessionRepository extends Mock implements SessionRepository {}
 
 class _MockPedalRepository extends Mock implements PedalRepository {}
+
+class _MockLooperRepository extends Mock implements LooperRepository {}
+
+class _MockTracksCubit extends MockCubit<TracksState> implements TracksCubit {}
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
@@ -92,7 +97,10 @@ SessionPreview _previewOf(String id) => switch (id) {
 /// Images of the Library to compare with pen 19/01 to 19/05 and 18/06. CI
 /// renders them into the `screenshots` artifact; nothing compares pixels.
 void main() {
-  setUpAll(() => registerFallbackValue(_track(0, 1)));
+  setUpAll(() {
+    registerFallbackValue(_track(0, 1));
+    registerFallbackValue(<TrackEffect>[]);
+  });
 
   setUpAll(() async {
     if (!rendersScreenshots) return;
@@ -129,6 +137,8 @@ void main() {
     WidgetTester tester, {
     required String current,
     Stream<SessionState> states = const Stream.empty(),
+    List<String>? trackNames,
+    int fxRoomNs = 7192,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -207,10 +217,23 @@ void main() {
         ],
       ),
     );
+    // The effects budget Ed's setup is checked against.
+    final looperRepository = _MockLooperRepository();
+    when(() => looperRepository.fxCostOf(any())).thenReturn(100);
+    when(() => looperRepository.fxRoomNs).thenReturn(fxRoomNs);
+    when(looperRepository.allTrackChains).thenReturn(const {});
+    when(looperRepository.allLaneChains).thenReturn(const {});
+    final tracks = _MockTracksCubit();
+    when(() => tracks.state).thenReturn(
+      TracksState(
+        names: trackNames ?? List.generate(8, (c) => 'TRACK ${c + 1}'),
+      ),
+    );
     await tester.pumpApp(
       MultiRepositoryProvider(
         providers: [
           RepositoryProvider<SessionRepository>.value(value: repository),
+          RepositoryProvider<LooperRepository>.value(value: looperRepository),
           RepositoryProvider<PedalRepository>.value(value: pedal),
           RepositoryProvider<GuardRegistry>.value(value: GuardRegistry()),
           RepositoryProvider<RemovableVolumes>.value(
@@ -221,6 +244,7 @@ void main() {
           providers: [
             BlocProvider<SessionCubit>.value(value: session),
             BlocProvider<LooperBloc>.value(value: looper),
+            BlocProvider<TracksCubit>.value(value: tracks),
           ],
           child: const LibraryPage(),
         ),
@@ -286,6 +310,43 @@ void main() {
     await tester.tap(find.byKey(const Key('library_new_loop')));
     await tester.pumpAndSettle();
     await shot('new_loop');
+  }, skip: !rendersScreenshots);
+
+  Future<void> chooseEds(WidgetTester tester) async {
+    await tester.tap(find.byKey(const Key('library_new_loop')));
+    await tester.pumpAndSettle();
+    // The presets are read from the asset bundle, off the fake clock.
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('new_loop_template_eds')));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets("19/07 the New loop sheet with Ed's setup", (tester) async {
+    await pump(tester, current: 's-1');
+    await chooseEds(tester);
+    await shot('new_loop_eds');
+  }, skip: !rendersScreenshots);
+
+  testWidgets("19/07 Ed's setup replacing custom track names", (tester) async {
+    await pump(
+      tester,
+      current: 's-1',
+      trackNames: [
+        'Lead',
+        'Keys',
+        for (var c = 2; c < 8; c++) 'TRACK ${c + 1}',
+      ],
+    );
+    await chooseEds(tester);
+    await shot('new_loop_eds_names');
+  }, skip: !rendersScreenshots);
+
+  testWidgets("19/07 Ed's setup over the effects budget", (tester) async {
+    await pump(tester, current: 's-1', fxRoomNs: 0);
+    await chooseEds(tester);
+    await shot('new_loop_eds_over_budget');
   }, skip: !rendersScreenshots);
 
   testWidgets('Listen on the selected session', (tester) async {

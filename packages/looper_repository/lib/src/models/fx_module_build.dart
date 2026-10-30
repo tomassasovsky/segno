@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/src/models/fx_rack_level.dart';
+import 'package:looper_repository/src/models/fx_slot_ids.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 
 /// How much of a catalogue module this engine can actually build.
@@ -829,10 +830,14 @@ const String kFxRackLevelKey = 'Master Vol';
 /// linear mapper, so its normalized value v is `-12 + 24 * v` dB (see
 /// [fxRackLevelGainAt]), and every factory value lands on that 0.1 dB grid.
 /// A preset without it leaves the rack at unity.
-List<BuiltInEffect> fxRackEntries(FxPreset preset) {
+///
+/// With [onlyEnabled], the modules the preset leaves off are left out, and
+/// the level lands on the last module kept.
+List<BuiltInEffect> fxRackEntries(FxPreset preset, {bool onlyEnabled = false}) {
   final entries = [
     for (final module in fxPresetModules(preset)) fxModuleEntry(module, preset),
   ];
+  if (onlyEnabled) entries.retainWhere((entry) => entry.enabled);
   final level = preset.params[kFxRackLevelKey];
   if (entries.isEmpty || level == null) return entries;
   final last = entries.last;
@@ -840,6 +845,31 @@ List<BuiltInEffect> fxRackEntries(FxPreset preset) {
     channels: last.channels.copyWith(level: fxRackLevelGainAt(level)),
   );
   return entries;
+}
+
+/// A factory rack built from [preset] the way the Effects library adds one:
+/// the entries of [fxRackEntries] (only the modules the preset turns on with
+/// [onlyEnabled]) at [placement], grouped under [into], or under a new
+/// [FxRack] named after the preset with its family's art.
+///
+/// Slot ids are left as [fxRackEntries] gives them; the caller mints them.
+List<BuiltInEffect> fxFactoryRack(
+  FxPreset preset, {
+  required FxPlacement placement,
+  FxRack? into,
+  bool onlyEnabled = false,
+}) {
+  final rack =
+      into ??
+      FxRack(
+        id: SlotIds.mint(),
+        name: preset.name,
+        art: kFxFamilySlugs[preset.family],
+      );
+  return [
+    for (final entry in fxRackEntries(preset, onlyEnabled: onlyEnabled))
+      entry.copyWith(placement: placement, rack: rack),
+  ];
 }
 
 /// What this engine can build for [module], in [family]'s variant when the

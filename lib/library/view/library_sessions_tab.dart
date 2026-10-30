@@ -517,6 +517,7 @@ class LibraryTrackStrip extends StatelessWidget {
   /// Creates a track strip for the populated [channels].
   const LibraryTrackStrip({
     required this.channels,
+    this.setUp = const [],
     this.size = LibraryTrackStripSize.row,
     super.key,
   });
@@ -524,14 +525,22 @@ class LibraryTrackStrip extends StatelessWidget {
   /// The channels (0-based) holding audio.
   final List<int> channels;
 
+  /// The empty channels a loop template sets up (#1513), drawn outlined.
+  final List<int> setUp;
+
   /// Where the strip is drawn.
   final LibraryTrackStripSize size;
 
   static const int _slots = kMaxTracks;
 
+  String _look(int channel) => channels.contains(channel)
+      ? 'filled'
+      : setUp.contains(channel)
+      ? 'setup'
+      : 'empty';
+
   @override
   Widget build(BuildContext context) {
-    final surface = context.surface;
     return ExcludeSemantics(
       child: SizedBox(
         width: size.width,
@@ -540,27 +549,46 @@ class LibraryTrackStrip extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             for (var channel = 0; channel < _slots; channel++)
-              DecoratedBox(
-                key: Key(
-                  'library_strip_${channel}_'
-                  '${channels.contains(channel) ? 'filled' : 'empty'}',
-                ),
-                decoration: BoxDecoration(
-                  color: channels.contains(channel)
-                      ? surface.accent
-                      : surface.control,
-                  borderRadius: BorderRadius.circular(3),
-                  border: Border.all(
-                    color: channels.contains(channel)
-                        ? surface.accent
-                        : surface.borderStrong,
-                  ),
-                ),
-                child: SizedBox(width: size.slotWidth, height: size.height),
+              _StripSlot(
+                key: Key('library_strip_${channel}_${_look(channel)}'),
+                filled: channels.contains(channel),
+                setUp: setUp.contains(channel),
+                size: size,
               ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// One slot of a [LibraryTrackStrip]: filled when its track holds audio,
+/// outlined when a loop template sets it up, else empty.
+class _StripSlot extends StatelessWidget {
+  const _StripSlot({
+    required this.filled,
+    required this.setUp,
+    required this.size,
+    super.key,
+  });
+
+  final bool filled;
+  final bool setUp;
+  final LibraryTrackStripSize size;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: filled ? surface.accent : surface.control,
+        borderRadius: BorderRadius.circular(3),
+        border: Border.all(
+          color: filled || setUp ? surface.accent : surface.borderStrong,
+          width: !filled && setUp ? 2 : 1,
+        ),
+      ),
+      child: SizedBox(width: size.slotWidth, height: size.height),
     );
   }
 }

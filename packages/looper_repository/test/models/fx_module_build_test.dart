@@ -407,6 +407,61 @@ void main() {
       expect(fxRackLevelDb(high), 12);
       expect(high, closeTo(3.9811, 1e-4));
     });
+
+    test('only the modules the preset turns on, with the level on the last '
+        'one kept when the last module is off (#1513)', () {
+      final preset = _preset(const {
+        'Comp': 1,
+        'Delay': 0,
+        'Del Time': 0.4,
+        'Master Vol': 0.7083,
+      });
+
+      final all = fxRackEntries(preset);
+      final on = fxRackEntries(preset, onlyEnabled: true);
+
+      expect(all.map((e) => e.module), ['Compressor', 'Delay']);
+      expect(on.map((e) => e.module), ['Compressor']);
+      expect(on.single.enabled, isTrue);
+      expect(fxRackLevelDb(on.single.channels.level), 5.0);
+      expect(on.single.params, all.first.params);
+    });
+  });
+
+  group('fxFactoryRack', () {
+    final preset = _preset(const {'Comp': 1, 'Delay': 0, 'Master Vol': 0.5});
+
+    test('groups the entries under a new rack named after the preset, with '
+        "its family's art, at the placement given", () {
+      final entries = fxFactoryRack(preset, placement: FxPlacement.pre);
+
+      expect(entries.map((e) => e.module), ['Compressor', 'Delay']);
+      final rack = entries.first.rack!;
+      expect(rack.name, 'Acoustic Rhythm 1');
+      expect(rack.art, 'edsguitar');
+      for (final entry in entries) {
+        expect(entry.rack, rack);
+        expect(entry.placement, FxPlacement.pre);
+      }
+      expect(entries, [
+        for (final e in fxRackEntries(preset))
+          e.copyWith(placement: FxPlacement.pre, rack: rack),
+      ]);
+    });
+
+    test('adds into a rack it is given, and can keep only the pedals on', () {
+      const into = FxRack(id: 'r', name: 'Mine');
+
+      final entries = fxFactoryRack(
+        preset,
+        placement: FxPlacement.post,
+        into: into,
+        onlyEnabled: true,
+      );
+
+      expect(entries.single.module, 'Compressor');
+      expect(entries.single.rack, into);
+    });
   });
 
   group('reading a preset', () {
