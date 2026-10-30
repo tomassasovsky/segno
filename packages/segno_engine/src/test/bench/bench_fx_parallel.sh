@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build + run the multi-core effects spike (#1515). NOT part of the test gate.
+# Build + run the multi-core effects spike (#1515). NOT part of the test gate;
+# CI builds and smoke-runs it (native-tests).
 #
 # Links the real engine sources, so a chain job is what le_engine_process
 # costs as shipped, plus the Signalsmith Stretch C shim the render paths call.
