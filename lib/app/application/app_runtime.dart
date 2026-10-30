@@ -151,7 +151,10 @@ class AppRuntime {
       takeLocked: () => takeLocked,
       inputLocked: () => _closing || fxPersistence.sessionTransitionActive,
     );
+    // Loaded on its own, as the widget tree used to: a name that cannot be
+    // read must not hold up the session baseline in [start].
     tracks = TracksCubit(settings: settings);
+    unawaited(tracks.load());
     session = SessionCubit(
       repository: sessions,
       looper: repository,
@@ -180,8 +183,18 @@ class AppRuntime {
           control.applySessionBindings(PedalBindingSet.decode(encoded)),
       releaseHeldBindings: control.releaseAllMomentary,
       renameTracks: (names) async {
+        // Every name is tried, so one failed write does not leave the rest
+        // unwritten; the first failure is reported.
+        (Object, StackTrace)? failure;
         for (final MapEntry(key: channel, value: name) in names.entries) {
-          await tracks.rename(channel, name);
+          try {
+            await tracks.rename(channel, name);
+          } on Object catch (error, stack) {
+            failure ??= (error, stack);
+          }
+        }
+        if (failure case (final error, final stack)) {
+          Error.throwWithStackTrace(error, stack);
         }
       },
       guards: guards,
@@ -259,7 +272,6 @@ class AppRuntime {
       backingPlayer.start(),
       ?instruments?.load(),
       control.load(),
-      tracks.load(),
     ]).then((_) => session.recordBaseline());
   }
 

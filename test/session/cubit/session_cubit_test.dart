@@ -2404,6 +2404,7 @@ void main() {
               ? () => ''
               : () => 'remap',
           onPedalBindings: onPedalBindings ?? (_) {},
+          releaseHeldBindings: () => events.add('release'),
           renameTracks:
               renameTracks ??
               (names) async {
@@ -2468,7 +2469,8 @@ void main() {
         });
 
         test('a template that does not fit applies nothing, names nothing, '
-            'and says why, after saving the outgoing session', () async {
+            'releases no held pedal, and says why, after saving the outgoing '
+            'session', () async {
           stubNewLoop();
           stubLiveChains();
           // Two racks of one entry: 200, less nothing on tracks 0 and 1 live.
@@ -2488,6 +2490,7 @@ void main() {
           verifyNever(() => looper.applySession(any()));
           verifyNever(repository.newSessionId);
           expect(renamed, isEmpty);
+          expect(events, isNot(contains('release')));
           expect(cubit.state.status, SessionStatus.failure);
           expect(cubit.state.error, SessionError.templateDoesNotFit);
           expect(cubit.state.currentSessionId, 'A');

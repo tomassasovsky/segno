@@ -572,8 +572,8 @@ class SessionCubit extends Cubit<SessionState> {
   /// ([newLoopTemplateFits]); when it does not fit, nothing is applied and
   /// the failure is [SessionError.templateDoesNotFit], with the outgoing
   /// session already saved. Its names are written after the apply and before
-  /// the first save; a failed write keeps the loop and rides the outcome as
-  /// [SessionState.trackNamesNotSaved].
+  /// the first save; a failed write keeps the loop and sets
+  /// [SessionState.trackNamesNotSaved] on the outcome.
   Future<void> newLoop({NewLoopTemplate? template}) => _run(
     () async {
       SessionId? reserved;
@@ -582,6 +582,12 @@ class SessionCubit extends Cubit<SessionState> {
         return await _captureSettings.runExclusive(() async {
           await _endCaptures();
           await _preserveOutgoing();
+          // Checked before anything on the live rig changes, on the chains
+          // as they are now: ending a take can have copied an input chain
+          // onto a lane since the sheet checked.
+          if (template != null && !newLoopTemplateFits(_looper, template)) {
+            throw const _SessionRefusal(SessionError.templateDoesNotFit);
+          }
           // A held momentary belongs to the outgoing rig, not to the chains
           // the new loop keeps.
           _releaseHeldBindings();
@@ -600,11 +606,6 @@ class SessionCubit extends Cubit<SessionState> {
             chains: captured.chains,
             pedalBindings: _currentPedalBindings(),
           );
-          // Checked on the chains as they are now: ending a take can have
-          // copied an input chain onto a lane since the sheet checked.
-          if (template != null && !newLoopTemplateFits(_looper, template)) {
-            throw const _SessionRefusal(SessionError.templateDoesNotFit);
-          }
           final name = await _repository.nextAutomaticName(
             automaticNamePrefix,
           );

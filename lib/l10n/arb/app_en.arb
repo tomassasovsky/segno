@@ -3001,7 +3001,7 @@
             }
         }
     },
-    "sessionTemplateDoesNotFit": "Ed's setup would go over the effects budget, so no new loop started. Your loop was saved.",
+    "sessionTemplateDoesNotFit": "Ed's setup would go over the effects budget, so no new loop started.",
     "@sessionTemplateDoesNotFit": {
         "description": "Ed's setup was refused when the new loop was about to start because the effects changed after the sheet checked."
     },

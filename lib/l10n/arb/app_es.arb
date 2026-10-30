@@ -1714,7 +1714,7 @@
     "libraryNewLoopNamesShared": "Los nombres de las pistas son los mismos en todas las sesiones.",
     "libraryNewLoopNameReplaced": "Se reemplaza {name}.",
     "libraryNewLoopNamesReplaced": "Se reemplazan {names} y {last}.",
-    "sessionTemplateDoesNotFit": "Ed's setup superaría el presupuesto de efectos, así que no empezó un nuevo loop. Tu loop se guardó.",
+    "sessionTemplateDoesNotFit": "Ed's setup superaría el presupuesto de efectos, así que no empezó un nuevo loop.",
     "sessionTrackNamesNotSaved": "El nuevo loop empezó, pero no se pudieron guardar los nombres de las pistas.",
     "libraryTakeStillRunning": "La toma está terminando. Vuelve a intentarlo cuando se detenga.",
     "libraryOpenInterruptTitle": "¿Detener la reproducción y abrir {name}?",
