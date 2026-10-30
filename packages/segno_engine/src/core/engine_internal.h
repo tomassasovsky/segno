@@ -22,6 +22,12 @@ extern "C" {
  * thread while the callback cannot run. */
 void le_latency_publish(le_engine* e, int32_t state);
 
+/* TEST SEAM (#1515): [hold] 1 keeps effects worker [worker] from claiming any
+ * job once it wakes, standing in for a worker the scheduler never runs; 0
+ * lets it go. The callback then runs that worker's share itself. */
+void le_engine_hold_fx_worker_for_test(le_engine* engine, int32_t worker,
+                                       int hold);
+
 /* Selects the device backend: miniaudio (or the native tests' fake). */
 const le_device_backend* le_select_backend(void);
 

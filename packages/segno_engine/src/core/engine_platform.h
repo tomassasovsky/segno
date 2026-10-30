@@ -74,6 +74,25 @@ void le_platform_after_device_start(le_engine* engine, const le_config* config);
  * normal priority, overruns the capture, and the recovery leaves audible
  * artifacts. No-op elsewhere. */
 void le_platform_after_device_open(le_engine* engine);
+/* (Linux) It also pins the callback thread to the core le_engine_set_fx_
+ * workers names for it, when it names one (#1515). */
+
+/* ---- Effects workers (#1515, engine_workers.c) ---- */
+
+/* On a worker thread as it starts: pins it to [core] (none when negative)
+ * and, where the callback runs real-time (the ALSA appliance with
+ * SEGNO_RT_AUDIO=1), puts it on SCHED_FIFO LE_FX_WORKER_PRIO. Returns 0 when
+ * the kernel refused either, or when this platform cannot pin a thread and a
+ * core was asked for; the worker then does not run. */
+int le_platform_fx_worker_setup(int32_t core);
+
+/* Sleeps while *word == seen: a private futex on Linux, __ulock on Apple.
+ * May return early; the caller re-checks. */
+void le_platform_fx_wait(_Atomic uint32_t* word, uint32_t seen);
+
+/* Wakes up to [n] threads sleeping on [word] (n <= 0: none). One syscall:
+ * the only one on the audio path the workers add. */
+void le_platform_fx_wake(_Atomic uint32_t* word, int n);
 
 /* Called from le_engine_stop and le_engine_destroy. Linux restores PipeWire's
  * dynamic quantum (force-quantum 0). No-op elsewhere. */

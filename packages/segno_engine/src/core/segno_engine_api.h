@@ -1499,6 +1499,10 @@ typedef struct le_cb_window_snapshot {
    * happened. Folding it into an existing bucket instead would corrupt the
    * breakdown; dropping it entirely would under-report reality. */
   uint64_t xruns[LE_XRUN_KINDS];
+  /* Services longer than the effects budget's share of their deadline (80 %,
+   * kFxBudgetShare in fx_cost.dart): what the admission model promises never
+   * happens (#1515). Every late period is one of these too. */
+  uint64_t over_share_periods;
 } le_cb_window_snapshot;
 
 /* The whole instrument, read through le_engine_get_callback_telemetry.
@@ -1519,6 +1523,52 @@ typedef struct le_callback_telemetry {
   le_cb_window_snapshot session; /* since the device started */
   le_cb_window_snapshot armed;   /* since the most recent le_perf_arm */
 } le_callback_telemetry;
+
+/* ---- Effects on more than one core (#1515) ----
+ *
+ * Worker threads that run the monitor chains beside the audio callback, in
+ * every period, with no added latency: the callback releases the period's
+ * jobs (one monitor input's whole chain each), claims them alongside the
+ * workers, and waits until every one is done before it mixes them in. The
+ * output is bit-identical with or without workers. A late worker is waited
+ * for, never played dry. Set with le_engine_set_fx_workers; read with
+ * le_engine_get_fx_workers_telemetry. */
+#define LE_FX_WORKERS_MAX 3
+/* A worker's wake-latency histogram: 2 us a bucket, the last also holding
+ * everything later. */
+#define LE_FX_WAKE_BUCKETS 16
+#define LE_FX_WAKE_BUCKET_NS 2000
+
+typedef struct le_fx_worker_snapshot {
+  /* Rounds this worker woke for, and how long after the callback's wake it
+   * was running (mean, worst, histogram). */
+  uint64_t wakes;
+  uint32_t wake_mean_ns;
+  uint32_t wake_max_ns;
+  uint64_t wake_buckets[LE_FX_WAKE_BUCKETS];
+  /* Jobs it ran, and how long each took (mean, worst, sum). */
+  uint64_t jobs;
+  uint32_t job_mean_ns;
+  uint32_t job_max_ns;
+  uint64_t job_total_ns;
+} le_fx_worker_snapshot;
+
+typedef struct le_fx_workers_telemetry {
+  int32_t requested; /* le_engine_set_fx_workers's count */
+  /* The workers running: 0 until the engine is configured or started, and
+   * fewer than requested when the kernel refused one its core or its
+   * real-time priority. What the effects admission counts. */
+  int32_t running;
+  /* Since the workers started: the rounds released to them, the jobs the
+   * callback ran itself in those rounds, and the rounds whose join waited
+   * for a job a worker had started (how long: mean, worst). */
+  uint64_t rounds;
+  uint64_t callback_jobs;
+  uint64_t join_waits;
+  uint32_t join_wait_mean_ns;
+  uint32_t join_wait_max_ns;
+  le_fx_worker_snapshot worker[LE_FX_WORKERS_MAX];
+} le_fx_workers_telemetry;
 
 /* Lock-free snapshot of engine state, published by the audio thread and read by
  * Dart on a render-rate timer. Fields are individually atomic; readers may see
@@ -2284,6 +2334,25 @@ LE_EXPORT void le_engine_get_snapshot(le_engine* engine, le_snapshot* out);
  * control thread at any time, running or not. */
 LE_EXPORT void le_engine_get_callback_telemetry(le_engine* engine,
                                                 le_callback_telemetry* out);
+
+/* Asks for [count] effects workers (0..LE_FX_WORKERS_MAX; 0, the default,
+ * runs the monitor chains on the callback) and where to run them: [cores]
+ * NULL leaves every thread where the scheduler puts it, otherwise it holds
+ * count + 1 core numbers, the callback's first and then one per worker, -1
+ * for "not pinned". The workers start when the engine is next configured or
+ * started, and run at SCHED_FIFO 79, one below the callback, where the
+ * callback runs real-time (the ALSA appliance). A worker the kernel refuses
+ * its core or its priority is not started: le_engine_get_fx_workers_
+ * telemetry reports how many run. Fixed while the device runs, like the
+ * device itself: LE_ERR_ALREADY_RUNNING then, LE_ERR_INVALID for a count or
+ * core out of range. */
+LE_EXPORT int32_t le_engine_set_fx_workers(le_engine* engine, int32_t count,
+                                           const int32_t* cores);
+
+/* Copies the effects workers' telemetry (#1515) into *out. No-op if either
+ * pointer is NULL. Relaxed loads only; safe from any thread at any time. */
+LE_EXPORT void le_engine_get_fx_workers_telemetry(
+    le_engine* engine, le_fx_workers_telemetry* out);
 
 /* Copies track `channel`'s snapshot into *out. Out-of-range channels yield an
  * empty track. No-op if either pointer is NULL. */

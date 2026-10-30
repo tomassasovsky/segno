@@ -124,6 +124,11 @@ extern "C" {
  * shorter than the stalls this instrument is looking for. */
 #define LE_CB_GAP_SUPPRESS_PERIODS 4u
 
+/* The share of a deadline the effects admission budgets a service to fill:
+ * 4/5, kFxBudgetShare in fx_cost.dart (#1515). */
+#define LE_CB_OVER_SHARE_NUM 4u
+#define LE_CB_OVER_SHARE_DEN 5u
+
 /* Monotonic nanoseconds. Never wall-clock (CLOCK_REALTIME / the system time):
  * that clock STEPS — an NTP correction, a DST-less timezone database update or
  * a user setting the date can move it backwards or forwards by seconds, and a
@@ -179,6 +184,7 @@ typedef struct le_cb_window {
   _Atomic uint64_t a_max_gap_ns;
   _Atomic uint64_t a_bucket[LE_CB_BUCKETS];
   _Atomic uint64_t a_xruns[LE_XRUN_KINDS];
+  _Atomic uint64_t a_over_share; /* services past the effects budget's share */
 } le_cb_window;
 
 /* The whole telemetry state, embedded in le_engine. */
@@ -238,6 +244,7 @@ static inline void le_cb_window_reset(le_cb_window* w) {
   for (int i = 0; i < LE_XRUN_KINDS; ++i) {
     atomic_store_explicit(&w->a_xruns[i], 0u, memory_order_relaxed);
   }
+  atomic_store_explicit(&w->a_over_share, 0u, memory_order_relaxed);
 }
 
 /* Seeds the negotiated rate + nominal period and clears BOTH windows — a fresh
@@ -339,6 +346,11 @@ static inline void le_cb_window_note_service(le_cb_window* w, uint64_t dur_ns,
   }
   if (dur_ns > budget_ns) {
     atomic_fetch_add_explicit(&w->a_late_periods, 1u, memory_order_relaxed);
+  }
+  /* Past LE_CB_OVER_SHARE_NUM/DEN of the deadline: the effects budget's
+   * share (#1515). */
+  if (dur_ns * LE_CB_OVER_SHARE_DEN > budget_ns * LE_CB_OVER_SHARE_NUM) {
+    atomic_fetch_add_explicit(&w->a_over_share, 1u, memory_order_relaxed);
   }
   {
     uint64_t idx = dur_ns / bucket_ns;
@@ -506,6 +518,8 @@ static inline void le_cb_window_read(const le_cb_window* w,
   for (int i = 0; i < LE_XRUN_KINDS; ++i) {
     out->xruns[i] = atomic_load_explicit(&w->a_xruns[i], memory_order_relaxed);
   }
+  out->over_share_periods =
+      atomic_load_explicit(&w->a_over_share, memory_order_relaxed);
 }
 
 /* Fills the whole ABI projection. Shared by le_engine_get_callback_telemetry

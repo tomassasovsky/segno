@@ -188,6 +188,10 @@ echo "== building backing handoff race tests =="
 # shellcheck disable=SC2086
 $CC $STD $EXTRA_CFLAGS src/test/test_backing_races.c $ENGINE_SRC \
   "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_backing_race_tests.exe"
+echo "== building effects worker race tests =="
+$CC $STD $EXTRA_CFLAGS src/test/test_fx_workers_races.c $ENGINE_SRC \
+  "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_fx_workers_race_tests.exe"
+"$OUT/segno_fx_workers_race_tests.exe"
 "$OUT/segno_backing_race_tests.exe"
 
 if [ "${NATIVE_TESTS_ONLY:-}" = "races" ]; then

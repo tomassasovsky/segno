@@ -95,6 +95,7 @@ add_library(segno_engine SHARED
   core/engine_restore.c      # Offline loop-close restoration worker (#697 S9)
   core/engine_cond.c         # per-input conditioning stage (input conditioning)
   core/engine_backing.c      # backing player buffers + control API (#1200)
+  core/engine_workers.c      # effects on more than one core (#1515)
   core/engine_decode.c       # the audio-file decoder + offline resampler (#1200)
   core/engine_audition.c     # Library audition voice control API (#1178)
   core/engine_instruments.c  # instrument slots, note rings, synth in the callback (#1197)
