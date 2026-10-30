@@ -11,6 +11,12 @@
 # non-RT kernel the "threadirqs" cmdline arg does. Best-effort — a missing thread
 # or missing chrt is non-fatal (the audio thread still runs RT; this just tightens
 # the tail). Iterates /proc directly so it works under busybox sh.
+#
+# It also keeps the thread on core 0, where its hardware interrupt arrives
+# (#1515): the audio callback runs on core 3 and the effects workers on cores 1
+# and 2, and an IRQ thread at FIFO 90 floating onto one of their cores would
+# preempt a job in the middle of a period. The IRQ's own affinity is set, and
+# the kernel moves its thread with it.
 # Pin every CPU to the performance governor (belt-and-suspenders with the
 # cpufreq.default_governor=performance cmdline arg): the default ondemand governor
 # idles at 1.1 GHz and only ramps under load, which shows up as audio xruns.
@@ -28,6 +34,12 @@ for comm in /proc/[0-9]*/comm; do
             if chrt -f -p "$PRIO" "$pid" 2>/dev/null; then
                 echo "segno-rtirq: $name (pid $pid) -> SCHED_FIFO $PRIO"
                 found=1
+            fi
+            irq=${name#irq/}
+            irq=${irq%%-*}
+            if [ -w "/proc/irq/$irq/smp_affinity" ] &&
+                echo 1 > "/proc/irq/$irq/smp_affinity" 2>/dev/null; then
+                echo "segno-rtirq: IRQ $irq -> core 0"
             fi
             ;;
     esac

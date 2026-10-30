@@ -112,6 +112,11 @@ Future<void> runSegno(
       performanceRepository == null ||
       backingRepository == null) {
     final engine = createNativeAudioEngine();
+    // Effects on more than one core (#1515): on the console two workers run
+    // the live inputs' chains on cores 1 and 2 beside the audio callback on
+    // core 3, and core 0 keeps the interrupts and the UI. Elsewhere the
+    // callback runs every chain.
+    if (isAppliance()) engine.setFxWorkers(count: 2, cores: const [3, 1, 2]);
     looper = LooperRepository(engine: engine);
     session = SessionRepository(
       engine: engine,

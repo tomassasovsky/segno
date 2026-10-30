@@ -50,8 +50,8 @@ void main() {
     when(() => repository.mixGeneration).thenAnswer((_) => generation);
     when(() => repository.sessionRevision).thenAnswer((_) => session);
     when(() => repository.fxRoomNs).thenAnswer((_) => room);
-    when(() => repository.fxCostOf(any())).thenAnswer(
-      (call) => fxChainCostNs(call.positionalArguments[0] as List<TrackEffect>),
+    when(() => repository.fxGrowthNs(any(), any())).thenAnswer(
+      (call) => fxChainCostNs(call.positionalArguments[1] as List<TrackEffect>),
     );
     when(() => repository.state).thenReturn(
       const LooperState(

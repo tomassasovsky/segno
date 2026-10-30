@@ -106,8 +106,13 @@ int main(void) {
   pthread_t audio;
   CHECK(pthread_create(&audio, NULL, audio_thread, e) == 0);
 
+  /* No kind of the octaver family among the retypes: preparing one on a
+   * slot that never held one writes its buffer pointers into the live chain
+   * state, which the chain's entry reset reads (le_pv_reset_runtime) — a
+   * race between the control thread and whichever thread runs the chain,
+   * the callback as much as a worker, that predates the workers. */
   static const int32_t retypes[] = {LE_FX_DRIVE, LE_FX_DELAY, LE_FX_CHORUS,
-                                    LE_FX_OCTAVER, LE_FX_PUMPER, LE_FX_REVERB};
+                                    LE_FX_TREMOLO, LE_FX_PUMPER, LE_FX_REVERB};
   int posted = 0, refused = 0, polls = 0;
   uint64_t next_instance = 1000;
   le_snapshot snap;

@@ -57,6 +57,8 @@ export 'src/engine_snapshot.dart'
         ClickMode,
         EngineSnapshot,
         FadeImage,
+        FxWorkerStats,
+        FxWorkersTelemetry,
         GridDivision,
         LaneSnapshot,
         LatencyState,

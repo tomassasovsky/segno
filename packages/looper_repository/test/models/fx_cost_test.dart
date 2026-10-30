@@ -106,10 +106,161 @@ void main() {
       ], period: period);
       expect(repo.fxCostNs, cost);
       expect(repo.fxRoomNs, room - cost);
+      // An edit is weighed by what it adds.
       expect(
-        repo.fxCostOf([_fx(TrackEffectType.reverb)]),
+        repo.fxGrowthNs(const FxAddress(stage: FxStage.output), [
+          _fx(TrackEffectType.reverb),
+        ]),
         _cost(TrackEffectType.reverb),
       );
+      expect(
+        repo.fxGrowthNs(const FxAddress(stage: FxStage.track), const []),
+        -cost,
+      );
+    });
+  });
+
+  group('effects on more than one core (#1515)', () {
+    // Ed's Rack, the plan's unit (section 7): 2,665 ns a frame.
+    final rack = [
+      for (final type in [
+        TrackEffectType.dualOctaver,
+        TrackEffectType.wah,
+        TrackEffectType.compressor,
+        TrackEffectType.overdrive,
+        TrackEffectType.ampCab,
+        TrackEffectType.chorus,
+        TrackEffectType.roomVerb,
+        TrackEffectType.modeDelay,
+        TrackEffectType.eq,
+      ])
+        _fx(type),
+    ];
+    final rackNs = fxChainCostNs(rack);
+
+    /// The racks, one per monitor input, that fit beside the callback with
+    /// [workers] workers.
+    int racksAdmitted(int workers) {
+      var racks = 0;
+      while (fxLoadNs(
+            serial: 0,
+            jobs: List.filled(racks + 1, rackNs),
+            workers: workers,
+          ) <=
+          fxBudgetNs(96000)) {
+        racks++;
+      }
+      return racks;
+    }
+
+    test("Ed's Rack charges what the plan's table assumes", () {
+      expect(rackNs, 2665);
+      expect(fxBudgetNs(96000), 7192);
+    });
+
+    test('with no workers the load is every chain summed', () {
+      expect(fxLoadNs(serial: 500, jobs: [rackNs, rackNs]), 500 + 2 * rackNs);
+      // One job is run on the callback, workers or not: no handoff.
+      expect(fxLoadNs(serial: 500, jobs: [rackNs], workers: 2), 500 + rackNs);
+      expect(fxLoadNs(serial: 0, jobs: [0, rackNs], workers: 2), rackNs);
+    });
+
+    test('with workers, the critical path and the handoff', () {
+      // Two workers, three cores: (J + 2p) / 3 plus 81 ns of handoff.
+      expect(
+        fxLoadNs(serial: 1000, jobs: [rackNs, rackNs, rackNs], workers: 2),
+        1000 + 81 + ((3 * rackNs + 2 * rackNs) / 3).ceil(),
+      );
+      // The largest job never splits: one big chain costs nearly all of it.
+      final big = fxLoadNs(serial: 0, jobs: [6000, 100], workers: 2);
+      expect(big, greaterThan(6000));
+      // The handoff per worker count, at 64-frame blocks, over two jobs of
+      // 12 ns: (24 + (C - 1) 12) / C on C cores.
+      expect(fxLoadNs(serial: 0, jobs: [12, 12], workers: 1), 70 + 18);
+      expect(fxLoadNs(serial: 0, jobs: [12, 12], workers: 2), 81 + 16);
+      expect(fxLoadNs(serial: 0, jobs: [12, 12], workers: 3), 97 + 15);
+    });
+
+    test("admits the racks of the plan's table: 2, 4, 6 and 7", () {
+      expect(racksAdmitted(0), 2);
+      expect(racksAdmitted(1), 4);
+      expect(racksAdmitted(2), 6);
+      expect(racksAdmitted(3), 7);
+    });
+
+    group('LooperRepository', () {
+      late MockAudioEngine engine;
+      late LooperRepository repo;
+
+      void putRacks(int count) {
+        for (var input = 0; input < count; input++) {
+          expect(
+            repo.setMonitorEffects(input: input, effects: rack),
+            EngineResult.ok,
+          );
+        }
+      }
+
+      setUp(() {
+        engine = MockAudioEngine()..setFxWorkers(count: 2);
+        repo = LooperRepository(
+          engine: engine,
+        )..startEngine(const EngineConfig(sampleRate: 96000, inputChannels: 8));
+        addTearDown(repo.dispose);
+      });
+
+      test('six racks on the inputs fit two workers, seven do not', () {
+        putRacks(6);
+        expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
+        // A seventh is weighed by what it adds to the critical path.
+        final seventh = repo.fxGrowthNs(
+          const FxAddress(stage: FxStage.input, index: 6),
+          rack,
+        );
+        expect(seventh, greaterThan(repo.fxRoomNs));
+        putRacks(7);
+        expect(repo.fxRoomNs, lessThan(0));
+      });
+
+      test('a rack on a track runs on the callback: it charges in full', () {
+        putRacks(2);
+        final onInput = repo.fxGrowthNs(
+          const FxAddress(stage: FxStage.input, index: 2),
+          rack,
+        );
+        final onTrack = repo.fxGrowthNs(
+          const FxAddress(stage: FxStage.track),
+          rack,
+        );
+        expect(onTrack, rackNs);
+        expect(onInput, lessThan(onTrack));
+      });
+
+      test('a pedal switched on is never refused: on or off it is charged', () {
+        putRacks(6);
+        final off = [for (final fx in rack) fx.copyWith(enabled: false)];
+        expect(
+          repo.fxGrowthNs(const FxAddress(stage: FxStage.input), off),
+          0,
+        );
+      });
+
+      test('without its workers the same rig reads over budget', () {
+        putRacks(6);
+        repo.stopEngine();
+        engine.setFxWorkers(count: 0);
+        repo.startEngine(
+          const EngineConfig(sampleRate: 96000, inputChannels: 8),
+        );
+        // Nothing is dropped: the chains stay, and the room goes negative.
+        expect(
+          [
+            for (final fx in repo.monitorEffects(5)) (fx as BuiltInEffect).type,
+          ],
+          [for (final fx in rack) fx.type],
+        );
+        expect(repo.fxRoomNs, lessThan(0));
+      });
     });
   });
 }

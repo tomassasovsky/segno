@@ -234,6 +234,15 @@ abstract interface class EngineLifecycle {
   /// Stops and closes the audio device.
   EngineResult stop();
 
+  /// Asks for [count] effects workers (0 to 3; 0, the default, runs the
+  /// monitor chains on the audio callback) and, in [cores], where to run them:
+  /// the callback's core first, then one per worker, -1 for "not pinned";
+  /// null pins nothing (#1515). They start with the next [start]; while the
+  /// device runs the count is fixed ([EngineResult.alreadyRunning]). The
+  /// output is the same with or without them;
+  /// [EngineMetering.fxWorkersTelemetry] reports how many run.
+  EngineResult setFxWorkers({required int count, List<int>? cores});
+
   /// Reopens the device after a loss WITHOUT discarding the recorded loops.
   ///
   /// Only valid on a stopped engine that was started before:
@@ -280,6 +289,11 @@ abstract interface class EngineMetering {
   /// render-rate dedupe that keeps an idle rig from rebuilding. Call it when a
   /// bench or a diagnostic screen asks — not on a frame timer.
   CallbackTelemetry callbackTelemetry();
+
+  /// Reads the effects workers' telemetry (#1515): how many run, and how the
+  /// rounds they share with the callback went. A diagnostic pull, like
+  /// [callbackTelemetry]; the effects admission reads its `running`.
+  FxWorkersTelemetry fxWorkersTelemetry();
 
   /// Arms the chromatic tuner on hardware [input], or disarms it with `-1`.
   ///

@@ -8,6 +8,7 @@ import 'package:looper_repository/src/models/audio_apply_result.dart';
 import 'package:looper_repository/src/models/audio_config.dart';
 import 'package:looper_repository/src/models/engine_reopened.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
+import 'package:looper_repository/src/models/fx_address.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/fx_chain_group.dart';
 import 'package:looper_repository/src/models/fx_cost.dart';
@@ -7975,26 +7976,64 @@ class LooperRepository {
     return frames > 0 ? frames : kFxBenchPeriod;
   }
 
-  /// What [chain] would charge ([fxChainCostNs]), in nanoseconds per frame
-  /// at the running block length.
-  int fxCostOf(List<TrackEffect> chain) =>
-      fxChainCostNs(chain, period: _fxPeriod);
+  /// What the effects charge the audio thread's worst block ([fxLoadNs]), in
+  /// nanoseconds per frame at the running block length: the live inputs'
+  /// chains shared with the effects workers the engine runs (#1515), and the
+  /// tracks, All tracks, the destinations and the lanes on the callback. A
+  /// lane counts in full: its print stands in for its Pre entries only
+  /// between edits, overdubs, evictions and renders, and the worst block is
+  /// the one in between. Every pedal counts whether it is on or off, so
+  /// switching one on is never refused.
+  int get fxCostNs => _fxLoadAt(_fxPeriod);
 
-  /// What every chain charges the audio thread's worst block ([fxCostOf]),
-  /// in nanoseconds per frame: the live inputs, the tracks, All tracks, the
-  /// destinations and the lanes. A lane counts in full: its print stands in
-  /// for its Pre entries only between edits, overdubs, evictions and
-  /// renders, and the worst block is the one in between.
-  int get fxCostNs => _fxCostAt(_fxPeriod);
+  /// How much [fxCostNs] would grow, in nanoseconds per frame, with the chain
+  /// at [address] replaced by [chain] (negative when it would shrink): what
+  /// an edit there is weighed by against [fxRoomNs].
+  int fxGrowthNs(FxAddress address, List<TrackEffect> chain) {
+    final period = _fxPeriod;
+    return _fxLoadAt(period, address, chain) - _fxLoadAt(period);
+  }
 
-  int _fxCostAt(int period) {
-    return [
-      for (final c in _monitorEffects.values) fxChainCostNs(c, period: period),
-      for (final c in _trackEffects.values) fxChainCostNs(c, period: period),
-      for (final c in _outputEffects.values) fxChainCostNs(c, period: period),
-      fxChainCostNs(_allTracksEffects, period: period),
-      for (final c in _laneEffects.values) fxChainCostNs(c, period: period),
+  /// The effects workers the engine runs beside the callback (#1515): 0 on
+  /// the desktop, and whenever the kernel refused them, which shows a rig
+  /// admitted with them as over budget rather than dropping any effect.
+  int get _fxWorkers => _engine.fxWorkersTelemetry().running;
+
+  /// [fxLoadNs] for every chain as it is, or with the chain at [at] replaced
+  /// by [chain].
+  int _fxLoadAt(int period, [FxAddress? at, List<TrackEffect>? chain]) {
+    int cost(List<TrackEffect> c) => fxChainCostNs(c, period: period);
+    final monitors = {..._monitorEffects};
+    final tracks = {..._trackEffects};
+    final outputs = {..._outputEffects};
+    final lanes = {..._laneEffects};
+    var allTracks = _allTracksEffects;
+    if (at != null && chain != null) {
+      switch (at.stage) {
+        case FxStage.input:
+          monitors[at.index] = chain;
+        case FxStage.loop:
+          lanes[(at.index, at.lane ?? 0)] = chain;
+        case FxStage.track:
+          tracks[at.index] = chain;
+        case FxStage.allTracks:
+          allTracks = chain;
+        case FxStage.output:
+          outputs[at.index] = chain;
+      }
+    }
+    final serial = [
+      for (final c in tracks.values) cost(c),
+      for (final c in outputs.values) cost(c),
+      cost(allTracks),
+      for (final c in lanes.values) cost(c),
     ].fold(0, (a, b) => a + b);
+    return fxLoadNs(
+      serial: serial,
+      jobs: [for (final c in monitors.values) cost(c)],
+      workers: _fxWorkers,
+      period: period,
+    );
   }
 
   /// What is left of the effects budget ([fxBudgetNs]) at the running rate
@@ -8013,7 +8052,7 @@ class LooperRepository {
   /// Negative when the chains would not fit.
   int fxRoomAt(int sampleRate, int bufferFrames) {
     final period = bufferFrames > 0 ? bufferFrames : kFxBenchPeriod;
-    return fxBudgetNs(sampleRate, period: period) - _fxCostAt(period);
+    return fxBudgetNs(sampleRate, period: period) - _fxLoadAt(period);
   }
 
   /// Monitor [input]'s remembered effect chain (empty if none), in processing

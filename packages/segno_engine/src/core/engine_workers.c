@@ -30,6 +30,9 @@
  * futex is private, so its key never walks the page tables, and its word is
  * in that same memory.
  */
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE 1 /* pthread_setname_np */
+#endif
 #include "engine_workers.h"
 
 #include <pthread.h>
@@ -52,6 +55,7 @@ typedef struct le_fx_worker {
   le_engine* e;
   int32_t index;
   int32_t core;
+  int rt; /* SCHED_FIFO (le_platform_rt_audio, asked once at the start) */
   pthread_t thread;
   int created;
   void* stack_block; /* le_rt_alloc'd; the stack is page-aligned inside it */
@@ -215,7 +219,16 @@ static void* le_fx_worker_main(void* arg) {
   le_engine* e = w->e;
   le_fx_par* p = &e->fx_par;
   le_fx_worker_tm* tm = &e->fx_worker_tm[w->index];
-  if (!le_platform_fx_worker_setup(w->core)) {
+  /* Named, so top -H, the profiler and the benches can tell the workers
+   * apart (segno-fx-0 ..). */
+  char name[16];
+  snprintf(name, sizeof(name), "segno-fx-%d", (int)w->index);
+#if defined(__APPLE__)
+  (void)pthread_setname_np(name);
+#else
+  (void)pthread_setname_np(pthread_self(), name);
+#endif
+  if (!le_platform_fx_worker_setup(w->core, w->rt)) {
     atomic_store_explicit(&w->a_state, -1, memory_order_release);
     return NULL;
   }
@@ -319,11 +332,13 @@ void le_fx_pool_start(le_engine* e) {
   struct le_fx_pool* pool =
       (struct le_fx_pool*)calloc(1, sizeof(struct le_fx_pool));
   if (pool == NULL) return;
+  const int rt = le_platform_rt_audio();
   for (int32_t k = 0; k < want; ++k) {
     le_fx_worker* w = &pool->w[k];
     w->e = e;
     w->index = k;
     w->core = e->fx_cores[1 + k];
+    w->rt = rt;
     atomic_store_explicit(&w->a_state, 0, memory_order_relaxed);
     if (!le_fx_worker_create(w)) {
       atomic_store_explicit(&w->a_state, -1, memory_order_relaxed);

@@ -79,12 +79,17 @@ void le_platform_after_device_open(le_engine* engine);
 
 /* ---- Effects workers (#1515, engine_workers.c) ---- */
 
+/* Whether the callback runs real-time (the ALSA appliance with
+ * SEGNO_RT_AUDIO=1), so the workers must too. Control thread: it reads the
+ * environment's cached answer. */
+int le_platform_rt_audio(void);
+
 /* On a worker thread as it starts: pins it to [core] (none when negative)
- * and, where the callback runs real-time (the ALSA appliance with
- * SEGNO_RT_AUDIO=1), puts it on SCHED_FIFO LE_FX_WORKER_PRIO. Returns 0 when
- * the kernel refused either, or when this platform cannot pin a thread and a
- * core was asked for; the worker then does not run. */
-int le_platform_fx_worker_setup(int32_t core);
+ * and, when [rt] (le_platform_rt_audio, asked by the control thread), puts it
+ * on SCHED_FIFO LE_FX_WORKER_PRIO. Returns 0 when the kernel refused either,
+ * or when this platform cannot pin a thread and a core was asked for; the
+ * worker then does not run. */
+int le_platform_fx_worker_setup(int32_t core, int rt);
 
 /* Sleeps while *word == seen: a private futex on Linux, __ulock on Apple.
  * May return early; the caller re-checks. */

@@ -890,7 +890,9 @@ static void le_pin_callback(le_engine* engine) {
   }
 }
 
-int le_platform_fx_worker_setup(int32_t core) {
+int le_platform_rt_audio(void) { return le_rt_audio(); }
+
+int le_platform_fx_worker_setup(int32_t core, int rt) {
   if (core >= 0) {
     cpu_set_t set;
     CPU_ZERO(&set);
@@ -899,7 +901,7 @@ int le_platform_fx_worker_setup(int32_t core) {
       return 0;
     }
   }
-  if (le_rt_audio()) {
+  if (rt) {
     struct sched_param sp;
     memset(&sp, 0, sizeof(sp));
     sp.sched_priority = LE_FX_WORKER_PRIO;

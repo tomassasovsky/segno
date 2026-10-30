@@ -145,7 +145,10 @@ extern int __ulock_wake(uint32_t operation, void* addr, uint64_t wake_value);
 #define LE_UL_COMPARE_AND_WAIT 1u
 #define LE_ULF_WAKE_ALL 0x00000100u
 
-int le_platform_fx_worker_setup(int32_t core) {
+int le_platform_rt_audio(void) { return 0; }
+
+int le_platform_fx_worker_setup(int32_t core, int rt) {
+  (void)rt;
   /* No way to pin a thread to a core here; the desktop never asks. */
   return core < 0;
 }
