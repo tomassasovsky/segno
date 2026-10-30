@@ -2948,6 +2948,67 @@
     "@libraryNewLoopStart": {
         "description": "Confirms New loop."
     },
+    "libraryNewLoopStartWith": "Start with",
+    "@libraryNewLoopStartWith": {
+        "description": "The New loop sheet: label of the choice of what the new loop starts with (#1513)."
+    },
+    "libraryNewLoopEmptyTracks": "Empty tracks",
+    "@libraryNewLoopEmptyTracks": {
+        "description": "The New loop sheet: start with empty tracks, the plain New loop."
+    },
+    "libraryNewLoopEdsSetup": "Ed's setup",
+    "@libraryNewLoopEdsSetup": {
+        "description": "The New loop sheet: start with Ed's setup, four named tracks each with an Ed's Rack sound. A product name, kept as is."
+    },
+    "libraryNewLoopEdsSummary": "Tracks 1 to 4 become Guitar, Boom, RC20 and Vox, each with an Ed's Rack sound. Your other effects, tempo and pedal setup stay.",
+    "@libraryNewLoopEdsSummary": {
+        "description": "The New loop sheet with Ed's setup chosen: what it does. Guitar, Boom, RC20 and Vox are the track names it writes, which stay in English."
+    },
+    "libraryNewLoopEdsLoading": "Loading the Ed's Rack sounds.",
+    "@libraryNewLoopEdsLoading": {
+        "description": "The New loop sheet with Ed's setup chosen, while its sounds are read; Start new loop waits."
+    },
+    "libraryNewLoopEdsMissing": "The Ed's Rack sounds could not be read, so Ed's setup cannot start.",
+    "@libraryNewLoopEdsMissing": {
+        "description": "The New loop sheet with Ed's setup chosen when one of its sounds is missing from this build."
+    },
+    "libraryNewLoopEdsOverBudget": "Ed's setup would go over the effects budget. Remove some effects first.",
+    "@libraryNewLoopEdsOverBudget": {
+        "description": "The New loop sheet with Ed's setup chosen when its four racks do not fit the effects budget."
+    },
+    "libraryNewLoopNamesShared": "Track names are shared by every session.",
+    "@libraryNewLoopNamesShared": {
+        "description": "The New loop sheet with Ed's setup chosen: the track names it writes also show in every other session."
+    },
+    "libraryNewLoopNameReplaced": "{name} is replaced.",
+    "@libraryNewLoopNameReplaced": {
+        "description": "Follows libraryNewLoopNamesShared when one custom track name is replaced.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryNewLoopNamesReplaced": "{names} and {last} are replaced.",
+    "@libraryNewLoopNamesReplaced": {
+        "description": "Follows libraryNewLoopNamesShared when several custom track names are replaced: all but the last, comma separated, then the last.",
+        "placeholders": {
+            "names": {
+                "type": "String"
+            },
+            "last": {
+                "type": "String"
+            }
+        }
+    },
+    "sessionTemplateDoesNotFit": "Ed's setup would go over the effects budget, so no new loop started. Your loop was saved.",
+    "@sessionTemplateDoesNotFit": {
+        "description": "Ed's setup was refused when the new loop was about to start because the effects changed after the sheet checked."
+    },
+    "sessionTrackNamesNotSaved": "The new loop started, but its track names could not be saved.",
+    "@sessionTrackNamesNotSaved": {
+        "description": "Ed's setup started the new loop, but writing the track names failed."
+    },
     "libraryTakeStillRunning": "The take is finishing. Try again when it has stopped.",
     "@libraryTakeStillRunning": {
         "description": "An Open or New loop ended a take in progress and it did not finish in time; nothing was saved, opened or cleared."

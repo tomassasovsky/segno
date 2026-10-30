@@ -352,6 +352,9 @@ enum LibraryFailure {
   /// A New loop started but could not be saved yet.
   newLoopNotSaved,
 
+  /// A New loop with Ed's setup no longer fit the effects budget.
+  templateDoesNotFit,
+
   /// Any other catalog action failed.
   actionFailed,
 
@@ -384,6 +387,7 @@ LibraryFailure? libraryFailureOf(SessionState state) {
     SessionError.busy => LibraryFailure.busy,
     SessionError.captureInProgress => LibraryFailure.captureInProgress,
     SessionError.newLoopNotSaved => LibraryFailure.newLoopNotSaved,
+    SessionError.templateDoesNotFit => LibraryFailure.templateDoesNotFit,
     SessionError.nameCollision ||
     SessionError.corruptLayers ||
     SessionError.unknown => LibraryFailure.actionFailed,
@@ -420,6 +424,7 @@ class LibraryFailureLine extends StatelessWidget {
       LibraryFailure.newLoopNotSaved => l10n.sessionNewLoopNotSaved(
         context.read<SessionCubit>().state.currentSessionName ?? '',
       ),
+      LibraryFailure.templateDoesNotFit => l10n.sessionTemplateDoesNotFit,
       LibraryFailure.actionFailed => l10n.libraryActionFailed,
       LibraryFailure.busy => l10n.operationBusy(refusedBy?.name ?? 'other'),
     };

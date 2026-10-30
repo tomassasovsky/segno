@@ -105,6 +105,32 @@ void main() {
       expect(find.byKey(const Key('tracks_session_snackbar')), findsNothing);
     });
 
+    testWidgets("a new loop whose Ed's setup names were not saved says so", (
+      tester,
+    ) async {
+      await show(
+        tester,
+        const SessionState(
+          status: SessionStatus.success,
+          outcome: SessionOutcome.newLoop,
+          currentSessionName: 'New loop 2',
+          trackNamesNotSaved: true,
+        ),
+      );
+      expect(find.text(l10n.sessionTrackNamesNotSaved), findsOneWidget);
+    });
+
+    testWidgets("Ed's setup refused at the start says why", (tester) async {
+      await show(
+        tester,
+        const SessionState(
+          status: SessionStatus.failure,
+          error: SessionError.templateDoesNotFit,
+        ),
+      );
+      expect(find.text(l10n.sessionTemplateDoesNotFit), findsOneWidget);
+    });
+
     testWidgets('the Library catalog outcomes raise no toast behind it', (
       tester,
     ) async {
