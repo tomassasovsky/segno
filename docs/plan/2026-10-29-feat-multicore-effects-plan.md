@@ -319,7 +319,7 @@ never refused.
 | **The mm lock (#710).** A page fault takes `mmap_lock`; a fork in the process holds it for write while it copies page tables. | A worker that faults waits for the fork, and the callback waits for the worker. #710 was exactly this on the callback. | Everything a job touches is engine memory that is already fork-shielded and locked (`rt_alloc.c`), or new memory allocated the same way: the job array, the job output blocks, the event lists and the futex word. |
 | **A fault inside the futex call.** `futex_wait` and `futex_wake` fault the word in with `fault_in_user_writeable`, which takes `mmap_lock`. | Same as above, inside a syscall. | The word lives in locked, `MADV_DONTFORK` memory, touched before the first period. |
 | **Shared futexes.** A shared futex's key is found through the page tables. | `mmap_lock` again. | Private futexes only (`FUTEX_*_PRIVATE`). |
-| **The futex hash bucket lock.** On PREEMPT_RT it is a sleeping lock with priority inheritance. On 6.12 the hash table is global, so another thread whose futex hashes to the same bucket (the Dart VM uses many) can hold it. | The callback's one wake per period can wait for that holder, bounded by the lock's short hold time and boosted by inheritance. | Measured by the spike: waking two workers added 2.5 us to the callback's median period and nothing to its p99.9, and a worker was running 3 to 5 us after the wake at p99 (26 us at most) over the 885,000 periods run without the memory load (section 8). If it ever shows in part 1's telemetry, the fallback is a worker that wakes itself on a timer just before the period, so the callback makes no syscall. Spinning workers instead of sleeping ones were measured and are worse (section 8). |
+| **The futex hash bucket lock.** On PREEMPT_RT it is a sleeping lock with priority inheritance. On 6.12 the hash table is global, so another thread whose futex hashes to the same bucket (the Dart VM uses many) can hold it. | The callback's one wake per period can wait for that holder, bounded by the lock's short hold time and boosted by inheritance. | Measured by the spike: waking two workers added 2.5 us to the callback's median period and nothing to its p99.9, and a worker was running 3 to 5 us after the wake at p99 and 21 us after it at most, with no worker ever sleeping through a period, over the 360,000 periods of the re-run that had workers (section 8). If it ever shows in part 1's telemetry, the fallback is a worker that wakes itself on a timer just before the period, so the callback makes no syscall. Spinning workers instead of sleeping ones were measured and are worse (section 8). |
 | **Worker stacks.** `pthread_create` maps a stack; a fault on an untouched page takes `mmap_lock`. | A fault on the first deep call (the octaver's FFT scratch is on the stack). | Stacks are allocated with `rt_alloc` (locked, `MADV_DONTFORK`) and passed with `pthread_attr_setstack`, so they are better shielded than the callback's own stack. |
 | **Code pages.** A worker running a kernel for the first time faults its code in. | A fault, and `mmap_lock`. | `le_platform_prefault_audio_code` already locks the engine's, libc's and libm's code. |
 | **Allocation and locks.** | Unbounded. | None on the worker path: jobs are fixed at configure; the claim, done and generation words are atomics. |
@@ -434,12 +434,17 @@ job is the same chain on a different input.
 The handoff was checked under ThreadSanitizer on the Mac
 (`EXTRA_CFLAGS="-fsanitize=thread -g"`, three workers): no report.
 
-On the console, 2026-10-30 01:27 to 01:42 UTC, build .205, segno.service
-stopped, 96 kHz / 64 frames (period 666.7 us, budget 533.3 us). The callback
-thread is pinned to core 3 at SCHED_FIFO 70, the workers to cores 2, 1 and 0
+On the console, build .205, segno.service stopped: the sweep and soaks from
+01:27 to 01:42 UTC on 2026-10-30, and a re-run of the room and the soak at
+02:35 UTC with the bench as fixed in review (wake latency measured from the
+first wake a worker missed, with skipped periods counted; major faults counted
+with minor ones; the CPU and fault samples taken outside the timed periods;
+the kernel's grant of pinning and SCHED_FIFO checked). Every run was at
+96 kHz / 64 frames (period 666.7 us, budget 533.3 us), with the callback
+thread pinned to core 3 at SCHED_FIFO 70 and the workers to cores 2, 1 and 0
 in that order at 69 (below the app's 80, as every bench on the console runs).
-`mlockall` as the engine's locked memory stands in for `rt_alloc`. Raw output:
-`/data/bench/mc/spike1.txt` and `soak.txt` on the console.
+`mlockall` stands in for the engine's `rt_alloc` locking. Raw output:
+`/data/bench/mc/spike1.txt`, `soak.txt` and `rerun.txt` on the console.
 
 ### 8.2 The handoff and one rack
 
@@ -460,19 +465,22 @@ in that order at 69 (below the app's 80, as every bench on the console runs).
 
 ### 8.3 The room per core count
 
-Racks were added one at a time until a period went over the budget. Every row
-below had 0 late periods and 0 page faults on every thread.
+Racks were added one at a time until a period went over the budget (first
+sweep), and the re-run repeated each core count at its limit and one rack
+past it. The table is the re-run; the first sweep found the same limits with
+numbers within a few microseconds. Every row had 0 late periods, 0 page faults
+(minor or major) on every thread, and no worker sleeping through a period.
 
 | Cores | Racks | Median us | p99.9 us | Max us | Over budget | Wake p99 / max us | Callback + workers CPU, whole machine |
 |---|---|---|---|---|---|---|---|
-| 1 | 2 | 337.4 | 359.5 | 468.2 | 0 | | 12.4 % |
-| 1 | 3 | 467.6 | 488.6 | 590.3 | 9 | | |
-| 2 | 4 | 351.0 | 369.3 | 478.1 | 0 | 3.0 / 18.4 | 25.4 % |
-| 2 | 5 | 438.5 | 495.5 | 583.2 | 7 | | |
-| 3 | 6 | 356.6 | 405.9 | 489.5 | 0 | 3.7 / 16.2 | 39.2 % |
-| 3 | 7 | 444.0 | 499.7 | 634.5 | 8 | | |
-| 4 | 8 | 374.0 | 420.1 | 519.3 | 0 | 4.9 / 15.5 | 53.9 % |
-| 4 | 9 | 464.1 | 520.4 | 608.8 | 11 | | |
+| 1 | 2 | 340.4 | 363.0 | 437.3 | 0 | | 12.5 % |
+| 1 | 3 | 469.3 | 487.1 | 562.5 | 6 | | |
+| 2 | 4 | 350.8 | 381.8 | 442.7 | 0 | 3.0 / 17.8 | 25.4 % |
+| 2 | 5 | 439.4 | 487.9 | 598.7 | 5 | | |
+| 3 | 6 | 359.1 | 410.6 | 463.2 | 0 | 3.8 / 11.3 | 39.4 % |
+| 3 | 7 | 444.2 | 515.7 | 602.9 | 17 | | |
+| 4 | 8 | 373.7 | 425.2 | 465.9 | 0 | 4.9 / 16.6 | 54.0 % |
+| 4 | 9 | 462.4 | 518.4 | 558.2 | 11 | | |
 
 **N cores give N times the room: 2, 4, 6 and 8 racks.** One rack's worst
 block is 5.9 % of the machine (158 us of a 667 us period on one of four cores),
@@ -486,14 +494,16 @@ the join and the workers' wait for phase A.
 | Run | Periods | Median us | p99.9 us | Max us | Over budget | Late | Wake p99 / max us |
 |---|---|---|---|---|---|---|---|
 | 6 racks, 3 cores, futex, 150 s | 225,000 | 358.4 | 408.0 | 608.8 | 1 | 0 | 3.8 / 23.0 |
+| The same, re-run with the fixed bench, 120 s | 180,000 | 357.6 | 406.6 | 541.6 | 1 | 0 | 3.7 / 20.5, none skipped |
 | 6 racks, 3 cores, workers spinning instead of sleeping, 30 s | 45,000 | 354.6 | 403.3 | 878.7 | 12 | 7 | 0.3 / 357.1 |
 | 6 racks, 3 cores, memory load on core 0, 60 s | 90,000 | 575.6 | 654.9 | 1217.1 | 89,734 | 36 | 20.1 / 65.4 |
 | 2 racks, 1 core (today's layout), memory load on core 0, 30 s | 45,000 | 392.0 | 597.5 | 697.1 | 112 | 15 | |
 
 The SoC went from 58 to 66 °C over the 150 s soak.
 
-- **Sleeping workers.** One period in 225,000 went over the budget (91 % of
-  the period, not late). The handoff held up over the soak.
+- **Sleeping workers.** One period in 225,000, and one in 180,000 in the
+  re-run, went over the budget (91 % and 81 % of the period); none was late.
+  The handoff held up over both soaks.
 - **Spinning workers are worse.** Two cores spent all their time spinning
   (50 % of the machine against 25 %), and a spinning worker was sometimes
   held off its core for up to 357 us, so seven periods were late. The cause
