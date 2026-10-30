@@ -31,7 +31,13 @@ class NewLoopCubit extends Cubit<NewLoopState> {
     if (template == null) {
       if (state.eds == EdsSetupStatus.loading) return;
       emit(state.copyWith(eds: EdsSetupStatus.loading));
-      template = await _loadEdsSetup();
+      try {
+        template = await _loadEdsSetup();
+      } on Object {
+        // A sound that cannot be read is a missing one, not a load that
+        // never ends.
+        template = null;
+      }
       if (isClosed) return;
       if (template == null) {
         emit(state.copyWith(eds: EdsSetupStatus.missing));

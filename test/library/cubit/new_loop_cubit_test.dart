@@ -84,6 +84,27 @@ void main() {
     );
 
     blocTest<NewLoopCubit, NewLoopState>(
+      'a read that fails leaves it refused, and choosing it again retries',
+      build: () => NewLoopCubit(
+        loadEdsSetup: () async {
+          loads++;
+          if (loads == 1) throw StateError('read failed');
+          return _template;
+        },
+        fits: (_) => fits,
+      ),
+      act: (cubit) async {
+        await cubit.choose(NewLoopStart.edsSetup);
+        expect(cubit.state.eds, EdsSetupStatus.missing);
+        await cubit.choose(NewLoopStart.edsSetup);
+      },
+      verify: (cubit) {
+        expect(loads, 2);
+        expect(cubit.state.eds, EdsSetupStatus.ready);
+      },
+    );
+
+    blocTest<NewLoopCubit, NewLoopState>(
       'sounds over the budget leave it refused',
       build: () {
         fits = false;

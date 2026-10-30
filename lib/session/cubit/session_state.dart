@@ -193,9 +193,9 @@ class SessionState extends Equatable {
   /// The **result** fields ([outcome] / [error] / [errorMessage] /
   /// [failedSessionId] / [conversion] / [trackNamesNotSaved]) are
   /// per-transition: they default to `null` or false (cleared) unless passed,
-  /// so a fresh status never carries a stale result. The **durable** fields ([currentSessionId] /
-  /// [currentSessionName] / [sessions] / [folders]) are preserved unless
-  /// overridden.
+  /// so a fresh status never carries a stale result. The **durable** fields
+  /// ([currentSessionId] / [currentSessionName] / [sessions] / [folders]) are
+  /// preserved unless overridden.
   SessionState copyWith({
     SessionStatus? status,
     SessionOutcome? outcome,
