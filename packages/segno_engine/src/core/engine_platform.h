@@ -86,7 +86,8 @@ int le_platform_rt_audio(void);
 
 /* On a worker thread as it starts: pins it to [core] (none when negative)
  * and, when [rt] (le_platform_rt_audio, asked by the control thread), puts it
- * on SCHED_FIFO LE_FX_WORKER_PRIO. Returns 0 when the kernel refused either,
+ * on SCHED_FIFO LE_FX_WORKER_PRIO. Linux also faults in and locks its stack
+ * (LE_FX_WORKER_STACK_BYTES). Returns 0 when the kernel refused either,
  * or when this platform cannot pin a thread and a core was asked for; the
  * worker then does not run. */
 int le_platform_fx_worker_setup(int32_t core, int rt);

@@ -26,9 +26,9 @@
  *
  * REAL-TIME SAFETY (#710). Nothing on the job path allocates, locks or makes a
  * syscall but the one wake. Everything a job touches is engine memory, which
- * is locked and fork-shielded (rt_alloc.h); so are the workers' stacks. The
- * futex is private, so its key never walks the page tables, and its word is
- * in that same memory.
+ * is locked and fork-shielded (rt_alloc.h); the workers' stacks are faulted
+ * in and locked as they start. The futex is private, so its key never walks
+ * the page tables, and its word is in that same memory.
  */
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE 1 /* pthread_setname_np */
@@ -47,7 +47,6 @@
 #include "engine_fx.h"          /* fx_apply_chain, le_flush_denormals */
 #include "engine_instruments.h" /* le_instrument_source_sample */
 #include "engine_platform.h"    /* the worker setup, wait and wake */
-#include "rt_alloc.h"
 
 /* One worker thread. Control-thread memory: the worker reads it only while
  * it starts. */
@@ -58,7 +57,6 @@ typedef struct le_fx_worker {
   int rt; /* SCHED_FIFO (le_platform_rt_audio, asked once at the start) */
   pthread_t thread;
   int created;
-  void* stack_block; /* le_rt_alloc'd; the stack is page-aligned inside it */
   /* 0 while starting, 1 running, -1 refused its core or its priority. */
   _Atomic int32_t a_state;
 } le_fx_worker;
@@ -291,28 +289,23 @@ static void le_fx_telemetry_reset(le_engine* e) {
   atomic_store_explicit(&rt->a_join_ns_max, 0u, memory_order_relaxed);
 }
 
-/* Joins worker [w] if it was created, and frees its stack. */
+/* Joins worker [w] if it was created. */
 static void le_fx_worker_release(le_fx_worker* w) {
   if (w->created) pthread_join(w->thread, NULL);
   w->created = 0;
-  le_rt_free(w->stack_block);
-  w->stack_block = NULL;
 }
 
-/* Creates worker [w] on a locked, fork-shielded stack (rt_alloc.h): a page
- * fault on an untouched stack page would take the mm lock (#710). Returns 0
- * when it could not be created. */
+/* Creates worker [w] on a stack of LE_FX_WORKER_STACK_BYTES that the
+ * library maps, with its guard page. Not a fork-shielded one (rt_alloc.h):
+ * glibc's fork child walks the thread descriptor at the top of every stack,
+ * which must therefore exist in the child. The worker faults its stack in
+ * and locks it as it starts (le_platform_fx_worker_setup), as the callback's
+ * is, so no fault on it takes the mm lock (#710). Returns 0 when it could
+ * not be created. */
 static int le_fx_worker_create(le_fx_worker* w) {
-  const long ps = sysconf(_SC_PAGESIZE);
-  const size_t page = ps > 0 ? (size_t)ps : 4096u;
-  w->stack_block = le_rt_alloc_prefaulted(LE_FX_WORKER_STACK_BYTES + page);
-  if (w->stack_block == NULL) return 0;
-  const uintptr_t lo = ((uintptr_t)w->stack_block + page - 1u) &
-                       ~(uintptr_t)(page - 1u);
   pthread_attr_t attr;
   if (pthread_attr_init(&attr) != 0) return 0;
-  int ok = pthread_attr_setstack(&attr, (void*)lo, LE_FX_WORKER_STACK_BYTES) ==
-           0;
+  int ok = pthread_attr_setstacksize(&attr, LE_FX_WORKER_STACK_BYTES) == 0;
   ok = ok && pthread_create(&w->thread, &attr, le_fx_worker_main, w) == 0;
   pthread_attr_destroy(&attr);
   w->created = ok;
@@ -403,6 +396,12 @@ int32_t le_engine_set_fx_workers(le_engine* engine, int32_t count,
   for (int k = 0; k <= LE_FX_WORKERS_MAX; ++k) {
     want[k] = cores != NULL && k <= count ? cores[k] : -1;
     if (want[k] < -1 || want[k] > 1023) return LE_ERR_INVALID;
+    /* One thread a core: a worker sharing the callback's core (or another
+     * worker's) could never run while the callback spins on a round, yet
+     * would count as running. */
+    for (int j = 0; j < k; ++j) {
+      if (want[k] >= 0 && want[k] == want[j]) return LE_ERR_INVALID;
+    }
   }
   if (atomic_load_explicit(&engine->a_running, memory_order_acquire)) {
     return LE_ERR_ALREADY_RUNNING;

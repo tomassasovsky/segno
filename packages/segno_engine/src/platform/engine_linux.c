@@ -893,6 +893,9 @@ static void le_pin_callback(le_engine* engine) {
 int le_platform_rt_audio(void) { return le_rt_audio(); }
 
 int le_platform_fx_worker_setup(int32_t core, int rt) {
+  /* Its whole stack, faulted in and locked like the callback's top: a fault
+   * on it would take the mm lock (#710). */
+  le_prepare_thread_stack(pthread_self(), LE_FX_WORKER_STACK_BYTES);
   if (core >= 0) {
     cpu_set_t set;
     CPU_ZERO(&set);

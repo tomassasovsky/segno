@@ -11,14 +11,8 @@
  * one frame to more than two of the frame loop's LE_FX_BLOCK. Its output is
  * compared, sample for sample, across 0, 1, 2 and 3 workers, and with a
  * worker the scheduler never runs.
- *
- * Needs only the public API, engine_internal.h and engine_fx.h, so a copy
- * of fxw_session also runs against the engine from before #1515 to show the
- * split frame loop changes nothing (the PR records that comparison). */
-
-#ifdef FXW_BEFORE_WORKERS
-typedef struct le_fx_workers_telemetry le_fx_workers_telemetry;
-#endif
+ * The same session also matched the engine from before #1515 sample for
+ * sample, with every worker count (PR #1521 records that comparison). */
 
 #define FXW_SR 48000
 #define FXW_IN 2
@@ -88,13 +82,8 @@ static void fxw_session(int32_t workers, int hold, float* out,
   le_engine* e = le_engine_create();
   CHECK(e != NULL);
   CHECK(le_engine_configure(e, FXW_SR, FXW_IN, FXW_OUT, FXW_SR * 4) == LE_OK);
-#ifndef FXW_BEFORE_WORKERS
   CHECK(le_engine_set_fx_workers(e, workers, NULL) == LE_OK);
   if (hold) le_engine_hold_fx_worker_for_test(e, 0, 1);
-#else
-  (void)workers;
-  (void)hold;
-#endif
   uint32_t rev = 1;
   le_fx_recipe m0, m1, bus;
   fxw_recipe(&m0, 0);
@@ -158,15 +147,9 @@ static void fxw_session(int32_t workers, int hold, float* out,
     at += (int32_t)n;
     ++step;
   }
-#ifndef FXW_BEFORE_WORKERS
   if (tm != NULL) le_engine_get_fx_workers_telemetry(e, tm);
-#else
-  (void)tm;
-#endif
   le_engine_destroy(e);
 }
-
-#ifndef FXW_BEFORE_WORKERS
 
 static float g_fxw_ref[FXW_FRAMES * FXW_OUT];
 static float g_fxw_out[FXW_FRAMES * FXW_OUT];
@@ -230,6 +213,11 @@ static void test_fx_workers_request(void) {
         LE_ERR_INVALID);
   const int32_t bad[] = {0, -2};
   CHECK(le_engine_set_fx_workers(e, 1, bad) == LE_ERR_INVALID);
+  /* One thread a core. */
+  const int32_t shared[] = {1, 1, 2};
+  CHECK(le_engine_set_fx_workers(e, 2, shared) == LE_ERR_INVALID);
+  const int32_t twice[] = {3, 2, 2};
+  CHECK(le_engine_set_fx_workers(e, 2, twice) == LE_ERR_INVALID);
   CHECK(le_engine_set_fx_workers(e, 2, NULL) == LE_OK);
   le_engine_get_fx_workers_telemetry(e, &tm);
   CHECK(tm.requested == 2);
@@ -259,4 +247,3 @@ static void run_fx_workers_tests(void) {
   test_fx_workers_held_worker_is_covered();
 }
 
-#endif /* FXW_BEFORE_WORKERS */

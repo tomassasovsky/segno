@@ -21,8 +21,9 @@
  * IRQs (50), below the sound card's IRQ thread (90). */
 #define LE_FX_WORKER_PRIO 79
 
-/* Each worker's stack, locked and fork-shielded (rt_alloc.h): the chains'
- * deepest frames (the octaver's FFT scratch) are a few tens of kilobytes. */
+/* Each worker's stack, faulted in and locked as the worker starts: the
+ * chains' deepest frames (the octaver's FFT scratch) are a few tens of
+ * kilobytes. */
 #define LE_FX_WORKER_STACK_BYTES ((size_t)512 << 10)
 
 /* Runs the block's jobs (le_fx_par): with workers, releases them, claims
