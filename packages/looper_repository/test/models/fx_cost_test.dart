@@ -222,8 +222,13 @@ void main() {
           const FxAddress(stage: FxStage.input, index: 6): rack,
         });
         expect(seventh, greaterThan(repo.fxRoomNs));
+        // Restored anyway, it comes up switched off (the owner's R2).
         putRacks(7);
-        expect(repo.fxRoomNs, lessThan(0));
+        expect(
+          repo.fxChainHeld(const FxAddress(stage: FxStage.input, index: 6)),
+          isTrue,
+        );
+        expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
       });
 
       test('a rack on a track runs on the callback: it charges in full', () {
@@ -247,21 +252,24 @@ void main() {
         );
       });
 
-      test('without its workers the same rig reads over budget', () {
+      test('without its workers the same rig comes up with what does not fit '
+          'switched off', () {
         putRacks(6);
         repo.stopEngine();
         engine.setFxWorkers(count: 0);
         repo.startEngine(
           const EngineConfig(sampleRate: 96000, inputChannels: 8),
         );
-        // Nothing is dropped: the chains stay, and the room goes negative.
+        // Nothing is dropped: the chains stay, the ones the callback alone
+        // cannot run are switched off, and the rest fit.
         expect(
           [
             for (final fx in repo.monitorEffects(5)) (fx as BuiltInEffect).type,
           ],
           [for (final fx in rack) fx.type],
         );
-        expect(repo.fxRoomNs, lessThan(0));
+        expect(repo.state.fxHeld, hasLength(4));
+        expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
       });
     });
   });
