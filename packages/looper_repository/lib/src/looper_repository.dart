@@ -1282,6 +1282,7 @@ class LooperRepository {
         if (held.isNotEmpty) {
           // One notice per cause: while the standing notice is up the take's
           // chains join it; otherwise the toast says so (R1).
+          _pruneFxHoldNotice();
           if (_fxHoldNotice.isNotEmpty) {
             _fxHoldNotice = [..._fxHoldNotice, ...held];
           } else {
@@ -3764,6 +3765,9 @@ class LooperRepository {
     if (input < 0 || input >= kMaxMonitoredInputs) return null;
     final chain = _monitorEffects[input];
     if (chain == null || chain.isEmpty) return null;
+    // A chain switched off because it did not fit is heard dry, like one the
+    // player switched off (#1515).
+    if (fxChainHeld(FxAddress(stage: FxStage.input, index: input))) return null;
     return monitorChainEnabled(input) ? chain : null;
   }
 
@@ -7229,10 +7233,11 @@ class LooperRepository {
     if (released != null) return released;
     if (_intendRunning) {
       final result = _engine.setAllTracksFxChainEnabled(
-        enabled: _engineOn(address, enabled),
+        enabled: enabled,
       );
       if (!result.isOk) return result;
     }
+    _fxReleaseAfter(address, enabled: enabled);
     _allTracksChainEnabled = enabled;
     // The projected state carries the flag (allTracksChain), and the Effects
     // page reads it from there.
@@ -7507,10 +7512,11 @@ class LooperRepository {
       final result = _engine.setLaneFxChainEnabled(
         channel: channel,
         lane: lane,
-        enabled: _engineOn(address, enabled),
+        enabled: enabled,
       );
       if (!result.isOk) return result;
     }
+    _fxReleaseAfter(address, enabled: enabled);
     if (enabled) {
       _laneChainEnabled.remove((channel, lane)); // absence == enabled
     } else {
@@ -7538,10 +7544,11 @@ class LooperRepository {
     if (_intendRunning) {
       final result = _engine.setMonitorInputFxChainEnabled(
         input: input,
-        enabled: _engineOn(address, enabled),
+        enabled: enabled,
       );
       if (!result.isOk) return result;
     }
+    _fxReleaseAfter(address, enabled: enabled);
     if (enabled) {
       _monitorChainEnabled.remove(input);
     } else {
@@ -7567,10 +7574,11 @@ class LooperRepository {
     if (_intendRunning) {
       final result = _engine.setTrackFxChainEnabled(
         channel: channel,
-        enabled: _engineOn(address, enabled),
+        enabled: enabled,
       );
       if (!result.isOk) return result;
     }
+    _fxReleaseAfter(address, enabled: enabled);
     if (enabled) {
       _trackChainEnabled.remove(channel);
     } else {
@@ -7595,10 +7603,11 @@ class LooperRepository {
     if (_intendRunning) {
       final result = _engine.setOutputFxChainEnabled(
         bus: bus,
-        enabled: _engineOn(address, enabled),
+        enabled: enabled,
       );
       if (!result.isOk) return result;
     }
+    _fxReleaseAfter(address, enabled: enabled);
     if (enabled) {
       _outputChainEnabled.remove(bus);
     } else {
@@ -7705,7 +7714,8 @@ class LooperRepository {
     }
     // R2 (#1515): a restore that would put the rig over budget holds chains
     // off before this recipe goes out.
-    _fitRig(incoming: _fxAddressOf(owner, channel, lane), chain: effects);
+    final incoming = _fxAddressOf(owner, channel, lane);
+    final fitted = _fitRig(incoming: incoming, chain: effects);
     final oldHandles = _fxSlots[key] ?? const <String, PluginSlotHandle>{};
     final oldEffects = switch (owner) {
       FxOwner.lane => _laneEffects[(channel, lane)] ?? const <TrackEffect>[],
@@ -7830,6 +7840,7 @@ class LooperRepository {
     } finally {
       if (!refusal.isOk) {
         prepared.forEach(_engine.discardPreparedPlugin);
+        _unfitRig(fitted, incoming);
       }
     }
     return (result: refusal, effects: effects, handles: {});
@@ -8047,7 +8058,9 @@ class LooperRepository {
   /// lane counts in full: its print stands in for its Pre entries only
   /// between edits, overdubs, evictions and renders, and the worst block is
   /// the one in between. Every pedal counts whether it is on or off, so
-  /// switching one on is never refused.
+  /// switching one on is never refused; a chain switched off because it did
+  /// not fit charges nothing, and switching it back on is weighed
+  /// ([fxHeldChainFits]).
   int get fxCostNs => _fxLoadAt(_fxPeriod);
 
   /// How much [fxCostNs] would grow, in nanoseconds per frame, with the
@@ -8199,22 +8212,23 @@ class LooperRepository {
   };
 
   /// Switching a held chain on (R1, R2): refused with [EngineResult.capacity]
-  /// while the rig has no room for it, otherwise the hold is released and
-  /// null returned so the switch goes ahead. Null too for every other case:
-  /// a chain that is not held, or a switch off (a held chain stays held).
+  /// while the rig has no room for it; null when the switch may go ahead.
+  /// A switch off, or a chain that is not held, always may (a held chain
+  /// stays held when switched off). The hold itself is released by
+  /// [_fxReleaseAfter], once the engine took the switch.
   EngineResult? _fxReleaseFor(FxAddress address, {required bool enabled}) {
     if (!enabled || !_fxHeld.contains(address)) return null;
-    final period = _fxPeriod;
-    final grows =
-        _fxLoadAt(period, const {}, {..._fxHeld}..remove(address)) -
-        _fxLoadAt(period);
-    if (grows > 0 && grows > fxRoomNs) return EngineResult.capacity;
-    _fxHeld.remove(address);
+    return fxHeldChainFits(address) ? null : EngineResult.capacity;
+  }
+
+  /// Releases the hold on the chain at [address] after a switch on landed.
+  void _fxReleaseAfter(FxAddress address, {required bool enabled}) {
+    if (!enabled || !_fxHeld.remove(address)) return;
+    _fxHoldUnpushed.remove(address);
     _fxHoldNotice = [
       for (final named in _fxHoldNotice)
         if (named != address) named,
     ];
-    return null;
   }
 
   /// Whether switching the held chain at [address] on would fit: what the
@@ -8241,6 +8255,7 @@ class LooperRepository {
     _fxHeld.clear();
     _fxHoldUnpushed.clear();
     _fitRig(before: before);
+    _pruneFxHoldNotice();
   }
 
   /// R2: while the chains (with [incoming] replaced by [chain], when given)
@@ -8255,18 +8270,26 @@ class LooperRepository {
   /// the engine ([_submitFxRecipe]). An edit the Effects page admitted never
   /// gets here over budget; what does is a restore: the saved settings, a
   /// replay at another rate, fewer workers than the rig was saved with.
-  void _fitRig({
+  Set<FxAddress> _fitRig({
     FxAddress? incoming,
     List<TrackEffect>? chain,
     Set<FxAddress>? before,
   }) {
-    if (!_intendRunning) return;
+    if (!_intendRunning) return const {};
     final replaced = {if (incoming != null && chain != null) incoming: chain};
+    // A chain that goes empty has nothing left to hold.
+    if (incoming != null && chain != null && chain.isEmpty) {
+      _fxHeld.remove(incoming);
+      _fxHoldUnpushed.remove(incoming);
+    }
     final snapshot = _engine.snapshot();
     final rate = snapshot.sampleRate > 0 ? snapshot.sampleRate : 96000;
     final period = _fxPeriod;
     final budget = fxBudgetNs(rate, period: period);
-    if (_fxLoadAt(period, replaced) <= budget) return;
+    if (_fxLoadAt(period, replaced) <= budget) {
+      _pruneFxHoldNotice();
+      return const {};
+    }
     List<TrackEffect> chainOf(FxAddress at) => replaced[at] ?? _chainAt(at);
     final lanes = {
       ..._laneEffects.keys,
@@ -8291,19 +8314,65 @@ class LooperRepository {
     ];
     final previously = before ?? {..._fxHeld};
     final named = <FxAddress>[];
+    final held = <FxAddress>{};
     for (final at in order) {
       if (_fxLoadAt(period, replaced) <= budget) break;
       if (_fxHeld.contains(at) || chainOf(at).isEmpty) continue;
       _fxHeld.add(at);
+      held.add(at);
       if (at != incoming) _pushChainOff(at);
       if (!previously.contains(at) && _chainSwitchAt(at)) named.add(at);
     }
+    _pruneFxHoldNotice();
     _fxHoldNotice = [
-      for (final at in _fxHoldNotice)
-        if (_fxHeld.contains(at)) at,
+      ..._fxHoldNotice,
       for (final at in named)
         if (!_fxHoldNotice.contains(at)) at,
     ];
+    return held;
+  }
+
+  /// Drops from the standing notice every chain no longer held, or emptied.
+  void _pruneFxHoldNotice() {
+    _fxHoldNotice = [
+      for (final at in _fxHoldNotice)
+        if (fxChainHeld(at)) at,
+    ];
+  }
+
+  /// Undoes what [_fitRig] held for a recipe the engine then refused: the
+  /// chain it would have replaced is still there, and the chains it made
+  /// room with go back on.
+  void _unfitRig(Set<FxAddress> held, FxAddress incoming) {
+    for (final at in held) {
+      _fxHeld.remove(at);
+      _fxHoldUnpushed.remove(at);
+      if (at != incoming && _chainSwitchAt(at)) _pushChainOn(at);
+    }
+    _pruneFxHoldNotice();
+  }
+
+  /// Turns the engine switch of the chain at [address] back on.
+  void _pushChainOn(FxAddress address) {
+    switch (address.stage) {
+      case FxStage.input:
+        _engine.setMonitorInputFxChainEnabled(
+          input: address.index,
+          enabled: true,
+        );
+      case FxStage.loop:
+        _engine.setLaneFxChainEnabled(
+          channel: address.index,
+          lane: address.lane ?? 0,
+          enabled: true,
+        );
+      case FxStage.track:
+        _engine.setTrackFxChainEnabled(channel: address.index, enabled: true);
+      case FxStage.allTracks:
+        _engine.setAllTracksFxChainEnabled(enabled: true);
+      case FxStage.output:
+        _engine.setOutputFxChainEnabled(bus: address.index, enabled: true);
+    }
   }
 
   /// Turns the engine switch of the live chain at [address] off; one with a
@@ -8349,18 +8418,30 @@ class LooperRepository {
   }
 
   /// R1, at record: whether the chains a take inherits ([lanes], by lane of
-  /// [channel]) would put the rig over budget, against the chains as they
-  /// are with those lanes' old chains gone.
+  /// [channel]) would put the rig over budget, with those lanes' old chains
+  /// gone. Takes of other tracks still waiting for their first block charge
+  /// what they inherited, unless they came in off themselves, so takes
+  /// started together cannot each pass on the same room.
   bool _takeOverBudget(int channel, Map<int, List<TrackEffect>> lanes) {
     final replaced = {
       for (final MapEntry(:key, :value) in lanes.entries)
         FxAddress(stage: FxStage.loop, index: channel, lane: key): value,
     };
     if (replaced.values.every((chain) => chain.isEmpty)) return false;
+    final pending = {
+      for (final MapEntry(key: ch, value: image) in _pendingImages.entries)
+        if (ch != channel && !image.held)
+          for (final MapEntry(:key, :value) in image.inherited.entries)
+            FxAddress(stage: FxStage.loop, index: ch, lane: key): value,
+    };
+    final snapshot = _engine.snapshot();
+    final rate = snapshot.sampleRate > 0 ? snapshot.sampleRate : 96000;
     final period = _fxPeriod;
-    final held = {..._fxHeld}..removeAll(replaced.keys);
-    final grows = _fxLoadAt(period, replaced, held) - _fxLoadAt(period);
-    return grows > 0 && grows > fxRoomNs;
+    final held = {..._fxHeld}
+      ..removeAll(replaced.keys)
+      ..removeAll(pending.keys);
+    final load = _fxLoadAt(period, {...pending, ...replaced}, held);
+    return load > fxBudgetNs(rate, period: period);
   }
 
   /// What is left of the effects budget ([fxBudgetNs]) at the running rate

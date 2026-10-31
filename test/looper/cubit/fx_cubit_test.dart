@@ -838,11 +838,12 @@ void main() {
         when(() => repository.fxChainHeld(input)).thenReturn(true);
       });
 
-      test('reads as off, so switching it off changes nothing', () {
+      test('can still be switched off for good: the saved switch goes off', () {
         final result = cubit.setChainEnabled(input, enabled: false);
 
-        expect(result.status, FxEditStatus.unchanged);
-        verifyNever(() => persistence.scheduleSave(any(), settings));
+        expect(result.status, FxEditStatus.applied);
+        expect(power[input], isFalse);
+        verify(() => persistence.scheduleSave(input, settings)).called(1);
       });
 
       test('switching it on is refused as over budget while it does not '

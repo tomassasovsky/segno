@@ -133,6 +133,36 @@ void main() {
       expect(repo.state.fxHeld, isEmpty);
     });
 
+    test('takes started together are weighed together', () {
+      // Neither take has had its first block: each must count the other.
+      engine.publishRecordImages = false;
+      repo
+        ..setMonitorEffects(input: 0, effects: _rack())
+        ..record()
+        ..record(channel: 1);
+      engine
+        ..publishImage(0)
+        ..publishImage(1);
+      // The takes land on the next projection.
+      repo.setTrackChainEnabled(channel: 7, enabled: true);
+      expect(repo.laneEffects(1, 0), hasLength(9));
+      expect(repo.fxChainHeld(_lane(0)), isFalse);
+      expect(repo.fxChainHeld(_lane(1)), isTrue);
+    });
+
+    test("an input chain that is off because it didn't fit is heard dry, "
+        'so a take does not copy it', () {
+      repo
+        ..setMonitorEffects(input: 0, effects: _rack())
+        ..setMonitorEffects(input: 1, effects: _rack())
+        ..setMonitorEffects(input: 2, effects: _rack());
+      expect(repo.fxChainHeld(_input(2)), isTrue);
+      repo
+        ..setLaneInput(channel: 0, lane: 0, inputChannel: 2)
+        ..record();
+      expect(repo.laneEffects(0, 0), isEmpty);
+    });
+
     test('a dry input inherits as before', () {
       repo.record();
       expect(repo.laneEffects(0, 0), isEmpty);
@@ -176,6 +206,47 @@ void main() {
         ..setMonitorEffects(input: 1, effects: _rack());
       expect(repo.fxChainHeld(_lane(2)), isTrue);
       expect(repo.state.fxHoldNotice, isEmpty);
+    });
+
+    test('emptying a held chain drops its hold, and a new chain there is '
+        'weighed afresh', () {
+      repo
+        ..setMonitorEffects(input: 0, effects: _rack())
+        ..setMonitorEffects(input: 1, effects: _rack())
+        ..setMonitorEffects(input: 2, effects: _rack())
+        ..setMonitorEffects(input: 2, effects: const []);
+      expect(repo.state.fxHeld, isEmpty);
+      expect(repo.state.fxHoldNotice, isEmpty);
+      repo
+        ..setMonitorEffects(input: 1, effects: const [])
+        ..setMonitorEffects(input: 2, effects: _rack());
+      expect(repo.fxChainHeld(_input(2)), isFalse);
+    });
+
+    test('a notice left over from a rig that fits no longer swallows a '
+        "take's toast", () async {
+      final toasts = <int>[];
+      final sub = repo.fxTakeHeld.listen(toasts.add);
+      addTearDown(sub.cancel);
+      repo
+        ..setMonitorEffects(input: 0, effects: _rack())
+        ..setMonitorEffects(input: 1, effects: _rack())
+        ..setMonitorEffects(input: 2, effects: _rack());
+      expect(repo.state.fxHoldNotice, [_input(2)]);
+      // More room at the next start: everything comes back on.
+      engine.fxWorkersRunning = 2;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig(sampleRate: 96000));
+      expect(repo.state.fxHoldNotice, isEmpty);
+      // A fourth input rack still fits the workers; a take's copy does not.
+      repo
+        ..setMonitorEffects(input: 3, effects: _rack())
+        ..record();
+      expect(repo.state.fxHoldNotice, isEmpty);
+      expect(repo.fxChainHeld(_lane(0)), isTrue);
+      await pumpEventQueue();
+      expect(toasts, [0]);
     });
 
     test('dismissing the notice keeps the chains off', () {

@@ -2376,7 +2376,8 @@ class _LengthTrack extends TrackSnapshot {
         inputMask: source.inputMask,
         outputMask: source.outputMask,
         layerInFlight: source.layerInFlight,
-        pending: source.pending,
+        // A take whose image has not had its first block yet (#1515).
+        pending: source.pending || engine.pendingImages.containsKey(channel),
         pendingLaunch: source.pendingLaunch,
         countInCancelGrace: source.countInCancelGrace,
         lengthPresetBars: bars ?? source.lengthPresetBars,
