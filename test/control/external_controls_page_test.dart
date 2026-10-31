@@ -68,8 +68,6 @@ void main() {
 
   setUp(() {
     looper = _MockLooperRepository();
-    registerFallbackValue(const FxAddress(stage: FxStage.track));
-    when(() => looper.fxChainHeld(any())).thenReturn(false);
     confirmedTiming = RecordTiming.immediately;
     rememberedDivision = GridDivision.off;
     when(() => looper.sessionRevision).thenReturn(0);

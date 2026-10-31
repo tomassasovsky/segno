@@ -75,10 +75,7 @@ extension FxBindingResolver on LooperRepository {
   bool? bindingEnabled(FxBindingTarget target) {
     switch (target) {
       case FxChainTarget(:final address):
-        // A chain switched off because it did not fit (#1515) reads as off,
-        // so the pedal's LED says what the player hears.
-        final on = chainEnabledAt(address);
-        return on == null ? null : on && !fxChainHeld(address);
+        return chainEnabledAt(address);
       case FxSlotTarget(:final address, :final slotId):
         final index = _slotIndex(address, slotId);
         if (index == null) return null;

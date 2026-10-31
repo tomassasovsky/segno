@@ -249,6 +249,17 @@ void main() {
       expect(toasts, [0]);
     });
 
+    test('a chain the player has off goes first: holding it changes no '
+        'sound', () {
+      repo
+        ..setMonitorEffects(input: 3, effects: _rack(), chainEnabled: false)
+        ..setLaneEffects(channel: 2, lane: 0, effects: _rack())
+        ..setMonitorEffects(input: 0, effects: _rack());
+      expect(repo.fxChainHeld(_input(3)), isTrue);
+      expect(repo.fxChainHeld(_lane(2)), isFalse);
+      expect(repo.state.fxHoldNotice, isEmpty);
+    });
+
     test('dismissing the notice keeps the chains off', () {
       repo
         ..setMonitorEffects(input: 0, effects: _rack())

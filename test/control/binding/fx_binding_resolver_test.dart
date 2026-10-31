@@ -25,8 +25,6 @@ void main() {
 
   setUp(() {
     looper = _MockLooperRepository();
-    registerFallbackValue(const FxAddress(stage: FxStage.track));
-    when(() => looper.fxChainHeld(any())).thenReturn(false);
     monitorChains = {
       2: [_fx('m-1')],
     };
@@ -188,13 +186,6 @@ void main() {
           ),
           isTrue,
         );
-      });
-
-      test('read a chain switched off because it did not fit as off, so '
-          'the LED says what is heard (#1515)', () {
-        const input = FxAddress(stage: FxStage.input, index: 2);
-        when(() => looper.fxChainHeld(input)).thenReturn(true);
-        expect(looper.bindingEnabled(const FxChainTarget(input)), isFalse);
       });
 
       test('write through to the matching domain setter', () {

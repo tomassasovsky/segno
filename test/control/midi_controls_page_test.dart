@@ -113,8 +113,6 @@ void main() {
   setUp(() {
     captureMicros = 0;
     looper = _MockLooper();
-    registerFallbackValue(const FxAddress(stage: FxStage.track));
-    when(() => looper.fxChainHeld(any())).thenReturn(false);
     devices = _MockMidiDevices();
     looperStates = StreamController<LooperState>.broadcast();
     connections = StreamController<MidiConnection>.broadcast();
