@@ -527,9 +527,15 @@ class FxCubit extends Cubit<FxState> {
       return const FxEditResult(FxEditStatus.refused);
     }
     // A chain the rig holds no settings for has never been switched off.
-    final current = _repository.chainEnabledAt(address) ?? true;
+    // One switched off because it did not fit (#1515) reads as off, and
+    // switching it on is refused until the rig has room for it.
+    final held = _repository.fxChainHeld(address);
+    final current = !held && (_repository.chainEnabledAt(address) ?? true);
     if (current == enabled || (!enabled && chain.isEmpty)) {
       return const FxEditResult(FxEditStatus.unchanged);
+    }
+    if (held && enabled && !_repository.fxHeldChainFits(address)) {
+      return const FxEditResult(FxEditStatus.overBudget);
     }
     if (!_repository.setChainEnabledAt(address, enabled: enabled).isOk) {
       return const FxEditResult(FxEditStatus.refused);

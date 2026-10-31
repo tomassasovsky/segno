@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
+import 'package:looper_repository/src/models/fx_address.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/input_setup.dart';
 import 'package:looper_repository/src/models/output_setup.dart';
@@ -37,6 +38,8 @@ class LooperState extends Equatable {
     this.tempoFollow = TempoFollowState.free,
     this.defaultFollowTempo = false,
     this.defaultPitchMode = PitchMode.unchanged,
+    this.fxHeld = const {},
+    this.fxHoldNotice = const [],
   });
 
   /// Master loop transport.
@@ -65,6 +68,19 @@ class LooperState extends Equatable {
 
   /// The recorded-mix chain over the sum of the tracks.
   final FxChainEnvelope allTracksChain;
+
+  /// The chains switched off because they did not fit the effects budget
+  /// (#1515): a take's inherited chains at record, or chains the rig could
+  /// not run when it came up. Each keeps its entries and its saved switch;
+  /// it plays as off, uses no audio-thread time, and switching it on is
+  /// refused until the rig has room for it.
+  final Set<FxAddress> fxHeld;
+
+  /// The chains the standing notice names, in the order they were switched
+  /// off: those the rig switched off when it came up, plus any take's that
+  /// joined while the notice stood. Empty when there is no notice (none
+  /// held, or the player dismissed it).
+  final List<FxAddress> fxHoldNotice;
 
   /// What the chromatic tuner hears on its armed input. Disarmed by default,
   /// and disarmed costs nothing — the engine gates detection on the arm.
@@ -233,5 +249,7 @@ class LooperState extends Equatable {
     tempoFollow,
     defaultFollowTempo,
     defaultPitchMode,
+    fxHeld,
+    fxHoldNotice,
   ];
 }

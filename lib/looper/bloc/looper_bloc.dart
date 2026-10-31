@@ -58,6 +58,9 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperRedoPressed>(
       (event, _) => _repository.redo(channel: event.channel),
     );
+    on<LooperFxHoldNoticeDismissed>(
+      (_, _) => _repository.dismissFxHoldNotice(),
+    );
     on<LooperVolumeChanged>((event, _) {
       unawaited(
         _mixSettings.setTrackVolume(event.volume, channel: event.channel),

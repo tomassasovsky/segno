@@ -312,6 +312,8 @@ void main() {
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.fxRoomNs).thenReturn(1 << 40);
+    when(() => repository.fxChainHeld(any())).thenReturn(false);
+    when(() => repository.fxHeldChainFits(any())).thenReturn(true);
     when(() => repository.fxGrowthNs(any())).thenAnswer(
       (call) => fxChainCostNs(
         (call.positionalArguments[0] as Map<FxAddress, List<TrackEffect>>)

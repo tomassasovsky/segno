@@ -1161,3 +1161,10 @@ final class LooperOutputEnabledToggled extends LooperEvent {
   @override
   List<Object?> get props => [output, enabled];
 }
+
+/// The player dismissed the standing notice that some effects are off
+/// because the rig could not run them (#1515); the chains stay off.
+final class LooperFxHoldNoticeDismissed extends LooperEvent {
+  /// Creates a [LooperFxHoldNoticeDismissed].
+  const LooperFxHoldNoticeDismissed();
+}

@@ -63,6 +63,8 @@ void main() {
       settings: SettingsRepository(store: FakeKeyValueStore()),
     );
     looper = _MockLooperRepository();
+    registerFallbackValue(const FxAddress(stage: FxStage.track));
+    when(() => looper.fxChainHeld(any())).thenReturn(false);
     when(() => looper.sessionRevision).thenReturn(0);
     when(() => looper.mixGeneration).thenReturn(0);
     when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
