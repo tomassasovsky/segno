@@ -68,9 +68,17 @@ class FxHeldBanner extends StatelessWidget {
     final outputChannels = context.select<LooperBloc, int>(
       (bloc) => bloc.state.status.outputChannels,
     );
-    final trackNames = context.watch<TracksCubit>().state.names;
-    final inputNames = context.watch<InputsCubit>().state.names;
-    final outputNames = context.watch<OutputsCubit>().state.names;
+    // Each name source only when the notice names that kind of chain.
+    bool names(FxStage stage) => notice.any((at) => at.stage == stage);
+    final trackNames = names(FxStage.loop) || names(FxStage.track)
+        ? context.watch<TracksCubit>().state.names
+        : const <String>[];
+    final inputNames = names(FxStage.input)
+        ? context.watch<InputsCubit>().state.names
+        : const <int, String>{};
+    final outputNames = names(FxStage.output)
+        ? context.watch<OutputsCubit>().state.names
+        : const <int, String>{};
     final labels = <String>[];
     for (final address in notice) {
       final label = fxHeldChainLabel(
