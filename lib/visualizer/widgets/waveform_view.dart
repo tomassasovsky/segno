@@ -189,9 +189,13 @@ class WaveformPainter extends CustomPainter {
 }
 
 /// The bar ruler over the wave: one faint line per bar across the full
-/// height and the bar number in the strip the wave leaves free at the bottom
+/// height and the bar numbers in the strip the wave leaves free at the bottom
 /// ([WaveformPainter.rulerHeight]). Painted in its own layer, so the wave's
 /// per-poll playhead repaint never re-shapes these labels.
+///
+/// Every bar is numbered while the numbers fit. When bars are narrower than
+/// a number, only every 2nd, 4th, 8th... bar is, so the numbers never run
+/// into each other or past the end (#1524).
 class BarRulerPainter extends CustomPainter {
   /// Creates a [BarRulerPainter] for [bars] whole bars.
   BarRulerPainter({required this.bars, required this.color});
@@ -201,6 +205,12 @@ class BarRulerPainter extends CustomPainter {
 
   /// The label colour.
   final Color color;
+
+  /// A number's inset from its bar line.
+  static const double labelInset = 5;
+
+  /// The least space after a number before the next one.
+  static const double labelGap = 8;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -212,14 +222,30 @@ class BarRulerPainter extends CustomPainter {
       height: 1,
       color: color,
     );
+    final barWidth = size.width / bars;
+    // The widest number is the last one's.
+    final widest = (TextPainter(
+      text: TextSpan(text: '$bars', style: style),
+      textDirection: TextDirection.ltr,
+    )..layout()).width;
+    var stride = 1;
+    while (stride < bars &&
+        stride * barWidth < labelInset + widest + labelGap) {
+      stride *= 2;
+    }
     for (var bar = 0; bar < bars; bar++) {
-      final x = bar / bars * size.width;
+      final x = bar * barWidth;
       canvas.drawRect(Rect.fromLTWH(x, 0, 1, size.height), line);
+      // The last numbered bar must also leave room for its number before
+      // the end of the ruler.
+      if (bar % stride != 0 || (bars - bar) * barWidth < labelInset + widest) {
+        continue;
+      }
       final label = TextPainter(
         text: TextSpan(text: '${bar + 1}', style: style),
         textDirection: TextDirection.ltr,
       )..layout();
-      label.paint(canvas, Offset(x + 5, size.height - label.height));
+      label.paint(canvas, Offset(x + labelInset, size.height - label.height));
     }
   }
 
