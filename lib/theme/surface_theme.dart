@@ -364,12 +364,11 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// Apache 2.0).
   static const String frameFont = 'Arimo';
 
-  /// Bold Helvetica legend face from the Segno printed overlay — pedal silk
-  /// labels and the main looper screen.
-  static const String legendFont = 'Helvetica';
-
-  /// Fallbacks when [legendFont] is unavailable on the host.
-  static const List<String> legendFontFallback = ['Arial', 'sans-serif'];
+  /// The main looper screen's legend face, after the Helvetica of the Segno
+  /// printed overlay: Arimo, bundled under `assets/fonts/` and metric-matched
+  /// to Arial. The appliance image carries no system fonts, so a face the app
+  /// does not bundle draws no text at all there (#1524).
+  static const String legendFont = frameFont;
 
   /// The monospace typeface used for numerics, gate/section labels, and any
   /// "machine" readout (channel ids, dB values, FX names) — DS `font-mono`,
