@@ -13,20 +13,13 @@ class LooperScreenTheme extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     const family = SurfaceTheme.legendFont;
-    const fallback = SurfaceTheme.legendFontFallback;
     return Theme(
       data: theme.copyWith(
         textTheme: withAppTextMetrics(
-          theme.textTheme.apply(
-            fontFamily: family,
-            fontFamilyFallback: fallback,
-          ),
+          theme.textTheme.apply(fontFamily: family),
         ),
         primaryTextTheme: withAppTextMetrics(
-          theme.primaryTextTheme.apply(
-            fontFamily: family,
-            fontFamilyFallback: fallback,
-          ),
+          theme.primaryTextTheme.apply(fontFamily: family),
         ),
       ),
       child: child,

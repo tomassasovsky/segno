@@ -96,9 +96,9 @@ class MixerColumn extends StatelessWidget {
   static const double panHeight = 54;
   static const double markerHeight = 4;
 
-  /// The pan word's fixed slot (#1308): `Paneo` at 22; the readout takes
-  /// the rest of the row.
-  static const double panLabelWidth = 64;
+  /// The pan word's fixed slot (#1308): `Paneo` at 22 (65.4 in Inter, the
+  /// longest translation); the readout takes the rest of the row.
+  static const double panLabelWidth = 68;
 
   /// The gain readout's fixed slot (#1308): eight JetBrains Mono characters
   /// at 22, `−60.0 dB`.

@@ -33,10 +33,10 @@ typedef LoopMenuAnchorBuilder =
 /// The app's one pick-one menu: Flutter's [MenuAnchor] drawn in the surface
 /// tokens, anchored below whatever [builder] draws.
 ///
-/// Rows are 64 tall with 24 px labels; the current value is filled blue with
-/// a check, and the focused or hovered row carries the amber encoder outline.
-/// Opening focuses the current row, so arrows move, Enter chooses and Escape
-/// closes — the traversal the physical encoder will drive.
+/// Rows are 64 tall with 24 px labels in the UI face; the current value is
+/// filled blue with a check, and the focused or hovered row carries the amber
+/// encoder outline. Opening focuses the current row, so arrows move, Enter
+/// chooses and Escape closes — the traversal the physical encoder will drive.
 class LoopMenu<T> extends StatefulWidget {
   /// Creates a menu anchored on [builder].
   const LoopMenu({
@@ -151,7 +151,14 @@ class _LoopMenuState<T> extends State<LoopMenu<T>> {
             : null,
         child: AppText(
           item.label,
-          style: const TextStyle(fontSize: 24, height: 1),
+          // The face is named rather than inherited, so the menu reads the
+          // same over the stage, whose theme sets the legend face, as over
+          // every page (#1524).
+          style: const TextStyle(
+            fontFamily: SurfaceTheme.displayFont,
+            fontSize: 24,
+            height: 1,
+          ),
         ),
       ),
     );
@@ -265,6 +272,7 @@ class _LoopSelectState<T> extends State<LoopSelect<T>> {
                             child: AppText(
                               label,
                               style: TextStyle(
+                                fontFamily: SurfaceTheme.displayFont,
                                 color: surface.textPrimary,
                                 fontSize: 24,
                                 height: 1,
