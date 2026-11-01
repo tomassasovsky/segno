@@ -547,8 +547,20 @@ class _TrackMeta extends StatelessWidget {
   /// The channel number's slot: two figures at 22.
   static const double numberWidth = 30;
 
-  /// The markers' slot: `REV`, the gap, `FX`, at 19 bold.
-  static const double markersWidth = 96;
+  /// The markers' slot: `REV`, the gap, `FX`, at 19 bold (80.4 in Inter).
+  static const double markersWidth = 82;
+
+  /// The space between slots.
+  static const double slotGap = 8;
+
+  /// The bar count's share of the room the fixed slots leave, against
+  /// [layersFlex]. Sized for the longest count either language prints in a
+  /// 1920-wide stage: `128 compases` (134.5 px) and `12 capas` (84.6 px) in
+  /// the 230 px left between the number and the markers (#1524).
+  static const int barsFlex = 3;
+
+  /// The layer count's share; see [barsFlex].
+  static const int layersFlex = 2;
 
   @override
   Widget build(BuildContext context) {
@@ -584,7 +596,7 @@ class _TrackMeta extends StatelessWidget {
         child: SlotRow(
           key: Key('tracks_meta_$channel'),
           minWidth: minWidth,
-          spacing: _ReverseMarker.gap,
+          spacing: slotGap,
           crossAxisAlignment: CrossAxisAlignment.baseline,
           slots: [
             RowSlot(
@@ -604,6 +616,7 @@ class _TrackMeta extends StatelessWidget {
               ),
             ),
             RowSlot(
+              flex: barsFlex,
               child: SlotFigure(
                 key: Key('tracks_bars_$channel'),
                 figure: count.figure,
@@ -613,6 +626,7 @@ class _TrackMeta extends StatelessWidget {
               ),
             ),
             RowSlot(
+              flex: layersFlex,
               child: SlotFigure(
                 key: Key('tracks_layers_$channel'),
                 figure: '$layers',
@@ -631,6 +645,8 @@ class _TrackMeta extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
+                  // REV takes what FX leaves rather than half the slot, which
+                  // is narrower than REV (#1524).
                   Flexible(
                     child: Opacity(
                       opacity: reversed ? 1 : 0,
@@ -638,30 +654,28 @@ class _TrackMeta extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: _ReverseMarker.gap),
-                  Flexible(
-                    child: Semantics(
-                      label: switch (fxMarker) {
-                        _FxMarker.active => l10n.a11yStageFxActive,
-                        _FxMarker.bypassed => l10n.a11yStageFxBypassed,
-                        _FxMarker.absent => null,
-                      },
-                      child: Opacity(
-                        opacity: fxMarker == _FxMarker.absent ? 0 : 1,
-                        child: AppText(
-                          l10n.stageFxMarker,
-                          key: Key('tracks_fx_$channel'),
-                          maxLines: 1,
-                          overflow: TextOverflow.clip,
-                          style: TextStyle(
-                            fontFamily: SurfaceTheme.displayFont,
-                            color: fxMarker == _FxMarker.active
-                                ? surface.textPrimary
-                                : surface.textMuted,
-                            fontSize: 19,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1,
-                            height: 1,
-                          ),
+                  Semantics(
+                    label: switch (fxMarker) {
+                      _FxMarker.active => l10n.a11yStageFxActive,
+                      _FxMarker.bypassed => l10n.a11yStageFxBypassed,
+                      _FxMarker.absent => null,
+                    },
+                    child: Opacity(
+                      opacity: fxMarker == _FxMarker.absent ? 0 : 1,
+                      child: AppText(
+                        l10n.stageFxMarker,
+                        key: Key('tracks_fx_$channel'),
+                        maxLines: 1,
+                        overflow: TextOverflow.clip,
+                        style: TextStyle(
+                          fontFamily: SurfaceTheme.displayFont,
+                          color: fxMarker == _FxMarker.active
+                              ? surface.textPrimary
+                              : surface.textMuted,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1,
+                          height: 1,
                         ),
                       ),
                     ),
@@ -706,8 +720,10 @@ class _ReverseMarker extends StatelessWidget {
 }
 
 /// A figure with its small unit after it — `2 bars`, `4 layers` — for a
-/// [RowSlot]: both parts single-line and ellipsized, so a long count or unit
-/// is shortened inside the slot rather than pushing past it.
+/// [RowSlot]: the figure at its own width, the unit in what is left, so only
+/// a unit too long for the slot is shortened, with an ellipsis. The two never
+/// split the slot in halves: a short figure leaves its room to the unit
+/// (#1524).
 class SlotFigure extends StatelessWidget {
   /// Creates a [SlotFigure].
   const SlotFigure({
@@ -740,14 +756,12 @@ class SlotFigure extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.baseline,
     textBaseline: TextBaseline.alphabetic,
     children: [
-      Flexible(
-        child: AppText(
-          figure,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: figureStyle.copyWith(
-            fontFeatures: const [FontFeature.tabularFigures()],
-          ),
+      AppText(
+        figure,
+        maxLines: 1,
+        softWrap: false,
+        style: figureStyle.copyWith(
+          fontFeatures: const [FontFeature.tabularFigures()],
         ),
       ),
       SizedBox(width: gap),
