@@ -224,13 +224,16 @@ class BarRulerPainter extends CustomPainter {
     );
     final barWidth = size.width / bars;
     // The widest number is the last one's.
-    final widest = (TextPainter(
+    final measure = TextPainter(
       text: TextSpan(text: '$bars', style: style),
       textDirection: TextDirection.ltr,
-    )..layout()).width;
+    )..layout();
+    final widest = measure.width;
+    measure.dispose();
+    // Every number sits the same inset from its own line, so the room
+    // between two numbers is the stride less one number.
     var stride = 1;
-    while (stride < bars &&
-        stride * barWidth < labelInset + widest + labelGap) {
+    while (stride < bars && stride * barWidth < widest + labelGap) {
       stride *= 2;
     }
     for (var bar = 0; bar < bars; bar++) {
@@ -245,7 +248,9 @@ class BarRulerPainter extends CustomPainter {
         text: TextSpan(text: '${bar + 1}', style: style),
         textDirection: TextDirection.ltr,
       )..layout();
-      label.paint(canvas, Offset(x + labelInset, size.height - label.height));
+      label
+        ..paint(canvas, Offset(x + labelInset, size.height - label.height))
+        ..dispose();
     }
   }
 

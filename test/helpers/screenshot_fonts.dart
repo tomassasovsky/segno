@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_spec.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_textures.dart';
 
+import 'text_fit.dart';
+
 /// The Flutter SDK's Material fonts (Roboto and the Material icons), which
 /// the screenshot suites load.
 ///
@@ -92,17 +94,7 @@ String packageAssetPath(String package, String asset) {
 /// Throws when a family has no file rather than skipping it: a pedal printed
 /// in the test font's boxes is a golden that hides the gap.
 Future<void> loadFxStompFonts() async {
-  final manifest =
-      jsonDecode(await rootBundle.loadString('FontManifest.json'))
-          as List<dynamic>;
-  final files = {
-    for (final entry in manifest.cast<Map<String, dynamic>>())
-      entry['family'] as String: [
-        for (final font
-            in (entry['fonts'] as List<dynamic>).cast<Map<String, dynamic>>())
-          font['asset'] as String,
-      ],
-  };
+  final files = await bundledFontFiles();
   for (final family in {for (final spec in kFxStompSpecs.values) spec.font}) {
     final assets = files[family];
     if (assets == null || assets.isEmpty) {

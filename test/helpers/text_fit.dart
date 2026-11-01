@@ -69,15 +69,18 @@ Future<List<String>> unbundledTexts(
   for (final paragraph in tester.renderObjectList<RenderParagraph>(finder)) {
     final text = paragraph.text.toPlainText().trim();
     if (text.isEmpty) continue;
+    // A span without a family of its own draws in its parent's.
     final families = <String?>{};
-    paragraph.text.visitChildren((span) {
-      if (span is TextSpan && span.text != null && span.text!.isNotEmpty) {
-        families.add(
-          span.style?.fontFamily ?? paragraph.text.style?.fontFamily,
-        );
+    void collect(InlineSpan span, String? inherited) {
+      final family = span.style?.fontFamily ?? inherited;
+      if (span is! TextSpan) return;
+      if (span.text?.isNotEmpty ?? false) families.add(family);
+      for (final child in span.children ?? const <InlineSpan>[]) {
+        collect(child, family);
       }
-      return true;
-    });
+    }
+
+    collect(paragraph.text, null);
     for (final family in families) {
       if (family == null || !bundled.contains(family)) {
         found.add('"$text": $family');

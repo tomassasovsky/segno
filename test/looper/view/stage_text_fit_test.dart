@@ -132,17 +132,23 @@ void main() {
     addTearDown(control.close);
   });
 
-  /// Four tracks with the longest counts the stage prints: a 128-bar loop
-  /// with twelve layers, a 7-beat Divide, an empty count, reversed and
-  /// muted tracks.
+  /// Four tracks with the longest texts the stage prints: one recording,
+  /// so its count is the empty `—`; two 128-bar loops with twelve layers,
+  /// one reversed and panned hard left, one muted and panned hard right; and
+  /// a loop of seven beats (1.75 bars), which counts in beats.
   void seedLongCounts() {
     Track track(int channel) => Track(
       channel: channel,
       state: channel == 0 ? TrackState.recording : TrackState.playing,
-      lengthFrames: 1000 * (channel == 3 ? 7 : 128),
+      lengthFrames: channel == 3 ? 1750 : 128000,
       peelDepth: 11,
       reversed: channel == 1,
       muted: channel == 2,
+      pan: switch (channel) {
+        1 => -1,
+        2 => 1,
+        _ => 0,
+      },
     );
     final state = LooperState(
       status: const EngineStatus(
@@ -252,6 +258,13 @@ void main() {
           seedLongCounts();
           tracks.showView(view);
           await pump(tester, locale);
+          // The seed's longest texts are on screen to be measured.
+          final l10n = lookupAppLocalizations(locale);
+          expect(find.text(l10n.stageBeatsUnit(7)), findsOneWidget);
+          expect(find.text(l10n.stageBarsUnit(128)), findsWidgets);
+          if (view == StageView.mixer) {
+            expect(find.text(l10n.routingPanLeftAmount(100)), findsOneWidget);
+          }
           expect(tester.takeException(), isNull);
           expect(clippedTexts(tester), isEmpty);
           expect(await unbundledTexts(tester), isEmpty);
