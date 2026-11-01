@@ -41,13 +41,8 @@ Future<void> loadBundledFonts() async {
 /// Text inside a scale-down `FittedBox` is drawn smaller, not cut, so it
 /// passes; the box it is measured in is the one before the scale.
 List<String> clippedTexts(WidgetTester tester, {Finder? within}) {
-  final finder = within == null
-      ? find.byType(RichText)
-      : find.descendant(of: within, matching: find.byType(RichText));
   final found = <String>[];
-  for (final paragraph in tester.renderObjectList<RenderParagraph>(finder)) {
-    final text = paragraph.text.toPlainText().trim();
-    if (text.isEmpty || !paragraph.attached) continue;
+  for (final (:paragraph, :text) in _paragraphs(tester, within)) {
     final why = _whyClipped(paragraph);
     if (why != null) found.add('"$text": $why');
   }
@@ -62,13 +57,8 @@ Future<List<String>> unbundledTexts(
   Finder? within,
 }) async {
   final bundled = (await tester.runAsync(bundledFontFiles))!.keys.toSet();
-  final finder = within == null
-      ? find.byType(RichText)
-      : find.descendant(of: within, matching: find.byType(RichText));
   final found = <String>[];
-  for (final paragraph in tester.renderObjectList<RenderParagraph>(finder)) {
-    final text = paragraph.text.toPlainText().trim();
-    if (text.isEmpty) continue;
+  for (final (:paragraph, :text) in _paragraphs(tester, within)) {
     // A span without a family of its own draws in its parent's.
     final families = <String?>{};
     void collect(InlineSpan span, String? inherited) {
@@ -88,6 +78,22 @@ Future<List<String>> unbundledTexts(
     }
   }
   return found;
+}
+
+/// The laid-out paragraphs with text under [within], or on the whole screen.
+Iterable<({RenderParagraph paragraph, String text})> _paragraphs(
+  WidgetTester tester,
+  Finder? within,
+) sync* {
+  final finder = within == null
+      ? find.byType(RichText)
+      : find.descendant(of: within, matching: find.byType(RichText));
+  for (final paragraph in tester.renderObjectList<RenderParagraph>(finder)) {
+    final text = paragraph.text.toPlainText().trim();
+    if (text.isNotEmpty && paragraph.attached) {
+      yield (paragraph: paragraph, text: text);
+    }
+  }
 }
 
 String? _whyClipped(RenderParagraph paragraph) {

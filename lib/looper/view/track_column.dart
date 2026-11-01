@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -751,29 +753,38 @@ class SlotFigure extends StatelessWidget {
   final double gap;
 
   @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.baseline,
-    textBaseline: TextBaseline.alphabetic,
-    children: [
-      AppText(
-        figure,
-        maxLines: 1,
-        softWrap: false,
-        style: figureStyle.copyWith(
-          fontFeatures: const [FontFeature.tabularFigures()],
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        // At its own width, up to the whole slot: a count wider than that
+        // is ellipsized like the unit rather than overflowing the row.
+        ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: math.max(0, constraints.maxWidth - gap),
+          ),
+          child: AppText(
+            figure,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: figureStyle.copyWith(
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
         ),
-      ),
-      SizedBox(width: gap),
-      Flexible(
-        child: AppText(
-          unit,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: unitStyle,
+        SizedBox(width: gap),
+        Flexible(
+          child: AppText(
+            unit,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: unitStyle,
+          ),
         ),
-      ),
-    ],
+      ],
+    ),
   );
 }
 
