@@ -224,6 +224,7 @@ class _AppState extends State<App> {
   final _ownerSubscriptions = <StreamSubscription<void>>[];
   StreamSubscription<int>? _recordingInputRequiredSubscription;
   StreamSubscription<int>? _recordRefusedSubscription;
+  StreamSubscription<int>? _fxTakeHeldSubscription;
   StreamSubscription<int>? _overdubRefusedSubscription;
   StreamSubscription<int>? _lengthHistoryRefusedSubscription;
   late final PlaybackOptionsCubit _playbackView;
@@ -278,6 +279,9 @@ class _AppState extends State<App> {
         .repository
         .recordingInputRequired
         .listen(_showRecordingInputRequired);
+    _fxTakeHeldSubscription = widget.repository.fxTakeHeld.listen(
+      _showFxTakeHeld,
+    );
     _recordRefusedSubscription = widget.repository.recordRefusals.listen(
       (channel) =>
           _showRecordRefused(channel, (l10n) => l10n.recordRefusedTitle),
@@ -320,6 +324,7 @@ class _AppState extends State<App> {
     }
     unawaited(_recordingInputRequiredSubscription?.cancel());
     unawaited(_recordRefusedSubscription?.cancel());
+    unawaited(_fxTakeHeldSubscription?.cancel());
     unawaited(_overdubRefusedSubscription?.cancel());
     unawaited(_lengthHistoryRefusedSubscription?.cancel());
     _controlNotices.dispose();
@@ -454,6 +459,29 @@ class _AppState extends State<App> {
       body: (context) => context.l10n.instrumentsSettingsRecoveryBody,
     ),
   };
+
+  /// A take whose inherited effects did not fit came in with them switched
+  /// off (#1515, the owner's R1). The take sounds dry until the player makes
+  /// room, which matters little in the moment: a toast. While the standing
+  /// effects-off notice is up the repository adds the take to it instead.
+  void _showFxTakeHeld(int channel) {
+    if (!mounted) return;
+    showAppToast(
+      id: AppToastId.fxTakeHeld,
+      type: ToastificationType.warning,
+      autoCloseDuration: const Duration(seconds: 6),
+      title: Builder(
+        builder: (context) => Text(
+          context.l10n.fxTakeHeldToast(
+            context.l10n.trackName(
+              context.read<TracksCubit>().state.names,
+              channel,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   void _showRecordingInputRequired(int channel) {
     if (!mounted || _runtime.power.state.isUiUp) return;

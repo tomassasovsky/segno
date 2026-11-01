@@ -50,6 +50,8 @@ void main() {
     when(() => repository.mixGeneration).thenAnswer((_) => generation);
     when(() => repository.sessionRevision).thenAnswer((_) => session);
     when(() => repository.fxRoomNs).thenAnswer((_) => room);
+    when(() => repository.fxChainHeld(any())).thenReturn(false);
+    when(() => repository.fxHeldChainFits(any())).thenReturn(true);
     when(() => repository.fxGrowthNs(any())).thenAnswer(
       (call) => fxChainCostNs(
         (call.positionalArguments[0] as Map<FxAddress, List<TrackEffect>>)
@@ -827,6 +829,44 @@ void main() {
       );
 
       expect(result.status, FxEditStatus.refused);
+    });
+
+    group('a chain switched off because it did not fit (#1515)', () {
+      const input = FxAddress(stage: FxStage.input);
+
+      setUp(() {
+        when(() => repository.fxChainHeld(input)).thenReturn(true);
+      });
+
+      test('can still be switched off for good: the saved switch goes off', () {
+        final result = cubit.setChainEnabled(input, enabled: false);
+
+        expect(result.status, FxEditStatus.applied);
+        expect(power[input], isFalse);
+        verify(() => persistence.scheduleSave(input, settings)).called(1);
+      });
+
+      test('switching it on is refused as over budget while it does not '
+          'fit', () {
+        when(() => repository.fxHeldChainFits(input)).thenReturn(false);
+
+        final result = cubit.setChainEnabled(input, enabled: true);
+
+        expect(result.status, FxEditStatus.overBudget);
+        verifyNever(
+          () => repository.setMonitorChainEnabled(
+            input: any(named: 'input'),
+            enabled: any(named: 'enabled'),
+          ),
+        );
+      });
+
+      test('switching it on once it fits goes through its writer', () {
+        final result = cubit.setChainEnabled(input, enabled: true);
+
+        expect(result.status, FxEditStatus.applied);
+        expect(power[input], isTrue);
+      });
     });
   });
 

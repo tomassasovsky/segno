@@ -23,6 +23,15 @@ extension ExternalControlWriter on LooperRepository {
       final currentPower = bindingEnabled(FxChainTarget(address));
       if (original == null || currentPower == null) continue;
       final power = activations[FxChainTarget(address)] ?? currentPower;
+      // A chain switched off because it did not fit comes back on only
+      // through its own switch, which weighs it (#1515); refused, the write
+      // is not accepted.
+      if (activations[FxChainTarget(address)] ?? false) {
+        if (fxChainHeld(address) &&
+            !setChainEnabledAt(address, enabled: true).isOk) {
+          continue;
+        }
+      }
       final entries = [
         for (final effect in original)
           _edited(effect, address, activations, parameters),

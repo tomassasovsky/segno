@@ -30,6 +30,7 @@ abstract final class AppToastId {
   static const waveformFailed = 'app_waveformWindowFailed_banner';
   static const bootModeRetired = 'app_bootModeRetired_toast';
   static const fxStopChanged = 'app_fxStopChanged_toast';
+  static const fxTakeHeld = 'app_fxTakeHeld_toast';
   static const saveToFellBack = 'app_saveToFellBack_toast';
   static const bluetoothRetired = 'app_bluetoothRetired_toast';
   static const recoveryRefused = 'app_recoveryRefused_toast';

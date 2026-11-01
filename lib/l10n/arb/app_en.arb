@@ -4412,6 +4412,48 @@
     "@fxOverBudget": {
         "description": "Shown when adding an effect would overload the audio processing, so the add was refused."
     },
+    "fxTakeHeldToast": "{track}'s effects are off: they don't fit with the rest of the rig. Remove an effect to turn them on.",
+    "@fxTakeHeldToast": {
+        "description": "Toast after a take whose inherited effects did not fit the audio processing came in switched off (#1515).",
+        "placeholders": {
+            "track": {
+                "type": "String"
+            }
+        }
+    },
+    "fxHeldBanner": "Some effects are off: the rig doesn't fit the audio processing available. {chains} {count, plural, =1{is} other{are}} off. Remove effects, then turn them back on.",
+    "@fxHeldBanner": {
+        "description": "Standing stage notice: chains the rig could not run when it came up are switched off (#1515). chains is a list such as 'Guitar's input chain and Track 3'.",
+        "placeholders": {
+            "chains": {
+                "type": "String"
+            },
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "fxHeldInputChain": "{input}'s input chain",
+    "@fxHeldInputChain": {
+        "description": "One item of the effects-off notice's list: a live input's chain.",
+        "placeholders": {
+            "input": {
+                "type": "String"
+            }
+        }
+    },
+    "fxHeldListAnd": "{head} and {last}",
+    "@fxHeldListAnd": {
+        "description": "Joins the last item of the effects-off notice's list to the ones before it.",
+        "placeholders": {
+            "head": {
+                "type": "String"
+            },
+            "last": {
+                "type": "String"
+            }
+        }
+    },
     "fxNoRoom": "{name} needs more processing than is left",
     "@fxNoRoom": {
         "description": "A library row note: adding this rack or effect would overload the audio processing.",

@@ -1276,6 +1276,48 @@ void main() {
     skip: !rendersScreenshots,
   );
 
+  testWidgets(
+    'console main window with effects switched off because the rig could '
+    'not run them (#1515, STAGE / effects-off)',
+    (tester) async {
+      // The owner's R2: the rig came up over the effects budget, so its
+      // newest chains came up held off. The standing notice names them
+      // until they are back on or dismissed; the warning colour, not the
+      // record red: the sound differs from what was saved, nothing is lost.
+      inputNames = const {0: 'Guitar'};
+      const held = [
+        FxAddress(stage: FxStage.loop, index: 2),
+        FxAddress(stage: FxStage.input),
+      ];
+      seed(
+        LooperState(
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: const [
+            Track(state: TrackState.playing, lengthFrames: 96000),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 96000),
+            Track(channel: 2, state: TrackState.playing, lengthFrames: 96000),
+            Track(channel: 3),
+          ],
+          fxHeld: held.toSet(),
+          fxHoldNotice: held,
+        ),
+      );
+      await pump(tester);
+      expect(find.byKey(const Key('fx_held_banner')), findsOneWidget);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/tracks_fx_held.png'),
+      );
+    },
+    skip: !rendersScreenshots,
+  );
+
   // #692: the FX-mode stage transform — the whole stage takes the FX purple,
   // meters recede to 40%, and each tile re-dresses with a power pill and its
   // chain's entries (or NO CHAIN). Same seed as the nominal decal, in FX mode

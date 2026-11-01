@@ -24,6 +24,7 @@ import 'package:segno/looper/view/foot_length_view.dart';
 import 'package:segno/looper/view/foot_mixer_view.dart';
 import 'package:segno/looper/view/foot_peel_view.dart';
 import 'package:segno/looper/view/foot_reverse_view.dart';
+import 'package:segno/looper/view/fx_held_banner.dart';
 import 'package:segno/looper/view/mixer_column.dart';
 import 'package:segno/looper/view/stage_db_scale.dart';
 import 'package:segno/looper/view/stage_footer.dart';
@@ -357,6 +358,14 @@ class _TracksViewState extends State<TracksView> {
                                 0,
                               ),
                               child: ConnectivityBanners(),
+                            ),
+                            // Effects the rig could not run when it came up
+                            // (#1515): its own cause, so its own strip.
+                            const Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: StageTopBar.sideInset,
+                              ),
+                              child: FxHeldBanner(),
                             ),
                             // With no first-run gate, a stopped engine
                             // lands here; a full-width affordance opens

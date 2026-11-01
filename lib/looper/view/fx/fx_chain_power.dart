@@ -13,8 +13,16 @@ import 'package:segno/theme/theme.dart';
 /// pedal binding or a restored session.
 ///
 /// A live input's flag is the monitor cubit's, the one owner of the Input
-/// stage; every other stage's is the projected rig's.
-bool watchFxChainEnabled(BuildContext context, FxAddress address) =>
+/// stage; every other stage's is the projected rig's. A chain switched off
+/// because it did not fit (#1515) reads as off, whatever its saved switch.
+bool watchFxChainEnabled(BuildContext context, FxAddress address) {
+  final held = context.select<LooperBloc, bool>(
+    (b) => b.state.fxHeld.contains(address),
+  );
+  return !held && _watchFxChainSwitch(context, address);
+}
+
+bool _watchFxChainSwitch(BuildContext context, FxAddress address) =>
     switch (address.stage) {
       FxStage.input => context.select<MonitorCubit, bool>(
         (m) => m.state.forInput(address.index).chainEnabled,
