@@ -102,13 +102,6 @@ void main() {
     await loadScreenshotFont('MaterialIcons', [
       '$materialFontDir/MaterialIcons-Regular.otf',
     ]);
-    // TracksView wraps itself in LooperScreenTheme, which renders text in the
-    // legend font (Helvetica / Arial / sans-serif — macOS/Linux system fonts,
-    // absent under `flutter test`). Register the loaded Roboto glyphs under
-    // those family names so the labels render instead of Ahem tofu.
-    for (final family in ['Helvetica', 'Arial', 'sans-serif']) {
-      await loadScreenshotFont(family, robotoTtfs);
-    }
     await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
       'assets/fonts/Inter-Medium.ttf',
@@ -1162,6 +1155,52 @@ void main() {
         skip: !rendersScreenshots,
       );
     }
+  }
+
+  // #1524: the longest counts the stage prints, in Spanish, on every view,
+  // and the view menu open over them. Every count and unit shows in full.
+  for (final view in StageView.values) {
+    testWidgets(
+      'long counts in Spanish, ${view.name} view',
+      (tester) async {
+        Track track(int channel) => Track(
+          channel: channel,
+          state: TrackState.playing,
+          lengthFrames: 1000 * (channel == 3 ? 7 : 128),
+          peelDepth: 11,
+          reversed: channel == 1,
+          muted: channel == 2,
+        );
+        seed(
+          LooperState(
+            status: const EngineStatus(
+              isConnected: true,
+              devicePresent: true,
+              deviceName: 'Segno',
+              sampleRate: 48000,
+              inputChannels: 2,
+              outputChannels: 2,
+            ),
+            transport: const TransportState(
+              masterLengthFrames: 1000,
+              loopBars: 1,
+            ),
+            tracks: [
+              for (var channel = 0; channel < 4; channel++) track(channel),
+            ],
+          ),
+        );
+        tracks.showView(view);
+        await pump(tester, locale: const Locale('es'));
+        await tester.tap(find.byKey(const Key('stage_view_menu')));
+        await tester.pumpAndSettle();
+        await expectLater(
+          find.byType(MaterialApp),
+          matchesGoldenFile('goldens/tracks_long_counts_es_${view.name}.png'),
+        );
+      },
+      skip: !rendersScreenshots,
+    );
   }
 
   testWidgets(

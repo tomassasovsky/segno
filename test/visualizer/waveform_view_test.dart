@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -358,6 +359,31 @@ void main() {
       expect(find.byKey(const Key('waveform_view_ruler')), findsNothing);
     });
 
+    // Long loops on a wave row (#1524): bars narrower than a number used to
+    // run every number into the next, and the last past the ruler's end.
+    for (final bars in [4, 16, 128, 999]) {
+      test('$bars bars: numbers never touch and stay on the ruler', () {
+        const size = Size(1340, 24);
+        final canvas = _LabelCanvas();
+        BarRulerPainter(
+          bars: bars,
+          color: const Color(0xFF888888),
+        ).paint(canvas, size);
+        expect(canvas.labels, isNotEmpty);
+        expect(canvas.labels.first.left, BarRulerPainter.labelInset);
+        if (bars == 4) expect(canvas.labels, hasLength(4));
+        for (var i = 1; i < canvas.labels.length; i++) {
+          expect(
+            canvas.labels[i].left,
+            greaterThanOrEqualTo(
+              canvas.labels[i - 1].right + BarRulerPainter.labelGap,
+            ),
+          );
+        }
+        expect(canvas.labels.last.right, lessThanOrEqualTo(size.width));
+      });
+    }
+
     test('repaints only when the bars or the colour change', () {
       const grey = Color(0xFF888888);
       final four = BarRulerPainter(bars: 4, color: grey);
@@ -374,4 +400,16 @@ void main() {
       );
     });
   });
+}
+
+/// Records where each bar number is drawn.
+class _LabelCanvas implements Canvas {
+  final labels = <Rect>[];
+
+  @override
+  void drawParagraph(Paragraph paragraph, Offset offset) =>
+      labels.add(offset & Size(paragraph.maxIntrinsicWidth, paragraph.height));
+
+  @override
+  void noSuchMethod(Invocation invocation) {}
 }
