@@ -210,6 +210,27 @@ void main() {
       expect(repo.lastEngineConfig, player.warmUp);
     });
 
+    test('a switch that lost loops says so on the status', () {
+      final repo = warm();
+      engine.reopenResult = (
+        result: EngineResult.ok,
+        outcome: ReopenOutcome.retainedPartial,
+        droppedTracks: 1 << 2,
+        openedRate: 0,
+      );
+
+      final outcome = repo.finishWarmUp();
+
+      expect(outcome.status, AudioApplyStatus.applied);
+      expect(repo.state.status.reopen?.droppedChannels, [2]);
+    });
+
+    test('a switch that kept every loop leaves no verdict', () {
+      final repo = warm()..finishWarmUp();
+
+      expect(repo.state.status.reopen, isNull);
+    });
+
     test('changes nothing when no warm-up runs', () {
       final repo = build();
       expect(repo.startEngine(player), EngineResult.ok);

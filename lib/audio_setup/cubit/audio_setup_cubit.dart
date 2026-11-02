@@ -813,9 +813,10 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
 
   /// Follows a warm-up (#1533) to its end. The end opens the player's config
   /// (`AudioWarmUpCubit`); when the device runs something else after it,
-  /// the page says so the way it says it after a refused Apply: the banner
-  /// names what was asked and what runs. Nothing is saved, so the next start
-  /// asks for the player's config again.
+  /// the page says so the way it says it after a refused Apply: the chips
+  /// show what runs and the banner names what was asked. Nothing is saved,
+  /// so the next start asks for the player's config again. A switch that
+  /// lost loops is told like a reconnect that did.
   void _followWarmUp(EngineStatus status) {
     if (status.warmingUp) {
       _warmUpTarget = _repository.lastEngineConfig;
@@ -824,6 +825,15 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     final asked = _warmUpTarget;
     _warmUpTarget = null;
     if (asked == null || !status.isConnected) return;
+    final lost = _restoredConnectivity(status.reopen);
+    if (lost != DeviceConnectivity.restored) {
+      emit(
+        state.copyWith(
+          deviceConnectivity: lost,
+          connectivityDeviceName: status.deviceName,
+        ),
+      );
+    }
     final rateMoved =
         asked.sampleRate > 0 && asked.sampleRate != status.sampleRate;
     final bufferMoved =
@@ -831,6 +841,16 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     if (!rateMoved && !bufferMoved) return;
     emit(
       state.copyWith(
+        sampleRate: _offerable(
+          status.sampleRate,
+          AudioSetupState.sampleRates,
+          state.sampleRate,
+        ),
+        bufferFrames: _offerable(
+          status.bufferFrames,
+          AudioSetupState.bufferSizes,
+          state.bufferFrames,
+        ),
         phase: ConfigPhase.refused,
         requestedRate: asked.sampleRate > 0
             ? asked.sampleRate

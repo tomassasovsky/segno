@@ -159,17 +159,18 @@ void main() {
         ready: () => ready.future,
         ticker: ticker.stream,
         interval: const Duration(seconds: 1),
-        cap: const Duration(seconds: 6),
+        cap: const Duration(seconds: 30),
       );
       addTearDown(cubit.close);
-      final loading = cubit.load();
+      await cubit.load();
 
+      // Quiet ticks before the first frame do not count.
       await tick(10);
       verifyNever(looper.finishWarmUp);
-      expect(cubit.state.status, AudioWarmUpStatus.idle);
+      verifyNever(looper.readCallbackTelemetry);
 
       ready.complete();
-      await loading;
+      await pumpEventQueue();
       await tick(3);
       verifyNever(looper.finishWarmUp);
       expect(cubit.state.status, AudioWarmUpStatus.settling);
@@ -203,6 +204,50 @@ void main() {
       expect(calls, ['offset 300', 'finish']);
       await tick();
       expect(cubit.state.status, AudioWarmUpStatus.idle);
+    });
+
+    test('a refused switch sets the offset of the config that runs', () async {
+      await settings.saveLatencyOffsetFrames(
+        device: 'Scarlett 4i4',
+        sampleRate: 48000,
+        bufferFrames: 32,
+        frames: 300,
+      );
+      await settings.saveLatencyOffsetFrames(
+        device: 'Scarlett 4i4',
+        sampleRate: 48000,
+        bufferFrames: kWarmUpBufferFrames,
+        frames: 900,
+      );
+      finishResult = const AudioApplyResult(
+        status: AudioApplyStatus.refused,
+        result: EngineResult.device,
+      );
+      await build();
+
+      await tick(4);
+
+      expect(calls, ['offset 300', 'finish', 'offset 900']);
+    });
+
+    test('a screen that never draws still lets the switch happen', () async {
+      final cubit = AudioWarmUpCubit(
+        looper: looper,
+        settings: settings,
+        guards: guards,
+        ready: () => Completer<void>().future,
+        ticker: ticker.stream,
+        interval: const Duration(seconds: 1),
+        cap: const Duration(seconds: 6),
+      );
+      addTearDown(cubit.close);
+
+      await cubit.load();
+      await tick(5);
+      verifyNever(looper.finishWarmUp);
+      await tick();
+
+      verify(looper.finishWarmUp).called(1);
     });
 
     test('an unmeasured profile switches with no offset', () async {

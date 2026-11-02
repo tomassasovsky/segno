@@ -17,11 +17,11 @@ part 'audio_warm_up_state.dart';
 /// transport closed ([EngineStatus.warmingUp]). This cubit decides when to
 /// leave it.
 ///
-/// It starts watching once [load]'s `ready` has completed (the first frame
-/// is on screen, after the boot's settings and chains have loaded), and it
-/// ticks only while a warm-up runs. On each tick it reads the callback
-/// telemetry's session window and sums its late periods, gaps and xruns.
-/// When that sum has not moved for the
+/// It ticks only while a warm-up runs, and no tick counts as quiet before
+/// [load]'s `ready` has completed (the first frame is on screen, after the
+/// boot's settings and chains have loaded); the cap counts from [load].
+/// On each tick it reads the callback telemetry's session window and sums
+/// its late periods, gaps and xruns. When that sum has not moved for the
 /// quiet window, the console has settled. When the cap passes first, the
 /// switch happens anyway, so it never waits forever. A device that goes
 /// missing restarts the count.
@@ -71,6 +71,13 @@ class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
   var _loaded = false;
   var _switching = false;
 
+  /// Whether the startup work is done ([load]'s `ready`).
+  var _isReady = false;
+
+  /// Whether this warm-up's switch was already deferred, so a long deferral
+  /// logs once.
+  var _deferred = false;
+
   /// Ticks watched in this warm-up.
   var _ticks = 0;
 
@@ -87,8 +94,15 @@ class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
   Future<void> load() async {
     if (_loaded) return;
     _loaded = true;
-    await _ready?.call();
-    if (isClosed) return;
+    // Until the startup work is done no tick counts as quiet, but the cap
+    // runs from here: a console whose screen never draws (no panel
+    // attached) must still be heard.
+    final ready = _ready;
+    if (ready == null) {
+      _isReady = true;
+    } else {
+      unawaited(ready().then((_) => _isReady = true));
+    }
     _stateSubscription = _looper.looperState.listen(_follow);
     _follow(_looper.state);
   }
@@ -122,9 +136,11 @@ class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
       _restart();
       return;
     }
-    final faults = _faultsOf(_looper.readCallbackTelemetry().session);
     _ticks++;
-    if (faults == _faults) {
+    final faults = _isReady
+        ? _faultsOf(_looper.readCallbackTelemetry().session)
+        : null;
+    if (faults != null && faults == _faults) {
       _quiet++;
     } else {
       _faults = faults;
@@ -138,19 +154,18 @@ class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
 
   /// What a dropout is made of: late periods, gaps and backend xruns.
   static int _faultsOf(CallbackWindowStats window) =>
-      window.latePeriods +
-      window.gapEvents +
-      window.xruns.fold<int>(0, (sum, kind) => sum + kind);
+      window.latePeriods + window.gapEvents + window.xrunTotal;
 
   Future<void> _switch({required bool settled}) async {
     _switching = true;
     try {
       final target = _looper.lastEngineConfig;
       if (target == null) return;
-      final offset = await _savedOffset(
-        _looper.state.status,
-        target.bufferFrames,
-      );
+      final status = _looper.state.status;
+      // Both offsets before the switch, so whichever config runs after it
+      // has its own before the transport opens.
+      final offset = await _savedOffset(status, target.bufferFrames);
+      final warmOffset = await _savedOffset(status, status.bufferFrames);
       if (isClosed || !_looper.state.status.warmingUp) return;
       final OperationGuard guard;
       try {
@@ -160,18 +175,23 @@ class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
           purpose: 'audio warm-up',
         );
       } on GuardRefused catch (refused) {
-        AppLog.info(
-          'audio warm-up: switch deferred by '
-          '${refused.blockers.first.kind.name}',
-        );
+        _logDeferred(refused.blockers.first.kind.name);
         return;
       }
       final AudioApplyResult outcome;
       try {
         _looper.setRecordOffset(offset);
         outcome = _looper.finishWarmUp();
+        if (outcome.status == AudioApplyStatus.refused &&
+            outcome.result != EngineResult.notReady) {
+          _looper.setRecordOffset(warmOffset);
+        }
       } finally {
         guard.release();
+      }
+      if (outcome.result == EngineResult.notReady) {
+        _logDeferred('a start fence');
+        return;
       }
       AppLog.info(
         'audio warm-up: ${settled ? 'settled' : 'cap reached'} after '
@@ -179,8 +199,6 @@ class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
         'buffer=${target.bufferFrames}: ${outcome.status.name} '
         'result=${outcome.result.name}',
       );
-      // A refused admission touched nothing: the next tick tries again.
-      if (outcome.result == EngineResult.notReady) return;
       _restart();
     } finally {
       _switching = false;
@@ -205,7 +223,15 @@ class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
     }
   }
 
+  /// A deferred switch is tried again on the next tick; it is logged once.
+  void _logDeferred(String by) {
+    if (_deferred) return;
+    _deferred = true;
+    AppLog.info('audio warm-up: switch deferred by $by');
+  }
+
   void _restart() {
+    _deferred = false;
     _ticks = 0;
     _quiet = 0;
     _faults = null;

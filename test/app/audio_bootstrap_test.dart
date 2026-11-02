@@ -943,10 +943,14 @@ void main() {
 
         expect(result.started, isTrue);
         expect(engine.startCalls, 1);
-        // A zero-config open (sample rate / buffer left at the device
-        // default), warmed up first at the largest buffer (#1533).
+        // The device's rate, and the 128-frame buffer the first run saves,
+        // warmed up first at the largest buffer (#1533).
         expect(engine.lastConfig, const le.EngineConfig(bufferFrames: 512));
-        expect(repository.lastEngineConfig, const EngineConfig());
+        expect(
+          repository.lastEngineConfig,
+          const EngineConfig(bufferFrames: 128),
+        );
+        expect((await settings.loadAudioConfig())?.bufferFrames, 128);
         expect(repository.state.status.warmingUp, isTrue);
         // Persisted so the next launch takes the saved-config path.
         expect(await settings.loadAudioConfig(), isNotNull);

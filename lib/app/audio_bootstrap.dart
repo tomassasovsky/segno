@@ -285,8 +285,8 @@ Future<AutoStartResult> _tryAutoStartEngine({
   final status = repository.state.status;
   final savedMix = await settings.loadMixSettings(status.deviceName);
 
-  // Restore the global default loop multiple (×N). Like the latency offset
-  // above, RecordOptionsCubit normally applies this — but that cubit is not
+  // Restore the global default loop multiple (×N). RecordOptionsCubit
+  // normally applies this — but that cubit is not
   // created on the auto-start path and may not have initialized before the
   // pedal triggers a recording, so without this a saved forced ×1 reverts to
   // auto-round-up and loops record at ×2/×4.
@@ -530,6 +530,9 @@ Future<AutoStartResult> _tryAutoStartEngine({
   return (started: true, recoveryConfig: null);
 }
 
+/// The buffer a first run asks for and saves.
+const _firstRunBufferFrames = 128;
+
 /// Starts the engine on a first run (no saved config) and persists the chosen
 /// config so later launches take the normal saved path. Opens the first
 /// non-default duplex interface ([pickConsoleAudioDevices]), falling back to
@@ -555,8 +558,15 @@ Future<bool> _firstRunAutoStart({
     );
   }
 
+  // An explicit buffer, the one saved below: a warm-up opens the player's
+  // buffer only at the switch, so the device's own default is never seen
+  // before the config is saved (#1533).
   var result = repository.startEngine(
-    EngineConfig(playbackDeviceId: playbackId, captureDeviceId: captureId),
+    EngineConfig(
+      bufferFrames: _firstRunBufferFrames,
+      playbackDeviceId: playbackId,
+      captureDeviceId: captureId,
+    ),
     warmUp: true,
   );
   if (!result.isOk && (playbackId.isNotEmpty || captureId.isNotEmpty)) {
@@ -568,7 +578,10 @@ Future<bool> _firstRunAutoStart({
     );
     playbackId = '';
     captureId = '';
-    result = repository.startEngine(const EngineConfig(), warmUp: true);
+    result = repository.startEngine(
+      const EngineConfig(bufferFrames: _firstRunBufferFrames),
+      warmUp: true,
+    );
   }
   if (!result.isOk) {
     AppLog.error('audio first-run: open failed result=${result.name}');
@@ -621,11 +634,7 @@ Future<bool> _firstRunAutoStart({
   await settings.saveAudioConfig(
     StoredAudioConfig(
       sampleRate: status.sampleRate > 0 ? status.sampleRate : 48000,
-      // A warm-up runs the warm-up buffer, which is not one to save: the
-      // device's own is only known once the switch has opened it.
-      bufferFrames: !status.warmingUp && status.bufferFrames > 0
-          ? status.bufferFrames
-          : 128,
+      bufferFrames: _firstRunBufferFrames,
       playbackDeviceId: playbackId,
       captureDeviceId: captureId,
     ),

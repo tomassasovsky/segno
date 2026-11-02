@@ -932,9 +932,40 @@ void main() {
       expect(cubit.state.requestedBuffer, 32);
       expect(cubit.state.actualRate, 48000);
       expect(cubit.state.actualBuffer, kWarmUpBufferFrames);
-      // The chips keep the player's config, and nothing is saved.
-      expect(cubit.state.bufferFrames, 32);
+      // The chips show what runs, so choosing 32 again is an Apply that
+      // retries it; nothing is saved.
+      expect(cubit.state.bufferFrames, kWarmUpBufferFrames);
       expect(await settings.loadAudioConfig(), isNull);
+    });
+
+    test('a switch that dropped a track is told', () async {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      stateController.add(
+        const LooperState(
+          status: EngineStatus(
+            deviceName: 'Scarlett',
+            sampleRate: 48000,
+            bufferFrames: 32,
+            isConnected: true,
+            devicePresent: true,
+            reopen: EngineReopened(
+              outcome: ReopenOutcome.retainedPartial,
+              droppedTracks: 1 << 2,
+              previousSampleRate: 48000,
+              sampleRate: 48000,
+            ),
+          ),
+        ),
+      );
+      await pumpEventQueue();
+
+      expect(
+        cubit.state.deviceConnectivity,
+        DeviceConnectivity.restoredPartial,
+      );
+      expect(cubit.state.phase, ConfigPhase.settled);
     });
 
     test("the player's own apply ends the warm-up without a refusal "

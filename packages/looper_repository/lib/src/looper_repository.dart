@@ -2915,8 +2915,15 @@ class LooperRepository {
         _warmUpTarget != null) {
       _warmUpTarget = null;
       _engine.setMasterGain(_masterGain);
-      _reproject();
+      // The budget was the target's: what fits the warm-up buffer that runs
+      // now comes back on.
+      _admitRig(release: true);
     }
+    // No caller shows an apply's verdict here, so a switch that lost loops
+    // says so on the status, as a reconnect does (rule 3).
+    final reopen = outcome.reopen;
+    if (reopen != null && !reopen.retainedAll) _lastReopen = reopen;
+    _reproject();
     return outcome;
   }
 
