@@ -209,6 +209,7 @@ static void handleMessage(uint8_t type, const uint8_t *payload, uint8_t len) {
     case PEDAL_LINK_TYPE_STATE: {
       pedal_state decoded;
       if (pedal_link_decode_state(payload, len, &decoded)) {
+        if (decoded.goodbye) g_clearHold = {0, 0};  // a goodbye ends any fill
         g_frame = decoded;
         g_haveFrame = true;
         g_lastFrameMs = millis();
@@ -705,9 +706,17 @@ static bool renderIndicators() {
   const unsigned long now = millis();
   RgbColor desired[IND_N];
   uint32_t channelTotal = 0;
-  const bool clearHoldLive = g_clearHold.button != 0 &&
-                             now - g_clearHoldAtMs < PEDAL_LINK_CLEAR_HOLD_STALE_MS;
+  // A fill no message has refreshed is over, and forgotten, so it cannot
+  // come back with a later frame or when millis() wraps.
+  if (g_clearHold.button != 0 && now - g_clearHoldAtMs >= PEDAL_LINK_CLEAR_HOLD_STALE_MS) {
+    g_clearHold = {0, 0};
+  }
+  const bool clearHoldLive = g_clearHold.button != 0;
   const uint32_t clearRed = rgb(PILL_CLEAR_RED.r, PILL_CLEAR_RED.g, PILL_CLEAR_RED.b);
+  const uint8_t clearInk[3] = {
+      (uint8_t)((((clearRed >> 16) & 255) * PILL_FILL_LEVEL + 127) / 255),
+      (uint8_t)((((clearRed >> 8) & 255) * PILL_FILL_LEVEL + 127) / 255),
+      (uint8_t)(((clearRed & 255) * PILL_FILL_LEVEL + 127) / 255)};
   for (uint8_t group = 0; group < PEDAL_BTN_COUNT; ++group) {
     const uint8_t button = PILL_BUTTON[group];
     Rgb color = {0, 0, 0};
@@ -766,12 +775,11 @@ static bool renderIndicators() {
         const uint8_t depth = pixel < PILL_PIXELS / 2 ? pixel : PILL_PIXELS - 1 - pixel;
         const int16_t coverage = g_clearHold.progress * (PILL_PIXELS / 2) - depth * 255;
         const uint16_t fill = coverage <= 0 ? 0 : coverage >= 255 ? 255 : coverage;
-        const auto blend = [fill](uint8_t base, uint32_t red) {
-          const uint32_t ink = (red * PILL_FILL_LEVEL + 127) / 255;
+        const auto blend = [fill](uint8_t base, uint8_t ink) {
           return (uint8_t)((base * (255u - fill) + ink * fill + 127) / 255);
         };
-        value = RgbColor(blend(value.R, (clearRed >> 16) & 255), blend(value.G, (clearRed >> 8) & 255),
-                         blend(value.B, clearRed & 255));
+        value = RgbColor(blend(value.R, clearInk[0]), blend(value.G, clearInk[1]),
+                         blend(value.B, clearInk[2]));
       }
       desired[pillPixelIndex(group, pixel)] = value;
       channelTotal += value.R + value.G + value.B;
@@ -885,6 +893,7 @@ void loop() {
   }
   if (g_haveFrame && now - g_lastFrameMs > FRAME_TIMEOUT_MS) {
     g_haveFrame = false;
+    g_clearHold = {0, 0};
     sendRingState();
   }
   if (now - g_lastRingStateMs >= ring_link::STATE_MS) sendRingState();

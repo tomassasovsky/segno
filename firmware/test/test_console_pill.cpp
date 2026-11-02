@@ -365,9 +365,22 @@ static void clearHoldFill() {
   state.goodbye = 1;
   receive(state, now += 20);
   expectAllDark();
+  // ...and ends it: the next lit frame, inside the stale time, has no fill.
   state.goodbye = 0;
   receive(state, now += 20);
-  receiveClearHold(0, 0, now += 20);
+  expectNormal(2);
+  // A stale fill is forgotten, not just hidden: a frame much later shows the
+  // pill as the app lights it.
+  receiveClearHold(PEDAL_BTN_TRACK2 + 1, 128, now += 20);
+  at(now += PEDAL_LINK_CLEAR_HOLD_STALE_MS + 20);
+  assert(g_clearHold.button == 0);
+  expectNormal(2);
+  // A lost link ends it as well.
+  receiveClearHold(PEDAL_BTN_TRACK2 + 1, 128, now += 20);
+  at(now += PEDAL_LINK_FRAME_TIMEOUT_MS + 1);
+  expectAllDark();
+  assert(g_clearHold.button == 0);
+  receive(state, now += 20);
 }
 
 int main() {

@@ -127,16 +127,18 @@ button the app sends. The wire is unchanged
 
 **Clear-track hold (#1534, firmware 2.6).** While a hold that clears a
 track is pending (the Track Hold set to Clear track, or a Custom pedal whose
-Hold is Clear), the app sends `CLEAR_HOLD` (`0x13`) every 20 ms with the held
+Hold is Clear or Clear all), the app sends `CLEAR_HOLD` (`0x13`) every 20 ms with the held
 footswitch and how much of the long-press threshold has run (0..255). The
 board draws red from both ends of that pill toward the centre over whatever
 the pill shows, at the same uniform level as the Song queue (110), with the
 leading pixel on each side partly filled so the edges move smoothly; at 255
-the two meet. The app sends one with no footswitch when the hold settles
-(released early, fired, or cancelled), and the pill shows its normal state
-again at once. A fill that no message refreshes for 500 ms is dropped, so a
-lost message cannot leave a pill red; a pill the app does not light never
-fills, and goodbye and a lost link darken it like any other.
+the two meet. When the hold fires, the app sends 255 for 60 ms so the meeting
+shows, then one with no footswitch; a hold released early or cancelled (or
+one that can no longer fire) gets the one with no footswitch at once, and the
+pill shows its normal state again. A fill that no message refreshes for
+500 ms is dropped and forgotten, so a lost message cannot leave a pill red; a
+pill the app does not light never fills, and goodbye and a lost link end the
+fill.
 
 `CLEAR_HOLD` does not change the protocol version (still 12). Firmware 2.5 and
 older reject the unknown type at its type byte and keep rendering `STATE`, so

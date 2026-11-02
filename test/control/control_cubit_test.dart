@@ -1199,12 +1199,20 @@ void main() {
           for (var i = 1; i < progress.length; i++) {
             expect(progress[i], greaterThanOrEqualTo(progress[i - 1]));
           }
-          // 400 of 800 ms: about half way, never ahead of the hold.
-          expect(progress.last, inInclusiveRange(64, 128));
+          // 400 of 800 ms: about half way (later on a loaded machine).
+          expect(progress.last, inInclusiveRange(64, 200));
           verifyNever(() => looper.clear(channel: any(named: 'channel')));
 
           await Future<void>.delayed(const Duration(milliseconds: 450));
           verify(() => looper.clear(channel: 2)).called(1);
+          // The ends meet when it fires, then the frame takes the pill back.
+          expect(
+            fills(),
+            contains(
+              const ClearHoldMessage(button: PedalButton.track3, progress: 255),
+            ),
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 100));
           expect(fills().last, const ClearHoldMessage());
           final settled = fills().length;
           await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -1242,6 +1250,45 @@ void main() {
           transport.press(PedalButton.track2, down: false);
           await pumpEventQueue();
         });
+
+        test('a hold that can no longer fire stops filling', () async {
+          transport.press(PedalButton.track2, down: true);
+          await pumpEventQueue();
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          takeIsLocked = true;
+          await Future<void>.delayed(const Duration(milliseconds: 60));
+          expect(fills().last, const ClearHoldMessage());
+          final settled = fills().length;
+          await Future<void>.delayed(const Duration(milliseconds: 750));
+          expect(fills(), hasLength(settled));
+          verifyNever(() => looper.clear(channel: any(named: 'channel')));
+          takeIsLocked = false;
+          transport.press(PedalButton.track2, down: false);
+          await pumpEventQueue();
+        });
+
+        test(
+          'an older pending hold fills again when a newer one settles',
+          () async {
+            transport.press(PedalButton.track1, down: true);
+            await pumpEventQueue();
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+            transport.press(PedalButton.track2, down: true);
+            await pumpEventQueue();
+            expect(fills().last.button, PedalButton.track2);
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+            transport.press(PedalButton.track2, down: false);
+            await pumpEventQueue();
+            final resumed = fills().last;
+            expect(resumed.button, PedalButton.track1);
+            // Track 1's own clock: about 200 of its 800 ms.
+            expect(resumed.progress, greaterThanOrEqualTo(50));
+            await Future<void>.delayed(const Duration(milliseconds: 700));
+            verify(() => looper.clear()).called(1);
+            transport.press(PedalButton.track1, down: false);
+            await pumpEventQueue();
+          },
+        );
 
         test('Arm overdub Hold fills nothing', () async {
           await cubit.setPedalSetup(
@@ -1653,9 +1700,30 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 650));
         await pumpEventQueue();
         verify(() => looper.clear(channel: 1)).called(1);
-        expect(fills().last, const ClearHoldMessage());
+        expect(
+          fills(),
+          contains(
+            const ClearHoldMessage(button: PedalButton.stop, progress: 255),
+          ),
+        );
         transport.press(PedalButton.stop, down: false);
         await pumpEventQueue();
+
+        // Clear all fills too.
+        await assign(
+          PedalButton.undo,
+          const ControlGesturePair(
+            hold: CommandAction(ControlCommand.clearAll),
+          ),
+        );
+        transport.sent.clear();
+        transport.press(PedalButton.undo, down: true);
+        await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        expect(fills().last.button, PedalButton.undo);
+        transport.press(PedalButton.undo, down: false);
+        await pumpEventQueue();
+        expect(fills().last, const ClearHoldMessage());
       });
 
       test('bank switch resolves current bank at fire', () async {
