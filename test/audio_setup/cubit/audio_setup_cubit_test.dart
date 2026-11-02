@@ -1014,11 +1014,10 @@ void main() {
         expect(cubit.state.loopbackMeasure, LoopbackMeasure.measuring);
         // Silent and closed until the offset is set.
         verifyNever(() => repository.setRecordOffset(any()));
-        // Apply and the cable test wait for it.
-        expect(
-          guards.blockers(GuardKind.deviceChange, const GuardScope.internal()),
-          isNotEmpty,
-        );
+        // The cable test waits for it.
+        cubit.openCableTest();
+        expect(cubit.state.measurePhase, MeasurePhase.idle);
+        expect(cubit.state.refusal, const ApplyRefusal.busy('calibration'));
 
         measurement.complete(
           const LatencyResult.done(offsetFrames: 292, latencyMs: 6.08),
@@ -1030,10 +1029,6 @@ void main() {
         expect(await saved(), 292);
         verify(() => repository.setRecordOffset(292)).called(1);
         expect(cubit.state.loopbackMeasure, LoopbackMeasure.idle);
-        expect(
-          guards.blockers(GuardKind.deviceChange, const GuardScope.internal()),
-          isEmpty,
-        );
       },
     );
 
@@ -1127,6 +1122,7 @@ void main() {
         live = scarlett(owed: false);
         stateController.add(live);
         live = scarlett();
+        stateController.add(live);
         await pumpEventQueue();
         measurement.complete(
           const LatencyResult.done(offsetFrames: 292, latencyMs: 6.08),
@@ -1139,19 +1135,51 @@ void main() {
       },
     );
 
-    test('a calibration in flight: not measured, 0, and said so', () async {
+    test('the device leaving mid-measurement is no failure: the next owed '
+        'offset measures again', () async {
+      final cubit = await owe(scarlett());
+
+      live = const LooperState(
+        status: EngineStatus(
+          deviceName: 'Scarlett 4i4',
+          sampleRate: 48000,
+          bufferFrames: 32,
+          isConnected: true,
+          excludedInputMask: 1 << 4,
+          recordOffsetOwed: true,
+        ),
+      );
+      measurement.complete(const LatencyResult(LatencyOutcome.cancelled));
+      await pumpEventQueue();
+
+      verifyNever(() => repository.setRecordOffset(any()));
+      expect(cubit.state.loopbackMeasure, LoopbackMeasure.idle);
+
+      // It came back and owes the same profile again.
+      measurement = Completer<LatencyResult>();
+      live = scarlett();
+      stateController.add(live);
+      await pumpEventQueue();
+      measurement.complete(
+        const LatencyResult.done(offsetFrames: 292, latencyMs: 6.08),
+      );
+      await pumpEventQueue();
+
+      expect(await saved(), 292);
+      verify(() => repository.setRecordOffset(292)).called(1);
+    });
+
+    test('a guard someone else holds does not stop it', () async {
       final held = guards.enter(
-        GuardKind.calibration,
+        GuardKind.sessionApply,
         const GuardScope.internal(),
-        purpose: 'test',
+        purpose: 'boot session',
       );
       addTearDown(held.release);
 
-      final cubit = await owe(scarlett());
+      await owe(scarlett());
 
-      verifyNever(() => repository.measureLoopbackLatency());
-      verify(() => repository.setRecordOffset(0)).called(1);
-      expect(cubit.state.loopbackMeasure, LoopbackMeasure.failed);
+      verify(() => repository.measureLoopbackLatency()).called(1);
     });
 
     test('an interface with no loopback is set to 0, unmeasured', () async {
