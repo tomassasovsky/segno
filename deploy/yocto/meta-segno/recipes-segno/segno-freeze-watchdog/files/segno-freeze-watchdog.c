@@ -21,8 +21,9 @@
  * runs it at SCHED_FIFO 85, above the audio threads (80 and 79), pinned to
  * core 0, where no audio thread runs; it locks its memory here.
  *
- * Exit status: 1 when it cannot start, 3 when it asked for the reboot and is
- * still running (only possible with a test trigger, or a failed one).
+ * Exit status: 1 when it cannot start (including a first round that fails),
+ * 3 when it asked for the reboot and is still running (only possible with a
+ * test trigger, or a failed one).
  */
 #define _GNU_SOURCE
 #include "freeze_watchdog.h"
@@ -127,6 +128,13 @@ int main(void) {
     struct fw_prober *prober = fw_prober_start(probes, 3, why, sizeof why);
     if (prober == NULL) {
         fw_log(recovery.kmsg_fd, 3, "cannot start: %s", why);
+        return 1;
+    }
+    /* Arm only on probes that work: a probe broken from the start (a program
+     * an image no longer ships) would otherwise reboot the console a minute
+     * after every boot. systemd starts it again in 10 s. */
+    if (fw_prober_round(prober, deadline_ms, why, sizeof why) != 0) {
+        fw_log(recovery.kmsg_fd, 3, "cannot start: the first probe round failed: %s", why);
         return 1;
     }
 

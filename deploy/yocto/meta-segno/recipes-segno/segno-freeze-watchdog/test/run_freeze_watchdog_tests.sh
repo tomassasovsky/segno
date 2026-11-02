@@ -5,8 +5,9 @@
 #    probes (passing, failing, stuck), the real probes, the recovery sequence
 #    and the systemd notification.
 # 2. The daemon itself, end to end, with files standing in for /dev/kmsg and
-#    /proc/sysrq-trigger and timings cut to milliseconds: healthy, exec dead,
-#    exec stuck, and refusing to start without what it needs.
+#    /proc/sysrq-trigger and timings cut to milliseconds: healthy, exec going
+#    away, exec getting stuck, and refusing to start (or to arm on a probe
+#    that fails from the start).
 # 3. The wiring: the unit's priority against the audio threads and the USB IRQ
 #    thread, the image installing it, and the kernel's sysrq.
 #
@@ -82,27 +83,52 @@ check "no probe failed" '! grep -q "probe failed" "$work/kmsg"'
 check "triggered nothing" '[ ! -s "$work/sysrq" ]'
 check "created the /data probe file" '[ "$(wc -c < "$work/data/segno/probe")" -eq 4096 ]'
 
+# start_daemon [VAR=value ...]: run_daemon in the background; `wait $daemon`.
+start_daemon() {
+    run_daemon "$@" &
+    daemon=$!
+    for _ in $(seq 100); do grep -q "watching" "$work/kmsg" && return; sleep 0.05; done
+}
+
 echo "exec dead: the freeze of 2026-11-01"
+# The program is there when the daemon starts and goes away, as /bin/sleep did.
 setup
+mkdir "$work/bin"
+ln -s /bin/true "$work/bin/true"
+start_daemon SEGNO_WATCHDOG_EXEC="$work/bin/true"
+check "armed" 'grep -q "watching" "$work/kmsg"'
+rm "$work/bin/true"
 start=$(date +%s)
-run_daemon SEGNO_WATCHDOG_EXEC="$work/gone/true"; rc=$?
+wait "$daemon"; rc=$?
 check "asks for the reboot (exit 3)" '[ "$rc" = 3 ]'
 check "within seconds" '[ $(( $(date +%s) - start )) -le 5 ]'
-check "logs each failed round" 'grep -q "^<4>segno-freeze-watchdog: probe failed (1 in a row, 0 s since the last pass): exec $work/gone/true: No such file or directory" "$work/kmsg"'
+check "logs each failed round" 'grep -q "^<4>segno-freeze-watchdog: probe failed (1 in a row, 0 s since the last pass): exec $work/bin/true: No such file or directory" "$work/kmsg"'
 check "waits for enough failures" '[ "$(grep -c "probe failed" "$work/kmsg")" -ge 3 ]'
-check "says why before the dump" 'grep -q "^<2>segno-freeze-watchdog: rebooting: exec or storage dead: .* probe rounds failed over 0 s, the last: exec $work/gone/true: No such file or directory. Dumping" "$work/kmsg"'
+check "says why before the dump" 'grep -q "^<2>segno-freeze-watchdog: rebooting: exec or storage dead: .* probe rounds failed over 0 s, the last: exec $work/bin/true: No such file or directory. Dumping" "$work/kmsg"'
 check "and as the last line" 'tail -n 1 "$work/kmsg" | grep -q "^<2>segno-freeze-watchdog: rebooting now: exec or storage dead: "'
 check "dumps, syncs and crashes, in that order" '[ "$(cat "$work/sysrq")" = wlsc ]'
 
-echo "exec stuck: a probe that never returns"
+echo "exec stuck: a probe that stops returning"
 setup
-printf '#!/bin/sh\nexec /bin/sleep 3\n' > "$work/hang"
+# Passes the arming round, then hangs on every later one.
+printf '#!/bin/sh
+[ -e %s/armed ] && exec /bin/sleep 3
+: > %s/armed
+' "$work" "$work" > "$work/hang"
 chmod +x "$work/hang"
-run_daemon SEGNO_WATCHDOG_EXEC="$work/hang"; rc=$?
+start_daemon SEGNO_WATCHDOG_EXEC="$work/hang"
+wait "$daemon"; rc=$?
 check "asks for the reboot (exit 3)" '[ "$rc" = 3 ]'
 check "the round fails at its deadline" 'grep -q "probe failed (1 in a row, 0 s since the last pass): exec $work/hang did not return within 200 ms" "$work/kmsg"'
 check "later rounds say it is still stuck" 'grep -q "exec $work/hang has not returned for" "$work/kmsg"'
 check "dumps, syncs and crashes" '[ "$(cat "$work/sysrq")" = wlsc ]'
+
+echo "a probe broken from the start never arms"
+setup
+run_daemon SEGNO_WATCHDOG_EXEC="$work/gone/true"; rc=$?
+check "exit 1" '[ "$rc" = 1 ]'
+check "says why" 'grep -q "^<3>segno-freeze-watchdog: cannot start: the first probe round failed: exec $work/gone/true: No such file or directory" "$work/kmsg"'
+check "triggers nothing" '[ ! -s "$work/sysrq" ]'
 
 echo "refuses to start without what it needs"
 setup
