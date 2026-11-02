@@ -50,7 +50,9 @@ import 'package:pedal_repository/src/pedal_state_frame.dart';
 /// | byte | meaning                                                      |
 /// |------|--------------------------------------------------------------|
 /// | 0    | button: 0 none, else [PedalButton] index + 1                 |
-/// | 1    | progress, 0..255 of 255; 0 without a button                  |
+/// | 1    | progress, 0..254 of 255 while the hold runs; 255 sent once   |
+/// |      | when the hold fires and the clear is accepted (the board     |
+/// |      | flashes the pill to confirm it); 0 without a button          |
 ///
 /// [ClearHoldMessage] is optional: it does not change [protocolVersion],
 /// because a board that does not know [typeClearHold] drops it at the type

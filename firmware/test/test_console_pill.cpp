@@ -375,7 +375,7 @@ static void clearHoldFill() {
   assert(onSlots > 0 && offSlots > 0);
   at(now = fired + PILL_CLEAR_FLASH_TOTAL_MS);
   expectDarkPill(2);  // the cleared track, as the frame says
-  assert(g_clearFlash == 0);
+  assert(!g_clearFlashing[PEDAL_BTN_TRACK2]);
   // A new hold on the flashing pill wins at once; one on another pill does
   // not stop the flash.
   state.active_button_mask = (1u << PEDAL_BTN_TRACK1) | (1u << PEDAL_BTN_TRACK2);
@@ -385,7 +385,7 @@ static void clearHoldFill() {
   expectFull(2);
   assert(red(3, 0) == ink && red(3, 3) == 0);  // track 1 fills beside it
   receiveClearHold(PEDAL_BTN_TRACK2 + 1, 64, now += 20);
-  assert(g_clearFlash == 0);
+  assert(!g_clearFlashing[PEDAL_BTN_TRACK2]);
   for (unsigned pixel = 0; pixel < 8; ++pixel) {
     const bool end = pixel == 0 || pixel == 7;
     assert(red(2, pixel) == (end ? ink : 0));
@@ -400,7 +400,7 @@ static void clearHoldFill() {
   expectAllDark();
   state.goodbye = 0;
   receive(state, now += 20);
-  assert(g_clearFlash == 0);
+  assert(!g_clearFlashing[PEDAL_BTN_TRACK2]);
   expectNormal(2);
   // Goodbye darkens a filling pill like every other.
   state.active_button_mask = (1u << PEDAL_BTN_TRACK1) | (1u << PEDAL_BTN_TRACK2);
@@ -499,6 +499,50 @@ static void clearHoldUnderRed() {
   for (unsigned pixel = 0; pixel < 8; ++pixel) {
     assert(ind.shown[pillPixelIndex(2, pixel)] == ((uint32_t)level[pixel] * 0x010101u));
   }
+}
+
+// Each pill flashes on its own: a second hold firing on another pill does
+// not cut the first flash short or a live fill elsewhere, and a pill the app
+// does not light when the hold fires does not flash (#1534).
+static void clearFlashPerPill() {
+  const uint8_t level[8] = {28,69,151,191,191,151,69,28};
+  const unsigned ink = PILL_FILL_LEVEL;
+  pedal_state state = {};
+  state.mode = PEDAL_MODE_REC;
+  state.master_gain = 255;
+  for (auto &color : state.pedal_colors) color = {0,255,0};
+  state.active_button_mask = (1u << PEDAL_BTN_TRACK1) | (1u << PEDAL_BTN_TRACK2) |
+                             (1u << PEDAL_BTN_TRACK3);
+  uint32_t now = 700000;
+  receive(state, now += 20);
+  // Track 2 is group 2, track 1 group 3, track 3 group 1.
+  auto red = [](unsigned group, unsigned pixel) {
+    return ind.shown[pillPixelIndex(group, pixel)] >> 16;
+  };
+  const uint32_t first = now += 20;
+  receiveClearHold(PEDAL_BTN_TRACK2 + 1, 255, first);
+  receiveClearHold(PEDAL_BTN_TRACK3 + 1, 128, now += 20);  // a live fill
+  receiveClearHold(PEDAL_BTN_TRACK1 + 1, 255, now += 20);  // a second fires
+  assert(g_clearFlashing[PEDAL_BTN_TRACK2] && g_clearFlashing[PEDAL_BTN_TRACK1]);
+  assert(g_clearHold.button == PEDAL_BTN_TRACK3 + 1);  // not wiped
+  assert(red(1, 0) == ink && red(1, 3) == 0);
+  // Both flash on their own clocks to the end of the first one's 720 ms.
+  at(now = first + PILL_CLEAR_FLASH_TOTAL_MS - 20);
+  assert(g_clearFlashing[PEDAL_BTN_TRACK2]);
+  at(now = first + PILL_CLEAR_FLASH_TOTAL_MS);
+  assert(!g_clearFlashing[PEDAL_BTN_TRACK2] && g_clearFlashing[PEDAL_BTN_TRACK1]);
+  for (unsigned pixel = 0; pixel < 8; ++pixel) {
+    assert(red(2, pixel) == 0 && ((ind.shown[pillPixelIndex(2, pixel)] >> 8) & 255) == level[pixel]);
+  }
+  at(now += 60);
+  assert(!g_clearFlashing[PEDAL_BTN_TRACK1]);
+  receiveClearHold(0, 0, now += 20);
+  // A pill the app does not light when the hold fires does not flash.
+  state.active_button_mask = 1u << PEDAL_BTN_TRACK1;
+  receive(state, now += 20);
+  receiveClearHold(PEDAL_BTN_TRACK2 + 1, 255, now += 20);
+  assert(!g_clearFlashing[PEDAL_BTN_TRACK2]);
+  for (unsigned pixel = 0; pixel < 8; ++pixel) assert(ind.shown[pillPixelIndex(2, pixel)] == 0);
 }
 
 int main() {
@@ -607,6 +651,7 @@ int main() {
   clearHoldFill();
   clearFlashConstants();
   clearHoldUnderRed();
+  clearFlashPerPill();
   ringStateForwarding();
   pdStatusFollowsHello();
   lateTrigger();

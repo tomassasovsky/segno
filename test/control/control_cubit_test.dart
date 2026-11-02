@@ -1259,6 +1259,20 @@ void main() {
           await pumpEventQueue();
         });
 
+        test('a refused clear fills but sends no confirmation', () async {
+          when(
+            () => looper.clear(channel: any(named: 'channel')),
+          ).thenReturn(EngineResult.notReady);
+          transport.press(PedalButton.track3, down: true);
+          await pumpEventQueue();
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          verify(() => looper.clear(channel: 2)).called(1);
+          expect(fills().where((m) => m.progress == 255), isEmpty);
+          expect(fills().last, const ClearHoldMessage());
+          transport.press(PedalButton.track3, down: false);
+          await pumpEventQueue();
+        });
+
         test('a hold that can no longer fire stops filling', () async {
           transport.press(PedalButton.track2, down: true);
           await pumpEventQueue();

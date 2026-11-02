@@ -141,8 +141,9 @@ state again at once. A fill that no message refreshes for 500 ms is dropped
 and forgotten, so a lost message cannot leave a pill red; a pill the app does
 not light never fills, and goodbye and a lost link end the fill.
 
-When the hold fires, the track clears and the app sends 255 once. The board
-confirms the clear on its own clock: the full red pill flashes
+When the hold fires and the clear is accepted, the app sends 255 once (a
+refused clear sends none). The board confirms the clear on its own clock,
+on a pill it lights at that moment, each pill independently: the full red pill flashes
 `PILL_CLEAR_FLASHES` (3) times, `PILL_CLEAR_FLASH_MS` (120 ms) on and as long
 dark, about 0.7 s, and then shows what `STATE` says (the empty-track state).
 The app's no-footswitch message, later `STATE` frames and the 500 ms stale
