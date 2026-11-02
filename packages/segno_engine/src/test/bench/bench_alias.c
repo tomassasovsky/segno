@@ -21,18 +21,20 @@
  *     harmonic.
  *   - alias dB: the energy on the bins the harmonics above Nyquist fold to
  *     (followed up to 1.536 MHz), from 1 Hz to 20 kHz, over the output's
- *     energy in the same band. Other non-harmonic bins hold the kernel's
- *     own noise, not aliasing, and are left out. The dry row is the
+ *     energy in the same band. The other non-harmonic bins hold mostly the
+ *     kernel's own noise and are left out. The dry row is the
  *     measurement's floor.
  *   - worst dBFS: the largest single alias component below 20 kHz, as the
  *     peak level of a sine.
  *
  * The cost columns time the same renders: ns per frame for one instance
- * (stereo, net of the chain with no effect), and what 2x oversampling at
- * 48 kHz would cost: the kind's own work at 96 kHz per 48 kHz frame (twice
- * its 96 kHz per-frame cost) plus a 2:1 half-band pair on both channels
- * (the restore pass's 61-tap filters, timed here). An upper bound for the
- * Amp+Cab, whose cabinet need not run oversampled.
+ * (net of the chain with no effect), and what 2x oversampling at 48 kHz
+ * would cost: the kind's own work at 96 kHz per 48 kHz frame (twice its
+ * 96 kHz per-frame cost) plus a streaming 63-tap polyphase half-band up and
+ * down on each channel the kernel runs (one for the Amp+Cab, which is mono
+ * inside; two for the rest), timed here. An upper bound: the slot's own
+ * per-sample work is doubled with the kernel, and the Amp+Cab's cabinet
+ * need not run oversampled.
  *
  *   ./bench_alias.sh                        # the table
  *   ./bench_alias.sh --case od-crunch       # one case
@@ -53,7 +55,6 @@
 #include "segno_engine_api.h"
 #include "engine_fx.h"
 #include "engine_private.h"
-#include "restore_halfband.h"
 
 /* ---------------- the cases ---------------- */
 
@@ -271,10 +272,12 @@ static alias_result measure(const alias_case* c, int sr, int bin, double amp) {
   fft(re, im, win);
   /* The tone's bin is the same at both rates (the window grows with the
    * rate). The bins its folds land on: harmonic k at k x bin, reflected
-   * into the half spectrum. Only these count as aliasing; anything else
-   * that is not a harmonic is the kernel's own noise (float rounding in a
-   * low corner, a DC blocker still settling), which sits near the floor at
-   * both rates and is not what oversampling would change. */
+   * into the half spectrum. The bin is odd and the window a power of two,
+   * so a fold of a harmonic below FOLD_TOP_HZ never lands on a harmonic.
+   * Only these bins count as aliasing. The other non-harmonic bins hold the
+   * kernel's own noise (float rounding in a low corner, a DC blocker still
+   * settling) and the folds of harmonics past FOLD_TOP_HZ; counting them
+   * too moves no figure above -65 dB by more than 0.6 dB. */
   const int half = win / 2;
   unsigned char* fold = (unsigned char*)calloc((size_t)half + 1, 1);
   if (fold == NULL) exit(1);
@@ -282,7 +285,7 @@ static alias_result measure(const alias_case* c, int sr, int bin, double amp) {
     if ((double)k * hz <= 0.5 * sr) continue; /* in band: a harmonic */
     int64_t b = (k * bin) % win;
     if (b > half) b = win - b;
-    if (b % bin != 0) fold[b] = 1;
+    fold[b] = 1;
   }
   /* The alias sum is its own (not the total less the harmonics, which
    * would cancel to nothing at the floor). */
@@ -307,29 +310,107 @@ static alias_result measure(const alias_case* c, int sr, int bin, double amp) {
   return r;
 }
 
-/* ns per 48 kHz frame of a 2:1 half-band up and down, on two channels. */
+/* ---------------- a real-time half-band pair ---------------- */
+
+/* A 63-tap half-band low-pass at 96 kHz (Kaiser, beta 8: flat to about
+ * 20 kHz, about 80 dB down from 28 kHz), run polyphase: 16 coefficient
+ * pairs a side, every even tap but the centre zero. What a 2x oversampled
+ * kind would run around its kernel, per channel. */
+#define HB_K 16
+static float g_hb[HB_K]; /* the taps at +-(2k + 1) */
+
+static double bessel_i0(double x) {
+  double sum = 1.0, term = 1.0;
+  for (int k = 1; k < 40; ++k) {
+    term *= (x / (2.0 * k)) * (x / (2.0 * k));
+    sum += term;
+  }
+  return sum;
+}
+
+static void hb_design(void) {
+  const double beta = 8.0, half = 2.0 * HB_K; /* taps -32 .. 32 */
+  for (int k = 0; k < HB_K; ++k) {
+    const double n = 2.0 * k + 1.0;
+    const double r = n / half;
+    const double w = bessel_i0(beta * sqrt(1.0 - r * r)) / bessel_i0(beta);
+    g_hb[k] = (float)(sin(M_PI * n / 2.0) / (M_PI * n) * w);
+  }
+}
+
+/* The last 2 HB_K samples, newest at [0], kept twice over so the view
+ * never wraps. */
+typedef struct {
+  float x[4 * HB_K];
+  int p;
+} hb_hist;
+
+static inline const float* hb_push(hb_hist* h, float v) {
+  h->p = (h->p + 2 * HB_K - 1) & (2 * HB_K - 1);
+  h->x[h->p] = v;
+  h->x[h->p + 2 * HB_K] = v;
+  return h->x + h->p;
+}
+
+/* One 48 kHz sample up to two 96 kHz samples. */
+static inline void hb_up(hb_hist* h, float v, float out[2]) {
+  const float* b = hb_push(h, v);
+  float acc = 0.0f;
+  for (int k = 0; k < HB_K; ++k) acc += g_hb[k] * (b[HB_K - 1 - k] + b[HB_K + k]);
+  out[0] = b[HB_K];
+  out[1] = 2.0f * acc;
+}
+
+/* Two 96 kHz samples down to one 48 kHz sample. */
+static inline float hb_down(hb_hist* even, hb_hist* odd, const float in[2]) {
+  const float* e = hb_push(even, in[0]);
+  const float* o = hb_push(odd, in[1]);
+  float acc = 0.0f;
+  for (int k = 0; k < HB_K; ++k) acc += g_hb[k] * (o[HB_K - 1 - k] + o[HB_K + k]);
+  return 0.5f * e[HB_K - 1] + acc;
+}
+
+/* ns per 48 kHz frame of the pair, up then down, on one channel. Checks the
+ * pair passes a 1 kHz sine at unity first. */
 static double halfband_pair_ns(void) {
-  const uint32_t n = 48000;
-  float* x = (float*)malloc(sizeof(float) * n);
-  float* up = (float*)malloc(sizeof(float) * 2 * n);
-  float* down = (float*)malloc(sizeof(float) * n);
-  if (x == NULL || up == NULL || down == NULL) exit(1);
-  for (uint32_t i = 0; i < n; ++i) x[i] = (float)sin(0.05 * i);
-  const int reps = 20;
+  hb_design();
+  const int n = 48000;
+  float* x = (float*)malloc(sizeof(float) * (size_t)n);
+  if (x == NULL) exit(1);
+  for (int i = 0; i < n; ++i) x[i] = (float)sin(2.0 * M_PI * 1000.0 * i / 48000.0);
+  hb_hist up, de, dodd;
+  memset(&up, 0, sizeof(up));
+  memset(&de, 0, sizeof(de));
+  memset(&dodd, 0, sizeof(dodd));
+  double peak = 0.0;
+  for (int i = 0; i < n; ++i) {
+    float u[2];
+    hb_up(&up, x[i], u);
+    const float y = hb_down(&de, &dodd, u);
+    if (i > n / 2 && fabs(y) > peak) peak = fabs(y);
+  }
+  if (fabs(peak - 1.0) > 0.01) {
+    fprintf(stderr, "the half-band pair passes 1 kHz at %.4f, not 1\n", peak);
+    exit(1);
+  }
+  const int reps = 40;
   volatile float sink = 0.0f;
   const double t0 = now_ns();
-  for (int k = 0; k < reps; ++k) {
-    le_halfband_interpolate(x, n, up);
-    le_halfband_decimate(up, 2 * n, down);
-    sink += down[k];
+  for (int r = 0; r < reps; ++r) {
+    for (int i = 0; i < n; ++i) {
+      float u[2];
+      hb_up(&up, x[i], u);
+      sink += hb_down(&de, &dodd, u);
+    }
   }
   const double dt = now_ns() - t0;
   (void)sink;
   free(x);
-  free(up);
-  free(down);
-  return 2.0 * dt / ((double)reps * n);
+  return dt / ((double)reps * n);
 }
+
+/* The channels [type]'s kernel runs: the Amp+Cab is mono inside. */
+static int kind_channels(int32_t type) { return type == LE_FX_AMP_CAB ? 1 : 2; }
 
 /* ---------------- the table ---------------- */
 
@@ -342,8 +423,8 @@ static int run_table(const char* only, double level_db) {
   printf("alias dB = folded-harmonic energy below 20 kHz over the output's; "
          "worst = the largest alias component, dBFS\n"
          "(near -80 dB and below, the bins hold the kernel's own noise)\n");
-  printf("half-band 2:1 up + down, both channels: %.1f ns per 48 kHz "
-         "frame\n\n",
+  printf("63-tap polyphase half-band, 2:1 up and down: %.1f ns per 48 kHz "
+         "frame per channel\n\n",
          hb);
   printf("| case          |  330 Hz 48k / 96k |  660 Hz 48k / 96k | "
          "1320 Hz 48k / 96k | 2640 Hz 48k / 96k | worst 48k | worst 96k | "
@@ -388,7 +469,8 @@ static int run_table(const char* only, double level_db) {
              "-", "-", "-");
     } else {
       printf(" %9.1f | %9.1f | %12.1f | %12.1f | %9.1f |\n", worst[0],
-             worst[1], n48, n96, 2.0 * n96 + hb);
+             worst[1], n48, n96,
+             2.0 * n96 + kind_channels(c->type) * hb);
     }
     fflush(stdout);
   }
@@ -411,12 +493,17 @@ static int run_render(const alias_case* c, int sr, const char* in_path,
     perror(in_path);
     return 1;
   }
-  fseek(f, 0, SEEK_END);
-  const long bytes = ftell(f);
-  fseek(f, 0, SEEK_SET);
+  long bytes = -1;
+  if (fseek(f, 0, SEEK_END) == 0) bytes = ftell(f);
+  if (bytes <= 0 || bytes % (long)sizeof(float) != 0 ||
+      fseek(f, 0, SEEK_SET) != 0) {
+    fprintf(stderr, "%s: not a raw float32 file\n", in_path);
+    fclose(f);
+    return 1;
+  }
   const int64_t n = bytes / (long)sizeof(float);
-  float* in = (float*)malloc(sizeof(float) * (size_t)(n > 0 ? n : 1));
-  float* out = (float*)malloc(sizeof(float) * (size_t)(n > 0 ? n : 1));
+  float* in = (float*)malloc(sizeof(float) * (size_t)n);
+  float* out = (float*)malloc(sizeof(float) * (size_t)n);
   int rc = 0;
   if (in == NULL || out == NULL ||
       (int64_t)fread(in, sizeof(float), (size_t)n, f) != n) {
@@ -443,7 +530,7 @@ int main(int argc, char** argv) {
   const char* render = NULL;
   const char* paths[2] = {NULL, NULL};
   int npaths = 0;
-  int sr = 48000;
+  int sr = 0; /* --render's rate; 48 kHz when not given */
   double level_db = -12.0;
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--case") && i + 1 < argc) {
@@ -475,8 +562,14 @@ int main(int argc, char** argv) {
     fprintf(stderr, "unknown case %s (--list)\n", only);
     return 2;
   }
+  if (render == NULL && (npaths > 0 || sr != 0)) {
+    fprintf(stderr, "--rate and files go with --render; the table runs both "
+                    "rates on its own tones\n");
+    return 2;
+  }
   if (render != NULL) {
     const alias_case* c = find_case(render);
+    if (sr == 0) sr = 48000;
     if (c == NULL || npaths != 2 || sr <= 0) {
       fprintf(stderr, "--render needs a case (--list), IN.f32 and OUT.f32\n");
       return 2;
