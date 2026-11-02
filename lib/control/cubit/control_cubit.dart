@@ -1223,6 +1223,11 @@ class ControlCubit extends Cubit<ControlState> {
   bool _clearHeld = false;
   Object? _clearPressToken;
 
+  // The clear-track hold whose pill is filling (#1534), and the ticker that
+  // streams its progress to the board.
+  PedalButton? _clearFillButton;
+  Timer? _clearFillTicker;
+
   // Mirrors `PerformanceRepository.captureStatus` so the pedal frame can
   // render the armed LED without re-deriving it from the raw status stream on
   // every projection. Independent of `ControlState` (nothing routes through
@@ -3034,9 +3039,13 @@ class ControlCubit extends Cubit<ControlState> {
       _fireCustomAction(button, hold: false);
       return;
     }
+    final hold = pair.hold;
     _armGesture(
       _bindingGestures.putIfAbsent(button, _HoldGesture.new),
       cue: button,
+      clears:
+          hold is TrackOperationAction &&
+          hold.operation == TrackOperation.clear,
       onHold: () => _fireCustomAction(button, hold: true),
       onTap: () => _fireCustomAction(button, hold: false),
     );
@@ -3415,12 +3424,14 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// Arms [gesture]. [cue] is the pedal a face draws the Pending Hold cue
   /// on while the hold is pending; null for a control no surface draws (the
-  /// CTRL jacks).
+  /// CTRL jacks). A hold that [clears] a track also fills [cue]'s LED pill
+  /// red until it settles (#1534).
   void _armGesture(
     _HoldGesture gesture, {
     required PedalButton? cue,
     required void Function() onHold,
     void Function()? onTap,
+    bool clears = false,
   }) {
     final session = _looper.sessionRevision;
     final armed = gesture._active;
@@ -3430,14 +3441,46 @@ class ControlCubit extends Cubit<ControlState> {
           !isClosed && !_takeLocked() && _looper.sessionRevision == session,
       onHold: onHold,
       onTap: onTap,
-      onSettled: cue == null ? null : () => _setHoldPending(cue, false),
+      onSettled: cue == null
+          ? null
+          : () {
+              _setHoldPending(cue, false);
+              if (clears) _endClearFill(cue);
+            },
     );
-    if (cue != null &&
-        !armed &&
-        gesture._active &&
-        _cueModes.contains(state.mode)) {
-      _setHoldPending(cue, true);
-    }
+    if (cue == null || armed || !gesture._active) return;
+    if (_cueModes.contains(state.mode)) _setHoldPending(cue, true);
+    if (clears) _startClearFill(cue);
+  }
+
+  /// Fills [button]'s pill red from both ends while its clear hold runs
+  /// (#1534): one message now and one per
+  /// [PedalLinkCodec.clearHoldIntervalMs], timed against the threshold the
+  /// gesture was armed with, until [_endClearFill]. A second clear hold takes
+  /// the fill over; the board shows one at a time.
+  void _startClearFill(PedalButton button) {
+    _clearFillTicker?.cancel();
+    _clearFillButton = button;
+    final threshold = _longPress;
+    const interval = Duration(milliseconds: PedalLinkCodec.clearHoldIntervalMs);
+    _pedal.showClearHold(button);
+    _clearFillTicker = Timer.periodic(interval, (timer) {
+      // The tick count includes ticks a busy isolate skipped, so the fill
+      // keeps to the hold's own clock.
+      _pedal.showClearHold(
+        button,
+        progress: clearHoldProgress(interval * timer.tick, threshold),
+      );
+    });
+  }
+
+  /// Ends [button]'s fill, unless another clear hold has taken it over.
+  void _endClearFill(PedalButton button) {
+    if (_clearFillButton != button) return;
+    _clearFillTicker?.cancel();
+    _clearFillTicker = null;
+    _clearFillButton = null;
+    _pedal.showClearHold(null);
   }
 
   /// The modes whose surfaces draw pedals, and so the Pending Hold cue. Tracks
@@ -3612,6 +3655,7 @@ class ControlCubit extends Cubit<ControlState> {
     _armGesture(
       _trackHoldGestures.putIfAbsent(button, _HoldGesture.new),
       cue: button,
+      clears: hold == TrackHold.clearTrack,
       onHold: () {
         final channel = state.bankBaseChannel + _trackIndex(button);
         switch (hold) {

@@ -262,6 +262,114 @@ static void songQueueFill() {
   expectAllDark();
 }
 
+static void receiveClearHold(uint8_t button, uint8_t progress, uint32_t now) {
+  uint8_t bytes[PEDAL_LINK_MAX_FRAME];
+  const size_t size = pedal_link_encode_clear_hold(button, progress, bytes);
+  assert(size == 6);
+  for (size_t i = 0; i < size; ++i) fake_arduino::received.push_back(bytes[i]);
+  at(now);
+}
+
+// A clear-track hold (#1534): red grows from both ends of the held pill toward
+// the centre by the app's progress, at the fill level, over what the pill
+// shows. It ends on a message with no button, when the messages stop, and with
+// the frame; it never lights a pill the app leaves dark.
+static void clearHoldFill() {
+  const uint8_t level[8] = {28,69,151,191,191,151,69,28};
+  const unsigned ink = 110;  // PILL_FILL_LEVEL, the red channel when covered
+  pedal_state state = {};
+  state.mode = PEDAL_MODE_REC;
+  state.master_gain = 255;
+  for (auto &color : state.pedal_colors) color = {0,255,0};
+  // Track 2 is held (group 2), track 1 plays beside it (group 3).
+  state.active_button_mask = (1u << PEDAL_BTN_TRACK1) | (1u << PEDAL_BTN_TRACK2);
+  uint32_t now = 300000;
+  receive(state, now += 20);
+  auto red = [](unsigned group, unsigned pixel) {
+    return ind.shown[pillPixelIndex(group, pixel)] >> 16;
+  };
+  auto green = [](unsigned group, unsigned pixel) {
+    return (ind.shown[pillPixelIndex(group, pixel)] >> 8) & 255;
+  };
+  auto expectNormal = [&](unsigned group) {
+    for (unsigned pixel = 0; pixel < 8; ++pixel) {
+      assert(red(group, pixel) == 0 && green(group, pixel) == level[pixel]);
+    }
+  };
+  expectNormal(2);
+  for (const unsigned progress : {0U, 1U, 32U, 64U, 128U, 200U, 254U, 255U}) {
+    receiveClearHold(PEDAL_BTN_TRACK2 + 1, (uint8_t)progress, now += 20);
+    for (unsigned pixel = 0; pixel < 8; ++pixel) {
+      const unsigned depth = pixel < 4 ? pixel : 7 - pixel;
+      const int coverage = (int)progress * 4 - (int)depth * 255;
+      const unsigned fill = coverage <= 0 ? 0 : coverage >= 255 ? 255 : coverage;
+      assert(red(2, pixel) == (ink * fill + 127) / 255);
+      assert(green(2, pixel) == (level[pixel] * (255 - fill) + 127) / 255);
+      // Both ends move together.
+      assert(ind.shown[pillPixelIndex(2, pixel)] == ind.shown[pillPixelIndex(2, 7 - pixel)]);
+      assert(red(3, pixel) == 0 && green(3, pixel) == level[pixel]);  // the neighbour
+    }
+  }
+  // Half way, exactly the two outer pairs are red and the centre is untouched.
+  receiveClearHold(PEDAL_BTN_TRACK2 + 1, 128, now += 20);
+  for (unsigned pixel = 0; pixel < 8; ++pixel) {
+    const bool outer = pixel < 2 || pixel > 5;
+    const bool centre = pixel == 3 || pixel == 4;
+    if (outer) assert(red(2, pixel) == ink && green(2, pixel) == 0);
+    if (centre) assert(red(2, pixel) == 0 && green(2, pixel) == level[pixel]);
+  }
+  // Full: the ends have met.
+  receiveClearHold(PEDAL_BTN_TRACK2 + 1, 255, now += 20);
+  for (unsigned pixel = 0; pixel < 8; ++pixel) {
+    assert(red(2, pixel) == ink && green(2, pixel) == 0);
+  }
+  // Released early: the next message has no button and the pill is back at
+  // once.
+  receiveClearHold(0, 0, now += 20);
+  expectNormal(2);
+  // A refused CLEAR_HOLD (progress without a button) changes nothing.
+  receiveClearHold(PEDAL_BTN_TRACK2 + 1, 128, now += 20);
+  const uint32_t last = now;
+  const auto filled = ind.shown;
+  const uint8_t bad[2] = {0, 1};
+  uint8_t bytes[PEDAL_LINK_MAX_FRAME];
+  const size_t size = pedal_link_encode(PEDAL_LINK_TYPE_CLEAR_HOLD, bad, 2, bytes);
+  for (size_t i = 0; i < size; ++i) fake_arduino::received.push_back(bytes[i]);
+  at(now += 20);
+  assert(ind.shown == filled);
+  // Messages that stop leave the fill for less than the stale time, then the
+  // pill is back by itself: a lost settling message cannot leave it red.
+  at(now = last + PEDAL_LINK_CLEAR_HOLD_STALE_MS - 20);
+  assert(ind.shown == filled);
+  at(now = last + PEDAL_LINK_CLEAR_HOLD_STALE_MS + 20);
+  expectNormal(2);
+  // A hold on a pill the app does not light stays dark.
+  state.active_button_mask = 1u << PEDAL_BTN_TRACK1;
+  receive(state, now += 20);
+  receiveClearHold(PEDAL_BTN_TRACK2 + 1, 200, now += 20);
+  for (unsigned pixel = 0; pixel < 8; ++pixel) assert(ind.shown[pillPixelIndex(2, pixel)] == 0);
+  // After the clear the app's frame decides the pill (here, dark), not the
+  // last fill.
+  state.active_button_mask = (1u << PEDAL_BTN_TRACK1) | (1u << PEDAL_BTN_TRACK2);
+  receive(state, now += 20);
+  receiveClearHold(PEDAL_BTN_TRACK2 + 1, 255, now += 20);
+  assert(red(2, 3) == ink);
+  receiveClearHold(0, 0, now += 20);
+  state.active_button_mask = 1u << PEDAL_BTN_TRACK1;
+  receive(state, now += 20);
+  for (unsigned pixel = 0; pixel < 8; ++pixel) assert(ind.shown[pillPixelIndex(2, pixel)] == 0);
+  // Goodbye darkens a filling pill like every other.
+  state.active_button_mask = (1u << PEDAL_BTN_TRACK1) | (1u << PEDAL_BTN_TRACK2);
+  receive(state, now += 20);
+  receiveClearHold(PEDAL_BTN_TRACK2 + 1, 128, now += 20);
+  state.goodbye = 1;
+  receive(state, now += 20);
+  expectAllDark();
+  state.goodbye = 0;
+  receive(state, now += 20);
+  receiveClearHold(0, 0, now += 20);
+}
+
 int main() {
   fake_arduino::analog[26] = fake_arduino::analog[27] = 4095;
   setup();
@@ -365,8 +473,9 @@ int main() {
   receive(state, now += 20);
   for (unsigned group = 0; group < 10; ++group) assert(ind.shown[group*8+3]);
   songQueueFill();
+  clearHoldFill();
   ringStateForwarding();
   pdStatusFollowsHello();
   lateTrigger();
-  puts("Console v3 ten pills, Song queue fill and ring state: all physical groups, host activity, limits, dimming, PD status and lifecycle pass");
+  puts("Console v3 ten pills, Song queue fill, clear-hold fill and ring state: all physical groups, host activity, limits, dimming, PD status and lifecycle pass");
 }

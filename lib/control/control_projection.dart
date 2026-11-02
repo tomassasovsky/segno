@@ -100,6 +100,17 @@ bool showsSectionQueue(LooperState looper, InteractionMode mode) =>
   );
 }
 
+/// How far a clear-track hold has run after [elapsed] of its [threshold],
+/// as the pedal draws it (#1534): `0`..`255`, where 255 is the moment the
+/// red from both ends of the pill meets in the centre and the track clears.
+int clearHoldProgress(Duration elapsed, Duration threshold) {
+  if (threshold <= Duration.zero) return 255;
+  return (elapsed.inMicroseconds * 255 ~/ threshold.inMicroseconds).clamp(
+    0,
+    255,
+  );
+}
+
 /// The pedal-track LED for [channel] under the current mode.
 ///
 /// [boundChains] carries the resolved `enabled` of every track button that

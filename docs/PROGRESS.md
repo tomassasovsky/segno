@@ -74,6 +74,20 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 clear-track hold fills the pill (#1534)
+
+- A hold that clears a track (Track Hold set to Clear track in Record mode,
+  or a Custom pedal whose Hold is Clear) fills the held pedal's pill red from
+  both ends toward the centre over the long-press threshold; releasing early
+  ends the fill at once. `ControlCubit._startClearFill` streams
+  `PedalRepository.showClearHold` every 20 ms (`clearHoldProgress`).
+- Wire: optional `CLEAR_HOLD` (`0x13`, two bytes), console firmware 2.6. The
+  protocol stays 12, so firmware 2.5 and older keep working and show no fill.
+  The board drops a fill not refreshed for 500 ms.
+- No screen mirrors the LED pill: Record mode draws no pedals, and the Custom
+  face's Pending Hold bar already times the same hold.
+- Device check owed: the fill's look and timing on the console.
+
 ## October 2026 Ed's setup loop template (#1513)
 
 - Library > New loop asks **Start with: Empty tracks | Ed's setup**. Ed's

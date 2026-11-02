@@ -255,6 +255,17 @@ final goldenMessages = <String, PedalLinkMessage>{
   'pd_status_not_read': const PdStatusMessage(
     PedalPowerSupply(profile: PedalPowerProfile.notRead),
   ),
+  // A clear-track hold on Track 2 half way to its threshold (#1534), the
+  // whole run, and the message that ends it.
+  'clear_hold_track2_128': const ClearHoldMessage(
+    button: PedalButton.track2,
+    progress: 128,
+  ),
+  'clear_hold_track4_255': const ClearHoldMessage(
+    button: PedalButton.track4,
+    progress: 255,
+  ),
+  'clear_hold_none': const ClearHoldMessage(),
   'hello': const HelloMessage(
     protocolVersion: PedalLinkCodec.protocolVersion,
     firmwareMajor: 1,

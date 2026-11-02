@@ -137,6 +137,20 @@ int pedal_link_decode_state(const uint8_t *p, uint8_t len, pedal_state *out) {
   return 1;
 }
 
+size_t pedal_link_encode_clear_hold(uint8_t button, uint8_t progress, uint8_t *out) {
+  if (button > PEDAL_BTN_COUNT || (!button && progress)) return 0;
+  const uint8_t p[PEDAL_LINK_CLEAR_HOLD_LEN] = {button, progress};
+  return pedal_link_encode(PEDAL_LINK_TYPE_CLEAR_HOLD, p, PEDAL_LINK_CLEAR_HOLD_LEN, out);
+}
+
+int pedal_link_decode_clear_hold(const uint8_t *p, uint8_t len, pedal_clear_hold *out) {
+  if (len != PEDAL_LINK_CLEAR_HOLD_LEN) return 0;
+  if (p[0] > PEDAL_BTN_COUNT || (!p[0] && p[1])) return 0;
+  out->button = p[0];
+  out->progress = p[1];
+  return 1;
+}
+
 int pedal_link_payload_len(uint8_t type) {
   switch (type) {
     case PEDAL_LINK_TYPE_BUTTON: return 2;
@@ -147,6 +161,7 @@ int pedal_link_payload_len(uint8_t type) {
     case PEDAL_LINK_TYPE_PD_STATUS: return (int)PEDAL_LINK_PD_STATUS_LEN;
     case PEDAL_LINK_TYPE_STATE: return (int)PEDAL_LINK_STATE_LEN;
     case PEDAL_LINK_TYPE_RING_BRIDGE: return 2;
+    case PEDAL_LINK_TYPE_CLEAR_HOLD: return (int)PEDAL_LINK_CLEAR_HOLD_LEN;
     default: return -1;
   }
 }
