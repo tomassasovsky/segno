@@ -124,9 +124,11 @@
  * listener picks out on music, and what the EQ's per-rate fit (#1436)
  * holds its bells to. */
 #define MX_RESPONSE_DB 1.0
-/* Bands more than this far below the loudest are not judged: a notch's
- * depth is not its sound. */
-#define MX_RESPONSE_FLOOR_DB 50.0
+/* Bands more than this far below the loudest are not judged: they are a
+ * filter's stopband or a notch, which is not the sound, and their level
+ * rests on rounding. The Dual Octaver's top bands, 40 to 50 dB down, read
+ * 12 dB apart on macOS and 22 dB on Linux from the same code. */
+#define MX_RESPONSE_FLOOR_DB 40.0
 /* envelope: 1.5 dB on all but 2 % of the frames that matter. The kinds that
  * keep their times in milliseconds stay within 0.8 dB on every frame; the
  * 2 % lets through what is random by design, the vinyl's clicks and the
@@ -223,8 +225,9 @@ static const char* const k_check_names[MX_NCHECKS] = {
 /* ---------------- known failures ---------------- */
 
 /* [ceiling]: the worst figure the entry allows, in the check's unit (dB
- * for response, envelope and alias, dBFS for dc), the worst today plus
- * at least 0.5 dB. A listed kind that gets worse than that fails as new,
+ * for response, envelope and alias, dBFS for dc): the worst today on
+ * macOS (arm64, clang) and Linux (gcc) plus at least 1 dB. The hop kinds'
+ * figures differ by up to 0.3 dB between the two, through their libm. A listed kind that gets worse than that fails as new,
  * so the list does not hide a regression of a kind already on it. */
 typedef struct {
   const char* kind;
@@ -237,61 +240,60 @@ typedef struct {
  * run's table names the worst setting of each. */
 static const mx_known k_known[] = {
     /* The waveshapers alias (#1540): oversampling, part 2. */
-    {"overdrive", MX_ALIAS, 44100, -34.0},
-    {"overdrive", MX_ALIAS, 48000, -35.0},
-    {"overdrive", MX_ALIAS, 96000, -42.0},
-    {"distortion", MX_ALIAS, 44100, -53.0},
-    {"distortion", MX_ALIAS, 48000, -55.0},
-    {"vinyl", MX_ALIAS, 44100, -44.0},
-    {"vinyl", MX_ALIAS, 48000, -45.0},
-    {"vinyl", MX_ALIAS, 96000, -59.0},
-    {"ampcab", MX_ALIAS, 44100, -24.0},
-    {"ampcab", MX_ALIAS, 48000, -26.0},
-    {"ampcab", MX_ALIAS, 96000, -41.5},
+    {"overdrive", MX_ALIAS, 44100, -33.5},
+    {"overdrive", MX_ALIAS, 48000, -34.5},
+    {"overdrive", MX_ALIAS, 96000, -41.5},
+    {"distortion", MX_ALIAS, 44100, -52.5},
+    {"distortion", MX_ALIAS, 48000, -54.5},
+    {"vinyl", MX_ALIAS, 44100, -43.5},
+    {"vinyl", MX_ALIAS, 48000, -44.5},
+    {"vinyl", MX_ALIAS, 96000, -58.5},
+    {"ampcab", MX_ALIAS, 44100, -23.5},
+    {"ampcab", MX_ALIAS, 48000, -25.5},
+    {"ampcab", MX_ALIAS, 96000, -41.0},
     /* The transient shaper's gain follows each cycle, and folds too. */
-    {"transient", MX_ALIAS, 44100, -47.0},
-    {"transient", MX_ALIAS, 48000, -46.5},
-    {"transient", MX_ALIAS, 96000, -57.5},
+    {"transient", MX_ALIAS, 44100, -46.5},
+    {"transient", MX_ALIAS, 48000, -46.0},
+    {"transient", MX_ALIAS, 96000, -57.0},
     /* Filters whose response moves with the rate. */
-    {"filter", MX_RESPONSE, 96000, 3.0},
-    {"eq", MX_RESPONSE, 96000, 2.0},
-    {"overdrive", MX_RESPONSE, 44100, 2.5},
-    {"overdrive", MX_RESPONSE, 96000, 5.5},
-    {"distortion", MX_RESPONSE, 44100, 2.5},
-    {"distortion", MX_RESPONSE, 96000, 12.0},
-    {"degrade", MX_RESPONSE, 44100, 2.0},
-    {"degrade", MX_RESPONSE, 96000, 11.0},
-    {"lpf", MX_RESPONSE, 44100, 3.0},
-    {"lpf", MX_RESPONSE, 96000, 7.0},
-    {"modedelay", MX_RESPONSE, 96000, 2.5},
+    {"eq", MX_RESPONSE, 96000, 2.5},
+    {"overdrive", MX_RESPONSE, 44100, 3.0},
+    {"overdrive", MX_RESPONSE, 96000, 6.0},
+    {"distortion", MX_RESPONSE, 44100, 3.0},
+    {"distortion", MX_RESPONSE, 96000, 7.0},
+    {"degrade", MX_RESPONSE, 44100, 2.5},
+    {"degrade", MX_RESPONSE, 96000, 11.5},
+    {"lpf", MX_RESPONSE, 44100, 3.5},
+    {"lpf", MX_RESPONSE, 96000, 7.5},
+    {"modedelay", MX_RESPONSE, 96000, 3.0},
     {"ampcab", MX_RESPONSE, 44100, 2.5},
     {"ampcab", MX_RESPONSE, 96000, 4.0},
-    {"mod", MX_RESPONSE, 96000, 3.0},
+    {"mod", MX_RESPONSE, 96000, 3.5},
     /* Tails whose decay moves with the rate. */
-    {"echo", MX_ENVELOPE, 96000, 5.0},
-    {"reverb", MX_ENVELOPE, 44100, 4.0},
-    {"reverb", MX_ENVELOPE, 96000, 2.5},
-    {"spring", MX_ENVELOPE, 44100, 8.5},
-    {"spring", MX_ENVELOPE, 96000, 4.5},
-    {"dubverb", MX_ENVELOPE, 44100, 2.5},
-    {"dubverb", MX_ENVELOPE, 96000, 3.5},
-    {"roomverb", MX_ENVELOPE, 44100, 5.5},
-    {"roomverb", MX_ENVELOPE, 96000, 5.0},
+    {"echo", MX_ENVELOPE, 96000, 5.5},
+    {"reverb", MX_ENVELOPE, 44100, 4.5},
+    {"reverb", MX_ENVELOPE, 96000, 3.0},
+    {"spring", MX_ENVELOPE, 44100, 9.0},
+    {"spring", MX_ENVELOPE, 96000, 5.0},
+    {"dubverb", MX_ENVELOPE, 44100, 3.0},
+    {"dubverb", MX_ENVELOPE, 96000, 4.0},
+    {"roomverb", MX_ENVELOPE, 44100, 6.0},
+    {"roomverb", MX_ENVELOPE, 96000, 5.5},
     /* Pitch: the vocoder's frame is samples, not milliseconds (#1467). */
-    {"octaver", MX_RESPONSE, 44100, 3.0},
-    {"octaver", MX_RESPONSE, 96000, 4.5},
-    {"octaver", MX_ENVELOPE, 44100, 8.0},
-    {"octaver", MX_ENVELOPE, 96000, 8.0},
-    {"dualoct", MX_RESPONSE, 44100, 12.5},
-    {"dualoct", MX_RESPONSE, 96000, 8.5},
-    {"dualoct", MX_ENVELOPE, 44100, 5.0},
-    {"dualoct", MX_ENVELOPE, 96000, 7.5},
-    {"smarttune", MX_ENVELOPE, 44100, 2.5},
-    {"smarttune", MX_ENVELOPE, 96000, 5.5},
+    {"octaver", MX_RESPONSE, 44100, 3.5},
+    {"octaver", MX_RESPONSE, 96000, 5.0},
+    {"octaver", MX_ENVELOPE, 44100, 8.5},
+    {"octaver", MX_ENVELOPE, 96000, 8.5},
+    {"dualoct", MX_RESPONSE, 44100, 4.0},
+    {"dualoct", MX_RESPONSE, 96000, 7.0},
+    {"dualoct", MX_ENVELOPE, 44100, 5.5},
+    {"dualoct", MX_ENVELOPE, 96000, 8.0},
+    {"smarttune", MX_ENVELOPE, 44100, 3.0},
+    {"smarttune", MX_ENVELOPE, 96000, 6.0},
     /* The vinyl's rectifier keeps its DC, as the Looper X's does. */
-    {"vinyl", MX_DC, 44100, -10.5},
-    {"vinyl", MX_DC, 48000, -10.5},
-    {"vinyl", MX_DC, 96000, -10.5},
+    {"vinyl", MX_DC, 44100, -10.0},
+    {"vinyl", MX_DC, 48000, -10.0},
+    {"vinyl", MX_DC, 96000, -10.0},
     {NULL, 0, 0, 0.0},
 };
 
