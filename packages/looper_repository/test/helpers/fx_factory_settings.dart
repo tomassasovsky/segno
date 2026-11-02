@@ -56,9 +56,10 @@ String fxFactorySettingsInc({
         final values = [for (final v in params) '${_literal(v)}f'];
         final key = '${entry.type.code} ${values.join(' ')}';
         if (!seen.add(key)) continue;
-        final name = '$family / ${preset.name} / ${entry.module}'
-            .replaceAll(r'\', r'\\')
-            .replaceAll('"', r'\"');
+        final name =
+            '$family / ${preset.name} / ${entry.module ?? entry.type.name}'
+                .replaceAll(r'\', r'\\')
+                .replaceAll('"', r'\"');
         out.writeln(
           '{"$name", ${entry.type.code}, {${values.join(', ')}}},',
         );

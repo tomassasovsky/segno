@@ -2,7 +2,10 @@
 // factory presets' effect settings the effects matrix runs (#1547).
 //
 //   cd packages/looper_repository &&
-//     flutter test tool/generate_fx_factory_settings.dart
+//     /Users/Tomas/development/flutter/bin/flutter test \
+//       tool/generate_fx_factory_settings.dart
+//
+// (the absolute path, as docs/PROGRESS.md "How to build / test" says).
 //
 // A test rather than a script because the package depends on Flutter, which
 // `dart run` cannot load. Rerun it after the catalogue or the module builds

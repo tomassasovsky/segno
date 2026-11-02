@@ -1353,8 +1353,9 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   does a listed one that now passes. The settings come from
   `src/test/bench/fx_factory_settings.inc`, generated from the catalogue;
   after a catalogue or module-build change, regenerate it with
-  `flutter test tool/generate_fx_factory_settings.dart` in
-  `packages/looper_repository` (its test fails until then).
+  `/Users/Tomas/development/flutter/bin/flutter test
+  tool/generate_fx_factory_settings.dart` in `packages/looper_repository`
+  (its test fails until then).
 - **Regenerate FFI bindings** after touching `src/segno_engine_api.h`:
   ```sh
   cd packages/segno_engine

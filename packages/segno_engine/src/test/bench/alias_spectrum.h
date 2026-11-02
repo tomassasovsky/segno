@@ -13,11 +13,15 @@
  *   - worst dBFS: the largest single alias component below ALIAS_TOP_HZ, as
  *     the peak level of a sine.
  *
- * Header-only, included by one TU per bench binary after the system
- * headers (math.h, stdio.h, stdlib.h).
+ * Header-only, included by one TU per bench binary.
  */
 #ifndef SEGNO_ALIAS_SPECTRUM_H
 #define SEGNO_ALIAS_SPECTRUM_H
+
+#include <math.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #define ALIAS_TOP_HZ 20000.0
 /* Harmonics up to here are followed into their folds: 32 times 48 kHz,

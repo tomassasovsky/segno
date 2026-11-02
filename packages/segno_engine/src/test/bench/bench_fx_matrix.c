@@ -51,14 +51,18 @@
  *             harmonics (mx_kind::harmonic), and not at a setting whose
  *             free-running modulator is heard (le_fx_entry_free_running).
  *   blowup    At each rate, every render: no NaN or infinity, a peak below
- *             MX_PEAK_LIMIT, and no DC beyond MX_DC_LIMIT, read as the mean
- *             of the alias sines' windows (whole cycles, so a curve that is
+ *             MX_PEAK_LIMIT, and no DC beyond MX_DC_LIMIT, read as the
+ *             Hann-weighted mean of the alias sines' windows (whole cycles, so a curve that is
  *             not lopsided leaves zero) and of the phrase's last half
  *             second, which is silence.
  *   stall     The silent tail of the plucked phrase may cost at most
  *             MX_STALL_RATIO times what the notes cost a frame (medians of
- *             the 512-frame blocks); a tail that turns denormal costs many
- *             times more. Timing, so it is reported and never fails a run.
+ *             the 512-frame blocks): a kind whose work grows once the input
+ *             stops. The engine flushes denormals each callback (FTZ, and
+ *             DAZ on x86), as it does on the console, so this reads the tail
+ *             as shipped; a kernel that went denormal on a platform without
+ *             the flush would show here. Timing, so it is reported and never
+ *             fails a run.
  *
  * The input signals are functions of time, the same at every rate, and
  * band-limited to 18 kHz so the 44.1 kHz render loses nothing:
@@ -132,9 +136,10 @@
 #define MX_ENVELOPE_FLOOR_DB 40.0
 /* alias: #1547's bar, on guitar notes up to E6. */
 #define MX_ALIAS_DB (-60.0)
-/* blowup: +12 dBFS is past anything a preset means (the loudest rack level
- * is +12 dB, on a phrase that peaks at -10 dBFS), and -60 dBFS of DC
- * steps by that much when the effect is bypassed. */
+/* blowup: +12 dBFS is 22 dB over the phrase's -10 dBFS peak, past any
+ * kind's own gain (a rack's level is applied after the kind, and the
+ * matrix runs the kind alone), and -60 dBFS of DC steps by that much when
+ * the effect is bypassed. */
 #define MX_PEAK_LIMIT 4.0
 #define MX_DC_LIMIT 1e-3
 /* stall: a denormal costs tens to hundreds of times a normal operation;
@@ -707,12 +712,14 @@ typedef struct {
 } mx_health;
 
 /* Folds [o]'s non-finite samples and peak into [h], and, when [len] > 0,
- * the mean of its [len] frames from [from], a window holding whole cycles
- * of every input tone, so whatever is not zero there is DC. */
+ * the DC of its [len] frames from [from]: their mean under a Hann window,
+ * which takes a tone of a few cycles in the window down by far more than a
+ * plain mean does (its sidelobes fall as the cube of the frequency), so a
+ * tail still ringing there does not read as DC. */
 static void health_of(const mx_out* o, int64_t from, int64_t len, mx_health* h) {
   const float* ch[2] = {o->l, o->r};
   for (int c = 0; c < 2; ++c) {
-    double sum = 0.0;
+    double sum = 0.0, wsum = 0.0;
     for (int64_t i = 0; i < o->n; ++i) {
       const float v = ch[c][i];
       if (!isfinite(v)) {
@@ -720,9 +727,13 @@ static void health_of(const mx_out* o, int64_t from, int64_t len, mx_health* h) 
         continue;
       }
       if (fabsf(v) > h->peak) h->peak = fabsf(v);
-      if (i >= from && i < from + len) sum += v;
+      if (i >= from && i < from + len) {
+        const double w = 0.5 - 0.5 * cos(2.0 * M_PI * (double)(i - from) / len);
+        sum += w * v;
+        wsum += w;
+      }
     }
-    if (len > 0 && fabs(sum / (double)len) > h->dc) h->dc = fabs(sum / (double)len);
+    if (wsum > 0.0 && fabs(sum / wsum) > h->dc) h->dc = fabs(sum / wsum);
   }
 }
 
@@ -905,7 +916,6 @@ static atomic_int g_next;
 
 static void* worker(void* arg) {
   (void)arg;
-  le_flush_denormals(); /* as the audio thread runs */
   for (;;) {
     const int i = atomic_fetch_add(&g_next, 1);
     if (i >= g_nitems) break;
@@ -1193,8 +1203,12 @@ int main(int argc, char** argv) {
          g_ci ? " (CI subset)" : "", g_nitems, MX_NKINDS, g_cpu_name, jobs);
   const double t0 = now_us();
   pthread_t* th = (pthread_t*)calloc((size_t)jobs, sizeof(pthread_t));
-  for (int j = 0; j < jobs; ++j) pthread_create(&th[j], NULL, worker, NULL);
-  for (int j = 0; j < jobs; ++j) pthread_join(th[j], NULL);
+  int started = 0;
+  for (int j = 0; j < jobs; ++j) {
+    if (pthread_create(&th[started], NULL, worker, NULL) == 0) started++;
+  }
+  if (started == 0) worker(NULL); /* no thread: run them here */
+  for (int j = 0; j < started; ++j) pthread_join(th[j], NULL);
   free(th);
   printf("ran in %.1f s\n", (now_us() - t0) / 1e6);
   if (g_detail) {
