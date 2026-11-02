@@ -132,8 +132,9 @@ with the held footswitch and how much of the long-press threshold has run
 (0..254). The board draws red from both ends of that pill toward the centre
 over whatever the pill shows, at the same uniform level as the Song queue
 (110), with the leading pixel on each side partly filled so the edges move
-smoothly. On a pill the app already shows red (a recording track, or any
-state it colours red), the pill's own red drops to about a third
+smoothly. While the fill runs, the app colours the held pill with its own
+state (green playing, red recording) instead of the pressed colour. On a pill
+the app shows red (a recording track, or any state it colours red), the pill's own red drops to about a third
 (`PILL_CLEAR_UNDER_RED`, 85 of 255) and the fill is drawn at full brightness
 (`PILL_PEAK`) over it. A hold released early or cancelled (or one that can no
 longer fire) gets a message with no footswitch, and the pill shows its normal

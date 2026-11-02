@@ -3498,6 +3498,7 @@ class ControlCubit extends Cubit<ControlState> {
     _clearFills
       ..remove(button)
       ..[button] = _ClearFill(threshold: _longPress, stillValid: stillValid);
+    _pushProjected(); // the pill's base turns from pressed to its own state
     _sendClearFill();
     _clearFillTicker ??= Timer.periodic(
       const Duration(milliseconds: PedalLinkCodec.clearHoldIntervalMs),
@@ -3511,6 +3512,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// back full.
   void _endClearFill(PedalButton button) {
     if (_clearFills.remove(button) == null) return;
+    if (!_closing) _pushProjected(); // back to pressed, or to its own state
     scheduleMicrotask(_sendClearFill);
   }
 
@@ -3526,7 +3528,11 @@ class ControlCubit extends Cubit<ControlState> {
   /// longer fire (a take locked, another session loaded) stops filling at
   /// once rather than reaching the centre and clearing nothing.
   void _sendClearFill() {
+    final pending = _clearFills.length;
     _clearFills.removeWhere((_, fill) => !fill.stillValid());
+    if (_clearFills.length != pending && !_closing && !isClosed) {
+      _pushProjected();
+    }
     if (_clearFills.isEmpty) {
       _clearFillTicker?.cancel();
       _clearFillTicker = null;
@@ -4258,6 +4264,7 @@ class ControlCubit extends Cubit<ControlState> {
       physicalCustomStates: physicalCustom,
       tunerStates: _tunerStates(),
       pressed: _pressedButtons.keys.toSet(),
+      clearFilling: _clearFills.keys.toSet(),
     );
     _pedal.pushState(frame);
   }

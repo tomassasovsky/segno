@@ -91,9 +91,12 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   The board drops a fill not refreshed for 500 ms.
 - No screen mirrors the LED pill: Record mode draws no pedals, and the Custom
   face's Pending Hold bar already times the same hold.
+- While a clear hold's fill runs, the held pill's base is its own state
+  colour (green playing, red recording) instead of the pressed colour
+  (`projectPedalLights(clearFilling:)`), so a recording track gets the
+  dimmed red. Other holds and plain presses keep the pressed colour.
 - Device check owed: the fill's and the flash's look and timing on the
-  console. With default colours a held track pedal reads white (pressed),
-  so the dimmed-red case shows only where the pill's shown colour is red.
+  console.
 
 ## October 2026 Ed's setup loop template (#1513)
 

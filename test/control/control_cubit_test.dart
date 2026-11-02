@@ -1259,6 +1259,45 @@ void main() {
           await pumpEventQueue();
         });
 
+        test(
+          'the pill shows its own state under the fill, not pressed',
+          () async {
+            setEngine(
+              _tracksWith(const [
+                Track(
+                  channel: 2,
+                  state: TrackState.playing,
+                  lengthFrames: 48000,
+                ),
+              ]),
+            );
+            transport.press(PedalButton.track3, down: true);
+            await pumpEventQueue();
+            expect(transport.lastFrame!.colorFor(PedalButton.track3), ledGreen);
+            // Released early: the fill ends and the pill reads as before.
+            transport.press(PedalButton.track3, down: false);
+            await pumpEventQueue();
+            expect(transport.lastFrame!.colorFor(PedalButton.track3), ledGreen);
+            expect(fills().last, const ClearHoldMessage());
+          },
+        );
+
+        test('a hold that is not a clear keeps the pressed colour', () async {
+          await cubit.setPedalSetup(
+            cubit.state.pedalSetup.copyWith(trackHold: TrackHold.armOverdub),
+          );
+          setEngine(
+            _tracksWith(const [
+              Track(channel: 2, state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          );
+          transport.press(PedalButton.track3, down: true);
+          await pumpEventQueue();
+          expect(transport.lastFrame!.colorFor(PedalButton.track3), ledWhite);
+          transport.press(PedalButton.track3, down: false);
+          await pumpEventQueue();
+        });
+
         test('a refused clear fills but sends no confirmation', () async {
           when(
             () => looper.clear(channel: any(named: 'channel')),
