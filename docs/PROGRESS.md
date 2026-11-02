@@ -79,7 +79,9 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - Every start the console makes on its own opens the device as a warm-up:
   the player's rate with a 512-frame buffer (`kWarmUpBufferFrames`). This
   covers the boot auto-start, the boot-time recovery (`AudioRecoveryCubit`)
-  and every reconnect by the in-repo supervisor. `LooperRepository` keeps the
+  and every reconnect by the in-repo supervisor. A first run opens as it is,
+  so each try in its fallback order (48 kHz / 32, then the device's own rate
+  and period, then the system default) can fail over. `LooperRepository` keeps the
   player's config as the warm-up target, so `lastEngineConfig` and the audio
   setup never show or save 512. A player's config already at 512 skips the
   warm-up.
@@ -87,8 +89,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   after everything is summed, so nothing is heard, and the remembered gain
   and the saved mix are untouched.
 - Also during the warm-up: transport presses return `notReady` (as during a
-  Session apply), the cable test is refused, the performance recorder is
-  locked, and the stage shows "Audio is starting…" where the engine-stopped
+  Session apply), the cable test is refused, `AppRuntime.takeLocked` holds
+  (performance takes from the page and the pedal), and the stage shows "Audio is starting…" where the engine-stopped
   banner sits. The effects budget uses the target's buffer.
 - `AudioWarmUpCubit` watches from the first rasterized frame. Every 500 ms it
   sums the session window's late periods, gaps and xruns. When that sum has

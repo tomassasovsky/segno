@@ -59,7 +59,7 @@ class AppRuntime {
     required Future<void> Function() storageSettled,
     required GuardRegistry guards,
     InstrumentRepository? instruments,
-  }) {
+  }) : _looper = repository {
     fxPersistence = FxChainPersistence(looper: repository);
     mixPersistence = SettingsMixPersistence(settings);
     tempo = TempoSettings(repository: repository, settings: settings);
@@ -250,13 +250,19 @@ class AppRuntime {
   /// Volumes, capacity, eject, and whether a transfer is in flight.
   late final StorageCubit storage;
 
+  final LooperRepository _looper;
   bool _closing = false;
   Future<void>? _startFuture;
   Future<void>? _closeFuture;
 
-  /// Prevents new takes during shutdown, session transitions and disposal.
+  /// Prevents new takes during shutdown, session transitions, disposal and an
+  /// audio warm-up (#1533): the performance master tap sits before the master
+  /// gain a warm-up silences with, so a take would hold what nobody heard.
   bool get takeLocked =>
-      _closing || power.state.isUiUp || fxPersistence.sessionTransitionActive;
+      _closing ||
+      power.state.isUiUp ||
+      fxPersistence.sessionTransitionActive ||
+      _looper.state.status.warmingUp;
 
   /// Starts independent restores together; callers can observe load failures.
   Future<void> start() {

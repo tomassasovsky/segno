@@ -898,12 +898,9 @@ class _AppState extends State<App> {
             create: (context) {
               final cubit = PerformanceRecorderCubit(
                 performance: context.read<PerformanceRepository>(),
-                // The master tap sits before the master gain a warm-up
-                // silences with, so a take would hold what nobody heard.
-                takeLocked: () =>
-                    context.read<PowerCubit>().state.isUiUp ||
-                    _runtime.fxPersistence.sessionTransitionActive ||
-                    context.read<LooperRepository>().state.status.warmingUp,
+                // The runtime's lock, which also holds during an audio
+                // warm-up (#1533).
+                takeLocked: () => _runtime.takeLocked,
                 storage: _storage,
                 destination: () =>
                     context.read<RecordingDestinationCubit>().state.destination,

@@ -944,17 +944,14 @@ void main() {
 
         expect(result.started, isTrue);
         expect(engine.startCalls, 1);
-        // The console's default rate and buffer, not the device's (#1529),
-        // warmed up first at the largest buffer (#1533).
+        // The console's default rate and buffer, not the device's (#1529).
         expect(
           engine.lastConfig,
-          const le.EngineConfig(sampleRate: 48000, bufferFrames: 512),
+          const le.EngineConfig(sampleRate: 48000, bufferFrames: 32),
         );
-        expect(
-          repository.lastEngineConfig,
-          const EngineConfig(sampleRate: 48000, bufferFrames: 32),
-        );
-        expect(repository.state.status.warmingUp, isTrue);
+        // Opened as it is, with no warm-up, so a refused buffer can fall back
+        // (#1533).
+        expect(repository.state.status.warmingUp, isFalse);
         // Persisted so the next launch takes the saved-config path.
         final saved = await settings.loadAudioConfig();
         expect(saved?.sampleRate, 48000);
@@ -1002,10 +999,8 @@ void main() {
           expect(engine.lastConfig?.playbackDeviceId, 'scarlett');
           expect(engine.lastConfig?.captureDeviceId, 'scarlett');
           expect(engine.lastConfig?.sampleRate, 48000);
-          expect(engine.lastConfig?.bufferFrames, kWarmUpBufferFrames);
-          expect(repository.lastEngineConfig?.bufferFrames, 32);
+          expect(engine.lastConfig?.bufferFrames, 32);
           final saved = await settings.loadAudioConfig();
-          expect(saved?.bufferFrames, 32);
           expect(saved?.playbackDeviceId, 'scarlett');
           expect(saved?.captureDeviceId, 'scarlett');
         },
@@ -1047,8 +1042,7 @@ void main() {
           // 48 kHz / 32 on the pin, the pin at its own rate and period, then
           // the system default at its own: the last try has to come up.
           expect(engine.startCalls, 3);
-          expect(engine.lastConfig, const le.EngineConfig(bufferFrames: 512));
-          expect(repository.lastEngineConfig, const EngineConfig());
+          expect(engine.lastConfig, const le.EngineConfig());
           final saved = await settings.loadAudioConfig();
           expect(saved?.playbackDeviceId, '');
           expect(saved?.captureDeviceId, '');
@@ -1088,14 +1082,11 @@ void main() {
           expect(
             engine.lastConfig,
             const le.EngineConfig(
-              bufferFrames: 512,
               playbackDeviceId: 'scarlett',
               captureDeviceId: 'scarlett',
             ),
           );
           final saved = await settings.loadAudioConfig();
-          // The device's own period, known only once the switch opens it.
-          expect(saved?.bufferFrames, 0);
           expect(saved?.playbackDeviceId, 'scarlett');
           expect(saved?.captureDeviceId, 'scarlett');
         },
@@ -1114,8 +1105,7 @@ void main() {
 
         expect(result.started, isTrue);
         expect(engine.startCalls, 2);
-        expect(engine.lastConfig, const le.EngineConfig(bufferFrames: 512));
-        expect(repository.lastEngineConfig, const EngineConfig());
+        expect(engine.lastConfig, const le.EngineConfig());
       });
 
       test('macOS/Linux lands stopped when the default open fails', () async {
@@ -1836,6 +1826,14 @@ void main() {
       await settings.saveAudioConfig(
         const StoredAudioConfig(sampleRate: 48000, bufferFrames: 512),
       );
+      // Saved under the profile the running engine reports (the fake's
+      // snapshot has sample rate / buffer 0, device 'Fake Device').
+      await settings.saveLatencyOffsetFrames(
+        device: 'Fake Device',
+        sampleRate: 0,
+        bufferFrames: 0,
+        frames: 720,
+      );
 
       final started = await tryAutoStartEngine(
         mixSettings: testMixSettings(repository, settings: settings),
@@ -1847,6 +1845,8 @@ void main() {
       expect(engine.lastConfig?.bufferFrames, 512);
       expect(repository.state.status.warmingUp, isFalse);
       expect(engine.lastMasterGain, 1);
+      // No switch will restore it, so the start does.
+      expect(engine.lastRecordOffset, 720);
     });
 
     test("restores every track pan and the open device's input setup "

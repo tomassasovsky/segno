@@ -846,11 +846,12 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
         ),
       );
     }
-    final rateMoved =
-        asked.sampleRate > 0 && asked.sampleRate != status.sampleRate;
-    final bufferMoved =
-        asked.bufferFrames > 0 && asked.bufferFrames != status.bufferFrames;
-    if (!rateMoved && !bufferMoved) return;
+    // Refused: the warm-up buffer still runs. A period the device rounded
+    // is not a refusal, as it was not before the warm-up.
+    if (asked.bufferFrames == kWarmUpBufferFrames ||
+        status.bufferFrames != kWarmUpBufferFrames) {
+      return;
+    }
     emit(
       state.copyWith(
         sampleRate: _offerable(

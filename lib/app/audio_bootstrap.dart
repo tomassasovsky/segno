@@ -26,10 +26,11 @@ typedef AutoStartResult = ({
 /// device could be opened, which the looper surfaces as an "audio not running"
 /// affordance.
 ///
-/// Every start here is a warm-up (#1533): the device opens at the saved rate
-/// with the largest buffer, silent, and the saved settings and chains load
-/// onto it. `AudioWarmUpCubit` opens the saved config itself, and restores
-/// its record offset, once the console has settled.
+/// A start from a saved config is a warm-up (#1533): the device opens at the
+/// saved rate with the largest buffer, silent, and the saved settings and
+/// chains load onto it. `AudioWarmUpCubit` opens the saved config itself,
+/// and restores its record offset, once the console has settled. A first run
+/// opens as it is, so each of its tries can fall back on a refused buffer.
 Future<AutoStartResult> tryAutoStartEngine({
   required LooperRepository repository,
   required SettingsRepository settings,
@@ -280,11 +281,23 @@ Future<AutoStartResult> _tryAutoStartEngine({
     );
   }
 
-  // The record offset is not restored here: the device runs the warm-up
-  // buffer, and the switch to the saved one restores the offset saved for it
-  // (`AudioWarmUpCubit`).
+  // Restore latency compensation for a config that opened as it is (one
+  // already at the warm-up buffer): only a saved offset for this device, rate
+  // and buffer, since nothing is measured without being asked (#1270, Q2).
+  // A warm-up's offset is restored by the switch to the saved buffer
+  // (`AudioWarmUpCubit`), since nothing records before it.
   final status = repository.state.status;
   final savedMix = await settings.loadMixSettings(status.deviceName);
+  if (!status.warmingUp) {
+    final savedOffset = await settings.loadLatencyOffsetFrames(
+      device: status.deviceName,
+      sampleRate: status.sampleRate,
+      bufferFrames: status.bufferFrames,
+    );
+    if (savedOffset != null && savedOffset > 0) {
+      repository.setRecordOffset(savedOffset);
+    }
+  }
 
   // Restore the global default loop multiple (×N). RecordOptionsCubit
   // normally applies this — but that cubit is not
@@ -560,10 +573,9 @@ Future<bool> _firstRunAutoStart({
     );
   }
 
-  // Every try is a warm-up (#1533): the device opens the try's rate at the
-  // warm-up buffer, and its own buffer only at the switch. A refused rate is
-  // seen here; a refused buffer at the switch, which keeps the warm-up
-  // config running and says so.
+  // No warm-up on a first run (#1533): each try must open its own buffer
+  // here, so a device that refuses 32 frames falls back to its own period
+  // and that period is what gets saved.
   var result = repository.startEngine(
     EngineConfig(
       sampleRate: AudioSetupState.defaultSampleRate,
@@ -571,7 +583,6 @@ Future<bool> _firstRunAutoStart({
       playbackDeviceId: playbackId,
       captureDeviceId: captureId,
     ),
-    warmUp: true,
   );
   if (result == EngineResult.device) {
     // The interface would not open at the default rate or period: keep it,
@@ -582,7 +593,6 @@ Future<bool> _firstRunAutoStart({
     );
     result = repository.startEngine(
       EngineConfig(playbackDeviceId: playbackId, captureDeviceId: captureId),
-      warmUp: true,
     );
   }
   if (!result.isOk && (playbackId.isNotEmpty || captureId.isNotEmpty)) {
@@ -594,7 +604,7 @@ Future<bool> _firstRunAutoStart({
     );
     playbackId = '';
     captureId = '';
-    result = repository.startEngine(const EngineConfig(), warmUp: true);
+    result = repository.startEngine(const EngineConfig());
   }
   if (!result.isOk) {
     AppLog.error('audio first-run: open failed result=${result.name}');
@@ -644,20 +654,14 @@ Future<bool> _firstRunAutoStart({
     );
   }
   final status = repository.state.status;
-  // What the try asked for, not the warm-up buffer that runs now (#1533). A
-  // try at the device's own period saves 0, the device's own, since that
-  // period is only known once the switch has opened it.
-  final asked = repository.lastEngineConfig ?? const EngineConfig();
   await settings.saveAudioConfig(
     StoredAudioConfig(
       sampleRate: status.sampleRate > 0
           ? status.sampleRate
           : AudioSetupState.defaultSampleRate,
-      bufferFrames: asked.bufferFrames > 0
-          ? asked.bufferFrames
-          : status.warmingUp
-          ? 0
-          : status.bufferFrames,
+      bufferFrames: status.bufferFrames > 0
+          ? status.bufferFrames
+          : AudioSetupState.defaultBufferFrames,
       playbackDeviceId: playbackId,
       captureDeviceId: captureId,
     ),

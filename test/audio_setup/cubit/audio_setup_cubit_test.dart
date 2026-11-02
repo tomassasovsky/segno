@@ -991,6 +991,16 @@ void main() {
       expect(await settings.loadAudioConfig(), isNull);
     });
 
+    test('a period the device rounded is not a refusal', () async {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      stateController.add(looper(warmingUp: false, buffer: 48));
+      await pumpEventQueue();
+
+      expect(cubit.state.phase, ConfigPhase.settled);
+    });
+
     test('a switch that dropped a track is told', () async {
       final cubit = buildCubit();
       addTearDown(cubit.close);
