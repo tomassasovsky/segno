@@ -1816,6 +1816,9 @@ void main() {
         // Set by a warm start or a reconnect and cleared by the switch to the
         // player's config (#1533): once or twice per start, never per callback.
         'warmingUp',
+        // Set when an open owes its record offset and cleared when the audio
+        // setup sets it (#1541): once per start or apply.
+        'recordOffsetOwed',
       };
 
       final actual = _declaredFinalFields(

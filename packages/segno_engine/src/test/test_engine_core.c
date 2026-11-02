@@ -8783,6 +8783,41 @@ static void test_label_is_loopback(void) {
   CHECK(le_label_is_loopback("Microphone") == 0);
   CHECK(le_label_is_loopback("") == 0);
   CHECK(le_label_is_loopback(NULL) == 0);
+  /* A Core Audio label is never read as a scarlett2 source. */
+  CHECK(le_label_is_loopback("PCM 1") == 0);
+}
+
+/* Linux: a capture source in the scarlett2 routing that is the host's own
+ * playback stream (#1541). Other sources are real inputs or mixes. */
+static void test_capture_source_is_loopback(void) {
+  printf("test_capture_source_is_loopback\n");
+  CHECK(le_capture_source_is_loopback("PCM 1") == 1);
+  CHECK(le_capture_source_is_loopback("PCM 12") == 1);
+  CHECK(le_capture_source_is_loopback("PCM") == 0);
+  CHECK(le_capture_source_is_loopback("PCM x") == 0);
+  CHECK(le_capture_source_is_loopback("Analogue 1") == 0);
+  CHECK(le_capture_source_is_loopback("Mix A") == 0);
+  CHECK(le_capture_source_is_loopback("Off") == 0);
+  CHECK(le_capture_source_is_loopback(NULL) == 0);
+}
+
+/* The ALSA control device behind a capture id (#1541): the appliance's own
+ * ":<card>,<dev>", miniaudio's "hw:" forms, and a card named by id. */
+static void test_alsa_ctl_name_from_uid(void) {
+  printf("test_alsa_ctl_name_from_uid\n");
+  char out[32];
+  CHECK(le_alsa_ctl_name_from_uid(":1,0", out, sizeof(out)) == 1);
+  CHECK(strcmp(out, "hw:1") == 0);
+  CHECK(le_alsa_ctl_name_from_uid("hw:2,0", out, sizeof(out)) == 1);
+  CHECK(strcmp(out, "hw:2") == 0);
+  CHECK(le_alsa_ctl_name_from_uid("plughw:3", out, sizeof(out)) == 1);
+  CHECK(strcmp(out, "hw:3") == 0);
+  CHECK(le_alsa_ctl_name_from_uid("hw:CARD=USB,DEV=0", out, sizeof(out)) == 1);
+  CHECK(strcmp(out, "hw:USB") == 0);
+  CHECK(le_alsa_ctl_name_from_uid(NULL, out, sizeof(out)) == 0);
+  CHECK(le_alsa_ctl_name_from_uid("default", out, sizeof(out)) == 0);
+  CHECK(le_alsa_ctl_name_from_uid("hw:", out, sizeof(out)) == 0);
+  CHECK(le_alsa_ctl_name_from_uid(":1,0", out, 4) == 0);
 }
 
 /* Fake per-channel name provider for the mask test: `ctx` is a NULL-terminable
@@ -8972,6 +9007,58 @@ static void test_loopback_latency_weak_echo_and_silence(void) {
 
   free(out);
   free(in);
+}
+
+/* The automatic measurement's burst (#1541) is -80 dBFS: on a bit-exact
+ * loopback it still resolves to the round trip, since the silence floor scales
+ * with the burst, and a silent loopback at that level still times out. */
+static void test_loopback_latency_quiet_burst(void) {
+  printf("test_loopback_latency_quiet_burst\n");
+  enum { SR = 48000, RET = 292, CAP = SR / 10 };
+  const float amp = 1e-4f;
+  le_snapshot s;
+
+  /* Output 0 returns bit-exact on the loopback channel 1 after RET frames. */
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, SR, 2, 2, 100000) == LE_OK);
+  le_engine_set_excluded_input_mask_for_test(e, 0x2u);
+  CHECK(le_engine_measure_latency_path(e, 0, LE_LATENCY_LOOPBACK_INPUT, amp,
+                                       1) == LE_OK);
+  drain(e);
+  float* sent = calloc((size_t)CAP + 1, sizeof(float));
+  CHECK(sent != NULL);
+  float peak = 0.0f;
+  for (int f = 0; f < CAP; ++f) {
+    float in[2] = {0.0f, f >= RET ? sent[f - RET] : 0.0f};
+    float out[2];
+    le_engine_process(e, out, in, 1);
+    sent[f] = out[0];
+    if (fabsf(out[0]) > peak) peak = fabsf(out[0]);
+  }
+  CHECK(peak <= amp);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_DONE);
+  CHECK(s.record_offset_frames >= RET && s.record_offset_frames <= RET + 2);
+  free(sent);
+  le_engine_destroy(e);
+
+  /* Nothing returns: a timeout, the offset kept. */
+  le_engine* e2 = le_engine_create();
+  CHECK(le_engine_configure(e2, SR, 2, 2, 100000) == LE_OK);
+  le_engine_set_excluded_input_mask_for_test(e2, 0x2u);
+  CHECK(le_engine_set_record_offset(e2, 77) == LE_OK);
+  CHECK(le_engine_measure_latency_path(e2, 0, LE_LATENCY_LOOPBACK_INPUT, amp,
+                                       2) == LE_OK);
+  drain(e2);
+  for (int f = 0; f < CAP; ++f) {
+    float in[2] = {0.0f, 0.0f};
+    float out[2];
+    le_engine_process(e2, out, in, 1);
+  }
+  le_engine_get_snapshot(e2, &s);
+  CHECK(s.latency_state == LE_LATENCY_TIMEOUT);
+  CHECK(s.record_offset_frames == 77);
+  le_engine_destroy(e2);
 }
 
 /* ---- latency path measurement (#1270 Part 2) ---- */
@@ -40379,6 +40466,8 @@ int main(void) {
   test_probing_leaks_no_fds();
   test_probing_leaks_no_fds_when_the_server_fails_mid_connect();
   test_label_is_loopback();
+  test_capture_source_is_loopback();
+  test_alsa_ctl_name_from_uid();
   test_excluded_mask_from_names();
   test_loopback_exclusion();
   test_loopback_latency_uses_loopback_channel();
@@ -40392,6 +40481,7 @@ int main(void) {
   test_latency_path_holds_a_sound_arm();
   test_latency_path_restored_offset();
   test_loopback_latency_weak_echo_and_silence();
+  test_loopback_latency_quiet_burst();
   test_set_record_offset_publishes_latency();
   test_fx_bypass_is_transparent();
   test_fx_count_gates_the_chain();

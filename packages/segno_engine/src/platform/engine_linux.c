@@ -1107,11 +1107,147 @@ static void le_prepare_thread_stack(pthread_t thread, size_t bytes) {
   pthread_attr_destroy(&attr);
 }
 
+/* ---- loopback channels from the interface's routing (#1541) ----
+ *
+ * ALSA gives capture channels no labels, but a Focusrite interface's
+ * `scarlett2` mixer names the source of every capture channel: control
+ * "PCM NN Capture Enum" (NN = the 1-based channel) reads "Analogue 1",
+ * "Mix A", ... or "PCM <n>", the host's own playback stream n. A channel fed
+ * from a playback stream is a loopback (on the console's 4i4, capture 5 =
+ * "PCM 1", le_capture_source_is_loopback). A card without these
+ * controls (anything but scarlett2) names no channel and excludes nothing.
+ *
+ * Through libasound's control API, dlopen'd like the channel probe above: the
+ * engine's link line, and the native tests', do not carry libasound. */
+
+/* snd_ctl_elem_iface_t / snd_ctl_elem_type_t values (alsa/control.h). */
+#define LE_SND_CTL_ELEM_IFACE_MIXER 2
+#define LE_SND_CTL_ELEM_TYPE_ENUMERATED 3
+#define LE_SND_CTL_NONBLOCK 0x0001
+
+typedef struct le_alsa_ctl_syms {
+  int (*ctl_open)(void**, const char*, int);
+  int (*ctl_close)(void*);
+  int (*id_malloc)(void**);
+  void (*id_free)(void*);
+  void (*id_set_interface)(void*, int);
+  void (*id_set_name)(void*, const char*);
+  int (*info_malloc)(void**);
+  void (*info_free)(void*);
+  void (*info_set_id)(void*, const void*);
+  int (*info)(void*, void*);
+  int (*info_get_type)(const void*);
+  unsigned int (*info_get_items)(const void*);
+  void (*info_set_item)(void*, unsigned int);
+  const char* (*info_get_item_name)(const void*);
+  int (*value_malloc)(void**);
+  void (*value_free)(void*);
+  void (*value_set_id)(void*, const void*);
+  int (*elem_read)(void*, void*);
+  unsigned int (*value_get_enumerated)(const void*, unsigned int);
+} le_alsa_ctl_syms;
+
+/* Resolved once from the process-lifetime libasound handle; NULL when ALSA or
+ * any entry point is missing. Control thread only (device open), no locking. */
+static const le_alsa_ctl_syms* le_alsa_ctl_syms_get(void) {
+  static le_alsa_ctl_syms syms;
+  static int resolved = 0;
+  static int usable = 0;
+  if (!resolved) {
+    resolved = 1;
+    void* lib = le_alsa_syms_get()->lib;
+    if (lib == NULL) return NULL;
+#define LE_CTL_SYM(field, name) \
+  syms.field = (__typeof__(syms.field))dlsym(lib, name)
+    LE_CTL_SYM(ctl_open, "snd_ctl_open");
+    LE_CTL_SYM(ctl_close, "snd_ctl_close");
+    LE_CTL_SYM(id_malloc, "snd_ctl_elem_id_malloc");
+    LE_CTL_SYM(id_free, "snd_ctl_elem_id_free");
+    LE_CTL_SYM(id_set_interface, "snd_ctl_elem_id_set_interface");
+    LE_CTL_SYM(id_set_name, "snd_ctl_elem_id_set_name");
+    LE_CTL_SYM(info_malloc, "snd_ctl_elem_info_malloc");
+    LE_CTL_SYM(info_free, "snd_ctl_elem_info_free");
+    LE_CTL_SYM(info_set_id, "snd_ctl_elem_info_set_id");
+    LE_CTL_SYM(info, "snd_ctl_elem_info");
+    LE_CTL_SYM(info_get_type, "snd_ctl_elem_info_get_type");
+    LE_CTL_SYM(info_get_items, "snd_ctl_elem_info_get_items");
+    LE_CTL_SYM(info_set_item, "snd_ctl_elem_info_set_item");
+    LE_CTL_SYM(info_get_item_name, "snd_ctl_elem_info_get_item_name");
+    LE_CTL_SYM(value_malloc, "snd_ctl_elem_value_malloc");
+    LE_CTL_SYM(value_free, "snd_ctl_elem_value_free");
+    LE_CTL_SYM(value_set_id, "snd_ctl_elem_value_set_id");
+    LE_CTL_SYM(elem_read, "snd_ctl_elem_read");
+    LE_CTL_SYM(value_get_enumerated, "snd_ctl_elem_value_get_enumerated");
+#undef LE_CTL_SYM
+    usable = syms.ctl_open && syms.ctl_close && syms.id_malloc && syms.id_free &&
+             syms.id_set_interface && syms.id_set_name && syms.info_malloc &&
+             syms.info_free && syms.info_set_id && syms.info &&
+             syms.info_get_type && syms.info_get_items && syms.info_set_item &&
+             syms.info_get_item_name && syms.value_malloc && syms.value_free &&
+             syms.value_set_id && syms.elem_read && syms.value_get_enumerated;
+  }
+  return usable ? &syms : NULL;
+}
+
+/* One card's open control handle and scratch objects, for the name provider. */
+typedef struct le_capture_sources {
+  const le_alsa_ctl_syms* s;
+  void* ctl;
+  void* id;
+  void* info;
+  void* value;
+  char name[64];
+} le_capture_sources;
+
+/* Capture channel `channel`'s source in the scarlett2 routing ("PCM 1",
+ * "Analogue 2", ...), or NULL when the card has no such control for it. */
+static const char* le_capture_source_name(le_capture_sources* c, int channel) {
+  const le_alsa_ctl_syms* s = c->s;
+  char control[48];
+  snprintf(control, sizeof(control), "PCM %02d Capture Enum", channel + 1);
+  s->id_set_interface(c->id, LE_SND_CTL_ELEM_IFACE_MIXER);
+  s->id_set_name(c->id, control);
+  s->info_set_id(c->info, c->id);
+  if (s->info(c->ctl, c->info) < 0 ||
+      s->info_get_type(c->info) != LE_SND_CTL_ELEM_TYPE_ENUMERATED) {
+    return NULL;
+  }
+  s->value_set_id(c->value, c->id);
+  if (s->elem_read(c->ctl, c->value) < 0) return NULL;
+  const unsigned int item = s->value_get_enumerated(c->value, 0);
+  if (item >= s->info_get_items(c->info)) return NULL;
+  s->info_set_item(c->info, item);
+  if (s->info(c->ctl, c->info) < 0) return NULL;
+  const char* source = s->info_get_item_name(c->info);
+  if (source == NULL) return NULL;
+  strncpy(c->name, source, sizeof(c->name) - 1);
+  c->name[sizeof(c->name) - 1] = '\0';
+  return c->name;
+}
+
 uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count) {
-  /* No Linux channel-label source yet (PipeWire labels are future work). */
-  (void)uid;
-  (void)channel_count;
-  return 0;
+  char card[64];
+  if (!le_alsa_ctl_name_from_uid(uid, card, sizeof(card))) return 0;
+  const le_alsa_ctl_syms* s = le_alsa_ctl_syms_get();
+  if (s == NULL) return 0;
+  le_capture_sources c = {.s = s};
+  uint32_t mask = 0;
+  if (s->ctl_open(&c.ctl, card, LE_SND_CTL_NONBLOCK) < 0) return 0;
+  if (s->id_malloc(&c.id) >= 0 && s->info_malloc(&c.info) >= 0 &&
+      s->value_malloc(&c.value) >= 0) {
+    const int n =
+        channel_count < LE_MAX_CHANNELS ? channel_count : LE_MAX_CHANNELS;
+    for (int ch = 0; ch < n; ++ch) {
+      if (le_capture_source_is_loopback(le_capture_source_name(&c, ch))) {
+        mask |= 1u << ch;
+      }
+    }
+  }
+  if (c.value != NULL) s->value_free(c.value);
+  if (c.info != NULL) s->info_free(c.info);
+  if (c.id != NULL) s->id_free(c.id);
+  s->ctl_close(c.ctl);
+  return mask;
 }
 
 void le_platform_device_id_to_str(const ma_device_id* id, char* out,

@@ -567,7 +567,9 @@ class _EngineColumn extends StatelessWidget {
   }
 }
 
-/// The round trip: what it measures, Measure, and the engine's health.
+/// The round trip: what it measures, Measure, and the engine's health. The
+/// automatic loopback measurement (#1541) reads as measuring while it runs,
+/// and a failed one says so under the figure.
 class _LatencyColumn extends StatelessWidget {
   const _LatencyColumn();
 
@@ -580,15 +582,20 @@ class _LatencyColumn extends StatelessWidget {
     final status = state.engineStatus;
     final present = status.isConnected && status.devicePresent;
     final running = state.measurePhase == MeasurePhase.running;
+    final measuring =
+        running || state.loopbackMeasure == LoopbackMeasure.measuring;
     final measured =
         status.latencyState == LatencyState.done &&
         status.recordOffsetFrames > 0;
+    final canMeasure = present && state.draft == null && !measuring;
     final note = !present
         ? l10n.audioMeasureUnavailable
         : state.draft != null
         ? l10n.deviceApplyBeforeMeasuring
         : measured
         ? l10n.audioRecordOffsetSub(status.recordOffsetFrames)
+        : state.loopbackMeasure == LoopbackMeasure.failed
+        ? l10n.deviceLoopbackFailed
         : l10n.deviceMeasureNote;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -606,23 +613,19 @@ class _LatencyColumn extends StatelessWidget {
               )
             else
               Opacity(
-                opacity: present && state.draft == null
-                    ? 1
-                    : surface.disabledOpacity,
+                opacity: canMeasure ? 1 : surface.disabledOpacity,
                 child: LoopOutlinedButton(
                   key: const Key('audio_measure'),
                   width: 144,
                   label: l10n.audioMeasure,
-                  onTap: present && state.draft == null
-                      ? cubit.openCableTest
-                      : null,
+                  onTap: canMeasure ? cubit.openCableTest : null,
                 ),
               ),
           ],
         ),
         const SizedBox(height: 26),
         AppText(
-          running
+          measuring
               ? l10n.measuringEllipsis
               : measured
               ? l10n.latencyMs(status.measuredLatencyMs.toStringAsFixed(2))

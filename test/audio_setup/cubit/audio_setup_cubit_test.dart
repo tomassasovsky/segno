@@ -15,6 +15,17 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 
 class _MockBackingRepository extends Mock implements BackingRepository {}
 
+/// Counts the integer writes, so a test can tell an offset saved once.
+class _CountingStore extends FakeKeyValueStore {
+  int intWrites = 0;
+
+  @override
+  Future<void> setInt(String key, int value) {
+    intWrites++;
+    return super.setInt(key, value);
+  }
+}
+
 const _applied = AudioApplyResult(
   status: AudioApplyStatus.applied,
   result: EngineResult.ok,
@@ -908,6 +919,337 @@ void main() {
       await pumpEventQueue();
 
       verify(() => repository.setRecordOffset(300)).called(1);
+    });
+  });
+
+  group('the owed record offset (#1541)', () {
+    late _CountingStore counting;
+    late LooperState live;
+    late Completer<LatencyResult> measurement;
+
+    LooperState scarlett({
+      int buffer = 32,
+      bool owed = true,
+      int loopback = 1 << 4,
+      int offset = 0,
+    }) => LooperState(
+      status: EngineStatus(
+        deviceName: 'Scarlett 4i4',
+        sampleRate: 48000,
+        bufferFrames: buffer,
+        isConnected: true,
+        devicePresent: true,
+        excludedInputMask: loopback,
+        recordOffsetFrames: offset,
+        recordOffsetOwed: owed,
+      ),
+    );
+
+    setUp(() {
+      counting = _CountingStore();
+      settings = SettingsRepository(store: counting);
+      live = const LooperState();
+      measurement = Completer<LatencyResult>();
+      when(() => repository.state).thenAnswer((_) => live);
+      // Setting the offset settles the owed one, as the repository does.
+      when(() => repository.setRecordOffset(any())).thenAnswer((invocation) {
+        final frames = invocation.positionalArguments.single as int;
+        live = LooperState(
+          status: EngineStatus(
+            deviceName: live.status.deviceName,
+            sampleRate: live.status.sampleRate,
+            bufferFrames: live.status.bufferFrames,
+            isConnected: true,
+            devicePresent: true,
+            excludedInputMask: live.status.excludedInputMask,
+            recordOffsetFrames: frames,
+          ),
+        );
+        stateController.add(live);
+        return EngineResult.ok;
+      });
+      when(
+        () => repository.measureLoopbackLatency(),
+      ).thenAnswer((_) => measurement.future);
+    });
+
+    Future<AudioSetupCubit> owe(LooperState next) async {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      live = next;
+      stateController.add(next);
+      await pumpEventQueue();
+      return cubit;
+    }
+
+    Future<int?> saved({int buffer = 32}) => settings.loadLatencyOffsetFrames(
+      device: 'Scarlett 4i4',
+      sampleRate: 48000,
+      bufferFrames: buffer,
+    );
+
+    test('a saved offset is set, and nothing is measured', () async {
+      // A cable result, say: it is never measured over.
+      await settings.saveLatencyOffsetFrames(
+        device: 'Scarlett 4i4',
+        sampleRate: 48000,
+        bufferFrames: 32,
+        frames: 320,
+      );
+      counting.intWrites = 0;
+
+      await owe(scarlett());
+
+      verify(() => repository.setRecordOffset(320)).called(1);
+      verifyNever(() => repository.measureLoopbackLatency());
+      expect(counting.intWrites, 0);
+    });
+
+    test(
+      'none saved, with a loopback: measured twice, saved, then set',
+      () async {
+        final cubit = await owe(scarlett());
+
+        verify(() => repository.measureLoopbackLatency()).called(1);
+        expect(cubit.state.loopbackMeasure, LoopbackMeasure.measuring);
+        // Silent and closed until the offset is set.
+        verifyNever(() => repository.setRecordOffset(any()));
+        // The cable test waits for it.
+        cubit.openCableTest();
+        expect(cubit.state.measurePhase, MeasurePhase.idle);
+        expect(cubit.state.refusal, const ApplyRefusal.busy('calibration'));
+
+        measurement.complete(
+          const LatencyResult.done(offsetFrames: 292, latencyMs: 6.08),
+        );
+        await pumpEventQueue();
+
+        // The second run, which agrees.
+        verify(() => repository.measureLoopbackLatency()).called(1);
+        expect(await saved(), 292);
+        verify(() => repository.setRecordOffset(292)).called(1);
+        expect(cubit.state.loopbackMeasure, LoopbackMeasure.idle);
+      },
+    );
+
+    test(
+      'a profile measured once is not measured again, nor saved twice',
+      () async {
+        await owe(scarlett());
+        measurement.complete(
+          const LatencyResult.done(offsetFrames: 292, latencyMs: 6.08),
+        );
+        await pumpEventQueue();
+        expect(counting.intWrites, 1);
+
+        // The next start owes the same profile again.
+        live = scarlett();
+        stateController.add(live);
+        await pumpEventQueue();
+
+        verify(() => repository.measureLoopbackLatency()).called(2);
+        verify(() => repository.setRecordOffset(292)).called(2);
+        expect(counting.intWrites, 1);
+      },
+    );
+
+    for (final outcome in [
+      const LatencyResult(LatencyOutcome.noReturn),
+      const LatencyResult(LatencyOutcome.timedOut),
+      const LatencyResult(LatencyOutcome.cancelled),
+      const LatencyResult.refused(EngineResult.invalid),
+    ]) {
+      test('a measurement that ends ${outcome.outcome.name} leaves 0, saves '
+          'nothing and says so', () async {
+        final cubit = await owe(scarlett());
+
+        measurement.complete(outcome);
+        await pumpEventQueue();
+
+        verify(() => repository.setRecordOffset(0)).called(1);
+        expect(await saved(), isNull);
+        expect(counting.intWrites, 0);
+        expect(cubit.state.loopbackMeasure, LoopbackMeasure.failed);
+        // A tick from before the offset was set does not measure again.
+        stateController.add(scarlett());
+        await pumpEventQueue();
+        verify(() => repository.measureLoopbackLatency()).called(1);
+      });
+    }
+
+    test('two runs that disagree save nothing and say so', () async {
+      final runs = [
+        const LatencyResult.done(offsetFrames: 292, latencyMs: 6.08),
+        const LatencyResult.done(offsetFrames: 324, latencyMs: 6.75),
+      ];
+      when(
+        () => repository.measureLoopbackLatency(),
+      ).thenAnswer((_) async => runs.removeAt(0));
+
+      final cubit = await owe(scarlett());
+
+      expect(await saved(), isNull);
+      verify(() => repository.setRecordOffset(0)).called(1);
+      expect(cubit.state.loopbackMeasure, LoopbackMeasure.failed);
+    });
+
+    test('an owed offset with no device name to key it is 0', () async {
+      await owe(
+        const LooperState(
+          status: EngineStatus(
+            sampleRate: 48000,
+            bufferFrames: 32,
+            isConnected: true,
+            devicePresent: true,
+            excludedInputMask: 1 << 4,
+            recordOffsetOwed: true,
+          ),
+        ),
+      );
+
+      verifyNever(() => repository.measureLoopbackLatency());
+      verify(() => repository.setRecordOffset(0)).called(1);
+    });
+
+    test(
+      'an open owed again while a settle runs is settled after it',
+      () async {
+        // A plain open of an unmeasured profile is settling (its saved offset
+        // is being read) when an apply owes the same profile: that tick is
+        // skipped, so the end of the settle picks it up from the repository.
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        live = scarlett(owed: false);
+        stateController.add(live);
+        live = scarlett();
+        stateController.add(live);
+        await pumpEventQueue();
+        measurement.complete(
+          const LatencyResult.done(offsetFrames: 292, latencyMs: 6.08),
+        );
+        await pumpEventQueue();
+
+        expect(await saved(), 292);
+        expect(live.status.recordOffsetOwed, isFalse);
+        expect(live.status.recordOffsetFrames, 292);
+      },
+    );
+
+    test('the device leaving mid-measurement is no failure: the next owed '
+        'offset measures again', () async {
+      final cubit = await owe(scarlett());
+
+      live = const LooperState(
+        status: EngineStatus(
+          deviceName: 'Scarlett 4i4',
+          sampleRate: 48000,
+          bufferFrames: 32,
+          isConnected: true,
+          excludedInputMask: 1 << 4,
+          recordOffsetOwed: true,
+        ),
+      );
+      measurement.complete(const LatencyResult(LatencyOutcome.cancelled));
+      await pumpEventQueue();
+
+      verifyNever(() => repository.setRecordOffset(any()));
+      expect(cubit.state.loopbackMeasure, LoopbackMeasure.idle);
+
+      // It came back and owes the same profile again.
+      measurement = Completer<LatencyResult>();
+      live = scarlett();
+      stateController.add(live);
+      await pumpEventQueue();
+      measurement.complete(
+        const LatencyResult.done(offsetFrames: 292, latencyMs: 6.08),
+      );
+      await pumpEventQueue();
+
+      expect(await saved(), 292);
+      verify(() => repository.setRecordOffset(292)).called(1);
+    });
+
+    test('a guard someone else holds does not stop it', () async {
+      final held = guards.enter(
+        GuardKind.sessionApply,
+        const GuardScope.internal(),
+        purpose: 'boot session',
+      );
+      addTearDown(held.release);
+
+      await owe(scarlett());
+
+      verify(() => repository.measureLoopbackLatency()).called(1);
+    });
+
+    test('an interface with no loopback is set to 0, unmeasured', () async {
+      final cubit = await owe(scarlett(loopback: 0));
+
+      verifyNever(() => repository.measureLoopbackLatency());
+      verify(() => repository.setRecordOffset(0)).called(1);
+      expect(cubit.state.loopbackMeasure, LoopbackMeasure.idle);
+    });
+
+    test('a profile that nothing owes is never measured', () async {
+      await owe(scarlett(owed: false, offset: 50));
+
+      verifyNever(() => repository.measureLoopbackLatency());
+      verify(() => repository.setRecordOffset(0)).called(1);
+    });
+
+    test('a device that reopened at another buffer while measuring: nothing '
+        'saved, and the new profile is settled', () async {
+      await settings.saveLatencyOffsetFrames(
+        device: 'Scarlett 4i4',
+        sampleRate: 48000,
+        bufferFrames: 64,
+        frames: 330,
+      );
+      final cubit = await owe(scarlett());
+
+      live = scarlett(buffer: 64);
+      stateController.add(live);
+      await pumpEventQueue();
+      measurement.complete(const LatencyResult(LatencyOutcome.cancelled));
+      await pumpEventQueue();
+
+      expect(await saved(), isNull);
+      verifyNever(() => repository.setRecordOffset(0));
+      verify(() => repository.setRecordOffset(330)).called(1);
+      expect(cubit.state.loopbackMeasure, LoopbackMeasure.idle);
+    });
+
+    test('a cable result clears the failure', () async {
+      final cubit = await owe(scarlett());
+      measurement.complete(const LatencyResult(LatencyOutcome.noReturn));
+      await pumpEventQueue();
+      expect(cubit.state.loopbackMeasure, LoopbackMeasure.failed);
+      when(
+        () => repository.measureLatency(
+          output: any(named: 'output'),
+          input: any(named: 'input'),
+        ),
+      ).thenAnswer(
+        (_) async =>
+            const LatencyResult.done(offsetFrames: 320, latencyMs: 6.67),
+      );
+
+      cubit
+        ..openCableTest()
+        ..startCableTest(1, 1);
+      await pumpEventQueue();
+
+      expect(cubit.state.loopbackMeasure, LoopbackMeasure.idle);
+      expect(await saved(), 320);
+    });
+
+    test('closing mid-measurement cancels it', () async {
+      when(() => repository.cancelLatency()).thenReturn(null);
+      final cubit = await owe(scarlett());
+
+      await cubit.close();
+
+      verify(() => repository.cancelLatency()).called(1);
     });
   });
 

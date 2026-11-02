@@ -201,9 +201,13 @@ and owns it while the app runs; its audio thread runs at real-time priority
 80.
 
 - **Select the interface as both input and output** in Settings → Audio.
-- **Latency calibration is per (device, sample rate, buffer).** Measure
-  round-trip latency *after* choosing the buffer, and measure again after
-  changing it. The measurement needs a physical out→in loopback cable.
+- **Latency calibration is per (device, sample rate, buffer).** When a
+  profile has no saved offset, the console measures it through the
+  interface's own loopback at start and after an apply in Settings → Audio,
+  silently, and saves it. That loopback is digital, so it leaves the
+  converters out (about 0.6 ms on a Scarlett 4i4). Measure with a physical
+  out→in cable to include them; a cable result replaces the loopback one and
+  is never measured over.
 - **Channel count can depend on the sample rate.** USB interfaces switch
   their USB alternate setting by rate: a Clarett+ 8Pre has 18 in / 20 out at 44.1/48 kHz, 14/16 at
   88.2/96 kHz and 10/10 at 176.4/192 kHz.
@@ -225,7 +229,9 @@ amixer -c USB get 'Analogue Output 01'
   (`Analogue Output 01 ← Mix A`), so app audio is missing until the output is
   set to the PCM channel: `amixer -c USB cset numid=<n> "PCM 1"`.
 - **Capture** defaults are usually right (`PCM 01 ← Analogue 1`, …); check the
-  `PCM NN Capture Enum` controls.
+  `PCM NN Capture Enum` controls. A capture channel fed from a playback
+  stream (`PCM 05 ← PCM 1`) is the loopback: Segno times its latency
+  measurement there and never records, monitors or routes it.
 - **Monitor level, input gain and 48 V phantom power** are hardware controls on
   most models. A weak input that the gain knob barely changes is the classic
   sign of a condenser mic with 48 V off.

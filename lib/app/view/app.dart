@@ -873,7 +873,6 @@ class _AppState extends State<App> {
             create: (context) {
               final cubit = AudioWarmUpCubit(
                 looper: context.read<LooperRepository>(),
-                settings: context.read<SettingsRepository>(),
                 guards: widget.guards,
                 ready: () =>
                     WidgetsBinding.instance.waitUntilFirstFrameRasterized,

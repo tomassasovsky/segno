@@ -735,6 +735,61 @@ void main() {
       expect(button(tester, const Key('audio_measure')).onTap, isNull);
     });
 
+    testWidgets('the loopback measurement reads as measuring, and a failed '
+        'one says to measure with a cable (#1541)', (tester) async {
+      // A start owes the offset of a profile never measured.
+      const owed = LooperState(
+        status: EngineStatus(
+          isConnected: true,
+          deviceName: 'Scarlett 4i4',
+          sampleRate: 48000,
+          bufferFrames: 32,
+          inputChannels: 6,
+          outputChannels: 4,
+          devicePresent: true,
+          excludedInputMask: 1 << 4,
+          recordOffsetOwed: true,
+        ),
+      );
+      final measured = Completer<LatencyResult>();
+      var live = owed;
+      when(() => repository.state).thenAnswer((_) => live);
+      // Setting the offset settles it, as the repository does.
+      when(() => repository.setRecordOffset(any())).thenAnswer((_) {
+        live = const LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            deviceName: 'Scarlett 4i4',
+            sampleRate: 48000,
+            bufferFrames: 32,
+            inputChannels: 6,
+            outputChannels: 4,
+            devicePresent: true,
+            excludedInputMask: 1 << 4,
+          ),
+        );
+        return EngineResult.ok;
+      });
+      when(
+        () => repository.measureLoopbackLatency(),
+      ).thenAnswer((_) => measured.future);
+      when(repository.cancelLatency).thenReturn(null);
+      await pump(tester, looper: owed);
+      await tester.pump();
+      final l10n = l10nOf(tester);
+
+      expect(find.text(l10n.measuringEllipsis), findsOneWidget);
+      expect(button(tester, const Key('audio_measure')).onTap, isNull);
+
+      measured.complete(const LatencyResult(LatencyOutcome.timedOut));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text(l10n.notMeasured), findsOneWidget);
+      expect(find.text(l10n.deviceLoopbackFailed), findsOneWidget);
+      expect(button(tester, const Key('audio_measure')).onTap, isNotNull);
+    });
+
     group('the cable test (#1270 Part 3b)', () {
       late Completer<LatencyResult> result;
 

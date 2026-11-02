@@ -129,10 +129,10 @@ unsigned le_platform_fork_count(void);
  * The tests call it to stand in for a device start. */
 void le_platform_prefault_audio_code(void);
 
-/* Excluded-input-channel mask from per-channel labels. macOS reads CoreAudio
- * labels. Linux returns 0 (no channel-label source yet; PipeWire port labels
- * are future work). All paths route through the shared
- * le_excluded_mask_from_names / le_label_is_loopback. */
+/* Excluded-input-channel mask: the input channels that are loopbacks. macOS
+ * reads Core Audio channel labels (le_label_is_loopback). Linux reads the
+ * capture sources of a scarlett2 card's routing (le_capture_source_is_loopback,
+ * #1541); any other card excludes nothing. */
 uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count);
 
 /* Platform-native device enumeration, taking precedence over the portable

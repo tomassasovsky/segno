@@ -1163,8 +1163,9 @@ const char* le_version(void) {
 /* Loopback detection + device enumeration moved to engine_devices.c (S1). */
 
 /* Loopback channel exclusion is per-OS: macOS reads Core Audio channel labels
- * (engine_apple.c), Linux/Windows exclude nothing for now. The mask is fetched
- * through le_platform_excluded_input_mask (engine_platform.h) at device open. */
+ * (engine_apple.c), Linux a scarlett2 card's capture routing (engine_linux.c,
+ * #1541). The mask is fetched through le_platform_excluded_input_mask
+ * (engine_platform.h) at device open. */
 
 void le_engine_set_now_fn_for_test(le_engine* engine, uint64_t (*fn)(void*),
                                    void* ctx) {

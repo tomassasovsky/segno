@@ -5,6 +5,7 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
+import 'package:segno/logging/app_log.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'audio_setup_state.dart';
@@ -18,6 +19,10 @@ part 'audio_setup_state.dart';
 /// the new rate or buffer, confirmed first when music is playing, and applied
 /// by reopening the device so the loops stay. The config is saved only once
 /// the device has opened it.
+///
+/// It also owns the record offset (#1541): the one saved for the running
+/// device, rate and buffer, or, when an open owes one that was never saved,
+/// one measured through the interface's own loopback and saved.
 class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// Creates an [AudioSetupCubit] backed by [repository], persisting the
   /// config through [settings]. [guards] is the app's operation table, and
@@ -50,6 +55,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       ),
     );
     _followWarmUp(_repository.state.status);
+    unawaited(_syncRecordOffset());
   }
 
   final LooperRepository _repository;
@@ -74,9 +80,14 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// disposes, and the poll must not stop underneath the new one.
   int _deviceScanners = 0;
 
-  /// The device profile whose saved offset was last applied, so it is
-  /// applied once per profile.
+  /// The device profile whose record offset was last set, so it is set once
+  /// per profile unless an open owes it again.
   String? _hydratedDeviceKey;
+
+  /// Whether [_syncRecordOffset] runs, so a tick meanwhile only marks it
+  /// [_offsetStale] and it settles again once done.
+  bool _syncingOffset = false;
+  bool _offsetStale = false;
 
   /// Whether the boot-time recovery still waits for the pinned interface
   /// ([setWaitingForDevice]), so a refused or failed apply in the meantime
@@ -340,7 +351,12 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     if (isClosed || state.measurePhase != MeasurePhase.running) return;
     switch (result.outcome) {
       case LatencyOutcome.done:
-        emit(state.copyWith(measurePhase: MeasurePhase.done));
+        emit(
+          state.copyWith(
+            measurePhase: MeasurePhase.done,
+            loopbackMeasure: LoopbackMeasure.idle,
+          ),
+        );
         await _settings.saveLatencyOffsetFrames(
           device: status.deviceName,
           sampleRate: status.sampleRate,
@@ -436,6 +452,11 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
           (t) => t.isCapturing || t.pending || t.pendingLaunch != null,
         );
     if (takeRunning) return GuardKind.capture.name;
+    // The automatic loopback measurement (#1541): an Apply or the cable test
+    // would cut it.
+    if (state.loopbackMeasure == LoopbackMeasure.measuring) {
+      return GuardKind.calibration.name;
+    }
     final blockers = _guards.blockers(kind, const GuardScope.internal());
     return blockers.isEmpty ? null : blockers.first.kind.name;
   }
@@ -820,7 +841,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     _reconcileDraft();
     _detectConnectivity(looper.status);
     _followWarmUp(looper.status);
-    unawaited(_syncLatencyPersistence(looper.status));
+    unawaited(_syncRecordOffset());
   }
 
   /// Follows a warm-up (#1533) to its end. The end opens the player's config
@@ -945,33 +966,191 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
         : DeviceConnectivity.restoredCleared;
   }
 
-  /// Sets the record offset saved for the open device, rate and buffer, or 0
-  /// when they were never measured, once per profile (#1270 Part 3a). A
-  /// device change, a new rate or buffer, or a reconnect each lands here, so
-  /// an offset measured on one profile never compensates another. Nothing is
-  /// saved here: only a measurement saves an offset.
+  /// Sets the record offset of the open device, rate and buffer, once per
+  /// profile (#1270 Part 3a), so an offset measured on one profile never
+  /// compensates another: the saved one, or 0 when it was never measured.
+  ///
+  /// When the open owes its offset ([EngineStatus.recordOffsetOwed], #1541:
+  /// the warm-up switch, a start that needed no warm-up, an apply here) it is
+  /// set however often, and the outputs stay silent with the transport closed
+  /// until it is. With none saved and a loopback on the interface
+  /// ([EngineStatus.excludedInputMask]) it is measured first, and saved
+  /// under the profile as the cable test saves. A measurement that fails
+  /// leaves 0, saves nothing, and says so on the latency row; the next owed
+  /// offset of that profile tries again. A saved offset is never measured
+  /// over, so a cable result is never replaced.
   ///
   /// Not during a warm-up (#1533): nothing records on its buffer, and the
-  /// switch to the player's buffer sets that profile's offset itself.
-  Future<void> _syncLatencyPersistence(EngineStatus status) async {
-    if (!status.isConnected || status.deviceName.isEmpty || status.warmingUp) {
+  /// switch owes the player's.
+  Future<void> _syncRecordOffset() async {
+    if (_syncingOffset) {
+      _offsetStale = true;
       return;
     }
-    final deviceKey =
-        '${status.deviceName}|${status.sampleRate}|${status.bufferFrames}';
-    if (_hydratedDeviceKey == deviceKey) return;
-    _hydratedDeviceKey = deviceKey;
-    final saved = await _settings.loadLatencyOffsetFrames(
-      device: status.deviceName,
-      sampleRate: status.sampleRate,
-      bufferFrames: status.bufferFrames,
-    );
-    if (isClosed || _hydratedDeviceKey != deviceKey) return;
-    final offset = saved != null && saved > 0 ? saved : 0;
-    if (offset != status.recordOffsetFrames) {
-      _repository.setRecordOffset(offset);
+    _syncingOffset = true;
+    try {
+      do {
+        _offsetStale = false;
+        await _settleRecordOffset(state.engineStatus);
+      } while (_offsetStale && !isClosed);
+    } finally {
+      _syncingOffset = false;
     }
   }
+
+  Future<void> _settleRecordOffset(EngineStatus status) async {
+    if (!status.isConnected || status.warmingUp) return;
+    // Owed by the last tick and still owed now: a tick published before the
+    // offset was set must not settle it a second time.
+    final owed =
+        status.recordOffsetOwed && _repository.state.status.recordOffsetOwed;
+    try {
+      if (status.deviceName.isEmpty) {
+        // No profile to look up or save under, but an owed offset is what
+        // keeps the outputs silent: it is 0.
+        if (owed) _repository.setRecordOffset(0);
+        return;
+      }
+      final key = _profileKey(status);
+      if (!owed && _hydratedDeviceKey == key) return;
+      _hydratedDeviceKey = key;
+      await _settleProfile(status, key, owed: owed);
+    } on Object catch (error) {
+      // Whatever went wrong, an owed offset must not leave the console
+      // silent.
+      AppLog.error('record offset: not settled: $error');
+      if (owed && !isClosed) _repository.setRecordOffset(0);
+    }
+  }
+
+  Future<void> _settleProfile(
+    EngineStatus status,
+    String key, {
+    required bool owed,
+  }) async {
+    // A failure told on the row belongs to the profile that failed.
+    emit(state.copyWith(loopbackMeasure: LoopbackMeasure.idle));
+    final saved = await _savedOffset(status);
+    if (isClosed) return;
+    if (saved != null) {
+      _setRecordOffset(key, saved, owed: owed);
+      return;
+    }
+    if (!owed || status.excludedInputMask == 0) {
+      _setRecordOffset(key, 0, owed: owed);
+      return;
+    }
+    emit(state.copyWith(loopbackMeasure: LoopbackMeasure.measuring));
+    final measured = await _measureThroughLoopback(status);
+    if (isClosed) return;
+    final live = _repository.state.status;
+    if (measured.interrupted &&
+            (!live.devicePresent || !live.isConnected || live.warmingUp) ||
+        _profileKey(state.engineStatus) != key) {
+      // The device left or reopened meanwhile: its own owed offset comes
+      // next, and this profile is settled again when it runs.
+      _hydratedDeviceKey = null;
+      emit(state.copyWith(loopbackMeasure: LoopbackMeasure.idle));
+      return;
+    }
+    final offset = measured.offset;
+    if (offset == null) {
+      emit(state.copyWith(loopbackMeasure: LoopbackMeasure.failed));
+      _setRecordOffset(key, 0, owed: owed);
+      return;
+    }
+    // Heard first, saved after: a slow write must not hold the outputs.
+    emit(state.copyWith(loopbackMeasure: LoopbackMeasure.idle));
+    _setRecordOffset(key, offset, owed: owed);
+    try {
+      await _settings.saveLatencyOffsetFrames(
+        device: status.deviceName,
+        sampleRate: status.sampleRate,
+        bufferFrames: status.bufferFrames,
+        frames: offset,
+      );
+    } on Object catch (error) {
+      AppLog.error('record offset: measured offset not saved: $error');
+    }
+  }
+
+  /// The offset saved for [status]'s device, rate and buffer, or `null` when
+  /// none is (or it cannot be read).
+  Future<int?> _savedOffset(EngineStatus status) async {
+    try {
+      final saved = await _settings.loadLatencyOffsetFrames(
+        device: status.deviceName,
+        sampleRate: status.sampleRate,
+        bufferFrames: status.bufferFrames,
+      );
+      return saved != null && saved > 0 ? saved : null;
+    } on Object catch (error) {
+      AppLog.error('record offset: saved offset unreadable: $error');
+      return null;
+    }
+  }
+
+  /// Measures the round trip through the interface's loopback. While it
+  /// runs an Apply and the cable test are refused ([_busyKind]). Twice, as it
+  /// runs right after a reopen: a period the device dropped in the window
+  /// would move the peak, and a saved offset is never measured again.
+  /// The offset is the measured one when both agree within
+  /// [_loopbackTolerance] frames, or `null` when they do not or one did not
+  /// return; `interrupted` says a run was cancelled (the device left, or the
+  /// engine reopened) rather than measured.
+  Future<({int? offset, bool interrupted})> _measureThroughLoopback(
+    EngineStatus status,
+  ) async {
+    final profile =
+        '${status.deviceName} ${status.sampleRate} Hz / '
+        '${status.bufferFrames}';
+    final offsets = <int>[];
+    for (var run = 0; run < 2; run++) {
+      final result = await _repository.measureLoopbackLatency();
+      if (isClosed) return (offset: null, interrupted: true);
+      if (result.outcome != LatencyOutcome.done || result.offsetFrames <= 0) {
+        AppLog.warn(
+          'record offset: loopback measurement of $profile failed: '
+          '${result.outcome.name} (${result.engineResult.name})',
+        );
+        return (
+          offset: null,
+          interrupted: result.outcome == LatencyOutcome.cancelled,
+        );
+      }
+      offsets.add(result.offsetFrames);
+    }
+    if ((offsets[0] - offsets[1]).abs() > _loopbackTolerance) {
+      AppLog.warn(
+        'record offset: loopback measurements of $profile disagree: '
+        '${offsets.join(' and ')} frames',
+      );
+      return (offset: null, interrupted: false);
+    }
+    AppLog.info(
+      'record offset: $profile measured through the loopback: '
+      '${offsets[1]} frames',
+    );
+    return (offset: offsets[1], interrupted: false);
+  }
+
+  /// How far apart two loopback measurements may land and still agree. The
+  /// loopback is digital, so a sound path returns the same lag every run.
+  static const _loopbackTolerance = 2;
+
+  /// Sets [frames] while [key] is still the open profile (the last status
+  /// the repository published): always when the open owes it, as that is
+  /// what makes it heard, else only when it moves.
+  void _setRecordOffset(String key, int frames, {required bool owed}) {
+    final live = state.engineStatus;
+    if (_profileKey(live) != key) return;
+    if (owed || frames != live.recordOffsetFrames) {
+      _repository.setRecordOffset(frames);
+    }
+  }
+
+  static String _profileKey(EngineStatus status) =>
+      '${status.deviceName}|${status.sampleRate}|${status.bufferFrames}';
 
   AudioSetupState _projectFromRepository(
     LooperState looper, {
@@ -1038,7 +1217,8 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
 
   @override
   Future<void> close() {
-    if (state.measurePhase == MeasurePhase.running) {
+    if (state.measurePhase == MeasurePhase.running ||
+        state.loopbackMeasure == LoopbackMeasure.measuring) {
       _repository.cancelLatency();
     }
     final guard = _measureGuard;

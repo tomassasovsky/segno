@@ -1411,6 +1411,7 @@
     "deviceMs": "ms",
     "devicePerBuffer": "por búfer",
     "deviceMeasureNote": "Medí para alinear las grabaciones nuevas.",
+    "deviceLoopbackFailed": "No se pudo medir por el loopback. Medí con un cable.",
     "deviceApplyBeforeMeasuring": "Aplicá los ajustes de audio antes de medir.",
     "deviceDropouts": "Cortes de audio",
     "deviceEngine": "Motor de audio",

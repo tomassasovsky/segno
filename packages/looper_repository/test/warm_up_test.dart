@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:segno_engine/segno_engine.dart' show EngineSnapshot;
+import 'package:segno_engine/segno_engine.dart'
+    show EngineSnapshot, latencyLoopbackInput;
 import 'package:segno_engine/segno_engine.dart' as le show AudioDevice;
 
 import 'helpers/fake_audio_engine.dart';
@@ -16,7 +17,9 @@ const _scarlett = le.AudioDevice(
 
 /// The audio warm-up (#1533): a start the console makes on its own opens the
 /// player's rate with the largest buffer, silent and with the transport
-/// closed, and [LooperRepository.finishWarmUp] opens the player's config.
+/// closed, and [LooperRepository.finishWarmUp] opens the player's config. What
+/// opens then owes its record offset (#1541): still silent and closed until
+/// [LooperRepository.setRecordOffset] sets it.
 void main() {
   late FakeAudioEngine engine;
   late StreamController<void> ticker;
@@ -120,7 +123,8 @@ void main() {
       expect(count('measureLatencyPath'), 0);
     });
 
-    test('is skipped when the player already runs the largest buffer', () {
+    test('is skipped when the player already runs the largest buffer, and '
+        'the record offset is owed', () {
       final repo = build()..setMasterGain(0.8);
       const large = EngineConfig(
         sampleRate: 48000,
@@ -130,18 +134,28 @@ void main() {
 
       expect(repo.startEngine(large, warmUp: true), EngineResult.ok);
 
+      expect(engine.lastConfig?.bufferFrames, kWarmUpBufferFrames);
       expect(repo.state.status.warmingUp, isFalse);
+      expect(repo.state.status.recordOffsetOwed, isTrue);
+      expect(engine.masterGains, everyElement(0));
+      expect(repo.record(), EngineResult.notReady);
+
+      repo.setRecordOffset(300);
+
+      expect(repo.state.status.recordOffsetOwed, isFalse);
       expect(engine.lastMasterGain, 0.8);
       expect(repo.record(), isNot(EngineResult.notReady));
     });
 
-    test('a plain start runs the config as given', () {
-      final repo = build();
+    test('a plain start runs the config as given, owing nothing', () {
+      final repo = build()..setMasterGain(0.8);
 
       expect(repo.startEngine(player), EngineResult.ok);
 
       expect(engine.lastConfig?.bufferFrames, 32);
       expect(repo.state.status.warmingUp, isFalse);
+      expect(repo.state.status.recordOffsetOwed, isFalse);
+      expect(engine.lastMasterGain, 0.8);
     });
 
     test('a stop ends it', () {
@@ -153,11 +167,13 @@ void main() {
   });
 
   group('finishWarmUp', () {
-    test("opens the player's config, keeping the loops, and is heard", () {
+    test("opens the player's config, keeping the loops, silent until its "
+        'record offset is set', () {
       final repo = build()..setMasterGain(0.8);
       expect(repo.startEngine(player, warmUp: true), EngineResult.ok);
       engine
         ..calls.clear()
+        ..masterGains.clear()
         // The device opens the buffer asked for.
         ..nextSnapshot = engine.nextSnapshot.copyWith(bufferFrames: 32);
 
@@ -167,32 +183,30 @@ void main() {
       expect(engine.calls, containsAllInOrder(<String>['stop', 'reopen']));
       expect(count('start'), 0);
       expect(engine.lastConfig?.bufferFrames, 32);
-      expect(engine.lastMasterGain, 0.8);
       expect(repo.state.status.warmingUp, isFalse);
+      expect(repo.state.status.recordOffsetOwed, isTrue);
       expect(repo.lastEngineConfig, player);
-      expect(repo.record(), isNot(EngineResult.notReady));
-    });
-
-    test('a buffer the device rounded keeps the transport closed until its '
-        'offset is set', () {
-      final repo = build()..setMasterGain(0.8);
-      expect(repo.startEngine(player, warmUp: true), EngineResult.ok);
-      repo.setRecordOffset(300);
-      // Asked 32, opened 48: the offset set for 32 is not this profile's.
-      engine.nextSnapshot = engine.nextSnapshot.copyWith(bufferFrames: 48);
-
-      final outcome = repo.finishWarmUp();
-
-      expect(outcome.status, AudioApplyStatus.applied);
-      expect(engine.lastMasterGain, 0.8);
-      expect(repo.state.status.warmingUp, isTrue);
+      // Never heard before the offset: not one gain but 0 reached the engine.
+      expect(engine.masterGains, everyElement(0));
       expect(repo.record(), EngineResult.notReady);
 
       repo.setRecordOffset(420);
 
-      expect(repo.state.status.warmingUp, isFalse);
       expect(engine.lastRecordOffset, 420);
+      expect(engine.lastMasterGain, 0.8);
+      expect(repo.state.status.recordOffsetOwed, isFalse);
       expect(repo.record(), isNot(EngineResult.notReady));
+    });
+
+    test('a buffer the device rounded owes its offset the same way', () {
+      final repo = warm();
+      // Asked 32, opened 48.
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(bufferFrames: 48);
+
+      expect(repo.finishWarmUp().status, AudioApplyStatus.applied);
+
+      expect(repo.state.status.bufferFrames, 48);
+      expect(repo.state.status.recordOffsetOwed, isTrue);
     });
 
     test('replays the record offset set before it', () {
@@ -231,8 +245,14 @@ void main() {
       expect(outcome.status, AudioApplyStatus.refused);
       expect(engine.lastConfig?.bufferFrames, kWarmUpBufferFrames);
       expect(repo.state.status.warmingUp, isFalse);
-      expect(engine.lastMasterGain, 0.8);
       expect(repo.lastEngineConfig, player.warmUp);
+      // It runs as the player's now, so it owes its own offset first.
+      expect(repo.state.status.recordOffsetOwed, isTrue);
+      expect(engine.lastMasterGain, 0);
+
+      repo.setRecordOffset(0);
+
+      expect(engine.lastMasterGain, 0.8);
     });
 
     test('a switch that lost loops says so on the status', () {
@@ -282,8 +302,12 @@ void main() {
 
       expect(outcome.status, AudioApplyStatus.applied);
       expect(repo.state.status.warmingUp, isFalse);
-      expect(engine.lastMasterGain, 0.8);
+      expect(repo.state.status.recordOffsetOwed, isTrue);
       expect(repo.lastEngineConfig, other);
+
+      repo.setRecordOffset(0);
+
+      expect(engine.lastMasterGain, 0.8);
     });
   });
 
@@ -316,6 +340,8 @@ void main() {
 
       repo.finishWarmUp();
       expect(engine.lastConfig?.bufferFrames, 32);
+      expect(engine.lastMasterGain, 0);
+      repo.setRecordOffset(300);
       expect(engine.lastMasterGain, 0.8);
     });
 
@@ -357,6 +383,46 @@ void main() {
       expect(engine.lastConfig?.bufferFrames, 32);
     });
 
+    test('of a config that needs no warm-up keeps an owed offset owed '
+        '(#1541)', () async {
+      const large = EngineConfig(
+        sampleRate: 48000,
+        bufferFrames: kWarmUpBufferFrames,
+        playbackDeviceId: 'out-1',
+      );
+      final repo = build()..setMasterGain(0.8);
+      expect(repo.startEngine(large, warmUp: true), EngineResult.ok);
+      engine.calls.clear();
+
+      await unplugAndReturn(repo);
+
+      expect(count('reopen'), 1);
+      expect(repo.state.status.recordOffsetOwed, isTrue);
+      expect(engine.lastMasterGain, 0);
+    });
+
+    test(
+      'of a config that needs no warm-up owes nothing once it was set',
+      () async {
+        const large = EngineConfig(
+          sampleRate: 48000,
+          bufferFrames: kWarmUpBufferFrames,
+          playbackDeviceId: 'out-1',
+        );
+        final repo = build()..setMasterGain(0.8);
+        expect(repo.startEngine(large, warmUp: true), EngineResult.ok);
+        repo.setRecordOffset(300);
+        engine.calls.clear();
+
+        await unplugAndReturn(repo);
+
+        expect(count('reopen'), 1);
+        expect(repo.state.status.recordOffsetOwed, isFalse);
+        expect(engine.lastMasterGain, 0.8);
+        expect(engine.lastRecordOffset, 300);
+      },
+    );
+
     test('during a warm-up keeps its target', () async {
       final repo = warm();
       engine.calls.clear();
@@ -367,6 +433,87 @@ void main() {
       expect(engine.lastConfig?.bufferFrames, kWarmUpBufferFrames);
       expect(repo.lastEngineConfig, player);
       expect(repo.state.status.warmingUp, isTrue);
+    });
+  });
+
+  group('an owed record offset (#1541)', () {
+    LooperRepository playing() {
+      final repo = build()..setMasterGain(0.8);
+      expect(repo.startEngine(player), EngineResult.ok);
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(bufferFrames: 32);
+      return repo;
+    }
+
+    const other = EngineConfig(
+      sampleRate: 48000,
+      bufferFrames: 64,
+      playbackDeviceId: 'out-1',
+    );
+
+    test('follows an applied config: silent and closed until it is set', () {
+      final repo = playing();
+      engine.masterGains.clear();
+
+      expect(repo.applyAudioConfig(other).status, AudioApplyStatus.applied);
+
+      expect(repo.state.status.recordOffsetOwed, isTrue);
+      expect(repo.state.status.starting, isTrue);
+      expect(engine.masterGains, everyElement(0));
+      expect(repo.record(), EngineResult.notReady);
+
+      repo.setRecordOffset(250);
+
+      expect(repo.state.status.recordOffsetOwed, isFalse);
+      expect(repo.state.status.starting, isFalse);
+      expect(engine.lastRecordOffset, 250);
+      expect(engine.lastMasterGain, 0.8);
+      expect(repo.record(), isNot(EngineResult.notReady));
+    });
+
+    test('follows a refused config, the previous one put back', () {
+      final repo = playing();
+      engine.reopenResult = (
+        result: EngineResult.device,
+        outcome: ReopenOutcome.retained,
+        droppedTracks: 0,
+        openedRate: 0,
+      );
+      var reopens = 0;
+      engine.afterSnapshot = () {
+        if (count('reopen') > reopens) {
+          reopens = count('reopen');
+          engine.reopenResult = (
+            result: EngineResult.ok,
+            outcome: ReopenOutcome.retained,
+            droppedTracks: 0,
+            openedRate: 0,
+          );
+        }
+      };
+
+      expect(repo.applyAudioConfig(other).status, AudioApplyStatus.refused);
+
+      expect(repo.lastEngineConfig, player);
+      expect(repo.state.status.recordOffsetOwed, isTrue);
+    });
+
+    test('lets the loopback measurement run, quietly, on the loopback', () {
+      final repo = playing()..applyAudioConfig(other);
+
+      unawaited(repo.measureLoopbackLatency());
+
+      expect(engine.lastLatencyPath?.output, 0);
+      expect(engine.lastLatencyPath?.input, latencyLoopbackInput);
+      expect(engine.lastLatencyPath?.amplitude, 1e-4);
+      repo.cancelLatency();
+    });
+
+    test('ends with a stop', () {
+      final repo = playing()
+        ..applyAudioConfig(other)
+        ..stopEngine();
+
+      expect(repo.state.status.recordOffsetOwed, isFalse);
     });
   });
 }

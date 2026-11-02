@@ -3068,6 +3068,24 @@ void main() {
       expect(find.text('Audio is starting…'), findsOneWidget);
       expect(find.byKey(const Key('tracks_audioNotRunning')), findsNothing);
     });
+
+    testWidgets('says so too while the record offset is owed (#1541)', (
+      tester,
+    ) async {
+      seed(
+        const LooperState(
+          tracks: [Track()],
+          status: EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            recordOffsetOwed: true,
+          ),
+        ),
+      );
+      await pump(tester);
+
+      expect(find.byKey(const Key('tracks_audioStarting')), findsOneWidget);
+    });
   });
 
   group('fixed slot geometry (#1308)', () {

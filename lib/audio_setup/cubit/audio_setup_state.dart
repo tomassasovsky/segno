@@ -124,6 +124,21 @@ enum MeasurePhase {
   cancelled,
 }
 
+/// Where the automatic loopback measurement stands (#1541): the record offset
+/// of a device, rate and buffer with none saved, measured through the
+/// interface's own loopback.
+enum LoopbackMeasure {
+  /// Nothing to tell: no measurement runs, or the last one was saved.
+  idle,
+
+  /// The burst is out on the loopback.
+  measuring,
+
+  /// The loopback measurement did not return (or could not run): the record
+  /// offset is 0 and nothing was saved. The cable test is the way to align.
+  failed,
+}
+
 /// Why the last request was refused before anything changed (#1270 Part 3a).
 class ApplyRefusal extends Equatable {
   /// Refused because [busyKind] is in flight: the guard table's name of the
@@ -264,6 +279,7 @@ class AudioSetupState extends Equatable {
     this.measurePhase = MeasurePhase.idle,
     this.measureOutput = 1,
     this.measureInput = 1,
+    this.loopbackMeasure = LoopbackMeasure.idle,
     this.playbackRunning = false,
     this.draft,
   });
@@ -359,6 +375,10 @@ class AudioSetupState extends Equatable {
   /// The input the cable test listens on, 1-based.
   final int measureInput;
 
+  /// Where the automatic loopback measurement of the running device, rate
+  /// and buffer stands.
+  final LoopbackMeasure loopbackMeasure;
+
   /// Whether a track or the backing track plays, so the cable test says it
   /// will stop them (D4).
   final bool playbackRunning;
@@ -437,6 +457,7 @@ class AudioSetupState extends Equatable {
     MeasurePhase? measurePhase,
     int? measureOutput,
     int? measureInput,
+    LoopbackMeasure? loopbackMeasure,
     bool? playbackRunning,
     AudioDraft? draft,
     bool clearDraft = false,
@@ -469,6 +490,7 @@ class AudioSetupState extends Equatable {
       measurePhase: measurePhase ?? this.measurePhase,
       measureOutput: measureOutput ?? this.measureOutput,
       measureInput: measureInput ?? this.measureInput,
+      loopbackMeasure: loopbackMeasure ?? this.loopbackMeasure,
       playbackRunning: playbackRunning ?? this.playbackRunning,
       draft: clearDraft ? null : (draft ?? this.draft),
     );
@@ -500,6 +522,7 @@ class AudioSetupState extends Equatable {
     measurePhase,
     measureOutput,
     measureInput,
+    loopbackMeasure,
     playbackRunning,
     draft,
   ];

@@ -806,6 +806,9 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   bool? lastAutoRecord;
   double? lastMasterGain;
 
+  /// Every gain [setMasterGain] was sent, in order.
+  final List<double> masterGains = [];
+
   @override
   EngineResult setTrackMultiple({required int channel, required int multiple}) {
     trackMultiple[channel] = multiple;
@@ -830,6 +833,7 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   @override
   EngineResult setMasterGain(double gain) {
     lastMasterGain = gain;
+    masterGains.add(gain);
     calls.add('setMasterGain');
     return EngineResult.ok;
   }
