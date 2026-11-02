@@ -204,6 +204,24 @@ $CC $STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS src/test/test_engine_core.c $ENGINE_SRC
   -o "$OUT/segno_core_tests.exe"
 "$OUT/segno_core_tests.exe"
 
+echo "== building the effects matrix (CI subset) =="
+# Every effect kind at every sample rate and block size (#1547): the native
+# tests run one setting a kind (--ci); the full run over every factory
+# setting is the bench, src/test/bench/bench_fx_matrix.sh. It renders about
+# a minute of audio a kind through the engine, so it is built -O2 (as the
+# shipped library is) whatever the suite's own flags. Its known failures
+# are listed in the source and do not fail the run; a new one does. It
+# needs the POSIX bench helpers (bench_common.h), so not on Windows.
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) echo "skipped on Windows" ;;
+  *)
+    # shellcheck disable=SC2086
+    $CC $STD -O2 $EXTRA_CFLAGS src/test/bench/bench_fx_matrix.c $ENGINE_SRC \
+      "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_fx_matrix.exe"
+    "$OUT/segno_fx_matrix.exe" --ci
+    ;;
+esac
+
 echo "== building the decoder fuzz driver =="
 # The app's audio-file decoder over whole-file mutations of every accepted and
 # refused format (#1200): a bounded, fixed-seed run in every configuration, so

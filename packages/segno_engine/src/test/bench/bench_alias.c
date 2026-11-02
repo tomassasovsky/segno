@@ -55,6 +55,7 @@
 #include "segno_engine_api.h"
 #include "engine_fx.h"
 #include "engine_private.h"
+#include "alias_spectrum.h"
 
 /* ---------------- the cases ---------------- */
 
@@ -166,44 +167,8 @@ static double kind_run(const alias_case* c, int sr, const float* in, float* out,
 
 /* ---------------- the spectrum ---------------- */
 
-/* In-place radix-2 complex FFT, double precision ([n] a power of two). */
-static void fft(double* re, double* im, int n) {
-  for (int i = 1, j = 0; i < n; ++i) {
-    int bit = n >> 1;
-    for (; j & bit; bit >>= 1) j ^= bit;
-    j ^= bit;
-    if (i < j) {
-      double t = re[i];
-      re[i] = re[j];
-      re[j] = t;
-      t = im[i];
-      im[i] = im[j];
-      im[j] = t;
-    }
-  }
-  for (int len = 2; len <= n; len <<= 1) {
-    const double a = -2.0 * M_PI / len;
-    for (int k = 0; k < len / 2; ++k) {
-      const double wr = cos(a * k), wi = sin(a * k);
-      for (int i = k; i < n; i += len) {
-        const int j = i + len / 2;
-        const double xr = re[j] * wr - im[j] * wi;
-        const double xi = re[j] * wi + im[j] * wr;
-        re[j] = re[i] - xr;
-        im[j] = im[i] - xi;
-        re[i] += xr;
-        im[i] += xi;
-      }
-    }
-  }
-}
-
 #define WIN_48K 65536 /* analysis window at 48 kHz: 1.365 s */
 #define SETTLE_S 1.0  /* glides, envelopes and the cabinet's tail settle */
-#define TOP_HZ 20000.0
-/* Harmonics up to here are followed into their folds: 32 times 48 kHz,
- * the 32nd fold at 48 kHz and the 16th at 96 kHz. */
-#define FOLD_TOP_HZ (32.0 * 48000.0)
 
 /* The tones: whole cycles of the 48 kHz window (odd bins), so the same
  * frequency is coherent at 96 kHz too. 330.32, 659.91, 1320.56 and
@@ -217,37 +182,9 @@ typedef struct {
   int64_t frames;
 } alias_result;
 
-/* --detail: the five largest alias components of one measurement, on
- * stderr, so the table stays whole on stdout. */
+/* --detail: the five largest alias components of each measurement, on
+ * stderr (alias_analyze). */
 static int g_detail;
-
-static void print_detail(const alias_case* c, int sr, double hz,
-                         const unsigned char* fold, const double* re,
-                         const double* im, int win, int top) {
-  int best[5] = {0, 0, 0, 0, 0};
-  double e_best[5] = {0, 0, 0, 0, 0};
-  for (int j = 1; j <= top && j < win / 2; ++j) {
-    if (!fold[j]) continue;
-    const double e = re[j] * re[j] + im[j] * im[j];
-    for (int k = 0; k < 5; ++k) {
-      if (e > e_best[k]) {
-        for (int m = 4; m > k; --m) {
-          e_best[m] = e_best[m - 1];
-          best[m] = best[m - 1];
-        }
-        e_best[k] = e;
-        best[k] = j;
-        break;
-      }
-    }
-  }
-  fprintf(stderr, "%s, %d Hz, %.1f Hz tone:", c->name, sr, hz);
-  for (int k = 0; k < 5 && best[k] > 0; ++k) {
-    fprintf(stderr, " %.0f Hz %.1f dBFS%s", (double)best[k] * sr / win,
-            20.0 * log10(2.0 * sqrt(e_best[k]) / win), k < 4 ? "," : "");
-  }
-  fprintf(stderr, "\n");
-}
 
 static alias_result measure(const alias_case* c, int sr, int bin, double amp) {
   const int win = WIN_48K * (sr / 48000);
@@ -256,9 +193,7 @@ static alias_result measure(const alias_case* c, int sr, int bin, double amp) {
   const double hz = (double)bin * 48000.0 / WIN_48K;
   float* in = (float*)malloc(sizeof(float) * (size_t)n);
   float* out = (float*)malloc(sizeof(float) * (size_t)n);
-  double* re = (double*)calloc((size_t)win, sizeof(double));
-  double* im = (double*)calloc((size_t)win, sizeof(double));
-  if (in == NULL || out == NULL || re == NULL || im == NULL) {
+  if (in == NULL || out == NULL) {
     fprintf(stderr, "out of memory\n");
     exit(1);
   }
@@ -268,45 +203,12 @@ static alias_result measure(const alias_case* c, int sr, int bin, double amp) {
   alias_result r;
   r.ns = kind_run(c, sr, in, out, n);
   r.frames = n;
-  for (int i = 0; i < win; ++i) re[i] = out[settle + i];
-  fft(re, im, win);
-  /* The tone's bin is the same at both rates (the window grows with the
-   * rate). The bins its folds land on: harmonic k at k x bin, reflected
-   * into the half spectrum. The bin is odd and the window a power of two,
-   * so a fold of a harmonic below FOLD_TOP_HZ never lands on a harmonic.
-   * Only these bins count as aliasing. The other non-harmonic bins hold the
-   * kernel's own noise (float rounding in a low corner, a DC blocker still
-   * settling) and the folds of harmonics past FOLD_TOP_HZ; counting them
-   * too moves no figure above -65 dB by more than 0.6 dB. */
-  const int half = win / 2;
-  unsigned char* fold = (unsigned char*)calloc((size_t)half + 1, 1);
-  if (fold == NULL) exit(1);
-  for (int64_t k = 1; (double)k * hz <= FOLD_TOP_HZ; ++k) {
-    if ((double)k * hz <= 0.5 * sr) continue; /* in band: a harmonic */
-    int64_t b = (k * bin) % win;
-    if (b > half) b = win - b;
-    fold[b] = 1;
-  }
-  /* The alias sum is its own (not the total less the harmonics, which
-   * would cancel to nothing at the floor). */
-  double total = 0.0, alias = 0.0, worst = 0.0;
-  const int top = (int)(TOP_HZ * win / sr);
-  for (int j = 1; j <= top && j < half; ++j) {
-    const double e = re[j] * re[j] + im[j] * im[j];
-    total += e;
-    if (fold[j]) {
-      alias += e;
-      if (e > worst) worst = e;
-    }
-  }
-  r.alias_db = 10.0 * log10(alias / total + 1e-30);
-  r.worst_dbfs = 20.0 * log10(2.0 * sqrt(worst) / win + 1e-15);
-  if (g_detail) print_detail(c, sr, hz, fold, re, im, win, top);
-  free(fold);
+  const alias_spectrum sp =
+      alias_analyze(out + settle, win, sr, bin, g_detail ? c->name : NULL);
+  r.alias_db = sp.alias_db;
+  r.worst_dbfs = sp.worst_dbfs;
   free(in);
   free(out);
-  free(re);
-  free(im);
   return r;
 }
 
