@@ -50,8 +50,9 @@
  *             for the kinds whose output on a sine is meant to be its
  *             harmonics (mx_kind::harmonic), and not at a setting whose
  *             free-running modulator is heard (le_fx_entry_free_running).
- *   blowup    At each rate, every render: no NaN or infinity, a peak below
- *             MX_PEAK_LIMIT, and no DC beyond MX_DC_LIMIT, read as the
+ *   blowup    At each rate, every render: no NaN or infinity, and a peak
+ *             below MX_PEAK_LIMIT.
+ *   dc        At each rate: no DC beyond MX_DC_LIMIT, read as the
  *             Hann-weighted mean of the alias sines' windows (whole cycles, so a curve that is
  *             not lopsided leaves zero) and of the phrase's last half
  *             second, which is silence.
@@ -79,10 +80,12 @@
  * fitted to the Looper X's captures, which run at 48 kHz.
  *
  * KNOWN FAILURES: what fails today is listed in k_known, by kind, check and
- * rate. A failure on the list does not fail the run; one that is not on it
- * does, and so, in the full run, does an entry on the list that now passes
- * (its fix forgot to take it off). The CI subset runs fewer settings, so an
- * entry it does not reproduce is only reported there.
+ * rate, with the worst figure it may reach. A failure on the list within
+ * that ceiling does not fail the run; one past it does, as does one that
+ * is not on the list, and so, in the full run, does an entry on the list
+ * that now passes or is no longer read (its fix forgot to take it off).
+ * The CI subset runs one setting a kind, so an entry it does not reproduce
+ * is only reported there.
  *
  *   ./bench_fx_matrix.sh                    # every setting
  *   ./bench_fx_matrix.sh --kind overdrive   # one kind
@@ -204,88 +207,102 @@ static int kind_index(int32_t type) {
   return -1;
 }
 
-enum { MX_BLOCK, MX_RESPONSE, MX_ENVELOPE, MX_ALIAS, MX_BLOWUP, MX_STALL, MX_NCHECKS };
+enum {
+  MX_BLOCK,
+  MX_RESPONSE,
+  MX_ENVELOPE,
+  MX_ALIAS,
+  MX_BLOWUP,
+  MX_DC,
+  MX_STALL,
+  MX_NCHECKS
+};
 static const char* const k_check_names[MX_NCHECKS] = {
-    "block", "response", "envelope", "alias", "blowup", "stall"};
+    "block", "response", "envelope", "alias", "blowup", "dc", "stall"};
 
 /* ---------------- known failures ---------------- */
 
+/* [ceiling]: the worst figure the entry allows, in the check's unit (dB
+ * for response, envelope and alias, dBFS for dc), the worst today plus
+ * at least 0.5 dB. A listed kind that gets worse than that fails as new,
+ * so the list does not hide a regression of a kind already on it. */
 typedef struct {
   const char* kind;
   int check;
   int rate;
+  double ceiling;
 } mx_known;
 
 /* What fails today, emptied by the parts of #1547 that fix it. The full
  * run's table names the worst setting of each. */
 static const mx_known k_known[] = {
     /* The waveshapers alias (#1540): oversampling, part 2. */
-    {"overdrive", MX_ALIAS, 44100},
-    {"overdrive", MX_ALIAS, 48000},
-    {"overdrive", MX_ALIAS, 96000},
-    {"distortion", MX_ALIAS, 44100},
-    {"distortion", MX_ALIAS, 48000},
-    {"vinyl", MX_ALIAS, 44100},
-    {"vinyl", MX_ALIAS, 48000},
-    {"vinyl", MX_ALIAS, 96000},
-    {"ampcab", MX_ALIAS, 44100},
-    {"ampcab", MX_ALIAS, 48000},
-    {"ampcab", MX_ALIAS, 96000},
+    {"overdrive", MX_ALIAS, 44100, -34.0},
+    {"overdrive", MX_ALIAS, 48000, -35.0},
+    {"overdrive", MX_ALIAS, 96000, -42.0},
+    {"distortion", MX_ALIAS, 44100, -53.0},
+    {"distortion", MX_ALIAS, 48000, -55.0},
+    {"vinyl", MX_ALIAS, 44100, -44.0},
+    {"vinyl", MX_ALIAS, 48000, -45.0},
+    {"vinyl", MX_ALIAS, 96000, -59.0},
+    {"ampcab", MX_ALIAS, 44100, -24.0},
+    {"ampcab", MX_ALIAS, 48000, -26.0},
+    {"ampcab", MX_ALIAS, 96000, -41.5},
     /* The transient shaper's gain follows each cycle, and folds too. */
-    {"transient", MX_ALIAS, 44100},
-    {"transient", MX_ALIAS, 48000},
-    {"transient", MX_ALIAS, 96000},
+    {"transient", MX_ALIAS, 44100, -47.0},
+    {"transient", MX_ALIAS, 48000, -46.5},
+    {"transient", MX_ALIAS, 96000, -57.5},
     /* Filters whose response moves with the rate. */
-    {"filter", MX_RESPONSE, 96000},
-    {"eq", MX_RESPONSE, 96000},
-    {"overdrive", MX_RESPONSE, 44100},
-    {"overdrive", MX_RESPONSE, 96000},
-    {"distortion", MX_RESPONSE, 44100},
-    {"distortion", MX_RESPONSE, 96000},
-    {"degrade", MX_RESPONSE, 44100},
-    {"degrade", MX_RESPONSE, 96000},
-    {"lpf", MX_RESPONSE, 44100},
-    {"lpf", MX_RESPONSE, 96000},
-    {"modedelay", MX_RESPONSE, 96000},
-    {"ampcab", MX_RESPONSE, 44100},
-    {"ampcab", MX_RESPONSE, 96000},
-    {"mod", MX_RESPONSE, 96000},
+    {"filter", MX_RESPONSE, 96000, 3.0},
+    {"eq", MX_RESPONSE, 96000, 2.0},
+    {"overdrive", MX_RESPONSE, 44100, 2.5},
+    {"overdrive", MX_RESPONSE, 96000, 5.5},
+    {"distortion", MX_RESPONSE, 44100, 2.5},
+    {"distortion", MX_RESPONSE, 96000, 12.0},
+    {"degrade", MX_RESPONSE, 44100, 2.0},
+    {"degrade", MX_RESPONSE, 96000, 11.0},
+    {"lpf", MX_RESPONSE, 44100, 3.0},
+    {"lpf", MX_RESPONSE, 96000, 7.0},
+    {"modedelay", MX_RESPONSE, 96000, 2.5},
+    {"ampcab", MX_RESPONSE, 44100, 2.5},
+    {"ampcab", MX_RESPONSE, 96000, 4.0},
+    {"mod", MX_RESPONSE, 96000, 3.0},
     /* Tails whose decay moves with the rate. */
-    {"echo", MX_ENVELOPE, 96000},
-    {"reverb", MX_ENVELOPE, 44100},
-    {"reverb", MX_ENVELOPE, 96000},
-    {"spring", MX_ENVELOPE, 44100},
-    {"spring", MX_ENVELOPE, 96000},
-    {"dubverb", MX_ENVELOPE, 44100},
-    {"dubverb", MX_ENVELOPE, 96000},
-    {"roomverb", MX_ENVELOPE, 44100},
-    {"roomverb", MX_ENVELOPE, 96000},
+    {"echo", MX_ENVELOPE, 96000, 5.0},
+    {"reverb", MX_ENVELOPE, 44100, 4.0},
+    {"reverb", MX_ENVELOPE, 96000, 2.5},
+    {"spring", MX_ENVELOPE, 44100, 8.5},
+    {"spring", MX_ENVELOPE, 96000, 4.5},
+    {"dubverb", MX_ENVELOPE, 44100, 2.5},
+    {"dubverb", MX_ENVELOPE, 96000, 3.5},
+    {"roomverb", MX_ENVELOPE, 44100, 5.5},
+    {"roomverb", MX_ENVELOPE, 96000, 5.0},
     /* Pitch: the vocoder's frame is samples, not milliseconds (#1467). */
-    {"octaver", MX_RESPONSE, 44100},
-    {"octaver", MX_RESPONSE, 96000},
-    {"octaver", MX_ENVELOPE, 44100},
-    {"octaver", MX_ENVELOPE, 96000},
-    {"dualoct", MX_RESPONSE, 44100},
-    {"dualoct", MX_RESPONSE, 96000},
-    {"dualoct", MX_ENVELOPE, 44100},
-    {"dualoct", MX_ENVELOPE, 96000},
-    {"smarttune", MX_ENVELOPE, 44100},
-    {"smarttune", MX_ENVELOPE, 96000},
+    {"octaver", MX_RESPONSE, 44100, 3.0},
+    {"octaver", MX_RESPONSE, 96000, 4.5},
+    {"octaver", MX_ENVELOPE, 44100, 8.0},
+    {"octaver", MX_ENVELOPE, 96000, 8.0},
+    {"dualoct", MX_RESPONSE, 44100, 12.5},
+    {"dualoct", MX_RESPONSE, 96000, 8.5},
+    {"dualoct", MX_ENVELOPE, 44100, 5.0},
+    {"dualoct", MX_ENVELOPE, 96000, 7.5},
+    {"smarttune", MX_ENVELOPE, 44100, 2.5},
+    {"smarttune", MX_ENVELOPE, 96000, 5.5},
     /* The vinyl's rectifier keeps its DC, as the Looper X's does. */
-    {"vinyl", MX_BLOWUP, 44100},
-    {"vinyl", MX_BLOWUP, 48000},
-    {"vinyl", MX_BLOWUP, 96000},
-    {NULL, 0, 0},
+    {"vinyl", MX_DC, 44100, -10.5},
+    {"vinyl", MX_DC, 48000, -10.5},
+    {"vinyl", MX_DC, 96000, -10.5},
+    {NULL, 0, 0, 0.0},
 };
 
-static int is_known(int kind, int check, int rate) {
+static const mx_known* known_entry(int kind, int check, int rate) {
   for (const mx_known* k = k_known; k->kind != NULL; ++k) {
     if (k->check == check && k->rate == rate &&
         !strcmp(k->kind, k_kinds[kind].name)) {
-      return 1;
+      return k;
     }
   }
-  return 0;
+  return NULL;
 }
 
 /* ---------------- the input signals ---------------- */
@@ -459,10 +476,11 @@ static int render(const mx_setting* s, int sr, int block, const float* in,
       o->l[at + f] = buf[2 * f];
       o->r[at + f] = buf[2 * f + 1];
     }
-    if (at == 0 && snap != NULL) {
-      le_engine_get_snapshot(e, snap);
-      o->latency = snap->fx_added_latency_frames;
-    }
+  }
+  /* The latency the chain reports once it has run the whole input. */
+  if (snap != NULL) {
+    le_engine_get_snapshot(e, snap);
+    o->latency = snap->fx_added_latency_frames;
   }
   o->ns_active = n_active ? stats_of(t_active, n_active).p50 : 0.0;
   o->ns_tail = n_tail ? stats_of(t_tail, n_tail).p50 : 0.0;
@@ -742,14 +760,14 @@ static void health_of(const mx_out* o, int64_t from, int64_t len, mx_health* h) 
 typedef struct {
   /* per rate */
   int block_exact[MX_NRATES];   /* every block bit-identical */
-  int block_worst[MX_NRATES];   /* the first block that differs */
+  int block_worst[MX_NRATES];   /* the block that differs the most */
   double block_diff_db[MX_NRATES]; /* its largest difference, dB re peak */
   double response_db[MX_NRATES];
   int response_hz[MX_NRATES];
   double envelope_db[MX_NRATES];
   double envelope_max_db[MX_NRATES];
   int envelope_ms[MX_NRATES];
-  int alias_judged;
+  int alias_judged[MX_NRATES];
   double alias_db[MX_NRATES]; /* the worst of the three sines */
   int alias_hz[MX_NRATES];
   mx_health health[MX_NRATES];
@@ -776,10 +794,9 @@ static void run_setting(const mx_setting* s, mx_result* r) {
    * and it would bury the folds. */
   mx_setting as = *s;
   if (as.type == LE_FX_VINYL) as.p[2] = 0.0f;
-  r->alias_judged = k_kinds[kind_index(s->type)].harmonic;
   for (int ri = 0; ri < MX_NRATES; ++ri) {
-    const int sr = k_rates[ri];
-    if (le_fx_entry_free_running(as.type, as.p, sr)) r->alias_judged = 0;
+    r->alias_judged[ri] = k_kinds[kind_index(s->type)].harmonic &&
+                          !le_fx_entry_free_running(as.type, as.p, k_rates[ri]);
   }
   for (int ri = 0; ri < MX_NRATES; ++ri) {
     const int sr = k_rates[ri];
@@ -846,7 +863,7 @@ static void run_setting(const mx_setting* s, mx_result* r) {
     out_free(&t);
     /* alias */
     r->alias_db[ri] = -400.0;
-    if (r->alias_judged) {
+    if (r->alias_judged[ri]) {
       const int win = alias_win(sr);
       const int64_t settle = (int64_t)(MX_ALIAS_SETTLE_S * sr);
       for (int k = 0; k < 3; ++k) {
@@ -895,9 +912,9 @@ static void run_setting(const mx_setting* s, mx_result* r) {
       r->fail[MX_RESPONSE][ri] = r->response_db[ri] > MX_RESPONSE_DB;
       r->fail[MX_ENVELOPE][ri] = r->envelope_db[ri] > MX_ENVELOPE_DB;
     }
-    r->fail[MX_ALIAS][ri] = r->alias_judged && r->alias_db[ri] > MX_ALIAS_DB;
-    r->fail[MX_BLOWUP][ri] = h->nonfinite > 0 || h->peak > MX_PEAK_LIMIT ||
-                            h->dc > MX_DC_LIMIT;
+    r->fail[MX_ALIAS][ri] = r->alias_judged[ri] && r->alias_db[ri] > MX_ALIAS_DB;
+    r->fail[MX_BLOWUP][ri] = h->nonfinite > 0 || h->peak > MX_PEAK_LIMIT;
+    r->fail[MX_DC][ri] = h->dc > MX_DC_LIMIT;
     r->fail[MX_STALL][ri] = r->stall[ri] > MX_STALL_RATIO;
   }
 }
@@ -1021,7 +1038,7 @@ static void print_item(const mx_item* it) {
              r->response_db[ri], r->response_hz[ri], r->envelope_db[ri],
              r->envelope_max_db[ri], r->envelope_ms[ri]);
     }
-    if (r->alias_judged) {
+    if (r->alias_judged[ri]) {
       printf(", alias %.1f dB at %d Hz", r->alias_db[ri], r->alias_hz[ri]);
     }
     printf(", peak %.2f, dc %.1e, stall x%.1f, latency %d", r->health[ri].peak,
@@ -1052,19 +1069,16 @@ static double severity(const mx_result* r, int check, int ri, char* buf, size_t 
     case MX_ALIAS:
       snprintf(buf, n, "%.1f dB at %d Hz", r->alias_db[ri], r->alias_hz[ri]);
       return r->alias_db[ri];
-    case MX_BLOWUP: {
+    case MX_BLOWUP:
       if (h->nonfinite) {
         snprintf(buf, n, "%d non-finite", h->nonfinite);
         return 1e9;
       }
-      const double sp = h->peak / MX_PEAK_LIMIT, sd = h->dc / MX_DC_LIMIT;
-      if (sp >= sd) {
-        snprintf(buf, n, "peak %+.1f dBFS", 20.0 * log10(h->peak + 1e-30));
-        return sp;
-      }
-      snprintf(buf, n, "DC %.1f dBFS", 20.0 * log10(h->dc + 1e-30));
-      return sd;
-    }
+      snprintf(buf, n, "peak %+.1f dBFS", 20.0 * log10(h->peak + 1e-30));
+      return 20.0 * log10(h->peak + 1e-30);
+    case MX_DC:
+      snprintf(buf, n, "%.1f dBFS", 20.0 * log10(h->dc + 1e-30));
+      return 20.0 * log10(h->dc + 1e-30);
     default:
       snprintf(buf, n, "x%.1f", r->stall[ri]);
       return r->stall[ri];
@@ -1074,8 +1088,8 @@ static double severity(const mx_result* r, int check, int ri, char* buf, size_t 
 /* The worst of [check] over [kind]'s settings at rate [ri], into [buf], and
  * the setting it came from; [fails] gets how many settings fail it,
  * [judged] how many it was read on. */
-static void worst_of(int kind, int check, int ri, char* buf, size_t n,
-                     const char** name, int* fails, int* judged) {
+static double worst_of(int kind, int check, int ri, char* buf, size_t n,
+                       const char** name, int* fails, int* judged) {
   double worst = -1e30;
   *name = "";
   buf[0] = 0;
@@ -1085,7 +1099,7 @@ static void worst_of(int kind, int check, int ri, char* buf, size_t n,
     const mx_item* it = &g_items[i];
     if (kind_index(it->s.type) != kind || it->r.failed_render) continue;
     const mx_result* r = &it->r;
-    if (check == MX_ALIAS && !r->alias_judged) continue;
+    if (check == MX_ALIAS && !r->alias_judged[ri]) continue;
     if ((check == MX_RESPONSE || check == MX_ENVELOPE) && ri == MX_REF) continue;
     char fig[64];
     const double v = severity(r, check, ri, fig, sizeof(fig));
@@ -1099,6 +1113,7 @@ static void worst_of(int kind, int check, int ri, char* buf, size_t n,
       snprintf(buf, n, "%s", fig);
     }
   }
+  return worst;
 }
 
 static int report(void) {
@@ -1109,6 +1124,9 @@ static int report(void) {
       refused++;
     }
   }
+  int ran[MX_NKINDS];
+  memset(ran, 0, sizeof(ran));
+  for (int i = 0; i < g_nitems; ++i) ran[kind_index(g_items[i].s.type)] = 1;
   printf("\n## Failures\n\n");
   printf("| kind       | check    | rate   | failing    | list   | worst                  | worst setting |\n");
   printf("|------------|----------|--------|------------|--------|------------------------|---------------|\n");
@@ -1119,17 +1137,31 @@ static int report(void) {
         const char* name = "";
         int fails = 0, judged = 0;
         char fig[64];
-        worst_of(k, c, ri, fig, sizeof(fig), &name, &fails, &judged);
-        if (judged == 0) continue;
-        const int known = is_known(k, c, k_rates[ri]);
+        const double v =
+            worst_of(k, c, ri, fig, sizeof(fig), &name, &fails, &judged);
+        const mx_known* known = known_entry(k, c, k_rates[ri]);
+        if (judged == 0) {
+          /* A listed entry no setting of a kind that ran is read on. */
+          if (known != NULL && ran[k] && !g_ci) {
+            printf("| %-10s | %-8s | %5.1fk | not read   | known  | "
+                   "TAKE IT OFF THE LIST | |\n",
+                   k_kinds[k].name, k_check_names[c], k_rates[ri] / 1000.0);
+            stale++;
+          }
+          continue;
+        }
         if (fails > 0) {
+          const int over = known != NULL && v > known->ceiling;
+          const char* list = c == MX_STALL ? "timing"
+                             : over        ? "WORSE"
+                             : known       ? "known"
+                                           : "NEW";
           printf("| %-10s | %-8s | %5.1fk | %3d of %3d | %-6s | %-22s | %s |\n",
                  k_kinds[k].name, k_check_names[c], k_rates[ri] / 1000.0, fails,
-                 judged, c == MX_STALL ? "timing" : known ? "known" : "NEW",
-                 fig, name);
+                 judged, list, fig, name);
           /* Timing is reported and never fails a run. */
-          if (!known && c != MX_STALL) new_fail++;
-        } else if (known) {
+          if ((known == NULL || over) && c != MX_STALL) new_fail++;
+        } else if (known != NULL) {
           printf("| %-10s | %-8s | %5.1fk | passes     | known  | %s | |\n",
                  k_kinds[k].name, k_check_names[c], k_rates[ri] / 1000.0,
                  g_ci ? "not every setting ran" : "TAKE IT OFF THE LIST");
@@ -1138,8 +1170,8 @@ static int report(void) {
       }
     }
   }
-  printf("\n%d settings, %d new failures, %d known entries now passing, %d "
-         "refused\n",
+  printf("\n%d settings, %d new or worse failures, %d known entries now "
+         "passing, %d refused\n",
          g_nitems, new_fail, stale, refused);
   return new_fail || stale || refused ? 1 : 0;
 }

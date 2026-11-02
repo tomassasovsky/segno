@@ -209,14 +209,15 @@ echo "== building the effects matrix (CI subset) =="
 # tests run one setting a kind (--ci); the full run over every factory
 # setting is the bench, src/test/bench/bench_fx_matrix.sh. It renders about
 # a minute of audio a kind through the engine, so it is built -O2 (as the
-# shipped library is) whatever the suite's own flags. Its known failures
-# are listed in the source and do not fail the run; a new one does. It
+# shipped library is) whatever the suite's own flags, -O2 last so it wins.
+# Its known failures are listed in the source and do not fail the run; a
+# new one, or a listed one past its ceiling, does. It
 # needs the POSIX bench helpers (bench_common.h), so not on Windows.
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) echo "skipped on Windows" ;;
   *)
     # shellcheck disable=SC2086
-    $CC $STD -O2 $EXTRA_CFLAGS src/test/bench/bench_fx_matrix.c $ENGINE_SRC \
+    $CC $STD $EXTRA_CFLAGS -O2 src/test/bench/bench_fx_matrix.c $ENGINE_SRC \
       "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_fx_matrix.exe"
     "$OUT/segno_fx_matrix.exe" --ci
     ;;

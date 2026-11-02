@@ -1349,8 +1349,9 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   minutes on an M4 Pro, `--kind NAME` for one kind, `--detail` for every
   setting's figures); `run_native_tests.sh` runs its `--ci` subset, one
   setting a kind. What fails today is the `k_known` list in
-  `bench_fx_matrix.c`: a new failure fails the run, and in the full run so
-  does a listed one that now passes. The settings come from
+  `bench_fx_matrix.c`, each entry with a ceiling: a new failure, or a
+  listed one past its ceiling, fails the run, and in the full run so does a
+  listed one that now passes. The settings come from
   `src/test/bench/fx_factory_settings.inc`, generated from the catalogue;
   after a catalogue or module-build change, regenerate it with
   `/Users/Tomas/development/flutter/bin/flutter test
