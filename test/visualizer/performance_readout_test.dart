@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:segno/appliance/power_off/power_step.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 
 void main() {
@@ -73,17 +74,31 @@ void main() {
     });
 
     test('goodbye tokens decode, unknown ones read as none', () {
-      expect(
-        PerformanceReadout.fromMap(const {'goodbye': 'saving'}).goodbye,
-        ReadoutGoodbye.saving,
-      );
+      for (final face in ReadoutGoodbye.values) {
+        expect(
+          PerformanceReadout.fromMap({'goodbye': face.name}).goodbye,
+          face,
+        );
+      }
       expect(
         PerformanceReadout.fromMap(const {'goodbye': 'mark'}).goodbye,
-        ReadoutGoodbye.mark,
-      );
-      expect(
-        PerformanceReadout.fromMap(const {'goodbye': 'later'}).goodbye,
         ReadoutGoodbye.none,
+      );
+    });
+
+    test('the save step and its progress cross the channel', () {
+      const saving = PerformanceReadout(
+        goodbye: ReadoutGoodbye.saving,
+        savingStep: PowerStep.writeSession,
+        savingProgress: 0.5,
+      );
+      final decoded = PerformanceReadout.fromMap(saving.toMap());
+      expect(decoded, saving);
+      expect(PerformanceReadout.fromMap(const {}).savingStep, isNull);
+      expect(PerformanceReadout.fromMap(const {}).savingProgress, 0);
+      expect(
+        PerformanceReadout.fromMap(const {'savingStep': 'later'}).savingStep,
+        isNull,
       );
     });
 

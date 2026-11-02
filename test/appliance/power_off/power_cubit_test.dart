@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:clock/clock.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:operation_guards/operation_guards.dart';
@@ -157,9 +158,9 @@ void main() {
     test(
       'Restart: stop, flush, save, storage, then reboot exactly once',
       () async {
-        final cubit = build()
-          ..press(named)
-          ..restart(named, save: save);
+        final savedAt = DateTime(2026, 11, 2, 21, 47);
+        final cubit = build()..press(named);
+        withClock(Clock.fixed(savedAt), () => cubit.restart(named, save: save));
         await pumpEventQueue();
         expect(log, [
           'stop',
@@ -172,9 +173,11 @@ void main() {
         ]);
         expect(
           cubit.state,
-          const PowerState(
+          PowerState(
             phase: PowerPhase.goodbye,
             action: PowerAction.restart,
+            session: 'set',
+            savedAt: savedAt,
           ),
         );
         await cubit.close();
@@ -304,6 +307,119 @@ void main() {
       await cubit.close();
     });
 
+    group('save steps', () {
+      test('a named save reports each stage as it reaches it', () async {
+        final flushed = Completer<void>();
+        final written = Completer<void>();
+        final settled = Completer<void>();
+        final savedAt = DateTime(2026, 11, 2, 21, 47);
+        final cubit = build(
+          flush: ({required retry}) => flushed.future,
+          storageSettled: () => settled.future,
+        )..press(named);
+        withClock(
+          Clock.fixed(savedAt),
+          () => cubit.shutDown(named, save: () => written.future),
+        );
+        expect(cubit.state.step, PowerStep.saveSettings);
+        expect(cubit.state.session, 'set');
+        expect(cubit.state.progress, 0.25);
+        flushed.complete();
+        await pumpEventQueue();
+        expect(cubit.state.step, PowerStep.writeSession);
+        expect(cubit.state.progress, 0.5);
+        written.complete();
+        await pumpEventQueue();
+        expect(cubit.state.step, PowerStep.finishOnDisk);
+        expect(cubit.state.progress, 0.75);
+        settled.complete();
+        await pumpEventQueue();
+        expect(
+          cubit.state,
+          PowerState(
+            phase: PowerPhase.goodbye,
+            action: PowerAction.shutDown,
+            session: 'set',
+            savedAt: savedAt,
+          ),
+        );
+        await cubit.close();
+      });
+
+      test('the steps run in order, each once', () async {
+        final steps = <PowerStep>[];
+        final cubit = build();
+        final sub = cubit.stream.listen((state) {
+          if (state.step case final step?) steps.add(step);
+        });
+        cubit
+          ..press(named)
+          ..restart(named, save: save);
+        await pumpEventQueue();
+        expect(steps, PowerStep.values);
+        await sub.cancel();
+        await cubit.close();
+      });
+
+      test('Save As saves under the name it was given', () async {
+        final cubit = build()
+          ..press(unnamed)
+          ..shutDown(unnamed, save: save)
+          ..commitSaveAs(unnamed, name: 'friday-set', save: save);
+        expect(cubit.state.session, 'friday-set');
+        expect(cubit.state.steps, PowerStep.values);
+        await pumpEventQueue();
+        expect(cubit.state.phase, PowerPhase.goodbye);
+        expect(cubit.state.session, 'friday-set');
+        expect(cubit.state.savedAt, isNotNull);
+        await cubit.close();
+      });
+
+      test('Retry starts the steps over and keeps the session', () async {
+        var fail = true;
+        final steps = <PowerStep>[];
+        final cubit = build();
+        final sub = cubit.stream.listen((state) {
+          if (state.step case final step?) steps.add(step);
+        });
+        cubit
+          ..press(named)
+          ..shutDown(
+            named,
+            save: () async {
+              if (fail) throw StateError('disk full');
+            },
+          );
+        await pumpEventQueue();
+        expect(cubit.state.phase, PowerPhase.saveFailed);
+        expect(cubit.state.step, isNull);
+        expect(cubit.state.session, 'set');
+        expect(steps, [
+          PowerStep.stopPlayback,
+          PowerStep.saveSettings,
+          PowerStep.writeSession,
+        ]);
+        steps.clear();
+        fail = false;
+        cubit.retry(named, save: save);
+        await pumpEventQueue();
+        expect(steps, PowerStep.values);
+        expect(cubit.state.phase, PowerPhase.goodbye);
+        await sub.cancel();
+        await cubit.close();
+      });
+
+      test('Stay on forgets the session', () async {
+        final cubit = build()
+          ..press(named)
+          ..shutDown(named, save: failingSave);
+        await pumpEventQueue();
+        cubit.dismiss();
+        expect(cubit.state, const PowerState());
+        await cubit.close();
+      });
+    });
+
     group('save failure', () {
       test('stays on: saveFailed, neither reboot nor powerOff', () async {
         final cubit = build()
@@ -315,6 +431,7 @@ void main() {
           const PowerState(
             phase: PowerPhase.saveFailed,
             action: PowerAction.restart,
+            session: 'set',
           ),
         );
         expect(log, ['stop', 'flush', 'save']);
@@ -407,6 +524,7 @@ void main() {
         expect(log, isEmpty);
         cubit.commitSaveAs(
           unnamed,
+          name: 'friday-set',
           save: () async => log.add('saveAs'),
         );
         await pumpEventQueue();
@@ -446,11 +564,16 @@ void main() {
           'pedal',
           'reboot',
         ]);
-        expect(states.map((s) => s.phase), [
-          PowerPhase.options,
-          PowerPhase.saving,
-          PowerPhase.goodbye,
+        // Nothing is written, so the save has no session step.
+        expect(states.map((s) => (s.phase, s.step)), [
+          (PowerPhase.options, null),
+          (PowerPhase.saving, PowerStep.stopPlayback),
+          (PowerPhase.saving, PowerStep.saveSettings),
+          (PowerPhase.saving, PowerStep.finishOnDisk),
+          (PowerPhase.goodbye, null),
         ]);
+        expect(states.last.session, isNull);
+        expect(states.last.savedAt, isNull);
         expect(
           guards.blockers(GuardKind.capture, const GuardScope.internal()),
           [
@@ -536,7 +659,11 @@ void main() {
           ),
         );
         expect(log, ['stop', 'flush']);
-        cubit.commitSaveAs(unnamed, save: () async => log.add('saveAs'));
+        cubit.commitSaveAs(
+          unnamed,
+          name: 'friday-set',
+          save: () async => log.add('saveAs'),
+        );
         await pumpEventQueue();
         expect(log, [
           'stop',

@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:operation_guards/operation_guards.dart';
-import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/appliance/power_off/power_dialog.dart';
 import 'package:segno/appliance/power_off/power_gate.dart';
@@ -16,18 +15,24 @@ import 'package:segno/visualizer/performance_readout.dart';
 
 import '../helpers/helpers.dart';
 
-/// Pen 32's five Power screens: Power options, Saving, Save failed, Safe to
-/// switch off and Restarting. No real halt is invoked.
+/// Pen 32's five Power screens on the main screen (Power options, Saving,
+/// Save failed, Safe to switch off and Restarting) and the Track display's
+/// faces. No real halt is invoked.
 void main() {
   setUpAll(() async {
     if (!rendersScreenshots) return;
     await loadScreenshotFonts();
   });
 
-  Future<void> pumpFace(WidgetTester tester, Widget child) async {
+  Future<void> pumpFace(
+    WidgetTester tester,
+    Widget child, {
+    Size size = const Size(1920, 1080),
+    double pixelRatio = 1,
+  }) async {
     tester.view
-      ..physicalSize = const Size(1920, 1080)
-      ..devicePixelRatio = 1;
+      ..physicalSize = size
+      ..devicePixelRatio = pixelRatio;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
@@ -35,14 +40,9 @@ void main() {
         debugShowCheckedModeBanner: false,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        theme: ThemeData(
-          fontFamily: SurfaceTheme.displayFont,
-          brightness: Brightness.dark,
-          extensions: [
-            SurfaceTheme.dark,
-            routingGraphThemeFromSurface(SurfaceTheme.dark),
-          ],
-        ),
+        theme: AppTheme.neon,
+        builder: (context, child) =>
+            AppTextDefaults(child: child ?? const SizedBox.shrink()),
         home: Scaffold(body: child),
       ),
     );
@@ -99,15 +99,80 @@ void main() {
     );
   }, skip: !rendersScreenshots);
 
-  for (final (name, face, action) in [
-    ('power_saving', ReadoutGoodbye.saving, PowerAction.shutDown),
-    ('power_safe_to_switch_off', ReadoutGoodbye.mark, PowerAction.shutDown),
-    ('power_restarting', ReadoutGoodbye.mark, PowerAction.restart),
+  final savedAt = DateTime(2026, 11, 2, 21, 47);
+  for (final (name, state) in [
+    (
+      'power_saving',
+      const PowerState(
+        phase: PowerPhase.saving,
+        action: PowerAction.shutDown,
+        step: PowerStep.writeSession,
+        session: 'friday-set',
+      ),
+    ),
+    (
+      'power_safe_to_switch_off',
+      PowerState(
+        phase: PowerPhase.goodbye,
+        action: PowerAction.shutDown,
+        session: 'friday-set',
+        savedAt: savedAt,
+      ),
+    ),
+    (
+      'power_restarting',
+      PowerState(
+        phase: PowerPhase.goodbye,
+        action: PowerAction.restart,
+        session: 'friday-set',
+        savedAt: savedAt,
+      ),
+    ),
   ]) {
     testWidgets(name, (tester) async {
-      await pumpFace(tester, PowerGoodbye(face: face, action: action));
+      await pumpFace(
+        tester,
+        PowerGoodbye(state: state, stagedUpdate: '1.1.0'),
+      );
       await expectLater(
         find.byType(PowerGoodbye),
+        matchesGoldenFile('goldens/$name.png'),
+      );
+    }, skip: !rendersScreenshots);
+  }
+
+  for (final (name, readout) in [
+    (
+      'power_readout_options',
+      const PerformanceReadout(goodbye: ReadoutGoodbye.options),
+    ),
+    (
+      'power_readout_saving',
+      const PerformanceReadout(
+        goodbye: ReadoutGoodbye.saving,
+        savingStep: PowerStep.writeSession,
+        savingProgress: 0.5,
+      ),
+    ),
+    (
+      'power_readout_safe_to_switch_off',
+      const PerformanceReadout(goodbye: ReadoutGoodbye.safeToSwitchOff),
+    ),
+    (
+      'power_readout_restarting',
+      const PerformanceReadout(goodbye: ReadoutGoodbye.restarting),
+    ),
+  ]) {
+    testWidgets(name, (tester) async {
+      // The 7" panel: 1024x600 at the console's pixel ratio.
+      await pumpFace(
+        tester,
+        ReadoutGoodbyeFace(readout: readout),
+        size: const Size(1024, 600),
+        pixelRatio: 1.6,
+      );
+      await expectLater(
+        find.byType(ReadoutGoodbyeFace),
         matchesGoldenFile('goldens/$name.png'),
       );
     }, skip: !rendersScreenshots);

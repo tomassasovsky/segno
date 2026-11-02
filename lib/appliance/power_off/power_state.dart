@@ -42,9 +42,16 @@ class PowerState extends Equatable {
     this.phase = PowerPhase.idle,
     this.action,
     this.refusal,
+    this.step,
+    this.session,
+    this.savedAt,
   }) : assert(
          (phase == PowerPhase.refuse) == (refusal != null),
          'a refusal names its reason, and only a refusal has one',
+       ),
+       assert(
+         (phase == PowerPhase.saving) == (step != null),
+         'the save names its current step, and only the save has one',
        );
 
   /// Current phase.
@@ -58,6 +65,19 @@ class PowerState extends Equatable {
   /// refused ends while it is up.
   final PowerRefusal? refusal;
 
+  /// The stage the save is in, in [PowerPhase.saving]; null in every other
+  /// phase.
+  final PowerStep? step;
+
+  /// The name the commit saves the session under, from the commit onwards;
+  /// null when nothing is written (an empty unnamed session) and before a
+  /// commit.
+  final String? session;
+
+  /// When the session write landed, from then on; null until it has, and
+  /// when nothing was written.
+  final DateTime? savedAt;
+
   /// Any power UI is up — extra `KEY_POWER` is ignored.
   bool get isUiUp => phase != PowerPhase.idle;
 
@@ -68,6 +88,23 @@ class PowerState extends Equatable {
       phase == PowerPhase.saveAs ||
       phase == PowerPhase.saveFailed;
 
+  /// The stages this save runs, in order: the session write only when there
+  /// is a session to write.
+  List<PowerStep> get steps => [
+    PowerStep.stopPlayback,
+    PowerStep.saveSettings,
+    if (session != null) PowerStep.writeSession,
+    PowerStep.finishOnDisk,
+  ];
+
+  /// The share of [steps] finished, `0..1`; 0 outside [PowerPhase.saving].
+  double get progress {
+    final current = step;
+    if (current == null) return 0;
+    final all = steps;
+    return all.indexOf(current) / all.length;
+  }
+
   @override
-  List<Object?> get props => [phase, action, refusal];
+  List<Object?> get props => [phase, action, refusal, step, session, savedAt];
 }

@@ -2822,21 +2822,26 @@
     "@powerKeepPlaying": {
         "description": "Dismisses the power refusal and leaves the set running."
     },
-    "powerOptionsTitle": "Power options",
+    "powerOptionsTitle": "Power",
     "@powerOptionsTitle": {
-        "description": "Title of the card opened by the power button or Settings' Power row (pen 32)."
+        "description": "Title of the power panel: Cancel, Restart, Shut down."
     },
-    "powerOptionsBody": "Playback will stop and your session will be saved.",
-    "@powerOptionsBody": {
-        "description": "Power options body: both Restart and Shut down save first."
+    "powerOptionsBodyNamed": "Playback stops and {session} is saved first.",
+    "@powerOptionsBodyNamed": {
+        "description": "Power panel body for a named session.",
+        "placeholders": {
+            "session": {
+                "type": "String"
+            }
+        }
     },
-    "powerSessionUnnamed": "This session has no name yet. You'll name it before it saves.",
-    "@powerSessionUnnamed": {
-        "description": "Power options line in place of the session name when the open session is unnamed."
+    "powerOptionsBodyUnnamed": "Playback stops and this session is saved first. You name it before it saves.",
+    "@powerOptionsBodyUnnamed": {
+        "description": "Power panel body for an unnamed session with content: Save As opens before the save."
     },
-    "powerOptionsBodyEmpty": "Playback will stop. This session is empty, so there is nothing to save.",
+    "powerOptionsBodyEmpty": "Playback stops. This session is empty, so there is nothing to save.",
     "@powerOptionsBodyEmpty": {
-        "description": "Power options body in place of the save promise and the session line when the open session is unnamed and holds no recorded audio and no backing: Restart and Shut down write no session."
+        "description": "Power panel body for an unnamed session with nothing in it: nothing is saved, so there is no save promise."
     },
     "powerStagedUpdate": "Segno {version} installs during the restart.",
     "@powerStagedUpdate": {
@@ -2859,9 +2864,50 @@
     "@powerShutDown": {
         "description": "Saves the session, then shuts the console down."
     },
-    "powerSaving": "Saving…",
+    "powerSaving": "Saving",
     "@powerSaving": {
-        "description": "Full-screen face while the session and settings are writing. No spinner."
+        "description": "Headline of the Saving face when no session is written (an empty unnamed session), and of the Track display while saving."
+    },
+    "powerSavingSession": "Saving {session}",
+    "@powerSavingSession": {
+        "description": "Headline of the Saving face on the main screen.",
+        "placeholders": {
+            "session": {
+                "type": "String"
+            }
+        }
+    },
+    "powerStepStopPlayback": "Stopping playback",
+    "@powerStepStopPlayback": {
+        "description": "Saving step while it runs or is still ahead: the transport stops."
+    },
+    "powerStepStopPlaybackDone": "Playback stopped",
+    "@powerStepStopPlaybackDone": {
+        "description": "Saving step once finished: the transport stopped."
+    },
+    "powerStepSaveSettings": "Saving settings",
+    "@powerStepSaveSettings": {
+        "description": "Saving step while it runs or is still ahead: the settings flush."
+    },
+    "powerStepSaveSettingsDone": "Settings saved",
+    "@powerStepSaveSettingsDone": {
+        "description": "Saving step once finished: the settings flushed."
+    },
+    "powerStepWriteSession": "Writing the session",
+    "@powerStepWriteSession": {
+        "description": "Saving step while it runs or is still ahead: the session file is written."
+    },
+    "powerStepWriteSessionDone": "Session written",
+    "@powerStepWriteSessionDone": {
+        "description": "Saving step once finished: the session file is on disk."
+    },
+    "powerStepFinishOnDisk": "Finishing on disk",
+    "@powerStepFinishOnDisk": {
+        "description": "Saving step while it runs or is still ahead: storage writes settle before the power-off."
+    },
+    "powerStepFinishOnDiskDone": "Finished on disk",
+    "@powerStepFinishOnDiskDone": {
+        "description": "Saving step once finished: storage writes settled."
     },
     "powerSaveFailedTitle": "Segno is staying on",
     "@powerSaveFailedTitle": {
@@ -2883,9 +2929,30 @@
     "@powerRestarting": {
         "description": "Terminal face after a restart has saved. No ellipsis."
     },
-    "a11yPowerMark": "Segno",
-    "@a11yPowerMark": {
-        "description": "Announced name of the Plymouth lockup on the Track display's goodbye mark."
+    "powerSavedAt": "{session} saved at {time}",
+    "@powerSavedAt": {
+        "description": "Under Safe to switch off and Restarting: the saved session and the console's local time of the save.",
+        "placeholders": {
+            "session": {
+                "type": "String"
+            },
+            "time": {
+                "type": "String"
+            }
+        }
+    },
+    "powerInstallingUpdate": "Installing Segno {version}",
+    "@powerInstallingUpdate": {
+        "description": "Under Restarting when a staged update installs during the restart.",
+        "placeholders": {
+            "version": {
+                "type": "String"
+            }
+        }
+    },
+    "powerOnMainScreen": "Power options on the main screen",
+    "@powerOnMainScreen": {
+        "description": "Track display face while the power panel or Save As is up on the main screen."
     },
     "stageLibrary": "Library",
     "@stageLibrary": {

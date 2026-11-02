@@ -4598,11 +4598,25 @@ void main() {
       expect(windowService.readouts.last.goodbye, ReadoutGoodbye.none);
 
       final power = tester.element(find.byType(LooperPage)).read<PowerCubit>()
-        ..press(_named)
-        ..shutDown(_named, save: () async {});
+        ..press(_named);
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.readouts.last.goodbye, ReadoutGoodbye.options);
+
+      final written = Completer<void>();
+      power.shutDown(_named, save: () => written.future);
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(power.state.step, PowerStep.writeSession);
+      expect(windowService.readouts.last.goodbye, ReadoutGoodbye.saving);
+      expect(windowService.readouts.last.savingStep, PowerStep.writeSession);
+      expect(windowService.readouts.last.savingProgress, 0.5);
+
+      written.complete();
       await tester.pump(const Duration(milliseconds: 40));
       expect(power.state.phase, PowerPhase.goodbye);
-      expect(windowService.readouts.last.goodbye, ReadoutGoodbye.mark);
+      expect(
+        windowService.readouts.last.goodbye,
+        ReadoutGoodbye.safeToSwitchOff,
+      );
       await tester.pump(const Duration(seconds: 2));
       expect(haltCalls, 1);
     });

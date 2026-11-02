@@ -1,11 +1,15 @@
 import 'dart:async';
 
 import 'package:bloc/bloc.dart';
+import 'package:clock/clock.dart';
 import 'package:equatable/equatable.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/appliance/power_off/power_gate.dart';
+import 'package:segno/appliance/power_off/power_step.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:update_repository/update_repository.dart';
+
+export 'package:segno/appliance/power_off/power_step.dart';
 
 part 'power_state.dart';
 
@@ -16,9 +20,10 @@ part 'power_state.dart';
 /// Restart and Shut down share one guarded path: refused while a take, an
 /// update install or a transfer is in flight; otherwise stop the transport,
 /// flush settings, save the session, hold [GuardKind.restart], wait for
-/// storage leases, ask the installer again, then reboot or halt. A failed
-/// save keeps Segno on (Stay on / Retry); there is no way to halt without
-/// saving. An unnamed session with nothing to lose
+/// storage leases, ask the installer again, then reboot or halt. The save
+/// reports each of those stages as [PowerState.step], so the Saving face can
+/// tick them off. A failed save keeps Segno on (Stay on / Retry); there is no
+/// way to halt without saving. An unnamed session with nothing to lose
 /// ([PowerSnapshot.sessionHasContent] false) skips only the session write:
 /// there is nothing to name and nothing to write.
 ///
@@ -68,6 +73,9 @@ class PowerCubit extends Cubit<PowerState> {
   /// The save of the commit in progress, kept for Retry.
   Future<void> Function()? _save;
 
+  /// The name [_save] writes the session under; null when it writes nothing.
+  String? _session;
+
   /// A Retry sent this Save As: its save repairs, as the Retry would have.
   bool _repairOnSaveAs = false;
   OperationGuard? _guard;
@@ -89,6 +97,7 @@ class PowerCubit extends Cubit<PowerState> {
   void dismiss() {
     if (!state.isDismissible) return;
     _save = null;
+    _session = null;
     _repairOnSaveAs = false;
     _set(PowerPhase.idle);
   }
@@ -108,14 +117,17 @@ class PowerCubit extends Cubit<PowerState> {
     required Future<void> Function() save,
   }) => _commit(PowerAction.shutDown, snapshot, save);
 
-  /// The host named an unnamed session; [save] writes it under that name.
+  /// The host named an unnamed session [name]; [save] writes it under that
+  /// name.
   void commitSaveAs(
     PowerSnapshot snapshot, {
+    required String name,
     required Future<void> Function() save,
   }) {
     if (state.phase != PowerPhase.saveAs) return;
     if (_refused(snapshot)) return;
     _save = save;
+    _session = name;
     unawaited(_run(state.action!, retry: _repairOnSaveAs));
   }
 
@@ -160,10 +172,12 @@ class PowerCubit extends Cubit<PowerState> {
     PowerSnapshot snapshot,
     Future<void> Function() save,
   ) {
-    if (snapshot.currentSessionName != null) {
+    if (snapshot.currentSessionName case final name?) {
       _save = save;
+      _session = name;
       return true;
     }
+    _session = null;
     if (snapshot.sessionHasContent) {
       _save = null;
       emit(PowerState(phase: PowerPhase.saveAs, action: action));
@@ -182,15 +196,32 @@ class PowerCubit extends Cubit<PowerState> {
     final refusal = powerRefusal(snapshot);
     if (refusal == null) return false;
     _save = null;
+    _session = null;
     emit(PowerState(phase: PowerPhase.refuse, refusal: refusal));
     return true;
   }
 
   Future<void> _run(PowerAction action, {required bool retry}) async {
-    emit(PowerState(phase: PowerPhase.saving, action: action));
+    final session = _session;
+    void reach(PowerStep step) {
+      if (isClosed) return;
+      emit(
+        PowerState(
+          phase: PowerPhase.saving,
+          action: action,
+          step: step,
+          session: session,
+        ),
+      );
+    }
+
+    reach(PowerStep.stopPlayback);
     try {
       _stopTransport();
+      reach(PowerStep.saveSettings);
       await _flush(retry: retry);
+      // An empty unnamed session's save writes nothing, so it has no step.
+      if (session != null) reach(PowerStep.writeSession);
       await _save!();
     } on Object catch (error, stack) {
       AppLog.error('power: save failed', error: error, stack: stack);
@@ -198,6 +229,8 @@ class PowerCubit extends Cubit<PowerState> {
       return;
     }
     if (isClosed) return;
+    final savedAt = session == null ? null : clock.now();
+    reach(PowerStep.finishOnDisk);
     // Held from here to the end: no take, session write or transfer may
     // start once the session is on disk. Not before, because the session
     // write itself is one of the operations a restart refuses.
@@ -231,7 +264,14 @@ class PowerCubit extends Cubit<PowerState> {
     }
     if (isClosed) return;
     _pedalGoodbye();
-    _set(PowerPhase.goodbye);
+    emit(
+      PowerState(
+        phase: PowerPhase.goodbye,
+        action: action,
+        session: session,
+        savedAt: savedAt,
+      ),
+    );
     if (_markHold > Duration.zero) {
       await Future<void>.delayed(_markHold);
     }
@@ -268,19 +308,22 @@ class PowerCubit extends Cubit<PowerState> {
     _guard?.release();
     _guard = null;
     _save = null;
+    _session = null;
     if (isClosed) return;
     emit(
       const PowerState(phase: PowerPhase.refuse, refusal: PowerRefusal.update),
     );
   }
 
+  /// Moves to [phase] outside the save, keeping the commit's action and
+  /// session once there is a commit.
   void _set(PowerPhase phase) {
+    final committed = phase != PowerPhase.idle && phase != PowerPhase.options;
     emit(
       PowerState(
         phase: phase,
-        action: phase == PowerPhase.idle || phase == PowerPhase.options
-            ? null
-            : state.action,
+        action: committed ? state.action : null,
+        session: committed ? _session : null,
       ),
     );
   }

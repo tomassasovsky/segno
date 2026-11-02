@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:segno/appliance/power_off/power_goodbye.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 import 'package:segno/visualizer/waveform_window.dart';
@@ -176,14 +177,14 @@ void main() {
       expect(view.width, panel.width);
     });
 
-    testWidgets('PerformanceReadout.goodbye covers the panel with the mark', (
+    testWidgets('PerformanceReadout.goodbye covers the panel with its face', (
       tester,
     ) async {
       final frame = ValueNotifier<WaveformFrame>(
         (samples: Float32List(0), progress: 0, selectedTrack: ''),
       );
       final readout = ValueNotifier<PerformanceReadout>(
-        const PerformanceReadout(goodbye: ReadoutGoodbye.mark),
+        const PerformanceReadout(goodbye: ReadoutGoodbye.safeToSwitchOff),
       );
       addTearDown(frame.dispose);
       addTearDown(readout.dispose);
@@ -195,7 +196,11 @@ void main() {
       );
       addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
 
-      expect(find.byKey(const Key('power_mark')), findsOneWidget);
+      expect(
+        find.byKey(const Key('readout_goodbye_safe_to_switch_off')),
+        findsOneWidget,
+      );
+      expect(find.byType(Image), findsNothing);
     });
 
     testWidgets('PerformanceReadout.brightness dims the panel in software', (
@@ -227,6 +232,46 @@ void main() {
         ),
         findsOneWidget,
       );
+    });
+
+    testWidgets('the pointer to the power panel dims with the panel; the '
+        'save and goodbye faces stay above the dim, and the readout is '
+        'never remounted', (tester) async {
+      final frame = ValueNotifier<WaveformFrame>(
+        (samples: Float32List(0), progress: 0, selectedTrack: ''),
+      );
+      final readout = ValueNotifier<PerformanceReadout>(
+        const PerformanceReadout(brightness: 0.3),
+      );
+      addTearDown(frame.dispose);
+      addTearDown(readout.dispose);
+      await tester.pumpWidget(
+        WaveformWindowApp(frame: frame, readout: readout),
+      );
+      addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
+      final view = tester.element(find.byType(ConsoleReadoutView));
+
+      Finder dimmed(Finder face) =>
+          find.ancestor(of: face, matching: find.byType(ColorFiltered));
+
+      readout.value = const PerformanceReadout(
+        brightness: 0.3,
+        goodbye: ReadoutGoodbye.options,
+      );
+      await tester.pump();
+      expect(dimmed(find.byType(ReadoutGoodbyeFace)), findsOneWidget);
+
+      readout.value = const PerformanceReadout(
+        brightness: 0.3,
+        goodbye: ReadoutGoodbye.safeToSwitchOff,
+      );
+      await tester.pump();
+      expect(find.byType(ReadoutGoodbyeFace), findsOneWidget);
+      expect(dimmed(find.byType(ReadoutGoodbyeFace)), findsNothing);
+
+      readout.value = const PerformanceReadout(brightness: 0.3);
+      await tester.pump();
+      expect(tester.element(find.byType(ConsoleReadoutView)), same(view));
     });
 
     testWidgets('gives the readout a Material ancestor on both faces', (
