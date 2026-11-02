@@ -203,7 +203,7 @@ The unit recovers from a hang by itself and leaves a record on `/data`
   be started and the disks do not answer (#1527). Every 5 s it reads one
   block of a file on `/` and one on `/data` past the page cache, and starts
   `/bin/true`. A round that fails or takes over 10 s counts as failed. Once
-  the rounds have failed for 60 s, at least 3 in a row, it logs
+  the rounds have failed for 90 s, at least 3 in a row, it logs
   `segno-freeze-watchdog: rebooting: <why>`, dumps the blocked tasks and
   every CPU's backtrace into the kernel log (sysrq `w` and `l`), syncs, and
   panics through sysrq. The panic writes the log into a dmesg record and the

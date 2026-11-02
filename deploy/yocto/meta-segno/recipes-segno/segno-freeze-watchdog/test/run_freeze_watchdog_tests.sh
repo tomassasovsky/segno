@@ -134,7 +134,7 @@ echo "refuses to start without what it needs"
 setup
 run_daemon SEGNO_WATCHDOG_ROOT_FILE="$work/missing"; rc=$?
 check "a missing root file: exit 1" '[ "$rc" = 1 ]'
-check "says why" 'grep -q "^<3>segno-freeze-watchdog: cannot start: open $work/missing: No such file or directory" "$work/kmsg"'
+check "says why" 'grep -q "^<3>segno-freeze-watchdog: cannot start: open $work/missing with O_DIRECT: No such file or directory" "$work/kmsg"'
 setup
 run_daemon SEGNO_WATCHDOG_SYSRQ="$work/no/sysrq"; rc=$?
 check "no sysrq trigger: exit 1" '[ "$rc" = 1 ]'
@@ -155,12 +155,15 @@ check "read the audio and IRQ priorities" '[ -n "$callback" ] && [ -n "$workers"
 check "SCHED_FIFO" '[ "$(value CPUSchedulingPolicy)" = fifo ]'
 check "above the audio callback ($callback) and workers ($workers)" '[ "$prio" -gt "$callback" ] && [ "$prio" -gt "$workers" ]'
 check "below the USB sound-card IRQ thread ($usb_irq)" '[ "$prio" -lt "$usb_irq" ]'
-check "on core 0, away from the audio cores" '[ "$(value CPUAffinity)" = 0 ]'
+check "on core 0, away from the callback and workers" '[ "$(value CPUAffinity)" = 0 ]'
 check "may lock its memory" '[ "$(value LimitMEMLOCK)" = infinity ]'
 check "Type=notify with a watchdog" '[ "$(value Type)" = notify ] && [ -n "$(value WatchdogSec)" ]'
 check "stops before /data is unmounted" '[ "$(value RequiresMountsFor)" = /data ]'
 check "starts at boot" '[ "$(value WantedBy)" = multi-user.target ]'
 check "the recipe enables the unit" 'grep -qx "SYSTEMD_SERVICE:\${PN} = \"segno-freeze-watchdog.service\"" "$recipe"'
+default_root=$(sed -n 's/.*SEGNO_WATCHDOG_ROOT_FILE", "\([^"]*\)").*/\1/p' "$files/segno-freeze-watchdog.c")
+check "the recipe ships the / probe file the daemon reads ($default_root)" '[ "$default_root" = /usr/lib/segno/freeze-watchdog-probe ] && grep -qF "\${D}\${libdir}/segno/freeze-watchdog-probe" "$recipe" && grep -qx "FILES:\${PN} += \"\${libdir}/segno/freeze-watchdog-probe\"" "$recipe"'
+check "a unit that keeps failing gives up and shows as failed" '[ "$(value StartLimitBurst)" -gt 0 ] && [ "$(value StartLimitIntervalSec)" != 0 ]'
 check "the recipe builds both sources" 'grep -q "segno-freeze-watchdog.c \${S}/freeze_watchdog.c" "$recipe"'
 check "the image installs it" 'sed -n "/^IMAGE_INSTALL:append/,/^    \"/p" "$IMAGE" | grep -qx "    segno-freeze-watchdog \\\\"'
 check "the kernel has sysrq" 'grep -qx "CONFIG_MAGIC_SYSRQ=y" "$FRAGMENT"'

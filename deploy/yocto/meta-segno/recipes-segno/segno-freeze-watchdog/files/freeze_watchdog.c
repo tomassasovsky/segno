@@ -91,7 +91,6 @@ int fw_read_probe_open(struct fw_read_probe *r, const char *path,
                        char *why, size_t why_len) {
     r->path = path;
     r->fd = -1;
-    r->direct = 1;
     if (posix_memalign(&r->buf, FW_BLOCK, FW_BLOCK) != 0) {
         snprintf(why, why_len, "read %s: no memory for the buffer", path);
         return -1;
@@ -100,14 +99,8 @@ int fw_read_probe_open(struct fw_read_probe *r, const char *path,
      * filesystem that has gone (an ext4 shut down after an error, a disk
      * that stopped answering) fails the read rather than an open. */
     r->fd = open(path, O_RDONLY | O_DIRECT | O_CLOEXEC);
-    if (r->fd < 0 && errno == EINVAL) {
-        /* A filesystem without O_DIRECT: read through the cache, dropping
-         * the page first so the read still reaches the disk. */
-        r->direct = 0;
-        r->fd = open(path, O_RDONLY | O_CLOEXEC);
-    }
     if (r->fd < 0) {
-        snprintf(why, why_len, "open %s: %s", path, strerror(errno));
+        snprintf(why, why_len, "open %s with O_DIRECT: %s", path, strerror(errno));
         return -1;
     }
     return 0;
@@ -115,7 +108,6 @@ int fw_read_probe_open(struct fw_read_probe *r, const char *path,
 
 int fw_probe_read(void *ctx, char *why, size_t why_len) {
     struct fw_read_probe *r = ctx;
-    if (!r->direct) posix_fadvise(r->fd, 0, FW_BLOCK, POSIX_FADV_DONTNEED);
     ssize_t n = pread(r->fd, r->buf, FW_BLOCK, 0);
     if (n < 0) {
         snprintf(why, why_len, "read %s: %s", r->path, strerror(errno));
@@ -302,8 +294,11 @@ void fw_log(int kmsg_fd, int level, const char *fmt, ...) {
     size_t len = strlen(line);
     line[len++] = '\n';
     if (kmsg_fd >= 0) {
-        /* One write is one kernel log record. */
-        if (write(kmsg_fd, line, len) == (ssize_t)len) return;
+        /* One write is one kernel log record. A failed one is dropped:
+         * falling back to stderr could block the recovery for good. */
+        ssize_t ignored = write(kmsg_fd, line, len);
+        (void)ignored;
+        return;
     }
     fwrite(line + prefix, 1, len - prefix, stderr);
 }

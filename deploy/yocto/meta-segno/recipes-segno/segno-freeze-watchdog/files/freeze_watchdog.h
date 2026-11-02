@@ -22,8 +22,8 @@ void fw_sleep_ms(int64_t ms);
 /* --- The decision ---------------------------------------------------------
  *
  * One slow I/O under load must not reboot the console, and neither must a
- * stall the drive recovers from: nvme_core times a command out after 30 s and
- * then resets the controller. So a reboot needs both at least `min_failures`
+ * stall the drive recovers from (see the default in segno-freeze-watchdog.c).
+ * So a reboot needs both at least `min_failures`
  * failed rounds in a row and `fail_after_ms` since the last round that passed.
  */
 struct fw_policy {
@@ -57,11 +57,14 @@ struct fw_probe {
 /* Starts a program (ctx is its path) and waits for it to exit 0. */
 int fw_probe_exec(void *ctx, char *why, size_t why_len);
 
-/* Reads the first block of a file past the page cache. */
+/* Reads the first block of a file with O_DIRECT, past the page cache. The
+ * file must be one nothing maps: both appliance filesystems are ext4 in
+ * ordered mode, where O_DIRECT reaches the disk. A filesystem that refuses
+ * O_DIRECT fails the open, so the daemon does not start on a probe that
+ * would only read the cache. */
 struct fw_read_probe {
     const char *path;
     int fd;
-    int direct; /* 1: O_DIRECT; 0: the cached page is dropped before each read */
     void *buf;
 };
 
@@ -104,8 +107,10 @@ struct fw_recovery {
 };
 
 /* One line in the kernel log at `level` (0-7), or on stderr when there is no
- * kernel log. The kernel log never waits on a disk; the journal's stream
- * socket does, once journald is stuck behind the dead filesystem. */
+ * kernel log yet (startup only). Once the kernel log is open it is the only
+ * place written, even when a write fails: the kernel log never waits on a
+ * disk, while stderr is the journal's stream socket, which fills and blocks
+ * once journald is stuck behind the dead filesystem. */
 void fw_log(int kmsg_fd, int level, const char *fmt, ...)
     __attribute__((format(printf, 3, 4)));
 

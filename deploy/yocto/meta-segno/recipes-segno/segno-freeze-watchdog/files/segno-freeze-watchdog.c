@@ -18,8 +18,9 @@
  * (freeze_watchdog.c, fw_recover).
  *
  * It never execs anything itself and opens every path at startup. The unit
- * runs it at SCHED_FIFO 85, above the audio threads (80 and 79), pinned to
- * core 0, where no audio thread runs; it locks its memory here.
+ * runs it at SCHED_FIFO 85, above the audio callback (80) and the effects
+ * workers (79), pinned to core 0, where neither runs; it locks its memory
+ * here.
  *
  * Exit status: 1 when it cannot start (including a first round that fails),
  * 3 when it asked for the reboot and is still running (only possible with a
@@ -68,18 +69,20 @@ static void cpus_of_self(char *out, size_t len) {
 
 int main(void) {
     const char *exec_path = env_or("SEGNO_WATCHDOG_EXEC", "/bin/true");
-    /* The daemon's own binary: always on the rootfs, never empty. */
-    const char *root_file = env_or("SEGNO_WATCHDOG_ROOT_FILE", "/usr/bin/segno-freeze-watchdog");
+    /* Shipped by the recipe for this alone, so nothing maps or locks it. */
+    const char *root_file = env_or("SEGNO_WATCHDOG_ROOT_FILE", "/usr/lib/segno/freeze-watchdog-probe");
     const char *data_file = env_or("SEGNO_WATCHDOG_DATA_FILE", "/data/segno/freeze-watchdog-probe");
     const char *sysrq_path = env_or("SEGNO_WATCHDOG_SYSRQ", "/proc/sysrq-trigger");
     const char *kmsg_path = env_or("SEGNO_WATCHDOG_KMSG", "/dev/kmsg");
     int64_t interval_ms = env_num("SEGNO_WATCHDOG_INTERVAL_MS", 5000);
     int64_t deadline_ms = env_num("SEGNO_WATCHDOG_DEADLINE_MS", 10000);
-    /* 60 s, like RuntimeWatchdogSec (#1437): longer than an NVMe command
-     * timeout (30 s) plus the controller reset that follows it, so a stall
-     * the drive recovers from never reboots the console mid-set. */
+    /* 90 s, so a stall the drive recovers from never reboots the console
+     * mid-set. The NVMe driver answers a command's first timeout (30 s) with
+     * an Abort and waits again; only the second (60 s) resets the
+     * controller, and the reset takes seconds more. The stalled read can
+     * also start up to one interval after the last pass. */
     struct fw_policy policy = {
-        .fail_after_ms = env_num("SEGNO_WATCHDOG_FAIL_AFTER_MS", 60000),
+        .fail_after_ms = env_num("SEGNO_WATCHDOG_FAIL_AFTER_MS", 90000),
         .min_failures = (int)env_num("SEGNO_WATCHDOG_MIN_FAILURES", 3),
     };
     struct fw_recovery recovery = {
@@ -145,12 +148,11 @@ int main(void) {
     cpus_of_self(cpus, sizeof cpus);
     fw_log(recovery.kmsg_fd, 6,
            "watching %s, %s and %s every %lld ms; reboots after %d failed rounds "
-           "and %lld s without a pass (%s %d, CPU %s, memory %s, reads %s and %s)",
+           "and %lld s without a pass (%s %d, CPU %s, memory %s)",
            root_name, data_name, exec_name, (long long)interval_ms, policy.min_failures,
            (long long)(policy.fail_after_ms / 1000),
            policy_now == SCHED_FIFO ? "SCHED_FIFO" : "NOT SCHED_FIFO", sp.sched_priority,
-           cpus, locked, root_read.direct ? "O_DIRECT" : "fadvise",
-           data_read.direct ? "O_DIRECT" : "fadvise");
+           cpus, locked);
 
     fw_notify("READY=1");
     struct fw_tracker tracker;

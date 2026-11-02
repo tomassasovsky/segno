@@ -174,7 +174,9 @@ teardown
 
 echo "a reboot segno-freeze-watchdog asked for is named in the journal"
 setup
-printf '<4>[  80.1] segno-freeze-watchdog: probe failed (12 in a row, 60 s since the last pass): exec /bin/true: No such file or directory\n<2>[  80.2] segno-freeze-watchdog: rebooting now: exec or storage dead: 12 probe rounds failed over 60 s, the last: exec /bin/true: No such file or directory\n<0>[  81.3] Kernel panic - not syncing: sysrq triggered crash\n' \
+# As ramoops records it: a line written to /dev/kmsg is LOG_USER, so KERN_CRIT
+# comes back as <10> and KERN_WARNING as <12>.
+printf '<12>[  80.1] segno-freeze-watchdog: probe failed (12 in a row, 60 s since the last pass): exec /bin/true: No such file or directory\n<10>[  80.2] segno-freeze-watchdog: rebooting now: exec or storage dead: 12 probe rounds failed over 60 s, the last: exec /bin/true: No such file or directory\n<0>[  81.3] Kernel panic - not syncing: sysrq triggered crash\n' \
     > "$work/pstore/dmesg-ramoops-0"
 printf 'console\n' > "$work/pstore/console-ramoops-0"
 run_keep 20261102T120000Z; rc=$?

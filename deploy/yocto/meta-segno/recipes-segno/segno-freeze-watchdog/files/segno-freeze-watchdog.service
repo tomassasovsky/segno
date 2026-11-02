@@ -7,7 +7,8 @@ Description=Segno: reboot warm when exec or storage stops working
 # daemon before /data is unmounted, so a clean shutdown never reads as a dead
 # disk.
 RequiresMountsFor=/data
-StartLimitIntervalSec=0
+StartLimitIntervalSec=10min
+StartLimitBurst=5
 
 [Service]
 # READY=1 once every probe is open and the memory is locked, then WATCHDOG=1
@@ -17,13 +18,17 @@ NotifyAccess=main
 WatchdogSec=30s
 ExecStart=/usr/bin/segno-freeze-watchdog
 Restart=always
-RestartSec=10s
+# A daemon that keeps failing to start (a probe broken from the start) gives
+# up after five tries and shows in `systemctl --failed`, rather than logging
+# a line every few seconds forever.
+RestartSec=30s
 # Above the audio threads (callback FIFO 80 on core 3, effects workers FIFO 79
 # on cores 1 and 2), so an audio overload cannot starve it, and below the USB
-# sound-card IRQ thread (segno-rtirq, FIFO 90). Pinned to core 0, where no
-# audio thread runs, so its few hundred microseconds per round never land in
-# the middle of an audio period. The probe thread and the program it starts
-# inherit both.
+# sound-card IRQ thread (segno-rtirq, FIFO 90). Pinned to core 0, where the
+# callback and the workers do not run, so its few hundred microseconds per
+# round never land in the middle of their audio period. The USB IRQ thread
+# is on core 0 too, and preempts this one. The probe thread and the program
+# it starts inherit both.
 CPUSchedulingPolicy=fifo
 CPUSchedulingPriority=85
 CPUAffinity=0

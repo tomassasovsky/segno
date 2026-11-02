@@ -206,10 +206,11 @@ static void test_probes(void) {
     CHECK("saying which", strstr(why, missing) != NULL);
 
     /* A read error: a directory cannot be read (EISDIR), as a dead disk
-     * returns EIO. */
-    struct fw_read_probe d;
-    CHECK("opens a directory", fw_read_probe_open(&d, data, why, sizeof why) == 0);
-    CHECK("whose read fails", fw_probe_read(&d, why, sizeof why) == -1);
+     * returns EIO. Opened by hand: O_DIRECT refuses a directory. */
+    struct fw_read_probe d = r;
+    d.path = data;
+    d.fd = open(data, O_RDONLY | O_DIRECTORY);
+    CHECK("whose read fails", d.fd >= 0 && fw_probe_read(&d, why, sizeof why) == -1);
     CHECK("with the error", strstr(why, "Is a directory") != NULL);
 }
 
