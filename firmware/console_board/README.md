@@ -125,6 +125,28 @@ once. The board keeps no Song or bank logic: it reacts only to the queued
 button the app sends. The wire is unchanged
 ([plan](../../docs/plan/2026-10-13-fix-song-band-one-section-plan.md)).
 
+**Clear-track hold (#1534, firmware 2.6).** While a hold that clears a
+track is pending (the Track Hold set to Clear track, or a Custom pedal whose
+Hold is Clear or Clear all), the app sends `CLEAR_HOLD` (`0x13`) every 20 ms with the held
+footswitch and how much of the long-press threshold has run (0..255). The
+board draws red from both ends of that pill toward the centre over whatever
+the pill shows, at the same uniform level as the Song queue (110), with the
+leading pixel on each side partly filled so the edges move smoothly; at 255
+the two meet. When the hold fires, the app sends 255 for 60 ms so the meeting
+shows, then one with no footswitch; a hold released early or cancelled (or
+one that can no longer fire) gets the one with no footswitch at once, and the
+pill shows its normal state again. A fill that no message refreshes for
+500 ms is dropped and forgotten, so a lost message cannot leave a pill red; a
+pill the app does not light never fills, and goodbye and a lost link end the
+fill.
+
+`CLEAR_HOLD` does not change the protocol version (still 12). Firmware 2.5 and
+older reject the unknown type at its type byte and keep rendering `STATE`, so
+an older board shows no fill and nothing wrong; a protocol bump would instead
+make the app refuse those boards altogether. The two-byte payload keeps the
+rejection clean: a progress byte equal to the sync byte has only the checksum
+behind it, so the next frame starts in the type or length slot and is parsed.
+
 No physical deployment or electrical/optical validation is implied by the host
 tests or a successful Arduino compile.
 
@@ -152,6 +174,7 @@ compete with the ten-button mask for physical output.
 | `0x05 ENCODER_BUTTON` | board → segno | `pressed (0/1)` — the encoder's push switch, one message per debounced edge (protocol 9) |
 | `0x06 PD_STATUS` | board → segno | `profile, mismatch, mV (LE16), mA (LE16), source max mA (LE16)` — after every `HELLO` (protocol 12) |
 | `0x10 STATE` | segno → board | 53 bytes: flags, mode, looper mode, global colour, bank, selected track, 8 track LEDs, loop length µs (LE32), master gain, ten RGB triples, active mask (LE16), queued switch, queue progress — see `pedal_link.h` |
+| `0x13 CLEAR_HOLD` | segno → board | `button + 1 (0 none), progress 0..255` — every 20 ms while a clear-track hold runs; optional, firmware 2.6 (#1534) |
 
 segno answers every compatible `HELLO` with its current `STATE`, so a board that just
 (re)connected is current within a second; the board goes dark if no `STATE`
@@ -218,7 +241,7 @@ without the app, watch the hellos arrive:
 
 ```sh
 stty -F /dev/ttyAMA3 115200 raw -echo
-od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0c 02 05 0b (HELLO, protocol 12, fw 2.5), once a second
+od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0c 02 06 08 (HELLO, protocol 12, fw 2.6), once a second
 ```
 
 ## Bring-up record

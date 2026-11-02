@@ -44,6 +44,20 @@ import 'package:pedal_repository/src/pedal_state_frame.dart';
 /// | 52     | queue progress, 0..254 of 255; 0 without a queued button   |
 ///
 /// Enum indices are the wire values: none of those enums may be reordered.
+///
+/// ### Clear-hold payload (segno → board), [clearHoldPayloadLength] bytes
+///
+/// | byte | meaning                                                      |
+/// |------|--------------------------------------------------------------|
+/// | 0    | button: 0 none, else [PedalButton] index + 1                 |
+/// | 1    | progress, 0..255 of 255; 0 without a button                  |
+///
+/// [ClearHoldMessage] is optional: it does not change [protocolVersion],
+/// because a board that does not know [typeClearHold] drops it at the type
+/// byte and keeps rendering the state frame (#1534). Two payload bytes keep
+/// that drop clean: a stray sync byte in the payload has only the checksum
+/// behind it, so the frame that follows lands in the type or length slot and
+/// is parsed, never swallowed.
 abstract final class PedalLinkCodec {
   /// The frame start byte.
   static const sync = 0xA5;
@@ -103,6 +117,21 @@ abstract final class PedalLinkCodec {
   /// The number of payload bytes in a [StateMessage].
   static const statePayloadLength = 53;
 
+  /// The second message type segno → board, [ClearHoldMessage].
+  static const typeClearHold = 0x13;
+
+  /// The number of payload bytes in a [ClearHoldMessage].
+  static const clearHoldPayloadLength = 2;
+
+  /// How often segno sends [ClearHoldMessage] while a clear hold runs, in
+  /// milliseconds (`PEDAL_LINK_CLEAR_HOLD_MS`): once per board render.
+  static const clearHoldIntervalMs = 20;
+
+  /// How long the board keeps a clear-hold fill without a fresh
+  /// [ClearHoldMessage], in milliseconds (`PEDAL_LINK_CLEAR_HOLD_STALE_MS`),
+  /// so a lost settling message cannot leave a pill red.
+  static const clearHoldStaleMs = 500;
+
   /// How often the board sends [HelloMessage], in milliseconds
   /// (`PEDAL_LINK_HELLO_MS`). The liveness clocks on both ends derive from
   /// it: `PedalRepository.helloTimeout` on this side, the board's frame
@@ -127,6 +156,7 @@ abstract final class PedalLinkCodec {
     typeEncoderButton => 1,
     typePdStatus => pdStatusPayloadLength,
     typeState => statePayloadLength,
+    typeClearHold => clearHoldPayloadLength,
     _ => null,
   };
 
@@ -163,6 +193,10 @@ abstract final class PedalLinkCodec {
         ],
       ),
       StateMessage(:final frame) => (typeState, encodeStatePayload(frame)),
+      ClearHoldMessage(:final button, :final progress) => (
+        typeClearHold,
+        <int>[if (button == null) 0 else button.index + 1, progress],
+      ),
     };
     final out = Uint8List(4 + payload.length);
     out[0] = sync;
@@ -240,6 +274,15 @@ abstract final class PedalLinkCodec {
       case typeState:
         final frame = decodeStatePayload(payload);
         return frame == null ? null : StateMessage(frame);
+      case typeClearHold:
+        if (payload[0] > PedalButton.values.length ||
+            (payload[0] == 0 && payload[1] != 0)) {
+          return null;
+        }
+        return ClearHoldMessage(
+          button: payload[0] == 0 ? null : PedalButton.values[payload[0] - 1],
+          progress: payload[1],
+        );
       default:
         return null;
     }

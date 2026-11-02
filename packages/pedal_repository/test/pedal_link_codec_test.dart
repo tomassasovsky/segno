@@ -391,6 +391,7 @@ void main() {
         PedalLinkCodec.payloadLengthFor(PedalLinkCodec.typeState),
         PedalLinkCodec.statePayloadLength,
       );
+      expect(PedalLinkCodec.payloadLengthFor(PedalLinkCodec.typeClearHold), 2);
       expect(PedalLinkCodec.payloadLengthFor(0x11), isNull);
       expect(PedalLinkCodec.payloadLengthFor(0x7F), isNull);
     });
@@ -412,6 +413,73 @@ void main() {
         ),
       );
       expect(PedalLinkParser().push(state), hasLength(1));
+    });
+  });
+
+  group('clear-hold frames (#1534)', () {
+    test('carry the button + 1 and the progress', () {
+      const message = ClearHoldMessage(
+        button: PedalButton.track3,
+        progress: 200,
+      );
+      final bytes = PedalLinkCodec.encode(message);
+      expect(bytes, [
+        0xA5,
+        PedalLinkCodec.typeClearHold,
+        2,
+        PedalButton.track3.index + 1,
+        200,
+        PedalLinkCodec.typeClearHold ^ 2 ^ (PedalButton.track3.index + 1) ^ 200,
+      ]);
+      expect(PedalLinkParser().push(bytes), [message]);
+    });
+
+    test('no button is zero and ends the fill', () {
+      final bytes = PedalLinkCodec.encode(const ClearHoldMessage());
+      expect(bytes.sublist(3, 5), [0, 0]);
+      expect(PedalLinkParser().push(bytes), [const ClearHoldMessage()]);
+    });
+
+    test('rejects an unknown button or a progress without one', () {
+      expect(
+        PedalLinkCodec.decode(PedalLinkCodec.typeClearHold, [11, 0]),
+        isNull,
+      );
+      expect(
+        PedalLinkCodec.decode(PedalLinkCodec.typeClearHold, [0, 1]),
+        isNull,
+      );
+      expect(
+        PedalLinkCodec.decode(PedalLinkCodec.typeClearHold, [1]),
+        isNull,
+      );
+      expect(
+        PedalLinkCodec.decode(PedalLinkCodec.typeClearHold, [10, 255]),
+        const ClearHoldMessage(button: PedalButton.bank, progress: 255),
+      );
+    });
+
+    test('a parser that does not know the type keeps the next frame', () {
+      // What an older board does with it (#1534): the type byte is unknown,
+      // so the frame is dropped there. A progress byte equal to the sync
+      // byte has only the checksum behind it, so the frame that follows
+      // starts in the type or length slot and is parsed, not swallowed.
+      const unknown = 0x7E;
+      for (final checksum in [0x01, 0x10, 0xA5]) {
+        final parser = PedalLinkParser();
+        final out = parser.push([
+          0xA5,
+          unknown,
+          2,
+          1,
+          0xA5,
+          checksum,
+          ...PedalLinkCodec.encode(
+            const ButtonMessage(PedalButton.stop, pressed: true),
+          ),
+        ]);
+        expect(out, [const ButtonMessage(PedalButton.stop, pressed: true)]);
+      }
     });
   });
 

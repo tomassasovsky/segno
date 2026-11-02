@@ -72,6 +72,22 @@ extern "C" {
 #define PEDAL_LINK_TYPE_RING_BRIDGE 0x12u /* ['R', 'B'] */
 #define PEDAL_LINK_RING_BRIDGE_MAGIC0 0x52u
 #define PEDAL_LINK_RING_BRIDGE_MAGIC1 0x42u
+/* segno -> board while a clear-track hold runs (#1534): [button + 1 (0 none),
+ * progress 0..255]. The board fills that pill red from both ends toward the
+ * centre by the progress. segno sends one every PEDAL_LINK_CLEAR_HOLD_MS while
+ * the hold is pending and one with no button when it settles; the board drops
+ * a fill that has not been refreshed for PEDAL_LINK_CLEAR_HOLD_STALE_MS, so a
+ * lost settling message cannot leave a pill red.
+ *
+ * Optional, so PEDAL_LINK_PROTOCOL_VERSION stays 12: firmware 2.5 and older
+ * reject the unknown type at its type byte and keep rendering STATE, which
+ * shows no fill and nothing wrong. Two payload bytes keep that rejection
+ * clean: a progress equal to the sync byte has only the checksum behind it,
+ * so the next frame lands in the type or length slot and is parsed. */
+#define PEDAL_LINK_TYPE_CLEAR_HOLD 0x13u
+#define PEDAL_LINK_CLEAR_HOLD_LEN 2u
+#define PEDAL_LINK_CLEAR_HOLD_MS 20u
+#define PEDAL_LINK_CLEAR_HOLD_STALE_MS 500u
 
 #define PEDAL_LINK_PD_STATUS_LEN 8u
 #define PEDAL_LINK_STATE_LEN 53u
@@ -228,6 +244,19 @@ size_t pedal_link_encode_state(const pedal_state *state, uint8_t *out);
 size_t pedal_link_encode_ring_bridge(uint8_t *out);
 size_t pedal_link_encode_pd_status(uint8_t profile, uint8_t mismatch, uint16_t millivolts,
                                    uint16_t milliamps, uint16_t max_milliamps, uint8_t *out);
+/* Returns 0, and writes nothing, for a payload decode_clear_hold refuses. */
+size_t pedal_link_encode_clear_hold(uint8_t button, uint8_t progress, uint8_t *out);
+
+/* A decoded CLEAR_HOLD payload: button is the PEDAL_BTN value + 1, 0 for none. */
+typedef struct pedal_clear_hold {
+  uint8_t button;
+  uint8_t progress;
+} pedal_clear_hold;
+
+/* Decode a CLEAR_HOLD payload. Returns 1 on success, 0 for a wrong length, a
+ * button > PEDAL_BTN_COUNT or a progress without a button - the same
+ * rejections as the Dart side. */
+int pedal_link_decode_clear_hold(const uint8_t *payload, uint8_t len, pedal_clear_hold *out);
 
 /* Decode a STATE payload. Returns 1 on success, 0 for a wrong length, an
  * out-of-range enum, a reserved flag bit, an active_bank > 1, a

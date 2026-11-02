@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:pedal_repository/src/pedal_button.dart';
 import 'package:pedal_repository/src/pedal_ctrl.dart';
 import 'package:pedal_repository/src/pedal_event.dart';
 import 'package:pedal_repository/src/pedal_link.dart';
@@ -150,6 +151,16 @@ class PedalRepository {
     if (_connected) _link.send(StateMessage(stamped));
   }
 
+  /// Tells the board how far a clear-track hold on [button] has run, so its
+  /// pill fills red from both ends (#1534); no [button] ends the fill. Sent
+  /// only to a connected board and never after [goodbye]. Not replayed on a
+  /// hello: the caller sends one every [PedalLinkCodec.clearHoldIntervalMs]
+  /// while the hold runs, and the board drops a fill that stops arriving.
+  void showClearHold(PedalButton? button, {int progress = 0}) {
+    if (_disposed || _goodbye || !_connected) return;
+    _link.send(ClearHoldMessage(button: button, progress: progress));
+  }
+
   bool _dimmed = false;
 
   /// Whether the console sat idle and the app dimmed the screens. The board
@@ -208,7 +219,7 @@ class PedalRepository {
         _setPowerSupply(supply);
       case HelloMessage():
         _onHello(message);
-      case StateMessage():
+      case StateMessage() || ClearHoldMessage():
         break; // outbound; a board never sends one
     }
   }

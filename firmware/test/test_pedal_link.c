@@ -187,6 +187,15 @@ static void check_fixture(const char *dir, const char *name) {
                                       (uint16_t)(payload[4] | payload[5] << 8),
                                       (uint16_t)(payload[6] | payload[7] << 8), again);
       break;
+    case PEDAL_LINK_TYPE_CLEAR_HOLD: {
+      pedal_clear_hold hold;
+      if (!pedal_link_decode_clear_hold(payload, len, &hold)) {
+        CHECK(0, "%s: decode_clear_hold rejected it", name);
+        return;
+      }
+      m = pedal_link_encode_clear_hold(hold.button, hold.progress, again);
+      break;
+    }
     case PEDAL_LINK_TYPE_HELLO:
       CHECK(len == 3 && payload[0] == PEDAL_LINK_PROTOCOL_VERSION, "%s: bad hello", name);
       m = pedal_link_encode_hello(payload[1], payload[2], again);
@@ -260,6 +269,17 @@ static void check_fixture(const char *dir, const char *name) {
     CHECK(st.looper_mode == PEDAL_LOOPER_SONG && st.queued_button == 0 &&
               st.queued_progress == 0,
           "song_queue_none: fields differ");
+  } else if (strcmp(name, "clear_hold_track2_128.bin") == 0) {
+    CHECK(type == PEDAL_LINK_TYPE_CLEAR_HOLD && payload[0] == PEDAL_BTN_TRACK2 + 1 &&
+              payload[1] == 128,
+          "clear_hold_track2_128: fields differ");
+  } else if (strcmp(name, "clear_hold_track4_255.bin") == 0) {
+    CHECK(type == PEDAL_LINK_TYPE_CLEAR_HOLD && payload[0] == PEDAL_BTN_TRACK4 + 1 &&
+              payload[1] == 255,
+          "clear_hold_track4_255: fields differ");
+  } else if (strcmp(name, "clear_hold_none.bin") == 0) {
+    CHECK(type == PEDAL_LINK_TYPE_CLEAR_HOLD && payload[0] == 0 && payload[1] == 0,
+          "clear_hold_none: fields differ");
   } else if (strcmp(name, "dimmed.bin") == 0) {
     CHECK(st.dimmed == 1 && st.global_color == PEDAL_GLOBAL_GREEN && st.active_button_mask == 1 &&
               !st.counting_in && !st.goodbye,
@@ -409,6 +429,34 @@ static void check_physical_state(void) {
   }
 }
 
+/* CLEAR_HOLD (#1534): a button past the last and a progress without a button
+ * are refused by the decoder and the encoder; the full run (255) is not. */
+static void check_clear_hold(void) {
+  const uint8_t bad[][2] = {{PEDAL_BTN_COUNT + 1, 0}, {0, 1}};
+  uint8_t frame[PEDAL_LINK_MAX_FRAME];
+  for (size_t i = 0; i < sizeof(bad) / sizeof(*bad); ++i) {
+    pedal_clear_hold before, hold;
+    memset(&before, 0x5a, sizeof(before));
+    hold = before;
+    CHECK(!pedal_link_decode_clear_hold(bad[i], PEDAL_LINK_CLEAR_HOLD_LEN, &hold),
+          "bad clear hold accepted");
+    CHECK(!memcmp(&hold, &before, sizeof(hold)), "clear hold refusal mutated output");
+    CHECK(pedal_link_encode_clear_hold(bad[i][0], bad[i][1], frame) == 0, "bad clear hold encoded");
+  }
+  const uint8_t full[2] = {PEDAL_BTN_COUNT, 255};
+  pedal_clear_hold hold;
+  CHECK(pedal_link_decode_clear_hold(full, PEDAL_LINK_CLEAR_HOLD_LEN, &hold) &&
+            hold.button == PEDAL_BTN_COUNT && hold.progress == 255,
+        "full clear hold refused");
+  CHECK(!pedal_link_decode_clear_hold(full, PEDAL_LINK_CLEAR_HOLD_LEN - 1, &hold),
+        "short clear hold accepted");
+  /* The board keeps a fill through several missed refreshes, and drops it
+   * well inside a second. */
+  CHECK(PEDAL_LINK_CLEAR_HOLD_STALE_MS >= 10u * PEDAL_LINK_CLEAR_HOLD_MS &&
+            PEDAL_LINK_CLEAR_HOLD_STALE_MS < PEDAL_LINK_HELLO_MS,
+        "clear hold staleness does not fit its cadence");
+}
+
 int main(int argc, char **argv) {
   /* Liveness: the board must outlive one lost STATE reply. */
   CHECK(PEDAL_LINK_FRAME_TIMEOUT_MS >= 2u * PEDAL_LINK_HELLO_MS,
@@ -439,6 +487,7 @@ int main(int argc, char **argv) {
   check_rejections();
   check_physical_state();
   check_ring_bridge();
+  check_clear_hold();
   if (g_failures) {
     fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

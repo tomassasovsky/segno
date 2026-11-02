@@ -81,27 +81,47 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   covers the boot auto-start, the boot-time recovery (`AudioRecoveryCubit`)
   and every reconnect by the in-repo supervisor. A first run opens as it is,
   so each try in its fallback order (48 kHz / 32, then the device's own rate
-  and period, then the system default) can fail over. `LooperRepository` keeps the
-  player's config as the warm-up target, so `lastEngineConfig` and the audio
-  setup never show or save 512. A player's config already at 512 skips the
-  warm-up.
+  and period, then the system default) can fail over. `LooperRepository`
+  keeps the player's config as the warm-up target, so `lastEngineConfig` and
+  the audio setup never show or save 512. A player's config already at 512
+  skips the warm-up and restores its record offset at start.
 - While warming up, the engine's master gain is held at 0. It is applied
   after everything is summed, so nothing is heard, and the remembered gain
   and the saved mix are untouched.
 - Also during the warm-up: transport presses return `notReady` (as during a
   Session apply), the cable test is refused, `AppRuntime.takeLocked` holds
-  (performance takes from the page and the pedal), and the stage shows "Audio is starting…" where the engine-stopped
-  banner sits. The effects budget uses the target's buffer.
-- `AudioWarmUpCubit` watches from the first rasterized frame. Every 500 ms it
-  sums the session window's late periods, gaps and xruns. When that sum has
-  been still for 3 s, or 20 s after watching began, it sets the record offset
-  saved for the player's buffer and calls `finishWarmUp()`. That reopens at
-  the player's config with the loops kept, under the device-change guard.
+  (performance takes from the page and the pedal), and the stage shows
+  "Audio is starting…" where the engine-stopped banner sits. The effects
+  budget uses the target's buffer.
+- `AudioWarmUpCubit` ticks every 500 ms while a warm-up runs. Ticks count as
+  quiet only after the first rasterized frame. When the sum of the session
+  window's late periods, gaps and xruns has been still for 3 s, or 20 s after
+  load, it sets the record offset saved for the player's buffer and calls
+  `finishWarmUp()`. That reopens at the player's config with the loops kept,
+  under the device-change guard. If the device rounded the buffer, the
+  transport stays closed until the cubit sets the opened buffer's offset.
 - If the device refuses the player's config, the 512 config runs and is
   heard. The device page shows the existing refused banner (asked, running),
-  and nothing is saved.
+  nothing is saved, and the next replug warms up for the player's config
+  again.
 - Device checks owed: a cold boot and a Scarlett replug at 48 kHz / 32, with
   no xrun during or after the switch and no sound before it.
+
+## November 2026 clear-track hold fills the pill (#1534)
+
+- A hold that clears (Track Hold set to Clear track in Record mode, or a
+  Custom pedal whose Hold is Clear or Clear all) fills the held pedal's pill
+  red from both ends toward the centre over the long-press threshold, and
+  shows it full for 60 ms when it fires; releasing early, or a hold that can
+  no longer fire, ends the fill at once. The newest pending clear hold fills;
+  an older one fills again when the newer one settles. `ControlCubit._startClearFill` streams
+  `PedalRepository.showClearHold` every 20 ms (`clearHoldProgress`).
+- Wire: optional `CLEAR_HOLD` (`0x13`, two bytes), console firmware 2.6. The
+  protocol stays 12, so firmware 2.5 and older keep working and show no fill.
+  The board drops a fill not refreshed for 500 ms.
+- No screen mirrors the LED pill: Record mode draws no pedals, and the Custom
+  face's Pending Hold bar already times the same hold.
+- Device check owed: the fill's look and timing on the console.
 
 ## October 2026 Ed's setup loop template (#1513)
 

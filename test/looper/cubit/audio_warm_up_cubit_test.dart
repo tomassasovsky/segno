@@ -267,7 +267,7 @@ void main() {
       when(looper.finishWarmUp).thenAnswer((_) {
         calls.add('finish');
         // Asked 32, opened 48: the transport waits for 48's offset.
-        state = LooperState(
+        state = const LooperState(
           status: EngineStatus(
             deviceName: 'Scarlett 4i4',
             sampleRate: 48000,
