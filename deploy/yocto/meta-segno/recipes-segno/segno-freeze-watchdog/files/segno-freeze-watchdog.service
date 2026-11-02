@@ -1,0 +1,35 @@
+# Reboots the console warm, with a kernel record, when exec or storage stops
+# working while the kernel and PID 1 live on (#1527). See
+# /usr/bin/segno-freeze-watchdog and deploy/yocto/README.md.
+[Unit]
+Description=Segno: reboot warm when exec or storage stops working
+# The /data probe file lives there. The ordering this adds also stops the
+# daemon before /data is unmounted, so a clean shutdown never reads as a dead
+# disk.
+RequiresMountsFor=/data
+StartLimitIntervalSec=0
+
+[Service]
+# READY=1 once every probe is open and the memory is locked, then WATCHDOG=1
+# every round: a daemon stuck in its own loop is restarted.
+Type=notify
+NotifyAccess=main
+WatchdogSec=30s
+ExecStart=/usr/bin/segno-freeze-watchdog
+Restart=always
+RestartSec=10s
+# Above the audio threads (callback FIFO 80 on core 3, effects workers FIFO 79
+# on cores 1 and 2), so an audio overload cannot starve it, and below the USB
+# sound-card IRQ thread (segno-rtirq, FIFO 90). Pinned to core 0, where no
+# audio thread runs, so its few hundred microseconds per round never land in
+# the middle of an audio period. The probe thread and the program it starts
+# inherit both.
+CPUSchedulingPolicy=fifo
+CPUSchedulingPriority=85
+CPUAffinity=0
+# It locks all of its memory (mlockall).
+LimitMEMLOCK=infinity
+OOMScoreAdjust=-1000
+
+[Install]
+WantedBy=multi-user.target

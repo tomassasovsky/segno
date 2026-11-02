@@ -1,6 +1,7 @@
 #!/bin/sh
-# File each archived set of kernel crash records in its own directory, and
-# bound how many sets are kept (#1437).
+# File each archived set of kernel crash records in its own directory, bound
+# how many sets are kept (#1437), and say when a set is a freeze that
+# segno-freeze-watchdog rebooted (#1527).
 #
 # Runs as ExecStartPost of systemd-pstore.service (drop-in
 # systemd-pstore.service.d/10-segno.conf), right after systemd-pstore has moved
@@ -47,6 +48,15 @@ if ! mv -- "$@" "$dest/"; then
     exit 1
 fi
 log "kept $# record(s) in $dest"
+
+# A reboot segno-freeze-watchdog asked for (#1527) says so in the boot's log
+# right before its panic. Name it here, in the journal of the boot after, so
+# "the console restarted itself after a freeze" needs no digging through the
+# records to find.
+reason=$(sed -n 's/.*segno-freeze-watchdog: rebooting now: //p' "$dest"/* 2>/dev/null | tail -n 1)
+if [ -n "$reason" ]; then
+    log "the console restarted itself after a freeze ($reason); the kernel's record of it is in $dest"
+fi
 
 # crash or console: a set with any dmesg record is a crash.
 kind_of() {
