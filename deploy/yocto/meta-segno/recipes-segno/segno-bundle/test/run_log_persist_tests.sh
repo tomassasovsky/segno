@@ -172,6 +172,26 @@ check "nothing left at the top" no \
     "$([ -e "$work/pstore/dmesg-ramoops-0" ] && echo yes || echo no)"
 teardown
 
+echo "a reboot segno-freeze-watchdog asked for is named in the journal"
+setup
+# As ramoops records it: a line written to /dev/kmsg is LOG_USER, so KERN_CRIT
+# comes back as <10> and KERN_WARNING as <12>.
+printf '<12>[  80.1] segno-freeze-watchdog: probe failed (12 in a row, 60 s since the last pass): exec /bin/true: No such file or directory\n<10>[  80.2] segno-freeze-watchdog: rebooting now: exec or storage dead: 12 probe rounds failed over 60 s, the last: exec /bin/true: No such file or directory\n<0>[  81.3] Kernel panic - not syncing: sysrq triggered crash\n' \
+    > "$work/pstore/dmesg-ramoops-0"
+printf 'console\n' > "$work/pstore/console-ramoops-0"
+run_keep 20261102T120000Z; rc=$?
+check "exits 0" 0 "$rc"
+check "says the console restarted itself, why, and where the record is" yes \
+    "$(grep -qF "segno-pstore-keep: the console restarted itself after a freeze (exec or storage dead: 12 probe rounds failed over 60 s, the last: exec /bin/true: No such file or directory); the kernel's record of it is in $work/pstore/20261102T120000Z" "$work/stderr" && echo yes || echo no)"
+teardown
+
+echo "any other crash is not called a freeze"
+setup
+printf '<0>[  81.3] Kernel panic - not syncing: sysrq triggered crash\n' > "$work/pstore/dmesg-ramoops-0"
+run_keep 20261102T120000Z
+check "no freeze line" no "$(grep -q "after a freeze" "$work/stderr" && echo yes || echo no)"
+teardown
+
 echo "the next crash does not replace the last one"
 # The reason the script exists: ramoops numbers its records from 0 every boot,
 # and systemd-pstore copies with COPY_REPLACE, so both crashes are named

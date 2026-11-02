@@ -198,8 +198,25 @@ The unit recovers from a hang by itself and leaves a record on `/data`
   crash sets and the newest 10 console-only sets (every warm reboot leaves
   one) are kept. A power cut erases the RAM: pull the power on a frozen unit
   only after the watchdog had its minute.
+- **Exec or storage dead.** `segno-freeze-watchdog` covers the freeze the
+  hardware watchdog cannot see: PID 1 alive and feeding it, while nothing can
+  be started and the disks do not answer (#1527). Every 5 s it reads one
+  block of a file on `/` from every core (each core has its own NVMe queue)
+  and one on `/data`, past the page cache, and starts `/bin/true`. A round that fails or takes over 10 s counts as failed. Once
+  the rounds have failed for 90 s, at least 3 in a row, it logs
+  `segno-freeze-watchdog: rebooting: <why>`, dumps the blocked tasks and
+  every CPU's backtrace into the kernel log (sysrq `w` and `l`), syncs, and
+  panics through sysrq. The panic writes the log into a dmesg record and the
+  board resets warm 10 s later. In the next boot,
+  `journalctl -b -u systemd-pstore` says "the console restarted itself after
+  a freeze" and names the record. Its deadline and recovery run at
+  SCHED_FIFO 85 on core 0 with its memory locked; the probes run at
+  SCHED_OTHER. It logs only to the kernel log, which never waits on a disk:
+  `dmesg | grep segno-freeze-watchdog`.
 - A reset during a tryboot trial boot comes back on the committed slot,
-  because the tryboot flag only lasts one boot.
+  because the tryboot flag only lasts one boot. None of these resets asks for
+  the tryboot slot, so one during an update install also comes back on the
+  committed slot, with the install reported as cut off.
 
 To check the chain on a unit: `echo c > /proc/sysrq-trigger` panics the
 kernel. The unit is back about a minute later, with a new directory under

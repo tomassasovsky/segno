@@ -21,6 +21,10 @@ IMAGE_FEATURES += "package-management ssh-server-dropbear hwcodecs"
 #
 # segno-profiling ships segno-prof (the stack sampler) on every image; its
 # recorder service only runs on experimental ones (#1299).
+#
+# segno-freeze-watchdog reboots the console warm, with a kernel record, when
+# exec or storage stops working while PID 1 still feeds the hardware watchdog
+# (#1527).
 IMAGE_INSTALL:append = " \
     segno-bundle \
     mesa \
@@ -36,6 +40,7 @@ IMAGE_INSTALL:append = " \
     raspi-utils \
     segno-console-board \
     segno-profiling \
+    segno-freeze-watchdog \
     dtc \
     ddcutil \
     networkmanager-nmcli \
