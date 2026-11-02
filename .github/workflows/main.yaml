@@ -372,6 +372,15 @@ jobs:
         run: >
           bash packages/segno_engine/src/test/bench/bench_pitch_algos.sh
           | tee bench-pitch-algos-arm64.md
+      # The nonlinear kinds' aliasing at 48 kHz against 96 kHz (#1540).
+      # Informational, but it must build and run: it is rerun after any
+      # oversampling change.
+      - name: Run the aliasing bench
+        if: always()
+        shell: bash
+        run: >
+          bash packages/segno_engine/src/test/bench/bench_alias.sh
+          | tee bench-alias-arm64.md
       - name: Upload the effects bench and its report for the appliance
         if: always()
         uses: actions/upload-artifact@v7
@@ -380,8 +389,10 @@ jobs:
           path: |
             packages/segno_engine/build/bench/bench_fx_cpu
             packages/segno_engine/build/bench/bench_pitch_algos
+            packages/segno_engine/build/bench/bench_alias
             bench-fx-kinds-arm64.md
             bench-pitch-algos-arm64.md
+            bench-alias-arm64.md
           if-no-files-found: error
       # The audio-thread fault bench (#900): build only, since it needs the
       # console's sound card. Its binary is uploaded for the on-device proof
