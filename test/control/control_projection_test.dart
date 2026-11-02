@@ -399,6 +399,52 @@ void main() {
     });
   });
 
+  group('clearHoldProgress (#1534)', () {
+    const threshold = Duration(milliseconds: 800);
+
+    test('runs from 0 at the press to 255 at the threshold', () {
+      expect(clearHoldProgress(Duration.zero, threshold), 0);
+      expect(
+        clearHoldProgress(const Duration(milliseconds: 200), threshold),
+        63,
+      );
+      expect(
+        clearHoldProgress(const Duration(milliseconds: 400), threshold),
+        127,
+      );
+      expect(
+        clearHoldProgress(const Duration(milliseconds: 799), threshold),
+        254,
+      );
+      expect(clearHoldProgress(threshold, threshold), 255);
+    });
+
+    test('rises with every step of the hold and never runs ahead', () {
+      var last = -1;
+      for (var ms = 0; ms <= 800; ms += 20) {
+        final progress = clearHoldProgress(
+          Duration(milliseconds: ms),
+          threshold,
+        );
+        expect(progress, greaterThan(last));
+        expect(progress, lessThanOrEqualTo(ms * 255 ~/ 800));
+        last = progress;
+      }
+    });
+
+    test('stays full past the threshold and never goes negative', () {
+      expect(clearHoldProgress(const Duration(seconds: 5), threshold), 255);
+      expect(
+        clearHoldProgress(const Duration(milliseconds: -20), threshold),
+        0,
+      );
+    });
+
+    test('a zero threshold is already full', () {
+      expect(clearHoldProgress(Duration.zero, Duration.zero), 255);
+    });
+  });
+
   group('Song queue (#1077, #1323)', () {
     LooperState song({
       int queued = 1,

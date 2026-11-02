@@ -450,10 +450,48 @@ void main() {
       ]);
     });
 
+    test('showClearHold goes only to a connected board', () async {
+      repo.showClearHold(PedalButton.track1, progress: 10);
+      expect(link.sent, isEmpty);
+      link.hello();
+      await pumpEventQueue();
+      repo
+        ..showClearHold(PedalButton.track1, progress: 10)
+        ..showClearHold(null);
+      expect(link.sent, const [
+        ClearHoldMessage(button: PedalButton.track1, progress: 10),
+        ClearHoldMessage(),
+      ]);
+    });
+
+    test('showClearHold is not replayed on a hello', () async {
+      link.hello();
+      await pumpEventQueue();
+      repo
+        ..pushState(PedalStateFrame.blank())
+        ..showClearHold(PedalButton.track2, progress: 40);
+      link
+        ..sent.clear()
+        ..hello();
+      await pumpEventQueue();
+      expect(link.sent, [StateMessage(PedalStateFrame.blank())]);
+    });
+
+    test('showClearHold sends nothing after goodbye', () async {
+      link.hello();
+      await pumpEventQueue();
+      repo.goodbye();
+      link.sent.clear();
+      repo.showClearHold(PedalButton.track1, progress: 10);
+      expect(link.sent, isEmpty);
+    });
+
     test('outbound message types arriving inbound are ignored', () async {
       final events = <PedalEvent>[];
       repo.events.listen(events.add);
-      link.emit(StateMessage(PedalStateFrame.blank()));
+      link
+        ..emit(StateMessage(PedalStateFrame.blank()))
+        ..emit(const ClearHoldMessage());
       await pumpEventQueue();
       expect(events, isEmpty);
       expect(repo.status, PedalLinkStatus.disconnected);

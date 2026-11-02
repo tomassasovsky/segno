@@ -64,6 +64,25 @@ void main() {
         define('PEDAL_LINK_PD_STATUS_LEN'),
         PedalLinkCodec.pdStatusPayloadLength,
       );
+      expect(
+        define('PEDAL_LINK_TYPE_CLEAR_HOLD'),
+        PedalLinkCodec.typeClearHold,
+      );
+      expect(
+        define('PEDAL_LINK_CLEAR_HOLD_LEN'),
+        PedalLinkCodec.clearHoldPayloadLength,
+      );
+    });
+
+    test('clear-hold cadence', () {
+      expect(
+        define('PEDAL_LINK_CLEAR_HOLD_MS'),
+        PedalLinkCodec.clearHoldIntervalMs,
+      );
+      expect(
+        define('PEDAL_LINK_CLEAR_HOLD_STALE_MS'),
+        PedalLinkCodec.clearHoldStaleMs,
+      );
     });
 
     test('hello is the frozen three-byte message', () {

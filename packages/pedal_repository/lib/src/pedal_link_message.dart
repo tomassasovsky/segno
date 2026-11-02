@@ -139,3 +139,28 @@ final class StateMessage extends PedalLinkMessage {
   @override
   List<Object?> get props => [frame];
 }
+
+/// How far a clear-track hold has run on one pill (segno → board, #1534).
+///
+/// While the hold is pending the board draws red growing from both ends of
+/// [button]'s pill toward its centre, by [progress]. segno sends one every
+/// `PedalLinkCodec.clearHoldIntervalMs` while the hold runs, and one with no
+/// [button] when it settles.
+///
+/// Optional on the wire: a board that does not know the type drops it and
+/// keeps rendering the state frame, so it shows no fill and nothing wrong.
+final class ClearHoldMessage extends PedalLinkMessage {
+  /// Creates a [ClearHoldMessage]; no [button] ends the fill.
+  const ClearHoldMessage({this.button, this.progress = 0})
+    : assert(progress >= 0 && progress <= 255, 'progress must fit a byte'),
+      assert(button != null || progress == 0, 'no fill without a button');
+
+  /// The footswitch whose pill fills, or `null` for none.
+  final PedalButton? button;
+
+  /// `0`..`255`: how much of the hold has run; 255 meets in the centre.
+  final int progress;
+
+  @override
+  List<Object?> get props => [button, progress];
+}
