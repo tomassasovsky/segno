@@ -144,6 +144,8 @@ flutter:
     - family: Arimo
       fonts:
         - asset: assets/fonts/Arimo-Regular.ttf
+        - asset: assets/fonts/Arimo-Bold.ttf
+          weight: 700
     - family: JetBrains Mono
       fonts:
         - asset: assets/fonts/JetBrainsMono-Regular.ttf
