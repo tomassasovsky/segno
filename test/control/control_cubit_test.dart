@@ -1205,13 +1205,17 @@ void main() {
 
           await Future<void>.delayed(const Duration(milliseconds: 450));
           verify(() => looper.clear(channel: 2)).called(1);
-          // The ends meet when it fires, then the frame takes the pill back.
-          expect(
-            fills(),
-            contains(
-              const ClearHoldMessage(button: PedalButton.track3, progress: 255),
-            ),
+          // The ends meet when it fires, straight from the last step with no
+          // empty message between, then the frame takes the pill back.
+          const met = ClearHoldMessage(
+            button: PedalButton.track3,
+            progress: 255,
           );
+          final atFire = fills();
+          final first = atFire.indexOf(met);
+          expect(first, greaterThan(0));
+          expect(atFire[first - 1].button, PedalButton.track3);
+          expect(atFire[first - 1].progress, lessThan(255));
           await Future<void>.delayed(const Duration(milliseconds: 100));
           expect(fills().last, const ClearHoldMessage());
           final settled = fills().length;
@@ -1243,6 +1247,7 @@ void main() {
           await pumpEventQueue();
           await Future<void>.delayed(const Duration(milliseconds: 100));
           cubit.setMode(InteractionMode.mute);
+          await pumpEventQueue();
           expect(fills().last, const ClearHoldMessage());
           final settled = fills().length;
           await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -1708,6 +1713,35 @@ void main() {
         );
         transport.press(PedalButton.stop, down: false);
         await pumpEventQueue();
+
+        // A bank change mid-hold to a Hold that does not clear ends the fill:
+        // the Hold is looked up again when it fires.
+        await assign(
+          PedalButton.track2,
+          const ControlGesturePair(
+            hold: TrackOperationAction(
+              operation: TrackOperation.clear,
+              scope: FixedTrackScope(1),
+            ),
+          ),
+        );
+        await assign(
+          PedalButton.track2,
+          const ControlGesturePair(hold: CommandAction(ControlCommand.redo)),
+          bank: 1,
+        );
+        transport.sent.clear();
+        transport.press(PedalButton.track2, down: true);
+        await pumpEventQueue();
+        expect(fills().last.button, PedalButton.track2);
+        cubit.browseBank(1);
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        expect(fills().last, const ClearHoldMessage());
+        await Future<void>.delayed(const Duration(milliseconds: 800));
+        expect(fills().where((m) => m.progress == 255), isEmpty);
+        transport.press(PedalButton.track2, down: false);
+        await pumpEventQueue();
+        cubit.browseBank(0);
 
         // Clear all fills too.
         await assign(
