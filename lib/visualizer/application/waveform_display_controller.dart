@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/appliance/power_off/power_step.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 import 'package:segno/visualizer/waveform_window_service.dart';
@@ -18,6 +19,8 @@ class WaveformDisplayContext extends Equatable {
     required this.bank,
     required this.lossLine,
     required this.goodbye,
+    this.savingStep,
+    this.savingProgress = 0,
     this.brightness = 1,
   });
 
@@ -40,8 +43,14 @@ class WaveformDisplayContext extends Equatable {
   /// readout; empty when there is none.
   final String lossLine;
 
-  /// Current shutdown presentation.
+  /// Current power face.
   final ReadoutGoodbye goodbye;
+
+  /// The save's current step while [goodbye] is saving.
+  final PowerStep? savingStep;
+
+  /// The share of the save's steps finished, `0..1`.
+  final double savingProgress;
 
   /// The software dim over the second screen's window (`1` = none).
   final double brightness;
@@ -55,6 +64,8 @@ class WaveformDisplayContext extends Equatable {
     bank,
     lossLine,
     goodbye,
+    savingStep,
+    savingProgress,
     brightness,
   ];
 }
@@ -348,6 +359,8 @@ class WaveformDisplayController {
       activeBank: _context.bank,
       lossLine: _context.lossLine,
       goodbye: _context.goodbye,
+      savingStep: _context.savingStep,
+      savingProgress: _context.savingProgress,
       brightness: _context.brightness,
     );
   }

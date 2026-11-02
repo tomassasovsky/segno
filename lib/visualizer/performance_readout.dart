@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:segno/appliance/power_off/power_step.dart';
 
 /// The selected track as the 7" display shows it (the accepted design): its
 /// number, name, crown, state and the facts under the name.
@@ -71,16 +72,22 @@ class ReadoutTrack extends Equatable {
   ];
 }
 
-/// Which goodbye face the 7" (and the stage overlay) should show.
+/// Which power face the 7" shows over its readout (pen 32).
 enum ReadoutGoodbye {
-  /// Live meters / stage — no overlay.
+  /// The live readout, no face.
   none,
 
-  /// Saving… on the stage; the 7" may keep meters until the mark.
+  /// The power panel or Save As is up: "Power options on the main screen".
+  options,
+
+  /// The save before a restart or shutdown, with its current step.
   saving,
 
-  /// Plymouth lockup on #08080A, covering the window.
-  mark,
+  /// The console is off: the check ring and "Safe to switch off".
+  safeToSwitchOff,
+
+  /// The console is restarting: the restart icon and "Restarting".
+  restarting,
 }
 
 /// Everything the 7" screen shows besides the waveform.
@@ -105,6 +112,8 @@ class PerformanceReadout extends Equatable {
     this.activeBank = 0,
     this.lossLine = '',
     this.goodbye = ReadoutGoodbye.none,
+    this.savingStep,
+    this.savingProgress = 0,
     this.brightness = 1,
   });
 
@@ -126,6 +135,8 @@ class PerformanceReadout extends Equatable {
       activeBank: map['activeBank'] as int? ?? 0,
       lossLine: map['lossLine'] as String? ?? '',
       goodbye: _goodbyeOf(map['goodbye']),
+      savingStep: _stepOf(map['savingStep']),
+      savingProgress: (map['savingProgress'] as num? ?? 0).toDouble(),
       brightness: (map['brightness'] as num? ?? 1).toDouble(),
     );
   }
@@ -163,8 +174,15 @@ class PerformanceReadout extends Equatable {
   /// screen, with the device's name (#1270 Part 5).
   final String lossLine;
 
-  /// Committed power-off face. Older senders omit the key → none.
+  /// The power face. A missing key reads as none.
   final ReadoutGoodbye goodbye;
+
+  /// The save's current step under [ReadoutGoodbye.saving]; null otherwise.
+  final PowerStep? savingStep;
+
+  /// The share of the save's steps finished, `0..1`, under
+  /// [ReadoutGoodbye.saving].
+  final double savingProgress;
 
   /// The software dim over the Track display window, `0..1` (`1` = none):
   /// its panel's brightness and idle dim when the panel cannot dim itself.
@@ -181,6 +199,8 @@ class PerformanceReadout extends Equatable {
     'activeBank': activeBank,
     'lossLine': lossLine,
     'goodbye': goodbye.name,
+    'savingStep': savingStep?.name,
+    'savingProgress': savingProgress,
     'brightness': brightness,
   };
 
@@ -195,12 +215,20 @@ class PerformanceReadout extends Equatable {
     activeBank,
     lossLine,
     goodbye,
+    savingStep,
+    savingProgress,
     brightness,
   ];
 }
 
-ReadoutGoodbye _goodbyeOf(Object? raw) {
-  if (raw == 'saving') return ReadoutGoodbye.saving;
-  if (raw == 'mark') return ReadoutGoodbye.mark;
-  return ReadoutGoodbye.none;
+ReadoutGoodbye _goodbyeOf(Object? raw) => ReadoutGoodbye.values.firstWhere(
+  (face) => face.name == raw,
+  orElse: () => ReadoutGoodbye.none,
+);
+
+PowerStep? _stepOf(Object? raw) {
+  for (final step in PowerStep.values) {
+    if (step.name == raw) return step;
+  }
+  return null;
 }

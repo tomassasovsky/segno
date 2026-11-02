@@ -176,14 +176,14 @@ void main() {
       expect(view.width, panel.width);
     });
 
-    testWidgets('PerformanceReadout.goodbye covers the panel with the mark', (
+    testWidgets('PerformanceReadout.goodbye covers the panel with its face', (
       tester,
     ) async {
       final frame = ValueNotifier<WaveformFrame>(
         (samples: Float32List(0), progress: 0, selectedTrack: ''),
       );
       final readout = ValueNotifier<PerformanceReadout>(
-        const PerformanceReadout(goodbye: ReadoutGoodbye.mark),
+        const PerformanceReadout(goodbye: ReadoutGoodbye.safeToSwitchOff),
       );
       addTearDown(frame.dispose);
       addTearDown(readout.dispose);
@@ -195,7 +195,11 @@ void main() {
       );
       addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
 
-      expect(find.byKey(const Key('power_mark')), findsOneWidget);
+      expect(
+        find.byKey(const Key('readout_goodbye_safe_to_switch_off')),
+        findsOneWidget,
+      );
+      expect(find.byType(Image), findsNothing);
     });
 
     testWidgets('PerformanceReadout.brightness dims the panel in software', (

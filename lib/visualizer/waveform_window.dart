@@ -133,12 +133,12 @@ class WaveformWindowApp extends StatelessWidget {
                 waveform: waveform,
               ),
             );
-            if (readoutData.goodbye != ReadoutGoodbye.mark) return face;
+            if (readoutData.goodbye == ReadoutGoodbye.none) return face;
             return Stack(
               fit: StackFit.expand,
               children: [
                 face,
-                const PowerGoodbye(face: ReadoutGoodbye.mark),
+                ReadoutGoodbyeFace(readout: readoutData),
               ],
             );
           },

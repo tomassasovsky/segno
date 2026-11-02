@@ -211,7 +211,7 @@ void main() {
       await openOptions(tester);
 
       expect(find.byKey(const Key('power_dialog')), findsOneWidget);
-      expect(find.text('Power options'), findsOneWidget);
+      expect(find.text('Power'), findsOneWidget);
       expect(find.byKey(const Key('power_restart')), findsOneWidget);
       expect(find.byKey(const Key('power_shut_down')), findsOneWidget);
       expect(cubit.state.phase, PowerPhase.options);
@@ -531,8 +531,8 @@ void main() {
 
         expect(
           find.text(
-            'Playback will stop. This session is empty, so there is '
-            'nothing to save.',
+            'Playback stops. This session is empty, so there is nothing '
+            'to save.',
           ),
           findsOneWidget,
         );
@@ -591,8 +591,8 @@ void main() {
         whenListen(looper, states.stream, initialState: const LooperState());
         await openOptions(tester, backing: backing);
         const empty =
-            'Playback will stop. This session is empty, so there is '
-            'nothing to save.';
+            'Playback stops. This session is empty, so there is nothing '
+            'to save.';
         expect(find.text(empty), findsOneWidget);
 
         states.add(_loops);
@@ -600,12 +600,9 @@ void main() {
 
         expect(find.text(empty), findsNothing);
         expect(
-          find.text('Playback will stop and your session will be saved.'),
-          findsOneWidget,
-        );
-        expect(
           find.text(
-            "This session has no name yet. You'll name it before it saves.",
+            'Playback stops and this session is saved first. You name it '
+            'before it saves.',
           ),
           findsOneWidget,
         );
@@ -740,6 +737,8 @@ void main() {
       await typeName(tester, 'jam');
 
       expect(cubit.state.phase, PowerPhase.goodbye);
+      // The goodbye names the session by the name just given.
+      expect(cubit.state.session, 'jam');
       expect(log, ['stop', 'flush', 'pedal', 'powerOff']);
       verify(() => session.saveAs('jam')).called(1);
       expect(find.byKey(const Key('power_underlay')), findsOneWidget);

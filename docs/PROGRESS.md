@@ -74,6 +74,23 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Power screens on both displays (#1543)
+
+- Power options, the refusals and "Segno is staying on" rise as a 760 px
+  panel anchored bottom-centre, 48 px above the edge, instead of the centred
+  dialog (`PowerDialog`, `PowerPanelButton`, 84 px buttons).
+- `PowerCubit` reports the save's stages as `PowerState.step` (`PowerStep`:
+  playback stopped, settings saved, writing the session, finishing on disk),
+  with the session it writes and the local time the write landed. An empty
+  unnamed session has no session step. Save As hands the cubit its name.
+- The main screen's Saving face lists the steps with a check, a spinner or a
+  muted ring and a bar; Safe to switch off and Restarting name the session
+  and the time, and Restarting has no icon. The Track display mirrors them
+  through `PerformanceReadout` (`ReadoutGoodbye`, `savingStep`,
+  `savingProgress`) in `ReadoutGoodbyeFace`, points to the main screen while
+  the panel is up, and shows no Segno logo. The bundled lockup asset is gone.
+- Design: Penpot page 32 (segno-design PR linked from the app PR).
+
 ## November 2026 Audio warm-up at start (#1533)
 
 - Every start the console makes on its own opens the device as a warm-up:

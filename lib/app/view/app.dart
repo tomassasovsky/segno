@@ -1060,6 +1060,7 @@ class _AppViewState extends State<_AppView> {
 
   WaveformDisplayContext _displayContext() {
     final control = context.read<ControlCubit>().state;
+    final power = context.read<PowerCubit>().state;
     final name = context.read<TracksCubit>().state.nameOf(control.cursor);
     return WaveformDisplayContext(
       cursor: control.cursor,
@@ -1069,7 +1070,9 @@ class _AppViewState extends State<_AppView> {
       bank: control.activeBank,
       lossLine:
           audioLossLine(_l10n, context.read<AudioSetupCubit>().state) ?? '',
-      goodbye: readoutGoodbyeOf(context.read<PowerCubit>().state.phase),
+      goodbye: readoutGoodbyeOf(power),
+      savingStep: power.step,
+      savingProgress: power.progress,
       brightness: context.read<DisplayBrightnessCubit>().state.softwareOf(
         DisplayRole.track,
       ),
@@ -1433,22 +1436,24 @@ class _AppViewState extends State<_AppView> {
             return BlocBuilder<PowerCubit, PowerState>(
               buildWhen: (previous, current) => previous != current,
               builder: (context, power) {
-                final face = readoutGoodbyeOf(power.phase);
                 // Always the Stack: moving the app in and out of one
                 // would remount it, routes and all, as power-off begins.
                 return Stack(
                   fit: StackFit.expand,
                   children: [
                     dimmed,
-                    if (face != ReadoutGoodbye.none)
-                      PowerGoodbye(
-                        face: face,
-                        action: power.action,
-                        unplugToApply: context.select<PedalCubit, bool>(
-                          (pedal) =>
-                              pedal.state.powerSupply?.needsPowerCycle ?? false,
-                        ),
+                    PowerGoodbye(
+                      state: power,
+                      stagedUpdate: context.select<UpdateCubit, String?>(
+                        (update) => update.state.phase == UpdatePhase.staged
+                            ? update.state.available?.version.toString()
+                            : null,
                       ),
+                      unplugToApply: context.select<PedalCubit, bool>(
+                        (pedal) =>
+                            pedal.state.powerSupply?.needsPowerCycle ?? false,
+                      ),
+                    ),
                   ],
                 );
               },

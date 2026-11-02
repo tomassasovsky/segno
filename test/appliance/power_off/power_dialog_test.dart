@@ -7,7 +7,7 @@ import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/appliance/power_off/power_dialog.dart';
 import 'package:segno/appliance/power_off/power_gate.dart';
-import 'package:segno/common/console_surface.dart';
+import 'package:segno/theme/theme.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -64,11 +64,11 @@ void main() {
       expect(find.byKey(const Key('power_shut_down')), findsNothing);
       expect(
         tester
-            .widget<ConsoleDialogButton>(
+            .widget<PowerPanelButton>(
               find.byKey(const Key('power_keep_playing')),
             )
             .tone,
-        ConsoleDialogTone.warning,
+        PowerPanelTone.warning,
       );
     });
 
@@ -179,12 +179,11 @@ void main() {
       addTearDown(cubit.close);
       await _pump(tester, cubit);
 
-      expect(find.text('Power options'), findsOneWidget);
+      expect(find.text('Power'), findsOneWidget);
       expect(
-        find.text('Playback will stop and your session will be saved.'),
+        find.text('Playback stops and friday-set is saved first.'),
         findsOneWidget,
       );
-      expect(find.text('friday-set'), findsOneWidget);
       expect(find.byKey(const Key('power_cancel')), findsOneWidget);
       expect(find.byKey(const Key('power_restart')), findsOneWidget);
       expect(find.byKey(const Key('power_shut_down')), findsOneWidget);
@@ -200,7 +199,8 @@ void main() {
       await _pump(tester, cubit, snapshot: const PowerSnapshot());
       expect(
         find.text(
-          "This session has no name yet. You'll name it before it saves.",
+          'Playback stops and this session is saved first. You name it '
+          'before it saves.',
         ),
         findsOneWidget,
       );
@@ -220,12 +220,12 @@ void main() {
 
       expect(
         find.text(
-          'Playback will stop. This session is empty, so there is nothing '
-          'to save.',
+          'Playback stops. This session is empty, so there is nothing to '
+          'save.',
         ),
         findsOneWidget,
       );
-      expect(find.textContaining('will be saved'), findsNothing);
+      expect(find.textContaining('saved first'), findsNothing);
       expect(find.textContaining('name it before it saves'), findsNothing);
       expect(find.byKey(const Key('power_restart')), findsOneWidget);
       expect(find.byKey(const Key('power_shut_down')), findsOneWidget);
@@ -259,8 +259,8 @@ void main() {
         ),
       );
       const empty =
-          'Playback will stop. This session is empty, so there is nothing '
-          'to save.';
+          'Playback stops. This session is empty, so there is nothing to '
+          'save.';
       expect(find.text(empty), findsOneWidget);
 
       reading = const PowerSnapshot();
@@ -269,12 +269,9 @@ void main() {
 
       expect(find.text(empty), findsNothing);
       expect(
-        find.text('Playback will stop and your session will be saved.'),
-        findsOneWidget,
-      );
-      expect(
         find.text(
-          "This session has no name yet. You'll name it before it saves.",
+          'Playback stops and this session is saved first. You name it '
+          'before it saves.',
         ),
         findsOneWidget,
       );
@@ -294,10 +291,9 @@ void main() {
         ),
       );
       expect(
-        find.text('Playback will stop and your session will be saved.'),
+        find.text('Playback stops and friday-set is saved first.'),
         findsOneWidget,
       );
-      expect(find.text('friday-set'), findsOneWidget);
     });
 
     testWidgets('a staged update adds the install line', (tester) async {
@@ -370,12 +366,68 @@ void main() {
       expect(find.byKey(const Key('power_shut_down')), findsNothing);
       expect(find.textContaining('anyway'), findsNothing);
       expect(log, ['save']);
+      // The same panel, its title in the warning colour behind an alert.
+      expect(find.byKey(const Key('power_dialog')), findsOneWidget);
+      expect(find.byIcon(Icons.error_outline), findsOneWidget);
+      final title = tester.widget<Text>(find.text('Segno is staying on'));
+      expect(
+        title.style?.color,
+        tester.element(find.text('Segno is staying on')).surface.warning,
+      );
+      expect(
+        tester
+            .widget<PowerPanelButton>(find.byKey(const Key('power_retry')))
+            .tone,
+        PowerPanelTone.accent,
+      );
 
       fail = false;
       await tester.tap(find.byKey(const Key('power_retry')));
       await tester.pump();
       await tester.pump();
       expect(log, ['save', 'save', 'powerOff']);
+    });
+
+    testWidgets('the panel sits bottom-centre, 760 wide, 48 above the edge', (
+      tester,
+    ) async {
+      tester.view
+        ..physicalSize = const Size(1920, 1080)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final cubit = _cubit();
+      addTearDown(cubit.close);
+      await _pump(tester, cubit);
+
+      final panel = tester.getRect(find.byKey(const Key('power_dialog')));
+      expect(panel.width, 760);
+      expect(panel.center.dx, 960);
+      expect(panel.bottom, 1080 - 48);
+      for (final key in ['power_cancel', 'power_restart', 'power_shut_down']) {
+        expect(tester.getSize(find.byKey(Key(key))).height, 84);
+      }
+      // Shut down is the widest; Restart and Shut down carry their icons.
+      expect(
+        tester.getSize(find.byKey(const Key('power_shut_down'))).width,
+        greaterThan(
+          tester.getSize(find.byKey(const Key('power_restart'))).width,
+        ),
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('power_restart')),
+          matching: find.byIcon(Icons.restart_alt),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('power_shut_down')),
+          matching: find.byIcon(Icons.power_settings_new),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('Stay on after a failed save returns to idle', (tester) async {

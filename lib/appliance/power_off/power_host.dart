@@ -226,6 +226,7 @@ class _PowerHostState extends State<PowerHost> {
         _saveAsOpen = false;
         cubit.commitSaveAs(
           _snapshot(),
+          name: slug,
           save: () async {
             // A Retry after the Save As already landed saves that session
             // again instead of claiming the same name twice.
