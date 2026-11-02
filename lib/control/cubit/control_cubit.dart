@@ -1235,12 +1235,10 @@ class ControlCubit extends Cubit<ControlState> {
   Object? _clearPressToken;
 
   // The pending holds that clear (#1534), oldest first: the newest one's
-  // pill fills. The ticker streams its progress to the board, and a fired
-  // hold shows its full pill for a moment before the board takes the frame.
+  // pill fills. The ticker streams its progress to the board; a fired hold
+  // sends 255 once, and the board flashes that pill on its own clock.
   final _clearFills = <PedalButton, _ClearFill>{};
   Timer? _clearFillTicker;
-  PedalButton? _clearFillMet;
-  Timer? _clearFillMetTimer;
 
   // Mirrors `PerformanceRepository.captureStatus` so the pedal frame can
   // render the armed LED without re-deriving it from the raw status stream on
@@ -3491,10 +3489,6 @@ class ControlCubit extends Cubit<ControlState> {
   /// at a time: the newest pending clear hold's, and an older one's again
   /// when the newer one settles first.
   void _startClearFill(PedalButton button, bool Function() stillValid) {
-    // A new hold takes the board from a full pill still showing.
-    _clearFillMetTimer?.cancel();
-    _clearFillMetTimer = null;
-    _clearFillMet = null;
     _clearFills
       ..remove(button)
       ..[button] = _ClearFill(threshold: _longPress, stillValid: stillValid);
@@ -3514,21 +3508,12 @@ class ControlCubit extends Cubit<ControlState> {
     scheduleMicrotask(_sendClearFill);
   }
 
-  /// The hold on [button] fired: its pill shows the two ends met, long enough
-  /// for the board to draw it, then the frame decides the pill again.
-  void _meetClearFill(PedalButton button) {
-    _clearFillMetTimer?.cancel();
-    _clearFillMet = button;
-    _sendClearFill();
-    _clearFillMetTimer = Timer(
-      const Duration(milliseconds: PedalLinkCodec.clearHoldIntervalMs * 3),
-      () {
-        _clearFillMet = null;
-        _clearFillMetTimer = null;
-        _sendClearFill();
-      },
-    );
-  }
+  /// The hold on [button] fired: the ends meet. The board takes 255 as the
+  /// clear and confirms it by flashing the full pill on its own clock
+  /// (`PILL_CLEAR_FLASHES` in console_board.ino), which the messages that
+  /// follow do not cut short.
+  void _meetClearFill(PedalButton button) =>
+      _pedal.showClearHold(button, progress: 255);
 
   /// Sends the fill the board should show now. A pending hold that can no
   /// longer fire (a take locked, another session loaded) stops filling at
@@ -3539,10 +3524,7 @@ class ControlCubit extends Cubit<ControlState> {
       _clearFillTicker?.cancel();
       _clearFillTicker = null;
     }
-    final met = _clearFillMet;
-    if (met != null) {
-      _pedal.showClearHold(met, progress: 255);
-    } else if (_clearFills.isEmpty) {
+    if (_clearFills.isEmpty) {
       _pedal.showClearHold(null);
     } else {
       final MapEntry(key: button, value: fill) = _clearFills.entries.last;
@@ -4487,15 +4469,9 @@ class ControlCubit extends Cubit<ControlState> {
     for (final gesture in _bindingGestures.values) {
       gesture.cancel();
     }
-    // Every gesture has settled; end a full pill still showing as well.
-    _clearFillMetTimer?.cancel();
-    if (_clearFillMet != null || _clearFills.isNotEmpty) {
-      _clearFillMet = null;
-      _clearFills.clear();
-      _clearFillTicker?.cancel();
-      _clearFillTicker = null;
-      _pedal.showClearHold(null);
-    }
+    // Every gesture has settled, and each settle sends its own end.
+    _clearFillTicker?.cancel();
+    _clearFillTicker = null;
     await _looperSub.cancel();
     await _eventsSub.cancel();
     await _statusSub.cancel();

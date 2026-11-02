@@ -127,18 +127,27 @@ button the app sends. The wire is unchanged
 
 **Clear-track hold (#1534, firmware 2.6).** While a hold that clears a
 track is pending (the Track Hold set to Clear track, or a Custom pedal whose
-Hold is Clear or Clear all), the app sends `CLEAR_HOLD` (`0x13`) every 20 ms with the held
-footswitch and how much of the long-press threshold has run (0..255). The
-board draws red from both ends of that pill toward the centre over whatever
-the pill shows, at the same uniform level as the Song queue (110), with the
-leading pixel on each side partly filled so the edges move smoothly; at 255
-the two meet. When the hold fires, the app sends 255 for 60 ms so the meeting
-shows, then one with no footswitch; a hold released early or cancelled (or
-one that can no longer fire) gets the one with no footswitch at once, and the
-pill shows its normal state again. A fill that no message refreshes for
-500 ms is dropped and forgotten, so a lost message cannot leave a pill red; a
-pill the app does not light never fills, and goodbye and a lost link end the
-fill.
+Hold is Clear or Clear all), the app sends `CLEAR_HOLD` (`0x13`) every 20 ms
+with the held footswitch and how much of the long-press threshold has run
+(0..254). The board draws red from both ends of that pill toward the centre
+over whatever the pill shows, at the same uniform level as the Song queue
+(110), with the leading pixel on each side partly filled so the edges move
+smoothly. On a pill the app already shows red (a recording track, or any
+state it colours red), the pill's own red drops to about a third
+(`PILL_CLEAR_UNDER_RED`, 85 of 255) and the fill is drawn at full brightness
+(`PILL_PEAK`) over it. A hold released early or cancelled (or one that can no
+longer fire) gets a message with no footswitch, and the pill shows its normal
+state again at once. A fill that no message refreshes for 500 ms is dropped
+and forgotten, so a lost message cannot leave a pill red; a pill the app does
+not light never fills, and goodbye and a lost link end the fill.
+
+When the hold fires, the track clears and the app sends 255 once. The board
+confirms the clear on its own clock: the full red pill flashes
+`PILL_CLEAR_FLASHES` (3) times, `PILL_CLEAR_FLASH_MS` (120 ms) on and as long
+dark, about 0.7 s, and then shows what `STATE` says (the empty-track state).
+The app's no-footswitch message, later `STATE` frames and the 500 ms stale
+time do not cut the flash short; a new hold on that pill takes it over, and
+goodbye and a lost link end it.
 
 `CLEAR_HOLD` does not change the protocol version (still 12). Firmware 2.5 and
 older reject the unknown type at its type byte and keep rendering `STATE`, so
@@ -174,7 +183,7 @@ compete with the ten-button mask for physical output.
 | `0x05 ENCODER_BUTTON` | board → segno | `pressed (0/1)` — the encoder's push switch, one message per debounced edge (protocol 9) |
 | `0x06 PD_STATUS` | board → segno | `profile, mismatch, mV (LE16), mA (LE16), source max mA (LE16)` — after every `HELLO` (protocol 12) |
 | `0x10 STATE` | segno → board | 53 bytes: flags, mode, looper mode, global colour, bank, selected track, 8 track LEDs, loop length µs (LE32), master gain, ten RGB triples, active mask (LE16), queued switch, queue progress — see `pedal_link.h` |
-| `0x13 CLEAR_HOLD` | segno → board | `button + 1 (0 none), progress 0..255` — every 20 ms while a clear-track hold runs; optional, firmware 2.6 (#1534) |
+| `0x13 CLEAR_HOLD` | segno → board | `button + 1 (0 none), progress 0..255` — every 20 ms while a clear-track hold runs (0..254), 255 once when it fires (the board flashes the pill); optional, firmware 2.6 (#1534) |
 
 segno answers every compatible `HELLO` with its current `STATE`, so a board that just
 (re)connected is current within a second; the board goes dark if no `STATE`

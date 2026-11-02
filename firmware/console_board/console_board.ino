@@ -52,8 +52,9 @@ struct Rgb { uint8_t r, g, b; };
 // contract (protocol 12, #1352). 2.4: MODE reads GP12 (#1388). 2.5: a
 // waiting Song or Band section fills its pill at one level and blends to
 // the diffused curve when it starts (#1323). 2.6: a clear-track hold fills
-// its pill red from both ends toward the centre (CLEAR_HOLD, #1534; still
-// protocol 12, see pedal_link.h).
+// its pill red from both ends toward the centre and, when it fires, flashes
+// the full pill three times (CLEAR_HOLD, #1534; still protocol 12, see
+// pedal_link.h).
 static const uint8_t FW_MAJOR = 2;
 static const uint8_t FW_MINOR = 6;
 
@@ -104,6 +105,24 @@ static const uint8_t PILL_WEIGHTS[PILL_PIXELS] = {38, 92, 201, 255, 255, 201, 92
 static const uint8_t PILL_FILL_LEVEL = 110;
 // The colour a clear-track hold fills with, before gamma: the global red.
 static const Rgb PILL_CLEAR_RED = {255, 0, 0};
+// When a clear-track hold fires (a CLEAR_HOLD at 255), the board confirms it:
+// the full red pill flashes this many times, each PILL_CLEAR_FLASH_MS on and
+// as long dark, about 0.7 s in all, then the pill shows what STATE says.
+static const uint8_t PILL_CLEAR_FLASHES = 3;
+static const unsigned long PILL_CLEAR_FLASH_MS = 120;
+static const unsigned long PILL_CLEAR_FLASH_TOTAL_MS = 2ul * PILL_CLEAR_FLASHES * PILL_CLEAR_FLASH_MS;
+// A pill the app already shows red (a recording track, or any state it
+// colours red) would hide the red fill. While a clear hold runs on it, its
+// own colour drops to PILL_CLEAR_UNDER_RED of 255 (about a third) and the
+// fill is drawn at full brightness, PILL_PEAK, over it.
+static const uint8_t PILL_CLEAR_UNDER_RED = 85;
+
+// Whether the app's colour for a pill reads red: red is at least half on and
+// at least twice green and blue, so the palette's reds count and its orange,
+// pink and white do not.
+static bool pillReadsRed(Rgb c) {
+  return c.r >= 128 && 2u * c.g <= c.r && 2u * c.b <= c.r;
+}
 // When a pill leaves the queue and stays lit, it blends from its last fill
 // to the diffused curve over this long.
 static const unsigned long PILL_SETTLE_MS = 300;
@@ -138,6 +157,11 @@ static unsigned long g_lastHelloMs = 0;
 // refreshed for PEDAL_LINK_CLEAR_HOLD_STALE_MS is over.
 static pedal_clear_hold g_clearHold = {0, 0};
 static unsigned long g_clearHoldAtMs = 0;
+// The pill a fired clear hold is flashing on (PEDAL_BTN value + 1, 0 none)
+// and when the flash began. It runs on this clock alone: the stale-fill
+// drop, the app's no-button message and later STATE frames do not touch it.
+static uint8_t g_clearFlash = 0;
+static unsigned long g_clearFlashAtMs = 0;
 
 // 2048: while bridging, a whole update chunk is copied the other way before
 // this buffer is drained again.
@@ -209,7 +233,10 @@ static void handleMessage(uint8_t type, const uint8_t *payload, uint8_t len) {
     case PEDAL_LINK_TYPE_STATE: {
       pedal_state decoded;
       if (pedal_link_decode_state(payload, len, &decoded)) {
-        if (decoded.goodbye) g_clearHold = {0, 0};  // a goodbye ends any fill
+        if (decoded.goodbye) {  // a goodbye ends any fill or flash
+          g_clearHold = {0, 0};
+          g_clearFlash = 0;
+        }
         g_frame = decoded;
         g_haveFrame = true;
         g_lastFrameMs = millis();
@@ -220,8 +247,17 @@ static void handleMessage(uint8_t type, const uint8_t *payload, uint8_t len) {
     case PEDAL_LINK_TYPE_CLEAR_HOLD: {
       pedal_clear_hold decoded;
       if (pedal_link_decode_clear_hold(payload, len, &decoded)) {
-        g_clearHold = decoded;
-        g_clearHoldAtMs = millis();
+        if (decoded.progress == 255) {
+          // The hold fired: the ends met and the track cleared. Confirm it.
+          g_clearFlash = decoded.button;
+          g_clearFlashAtMs = millis();
+          g_clearHold = {0, 0};
+        } else {
+          // A new hold on the flashing pill takes it over.
+          if (decoded.button != 0 && decoded.button == g_clearFlash) g_clearFlash = 0;
+          g_clearHold = decoded;
+          g_clearHoldAtMs = millis();
+        }
       }
       break;
     }
@@ -712,11 +748,18 @@ static bool renderIndicators() {
     g_clearHold = {0, 0};
   }
   const bool clearHoldLive = g_clearHold.button != 0;
+  if (g_clearFlash != 0 && now - g_clearFlashAtMs >= PILL_CLEAR_FLASH_TOTAL_MS) g_clearFlash = 0;
+  // On for the even PILL_CLEAR_FLASH_MS slots of the flash, dark for the odd.
+  const bool clearFlashOn = ((now - g_clearFlashAtMs) / PILL_CLEAR_FLASH_MS) % 2 == 0;
   const uint32_t clearRed = rgb(PILL_CLEAR_RED.r, PILL_CLEAR_RED.g, PILL_CLEAR_RED.b);
   const uint8_t clearInk[3] = {
       (uint8_t)((((clearRed >> 16) & 255) * PILL_FILL_LEVEL + 127) / 255),
       (uint8_t)((((clearRed >> 8) & 255) * PILL_FILL_LEVEL + 127) / 255),
       (uint8_t)(((clearRed & 255) * PILL_FILL_LEVEL + 127) / 255)};
+  const uint8_t clearPeakInk[3] = {
+      (uint8_t)((((clearRed >> 16) & 255) * PILL_PEAK + 127) / 255),
+      (uint8_t)((((clearRed >> 8) & 255) * PILL_PEAK + 127) / 255),
+      (uint8_t)(((clearRed & 255) * PILL_PEAK + 127) / 255)};
   for (uint8_t group = 0; group < PEDAL_BTN_COUNT; ++group) {
     const uint8_t button = PILL_BUTTON[group];
     Rgb color = {0, 0, 0};
@@ -728,8 +771,12 @@ static bool renderIndicators() {
       lit = true;
       queued = g_frame.queued_button == button + 1;
     }
-    // The app runs the hold; a pill only fills while the app lights it.
+    // The app runs the hold; a pill only fills while the app lights it. The
+    // flash that confirms a fired hold shows whatever the frame says.
     const bool clearing = lit && clearHoldLive && g_clearHold.button == button + 1;
+    const bool flashing = g_haveFrame && !g_frame.goodbye && g_clearFlash == button + 1;
+    const bool underRed = clearing && pillReadsRed(color);
+    const uint8_t *ink = underRed ? clearPeakInk : clearInk;
     // The app decides the queue. The board only records when a pill stops
     // being queued (the section started, the request was dropped, or the
     // pill now shows another track) and blends it from there.
@@ -769,17 +816,25 @@ static bool renderIndicators() {
           (uint8_t)(((corrected & 255) * level + 127) / 255));
       if (clearing) {
         // A clear-track hold: red grows from both ends toward the centre over
-        // whatever the pill shows, at the fill level, the leading pixel on
-        // each side blending in so the edges move smoothly. 255 covers the
-        // pill; the clear itself and the next STATE are the app's.
+        // whatever the pill shows, at the fill level (at full brightness over
+        // a pill already red, dimmed to a third), the leading pixel on each
+        // side blending in so the edges move smoothly. The clear itself is
+        // the app's; it sends 255 when it fires, and the flash shows that.
         const uint8_t depth = pixel < PILL_PIXELS / 2 ? pixel : PILL_PIXELS - 1 - pixel;
         const int16_t coverage = g_clearHold.progress * (PILL_PIXELS / 2) - depth * 255;
         const uint16_t fill = coverage <= 0 ? 0 : coverage >= 255 ? 255 : coverage;
-        const auto blend = [fill](uint8_t base, uint8_t ink) {
-          return (uint8_t)((base * (255u - fill) + ink * fill + 127) / 255);
+        if (underRed) {
+          value = RgbColor((uint8_t)((value.R * PILL_CLEAR_UNDER_RED + 127) / 255),
+                           (uint8_t)((value.G * PILL_CLEAR_UNDER_RED + 127) / 255),
+                           (uint8_t)((value.B * PILL_CLEAR_UNDER_RED + 127) / 255));
+        }
+        const auto blend = [fill](uint8_t base, uint8_t over) {
+          return (uint8_t)((base * (255u - fill) + over * fill + 127) / 255);
         };
-        value = RgbColor(blend(value.R, clearInk[0]), blend(value.G, clearInk[1]),
-                         blend(value.B, clearInk[2]));
+        value = RgbColor(blend(value.R, ink[0]), blend(value.G, ink[1]), blend(value.B, ink[2]));
+      }
+      if (flashing) {
+        value = clearFlashOn ? RgbColor(clearInk[0], clearInk[1], clearInk[2]) : RgbColor(0);
       }
       desired[pillPixelIndex(group, pixel)] = value;
       channelTotal += value.R + value.G + value.B;
@@ -894,6 +949,7 @@ void loop() {
   if (g_haveFrame && now - g_lastFrameMs > FRAME_TIMEOUT_MS) {
     g_haveFrame = false;
     g_clearHold = {0, 0};
+    g_clearFlash = 0;
     sendRingState();
   }
   if (now - g_lastRingStateMs >= ring_link::STATE_MS) sendRingState();
