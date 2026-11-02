@@ -12,6 +12,7 @@
  */
 #include <ctype.h>
 #include <stdint.h>
+#include <stdio.h> /* snprintf */
 #include <string.h>
 
 #include "engine_internal.h"  /* le_classify_capture_device, le_select_backend, ... */
@@ -56,7 +57,27 @@ int le_label_is_loopback(const char* label) {
    * label and the Focusrite convention of naming the two loopback inputs
    * "Loop 1" / "Loop 2" (verified on a Scarlett 4i4). "loop" subsumes
    * "loopback", so one substring check handles both. */
-  return contains_ci(label, "loop");
+  if (contains_ci(label, "loop")) return 1;
+  /* On Linux the name is the channel's capture source in the scarlett2
+   * routing: "PCM <n>" is the host's own playback stream n, so the channel
+   * returns what the engine plays (#1541). Exact, as the driver writes it. */
+  return label != NULL && strncmp(label, "PCM ", 4) == 0 &&
+         label[4] >= '0' && label[4] <= '9';
+}
+
+int le_alsa_ctl_name_from_uid(const char* uid, char* out, size_t cap) {
+  if (uid == NULL || out == NULL || cap == 0) return 0;
+  /* The card is what follows the plugin's colon: "hw:1,0", "plughw:1,0", and
+   * the appliance's own ":1,0" (engine_linux.c's enumeration). */
+  const char* card = strchr(uid, ':');
+  if (card == NULL) return 0;
+  ++card;
+  if (strncmp(card, "CARD=", 5) == 0) card += 5;
+  size_t len = 0;
+  while (card[len] != '\0' && card[len] != ',') ++len;
+  if (len == 0) return 0;
+  const int written = snprintf(out, cap, "hw:%.*s", (int)len, card);
+  return written > 0 && (size_t)written < cap;
 }
 
 uint32_t le_excluded_mask_from_names(le_channel_name_fn get_name, void* ctx,

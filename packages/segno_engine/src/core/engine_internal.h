@@ -133,10 +133,18 @@ void le_engine_master_bus_frame_for_test(le_engine* engine, float* out,
  * unit-testable. */
 le_loopback_kind le_classify_capture_device(const char* name);
 
-/* Whether a Core Audio channel label marks a loopback channel (case-insensitive
- * substring "loopback"). Pure and unit-testable; a NULL/blank label is not a
- * loopback. */
+/* Whether an input channel's name marks a loopback channel: a Core Audio
+ * label containing "loop" (case-insensitive; "Loopback", Focusrite's "Loop 1"),
+ * or an ALSA capture source that is a playback stream ("PCM 1", the scarlett2
+ * routing's name for it, #1541). Pure and unit-testable; a NULL/blank name is
+ * not a loopback. */
 int le_label_is_loopback(const char* label);
+
+/* Writes the ALSA control device ("hw:<card>") of the card behind capture-device
+ * id `uid` into `out` (":1,0", "hw:1,0" and "hw:CARD=USB,DEV=0" name cards 1,
+ * 1 and USB). Returns 1, or 0 for a NULL id, an id with no card, or a name that
+ * does not fit. Pure and unit-testable. */
+int le_alsa_ctl_name_from_uid(const char* uid, char* out, size_t cap);
 
 /* Sightings an entry of the channel-count memo is trusted for before it is read
  * again (engine_devices.c, where the rationale for a per-entry countdown lives).

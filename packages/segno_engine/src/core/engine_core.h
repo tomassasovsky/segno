@@ -31,6 +31,11 @@ int32_t le_length_presets_check(le_engine* engine, const int32_t* bars,
  * le_engine_configure sizes lat_buf from CAPTURE_DIV). */
 #define LE_LATENCY_TONE_HZ 1000.0f /* tone-burst freq (AC: survives AC-coupling) */
 #define LE_LATENCY_PEAK_RATIO 2.5f /* correlation peak must exceed this x baseline */
+/* The return must also carry a mean magnitude of at least this times the
+ * burst's amplitude, which rejects pure silence. Relative to the amplitude so a
+ * bit-exact loopback detects a very quiet burst (#1541); at the cable test's
+ * 0.25 it is the fixed 1e-4 it replaced. */
+#define LE_LATENCY_FLOOR_RATIO 4e-4f
 #define LE_LATENCY_PULSE_DIV 100   /* pulse length = sample_rate / this (~10ms) */
 #define LE_LATENCY_CAPTURE_DIV 10  /* capture window = sample_rate / this (~100ms) */
 

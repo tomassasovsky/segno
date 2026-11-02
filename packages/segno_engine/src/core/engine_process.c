@@ -6362,9 +6362,10 @@ static void le_latency_resolve(le_engine* e, int sr) {
   }
   const double avg = total / (double)count;
   /* The echo's correlation peak must stand clearly above the baseline — a
-   * level-independent test that works for weak loopback levels; the tiny
-   * absolute floor rejects pure silence. */
-  if (best < (double)LE_LATENCY_PEAK_RATIO * avg || best / (double)m < 1e-4) {
+   * level-independent test that works for weak loopback levels; the floor,
+   * a small fraction of the burst's own level, rejects pure silence. */
+  if (best < (double)LE_LATENCY_PEAK_RATIO * avg ||
+      best / (double)m < (double)LE_LATENCY_FLOOR_RATIO * (double)e->lat_amp) {
     le_latency_publish(e, LE_LATENCY_TIMEOUT);
     return;
   }
