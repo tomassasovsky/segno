@@ -134,7 +134,8 @@ class EngineStatus extends Equatable {
   /// with a [kWarmUpBufferFrames]-frame buffer, every output silent and the
   /// transport closed, until the console has settled and the player's own
   /// config opens. [bufferFrames] then reports the warm-up buffer, not the
-  /// player's.
+  /// player's. It also stays true after the switch while the record offset
+  /// of a buffer the device rounded is still owed.
   final bool warmingUp;
 
   /// Whether a latency measurement has completed.

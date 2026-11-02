@@ -280,7 +280,8 @@ class LooperRepository {
   /// audio ([_sessionAudioReserved]), or the device still warms up (#1533),
   /// when a take would be recorded with the warm-up buffer's offset and
   /// heard only once the player's own config opens.
-  bool get _transportReserved => _sessionAudioReserved || _warmUpTarget != null;
+  bool get _transportReserved =>
+      _sessionAudioReserved || _warmUpTarget != null || _offsetOwed;
 
   /// The config the device last opened: during a warm-up, the warm-up
   /// variant of [_warmUpTarget].
@@ -294,6 +295,17 @@ class LooperRepository {
   /// ([startEngine] with `warmUp`) and by every reconnect; cleared by any
   /// other successful open, by [finishWarmUp] and by [stopEngine].
   EngineConfig? _warmUpTarget;
+
+  /// The switch out of a warm-up opened another buffer than the one asked
+  /// (the device rounded it), so the record offset set for the asked one is
+  /// not this profile's. The transport stays closed, and the status reads
+  /// warming up, until [setRecordOffset] sets the opened profile's (#1533).
+  bool _offsetOwed = false;
+
+  /// The player's config a warm-up switch was refused (#1533). A returning
+  /// interface warms up for it again instead of reopening the warm-up config
+  /// that ran in its place; any other open forgets it.
+  EngineConfig? _refusedTarget;
 
   /// The last reconnect's verdict on the recorded loops, projected onto
   /// [EngineStatus.reopen]. `null` from a deliberate [startEngine] on, and
@@ -2429,7 +2441,7 @@ class LooperRepository {
     _lastAttemptSignature = signature;
     // A returning interface warms up again (#1533): the player's config
     // opens once the console has settled ([finishWarmUp]).
-    final target = _warmUpTarget ?? config;
+    final target = _warmUpTarget ?? _refusedTarget ?? config;
     final reopened = target.needsWarmUp
         ? _reopenEngine(target.warmUp, warmUpTarget: target)
         : _reopenEngine(target);
@@ -2620,7 +2632,7 @@ class LooperRepository {
       recordOffsetFrames: s.recordOffsetFrames,
       fxAddedLatencyFrames: s.fxAddedLatencyFrames,
       reopen: _lastReopen,
-      warmingUp: _warmUpTarget != null,
+      warmingUp: _warmUpTarget != null || _offsetOwed,
     ),
     // From the repository's own re-apply CACHE, not `s.outputEnabledMask`, on
     // the same reasoning as the quantize override above: the gate is re-applied
@@ -2900,6 +2912,11 @@ class LooperRepository {
   /// the reconnect supervisor warms up again when the interface answers.
   /// Failed: the engine is stopped. A refused admission
   /// ([EngineResult.notReady]) changes nothing, so the caller tries again.
+  ///
+  /// The caller sets the record offset for the asked buffer first. When the
+  /// device opened another one, the transport stays closed until the caller
+  /// sets that buffer's offset too ([EngineStatus.warmingUp] stays true). A
+  /// refused config is retried at the next reconnect.
   /// Applied at once, changing nothing, when no warm-up runs.
   AudioApplyResult finishWarmUp() {
     final target = _warmUpTarget;
@@ -2918,6 +2935,14 @@ class LooperRepository {
       // The budget was the target's: what fits the warm-up buffer that runs
       // now comes back on.
       _admitRig(release: true);
+      _refusedTarget = target;
+    }
+    final opened = _engine.snapshot().bufferFrames;
+    if (outcome.status == AudioApplyStatus.applied &&
+        target.bufferFrames > 0 &&
+        opened > 0 &&
+        opened != target.bufferFrames) {
+      _offsetOwed = true;
     }
     // No caller shows an apply's verdict here, so a switch that lost loops
     // says so on the status, as a reconnect does (rule 3).
@@ -2977,6 +3002,8 @@ class LooperRepository {
       // Before the master gain below and before any chain is admitted: a
       // warm-up is silent, and its effects budget is the target's.
       _warmUpTarget = warmUpTarget;
+      _offsetOwed = false;
+      _refusedTarget = null;
       _intendRunning = true;
       // R2 (#1515): what the rig cannot run comes up held off, before any
       // chain is replayed.
@@ -3397,6 +3424,8 @@ class LooperRepository {
     // A stopped warm-up leaves the player's config as the one to open.
     _lastEngineConfig = _warmUpTarget ?? _lastEngineConfig;
     _warmUpTarget = null;
+    _offsetOwed = false;
+    _refusedTarget = null;
     _clickVolume.retireLive();
     _stopReconnectPolling();
     // The engine tears down all plugin slots on stop; drop our stale handles so
@@ -6330,6 +6359,10 @@ class LooperRepository {
   /// compensation survives — a fresh engine start resets it to 0.
   EngineResult setRecordOffset(int frames) {
     _recordOffset = frames < 0 ? 0 : frames;
+    if (_offsetOwed) {
+      _offsetOwed = false;
+      _reproject();
+    }
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setRecordOffset(_recordOffset);
   }

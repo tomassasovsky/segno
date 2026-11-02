@@ -199,6 +199,13 @@ class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
         'buffer=${target.bufferFrames}: ${outcome.status.name} '
         'result=${outcome.result.name}',
       );
+      // The device rounded the buffer: the transport waits for the offset of
+      // the buffer it opened.
+      final opened = _looper.state.status;
+      if (outcome.status == AudioApplyStatus.applied && opened.warmingUp) {
+        final rounded = await _savedOffset(opened, opened.bufferFrames);
+        if (!isClosed) _looper.setRecordOffset(rounded);
+      }
       _restart();
     } finally {
       _switching = false;

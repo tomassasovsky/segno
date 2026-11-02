@@ -250,6 +250,44 @@ void main() {
       verify(looper.finishWarmUp).called(1);
     });
 
+    test('a buffer the device rounded gets the offset of the buffer it '
+        'opened', () async {
+      await settings.saveLatencyOffsetFrames(
+        device: 'Scarlett 4i4',
+        sampleRate: 48000,
+        bufferFrames: 32,
+        frames: 300,
+      );
+      await settings.saveLatencyOffsetFrames(
+        device: 'Scarlett 4i4',
+        sampleRate: 48000,
+        bufferFrames: 48,
+        frames: 420,
+      );
+      when(looper.finishWarmUp).thenAnswer((_) {
+        calls.add('finish');
+        // Asked 32, opened 48: the transport waits for 48's offset.
+        state = LooperState(
+          status: EngineStatus(
+            deviceName: 'Scarlett 4i4',
+            sampleRate: 48000,
+            bufferFrames: 48,
+            isConnected: true,
+            devicePresent: true,
+            warmingUp: true,
+          ),
+        );
+        return finishResult;
+      });
+      final cubit = await build();
+
+      await tick(4);
+
+      expect(calls, ['offset 300', 'finish', 'offset 420']);
+      verify(looper.finishWarmUp).called(1);
+      expect(cubit.state.status, AudioWarmUpStatus.settling);
+    });
+
     test('an unmeasured profile switches with no offset', () async {
       await build();
 

@@ -156,7 +156,10 @@ void main() {
     test("opens the player's config, keeping the loops, and is heard", () {
       final repo = build()..setMasterGain(0.8);
       expect(repo.startEngine(player, warmUp: true), EngineResult.ok);
-      engine.calls.clear();
+      engine
+        ..calls.clear()
+        // The device opens the buffer asked for.
+        ..nextSnapshot = engine.nextSnapshot.copyWith(bufferFrames: 32);
 
       final outcome = repo.finishWarmUp();
 
@@ -167,6 +170,28 @@ void main() {
       expect(engine.lastMasterGain, 0.8);
       expect(repo.state.status.warmingUp, isFalse);
       expect(repo.lastEngineConfig, player);
+      expect(repo.record(), isNot(EngineResult.notReady));
+    });
+
+    test('a buffer the device rounded keeps the transport closed until its '
+        'offset is set', () {
+      final repo = build()..setMasterGain(0.8);
+      expect(repo.startEngine(player, warmUp: true), EngineResult.ok);
+      repo.setRecordOffset(300);
+      // Asked 32, opened 48: the offset set for 32 is not this profile's.
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(bufferFrames: 48);
+
+      final outcome = repo.finishWarmUp();
+
+      expect(outcome.status, AudioApplyStatus.applied);
+      expect(engine.lastMasterGain, 0.8);
+      expect(repo.state.status.warmingUp, isTrue);
+      expect(repo.record(), EngineResult.notReady);
+
+      repo.setRecordOffset(420);
+
+      expect(repo.state.status.warmingUp, isFalse);
+      expect(engine.lastRecordOffset, 420);
       expect(repo.record(), isNot(EngineResult.notReady));
     });
 
@@ -292,6 +317,44 @@ void main() {
       repo.finishWarmUp();
       expect(engine.lastConfig?.bufferFrames, 32);
       expect(engine.lastMasterGain, 0.8);
+    });
+
+    test("after a refused switch retries the player's config", () async {
+      final repo = warm();
+      engine.reopenResult = (
+        result: EngineResult.device,
+        outcome: ReopenOutcome.retained,
+        droppedTracks: 0,
+        openedRate: 0,
+      );
+      var reopens = 0;
+      engine.afterSnapshot = () {
+        if (count('reopen') > reopens) {
+          reopens = count('reopen');
+          engine.reopenResult = (
+            result: EngineResult.ok,
+            outcome: ReopenOutcome.retained,
+            droppedTracks: 0,
+            openedRate: 0,
+          );
+        }
+      };
+      expect(repo.finishWarmUp().status, AudioApplyStatus.refused);
+      expect(repo.state.status.warmingUp, isFalse);
+      engine
+        ..afterSnapshot = null
+        ..calls.clear();
+
+      await unplugAndReturn(repo);
+
+      // Not the 512 config that ran in its place: a warm-up for the player's.
+      expect(count('reopen'), 1);
+      expect(engine.lastConfig?.bufferFrames, kWarmUpBufferFrames);
+      expect(repo.state.status.warmingUp, isTrue);
+      expect(repo.lastEngineConfig, player);
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(bufferFrames: 32);
+      expect(repo.finishWarmUp().status, AudioApplyStatus.applied);
+      expect(engine.lastConfig?.bufferFrames, 32);
     });
 
     test('during a warm-up keeps its target', () async {
