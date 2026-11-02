@@ -8009,12 +8009,12 @@ static void tuner_tap_block(le_engine* e, const float* in, uint32_t frames,
      *     in flight and skip it however large the budget is. Raising the
      *     budget would NOT buy headroom here; only a hop longer than the
      *     block does. No shipped path negotiates a period that large: the
-     *     chooser offers [64, 128, 256, 512] (bufferSizes in
-     *     audio_setup_state.dart), and none of them lands above a hop. If one ever did, the
-     *     single consequence is that the needle refreshes every second hop
-     *     instead of every hop — ~86 ms rather than ~43 ms, still far finer
-     *     than a needle needs to look continuous. Nothing is wrong, only
-     *     coarser. */
+     *     chooser offers [32, 64, 128, 256, 512] (bufferSizes in
+     *     audio_setup_state.dart), and none of them lands above a hop. If one
+     *     ever did, the single consequence is that the needle refreshes every
+     *     second hop instead of every hop — ~86 ms rather than ~43 ms, still
+     *     far finer than a needle needs to look continuous. Nothing is wrong,
+     *     only coarser. */
     if (e->tuner_pass.phase == LE_TUNER_PHASE_IDLE) tuner_begin(e, sr, sr_d);
 
     /* Slide by one hop, so the next detect costs one memmove rather than one

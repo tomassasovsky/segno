@@ -932,7 +932,8 @@ void main() {
     group('first run (no saved config)', () {
       tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-      test('macOS/Linux opens the system default and persists it', () async {
+      test('macOS/Linux opens the system default at 48 kHz / 32 and persists '
+          'it', () async {
         debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
 
         final result = await tryAutoStartEngine(
@@ -943,17 +944,21 @@ void main() {
 
         expect(result.started, isTrue);
         expect(engine.startCalls, 1);
-        // The device's rate, and the 128-frame buffer the first run saves,
+        // The console's default rate and buffer, not the device's (#1529),
         // warmed up first at the largest buffer (#1533).
-        expect(engine.lastConfig, const le.EngineConfig(bufferFrames: 512));
+        expect(
+          engine.lastConfig,
+          const le.EngineConfig(sampleRate: 48000, bufferFrames: 512),
+        );
         expect(
           repository.lastEngineConfig,
-          const EngineConfig(bufferFrames: 128),
+          const EngineConfig(sampleRate: 48000, bufferFrames: 32),
         );
-        expect((await settings.loadAudioConfig())?.bufferFrames, 128);
         expect(repository.state.status.warmingUp, isTrue);
         // Persisted so the next launch takes the saved-config path.
-        expect(await settings.loadAudioConfig(), isNotNull);
+        final saved = await settings.loadAudioConfig();
+        expect(saved?.sampleRate, 48000);
+        expect(saved?.bufferFrames, 32);
       });
 
       test(
@@ -996,7 +1001,11 @@ void main() {
           expect(result.started, isTrue);
           expect(engine.lastConfig?.playbackDeviceId, 'scarlett');
           expect(engine.lastConfig?.captureDeviceId, 'scarlett');
+          expect(engine.lastConfig?.sampleRate, 48000);
+          expect(engine.lastConfig?.bufferFrames, kWarmUpBufferFrames);
+          expect(repository.lastEngineConfig?.bufferFrames, 32);
           final saved = await settings.loadAudioConfig();
+          expect(saved?.bufferFrames, 32);
           expect(saved?.playbackDeviceId, 'scarlett');
           expect(saved?.captureDeviceId, 'scarlett');
         },
@@ -1022,6 +1031,50 @@ void main() {
                 isInput: true,
               ),
             ]
+            ..startResults = [
+              EngineResult.device,
+              EngineResult.device,
+              EngineResult.ok,
+            ];
+
+          final result = await tryAutoStartEngine(
+            mixSettings: testMixSettings(repository, settings: settings),
+            repository: repository,
+            settings: settings,
+          );
+
+          expect(result.started, isTrue);
+          // 48 kHz / 32 on the pin, the pin at its own rate and period, then
+          // the system default at its own: the last try has to come up.
+          expect(engine.startCalls, 3);
+          expect(engine.lastConfig, const le.EngineConfig(bufferFrames: 512));
+          expect(repository.lastEngineConfig, const EngineConfig());
+          final saved = await settings.loadAudioConfig();
+          expect(saved?.playbackDeviceId, '');
+          expect(saved?.captureDeviceId, '');
+        },
+      );
+
+      test(
+        'console first-run keeps the pin at its own rate and period when it '
+        'refuses 48 kHz / 32 (#1529)',
+        () async {
+          debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+          engine
+            ..devices = const [
+              le.AudioDevice(
+                id: 'scarlett',
+                name: 'Scarlett 4i4',
+                isDefault: false,
+                isInput: false,
+              ),
+              le.AudioDevice(
+                id: 'scarlett',
+                name: 'Scarlett 4i4',
+                isDefault: false,
+                isInput: true,
+              ),
+            ]
             ..startResults = [EngineResult.device, EngineResult.ok];
 
           final result = await tryAutoStartEngine(
@@ -1032,13 +1085,38 @@ void main() {
 
           expect(result.started, isTrue);
           expect(engine.startCalls, 2);
-          expect(engine.lastConfig?.playbackDeviceId, '');
-          expect(engine.lastConfig?.captureDeviceId, '');
+          expect(
+            engine.lastConfig,
+            const le.EngineConfig(
+              bufferFrames: 512,
+              playbackDeviceId: 'scarlett',
+              captureDeviceId: 'scarlett',
+            ),
+          );
           final saved = await settings.loadAudioConfig();
-          expect(saved?.playbackDeviceId, '');
-          expect(saved?.captureDeviceId, '');
+          // The device's own period, known only once the switch opens it.
+          expect(saved?.bufferFrames, 0);
+          expect(saved?.playbackDeviceId, 'scarlett');
+          expect(saved?.captureDeviceId, 'scarlett');
         },
       );
+
+      test('macOS/Linux retries the system default at its own rate and '
+          'period when it refuses 48 kHz / 32 (#1529)', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+        engine.startResults = [EngineResult.device, EngineResult.ok];
+
+        final result = await tryAutoStartEngine(
+          mixSettings: testMixSettings(repository, settings: settings),
+          repository: repository,
+          settings: settings,
+        );
+
+        expect(result.started, isTrue);
+        expect(engine.startCalls, 2);
+        expect(engine.lastConfig, const le.EngineConfig(bufferFrames: 512));
+        expect(repository.lastEngineConfig, const EngineConfig());
+      });
 
       test('macOS/Linux lands stopped when the default open fails', () async {
         debugDefaultTargetPlatformOverride = TargetPlatform.macOS;

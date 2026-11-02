@@ -741,10 +741,6 @@
     "sampleRateNoteCd": "CD",
     "sampleRateNoteStudio": "Studio",
     "sampleRateNoteHiRes": "Hi-res",
-    "bufferHint64": "Tightest timing — best feel, highest CPU and dropout risk.",
-    "bufferHint128": "Low latency — a solid default for most interfaces.",
-    "bufferHint256": "Balanced — safe headroom with still-tight timing.",
-    "bufferHint512": "Most stable — pick this if you hear clicks or dropouts.",
     "notMeasured": "Not measured",
     "noSignalDetected": "No signal detected",
     "latencyMs": "{milliseconds} ms",
@@ -2168,6 +2164,15 @@
         "placeholders": {
             "rate": {
                 "type": "String"
+            }
+        }
+    },
+    "audioEffectsOverBudgetBuffer": "Your effects need more processing than a {frames}-sample buffer leaves. Remove some effects first.",
+    "@audioEffectsOverBudgetBuffer": {
+        "description": "Banner when a smaller buffer is refused because the effects would not fit the audio thread's budget (#1270 D19, #1529). frames is the buffer size in samples.",
+        "placeholders": {
+            "frames": {
+                "type": "int"
             }
         }
     },

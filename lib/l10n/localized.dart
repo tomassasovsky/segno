@@ -513,13 +513,6 @@ extension EngineLocalizations on AppLocalizations {
     return sampleRateKhz(text);
   }
 
-  String bufferHint(int frames) => switch (frames) {
-    <= 64 => bufferHint64,
-    128 => bufferHint128,
-    256 => bufferHint256,
-    _ => bufferHint512,
-  };
-
   String sampleRateNote(int rate) => switch (rate) {
     44100 => sampleRateNoteCd,
     48000 => sampleRateNoteStudio,

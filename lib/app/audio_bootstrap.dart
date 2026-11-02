@@ -1,6 +1,7 @@
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/console_audio_devices.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/audio_tempo_families.dart';
 import 'package:segno/looper/application/settings_families.dart';
@@ -530,13 +531,14 @@ Future<AutoStartResult> _tryAutoStartEngine({
   return (started: true, recoveryConfig: null);
 }
 
-/// The buffer a first run asks for and saves.
-const _firstRunBufferFrames = 128;
-
 /// Starts the engine on a first run (no saved config) and persists the chosen
 /// config so later launches take the normal saved path. Opens the first
-/// non-default duplex interface ([pickConsoleAudioDevices]), falling back to
-/// the system default. Returns whether the engine started.
+/// non-default duplex interface ([pickConsoleAudioDevices]), or the system
+/// default when there is none, at [AudioSetupState.defaultSampleRate] and
+/// [AudioSetupState.defaultBufferFrames]. If that does not open, it tries the
+/// same interface at its own rate and period, and then the system default at
+/// its own rate and period, the last try that has to come up. Returns whether
+/// the engine started.
 Future<bool> _firstRunAutoStart({
   required LooperRepository repository,
   required SettingsRepository settings,
@@ -558,17 +560,31 @@ Future<bool> _firstRunAutoStart({
     );
   }
 
-  // An explicit buffer, the one saved below: a warm-up opens the player's
-  // buffer only at the switch, so the device's own default is never seen
-  // before the config is saved (#1533).
+  // Every try is a warm-up (#1533): the device opens the try's rate at the
+  // warm-up buffer, and its own buffer only at the switch. A refused rate is
+  // seen here; a refused buffer at the switch, which keeps the warm-up
+  // config running and says so.
   var result = repository.startEngine(
     EngineConfig(
-      bufferFrames: _firstRunBufferFrames,
+      sampleRate: AudioSetupState.defaultSampleRate,
+      bufferFrames: AudioSetupState.defaultBufferFrames,
       playbackDeviceId: playbackId,
       captureDeviceId: captureId,
     ),
     warmUp: true,
   );
+  if (result == EngineResult.device) {
+    // The interface would not open at the default rate or period: keep it,
+    // at its own.
+    AppLog.warn(
+      'audio first-run: default rate/buffer open failed '
+      'result=${result.name}; retrying at the device default',
+    );
+    result = repository.startEngine(
+      EngineConfig(playbackDeviceId: playbackId, captureDeviceId: captureId),
+      warmUp: true,
+    );
+  }
   if (!result.isOk && (playbackId.isNotEmpty || captureId.isNotEmpty)) {
     // Console pin failed (interface busy/absent) — fall back to system default
     // so the kiosk still comes up, matching pre-auto-pin first-run behavior.
@@ -578,10 +594,7 @@ Future<bool> _firstRunAutoStart({
     );
     playbackId = '';
     captureId = '';
-    result = repository.startEngine(
-      const EngineConfig(bufferFrames: _firstRunBufferFrames),
-      warmUp: true,
-    );
+    result = repository.startEngine(const EngineConfig(), warmUp: true);
   }
   if (!result.isOk) {
     AppLog.error('audio first-run: open failed result=${result.name}');
@@ -631,10 +644,20 @@ Future<bool> _firstRunAutoStart({
     );
   }
   final status = repository.state.status;
+  // What the try asked for, not the warm-up buffer that runs now (#1533). A
+  // try at the device's own period saves 0, the device's own, since that
+  // period is only known once the switch has opened it.
+  final asked = repository.lastEngineConfig ?? const EngineConfig();
   await settings.saveAudioConfig(
     StoredAudioConfig(
-      sampleRate: status.sampleRate > 0 ? status.sampleRate : 48000,
-      bufferFrames: _firstRunBufferFrames,
+      sampleRate: status.sampleRate > 0
+          ? status.sampleRate
+          : AudioSetupState.defaultSampleRate,
+      bufferFrames: asked.bufferFrames > 0
+          ? asked.bufferFrames
+          : status.warmingUp
+          ? 0
+          : status.bufferFrames,
       playbackDeviceId: playbackId,
       captureDeviceId: captureId,
     ),

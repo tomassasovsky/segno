@@ -234,6 +234,8 @@ class _Workspace extends StatelessWidget {
     if (rate != null) {
       return l10n.audioEffectsOverBudgetRate(l10n.sampleRateKhzLabel(rate));
     }
+    final frames = refusal.overBudgetBuffer;
+    if (frames != null) return l10n.audioEffectsOverBudgetBuffer(frames);
     final device = refusal.refusedDevice;
     if (device != null) return l10n.audioDeviceRefused(device);
     if (refusal.settingsRefused) return l10n.audioSettingsRefused;
@@ -509,20 +511,18 @@ class _EngineColumn extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              for (final frames in AudioSetupState.bufferSizes)
-                LoopChoiceButton(
-                  key: Key('device_buffer_$frames'),
-                  label: '$frames',
-                  selected: shown.bufferFrames == frames,
-                  width: 198,
-                  height: 84,
-                  fontSize: 28,
-                  onTap: () => cubit.editBuffer(frames),
-                ),
-            ],
+          // The pen's 831 of content, split equally with its 13 px gaps
+          // (28/01; five buffers since #1529).
+          LoopChoiceRow<int>(
+            values: AudioSetupState.bufferSizes,
+            labelOf: (frames) => '$frames',
+            keyOf: (frames) => Key('device_buffer_$frames'),
+            selected: shown.bufferFrames,
+            onSelected: cubit.editBuffer,
+            width: 831,
+            height: 84,
+            gap: 13,
+            fontSize: 28,
           ),
           const SizedBox(height: 18),
           Row(
