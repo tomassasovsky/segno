@@ -381,6 +381,13 @@ jobs:
         run: >
           bash packages/segno_engine/src/test/bench/bench_alias.sh
           | tee bench-alias-arm64.md
+      # The effects matrix (#1547): its CI subset runs in native-tests; this
+      # builds the full run's binary for the console, where the owner runs
+      # it, and runs the subset on arm64 too.
+      - name: Run the effects matrix subset
+        if: always()
+        shell: bash
+        run: bash packages/segno_engine/src/test/bench/bench_fx_matrix.sh --ci
       - name: Upload the effects bench and its report for the appliance
         if: always()
         uses: actions/upload-artifact@v7
@@ -390,6 +397,7 @@ jobs:
             packages/segno_engine/build/bench/bench_fx_cpu
             packages/segno_engine/build/bench/bench_pitch_algos
             packages/segno_engine/build/bench/bench_alias
+            packages/segno_engine/build/bench/bench_fx_matrix
             bench-fx-kinds-arm64.md
             bench-pitch-algos-arm64.md
             bench-alias-arm64.md
