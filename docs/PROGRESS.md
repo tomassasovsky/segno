@@ -84,7 +84,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   and period, then the system default) can fail over. `LooperRepository`
   keeps the player's config as the warm-up target, so `lastEngineConfig` and
   the audio setup never show or save 512. A player's config already at 512
-  skips the warm-up and restores its record offset at start.
+  skips the warm-up and owes its record offset at start (#1541).
 - While warming up, the engine's master gain is held at 0. It is applied
   after everything is summed, so nothing is heard, and the remembered gain
   and the saved mix are untouched.
@@ -96,16 +96,44 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - `AudioWarmUpCubit` ticks every 500 ms while a warm-up runs. Ticks count as
   quiet only after the first rasterized frame. When the sum of the session
   window's late periods, gaps and xruns has been still for 3 s, or 20 s after
-  load, it sets the record offset saved for the player's buffer and calls
-  `finishWarmUp()`. That reopens at the player's config with the loops kept,
-  under the device-change guard. If the device rounded the buffer, the
-  transport stays closed until the cubit sets the opened buffer's offset.
+  load, it calls `finishWarmUp()`. That reopens at the player's config with
+  the loops kept, under the device-change guard. What opens then owes its
+  record offset (#1541, below).
 - If the device refuses the player's config, the 512 config runs and is
   heard. The device page shows the existing refused banner (asked, running),
   nothing is saved, and the next replug warms up for the player's config
   again.
 - Device checks owed: a cold boot and a Scarlett replug at 48 kHz / 32, with
   no xrun during or after the switch and no sound before it.
+
+## November 2026 Record offset measured through the loopback (#1541)
+
+- The repository owes the record offset of what it opens after the warm-up
+  switch (whatever buffer the device rounded to, or the warm-up config a
+  refused switch leaves running), after a start with `warmUp` that needed
+  none, and after an `applyAudioConfig` that opened a config.
+  `EngineStatus.recordOffsetOwed` says so; until `setRecordOffset` the master
+  gain is 0 and the transport closed, and the stage shows "Audio is
+  starting…" (`EngineStatus.starting`).
+- `AudioSetupCubit` is the one owner of the offset. When it is owed, it sets
+  the offset saved for that device, rate and buffer. With none saved and a
+  loopback channel on the interface (`excludedInputMask`), it first measures
+  through it under the calibration guard and saves the result under the
+  `.p8` key. Otherwise it sets 0. The burst is 1e-4 (-80 dBFS) on output 1,
+  timed on the loopback channels. A failure (timeout, no return, refused,
+  guard busy) leaves 0, saves nothing, is logged, and the latency row says
+  "Loopback measurement failed. Measure with a cable." The next owed offset
+  of that profile tries again. A saved offset is never measured over, so a
+  cable result always wins. `AudioWarmUpCubit` no longer touches offsets.
+- Engine: Linux reads the loopback channels from the `scarlett2` routing
+  (`PCM NN Capture Enum` = `PCM <n>`, through a `dlopen`'d libasound control
+  handle), so the console's capture 5 (`PCM 1`) is a loopback channel and is
+  excluded from recording, monitoring and routing, as on macOS. The
+  detector's silence floor is now `4e-4 x amplitude` (1e-4 at the cable
+  test's 0.25, as before).
+- Device checks owed: delete the 48 kHz / 32 offset and reboot. That should
+  measure about 292 frames with nothing audible, and a buffer change in
+  Settings > Audio should measure the new profile once.
 
 ## November 2026 clear-track hold fills the pill (#1534)
 

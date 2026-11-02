@@ -2293,6 +2293,10 @@
     "@deviceMeasureNote": {
         "description": "Under the latency while nothing is measured."
     },
+    "deviceLoopbackFailed": "Loopback measurement failed. Measure with a cable.",
+    "@deviceLoopbackFailed": {
+        "description": "Under the latency when the automatic measurement through the interface's own loopback did not return: nothing is compensated until the cable test measures."
+    },
     "deviceApplyBeforeMeasuring": "Apply audio settings before measuring.",
     "@deviceApplyBeforeMeasuring": {
         "description": "Why Measure is disabled while settings are drafted."

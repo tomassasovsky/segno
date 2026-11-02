@@ -5,9 +5,6 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/looper/looper.dart';
-import 'package:settings_repository/settings_repository.dart';
-
-import '../../helpers/helpers.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -20,6 +17,7 @@ const _target = EngineConfig(
 LooperState _state({
   bool warmingUp = true,
   bool present = true,
+  bool owed = false,
 }) => LooperState(
   status: EngineStatus(
     deviceName: 'Scarlett 4i4',
@@ -28,6 +26,7 @@ LooperState _state({
     isConnected: true,
     devicePresent: present,
     warmingUp: warmingUp,
+    recordOffsetOwed: owed,
   ),
 );
 
@@ -41,12 +40,12 @@ CallbackTelemetry _telemetry({int late = 0, int gaps = 0, int xruns = 0}) =>
     );
 
 /// The warm-up's settle rule (#1533): it watches from `ready` on, switches
-/// once the callback has run a quiet window with no new fault, switches
-/// anyway at the cap, and sets the player's record offset before the switch.
+/// once the callback has run a quiet window with no new fault, and switches
+/// anyway at the cap. The record offset the switch owes is the audio setup's
+/// (#1541), never this cubit's.
 void main() {
   group('AudioWarmUpCubit', () {
     late _MockLooperRepository looper;
-    late SettingsRepository settings;
     late GuardRegistry guards;
     late StreamController<void> ticker;
     late StreamController<LooperState> states;
@@ -57,7 +56,6 @@ void main() {
 
     setUp(() async {
       looper = _MockLooperRepository();
-      settings = SettingsRepository(store: FakeKeyValueStore());
       guards = GuardRegistry();
       ticker = StreamController<void>.broadcast();
       states = StreamController<LooperState>.broadcast();
@@ -79,7 +77,7 @@ void main() {
       when(looper.finishWarmUp).thenAnswer((_) {
         calls.add('finish');
         if (finishResult.result != EngineResult.notReady) {
-          state = _state(warmingUp: false);
+          state = _state(warmingUp: false, owed: true);
           states.add(state);
         }
         return finishResult;
@@ -100,7 +98,6 @@ void main() {
     Future<AudioWarmUpCubit> build({Future<void> Function()? ready}) async {
       final cubit = AudioWarmUpCubit(
         looper: looper,
-        settings: settings,
         guards: guards,
         ready: ready,
         ticker: ticker.stream,
@@ -135,7 +132,6 @@ void main() {
       state = _state(warmingUp: false);
       final cubit = AudioWarmUpCubit(
         looper: looper,
-        settings: settings,
         guards: guards,
         interval: const Duration(milliseconds: 10),
       );
@@ -154,7 +150,6 @@ void main() {
       final ready = Completer<void>();
       final cubit = AudioWarmUpCubit(
         looper: looper,
-        settings: settings,
         guards: guards,
         ready: () => ready.future,
         ticker: ticker.stream,
@@ -178,21 +173,8 @@ void main() {
       verify(looper.finishWarmUp).called(1);
     });
 
-    test('switches after a quiet window, setting the offset saved for the '
-        "player's buffer first", () async {
-      await settings.saveLatencyOffsetFrames(
-        device: 'Scarlett 4i4',
-        sampleRate: 48000,
-        bufferFrames: 32,
-        frames: 300,
-      );
-      // The warm-up buffer's own profile is not the one restored.
-      await settings.saveLatencyOffsetFrames(
-        device: 'Scarlett 4i4',
-        sampleRate: 48000,
-        bufferFrames: kWarmUpBufferFrames,
-        frames: 900,
-      );
+    test('switches after a quiet window, leaving the record offset to the '
+        'audio setup', () async {
       final cubit = await build();
 
       // The first tick takes the baseline; three more without a new fault
@@ -201,39 +183,16 @@ void main() {
       verifyNever(looper.finishWarmUp);
       await tick();
 
-      expect(calls, ['offset 300', 'finish']);
+      expect(calls, ['finish']);
+      verifyNever(() => looper.setRecordOffset(any()));
+      // The owed offset that follows is no warm-up: nothing ticks for it.
       await tick();
       expect(cubit.state.status, AudioWarmUpStatus.idle);
-    });
-
-    test('a refused switch sets the offset of the config that runs', () async {
-      await settings.saveLatencyOffsetFrames(
-        device: 'Scarlett 4i4',
-        sampleRate: 48000,
-        bufferFrames: 32,
-        frames: 300,
-      );
-      await settings.saveLatencyOffsetFrames(
-        device: 'Scarlett 4i4',
-        sampleRate: 48000,
-        bufferFrames: kWarmUpBufferFrames,
-        frames: 900,
-      );
-      finishResult = const AudioApplyResult(
-        status: AudioApplyStatus.refused,
-        result: EngineResult.device,
-      );
-      await build();
-
-      await tick(4);
-
-      expect(calls, ['offset 300', 'finish', 'offset 900']);
     });
 
     test('a screen that never draws still lets the switch happen', () async {
       final cubit = AudioWarmUpCubit(
         looper: looper,
-        settings: settings,
         guards: guards,
         ready: () => Completer<void>().future,
         ticker: ticker.stream,
@@ -248,52 +207,6 @@ void main() {
       await tick();
 
       verify(looper.finishWarmUp).called(1);
-    });
-
-    test('a buffer the device rounded gets the offset of the buffer it '
-        'opened', () async {
-      await settings.saveLatencyOffsetFrames(
-        device: 'Scarlett 4i4',
-        sampleRate: 48000,
-        bufferFrames: 32,
-        frames: 300,
-      );
-      await settings.saveLatencyOffsetFrames(
-        device: 'Scarlett 4i4',
-        sampleRate: 48000,
-        bufferFrames: 48,
-        frames: 420,
-      );
-      when(looper.finishWarmUp).thenAnswer((_) {
-        calls.add('finish');
-        // Asked 32, opened 48: the transport waits for 48's offset.
-        state = const LooperState(
-          status: EngineStatus(
-            deviceName: 'Scarlett 4i4',
-            sampleRate: 48000,
-            bufferFrames: 48,
-            isConnected: true,
-            devicePresent: true,
-            warmingUp: true,
-          ),
-        );
-        return finishResult;
-      });
-      final cubit = await build();
-
-      await tick(4);
-
-      expect(calls, ['offset 300', 'finish', 'offset 420']);
-      verify(looper.finishWarmUp).called(1);
-      expect(cubit.state.status, AudioWarmUpStatus.settling);
-    });
-
-    test('an unmeasured profile switches with no offset', () async {
-      await build();
-
-      await tick(4);
-
-      expect(calls, ['offset 0', 'finish']);
     });
 
     test('a new fault restarts the quiet window', () async {

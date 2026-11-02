@@ -273,6 +273,7 @@ void main() {
     WidgetTester tester, {
     MidiConnection connection = const MidiConnection(),
     LooperState looperState = const LooperState(),
+    EngineStatus status = _previewStatus,
   }) {
     final looper = _MockLooperRepository();
     when(() => looper.sessionRevision).thenReturn(0);
@@ -322,8 +323,14 @@ void main() {
       LooperState(
         tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
         outputBusCount: 1,
-        status: _previewStatus,
+        status: status,
       ),
+    );
+    // A status that owes its record offset is settled at once: the loopback
+    // measurement does not return (#1541).
+    when(() => looper.setRecordOffset(any())).thenReturn(EngineResult.ok);
+    when(looper.measureLoopbackLatency).thenAnswer(
+      (_) async => const LatencyResult(LatencyOutcome.timedOut),
     );
     when(looper.allMonitors).thenReturn(const {});
     when(
@@ -840,10 +847,6 @@ void main() {
     );
   }, skip: !rendersScreenshots);
 
-  /// The rig the Audio previews draw: an open device on a 48k/128 clock, with
-  /// the latency measured and a record offset applied.
-  const audioRig = LooperState(tracks: [Track()], status: _previewStatus);
-
   Future<
     ({
       ControlCubit control,
@@ -860,9 +863,13 @@ void main() {
       MonitorCubit monitor,
     })
   >
-  pumpAudio(WidgetTester tester) async {
+  pumpAudio(WidgetTester tester, {EngineStatus status = _previewStatus}) async {
     await size(tester);
-    final providers = controlProviders(tester, looperState: audioRig);
+    final providers = controlProviders(
+      tester,
+      looperState: LooperState(tracks: const [Track()], status: status),
+      status: status,
+    );
     await pumpPage(
       tester,
       page: const DevicePage(),
@@ -877,6 +884,29 @@ void main() {
     await expectLater(
       find.byType(Scaffold),
       matchesGoldenFile('goldens/settings_device.png'),
+    );
+  }, skip: !rendersScreenshots);
+
+  testWidgets('Device page, the loopback measurement failed (#1541)', (
+    tester,
+  ) async {
+    await pumpAudio(
+      tester,
+      status: const EngineStatus(
+        isConnected: true,
+        deviceName: 'Scarlett 18i20',
+        sampleRate: 48000,
+        bufferFrames: 32,
+        inputChannels: 18,
+        outputChannels: 20,
+        devicePresent: true,
+        excludedInputMask: 1 << 16,
+        recordOffsetOwed: true,
+      ),
+    );
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/settings_device_loopback_failed.png'),
     );
   }, skip: !rendersScreenshots);
 
@@ -953,7 +983,10 @@ void main() {
   }) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    final rig = controlProviders(tester, looperState: audioRig);
+    final rig = controlProviders(
+      tester,
+      looperState: const LooperState(tracks: [Track()], status: _previewStatus),
+    );
     final system = systemProviders(
       tester,
       looper: rig.looper,

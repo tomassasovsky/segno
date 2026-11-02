@@ -382,10 +382,12 @@ class _TracksViewState extends State<TracksView> {
                                 ),
                                 child: AudioNotRunningBanner(),
                               )
-                            // A warm-up runs the device silent with the
-                            // transport closed (#1533): the stage says so
-                            // in the same place rather than looking ready.
-                            else if (chrome.warmingUp && !deviceLost)
+                            // While audio starts (a warm-up, #1533, or an
+                            // owed record offset, #1541) the device runs
+                            // silent with the transport closed: the stage
+                            // says so in the same place rather than looking
+                            // ready.
+                            else if (chrome.audioStarting && !deviceLost)
                               const Padding(
                                 padding: EdgeInsets.fromLTRB(
                                   StageTopBar.sideInset,
@@ -583,7 +585,7 @@ class _ChromeState extends Equatable {
     required this.bars,
     required this.beats,
     required this.isConnected,
-    required this.warmingUp,
+    required this.audioStarting,
     required this.primaryTrack,
     required this.quantizeDiv,
     required this.recDub,
@@ -604,7 +606,7 @@ class _ChromeState extends Equatable {
         for (final track in state.tracks) _beatsWithoutBars(track, state),
       ],
       isConnected: state.status.isConnected,
-      warmingUp: state.status.warmingUp,
+      audioStarting: state.status.starting,
       primaryTrack: state.transport.primaryTrack,
       quantizeDiv: state.transport.quantizeDiv,
       recDub: state.transport.recDub,
@@ -625,7 +627,7 @@ class _ChromeState extends Equatable {
   final List<int?> bars;
   final List<int?> beats;
   final bool isConnected;
-  final bool warmingUp;
+  final bool audioStarting;
   final int primaryTrack;
   final GridDivision quantizeDiv;
   final bool recDub;
@@ -636,7 +638,7 @@ class _ChromeState extends Equatable {
     bars,
     beats,
     isConnected,
-    warmingUp,
+    audioStarting,
     primaryTrack,
     quantizeDiv,
     recDub,

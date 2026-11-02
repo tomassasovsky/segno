@@ -277,9 +277,10 @@ class LooperRepository {
       _sessionBootStartBlocked;
 
   /// Whether a transport press is refused right now: a Session holds the
-  /// audio ([_sessionAudioReserved]), or the device still warms up (#1533),
+  /// audio ([_sessionAudioReserved]), the device still warms up (#1533),
   /// when a take would be recorded with the warm-up buffer's offset and
-  /// heard only once the player's own config opens.
+  /// heard only once the player's own config opens, or the record offset of
+  /// what just opened is still owed (#1541).
   bool get _transportReserved =>
       _sessionAudioReserved || _warmUpTarget != null || _offsetOwed;
 
@@ -296,10 +297,13 @@ class LooperRepository {
   /// other successful open, by [finishWarmUp] and by [stopEngine].
   EngineConfig? _warmUpTarget;
 
-  /// The switch out of a warm-up opened another buffer than the one asked
-  /// (the device rounded it), so the record offset set for the asked one is
-  /// not this profile's. The transport stays closed, and the status reads
-  /// warming up, until [setRecordOffset] sets the opened profile's (#1533).
+  /// The record offset of what just opened is owed (#1541): after the
+  /// warm-up switch ([finishWarmUp]), after an [applyAudioConfig] that
+  /// opened a config, and after a [startEngine] with `warmUp` that needed
+  /// none. The opened device, rate and buffer may have no saved offset yet,
+  /// which the audio setup then measures. Until [setRecordOffset] sets it,
+  /// the transport is closed and the master gain held at 0, as during a
+  /// warm-up ([EngineStatus.recordOffsetOwed]).
   bool _offsetOwed = false;
 
   /// The player's config a warm-up switch was refused (#1533). A returning
@@ -2632,7 +2636,8 @@ class LooperRepository {
       recordOffsetFrames: s.recordOffsetFrames,
       fxAddedLatencyFrames: s.fxAddedLatencyFrames,
       reopen: _lastReopen,
-      warmingUp: _warmUpTarget != null || _offsetOwed,
+      warmingUp: _warmUpTarget != null,
+      recordOffsetOwed: _offsetOwed,
     ),
     // From the repository's own re-apply CACHE, not `s.outputEnabledMask`, on
     // the same reasoning as the quantize override above: the gate is re-applied
@@ -2674,8 +2679,19 @@ class LooperRepository {
   /// ([EngineConfig.warmUp]) instead: the same rate and device with the
   /// largest buffer, every output silent and the transport closed
   /// ([EngineStatus.warmingUp]) until [finishWarmUp] opens [config] itself.
-  /// The boot auto-start and the boot-time recovery start this way.
-  EngineResult startEngine(EngineConfig config, {bool warmUp = false}) {
+  /// The boot auto-start and the boot-time recovery start this way. A
+  /// [config] that needs no warm-up opens as it is, with its record offset
+  /// owed ([EngineStatus.recordOffsetOwed], #1541).
+  EngineResult startEngine(EngineConfig config, {bool warmUp = false}) =>
+      _startEngine(config, warmUp: warmUp, owesOffset: warmUp);
+
+  /// [startEngine]; with [owesOffset], a config that opens as it is owes
+  /// its record offset.
+  EngineResult _startEngine(
+    EngineConfig config, {
+    bool warmUp = false,
+    bool owesOffset = false,
+  }) {
     if (_startRefused) return EngineResult.notReady;
     _retireEngineLifetime();
     final replayedPriorEngine = _hasOpenedEngine;
@@ -2692,6 +2708,7 @@ class LooperRepository {
     return _replayRig(
       opened,
       warmUpTarget: warm ? config : null,
+      owesOffset: owesOffset && !warm,
       replayedPriorEngine: replayedPriorEngine,
       foldedHistory: foldedHistory,
     );
@@ -2722,11 +2739,13 @@ class LooperRepository {
   /// the audio setup's re-apply instead.
   ///
   /// [config] is what the device opens; [warmUpTarget], when given, is the
-  /// player's config that [config] warms up for (#1533).
+  /// player's config that [config] warms up for (#1533). With [owesOffset]
+  /// the opened config owes its record offset (#1541).
   EngineResult _reopenEngine(
     EngineConfig config, {
     bool keepMaterial = false,
     EngineConfig? warmUpTarget,
+    bool owesOffset = false,
   }) {
     if (_startRefused) return EngineResult.notReady;
     // The stopped engine still reports the rate the loops were recorded at.
@@ -2782,6 +2801,7 @@ class LooperRepository {
     final result = _replayRig(
       config,
       warmUpTarget: warmUpTarget,
+      owesOffset: owesOffset && warmUpTarget == null,
       replayedPriorEngine: true,
       foldedHistory: foldedHistory,
     );
@@ -2811,7 +2831,9 @@ class LooperRepository {
   /// rate) and the previous config is reopened, the loops untouched.
   ///
   /// [config] is the player's own, so an apply that opens it ends a warm-up
-  /// (#1533); a refused one puts the warm-up back as it was.
+  /// (#1533); a refused one puts the warm-up back as it was. Whatever config
+  /// the apply leaves open owes its record offset (#1541), unless it is that
+  /// warm-up.
   ///
   /// When [config] cannot be opened, the previous config is reopened the same
   /// way and the result is [AudioApplyStatus.refused]; when that fails too,
@@ -2830,7 +2852,7 @@ class LooperRepository {
     final previous = _lastEngineConfig;
     final previousTarget = _warmUpTarget;
     if (!_intendRunning || previous == null) {
-      final result = startEngine(config);
+      final result = _startEngine(config, owesOffset: true);
       return AudioApplyResult(
         status: result.isOk
             ? AudioApplyStatus.applied
@@ -2843,7 +2865,11 @@ class LooperRepository {
     final keepMaterial = state.hasContent;
     _engine.stop();
     if (!_reopenVerdictPending) _lastReopen = null;
-    final result = _reopenEngine(config, keepMaterial: keepMaterial);
+    final result = _reopenEngine(
+      config,
+      keepMaterial: keepMaterial,
+      owesOffset: true,
+    );
     final refusedRate = result == EngineResult.wouldClear ? _lastOpenedRate : 0;
     if (result.isOk) {
       // The device answered: nothing is lost any more.
@@ -2868,6 +2894,7 @@ class LooperRepository {
       previous,
       keepMaterial: keepMaterial,
       warmUpTarget: previousTarget,
+      owesOffset: true,
     );
     final verdict = _moreLost(attempt, _lastReopen);
     if (back.isOk) {
@@ -2905,18 +2932,16 @@ class LooperRepository {
   /// ([lastEngineConfig]) through [applyAudioConfig], keeping the loops, and
   /// lets it be heard. Called once the console has settled.
   ///
-  /// Applied: the player's config runs, heard. Refused (the device would not
-  /// open it): the warm-up config runs again and is heard too, since a
-  /// console left silent is worse; the outcome says what was asked and the
-  /// audio setup names both. Waiting (neither opened): the warm-up stays and
-  /// the reconnect supervisor warms up again when the interface answers.
-  /// Failed: the engine is stopped. A refused admission
-  /// ([EngineResult.notReady]) changes nothing, so the caller tries again.
-  ///
-  /// The caller sets the record offset for the asked buffer first. When the
-  /// device opened another one, the transport stays closed until the caller
-  /// sets that buffer's offset too ([EngineStatus.warmingUp] stays true). A
-  /// refused config is retried at the next reconnect.
+  /// Applied: the player's config runs. Refused (the device would not open
+  /// it): the warm-up config runs again, since a console left silent is
+  /// worse; the outcome says what was asked and the audio setup names both.
+  /// Either way what runs owes its record offset (#1541): silent, with the
+  /// transport closed, until the audio setup sets it, measuring it first
+  /// when that device, rate and buffer have none saved. Waiting (neither
+  /// opened): the warm-up stays and the reconnect supervisor warms up again
+  /// when the interface answers. Failed: the engine is stopped. A refused
+  /// admission ([EngineResult.notReady]) changes nothing, so the caller tries
+  /// again. A refused config is retried at the next reconnect.
   /// Applied at once, changing nothing, when no warm-up runs.
   AudioApplyResult finishWarmUp() {
     final target = _warmUpTarget;
@@ -2930,19 +2955,15 @@ class LooperRepository {
     if (outcome.status == AudioApplyStatus.refused &&
         outcome.result != EngineResult.notReady &&
         _warmUpTarget != null) {
+      // The warm-up config runs on as the player's: it owes its offset like
+      // any config the apply leaves open, so it stays silent until then.
       _warmUpTarget = null;
-      _engine.setMasterGain(_masterGain);
+      _offsetOwed = true;
+      _engine.setMasterGain(_engineMasterGain);
       // The budget was the target's: what fits the warm-up buffer that runs
       // now comes back on.
       _admitRig(release: true);
       _refusedTarget = target;
-    }
-    final opened = _engine.snapshot().bufferFrames;
-    if (outcome.status == AudioApplyStatus.applied &&
-        target.bufferFrames > 0 &&
-        opened > 0 &&
-        opened != target.bufferFrames) {
-      _offsetOwed = true;
     }
     // No caller shows an apply's verdict here, so a switch that lost loops
     // says so on the status, as a reconnect does (rule 3).
@@ -2992,6 +3013,7 @@ class LooperRepository {
     required bool replayedPriorEngine,
     required Set<(int, int)> foldedHistory,
     EngineConfig? warmUpTarget,
+    bool owesOffset = false,
   }) {
     {
       _fxSlots.clear();
@@ -3000,9 +3022,10 @@ class LooperRepository {
       _monitorSlots.clear();
       _lastEngineConfig = config;
       // Before the master gain below and before any chain is admitted: a
-      // warm-up is silent, and its effects budget is the target's.
+      // warm-up, and a config whose record offset is owed, are silent, and a
+      // warm-up's effects budget is the target's.
       _warmUpTarget = warmUpTarget;
-      _offsetOwed = false;
+      _offsetOwed = owesOffset;
       _refusedTarget = null;
       _intendRunning = true;
       // R2 (#1515): what the rig cannot run comes up held off, before any
@@ -3444,14 +3467,22 @@ class LooperRepository {
   LoopbackInfo detectLoopback() =>
       loopbackInfoFromEngine(_engine.detectLoopback());
 
-  /// The level of the measuring burst: -12 dBFS.
+  /// The level of the cable test's burst: -12 dBFS.
   static const double latencyAmplitude = 0.25;
+
+  /// The level of the loopback measurement's burst (#1541): -80 dBFS. The
+  /// interface's loopback returns it bit-exact (about 840 steps of a 24-bit
+  /// stream), while the analog output it also reaches plays it, for 10 ms,
+  /// far below anything heard at a sane monitoring level.
+  static const double loopbackAmplitude = 1e-4;
 
   /// How long [measureLatency] waits for its result before it cancels.
   static const Duration latencyTimeout = Duration(seconds: 2);
 
-  /// Measures the round trip of one cable (#1270 Part 3b): a burst on
-  /// hardware [output], timed on hardware [input] (both 0-based).
+  /// Measures the round trip of one cable (#1270 Part 3b): a burst at
+  /// [amplitude] on hardware [output], timed on hardware [input] (both
+  /// 0-based), or on the interface's loopback channels for
+  /// [latencyLoopbackInput].
   ///
   /// Completes on this request's own result. The engine keeps only the last
   /// state, so the wait also ends, cancelled, on idle under this request,
@@ -3462,6 +3493,7 @@ class LooperRepository {
   Future<LatencyResult> measureLatency({
     required int output,
     required int input,
+    double amplitude = latencyAmplitude,
   }) {
     // The burst bypasses the master gain a warm-up silences with, and an
     // offset measured on the warm-up buffer belongs to no profile the player
@@ -3475,7 +3507,7 @@ class LooperRepository {
     final result = _engine.measureLatencyPath(
       output: output,
       input: input,
-      amplitude: latencyAmplitude,
+      amplitude: amplitude,
       request: request,
     );
     if (!result.isOk) return Future.value(LatencyResult.refused(result));
@@ -3490,6 +3522,16 @@ class LooperRepository {
     _latencyWait = wait;
     return wait.completer.future;
   }
+
+  /// Measures the round trip through the interface's own loopback (#1541): a
+  /// [loopbackAmplitude] burst on output 1, timed on the loopback channels
+  /// ([EngineStatus.excludedInputMask]). Digital, so it leaves out the
+  /// converters a cable passes through. As [measureLatency].
+  Future<LatencyResult> measureLoopbackLatency() => measureLatency(
+    output: 0,
+    input: latencyLoopbackInput,
+    amplitude: loopbackAmplitude,
+  );
 
   /// Cancels the measurement in flight; its wait completes
   /// [LatencyOutcome.cancelled] and the record offset stays as it was.
@@ -6357,14 +6399,23 @@ class LooperRepository {
   /// Sets the record-offset latency compensation in frames. Remembered and
   /// re-applied on every (re)start (device change / reconnect) so the
   /// compensation survives — a fresh engine start resets it to 0.
+  ///
+  /// Settles an owed offset ([EngineStatus.recordOffsetOwed], #1541): the
+  /// outputs are heard and the transport opens again.
   EngineResult setRecordOffset(int frames) {
     _recordOffset = frames < 0 ? 0 : frames;
-    if (_offsetOwed) {
-      _offsetOwed = false;
+    final owed = _offsetOwed;
+    _offsetOwed = false;
+    if (!_intendRunning) {
+      if (owed) _reproject();
+      return EngineResult.ok;
+    }
+    final result = _engine.setRecordOffset(_recordOffset);
+    if (owed) {
+      _engine.setMasterGain(_engineMasterGain);
       _reproject();
     }
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setRecordOffset(_recordOffset);
+    return result;
   }
 
   /// Sets track [channel]'s record timing override (accepted design, Length
@@ -8713,10 +8764,12 @@ class LooperRepository {
   }
 
   /// The master gain the engine runs with: the remembered [_masterGain], or
-  /// 0 while the device warms up (#1533). Applied after everything is
-  /// summed, so tracks, monitors, the click, the backing and the audition are
-  /// all silent without one remembered or saved level changing.
-  double get _engineMasterGain => _warmUpTarget != null ? 0 : _masterGain;
+  /// 0 while the device warms up (#1533) or its record offset is owed
+  /// (#1541). Applied after everything is summed, so tracks, monitors, the
+  /// click, the backing and the audition are all silent without one
+  /// remembered or saved level changing.
+  double get _engineMasterGain =>
+      _warmUpTarget != null || _offsetOwed ? 0 : _masterGain;
 
   /// Whether the master peak limiter is engaged.
   ///

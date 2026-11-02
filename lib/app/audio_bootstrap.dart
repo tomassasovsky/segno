@@ -28,9 +28,12 @@ typedef AutoStartResult = ({
 ///
 /// A start from a saved config is a warm-up (#1533): the device opens at the
 /// saved rate with the largest buffer, silent, and the saved settings and
-/// chains load onto it. `AudioWarmUpCubit` opens the saved config itself,
-/// and restores its record offset, once the console has settled. A first run
-/// opens as it is, so each of its tries can fall back on a refused buffer.
+/// chains load onto it. `AudioWarmUpCubit` opens the saved config itself
+/// once the console has settled. A saved config that needs no warm-up opens
+/// as it is. Either way the config that runs owes its record offset, which
+/// `AudioSetupCubit` sets (measuring it through the interface's loopback
+/// when none is saved, #1541) before anything is heard. A first run opens as
+/// it is, so each of its tries can fall back on a refused buffer.
 Future<AutoStartResult> tryAutoStartEngine({
   required LooperRepository repository,
   required SettingsRepository settings,
@@ -281,23 +284,8 @@ Future<AutoStartResult> _tryAutoStartEngine({
     );
   }
 
-  // Restore latency compensation for a config that opened as it is (one
-  // already at the warm-up buffer): only a saved offset for this device, rate
-  // and buffer, since nothing is measured without being asked (#1270, Q2).
-  // A warm-up's offset is restored by the switch to the saved buffer
-  // (`AudioWarmUpCubit`), since nothing records before it.
   final status = repository.state.status;
   final savedMix = await settings.loadMixSettings(status.deviceName);
-  if (!status.warmingUp) {
-    final savedOffset = await settings.loadLatencyOffsetFrames(
-      device: status.deviceName,
-      sampleRate: status.sampleRate,
-      bufferFrames: status.bufferFrames,
-    );
-    if (savedOffset != null && savedOffset > 0) {
-      repository.setRecordOffset(savedOffset);
-    }
-  }
 
   // Restore the global default loop multiple (×N). RecordOptionsCubit
   // normally applies this — but that cubit is not

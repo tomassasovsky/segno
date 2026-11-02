@@ -5,7 +5,6 @@ import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/logging/app_log.dart';
-import 'package:settings_repository/settings_repository.dart';
 
 part 'audio_warm_up_state.dart';
 
@@ -26,11 +25,11 @@ part 'audio_warm_up_state.dart';
 /// switch happens anyway, so it never waits forever. A device that goes
 /// missing restarts the count.
 ///
-/// The switch sets the record offset saved for the player's device, rate and
-/// buffer, then [LooperRepository.finishWarmUp] reopens at the player's config
-/// with the loops kept, and outputs and monitoring are heard from there. It
-/// runs under the device-change guard, like an Apply; an operation that holds
-/// the device defers it to the next tick.
+/// The switch is [LooperRepository.finishWarmUp]: it reopens at the player's
+/// config with the loops kept, and what runs then owes its record offset,
+/// which the audio setup settles (#1541) before anything is heard. It runs
+/// under the device-change guard, like an Apply; an operation that holds the
+/// device defers it to the next tick.
 class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
   /// Creates an [AudioWarmUpCubit].
   ///
@@ -40,7 +39,6 @@ class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
   /// new fault, and the switch happens anyway [cap] after watching began.
   AudioWarmUpCubit({
     required LooperRepository looper,
-    required SettingsRepository settings,
     required GuardRegistry guards,
     Future<void> Function()? ready,
     Stream<void>? ticker,
@@ -48,7 +46,6 @@ class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
     Duration quiet = const Duration(seconds: 3),
     Duration cap = const Duration(seconds: 20),
   }) : _looper = looper,
-       _settings = settings,
        _guards = guards,
        _ready = ready,
        _ticker = ticker,
@@ -58,7 +55,6 @@ class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
        super(const AudioWarmUpState());
 
   final LooperRepository _looper;
-  final SettingsRepository _settings;
   final GuardRegistry _guards;
   final Future<void> Function()? _ready;
   final Stream<void>? _ticker;
@@ -69,7 +65,6 @@ class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
   StreamSubscription<LooperState>? _stateSubscription;
   StreamSubscription<void>? _tickSubscription;
   var _loaded = false;
-  var _switching = false;
 
   /// Whether the startup work is done ([load]'s `ready`).
   var _isReady = false;
@@ -117,7 +112,6 @@ class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
           );
       return;
     }
-    if (_switching) return;
     unawaited(_tickSubscription?.cancel());
     _tickSubscription = null;
     _restart();
@@ -125,7 +119,7 @@ class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
   }
 
   void _tick() {
-    if (_switching || isClosed) return;
+    if (isClosed) return;
     final status = _looper.state.status;
     if (!status.warmingUp) {
       _follow(_looper.state);
@@ -147,87 +141,44 @@ class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
       _quiet = 0;
     }
     final settled = _quiet >= _quietTicks;
-    if (settled || _ticks >= _capTicks) {
-      unawaited(_switch(settled: settled));
-    }
+    if (settled || _ticks >= _capTicks) _switch(settled: settled);
   }
 
   /// What a dropout is made of: late periods, gaps and backend xruns.
   static int _faultsOf(CallbackWindowStats window) =>
       window.latePeriods + window.gapEvents + window.xrunTotal;
 
-  Future<void> _switch({required bool settled}) async {
-    _switching = true;
+  void _switch({required bool settled}) {
+    final target = _looper.lastEngineConfig;
+    if (target == null) return;
+    final OperationGuard guard;
     try {
-      final target = _looper.lastEngineConfig;
-      if (target == null) return;
-      final status = _looper.state.status;
-      // Both offsets before the switch, so whichever config runs after it
-      // has its own before the transport opens.
-      final offset = await _savedOffset(status, target.bufferFrames);
-      final warmOffset = await _savedOffset(status, status.bufferFrames);
-      if (isClosed || !_looper.state.status.warmingUp) return;
-      final OperationGuard guard;
-      try {
-        guard = _guards.enter(
-          GuardKind.deviceChange,
-          const GuardScope.internal(),
-          purpose: 'audio warm-up',
-        );
-      } on GuardRefused catch (refused) {
-        _logDeferred(refused.blockers.first.kind.name);
-        return;
-      }
-      final AudioApplyResult outcome;
-      try {
-        _looper.setRecordOffset(offset);
-        outcome = _looper.finishWarmUp();
-        if (outcome.status == AudioApplyStatus.refused &&
-            outcome.result != EngineResult.notReady) {
-          _looper.setRecordOffset(warmOffset);
-        }
-      } finally {
-        guard.release();
-      }
-      if (outcome.result == EngineResult.notReady) {
-        _logDeferred('a start fence');
-        return;
-      }
-      AppLog.info(
-        'audio warm-up: ${settled ? 'settled' : 'cap reached'} after '
-        '$_ticks ticks; switch to rate=${target.sampleRate} '
-        'buffer=${target.bufferFrames}: ${outcome.status.name} '
-        'result=${outcome.result.name}',
+      guard = _guards.enter(
+        GuardKind.deviceChange,
+        const GuardScope.internal(),
+        purpose: 'audio warm-up',
       );
-      // The device rounded the buffer: the transport waits for the offset of
-      // the buffer it opened.
-      final opened = _looper.state.status;
-      if (outcome.status == AudioApplyStatus.applied && opened.warmingUp) {
-        final rounded = await _savedOffset(opened, opened.bufferFrames);
-        if (!isClosed) _looper.setRecordOffset(rounded);
-      }
-      _restart();
+    } on GuardRefused catch (refused) {
+      _logDeferred(refused.blockers.first.kind.name);
+      return;
+    }
+    final AudioApplyResult outcome;
+    try {
+      outcome = _looper.finishWarmUp();
     } finally {
-      _switching = false;
-      // The switch's own state changes arrived while it ran.
-      if (!isClosed) _follow(_looper.state);
+      guard.release();
     }
-  }
-
-  /// The record offset saved for the warm-up device at the player's rate and
-  /// [bufferFrames], or 0 when that profile was never measured.
-  Future<int> _savedOffset(EngineStatus status, int bufferFrames) async {
-    try {
-      final saved = await _settings.loadLatencyOffsetFrames(
-        device: status.deviceName,
-        sampleRate: status.sampleRate,
-        bufferFrames: bufferFrames,
-      );
-      return saved != null && saved > 0 ? saved : 0;
-    } on Object catch (error) {
-      AppLog.error('audio warm-up: saved record offset unreadable: $error');
-      return 0;
+    if (outcome.result == EngineResult.notReady) {
+      _logDeferred('a start fence');
+      return;
     }
+    AppLog.info(
+      'audio warm-up: ${settled ? 'settled' : 'cap reached'} after '
+      '$_ticks ticks; switch to rate=${target.sampleRate} '
+      'buffer=${target.bufferFrames}: ${outcome.status.name} '
+      'result=${outcome.result.name}',
+    );
+    _restart();
   }
 
   /// A deferred switch is tried again on the next tick; it is logged once.

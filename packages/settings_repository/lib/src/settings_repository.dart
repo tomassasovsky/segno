@@ -274,12 +274,9 @@ class SettingsRepository {
   /// sample-rate / buffer triple. Folding it into the key separates those
   /// offsets. A pre-#809 calibration under the legacy (period-less) key is
   /// not discarded but **migrated** on first read — see
-  /// [loadLatencyOffsetFrames] — because nothing on the appliance would ever
-  /// re-measure it: both auto-measure triggers in the bootstrap are
-  /// structurally false on Linux (the console pins its capture device, and
-  /// `le_platform_excluded_input_mask` always returns 0 there), so a
-  /// discarded offset would simply mean *no* compensation, an error of the
-  /// full hardware round trip.
+  /// [loadLatencyOffsetFrames] — because it was measured with a cable: the
+  /// automatic measurement that fills a missing offset (#1541) runs through
+  /// the interface's digital loopback, which leaves the converters out.
   ///
   /// `null` means "knob not engaged" and keeps the legacy key shape, so every
   /// desktop calibration (and Linux with the variable unset, where #809 is a
@@ -346,9 +343,9 @@ class SettingsRepository {
   /// When the ALSA periods knob is engaged and the period-qualified key is
   /// empty, a calibration stored under the legacy key is migrated: returned
   /// shifted by [_startThresholdDeltaFrames] and persisted under the
-  /// qualified key. Discarding it instead would leave the appliance with NO
-  /// offset forever — no auto re-measure exists on Linux (see
-  /// [_alsaPeriods]) — and the shift is exact because #809 changes output
+  /// qualified key. Discarding it instead would replace a cable measurement
+  /// with a loopback one that leaves the converters out (see [_alsaPeriods]),
+  /// and the shift is exact because #809 changes output
   /// latency by precisely the threshold delta. This is a one-time value
   /// migration for calibrations on shipped hardware, not a compatibility
   /// code path (AGENTS.md): the legacy key is never read again once the

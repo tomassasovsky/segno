@@ -1844,9 +1844,11 @@ void main() {
       expect(started.started, isTrue);
       expect(engine.lastConfig?.bufferFrames, 512);
       expect(repository.state.status.warmingUp, isFalse);
-      expect(engine.lastMasterGain, 1);
-      // No switch will restore it, so the start does.
-      expect(engine.lastRecordOffset, 720);
+      // It owes its record offset, which the audio setup sets (#1541):
+      // silent until then, and the start sets none itself.
+      expect(repository.state.status.recordOffsetOwed, isTrue);
+      expect(engine.lastMasterGain, 0);
+      expect(engine.lastRecordOffset, 0);
     });
 
     test("restores every track pan and the open device's input setup "
@@ -2007,13 +2009,13 @@ void main() {
         settings: settings,
       );
 
-      // Nothing records during the warm-up; AudioWarmUpCubit sets the
-      // offset saved for the player's buffer when it opens it.
+      // Nothing records during the warm-up; the switch to the player's
+      // buffer owes its offset, which the audio setup sets (#1541).
       expect(engine.lastRecordOffset, 0);
     });
 
     test(
-      'never measures by itself, even with a routable loopback (Q2)',
+      'measures nothing itself: the audio setup settles the owed offset',
       () async {
         engine.loopback = const le.LoopbackInfo(
           available: true,
@@ -2035,7 +2037,7 @@ void main() {
         );
 
         expect(engine.measureLatencyCalls, 0);
-        expect(engine.lastRecordOffset, 0); // nothing saved, nothing measured
+        expect(engine.lastRecordOffset, 0);
       },
     );
 

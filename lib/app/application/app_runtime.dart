@@ -255,14 +255,15 @@ class AppRuntime {
   Future<void>? _startFuture;
   Future<void>? _closeFuture;
 
-  /// Prevents new takes during shutdown, session transitions, disposal and an
-  /// audio warm-up (#1533): the performance master tap sits before the master
-  /// gain a warm-up silences with, so a take would hold what nobody heard.
+  /// Prevents new takes during shutdown, session transitions, disposal and
+  /// while audio starts (an audio warm-up, #1533, or an owed record offset,
+  /// #1541): the performance master tap sits before the master gain those
+  /// silence with, so a take would hold what nobody heard.
   bool get takeLocked =>
       _closing ||
       power.state.isUiUp ||
       fxPersistence.sessionTransitionActive ||
-      _looper.state.status.warmingUp;
+      _looper.state.status.starting;
 
   /// Starts independent restores together; callers can observe load failures.
   Future<void> start() {
