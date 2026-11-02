@@ -1177,9 +1177,9 @@ void main() {
   }
 
   // The keyboard shortcuts sheet, opened from inside LooperScreenTheme as the
-  // `?` key opens it: its title is the stage's one bold Arimo text (#1526).
-  // The context comes from the view button, since TracksView sits above the
-  // theme.
+  // `?` key opens it: its title, group headings and key chips are bold Arimo
+  // (#1526). The context comes from the view button, since TracksView sits
+  // above the theme.
   testWidgets(
     'keyboard shortcuts sheet',
     (tester) async {
