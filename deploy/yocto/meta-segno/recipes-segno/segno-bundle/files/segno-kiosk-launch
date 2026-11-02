@@ -53,9 +53,9 @@ mkdir -p "$HOME/Documents" "$HOME/Downloads" "$HOME/Desktop"
 # that needs the RT limits on segno.service.
 export SEGNO_ALSA_ONLY=1
 # Promote the engine's audio thread to SCHED_FIFO (needs the RT limits on
-# segno.service). Required for glitch-free low-latency: at small buffers (64-128
-# frames, ~1-3ms) a normal-priority thread misses the period deadline and the
-# monitored signal buzzes. Safe now that the ALSA wait loop sleeps (snd_pcm_wait)
+# segno.service). Required for glitch-free low-latency: at small periods (under
+# about 3ms, which includes the 0.67ms default) a normal-priority thread misses
+# the period deadline and the monitored signal buzzes. Safe now that the ALSA wait loop sleeps (snd_pcm_wait)
 # rather than busy-spinning.
 export SEGNO_RT_AUDIO=1
 # Resolve every dynamic symbol at load, in every library, including the
@@ -143,8 +143,9 @@ export LD_BIND_NOW=1
 # upstream's style, so that string matches nothing.
 #
 # Each playback slip-resync also now restarts through the higher threshold, so
-# its silent gap is 256 frames rather than 128 at 8 periods — fewer resyncs (the
-# cushion is harder to underrun through), longer gap each.
+# its silent gap at 8 periods is 4 periods rather than 2 (2.67ms rather than
+# 1.33ms at both 96kHz/64 and 48kHz/32) — fewer resyncs (the cushion is harder
+# to underrun through), longer gap each.
 #
 # Evidence honestly stated: only the periods=8 state was measured on the unit —
 # no periods=3 comparison was taken — so this rests on that measurement plus the
@@ -170,8 +171,9 @@ export LD_BIND_NOW=1
 # independently. It stays at 8 because the capture-drop measurement that chose
 # it still stands and there is no bench measurement to re-derive it against —
 # inventing one would be worse than saying so. The sweep that would settle it
-# (occupancy, delay, cold starts and a full take at 2/4/5/6/8, at both this
-# unit's 96kHz/64 and the shipped 48kHz/32) is #818, device-gated.
+# (occupancy, delay, cold starts and a full take at 2/4/5/6/8, at both 96kHz/64
+# and 48kHz/128) is #818, device-gated. The 48kHz/32 default has the same
+# period as 96kHz/64.
 #
 # What would make 8 wrong: a different interface or SoC (the underrun edge is a
 # property of this Scarlett + Pi 4 pair), or an engine change that removes the

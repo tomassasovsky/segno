@@ -2163,6 +2163,15 @@
             }
         }
     },
+    "audioEffectsOverBudgetBuffer": "Your effects need more processing than a {frames}-sample buffer leaves. Remove some effects first.",
+    "@audioEffectsOverBudgetBuffer": {
+        "description": "Banner when a smaller buffer is refused because the effects would not fit the audio thread's budget (#1270 D19, #1529). frames is the buffer size in samples.",
+        "placeholders": {
+            "frames": {
+                "type": "int"
+            }
+        }
+    },
     "audioDeviceRefused": "{device} could not be opened. The previous interface is running again.",
     "@audioDeviceRefused": {
         "description": "Banner when the interface the player picked would not open and the previous one was reopened (#1270 Part 3a).",

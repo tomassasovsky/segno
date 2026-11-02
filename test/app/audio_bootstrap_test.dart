@@ -1033,10 +1033,9 @@ void main() {
 
           expect(result.started, isTrue);
           expect(engine.startCalls, 2);
-          expect(engine.lastConfig?.playbackDeviceId, '');
-          expect(engine.lastConfig?.captureDeviceId, '');
-          expect(engine.lastConfig?.sampleRate, 48000);
-          expect(engine.lastConfig?.bufferFrames, 32);
+          // The last try opens at the device's own rate and period, so the
+          // kiosk comes up even where the default does not open.
+          expect(engine.lastConfig, const le.EngineConfig());
           final saved = await settings.loadAudioConfig();
           expect(saved?.playbackDeviceId, '');
           expect(saved?.captureDeviceId, '');

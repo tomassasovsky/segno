@@ -234,6 +234,8 @@ class _Workspace extends StatelessWidget {
     if (rate != null) {
       return l10n.audioEffectsOverBudgetRate(l10n.sampleRateKhzLabel(rate));
     }
+    final frames = refusal.overBudgetBuffer;
+    if (frames != null) return l10n.audioEffectsOverBudgetBuffer(frames);
     final device = refusal.refusedDevice;
     if (device != null) return l10n.audioDeviceRefused(device);
     if (refusal.settingsRefused) return l10n.audioSettingsRefused;

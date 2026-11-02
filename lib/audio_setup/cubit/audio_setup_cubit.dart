@@ -437,16 +437,19 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
 
   /// The refusal for a change that would leave the effects no room (#887,
   /// owner's Q5 answer, D19), or `null`. Only a change that shrinks the room
-  /// is checked, and with buffers of 64 frames and up only a higher rate does
-  /// (the per-frame costs only grow below the 64-frame block they were
-  /// measured at). A lower rate or another buffer is never refused, as an
-  /// effects removal never is.
+  /// is refused: a higher rate, or a buffer below the 64-frame block the
+  /// per-frame costs were measured at (32, #1529). A change that leaves the
+  /// room as it is or frees some is never refused, as an effects removal
+  /// never is. A higher rate is the one named when both move.
   ApplyRefusal? _overBudget(AudioSetupState next) {
-    if (next.sampleRate <= state.sampleRate) return null;
-    if (_repository.fxRoomAt(next.sampleRate, next.bufferFrames) >= 0) {
+    final room = _repository.fxRoomAt(next.sampleRate, next.bufferFrames);
+    if (room >= 0) return null;
+    if (room >= _repository.fxRoomAt(state.sampleRate, state.bufferFrames)) {
       return null;
     }
-    return ApplyRefusal.overBudgetRate(next.sampleRate);
+    return next.sampleRate > state.sampleRate
+        ? ApplyRefusal.overBudgetRate(next.sampleRate)
+        : ApplyRefusal.overBudgetBuffer(next.bufferFrames);
   }
 
   /// Opens the device at [next] under the device-change guard, keeping the

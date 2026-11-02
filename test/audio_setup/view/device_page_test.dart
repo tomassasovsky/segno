@@ -629,6 +629,21 @@ void main() {
       verifyNever(() => repository.applyAudioConfig(any()));
     });
 
+    testWidgets('a buffer the effects do not fit is refused with the reason '
+        '(#1529)', (tester) async {
+      when(() => repository.fxRoomAt(48000, 32)).thenReturn(-1);
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('device_buffer_32')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('device_apply')));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(l10nOf(tester).audioEffectsOverBudgetBuffer(32)),
+        findsOneWidget,
+      );
+      verifyNever(() => repository.applyAudioConfig(any()));
+    });
+
     testWidgets('a device that negotiates something else reports it', (
       tester,
     ) async {

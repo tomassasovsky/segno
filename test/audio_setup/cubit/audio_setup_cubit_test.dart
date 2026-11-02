@@ -366,8 +366,27 @@ void main() {
       verifyNever(() => repository.applyAudioConfig(any()));
     });
 
-    test('a change that only lowers the cost is never refused (D19)', () {
+    test('a 32-frame buffer the effects do not fit is refused inline '
+        '(D19, #1529)', () {
       seed();
+      when(() => repository.fxRoomAt(48000, 32)).thenReturn(-1);
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      cubit
+        ..editBuffer(32)
+        ..applyDraft();
+
+      expect(cubit.state.refusal, const ApplyRefusal.overBudgetBuffer(32));
+      expect(cubit.state.bufferFrames, 128);
+      verifyNever(() => repository.applyAudioConfig(any()));
+    });
+
+    test('a change that does not lower the room is never refused (D19)', () {
+      seed();
+      // Already over budget at 48 kHz / 128 (an effects removal is never
+      // refused either): a lower rate and a bigger buffer leave as much room
+      // or more, so neither is refused.
       when(() => repository.fxRoomAt(any(), any())).thenReturn(-1);
       final cubit = buildCubit();
       addTearDown(cubit.close);
@@ -378,7 +397,7 @@ void main() {
         ..editBuffer(512)
         ..applyDraft();
 
-      verifyNever(() => repository.fxRoomAt(any(), any()));
+      expect(cubit.state.refusal, isNull);
       verify(() => repository.applyAudioConfig(any())).called(2);
     });
 

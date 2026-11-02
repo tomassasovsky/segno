@@ -130,12 +130,22 @@ class ApplyRefusal extends Equatable {
   /// operation a device change must not overlap (`capture` for a take).
   const ApplyRefusal.busy(String this.busyKind)
     : overBudgetRate = null,
+      overBudgetBuffer = null,
       refusedDevice = null,
       settingsRefused = false;
 
   /// Refused because the effects would not fit at [overBudgetRate] (D19).
   const ApplyRefusal.overBudgetRate(int this.overBudgetRate)
     : busyKind = null,
+      overBudgetBuffer = null,
+      refusedDevice = null,
+      settingsRefused = false;
+
+  /// Refused because the effects would not fit in [overBudgetBuffer]-frame
+  /// blocks at the same rate (D19; a buffer below 64 frames, #1529).
+  const ApplyRefusal.overBudgetBuffer(int this.overBudgetBuffer)
+    : busyKind = null,
+      overBudgetRate = null,
       refusedDevice = null,
       settingsRefused = false;
 
@@ -144,6 +154,7 @@ class ApplyRefusal extends Equatable {
   const ApplyRefusal.deviceRefused(String this.refusedDevice)
     : busyKind = null,
       overBudgetRate = null,
+      overBudgetBuffer = null,
       settingsRefused = false;
 
   /// Refused by the interface for a change that moved neither the device nor
@@ -151,6 +162,7 @@ class ApplyRefusal extends Equatable {
   const ApplyRefusal.settingsRefused()
     : busyKind = null,
       overBudgetRate = null,
+      overBudgetBuffer = null,
       refusedDevice = null,
       settingsRefused = true;
 
@@ -159,6 +171,9 @@ class ApplyRefusal extends Equatable {
 
   /// The sample rate the effects would not fit at.
   final int? overBudgetRate;
+
+  /// The buffer, in frames, the effects would not fit in.
+  final int? overBudgetBuffer;
 
   /// The interface that would not open.
   final String? refusedDevice;
@@ -171,6 +186,7 @@ class ApplyRefusal extends Equatable {
   List<Object?> get props => [
     busyKind,
     overBudgetRate,
+    overBudgetBuffer,
     refusedDevice,
     settingsRefused,
   ];
