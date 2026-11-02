@@ -74,6 +74,33 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Audio warm-up at start (#1533)
+
+- Every start the console makes on its own opens the device as a warm-up:
+  the player's rate with a 512-frame buffer (`kWarmUpBufferFrames`). This
+  covers the boot auto-start, the boot-time recovery (`AudioRecoveryCubit`)
+  and every reconnect by the in-repo supervisor. `LooperRepository` keeps the
+  player's config as the warm-up target, so `lastEngineConfig` and the audio
+  setup never show or save 512. A player's config already at 512 skips the
+  warm-up.
+- While warming up, the engine's master gain is held at 0. It is applied
+  after everything is summed, so nothing is heard, and the remembered gain
+  and the saved mix are untouched.
+- Also during the warm-up: transport presses return `notReady` (as during a
+  Session apply), the cable test is refused, the performance recorder is
+  locked, and the stage shows "Audio is starting…" where the engine-stopped
+  banner sits. The effects budget uses the target's buffer.
+- `AudioWarmUpCubit` watches from the first rasterized frame. Every 500 ms it
+  sums the session window's late periods, gaps and xruns. When that sum has
+  been still for 3 s, or 20 s after watching began, it sets the record offset
+  saved for the player's buffer and calls `finishWarmUp()`. That reopens at
+  the player's config with the loops kept, under the device-change guard.
+- If the device refuses the player's config, the 512 config runs and is
+  heard. The device page shows the existing refused banner (asked, running),
+  and nothing is saved.
+- Device checks owed: a cold boot and a Scarlett replug at 48 kHz / 32, with
+  no xrun during or after the switch and no sound before it.
+
 ## October 2026 Ed's setup loop template (#1513)
 
 - Library > New loop asks **Start with: Empty tracks | Ed's setup**. Ed's
