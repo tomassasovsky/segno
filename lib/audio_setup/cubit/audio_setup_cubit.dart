@@ -440,14 +440,23 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// is refused: a higher rate, or a buffer below the 64-frame block the
   /// per-frame costs were measured at (32, #1529). A change that leaves the
   /// room as it is or frees some is never refused, as an effects removal
-  /// never is. A higher rate is the one named when both move.
+  /// never is. The room now is the running device's, which can differ from
+  /// the selection when the device negotiated an off-list period. When both
+  /// move, the rate is named only if it alone would not fit.
   ApplyRefusal? _overBudget(AudioSetupState next) {
+    final live = state.engineStatus;
+    final rate = live.sampleRate > 0 ? live.sampleRate : state.sampleRate;
+    final buffer = live.bufferFrames > 0
+        ? live.bufferFrames
+        : state.bufferFrames;
+    if (next.sampleRate == rate && next.bufferFrames == buffer) return null;
     final room = _repository.fxRoomAt(next.sampleRate, next.bufferFrames);
     if (room >= 0) return null;
-    if (room >= _repository.fxRoomAt(state.sampleRate, state.bufferFrames)) {
-      return null;
-    }
-    return next.sampleRate > state.sampleRate
+    if (room >= _repository.fxRoomAt(rate, buffer)) return null;
+    final rateAlone = next.sampleRate > rate
+        ? _repository.fxRoomAt(next.sampleRate, buffer)
+        : 0;
+    return rateAlone < 0
         ? ApplyRefusal.overBudgetRate(next.sampleRate)
         : ApplyRefusal.overBudgetBuffer(next.bufferFrames);
   }

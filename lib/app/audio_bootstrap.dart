@@ -539,11 +539,12 @@ Future<AutoStartResult> _tryAutoStartEngine({
 
 /// Starts the engine on a first run (no saved config) and persists the chosen
 /// config so later launches take the normal saved path. Opens the first
-/// non-default duplex interface ([pickConsoleAudioDevices]) at
-/// [AudioSetupState.defaultSampleRate] and
-/// [AudioSetupState.defaultBufferFrames], falling back to the system default
-/// at its own rate and period, the last try that has to come up. Returns
-/// whether the engine started.
+/// non-default duplex interface ([pickConsoleAudioDevices]), or the system
+/// default when there is none, at [AudioSetupState.defaultSampleRate] and
+/// [AudioSetupState.defaultBufferFrames]. If that does not open, it tries the
+/// same interface at its own rate and period, and then the system default at
+/// its own rate and period, the last try that has to come up. Returns whether
+/// the engine started.
 Future<bool> _firstRunAutoStart({
   required LooperRepository repository,
   required SettingsRepository settings,
@@ -573,11 +574,20 @@ Future<bool> _firstRunAutoStart({
       captureDeviceId: captureId,
     ),
   );
+  if (result == EngineResult.device) {
+    // The interface would not open at the default rate or period: keep it,
+    // at its own.
+    AppLog.warn(
+      'audio first-run: default rate/buffer open failed '
+      'result=${result.name}; retrying at the device default',
+    );
+    result = repository.startEngine(
+      EngineConfig(playbackDeviceId: playbackId, captureDeviceId: captureId),
+    );
+  }
   if (!result.isOk && (playbackId.isNotEmpty || captureId.isNotEmpty)) {
-    // Console pin failed (interface busy/absent, or it refused the default
-    // rate or period) — fall back to the system default at the device's own
-    // rate and period so the kiosk still comes up, matching pre-auto-pin
-    // first-run behavior.
+    // Console pin failed (interface busy/absent) — fall back to system default
+    // so the kiosk still comes up, matching pre-auto-pin first-run behavior.
     AppLog.warn(
       'audio first-run: console pin open failed result=${result.name}; '
       'falling back to system default',

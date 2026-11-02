@@ -55,8 +55,8 @@ export SEGNO_ALSA_ONLY=1
 # Promote the engine's audio thread to SCHED_FIFO (needs the RT limits on
 # segno.service). Required for glitch-free low-latency: at small periods (under
 # about 3ms, which includes the 0.67ms default) a normal-priority thread misses
-# the period deadline and the monitored signal buzzes. Safe now that the ALSA wait loop sleeps (snd_pcm_wait)
-# rather than busy-spinning.
+# the period deadline and the monitored signal buzzes. Safe now that the ALSA
+# wait loop sleeps (snd_pcm_wait) rather than busy-spinning.
 export SEGNO_RT_AUDIO=1
 # Resolve every dynamic symbol at load, in every library, including the
 # libasound that miniaudio dlopens: a lazy binding resolved for the first time

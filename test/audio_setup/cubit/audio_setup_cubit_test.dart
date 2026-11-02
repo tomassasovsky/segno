@@ -382,6 +382,22 @@ void main() {
       verifyNever(() => repository.applyAudioConfig(any()));
     });
 
+    test('a higher rate that fits with a buffer that does not names the '
+        'buffer (D19, #1529)', () {
+      seed();
+      when(() => repository.fxRoomAt(96000, 32)).thenReturn(-1);
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      cubit
+        ..editRate(96000)
+        ..editBuffer(32)
+        ..applyDraft();
+
+      expect(cubit.state.refusal, const ApplyRefusal.overBudgetBuffer(32));
+      verifyNever(() => repository.applyAudioConfig(any()));
+    });
+
     test('a change that does not lower the room is never refused (D19)', () {
       seed();
       // Already over budget at 48 kHz / 128 (an effects removal is never
