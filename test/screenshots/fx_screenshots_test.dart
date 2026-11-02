@@ -168,29 +168,6 @@ void main() {
     registerFallbackValue(const FxAddress(stage: FxStage.track));
     registerFallbackValue(<FxAddress, List<TrackEffect>>{});
     if (!rendersScreenshots) return;
-    await loadScreenshotFont('Roboto', [
-      '$materialFontDir/Roboto-Regular.ttf',
-      '$materialFontDir/Roboto-Medium.ttf',
-      '$materialFontDir/Roboto-Bold.ttf',
-    ]);
-    await loadScreenshotFont('Inter', [
-      'assets/fonts/Inter-Regular.ttf',
-      'assets/fonts/Inter-Medium.ttf',
-      'assets/fonts/Inter-SemiBold.ttf',
-      'assets/fonts/Inter-Bold.ttf',
-    ]);
-    await loadScreenshotFont('Arimo', [
-      'assets/fonts/Arimo-Regular.ttf',
-      'assets/fonts/Arimo-Bold.ttf',
-    ]);
-    await loadScreenshotFont('JetBrains Mono', [
-      'assets/fonts/JetBrainsMono-Regular.ttf',
-      'assets/fonts/JetBrainsMono-Medium.ttf',
-      'assets/fonts/JetBrainsMono-SemiBold.ttf',
-    ]);
-    await loadScreenshotFont('packages/lucide_icons_flutter/Lucide', [
-      packageAssetPath('lucide_icons_flutter', 'assets/lucide.ttf'),
-    ]);
     // The rack editor and the reorder strip draw catalogue pedals.
     await loadFxStompArt();
   });
