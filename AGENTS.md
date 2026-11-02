@@ -77,6 +77,12 @@ pen's", `AREA / name`) mean the same frames in the Penpot file.
   button). Writes apply only to the active page, so call
   `penpot.openPage(page)` before editing a page. With no such tab, ask the
   owner to open one; do not fall back to another tool.
+- **Keep each MCP call small.** The plugin runs inside the editor tab, so a
+  call that walks the whole file (`findShapes` or recursive searches across
+  every page) blocks the tab until it finishes, and the call times out. A
+  call that times out may have half-applied. Look shapes up by id or within
+  one page, change one board per call, and export or read back the result
+  before the next edit. After a timeout, inspect what landed before retrying.
 - **API access** (snapshots, imports) uses the owner's access token in
   `~/development/penpot-server/.penpot-token`. Never print or commit it.
 
