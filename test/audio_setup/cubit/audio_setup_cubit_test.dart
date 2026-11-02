@@ -68,8 +68,9 @@ void main() {
   test('initial state has sensible defaults', () {
     final cubit = buildCubit();
     addTearDown(cubit.close);
+    // 48 kHz / 32 frames, the console's measured default (#1529).
     expect(cubit.state.sampleRate, 48000);
-    expect(cubit.state.bufferFrames, 128);
+    expect(cubit.state.bufferFrames, 32);
     expect(cubit.state.status, AudioSetupStatus.stopped);
   });
 
@@ -163,6 +164,23 @@ void main() {
       verifyNever(repository.stopEngine);
       await pumpEventQueue();
       expect((await settings.loadAudioConfig())?.bufferFrames, 256);
+    });
+
+    test('32 frames is on the list: it applies, stays selected and is '
+        'saved (#1529)', () async {
+      seed();
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      cubit
+        ..editBuffer(32)
+        ..applyDraft();
+
+      expect(cubit.state.phase, ConfigPhase.settled);
+      expect(cubit.state.bufferFrames, 32);
+      expect(cubit.state.actualBuffer, 32);
+      await pumpEventQueue();
+      expect((await settings.loadAudioConfig())?.bufferFrames, 32);
     });
 
     test('a change while a track plays asks first and calls nothing', () {
@@ -348,8 +366,43 @@ void main() {
       verifyNever(() => repository.applyAudioConfig(any()));
     });
 
-    test('a change that only lowers the cost is never refused (D19)', () {
+    test('a 32-frame buffer the effects do not fit is refused inline '
+        '(D19, #1529)', () {
       seed();
+      when(() => repository.fxRoomAt(48000, 32)).thenReturn(-1);
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      cubit
+        ..editBuffer(32)
+        ..applyDraft();
+
+      expect(cubit.state.refusal, const ApplyRefusal.overBudgetBuffer(32));
+      expect(cubit.state.bufferFrames, 128);
+      verifyNever(() => repository.applyAudioConfig(any()));
+    });
+
+    test('a higher rate that fits with a buffer that does not names the '
+        'buffer (D19, #1529)', () {
+      seed();
+      when(() => repository.fxRoomAt(96000, 32)).thenReturn(-1);
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      cubit
+        ..editRate(96000)
+        ..editBuffer(32)
+        ..applyDraft();
+
+      expect(cubit.state.refusal, const ApplyRefusal.overBudgetBuffer(32));
+      verifyNever(() => repository.applyAudioConfig(any()));
+    });
+
+    test('a change that does not lower the room is never refused (D19)', () {
+      seed();
+      // Already over budget at 48 kHz / 128 (an effects removal is never
+      // refused either): a lower rate and a bigger buffer leave as much room
+      // or more, so neither is refused.
       when(() => repository.fxRoomAt(any(), any())).thenReturn(-1);
       final cubit = buildCubit();
       addTearDown(cubit.close);
@@ -360,7 +413,7 @@ void main() {
         ..editBuffer(512)
         ..applyDraft();
 
-      verifyNever(() => repository.fxRoomAt(any(), any()));
+      expect(cubit.state.refusal, isNull);
       verify(() => repository.applyAudioConfig(any())).called(2);
     });
 
@@ -665,7 +718,7 @@ void main() {
         () => repository.applyAudioConfig(
           const EngineConfig(
             sampleRate: 48000,
-            bufferFrames: 128,
+            bufferFrames: 32,
             maxLoopFrames: 14400000,
           ),
         ),
@@ -691,7 +744,7 @@ void main() {
       expect(cubit.state.status, AudioSetupStatus.error);
       expect(cubit.state.error, AudioSetupError.openDeviceFailed);
       expect(cubit.state.errorDetail, EngineResult.device.name);
-      expect(cubit.state.bufferFrames, 128);
+      expect(cubit.state.bufferFrames, 32);
     });
 
     test('a later success clears the error', () {

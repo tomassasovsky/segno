@@ -130,12 +130,22 @@ class ApplyRefusal extends Equatable {
   /// operation a device change must not overlap (`capture` for a take).
   const ApplyRefusal.busy(String this.busyKind)
     : overBudgetRate = null,
+      overBudgetBuffer = null,
       refusedDevice = null,
       settingsRefused = false;
 
   /// Refused because the effects would not fit at [overBudgetRate] (D19).
   const ApplyRefusal.overBudgetRate(int this.overBudgetRate)
     : busyKind = null,
+      overBudgetBuffer = null,
+      refusedDevice = null,
+      settingsRefused = false;
+
+  /// Refused because the effects would not fit in [overBudgetBuffer]-frame
+  /// blocks at the same rate (D19; a buffer below 64 frames, #1529).
+  const ApplyRefusal.overBudgetBuffer(int this.overBudgetBuffer)
+    : busyKind = null,
+      overBudgetRate = null,
       refusedDevice = null,
       settingsRefused = false;
 
@@ -144,6 +154,7 @@ class ApplyRefusal extends Equatable {
   const ApplyRefusal.deviceRefused(String this.refusedDevice)
     : busyKind = null,
       overBudgetRate = null,
+      overBudgetBuffer = null,
       settingsRefused = false;
 
   /// Refused by the interface for a change that moved neither the device nor
@@ -151,6 +162,7 @@ class ApplyRefusal extends Equatable {
   const ApplyRefusal.settingsRefused()
     : busyKind = null,
       overBudgetRate = null,
+      overBudgetBuffer = null,
       refusedDevice = null,
       settingsRefused = true;
 
@@ -159,6 +171,9 @@ class ApplyRefusal extends Equatable {
 
   /// The sample rate the effects would not fit at.
   final int? overBudgetRate;
+
+  /// The buffer, in frames, the effects would not fit in.
+  final int? overBudgetBuffer;
 
   /// The interface that would not open.
   final String? refusedDevice;
@@ -171,6 +186,7 @@ class ApplyRefusal extends Equatable {
   List<Object?> get props => [
     busyKind,
     overBudgetRate,
+    overBudgetBuffer,
     refusedDevice,
     settingsRefused,
   ];
@@ -224,8 +240,8 @@ enum DeviceConnectivity {
 class AudioSetupState extends Equatable {
   /// Creates an [AudioSetupState].
   const AudioSetupState({
-    this.sampleRate = 48000,
-    this.bufferFrames = 128,
+    this.sampleRate = defaultSampleRate,
+    this.bufferFrames = defaultBufferFrames,
     this.maxLoopMinutes = 0,
     this.status = AudioSetupStatus.stopped,
     this.engineStatus = const EngineStatus(),
@@ -366,7 +382,15 @@ class AudioSetupState extends Equatable {
   static const sampleRates = [44100, 48000, 96000];
 
   /// Selectable buffer sizes.
-  static const bufferSizes = [64, 128, 256, 512];
+  static const bufferSizes = [32, 64, 128, 256, 512];
+
+  /// The sample rate a console opens at before anything is saved.
+  static const defaultSampleRate = 48000;
+
+  /// The buffer a console opens at before anything is saved: 32 frames at
+  /// [defaultSampleRate] is the same 0.67 ms period as 64 at 96 kHz, for
+  /// about half the CPU (#1529).
+  static const defaultBufferFrames = 32;
 
   /// Selectable max-loop-length options, in minutes. `0` is the engine default.
   static const maxLoopMinuteOptions = [0, 1, 2, 5, 10];

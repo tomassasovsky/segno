@@ -437,16 +437,28 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
 
   /// The refusal for a change that would leave the effects no room (#887,
   /// owner's Q5 answer, D19), or `null`. Only a change that shrinks the room
-  /// is checked, and with buffers of 64 frames and up only a higher rate does
-  /// (the per-frame costs only grow below the 64-frame block they were
-  /// measured at). A lower rate or another buffer is never refused, as an
-  /// effects removal never is.
+  /// is refused: a higher rate, or a buffer below the 64-frame block the
+  /// per-frame costs were measured at (32, #1529). A change that leaves the
+  /// room as it is or frees some is never refused, as an effects removal
+  /// never is. The room now is the running device's, which can differ from
+  /// the selection when the device negotiated an off-list period. When both
+  /// move, the rate is named only if it alone would not fit.
   ApplyRefusal? _overBudget(AudioSetupState next) {
-    if (next.sampleRate <= state.sampleRate) return null;
-    if (_repository.fxRoomAt(next.sampleRate, next.bufferFrames) >= 0) {
-      return null;
-    }
-    return ApplyRefusal.overBudgetRate(next.sampleRate);
+    final live = state.engineStatus;
+    final rate = live.sampleRate > 0 ? live.sampleRate : state.sampleRate;
+    final buffer = live.bufferFrames > 0
+        ? live.bufferFrames
+        : state.bufferFrames;
+    if (next.sampleRate == rate && next.bufferFrames == buffer) return null;
+    final room = _repository.fxRoomAt(next.sampleRate, next.bufferFrames);
+    if (room >= 0) return null;
+    if (room >= _repository.fxRoomAt(rate, buffer)) return null;
+    final rateAlone = next.sampleRate > rate
+        ? _repository.fxRoomAt(next.sampleRate, buffer)
+        : 0;
+    return rateAlone < 0
+        ? ApplyRefusal.overBudgetRate(next.sampleRate)
+        : ApplyRefusal.overBudgetBuffer(next.bufferFrames);
   }
 
   /// Opens the device at [next] under the device-change guard, keeping the
@@ -638,8 +650,8 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     final actualBuffer = known ? live.bufferFrames : askedBuffer;
     final gave = actualRate == askedRate && actualBuffer == askedBuffer;
     // A row that says 96 kHz while the engine runs 48 would be a lie, and a
-    // row saying 480 when the grid only offers 64/128/256/512 another, with no
-    // chip lit and no way back. So an off-list figure stays out of the
+    // row saying 480 when the grid only offers 32/64/128/256/512 another, with
+    // no chip lit and no way back. So an off-list figure stays out of the
     // selection and the banner names it.
     final rate = _offerable(actualRate, AudioSetupState.sampleRates, askedRate);
     final buffer = _offerable(
