@@ -270,7 +270,10 @@ void main() {
       'assets/fonts/Inter-SemiBold.ttf',
       'assets/fonts/Inter-Bold.ttf',
     ]);
-    await loadScreenshotFont('Arimo', ['assets/fonts/Arimo-Regular.ttf']);
+    await loadScreenshotFont('Arimo', [
+      'assets/fonts/Arimo-Regular.ttf',
+      'assets/fonts/Arimo-Bold.ttf',
+    ]);
     // And the rail's own glyphs. A package font is bundled from the package's
     // pubspec at run time but not by the test harness, so every rail icon and
     // the brightness sun rendered as a tofu box in these previews — the same
