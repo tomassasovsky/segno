@@ -84,6 +84,12 @@ local_conf_header:
     # Accept the Pi 5 WiFi firmware's restricted license (meta-raspberrypi).
     LICENSE_FLAGS_ACCEPTED = "synaptics-killswitch"
 
+  timezone: |
+    # Local time for the times the app shows ("saved at 21:47", the Library's
+    # "today 14:02"). The console is used offline, so it cannot detect its zone;
+    # it ships set to the owner's. tzdata writes /etc/localtime from this.
+    DEFAULT_TIMEZONE = "America/Argentina/Buenos_Aires"
+
   init: |
     # systemd: the app and its helpers are ordered and supervised as units.
     INIT_MANAGER = "systemd"

@@ -45,6 +45,8 @@ IMAGE_INSTALL:append = " \
     ddcutil \
     networkmanager-nmcli \
     networkmanager-wifi \
+    tzdata-core \
+    tzdata-americas \
     "
 # tryboot-cmdline.bbclass edits cmdline.txt inside the .wic (mtools) and regenerates
 # the bmap (bmaptool) — both are native build tools its task needs.
