@@ -949,6 +949,9 @@ void main() {
           engine.lastConfig,
           const le.EngineConfig(sampleRate: 48000, bufferFrames: 32),
         );
+        // Opened as it is, with no warm-up, so a refused buffer can fall back
+        // (#1533).
+        expect(repository.state.status.warmingUp, isFalse);
         // Persisted so the next launch takes the saved-config path.
         final saved = await settings.loadAudioConfig();
         expect(saved?.sampleRate, 48000);
@@ -1804,12 +1807,46 @@ void main() {
 
       expect(started.started, isTrue);
       expect(engine.startCalls, 1);
+      // A warm-up (#1533): the saved rate with the largest buffer, silent,
+      // until the console has settled and the saved buffer opens.
       expect(engine.lastConfig?.sampleRate, 96000);
-      expect(engine.lastConfig?.bufferFrames, 256);
+      expect(engine.lastConfig?.bufferFrames, 512);
+      expect(repository.lastEngineConfig?.sampleRate, 96000);
+      expect(repository.lastEngineConfig?.bufferFrames, 256);
+      expect(repository.state.status.warmingUp, isTrue);
+      expect(engine.lastMasterGain, 0);
       // Channel counts left at 0 (device default) so the interface opens with
       // all its channels; the negotiated counts come back via the snapshot.
       expect(engine.lastConfig?.inputChannels, 0);
       expect(engine.lastConfig?.outputChannels, 0);
+    });
+
+    test('a saved config at the largest buffer opens without a warm-up '
+        '(#1533)', () async {
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 512),
+      );
+      // Saved under the profile the running engine reports (the fake's
+      // snapshot has sample rate / buffer 0, device 'Fake Device').
+      await settings.saveLatencyOffsetFrames(
+        device: 'Fake Device',
+        sampleRate: 0,
+        bufferFrames: 0,
+        frames: 720,
+      );
+
+      final started = await tryAutoStartEngine(
+        mixSettings: testMixSettings(repository, settings: settings),
+        repository: repository,
+        settings: settings,
+      );
+
+      expect(started.started, isTrue);
+      expect(engine.lastConfig?.bufferFrames, 512);
+      expect(repository.state.status.warmingUp, isFalse);
+      expect(engine.lastMasterGain, 1);
+      // No switch will restore it, so the start does.
+      expect(engine.lastRecordOffset, 720);
     });
 
     test("restores every track pan and the open device's input setup "
@@ -1947,7 +1984,8 @@ void main() {
       expect(engine.lanePan[(0, 1)], 0.5);
     });
 
-    test('restores the saved latency offset for the device', () async {
+    test('leaves the record offset to the switch out of the warm-up '
+        '(#1533)', () async {
       await settings.saveAudioConfig(
         const StoredAudioConfig(
           sampleRate: 48000,
@@ -1969,7 +2007,9 @@ void main() {
         settings: settings,
       );
 
-      expect(engine.lastRecordOffset, 720);
+      // Nothing records during the warm-up; AudioWarmUpCubit sets the
+      // offset saved for the player's buffer when it opens it.
+      expect(engine.lastRecordOffset, 0);
     });
 
     test(

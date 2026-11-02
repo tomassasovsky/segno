@@ -74,6 +74,39 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Audio warm-up at start (#1533)
+
+- Every start the console makes on its own opens the device as a warm-up:
+  the player's rate with a 512-frame buffer (`kWarmUpBufferFrames`). This
+  covers the boot auto-start, the boot-time recovery (`AudioRecoveryCubit`)
+  and every reconnect by the in-repo supervisor. A first run opens as it is,
+  so each try in its fallback order (48 kHz / 32, then the device's own rate
+  and period, then the system default) can fail over. `LooperRepository`
+  keeps the player's config as the warm-up target, so `lastEngineConfig` and
+  the audio setup never show or save 512. A player's config already at 512
+  skips the warm-up and restores its record offset at start.
+- While warming up, the engine's master gain is held at 0. It is applied
+  after everything is summed, so nothing is heard, and the remembered gain
+  and the saved mix are untouched.
+- Also during the warm-up: transport presses return `notReady` (as during a
+  Session apply), the cable test is refused, `AppRuntime.takeLocked` holds
+  (performance takes from the page and the pedal), and the stage shows
+  "Audio is starting…" where the engine-stopped banner sits. The effects
+  budget uses the target's buffer.
+- `AudioWarmUpCubit` ticks every 500 ms while a warm-up runs. Ticks count as
+  quiet only after the first rasterized frame. When the sum of the session
+  window's late periods, gaps and xruns has been still for 3 s, or 20 s after
+  load, it sets the record offset saved for the player's buffer and calls
+  `finishWarmUp()`. That reopens at the player's config with the loops kept,
+  under the device-change guard. If the device rounded the buffer, the
+  transport stays closed until the cubit sets the opened buffer's offset.
+- If the device refuses the player's config, the 512 config runs and is
+  heard. The device page shows the existing refused banner (asked, running),
+  nothing is saved, and the next replug warms up for the player's config
+  again.
+- Device checks owed: a cold boot and a Scarlett replug at 48 kHz / 32, with
+  no xrun during or after the switch and no sound before it.
+
 ## November 2026 clear-track hold fills the pill (#1534)
 
 - A hold that clears (Track Hold set to Clear track in Record mode, or a

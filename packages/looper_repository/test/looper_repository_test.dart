@@ -1813,6 +1813,9 @@ void main() {
         // Set once per reconnect, cleared by the next deliberate start: it
         // moves at human pace, like a dropout count, never per callback.
         'reopen',
+        // Set by a warm start or a reconnect and cleared by the switch to the
+        // player's config (#1533): once or twice per start, never per callback.
+        'warmingUp',
       };
 
       final actual = _declaredFinalFields(
@@ -7797,8 +7800,15 @@ void main() {
       'same-name reopen publishes a new lifetime for an identical snapshot',
       () async {
         engine.nextSnapshot = runningSnapshot(devicePresent: true);
+        // At the warm-up buffer, so the reconnect opens the same config and
+        // no warm-up moves the status (#1533).
         final repo = buildSupervised()
-          ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+          ..startEngine(
+            const EngineConfig(
+              playbackDeviceId: 'out-1',
+              bufferFrames: kWarmUpBufferFrames,
+            ),
+          );
         addTearDown(repo.dispose);
         final states = <LooperState>[];
         final sub = repo.looperState.listen(states.add);

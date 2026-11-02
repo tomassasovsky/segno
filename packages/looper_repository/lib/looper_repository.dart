@@ -12,6 +12,8 @@ library;
 // (AudioDevice/EngineConfig/…) is wrapped in Part 2b.
 export 'package:segno_engine/segno_engine.dart'
     show
+        CallbackTelemetry,
+        CallbackWindowStats,
         ClickMode,
         EngineResult,
         FadeImage,
@@ -56,7 +58,13 @@ export 'src/fx_chain_lookup.dart';
 export 'src/looper_repository.dart';
 export 'src/models/audio_apply_result.dart';
 export 'src/models/audio_config.dart'
-    show AudioDevice, EngineConfig, LatencyState, LoopbackInfo, LoopbackKind;
+    show
+        AudioDevice,
+        EngineConfig,
+        LatencyState,
+        LoopbackInfo,
+        LoopbackKind,
+        kWarmUpBufferFrames;
 export 'src/models/engine_reopened.dart';
 export 'src/models/engine_status.dart';
 // The stage-addressed FX model (FX v3 part 3a): the four-stage address + its

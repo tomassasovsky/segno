@@ -25,6 +25,12 @@ typedef AutoStartResult = ({
 /// lands on the looper; the returned `started` flag is `false` only when no
 /// device could be opened, which the looper surfaces as an "audio not running"
 /// affordance.
+///
+/// A start from a saved config is a warm-up (#1533): the device opens at the
+/// saved rate with the largest buffer, silent, and the saved settings and
+/// chains load onto it. `AudioWarmUpCubit` opens the saved config itself,
+/// and restores its record offset, once the console has settled. A first run
+/// opens as it is, so each of its tries can fall back on a refused buffer.
 Future<AutoStartResult> tryAutoStartEngine({
   required LooperRepository repository,
   required SettingsRepository settings,
@@ -163,7 +169,7 @@ Future<AutoStartResult> _tryAutoStartEngine({
     'capture=${config.captureDeviceId} rate=${config.sampleRate} '
     'buffer=${config.bufferFrames}',
   );
-  var result = repository.startEngine(config);
+  var result = repository.startEngine(config, warmUp: true);
   if (!result.isOk && consolePinned) {
     // Empty-id heal picked a duplex that would not open — fall back to the
     // system default (same as first-run) so the kiosk still comes up.
@@ -184,7 +190,7 @@ Future<AutoStartResult> _tryAutoStartEngine({
           : saved.maxLoopMinutes * 60 * saved.sampleRate,
       useLoopbackCapture: loopback.isAutoRoutable,
     );
-    result = repository.startEngine(fallback);
+    result = repository.startEngine(fallback, warmUp: true);
     if (result.isOk) {
       // Persist empty ids so we don't retry a broken pin every boot; the next
       // heal only runs while both ids stay empty, and first-run-style pin
@@ -275,25 +281,26 @@ Future<AutoStartResult> _tryAutoStartEngine({
     );
   }
 
-  // Restore latency compensation. The interactive flow does this in
-  // AudioSetupCubit, but the cubit is not created on the auto-start path, so
-  // without this the engine would come up with no record offset (compensation
-  // off) — overdubs would land late by the full hardware round-trip. Only a
-  // saved offset for this device, rate and buffer is restored: nothing is
-  // measured without being asked (#1270, the owner's Q2 answer).
+  // Restore latency compensation for a config that opened as it is (one
+  // already at the warm-up buffer): only a saved offset for this device, rate
+  // and buffer, since nothing is measured without being asked (#1270, Q2).
+  // A warm-up's offset is restored by the switch to the saved buffer
+  // (`AudioWarmUpCubit`), since nothing records before it.
   final status = repository.state.status;
   final savedMix = await settings.loadMixSettings(status.deviceName);
-  final savedOffset = await settings.loadLatencyOffsetFrames(
-    device: status.deviceName,
-    sampleRate: status.sampleRate,
-    bufferFrames: status.bufferFrames,
-  );
-  if (savedOffset != null && savedOffset > 0) {
-    repository.setRecordOffset(savedOffset);
+  if (!status.warmingUp) {
+    final savedOffset = await settings.loadLatencyOffsetFrames(
+      device: status.deviceName,
+      sampleRate: status.sampleRate,
+      bufferFrames: status.bufferFrames,
+    );
+    if (savedOffset != null && savedOffset > 0) {
+      repository.setRecordOffset(savedOffset);
+    }
   }
 
-  // Restore the global default loop multiple (×N). Like the latency offset
-  // above, RecordOptionsCubit normally applies this — but that cubit is not
+  // Restore the global default loop multiple (×N). RecordOptionsCubit
+  // normally applies this — but that cubit is not
   // created on the auto-start path and may not have initialized before the
   // pedal triggers a recording, so without this a saved forced ×1 reverts to
   // auto-round-up and loops record at ×2/×4.
@@ -566,6 +573,9 @@ Future<bool> _firstRunAutoStart({
     );
   }
 
+  // No warm-up on a first run (#1533): each try must open its own buffer
+  // here, so a device that refuses 32 frames falls back to its own period
+  // and that period is what gets saved.
   var result = repository.startEngine(
     EngineConfig(
       sampleRate: AudioSetupState.defaultSampleRate,

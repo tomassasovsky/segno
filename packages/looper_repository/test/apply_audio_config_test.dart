@@ -295,7 +295,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       // The interface answers: the supervisor reopens the previous config,
-      // as after an unplug.
+      // as after an unplug, as a warm-up first (#1533).
       engine
         ..devices = const [pinnedDevice]
         ..reopenResult = (
@@ -308,7 +308,9 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(count('reopen'), 3);
-      expect(engine.lastConfig?.bufferFrames, 128);
+      expect(engine.lastConfig?.bufferFrames, kWarmUpBufferFrames);
+      expect(repo.state.status.warmingUp, isTrue);
+      expect(repo.lastEngineConfig, previous);
       expect(repo.sessionTransport.deviceRunning, isTrue);
     });
 

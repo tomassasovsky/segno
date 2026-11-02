@@ -4182,7 +4182,13 @@ void main() {
         final pinned = LooperRepository(engine: engine, ticker: ticker.stream);
         addTearDown(pinned.dispose);
         engine.nextSnapshot = snapshot(devicePresent: true);
-        pinned.startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+        // At the warm-up buffer, so the reconnect opens no warm-up (#1533).
+        pinned.startEngine(
+          const EngineConfig(
+            playbackDeviceId: 'out-1',
+            bufferFrames: kWarmUpBufferFrames,
+          ),
+        );
 
         final windowService = _RecordingWindowService();
         await tester.pumpWidget(
@@ -4277,7 +4283,13 @@ void main() {
         );
         addTearDown(pinned.dispose);
         engine.nextSnapshot = snapshot(devicePresent: true);
-        pinned.startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+        // At the warm-up buffer, so the reconnect opens no warm-up (#1533).
+        pinned.startEngine(
+          const EngineConfig(
+            playbackDeviceId: 'out-1',
+            bufferFrames: kWarmUpBufferFrames,
+          ),
+        );
 
         await tester.pumpWidget(
           App(

@@ -38,6 +38,35 @@ class AudioNotRunningBanner extends StatelessWidget {
   }
 }
 
+/// Shown where [AudioNotRunningBanner] sits while the audio device warms up
+/// (#1533): the device is open but silent and the transport is closed until
+/// the player's own audio settings open. It ends on its own, so it carries no
+/// action.
+class AudioStartingBanner extends StatelessWidget {
+  /// Creates an [AudioStartingBanner].
+  const AudioStartingBanner({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      key: const Key('tracks_audioStarting'),
+      color: scheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            const Icon(Icons.hourglass_top_rounded, size: 18),
+            const SizedBox(width: 10),
+            Expanded(child: AppText(context.l10n.audioStartingBanner)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// The session area in the top bar: the current session name (or "Unsaved")
 /// beside a folder button that opens the **Sessions** popup — the single place
 /// to save / load / manage sessions and export (Segno-Pro-style). The popup

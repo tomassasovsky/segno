@@ -38,7 +38,9 @@ void main() {
       ticker = StreamController<void>.broadcast();
       when(() => looper.state).thenReturn(_state(connected: false));
       when(looper.devices).thenReturn(const []);
-      when(() => looper.startEngine(any())).thenReturn(EngineResult.ok);
+      when(
+        () => looper.startEngine(any(), warmUp: any(named: 'warmUp')),
+      ).thenReturn(EngineResult.ok);
     });
 
     tearDown(() => ticker.close());
@@ -59,20 +61,26 @@ void main() {
         final cubit = await build(config: null);
         expect(cubit.state.status, AudioRecoveryStatus.idle);
         verifyNever(looper.devices);
-        verifyNever(() => looper.startEngine(any()));
+        verifyNever(
+          () => looper.startEngine(any(), warmUp: any(named: 'warmUp')),
+        );
       });
 
       test('does nothing for a system-default (unpinned) config', () async {
         final cubit = await build(config: const EngineConfig());
         expect(cubit.state.status, AudioRecoveryStatus.idle);
-        verifyNever(() => looper.startEngine(any()));
+        verifyNever(
+          () => looper.startEngine(any(), warmUp: any(named: 'warmUp')),
+        );
       });
 
       test('goes idle when the engine is already running', () async {
         when(() => looper.state).thenReturn(_state(connected: true));
         final cubit = await build();
         expect(cubit.state.status, AudioRecoveryStatus.idle);
-        verifyNever(() => looper.startEngine(any()));
+        verifyNever(
+          () => looper.startEngine(any(), warmUp: any(named: 'warmUp')),
+        );
       });
     });
 
@@ -80,7 +88,9 @@ void main() {
       test('waits when the pinned device is absent', () async {
         final cubit = await build();
         expect(cubit.state.status, AudioRecoveryStatus.waitingForDevice);
-        verifyNever(() => looper.startEngine(any()));
+        verifyNever(
+          () => looper.startEngine(any(), warmUp: any(named: 'warmUp')),
+        );
       });
 
       test('auto-starts the engine when the device appears', () async {
@@ -91,7 +101,7 @@ void main() {
         ticker.add(null);
         await pumpEventQueue();
 
-        verify(() => looper.startEngine(_config)).called(1);
+        verify(() => looper.startEngine(_config, warmUp: true)).called(1);
       });
 
       test('does not re-start while the device stays present', () async {
@@ -103,14 +113,14 @@ void main() {
         ticker.add(null); // still present, no absent->present edge
         await pumpEventQueue();
 
-        verify(() => looper.startEngine(_config)).called(1);
+        verify(() => looper.startEngine(_config, warmUp: true)).called(1);
         expect(cubit.state.status, AudioRecoveryStatus.waitingForDevice);
       });
 
       test('auto-starts when the device is present at load', () async {
         when(looper.devices).thenReturn(const [_device]);
         await build();
-        verify(() => looper.startEngine(_config)).called(1);
+        verify(() => looper.startEngine(_config, warmUp: true)).called(1);
       });
 
       test('recovers a capture-only pinned device', () async {
@@ -121,18 +131,22 @@ void main() {
         ticker.add(null);
         await pumpEventQueue();
 
-        verify(() => looper.startEngine(_captureConfig)).called(1);
+        verify(
+          () => looper.startEngine(_captureConfig, warmUp: true),
+        ).called(1);
       });
 
       test('does not thrash when a present device cannot be opened', () async {
-        when(() => looper.startEngine(any())).thenReturn(EngineResult.device);
+        when(
+          () => looper.startEngine(any(), warmUp: any(named: 'warmUp')),
+        ).thenReturn(EngineResult.device);
         when(looper.devices).thenReturn(const [_device]);
         await build(); // present at load -> one attempt
 
         ticker.add(null); // still present, start still failing -> no retry
         await pumpEventQueue();
 
-        verify(() => looper.startEngine(_config)).called(1);
+        verify(() => looper.startEngine(_config, warmUp: true)).called(1);
       });
     });
 
@@ -154,7 +168,9 @@ void main() {
         when(() => looper.state).thenReturn(_state(connected: false));
         ticker.add(null);
         await pumpEventQueue();
-        verifyNever(() => looper.startEngine(any()));
+        verifyNever(
+          () => looper.startEngine(any(), warmUp: any(named: 'warmUp')),
+        );
       });
     });
   });

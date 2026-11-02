@@ -911,6 +911,149 @@ void main() {
     });
   });
 
+  group('the audio warm-up (#1533)', () {
+    const target = EngineConfig(
+      sampleRate: 48000,
+      bufferFrames: 32,
+      playbackDeviceId: 'scarlett',
+    );
+
+    LooperState looper({required bool warmingUp, int? buffer}) => LooperState(
+      status: EngineStatus(
+        deviceName: 'Scarlett',
+        sampleRate: 48000,
+        bufferFrames: buffer ?? (warmingUp ? kWarmUpBufferFrames : 32),
+        isConnected: true,
+        devicePresent: true,
+        warmingUp: warmingUp,
+      ),
+    );
+
+    setUp(() {
+      when(() => repository.lastEngineConfig).thenReturn(target);
+      when(() => repository.state).thenReturn(looper(warmingUp: true));
+    });
+
+    test("hydrates the player's buffer, not the warm-up's", () {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      expect(cubit.state.sampleRate, 48000);
+      expect(cubit.state.bufferFrames, 32);
+      expect(cubit.state.playbackDeviceId, 'scarlett');
+    });
+
+    test('sets no record offset while warming up', () async {
+      await settings.saveLatencyOffsetFrames(
+        device: 'Scarlett',
+        sampleRate: 48000,
+        bufferFrames: kWarmUpBufferFrames,
+        frames: 900,
+      );
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      stateController.add(looper(warmingUp: true));
+      await pumpEventQueue();
+
+      verifyNever(() => repository.setRecordOffset(any()));
+    });
+
+    test("an end that opened the player's config shows no banner", () async {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      stateController.add(looper(warmingUp: false));
+      await pumpEventQueue();
+
+      expect(cubit.state.phase, ConfigPhase.settled);
+    });
+
+    test('an end that left the warm-up config running says what was asked '
+        'and what runs', () async {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      when(() => repository.lastEngineConfig).thenReturn(target.warmUp);
+      stateController.add(
+        looper(warmingUp: false, buffer: kWarmUpBufferFrames),
+      );
+      await pumpEventQueue();
+
+      expect(cubit.state.phase, ConfigPhase.refused);
+      expect(cubit.state.requestedRate, 48000);
+      expect(cubit.state.requestedBuffer, 32);
+      expect(cubit.state.actualRate, 48000);
+      expect(cubit.state.actualBuffer, kWarmUpBufferFrames);
+      // The chips show what runs, so choosing 32 again is an Apply that
+      // retries it; nothing is saved.
+      expect(cubit.state.bufferFrames, kWarmUpBufferFrames);
+      expect(await settings.loadAudioConfig(), isNull);
+    });
+
+    test('a period the device rounded is not a refusal', () async {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      stateController.add(looper(warmingUp: false, buffer: 48));
+      await pumpEventQueue();
+
+      expect(cubit.state.phase, ConfigPhase.settled);
+    });
+
+    test('a switch that dropped a track is told', () async {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      stateController.add(
+        const LooperState(
+          status: EngineStatus(
+            deviceName: 'Scarlett',
+            sampleRate: 48000,
+            bufferFrames: 32,
+            isConnected: true,
+            devicePresent: true,
+            reopen: EngineReopened(
+              outcome: ReopenOutcome.retainedPartial,
+              droppedTracks: 1 << 2,
+              previousSampleRate: 48000,
+              sampleRate: 48000,
+            ),
+          ),
+        ),
+      );
+      await pumpEventQueue();
+
+      expect(
+        cubit.state.deviceConnectivity,
+        DeviceConnectivity.restoredPartial,
+      );
+      expect(cubit.state.phase, ConfigPhase.settled);
+    });
+
+    test("the player's own apply ends the warm-up without a refusal "
+        'banner', () async {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      when(() => repository.applyAudioConfig(any())).thenAnswer((_) {
+        when(
+          () => repository.state,
+        ).thenReturn(looper(warmingUp: false, buffer: 64));
+        return _applied;
+      });
+
+      cubit
+        ..editBuffer(64)
+        ..applyDraft();
+      await pumpEventQueue();
+      stateController.add(looper(warmingUp: false, buffer: 64));
+      await pumpEventQueue();
+
+      expect(cubit.state.phase, ConfigPhase.settled);
+      expect(cubit.state.bufferFrames, 64);
+    });
+  });
+
   group('device selection', () {
     test('hydrates devices and selected ids from the repository', () {
       when(repository.devices).thenReturn(const [

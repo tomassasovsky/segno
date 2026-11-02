@@ -26,6 +26,7 @@ class EngineStatus extends Equatable {
     this.recordOffsetFrames = 0,
     this.fxAddedLatencyFrames = 0,
     this.reopen,
+    this.warmingUp = false,
   });
 
   /// Active device name, or empty when stopped.
@@ -129,6 +130,14 @@ class EngineStatus extends Equatable {
   /// a retained rig from a cleared one (#1140).
   final EngineReopened? reopen;
 
+  /// Whether the device runs the warm-up config (#1533): the player's rate
+  /// with a [kWarmUpBufferFrames]-frame buffer, every output silent and the
+  /// transport closed, until the console has settled and the player's own
+  /// config opens. [bufferFrames] then reports the warm-up buffer, not the
+  /// player's. It also stays true after the switch while the record offset
+  /// of a buffer the device rounded is still owed.
+  final bool warmingUp;
+
   /// Whether a latency measurement has completed.
   bool get hasMeasuredLatency => latencyState == LatencyState.done;
 
@@ -150,5 +159,6 @@ class EngineStatus extends Equatable {
     recordOffsetFrames,
     fxAddedLatencyFrames,
     reopen,
+    warmingUp,
   ];
 }

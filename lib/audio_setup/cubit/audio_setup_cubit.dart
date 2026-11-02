@@ -49,6 +49,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
         hydrateConfig: true,
       ),
     );
+    _followWarmUp(_repository.state.status);
   }
 
   final LooperRepository _repository;
@@ -84,6 +85,10 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
 
   /// The request waiting on the "Apply audio settings?" answer.
   AudioSetupState? _pending;
+
+  /// The player's config while the device warms up (#1533), so the end of
+  /// the warm-up can be told against what was asked.
+  EngineConfig? _warmUpTarget;
 
   /// Previous pinned-device presence, to detect lost/restored transitions; and
   /// the last device name seen while present, so a disconnect banner can name
@@ -509,6 +514,9 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     // repository's reconnect supervisor never passes through here, so a REAL
     // unplug's lost/restored pair is untouched.
     _lastDevicePresent = null;
+    // The player's own apply ends a warm-up, and its outcome is told below;
+    // a refused one puts the warm-up back, and the next tick follows it.
+    _warmUpTarget = null;
     final askedRate = next.sampleRate;
     final askedBuffer = next.bufferFrames;
     final outcome = _repository.applyAudioConfig(_engineConfig(next));
@@ -811,7 +819,62 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     );
     _reconcileDraft();
     _detectConnectivity(looper.status);
+    _followWarmUp(looper.status);
     unawaited(_syncLatencyPersistence(looper.status));
+  }
+
+  /// Follows a warm-up (#1533) to its end. The end opens the player's config
+  /// (`AudioWarmUpCubit`); when the device runs something else after it,
+  /// the page says so the way it says it after a refused Apply: the chips
+  /// show what runs and the banner names what was asked. Nothing is saved,
+  /// so the next start asks for the player's config again. A switch that
+  /// lost loops is told like a reconnect that did.
+  void _followWarmUp(EngineStatus status) {
+    if (status.warmingUp) {
+      _warmUpTarget = _repository.lastEngineConfig;
+      return;
+    }
+    final asked = _warmUpTarget;
+    _warmUpTarget = null;
+    if (asked == null || !status.isConnected) return;
+    final lost = _restoredConnectivity(status.reopen);
+    if (lost != DeviceConnectivity.restored) {
+      emit(
+        state.copyWith(
+          deviceConnectivity: lost,
+          connectivityDeviceName: status.deviceName,
+        ),
+      );
+    }
+    // Refused: the warm-up buffer still runs. A period the device rounded
+    // is not a refusal, as it was not before the warm-up.
+    if (asked.bufferFrames == kWarmUpBufferFrames ||
+        status.bufferFrames != kWarmUpBufferFrames) {
+      return;
+    }
+    emit(
+      state.copyWith(
+        sampleRate: _offerable(
+          status.sampleRate,
+          AudioSetupState.sampleRates,
+          state.sampleRate,
+        ),
+        bufferFrames: _offerable(
+          status.bufferFrames,
+          AudioSetupState.bufferSizes,
+          state.bufferFrames,
+        ),
+        phase: ConfigPhase.refused,
+        requestedRate: asked.sampleRate > 0
+            ? asked.sampleRate
+            : status.sampleRate,
+        requestedBuffer: asked.bufferFrames > 0
+            ? asked.bufferFrames
+            : status.bufferFrames,
+        actualRate: status.sampleRate,
+        actualBuffer: status.bufferFrames,
+      ),
+    );
   }
 
   /// Whether the boot-time recovery waits for the pinned interface
@@ -887,8 +950,13 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// device change, a new rate or buffer, or a reconnect each lands here, so
   /// an offset measured on one profile never compensates another. Nothing is
   /// saved here: only a measurement saves an offset.
+  ///
+  /// Not during a warm-up (#1533): nothing records on its buffer, and the
+  /// switch to the player's buffer sets that profile's offset itself.
   Future<void> _syncLatencyPersistence(EngineStatus status) async {
-    if (!status.isConnected || status.deviceName.isEmpty) return;
+    if (!status.isConnected || status.deviceName.isEmpty || status.warmingUp) {
+      return;
+    }
     final deviceKey =
         '${status.deviceName}|${status.sampleRate}|${status.bufferFrames}';
     if (_hydratedDeviceKey == deviceKey) return;
@@ -931,7 +999,10 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       sampleRate: resolvedSampleRate,
       bufferFrames: hydrateConfig
           ? _resolvedOption(
-              negotiated: engineStatus.bufferFrames,
+              // A warm-up's buffer is not the player's (#1533).
+              negotiated: engineStatus.warmingUp
+                  ? 0
+                  : engineStatus.bufferFrames,
               requested: lastConfig?.bufferFrames,
               fallback: current.bufferFrames,
             )
