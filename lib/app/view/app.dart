@@ -816,7 +816,10 @@ class _AppState extends State<App> {
           // Provided at the shell (not just the setup screen) so the device
           // picker, the persisted selection, and the connect/disconnect banner
           // stay live during normal looping, not only during first-run setup.
+          // Eager (not lazy): it follows the boot's audio warm-up to its end,
+          // so a player's config the device refused is told (#1533).
           BlocProvider(
+            lazy: false,
             create: (context) => AudioSetupCubit(
               repository: context.read<LooperRepository>(),
               settings: context.read<SettingsRepository>(),
@@ -862,6 +865,23 @@ class _AppState extends State<App> {
               return cubit;
             },
           ),
+          // Eager (not lazy): every start the console makes on its own is an
+          // audio warm-up, and this opens the player's config once the
+          // console has settled (#1533). It watches from the first frame on.
+          BlocProvider(
+            lazy: false,
+            create: (context) {
+              final cubit = AudioWarmUpCubit(
+                looper: context.read<LooperRepository>(),
+                settings: context.read<SettingsRepository>(),
+                guards: widget.guards,
+                ready: () =>
+                    WidgetsBinding.instance.waitUntilFirstFrameRasterized,
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
           // Eager (not lazy): the boot-time silent salvage (D-SALVAGE, #679)
           // must start the moment the app composes, not whenever a widget
           // first reads this cubit — a crashed capture recovers in the
@@ -878,9 +898,12 @@ class _AppState extends State<App> {
             create: (context) {
               final cubit = PerformanceRecorderCubit(
                 performance: context.read<PerformanceRepository>(),
+                // The master tap sits before the master gain a warm-up
+                // silences with, so a take would hold what nobody heard.
                 takeLocked: () =>
                     context.read<PowerCubit>().state.isUiUp ||
-                    _runtime.fxPersistence.sessionTransitionActive,
+                    _runtime.fxPersistence.sessionTransitionActive ||
+                    context.read<LooperRepository>().state.status.warmingUp,
                 storage: _storage,
                 destination: () =>
                     context.read<RecordingDestinationCubit>().state.destination,

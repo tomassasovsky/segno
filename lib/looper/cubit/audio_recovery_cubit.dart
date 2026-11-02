@@ -82,7 +82,9 @@ class AudioRecoveryCubit extends Cubit<AudioRecoveryState> {
     final present = pinnedDevicesPresent(_config!, _looper.devices());
     // Attempt only on the absent->present edge so a present-but-unopenable
     // device can't thrash the engine (mirrors the in-repo supervisor).
-    if (present && !_lastPresent) _looper.startEngine(_config);
+    // A warm start, as at boot (#1533): `AudioWarmUpCubit` opens the
+    // config itself once the console has settled.
+    if (present && !_lastPresent) _looper.startEngine(_config, warmUp: true);
     _lastPresent = present;
     _emit(AudioRecoveryStatus.waitingForDevice);
   }

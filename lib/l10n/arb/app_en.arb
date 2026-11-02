@@ -179,6 +179,10 @@
         }
     },
     "engineStoppedBanner": "Audio engine stopped — open setup to start.",
+    "audioStartingBanner": "Audio is starting…",
+    "@audioStartingBanner": {
+        "description": "Stage strip while the audio device warms up after a start, before the player's own audio settings open and anything is heard (#1533)."
+    },
     "loopMultipleLabel": "×{multiple}",
     "@loopMultipleLabel": {
         "placeholders": {

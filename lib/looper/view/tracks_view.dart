@@ -381,6 +381,19 @@ class _TracksViewState extends State<TracksView> {
                                   4,
                                 ),
                                 child: AudioNotRunningBanner(),
+                              )
+                            // A warm-up runs the device silent with the
+                            // transport closed (#1533): the stage says so
+                            // in the same place rather than looking ready.
+                            else if (chrome.warmingUp && !deviceLost)
+                              const Padding(
+                                padding: EdgeInsets.fromLTRB(
+                                  StageTopBar.sideInset,
+                                  10,
+                                  StageTopBar.sideInset,
+                                  4,
+                                ),
+                                child: AudioStartingBanner(),
                               ),
                             Expanded(
                               child: Padding(
@@ -570,6 +583,7 @@ class _ChromeState extends Equatable {
     required this.bars,
     required this.beats,
     required this.isConnected,
+    required this.warmingUp,
     required this.primaryTrack,
     required this.quantizeDiv,
     required this.recDub,
@@ -590,6 +604,7 @@ class _ChromeState extends Equatable {
         for (final track in state.tracks) _beatsWithoutBars(track, state),
       ],
       isConnected: state.status.isConnected,
+      warmingUp: state.status.warmingUp,
       primaryTrack: state.transport.primaryTrack,
       quantizeDiv: state.transport.quantizeDiv,
       recDub: state.transport.recDub,
@@ -610,6 +625,7 @@ class _ChromeState extends Equatable {
   final List<int?> bars;
   final List<int?> beats;
   final bool isConnected;
+  final bool warmingUp;
   final int primaryTrack;
   final GridDivision quantizeDiv;
   final bool recDub;
@@ -620,6 +636,7 @@ class _ChromeState extends Equatable {
     bars,
     beats,
     isConnected,
+    warmingUp,
     primaryTrack,
     quantizeDiv,
     recDub,

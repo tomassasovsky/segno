@@ -79,6 +79,12 @@ class AudioDevice extends Equatable {
   ];
 }
 
+/// The buffer a warm-up opens the device with (#1533): the largest the
+/// console offers, so the busiest seconds after a start run with the most
+/// headroom. The sample rate stays the player's, so the interface clock does
+/// not move when the player's own buffer opens.
+const int kWarmUpBufferFrames = 512;
+
 /// Requested audio device configuration. Domain mirror of the engine's
 /// `EngineConfig`; any field left at `0`/empty defers to the device default.
 class EngineConfig extends Equatable {
@@ -117,6 +123,23 @@ class EngineConfig extends Equatable {
 
   /// The id of the capture device to open, or empty for the system default.
   final String captureDeviceId;
+
+  /// This config with a [kWarmUpBufferFrames]-frame buffer: what a warm-up
+  /// opens before the player's own buffer (#1533).
+  EngineConfig get warmUp => EngineConfig(
+    sampleRate: sampleRate,
+    bufferFrames: kWarmUpBufferFrames,
+    inputChannels: inputChannels,
+    outputChannels: outputChannels,
+    maxLoopFrames: maxLoopFrames,
+    useLoopbackCapture: useLoopbackCapture,
+    playbackDeviceId: playbackDeviceId,
+    captureDeviceId: captureDeviceId,
+  );
+
+  /// Whether opening this config needs a warm-up first: its buffer is
+  /// smaller than [kWarmUpBufferFrames], or left to the device (`0`).
+  bool get needsWarmUp => bufferFrames < kWarmUpBufferFrames;
 
   @override
   List<Object?> get props => [

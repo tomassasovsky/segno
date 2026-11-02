@@ -3046,6 +3046,27 @@ void main() {
       await pump(tester);
 
       expect(find.byKey(const Key('tracks_audioNotRunning')), findsNothing);
+      expect(find.byKey(const Key('tracks_audioStarting')), findsNothing);
+    });
+
+    testWidgets('says audio is starting while the device warms up (#1533)', (
+      tester,
+    ) async {
+      seed(
+        const LooperState(
+          tracks: [Track()],
+          status: EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            warmingUp: true,
+          ),
+        ),
+      );
+      await pump(tester);
+
+      expect(find.byKey(const Key('tracks_audioStarting')), findsOneWidget);
+      expect(find.text('Audio is starting…'), findsOneWidget);
+      expect(find.byKey(const Key('tracks_audioNotRunning')), findsNothing);
     });
   });
 

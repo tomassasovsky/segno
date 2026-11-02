@@ -4,6 +4,7 @@ library;
 
 export 'bloc/looper_bloc.dart';
 export 'cubit/audio_recovery_cubit.dart';
+export 'cubit/audio_warm_up_cubit.dart';
 export 'cubit/fx_presets_cubit.dart';
 export 'cubit/high_contrast_cubit.dart';
 export 'cubit/output_level_cubit.dart';

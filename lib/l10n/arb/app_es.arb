@@ -85,6 +85,7 @@
     "sessionBootRecoveryBody": "La sesión cargada está detenida. Reintenta confirmar sus ajustes antes de continuar.",
     "sessionErrorGeneric": "La acción de sesión falló: {details}",
     "engineStoppedBanner": "Motor de audio detenido — abre la configuración para iniciar.",
+    "audioStartingBanner": "El audio se está iniciando…",
     "loopMultipleLabel": "×{multiple}",
     "trackStateEmpty": "vacío",
     "trackStateRecording": "grabando",
