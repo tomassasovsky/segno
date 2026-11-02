@@ -24,8 +24,8 @@ void main() {
   setUpAll(loadBundledFonts);
 
   // Arimo is the track view's face and the settings frame's. A weight the app
-  // does not bundle is synthesized from the Regular, which smears the
-  // outlines and keeps the Regular's advances; the bundled Bold is wider.
+  // does not bundle is synthesized by thickening the Regular's outlines,
+  // which keeps the Regular's advance widths; the bundled Bold is wider.
   test('Arimo draws bold and semi-bold from its own Bold face', () {
     final regular = _width(FontWeight.w400);
     expect(_width(FontWeight.w700), greaterThan(regular + 50));
