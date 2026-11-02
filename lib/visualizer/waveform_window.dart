@@ -125,21 +125,18 @@ class WaveformWindowApp extends StatelessWidget {
               ),
             );
             // Full-bleed: the console view carries its own inset. Dimmed
-            // as its panel is set when the panel cannot dim itself.
-            final face = SoftwareBrightness(
+            // as its panel is set when the panel cannot dim itself, power
+            // faces included. Always the Stack: moving the view in and out
+            // of one would remount it each time the power panel opens.
+            return SoftwareBrightness(
               brightness: readoutData.brightness,
-              child: ConsoleReadoutView(
-                readout: readoutData,
-                waveform: waveform,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ConsoleReadoutView(readout: readoutData, waveform: waveform),
+                  ReadoutGoodbyeFace(readout: readoutData),
+                ],
               ),
-            );
-            if (readoutData.goodbye == ReadoutGoodbye.none) return face;
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                face,
-                ReadoutGoodbyeFace(readout: readoutData),
-              ],
             );
           },
         ),

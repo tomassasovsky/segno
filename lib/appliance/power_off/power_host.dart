@@ -58,12 +58,17 @@ void requestRestart(BuildContext context) => context.read<PowerCubit>().restart(
   save: saveOpenSession(context),
 );
 
-/// The staged update's version, which a restart installs; null when none is
-/// staged or no update owner is mounted.
+/// The version a restart installs from [update]; null when nothing is
+/// staged. Power options and the Restarting face both say it.
+String? stagedUpdateVersion(UpdateState update) =>
+    update.phase == UpdatePhase.staged
+    ? update.available?.version.toString()
+    : null;
+
+/// [stagedUpdateVersion] of the mounted update owner; null without one.
 String? _stagedUpdate(BuildContext context) {
   final update = _maybeRead<UpdateCubit>(context)?.state;
-  if (update == null || update.phase != UpdatePhase.staged) return null;
-  return update.available?.version.toString();
+  return update == null ? null : stagedUpdateVersion(update);
 }
 
 /// Listens for the rear power button, shows Power options, and runs Save As.

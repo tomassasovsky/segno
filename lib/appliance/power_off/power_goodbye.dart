@@ -24,12 +24,21 @@ ReadoutGoodbye readoutGoodbyeOf(PowerState state) => switch (state.phase) {
   PowerPhase.idle || PowerPhase.refuse => ReadoutGoodbye.none,
 };
 
-/// The step's line, as the Saving face lists it.
-String powerStepLabel(AppLocalizations l10n, PowerStep step) => switch (step) {
-  PowerStep.stopPlayback => l10n.powerStepStopPlayback,
-  PowerStep.saveSettings => l10n.powerStepSaveSettings,
-  PowerStep.writeSession => l10n.powerStepWriteSession,
-  PowerStep.finishOnDisk => l10n.powerStepFinishOnDisk,
+/// The step's line, as the Saving face lists it: what it does while it runs
+/// or is still ahead, what it did once [done].
+String powerStepLabel(
+  AppLocalizations l10n,
+  PowerStep step, {
+  bool done = false,
+}) => switch (step) {
+  PowerStep.stopPlayback =>
+    done ? l10n.powerStepStopPlaybackDone : l10n.powerStepStopPlayback,
+  PowerStep.saveSettings =>
+    done ? l10n.powerStepSaveSettingsDone : l10n.powerStepSaveSettings,
+  PowerStep.writeSession =>
+    done ? l10n.powerStepWriteSessionDone : l10n.powerStepWriteSession,
+  PowerStep.finishOnDisk =>
+    done ? l10n.powerStepFinishOnDiskDone : l10n.powerStepFinishOnDisk,
 };
 
 /// The main screen's full-screen Saving, Safe to switch off and Restarting
@@ -117,7 +126,7 @@ class _SavingFace extends StatelessWidget {
             for (var i = 0; i < steps.length; i++) ...[
               if (i > 0) const SizedBox(height: 20),
               _StepRow(
-                label: powerStepLabel(l10n, steps[i]),
+                label: powerStepLabel(l10n, steps[i], done: i < current),
                 progress: i < current
                     ? _StepProgress.done
                     : i == current

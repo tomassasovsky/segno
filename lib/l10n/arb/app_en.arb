@@ -2873,21 +2873,37 @@
             }
         }
     },
-    "powerStepStopPlayback": "Playback stopped",
+    "powerStepStopPlayback": "Stopping playback",
     "@powerStepStopPlayback": {
-        "description": "Saving face step: the transport stops."
+        "description": "Saving step while it runs or is still ahead: the transport stops."
     },
-    "powerStepSaveSettings": "Settings saved",
+    "powerStepStopPlaybackDone": "Playback stopped",
+    "@powerStepStopPlaybackDone": {
+        "description": "Saving step once finished: the transport stopped."
+    },
+    "powerStepSaveSettings": "Saving settings",
     "@powerStepSaveSettings": {
-        "description": "Saving face step: the settings flush."
+        "description": "Saving step while it runs or is still ahead: the settings flush."
+    },
+    "powerStepSaveSettingsDone": "Settings saved",
+    "@powerStepSaveSettingsDone": {
+        "description": "Saving step once finished: the settings flushed."
     },
     "powerStepWriteSession": "Writing the session",
     "@powerStepWriteSession": {
-        "description": "Saving face step: the session file is written."
+        "description": "Saving step while it runs or is still ahead: the session file is written."
+    },
+    "powerStepWriteSessionDone": "Session written",
+    "@powerStepWriteSessionDone": {
+        "description": "Saving step once finished: the session file is on disk."
     },
     "powerStepFinishOnDisk": "Finishing on disk",
     "@powerStepFinishOnDisk": {
-        "description": "Saving face step: storage writes settle before the power-off."
+        "description": "Saving step while it runs or is still ahead: storage writes settle before the power-off."
+    },
+    "powerStepFinishOnDiskDone": "Finished on disk",
+    "@powerStepFinishOnDiskDone": {
+        "description": "Saving step once finished: storage writes settled."
     },
     "powerSaveFailedTitle": "Segno is staying on",
     "@powerSaveFailedTitle": {

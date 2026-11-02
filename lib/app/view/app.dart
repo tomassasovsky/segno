@@ -1445,9 +1445,7 @@ class _AppViewState extends State<_AppView> {
                     PowerGoodbye(
                       state: power,
                       stagedUpdate: context.select<UpdateCubit, String?>(
-                        (update) => update.state.phase == UpdatePhase.staged
-                            ? update.state.available?.version.toString()
-                            : null,
+                        (update) => stagedUpdateVersion(update.state),
                       ),
                       unplugToApply: context.select<PedalCubit, bool>(
                         (pedal) =>

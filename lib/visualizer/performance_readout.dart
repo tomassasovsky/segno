@@ -221,14 +221,7 @@ class PerformanceReadout extends Equatable {
   ];
 }
 
-ReadoutGoodbye _goodbyeOf(Object? raw) => ReadoutGoodbye.values.firstWhere(
-  (face) => face.name == raw,
-  orElse: () => ReadoutGoodbye.none,
-);
+ReadoutGoodbye _goodbyeOf(Object? raw) =>
+    ReadoutGoodbye.values.asNameMap()[raw] ?? ReadoutGoodbye.none;
 
-PowerStep? _stepOf(Object? raw) {
-  for (final step in PowerStep.values) {
-    if (step.name == raw) return step;
-  }
-  return null;
-}
+PowerStep? _stepOf(Object? raw) => PowerStep.values.asNameMap()[raw];

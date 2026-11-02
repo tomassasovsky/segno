@@ -72,6 +72,9 @@ void main() {
         expect(marker('done'), findsNothing);
         expect(marker('current'), findsOneWidget);
         expect(marker('pending'), findsNWidgets(3));
+        expect(find.text('Stopping playback'), findsOneWidget);
+        expect(find.text('Saving settings'), findsOneWidget);
+        expect(find.text('Settings saved'), findsNothing);
       });
 
       testWidgets('ends on the disk step with the rest done', (tester) async {
@@ -81,6 +84,10 @@ void main() {
         expect(marker('done'), findsNWidgets(3));
         expect(marker('current'), findsOneWidget);
         expect(marker('pending'), findsNothing);
+        // A step names what it did once done, what it does until then.
+        expect(find.text('Session written'), findsOneWidget);
+        expect(find.text('Writing the session'), findsNothing);
+        expect(find.text('Finishing on disk'), findsOneWidget);
       });
 
       testWidgets('an empty unnamed session has no session step or name', (
