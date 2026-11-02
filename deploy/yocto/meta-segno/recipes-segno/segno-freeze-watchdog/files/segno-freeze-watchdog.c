@@ -8,7 +8,8 @@
  * board. The power cut that ended it erased the ramoops RAM.
  *
  * Every SEGNO_WATCHDOG_INTERVAL_MS this runs one round of probes on its probe
- * thread: an uncached read of a file on / and of one on /data, and an exec of
+ * thread: an uncached read of a file on / from every CPU and of one on /data,
+ * and an exec of
  * a trivial program. A round that fails, or does not finish within
  * SEGNO_WATCHDOG_DEADLINE_MS, counts as failed. After at least
  * SEGNO_WATCHDOG_MIN_FAILURES failed rounds in a row spanning
@@ -93,7 +94,7 @@ int main(void) {
 
     recovery.kmsg_fd = open(kmsg_path, O_WRONLY | O_APPEND | O_CLOEXEC);
     if (recovery.kmsg_fd < 0) {
-        fprintf(stderr, "segno-freeze-watchdog: cannot open %s: %s\n", kmsg_path, strerror(errno));
+        fw_log(-1, 3, "cannot open %s: %s", kmsg_path, strerror(errno));
         return 1;
     }
     recovery.sysrq_fd = open(sysrq_path, O_WRONLY | O_APPEND | O_CLOEXEC);
@@ -111,11 +112,11 @@ int main(void) {
     }
 
     static char root_name[300], data_name[300], exec_name[300];
-    snprintf(root_name, sizeof root_name, "read %s", root_file);
+    snprintf(root_name, sizeof root_name, "read %s on each CPU", root_file);
     snprintf(data_name, sizeof data_name, "read %s", data_file);
     snprintf(exec_name, sizeof exec_name, "exec %s", exec_path);
     static struct fw_probe probes[3];
-    probes[0] = (struct fw_probe){root_name, fw_probe_read, &root_read};
+    probes[0] = (struct fw_probe){root_name, fw_probe_read_every_cpu, &root_read};
     probes[1] = (struct fw_probe){data_name, fw_probe_read, &data_read};
     probes[2] = (struct fw_probe){exec_name, fw_probe_exec, (void *)exec_path};
 
@@ -135,7 +136,7 @@ int main(void) {
     }
     /* Arm only on probes that work: a probe broken from the start (a program
      * an image no longer ships) would otherwise reboot the console a minute
-     * after every boot. systemd starts it again in 10 s. */
+     * after every boot. systemd tries again in 30 s, five times. */
     if (fw_prober_round(prober, deadline_ms, why, sizeof why) != 0) {
         fw_log(recovery.kmsg_fd, 3, "cannot start: the first probe round failed: %s", why);
         return 1;
@@ -172,11 +173,16 @@ int main(void) {
             char reason[FW_WHY_MAX + 96];
             snprintf(reason, sizeof reason, "exec or storage dead: %d probe rounds failed over %lld s, the last: %s",
                      tracker.failures, (long long)((now - tracker.last_ok_ms) / 1000), why);
-            if (fw_recover(&recovery, reason) != 0) {
-                /* The sysrq crash did not take. reboot(2) runs the device
-                 * shutdown, which a dead disk can hang, but it is all that
-                 * is left. No sync(): that would wait on the dead disk. */
-                fw_log(recovery.kmsg_fd, 2, "sysrq did not reboot; calling reboot(2)");
+            int crash = fw_recover(&recovery, reason);
+            /* Still here: the panic did not happen. With the kernel's
+             * trigger that is a failure whatever the write returned, and
+             * exiting would leave a restart that needs exec, so reboot(2).
+             * It runs the device shutdown, which a dead disk can hang, but
+             * it is all that is left. No sync(): that would wait on the
+             * dead disk. A test trigger only exits. */
+            if (strcmp(sysrq_path, "/proc/sysrq-trigger") == 0) {
+                fw_log(recovery.kmsg_fd, 2, "sysrq did not reboot (%s); calling reboot(2)",
+                       crash != 0 ? "the crash write failed" : "the crash write returned");
                 reboot(RB_AUTOBOOT);
                 fw_log(recovery.kmsg_fd, 2, "reboot(2): %s", strerror(errno));
             }

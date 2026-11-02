@@ -27,8 +27,10 @@ RestartSec=30s
 # sound-card IRQ thread (segno-rtirq, FIFO 90). Pinned to core 0, where the
 # callback and the workers do not run, so its few hundred microseconds per
 # round never land in the middle of their audio period. The USB IRQ thread
-# is on core 0 too, and preempts this one. The probe thread and the program
-# it starts inherit both.
+# is on core 0 too, and preempts this one. The probe thread runs at
+# SCHED_OTHER (it takes kernel locks that must not boost anything above the
+# audio callback) and visits every core for one read each round, so a core
+# whose NVMe completions the audio starves is seen too.
 CPUSchedulingPolicy=fifo
 CPUSchedulingPriority=85
 CPUAffinity=0

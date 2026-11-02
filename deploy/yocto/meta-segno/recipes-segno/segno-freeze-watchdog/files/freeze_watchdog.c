@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <sched.h>
 #include <spawn.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -120,6 +121,30 @@ int fw_probe_read(void *ctx, char *why, size_t why_len) {
     return 0;
 }
 
+int fw_probe_read_every_cpu(void *ctx, char *why, size_t why_len) {
+    struct fw_read_probe *r = ctx;
+    pthread_t self = pthread_self();
+    cpu_set_t saved;
+    if (pthread_getaffinity_np(self, sizeof saved, &saved) != 0) return fw_probe_read(r, why, why_len);
+    long cpus = sysconf(_SC_NPROCESSORS_CONF);
+    int result = 0;
+    for (long cpu = 0; cpu < cpus && cpu < CPU_SETSIZE; cpu++) {
+        cpu_set_t one;
+        CPU_ZERO(&one);
+        CPU_SET(cpu, &one);
+        /* An offline CPU refuses the mask: nothing runs there to starve. */
+        if (pthread_setaffinity_np(self, sizeof one, &one) != 0) continue;
+        if (fw_probe_read(r, why, why_len) != 0) {
+            size_t used = strlen(why);
+            snprintf(why + used, why_len - used, " (on CPU %ld)", cpu);
+            result = -1;
+            break;
+        }
+    }
+    pthread_setaffinity_np(self, sizeof saved, &saved);
+    return result;
+}
+
 int fw_ensure_probe_file(const char *path, char *why, size_t why_len) {
     struct stat st;
     if (stat(path, &st) == 0 && S_ISREG(st.st_mode) && st.st_size >= FW_BLOCK)
@@ -147,8 +172,10 @@ int fw_ensure_probe_file(const char *path, char *why, size_t why_len) {
         snprintf(why, why_len, "create %s: %s", tmp, strerror(errno));
         return -1;
     }
-    int ok = write(fd, block, sizeof block) == (ssize_t)sizeof block && fsync(fd) == 0;
-    int saved = errno;
+    ssize_t written = write(fd, block, sizeof block);
+    int ok = written == (ssize_t)sizeof block && fsync(fd) == 0;
+    /* A short write leaves errno alone; it means the disk is full. */
+    int saved = written >= 0 && written < (ssize_t)sizeof block ? ENOSPC : errno;
     close(fd);
     if (!ok || rename(tmp, path) != 0) {
         snprintf(why, why_len, "write %s: %s", path, strerror(ok ? errno : saved));
@@ -224,11 +251,15 @@ struct fw_prober *fw_prober_start(const struct fw_probe *probes, int count,
     pthread_cond_init(&pr->cond, &ca);
     pthread_condattr_destroy(&ca);
 
-    /* The thread inherits this process's scheduling (SCHED_FIFO and the CPU
-     * the unit pins it to), so an audio overload cannot starve it either. */
+    /* SCHED_OTHER (see the header); it keeps the CPU the unit pins this
+     * process to, and the program it starts inherits both. */
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, FW_PROBE_STACK);
+    struct sched_param other = {.sched_priority = 0};
+    pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
+    pthread_attr_setschedpolicy(&attr, SCHED_OTHER);
+    pthread_attr_setschedparam(&attr, &other);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
     pthread_t thread;
     int rc = pthread_create(&thread, &attr, prober_main, pr);

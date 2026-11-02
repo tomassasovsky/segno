@@ -49,6 +49,12 @@ flags=(-std=gnu11 -Wall -Wextra -Werror -O1 -pthread -I "$files")
 "$cc" "${flags[@]}" -o "$build/segno-freeze-watchdog" \
     "$files/segno-freeze-watchdog.c" "$files/freeze_watchdog.c" || exit 1
 
+# The / probe file, made the way the recipe makes it.
+probe_cmd=$(sed -n 's/^    \(yes .* | head -c 4096\) \\$/\1/p' "$recipe")
+check "the recipe's probe file command was found" '[ -n "$probe_cmd" ]'
+eval "$probe_cmd" > "$build/root-probe"
+check "it makes one full block" '[ "$(wc -c < "$build/root-probe")" -eq 4096 ]'
+
 echo "unit tests"
 TMPDIR="$build" "$build/test_freeze_watchdog"; rc=$?
 check "the unit tests pass" '[ "$rc" = 0 ]'
@@ -61,13 +67,14 @@ setup() {
 }
 
 # run_daemon [VAR=value ...]: the daemon with test paths and fast timings,
+# and a deadline loose enough for a loaded machine to visit every CPU,
 # stopped after $limit seconds (20 by default) if it has not exited by itself.
 run_daemon() {
     env SEGNO_WATCHDOG_KMSG="$work/kmsg" SEGNO_WATCHDOG_SYSRQ="$work/sysrq" \
-        SEGNO_WATCHDOG_ROOT_FILE="$build/segno-freeze-watchdog" \
+        SEGNO_WATCHDOG_ROOT_FILE="$build/root-probe" \
         SEGNO_WATCHDOG_DATA_FILE="$work/data/segno/probe" \
         SEGNO_WATCHDOG_EXEC=/bin/true \
-        SEGNO_WATCHDOG_INTERVAL_MS=50 SEGNO_WATCHDOG_DEADLINE_MS=200 \
+        SEGNO_WATCHDOG_INTERVAL_MS=50 SEGNO_WATCHDOG_DEADLINE_MS=2000 \
         SEGNO_WATCHDOG_FAIL_AFTER_MS=400 SEGNO_WATCHDOG_MIN_FAILURES=3 \
         SEGNO_WATCHDOG_DUMP_WAIT_MS=20 SEGNO_WATCHDOG_SYNC_WAIT_MS=10 \
         "$@" timeout "${limit:-20}" "$build/segno-freeze-watchdog" 2>"$work/stderr"
@@ -78,7 +85,7 @@ setup
 limit=1.5 run_daemon
 rc=$?
 check "still running when stopped" '[ "$rc" = 124 ]'
-check "says what it watches" 'grep -q "^<6>segno-freeze-watchdog: watching read .*segno-freeze-watchdog, read $work/data/segno/probe and exec /bin/true every 50 ms" "$work/kmsg"'
+check "says what it watches" 'grep -q "^<6>segno-freeze-watchdog: watching read $build/root-probe on each CPU, read $work/data/segno/probe and exec /bin/true every 50 ms" "$work/kmsg"'
 check "no probe failed" '! grep -q "probe failed" "$work/kmsg"'
 check "triggered nothing" '[ ! -s "$work/sysrq" ]'
 check "created the /data probe file" '[ "$(wc -c < "$work/data/segno/probe")" -eq 4096 ]'
@@ -116,10 +123,10 @@ printf '#!/bin/sh
 : > %s/armed
 ' "$work" "$work" > "$work/hang"
 chmod +x "$work/hang"
-start_daemon SEGNO_WATCHDOG_EXEC="$work/hang"
+start_daemon SEGNO_WATCHDOG_EXEC="$work/hang" SEGNO_WATCHDOG_DEADLINE_MS=500
 wait "$daemon"; rc=$?
 check "asks for the reboot (exit 3)" '[ "$rc" = 3 ]'
-check "the round fails at its deadline" 'grep -q "probe failed (1 in a row, 0 s since the last pass): exec $work/hang did not return within 200 ms" "$work/kmsg"'
+check "the round fails at its deadline" 'grep -q "probe failed (1 in a row, 0 s since the last pass): exec $work/hang did not return within 500 ms" "$work/kmsg"'
 check "later rounds say it is still stuck" 'grep -q "exec $work/hang has not returned for" "$work/kmsg"'
 check "dumps, syncs and crashes" '[ "$(cat "$work/sysrq")" = wlsc ]'
 

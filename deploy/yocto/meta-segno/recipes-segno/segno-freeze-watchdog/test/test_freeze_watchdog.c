@@ -7,6 +7,8 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <pthread.h>
+#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -110,6 +112,12 @@ static int fake_hang(void *ctx, char *why, size_t len) {
     return 0;
 }
 
+static int fake_policy(void *ctx, char *why, size_t len) {
+    (void)why, (void)len;
+    *(int *)ctx = sched_getscheduler(0);
+    return 0;
+}
+
 static void test_prober(void) {
     char why[FW_WHY_MAX];
 
@@ -121,6 +129,12 @@ static void test_prober(void) {
     CHECK("every probe ran", first == 1 && second == 1);
     CHECK("each round runs them again",
           fw_prober_round(pr, 1000, why, sizeof why) == 0 && first == 2 && second == 2);
+
+    int policy = -1;
+    struct fw_probe pol[] = {{"policy", fake_policy, &policy}};
+    pr = fw_prober_start(pol, 1, why, sizeof why);
+    fw_prober_round(pr, 1000, why, sizeof why);
+    CHECK("probes run at SCHED_OTHER", policy == SCHED_OTHER);
 
     int after = 0;
     struct fw_probe bad[] = {{"exec", fake_fail, "exec /bin/true: No such file or directory"},
@@ -183,6 +197,11 @@ static void test_probes(void) {
     CHECK("opens the probe file", fw_read_probe_open(&r, probe, why, sizeof why) == 0);
     CHECK("reads it", fw_probe_read(&r, why, sizeof why) == 0);
     CHECK("and again", fw_probe_read(&r, why, sizeof why) == 0);
+    cpu_set_t before, after;
+    pthread_getaffinity_np(pthread_self(), sizeof before, &before);
+    CHECK("reads it from every CPU", fw_probe_read_every_cpu(&r, why, sizeof why) == 0);
+    pthread_getaffinity_np(pthread_self(), sizeof after, &after);
+    CHECK("and puts the CPU mask back", CPU_EQUAL(&before, &after));
 
     /* An existing file is left as it is. */
     int fd = open(probe, O_WRONLY);
@@ -212,6 +231,8 @@ static void test_probes(void) {
     d.fd = open(data, O_RDONLY | O_DIRECTORY);
     CHECK("whose read fails", d.fd >= 0 && fw_probe_read(&d, why, sizeof why) == -1);
     CHECK("with the error", strstr(why, "Is a directory") != NULL);
+    CHECK("from every CPU too", fw_probe_read_every_cpu(&d, why, sizeof why) == -1);
+    CHECK("naming the CPU", strstr(why, "Is a directory (on CPU ") != NULL);
 }
 
 /* --- Recovery ------------------------------------------------------------- */

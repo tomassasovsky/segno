@@ -72,17 +72,31 @@ int fw_read_probe_open(struct fw_read_probe *r, const char *path,
                        char *why, size_t why_len);
 int fw_probe_read(void *ctx, char *why, size_t why_len);
 
+/* The same read from every CPU in turn (ctx is a struct fw_read_probe). Each
+ * CPU submits to its own NVMe queue, whose completion interrupt is handled
+ * on that CPU by a FIFO 50 thread. A queue whose CPU the audio threads
+ * starve hangs only the I/O issued there, so a read from core 0 alone would
+ * miss it. The calling thread's CPU mask is put back afterwards. */
+int fw_probe_read_every_cpu(void *ctx, char *why, size_t why_len);
+
 /* Creates `path` holding one block if it is missing or shorter, so the read
  * probe on /data has a file to read. Returns 0 on success. */
 int fw_ensure_probe_file(const char *path, char *why, size_t why_len);
 
 /* --- The prober -----------------------------------------------------------
  *
- * Runs each round's probes on its own thread, so a probe stuck in the kernel
+ * Runs each round's probes on its own thread, at SCHED_OTHER, so a probe
+ * stuck in the kernel
  * (uninterruptible sleep on a dead disk) cannot block the caller. A stuck
  * round counts as failed at its deadline, and every round after it fails at
  * once until it returns: a thread in uninterruptible sleep cannot be stopped,
  * so no second one is started next to it.
+ *
+ * SCHED_OTHER, while the caller is SCHED_FIFO: the probes take kernel locks
+ * that PREEMPT_RT turns into priority-inheriting ones, and a FIFO 85 waiter
+ * would boost a holder on an audio core above the audio callback. On an audio
+ * core the probe thread only runs when the audio threads leave it time, and
+ * RT throttling always leaves some. Only the deadline needs FIFO.
  */
 struct fw_prober;
 
