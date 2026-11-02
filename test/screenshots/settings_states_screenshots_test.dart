@@ -319,16 +319,34 @@ void main() {
       () => looper.mixSettingsFailures,
     ).thenAnswer((_) => const Stream.empty());
     when(() => looper.mixGeneration).thenReturn(0);
-    when(() => looper.state).thenReturn(
-      LooperState(
-        tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
-        outputBusCount: 1,
-        status: status,
-      ),
+    var looperNow = LooperState(
+      tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
+      outputBusCount: 1,
+      status: status,
     );
+    when(() => looper.state).thenAnswer((_) => looperNow);
     // A status that owes its record offset is settled at once: the loopback
-    // measurement does not return (#1541).
-    when(() => looper.setRecordOffset(any())).thenReturn(EngineResult.ok);
+    // measurement does not return (#1541), and setting the offset settles it.
+    when(() => looper.setRecordOffset(any())).thenAnswer((_) {
+      looperNow = LooperState(
+        tracks: looperNow.tracks,
+        outputBusCount: looperNow.outputBusCount,
+        status: EngineStatus(
+          isConnected: status.isConnected,
+          deviceName: status.deviceName,
+          sampleRate: status.sampleRate,
+          bufferFrames: status.bufferFrames,
+          inputChannels: status.inputChannels,
+          outputChannels: status.outputChannels,
+          devicePresent: status.devicePresent,
+          excludedInputMask: status.excludedInputMask,
+          latencyState: status.latencyState,
+          measuredLatencyMs: status.measuredLatencyMs,
+          recordOffsetFrames: status.recordOffsetFrames,
+        ),
+      );
+      return EngineResult.ok;
+    });
     when(looper.measureLoopbackLatency).thenAnswer(
       (_) async => const LatencyResult(LatencyOutcome.timedOut),
     );

@@ -2446,9 +2446,11 @@ class LooperRepository {
     // A returning interface warms up again (#1533): the player's config
     // opens once the console has settled ([finishWarmUp]).
     final target = _warmUpTarget ?? _refusedTarget ?? config;
+    // A config that needs none comes back still owing an offset that was
+    // owed when the interface left (#1541).
     final reopened = target.needsWarmUp
         ? _reopenEngine(target.warmUp, warmUpTarget: target)
-        : _reopenEngine(target);
+        : _reopenEngine(target, owesOffset: _offsetOwed);
     if (reopened.isOk) {
       _stopReconnectPolling();
     }

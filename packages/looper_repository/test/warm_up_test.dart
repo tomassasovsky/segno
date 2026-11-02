@@ -383,6 +383,46 @@ void main() {
       expect(engine.lastConfig?.bufferFrames, 32);
     });
 
+    test('of a config that needs no warm-up keeps an owed offset owed '
+        '(#1541)', () async {
+      const large = EngineConfig(
+        sampleRate: 48000,
+        bufferFrames: kWarmUpBufferFrames,
+        playbackDeviceId: 'out-1',
+      );
+      final repo = build()..setMasterGain(0.8);
+      expect(repo.startEngine(large, warmUp: true), EngineResult.ok);
+      engine.calls.clear();
+
+      await unplugAndReturn(repo);
+
+      expect(count('reopen'), 1);
+      expect(repo.state.status.recordOffsetOwed, isTrue);
+      expect(engine.lastMasterGain, 0);
+    });
+
+    test(
+      'of a config that needs no warm-up owes nothing once it was set',
+      () async {
+        const large = EngineConfig(
+          sampleRate: 48000,
+          bufferFrames: kWarmUpBufferFrames,
+          playbackDeviceId: 'out-1',
+        );
+        final repo = build()..setMasterGain(0.8);
+        expect(repo.startEngine(large, warmUp: true), EngineResult.ok);
+        repo.setRecordOffset(300);
+        engine.calls.clear();
+
+        await unplugAndReturn(repo);
+
+        expect(count('reopen'), 1);
+        expect(repo.state.status.recordOffsetOwed, isFalse);
+        expect(engine.lastMasterGain, 0.8);
+        expect(engine.lastRecordOffset, 300);
+      },
+    );
+
     test('during a warm-up keeps its target', () async {
       final repo = warm();
       engine.calls.clear();

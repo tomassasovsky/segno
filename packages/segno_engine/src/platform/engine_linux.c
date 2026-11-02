@@ -1114,7 +1114,7 @@ static void le_prepare_thread_stack(pthread_t thread, size_t bytes) {
  * "PCM NN Capture Enum" (NN = the 1-based channel) reads "Analogue 1",
  * "Mix A", ... or "PCM <n>", the host's own playback stream n. A channel fed
  * from a playback stream is a loopback (on the console's 4i4, capture 5 =
- * "PCM 1"), and le_label_is_loopback matches that name. A card without these
+ * "PCM 1", le_capture_source_is_loopback). A card without these
  * controls (anything but scarlett2) names no channel and excludes nothing.
  *
  * Through libasound's control API, dlopen'd like the channel probe above: the
@@ -1199,11 +1199,9 @@ typedef struct le_capture_sources {
   char name[64];
 } le_capture_sources;
 
-/* le_channel_name_fn: capture channel `channel`'s source in the scarlett2
- * routing ("PCM 1", "Analogue 2", ...), or NULL when the card has no such
- * control for it. */
-static const char* le_capture_source_name(void* ctx, int channel) {
-  le_capture_sources* c = (le_capture_sources*)ctx;
+/* Capture channel `channel`'s source in the scarlett2 routing ("PCM 1",
+ * "Analogue 2", ...), or NULL when the card has no such control for it. */
+static const char* le_capture_source_name(le_capture_sources* c, int channel) {
   const le_alsa_ctl_syms* s = c->s;
   char control[48];
   snprintf(control, sizeof(control), "PCM %02d Capture Enum", channel + 1);
@@ -1237,8 +1235,13 @@ uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count) {
   if (s->ctl_open(&c.ctl, card, LE_SND_CTL_NONBLOCK) < 0) return 0;
   if (s->id_malloc(&c.id) >= 0 && s->info_malloc(&c.info) >= 0 &&
       s->value_malloc(&c.value) >= 0) {
-    mask = le_excluded_mask_from_names(le_capture_source_name, &c,
-                                       channel_count);
+    const int n =
+        channel_count < LE_MAX_CHANNELS ? channel_count : LE_MAX_CHANNELS;
+    for (int ch = 0; ch < n; ++ch) {
+      if (le_capture_source_is_loopback(le_capture_source_name(&c, ch))) {
+        mask |= 1u << ch;
+      }
+    }
   }
   if (c.value != NULL) s->value_free(c.value);
   if (c.info != NULL) s->info_free(c.info);

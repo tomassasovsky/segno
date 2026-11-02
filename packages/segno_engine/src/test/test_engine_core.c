@@ -8783,15 +8783,22 @@ static void test_label_is_loopback(void) {
   CHECK(le_label_is_loopback("Microphone") == 0);
   CHECK(le_label_is_loopback("") == 0);
   CHECK(le_label_is_loopback(NULL) == 0);
-  /* Linux: a capture source in the scarlett2 routing that is the host's own
-   * playback stream (#1541). Other sources are real inputs or mixes. */
-  CHECK(le_label_is_loopback("PCM 1") == 1);
-  CHECK(le_label_is_loopback("PCM 12") == 1);
-  CHECK(le_label_is_loopback("PCM") == 0);
-  CHECK(le_label_is_loopback("PCM x") == 0);
-  CHECK(le_label_is_loopback("Analogue 1") == 0);
-  CHECK(le_label_is_loopback("Mix A") == 0);
-  CHECK(le_label_is_loopback("Off") == 0);
+  /* A Core Audio label is never read as a scarlett2 source. */
+  CHECK(le_label_is_loopback("PCM 1") == 0);
+}
+
+/* Linux: a capture source in the scarlett2 routing that is the host's own
+ * playback stream (#1541). Other sources are real inputs or mixes. */
+static void test_capture_source_is_loopback(void) {
+  printf("test_capture_source_is_loopback\n");
+  CHECK(le_capture_source_is_loopback("PCM 1") == 1);
+  CHECK(le_capture_source_is_loopback("PCM 12") == 1);
+  CHECK(le_capture_source_is_loopback("PCM") == 0);
+  CHECK(le_capture_source_is_loopback("PCM x") == 0);
+  CHECK(le_capture_source_is_loopback("Analogue 1") == 0);
+  CHECK(le_capture_source_is_loopback("Mix A") == 0);
+  CHECK(le_capture_source_is_loopback("Off") == 0);
+  CHECK(le_capture_source_is_loopback(NULL) == 0);
 }
 
 /* The ALSA control device behind a capture id (#1541): the appliance's own
@@ -40459,6 +40466,7 @@ int main(void) {
   test_probing_leaks_no_fds();
   test_probing_leaks_no_fds_when_the_server_fails_mid_connect();
   test_label_is_loopback();
+  test_capture_source_is_loopback();
   test_alsa_ctl_name_from_uid();
   test_excluded_mask_from_names();
   test_loopback_exclusion();

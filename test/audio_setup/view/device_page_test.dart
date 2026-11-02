@@ -752,7 +752,24 @@ void main() {
         ),
       );
       final measured = Completer<LatencyResult>();
-      when(() => repository.state).thenReturn(owed);
+      var live = owed;
+      when(() => repository.state).thenAnswer((_) => live);
+      // Setting the offset settles it, as the repository does.
+      when(() => repository.setRecordOffset(any())).thenAnswer((_) {
+        live = const LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            deviceName: 'Scarlett 4i4',
+            sampleRate: 48000,
+            bufferFrames: 32,
+            inputChannels: 6,
+            outputChannels: 4,
+            devicePresent: true,
+            excludedInputMask: 1 << 4,
+          ),
+        );
+        return EngineResult.ok;
+      });
       when(
         () => repository.measureLoopbackLatency(),
       ).thenAnswer((_) => measured.future);

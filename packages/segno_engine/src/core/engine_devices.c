@@ -57,12 +57,15 @@ int le_label_is_loopback(const char* label) {
    * label and the Focusrite convention of naming the two loopback inputs
    * "Loop 1" / "Loop 2" (verified on a Scarlett 4i4). "loop" subsumes
    * "loopback", so one substring check handles both. */
-  if (contains_ci(label, "loop")) return 1;
-  /* On Linux the name is the channel's capture source in the scarlett2
-   * routing: "PCM <n>" is the host's own playback stream n, so the channel
-   * returns what the engine plays (#1541). Exact, as the driver writes it. */
-  return label != NULL && strncmp(label, "PCM ", 4) == 0 &&
-         label[4] >= '0' && label[4] <= '9';
+  return contains_ci(label, "loop");
+}
+
+int le_capture_source_is_loopback(const char* source) {
+  /* "PCM <n>" is the host's own playback stream n in the scarlett2 routing,
+   * so the channel returns what the engine plays (#1541). Exact, as the
+   * driver writes it. */
+  return source != NULL && strncmp(source, "PCM ", 4) == 0 &&
+         source[4] >= '0' && source[4] <= '9';
 }
 
 int le_alsa_ctl_name_from_uid(const char* uid, char* out, size_t cap) {

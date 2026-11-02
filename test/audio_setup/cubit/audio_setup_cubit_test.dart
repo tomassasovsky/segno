@@ -1005,32 +1005,37 @@ void main() {
       expect(counting.intWrites, 0);
     });
 
-    test('none saved, with a loopback: measured, saved, then set', () async {
-      final cubit = await owe(scarlett());
+    test(
+      'none saved, with a loopback: measured twice, saved, then set',
+      () async {
+        final cubit = await owe(scarlett());
 
-      verify(() => repository.measureLoopbackLatency()).called(1);
-      expect(cubit.state.loopbackMeasure, LoopbackMeasure.measuring);
-      // Silent and closed until the offset is set.
-      verifyNever(() => repository.setRecordOffset(any()));
-      // Apply and the cable test wait for it.
-      expect(
-        guards.blockers(GuardKind.deviceChange, const GuardScope.internal()),
-        isNotEmpty,
-      );
+        verify(() => repository.measureLoopbackLatency()).called(1);
+        expect(cubit.state.loopbackMeasure, LoopbackMeasure.measuring);
+        // Silent and closed until the offset is set.
+        verifyNever(() => repository.setRecordOffset(any()));
+        // Apply and the cable test wait for it.
+        expect(
+          guards.blockers(GuardKind.deviceChange, const GuardScope.internal()),
+          isNotEmpty,
+        );
 
-      measurement.complete(
-        const LatencyResult.done(offsetFrames: 292, latencyMs: 6.08),
-      );
-      await pumpEventQueue();
+        measurement.complete(
+          const LatencyResult.done(offsetFrames: 292, latencyMs: 6.08),
+        );
+        await pumpEventQueue();
 
-      expect(await saved(), 292);
-      verify(() => repository.setRecordOffset(292)).called(1);
-      expect(cubit.state.loopbackMeasure, LoopbackMeasure.idle);
-      expect(
-        guards.blockers(GuardKind.deviceChange, const GuardScope.internal()),
-        isEmpty,
-      );
-    });
+        // The second run, which agrees.
+        verify(() => repository.measureLoopbackLatency()).called(1);
+        expect(await saved(), 292);
+        verify(() => repository.setRecordOffset(292)).called(1);
+        expect(cubit.state.loopbackMeasure, LoopbackMeasure.idle);
+        expect(
+          guards.blockers(GuardKind.deviceChange, const GuardScope.internal()),
+          isEmpty,
+        );
+      },
+    );
 
     test(
       'a profile measured once is not measured again, nor saved twice',
@@ -1047,7 +1052,7 @@ void main() {
         stateController.add(live);
         await pumpEventQueue();
 
-        verify(() => repository.measureLoopbackLatency()).called(1);
+        verify(() => repository.measureLoopbackLatency()).called(2);
         verify(() => repository.setRecordOffset(292)).called(2);
         expect(counting.intWrites, 1);
       },
@@ -1076,6 +1081,63 @@ void main() {
         verify(() => repository.measureLoopbackLatency()).called(1);
       });
     }
+
+    test('two runs that disagree save nothing and say so', () async {
+      final runs = [
+        const LatencyResult.done(offsetFrames: 292, latencyMs: 6.08),
+        const LatencyResult.done(offsetFrames: 324, latencyMs: 6.75),
+      ];
+      when(
+        () => repository.measureLoopbackLatency(),
+      ).thenAnswer((_) async => runs.removeAt(0));
+
+      final cubit = await owe(scarlett());
+
+      expect(await saved(), isNull);
+      verify(() => repository.setRecordOffset(0)).called(1);
+      expect(cubit.state.loopbackMeasure, LoopbackMeasure.failed);
+    });
+
+    test('an owed offset with no device name to key it is 0', () async {
+      await owe(
+        const LooperState(
+          status: EngineStatus(
+            sampleRate: 48000,
+            bufferFrames: 32,
+            isConnected: true,
+            devicePresent: true,
+            excludedInputMask: 1 << 4,
+            recordOffsetOwed: true,
+          ),
+        ),
+      );
+
+      verifyNever(() => repository.measureLoopbackLatency());
+      verify(() => repository.setRecordOffset(0)).called(1);
+    });
+
+    test(
+      'an open owed again while a settle runs is settled after it',
+      () async {
+        // A plain open of an unmeasured profile is settling (its saved offset
+        // is being read) when an apply owes the same profile: that tick is
+        // skipped, so the end of the settle picks it up from the repository.
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        live = scarlett(owed: false);
+        stateController.add(live);
+        live = scarlett();
+        await pumpEventQueue();
+        measurement.complete(
+          const LatencyResult.done(offsetFrames: 292, latencyMs: 6.08),
+        );
+        await pumpEventQueue();
+
+        expect(await saved(), 292);
+        expect(live.status.recordOffsetOwed, isFalse);
+        expect(live.status.recordOffsetFrames, 292);
+      },
+    );
 
     test('a calibration in flight: not measured, 0, and said so', () async {
       final held = guards.enter(

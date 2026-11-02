@@ -133,12 +133,15 @@ void le_engine_master_bus_frame_for_test(le_engine* engine, float* out,
  * unit-testable. */
 le_loopback_kind le_classify_capture_device(const char* name);
 
-/* Whether an input channel's name marks a loopback channel: a Core Audio
- * label containing "loop" (case-insensitive; "Loopback", Focusrite's "Loop 1"),
- * or an ALSA capture source that is a playback stream ("PCM 1", the scarlett2
- * routing's name for it, #1541). Pure and unit-testable; a NULL/blank name is
- * not a loopback. */
+/* Whether a Core Audio channel label marks a loopback channel (case-insensitive
+ * substring "loop": "Loopback", Focusrite's "Loop 1"). Pure and unit-testable;
+ * a NULL/blank label is not a loopback. */
 int le_label_is_loopback(const char* label);
+
+/* Whether an ALSA scarlett2 capture source names the host's own playback
+ * stream ("PCM 1"), so the channel it feeds is a loopback (#1541). Pure and
+ * unit-testable; NULL is not. */
+int le_capture_source_is_loopback(const char* source);
 
 /* Writes the ALSA control device ("hw:<card>") of the card behind capture-device
  * id `uid` into `out` (":1,0", "hw:1,0" and "hw:CARD=USB,DEV=0" name cards 1,
