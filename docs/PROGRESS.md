@@ -111,9 +111,12 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 - A hold that clears (Track Hold set to Clear track in Record mode, or a
   Custom pedal whose Hold is Clear or Clear all) fills the held pedal's pill
-  red from both ends toward the centre over the long-press threshold, and
-  shows it full for 60 ms when it fires; releasing early, or a hold that can
-  no longer fire, ends the fill at once. The newest pending clear hold fills;
+  red from both ends toward the centre over the long-press threshold;
+  releasing early, or a hold that can no longer fire, ends the fill at once.
+  When it fires the track clears and the board flashes the full red pill 3
+  times (120 ms on, 120 ms off) on its own clock, then shows the empty-track
+  state. A pill already red dims to about a third under a full-brightness
+  fill. The newest pending clear hold fills;
   an older one fills again when the newer one settles. `ControlCubit._startClearFill` streams
   `PedalRepository.showClearHold` every 20 ms (`clearHoldProgress`).
 - Wire: optional `CLEAR_HOLD` (`0x13`, two bytes), console firmware 2.6. The
@@ -121,7 +124,12 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   The board drops a fill not refreshed for 500 ms.
 - No screen mirrors the LED pill: Record mode draws no pedals, and the Custom
   face's Pending Hold bar already times the same hold.
-- Device check owed: the fill's look and timing on the console.
+- While a clear hold's fill runs, the held pill's base is its own state
+  colour (green playing, red recording) instead of the pressed colour
+  (`projectPedalLights(clearFilling:)`), so a recording track gets the
+  dimmed red. Other holds and plain presses keep the pressed colour.
+- Device check owed: the fill's and the flash's look and timing on the
+  console.
 
 ## October 2026 Ed's setup loop template (#1513)
 

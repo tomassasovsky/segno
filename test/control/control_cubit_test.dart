@@ -1205,8 +1205,9 @@ void main() {
 
           await Future<void>.delayed(const Duration(milliseconds: 450));
           verify(() => looper.clear(channel: 2)).called(1);
-          // The ends meet when it fires, straight from the last step with no
-          // empty message between, then the frame takes the pill back.
+          // The ends meet when it fires: 255 once, straight from the last
+          // step with no empty message between, then the end of the fill.
+          // The board's flash confirms the clear on its own clock.
           const met = ClearHoldMessage(
             button: PedalButton.track3,
             progress: 255,
@@ -1214,8 +1215,10 @@ void main() {
           final atFire = fills();
           final first = atFire.indexOf(met);
           expect(first, greaterThan(0));
+          expect(atFire.where((m) => m == met), hasLength(1));
           expect(atFire[first - 1].button, PedalButton.track3);
           expect(atFire[first - 1].progress, lessThan(255));
+          expect(atFire[first + 1], const ClearHoldMessage());
           await Future<void>.delayed(const Duration(milliseconds: 100));
           expect(fills().last, const ClearHoldMessage());
           final settled = fills().length;
@@ -1253,6 +1256,59 @@ void main() {
           await Future<void>.delayed(const Duration(milliseconds: 100));
           expect(fills(), hasLength(settled));
           transport.press(PedalButton.track2, down: false);
+          await pumpEventQueue();
+        });
+
+        test(
+          'the pill shows its own state under the fill, not pressed',
+          () async {
+            setEngine(
+              _tracksWith(const [
+                Track(
+                  channel: 2,
+                  state: TrackState.playing,
+                  lengthFrames: 48000,
+                ),
+              ]),
+            );
+            transport.press(PedalButton.track3, down: true);
+            await pumpEventQueue();
+            expect(transport.lastFrame!.colorFor(PedalButton.track3), ledGreen);
+            // Released early: the fill ends and the pill reads as before.
+            transport.press(PedalButton.track3, down: false);
+            await pumpEventQueue();
+            expect(transport.lastFrame!.colorFor(PedalButton.track3), ledGreen);
+            expect(fills().last, const ClearHoldMessage());
+          },
+        );
+
+        test('a hold that is not a clear keeps the pressed colour', () async {
+          await cubit.setPedalSetup(
+            cubit.state.pedalSetup.copyWith(trackHold: TrackHold.armOverdub),
+          );
+          setEngine(
+            _tracksWith(const [
+              Track(channel: 2, state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          );
+          transport.press(PedalButton.track3, down: true);
+          await pumpEventQueue();
+          expect(transport.lastFrame!.colorFor(PedalButton.track3), ledWhite);
+          transport.press(PedalButton.track3, down: false);
+          await pumpEventQueue();
+        });
+
+        test('a refused clear fills but sends no confirmation', () async {
+          when(
+            () => looper.clear(channel: any(named: 'channel')),
+          ).thenReturn(EngineResult.notReady);
+          transport.press(PedalButton.track3, down: true);
+          await pumpEventQueue();
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          verify(() => looper.clear(channel: 2)).called(1);
+          expect(fills().where((m) => m.progress == 255), isEmpty);
+          expect(fills().last, const ClearHoldMessage());
+          transport.press(PedalButton.track3, down: false);
           await pumpEventQueue();
         });
 

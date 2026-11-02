@@ -445,6 +445,64 @@ void main() {
     });
   });
 
+  group("a clear-hold fill shows the held pill's own state (#1534)", () {
+    final looper = LooperState(
+      transport: const TransportState(deviceRunning: true),
+      tracks: _tracksWith(const [
+        Track(state: TrackState.playing, lengthFrames: 48000),
+        Track(channel: 1, state: TrackState.recording),
+      ]),
+      status: const EngineStatus(sampleRate: 48000),
+    );
+    // A press selects its track, and Record lights the selected track and
+    // any capturing one.
+    const record = ControlState();
+
+    test('a held pedal reads pressed without a fill', () {
+      final frame = projectFrame(
+        looper,
+        record,
+        pressed: const {PedalButton.track1, PedalButton.track2},
+      );
+      expect(frame.colorFor(PedalButton.track1), ledWhite);
+      expect(frame.colorFor(PedalButton.track2), ledWhite);
+    });
+
+    test('under a fill it reads its state: playing green, recording red', () {
+      final frame = projectFrame(
+        looper,
+        record,
+        pressed: const {PedalButton.track1, PedalButton.track2},
+        clearFilling: const {PedalButton.track1, PedalButton.track2},
+      );
+      expect(frame.isLit(PedalButton.track1), isTrue);
+      expect(frame.colorFor(PedalButton.track1), ledGreen);
+      expect(frame.colorFor(PedalButton.track2), ledRed);
+    });
+
+    test('under a fill a dark state stays lit, as pressed', () {
+      final frame = projectFrame(
+        looper,
+        record,
+        pressed: const {PedalButton.track4},
+        clearFilling: const {PedalButton.track4},
+      );
+      expect(frame.isLit(PedalButton.track4), isTrue);
+      expect(frame.colorFor(PedalButton.track4), ledWhite);
+    });
+
+    test('a fill without a held contact changes nothing', () {
+      expect(
+        projectFrame(
+          looper,
+          record,
+          clearFilling: const {PedalButton.track1},
+        ),
+        projectFrame(looper, record),
+      );
+    });
+  });
+
   group('Song queue (#1077, #1323)', () {
     LooperState song({
       int queued = 1,

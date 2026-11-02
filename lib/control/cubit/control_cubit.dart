@@ -1235,12 +1235,10 @@ class ControlCubit extends Cubit<ControlState> {
   Object? _clearPressToken;
 
   // The pending holds that clear (#1534), oldest first: the newest one's
-  // pill fills. The ticker streams its progress to the board, and a fired
-  // hold shows its full pill for a moment before the board takes the frame.
+  // pill fills. The ticker streams its progress to the board; a fired hold
+  // sends 255 once, and the board flashes that pill on its own clock.
   final _clearFills = <PedalButton, _ClearFill>{};
   Timer? _clearFillTicker;
-  PedalButton? _clearFillMet;
-  Timer? _clearFillMetTimer;
 
   // Mirrors `PerformanceRepository.captureStatus` so the pedal frame can
   // render the armed LED without re-deriving it from the raw status stream on
@@ -3062,7 +3060,11 @@ class ControlCubit extends Cubit<ControlState> {
       _bindingGestures.putIfAbsent(button, _HoldGesture.new),
       cue: button,
       clears: clears() ? clears : null,
-      onHold: () => _fireCustomAction(button, hold: true),
+      onHold: () => _fireCustomAction(
+        button,
+        hold: true,
+        onAccepted: clears() ? () => _meetClearFill(button) : null,
+      ),
       onTap: () => _fireCustomAction(button, hold: false),
     );
   }
@@ -3073,7 +3075,12 @@ class ControlCubit extends Cubit<ControlState> {
     _ => false,
   };
 
-  void _fireCustomAction(PedalButton button, {required bool hold}) {
+  /// [onAccepted] runs once the action is accepted.
+  void _fireCustomAction(
+    PedalButton button, {
+    required bool hold,
+    void Function()? onAccepted,
+  }) {
     if (state.mode != InteractionMode.custom ||
         state.pedalSetupUnavailable ||
         _takeLocked()) {
@@ -3103,8 +3110,9 @@ class ControlCubit extends Cubit<ControlState> {
     final admitted = _runAction(action, channels);
     if (admitted is Future<bool>) {
       unawaited(
-        admitted.then(
-          (accepted) => _completeCustomAction(
+        admitted.then((accepted) {
+          if (accepted && !isClosed) onAccepted?.call();
+          _completeCustomAction(
             button,
             key,
             action,
@@ -3113,11 +3121,11 @@ class ControlCubit extends Cubit<ControlState> {
             setup: setup,
             token: token,
             accepted: accepted,
-          ),
-          onError: addError,
-        ),
+          );
+        }, onError: addError),
       );
     } else {
+      if (admitted) onAccepted?.call();
       _completeCustomAction(
         button,
         key,
@@ -3447,8 +3455,9 @@ class ControlCubit extends Cubit<ControlState> {
   /// Arms [gesture]. [cue] is the pedal a face draws the Pending Hold cue
   /// on while the hold is pending; null for a control no surface draws (the
   /// CTRL jacks). A hold whose action [clears] (asked again on every fill
-  /// step and when it fires) also fills [cue]'s LED pill red until it
-  /// settles, and shows it full when it fires (#1534).
+  /// step) also fills [cue]'s LED pill red until it settles (#1534). The
+  /// action itself calls [_meetClearFill] once the clear is accepted, which
+  /// the board confirms with its flash.
   void _armGesture(
     _HoldGesture gesture, {
     required PedalButton? cue,
@@ -3463,12 +3472,7 @@ class ControlCubit extends Cubit<ControlState> {
     gesture.press(
       threshold: _longPress,
       stillValid: stillValid,
-      onHold: cue == null || clears == null
-          ? onHold
-          : () {
-              if (clears()) _meetClearFill(cue);
-              onHold();
-            },
+      onHold: onHold,
       onTap: onTap,
       onSettled: cue == null
           ? null
@@ -3491,13 +3495,10 @@ class ControlCubit extends Cubit<ControlState> {
   /// at a time: the newest pending clear hold's, and an older one's again
   /// when the newer one settles first.
   void _startClearFill(PedalButton button, bool Function() stillValid) {
-    // A new hold takes the board from a full pill still showing.
-    _clearFillMetTimer?.cancel();
-    _clearFillMetTimer = null;
-    _clearFillMet = null;
     _clearFills
       ..remove(button)
       ..[button] = _ClearFill(threshold: _longPress, stillValid: stillValid);
+    _pushProjected(); // the pill's base turns from pressed to its own state
     _sendClearFill();
     _clearFillTicker ??= Timer.periodic(
       const Duration(milliseconds: PedalLinkCodec.clearHoldIntervalMs),
@@ -3511,38 +3512,32 @@ class ControlCubit extends Cubit<ControlState> {
   /// back full.
   void _endClearFill(PedalButton button) {
     if (_clearFills.remove(button) == null) return;
+    if (!_closing) _pushProjected(); // back to pressed, or to its own state
     scheduleMicrotask(_sendClearFill);
   }
 
-  /// The hold on [button] fired: its pill shows the two ends met, long enough
-  /// for the board to draw it, then the frame decides the pill again.
-  void _meetClearFill(PedalButton button) {
-    _clearFillMetTimer?.cancel();
-    _clearFillMet = button;
-    _sendClearFill();
-    _clearFillMetTimer = Timer(
-      const Duration(milliseconds: PedalLinkCodec.clearHoldIntervalMs * 3),
-      () {
-        _clearFillMet = null;
-        _clearFillMetTimer = null;
-        _sendClearFill();
-      },
-    );
-  }
+  /// The clear [button]'s hold fired was accepted: the ends meet. The board
+  /// takes 255 as the clear and confirms it by flashing the full pill on its
+  /// own clock (`PILL_CLEAR_FLASHES` in console_board.ino), which the
+  /// messages that follow do not cut short. Never sent for a clear that was
+  /// refused, so the flash never confirms one that did not happen.
+  void _meetClearFill(PedalButton button) =>
+      _pedal.showClearHold(button, progress: 255);
 
   /// Sends the fill the board should show now. A pending hold that can no
   /// longer fire (a take locked, another session loaded) stops filling at
   /// once rather than reaching the centre and clearing nothing.
   void _sendClearFill() {
+    final pending = _clearFills.length;
     _clearFills.removeWhere((_, fill) => !fill.stillValid());
+    if (_clearFills.length != pending && !_closing && !isClosed) {
+      _pushProjected();
+    }
     if (_clearFills.isEmpty) {
       _clearFillTicker?.cancel();
       _clearFillTicker = null;
     }
-    final met = _clearFillMet;
-    if (met != null) {
-      _pedal.showClearHold(met, progress: 255);
-    } else if (_clearFills.isEmpty) {
+    if (_clearFills.isEmpty) {
       _pedal.showClearHold(null);
     } else {
       final MapEntry(key: button, value: fill) = _clearFills.entries.last;
@@ -3748,7 +3743,7 @@ class ControlCubit extends Cubit<ControlState> {
               _looper.record(channel: channel);
             }
           case TrackHold.clearTrack:
-            _looper.clear(channel: channel);
+            if (_looper.clear(channel: channel).isOk) _meetClearFill(button);
         }
       },
     );
@@ -4269,6 +4264,7 @@ class ControlCubit extends Cubit<ControlState> {
       physicalCustomStates: physicalCustom,
       tunerStates: _tunerStates(),
       pressed: _pressedButtons.keys.toSet(),
+      clearFilling: _clearFills.keys.toSet(),
     );
     _pedal.pushState(frame);
   }
@@ -4487,15 +4483,9 @@ class ControlCubit extends Cubit<ControlState> {
     for (final gesture in _bindingGestures.values) {
       gesture.cancel();
     }
-    // Every gesture has settled; end a full pill still showing as well.
-    _clearFillMetTimer?.cancel();
-    if (_clearFillMet != null || _clearFills.isNotEmpty) {
-      _clearFillMet = null;
-      _clearFills.clear();
-      _clearFillTicker?.cancel();
-      _clearFillTicker = null;
-      _pedal.showClearHold(null);
-    }
+    // Every gesture has settled, and each settle sends its own end.
+    _clearFillTicker?.cancel();
+    _clearFillTicker = null;
     await _looperSub.cancel();
     await _eventsSub.cancel();
     await _statusSub.cancel();

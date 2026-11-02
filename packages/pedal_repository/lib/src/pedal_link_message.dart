@@ -158,7 +158,8 @@ final class ClearHoldMessage extends PedalLinkMessage {
   /// The footswitch whose pill fills, or `null` for none.
   final PedalButton? button;
 
-  /// `0`..`255`: how much of the hold has run; 255 meets in the centre.
+  /// `0`..`254`: how much of the hold has run. 255 is the hold firing, sent
+  /// once: the ends meet and the board flashes the pill to confirm the clear.
   final int progress;
 
   @override

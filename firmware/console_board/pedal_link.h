@@ -75,9 +75,12 @@ extern "C" {
 /* segno -> board while a clear-track hold runs (#1534): [button + 1 (0 none),
  * progress 0..255]. The board fills that pill red from both ends toward the
  * centre by the progress. segno sends one every PEDAL_LINK_CLEAR_HOLD_MS while
- * the hold is pending and one with no button when it settles; the board drops
- * a fill that has not been refreshed for PEDAL_LINK_CLEAR_HOLD_STALE_MS, so a
- * lost settling message cannot leave a pill red.
+ * the hold is pending (0..254) and one with no button when it settles; the
+ * board drops a fill that has not been refreshed for
+ * PEDAL_LINK_CLEAR_HOLD_STALE_MS, so a lost settling message cannot leave a
+ * pill red. 255 is sent once, when the hold fires: the board then flashes
+ * that pill on its own clock to confirm the clear (console_board.ino,
+ * PILL_CLEAR_FLASHES), until a new hold on the same pill takes it over.
  *
  * Optional, so PEDAL_LINK_PROTOCOL_VERSION stays 12: firmware 2.5 and older
  * reject the unknown type at its type byte and keep rendering STATE, which

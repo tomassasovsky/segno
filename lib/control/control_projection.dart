@@ -241,6 +241,7 @@ PedalStateFrame projectFrame(
   Map<PedalButton, bool> physicalCustomStates = const {},
   Map<PedalButton, bool> tunerStates = const {},
   Set<PedalButton> pressed = const {},
+  Set<PedalButton> clearFilling = const {},
 }) {
   final leds = <PedalTrackLed>[
     for (var channel = 0; channel < PedalStateFrame.trackCount; channel++)
@@ -283,6 +284,7 @@ PedalStateFrame projectFrame(
     tunerStates: tunerStates,
     boundSwitches: boundSwitches,
     pressed: pressed,
+    clearFilling: clearFilling,
   );
   var activeButtonMask = 0;
   for (final button in PedalButton.values) {
@@ -365,9 +367,11 @@ PedalStateFrame projectFrame(
 /// state it lights for, or `null` when it is dark.
 ///
 /// A held pedal reads [PedalLedState.pressed] whatever else it shows, MODE
-/// included. [pressed] is the cubit's set of held contacts, updated on the
-/// press event itself and projected in the same call, so the light never waits
-/// for the engine to answer.
+/// included, unless it is in [clearFilling]: a clear hold's fill is running
+/// on it, and the fill draws over its own state (#1534). [pressed] is the
+/// cubit's set of held contacts, updated on the press event itself and
+/// projected in the same call, so the light never waits for the engine to
+/// answer.
 List<PedalLedState?> projectPedalLights(
   LooperState looper,
   ControlState overlay,
@@ -378,6 +382,7 @@ List<PedalLedState?> projectPedalLights(
   Map<PedalButton, bool> tunerStates = const {},
   Map<PedalButton, FxSwitchReading> boundSwitches = const {},
   Set<PedalButton> pressed = const {},
+  Set<PedalButton> clearFilling = const {},
 }) {
   final mode = overlay.mode;
   // Rec/Play reports the loop whatever lit it: a take, a playing loop, or
@@ -423,8 +428,7 @@ List<PedalLedState?> projectPedalLights(
     };
   }
 
-  PedalLedState? state(PedalButton button) => switch (button) {
-    _ when pressed.contains(button) => PedalLedState.pressed,
+  PedalLedState? own(PedalButton button) => switch (button) {
     // Always lit, in the mode's own colour, as the pedal always was.
     PedalButton.mode => PedalLedState.current,
     // The Tuner face's own lights: the tuned input, Stop while muted, Bank
@@ -471,6 +475,15 @@ List<PedalLedState?> projectPedalLights(
       global != GlobalColor.off || performanceArmed ? loopState() : null,
     PedalButton.undo || PedalButton.stop || PedalButton.clear => null,
   };
+
+  // A held pedal reads pressed, except under a running clear-hold fill
+  // (#1534): there the fill draws over the pill's own state colour (playing
+  // green, recording red), or pressed when that state is dark.
+  PedalLedState? state(PedalButton button) {
+    if (!pressed.contains(button)) return own(button);
+    if (!clearFilling.contains(button)) return PedalLedState.pressed;
+    return own(button) ?? PedalLedState.pressed;
+  }
 
   return [for (final button in PedalButton.values) state(button)];
 }
