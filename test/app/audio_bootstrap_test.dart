@@ -932,7 +932,8 @@ void main() {
     group('first run (no saved config)', () {
       tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-      test('macOS/Linux opens the system default and persists it', () async {
+      test('macOS/Linux opens the system default at 48 kHz / 32 and persists '
+          'it', () async {
         debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
 
         final result = await tryAutoStartEngine(
@@ -943,10 +944,15 @@ void main() {
 
         expect(result.started, isTrue);
         expect(engine.startCalls, 1);
-        // A zero-config open (sample rate / buffer left at the device default).
-        expect(engine.lastConfig, const le.EngineConfig());
+        // The console's default rate and buffer, not the device's (#1529).
+        expect(
+          engine.lastConfig,
+          const le.EngineConfig(sampleRate: 48000, bufferFrames: 32),
+        );
         // Persisted so the next launch takes the saved-config path.
-        expect(await settings.loadAudioConfig(), isNotNull);
+        final saved = await settings.loadAudioConfig();
+        expect(saved?.sampleRate, 48000);
+        expect(saved?.bufferFrames, 32);
       });
 
       test(
@@ -989,6 +995,8 @@ void main() {
           expect(result.started, isTrue);
           expect(engine.lastConfig?.playbackDeviceId, 'scarlett');
           expect(engine.lastConfig?.captureDeviceId, 'scarlett');
+          expect(engine.lastConfig?.sampleRate, 48000);
+          expect(engine.lastConfig?.bufferFrames, 32);
           final saved = await settings.loadAudioConfig();
           expect(saved?.playbackDeviceId, 'scarlett');
           expect(saved?.captureDeviceId, 'scarlett');
@@ -1027,6 +1035,8 @@ void main() {
           expect(engine.startCalls, 2);
           expect(engine.lastConfig?.playbackDeviceId, '');
           expect(engine.lastConfig?.captureDeviceId, '');
+          expect(engine.lastConfig?.sampleRate, 48000);
+          expect(engine.lastConfig?.bufferFrames, 32);
           final saved = await settings.loadAudioConfig();
           expect(saved?.playbackDeviceId, '');
           expect(saved?.captureDeviceId, '');

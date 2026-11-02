@@ -1,6 +1,7 @@
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/console_audio_devices.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/audio_tempo_families.dart';
 import 'package:segno/looper/application/settings_families.dart';
@@ -539,7 +540,8 @@ Future<AutoStartResult> _tryAutoStartEngine({
 /// Starts the engine on a first run (no saved config) and persists the chosen
 /// config so later launches take the normal saved path. Opens the first
 /// non-default duplex interface ([pickConsoleAudioDevices]), falling back to
-/// the system default. Returns whether the engine started.
+/// the system default, at [AudioSetupState.defaultSampleRate] and
+/// [AudioSetupState.defaultBufferFrames]. Returns whether the engine started.
 Future<bool> _firstRunAutoStart({
   required LooperRepository repository,
   required SettingsRepository settings,
@@ -562,7 +564,12 @@ Future<bool> _firstRunAutoStart({
   }
 
   var result = repository.startEngine(
-    EngineConfig(playbackDeviceId: playbackId, captureDeviceId: captureId),
+    EngineConfig(
+      sampleRate: AudioSetupState.defaultSampleRate,
+      bufferFrames: AudioSetupState.defaultBufferFrames,
+      playbackDeviceId: playbackId,
+      captureDeviceId: captureId,
+    ),
   );
   if (!result.isOk && (playbackId.isNotEmpty || captureId.isNotEmpty)) {
     // Console pin failed (interface busy/absent) — fall back to system default
@@ -573,7 +580,12 @@ Future<bool> _firstRunAutoStart({
     );
     playbackId = '';
     captureId = '';
-    result = repository.startEngine(const EngineConfig());
+    result = repository.startEngine(
+      const EngineConfig(
+        sampleRate: AudioSetupState.defaultSampleRate,
+        bufferFrames: AudioSetupState.defaultBufferFrames,
+      ),
+    );
   }
   if (!result.isOk) {
     AppLog.error('audio first-run: open failed result=${result.name}');
@@ -625,8 +637,12 @@ Future<bool> _firstRunAutoStart({
   final status = repository.state.status;
   await settings.saveAudioConfig(
     StoredAudioConfig(
-      sampleRate: status.sampleRate > 0 ? status.sampleRate : 48000,
-      bufferFrames: status.bufferFrames > 0 ? status.bufferFrames : 128,
+      sampleRate: status.sampleRate > 0
+          ? status.sampleRate
+          : AudioSetupState.defaultSampleRate,
+      bufferFrames: status.bufferFrames > 0
+          ? status.bufferFrames
+          : AudioSetupState.defaultBufferFrames,
       playbackDeviceId: playbackId,
       captureDeviceId: captureId,
     ),

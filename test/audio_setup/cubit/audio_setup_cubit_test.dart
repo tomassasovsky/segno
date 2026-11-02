@@ -68,8 +68,9 @@ void main() {
   test('initial state has sensible defaults', () {
     final cubit = buildCubit();
     addTearDown(cubit.close);
+    // 48 kHz / 32 frames, the console's measured default (#1529).
     expect(cubit.state.sampleRate, 48000);
-    expect(cubit.state.bufferFrames, 128);
+    expect(cubit.state.bufferFrames, 32);
     expect(cubit.state.status, AudioSetupStatus.stopped);
   });
 
@@ -163,6 +164,23 @@ void main() {
       verifyNever(repository.stopEngine);
       await pumpEventQueue();
       expect((await settings.loadAudioConfig())?.bufferFrames, 256);
+    });
+
+    test('32 frames is on the list: it applies, stays selected and is '
+        'saved (#1529)', () async {
+      seed();
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      cubit
+        ..editBuffer(32)
+        ..applyDraft();
+
+      expect(cubit.state.phase, ConfigPhase.settled);
+      expect(cubit.state.bufferFrames, 32);
+      expect(cubit.state.actualBuffer, 32);
+      await pumpEventQueue();
+      expect((await settings.loadAudioConfig())?.bufferFrames, 32);
     });
 
     test('a change while a track plays asks first and calls nothing', () {
@@ -665,7 +683,7 @@ void main() {
         () => repository.applyAudioConfig(
           const EngineConfig(
             sampleRate: 48000,
-            bufferFrames: 128,
+            bufferFrames: 32,
             maxLoopFrames: 14400000,
           ),
         ),
@@ -691,7 +709,7 @@ void main() {
       expect(cubit.state.status, AudioSetupStatus.error);
       expect(cubit.state.error, AudioSetupError.openDeviceFailed);
       expect(cubit.state.errorDetail, EngineResult.device.name);
-      expect(cubit.state.bufferFrames, 128);
+      expect(cubit.state.bufferFrames, 32);
     });
 
     test('a later success clears the error', () {

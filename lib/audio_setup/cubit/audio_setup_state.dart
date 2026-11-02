@@ -224,8 +224,8 @@ enum DeviceConnectivity {
 class AudioSetupState extends Equatable {
   /// Creates an [AudioSetupState].
   const AudioSetupState({
-    this.sampleRate = 48000,
-    this.bufferFrames = 128,
+    this.sampleRate = defaultSampleRate,
+    this.bufferFrames = defaultBufferFrames,
     this.maxLoopMinutes = 0,
     this.status = AudioSetupStatus.stopped,
     this.engineStatus = const EngineStatus(),
@@ -366,7 +366,15 @@ class AudioSetupState extends Equatable {
   static const sampleRates = [44100, 48000, 96000];
 
   /// Selectable buffer sizes.
-  static const bufferSizes = [64, 128, 256, 512];
+  static const bufferSizes = [32, 64, 128, 256, 512];
+
+  /// The sample rate a console opens at before anything is saved.
+  static const defaultSampleRate = 48000;
+
+  /// The buffer a console opens at before anything is saved: 32 frames at
+  /// [defaultSampleRate] is the same 0.67 ms period as 64 at 96 kHz, for
+  /// about half the CPU (#1529).
+  static const defaultBufferFrames = 32;
 
   /// Selectable max-loop-length options, in minutes. `0` is the engine default.
   static const maxLoopMinuteOptions = [0, 1, 2, 5, 10];

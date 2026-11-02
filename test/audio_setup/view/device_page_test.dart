@@ -414,6 +414,63 @@ void main() {
     });
   });
 
+  // --------------------------------------------------------- the buffer row
+
+  group('the buffer row (#1529)', () {
+    testWidgets('offers 32 to 512 as five equal chips across the row', (
+      tester,
+    ) async {
+      await pump(tester);
+
+      const sizes = [32, 64, 128, 256, 512];
+      final rects = [
+        for (final frames in sizes)
+          tester.getRect(find.byKey(Key('device_buffer_$frames'))),
+      ];
+      for (final rect in rects) {
+        expect(rect.width, moreOrLessEquals((831 - 4 * 13) / 5));
+        expect(rect.height, 84);
+      }
+      for (var i = 1; i < rects.length; i++) {
+        expect(rects[i].left - rects[i - 1].right, moreOrLessEquals(13));
+      }
+      // The pen's 831 of content, no more.
+      expect(
+        rects.last.right - rects.first.left,
+        moreOrLessEquals(831),
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a console running 48 kHz / 32 shows 32 selected', (
+      tester,
+    ) async {
+      const running = EngineStatus(
+        isConnected: true,
+        deviceName: 'Scarlett 18i20',
+        sampleRate: 48000,
+        bufferFrames: 32,
+        devicePresent: true,
+      );
+      when(
+        () => repository.state,
+      ).thenReturn(const LooperState(status: running));
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(
+          sampleRate: 48000,
+          bufferFrames: 32,
+          playbackDeviceId: 'scarlett-out',
+          captureDeviceId: 'scarlett-in',
+        ),
+      );
+      await pump(tester, looper: const LooperState(status: running));
+
+      expect(chip(tester, const Key('device_buffer_32')).selected, isTrue);
+      expect(chip(tester, const Key('device_buffer_64')).selected, isFalse);
+      expect(find.text('0.67'), findsOneWidget);
+    });
+  });
+
   // -------------------------------------------------------------- the draft
 
   group('the draft (pen 28/01)', () {

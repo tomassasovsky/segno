@@ -90,12 +90,13 @@ export LD_BIND_NOW=1
 # therefore 3.3ms of additional capacity, not 6.5ms, and the separately tracked
 # "retest at 2" is chasing 0.67ms, not ~1.3ms.
 #
-# The 64 in that arithmetic is this unit's saved setting, not an image default:
-# rate and buffer_frames are persisted per unit on /data by the app, which ships
-# 48000 / 128 frames (lib/audio_setup/cubit/audio_setup_state.dart:63-64). On a
-# unit that has never been retuned one period is therefore 128/48000 = 2.67ms —
-# the frames double AND the rate halves, so every millisecond figure above is
-# 4x, not 2x. Redo the arithmetic rather than quoting these numbers.
+# The 64 in that arithmetic was this unit's saved setting, not an image
+# default: rate and buffer_frames are persisted per unit on /data by the app,
+# which opens a unit with nothing saved at 48000 / 32 frames
+# (AudioSetupState.defaultSampleRate and defaultBufferFrames, #1529). One period
+# there is 32/48000 = 0.67ms, the same as 64/96000, so the millisecond figures
+# above hold for both. A unit saved at another rate or buffer does not: redo the
+# arithmetic for it rather than quoting these numbers.
 #
 # WHAT THIS COSTS IN LATENCY CHANGED WITH #809, and the old note is kept below
 # because it explains a #710 result that would otherwise look like a
@@ -121,15 +122,17 @@ export LD_BIND_NOW=1
 # latency is exactly two periods — and a period is not the same thing on every
 # unit, which is the whole point of the paragraph above:
 #
-#   this unit, saved 96kHz/64:     128 -> 256 frames = +1.33ms
-#   never retuned, 48kHz/128:      256 -> 512 frames = +5.33ms
+#   saved 96kHz/64:                128 -> 256 frames = +1.33ms
+#   default 48kHz/32:               64 -> 128 frames = +1.33ms
+#   saved 48kHz/128 (old default): 256 -> 512 frames = +5.33ms
 #
-# The first is bought deliberately: the #804 click hunt found the monitor
+# The first two are bought deliberately: the #804 click hunt found the monitor
 # underrunning on stalls of 2-3ms against a cushion of 1.33ms, and a cushion
-# that cannot be raised is not a tuning knob. The second is a different trade
-# and has NOT been played — this is a live looper and the performer monitors
-# through this bus, so 5.33ms of added monitor latency is something to hear
-# before shipping, not something to infer from the 96kHz/64 figure.
+# that cannot be raised is not a tuning knob. 48kHz/32 was measured on the Pi 5
+# console against 96kHz/64 in #1529: the same round trip within 0.2ms. The
+# third is a different trade and has NOT been played — this is a live looper and
+# the performer monitors through this bus, so 5.33ms of added monitor latency is
+# something to hear, not something to infer from the other two.
 #
 # The capture side is unchanged and still gets the depth: miniaudio assigns the
 # same `periods` to both descriptors (playback then capture), back to back in
@@ -168,7 +171,7 @@ export LD_BIND_NOW=1
 # it still stands and there is no bench measurement to re-derive it against —
 # inventing one would be worse than saying so. The sweep that would settle it
 # (occupancy, delay, cold starts and a full take at 2/4/5/6/8, at both this
-# unit's 96kHz/64 and the shipped 48kHz/128) is #818, device-gated.
+# unit's 96kHz/64 and the shipped 48kHz/32) is #818, device-gated.
 #
 # What would make 8 wrong: a different interface or SoC (the underrun edge is a
 # property of this Scarlett + Pi 4 pair), or an engine change that removes the

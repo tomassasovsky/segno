@@ -638,8 +638,8 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     final actualBuffer = known ? live.bufferFrames : askedBuffer;
     final gave = actualRate == askedRate && actualBuffer == askedBuffer;
     // A row that says 96 kHz while the engine runs 48 would be a lie, and a
-    // row saying 480 when the grid only offers 64/128/256/512 another, with no
-    // chip lit and no way back. So an off-list figure stays out of the
+    // row saying 480 when the grid only offers 32/64/128/256/512 another, with
+    // no chip lit and no way back. So an off-list figure stays out of the
     // selection and the banner names it.
     final rate = _offerable(actualRate, AudioSetupState.sampleRates, askedRate);
     final buffer = _offerable(
