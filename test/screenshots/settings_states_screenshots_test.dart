@@ -242,49 +242,7 @@ void main() {
 
   setUpAll(() async {
     if (!rendersScreenshots) return;
-    await loadScreenshotFont('Roboto', [
-      '$materialFontDir/Roboto-Regular.ttf',
-      '$materialFontDir/Roboto-Medium.ttf',
-      '$materialFontDir/Roboto-Bold.ttf',
-    ]);
-    await loadScreenshotFont('MaterialIcons', [
-      '$materialFontDir/MaterialIcons-Regular.otf',
-    ]);
-    // The console's own faces set state words and disclosure markers in the
-    // bundled mono face. Without it they render as tofu and the golden is
-    // useless for the eyeballing it exists to support.
-    await loadScreenshotFont(SurfaceTheme.monoFont, [
-      'assets/fonts/JetBrainsMono-Regular.ttf',
-      'assets/fonts/JetBrainsMono-Medium.ttf',
-    ]);
-    // The same argument for the PROPORTIONAL face, which these previews had
-    // been rendering in Roboto — the harness fallback — rather than in the
-    // Inter the app actually ships. Two costs, and the second is the one that
-    // matters: every letterform in every console golden was the wrong one, and
-    // Roboto's cache subset has no `→`, so Signal's routing lines came out as
-    // tofu boxes. A preview that draws a different typeface than the product
-    // cannot be eyeballed against the mockups, which is its whole job.
-    await loadScreenshotFont(SurfaceTheme.displayFont, [
-      'assets/fonts/Inter-Regular.ttf',
-      'assets/fonts/Inter-Medium.ttf',
-      'assets/fonts/Inter-SemiBold.ttf',
-      'assets/fonts/Inter-Bold.ttf',
-    ]);
-    await loadScreenshotFont('Arimo', [
-      'assets/fonts/Arimo-Regular.ttf',
-      'assets/fonts/Arimo-Bold.ttf',
-    ]);
-    // And the rail's own glyphs. A package font is bundled from the package's
-    // pubspec at run time but not by the test harness, so every rail icon and
-    // the brightness sun rendered as a tofu box in these previews — the same
-    // failure the mono and Inter loads above exist to prevent, and the one
-    // that makes an icon golden worthless.
-    //
-    // Registered under the name Flutter resolves a package font by, since
-    // that is what `IconData(fontPackage:)` asks the engine for.
-    await loadScreenshotFont('packages/lucide_icons_flutter/Lucide', [
-      packageAssetPath('lucide_icons_flutter', 'assets/lucide.ttf'),
-    ]);
+    await loadScreenshotFonts();
   });
 
   Future<void> size(WidgetTester tester) async {

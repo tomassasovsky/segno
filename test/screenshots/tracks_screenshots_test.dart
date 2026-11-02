@@ -24,6 +24,7 @@ import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/view/shortcuts_help_sheet.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -90,38 +91,7 @@ void main() {
 
   setUpAll(() async {
     if (!rendersScreenshots) return;
-    final robotoTtfs = [
-      '$materialFontDir/Roboto-Regular.ttf',
-      '$materialFontDir/Roboto-Medium.ttf',
-      '$materialFontDir/Roboto-Bold.ttf',
-    ];
-    await loadScreenshotFont('Roboto', robotoTtfs);
-    // Material icon glyphs (e.g. the FX entry-run's arrow_right_alt) — the app
-    // bundles this font at runtime; the golden harness must load it too, or
-    // every `Icon` renders as .notdef tofu.
-    await loadScreenshotFont('MaterialIcons', [
-      '$materialFontDir/MaterialIcons-Regular.otf',
-    ]);
-    await loadScreenshotFont('Inter', [
-      'assets/fonts/Inter-Regular.ttf',
-      'assets/fonts/Inter-Medium.ttf',
-      'assets/fonts/Inter-SemiBold.ttf',
-      'assets/fonts/Inter-Bold.ttf',
-    ]);
-    await loadScreenshotFont('Arimo', [
-      'assets/fonts/Arimo-Regular.ttf',
-      'assets/fonts/Arimo-Bold.ttf',
-    ]);
-    await loadScreenshotFont('JetBrains Mono', [
-      'assets/fonts/JetBrainsMono-Regular.ttf',
-      'assets/fonts/JetBrainsMono-Medium.ttf',
-      'assets/fonts/JetBrainsMono-SemiBold.ttf',
-    ]);
-    // The top bar's settings gear is a package font, which the harness does
-    // not bundle: without this load it is a tofu box in every tracks golden.
-    await loadScreenshotFont('packages/lucide_icons_flutter/Lucide', [
-      packageAssetPath('lucide_icons_flutter', 'assets/lucide.ttf'),
-    ]);
+    await loadScreenshotFonts();
   });
 
   late LooperBloc bloc;
@@ -1205,6 +1175,41 @@ void main() {
       skip: !rendersScreenshots,
     );
   }
+
+  // The keyboard shortcuts sheet, opened from inside LooperScreenTheme as the
+  // `?` key opens it: its title is the stage's one bold Arimo text (#1526).
+  // The context comes from the view button, since TracksView sits above the
+  // theme.
+  testWidgets(
+    'keyboard shortcuts sheet',
+    (tester) async {
+      seed(
+        const LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            sampleRate: 48000,
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+        ),
+      );
+      await pump(tester);
+      unawaited(
+        showShortcutsHelp(
+          tester.element(find.byKey(const Key('stage_view_menu'))),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('goldens/tracks_shortcuts_sheet.png'),
+      );
+    },
+    skip: !rendersScreenshots,
+  );
 
   testWidgets(
     'the Mixer view (MAIN VIEWS / Mixer)',

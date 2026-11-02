@@ -17,17 +17,7 @@ import '../helpers/helpers.dart';
 void main() {
   setUpAll(() async {
     if (!rendersScreenshots) return;
-    await loadScreenshotFont('Roboto', [
-      '$materialFontDir/Roboto-Regular.ttf',
-      '$materialFontDir/Roboto-Medium.ttf',
-      '$materialFontDir/Roboto-Bold.ttf',
-    ]);
-    await loadScreenshotFont('Inter', [
-      'assets/fonts/Inter-Regular.ttf',
-      'assets/fonts/Inter-Medium.ttf',
-      'assets/fonts/Inter-SemiBold.ttf',
-      'assets/fonts/Inter-Bold.ttf',
-    ]);
+    await loadScreenshotFonts();
   });
 
   const usb = RemovableVolume(

@@ -1,15 +1,13 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:segno/looper/view/fx/stomp/fx_stomp_spec.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_textures.dart';
 
 import 'text_fit.dart';
 
-/// The Flutter SDK's Material fonts (Roboto and the Material icons), which
-/// the screenshot suites load.
+/// The Flutter SDK's Material fonts, where the screenshot suites load Roboto
+/// from.
 ///
 /// They are in `<sdk>/bin/cache/artifacts/material_fonts` on any machine with
 /// the SDK, the author's Mac and the Linux CI runner alike. The `flutter`
@@ -39,74 +37,35 @@ bool get rendersScreenshots {
   return true;
 }
 
-/// Registers the font files at [paths] under [family] for a screenshot suite.
+/// Registers every font a screenshot can show, for a screenshot suite.
 ///
-/// The test harness bundles no fonts of its own, so every face a golden shows
-/// has to be loaded by hand or it renders as tofu boxes and the golden is
-/// worthless.
-Future<void> loadScreenshotFont(String family, List<String> paths) async {
-  final loader = FontLoader(family);
-  for (final p in paths) {
-    loader.addFont(File(p).readAsBytes().then((b) => ByteData.view(b.buffer)));
+/// The test harness bundles no fonts of its own, so every face a screenshot
+/// shows has to be loaded by hand or it renders as tofu boxes and the
+/// screenshot is worthless. The faces come from two places: every family in
+/// the font manifest the test build writes from the pubspecs, which holds the
+/// app's own faces, the Material icons and the package icon fonts (Lucide
+/// among them) under the names Flutter resolves them by; and the SDK's Roboto,
+/// which the app does not bundle but Material falls back to for text that
+/// names no family. Read from the manifest rather than listed per suite, so a
+/// face the app adds reaches every suite at once.
+Future<void> loadScreenshotFonts() async {
+  final roboto = FontLoader('Roboto');
+  for (final face in const ['Regular', 'Medium', 'Bold']) {
+    roboto.addFont(
+      File(
+        '$materialFontDir/Roboto-$face.ttf',
+      ).readAsBytes().then(ByteData.sublistView),
+    );
   }
-  await loader.load();
-}
-
-/// The on-disk path of [asset] inside the pub cache checkout of [package].
-///
-/// A package font is bundled from the package's pubspec at run time but not
-/// by the test harness, so an icon golden has to load it from the resolved
-/// package root. Resolved through the package config rather than a guessed
-/// pub-cache path: the version is in that path, so hard-coding it would
-/// silently stop loading on the next bump and put the tofu back. Read from
-/// `package_config.json` rather than `Isolate.resolvePackageUri`, which
-/// the test runtime does not implement. Throws rather than returning null
-/// when it cannot find the asset: a silent skip here is a golden full of
-/// tofu boxes that still passes, which is the exact failure this function
-/// exists to prevent.
-String packageAssetPath(String package, String asset) {
-  final config = File('.dart_tool/package_config.json');
-  final packages =
-      (jsonDecode(config.readAsStringSync())
-              as Map<String, dynamic>)['packages']
-          as List<dynamic>;
-  for (final entry in packages.cast<Map<String, dynamic>>()) {
-    if (entry['name'] != package) continue;
-    // The trailing slash matters: without it `resolve` treats the package
-    // directory as a FILE and replaces it, so the asset lands one level up in
-    // `pub.dev/` and nothing is there.
-    final root = entry['rootUri']! as String;
-    final path = config.uri
-        .resolve(root.endsWith('/') ? root : '$root/')
-        .resolve(asset)
-        .toFilePath();
-    if (File(path).existsSync()) return path;
-    throw StateError('$package has no $asset (looked in $path)');
-  }
-  throw StateError('$package is not in the package config');
-}
-
-/// Registers every typeface a stomp pedal's look names, for a screenshot
-/// suite, from the font files the app bundles for it.
-///
-/// Both sides are read rather than listed: the families from the looks, the
-/// files from the font manifest the test build writes from the pubspec.
-/// Throws when a family has no file rather than skipping it: a pedal printed
-/// in the test font's boxes is a golden that hides the gap.
-Future<void> loadFxStompFonts() async {
-  final files = await bundledFontFiles();
-  for (final family in {for (final spec in kFxStompSpecs.values) spec.font}) {
-    final assets = files[family];
-    if (assets == null || assets.isEmpty) {
-      throw StateError('The stomp typeface $family is not bundled');
-    }
-    await loadScreenshotFont(family, assets);
-  }
+  await roboto.load();
+  await loadBundledFonts();
 }
 
 /// Loads everything a code-drawn pedal needs to look as designed in a
-/// screenshot: its typefaces ([loadFxStompFonts]) and its finish tiles.
+/// screenshot: the fonts ([loadScreenshotFonts], which include every pedal's
+/// typeface) and its finish tiles. A suite that draws pedals calls this in
+/// place of [loadScreenshotFonts].
 Future<void> loadFxStompArt() async {
-  await loadFxStompFonts();
+  await loadScreenshotFonts();
   await FxStompTextures.instance.load();
 }

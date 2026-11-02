@@ -20,12 +20,6 @@ import '../looper/view/fx/stomp/factory_pedals.dart';
 void main() {
   setUpAll(() async {
     if (!rendersScreenshots) return;
-    await loadScreenshotFont('Inter', [
-      'assets/fonts/Inter-Regular.ttf',
-      'assets/fonts/Inter-Medium.ttf',
-      'assets/fonts/Inter-SemiBold.ttf',
-      'assets/fonts/Inter-Bold.ttf',
-    ]);
     await loadFxStompArt();
   });
 

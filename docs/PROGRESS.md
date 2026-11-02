@@ -1195,8 +1195,9 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   the former Claude hook that blocked bare CLI test commands.
 - **Screenshot suites** (`test/screenshots/`, tag `screenshots`): no goldens
   are committed. They render only with `--update-goldens`, into
-  `test/screenshots/goldens/` (ignored), using the SDK's Material fonts and the
-  fonts in `assets/fonts`, so they render on Linux CI as well as on a Mac. CI's
+  `test/screenshots/goldens/` (ignored), using the SDK's Roboto and every font
+  in the font manifest (`loadScreenshotFonts`, one call per suite), so they
+  render on Linux CI as well as on a Mac. CI's
   `design` job uploads them as the `screenshots` artifact (a suite that fails
   to render fails the job) and runs `test/control/external_pedal_art_test.dart`
   against a segno-design clone next to the main checkout; without that clone
