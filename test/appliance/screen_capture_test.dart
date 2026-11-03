@@ -87,6 +87,41 @@ void main() {
         'readout-20261101T000000.000Z.png',
       ]);
     });
+
+    test('keeps the new capture when the clock went back', () async {
+      for (final day in [10, 11]) {
+        File(
+          '${dir.path}/main-202611${day}T000000.000Z.png',
+        ).writeAsBytesSync([day]);
+      }
+      final path = await saveScreenCapture(
+        directory: dir.path,
+        screen: SegnoScreen.main,
+        at: DateTime.utc(2026, 11, 3),
+        png: [1],
+        kept: 2,
+      );
+      expect(File(path).existsSync(), isTrue);
+      expect(_names(dir), [
+        'main-20261103T000000.000Z.png',
+        'main-20261111T000000.000Z.png',
+      ]);
+    });
+
+    test("deletes that screen's leftover partial writes", () async {
+      File('${dir.path}/main-20261101T000000.000Z.png.part').createSync();
+      File('${dir.path}/readout-20261101T000000.000Z.png.part').createSync();
+      await saveScreenCapture(
+        directory: dir.path,
+        screen: SegnoScreen.main,
+        at: DateTime.utc(2026, 11, 3),
+        png: [1],
+      );
+      expect(_names(dir), [
+        'main-20261103T000000.000Z.png',
+        'readout-20261101T000000.000Z.png.part',
+      ]);
+    });
   });
 
   group('ScreenCapture', () {

@@ -46,38 +46,49 @@ if [ $((0x$low & 0x200)) -eq 0 ]; then
     exit 2
 fi
 
-# The captures already there, so only new ones are reported.
+# A capture of this run is one that was not there before the signal and is
+# named from this second on: the app names each capture
+# <screen>-<UTC yyyymmddThhmmss>.<ms>Z.png from this clock when it handles the
+# signal, so a PNG that an earlier, timed-out run left late is older.
 before=$(ls "$DIR" 2>/dev/null) || before=
+since=$(date -u +%Y%m%dT%H%M%S)
+if ! kill -s USR1 "$pid" 2>/dev/null; then
+    log "pid $pid is gone (segno.service restarting?); nothing sent"
+    exit 2
+fi
 
-# The newest PNG of screen $1 that was not there before, or nothing. Names sort
-# by time; a .part file is still being written.
-new_capture() {
-    ls "$DIR" 2>/dev/null | grep "^$1-.*\.png\$" | sort -r | while read -r name; do
-        if ! printf '%s\n' "$before" | grep -qxF "$name"; then
-            echo "$DIR/$name"
-            break
-        fi
-    done
+# One "<screen> <newest capture of this run>" line per screen, in $SCREENS
+# order, with no name for a screen that has none yet. A .part is still being
+# written.
+captures() {
+    ls "$DIR" 2>/dev/null | BEFORE="$before" awk -v since="$since" -v screens="$SCREENS" '
+        BEGIN {
+            n = split(ENVIRON["BEFORE"], old, "\n")
+            for (i = 1; i <= n; i++) seen[old[i]] = 1
+        }
+        /\.png$/ && !($0 in seen) {
+            dash = index($0, "-")
+            if (dash == 0) next
+            s = substr($0, 1, dash - 1)
+            if (substr($0, dash + 1, 15) >= since && $0 > newest[s]) newest[s] = $0
+        }
+        END {
+            n = split(screens, list, " ")
+            for (i = 1; i <= n; i++) print list[i], newest[list[i]]
+        }'
 }
-
-kill -s USR1 "$pid"
 
 ticks=$((TIMEOUT * 10))
 while :; do
-    missing=
-    for screen in $SCREENS; do
-        [ -n "$(new_capture "$screen")" ] || missing="$missing $screen"
-    done
+    found=$(captures)
+    missing=$(printf '%s\n' "$found" | awk 'NF < 2 { printf " %s", $1 }')
     [ -z "$missing" ] && break
     [ "$ticks" -gt 0 ] || break
     ticks=$((ticks - 1))
     sleep 0.1
 done
 
-for screen in $SCREENS; do
-    path=$(new_capture "$screen")
-    [ -z "$path" ] || echo "$path"
-done
+printf '%s\n' "$found" | awk -v dir="$DIR" 'NF == 2 { print dir "/" $2 }'
 if [ -n "$missing" ]; then
     log "no capture from:$missing within ${TIMEOUT}s; see journalctl -u segno.service"
     exit 1

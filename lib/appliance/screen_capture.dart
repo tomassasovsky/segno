@@ -43,11 +43,12 @@ String screenCaptureName(SegnoScreen screen, DateTime at) {
 }
 
 /// Writes [png] as [screen]'s capture taken at [at] into [directory], creating
-/// it, and deletes all but the newest [kept] captures of that screen.
+/// it, and keeps it and the newest [kept] - 1 other captures of that screen.
 ///
 /// The PNG is written under a `.part` name and renamed, so a reader that
-/// waits for `<screen>-*.png` never sees a half-written file. Returns the
-/// capture's path.
+/// waits for `<screen>-*.png` never sees a half-written file. A `.part` left
+/// by a failed write or a capture cut short is deleted. Callers write one
+/// capture of a screen at a time. Returns the capture's path.
 Future<String> saveScreenCapture({
   required String directory,
   required SegnoScreen screen,
@@ -58,25 +59,43 @@ Future<String> saveScreenCapture({
   final dir = await Directory(directory).create(recursive: true);
   final path = '${dir.path}/${screenCaptureName(screen, at)}';
   final part = File('$path.part');
-  await part.writeAsBytes(png, flush: true);
-  await part.rename(path);
+  try {
+    await part.writeAsBytes(png, flush: true);
+    await part.rename(path);
+  } on Object {
+    await _deleteQuietly(part);
+    rethrow;
+  }
 
+  // The new capture is kept whatever its name: a clock set back since the
+  // older ones were taken would otherwise sort it first and delete it.
   final prefix = '${screen.name}-';
-  final captures = <File>[
-    await for (final entry in dir.list())
-      if (entry is File &&
-          entry.uri.pathSegments.last.startsWith(prefix) &&
-          entry.path.endsWith('.png'))
-        entry,
-  ]..sort((a, b) => a.path.compareTo(b.path));
-  for (final old in captures.take(max(0, captures.length - kept))) {
-    try {
-      await old.delete();
-    } on FileSystemException {
-      // Already gone; the next capture prunes again.
+  final older = <File>[];
+  final leftovers = <File>[];
+  await for (final entry in dir.list()) {
+    final name = entry.uri.pathSegments.last;
+    if (entry is! File || !name.startsWith(prefix) || entry.path == path) {
+      continue;
     }
+    if (name.endsWith('.png')) older.add(entry);
+    if (name.endsWith('.png.part')) leftovers.add(entry);
+  }
+  older.sort((a, b) => a.path.compareTo(b.path));
+  for (final file in [
+    ...leftovers,
+    ...older.take(max(0, older.length - (kept - 1))),
+  ]) {
+    await _deleteQuietly(file);
   }
   return path;
+}
+
+Future<void> _deleteQuietly(File file) async {
+  try {
+    await file.delete();
+  } on FileSystemException {
+    // Already gone; the next capture prunes again.
+  }
 }
 
 /// Draws [child] inside a repaint boundary and, on each of [requests], saves
@@ -114,6 +133,7 @@ class ScreenCapture extends StatefulWidget {
 class _ScreenCaptureState extends State<ScreenCapture> {
   final GlobalKey _boundary = GlobalKey();
   StreamSubscription<void>? _requests;
+  Future<void> _pending = Future<void>.value();
 
   @override
   void initState() {
@@ -137,13 +157,21 @@ class _ScreenCaptureState extends State<ScreenCapture> {
   }
 
   void _listen() {
-    _requests = widget.requests.listen((_) => unawaited(_capture()));
+    // One capture at a time: saveScreenCapture deletes the screen's leftover
+    // `.part` files, which must not include one still being written.
+    _requests = widget.requests.listen((_) {
+      _pending = _pending.then((_) => _capture());
+    });
   }
 
   Future<void> _capture() async {
-    final boundary = _boundary.currentContext?.findRenderObject();
-    if (!mounted || boundary is! RenderRepaintBoundary) return;
+    if (!mounted) return;
     final screen = widget.screen;
+    final boundary = _boundary.currentContext?.findRenderObject();
+    if (boundary is! RenderRepaintBoundary) {
+      AppLog.warn('capture: ${screen.name} has no painted screen to capture');
+      return;
+    }
     final directory = widget.directory;
     final pixelRatio = View.of(context).devicePixelRatio;
     final at = DateTime.now();
