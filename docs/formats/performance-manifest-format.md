@@ -138,8 +138,8 @@ from the file's length, floored to whole frames.
 ### Captures from before #1198
 
 A capture written before the parts format holds raw streams instead:
-`master.pcm` (stream 0) and `input-<n>.pcm` (stream `1 + n`), headerless
-native-endian float32, with no `take_id` and no `parts`. Finalize converts
+`master.pcm` (stream 0) and `input-<n>.pcm` (stream `1 + n`), bare
+native-endian float32 with no file header, and no `take_id` or `parts`. Finalize converts
 such a capture into parts (#1078), keeping every sample as written:
 
 - One stream at a time, master first. Its raw file is copied into
