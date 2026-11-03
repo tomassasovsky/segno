@@ -404,6 +404,15 @@ void main() {
       expect(find.text('Change password'), findsOneWidget);
       expect(find.byKey(const Key('network_forget')), findsOneWidget);
       expect(find.byKey(const Key('network_disconnect')), findsOneWidget);
+      // Forget network starts at the rows' edge (#1590 NET-1).
+      final forget = find.descendant(
+        of: find.byKey(const Key('network_forget')),
+        matching: find.byType(AppText),
+      );
+      expect(
+        tester.getTopLeft(forget).dx,
+        tester.getTopLeft(find.text('Change password')).dx,
+      );
     });
 
     testWidgets('Connect automatically applies in place', (tester) async {

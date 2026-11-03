@@ -1588,7 +1588,7 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   reads its level's true peak between samples and smooths its gain over
   0.1 ms, which keeps its folds under -69 dB. What fails today is the
   `k_known` list in `bench_fx_matrix.c` (only the Dual Octaver's
-  envelope, #1580), each entry with a ceiling: a new failure, or a
+  Octave 2 envelope at 96 kHz, #1616), each entry with a ceiling: a new failure, or a
   listed one past its ceiling, fails the run, and in the full run so does a
   listed one that now passes. The settings come from
   `src/test/bench/fx_factory_settings.inc`, generated from the catalogue;

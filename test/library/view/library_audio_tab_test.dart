@@ -217,6 +217,29 @@ void main() {
     expect(find.text(l10n.libraryTitle), findsOneWidget);
   });
 
+  testWidgets('the rows span the list to its rule, and the empty card is '
+      'centred as on Sessions (#1590 LIB-2, LIB-3)', (tester) async {
+    await openAudio(tester);
+    final parent = tester.getRect(
+      find.byKey(const Key('library_audio_parent')),
+    );
+    final folder = tester.getRect(
+      find.byKey(const Key('library_audio_folder_performances')),
+    );
+    // The list column is 1060 wide, its rule too.
+    expect(folder.left, parent.left);
+    expect(folder.right, parent.left + 1060);
+
+    final card = tester.getRect(find.byKey(const Key('library_audio_card')));
+    final notice = tester.getRect(
+      find.byKey(const Key('library_audio_no_selection')),
+    );
+    expect(notice.center, offsetMoreOrLessEquals(card.center));
+
+    await openPerformances(tester);
+    expect(tester.getRect(row(single.path)).right, parent.left + 1060);
+  });
+
   testWidgets('Performances lists every take with its length, the recovered '
       'one marked, and the card describes the selection', (tester) async {
     await openAudio(tester);
