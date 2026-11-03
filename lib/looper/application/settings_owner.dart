@@ -149,10 +149,6 @@ class SettingsOwner<V extends Object, C> {
   /// A load whose replay threw (#1614): the family stays unavailable until
   /// Retry runs the load again.
   Object? _loadError;
-
-  /// The durable value a write that threw left in storage (#1614): the
-  /// engine may or may not hold it, so Retry requests it again.
-  V? _owedValue;
   int? _loadSession;
   ({Object? address, C checkpoint})? _owedRollback;
   SettingOutcome _last = const SettingOutcome(SettingStatus.rejected);
@@ -175,13 +171,12 @@ class SettingsOwner<V extends Object, C> {
   /// Whether a load has ever confirmed a value.
   bool get initialized => _initialized;
 
-  /// Unreadable storage, a load that threw, an owed rollback, a write that
-  /// threw, or an uncertain receipt.
+  /// Unreadable storage, a load that threw, an owed rollback or an uncertain
+  /// receipt.
   bool get _recoveryPending =>
       _unreadable != null ||
       _loadError != null ||
       _owedRollback != null ||
-      _owedValue != null ||
       _family.recoveryRequired;
 
   /// Whether a new value can be admitted; an in-flight write does not count.
@@ -313,20 +308,6 @@ class SettingsOwner<V extends Object, C> {
           await _family.writeCheckpoint(owed.address, owed.checkpoint);
           _owedRollback = null;
         }
-        // The load runs again below, once nothing else is owed.
-        _loadError = null;
-        if (_owedValue case final owed?) {
-          final result = _family.request(owed, owed, null);
-          if (!result.isOk) {
-            return _report(
-              SettingOutcome(
-                SettingStatus.recoveryRequired,
-                engineResult: result,
-              ),
-            );
-          }
-          _owedValue = null;
-        }
         if (_family.recoveryRequired) {
           final result = _family.recover();
           if (!result.isOk) {
@@ -339,6 +320,9 @@ class SettingsOwner<V extends Object, C> {
           }
         }
         final result = await _family.settle();
+        // A load that threw runs again below; it stays owed until the
+        // steps before it have succeeded.
+        _loadError = null;
         if (_recoveryPending) {
           return _report(
             SettingOutcome(
@@ -407,6 +391,7 @@ class SettingsOwner<V extends Object, C> {
     }
     _family.request(value, value, null);
     _unreadable = null;
+    _loadError = null;
     _owedRollback = null;
     _initialized = true;
     _report(const SettingOutcome(SettingStatus.applied));
@@ -420,11 +405,7 @@ class SettingsOwner<V extends Object, C> {
 
   Future<void> _close() async {
     _closing = true;
-    try {
-      await _loadFuture;
-    } on Object {
-      // A load that threw was answered to the writes waiting on it.
-    }
+    await _loadFuture;
     await _tail;
     await _stateSubscription.cancel();
     await _failureSubscription.cancel();
@@ -471,9 +452,9 @@ class SettingsOwner<V extends Object, C> {
   }
 
   /// Runs [slot]'s write once the load and the writes before it are done.
-  /// Its caller always gets an outcome: a load or a write that throws
-  /// answers with a reported refusal carrying the error (#1614), and the
-  /// queue goes on to the writes after it.
+  /// Its caller always gets an outcome: a write that throws where [_write]
+  /// does not catch it answers with a reported refusal carrying the error
+  /// (#1614), and the queue goes on to the writes after it.
   Future<void> _run(_Slot<V> slot) async {
     try {
       await load();
@@ -508,8 +489,7 @@ class SettingsOwner<V extends Object, C> {
     if (!_initialized ||
         _unreadable != null ||
         _loadError != null ||
-        _owedRollback != null ||
-        _owedValue != null) {
+        _owedRollback != null) {
       return _report(
         SettingOutcome(
           _recoveryPending
@@ -614,18 +594,15 @@ class SettingsOwner<V extends Object, C> {
           error: error,
           stack: stack,
         );
-        if (!current()) {
-          return await _rollback(
-            write.address,
-            checkpoint,
-            SettingStatus.superseded,
-          );
-        }
-        // Whether the engine took the value is unknown. Storage keeps it,
-        // which is what a restart replays, and Retry requests it again.
-        _owedValue = durable;
-        return _report(
-          SettingOutcome(SettingStatus.recoveryRequired, error: error),
+        // A request or receipt that throws is a refusal with the error as
+        // its cause: storage goes back to its checkpoint, so it never keeps
+        // a value nothing confirmed, and nothing is left owed that a later
+        // throw could hold for good.
+        return await _rollback(
+          write.address,
+          checkpoint,
+          current() ? SettingStatus.rejected : SettingStatus.superseded,
+          error: error,
         );
       }
       if (result.isOk) {

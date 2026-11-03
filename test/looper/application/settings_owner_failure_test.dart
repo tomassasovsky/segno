@@ -120,48 +120,44 @@ void main() {
   Future<SettingOutcome> answer(Future<SettingOutcome> write) =>
       write.timeout(const Duration(seconds: 2));
 
-  test('a request that throws owes its value: storage keeps it, Retry '
-      'requests it again', () async {
+  test('a request that throws refuses, reports and rolls storage back, '
+      'and the family stays usable', () async {
     await owner.load();
     family.throwOnRequest = true;
 
     final outcome = await answer(owner.set(5));
 
-    expect(outcome.status, SettingStatus.recoveryRequired);
+    expect(outcome.status, SettingStatus.rejected);
     expect(outcome.error, isA<TypeError>());
-    expect(family.stored, 5);
+    expect(family.stored, 1);
     expect(reported.single.error, isA<TypeError>());
-    expect(owner.ready, isFalse);
-    expect(
-      (await answer(owner.set(6))).status,
-      SettingStatus.recoveryRequired,
-    );
-    expect(family.stored, 5);
+    expect(owner.ready, isTrue);
+
+    // A request that keeps throwing never leaves anything owed.
+    expect((await answer(owner.set(6))).status, SettingStatus.rejected);
+    expect(family.stored, 1);
+    expect(owner.ready, isTrue);
 
     family.throwOnRequest = false;
-    expect((await answer(owner.recover())).isOk, isTrue);
-    expect(family.requests.last, 5);
-    expect(family.value, 5);
-    expect(owner.ready, isTrue);
-    expect((await answer(owner.set(6))).isOk, isTrue);
-    expect(family.stored, 6);
+    expect((await answer(owner.set(7))).isOk, isTrue);
+    expect(family.stored, 7);
   });
 
-  test('a receipt that throws after the request owes the value too', () async {
+  test('a receipt that throws after the request refuses and rolls storage '
+      'back', () async {
     await owner.load();
     family.throwOnReceipt = true;
 
     final outcome = await answer(owner.set(5));
 
-    expect(outcome.status, SettingStatus.recoveryRequired);
+    expect(outcome.status, SettingStatus.rejected);
     expect(outcome.error, isA<StateError>());
-    expect(family.stored, 5);
-    expect(owner.ready, isFalse);
+    expect(family.stored, 1);
+    expect(owner.ready, isTrue);
 
     family.throwOnReceipt = false;
-    expect((await answer(owner.recover())).isOk, isTrue);
-    expect(owner.ready, isTrue);
     expect((await answer(owner.set(6))).isOk, isTrue);
+    expect(family.stored, 6);
   });
 
   test('a receipt that throws before storage is touched refuses and '
@@ -192,11 +188,36 @@ void main() {
     expect(reported.first.error, isA<StateError>());
     expect(owner.initialized, isFalse);
 
+    // A Retry that throws again leaves the load owed.
+    expect(
+      (await answer(owner.recover())).status,
+      SettingStatus.recoveryRequired,
+    );
+    expect(
+      (await answer(owner.set(5))).status,
+      SettingStatus.recoveryRequired,
+    );
+
     family.throwOnSettle = false;
     expect((await answer(owner.recover())).isOk, isTrue);
     expect(owner.initialized, isTrue);
     expect(owner.ready, isTrue);
     expect((await answer(owner.set(6))).isOk, isTrue);
     expect(family.stored, 6);
+  });
+
+  test('a recalled Session clears a load that threw', () async {
+    family.throwOnSettle = true;
+    await owner.load();
+    expect(owner.ready, isFalse);
+
+    family.throwOnSettle = false;
+    await owner
+        .runExclusive(() => owner.installSession(9))
+        .timeout(const Duration(seconds: 2));
+
+    expect(owner.ready, isTrue);
+    expect(family.value, 9);
+    expect(family.stored, 9);
   });
 }
