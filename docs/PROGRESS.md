@@ -79,12 +79,13 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ## November 2026 Automatic LED brightness from a light sensor (#1564)
 
-- An optional Vishay TEPT5600 on J22 (GP28) with its load resistor (2.2 kΩ)
-  and 100 nF in the lead's J22 end; wiring, resistor choice and saturation in
+- An optional Vishay TEPT5600 on J22 (GP28), with 100 Ω in its collector
+  lead, its load resistor (2.2 kΩ) and 100 nF in the lead's J22 end; wiring, resistor choice and saturation in
   segno-hardware's `hardware/segno_wiring.md`. The enclosure part (hole,
   holder, lead route) is a separate thread.
-- Console firmware 2.7 smooths the reading (one-second means, a five-second
-  median, a 3 s average, a quarter-doubling hysteresis), tells a fitted sensor
+- Console firmware 2.7 smooths the reading (readings at random 7-13 ms so
+  mains flicker averages out, one-second means, a five-second median, a 3 s
+  average, a quarter-doubling hysteresis), tells a fitted sensor
   from an open pin with the pad's pulls every 2 s, and reports it after every
   hello as `AMBIENT` (`0x07`): the raw ADC reading on a log scale, not lux.
   The app answers with `LED_LEVEL` (`0x14`), which scales the pills and, via
