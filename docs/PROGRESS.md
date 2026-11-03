@@ -117,8 +117,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   shorter than that the cache stays off; longer loops print as before. The
   same rule holds the whole-track print, and a lane back at forward 1x after
   laps reversed or at another speed plays live until its next edit.
-- Tests: `test_cache_cached_matches_live_every_builtin` adds a 2560-frame
-  loop per kind (the print is ready five laps after the chain went in) and
+- Tests: the every-kind parity sweep adds a 2560-frame loop per kind (the
+  print is ready five laps after the chain went in) and
   `test_whole_track_print_stays_live_on_a_short_loop` covers the track
   print; the whole-track tests run on a 16384-frame loop.
 
