@@ -22,8 +22,8 @@ settings and the RT environment, and starts `/usr/bin/segno` with
 
 | Screen | Panel | Connector | Notes |
 |---|---|---|---|
-| `main` | 15.6″ 1080p touch | `HDMI-A-1` | the stage and every page |
-| `readout` | 7″ 1024×600 touch | `HDMI-A-2` | `pixel_ratio = 1.6`; the selected-track readout |
+| `main` | 15.6″ 1080p touch | `HDMI-A-2` | the stage and every page |
+| `readout` | 7″ 1024×600 touch | `HDMI-A-1` | `pixel_ratio = 1.6` (640×375 logical); the selected-track readout |
 
 - **Roles.** Each engine learns its role from `--segno-screen=`. The two talk
   through the Dart VM they share (`lib/visualizer/screen_link.dart`), and the
@@ -33,6 +33,14 @@ settings and the RT environment, and starts `/usr/bin/segno` with
   were seen on the old GTK runner, not on this stack (#1555).
 - **Touch.** The readout's view names its touch controller with
   `touch_device`; touch that matches no view goes to the main screen.
+- **Modes.** Both connectors read an empty EDID on the console, so the
+  kernel command line forces each one on at its panel's native mode
+  (`deploy/yocto/kas-segno-common.yml`): `video=HDMI-A-2:1920x1080@60D` for
+  the main screen and `video=HDMI-A-1:1024x600@60D` for the readout. The
+  main view takes the first mode its connector lists, 1920x1080. The readout
+  pins `mode = '1024x600@60'`, because its connector lists the kernel's
+  1024x768 fallback first (#1591). Change the pin and the command line
+  together: a pinned mode the connector does not list stops the app at start.
 - **No seat.** Both views set `no_seat = true` and open the DRM master and the
   input devices themselves. `seatd` is installed with ivi-homescreen's libseat
   but not enabled.
