@@ -160,6 +160,20 @@ void main() {
     expect(within(PedalButton.mode, 'Exit'), findsOneWidget);
     expect(within(PedalButton.bank, 'Bank A'), findsOneWidget);
     expect(within(PedalButton.bank, 'Switch bank'), findsOneWidget);
+    // The FX, Reverse and Peel views' 24 px state line, not the 18 px hold
+    // hint (#1590 FT-2).
+    expect(
+      tester
+          .widget<AppText>(
+            find.ancestor(
+              of: within(PedalButton.bank, 'Switch bank'),
+              matching: find.byType(AppText),
+            ),
+          )
+          .style
+          ?.fontSize,
+      24,
+    );
     expect(find.byKey(const Key('foot_custom_recording')), findsNothing);
   });
 

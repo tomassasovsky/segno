@@ -1039,12 +1039,18 @@ static int le_pd_write_log_entry(FILE* f, const le_perf_log_entry* entry) {
   return le_pd_write(f, buf, sizeof(buf));
 }
 
-/* Drains everything currently available from a perf-log ring (either
- * log_ring or log_ctrl_ring) into events.log, one entry at a time — these
- * rings carry one event per pop, unlike the bulk-sample le_audio_ring above. */
-static int le_pd_drain_log_ring(le_perf_drain* d, le_perf_log_ring* ring) {
+/* Drains a perf-log ring (either log_ring or log_ctrl_ring) into events.log,
+ * one entry at a time — these rings carry one event per pop, unlike the
+ * bulk-sample le_audio_ring above. An entry past `ready` stays in the ring for
+ * a later cycle: it may follow a drop this cycle has not seen. An entry past
+ * `end`, the take's end, is consumed and never written, like the audio past
+ * it (#1549). */
+static int le_pd_drain_log_ring(le_perf_drain* d, le_perf_log_ring* ring,
+                                uint64_t ready, uint64_t end) {
   le_perf_log_entry entry;
-  while (le_perf_log_ring_pop(ring, &entry)) {
+  while (le_perf_log_ring_peek(ring, &entry) && entry.frame <= ready) {
+    (void)le_perf_log_ring_pop(ring, &entry);
+    if (entry.frame > end) continue;
     if (!le_pd_write_log_entry(d->events_file, &entry)) return 0;
     le_pd_count_bytes(d, LE_PD_EVENTS_ENTRY_BYTES);
     d->events_bytes += LE_PD_EVENTS_ENTRY_BYTES;
@@ -2009,9 +2015,28 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
    *
    * Written before the audio, with the retired layers below (#1198): they
    * come off the same reserve budget, so the frames the audio may still take
-   * are counted after them. */
-  if (!le_pd_drain_log_ring(d, &e->perf.log_ring)) ok = 0;
-  if (ok && !le_pd_drain_log_ring(d, &e->perf.log_ctrl_ring)) ok = 0;
+   * are counted after them.
+   *
+   * Like the audio, the log ends where the take does (#1549): no entry past
+   * the frame the take stopped at or the first dropped frame is written. One
+   * at that frame is, as a disarm's own entries sit at the take's last
+   * frame count. Entries are stamped with a capture frame of the block that
+   * logged them, or with the count of frames before it (the control ring),
+   * so any drop before an entry at or below `elapsed` is in a counted block,
+   * which the load above has seen. Later ones wait for the next cycle. The
+   * last pass runs after the disarm stopped the audio thread, so every entry
+   * and every drop is in by then. Without this the file's end depended on
+   * whether a cycle ran between the first drop and the disarm: a cycle that
+   * ran stopped the take and left everything logged after it in the ring,
+   * while a disarm before any cycle wrote all of it. */
+  {
+    const uint64_t ready = final ? LE_PD_NO_LIMIT : elapsed;
+    const uint64_t end = first_drop < d->stop_frame ? first_drop : d->stop_frame;
+    if (!le_pd_drain_log_ring(d, &e->perf.log_ring, ready, end)) ok = 0;
+    if (ok && !le_pd_drain_log_ring(d, &e->perf.log_ctrl_ring, ready, end)) {
+      ok = 0;
+    }
+  }
 
   /* Retired-layer persistence (part 5, D-LAYER): each staged layer is its
    * own self-contained file (open, write, fclose — not a long-lived stream

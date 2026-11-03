@@ -107,7 +107,7 @@ static void shifter_open(shifter* s, int alg, double semitones) {
     exit(1);
   }
   for (int i = 0; i < LE_FX_MAX; ++i) le_fx_enable_seed_settled(s->fx, i);
-  le_fx_entry_reset(s->fx, 0);
+  le_fx_entry_reset(s->fx, 0, LE_FX_OCTAVER);
   if (le_fx_prepare(s->fx, 0, LE_FX_OCTAVER, SR) != LE_OK) {
     fprintf(stderr, "octaver prepare failed\n");
     exit(1);

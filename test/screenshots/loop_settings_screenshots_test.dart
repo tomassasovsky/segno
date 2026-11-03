@@ -224,6 +224,7 @@ void main() {
         countInBars: any(named: 'countInBars'),
         soundStart: any(named: 'soundStart'),
         editKind: any(named: 'editKind'),
+        releasedSettings: any(named: 'releasedSettings'),
       ),
     ).thenAnswer((call) {
       confirmedCountIn = call.namedArguments[#countInBars] as int;
@@ -504,7 +505,7 @@ void main() {
       find.byType(LoopSettingsPage),
       matchesGoldenFile('goldens/recording_sound_recovery.png'),
     );
-  }, skip: true); // Fails to render: #1500.
+  }, skip: !rendersScreenshots);
 
   testWidgets('Tempo & click, and the time signature grid', (tester) async {
     await pump(tester, page: LoopSettingsPageId.tempo);
@@ -542,7 +543,7 @@ void main() {
       find.byType(LoopSettingsPage),
       matchesGoldenFile('goldens/tempo_count_in_2.png'),
     );
-  }, skip: true); // Fails to render: #1500.
+  }, skip: !rendersScreenshots);
 
   testWidgets('Length & quantize, defaults and a custom track', (
     tester,

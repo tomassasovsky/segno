@@ -1301,7 +1301,7 @@ void main() {
         matchesGoldenFile('goldens/tracks_mixer_compact_window.png'),
       );
     },
-    skip: true, // Fails to render: #1500.
+    skip: !rendersScreenshots,
   );
 
   // #692: the FX-mode stage transform — the whole stage takes the FX purple,

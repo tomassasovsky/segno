@@ -216,8 +216,12 @@ class _FootCustomPedal extends StatelessWidget {
         _ => l10n.controlTrackSwitchName(bank * 4 + slot! + 1),
       },
     };
+    // What the bank pedal does is its state line, as the FX, Reverse and
+    // Peel views draw it; the hint line is for a Hold (#1590 FT-2).
+    final detail = pedal.role == FootCustomRole.nextBank
+        ? l10n.footPeelSwitchBank
+        : '';
     final hint = switch (pedal.role) {
-      FootCustomRole.nextBank => l10n.footPeelSwitchBank,
       FootCustomRole.assignment when hold != null => l10n.footCustomHold(
         label(hold),
       ),
@@ -236,7 +240,7 @@ class _FootCustomPedal extends StatelessWidget {
         _ => '${slot! + 1}',
       },
       title: title,
-      detail: '',
+      detail: detail,
       hint: hint,
       titleMuted: pedal.unavailable,
       titleMaxLines: 2,

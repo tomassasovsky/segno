@@ -8,6 +8,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno_engine/segno_engine.dart';
 
 import 'helpers/fake_performance_engine.dart';
+import 'helpers/fake_storage_io.dart';
 
 /// The Library's view of finished recordings (#1178 Part 7): the listing,
 /// the parts of #1198's format, the DAW package, Delete and Preview.
@@ -25,6 +26,7 @@ void main() {
     engine = FakePerformanceEngine();
     guards = GuardRegistry();
     repo = PerformanceRepository(
+      storageIo: fakeStorageIo,
       guards: guards,
       engine: engine,
       exportsRoot: () async => root,

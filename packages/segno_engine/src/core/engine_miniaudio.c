@@ -307,6 +307,7 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
   const int want_capture_pin = config->capture_device_id[0] != '\0';
   ma_context* pContext = NULL;
   engine->capture_id_set = 0;
+  engine->playback_id_set = 0;
 
   /* Per-OS backend preference + pre-context-init hook. Linux prefers
    * {jack, pulseaudio, alsa} and forces the PipeWire quantum; every other
@@ -342,6 +343,7 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
                                config->playback_device_id,
                                &engine->playback_id)) {
         cfg.playback.pDeviceID = &engine->playback_id;
+        engine->playback_id_set = 1;
       }
     }
   }

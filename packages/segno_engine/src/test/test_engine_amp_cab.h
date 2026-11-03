@@ -11,7 +11,7 @@ static void amp_run(const float* p, int sr, const float* in, float* l, float* r,
   CHECK(fx != NULL);
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
   CHECK(le_fx_prepare(fx, 0, LE_FX_AMP_CAB, sr) == LE_OK);
-  le_fx_entry_reset(fx, 0);
+  le_fx_entry_reset(fx, 0, LE_FX_AMP_CAB);
   static int32_t types[LE_FX_MAX];
   static float params[LE_FX_MAX][LE_FX_PARAMS];
   for (int s = 0; s < LE_FX_MAX; ++s) types[s] = LE_FX_NONE;
@@ -166,7 +166,7 @@ static void test_amp_cabinet_change_does_not_click(void) {
   CHECK(fx != NULL);
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
   CHECK(le_fx_prepare(fx, 0, LE_FX_AMP_CAB, sr) == LE_OK);
-  le_fx_entry_reset(fx, 0);
+  le_fx_entry_reset(fx, 0, LE_FX_AMP_CAB);
   static int32_t types[LE_FX_MAX];
   static float params[LE_FX_MAX][LE_FX_PARAMS];
   for (int s = 0; s < LE_FX_MAX; ++s) types[s] = LE_FX_NONE;
@@ -242,7 +242,7 @@ static void test_amp_cabinet_change_during_a_fade_lands(void) {
   CHECK(fx != NULL);
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
   CHECK(le_fx_prepare(fx, 0, LE_FX_AMP_CAB, sr) == LE_OK);
-  le_fx_entry_reset(fx, 0);
+  le_fx_entry_reset(fx, 0, LE_FX_AMP_CAB);
   static int32_t types[LE_FX_MAX];
   static float params[LE_FX_MAX][LE_FX_PARAMS];
   for (int s = 0; s < LE_FX_MAX; ++s) types[s] = LE_FX_NONE;

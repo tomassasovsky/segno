@@ -88,6 +88,13 @@ uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count) {
   return le_macos_excluded_mask(uid, channel_count);
 }
 
+void le_platform_own_interface_routing(const char* capture_uid,
+                                       const char* playback_uid) {
+  /* Core Audio exposes no interface's routing matrix; nothing to own here. */
+  (void)capture_uid;
+  (void)playback_uid;
+}
+
 void le_platform_device_id_to_str(const ma_device_id* id, char* out,
                                   size_t cap) {
   /* Core Audio device ids are NUL-terminated char strings. */

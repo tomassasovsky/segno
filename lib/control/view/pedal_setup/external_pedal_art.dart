@@ -45,12 +45,14 @@ class ExternalPedalArt extends StatelessWidget {
       size: Size(1024, 1536),
       switches: [Offset(511.5, 775.5)],
       indicators: [Offset(512, 468)],
+      bezelRadius: 145,
     ),
     ExternalJackType.dualSwitch: ExternalPedalArtwork(
       asset: 'assets/hardware/external_dual.webp',
       size: Size(1672, 941),
       switches: [Offset(402.5, 485.5), Offset(1265.5, 485.5)],
       indicators: [Offset(405, 285), Offset(1265, 285)],
+      bezelRadius: 127,
     ),
   };
 
@@ -67,6 +69,10 @@ class ExternalPedalArt extends StatelessWidget {
     // different aspects, so a marker positioned against the BOX would sit off
     // the switch on one of them.
     final fitted = _fit(art.size, penSize);
+    // Raster pixels to drawn pixels; the fit keeps the aspect, so one scale
+    // serves both axes.
+    final scale = fitted.width / art.size.width;
+    Offset drawn(Offset raster) => fitted.topLeft + raster * scale;
     return SizedBox.fromSize(
       size: penSize,
       child: Stack(
@@ -77,33 +83,22 @@ class ExternalPedalArt extends StatelessWidget {
           ),
           for (final (index, centre) in art.switches.indexed)
             Positioned(
-              left:
-                  fitted.left +
-                  centre.dx / art.size.width * fitted.width -
-                  _targetSize / 2,
-              top:
-                  fitted.top +
-                  centre.dy / art.size.height * fitted.height -
-                  _targetSize / 2,
+              left: drawn(centre).dx - _targetSize / 2,
+              top: drawn(centre).dy - _targetSize / 2,
               width: _targetSize,
               height: _targetSize,
               child: _Target(
                 key: Key('external_switch_$index'),
                 index: index,
                 selected: index == selected,
+                bezelRadius: art.bezelRadius * scale,
                 onTap: () => onSelect(index),
               ),
             ),
           for (final (index, centre) in art.indicators.indexed)
             Positioned(
-              left:
-                  fitted.left +
-                  centre.dx / art.size.width * fitted.width -
-                  _markerSize / 2,
-              top:
-                  fitted.top +
-                  centre.dy / art.size.height * fitted.height -
-                  _markerSize / 2,
+              left: drawn(centre).dx - _markerSize / 2,
+              top: drawn(centre).dy - _markerSize / 2,
               width: _markerSize,
               height: _markerSize,
               child: _Contact(
@@ -139,6 +134,7 @@ class ExternalPedalArtwork {
     required this.size,
     required this.switches,
     required this.indicators,
+    required this.bezelRadius,
   });
 
   /// The bundled picture.
@@ -152,6 +148,10 @@ class ExternalPedalArtwork {
 
   /// The centre of each contact indicator.
   final List<Offset> indicators;
+
+  /// The radius of each switch's metal bezel, measured from the switch
+  /// centre to the bezel's outer edge.
+  final double bezelRadius;
 }
 
 /// A hit target over one switch, with its name under it.
@@ -159,12 +159,17 @@ class _Target extends StatelessWidget {
   const _Target({
     required this.index,
     required this.selected,
+    required this.bezelRadius,
     required this.onTap,
     super.key,
   });
 
   final int index;
   final bool selected;
+
+  /// The switch bezel's radius as drawn, which the name clears.
+  final double bezelRadius;
+
   final VoidCallback onTap;
 
   @override
@@ -200,10 +205,15 @@ class _Target extends StatelessWidget {
                   ),
                 ),
               ),
+              // The name sits under the bezel, clear of it, not on it
+              // (#1590 PED-2).
               Positioned(
                 left: 0,
                 right: 0,
-                top: ExternalPedalArt._targetSize - 2,
+                top:
+                    ExternalPedalArt._targetSize / 2 +
+                    bezelRadius +
+                    context.spacing.sm,
                 child: ExcludeSemantics(
                   child: AppText(
                     label,
