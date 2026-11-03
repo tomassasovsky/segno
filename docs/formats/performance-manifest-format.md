@@ -161,7 +161,8 @@ such a capture into parts (#1078), keeping every sample as written:
   next start reconverts a stream whose listed parts are incomplete, and
   removes a raw file whose parts are listed whole.
 - Before converting, the volume must have room for the largest remaining
-  stream (its bytes plus one header per part), measured after the unlisted
+  stream (its bytes plus one header per part) above the reserve a take
+  keeps on Internal, measured after the unlisted
   parts a cut conversion left are deleted. Too little room, a sidecar
   whose `parts` do not read, a `channel_layout` that does not, or a failed
   write leaves the capture unfinalized with its raw files, and it is
