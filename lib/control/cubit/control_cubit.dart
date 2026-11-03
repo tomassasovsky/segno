@@ -305,6 +305,7 @@ class ControlCubit extends Cubit<ControlState> {
     step: _midiStep,
   );
   StreamSubscription<MidiInputMessage>? _midiMessageSub;
+
   /// The capture lifetime of every device feeding controls, by device.
   Map<String, MidiInputSession> _midiCaptures = const {};
   int _midiIngressRevision = 0;

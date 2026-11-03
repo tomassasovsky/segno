@@ -600,8 +600,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
         return const [];
       case _MidiView.editor:
         final connected =
-            connection.statusOf(draft.device) ==
-            MidiConnectionStatus.connected;
+            connection.statusOf(draft.device) == MidiConnectionStatus.connected;
         return [
           Positioned(
             left: _left,
