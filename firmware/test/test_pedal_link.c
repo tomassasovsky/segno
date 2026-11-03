@@ -196,6 +196,24 @@ static void check_fixture(const char *dir, const char *name) {
       m = pedal_link_encode_clear_hold(hold.button, hold.progress, again);
       break;
     }
+    case PEDAL_LINK_TYPE_AMBIENT: {
+      pedal_ambient ambient;
+      if (!pedal_link_decode_ambient(payload, len, &ambient)) {
+        CHECK(0, "%s: decode_ambient rejected it", name);
+        return;
+      }
+      m = pedal_link_encode_ambient(ambient.sensor, ambient.level, again);
+      break;
+    }
+    case PEDAL_LINK_TYPE_LED_LEVEL: {
+      uint8_t level;
+      if (!pedal_link_decode_led_level(payload, len, &level)) {
+        CHECK(0, "%s: decode_led_level rejected it", name);
+        return;
+      }
+      m = pedal_link_encode_led_level(level, again);
+      break;
+    }
     case PEDAL_LINK_TYPE_HELLO:
       CHECK(len == 3 && payload[0] == PEDAL_LINK_PROTOCOL_VERSION, "%s: bad hello", name);
       m = pedal_link_encode_hello(payload[1], payload[2], again);
@@ -280,6 +298,21 @@ static void check_fixture(const char *dir, const char *name) {
   } else if (strcmp(name, "clear_hold_none.bin") == 0) {
     CHECK(type == PEDAL_LINK_TYPE_CLEAR_HOLD && payload[0] == 0 && payload[1] == 0,
           "clear_hold_none: fields differ");
+  } else if (strcmp(name, "ambient_none.bin") == 0) {
+    CHECK(payload[0] == PEDAL_AMBIENT_NONE && payload[1] == 0, "ambient_none: fields differ");
+  } else if (strcmp(name, "ambient_reading_160.bin") == 0) {
+    CHECK(payload[0] == PEDAL_AMBIENT_READING && payload[1] == 160,
+          "ambient_reading_160: fields differ");
+  } else if (strcmp(name, "ambient_reading_165.bin") == 0) {
+    CHECK(payload[0] == PEDAL_AMBIENT_READING && payload[1] == PEDAL_LINK_SYNC,
+          "ambient_reading_165: fields differ");
+  } else if (strcmp(name, "ambient_above_188.bin") == 0) {
+    CHECK(payload[0] == PEDAL_AMBIENT_ABOVE && payload[1] == 188,
+          "ambient_above_188: fields differ");
+  } else if (strcmp(name, "led_level_128.bin") == 0) {
+    CHECK(payload[0] == 128, "led_level_128: fields differ");
+  } else if (strcmp(name, "led_level_165.bin") == 0) {
+    CHECK(payload[0] == PEDAL_LINK_SYNC, "led_level_165: fields differ");
   } else if (strcmp(name, "dimmed.bin") == 0) {
     CHECK(st.dimmed == 1 && st.global_color == PEDAL_GLOBAL_GREEN && st.active_button_mask == 1 &&
               !st.counting_in && !st.goodbye,
@@ -457,6 +490,57 @@ static void check_clear_hold(void) {
         "clear hold staleness does not fit its cadence");
 }
 
+/* AMBIENT and LED_LEVEL (#1564): the refusals both ends share, and the
+ * claim that a side which does not know them drops them cleanly even when a
+ * payload byte is the sync byte: the frame behind still parses. */
+static void check_ambient_and_led_level(void) {
+  uint8_t frame[PEDAL_LINK_MAX_FRAME];
+  const uint8_t bad[][2] = {{PEDAL_AMBIENT_COUNT, 0}, {PEDAL_AMBIENT_NONE, 1}};
+  for (size_t i = 0; i < sizeof(bad) / sizeof(*bad); ++i) {
+    pedal_ambient before, ambient;
+    memset(&before, 0x5a, sizeof(before));
+    ambient = before;
+    CHECK(!pedal_link_decode_ambient(bad[i], PEDAL_LINK_AMBIENT_LEN, &ambient),
+          "bad ambient accepted");
+    CHECK(!memcmp(&ambient, &before, sizeof(ambient)), "ambient refusal mutated output");
+    CHECK(pedal_link_encode_ambient(bad[i][0], bad[i][1], frame) == 0, "bad ambient encoded");
+  }
+  pedal_ambient ambient;
+  const uint8_t top[2] = {PEDAL_AMBIENT_ABOVE, 255};
+  CHECK(pedal_link_decode_ambient(top, PEDAL_LINK_AMBIENT_LEN, &ambient) && ambient.level == 255,
+        "a full-scale ambient refused");
+  CHECK(!pedal_link_decode_ambient(top, PEDAL_LINK_AMBIENT_LEN - 1, &ambient),
+        "short ambient accepted");
+  uint8_t level = 7;
+  const uint8_t zero[1] = {0};
+  CHECK(!pedal_link_decode_led_level(zero, 1, &level) && level == 7, "a dark LED level accepted");
+  CHECK(pedal_link_encode_led_level(0, frame) == 0, "a dark LED level encoded");
+
+  /* A parser that predates the types, modelled by one that rejects them at
+   * the type byte: feed each frame with sync-valued payload bytes, then a
+   * button, through a parser where the types are unknown. Here that is the
+   * real parser with the frame's type byte rewritten to an unknown one, which
+   * is exactly what an older parser sees. */
+  uint8_t button[PEDAL_LINK_MAX_FRAME];
+  const size_t nb = pedal_link_encode_button(PEDAL_BTN_UNDO, 1, button);
+  const uint8_t worst[][2] = {{PEDAL_AMBIENT_READING, PEDAL_LINK_SYNC},
+                              {PEDAL_AMBIENT_ABOVE, PEDAL_LINK_SYNC}};
+  for (int which = 0; which < 3; ++which) {
+    size_t n = which < 2 ? pedal_link_encode_ambient(worst[which][0], worst[which][1], frame)
+                         : pedal_link_encode_led_level(PEDAL_LINK_SYNC, frame);
+    /* An older parser looks the type up and finds nothing. Use a type no
+     * version has ever had, keeping every other byte, checksum included. */
+    frame[1] = 0x7E;
+    uint8_t stream[2 * PEDAL_LINK_MAX_FRAME];
+    memcpy(stream, frame, n);
+    memcpy(stream + n, button, nb);
+    uint8_t type, len, payload[PEDAL_LINK_MAX_PAYLOAD];
+    CHECK(parse_all(stream, n + nb, &type, payload, &len, NULL) == 1 &&
+              type == PEDAL_LINK_TYPE_BUTTON,
+          "an unknown AMBIENT or LED_LEVEL swallowed the next frame");
+  }
+}
+
 int main(int argc, char **argv) {
   /* Liveness: the board must outlive one lost STATE reply. */
   CHECK(PEDAL_LINK_FRAME_TIMEOUT_MS >= 2u * PEDAL_LINK_HELLO_MS,
@@ -488,6 +572,7 @@ int main(int argc, char **argv) {
   check_physical_state();
   check_ring_bridge();
   check_clear_hold();
+  check_ambient_and_led_level();
   if (g_failures) {
     fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

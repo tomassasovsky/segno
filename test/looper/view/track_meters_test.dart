@@ -234,6 +234,23 @@ void main() {
       expect(drawn(tester), 0.25);
     });
 
+    testWidgets('paints the fill the full bar height (#1570)', (tester) async {
+      when(
+        () => repository.playhead,
+      ).thenReturn(const Playhead(tracks: [0.25]));
+      seed(const LooperState());
+      // In a column, as on a track tile, so it takes its own height.
+      await pumpLeaf(tester, const Column(children: [bar]));
+
+      final fill = tester.renderObject<RenderBox>(
+        find.byWidgetPredicate(
+          (widget) => widget is ColoredBox && widget.color == Colors.green,
+        ),
+      );
+      expect(fill.size.height, TrackProgressBar.height);
+      expect(fill.size.width, closeTo(25, 0.01));
+    });
+
     testWidgets('follows the live playhead', (tester) async {
       seed(const LooperState());
       await pumpLeaf(tester, bar);

@@ -19,6 +19,7 @@ runs the encoder and the ring. segno runs the behavior machine.
 | CTRL1 / CTRL2 ring | GP20 / GP21 | Each jack's ring through 4.7 kΩ (R19/R20). The B switch of a two-switch pedal (a BOSS FS-6's A&B jack) reports as `CTRL n · footswitch B`; its first press on a jack the board has not yet seen a switch on is held 200 ms, so a plug brushing the contact cannot fake it |
 | CTRL1 / CTRL2 present | GP19 / GP22 | The Neutrik NJ6FD-V's ring-normal contact through 4.7 kΩ (R21/R22): high only while the jack is empty, **present = low** against the internal pull-down. Read through `console_presence.h`, which keeps the pad's input buffer off between samples (RP2350-E9). An empty jack reports CTRL kind `NONE` and is classified afresh on the next plug |
 | SMPS mode | GP23 | Driven high: PWM mode, less ADC ripple |
+| Light sensor | GP28 | ADC2 on J22 pin 5, optional (#1564): a TEPT5600 phototransistor from J22's +3V3 (pin 1) through 100 Ω, its load resistor (2.2 kΩ as fitted) and 100 nF to ground (pin 6), all at the J22 end of the lead. Nothing fitted reads as no sensor: see [Light sensor](#light-sensor-and-led-level-firmware-27) |
 | PD trigger I2C | GP0 / GP1 | J23: I2C0, 100 kHz, to the STUSB4500 on the SparkFun PD board (its own pull-ups). Provisioned at boot and read once a second: see [PD trigger](#pd-trigger-firmware-23) |
 
 ## The ring carrier
@@ -88,6 +89,64 @@ in segno-hardware reprograms it from an Arduino UNO.
 
 `firmware/test/test_pd_trigger.cpp` runs the driver against a simulated
 STUSB4500, NVM controller included (`firmware/test/stusb4500_sim.h`).
+
+### Light sensor and LED level (firmware 2.7)
+
+An optional light sensor on J22 lets the app set the LED brightness from the
+room (#1564). The wiring is in segno-hardware's `hardware/segno_wiring.md`.
+`ambient_light.c` is the board's half:
+
+- **Reading.** GP28 is read about every 10 ms (eight ADC conversions averaged)
+  with the pad's pulls off, at random intervals of 7 to 13 ms: a fixed 10 ms
+  is 100 Hz, the flicker of lamps on 50 Hz mains, and would catch every one
+  at the same phase. One second of readings at random phases is averaged,
+  which takes out mains flicker and dimmer PWM. The board keeps the median of the last five
+  seconds, so a hand, a shadow or a strobe hit shorter than about two seconds
+  never reaches the level, then averages that with a time constant of about
+  3 s. The reported level moves only when the average has moved a quarter of
+  a doubling (about 19 %) from it, so light that hovers does not make the LEDs
+  step back and forth. A real change lands in about 5 to 10 s.
+- **Units.** `AMBIENT` carries the reading, not lux: `2^(level / 16)` ADC
+  counts of 4095, 0 for one count or less, 188 at the top of the range
+  (3500 counts, 2.82 V). The collector runs from J22's +3V3, the Pi's rail,
+  through 100 Ω, and the ADC reads against the Pico's own 3V3, so the top
+  sits below where a saturated sensor reads even with the Pi's rail 0.1 V
+  low. Darkness is reported as 0 exactly, and while the sensor is at the top
+  of its range the level is 188 exactly. The sensor's gain
+  varies 9x between Vishay's bins and its lens is sanded flat, so the board
+  does not guess it. The app calibrates against a dark and a bright reading the
+  owner captures in Settings, and the load resistor can be swapped without
+  touching this firmware.
+- **No sensor.** Every 2 s the board switches the pad's pull-up on for one
+  sample slot, then its pull-down for the next, and reads the pin in each. A
+  pin that follows the pull-up into the top quarter of the scale and the
+  pull-down into the bottom quarter has nothing on it; a fitted load holds it
+  near its own reading. A pin that stays at ground with the pull-up
+  on is shorted there and counts as no sensor too. The first verdict holds at
+  once, and a change needs two probes in a row. With no sensor the board sends
+  `AMBIENT` with sensor 0, and the app offers no automatic brightness.
+- **No blanking.** The pills stay lit while the board reads. The sensor is
+  flush in the plate looking straight up, and every pill, the ring and both
+  screens are flush with or below the plate, at least 76 mm away, about
+  90 degrees off its axis, so the console's own light reaches it only by
+  reflection. The median, the slow average and the hysteresis take that up.
+  If a bench shows the console's light moving the reading by more than the
+  hysteresis, the sampling slot can blank the pills.
+
+`LED_LEVEL` (`0x14`) is the app's answer: how bright the pills and the ring
+are, 1..255 of full. The board scales every pill pixel by it after the channel
+budget, together with the idle dim as one factor (`ring_link::outputLevel`),
+rounding each pixel once so its hue holds: a lit pixel keeps its strongest
+channel at 1 at least, and weak channels drop out rather than rising to match
+it. It fades to a new level at 3 steps per 20 ms render (the whole range in
+about 1.7 s), except while no frame is showing, when it takes the level at
+once: the app sends the level before the `STATE` that answers a hello, so a
+reconnect never lights full and fades down. The board sends the level to the
+ring carrier as the ring link's `LEVEL` just before every ring state. Without a
+`LED_LEVEL`, and again when the app's frames stop, it is 255: exactly what
+firmware 2.6 showed. Both messages are optional (still protocol 12):
+firmware 2.6 drops `LED_LEVEL` and an older app drops `AMBIENT`, each at the
+type byte, cleanly even when a payload byte is the sync byte.
 
 ## Physical rendering and source boundary
 
@@ -184,8 +243,10 @@ compete with the ten-button mask for physical output.
 | `0x04 CTRL` | board → segno | `jack, contact, kind, value` (unchanged four bytes) |
 | `0x05 ENCODER_BUTTON` | board → segno | `pressed (0/1)` — the encoder's push switch, one message per debounced edge (protocol 9) |
 | `0x06 PD_STATUS` | board → segno | `profile, mismatch, mV (LE16), mA (LE16), source max mA (LE16)` — after every `HELLO` (protocol 12) |
+| `0x07 AMBIENT` | board → segno | `sensor (0 none, 1 reading, 2 at the top of the range), level` — the reading, `2^(level / 16)` ADC counts; after every `HELLO`; optional, firmware 2.7 (#1564) |
 | `0x10 STATE` | segno → board | 53 bytes: flags, mode, looper mode, global colour, bank, selected track, 8 track LEDs, loop length µs (LE32), master gain, ten RGB triples, active mask (LE16), queued switch, queue progress — see `pedal_link.h` |
 | `0x13 CLEAR_HOLD` | segno → board | `button + 1 (0 none), progress 0..255` — every 20 ms while a clear-track hold runs (0..254), 255 once when it fires (the board flashes the pill); optional, firmware 2.6 (#1534) |
+| `0x14 LED_LEVEL` | segno → board | `level 1..255` of full brightness, for the pills and the ring — when it changes and, once the app has set one, before the `STATE` that answers each `HELLO`; optional, firmware 2.7 (#1564) |
 
 segno answers every compatible `HELLO` with its current `STATE`, so a board that just
 (re)connected is current within a second; the board goes dark if no `STATE`
@@ -252,7 +313,7 @@ without the app, watch the hellos arrive:
 
 ```sh
 stty -F /dev/ttyAMA3 115200 raw -echo
-od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0c 02 06 08 (HELLO, protocol 12, fw 2.6), once a second
+od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0c 02 07 09 (HELLO, protocol 12, fw 2.7), once a second
 ```
 
 ## Bring-up record

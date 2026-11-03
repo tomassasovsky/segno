@@ -5,6 +5,7 @@
 library;
 
 export 'src/noop_pedal_link.dart';
+export 'src/pedal_ambient_light.dart';
 export 'src/pedal_button.dart';
 export 'src/pedal_color.dart';
 export 'src/pedal_ctrl.dart';

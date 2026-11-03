@@ -24,7 +24,9 @@ struct Rgb { uint8_t r, g, b; };
 // image (seal.py reads these two lines). Bump it with every change: the Pi
 // updates the ring when the version differs from the image it ships.
 static const uint8_t FW_MAJOR = 1;
-static const uint8_t FW_MINOR = 1;  // 1.1: dims with the screens (#1349)
+// 1.1: dims with the screens (#1349). 1.2: the console's LED brightness, the
+// ring link's LEVEL (#1564).
+static const uint8_t FW_MINOR = 2;
 
 // Seeed variant pin aliases, matching ring_board.py's D-number pads.
 static const uint8_t PIN_RING = D0, PIN_ENC_A = D1, PIN_ENC_B = D2, PIN_ENC_SW = D3;
@@ -47,6 +49,9 @@ static const uint32_t RING_CHANNEL_BUDGET = RING_N * 3UL * RING_AMBIENT_BRIGHTNE
 static ring_link::Parser g_parser;
 static ring_link::RingState g_state;
 static bool g_haveState = false;
+// The console's LED brightness (ring link LEVEL), full until the console says
+// otherwise and again when its state goes stale.
+static uint8_t g_level = ring_link::LEVEL_FULL;
 static uint32_t g_lastStateMs = 0, g_lastSnapshotMs = 0, g_lastRenderMs = 0, g_lastRefreshMs = 0;
 // How long the ring shows the master level after the encoder moves it. Armed
 // with a flag rather than a deadline in the future: a bare `millis() + N`
@@ -61,7 +66,13 @@ static void pollState() {
     g_updater.push(byte, millis());
     uint8_t type;
     const uint8_t *payload;
-    if (!g_parser.push(byte, type, payload) || type != ring_link::STATE) continue;
+    if (!g_parser.push(byte, type, payload)) continue;
+    // The console sends LEVEL with each STATE, just before it.
+    if (type == ring_link::LEVEL) {
+      if (payload[0]) g_level = payload[0];
+      continue;
+    }
+    if (type != ring_link::STATE) continue;
     const ring_link::RingState next = ring_link::decodeState(payload);
     // The encoder is the master volume and has no pill of its own, so the ring
     // becomes the readout for a moment whenever the level moves.
@@ -76,7 +87,10 @@ static void pollState() {
     g_haveState = true;
     g_lastStateMs = millis();
   }
-  if (g_haveState && (uint32_t)(millis() - g_lastStateMs) >= ring_link::TIMEOUT_MS) g_haveState = false;
+  if (g_haveState && (uint32_t)(millis() - g_lastStateMs) >= ring_link::TIMEOUT_MS) {
+    g_haveState = false;
+    g_level = ring_link::LEVEL_FULL;
+  }
 }
 
 // ---- encoder and button -----------------------------------------------------------
@@ -166,12 +180,14 @@ static uint32_t ambientRingColor(uint32_t c) {
 // Every push shares one full-white current ceiling. Normal patterns fit
 // without dimming; a larger frame is scaled uniformly, keeping its hue. While
 // the console is idle and the screens are dimmed, the output drops to about
-// 20 % (#1349), at once even on a still frame.
-static bool g_shownDim = false;
+// 20 % (#1349), at once even on a still frame. The console's LED brightness
+// (#1564) scales it first, also at once.
+static uint8_t g_shownOutput = ring_link::LEVEL_FULL;
 static bool dimmedNow() { return g_haveState && (g_state.flags & ring_link::FLAG_DIMMED); }
+static uint8_t outputNow() { return ring_link::outputLevel(g_level, dimmedNow()); }
 static void showRing() {
-  const bool dim = dimmedNow();
-  g_shownDim = dim;
+  const uint8_t output = outputNow();
+  g_shownOutput = output;
   uint32_t total = 0;
   for (uint16_t i = 0; i < RING_N; ++i) {
     const uint32_t c = g_pixels[i];
@@ -184,10 +200,9 @@ static void showRing() {
                                    ((c >> 8) & 255) * RING_CHANNEL_BUDGET / total,
                                    (c & 255) * RING_CHANNEL_BUDGET / total);
     }
-    if (dim)
-      c = Adafruit_NeoPixel::Color(ring_link::dimChannel((c >> 16) & 255),
-                                   ring_link::dimChannel((c >> 8) & 255),
-                                   ring_link::dimChannel(c & 255));
+    uint8_t r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
+    ring_link::scalePixel(r, g, b, output);
+    c = Adafruit_NeoPixel::Color(r, g, b);
     ring.setPixelColor(i, c);
   }
   ring.show();
@@ -343,6 +358,6 @@ void loop() {
     const bool changed = renderRing();
     const bool refresh = (uint32_t)(now - g_lastRefreshMs) >= 250;
     if (refresh) g_lastRefreshMs = now;
-    if (changed || refresh || dimmedNow() != g_shownDim) showRing();
+    if (changed || refresh || outputNow() != g_shownOutput) showRing();
   }
 }

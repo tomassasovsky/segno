@@ -40,7 +40,21 @@ inline bool interruptsOff = false;
 
 inline unsigned long millis() { return fake_arduino::now; }
 inline int digitalRead(int pin) { return fake_arduino::digital[pin]; }
-inline int analogRead(int pin) { return fake_arduino::analog[pin]; }
+// A pin with nothing on it (floating[pin]) reads the rail its pad pull
+// takes it to, and a mid-scale nothing without one; a fitted pin reads
+// analog[pin], plus loaded[pin] counts while its pull-up is on.
+namespace fake_arduino {
+inline bool floating[32] = {};
+inline int loaded[32] = {};
+inline bool pullUp[32] = {};
+inline bool pullDown[32] = {};
+}
+inline int analogRead(int pin) {
+  if (fake_arduino::floating[pin]) {
+    return fake_arduino::pullUp[pin] ? 4095 : fake_arduino::pullDown[pin] ? 0 : 2048;
+  }
+  return fake_arduino::analog[pin] + (fake_arduino::pullUp[pin] ? fake_arduino::loaded[pin] : 0);
+}
 inline void digitalWrite(int pin, int value) { fake_arduino::digital[pin] = value; }
 inline void pinMode(int pin, int mode) {
   if (mode == INPUT_PULLUP) fake_arduino::digital[pin] = HIGH;
