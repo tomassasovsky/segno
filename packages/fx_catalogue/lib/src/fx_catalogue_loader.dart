@@ -46,11 +46,9 @@ class FxCatalogue {
 /// `FlutterError` for a missing key, and an Error is not a thing to catch.
 class FxCatalogueLoader {
   /// Creates an [FxCatalogueLoader] reading through [bundle].
-  const FxCatalogueLoader({AssetBundle? bundle}) : _bundle = bundle;
+  const FxCatalogueLoader({required AssetBundle bundle}) : _assets = bundle;
 
-  final AssetBundle? _bundle;
-
-  AssetBundle get _assets => _bundle ?? rootBundle;
+  final AssetBundle _assets;
 
   /// The package the assets are bundled under.
   static const String package = 'fx_catalogue';

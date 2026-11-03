@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:segno/audio_setup/view/device_page.dart';
 import 'package:segno/control/view/midi_controls/midi_controls_page.dart';
@@ -85,9 +86,11 @@ Future<FxCatalogue>? _fxCatalogue;
 ///
 /// Read lazily on the first open rather than at startup: it is 6 MB of assets
 /// that only the Effects surfaces want, and a rig that never opens them should
-/// not pay for it on the way to the stage.
+/// not pay for it on the way to the stage. Read through [rootBundle], not a
+/// widget's bundle: the catalogue is kept for the whole process, and a test
+/// supplies its own with [setSegnoFxCatalogueForTest].
 Future<FxCatalogue> segnoFxCatalogue() =>
-    _fxCatalogue ??= const FxCatalogueLoader().load();
+    _fxCatalogue ??= FxCatalogueLoader(bundle: rootBundle).load();
 
 /// Replaces the loaded catalogue, for a test or a screenshot that supplies its
 /// own instead of an asset bundle.
