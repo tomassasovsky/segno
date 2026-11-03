@@ -468,20 +468,34 @@ void main() {
         expect(r.store.values['tempo.click_mode'], 1);
       },
     );
-    check(
-      '${external ? "External" : "MIDI"} capture refuses acquisition '
-      'without adding a holder',
-      (r) {
-        r
-          ..bind()
-          ..capture(TrackState.recording);
-        press(r, high: true);
-        expect(r.live, 2);
-        expect(r.durable, 2);
-        r.capture(TrackState.empty);
-        press(r, high: false);
-        expect(r.live, 2);
-      },
-    );
+  }
+  // A refused Held voids its whole gesture, so its Released does nothing
+  // (#1153), whether or not an ordinary edit came first.
+  for (final external in [false, true]) {
+    for (final edited in [false, true]) {
+      check(
+        '${external ? 'External' : 'MIDI'} refused Held voids its Released'
+        '${edited ? ' after an ordinary edit' : ''}',
+        (r) {
+          if (edited) r.ordinary(ClickMode.rec);
+          r.bind();
+          final before = (r.live, r.durable);
+          r.capture(TrackState.recording);
+          if (external) {
+            r.external(high: true);
+          } else {
+            r.note(127);
+          }
+          expect((r.live, r.durable), before);
+          r.capture(TrackState.empty);
+          if (external) {
+            r.external(high: false);
+          } else {
+            r.note(0);
+          }
+          expect((r.live, r.durable), before);
+        },
+      );
+    }
   }
 }
