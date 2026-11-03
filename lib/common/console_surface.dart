@@ -423,96 +423,108 @@ class ConsoleRow extends StatelessWidget {
           ),
         ),
       ),
-      child: Row(
-        children: [
-          if (leading case final glyph?) ...[
-            glyph,
-            const SizedBox(width: kConsoleRowGap),
-          ],
-          Expanded(
-            child: quiet(
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  AppText(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: titleColor ?? surface.textPrimary,
-                      fontSize: 17,
-                      height: 1.18,
-                      leadingDistribution: TextLeadingDistribution.even,
-                    ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          return Row(
+            children: [
+              if (leading case final glyph?) ...[
+                glyph,
+                const SizedBox(width: kConsoleRowGap),
+              ],
+              Expanded(
+                child: quiet(
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AppText(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: titleColor ?? surface.textPrimary,
+                          fontSize: 17,
+                          height: 1.18,
+                          leadingDistribution: TextLeadingDistribution.even,
+                        ),
+                      ),
+                      if (subtitle case final sub?) ...[
+                        const SizedBox(height: 2),
+                        // Two lines fit the row's height, so a sentence of
+                        // subtitle wraps rather than losing its end (#1590
+                        // DEV-1).
+                        AppText(
+                          sub,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: surface.textMuted,
+                            fontSize: 14,
+                            height: 1.21,
+                            leadingDistribution: TextLeadingDistribution.even,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                  if (subtitle case final sub?) ...[
-                    const SizedBox(height: 2),
+                ),
+              ),
+              if (trailing case final control?) ...[
+                const SizedBox(width: kConsoleRowGap),
+                control,
+              ] else ...[
+                if (state case final word?) ...[
+                  const SizedBox(width: kConsoleRowGap),
+                  quiet(
                     AppText(
-                      sub,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      word,
+                      textAlign: TextAlign.right,
                       style: TextStyle(
-                        color: surface.textMuted,
+                        color: readout,
+                        fontFamily: SurfaceTheme.monoFont,
                         fontSize: 14,
-                        height: 1.21,
+                        height: 1.14,
                         leadingDistribution: TextLeadingDistribution.even,
                       ),
                     ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          if (trailing case final control?) ...[
-            const SizedBox(width: kConsoleRowGap),
-            control,
-          ] else ...[
-            if (state case final word?) ...[
-              const SizedBox(width: kConsoleRowGap),
-              quiet(
-                AppText(
-                  word,
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
-                    color: readout,
-                    fontFamily: SurfaceTheme.monoFont,
-                    fontSize: 14,
-                    height: 1.14,
-                    leadingDistribution: TextLeadingDistribution.even,
                   ),
-                ),
-              ),
-            ],
-            if (value case final name?) ...[
-              const SizedBox(width: kConsoleRowGap),
-              Expanded(
-                child: quiet(
-                  AppText(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.right,
-                    style: TextStyle(
-                      color: readout,
-                      fontSize: 14,
-                      height: 1.21,
-                      leadingDistribution: TextLeadingDistribution.even,
+                ],
+                if (value case final name?) ...[
+                  const SizedBox(width: kConsoleRowGap),
+                  // As wide as its text, up to half the row: the title takes
+                  // what a short value leaves, instead of an even split that
+                  // cut the title short beside an empty value (#1590 DEV-1).
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: width / 2),
+                    child: quiet(
+                      AppText(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          color: readout,
+                          fontSize: 14,
+                          height: 1.21,
+                          leadingDistribution: TextLeadingDistribution.even,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
+                ],
+                if (mark case final glyph?) ...[
+                  const SizedBox(width: kConsoleRowGap),
+                  quiet(glyph),
+                ],
+                if (showDisclosure) ...[
+                  const SizedBox(width: kConsoleRowGap),
+                  quiet(ConsoleDisclosure(expanded: expanded)),
+                ],
+              ],
             ],
-            if (mark case final glyph?) ...[
-              const SizedBox(width: kConsoleRowGap),
-              quiet(glyph),
-            ],
-            if (showDisclosure) ...[
-              const SizedBox(width: kConsoleRowGap),
-              quiet(ConsoleDisclosure(expanded: expanded)),
-            ],
-          ],
-        ],
+          );
+        },
       ),
     );
 

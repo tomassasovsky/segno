@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -22,6 +23,43 @@ void main() {
           home: Scaffold(body: ConsoleCard(children: rows)),
         ),
       );
+
+  group('ConsoleRow layout', () {
+    testWidgets('a short value leaves the title the rest of the row, and a '
+        'long subtitle wraps instead of being cut (#1590 DEV-1)', (
+      tester,
+    ) async {
+      const subtitle =
+          'A higher cap reserves more memory per track. Change it with no '
+          'tracks recorded.';
+      await pumpRows(tester, [
+        const ConsoleRow(
+          key: Key('row'),
+          title: 'Maximum loop length',
+          subtitle: subtitle,
+          value: '5 min',
+          expanded: false,
+          showDivider: false,
+        ),
+      ]);
+      final row = tester.getRect(find.byKey(const Key('row')));
+      final value = tester.getRect(find.text('5 min'));
+      final sub = tester.renderObject<RenderParagraph>(
+        find.descendant(
+          of: find.text(subtitle),
+          matching: find.byType(RichText),
+        ),
+      );
+      // The value is as wide as its text, not half the row.
+      expect(value.width, lessThan(row.width / 4));
+      // The subtitle runs past the row's middle and keeps all its words.
+      expect(
+        tester.getRect(find.text(subtitle)).right,
+        greaterThan(row.center.dx),
+      );
+      expect(sub.didExceedMaxLines, isFalse);
+    });
+  });
 
   group('ConsoleRow semantics', () {
     // A row announces itself as one composed label, so its visible words are
