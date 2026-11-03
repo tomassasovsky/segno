@@ -239,19 +239,9 @@ typedef struct {
 /* What fails today, emptied by the parts of #1547 that fix it. The full
  * run's table names the worst setting of each. */
 static const mx_known k_known[] = {
-    /* The waveshapers alias (#1540): oversampling, part 2. */
-    {"overdrive", MX_ALIAS, 44100, -33.5},
-    {"overdrive", MX_ALIAS, 48000, -34.5},
-    {"overdrive", MX_ALIAS, 96000, -41.5},
-    {"distortion", MX_ALIAS, 44100, -52.5},
-    {"distortion", MX_ALIAS, 48000, -54.5},
-    {"vinyl", MX_ALIAS, 44100, -43.5},
-    {"vinyl", MX_ALIAS, 48000, -44.5},
-    {"vinyl", MX_ALIAS, 96000, -58.5},
-    {"ampcab", MX_ALIAS, 44100, -23.5},
-    {"ampcab", MX_ALIAS, 48000, -25.5},
-    {"ampcab", MX_ALIAS, 96000, -41.0},
-    /* The transient shaper's gain follows each cycle, and folds too. */
+    /* The transient shaper's peak envelope, which rises at once to the
+     * largest sample of each cycle, ripples off the harmonics: the
+     * envelope, not a curve, so oversampling is not its fix (part 3). */
     {"transient", MX_ALIAS, 44100, -46.5},
     {"transient", MX_ALIAS, 48000, -46.0},
     {"transient", MX_ALIAS, 96000, -57.0},
@@ -290,10 +280,6 @@ static const mx_known k_known[] = {
     {"dualoct", MX_ENVELOPE, 96000, 8.0},
     {"smarttune", MX_ENVELOPE, 44100, 3.0},
     {"smarttune", MX_ENVELOPE, 96000, 6.0},
-    /* The vinyl's rectifier keeps its DC, as the Looper X's does. */
-    {"vinyl", MX_DC, 44100, -10.0},
-    {"vinyl", MX_DC, 48000, -10.0},
-    {"vinyl", MX_DC, 96000, -10.0},
     {NULL, 0, 0, 0.0},
 };
 

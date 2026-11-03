@@ -3106,7 +3106,10 @@ static void fx_reverb_process(le_fx_state* fx, int slot, int sr, int cap,
 }
 
 /* Octaver's added latency, adapted to the vtable's (fx, slot) signature. */
-static int fx_octaver_latency_vt(const le_fx_state* fx, int slot) {
+static int fx_octaver_latency_vt(const le_fx_state* fx, int slot,
+                                 int32_t type, int sr) {
+  (void)type;
+  (void)sr;
   return le_octaver_latency(&fx->oct[slot][0]);
 }
 
@@ -5115,6 +5118,251 @@ static void fx_wah_kprocess(void* ks, float* l, float* r) {
   *r = y[1];
 }
 
+/* ---- Oversampling the waveshapers (#1547) ----
+ *
+ * A waveshaper's harmonics above the rate's Nyquist fold back under it as
+ * inharmonic tones (#1540). The Overdrive, Distortion, Vinyl and Amp+Cab
+ * run their curves at a multiple of the rate: each 2x stage is a polyphase
+ * IIR half-band, up before the curve and down after it, cascaded for 4x
+ * and 8x. The linear filters around a curve stay at the rate.
+ *
+ * The half-band is Laurent de Soras's (HIIR): two paths of first-order
+ * allpass sections in z^2, H(z) = (A0(z^2) + z^-1 A1(z^2)) / 2, its
+ * coefficients from his elliptic design (PolyphaseIir2Designer). Each
+ * stage is designed when the rate is set: flat to LE_OS_PASS_HZ (or 0.42
+ * of a lower rate), at least LE_OS_ATT_DB down from the image of that
+ * edge, with as few coefficients as that takes (6 for the first stage at
+ * 44.1 and 48 kHz, 3 or 4 after it). It is minimum phase: the whole path
+ * runs about 4 frames late at 48 kHz, where a linear-phase FIR of the same
+ * stopband ran 33. Its delay grows toward the top of the band: the 8x path
+ * at 44.1 kHz holds 1 kHz 4.5 frames, 10 kHz 5.3 and 15 kHz 7.2 (at
+ * 96 kHz, 3.5 to 3.8). The kind reports the low-frequency figure as its
+ * latency (le_os_latency).
+ *
+ * State per channel and stage: each section's last input and output, for
+ * the way up and the way down. Nothing is allocated: the arrays are sized
+ * for LE_OS_MAX_STAGES stages of LE_OS_MAX_COEFS sections, inside the
+ * kind's block. */
+#define LE_OS_MAX_STAGES 3 /* up to 8x */
+#define LE_OS_MAX_COEFS 8
+#define LE_OS_PASS_HZ 20000.0
+#define LE_OS_ATT_DB 70.0
+
+typedef struct le_os_path {
+  float x[LE_OS_MAX_COEFS], y[LE_OS_MAX_COEFS]; /* per section */
+} le_os_path;
+
+typedef struct le_os {
+  int32_t sr;     /* the rate the design is for; 0: none yet */
+  int32_t stages; /* log2 of the factor */
+  int32_t n[LE_OS_MAX_STAGES];                /* coefficients a stage */
+  float c[LE_OS_MAX_STAGES][LE_OS_MAX_COEFS]; /* even: A0, odd: A1 */
+  le_os_path up[2][LE_OS_MAX_STAGES], down[2][LE_OS_MAX_STAGES];
+} le_os;
+
+/* The pass edge at [sr]: LE_OS_PASS_HZ, or 0.42 of a rate too low for it. */
+static double le_os_pass_hz(int sr) {
+  const double rate = (double)(sr > 0 ? sr : 48000);
+  return LE_OS_PASS_HZ > 0.42 * rate ? 0.42 * rate : LE_OS_PASS_HZ;
+}
+
+/* Stage [s]'s coefficients at [sr], into [c]; returns how many. De Soras's
+ * design: the transition band, as a share of the upper rate, from the pass
+ * edge to its image; the elliptic order that holds LE_OS_ATT_DB over it;
+ * each coefficient from the elliptic functions' series (summed until their
+ * terms are below what a float carries). */
+static int le_os_coefs(int sr, int s, float* c) {
+  const double pi = 3.14159265358979323846;
+  const double rate = (double)(sr > 0 ? sr : 48000);
+  const double tbw = 0.25 - le_os_pass_hz(sr) / (2.0 * rate * (double)(1 << s));
+  double k = tan((1.0 - 2.0 * tbw) * pi / 4.0);
+  k *= k;
+  const double kr = pow(1.0 - k * k, 0.25);
+  const double e = 0.5 * (1.0 - kr) / (1.0 + kr);
+  const double e4 = e * e * e * e;
+  const double q = e * (1.0 + e4 * (2.0 + e4 * (15.0 + 150.0 * e4)));
+  const double att = pow(10.0, -LE_OS_ATT_DB / 10.0);
+  const double a = att / (1.0 - att);
+  int order = (int)ceil(log(a * a / 16.0) / log(q));
+  if ((order & 1) == 0) ++order;
+  if (order < 3) order = 3;
+  /* A band too narrow for LE_OS_MAX_COEFS sections is designed at the
+   * largest order they hold (less attenuation, but a true half-band), never
+   * cut short. */
+  if (order > 2 * LE_OS_MAX_COEFS + 1) order = 2 * LE_OS_MAX_COEFS + 1;
+  const int n = (order - 1) / 2;
+  for (int i = 0; i < n; ++i) {
+    const double m = (double)(i + 1);
+    double num = 0.0, den = 0.0;
+    for (int j = 0; j < 40; ++j) {
+      const double t = pow(q, (double)(j * (j + 1))) *
+                       sin((2.0 * j + 1.0) * m * pi / order);
+      num += (j & 1) ? -t : t;
+      if (fabs(t) < 1e-30) break;
+    }
+    for (int j = 1; j < 40; ++j) {
+      const double t = pow(q, (double)(j * j)) * cos(2.0 * j * m * pi / order);
+      den += (j & 1) ? -t : t;
+      if (fabs(t) < 1e-30) break;
+    }
+    const double ww = num * pow(q, 0.25) / (den + 0.5);
+    const double w2 = ww * ww;
+    const double x = sqrt((1.0 - w2 * k) * (1.0 - w2 / k)) / (1.0 + w2);
+    c[i] = (float)((1.0 - x) / (1.0 + x));
+  }
+  return n;
+}
+
+/* Designs [o] for 2^[stages] times [sr] and clears its state. Audio thread
+ * (a kind's update, on a new rate): a few hundred operations, once. */
+static void le_os_design(le_os* o, int sr, int stages) {
+  memset(o, 0, sizeof(*o));
+  o->sr = sr;
+  o->stages = stages;
+  for (int s = 0; s < stages; ++s) o->n[s] = le_os_coefs(sr, s, o->c[s]);
+}
+
+/* Empties [o]'s state, keeping its design. */
+static void le_os_clear(le_os* o) {
+  memset(o->up, 0, sizeof(o->up));
+  memset(o->down, 0, sizeof(o->down));
+}
+
+/* The frames the up and down pair delays a signal at low frequencies,
+ * rounded: each stage's half-band delays by the mean of its two paths
+ * (a section (c + z^-2) / (1 + c z^-2) by 2 (1 - c) / (1 + c) samples of
+ * the upper rate at DC, the odd path one more), once up and once down. */
+static int le_os_latency_of(int sr, int stages) {
+  double d = 0.0;
+  for (int s = 0; s < stages; ++s) {
+    float c[LE_OS_MAX_COEFS];
+    const int n = le_os_coefs(sr, s, c);
+    double t[2] = {0.0, 1.0};
+    for (int i = 0; i < n; ++i) t[i & 1] += 2.0 * (1.0 - c[i]) / (1.0 + c[i]);
+    /* Up and down, in samples of the upper rate, over 2^(s + 1). */
+    d += (t[0] + t[1]) / (double)(1 << s) / 2.0;
+  }
+  return (int)(d + 0.5);
+}
+
+/* le_os_latency_of, kept per rate once worked out: every enabled
+ * waveshaper asks on each snapshot, and the audio thread on an enable edge,
+ * and the design behind it is a few hundred transcendental operations. Any
+ * thread: two that work out the same entry store the same value. */
+static const int le_os_rates[6] = {44100, 48000, 88200, 96000, 176400, 192000};
+static _Atomic int le_os_lat_memo[6][LE_OS_MAX_STAGES + 1]; /* frames + 1 */
+
+static int le_os_latency(int sr, int stages) {
+  if (stages <= 0) return 0;
+  for (int i = 0; i < 6; ++i) {
+    if (le_os_rates[i] != sr) continue;
+    _Atomic int* m = &le_os_lat_memo[i][stages];
+    const int got = atomic_load_explicit(m, memory_order_relaxed);
+    if (got > 0) return got - 1;
+    const int lat = le_os_latency_of(sr, stages);
+    atomic_store_explicit(m, lat + 1, memory_order_relaxed);
+    return lat;
+  }
+  return le_os_latency_of(sr, stages);
+}
+
+/* [x] through path [p]'s sections (every other coefficient of [c], from
+ * [first]), each y = c (x - y') + x' in the path's own rate. */
+static inline float le_os_path_run(const float* c, int n, int first,
+                                   le_os_path* p, float x) {
+  for (int i = first; i < n; i += 2) {
+    const float y = c[i] * (x - p->y[i]) + p->x[i];
+    p->x[i] = x;
+    p->y[i] = y;
+    x = y;
+  }
+  return x;
+}
+
+/* [x] on channel [ch] up to 2^stages samples, in time order, into [out]:
+ * each stage's even output is A0's, its odd one A1's. */
+static inline int le_os_up(le_os* o, int ch, float x, float* out) {
+  out[0] = x;
+  int n = 1;
+  for (int s = 0; s < o->stages; ++s) {
+    float tmp[1 << LE_OS_MAX_STAGES];
+    le_os_path* p = &o->up[ch][s];
+    for (int i = 0; i < n; ++i) {
+      tmp[2 * i] = le_os_path_run(o->c[s], o->n[s], 0, p, out[i]);
+      tmp[2 * i + 1] = le_os_path_run(o->c[s], o->n[s], 1, p, out[i]);
+    }
+    n *= 2;
+    for (int i = 0; i < n; ++i) out[i] = tmp[i];
+  }
+  return n;
+}
+
+/* The 2^stages samples in [in] (time order) on channel [ch] back down to
+ * one: each pair's newer sample through A0, its older through A1, halved.
+ * [in] is used as scratch. */
+static inline float le_os_down(le_os* o, int ch, float* in) {
+  int n = 1 << o->stages;
+  /* The paths are recursive: a sample that is not finite would stay in
+   * them, so it goes in as 0. */
+  for (int i = 0; i < n; ++i) in[i] = fx_sanitize(in[i]);
+  for (int s = o->stages - 1; s >= 0; --s) {
+    n /= 2;
+    le_os_path* p = &o->down[ch][s];
+    for (int i = 0; i < n; ++i) {
+      const float a0 = le_os_path_run(o->c[s], o->n[s], 0, p, in[2 * i + 1]);
+      const float a1 = le_os_path_run(o->c[s], o->n[s], 1, p, in[2 * i]);
+      in[i] = 0.5f * (a0 + a1);
+    }
+  }
+  return in[0];
+}
+
+/* The oversampling stages a waveshaper of [type] runs at [sr]: the
+ * smallest factor at which every factory setting keeps its aliasing at
+ * least 61 dB under its output, a dB inside the effects matrix's 60
+ * (#1547: -12 dBFS sines at E4, E5 and E6), so platform rounding cannot
+ * push it past the limit. The worst setting's aliasing at 1x, 2x, 4x and 8x, at
+ * 44.1 / 48 / 96 kHz:
+ *
+ *   Overdrive   -34.9 -42.3 -50.3 -62.3 / -35.7 -43.0 -51.4 -64.8 /
+ *               -42.9 -51.3 -64.7 -88.4
+ *   Amp+Cab     -24.9 -40.4 -58.5 -76.5 / -26.8 -41.9 -59.9 -78.6 /
+ *               -42.4 -60.2 -72.5
+ *   Vinyl       -44.5 -58.2 -70.4 / -45.9 -59.8 -72.0 / -59.9 -72.4
+ *   Distortion  -53.8 -77.2 / -55.7 -80.5 / -80.3
+ *
+ * The Overdrive's clipped part (G up to 680 times the input into a tanh)
+ * is close to a square wave, so each doubling lowers its aliasing by only
+ * 8 dB.
+ * First-order antiderivative anti-aliasing on that tanh (its antiderivative
+ * log cosh) reaches -69 dB at 2x and 44.1 kHz, but its exp and log1p in
+ * double on every sample cost more than 8x plain: about 280 against 233 ns
+ * a frame at 48 kHz on an M4 Pro. The curves stay where they are:
+ * oversampling only takes away what folded back. A rate past 96 kHz runs
+ * the 96 kHz factor. */
+static int le_os_stages(int32_t type, int sr) {
+  const int low = sr < 88200; /* 44.1 and 48 kHz */
+  switch (type) {
+    case LE_FX_OVERDRIVE:
+    case LE_FX_AMP_CAB:
+      return low ? 3 : 2; /* 8x, 4x */
+    case LE_FX_VINYL:
+      return low ? 2 : 1; /* 4x, 2x */
+    case LE_FX_DISTORTION:
+      return low ? 1 : 0; /* 2x, 1x */
+    default:
+      return 0;
+  }
+}
+
+/* The latency of a kind that oversamples, for the effect table. */
+static int fx_os_latency_vt(const le_fx_state* fx, int slot, int32_t type,
+                            int sr) {
+  (void)fx;
+  (void)slot;
+  return le_os_latency(sr, le_os_stages(type, sr));
+}
+
 /* ---- Overdrive (LE_FX_OVERDRIVE, #887 part 7) ----
  *
  * Fit to the Phase 0 captures of the Guitar Rack's OvDrive (#891, session
@@ -5184,6 +5432,7 @@ typedef struct le_fx_overdrive {
   float pk[5];      /* the 680 Hz rise, RBJ, a0-normalized */
   float s_hp[2], s_tone[2], s_lp2[2];
   float z_pk[2][2];
+  le_os os; /* the curve's oversampling */
 } le_fx_overdrive;
 
 static void fx_overdrive_update(void* ks, const float* p, int sr, int settle) {
@@ -5192,6 +5441,7 @@ static void fx_overdrive_update(void* ks, const float* p, int sr, int settle) {
   if (!f) return;
   const double rate = (double)(sr > 0 ? sr : 48000);
   if (f & LE_FX_DYN_NEW_RATE) {
+    le_os_design(&o->os, sr, le_os_stages(LE_FX_OVERDRIVE, sr));
     o->hp_g1 = le_onepole_g1(LE_OD_HP_HZ, sr);
     o->lp2_g1 = le_onepole_g1(LE_OD_LP2_HZ, sr);
     double c[5];
@@ -5220,9 +5470,14 @@ static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
   const float g = le_fx_glide_next(&o->g);
   float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
   for (int ch = 0; ch < 2; ++ch) {
-    const float x = io[ch];
-    const float u = LE_OD_K * x + LE_OD_C * tanhf(g * x);
-    float v = (tanhf(LE_OD_A * (u + LE_OD_B)) - LE_OD_OFF) * (1.0f / LE_OD_A);
+    float os[1 << LE_OS_MAX_STAGES];
+    const int n = le_os_up(&o->os, ch, io[ch], os);
+    for (int i = 0; i < n; ++i) {
+      const float x = os[i];
+      const float u = LE_OD_K * x + LE_OD_C * tanhf(g * x);
+      os[i] = (tanhf(LE_OD_A * (u + LE_OD_B)) - LE_OD_OFF) * (1.0f / LE_OD_A);
+    }
+    float v = le_os_down(&o->os, ch, os);
     /* The tone filter: the 17 Hz high-pass, the 680 Hz rise, the tone
      * corner and the 11 kHz pole. */
     v = v - le_onepole_lp(&o->s_hp[ch], o->hp_g1, v);
@@ -5530,6 +5785,7 @@ typedef struct le_fx_amp {
   float tail[2][LE_CAB_B];
   float fre[LE_CAB_MAX_PARTS][LE_CAB_NB], fim[LE_CAB_MAX_PARTS][LE_CAB_NB];
   float wr[LE_CAB_NB], wi[LE_CAB_NB], tmp[2 * LE_CAB_B];
+  le_os os; /* the clipper's oversampling (mono: channel 0) */
 } le_fx_amp;
 
 static void le_amp_design(int kind, double hz, double db, double q, int sr,
@@ -5569,6 +5825,7 @@ static void le_amp_reset(le_fx_amp* a) {
   memset(a->tail, 0, sizeof(a->tail));
   memset(a->fre, 0, sizeof(a->fre));
   memset(a->fim, 0, sizeof(a->fim));
+  le_os_clear(&a->os);
   a->hp = a->j = a->fpos = 0;
   a->xf = 0;
   a->cab_from = a->cab;
@@ -5589,6 +5846,7 @@ static void le_amp_update(le_fx_amp* a, const float* p, int sr) {
   if (new_rate) {
     a->sr = sr;
     a->k = le_fx_smooth_k(sr);
+    le_os_design(&a->os, sr, le_os_stages(LE_FX_AMP_CAB, sr));
     le_amp_design(LE_EQ_LOWCUT, LE_AMP_HP_HZ, 0.0, LE_AMP_HP_Q, sr, a->pre_hp);
     le_amp_design(LE_EQ_LOMID, LE_AMP_PK1_HZ, LE_AMP_PK1_DB, LE_AMP_PK1_Q, sr,
                   a->pre_pk1);
@@ -5765,9 +6023,14 @@ static void fx_amp_cab_process(le_fx_state* fx, int slot, int sr, int cap,
   v = le_biquad_tick(a->m_pk, a->z_m[1], v);
   v = le_biquad_tick(a->m_hs, a->z_m[2], v);
   v = le_biquad_tick(a->d_hs, a->z_dhs, v);
-  const float w = v * a->mpre_lin * a->gb_lin;
-  float y = w >= 0.0f ? LE_AMP_CLIP_POS * le_amp_knee(w / LE_AMP_CLIP_POS)
+  float os[1 << LE_OS_MAX_STAGES];
+  const int n = le_os_up(&a->os, 0, v * a->mpre_lin * a->gb_lin, os);
+  for (int i = 0; i < n; ++i) {
+    const float w = os[i];
+    os[i] = w >= 0.0f ? LE_AMP_CLIP_POS * le_amp_knee(w / LE_AMP_CLIP_POS)
                       : LE_AMP_CLIP_NEG * le_amp_knee(w / LE_AMP_CLIP_NEG);
+  }
+  float y = le_os_down(&a->os, 0, os);
   y = le_amp_hp1_tick(a->post_hp_b0, a->post_hp_a1, a->z_post_hp, y);
   y = le_biquad_tick(a->t_bass, a->z_tone[0], y);
   y = le_biquad_tick(a->t_treb, a->z_tone[1], y);
@@ -5852,6 +6115,7 @@ typedef struct le_fx_distortion {
   float cab[LE_DIST_SECTIONS][5];
   float shelf[5];
   float z[LE_DIST_SECTIONS + 1][2][2]; /* [section][channel][state] */
+  le_os os; /* the curve's oversampling */
 } le_fx_distortion;
 
 /* |H(e^jw)| of one a0-normalized biquad. */
@@ -5870,6 +6134,7 @@ static void fx_distortion_update(void* ks, const float* p, int sr, int settle) {
   if (!f) return;
   const int rate = sr > 0 ? sr : 48000;
   if (f & LE_FX_DYN_NEW_RATE) {
+    le_os_design(&q->os, sr, le_os_stages(LE_FX_DISTORTION, sr));
     double mag = 1.0;
     const double w1k = 2.0 * 3.14159265358979323846 * 1000.0 / rate;
     for (int s = 0; s < LE_DIST_SECTIONS; ++s) {
@@ -5915,12 +6180,17 @@ static void fx_distortion_kprocess(void* ks, float* l, float* r) {
   const float level = le_fx_glide_next(&q->level);
   float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
   for (int ch = 0; ch < 2; ++ch) {
-    const float u = g * io[ch];
-    const float au = LE_DIST_ALPHA * u;
-    const float w = u + LE_DIST_ALPHA * u * u / (1.0f + au * au);
-    const float c = w > 0.0f ? LE_DIST_UP : LE_DIST_DOWN;
-    float v = w / powf(1.0f + powf(fabsf(w / c), LE_DIST_KNEE),
+    float os[1 << LE_OS_MAX_STAGES];
+    const int n = le_os_up(&q->os, ch, io[ch], os);
+    for (int i = 0; i < n; ++i) {
+      const float u = g * os[i];
+      const float au = LE_DIST_ALPHA * u;
+      const float w = u + LE_DIST_ALPHA * u * u / (1.0f + au * au);
+      const float c = w > 0.0f ? LE_DIST_UP : LE_DIST_DOWN;
+      os[i] = w / powf(1.0f + powf(fabsf(w / c), LE_DIST_KNEE),
                        1.0f / LE_DIST_KNEE);
+    }
+    float v = le_os_down(&q->os, ch, os);
     for (int s = 0; s < LE_DIST_SECTIONS; ++s) {
       v = le_biquad_tick(q->cab[s], q->z[s][ch], v);
     }
@@ -5952,8 +6222,13 @@ static void fx_distortion_kprocess(void* ks, float* l, float* r) {
  *   0.471 and 0.024 at Freq 251, 50, 1256 and 5000 Hz (the high-pass gives
  *   0.621, 0.601, 0.469 and 0.025), 3.88 at Drive 100 %; the square law's
  *   was 4.4 and 4.5 times the rectifier's at 40 and 100 % (4.3 times with
- *   the high-pass's 1.035 at 1 kHz taken out). The copy carries the
- *   rectifier's DC, as the Looper X's output does;
+ *   the high-pass's 1.035 at 1 kHz taken out). The Looper X's output
+ *   carries the rectifier's DC (here up to -11 dBFS at Drive 100 %); a
+ *   LE_VIN_DC_HZ high-pass after the copy takes it out of what plays
+ *   (#1547, the owner's call, a departure from the capture), so bypassing
+ *   the vinyl never steps by it. The limiter below still reads the copy
+ *   with its DC, so its gain, and every level the capture fitted, stay
+ *   as they were;
  * - a stereo-linked limiter holds the output's peaks to 0.5: at once on the
  *   way down, back up through a 57 ms release on its peak and 145 ms on its
  *   gain (fit to the recovery after a loud tone within 0.055 of gain);
@@ -5987,6 +6262,7 @@ static const le_fx_param_desc LE_FX_VINYL_PARAMS[] = {
 #define LE_VIN_RECT 3.75f   /* the rectifier at 100 % drive, x drive^2 */
 #define LE_VIN_SQUARE 4.3f  /* the square law, x the rectifier */
 #define LE_VIN_SPLIT_Q 1.1
+#define LE_VIN_DC_HZ 5.0 /* the DC blocker, as the amp's coupling */
 #define LE_VIN_CEIL 0.5f
 #define LE_VIN_PEAK_S 0.057
 #define LE_VIN_GAIN_S 0.145
@@ -6025,6 +6301,10 @@ typedef struct le_fx_vinyl {
   float click;       /* the click under way */
   int32_t click_left; /* its samples still to come */
   int32_t click_len;  /* a click's samples: 1/48000 s at this rate */
+  le_os os; /* the copy's oversampling: its high-pass runs inside it */
+  le_os os_dry; /* the dry share's way down, in step with the copy's */
+  float dc_b0, dc_a1; /* the DC blocker after the copy */
+  float z_dc[2][2];
 } le_fx_vinyl;
 
 static void fx_vinyl_update(void* ks, const float* p, int sr, int settle) {
@@ -6041,6 +6321,10 @@ static void fx_vinyl_update(void* ks, const float* p, int sr, int settle) {
     v->lim = 1.0f;
   }
   if (f & LE_FX_DYN_NEW_RATE) {
+    le_os_design(&v->os, rate, le_os_stages(LE_FX_VINYL, rate));
+    v->os_dry = v->os; /* the same filters, its own (cleared) state */
+    memset(v->z_hp, 0, sizeof(v->z_hp));
+    le_amp_hp1(LE_VIN_DC_HZ, rate, &v->dc_b0, &v->dc_a1);
     double c[5];
     le_eq_design(LE_EQ_HIGHCUT, LE_VIN_RUMBLE_HZ, 0.0, 0.70710678, rate, c);
     for (int i = 0; i < 5; ++i) v->rumble[i] = (float)c[i];
@@ -6067,8 +6351,8 @@ static void fx_vinyl_update(void* ks, const float* p, int sr, int settle) {
   if (v->hz_l2 != v->hz_tgt || (f & LE_FX_DYN_NEW_RATE)) {
     le_fx_step_toward(&v->hz_l2, v->hz_tgt, k);
     double c[5];
-    le_eq_design(LE_EQ_LOWCUT, exp2((double)v->hz_l2), 0.0, LE_VIN_SPLIT_Q, rate,
-                 c);
+    le_eq_design(LE_EQ_LOWCUT, exp2((double)v->hz_l2), 0.0, LE_VIN_SPLIT_Q,
+                 rate << v->os.stages, c);
     for (int i = 0; i < 5; ++i) v->hp[i] = (float)c[i];
   }
   if (v->tone_l2 != v->tone_tgt || (f & LE_FX_DYN_NEW_RATE)) {
@@ -6091,6 +6375,7 @@ static void fx_vinyl_kprocess(void* ks, float* l, float* r) {
   const float c = le_fx_glide_next(&v->gain);
   const float n = le_fx_glide_next(&v->noise);
   float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
+  float det[2]; /* what the limiter reads: the output with the copy's DC */
   float shared = 0.0f;
   if (n <= 0.0f) {
     /* Silent: nothing left to come back when the noise is raised. */
@@ -6117,21 +6402,36 @@ static void fx_vinyl_kprocess(void* ks, float* l, float* r) {
     }
   }
   for (int ch = 0; ch < 2; ++ch) {
-    const float x = io[ch];
-    const float hcopy = le_biquad_tick(v->hp, v->z_hp[ch], x);
-    float y = LE_VIN_DRY * x + c * (fabsf(hcopy) + LE_VIN_SQUARE * hcopy * hcopy);
+    /* The dry share goes up and down too, on its own way down, so it stays
+     * in step with the copy while only the copy is DC-blocked. */
+    float os[1 << LE_OS_MAX_STAGES], dry[1 << LE_OS_MAX_STAGES];
+    const int m = le_os_up(&v->os, ch, io[ch], os);
+    for (int i = 0; i < m; ++i) {
+      const float x = os[i];
+      const float hcopy = le_biquad_tick(v->hp, v->z_hp[ch], x);
+      dry[i] = LE_VIN_DRY * x;
+      os[i] = c * (fabsf(hcopy) + LE_VIN_SQUARE * hcopy * hcopy);
+    }
+    const float copy = le_os_down(&v->os, ch, os);
+    const float through = le_os_down(&v->os_dry, ch, dry);
+    /* The limiter reads the copy with its DC, as fitted; what it scales is
+     * the copy without it. */
+    float d = through + copy;
+    float y = through + le_amp_hp1_tick(v->dc_b0, v->dc_a1, v->z_dc[ch], copy);
     if (n > 0.0f) {
       float bed = n * (shared + LE_VIN_OWN * v->hiss * le_noise(&v->rng[ch]));
       if (!v->tone_open) bed = le_biquad_tick(v->tone, v->z_tone[ch], bed);
       y += bed;
+      d += bed;
     }
     io[ch] = y;
+    det[ch] = d;
   }
   /* The limiter: the peak follows the louder side at once and falls back
    * through its release; the gain drops to the ceiling at once and rises
    * through its own. */
-  const float a0 = fabsf(io[0]);
-  const float a1 = fabsf(io[1]);
+  const float a0 = fabsf(det[0]);
+  const float a1 = fabsf(det[1]);
   const float a = a0 > a1 ? a0 : a1;
   v->peak = a > v->peak ? a : a + v->peak_rel * (v->peak - a);
   const float want = v->peak > LE_VIN_CEIL ? LE_VIN_CEIL / v->peak : 1.0f;
@@ -7806,8 +8106,9 @@ typedef struct le_fx_vtable {
    * that slot's per-channel DSP state. NULL == a no-op slot (LE_FX_NONE). */
   void (*process)(le_fx_state* fx, int slot, int sr, int cap, float* l, float* r,
                   const float* p);
-  /* Added latency in frames for slot [slot], or NULL when the effect adds none. */
-  int (*latency)(const le_fx_state* fx, int slot);
+  /* Added latency in frames for slot [slot] of [type] at [sr], or NULL when
+   * the effect adds none. */
+  int (*latency)(const le_fx_state* fx, int slot, int32_t type, int sr);
   /* Lazily allocates slot [slot]'s heap buffers (control thread). LE_OK, or
    * LE_ERR_INVALID on OOM (after freeing whatever it allocated this call). NULL =
    * the type needs no allocation. */
@@ -7889,13 +8190,15 @@ static const le_fx_vtable LE_FX[] = {
                       fx_chorus_update, fx_chorus_kprocess},
     [LE_FX_WAH] = {NULL, NULL, NULL, LE_FX_WAH_PARAMS, 0, sizeof(le_fx_wah),
                    fx_wah_update, fx_wah_kprocess},
-    [LE_FX_OVERDRIVE] = {NULL, NULL, NULL, LE_FX_OVERDRIVE_PARAMS, 0,
+    /* The waveshapers run oversampled, a fixed number of frames late. */
+    [LE_FX_OVERDRIVE] = {NULL, fx_os_latency_vt, NULL, LE_FX_OVERDRIVE_PARAMS, 0,
                          sizeof(le_fx_overdrive), fx_overdrive_update,
                          fx_overdrive_kprocess},
-    [LE_FX_DISTORTION] = {NULL, NULL, NULL, LE_FX_DISTORTION_PARAMS, 0,
+    [LE_FX_DISTORTION] = {NULL, fx_os_latency_vt, NULL, LE_FX_DISTORTION_PARAMS, 0,
                           sizeof(le_fx_distortion), fx_distortion_update,
                           fx_distortion_kprocess},
-    [LE_FX_VINYL] = {NULL, NULL, NULL, LE_FX_VINYL_PARAMS, LE_FX_F_FREE_RUNNING,
+    [LE_FX_VINYL] = {NULL, fx_os_latency_vt, NULL, LE_FX_VINYL_PARAMS,
+                     LE_FX_F_FREE_RUNNING,
                      sizeof(le_fx_vinyl), fx_vinyl_update, fx_vinyl_kprocess},
     [LE_FX_DEGRADE] = {NULL, NULL, NULL, LE_FX_DEGRADE_PARAMS,
                        LE_FX_F_FREE_RUNNING, sizeof(le_fx_degrade),
@@ -7924,7 +8227,7 @@ static const le_fx_vtable LE_FX[] = {
     [LE_FX_DUAL_OCTAVER] = {fx_dual_octaver_process, fx_octaver_latency_vt,
                             fx_dual_octaver_prepare, LE_FX_DUAL_OCTAVER_PARAMS},
     /* The amp and its cabinet, in its own per-slot instance (fx->amp). */
-    [LE_FX_AMP_CAB] = {fx_amp_cab_process, NULL, fx_amp_cab_prepare,
+    [LE_FX_AMP_CAB] = {fx_amp_cab_process, fx_os_latency_vt, fx_amp_cab_prepare,
                        LE_FX_AMP_CAB_PARAMS},
     /* Locked to the beat: a print could not stand for it lap after lap. */
     [LE_FX_PUMPER] = {fx_pumper_process, NULL, NULL, LE_FX_PUMPER_PARAMS,
@@ -8561,7 +8864,7 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
               le_fx_entry_clear_rings(fx, s, cap);
             fx->enable_clear_cooldown = LE_FX_ENABLE_CLEAR_SPACING;
           }
-          fx->enable_warmup[s] = le_fx_added_latency(fx, s, ty);
+          fx->enable_warmup[s] = le_fx_added_latency(fx, s, ty, sr);
         } else if (!want) {
           fx->enable_warmup[s] = 0; /* an aborted warmup never resumes */
           /* Bypass edge: mark the tail draining once the feed has
@@ -8714,9 +9017,9 @@ void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
   fx_apply_chain_with_gain(fx, sr, cap, l, r, count, types, params, enabled, 0, 1);
 }
 
-int le_fx_added_latency(const le_fx_state* fx, int slot, int32_t type) {
+int le_fx_added_latency(const le_fx_state* fx, int slot, int32_t type, int sr) {
   if (type > LE_FX_NONE && type < LE_FX_TYPE_COUNT && LE_FX[type].latency) {
-    return LE_FX[type].latency(fx, slot);
+    return LE_FX[type].latency(fx, slot, type, sr);
   }
   return 0;
 }

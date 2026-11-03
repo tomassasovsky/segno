@@ -166,7 +166,8 @@ uint32 PLUGIN_API Processor::getLatencySamples() {
   // automatically. Safe to call at any time: le_fx_added_latency's LE_FX_
   // OCTAVER row (le_octaver_latency) reads no heap state, just returns the
   // LE_PV_LATENCY constant.
-  return static_cast<uint32>(le_fx_added_latency(&fx_, 0, LE_FX_OCTAVER));
+  return static_cast<uint32>(le_fx_added_latency(
+      &fx_, 0, LE_FX_OCTAVER, static_cast<int>(processSetup.sampleRate)));
 }
 
 }  // namespace segno_vst3_octaver

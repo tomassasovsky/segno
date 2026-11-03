@@ -72,7 +72,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
-| #1547 | Every effect the same at any sample rate and block size: part 1, the matrix test, in review; part 2 (oversampling) next | in-review | auto | `claude/fx-invariance-1547-p1` |
+| #1547 | Every effect the same at any sample rate and block size: part 1 (the matrix test) merged; part 2 (oversampling the Overdrive, Distortion, Vinyl and Amp+Cab, the Vinyl's DC out) in review; console cost table owed; part 3 (the rest) next | in-review | auto | `claude/fx-invariance-1547-p2` |
 
 ---
 

@@ -8258,6 +8258,14 @@ class LooperRepository {
     return true;
   }
 
+  /// The running sample rate, or 96 kHz when the engine reports none: what
+  /// the oversampled kinds' charges follow ([kFxOversampledCostNs]) and the
+  /// budget is taken at.
+  int get _fxRate {
+    final rate = _engine.snapshot().sampleRate;
+    return rate > 0 ? rate : 96000;
+  }
+
   /// The running block length, or the bench's when the engine is stopped.
   int get _fxPeriod {
     // A warm-up's budget is its target's (#1533): what is held off then is
@@ -8277,7 +8285,7 @@ class LooperRepository {
   /// switching one on is never refused; a chain switched off because it did
   /// not fit charges nothing, and switching it back on is weighed
   /// ([fxHeldChainFits]).
-  int get fxCostNs => _fxLoadAt(_fxPeriod);
+  int get fxCostNs => _fxLoadAt(_fxRate, _fxPeriod);
 
   /// How much [fxCostNs] would grow, in nanoseconds per frame, with the
   /// chain at each address of [chains] replaced by its value (an empty one
@@ -8286,7 +8294,8 @@ class LooperRepository {
   /// loop template.
   int fxGrowthNs(Map<FxAddress, List<TrackEffect>> chains) {
     final period = _fxPeriod;
-    return _fxLoadAt(period, chains) - _fxLoadAt(period);
+    final rate = _fxRate;
+    return _fxLoadAt(rate, period, chains) - _fxLoadAt(rate, period);
   }
 
   /// The effects workers the engine runs beside the callback (#1515): 0 on
@@ -8307,13 +8316,15 @@ class LooperRepository {
   /// (the chains switched off because they did not fit, unless the caller
   /// asks about another set) charges nothing: it uses no audio-thread time.
   int _fxLoadAt(
+    int rate,
     int period, [
     Map<FxAddress, List<TrackEffect>> replaced = const {},
     Set<FxAddress>? held,
   ]) {
     final off = held ?? _fxHeld;
-    int costAt(FxAddress at, List<TrackEffect> c) =>
-        off.contains(at) ? 0 : fxChainCostNs(c, period: period);
+    int costAt(FxAddress at, List<TrackEffect> c) => off.contains(at)
+        ? 0
+        : fxChainCostNs(c, period: period, sampleRate: rate);
     final monitors = {..._monitorEffects};
     final tracks = {..._trackEffects};
     final outputs = {..._outputEffects};
@@ -8453,9 +8464,10 @@ class LooperRepository {
   bool fxHeldChainFits(FxAddress address) {
     if (!_fxHeld.contains(address)) return true;
     final period = _fxPeriod;
+    final rate = _fxRate;
     final grows =
-        _fxLoadAt(period, const {}, {..._fxHeld}..remove(address)) -
-        _fxLoadAt(period);
+        _fxLoadAt(rate, period, const {}, {..._fxHeld}..remove(address)) -
+        _fxLoadAt(rate, period);
     return grows <= 0 || grows <= fxRoomNs;
   }
 
@@ -8520,11 +8532,10 @@ class LooperRepository {
       if (!_fxHeld.add(incoming)) return nothing;
       return (held: {incoming}, dropped: false);
     }
-    final snapshot = _engine.snapshot();
-    final rate = snapshot.sampleRate > 0 ? snapshot.sampleRate : 96000;
+    final rate = _fxRate;
     final period = _fxPeriod;
     final budget = fxBudgetNs(rate, period: period);
-    if (_fxLoadAt(period, replaced) <= budget) {
+    if (_fxLoadAt(rate, period, replaced) <= budget) {
       _pruneFxHoldNotice();
       return (held: <FxAddress>{}, dropped: dropped);
     }
@@ -8563,7 +8574,7 @@ class LooperRepository {
     final named = <FxAddress>[];
     final held = <FxAddress>{};
     for (final at in order) {
-      if (_fxLoadAt(period, replaced) <= budget) break;
+      if (_fxLoadAt(rate, period, replaced) <= budget) break;
       if (_fxHeld.contains(at) || chainOf(at).isEmpty) continue;
       _fxHeld.add(at);
       held.add(at);
@@ -8664,13 +8675,12 @@ class LooperRepository {
           for (final MapEntry(:key, :value) in image.inherited.entries)
             FxAddress(stage: FxStage.loop, index: ch, lane: key): value,
     };
-    final snapshot = _engine.snapshot();
-    final rate = snapshot.sampleRate > 0 ? snapshot.sampleRate : 96000;
+    final rate = _fxRate;
     final period = _fxPeriod;
     final held = {..._fxHeld}
       ..removeAll(replaced.keys)
       ..removeAll(pending.keys);
-    final load = _fxLoadAt(period, {...pending, ...replaced}, held);
+    final load = _fxLoadAt(rate, period, {...pending, ...replaced}, held);
     return load > fxBudgetNs(rate, period: period);
   }
 
@@ -8679,9 +8689,7 @@ class LooperRepository {
   /// went over (a removal is never refused, and a take's inherited chain is
   /// never refused either: a recording is not an edit).
   int get fxRoomNs {
-    final snapshot = _engine.snapshot();
-    final rate = snapshot.sampleRate > 0 ? snapshot.sampleRate : 96000;
-    return fxBudgetNs(rate, period: _fxPeriod) - fxCostNs;
+    return fxBudgetNs(_fxRate, period: _fxPeriod) - fxCostNs;
   }
 
   /// What would be left of the effects budget at [sampleRate] and
@@ -8690,7 +8698,8 @@ class LooperRepository {
   /// Negative when the chains would not fit.
   int fxRoomAt(int sampleRate, int bufferFrames) {
     final period = bufferFrames > 0 ? bufferFrames : kFxBenchPeriod;
-    return fxBudgetNs(sampleRate, period: period) - _fxLoadAt(period);
+    return fxBudgetNs(sampleRate, period: period) -
+        _fxLoadAt(sampleRate, period);
   }
 
   /// Monitor [input]'s remembered effect chain (empty if none), in processing

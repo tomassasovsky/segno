@@ -485,12 +485,14 @@ void le_fx_free_delay(le_fx_state* fx, int slot);
  * once, and every offline consumer inherits it. */
 void le_fx_state_free_buffers(le_fx_state* fx);
 
-/* Added latency (frames) of chain slot [slot]'s effect of [type] on `fx`, looked
- * up through the effect vtable — 0 for types that add none. Generic so a future
+/* Added latency (frames) of chain slot [slot]'s effect of [type] on `fx` at
+ * [sr], looked up through the effect vtable — 0 for types that add none. The
+ * octaver's is the same at every rate; an oversampling waveshaper's depends
+ * on the rate (its factor and filters do). Generic so a future
  * latency-bearing effect (or hosted plugin) reports through the same seam. Folded
  * into the published snapshot so the UI can warn about monitoring lag. Control
  * thread (le_max_fx_latency). */
-int le_fx_added_latency(const le_fx_state* fx, int slot, int32_t type);
+int le_fx_added_latency(const le_fx_state* fx, int slot, int32_t type, int sr);
 
 /* Lazily allocates chain slot [slot]'s heap buffers for effect [type] (delay
  * rings, octaver phase-vocoder buffers, …) on the control thread, sized from

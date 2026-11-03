@@ -57,6 +57,23 @@ void main() {
       );
     });
 
+    test('an oversampled kind charges by the rate (#1547)', () {
+      for (final MapEntry(key: type, value: ns)
+          in kFxOversampledCostNs.entries) {
+        final fx = _fx(type);
+        // 44.1 and 48 kHz run the most times over, 88.2 kHz and up fewer.
+        expect(fxEntryCostNs(fx, sampleRate: 44100), ns.low, reason: '$type');
+        expect(fxEntryCostNs(fx, sampleRate: 48000), ns.low, reason: '$type');
+        expect(fxEntryCostNs(fx, sampleRate: 88200), ns.high, reason: '$type');
+        expect(fxEntryCostNs(fx), ns.high, reason: '$type'); // 96 kHz
+        expect(ns.low, greaterThanOrEqualTo(ns.high), reason: '$type');
+        expect(kFxKindCostNs.containsKey(type), isFalse, reason: '$type');
+      }
+      // A kind that does not oversample charges the same at every rate.
+      final delay = _fx(TrackEffectType.delay);
+      expect(fxEntryCostNs(delay, sampleRate: 48000), fxEntryCostNs(delay));
+    });
+
     test("the budget is 80 % of a frame less the engine's own cost", () {
       final base = (kFxBaseCostUs * 1000 / 64).ceil();
       // 96 kHz: 10417 ns a frame, 8333 of them for the worst block.
@@ -121,7 +138,9 @@ void main() {
   });
 
   group('effects on more than one core (#1515)', () {
-    // Ed's Rack, the plan's unit (section 7): 2,665 ns a frame.
+    // Ed's Rack, the plan's unit (section 7): 3,402 ns a frame at 96 kHz,
+    // 2,665 in the plan, before its Overdrive and Amp+Cab ran oversampled
+    // (#1547).
     final rack = [
       for (final type in [
         TrackEffectType.dualOctaver,
@@ -154,7 +173,7 @@ void main() {
     }
 
     test("Ed's Rack charges what the plan's table assumes", () {
-      expect(rackNs, 2665);
+      expect(rackNs, 3402);
       expect(fxBudgetNs(96000), 7192);
     });
 
@@ -186,11 +205,12 @@ void main() {
       expect(fxLoadNs(serial: 0, jobs: [12, 12], workers: 3), 97 + 15);
     });
 
-    test("admits the racks of the plan's table: 2, 4, 6 and 7", () {
+    // The plan's table admitted 2, 4, 6 and 7 at its 2,665 ns.
+    test('admits 2, 3, 4 and 5 racks with 0 to 3 workers', () {
       expect(racksAdmitted(0), 2);
-      expect(racksAdmitted(1), 4);
-      expect(racksAdmitted(2), 6);
-      expect(racksAdmitted(3), 7);
+      expect(racksAdmitted(1), 3);
+      expect(racksAdmitted(2), 4);
+      expect(racksAdmitted(3), 5);
     });
 
     group('LooperRepository', () {
@@ -214,18 +234,19 @@ void main() {
         addTearDown(repo.dispose);
       });
 
-      test('six racks on the inputs fit two workers, seven do not', () {
-        putRacks(6);
+      test('four racks on the inputs fit two workers, five do not', () {
+        putRacks(4);
         expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
-        // A seventh is weighed by what it adds to the critical path.
-        final seventh = repo.fxGrowthNs({
-          const FxAddress(stage: FxStage.input, index: 6): rack,
+        expect(repo.state.fxHeld, isEmpty);
+        // A fifth is weighed by what it adds to the critical path.
+        final fifth = repo.fxGrowthNs({
+          const FxAddress(stage: FxStage.input, index: 4): rack,
         });
-        expect(seventh, greaterThan(repo.fxRoomNs));
+        expect(fifth, greaterThan(repo.fxRoomNs));
         // Restored anyway, it comes up switched off (the owner's R2).
-        putRacks(7);
+        putRacks(5);
         expect(
-          repo.fxChainHeld(const FxAddress(stage: FxStage.input, index: 6)),
+          repo.fxChainHeld(const FxAddress(stage: FxStage.input, index: 4)),
           isTrue,
         );
         expect(repo.fxRoomNs, greaterThanOrEqualTo(0));

@@ -95,11 +95,51 @@ static void test_vinyl_drive(void) {
       CHECK(fabs(h1 / cases[c][3] - 1.0) < 0.15);
     } else {
       CHECK(fabs(h1 - cases[c][3]) < 0.005);
-      CHECK(fabs(dc - cases[c][4]) < 0.06 * cases[c][4] + 0.005);
+      /* The capture's DC is taken out (#1547, the owner's call): the
+       * column records the Looper X's, and none is left. */
+      CHECK(fabs(dc) < 0.005);
       CHECK(fabs(h2 - cases[c][5]) < 0.06 * cases[c][5] + 0.005);
       CHECK(fabs(h4 - cases[c][6]) < 0.12 * cases[c][6] + 0.002);
     }
     free(y);
+  }
+}
+
+/* The vinyl runs oversampled (#1547): at Drive 0 it passes half its input,
+ * through the up and down filters and nothing else, so its impulse comes
+ * out the latency it reports late and its response is flat to 16 kHz, at
+ * every rate. */
+static void test_vinyl_oversampling(void) {
+  printf("test_vinyl_oversampling\n");
+  const int rates[3] = {44100, 48000, 96000};
+  for (int k = 0; k < 3; ++k) {
+    const int sr = rates[k];
+    float p[LE_FX_PARAMS] = {0};
+    p[1] = dyn_setting(LE_FX_VINYL, 1, 251.0);
+    p[3] = 0.9f;
+    const int n = 4096;
+    float* in = (float*)calloc((size_t)n, sizeof(float));
+    float* h = (float*)calloc((size_t)n, sizeof(float));
+    in[0] = 1e-3f;
+    le_fx_state* fx = dyn_state(LE_FX_VINYL, sr);
+    const int lat = le_fx_added_latency(fx, 0, LE_FX_VINYL, sr);
+    uint32_t clock = 0;
+    dyn_run(fx, LE_FX_VINYL, p, sr, in, h, NULL, n, &clock);
+    dyn_free(fx);
+    int peak = 0;
+    for (int i = 1; i < n; ++i) {
+      if (fabsf(h[i]) > fabsf(h[peak])) peak = i;
+    }
+    const double at1k = lofi_db(LE_FX_VINYL, p, sr, 1000.0);
+    const double at16k = lofi_db(LE_FX_VINYL, p, sr, 16000.0);
+    printf("  %d Hz: latency %d, impulse at %d, 1 kHz %.3f dB, 16 kHz %.3f dB\n",
+           sr, lat, peak, at1k, at16k);
+    CHECK(lat > 0);
+    CHECK(abs(peak - lat) <= 1);
+    CHECK(fabs(at1k + 6.0206) < 0.02);
+    CHECK(fabs(at16k - at1k) < 0.1);
+    free(in);
+    free(h);
   }
 }
 
@@ -129,7 +169,18 @@ static void test_vinyl_limiter_release(void) {
   for (int k = 0; k < 3; ++k) {
     const int at = sr / 2 + (int)(want[k][0] * sr) - 240;
     const double a = k == 0 ? 0.2512 : 0.003981;
-    const double g = lofi_amp(out, at, 480, 1000.0, sr) / a / 0.5;
+    /* Read under a Hann window: once the loud tone stops, the DC blocker
+     * (#1547) lets the copy's DC fall away over tens of milliseconds, a
+     * slow swing the plain correlation would mix into the quiet tone. */
+    double re = 0.0, im = 0.0, wsum = 0.0;
+    for (int i = 0; i < 480; ++i) {
+      const double w = 0.5 - 0.5 * cos(2.0 * M_PI * (i + 0.5) / 480.0);
+      const double ph = 2.0 * M_PI * 1000.0 * (at + i) / sr;
+      re += w * out[at + i] * cos(ph);
+      im += w * out[at + i] * sin(ph);
+      wsum += w;
+    }
+    const double g = 2.0 * sqrt(re * re + im * im) / wsum / a / 0.5;
     printf("  %+.2f s: gain %.3f (capture %.3f)\n", want[k][0], g, want[k][1]);
     CHECK(fabs(g - want[k][1]) < 0.06);
   }
@@ -626,6 +677,7 @@ static void test_lofi_on_a_lane(void) {
 
 static void run_lofi_tests(void) {
   test_vinyl_drive();
+  test_vinyl_oversampling();
   test_vinyl_limiter_release();
   test_vinyl_noise();
   test_degrade();

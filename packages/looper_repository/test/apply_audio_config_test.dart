@@ -515,5 +515,16 @@ void main() {
       // A higher rate leaves less room for the same chains.
       expect(repo.fxRoomAt(96000, 128), lessThan(repo.fxRoomAt(48000, 128)));
     });
+
+    test("an oversampled kind is charged at the target rate's figure", () {
+      final repo = running()
+        ..setTrackEffects(
+          channel: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.overdrive)],
+        );
+      final od = kFxOversampledCostNs[TrackEffectType.overdrive]!;
+      expect(repo.fxRoomAt(48000, 64), fxBudgetNs(48000) - od.low);
+      expect(repo.fxRoomAt(96000, 64), fxBudgetNs(96000) - od.high);
+    });
   });
 }
