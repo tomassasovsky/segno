@@ -1453,7 +1453,9 @@
     "Mixo",
     "Penta",
     "penpot",
-    "blobless"
+    "blobless",
+    "SIGUSR",
+    "scanout"
   ],
   "overrides": [
     {

@@ -1,0 +1,84 @@
+#!/bin/sh
+# segno-capture — save what each console screen draws as a PNG (#1555).
+#
+# Sends SIGUSR1 to the running app. Each of its two Flutter engines (the main
+# screen and the readout) then renders its root into
+# /data/capture/<screen>-<UTC time>.png. This waits for one new PNG per screen,
+# prints their paths (main first) and exits.
+#
+# The PNG is the frame Flutter rendered through the active renderer (Impeller
+# or Skia), so renderer faults such as missing glyphs show up. It is not the
+# HDMI scanout. The app keeps the newest five captures of each screen.
+#
+# Copy them off from the dev host:
+#   scp 'root@<console>:/data/capture/*.png' .
+#
+# Exit status: 0 both screens wrote a PNG; 1 a screen wrote none in time (the
+# paths that did land are still printed; `journalctl -u segno.service` has the
+# app's `capture:` lines); 2 the app is not running or does not catch SIGUSR1
+# yet, and nothing was sent.
+set -eu
+
+DIR="${SEGNO_CAPTURE_DIR:-/data/capture}"
+PROC="${SEGNO_PROC_ROOT:-/proc}"
+# Seconds to wait for the PNGs.
+TIMEOUT="${SEGNO_CAPTURE_TIMEOUT:-5}"
+SCREENS="main readout"
+
+log() { echo "segno-capture: $*" >&2; }
+
+pid=$(systemctl show --property=MainPID --value segno.service 2>/dev/null) || pid=
+case "$pid" in
+    '' | 0 | *[!0-9]*) log "segno.service is not running"; exit 2 ;;
+esac
+
+# SIGUSR1's default action ends the process. The app replaces it once a screen
+# is up, so read the caught-signal mask before sending: a capture must never
+# kill an app that is still starting. SIGUSR1 is signal 10 on Linux, bit 9 of
+# the mask, which is 0x2 in its third hex digit from the right.
+caught=$(sed -n 's/^SigCgt:[[:space:]]*//p' "$PROC/$pid/status" 2>/dev/null) || caught=
+case "$caught" in
+    '' | *[!0-9a-fA-F]*) log "cannot read the signal mask of pid $pid"; exit 2 ;;
+esac
+low=${caught#"${caught%???}"}
+if [ $((0x$low & 0x200)) -eq 0 ]; then
+    log "the app does not catch SIGUSR1 yet (still starting?); nothing sent"
+    exit 2
+fi
+
+# The captures already there, so only new ones are reported.
+before=$(ls "$DIR" 2>/dev/null) || before=
+
+# The newest PNG of screen $1 that was not there before, or nothing. Names sort
+# by time; a .part file is still being written.
+new_capture() {
+    ls "$DIR" 2>/dev/null | grep "^$1-.*\.png\$" | sort -r | while read -r name; do
+        if ! printf '%s\n' "$before" | grep -qxF "$name"; then
+            echo "$DIR/$name"
+            break
+        fi
+    done
+}
+
+kill -s USR1 "$pid"
+
+ticks=$((TIMEOUT * 10))
+while :; do
+    missing=
+    for screen in $SCREENS; do
+        [ -n "$(new_capture "$screen")" ] || missing="$missing $screen"
+    done
+    [ -z "$missing" ] && break
+    [ "$ticks" -gt 0 ] || break
+    ticks=$((ticks - 1))
+    sleep 0.1
+done
+
+for screen in $SCREENS; do
+    path=$(new_capture "$screen")
+    [ -z "$path" ] || echo "$path"
+done
+if [ -n "$missing" ]; then
+    log "no capture from:$missing within ${TIMEOUT}s; see journalctl -u segno.service"
+    exit 1
+fi

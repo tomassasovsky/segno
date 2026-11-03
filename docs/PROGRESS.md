@@ -72,9 +72,25 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
+| #1555 | Retest Impeller on the console: on-device screen capture (`segno-capture`) in review; the owner's look at both renderers next | in-review | merge-gate | `claude/screen-capture-1555` |
 | #1547 | Every effect the same at any sample rate and block size: part 1 (the matrix test) merged; part 2 (oversampling the Overdrive, Distortion, Vinyl and Amp+Cab, the Vinyl's DC out) in review; console cost table owed; part 3 (the rest) next | in-review | auto | `claude/fx-invariance-1547-p2` |
 
 ---
+
+## November 2026 Screen capture on the console (#1555)
+
+- `segno-capture` (segno-bundle) sends SIGUSR1 to `segno.service`'s process
+  and prints one new `/data/capture/<screen>-<UTC time>.png` per screen,
+  exiting 1 when a screen writes none within 5 s.
+- Each engine's root sits in `ScreenCapture` (`lib/appliance/screen_capture.dart`),
+  a `RepaintBoundary` rendered with `toImage` at the view's pixel ratio. The
+  Dart VM hands a watched signal to every isolate group that watches it, so one
+  SIGUSR1 reaches both engines (checked with two isolate groups under JIT and
+  AOT on Linux arm64). Only the console watches the signal (`isAppliance()`).
+- The helper reads `SigCgt` first and sends nothing while the app does not
+  catch SIGUSR1, whose default action would end it. The app keeps five
+  captures per screen.
+- Device check owed: run it on the console under both renderers.
 
 ## November 2026 Power screens only when they say something (#1553)
 
@@ -1477,6 +1493,11 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   joins. **Off by default**, so a shipped build can never
   present invented networks as real ones; the factory tests assert the flag
   from both sides, so the branch is covered by the ordinary CI run.
+- **Seeing what the console's screens draw:** `ssh root@<console>
+  segno-capture` prints one PNG path per screen under `/data/capture`; copy
+  them with `scp 'root@<console>:/data/capture/*.png' .`. It is Flutter's
+  rendered frame, not the HDMI scanout. Details in
+  [`docs/RUNNING_ON_RPI.md`](RUNNING_ON_RPI.md#screen-capture) (#1555).
 - **Appliance helper suites** (shell, no device): every
   `deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_*_tests.sh`,
   as the `appliance-shell-tests` CI job runs them. Bluetooth was retired (#1199): the

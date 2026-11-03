@@ -20,6 +20,7 @@ import 'package:segno/app/monitor_migration.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/app/view/app.dart';
 import 'package:segno/appliance/boot_readiness.dart';
+import 'package:segno/appliance/screen_capture.dart';
 import 'package:segno/appliance/systemd_notify.dart';
 import 'package:segno/bootstrap.dart';
 import 'package:segno/logging/app_log.dart';
@@ -258,28 +259,33 @@ Future<void> runSegno(
   final readoutLink = screen == null ? null : ScreenLinkWaveformService();
   final displayOutputs = createDisplayOutputs();
   await bootstrap(
-    () => App(
-      repository: looper,
-      controllerRepository: controllerRepository,
-      midiDeviceRepository: midiDeviceRepository,
-      pedalRepository: pedalRepository,
-      audioRecoveryConfig: audioRecoveryConfig,
-      settings: settings,
-      mixSettings: mixSettings,
-      waveformWindow: readoutLink ?? NoopWaveformWindowService(),
-      sessionRepository: session,
-      performanceRepository: performance,
-      backingRepository: backing,
-      instrumentRepository: instruments,
-      updates: updates,
-      wifi: wifi,
-      brightness: brightness,
-      displayOutputs: displayOutputs,
-      touchCalibration: createTouchCalibrationClient(),
-      consoleFacts: consoleFacts,
-      cpuLoad: CpuLoadRepository.system(),
-      guards: registry,
-      storage: storage,
+    () => ScreenCapture(
+      // segno-capture's SIGUSR1 on the console; nothing elsewhere (#1555).
+      screen: SegnoScreen.main,
+      requests: screenCaptureRequests(),
+      child: App(
+        repository: looper,
+        controllerRepository: controllerRepository,
+        midiDeviceRepository: midiDeviceRepository,
+        pedalRepository: pedalRepository,
+        audioRecoveryConfig: audioRecoveryConfig,
+        settings: settings,
+        mixSettings: mixSettings,
+        waveformWindow: readoutLink ?? NoopWaveformWindowService(),
+        sessionRepository: session,
+        performanceRepository: performance,
+        backingRepository: backing,
+        instrumentRepository: instruments,
+        updates: updates,
+        wifi: wifi,
+        brightness: brightness,
+        displayOutputs: displayOutputs,
+        touchCalibration: createTouchCalibrationClient(),
+        consoleFacts: consoleFacts,
+        cpuLoad: CpuLoadRepository.system(),
+        guards: registry,
+        storage: storage,
+      ),
     ),
   );
 
