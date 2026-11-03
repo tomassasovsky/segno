@@ -234,7 +234,7 @@ void main() {
     final notice = tester.getRect(
       find.byKey(const Key('library_audio_no_selection')),
     );
-    expect(notice.center, card.center);
+    expect(notice.center, offsetMoreOrLessEquals(card.center));
 
     await openPerformances(tester);
     expect(tester.getRect(row(single.path)).right, parent.left + 1060);

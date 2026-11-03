@@ -140,9 +140,10 @@ class LibrarySearchField extends StatelessWidget {
   }
 }
 
-/// The pen's 64-high search box, as wide as its parent allows (556 on the
-/// Sessions tab, 310 on the Audio tab): an outlined box with the query or
-/// the placeholder, which opens a keyboard sheet instead of taking keys.
+/// The pen's 64-high search box, as wide as its parent allows (what New
+/// folder leaves on the Sessions tab, 310 on the Audio tab): an outlined box
+/// with the query or the placeholder, which opens a keyboard sheet instead of
+/// taking keys.
 class LibrarySearchBox extends StatelessWidget {
   /// Creates the search box.
   const LibrarySearchBox({
@@ -245,9 +246,9 @@ class LibraryFolderChips extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(vertical: 14),
       child: Row(
+        spacing: context.spacing.sm,
         children: [
-          for (final (i, (key, label, value)) in chips.indexed) ...[
-            if (i > 0) SizedBox(width: context.spacing.sm),
+          for (final (key, label, value) in chips)
             LibraryChip(
               key: key,
               label: label,
@@ -260,7 +261,6 @@ class LibraryFolderChips extends StatelessWidget {
                 _ => null,
               },
             ),
-          ],
         ],
       ),
     );
