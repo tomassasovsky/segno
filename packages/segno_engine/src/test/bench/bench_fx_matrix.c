@@ -245,16 +245,6 @@ static const mx_known k_known[] = {
     {"transient", MX_ALIAS, 44100, -46.5},
     {"transient", MX_ALIAS, 48000, -46.0},
     {"transient", MX_ALIAS, 96000, -57.0},
-    /* Tails whose decay moves with the rate. */
-    {"echo", MX_ENVELOPE, 96000, 5.5},
-    {"reverb", MX_ENVELOPE, 44100, 4.5},
-    {"reverb", MX_ENVELOPE, 96000, 3.0},
-    {"spring", MX_ENVELOPE, 44100, 9.0},
-    {"spring", MX_ENVELOPE, 96000, 5.0},
-    {"dubverb", MX_ENVELOPE, 44100, 3.0},
-    {"dubverb", MX_ENVELOPE, 96000, 4.0},
-    {"roomverb", MX_ENVELOPE, 44100, 6.0},
-    {"roomverb", MX_ENVELOPE, 96000, 5.5},
     /* Pitch: the vocoder's frame is samples, not milliseconds (#1467). */
     {"octaver", MX_RESPONSE, 44100, 3.5},
     {"octaver", MX_RESPONSE, 96000, 5.0},
