@@ -149,6 +149,52 @@ int le_capture_source_is_loopback(const char* source);
  * does not fit. Pure and unit-testable. */
 int le_alsa_ctl_name_from_uid(const char* uid, char* out, size_t cap);
 
+/* ---- The interface's own routing (#1046, engine_devices.c) ---- */
+
+/* Control types, as alsa/control.h numbers them. */
+#define LE_MIXER_BOOLEAN 1
+#define LE_MIXER_ENUMERATED 3
+
+/* A sound card's mixer controls, looked up by name. Linux backs it with
+ * libasound's control API (engine_linux.c); the tests with a fake card read
+ * from an `amixer contents` dump. Every call is on the control thread. */
+typedef struct le_mixer {
+  void* ctx;
+  /* 1 when the card has mixer control `name`, with its type and, for an
+   * enumerated control, its item count (0 otherwise); 0 when it has none. */
+  int (*find)(void* ctx, const char* name, int* type, unsigned* items);
+  /* The name of item `item` of enumerated control `name`, or NULL. Valid
+   * until the next call. */
+  const char* (*item_name)(void* ctx, const char* name, unsigned item);
+  /* Reads or writes the control's first value (an item index, or 0/1).
+   * 0 on success, negative on failure. */
+  int (*read)(void* ctx, const char* name, unsigned* value);
+  int (*write)(void* ctx, const char* name, unsigned value);
+} le_mixer;
+
+/* What le_own_scarlett2_routing did to one card. */
+typedef struct le_routing_report {
+  int controls; /* routing controls the rules cover on this card */
+  int changed;  /* of those, the ones written because they differed */
+  int failed;   /* of those, writes refused or not read back */
+  char first_failed[48]; /* the first failed control's name, or "" */
+} le_routing_report;
+
+/* Sets a card's routing to plain pass-through with the rules for the kernel's
+ * scarlett2 driver (Scarlett Gen 2-4, Clarett USB/+, Vocaster): hardware
+ * output k plays playback stream k, capture channel k records hardware input
+ * k, capture channels past the hardware inputs return playback streams 1, 2,
+ * ... (the loopback, #1541), and direct monitoring is off. Writes only what
+ * differs and reads it back. A card without these controls reports 0
+ * controls and is left alone. The rules and the reasons are in
+ * engine_devices.c. */
+void le_own_scarlett2_routing(const le_mixer* m, le_routing_report* out);
+
+/* The capture channels (bit c = channel c, of the first `channel_count`) whose
+ * scarlett2 source is one of the host's own playback streams
+ * (le_capture_source_is_loopback). 0 on a card without the controls. */
+uint32_t le_scarlett2_loopback_mask(const le_mixer* m, int channel_count);
+
 /* Sightings an entry of the channel-count memo is trusted for before it is read
  * again (engine_devices.c, where the rationale for a per-entry countdown lives).
  * Exposed so the stability test can run enumeration PAST the TTL and cover the

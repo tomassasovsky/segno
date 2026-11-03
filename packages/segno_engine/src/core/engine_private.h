@@ -3220,6 +3220,9 @@ struct le_engine {
    * portable core can compute the loopback-excluded input mask from that device
    * UID after open. */
   int capture_id_set;
+  /* 1 when playback_id holds a resolved (pinned) playback device, so the core
+   * can set that interface's routing after open (#1046). */
+  int playback_id_set;
 
   /* ---- #900: the audio-memory bookkeeping. At the END of the struct on
    * purpose: le_engine, le_track and le_lane hold the callback's hot data,

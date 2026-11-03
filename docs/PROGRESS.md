@@ -76,6 +76,37 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Segno owns the interface's routing (#1046)
+
+- At every device open, before the loopback mask is read and the callback
+  starts, the engine sets the interface's routing matrix to plain
+  pass-through (`le_platform_own_interface_routing`, from
+  `le_engine_publish_and_start`, so start and reopen both run it). Linux
+  applies it to the card behind the capture id and, when it is a different
+  card, the playback id, through the `dlopen`'d libasound control API.
+- The rules are per kernel driver, matched on control names. Only
+  `scarlett2` has rules (Scarlett Gen 2-4, Clarett USB/+, Vocaster):
+  `le_own_scarlett2_routing` in `engine_devices.c`. Hardware outputs
+  (`Analogue Output NN`, then `S/PDIF Output N`, then `ADAT Output N`
+  `Playback Enum`) play `PCM 1`, `PCM 2`, ... in order. `PCM NN Capture
+  Enum` records the hardware inputs in order, and the slots past them
+  return `PCM 1`, `PCM 2`, ... (the loopback #1541 times on, excluded from
+  recording). Direct monitoring goes off. The mixer is left alone, since
+  nothing selects a `Mix` afterwards. Only controls that differ are
+  written, then read back. A card without these controls is left alone.
+- Logs `segno/audio: hw:N routing set to pass-through (N of M controls
+  changed)`, or `routing not pass-through` with the first control that
+  failed. Nothing is reported to the UI yet.
+- Tests: `test_engine_interface_routing.h` runs the rules against a fake
+  card read from the console's `amixer contents` dump
+  (`src/test/fixtures/alsa/scarlett_4i4_gen3.txt`) and against built cards
+  (S/PDIF ordering, direct monitor).
+- Verified on the console's 4i4 on 2026-11-03 with a test engine library:
+  outputs set to `Mix A`-`Mix D` and stray capture sources came back as
+  pass-through at app start (7 of 10 controls changed), and the loopback
+  mask read 0x30. Device check owed: a replug after scrambling the routing
+  in `amixer`.
+
 ## November 2026 One notice system (#1562)
 
 - The owner's decision on #1562: direction 1 (the top bar's centre says a
