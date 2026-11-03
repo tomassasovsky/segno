@@ -41,51 +41,60 @@ static void rh_pump_run(le_fx_state* fx, const float* p4, float* gain, int n) {
   }
 }
 
-/* The measured e(phase) (#891), linear between its 1/20 points. */
-static float rh_shape(double phase) {
-  static const float e[16] = {1.000f, 0.994f, 0.984f, 0.970f, 0.948f, 0.918f,
-                              0.876f, 0.820f, 0.746f, 0.654f, 0.544f, 0.418f,
-                              0.284f, 0.153f, 0.045f, 0.0f};
-  const double x = phase * 20.0;
-  if (x >= 15.0) return 0.0f;
-  const int i = (int)x;
-  return e[i] + (e[i + 1] - e[i]) * (float)(x - (double)i);
-}
+/* The capture's recovery (#891 s17rhy, the median over Bar to 1/8 and 50 to
+ * 100 %), every 1/40 of the period from the beat, past the attack. */
+static const float RH_PUMP_REC[31] = {
+    1.0f,    0.9998f, 0.9969f, 0.9934f, 0.9890f, 0.9835f, 0.9769f, 0.9688f,
+    0.9590f, 0.9472f, 0.9331f, 0.9165f, 0.8968f, 0.8739f, 0.8473f, 0.8167f,
+    0.7819f, 0.7425f, 0.6985f, 0.6497f, 0.5963f, 0.5385f, 0.4769f, 0.4121f,
+    0.3450f, 0.2772f, 0.2103f, 0.1464f, 0.0890f, 0.0403f, 0.0074f};
 
 /* The setting of rate position [pos] (of 11). */
 static float rh_rate(int pos) { return (float)pos / 10.0f; }
 
-/* The measured shape (#891): at 1/4, 120 BPM and 70 %, the gain is
- * 1 - 0.901 e(phase) every 1/20 of the 500 ms period, at full depth 1 ms
- * after the beat (the onset ramp), and 1 from three quarters on. */
+/* The Pumper's gain in dB [ms] after the beat at frame [beat]. */
+static float rh_pump_db_at(const float* g, int beat, double ms) {
+  return 20.0f * log10f(g[beat + (int)lround(ms * RH_SR / 1000.0)]);
+}
+
+/* The measured duck (#891 s17rhy, a steady 1 kHz tone): at 1/4, 120 BPM
+ * and 100 % it falls from the beat straight in dB, 3.64 dB a millisecond,
+ * to -40 dB at 11 ms (0.022 of the period); at 70 % it recovers as the
+ * capture does at every 1/40 of the period, and is 1 from 0.76 on. */
 static void test_pumper_matches_the_capture(void) {
   printf("test_pumper_matches_the_capture\n");
-  static const float e[16] = {1.000f, 0.994f, 0.984f, 0.970f, 0.948f, 0.918f,
-                              0.876f, 0.820f, 0.746f, 0.654f, 0.544f, 0.418f,
-                              0.284f, 0.153f, 0.045f, 0.0f};
   const le_fx_tempo t = rh_tempo(120.0);
+  const int n = RH_SR; /* two periods */
+  const int period = RH_SR / 2;
+  float* g = (float*)malloc(sizeof(float) * (size_t)n);
+  {
+    const float p[LE_FX_PARAMS] = {rh_rate(3), 1.0f};
+    le_fx_state* fx = rh_pumper(&t, p);
+    rh_pump_run(fx, p, g, n);
+    static const double ms[5] = {1.0, 3.0, 5.0, 7.0, 9.0};
+    for (int k = 0; k < 5; ++k) {
+      const float db = rh_pump_db_at(g, period, ms[k]);
+      printf("  100 %%, %.0f ms after the beat: %.2f dB (capture %.2f)\n",
+             ms[k], (double)db, -3.64 * ms[k]);
+      CHECK(fabsf(db - (float)(-3.64 * ms[k])) < 0.3f);
+    }
+    CHECK(fabsf(rh_pump_db_at(g, period, 12.0) - -40.0f) < 0.3f);
+    le_fx_state_free_buffers(fx);
+    free(fx);
+  }
   const float p[LE_FX_PARAMS] = {rh_rate(3), 0.7f};
   le_fx_state* fx = rh_pumper(&t, p);
-  const int n = RH_SR; /* two periods */
-  float* g = (float*)malloc(sizeof(float) * (size_t)n);
   rh_pump_run(fx, p, g, n);
-  const int period = RH_SR / 2;
-  const float a = 0.901f;
-  for (int k = 1; k < 16; ++k) {
-    const int at = period + k * period / 20;
-    CHECK(fabsf(g[at] - (1.0f - a * e[k])) < 2e-3f);
+  const float a = 0.99f * 0.7f * 1.3f;
+  for (int k = 1; k < 31; ++k) {
+    const int at = period + k * period / 40;
+    CHECK(fabsf(g[at] - (1.0f - a * RH_PUMP_REC[k])) < 2e-3f);
   }
-  const int ms = RH_SR / 1000;
-  const float dip = 20.0f * log10f(g[period + 2 * ms]);
-  printf("  dip 2 ms after the beat: %.2f dB (capture -20.1)\n", dip);
-  CHECK(fabsf(dip - -20.09f) < 0.1f);
   CHECK(fabsf(g[period + period * 4 / 5] - 1.0f) < 1e-6f);
-  /* The duck is smoothed (0.25 ms): no sample steps by more than its share
-   * of the depth, on the beat or anywhere. */
-  const float k = 1.0f / (1.0f + 0.00025f * (float)RH_SR);
-  for (int i = 1; i < n; ++i) {
-    CHECK(fabsf(g[i] - g[i - 1]) <= a * k * 1.01f + 1e-6f);
-  }
+  /* No sample steps by more than 1.5 times the attack's steepest, on the
+   * beat or anywhere. */
+  const float most = 1.5f * 4.6052f / 0.022f / (float)period;
+  for (int i = 1; i < n; ++i) CHECK(fabsf(g[i] - g[i - 1]) <= most);
   free(g);
   le_fx_state_free_buffers(fx);
   free(fx);
@@ -93,7 +102,9 @@ static void test_pumper_matches_the_capture(void) {
 
 /* Each rate is its note value at the tempo (#891: Bar 2000 ms, 1/2 1000,
  * 1/4 500, 1/8 250, 1/16 125 at 120 BPM), the triplets two thirds of
- * theirs; and the depth's dip is 6, 20 and 40 dB at 30, 70 and 100 %. */
+ * theirs, with the whole shape, attack and all, in proportion (s17rhy: the
+ * same at Bar to 1/16 to 0.001); the dips at 30, 50, 70, 85 and 100 %
+ * are the capture's. */
 static void test_pumper_rates_and_depths(void) {
   printf("test_pumper_rates_and_depths\n");
   const le_fx_tempo t = rh_tempo(120.0);
@@ -108,29 +119,30 @@ static void test_pumper_rates_and_depths(void) {
     le_fx_state* fx = rh_pumper(&t, p);
     rh_pump_run(fx, p, g, n);
     const double frames = quarters[pos] * quarter;
-    /* 1 ms into the second period the duck is the shape at that phase, at
-     * 100 % depth (a = 0.99)... */
-    const int at = (int)ceil(frames) + 2 * RH_SR / 1000 + 1;
-    const double phase = ((double)at - frames) / frames;
-    CHECK(fabsf(g[at] - (1.0f - 0.99f * rh_shape(phase))) < 2e-3f);
+    /* Half way through the attack the duck is -20 dB (100 %), and a tenth
+     * of the period in it is the capture's recovery there... */
+    const float mid = 20.0f * log10f(g[(int)lround(frames * 1.011)]);
+    printf("  rate %d: %.2f dB half way through the attack\n", pos,
+           (double)mid);
+    CHECK(fabsf(mid - -20.0f) < 0.3f);
+    const int at = (int)lround(frames * 1.1);
+    CHECK(fabsf(g[at] - (1.0f - 0.99f * RH_PUMP_REC[4])) < 2e-3f);
     /* ...and it has recovered at 80 % of the first. */
     CHECK(g[(int)(frames * 0.8)] > 0.999f);
     le_fx_state_free_buffers(fx);
     free(fx);
   }
-  static const float depth[3] = {0.3f, 0.7f, 1.0f};
-  static const float want_db[3] = {-6.02f, -20.09f, -40.0f};
-  for (int d = 0; d < 3; ++d) {
+  static const float depth[5] = {0.303f, 0.5f, 0.7f, 0.85f, 1.0f};
+  static const float want_db[5] = {-6.20f, -11.89f, -20.09f, -29.93f, -40.09f};
+  for (int d = 0; d < 5; ++d) {
     const float p[LE_FX_PARAMS] = {rh_rate(3), depth[d]};
     le_fx_state* fx = rh_pumper(&t, p);
-    rh_pump_run(fx, p, g, RH_SR / 100);
-    /* The dip, taken back to the beat: the gain over the shape there. */
-    const int at = 2 * RH_SR / 1000 + 1;
-    const float a = (1.0f - g[at]) / rh_shape((double)at / quarter);
-    const float db = 20.0f * log10f(1.0f - a);
-    printf("  depth %.0f %%: %.2f dB (want %.2f)\n", 100.0 * depth[d], db, want_db[d]);
-    /* The smoothing trails the falling shape by a hair: 0.3 dB of a 40 dB
-     * dip is 3e-4 of the gain. */
+    rh_pump_run(fx, p, g, RH_SR / 10);
+    float lo = 1.0f;
+    for (int i = 0; i < RH_SR / 10; ++i) lo = fminf(lo, g[i]);
+    const float db = 20.0f * log10f(lo);
+    printf("  depth %.1f %%: dip %.2f dB (capture %.2f)\n", 100.0 * depth[d],
+           (double)db, (double)want_db[d]);
     CHECK(fabsf(db - want_db[d]) < 0.3f);
     le_fx_state_free_buffers(fx);
     free(fx);
@@ -418,7 +430,8 @@ static void test_pumper_bar_follows_the_signature(void) {
   rh_pump_run(fx, p, g, n);
   const int bar = 3 * RH_SR / 2; /* three quarters at 120 BPM */
   CHECK(g[bar * 4 / 5] > 0.999f);
-  CHECK(20.0f * log10f(g[bar + 2 * RH_SR / 1000]) < -39.0f);
+  /* Full depth at the end of the bar's attack (0.022 of it, 33 ms). */
+  CHECK(20.0f * log10f(g[bar + bar * 22 / 1000 + RH_SR / 1000]) < -39.0f);
   free(g);
   le_fx_state_free_buffers(fx);
   free(fx);
@@ -533,21 +546,44 @@ static void test_slicer_half_steps(void) {
   free(o);
 }
 
-/* A_C_ (seg23): a rest is silent; a slice ends with a 4 ms fade and starts
- * without one. */
+/* A_C_ (s4/23): a rest is silent. A slice plays whole to its end, then
+ * fades out over 4 ms past it; the slice after a rest fades in over the
+ * 4 ms from its start. */
 static void test_slicer_rests_and_fades(void) {
   printf("test_slicer_rests_and_fades\n");
   const int step = RH_SR / 8;
   const int fade = 4 * RH_SR / 1000;
   float* o = rh_slice(4, 4, 1.0f, 4 * step);
+  CHECK(rh_is_frame(o[step - 1], step - 1, 0.5)); /* whole to its end */
+  const float g = o[step + fade / 2] / ((float)(step + fade / 2) / RH_SR);
+  CHECK(fabsf(g - 0.5f) < 0.02f); /* half way down, past the end */
+  CHECK(o[step + fade + 1] == 0.0f);
   CHECK(o[step + step / 2] == 0.0f);
-  CHECK(rh_is_frame(o[step - fade - 1], step - fade - 1, 0.5)); /* whole */
-  const float g = o[step - fade / 2] / ((float)(step - fade / 2) / RH_SR);
-  CHECK(fabsf(g - 0.5f) < 0.02f); /* half way down */
-  CHECK(fabsf(o[step - 1]) < 0.01f);
-  /* No fade in (a frame on, as the beat's float rate may land a boundary a
-   * frame late). */
-  CHECK(rh_is_frame(o[2 * step + 1], 2 * step + 1, 0.5));
+  /* C fades in (a frame of slack: the beat's float rate may land a
+   * boundary a frame late). */
+  const int up = 2 * step + fade / 2;
+  const float in = o[up] / ((float)up / RH_SR);
+  CHECK(fabsf(in - 0.5f) < 0.02f);
+  CHECK(rh_is_frame(o[2 * step + fade + 2], 2 * step + fade + 2, 0.5));
+  free(o);
+}
+
+/* AABB (s4/21): from one slice to the next the output crossfades over the
+ * 4 ms from the boundary, the slice before playing on past its end: half
+ * way, half the live A and half its replay a step back. */
+static void test_slicer_crossfades_from_the_boundary(void) {
+  printf("test_slicer_crossfades_from_the_boundary\n");
+  const int step = RH_SR / 8;
+  const int fade = 4 * RH_SR / 1000;
+  float* o = rh_slice(0, 4, 1.0f, 3 * step);
+  const int i = step + fade / 2;
+  const float live = (float)i / RH_SR;
+  const float replay = (float)(i - step) / RH_SR;
+  printf("  half way: %.5f (want %.5f)\n", (double)o[i],
+         (double)(0.5f * (live + replay)));
+  CHECK(fabsf(o[i] - 0.5f * (live + replay)) < 0.02f * live);
+  CHECK(rh_is_frame(o[step - 1], step - 1, 0.5));            /* A whole */
+  CHECK(rh_is_frame(o[step + fade + 2], fade + 2, 0.5));      /* the replay */
   free(o);
 }
 
@@ -556,25 +592,30 @@ static void test_slicer_reverses(void) {
   printf("test_slicer_reverses\n");
   const int step = RH_SR / 8;
   float* o = rh_slice(16, 4, 1.0f, 3 * step);
-  for (int k = 10; k < step - 400; k += 997) {
+  for (int k = 210; k < step - 400; k += 997) { /* past the fade in */
     CHECK(rh_is_frame(o[2 * step + k], 2 * step - k, 1.5));
   }
   free(o);
 }
 
-/* Mix (seg22): the slices at Mix, the dry whole up to 50 % and fading to
- * nothing at 100 %. */
+/* Mix (#891 s17rhy and s4/22, noise in A's replay): the slices at
+ * m (2 - m) and the dry at 1 - m^2, a crossfade the same both ways: 0.44
+ * and 0.94 at 25 %, 0.75 and 0.75 at 50 %. */
 static void test_slicer_mix_law(void) {
   printf("test_slicer_mix_law\n");
   const int step = RH_SR / 8;
   const int mid = step + step / 2; /* A's replay, one step back */
   const float x = (float)mid / RH_SR;
   const float w = (float)(mid - step) / RH_SR;
-  static const float mix[3][3] = {
-      {0.5f, 1.0f, 0.5f}, {0.75f, 0.5f, 0.75f}, {0.25f, 1.0f, 0.25f}};
-  for (int m = 0; m < 3; ++m) {
+  /* mix, then the capture's dry and slice gains */
+  static const float mix[4][3] = {{0.254f, 0.935f, 0.439f},
+                                  {0.502f, 0.747f, 0.742f},
+                                  {0.748f, 0.436f, 0.925f},
+                                  {0.898f, 0.190f, 0.976f}};
+  for (int m = 0; m < 4; ++m) {
     float* o = rh_slice(0, 4, mix[m][0], 2 * step);
-    CHECK(fabsf(o[mid] - (x * mix[m][1] + w * mix[m][2])) < 1e-5f);
+    /* Each gain within 0.015: the dry and the slice are 0.125 apart. */
+    CHECK(fabsf(o[mid] - (x * mix[m][1] + w * mix[m][2])) < 0.015f * (x + w));
     free(o);
   }
 }
@@ -659,7 +700,8 @@ static void test_slicer_step_lengths(void) {
     const int st = frames[k];
     float* o = rh_slice(4, k, 1.0f, 2 * st);
     CHECK(rh_is_frame(o[st - st / 4], st - st / 4, 0.5)); /* A, live */
-    CHECK(o[st + 2] == 0.0f && o[st + st / 2] == 0.0f);    /* the rest */
+    /* the rest, once A's 4 ms (or half-slice) fade past its end is out */
+    CHECK(o[st + 200] == 0.0f && o[st + st / 2] == 0.0f);
     free(o);
   }
 }
@@ -739,7 +781,9 @@ static void test_slicer_at_96k(void) {
   rh_slice_run_at(fx, sr, p, in, o, n, NULL, -1, 0.0, 0.0f);
   const int mid = step + step / 2;
   CHECK(fabsf(o[mid] - (float)(mid - step) / (float)sr) < 0.6f / (float)sr);
-  CHECK(fabsf(o[step + 1] - (float)1 / (float)sr) < 0.6f / (float)sr);
+  const int fade = 4 * sr / 1000; /* the replay, past its fade in */
+  CHECK(fabsf(o[step + fade + 1] - (float)(fade + 1) / (float)sr) <
+        0.6f / (float)sr);
   le_fx_state_free_buffers(fx);
   free(fx);
   free(in);
@@ -1246,6 +1290,7 @@ static void run_rhythmic_tests(void) {
   test_slicer_replays_a_repeat();
   test_slicer_half_steps();
   test_slicer_rests_and_fades();
+  test_slicer_crossfades_from_the_boundary();
   test_slicer_reverses();
   test_slicer_mix_law();
   test_slicer_list_ends_and_is_not_printed();

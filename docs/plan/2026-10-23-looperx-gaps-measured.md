@@ -328,3 +328,94 @@ hold.
   misses.
 - **Doubler.** The Studio and Vocal racks' copies reach 49 ms, as the Dub
   Rack's do at Sep 50 % (51 ms).
+
+## Re-captured for the fit (#1447, sessions s17grv and s17rhy)
+
+The gC and gD session audio behind the RES HI GRV, Pumper and LPF LFO
+readings above is no longer on the rig machine, so these four were captured
+again on 2026-11-03: s17grv (Guitar Rack, Delay alone, the general stimulus
+of the Method section) and s17rhy (Rhythmic Rack, one pedal at a time,
+`tremstim`: a 12 s steady 1 kHz sine at -12 dBFS, then 6 s of noise).
+Each kind was compared with segno's kernel run on the captured input with
+the same analysis. Where these differ from the sections above, these hold.
+
+**The beat.** In s17rhy the transport ran through the whole session, so one
+beat serves every pass: the Pumper's duck starts at the same sample (within
+16 samples) at Bar, 1/2, 1/4, 1/8 and 1/16, and that is the bar line. The
+s4 Pumper passes (s4/25-27) agree among themselves the same way.
+
+**RES HI GRV.**
+
+- Its echoes have RESO HI's voicing: against its own 1 kHz, the early
+  echo reads -2.45 dB at 100 Hz, -1.57 at 300 Hz, +3.75 at 2 kHz, +3.86 at
+  3 kHz, +0.03 at 5 kHz and -2.58 at 8 kHz, and the plain RESO HI echo
+  reads the same within 0.5 dB. The "+2.2 at 2 kHz, -1.6 at 8 kHz" reading
+  above does not repeat in a fresh capture of the same setting.
+- The early tap is 251/300 of the time, to the sample: 15060 frames of
+  18000 at 1/8D, 20080 of 24000 at 1/4, 10040 of 12000 at 1/8 and 30121 of
+  36000 at 1/4D. It is a ratio, not a fixed offset. The old 0.8368 put it
+  2 frames late at 1/8D. That moved the right side's steady 1 kHz level
+  by 0.7 to 1.4 dB, which is the GRV discrepancy the s7dly ladder showed.
+- Each side carries -16.90 dB (0.143) of the other side's echo, at Feedback
+  0, 29 and 50 %. On the left that is 0.143 of the left's own echo, so it
+  scales with Feedback the way L/R's does.
+- Against the plain RESO HI echo, the right side reads -1.15 dB (0.876) and
+  the left reads -2.53, -2.11 and -1.81 dB at Feedback 0, 29 and 50 %
+  (0.753 + 0.129 Feedback).
+
+**Pumper.**
+
+- The duck has the same shape, in phase, at every rate and depth captured.
+  The 1/40-point values below agree to 0.001 across Bar, 1/2, 1/4 and 1/8
+  and across Depth 50, 70, 85 and 100 %.
+- It starts falling on the beat and reaches full depth at 0.022 of the
+  period: 11 ms at 1/4, 44 ms at a bar. It falls straight in dB at full
+  depth (3.64 dB a millisecond at 1/4), as (1 - 100^(-phase / 0.022)) / 0.99.
+- After that it recovers as follows, at each 1/40 of the period from the
+  beat: 1.0, 0.9998, 0.9969, 0.9934, 0.9890, 0.9835, 0.9769, 0.9688, 0.9590,
+  0.9472, 0.9331, 0.9165, 0.8968, 0.8739, 0.8473, 0.8167, 0.7819, 0.7425,
+  0.6985, 0.6497, 0.5963, 0.5385, 0.4769, 0.4121, 0.3450, 0.2772, 0.2103,
+  0.1464, 0.0890, 0.0403, 0.0074. It is 0 from about 0.756 of the period.
+- The e(phase) table above put phase 0 where the duck first reaches full
+  depth, 0.022 of the period after the beat.
+- The depth is a = 0.99 d (2 - d). The dips are 6.20, 11.89, 20.09, 29.93
+  and 40.09 dB at 30, 50, 70, 85 and 100 %, each within 0.2 dB of that law.
+  The old table, linear in dB between 30, 70 and 100 %, was 1.1 dB deep at
+  50 % and 2.4 dB shallow at 85 %.
+- No smoothing shows beyond the shape itself. At 1/16 the capture and the
+  shape agree within 0.05 dB with none.
+
+**Slicer.**
+
+- From one slice to the next the output crossfades in a straight line over
+  about 4 ms, starting on the step boundary. The slice before plays on past
+  its end as it fades out, and the next one fades in.
+- This was measured by regressing the output on the input and on the input
+  one step back, in 0.5 ms windows on the noise. It holds at 1/4, 1/16 and
+  1/64 (s17rhy), and against the beat in s4/21-23.
+- Into a rest, the slice fades out after the boundary; out of a rest, the
+  next slice fades in after it. The earlier reading, "a slice ends with a
+  4 ms fade and starts without one", placed the boundary 4 ms early.
+- The replay distance is the step at 1/4 (500 ms) and 1/64 (31.25 ms).
+- Mix crossfades the same way in both directions: the slices at m (2 - m)
+  and the dry at 1 - m^2. The capture's dry and slice gains are
+  0.935/0.439, 0.747/0.742, 0.436/0.925 and 0.190/0.976 at 25, 50, 75 and
+  90 %. The law gives 0.936/0.443, 0.748/0.752, 0.440/0.936 and
+  0.194/0.990. s4/22 at 50.3 % reads 0.748/0.747.
+- The earlier "wet = m, dry = min(1, 2 (1 - m))" fits only the sum the two
+  make where they read the same audio.
+
+**Rhythmic LPF LFO.** Cutoff 647 Hz shown, Reso 50.2 %:
+
+- At 1/2, the swing that fits each depth best is +-0.38, 1.58 and 3.95
+  octaves at 25, 50 and 75 %. The 0.72 x Depth^2.2 law gives 0.35, 1.58
+  and 3.79.
+- The phase is as modelled at 1/2, 1/4 and 4/4: no shift fits better.
+- At 1/4D and 1/8D the phase counts from a bar line a whole number of bars
+  from the session's bar.
+- The level stays 0.9 to 1.6 dB rms off at every depth and rate. That is
+  the ladder's static level, not the LFO: with the LFO off, the 1 kHz tone
+  comes out at -11.94 dB on the capture and -10.38 dB in the kernel. A
+  constant offset brings the 25 % pass within 0.19 dB rms.
+- The kernel's ladder compresses less than the Looper X's at this level. At
+  0 dBFS, #1445 read -17.1 dB, and the kernel gives -14.4.

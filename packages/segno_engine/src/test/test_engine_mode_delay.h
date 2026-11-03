@@ -285,10 +285,9 @@ static void test_mode_delay_clear_reads_nothing_old(void) {
 }
 
 /* The taps on an impulse (#891, s4/10-11, gC 36/38): L/R's early tap is
- * exactly half the time and GRV's 0.837 of it (313.8 ms at 1/8D), and
- * each side carries the other at the capture's ratio to its own: L/R
- * left -17.0 dB, right -16.9; GRV left -17.0, right -16.8 (within
- * 0.5 dB). */
+ * exactly half the time and GRV's 251/300 of it (15060 frames at 1/8D,
+ * s17grv), and each side carries the other at the capture's ratio to its
+ * own: L/R left -17.0 dB, right -16.9; GRV -16.9 both (within 0.5 dB). */
 static void test_mode_delay_taps(void) {
   printf("test_mode_delay_taps\n");
   const le_fx_tempo t = rh_tempo(120.0);
@@ -301,7 +300,7 @@ static void test_mode_delay_taps(void) {
   static const struct {
     int mode, early;
     double l_cross, r_cross;
-  } want[2] = {{1, 9000, -17.0, -16.9}, {2, 15062, -17.0, -16.8}};
+  } want[2] = {{1, 9000, -17.0, -16.9}, {2, 15060, -17.0, -16.9}};
   for (int w = 0; w < 2; ++w) {
     const float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.5f, 0.5f,
                                    md_choice(want[w].mode, 14)};
@@ -332,6 +331,101 @@ static void test_mode_delay_taps(void) {
     CHECK(fabs(rc - want[w].r_cross) < 0.5);
   }
   free(x);
+  free(yl);
+  free(yr);
+}
+
+/* RES HI GRV against the s17grv captures (#1447; 1/8D, Mix 30 %, 1 kHz
+ * bursts against RESO HI's plain echo): the right side's early echo at
+ * -1.15 dB, the left's on time at -2.53, -2.11 and -1.81 dB at Feedback 0,
+ * 29 and 50 %, each side carrying the other at -16.9 dB; the early echo's
+ * spectrum against its 1 kHz is RESO HI's. And the early tap is 251/300 of
+ * the time at every note value captured (1/8, 1/8D, 1/4, 1/4D). */
+static void test_mode_delay_res_hi_grv_matches_the_capture(void) {
+  printf("test_mode_delay_res_hi_grv_matches_the_capture\n");
+  const le_fx_tempo t = rh_tempo(120.0);
+  const int n = 2 * MD_SR;
+  const int period = MD_SR * 375 / 1000;
+  const int early = period * 251 / 300;
+  float* yl = (float*)malloc(sizeof(float) * (size_t)n);
+  float* yr = (float*)malloc(sizeof(float) * (size_t)n);
+  float* x = md_burst(1000.0, n);
+  /* The plain RESO HI echo, the reference. */
+  const float plain[LE_FX_PARAMS] = {md_choice(8, 20), 0.0f, 0.3f,
+                                     md_choice(9, 14)};
+  le_fx_state* fx = md_state(&t);
+  md_run(fx, plain, x, yl, yr, n);
+  le_fx_state_free_buffers(fx);
+  free(fx);
+  const double ref = md_level(yl, period);
+  static const struct {
+    float fb;
+    double l_on;
+  } want[3] = {{0.0f, -2.53}, {0.29f, -2.11}, {0.5f, -1.81}};
+  for (int w = 0; w < 3; ++w) {
+    const float p[LE_FX_PARAMS] = {md_choice(8, 20), want[w].fb, 0.3f,
+                                   md_choice(11, 14)};
+    fx = md_state(&t);
+    md_run(fx, p, x, yl, yr, n);
+    le_fx_state_free_buffers(fx);
+    free(fx);
+    const double lo = md_level(yl, period) - ref;
+    const double re = md_level(yr, early) - ref;
+    const double lx = md_level(yl, early) - md_level(yl, period);
+    const double rx = md_level(yr, period) - md_level(yr, early);
+    printf("  feedback %2.0f %%: left %+5.2f (capture %+5.2f), right %+5.2f "
+           "(-1.15), carried %+5.2f / %+5.2f (-16.90)\n",
+           100.0 * want[w].fb, lo, want[w].l_on, re, lx, rx);
+    CHECK(fabs(lo - want[w].l_on) < 0.3);
+    CHECK(fabs(re - -1.15) < 0.3);
+    CHECK(fabs(lx - -16.9) < 0.3);
+    CHECK(fabs(rx - -16.9) < 0.3);
+  }
+  free(x);
+  /* The early echo's spectrum against its 1 kHz (the capture's response at
+   * each tone, read off the impulse response). */
+  static const double hz[6] = {100.0, 300.0, 2000.0, 3000.0, 5000.0, 8000.0};
+  static const double cap[6] = {-2.45, -1.57, 3.75, 3.86, 0.03, -2.58};
+  const float p[LE_FX_PARAMS] = {md_choice(8, 20), 0.0f, 0.3f,
+                                 md_choice(11, 14)};
+  double at1k = 0.0;
+  for (int k = -1; k < 6; ++k) {
+    float* b = md_burst(k < 0 ? 1000.0 : hz[k], n);
+    fx = md_state(&t);
+    md_run(fx, p, b, yl, yr, n);
+    le_fx_state_free_buffers(fx);
+    free(fx);
+    free(b);
+    const double lv = md_level(yr, early);
+    if (k < 0) {
+      at1k = lv;
+      continue;
+    }
+    printf("  early echo at %4.0f Hz: %+5.2f dB (capture %+5.2f)\n", hz[k],
+           lv - at1k, cap[k]);
+    CHECK(fabs(lv - at1k - cap[k]) < 0.6);
+  }
+  /* The early tap, on an impulse through DIGI GRV (flat). */
+  static const struct {
+    int pos, period, early;
+  } at[4] = {{6, 12000, 10040}, {8, 18000, 15060}, {9, 24000, 20080},
+             {11, 36000, 30120}};
+  float* imp = (float*)calloc((size_t)n, sizeof(float));
+  imp[100] = 1.0f;
+  for (int k = 0; k < 4; ++k) {
+    const float q[LE_FX_PARAMS] = {md_choice(at[k].pos, 20), 0.0f, 0.5f,
+                                   md_choice(2, 14)};
+    fx = md_state(&t);
+    md_run(fx, q, imp, yl, yr, n);
+    le_fx_state_free_buffers(fx);
+    free(fx);
+    int ri = 200;
+    for (int i = 200; i < 100 + at[k].period - 500; ++i) {
+      if (fabsf(yr[i]) > fabsf(yr[ri])) ri = i;
+    }
+    CHECK(abs(ri - 100 - at[k].early) <= 1);
+  }
+  free(imp);
   free(yl);
   free(yr);
 }
@@ -938,6 +1032,7 @@ static void run_mode_delay_tests(void) {
   test_mode_delay_time_change_crossfades();
   test_mode_delay_clear_reads_nothing_old();
   test_mode_delay_taps();
+  test_mode_delay_res_hi_grv_matches_the_capture();
   test_mode_delay_loop_is_bounded();
   test_mode_delay_at_96k();
   test_mode_delay_reenable_skips_the_spacing();
