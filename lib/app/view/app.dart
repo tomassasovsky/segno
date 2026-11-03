@@ -953,9 +953,9 @@ class _AppViewState extends State<_AppView> {
   final Stopwatch _midiSaid = clock.stopwatch();
   MidiConnection? _midiSaidFor;
 
-  /// The interface's own MIDI loss was folded into its message, so the
-  /// port's return is folded into the interface's too, however late.
-  bool _midiLossFolded = false;
+  /// The MIDI device whose loss was folded into the interface's message, so
+  /// that device's return is folded into the interface's too, however late.
+  String? _foldedMidiId;
 
   static bool _within(Stopwatch since) =>
       since.isRunning && since.elapsed <= _sameCauseWindow;
@@ -1218,8 +1218,10 @@ class _AppViewState extends State<_AppView> {
             _within(_midiSaid) &&
             midiIsInterfacesOwn(said, state, audioJustChanged: true)) {
           if (said.connectivity == MidiConnectivity.lost) {
-            _midiLossFolded = true;
+            _foldedMidiId = said.selectedId;
           }
+          // Folded once: a second change of the interface finds it gone.
+          _midiSaidFor = null;
           _notices
             ..clear(AppNoticeId.midiLost)
             ..clear(AppNoticeId.midiRestored);
@@ -1271,14 +1273,16 @@ class _AppViewState extends State<_AppView> {
     final connection = state.connection;
     switch (connection.connectivity) {
       case MidiConnectivity.lost when _interfacesOwn(connection):
-        _midiLossFolded = true;
+        _foldedMidiId = connection.selectedId;
         return;
       case MidiConnectivity.restored
-          when _midiLossFolded || _interfacesOwn(connection):
-        _midiLossFolded = false;
+          when _foldedMidiId == connection.selectedId ||
+              _interfacesOwn(connection):
+        _foldedMidiId = null;
         _notices.clear(AppNoticeId.midiLost);
         return;
       case MidiConnectivity.lost:
+        _foldedMidiId = null;
         _midiSaid
           ..reset()
           ..start();
@@ -1309,6 +1313,7 @@ class _AppViewState extends State<_AppView> {
             ),
           );
       case MidiConnectivity.none:
+        _foldedMidiId = null;
         _notices.clear(AppNoticeId.midiLost);
     }
   }

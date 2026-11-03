@@ -971,14 +971,20 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     final present = status.devicePresent;
     final previous = _lastDevicePresent;
     _lastDevicePresent = present;
-    // Named when it appears, from a fresh catalog: not on every tick.
+    // Named when it appears, not on every tick. The catalog is enumerated
+    // again only when it has no entry for the pin (it was plugged in after
+    // the last scan): an enumeration can cost a second on the Pi (#649).
     if (present && previous != true) {
       final id = state.playbackDeviceId.isNotEmpty
           ? state.playbackDeviceId
           : state.captureDeviceId;
+      final listed = state.devices.any((device) => device.id == id);
       _lastPresent = (
         id,
-        _interfaceName(status.deviceName, devices: _repository.devices()),
+        _interfaceName(
+          status.deviceName,
+          devices: listed || id.isEmpty ? null : _repository.devices(),
+        ),
       );
     }
     if (present && state.deviceConnectivity == DeviceConnectivity.waiting) {

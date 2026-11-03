@@ -120,8 +120,9 @@ void showStorageFailed(BuildContext context, String id) =>
 /// The MIDI device carries the interface's name ("Scarlett 4i4 USB MIDI 1"
 /// under "Scarlett 4i4 USB"), and the interface is gone ([audio]) or went
 /// or came back moments ago ([audioJustChanged]). Another controller is its
-/// own cause whatever the timing. Only when either name is unknown does the
-/// timing alone decide.
+/// own cause whatever the timing, and so is any device while the
+/// interface's name is unknown. Only a MIDI device with no name at all is
+/// judged by the timing alone.
 bool midiIsInterfacesOwn(
   MidiConnection connection,
   AudioSetupState audio, {
@@ -134,7 +135,8 @@ bool midiIsInterfacesOwn(
     connection.selectedName,
     connection.selectedId,
   ].where((name) => name.isNotEmpty);
-  if (interface.isEmpty || names.isEmpty) return audioJustChanged;
+  if (names.isEmpty) return audioJustChanged;
+  if (interface.isEmpty) return false;
   if (!names.any((name) => name.startsWith(interface))) return false;
   final gone = switch (audio.deviceConnectivity) {
     DeviceConnectivity.lost || DeviceConnectivity.waiting => true,

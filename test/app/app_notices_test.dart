@@ -129,21 +129,26 @@ void main() {
       );
     });
 
-    test('with no name to compare, the timing alone decides', () {
+    test("with the interface's name unknown, a named controller is its own "
+        'cause', () {
       expect(
         midiIsInterfacesOwn(
           pedal,
           const AudioSetupState(),
           audioJustChanged: true,
         ),
+        isFalse,
+      );
+    });
+
+    test('a MIDI device with no name is judged by the timing alone', () {
+      const nameless = MidiConnection(connectivity: MidiConnectivity.lost);
+      expect(
+        midiIsInterfacesOwn(nameless, lost, audioJustChanged: true),
         isTrue,
       );
       expect(
-        midiIsInterfacesOwn(
-          pedal,
-          const AudioSetupState(),
-          audioJustChanged: false,
-        ),
+        midiIsInterfacesOwn(nameless, lost, audioJustChanged: false),
         isFalse,
       );
     });
