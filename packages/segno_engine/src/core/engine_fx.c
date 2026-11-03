@@ -510,9 +510,12 @@ static void le_pv_stage_envelope(le_octaver_state* o) {
  * the formants stay fixed in frequency; moving them, the magnitude goes over
  * as it is, envelope and all. [drop_dc] also drops a region whose peak
  * lands below bin 1 (the second voice's, two octaves down; the first voice
- * keeps the shipped octaver's behaviour). */
+ * keeps the shipped octaver's behaviour). [whole_phase]: where two regions
+ * land on one bin, the louder before the low band takes its share sets the
+ * phase (the first voice), not the louder after (the second; see below). */
 static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
-                             float* re, float* im, int drop_dc) {
+                             float* re, float* im, int drop_dc,
+                             int whole_phase) {
   /* The Dual Octaver's low band (#1467) plays this share of each region
    * below the crossover: the band's weight times what it passes at the
    * region's peak, its boost over the crossover's low-pass there
@@ -542,7 +545,19 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
    * ratio; scaling each bin's index instead spread an up-shifted lobe over
    * every other bin and lost up to 13 dB at a fifth. A region runs from
    * halfway after the previous peak to halfway before the next; where two
-   * regions land on one bin, the louder source sets its phase. */
+   * regions land on one bin, the louder source sets its phase.
+   *
+   * Louder as it came in, before the low band took its share (#1580): a
+   * region the band has taken nearly all of is still the bin's partial,
+   * and its phase stays on that partial's track from frame to frame. Judged
+   * after the share, the bin's phase went to whichever faint neighbour
+   * edged out the partial's remainder, a contest the slightest change in
+   * the input decided; the remainder then summed with the band's voice at
+   * a phase that moved with it, and the Dual Octaver's level at 44.1 and
+   * 96 kHz strayed up to 3.9 dB from 48 kHz's. The second voice keeps the
+   * contest after the share: judged before it, a top band 40 dB down
+   * moved 4 dB at 96 kHz on Octave 2 (Bass Octave Layer), and its own
+   * residue there is the vocoder's (it strays as far with the band off). */
   int peaks[LE_PV_BINS];
   int np = 0;
   for (int q = 0; q < LE_PV_BINS; ++q) {
@@ -588,8 +603,9 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
         if (fg > LE_PV_FORMANT_MAX) fg = LE_PV_FORMANT_MAX;
       }
       syn_mag[j] += m * fg;
-      if (m > syn_best[j]) {
-        syn_best[j] = m;
+      const float loud = whole_phase ? mag[k] : m;
+      if (loud > syn_best[j]) {
+        syn_best[j] = loud;
         syn_phase[j] =
             le_wrap_pi(peak_phase + (in_phase[k] - in_phase[peak]));
       }
@@ -605,14 +621,14 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
 
 static void le_pv_stage_shift(le_octaver_state* o) {
   le_pv_shift_into(o, o->frame_ratio, o->sum_phase, LE_PV_S_RE(o),
-                   LE_PV_S_IM(o), 0);
+                   LE_PV_S_IM(o), 0, 1);
 }
 
 /* The second voice's shift (#1464): the same analysis at its own ratio,
  * into its own spectrum and phases. */
 static void le_pv_stage_shift2(le_octaver_state* o) {
   le_pv_shift_into(o, o->frame_ratio2, LE_PV_S_PHASE2(o), LE_PV_S_RE2(o),
-                   LE_PV_S_IM2(o), o->frame_ratio2 < 1.0f);
+                   LE_PV_S_IM2(o), o->frame_ratio2 < 1.0f, 0);
 }
 
 /* Stage 3: inverse transform, synthesis-window, and overlap-add from the
