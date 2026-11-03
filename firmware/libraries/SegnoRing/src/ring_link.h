@@ -40,18 +40,29 @@ constexpr uint32_t SNAPSHOT_MS = 20, STATE_MS = 100, TIMEOUT_MS = 500;
 // DIMMED: the console idled and the screens dimmed; the ring dims with them
 // (#1349). A ring firmware that predates it ignores the bit.
 constexpr uint8_t FLAG_LIVE = 1, FLAG_ACTIVE = 2, FLAG_LOADED = 4, FLAG_DIMMED = 8;
-// The share of normal output the console's LEDs keep while dimmed: ~20 %. A
-// lit channel stays at least 1, so a dimmed breathe never reaches black and a
-// faint hue component does not vanish.
+// The share of normal output the console's LEDs keep while dimmed: ~20 %.
 constexpr uint8_t DIM_LEVEL = 51;
-// One channel at `level` of 255. A lit channel stays at least 1, as above;
-// at LEVEL_FULL it is unchanged.
-inline uint8_t scaleChannel(uint8_t value, uint8_t level) {
-  if (!value) return 0;
-  const uint8_t scaled = (uint8_t)((value * level + 127) / 255);
+// The output level for the console's LED `level` (LEVEL, LEVEL_FULL when the
+// console says nothing) and the idle dim, as one factor so a pixel is rounded
+// once. Never 0: a lit pixel stays lit.
+inline uint8_t outputLevel(uint8_t level, bool dimmed) {
+  if (!dimmed) return level ? level : 1;
+  const uint8_t scaled = (uint8_t)((level * DIM_LEVEL + 127) / 255);
   return scaled ? scaled : 1;
 }
-inline uint8_t dimChannel(uint8_t value) { return scaleChannel(value, DIM_LEVEL); }
+// Scales one pixel by `level` of 255, each channel rounded, so its hue holds.
+// A lit pixel stays lit: when every channel rounds to 0, the strongest keeps
+// 1, so a dimmed breathe never reaches black and the hue's main component
+// survives while weak ones drop out instead of rising to match it. At
+// LEVEL_FULL nothing changes.
+inline void scalePixel(uint8_t &r, uint8_t &g, uint8_t &b, uint8_t level) {
+  if (level == LEVEL_FULL || !(r | g | b)) return;
+  const uint8_t peak = r >= g && r >= b ? 0 : g >= b ? 1 : 2;
+  r = (uint8_t)((r * level + 127) / 255);
+  g = (uint8_t)((g * level + 127) / 255);
+  b = (uint8_t)((b * level + 127) / 255);
+  if (!(r | g | b)) (peak == 0 ? r : peak == 1 ? g : b) = 1;
+}
 
 struct RingState {
   uint8_t r = 0, g = 0, b = 0;  // the activity colour, black when none

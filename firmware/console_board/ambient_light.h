@@ -50,19 +50,23 @@ extern "C" {
 #define AMBIENT_SMOOTHING 0.3f
 
 /* The reported level moves only when the smoothed reading has moved this
- * many level steps from it: 4 of the 16 per doubling, about 19 %. A reading
- * under one count (0) and the top of the range are always reported exactly. */
+ * many level steps from it: 4 of the 16 per doubling, about 19 %. Whether
+ * the sensor is at the top of its range follows the median alone, so it
+ * changes no faster than the median does. */
 #define AMBIENT_HYSTERESIS 4
 
 /* The pad-pull probe that tells a fitted sensor from an open pin, every
- * AMBIENT_PROBE_MS. A pin that follows the pull-up to the rail and the
- * pull-down to ground has nothing on it. A fitted load holds the pin near
- * its own reading: the pull-up (50 to 80 k) adds about 0.14 V over 2.2 k and
- * still about 0.04 V over 1 k. A pin at ground even with the pull-up on is
- * shorted there. */
+ * AMBIENT_PROBE_MS. A pin that follows the pull-up into the top quarter and
+ * the pull-down into the bottom quarter has nothing on it: the thresholds
+ * leave the weak pad pulls (50 to 80 k) a wide margin against the ADC's
+ * sampling load. A fitted load holds the pin near its own reading, the two
+ * pulls moving it apart by at most about 1 V (22 k, the largest load the
+ * docs allow) and usually 0.15 V (2.2 k), never the 1.6 V between the
+ * thresholds. A pin at ground even with the pull-up on is shorted there: the
+ * pull-up still lifts a fitted 1 k load about 0.04 V. */
 #define AMBIENT_PROBE_MS 2000u
-#define AMBIENT_PROBE_RAIL 3900u
-#define AMBIENT_PROBE_FLOOR 200u
+#define AMBIENT_PROBE_RAIL 3000u
+#define AMBIENT_PROBE_FLOOR 1000u
 #define AMBIENT_PROBE_GROUNDED 20u
 
 typedef struct ambient_light {
@@ -76,6 +80,7 @@ typedef struct ambient_light {
   uint8_t history_pos;
   float smoothed;
   uint8_t have_level;
+  uint8_t above;        /* the median second is at the top of the range */
   uint8_t level;        /* the reported level, PEDAL_AMBIENT_STEPS_PER_DOUBLING per doubling */
 } ambient_light;
 

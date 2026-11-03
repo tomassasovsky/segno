@@ -19,6 +19,14 @@ static void receive(pedal_state state, uint32_t now, bool corrupt = false) {
   at(now);
 }
 
+// One channel of a single-channel pixel at `level` of 255, as scalePixel
+// renders it.
+static uint32_t onePixel(uint8_t value, uint8_t level) {
+  uint8_t r = value, g = 0, b = 0;
+  ring_link::scalePixel(r, g, b, level);
+  return r;
+}
+
 static void expectAllDark() {
   assert(ind.shown.size() == 80);
   for (const uint32_t pixel : ind.shown) assert(pixel == 0);
@@ -171,16 +179,16 @@ static void ledLevel() {
   ringLink.sent.clear();
   receiveLedLevel(128, now += 1);
   at(now += RENDER_MS);  // one render: one fade step, not a jump
-  assert(ind.shown[59] == ((uint32_t)ring_link::scaleChannel(191, 255 - LED_FADE_STEP) << 16));
+  assert(ind.shown[59] == (onePixel(191, 255 - LED_FADE_STEP) << 16));
   assert(lastRingLevel() == 255 - LED_FADE_STEP);
   for (int i = 0; i < 60; ++i) at(now += RENDER_MS);
-  assert(ind.shown[59] == ((uint32_t)ring_link::scaleChannel(191, 128) << 16));
+  assert(ind.shown[59] == (onePixel(191, 128) << 16));
   assert(lastRingLevel() == 128);
   // The idle dim applies on top of the level.
   state.dimmed = 1;
   receive(state, now += 20);
   assert(ind.shown[59] ==
-         ((uint32_t)ring_link::dimChannel(ring_link::scaleChannel(191, 128)) << 16));
+         (onePixel(191, ring_link::outputLevel(128, true)) << 16));
   state.dimmed = 0;
   receive(state, now += 20);
   // A level of 0 is refused and changes nothing.
@@ -188,8 +196,15 @@ static void ledLevel() {
                           PEDAL_LINK_TYPE_LED_LEVEL ^ 1};
   for (const uint8_t byte : zero) fake_arduino::received.push_back(byte);
   for (int i = 0; i < 10; ++i) at(now += RENDER_MS);
-  assert(ind.shown[59] == ((uint32_t)ring_link::scaleChannel(191, 128) << 16));
-  // The app is gone: dark, and full again for whoever connects next.
+  assert(ind.shown[59] == (onePixel(191, 128) << 16));
+  // The app is gone: dark. A level that arrives before the next frame takes
+  // effect at once, so a reconnect never flashes full and fades down.
+  at(now += 5001);
+  expectAllDark();
+  receiveLedLevel(64, now += 1);
+  receive(state, now += 20);
+  assert(ind.shown[59] == (onePixel(191, 64) << 16));
+  // Without one the next app gets full, as firmware 2.6 showed.
   at(now += 5001);
   expectAllDark();
   receive(state, now += 20);
@@ -754,7 +769,7 @@ int main() {
   // come back on the next undimmed frame.
   state.dimmed = 1;
   receive(state, now += 20);
-  assert(ind.shown[59] == ((uint32_t)ring_link::dimChannel(191) << 16));
+  assert(ind.shown[59] == (onePixel(191, ring_link::DIM_LEVEL) << 16));
   assert(lastRingState().flags & ring_link::FLAG_DIMMED);
   state.dimmed = 0;
   receive(state, now += 20);

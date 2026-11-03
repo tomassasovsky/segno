@@ -55,6 +55,12 @@ static void test_probe(void) {
   /* Nothing on J22: the pin follows both pulls. */
   CHECK(!ambient_light_probe_fitted(4095, 0), "an open pin reads as fitted");
   CHECK(!ambient_light_probe_fitted(3950, 150), "an open pin near the rails reads as fitted");
+  /* Weak pad pulls against the ADC's sampling load fall well short of the
+   * rails and still read as open. */
+  CHECK(!ambient_light_probe_fitted(3100, 900), "an open pin on weak pulls reads as fitted");
+  /* The largest load the docs allow, 22 k, in a bright room: the pulls move
+   * it about 1 V apart, and it is still a sensor. */
+  CHECK(ambient_light_probe_fitted(3250, 1950), "a 22 k load reads as missing");
   /* A pin shorted to ground stays there with the pull-up on. */
   CHECK(!ambient_light_probe_fitted(10, 0), "a grounded pin reads as fitted");
   /* Fitted, in the dark: the 2.2 k holds a 50 k pull-up to ~0.14 V, and a
@@ -97,6 +103,13 @@ static void test_first_second_and_top(void) {
   CHECK(ambient_light_sensor(&bright) == PEDAL_AMBIENT_ABOVE &&
             ambient_light_level(&bright) == ambient_light_top_level(),
         "daylight is not reported as the top of the range");
+  /* Leaving the top follows the median, as reaching it does: two seconds
+   * back in range change nothing, the third does. */
+  for (int i = 0; i < 4; ++i) second(&bright, counts_at(5000.0f));
+  for (int i = 0; i < 2; ++i) second(&bright, counts_at(2000.0f));
+  CHECK(ambient_light_sensor(&bright) == PEDAL_AMBIENT_ABOVE, "two seconds left the top");
+  second(&bright, counts_at(2000.0f));
+  CHECK(ambient_light_sensor(&bright) == PEDAL_AMBIENT_READING, "the median back in range is still the top");
   ambient_light dark = fitted_at(0.0f);
   CHECK(ambient_light_sensor(&dark) == PEDAL_AMBIENT_READING && ambient_light_level(&dark) == 0,
         "darkness is not level 0");

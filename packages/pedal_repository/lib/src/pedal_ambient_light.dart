@@ -41,9 +41,6 @@ class PedalAmbientLight extends Equatable {
   /// (`PEDAL_AMBIENT_STEPS_PER_DOUBLING`).
   static const int stepsPerDoubling = 16;
 
-  /// The full ADC scale the reading is out of.
-  static const int adcFullScale = 4095;
-
   /// Whether the board has a sensor.
   final PedalLightSensor sensor;
 
@@ -54,7 +51,7 @@ class PedalAmbientLight extends Equatable {
   /// Whether a sensor is fitted.
   bool get fitted => sensor != PedalLightSensor.none;
 
-  /// The reading in ADC counts (of [adcFullScale]), to within 2 %: what the
+  /// The reading in ADC counts (of 4095), to within 3 %: what the
   /// owner reads in Settings to calibrate. 0 without a sensor.
   int get counts => fitted ? math.pow(2, level / stepsPerDoubling).round() : 0;
 
