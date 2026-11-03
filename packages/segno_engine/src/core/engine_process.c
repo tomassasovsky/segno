@@ -8015,6 +8015,12 @@ static inline float le_trigger_hp(le_engine* e, int c, float x) {
     z[1] = b[2] * x - b[4] * y;
     x = y;
   }
+  if (!isfinite(x)) {
+    /* A non-finite sample (a driver glitch) would stay in the states for
+     * good and keep the trigger from ever firing: drop it and start clean. */
+    memset(e->trig_hp_z[c], 0, sizeof(e->trig_hp_z[c]));
+    return 0.0f;
+  }
   return x;
 }
 
@@ -8026,6 +8032,7 @@ static inline int process_input_frame(le_engine* e, const float* in,
                                       uint64_t perf_frame_base) {
   float frame_mag = 0.0f; /* max |input| over real (non-loopback) channels */
   float loop_mag = 0.0f;  /* max |input| over loopback channels (latency tap) */
+  float trig[LE_MAX_CHANNELS]; /* each real input through the trigger's HP */
   for (int c = 0; c < ch_in; ++c) {
     const float s = in ? in[f * ch_in + c] : 0.0f;
     const float a = fabsf(s);
@@ -8040,7 +8047,7 @@ static inline int process_input_frame(le_engine* e, const float* in,
     *in_sumsq += s * s;
     /* The trigger's detection path (#1623), on every real input so an arm
      * finds it settled. */
-    if (c < LE_MAX_CHANNELS) e->trig_hp_y[c] = le_trigger_hp(e, c, s);
+    if (c < LE_MAX_CHANNELS) trig[c] = le_trigger_hp(e, c, s);
   }
   if (frame_mag > *in_peak) *in_peak = frame_mag;
 
@@ -8065,7 +8072,7 @@ static inline int process_input_frame(le_engine* e, const float* in,
             (excluded & (1u << source))) continue;
         /* Through the detector's high-pass: hum and rumble do not arm it
          * (#1623); the take records the raw input. */
-        value = in ? fabsf(e->trig_hp_y[source]) : 0.0f;
+        value = in ? fabsf(trig[source]) : 0.0f;
       }
       if (value > magnitude) magnitude = value;
     }

@@ -17136,8 +17136,31 @@ static void test_sound_trigger_ignores_hum(void) {
     CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
     le_engine_destroy(e);
   }
-  /* What records is raw: a take of hum alone, armed by a pluck at its start,
-   * carries the hum. */
+  /* A non-finite sample (a driver glitch) does not stick in the filter: the
+   * next pluck still arms. */
+  {
+    const int sr = 48000;
+    le_engine* e = le_engine_create();
+    CHECK(le_engine_configure(e, sr, 1, 1, sr * 4) == LE_OK);
+    CHECK(record_start_sound(e, 1) == LE_OK);
+    CHECK(le_engine_record(e, 0) == LE_OK);
+    drain(e);
+    float in[64] = {0};
+    float out[64];
+    in[10] = NAN;
+    le_engine_process(e, out, in, 64);
+    in[10] = 0.0f;
+    for (int b = 0; b < 10; ++b) le_engine_process(e, out, in, 64);
+    le_snapshot s;
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+    sound_trigger_feed(e, sr, 64, 60.0, 0, NULL);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+    le_engine_destroy(e);
+  }
+  /* What records is raw: a take of hum, armed by a pluck at its start,
+   * carries the hum, measured well past the pluck's decay. */
   {
     const int sr = 48000;
     le_engine* e = le_engine_create();
@@ -17149,13 +17172,22 @@ static void test_sound_trigger_ignores_hum(void) {
     sound_trigger_feed(e, sr, sr / 2, 60.0, -1, NULL); /* hum only */
     CHECK(le_engine_record(e, 0) == LE_OK); /* close the take */
     drain(e);
+    /* From the loop top on; the pluck (tau 20 ms) is below 1e-3 by 8000
+     * frames, so the window after that holds the hum alone. */
     float peak = 0.0f;
     float out[64];
-    for (int b = 0; b < 200; ++b) {
+    le_snapshot snap;
+    le_engine_get_snapshot(e, &snap);
+    const int32_t len = sr / 2 + 64;
+    const int32_t to_top = (len - snap.master_position_frames) % len;
+    for (int32_t f = 0; f < to_top + 8000; f += 64) {
+      process_const(e, 0.0f, 64, out);
+    }
+    for (int b = 0; b < 100; ++b) {
       process_const(e, 0.0f, 64, out);
       for (int i = 0; i < 64; ++i) peak = fmaxf(peak, fabsf(out[i]));
     }
-    CHECK(peak > 0.03f); /* the 0.04 hum plays back */
+    CHECK(peak > 0.03f && peak < 0.05f); /* the 0.04 hum, unfiltered */
     le_engine_destroy(e);
   }
 }

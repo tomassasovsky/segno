@@ -1029,7 +1029,6 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
       engine->trig_hp_c[k][4] = (float)((1.0 - alpha) / a0);
     }
     memset(engine->trig_hp_z, 0, sizeof(engine->trig_hp_z));
-    memset(engine->trig_hp_y, 0, sizeof(engine->trig_hp_y));
   }
 
   /* Output buses (slice 3b): defaults empty/enabled/unity, same rationale as
