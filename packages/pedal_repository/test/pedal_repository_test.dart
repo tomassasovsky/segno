@@ -179,6 +179,132 @@ void main() {
       },
     );
 
+    test(
+      'the light sensor is kept while connected and cleared when it goes',
+      () {
+        fakeAsync((async) {
+          final link = FakePedalLink();
+          final lines = <String>[];
+          final repo = PedalRepository(link, log: lines.add);
+          final changes = <PedalAmbientLight?>[];
+          repo.ambientLightChanges.listen(changes.add);
+          const room = PedalAmbientLight(
+            sensor: PedalLightSensor.reading,
+            level: 150,
+          );
+          const darker = PedalAmbientLight(
+            sensor: PedalLightSensor.reading,
+            level: 90,
+          );
+          // Not trusted before a compatible hello.
+          link.emit(const AmbientLightMessage(room));
+          async.flushMicrotasks();
+          expect(repo.ambientLight, isNull);
+          link
+            ..hello()
+            ..emit(const AmbientLightMessage(room))
+            ..emit(const AmbientLightMessage(room))
+            ..emit(const AmbientLightMessage(darker));
+          async.flushMicrotasks();
+          expect(repo.ambientLight, darker);
+          expect(changes, [room, darker]);
+          // One log line for the sensor appearing, none per reading.
+          expect(
+            lines.where((line) => line.contains('light sensor')),
+            ['pedal link: light sensor reading'],
+          );
+          // A board reflashed under the app to firmware without the sensor
+          // says nothing more of it: the reading goes with the old hello.
+          link.hello(firmwareMinor: 6);
+          async.flushMicrotasks();
+          expect(repo.ambientLight, isNull);
+          expect(changes, [room, darker, null]);
+          link.emit(const AmbientLightMessage(room));
+          async
+            ..flushMicrotasks()
+            ..elapse(repo.helloTimeout);
+          expect(repo.ambientLight, isNull);
+          expect(changes, [room, darker, null, room, null]);
+          unawaited(repo.dispose());
+          async.flushMicrotasks();
+        });
+      },
+    );
+
+    test('setLedLevel goes to a connected board, and at once', () async {
+      repo.setLedLevel(100);
+      expect(link.sent, isEmpty);
+      expect(repo.ledLevel, 100);
+      link.hello();
+      await pumpEventQueue();
+      // Set while the board was away: the first hello carries it, even with
+      // no frame to follow.
+      expect(link.sent, const [LedLevelMessage(100)]);
+      repo
+        ..setLedLevel(100)
+        ..setLedLevel(140);
+      expect(link.sent, const [LedLevelMessage(100), LedLevelMessage(140)]);
+      expect(() => repo.setLedLevel(0), throwsRangeError);
+      expect(() => repo.setLedLevel(256), throwsRangeError);
+    });
+
+    test('a level once set follows the frame on every hello', () async {
+      link.hello();
+      await pumpEventQueue();
+      repo.pushState(PedalStateFrame.blank());
+      link
+        ..sent.clear()
+        ..hello();
+      await pumpEventQueue();
+      // Never set: the board shows full by itself and hears nothing of it.
+      expect(link.sent, [StateMessage(PedalStateFrame.blank())]);
+      repo.setLedLevel(90);
+      link
+        ..sent.clear()
+        ..hello();
+      await pumpEventQueue();
+      expect(link.sent, [
+        const LedLevelMessage(90),
+        StateMessage(PedalStateFrame.blank()),
+      ]);
+      // Back to full is replayed too, so a board that missed it catches up.
+      repo.setLedLevel(PedalLinkCodec.ledLevelFull);
+      link
+        ..sent.clear()
+        ..hello();
+      await pumpEventQueue();
+      expect(link.sent, [
+        const LedLevelMessage(PedalLinkCodec.ledLevelFull),
+        StateMessage(PedalStateFrame.blank()),
+      ]);
+    });
+
+    test('full, set once, is replayed too', () async {
+      // A board the last run left dimmed is brought back to full.
+      link.hello();
+      await pumpEventQueue();
+      repo.setLedLevel(PedalLinkCodec.ledLevelFull);
+      expect(link.sent, const [LedLevelMessage(PedalLinkCodec.ledLevelFull)]);
+      link
+        ..sent.clear()
+        ..hello();
+      await pumpEventQueue();
+      expect(link.sent, const [LedLevelMessage(PedalLinkCodec.ledLevelFull)]);
+    });
+
+    test('setLedLevel sends nothing after goodbye', () async {
+      link.hello();
+      await pumpEventQueue();
+      repo
+        ..setLedLevel(90)
+        ..goodbye();
+      link.sent.clear();
+      repo.setLedLevel(60);
+      link.hello();
+      await pumpEventQueue();
+      expect(link.sent.whereType<LedLevelMessage>(), isEmpty);
+    });
+
     test('a frame identical to the last push is not sent again', () async {
       link.hello();
       await pumpEventQueue();
@@ -491,7 +617,8 @@ void main() {
       repo.events.listen(events.add);
       link
         ..emit(StateMessage(PedalStateFrame.blank()))
-        ..emit(const ClearHoldMessage());
+        ..emit(const ClearHoldMessage())
+        ..emit(const LedLevelMessage(90));
       await pumpEventQueue();
       expect(events, isEmpty);
       expect(repo.status, PedalLinkStatus.disconnected);

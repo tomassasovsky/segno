@@ -72,6 +72,27 @@ void main() {
         define('PEDAL_LINK_CLEAR_HOLD_LEN'),
         PedalLinkCodec.clearHoldPayloadLength,
       );
+      expect(define('PEDAL_LINK_TYPE_AMBIENT'), PedalLinkCodec.typeAmbient);
+      expect(
+        define('PEDAL_LINK_AMBIENT_LEN'),
+        PedalLinkCodec.ambientPayloadLength,
+      );
+      expect(define('PEDAL_LINK_TYPE_LED_LEVEL'), PedalLinkCodec.typeLedLevel);
+      expect(
+        define('PEDAL_LINK_LED_LEVEL_LEN'),
+        PedalLinkCodec.ledLevelPayloadLength,
+      );
+    });
+
+    test('light sensor and LED level scales', () {
+      expect(
+        define('PEDAL_AMBIENT_STEPS_PER_DOUBLING'),
+        PedalAmbientLight.stepsPerDoubling,
+      );
+      expect(
+        define('PEDAL_LINK_LED_LEVEL_FULL'),
+        PedalLinkCodec.ledLevelFull,
+      );
     });
 
     test('clear-hold cadence', () {
