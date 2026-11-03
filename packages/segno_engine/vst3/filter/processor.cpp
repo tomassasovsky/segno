@@ -45,7 +45,7 @@ tresult PLUGIN_API Processor::terminate() {
 
 tresult PLUGIN_API Processor::setActive(TBool state) {
   if (state) {
-    le_fx_entry_reset(&fx_, 0);
+    le_fx_entry_reset(&fx_, 0, types_[0]);
     // Enable-crossfade runtime settled at enabled: this standalone slot has
     // no bypass flags (the host does its own bypassing), so it must never
     // read as a mid-ramp bypass and fade in.
