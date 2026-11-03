@@ -274,9 +274,9 @@ class PowerCubit extends Cubit<PowerState> {
       return;
     }
     if (isClosed) return;
-    // The save ends here: what the slow-save threshold is tuned from, and
-    // where the Saving face stops being able to appear.
-    _slowTimer?.cancel();
+    // What the slow-save threshold is tuned from. The timer runs on through
+    // the installer check: a slow check shows the Saving face rather than
+    // a screen that takes no touch and shows nothing.
     AppLog.info('power: saved in ${watch.elapsedMilliseconds} ms');
     if (await _installerBusy()) {
       AppLog.warn('power: the installer reports an update in progress');
@@ -284,6 +284,7 @@ class PowerCubit extends Cubit<PowerState> {
       return;
     }
     if (isClosed) return;
+    _slowTimer?.cancel();
     _pedalGoodbye();
     emit(
       PowerState(

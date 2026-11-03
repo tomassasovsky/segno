@@ -56,6 +56,7 @@ void main() {
   group(PowerHost, () {
     late FakePowerKeySource keys;
     late PowerCubit cubit;
+    var stopFails = false;
     late _MockLooperBloc looper;
     late _MockSessionCubit session;
     late _MockRecorder recorder;
@@ -70,8 +71,12 @@ void main() {
     setUp(() {
       log = <String>[];
       keys = FakePowerKeySource();
+      stopFails = false;
       cubit = PowerCubit(
-        stopTransport: () => log.add('stop'),
+        stopTransport: () {
+          log.add('stop');
+          if (stopFails) throw StateError('transport stuck');
+        },
         flush: ({required retry}) => log.add('flush'),
         storageSettled: () async {},
         guards: GuardRegistry(),
@@ -654,6 +659,23 @@ void main() {
       expect(cubit.state.phase, PowerPhase.idle);
       expect(find.byKey(const Key('power_dialog')), findsNothing);
       expect(log, ['stop', 'flush']);
+    });
+
+    testWidgets('a save that fails at once keeps Segno is staying on up '
+        '(#1553)', (tester) async {
+      named();
+      stopFails = true;
+      await openOptions(tester);
+      await tester.tap(find.byKey(const Key('power_shut_down')));
+      await settle(tester);
+      expect(cubit.state.phase, PowerPhase.saveFailed);
+      expect(find.text('Segno is staying on'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('power_retry')));
+      await settle(tester);
+      expect(cubit.state.phase, PowerPhase.saveFailed);
+      expect(find.text('Segno is staying on'), findsOneWidget);
+      expect(find.byKey(const Key('power_dialog')), findsOneWidget);
     });
 
     testWidgets('Install and restart that fails to save opens Stay on / '

@@ -87,7 +87,9 @@ abstract interface class ApplianceEnv {
   Future<void> reboot();
 
   /// Runs the privileged helper to halt the appliance
-  /// (`systemctl start poweroff.target`). Throws on failure, an
+  /// (`systemctl start --no-block poweroff.target`). Returns once systemd
+  /// has queued the halt, without waiting for it (#1553). Throws on failure,
+  /// an
   /// `UpdateInstallingException` when the helper refused because RAUC is
   /// installing. The caller freezes on the goodbye mark on any other
   /// failure rather than retrying.

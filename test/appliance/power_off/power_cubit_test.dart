@@ -464,8 +464,7 @@ void main() {
         });
       });
 
-      test('the save ends when storage settles: a slow installer check '
-          'after it does not mark it slow', () {
+      test('a slow installer check after the save shows the Saving face', () {
         fakeAsync((async) {
           final asked = Completer<bool>();
           final cubit = build(updateInstalling: () => asked.future)
@@ -473,8 +472,9 @@ void main() {
             ..shutDown(named, save: save);
           async.flushMicrotasks();
           expect(cubit.state.step, PowerStep.finishOnDisk);
-          async.elapse(PowerCubit.slowSave * 2);
           expect(cubit.state.slow, isFalse);
+          async.elapse(PowerCubit.slowSave);
+          expect(cubit.state.slow, isTrue);
           asked.complete(false);
           async.flushMicrotasks();
           expect(cubit.state.phase, PowerPhase.goodbye);
