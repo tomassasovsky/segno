@@ -17090,6 +17090,76 @@ static void test_record_start_refusal_preserves_settings_and_arms(void) {
   }
 }
 
+/* The sound trigger's detector high-pass (#1623): mains hum and rumble above
+ * the threshold do not start a take, a pick's attack does, on the frame it
+ * arrives, and the take records the raw input, hum included. */
+static void sound_trigger_feed(le_engine* e, int sr, int frames, double hum_hz,
+                               int attack_at, float* out_last) {
+  float in[64];
+  float out[64];
+  int done = 0;
+  while (done < frames) {
+    const int n = frames - done > 64 ? 64 : frames - done;
+    for (int i = 0; i < n; ++i) {
+      const int k = done + i;
+      float x = 0.04f * (float)sin(2.0 * M_PI * hum_hz * k / sr); /* 2x it */
+      if (attack_at >= 0 && k >= attack_at) {
+        const int a = k - attack_at; /* a 2 kHz pluck, decaying over 20 ms */
+        x += 0.1f * (float)(sin(2.0 * M_PI * 2000.0 * a / sr) *
+                            exp(-(double)a / (0.02 * sr)));
+      }
+      in[i] = x;
+    }
+    le_engine_process(e, out, in, (uint32_t)n);
+    done += n;
+  }
+  if (out_last != NULL) *out_last = out[0];
+}
+
+static void test_sound_trigger_ignores_hum(void) {
+  printf("test_sound_trigger_ignores_hum\n");
+  const double hums[] = {50.0, 60.0, 30.0};
+  for (int h = 0; h < 3; ++h) {
+    const int sr = 48000;
+    le_engine* e = le_engine_create();
+    CHECK(le_engine_configure(e, sr, 1, 1, sr * 4) == LE_OK);
+    CHECK(record_start_sound(e, 1) == LE_OK);
+    CHECK(le_engine_record(e, 0) == LE_OK);
+    drain(e);
+    sound_trigger_feed(e, sr, sr, hums[h], -1, NULL); /* a second of hum */
+    le_snapshot s;
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[0].state == LE_TRACK_EMPTY && s.tracks[0].pending == 1);
+    /* The pluck over the hum fires at once. */
+    sound_trigger_feed(e, sr, 64, hums[h], 0, NULL);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+    le_engine_destroy(e);
+  }
+  /* What records is raw: a take of hum alone, armed by a pluck at its start,
+   * carries the hum. */
+  {
+    const int sr = 48000;
+    le_engine* e = le_engine_create();
+    CHECK(le_engine_configure(e, sr, 1, 1, sr * 4) == LE_OK);
+    CHECK(record_start_sound(e, 1) == LE_OK);
+    CHECK(le_engine_record(e, 0) == LE_OK);
+    drain(e);
+    sound_trigger_feed(e, sr, 64, 60.0, 0, NULL);
+    sound_trigger_feed(e, sr, sr / 2, 60.0, -1, NULL); /* hum only */
+    CHECK(le_engine_record(e, 0) == LE_OK); /* close the take */
+    drain(e);
+    float peak = 0.0f;
+    float out[64];
+    for (int b = 0; b < 200; ++b) {
+      process_const(e, 0.0f, 64, out);
+      for (int i = 0; i < 64; ++i) peak = fmaxf(peak, fabsf(out[i]));
+    }
+    CHECK(peak > 0.03f); /* the 0.04 hum plays back */
+    le_engine_destroy(e);
+  }
+}
+
 /* One remaining slot must suffice for the whole edit, including cancelling
  * multiple waiting tracks. A full queue already has a refusal test above. */
 static void test_record_start_edit_cancels_arms_with_one_queue_slot(void) {
@@ -38983,6 +39053,7 @@ int main(void) {
   test_record_start_same_value_transient_intent();
   test_record_start_refusal_preserves_settings_and_arms();
   test_record_start_edit_cancels_arms_with_one_queue_slot();
+  test_sound_trigger_ignores_hum();
   test_disabling_inactive_record_start_preserves_active_choice();
   test_count_in_bars_change_mid_count_cancels();
   test_count_in_auto_record_mutual_exclusion();
