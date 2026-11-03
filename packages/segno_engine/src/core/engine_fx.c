@@ -515,12 +515,19 @@ static void le_pv_stage_envelope(le_octaver_state* o) {
  * of each region's bins wherever they land (the second; see below). */
 static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
                              float* re, float* im, int drop_dc, int by_owner) {
-  /* The Dual Octaver's low band (#1467) plays this share of each region
+  /* The Dual Octaver's low band (#1467) plays this share of each partial
    * below the crossover: the band's weight times what it passes at the
-   * region's peak, its boost over the crossover's low-pass there
-   * (1 / (1 + (f / fc)^4), the Linkwitz-Riley pair), at most all of it, so
-   * the two bands sum to the whole voice. None from 5 fc up (under -45 dB)
-   * or with no band, which leaves the vocoder as it was. */
+   * partial's peak, its boost over the crossover's low-pass there
+   * (1 / (1 + (f / fc)^4), the Linkwitz-Riley pair), at most all of it.
+   * The vocoder gives it up from the region's bins (the second voice) or
+   * from the bins the partial owns (the first, [by_owner]; see below), so
+   * the two bands sum to the whole voice on a lone partial. Where two
+   * partials share bins, giving up by owner drops the other's part of a
+   * bin the handed-over partial owns, and keeps the handed-over partial's
+   * part of a bin the other owns: on a held 147 Hz bass the down voice's
+   * second harmonic reads -8.7 dB against its fundamental (-5.4 dB by
+   * region; a waveform at half speed has -6.0). None from 5 fc up (under
+   * -45 dB) or with no band, which leaves the vocoder as it was. */
   const float low_w = o->frame_low_w;
   const float low_g = o->frame_low_g;
   const float kc = o->frame_low_kc;
@@ -560,7 +567,8 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
    * still taking the share region by region was steady, but left a
    * neighbour's lobe turning at the handed-over partial's phase: 1.3 dB
    * too much down voice on a 110 Hz bass. The second voice keeps the share
-   * by region (its residue at 96 kHz is its own, #1616). */
+   * by region: whether by owner suits it too is #1616's to measure (its
+   * residue at 96 kHz is its own: it strays further with the band off). */
   int peaks[LE_PV_BINS];
   int np = 0;
   for (int q = 0; q < LE_PV_BINS; ++q) {
@@ -599,7 +607,8 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
     for (int k = start; k < end; ++k) {
       const int j = k + shift;
       if (j < 0 || j >= LE_PV_BINS) continue;
-      /* mag[k] exactly, kept whole */
+      /* The source bin as it is (by_owner: the share comes off below), or
+       * its region's share already off. */
       const float m = by_owner ? mag[k] : keep * mag[k];
       float fg = 1.0f;
       if (!o->frame_formants_move) {
@@ -1456,9 +1465,10 @@ static float le_low_voice(le_oct_low* L, le_oct_low_voice* v, float ratio,
  *
  * The note's fundamental is handed over whole: the band is boosted by the
  * crossover's loss at the detected pitch (1 + (f0 / fc)^4, up to 2 at the
- * crossover), and the vocoder gives up the same share of each region
- * (le_pv_shift_into), so a note near the crossover is not split between two
- * voices whose phases differ. A note above the crossover is left to the
+ * crossover), and the vocoder gives up the same share of the note's
+ * partial (le_pv_shift_into: of the bins it owns in the first voice, of its
+ * region in the second), so a note near the crossover is not split between
+ * two voices whose phases differ. A note above the crossover is left to the
  * vocoder, the band fading out by 1.15 fc. The voices come in over a
  * smoothstep from LE_OCT_LOW_MIN_HZ, where the Looper X's start
  * (engine_fx.h): their level only, as the Looper X plays no other voice
