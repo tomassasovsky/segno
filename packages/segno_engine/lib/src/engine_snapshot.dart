@@ -2256,10 +2256,11 @@ class EngineSnapshot {
   /// Record-offset latency compensation in frames (auto-set by a measurement).
   final int recordOffsetFrames;
 
-  /// Added latency (frames) of the highest-latency effect engaged in any
-  /// audible or monitored lane chain — the maximum across active effects. Today
-  /// only the octaver and the Whammy (its kernel) contribute (~25 ms at
-  /// 48 kHz); `0` when neither is engaged. Purely informational (see
+  /// Added latency (frames) of the highest-latency audible or monitored lane
+  /// chain: its engaged effects summed, the largest chain taken. The octaver
+  /// family adds about 25 ms at 48 kHz, the oversampled Overdrive,
+  /// Distortion, Vinyl and Amp+Cab up to 0.8 ms (#1547); `0` when no such
+  /// effect is engaged. Purely informational (see
   /// [fxAddedLatencyMs]); never feeds [recordOffsetFrames] or any
   /// compensation.
   final int fxAddedLatencyFrames;

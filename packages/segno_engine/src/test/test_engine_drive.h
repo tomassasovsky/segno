@@ -221,7 +221,48 @@ static void test_drive_on_a_lane(void) {
   }
 }
 
+/* The oversampled drives report their latency (#1547), and the snapshot
+ * sums a chain's slots: an Overdrive after an octaver adds to the
+ * octaver's, a bypassed one adds nothing, and the Distortion, which runs
+ * at 1x at 96 kHz, adds nothing there. */
+static void test_drive_latency_sums_in_a_chain(void) {
+  printf("test_drive_latency_sums_in_a_chain\n");
+  le_engine* e = make_configured_engine(); /* 48 kHz */
+  le_snapshot s;
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_OVERDRIVE);
+  le_engine_set_monitor_input_fx_count(e, 0, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  const int32_t od = s.fx_added_latency_frames;
+  printf("  the Overdrive at 48 kHz: %d frames\n", od);
+  CHECK(od > 0 && od < 48); /* under a millisecond */
+  le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_OCTAVER);
+  le_engine_set_monitor_input_fx_param(e, 0, 0, 3, 0.0f); /* PV mode */
+  le_engine_set_monitor_input_fx(e, 0, 1, LE_FX_OVERDRIVE);
+  le_engine_set_monitor_input_fx_count(e, 0, 2);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.fx_added_latency_frames == LE_PV_LATENCY + od);
+  le_engine_set_monitor_input_fx_enabled(e, 0, 1, 0);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.fx_added_latency_frames == LE_PV_LATENCY);
+  le_engine_destroy(e);
+
+  e = le_engine_create();
+  le_engine_configure(e, 96000, 1, 1, 1000);
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DISTORTION);
+  le_engine_set_monitor_input_fx_count(e, 0, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.fx_added_latency_frames == 0);
+  le_engine_destroy(e);
+}
+
 static void run_drive_tests(void) {
+  test_drive_latency_sums_in_a_chain();
   test_overdrive_matches_the_capture();
   test_overdrive_controls();
   test_distortion_matches_the_capture();

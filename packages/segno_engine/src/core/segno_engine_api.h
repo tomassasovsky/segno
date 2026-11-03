@@ -1619,13 +1619,14 @@ typedef struct le_snapshot {
    * player heard. Auto-set by a latency measurement; manually overridable. */
   int32_t record_offset_frames;
 
-  /* Added latency (frames) of the highest-latency effect active in any audible
-   * or monitored lane chain — the MAXIMUM across active effects, so it stays
-   * forward-compatible as effects accrue. Today the formant-preserving octaver
-   * is the only contributor (LE_PV_LATENCY frames, engine_fx.h; both PV and
-   * PSOLA modes report the same value); every other effect adds 0, so this
-   * reads 0 whenever no octaver is engaged. The Dart layer divides by sample_rate to show milliseconds and
-   * warn a performer monitoring through the octaver. PURELY informational: this
+  /* Added latency (frames) of the highest-latency audible or monitored lane
+   * chain: each chain's enabled effects summed (they run in series), the
+   * largest chain taken. The octaver family adds LE_PV_LATENCY frames
+   * (engine_fx.h; both PV and PSOLA modes), and the oversampled waveshapers
+   * (Overdrive, Distortion, Vinyl, Amp+Cab) up to 35 frames at 44.1 kHz,
+   * depending on the rate (#1547); every other effect adds 0. The Dart layer
+   * divides by sample_rate to show milliseconds and warn a performer
+   * monitoring through such a chain. PURELY informational: this
    * does NOT feed record_offset_frames or any compensation — it only surfaces
    * the lag so the UI can suggest the lower-latency choice. */
   int32_t fx_added_latency_frames;

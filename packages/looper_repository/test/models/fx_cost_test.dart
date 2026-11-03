@@ -57,6 +57,27 @@ void main() {
       );
     });
 
+    test('an oversampled kind charges by the rate (#1547)', () {
+      for (final MapEntry(key: type, value: ns)
+          in kFxOversampledCostNs.entries) {
+        final fx = _fx(type);
+        // 44.1 and 48 kHz run the most times over, 88.2 kHz and up fewer.
+        expect(fxEntryCostNs(fx, sampleRate: 44100), ns.low, reason: '$type');
+        expect(fxEntryCostNs(fx, sampleRate: 48000), ns.low, reason: '$type');
+        expect(fxEntryCostNs(fx, sampleRate: 88200), ns.high, reason: '$type');
+        expect(fxEntryCostNs(fx, sampleRate: 96000), ns.high, reason: '$type');
+        expect(fxEntryCostNs(fx), ns.high, reason: '$type'); // the bench's
+        expect(ns.low, greaterThanOrEqualTo(ns.high), reason: '$type');
+        expect(kFxKindCostNs.containsKey(type), isFalse, reason: '$type');
+      }
+      // A kind that does not oversample charges the same at every rate.
+      final delay = _fx(TrackEffectType.delay);
+      expect(
+        fxEntryCostNs(delay, sampleRate: 48000),
+        fxEntryCostNs(delay, sampleRate: 96000),
+      );
+    });
+
     test("the budget is 80 % of a frame less the engine's own cost", () {
       final base = (kFxBaseCostUs * 1000 / 64).ceil();
       // 96 kHz: 10417 ns a frame, 8333 of them for the worst block.

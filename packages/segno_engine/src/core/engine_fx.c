@@ -5166,30 +5166,43 @@ static double le_os_i0(double x) {
   return sum;
 }
 
+/* The pass edge at [sr]: LE_OS_PASS_HZ, or 0.42 of a rate too low for it. */
+static double le_os_pass_hz(int sr) {
+  const double rate = (double)(sr > 0 ? sr : 48000);
+  return LE_OS_PASS_HZ > 0.42 * rate ? 0.42 * rate : LE_OS_PASS_HZ;
+}
+
+/* Stage [s]'s tap pairs a side at [sr]: Kaiser's estimate of the length that
+ * holds LE_OS_ATT_DB across the band from the pass edge to its image. */
+static int le_os_k(int sr, int s) {
+  const double rate = (double)(sr > 0 ? sr : 48000);
+  const double fp = le_os_pass_hz(sr);
+  const double in = rate * (double)(1 << s); /* the stage's lower rate */
+  /* The band edge and its image, fp and in - fp, over the upper rate. */
+  const double dw = (in - 2.0 * fp) / (2.0 * in);
+  const double n = (LE_OS_ATT_DB - 7.95) / (14.36 * dw) + 1.0;
+  int k = (int)ceil((n + 1.0) / 4.0);
+  if (k < 2) k = 2;
+  if (k > LE_OS_MAX_K) k = LE_OS_MAX_K;
+  return k;
+}
+
 /* Designs [o] for 2^[stages] times [sr] and clears its histories. Audio
  * thread (a kind's update, on a new rate): a few thousand flops, once. */
 static void le_os_design(le_os* o, int sr, int stages) {
   memset(o, 0, sizeof(*o));
   o->sr = sr;
   o->stages = stages;
-  const double rate = (double)(sr > 0 ? sr : 48000);
-  double fp = LE_OS_PASS_HZ;
-  if (fp > 0.42 * rate) fp = 0.42 * rate;
   const double beta = 0.1102 * (LE_OS_ATT_DB - 8.7);
+  const double i0_beta = le_os_i0(beta);
   for (int s = 0; s < stages; ++s) {
-    const double in = rate * (double)(1 << s); /* the stage's lower rate */
-    /* The band edge and its image, fp and in - fp, over the upper rate. */
-    const double dw = (in - 2.0 * fp) / (2.0 * in);
-    const double n = (LE_OS_ATT_DB - 7.95) / (14.36 * dw) + 1.0;
-    int k = (int)ceil((n + 1.0) / 4.0);
-    if (k < 2) k = 2;
-    if (k > LE_OS_MAX_K) k = LE_OS_MAX_K;
+    const int k = le_os_k(sr, s);
     o->k[s] = k;
     double sum = 0.0;
     for (int i = 0; i < k; ++i) {
       const double t = 2.0 * i + 1.0;
       const double r = t / (2.0 * k);
-      const double w = le_os_i0(beta * sqrt(1.0 - r * r)) / le_os_i0(beta);
+      const double w = le_os_i0(beta * sqrt(1.0 - r * r)) / i0_beta;
       const double v = sin(3.14159265358979323846 * t / 2.0) /
                        (3.14159265358979323846 * t) * w;
       o->h[s][i] = (float)v;
@@ -5210,10 +5223,10 @@ static void le_os_clear(le_os* o) {
 /* The frames the up and down pair delays a signal: each stage's pair runs
  * 2k - 1 samples of its lower rate late. Rounded to the nearest frame. */
 static int le_os_latency(int sr, int stages) {
-  le_os o;
-  le_os_design(&o, sr, stages);
   double d = 0.0;
-  for (int s = 0; s < stages; ++s) d += (2.0 * o.k[s] - 1.0) / (double)(1 << s);
+  for (int s = 0; s < stages; ++s) {
+    d += (2.0 * le_os_k(sr, s) - 1.0) / (double)(1 << s);
+  }
   return (int)(d + 0.5);
 }
 
@@ -5277,8 +5290,8 @@ static inline float le_os_down(le_os* o, int ch, float* in) {
 /* The oversampling stages a waveshaper of [type] runs at [sr]: the
  * smallest factor at which every factory setting keeps its aliasing at
  * least 61 dB under its output, a dB inside the effects matrix's 60
- * (#1547: -12 dBFS sines at E4, E5 and E6), so a platform's rounding does
- * not tip it over. The worst setting's aliasing at 1x, 2x, 4x and 8x, at
+ * (#1547: -12 dBFS sines at E4, E5 and E6), so platform rounding cannot
+ * push it past the limit. The worst setting's aliasing at 1x, 2x, 4x and 8x, at
  * 44.1 / 48 / 96 kHz:
  *
  *   Overdrive   -34.9 -42.3 -50.3 -62.3 / -35.7 -43.0 -51.4 -64.8 /
@@ -5289,7 +5302,8 @@ static inline float le_os_down(le_os* o, int ch, float* in) {
  *   Distortion  -53.8 -77.2 / -55.7 -80.6 / -80.3
  *
  * The Overdrive's clipped part (G up to 680 times the input into a tanh)
- * is close to a square wave, so each doubling buys it only 8 dB.
+ * is close to a square wave, so each doubling lowers its aliasing by only
+ * 8 dB.
  * First-order antiderivative anti-aliasing on that tanh (its antiderivative
  * log cosh) reaches -69 dB at 2x and 44.1 kHz, but its exp and log1p in
  * double on every sample cost more than 8x plain: 280 against 237 ns a
