@@ -5,7 +5,8 @@
  *
  * The circuit (segno-hardware, hardware/segno_wiring.md): a Vishay TEPT5600
  * NPN phototransistor, its lens sanded flat and glued flush in the faceplate,
- * with its collector on J22's +3V3 and its emitter on GP28 (ADC2), and a load
+ * with its collector on J22's +3V3 through 100 ohm and its emitter on GP28
+ * (ADC2), and a load
  * resistor (2.2 k as fitted) from GP28 to ground with 100 nF across it, both
  * at the J22 end of the lead. The photocurrent through the load is the
  * voltage the ADC reads.
