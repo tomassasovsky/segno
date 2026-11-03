@@ -7728,11 +7728,11 @@ static void fx_lpf_kprocess(void* ks, float* l, float* r) {
  *   (-46 dB at 4.7 kHz, -96 dB at 7.2 kHz): nine sections fitted to the
  *   impulse response's spectrum within 1.7 dB rms from 100 Hz to 7.3 kHz;
  * - the mix law is the chorus's (dry 1 - 0.29 mix; the capture's dry gain
- *   was 0.9165 at 28.9 %), and the wet level follows
- *   0.85 mix (Time / 2)^0.45. The s16spring captures put the wet energy
- *   well under that, almost flat across Time (-18.1 dB against the dry at
- *   1 s to -17.1 at 10 s, where this law gives about -9 and -0.6 at 2 and
- *   8 s): whether to follow them is open (#1576).
+ *   was 0.9165 at 28.9 %), and the wet level is LE_SPR_TIME's at the Time,
+ *   times the mix: fitted so the wet energy over the impulse response's
+ *   first second, against the dry, is the capture's at every whole second
+ *   (-18.1 dB at 1 s to -17.1 dB at 10 s, the rise all from the longer
+ *   tail; #1576).
  * A known difference: successive echoes repeat more closely (envelope
  * autocorrelation 0.87 at 38 ms against the capture's 0.4). Both channels
  * take the tank's mono output (the capture's correlated at 0.996). */
@@ -7752,17 +7752,16 @@ static const le_fx_param_desc LE_FX_SPRING_PARAMS[] = {
 #define LE_SPR_DRY_DROP 0.29f
 #define LE_SPR_SECTIONS 9
 
-#define LE_SPR_WET 0.85
-#define LE_SPR_WET_EXP 0.45
-
-/* At each whole second of Time from 1 to 10 s: the dB a trip loses, and the
- * dB it keeps more below LE_SPR_LOW_HZ. */
+/* At each whole second of Time from 1 to 10 s: the dB a trip loses, the dB
+ * it keeps more below LE_SPR_LOW_HZ, and the wet gain at 100 % mix. */
 static const struct {
-  double loss_db, low_db;
+  double loss_db, low_db, wet;
 } LE_SPR_TIME[10] = {
-    {1.5925, 0.0000}, {1.0904, 0.0000}, {0.8372, 0.0000}, {0.6768, 0.0231},
-    {0.5571, 0.0330}, {0.4629, 0.0409}, {0.3854, 0.0470}, {0.3199, 0.0522},
-    {0.2631, 0.0563}, {0.2129, 0.0595},
+    {1.5925, 0.0000, 0.3496}, {1.0904, 0.0000, 0.3075},
+    {0.8372, 0.0000, 0.2819}, {0.6768, 0.0231, 0.2637},
+    {0.5571, 0.0330, 0.2491}, {0.4629, 0.0409, 0.2371},
+    {0.3854, 0.0470, 0.2271}, {0.3199, 0.0522, 0.2184},
+    {0.2631, 0.0563, 0.2097}, {0.2129, 0.0595, 0.2026},
 };
 
 static const struct {
@@ -7875,11 +7874,10 @@ static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
     /* Time in whole seconds, as the Looper X steps it (a NaN reads as 1 s). */
     const double t = le_fx_desc_value(&LE_FX_SPRING_PARAMS[0], p[0]);
     const int i = !(t >= 1.5) ? 0 : !(t < 9.5) ? 9 : (int)(t + 0.5) - 1;
-    const double time = (double)(i + 1);
     q->gain_tgt =
         (float)pow(10.0, -LE_SPR_TIME[i].loss_db * q->trip_scale / 20.0);
     q->low_tgt = (float)pow(10.0, LE_SPR_TIME[i].low_db * q->trip_scale / 20.0);
-    q->wet_tgt = (float)(LE_SPR_WET * pow(time / 2.0, LE_SPR_WET_EXP));
+    q->wet_tgt = (float)LE_SPR_TIME[i].wet;
   }
   const float k = settle ? 1.0f : q->h.k;
   int moving = le_fx_glide_step(&q->gain, q->gain_tgt, k);

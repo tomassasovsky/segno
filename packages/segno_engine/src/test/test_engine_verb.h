@@ -56,24 +56,35 @@ static float* spring_ir(int sr, double time, float mix, int n) {
 /* The spring against its captures at Mix 28.9 % (#891 s3/6 and s3/7,
  * s16spring; #1547), at 48 kHz, the Looper X's rate: the decay at every
  * whole second of Time, read the same way on the captures (0.3 to 1.0 s),
- * and at bar 0.90 (7.94 s by the taper, the s3/7 capture's 8 s); at
- * Time 2 s the 38 ms echo and the band-limited wet spectrum; at 44.1 and
- * 96 kHz the same decay. At 0 % mix it is the identity. */
+ * and at bar 0.90 (7.94 s by the taper, the s3/7 capture's 8 s); the wet
+ * level there, as the energy of the impulse response's first second against
+ * the dry gain squared (#1576); at Time 2 s the 38 ms echo and the
+ * band-limited wet spectrum; at 44.1 and 96 kHz the same decay. At 0 % mix
+ * it is the identity. */
 static void test_spring_matches_the_capture(void) {
   printf("test_spring_matches_the_capture\n");
   const int sr = 48000; /* the Looper X's rate */
   const int n = 3 * sr;
   const float mix = 0.289f;
-  /* Time and the captures' decay; 7.94 s plays 8 s, as on the device. */
-  const double cap[11][2] = {{1.0, 1.30}, {2.0, 1.82}, {3.0, 2.28},
-                             {4.0, 2.73}, {5.0, 3.20}, {6.0, 3.70},
-                             {7.0, 4.24}, {8.0, 4.85}, {9.0, 5.54},
-                             {10.0, 6.32}, {7.94, 4.85}};
+  const double dry = 1.0 - 0.29 * mix;
+  /* Time, the captures' decay and wet level in dB; 7.94 s plays 8 s, as on
+   * the device. */
+  const double cap[11][3] = {
+      {1.0, 1.30, -18.06},  {2.0, 1.82, -17.96},  {3.0, 2.28, -17.86},
+      {4.0, 2.73, -17.75},  {5.0, 3.20, -17.65},  {6.0, 3.70, -17.54},
+      {7.0, 4.24, -17.42},  {8.0, 4.85, -17.30},  {9.0, 5.54, -17.22},
+      {10.0, 6.32, -17.11}, {7.94, 4.85, -17.30}};
   for (int c = 0; c < 11; ++c) {
     float* h = spring_ir(sr, cap[c][0], mix, n);
     const double t = spring_t60(h, sr, 0.3, 1.0);
-    printf("  Time %.2f s: decay %.2f s (capture %.2f)\n", cap[c][0], t, cap[c][1]);
+    double e = 0.0;
+    for (int i = 0; i < sr; ++i) e += (double)h[i] * h[i];
+    const double wet = 10.0 * log10(e / (dry * dry));
+    printf("  Time %.2f s: decay %.2f s (capture %.2f), wet %.2f dB (capture "
+           "%.2f)\n",
+           cap[c][0], t, cap[c][1], wet, cap[c][2]);
     CHECK(fabs(t - cap[c][1]) < 0.03 * cap[c][1]);
+    CHECK(fabs(wet - cap[c][2]) < 0.3);
     free(h);
   }
 
