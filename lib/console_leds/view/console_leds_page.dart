@@ -4,20 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pedal_repository/pedal_repository.dart';
-import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/app_notices.dart';
+import 'package:segno/appliance/display_brightness_edit.dart';
 import 'package:segno/console_leds/ambient_brightness.dart';
 import 'package:segno/console_leds/cubit/console_leds_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_edit_scope.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/settings/view/settings_fact_panel.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
-import 'package:toastification/toastification.dart';
-
-/// The toast that says a console LED change was not saved.
-const String consoleLedsSaveFailedToast = 'console_leds_save_failed';
 
 /// Settings > Displays > Console LEDs (#1564): how bright the pedal pills and
 /// the ring are, Manual or Automatic from the light sensor, and the sensor's
@@ -99,27 +97,20 @@ class _ConsoleLedsPageState extends State<ConsoleLedsPage> {
   }
 }
 
-/// Runs a console LED change; a failed save says so in a toast, cleared by
-/// the next change that does save. The change applies either way.
+/// Runs a console LED change; a failed save says so in the top bar, cleared
+/// by the next change that does save. The change applies either way.
 void _edit(
   BuildContext context,
   Future<void> Function(ConsoleLedsCubit cubit) change,
 ) {
   final cubit = context.read<ConsoleLedsCubit>();
-  final l10n = context.l10n;
+  final notices = context.read<NoticesCubit>();
   unawaited(() async {
     try {
       await change(cubit);
-      if (!context.mounted) return;
-      dismissAppToast(consoleLedsSaveFailedToast);
+      notices.clear(AppNoticeId.consoleLedsSave);
     } on Object {
-      if (!context.mounted) return;
-      showAppSnackToast(
-        id: consoleLedsSaveFailedToast,
-        type: ToastificationType.error,
-        icon: const Icon(Icons.error_outline),
-        title: Text(l10n.displayBrightnessSaveFailed),
-      );
+      notices.show(displaySaveFailedNotice(AppNoticeId.consoleLedsSave));
     }
   }());
 }

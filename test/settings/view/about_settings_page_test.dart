@@ -9,7 +9,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
-import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -18,7 +17,6 @@ import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:update_repository/update_repository.dart';
 
-import '../../helpers/helpers.dart';
 import 'destination_harness.dart';
 
 /// A console whose facts are exactly the ones given.
@@ -39,8 +37,6 @@ void main() {
 
   setUp(() {
     resetSegnoNavigatorForTest();
-    resetAppToastsForTest();
-    resetToastificationForTest();
     harness = DestinationHarness();
   });
 

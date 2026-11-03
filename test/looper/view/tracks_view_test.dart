@@ -17,7 +17,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
-import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
@@ -37,7 +37,6 @@ import 'package:segno/looper/view/stage_db_scale.dart';
 import 'package:segno/looper/view/stage_top_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
 import 'package:segno/looper/view/track_meters.dart';
-import 'package:segno/looper/view/tracks_chrome.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
@@ -47,7 +46,6 @@ import 'package:segno/tuner/application/tuner_settings.dart';
 import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:segno/visualizer/widgets/waveform_view.dart';
 import 'package:settings_repository/settings_repository.dart';
-import 'package:toastification/toastification.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -93,6 +91,8 @@ void main() {
   });
 
   late LooperBloc bloc;
+  late NoticesCubit notices;
+  late NoticeLog said;
   late TracksCubit tracks;
   late ControlCubit control;
   late LooperRepository repository;
@@ -107,13 +107,18 @@ void main() {
   late OutputLevelCubit outputLevel;
   late StreamController<MeterLevels> meterLevels;
   late AudioSetupCubit audioSetup;
-  late NoticesCubit notices;
   late PedalRepository pedalRepo;
   // The top bar's CPU readout; hidden unless a test gives it a figure.
   late CpuLoadRepository cpuLoad;
   late FakePedalLink pedalLink;
 
   setUp(() {
+    notices = NoticesCubit();
+    said = NoticeLog(notices);
+    addTearDown(() async {
+      await said.close();
+      await notices.close();
+    });
     resetSegnoNavigatorForTest();
     cpuLoad = const CpuLoadRepository.unsupported();
     // The toast registry is module-level and survives between tests; a stale
@@ -121,13 +126,9 @@ void main() {
     // `toastification` singleton leaks too, across files, under
     // `--optimization` (#875) — reset both so this test's toasts get a live
     // overlay regardless of what ran before.
-    resetAppToastsForTest();
-    resetToastificationForTest();
-    addTearDown(() => dismissAppToast(AppToastId.undoClearAll));
+    addTearDown(() => notices.clear(AppNoticeId.undoClearAll));
     settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = _MockLooperBloc();
-    notices = NoticesCubit();
-    addTearDown(notices.close);
     audioSetup = _MockAudioSetupCubit();
     whenListen(
       audioSetup,
@@ -281,7 +282,8 @@ void main() {
     Locale? locale,
     List<NavigatorObserver> navigatorObservers = const [],
   }) => tester.pumpWidget(
-    ToastificationWrapper(
+    BlocProvider<NoticesCubit>.value(
+      value: notices,
       child: MaterialApp(
         // The root key, so Settings and its destinations push over the stage.
         navigatorKey: segnoNavigatorKey,
@@ -340,7 +342,6 @@ void main() {
                   settings: TunerSettings(settings: settings),
                 ),
               ),
-              BlocProvider<NoticesCubit>.value(value: notices),
             ],
             child: onAncestorKey == null
                 ? const TracksView()
@@ -388,7 +389,7 @@ void main() {
   // failure toast).
   Future<void> settleToasts(WidgetTester tester) async {
     await tester.pumpAndSettle(); // mount + finish the entrance animation
-    dismissAppToast(AppToastId.undoClearAll); // cancels the auto-close timer
+    notices.clear(AppNoticeId.undoClearAll); // cancels the auto-close timer
     // Past the removal animation and the overlay teardown it schedules.
     await tester.pump(const Duration(seconds: 10));
   }
@@ -671,14 +672,12 @@ void main() {
     await control.toggleFootMixerMute();
     await tester.pumpAndSettle();
     expect(
-      find
-          .text('The Mixer change could not be completed. Try again.')
-          .hitTestable(),
-      findsOneWidget,
+      said.titles,
+      contains('The Mixer change could not be completed. Try again.'),
     );
     expect(control.state.footMixerFailure, 1);
     expect(tester.takeException(), isNull);
-    dismissAppToast(AppToastId.footMixerFailure);
+    notices.clear(AppNoticeId.footMixerFailure);
     await tester.pump(const Duration(seconds: 10));
   });
 
@@ -806,11 +805,11 @@ void main() {
       await control.toggleFootReverseTrack(0);
       await tester.pumpAndSettle();
       expect(
-        find.text('The track could not be turned around. Try again.'),
-        findsOneWidget,
+        said.titles,
+        contains('The track could not be turned around. Try again.'),
       );
       expect(control.state.footReverseFailure, 1);
-      dismissAppToast(AppToastId.footReverseFailure);
+      notices.clear(AppNoticeId.footReverseFailure);
       await tester.pump(const Duration(seconds: 10));
     });
   });
@@ -835,14 +834,12 @@ void main() {
     control.peelFootPeelTrack(0);
     await tester.pumpAndSettle();
     expect(
-      find
-          .text('Only the original take remains: there is no overdub to peel.')
-          .hitTestable(),
-      findsOneWidget,
+      said.titles,
+      contains('Only the original take remains: there is no overdub to peel.'),
     );
     verifyNever(() => repository.peel(channel: any(named: 'channel')));
     expect(tester.takeException(), isNull);
-    dismissAppToast(AppToastId.footPeelRefused);
+    notices.clear(AppNoticeId.footPeelRefused);
     await tester.pump(const Duration(seconds: 10));
   });
 
@@ -884,13 +881,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(control.state.mode, InteractionMode.custom);
     expect(
-      find
-          .text('Only the original take remains: there is no overdub to peel.')
-          .hitTestable(),
-      findsOneWidget,
+      said.titles,
+      contains('Only the original take remains: there is no overdub to peel.'),
     );
     verifyNever(() => repository.peel(channel: any(named: 'channel')));
-    dismissAppToast(AppToastId.footPeelRefused);
+    notices.clear(AppNoticeId.footPeelRefused);
     await tester.pump(const Duration(seconds: 10));
   });
 
@@ -898,12 +893,12 @@ void main() {
     (
       TrackOperation.fade,
       'The track is empty: there is nothing to fade.',
-      AppToastId.footFadeFailure,
+      AppNoticeId.footFadeFailure,
     ),
     (
       TrackOperation.reverse,
       'The track is empty: there is nothing to turn around.',
-      AppToastId.footReverseFailure,
+      AppNoticeId.footReverseFailure,
     ),
   ]) {
     testWidgets('an assigned ${operation.name} aimed at an empty track says '
@@ -938,8 +933,8 @@ void main() {
       await tester.runAsync(() => Future<void>.delayed(Duration.zero));
       await tester.pumpAndSettle();
       expect(control.state.mode, InteractionMode.custom);
-      expect(find.text(notice).hitTestable(), findsOneWidget);
-      dismissAppToast(toast);
+      expect(said.titles, contains(notice));
+      notices.clear(toast);
       await tester.pump(const Duration(seconds: 10));
     });
   }
@@ -971,16 +966,14 @@ void main() {
     await tester.tap(find.byKey(const Key('foot_custom_pedal_clear')));
     await tester.pumpAndSettle();
     expect(
-      find
-          .text(
-            "This control's action isn't available in this version. "
-            'Reassign it.',
-          )
-          .hitTestable(),
-      findsOneWidget,
+      said.titles,
+      contains(
+        "This control's action isn't available in this version. "
+        'Reassign it.',
+      ),
     );
     expect(control.state.assignedActionFailure, 1);
-    dismissAppToast(AppToastId.assignedActionRefused);
+    notices.clear(AppNoticeId.assignedActionRefused);
     await tester.pump(const Duration(seconds: 10));
   });
 
@@ -1022,18 +1015,16 @@ void main() {
       await tester.pumpAndSettle();
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
       expect(
-        find
-            .text(
-              lowDisk
-                  ? l10n.perfLowDiskBlocked
-                  : l10n.assignedActionRefused(l10n.actionRecordPerformance),
-            )
-            .hitTestable(),
-        findsOneWidget,
+        said.titles,
+        contains(
+          lowDisk
+              ? l10n.perfLowDiskBlocked
+              : l10n.assignedActionRefused(l10n.actionRecordPerformance),
+        ),
       );
       expect(control.state.assignedActionFailure, 1);
       expect(performanceEngine.perfArmCalls, lowDisk ? 0 : 1);
-      dismissAppToast(AppToastId.assignedActionRefused);
+      notices.clear(AppNoticeId.assignedActionRefused);
       await tester.pump(const Duration(seconds: 10));
     });
   }
@@ -1078,17 +1069,15 @@ void main() {
     await tester.pumpAndSettle();
     final l10n = await AppLocalizations.delegate.load(const Locale('en'));
     expect(
-      find
-          .text(
-            l10n.assignedActionRefused(
-              controlActionLabel(l10n, const [], undo),
-            ),
-          )
-          .hitTestable(),
-      findsOneWidget,
+      said.titles,
+      contains(
+        l10n.assignedActionRefused(
+          controlActionLabel(l10n, const [], undo),
+        ),
+      ),
     );
     expect(control.state.assignedActionFailure, 1);
-    dismissAppToast(AppToastId.assignedActionRefused);
+    notices.clear(AppNoticeId.assignedActionRefused);
     await tester.pump(const Duration(seconds: 10));
   });
 
@@ -1115,14 +1104,11 @@ void main() {
     control.setMode(InteractionMode.tuner);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('foot_tuner_view')), findsOneWidget);
-    expect(
-      find.text('The tuner could not start. Try again.').hitTestable(),
-      findsOneWidget,
-    );
+    expect(said.titles, contains('The tuner could not start. Try again.'));
     control.setMode(InteractionMode.record);
     await tester.pumpAndSettle();
     verify(() => repository.setTunerInput(input: -1)).called(1);
-    dismissAppToast(AppToastId.footTunerRefused);
+    notices.clear(AppNoticeId.footTunerRefused);
     await tester.pump(const Duration(seconds: 10));
   });
 
@@ -1209,14 +1195,14 @@ void main() {
       control.activateFootLengthPedal(PedalButton.clear); // Last half
       await tester.pumpAndSettle();
       expect(
-        find.text(
+        said.titles,
+        contains(
           'That length does not fit the other loops, or would leave half a '
           'beat.',
         ),
-        findsOneWidget,
       );
       expect(control.state.footLengthFailure, 1);
-      dismissAppToast(AppToastId.footLengthRefused);
+      notices.clear(AppNoticeId.footLengthRefused);
       await tester.pump(const Duration(seconds: 10));
     });
   });
@@ -1330,13 +1316,11 @@ void main() {
     control.activateFootFxPedal(PedalButton.undo);
     await tester.pumpAndSettle();
     expect(
-      find.text(
-        "This pedal's effect is no longer available. Reassign it.",
-      ),
-      findsOneWidget,
+      said.titles,
+      contains("This pedal's effect is no longer available. Reassign it."),
     );
     expect(control.state.footFxFailure, 1);
-    dismissAppToast(AppToastId.footFxFailure);
+    notices.clear(AppNoticeId.footFxFailure);
     await tester.pump(const Duration(seconds: 10));
   });
 
@@ -1392,7 +1376,7 @@ void main() {
     await tester.pump();
     verify(() => bloc.add(const LooperTrackChainToggled(1))).called(1);
     expect(control.state.footFxFailure, 1);
-    dismissAppToast(AppToastId.footFxFailure);
+    notices.clear(AppNoticeId.footFxFailure);
     await tester.pump(const Duration(seconds: 10));
   });
 
@@ -3127,66 +3111,6 @@ void main() {
     );
   });
 
-  group('audio-not-running affordance', () {
-    testWidgets('shows when the engine is not connected', (tester) async {
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-
-      expect(find.byKey(const Key('tracks_audioNotRunning')), findsOneWidget);
-    });
-
-    testWidgets('is hidden once the engine is connected', (tester) async {
-      seed(
-        const LooperState(
-          tracks: [Track()],
-          status: EngineStatus(isConnected: true),
-        ),
-      );
-      await pump(tester);
-
-      expect(find.byKey(const Key('tracks_audioNotRunning')), findsNothing);
-      expect(find.byKey(const Key('tracks_audioStarting')), findsNothing);
-    });
-
-    testWidgets('says audio is starting while the device warms up (#1533)', (
-      tester,
-    ) async {
-      seed(
-        const LooperState(
-          tracks: [Track()],
-          status: EngineStatus(
-            isConnected: true,
-            devicePresent: true,
-            warmingUp: true,
-          ),
-        ),
-      );
-      await pump(tester);
-
-      expect(find.byKey(const Key('tracks_audioStarting')), findsOneWidget);
-      expect(find.text('Audio is starting…'), findsOneWidget);
-      expect(find.byKey(const Key('tracks_audioNotRunning')), findsNothing);
-    });
-
-    testWidgets('says so too while the record offset is owed (#1541)', (
-      tester,
-    ) async {
-      seed(
-        const LooperState(
-          tracks: [Track()],
-          status: EngineStatus(
-            isConnected: true,
-            devicePresent: true,
-            recordOffsetOwed: true,
-          ),
-        ),
-      );
-      await pump(tester);
-
-      expect(find.byKey(const Key('tracks_audioStarting')), findsOneWidget);
-    });
-  });
-
   group('fixed slot geometry (#1308)', () {
     const sizes = [Size(1024, 600), Size(1920, 1080)];
 
@@ -3671,9 +3595,10 @@ void main() {
       await tester.pump();
 
       expect(
-        find.text('This take could not be recovered. Its files are kept.'),
-        findsOneWidget,
+        said.titles,
+        ['This take could not be recovered. Its files are kept.'],
       );
+      await tester.pump(const Duration(seconds: 6));
     });
 
     testWidgets('A toggles arm', (tester) async {
@@ -3723,8 +3648,8 @@ void main() {
     });
 
     testWidgets(
-      'a short-capture auto-discard shows a SnackBar, not the completion '
-      'sheet',
+      'a short-capture auto-discard is said in the top bar, not the '
+      'completion sheet',
       (tester) async {
         whenListen(
           performanceRecorder,
@@ -3738,14 +3663,14 @@ void main() {
         await tester.pump();
 
         final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-        expect(find.text(l10n.perfDiscarded), findsOneWidget);
+        expect(said.titles, [l10n.perfDiscarded]);
         expect(find.byKey(const Key('perfCompletion_sheet')), findsNothing);
+        await tester.pump(const Duration(seconds: 4));
       },
     );
 
-    testWidgets('every refused arm shows its own toast (#1198, #640)', (
-      tester,
-    ) async {
+    testWidgets('every refused arm says so in its own message (#1198, '
+        '#640)', (tester) async {
       final controller = StreamController<PerformanceRecorderState>();
       addTearDown(controller.close);
       whenListen(
@@ -3755,47 +3680,43 @@ void main() {
       );
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
-      const refused = Key('tracks_perfArmRefused_snackbar');
-      const lowDisk = Key('tracks_perfLowDiskBlocked_snackbar');
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      final busy = l10n.perfArmRefused;
 
-      controller.add(
-        const PerformanceRecorderIdle(
-          refusedBy: GuardKind.sessionApply,
-          refusal: 1,
+      for (final (refusal, title) in [
+        (
+          const PerformanceRecorderIdle(
+            refusedBy: GuardKind.sessionApply,
+            refusal: 1,
+          ),
+          busy,
         ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byKey(refused), findsOneWidget);
-      // Let the first toast time out, so the next one is a new toast.
-      await tester.pumpAndSettle(const Duration(seconds: 10));
-      expect(find.byKey(refused), findsNothing);
-
-      controller.add(
-        const PerformanceRecorderIdle(
-          refusedBy: GuardKind.sessionApply,
-          refusal: 2,
+        // Another refusal for the same cause is a new message.
+        (
+          const PerformanceRecorderIdle(
+            refusedBy: GuardKind.sessionApply,
+            refusal: 2,
+          ),
+          busy,
         ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byKey(refused), findsOneWidget);
-      await tester.pumpAndSettle(const Duration(seconds: 10));
-
-      controller.add(
-        const PerformanceRecorderIdle(lowDiskBlocked: true, refusal: 3),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byKey(lowDisk), findsOneWidget);
-      await tester.pumpAndSettle(const Duration(seconds: 10));
-
-      // The USB drive in Save to went between the choice and the press.
-      controller.add(
-        const PerformanceRecorderIdle(driveUnavailable: true, refusal: 4),
-      );
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const Key('tracks_perfArmDriveUnavailable_snackbar')),
-        findsOneWidget,
-      );
+        (
+          const PerformanceRecorderIdle(lowDiskBlocked: true, refusal: 3),
+          l10n.perfLowDiskBlocked,
+        ),
+        // The USB drive in Save to went between the choice and the press.
+        (
+          const PerformanceRecorderIdle(driveUnavailable: true, refusal: 4),
+          l10n.perfArmDriveUnavailable,
+        ),
+      ]) {
+        controller.add(refusal);
+        await tester.pump();
+        await tester.pump();
+        expect(said.titles.last, title);
+        expect(notices.state.message?.notice.tone, NoticeTone.warning);
+      }
+      expect(said.shown, hasLength(4));
+      await tester.pump(const Duration(seconds: 6));
     });
 
     testWidgets(
@@ -3951,22 +3872,22 @@ void main() {
         await pump(tester);
 
         // Every surface's clear-all lands in ControlCubit.clearAll, which
-        // fires the cue the view listens for. pumpAndSettle so the toast's
-        // entrance animation completes and it is present to find.
+        // fires the cue the view listens for; the message fades in.
         await control.clearAll();
-        await tester.pumpAndSettle();
-        expect(find.byKey(const Key(AppToastId.undoClearAll)), findsOneWidget);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(
+          find.byKey(const Key('notice_bar_${AppNoticeId.undoClearAll}')),
+          findsOneWidget,
+        );
 
-        await tester.tap(find.byKey(const Key(AppToastId.undoClearAllAction)));
-        // The action restores the rig and dismisses its own toast. Pump past
-        // the exit animation AND the bare Timer `toastification` schedules to
-        // retire the overlay entry, so nothing outlives the test (the leak the
-        // first attempt hit) and the global overlay is clean for the next one.
-        await tester.pumpAndSettle();
-        await tester.pump(const Duration(seconds: 10));
+        await tester.tap(find.byKey(const Key(AppNoticeId.undoClearAllAction)));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
 
+        // Undo restores the rig and takes its own message down.
         verify(() => repository.undoClearAll()).called(1);
-        expect(find.byKey(const Key(AppToastId.undoClearAll)), findsNothing);
+        expect(notices.state.message, isNull);
       },
     );
 
@@ -3979,7 +3900,7 @@ void main() {
       await control.clearAll();
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key(AppToastId.undoClearAll)), findsNothing);
+      expect(said.shown, isEmpty);
     });
   });
 
@@ -4331,11 +4252,14 @@ void main() {
 
       final before = tester.widget<GestureDetector>(_chromeProbe);
 
-      // Losing the engine is exactly the kind of change the chrome exists to
-      // show: it must get through the selector.
-      const lost = LooperState(tracks: [Track()]);
-      when(() => bloc.state).thenReturn(lost);
-      states.add(lost);
+      // A track joining the rig is exactly the kind of change the chrome
+      // exists to show: it must get through the selector.
+      const grown = LooperState(
+        tracks: [Track(), Track(channel: 1)],
+        status: EngineStatus(isConnected: true),
+      );
+      when(() => bloc.state).thenReturn(grown);
+      states.add(grown);
       await tester.pump();
 
       expect(
@@ -4343,7 +4267,6 @@ void main() {
         isFalse,
         reason: 'the selector swallowed a structural change',
       );
-      expect(find.byType(AudioNotRunningBanner), findsOneWidget);
     });
   });
 }

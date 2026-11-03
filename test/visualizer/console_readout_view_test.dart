@@ -215,56 +215,6 @@ void main() {
       expect(find.byType(GestureDetector), findsNothing);
     });
 
-    group('connectivity echo (#453)', () {
-      testWidgets('absent while nothing is lost', (tester) async {
-        await pump(tester);
-        expect(
-          find.byKey(const Key('console_readout_deviceLost')),
-          findsNothing,
-        );
-      });
-
-      testWidgets('echoes the stage line, word for word', (tester) async {
-        const line =
-            'Scarlett 4i4 USB disconnected — nothing is heard. Audio restarts '
-            'when it is back.';
-        await pump(
-          tester,
-          readout: const PerformanceReadout(selected: selected, lossLine: line),
-        );
-        expect(
-          find.byKey(const Key('console_readout_deviceLost')),
-          findsOneWidget,
-        );
-        expect(find.text(line), findsOneWidget);
-      });
-
-      testWidgets('the longest line fits the 7" at full size, unclipped', (
-        tester,
-      ) async {
-        // The stage's own copy with a long interface name, at the 7"'s
-        // 1024 x 600: the echo must not ellipsize.
-        const line =
-            'Scarlett 4i4 USB disconnected — nothing is heard. Audio restarts '
-            'when it is back.';
-        await pump(
-          tester,
-          size: const Size(1024, 600),
-          readout: const PerformanceReadout(selected: selected, lossLine: line),
-        );
-        final text = tester.renderObject<RenderParagraph>(
-          find.descendant(
-            of: find.byKey(const Key('console_readout_deviceLost')),
-            matching: find.byType(RichText),
-          ),
-        );
-        // At the readout's full size, wrapped onto at most two lines and
-        // never ellipsized.
-        expect(text.didExceedMaxLines, isFalse);
-        expect(tester.takeException(), isNull);
-      });
-    });
-
     group('notice band (#1562)', () {
       const lost = ReadoutNotice(
         title: 'Scarlett 4i4 USB disconnected. Nothing is heard.',
@@ -365,13 +315,15 @@ void main() {
           find.textContaining('GUITAR', findRichText: true),
           findsOneWidget,
         );
+        // The title whole, and the body too: it fits the 7".
         final text = tester.renderObject<RenderParagraph>(
           find.descendant(
-            of: find.byKey(const Key('console_readout_notice_text')),
+            of: find.byKey(const Key('notice_sentence_title')),
             matching: find.byType(RichText),
           ),
         );
         expect(text.didExceedMaxLines, isFalse);
+        expect(find.text('Press Record again'), findsOneWidget);
         expect(tester.takeException(), isNull);
       });
     });
@@ -396,7 +348,6 @@ void main() {
           tsDen: 16,
           mode: 'mute',
           activeBank: 1,
-          lossLine: 'No audio device — nothing is heard',
         ),
       );
       expect(tester.takeException(), isNull);
@@ -414,7 +365,6 @@ extension on PerformanceReadout {
         tsDen: tsDen,
         mode: mode,
         activeBank: bank,
-        lossLine: lossLine,
         goodbye: goodbye,
       );
 }

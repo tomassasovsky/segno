@@ -18,7 +18,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app.dart';
-import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/segno_navigator.dart';
@@ -29,6 +29,7 @@ import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/audio_setup/view/device_page.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_mixer.dart';
+import 'package:segno/l10n/l10n.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
@@ -37,12 +38,12 @@ import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/audio_tempo.dart';
 import 'package:segno/looper/model/owned_setting.dart';
-import 'package:segno/looper/view/tracks_chrome.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/cubit/recording_destination_cubit.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/visualizer/visualizer.dart';
 import 'package:segno_engine/segno_engine.dart'
     as le
@@ -714,11 +715,9 @@ void main() {
       // Both are module-level and survive between tests: a leftover toast
       // makes the next identical toast a silent no-op, and a settings guard
       // left set makes openSegnoSettings return early forever after.
-      resetAppToastsForTest();
       // The `toastification` singleton also leaks across files under
       // `--optimization`, leaving a dead overlay the next toast renders into
       // nothing (#875). Reset it so every toast here gets a live overlay.
-      resetToastificationForTest();
       resetSegnoNavigatorForTest();
       engine = FakeAudioEngine();
       repository = LooperRepository(
@@ -772,6 +771,7 @@ void main() {
           powerKeySource: powerKeySource,
         ),
       );
+      watchNotices(tester);
       await tester.pumpAndSettle();
     }
 
@@ -794,6 +794,7 @@ void main() {
           updates: updates,
         ),
       );
+      watchNotices(tester);
       await tester.pumpAndSettle();
     }
 
@@ -884,6 +885,7 @@ void main() {
             backingRepository: testBackingRepository(),
           ),
         );
+        watchNotices(tester);
         await tester.pumpAndSettle();
         final context = tester.element(find.byType(TracksView));
         final looper = context.read<LooperBloc>();
@@ -1014,7 +1016,10 @@ void main() {
             NoopWaveformWindowService(),
             powerOff: () async => halted = true,
           );
-          expect(find.text('Fade duration needs recovery'), findsOneWidget);
+          expect(
+            noticeTitles(tester),
+            contains('Fade duration needs recovery'),
+          );
           if (recovery == 'Session') {
             final context = tester.element(find.byType(TracksView));
             bundles.readRelease.complete();
@@ -1041,19 +1046,16 @@ void main() {
             expect(halted, isTrue);
           } else {
             store.values.remove('looper.fade_durations');
-            await tester.tap(
-              find.descendant(
-                of: find.byKey(const Key(AppToastId.fadeSettings)),
-                matching: find.text('Retry'),
-              ),
-            );
+            await tapRetry(tester, AppNoticeId.fadeSettings);
             await tester.pumpAndSettle();
           }
-          expect(find.text('Fade duration needs recovery'), findsNothing);
-          expect(debugAppToastActive(AppToastId.fadeSettings), isFalse);
+          expect(
+            noticeTitles(tester),
+            isNot(contains('Fade duration needs recovery')),
+          );
+          expect(noticeUp(tester, AppNoticeId.fadeSettings), isFalse);
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pump();
-          expect(debugAppToastActive(AppToastId.fadeSettings), isFalse);
         },
       );
     }
@@ -1337,26 +1339,21 @@ void main() {
           await bundles.readEntered.future;
           await tester.pumpAndSettle();
           expect(monitor.state.restoreFailed, isTrue);
-          expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
-          expect(find.text('Input monitoring needs recovery'), findsNothing);
+          expect(noticeUp(tester, AppNoticeId.monitorRestore), isFalse);
+          expect(
+            noticeTitles(tester),
+            isNot(contains('Input monitoring needs recovery')),
+          );
           bundles.readRelease.complete();
           await load;
           await tester.pumpAndSettle();
-          expect(
-            find.byKey(const Key('tracks_session_snackbar')),
-            findsOneWidget,
-          );
+          expect(noticeSaid(AppNoticeId.session), isTrue);
           if (cancelLoad) {
             expect(session.state.status, SessionStatus.failure);
             expect(monitor.state.restoreFailed, isTrue);
-            final retry = find
-                .descendant(
-                  of: find.byKey(const Key(AppToastId.monitorRestore)),
-                  matching: find.text('Retry'),
-                )
-                .hitTestable();
-            expect(retry, findsOneWidget);
-            await tester.tap(retry);
+            const retry = AppNoticeId.monitorRestore;
+            expect(noticeUp(tester, retry), isTrue);
+            await tapRetry(tester, retry);
             await tester.pumpAndSettle();
             expect(monitor.state.forInput(0).outputMask, 8);
           } else {
@@ -1365,7 +1362,7 @@ void main() {
             expect(monitor.state.forInput(0).volume, .65);
           }
           expect(monitor.state.restoreFailed, isFalse);
-          expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+          expect(noticeUp(tester, AppNoticeId.monitorRestore), isFalse);
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pump(const Duration(milliseconds: 100));
         },
@@ -1385,7 +1382,7 @@ void main() {
       final context = tester.element(find.byType(TracksView));
       final monitor = context.read<MonitorCubit>();
       final session = context.read<SessionCubit>();
-      expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
+      expect(noticeUp(tester, AppNoticeId.monitorRestore), isTrue);
       store
         ..refuseRead = false
         ..refuseBootWrite = true;
@@ -1393,7 +1390,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('library_page')), findsOneWidget);
       // Catalog refresh is unrelated work; it must not suppress Monitor Retry.
-      expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
+      expect(noticeUp(tester, AppNoticeId.monitorRestore), isTrue);
       await tester.tap(find.byKey(const Key('library_row_Replacement')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('library_open_session')));
@@ -1401,35 +1398,30 @@ void main() {
       expect(session.state.bootRecoveryRequired, isTrue);
       expect(session.state.error, SessionError.bootPersistence);
       expect(engine.snapshot().isRunning, isFalse);
-      expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+      expect(noticeUp(tester, AppNoticeId.monitorRestore), isFalse);
       expect(monitor.state.inputs, isEmpty);
-      expect(debugAppToastActive(AppToastId.sessionBootRecovery), isTrue);
-      expect(find.byKey(const Key('tracks_session_snackbar')), findsNothing);
-      final retry = find
-          .descendant(
-            of: find.byKey(const Key(AppToastId.sessionBootRecovery)),
-            matching: find.text('Retry'),
-          )
-          .hitTestable();
-      expect(retry, findsOneWidget);
-      expect(find.text('Retry').hitTestable(), findsOneWidget);
+      expect(noticeUp(tester, AppNoticeId.sessionBootRecovery), isTrue);
+      expect(noticeSaid(AppNoticeId.session), isFalse);
+      const retry = AppNoticeId.sessionBootRecovery;
+      expect(noticeUp(tester, retry), isTrue);
+      expect(retryUp(tester), isTrue);
       final power = context.read<PowerCubit>()..press(_named);
       await tester.pumpAndSettle();
-      expect(debugAppToastActive(AppToastId.sessionBootRecovery), isFalse);
-      expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+      expect(noticeUp(tester, AppNoticeId.sessionBootRecovery), isFalse);
+      expect(noticeUp(tester, AppNoticeId.monitorRestore), isFalse);
       power.dismiss();
       await tester.pumpAndSettle();
-      expect(retry, findsOneWidget);
-      expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
-      await tester.tap(retry);
+      expect(noticeUp(tester, retry), isTrue);
+      expect(noticeUp(tester, AppNoticeId.monitorRestore), isFalse);
+      await tapRetry(tester, retry);
       await tester.pumpAndSettle();
       expect(session.state.bootRecoveryRequired, isTrue);
       expect(monitor.state.inputs, isEmpty);
       expect(find.byKey(const Key('library_page')), findsOneWidget);
-      expect(find.byKey(const Key('tracks_session_snackbar')), findsNothing);
-      expect(find.text('Retry').hitTestable(), findsOneWidget);
+      expect(noticeSaid(AppNoticeId.session), isFalse);
+      expect(retryUp(tester), isTrue);
       store.refuseBootWrite = false;
-      await tester.tap(find.text('Retry').hitTestable());
+      await tapRetry(tester);
       await tester.pumpAndSettle();
       expect(session.state.bootRecoveryRequired, isFalse);
       expect(session.state.outcome, SessionOutcome.loaded);
@@ -1437,9 +1429,9 @@ void main() {
       expect(monitor.state.forInput(0).outputMask, 16);
       expect(monitor.state.forInput(0).volume, .65);
       expect(await settings.loadMonitorOutput(0), 16);
-      expect(debugAppToastActive(AppToastId.sessionBootRecovery), isFalse);
-      expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
-      expect(find.text('Retry').hitTestable(), findsNothing);
+      expect(noticeUp(tester, AppNoticeId.sessionBootRecovery), isFalse);
+      expect(noticeUp(tester, AppNoticeId.monitorRestore), isFalse);
+      expect(retryUp(tester), isFalse);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(milliseconds: 100));
     });
@@ -1458,18 +1450,21 @@ void main() {
           .element(find.byType(TracksView))
           .read<MonitorCubit>();
       expect(monitor.state.restoreFailed, isTrue);
-      expect(find.text('Input monitoring needs recovery'), findsOneWidget);
-      await tester.tap(find.text('Retry'));
+      expect(noticeTitles(tester), contains('Input monitoring needs recovery'));
+      await tapRetry(tester);
       await tester.pumpAndSettle();
       expect(monitor.state.restoreFailed, isTrue);
-      expect(find.text('Retry'), findsOneWidget);
+      expect(retryUp(tester), isTrue);
       store.refuseRead = false;
-      await tester.tap(find.text('Retry'));
+      await tapRetry(tester);
       await tester.pumpAndSettle();
       expect(monitor.state.restoreFailed, isFalse);
       expect(monitor.state.forInput(0).mode, MonitorMode.on);
       expect(monitor.state.forInput(0).outputMask, 8);
-      expect(find.text('Input monitoring needs recovery'), findsNothing);
+      expect(
+        noticeTitles(tester),
+        isNot(contains('Input monitoring needs recovery')),
+      );
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(milliseconds: 100));
     });
@@ -1501,8 +1496,8 @@ void main() {
           if (projectBeforeFrame) monitor.projectFromRepository();
           await tester.pumpAndSettle();
           expect(
-            find.text('Input monitoring needs recovery'),
-            projectBeforeFrame ? findsNothing : findsOneWidget,
+            noticeTitles(tester).contains('Input monitoring needs recovery'),
+            !projectBeforeFrame,
           );
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pump(const Duration(milliseconds: 100));
@@ -1521,21 +1516,21 @@ void main() {
         final monitor = tester
             .element(find.byType(TracksView))
             .read<MonitorCubit>();
-        expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
+        expect(noticeUp(tester, AppNoticeId.monitorRestore), isTrue);
         final power = tester.element(find.byType(TracksView)).read<PowerCubit>()
           ..press(_named);
         await tester.pumpAndSettle();
-        expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+        expect(noticeUp(tester, AppNoticeId.monitorRestore), isFalse);
         power.dismiss();
         await tester.pumpAndSettle();
-        expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
+        expect(noticeUp(tester, AppNoticeId.monitorRestore), isTrue);
         power.press(_named);
         await tester.pumpAndSettle();
         monitor.projectFromRepository();
         await tester.pumpAndSettle();
         power.dismiss();
         await tester.pumpAndSettle();
-        expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+        expect(noticeUp(tester, AppNoticeId.monitorRestore), isFalse);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump(const Duration(milliseconds: 100));
       },
@@ -1558,14 +1553,23 @@ void main() {
           final context = tester.element(find.byType(TracksView));
           final length = context.read<RecordOptionsCubit>();
           expect(length.state.options.recordLengthReady, isFalse);
-          expect(find.text('Record length needs recovery'), findsOneWidget);
+          expect(
+            noticeTitles(tester),
+            contains('Record length needs recovery'),
+          );
           await tester.pump(const Duration(seconds: 6));
-          expect(find.text('Record length needs recovery'), findsOneWidget);
-          expect(find.text('Retry'), findsOneWidget);
-          await tester.tap(find.text('Retry'));
+          expect(
+            noticeTitles(tester),
+            contains('Record length needs recovery'),
+          );
+          expect(retryUp(tester), isTrue);
+          await tapRetry(tester);
           await tester.pumpAndSettle();
           expect(length.state.options.recordLengthReady, isTrue);
-          expect(find.text('Record length needs recovery'), findsNothing);
+          expect(
+            noticeTitles(tester),
+            isNot(contains('Record length needs recovery')),
+          );
           if (malformed) {
             // Retry removes only the unreadable key, then restores the rest.
             expect(
@@ -1580,7 +1584,10 @@ void main() {
             expect(repository.trackLengthPresetOverrides, isEmpty);
           } else {
             expect(store.values, before);
-            expect(find.text('Record length needs recovery'), findsNothing);
+            expect(
+              noticeTitles(tester),
+              isNot(contains('Record length needs recovery')),
+            );
             expect(length.state.options.defaultLengthBars, 4);
             expect(length.state.options.trackLengthPresetOverrides, {7: 0});
           }
@@ -1607,13 +1614,22 @@ void main() {
           final context = tester.element(find.byType(TracksView));
           final timing = context.read<RecordTimingCubit>();
           expect(timing.state.recordTimingReady, isFalse);
-          expect(find.text('Record timing needs recovery'), findsOneWidget);
+          expect(
+            noticeTitles(tester),
+            contains('Record timing needs recovery'),
+          );
           await tester.pump(const Duration(seconds: 6));
-          expect(find.text('Record timing needs recovery'), findsOneWidget);
-          await tester.tap(find.text('Retry'));
+          expect(
+            noticeTitles(tester),
+            contains('Record timing needs recovery'),
+          );
+          await tapRetry(tester);
           await tester.pumpAndSettle();
           expect(timing.state.recordTimingReady, isTrue);
-          expect(find.text('Record timing needs recovery'), findsNothing);
+          expect(
+            noticeTitles(tester),
+            isNot(contains('Record timing needs recovery')),
+          );
           if (malformed) {
             // Retry removes only the unreadable key; the rest survive.
             expect(
@@ -1628,7 +1644,10 @@ void main() {
             expect(repository.trackRecordTimingOverrides, isEmpty);
           } else {
             expect(store.values, before);
-            expect(find.text('Record timing needs recovery'), findsNothing);
+            expect(
+              noticeTitles(tester),
+              isNot(contains('Record timing needs recovery')),
+            );
             expect(timing.state.defaultTiming, RecordTiming.quarter);
             expect(timing.state.trackOverrides, {7: RecordTiming.immediately});
           }
@@ -1654,10 +1673,16 @@ void main() {
               .element(find.byType(TracksView))
               .read<TempoCubit>();
           expect(tempo.state.recordStartSnapshot, isNull);
-          expect(find.text('Recording start needs recovery'), findsOneWidget);
+          expect(
+            noticeTitles(tester),
+            contains('Recording start needs recovery'),
+          );
           await tester.pump(const Duration(seconds: 6));
-          expect(find.text('Recording start needs recovery'), findsOneWidget);
-          await tester.tap(find.text('Retry'));
+          expect(
+            noticeTitles(tester),
+            contains('Recording start needs recovery'),
+          );
+          await tapRetry(tester);
           await tester.pumpAndSettle();
           // A transient read reads cleanly on Retry; a pair that stays
           // unreadable is repaired to (0, false).
@@ -1677,7 +1702,10 @@ void main() {
             malformed ? 0 : 4,
           );
           expect(tempo.state.recordStartSnapshot?.settings.soundStart, isFalse);
-          expect(find.text('Recording start needs recovery'), findsNothing);
+          expect(
+            noticeTitles(tester),
+            isNot(contains('Recording start needs recovery')),
+          );
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pump(const Duration(milliseconds: 100));
         },
@@ -1693,33 +1721,23 @@ void main() {
       settings = SettingsRepository(store: store);
       await pumpApp(tester, NoopWaveformWindowService());
       final tempo = tester.element(find.byType(TracksView)).read<TempoCubit>();
-      expect(debugAppToastActive(AppToastId.clickModeSettings), isTrue);
-      expect(debugAppToastActive(AppToastId.recordStartSettings), isTrue);
+      expect(noticeSaid(AppNoticeId.clickModeSettings), isTrue);
+      expect(noticeSaid(AppNoticeId.recordStartSettings), isTrue);
 
       store.values['tempo.click_mode'] = 0;
-      await tester.tap(
-        find.descendant(
-          of: find.byKey(const Key(AppToastId.clickModeSettings)),
-          matching: find.text('Retry'),
-        ),
-      );
+      await tapRetry(tester, AppNoticeId.clickModeSettings);
       await tester.pumpAndSettle();
       expect(tempo.state.clickModeReady, isTrue);
       expect(tempo.state.recordStartReady, isFalse);
-      expect(debugAppToastActive(AppToastId.clickModeSettings), isFalse);
-      expect(debugAppToastActive(AppToastId.recordStartSettings), isTrue);
-      expect(find.text('Recording start needs recovery'), findsOneWidget);
+      expect(noticeUp(tester, AppNoticeId.clickModeSettings), isFalse);
+      expect(noticeSaid(AppNoticeId.recordStartSettings), isTrue);
+      expect(noticeTitles(tester), contains('Recording start needs recovery'));
 
       store.values['tempo.count_in_bars'] = 2;
-      await tester.tap(
-        find.descendant(
-          of: find.byKey(const Key(AppToastId.recordStartSettings)),
-          matching: find.text('Retry'),
-        ),
-      );
+      await tapRetry(tester, AppNoticeId.recordStartSettings);
       await tester.pumpAndSettle();
       expect(tempo.state.recordStartReady, isTrue);
-      expect(debugAppToastActive(AppToastId.recordStartSettings), isFalse);
+      expect(noticeUp(tester, AppNoticeId.recordStartSettings), isFalse);
     });
 
     for (final customName in [false, true]) {
@@ -1746,26 +1764,12 @@ void main() {
           final initialCalls = engine.recordCalls;
           expect(repository.record(channel: 3), EngineResult.invalid);
           await tester.pumpAndSettle();
+          // Said on the track it was pressed for, whose card names it.
+          expect(noticeTracks(AppNoticeId.recordingInputRequired), [3]);
+          expect(saidTitles, contains('Choose recording inputs'));
           expect(
-            debugAppToastActive(AppToastId.recordingInputRequired),
-            isTrue,
-          );
-          final notice = find.byKey(
-            const Key(AppToastId.recordingInputRequired),
-          );
-          expect(
-            find.descendant(
-              of: notice,
-              matching: find.text('Choose recording inputs'),
-            ),
-            findsOneWidget,
-          );
-          expect(
-            find.descendant(
-              of: notice,
-              matching: find.text(customName ? 'Harmony' : 'TRACK 4'),
-            ),
-            findsOneWidget,
+            find.text(customName ? 'Harmony' : 'TRACK 4'),
+            findsWidgets,
           );
           expect(engine.recordCalls, initialCalls);
           expect(engine.lastRecordImage, isNull);
@@ -1805,11 +1809,8 @@ void main() {
       expect(repository.record(), EngineResult.ok);
       repository.laneEffects(0, 0); // the take lands on the next read
       await tester.pumpAndSettle();
-      expect(debugAppToastActive(AppToastId.fxTakeHeld), isTrue);
-      expect(
-        find.textContaining("effects are off: they don't fit"),
-        findsOneWidget,
-      );
+      expect(noticeTracks(AppNoticeId.fxTakeHeld), [0]);
+      expect(saidTitles, contains("This take's effects are off"));
       await tester.pump(const Duration(seconds: 7));
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
@@ -1842,10 +1843,10 @@ void main() {
       await pumpApp(tester, NoopWaveformWindowService());
       expect(repository.record(), EngineResult.reversed);
       await tester.pumpAndSettle();
-      expect(debugAppToastActive(AppToastId.recordRefused), isTrue);
+      expect(noticeTracks(AppNoticeId.overdubRefused), [0]);
       expect(
-        find.text('Overdub is unavailable while the track is reversed'),
-        findsOneWidget,
+        saidTitles,
+        contains('Overdub is unavailable while the track is reversed'),
       );
       await tester.pump(const Duration(seconds: 6));
       await tester.pumpWidget(const SizedBox.shrink());
@@ -1878,17 +1879,15 @@ void main() {
       await pumpApp(tester, NoopWaveformWindowService());
       ticks.add(null);
       await tester.pump();
-      expect(debugAppToastActive(AppToastId.lengthHistoryRefused), isFalse);
+      expect(noticeUp(tester, AppNoticeId.lengthHistoryRefused), isFalse);
       engine.nextSnapshot = rig(1);
       ticks.add(null);
       await tester.pumpAndSettle();
-      expect(debugAppToastActive(AppToastId.lengthHistoryRefused), isTrue);
-      final notice = find.text(
-        'The length change was not undone or redone. If pressing again '
-        'changes nothing, that length no longer fits the other loops.',
+      expect(noticeTracks(AppNoticeId.lengthHistoryRefused), [0]);
+      expect(
+        saidTitles,
+        contains('The length change was not undone or redone'),
       );
-      expect(notice, findsOneWidget);
-      expect(find.text('TRACK 1'), findsWidgets);
       await tester.pump(const Duration(seconds: 6));
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
@@ -1967,7 +1966,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(power.state.phase, PowerPhase.saveFailed);
         expect(haltCalls, 0);
-        expect(debugAppToastActive(AppToastId.recordStartSettings), isFalse);
+        expect(noticeUp(tester, AppNoticeId.recordStartSettings), isFalse);
         store.refuseWrite = false;
         await tester.tap(
           find.byKey(Key(retry ? 'power_retry' : 'power_stay_on')),
@@ -1976,11 +1975,17 @@ void main() {
         await tester.pump(const Duration(seconds: 6));
         expect(haltCalls, retry ? 1 : 0);
         if (!retry) {
-          expect(find.text('Recording start needs recovery'), findsOneWidget);
+          expect(
+            noticeTitles(tester),
+            contains('Recording start needs recovery'),
+          );
           expect(tempo.state.recordStartSnapshot, isNull);
-          await tester.tap(find.text('Retry'));
+          await tapRetry(tester);
           await tester.pumpAndSettle();
-          expect(find.text('Recording start needs recovery'), findsNothing);
+          expect(
+            noticeTitles(tester),
+            isNot(contains('Recording start needs recovery')),
+          );
         }
         expect(store.values.containsKey('tempo.count_in_bars'), isFalse);
         expect(store.values.containsKey('looper.auto_record'), isFalse);
@@ -2049,17 +2054,20 @@ void main() {
               .element(find.byType(TracksView))
               .read<TempoCubit>();
           expect(tempo.state.clickModeSnapshot, isNull);
-          expect(find.text('Hear click needs attention'), findsOneWidget);
+          expect(noticeTitles(tester), contains('Hear click needs attention'));
           await tester.pump(const Duration(seconds: 6));
-          expect(find.text('Hear click needs attention'), findsOneWidget);
-          await tester.tap(find.text('Retry'));
+          expect(noticeTitles(tester), contains('Hear click needs attention'));
+          await tapRetry(tester);
           await tester.pumpAndSettle();
           // A transient read reads cleanly on Retry; malformed data that
           // stays unreadable is repaired to Off.
           expect(tempo.state.clickModeReady, isTrue);
           expect(store.values, before..['tempo.click_mode'] = 0);
           expect(tempo.state.clickModeSnapshot?.mode, ClickMode.off);
-          expect(find.text('Hear click needs attention'), findsNothing);
+          expect(
+            noticeTitles(tester),
+            isNot(contains('Hear click needs attention')),
+          );
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pump(const Duration(milliseconds: 100));
         },
@@ -2129,7 +2137,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(power.state.phase, PowerPhase.saveFailed);
         expect(haltCalls, 0);
-        expect(debugAppToastActive(AppToastId.clickModeSettings), isFalse);
+        expect(noticeUp(tester, AppNoticeId.clickModeSettings), isFalse);
         store.refuseWrite = false;
         await tester.tap(
           find.byKey(Key(retry ? 'power_retry' : 'power_stay_on')),
@@ -2138,11 +2146,14 @@ void main() {
         await tester.pump(const Duration(seconds: 6));
         expect(haltCalls, retry ? 1 : 0);
         if (!retry) {
-          expect(find.text('Hear click needs attention'), findsOneWidget);
+          expect(noticeTitles(tester), contains('Hear click needs attention'));
           expect(tempo.state.clickModeSnapshot, isNull);
-          await tester.tap(find.text('Retry'));
+          await tapRetry(tester);
           await tester.pumpAndSettle();
-          expect(find.text('Hear click needs attention'), findsNothing);
+          expect(
+            noticeTitles(tester),
+            isNot(contains('Hear click needs attention')),
+          );
         }
         expect(store.values.containsKey('tempo.click_mode'), isFalse);
         expect(
@@ -2187,35 +2198,35 @@ void main() {
               .read<RecordTimingSettings>();
           final (toast, owner) = switch (key) {
             OwnedSetting.clickVolume => (
-              AppToastId.clickSettings,
+              AppNoticeId.clickSettings,
               tempo.clickVolumeOwner,
             ),
             OwnedSetting.hearClick => (
-              AppToastId.clickModeSettings,
+              AppNoticeId.clickModeSettings,
               tempo.clickModeOwner,
             ),
             OwnedSetting.recordStart => (
-              AppToastId.recordStartSettings,
+              AppNoticeId.recordStartSettings,
               tempo.recordStartOwner,
             ),
             OwnedSetting.oneShot => (
-              AppToastId.oneShotSettings,
+              AppNoticeId.oneShotSettings,
               playback.oneShotOwner,
             ),
             OwnedSetting.recordLength => (
-              AppToastId.recordLengthSettings,
+              AppNoticeId.recordLengthSettings,
               record.owner,
             ),
             OwnedSetting.recordTiming => (
-              AppToastId.recordTimingSettings,
+              AppNoticeId.recordTimingSettings,
               timing.owner,
             ),
             OwnedSetting.followTempo => (
-              AppToastId.followTempoSettings,
+              AppNoticeId.followTempoSettings,
               playback.followTempoOwner,
             ),
             OwnedSetting.pitchMode => (
-              AppToastId.pitchModeSettings,
+              AppNoticeId.pitchModeSettings,
               playback.pitchModeOwner,
             ),
             OwnedSetting.decay ||
@@ -2267,7 +2278,7 @@ void main() {
           });
           await tester.pump(const Duration(milliseconds: 600));
           await tester.pump();
-          expect(debugAppToastActive(toast), isTrue);
+          expect(noticeUp(tester, toast), isTrue);
           repository.stopEngine();
           engine
             ..publishClickCommands = true
@@ -2279,7 +2290,7 @@ void main() {
           await tester.pump(const Duration(milliseconds: 50));
           await tester.pumpAndSettle();
           expect(owner.ready, isTrue);
-          expect(debugAppToastActive(toast), isFalse);
+          expect(noticeUp(tester, toast), isFalse);
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pump(const Duration(milliseconds: 600));
         },
@@ -2401,7 +2412,7 @@ void main() {
           if (releasedBeforeShutdown) {
             midi.push(0);
             await tester.pumpAndSettle();
-            expect(debugAppToastActive(AppToastId.clickModeSettings), isTrue);
+            expect(noticeSaid(AppNoticeId.clickModeSettings), isTrue);
             expect(tempo.state.clickMode, ClickMode.playRec);
           }
           final stopCalls = engine.stopCalls;
@@ -2414,7 +2425,7 @@ void main() {
           expect(engine.stopCalls, stopCalls);
           expect(tempo.state.clickMode, ClickMode.playRec);
           expect(store.values['tempo.click_mode'], 0);
-          expect(debugAppToastActive(AppToastId.clickModeSettings), isFalse);
+          expect(noticeUp(tester, AppNoticeId.clickModeSettings), isFalse);
           expect(
             find.byKey(const Key('power_retry')).hitTestable(),
             findsOneWidget,
@@ -2517,16 +2528,22 @@ void main() {
         expect(halted, retry);
         if (!retry) {
           // Staying on reopens input, but cannot prove a failed rollback.
-          expect(find.text('Record timing needs recovery'), findsOneWidget);
+          expect(
+            noticeTitles(tester),
+            contains('Record timing needs recovery'),
+          );
           expect(timing.state.recordTimingReady, isFalse);
           unawaited(timing.setTiming(RecordTiming.half));
           await tester.pumpAndSettle();
           expect(timing.state.defaultTiming, RecordTiming.immediately);
           expect(timing.state.recordTimingReady, isFalse);
           // Explicit timing recovery restores the exact absent checkpoint.
-          await tester.tap(find.text('Retry'));
+          await tapRetry(tester);
           await tester.pumpAndSettle();
-          expect(find.text('Record timing needs recovery'), findsNothing);
+          expect(
+            noticeTitles(tester),
+            isNot(contains('Record timing needs recovery')),
+          );
         }
         expect(store.values.containsKey('looper.quantize'), isFalse);
         expect(store.values.containsKey('tempo.quantize_div'), isFalse);
@@ -2598,13 +2615,13 @@ void main() {
         unawaited(decay.setOverdubDecay(80));
         await tester.pumpAndSettle();
         expect(decay.state.overdubDecay, 0);
-        expect(debugAppToastActive(AppToastId.decaySettings), isTrue);
+        expect(noticeSaid(AppNoticeId.decaySettings), isTrue);
         power
           ..press(_named)
           ..shutDown(_named, save: () async {});
         await tester.pumpAndSettle();
         expect(power.state.phase, PowerPhase.saveFailed);
-        expect(debugAppToastActive(AppToastId.decaySettings), isFalse);
+        expect(noticeUp(tester, AppNoticeId.decaySettings), isFalse);
         expect(find.text('Segno is staying on'), findsOneWidget);
         expect(halted, isFalse);
         store.refuseWrite = false;
@@ -2616,10 +2633,16 @@ void main() {
         expect(halted, retry);
         if (!retry) {
           // The owed rollback keeps Decay unavailable until its own Retry.
-          expect(find.text('Decay settings need recovery'), findsOneWidget);
-          await tester.tap(find.text('Retry'));
+          expect(
+            noticeTitles(tester),
+            contains('Decay settings need recovery'),
+          );
+          await tapRetry(tester);
           await tester.pumpAndSettle();
-          expect(find.text('Decay settings need recovery'), findsNothing);
+          expect(
+            noticeTitles(tester),
+            isNot(contains('Decay settings need recovery')),
+          );
         }
         expect(store.values.containsKey('looper.overdub_decay'), isFalse);
         if (!retry) {
@@ -2825,10 +2848,16 @@ void main() {
         expect(halted, retry);
         if (!retry) {
           // The owed rollback keeps Loop/Once unavailable until its Retry.
-          expect(find.text('Playback settings need recovery'), findsOneWidget);
-          await tester.tap(find.text('Retry'));
+          expect(
+            noticeTitles(tester),
+            contains('Playback settings need recovery'),
+          );
+          await tapRetry(tester);
           await tester.pumpAndSettle();
-          expect(find.text('Playback settings need recovery'), findsNothing);
+          expect(
+            noticeTitles(tester),
+            isNot(contains('Playback settings need recovery')),
+          );
         }
         expect(store.values.containsKey('looper.default_one_shot'), isFalse);
         if (!retry) {
@@ -2999,10 +3028,16 @@ void main() {
           expect(halted, retry);
           if (!retry) {
             // The owed rollback keeps Record length unavailable until Retry.
-            expect(find.text('Record length needs recovery'), findsOneWidget);
-            await tester.tap(find.text('Retry'));
+            expect(
+              noticeTitles(tester),
+              contains('Record length needs recovery'),
+            );
+            await tapRetry(tester);
             await tester.pumpAndSettle();
-            expect(find.text('Record length needs recovery'), findsNothing);
+            expect(
+              noticeTitles(tester),
+              isNot(contains('Record length needs recovery')),
+            );
           }
           expect(
             store.values.containsKey('looper.default_length_bars'),
@@ -3167,10 +3202,7 @@ void main() {
           if (releasedBeforeShutdown) {
             midi.push(0);
             await tester.pumpAndSettle();
-            expect(
-              debugAppToastActive(AppToastId.recordTimingSettings),
-              isTrue,
-            );
+            expect(noticeSaid(AppNoticeId.recordTimingSettings), isTrue);
             expect(timing.state.trackOverrides[0], RecordTiming.sixteenth);
           }
           final stopCalls = engine.stopCalls;
@@ -3184,7 +3216,7 @@ void main() {
           expect(engine.stopCalls, stopCalls);
           expect(timing.state.trackOverrides[0], RecordTiming.sixteenth);
           expect(store.values['track_record_timing.0'], 0);
-          expect(debugAppToastActive(AppToastId.recordTimingSettings), isFalse);
+          expect(noticeUp(tester, AppNoticeId.recordTimingSettings), isFalse);
           expect(
             find.byKey(const Key('power_retry')).hitTestable(),
             findsOneWidget,
@@ -3570,26 +3602,22 @@ void main() {
         engine.nextHistoryModeGate = EngineResult.modeMismatch;
         final result = redo ? repository.redo() : repository.undo();
         expect(result, EngineResult.modeMismatch);
-        await tester.pumpAndSettle();
-        expect(find.text('Loop does not fit this mode'), findsOneWidget);
+        await tester.pump();
+        await tester.pump();
+        final message = noticesOf(tester).state.message?.notice;
+        final l10n = lookupAppLocalizations(const Locale('en'));
+        expect(message?.id, AppNoticeId.recoveryRefused);
+        expect(message?.title(l10n), 'Loop does not fit this mode');
         expect(
-          find.text(
-            'Choose Free in Loop settings, then try '
-            '${redo ? 'Redo' : 'Undo'} again. Your session is unchanged.',
-          ),
-          findsOneWidget,
+          message?.body?.call(l10n),
+          'Choose Free in Loop settings, then ${redo ? 'Redo' : 'Undo'} '
+          'again',
         );
         expect(find.byType(TracksView), findsOneWidget);
         expect(engine.historyModeGateCalls.last, (channels: 1, redo: redo));
-        // The message can be dismissed; it does not force a mode change.
-        await tester.tap(
-          find.descendant(
-            of: find.byKey(const Key(AppToastId.recoveryRefused)),
-            matching: find.byType(IconButton),
-          ),
-        );
-        await tester.pumpAndSettle();
-        expect(find.text('Loop does not fit this mode'), findsNothing);
+        // The message goes by itself; it does not force a mode change.
+        await tester.pump(const Duration(seconds: 10));
+        expect(noticesOf(tester).state.message, isNull);
         expect(repository.settledLooperMode, LooperMode.multi);
       });
     }
@@ -3600,24 +3628,23 @@ void main() {
       await pumpApp(tester, NoopWaveformWindowService());
       engine.nextHistoryModeGate = EngineResult.notReady;
       expect(repository.redo(), EngineResult.notReady);
-      await tester.pumpAndSettle();
-      expect(find.text('Recovery is not ready yet'), findsOneWidget);
+      await tester.pump();
+      await tester.pump();
+      final l10n = lookupAppLocalizations(const Locale('en'));
+      String? title() => noticesOf(tester).state.message?.notice.title(l10n);
+      expect(title(), 'Recovery is not ready yet');
       expect(
-        find.text(
-          'Let the current change finish, then try again. '
-          'Your session is unchanged.',
-        ),
-        findsOneWidget,
+        noticesOf(tester).state.message?.notice.body?.call(l10n),
+        'Let the current change finish, then try again',
       );
       // A different refusal replaces the message instead of stacking it.
       engine.nextHistoryModeGate = EngineResult.modeMismatch;
       repository.undo();
-      await tester.pumpAndSettle();
-      expect(find.text('Recovery is not ready yet'), findsNothing);
-      expect(find.text('Loop does not fit this mode'), findsOneWidget);
+      await tester.pump();
+      await tester.pump();
+      expect(title(), 'Loop does not fit this mode');
       await tester.pump(const Duration(seconds: 11));
-      await tester.pumpAndSettle();
-      expect(find.text('Loop does not fit this mode'), findsNothing);
+      expect(title(), isNull);
     });
 
     group('USB-C power (#1352)', () {
@@ -3649,6 +3676,7 @@ void main() {
             pedalRepository: pedal,
           ),
         );
+        watchNotices(tester);
         await tester.pump();
         return (link, pedal);
       }
@@ -3668,8 +3696,8 @@ void main() {
           'fresh one arrives', (tester) async {
         final (link, pedal) = await pumpWithPedal(tester);
         await report(tester, link, stale);
-        expect(find.byKey(const Key(AppToastId.powerCycle)), findsOneWidget);
-        expect(find.byKey(const Key(AppToastId.weakCharger)), findsNothing);
+        expect(noticeUp(tester, AppNoticeId.powerCycle), isTrue);
+        expect(noticeSaid(AppNoticeId.weakCharger), isFalse);
 
         await report(
           tester,
@@ -3681,7 +3709,7 @@ void main() {
             maxMilliamps: 4700,
           ),
         );
-        expect(find.byKey(const Key(AppToastId.powerCycle)), findsNothing);
+        expect(noticeUp(tester, AppNoticeId.powerCycle), isFalse);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump(pedal.helloTimeout);
       });
@@ -3691,9 +3719,13 @@ void main() {
       ) async {
         final (link, pedal) = await pumpWithPedal(tester);
         await report(tester, link, stale);
-        await tester.tap(find.byKey(const Key(AppToastId.powerCycleDismiss)));
+        await pressNoticeAction(
+          tester,
+          AppNoticeId.powerCycle,
+          secondary: true,
+        );
         await tester.pumpAndSettle();
-        expect(find.byKey(const Key(AppToastId.powerCycle)), findsNothing);
+        expect(noticeUp(tester, AppNoticeId.powerCycle), isFalse);
         // A changed but still stale contract does not bring it back.
         await report(
           tester,
@@ -3705,7 +3737,7 @@ void main() {
             maxMilliamps: 4500,
           ),
         );
-        expect(find.byKey(const Key(AppToastId.powerCycle)), findsNothing);
+        expect(noticeUp(tester, AppNoticeId.powerCycle), isFalse);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump(pedal.helloTimeout);
       });
@@ -3713,9 +3745,9 @@ void main() {
       testWidgets('Power off… opens Power options', (tester) async {
         final (link, pedal) = await pumpWithPedal(tester);
         await report(tester, link, stale);
-        await tester.tap(find.byKey(const Key(AppToastId.powerCyclePowerOff)));
+        await pressNoticeAction(tester, AppNoticeId.powerCycle);
         await tester.pumpAndSettle();
-        expect(find.byKey(const Key(AppToastId.powerCycle)), findsNothing);
+        expect(noticeUp(tester, AppNoticeId.powerCycle), isFalse);
         expect(find.byKey(const Key('power_restart')), findsOneWidget);
         await tester.tap(find.byKey(const Key('power_cancel')));
         await tester.pumpAndSettle();
@@ -3737,8 +3769,8 @@ void main() {
             maxMilliamps: 3250,
           ),
         );
-        expect(find.byKey(const Key(AppToastId.weakCharger)), findsOneWidget);
-        expect(find.byKey(const Key(AppToastId.powerCycle)), findsNothing);
+        expect(noticeSaid(AppNoticeId.weakCharger), isTrue);
+        expect(noticeUp(tester, AppNoticeId.powerCycle), isFalse);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump(pedal.helloTimeout);
       });
@@ -3751,84 +3783,62 @@ void main() {
         tester,
         UpdateRepository(backend: _FakeUpdateBackend()),
       );
-      expect(find.byKey(const Key('app_update_banner')), findsOneWidget);
+      expect(noticeSaid(AppNoticeId.update), isTrue);
+      await tester.pump(const Duration(seconds: 10));
     });
 
-    testWidgets(
-      'dismissing the update toast hides it',
-      (tester) async {
-        await pumpAppWithUpdates(
-          tester,
-          UpdateRepository(backend: _FakeUpdateBackend()),
-        );
-        await tester.tap(find.byKey(const Key('app_update_banner_dismiss')));
-        await tester.pumpAndSettle();
-        expect(find.byKey(const Key('app_update_banner')), findsNothing);
-      },
-      // Toast, not a widget. These notifications moved to toastification,
-      // which renders into an overlay this harness does not provide, so the
-      // old widget-key assertions can never match. Coverage is rebuilt with
-      // the persistent-surface work — see #453.
-      skip: true,
-    );
-
-    testWidgets(
-      'Update on the toast opens the Updates page',
-      (
+    testWidgets('Update… on the message opens the Updates page', (
+      tester,
+    ) async {
+      await pumpAppWithUpdates(
         tester,
-      ) async {
-        await pumpAppWithUpdates(
-          tester,
-          UpdateRepository(backend: _FakeUpdateBackend()),
-        );
-        await tester.tap(find.byKey(const Key('app_update_banner_update')));
-        await tester.pumpAndSettle();
-        expect(find.byType(UpdatesSettingsPage), findsOneWidget);
-        expect(find.byKey(const Key('app_update_banner')), findsNothing);
-        // Pop so the navigator's open-route guard clears for later tests in
-        // this file that also open Settings.
-        await tester.tap(find.byKey(const Key('loop_settings_back')));
-        await tester.pumpAndSettle();
-      },
-      // Toast, not a widget. These notifications moved to toastification,
-      // which renders into an overlay this harness does not provide, so the
-      // old widget-key assertions can never match. Coverage is rebuilt with
-      // the persistent-surface work — see #453.
-      skip: true,
-    );
+        UpdateRepository(backend: _FakeUpdateBackend()),
+      );
+      await pressNoticeAction(tester, AppNoticeId.update);
+      await tester.pumpAndSettle();
+      expect(find.byType(UpdatesSettingsPage), findsOneWidget);
+      expect(noticeUp(tester, AppNoticeId.update), isFalse);
+      // Pop so the navigator's open-route guard clears for later tests in
+      // this file that also open Settings.
+      await tester.tap(find.byKey(const Key('loop_settings_back')));
+      await tester.pumpAndSettle();
+    });
 
-    testWidgets(
-      'no update toast while Settings Updates is already open',
-      (
+    testWidgets('Not now puts this version off', (tester) async {
+      await pumpAppWithUpdates(
         tester,
-      ) async {
-        final backend = _DeferredUpdateBackend();
-        await pumpAppWithUpdates(
-          tester,
-          UpdateRepository(backend: backend),
-        );
-        // NOT awaited: openUpdateSettings awaits navigator.push, which
-        // resolves only when the route is POPPED. Awaiting it here deadlocks
-        // the test on its own first statement.
-        unawaited(openUpdateSettings());
-        await tester.pumpAndSettle();
-        backend.complete();
-        await tester.pumpAndSettle();
-        expect(find.byType(UpdatesSettingsPage), findsOneWidget);
-        expect(find.byKey(const Key('app_update_banner')), findsNothing);
-        await tester.tap(find.byKey(const Key('loop_settings_back')));
-        await tester.pumpAndSettle();
-      },
-      // Toast, not a widget. These notifications moved to toastification,
-      // which renders into an overlay this harness does not provide, so the
-      // old widget-key assertions can never match. Coverage is rebuilt with
-      // the persistent-surface work — see #453.
-      skip: true,
-    );
+        UpdateRepository(backend: _FakeUpdateBackend()),
+      );
+      await pressNoticeAction(tester, AppNoticeId.update, secondary: true);
+      await tester.pump();
+      expect(noticeUp(tester, AppNoticeId.update), isFalse);
+      final context = tester.element(find.byType(TracksView));
+      final updates = context.read<UpdateCubit>().state;
+      expect(updates.dismissed, contains(updates.available!.version));
+      expect(updates.shouldNotify, isFalse);
+    });
+
+    testWidgets('no update message while Settings Updates is already open', (
+      tester,
+    ) async {
+      final backend = _DeferredUpdateBackend();
+      await pumpAppWithUpdates(tester, UpdateRepository(backend: backend));
+      // NOT awaited: openUpdateSettings awaits navigator.push, which
+      // resolves only when the route is POPPED. Awaiting it here deadlocks
+      // the test on its own first statement.
+      unawaited(openUpdateSettings());
+      await tester.pumpAndSettle();
+      backend.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(UpdatesSettingsPage), findsOneWidget);
+      expect(noticeSaid(AppNoticeId.update), isFalse);
+      await tester.tap(find.byKey(const Key('loop_settings_back')));
+      await tester.pumpAndSettle();
+    });
 
     testWidgets('no update toast on an unsupported platform', (tester) async {
       await pumpApp(tester, NoopWaveformWindowService());
-      expect(find.byKey(const Key('app_update_banner')), findsNothing);
+      expect(noticeSaid(AppNoticeId.update), isFalse);
     });
 
     testWidgets('renders the looper as the home page in tracks', (
@@ -3901,6 +3911,7 @@ void main() {
             pedalRepository: pedal,
           ),
         );
+        watchNotices(tester);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
 
@@ -3939,6 +3950,7 @@ void main() {
           backingRepository: testBackingRepository(),
         ),
       );
+      watchNotices(tester);
       await tester.pumpAndSettle();
 
       expect(find.byType(LooperPage), findsOneWidget);
@@ -4033,17 +4045,17 @@ void main() {
         () => destination.choose(const StorageDestination.removable(1)),
       );
       await tester.pump();
-      expect(debugAppToastActive(AppToastId.saveToFellBack), isFalse);
+      expect(noticeUp(tester, AppNoticeId.saveToFellBack), isFalse);
 
       usb.detach(1);
       await tester.pumpAndSettle();
 
-      expect(debugAppToastActive(AppToastId.saveToFellBack), isTrue);
+      expect(noticeSaid(AppNoticeId.saveToFellBack), isTrue);
       expect(
         destination.state.destination,
         const StorageDestination.internal(),
       );
-      dismissAppToast(AppToastId.saveToFellBack, animate: false);
+      noticesOf(tester).clear(AppNoticeId.saveToFellBack);
       await tester.pumpAndSettle();
     });
 
@@ -4057,15 +4069,14 @@ void main() {
           .element(find.byType(TracksView))
           .read<ControlCubit>();
       expect(control.state.mode, InteractionMode.record);
-      expect(debugAppToastActive(AppToastId.bootModeRetired), isTrue);
+      expect(noticeSaid(AppNoticeId.bootModeRetired), isTrue);
 
       // The next start has nothing to say.
-      dismissAppToast(AppToastId.bootModeRetired);
+      noticesOf(tester).clear(AppNoticeId.bootModeRetired);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
-      resetAppToastsForTest();
       await pumpApp(tester, NoopWaveformWindowService());
-      expect(debugAppToastActive(AppToastId.bootModeRetired), isFalse);
+      expect(noticeUp(tester, AppNoticeId.bootModeRetired), isFalse);
     });
 
     testWidgets('a fresh install gets Hold · Tuner on Custom pedal 2 and is '
@@ -4082,15 +4093,14 @@ void main() {
         control.state.pedalSetup.customFor(PedalButton.track2, bank: 0).hold,
         const ModeAction(InteractionMode.tuner),
       );
-      expect(debugAppToastActive(AppToastId.tunerSeeded), isTrue);
+      expect(noticeSaid(AppNoticeId.tunerSeeded), isTrue);
       expect(store.values['pedal.tuner_default_seeded'], isTrue);
 
-      dismissAppToast(AppToastId.tunerSeeded);
+      noticesOf(tester).clear(AppNoticeId.tunerSeeded);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
-      resetAppToastsForTest();
       await pumpApp(tester, NoopWaveformWindowService());
-      expect(debugAppToastActive(AppToastId.tunerSeeded), isFalse);
+      expect(noticeUp(tester, AppNoticeId.tunerSeeded), isFalse);
     });
 
     testWidgets('an install that started in Record is not told anything', (
@@ -4100,7 +4110,7 @@ void main() {
       await store.setString('looper.default_mode', 'record');
       settings = SettingsRepository(store: store);
       await pumpApp(tester, NoopWaveformWindowService());
-      expect(debugAppToastActive(AppToastId.bootModeRetired), isFalse);
+      expect(noticeUp(tester, AppNoticeId.bootModeRetired), isFalse);
     });
 
     testWidgets('an install with paired Bluetooth devices is told once', (
@@ -4111,17 +4121,16 @@ void main() {
         bluetoothPairings: 2,
       );
       await pumpApp(tester, NoopWaveformWindowService(), consoleFacts: facts);
-      expect(debugAppToastActive(AppToastId.bluetoothRetired), isTrue);
+      expect(noticeSaid(AppNoticeId.bluetoothRetired), isTrue);
       expect(await settings.loadBluetoothRetiredNoticeShown(), isTrue);
 
       // The next start has nothing to say, though the pairings are still
       // there for a fallback to the previous system.
-      dismissAppToast(AppToastId.bluetoothRetired);
+      noticesOf(tester).clear(AppNoticeId.bluetoothRetired);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
-      resetAppToastsForTest();
       await pumpApp(tester, NoopWaveformWindowService(), consoleFacts: facts);
-      expect(debugAppToastActive(AppToastId.bluetoothRetired), isFalse);
+      expect(noticeUp(tester, AppNoticeId.bluetoothRetired), isFalse);
     });
 
     testWidgets('an install with no Bluetooth pairings is told nothing', (
@@ -4132,7 +4141,7 @@ void main() {
         NoopWaveformWindowService(),
         consoleFacts: FakeConsoleFactsClient(latency: Duration.zero),
       );
-      expect(debugAppToastActive(AppToastId.bluetoothRetired), isFalse);
+      expect(noticeUp(tester, AppNoticeId.bluetoothRetired), isFalse);
       expect(await settings.loadBluetoothRetiredNoticeShown(), isFalse);
     });
 
@@ -4155,10 +4164,10 @@ void main() {
     // finally written against the real thing, end to end through the engine's
     // own `devicePresent` diff rather than against any stopgap.
     testWidgets(
-      'a lost pinned device holds the stage banner — no toast — rides the '
-      'readout, and leaves with a restored snack',
+      'a lost pinned device is a must-act message on the top bar and the '
+      "readout's band, and leaves with a confirmation (#453, #1562)",
       (tester) async {
-        const deviceBanner = Key('connectivity_banner_device');
+        const deviceBanner = Key('notice_bar_${AppNoticeId.deviceLost}');
         le.EngineSnapshot snapshot({required bool devicePresent}) =>
             le.EngineSnapshot(
               isRunning: true,
@@ -4206,6 +4215,7 @@ void main() {
             backingRepository: testBackingRepository(),
           ),
         );
+        watchNotices(tester);
         await tester.pumpAndSettle();
 
         // Present on the first tick: no condition, no banner.
@@ -4220,15 +4230,17 @@ void main() {
         await tester.pump();
         expect(find.byKey(deviceBanner), findsOneWidget);
 
-        // ...outlives every toast timeout, and the retired lost-toast id
-        // never registers (D1: the banner REPLACES the lost toast).
+        // ...and outlives every passing message's time.
         await tester.pump(const Duration(seconds: 30));
         expect(find.byKey(deviceBanner), findsOneWidget);
-        expect(debugAppToastActive('app_deviceLost_banner'), isFalse);
+        expect(
+          noticesOf(tester).state.banner?.notice.tone,
+          NoticeTone.critical,
+        );
 
         // The 7" readout carries the same condition on the next push tick.
         await tester.pump(const Duration(milliseconds: 40));
-        expect(windowService.readouts.last.lossLine, isNotEmpty);
+        expect(windowService.readouts.last.notice?.tone, NoticeTone.critical);
 
         // Replug: the banner leaves on its own; restored stays a snack toast
         // (an event, not a condition).
@@ -4236,10 +4248,15 @@ void main() {
         ticker.add(null);
         await tester.pump();
         await tester.pump();
+        // Past the centre's cross-fade.
+        await tester.pump(const Duration(milliseconds: 200));
         expect(find.byKey(deviceBanner), findsNothing);
-        expect(debugAppToastActive(AppToastId.deviceRestored), isTrue);
+        expect(noticeSaid(AppNoticeId.deviceRestored), isTrue);
         await tester.pump(const Duration(milliseconds: 40));
-        expect(windowService.readouts.last.lossLine, isEmpty);
+        expect(
+          windowService.readouts.last.notice?.tone,
+          isNot(NoticeTone.critical),
+        );
 
         // Let the snack's auto-close and removal animations run out so no
         // timer outlives the test.
@@ -4253,8 +4270,10 @@ void main() {
       'a reconnect that dropped a track is one warning toast naming it — '
       'not the restored snack, and never a bar (#1140)',
       (tester) async {
-        const deviceBanner = Key('connectivity_banner_device');
-        const materialBanner = Key('connectivity_banner_material');
+        const deviceBanner = Key('notice_bar_${AppNoticeId.deviceLost}');
+        const materialBanner = Key(
+          'notice_bar_${AppNoticeId.deviceMaterialCleared}',
+        );
         le.EngineSnapshot snapshot({required bool devicePresent}) =>
             le.EngineSnapshot(
               isRunning: true,
@@ -4306,6 +4325,7 @@ void main() {
             backingRepository: testBackingRepository(),
           ),
         );
+        watchNotices(tester);
         await tester.pumpAndSettle();
         ticker.add(null);
         await tester.pump();
@@ -4352,14 +4372,14 @@ void main() {
         );
         expect(find.byKey(deviceBanner), findsNothing);
         expect(find.byKey(materialBanner), findsNothing);
-        expect(debugAppToastActive(AppToastId.deviceRestoredPartial), isTrue);
-        expect(debugAppToastActive(AppToastId.deviceRestored), isFalse);
+        expect(noticeSaid(AppNoticeId.deviceRestoredPartial), isTrue);
+        expect(noticeUp(tester, AppNoticeId.deviceRestored), isFalse);
         // Retire the warning toast before the next episode (its auto-close
         // runs on the overlay the harness does not render), so a re-raise
         // below would register anew.
-        dismissAppToast(AppToastId.deviceRestoredPartial, animate: false);
+        noticesOf(tester).clear(AppNoticeId.deviceRestoredPartial);
         await tester.pump(const Duration(seconds: 12));
-        expect(debugAppToastActive(AppToastId.deviceRestoredPartial), isFalse);
+        expect(noticeUp(tester, AppNoticeId.deviceRestoredPartial), isFalse);
 
         // A later return the backend produces on its own (present 0 then 1,
         // no reconnect tick, nothing reopened) is a plain restore: the stale
@@ -4377,8 +4397,8 @@ void main() {
         expect(engine.reopenCalls, 1);
         expect(find.byKey(deviceBanner), findsNothing);
         expect(find.byKey(materialBanner), findsNothing);
-        expect(debugAppToastActive(AppToastId.deviceRestoredPartial), isFalse);
-        expect(debugAppToastActive(AppToastId.deviceRestored), isTrue);
+        expect(noticeUp(tester, AppNoticeId.deviceRestoredPartial), isFalse);
+        expect(noticeSaid(AppNoticeId.deviceRestored), isTrue);
 
         await tester.pump(const Duration(seconds: 12));
         await tester.pumpWidget(const SizedBox.shrink());
@@ -4431,6 +4451,7 @@ void main() {
             backingRepository: testBackingRepository(),
           ),
         );
+        watchNotices(tester);
         await tester.pumpAndSettle();
 
         // Unplug: the transient lost toast registers...
@@ -4438,7 +4459,7 @@ void main() {
         midi.refresh();
         await tester.pump();
         await tester.pump();
-        expect(debugAppToastActive(AppToastId.midiLost), isTrue);
+        expect(noticeSaid(AppNoticeId.midiLost), isTrue);
 
         // ...and never a standing bar. MIDI has no persistent surface, on
         // either the stage or the readout.
@@ -4453,8 +4474,8 @@ void main() {
         midi.refresh();
         await tester.pump();
         await tester.pump();
-        expect(debugAppToastActive(AppToastId.midiLost), isFalse);
-        expect(debugAppToastActive(AppToastId.midiRestored), isTrue);
+        expect(noticeUp(tester, AppNoticeId.midiLost), isFalse);
+        expect(noticeSaid(AppNoticeId.midiRestored), isTrue);
 
         // Drain the toast timers so none outlives the test.
         await tester.pump(const Duration(seconds: 10));
@@ -4478,7 +4499,7 @@ void main() {
     /// never found. Ordering hid it — the toast test happens to be declared
     /// first — until a randomised seed put it last.
     Future<void> dismissFailureToast(WidgetTester tester) async {
-      dismissAppToast(AppToastId.waveformFailed);
+      noticesOf(tester).clear(AppNoticeId.waveformFailed);
       // Past the removal animation and the overlay teardown it schedules.
       await tester.pump(const Duration(seconds: 10));
     }
@@ -4593,16 +4614,21 @@ void main() {
       final windowService = _RecordingWindowService();
       await pumpApp(tester, windowService);
       await tester.pump(const Duration(milliseconds: 40));
-      expect(windowService.readouts.last.notice, isNull);
+      // The test rig's engine never starts: the band says so.
+      const stopped = ReadoutNotice(
+        title: 'Audio engine stopped',
+        tone: NoticeTone.critical,
+      );
+      expect(windowService.readouts.last.notice, stopped);
 
-      final notices =
-          tester.element(find.byType(LooperPage)).read<NoticesCubit>()..raise(
-            Notice(
-              id: 'lost',
-              tone: NoticeTone.critical,
-              title: (_) => 'Nothing is heard.',
-            ),
-          );
+      final notices = noticesOf(tester)
+        ..raise(
+          Notice(
+            id: 'lost',
+            tone: NoticeTone.critical,
+            title: (_) => 'Nothing is heard.',
+          ),
+        );
       await tester.pump(const Duration(milliseconds: 40));
       expect(
         windowService.readouts.last.notice,
@@ -4631,7 +4657,7 @@ void main() {
 
       notices.clear('lost');
       await tester.pump(const Duration(milliseconds: 40));
-      expect(windowService.readouts.last.notice, isNull);
+      expect(windowService.readouts.last.notice, stopped);
     });
 
     testWidgets('a shutdown phase change reaches an otherwise idle readout', (
@@ -4840,6 +4866,7 @@ void main() {
             backingRepository: testBackingRepository(),
           ),
         );
+        watchNotices(tester);
         await tester.pumpAndSettle();
         await tester.pump(const Duration(milliseconds: 40));
         return (window: window, ticker: ticker);
@@ -5323,21 +5350,20 @@ void main() {
             audioRecoveryConfig: const EngineConfig(playbackDeviceId: 'absent'),
           ),
         );
+        watchNotices(tester);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 10));
         await tester.pump();
 
-        // One surface for one cause: the red strip, with no toast and no
-        // engine-stopped banner beside it.
+        // One message for one cause: the must-act line, with no
+        // engine-stopped message beside it.
+        expect(find.text('Waiting for the audio interface'), findsOneWidget);
         expect(
-          find.byKey(const Key('connectivity_banner_waiting')),
-          findsOneWidget,
+          noticesOf(tester).state.banners.map((shown) => shown.notice.id),
+          [AppNoticeId.deviceLost],
         );
-        expect(find.byType(AudioNotRunningBanner), findsNothing);
 
-        await tester.tap(
-          find.byKey(const Key('connectivity_banner_waiting_action')),
-        );
+        await pressNoticeAction(tester, AppNoticeId.deviceLost);
         for (var i = 0; i < 10; i++) {
           await tester.pump(const Duration(milliseconds: 100));
         }
@@ -5415,4 +5441,115 @@ void main() {
       },
     );
   });
+}
+
+/// The app's notice centre.
+NoticesCubit noticesOf(WidgetTester tester) => tester
+    .element(find.byType(LooperPage, skipOffstage: false))
+    .read<NoticesCubit>();
+
+/// Whether a notice with [id] is up right now: the top bar's message, a
+/// must-act message (on screen or waiting behind another), or a track's.
+bool noticeUp(WidgetTester tester, String id) {
+  final state = noticesOf(tester).state;
+  if (state.held) return false;
+  return state.message?.notice.id == id ||
+      state.banners.any((shown) => shown.notice.id == id) ||
+      state.tracks.values.any((shown) => shown.notice.id == id);
+}
+
+/// Every notice up right now, as its English title: the top bar's message,
+/// the must-act messages (shown or waiting) and the tracks'. Empty while the
+/// Power screen holds them.
+List<String> noticeTitles(WidgetTester tester) {
+  final state = noticesOf(tester).state;
+  if (state.held) return const [];
+  final l10n = lookupAppLocalizations(const Locale('en'));
+  return [
+    for (final shown in [
+      ?state.message,
+      ...state.banners,
+      ...state.tracks.values,
+    ])
+      shown.notice.title(l10n),
+  ];
+}
+
+/// The must-act recoveries up right now that offer Retry, most pressing
+/// first.
+List<Notice> _retries(WidgetTester tester) {
+  final state = noticesOf(tester).state;
+  if (state.held) return const [];
+  final ranked = [...state.banners]
+    ..sort(
+      (a, b) => (b.notice.tone.index * 1000000 + b.serial).compareTo(
+        a.notice.tone.index * 1000000 + a.serial,
+      ),
+    );
+  return [
+    for (final shown in ranked)
+      if (shown.notice.action?.key case ValueKey<String>(
+        :final value,
+      ) when value.endsWith('_${AppNoticeId.retry}'))
+        shown.notice,
+  ];
+}
+
+/// Whether a recovery offers Retry right now.
+bool retryUp(WidgetTester tester) => _retries(tester).isNotEmpty;
+
+/// Presses Retry on the recovery [id], or on the most pressing one. The
+/// console shows one must-act message at a time, and the test rig's engine
+/// never starts, so its engine-stopped message would stand in front of a
+/// recovery on screen; the press goes to the message's own action.
+Future<void> tapRetry(WidgetTester tester, [String? id]) async {
+  final retries = _retries(tester);
+  final notice = id == null
+      ? retries.first
+      : retries.firstWhere((notice) => notice.id == id);
+  notice.action!.onPressed();
+  await tester.pump();
+}
+
+/// Every notice the app under test showed since it was pumped, so a test
+/// that settles after the press still sees a message that has gone by.
+NoticeLog? _noticeLog;
+
+/// Starts recording the app's notices; call right after pumping an [App].
+void watchNotices(WidgetTester tester) {
+  final previous = _noticeLog;
+  if (previous != null) unawaited(previous.close());
+  final log = NoticeLog(noticesOf(tester));
+  _noticeLog = log;
+  addTearDown(() {
+    if (identical(_noticeLog, log)) _noticeLog = null;
+    unawaited(log.close());
+  });
+}
+
+/// The English titles of every notice shown since [watchNotices].
+List<String> get saidTitles => _noticeLog!.titles;
+
+/// Whether a notice with [id] was shown since [watchNotices].
+bool noticeSaid(String id) => _noticeLog!.said(id);
+
+/// The tracks a notice with [id] was shown on since [watchNotices].
+List<int> noticeTracks(String id) => _noticeLog!.tracksOf(id);
+
+/// Presses the action of the notice [id] that is up: the one fix, or with
+/// [secondary] the way to put it off. The console shows one message at a
+/// time and the test rig's engine never starts, so its engine-stopped
+/// message can stand in front of the one under test; the press goes to the
+/// message's own action.
+///
+/// A passing message may have gone by the time a test settles; its action
+/// is the one it showed.
+Future<void> pressNoticeAction(
+  WidgetTester tester,
+  String id, {
+  bool secondary = false,
+}) async {
+  final notice = _noticeLog!.shown.lastWhere((notice) => notice.id == id);
+  (secondary ? notice.secondary : notice.action)!.onPressed();
+  await tester.pump();
 }

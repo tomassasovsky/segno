@@ -24,13 +24,13 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/record_options.dart';
 import 'package:segno/looper/model/record_options_view_state.dart';
 import 'package:segno/looper/model/tempo_state.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/visualizer/visualizer.dart';
 import 'package:settings_repository/settings_repository.dart';
-import 'package:toastification/toastification.dart';
 import 'package:touch_calibration_client/touch_calibration_client.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
@@ -114,6 +114,9 @@ class DestinationHarness {
 
   /// The audio setup the Device page reads.
   final MockAudioSetupCubit audio = MockAudioSetupCubit();
+
+  /// The notice centre the pages say their messages to.
+  final NoticesCubit notices = NoticesCubit();
 
   /// The radio the Network page reads.
   final CountingWifiClient wifi = CountingWifiClient();
@@ -256,9 +259,10 @@ class DestinationHarness {
             BlocProvider.value(value: facts),
             ...extraProviders(),
           ],
-          // The app's own toast overlay, so a page's toasts can be shown
-          // and dismissed here as they are on the console.
-          child: ToastificationWrapper(
+          // The app's notice centre, so a page's messages can be read here
+          // as they are on the console.
+          child: BlocProvider<NoticesCubit>.value(
+            value: notices,
             child: MaterialApp(
               navigatorKey: segnoNavigatorKey,
               debugShowCheckedModeBanner: false,

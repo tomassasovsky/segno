@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
-import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/console_leds/view/console_leds_page.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -12,7 +11,6 @@ import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
-import '../../helpers/helpers.dart';
 import '../../settings/view/destination_harness.dart';
 
 void main() {
@@ -21,8 +19,6 @@ void main() {
 
   setUp(() {
     resetSegnoNavigatorForTest();
-    resetAppToastsForTest();
-    resetToastificationForTest();
     harness = DestinationHarness();
     link = FakePedalLink();
   });

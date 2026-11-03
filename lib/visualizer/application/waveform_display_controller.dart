@@ -17,7 +17,6 @@ class WaveformDisplayContext extends Equatable {
     required this.defaultName,
     required this.mode,
     required this.bank,
-    required this.lossLine,
     required this.goodbye,
     this.notice,
     this.savingStep,
@@ -39,10 +38,6 @@ class WaveformDisplayContext extends Equatable {
 
   /// Visible pedal bank.
   final int bank;
-
-  /// The stage strip's line about a missing interface, echoed on the
-  /// readout; empty when there is none.
-  final String lossLine;
 
   /// The main screen's message for the readout's band, or null.
   final ReadoutNotice? notice;
@@ -66,7 +61,6 @@ class WaveformDisplayContext extends Equatable {
     defaultName,
     mode,
     bank,
-    lossLine,
     notice,
     goodbye,
     savingStep,
@@ -378,7 +372,6 @@ class WaveformDisplayController {
       tsDen: transport.tsDen,
       mode: _context.mode,
       activeBank: _context.bank,
-      lossLine: _context.lossLine,
       notice: _context.notice,
       goodbye: _context.goodbye,
       savingStep: _context.savingStep,

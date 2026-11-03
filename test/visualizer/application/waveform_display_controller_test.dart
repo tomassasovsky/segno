@@ -78,7 +78,6 @@ WaveformDisplayContext _context(int cursor) => WaveformDisplayContext(
   defaultName: true,
   mode: 'record',
   bank: 0,
-  lossLine: '',
   goodbye: ReadoutGoodbye.none,
 );
 
@@ -371,7 +370,6 @@ void main() {
           defaultName: true,
           mode: 'record',
           bank: 0,
-          lossLine: '',
           goodbye: ReadoutGoodbye.none,
           brightness: 0.3,
         ),

@@ -164,7 +164,6 @@ class PerformanceReadout extends Equatable {
     this.tsDen = 4,
     this.mode = 'record',
     this.activeBank = 0,
-    this.lossLine = '',
     this.notice,
     this.goodbye = ReadoutGoodbye.none,
     this.savingStep,
@@ -188,7 +187,6 @@ class PerformanceReadout extends Equatable {
       tsDen: map['tsDen'] as int? ?? 4,
       mode: map['mode'] as String? ?? 'record',
       activeBank: map['activeBank'] as int? ?? 0,
-      lossLine: map['lossLine'] as String? ?? '',
       notice: ReadoutNotice.fromMap(map['notice']),
       goodbye: _goodbyeOf(map['goodbye']),
       savingStep: _stepOf(map['savingStep']),
@@ -223,13 +221,6 @@ class PerformanceReadout extends Equatable {
   /// address, shown beside the function.
   final int activeBank;
 
-  /// The stage strip's line while the pinned audio interface is absent
-  /// (#453), or while the boot waits for it; empty otherwise. The readout
-  /// echoes it word for word (`c/device-lost` — the performer is looking
-  /// down, not at the main screen), so the line is built once, on the main
-  /// screen, with the device's name (#1270 Part 5).
-  final String lossLine;
-
   /// The main screen's message, shown in a band over the readout's top
   /// margin; null when the top bar says nothing.
   final ReadoutNotice? notice;
@@ -257,7 +248,6 @@ class PerformanceReadout extends Equatable {
     'tsDen': tsDen,
     'mode': mode,
     'activeBank': activeBank,
-    'lossLine': lossLine,
     'notice': notice?.toMap(),
     'goodbye': goodbye.name,
     'savingStep': savingStep?.name,
@@ -274,7 +264,6 @@ class PerformanceReadout extends Equatable {
     tsDen,
     mode,
     activeBank,
-    lossLine,
     notice,
     goodbye,
     savingStep,

@@ -199,19 +199,21 @@ void main() {
       await _fadeIn(tester);
       final text = find.byKey(const Key('notice_bar_text'));
       expect(_baseline(tester, text), moreOrLessEquals(nameBaseline));
-      final span = tester
+      final title = tester
           .widget<RichText>(
-            find.descendant(of: text, matching: find.byType(RichText)),
+            find.descendant(
+              of: find.byKey(const Key('notice_sentence_title')),
+              matching: find.byType(RichText),
+            ),
           )
           .text;
-      final sizes = <double?>[];
-      span.visitChildren((child) {
-        if (child is TextSpan && child.text == 'MIDI controller disconnected') {
-          sizes.add(child.style?.fontSize);
-        }
-        return true;
-      });
-      expect(sizes, [nameStyle.fontSize]);
+      expect(title.toPlainText(), 'MIDI controller disconnected');
+      expect(title.style?.fontSize, nameStyle.fontSize);
+      // The body is on the same baseline.
+      expect(
+        _baseline(tester, find.byKey(const Key('notice_sentence_body'))),
+        moreOrLessEquals(nameBaseline),
+      );
       await tester.pump(const Duration(seconds: 10));
     });
 

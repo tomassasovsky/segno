@@ -6,7 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
@@ -36,9 +36,9 @@ import 'package:segno/looper/view/fx/fx_reorder_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_select.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
-import 'package:toastification/toastification.dart';
 
 /// The Effects route (accepted design, slice 3f): the pen's
 /// `01 Effects · destinations`.
@@ -320,9 +320,13 @@ class _FxViewState extends State<FxView> {
         if (!_committed(result)) {
           return;
         }
-        showAppSnackToast(
-          id: 'fx-rack-removed',
-          title: AppText(l10n.fxRackRemoved(rack.name)),
+        final removed = rack.name;
+        context.read<NoticesCubit>().show(
+          Notice(
+            id: AppNoticeId.fx,
+            tone: NoticeTone.success,
+            title: (l10n) => l10n.fxRackRemoved(removed),
+          ),
         );
         if (ModalRoute.of(context)?.isCurrent ?? false) {
           Navigator.maybePop(context);
@@ -463,19 +467,12 @@ class _FxViewState extends State<FxView> {
           await presets.save(name: name, entries: entries, art: art);
         } on Object {
           if (context.mounted) {
-            showAppSnackToast(
-              id: 'fx-preset-save-failed',
-              type: ToastificationType.error,
-              title: AppText(l10n.storageActionFailed),
-            );
+            showStorageFailed(context, AppNoticeId.fxPreset);
           }
           return;
         }
         if (!context.mounted) return;
-        showAppSnackToast(
-          id: 'fx-preset-saved',
-          title: AppText(l10n.fxPresetSaved(name.trim())),
-        );
+        _presetSaved(context, name.trim());
         return;
       }
       final answer = await showFxOptionsSheet(
@@ -499,19 +496,12 @@ class _FxViewState extends State<FxView> {
           await presets.replace(id: existing.id, entries: entries, art: art);
         } on Object {
           if (context.mounted) {
-            showAppSnackToast(
-              id: 'fx-preset-save-failed',
-              type: ToastificationType.error,
-              title: AppText(l10n.storageActionFailed),
-            );
+            showStorageFailed(context, AppNoticeId.fxPreset);
           }
           return;
         }
         if (!context.mounted) return;
-        showAppSnackToast(
-          id: 'fx-preset-saved',
-          title: AppText(l10n.fxPresetSaved(existing.name)),
-        );
+        _presetSaved(context, existing.name);
         return;
       }
       if (!context.mounted) return;
@@ -550,11 +540,23 @@ class _FxViewState extends State<FxView> {
     }
   }
 
-  static void _changeRefused(BuildContext context) => showAppSnackToast(
-    id: 'fx-change-refused',
-    type: ToastificationType.error,
-    title: AppText(context.l10n.fxChangeNotApplied),
-  );
+  static void _changeRefused(BuildContext context) =>
+      context.read<NoticesCubit>().show(
+        Notice(
+          id: AppNoticeId.fx,
+          tone: NoticeTone.warning,
+          title: (l10n) => l10n.fxChangeNotApplied,
+        ),
+      );
+
+  static void _presetSaved(BuildContext context, String name) =>
+      context.read<NoticesCubit>().show(
+        Notice(
+          id: AppNoticeId.fxPreset,
+          tone: NoticeTone.success,
+          title: (l10n) => l10n.fxPresetSaved(name),
+        ),
+      );
 
   /// What adding entries to [chain], the chain at [address], would cost
   /// ([LooperRepository.fxGrowthNs]).
@@ -578,17 +580,15 @@ class _FxViewState extends State<FxView> {
       case FxEditStatus.refused:
         _changeRefused(context);
       case FxEditStatus.overBudget:
-        showAppSnackToast(
-          id: 'fx-over-budget',
-          type: ToastificationType.error,
-          title: AppText(context.l10n.fxOverBudget),
+        context.read<NoticesCubit>().show(
+          Notice(
+            id: AppNoticeId.fx,
+            tone: NoticeTone.warning,
+            title: (l10n) => l10n.fxOverBudget,
+          ),
         );
       case FxEditStatus.unsaved:
-        showAppSnackToast(
-          id: 'fx-storage-failed',
-          type: ToastificationType.error,
-          title: AppText(context.l10n.storageActionFailed),
-        );
+        showStorageFailed(context, AppNoticeId.fx);
       case FxEditStatus.applied || FxEditStatus.unchanged || FxEditStatus.stale:
         break;
     }
