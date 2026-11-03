@@ -257,19 +257,15 @@ jobs:
       # runner VM with it. Recovery needed physical console access (#817).
       #
       # Two guards, both cheap: prune what accumulates (old images, and the
-      # tree of a machine no longer built), and refuse to start a build that
+      # tree of a machine this workflow no longer builds), and refuse to start a build that
       # cannot fit rather than discovering the limit by hitting it.
       # Self-hosted only. A GitHub-hosted runner is ephemeral and nowhere near
       # 80 GB free, so this would fail every push- and tag-triggered release
       # with advice ("free space on the runner") that is unactionable there.
-      - name: Prune old images + stale machines, pre-flight disk check
+      - name: Prune old images + retired machines, pre-flight disk check
         if: inputs.runner == 'self-hosted'
         env:
           MACHINE: ${{ needs.determine-meta.outputs.machine }}
-          # A machine this workflow no longer builds keeps its whole tree (the
-          # Pi 4's was ~45 GB, #817). Once its newest image is this old, it is
-          # retired, not between builds.
-          STALE_MACHINE_DAYS: "14"
           # A warm incremental build for an already-built MACHINE reuses sstate
           # and only lays down one fresh ~8.3 GB .wic plus tmp churn — it does
           # NOT need the ~80 GB a cold/new-MACHINE second full tree does. An
@@ -308,28 +304,29 @@ jobs:
             done < <(ls -t -- "${wics[@]}" | tail -n +3)
           done
 
-          # A machine other than the one this run builds, whose newest deploy
-          # file is older than STALE_MACHINE_DAYS, is retired. Its packages,
-          # stamps and sysroots sit in the shared TMPDIR under its tune's
-          # names as well as its own (the Pi 4's cortexa72 tree), so the tree
-          # cannot be cut out piece by piece without leaving stamps that claim
-          # deleted output. Remove the whole TMPDIR instead, the operation
-          # Yocto documents as always safe: sstate-cache and downloads stay
-          # (they sit beside tmp/, not in it), and this run restores its own
-          # machine's tree from sstate.
-          for d in "$YOCTO_WORK_DIR"/*/tmp/deploy/images/*/; do
-            # An earlier pass may already have removed this TMPDIR. Files, not
-            # the directory: the image prune above just touched its mtime.
-            [ -d "$d" ] || continue
-            other=$(basename "$d")
-            [ "$other" != "$MACHINE" ] || continue
-            if [ -n "$(find "$d" -mindepth 1 ! -type d -mtime "-${STALE_MACHINE_DAYS}" -print -quit)" ]; then
-              echo "keeping $other: built within ${STALE_MACHINE_DAYS} days"
-              continue
-            fi
-            tmpdir=${d%/deploy/images/*}
-            echo "pruning $tmpdir ($(du -sh "$tmpdir" | cut -f1)): $other has not been built in ${STALE_MACHINE_DAYS} days"
+          # determine-meta builds exactly one MACHINE, so a deploy directory
+          # for any other machine belongs to a retired one, and its tree (the
+          # Pi 4's was ~45 GB, #817) would otherwise stay forever, beside the
+          # second full tree a new machine builds. Its packages, stamps and
+          # sysroots sit in the shared TMPDIR under its tune's names as well as
+          # its own (the Pi 4's cortexa72), so it cannot be cut out piece by
+          # piece without leaving stamps that claim deleted output. Remove the
+          # whole TMPDIR instead, the cleanup Yocto documents as always safe.
+          # sstate-cache and downloads sit beside tmp/, not in it, so they
+          # stay, and this run restores its own machine's tree from sstate
+          # (the older images of this machine go with it, once).
+          for tmpdir in "$YOCTO_WORK_DIR"/*/tmp; do
+            retired=()
+            for d in "$tmpdir"/deploy/images/*/; do
+              m=$(basename "$d")
+              [ "$m" = "$MACHINE" ] || retired+=( "$m" )
+            done
+            [ ${#retired[@]} -gt 0 ] || continue
+            before=$(df -BG --output=avail "$YOCTO_WORK_DIR" | tail -1 | tr -dc '0-9')
+            echo "pruning $tmpdir: it holds ${retired[*]}, and this workflow builds only $MACHINE"
             rm -rf -- "$tmpdir"
+            after=$(df -BG --output=avail "$YOCTO_WORK_DIR" | tail -1 | tr -dc '0-9')
+            echo "freed $((after - before)) GB"
           done
 
           avail=$(df -BG --output=avail "$YOCTO_WORK_DIR" | tail -1 | tr -dc '0-9')
@@ -423,12 +420,12 @@ jobs:
         run: |
           set +e
           echo "free after build: $(df -BG --output=avail "$YOCTO_WORK_DIR" | tail -1 | tr -dc '0-9') GB"
-          du -sh "$YOCTO_WORK_DIR" 2>/dev/null | tail -1
+          # One pass: the total, plus sstate-cache and downloads, which are
+          # never pruned (they keep a build incremental), so their growth is
+          # seen here first.
+          du -h -d 2 "$YOCTO_WORK_DIR" 2>/dev/null \
+            | awk -F'\t' -v top="$YOCTO_WORK_DIR" '$2 == top || $2 ~ /\/(sstate-cache|downloads)$/'
           du -sh "$YOCTO_WORK_DIR"/*/tmp/deploy/images/*/ 2>/dev/null | tail -5
-          # Never pruned: they are what keeps a build incremental. Shown so
-          # their growth is seen here first.
-          du -sh "$YOCTO_WORK_DIR"/sstate-cache "$YOCTO_WORK_DIR"/downloads \
-            "$YOCTO_WORK_DIR"/*/sstate-cache "$YOCTO_WORK_DIR"/*/downloads 2>/dev/null
 
       - name: Collect bundle + write manifest
         id: artifacts
