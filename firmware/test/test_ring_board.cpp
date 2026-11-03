@@ -225,8 +225,12 @@ static void lifecycle() {
   assert(channelTotal() > 0 && g_parser.dropped == 1);
   at(now += 600);
   expectDark();
-  // A stale console also takes the level back to full.
+  // A stale console takes the level back to full; a LEVEL just before the
+  // next state sets it, so the ring comes back at that level.
+  assert(g_level == ring_link::LEVEL_FULL);
   sendLevel(64, now += 1);
+  send(live(), now += 20);
+  assert(g_level == 64 && channelTotal() > 0);
   at(now += 600);
   assert(g_level == ring_link::LEVEL_FULL);
 }

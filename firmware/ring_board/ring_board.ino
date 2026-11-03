@@ -67,10 +67,9 @@ static void pollState() {
     uint8_t type;
     const uint8_t *payload;
     if (!g_parser.push(byte, type, payload)) continue;
-    // The console sends LEVEL after each STATE; without a live state the
-    // ring is dark, and the level waits for the next one.
+    // The console sends LEVEL with each STATE, just before it.
     if (type == ring_link::LEVEL) {
-      if (payload[0] && g_haveState) g_level = payload[0];
+      if (payload[0]) g_level = payload[0];
       continue;
     }
     if (type != ring_link::STATE) continue;
@@ -183,14 +182,12 @@ static uint32_t ambientRingColor(uint32_t c) {
 // the console is idle and the screens are dimmed, the output drops to about
 // 20 % (#1349), at once even on a still frame. The console's LED brightness
 // (#1564) scales it first, also at once.
-static bool g_shownDim = false;
-static uint8_t g_shownLevel = ring_link::LEVEL_FULL;
+static uint8_t g_shownOutput = ring_link::LEVEL_FULL;
 static bool dimmedNow() { return g_haveState && (g_state.flags & ring_link::FLAG_DIMMED); }
+static uint8_t outputNow() { return ring_link::outputLevel(g_level, dimmedNow()); }
 static void showRing() {
-  const bool dim = dimmedNow();
-  g_shownDim = dim;
-  g_shownLevel = g_level;
-  const uint8_t output = ring_link::outputLevel(g_level, dim);
+  const uint8_t output = outputNow();
+  g_shownOutput = output;
   uint32_t total = 0;
   for (uint16_t i = 0; i < RING_N; ++i) {
     const uint32_t c = g_pixels[i];
@@ -361,6 +358,6 @@ void loop() {
     const bool changed = renderRing();
     const bool refresh = (uint32_t)(now - g_lastRefreshMs) >= 250;
     if (refresh) g_lastRefreshMs = now;
-    if (changed || refresh || dimmedNow() != g_shownDim || g_level != g_shownLevel) showRing();
+    if (changed || refresh || outputNow() != g_shownOutput) showRing();
   }
 }

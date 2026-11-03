@@ -180,14 +180,14 @@ class PedalRepository {
 
   /// How bright the console's pills and ring are, `1`..`255` of full
   /// (#1564). Sent at once to a connected board when it changes. Once it has
-  /// been set, it is sent again with the state frame that answers every
-  /// hello, so a board that restarted, or missed one, is back on it within a
-  /// second; until then a board shows full brightness by itself and hears
-  /// nothing of it. A board that predates the message stays at full.
+  /// been set, even to full, it is sent again ahead of the state frame that
+  /// answers every hello, so a board that restarted, missed one, or was left
+  /// dimmed by an earlier run is back on it within a second; until then a
+  /// board shows full brightness by itself and hears nothing of it. A board
+  /// that predates the message stays at full.
   int get ledLevel => _ledLevel;
 
-  /// Sets [ledLevel]. Once a level has been set it is sent before the state
-  /// frame that answers every hello.
+  /// Sets [ledLevel].
   void setLedLevel(int level) {
     RangeError.checkValueInInterval(
       level,
@@ -195,9 +195,12 @@ class PedalRepository {
       PedalLinkCodec.ledLevelFull,
       'level',
     );
-    if (level == _ledLevel) return;
+    // Set once, even to full, the level is replayed on every hello: a board
+    // the last run left dimmed comes back to what this run says.
+    final changed = level != _ledLevel || !_ledLevelSet;
     _ledLevel = level;
     _ledLevelSet = true;
+    if (!changed) return;
     if (_disposed || _goodbye || !_connected) return;
     _link.send(LedLevelMessage(level));
   }
@@ -281,13 +284,13 @@ class PedalRepository {
     );
     // Answer every hello with the current frame: the reconnect re-push and
     // the keep-alive in one place, paced by the board.
-    // The level goes first: a board with no frame showing applies it at once,
-    // so a reconnect never lights full and fades down.
+    // The level goes first, with or without a frame to follow: a board with
+    // no frame showing applies it at once, so a reconnect never lights full
+    // and fades down.
+    if (status != PedalLinkStatus.connected) return;
+    if (_ledLevelSet && !_goodbye) _link.send(LedLevelMessage(_ledLevel));
     final frame = _lastFrame;
-    if (status == PedalLinkStatus.connected && frame != null) {
-      if (_ledLevelSet && !_goodbye) _link.send(LedLevelMessage(_ledLevel));
-      _link.send(StateMessage(frame));
-    }
+    if (frame != null) _link.send(StateMessage(frame));
   }
 
   void _onHelloTimeout() {
@@ -314,11 +317,11 @@ class PedalRepository {
     _hello = hello;
     _log?.call('pedal link: ${status.name} (${why()})');
     if (!_statusChanges.isClosed) _statusChanges.add(status);
-    // What the board reported belongs to that board and firmware: a new
-    // hello (another status, or a reflash under the running app) starts
-    // over, and a board that still reports it says so within a second.
-    _setPowerSupply(null);
+    // The sensor report belongs to that board and firmware: a new hello
+    // (another status, or a reflash under the running app) starts it over,
+    // and a board that still has the sensor says so within a second.
     _setAmbientLight(null);
+    if (status != PedalLinkStatus.connected) _setPowerSupply(null);
   }
 
   void _setAmbientLight(PedalAmbientLight? light) {

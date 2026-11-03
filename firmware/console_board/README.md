@@ -106,7 +106,9 @@ room (#1564). The wiring is in segno-hardware's `hardware/segno_wiring.md`.
   step back and forth. A real change lands in about 5 to 10 s.
 - **Units.** `AMBIENT` carries the reading, not lux: `2^(level / 16)` ADC
   counts of 4095, 0 for one count or less, 190 at the top of the range
-  (3700 counts, where the transistor runs out of headroom). The sensor's gain
+  (3700 counts, where the transistor runs out of headroom). Darkness is
+  reported as 0 exactly, and while the sensor is at the top of its range the
+  level is 190 exactly. The sensor's gain
   varies 9x between Vishay's bins and its lens is sanded flat, so the board
   does not guess it. The app calibrates against a dark and a bright reading the
   owner captures in Settings, and the load resistor can be swapped without
@@ -136,7 +138,7 @@ it. It fades to a new level at 3 steps per 20 ms render (the whole range in
 about 1.7 s), except while no frame is showing, when it takes the level at
 once: the app sends the level before the `STATE` that answers a hello, so a
 reconnect never lights full and fades down. The board sends the level to the
-ring carrier as the ring link's `LEVEL` after every ring state. Without a
+ring carrier as the ring link's `LEVEL` just before every ring state. Without a
 `LED_LEVEL`, and again when the app's frames stop, it is 255: exactly what
 firmware 2.6 showed. Both messages are optional (still protocol 12):
 firmware 2.6 drops `LED_LEVEL` and an older app drops `AMBIENT`, each at the
@@ -240,7 +242,7 @@ compete with the ten-button mask for physical output.
 | `0x07 AMBIENT` | board → segno | `sensor (0 none, 1 reading, 2 at the top of the range), level` — the reading, `2^(level / 16)` ADC counts; after every `HELLO`; optional, firmware 2.7 (#1564) |
 | `0x10 STATE` | segno → board | 53 bytes: flags, mode, looper mode, global colour, bank, selected track, 8 track LEDs, loop length µs (LE32), master gain, ten RGB triples, active mask (LE16), queued switch, queue progress — see `pedal_link.h` |
 | `0x13 CLEAR_HOLD` | segno → board | `button + 1 (0 none), progress 0..255` — every 20 ms while a clear-track hold runs (0..254), 255 once when it fires (the board flashes the pill); optional, firmware 2.6 (#1534) |
-| `0x14 LED_LEVEL` | segno → board | `level 1..255` of full brightness, for the pills and the ring — when it changes and after the `STATE` that answers each `HELLO`; optional, firmware 2.7 (#1564) |
+| `0x14 LED_LEVEL` | segno → board | `level 1..255` of full brightness, for the pills and the ring — when it changes and, once the app has set one, before the `STATE` that answers each `HELLO`; optional, firmware 2.7 (#1564) |
 
 segno answers every compatible `HELLO` with its current `STATE`, so a board that just
 (re)connected is current within a second; the board goes dark if no `STATE`
