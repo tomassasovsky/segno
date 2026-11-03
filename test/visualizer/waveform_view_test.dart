@@ -140,8 +140,8 @@ void main() {
     // in the background colour the playhead is invisible wherever a bar
     // covers it, which is most of the height on a loud loop.
     //
-    // Empty samples so the paint calls are exactly enumerable: baseline,
-    // then the gutter, then the playhead itself.
+    // The wave paints its baseline; the playhead's layer over it paints the
+    // gutter, then the playhead itself.
     final hc = AppTheme.highContrast.extension<LooperTheme>()!;
     await tester.pumpWidget(
       MaterialApp(
@@ -158,14 +158,17 @@ void main() {
 
     expect(
       tester.renderObject(find.byKey(const Key('waveform_view_paint'))),
+      paints..rect(
+        color: hc
+            .waveformColor(LooperMeterState.stopped)
+            .withValues(
+              alpha: 0.18,
+            ),
+      ),
+    );
+    expect(
+      tester.renderObject(find.byKey(const Key('waveform_view_playhead'))),
       paints
-        ..rect(
-          color: hc
-              .waveformColor(LooperMeterState.stopped)
-              .withValues(
-                alpha: 0.18,
-              ),
-        )
         ..rect(color: hc.waveformBackground)
         ..rect(color: const Color(0xFFFFFFFF)),
       reason: 'the gutter must sit between the bars and the playhead',
@@ -197,11 +200,11 @@ void main() {
             .map((box) => box.color),
         contains(looper.waveformBackground),
       );
-      final paint = tester.widget<CustomPaint>(
-        find.byKey(const Key('waveform_view_paint')),
+      final playhead = tester.widget<CustomPaint>(
+        find.byKey(const Key('waveform_view_playhead')),
       );
       expect(
-        (paint.painter! as WaveformPainter).background,
+        (playhead.painter! as PlayheadPainter).background,
         looper.waveformBackground,
       );
     }
@@ -251,19 +254,9 @@ void main() {
   group('WaveformPainter.shouldRepaint', () {
     final samples = Float32List.fromList([0, 1]);
     const cyan = Color(0xFF00E5FF);
-    const black = Color(0xFF000000);
 
-    WaveformPainter painterOf({
-      Float32List? samples_,
-      Color color = cyan,
-      Color background = black,
-      double progress = 0,
-    }) => WaveformPainter(
-      samples: samples_ ?? samples,
-      color: color,
-      background: background,
-      progress: progress,
-    );
+    WaveformPainter painterOf({Float32List? samples_, Color color = cyan}) =>
+        WaveformPainter(samples: samples_ ?? samples, color: color);
 
     test('does not repaint for the same list and color', () {
       expect(painterOf().shouldRepaint(painterOf()), isFalse);
@@ -284,6 +277,22 @@ void main() {
         isTrue,
       );
     });
+  });
+
+  group('PlayheadPainter.shouldRepaint', () {
+    const black = Color(0xFF000000);
+
+    PlayheadPainter painterOf({
+      double progress = 0,
+      Color background = black,
+    }) => PlayheadPainter(progress: progress, background: background);
+
+    test('repaints on a playhead change', () {
+      expect(
+        painterOf(progress: 0.2).shouldRepaint(painterOf(progress: 0.5)),
+        isTrue,
+      );
+    });
 
     test('repaints on a background change', () {
       // The background is not decoration: it is painted into the playhead
@@ -295,13 +304,56 @@ void main() {
         isTrue,
       );
     });
+  });
 
-    test('repaints on a playhead change', () {
-      expect(
-        painterOf(progress: 0.2).shouldRepaint(painterOf(progress: 0.5)),
-        isTrue,
-      );
-    });
+  testWidgets('a moving playhead does not repaint the wave', (tester) async {
+    final samples = Float32List.fromList([0, 0.5, 1]);
+    Future<void> pumpAt(double progress) => tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.neon,
+        home: Scaffold(
+          body: WaveformView(
+            samples: samples,
+            state: LooperMeterState.playing,
+            progress: progress,
+          ),
+        ),
+      ),
+    );
+    const waveKey = Key('waveform_view_paint');
+    const playheadKey = Key('waveform_view_playhead');
+    CustomPainter painterOf(Key key) =>
+        tester.widget<CustomPaint>(find.byKey(key)).painter!;
+
+    await pumpAt(0.2);
+    final wave = painterOf(waveKey);
+    final playhead = painterOf(playheadKey);
+    await pumpAt(0.4);
+
+    expect(painterOf(waveKey).shouldRepaint(wave), isFalse);
+    expect(painterOf(playheadKey).shouldRepaint(playhead), isTrue);
+    // Each paints in a layer of its own, so a playhead repaint reaches
+    // neither the wave nor the readout around the view.
+    final waveBoundary = find
+        .ancestor(
+          of: find.byKey(waveKey),
+          matching: find.byType(RepaintBoundary),
+        )
+        .first;
+    final playheadBoundary = find
+        .ancestor(
+          of: find.byKey(playheadKey),
+          matching: find.byType(RepaintBoundary),
+        )
+        .first;
+    expect(
+      find.descendant(of: waveBoundary, matching: find.byKey(playheadKey)),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: playheadBoundary, matching: find.byKey(waveKey)),
+      findsNothing,
+    );
   });
 
   group('bar ruler', () {
@@ -334,12 +386,12 @@ void main() {
         (tester.widget<CustomPaint>(ruler).painter! as BarRulerPainter).bars,
         4,
       );
-      // Over the wave, so its lines stay visible across loud bars: the last
-      // child of the stack, after the wave's own layer.
+      // Over the wave and the playhead, so its lines stay visible across
+      // loud bars: the last child of the stack, after the wave's own layer.
       final stack = tester.widget<Stack>(
         find.ancestor(of: ruler, matching: find.byType(Stack)).first,
       );
-      expect(stack.children.length, 2);
+      expect(stack.children.length, 3);
       expect(
         find.descendant(
           of: find.byWidget(stack.children.last),
