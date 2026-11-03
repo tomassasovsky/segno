@@ -714,6 +714,15 @@ class PerformanceRepository {
         disarmSnapshot: disarmSnapshot,
         live: true,
       );
+    } on Object {
+      // The engine has stopped: the take is no longer live, whatever the
+      // finalize did. It stays unfinalized on disk for the next start's
+      // recovery, and the repository is free to record again.
+      _armedDir = null;
+      _armSnapshot = null;
+      _armedAt = null;
+      _setStatus(PerformanceCaptureStatus.idle);
+      rethrow;
     } finally {
       _releaseCaptureGuard();
     }
@@ -1390,7 +1399,7 @@ class PerformanceRepository {
         // Converted into parts a stream at a time in bounded memory;
         // anything short of a complete conversion leaves it unfinalized, its
         // raw files kept, for the next start.
-        final streams = _legacyStreams(native);
+        final streams = streamsOf(native);
         if (streams == null) return; // a layout no conversion can trust
         final converted = await _convertLegacy(dir, native, streams);
         if (converted == null) return;
@@ -1626,6 +1635,8 @@ class PerformanceRepository {
                 for (final s in reconciled.streams.skip(1)) s.stream - 1,
               ],
             },
+            // Overwritten below by what the parts hold, when there are any.
+            'capture_frames': checkpoint?.frames ?? 0,
             'overrun_count': 0,
             'zero_filled_frames': 0,
             'overrun_gaps': const <dynamic>[],
@@ -1668,28 +1679,6 @@ class PerformanceRepository {
   bool _holdsRawPcm(String dir) => Directory(dir).listSync().any(
     (e) => e is File && _rawPcmFile.hasMatch(_basename(e.path)),
   );
-
-  /// The streams a capture from before #1198 wrote, from its sidecar's
-  /// `channel_layout`: the master (stream 0, 1 or 2 channels) and each
-  /// captured input `n` (stream `1 + n`, stereo). Null when the layout does
-  /// not read, which no conversion may guess at.
-  List<({int stream, int channels})>? _legacyStreams(
-    Map<String, dynamic> native,
-  ) {
-    final layout = native['channel_layout'] ?? const <String, dynamic>{};
-    if (layout is! Map<String, dynamic>) return null;
-    final master = layout['master_channels'] ?? 1;
-    final inputs = layout['captured_inputs'] ?? const <dynamic>[];
-    if (master is! int || master < 1 || master > 2 || inputs is! List) {
-      return null;
-    }
-    final streams = [(stream: 0, channels: master)];
-    for (final input in inputs) {
-      if (input is! int || input < 0) return null;
-      streams.add((stream: 1 + input, channels: 2));
-    }
-    return streams;
-  }
 
   /// Converts a capture from before #1198 into float parts (#1078): each
   /// raw stream in turn is copied into parts on a background isolate, a

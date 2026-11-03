@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno_engine/segno_engine.dart';
 
 import 'helpers/fake_performance_engine.dart';
 import 'helpers/fake_storage_io.dart';
@@ -426,6 +427,81 @@ void main() {
   });
 
   group('recovery, refused', () {
+    test('a stream the checkpoint does not list leaves the take as it is when '
+        'only the checkpoint is trusted', () async {
+      final dir = seed('perf-unlisted-stream');
+      writeOpenPart('$dir/master-001.wav', stereo(8));
+      writeOpenPart('$dir/input-0-001.wav', stereo(8), stream: 1);
+      writeNativeSidecar(dir, capturedInputs: const [0], captureFrames: 8);
+      checkpoint(dir, master: [openEntry(1, 6)]);
+      bootId = 'boot-b';
+      final before = File('$dir/master-001.wav').readAsBytesSync();
+
+      await repo.recoverCapture(dir);
+
+      expect(manifestOf(dir)['finalized'], isFalse);
+      expect(File('$dir/master-001.wav').readAsBytesSync(), before);
+    });
+
+    test(
+      'a header naming part 0 is not a part: its stream ends before it',
+      () async {
+        final dir = seed('perf-index-zero');
+        writeOpenPart('$dir/master-001.wav', stereo(4));
+        writeOpenPart('$dir/master-002.wav', stereo(4), index: 0);
+        writeNativeSidecar(dir, captureFrames: 8);
+
+        await repo.recoverCapture(dir);
+
+        expect(partsOf(dir).single.frames, 4);
+        expect(File('$dir/master-002.wav').existsSync(), isTrue);
+      },
+    );
+
+    test('a take whose sidecar was lost and whose parts are not its own keeps '
+        'the length its checkpoint names', () async {
+      final dir = seed('perf-lost-all');
+      writeOpenPart('$dir/master-001.wav', stereo(4));
+      File('$dir/master-001.wav').openSync(mode: FileMode.append)
+        ..setPositionSync(44)
+        ..writeFromSync([9])
+        ..closeSync();
+      checkpoint(dir, master: [openEntry(1, 4)]);
+
+      await repo.recoverCapture(dir);
+
+      expect(manifestOf(dir)['capture_frames'], 4);
+      expect(manifestOf(dir)['parts'], isEmpty);
+    });
+
+    test('a Stop whose finalize fails leaves the repository free to record, '
+        'and the take for the next start', () async {
+      final unreadable = PerformanceRepository(
+        storageIo: unreadableStorageIo,
+        guards: GuardRegistry(),
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+        bootId: () => bootId,
+      );
+      addTearDown(unreadable.dispose);
+      await unreadable.arm();
+      clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+      final dir = unreadable.armedDirectory!;
+      writeOpenPart('$dir/master-001.wav', stereo(4));
+      writeNativeSidecar(dir, captureFrames: 4);
+
+      await expectLater(
+        unreadable.disarm(),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      expect(unreadable.armedDirectory, isNull);
+      expect(manifestOf(dir)['finalized'], isFalse);
+      expect(await unreadable.arm(), EngineResult.ok);
+      expect(unreadable.armedDirectory, isNot(dir));
+    });
+
     test('a take with no id and no part finalizes as it was, keeping its '
         'length for the stems', () async {
       final dir = seed('perf-no-audio');

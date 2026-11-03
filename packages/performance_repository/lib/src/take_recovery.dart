@@ -114,7 +114,7 @@ ReconciledTake? reconcileTake({
   if (takeId != null && !_takeIdHex.hasMatch(takeId)) return null;
   if (checkpoint != null && checkpoint.takeId != takeId) return null;
   final streams = native != null
-      ? _streamsOf(native)
+      ? streamsOf(native)
       : [
           for (final s in checkpoint!.streams)
             (stream: s.stream, channels: s.channels),
@@ -163,7 +163,8 @@ ReconciledTake? reconcileTake({
       final RecordedPartHeader header;
       try {
         header = RecordedPartHeader.decode(_head(file));
-      } on FormatException {
+      } on Object {
+        // Not a part header (a bad tag, or a field no part can hold).
         break;
       }
       if (_hex(header.takeId) != takeId ||
@@ -182,7 +183,10 @@ ReconciledTake? reconcileTake({
     if (parts.isEmpty) continue;
     var available = parts.fold<int>(0, (sum, p) => sum + p.frames);
     if (!trusted) {
+      // A stream the checkpoint does not know cannot be bounded by it, and
+      // reading it as holding nothing would cut every stream to nothing.
       final durable = _checkpointFrames(checkpoint, s.stream);
+      if (durable == null) return null;
       if (durable < available) available = durable;
     }
     onDisk[s.stream] = parts;
@@ -281,13 +285,19 @@ int countOvers(String path, int dataBytes) {
     var left = dataBytes;
     while (left > 0) {
       final want = left < buffer.length ? left : buffer.length;
-      final got = file.readIntoSync(buffer, 0, want);
-      if (got == 0) break;
-      final samples = Float32List.view(buffer.buffer, 0, got ~/ 4);
+      // Fill the chunk, so a short read never splits a sample.
+      var filled = 0;
+      while (filled < want) {
+        final got = file.readIntoSync(buffer, filled, want);
+        if (got == 0) break;
+        filled += got;
+      }
+      final samples = Float32List.view(buffer.buffer, 0, filled ~/ 4);
       for (final sample in samples) {
         if (isOver(sample)) overs++;
       }
-      left -= got;
+      if (filled < want) break;
+      left -= filled;
     }
   } finally {
     file.closeSync();
@@ -295,9 +305,11 @@ int countOvers(String path, int dataBytes) {
   return overs;
 }
 
-/// The master and each captured input from a sidecar's `channel_layout`,
-/// or null when it does not read.
-List<({int stream, int channels})>? _streamsOf(Map<String, dynamic> native) {
+/// The streams a take wrote, from its sidecar's `channel_layout`: the
+/// master (stream 0, 1 or 2 channels) and each captured input `n` (stream
+/// `1 + n`, stereo). Null when the layout does not read, which nothing may
+/// guess at.
+List<({int stream, int channels})>? streamsOf(Map<String, dynamic> native) {
   final layout = native['channel_layout'] ?? const <String, dynamic>{};
   if (layout is! Map<String, dynamic>) return null;
   final master = layout['master_channels'] ?? 1;
@@ -324,11 +336,11 @@ List<TakePart> _sidecarParts(Map<String, dynamic>? native) {
   }
 }
 
-int _checkpointFrames(TakeCheckpoint checkpoint, int stream) {
+int? _checkpointFrames(TakeCheckpoint checkpoint, int stream) {
   for (final s in checkpoint.streams) {
     if (s.stream == stream) return s.frames;
   }
-  return 0;
+  return null;
 }
 
 /// Truncates [part] to its header and [dataBytes] of payload and patches

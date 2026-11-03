@@ -424,10 +424,12 @@ writes `finalized: true`, on a background isolate:
 
 - **How much counts.** At a Stop (the drain has just stopped, in this boot)
   every whole frame the files hold. At recovery after a crash, the same only
-  when the trust rule above holds (this build has no mirror and records to
-  Internal, so: the newest slot's `boot_id` is this boot and its
-  `volume_generation` is -1); otherwise only the checkpoint's per-stream
-  frames. A take with no valid slot (cut in its first five seconds) has
+  when the trust rule above holds (recovery runs only for takes under the
+  Internal exports root and this build has no mirror, so: the newest slot's
+  `boot_id` is this boot and its `volume_generation` is -1); otherwise only
+  the checkpoint's per-stream frames. A take recorded to a USB drive is not
+  recovered yet; that is Part 10, which also records the drive's
+  generation. A take with no valid slot (cut in its first five seconds) has
   nothing better than its files, and they count. A part counts only while
   its header reads as this take's (`take_id`, stream, index, format); the
   first one that does not ends its stream, and it is never touched.
@@ -455,7 +457,8 @@ writes `finalized: true`, on a background isolate:
   (their details were in the sidecar).
 - **Left as it is** (unfinalized, every file kept, reported as not
   recovered): neither a readable sidecar nor a valid slot, a slot of another
-  take, or a sidecar with no `take_id` beside part files. A sidecar with no
+  take, a stream the slot does not list when only the slot is trusted, or a
+  sidecar with no `take_id` beside part files. A sidecar with no
   `take_id` and no part (a take that captured no audio) finalizes as it was.
 - A capture converted from raw streams (`converted_from_raw: true`, below)
   is already sealed and is kept as converted.
