@@ -6,6 +6,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/output_level_cubit.dart';
 import 'package:segno/looper/cubit/transport_clock_cubit.dart';
 import 'package:segno/looper/view/slot_row.dart';
+import 'package:segno/looper/view/stage_top_bar.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The session strip under the track run (the accepted stage): tempo and time
@@ -16,9 +17,6 @@ class StageFooter extends StatelessWidget {
   /// Creates a [StageFooter].
   const StageFooter({super.key});
 
-  /// The strip's inset from the screen edges — the pen's 54.
-  static const double sideInset = 54;
-
   /// The narrowest strip the four slots are laid out at; a narrower window
   /// scales the strip down as one piece.
   static const double minWidth = 900;
@@ -27,7 +25,14 @@ class StageFooter extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     // The pen's 22 above the readouts; the run's own inset holds the strip
     // off the columns.
-    padding: const EdgeInsets.fromLTRB(sideInset, 22, sideInset, 0),
+    // The stage's one side inset, the top bar's, so both bars of the stage
+    // end at the same edges (#1590 STG-1).
+    padding: const EdgeInsets.fromLTRB(
+      StageTopBar.sideInset,
+      22,
+      StageTopBar.sideInset,
+      0,
+    ),
     child: ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 44),
       // Four fixed slots across the strip (#1308): a readout changing value

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/control/binding/pedal_button_legend.dart';
+import 'package:segno/control/view/console_pedal_layout.dart';
 import 'package:segno/control/view/pedal_setup/pedal_hardware_face.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -72,23 +73,11 @@ class PedalSetupMap extends StatelessWidget {
   /// two caps and the plate spaces them by the screens between them.
   static const Size _rearSlot = Size(168, 216);
 
-  /// The pen's front-row pitch.
-  static const double _frontPitch = 217;
-
   /// The raised row, including space for its LED above the cap.
   static const double _rearTop = 30;
 
   /// Where the front row sits.
   static const double _frontTop = 350;
-
-  /// The pen's front-row order, left to right.
-  static const List<PedalButton> _frontRow = [
-    PedalButton.recPlay,
-    PedalButton.stop,
-    PedalButton.undo,
-    PedalButton.mode,
-    ...kTrackSwitches,
-  ];
 
   @override
   Widget build(BuildContext context) => SizedBox.fromSize(
@@ -96,24 +85,28 @@ class PedalSetupMap extends StatelessWidget {
     child: Stack(
       clipBehavior: Clip.none,
       children: [
-        Positioned(
-          left: 451,
-          top: _rearTop,
-          child: _cap(context, PedalButton.clear, _rearSlot),
-        ),
-        Positioned(
-          left: 668,
-          top: _rearTop,
-          child: _cap(context, PedalButton.bank, _rearSlot),
-        ),
-        for (final (index, button) in _frontRow.indexed)
-          Positioned(
-            left: index * _frontPitch,
-            top: _frontTop,
-            child: _cap(context, button, _frontSlot),
-          ),
+        // Where the foot views draw them too (#1590 FT-4).
+        for (final button in ConsolePedalLayout.rearRow)
+          _place(context, button, _rearSlot, _rearTop),
+        for (final button in ConsolePedalLayout.frontRow)
+          _place(context, button, _frontSlot, _frontTop),
       ],
     ),
+  );
+
+  /// [button]'s cap, centred where [ConsolePedalLayout] puts it.
+  Widget _place(
+    BuildContext context,
+    PedalButton button,
+    Size slot,
+    double top,
+  ) => Positioned(
+    left:
+        penSize.width / 2 +
+        ConsolePedalLayout.centreOffset(button) -
+        slot.width / 2,
+    top: top,
+    child: _cap(context, button, slot),
   );
 
   Widget _cap(BuildContext context, PedalButton button, Size slot) {

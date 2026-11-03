@@ -7,6 +7,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/foot_pedal_rows.dart';
 import 'package:segno/looper/view/foot_top_bar.dart';
 import 'package:segno/looper/view/performance_pedal.dart';
 import 'package:segno/theme/theme.dart';
@@ -38,17 +39,6 @@ class FootPeelView extends StatelessWidget {
     );
     final l10n = context.l10n;
     final surface = context.surface;
-
-    const front = [
-      PedalButton.recPlay,
-      PedalButton.stop,
-      PedalButton.undo,
-      PedalButton.mode,
-      PedalButton.track1,
-      PedalButton.track2,
-      PedalButton.track3,
-      PedalButton.track4,
-    ];
     return DefaultTextStyle.merge(
       style: TextStyle(
         fontWeight: FontWeight.w400,
@@ -79,22 +69,12 @@ class FootPeelView extends StatelessWidget {
                           style: const TextStyle(fontSize: 40),
                         ),
                       ),
-                      PositionedDirectional(
-                        start: 480,
-                        top: 56,
-                        width: 180,
-                        child: _FootPeelPedal(
-                          button: PedalButton.clear,
-                          projection: projection,
-                        ),
-                      ),
-                      PositionedDirectional(
-                        start: 700,
-                        top: 56,
-                        width: 180,
-                        child: _FootPeelPedal(
-                          button: PedalButton.bank,
-                          projection: projection,
+                      Positioned.fill(
+                        child: FootPedalRows(
+                          pedal: (button) => _FootPeelPedal(
+                            button: button,
+                            projection: projection,
+                          ),
                         ),
                       ),
                       PositionedDirectional(
@@ -102,25 +82,6 @@ class FootPeelView extends StatelessWidget {
                         top: 150,
                         width: 820,
                         child: _PeelOverview(projection: projection),
-                      ),
-                      PositionedDirectional(
-                        start: 40,
-                        end: 40,
-                        top: 472,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            for (final button in front)
-                              SizedBox(
-                                width: 180,
-                                child: _FootPeelPedal(
-                                  button: button,
-                                  projection: projection,
-                                ),
-                              ),
-                          ],
-                        ),
                       ),
                     ],
                   ),

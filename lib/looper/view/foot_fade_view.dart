@@ -8,6 +8,7 @@ import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/foot_pedal_rows.dart';
 import 'package:segno/looper/view/foot_top_bar.dart';
 import 'package:segno/looper/view/performance_pedal.dart';
 import 'package:segno/theme/theme.dart';
@@ -79,17 +80,6 @@ class _FootFadeContent extends StatelessWidget {
     final timeTrack = timeChannel == null
         ? null
         : projection.tracks[timeChannel];
-
-    const front = [
-      PedalButton.recPlay,
-      PedalButton.stop,
-      PedalButton.undo,
-      PedalButton.mode,
-      PedalButton.track1,
-      PedalButton.track2,
-      PedalButton.track3,
-      PedalButton.track4,
-    ];
     return DefaultTextStyle.merge(
       style: TextStyle(
         fontWeight: FontWeight.w400,
@@ -120,22 +110,12 @@ class _FootFadeContent extends StatelessWidget {
                           style: const TextStyle(fontSize: 40),
                         ),
                       ),
-                      PositionedDirectional(
-                        start: 480,
-                        top: 56,
-                        width: 180,
-                        child: _FootFadePedal(
-                          button: PedalButton.clear,
-                          projection: projection,
-                        ),
-                      ),
-                      PositionedDirectional(
-                        start: 700,
-                        top: 56,
-                        width: 180,
-                        child: _FootFadePedal(
-                          button: PedalButton.bank,
-                          projection: projection,
+                      Positioned.fill(
+                        child: FootPedalRows(
+                          pedal: (button) => _FootFadePedal(
+                            button: button,
+                            projection: projection,
+                          ),
                         ),
                       ),
                       PositionedDirectional(
@@ -208,25 +188,6 @@ class _FootFadeContent extends StatelessWidget {
                                       ),
                                     ],
                                   ],
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      PositionedDirectional(
-                        start: 40,
-                        end: 40,
-                        top: 472,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            for (final button in front)
-                              SizedBox(
-                                width: 180,
-                                child: _FootFadePedal(
-                                  button: button,
-                                  projection: projection,
                                 ),
                               ),
                           ],
