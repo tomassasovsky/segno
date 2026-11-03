@@ -994,6 +994,14 @@ void main() {
       expect(titleLeft(tester), 32);
       expect(row.left, 32);
       expect(row.right, 1920 - 32);
+      // The chevron keeps the pen's 33 from the row's right end.
+      final chevron = tester.getRect(
+        find.descendant(
+          of: find.byKey(const Key('loop_hub_mode')),
+          matching: find.byType(Icon),
+        ),
+      );
+      expect(row.right - chevron.right, 33);
     });
 
     testWidgets('the mode cards fill the content box under the title', (

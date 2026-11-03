@@ -198,12 +198,17 @@ class _TouchCalibrationViewState extends State<TouchCalibrationView> {
                   right: 0,
                   child: _Instruction(readout: _readout),
                 ),
+                // Placed from the rect the taps are converted with, so the
+                // drawn area and the conversion cannot disagree.
                 Positioned(
-                  left: _readout
-                      ? (MainCalibrationArea.rect.width -
-                                TouchCalibrationView.trackArea.width) /
-                            2
-                      : 0,
+                  left:
+                      MainCalibrationArea.rect.left -
+                      LoopSettingsFrame.insetOf(context) +
+                      (_readout
+                          ? (MainCalibrationArea.rect.width -
+                                    TouchCalibrationView.trackArea.width) /
+                                2
+                          : 0),
                   top: MainCalibrationArea.rect.top - kLoopTopBarHeight,
                   child: _readout ? const _TrackMirror() : const _MainArea(),
                 ),

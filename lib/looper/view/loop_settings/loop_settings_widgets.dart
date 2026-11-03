@@ -1461,7 +1461,7 @@ class LoopHubRow extends StatelessWidget {
                     ),
                   ),
                   Positioned(
-                    left: 1787,
+                    right: 33,
                     top: 36,
                     child: Icon(
                       LucideIcons.chevronRight,

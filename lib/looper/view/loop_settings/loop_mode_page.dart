@@ -175,10 +175,15 @@ class _ModeCard extends StatelessWidget {
                         color: surface.textPrimary,
                       ),
                     ),
+                  // Centred: the card is the row's share, wider than the
+                  // pen's 330.
                   Positioned(
-                    left: 29,
+                    left: 0,
+                    right: 0,
                     top: 100,
-                    child: _ModeDiagram(mode: mode, selected: selected),
+                    child: Center(
+                      child: _ModeDiagram(mode: mode, selected: selected),
+                    ),
                   ),
                   Positioned(
                     left: 29,
