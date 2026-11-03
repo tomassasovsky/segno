@@ -84,7 +84,9 @@ static void test_spring_matches_the_capture(void) {
            "%.2f)\n",
            cap[c][0], t, cap[c][1], wet, cap[c][2]);
     CHECK(fabs(t - cap[c][1]) < 0.03 * cap[c][1]);
-    CHECK(fabs(wet - cap[c][2]) < 0.3);
+    /* The fit lands within 0.01 dB; adjacent Times differ by 0.08 dB or
+     * more. */
+    CHECK(fabs(wet - cap[c][2]) < 0.05);
     free(h);
   }
 
