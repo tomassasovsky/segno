@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -55,6 +56,7 @@ class TouchCalibrationPage extends StatelessWidget {
     return BlocProvider(
       create: (context) => TouchCalibrationCubit(
         client: context.read<TouchCalibrationClient>(),
+        guards: context.read<GuardRegistry>(),
         screen: screen,
         captureTargets: readout ? captureTargets : MainCalibrationArea.toScreen,
         testTargets: readout ? testTargets : MainCalibrationArea.testToScreen,
@@ -164,7 +166,12 @@ class _TouchCalibrationViewState extends State<TouchCalibrationView> {
             if (_readout) unawaited(_mirror(state));
           // The 7" keeps its last target while a calibration is applied,
           // stored or reverted, rather than blanking for a moment.
-          case .loading || .applying || .saving || .reverting || .failed:
+          case .loading ||
+              .applying ||
+              .saving ||
+              .reverting ||
+              .failed ||
+              .refused:
             return;
         }
       },
@@ -237,6 +244,7 @@ class _Instruction extends StatelessWidget {
     final testing = state.phase == .test;
     final heading = switch (state.phase) {
       .failed => l10n.touchCalibrationFailed,
+      .refused => l10n.operationBusy(state.busyKind?.name ?? 'other'),
       .test when state.target == null => l10n.touchCalibrationTestDone,
       .test => l10n.touchCalibrationTestInstruction,
       _ when readout => l10n.touchCalibrationTrackInstruction,
@@ -251,7 +259,7 @@ class _Instruction extends StatelessWidget {
             heading,
             key: const Key('touch_calibration_heading'),
             style: TextStyle(
-              color: state.phase == .failed
+              color: state.phase == .failed || state.phase == .refused
                   ? surface.warning
                   : surface.frameText,
               fontSize: 28,

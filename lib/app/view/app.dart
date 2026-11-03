@@ -589,7 +589,7 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: _storage),
         // The one guard table (#1198), for the owners the views build: the
         // Library's exports and backups enter transfer guards on what
-        // they read.
+        // they read, and touch calibration holds the calibration guard.
         RepositoryProvider<GuardRegistry>.value(value: widget.guards),
         if (_powerKeySource != null)
           RepositoryProvider<PowerKeySource>.value(value: _powerKeySource!),

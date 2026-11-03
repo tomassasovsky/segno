@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/settings/touch_calibration/view/touch_calibration_page.dart';
@@ -163,6 +164,41 @@ void main() {
       await tester.pumpAndSettle();
       expect(client.calls.last, 'restore main');
       expect(find.byType(TouchCalibrationPage), findsNothing);
+    });
+
+    testWidgets('holds the calibration guard while the page is open', (
+      tester,
+    ) async {
+      await openCalibration(tester, 'main');
+      expect(
+        harness.guards.active.map((op) => op.kind),
+        [GuardKind.calibration],
+      );
+      await tester.tap(find.byKey(const Key('touch_calibration_cancel')));
+      await tester.pumpAndSettle();
+      expect(harness.guards.active, isEmpty);
+    });
+
+    testWidgets('a latency measurement in flight refuses it, and says so', (
+      tester,
+    ) async {
+      final measuring = harness.guards.enter(
+        GuardKind.calibration,
+        const GuardScope.internal(),
+        purpose: 'latency measurement',
+      );
+      addTearDown(measuring.release);
+      await openCalibration(tester, 'main');
+      expect(
+        text(tester, 'touch_calibration_heading'),
+        l10n(tester).operationBusy(GuardKind.calibration.name),
+      );
+      expect(target, findsNothing);
+      expect(client.calls, isEmpty);
+      await tester.tap(find.byKey(const Key('touch_calibration_cancel')));
+      await tester.pumpAndSettle();
+      expect(find.byType(TouchCalibrationPage), findsNothing);
+      expect(client.calls, isEmpty);
     });
   });
 

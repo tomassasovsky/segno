@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/settings/touch_calibration/cubit/touch_calibration_cubit.dart';
 import 'package:touch_calibration_client/touch_calibration_client.dart';
 
@@ -21,9 +22,11 @@ const _skew = TouchMatrix(1, 0, 0.05, 0, 1, 0.03);
 
 void main() {
   late FakeTouchCalibrationClient client;
+  late GuardRegistry guards;
 
   TouchCalibrationCubit cubit() => TouchCalibrationCubit(
     client: client,
+    guards: guards,
     screen: TouchScreen.readout,
     captureTargets: _capture,
     testTargets: _test,
@@ -39,7 +42,149 @@ void main() {
     async.flushMicrotasks();
   }
 
-  setUp(() => client = FakeTouchCalibrationClient());
+  setUp(() {
+    client = FakeTouchCalibrationClient();
+    guards = GuardRegistry();
+  });
+
+  /// The calibration guards held right now.
+  List<ActiveOperation> calibrating() => [
+    for (final op in guards.active)
+      if (op.kind == GuardKind.calibration) op,
+  ];
+
+  group('calibration guard', () {
+    test('is held from the first target', () {
+      fakeAsync((async) {
+        final c = cubit()..start();
+        async.flushMicrotasks();
+        expect(c.state.phase, TouchCalibrationPhase.capture);
+        expect(calibrating(), hasLength(1));
+        expect(
+          guards.blockers(GuardKind.deviceChange, const GuardScope.internal()),
+          isNotEmpty,
+        );
+      });
+    });
+
+    test('is held through the test and a Restart', () {
+      fakeAsync((async) {
+        final c = cubit();
+        capture(async, c);
+        expect(c.state.phase, TouchCalibrationPhase.test);
+        expect(calibrating(), hasLength(1));
+        c.restart();
+        async.flushMicrotasks();
+        expect(c.state.phase, TouchCalibrationPhase.capture);
+        expect(calibrating(), hasLength(1));
+      });
+    });
+
+    test('is released once Keep has stored the calibration', () {
+      fakeAsync((async) {
+        client.writeGate = Completer<void>();
+        final c = cubit();
+        capture(async, c);
+        c.keep();
+        async.flushMicrotasks();
+        expect(c.state.phase, TouchCalibrationPhase.saving);
+        expect(calibrating(), hasLength(1));
+        client.writeGate!.complete();
+        async.flushMicrotasks();
+        expect(c.state.phase, TouchCalibrationPhase.kept);
+        expect(calibrating(), isEmpty);
+      });
+    });
+
+    test('is released once Cancel has reverted', () {
+      fakeAsync((async) {
+        final c = cubit();
+        capture(async, c);
+        c.cancel();
+        async.flushMicrotasks();
+        expect(c.state.phase, TouchCalibrationPhase.reverted);
+        expect(client.calls.last, 'restore readout');
+        expect(calibrating(), isEmpty);
+      });
+    });
+
+    test('is released once the countdown has reverted', () {
+      fakeAsync((async) {
+        final c = cubit();
+        capture(async, c);
+        async.elapse(const Duration(seconds: 30));
+        expect(c.state.phase, TouchCalibrationPhase.reverted);
+        expect(calibrating(), isEmpty);
+      });
+    });
+
+    test('is held through a failure until leaving', () {
+      fakeAsync((async) {
+        client.failApply = true;
+        final c = cubit();
+        capture(async, c);
+        expect(c.state.phase, TouchCalibrationPhase.failed);
+        expect(calibrating(), hasLength(1));
+        _close(async, c);
+        expect(calibrating(), isEmpty);
+      });
+    });
+
+    test('is released after leaving has reverted', () {
+      fakeAsync((async) {
+        client.restoreGate = Completer<void>();
+        final c = cubit();
+        capture(async, c);
+        _close(async, c);
+        expect(calibrating(), hasLength(1));
+        client.restoreGate!.complete();
+        async.flushMicrotasks();
+        expect(calibrating(), isEmpty);
+      });
+    });
+
+    test('refuses to start under a latency measurement, and says why', () {
+      fakeAsync((async) {
+        final measuring = guards.enter(
+          GuardKind.calibration,
+          const GuardScope.internal(),
+          purpose: 'latency measurement',
+        );
+        final c = cubit()..start();
+        async.flushMicrotasks();
+        expect(
+          c.state,
+          const TouchCalibrationState(
+            phase: .refused,
+            busyKind: GuardKind.calibration,
+          ),
+        );
+        expect(client.calls, isEmpty);
+        c.tap(_capture.first);
+        expect(c.state.phase, TouchCalibrationPhase.refused);
+        c.cancel();
+        async.flushMicrotasks();
+        expect(c.state.phase, TouchCalibrationPhase.reverted);
+        expect(client.calls, isEmpty);
+        measuring.release();
+        expect(guards.active, isEmpty);
+      });
+    });
+
+    test('refuses to start under a device change', () {
+      fakeAsync((async) {
+        guards.enter(
+          GuardKind.deviceChange,
+          const GuardScope.internal(),
+          purpose: 'audio settings',
+        );
+        final c = cubit()..start();
+        async.flushMicrotasks();
+        expect(c.state.phase, TouchCalibrationPhase.refused);
+        expect(c.state.busyKind, GuardKind.deviceChange);
+      });
+    });
+  });
 
   test('walks the capture targets in order', () {
     fakeAsync((async) {

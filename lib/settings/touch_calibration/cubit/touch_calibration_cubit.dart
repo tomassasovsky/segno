@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:touch_calibration_client/touch_calibration_client.dart';
 
 /// Where a touch calibration is (pen 30).
@@ -34,6 +35,10 @@ enum TouchCalibrationPhase {
 
   /// The calibration could not be read or saved.
   failed,
+
+  /// Another operation the calibration must not overlap is running (a
+  /// latency measurement, a device change, a take): nothing was started.
+  refused,
 }
 
 /// A touch calibration's progress.
@@ -45,6 +50,7 @@ class TouchCalibrationState extends Equatable {
     this.steps = 0,
     this.target,
     this.secondsLeft = 0,
+    this.busyKind,
   });
 
   /// Where the calibration is.
@@ -63,8 +69,19 @@ class TouchCalibrationState extends Equatable {
   /// Seconds before the test reverts to the previous calibration.
   final int secondsLeft;
 
+  /// What refused the calibration, when [phase] is
+  /// [TouchCalibrationPhase.refused].
+  final GuardKind? busyKind;
+
   @override
-  List<Object?> get props => [phase, step, steps, target, secondsLeft];
+  List<Object?> get props => [
+    phase,
+    step,
+    steps,
+    target,
+    secondsLeft,
+    busyKind,
+  ];
 }
 
 /// Measures one screen's touch calibration (pen 30, "Displays & touch
@@ -81,10 +98,16 @@ class TouchCalibrationState extends Equatable {
 /// so one that a power cycle interrupts is gone after the reboot. Helper calls
 /// run one at a time, in the order they were made: a revert never overtakes
 /// the apply it undoes.
+///
+/// The calibration holds [GuardKind.calibration] from [start] until it is
+/// kept, reverted or left, so an update, a device change or a latency
+/// measurement cannot start in the middle of it (#1375). One that the guard
+/// table refuses starts nothing and says what is running.
 class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
   /// Creates a [TouchCalibrationCubit] for [screen].
   TouchCalibrationCubit({
     required TouchCalibrationClient client,
+    required GuardRegistry guards,
     required TouchScreen screen,
     required List<TouchPoint> captureTargets,
     required List<TouchPoint> testTargets,
@@ -93,6 +116,7 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
   }) : assert(captureTargets.length >= 3, 'a fit needs three points'),
        assert(testTargets.isNotEmpty, 'the test needs a target'),
        _client = client,
+       _guards = guards,
        _screen = screen,
        _captureTargets = captureTargets,
        _testTargets = testTargets,
@@ -101,6 +125,7 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
        super(const TouchCalibrationState());
 
   final TouchCalibrationClient _client;
+  final GuardRegistry _guards;
   final TouchScreen _screen;
   final List<TouchPoint> _captureTargets;
   final List<TouchPoint> _testTargets;
@@ -121,6 +146,9 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
   Timer? _countdown;
   Future<void> _helper = Future.value();
 
+  /// The calibration guard this session holds, from [start] until it ends.
+  OperationGuard? _guard;
+
   /// Runs [op] after every helper call made before it.
   Future<void> _serial(Future<void> Function() op) {
     final next = _helper.then((_) => op());
@@ -128,8 +156,28 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
     return next;
   }
 
-  /// Reads the calibration in force and shows the first target.
-  void start() => unawaited(_start());
+  /// Holds the calibration guard, reads the calibration in force and shows
+  /// the first target. Refused while an operation the guard table forbids
+  /// alongside a calibration is running.
+  void start() {
+    if (_guard != null) return;
+    try {
+      _guard = _guards.enter(
+        GuardKind.calibration,
+        const GuardScope.internal(),
+        purpose: 'touch calibration',
+      );
+    } on GuardRefused catch (refused) {
+      emit(
+        TouchCalibrationState(
+          phase: .refused,
+          busyKind: refused.blockers.first.kind,
+        ),
+      );
+      return;
+    }
+    unawaited(_start());
+  }
 
   Future<void> _start() async {
     try {
@@ -188,7 +236,8 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
           .reverting ||
           .kept ||
           .reverted ||
-          .failed:
+          .failed ||
+          .refused:
         return;
     }
   }
@@ -272,6 +321,7 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
       return;
     }
     _applied = false;
+    _releaseGuard();
     if (!isClosed) emit(const TouchCalibrationState(phase: .kept));
   }
 
@@ -287,7 +337,7 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
     switch (state.phase) {
       case .saving || .reverting || .kept || .reverted:
         return;
-      case .loading || .capture || .applying || .test || .failed:
+      case .loading || .capture || .applying || .test || .failed || .refused:
         unawaited(_revertThen(const TouchCalibrationState(phase: .reverted)));
     }
   }
@@ -307,8 +357,15 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
     if (next == null) {
       _capture();
     } else {
+      _releaseGuard();
       emit(next);
     }
+  }
+
+  /// Ends the session's hold on the calibration guard. Idempotent.
+  void _releaseGuard() {
+    _guard?.release();
+    _guard = null;
   }
 
   Future<void> _revert() async {
@@ -334,6 +391,7 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
       // Nothing left to tell: the page is gone. The previous calibration is
       // still on /data for the next boot.
     }
+    _releaseGuard();
     return super.close();
   }
 }
