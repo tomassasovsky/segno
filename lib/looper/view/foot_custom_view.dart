@@ -192,7 +192,7 @@ class _FootCustomPedal extends StatelessWidget {
     // started (pen 20/03).
     String label(ControlAction action) =>
         armed && action == const CommandAction(ControlCommand.recordPerformance)
-        ? l10n.footCustomStopRecording
+        ? l10n.footCustomStopCapture
         : footCustomActionLabel(l10n, names, action);
     final slot = switch (button) {
       PedalButton.track1 => 0,

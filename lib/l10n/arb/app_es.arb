@@ -2538,7 +2538,7 @@
     "footPeelRefusedBusy": "Peel no está disponible mientras la pista graba. Inténtalo de nuevo.",
     "footPeelFailure": "No se pudo quitar la capa. Inténtalo de nuevo.",
     "footCustomHold": "Mantener · {action}",
-    "footCustomStopRecording": "Parar captura",
+    "footCustomStopCapture": "Parar captura",
     "footCustomUnavailableAction": "No disponible",
     "footCustomCapture": "Capturar",
     "footCustomClearAll": "Borrar todo",

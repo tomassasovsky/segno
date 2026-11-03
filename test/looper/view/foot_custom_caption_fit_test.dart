@@ -15,14 +15,19 @@ import '../../helpers/text_fit.dart';
 void main() {
   setUpAll(loadBundledFonts);
 
+  // The caption's style as drawn: the page's Material body text (which
+  // carries its letter spacing), with the foot view's face and the pedal's
+  // size over it.
   double width(String text, double fontSize) {
     final painter = TextPainter(
       text: TextSpan(
         text: text,
-        style: TextStyle(
-          fontFamily: SurfaceTheme.displayFont,
-          fontWeight: FontWeight.w400,
-          fontSize: fontSize,
+        style: AppTheme.neon.textTheme.bodyMedium!.merge(
+          TextStyle(
+            fontFamily: SurfaceTheme.displayFont,
+            fontWeight: FontWeight.w400,
+            fontSize: fontSize,
+          ),
         ),
       ),
       textDirection: TextDirection.ltr,
@@ -39,7 +44,7 @@ void main() {
         for (final action in controlActionCatalogue())
           if (action is ModeAction || action is CommandAction)
             footCustomActionLabel(l10n, const [], action),
-        l10n.footCustomStopRecording,
+        l10n.footCustomStopCapture,
         l10n.footCustomUnavailableAction,
       ];
       final wide = [

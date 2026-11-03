@@ -69,6 +69,12 @@ class FootPeelView extends StatelessWidget {
                           style: const TextStyle(fontSize: 40),
                         ),
                       ),
+                      PositionedDirectional(
+                        start: 940,
+                        top: 150,
+                        width: 820,
+                        child: _PeelOverview(projection: projection),
+                      ),
                       Positioned.fill(
                         child: FootPedalRows(
                           pedal: (button) => _FootPeelPedal(
@@ -76,12 +82,6 @@ class FootPeelView extends StatelessWidget {
                             projection: projection,
                           ),
                         ),
-                      ),
-                      PositionedDirectional(
-                        start: 940,
-                        top: 150,
-                        width: 820,
-                        child: _PeelOverview(projection: projection),
                       ),
                     ],
                   ),

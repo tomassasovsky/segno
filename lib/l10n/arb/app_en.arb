@@ -6883,9 +6883,9 @@
             }
         }
     },
-    "footCustomStopRecording": "Stop capture",
-    "@footCustomStopRecording": {
-        "description": "Foot Custom performance surface: what a switch assigned Record performance reads while a performance recording runs."
+    "footCustomStopCapture": "Stop capture",
+    "@footCustomStopCapture": {
+        "description": "Foot Custom performance surface: what a switch assigned Record performance reads while a performance recording (a capture) runs."
     },
     "footCustomUnavailableAction": "Unavailable",
     "@footCustomUnavailableAction": {

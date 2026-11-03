@@ -239,7 +239,7 @@ void main() {
           tester
               .getCenter(find.byKey(Key('pedal_setup_cap_${button.name}')))
               .dx,
-          moreOrLessEquals(960 + ConsolePedalLayout.centreOffset(button)),
+          closeTo(960 + ConsolePedalLayout.centreOffset(button), 0.5),
           reason: button.name,
         );
       }

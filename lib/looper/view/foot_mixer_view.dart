@@ -99,14 +99,6 @@ class _FootMixerContent extends StatelessWidget {
                           style: const TextStyle(fontSize: 40),
                         ),
                       ),
-                      Positioned.fill(
-                        child: FootPedalRows(
-                          pedal: (button) => _FootMixerPedal(
-                            button: button,
-                            projection: projection,
-                          ),
-                        ),
-                      ),
                       PositionedDirectional(
                         start: 940,
                         top: 140,
@@ -201,6 +193,14 @@ class _FootMixerContent extends StatelessWidget {
                               ),
                             ],
                           ],
+                        ),
+                      ),
+                      Positioned.fill(
+                        child: FootPedalRows(
+                          pedal: (button) => _FootMixerPedal(
+                            button: button,
+                            projection: projection,
+                          ),
                         ),
                       ),
                     ],

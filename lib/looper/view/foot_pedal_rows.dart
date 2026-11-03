@@ -27,10 +27,12 @@ class FootPedalRows extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      final centre = constraints.maxWidth / 2;
-      Widget place(PedalButton button, double top) => PositionedDirectional(
-        start:
-            centre + ConsolePedalLayout.centreOffset(button) - pedalWidth / 2,
+      Widget place(PedalButton button, double top) => Positioned(
+        left: ConsolePedalLayout.left(
+          button,
+          constraints.maxWidth,
+          pedalWidth,
+        ),
         top: top,
         width: pedalWidth,
         child: pedal(button),

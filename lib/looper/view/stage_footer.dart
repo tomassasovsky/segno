@@ -23,10 +23,9 @@ class StageFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    // The pen's 22 above the readouts; the run's own inset holds the strip
-    // off the columns.
-    // The stage's one side inset, the top bar's, so both bars of the stage
-    // end at the same edges (#1590 STG-1).
+    // The pen's 22 above the readouts, and the stage's one side inset, the
+    // top bar's, so both bars of the stage end at the same edges (#1590
+    // STG-1).
     padding: const EdgeInsets.fromLTRB(
       StageTopBar.sideInset,
       22,

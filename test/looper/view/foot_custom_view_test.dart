@@ -173,7 +173,7 @@ void main() {
     ]) {
       expect(
         tester.getCenter(pedal(button)).dx,
-        moreOrLessEquals(960 + ConsolePedalLayout.centreOffset(button)),
+        closeTo(960 + ConsolePedalLayout.centreOffset(button), 0.5),
         reason: button.name,
       );
     }

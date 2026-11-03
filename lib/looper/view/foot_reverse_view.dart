@@ -60,6 +60,12 @@ class FootReverseView extends StatelessWidget {
                           style: const TextStyle(fontSize: 40),
                         ),
                       ),
+                      PositionedDirectional(
+                        start: 940,
+                        top: 150,
+                        width: 820,
+                        child: _ReverseOverview(projection: projection),
+                      ),
                       Positioned.fill(
                         child: FootPedalRows(
                           pedal: (button) => _FootReversePedal(
@@ -67,12 +73,6 @@ class FootReverseView extends StatelessWidget {
                             projection: projection,
                           ),
                         ),
-                      ),
-                      PositionedDirectional(
-                        start: 940,
-                        top: 150,
-                        width: 820,
-                        child: _ReverseOverview(projection: projection),
                       ),
                     ],
                   ),

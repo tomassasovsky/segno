@@ -79,6 +79,12 @@ class FootTunerView extends StatelessWidget {
                         width: 418,
                         child: _ReferenceBlock(hz: projection.referenceHz),
                       ),
+                      PositionedDirectional(
+                        start: 908,
+                        top: 70,
+                        width: 852,
+                        child: _ReadingBlock(projection: projection),
+                      ),
                       Positioned.fill(
                         child: FootPedalRows(
                           pedal: (button) => _FootTunerPedal(
@@ -86,12 +92,6 @@ class FootTunerView extends StatelessWidget {
                             button: button,
                           ),
                         ),
-                      ),
-                      PositionedDirectional(
-                        start: 908,
-                        top: 70,
-                        width: 852,
-                        child: _ReadingBlock(projection: projection),
                       ),
                     ],
                   ),

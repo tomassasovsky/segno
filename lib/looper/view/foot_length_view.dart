@@ -84,11 +84,6 @@ class FootLengthView extends StatelessWidget {
                           style: const TextStyle(fontSize: 40),
                         ),
                       ),
-                      Positioned.fill(
-                        child: FootPedalRows(
-                          pedal: pedal,
-                        ),
-                      ),
                       PositionedDirectional(
                         start: 940,
                         top: 112,
@@ -98,6 +93,11 @@ class FootLengthView extends StatelessWidget {
                           projection: projection,
                           outcome: outcome,
                           sampleRate: sampleRate,
+                        ),
+                      ),
+                      Positioned.fill(
+                        child: FootPedalRows(
+                          pedal: pedal,
                         ),
                       ),
                     ],

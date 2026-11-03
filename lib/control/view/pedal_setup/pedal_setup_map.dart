@@ -101,10 +101,7 @@ class PedalSetupMap extends StatelessWidget {
     Size slot,
     double top,
   ) => Positioned(
-    left:
-        penSize.width / 2 +
-        ConsolePedalLayout.centreOffset(button) -
-        slot.width / 2,
+    left: ConsolePedalLayout.left(button, penSize.width, slot.width),
     top: top,
     child: _cap(context, button, slot),
   );
