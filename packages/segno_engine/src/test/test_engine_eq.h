@@ -1,8 +1,6 @@
 /* The EQ kind (LE_FX_EQ, #887 part 4) and the per-kind heap state it is the
  * first user of. Included by test_engine_core.c. */
 
-void le_eq_design_for_test(int kind, double hz, double db, double q, int sr,
-                           double c[5]);
 void le_eq_bell_for_test(double hz, double db, double q, int sr, double c[5]);
 void le_eq_band_design_for_test(int b, int shelves, double hz, double db,
                                 double q, int sr, double c[5]);
@@ -450,8 +448,8 @@ static void test_eq_layout_change_glides(void) {
 
 /* A slot keeps one block per kind it has held, never reads another kind's
  * bytes, and starts its own clean when it comes back to it: EQ -> delay ->
- * EQ sounds exactly like a fresh EQ from the second EQ on, and the slot's
- * arena does not grow. */
+ * EQ sounds exactly like a fresh EQ from the second EQ on, and the slot
+ * keeps the one block it made for the EQ. */
 static void test_eq_retype_is_clean(void) {
   printf("test_eq_retype_is_clean\n");
   const int sr = 48000;
@@ -474,15 +472,15 @@ static void test_eq_retype_is_clean(void) {
   eq_run(fx, LE_FX_EQ, eq, sr, in, b, NULL, n);
   le_fx_kinds* k = atomic_load(&fx->kinds);
   CHECK(k != NULL);
-  const size_t used = k->slot[0].arena.used;
-  CHECK(used > 0);
+  struct le_fx_kind_block* const block = atomic_load(&k->slot[0].head);
+  CHECK(block != NULL);
   /* The ring handler resets the slot on each type change. */
   le_fx_entry_reset(fx, 0);
   eq_run(fx, LE_FX_DELAY, dl, sr, in, b, NULL, n);
   le_fx_entry_reset(fx, 0);
   CHECK(le_fx_prepare(fx, 0, LE_FX_EQ, sr) == LE_OK); /* already there */
   eq_run(fx, LE_FX_EQ, eq, sr, in, b, NULL, n);
-  CHECK(k->slot[0].arena.used == used);
+  CHECK(atomic_load(&k->slot[0].head) == block);
   for (int i = 0; i < n; ++i) CHECK(a[i] == b[i]);
   /* An EQ the control thread never prepared passes through. */
   le_fx_state* bare = (le_fx_state*)calloc(1, sizeof(le_fx_state));

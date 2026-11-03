@@ -106,7 +106,6 @@ typedef enum le_midi_dispatch_kind {
                                 * LE_FX_PARAMS / LE_VIZ_POINTS */
 #include "miniaudio.h"         /* ma_device, ma_context, ma_device_id */
 #include "perf_log_ring.h"     /* le_perf_log_ring (performance event log) */
-#include "rt_alloc.h"          /* le_rt_arena (per-kind FX state) */
 
 #ifdef __cplusplus
 extern "C" {
@@ -564,12 +563,12 @@ typedef struct le_octaver_state {
 
 /* Per-kind DSP state for the kinds that keep it on the heap (#887 part 4).
  *
- * Each slot owns one fork-shielded arena (le_rt_arena, rt_alloc.h), made on
- * the control thread the first time the slot is prepared for such a kind and
- * sized for one block of every kind, and a list of the blocks it has
- * allocated: one per kind the slot has held. A block is never freed while
- * the owner lives, so a retype never frees memory the audio thread may still
- * read; the arena goes at owner reset or destroy, with the delay rings.
+ * Each slot owns a list of blocks, one per kind the slot has held, each its
+ * own fork-shielded, prefaulted allocation (le_rt_alloc_prefaulted,
+ * rt_alloc.h) sized for that kind and made on the control thread the first
+ * time the slot is prepared for it. A block is never freed while the owner
+ * lives, so a retype never frees memory the audio thread may still read;
+ * the blocks go at owner reset or destroy, with the delay rings.
  *
  * `head` is the control thread's list (pushed with release); `cur` is the
  * audio thread's: the block of the type it last ran. When the type it runs
@@ -578,7 +577,6 @@ typedef struct le_octaver_state {
  * ever reads another's state or a stale one of its own. */
 struct le_fx_kind_block;
 typedef struct le_fx_kind_slot {
-  le_rt_arena arena;                        /* control thread */
   struct le_fx_kind_block *_Atomic head;    /* control pushes, audio walks */
   struct le_fx_kind_block* cur;             /* audio thread */
 } le_fx_kind_slot;
@@ -1026,6 +1024,12 @@ static inline int le_src_entry_fits(const le_wet_entry* ent, uint32_t key,
 typedef struct le_fx_slot_meta {
   _Atomic uint64_t instance;
 } le_fx_slot_meta;
+
+/* Slot [index] no longer holds the entry a recipe put there (a granular type
+ * command landed, or its owner was reset), so the next recipe renews it. */
+static inline void le_fx_slot_forget(le_fx_slot_meta* meta, int32_t index) {
+  atomic_store_explicit(&meta[index].instance, 0u, memory_order_relaxed);
+}
 
 
 /* One recordable input lane — the fundamental unit of captured audio.

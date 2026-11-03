@@ -608,6 +608,16 @@ int le_yin_finish(const le_yin_pass* p, float* out_period, float* out_voiced);
  * coarse period. [span] is at most LE_REFINE_SPAN_MAX. */
 int le_refine_begin(le_lag_refine* r, float coarse, int span, int n);
 
+/* The RBJ cookbook sections, designed in double and a0-normalized into
+ * [c] (b0 b1 b2 a1 a2): the 12 dB/octave cuts, the shelves, the peak and the
+ * notch at [hz] (held under 0.49 of [sr]), Q [q], and for a shelf or the
+ * peak a gain of [db]. The EQ's bands, the other kinds' voicings and the
+ * input conditioning's high-pass and hum notches all design with it. */
+enum { LE_EQ_LOWCUT, LE_EQ_LOW, LE_EQ_LOMID, LE_EQ_HIMID, LE_EQ_HIGH,
+       LE_EQ_HIGHCUT, LE_EQ_NOTCH };
+void le_eq_design(int kind, double hz, double db, double q, int sr,
+                  double c[5]);
+
 /* Accumulates lags over window [x] until at least [budget] inner iterations
  * are spent (one whole lag always runs). Returns 1 once every lag is in. */
 int le_refine_step(le_lag_refine* r, const float* x, long budget);

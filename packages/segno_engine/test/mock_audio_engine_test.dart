@@ -523,6 +523,89 @@ void main() {
         expect(engine.setOutputFxCount(bus: 0, count: 1), EngineResult.ok);
       });
 
+      test("a parameter write past the slot type's width is refused, as "
+          'the native setters refuse it', () {
+        engine.start(engine.defaultConfig);
+        final drive = TrackEffectType.drive.params.length;
+        // An empty slot reads no cell.
+        expect(
+          engine.setTrackFxParam(channel: 0, index: 0, param: 0, value: 0.5),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setTrackFx(channel: 0, index: 0, type: TrackEffectType.drive),
+          EngineResult.ok,
+        );
+        expect(
+          engine.setTrackFxParam(channel: 0, index: 0, param: 0, value: 0.5),
+          EngineResult.ok,
+        );
+        expect(
+          engine.setTrackFxParam(
+            channel: 0,
+            index: 0,
+            param: drive,
+            value: 0.5,
+          ),
+          EngineResult.invalid,
+        );
+        // A recipe sets the slots' types too.
+        expect(
+          engine.setFxRecipe(
+            owner: FxOwner.lane,
+            channel: 1,
+            lane: 2,
+            revision: 1,
+            recipe: FxRecipe(
+              slots: [FxRecipeSlot(type: TrackEffectType.drive)],
+            ),
+          ),
+          EngineResult.ok,
+        );
+        expect(
+          engine.setLaneFxParam(
+            channel: 1,
+            lane: 2,
+            index: 0,
+            param: drive - 1,
+            value: 0.5,
+          ),
+          EngineResult.ok,
+        );
+        expect(
+          engine.setLaneFxParam(
+            channel: 1,
+            lane: 2,
+            index: 0,
+            param: drive,
+            value: 0.5,
+          ),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setLaneFxParam(
+            channel: 1,
+            lane: 2,
+            index: 1,
+            param: 0,
+            value: 0.5,
+          ),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setAllTracksFxParam(index: 0, param: 0, value: 0.5),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setAllTracksFx(index: 0, type: TrackEffectType.drive),
+          EngineResult.ok,
+        );
+        expect(
+          engine.setAllTracksFxParam(index: 0, param: 0, value: 0.5),
+          EngineResult.ok,
+        );
+      });
+
       test('records enable calls, working while stopped', () {
         // Direct-store contract: no start() needed, calls are recorded.
         expect(

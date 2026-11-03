@@ -38,6 +38,12 @@
  * hop is anchored to the engine clock (#941), so the instant a slot resets at
  * does not move its schedule and the spacing is free of the hop. */
 #define LE_FX_ENABLE_CLEAR_SPACING 128
+/* A heap-state kind whose block is at least this large (the doubler's and
+ * the chorus's delay lines, the spring's ring) is spaced the same way: the
+ * reset clears its block on the audio thread, about 1.6 us per 16 KB on the
+ * console, so a stomp engaging several must not clear them in one
+ * callback. */
+#define LE_FX_SPACED_CLEAR_BYTES 4096
 
 static float le_hann[LE_PV_N];
 /* The length-LE_PV_N real-FFT tables, shared the same way (fft.h). */
@@ -3061,11 +3067,13 @@ static void le_mdly_voice_set(le_mdly_bq* f, int v, int sr) {
  * 48 kHz response (le_rate_design). The state is kept. */
 static void le_rate_design(int kind, double hz, double db, double q, int sr,
                            double c[5]);
+/* le_rate_design's kinds past le_eq_design's: the bilinear one-poles, as
+ * biquads. */
+enum { LE_RS_LP1 = LE_EQ_NOTCH + 1, LE_RS_HP1 };
 static void le_mdly_bq_rbj(le_mdly_bq* f, int kind, double hz, double q,
                            double db, int sr) {
-  static const int as_rate[5] = {2 /* LE_EQ_LOMID */, 5 /* LE_EQ_HIGHCUT */,
-                                 0 /* LE_EQ_LOWCUT */, 6 /* LE_RS_LP1 */,
-                                 7 /* LE_RS_HP1 */};
+  static const int as_rate[5] = {LE_EQ_LOMID, LE_EQ_HIGHCUT, LE_EQ_LOWCUT,
+                                 LE_RS_LP1, LE_RS_HP1};
   double c[5] = {1.0, 0.0, 0.0, 0.0, 0.0};
   if (kind >= 0 && kind < 5) le_rate_design(as_rate[kind], hz, db, q, sr, c);
   f->b0 = (float)c[0]; f->b1 = (float)c[1]; f->b2 = (float)c[2];
@@ -3856,10 +3864,12 @@ typedef struct le_fx_dyn_head {
 #define LE_FX_DYN_RUN 1      /* the update has work */
 #define LE_FX_DYN_NEW_RATE 2 /* the sample rate changed */
 #define LE_FX_DYN_CHANGED 4  /* the settings or the rate changed, or settle */
+#define LE_FX_DYN_SETTLE 8   /* the block was just cleared: land at once */
 
 /* Returns 0 when nothing changed and nothing moves; otherwise LE_FX_DYN_RUN
  * with the other bits saying what changed, and the rate and settings
- * recorded. */
+ * recorded. fx_kind_state runs it on the block's head before every update,
+ * so a kind's update is handed the head and these bits. */
 static int le_fx_dyn_begin(le_fx_dyn_head* h, float* last, const float* p,
                            size_t n, int sr, int settle) {
   const int new_rate = !h->primed || h->k_sr != sr;
@@ -3875,7 +3885,8 @@ static int le_fx_dyn_begin(le_fx_dyn_head* h, float* last, const float* p,
     h->primed = 1;
   }
   return LE_FX_DYN_RUN | (new_rate ? LE_FX_DYN_NEW_RATE : 0) |
-         (new_rate || new_params || settle ? LE_FX_DYN_CHANGED : 0);
+         (new_rate || new_params || settle ? LE_FX_DYN_CHANGED : 0) |
+         (settle ? LE_FX_DYN_SETTLE : 0);
 }
 
 /* A setting a kernel reads every sample. Each update moves its glide point
@@ -3929,12 +3940,7 @@ static inline float le_fx_glide_next(le_fx_glide* s) {
  * Settings are smoothed per update (LE_FX_UPDATE_FRAMES frames) over about
  * 10 ms, in octaves, decibels and log Q, and coefficients are recomputed only
  * while something moves. */
-#define LE_EQ_PARAMS_N 15 /* LE_FX_EQ_PARAMS rows */
 #define LE_EQ_CUT_Q 0.70710678118654752
-
-/* le_eq_design's kinds, which the other kinds' voicings use too. */
-enum { LE_EQ_LOWCUT, LE_EQ_LOW, LE_EQ_LOMID, LE_EQ_HIMID, LE_EQ_HIGH,
-       LE_EQ_HIGHCUT };
 
 /* The EQ kind's bands, in processing order. */
 enum { LE_EQB_LOWCUT, LE_EQB_LOW, LE_EQB_LOMID, LE_EQB_HIMID, LE_EQB_HIGH,
@@ -3960,11 +3966,6 @@ typedef struct le_fx_eq {
   float db[LE_EQ_BANDS];
   float lnq[LE_EQ_BANDS];
   uint32_t active; /* bands that are not the identity */
-  /* The settings the targets were last taken from, and the smoothing step
-   * for the rate it was computed at: a settled EQ whose settings did not
-   * change costs one compare per update. */
-  le_fx_dyn_head h;
-  float last[LE_EQ_PARAMS_N];
   float tgt_hz[LE_EQ_BANDS];
   float tgt_db[LE_EQ_BANDS];
   float tgt_lnq[LE_EQ_BANDS];
@@ -4000,8 +4001,8 @@ static double le_fx_desc_value(const le_fx_param_desc* d, float v) {
  * peaking ones are RBJ's constant-Q peak, which the other kinds' voicings
  * were fitted with; the EQ kind's bells are le_eq_bell); hz the corner or
  * centre, db the gain, q the Q. */
-static void le_eq_design(int kind, double hz, double db, double q, int sr,
-                         double c[5]) {
+void le_eq_design(int kind, double hz, double db, double q, int sr,
+                  double c[5]) {
   const double nyq = 0.49 * (double)sr;
   if (hz > nyq) hz = nyq;
   const double w0 = 2.0 * 3.14159265358979323846 * hz / (double)sr;
@@ -4018,6 +4019,10 @@ static void le_eq_design(int kind, double hz, double db, double q, int sr,
       break;
     case LE_EQ_HIGHCUT:
       b0 = (1.0 - cw) / 2.0; b1 = 1.0 - cw; b2 = b0;
+      a0 = 1.0 + alpha; a1 = -2.0 * cw; a2 = 1.0 - alpha;
+      break;
+    case LE_EQ_NOTCH:
+      b0 = 1.0; b1 = -2.0 * cw; b2 = 1.0;
       a0 = 1.0 + alpha; a1 = -2.0 * cw; a2 = 1.0 - alpha;
       break;
     case LE_EQ_LOW:
@@ -4043,12 +4048,6 @@ static void le_eq_design(int kind, double hz, double db, double q, int sr,
   }
   c[0] = b0 / a0; c[1] = b1 / a0; c[2] = b2 / a0; c[3] = a1 / a0;
   c[4] = a2 / a0;
-}
-
-/* Exposed for the native tests: band [kind]'s design at these values. */
-void le_eq_design_for_test(int kind, double hz, double db, double q, int sr,
-                           double c[5]) {
-  le_eq_design(kind, hz, db, q, sr, c);
 }
 
 /* The Looper X's bell, in double (#891): a fixed-pole peaking filter
@@ -4201,9 +4200,6 @@ static void le_eq_rate_correct(int shape, double hz, double db, double q,
  * plain design. */
 #include "engine_fx_rate.inc"
 
-/* le_rate_design's kinds past le_eq_design's: the bilinear one-poles, as
- * biquads. */
-enum { LE_RS_LP1 = LE_EQ_HIGHCUT + 1, LE_RS_HP1 };
 
 static const le_eq_rate_table* le_rf_table(int kind, int sr) {
   if (sr == 44100) {
@@ -4359,9 +4355,10 @@ static void le_eq_targets(const float* p, float hz[LE_EQ_BANDS],
                           float db[LE_EQ_BANDS], float lnq[LE_EQ_BANDS],
                           int32_t* shelves);
 
-static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
+static void fx_eq_update(void* ks, le_fx_dyn_head* h, const float* p, int sr,
+                         int f) {
   le_fx_eq* q = (le_fx_eq*)ks;
-  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_EQ_PARAMS_N, sr, settle);
+  const int settle = (f & LE_FX_DYN_SETTLE) != 0;
   if (!f) return;
   const int new_rate = (f & LE_FX_DYN_NEW_RATE) != 0; /* every design moves */
   if (new_rate) {
@@ -4373,7 +4370,7 @@ static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
   if (f & LE_FX_DYN_CHANGED) {
     le_eq_targets(p, q->tgt_hz, q->tgt_db, q->tgt_lnq, &q->tgt_shelves);
   }
-  const float k = settle ? 1.0f : q->h.k;
+  const float k = settle ? 1.0f : h->k;
   /* The outer bands change shape (bell or shelf) only at 0 dB, where both
    * are the identity: a layout change first glides them to 0 dB, switches
    * the shape there and glides them back, so it never steps. A settle
@@ -4419,7 +4416,7 @@ static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
   if (reshaping && q->db[LE_EQB_LOW] == 0.0f && q->db[LE_EQB_HIGH] == 0.0f) {
     q->shelves = q->tgt_shelves; /* both outer bands are the identity now */
   }
-  q->h.moving = moving;
+  h->moving = moving;
 }
 
 static void fx_eq_kprocess(void* ks, float* l, float* r) {
@@ -4517,9 +4514,6 @@ static const le_fx_param_desc LE_FX_HP_GATE_PARAMS[] = {
     {"gate_threshold", LE_FX_UNIT_DB, 0, -120.0f, 0.0f, LE_FX_CURVE_LINEAR, 0.0f,
      0},
 };
-#define LE_COMP_PARAMS_N 5
-#define LE_TR_PARAMS_N 3
-#define LE_HPG_PARAMS_N 2
 
 /* 20 log10 |x| and back, through log2 and exp2. */
 #define LE_DB_PER_OCTAVE 6.0205999132796239f /* 20 log10 2 */
@@ -4563,8 +4557,6 @@ static inline float fx_sanitize(float x) {
 #define LE_COMP_REL_SHARE 0.47
 
 typedef struct le_fx_comp {
-  le_fx_dyn_head h;
-  float last[LE_COMP_PARAMS_N];
   le_fx_glide thr;   /* threshold, dB */
   le_fx_glide slope; /* 1 - 1 / ratio */
   le_fx_glide mk;    /* make-up, dB */
@@ -4585,9 +4577,10 @@ static inline float le_comp_knee(float over, float slope) {
   return slope * t * t * (0.5f / w);
 }
 
-static void fx_comp_update(void* ks, const float* p, int sr, int settle) {
+static void fx_comp_update(void* ks, le_fx_dyn_head* h, const float* p, int sr,
+                           int f) {
   le_fx_comp* c = (le_fx_comp*)ks;
-  const int f = le_fx_dyn_begin(&c->h, c->last, p, LE_COMP_PARAMS_N, sr, settle);
+  const int settle = (f & LE_FX_DYN_SETTLE) != 0;
   if (!f) return;
   const le_fx_param_desc* d = LE_FX_COMPRESSOR_PARAMS;
   if ((f & LE_FX_DYN_NEW_RATE) || settle || p[2] != c->att_p ||
@@ -4598,12 +4591,12 @@ static void fx_comp_update(void* ks, const float* p, int sr, int settle) {
     c->rel = le_one_pole(
         le_fx_desc_value(&d[3], p[3]) * 1e-3 * LE_COMP_REL_SHARE, sr);
   }
-  const float k = settle ? 1.0f : c->h.k;
+  const float k = settle ? 1.0f : h->k;
   int moving = le_fx_glide_step(&c->thr, (float)le_fx_desc_value(&d[0], p[0]), k);
   moving |= le_fx_glide_step(
       &c->slope, (float)(1.0 - 1.0 / le_fx_desc_value(&d[1], p[1])), k);
   moving |= le_fx_glide_step(&c->mk, (float)le_fx_desc_value(&d[4], p[4]), k);
-  c->h.moving = moving;
+  h->moving = moving;
 }
 
 static void fx_comp_kprocess(void* ks, float* l, float* r) {
@@ -4684,8 +4677,6 @@ float le_comp_static_gr_for_test(const float* p, float in_db) {
 #define LE_TR_PEAK_LIFT 0.01f
 
 typedef struct le_fx_transient {
-  le_fx_dyn_head h;
-  float last[LE_TR_PARAMS_N];
   le_fx_glide atk; /* attack amount, -1..1 */
   le_fx_glide sus; /* sustain amount, -1..1 */
   float peak_rel;  /* coefficients */
@@ -4703,9 +4694,10 @@ typedef struct le_fx_transient {
   float a2;
 } le_fx_transient;
 
-static void fx_transient_update(void* ks, const float* p, int sr, int settle) {
+static void fx_transient_update(void* ks, le_fx_dyn_head* h, const float* p,
+                                int sr, int f) {
   le_fx_transient* t = (le_fx_transient*)ks;
-  const int f = le_fx_dyn_begin(&t->h, t->last, p, LE_TR_PARAMS_N, sr, settle);
+  const int settle = (f & LE_FX_DYN_SETTLE) != 0;
   if (!f) return;
   const int changed = (f & LE_FX_DYN_CHANGED) != 0;
   if (changed) {
@@ -4719,12 +4711,12 @@ static void fx_transient_update(void* ks, const float* p, int sr, int settle) {
     t->lift = le_one_pole(LE_TR_SUS_LIFT_S, sr);
     t->gain_c = le_one_pole(LE_TR_GAIN_S, sr);
   }
-  const float k = settle ? 1.0f : t->h.k;
+  const float k = settle ? 1.0f : h->k;
   const float a = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
   const float s = p[2] < 0.0f ? 0.0f : p[2] > 1.0f ? 1.0f : p[2];
   int moving = le_fx_glide_step(&t->atk, 2.0f * a - 1.0f, k);
   moving |= le_fx_glide_step(&t->sus, 2.0f * s - 1.0f, k);
-  t->h.moving = moving;
+  h->moving = moving;
 }
 
 /* The level's peak between the samples, read on the sample after a strict
@@ -4798,8 +4790,6 @@ static void fx_transient_kprocess(void* ks, float* l, float* r) {
 #define LE_GATE_CLOSE_S 0.0032
 
 typedef struct le_fx_hp_gate {
-  le_fx_dyn_head h;
-  float last[LE_HPG_PARAMS_N];
   float lhz; /* the corner now, log2 Hz */
   float tgt_lhz;
   float f;      /* the filter's frequency coefficient */
@@ -4822,9 +4812,10 @@ static void le_hpg_design(le_fx_hp_gate* q, int sr) {
                            (double)(sr > 0 ? sr : 48000)));
 }
 
-static void fx_hp_gate_update(void* ks, const float* p, int sr, int settle) {
+static void fx_hp_gate_update(void* ks, le_fx_dyn_head* h, const float* p,
+                              int sr, int f) {
   le_fx_hp_gate* q = (le_fx_hp_gate*)ks;
-  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_HPG_PARAMS_N, sr, settle);
+  const int settle = (f & LE_FX_DYN_SETTLE) != 0;
   if (!f) return;
   const int new_rate = (f & LE_FX_DYN_NEW_RATE) != 0;
   const le_fx_param_desc* d = LE_FX_HP_GATE_PARAMS;
@@ -4850,15 +4841,15 @@ static void fx_hp_gate_update(void* ks, const float* p, int sr, int settle) {
     q->hold = q->hold_n;
   }
   if (q->lhz != q->tgt_lhz || new_rate) {
-    le_fx_step_toward(&q->lhz, q->tgt_lhz, settle ? 1.0f : q->h.k);
+    le_fx_step_toward(&q->lhz, q->tgt_lhz, settle ? 1.0f : h->k);
     le_hpg_design(q, sr);
   }
-  le_fx_step_toward(&q->wet, q->tgt_wet, settle ? 1.0f : q->h.k);
+  le_fx_step_toward(&q->wet, q->tgt_wet, settle ? 1.0f : h->k);
   if (q->wet == 0.0f) { /* off: the filter starts clean when it comes back */
     q->lp[0] = q->lp[1] = 0.0f;
     q->bp[0] = q->bp[1] = 0.0f;
   }
-  q->h.moving = q->lhz != q->tgt_lhz || q->wet != q->tgt_wet;
+  h->moving = q->lhz != q->tgt_lhz || q->wet != q->tgt_wet;
 }
 
 static void fx_hp_gate_kprocess(void* ks, float* l, float* r) {
@@ -4926,9 +4917,6 @@ static const le_fx_param_desc LE_FX_WAH_PARAMS[] = {
     {"pedal", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.619f,
      0},
 };
-#define LE_DBL_PARAMS_N 2
-#define LE_CHO_PARAMS_N 3
-#define LE_WAH_PARAMS_N 1
 
 /* A delay line inside a kind's block: [LE_*_RING] floats, a power of two,
  * written at [w] every sample and read back [delay] samples earlier by
@@ -5011,8 +4999,8 @@ static inline float le_unit(uint32_t* s) {
  *   50.5 ms at 50 % and 100 ms at 100 % (measured 1.0, 51.2 and 100.8 ms),
  *   the shortest 0.2 ms. The ring holds 100 ms up to 162 kHz, so the
  *   appliance's 96 kHz gets the whole range; that makes the block 128 KB,
- *   which every slot's arena holds once and the audio thread clears when a
- *   slot turns into a doubler.
+ *   which a slot allocates the first time it holds a doubler and the audio
+ *   thread clears when a slot turns into one.
  * - The mix does not fade the copy: from 50 % up it changes nothing
  *   (Studio, Vocal and Dub alike), and towards 0 % it shrinks the delays
  *   until, at 0 %, the copy sits within 1 ms of the dry signal (the range
@@ -5031,8 +5019,6 @@ static inline float le_unit(uint32_t* s) {
 #define LE_DBL_FADE_S 0.025
 
 typedef struct le_fx_doubler {
-  le_fx_dyn_head h;
-  float last[LE_DBL_PARAMS_N];
   uint32_t w;
   float short_n; /* the shortest delay, in samples */
   float long_n;  /* the longest the settings allow, in samples */
@@ -5056,9 +5042,10 @@ static int32_t le_dbl_draw_hold(le_fx_doubler* d, int ch) {
   return (int32_t)(d->hold_n + d->spread_n * le_unit(&d->rng[ch]));
 }
 
-static void fx_doubler_update(void* ks, const float* p, int sr, int settle) {
+static void fx_doubler_update(void* ks, le_fx_dyn_head* h, const float* p,
+                              int sr, int f) {
   le_fx_doubler* d = (le_fx_doubler*)ks;
-  const int f = le_fx_dyn_begin(&d->h, d->last, p, LE_DBL_PARAMS_N, sr, settle);
+  const int settle = (f & LE_FX_DYN_SETTLE) != 0;
   if (!f) return;
   const double rate = (double)(sr > 0 ? sr : 48000);
   const float m = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
@@ -5095,7 +5082,7 @@ static void fx_doubler_update(void* ks, const float* p, int sr, int settle) {
     if (d->cur[ch] > LE_DBL_RING - 1u) d->cur[ch] = LE_DBL_RING - 1u;
     if (d->next[ch] > LE_DBL_RING - 1u) d->next[ch] = LE_DBL_RING - 1u;
   }
-  d->h.moving = 0;
+  h->moving = 0;
 }
 
 static void fx_doubler_kprocess(void* ks, float* l, float* r) {
@@ -5172,8 +5159,6 @@ static void le_cho_lowpass(float* lp, double rate) {
 }
 
 typedef struct le_fx_chorus {
-  le_fx_dyn_head h;
-  float last[LE_CHO_PARAMS_N];
   le_fx_glide rate;  /* LFO rate, Hz */
   le_fx_glide swing; /* the delay's swing above the base, samples */
   le_fx_glide dry;
@@ -5188,9 +5173,10 @@ typedef struct le_fx_chorus {
   float ring[2][LE_CHO_RING];
 } le_fx_chorus;
 
-static void fx_chorus_update(void* ks, const float* p, int sr, int settle) {
+static void fx_chorus_update(void* ks, le_fx_dyn_head* h, const float* p,
+                             int sr, int f) {
   le_fx_chorus* c = (le_fx_chorus*)ks;
-  const int f = le_fx_dyn_begin(&c->h, c->last, p, LE_CHO_PARAMS_N, sr, settle);
+  const int settle = (f & LE_FX_DYN_SETTLE) != 0;
   if (!f) return;
   const double rate = (double)(sr > 0 ? sr : 48000);
   if (f & LE_FX_DYN_NEW_RATE) {
@@ -5199,7 +5185,7 @@ static void fx_chorus_update(void* ks, const float* p, int sr, int settle) {
     c->inv_sr = (float)(1.0 / rate);
     le_cho_lowpass(c->lp, rate);
   }
-  const float k = settle ? 1.0f : c->h.k;
+  const float k = settle ? 1.0f : h->k;
   const float v[3] = {
       p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0],
       p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1],
@@ -5212,7 +5198,7 @@ static void fx_chorus_update(void* ks, const float* p, int sr, int settle) {
   moving |= le_fx_glide_step(&c->swing, swing, k);
   moving |= le_fx_glide_step(&c->dry, 1.0f - LE_CHO_DRY_DROP * v[2], k);
   moving |= le_fx_glide_step(&c->wet, LE_CHO_VOICE * v[2], k);
-  c->h.moving = moving;
+  h->moving = moving;
 }
 
 static void fx_chorus_kprocess(void* ks, float* l, float* r) {
@@ -5267,7 +5253,6 @@ static void fx_chorus_kprocess(void* ks, float* l, float* r) {
  *
  * A mode change crossfades over LE_MOD_FADE frames, with both modes
  * running for that time. */
-#define LE_MOD_PARAMS_N 4
 enum { LE_MOD_CHORUS, LE_MOD_PHASER, LE_MOD_FLANGER, LE_MOD_TREMOLO,
        LE_MOD_MODES };
 #define LE_MOD_RING LE_CHO_RING
@@ -5369,8 +5354,6 @@ typedef struct le_mod_voice {
 } le_mod_voice;
 
 typedef struct le_fx_mod {
-  le_fx_dyn_head h;
-  float last[LE_MOD_PARAMS_N];
   int32_t mode;
   int32_t from; /* the mode fading out, or -1 */
   int32_t fade; /* frames of the crossfade left */
@@ -5456,9 +5439,10 @@ static void le_mod_phaser_land(le_fx_mod* q) {
   q->pha_left = 0;
 }
 
-static void fx_mod_update(void* ks, const float* p, int sr, int settle) {
+static void fx_mod_update(void* ks, le_fx_dyn_head* h, const float* p, int sr,
+                          int f) {
   le_fx_mod* q = (le_fx_mod*)ks;
-  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_MOD_PARAMS_N, sr, settle);
+  const int settle = (f & LE_FX_DYN_SETTLE) != 0;
   if (!f) return;
   if (f & LE_FX_DYN_NEW_RATE) {
     const double rate = (double)(sr > 0 ? sr : 48000);
@@ -5499,10 +5483,10 @@ static void fx_mod_update(void* ks, const float* p, int sr, int settle) {
     if (m == LE_MOD_PHASER) le_mod_phaser_land(q);
     if (m == LE_MOD_TREMOLO) q->trm_g = 1.0f;
   }
-  const float k = settle ? 1.0f : q->h.k;
+  const float k = settle ? 1.0f : h->k;
   int moving = le_mod_targets(q, q->mode, v, k);
   if (settle) le_mod_phaser_land(q);
-  q->h.moving = moving || q->fade > 0 || m != q->mode;
+  h->moving = moving || q->fade > 0 || m != q->mode;
 }
 
 /* The chorus mode on one sample of both sides. */
@@ -5651,8 +5635,6 @@ static const le_wah_point LE_WAH_TABLE[] = {
 #define LE_WAH_POINTS ((int)(sizeof(LE_WAH_TABLE) / sizeof(LE_WAH_TABLE[0])))
 
 typedef struct le_fx_wah {
-  le_fx_dyn_head h;
-  float last[LE_WAH_PARAMS_N];
   float pos; /* the pedal now */
   float tgt;
   float a1, a2, a3; /* SVF coefficients */
@@ -5677,15 +5659,16 @@ static void le_wah_at(float v, double* hz, double* q, double* bp, double* lp,
   *hp = a->hp * pow(b->hp / a->hp, t);
 }
 
-static void fx_wah_update(void* ks, const float* p, int sr, int settle) {
+static void fx_wah_update(void* ks, le_fx_dyn_head* h, const float* p, int sr,
+                          int f) {
   le_fx_wah* q = (le_fx_wah*)ks;
-  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_WAH_PARAMS_N, sr, settle);
+  const int settle = (f & LE_FX_DYN_SETTLE) != 0;
   if (!f) return;
   if (f & LE_FX_DYN_CHANGED) {
     q->tgt = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
   }
   if (q->pos != q->tgt || (f & LE_FX_DYN_NEW_RATE) || settle) {
-    le_fx_step_toward(&q->pos, q->tgt, settle ? 1.0f : q->h.k);
+    le_fx_step_toward(&q->pos, q->tgt, settle ? 1.0f : h->k);
     double hz, qq, bp, lp, hp;
     le_wah_at(q->pos, &hz, &qq, &bp, &lp, &hp);
     const double k = 1.0 / qq;
@@ -5696,7 +5679,7 @@ static void fx_wah_update(void* ks, const float* p, int sr, int settle) {
     q->cl = (float)(lp - hp);
     q->cx = (float)hp;
   }
-  q->h.moving = q->pos != q->tgt;
+  h->moving = q->pos != q->tgt;
 }
 
 static void fx_wah_kprocess(void* ks, float* l, float* r) {
@@ -6031,7 +6014,6 @@ static const le_fx_param_desc LE_FX_OVERDRIVE_PARAMS[] = {
     {"tone", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
      LE_FX_PARAM_TAPER_UNVERIFIED},
 };
-#define LE_OD_PARAMS_N 2
 #define LE_OD_K 0.5166f      /* the clean part */
 #define LE_OD_C 0.0367f      /* the clipped part's ceiling */
 #define LE_OD_A 2.8826f      /* the second stage */
@@ -6062,8 +6044,6 @@ static float le_onepole_g1(double hz, int sr) {
 }
 
 typedef struct le_fx_overdrive {
-  le_fx_dyn_head h;
-  float last[LE_OD_PARAMS_N];
   le_fx_glide g;    /* the clipped part's gain over its ceiling, G / c */
   float tone_lhz;   /* the tone corner now, log2 Hz */
   float tone_tgt;
@@ -6077,9 +6057,10 @@ typedef struct le_fx_overdrive {
   le_hb hb; /* at 96 kHz, the curve's output under 24 kHz */
 } le_fx_overdrive;
 
-static void fx_overdrive_update(void* ks, const float* p, int sr, int settle) {
+static void fx_overdrive_update(void* ks, le_fx_dyn_head* h, const float* p,
+                                int sr, int f) {
   le_fx_overdrive* o = (le_fx_overdrive*)ks;
-  const int f = le_fx_dyn_begin(&o->h, o->last, p, LE_OD_PARAMS_N, sr, settle);
+  const int settle = (f & LE_FX_DYN_SETTLE) != 0;
   if (!f) return;
   const double rate = (double)(sr > 0 ? sr : 48000);
   if (f & LE_FX_DYN_NEW_RATE) {
@@ -6103,7 +6084,7 @@ static void fx_overdrive_update(void* ks, const float* p, int sr, int settle) {
   if (f & LE_FX_DYN_CHANGED) {
     o->tone_tgt = (float)(log2(LE_OD_TONE_HZ) + 2.0 * (2.0 * t - 1.0));
   }
-  const float k = settle ? 1.0f : o->h.k;
+  const float k = settle ? 1.0f : h->k;
   int moving = le_fx_glide_step(
       &o->g, (float)(LE_OD_G0 * exp(LE_OD_GK * d) / LE_OD_C), k);
   if (o->tone_lhz != o->tone_tgt || (f & LE_FX_DYN_NEW_RATE)) {
@@ -6113,7 +6094,7 @@ static void fx_overdrive_update(void* ks, const float* p, int sr, int settle) {
     for (int i = 0; i < 5; ++i) o->tone[i] = (float)c[i];
   }
   moving |= o->tone_lhz != o->tone_tgt;
-  o->h.moving = moving;
+  h->moving = moving;
 }
 
 static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
@@ -6766,7 +6747,6 @@ static const le_fx_param_desc LE_FX_DISTORTION_PARAMS[] = {
     {"tone", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
      LE_FX_PARAM_TAPER_UNVERIFIED},
 };
-#define LE_DIST_PARAMS_N 2
 #define LE_DIST_ALPHA 3.4467f /* the early asymmetry */
 #define LE_DIST_UP 0.20428f   /* the positive ceiling */
 #define LE_DIST_DOWN 0.045506f
@@ -6788,8 +6768,6 @@ static const struct {
 };
 
 typedef struct le_fx_distortion {
-  le_fx_dyn_head h;
-  float last[LE_DIST_PARAMS_N];
   le_fx_glide g;     /* the gain into the curve */
   le_fx_glide level; /* the output level, over the cabinet's 1 kHz gain */
   float norm;        /* 1 / |cabinet at 1 kHz| */
@@ -6814,9 +6792,10 @@ static double le_biquad_mag(const double c[5], double w) {
   return sqrt((nr * nr + ni * ni) / (dr * dr + di * di));
 }
 
-static void fx_distortion_update(void* ks, const float* p, int sr, int settle) {
+static void fx_distortion_update(void* ks, le_fx_dyn_head* h, const float* p,
+                                 int sr, int f) {
   le_fx_distortion* q = (le_fx_distortion*)ks;
-  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_DIST_PARAMS_N, sr, settle);
+  const int settle = (f & LE_FX_DYN_SETTLE) != 0;
   if (!f) return;
   const int rate = sr > 0 ? sr : 48000;
   if (f & LE_FX_DYN_NEW_RATE) {
@@ -6840,7 +6819,7 @@ static void fx_distortion_update(void* ks, const float* p, int sr, int settle) {
   }
   const float d = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
   const float t = p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1];
-  const float k = settle ? 1.0f : q->h.k;
+  const float k = settle ? 1.0f : h->k;
   int moving = le_fx_glide_step(
       &q->g,
       (float)exp(-1.0887 + d * (2.3136 + d * (-3.3444 + d * 6.5117))), k);
@@ -6864,7 +6843,7 @@ static void fx_distortion_update(void* ks, const float* p, int sr, int settle) {
     }
   }
   moving |= q->tone_db != q->tone_tgt;
-  q->h.moving = moving;
+  h->moving = moving;
 }
 
 static void fx_distortion_kprocess(void* ks, float* l, float* r) {
@@ -6953,7 +6932,6 @@ static const le_fx_param_desc LE_FX_VINYL_PARAMS[] = {
     {"noise_tone", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR,
      0.9f, 0},
 };
-#define LE_VIN_PARAMS_N 4
 #define LE_VIN_DRY 0.5f
 #define LE_VIN_RECT 3.75f   /* the rectifier at 100 % drive, x drive^2 */
 #define LE_VIN_SQUARE 4.3f  /* the square law, x the rectifier */
@@ -6975,8 +6953,6 @@ static const le_fx_param_desc LE_FX_VINYL_PARAMS[] = {
 #define LE_VIN_TONE_HI_HZ 21600.0
 
 typedef struct le_fx_vinyl {
-  le_fx_dyn_head h;
-  float last[LE_VIN_PARAMS_N];
   le_fx_glide gain;  /* the copy's gain c */
   le_fx_glide noise; /* the bed's level, noise^3 */
   float hz_l2, hz_tgt; /* the high-pass corner, log2 Hz */
@@ -7003,12 +6979,13 @@ typedef struct le_fx_vinyl {
   float z_dc[2][2];
 } le_fx_vinyl;
 
-static void fx_vinyl_update(void* ks, const float* p, int sr, int settle) {
+static void fx_vinyl_update(void* ks, le_fx_dyn_head* h, const float* p, int sr,
+                            int f) {
   le_fx_vinyl* v = (le_fx_vinyl*)ks;
-  const int f = le_fx_dyn_begin(&v->h, v->last, p, LE_VIN_PARAMS_N, sr, settle);
+  const int settle = (f & LE_FX_DYN_SETTLE) != 0;
   if (!f) return;
   const int rate = sr > 0 ? sr : 48000;
-  const float k = settle ? 1.0f : v->h.k;
+  const float k = settle ? 1.0f : h->k;
   if (settle) {
     const uint32_t seed = le_fx_kind_seed(ks);
     v->rng[0] = seed | 1u;
@@ -7063,7 +7040,7 @@ static void fx_vinyl_update(void* ks, const float* p, int sr, int settle) {
     for (int i = 0; i < 5; ++i) v->tone[i] = (float)c[i];
   }
   moving |= v->hz_l2 != v->hz_tgt || v->tone_l2 != v->tone_tgt;
-  v->h.moving = moving;
+  h->moving = moving;
 }
 
 static void fx_vinyl_kprocess(void* ks, float* l, float* r) {
@@ -7166,7 +7143,6 @@ static const le_fx_param_desc LE_FX_DEGRADE_PARAMS[] = {
      0},
     {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 1.0f, 0},
 };
-#define LE_DEG_PARAMS_N 3
 #define LE_DEG_RATIO 0.194  /* the corner over the hold, at 0 % */
 #define LE_DEG_RATIO_MID 0.89 /* at 50 % */
 #define LE_DEG_Q1 0.91
@@ -7177,8 +7153,6 @@ static const le_fx_param_desc LE_FX_DEGRADE_PARAMS[] = {
 #define LE_DEG_HIST 64       /* its history, a power of two past 2 M + 1 */
 
 typedef struct le_fx_degrade {
-  le_fx_dyn_head h;
-  float last[LE_DEG_PARAMS_N];
   le_fx_glide step; /* the hold's phase step per sample (1: every sample) */
   le_fx_glide mix;
   float lp_l2, lp_tgt; /* the low-pass corner, log2 Hz */
@@ -7257,9 +7231,10 @@ static int fx_degrade_latency_vt(const le_fx_state* fx, int slot, int32_t type,
   return le_deg_latency(sr);
 }
 
-static void fx_degrade_update(void* ks, const float* p, int sr, int settle) {
+static void fx_degrade_update(void* ks, le_fx_dyn_head* h, const float* p,
+                              int sr, int f) {
   le_fx_degrade* q = (le_fx_degrade*)ks;
-  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_DEG_PARAMS_N, sr, settle);
+  const int settle = (f & LE_FX_DYN_SETTLE) != 0;
   if (!f) return;
   const int sr_in = sr > 0 ? sr : 48000;
   if (f & LE_FX_DYN_NEW_RATE) {
@@ -7278,7 +7253,7 @@ static void fx_degrade_update(void* ks, const float* p, int sr, int settle) {
   /* The rate the kernel runs at: a hold at or above it holds every
    * sample. */
   const int rate = q->halved ? sr_in / 2 : sr_in;
-  const float k = settle ? 1.0f : q->h.k;
+  const float k = settle ? 1.0f : h->k;
   const le_fx_param_desc* d = LE_FX_DEGRADE_PARAMS;
   const double hz = le_fx_desc_value(&d[0], p[0]);
   const float step = (float)(hz >= rate ? 1.0 : hz / rate);
@@ -7302,7 +7277,7 @@ static void fx_degrade_update(void* ks, const float* p, int sr, int settle) {
     for (int i = 0; i < 5; ++i) q->c2[i] = (float)c[i];
   }
   moving |= q->lp_l2 != q->lp_tgt;
-  q->h.moving = moving;
+  h->moving = moving;
 }
 
 /* One frame of the kernel at its rate: [x] in, [y] out. The glides have
@@ -7415,7 +7390,6 @@ static const le_fx_param_desc LE_FX_LPF_PARAMS[] = {
     {"lfo_rate", LE_FX_UNIT_CHOICE, 16, 0.0f, 1.0f, LE_FX_CURVE_LINEAR, 0.4f,
      0},
 };
-#define LE_LPF_PARAMS_N 4
 #define LE_LPF_K0 0.2
 #define LE_LPF_K1 4.2
 #define LE_LPF_K_POW 1.15
@@ -7447,8 +7421,6 @@ static const double LE_LPF_LFO_QUARTERS[16] = {
 #define LE_LPF_LFO_EXP 2.2
 
 typedef struct le_fx_lpf {
-  le_fx_dyn_head h;
-  float last[LE_LPF_PARAMS_N];
   double beat;      /* the beat the coming update lands on (fx_lpf_beat) */
   float l2, tgt;    /* the corner, log2 Hz, without the LFO */
   float lfo;        /* the LFO's offset to the corner now, octaves */
@@ -7515,7 +7487,8 @@ static void le_lpf_coefs(le_fx_lpf* q, double G) {
   q->inv = (float)(1.0 / (1.0 + (double)q->k * g4));
 }
 
-static void fx_lpf_update(void* ks, const float* p, int sr, int settle) {
+static void fx_lpf_update(void* ks, le_fx_dyn_head* h, const float* p, int sr,
+                          int f) {
   le_fx_lpf* q = (le_fx_lpf*)ks;
   /* Oscillating, a side whose stages have all died away in silence (to 0,
    * or to the denormal crumbs where growth no longer works) gets the seed
@@ -7529,9 +7502,9 @@ static void fx_lpf_update(void* ks, const float* p, int sr, int settle) {
       }
     }
   }
-  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_LPF_PARAMS_N, sr, settle);
+  const int settle = (f & LE_FX_DYN_SETTLE) != 0;
   if (!f) return;
-  const float k = settle ? 1.0f : q->h.k;
+  const float k = settle ? 1.0f : h->k;
   if (settle) q->s[0][0] = q->s[1][0] = LE_LPF_SEED;
   if (f & LE_FX_DYN_CHANGED) {
     const double v = p[1] < 0.0f ? 0.0 : p[1] > 1.0f ? 1.0 : p[1];
@@ -7623,7 +7596,7 @@ static void fx_lpf_update(void* ks, const float* p, int sr, int settle) {
     }
   }
   const int moving = le_fx_glide_step(&q->amount, p[0] >= 1.0f ? 0.0f : 1.0f, k);
-  q->h.moving = moving || q->l2 != q->tgt || q->k != q->ktgt || sweeping ||
+  h->moving = moving || q->l2 != q->tgt || q->k != q->ktgt || sweeping ||
                 q->lfo != 0.0f || q->g_n > 0;
 }
 
@@ -7741,7 +7714,6 @@ static const le_fx_param_desc LE_FX_SPRING_PARAMS[] = {
      0.30103f, 0},
     {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
 };
-#define LE_SPR_PARAMS_N 2
 #define LE_SPR_RING 4096u /* holds the 38 ms trip up to 107 kHz */
 #define LE_SPR_TRIP_S 0.038
 #define LE_SPR_STAGES 12
@@ -7777,8 +7749,6 @@ static const struct {
 };
 
 typedef struct le_fx_spring {
-  le_fx_dyn_head h;
-  float last[LE_SPR_PARAMS_N];
   le_fx_glide gain; /* the loop's gain per trip */
   le_fx_glide low;  /* its gain below LE_SPR_LOW_HZ, over it */
   le_fx_glide dry;
@@ -7808,9 +7778,10 @@ typedef struct le_fx_spring {
   float ring[LE_SPR_RING];
 } le_fx_spring;
 
-static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
+static void fx_spring_update(void* ks, le_fx_dyn_head* h, const float* p,
+                             int sr, int f) {
   le_fx_spring* q = (le_fx_spring*)ks;
-  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_SPR_PARAMS_N, sr, settle);
+  const int settle = (f & LE_FX_DYN_SETTLE) != 0;
   if (!f) return;
   const int rate = sr > 0 ? sr : 48000;
   if (f & LE_FX_DYN_NEW_RATE) {
@@ -7862,9 +7833,8 @@ static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
       want = q->nph * trip48;
     }
     double trip = want;
-    /* Past 107 kHz the trip outgrows the ring (a larger one would sit in
-     * every slot's arena): hold it there and scale the loss per trip, so the
-     * decay stays right though the echo shortens. */
+    /* Past 107 kHz the trip outgrows the ring: hold it there and scale the
+     * loss per trip, so the decay stays right though the echo shortens. */
     if (trip > (double)(LE_SPR_RING - 1u)) trip = (double)(LE_SPR_RING - 1u);
     if (trip < 1.0) trip = 1.0;
     q->trip = (uint32_t)trip;
@@ -7881,12 +7851,12 @@ static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
     q->low_tgt = (float)pow(10.0, LE_SPR_TIME[i].low_db * q->trip_scale / 20.0);
     q->wet_tgt = (float)(LE_SPR_WET * pow(time / 2.0, LE_SPR_WET_EXP));
   }
-  const float k = settle ? 1.0f : q->h.k;
+  const float k = settle ? 1.0f : h->k;
   int moving = le_fx_glide_step(&q->gain, q->gain_tgt, k);
   moving |= le_fx_glide_step(&q->low, q->low_tgt, k);
   moving |= le_fx_glide_step(&q->dry, 1.0f - LE_SPR_DRY_DROP * m, k);
   moving |= le_fx_glide_step(&q->wet, q->wet_tgt * m, k);
-  q->h.moving = moving;
+  h->moving = moving;
 }
 
 static void fx_spring_kprocess(void* ks, float* l, float* r) {
@@ -8074,11 +8044,8 @@ static const le_fx_param_desc LE_FX_AMB_VERB_PARAMS[] = {
     {"amb_dub_mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR,
      0.4f, 0},
 };
-#define LE_VB_PARAMS_N 3
 
 typedef struct le_fx_verb {
-  le_fx_dyn_head h;
-  float last[LE_VB_PARAMS_N];
   le_fx_glide dry;
   le_fx_glide wet;
   const le_verb_def* def;
@@ -8417,15 +8384,15 @@ static void le_vb_glide_dec(le_fx_verb* q, float dec_tgt, float k, int rate) {
   if (def->lg[0] > 0.0) q->late_k = (float)le_vb_t_at(def, def->lg, q->dec);
 }
 
-static void fx_verb_update(void* ks, const float* p, int sr, int settle,
-                           const le_verb_def* def) {
+static void fx_verb_update(void* ks, le_fx_dyn_head* h, const float* p, int sr,
+                           int f, const le_verb_def* def) {
   le_fx_verb* q = (le_fx_verb*)ks;
   q->def = def;
-  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_VB_PARAMS_N, sr, settle);
+  const int settle = (f & LE_FX_DYN_SETTLE) != 0;
   if (!f) return;
   const int rate = sr > 0 ? sr : 48000;
   if (f & LE_FX_DYN_NEW_RATE) le_vb_lay(q, def, rate);
-  const float k = settle ? 1.0f : q->h.k;
+  const float k = settle ? 1.0f : h->k;
   /* Dec glides with the other settings' smoothing, not when Vol does. */
   const float dec_tgt = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
   le_vb_glide_dec(q, dec_tgt, k, rate);
@@ -8433,14 +8400,16 @@ static void fx_verb_update(void* ks, const float* p, int sr, int settle,
   int moving = le_fx_glide_step(&q->dry, (float)le_vb_interp(def->dry, vol), k);
   moving |= le_fx_glide_step(&q->wet, (float)le_vb_interp(LE_VB_WET, vol), k);
   moving |= q->dec != dec_tgt;
-  q->h.moving = moving;
+  h->moving = moving;
 }
 
-static void fx_dub_verb_update(void* ks, const float* p, int sr, int settle) {
-  fx_verb_update(ks, p, sr, settle, &LE_DUB_VERB_DEF);
+static void fx_dub_verb_update(void* ks, le_fx_dyn_head* h, const float* p,
+                               int sr, int f) {
+  fx_verb_update(ks, h, p, sr, f, &LE_DUB_VERB_DEF);
 }
-static void fx_amb_verb_update(void* ks, const float* p, int sr, int settle) {
-  fx_verb_update(ks, p, sr, settle, &LE_AMB_VERB_DEF);
+static void fx_amb_verb_update(void* ks, le_fx_dyn_head* h, const float* p,
+                               int sr, int f) {
+  fx_verb_update(ks, h, p, sr, f, &LE_AMB_VERB_DEF);
 }
 
 /* One sample of [q]'s network: the mono input [m] into its history, and
@@ -8595,7 +8564,6 @@ static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
 #define LE_RV_ROOMS 16
 #define LE_RV_ER 16
 #define LE_RV_FIR 64 /* the most taps a network's early part runs a side */
-#define LE_RV_PARAMS_N 7
 
 /* A network's early part, read off the captures as taps (delay, and gain
  * at each Density point 0, 25, 50, 75 and 100 %; a mode's at one), the
@@ -8638,9 +8606,7 @@ static const le_fx_param_desc LE_FX_ROOM_VERB_PARAMS[] = {
 #include "engine_fx_rooms.inc"
 
 typedef struct le_fx_rverb {
-  le_fx_verb v; /* the room's network; its own head and last are unused */
-  le_fx_dyn_head h;
-  float last[LE_RV_PARAMS_N];
+  le_fx_verb v; /* the room's network */
   int room;    /* the room laid out, -1 for none */
   int rate;    /* the rate it is laid out at */
   uint32_t er_n[2];
@@ -8751,14 +8717,15 @@ static void le_rv_tone(le_fx_rverb* q, float v, int drum, int sr) {
   q->cut_hz = cut;
 }
 
-static void fx_room_verb_update(void* ks, const float* p, int sr, int settle) {
+static void fx_room_verb_update(void* ks, le_fx_dyn_head* h, const float* p,
+                                int sr, int f) {
   le_fx_rverb* q = (le_fx_rverb*)ks;
-  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_RV_PARAMS_N, sr, settle);
+  const int settle = (f & LE_FX_DYN_SETTLE) != 0;
   if (!f) return;
   const int rate = sr > 0 ? sr : 48000;
   int room = (int)(p[2] * (float)(LE_RV_ROOMS - 1) + 0.5f);
   room = room < 0 ? 0 : room >= LE_RV_ROOMS ? LE_RV_ROOMS - 1 : room;
-  const float k = settle ? 1.0f : q->h.k;
+  const float k = settle ? 1.0f : h->k;
   int moving = 0;
   /* A new rate, a first update or a settle lays the room out at once; a
    * room change dips the wet first. */
@@ -8861,7 +8828,7 @@ static void fx_room_verb_update(void* ks, const float* p, int sr, int settle) {
   q->apg_d = (q->apg_to - q->v.ap_g) * per;
   q->latek_d = (q->latek_to - q->v.late_k) * per;
   q->ramp = instant ? 0 : LE_FX_UPDATE_FRAMES;
-  q->h.moving = moving;
+  h->moving = moving;
 }
 
 /* [n] taps (delays [at], gains [g]) off the history [hist], whose newest
@@ -9145,11 +9112,13 @@ typedef struct le_fx_vtable {
   uint32_t flags;
   /* A kind that keeps its state on the heap (le_fx_kinds): the bytes of its
    * block, 0 for the rest. Such a kind has no `process`; the chain runs
-   * `update` on its block at the update cadence (and with settle set right
-   * after the block is cleared, so smoothing lands at once), then
-   * `kprocess`. */
+   * `update` on its block at the update cadence (and with LE_FX_DYN_SETTLE
+   * set right after the block is cleared, so smoothing lands at once), then
+   * `kprocess`. The block's head [h] holds the settings the kind last saw
+   * and its smoothing step; [f] is le_fx_dyn_begin's verdict on them, 0 when
+   * nothing changed and nothing moves. */
   size_t state_size;
-  void (*update)(void* ks, const float* p, int sr, int settle);
+  void (*update)(void* ks, le_fx_dyn_head* h, const float* p, int sr, int f);
   void (*kprocess)(void* ks, float* l, float* r);
   /* A heap-state kind whose long lines live in the slot's two rings, which
    * its `prepare` allocates (the reverbs): run instead of `kprocess`, with
@@ -9282,26 +9251,6 @@ static const le_fx_vtable LE_FX[] = {
  * entry here would read nothing; test_fx_params_past_count_are_inert checks
  * every built-in has one. */
 #define LE_FX_ROW_COUNT(t) (uint8_t)(sizeof(t) / sizeof(t[0]))
-_Static_assert(LE_EQ_PARAMS_N ==
-                   sizeof(LE_FX_EQ_PARAMS) / sizeof(LE_FX_EQ_PARAMS[0]),
-               "le_fx_eq.last holds every EQ setting");
-_Static_assert(LE_COMP_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_COMPRESSOR_PARAMS) &&
-                   LE_TR_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_TRANSIENT_PARAMS) &&
-                   LE_HPG_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_HP_GATE_PARAMS) &&
-                   LE_DBL_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_DOUBLER_PARAMS) &&
-                   LE_CHO_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_CHORUS_PARAMS) &&
-                   LE_MOD_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_MOD_PARAMS) &&
-                   LE_WAH_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_WAH_PARAMS) &&
-                   LE_OD_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_OVERDRIVE_PARAMS) &&
-                   LE_DIST_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_DISTORTION_PARAMS) &&
-                   LE_VIN_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_VINYL_PARAMS) &&
-                   LE_DEG_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_DEGRADE_PARAMS) &&
-                   LE_LPF_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_LPF_PARAMS) &&
-                   LE_SPR_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_SPRING_PARAMS) &&
-                   LE_VB_PARAMS_N >= LE_FX_ROW_COUNT(LE_FX_DUB_VERB_PARAMS) &&
-                   LE_VB_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_AMB_VERB_PARAMS) &&
-                   LE_RV_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_ROOM_VERB_PARAMS),
-               "each Looper X kind's `last` holds every setting");
 _Static_assert(LE_FX_WIDTHS == sizeof(LE_FX) / sizeof(LE_FX[0]),
                "LE_FX_WIDTHS must be one past the last le_fx_type code");
 const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
@@ -9340,37 +9289,35 @@ const uint8_t le_fx_widths[LE_FX_WIDTHS] = {
 
 /* ---- per-kind state (le_fx_kinds, engine_private.h) ---- */
 
-/* A block's header; the kind's state follows at LE_FX_KIND_ALIGN. */
+/* A block's header; the kind's state follows at LE_FX_KIND_HEAD. The
+ * header holds the change detection every kind shares (le_fx_dyn_begin):
+ * the settings the kind last saw, as many as its type reads. */
 #define LE_FX_KIND_ALIGN 64
 typedef struct le_fx_kind_block {
   struct le_fx_kind_block* next; /* set before the block is published */
   int32_t type;
   int32_t settle; /* audio thread: the next update lands at once */
   uint32_t seed;  /* audio thread: set with each clear (le_fx_kind_seed) */
+  le_fx_dyn_head h;           /* audio thread */
+  float last[LE_FX_PARAMS];   /* audio thread: the settings h saw */
 } le_fx_kind_block;
+#define LE_FX_KIND_HEAD                                       \
+  ((sizeof(le_fx_kind_block) + LE_FX_KIND_ALIGN - 1) &        \
+   ~(size_t)(LE_FX_KIND_ALIGN - 1))
 
 static inline void* le_fx_kind_payload(le_fx_kind_block* b) {
-  return (unsigned char*)b + LE_FX_KIND_ALIGN;
+  return (unsigned char*)b + LE_FX_KIND_HEAD;
 }
 
 static uint32_t le_fx_kind_seed(const void* ks) {
   return ((const le_fx_kind_block*)((const unsigned char*)ks -
-                                    LE_FX_KIND_ALIGN))->seed;
+                                    LE_FX_KIND_HEAD))->seed;
 }
 
 static size_t le_fx_kind_block_bytes(int32_t type) {
   const size_t n = LE_FX[type].state_size;
-  return LE_FX_KIND_ALIGN + ((n + LE_FX_KIND_ALIGN - 1) & ~(size_t)(LE_FX_KIND_ALIGN - 1));
-}
-
-/* One slot's arena: room for one block of every heap-state kind, so a slot
- * that holds each kind in turn never runs out. */
-static size_t le_fx_kind_arena_bytes(void) {
-  size_t bytes = 0;
-  for (int32_t t = LE_FX_NONE + 1; t < LE_FX_TYPE_COUNT; ++t) {
-    if (LE_FX[t].state_size) bytes += le_fx_kind_block_bytes(t);
-  }
-  return bytes;
+  return LE_FX_KIND_HEAD +
+         ((n + LE_FX_KIND_ALIGN - 1) & ~(size_t)(LE_FX_KIND_ALIGN - 1));
 }
 
 /* Control thread: makes sure slot [slot] has a block for [type]. */
@@ -9386,13 +9333,10 @@ static int32_t le_fx_kind_prepare(le_fx_state* fx, int slot, int32_t type) {
   for (le_fx_kind_block* b = head; b != NULL; b = b->next) {
     if (b->type == type) return LE_OK;
   }
-  if (ks->arena.base == NULL &&
-      !le_rt_arena_init(&ks->arena, le_fx_kind_arena_bytes())) {
-    return LE_ERR_INVALID;
-  }
-  le_fx_kind_block* b = (le_fx_kind_block*)le_rt_arena_alloc(
-      &ks->arena, le_fx_kind_block_bytes(type));
-  if (b == NULL) return LE_ERR_INVALID; /* sized for every kind: unreachable */
+  /* Sized for this kind only, so a slot pays for the kinds it has held. */
+  le_fx_kind_block* b =
+      (le_fx_kind_block*)le_rt_alloc_prefaulted(le_fx_kind_block_bytes(type));
+  if (b == NULL) return LE_ERR_INVALID;
   b->type = type;
   b->settle = 1;
   b->next = head;
@@ -9404,15 +9348,20 @@ void le_fx_free_kinds(le_fx_state* fx, int slot) {
   le_fx_kinds* k = atomic_load_explicit(&fx->kinds, memory_order_relaxed);
   if (k == NULL) return;
   le_fx_kind_slot* ks = &k->slot[slot];
+  le_fx_kind_block* b = atomic_load_explicit(&ks->head, memory_order_relaxed);
   atomic_store_explicit(&ks->head, NULL, memory_order_relaxed);
   ks->cur = NULL;
-  le_rt_arena_release(&ks->arena);
+  while (b != NULL) {
+    le_fx_kind_block* next = b->next;
+    le_rt_free(b);
+    b = next;
+  }
 }
 
 void le_fx_free_kind_table(le_fx_state* fx) {
   le_fx_kinds* k = atomic_load_explicit(&fx->kinds, memory_order_relaxed);
   if (k == NULL) return;
-  for (int s = 0; s < LE_FX_MAX; ++s) le_rt_arena_release(&k->slot[s].arena);
+  for (int s = 0; s < LE_FX_MAX; ++s) le_fx_free_kinds(fx, s);
   atomic_store_explicit(&fx->kinds, NULL, memory_order_relaxed);
   le_rt_free(k);
 }
@@ -9444,6 +9393,7 @@ static void* fx_kind_state(le_fx_state* fx, int s, int32_t ty, int sr,
     ks->cur = b;
     if (b == NULL) return NULL;
     memset(le_fx_kind_payload(b), 0, LE_FX[ty].state_size);
+    memset(&b->h, 0, sizeof(b->h)); /* sees no settings yet */
     b->settle = 1;
     b->seed = ((uint32_t)fx->hop_seed + 1u) * 2654435761u +
               (uint32_t)s * 0x9E3779B9u;
@@ -9459,7 +9409,9 @@ static void* fx_kind_state(le_fx_state* fx, int s, int32_t ty, int sr,
       LE_FX[ty].beat(st,
                      now + (double)(LE_FX_UPDATE_FRAMES - 1) * (double)qpf);
     }
-    LE_FX[ty].update(st, p, sr, b->settle);
+    const int f = le_fx_dyn_begin(&b->h, b->last, p,
+                                   (size_t)le_fx_param_width(ty), sr, b->settle);
+    LE_FX[ty].update(st, &b->h, p, sr, f);
     b->settle = 0;
   }
   return st;
@@ -9872,8 +9824,10 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
            * Only ring-OWNING types (vtable `prepare` non-NULL) pay the ring
            * clear, and those are spaced by the cooldown: a deferred slot
            * simply stays bypassed and retries next sample. A draining
-           * heap-state kind is spaced the same way: the reset clears its
-           * block (the spring's ring lives there). A ring kernel
+           * heap-state kind, or one with a large block
+           * (LE_FX_SPACED_CLEAR_BYTES), is spaced the same way: the reset
+           * clears its block (the spring's ring, the doubler's and the
+           * chorus's delay lines live there). A ring kernel
            * (`rkprocess`, the reverbs) skips the ring clear: its cleared
            * block marks every structure unwrapped, so it reads silence
            * until it has written there again. */
@@ -9881,7 +9835,9 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
            * empties at once: no ring to clear, no spacing to wait on, and
            * any 1 s rings an earlier kind left stay as they are, unread. */
           const int needs_clear =
-              ty != LE_FX_MODE_DELAY && le_fx_holds_tail(fx, s, ty);
+              ty != LE_FX_MODE_DELAY &&
+              (le_fx_holds_tail(fx, s, ty) ||
+               LE_FX[ty].state_size >= LE_FX_SPACED_CLEAR_BYTES);
           if (needs_clear && fx->enable_clear_cooldown > 0) goto slot_done;
           le_fx_entry_reset(fx, s);
           if (needs_clear) {

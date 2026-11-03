@@ -562,6 +562,45 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
 
   /// Complete recipes accepted by the in-memory engine.
   final fxRecipes = <(FxOwner, int, int), FxRecipe>{};
+
+  /// Each chain slot's type, as the single-slot type setters and the
+  /// recipes leave it, keyed (owner, channel, lane, index): what a parameter
+  /// write is checked against, as the native setters check
+  /// `le_fx_param_width`.
+  final _fxSlotTypes = <(FxOwner, int, int, int), TrackEffectType>{};
+
+  /// Records [type] on a chain slot, when the engine runs and [index] is a
+  /// slot.
+  EngineResult _setFxSlotType(
+    FxOwner owner,
+    int channel,
+    int lane,
+    int index,
+    TrackEffectType type,
+  ) {
+    final running = _requireRunning();
+    if (!running.isOk) return running;
+    if (index < 0 || index >= kTrackEffectMax) return EngineResult.invalid;
+    _fxSlotTypes[(owner, channel, lane, index)] = type;
+    return EngineResult.ok;
+  }
+
+  /// A parameter write's result: refused past the cells the slot's type
+  /// reads (none for an empty slot), as the native setters refuse it.
+  EngineResult _fxParamResult(
+    FxOwner owner,
+    int channel,
+    int lane,
+    int index,
+    int param,
+  ) {
+    final running = _requireRunning();
+    if (!running.isOk) return running;
+    if (index < 0 || index >= kTrackEffectMax) return EngineResult.invalid;
+    final width = _fxSlotTypes[(owner, channel, lane, index)]?.params.length;
+    if (param < 0 || param >= (width ?? 0)) return EngineResult.invalid;
+    return EngineResult.ok;
+  }
   final _fxRecipeRevisions = <(FxOwner, int, int), int>{};
 
   @override
@@ -593,6 +632,13 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     }
     fxRecipes[(owner, channel, lane)] = recipe;
     _fxRecipeRevisions[(owner, channel, lane)] = revision;
+    for (var i = 0; i < kTrackEffectMax; i++) {
+      if (i < recipe.slots.length) {
+        _fxSlotTypes[(owner, channel, lane, i)] = recipe.slots[i].type;
+      } else {
+        _fxSlotTypes.remove((owner, channel, lane, i));
+      }
+    }
     return EngineResult.ok;
   }
 
@@ -1453,7 +1499,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     required int lane,
     required int index,
     required TrackEffectType type,
-  }) => _requireRunning();
+  }) => _setFxSlotType(FxOwner.lane, channel, lane, index, type);
 
   @override
   EngineResult setLaneFxCount({
@@ -1470,7 +1516,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     required int index,
     required int param,
     required double value,
-  }) => _requireRunning();
+  }) => _fxParamResult(FxOwner.lane, channel, lane, index, param);
 
   /// Recorded [setLaneFxEnabled] calls, in order, for test assertions.
   final laneFxEnabledCalls =
@@ -1522,7 +1568,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     required int channel,
     required int index,
     required TrackEffectType type,
-  }) => _requireRunning();
+  }) => _setFxSlotType(FxOwner.track, channel, 0, index, type);
 
   @override
   EngineResult setTrackFxCount({
@@ -1537,7 +1583,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     required int index,
     required int param,
     required double value,
-  }) => _requireRunning();
+  }) => _fxParamResult(FxOwner.track, channel, 0, index, param);
 
   /// Recorded [setTrackFxEnabled] calls, in order, for test assertions.
   final trackFxEnabledCalls = <({int channel, int index, bool enabled})>[];
@@ -1581,7 +1627,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     required int bus,
     required int index,
     required TrackEffectType type,
-  }) => _requireRunning();
+  }) => _setFxSlotType(FxOwner.output, bus, 0, index, type);
 
   @override
   EngineResult setOutputFxCount({required int bus, required int count}) =>
@@ -1593,7 +1639,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     required int index,
     required int param,
     required double value,
-  }) => _requireRunning();
+  }) => _fxParamResult(FxOwner.output, bus, 0, index, param);
 
   /// Recorded [setOutputFxEnabled] calls, in order, for test assertions.
   final outputFxEnabledCalls = <({int bus, int index, bool enabled})>[];
@@ -1636,6 +1682,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   }) {
     if (index < 0 || index >= kTrackEffectMax) return EngineResult.invalid;
     allTracksFxCalls.add((index: index, type: type));
+    _fxSlotTypes[(FxOwner.allTracks, 0, 0, index)] = type;
     return EngineResult.ok;
   }
 
@@ -1652,7 +1699,8 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     required double value,
   }) {
     if (index < 0 || index >= kTrackEffectMax) return EngineResult.invalid;
-    if (param < 0 || param >= kTrackEffectParams) return EngineResult.invalid;
+    final width = _fxSlotTypes[(FxOwner.allTracks, 0, 0, index)]?.params.length;
+    if (param < 0 || param >= (width ?? 0)) return EngineResult.invalid;
     return EngineResult.ok;
   }
 
@@ -1762,7 +1810,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     required int input,
     required int index,
     required TrackEffectType type,
-  }) => _requireRunning();
+  }) => _setFxSlotType(FxOwner.monitor, input, 0, index, type);
 
   @override
   EngineResult setMonitorInputFxCount({
@@ -1776,7 +1824,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     required int index,
     required int param,
     required double value,
-  }) => _requireRunning();
+  }) => _fxParamResult(FxOwner.monitor, input, 0, index, param);
 
   /// Recorded [setInputConditioningEnabled] calls, in order, for test
   /// assertions.

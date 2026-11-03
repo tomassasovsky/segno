@@ -2,7 +2,7 @@
  * the doubler and the wah against the Phase 0 gap captures (#1445).
  * Included by test_engine_core.c after the dynamics tests, whose helpers
  * (dyn_setting, dyn_run, dyn_state, dyn_free, dyn_db, tr_peak) and the EQ's
- * (eq_measured_db, eq_design_db, le_eq_design_for_test) it reuses. */
+ * (eq_measured_db, eq_design_db, le_eq_design) it reuses. */
 
 /* ---- Chorus ---- */
 

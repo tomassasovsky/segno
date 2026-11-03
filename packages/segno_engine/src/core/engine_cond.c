@@ -22,6 +22,7 @@
 #include <math.h>
 
 #include "engine_core.h"
+#include "engine_fx.h" /* le_eq_design */
 #include "engine_private.h"
 
 #ifndef M_PI
@@ -40,32 +41,17 @@ static void le_cond_biquad_clear(le_cond_biquad* q) {
   q->s2 = 0.0f;
 }
 
-/* RBJ cookbook high-pass, a0-normalized. */
-static void le_cond_hpf_coeffs(le_cond_biquad* q, float fc, float sr) {
-  const float w0 = 2.0f * (float)M_PI * fc / sr;
-  const float cw = cosf(w0);
-  const float sw = sinf(w0);
-  const float alpha = sw / (2.0f * LE_COND_HPF_Q);
-  const float a0 = 1.0f + alpha;
-  q->b0 = (1.0f + cw) * 0.5f / a0;
-  q->b1 = -(1.0f + cw) / a0;
-  q->b2 = (1.0f + cw) * 0.5f / a0;
-  q->a1 = -2.0f * cw / a0;
-  q->a2 = (1.0f - alpha) / a0;
-}
-
-/* RBJ cookbook notch, a0-normalized. */
-static void le_cond_notch_coeffs(le_cond_biquad* q, float fc, float sr) {
-  const float w0 = 2.0f * (float)M_PI * fc / sr;
-  const float cw = cosf(w0);
-  const float sw = sinf(w0);
-  const float alpha = sw / (2.0f * LE_COND_NOTCH_Q);
-  const float a0 = 1.0f + alpha;
-  q->b0 = 1.0f / a0;
-  q->b1 = -2.0f * cw / a0;
-  q->b2 = 1.0f / a0;
-  q->a1 = -2.0f * cw / a0;
-  q->a2 = (1.0f - alpha) / a0;
+/* An RBJ section of [kind] (LE_EQ_LOWCUT or LE_EQ_NOTCH) at [fc], Q [q]:
+ * the effects' design (le_eq_design), rounded to the stage's floats. */
+static void le_cond_design(le_cond_biquad* b, int kind, float fc, float q,
+                           float sr) {
+  double c[5];
+  le_eq_design(kind, fc, 0.0, q, (int)sr, c);
+  b->b0 = (float)c[0];
+  b->b1 = (float)c[1];
+  b->b2 = (float)c[2];
+  b->a1 = (float)c[3];
+  b->a2 = (float)c[4];
 }
 
 /* D-RT twin of engine_fx.c's fx_sanitize, applied at the STAGE BOUNDARY: a
@@ -108,7 +94,7 @@ static void le_cond_update_hpf(le_input_cond* c, float sr) {
     /* Keep the section well inside Nyquist whatever the rate. */
     const float cap = 0.45f * sr;
     if (fc > cap) fc = cap;
-    le_cond_hpf_coeffs(&c->hpf, fc, sr);
+    le_cond_design(&c->hpf, LE_EQ_LOWCUT, fc, LE_COND_HPF_Q, sr);
   }
   le_cond_biquad_clear(&c->hpf);
 }
@@ -123,7 +109,7 @@ static void le_cond_update_hum(le_input_cond* c, float sr) {
     for (int32_t k = 1; k <= harmonics; ++k) {
       const float fc = base * (float)k;
       if (fc >= 0.45f * sr) break; /* notches above ~Nyquist are dropped */
-      le_cond_notch_coeffs(&c->hum[c->hum_n], fc, sr);
+      le_cond_design(&c->hum[c->hum_n], LE_EQ_NOTCH, fc, LE_COND_NOTCH_Q, sr);
       ++c->hum_n;
     }
   }

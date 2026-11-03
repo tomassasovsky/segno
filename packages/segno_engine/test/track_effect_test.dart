@@ -75,34 +75,6 @@ void main() {
       },
     );
 
-    test('copyWith replaces type and params independently', () {
-      final base = BuiltInEffect(
-        type: TrackEffectType.drive,
-        params: const [0.1, 0.2, 0.3],
-      );
-      expect(
-        base.copyWith(type: TrackEffectType.filter).type,
-        TrackEffectType.filter,
-      );
-      // Another type starts at its own defaults; the same type keeps them.
-      expect(
-        base.copyWith(type: TrackEffectType.filter).params,
-        TrackEffectType.filter.defaultParams,
-      );
-      expect(base.copyWith(type: TrackEffectType.drive).params, base.params);
-      expect(
-        base.copyWith(params: const [0.9, 0, 0]).params,
-        cells(const [0.9, 0]),
-      );
-    });
-
-    test('copyWith preserves the unmodifiable params contract', () {
-      final copy = BuiltInEffect(type: TrackEffectType.drive).copyWith(
-        params: [0.9, 0, 0],
-      );
-      expect(() => copy.params[0] = 0, throwsUnsupportedError);
-    });
-
     test('fromJson pads a pre-rewrite 3-param chain to the current width', () {
       // A chain saved by the 3-param build: the octaver gains its new `mode`
       // slot, which must default to 0.0 (phase vocoder), not leave the list
@@ -163,8 +135,28 @@ void main() {
         type: TrackEffectType.delay,
         params: const [0.1, 0.2, 0.3],
       );
-      expect(a, isNot(equals(a.copyWith(type: TrackEffectType.drive))));
-      expect(a, isNot(equals(a.copyWith(params: const [0.9, 0.2, 0.3]))));
+      expect(
+        a,
+        isNot(
+          equals(
+            BuiltInEffect(
+              type: TrackEffectType.drive,
+              params: const [0.1, 0.2, 0.3],
+            ),
+          ),
+        ),
+      );
+      expect(
+        a,
+        isNot(
+          equals(
+            BuiltInEffect(
+              type: TrackEffectType.delay,
+              params: const [0.9, 0.2, 0.3],
+            ),
+          ),
+        ),
+      );
     });
 
     test('the preset id and source values round-trip and count in '
@@ -184,8 +176,32 @@ void main() {
       expect(decoded.hashCode, fx.hashCode);
       expect(decoded.presetId, 'preset-id');
       expect(decoded.source, {'Smart Tune': 0, 'Mode': 1, 'Key': 3 / 11});
-      expect(fx, isNot(equals(fx.copyWith(presetId: 'other'))));
-      expect(fx, isNot(equals(fx.copyWith(source: const {'Mode': 0}))));
+      expect(
+        fx,
+        isNot(
+          equals(
+            BuiltInEffect(
+              type: TrackEffectType.none,
+              module: 'Smart tune',
+              presetId: 'other',
+              source: const {'Smart Tune': 0, 'Mode': 1, 'Key': 3 / 11},
+            ),
+          ),
+        ),
+      );
+      expect(
+        fx,
+        isNot(
+          equals(
+            BuiltInEffect(
+              type: TrackEffectType.none,
+              module: 'Smart tune',
+              presetId: 'preset-id',
+              source: const {'Mode': 0},
+            ),
+          ),
+        ),
+      );
     });
 
     test('the rack path round-trips by name, counts in equality and is '
@@ -201,7 +217,17 @@ void main() {
       );
       expect(decoded, fx);
       expect(decoded.hashCode, fx.hashCode);
-      expect(fx, isNot(equals(fx.copyWith(rackPath: FxRackPath.dub))));
+      expect(
+        fx,
+        isNot(
+          equals(
+            BuiltInEffect(
+              type: TrackEffectType.ambVerb,
+              rackPath: FxRackPath.dub,
+            ),
+          ),
+        ),
+      );
       final none = BuiltInEffect(type: TrackEffectType.ambVerb).toJson();
       expect(none.containsKey('rackPath'), isFalse);
       expect(BuiltInEffect.fromJson(none).rackPath, FxRackPath.none);
@@ -265,11 +291,10 @@ void main() {
       expect((decoded as PluginEffect).ref, ref);
     });
 
-    test('copyWith and value equality', () {
+    test('value equality', () {
       const a = PluginEffect(ref: ref);
       expect(a, const PluginEffect(ref: ref));
       const other = PluginRef(format: PluginFormat.clap, id: 'x');
-      expect(a.copyWith(ref: other).ref, other);
       expect(a, isNot(const PluginEffect(ref: other)));
     });
 
@@ -864,17 +889,27 @@ void main() {
       expect(encoded, isNot(contains('slotId')));
     });
 
-    test('equality and copyWith cover both fields on both subtypes', () {
+    test('equality covers both fields on both subtypes', () {
       final a = BuiltInEffect(type: TrackEffectType.drive, slotId: 'x');
       expect(a, isNot(BuiltInEffect(type: TrackEffectType.drive)));
-      expect(a.copyWith(enabled: false).enabled, isFalse);
-      expect(a.copyWith(enabled: false).slotId, 'x');
+      expect(
+        a,
+        isNot(
+          BuiltInEffect(
+            type: TrackEffectType.drive,
+            slotId: 'x',
+            enabled: false,
+          ),
+        ),
+      );
 
       const ref = PluginRef(format: PluginFormat.vst3, id: 't');
       const p = PluginEffect(ref: ref, enabled: false);
       expect(p, isNot(const PluginEffect(ref: ref)));
-      expect(p.copyWith(slotId: 'y').slotId, 'y');
-      expect(p.copyWith(slotId: 'y').enabled, isFalse);
+      expect(
+        p,
+        isNot(const PluginEffect(ref: ref, enabled: false, slotId: 'y')),
+      );
     });
   });
 
@@ -938,7 +973,6 @@ void main() {
       );
       final post = BuiltInEffect(type: TrackEffectType.echo);
       expect(pre, isNot(post));
-      expect(pre.copyWith(placement: FxPlacement.post), post);
     });
 
     test('fxPreCount counts the leading pre run only', () {
@@ -1030,7 +1064,6 @@ void main() {
         channels: const FxChannels(level: 0.5),
       );
       expect(a, isNot(b));
-      expect(b.copyWith(channels: FxChannels.defaults), a);
     });
   });
 }

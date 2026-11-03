@@ -75,12 +75,6 @@ void le_plog_push(le_engine* e, uint64_t frame, le_command cmd) {
   }
 }
 
-/* A type command landing on slot [index]: the slot no longer holds the
- * entry a recipe put there (instance), so the next recipe renews it. */
-static inline void le_fx_type_landed(le_fx_slot_meta* meta, int32_t index) {
-  atomic_store_explicit(&meta[index].instance, 0u, memory_order_relaxed);
-}
-
 /* Whether the transport is HELD: no track is playing, recording, or
  * overdubbing, so the loop clock sits at the top (advance_transport_frame's
  * idle branch). The audio-thread twin of le_transport_active on the control
@@ -5764,7 +5758,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       le_plog_push(e, frame, *cmd);
       le_lane* ln = &e->tracks[ch].lanes[lane];
       store_i32(&ln->a_fx_type[index], cmd->fx.type);
-      le_fx_type_landed(ln->fx_meta, index);
+      le_fx_slot_forget(ln->fx_meta, index);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&ln->fx, index);
       /* Wet-cache fast path: the published type just moved, so the chain
@@ -5900,7 +5894,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       le_plog_push(e, frame, *cmd);
       le_monitor_input* m = &e->monitors[input];
       store_i32(&m->a_fx_type[index], cmd->fx.type);
-      le_fx_type_landed(m->fx_meta, index);
+      le_fx_slot_forget(m->fx_meta, index);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&m->fx, index);
       break;
@@ -5953,7 +5947,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       if (!valid_channel(e, ch) || index < 0 || index >= LE_FX_MAX) break;
       le_fx_bus* b = &e->tracks[ch].bus;
       store_i32(&b->a_fx_type[index], cmd->fx.type);
-      le_fx_type_landed(b->fx_meta, index);
+      le_fx_slot_forget(b->fx_meta, index);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&b->fx, index);
       break;
@@ -5977,7 +5971,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       const int32_t index = cmd->fx.index;
       if (index < 0 || index >= LE_FX_MAX) break;
       store_i32(&e->all_tracks.a_fx_type[index], cmd->fx.type);
-      le_fx_type_landed(e->all_tracks.fx_meta, index);
+      le_fx_slot_forget(e->all_tracks.fx_meta, index);
       /* One config, one instance per bus: every instance's DSP state resets,
        * or a destination would keep the previous effect's filter memory. */
       for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
@@ -5999,7 +5993,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       if (index < 0 || index >= LE_FX_MAX) break;
       le_plog_push(e, frame, *cmd);
       store_i32(&e->outputs[bus].fx.a_fx_type[index], cmd->fx.type);
-      le_fx_type_landed(e->outputs[bus].fx.fx_meta, index);
+      le_fx_slot_forget(e->outputs[bus].fx.fx_meta, index);
       /* As a recipe renews a slot (le_fx_entry_renew), so perf_render can
        * answer every logged output type the one way. */
       le_fx_entry_renew(&e->outputs[bus].fx.fx, index, cmd->fx.type,
@@ -7455,14 +7449,17 @@ static inline void snapshot_lane_fx(
 /* Snapshots each hardware input's single live-monitor chain: the input-level
  * enable (gated by loopback exclusion) plus the chain's output mask / volume /
  * mute / effects — the monitor mirror of snapshot_lane_fx, one chain per input,
- * including the per-slot effective enable bits (D-EFFBITS). */
+ * including the per-slot effective enable bits (D-EFFBITS), and, while a
+ * performance is armed, the parameters that moved, logged at [log_frame],
+ * the frame they land (as snapshot_lane_fx logs a lane's). */
 static inline void snapshot_monitor_fx(
     le_engine* e, int ch_in, uint32_t excluded, int* mon_on, uint32_t* mon_out,
     float* mon_vol, int* mon_mut, int32_t* mon_fx_count,
     int32_t mon_fx_type[][LE_FX_MAX],
     float mon_fx_params[][LE_FX_MAX][LE_FX_PARAMS],
     int32_t mon_fx_enabled[][LE_FX_MAX], int* mon_has_fx, float* mon_gl,
-    float* mon_gr) {
+    float* mon_gr, uint64_t log_frame) {
+  const int log = e->perf.armed;
   /* The tuner's temporary mute ORs into the player's persistent one, so the
    * whole monitor path below treats it as a mute without either flag
    * changing the other (#1229). */
@@ -7488,12 +7485,25 @@ static inline void snapshot_monitor_fx(
     const int32_t chain_on = load_i32(&m->a_fx_chain_enabled);
     for (int s = 0; s < n; ++s) {
       const int32_t ty = load_i32(&m->a_fx_type[s]);
+      const int same_type = mon_fx_type[c][s] == ty;
       mon_fx_type[c][s] = ty;
       if (ty != LE_FX_NONE) mon_has_fx[c] = 1;
       mon_fx_enabled[c][s] = chain_on && load_i32(&m->a_fx_enabled[s]);
       const int32_t w = le_fx_param_width(ty); /* see snapshot_lane_fx */
+      /* A granular retype logs its type (apply_command); what differs from
+       * the type's defaults is what moved. A monitor recipe writes its own
+       * values into this view first (le_fx_recipe_apply). */
+      float base[LE_FX_PARAMS];
+      if (log && !same_type) le_fx_defaults(ty, base);
       for (int p = 0; p < w; ++p) {
-        mon_fx_params[c][s][p] = load_f32(&m->a_fx_param[s][p]);
+        const float v = load_f32(&m->a_fx_param[s][p]);
+        if (log && (same_type ? mon_fx_params[c][s][p] : base[p]) != v) {
+          le_plog_push(e, log_frame,
+                       (le_command){.code = LE_PLOG_SET_MONITOR_FX_PARAM,
+                                    .fx = {c, -1, LE_PLOG_FX_PARAM_PACK(s, p),
+                                           (int32_t)f32_to_bits(v)}});
+        }
+        mon_fx_params[c][s][p] = v;
       }
     }
     /* A rack runs even when every entry is LE_FX_NONE (snapshot_lane_fx). */
@@ -10006,7 +10016,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   int* const mon_has_fx = snap->mon_has;
   snapshot_monitor_fx(e, ch_in, excluded, mon_on, mon_out, mon_vol, mon_mut,
                       mon_fx_count, mon_fx_type, mon_fx_params, mon_fx_enabled,
-                      mon_has_fx, mon_gl, mon_gr);
+                      mon_has_fx, mon_gl, mon_gr, perf_frame_base);
 
   /* Structural output gate, read once per block (a mid-block toggle applies from
    * the next block — RT-safe, no mid-buffer artifact). Intersected into every
