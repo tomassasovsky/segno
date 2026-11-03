@@ -36,9 +36,8 @@ enum TouchCalibrationPhase {
   /// The calibration could not be read or saved.
   failed,
 
-  /// Another operation the guard table says the calibration must not
-  /// overlap is running (a cable test, a device change, a performance
-  /// recording): nothing was started.
+  /// Another touch calibration, or a shutdown, is running: nothing was
+  /// started.
   refused,
 }
 
@@ -100,13 +99,14 @@ class TouchCalibrationState extends Equatable {
 /// run one at a time, in the order they were made: a revert never overtakes
 /// the apply it undoes.
 ///
-/// The calibration holds [GuardKind.calibration] from [start] until it is
-/// kept, reverted or left, so a device change, a session being opened, a
-/// performance recording or a cable test cannot start in the middle of it
-/// (#1375). A restart or an update install still may (the guard table lets
-/// a restart cancel a calibration): what was only tried is gone after the
-/// reboot. One that the guard table refuses starts nothing and says what is
-/// running.
+/// The calibration holds [GuardKind.touchCalibration] from [start] until it
+/// is kept, reverted or left (#1375). That kind touches no audio, so it holds
+/// up nothing audio does (a take, a device change, the warm-up's switch out
+/// of silence): only a second touch calibration is refused, and a shutdown
+/// that is already under way refuses this one. A restart or an update
+/// install may still start during a calibration (the guard table lets a
+/// restart cancel one): what was only tried is gone after the reboot. One
+/// that the guard table refuses starts nothing and says what is running.
 class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
   /// Creates a [TouchCalibrationCubit] for [screen].
   TouchCalibrationCubit({
@@ -167,7 +167,7 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
     if (_guard != null) return;
     try {
       _guard = _guards.enter(
-        GuardKind.calibration,
+        GuardKind.touchCalibration,
         const GuardScope.internal(),
         purpose: 'touch calibration',
       );

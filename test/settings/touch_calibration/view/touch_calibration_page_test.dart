@@ -172,26 +172,26 @@ void main() {
       await openCalibration(tester, 'main');
       expect(
         harness.guards.active.map((op) => op.kind),
-        [GuardKind.calibration],
+        [GuardKind.touchCalibration],
       );
       await tester.tap(find.byKey(const Key('touch_calibration_cancel')));
       await tester.pumpAndSettle();
       expect(harness.guards.active, isEmpty);
     });
 
-    testWidgets('a latency measurement in flight refuses it, and says so', (
+    testWidgets('another touch calibration refuses it, and says so', (
       tester,
     ) async {
-      final measuring = harness.guards.enter(
-        GuardKind.calibration,
+      final other = harness.guards.enter(
+        GuardKind.touchCalibration,
         const GuardScope.internal(),
-        purpose: 'latency measurement',
+        purpose: 'touch calibration',
       );
-      addTearDown(measuring.release);
+      addTearDown(other.release);
       await openCalibration(tester, 'main');
       expect(
         text(tester, 'touch_calibration_heading'),
-        l10n(tester).operationBusy(GuardKind.calibration.name),
+        l10n(tester).operationBusy(GuardKind.touchCalibration.name),
       );
       expect(target, findsNothing);
       expect(client.calls, isEmpty);

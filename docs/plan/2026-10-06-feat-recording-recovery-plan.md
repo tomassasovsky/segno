@@ -607,16 +607,22 @@ player's Save or Discard, its durable state is on disk (and in the Internal
 mirror for USB), and it must not block Open, New loop, power off, update or
 eject. Save recovered audio takes its own `transfer` lease while it writes.
 
-| Wants to commit ↓ / active → | capture | sessionApply | sessionWrite | transfer | eject | deviceChange | calibration | restart |
-|---|---|---|---|---|---|---|---|---|
-| **capture** (arm) | – | refuse | allow | refuse (same volume) | refuse (same volume) | refuse | refuse | refuse |
-| **sessionApply** (Open, New loop) | allow (a running take is finished first: today's `disarmAndFinalize`, rule 1) | refuse | refuse | allow | allow | refuse | refuse | refuse |
-| **sessionWrite** (save, Save as, rename, duplicate, delete, restore into Internal) | allow | allow (its own preservation save) | refuse (same bundle) | allow | allow | allow | allow | refuse |
-| **transfer** (export, backup, import, restore read, Save recovered audio) | refuse (same volume) | allow | allow | allow | refuse (same volume) | allow | allow | refuse |
-| **eject** | refuse (same volume) | allow | allow | refuse (same volume) | refuse (same volume) | allow | allow | refuse |
-| **deviceChange** (audio apply, rate change) | refuse | refuse | allow | allow | allow | refuse | refuse | refuse |
-| **calibration** (latency measurement; touch calibration when it exists) | refuse | refuse | allow | allow | allow | refuse | refuse | refuse |
-| **restart** (power off, restart, update install) | refuse (a running take is finished first) | refuse | refuse | refuse | refuse | refuse | allow (it is cancelled and keeps the old profile, AB §7.6) | – |
+| Wants to commit ↓ / active → | capture | sessionApply | sessionWrite | transfer | eject | deviceChange | calibration | touchCalibration | restart |
+|---|---|---|---|---|---|---|---|---|---|
+| **capture** (arm) | – | refuse | allow | refuse (same volume) | refuse (same volume) | refuse | refuse | allow | refuse |
+| **sessionApply** (Open, New loop) | allow (a running take is finished first: today's `disarmAndFinalize`, rule 1) | refuse | refuse | allow | allow | refuse | refuse | allow | refuse |
+| **sessionWrite** (save, Save as, rename, duplicate, delete, restore into Internal) | allow | allow (its own preservation save) | refuse (same bundle) | allow | allow | allow | allow | allow | refuse |
+| **transfer** (export, backup, import, restore read, Save recovered audio) | refuse (same volume) | allow | allow | allow | refuse (same volume) | allow | allow | allow | refuse |
+| **eject** | refuse (same volume) | allow | allow | refuse (same volume) | refuse (same volume) | allow | allow | allow | refuse |
+| **deviceChange** (audio apply, rate change) | refuse | refuse | allow | allow | allow | refuse | refuse | allow | refuse |
+| **calibration** (latency measurement) | refuse | refuse | allow | allow | allow | refuse | refuse | allow | refuse |
+| **touchCalibration** (touch calibration, #1375) | allow | allow | allow | allow | allow | allow | allow | refuse | refuse |
+| **restart** (power off, restart, update install) | refuse (a running take is finished first) | refuse | refuse | refuse | refuse | refuse | allow (it is cancelled and keeps the old profile, AB §7.6) | allow (it is cancelled; a calibration only tried is gone after the reboot, #1375) | – |
+
+Touch calibration is its own kind (#1375): it touches no audio, so it
+holds up nothing audio does (a take, a device change, the warm-up's switch
+out of silence), and only another touch calibration or a shutdown refuses
+it.
 
 Eject against eject is per volume (#1177's P6 review): an eject left
 unanswered on one drive, which can last until that drive is pulled, must not

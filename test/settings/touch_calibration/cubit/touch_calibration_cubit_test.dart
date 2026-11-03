@@ -50,7 +50,7 @@ void main() {
   /// The calibration guards held right now.
   List<ActiveOperation> calibrating() => [
     for (final op in guards.active)
-      if (op.kind == GuardKind.calibration) op,
+      if (op.kind == GuardKind.touchCalibration) op,
   ];
 
   group('calibration guard', () {
@@ -61,7 +61,10 @@ void main() {
         expect(c.state.phase, TouchCalibrationPhase.capture);
         expect(calibrating(), hasLength(1));
         expect(
-          guards.blockers(GuardKind.deviceChange, const GuardScope.internal()),
+          guards.blockers(
+            GuardKind.touchCalibration,
+            const GuardScope.internal(),
+          ),
           isNotEmpty,
         );
       });
@@ -187,12 +190,12 @@ void main() {
       });
     });
 
-    test('refuses to start under a latency measurement, and says why', () {
+    test('refuses to start under another touch calibration, and says why', () {
       fakeAsync((async) {
-        final measuring = guards.enter(
-          GuardKind.calibration,
+        final other = guards.enter(
+          GuardKind.touchCalibration,
           const GuardScope.internal(),
-          purpose: 'latency measurement',
+          purpose: 'touch calibration',
         );
         final c = cubit()..start();
         async.flushMicrotasks();
@@ -200,7 +203,7 @@ void main() {
           c.state,
           const TouchCalibrationState(
             phase: .refused,
-            busyKind: GuardKind.calibration,
+            busyKind: GuardKind.touchCalibration,
           ),
         );
         expect(client.calls, isEmpty);
@@ -210,24 +213,51 @@ void main() {
         async.flushMicrotasks();
         expect(c.state.phase, TouchCalibrationPhase.reverted);
         expect(client.calls, isEmpty);
-        measuring.release();
+        other.release();
         expect(guards.active, isEmpty);
       });
     });
 
-    test('refuses to start under a device change', () {
+    test('refuses to start during a shutdown', () {
       fakeAsync((async) {
         guards.enter(
-          GuardKind.deviceChange,
+          GuardKind.restart,
           const GuardScope.internal(),
-          purpose: 'audio settings',
+          purpose: 'power off',
         );
         final c = cubit()..start();
         async.flushMicrotasks();
         expect(c.state.phase, TouchCalibrationPhase.refused);
-        expect(c.state.busyKind, GuardKind.deviceChange);
+        expect(c.state.busyKind, GuardKind.restart);
       });
     });
+
+    for (final audio in [
+      GuardKind.capture,
+      GuardKind.sessionApply,
+      GuardKind.deviceChange,
+      GuardKind.calibration,
+    ]) {
+      test('starts while a ${audio.name} runs, and refuses none later', () {
+        fakeAsync((async) {
+          guards.enter(audio, const GuardScope.internal(), purpose: 'audio');
+          final c = cubit()..start();
+          async.flushMicrotasks();
+          expect(c.state.phase, TouchCalibrationPhase.capture);
+          expect(calibrating(), hasLength(1));
+          expect(
+            guards.blockers(audio, const GuardScope.internal()),
+            everyElement(
+              isA<ActiveOperation>().having(
+                (op) => op.kind,
+                'kind',
+                isNot(GuardKind.touchCalibration),
+              ),
+            ),
+          );
+        });
+      });
+    }
   });
 
   test('walks the capture targets in order', () {
