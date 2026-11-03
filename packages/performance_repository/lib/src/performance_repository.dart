@@ -1363,11 +1363,16 @@ class PerformanceRepository {
         // recoverable to finalize), instead of upgrading every outer guard.
         return;
       }
-      if (_holdsRawPcm(dir)) {
-        // A capture from before #1198: raw PCM, no parts (#1078). Converted
-        // into parts a stream at a time in bounded memory; anything short of
-        // a complete conversion leaves it unfinalized, its raw files kept,
-        // for the next start.
+      // A capture from before #1198 (#1078): raw PCM, no parts and no take
+      // id, or one whose conversion a cut interrupted. A take the drain
+      // wrote as parts always carries its id, so a stray raw file beside its
+      // parts never sends it here.
+      final rawCapture =
+          native['take_id'] == null || native[convertedFromRawKey] == true;
+      if (rawCapture && _holdsRawPcm(dir)) {
+        // Converted into parts a stream at a time in bounded memory;
+        // anything short of a complete conversion leaves it unfinalized, its
+        // raw files kept, for the next start.
         final streams = _legacyStreams(native);
         if (streams == null) return; // a layout no conversion can trust
         final converted = await _convertLegacy(dir, native, streams);
@@ -1396,6 +1401,9 @@ class PerformanceRepository {
         armSnapshot: resolvedArm,
         disarmSnapshot: disarmSnapshot,
       );
+      // A failed directory sync does not undo the finalize: the manifest is
+      // in place, and if a power cut takes it back the next start finalizes
+      // the take again.
       await _publishManifest(dir, manifest.toJson());
       if (armFile.existsSync()) armFile.deleteSync();
 
@@ -1539,6 +1547,9 @@ class PerformanceRepository {
       },
   ];
 
+  /// The sidecar key that marks a take converted from raw streams (#1078).
+  static const String convertedFromRawKey = 'converted_from_raw';
+
   /// A raw stream file the drain wrote before #1198.
   static final _rawPcmFile = RegExp(r'^(master|input-\d+)\.pcm$');
 
@@ -1620,6 +1631,11 @@ class PerformanceRepository {
       }
     }
 
+    // What a cut conversion left unlisted goes first, so its room counts.
+    for (final s in pending) {
+      _deleteStrayParts(dir, s.stream);
+      parts.removeWhere((p) => p.stream == s.stream);
+    }
     final format = [
       for (final s in pending)
         RecordingFormat(
@@ -1645,8 +1661,6 @@ class PerformanceRepository {
     var out = native;
     for (final s in pending) {
       final pcm = '$dir/${legacyPcmName(s.stream)}';
-      _deleteStrayParts(dir, s.stream);
-      parts.removeWhere((p) => p.stream == s.stream);
       final partBytes = _partBytes;
       final List<TakePart> written;
       try {
@@ -1685,18 +1699,23 @@ class PerformanceRepository {
           );
         }
         _io.syncDirectory(dir);
-        out = {
+        final listed = {
           ...native,
           'take_id': _hex(takeId),
           'encoding': TakeCheckpoint.encoding,
           'overs': parts.fold<int>(0, (sum, p) => sum + p.overs),
           'parts': [for (final p in _ordered(parts)) p.toJson()],
+          convertedFromRawKey: true,
         };
-        await _publishManifest(dir, {
-          ...out,
+        final synced = await _publishManifest(dir, {
+          ...listed,
           'slug': _basename(dir),
           'finalized': false,
         });
+        // Listed but perhaps not durably: the parts stand, and so does the
+        // raw file, until a later start can make the listing durable.
+        if (!synced) return null;
+        out = listed;
       } on Object {
         for (final part in written) {
           final f = File('$dir/${part.file}');
@@ -1749,18 +1768,35 @@ class PerformanceRepository {
     },
   );
 
-  /// Writes [json] as [dir]'s `performance.json` durably: a temporary file,
-  /// flushed, renamed over the sidecar, then the directory synced. A reader
-  /// sees the old sidecar or the new one, and after a power cut the new one
-  /// is there once this returns.
-  Future<void> _publishManifest(String dir, Map<String, dynamic> json) async {
+  /// Writes [json] as [dir]'s `performance.json`: a temporary file, flushed,
+  /// renamed over the sidecar, then the directory synced. A reader sees the
+  /// old sidecar or the new one. Throws, leaving the old sidecar and no
+  /// temporary file, when the write or the rename fails. Returns whether the
+  /// directory sync also succeeded, which is what makes the new sidecar
+  /// survive a power cut; when it did not, the new sidecar is already in
+  /// place.
+  Future<bool> _publishManifest(String dir, Map<String, dynamic> json) async {
     final pending = File('$dir/$manifestName.publishing');
-    await pending.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(json),
-      flush: true,
-    );
-    await pending.rename('$dir/$manifestName');
-    _io.syncDirectory(dir);
+    try {
+      await pending.writeAsString(
+        const JsonEncoder.withIndent('  ').convert(json),
+        flush: true,
+      );
+      await pending.rename('$dir/$manifestName');
+    } on Object {
+      try {
+        if (pending.existsSync()) pending.deleteSync();
+      } on FileSystemException {
+        // The volume may be gone; the temporary file is never read.
+      }
+      rethrow;
+    }
+    try {
+      _io.syncDirectory(dir);
+      return true;
+    } on FileSystemException {
+      return false;
+    }
   }
 
   static final RegExp _takeIdHex = RegExp(r'^[0-9a-f]{32}$');
