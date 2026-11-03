@@ -145,6 +145,14 @@ class SettingsOwner<V extends Object, C> {
   bool _busy = false;
   bool _closing = false;
   Object? _unreadable;
+
+  /// A load whose replay threw (#1614): the family stays unavailable until
+  /// Retry runs the load again.
+  Object? _loadError;
+
+  /// The durable value a write that threw left in storage (#1614): the
+  /// engine may or may not hold it, so Retry requests it again.
+  V? _owedValue;
   int? _loadSession;
   ({Object? address, C checkpoint})? _owedRollback;
   SettingOutcome _last = const SettingOutcome(SettingStatus.rejected);
@@ -167,9 +175,14 @@ class SettingsOwner<V extends Object, C> {
   /// Whether a load has ever confirmed a value.
   bool get initialized => _initialized;
 
-  /// Unreadable storage, an owed rollback or an uncertain receipt.
+  /// Unreadable storage, a load that threw, an owed rollback, a write that
+  /// threw, or an uncertain receipt.
   bool get _recoveryPending =>
-      _unreadable != null || _owedRollback != null || _family.recoveryRequired;
+      _unreadable != null ||
+      _loadError != null ||
+      _owedRollback != null ||
+      _owedValue != null ||
+      _family.recoveryRequired;
 
   /// Whether a new value can be admitted; an in-flight write does not count.
   bool get ready => _initialized && !_recoveryPending && !_closing;
@@ -299,6 +312,20 @@ class SettingsOwner<V extends Object, C> {
         if (_owedRollback case final owed?) {
           await _family.writeCheckpoint(owed.address, owed.checkpoint);
           _owedRollback = null;
+        }
+        // The load runs again below, once nothing else is owed.
+        _loadError = null;
+        if (_owedValue case final owed?) {
+          final result = _family.request(owed, owed, null);
+          if (!result.isOk) {
+            return _report(
+              SettingOutcome(
+                SettingStatus.recoveryRequired,
+                engineResult: result,
+              ),
+            );
+          }
+          _owedValue = null;
         }
         if (_family.recoveryRequired) {
           final result = _family.recover();
@@ -478,7 +505,11 @@ class SettingsOwner<V extends Object, C> {
     if (!current()) return const SettingOutcome(SettingStatus.superseded);
     // An owed receipt may be replaying right now; the settle below waits for
     // it and the check after it refuses only a value still owed.
-    if (!_initialized || _unreadable != null || _owedRollback != null) {
+    if (!_initialized ||
+        _unreadable != null ||
+        _loadError != null ||
+        _owedRollback != null ||
+        _owedValue != null) {
       return _report(
         SettingOutcome(
           _recoveryPending
@@ -577,22 +608,24 @@ class SettingsOwner<V extends Object, C> {
       try {
         final admission = _family.request(value, durable, write.edit);
         result = admission.isOk ? await _family.settle() : admission;
-      } on Object catch (error) {
-        // A request or receipt that throws is a refusal with the error as
-        // its cause: storage goes back, unless the receipt now owes the
-        // value storage already holds.
-        if (_family.recoveryRequired && _family.durable == durable) {
-          return _report(
-            SettingOutcome(SettingStatus.recoveryRequired, error: error),
+      } on Object catch (error, stack) {
+        AppLog.error(
+          '${_family.key.name}: write threw',
+          error: error,
+          stack: stack,
+        );
+        if (!current()) {
+          return await _rollback(
+            write.address,
+            checkpoint,
+            SettingStatus.superseded,
           );
         }
-        return await _rollback(
-          write.address,
-          checkpoint,
-          _family.recoveryRequired
-              ? SettingStatus.recoveryRequired
-              : SettingStatus.rejected,
-          error: error,
+        // Whether the engine took the value is unknown. Storage keeps it,
+        // which is what a restart replays, and Retry requests it again.
+        _owedValue = durable;
+        return _report(
+          SettingOutcome(SettingStatus.recoveryRequired, error: error),
         );
       }
       if (result.isOk) {
@@ -730,6 +763,17 @@ class SettingsOwner<V extends Object, C> {
           }
           _initialized = true;
           _report(const SettingOutcome(SettingStatus.applied));
+          return true;
+        } on Object catch (error, stack) {
+          // A replay that throws leaves the family unavailable, not the load
+          // failed for good: Retry runs it again (#1614).
+          AppLog.error(
+            '${_family.key.name}: load threw',
+            error: error,
+            stack: stack,
+          );
+          _loadError = error;
+          _report(SettingOutcome(SettingStatus.recoveryRequired, error: error));
           return true;
         } finally {
           _busy = false;

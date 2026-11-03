@@ -13,7 +13,14 @@ class _Family implements SettingsFamily<int, int?> {
   int? stored = 1;
   int value = 1;
   bool throwOnRequest = false;
+
+  /// Every receipt throws, the load's and a write's first one included.
   bool throwOnSettle = false;
+
+  /// Only the receipt right after a request throws.
+  bool throwOnReceipt = false;
+  bool _requested = false;
+  final requests = <int>[];
 
   @override
   OwnedSetting get key => OwnedSetting.clickVolume;
@@ -64,14 +71,20 @@ class _Family implements SettingsFamily<int, int?> {
 
   @override
   EngineResult request(int live, int durable, Object? edit) {
+    requests.add(live);
     if (throwOnRequest) throw TypeError();
     value = live;
+    _requested = true;
     return EngineResult.ok;
   }
 
   @override
   Future<EngineResult> settle() async {
-    if (throwOnSettle) throw StateError('receipt failed');
+    final requested = _requested;
+    _requested = false;
+    if (throwOnSettle || (throwOnReceipt && requested)) {
+      throw StateError('receipt failed');
+    }
     return EngineResult.ok;
   }
 
@@ -82,9 +95,9 @@ class _Family implements SettingsFamily<int, int?> {
   void retireLive() {}
 }
 
-/// A write that throws inside the owner's queue (#1614) answers its caller
-/// with a reported refusal instead of leaving it waiting, and the writes
-/// after it still run.
+/// A write or load that throws inside the owner's queue (#1614) answers its
+/// caller and reports, instead of leaving it waiting; the writes after it
+/// still run, and Retry recovers what the throw left uncertain.
 void main() {
   late LooperRepository looper;
   late _Family family;
@@ -107,27 +120,52 @@ void main() {
   Future<SettingOutcome> answer(Future<SettingOutcome> write) =>
       write.timeout(const Duration(seconds: 2));
 
-  test(
-    'a request that throws refuses, reports and rolls storage back',
-    () async {
-      await owner.load();
-      family.throwOnRequest = true;
+  test('a request that throws owes its value: storage keeps it, Retry '
+      'requests it again', () async {
+    await owner.load();
+    family.throwOnRequest = true;
 
-      final outcome = await answer(owner.set(5));
+    final outcome = await answer(owner.set(5));
 
-      expect(outcome.status, SettingStatus.rejected);
-      expect(outcome.error, isA<TypeError>());
-      expect(family.stored, 1);
-      expect(reported.single.error, isA<TypeError>());
+    expect(outcome.status, SettingStatus.recoveryRequired);
+    expect(outcome.error, isA<TypeError>());
+    expect(family.stored, 5);
+    expect(reported.single.error, isA<TypeError>());
+    expect(owner.ready, isFalse);
+    expect(
+      (await answer(owner.set(6))).status,
+      SettingStatus.recoveryRequired,
+    );
+    expect(family.stored, 5);
 
-      family.throwOnRequest = false;
-      expect((await answer(owner.set(6))).isOk, isTrue);
-      expect(family.stored, 6);
-    },
-  );
+    family.throwOnRequest = false;
+    expect((await answer(owner.recover())).isOk, isTrue);
+    expect(family.requests.last, 5);
+    expect(family.value, 5);
+    expect(owner.ready, isTrue);
+    expect((await answer(owner.set(6))).isOk, isTrue);
+    expect(family.stored, 6);
+  });
+
+  test('a receipt that throws after the request owes the value too', () async {
+    await owner.load();
+    family.throwOnReceipt = true;
+
+    final outcome = await answer(owner.set(5));
+
+    expect(outcome.status, SettingStatus.recoveryRequired);
+    expect(outcome.error, isA<StateError>());
+    expect(family.stored, 5);
+    expect(owner.ready, isFalse);
+
+    family.throwOnReceipt = false;
+    expect((await answer(owner.recover())).isOk, isTrue);
+    expect(owner.ready, isTrue);
+    expect((await answer(owner.set(6))).isOk, isTrue);
+  });
 
   test('a receipt that throws before storage is touched refuses and '
-      'reports', () async {
+      'reports, and the next write runs', () async {
     await owner.load();
     family.throwOnSettle = true;
 
@@ -143,14 +181,22 @@ void main() {
     expect(family.stored, 6);
   });
 
-  test('a load that throws answers the write waiting on it', () async {
+  test('a load that throws answers the write waiting on it, and Retry '
+      'loads again', () async {
     family.throwOnSettle = true;
 
     final outcome = await answer(owner.set(5));
 
-    expect(outcome.status, SettingStatus.rejected);
-    expect(outcome.error, isA<StateError>());
+    expect(outcome.status, SettingStatus.recoveryRequired);
     expect(family.stored, 1);
-    expect(reported.last.error, isA<StateError>());
+    expect(reported.first.error, isA<StateError>());
+    expect(owner.initialized, isFalse);
+
+    family.throwOnSettle = false;
+    expect((await answer(owner.recover())).isOk, isTrue);
+    expect(owner.initialized, isTrue);
+    expect(owner.ready, isTrue);
+    expect((await answer(owner.set(6))).isOk, isTrue);
+    expect(family.stored, 6);
   });
 }
