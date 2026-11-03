@@ -5915,33 +5915,6 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       store_i32(&e->monitors[input].a_fx_count, count);
       break;
     }
-    /* ---- Per-input conditioning stage (input conditioning, S1) ----
-     * This thread is the sole owner of the stage's biquad/envelope state, so
-     * both commands recompute it here, in lockstep with the config change.
-     * Loopback exclusion is deliberately NOT folded into the stored enable
-     * (unlike SET_MONITOR_INPUT): the per-block conditioning pass masks
-     * excluded channels out itself, so an input that stops being loopback
-     * (device change) needs no re-push. Not perf-logged (upstream of capture:
-     * recorded PCM already embodies the conditioning; nothing replays it). */
-    case LE_CMD_SET_INPUT_COND: {
-      const int32_t input = cmd->arg_i;
-      if (input < 0 || input >= LE_MAX_CHANNELS) break;
-      le_input_cond* c = &e->cond[input];
-      const int on = cmd->arg_f != 0.0f ? 1 : 0;
-      const int was = load_i32(&c->a_enabled);
-      store_i32(&c->a_enabled, on);
-      /* Enable EDGE: fresh coefficients + zeroed filter/envelope state, so a
-       * re-engaged stage never rings with stale history. */
-      if (on && !was) le_cond_prepare(c, e->sample_rate);
-      break;
-    }
-    case LE_CMD_SET_INPUT_COND_PARAM: {
-      const int32_t input = cmd->lanef.channel;
-      if (input < 0 || input >= LE_MAX_CHANNELS) break;
-      le_cond_update_param(&e->cond[input], cmd->lanef.lane, cmd->lanef.value,
-                           e->sample_rate);
-      break;
-    }
     /* ---- Track-stage + output bus chains ----
      * The bus twins of the lane/monitor FX cases above — same typed arms,
      * same lockstep DSP reset on a type change. Track chains remain
@@ -8029,7 +8002,7 @@ static void tuner_tap_block(le_engine* e, const float* in, uint32_t frames,
 }
 
 static inline int process_input_frame(le_engine* e, const float* in,
-                                      const float* in_c, float* out, uint32_t f,
+                                      float* out, uint32_t f,
                                       int ch_in, int ch_out, int tc,
                                       int sr, uint32_t excluded, float* in_sumsq,
                                       float* in_peak, float* in_peak_ch,
@@ -8051,8 +8024,7 @@ static inline int process_input_frame(le_engine* e, const float* in,
   }
   if (frame_mag > *in_peak) *in_peak = frame_mag;
 
-  /* Signal arms listen only to their selected, real recording sources. Input
-   * conditioning precedes this buffer; meters/latency above remain raw. Never
+  /* Signal arms listen only to their selected, real recording sources. Never
    * substitute input zero when a route disappears. Cancellation remains a
    * control action even when no selected source is currently usable. While a
    * latency measurement runs the arms wait: its burst and echo are not the
@@ -8070,7 +8042,7 @@ static inline int process_input_frame(le_engine* e, const float* in,
       } else {
         if (source < 0 || source >= ch_in || source >= LE_MAX_CHANNELS ||
             (excluded & (1u << source))) continue;
-        value = in_c ? fabsf(in_c[f * ch_in + source]) : 0.0f;
+        value = in ? fabsf(in[f * ch_in + source]) : 0.0f;
       }
       if (value > magnitude) magnitude = value;
     }
@@ -9798,58 +9770,9 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     if (!(excluded & (1u << c))) ++active_in;
   }
 
-  /* ---- Per-input conditioning stage (input conditioning, S1) ----
-   * HPF + hum notches + downward expander, run ONCE per block per enabled
-   * input into the preallocated conditioned copy of the interleaved input,
-   * upstream of BOTH the lane fan-out and the monitor split (WYSIWYG: the
-   * performer hears exactly what records, and N lanes recording one input
-   * capture identical samples for one run of the DSP). `in_c` is what the
-   * lane capture, the monitors, the tuner, and the sound-activated record
-   * trigger read; metering / the latency harness keep reading the RAW `in`
-   * (process_input_frame). Loopback-excluded channels are never conditioned
-   * — the harness's round-trip correlation cannot be shaved by the HPF.
-   * Zero added buffering latency by construction (IIR + no-lookahead
-   * envelope; see engine_cond.c). Dormant cost: at most
-   * LE_MAX_CHANNELS relaxed loads per block. A block larger than the
-   * scratch (only the native tests' synthetic mega-blocks) falls back to the
-   * raw path for that block rather than allocating on the audio thread. */
-  const float* in_c = in;
-  if (in != NULL) {
-    uint32_t cond_mask = 0u;
-    const int cond_ch = ch_in < LE_MAX_CHANNELS ? ch_in : LE_MAX_CHANNELS;
-    for (int c = 0; c < cond_ch; ++c) {
-      if (load_i32(&e->cond[c].a_enabled) && !(excluded & (1u << c))) {
-        cond_mask |= 1u << c;
-      }
-    }
-    if (cond_mask != 0u) {
-      if (e->cond_buf != NULL &&
-          (int64_t)frames * (int64_t)ch_in <= e->cond_buf_cap) {
-        memcpy(e->cond_buf, in,
-               sizeof(float) * (size_t)frames * (size_t)ch_in);
-        for (int c = 0; c < cond_ch; ++c) {
-          if (cond_mask & (1u << c)) {
-            le_cond_process_block(&e->cond[c], e->cond_buf + c, frames, ch_in);
-          }
-        }
-        in_c = e->cond_buf;
-      } else if (frames > 0) {
-        /* Conditioning WANTED but impossible this block (oversized period or
-         * a failed scratch allocation): raw fallback, COUNTED — silent
-         * per-block alternation between conditioned and raw would click
-         * (stale filter states across the gaps), so the counter is how a
-         * bench/test proves this path never fires on a real backend. No RT
-         * assert: the audio callback must never abort. */
-        atomic_fetch_add_explicit(&e->a_cond_fallback_blocks, 1u,
-                                  memory_order_relaxed);
-      }
-    }
-  }
-
   /* ---- Input clip ("HOT") detector (input clip, S2) ----
-   * Always on, no params, and deliberately on the RAW `in` — never `in_c` —
-   * so a clipped input flags HOT even when the conditioning stage has ducked
-   * or notched what records (HOT reflects the ADC; see the LE_CLIP_* doc).
+   * Always on, no params, on the raw device buffer `in`, so HOT reflects the
+   * ADC (see the LE_CLIP_* doc).
    * LE_CLIP_RUN consecutive samples at |s| >= LE_CLIP_LEVEL latch the input's
    * bit for LE_CLIP_HOLD_MS of engine time (the a_frames timeline), refreshed
    * while the rail persists; the run counter carries across blocks so a run
@@ -10079,10 +10002,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   par->jobs = 0;
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     const int instrument = c >= LE_INSTRUMENT_SOURCE_BASE;
-    if (!instrument && (in_c == NULL || c >= ch_in)) continue;
+    if (!instrument && (in == NULL || c >= ch_in)) continue;
     if (mon_on[c] && !mon_mut[c] && mon_has_fx[c]) par->job_mon[par->jobs++] = c;
   }
-  par->in = in_c;
+  par->in = in;
   par->ch_in = ch_in;
   par->sr = sr;
   par->fx_cap = fx_cap;
@@ -10125,7 +10048,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
        * harness owns the frame it has already written `out`, so skip the
        * rest (in both loops). */
       par->owned[i] = (uint8_t)process_input_frame(
-          e, in, in_c, out, f, ch_in, ch_out, tc, sr, excluded, &in_sumsq,
+          e, in, out, f, ch_in, ch_out, tc, sr, excluded, &in_sumsq,
           &in_peak, in_peak_ch, perf_frame_base);
       if (par->owned[i]) {
         /* The FX clock still moves on to the next frame (#941). */
@@ -10170,10 +10093,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         }
       }
 
-      /* Per-lane capture + additive playback mix (see mix_tracks_frame).
-       * Reads the CONDITIONED input (in_c): the conditioning stage sits
-       * upstream of the lane write by design (WYSIWYG). */
-      mix_tracks_frame(e, in_c, out, f, ch_in, ch_out, tc, sr, fx_cap, excluded,
+      /* Per-lane capture + additive playback mix (see mix_tracks_frame). */
+      mix_tracks_frame(e, in, out, f, ch_in, ch_out, tc, sr, fx_cap, excluded,
                        out_enabled, overdub_fb, free_or_song, od_step,
                        od_fade_frames, pos,
                        lane_n, lane_fx_any, has_fx, fx_count, fx_pre_count,
@@ -10236,10 +10157,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       atomic_store_explicit(&ot->a_frame, par->clock + i, memory_order_relaxed);
       float frame_out_peak = 0.0f;
 
-      /* Per-input live monitoring (see mix_monitors_frame). Reads the
-       * CONDITIONED input (in_c): conditioned-clean IS the input's clean,
-       * for every consumer at once (WYSIWYG with the lane capture). */
-      mix_monitors_frame(e, in_c, out, f, i, ch_in, ch_out, out_enabled,
+      /* Per-input live monitoring (see mix_monitors_frame). */
+      mix_monitors_frame(e, in, out, f, i, ch_in, ch_out, out_enabled,
                          mon_on, mon_mut, mon_has_fx, mon_vol, mon_out, mon_gl,
                          mon_gr, mon_peak);
 
@@ -10324,9 +10243,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   store_f32(&e->a_out_rms_bits,
             total_out ? sqrtf(out_sumsq / (float)total_out) : 0.0f);
   store_f32(&e->a_out_peak_bits, out_peak);
-  /* The tuner reads the CONDITIONED input too — pitch detection benefits from
-   * the hum notches exactly like the lane capture does. */
-  tuner_tap_block(e, in_c, frames, ch_in, sr);
+  tuner_tap_block(e, in, frames, ch_in, sr);
   for (int t = 0; t < tc; ++t) {
     /* Lane buffers are mono: one loop sample accumulated per frame. The shared
      * write head publishes the same growing length onto every active lane. */

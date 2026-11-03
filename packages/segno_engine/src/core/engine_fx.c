@@ -4426,8 +4426,7 @@ static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
 
 static void fx_eq_kprocess(void* ks, float* l, float* r) {
   le_fx_eq* q = (le_fx_eq*)ks;
-  /* A non-finite sample would latch into the band memory for good (the
-   * conditioning stage's biquads guard the same way). */
+  /* A non-finite sample would latch into the band memory for good. */
   double x[2] = {isfinite(*l) ? *l : 0.0, isfinite(*r) ? *r : 0.0};
   for (int b = 0; b < LE_EQ_BANDS; ++b) {
     if (!(q->active & (1u << b))) continue;

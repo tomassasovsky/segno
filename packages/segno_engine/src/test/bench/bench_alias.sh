@@ -19,8 +19,7 @@ CC=${CC:-cc}
 CXX=${CXX:-c++}
 OUT_DIR="build/bench"
 mkdir -p "$OUT_DIR"
-STD="-std=gnu11 -O2 -DNDEBUG -I src/core -I src/midi -I src/miniaudio \
-  -I third_party/rnnoise/include -I third_party/rnnoise/src"
+STD="-std=gnu11 -O2 -DNDEBUG -I src/core -I src/midi -I src/miniaudio"
 
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) LIBS="-lole32 -lwinmm -lstdc++ -lm" ;;
@@ -30,19 +29,12 @@ esac
 
 ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
   src/core/tempo_grid.c \
-  src/core/restore_declip.c src/core/restore_halfband.c \
+  src/core/halfband.c \
   src/core/synth_voice.c src/core/synth_patch.c \
   src/core/audio_ring.c src/core/rt_alloc.c src/core/perf_drain.c src/core/perf_checkpoint.c src/core/perf_log_ring.c \
   src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c \
   src/core/plugin_disabled.c \
-  src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c src/midi/le_clock_follow.c \
-  third_party/rnnoise/src/denoise.c third_party/rnnoise/src/rnn.c \
-  third_party/rnnoise/src/pitch.c third_party/rnnoise/src/kiss_fft.c \
-  third_party/rnnoise/src/celt_lpc.c third_party/rnnoise/src/nnet.c \
-  third_party/rnnoise/src/nnet_default.c \
-  third_party/rnnoise/src/parse_lpcnet_weights.c \
-  third_party/rnnoise/src/rnnoise_data.c \
-  third_party/rnnoise/src/rnnoise_tables.c"
+  src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c src/midi/le_clock_follow.c"
 
 echo "== building the stretch shim ==" >&2
 $CXX -std=c++17 -O2 -DNDEBUG -c src/stretch/le_stretch.cpp -o "$OUT_DIR/le_stretch.o"

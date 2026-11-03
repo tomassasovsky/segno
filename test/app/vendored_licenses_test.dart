@@ -11,7 +11,6 @@ const _engine = 'packages/segno_engine';
 const _expected = {
   'clap': '$_engine/third_party/clap/LICENSE',
   'miniaudio': '$_engine/src/miniaudio/LICENSE',
-  'rnnoise': '$_engine/third_party/rnnoise/COPYING',
   'signalsmith-dsp': '$_engine/third_party/signalsmith-stretch/dsp/LICENSE.txt',
   'signalsmith-stretch': '$_engine/third_party/signalsmith-stretch/LICENSE.txt',
   'vst3sdk': '$_engine/third_party/vst3sdk/base/LICENSE.txt',

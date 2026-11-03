@@ -5,4 +5,4 @@
 // included source needs resolve relative to its real location (src/core) plus
 // the cross-folder forwarders in include/ (SPM adds include/ to the search path;
 // it cannot point outside the package).
-#include "../../../../src/core/restore_declip.c"
+#include "../../../../src/core/halfband.c"
