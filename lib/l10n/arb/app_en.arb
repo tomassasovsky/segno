@@ -1930,10 +1930,6 @@
     "@midiDeviceRow": {
         "description": "Row that opens the MIDI input picker."
     },
-    "midiDeviceNone": "None",
-    "@midiDeviceNone": {
-        "description": "Value of the MIDI device row when nothing is selected."
-    },
     "midiStatusWaiting": "Waiting for MIDI input",
     "@midiStatusWaiting": {
         "description": "Traffic line on a live link that has not delivered a message yet."
@@ -6052,17 +6048,9 @@
     "@midiDelete": {
         "description": "Deletes the saved MIDI mapping being edited."
     },
-    "midiDeviceAvailable": "Available",
-    "@midiDeviceAvailable": {
-        "description": "A MIDI device card for a controller that is plugged in but not the one in use."
-    },
     "midiDeviceConnected": "Connected",
     "@midiDeviceConnected": {
         "description": "A MIDI device card for the open, connected controller."
-    },
-    "midiDeviceConnecting": "Connecting…",
-    "@midiDeviceConnecting": {
-        "description": "A MIDI device card while its port is opening."
     },
     "midiDeviceDisconnected": "Disconnected",
     "@midiDeviceDisconnected": {

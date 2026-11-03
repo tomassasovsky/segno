@@ -2300,8 +2300,10 @@ remains open — see "On-hardware validations" below.
 
 ### Deferred (need hardware / 2nd display)
 - `midi_client` — real USB-MIDI binding **SHIPPED** (PRs #39/#40/#42): native
-  `le_midi_*` capture seam → `MidiControllerSource` → `ControllerRepository`,
-  with a device-selection UI. Hardware-gated only for a live DIN-MIDI smoke test.
+  `le_midi_*` capture seam → one `MidiControllerSource` per plugged-in device,
+  owned by `MidiDeviceRepository`, so every connected controller feeds the
+  mappings learned from it (#1040). Hardware-gated only for a live DIN-MIDI
+  smoke test and a two-controller check.
 - **VST3/CLAP plugin hosting on Linux.** Hosting is on by default only on
   macOS; the Linux CMake build leaves `SEGNO_ENABLE_PLUGINS` off unless the
   environment overrides it, since third-party plugins rarely ship for aarch64

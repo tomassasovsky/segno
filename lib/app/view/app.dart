@@ -957,6 +957,9 @@ class _AppViewState extends State<_AppView> {
   /// that device's return is folded into the interface's too, however late.
   String? _foldedMidiId;
 
+  /// The devices the MIDI loss warning on screen is for.
+  final _midiLostIds = <String>{};
+
   static bool _within(Stopwatch since) =>
       since.isRunning && since.elapsed <= _sameCauseWindow;
 
@@ -1218,7 +1221,8 @@ class _AppViewState extends State<_AppView> {
             _within(_midiSaid) &&
             midiIsInterfacesOwn(said, state, audioJustChanged: true)) {
           if (said.connectivity == MidiConnectivity.lost) {
-            _foldedMidiId = said.selectedId;
+            _foldedMidiId = said.connectivityDeviceId;
+            _midiLostIds.clear();
           }
           // Folded once: a second change of the interface finds it gone.
           _midiSaidFor = null;
@@ -1269,20 +1273,36 @@ class _AppViewState extends State<_AppView> {
   /// The audio interface's own MIDI ports go and come back with it: their
   /// loss or return is not said beside the interface's (#860), whether it is
   /// the same device by name or arrives within [_sameCauseWindow] of it.
+  ///
+  /// Only a device in use is said: the one the MIDI page shows, or one a
+  /// mapping names. Another device coming and going changes nothing.
   void _showMidiConnectivity(MidiSetupState state) {
     final connection = state.connection;
+    final device = connection.connectivityDeviceId;
+    // A device that comes back takes its own loss warning down, even when it
+    // is no longer in use.
+    if (connection.connectivity == MidiConnectivity.restored) {
+      _clearMidiLost(device);
+    }
+    if (connection.connectivity != MidiConnectivity.none &&
+        device != connection.selectedId &&
+        !context.read<ControlCubit>().state.midiMappings.mappings.any(
+          (mapping) => mapping.source.device == device,
+        )) {
+      return;
+    }
     switch (connection.connectivity) {
       case MidiConnectivity.lost when _interfacesOwn(connection):
-        _foldedMidiId = connection.selectedId;
+        _foldedMidiId = connection.connectivityDeviceId;
         return;
       case MidiConnectivity.restored
-          when _foldedMidiId == connection.selectedId ||
-              _interfacesOwn(connection):
+          when _foldedMidiId == device || _interfacesOwn(connection):
         _foldedMidiId = null;
-        _notices.clear(AppNoticeId.midiLost);
+        _clearMidiLost(device);
         return;
       case MidiConnectivity.lost:
         _foldedMidiId = null;
+        _midiLostIds.add(device);
         _midiSaid
           ..reset()
           ..start();
@@ -1297,25 +1317,32 @@ class _AppViewState extends State<_AppView> {
         );
       case MidiConnectivity.restored:
         final name = connection.connectivityDeviceName.isEmpty
-            ? connection.selectedName
+            ? connection.connectivityDeviceId
             : connection.connectivityDeviceName;
         _midiSaid
           ..reset()
           ..start();
         _midiSaidFor = connection;
-        _notices
-          ..clear(AppNoticeId.midiLost)
-          ..show(
-            Notice(
-              id: AppNoticeId.midiRestored,
-              tone: NoticeTone.success,
-              title: (l10n) => l10n.midiReconnectedSnackbar(name),
-            ),
-          );
+        _clearMidiLost(device);
+        _notices.show(
+          Notice(
+            id: AppNoticeId.midiRestored,
+            tone: NoticeTone.success,
+            title: (l10n) => l10n.midiReconnectedSnackbar(name),
+          ),
+        );
       case MidiConnectivity.none:
         _foldedMidiId = null;
+        _midiLostIds.clear();
         _notices.clear(AppNoticeId.midiLost);
     }
+  }
+
+  /// Takes the loss warning down once every device it was for is back;
+  /// another device's return leaves it up.
+  void _clearMidiLost(String device) {
+    if (!_midiLostIds.remove(device) || _midiLostIds.isNotEmpty) return;
+    _notices.clear(AppNoticeId.midiLost);
   }
 
   bool _interfacesOwn(MidiConnection connection) => midiIsInterfacesOwn(
@@ -1653,7 +1680,9 @@ class _AppViewState extends State<_AppView> {
         BlocListener<MidiSetupCubit, MidiSetupState>(
           listenWhen: (previous, current) =>
               previous.connection.connectivity !=
-              current.connection.connectivity,
+                  current.connection.connectivity ||
+              previous.connection.connectivityDeviceId !=
+                  current.connection.connectivityDeviceId,
           listener: (_, state) => _showMidiConnectivity(state),
         ),
         BlocListener<AudioRecoveryCubit, AudioRecoveryState>(
