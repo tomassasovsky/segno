@@ -222,7 +222,7 @@ class _AppState extends State<App> {
   PowerKeySource? _powerKeySource;
 
   /// The app's one notice centre (#1562), held while the Power screen is up.
-  final _notices = NoticesCubit();
+  final _notices = NoticesCubit(stopwatch: Stopwatch.new);
   late final TempoCubit _tempoView;
   final _ownerSubscriptions = <StreamSubscription<void>>[];
   StreamSubscription<int>? _recordingInputRequiredSubscription;
