@@ -627,6 +627,53 @@ static void test_transient_does_not_alias(void) {
            (double)notes[k], (double)(hi - lo));
     CHECK(hi - lo <= most[k]);
   }
+  /* A hard-clipped 110 Hz note: its flat tops are no peak between samples,
+   * so the held gain barely swings (0.06 dB; a vertex read on each flat
+   * top's first sample made it 0.25). */
+  {
+    for (int i = 0; i < n; ++i) {
+      const float v = 10.0f * sinf(2.0f * (float)M_PI * 110.0f * (float)i / (float)sr);
+      in[i] = 0.25f * fmaxf(-1.0f, fminf(1.0f, v));
+    }
+    float p[LE_FX_PARAMS] = {0};
+    le_fx_defaults(LE_FX_TRANSIENT, p);
+    p[0] = 1.0f;
+    le_fx_state* fx = dyn_state(LE_FX_TRANSIENT, sr);
+    uint32_t clock = 0;
+    dyn_run(fx, LE_FX_TRANSIENT, p, sr, in, out, NULL, n, &clock);
+    dyn_free(fx);
+    float lo = 1e9f;
+    float hi = -1e9f;
+    for (int i = sr; i < n; ++i) {
+      if (fabsf(in[i]) < 0.025f) continue;
+      const float g = dyn_db(out[i] / in[i]);
+      lo = fminf(lo, g);
+      hi = fmaxf(hi, g);
+    }
+    printf("  attack 100 %%, 110 Hz clipped: gain swings %.2f dB\n",
+           (double)(hi - lo));
+    CHECK(hi - lo <= 0.12f);
+  }
+  /* Huge finite samples (an unstable plugin upstream) leave the state
+   * finite: the note after them plays. */
+  {
+    for (int i = 0; i < n; ++i) {
+      in[i] = 0.25f * sinf(2.0f * (float)M_PI * 440.0f * (float)i / (float)sr);
+    }
+    in[100] = 0.5e20f;
+    in[101] = 1e20f;
+    in[102] = 0.8e20f;
+    float p[LE_FX_PARAMS] = {0};
+    memcpy(p, (const float[3]){0.93f, 0.48f, 0.55f}, 3 * sizeof(float));
+    le_fx_state* fx = dyn_state(LE_FX_TRANSIENT, sr);
+    uint32_t clock = 0;
+    dyn_run(fx, LE_FX_TRANSIENT, p, sr, in, out, NULL, n, &clock);
+    dyn_free(fx);
+    int finite = 1;
+    for (int i = 0; i < n; ++i) finite &= isfinite(out[i]) ? 1 : 0;
+    CHECK(finite);
+    CHECK(fabsf(out[n - sr / 4]) <= 1.0f);
+  }
   free(in);
   free(out);
 }

@@ -4663,8 +4663,9 @@ float le_comp_static_gr_for_test(const float* p, float in_db) {
  * the samples fall on the cycle: a pattern that beats with the rate,
  * which is aliasing (-47 dB on a 1319 Hz note at 48 kHz). So the level
  * feeding the envelope is the true peak between samples, the vertex of
- * the parabola through the three around a local maximum, and the gain is
- * smoothed over LE_TR_GAIN_S, too short to move a measured crest gain.
+ * the parabola through the three around a strict local maximum, held to
+ * a sine's (le_tr_true_peak), and the gain is smoothed over LE_TR_GAIN_S,
+ * too short to move a measured crest gain.
  * Folds then stay under -69 dB at every factory setting up to E6, at 44.1,
  * 48 and 96 kHz. */
 #define LE_TR_PEAK_REL_S 0.090
@@ -4677,6 +4678,10 @@ float le_comp_static_gr_for_test(const float* p, float in_db) {
 #define LE_TR_SUS_K 13.4f
 #define LE_TR_FLOOR 1e-5f
 #define LE_TR_GAIN_S 0.0001 /* the gain's smoothing */
+/* The most the true peak may read above its sample: a sine's, up to
+ * 2.1 kHz at 48 kHz. A sharp click's parabola would read up to 12.5 %
+ * high, which is no sine's peak. */
+#define LE_TR_PEAK_LIFT 0.01f
 
 typedef struct le_fx_transient {
   le_fx_dyn_head h;
@@ -4705,8 +4710,10 @@ static void fx_transient_update(void* ks, const float* p, int sr, int settle) {
   const int changed = (f & LE_FX_DYN_CHANGED) != 0;
   if (changed) {
     const float len = p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1];
-    t->peak_rel = le_one_pole(LE_TR_PEAK_REL_S, sr);
     t->rise = le_one_pole(LE_TR_ATK_MIN_S * pow(LE_TR_ATK_SPAN, len), sr);
+  }
+  if (f & LE_FX_DYN_NEW_RATE) {
+    t->peak_rel = le_one_pole(LE_TR_PEAK_REL_S, sr);
     t->sus_rise = le_one_pole(LE_TR_SUS_RISE_S, sr);
     t->sus_fall = le_one_pole(LE_TR_SUS_FALL_S, sr);
     t->lift = le_one_pole(LE_TR_SUS_LIFT_S, sr);
@@ -4722,12 +4729,16 @@ static void fx_transient_update(void* ks, const float* p, int sr, int settle) {
 
 /* The level's peak between the samples, read on the sample after a strict
  * local maximum [a1] (between [a2] before it and [a0] after): the vertex of
- * the parabola through the three. Anything else, a flat top or a step
- * included, is its own sample [a0]. */
+ * the parabola through the three, at most LE_TR_PEAK_LIFT above [a1].
+ * Anything else, a flat top or a step included, is its own sample [a0]. */
 static inline float le_tr_true_peak(float a2, float a1, float a0) {
   if (!(a1 > a0 && a1 > a2)) return a0;
-  const float den = a0 - 2.0f * a1 + a2; /* < 0 at a strict maximum */
-  const float v = a1 - (a0 - a2) * (a0 - a2) / (8.0f * den);
+  const float d0 = a1 - a0; /* both > 0 */
+  const float d2 = a1 - a2;
+  const float sum = d0 + d2;
+  /* (d2 - d0)^2 / (8 (d0 + d2)), in terms that cannot overflow */
+  const float q = sum < INFINITY ? (d2 - d0) / sum : 0.0f;
+  const float v = fminf(a1 + 0.125f * (d2 - d0) * q, a1 * (1.0f + LE_TR_PEAK_LIFT));
   return v > a0 ? v : a0;
 }
 
