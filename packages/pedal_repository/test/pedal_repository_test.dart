@@ -220,8 +220,9 @@ void main() {
           expect(repo.ambientLight, isNull);
           expect(changes, [room, darker, null]);
           link.emit(const AmbientLightMessage(room));
-          async.flushMicrotasks();
-          async.elapse(repo.helloTimeout);
+          async
+            ..flushMicrotasks()
+            ..elapse(repo.helloTimeout);
           expect(repo.ambientLight, isNull);
           expect(changes, [room, darker, null, room, null]);
           unawaited(repo.dispose());
