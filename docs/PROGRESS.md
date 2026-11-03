@@ -73,7 +73,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
-| #1547 | Every effect the same at any sample rate and block size: parts 1, 2, 3a (filter responses), 3b (tails) and the Spring refit to its captures merged; part 3c (pitch: the octaver kinds run at 48 kHz at every rate, #1467) in review; 3d the Transient next | in-review | auto | `claude/fx-invariance-1547-p3c` |
 
 ---
 
@@ -1548,9 +1547,11 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   at a time with `python3 rate_fit.py SHAPE 44100`, numpy and scipy, a
   few minutes each). The pitch kinds (Octaver, Dual Octaver, Whammy, Smart
   Tune) instead run their kernel at 48 kHz at every rate, between two
-  Kaiser-windowed sinc resamplers (`fx_octaver_run`). What fails today
-  is the `k_known` list in `bench_fx_matrix.c`, each entry with a
-  ceiling: a new failure, or a
+  Kaiser-windowed sinc resamplers (`fx_octaver_run`). The Transient
+  reads its level's true peak between samples and smooths its gain over
+  0.1 ms, which keeps its folds under -69 dB. What fails today is the
+  `k_known` list in `bench_fx_matrix.c` (only the Dual Octaver's
+  envelope, #1580), each entry with a ceiling: a new failure, or a
   listed one past its ceiling, fails the run, and in the full run so does a
   listed one that now passes. The settings come from
   `src/test/bench/fx_factory_settings.inc`, generated from the catalogue;
