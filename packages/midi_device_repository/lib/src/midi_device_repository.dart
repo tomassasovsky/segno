@@ -252,8 +252,10 @@ class MidiDeviceRepository {
     ++_selectionGeneration;
     _pollTimer?.cancel();
     await _selectionTail;
+    // Not awaited: a broadcast cancel completes at once, and awaiting it
+    // inside a widget test's fake clock never returns (flutter/flutter#139870).
     for (final subscription in _subscriptions) {
-      await subscription.cancel();
+      unawaited(subscription.cancel());
     }
     for (final source in _sources.values) {
       await source.dispose();
