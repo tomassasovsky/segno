@@ -957,8 +957,8 @@ class _AppViewState extends State<_AppView> {
   /// that device's return is folded into the interface's too, however late.
   String? _foldedMidiId;
 
-  /// The device the MIDI loss warning on screen is for.
-  String? _midiLostId;
+  /// The devices the MIDI loss warning on screen is for.
+  final _midiLostIds = <String>{};
 
   static bool _within(Stopwatch since) =>
       since.isRunning && since.elapsed <= _sameCauseWindow;
@@ -1222,7 +1222,7 @@ class _AppViewState extends State<_AppView> {
             midiIsInterfacesOwn(said, state, audioJustChanged: true)) {
           if (said.connectivity == MidiConnectivity.lost) {
             _foldedMidiId = said.connectivityDeviceId;
-            _midiLostId = null;
+            _midiLostIds.clear();
           }
           // Folded once: a second change of the interface finds it gone.
           _midiSaidFor = null;
@@ -1279,6 +1279,11 @@ class _AppViewState extends State<_AppView> {
   void _showMidiConnectivity(MidiSetupState state) {
     final connection = state.connection;
     final device = connection.connectivityDeviceId;
+    // A device that comes back takes its own loss warning down, even when it
+    // is no longer in use.
+    if (connection.connectivity == MidiConnectivity.restored) {
+      _clearMidiLost(device);
+    }
     if (connection.connectivity != MidiConnectivity.none &&
         device != connection.selectedId &&
         !context.read<ControlCubit>().state.midiMappings.mappings.any(
@@ -1297,7 +1302,7 @@ class _AppViewState extends State<_AppView> {
         return;
       case MidiConnectivity.lost:
         _foldedMidiId = null;
-        _midiLostId = device;
+        _midiLostIds.add(device);
         _midiSaid
           ..reset()
           ..start();
@@ -1328,16 +1333,15 @@ class _AppViewState extends State<_AppView> {
         );
       case MidiConnectivity.none:
         _foldedMidiId = null;
-        _midiLostId = null;
+        _midiLostIds.clear();
         _notices.clear(AppNoticeId.midiLost);
     }
   }
 
-  /// Takes the loss warning down when [device] is the device it was for;
+  /// Takes the loss warning down once every device it was for is back;
   /// another device's return leaves it up.
   void _clearMidiLost(String device) {
-    if (_midiLostId != device) return;
-    _midiLostId = null;
+    if (!_midiLostIds.remove(device) || _midiLostIds.isNotEmpty) return;
     _notices.clear(AppNoticeId.midiLost);
   }
 

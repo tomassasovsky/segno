@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:console_facts_client/console_facts_client.dart';
@@ -4402,6 +4403,85 @@ void main() {
         await tester.pump(const Duration(seconds: 12));
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump(const Duration(milliseconds: 100));
+      },
+    );
+
+    testWidgets(
+      'the loss warning stays up until every lost device in use is back',
+      (tester) async {
+        const pedal = MidiDevice(id: 'fcb1010', name: 'FCB1010');
+        const keys = MidiDevice(id: 'keys', name: 'Keyboard');
+        var enumerated = const <MidiDevice>[pedal, keys];
+        // The keyboard is in use through a mapping, the pedal by selection.
+        await tester.runAsync(
+          () => settings.saveMidiConfiguration(
+            jsonEncode({
+              'version': 1,
+              'enabled': true,
+              'mappings': [
+                MidiMapping(
+                  id: 'k1',
+                  source: MidiSource(
+                    device: 'keys',
+                    kind: ControllerSourceKind.midiCc,
+                    number: 64,
+                  ),
+                  behavior: MidiBehavior.momentary,
+                  controls: [
+                    MidiParameterControl(
+                      key: const TrackVolumeTarget(0).canonicalString(),
+                      low: 0,
+                      high: 1,
+                    ),
+                  ],
+                ).toJson(),
+              ],
+            }),
+          ),
+        );
+        final midi = MidiDeviceRepository(
+          captures: () => FakeMidiCapture(devices: () => enumerated),
+          settings: settings,
+          pollInterval: Duration.zero,
+        );
+        await midi.select('fcb1010');
+
+        await tester.pumpWidget(
+          App(
+            guards: GuardRegistry(),
+            mixSettings: testMixSettings(repository, settings: settings),
+            repository: repository,
+            controllerRepository: controllerRepository,
+            midiDeviceRepository: midi,
+            settings: settings,
+            waveformWindow: _RecordingWindowService(),
+            sessionRepository: sessionRepository,
+            performanceRepository: performanceRepository,
+            backingRepository: testBackingRepository(),
+          ),
+        );
+        watchNotices(tester);
+        await tester.pumpAndSettle();
+
+        Future<void> plug(List<MidiDevice> devices) async {
+          enumerated = devices;
+          midi.refresh();
+          await tester.pump();
+          await tester.pump();
+        }
+
+        await plug(const [keys]);
+        await plug(const []);
+        expect(noticeUp(tester, AppNoticeId.midiLost), isTrue);
+        await plug(const [keys]);
+        expect(noticeUp(tester, AppNoticeId.midiLost), isTrue);
+        await plug(const [pedal, keys]);
+        expect(noticeUp(tester, AppNoticeId.midiLost), isFalse);
+
+        await tester.pump(const Duration(seconds: 10));
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        await midi.dispose();
       },
     );
 

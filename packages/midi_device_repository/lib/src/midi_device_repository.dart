@@ -40,13 +40,25 @@ class MidiDeviceRepository {
   }) : _newCapture = captures,
        _settings = settings,
        // One never-opened source lists the host's inputs.
-       _scanner = captures?.call() {
+       _scanner = _scannerOf(captures) {
     // Capture what is plugged in now, so input works before the saved
     // selection loads (enumerate is a cheap synchronous native call).
     refresh();
     unawaited(_hydrate());
     if (_scanner != null && pollInterval > Duration.zero) {
       _pollTimer = Timer.periodic(pollInterval, (_) => refresh());
+    }
+  }
+
+  /// A native handle that cannot be allocated leaves the app without MIDI
+  /// rather than stopping launch.
+  static MidiControllerSource? _scannerOf(
+    MidiControllerSource Function()? captures,
+  ) {
+    try {
+      return captures?.call();
+    } on Object {
+      return null;
     }
   }
 
@@ -209,6 +221,7 @@ class MidiDeviceRepository {
 
     final next = _connection.copyWith(
       devices: devices,
+      names: Map.unmodifiable(_names),
       open: sessions.keys.toSet(),
       openErrors: Map.unmodifiable(_openErrors),
     );
@@ -219,12 +232,13 @@ class MidiDeviceRepository {
       _emit(next);
       return;
     }
-    // A device that was captured and went is lost; one that appeared after
-    // launch is restored. Each is published on its own, so every change
+    // A device that was captured and went is lost; one whose capture opened
+    // after launch (plugged back in, plugged in late, or a port that opened
+    // on a retry) is restored. Each is published on its own, so every change
     // reaches the listener.
     final transitions = [
       for (final id in wasOpen.difference(present)) (MidiConnectivity.lost, id),
-      for (final id in present.difference(previous))
+      for (final id in next.open.difference(wasOpen))
         (MidiConnectivity.restored, id),
     ];
     if (transitions.isEmpty) {

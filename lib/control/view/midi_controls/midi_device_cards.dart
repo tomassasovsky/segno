@@ -71,14 +71,15 @@ List<MidiDeviceCard> midiDeviceCards(
       connection.selectedId,
       () => card(
         connection.selectedId,
-        connection.selectedName.isEmpty
-            ? connection.selectedId
-            : connection.selectedName,
+        connection.names[connection.selectedId] ??
+            (connection.selectedName.isEmpty
+                ? connection.selectedId
+                : connection.selectedName),
       ),
     );
   }
   for (final id in mapped) {
-    cards.putIfAbsent(id, () => card(id, id));
+    cards.putIfAbsent(id, () => card(id, connection.names[id] ?? id));
   }
   return [...cards.values];
 }

@@ -48,6 +48,7 @@ class MidiConnection extends Equatable {
     this.devices = const [],
     this.open = const {},
     this.openErrors = const {},
+    this.names = const {},
     this.selectedId = '',
     this.selectedName = '',
     this.connectivity = MidiConnectivity.none,
@@ -66,6 +67,10 @@ class MidiConnection extends Equatable {
   /// The plugged-in devices whose port would not open, with the native
   /// result code.
   final Map<String, String> openErrors;
+
+  /// The name of every device seen this run, so a device that is unplugged
+  /// keeps its name.
+  final Map<String, String> names;
 
   /// The device the MIDI page shows, or empty when none is chosen.
   final String selectedId;
@@ -109,6 +114,7 @@ class MidiConnection extends Equatable {
     List<MidiDevice>? devices,
     Set<String>? open,
     Map<String, String>? openErrors,
+    Map<String, String>? names,
     String? selectedId,
     String? selectedName,
     MidiConnectivity? connectivity,
@@ -122,6 +128,7 @@ class MidiConnection extends Equatable {
       devices: devices ?? this.devices,
       open: open ?? this.open,
       openErrors: openErrors ?? this.openErrors,
+      names: names ?? this.names,
       selectedId: selectedId ?? this.selectedId,
       selectedName: selectedName ?? this.selectedName,
       connectivity: connectivity ?? this.connectivity,
@@ -140,6 +147,7 @@ class MidiConnection extends Equatable {
     devices,
     open,
     openErrors,
+    names,
     selectedId,
     selectedName,
     connectivity,

@@ -186,6 +186,25 @@ void main() {
 
       expect(repository.connection.openErrors, isEmpty);
       expect(repository.connection.open, {'id-1', 'id-2'});
+      // The port that opened on a retry now feeds its mappings.
+      expect(repository.connection.connectivity, MidiConnectivity.restored);
+      expect(repository.connection.connectivityDeviceId, 'id-1');
+    });
+
+    test('a device that appears but will not open is not restored', () async {
+      enumerated = const [dev1];
+      openResult = (id) => id == 'id-2' ? 5 : 0;
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+
+      enumerated = const [dev1, dev2];
+      repository.refresh();
+
+      expect(repository.connection.connectivity, MidiConnectivity.none);
+      expect(repository.connection.names, {
+        'id-1': 'FCB1010',
+        'id-2': 'SoftStep',
+      });
     });
 
     test('a port that throws on open does not stop the others', () async {

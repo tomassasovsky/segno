@@ -145,22 +145,10 @@ extension MidiControlEditing on ControlCubit {
       return MidiSaveResult.refused('$error');
     }
     if (_closing || isClosed) return const MidiSaveResult.refused('closed');
-    // Queued input was read against the old mappings; only the devices whose
-    // mappings changed restart their decoders.
+    // Queued input was read against the old mappings and is dropped, so
+    // every device's decoders restart with it.
     ++_midiIngressRevision;
-    final before = state.midiMappings.mappings.toSet();
-    final after = mappings.mappings.toSet();
-    _resetMidiDecoders(
-      only: {
-        for (final mapping
-            in before
-                .difference(after)
-                .union(
-                  after.difference(before),
-                ))
-          mapping.source.device,
-      },
-    );
+    _resetMidiDecoders();
     await _queueMidi(() async {
       await _applyMidiProposals(_midiEngine.setMappings(mappings));
     });
