@@ -526,6 +526,10 @@ static int run_racks(const bench_opts* o, float* src, int32_t frames,
  * larger of that and one instance's own p99 increment (p99 rather than the
  * racks' p99.9: a share of eight is steadier there). Prints a row per kind,
  * then the charges for kFxKindCostNs and kFxHopCostUs (looper_repository).
+ * The Overdrive, Distortion, Vinyl and Amp+Cab run oversampled, by a factor
+ * that depends on the rate (#1547), so their charges go to
+ * kFxOversampledCostNs instead: `low` from a run at 48 kHz (44.1 kHz runs
+ * the same factor), `high` from one at 96 kHz.
  * Run it paced on the console; elsewhere the numbers are only a proxy. */
 typedef struct {
   const char* name;
@@ -629,12 +633,16 @@ static int run_table(const bench_opts* o, float* src, int32_t frames,
     fflush(stdout);
   }
   /* kFxKindCostNs takes these per frame; the octaver and PSOLA go to
-   * kFxHopCostUs and kFxPsolaCostUs per block (1 x +us). */
+   * kFxHopCostUs and kFxPsolaCostUs per block (1 x +us); the oversampled
+   * kinds go to kFxOversampledCostNs at this rate's end of it. */
   printf("charges, ns per frame:");
   for (size_t k = 0; k < sizeof(k_table) / sizeof(k_table[0]); ++k) {
     printf(" %s=%.0f", k_table[k].name, ns[k]);
   }
-  printf("\ntimed loops ran at: %s\n", g_timed_sched);
+  printf("\n(overdrive, distortion, vinyl and ampcab: kFxOversampledCostNs, "
+         "%s at %d Hz)\n",
+         o->rate < 88200 ? "low" : "high", o->rate);
+  printf("timed loops ran at: %s\n", g_timed_sched);
   return 0;
 }
 

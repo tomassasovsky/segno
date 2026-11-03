@@ -79,14 +79,14 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
 /// Amp+Cab's 376 from CI arm64 x 1.75) times what oversampling multiplied
 /// the kind's own cost by on the macOS host (M4 Pro, one instance, ns per
 /// frame against the same kind at 96 kHz before): the Overdrive 7.9 and
-/// 4.8, the Distortion 2.0 and 1.2, the Vinyl 5.6 and 2.9 (its DC blocker
-/// included), the Amp+Cab 2.5 and 2.1. The console's own table
-/// (`bench_fx_cpu --table` at 44.1, 48 and 96 kHz) is owed and replaces
-/// these.
+/// 4.8, the Distortion 2.0 and 1.2, the Vinyl 7.7 and 3.2 (its DC blocker
+/// and its dry share's own way down included), the Amp+Cab 2.5 and 2.1.
+/// The console's own table (`bench_fx_cpu --table` at 48 and 96 kHz) is
+/// owed and replaces these.
 const Map<TrackEffectType, ({int low, int high})> kFxOversampledCostNs = {
   TrackEffectType.overdrive: (low: 969, high: 590),
   TrackEffectType.distortion: (low: 459, high: 267),
-  TrackEffectType.vinyl: (low: 543, high: 276),
+  TrackEffectType.vinyl: (low: 746, high: 314),
   TrackEffectType.ampCab: (low: 955, high: 793),
 };
 

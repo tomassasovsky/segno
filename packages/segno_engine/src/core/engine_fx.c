@@ -6272,6 +6272,7 @@ typedef struct le_fx_vinyl {
   int32_t click_left; /* its samples still to come */
   int32_t click_len;  /* a click's samples: 1/48000 s at this rate */
   le_os os; /* the copy's oversampling: its high-pass runs inside it */
+  le_os os_dry; /* the dry share's way down, in step with the copy's */
   float dc_b0, dc_a1; /* the DC blocker after the copy */
   float z_dc[2][2];
 } le_fx_vinyl;
@@ -6291,6 +6292,7 @@ static void fx_vinyl_update(void* ks, const float* p, int sr, int settle) {
   }
   if (f & LE_FX_DYN_NEW_RATE) {
     le_os_design(&v->os, rate, le_os_stages(LE_FX_VINYL, rate));
+    le_os_design(&v->os_dry, rate, le_os_stages(LE_FX_VINYL, rate));
     memset(v->z_hp, 0, sizeof(v->z_hp));
     le_amp_hp1(LE_VIN_DC_HZ, rate, &v->dc_b0, &v->dc_a1);
     double c[5];
@@ -6370,20 +6372,22 @@ static void fx_vinyl_kprocess(void* ks, float* l, float* r) {
     }
   }
   for (int ch = 0; ch < 2; ++ch) {
-    /* The dry share goes through the oversampling too, so it stays in
-     * step with the copy. */
-    float os[1 << LE_OS_MAX_STAGES];
+    /* The dry share goes up and down too, on its own way down, so it stays
+     * in step with the copy while only the copy is DC-blocked. */
+    float os[1 << LE_OS_MAX_STAGES], dry[1 << LE_OS_MAX_STAGES];
     const int m = le_os_up(&v->os, ch, io[ch], os);
     for (int i = 0; i < m; ++i) {
       const float x = os[i];
       const float hcopy = le_biquad_tick(v->hp, v->z_hp[ch], x);
-      os[i] = LE_VIN_DRY * x + c * (fabsf(hcopy) + LE_VIN_SQUARE * hcopy * hcopy);
+      dry[i] = LE_VIN_DRY * x;
+      os[i] = c * (fabsf(hcopy) + LE_VIN_SQUARE * hcopy * hcopy);
     }
-    float y = le_os_down(&v->os, ch, os);
+    const float copy = le_os_down(&v->os, ch, os);
+    const float through = le_os_down(&v->os_dry, ch, dry);
     /* The limiter reads the copy with its DC, as fitted; what it scales is
      * the copy without it. */
-    float d = y;
-    y = le_amp_hp1_tick(v->dc_b0, v->dc_a1, v->z_dc[ch], y);
+    float d = through + copy;
+    float y = through + le_amp_hp1_tick(v->dc_b0, v->dc_a1, v->z_dc[ch], copy);
     if (n > 0.0f) {
       float bed = n * (shared + LE_VIN_OWN * v->hiss * le_noise(&v->rng[ch]));
       if (!v->tone_open) bed = le_biquad_tick(v->tone, v->z_tone[ch], bed);
