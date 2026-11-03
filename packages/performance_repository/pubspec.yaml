@@ -2,9 +2,9 @@ name: performance_repository
 description: >-
   Owns the performance-recording capture lifecycle end-to-end: arming and
   disarming the audio engine's capture rings, snapshotting settled lanes and
-  monitor/master state, finalizing raw PCM to WAV, and assembling the
-  `{documents}/exports/<slug>/` bundle. Depends only on the AudioEngine
-  interface, never NativeAudioEngine.
+  monitor/master state, finalizing the take's float WAV parts, and
+  assembling the `{documents}/exports/<slug>/` bundle. Depends only on the
+  AudioEngine interface, never NativeAudioEngine.
 version: 0.1.0
 publish_to: none
 

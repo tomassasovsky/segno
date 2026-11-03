@@ -61,7 +61,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1178 | Library and Sessions redesign | build | merge-gate | `claude/library-1178-*` |
 | #1179 | Pitch and time DSP core | build | merge-gate | `claude/pitch-time-1179-*` |
 | #1197 | Instruments | plan | merge-gate | `claude/instruments-1197-*` |
-| #1198 | Recording to USB and long recordings | plan | merge-gate | `claude/recording-1198-*` |
+| #1198, #1078 | Recording to USB and long recordings: Parts 1-5 and 11 on the trunk; durability and bounded recovery (Part 8's finalize and recovery, fixes #1078) in build | build | merge-gate | `claude/recording-durability-1198-p*` |
 | #1200 | Backing player | plan | merge-gate | `claude/backing-1200-*` |
 | #1202 | Shared render recipe, Bounce, Save selected | plan | merge-gate | `claude/render-1202-*` |
 | #1228 | MIDI clock | plan | merge-gate | `claude/midi-clock-1228-*` |
