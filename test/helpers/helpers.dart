@@ -12,6 +12,7 @@ export 'pump_app.dart';
 export 'screenshot_fonts.dart';
 export 'segno_design.dart';
 export 'slot_rects.dart';
+export 'test_asset_bundle.dart';
 export 'test_backing.dart';
 export 'test_fade_settings.dart';
 export 'test_mix_settings.dart';

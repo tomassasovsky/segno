@@ -24,12 +24,13 @@ Future<void> startNewLoop(BuildContext context) async {
   final session = context.read<SessionCubit>();
   final library = context.read<LibraryCubit>();
   final looper = context.read<LooperRepository>();
+  final assets = DefaultAssetBundle.of(context);
   final confirmed = await showDialog<NewLoopConfirmation>(
     context: context,
     barrierColor: context.surface.scrim,
     builder: (_) => BlocProvider(
       create: (_) => NewLoopCubit(
-        loadEdsSetup: loadEdsSetup,
+        loadEdsSetup: () => loadEdsSetup(assets),
         fits: (template) => newLoopTemplateFits(looper, template),
       ),
       child: NewLoopSheet(
