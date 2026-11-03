@@ -336,6 +336,26 @@ void main() {
     });
   });
 
+  test("another track's playhead sends no frame", () {
+    fakeAsync((clock) {
+      final display = build()..start(enabled: true);
+      clock.flushMicrotasks();
+      expect(window.frames, ['Track 1']);
+
+      // Track 2 plays; the selected track 1 stands still.
+      for (final position in [0.1, 0.2, 0.3]) {
+        playheads.add(Playhead(tracks: [0, position]));
+        clock
+          ..flushMicrotasks()
+          ..elapse(const Duration(milliseconds: 40));
+      }
+      expect(window.frames, ['Track 1']);
+
+      unawaited(display.close());
+      clock.flushMicrotasks();
+    });
+  });
+
   test('the Track display dim reaches the second screen in its readout', () {
     fakeAsync((clock) {
       final display = build()..start(enabled: true);

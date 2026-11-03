@@ -109,6 +109,9 @@ class WaveformDisplayController {
   /// Counts the frames sent, so a failed one retries only while it is the
   /// latest.
   int _frameCount = 0;
+
+  /// The playhead position the latest frame carried.
+  double? _sentProgress;
   (LooperState, WaveformDisplayContext)? _lastReadout;
   int _readoutRevision = 0;
   int _intent = 0;
@@ -193,7 +196,11 @@ class WaveformDisplayController {
     if (_running) return;
     _running = true;
     _states = _repository.looperState.listen((_) => _requestFrame());
-    _playheads = _repository.playheads.listen((_) => _requestFrame());
+    // Only the selected track's playhead is drawn there; another track
+    // moving changes nothing on that screen.
+    _playheads = _repository.playheads.listen((playhead) {
+      if (playhead.track(_context.cursor) != _sentProgress) _requestFrame();
+    });
     _readoutTimer = Timer.periodic(_frame, (_) => _pushReadout());
     _onWindowReady();
   }
@@ -235,6 +242,7 @@ class WaveformDisplayController {
         ? _repository.readTrackWaveform(cursor)
         : Float32List(0);
     final progress = _repository.playhead.track(cursor);
+    _sentProgress = progress;
     unawaited(
       _window.pushWaveform(samples, progress, name).catchError((Object _) {
         if (!_running ||
@@ -289,6 +297,7 @@ class WaveformDisplayController {
     unawaited(_playheads?.cancel());
     _playheads = null;
     _framePending = false;
+    _sentProgress = null;
     _lastReadout = null;
   }
 

@@ -332,15 +332,26 @@ void main() {
 
     expect(painterOf(waveKey).shouldRepaint(wave), isFalse);
     expect(painterOf(playheadKey).shouldRepaint(playhead), isTrue);
-    // And the wave's layer is its own: the playhead's repaint stops above it.
+    // Each paints in a layer of its own, so a playhead repaint reaches
+    // neither the wave nor the readout around the view.
     final waveBoundary = find
         .ancestor(
           of: find.byKey(waveKey),
           matching: find.byType(RepaintBoundary),
         )
         .first;
+    final playheadBoundary = find
+        .ancestor(
+          of: find.byKey(playheadKey),
+          matching: find.byType(RepaintBoundary),
+        )
+        .first;
     expect(
       find.descendant(of: waveBoundary, matching: find.byKey(playheadKey)),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: playheadBoundary, matching: find.byKey(waveKey)),
       findsNothing,
     );
   });

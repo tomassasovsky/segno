@@ -101,7 +101,7 @@ class WaveformView extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             RepaintBoundary(child: paint),
-            playhead,
+            RepaintBoundary(child: playhead),
             ?ruler,
           ],
         ),

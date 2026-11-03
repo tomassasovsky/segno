@@ -2347,7 +2347,6 @@ class LooperRepository {
     final snapshot = _snapshotAndSettleImages();
     _engineSnapshots.add(snapshot);
     _publishMeters(snapshot);
-    _publishPlayhead(snapshot);
     _retryRefusedRecord(snapshot);
     _refreshCacheTelemetry();
     _superviseDevice(devicePresent: snapshot.devicePresent);
@@ -2360,6 +2359,7 @@ class LooperRepository {
     _rememberLooperMode(next, snapshot.looperMode);
     // Settlement also reaches persistence when the visible state is unchanged.
     if (next == _last && !receiptsSettled) {
+      _publishPlayhead(snapshot);
       return;
     }
     _last = next;
@@ -2369,6 +2369,9 @@ class LooperRepository {
     // the track arms rather than one behind it.
     _reconcileAutoMonitors();
     _controller.add(next);
+    // After the state, so a playhead never reaches a widget ahead of the
+    // track facts it belongs to (a take that just closed, a cleared track).
+    _publishPlayhead(snapshot);
   }
 
   /// Re-projects and emits immediately (deduped), skipping the device

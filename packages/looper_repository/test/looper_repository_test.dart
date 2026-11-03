@@ -1909,6 +1909,31 @@ void main() {
       expect(repo.playhead.track(99), 0, reason: 'no such track');
     });
 
+    test('a poll that moves the state and the playhead publishes the state '
+        'first', () async {
+      engine.nextSnapshot = _playingAt(
+        4800,
+        state: TrackState.recording,
+        lengthFrames: 4800,
+      );
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final order = <String>[];
+      final stateSub = repo.looperState.listen((_) => order.add('state'));
+      final playheadSub = repo.playheads.listen((_) => order.add('playhead'));
+      addTearDown(stateSub.cancel);
+      addTearDown(playheadSub.cancel);
+      await Future<void>.delayed(Duration.zero);
+      order.clear();
+
+      // The take closes and plays on: new track facts and a moving playhead.
+      engine.nextSnapshot = _playingAt(24000);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(order, ['state', 'playhead']);
+    });
+
     test('the playhead reads 0 for a recording take and an empty '
         'track', () async {
       // While a take records, the engine reports the growing write head as
