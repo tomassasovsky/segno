@@ -35,7 +35,6 @@
 #include "audio_ring.h" /* le_audio_ring_release (capture-ring teardown) */
 #include "engine_cache.h" /* le_cache_init/shutdown (wet-cache lifecycle) */
 #include "engine_render.h" /* le_render_destroy (render recipe jobs) */
-#include "engine_restore.h" /* le_restore_init/shutdown (restoration worker) */
 #include "engine_core.h" /* shared low-level helpers: le_push, valid_channel, ... */
 #include "../host/plugin_slot.h" /* le_plugin_slot_destroy (teardown of slots) */
 #include "engine_fx.h" /* effects DSP island: chain runner, reset/free, latency */
@@ -462,9 +461,6 @@ static void le_engine_quiesce_workers(le_engine* engine) {
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
   le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
-  /* Offline restoration worker (#697 S9, [R2](d)): join before the pools are
-   * touched — its enqueue copies read pool memory. */
-  le_restore_shutdown(engine);
 
   /* Performance-recording capture: stop and join the drain thread — if
    * still armed here, the engine is being reconfigured mid-session (a
@@ -1005,28 +1001,9 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
     store_f32(&engine->tracks[t].a_trk_peak_r_bits, 0.0f);
   }
 
-  /* Per-input conditioning stages (input conditioning, S1): defaults (all
-   * disabled) + the conditioned-copy scratch for the new channel count. The
-   * device is closed during configure, so both the seed and the realloc are
-   * race-free. A failed allocation leaves cond_buf NULL — the audio thread
-   * then simply keeps the raw path (conditioning silently off). */
-  for (int c = 0; c < LE_MAX_CHANNELS; ++c) {
-    le_cond_seed_defaults(&engine->cond[c], sample_rate);
-  }
-  le_rt_free(engine->cond_buf);
-  engine->cond_buf_cap =
-      (int64_t)LE_COND_SCRATCH_FRAMES * (int64_t)input_channels;
-  /* Prefaulted: the callback copies every input block into it (rt_alloc.h). */
-  engine->cond_buf = (float*)le_rt_alloc_prefaulted(
-      (size_t)engine->cond_buf_cap * sizeof(float));
-  if (engine->cond_buf == NULL) engine->cond_buf_cap = 0;
-  /* Raw-fallback telemetry: per session, like a_xruns above. */
-  atomic_store_explicit(&engine->a_cond_fallback_blocks, 0u,
-                        memory_order_relaxed);
-
   /* Input clip ("HOT") detector (input clip, S2): fresh session, no input is
    * HOT and no rail-run is in progress. Plain fields are race-free here (the
-   * device is closed during configure), same as the cond seeds above. */
+   * device is closed during configure). */
   for (int c = 0; c < LE_MAX_CHANNELS; ++c) {
     engine->clip_run[c] = 0;
     engine->clip_hold_until[c] = 0;
@@ -1062,7 +1039,6 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
    * no patches; the epoch tells the app that every voice and latch is gone. */
   le_instruments_reset(engine, sample_rate);
   le_cache_init(engine);
-  le_restore_init(engine); /* #697 S9: offline loop-close restoration worker */
   atomic_store_explicit(&engine->a_configured, 1, memory_order_release);
 }
 
@@ -1519,7 +1495,6 @@ void le_engine_destroy(le_engine* engine) {
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
   le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
-  le_restore_shutdown(engine); /* #697 S9: join before the pool frees below */
   le_prefault_shutdown(engine); /* its jobs name the pool buffers below */
   le_collect_retired(engine, 1);
   le_backing_release(engine, 0); /* #1200: no audio thread any more */
@@ -1583,7 +1558,6 @@ void le_engine_destroy(le_engine* engine) {
   }
   le_fx_free_kind_table(&engine->all_tracks.fx);
   le_rt_free(engine->lat_buf);
-  le_rt_free(engine->cond_buf); /* conditioned-copy scratch (input conditioning) */
   le_instruments_destroy(engine); /* the synth and its buses (#1197) */
   /* The device is already closed (no audio thread), so the performance-capture
    * rings — including any left retracted-but-allocated by a disarm that could
@@ -1839,7 +1813,6 @@ int32_t le_engine_stop(le_engine* engine) {
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
   le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
-  le_restore_shutdown(engine); /* #697 S9: join the restoration worker on stop */
   /* Per-OS teardown on stop (not only destroy) so a forced quantum doesn't
    * outlive a running engine for other PipeWire clients. No-op off Linux. */
   le_platform_on_engine_teardown();

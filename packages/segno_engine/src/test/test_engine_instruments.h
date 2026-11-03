@@ -305,12 +305,12 @@ static void test_instrument_configure_epoch_and_fallback(void) {
   le_engine_set_instrument(e, 0, syn_patch("pad"), NULL);
   le_engine_instrument_note_on(e, 0, 1, 60, 100);
   ins_run(e, 64, 64, 0, NULL);
-  ins_run(e, 9000, 9000, 0, NULL); /* above LE_COND_SCRATCH_FRAMES */
+  ins_run(e, 9000, 9000, 0, NULL); /* above LE_INST_BUS_FRAMES */
   le_engine_get_snapshot(e, &snap);
   CHECK(snap.instrument_fallback_blocks == 1);
   CHECK(snap.instrument_peaks[0] == 0.0f); /* the oversized block is silent */
   int zero = 1;
-  for (int i = 0; i < LE_COND_SCRATCH_FRAMES; ++i) zero &= le_instrument_bus(e, 0)[i] == 0.0f;
+  for (int i = 0; i < LE_INST_BUS_FRAMES; ++i) zero &= le_instrument_bus(e, 0)[i] == 0.0f;
   CHECK(zero);
   CHECK(le_engine_configure(e, 44100, 2, 2, 44100 * 4) == LE_OK);
   le_engine_get_snapshot(e, &snap);
@@ -598,17 +598,16 @@ static void test_source_mix_transaction(void) {
   bad.revision = 9;
   bad.monitor_mask = UINT64_C(1) << 40;
   CHECK(le_engine_set_mix(e, &bad) == LE_ERR_INVALID);
-  /* single commands: 39 accepted with an empty slot, the tuner and
-   * conditioning stay physical */
+  /* single commands: 39 accepted with an empty slot, the tuner and the
+   * capture trim stay physical */
   CHECK(le_engine_set_lane_input(e, 2, 0, 39) == LE_OK);
   CHECK(le_engine_set_tuner_input(e, 32) == LE_OK);
-  CHECK(le_engine_set_input_conditioning(e, 32, 1) == LE_ERR_INVALID);
   CHECK(le_engine_set_input_trim(e, 32, 0.5f) == LE_ERR_INVALID);
   ins_pump(e, 64, 64, NULL);
   le_engine_get_snapshot(e, &snap);
   CHECK(load_i32(&e->tracks[2].lanes[0].a_input_channel) == 39);
   CHECK(snap.tuner_input == -1);
-  CHECK(snap.input_cond_mask == 0u && snap.input_clip_mask == 0u);
+  CHECK(snap.input_clip_mask == 0u);
   le_engine_destroy(e);
 }
 

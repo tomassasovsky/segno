@@ -66,8 +66,8 @@ Future<void> runSegno(
     'or none',
   );
   WidgetsFlutterBinding.ensureInitialized();
-  // The engine's vendored native code (Signalsmith Stretch, RNNoise,
-  // miniaudio, VST3, CLAP) for System > About's open-source notices.
+  // The engine's vendored native code (Signalsmith Stretch, miniaudio, VST3,
+  // CLAP) for System > About's open-source notices.
   registerVendoredLicenses();
   // And the typefaces bundled with the app.
   registerFontLicenses();

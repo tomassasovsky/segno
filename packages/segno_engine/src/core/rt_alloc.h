@@ -31,7 +31,7 @@
  * control-thread time for nothing until the buffer is used:
  *
  *   - Written from the start (the le_engine struct and its rings, the
- *     conditioning and latency scratch, the instrument synth, the capture
+ *     latency scratch, the instrument synth, the capture
  *     rings, every FX ring and octaver buffer, the command payloads the
  *     callback writes back into): le_rt_alloc_prefaulted, when created or
  *     prepared.

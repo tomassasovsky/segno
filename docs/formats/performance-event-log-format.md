@@ -380,7 +380,7 @@ within one frame of the fact.
 
 Code `323` with image ID zero and state EMPTY means provenance was lost: a
 slot became live without a staged image (staging refused or the id space
-exhausted, a loop-close restoration commit, a session import during capture),
+exhausted, a session import during capture),
 or an image-sourced slot started being written by a new recording or overdub.
 It is logged unconditionally on such a slot change, whether the previous
 source was an image or the arm snapshot, so the affected stem fails rather

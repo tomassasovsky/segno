@@ -101,33 +101,6 @@ enum TrackState {
   };
 }
 
-/// Progress of an offline loop-close restoration pass (#697) on a track.
-///
-/// Mirrors the native `le_track_snapshot.restore_state`. A completed pass
-/// publishes its result as an ordinary undo layer, so the revert affordance
-/// surfaces through [TrackSnapshot.undoDepth]/[TrackSnapshot.clearRestore] —
-/// this is only the in-progress indicator (drive a "restoring…" affordance
-/// off it, clear it when it returns to [idle]).
-enum TrackRestoreState {
-  /// No restoration in flight.
-  idle,
-
-  /// A restoration is queued: its lane copy is in flight, or it is waiting for
-  /// the background worker to pick it up.
-  queued,
-
-  /// The background worker's de-clip/denoise DSP is running.
-  running;
-
-  /// Maps a native `le_track_snapshot.restore_state` integer to a value.
-  static TrackRestoreState fromCode(int code) => switch (code) {
-    0 => TrackRestoreState.idle,
-    1 => TrackRestoreState.queued,
-    2 => TrackRestoreState.running,
-    _ => TrackRestoreState.idle,
-  };
-}
-
 /// Where the current tempo came from (D7 precedence:
 /// `external > (manual | tapped, last writer wins) > derived`).
 ///
@@ -730,7 +703,6 @@ class TrackSnapshot {
     this.lengthPresetBars = 0,
     this.oneShot = false,
     this.settledTakeId = 0,
-    this.restoreState = TrackRestoreState.idle,
     this.positionFrames = 0,
     this.pendingTrigger = -1,
     this.quantizeOverride,
@@ -776,7 +748,6 @@ class TrackSnapshot {
       lengthPresetBars = 0,
       oneShot = false,
       settledTakeId = 0,
-      restoreState = TrackRestoreState.idle,
       positionFrames = 0,
       pendingTrigger = -1,
       quantizeOverride = null,
@@ -834,7 +805,6 @@ class TrackSnapshot {
     lengthPresetBars: native.length_preset_bars,
     oneShot: native.one_shot != 0,
     settledTakeId: native.settled_take_id,
-    restoreState: TrackRestoreState.fromCode(native.restore_state),
     positionFrames: native.position_frames,
     pendingTrigger: native.pending_trigger,
     quantizeOverride: native.quantize_override < 0
@@ -990,13 +960,6 @@ class TrackSnapshot {
   /// ordinal position.
   final int settledTakeId;
 
-  /// Progress of an offline loop-close restoration pass (#697) on this track:
-  /// [TrackRestoreState.idle] when none is in flight, else queued/running.
-  ///
-  /// The restored take is published as an ordinary undo layer, so the revert
-  /// affordance is [undoDepth]; this only drives an in-progress indicator.
-  final TrackRestoreState restoreState;
-
   /// This track's own playhead in frames within its own [lengthFrames] — the
   /// engine has already applied the mode's position rule (a multiple's segment,
   /// a Sync division's folded phase, a Free/Song track's private clock), so
@@ -1089,7 +1052,6 @@ class TrackSnapshot {
           lengthPresetBars == other.lengthPresetBars &&
           oneShot == other.oneShot &&
           settledTakeId == other.settledTakeId &&
-          restoreState == other.restoreState &&
           positionFrames == other.positionFrames &&
           pendingTrigger == other.pendingTrigger &&
           quantizeOverride == other.quantizeOverride &&
@@ -1131,7 +1093,6 @@ class TrackSnapshot {
     lengthPresetBars,
     oneShot,
     settledTakeId,
-    restoreState,
     positionFrames,
     pendingTrigger,
     quantizeOverride,
@@ -1662,7 +1623,6 @@ class EngineSnapshot {
     this.outputChannels = 0,
     this.excludedInputMask = 0,
     this.inputClipMask = 0,
-    this.inputCondMask = 0,
     this.masterLengthFrames = 0,
     this.masterPositionFrames = 0,
     this.recordOffsetFrames = 0,
@@ -1753,7 +1713,6 @@ class EngineSnapshot {
       outputChannels = 0,
       excludedInputMask = 0,
       inputClipMask = 0,
-      inputCondMask = 0,
       framesProcessed = 0,
       xrunCount = 0,
       inputRms = 0,
@@ -1867,7 +1826,6 @@ class EngineSnapshot {
       outputChannels: native.output_channels,
       excludedInputMask: native.excluded_input_mask,
       inputClipMask: native.input_clip_mask,
-      inputCondMask: native.input_cond_mask,
       framesProcessed: native.frames_processed,
       xrunCount: native.xrun_count,
       inputRms: native.input_rms,
@@ -1974,7 +1932,6 @@ class EngineSnapshot {
     int? outputChannels,
     int? excludedInputMask,
     int? inputClipMask,
-    int? inputCondMask,
     int? framesProcessed,
     int? xrunCount,
     double? tunerHz,
@@ -2070,7 +2027,6 @@ class EngineSnapshot {
     outputChannels: outputChannels ?? this.outputChannels,
     excludedInputMask: excludedInputMask ?? this.excludedInputMask,
     inputClipMask: inputClipMask ?? this.inputClipMask,
-    inputCondMask: inputCondMask ?? this.inputCondMask,
     framesProcessed: framesProcessed ?? this.framesProcessed,
     xrunCount: xrunCount ?? this.xrunCount,
     tunerHz: tunerHz ?? this.tunerHz,
@@ -2189,16 +2145,9 @@ class EngineSnapshot {
   /// raw samples at `|s| >= LE_CLIP_LEVEL` (0.999) — was seen on input `c`
   /// within the last `LE_CLIP_HOLD_MS` (1500 ms) of processed audio.
   ///
-  /// Detected on the RAW device buffer, upstream of the conditioning stage,
-  /// so a clipped input flags HOT even when the expander/HPF has reshaped
-  /// what records. Loopback-excluded inputs never flag.
+  /// Detected on the RAW device buffer, so the flag reflects the ADC.
+  /// Loopback-excluded inputs never flag.
   final int inputClipMask;
-
-  /// Conditioning activity: bit `c` set means input `c`'s conditioning stage
-  /// is currently active — enabled AND not loopback-excluded, i.e. the stage
-  /// actually runs on the audio path (the truth for a "conditioning on"
-  /// badge; a stage enabled on an excluded channel reads `0` here).
-  final int inputCondMask;
 
   /// Total frames processed by the audio callback since the device started.
   final int framesProcessed;
@@ -2514,8 +2463,8 @@ class EngineSnapshot {
 
   /// Per-input RAW device level over the most recent block, `0..1`, indexed
   /// by hardware channel: one entry per channel the device has (length
-  /// [inputChannels]; empty while no device is open). Read before
-  /// conditioning and trim, like [inputClipMask], so a hot ADC reads hot
+  /// [inputChannels]; empty while no device is open). Read before the
+  /// trim, like [inputClipMask], so a hot ADC reads hot
   /// however the trim is set. A block peak like [outputPeak]: written once
   /// per block, not a per-callback counter.
   final List<double> inputPeaks;
@@ -2626,7 +2575,6 @@ class EngineSnapshot {
           outputChannels == other.outputChannels &&
           excludedInputMask == other.excludedInputMask &&
           inputClipMask == other.inputClipMask &&
-          inputCondMask == other.inputCondMask &&
           framesProcessed == other.framesProcessed &&
           xrunCount == other.xrunCount &&
           tunerHz == other.tunerHz &&
@@ -2724,7 +2672,6 @@ class EngineSnapshot {
     outputChannels,
     excludedInputMask,
     inputClipMask,
-    inputCondMask,
     framesProcessed,
     xrunCount,
     inputRms,

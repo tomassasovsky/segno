@@ -30,7 +30,6 @@
 #include "audio_ring.h"  /* le_audio_ring_alloc/release (capture rings) */
 #include "engine_cache.h" /* le_cache_tick (wet-cache scheduler heartbeat) */
 #include "engine_render.h" /* le_render_take (Bounce, #1202) */
-#include "engine_restore.h" /* le_restore_tick + le_restore_commit_layer (#697) */
 #include "engine_core.h" /* le_push, valid_channel, le_lanes_active, le_*_reset */
 #include "engine_fx.h"   /* LE_PV_N / LE_PV_BINS */
 #include "engine_private.h"
@@ -70,7 +69,7 @@ static int le_history_is_cleared(const le_track* t) {
  * topmost LAYER reachable from the top through PEEL entries only, with
  * *skipped = how many PEEL entries sit above it. -1 when none is reachable —
  * the stack is empty (the live buffer is the original take), or a kind that is
- * not an overdub (CLEAR, PROCESSED) lies above the topmost LAYER. Stopping at
+ * not an overdub (CLEAR, LENGTH, BOUNCE) lies above the topmost LAYER. Stopping at
  * the deepest LAYER is what keeps the original take out of Peel's reach: that
  * entry IS the pre-first-overdub image, so swapping it in leaves the original
  * audible with nothing deeper to consume. */
@@ -143,7 +142,7 @@ static void le_publish_undo_depth(le_track* t) {
  * buffer into a live recording is not. Deliberately untested — the mutation
  * that removes it cannot be caught, because the path cannot be reached.
  *
- * PEEL and PROCESSED entries (#1164) are evictable like LAYERs: losing one
+ * PEEL entries (#1164) are evictable like LAYERs: losing one
  * costs a recovery step, never audio the track plays. A redo-side PEEL marker
  * names slot -1, which the `used` scan never matches, so it pins nothing. */
 static int track_select_slot(le_track* t, int undo_count, int redo_count,
@@ -152,8 +151,6 @@ static int track_select_slot(le_track* t, int undo_count, int redo_count,
   const int live = load_i32(&t->lanes[0].a_live);
   for (int i = 0; i < LE_POOL_SLOTS; ++i) {
     if (i == live) continue;
-    /* A Bounce in flight (#1202) holds two slots no stack names yet. */
-    if (t->bounce_pin[0] == i + 1 || t->bounce_pin[1] == i + 1) continue;
     int used = 0;
     for (int k = 0; k < undo_count && !used; ++k) {
       if (t->undo_stack[k].slot == i) used = 1;
@@ -747,8 +744,7 @@ static void le_undo_swap(le_engine* engine, le_track* t) {
     t->undo_count++;
     (void)le_redo_push(t, le_hist_kind_entry(LE_HIST_PEEL, -1, top.skipped));
   } else {
-    /* LAYER and PROCESSED: the redo entry keeps the kind, so a redo re-files
-     * a restoration swap as PROCESSED rather than as a peelable layer. */
+    /* LAYER: the redo entry keeps the kind. */
     (void)le_redo_push(t, le_hist_kind_entry(top.kind, live, 0));
   }
   le_publish_live_image(engine, t, top.slot, id, 1); /* [R1] undo swap */
@@ -839,83 +835,6 @@ static void le_drop_clear_history(le_track* t) {
  * — moved to engine_core.h (static inline): the wet-cache scheduler's enqueue
  * gate (engine_cache.c) decides from the same predicate and the two must
  * never diverge. */
-
-/* Commits a completed loop-close restoration (#697 S9) as ONE lockstep undo
- * layer — declared in engine_restore.h, defined HERE so it reuses the undo /
- * pool machinery above (track_acquire_slot, le_clear_redo, le_hist_layer,
- * le_publish_undo_depth, le_track_publish_live) rather than duplicating it.
- * Control thread only; the audio thread is untouched (a_live is swapped by a
- * single release store, and no buffer it can hold is freed — the pre-restore
- * live slot lives on as the pushed undo layer). See the header for the full
- * contract. */
-int32_t le_restore_commit_layer(le_engine* engine, int32_t channel,
-                                uint32_t lane_mask, uint32_t audio_rev,
-                                int32_t len,
-                                float* const restored[LE_MAX_LANES]) {
-  if (engine == NULL || channel < 0 || channel >= engine->track_count) {
-    return LE_ERR_INVALID;
-  }
-  le_track* t = &engine->tracks[channel];
-  /* The same gate the enqueue used, re-checked at commit: a capture may have
-   * started since. */
-  const int32_t est = le_effective_state(t);
-  if (est != LE_TRACK_PLAYING && est != LE_TRACK_STOPPED) return LE_ERR_INVALID;
-  if (atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire) ||
-      t->length_pending) {
-    return LE_ERR_INVALID;
-  }
-  /* [B5]: the take must not have moved since the worker copied it. */
-  if (atomic_load_explicit(&t->a_audio_rev, memory_order_acquire) != audio_rev) {
-    return LE_ERR_INVALID;
-  }
-  const int32_t live = load_i32(&t->lanes[0].a_live);
-  if (len <= 0 || load_i32(&t->lanes[0].a_len) != len) return LE_ERR_INVALID;
-
-  const int32_t lanes = le_lanes_active(t);
-  const int32_t slot = track_acquire_slot(t);
-  if (slot < 0) return LE_ERR_INVALID; /* pool exhausted beyond eviction */
-
-  /* Fill the fresh slot on every active lane: the restored PCM where opted,
-   * else a plain copy of the current live buffer (safe to read on this thread
-   * — the gate above proves the audio thread is not writing pool[live]). */
-  for (int32_t l = 0; l < lanes; ++l) {
-    if (!le_lane_ensure_slot(engine, &t->lanes[l], slot, len)) {
-      /* OOM: abandon the commit. track_acquire_slot only returns a free slot
-       * (never referenced by a_live / undo / redo / outstanding), so leaving
-       * it partially allocated in the pool is harmless — nothing names it. */
-      return LE_ERR_INVALID;
-    }
-    float* dst = t->lanes[l].pool[slot];
-    const float* src = t->lanes[l].pool[live];
-    if ((lane_mask & (1u << l)) && restored[l] != NULL) {
-      memcpy(dst, restored[l], (size_t)len * sizeof(float));
-    } else if (src != NULL) {
-      memcpy(dst, src, (size_t)len * sizeof(float));
-    } else {
-      memset(dst, 0, (size_t)len * sizeof(float));
-    }
-  }
-
-  /* A fresh action invalidates any redo path, exactly like a punch-in. */
-  le_clear_redo(t);
-  /* Push the pre-restoration live slot as one lockstep undo entry so a plain
-   * le_engine_undo swaps the restoration back to the raw take (the retention
-   * model the plan specifies: in-session undo, no session-bundle change).
-   * Filed as PROCESSED, not LAYER (#1164): a conditioning swap is not an
-   * overdub, so Peel must never consume it as one — a full-length raw take
-   * swapped under a conditioned image would not be "the newest overdub". */
-  if (t->undo_count < LE_POOL_SLOTS) {
-    t->undo_stack[t->undo_count++] =
-        le_hist_kind_entry(LE_HIST_PROCESSED, live, 0);
-  }
-  le_publish_undo_depth(t);
-  /* Swap a_live to the restored slot on every lane + bump a_audio_rev in one
-   * motion (invalidating and re-rendering the wet cache). Image 0 (#1143):
-   * processed material has no staged copy, so a running capture's stem fails
-   * truthfully at this swap (323/0) instead of replaying the raw take. */
-  le_publish_live_image(engine, t, slot, 0, 0);
-  return LE_OK;
-}
 
 /* Marks a successfully posted state-flip command (control thread). */
 static void le_mark_state_cmd(le_track* t, int32_t target) {
@@ -1452,10 +1371,6 @@ void le_engine_drain_events(le_engine* engine) {
    * cost is bounded: the copy step is chunked and every scan is fixed-size
    * with an under-budget early-out. */
   le_cache_tick(engine);
-  /* Offline loop-close restoration worker (#697 S9): the same control-thread
-   * heartbeat drives its chunked enqueue copy + finished-job collect. No-op
-   * until le_restore_init, and until a le_engine_restore_track enqueues a job. */
-  le_restore_tick(engine);
 }
 
 /* Retained reopen (#1140), control-side half — see engine_core.h. The device
@@ -2922,7 +2837,7 @@ int32_t le_engine_history_mode_gate(le_engine* engine, uint32_t channels,
   }
   /* Re-clears and same-span layer edits add no incompatible content. In
    * particular a grouped redo must not fence its own preceding re-clear.
-   * PEEL and PROCESSED entries and redo-side PEEL markers (#1164) are
+   * PEEL entries and redo-side PEEL markers (#1164) are
    * same-span swaps too: every kind test in this projection asks only
    * "is it CLEAR", so they fall with LAYER by construction. */
   if (!restores_content) return LE_OK;
@@ -3365,7 +3280,7 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
   t->redo_count--;
   const uint32_t image_id = le_stage_source_image(engine, channel, top.slot,
                                                   load_i32(&t->lanes[0].a_len));
-  /* The kind rides along: a PROCESSED entry undone and redone stays PROCESSED. */
+  /* The kind rides along: an entry undone and redone keeps its kind. */
   t->undo_stack[t->undo_count++] =
       le_hist_kind_entry(top.kind, load_i32(&t->lanes[0].a_live), 0);
   le_publish_live_image(engine, t, top.slot, image_id, 1); /* [R1] redo swap */
@@ -3651,8 +3566,8 @@ int32_t le_engine_set_transpose_bypass(le_engine* e, int32_t on,
 
 /* ---- length edits (#1168) ----
  * Double, First half and Last half build the new image here, on the control
- * thread, from the live image of a track that is not writing (the
- * le_restore_commit_layer precedent); LE_CMD_SET_LENGTH then swaps image,
+ * thread, from the live image of a track that is not writing;
+ * LE_CMD_SET_LENGTH then swaps image,
  * length and clock in one callback drain, and the drain files the history
  * entry once the callback acknowledges (le_length_collect). Undo and Redo of a
  * LENGTH entry ride the same command, so every length change of a playing
@@ -5056,35 +4971,6 @@ int32_t le_engine_set_monitor_input_fx_chain_enabled(le_engine* engine,
   return LE_OK;
 }
 
-/* ---- Per-input conditioning stage (input conditioning, S1) ----
- * Both setters ride the ring (the per-input monitor command shape: the input
- * index in the addressed field, bounds vs LE_MAX_MONITORED_INPUTS) so the
- * audio thread — sole owner of the stage's biquad/envelope state — resets or
- * recomputes it in lockstep with the config change (an enable edge resets
- * state; a param change recomputes only its own section's coefficients).
- * Values are clamped by the audio thread on apply (le_cond_update_param);
- * the control side validates only addressing. NOT perf-logged: conditioning
- * is upstream of capture, so recorded PCM already embodies it. */
-
-int32_t le_engine_set_input_conditioning(le_engine* engine, int32_t input,
-                                         int32_t enabled) {
-  if (engine == NULL) return LE_ERR_INVALID;
-  if (input < 0 || input >= LE_MAX_CHANNELS) return LE_ERR_INVALID;
-  return le_push(engine, LE_CMD_SET_INPUT_COND, input, enabled ? 1.0f : 0.0f);
-}
-
-int32_t le_engine_set_input_conditioning_param(le_engine* engine, int32_t input,
-                                               int32_t param, float value) {
-  if (engine == NULL) return LE_ERR_INVALID;
-  if (input < 0 || input >= LE_MAX_CHANNELS) return LE_ERR_INVALID;
-  if (param < LE_COND_HPF_HZ || param > LE_COND_EXP_RELEASE_MS) {
-    return LE_ERR_INVALID;
-  }
-  return le_push_cmd(engine,
-                     (le_command){.code = LE_CMD_SET_INPUT_COND_PARAM,
-                                  .lanef = {input, param, value}});
-}
-
 /* ---- Track-stage + output bus chains ----
  * The bus twins of the lane/monitor setter families above, on the two
  * le_fx_bus owners (le_track.bus / le_engine.outputs[k].fx, the Master
@@ -6193,7 +6079,19 @@ int32_t le_engine_perf_monitor_pop_for_test(le_engine* engine, int32_t input,
  * install drops them on the callback and le_bounce_collect reclaims them,
  * as a Clear does. A content track must also be
  * readable by the callback's own end-of-block verdict (no seam or punch
- * tail), so the install can never meet a writer. */
+ * tail), so the install can never meet a writer.
+ *
+ * While a Bounce is in flight its bundle names two slots no stack holds yet
+ * (the incoming image and the outgoing live slot), and nothing pins them:
+ * no slot can be taken on the track until le_bounce_collect files the
+ * outcome. A Bounce is a state command, so the length edit's busy check
+ * (state_cmds_posted ahead of a_state_acks) refuses it until the callback
+ * applies the install, and le_engine_edit_length drains, which collects the
+ * Bounce, before it selects a slot. Record, Undo, Redo and Peel refuse on
+ * bounce_inflight, and this rule refuses another Bounce. The drain's own
+ * acquirers (le_post_dub_shadows) need a layer in flight or a recording,
+ * which admission rules out. A new control-thread acquirer must keep to
+ * this, or the two slots need protecting from track_select_slot. */
 static int le_bounce_busy(le_engine* engine, int32_t channel) {
   le_track* t = &engine->tracks[channel];
   const int32_t st = le_effective_state(t);
@@ -6252,8 +6150,7 @@ static int32_t le_bounce_prepare(le_engine* engine, le_bounce_bundle* b,
 /* Posts [b] through the receipt table and, on acceptance, takes the track
  * into its in-flight window. */
 static int32_t le_bounce_post(le_engine* engine, le_bounce_bundle* b,
-                              int32_t code, int32_t pin_a, int32_t pin_b,
-                              uint64_t* receipt) {
+                              int32_t code, uint64_t* receipt) {
   le_track* t = &engine->tracks[b->channel];
   le_command cmd = {.code = code};
   cmd.bounce.bundle = b;
@@ -6270,8 +6167,6 @@ static int32_t le_bounce_post(le_engine* engine, le_bounce_bundle* b,
     engine->lane_growth_command = engine->commands_posted;
   }
   t->bounce_inflight = b;
-  t->bounce_pin[0] = pin_a >= 0 ? pin_a + 1 : 0;
-  t->bounce_pin[1] = pin_b >= 0 ? pin_b + 1 : 0;
   /* The bounced lanes hold material one Undo or Redo away from now on (plan
    * 5.4, review H1 of Part 4a): a shrink below them (le_mix_valid) or the
    * trailing-lane trim would otherwise drop a lane that a Redo regrows
@@ -6301,7 +6196,7 @@ static int32_t le_bounce_post(le_engine* engine, le_bounce_bundle* b,
 
 /* Files every collected Bounce outcome (control thread, each drain): the
  * callback's `prev` becomes the history entry on the side the motion leaves.
- * A refused install files nothing and releases its pins. */
+ * A refused install files nothing. */
 void le_bounce_collect(le_engine* engine) {
   if (engine == NULL) return;
   for (int32_t ch = 0; ch < engine->track_count; ++ch) {
@@ -6344,7 +6239,6 @@ void le_bounce_collect(le_engine* engine) {
       t->outstanding_count = 0;
     }
     t->bounce_inflight = NULL;
-    t->bounce_pin[0] = t->bounce_pin[1] = 0;
     le_rt_free(b);
   }
 }
@@ -6365,7 +6259,6 @@ void le_bounce_abandon_all(le_engine* engine) {
     }
     le_rt_free(t->bounce_inflight);
     t->bounce_inflight = NULL;
-    t->bounce_pin[0] = t->bounce_pin[1] = 0;
   }
 }
 
@@ -6479,8 +6372,7 @@ int32_t le_engine_bounce(le_engine* engine, const le_bounce_request* request,
   /* Staged before the push (#1143): the callback names this image at the
    * first frame it mixes it. */
   (void)le_stage_source_image(engine, ch, slot, len);
-  return le_bounce_post(engine, b, LE_CMD_BOUNCE, slot,
-                        load_i32(&t->lanes[0].a_live), receipt);
+  return le_bounce_post(engine, b, LE_CMD_BOUNCE, receipt);
 }
 
 int32_t le_engine_bounce_recover(le_engine* engine,
@@ -6543,6 +6435,5 @@ int32_t le_engine_bounce_recover(le_engine* engine,
   if (g.state != LE_TRACK_EMPTY && g.slot >= 0) {
     (void)le_stage_source_image(engine, ch, g.slot, g.len);
   }
-  return le_bounce_post(engine, b, LE_CMD_BOUNCE_RECOVER, g.slot,
-                        load_i32(&t->lanes[0].a_live), receipt);
+  return le_bounce_post(engine, b, LE_CMD_BOUNCE_RECOVER, receipt);
 }

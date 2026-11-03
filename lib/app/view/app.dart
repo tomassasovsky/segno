@@ -785,20 +785,6 @@ class _AppState extends State<App> {
               return cubit;
             },
           ),
-          BlocProvider(
-            // Not lazy, for the same reason as MonitorCubit above: the saved
-            // per-input conditioning stage must be applied to the engine at
-            // startup, not only when a settings surface first reads this cubit.
-            lazy: false,
-            create: (context) {
-              final cubit = InputConditioningCubit(
-                repository: context.read<LooperRepository>(),
-                settings: context.read<SettingsRepository>(),
-              );
-              unawaited(cubit.load());
-              return cubit;
-            },
-          ),
           BlocProvider.value(value: _recordView),
           // Provided at the shell (not just the setup screen) so the device
           // picker, the persisted selection, and the connect/disconnect banner

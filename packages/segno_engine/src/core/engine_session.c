@@ -387,8 +387,7 @@ int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
     /* LE_HIST_BOUNCE (#1202) is refused like any unknown kind: export cuts
      * it, so a Session that carries one was not written by this engine. */
     if (kind != LE_HIST_LAYER && kind != LE_HIST_CLEAR &&
-        kind != LE_HIST_PEEL && kind != LE_HIST_PROCESSED &&
-        kind != LE_HIST_LENGTH) {
+        kind != LE_HIST_PEEL && kind != LE_HIST_LENGTH) {
       return LE_ERR_INVALID;
     }
     /* Only a length edit carries a playhead map, inside the loop cap. */

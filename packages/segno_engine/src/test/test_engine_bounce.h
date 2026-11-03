@@ -374,77 +374,7 @@ static void test_bounce_abandoned_by_configure(void) {
   CHECK(e->tracks[2].bounce_inflight != NULL);
   CHECK(le_engine_configure(e, RR_SR, 1, 2, 0) == LE_OK);
   CHECK(e->tracks[2].bounce_inflight == NULL);
-  CHECK(e->tracks[2].bounce_pin[0] == 0 && e->tracks[2].bounce_pin[1] == 0);
   CHECK(e->tracks[2].undo_count == 0);
-  le_engine_destroy(e);
-}
-
-/* A loop-close restoration committed on the control thread while a Bounce
- * into the same track waits for the callback never takes the slot holding
- * the incoming image: the Bounce pins its slots until it is collected. The
- * restoration files first, so Undo of the Bounce returns to it. */
-static void test_bounce_pins_slots_in_flight(void) {
-  printf("test_bounce_pins_slots_in_flight\n");
-  le_engine* e = bb_fit_fixture();
-  const uint32_t job = bb_render(e, 0x3); /* A[f % 16] + C[f % 32], 32 frames */
-  const le_mix_settings two = bb_lanes(1, 2);
-  le_bounce_request q = {job, 1, 1, &two, NULL, 0, NULL};
-  uint64_t receipt = 0;
-  CHECK(le_engine_bounce(e, &q, &receipt) == LE_OK);
-  float fixed[32];
-  for (int i = 0; i < 32; ++i) fixed[i] = -1.0f - (float)i;
-  float* restored[LE_MAX_LANES] = {fixed};
-  const uint32_t rev = atomic_load(&e->tracks[1].a_audio_rev);
-  CHECK(le_restore_commit_layer(e, 1, 0x1u, rev, 32, restored) == LE_OK);
-  drain(e);
-  le_engine_drain_events(e);
-  int32_t result = LE_ERR_INVALID;
-  CHECK(le_engine_read_request_result(e, receipt, &result) == LE_OK);
-  CHECK(result == LE_OK);
-  const float* l = bb_live(e, 1, 0);
-  const float* r = bb_live(e, 1, 1);
-  for (int f = 0; f < 32; ++f) {
-    CHECK(l[f] == rr_a(f) + bb_c(f));
-    CHECK(r[f] == rr_a(f) + bb_c(f));
-  }
-  le_track_snapshot s;
-  le_engine_get_track(e, 1, &s);
-  CHECK(s.undo_depth == 2);
-  /* No shrink back to one lane: the bounced lanes are latched recoverable
-   * (review H1 of Part 4a), so Undo keeps the topology. */
-  CHECK(bb_recover(e, 1, 0, NULL, 0, NULL) == LE_OK);
-  l = bb_live(e, 1, 0);
-  for (int f = 0; f < 32; ++f) CHECK(l[f] == fixed[f]);
-  le_engine_destroy(e);
-}
-
-/* A layer filed on top of a Bounce is undone first, by plain Undo; the
- * Bounce's own recovery is refused until the Bounce is on top again. */
-static void test_bounce_layer_on_top_undoes_first(void) {
-  printf("test_bounce_layer_on_top_undoes_first\n");
-  le_engine* e = rr_fixture();
-  const uint32_t job = bb_render(e, 0x3);
-  const le_mix_settings two = bb_lanes(2, 2);
-  CHECK(bb_bounce(e, job, 2, &two) == LE_OK);
-  float fixed[48];
-  for (int i = 0; i < 48; ++i) fixed[i] = -1.0f - (float)i;
-  float* restored[LE_MAX_LANES] = {fixed};
-  const uint32_t rev = atomic_load(&e->tracks[2].a_audio_rev);
-  CHECK(le_restore_commit_layer(e, 2, 0x1u, rev, 48, restored) == LE_OK);
-  le_track_snapshot s;
-  le_engine_get_track(e, 2, &s);
-  CHECK(s.undo_depth == 2);
-  /* The Bounce sits under a newer edit (review L of Part 4a). */
-  CHECK(bb_recover(e, 2, 0, NULL, 0, NULL) == LE_ERR_TRACKS_CHANGED);
-  CHECK(le_engine_undo(e, 2) == LE_OK);
-  drain(e);
-  le_engine_drain_events(e);
-  const float* l = bb_live(e, 2, 0);
-  for (int f = 0; f < 48; ++f) CHECK(l[f] == rr_a(f) + rr_b(f));
-  CHECK(le_engine_undo(e, 2) == LE_ERR_INVALID); /* the Bounce is on top */
-  CHECK(bb_recover(e, 2, 0, NULL, 0, NULL) == LE_OK);
-  le_engine_get_track(e, 2, &s);
-  CHECK(s.state == LE_TRACK_EMPTY && s.undo_depth == 0);
   le_engine_destroy(e);
 }
 
@@ -512,7 +442,7 @@ static void test_bounce_names_its_image(void) {
   /* The overdubbed track holds spare shadows; they do not refuse it. */
   CHECK(e->tracks[0].outstanding_count > 0);
   CHECK(le_engine_bounce(e, &b, &receipt) == LE_OK);
-  const int32_t slot = e->tracks[0].bounce_pin[0] - 1;
+  const int32_t slot = e->tracks[0].bounce_inflight->target.slot;
   CHECK(slot >= 0);
   const uint32_t staged =
       slot >= 0 ? atomic_load(&e->perf.slot_image[0][slot]) : 0;
@@ -566,7 +496,6 @@ static void test_bounce_unapplied_at_reopen_drops_track(void) {
         LE_OK);
   CHECK(outcome == LE_REOPEN_RETAINED_PARTIAL && mask == (1 << 1));
   CHECK(e->tracks[1].bounce_inflight == NULL);
-  CHECK(e->tracks[1].bounce_pin[0] == 0 && e->tracks[1].bounce_pin[1] == 0);
   le_track_snapshot s;
   le_engine_get_track(e, 1, &s);
   CHECK(s.state == LE_TRACK_EMPTY && s.undo_depth == 0);
@@ -583,8 +512,6 @@ static void run_bounce_tests(void) {
   test_bounce_refusals_and_history();
   test_bounce_export_cut();
   test_bounce_abandoned_by_configure();
-  test_bounce_pins_slots_in_flight();
-  test_bounce_layer_on_top_undoes_first();
   test_bounce_topology_grows_playing_destination();
   test_bounce_names_its_image();
   test_bounce_unapplied_at_reopen_drops_track();

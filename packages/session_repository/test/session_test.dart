@@ -1183,11 +1183,11 @@ void main() {
     });
 
     group('history (#1164)', () {
-      // Undo side: a restoration, an overdub and a Peel above it. Redo side:
-      // the marker of an undone Peel (it re-peels the overdub), a layer, and
-      // the Clear point as the deepest entry, so 3 + 1 + 2 images.
+      // Undo side: two overdubs and a Peel above them. Redo side: the marker
+      // of an undone Peel (it re-peels the overdub), a layer, and the Clear
+      // point as the deepest entry, so 3 + 1 + 2 images.
       const peelHistory = [
-        {'kind': 'processed', 'skipped': 0},
+        {'kind': 'layer', 'skipped': 0},
         {'kind': 'layer', 'skipped': 0},
         {'kind': 'peel', 'skipped': 0},
         {'kind': 'peel', 'skipped': 1},
@@ -1199,7 +1199,7 @@ void main() {
         final json = withHistory(peelHistory, undoCount: 3, layers: 6);
         final lane = Session.fromJson(json).tracks.first.lanes.first;
         expect(lane.history.entries, const [
-          HistoryEntry(HistoryKind.processed),
+          HistoryEntry(HistoryKind.layer),
           HistoryEntry(HistoryKind.layer),
           HistoryEntry(HistoryKind.peel),
           HistoryEntry(HistoryKind.peel, skipped: 1),
@@ -1377,12 +1377,12 @@ void main() {
       });
 
       test('refuses a Redo marker with nothing to peel', () {
-        // A restoration on top blocks Peel, and an empty Undo side has
+        // A length edit on top blocks Peel, and an empty Undo side has
         // nothing beneath the original: Redo would refuse forever and strand
         // the layer below the marker.
         expectRefused(
           const [
-            {'kind': 'processed', 'skipped': 0},
+            {'kind': 'length', 'skipped': 0, 'start': 0},
             {'kind': 'peel', 'skipped': 0},
             {'kind': 'layer', 'skipped': 0},
           ],
@@ -1401,7 +1401,7 @@ void main() {
         // A marker reached after an earlier Redo re-files a layer is fine.
         final json = withHistory(
           const [
-            {'kind': 'processed', 'skipped': 0},
+            {'kind': 'length', 'skipped': 0, 'start': 0},
             {'kind': 'layer', 'skipped': 0},
             {'kind': 'peel', 'skipped': 0},
           ],
@@ -1455,7 +1455,7 @@ void main() {
           layers: 2,
         );
         track0Lanes(json).last['history'] = [
-          {'kind': 'processed', 'skipped': 0},
+          {'kind': 'peel', 'skipped': 0},
         ];
         expect(
           () => Session.fromJson(json),

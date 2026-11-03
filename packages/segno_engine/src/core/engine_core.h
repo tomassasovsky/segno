@@ -341,8 +341,8 @@ static inline void le_track_publish_live(le_track* t, int32_t slot,
 /* Publishes [slot] live with its staged image identity (#1143): `id` is the
  * perf.slot_image entry the callback will log when it first mixes the slot —
  * a nonzero staged id from le_stage_source_image, or 0 for a slot whose PCM
- * has no immutable copy in this capture (loop-close restoration, session
- * import), which the callback logs as 323/0 so the stem fails truthfully.
+ * has no immutable copy in this capture (a session import), which the
+ * callback logs as 323/0 so the stem fails truthfully.
  * Every control-side a_live publisher goes through here, so a stale entry
  * can never be read for a slot that was published without one. */
 static inline void le_publish_live_image(le_engine* e, le_track* t, int32_t slot,
@@ -572,30 +572,6 @@ void le_lane_shrink_slot(le_engine* e, le_lane* ln, int32_t slot,
  * free goes through here; a buffer the callback may still hold is retired
  * instead (le_retire_buffer). NULL-safe. */
 void le_free_audio_buffer(le_engine* e, float* buf);
-
-/* ---- Per-input conditioning stage (input conditioning, S1) ----
- * Defined in engine_cond.c. le_cond_seed_defaults runs on the CONTROL thread
- * at configure (device closed — no audio thread): stores the published
- * defaults and fully prepares the DSP state. The other three run on the AUDIO
- * thread alone (apply_command / the per-block conditioning pass). */
-
-/* Seeds published defaults (disabled, 40 Hz HPF, 50 Hz x4 hum, -55 dB 1:2
- * expander, 150 ms release) and recomputes + resets all DSP state. */
-void le_cond_seed_defaults(le_input_cond* c, int sample_rate);
-
-/* Recomputes every section's coefficients from the published params and
- * resets ALL filter/envelope state (enable edges + configure). */
-void le_cond_prepare(le_input_cond* c, int sample_rate);
-
-/* Clamps + publishes one le_cond_param and recomputes the affected section's
- * coefficients, resetting only that section's own state. */
-void le_cond_update_param(le_input_cond* c, int32_t param, float value,
-                          int sample_rate);
-
-/* Runs the stage in place over one input channel of an interleaved block:
- * buf[0], buf[stride], ... buf[(frames-1)*stride]. */
-void le_cond_process_block(le_input_cond* c, float* buf, uint32_t frames,
-                           int32_t stride);
 
 /* Drains the audio->control event ring (retired per-pass undo layers) into the
  * per-track undo stacks, replenishes shadow-slot spares, pre-arms the

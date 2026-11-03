@@ -216,7 +216,6 @@ static void test_engine_audio_buffers_are_fork_shielded(void) {
   le_engine* e = le_engine_create();
   CHECK(le_engine_configure(e, 48000, 2, 2, 48000 * 4) == LE_OK);
   CHECK(smaps_mapping_is_dontcopy(e) == 1);            /* the struct + rings */
-  CHECK(smaps_mapping_is_dontcopy(e->cond_buf) == 1);  /* conditioning scratch */
   CHECK(smaps_mapping_is_dontcopy(e->lat_buf) == 1);   /* latency capture */
   CHECK(smaps_mapping_is_dontcopy(e->synth) == 1);     /* instrument voices */
   CHECK(smaps_mapping_is_dontcopy(e->inst_bus) == 1);
