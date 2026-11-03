@@ -1726,12 +1726,17 @@ static int32_t le_engine_publish_and_start(le_engine* engine,
           sizeof(engine->device_name) - 1);
   engine->device_name[sizeof(engine->device_name) - 1] = '\0';
 
-  /* Exclude any loopback-labelled capture channels, computed from the resolved
-   * capture-device UID: our explicit capture id when one was pinned/loopback-
-   * routed (capture_id_set, set by the backend), else the system default input
-   * (on string-id backends the id union is the UID string). */
+  /* The interface's own routing to pass-through (#1046), first, so the mask
+   * below reads the routing just set. Then exclude any loopback-labelled
+   * capture channels, computed from the resolved capture-device UID: our
+   * explicit capture id when one was pinned/loopback-routed (capture_id_set,
+   * set by the backend), else the system default input (on string-id backends
+   * the id union is the UID string). */
   const char* capture_uid =
       engine->capture_id_set ? (const char*)&engine->capture_id : NULL;
+  const char* playback_uid =
+      engine->playback_id_set ? (const char*)&engine->playback_id : NULL;
+  le_platform_own_interface_routing(capture_uid, playback_uid);
   const uint32_t excluded_mask =
       le_platform_excluded_input_mask(capture_uid, info.input_channels);
   /* relaxed: a lone published value, matching the other configuration atomics

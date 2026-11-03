@@ -247,21 +247,41 @@ and owns it while the app runs; its audio thread runs at real-time priority
 There is no Focusrite Control on Linux. The `snd-usb-audio` **`scarlett2`**
 mixer controls routing instead, and the interface keeps that routing in its
 own flash, so a reset or another unit brings different defaults with it.
-Signal on the wrong output, or none, is usually this routing, not Segno: read
-it first.
+
+Segno owns this routing (#1046). Every time it opens the interface (start,
+the warm-up switch, an apply in Settings, a replug) it sets the routing to
+plain pass-through before the audio starts, writing only the controls that
+differ: the outputs of the interface it plays to, the capture of the one it
+records from. The rules cover the `scarlett2` models (Scarlett Gen 2 and 3,
+Gen 4 Solo, 2i2 and 4i4, Clarett, Vocaster); the big Gen 4 units use another
+driver and are left alone.
+
+- **Outputs:** `Analogue Output NN`, then `S/PDIF Output N`, then
+  `ADAT Output N` play `PCM 1`, `PCM 2`, … in that order (`Off` past the last
+  playback stream). On the 4i4: outputs 01-04 ← `PCM 1`-`PCM 4`.
+- **Capture:** `PCM NN` records the hardware inputs in order (`Analogue n`,
+  then `S/PDIF n`, then `ADAT n`). The capture channels past them are the
+  loopback and return Segno's outputs, `PCM 1` first: on the 4i4,
+  `PCM 05` ← `PCM 1` and `PCM 06` ← `PCM 2`. Segno times its latency
+  measurement there and never records, monitors or routes them. On an
+  interface Segno only records from (it plays to another), they are `Off`. An input
+  recorded through the unit's DSP (`DSP n` fed by that input) is kept.
+- **Direct monitoring** (`Direct Monitor Playback Switch` on the Solo,
+  `Direct Monitor Playback Enum` on the 2i2) is switched off.
+- The internal mixer (`Mixer Input NN`, `Mix X Input NN`) is left as it is:
+  once nothing selects a `Mix`, it reaches no output and no capture channel.
+
+The app logs `segno/audio: hw:<card> routing set to pass-through (N of M
+controls changed)` when it changed something, and `routing not pass-through`
+with the first control it could not set. To read the routing:
 
 ```bash
 amixer -c USB controls | grep -E 'Analogue Output|Mixer Input|PCM .* Capture'
 amixer -c USB get 'Analogue Output 01'
 ```
 
-- **Outputs** may be fed from an internal **Mix** rather than USB playback
-  (`Analogue Output 01 ← Mix A`), so app audio is missing until the output is
-  set to the PCM channel: `amixer -c USB cset numid=<n> "PCM 1"`.
-- **Capture** defaults are usually right (`PCM 01 ← Analogue 1`, …); check the
-  `PCM NN Capture Enum` controls. A capture channel fed from a playback
-  stream (`PCM 05 ← PCM 1`) is the loopback: Segno times its latency
-  measurement there and never records, monitors or routes it.
+- **Not controllable:** on the 4i4 (3rd gen) the headphone jack plays line
+  outputs 3-4, and no routing separates them.
 - **Monitor level, input gain and 48 V phantom power** are hardware controls on
   most models. A weak input that the gain knob barely changes is the classic
   sign of a condenser mic with 48 V off.

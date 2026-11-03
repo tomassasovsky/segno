@@ -1,14 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
 import 'package:operation_guards/operation_guards.dart';
+import 'package:performance_repository/src/legacy_capture.dart';
 import 'package:performance_repository/src/models/capture_summary.dart';
 import 'package:performance_repository/src/models/performance_chains.dart';
 import 'package:performance_repository/src/models/performance_manifest.dart';
+import 'package:performance_repository/src/models/recording_format.dart';
 import 'package:performance_repository/src/models/unfinalized_capture.dart';
 import 'package:performance_repository/src/performance_capture_status.dart';
 import 'package:performance_repository/src/performance_exception.dart';
@@ -21,10 +24,10 @@ import 'package:wav_codec/wav_codec.dart';
 /// Composes [AudioEngine] (never `NativeAudioEngine`) the same way every other
 /// repository does. A capture's directory IS its final bundle location from
 /// the moment of [arm] — `{exportsRoot}/<slug>/` — so there is no separate
-/// temp-then-move step: raw continuous taps (master/monitor, `perf_drain.c`)
-/// and this layer's own settled-lane WAV exports all land directly where the
-/// finished bundle expects them, and [disarm] only needs to convert the raw
-/// taps to WAV and merge the snapshot metadata into the sidecar.
+/// temp-then-move step: the continuous taps (master/monitor, `perf_drain.c`,
+/// written as float WAV parts) and this layer's own settled-lane WAV exports
+/// all land directly where the finished bundle expects them, and [disarm]
+/// only needs to merge the snapshot metadata into the sidecar.
 class PerformanceRepository {
   /// Creates a [PerformanceRepository] driving [engine].
   ///
@@ -37,6 +40,11 @@ class PerformanceRepository {
   /// [bootRecoveryRenderTimeout] bounds that wait (default
   /// [defaultBootRecoveryRenderTimeout]) so a wedged render can never park
   /// boot recovery — and [arm]'s render-poll refusal — forever.
+  ///
+  /// [storageIo] makes the engine's digest and directory sync, without an
+  /// engine; it is called on a background isolate too, so it must be a
+  /// top-level or static function. [partBytes] is the size of the parts a
+  /// take from before #1198 is converted into (tests pass small sizes).
   PerformanceRepository({
     required AudioEngine engine,
     required Future<String> Function() exportsRoot,
@@ -45,19 +53,26 @@ class PerformanceRepository {
     Duration bootRecoveryPollInterval = const Duration(milliseconds: 200),
     Duration bootRecoveryRenderTimeout = defaultBootRecoveryRenderTimeout,
     int? reserveBytes,
+    StorageIo Function() storageIo = NativeStorageIo.new,
+    int partBytes = RecordedPartWriter.defaultPartBytes,
   }) : _engine = engine,
        _guards = guards,
        _exportsRoot = exportsRoot,
        _reserveBytes = reserveBytes,
        _now = now,
        _bootRecoveryPollInterval = bootRecoveryPollInterval,
-       _bootRecoveryRenderTimeout = bootRecoveryRenderTimeout;
+       _bootRecoveryRenderTimeout = bootRecoveryRenderTimeout,
+       _storageIo = storageIo,
+       _partBytes = partBytes;
 
   final AudioEngine _engine;
   final Future<String> Function() _exportsRoot;
   final DateTime Function() _now;
   final Duration _bootRecoveryPollInterval;
   final Duration _bootRecoveryRenderTimeout;
+  final StorageIo Function() _storageIo;
+  late final StorageIo _io = _storageIo();
+  final int _partBytes;
 
   /// The app's one guard table (accepted behaviour 6.12). A take holds a
   /// `capture` guard from the commit of [arm] until it is finalized or its
@@ -188,19 +203,11 @@ class PerformanceRepository {
   /// area, adopted by future salvages.
   static const String recoveredDirName = reservedRecoveredDirName;
 
-  /// The largest raw `.pcm` file of a pre-#1198 capture that finalize still
-  /// converts by reading it whole, as it always did. Reading costs the file
-  /// once and the WAV it becomes once more, so this stays well inside the
-  /// appliance's memory: the 6 GB and 36 GB takes found on one ran it out
-  /// (#1198). A capture with a larger file stays unfinalized, in place, its
-  /// files untouched, for Part 8's streaming conversion, and is reported in
-  /// [unrecoveredTakes].
-  static const int legacyConvertMaxBytes = 512 * 1024 * 1024;
-
   /// Captures the last [runBootRecovery] tried and could not finalize (a
-  /// raw take too large to convert yet, a damaged sidecar, a failed write).
-  /// Each stays where it is with every file kept; the app tells the player
-  /// it could not be recovered.
+  /// damaged sidecar, too little space to convert a take from before #1198,
+  /// a failed write). Each stays where it is with every file kept and is
+  /// tried again at the next start; the app tells the player it could not be
+  /// recovered.
   List<String> get unrecoveredTakes => List.unmodifiable(_unrecovered);
   final List<String> _unrecovered = [];
 
@@ -465,10 +472,7 @@ class PerformanceRepository {
 
     // The take's identity (#1198): random, minted before any audio exists,
     // and written into every part's `sgno` chunk by the drain.
-    final random = Random.secure();
-    final takeId = Uint8List.fromList([
-      for (var i = 0; i < PerfTarget.takeIdBytes; i++) random.nextInt(256),
-    ]);
+    final takeId = _mintTakeId();
     // The reserve is Internal's (#1198); a removable volume keeps none
     // (#1177), so a take there stops only when its writes fail.
     final result = _engine.perfArm(
@@ -638,8 +642,8 @@ class PerformanceRepository {
   /// Takes the disarm-time settled-lane snapshot pass (covers a track
   /// recorded fresh during the performance — recording finalization produces
   /// no retire event, so nothing else would persist its PCM), disarms the
-  /// engine, converts the raw master/monitor PCM to WAV, and merges every
-  /// snapshot into the sidecar with `finalized: true`.
+  /// engine, and merges every snapshot into the sidecar with
+  /// `finalized: true`.
   ///
   /// Idempotent — calling this while already disarmed is a no-op success.
   /// If `EnginePerformanceCapture.perfDisarm` itself fails (a stalled
@@ -1346,7 +1350,7 @@ class PerformanceRepository {
         return; // no sidecar was ever written (e.g. disarmed within the drain
         // thread's first ~250ms cycle): nothing to finalize
       }
-      final Map<String, dynamic> native;
+      Map<String, dynamic> native;
       try {
         native = PerformanceManifest.fromJson(
           jsonDecode(rawManifest) as Map<String, dynamic>,
@@ -1359,24 +1363,21 @@ class PerformanceRepository {
         // recoverable to finalize), instead of upgrading every outer guard.
         return;
       }
-      final layout =
-          native['channel_layout'] as Map<String, dynamic>? ?? const {};
-      final capturedInputs = [
-        for (final c
-            in (layout['captured_inputs'] as List<dynamic>? ?? const []))
-          (c as num).toInt(),
-      ];
-      final legacy = [
-        File('$dir/master.pcm'),
-        for (final input in capturedInputs) File('$dir/input-$input.pcm'),
-      ].where((f) => f.existsSync()).toList();
-      if (legacy.isNotEmpty && !File('$dir/master-001.wav').existsSync()) {
-        // A capture from before #1198: raw PCM, no parts. Converted exactly
-        // as before, so an existing install's takes keep their audio. A raw
-        // file too large to read whole is left unfinalized, in place, for
-        // Part 8's bounded conversion; it is never finalized without audio.
-        if (legacy.any((f) => f.lengthSync() > legacyConvertMaxBytes)) return;
-        await _convertLegacyPcm(dir, native, capturedInputs);
+      // A capture from before #1198 (#1078): raw PCM, no parts and no take
+      // id, or one whose conversion a cut interrupted. A take the drain
+      // wrote as parts always carries its id, so a stray raw file beside its
+      // parts never sends it here.
+      final rawCapture =
+          native['take_id'] == null || native[convertedFromRawKey] == true;
+      if (rawCapture && _holdsRawPcm(dir)) {
+        // Converted into parts a stream at a time in bounded memory;
+        // anything short of a complete conversion leaves it unfinalized, its
+        // raw files kept, for the next start.
+        final streams = _legacyStreams(native);
+        if (streams == null) return; // a layout no conversion can trust
+        final converted = await _convertLegacy(dir, native, streams);
+        if (converted == null) return;
+        native = converted;
       } else {
         // The drain writes each stream as finished float WAV parts, so there
         // is nothing to convert. A crash leaves the open part's sizes
@@ -1400,9 +1401,10 @@ class PerformanceRepository {
         armSnapshot: resolvedArm,
         disarmSnapshot: disarmSnapshot,
       );
-      await manifestFile.writeAsString(
-        const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
-      );
+      // A failed directory sync does not undo the finalize: the manifest is
+      // in place, and if a power cut takes it back the next start finalizes
+      // the take again.
+      await _publishManifest(dir, manifest.toJson());
       if (armFile.existsSync()) armFile.deleteSync();
 
       // Kick off the offline render (dry stems, wet stems, master
@@ -1545,49 +1547,279 @@ class PerformanceRepository {
       },
   ];
 
-  /// Converts a pre-#1198 capture's raw `master.pcm` and `input-<n>.pcm` to
-  /// `master.wav` and `live-input-<n>.wav`, as every finalize did before the
-  /// drain wrote parts.
-  Future<void> _convertLegacyPcm(
+  /// The sidecar key that marks a take converted from raw streams (#1078).
+  static const String convertedFromRawKey = 'converted_from_raw';
+
+  /// A raw stream file the drain wrote before #1198.
+  static final _rawPcmFile = RegExp(r'^(master|input-\d+)\.pcm$');
+
+  /// Whether [dir] still holds a raw stream of a capture from before #1198.
+  bool _holdsRawPcm(String dir) => Directory(dir).listSync().any(
+    (e) => e is File && _rawPcmFile.hasMatch(_basename(e.path)),
+  );
+
+  /// The streams a capture from before #1198 wrote, from its sidecar's
+  /// `channel_layout`: the master (stream 0, 1 or 2 channels) and each
+  /// captured input `n` (stream `1 + n`, stereo). Null when the layout does
+  /// not read, which no conversion may guess at.
+  List<({int stream, int channels})>? _legacyStreams(
+    Map<String, dynamic> native,
+  ) {
+    final layout = native['channel_layout'] ?? const <String, dynamic>{};
+    if (layout is! Map<String, dynamic>) return null;
+    final master = layout['master_channels'] ?? 1;
+    final inputs = layout['captured_inputs'] ?? const <dynamic>[];
+    if (master is! int || master < 1 || master > 2 || inputs is! List) {
+      return null;
+    }
+    final streams = [(stream: 0, channels: master)];
+    for (final input in inputs) {
+      if (input is! int || input < 0) return null;
+      streams.add((stream: 1 + input, channels: 2));
+    }
+    return streams;
+  }
+
+  /// Converts a capture from before #1198 into float parts (#1078): each
+  /// raw stream in turn is copied into parts on a background isolate, a
+  /// megabyte at a time; the parts are digested, synced and listed in an
+  /// interim sidecar published durably, and only then is that stream's raw
+  /// file removed. So the conversion needs room for the largest stream
+  /// only, and a cut anywhere leaves either the raw file or its listed
+  /// parts. Returns the sidecar fields with the parts listed, or null when
+  /// the take must stay as it is: too little space (nothing is touched),
+  /// an interim sidecar that does not read, or a failed write (that stream's
+  /// new parts are deleted and its raw file kept).
+  Future<Map<String, dynamic>?> _convertLegacy(
     String dir,
     Map<String, dynamic> native,
-    List<int> capturedInputs,
+    List<({int stream, int channels})> streams,
   ) async {
-    final layout =
-        native['channel_layout'] as Map<String, dynamic>? ?? const {};
-    final sampleRate = (native['sample_rate'] as num?)?.toInt() ?? 0;
-    final masterChannels = (layout['master_channels'] as num?)?.toInt() ?? 1;
-    final masterPcm = File('$dir/master.pcm');
-    if (masterPcm.existsSync()) {
-      await File('$dir/master.wav').writeAsBytes(
-        WavCodec.encodeFloat32(
-          samples: _readRawPcm(masterPcm),
-          sampleRate: sampleRate,
-          channels: masterChannels,
-        ),
-      );
+    final sampleRate = native['sample_rate'];
+    if (sampleRate is! int || sampleRate < 1) return null;
+    final takeHex = native['take_id'];
+    final takeId = takeHex is String && _takeIdHex.hasMatch(takeHex)
+        ? _hexBytes(takeHex)
+        : _mintTakeId();
+    final List<TakePart> parts;
+    try {
+      parts = [
+        for (final entry in native['parts'] as List<dynamic>? ?? const [])
+          TakePart.fromJson(entry as Map<String, dynamic>),
+      ];
+    } on Object {
+      return null; // an interim list that does not read: never guess
     }
-    for (final input in capturedInputs) {
-      final raw = File('$dir/input-$input.pcm');
-      if (!raw.existsSync()) continue;
-      await File('$dir/live-input-$input.wav').writeAsBytes(
-        WavCodec.encodeFloat32(
-          samples: _readRawPcm(raw),
+
+    final pending = <({int stream, int channels})>[];
+    for (final s in streams) {
+      final pcm = File('$dir/${legacyPcmName(s.stream)}');
+      final listed = parts.where((p) => p.stream == s.stream).toList();
+      final done =
+          listed.isNotEmpty &&
+          listed.every((p) {
+            final f = File('$dir/${p.file}');
+            return f.existsSync() && f.lengthSync() == p.bytes;
+          });
+      if (done) {
+        // Converted and recorded before a cut; only the removal was lost.
+        if (pcm.existsSync()) pcm.deleteSync();
+      } else if (pcm.existsSync()) {
+        pending.add(s);
+      } else if (listed.isNotEmpty) {
+        return null; // listed parts gone and no raw file: keep for a look
+      }
+    }
+
+    // What a cut conversion left unlisted goes first, so its room counts.
+    for (final s in pending) {
+      _deleteStrayParts(dir, s.stream);
+      parts.removeWhere((p) => p.stream == s.stream);
+    }
+    final format = [
+      for (final s in pending)
+        RecordingFormat(
           sampleRate: sampleRate,
-          channels: 2,
+          channels: s.channels,
+          partBytes: _partBytes,
         ),
-      );
+    ];
+    var largest = 0;
+    for (var i = 0; i < pending.length; i++) {
+      final length = File(
+        '$dir/${legacyPcmName(pending[i].stream)}',
+      ).lengthSync();
+      final frames = length ~/ format[i].frameBytes;
+      final need =
+          format[i].bytesToAppend(frames) +
+          (frames == 0 ? RecordingFormat.headerBytes : 0);
+      if (need > largest) largest = need;
+    }
+    // The conversion keeps the reserve a take keeps, so it never fills the
+    // volume the console runs from.
+    final space = _engine.volumeSpace(dir);
+    if (space != null && space.freeBytes < largest + (_reserveBytes ?? 0)) {
+      return null;
+    }
+
+    var out = native;
+    for (final s in pending) {
+      final pcm = '$dir/${legacyPcmName(s.stream)}';
+      final partBytes = _partBytes;
+      final List<TakePart> written;
+      try {
+        written = await Isolate.run(
+          () => convertRawStream(
+            pcmPath: pcm,
+            dir: dir,
+            stream: s.stream,
+            channels: s.channels,
+            sampleRate: sampleRate,
+            takeId: takeId,
+            partBytes: partBytes,
+          ),
+        );
+      } on Object {
+        return null; // its parts are already gone; the raw file stays
+      }
+      try {
+        for (final part in written) {
+          final sha = await _digestPayload(
+            _storageIo,
+            '$dir/${part.file}',
+            part.bytes - RecordingFormat.headerBytes,
+          );
+          if (sha == null) throw FileSystemException('unreadable', part.file);
+          parts.add(
+            TakePart(
+              stream: part.stream,
+              index: part.index,
+              file: part.file,
+              frames: part.frames,
+              bytes: part.bytes,
+              overs: part.overs,
+              sha256: sha,
+            ),
+          );
+        }
+        _io.syncDirectory(dir);
+        final listed = {
+          ...native,
+          'take_id': _hex(takeId),
+          'encoding': TakeCheckpoint.encoding,
+          'overs': parts.fold<int>(0, (sum, p) => sum + p.overs),
+          'parts': [for (final p in _ordered(parts)) p.toJson()],
+          convertedFromRawKey: true,
+        };
+        final synced = await _publishManifest(dir, {
+          ...listed,
+          'slug': _basename(dir),
+          'finalized': false,
+        });
+        // Listed but perhaps not durably: the parts stand, and so does the
+        // raw file, until a later start can make the listing durable.
+        if (!synced) return null;
+        out = listed;
+      } on Object {
+        for (final part in written) {
+          final f = File('$dir/${part.file}');
+          if (f.existsSync()) f.deleteSync();
+        }
+        return null;
+      }
+      File(pcm).deleteSync();
+    }
+    return out;
+  }
+
+  /// Deletes every part file of [stream] in [dir]: what a conversion cut
+  /// short left before it could list them.
+  void _deleteStrayParts(String dir, int stream) {
+    final prefix = stream == 0 ? 'master-' : 'input-${stream - 1}-';
+    for (final entity in Directory(dir).listSync()) {
+      final name = _basename(entity.path);
+      if (entity is File &&
+          name.startsWith(prefix) &&
+          _partFile.hasMatch(name)) {
+        entity.deleteSync();
+      }
     }
   }
 
-  Float32List _readRawPcm(File file) {
-    final bytes = file.readAsBytesSync();
-    return Float32List.view(
-      bytes.buffer,
-      bytes.offsetInBytes,
-      bytes.lengthInBytes ~/ 4,
+  /// [parts] in playback order: stream by stream, each by index.
+  static List<TakePart> _ordered(List<TakePart> parts) => [...parts]
+    ..sort(
+      (a, b) => a.stream != b.stream
+          ? a.stream.compareTo(b.stream)
+          : a.index.compareTo(b.index),
     );
+
+  /// The SHA-256 of [dataBytes] of the part at [path] after its header, on a
+  /// background isolate through [storageIo]; null when it cannot be read
+  /// whole. Static, so the isolate's closure captures nothing else.
+  static Future<String?> _digestPayload(
+    StorageIo Function() storageIo,
+    String path,
+    int dataBytes,
+  ) => Isolate.run(
+    () => switch (storageIo().digestFile(
+      path,
+      offset: RecordingFormat.headerBytes,
+      length: dataBytes,
+    )) {
+      FileDigested(:final sha256) => sha256,
+      _ => null,
+    },
+  );
+
+  /// Writes [json] as [dir]'s `performance.json`: a temporary file, flushed,
+  /// renamed over the sidecar, then the directory synced. A reader sees the
+  /// old sidecar or the new one. Throws, leaving the old sidecar and no
+  /// temporary file, when the write or the rename fails. Returns whether the
+  /// directory sync also succeeded, which is what makes the new sidecar
+  /// survive a power cut; when it did not, the new sidecar is already in
+  /// place.
+  Future<bool> _publishManifest(String dir, Map<String, dynamic> json) async {
+    final pending = File('$dir/$manifestName.publishing');
+    try {
+      await pending.writeAsString(
+        const JsonEncoder.withIndent('  ').convert(json),
+        flush: true,
+      );
+      await pending.rename('$dir/$manifestName');
+    } on Object {
+      try {
+        if (pending.existsSync()) pending.deleteSync();
+      } on FileSystemException {
+        // The volume may be gone; the temporary file is never read.
+      }
+      rethrow;
+    }
+    try {
+      _io.syncDirectory(dir);
+      return true;
+    } on Object {
+      // Whatever failed, the new sidecar is already in place.
+      return false;
+    }
   }
+
+  static final RegExp _takeIdHex = RegExp(r'^[0-9a-f]{32}$');
+
+  static Uint8List _mintTakeId() {
+    final random = Random.secure();
+    return Uint8List.fromList([
+      for (var i = 0; i < PerfTarget.takeIdBytes; i++) random.nextInt(256),
+    ]);
+  }
+
+  static Uint8List _hexBytes(String hex) => Uint8List.fromList([
+    for (var i = 0; i < hex.length; i += 2)
+      int.parse(hex.substring(i, i + 2), radix: 16),
+  ]);
+
+  static String _hex(Uint8List bytes) =>
+      bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
   void _releaseCaptureGuard() {
     _captureGuard?.release();

@@ -131,6 +131,7 @@ void main() {
     engine = FakeAudioEngine();
     clock = DateTime(2026, 7, 6, 14, 30, 15);
     performance = PerformanceRepository(
+      storageIo: fakeStorageIo,
       guards: GuardRegistry(),
       engine: engine,
       exportsRoot: () async => '${tempDir.path}/exports',
@@ -327,6 +328,7 @@ void main() {
         writeManifest(dir.path, finalized: false);
         var rootCalls = 0;
         final blowingRepo = PerformanceRepository(
+          storageIo: fakeStorageIo,
           guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async {
@@ -1243,6 +1245,7 @@ void main() {
     test('the arm minimum is the reserve, the allowance and ten seconds of '
         'every captured stream with a header each', () {
       final reserved = PerformanceRepository(
+        storageIo: fakeStorageIo,
         engine: engine,
         exportsRoot: () async => '${tempDir.path}/exports',
         guards: GuardRegistry(),
@@ -1497,11 +1500,13 @@ void main() {
       final dir = Directory('${tempDir.path}/exports/perf-20260913-003635')
         ..createSync(recursive: true);
       writeManifest(dir.path, finalized: false);
-      // A raw take too large to convert yet (sparse: no real disk use).
+      // A raw take from before #1198 with no room to convert it into parts
+      // (sparse: no real disk use).
       File('${dir.path}/master.pcm').openSync(mode: FileMode.write)
-        ..setPositionSync(PerformanceRepository.legacyConvertMaxBytes)
+        ..setPositionSync(1 << 30)
         ..writeFromSync([0, 0, 0, 0])
         ..closeSync();
+      engine.freeBytes = 1 << 20;
 
       final cubit = build();
       addTearDown(cubit.close);
@@ -1590,6 +1595,7 @@ void main() {
     setUp(() {
       guards = GuardRegistry();
       guarded = PerformanceRepository(
+        storageIo: fakeStorageIo,
         engine: engine,
         exportsRoot: () async => '${tempDir.path}/exports',
         now: () => clock,
@@ -1876,6 +1882,7 @@ void main() {
         'drive goes', () async {
       engine = _SnapshotBlockingEngine();
       final blocked = PerformanceRepository(
+        storageIo: fakeStorageIo,
         guards: GuardRegistry(),
         engine: engine,
         exportsRoot: () async => '${tempDir.path}/exports',
@@ -1925,6 +1932,7 @@ void main() {
     test('an arm refused at its commit gives the drive back', () async {
       final guards = GuardRegistry();
       final guarded = PerformanceRepository(
+        storageIo: fakeStorageIo,
         engine: engine,
         exportsRoot: () async => '${tempDir.path}/exports',
         now: () => clock,
