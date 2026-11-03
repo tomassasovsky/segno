@@ -86,7 +86,7 @@ remote "rm -rf $REMOTE_DIR && mkdir -p $REMOTE_DIR/bundle"
 tar -C "$BUNDLE" -cf - . | remote "tar -C $REMOTE_DIR/bundle -xf -"
 remote "sed \
   -e \"s#^bundle = '/opt/segno'#bundle = '$REMOTE_DIR/bundle'#\" \
-  -e \"s#engine = \\['--enable-impeller=false'\\]#engine = ['--enable-impeller=false', '--vm-service-port=$PORT', '--disable-service-auth-codes']#\" \
+  -e \"s#engine = \\['--enable-impeller=true'\\]#engine = ['--enable-impeller=true', '--vm-service-port=$PORT', '--disable-service-auth-codes']#\" \
   /etc/segno/homescreen.toml > $REMOTE_DIR/homescreen.toml"
 # A sed that matched nothing would run the release bundle, or one with no VM
 # service, and look like a working profile session.
