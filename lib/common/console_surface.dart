@@ -253,11 +253,12 @@ class ConsoleCard extends StatelessWidget {
 
 /// The marker at a row's trailing edge saying the row does something.
 ///
-/// `false` draws `▸` and `true` draws `▾`; **null** draws nothing and keeps
-/// the space. The gutter is reserved **per group** rather than per row, so a
-/// row without a marker still lines its trailing edge up with the rows that
-/// have one — reserving per row instead makes a list's edge move as its
-/// contents change state.
+/// `false` draws a right chevron and `true` a down chevron, both the
+/// full-size pages' 28 px icon in the secondary text colour; **null** draws
+/// nothing and keeps the space. The gutter is reserved **per group** rather
+/// than per row, so a row without a marker still lines its trailing edge up
+/// with the rows that have one — reserving per row instead makes a list's
+/// edge move as its contents change state.
 class ConsoleDisclosure extends StatelessWidget {
   /// Creates a [ConsoleDisclosure].
   ///
@@ -2968,20 +2969,12 @@ class ConsoleCheck extends StatelessWidget {
   const ConsoleCheck({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return AppText(
-      '✓',
-      // Mono, for the same reason [ConsolePickRow]'s check is: the glyph is
-      // not in every text face, and a tofu box marks nothing.
-      style: TextStyle(
-        color: context.surface.accent,
-        fontFamily: SurfaceTheme.monoFont,
-        fontSize: 15,
-        height: 1.2,
-        leadingDistribution: TextLeadingDistribution.even,
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Icon(
+    LucideIcons.check,
+    // The pick row's check, at the full-size rows' scale.
+    size: ConsolePickRow.checkWidth,
+    color: context.surface.accent,
+  );
 }
 
 /// Confirms the destructive thing [title] asks about; resolves true when the

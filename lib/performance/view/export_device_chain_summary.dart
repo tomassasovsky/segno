@@ -62,8 +62,9 @@ class ExportDeviceChainSummary extends StatelessWidget {
   }
 }
 
-/// One track's 70px row: name, live-vs-bounced in the trailing state slot,
-/// and (when applicable) the specific fallback reason as the subtitle.
+/// One track's row ([kConsoleRowHeight] high): name, live-vs-bounced in the
+/// trailing state slot, and (when applicable) the specific fallback reason as
+/// the subtitle.
 class _TrackExportRow extends StatelessWidget {
   const _TrackExportRow({required this.track, required this.isLast});
 

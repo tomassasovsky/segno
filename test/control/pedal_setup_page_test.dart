@@ -1058,6 +1058,20 @@ void main() {
             reason: state.name,
           );
         }
+        // The colour wells sit a spacing token apart (#1590 PED-3).
+        expect(
+          tester
+                  .getTopLeft(
+                    find.byKey(const Key('pedal_led_state_overdubbing')),
+                  )
+                  .dx -
+              tester
+                  .getTopRight(
+                    find.byKey(const Key('pedal_led_state_recording')),
+                  )
+                  .dx,
+          SpacingTheme.standard.xl,
+        );
         for (final key in [
           'pedal_led_mode',
           'pedal_setup_context_tracks',

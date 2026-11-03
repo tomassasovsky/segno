@@ -295,5 +295,6 @@ class _ConsoleLicencesSheetState extends State<_ConsoleLicencesSheet> {
   static double _indent(LicenseParagraph paragraph) =>
       paragraph.indent == LicenseParagraph.centeredIndent
       ? 0
-      : paragraph.indent * 14.0;
+      // One step per indent level, the text's own size.
+      : paragraph.indent * 18.0;
 }
