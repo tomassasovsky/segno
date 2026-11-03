@@ -4649,7 +4649,7 @@ float le_comp_static_gr_for_test(const float* p, float in_db) {
  *   once, and is applied as 1 + s * gain, or its reciprocal for a cut.
  * A held tone leads neither follower and keeps its level, up to the peak
  * envelope's ripple on a low note: at 100 % the attack gain moves by up to
- * 1.7 dB within each cycle at 40 Hz, 0.9 dB at 80 Hz and 0.5 dB at 160 Hz
+ * 1.6 dB within each cycle at 40 Hz, 0.9 dB at 80 Hz and 0.5 dB at 160 Hz
  * (the captures held only a 1 kHz tone). Gains in the
  * linear domain saturate, as the Looper X's do: at 100 % an onset rises by
  * at most 1 + LE_TR_ATK_K (+15.2 dB) whatever its size, and after a 30 dB
@@ -4720,27 +4720,27 @@ static void fx_transient_update(void* ks, const float* p, int sr, int settle) {
   t->h.moving = moving;
 }
 
+/* The level's peak between the samples, read on the sample after a strict
+ * local maximum [a1] (between [a2] before it and [a0] after): the vertex of
+ * the parabola through the three. Anything else, a flat top or a step
+ * included, is its own sample [a0]. */
+static inline float le_tr_true_peak(float a2, float a1, float a0) {
+  if (!(a1 > a0 && a1 > a2)) return a0;
+  const float den = a0 - 2.0f * a1 + a2; /* < 0 at a strict maximum */
+  const float v = a1 - (a0 - a2) * (a0 - a2) / (8.0f * den);
+  return v > a0 ? v : a0;
+}
+
 static void fx_transient_kprocess(void* ks, float* l, float* r) {
   le_fx_transient* t = (le_fx_transient*)ks;
   const float x0 = fx_sanitize(*l);
   const float x1 = fx_sanitize(*r);
   const float atk = le_fx_glide_next(&t->atk);
   const float sus = le_fx_glide_next(&t->sus);
-  float x = fmaxf(fabsf(x0), fabsf(x1));
-  {
-    /* The level's peak between the samples: the vertex of the parabola
-     * through the last three, on the sample after a local maximum. */
-    const float a0 = x;
-    const float a1 = t->a1;
-    const float a2 = t->a2;
-    const float den = a0 - 2.0f * a1 + a2;
-    if (a1 >= a0 && a1 >= a2 && den < 0.0f) {
-      const float v = a1 - (a0 - a2) * (a0 - a2) / (8.0f * den);
-      if (v > x) x = v;
-    }
-    t->a2 = a1;
-    t->a1 = a0;
-  }
+  const float level = fmaxf(fabsf(x0), fabsf(x1));
+  const float x = le_tr_true_peak(t->a2, t->a1, level);
+  t->a2 = t->a1;
+  t->a1 = level;
   const float pk = x > t->peak ? x : x + t->peak_rel * (t->peak - x);
   t->peak = pk;
   t->riser = pk < t->riser ? pk : pk + t->rise * (t->riser - pk);
@@ -4762,9 +4762,11 @@ static void fx_transient_kprocess(void* ks, float* l, float* r) {
   const float ga = 1.0f + fabsf(atk) * LE_TR_ATK_K * ra;
   const float gs = 1.0f + fabsf(sus) * t->sus_gain;
   const float g = (atk >= 0.0f ? ga : 1.0f / ga) * (sus >= 0.0f ? gs : 1.0f / gs);
-  t->dg = (g - 1.0f) + t->gain_c * (t->dg - (g - 1.0f));
-  *l = x0 * (1.0f + t->dg);
-  *r = x1 * (1.0f + t->dg);
+  const float dg = g - 1.0f;
+  t->dg = dg + t->gain_c * (t->dg - dg);
+  const float gain = 1.0f + t->dg;
+  *l = x0 * gain;
+  *r = x1 * gain;
 }
 
 /* ---- HP/Gate (LE_FX_HP_GATE) ----
