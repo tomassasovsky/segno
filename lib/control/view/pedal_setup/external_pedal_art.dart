@@ -45,12 +45,14 @@ class ExternalPedalArt extends StatelessWidget {
       size: Size(1024, 1536),
       switches: [Offset(511.5, 775.5)],
       indicators: [Offset(512, 468)],
+      bezelRadius: 145,
     ),
     ExternalJackType.dualSwitch: ExternalPedalArtwork(
       asset: 'assets/hardware/external_dual.webp',
       size: Size(1672, 941),
       switches: [Offset(402.5, 485.5), Offset(1265.5, 485.5)],
       indicators: [Offset(405, 285), Offset(1265, 285)],
+      bezelRadius: 127,
     ),
   };
 
@@ -91,6 +93,7 @@ class ExternalPedalArt extends StatelessWidget {
                 key: Key('external_switch_$index'),
                 index: index,
                 selected: index == selected,
+                bezelRadius: art.bezelRadius * fitted.width / art.size.width,
                 onTap: () => onSelect(index),
               ),
             ),
@@ -139,6 +142,7 @@ class ExternalPedalArtwork {
     required this.size,
     required this.switches,
     required this.indicators,
+    required this.bezelRadius,
   });
 
   /// The bundled picture.
@@ -152,6 +156,10 @@ class ExternalPedalArtwork {
 
   /// The centre of each contact indicator.
   final List<Offset> indicators;
+
+  /// The radius of each switch's metal bezel, measured from the switch
+  /// centre to the bezel's outer edge.
+  final double bezelRadius;
 }
 
 /// A hit target over one switch, with its name under it.
@@ -159,12 +167,17 @@ class _Target extends StatelessWidget {
   const _Target({
     required this.index,
     required this.selected,
+    required this.bezelRadius,
     required this.onTap,
     super.key,
   });
 
   final int index;
   final bool selected;
+
+  /// The switch bezel's radius as drawn, which the name clears.
+  final double bezelRadius;
+
   final VoidCallback onTap;
 
   @override
@@ -200,10 +213,15 @@ class _Target extends StatelessWidget {
                   ),
                 ),
               ),
+              // The name sits under the bezel, clear of it, not on it
+              // (#1590 PED-2).
               Positioned(
                 left: 0,
                 right: 0,
-                top: ExternalPedalArt._targetSize - 2,
+                top:
+                    ExternalPedalArt._targetSize / 2 +
+                    bezelRadius +
+                    context.spacing.sm,
                 child: ExcludeSemantics(
                   child: AppText(
                     label,
