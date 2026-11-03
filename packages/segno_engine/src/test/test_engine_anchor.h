@@ -201,6 +201,38 @@ static void test_anchor_offset_survives_stop_all_at_half_speed(void) {
     CHECK(fabsf(out[f] - (anchor_chords[bar] + anchor_melody[(bar + 2) % 4])) <
           1e-5f);
   }
+
+  /* A Redo from the held rig restarts the loop the same way. */
+  CHECK(le_engine_undo(e, 2) == LE_OK);
+  drain(e);
+  anchor_stop_all(e, 2);
+  CHECK(le_engine_redo(e, 2) == LE_OK); /* unparks the rest with it */
+  drain(e);
+  process_const(e, 0.0f, 8 * LOOP_N, out);
+  for (int f = 0; f < 8 * LOOP_N; f += 2) {
+    const int bar = (f / 2) / LOOP_N;
+    CHECK(fabsf(out[f] - (anchor_chords[bar] + anchor_melody[(bar + 2) % 4])) <
+          1e-5f);
+  }
+  le_engine_destroy(e);
+}
+
+/* A Once take is launched, not placed (#854): after Stop-all it plays its
+ * whole take from its first bar, as a relaunch does, rather than the bars
+ * left before its lap edge. */
+static void test_anchor_once_take_restarts_at_its_top(void) {
+  printf("test_anchor_once_take_restarts_at_its_top\n");
+  le_engine* e = anchor_rig();
+  CHECK(le_engine_set_one_shot(e, 2, 1) == LE_OK);
+  drain(e);
+  anchor_stop_all(e, 3);
+  anchor_play_all(e, 3);
+  float out[4 * LOOP_N];
+  process_const(e, 0.0f, 4 * LOOP_N, out);
+  for (int f = 0; f < 4 * LOOP_N; ++f) {
+    const int bar = f / LOOP_N;
+    CHECK(fabsf(out[f] - (anchor_chords[bar] + anchor_melody[bar])) < 1e-5f);
+  }
   le_engine_destroy(e);
 }
 
@@ -373,6 +405,7 @@ static void test_anchor_perf_render_arm_image(void) {
 static void run_anchor_tests(void) {
   test_anchor_offset_survives_resets();
   test_anchor_offset_survives_stop_all_at_half_speed();
+  test_anchor_once_take_restarts_at_its_top();
   test_anchor_mode_switch_recounts_laps();
   test_anchor_undo_behind_a_queued_redo();
   test_anchor_import_contract();

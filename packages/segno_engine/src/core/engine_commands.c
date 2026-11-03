@@ -923,7 +923,12 @@ static void le_mark_state_cmd(le_track* t, int32_t target) {
   t->pending_target = target;
   t->pending_len = 0; /* the posters that restore a length set it after */
   t->pending_master_len = 0;
-  t->pending_anchor = -1; /* and the posters that restore a take, its lap */
+}
+
+/* Notes the lap a just-marked restore places the take on (#854). */
+static void le_mark_restore_anchor(le_track* t, int32_t anchor) {
+  t->pending_anchor = anchor;
+  t->pending_anchor_cmd = t->state_cmds_posted;
 }
 
 /* Marks a successfully posted command that EMPTIES the track: the state flip
@@ -3106,7 +3111,7 @@ static int32_t le_restore_clear(le_engine* engine, int32_t channel) {
   t->outstanding_count = 0;
   le_mark_state_cmd(t, e.state);
   t->pending_len = e.len; /* what the restore will publish */
-  t->pending_anchor = e.anchor;
+  le_mark_restore_anchor(t, e.anchor);
   t->pending_master_len = le_restore_master_len(engine, e.len, e.master_len);
   /* Length and multiple are DELIBERATELY not stored control-side here, unlike
    * the paths that empty a track. Those publish len 0 up front so a poll can
@@ -3239,9 +3244,8 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
    * has not published its lap yet; the one it was posted with is the take's. */
   le_hist_entry base = le_hist_layer(load_i32(&t->lanes[0].a_live));
   const int restoring =
-      t->state_cmds_posted >
-          atomic_load_explicit(&t->a_state_acks, memory_order_acquire) &&
-      t->pending_anchor >= 0;
+      atomic_load_explicit(&t->a_state_acks, memory_order_acquire) <
+      t->pending_anchor_cmd;
   base.anchor = restoring ? t->pending_anchor : load_i32(&t->a_anchor);
   if (le_push(engine, LE_CMD_UNDO_TO_EMPTY, channel, 0.0f) != LE_OK) {
     return LE_ERR_INVALID;
@@ -3360,7 +3364,7 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
     le_mark_state_cmd(t, LE_TRACK_PLAYING);
     t->pending_len = len;
     t->pending_master_len = le_restore_master_len(engine, len, 0);
-    t->pending_anchor = anchor;
+    le_mark_restore_anchor(t, anchor);
     le_track_set_len(t, len);
     store_i32(&t->a_redo_depth, t->redo_count);
     return LE_OK;

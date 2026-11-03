@@ -93,11 +93,16 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   `LE_CMD_REDO_FROM_EMPTY` / `LE_EVT_TAKE_CANCELLED` carry it in the
   `restore` payload; an undo behind a queued restore files the lap that
   restore carries (`pending_anchor`). A mode switch keeps it between
-  shared-clock modes, counted again in the new base's laps when the base
-  changes. At another Speed a restart parks the head so the take starts on
-  the image frame it reads at 1x (`le_track_park_head`), so the offset holds
-  at 1/2x too. A Session save keeps the lap within the multiple it pairs
-  with.
+  shared-clock modes, counted again in the take's new multiple when the
+  base changes. At another Speed a restart (the hold, a reopen, a commit, a
+  restore or redo into a held rig) parks the head so the take starts on the
+  image frame it reads at 1x (`le_track_park_head`), so the offset holds at
+  1/2x too. A Once take is launched, not placed: a restart starts it at its
+  first bar, as a relaunch does. A Session save keeps the lap within the
+  multiple it pairs with.
+- Not placed: a restore or redo into a running rig at a Speed other than
+  1x reads from origin 0, as before; the takes around it carry origins from
+  the Speed change, and there is no common reference to place it against.
 - The DAW export places an arm-time image at its anchor: the performance
   manifest's arm `tracks[]` carry `anchorLap` when nonzero.
 - Native test: `test_engine_anchor.h` (a 4-bar take on bar 1 and one on bar

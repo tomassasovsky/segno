@@ -1689,8 +1689,11 @@ typedef struct le_track {
                             * (0 for a command that empties the track) */
   int32_t pending_master_len; /* control: the master grid that command
                                * re-establishes (0: leaves it as published) */
-  int32_t pending_anchor; /* control: the lap that command places the take
-                           * on (#854); -1: the published a_anchor */
+  /* control: the lap the last posted restore places the take on (#854), and
+   * that restore's state_cmds_posted ticket: until a_state_acks reaches it,
+   * the published a_anchor still reads the empty track's 0. */
+  int32_t pending_anchor;
+  int pending_anchor_cmd;
   /* Control-only ticket (commands_posted) of the last command whose
    * application empties this track. a_commands_published at or past it proves
    * the callback block that applied it has completed — so no pointer that
