@@ -84,12 +84,14 @@ static inline void le_svf_tick(float x, float a1, float a2, float a3,
 /* At 96 kHz the EQ's bands and the other kinds' filter sections (#1547)
  * run their 48 kHz designs on every other sample, each of the two
  * interleaved phases with its own state: that is H48(z^2), which below
- * 24 kHz is exactly the 48 kHz response, cramping and all. Above 24 kHz it
- * mirrors what is below, so it passes what a signal holds there as the
- * 48 kHz design passes its mirror; the sections sit where the signal is
- * already band-limited (after an oversampled curve, or on a recording).
- * The phases count the engine's frames, so a section's state never swaps
- * phase. LE_RS_PH is the most phases a section runs. */
+ * 24 kHz is exactly the 48 kHz response, including its compression toward
+ * 24 kHz. Above 24 kHz it mirrors what is below: it passes what a signal
+ * holds there at the gain the 48 kHz design has at the mirror image, so a
+ * curve's output first passes a half-band (le_hb). Only linear sections run
+ * this way: a nonlinear kernel would run as two unrelated ones (the LPF and
+ * the Degrade run at 48 kHz instead). The phases count the engine's frames,
+ * so a section's state never swaps phase; a new rate clears them.
+ * LE_RS_PH is the most phases a section runs. */
 #define LE_RS_PH 2
 static inline int le_rs_phases(int sr) { return sr == 96000 ? 2 : 1; }
 /* The rate a section is designed at: 48 kHz at 96 kHz, else the rate. */
@@ -2889,6 +2891,13 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
       line->k = le_fx_smooth_k(rate);
       line->nph = le_rs_phases(rate);
       line->ph = 0;
+      le_mdly_bq* sec[9] = {&line->voice[0],  &line->voice[1],  &line->voice2[0],
+                            &line->voice2[1], &line->out_hp[0], &line->out_hp[1],
+                            &line->lp_out[0], &line->lp_out[1], &line->lp_loop};
+      for (int i = 0; i < 9; ++i) {
+        memset(sec[i]->z1, 0, sizeof(sec[i]->z1));
+        memset(sec[i]->z2, 0, sizeof(sec[i]->z2));
+      }
       le_mdly_bq_rbj(&line->lp_loop, 3, LE_MDLY_LOOP_LP_HZ, 0.707, 0.0, rate);
       le_mdly_pole_set(&line->dc, LE_MDLY_DC_HZ, rate, 1);
       for (int c = 0; c < 2; ++c) {
@@ -3881,7 +3890,7 @@ void le_ladder_correction_for_test(double hz, double k, int sr, double c[5]);
 /* The LPF kind's ladder (fx_lpf_*) at [sr], corner [hz] and feedback [k]:
  * the correction biquad that runs after it, so the two have the ladder's
  * 48 kHz response; the identity at 48 kHz, and at 96 kHz, where the ladder
- * runs its 48 kHz design on alternate samples.
+ * runs at 48 kHz (le_lpf_halved).
  * An oscillating ladder takes the correction of the edge, k = 3.99. */
 static void le_ladder_correction(double hz, double k, int sr, double c[5]) {
   c[0] = 1.0;
@@ -3960,6 +3969,7 @@ static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
   if (new_rate) {
     q->nph = le_rs_phases(sr);
     q->ph = 0;
+    for (int b = 0; b < LE_EQ_BANDS; ++b) memset(q->band[b].z, 0, sizeof(q->band[b].z));
   }
   /* The targets change only with the settings; a glide reuses them. */
   if (f & LE_FX_DYN_CHANGED) {
@@ -5015,6 +5025,8 @@ static void fx_mod_update(void* ks, const float* p, int sr, int settle) {
     le_cho_lowpass(q->cho_lp, rate);
     q->nph = le_rs_phases(rate);
     q->ph = 0;
+    memset(q->fla_hz, 0, sizeof(q->fla_hz));
+    memset(q->fla_lz, 0, sizeof(q->fla_lz));
     double c[5];
     le_rate_design(LE_RS_HP1, LE_FLA_HP_HZ, 0.0, 0.0, rate, c);
     for (int i = 0; i < 5; ++i) q->fla_hp[i] = (float)c[i];
@@ -5533,7 +5545,8 @@ static int le_cab_pre(int sr);
 
 /* The latency of a kind that oversamples, for the effect table: the
  * oversampler's; at 96 kHz the half-band its curve's output passes on the
- * way to the 48 kHz sections (le_hb; the Vinyl has none); and the frames
+ * way to the 48 kHz sections (le_hb; the Vinyl has none, the Amp+Cab two,
+ * one after each curve); and the frames
  * the Amp+Cab's resampled cabinet starts late (le_cab_pre). */
 static int fx_os_latency_vt(const le_fx_state* fx, int slot, int32_t type,
                             int sr) {
@@ -5541,6 +5554,7 @@ static int fx_os_latency_vt(const le_fx_state* fx, int slot, int32_t type,
   (void)slot;
   int lat = le_os_latency(sr, le_os_stages(type, sr));
   if (type != LE_FX_VINYL) lat += le_hb_latency(sr);
+  if (type == LE_FX_AMP_CAB) lat += le_hb_latency(sr); /* its first curve's */
   if (type == LE_FX_AMP_CAB) lat += le_cab_pre(sr);
   return lat;
 }
@@ -5629,6 +5643,9 @@ static void fx_overdrive_update(void* ks, const float* p, int sr, int settle) {
     le_os_design(&o->os, sr, le_os_stages(LE_FX_OVERDRIVE, sr));
     le_hb_design(&o->hb, sr);
     o->nph = le_rs_phases(sr);
+    memset(o->z_pk, 0, sizeof(o->z_pk));
+    memset(o->z_tone, 0, sizeof(o->z_tone));
+    memset(o->z_lp2, 0, sizeof(o->z_lp2));
     o->ph = 0;
     o->hp_g1 = le_onepole_g1(LE_OD_HP_HZ, sr);
     double c[5];
@@ -6001,7 +6018,8 @@ typedef struct le_fx_amp {
   float fre[LE_CAB_MAX_PARTS][LE_CAB_NB], fim[LE_CAB_MAX_PARTS][LE_CAB_NB];
   float wr[LE_CAB_NB], wi[LE_CAB_NB], tmp[2 * LE_CAB_B];
   le_os os; /* the clipper's oversampling (mono: channel 0) */
-  le_hb hb; /* at 96 kHz, the clipper's output under 24 kHz */
+  le_hb hbq; /* at 96 kHz, the first curve's output under 24 kHz */
+  le_hb hb;  /* and the clipper's */
 } le_fx_amp;
 
 static void le_amp_design(int kind, double hz, double db, double q, int sr,
@@ -6042,6 +6060,10 @@ static void le_amp_reset(le_fx_amp* a) {
   memset(a->fre, 0, sizeof(a->fre));
   memset(a->fim, 0, sizeof(a->fim));
   le_os_clear(&a->os);
+  memset(a->hbq.p, 0, sizeof(a->hbq.p));
+  memset(a->hbq.a1, 0, sizeof(a->hbq.a1));
+  memset(a->hb.p, 0, sizeof(a->hb.p));
+  memset(a->hb.a1, 0, sizeof(a->hb.a1));
   a->hp = a->j = a->fpos = 0;
   a->xf = 0;
   a->cab_from = a->cab;
@@ -6064,7 +6086,13 @@ static void le_amp_update(le_fx_amp* a, const float* p, int sr) {
     a->k = le_fx_smooth_k(sr);
     le_os_design(&a->os, sr, le_os_stages(LE_FX_AMP_CAB, sr));
     le_hb_design(&a->hb, sr);
+    le_hb_design(&a->hbq, sr);
     a->nph = le_rs_phases(sr);
+    memset(a->z_pre, 0, sizeof(a->z_pre));
+    memset(a->z_m, 0, sizeof(a->z_m));
+    memset(a->z_dhs, 0, sizeof(a->z_dhs));
+    memset(a->z_tone, 0, sizeof(a->z_tone));
+    memset(a->z_lp, 0, sizeof(a->z_lp));
     a->ph = 0;
     le_amp_design(LE_EQ_LOWCUT, LE_AMP_HP_HZ, 0.0, LE_AMP_HP_Q, sr, a->pre_hp);
     le_amp_design(LE_EQ_LOMID, LE_AMP_PK1_HZ, LE_AMP_PK1_DB, LE_AMP_PK1_Q, sr,
@@ -6238,7 +6266,7 @@ static void fx_amp_cab_process(le_fx_state* fx, int slot, int sr, int cap,
   u = le_biquad_tick(a->pre_pk1, a->z_pre[1][ph], u);
   u = le_biquad_tick(a->pre_pk2, a->z_pre[2][ph], u);
   u *= a->ga_lin;
-  float v = u + a->kq * u * u;
+  float v = le_hb_tick(&a->hbq, 0, ph, u + a->kq * u * u);
   v = le_amp_hp1_tick(a->dc_b0, a->dc_a1, a->z_dc, v);
   v = le_biquad_tick(a->m_ls, a->z_m[0][ph], v);
   v = le_biquad_tick(a->m_pk, a->z_m[1][ph], v);
@@ -6364,6 +6392,7 @@ static void fx_distortion_update(void* ks, const float* p, int sr, int settle) {
     le_os_design(&q->os, sr, le_os_stages(LE_FX_DISTORTION, sr));
     le_hb_design(&q->hb, sr);
     q->nph = le_rs_phases(sr);
+    memset(q->z, 0, sizeof(q->z));
     q->ph = 0;
     double mag = 1.0;
     /* The sections are designed at le_rs_design_rate. */
@@ -7002,13 +7031,38 @@ typedef struct le_fx_lpf {
   float g4;    /* G^4 */
   float inv;   /* 1 / (1 + k G^4) */
   float gh;    /* the high-pass one-pole's G */
-  float s[2][LE_RS_PH][4]; /* the ladder per phase (le_rs_phases) */
-  int32_t ph, nph;
+  float s[2][4];
   float sh[2];
   float cor[5];      /* after the ladder: its 48 kHz response (le_rate_design) */
   float cor_inc[5];  /* its step a frame toward the update's, while g_n runs */
   float z_cor[2][2];
+  int32_t cor_on;    /* whether the rate has a correction (44.1 kHz) */
+  /* At 96 kHz the kernel runs at 48 kHz (le_lpf_halved): each pair of
+   * frames goes down through the oversampler's half-band, and its one
+   * output back up, played over the next pair. A nonlinear ladder cannot
+   * run as two interleaved 48 kHz ones (le_rs_phases): oscillating, each
+   * would settle at its own phase. */
+  int32_t halved, odd;
+  le_os os;
+  float in2[2][2], out2[2][2];
 } le_fx_lpf;
+
+/* Whether the LPF runs its kernel at half the rate [sr]: at 96 kHz. */
+static int le_lpf_halved(int sr) { return sr == 96000; }
+
+/* The frames the LPF delays everything at [sr]: at 96 kHz the half-band's
+ * way down and up (le_os_latency, at 48 kHz) and the pair it waits for. */
+static int le_lpf_latency(int sr) {
+  return le_lpf_halved(sr) ? 2 * le_os_latency(sr / 2, 1) + 2 : 0;
+}
+
+static int fx_lpf_latency_vt(const le_fx_state* fx, int slot, int32_t type,
+                             int sr) {
+  (void)fx;
+  (void)slot;
+  (void)type;
+  return le_lpf_latency(sr);
+}
 
 /* The fastest the LFO's offset moves, octaves a second: above the fastest
  * sweep (1/16 at 300 BPM, Depth 100 %: about 900), so a sweep runs as
@@ -7037,31 +7091,39 @@ static void fx_lpf_update(void* ks, const float* p, int sr, int settle) {
    * again, so it starts on its own. */
   if (q->k > 4.0f) {
     for (int ch = 0; ch < 2; ++ch) {
-      for (int p2 = 0; p2 < LE_RS_PH; ++p2) {
-        const float* st = q->s[ch][p2];
-        if (fabsf(st[0]) < LE_LPF_DEAD && fabsf(st[1]) < LE_LPF_DEAD &&
-            fabsf(st[2]) < LE_LPF_DEAD && fabsf(st[3]) < LE_LPF_DEAD) {
-          q->s[ch][p2][0] = LE_LPF_SEED;
-        }
+      const float* st = q->s[ch];
+      if (fabsf(st[0]) < LE_LPF_DEAD && fabsf(st[1]) < LE_LPF_DEAD &&
+          fabsf(st[2]) < LE_LPF_DEAD && fabsf(st[3]) < LE_LPF_DEAD) {
+        q->s[ch][0] = LE_LPF_SEED;
       }
     }
   }
   const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_LPF_PARAMS_N, sr, settle);
   if (!f) return;
   const float k = settle ? 1.0f : q->h.k;
-  if (settle) {
-    for (int p2 = 0; p2 < LE_RS_PH; ++p2) q->s[0][p2][0] = q->s[1][p2][0] = LE_LPF_SEED;
-  }
+  if (settle) q->s[0][0] = q->s[1][0] = LE_LPF_SEED;
   if (f & LE_FX_DYN_CHANGED) {
     const double v = p[1] < 0.0f ? 0.0 : p[1] > 1.0f ? 1.0 : p[1];
     const double ratio = LE_LPF_FC_LO + (LE_LPF_FC_HI - LE_LPF_FC_LO) * v;
     q->tgt = (float)log2(ratio * le_fx_desc_value(&LE_FX_LPF_PARAMS[0], p[0]));
     q->ktgt = (float)(LE_LPF_K0 + LE_LPF_K1 * pow(v, LE_LPF_K_POW));
   }
+  /* The rate the kernel runs at. */
+  const int kr = le_lpf_halved(sr) ? sr / 2 : sr;
+  /* Kernel frames to the next update. */
+  const int ticks = le_lpf_halved(sr) ? LE_FX_UPDATE_FRAMES / 2 : LE_FX_UPDATE_FRAMES;
   if (f & LE_FX_DYN_NEW_RATE) {
-    q->nph = le_rs_phases(sr);
-    q->ph = 0;
-    const double gh = le_prewarp(LE_LPF_HP_HZ, sr);
+    q->halved = le_lpf_halved(sr);
+    q->odd = 0;
+    if (q->halved) le_os_design(&q->os, kr, 1);
+    memset(q->in2, 0, sizeof(q->in2));
+    memset(q->out2, 0, sizeof(q->out2));
+    memset(q->s, 0, sizeof(q->s));
+    q->s[0][0] = q->s[1][0] = LE_LPF_SEED;
+    q->sh[0] = q->sh[1] = 0.0f;
+    memset(q->z_cor, 0, sizeof(q->z_cor));
+    q->cor_on = sr == 44100;
+    const double gh = le_prewarp(LE_LPF_HP_HZ, kr);
     q->gh = (float)(gh / (1.0 + gh));
     q->lfo_max = (float)(LE_LPF_LFO_MAX_OCT_S * (double)LE_FX_UPDATE_FRAMES /
                          (double)sr);
@@ -7104,8 +7166,7 @@ static void fx_lpf_update(void* ks, const float* p, int sr, int settle) {
   if (q->l2 != l2_was || q->k != k_was || q->lfo != lfo_was || settle ||
       (f & LE_FX_DYN_CHANGED) || q->g_n > 0) {
     const double hz = exp2((double)(q->l2 + q->lfo));
-    /* 96 kHz runs the 48 kHz ladder on alternate samples (le_rs_phases). */
-    const double g = le_prewarp(hz, le_rs_design_rate(sr));
+    const double g = le_prewarp(hz, kr);
     const double G = g / (1.0 + g);
     double c[5];
     le_ladder_correction(hz, (double)q->k, sr, c);
@@ -7116,8 +7177,8 @@ static void fx_lpf_update(void* ks, const float* p, int sr, int settle) {
     } else {
       /* The samples up to the next update ramp G onto it, and the
        * correction with it. */
-      q->g_inc = (float)((G - (double)q->g) / (double)LE_FX_UPDATE_FRAMES);
-      q->g_n = LE_FX_UPDATE_FRAMES;
+      q->g_inc = (float)((G - (double)q->g) / (double)ticks);
+      q->g_n = ticks;
       if (q->g + q->g_inc == q->g) { /* closer than a step can show */
         le_lpf_coefs(q, G);
         q->g_inc = 0.0f;
@@ -7139,10 +7200,8 @@ static void fx_lpf_beat(void* ks, double beat) {
   ((le_fx_lpf*)ks)->beat = beat;
 }
 
-static void fx_lpf_kprocess(void* ks, float* l, float* r) {
-  le_fx_lpf* q = (le_fx_lpf*)ks;
-  const float amount = le_fx_glide_next(&q->amount);
-  float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
+/* One frame of the kernel at its rate, [io] in and out. */
+static void le_lpf_tick(le_fx_lpf* q, float amount, float* io) {
   if (amount <= 0.0f) {
     /* Off: the identity, with the filter's memory cleared (but for the
      * seed) so it starts clean when it comes back, and any ramp of G
@@ -7155,10 +7214,8 @@ static void fx_lpf_kprocess(void* ks, float* l, float* r) {
     }
     memset(q->s, 0, sizeof(q->s));
     memset(q->z_cor, 0, sizeof(q->z_cor));
-    for (int p2 = 0; p2 < LE_RS_PH; ++p2) q->s[0][p2][0] = q->s[1][p2][0] = LE_LPF_SEED;
+    q->s[0][0] = q->s[1][0] = LE_LPF_SEED;
     q->sh[0] = q->sh[1] = 0.0f;
-    *l = io[0];
-    *r = io[1];
     return;
   }
   if (q->g_n > 0) {
@@ -7169,7 +7226,7 @@ static void fx_lpf_kprocess(void* ks, float* l, float* r) {
   const float G = q->g;
   const float fb = q->k;
   for (int ch = 0; ch < 2; ++ch) {
-    float* s = q->s[ch][q->ph];
+    float* s = q->s[ch];
     /* The high-pass: the input less a one-pole low-pass of it. */
     const float vh = (io[ch] - q->sh[ch]) * q->gh;
     const float low = vh + q->sh[ch];
@@ -7188,12 +7245,34 @@ static void fx_lpf_kprocess(void* ks, float* l, float* r) {
       s[i] = o + vv;
       u = o;
     }
-    u = le_biquad_tick(q->cor, q->z_cor[ch], u);
+    if (q->cor_on) u = le_biquad_tick(q->cor, q->z_cor[ch], u);
     io[ch] = amount >= 1.0f ? u : io[ch] + amount * (u - io[ch]);
   }
-  if (++q->ph >= q->nph) q->ph = 0;
-  *l = io[0];
-  *r = io[1];
+}
+
+static void fx_lpf_kprocess(void* ks, float* l, float* r) {
+  le_fx_lpf* q = (le_fx_lpf*)ks;
+  const float amount = le_fx_glide_next(&q->amount);
+  float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
+  if (!q->halved) {
+    le_lpf_tick(q, amount, io);
+    *l = io[0];
+    *r = io[1];
+    return;
+  }
+  /* Halved: the pair's first frame waits; on its second the kernel runs
+   * once, and its output comes back up for the next pair. */
+  const int i = q->odd;
+  q->in2[0][i] = io[0];
+  q->in2[1][i] = io[1];
+  *l = q->out2[0][i];
+  *r = q->out2[1][i];
+  q->odd = !i;
+  if (i == 0) return;
+  float x[2];
+  for (int ch = 0; ch < 2; ++ch) x[ch] = le_os_down(&q->os, ch, q->in2[ch]);
+  le_lpf_tick(q, amount, x);
+  for (int ch = 0; ch < 2; ++ch) le_os_up(&q->os, ch, x[ch], q->out2[ch]);
 }
 
 /* ---- Spring (LE_FX_SPRING, #887 part 8) ----
@@ -8588,7 +8667,8 @@ static const le_fx_vtable LE_FX[] = {
     [LE_FX_DEGRADE] = {NULL, fx_degrade_latency_vt, NULL, LE_FX_DEGRADE_PARAMS,
                        LE_FX_F_FREE_RUNNING, sizeof(le_fx_degrade),
                        fx_degrade_update, fx_degrade_kprocess},
-    [LE_FX_LPF] = {NULL, NULL, NULL, LE_FX_LPF_PARAMS, LE_FX_F_FREE_RUNNING,
+    [LE_FX_LPF] = {NULL, fx_lpf_latency_vt, NULL, LE_FX_LPF_PARAMS,
+                   LE_FX_F_FREE_RUNNING,
                    sizeof(le_fx_lpf), fx_lpf_update, fx_lpf_kprocess, NULL,
                    fx_lpf_beat},
     /* The spring drains its tail on bypass, as the delay and reverb do. */
