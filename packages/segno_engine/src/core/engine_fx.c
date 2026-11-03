@@ -5134,9 +5134,10 @@ static void fx_wah_kprocess(void* ks, float* l, float* r) {
  * edge, with as few coefficients as that takes (6 for the first stage at
  * 44.1 and 48 kHz, 3 or 4 after it). It is minimum phase: the whole path
  * runs about 4 frames late at 48 kHz, where a linear-phase FIR of the same
- * stopband ran 33, and its phase turns only near the top of the band,
- * which a drive does not let through anyway. The kind reports that delay
- * as its latency (le_os_latency).
+ * stopband ran 33. Its delay grows toward the top of the band: the 8x path
+ * at 44.1 kHz holds 1 kHz 4.5 frames, 10 kHz 5.3 and 15 kHz 7.2 (at
+ * 96 kHz, 3.5 to 3.8). The kind reports the low-frequency figure as its
+ * latency (le_os_latency).
  *
  * State per channel and stage: each section's last input and output, for
  * the way up and the way down. Nothing is allocated: the arrays are sized
@@ -5185,8 +5186,11 @@ static int le_os_coefs(int sr, int s, float* c) {
   int order = (int)ceil(log(a * a / 16.0) / log(q));
   if ((order & 1) == 0) ++order;
   if (order < 3) order = 3;
-  int n = (order - 1) / 2;
-  if (n > LE_OS_MAX_COEFS) n = LE_OS_MAX_COEFS;
+  /* A band too narrow for LE_OS_MAX_COEFS sections is designed at the
+   * largest order they hold (less attenuation, but a true half-band), never
+   * cut short. */
+  if (order > 2 * LE_OS_MAX_COEFS + 1) order = 2 * LE_OS_MAX_COEFS + 1;
+  const int n = (order - 1) / 2;
   for (int i = 0; i < n; ++i) {
     const double m = (double)(i + 1);
     double num = 0.0, den = 0.0;
@@ -5228,7 +5232,7 @@ static void le_os_clear(le_os* o) {
  * rounded: each stage's half-band delays by the mean of its two paths
  * (a section (c + z^-2) / (1 + c z^-2) by 2 (1 - c) / (1 + c) samples of
  * the upper rate at DC, the odd path one more), once up and once down. */
-static int le_os_latency(int sr, int stages) {
+static int le_os_latency_of(int sr, int stages) {
   double d = 0.0;
   for (int s = 0; s < stages; ++s) {
     float c[LE_OS_MAX_COEFS];
@@ -5239,6 +5243,27 @@ static int le_os_latency(int sr, int stages) {
     d += (t[0] + t[1]) / (double)(1 << s) / 2.0;
   }
   return (int)(d + 0.5);
+}
+
+/* le_os_latency_of, kept per rate once worked out: every enabled
+ * waveshaper asks on each snapshot, and the audio thread on an enable edge,
+ * and the design behind it is a few hundred transcendental operations. Any
+ * thread: two that work out the same entry store the same value. */
+static const int le_os_rates[6] = {44100, 48000, 88200, 96000, 176400, 192000};
+static _Atomic int le_os_lat_memo[6][LE_OS_MAX_STAGES + 1]; /* frames + 1 */
+
+static int le_os_latency(int sr, int stages) {
+  if (stages <= 0) return 0;
+  for (int i = 0; i < 6; ++i) {
+    if (le_os_rates[i] != sr) continue;
+    _Atomic int* m = &le_os_lat_memo[i][stages];
+    const int got = atomic_load_explicit(m, memory_order_relaxed);
+    if (got > 0) return got - 1;
+    const int lat = le_os_latency_of(sr, stages);
+    atomic_store_explicit(m, lat + 1, memory_order_relaxed);
+    return lat;
+  }
+  return le_os_latency_of(sr, stages);
 }
 
 /* [x] through path [p]'s sections (every other coefficient of [c], from
@@ -5277,6 +5302,9 @@ static inline int le_os_up(le_os* o, int ch, float x, float* out) {
  * [in] is used as scratch. */
 static inline float le_os_down(le_os* o, int ch, float* in) {
   int n = 1 << o->stages;
+  /* The paths are recursive: a sample that is not finite would stay in
+   * them, so it goes in as 0. */
+  for (int i = 0; i < n; ++i) in[i] = fx_sanitize(in[i]);
   for (int s = o->stages - 1; s >= 0; --s) {
     n /= 2;
     le_os_path* p = &o->down[ch][s];
@@ -6294,7 +6322,7 @@ static void fx_vinyl_update(void* ks, const float* p, int sr, int settle) {
   }
   if (f & LE_FX_DYN_NEW_RATE) {
     le_os_design(&v->os, rate, le_os_stages(LE_FX_VINYL, rate));
-    le_os_design(&v->os_dry, rate, le_os_stages(LE_FX_VINYL, rate));
+    v->os_dry = v->os; /* the same filters, its own (cleared) state */
     memset(v->z_hp, 0, sizeof(v->z_hp));
     le_amp_hp1(LE_VIN_DC_HZ, rate, &v->dc_b0, &v->dc_a1);
     double c[5];

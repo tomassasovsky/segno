@@ -2259,7 +2259,7 @@ class EngineSnapshot {
   /// Added latency (frames) of the highest-latency audible or monitored lane
   /// chain: its engaged effects summed, the largest chain taken. The octaver
   /// family adds about 25 ms at 48 kHz, the oversampled Overdrive,
-  /// Distortion, Vinyl and Amp+Cab up to 0.8 ms (#1547); `0` when no such
+  /// Distortion, Vinyl and Amp+Cab under 0.1 ms (#1547); `0` when no such
   /// effect is engaged. Purely informational (see
   /// [fxAddedLatencyMs]); never feeds [recordOffsetFrames] or any
   /// compensation.
