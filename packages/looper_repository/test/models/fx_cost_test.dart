@@ -19,13 +19,17 @@ void main() {
 
     test('an entry charges its kind, on or off; PSOLA its own', () {
       final octaver = _fx(TrackEffectType.octaver);
-      expect(fxEntryCostNs(octaver), (69 * 1000 / 64).ceil());
+      final octaverUs = kFxHopCostUs[TrackEffectType.octaver]!;
+      expect(fxEntryCostNs(octaver), (octaverUs * 1000 / 64).ceil());
       expect(
         fxEntryCostNs(octaver.copyWith(enabled: false)),
         fxEntryCostNs(octaver),
       );
       // The Dual Octaver adds its low band to the octaver's vocoder.
-      expect(_cost(TrackEffectType.dualOctaver), (79 * 1000 / 64).ceil());
+      expect(
+        _cost(TrackEffectType.dualOctaver),
+        (kFxHopCostUs[TrackEffectType.dualOctaver]! * 1000 / 64).ceil(),
+      );
       expect(
         _cost(TrackEffectType.dualOctaver),
         greaterThan(fxEntryCostNs(octaver)),
@@ -47,7 +51,11 @@ void main() {
       final octaver = _fx(TrackEffectType.octaver);
       final delay = _fx(TrackEffectType.delay);
       // Half the block: the octaver's quarter-frame lands in half the time.
-      expect(fxEntryCostNs(octaver, period: 32), (69 * 1000 / 32).ceil());
+      final octaverUs = kFxHopCostUs[TrackEffectType.octaver]!;
+      expect(
+        fxEntryCostNs(octaver, period: 32),
+        (octaverUs * 1000 / 32).ceil(),
+      );
       // A longer block runs several hop stages: no cheaper per frame.
       expect(fxEntryCostNs(octaver, period: 256), fxEntryCostNs(octaver));
       expect(fxEntryCostNs(delay, period: 32), fxEntryCostNs(delay));
@@ -137,9 +145,8 @@ void main() {
   });
 
   group('effects on more than one core (#1515)', () {
-    // Ed's Rack, the plan's unit (section 7): 3,268 ns a frame at 96 kHz,
-    // 2,665 in the plan, before its Overdrive and Amp+Cab ran oversampled
-    // (#1547).
+    // Ed's Rack, the plan's unit (section 7): 3,162 ns a frame at 96 kHz
+    // on the console's own table (#1508), 2,665 in the plan.
     final rack = [
       for (final type in [
         TrackEffectType.dualOctaver,
@@ -171,9 +178,9 @@ void main() {
       return racks;
     }
 
-    test("Ed's Rack charges what the plan's table assumes", () {
-      expect(rackNs, 3268);
-      expect(fxBudgetNs(96000), 7192);
+    test("Ed's Rack charges what the console's table makes it", () {
+      expect(rackNs, 3162);
+      expect(fxBudgetNs(96000), 7145);
     });
 
     test('with no workers the load is every chain summed', () {
