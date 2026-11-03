@@ -28,9 +28,9 @@ settings and the RT environment, and starts `/usr/bin/segno` with
 - **Roles.** Each engine learns its role from `--segno-screen=`. The two talk
   through the Dart VM they share (`lib/visualizer/screen_link.dart`), and the
   readout stays blank until the main screen shows it.
-- **Renderer.** Both views pass `--enable-impeller=false`: Impeller draws the
-  Material icon font as empty boxes on this stack (#897), so the engines use
-  Skia.
+- **Renderer.** Both views pass `--enable-impeller=true` and draw with
+  Impeller over OpenGL ES. The empty-box icons that kept the console on Skia
+  were seen on the old GTK runner, not on this stack (#1555).
 - **Touch.** The readout's view names its touch controller with
   `touch_device`; touch that matches no view goes to the main screen.
 - **No seat.** Both views set `no_seat = true` and open the DRM master and the
