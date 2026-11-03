@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
