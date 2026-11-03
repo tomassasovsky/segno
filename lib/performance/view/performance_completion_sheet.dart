@@ -274,7 +274,7 @@ class _PerformanceCompletionSheetState
       ),
       PerformanceRecordDone() when state.hadGlitch => (
         l10n.perfCaptureGlitch,
-        ConsoleBannerTone.pending,
+        ConsoleBannerTone.warning,
       ),
       PerformanceRecordDone() => (null, ConsoleBannerTone.steady),
     };

@@ -9,6 +9,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_select.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/settings/view/about_settings_page.dart';
 import 'package:segno/settings/view/settings_fact_panel.dart';
 import 'package:segno/settings/view/updates_usb_panel.dart';
@@ -614,38 +615,18 @@ class _RollbackNotice extends StatelessWidget {
   final VoidCallback onDismiss;
 
   @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return Container(
-      key: const Key('updates_rollback_notice'),
-      width: AboutSettingsPage.columnWidth,
-      padding: const EdgeInsets.fromLTRB(27, 16, 16, 16),
-      decoration: BoxDecoration(
-        color: surface.warning.withValues(alpha: 0.14),
-        border: Border(left: BorderSide(color: surface.warning, width: 3)),
+  Widget build(BuildContext context) => SizedBox(
+    key: const Key('updates_rollback_notice'),
+    width: AboutSettingsPage.columnWidth,
+    child: InlineNotice(
+      message: text,
+      action: LoopOutlinedButton(
+        key: const Key('updates_rollback_dismiss'),
+        width: 160,
+        height: 56,
+        label: context.l10n.updatesPageDismiss,
+        onTap: onDismiss,
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: AppText(
-              text,
-              style: TextStyle(
-                color: surface.textPrimary,
-                fontSize: 24,
-                height: 1.2,
-              ),
-            ),
-          ),
-          const SizedBox(width: 24),
-          LoopOutlinedButton(
-            key: const Key('updates_rollback_dismiss'),
-            width: 160,
-            height: 56,
-            label: context.l10n.updatesPageDismiss,
-            onTap: onDismiss,
-          ),
-        ],
-      ),
-    );
-  }
+    ),
+  );
 }
