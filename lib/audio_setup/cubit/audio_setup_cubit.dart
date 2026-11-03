@@ -105,6 +105,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// the last device name seen while present, so a disconnect banner can name
   /// the device even after the snapshot stops reporting it.
   bool? _lastDevicePresent;
+
   /// The pin the interface last answered to while present, and its name.
   (String, String) _lastPresent = ('', '');
 
