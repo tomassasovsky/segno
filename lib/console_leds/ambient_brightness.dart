@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:settings_repository/settings_repository.dart';
+
 /// Maps the light sensor's reading to a brightness, on a perceptual scale,
 /// between two calibrated readings (#1564).
 ///
@@ -55,7 +57,10 @@ class AmbientBrightnessCurve {
 
 /// The console LEDs' curve: about a third of full on a dark stage, full in a
 /// bright room, never brighter than the console has always been.
-const consoleLedCurve = AmbientBrightnessCurve(floor: 0.35, minimum: 0.2);
+const consoleLedCurve = AmbientBrightnessCurve(
+  floor: 0.35,
+  minimum: ConsoleLedSettings.minBrightness,
+);
 
 /// The board's linear LED level (`1..255`) for a perceptual [brightness]
 /// (`0..1`). The LEDs' output is linear in the level and the eye's response

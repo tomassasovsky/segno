@@ -24,9 +24,9 @@ class ConsoleLedsCubit extends Cubit<ConsoleLedsState> {
     required PedalRepository pedal,
   }) : _settings = settings,
        _pedal = pedal,
-       super(ConsoleLedsState(light: pedal.ambientLight)) {
+       super(const ConsoleLedsState().withLight(pedal.ambientLight)) {
     _lightSub = pedal.ambientLightChanges.listen(
-      (light) => _show(state.copyWith(light: () => light)),
+      (light) => _show(state.withLight(light)),
     );
   }
 
@@ -41,16 +41,24 @@ class ConsoleLedsCubit extends Cubit<ConsoleLedsState> {
     _show(state.copyWith(settings: settings));
   }
 
-  /// Sets the manual brightness, `[ConsoleLedSettings.minBrightness, 1]`.
-  /// Throws when the save fails; the brightness applies either way.
-  Future<void> setBrightness(double brightness) => _save(
-    state.settings.copyWith(
-      brightness: brightness.clamp(
-        ConsoleLedSettings.minBrightness,
-        ConsoleLedSettings.maxBrightness,
-      ),
-    ),
-  );
+  /// Sets the manual brightness, `[ConsoleLedSettings.minBrightness, 1]`,
+  /// and saves it. Throws when the save fails; the brightness applies either
+  /// way.
+  Future<void> setBrightness(double brightness) =>
+      _save(_withBrightness(brightness));
+
+  /// Shows a manual brightness without saving it: a slider being dragged or
+  /// turned. [setBrightness] commits it.
+  void previewBrightness(double brightness) =>
+      _show(state.copyWith(settings: _withBrightness(brightness)));
+
+  ConsoleLedSettings _withBrightness(double brightness) =>
+      state.settings.copyWith(
+        brightness: brightness.clamp(
+          ConsoleLedSettings.minBrightness,
+          ConsoleLedSettings.maxBrightness,
+        ),
+      );
 
   /// Turns Automatic on or off. On is refused while no sensor is fitted;
   /// off always works.
@@ -60,9 +68,15 @@ class ConsoleLedsCubit extends Cubit<ConsoleLedsState> {
   }
 
   /// Sets the automatic brightness's brighter (+) or darker (-) shift,
-  /// `-1..1`.
-  Future<void> setOffset(double offset) =>
-      _save(state.settings.copyWith(offset: offset.clamp(-1.0, 1.0)));
+  /// `-1..1`, and saves it.
+  Future<void> setOffset(double offset) => _save(_withOffset(offset));
+
+  /// Shows an offset without saving it; [setOffset] commits it.
+  void previewOffset(double offset) =>
+      _show(state.copyWith(settings: _withOffset(offset)));
+
+  ConsoleLedSettings _withOffset(double offset) =>
+      state.settings.copyWith(offset: offset.clamp(-1.0, 1.0));
 
   /// Takes the current reading as the dark calibration point, when
   /// [ConsoleLedsState.canSetDark].

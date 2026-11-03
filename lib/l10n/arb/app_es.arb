@@ -2836,6 +2836,5 @@
     "consoleLedsBrightRow": "Sala iluminada",
     "consoleLedsNowRow": "LEDs ahora",
     "consoleLedsCalibrate": "Calibrar",
-    "consoleLedsCalibrateNote": "En una sala oscura, con las luces como en el escenario, esperá 10 segundos y tocá Sala oscura. Después hacé lo mismo en una sala iluminada. Cada uno toma la lectura de arriba.",
-    "consoleLedsCalibrateTooClose": "Una sala iluminada tiene que leer al menos el doble que la oscura. Fijá primero la sala oscura."
+    "consoleLedsCalibrateNote": "En una sala oscura, con las luces como en el escenario, esperá 10 segundos y tocá Sala oscura. Después hacé lo mismo en una sala iluminada. Cada uno toma la Lectura de la derecha, y está disponible cuando esa lectura es al menos el doble o la mitad del otro punto."
 }

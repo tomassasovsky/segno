@@ -124,8 +124,8 @@ void _edit(
   }());
 }
 
-/// Manual or Automatic, the slider for the one that applies, and a note on
-/// what it does or why Automatic is unavailable.
+/// Manual or Automatic, the slider for the one that applies, a note on what
+/// it does or why Automatic is unavailable, and the two calibration buttons.
 class _BrightnessColumn extends StatelessWidget {
   const _BrightnessColumn();
 
@@ -147,10 +147,13 @@ class _BrightnessColumn extends StatelessWidget {
           .round() /
       100;
 
-  /// The offset at slider position [travel], to the whole percent of its
-  /// span.
+  /// Brightness points a full offset moves.
+  static final int _offsetPoints = (consoleLedCurve.offsetSpan * 100).round();
+
+  /// The offset at slider position [travel], in whole points of brightness.
   static double offsetAt(double travel) =>
-      ((travel.clamp(0.0, 1.0) * 2 - 1) * 20).round() / 20;
+      ((travel.clamp(0.0, 1.0) * 2 - 1) * _offsetPoints).round() /
+      _offsetPoints;
 
   @override
   Widget build(BuildContext context) {
@@ -159,11 +162,13 @@ class _BrightnessColumn extends StatelessWidget {
     final state = context.watch<ConsoleLedsCubit>().state;
     final settings = state.settings;
     final automatic = settings.automatic;
+    // The slider sets what the LEDs follow now: the offset while Automatic
+    // follows the sensor, else the manual brightness in force.
+    final offsetSlider = state.followingLight;
     String percent(double travel) =>
         l10n.trayBrightnessPercent((brightnessAt(travel) * 100).round());
     String shift(double travel) {
-      final points = (offsetAt(travel) * consoleLedCurve.offsetSpan * 100)
-          .round();
+      final points = (offsetAt(travel) * _offsetPoints).round();
       return l10n.consoleLedsOffsetPercent(
         points > 0 ? '+$points' : '$points',
       );
@@ -179,11 +184,27 @@ class _BrightnessColumn extends StatelessWidget {
     final noteTone = state.light?.sensor == PedalLightSensor.aboveRange
         ? LoopNoteTone.error
         : LoopNoteTone.plain;
-    final travel = automatic
+    final travel = offsetSlider
         ? (settings.offset + 1) / 2
         : travelOf(settings.brightness);
-    final readout = automatic ? shift(travel) : percent(travel);
-    final label = automatic ? l10n.consoleLedsOffset : l10n.trayBrightnessLabel;
+    final readout = offsetSlider ? shift(travel) : percent(travel);
+    final label = offsetSlider
+        ? l10n.consoleLedsOffset
+        : l10n.trayBrightnessLabel;
+    // Dragging or turning previews; a release or Enter saves; Back restores.
+    void preview(double travel) {
+      final cubit = context.read<ConsoleLedsCubit>();
+      offsetSlider
+          ? cubit.previewOffset(offsetAt(travel))
+          : cubit.previewBrightness(brightnessAt(travel));
+    }
+
+    void commit(double travel) => _edit(
+      context,
+      (cubit) => offsetSlider
+          ? cubit.setOffset(offsetAt(travel))
+          : cubit.setBrightness(brightnessAt(travel)),
+    );
     return SizedBox(
       width: _width,
       child: Column(
@@ -234,41 +255,58 @@ class _BrightnessColumn extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           LoopSlider(
-            key: Key('console_leds_${automatic ? 'offset' : 'brightness'}'),
+            key: Key('console_leds_${offsetSlider ? 'offset' : 'brightness'}'),
             width: _width,
             value: travel,
-            keyboardStep: 0.025,
+            keyboardStep: offsetSlider ? 1 / (2 * _offsetPoints) : 0.0125,
             semanticLabel: label,
-            semanticValueBuilder: automatic ? shift : percent,
-            onChanged: (travel) => _edit(
-              context,
-              (cubit) => automatic
-                  ? cubit.setOffset(offsetAt(travel))
-                  : cubit.setBrightness(brightnessAt(travel)),
-            ),
-            onEditCancel: (travel) => _edit(
-              context,
-              (cubit) => automatic
-                  ? cubit.setOffset(offsetAt(travel))
-                  : cubit.setBrightness(brightnessAt(travel)),
-            ),
+            semanticValueBuilder: offsetSlider ? shift : percent,
+            onChanged: preview,
+            onChangeEnd: commit,
+            onEditCancel: preview,
             onDoubleTap: () => _edit(
               context,
-              (cubit) => automatic
+              (cubit) => offsetSlider
                   ? cubit.setOffset(0)
                   : cubit.setBrightness(ConsoleLedSettings.maxBrightness),
             ),
           ),
           const SizedBox(height: 32),
           LoopNote(note, key: const Key('console_leds_note'), tone: noteTone),
+          const SizedBox(height: 56),
+          LoopSectionLabel(l10n.consoleLedsCalibrate),
+          const SizedBox(height: 16),
+          LoopNote(l10n.consoleLedsCalibrateNote),
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              LoopOutlinedButton(
+                key: const Key('console_leds_set_dark'),
+                width: 300,
+                label: l10n.consoleLedsDarkRow,
+                onTap: state.canSetDark
+                    ? () => _edit(context, (cubit) => cubit.setDarkReading())
+                    : null,
+              ),
+              const SizedBox(width: 24),
+              LoopOutlinedButton(
+                key: const Key('console_leds_set_bright'),
+                width: 300,
+                label: l10n.consoleLedsBrightRow,
+                onTap: state.canSetBright
+                    ? () => _edit(context, (cubit) => cubit.setBrightReading())
+                    : null,
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 }
 
-/// What the sensor reads, where the calibration points are, the brightness
-/// the LEDs show, and the two buttons that calibrate.
+/// What the sensor reads, where the calibration points are, and the
+/// brightness the LEDs show.
 class _SensorColumn extends StatelessWidget {
   const _SensorColumn();
 
@@ -333,39 +371,6 @@ class _SensorColumn extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 40),
-          LoopSectionLabel(l10n.consoleLedsCalibrate),
-          const SizedBox(height: 16),
-          LoopNote(l10n.consoleLedsCalibrateNote),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              LoopOutlinedButton(
-                key: const Key('console_leds_set_dark'),
-                width: 300,
-                label: l10n.consoleLedsDarkRow,
-                onTap: state.canSetDark
-                    ? () => _edit(context, (cubit) => cubit.setDarkReading())
-                    : null,
-              ),
-              const SizedBox(width: 24),
-              LoopOutlinedButton(
-                key: const Key('console_leds_set_bright'),
-                width: 300,
-                label: l10n.consoleLedsBrightRow,
-                onTap: state.canSetBright
-                    ? () => _edit(context, (cubit) => cubit.setBrightReading())
-                    : null,
-              ),
-            ],
-          ),
-          if (fitted && (!state.canSetDark || !state.canSetBright)) ...[
-            const SizedBox(height: 16),
-            LoopNote(
-              l10n.consoleLedsCalibrateTooClose,
-              key: const Key('console_leds_too_close'),
-            ),
-          ],
         ],
       ),
     );

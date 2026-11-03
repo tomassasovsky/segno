@@ -8363,12 +8363,8 @@
     "@consoleLedsCalibrate": {
         "description": "Heading of the light sensor calibration section."
     },
-    "consoleLedsCalibrateNote": "In a dark room, with the lights as they are on stage, wait 10 seconds and tap Dark room. Then do the same in a bright room. Each takes the reading above.",
+    "consoleLedsCalibrateNote": "In a dark room, with the lights as they are on stage, wait 10 seconds and tap Dark room. Then do the same in a bright room. Each takes the Reading on the right, and is available while that reading is at least a doubling from the other point.",
     "@consoleLedsCalibrateNote": {
         "description": "How to calibrate the light sensor."
-    },
-    "consoleLedsCalibrateTooClose": "A bright room must read at least twice the dark room. Set the dark room first.",
-    "@consoleLedsCalibrateTooClose": {
-        "description": "Note when a calibration button is unavailable because the two readings would be too close."
     }
 }

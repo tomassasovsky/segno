@@ -95,12 +95,28 @@ void main() {
           const ConsoleLedSettings(brightness: 0.7, automatic: true),
         );
         await cubit.load();
+        link.emit(const AmbientLightMessage(PedalAmbientLight.none));
+        await pumpEventQueue();
         expect(cubit.state.followingLight, isFalse);
         expect(pedal.ledLevel, ledLevelOf(0.7));
         // And can be turned off.
         await cubit.setAutomatic(automatic: false);
         expect(cubit.state.settings.automatic, isFalse);
       });
+
+      test(
+        'Automatic with nothing heard yet starts at the dark point',
+        () async {
+          await settings.saveConsoleLeds(
+            const ConsoleLedSettings(automatic: true),
+          );
+          await cubit.load();
+          expect(cubit.state.light, isNull);
+          expect(cubit.state.followingLight, isTrue);
+          expect(cubit.state.brightness, consoleLedCurve.floor);
+          expect(pedal.ledLevel, ledLevelOf(consoleLedCurve.floor));
+        },
+      );
     });
 
     group('with a sensor', () {
@@ -125,6 +141,29 @@ void main() {
         link.emit(AmbientLightMessage(_reading(10)));
         await pumpEventQueue();
         expect(pedal.ledLevel, ledLevelOf(consoleLedCurve.floor));
+      });
+
+      test('a gap in the link keeps the level, not the manual one', () async {
+        final following = pedal.ledLevel;
+        expect(following, lessThan(PedalLinkCodec.ledLevelFull));
+        // A new hello clears the board's report until it sends the next one.
+        link.hello(firmwareMinor: 7);
+        await pumpEventQueue();
+        expect(cubit.state.light, isNull);
+        expect(pedal.ledLevel, following);
+        expect(levelsSent().last, LedLevelMessage(following));
+      });
+
+      test('a slider preview applies without saving; a commit saves', () async {
+        cubit.previewOffset(-0.4);
+        expect(cubit.state.settings.offset, -0.4);
+        expect((await settings.loadConsoleLeds()).offset, 0);
+        await cubit.setOffset(-0.4);
+        expect((await settings.loadConsoleLeds()).offset, -0.4);
+        await cubit.setAutomatic(automatic: false);
+        cubit.previewBrightness(0.5);
+        expect(pedal.ledLevel, ledLevelOf(0.5));
+        expect((await settings.loadConsoleLeds()).brightness, 1);
       });
 
       test('the offset makes them brighter or darker', () async {
