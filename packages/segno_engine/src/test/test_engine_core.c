@@ -21601,12 +21601,11 @@ static void test_octaver_psola_pitch_detect(void) {
   free(b);
 }
 
-/* PSOLA's sliced detection (#913): from 32 to 192 kHz every pass finishes
- * inside the hop that started it (the per-tick credit covers the worst pass
- * at every decimation), the period it settles on is the input's to within
- * 0.3 % for a 220 Hz voice and 1 % for an 80 Hz one, and the shifted output
- * plays the shifted pitch. At 96 kHz the old undecimated pass could not see
- * 80 Hz at all: its 800-lag search stopped at 120 Hz. */
+/* PSOLA's sliced detection (#913): the kernel runs at LE_OCT_RATE whatever
+ * the device rate (#1547), so from 32 to 192 kHz every pass finishes inside
+ * the hop that started it, the period it settles on (in kernel samples) is
+ * the input's to within 0.3 % for a 220 Hz voice and 1 % for an 80 Hz one,
+ * and the shifted output plays the shifted pitch. */
 static void test_octaver_psola_sliced_detection(void) {
   printf("test_octaver_psola_sliced_detection\n");
   static int32_t types[LE_FX_MAX];
@@ -21636,11 +21635,15 @@ static void test_octaver_psola_sliced_detection(void) {
       le_fx_octaver_seed_settled(fx, 0, params[0]);
       le_octaver_state* o = &fx->oct[0][0];
       const le_psola_pass* ps = le_ps(o);
-      /* A pass starts every max(1, D / 2) hops, D = ceil(sr / 24 kHz). */
-      int every = ((sr + LE_PSOLA_RATE - 1) / LE_PSOLA_RATE) / 2;
+      /* A pass starts every max(1, D / 2) hops, D = ceil(rate / 24 kHz), at
+       * the kernel's rate. */
+      int every = ((LE_OCT_RATE + LE_PSOLA_RATE - 1) / LE_PSOLA_RATE) / 2;
       if (every < 1) every = 1;
       int passes = 0;
       int overran = 0;
+      /* Away from 48 kHz a host frame runs zero, one or two kernel ticks:
+       * look at the state once per tick. */
+      uint32_t seen = UINT32_MAX;
       float* out = (float*)malloc(sizeof(float) * (size_t)sr);
       CHECK(out != NULL);
       if (out == NULL) return;
@@ -21653,7 +21656,10 @@ static void test_octaver_psola_sliced_detection(void) {
         }
         /* A pass starts on the tick that takes the counter to 0 on its
          * hop; the one before it must have finished. */
-        if (o->hop_count == 1 && ps->hops == every - 1) {
+        const uint32_t tick = fx->oct_rs[0] ? fx->oct_tick[0] : (uint32_t)i;
+        const int fresh = tick != seen;
+        seen = tick;
+        if (fresh && o->hop_count == 1 && ps->hops == every - 1) {
           ++passes;
           if (ps->phase != 0) ++overran;
         }
@@ -21682,7 +21688,7 @@ static void test_octaver_psola_sliced_detection(void) {
               ? 1200.0f * log2f(((float)(sr / dd) / out_period) / shifted)
               : 9999.0f;
       free(out);
-      const float want = (float)sr / f0;
+      const float want = (float)LE_OCT_RATE / f0;
       const float err = fabsf(o->period - want) / want;
       printf("  %d Hz, %.0f Hz voice: period %.2f (want %.2f, %.3f %%), "
              "voiced %.2f, %d passes, %d overran, output %+.1f cents\n",

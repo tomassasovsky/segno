@@ -554,6 +554,12 @@ typedef struct le_octaver_state {
   float tune_at[5];
   int32_t tune_note; /* the note it holds, semitones above the root */
   int32_t tune_held; /* whether it holds one (none after silence) */
+  /* At rates other than 48 kHz the kernel runs at 48 kHz (#1547): the
+   * input at the rate and the kernel's output at 48 kHz, each
+   * LE_OCT_RS_RING samples, indexed by their absolute frame (fx_octaver_run;
+   * heap, made in fx_octaver_prepare). */
+  float* rs_in;
+  float* rs_out;
 } le_octaver_state;
 
 /* Per-kind DSP state for the kinds that keep it on the heap (#887 part 4).
@@ -780,6 +786,18 @@ typedef struct le_fx_state {
   int32_t delay_pos[LE_FX_MAX][2];
   float fx_lp[LE_FX_MAX][2];
   le_octaver_state oct[LE_FX_MAX][2];
+  /* The octaver kinds at rates other than 48 kHz (fx_octaver_run, #1547):
+   * whether the slot's kernel is resampled; the kernel tick it is on (its
+   * hop keeps to these, as it keeps to the clock at 48 kHz); and, for a
+   * state nobody clocks, the frames the slot has run. */
+  int32_t oct_rs[LE_FX_MAX];
+  uint32_t oct_tick[LE_FX_MAX];
+  uint32_t oct_frame[LE_FX_MAX];
+  /* The first 48 kHz sample since the slot's reset (oct_n0_set): the
+   * kernel starts on it, as it starts on the reset's own frame at 48 kHz,
+   * not on the silence the resampler held before it. */
+  uint32_t oct_n0[LE_FX_MAX];
+  int32_t oct_n0_set[LE_FX_MAX];
   int32_t rev_comb_pos[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
   float rev_comb_lp[LE_FX_MAX][LE_REV_PHASES][LE_REV_COMBS * LE_REV_BANKS];
   int32_t rev_ap_pos[LE_FX_MAX][LE_REV_APS * LE_REV_BANKS];

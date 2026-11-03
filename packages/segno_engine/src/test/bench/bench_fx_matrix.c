@@ -245,17 +245,13 @@ static const mx_known k_known[] = {
     {"transient", MX_ALIAS, 44100, -46.5},
     {"transient", MX_ALIAS, 48000, -46.0},
     {"transient", MX_ALIAS, 96000, -57.0},
-    /* Pitch: the vocoder's frame is samples, not milliseconds (#1467). */
-    {"octaver", MX_RESPONSE, 44100, 3.5},
-    {"octaver", MX_RESPONSE, 96000, 5.0},
-    {"octaver", MX_ENVELOPE, 44100, 8.5},
-    {"octaver", MX_ENVELOPE, 96000, 8.5},
-    {"dualoct", MX_RESPONSE, 44100, 4.0},
-    {"dualoct", MX_RESPONSE, 96000, 7.0},
-    {"dualoct", MX_ENVELOPE, 44100, 5.5},
-    {"dualoct", MX_ENVELOPE, 96000, 8.0},
-    {"smarttune", MX_ENVELOPE, 44100, 3.0},
-    {"smarttune", MX_ENVELOPE, 96000, 6.0},
+    /* The Dual Octaver is sensitive to tiny input changes: adding -120 dB
+     * of noise at 48 kHz moves its envelope as far as running at 44.1 or
+     * 96 kHz does, most likely through the low band's pitch detection. Its
+     * kernel runs at 48 kHz at every rate (part 3c), so the residue is
+     * that sensitivity, not a rate dependence. */
+    {"dualoct", MX_ENVELOPE, 44100, 5.0},
+    {"dualoct", MX_ENVELOPE, 96000, 5.0},
     {NULL, 0, 0, 0.0},
 };
 

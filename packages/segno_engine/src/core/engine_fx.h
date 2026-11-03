@@ -54,6 +54,11 @@ extern "C" {
 #endif
 
 /* --- Phase-vocoder octaver (LE_FX_OCTAVER, mode p3 < 0.5) tuning ------------- */
+/* The rate the octaver's kernel runs at, whatever the engine's: at other
+ * rates fx_octaver_run resamples to and from it (#1547). */
+#define LE_OCT_RATE 48000
+/* Each of fx_octaver_run's two rings, samples (a power of two). */
+#define LE_OCT_RS_RING 512
 #define LE_PV_N 1024             /* STFT window (power of two) */
 #define LE_PV_HOP 256            /* 4x overlap (HOP = N/4: the clean-PV minimum);
                                   * a POWER OF TWO: le_pv_hop_phase masks with
@@ -451,9 +456,10 @@ void le_octaver_envelope(const float* mag, float* env);
 /* Frees a chain slot's octaver phase-vocoder heap buffers (both channels) and
  * nulls them. Control-thread only (lane/monitor reset, engine destroy). */
 void le_fx_free_octaver(le_fx_state* fx, int slot);
-/* The heap a Dual Octaver slot's low band (#1467) takes at [sr], both
- * channels, on top of the octaver's buffers. Any thread. */
-size_t le_fx_low_band_bytes(int sr);
+/* The heap a Dual Octaver slot's low band (#1467) takes, both channels, on
+ * top of the octaver's buffers: its kernel runs at LE_OCT_RATE at every
+ * rate. Any thread. */
+size_t le_fx_low_band_bytes(void);
 
 /* Frees every heap buffer chain slot [slot] owns: its delay rings, its
  * octaver buffers and its per-kind state. The one call an owner reset or

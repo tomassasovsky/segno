@@ -1621,9 +1621,11 @@ typedef struct le_snapshot {
 
   /* Added latency (frames) of the highest-latency audible or monitored lane
    * chain: each chain's enabled effects summed (they run in series), the
-   * largest chain taken. The octaver family adds LE_PV_LATENCY frames
-   * (engine_fx.h; both PV and PSOLA modes), and the oversampled waveshapers
-   * (Overdrive, Distortion, Vinyl, Amp+Cab) 2 to 4 frames, depending on
+   * largest chain taken. The octaver family adds LE_PV_LATENCY frames at
+   * 48 kHz (engine_fx.h; both PV and PSOLA modes); at any other rate its
+   * kernel runs at 48 kHz between two resamplers, whose filters add to it
+   * (1188 frames at 44.1 kHz, 2568 at 96 kHz). The oversampled waveshapers
+   * (Overdrive, Distortion, Vinyl, Amp+Cab) add 2 to 4 frames, depending on
    * the rate (#1547); every other effect adds 0. The Dart layer
    * divides by sample_rate to show milliseconds and warn a performer
    * monitoring through such a chain. PURELY informational: this

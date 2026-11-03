@@ -411,7 +411,7 @@ static int64_t le_render_job_bytes(const le_render_job* j) {
    * for every entry, which overstates and never understates. */
   bytes += states * (int64_t)(sizeof(le_fx_state) + sizeof(le_fx_kinds)) +
            entries * (2ll * j->cap * (int64_t)sizeof(float) + 16384) +
-           duals * (int64_t)le_fx_low_band_bytes(j->cap);
+           duals * (int64_t)le_fx_low_band_bytes();
   return bytes;
 }
 
