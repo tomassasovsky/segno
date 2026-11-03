@@ -2161,6 +2161,10 @@ typedef struct le_bounce_bundle {
   struct le_prepared_fx* lane_fx;
   struct le_prepared_fx* track_fx;
   le_hist_entry prev; /* callback-written: the track before the install */
+  /* Control-written at post: the live slot the install replaces, which the
+   * collect files as history. track_select_slot never hands it, or
+   * target.slot, out while the bundle is in flight. */
+  int32_t out_slot;
   /* Callback-written when the install waited for a tail: the state the
    * track had before the Bounce stopped it, which Undo restores. */
   int32_t parked;

@@ -2285,10 +2285,9 @@ class SegnoEngineBindings {
   /// a linear gain, default 1, applied to the sample a lane RECORDS from that
   /// input and to nothing else — the monitor path, the input meters, the clip
   /// detector, the sound-activated trigger and the tuner all read the
-  /// untrimmed input: raw for meters/clipping, conditioned for trigger/tuner.
-  /// Clamped to 0..LE_MAX_INPUT_TRIM. Takes
-  /// effect on the next block (a direct store, so it works while stopped);
-  /// reset to 1 by (re)configure.
+  /// untrimmed raw device input. Clamped to 0..LE_MAX_INPUT_TRIM. Takes effect
+  /// on the next block (a direct store, so it works while stopped); reset to 1
+  /// by (re)configure.
   int le_engine_set_input_trim(
     ffi.Pointer<le_engine> engine,
     int input,

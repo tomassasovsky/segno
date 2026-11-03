@@ -149,8 +149,12 @@ static int track_select_slot(le_track* t, int undo_count, int redo_count,
                              int outstanding_count, int* evict) {
   *evict = -1;
   const int live = load_i32(&t->lanes[0].a_live);
+  /* A Bounce in flight (#1202) names two slots no stack holds yet: the image
+   * it installs and the live slot it files as history. */
+  const le_bounce_bundle* b = t->bounce_inflight;
   for (int i = 0; i < LE_POOL_SLOTS; ++i) {
     if (i == live) continue;
+    if (b != NULL && (i == b->target.slot || i == b->out_slot)) continue;
     int used = 0;
     for (int k = 0; k < undo_count && !used; ++k) {
       if (t->undo_stack[k].slot == i) used = 1;
@@ -6085,16 +6089,18 @@ int32_t le_engine_perf_monitor_pop_for_test(le_engine* engine, int32_t input,
  * readable by the callback's own end-of-block verdict (no seam or punch
  * tail), so the install can never meet a writer.
  *
- * While a Bounce is in flight its bundle names two slots no stack holds yet
- * (the incoming image and the outgoing live slot), and nothing pins them.
- * They stay safe because every slot acquirer refuses while bounce_inflight
- * is set, which lasts until le_bounce_collect files the outcome: the length
- * edit (le_length_busy), record and its image capture
+ * While a Bounce is in flight its bundle names two slots no stack holds yet:
+ * the incoming image (target.slot) and the outgoing live slot (out_slot).
+ * track_select_slot skips both, so no acquirer can hand them out. On top of
+ * that, every history motion, capture and import on the track refuses while
+ * bounce_inflight is set, which lasts until le_bounce_collect files the
+ * outcome: the length edit (le_length_busy), record and its image capture
  * (le_record_preflight), Undo, Redo, Peel, the shadow posts
- * (le_post_dub_shadows) and another Bounce (this rule). The callback's
- * state acknowledgement is not enough on its own: it lands before the drain
- * collects the Bounce. A new control-thread acquirer must refuse the same
- * way, or the two slots need protecting from track_select_slot. */
+ * (le_post_dub_shadows), another Bounce (this rule), and the session
+ * imports (le_engine_import_track_lane, le_engine_import_layer,
+ * le_engine_finalize_history), which write pool slots and stacks directly.
+ * The callback's state acknowledgement is not enough on its own: it lands
+ * before the drain collects the Bounce. */
 static int le_bounce_busy(le_engine* engine, int32_t channel) {
   le_track* t = &engine->tracks[channel];
   const int32_t st = le_effective_state(t);
@@ -6155,6 +6161,7 @@ static int32_t le_bounce_prepare(le_engine* engine, le_bounce_bundle* b,
 static int32_t le_bounce_post(le_engine* engine, le_bounce_bundle* b,
                               int32_t code, uint64_t* receipt) {
   le_track* t = &engine->tracks[b->channel];
+  b->out_slot = load_i32(&t->lanes[0].a_live);
   le_command cmd = {.code = code};
   cmd.bounce.bundle = b;
   const int32_t rc = le_request_admit(engine, &cmd, &cmd.bounce.slot, receipt);

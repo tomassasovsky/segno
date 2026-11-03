@@ -90,6 +90,9 @@ int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
       atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
     return LE_ERR_INVALID;
   }
+  /* A Bounce in flight (#1202) names this track's slots until the drain
+   * files it (see le_bounce_busy); session loads retry. */
+  if (t->bounce_inflight) return LE_ERR_INVALID;
   /* Reject (rather than silently truncate) a stem that exceeds the buffer cap,
    * so a corrupted/foreign loop fails loudly instead of loading clipped. */
   if (frames > engine->max_loop_frames) return LE_ERR_INVALID;
@@ -320,6 +323,9 @@ int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
       atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
     return LE_ERR_INVALID;
   }
+  /* A Bounce in flight (#1202) names this track's slots until the drain
+   * files it (see le_bounce_busy); session loads retry. */
+  if (t->bounce_inflight) return LE_ERR_INVALID;
   /* Activate the lane if this is the first layer landing on it; a grown lane
    * takes its standard record route (input == lane index). Never reset a lane
    * already being filled. */
@@ -468,6 +474,9 @@ int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
       atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
     return LE_ERR_INVALID;
   }
+  /* A Bounce in flight (#1202) names this track's slots until the drain
+   * files it (see le_bounce_busy); session loads retry. */
+  if (t->bounce_inflight) return LE_ERR_INVALID;
   const int32_t lanes = le_lanes_active(t);
   if (load_i32(&t->lanes[0].a_len) <= 0) return LE_ERR_INVALID; /* unstaged */
   /* Every active lane must hold every image ordinal at that image's length

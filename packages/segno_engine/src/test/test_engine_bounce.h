@@ -428,6 +428,44 @@ static void test_bounce_in_flight_refuses_length_edit(void) {
   le_engine_destroy(e);
 }
 
+/* The session imports write a track's pool slots and rebuild its stacks
+ * directly, so they refuse while a Bounce is in flight. Undo of a Bounce into
+ * an empty destination leaves the track EMPTY with its acknowledgement in
+ * before the drain files the bounced take on the Redo side. */
+static void test_bounce_in_flight_refuses_import(void) {
+  printf("test_bounce_in_flight_refuses_import\n");
+  le_engine* e = rr_fixture();
+  const uint32_t job = bb_render(e, 0x3);
+  const le_mix_settings two = bb_lanes(2, 2);
+  CHECK(bb_bounce(e, job, 2, &two) == LE_OK);
+  le_bounce_recover_request rq = {2, 0, NULL, NULL, 0, NULL};
+  uint64_t receipt = 0;
+  CHECK(le_engine_bounce_recover(e, &rq, &receipt) == LE_OK);
+  drain(e); /* applied and acknowledged, not yet filed */
+  le_track* t = &e->tracks[2];
+  CHECK(t->bounce_inflight != NULL);
+  CHECK(atomic_load(&t->a_state) == LE_TRACK_EMPTY);
+  /* Caught up: the imports' own unacked-state check passes. */
+  CHECK(t->state_cmds_posted <= atomic_load(&t->a_state_acks));
+  float pcm[16];
+  for (int i = 0; i < 16; ++i) pcm[i] = -1.0f;
+  CHECK(le_engine_import_track_lane(e, 2, 0, pcm, 16) == LE_ERR_INVALID);
+  CHECK(le_engine_import_layer(e, 2, 0, 0, pcm, 16) == LE_ERR_INVALID);
+  const int32_t lens[1] = {16};
+  CHECK(le_engine_finalize_history(e, 2, NULL, NULL, NULL, 0, 0, lens, 1) ==
+        LE_ERR_INVALID);
+  /* Filed: the bounced take sits on the Redo side, intact. */
+  le_engine_drain_events(e);
+  CHECK(t->bounce_inflight == NULL);
+  le_track_snapshot s;
+  le_engine_get_track(e, 2, &s);
+  CHECK(s.state == LE_TRACK_EMPTY && s.redo_depth == 1);
+  CHECK(bb_recover(e, 2, 1, NULL, 0, NULL) == LE_OK);
+  const float* l = bb_live(e, 2, 0);
+  for (int f = 0; f < 48; ++f) CHECK(l[f] == rr_a(f) + rr_b(f));
+  le_engine_destroy(e);
+}
+
 /* Pumps `frames` frames of [value] on the one input, in 16-frame blocks. */
 static void bb_pump_const(le_engine* e, float value, int frames) {
   float in[16];
@@ -616,6 +654,7 @@ static void run_bounce_tests(void) {
   test_bounce_export_cut();
   test_bounce_abandoned_by_configure();
   test_bounce_in_flight_refuses_length_edit();
+  test_bounce_in_flight_refuses_import();
   test_bounce_layer_on_top_undoes_first();
   test_bounce_topology_grows_playing_destination();
   test_bounce_names_its_image();
