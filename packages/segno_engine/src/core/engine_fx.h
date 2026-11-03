@@ -122,33 +122,6 @@ extern "C" {
  * PSOLA's YIN pass still runs on one tick a hop. */
 #define LE_PV_STAGGER_QUARTER (LE_PV_HOP / 4)
 
-/* The engine frames after which an octaver's kernel is on the same hop
- * position again at [sr]: LE_PV_HOP at LE_OCT_RATE; at another rate, the
- * fewest frames that span a whole number of hops of the kernel's 48 kHz
- * ticks and start them at the same place in a frame (fx_octaver_run puts
- * tick k in the frame at k sr / 48 kHz): 512 at 96 kHz, 1176 at 44.1. The
- * engine works its own out when it is configured (le_engine::fx_hop_period),
- * so the audio thread never runs this GCD. */
-static inline uint32_t le_fx_hop_period(int sr) {
-  if (sr <= 0) sr = LE_OCT_RATE;
-  const uint64_t n = (uint64_t)LE_PV_HOP * (uint64_t)sr;
-  uint64_t a = n;
-  uint64_t b = LE_OCT_RATE;
-  while (b != 0) {
-    const uint64_t m = a % b;
-    a = b;
-    b = m;
-  }
-  return (uint32_t)(n / a);
-}
-
-/* Engine frame [top]'s position on the octaver's hop, whose period is
- * [period] frames (le_fx_hop_period, #941). A period of 0 (an engine never
- * configured) reads as the 48 kHz one. */
-static inline uint32_t le_fx_hop_position(uint32_t top, uint32_t period) {
-  return top % (period != 0u ? period : (uint32_t)LE_PV_HOP);
-}
-
 /* Engine frame [top]'s place on the grid of [len]-frame laps (#1620): where a
  * clock LFO's print is keyed, since such an LFO repeats lap after lap only
  * from tops on the same grid. */
@@ -157,15 +130,12 @@ static inline uint32_t le_fx_lap_position(uint32_t top, int32_t len) {
 }
 
 /* Whether [ent] may play from a lap that began at engine frame [top]: always
- * for a print without a clock-tied kind; for one with an octaver only on the
- * hop position it was rendered from (#941), and for one with a clock LFO
- * only on its lap grid (#1620). */
-static inline int le_wet_entry_hop_matches(const le_wet_entry* ent,
-                                           uint32_t top, uint32_t period) {
-  return (ent->hop_tag == 0 ||
-          ent->hop_tag == le_fx_hop_position(top, period) + 1u) &&
-         (ent->lap_tag == 0 ||
-          ent->lap_tag == le_fx_lap_position(top, ent->len) + 1u);
+ * for a print without a clock LFO, and for one with a clock LFO only on the
+ * lap grid it was rendered from (#1620). */
+static inline int le_wet_entry_lap_matches(const le_wet_entry* ent,
+                                           uint32_t top) {
+  return ent->lap_tag == 0 ||
+         ent->lap_tag == le_fx_lap_position(top, ent->len) + 1u;
 }
 
 static inline int32_t le_fx_hop_mask(uint32_t p) {

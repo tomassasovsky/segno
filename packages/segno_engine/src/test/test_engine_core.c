@@ -21790,31 +21790,15 @@ static void oct_rs_run(int sr, uint32_t c0, int n, float* out) {
   free(fx);
 }
 
-/* The pitch kinds away from 48 kHz (#1547): the kernel's hop lands on the
- * same place again every le_fx_hop_period frames, which is what a print
- * keyed on the hop position (#941) relies on: a run started a period later
- * is the same sample for sample, one started half a hop later is not. And
- * the engine clock wrapping mid-run starts the resamplers again, so the
- * octaver comes back, finite, a latency later. */
+/* The pitch kinds away from 48 kHz (#1547): the kernel's hop is anchored to
+ * the engine clock and lands on the same place again every hop period (512
+ * frames at 96 kHz, 1176 at 44.1, the fewest that span whole hops of its
+ * 48 kHz ticks): a run started a period later is the same sample for
+ * sample, one started half a hop later is not. And the engine clock wrapping
+ * mid-run starts the resamplers again, so the octaver comes back, finite, a
+ * latency later. */
 static void test_octaver_resampled_hop_period(void) {
   printf("test_octaver_resampled_hop_period\n");
-  CHECK(le_fx_hop_period(48000) == LE_PV_HOP);
-  CHECK(le_fx_hop_period(96000) == 512);
-  CHECK(le_fx_hop_period(44100) == 1176);
-  /* The engine works its own out when it is configured. */
-  {
-    le_engine* e = le_engine_create();
-    CHECK(e != NULL);
-    if (e == NULL) return;
-    CHECK(e->fx_hop_period == LE_PV_HOP);
-    const int32_t rates[] = {44100, 96000, 48000};
-    const uint32_t periods[] = {1176u, 512u, (uint32_t)LE_PV_HOP};
-    for (int i = 0; i < 3; ++i) {
-      CHECK(le_engine_configure(e, rates[i], 1, 2, rates[i]) == LE_OK);
-      CHECK(e->fx_hop_period == periods[i]);
-    }
-    le_engine_destroy(e);
-  }
   /* The latency a prepared slot reports: the kernel's 1216 frames at
    * 48 kHz and both filters' delays; none for one not prepared at the
    * rate, which passes its input. */
@@ -21844,7 +21828,7 @@ static void test_octaver_resampled_hop_period(void) {
     if (a == NULL || b == NULL || d == NULL || w == NULL) return;
     const uint32_t c0 = 1000;
     oct_rs_run(sr, c0, n, a);
-    oct_rs_run(sr, c0 + le_fx_hop_period(sr), n, b);
+    oct_rs_run(sr, c0 + (sr == 96000 ? 512u : 1176u), n, b);
     oct_rs_run(sr, c0 + (uint32_t)(LE_PV_HOP / 2) * (uint32_t)sr / 48000u, n, d);
     /* the clock wraps a quarter of the way in */
     oct_rs_run(sr, 0u - (uint32_t)(n / 4), n, w);
@@ -36631,42 +36615,70 @@ static void test_a_pre_channel_edit_drops_the_print(void) {
   le_engine_destroy(a);
 }
 
-/* An octaver's hop is anchored to the engine clock (#941), so on a loop that
- * is not a whole number of hops it lands on other frames of the loop each lap
- * and no one lap's print can equal live. Such a lane stays live and says why;
- * the same chain on a loop of whole hops prints (the parity sweep below). */
-static void cache_hop_stays_live(int32_t type) {
+/* The kinds on the octaver's kernel never print (#1624). Its phase vocoder
+ * carries running synthesis phases, which a loop of most material advances
+ * by a fraction of a cycle each lap, so the live voice is phased differently
+ * every lap: a print of one lap (which would equal the lap it was rendered
+ * for) steps at the next loop top. The lane stays live and says why, on a
+ * loop of whole hops too. */
+static void cache_pitch_stays_live(int32_t type) {
   le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
-  cache_record_loop(a, CACHE_LOOP - 80, 1.0f); /* 54.7 hops */
+  cache_record_loop(a, CACHE_LOOP, 1.0f); /* 55 whole hops */
   CHECK(le_engine_set_lane_fx(a, 0, 0, 0, type) == LE_OK);
   CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1, 1) == LE_OK);
   drain(a);
   le_lane_cache_info info;
   le_engine_get_lane_cache(a, 0, 0, &info);
-  pump_frames(a, 0.0f, CACHE_SETTLE + CACHE_LOOP);
+  pump_frames(a, 0.0f, CACHE_SETTLE + 2 * CACHE_LOOP);
   le_engine_get_lane_cache(a, 0, 0, &info);
   CHECK(info.state == LE_CACHE_GAVE_UP);
-  CHECK(info.reason == LE_CACHE_REASON_HOP);
+  CHECK(info.reason == LE_CACHE_REASON_FREE_RUNNING);
   CHECK(info.renders == 0);
   CHECK(info.engaged == 0);
   le_engine_destroy(a);
 }
 
-static void test_cache_octaver_on_a_partial_hop_loop_stays_live(void) {
-  printf("test_cache_octaver_on_a_partial_hop_loop_stays_live\n");
-  cache_hop_stays_live(LE_FX_OCTAVER);
-  cache_hop_stays_live(LE_FX_WHAMMY); /* the same kernel, on the same hop */
-  cache_hop_stays_live(LE_FX_SMART_TUNE);
+static void test_cache_pitch_kinds_play_live(void) {
+  printf("test_cache_pitch_kinds_play_live\n");
+  const int32_t kinds[] = {LE_FX_OCTAVER, LE_FX_DUAL_OCTAVER, LE_FX_WHAMMY,
+                           LE_FX_SMART_TUNE};
+  for (size_t i = 0; i < sizeof(kinds) / sizeof(kinds[0]); ++i) {
+    cache_pitch_stays_live(kinds[i]);
+  }
+  /* Why: on a 220 Hz loop of 55 whole hops, the live octaver's second lap
+   * is not its first. */
+  le_engine* e = cache_engine(0);
+  float in[64];
+  float out[64];
+  le_engine_record(e, 0);
+  for (int32_t f = 0, at = 0; f < CACHE_LOOP + 640; f += 64) {
+    if (f == CACHE_LOOP) {
+      le_engine_record(e, 0);
+      drain(e);
+    }
+    for (int i = 0; i < 64; ++i, ++at) {
+      in[i] = 0.5f * sinf(2.0f * (float)M_PI * 220.0f * (float)at / 48000.0f);
+    }
+    le_engine_process(e, out, in, 64);
+  }
+  const int32_t to_top = (CACHE_LOOP - cache_master_pos(e)) % CACHE_LOOP;
+  pump_frames(e, 0.0f, to_top);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_OCTAVER) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 1) == LE_OK);
+  drain(e);
+  static float lap[3][CACHE_LOOP];
+  for (int k = 0; k < 3; ++k) pump_capture(e, 0.0f, CACHE_LOOP, lap[k]);
+  CHECK(cache_max_diff(lap[1], lap[2], CACHE_LOOP, 0) > 0.1f);
+  le_engine_destroy(e);
 }
 
-/* A bypassed octaver passes the signal dry, whatever its hop, so the same
- * partial-hop lane prints: a rack's switched-off Pitch Shift (most Studio and
- * Vocal presets) must not keep the whole rack live. Switching it on gives up
- * again, for the hop. */
-static void test_cache_bypassed_octaver_prints_on_a_partial_hop_loop(void) {
-  printf("test_cache_bypassed_octaver_prints_on_a_partial_hop_loop\n");
+/* A bypassed octaver passes the signal dry, so its lane prints: a rack's
+ * switched-off Pitch Shift (most Studio and Vocal presets) must not keep the
+ * whole rack live. Switching it on gives up, as free-running (#1624). */
+static void test_cache_bypassed_octaver_prints(void) {
+  printf("test_cache_bypassed_octaver_prints\n");
   le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
-  cache_record_loop(a, CACHE_LOOP - 80, 1.0f); /* 54.7 hops */
+  cache_record_loop(a, CACHE_LOOP, 1.0f);
   CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
   CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_OCTAVER) == LE_OK);
   CHECK(le_engine_set_lane_fx_count(a, 0, 0, 2, 2) == LE_OK);
@@ -36683,32 +36695,41 @@ static void test_cache_bypassed_octaver_prints_on_a_partial_hop_loop(void) {
   pump_frames(a, 0.0f, CACHE_SETTLE + 64);
   le_engine_get_lane_cache(a, 0, 0, &info);
   CHECK(info.state == LE_CACHE_GAVE_UP);
-  CHECK(info.reason == LE_CACHE_REASON_HOP);
+  CHECK(info.reason == LE_CACHE_REASON_FREE_RUNNING);
   le_engine_destroy(a);
 }
 
-/* An octaver print is rendered against the hop position of the loop top it
- * engages at (#941). A stop and relaunch moves the loop against the engine
- * clock without a chain edit, so the print's key changes: the old print falls
- * back live by the next buffer (the per-buffer verdict memo notices the
- * move), the lane re-renders, and the new print engages at the next top. */
-static void test_cache_octaver_relaunch_rerenders(void) {
-  printf("test_cache_octaver_relaunch_rerenders\n");
-  const int32_t type = LE_FX_OCTAVER;
-  le_engine* a;
-  le_engine* b;
-  cache_pair_prepare_chain(&a, &b, &type, 1);
-  le_engine_destroy(b);
+/* A clock LFO's print is rendered against the loop top's place on the lap
+ * grid (#1620). A stop and relaunch moves the loop against the engine clock
+ * without a chain edit, so the print's key changes: the old print falls back
+ * live, the lane re-renders, and the new print engages a complete lap into
+ * the relaunched run. */
+static void test_cache_clock_lfo_relaunch_rerenders(void) {
+  printf("test_cache_clock_lfo_relaunch_rerenders\n");
+  le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  cache_record_loop(a, CACHE_LOOP, 1.0f);
+  pump_frames(a, 0.0f, (CACHE_LOOP - cache_master_pos(a)) % CACHE_LOOP);
+  /* One tremolo cycle a lap (rate = 0.1 + p0 * 11.9 Hz), at full depth. */
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_TREMOLO) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(
+            a, 0, 0, 0, 0, (float)((48000.0 / CACHE_LOOP - 0.1) / 11.9)) ==
+        LE_OK);
+  CHECK(le_engine_set_lane_fx_param(a, 0, 0, 0, 1, 1.0f) == LE_OK);
+  drain(a);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info); /* registers the key */
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
   pump_frames(a, 0.0f, CACHE_LOOP - CACHE_SETTLE + 64);
   CHECK(cache_engaged(a, 0, 0) == 1);
   CHECK(le_engine_stop_track(a, 0) == LE_OK);
   drain(a);
-  pump_frames(a, 0.0f, 100); /* the relaunched top lands off the old hop */
+  pump_frames(a, 0.0f, 100); /* the relaunched top lands off the old grid */
   CHECK(le_engine_play(a, 0) == LE_OK);
   drain(a);
   pump_frames(a, 0.0f, 128); /* the play buffer, then one more */
   CHECK(cache_engaged(a, 0, 0) == 0);
-  le_lane_cache_info info;
   le_engine_get_lane_cache(a, 0, 0, &info); /* registers the new key */
   CHECK(info.state != LE_CACHE_CACHED);
   pump_frames(a, 0.0f, CACHE_SETTLE);
@@ -36767,22 +36788,22 @@ static void cache_check_short_loop_stays_live(int32_t type) {
 static void test_cache_cached_matches_live_every_builtin(void) {
   printf("test_cache_cached_matches_live_every_builtin\n");
   const int32_t types[] = {LE_FX_DRIVE,      LE_FX_FILTER,    LE_FX_DELAY,
-                           LE_FX_OCTAVER,    LE_FX_REVERB,    LE_FX_EQ,
-                           LE_FX_COMPRESSOR, LE_FX_TRANSIENT, LE_FX_HP_GATE,
-                           LE_FX_WAH,        LE_FX_OVERDRIVE, LE_FX_DISTORTION,
-                           LE_FX_LPF,        LE_FX_SPRING,    LE_FX_DUB_VERB,
-                           LE_FX_AMB_VERB,   LE_FX_WHAMMY,    LE_FX_SMART_TUNE};
+                           LE_FX_REVERB,     LE_FX_EQ,        LE_FX_COMPRESSOR,
+                           LE_FX_TRANSIENT,  LE_FX_HP_GATE,   LE_FX_WAH,
+                           LE_FX_OVERDRIVE,  LE_FX_DISTORTION, LE_FX_LPF,
+                           LE_FX_SPRING,     LE_FX_DUB_VERB,  LE_FX_AMB_VERB};
   /* The doubler and the chorus are free-running and never print
    * (test_cache_free_running_stays_live). The tremolo and the echo run clock
    * LFOs that print only on a loop of whole cycles, which this one is not
-   * (test_cache_clock_lfo_prints_only_lap_locked). */
+   * (test_cache_clock_lfo_prints_only_lap_locked). The kinds on the
+   * octaver's kernel never print (test_cache_pitch_kinds_play_live). */
   for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); ++i) {
     cache_check_chain_parity(&types[i], 1);
     /* ...and on a NON-ZERO lane. Track 0, lane 0 has hop-stagger seed 0,
      * the one lane a render on a raw calloc'd state reproduces by accident,
      * so a lane-0-only sweep is blind to per-lane state the print fails to
-     * carry over: seeded wrong, the octaver's print is a different
-     * phase-vocoder realization, swapped in at the loop top as a step. */
+     * carry over: seeded wrong, a heap-state kind updates its settings on
+     * other frames than the live one (le_fx_update_phase). */
     cache_check_chain_parity_lane(&types[i], 1, 1);
     /* ...and where the print would swap in laps after the chain went in,
      * on a loop shorter than the settle window (#939). */
@@ -37477,7 +37498,7 @@ static void test_cache_midrender_rev_bump_aborts(void) {
   pump_frames(a, 1.0f, 600);
   CHECK(le_engine_set_lane_fx_count(a, 0, 0, 3, 3) == LE_OK);
   CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_REVERB) == LE_OK);
-  CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_OCTAVER) == LE_OK);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_DUB_VERB) == LE_OK);
   CHECK(le_engine_set_lane_fx(a, 0, 0, 2, LE_FX_DELAY) == LE_OK);
   drain(a);
   le_lane_cache_info info;
@@ -37551,7 +37572,7 @@ static void test_cache_destroy_during_active_render(void) {
     pump_frames(a, 1.0f, 600);
     CHECK(le_engine_set_lane_fx_count(a, 0, 0, 3, 3) == LE_OK);
     CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_REVERB) == LE_OK);
-    CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_OCTAVER) == LE_OK);
+    CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_DUB_VERB) == LE_OK);
     CHECK(le_engine_set_lane_fx(a, 0, 0, 2, LE_FX_DELAY) == LE_OK);
     drain(a);
     le_lane_cache_info info;
@@ -40154,9 +40175,9 @@ int main(void) {
   test_whole_track_print_stays_live_on_a_short_loop();
   test_cache_midlap_edit_steps();
   test_cache_clock_lfo_prints_only_lap_locked();
-  test_cache_octaver_on_a_partial_hop_loop_stays_live();
-  test_cache_bypassed_octaver_prints_on_a_partial_hop_loop();
-  test_cache_octaver_relaunch_rerenders();
+  test_cache_pitch_kinds_play_live();
+  test_cache_bypassed_octaver_prints();
+  test_cache_clock_lfo_relaunch_rerenders();
   test_cache_cached_matches_live_multi_slot_chain();
   test_cache_volume_move_invalidates();
   test_cache_param_edit_falls_back_within_one_buffer();

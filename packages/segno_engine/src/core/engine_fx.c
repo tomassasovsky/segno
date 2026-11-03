@@ -2438,7 +2438,8 @@ static const le_oct_rs* le_oct_rs_get(int sr) {
 /* The two channels' rings [a] and [b] (LE_OCT_RS_RING samples, indexed by
  * absolute frame) read at position [num] / [den] through the table [g] of
  * [w] taps a side, into [ya] and [yb]. The position is exact, so frames a
- * hop period apart (le_fx_hop_period) read with the same weights. */
+ * whole number of hops apart at the kernel's rate read with the same
+ * weights. */
 static void le_oct_rs_read(const float* a, const float* b, int64_t num,
                            int64_t den, const float* g, int w, float* ya,
                            float* yb) {

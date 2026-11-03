@@ -77,6 +77,29 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 The octaver's kinds play live (#1624)
+
+- The owner's decision on #1624: the Octaver, Dual Octaver, Whammy and Smart
+  Tune are never printed and always play live (the multicore workers, #1515,
+  carry live chains), because a print cannot be made exact.
+- The cause: their phase vocoder carries running synthesis phases, which a
+  loop of most material advances by a fraction of a cycle each lap, so the
+  live voice is phased differently every lap. A print equals the lap it was
+  rendered for (the old parity sweep, on a constant loop, could not see the
+  rest) and steps at every loop top after: on a 220 Hz sine loop of 55
+  whole hops, the live octaver's second lap differs from its first by 0.8,
+  however the chain went in.
+- The cache reports them FREE_RUNNING (`le_cache_free_running`). With no
+  print holding an octaver, the hop-position key (#941) is gone: the
+  fingerprint fold, `le_wet_entry::hop_tag`, `LE_CACHE_REASON_HOP` (value 5
+  retired), `le_fx_hop_period`/`le_fx_hop_position` and
+  `le_engine::fx_hop_period`. The octaver's clock-anchored hop and its
+  per-owner seed stay: the render recipe and the stems still reproduce it.
+- Tests: `test_cache_pitch_kinds_play_live` (each kind gives up, and the
+  octaver's laps differ on a sine), `test_cache_bypassed_octaver_prints`,
+  and `test_cache_clock_lfo_relaunch_rerenders` (the relaunch re-render,
+  now on a lap-locked tremolo).
+
 ## November 2026 Prints swap in after a complete lap, LFOs on the clock (#1620)
 
 - The owner's decision on #1620: (1) time-based modulation takes its phase
@@ -95,8 +118,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   at each loop top under 1e-4): otherwise each lap sounds different and it
   plays live, reported FREE_RUNNING (`le_fx_entry_lfo_drifts`). Its print is
   keyed on the top's place on the lap grid (`le_fx_lap_position`, folded
-  into the fingerprint, `le_wet_entry::lap_tag` at the lap top), as an
-  octaver's is on the hop position.
+  into the fingerprint, `le_wet_entry::lap_tag` at the lap top).
 - What a chain plays reversed or at another rate is not a lap of the loop,
   so every run on the track begins again where the head is back at forward
   1x (and at any jump of the read index there, which Play on a playing track
@@ -105,8 +127,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   until its next edit.
 - Remaining step at the swap per kind (`test_cache_midlap_edit_steps`, a sine
   loop): 0 for the memoryless and short-state kinds; a delay or reverb
-  differs by the part of its tail older than a lap; the octaver and Smart
-  Tune differ even with the chain in on a loop top (#1624).
+  differs by the part of its tail older than a lap; the octaver's kinds play
+  live (#1624).
 
 ## November 2026 Wet cache swaps in only over a matching run (#939)
 
