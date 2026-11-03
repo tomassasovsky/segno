@@ -222,7 +222,7 @@ class LibraryAudioFiles extends StatelessWidget {
           child: folder == null
               ? ListView(
                   key: const Key('library_audio_folders'),
-                  padding: const EdgeInsets.only(top: 12, right: 12),
+                  padding: const EdgeInsets.only(top: 12),
                   itemExtent: 96,
                   children: [
                     LibraryAudioRow(
@@ -283,7 +283,7 @@ class LibraryAudioItems extends StatelessWidget {
     final cubit = context.read<LibraryAudioCubit>();
     return ListView.builder(
       key: const Key('library_audio_rows'),
-      padding: const EdgeInsets.only(top: 12, right: 12),
+      padding: const EdgeInsets.only(top: 12),
       itemExtent: 96,
       itemCount: items.length,
       itemBuilder: (context, i) {
@@ -438,14 +438,9 @@ class LibraryAudioCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(37),
         child: item == null
-            ? AppText(
+            ? LibraryPreviewNotice(
                 l10n.libraryAudioNoSelection,
-                key: const Key('library_audio_no_selection'),
-                style: TextStyle(
-                  color: surface.textSecondary,
-                  fontSize: 22,
-                  height: 1.2,
-                ),
+                textKey: const Key('library_audio_no_selection'),
               )
             : LibraryAudioPreviewBody(item: item),
       ),

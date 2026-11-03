@@ -67,18 +67,20 @@ class LibrarySessionList extends StatelessWidget {
   const LibrarySessionList({super.key});
 
   @override
-  Widget build(BuildContext context) => const Column(
+  Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
+      // The field takes what New folder leaves, so the pair spans the list's
+      // width at the title row's button gap.
       Row(
-        children: [
-          LibrarySearchField(),
-          SizedBox(width: 9),
+        spacing: context.spacing.md,
+        children: const [
+          Expanded(child: LibrarySearchField()),
           LibraryNewFolderButton(),
         ],
       ),
-      SizedBox(height: 84, child: LibraryFolderChips()),
-      Expanded(child: LibrarySessionRows()),
+      const SizedBox(height: 84, child: LibraryFolderChips()),
+      const Expanded(child: LibrarySessionRows()),
     ],
   );
 }
@@ -128,15 +130,12 @@ class LibrarySearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final query = context.select<LibraryCubit, String>((c) => c.state.query);
-    return SizedBox(
-      width: 556,
-      child: LibrarySearchBox(
-        key: const Key('library_search'),
-        text: query.isEmpty ? l10n.librarySearchSessions : query,
-        placeholder: query.isEmpty,
-        semanticLabel: l10n.librarySearchSessions,
-        onTap: () => unawaited(_edit(context, query)),
-      ),
+    return LibrarySearchBox(
+      key: const Key('library_search'),
+      text: query.isEmpty ? l10n.librarySearchSessions : query,
+      placeholder: query.isEmpty,
+      semanticLabel: l10n.librarySearchSessions,
+      onTap: () => unawaited(_edit(context, query)),
     );
   }
 }
@@ -248,7 +247,7 @@ class LibraryFolderChips extends StatelessWidget {
       child: Row(
         children: [
           for (final (i, (key, label, value)) in chips.indexed) ...[
-            if (i > 0) const SizedBox(width: 7),
+            if (i > 0) SizedBox(width: context.spacing.sm),
             LibraryChip(
               key: key,
               label: label,
@@ -371,7 +370,7 @@ class LibrarySessionRows extends StatelessWidget {
     final cubit = context.read<LibraryCubit>();
     return ListView.builder(
       key: const Key('library_rows'),
-      padding: const EdgeInsets.only(top: 12, right: 10),
+      padding: const EdgeInsets.only(top: 12),
       itemExtent: 148,
       itemCount: rows.length,
       itemBuilder: (context, i) {
