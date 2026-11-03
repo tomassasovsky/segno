@@ -64,7 +64,6 @@ class Track extends Equatable {
     this.pending = false,
     this.pendingLaunch,
     this.pendingTrigger,
-    this.positionFrames = 0,
     this.lengthPresetBars = 0,
     this.lengthPresetOverride,
     this.recordTimingOverride,
@@ -162,16 +161,6 @@ class Track extends Equatable {
 
   /// What that arm waits for, or `null` while nothing is pending.
   final ArmTrigger? pendingTrigger;
-
-  /// This track's own playhead in frames within [lengthFrames] — the engine
-  /// has already applied the mode's position rule (a multiple's segment, a
-  /// Sync division's folded phase, a Free/Song track's private clock), so
-  /// [progress] is the track's own progress. While recording it is the write
-  /// head instead. `0` for an empty track.
-  ///
-  /// Moves at the poll rate while the track plays, so it is kept out of
-  /// [steadyProps]: the progress bar subscribes to it in its own leaf.
-  final int positionFrames;
 
   /// Track length in whole base loops (`>= 1`); `> 1` for a loop multiple.
   final int multiple;
@@ -273,13 +262,6 @@ class Track extends Equatable {
   bool get canPeel =>
       peelDepth > 0 && !isCapturing && !layerInFlight && pendingLaunch == null;
 
-  /// Normalized play position in `0..1`; `0` while the track has no length or
-  /// is still recording its take (the engine publishes the growing write head
-  /// as both position and length then, which is no position at all).
-  double get progress => lengthFrames > 0 && state != TrackState.recording
-      ? (positionFrames / lengthFrames).clamp(0.0, 1.0)
-      : 0;
-
   /// Layers the performer hears: the base take plus every overdub pass still
   /// stacked on it. Derived from [peelDepth], not [undoDepth]: a peel removes
   /// a layer while leaving a history entry behind, so the undo depth stays
@@ -344,86 +326,6 @@ class Track extends Equatable {
     return whole > 0 && (lengthFrames - whole * unit).abs() <= 1 ? whole : null;
   }
 
-  /// Everything in [props] EXCEPT [positionFrames].
-  ///
-  /// The playhead is the one field that changes at the poll rate on a track
-  /// that is merely playing, so it is the only one that has to be subscribed
-  /// at progress-bar granularity. A surface that draws the tile AROUND the
-  /// progress bar compares on this, so a moving playhead rebuilds the bar
-  /// and nothing else (#646/#654/#832). Levels are not part of [Track] at all
-  /// (#1301).
-  ///
-  /// This is the ONLY sanctioned way to ignore the moving playhead. Anything
-  /// that wants a playhead-insensitive comparison — a `context.select`
-  /// projection, a `buildWhen`, a push gate on the second screen — compares
-  /// on this rather than editing [props]; see the warning there.
-  ///
-  /// Listed out rather than derived from [props] so neither list is built
-  /// twice per comparison (a `Track ==` is on the console's hot path). The
-  /// two are locked to each other by a test — `props` is exactly this list
-  /// plus [positionFrames] — so a field added to one cannot silently miss
-  /// the other.
-  ///
-  /// "Steady" means steady against a moving PLAYHEAD, and nothing more — two
-  /// other fields here move on their own, both deliberately left in:
-  ///
-  /// - A track that is RECORDING differs on every poll tick as [lengthFrames]
-  ///   (and the recording lane's own) grow with the take. That is one tile
-  ///   rebuilding while it records, not eight rebuilding because one of them
-  ///   made a noise, so it is left alone — the tile draws `hasContent`, which
-  ///   the growing length flips exactly once (#899).
-  /// - [lanes] carries `Lane.cacheState`, which follows the background
-  ///   renderer while `CacheTelemetryScope` enables telemetry: the Signal
-  ///   face is visible and the track-indicator preference is on. Those
-  ///   observed cache changes also rebuild the tile; closing Signal or
-  ///   disabling indicators stops the telemetry reads.
-  List<Object?> get steadyProps => [
-    channel,
-    state,
-    volume,
-    fade,
-    reversed,
-    transpose,
-    followTempoOverride,
-    pitchModeOverride,
-    pitchEffectiveCents,
-    muted,
-    pan,
-    solo,
-    lengthFrames,
-    undoDepth,
-    clearRestore,
-    redoDepth,
-    peelDepth,
-    multiple,
-    syncDivisor,
-    inputMask,
-    outputMask,
-    layerInFlight,
-    pending,
-    pendingLaunch,
-    pendingTrigger,
-    lengthPresetBars,
-    lengthPresetOverride,
-    recordTimingOverride,
-    overdubDecayOverride,
-    oneShot,
-    oneShotOverride,
-    lanes,
-    effects,
-    chainEnabled,
-  ];
-
-  /// Value equality over every field, [positionFrames] INCLUDED —
-  /// deliberately, and load-bearing.
-  ///
-  /// **Do not remove [positionFrames] from this list.** The progress bars are
-  /// fed through `LooperState ==`: `LooperRepository`'s poll drops a
-  /// projection equal to the one before it (`if (next == _last) return`), so
-  /// a field outside equality is a field that never reaches the UI at all.
-  ///
-  /// A caller that needs to ignore the moving playhead compares [steadyProps]
-  /// instead. Locked by the tests in `test/models/track_test.dart`.
   @override
   List<Object?> get props => [
     channel,
@@ -460,6 +362,5 @@ class Track extends Equatable {
     lanes,
     effects,
     chainEnabled,
-    positionFrames,
   ];
 }

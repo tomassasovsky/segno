@@ -8,11 +8,11 @@ import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/live_playhead.dart';
 import 'package:segno/looper/view/loop_count_words.dart';
 import 'package:segno/looper/view/slot_row.dart';
 import 'package:segno/looper/view/track_column.dart'
     show PrimaryCrown, SlotFigure;
-import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/widgets/waveform_view.dart';
@@ -348,19 +348,20 @@ class TrackWaveform extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final progress = context.select<LooperBloc, double>(
-      (bloc) => progressOf(bloc.state, channel),
-    );
-    final samples = hasContent
-        ? context.read<LooperRepository>().readTrackWaveform(channel)
-        : Float32List(0);
-    return WaveformView(
-      key: Key('wave_waveform_$channel'),
-      samples: samples,
-      state: state,
-      progress: hasContent ? progress : 0,
-      bars: hasContent ? bars : 0,
-      semanticLabel: semanticLabel,
+    final repository = context.read<LooperRepository>();
+    return LivePlayhead<double>(
+      key: ValueKey(channel),
+      select: (playhead) => playhead.track(channel),
+      builder: (context, progress) => WaveformView(
+        key: Key('wave_waveform_$channel'),
+        samples: hasContent
+            ? repository.readTrackWaveform(channel)
+            : Float32List(0),
+        state: state,
+        progress: hasContent ? progress : 0,
+        bars: hasContent ? bars : 0,
+        semanticLabel: semanticLabel,
+      ),
     );
   }
 }

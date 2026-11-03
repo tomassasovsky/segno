@@ -11,6 +11,7 @@
  */
 #if defined(__APPLE__)
 
+#include <pthread.h> /* pthread_setname_np */
 #include <stdint.h>
 #include <string.h>
 
@@ -163,6 +164,10 @@ void le_platform_fx_wake(_Atomic uint32_t* word, int n) {
 }
 
 void le_platform_on_engine_teardown(void) {}
+
+void le_platform_name_thread(const char* name) {
+  (void)pthread_setname_np(name);
+}
 
 /* macOS is a development host: no PREEMPT_RT kernel to defend, and no fork
  * shield or memory lock to apply (rt_alloc.c maps buffers the same way). */

@@ -12,9 +12,8 @@ import 'package:wifi_repository/wifi_repository.dart';
 ///
 /// A reconnect scans every channel, and a scan takes the radio off-channel;
 /// that must not happen mid-show. Released, the reconnect catches up (#1337).
-/// The looper emits every poll while music runs, so only a change of the hold
-/// is written, and writes go out in order: a quick play-and-stop must not
-/// land its release before its hold.
+/// Only a change of the hold is written, and writes go out in order: a quick
+/// play-and-stop must not land its release before its hold.
 class WifiReconnectHoldHost extends StatefulWidget {
   /// Creates a [WifiReconnectHoldHost] around [child].
   const WifiReconnectHoldHost({required this.child, super.key});
