@@ -160,16 +160,17 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
       active && out->pending ? load_i32(&tr->a_pending_trigger) : -1;
 }
 
-/* Max added latency (frames) across every active octaver in any record-route or
- * monitor lane chain — the value the snapshot surfaces so the UI can warn about
- * monitoring lag (part 5). Scanned here on the control thread (a render-rate
- * poll) rather than cached on an fx-change atomic: an fx's type and count are
- * committed by the audio thread's ring handler, so a control-thread setter can't
- * see the post-commit chain — a pull-time scan of the published a_fx_type /
- * a_fx_count atomics is the only race-free seam. The audio thread never reads
- * this. Today only the octaver contributes (le_octaver_latency); the max keeps
- * it forward-compatible, and a chain with no octaver yields 0. */
+/* The largest added latency (frames) of any record-route or monitor lane
+ * chain: the sum of its enabled slots' (the octaver's, an oversampling
+ * waveshaper's), since a chain's slots run in series. The value the snapshot
+ * surfaces so the UI can warn about monitoring lag (part 5). Scanned here on
+ * the control thread (a render-rate poll) rather than cached on an fx-change
+ * atomic: an fx's type and count are committed by the audio thread's ring
+ * handler, so a control-thread setter can't see the post-commit chain — a
+ * pull-time scan of the published a_fx_type / a_fx_count atomics is the
+ * only race-free seam. The audio thread never reads this. */
 static int32_t le_max_fx_latency(le_engine* engine) {
+  const int sr = load_i32(&engine->a_sample_rate);
   int32_t max_lat = 0;
   for (int32_t t = 0; t < engine->track_count; ++t) {
     le_track* tr = &engine->tracks[t];
@@ -182,12 +183,12 @@ static int32_t le_max_fx_latency(le_engine* engine) {
        * warning alive. Granularity: the ~5 ms ramp is far below this
        * render-rate poll's resolution. */
       const int32_t chain_on = load_i32(&ln->a_fx_chain_enabled);
+      int32_t lat = 0;
       for (int32_t s = 0; s < n; ++s) {
         if (!(chain_on && load_i32(&ln->a_fx_enabled[s]))) continue;
-        const int32_t lat =
-            le_fx_added_latency(&ln->fx, s, load_i32(&ln->a_fx_type[s]));
-        if (lat > max_lat) max_lat = lat;
+        lat += le_fx_added_latency(&ln->fx, s, load_i32(&ln->a_fx_type[s]), sr);
       }
+      if (lat > max_lat) max_lat = lat;
     }
   }
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
@@ -195,12 +196,12 @@ static int32_t le_max_fx_latency(le_engine* engine) {
     int32_t n = load_i32(&m->a_fx_count);
     if (n > LE_FX_MAX) n = LE_FX_MAX;
     const int32_t chain_on = load_i32(&m->a_fx_chain_enabled);
+    int32_t lat = 0;
     for (int32_t s = 0; s < n; ++s) {
       if (!(chain_on && load_i32(&m->a_fx_enabled[s]))) continue;
-      const int32_t lat =
-          le_fx_added_latency(&m->fx, s, load_i32(&m->a_fx_type[s]));
-      if (lat > max_lat) max_lat = lat;
+      lat += le_fx_added_latency(&m->fx, s, load_i32(&m->a_fx_type[s]), sr);
     }
+    if (lat > max_lat) max_lat = lat;
   }
   return max_lat;
 }

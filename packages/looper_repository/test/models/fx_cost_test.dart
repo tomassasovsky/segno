@@ -121,7 +121,9 @@ void main() {
   });
 
   group('effects on more than one core (#1515)', () {
-    // Ed's Rack, the plan's unit (section 7): 2,665 ns a frame.
+    // Ed's Rack, the plan's unit (section 7): 3,550 ns a frame at 96 kHz,
+    // 2,665 in the plan, before its Overdrive and Amp+Cab ran oversampled
+    // (#1547).
     final rack = [
       for (final type in [
         TrackEffectType.dualOctaver,
@@ -154,7 +156,7 @@ void main() {
     }
 
     test("Ed's Rack charges what the plan's table assumes", () {
-      expect(rackNs, 2665);
+      expect(rackNs, 3550);
       expect(fxBudgetNs(96000), 7192);
     });
 
@@ -186,11 +188,12 @@ void main() {
       expect(fxLoadNs(serial: 0, jobs: [12, 12], workers: 3), 97 + 15);
     });
 
-    test("admits the racks of the plan's table: 2, 4, 6 and 7", () {
+    // The plan's table admitted 2, 4, 6 and 7 at its 2,665 ns.
+    test('admits 2, 3, 4 and 4 racks with 0 to 3 workers', () {
       expect(racksAdmitted(0), 2);
-      expect(racksAdmitted(1), 4);
-      expect(racksAdmitted(2), 6);
-      expect(racksAdmitted(3), 7);
+      expect(racksAdmitted(1), 3);
+      expect(racksAdmitted(2), 4);
+      expect(racksAdmitted(3), 4);
     });
 
     group('LooperRepository', () {
@@ -214,18 +217,19 @@ void main() {
         addTearDown(repo.dispose);
       });
 
-      test('six racks on the inputs fit two workers, seven do not', () {
-        putRacks(6);
+      test('four racks on the inputs fit two workers, five do not', () {
+        putRacks(4);
         expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
-        // A seventh is weighed by what it adds to the critical path.
-        final seventh = repo.fxGrowthNs({
-          const FxAddress(stage: FxStage.input, index: 6): rack,
+        expect(repo.state.fxHeld, isEmpty);
+        // A fifth is weighed by what it adds to the critical path.
+        final fifth = repo.fxGrowthNs({
+          const FxAddress(stage: FxStage.input, index: 4): rack,
         });
-        expect(seventh, greaterThan(repo.fxRoomNs));
+        expect(fifth, greaterThan(repo.fxRoomNs));
         // Restored anyway, it comes up switched off (the owner's R2).
-        putRacks(7);
+        putRacks(5);
         expect(
-          repo.fxChainHeld(const FxAddress(stage: FxStage.input, index: 6)),
+          repo.fxChainHeld(const FxAddress(stage: FxStage.input, index: 4)),
           isTrue,
         );
         expect(repo.fxRoomNs, greaterThanOrEqualTo(0));

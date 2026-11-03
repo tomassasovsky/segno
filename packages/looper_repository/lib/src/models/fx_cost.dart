@@ -6,15 +6,15 @@ import 'package:looper_repository/src/models/track_effect.dart';
 /// hop (`bench_fx_cpu --table`).
 ///
 /// Measured on the console (Pi 5, SCHED_FIFO 70) where a console bench
-/// exists: the overdrive,
-/// distortion, vinyl, degrade, LPF and spring (#1433). The rest are the
+/// exists: the degrade, LPF and spring (#1433). The rest are the
 /// arm64 CI runner's table times 1.75, the console's ratio to it on the
 /// octaver and on the rig itself, until the console's own table replaces
 /// them.
 ///
 /// Per frame because both the cost and the budget scale with the block: at
 /// another rate the same work fits a different share of real time
-/// ([fxBudgetNs]).
+/// ([fxBudgetNs]). The kinds that run oversampled charge by the rate
+/// instead ([kFxOversampledCostNs]).
 const Map<TrackEffectType, int> kFxKindCostNs = {
   TrackEffectType.none: 0,
   TrackEffectType.drive: 84,
@@ -32,9 +32,8 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   TrackEffectType.doubler: 40,
   TrackEffectType.chorus: 67,
   TrackEffectType.wah: 30,
-  TrackEffectType.overdrive: 122,
-  TrackEffectType.distortion: 227,
-  TrackEffectType.vinyl: 97,
+  // The overdrive, distortion and vinyl run oversampled, and their charge
+  // depends on the rate: kFxOversampledCostNs.
   TrackEffectType.degrade: 47,
   // The console's 55 for the still filter, x 1.08: the swept one (its
   // ladder redesigned every sample) over the still one on CI arm64.
@@ -58,10 +57,7 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   // every 32 frames, runs 4.89 us an instance where RES LO L/R runs 3.93
   // in the same run (#1477).
   TrackEffectType.modeDelay: 73,
-  // CI arm64, an eighth of eight in one chain (13.75 us, drive 93.5 % on
-  // the 4x12"), x 1.75. A cabinet change runs both cabinets for 1024
-  // frames, about a third more for those blocks.
-  TrackEffectType.ampCab: 376,
+  // The Amp+Cab's clipper runs oversampled: kFxOversampledCostNs.
   // CI arm64, an eighth of eight in one chain while their settings move
   // (3.27 us, the phaser at full depth, its heaviest mode), x 1.75. A mode
   // change runs both modes for 1024 frames.
@@ -70,6 +66,28 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   // (23.5 us, BOX, the most early taps, its Length gliding), x 1.75. Still,
   // the same eight run 13.5 us an instance.
   TrackEffectType.roomVerb: 643,
+};
+
+/// What the waveshapers that run oversampled (#1547) charge, in nanoseconds
+/// per frame: `low` at 44.1 and 48 kHz, `high` at 88.2 kHz and up, where
+/// they run fewer times over (8x and 4x the Overdrive and the Amp+Cab's
+/// clipper, 4x and 2x the Vinyl, 2x and 1x the Distortion; engine_fx.c,
+/// le_os_stages).
+///
+/// Estimated: each is the console's charge before oversampling (96 kHz:
+/// Overdrive 122, Distortion 227 and Vinyl 97 measured on the console, the
+/// Amp+Cab's 376 from CI arm64 x 1.75) times what oversampling multiplied
+/// the kind's own cost by on the macOS host (M4 Pro, one instance, ns per
+/// frame against the same kind at 96 kHz before): the Overdrive 7.9 and
+/// 4.8, the Distortion 2.0 and 1.2, the Vinyl 5.6 and 2.9 (its DC blocker
+/// included), the Amp+Cab 2.5 and 2.1. The console's own table
+/// (`bench_fx_cpu --table` at 44.1, 48 and 96 kHz) is owed and replaces
+/// these.
+const Map<TrackEffectType, ({int low, int high})> kFxOversampledCostNs = {
+  TrackEffectType.overdrive: (low: 969, high: 590),
+  TrackEffectType.distortion: (low: 459, high: 267),
+  TrackEffectType.vinyl: (low: 543, high: 276),
+  TrackEffectType.ampCab: (low: 955, high: 793),
 };
 
 /// What a kind on the hop charges, in microseconds a block: its frame's work
@@ -107,16 +125,28 @@ const int kFxBenchPeriod = 64;
 /// 80 %, leaving the rest to the callback's own jitter.
 const double kFxBudgetShare = 0.8;
 
-/// What [fx] charges, in nanoseconds per frame at [period]-frame blocks:
-/// its kind's ([kFxKindCostNs], or [kFxHopCostUs] spread over the block),
-/// whether or not it is on, so switching a pedal on is never refused. A
-/// hosted plugin charges nothing here; its cost is its own.
-int fxEntryCostNs(TrackEffect fx, {int period = kFxBenchPeriod}) {
+/// The rate the per-frame charges were measured at.
+const int kFxBenchRate = 96000;
+
+/// What [fx] charges, in nanoseconds per frame at [sampleRate] and
+/// [period]-frame blocks: its kind's ([kFxKindCostNs], [kFxOversampledCostNs]
+/// at the rate, or [kFxHopCostUs] spread over the block), whether or not it
+/// is on, so switching a pedal on is never refused. A hosted plugin charges
+/// nothing here; its cost is its own.
+int fxEntryCostNs(
+  TrackEffect fx, {
+  int period = kFxBenchPeriod,
+  int sampleRate = kFxBenchRate,
+}) {
   if (fx is! BuiltInEffect) return 0;
   final hop = fx.type == TrackEffectType.octaver && fx.params[3] >= 0.5
       ? kFxPsolaCostUs
       : kFxHopCostUs[fx.type];
   if (hop != null) return (hop * 1000 / _perBlock(period)).ceil();
+  final oversampled = kFxOversampledCostNs[fx.type];
+  if (oversampled != null) {
+    return sampleRate < 88200 ? oversampled.low : oversampled.high;
+  }
   return kFxKindCostNs[fx.type] ?? 0;
 }
 
@@ -124,7 +154,11 @@ int fxEntryCostNs(TrackEffect fx, {int period = kFxBenchPeriod}) {
 int fxChainCostNs(
   Iterable<TrackEffect> chain, {
   int period = kFxBenchPeriod,
-}) => chain.fold(0, (sum, fx) => sum + fxEntryCostNs(fx, period: period));
+  int sampleRate = kFxBenchRate,
+}) => chain.fold(
+  0,
+  (sum, fx) => sum + fxEntryCostNs(fx, period: period, sampleRate: sampleRate),
+);
 
 /// What the effects may charge in all, in nanoseconds per frame, at
 /// [sampleRate] and [period]-frame blocks: the budget's share of a frame
