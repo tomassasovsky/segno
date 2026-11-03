@@ -92,15 +92,15 @@ class LoopSettingsFrame extends StatelessWidget {
   /// reads as one titlebar rather than a heading with a stray button.
   final Widget? actions;
 
+  /// The top bar's inset from the canvas edges: Back at 36, Stage ending
+  /// 36 before the right edge.
+  static const double _barInset = 36;
+
   /// The title row in the main area, as the pen draws its two kinds. A row
   /// that carries actions (Settings' Power, the Pedals pages' Cancel and
   /// Save) is 64 high at 30, the height of its buttons, and its title has no
   /// tracking; a title alone is 72 high at 28 and tracked -1.1. The title is
   /// centred in either.
-  /// The top bar's inset from the canvas edges: Back at 36, Stage ending
-  /// 36 before the right edge.
-  static const double _barInset = 36;
-
   static ({double top, double height, double tracking}) _titleRow({
     required bool actions,
   }) => actions
@@ -153,7 +153,7 @@ class LoopSettingsFrame extends StatelessWidget {
                   ),
                   // The app's messages (#1562). A settings page draws no
                   // track cards, so a track's message is said here too.
-                  centre: const NoticeBarMessage(showsTrackMessages: true),
+                  centre: const NoticeBarMessage(),
                   // Arimo's line metrics put a label centred in a 64 high
                   // box 2 px under where the pen's text box sets it.
                   trailing: AppTextOptics(

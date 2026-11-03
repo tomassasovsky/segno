@@ -345,9 +345,11 @@ class TrackColumn extends StatelessWidget {
                 behavior: HitTestBehavior.opaque,
                 onLongPress: () => bloc.add(LooperStopPressed(track.channel)),
                 // A message this track caused takes the meter's place for as
-                // long as it is up (#1562).
+                // long as it is up (#1562), and steps aside for a queued
+                // action's cue.
                 child: TrackNotice(
                   channel: track.channel,
+                  yields: track.pending || songQueued,
                   child: Stack(
                     children: [
                       Positioned.fill(

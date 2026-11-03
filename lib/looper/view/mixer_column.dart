@@ -182,18 +182,15 @@ class MixerColumn extends StatelessWidget {
             ),
           ),
           const SizedBox(height: _gap),
+          // The fader stays in reach while this track has a message: the
+          // strip only rings, and the top bar says it (#1562).
           Expanded(
-            // A message this track caused takes the fader's place for as
-            // long as it is up (#1562).
-            child: TrackNotice(
-              channel: track.channel,
-              child: _StripMeter(
-                track: track,
-                cursor: cursor,
-                routeCurrent: routeCurrent,
-                color: barColor,
-                clipColor: looper.recordColor,
-              ),
+            child: _StripMeter(
+              track: track,
+              cursor: cursor,
+              routeCurrent: routeCurrent,
+              color: barColor,
+              clipColor: looper.recordColor,
             ),
           ),
           const SizedBox(height: _gap),
