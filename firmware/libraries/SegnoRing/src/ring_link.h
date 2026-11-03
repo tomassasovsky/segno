@@ -20,7 +20,7 @@
 // counting them as noise.
 //
 // LEVEL (#1564) is the console's LED brightness, one byte, 1..255 with 255
-// full: the console sends it with every STATE. It is a type of its own, not a
+// full: the console sends it just before every STATE. It is a type of its own, not a
 // STATE byte, so the version stays 3 and a ring firmware that predates it
 // (1.1 and older) drops it as an unknown type and keeps rendering at full
 // brightness.
@@ -42,11 +42,11 @@ constexpr uint32_t SNAPSHOT_MS = 20, STATE_MS = 100, TIMEOUT_MS = 500;
 constexpr uint8_t FLAG_LIVE = 1, FLAG_ACTIVE = 2, FLAG_LOADED = 4, FLAG_DIMMED = 8;
 // The share of normal output the console's LEDs keep while dimmed: ~20 %.
 constexpr uint8_t DIM_LEVEL = 51;
-// The output level for the console's LED `level` (LEVEL, LEVEL_FULL when the
-// console says nothing) and the idle dim, as one factor so a pixel is rounded
-// once. Never 0: a lit pixel stays lit.
+// The output level for the console's LED `level` (LEVEL, 1..255, LEVEL_FULL
+// when the console says nothing) and the idle dim, as one factor so a pixel is
+// rounded once. Never 0: a lit pixel stays lit.
 inline uint8_t outputLevel(uint8_t level, bool dimmed) {
-  if (!dimmed) return level ? level : 1;
+  if (!dimmed) return level;
   const uint8_t scaled = (uint8_t)((level * DIM_LEVEL + 127) / 255);
   return scaled ? scaled : 1;
 }

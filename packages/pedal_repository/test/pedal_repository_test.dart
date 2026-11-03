@@ -237,10 +237,13 @@ void main() {
       expect(repo.ledLevel, 100);
       link.hello();
       await pumpEventQueue();
+      // Set while the board was away: the first hello carries it, even with
+      // no frame to follow.
+      expect(link.sent, const [LedLevelMessage(100)]);
       repo
         ..setLedLevel(100)
         ..setLedLevel(140);
-      expect(link.sent, const [LedLevelMessage(140)]);
+      expect(link.sent, const [LedLevelMessage(100), LedLevelMessage(140)]);
       expect(() => repo.setLedLevel(0), throwsRangeError);
       expect(() => repo.setLedLevel(256), throwsRangeError);
     });
@@ -274,6 +277,19 @@ void main() {
         const LedLevelMessage(PedalLinkCodec.ledLevelFull),
         StateMessage(PedalStateFrame.blank()),
       ]);
+    });
+
+    test('full, set once, is replayed too', () async {
+      // A board the last run left dimmed is brought back to full.
+      link.hello();
+      await pumpEventQueue();
+      repo.setLedLevel(PedalLinkCodec.ledLevelFull);
+      expect(link.sent, const [LedLevelMessage(PedalLinkCodec.ledLevelFull)]);
+      link
+        ..sent.clear()
+        ..hello();
+      await pumpEventQueue();
+      expect(link.sent, const [LedLevelMessage(PedalLinkCodec.ledLevelFull)]);
     });
 
     test('setLedLevel sends nothing after goodbye', () async {

@@ -50,9 +50,10 @@ extern "C" {
 #define AMBIENT_SMOOTHING 0.3f
 
 /* The reported level moves only when the smoothed reading has moved this
- * many level steps from it: 4 of the 16 per doubling, about 19 %. Whether
- * the sensor is at the top of its range follows the median alone, so it
- * changes no faster than the median does. */
+ * many level steps from it: 4 of the 16 per doubling, about 19 %. Darkness
+ * is reported as 0 exactly. Whether the sensor is at the top of its range
+ * follows the median alone, so it changes no faster than the median does,
+ * and while it is the level is the top exactly. */
 #define AMBIENT_HYSTERESIS 4
 
 /* The pad-pull probe that tells a fitted sensor from an open pin, every

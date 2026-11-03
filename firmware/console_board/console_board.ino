@@ -376,14 +376,15 @@ static ring_link::RingState ringStateFromFrame() {
   return state;
 }
 
-// The LED level follows every state: ring firmware 1.1 and older drop it
-// and stay at full brightness.
+// The LED level goes with every state, and before it, so a ring that comes
+// back to life renders its first live state at the right level. Ring firmware
+// 1.1 and older drop it and stay at full brightness.
 static void sendRingState() {
   uint8_t payload[ring_link::STATE_LEN], packet[ring_link::MAX_FRAME];
-  ring_link::encodeState(ringStateFromFrame(), payload);
-  ringLink.write(packet, ring_link::encode(ring_link::STATE, payload, packet));
   const uint8_t level[ring_link::LEVEL_LEN] = {g_ledLevel};
   ringLink.write(packet, ring_link::encode(ring_link::LEVEL, level, packet));
+  ring_link::encodeState(ringStateFromFrame(), payload);
+  ringLink.write(packet, ring_link::encode(ring_link::STATE, payload, packet));
   g_lastRingStateMs = millis();
 }
 
@@ -556,6 +557,9 @@ static unsigned long g_ctrlSwitchSinceMs[PEDAL_CTRL_COUNT][PEDAL_CTRL_CONTACT_CO
 static unsigned long g_ctrlLastSampleMs = 0;
 
 static uint16_t ctrlSample(uint8_t pin) {
+  // The first conversion after another channel shares that channel's charge
+  // on the sample capacitor (the light sensor's GP28 is read between): drop it.
+  (void)analogRead(pin);
   uint32_t total = 0;
   for (uint8_t i = 0; i < 8; i++) total += analogRead(pin);
   return (uint16_t)(total / 8);

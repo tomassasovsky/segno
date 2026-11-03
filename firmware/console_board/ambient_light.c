@@ -90,8 +90,11 @@ static void close_second(ambient_light *a) {
   a->above = middle >= ambient_light_level_of((float)AMBIENT_TOP_COUNTS);
   const uint8_t target = round_level(a->smoothed);
   const int moved = (int)target - (int)a->level;
-  if (!a->have_level || moved >= AMBIENT_HYSTERESIS || moved <= -AMBIENT_HYSTERESIS) {
-    a->level = target;
+  if (a->above) {
+    a->level = ambient_light_top_level();  /* the top of the range, exactly */
+  } else if (!a->have_level || target == 0 || moved >= AMBIENT_HYSTERESIS ||
+             moved <= -AMBIENT_HYSTERESIS) {
+    a->level = target;  /* darkness, 0, exactly */
   }
   a->have_level = 1;
 }
