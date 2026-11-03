@@ -135,7 +135,7 @@ class _NoticeBand extends StatelessWidget {
         constraints: BoxConstraints(minHeight: theme.readoutBandHeight * s),
         padding: EdgeInsets.symmetric(
           horizontal: ConsoleReadoutView.sideInset * s,
-          vertical: context.spacing.sm * s,
+          vertical: context.spacing.xs * s,
         ),
         decoration: BoxDecoration(
           color: colors.tint,

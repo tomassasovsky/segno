@@ -7,6 +7,8 @@ import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 
+import '../helpers/text_fit.dart';
+
 void main() {
   group('readoutTempo', () {
     test('drops the decimal on a whole tempo, keeps one otherwise', () {
@@ -216,6 +218,9 @@ void main() {
     });
 
     group('notice band (#1562)', () {
+      // The console's faces: a band's height is the drawn type's.
+      setUpAll(loadBundledFonts);
+
       const lost = ReadoutNotice(
         title: 'Scarlett 4i4 USB disconnected. Nothing is heard.',
         tone: NoticeTone.critical,
