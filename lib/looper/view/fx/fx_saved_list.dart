@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/app_notices.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -12,7 +12,6 @@ import 'package:segno/looper/model/fx_library_choice.dart';
 import 'package:segno/looper/view/fx/fx_chain_strip.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
-import 'package:toastification/toastification.dart';
 
 /// The pen's `04 My presets`: the player's own saved sounds, each a card that
 /// recalls it over a row that renames or deletes it.
@@ -116,11 +115,7 @@ class _SavedPreset extends StatelessWidget {
       await presets.rename(preset.id, name);
     } on Object {
       if (context.mounted) {
-        showAppSnackToast(
-          id: 'fx-preset-write-failed',
-          type: ToastificationType.error,
-          title: AppText(l10n.storageActionFailed),
-        );
+        showStorageFailed(context, AppNoticeId.fxPreset);
       }
     }
   }
@@ -141,11 +136,7 @@ class _SavedPreset extends StatelessWidget {
       await presets.remove(preset.id);
     } on Object {
       if (context.mounted) {
-        showAppSnackToast(
-          id: 'fx-preset-write-failed',
-          type: ToastificationType.error,
-          title: AppText(l10n.storageActionFailed),
-        );
+        showStorageFailed(context, AppNoticeId.fxPreset);
       }
     }
   }

@@ -278,6 +278,8 @@ void main() {
           extensions: [
             SurfaceTheme.dark,
             routingGraphThemeFromSurface(SurfaceTheme.dark),
+            SpacingTheme.standard,
+            NoticeTheme.standard,
           ],
         ),
         home: MultiRepositoryProvider(

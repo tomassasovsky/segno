@@ -11,6 +11,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -25,6 +26,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/shortcuts_help_sheet.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -105,6 +107,7 @@ void main() {
   late TransportClockCubit transportClock;
   late OutputLevelCubit outputLevel;
   late AudioSetupCubit audioSetup;
+  late NoticesCubit notices;
   late FadeSettings fade;
 
   // The reading the Tuner face draws, and input names for its scenes; reset
@@ -113,6 +116,8 @@ void main() {
   Map<int, String>? inputNames;
 
   setUp(() {
+    notices = NoticesCubit();
+    addTearDown(notices.close);
     tunerReading = const TunerState();
     inputNames = null;
     settings = SettingsRepository(store: FakeKeyValueStore());
@@ -132,6 +137,10 @@ void main() {
     when(
       () => repository.meterLevels,
     ).thenAnswer((_) => const Stream<MeterLevels>.empty());
+    when(() => repository.playhead).thenReturn(const Playhead());
+    when(
+      () => repository.playheads,
+    ).thenAnswer((_) => const Stream<Playhead>.empty());
     when(
       () => repository.cancelArm(channel: any(named: 'channel')),
     ).thenReturn(EngineResult.ok);
@@ -267,6 +276,15 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       MaterialApp(
+        // Animations off, so a message is drawn whole and its time-left
+        // line at its full width, the frame the design is checked against.
+        builder: (context, child) => BlocProvider.value(
+          value: notices,
+          child: MediaQuery(
+            data: MediaQuery.of(context).copyWith(disableAnimations: true),
+            child: child!,
+          ),
+        ),
         debugShowCheckedModeBanner: false,
         locale: locale,
         theme: AppTheme.neon,
@@ -1286,87 +1304,170 @@ void main() {
     skip: true, // Fails to render: #1500.
   );
 
-  testWidgets(
-    'console main window with the device-lost banner (STAGE / device-lost)',
-    (tester) async {
-      // The one standing loss condition: the pinned interface is gone, so the
-      // red banner holds the stage above the track run. It STANDS IN for the
-      // "engine stopped" bar (#453) — the two never stack — so a device-gone
-      // engine shows this banner alone, not both. MIDI loss is a transient
-      // toast, never a banner here.
-      whenListen(
-        audioSetup,
-        const Stream<AudioSetupState>.empty(),
-        initialState: const AudioSetupState(
-          deviceConnectivity: DeviceConnectivity.lost,
-          connectivityDeviceName: 'Scarlett 2i2',
+  // #692: the FX-mode stage transform — the whole stage takes the FX purple,
+  // meters recede to 40%, and each tile re-dresses with a power pill and its
+  // chain's entries (or NO CHAIN). Same seed as the nominal decal, in FX mode
+  // and with two real chains, so the decal shows the transform end to end.
+
+  // The notice system (#1562): every state the top bar, a track's card and
+  // the foot views take, on the console's own stage at 1920 x 1080.
+  group('notices', () {
+    Future<void> stage(
+      WidgetTester tester, {
+      StageView view = StageView.track,
+    }) async {
+      const names = ['GUITAR', 'BOOM', 'RC-20', 'VOX'];
+      for (var i = 0; i < names.length; i++) {
+        await tracks.rename(i, names[i]);
+      }
+      tracks.showView(view);
+      levels(
+        const MeterLevels(
+          tracks: [
+            TrackLevels(peak: 0.9),
+            TrackLevels(peak: 0.68),
+            TrackLevels(peak: 0.55),
+          ],
         ),
       );
       seed(
         const LooperState(
-          // The engine reports the device gone, so the generic "not running"
-          // affordance is suppressed and only the device-lost banner shows.
-          tracks: [
-            Track(state: TrackState.playing, lengthFrames: 96000),
-            Track(channel: 1),
-            Track(channel: 2),
-            Track(channel: 3),
-          ],
-        ),
-      );
-      await pump(tester);
-      await expectLater(
-        find.byType(TracksView),
-        matchesGoldenFile('goldens/tracks_device_lost.png'),
-      );
-    },
-    skip: !rendersScreenshots,
-  );
-
-  testWidgets(
-    'console main window with effects switched off because the rig could '
-    'not run them (#1515, STAGE / effects-off)',
-    (tester) async {
-      // The owner's R2: the rig came up over the effects budget, so its
-      // newest chains came up held off. The standing notice names them
-      // until they are back on or dismissed; the warning colour, not the
-      // record red: the sound differs from what was saved, nothing is lost.
-      inputNames = const {0: 'Guitar'};
-      const held = [
-        FxAddress(stage: FxStage.loop, index: 2),
-        FxAddress(stage: FxStage.input),
-      ];
-      seed(
-        LooperState(
-          status: const EngineStatus(
+          status: EngineStatus(
             isConnected: true,
             devicePresent: true,
             deviceName: 'Segno',
+            sampleRate: 48000,
             inputChannels: 2,
             outputChannels: 2,
           ),
-          tracks: const [
+          tracks: [
             Track(state: TrackState.playing, lengthFrames: 96000),
             Track(channel: 1, state: TrackState.playing, lengthFrames: 96000),
             Track(channel: 2, state: TrackState.playing, lengthFrames: 96000),
             Track(channel: 3),
           ],
-          fxHeld: held.toSet(),
-          fxHoldNotice: held,
         ),
       );
       await pump(tester);
-      expect(find.byKey(const Key('fx_held_banner')), findsOneWidget);
+    }
+
+    Future<void> shoot(WidgetTester tester, String name) async {
+      // One pump delivers the cubit's state, the next draws it.
+      await tester.pump();
+      await tester.pump();
+      expect(tester.takeException(), isNull);
       await expectLater(
         find.byType(TracksView),
-        matchesGoldenFile('goldens/tracks_fx_held.png'),
+        matchesGoldenFile('goldens/notice_$name.png'),
       );
-    },
-    skip: !rendersScreenshots,
-  );
+      // Let the message run out, so no timer outlives the scene.
+      await tester.pump(const Duration(seconds: 10));
+    }
 
-  // #692: the FX-mode stage transform — the whole stage takes the FX purple,
-  // meters recede to 40%, and each tile re-dresses with a power pill and its
-  // chain's entries (or NO CHAIN). Same seed as the nominal decal, in FX mode
-  // and with two real chains, so the decal shows the transform end to end.
+    // The app's own words, as `StandingNotices` raises them.
+    Notice lost() => Notice(
+      id: 'lost',
+      tone: NoticeTone.critical,
+      title: (l10n) => l10n.deviceLostNamedBanner('Scarlett 4i4'),
+      action: NoticeAction(
+        label: (l10n) => l10n.deviceLostBannerAction,
+        onPressed: () {},
+      ),
+    );
+
+    testWidgets('confirmation in the top bar', (tester) async {
+      await stage(tester);
+      notices.show(
+        Notice(
+          id: 'saved',
+          tone: NoticeTone.success,
+          title: (l10n) => l10n.sessionSavedAs('Night set'),
+        ),
+      );
+      await shoot(tester, 'confirm');
+    }, skip: !rendersScreenshots);
+
+    testWidgets('undo in the top bar', (tester) async {
+      await stage(tester);
+      notices.show(
+        Notice(
+          id: 'undo',
+          title: (l10n) => l10n.undoClearAllToast,
+          action: NoticeAction(
+            icon: LucideIcons.undo2,
+            label: (l10n) => l10n.undoClearAllAction,
+            onPressed: () {},
+          ),
+        ),
+      );
+      await shoot(tester, 'undo');
+    }, skip: !rendersScreenshots);
+
+    testWidgets('warning in the top bar', (tester) async {
+      await stage(tester);
+      notices.show(
+        Notice(
+          id: 'midi',
+          tone: NoticeTone.warning,
+          title: (l10n) => l10n.midiLostToastTitle,
+          body: (l10n) => l10n.midiLostToastBody,
+        ),
+      );
+      await shoot(tester, 'warning');
+    }, skip: !rendersScreenshots);
+
+    testWidgets('critical must-act: the whole bar', (tester) async {
+      await stage(tester);
+      notices.raise(lost());
+      await shoot(tester, 'must_act_critical');
+    }, skip: !rendersScreenshots);
+
+    testWidgets('warning must-act: the whole bar', (tester) async {
+      await stage(tester);
+      notices.raise(
+        Notice(
+          id: 'fx_held',
+          tone: NoticeTone.warning,
+          title: (l10n) => l10n.fxHeldTitle,
+          body: (l10n) => l10n.fxHeldBanner('RC-20', 1),
+          action: NoticeAction(
+            label: (l10n) => l10n.fxHeldOpen,
+            onPressed: () {},
+          ),
+          secondary: NoticeAction(
+            label: (l10n) => l10n.dismiss,
+            onPressed: () {},
+          ),
+        ),
+      );
+      await shoot(tester, 'must_act_warning');
+    }, skip: !rendersScreenshots);
+
+    for (final view in StageView.values) {
+      testWidgets("a track's message on its card, ${view.name} view", (
+        tester,
+      ) async {
+        await stage(tester, view: view);
+        notices.showOnTrack(
+          1,
+          Notice(
+            id: 'rec',
+            tone: NoticeTone.warning,
+            overline: (l10n) => l10n.noticeRecRefused,
+            title: (l10n) => l10n.recordRefusedTitle,
+            body: (l10n) => l10n.recordRefusedBody,
+          ),
+        );
+        await shoot(tester, 'track_${view.name}');
+      }, skip: !rendersScreenshots);
+    }
+
+    testWidgets('must-act on a performance view (Mixer)', (tester) async {
+      when(repository.allMonitors).thenReturn(const {});
+      control.setMode(InteractionMode.mixer);
+      await stage(tester);
+      notices.raise(lost());
+      await shoot(tester, 'foot_must_act');
+    }, skip: !rendersScreenshots);
+  });
 }

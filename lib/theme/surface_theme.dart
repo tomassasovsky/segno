@@ -39,6 +39,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.fx,
     required this.fxSurface,
     required this.warning,
+    required this.warningTint,
+    required this.warningLine,
     required this.success,
     required this.successSurface,
     required this.rec,
@@ -189,6 +191,13 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// The caution colour for non-blocking notices (e.g. "no active outputs"),
   /// brightened in the high-contrast variant so it stays legible (WCAG 1.4.3).
   final Color warning;
+
+  /// The [warning] family's wash and line, mirroring [recTint] and [recLine]:
+  /// the fill and rule of a warning-tone notice (#1562). Tokens rather than an
+  /// inline `warning.withValues(alpha: …)`, so the high-contrast flavour can
+  /// lift them with the rest of the palette.
+  final Color warningTint;
+  final Color warningLine;
 
   /// Positive/confirmation colour (DS `success`), and its tinted wash — the
   /// [success] sibling of [recSurface], used behind pills that read positive
@@ -399,6 +408,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? fx,
     Color? fxSurface,
     Color? warning,
+    Color? warningTint,
+    Color? warningLine,
     Color? success,
     Color? successSurface,
     Color? rec,
@@ -464,6 +475,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     fx: fx ?? this.fx,
     fxSurface: fxSurface ?? this.fxSurface,
     warning: warning ?? this.warning,
+    warningTint: warningTint ?? this.warningTint,
+    warningLine: warningLine ?? this.warningLine,
     success: success ?? this.success,
     successSurface: successSurface ?? this.successSurface,
     rec: rec ?? this.rec,
@@ -535,6 +548,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       fx: c(fx, other.fx),
       fxSurface: c(fxSurface, other.fxSurface),
       warning: c(warning, other.warning),
+      warningTint: c(warningTint, other.warningTint),
+      warningLine: c(warningLine, other.warningLine),
       success: c(success, other.success),
       successSurface: c(successSurface, other.successSurface),
       rec: c(rec, other.rec),
@@ -631,6 +646,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     fx: Color(0xFFA06BE0),
     fxSurface: Color(0xFF1E1430),
     warning: Color(0xFFE0A94A),
+    warningTint: Color(0x21E0A94A),
+    warningLine: Color(0x66E0A94A),
     success: Color(0xFF30A46C),
     successSurface: Color(0x2430A46C),
     rec: Color(0xFFE5484D),
@@ -721,6 +738,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     fx: Color(0xFFC9A8FF),
     fxSurface: Color(0xFF33245A),
     warning: Color(0xFFFFD27A),
+    warningTint: Color(0x2EFFD27A),
+    warningLine: Color(0x99FFD27A),
     success: Color(0xFF6EE7B7),
     successSurface: Color(0x336EE7B7),
     rec: Color(0xFFFF6B6B),

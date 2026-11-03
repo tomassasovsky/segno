@@ -24,10 +24,6 @@ const _allowed = <String, String>{
   'lib/looper/view/fx/stomp/fx_stomp_graphics.dart':
       'stomp pedal face pictures — the approved pedal design (#1501)',
 
-  // Drop shadows. The design system has no shadow tokens at all; these are not
-  // palette drift, they are a gap on the DS side.
-  'lib/app/app_toasts.dart': 'drop shadow — DS defines no shadow tokens',
-
   // Runs in the second window, a separate engine that may have no theme
   // registered, so its theme lookups are null-guarded with literal fallbacks.
   // The playhead is deliberately white and carries its own gutter (3b).
@@ -43,11 +39,11 @@ const _allowed = <String, String>{
 /// Colour literals that carry no palette meaning.
 final _harmless = RegExp(r'Colors\.transparent');
 
-/// An inline alpha wash of a **state** colour — `accent`, `rec`, `success` or
-/// `fx`.
+/// An inline alpha wash of a **state** colour — `accent`, `rec`, `success`,
+/// `fx` or `warning`.
 ///
-/// Those four are the tokens that own a matching `*Surface` fill
-/// (`accentSurface`, `recSurface`, `successSurface`, `fxSurface`), so washing
+/// Those are the tokens that own a matching fill (`accentSurface`,
+/// `recSurface`, `successSurface`, `fxSurface`, `warningTint`), so washing
 /// them by hand is the same defect a hex is: the high-contrast flavor overrides
 /// the surface tokens and cannot reach an inline alpha, which pins the washed
 /// surface at the dark flavor's fill while every sibling brightens around it
@@ -58,7 +54,9 @@ final _harmless = RegExp(r'Colors\.transparent');
 /// Deliberately narrow: an alpha on a NEUTRAL (`textPrimary` dimmed to an
 /// unlit dot, `scrim` deepened for a barrier, `line` softened) is a dim, not
 /// a fill, and has no token to reach for.
-final _stateWash = RegExp(r'\.(accent|rec|success|fx)\.withValues\(\s*alpha:');
+final _stateWash = RegExp(
+  r'\.(accent|rec|success|fx|warning)\.withValues\(\s*alpha:',
+);
 
 /// Files that may still wash a state colour inline, and why.
 const _allowedWash = <String, String>{};
@@ -122,7 +120,8 @@ void main() {
       isEmpty,
       reason:
           'Inline alpha on a state colour. Use the matching surface token '
-          '(accentSurface / recSurface / successSurface), or add the file '
+          '(accentSurface / recSurface / successSurface / fxSurface / '
+          'warningTint), or add the file '
           'to _allowedWash with the reason no token fits.\n'
           '${offenders.join('\n')}',
     );

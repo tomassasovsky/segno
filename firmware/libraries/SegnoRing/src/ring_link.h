@@ -18,11 +18,18 @@
 // Framing is ring_frame.h's. Firmware updates share the wire on their own
 // channel (ring_update.h); the parser here skips those frames without
 // counting them as noise.
+//
+// LEVEL (#1564) is the console's LED brightness, one byte, 1..255 with 255
+// full: the console sends it just before every STATE. It is a type of its own, not a
+// STATE byte, so the version stays 3 and a ring firmware that predates it
+// (1.1 and older) drops it as an unknown type and keeps rendering at full
+// brightness.
 namespace ring_link {
-constexpr uint8_t VERSION = 3, STATE = 1, INPUT_STATE = 2;
+constexpr uint8_t VERSION = 3, STATE = 1, INPUT_STATE = 2, LEVEL = 3;
 constexpr uint8_t END = RING_FRAME_END, ESC = RING_FRAME_ESC;
 constexpr uint8_t ESC_END = RING_FRAME_ESC_END, ESC_ESC = RING_FRAME_ESC_ESC;
-constexpr size_t STATE_LEN = 5, INPUT_LEN = 12;
+constexpr size_t STATE_LEN = 5, INPUT_LEN = 12, LEVEL_LEN = 1;
+constexpr uint8_t LEVEL_FULL = 255;
 constexpr size_t MAX_PAYLOAD = INPUT_LEN, MAX_BODY = MAX_PAYLOAD + 4;
 constexpr size_t MAX_FRAME = RING_FRAME_ENCODED_MAX(MAX_BODY - 2);
 constexpr uint32_t SNAPSHOT_MS = 20, STATE_MS = 100, TIMEOUT_MS = 500;
@@ -33,14 +40,28 @@ constexpr uint32_t SNAPSHOT_MS = 20, STATE_MS = 100, TIMEOUT_MS = 500;
 // DIMMED: the console idled and the screens dimmed; the ring dims with them
 // (#1349). A ring firmware that predates it ignores the bit.
 constexpr uint8_t FLAG_LIVE = 1, FLAG_ACTIVE = 2, FLAG_LOADED = 4, FLAG_DIMMED = 8;
-// The share of normal output the console's LEDs keep while dimmed: ~20 %. A
-// lit channel stays at least 1, so a dimmed breathe never reaches black and a
-// faint hue component does not vanish.
+// The share of normal output the console's LEDs keep while dimmed: ~20 %.
 constexpr uint8_t DIM_LEVEL = 51;
-inline uint8_t dimChannel(uint8_t value) {
-  if (!value) return 0;
-  const uint8_t dimmed = (uint8_t)((value * DIM_LEVEL + 127) / 255);
-  return dimmed ? dimmed : 1;
+// The output level for the console's LED `level` (LEVEL, 1..255, LEVEL_FULL
+// when the console says nothing) and the idle dim, as one factor so a pixel is
+// rounded once. Never 0: a lit pixel stays lit.
+inline uint8_t outputLevel(uint8_t level, bool dimmed) {
+  if (!dimmed) return level;
+  const uint8_t scaled = (uint8_t)((level * DIM_LEVEL + 127) / 255);
+  return scaled ? scaled : 1;
+}
+// Scales one pixel by `level` of 255, each channel rounded, so its hue holds.
+// A lit pixel stays lit: when every channel rounds to 0, the strongest keeps
+// 1, so a dimmed breathe never reaches black and the hue's main component
+// survives while weak ones drop out instead of rising to match it. At
+// LEVEL_FULL nothing changes.
+inline void scalePixel(uint8_t &r, uint8_t &g, uint8_t &b, uint8_t level) {
+  if (level == LEVEL_FULL || !(r | g | b)) return;
+  const uint8_t peak = r >= g && r >= b ? 0 : g >= b ? 1 : 2;
+  r = (uint8_t)((r * level + 127) / 255);
+  g = (uint8_t)((g * level + 127) / 255);
+  b = (uint8_t)((b * level + 127) / 255);
+  if (!(r | g | b)) (peak == 0 ? r : peak == 1 ? g : b) = 1;
 }
 
 struct RingState {
@@ -60,7 +81,7 @@ inline RingState decodeState(const uint8_t *p) {
 
 inline uint16_t crc16(const uint8_t *p, size_t length) { return ring_frame_crc16(p, length); }
 inline size_t payloadLength(uint8_t type) {
-  return type == STATE ? STATE_LEN : type == INPUT_STATE ? INPUT_LEN : 0;
+  return type == STATE ? STATE_LEN : type == INPUT_STATE ? INPUT_LEN : type == LEVEL ? LEVEL_LEN : 0;
 }
 inline void put32(uint8_t *p, uint32_t value) {
   for (uint8_t i = 0; i < 4; ++i) p[i] = (uint8_t)(value >> (8 * i));

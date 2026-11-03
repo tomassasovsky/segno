@@ -4,19 +4,15 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:segno/app/app_toasts.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/segno_navigator.dart';
-import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_fx.dart';
-import 'package:segno/control/model/foot_length.dart';
-import 'package:segno/control/model/foot_peel.dart';
-import 'package:segno/control/model/foot_tuner.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
-import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/looper/view/foot_custom_view.dart';
 import 'package:segno/looper/view/foot_fade_view.dart';
 import 'package:segno/looper/view/foot_fx_view.dart';
@@ -24,28 +20,26 @@ import 'package:segno/looper/view/foot_length_view.dart';
 import 'package:segno/looper/view/foot_mixer_view.dart';
 import 'package:segno/looper/view/foot_peel_view.dart';
 import 'package:segno/looper/view/foot_reverse_view.dart';
-import 'package:segno/looper/view/fx_held_banner.dart';
 import 'package:segno/looper/view/mixer_column.dart';
 import 'package:segno/looper/view/stage_db_scale.dart';
 import 'package:segno/looper/view/stage_footer.dart';
 import 'package:segno/looper/view/stage_top_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
 import 'package:segno/looper/view/track_meters.dart';
-import 'package:segno/looper/view/tracks_chrome.dart';
 import 'package:segno/looper/view/tracks_commands.dart';
 import 'package:segno/looper/view/wave_track_row.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/tuner/view/foot_tuner_view.dart';
-import 'package:toastification/toastification.dart';
 
 /// The main display's Tracks view (the accepted stage): the top bar, then
 /// the active bank's four tracks — tall level columns between the shared dBFS
 /// scales, or one waveform row each in the Wave view — and the session strip
 /// under them. The smaller display follows the selected track on its own.
 ///
-/// The chrome ([StageTopBar], [StageFooter], [AudioNotRunningBanner]) and each
+/// The chrome ([StageTopBar], [StageFooter]) and each
 /// [TrackColumn] / [WaveTrackRow] are their own widgets; the tracks keyboard
 /// map and the shared dispatch/announce helpers live in [TracksCommands]. This
 /// view is just the layout that wires them together.
@@ -58,43 +52,43 @@ class TracksView extends StatefulWidget {
 }
 
 class _TracksViewState extends State<TracksView> {
-  @override
-  void dispose() {
-    dismissAppToast(AppToastId.undoClearAll);
-    dismissAppToast(AppToastId.footMixerFailure);
-    dismissAppToast(AppToastId.footFadeFailure);
-    dismissAppToast(AppToastId.footReverseFailure);
-    dismissAppToast(AppToastId.footPeelRefused);
-    dismissAppToast(AppToastId.assignedActionRefused);
-    dismissAppToast(AppToastId.footTunerRefused);
-    dismissAppToast(AppToastId.footFxFailure);
-    dismissAppToast(AppToastId.footLengthRefused);
-    super.dispose();
-  }
-
-  /// Shows the post-clear-all toast whose action restores the whole rig. The
-  /// action routes through the shared [TracksCommands.undoClearAll] so the
-  /// toast and `⌘⇧C` can never drift, and dismisses the toast on tap. Short
-  /// auto-close: the toast is the discoverable moment, `⌘⇧C` the permanence.
-  void _showUndoClearAllToast() {
+  /// The message after Clear all, whose Undo restores the whole rig. Undo
+  /// routes through the shared [TracksCommands.undoClearAll], so the message,
+  /// `⌘⇧C` and the pedal can never drift; the message is the discoverable
+  /// moment, the key and the pedal the permanent ways.
+  void _showUndoClearAll() {
     if (!mounted) return;
-    final l10n = context.l10n;
-    showAppToast(
-      id: AppToastId.undoClearAll,
-      autoCloseDuration: const Duration(seconds: 6),
-      title: Text(l10n.undoClearAllToast),
-      actions: [
-        TextButton(
-          key: const Key(AppToastId.undoClearAllAction),
+    final notices = context.read<NoticesCubit>();
+    final bloc = context.read<LooperBloc>();
+    final control = context.read<ControlCubit>();
+    notices.show(
+      Notice(
+        id: AppNoticeId.undoClearAll,
+        title: (l10n) => l10n.undoClearAllToast,
+        action: NoticeAction(
+          key: const Key(AppNoticeId.undoClearAllAction),
+          icon: LucideIcons.undo2,
+          label: (l10n) => l10n.undoClearAllAction,
           onPressed: () {
-            TracksCommands(context).undoClearAll();
-            dismissAppToast(AppToastId.undoClearAll);
+            // The message is in every screen's top bar, so Undo works with
+            // the stage gone too: straight to the rig, unannounced.
+            if (mounted) {
+              TracksCommands(context).undoClearAll();
+            } else if (bloc.state.tracks.any((track) => track.clearRestore)) {
+              control.undoClearAll();
+            }
+            notices.clear(AppNoticeId.undoClearAll);
           },
-          child: Text(l10n.undoClearAllAction),
         ),
-      ],
+      ),
     );
   }
+
+  /// A press in a performance view that changed nothing: a warning that
+  /// says why and goes by itself.
+  void _refused(String id, NoticeText title) => context
+      .read<NoticesCubit>()
+      .show(Notice(id: id, tone: NoticeTone.warning, title: title));
 
   @override
   Widget build(BuildContext context) {
@@ -104,11 +98,9 @@ class _TracksViewState extends State<TracksView> {
     // every surface (keyboard, tiles, pedal) reads and writes.
     final overlay = context.watch<ControlCubit>().state;
     final mode = overlay.mode;
-    // NOT `context.watch<LooperBloc>()`: `LooperState` carries live audio —
-    // per-track `peak` / `positionFrames` and the transport's position and
-    // output peak — so it changes on every poll tick while audio flows, and
-    // watching it here rebuilt this whole method: the theme, the listeners,
-    // the Scaffold and all eight columns.
+    // NOT `context.watch<LooperBloc>()`: any change to one track would
+    // rebuild this whole method: the theme, the listeners, the Scaffold and
+    // all eight columns.
     // Measured at 10.98ms p50 in the build phase on the Pi against a 16.7ms
     // frame (#638). This selector holds only values a moving meter cannot
     // change, so a level tick no longer reaches the chrome; the per-track
@@ -116,18 +108,6 @@ class _TracksViewState extends State<TracksView> {
     // level one level below THAT, in [TrackPeakMeter].
     final chrome = context.select<LooperBloc, _ChromeState>(
       (bloc) => _ChromeState.of(bloc.state),
-    );
-
-    // When the engine is stopped *because* the pinned interface is gone, the
-    // device-lost banner below is the one true statement of it — so the
-    // generic "engine stopped" affordance is suppressed while the loss
-    // condition holds, and the stage never says it twice (#453). A stopped
-    // engine with a device still present keeps the generic banner.
-    final deviceLost = context.select<AudioSetupCubit, bool>(
-      (cubit) => switch (cubit.state.deviceConnectivity) {
-        DeviceConnectivity.lost || DeviceConnectivity.waiting => true,
-        _ => false,
-      },
     );
 
     final bankTracks = [
@@ -146,31 +126,24 @@ class _TracksViewState extends State<TracksView> {
             listenWhen: (before, after) =>
                 before.footMixerFailure != after.footMixerFailure &&
                 after.mode == InteractionMode.mixer,
-            listener: (context, _) => showAppToast(
-              id: AppToastId.footMixerFailure,
-              type: ToastificationType.error,
-              title: Text(context.l10n.footMixerFailure),
-              autoCloseDuration: const Duration(seconds: 5),
+            listener: (_, _) => _refused(
+              AppNoticeId.footMixerFailure,
+              (l10n) => l10n.footMixerFailure,
             ),
           ),
           BlocListener<ControlCubit, ControlState>(
             // The Fade surface and an assigned Fade in any mode.
             listenWhen: (before, after) =>
                 before.footFadeFailure != after.footFadeFailure,
-            listener: (context, state) => showAppToast(
-              id: AppToastId.footFadeFailure,
-              type: state.footFadeRefusedEmpty > 0
-                  ? ToastificationType.warning
-                  : ToastificationType.error,
-              title: Text(
-                state.footFadeRefusedEmpty > 0
-                    ? context.l10n.footFadeRefusedEmpty(
-                        state.footFadeRefusedEmpty,
-                      )
-                    : context.l10n.footFadeFailure,
-              ),
-              autoCloseDuration: const Duration(seconds: 5),
-            ),
+            listener: (_, state) {
+              final empty = state.footFadeRefusedEmpty;
+              _refused(
+                AppNoticeId.footFadeFailure,
+                (l10n) => empty > 0
+                    ? l10n.footFadeRefusedEmpty(empty)
+                    : l10n.footFadeFailure,
+              );
+            },
           ),
           BlocListener<ControlCubit, ControlState>(
             // A refused FX-mode stomp says why: the bound effect is gone, or
@@ -178,50 +151,43 @@ class _TracksViewState extends State<TracksView> {
             listenWhen: (before, after) =>
                 before.footFxFailure != after.footFxFailure &&
                 after.mode == InteractionMode.fx,
-            listener: (context, state) => showAppToast(
-              id: AppToastId.footFxFailure,
-              type: ToastificationType.error,
-              title: Text(switch (state.footFxRefusal) {
-                FootFxRefusal.unavailable => context.l10n.footFxUnavailable,
-                FootFxRefusal.failed => context.l10n.footFxFailure,
-              }),
-              autoCloseDuration: const Duration(seconds: 5),
-            ),
+            listener: (_, state) {
+              final refusal = state.footFxRefusal;
+              _refused(
+                AppNoticeId.footFxFailure,
+                (l10n) => switch (refusal) {
+                  FootFxRefusal.unavailable => l10n.footFxUnavailable,
+                  FootFxRefusal.failed => l10n.footFxFailure,
+                },
+              );
+            },
           ),
           BlocListener<ControlCubit, ControlState>(
             // The Reverse surface and an assigned Reverse in any mode.
             listenWhen: (before, after) =>
                 before.footReverseFailure != after.footReverseFailure,
-            listener: (context, state) => showAppToast(
-              id: AppToastId.footReverseFailure,
-              type: state.footReverseRefusedEmpty > 0
-                  ? ToastificationType.warning
-                  : ToastificationType.error,
-              title: Text(
-                state.footReverseRefusedEmpty > 0
-                    ? context.l10n.footReverseRefusedEmpty(
-                        state.footReverseRefusedEmpty,
-                      )
-                    : context.l10n.footReverseFailure,
-              ),
-              autoCloseDuration: const Duration(seconds: 5),
-            ),
+            listener: (_, state) {
+              final empty = state.footReverseRefusedEmpty;
+              _refused(
+                AppNoticeId.footReverseFailure,
+                (l10n) => empty > 0
+                    ? l10n.footReverseRefusedEmpty(empty)
+                    : l10n.footReverseFailure,
+              );
+            },
           ),
           BlocListener<ControlCubit, ControlState>(
             // Every refused Peel says why, whether the press came from the
             // Peel surface or from an assigned Peel in another mode.
             listenWhen: (before, after) =>
                 before.footPeelFailure != after.footPeelFailure,
-            listener: (context, state) => showAppToast(
-              id: AppToastId.footPeelRefused,
-              type: state.footPeelRefusal == FootPeelRefusal.failed
-                  ? ToastificationType.error
-                  : ToastificationType.warning,
-              title: Text(
-                footPeelRefusalText(context.l10n, state.footPeelRefusal),
-              ),
-              autoCloseDuration: const Duration(seconds: 5),
-            ),
+            listener: (_, state) {
+              final refusal = state.footPeelRefusal;
+              _refused(
+                AppNoticeId.footPeelRefused,
+                (l10n) => footPeelRefusalText(l10n, refusal),
+              );
+            },
           ),
           BlocListener<ControlCubit, ControlState>(
             // Every other refused assignment (a Custom switch, a CTRL switch
@@ -229,50 +195,45 @@ class _TracksViewState extends State<TracksView> {
             listenWhen: (before, after) =>
                 before.assignedActionFailure != after.assignedActionFailure &&
                 after.assignedActionRefusal != null,
-            listener: (context, state) => showAppToast(
-              id: AppToastId.assignedActionRefused,
-              type: ToastificationType.warning,
-              title: Text(
-                assignedActionRefusedText(
-                  context.l10n,
-                  context.read<TracksCubit>().state.names,
-                  state.assignedActionRefusal!,
-                  lowDisk: state.assignedActionLowDisk,
+            listener: (context, state) {
+              final names = context.read<TracksCubit>().state.names;
+              final action = state.assignedActionRefusal!;
+              final lowDisk = state.assignedActionLowDisk;
+              _refused(
+                AppNoticeId.assignedActionRefused,
+                (l10n) => assignedActionRefusedText(
+                  l10n,
+                  names,
+                  action,
+                  lowDisk: lowDisk,
                 ),
-              ),
-              autoCloseDuration: const Duration(seconds: 5),
-            ),
+              );
+            },
           ),
           BlocListener<ControlCubit, ControlState>(
             // Every refused foot Tuner press says why (#1229).
             listenWhen: (before, after) =>
                 before.footTunerFailure != after.footTunerFailure,
-            listener: (context, state) => showAppToast(
-              id: AppToastId.footTunerRefused,
-              type: state.footTunerRefusal == FootTunerRefusal.limit
-                  ? ToastificationType.warning
-                  : ToastificationType.error,
-              title: Text(
-                footTunerRefusalText(context.l10n, state.footTunerRefusal),
-              ),
-              autoCloseDuration: const Duration(seconds: 5),
-            ),
+            listener: (_, state) {
+              final refusal = state.footTunerRefusal;
+              _refused(
+                AppNoticeId.footTunerRefused,
+                (l10n) => footTunerRefusalText(l10n, refusal),
+              );
+            },
           ),
           BlocListener<ControlCubit, ControlState>(
             // Every Multiply / Divide that changed nothing says why, from the
             // surface or from an assigned action in any mode (#1168).
             listenWhen: (before, after) =>
                 before.footLengthFailure != after.footLengthFailure,
-            listener: (context, state) => showAppToast(
-              id: AppToastId.footLengthRefused,
-              type: state.footLengthRefusal == FootLengthRefusal.failed
-                  ? ToastificationType.error
-                  : ToastificationType.warning,
-              title: Text(
-                footLengthRefusalText(context.l10n, state.footLengthRefusal),
-              ),
-              autoCloseDuration: const Duration(seconds: 5),
-            ),
+            listener: (_, state) {
+              final refusal = state.footLengthRefusal;
+              _refused(
+                AppNoticeId.footLengthRefused,
+                (l10n) => footLengthRefusalText(l10n, refusal),
+              );
+            },
           ),
           BlocListener<SessionCubit, SessionState>(
             // React to a settled action — a save or load that finished or
@@ -312,7 +273,7 @@ class _TracksViewState extends State<TracksView> {
             // bumps it, so the toast stays silent for an empty-rig CLEAR.
             listenWhen: (previous, current) =>
                 current.clearAllPulse != previous.clearAllPulse,
-            listener: (context, state) => _showUndoClearAllToast(),
+            listener: (_, _) => _showUndoClearAll(),
           ),
         ],
         child: Builder(
@@ -344,66 +305,21 @@ class _TracksViewState extends State<TracksView> {
                       : Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
+                            // The top bar holds the stage's messages and its
+                            // must-act conditions (#1562), so the run below
+                            // never moves for them.
                             const StageTopBar(),
-                            // Standing loss conditions hold the stage for
-                            // as long as they are true — the pen's
-                            // `STAGE / device-lost`, at the run's top. The
-                            // widget carries its own bottom gap, so an
-                            // empty stack adds no space here.
-                            const Padding(
-                              padding: EdgeInsets.fromLTRB(
-                                StageTopBar.sideInset,
-                                10,
-                                StageTopBar.sideInset,
-                                0,
-                              ),
-                              child: ConnectivityBanners(),
-                            ),
-                            // Effects the rig could not run when it came up
-                            // (#1515): its own cause, so its own strip.
-                            const Padding(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: StageTopBar.sideInset,
-                              ),
-                              child: FxHeldBanner(),
-                            ),
-                            // With no first-run gate, a stopped engine
-                            // lands here; a full-width affordance opens
-                            // settings to (re)start it. Suppressed while
-                            // the device-lost banner above already states
-                            // the stop, so the two never stack (#453).
-                            if (!chrome.isConnected && !deviceLost)
-                              const Padding(
-                                padding: EdgeInsets.fromLTRB(
-                                  StageTopBar.sideInset,
-                                  10,
-                                  StageTopBar.sideInset,
-                                  4,
-                                ),
-                                child: AudioNotRunningBanner(),
-                              )
-                            // While audio starts (a warm-up, #1533, or an
-                            // owed record offset, #1541) the device runs
-                            // silent with the transport closed: the stage
-                            // says so in the same place rather than looking
-                            // ready.
-                            else if (chrome.audioStarting && !deviceLost)
-                              const Padding(
-                                padding: EdgeInsets.fromLTRB(
-                                  StageTopBar.sideInset,
-                                  10,
-                                  StageTopBar.sideInset,
-                                  4,
-                                ),
-                                child: AudioStartingBanner(),
-                              ),
                             Expanded(
                               child: Padding(
-                                // The pen's instrument: 24 under the bar,
-                                // 60 off each edge.
+                                // 34 under the bar and 60 off each edge,
+                                // where the console has always drawn the
+                                // run: the pen's 24 plus the 10 the stage
+                                // banners' slot held above it before the
+                                // top bar took them over (#1562), so the
+                                // run does not move.
                                 padding: const EdgeInsets.fromLTRB(
                                   StageTopBar.sideInset,
-                                  24,
+                                  34,
                                   StageTopBar.sideInset,
                                   0,
                                 ),
@@ -569,11 +485,10 @@ class _TracksViewState extends State<TracksView> {
 
 /// The slice of [LooperState] that [TracksView]'s own chrome depends on.
 ///
-/// Deliberately excludes everything a moving meter touches — per-track
-/// `peak` and `positionFrames`, the master position and the output peak.
-/// Those change on every poll tick while audio flows, and including any here
-/// would put the whole console back on the rebuild path this class exists to
-/// keep it off (#646).
+/// Deliberately excludes each track's own facts, which the slots below
+/// follow per channel: including them here would rebuild the whole console
+/// for a change to one track (#646). Levels (#1301) and playheads (#1563) are
+/// not in the looper state at all.
 ///
 /// [channels] is every track's channel, not just the active bank's: the bank
 /// filter lives on [ControlCubit], so filtering here would rebuild the chrome
@@ -584,8 +499,6 @@ class _ChromeState extends Equatable {
     required this.channels,
     required this.bars,
     required this.beats,
-    required this.isConnected,
-    required this.audioStarting,
     required this.primaryTrack,
     required this.quantizeDiv,
     required this.recDub,
@@ -605,8 +518,6 @@ class _ChromeState extends Equatable {
       beats: [
         for (final track in state.tracks) _beatsWithoutBars(track, state),
       ],
-      isConnected: state.status.isConnected,
-      audioStarting: state.status.starting,
       primaryTrack: state.transport.primaryTrack,
       quantizeDiv: state.transport.quantizeDiv,
       recDub: state.transport.recDub,
@@ -626,8 +537,6 @@ class _ChromeState extends Equatable {
   final List<int> channels;
   final List<int?> bars;
   final List<int?> beats;
-  final bool isConnected;
-  final bool audioStarting;
   final int primaryTrack;
   final GridDivision quantizeDiv;
   final bool recDub;
@@ -637,24 +546,21 @@ class _ChromeState extends Equatable {
     channels,
     bars,
     beats,
-    isConnected,
-    audioStarting,
     primaryTrack,
     quantizeDiv,
     recDub,
   ];
 }
 
-/// One [TrackColumn], subscribed to nothing but its own [channel]'s [Track] —
-/// and to that track's STEADY fields only ([Track.steadyProps]).
+/// One [TrackColumn], subscribed to nothing but its own [channel]'s [Track].
 ///
 /// Selecting per channel means only track 0's column can follow track 0, where
 /// watching [LooperBloc] in [TracksView] rebuilt all eight columns plus the
-/// entire console around them on every tick (#646). Comparing on the steady
-/// slice means a moving level does not rebuild even that column: the level is
-/// subscribed one level further down, in the [TrackPeakMeter] leaf, so a meter
-/// tick redraws a bar instead of ~250 lines of tile with its l10n lookups,
-/// theme-extension reads and FX stage label.
+/// entire console around them on every tick (#646). The level and the
+/// playhead are followed one level further down, in the [TrackPeakMeter] and
+/// [TrackProgressBar] leaves, so their ticks redraw a bar instead of ~250
+/// lines of tile with its l10n lookups, theme-extension reads and FX stage
+/// label.
 class _TrackSlot extends StatelessWidget {
   const _TrackSlot({
     required this.channel,
@@ -683,10 +589,9 @@ class _TrackSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final steady = context.select<LooperBloc, SteadyTrack?>(
-      (bloc) => steadyTrackOf(bloc.state, channel),
+    final track = context.select<LooperBloc, Track?>(
+      (bloc) => trackOf(bloc.state, channel),
     );
-    final track = steady?.track;
     // The Song section waiting for the playing one's lap edge (#1077): the
     // screen shows it with the queued cue, whatever started the request.
     final waiting = context.select<LooperBloc, bool>(
@@ -719,8 +624,8 @@ class _TrackSlot extends StatelessWidget {
 }
 
 /// [_TrackSlot]'s twin for the Mixer view: one [MixerColumn] per channel, on
-/// the same steady-slice subscription. The strip's meter and playhead
-/// subscribe to their own live values one level down.
+/// the same per-channel subscription. The strip's meter and playhead
+/// follow their own live values one level down.
 class _MixerSlot extends StatelessWidget {
   const _MixerSlot({
     required this.channel,
@@ -745,14 +650,13 @@ class _MixerSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final values = context
-        .select<LooperBloc, ({SteadyTrack? steady, int generation})>(
-          (bloc) => (
-            steady: steadyTrackOf(bloc.state, channel),
-            generation: bloc.state.mixGeneration,
-          ),
-        );
-    final track = values.steady?.track;
+    final values = context.select<LooperBloc, ({Track? track, int generation})>(
+      (bloc) => (
+        track: trackOf(bloc.state, channel),
+        generation: bloc.state.mixGeneration,
+      ),
+    );
+    final track = values.track;
     if (track == null) return const SizedBox.shrink();
     return Expanded(
       child: MixerColumn(
@@ -770,7 +674,7 @@ class _MixerSlot extends StatelessWidget {
 }
 
 /// [_TrackSlot]'s twin for the Wave view: one [WaveTrackRow] per channel, on
-/// the same steady-slice subscription.
+/// the same per-channel subscription.
 class _WaveSlot extends StatelessWidget {
   const _WaveSlot({
     required this.channel,
@@ -795,10 +699,9 @@ class _WaveSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final steady = context.select<LooperBloc, SteadyTrack?>(
-      (bloc) => steadyTrackOf(bloc.state, channel),
+    final track = context.select<LooperBloc, Track?>(
+      (bloc) => trackOf(bloc.state, channel),
     );
-    final track = steady?.track;
     if (track == null) return const SizedBox.shrink();
     return Expanded(
       child: WaveTrackRow(

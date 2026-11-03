@@ -15,6 +15,8 @@ void main() {
             extensions: [
               SurfaceTheme.dark,
               routingGraphThemeFromSurface(SurfaceTheme.dark),
+              SpacingTheme.standard,
+              NoticeTheme.standard,
             ],
           ),
           home: Scaffold(body: ConsoleCard(children: rows)),
@@ -86,7 +88,13 @@ void main() {
 
   group('ConsoleSegmented', () {
     Widget host({required bool stretch}) => MaterialApp(
-      theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+      theme: ThemeData(
+        extensions: const [
+          SurfaceTheme.dark,
+          SpacingTheme.standard,
+          NoticeTheme.standard,
+        ],
+      ),
       home: Scaffold(
         body: SizedBox(
           width: 600,
@@ -131,7 +139,13 @@ void main() {
       var fired = 0;
       await tester.pumpWidget(
         MaterialApp(
-          theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+          theme: ThemeData(
+            extensions: const [
+              SurfaceTheme.dark,
+              SpacingTheme.standard,
+              NoticeTheme.standard,
+            ],
+          ),
           home: Scaffold(
             body: ConsoleSegmented<int>(
               selected: 0,
@@ -163,7 +177,13 @@ void main() {
     Future<void> pumpBar(WidgetTester tester, {required bool live}) =>
         tester.pumpWidget(
           MaterialApp(
-            theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+            theme: ThemeData(
+              extensions: const [
+                SurfaceTheme.dark,
+                SpacingTheme.standard,
+                NoticeTheme.standard,
+              ],
+            ),
             home: Scaffold(
               body: ConsoleValueBar(
                 label: 'GAIN',
@@ -270,6 +290,8 @@ void main() {
             extensions: [
               SurfaceTheme.dark,
               routingGraphThemeFromSurface(SurfaceTheme.dark),
+              SpacingTheme.standard,
+              NoticeTheme.standard,
             ],
           ),
           home: Scaffold(
@@ -368,6 +390,8 @@ void main() {
             extensions: [
               SurfaceTheme.dark,
               routingGraphThemeFromSurface(SurfaceTheme.dark),
+              SpacingTheme.standard,
+              NoticeTheme.standard,
             ],
           ),
           home: Scaffold(
@@ -426,6 +450,8 @@ void main() {
               extensions: [
                 SurfaceTheme.dark,
                 routingGraphThemeFromSurface(SurfaceTheme.dark),
+                SpacingTheme.standard,
+                NoticeTheme.standard,
               ],
             ),
             home: Scaffold(
@@ -478,6 +504,8 @@ void main() {
             extensions: [
               SurfaceTheme.dark,
               routingGraphThemeFromSurface(SurfaceTheme.dark),
+              SpacingTheme.standard,
+              NoticeTheme.standard,
             ],
           ),
           home: Scaffold(
@@ -540,6 +568,8 @@ void main() {
             extensions: [
               SurfaceTheme.dark,
               routingGraphThemeFromSurface(SurfaceTheme.dark),
+              SpacingTheme.standard,
+              NoticeTheme.standard,
             ],
           ),
           home: Scaffold(

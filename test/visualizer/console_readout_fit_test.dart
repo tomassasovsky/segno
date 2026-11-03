@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
 import 'package:segno/visualizer/performance_readout.dart';
@@ -64,9 +65,13 @@ void main() {
             // Custom is the longest function name in both languages.
             mode: 'custom',
             activeBank: 3,
-            lossLine: lookupAppLocalizations(
-              locale,
-            ).deviceLostNamedBanner('Scarlett 18i20 4th Gen'),
+            // The longest must-act line the band carries.
+            notice: ReadoutNotice(
+              title: lookupAppLocalizations(
+                locale,
+              ).deviceLostNamedBanner('Scarlett 18i20 4th Gen'),
+              tone: NoticeTone.critical,
+            ),
           ),
         );
         expect(tester.takeException(), isNull);

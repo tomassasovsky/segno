@@ -13,6 +13,7 @@ import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/idle_dim_cubit.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/console_leds/cubit/console_leds_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/high_contrast_cubit.dart';
@@ -23,13 +24,13 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/record_options.dart';
 import 'package:segno/looper/model/record_options_view_state.dart';
 import 'package:segno/looper/model/tempo_state.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/visualizer/visualizer.dart';
 import 'package:settings_repository/settings_repository.dart';
-import 'package:toastification/toastification.dart';
 import 'package:touch_calibration_client/touch_calibration_client.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
@@ -114,6 +115,9 @@ class DestinationHarness {
   /// The audio setup the Device page reads.
   final MockAudioSetupCubit audio = MockAudioSetupCubit();
 
+  /// The notice centre the pages say their messages to.
+  final NoticesCubit notices = NoticesCubit();
+
   /// The radio the Network page reads.
   final CountingWifiClient wifi = CountingWifiClient();
 
@@ -122,6 +126,10 @@ class DestinationHarness {
 
   /// The idle dim owner, real so a test can read what was saved.
   late IdleDimCubit idle;
+
+  /// The console LEDs' owner (#1564), real, on the same pedal repository as
+  /// the pedal cubit.
+  late ConsoleLedsCubit leds;
 
   /// The outputs the Displays page reads presence from.
   final FakeDisplayOutputs outputs = FakeDisplayOutputs();
@@ -208,9 +216,9 @@ class DestinationHarness {
     brightness = DisplayBrightnessCubit(settings: settings);
     idle = IdleDimCubit(settings: settings);
     final tracks = TracksCubit(settings: settings);
-    final pedal = PedalCubit(
-      pedal: PedalRepository(pedalLink ?? NoopPedalLink()),
-    );
+    final pedalRepository = PedalRepository(pedalLink ?? NoopPedalLink());
+    final pedal = PedalCubit(pedal: pedalRepository);
+    leds = ConsoleLedsCubit(settings: settings, pedal: pedalRepository);
     final facts = ConsoleFactsCubit(
       client: factsClient ?? FakeConsoleFactsClient(latency: Duration.zero),
       settings: settings,
@@ -220,6 +228,7 @@ class DestinationHarness {
     addTearDown(() => unawaited(brightness.close()));
     addTearDown(() => unawaited(idle.close()));
     addTearDown(() => unawaited(tracks.close()));
+    addTearDown(() => unawaited(leds.close()));
     addTearDown(() => unawaited(pedal.close()));
     addTearDown(() => unawaited(facts.close()));
 
@@ -246,12 +255,14 @@ class DestinationHarness {
             BlocProvider.value(value: idle),
             BlocProvider.value(value: tracks),
             BlocProvider.value(value: pedal),
+            BlocProvider.value(value: leds),
             BlocProvider.value(value: facts),
             ...extraProviders(),
           ],
-          // The app's own toast overlay, so a page's toasts can be shown
-          // and dismissed here as they are on the console.
-          child: ToastificationWrapper(
+          // The app's notice centre, so a page's messages can be read here
+          // as they are on the console.
+          child: BlocProvider<NoticesCubit>.value(
+            value: notices,
             child: MaterialApp(
               navigatorKey: segnoNavigatorKey,
               debugShowCheckedModeBanner: false,

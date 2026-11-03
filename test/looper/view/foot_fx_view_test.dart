@@ -380,58 +380,6 @@ void main() {
     );
   });
 
-  testWidgets('playhead ticks do not redraw the pedals', (tester) async {
-    final states = StreamController<LooperState>();
-    addTearDown(states.close);
-    const base = LooperState(
-      tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
-    );
-    whenListen(looper, states.stream, initialState: base);
-    given(const ControlState(mode: InteractionMode.fx));
-    await pump(tester);
-    int builds() => tester
-        .widgetList<PerformancePedal>(find.byType(PerformancePedal))
-        .length;
-    expect(builds(), 10);
-    final before = tester.widget<PerformancePedal>(
-      performancePedal(PedalButton.track1),
-    );
-    // Only the playhead moves. Levels are not in the looper state at all
-    // (#1301); the playhead is the one field that still moves every poll.
-    states.add(
-      const LooperState(
-        tracks: [
-          Track(
-            state: TrackState.playing,
-            lengthFrames: 48000,
-            positionFrames: 2400,
-          ),
-        ],
-      ),
-    );
-    await tester.pump();
-    await tester.pump();
-    expect(
-      identical(
-        tester.widget<PerformancePedal>(performancePedal(PedalButton.track1)),
-        before,
-      ),
-      isTrue,
-      reason: 'the pedal was rebuilt for a playhead tick',
-    );
-    // A chain change does redraw it.
-    states.add(const LooperState(tracks: [Track(chainEnabled: false)]));
-    await tester.pump();
-    await tester.pump();
-    expect(
-      identical(
-        tester.widget<PerformancePedal>(performancePedal(PedalButton.track1)),
-        before,
-      ),
-      isFalse,
-    );
-  });
-
   test('the projection reads the published switch values', () {
     final pedals = projectFootFx(
       ControlState(

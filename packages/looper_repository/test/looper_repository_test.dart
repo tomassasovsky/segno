@@ -159,37 +159,44 @@ EngineSnapshot _pendingSnapshot({
   ]),
 );
 
-/// One playing track with independently controlled transport and meter values.
-EngineSnapshot _playingAt(int masterPositionFrames, {double peak = 0.5}) =>
-    EngineSnapshot(
-      isRunning: true,
-      sampleRate: 48000,
-      bufferFrames: 128,
-      inputChannels: 2,
-      outputChannels: 4,
-      framesProcessed: 0,
-      xrunCount: 0,
-      inputRms: 0,
-      inputPeak: 0,
-      outputRms: 0,
-      latencyState: le.LatencyState.idle,
-      measuredLatencyMs: -1,
-      masterLengthFrames: 96000,
-      masterPositionFrames: masterPositionFrames,
-      tracks: _nativeSlots([
-        TrackSnapshot(
-          state: TrackState.playing,
-          volume: 0.8,
-          muted: false,
-          lengthFrames: 96000,
-          undoDepth: 1,
-          rms: 0.3,
-          peak: peak,
-          inputMask: 0x2,
-          outputMask: 0x2,
-        ),
-      ]),
-    );
+/// One playing track with independently controlled playhead and meter
+/// values. The track's own position follows the master's, as a sole track's
+/// does.
+EngineSnapshot _playingAt(
+  int masterPositionFrames, {
+  double peak = 0.5,
+  TrackState state = TrackState.playing,
+  int lengthFrames = 96000,
+}) => EngineSnapshot(
+  isRunning: true,
+  sampleRate: 48000,
+  bufferFrames: 128,
+  inputChannels: 2,
+  outputChannels: 4,
+  framesProcessed: 0,
+  xrunCount: 0,
+  inputRms: 0,
+  inputPeak: 0,
+  outputRms: 0,
+  latencyState: le.LatencyState.idle,
+  measuredLatencyMs: -1,
+  masterLengthFrames: 96000,
+  masterPositionFrames: masterPositionFrames,
+  tracks: _nativeSlots([
+    TrackSnapshot(
+      state: state,
+      volume: 0.8,
+      muted: false,
+      lengthFrames: lengthFrames,
+      positionFrames: masterPositionFrames,
+      undoDepth: 1,
+      rms: 0.3,
+      peak: peak,
+      inputMask: 0x2,
+      outputMask: 0x2,
+    ),
+  ]),
+);
 
 /// One playing track with one real lane — the cache-telemetry gate is a
 /// per-lane concern, and [_playingSnapshot]'s tracks carry no lanes.
@@ -426,15 +433,15 @@ void main() {
       final sub = repo.looperState.listen((_) {});
       addTearDown(sub.cancel);
       await Future<void>.delayed(Duration.zero);
-      expect(repo.lastState.transport.masterPositionFrames, 24000);
+      expect(repo.lastState.track.lanes, isEmpty);
 
       engine.nextSnapshot = _laneSnapshot;
       ticker.add(null);
       await Future<void>.delayed(Duration.zero);
 
       expect(
-        repo.lastState.transport.masterPositionFrames,
-        0,
+        repo.lastState.track.lanes,
+        hasLength(1),
         reason: 'the cache is refreshed by the poll, not frozen at first read',
       );
     });
@@ -445,7 +452,7 @@ void main() {
       addTearDown(repo.dispose);
       final sub = repo.looperState.listen((_) {});
       await Future<void>.delayed(Duration.zero);
-      expect(repo.lastState.transport.masterPositionFrames, 24000);
+      expect(repo.lastState.track.lanes, isEmpty);
 
       // Polling is wired to onListen/onCancel, so the last listener leaving
       // freezes the cache. "Nothing has ever polled" and "nothing is polling
@@ -456,7 +463,7 @@ void main() {
       engine.nextSnapshot = _laneSnapshot;
       final walked = engine.snapshotCalls;
 
-      expect(repo.lastState.transport.masterPositionFrames, 0);
+      expect(repo.lastState.track.lanes, hasLength(1));
       expect(
         engine.snapshotCalls,
         greaterThan(walked),
@@ -626,8 +633,6 @@ void main() {
       final state = repo.state;
       expect(state.transport.deviceRunning, isTrue);
       expect(state.transport.masterLengthFrames, 96000);
-      expect(state.transport.masterPositionFrames, 24000);
-      expect(state.transport.progress, closeTo(0.25, 1e-6));
       expect(state.track.state, TrackState.playing);
       // The native snapshot reports effective gain; projection retains the
       // independent live fader so source balance is not saved twice.
@@ -1459,27 +1464,6 @@ void main() {
       });
     });
 
-    test('the master playhead moving does not change any track', () {
-      // The transport position belongs to the TRANSPORT. Copying it onto every
-      // `Track` (as `playheadFrames` once did) made all eight tracks compare
-      // unequal on every poll tick of a running loop, regardless of their own
-      // levels — which silently put every track tile back on the rebuild path
-      // #646/#654/#832 built to keep it off.
-      engine.nextSnapshot = _playingSnapshot;
-      final repo = buildRepo();
-      final before = repo.state;
-
-      engine.nextSnapshot = _playingAt(48000);
-      final after = repo.state;
-
-      expect(after.transport.masterPositionFrames, 48000);
-      expect(
-        after.tracks,
-        before.tracks,
-        reason: 'a track carries a copy of the master transport position',
-      );
-    });
-
     test('projects multiple tracks with their channel indices', () {
       engine.nextSnapshot = const EngineSnapshot(
         isRunning: true,
@@ -1663,7 +1647,6 @@ void main() {
       expect(state.track.state, TrackState.empty);
       expect(state.track.hasContent, isFalse);
       expect(state.transport.hasLoop, isFalse);
-      expect(state.transport.progress, 0);
     });
 
     test('projects the excluded input mask onto EngineStatus', () {
@@ -1896,6 +1879,79 @@ void main() {
         expect(repo.meters.track(0).peak, 0.9);
       },
     );
+
+    test('a playhead-only poll moves the playhead and leaves the state '
+        'alone', () async {
+      // A playing track's position changes on every poll; inside LooperState
+      // it re-ran every listener of the state while a loop played (#1563).
+      engine.nextSnapshot = _playingAt(24000);
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final states = <LooperState>[];
+      final playheads = <Playhead>[];
+      final stateSub = repo.looperState.listen(states.add);
+      final playheadSub = repo.playheads.listen(playheads.add);
+      addTearDown(stateSub.cancel);
+      addTearDown(playheadSub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      engine.nextSnapshot = _playingAt(48000);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      // An unchanged following poll publishes nothing on either stream.
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(states, hasLength(1));
+      expect(playheads.map((p) => p.track(0)), [0.25, 0.5]);
+      expect(repo.playhead.track(0), 0.5);
+      expect(repo.playhead.track(99), 0, reason: 'no such track');
+    });
+
+    test('a poll that moves the state and the playhead publishes the state '
+        'first', () async {
+      engine.nextSnapshot = _playingAt(
+        4800,
+        state: TrackState.recording,
+        lengthFrames: 4800,
+      );
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final order = <String>[];
+      final stateSub = repo.looperState.listen((_) => order.add('state'));
+      final playheadSub = repo.playheads.listen((_) => order.add('playhead'));
+      addTearDown(stateSub.cancel);
+      addTearDown(playheadSub.cancel);
+      await Future<void>.delayed(Duration.zero);
+      order.clear();
+
+      // The take closes and plays on: new track facts and a moving playhead.
+      engine.nextSnapshot = _playingAt(24000);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(order, ['state', 'playhead']);
+    });
+
+    test('the playhead reads 0 for a recording take and an empty '
+        'track', () async {
+      // While a take records, the engine reports the growing write head as
+      // both position and length.
+      engine.nextSnapshot = _playingAt(
+        4800,
+        state: TrackState.recording,
+        lengthFrames: 4800,
+      );
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(repo.playhead.track(0), 0);
+      expect(repo.playhead.track(1), 0);
+    });
 
     test('meters carry the master, input, monitor and output levels', () async {
       engine.nextSnapshot = _playingSnapshot.copyWith(

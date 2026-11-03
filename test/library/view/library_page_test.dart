@@ -11,6 +11,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/common/console_surface.dart'
+    show ConsoleBanner, ConsoleBannerTone;
 import 'package:segno/l10n/gen/app_localizations.dart';
 import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
@@ -496,6 +498,15 @@ void main() {
 
       expect(find.byKey(const Key('library_open_refused')), findsOneWidget);
       expect(find.text(l10n.sessionErrorSampleRate), findsOneWidget);
+      // A press that did nothing: a warning (#1562).
+      expect(
+        tester
+            .widget<ConsoleBanner>(
+              find.byKey(const Key('library_open_refused')),
+            )
+            .tone,
+        ConsoleBannerTone.warning,
+      );
 
       // The refusal belongs to Night set, not to whatever is selected next.
       await tester.tap(row('s-new'));
@@ -1972,6 +1983,15 @@ void main() {
 
       expect(find.text(l10n.libraryListenNoDevice), findsOneWidget);
       expect(labelOf(tester), l10n.libraryListen);
+      // Nothing to play it with: red, not a warning (#1562).
+      expect(
+        tester
+            .widget<ConsoleBanner>(
+              find.byKey(const Key('library_listen_refused')),
+            )
+            .tone,
+        ConsoleBannerTone.failure,
+      );
     });
 
     testWidgets('Open stops it first', (tester) async {

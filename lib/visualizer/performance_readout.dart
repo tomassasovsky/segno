@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:segno/appliance/power_off/power_step.dart';
+import 'package:segno/notices/model/notice.dart';
 
 /// The selected track as the 7" display shows it (the accepted design): its
 /// number, name, crown, state and the facts under the name.
@@ -72,6 +73,58 @@ class ReadoutTrack extends Equatable {
   ];
 }
 
+/// The message the 7" shows in a band across its top margin (#1562): the
+/// one the main screen's top bar says, already in words, since the readout
+/// is a separate engine.
+class ReadoutNotice extends Equatable {
+  /// Creates a [ReadoutNotice].
+  const ReadoutNotice({
+    required this.title,
+    required this.tone,
+    this.body,
+    this.track,
+  });
+
+  /// Rebuilds a notice from [map] as pushed across the window channel, or
+  /// null when [map] is not one.
+  static ReadoutNotice? fromMap(Object? map) {
+    if (map is! Map<Object?, Object?>) return null;
+    final title = map['title'];
+    if (title is! String) return null;
+    final body = map['body'];
+    final track = map['track'];
+    return ReadoutNotice(
+      title: title,
+      body: body is String ? body : null,
+      track: track is String ? track : null,
+      tone: NoticeTone.values.asNameMap()[map['tone']] ?? NoticeTone.neutral,
+    );
+  }
+
+  /// The message.
+  final String title;
+
+  /// Its second part.
+  final String? body;
+
+  /// How much it matters.
+  final NoticeTone tone;
+
+  /// The name of the track that caused it, said before it.
+  final String? track;
+
+  /// Channel-encodable form.
+  Map<String, Object?> toMap() => {
+    'title': title,
+    'body': body,
+    'tone': tone.name,
+    'track': track,
+  };
+
+  @override
+  List<Object?> get props => [title, body, tone, track];
+}
+
 /// Which power face the 7" shows over its readout (pen 32).
 enum ReadoutGoodbye {
   /// The live readout, no face.
@@ -111,7 +164,7 @@ class PerformanceReadout extends Equatable {
     this.tsDen = 4,
     this.mode = 'record',
     this.activeBank = 0,
-    this.lossLine = '',
+    this.notice,
     this.goodbye = ReadoutGoodbye.none,
     this.savingStep,
     this.savingProgress = 0,
@@ -134,7 +187,7 @@ class PerformanceReadout extends Equatable {
       tsDen: map['tsDen'] as int? ?? 4,
       mode: map['mode'] as String? ?? 'record',
       activeBank: map['activeBank'] as int? ?? 0,
-      lossLine: map['lossLine'] as String? ?? '',
+      notice: ReadoutNotice.fromMap(map['notice']),
       goodbye: _goodbyeOf(map['goodbye']),
       savingStep: _stepOf(map['savingStep']),
       savingProgress: (map['savingProgress'] as num? ?? 0).toDouble(),
@@ -168,12 +221,9 @@ class PerformanceReadout extends Equatable {
   /// address, shown beside the function.
   final int activeBank;
 
-  /// The stage strip's line while the pinned audio interface is absent
-  /// (#453), or while the boot waits for it; empty otherwise. The readout
-  /// echoes it word for word (`c/device-lost` — the performer is looking
-  /// down, not at the main screen), so the line is built once, on the main
-  /// screen, with the device's name (#1270 Part 5).
-  final String lossLine;
+  /// The main screen's message, shown in a band over the readout's top
+  /// margin; null when the top bar says nothing.
+  final ReadoutNotice? notice;
 
   /// The power face. A missing key reads as none.
   final ReadoutGoodbye goodbye;
@@ -198,7 +248,7 @@ class PerformanceReadout extends Equatable {
     'tsDen': tsDen,
     'mode': mode,
     'activeBank': activeBank,
-    'lossLine': lossLine,
+    'notice': notice?.toMap(),
     'goodbye': goodbye.name,
     'savingStep': savingStep?.name,
     'savingProgress': savingProgress,
@@ -214,7 +264,7 @@ class PerformanceReadout extends Equatable {
     tsDen,
     mode,
     activeBank,
-    lossLine,
+    notice,
     goodbye,
     savingStep,
     savingProgress,

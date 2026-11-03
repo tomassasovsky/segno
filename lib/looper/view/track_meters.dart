@@ -1,11 +1,9 @@
 import 'dart:async';
 
-import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/live_meter.dart';
+import 'package:segno/looper/view/live_playhead.dart';
 import 'package:segno/theme/theme.dart';
 
 /// One track's [PeakMeterBar], following [channel]'s live level from
@@ -144,10 +142,10 @@ class TrackStereoMeter extends StatelessWidget {
 }
 
 /// One track's thin bottom progress bar, following [channel]'s own playhead
-/// ([Track.positionFrames] over its length) — the second moving value a
-/// playing track publishes, subscribed in its own leaf for the same reason
-/// [TrackPeakMeter] subscribes to the level: a playhead tick redraws six
-/// pixels, not the tile.
+/// from `LooperRepository.playheads` (#1563) — the second moving value a
+/// playing track publishes, followed in its own leaf for the reason
+/// [TrackPeakMeter] follows the level: a playhead tick redraws six pixels,
+/// not the tile.
 class TrackProgressBar extends StatelessWidget {
   /// Creates a [TrackProgressBar].
   const TrackProgressBar({
@@ -167,24 +165,28 @@ class TrackProgressBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final progress = context.select<LooperBloc, double>(
-      (bloc) => progressOf(bloc.state, channel),
-    );
     final looper = Theme.of(context).extension<LooperTheme>()!;
-    return Semantics(
-      label: '${(progress * 100).round()}%',
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(2),
-        child: ColoredBox(
-          color: looper.tileBorder,
-          child: SizedBox(
-            height: height,
-            width: double.infinity,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: FractionallySizedBox(
-                widthFactor: progress,
-                child: ColoredBox(color: color),
+    return LivePlayhead<double>(
+      key: ValueKey(channel),
+      select: (playhead) => playhead.track(channel),
+      builder: (context, progress) => Semantics(
+        label: '${(progress * 100).round()}%',
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(2),
+          child: ColoredBox(
+            color: looper.tileBorder,
+            child: SizedBox(
+              height: height,
+              width: double.infinity,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                // heightFactor: the Align hands down a loose height, and a
+                // childless ColoredBox sizes to its minimum, 0 (#1570).
+                child: FractionallySizedBox(
+                  widthFactor: progress,
+                  heightFactor: 1,
+                  child: ColoredBox(color: color),
+                ),
               ),
             ),
           ),
@@ -194,52 +196,11 @@ class TrackProgressBar extends StatelessWidget {
   }
 }
 
-/// [channel]'s normalized play position, or `0` when [state] has no such
-/// channel.
-///
-/// Zero, not an exception — and not because losing a channel is harmless,
-/// but because this runs at the wrong moment to react to it. A selector is
-/// evaluated when the bloc EMITS, before anything rebuilds, so a state that
-/// has dropped [channel] reaches this function on its way to the frame that
-/// unmounts the whole tile: the tile's own selector ([SteadyTrack]) has gone
-/// null, and the slot above it returns a `SizedBox` in the same frame. The
-/// value computed here is never drawn, so throwing would only turn an
-/// already-handled case into a crash.
-double progressOf(LooperState state, int channel) {
+/// [channel]'s track, or `null` when the rig no longer has it: what a track
+/// tile selects.
+Track? trackOf(LooperState state, int channel) {
   for (final track in state.tracks) {
-    if (track.channel == channel) return track.progress;
-  }
-  return 0;
-}
-
-/// A [Track] compared by its [Track.steadyProps] alone — everything about it
-/// EXCEPT the live [Track.positionFrames].
-///
-/// What a track tile selects. `Track`'s own equality includes the playhead,
-/// so selecting the track itself puts the tile back on the progress bar's
-/// rebuild path —
-/// exactly the leak that made #646/#654/#832 stop short: the tiles were
-/// subscribed per channel, but every one of them still rebuilt on every poll
-/// tick. Wrapping rather than restating the field list means a field added to
-/// `Track` is compared here automatically.
-class SteadyTrack extends Equatable {
-  /// Wraps [track] for a playhead-insensitive comparison.
-  const SteadyTrack(this.track);
-
-  /// The wrapped track. Its `positionFrames` may be a tick stale — by design:
-  /// whoever draws the playhead subscribes to it directly
-  /// ([TrackProgressBar]).
-  final Track track;
-
-  @override
-  List<Object?> get props => track.steadyProps;
-}
-
-/// [channel]'s track as a [SteadyTrack], or `null` when the rig no longer
-/// has it.
-SteadyTrack? steadyTrackOf(LooperState state, int channel) {
-  for (final track in state.tracks) {
-    if (track.channel == channel) return SteadyTrack(track);
+    if (track.channel == channel) return track;
   }
   return null;
 }

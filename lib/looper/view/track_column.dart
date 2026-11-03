@@ -14,6 +14,7 @@ import 'package:segno/looper/view/loop_count_words.dart';
 import 'package:segno/looper/view/rename_track_dialog.dart';
 import 'package:segno/looper/view/slot_row.dart';
 import 'package:segno/looper/view/track_meters.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The boundary a queued (pending) action waits for, as the accepted stage
@@ -220,17 +221,14 @@ class TrackColumn extends StatelessWidget {
     // bloc does not hold draws one track's facts under another's level — a
     // mis-wiring that renders perfectly and is invisible in a screenshot.
     //
-    // Compared as `SteadyTrack`, not by `listEquals` on the prop lists: the
-    // comparison has to be Equatable-deep, because `_project` builds a fresh
-    // `lanes` literal every poll and a shallow list compare would call two
-    // value-equal projections one tick apart different — rejecting the
-    // tick-stale instance this widget is DESIGNED to be handed. Steady, so a
-    // stale `peak` stays legal, which is the whole point of the split.
+    // Compared with Equatable's deep `==`, not by identity: `_project` builds
+    // a fresh `lanes` literal every poll, and two value-equal projections are
+    // the same track.
     assert(
       () {
         final live = bloc.state.tracks.where((t) => t.channel == track.channel);
         if (live.length != 1) return false;
-        return SteadyTrack(live.first) == SteadyTrack(track);
+        return live.first == track;
       }(),
       'TrackColumn was given a Track the ambient LooperBloc does not hold '
       '(channel ${track.channel}). A column is a live view of that bloc, not '
@@ -263,6 +261,8 @@ class TrackColumn extends StatelessWidget {
         ? _FxMarker.active
         : _FxMarker.bypassed;
 
+    // A message this track caused rings the card in its tone (#1562).
+    final noticeRing = trackNoticeRing(context, track.channel);
     return Container(
       decoration: BoxDecoration(
         color: looper.tileBackground,
@@ -270,7 +270,7 @@ class TrackColumn extends StatelessWidget {
         // 2px ring: white when selected (onAccent), otherwise the pen's
         // card stroke (the `card` token) — not borderless.
         border: Border.all(
-          color: selected ? surface.onAccent : surface.card,
+          color: noticeRing ?? (selected ? surface.onAccent : surface.card),
           width: border,
         ),
       ),
@@ -344,54 +344,62 @@ class TrackColumn extends StatelessWidget {
                 key: Key('tracks_tileStop_${track.channel}'),
                 behavior: HitTestBehavior.opaque,
                 onLongPress: () => bloc.add(LooperStopPressed(track.channel)),
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      // The one part of the column a level tick redraws: the
-                      // bar subscribes to this channel's peak itself, so the
-                      // ~250 lines around it stay off the meter's rebuild path
-                      // (#646/#654/#832).
-                      child: TrackPeakMeter(
-                        // Live, by channel: [track]'s own `peak` is
-                        // deliberately not read here — see [track]'s doc.
-                        channel: track.channel,
-                        color: barColor,
-                        hasContent: track.hasContent,
-                        // A stopped track reports no live peak; hold the last
-                        // fill so a loaded-but-paused loop keeps a visible bar
-                        // after a stop.
-                        frozen: track.state == TrackState.stopped,
-                        // The accepted stage's red clip cap.
-                        clipColor: looper.recordColor,
-                      ),
-                    ),
-                    // A queued action sits centrally in its own track, with
-                    // its action and boundary (the accepted stage). A readout,
-                    // never a target: the tap falls through to the tile.
-                    if (track.pending || songQueued)
+                // A message this track caused takes the meter's place for as
+                // long as it is up (#1562), and steps aside for a queued
+                // action's cue.
+                child: TrackNotice(
+                  channel: track.channel,
+                  yields: track.pending || songQueued,
+                  child: Stack(
+                    children: [
                       Positioned.fill(
-                        child: Center(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: _QueuedCue(
-                              key: Key('tracks_queued_${track.channel}'),
-                              action: _queueActionLabel(
-                                l10n,
-                                track.pending
-                                    ? queueActionOf(track, recDub: recDub)
-                                    : QueueAction.play,
-                              ),
-                              timing: _queueTimingLabel(
-                                l10n,
-                                track.pending
-                                    ? queueTimingOf(track, quantizeDiv)
-                                    : QueueTiming.loopStart,
+                        // The one part of the column a level tick redraws:
+                        // the bar subscribes to this channel's peak itself,
+                        // so the ~250 lines around it stay off the meter's
+                        // rebuild path (#646/#654/#832).
+                        child: TrackPeakMeter(
+                          // Live, by channel: [track]'s own `peak` is
+                          // deliberately not read here — see [track]'s doc.
+                          channel: track.channel,
+                          color: barColor,
+                          hasContent: track.hasContent,
+                          // A stopped track reports no live peak; hold the
+                          // last fill so a loaded-but-paused loop keeps a
+                          // visible bar after a stop.
+                          frozen: track.state == TrackState.stopped,
+                          // The accepted stage's red clip cap.
+                          clipColor: looper.recordColor,
+                        ),
+                      ),
+                      // A queued action sits centrally in its own track,
+                      // with its action and boundary (the accepted stage).
+                      // A readout, never a target: the tap falls through to
+                      // the tile.
+                      if (track.pending || songQueued)
+                        Positioned.fill(
+                          child: Center(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: _QueuedCue(
+                                key: Key('tracks_queued_${track.channel}'),
+                                action: _queueActionLabel(
+                                  l10n,
+                                  track.pending
+                                      ? queueActionOf(track, recDub: recDub)
+                                      : QueueAction.play,
+                                ),
+                                timing: _queueTimingLabel(
+                                  l10n,
+                                  track.pending
+                                      ? queueTimingOf(track, quantizeDiv)
+                                      : QueueTiming.loopStart,
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

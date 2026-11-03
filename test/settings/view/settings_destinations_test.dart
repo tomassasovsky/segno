@@ -3,17 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/audio_setup/view/device_page.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/view/connectivity_banners.dart';
-import 'package:segno/looper/view/tracks_chrome.dart';
 import 'package:segno/settings/settings.dart';
 import 'package:segno/wifi/wifi_cubit.dart';
 
-import '../../helpers/helpers.dart';
 import 'destination_harness.dart';
 
 void main() {
@@ -21,8 +17,6 @@ void main() {
 
   setUp(() {
     resetSegnoNavigatorForTest();
-    resetAppToastsForTest();
-    resetToastificationForTest();
     harness = DestinationHarness();
   });
 
@@ -154,19 +148,6 @@ void main() {
       expect(find.byKey(const Key('system_storage_tab')), findsOneWidget);
     });
 
-    testWidgets('opening Updates drops the update toast', (tester) async {
-      await pump(tester);
-      showAppToast(id: AppToastId.update, title: const Text('Update'));
-      await tester.pump();
-      expect(debugAppToastActive(AppToastId.update), isTrue);
-
-      unawaited(openUpdateSettings());
-      await tester.pumpAndSettle();
-      expect(debugAppToastActive(AppToastId.update), isFalse);
-      // Let the dismissed toast's exit animation finish.
-      await tester.pump(const Duration(seconds: 2));
-    });
-
     testWidgets('Updates is the accepted page and leads to About', (
       tester,
     ) async {
@@ -184,32 +165,6 @@ void main() {
       await tester.tap(find.byKey(const Key('loop_settings_stage')));
       await tester.pumpAndSettle();
       expect(isSegnoUpdatesSettingsOpen, isFalse);
-    });
-  });
-
-  group('notices that lead to Device', () {
-    testWidgets('the device-lost banner opens Device', (tester) async {
-      await pump(
-        tester,
-        home: const ConnectivityBanners(),
-        audioState: const AudioSetupState(
-          deviceConnectivity: DeviceConnectivity.lost,
-          connectivityDeviceName: 'Scarlett 2i2',
-        ),
-      );
-      await tester.tap(
-        find.byKey(const Key('connectivity_banner_device_action')),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byType(DevicePage), findsOneWidget);
-      expect(find.byKey(const Key('device_page')), findsOneWidget);
-    });
-
-    testWidgets('the engine-stopped banner opens Device', (tester) async {
-      await pump(tester, home: const AudioNotRunningBanner());
-      await tester.tap(find.byKey(const Key('tracks_audioNotRunning')));
-      await tester.pumpAndSettle();
-      expect(find.byType(DevicePage), findsOneWidget);
     });
   });
 }

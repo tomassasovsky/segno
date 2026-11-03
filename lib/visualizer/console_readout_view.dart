@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/track_column.dart' show PrimaryCrown;
+import 'package:segno/notices/model/notice.dart' show NoticeTone;
+import 'package:segno/notices/view/notice_palette.dart';
+import 'package:segno/notices/view/notice_sentence.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 
@@ -35,6 +38,9 @@ class ConsoleReadoutView extends StatelessWidget {
   /// The reference frame's size — what every dimension is drawn against.
   static const Size referenceSize = Size(1280, 720);
 
+  /// The reference's inset at the sides.
+  static const double sideInset = 49;
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -53,26 +59,20 @@ class ConsoleReadoutView extends StatelessWidget {
             ? width / referenceSize.width
             : height / referenceSize.height;
         final selected = readout.selected;
-        return Padding(
+        final content = Padding(
           // The reference insets the screen 49 at the sides and 45 above.
-          padding: EdgeInsets.fromLTRB(49 * s, 45 * s, 49 * s, 40 * s),
+          padding: EdgeInsets.fromLTRB(
+            sideInset * s,
+            45 * s,
+            sideInset * s,
+            40 * s,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _Header(selected: selected, s: s),
               SizedBox(height: 26 * s),
               _StateLine(selected: selected, s: s),
-              // The stage's one standing loss condition — the audio interface
-              // is gone — echoed here because the performer is looking down,
-              // not at the main screen (`c/device-lost`, #453).
-              if (readout.lossLine.isNotEmpty) ...[
-                SizedBox(height: 16 * s),
-                _ConnectivityEcho(
-                  key: const Key('console_readout_deviceLost'),
-                  line: readout.lossLine,
-                  s: s,
-                ),
-              ],
               SizedBox(height: 24 * s),
               Expanded(
                 child: KeyedSubtree(
@@ -85,7 +85,102 @@ class ConsoleReadoutView extends StatelessWidget {
             ],
           ),
         );
+        final notice = readout.notice;
+        if (notice == null) return content;
+        return Stack(
+          children: [
+            content,
+            Positioned(
+              left: 0,
+              top: 0,
+              right: 0,
+              child: _NoticeBand(notice: notice, s: s),
+            ),
+          ],
+        );
       },
+    );
+  }
+}
+
+/// The main screen's message across the readout's top margin (#1562): the
+/// tone's tint and rule, the dot or icon, and the sentence. It fills the
+/// margin and no more, so nothing on the readout moves for it, and it takes
+/// no touch: the readout stays inert.
+class _NoticeBand extends StatelessWidget {
+  const _NoticeBand({required this.notice, required this.s});
+
+  final ReadoutNotice notice;
+  final double s;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final spacing = context.spacing;
+    final theme = context.noticeTheme;
+    final colors = NoticePalette.of(surface, notice.tone);
+    final text = theme.readoutText.copyWith(
+      fontSize: theme.readoutText.fontSize! * s,
+    );
+    final icon = noticeToneIcon(notice.tone);
+    return Semantics(
+      liveRegion: true,
+      container: true,
+      child: Container(
+        key: const Key('console_readout_notice'),
+        height: theme.readoutBandHeight * s,
+        padding: EdgeInsets.symmetric(
+          horizontal: ConsoleReadoutView.sideInset * s,
+        ),
+        decoration: BoxDecoration(
+          color: colors.tint,
+          border: Border(
+            bottom: BorderSide(
+              color: colors.line,
+              width: theme.ruleThickness * s,
+            ),
+          ),
+        ),
+        child: AppTextOptics(
+          opticalOffset: Offset.zero,
+          child: Row(
+            children: [
+              // The tone's marks: its icon, the dot for a critical message,
+              // nothing for the rest. A notice's own icon stays on the main
+              // bar; the screen link carries the tone, not glyphs.
+              if (icon != null) ...[
+                Icon(icon, size: text.fontSize, color: colors.mark),
+                SizedBox(width: spacing.lg * s),
+              ] else if (notice.tone == NoticeTone.critical) ...[
+                DecoratedBox(
+                  key: const Key('console_readout_notice_dot'),
+                  decoration: BoxDecoration(
+                    color: colors.mark,
+                    shape: BoxShape.circle,
+                  ),
+                  child: SizedBox.square(dimension: theme.readoutDotSize * s),
+                ),
+                SizedBox(width: spacing.lg * s),
+              ],
+              Flexible(
+                child: NoticeSentence(
+                  key: const Key('console_readout_notice_text'),
+                  scale: s,
+                  title: notice.title,
+                  titleStyle: text.copyWith(color: surface.textPrimary),
+                  body: notice.body,
+                  bodyStyle: text.copyWith(
+                    color: surface.textSecondary,
+                    fontWeight: FontWeight.w400,
+                  ),
+                  source: notice.track,
+                  sourceStyle: text.copyWith(color: surface.textSecondary),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -285,43 +380,6 @@ class _Footer extends StatelessWidget {
           style: secondary.copyWith(color: surface.textPrimary),
         ),
       ],
-    );
-  }
-}
-
-/// The device-lost line, in readout-scale type: the pen's `c/device-lost`
-/// idiom echoed on the small display, word for word what the stage strip
-/// says. No action — the readout stays inert.
-class _ConnectivityEcho extends StatelessWidget {
-  const _ConnectivityEcho({required this.line, required this.s, super.key});
-
-  final String line;
-  final double s;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 20 * s, vertical: 12 * s),
-      decoration: BoxDecoration(
-        color: surface.recSurface,
-        borderRadius: BorderRadius.circular(10 * s),
-        border: Border.all(color: surface.rec),
-      ),
-      // Up to two lines at full size, never cut: the line names the
-      // interface and says what happens next, which does not fit one line of
-      // the 7" at a readable size (the plan asked for one line; written back).
-      child: AppText(
-        line,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontFamily: SurfaceTheme.displayFont,
-          color: surface.textPrimary,
-          fontSize: 24 * s,
-          height: 1.2,
-        ),
-      ),
     );
   }
 }

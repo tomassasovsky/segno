@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/appliance/power_off/power_step.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 
 void main() {
@@ -17,7 +18,12 @@ void main() {
     tsDen: 8,
     mode: 'fx',
     activeBank: 1,
-    lossLine: 'Scarlett 4i4 disconnected — nothing is heard.',
+    notice: ReadoutNotice(
+      title: 'Recording did not start',
+      body: 'Press Record again',
+      tone: NoticeTone.warning,
+      track: 'GUITAR',
+    ),
   );
 
   group('PerformanceReadout wire format', () {
@@ -49,11 +55,31 @@ void main() {
       expect(decoded.hasTempo, isTrue);
       expect(decoded.selected, isNull);
       expect(decoded.activeBank, 0);
-      expect(decoded.lossLine, isEmpty);
+      expect(decoded.notice, isNull);
       expect(decoded.goodbye, ReadoutGoodbye.none);
       expect(
         PerformanceReadout.fromMap(const {'tempoBpm': 0.0}).hasTempo,
         isFalse,
+      );
+    });
+
+    test('a garbled notice decodes to none, and an unknown tone to '
+        'neutral', () {
+      expect(
+        PerformanceReadout.fromMap(const {'notice': 'Saved'}).notice,
+        isNull,
+      );
+      expect(
+        PerformanceReadout.fromMap(const {
+          'notice': {'title': 'Saved', 'tone': 'loud'},
+        }).notice,
+        const ReadoutNotice(title: 'Saved', tone: NoticeTone.neutral),
+      );
+      expect(
+        PerformanceReadout.fromMap(const {
+          'notice': {'title': 'Saved', 'body': 3, 'track': false},
+        }).notice,
+        const ReadoutNotice(title: 'Saved', tone: NoticeTone.neutral),
       );
     });
 

@@ -54,16 +54,14 @@ void main() {
       );
       expect(canvas.color, surface.frameBackground);
 
-      final bar = tester.widget<Container>(
-        find
-            .descendant(
-              of: find.byType(LoopSettingsFrame),
-              matching: find.byType(Container),
-            )
-            .first,
+      // The rule under the top bar, drawn by its notice bar (#1562).
+      final rule = tester.widget<ColoredBox>(
+        find.descendant(
+          of: find.byKey(const Key('notice_bar_rule')),
+          matching: find.byType(ColoredBox),
+        ),
       );
-      final border = (bar.decoration! as BoxDecoration).border! as Border;
-      expect(border.bottom.color, surface.frameRule);
+      expect(rule.color, surface.frameRule);
 
       final back = find.byKey(const Key('loop_settings_back'));
       final chevron = tester.widget<Icon>(

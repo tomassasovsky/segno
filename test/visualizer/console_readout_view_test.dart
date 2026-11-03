@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
 import 'package:segno/visualizer/performance_readout.dart';
@@ -214,52 +215,115 @@ void main() {
       expect(find.byType(GestureDetector), findsNothing);
     });
 
-    group('connectivity echo (#453)', () {
-      testWidgets('absent while nothing is lost', (tester) async {
+    group('notice band (#1562)', () {
+      const lost = ReadoutNotice(
+        title: 'Scarlett 4i4 USB disconnected. Nothing is heard.',
+        tone: NoticeTone.critical,
+      );
+
+      testWidgets('nothing over the top margin while the main screen says '
+          'nothing', (tester) async {
         await pump(tester);
+        expect(find.byKey(const Key('console_readout_notice')), findsNothing);
+      });
+
+      testWidgets('fills the top margin and moves nothing on the readout', (
+        tester,
+      ) async {
+        await pump(tester);
+        final header = tester.getRect(
+          find.byKey(const Key('console_readout_number')),
+        );
+        final footer = tester.getRect(
+          find.byKey(const Key('console_readout_function')),
+        );
+        await pump(
+          tester,
+          readout: const PerformanceReadout(selected: selected, notice: lost),
+        );
+        final band = tester.getRect(
+          find.byKey(const Key('console_readout_notice')),
+        );
+        expect(band.top, 0);
+        expect(band.width, 1280);
+        expect(band.height, NoticeTheme.standard.readoutBandHeight);
+        expect(band.bottom, lessThanOrEqualTo(header.top));
         expect(
-          find.byKey(const Key('console_readout_deviceLost')),
+          tester.getRect(find.byKey(const Key('console_readout_number'))),
+          header,
+        );
+        expect(
+          tester.getRect(find.byKey(const Key('console_readout_function'))),
+          footer,
+        );
+        expect(
+          find.text(lost.title, findRichText: true),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets("carries the main bar's marks: the dot only for a critical "
+          'message', (tester) async {
+        await pump(
+          tester,
+          readout: const PerformanceReadout(selected: selected, notice: lost),
+        );
+        expect(
+          find.byKey(const Key('console_readout_notice_dot')),
+          findsOneWidget,
+        );
+        await pump(
+          tester,
+          readout: const PerformanceReadout(
+            selected: selected,
+            notice: ReadoutNotice(
+              title: 'Cleared all tracks',
+              tone: NoticeTone.neutral,
+            ),
+          ),
+        );
+        expect(
+          find.byKey(const Key('console_readout_notice_dot')),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('console_readout_notice')),
+            matching: find.byType(Icon),
+          ),
           findsNothing,
         );
       });
 
-      testWidgets('echoes the stage line, word for word', (tester) async {
-        const line =
-            'Scarlett 4i4 USB disconnected — nothing is heard. Audio restarts '
-            'when it is back.';
-        await pump(
-          tester,
-          readout: const PerformanceReadout(selected: selected, lossLine: line),
-        );
-        expect(
-          find.byKey(const Key('console_readout_deviceLost')),
-          findsOneWidget,
-        );
-        expect(find.text(line), findsOneWidget);
-      });
-
-      testWidgets('the longest line fits the 7" at full size, unclipped', (
+      testWidgets("a track's message says the track first, on one line", (
         tester,
       ) async {
-        // The stage's own copy with a long interface name, at the 7"'s
-        // 1024 x 600: the echo must not ellipsize.
-        const line =
-            'Scarlett 4i4 USB disconnected — nothing is heard. Audio restarts '
-            'when it is back.';
         await pump(
           tester,
           size: const Size(1024, 600),
-          readout: const PerformanceReadout(selected: selected, lossLine: line),
+          readout: const PerformanceReadout(
+            selected: selected,
+            notice: ReadoutNotice(
+              title: 'Recording did not start',
+              body: 'Press Record again',
+              tone: NoticeTone.warning,
+              track: 'GUITAR',
+            ),
+          ),
         );
+        expect(
+          find.textContaining('GUITAR', findRichText: true),
+          findsOneWidget,
+        );
+        // The title whole, and the body too: it fits the 7".
         final text = tester.renderObject<RenderParagraph>(
           find.descendant(
-            of: find.byKey(const Key('console_readout_deviceLost')),
+            of: find.byKey(const Key('notice_sentence_title')),
             matching: find.byType(RichText),
           ),
         );
-        // At the readout's full size, wrapped onto at most two lines and
-        // never ellipsized.
         expect(text.didExceedMaxLines, isFalse);
+        expect(find.text('Press Record again'), findsOneWidget);
         expect(tester.takeException(), isNull);
       });
     });
@@ -284,7 +348,6 @@ void main() {
           tsDen: 16,
           mode: 'mute',
           activeBank: 1,
-          lossLine: 'No audio device — nothing is heard',
         ),
       );
       expect(tester.takeException(), isNull);
@@ -302,7 +365,6 @@ extension on PerformanceReadout {
         tsDen: tsDen,
         mode: mode,
         activeBank: bank,
-        lossLine: lossLine,
         goodbye: goodbye,
       );
 }

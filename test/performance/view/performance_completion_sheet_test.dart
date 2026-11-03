@@ -286,18 +286,17 @@ void main() {
       await tester.pumpAndSettle();
       await typeSheetName(tester, 'Recovered');
 
-      // The console sheet has no inline-validator hook, so the guard runs
-      // after it closes and reports through a SnackBar. What matters is that
-      // the reserved name never reaches the cubit.
+      // Said under the field, with the sheet still open for another name.
+      // What matters is that the reserved name never reaches the cubit.
       expect(find.text(strings.perfRenameInvalid), findsOneWidget);
-      expect(find.byKey(const Key('console_rename_sheet')), findsNothing);
+      expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
       verifyNever(() => cubit.renameCompletedCapture(any()));
     },
   );
 
   testWidgets(
-    'a PerformanceNameCollision thrown by the cubit shows a SnackBar with '
-    'the duplicate message',
+    'a PerformanceNameCollision thrown by the cubit says the duplicate '
+    'message under the field',
     (tester) async {
       when(
         () => cubit.renameCompletedCapture(any()),

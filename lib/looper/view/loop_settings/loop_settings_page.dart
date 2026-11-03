@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/app/app_notices.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/loop_settings_feedback_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_audio_tempo_page.dart';
@@ -13,6 +14,7 @@ import 'package:segno/looper/view/loop_settings/loop_recording_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_tempo_page.dart';
+import 'package:segno/notices/notices.dart';
 
 /// The Loop settings route (accepted design, Loop setup): the hub and its
 /// submenus as one full-screen page stack, each drawn at the pen's size.
@@ -86,11 +88,14 @@ class _LoopSettingsPageState extends State<LoopSettingsPage> {
       ),
       child: BlocListener<LoopSettingsFeedbackCubit, LoopSettingsFeedback>(
         listenWhen: (previous, current) => previous.refused != current.refused,
-        listener: (context, _) {
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(SnackBar(content: Text(l10n.loopSettingsRefused)));
-        },
+        listener: (context, _) => context.read<NoticesCubit>().show(
+          Notice(
+            id: AppNoticeId.loopSettings,
+            tone: NoticeTone.warning,
+            title: (l10n) => l10n.loopSettingsRefused,
+            body: (l10n) => l10n.loopSettingsRefusedBody,
+          ),
+        ),
         child: LoopEditScope(
           coordinator: _edits,
           child: CallbackShortcuts(

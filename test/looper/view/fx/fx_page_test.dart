@@ -10,7 +10,6 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
-import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
@@ -30,9 +29,9 @@ import 'package:segno/looper/view/fx/fx_page.dart';
 import 'package:segno/looper/view/fx/fx_pedal_assignments_page.dart';
 import 'package:segno/looper/view/fx/fx_rack_editor.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
-import 'package:toastification/toastification.dart';
 
 import '../../../helpers/helpers.dart';
 
@@ -234,6 +233,8 @@ void main() {
   late _MockLooperRepository repository;
   late _MockControlCubit control;
   late SettingsRepository settings;
+  late NoticesCubit notices;
+  late NoticeLog said;
   late StreamController<int> monitorChanges;
   late StreamController<int> monitorParams;
   late PluginCatalog catalog;
@@ -241,11 +242,13 @@ void main() {
   late List<TrackEffect> monitorEntries;
 
   setUp(() {
+    notices = NoticesCubit();
+    said = NoticeLog(notices);
+    addTearDown(() async {
+      await said.close();
+      await notices.close();
+    });
     resetSegnoNavigatorForTest();
-    // A clean toast slate: under the optimized runner a toast left by
-    // another file would swallow this file's refusal toasts (#875).
-    resetToastificationForTest();
-    resetAppToastsForTest();
     catalog = PluginCatalog(
       engine: FakeAudioEngine(),
       appVersion: 'test',
@@ -610,9 +613,10 @@ void main() {
     ).thenAnswer((_) async => true);
 
     await tester.pumpWidget(
-      // Saving a preset confirms with a toast, which needs the app's own
-      // overlay wrapper to land in.
-      ToastificationWrapper(
+      // Saving a preset confirms in the top bar, through the app's notice
+      // centre.
+      BlocProvider<NoticesCubit>.value(
+        value: notices,
         // Above the navigator, as the app mounts them, so a route the page
         // pushes (the pedal assignments) reads the same providers.
         child: MultiRepositoryProvider(
@@ -642,6 +646,8 @@ void main() {
                 extensions: [
                   SurfaceTheme.dark,
                   routingGraphThemeFromSurface(SurfaceTheme.dark),
+                  SpacingTheme.standard,
+                  NoticeTheme.standard,
                 ],
               ),
               home: FxPage(
@@ -1754,11 +1760,7 @@ void main() {
           await tester.pumpAndSettle();
 
           expect(find.byType(FxRackEditor), findsOneWidget);
-          expect(find.text(l10nOf(tester).fxChangeNotApplied), findsOneWidget);
-          expect(
-            find.text(l10nOf(tester).fxRackRemoved('Funk Wah')),
-            findsNothing,
-          );
+          expect(said.titles, [l10nOf(tester).fxChangeNotApplied]);
           await tester.pump(const Duration(seconds: 4));
           await tester.pumpAndSettle();
         },
@@ -2311,11 +2313,8 @@ void main() {
       await chooseTheSameRack(tester);
       await tapKey(tester, 'console_confirm_confirm');
 
-      expect(
-        find.text(l10nOf(tester).storageActionFailed),
-        findsOneWidget,
-      );
-      await tester.pump(const Duration(seconds: 4));
+      expect(said.titles, [l10nOf(tester).storageActionFailed]);
+      await tester.pump(const Duration(seconds: 6));
     });
 
     testWidgets('with no assignments to it, it is replaced without asking', (

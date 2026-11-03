@@ -6,9 +6,8 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/segno_navigator.dart';
-import 'package:segno/appliance/display_brightness_edit.dart';
 import 'package:segno/appliance/display_role.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -36,8 +35,6 @@ void main() {
 
   setUp(() {
     resetSegnoNavigatorForTest();
-    resetAppToastsForTest();
-    resetToastificationForTest();
     harness = DestinationHarness();
   });
 
@@ -200,10 +197,15 @@ void main() {
       await openDisplays(tester);
 
       await tester.drag(slider(DisplayRole.track), const Offset(-4000, 0));
-      await tester.pumpAndSettle();
+      // Not a settle: that would run the message's time out.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
       // The level applies even though the write failed.
       expect(harness.brightness.state.levelOf(DisplayRole.track), 0.2);
-      expect(debugAppToastActive(displayBrightnessSaveFailedToast), isTrue);
+      expect(
+        harness.notices.state.message?.notice.id,
+        '${AppNoticeId.brightnessSave}_${DisplayRole.track.name}',
+      );
 
       store.refuse = false;
       await tester.drag(slider(DisplayRole.track), const Offset(4000, 0));
@@ -213,7 +215,7 @@ void main() {
         1,
       );
       await tester.pump(const Duration(seconds: 2));
-      expect(debugAppToastActive(displayBrightnessSaveFailedToast), isFalse);
+      expect(harness.notices.state.message, isNull);
     });
   });
 

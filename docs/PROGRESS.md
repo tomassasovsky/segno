@@ -72,9 +72,114 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
+| #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1547 | Every effect the same at any sample rate and block size: parts 1, 2, 3a (filter responses) and 3b (tails) merged; part 3c (pitch: the octaver kinds run at 48 kHz at every rate, #1467) in review; 3d the Transient next | in-review | auto | `claude/fx-invariance-1547-p3c` |
 
 ---
+
+## November 2026 One notice system (#1562)
+
+- The owner's decision on #1562: direction 1 (the top bar's centre says a
+  passing message in place of the session name; a must-act message turns the
+  whole bar into a banner) plus direction 3's per-track messages on the track
+  cards, and the same message as a band across the readout's top margin.
+- One cubit, `NoticesCubit` (`lib/notices/`), provided at the app root:
+  `show` (top bar, goes by itself), `showOnTrack` (that track's card),
+  `raise` / `clear` (must-act, until the condition clears) and `setHeld`
+  (the Power screen holds them). One message at a time, the newest replacing
+  the last; a passing message with a standing must-act message's id is
+  dropped. Durations: 4 s, 6 s for a warning, 8 s with an action, 10 s for a
+  one-time explanation.
+- Surfaces: `NoticeBar` + `NoticeBarMessage` in every top bar (the stage's,
+  the performance views' `FootTopBar`, the settings frame), laid out by the
+  shared `TopBarLayout`, so the side controls never move and the message sits
+  on the session name's baseline at its size; `TrackNotice` in the Track and
+  Wave cards (a Mixer strip is all controls: it rings and the bar says it);
+  the readout's band (`ReadoutNotice` over the screen link).
+- Sizes and type ramp in the `NoticeTheme` extension, gaps from the new
+  `SpacingTheme` scale, colours from `SurfaceTheme` (new `warningTint`,
+  `warningLine`). Screenshots: `notice_*` in the tracks and notices suites.
+- Every message the app says goes through it (part 2): the settings
+  owners' and the mix's recoveries, the session boot and monitor restores
+  and the power-cycle prompt are must-act messages with their fix; the
+  lost interface, the cleared loops, the stopped engine, audio starting and
+  the effects held off are raised by `StandingNotices`
+  (`lib/app/view/standing_notices.dart`) on every screen; a press a track
+  refused is said on its card; the rest pass through the top bar. Ids live
+  in `AppNoticeId` (`lib/app/app_notices.dart`). `toastification`,
+  `ControlSettingsNotices` and every `SnackBar` are gone; the rename sheets
+  say a bad name under the field.
+- Rules beyond the decision, settled while building it: a body is shown
+  whole or not at all; a bar too narrow for the buttons (a desktop window)
+  drops them before the words; one-time explanations queue behind each
+  other instead of replacing each other; the Mixer's own top-bar buttons
+  step aside while a must-act message stands. `test/notices/
+  notice_copy_fit_test.dart` renders every message in English and Spanish
+  in the stage bar and fails on any cut title or dropped body or button.
+- Tests: a press that settles runs a passing message's time out, so tests
+  ask `NoticeLog` (`test/helpers/notice_log.dart`) what was said.
+- Part 3: the page bands (the Effects pages' "effects are off", Loop
+  settings' lock, the Updates page's rollback) are one `InlineNotice` on the
+  notice tones and type, with no inline alpha wash (the token test now
+  covers `warning` too); a ConsoleBanner that needs no action is amber, not
+  red (the device running at other settings, a storage action that did
+  nothing, the Library's refused open and listen). The Storage and MIDI
+  pages' one-line amber notes stay the pen's.
+
+## November 2026 Automatic LED brightness from a light sensor (#1564)
+
+- An optional Vishay TEPT5600 on J22 (GP28), with 100 Ω in its collector
+  lead, its load resistor (2.2 kΩ) and 100 nF in the lead's J22 end; wiring, resistor choice and saturation in
+  segno-hardware's `hardware/segno_wiring.md`. The enclosure part (hole,
+  holder, lead route) is a separate thread.
+- Console firmware 2.7 smooths the reading (readings at random 7-13 ms so
+  mains flicker averages out, one-second means, a five-second median, a 3 s
+  average, a quarter-doubling hysteresis), tells a fitted sensor
+  from an open pin with the pad's pulls every 2 s, and reports it after every
+  hello as `AMBIENT` (`0x07`): the raw ADC reading on a log scale, not lux.
+  The app answers with `LED_LEVEL` (`0x14`), which scales the pills and, via
+  the ring link's new `LEVEL`, the ring (ring firmware 1.2), with a fade.
+  Both optional, so still protocol 12; with no `LED_LEVEL` the board shows
+  what 2.6 did.
+- The app: Settings > Displays > Console LEDs (`ConsoleLedsCubit`,
+  `ConsoleLedSettings` in settings_repository). Manual brightness (default
+  100 %, today's) or Automatic, which maps the reading between two points the
+  owner captures (Dark room, Bright room) on a log-linear curve from about a
+  third to full, plus a brighter/darker offset; the board's level is that
+  brightness to the power 2.2. Automatic is unavailable without a reported
+  sensor and says why. `AmbientBrightnessCurve` is the seam for the screens.
+- Not done: the screens' own automatic brightness; a bench of the console's
+  reflected light against the hysteresis once a sensor is fitted.
+
+## November 2026 The UI thread's CPU (#1563)
+
+- The 15% "UI thread at idle" was the audio thread. The engine's threads
+  kept the name of the thread that started them, a Dart UI isolate, so a
+  per-thread sum by name counted the audio thread (14% idle, 16% playing)
+  as `io.flutter.ui`. Each engine thread now names itself
+  (`le_platform_name_thread`: segno-audio, segno-midi, segno-cache,
+  segno-restore, segno-prefault, segno-render, segno-drain, segno-checkpt,
+  segno-fx-N), so `top -H`, `segno-prof` and `/data/bench/load.sh` read
+  true. The main screen's Dart UI thread is 1.4% of a core at idle, most of
+  it the 16 ms snapshot poll.
+- While a loop played, every poll republished `LooperState` because the
+  playhead was in it, and every listener of the state ran again. The
+  playhead is now `LooperRepository.playheads` (`Playhead`), apart from the
+  state as the levels are (#1301); `TransportState.masterPositionFrames`
+  and `Track.positionFrames` are gone.
+- Meters and playheads follow their stream through `LiveValue`
+  (`LiveCubit`): each paints in its own layer, and each stops following
+  while its route is covered (`TickerMode`), so the Effects page no longer
+  keeps the stage under it drawing frames. The waveform's playhead paints
+  over the wave in a layer of its own.
+- Console, build 213 against this branch, 30 s windows, % of one core,
+  Skia / Impeller: the main screen's UI thread playing 9.5 -> 4.1 /
+  10.1 -> 4.6, on the Effects page 7.1 -> 2.1 / 7.7 -> 2.3; the readout's
+  UI thread playing 2.1 -> 1.2 on both. On the Effects page the main
+  screen's raster thread fell 7.3 -> 1.0 / 13.0 -> 2.1. Under Skia the GPU
+  is busier while the stage plays (11% -> 15%): the stage's page is now a
+  stable layer, which Skia's raster cache keeps and draws as an image every
+  frame; Impeller has no raster cache and stays at 10%.
 
 ## November 2026 Screen capture on the console (#1555)
 

@@ -76,6 +76,7 @@
 
 #include "audio_ring.h"      /* le_audio_ring_pop */
 #include "engine_digest.h"   /* le_sha256_ctx (each part's payload digest) */
+#include "engine_platform.h" /* le_platform_name_thread */
 #include "engine_wav.h"      /* le_wav_writer (the one float WAV writer) */
 #include "engine_private.h"  /* le_engine, le_perf_capture,
                               * LE_MAX_MONITORED_INPUTS */
@@ -1910,6 +1911,7 @@ static int le_pd_checkpoint(le_perf_drain* d) {
  * is never more than a poll away. */
 static void le_pd_checkpoint_thread_main(void* arg) {
   le_perf_drain* d = (le_perf_drain*)arg;
+  le_platform_name_thread("segno-checkpt");
   le_pd_thread_lower_own_priority();
   uint64_t next_ms = 0;
   if (d->checkpoint_ms > 0 && le_pd_now_ms(&next_ms)) {
@@ -2149,6 +2151,7 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
 
 static void le_pd_drain_thread_main(void* arg) {
   le_perf_drain* d = (le_perf_drain*)arg;
+  le_platform_name_thread("segno-drain");
 
   /* Before the first cycle: drop this thread's own scheduling share (#722).
    * See the shim block's SCHEDULING note for why this half has to happen from

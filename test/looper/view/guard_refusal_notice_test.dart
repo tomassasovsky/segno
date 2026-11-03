@@ -3,8 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/tracks_commands.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/performance.dart';
-import 'package:segno/session/session.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -12,10 +12,17 @@ import '../../helpers/helpers.dart';
 /// a silent no-op on Record is indistinguishable from a dead control.
 void main() {
   late AppLocalizations l10n;
+  late NoticesCubit notices;
+
+  setUp(() {
+    notices = NoticesCubit();
+    addTearDown(notices.close);
+  });
 
   Future<BuildContext> pumpHost(WidgetTester tester) async {
     late BuildContext captured;
     await tester.pumpApp(
+      notices: notices,
       Scaffold(
         body: Builder(
           builder: (context) {
@@ -29,7 +36,7 @@ void main() {
     return captured;
   }
 
-  testWidgets('a refused arm shows a toast naming what it waits for', (
+  testWidgets('a refused arm says what it waits for', (
     tester,
   ) async {
     final context = await pumpHost(tester);
@@ -37,18 +44,13 @@ void main() {
       context,
       const PerformanceRecorderIdle(refusedBy: GuardKind.sessionApply),
     );
-    await tester.pump();
+    expect(notices.state.message?.notice.title(l10n), "Recording didn't start");
     expect(
-      find.byKey(const Key('tracks_perfArmRefused_snackbar')),
-      findsOneWidget,
+      notices.state.message?.notice.body?.call(l10n),
+      'A session is opening. Try again when it has opened.',
     );
-    expect(
-      find.text(
-        "Recording didn't start. A session is opening. Try again when it "
-        'has opened.',
-      ),
-      findsOneWidget,
-    );
+    expect(notices.state.message?.notice.tone, NoticeTone.warning);
+    await tester.pump(const Duration(seconds: 6));
     expect(
       l10n.operationBusy(GuardKind.deviceChange.name),
       'The audio interface is changing. Try again in a moment.',
@@ -70,25 +72,6 @@ void main() {
   testWidgets('a plain idle shows nothing', (tester) async {
     final context = await pumpHost(tester);
     onPerformanceRecorderState(context, const PerformanceRecorderIdle());
-    await tester.pump();
-    expect(find.byType(SnackBar), findsNothing);
-  });
-
-  testWidgets('a refused session action is real copy, not a developer string', (
-    tester,
-  ) async {
-    final context = await pumpHost(tester);
-    showSessionOutcome(
-      context,
-      const SessionState(
-        status: SessionStatus.failure,
-        error: SessionError.busy,
-        errorMessage: 'GuardRefused(GuardKind.sessionApply, blocked by [])',
-        refusedBy: GuardKind.restart,
-      ),
-    );
-    await tester.pump();
-    expect(find.text('The console is shutting down.'), findsOneWidget);
-    expect(find.textContaining('GuardRefused'), findsNothing);
+    expect(notices.state.message, isNull);
   });
 }

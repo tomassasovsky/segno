@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/settings/touch_calibration/view/touch_calibration_page.dart';
@@ -10,7 +9,6 @@ import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/visualizer.dart';
 import 'package:touch_calibration_client/touch_calibration_client.dart';
 
-import '../../../helpers/helpers.dart';
 import '../../view/destination_harness.dart';
 import '../fake_touch_calibration_client.dart';
 
@@ -36,8 +34,6 @@ void main() {
 
   setUp(() {
     resetSegnoNavigatorForTest();
-    resetAppToastsForTest();
-    resetToastificationForTest();
     client = FakeTouchCalibrationClient();
     link = _RecordingLink();
     harness = DestinationHarness()
