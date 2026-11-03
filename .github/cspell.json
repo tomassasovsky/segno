@@ -28,6 +28,7 @@
     "midlap",
     "relock",
     "relocking",
+    "EDID",
     "prefault",
     "checkpt",
     "oversample",
