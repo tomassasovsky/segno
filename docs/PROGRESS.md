@@ -82,16 +82,21 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   starts, the engine sets the interface's routing matrix to plain
   pass-through (`le_platform_own_interface_routing`, from
   `le_engine_publish_and_start`, so start and reopen both run it). Linux
-  applies it to the card behind the capture id and, when it is a different
-  card, the playback id, through the `dlopen`'d libasound control API.
+  sets the inputs of the card behind the capture id and the outputs of the
+  card behind the playback id (both, when they are one card), through the
+  `dlopen`'d libasound control API. Inputs only on the capture card, so the
+  loopback slots it sets are the ones the mask excludes.
 - The rules are per kernel driver, matched on control names. Only
-  `scarlett2` has rules (Scarlett Gen 2-4, Clarett USB/+, Vocaster):
-  `le_own_scarlett2_routing` in `engine_devices.c`. Hardware outputs
+  `scarlett2` has rules (Scarlett Gen 2 and 3, Gen 4 Solo, 2i2 and 4i4,
+  Clarett USB/+, Vocaster; the big Gen 4 units use the FCP driver and are
+  left alone): `le_own_scarlett2_routing` in `engine_devices.c`. Hardware outputs
   (`Analogue Output NN`, then `S/PDIF Output N`, then `ADAT Output N`
   `Playback Enum`) play `PCM 1`, `PCM 2`, ... in order. `PCM NN Capture
   Enum` records the hardware inputs in order, and the slots past them
   return `PCM 1`, `PCM 2`, ... (the loopback #1541 times on, excluded from
-  recording). Direct monitoring goes off. The mixer is left alone, since
+  recording). A hardware input recorded through the unit's input DSP
+  (`DSP n` fed by that input, Gen 4 and Vocaster) is kept. Direct
+  monitoring goes off. The mixer is left alone, since
   nothing selects a `Mix` afterwards. Only controls that differ are
   written, then read back. A card without these controls is left alone.
 - Logs `segno/audio: hw:N routing set to pass-through (N of M controls

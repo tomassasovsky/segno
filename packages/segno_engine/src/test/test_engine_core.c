@@ -40610,6 +40610,8 @@ int main(void) {
   test_routing_reports_what_it_could_not_set();
   test_routing_leaves_other_cards_alone();
   test_routing_spdif_order_and_direct_monitor();
+  test_routing_roles_per_card();
+  test_routing_keeps_inputs_through_their_dsp();
   test_excluded_mask_from_names();
   test_loopback_exclusion();
   test_loopback_latency_uses_loopback_channel();

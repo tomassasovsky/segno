@@ -140,10 +140,10 @@ void le_platform_prefault_audio_code(void);
 
 /* Called at every device open, before the excluded-input mask is read: sets
  * the interface's own routing matrix to plain pass-through (#1046). Linux
- * applies le_own_scarlett2_routing to the card behind each opened device id
- * (NULL: the system default, left alone) and logs what it changed or could
- * not set; a card without scarlett2 routing controls is left alone. No-op on
- * macOS. */
+ * applies le_own_scarlett2_routing to the inputs of the card behind the
+ * capture id and the outputs of the card behind the playback id (NULL: the
+ * system default, left alone), and logs what it changed or could not set; a
+ * card without scarlett2 routing controls is left alone. No-op on macOS. */
 void le_platform_own_interface_routing(const char* capture_uid,
                                        const char* playback_uid);
 

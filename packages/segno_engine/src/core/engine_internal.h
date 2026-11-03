@@ -180,15 +180,22 @@ typedef struct le_routing_report {
   char first_failed[48]; /* the first failed control's name, or "" */
 } le_routing_report;
 
+/* What le_own_scarlett2_routing owns on a card: the outputs of the card
+ * Segno plays to, the inputs of the card it records from. */
+#define LE_ROUTING_OUTPUTS 1
+#define LE_ROUTING_INPUTS 2
+
 /* Sets a card's routing to plain pass-through with the rules for the kernel's
- * scarlett2 driver (Scarlett Gen 2-4, Clarett USB/+, Vocaster): hardware
- * output k plays playback stream k, capture channel k records hardware input
- * k, capture channels past the hardware inputs return playback streams 1, 2,
- * ... (the loopback, #1541), and direct monitoring is off. Writes only what
- * differs and reads it back. A card without these controls reports 0
- * controls and is left alone. The rules and the reasons are in
- * engine_devices.c. */
-void le_own_scarlett2_routing(const le_mixer* m, le_routing_report* out);
+ * scarlett2 driver (Scarlett Gen 2-3, Gen 4 Solo/2i2/4i4, Clarett USB/+,
+ * Vocaster). LE_ROUTING_OUTPUTS: hardware output k plays playback stream k,
+ * and direct monitoring is off. LE_ROUTING_INPUTS: capture channel k records
+ * hardware input k (directly, or through the unit's input DSP), and capture
+ * channels past the hardware inputs return playback streams 1, 2, ... (the
+ * loopback, #1541). Writes only what differs and reads it back. A card
+ * without these controls reports 0 controls and is left alone. The rules and
+ * the reasons are in engine_devices.c. */
+void le_own_scarlett2_routing(const le_mixer* m, int roles,
+                              le_routing_report* out);
 
 /* The capture channels (bit c = channel c, of the first `channel_count`) whose
  * scarlett2 source is one of the host's own playback streams

@@ -94,30 +94,41 @@ int le_alsa_ctl_name_from_uid(const char* uid, char* out, size_t cap) {
  *
  * The rules are per kernel driver, matched on the control names it creates
  * (sound/usb/mixer_scarlett2.c, the names alsa-scarlett-gui reads too). One
- * driver, scarlett2, covers Scarlett Gen 2, 3 and 4, Clarett USB and Clarett+,
- * and Vocaster:
+ * driver, scarlett2, covers Scarlett Gen 2 and Gen 3, the Gen 4 Solo, 2i2 and
+ * 4i4, Clarett USB and Clarett+, and Vocaster. (The big Gen 4 units use the
+ * FCP driver, whose routing has no such controls: left alone.)
  *
+ * Outputs, on the card Segno plays to (LE_ROUTING_OUTPUTS):
  *  - The hardware outputs are "Analogue Output NN Playback Enum", then
  *    "S/PDIF Output N Playback Enum", then "ADAT Output N Playback Enum", the
  *    order in which the driver and Focusrite's own defaults lay out the host's
  *    playback streams. The k-th of them plays item "PCM k", or "Off" when
  *    there is no stream k.
- *  - Segno's input k is "PCM NN Capture Enum" (NN = k). Inputs up to the number
- *    of hardware inputs record them in the same order (the items "Analogue n",
- *    "S/PDIF n", "ADAT n"). An input past them is the interface's loopback slot
- *    and returns Segno's output k - (hardware inputs), "PCM 1" first: the
- *    engine excludes those channels from recording, monitoring and routing,
- *    and the record offset is timed on them (#1541).
  *  - "Direct Monitor Playback Switch" (Solo) and "Direct Monitor Playback
  *    Enum" (2i2, item "Off") mix the inputs into the outputs in hardware, so
  *    they are switched off.
- *  - The mixer ("Mixer Input NN Capture Enum" and its gains) is left as it
- *    is: once no output and no input selects a "Mix" item, it reaches nothing.
+ *
+ * Inputs, on the card Segno records from (LE_ROUTING_INPUTS), so that the
+ * loopback slots set here are the ones the engine's mask excludes:
+ *  - Segno's input k is "PCM NN Capture Enum" (NN = k). Inputs up to the number
+ *    of hardware inputs record them in the same order (the items "Analogue n",
+ *    "S/PDIF n", "ADAT n"). A unit with input processing (Gen 4, Vocaster)
+ *    may feed one through its DSP instead: "DSP n" whose "DSP Input n Capture
+ *    Enum" selects that same hardware input is that input, processed, and is
+ *    kept. An input past the hardware inputs is the interface's loopback slot
+ *    and returns Segno's output k - (hardware inputs), "PCM 1" first: the
+ *    engine excludes those channels from recording, monitoring and routing,
+ *    and the record offset is timed on them (#1541).
+ *
+ * The mixer ("Mixer Input NN Capture Enum" and its gains) is left as it is:
+ * once no output and no input selects a "Mix" item, it reaches nothing.
  *
  * Each control is written only when it differs (every scarlett2 routing write
  * sends the whole matrix over USB) and read back after. Not controllable, so
  * left to the user: output levels and the hardware monitor knob, and outputs a
- * model wires together (the 4i4's headphones play line outputs 3-4). */
+ * model wires together (the 4i4's headphones play line outputs 3-4). At 88.2
+ * kHz and above, units with ADAT ports open fewer channels than the controls
+ * count, so their loopback slots may fall outside what is opened. */
 
 #define LE_ROUTING_MAX_PORTS 64
 
@@ -161,13 +172,45 @@ static int le_is_hardware_source(const char* item) {
                           strncmp(item, "ADAT ", 5) == 0);
 }
 
-void le_own_scarlett2_routing(const le_mixer* m, le_routing_report* out) {
-  memset(out, 0, sizeof(*out));
+/* The item enumerated `control` selects, copied into `out`; 0 when it cannot
+ * be read. */
+static int le_mixer_selected(const le_mixer* m, const char* control,
+                             char* out, size_t cap) {
+  int type = 0;
+  unsigned items = 0;
+  unsigned value = 0;
+  if (!m->find(m->ctx, control, &type, &items) ||
+      type != LE_MIXER_ENUMERATED || m->read(m->ctx, control, &value) < 0 ||
+      value >= items) {
+    return 0;
+  }
+  const char* name = m->item_name(m->ctx, control, value);
+  if (name == NULL) return 0;
+  snprintf(out, cap, "%s", name);
+  return 1;
+}
+
+/* Whether capture `control` already records hardware source `hardware`
+ * through the unit's input DSP: it selects "DSP n" and "DSP Input n Capture
+ * Enum" selects `hardware`. */
+static int le_capture_via_dsp(const le_mixer* m, const char* control,
+                              const char* hardware) {
+  char current[48];
+  if (!le_mixer_selected(m, control, current, sizeof(current))) return 0;
+  int n = 0;
+  if (sscanf(current, "DSP %d", &n) != 1 || n <= 0) return 0;
+  char dsp[48];
+  char feeds[48];
+  snprintf(dsp, sizeof(dsp), "DSP Input %d Capture Enum", n);
+  return le_mixer_selected(m, dsp, feeds, sizeof(feeds)) &&
+         strcmp(feeds, hardware) == 0;
+}
+
+static void le_own_scarlett2_outputs(const le_mixer* m, le_routing_report* r) {
   char control[48];
   char item[48];
   int type = 0;
   unsigned items = 0;
-
   /* Hardware outputs: the k-th plays playback stream k. */
   static const char* const outputs[] = {"Analogue Output %02d Playback Enum",
                                         "S/PDIF Output %d Playback Enum",
@@ -180,10 +223,26 @@ void le_own_scarlett2_routing(const le_mixer* m, le_routing_report* out) {
       ++stream;
       if (type != LE_MIXER_ENUMERATED) continue;
       snprintf(item, sizeof(item), "PCM %d", stream);
-      le_routing_select(m, control, items, item, out);
+      le_routing_select(m, control, items, item, r);
     }
   }
+  /* Direct monitoring mixes the inputs into the outputs. */
+  if (m->find(m->ctx, "Direct Monitor Playback Switch", &type, &items) &&
+      type == LE_MIXER_BOOLEAN) {
+    le_routing_set(m, "Direct Monitor Playback Switch", 0, r);
+  }
+  if (m->find(m->ctx, "Direct Monitor Playback Enum", &type, &items) &&
+      type == LE_MIXER_ENUMERATED) {
+    le_routing_select(m, "Direct Monitor Playback Enum", items, "Off", r);
+  }
+}
 
+static void le_own_scarlett2_inputs(const le_mixer* m, le_routing_report* r) {
+  char control[48];
+  char item[48];
+  char hardware_name[48];
+  int type = 0;
+  unsigned items = 0;
   /* Capture channels: the hardware inputs in order, then the loopback. */
   for (int k = 1; k <= LE_ROUTING_MAX_PORTS; ++k) {
     snprintf(control, sizeof(control), "PCM %02d Capture Enum", k);
@@ -192,26 +251,31 @@ void le_own_scarlett2_routing(const le_mixer* m, le_routing_report* out) {
     int hardware = 0;
     int source = -1;
     for (unsigned i = 0; i < items; ++i) {
-      if (!le_is_hardware_source(m->item_name(m->ctx, control, i))) continue;
-      if (++hardware == k) source = (int)i;
+      const char* name = m->item_name(m->ctx, control, i);
+      if (!le_is_hardware_source(name)) continue;
+      if (++hardware == k) {
+        source = (int)i;
+        snprintf(hardware_name, sizeof(hardware_name), "%s", name);
+      }
     }
     if (source >= 0) {
-      le_routing_set(m, control, (unsigned)source, out);
+      if (le_capture_via_dsp(m, control, hardware_name)) {
+        r->controls++;
+      } else {
+        le_routing_set(m, control, (unsigned)source, r);
+      }
     } else {
       snprintf(item, sizeof(item), "PCM %d", k - hardware);
-      le_routing_select(m, control, items, item, out);
+      le_routing_select(m, control, items, item, r);
     }
   }
+}
 
-  /* Direct monitoring mixes the inputs into the outputs. */
-  if (m->find(m->ctx, "Direct Monitor Playback Switch", &type, &items) &&
-      type == LE_MIXER_BOOLEAN) {
-    le_routing_set(m, "Direct Monitor Playback Switch", 0, out);
-  }
-  if (m->find(m->ctx, "Direct Monitor Playback Enum", &type, &items) &&
-      type == LE_MIXER_ENUMERATED) {
-    le_routing_select(m, "Direct Monitor Playback Enum", items, "Off", out);
-  }
+void le_own_scarlett2_routing(const le_mixer* m, int roles,
+                              le_routing_report* out) {
+  memset(out, 0, sizeof(*out));
+  if (roles & LE_ROUTING_OUTPUTS) le_own_scarlett2_outputs(m, out);
+  if (roles & LE_ROUTING_INPUTS) le_own_scarlett2_inputs(m, out);
 }
 
 uint32_t le_scarlett2_loopback_mask(const le_mixer* m, int channel_count) {

@@ -1284,12 +1284,11 @@ static int le_alsa_mixer_write(void* ctx, const char* name, unsigned value) {
   return s->elem_write(c->ctl, c->value) < 0 ? -1 : 0;
 }
 
-/* Opens the control device of the card behind device id `uid` as an
- * le_mixer; 0 (nothing to close) when there is no card or no libasound. */
-static int le_alsa_mixer_open(const char* uid, le_alsa_mixer* c, le_mixer* m,
-                              char* card, size_t card_cap) {
+/* Opens control device `card` ("hw:2") as an le_mixer; 0 (nothing to close)
+ * when it cannot, or there is no libasound. */
+static int le_alsa_mixer_open(const char* card, le_alsa_mixer* c,
+                              le_mixer* m) {
   memset(c, 0, sizeof(*c));
-  if (!le_alsa_ctl_name_from_uid(uid, card, card_cap)) return 0;
   c->s = le_alsa_ctl_syms_get();
   if (c->s == NULL) return 0;
   if (c->s->ctl_open(&c->ctl, card, LE_SND_CTL_NONBLOCK) < 0) return 0;
@@ -1316,18 +1315,14 @@ static void le_alsa_mixer_close(le_alsa_mixer* c) {
   c->s->ctl_close(c->ctl);
 }
 
-/* Sets one card's routing to pass-through and logs what that took. */
-static void le_own_card_routing(const char* uid, const char* skip_card) {
+/* Sets `roles` of one card's routing to pass-through and logs what that
+ * took. */
+static void le_own_card_routing(const char* card, int roles) {
   le_alsa_mixer c;
   le_mixer m;
-  char card[64];
-  if (!le_alsa_mixer_open(uid, &c, &m, card, sizeof(card))) return;
-  if (skip_card != NULL && strcmp(card, skip_card) == 0) {
-    le_alsa_mixer_close(&c);
-    return;
-  }
+  if (!le_alsa_mixer_open(card, &c, &m)) return;
   le_routing_report r;
-  le_own_scarlett2_routing(&m, &r);
+  le_own_scarlett2_routing(&m, roles, &r);
   le_alsa_mixer_close(&c);
   if (r.failed > 0) {
     fprintf(stderr,
@@ -1344,19 +1339,30 @@ static void le_own_card_routing(const char* uid, const char* skip_card) {
 
 void le_platform_own_interface_routing(const char* capture_uid,
                                        const char* playback_uid) {
-  le_own_card_routing(capture_uid, NULL);
-  /* The playback card, unless it is the capture card just set. */
-  char capture_card[64];
-  const int has_capture_card = le_alsa_ctl_name_from_uid(
-      capture_uid, capture_card, sizeof(capture_card));
-  le_own_card_routing(playback_uid, has_capture_card ? capture_card : NULL);
+  /* The capture card's inputs, so the loopback slots set here are the ones
+   * le_platform_excluded_input_mask reads; the playback card's outputs. */
+  char capture[64];
+  char playback[64];
+  const int has_capture =
+      le_alsa_ctl_name_from_uid(capture_uid, capture, sizeof(capture));
+  const int has_playback =
+      le_alsa_ctl_name_from_uid(playback_uid, playback, sizeof(playback));
+  if (has_capture && has_playback && strcmp(capture, playback) == 0) {
+    le_own_card_routing(capture, LE_ROUTING_OUTPUTS | LE_ROUTING_INPUTS);
+    return;
+  }
+  if (has_capture) le_own_card_routing(capture, LE_ROUTING_INPUTS);
+  if (has_playback) le_own_card_routing(playback, LE_ROUTING_OUTPUTS);
 }
 
 uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count) {
+  char card[64];
   le_alsa_mixer c;
   le_mixer m;
-  char card[64];
-  if (!le_alsa_mixer_open(uid, &c, &m, card, sizeof(card))) return 0;
+  if (!le_alsa_ctl_name_from_uid(uid, card, sizeof(card)) ||
+      !le_alsa_mixer_open(card, &c, &m)) {
+    return 0;
+  }
   const uint32_t mask = le_scarlett2_loopback_mask(&m, channel_count);
   le_alsa_mixer_close(&c);
   return mask;

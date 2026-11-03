@@ -251,7 +251,10 @@ own flash, so a reset or another unit brings different defaults with it.
 Segno owns this routing (#1046). Every time it opens the interface (start,
 the warm-up switch, an apply in Settings, a replug) it sets the routing to
 plain pass-through before the audio starts, writing only the controls that
-differ:
+differ: the outputs of the interface it plays to, the capture of the one it
+records from. The rules cover the `scarlett2` models (Scarlett Gen 2 and 3,
+Gen 4 Solo, 2i2 and 4i4, Clarett, Vocaster); the big Gen 4 units use another
+driver and are left alone.
 
 - **Outputs:** `Analogue Output NN`, then `S/PDIF Output N`, then
   `ADAT Output N` play `PCM 1`, `PCM 2`, … in that order (`Off` past the last
@@ -260,7 +263,8 @@ differ:
   then `S/PDIF n`, then `ADAT n`). The capture channels past them are the
   loopback and return Segno's outputs, `PCM 1` first: on the 4i4,
   `PCM 05` ← `PCM 1` and `PCM 06` ← `PCM 2`. Segno times its latency
-  measurement there and never records, monitors or routes them.
+  measurement there and never records, monitors or routes them. An input
+  recorded through the unit's DSP (`DSP n` fed by that input) is kept.
 - **Direct monitoring** (`Direct Monitor Playback Switch` on the Solo,
   `Direct Monitor Playback Enum` on the 2i2) is switched off.
 - The internal mixer (`Mixer Input NN`, `Mix X Input NN`) is left as it is:

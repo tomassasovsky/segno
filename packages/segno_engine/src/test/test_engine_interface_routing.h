@@ -150,6 +150,7 @@ static void rt_set(rt_card* card, const char* name, const char* item) {
 }
 
 #define RT_4I4 "src/test/fixtures/alsa/scarlett_4i4_gen3.txt"
+#define RT_BOTH (LE_ROUTING_OUTPUTS | LE_ROUTING_INPUTS)
 
 /* The console's 4i4 as dumped: already pass-through, so nothing is written,
  * and capture 5-6 return PCM 1-2 (the loopback #1541 times on). */
@@ -160,7 +161,7 @@ static void test_routing_4i4_pass_through_writes_nothing(void) {
   CHECK(card.count == 90);
   const le_mixer m = rt_mixer(&card);
   le_routing_report r;
-  le_own_scarlett2_routing(&m, &r);
+  le_own_scarlett2_routing(&m, RT_BOTH, &r);
   CHECK(r.controls == 10); /* 4 analogue outputs, 6 capture channels */
   CHECK(r.changed == 0);
   CHECK(r.failed == 0);
@@ -190,7 +191,7 @@ static void test_routing_4i4_from_stored_mixes(void) {
   CHECK(le_scarlett2_loopback_mask(&m, 6) == 0u);
 
   le_routing_report r;
-  le_own_scarlett2_routing(&m, &r);
+  le_own_scarlett2_routing(&m, RT_BOTH, &r);
   CHECK(r.controls == 10);
   CHECK(r.changed == 8);
   CHECK(r.failed == 0);
@@ -213,7 +214,7 @@ static void test_routing_4i4_from_stored_mixes(void) {
   CHECK(le_scarlett2_loopback_mask(&m, 6) == 0x30u);
 
   /* The next open finds it owned and writes nothing. */
-  le_own_scarlett2_routing(&m, &r);
+  le_own_scarlett2_routing(&m, RT_BOTH, &r);
   CHECK(r.changed == 0);
   CHECK(card.writes == 8);
 }
@@ -231,7 +232,7 @@ static void test_routing_reports_what_it_could_not_set(void) {
   card.stuck = "PCM 05 Capture Enum";
   const le_mixer m = rt_mixer(&card);
   le_routing_report r;
-  le_own_scarlett2_routing(&m, &r);
+  le_own_scarlett2_routing(&m, RT_BOTH, &r);
   CHECK(r.controls == 10);
   CHECK(r.changed == 3);
   CHECK(r.failed == 2);
@@ -249,7 +250,7 @@ static void test_routing_leaves_other_cards_alone(void) {
   rt_add_enum(&card, "Line In 1 Level Capture Enum", "Line|Inst", 1);
   const le_mixer m = rt_mixer(&card);
   le_routing_report r;
-  le_own_scarlett2_routing(&m, &r);
+  le_own_scarlett2_routing(&m, RT_BOTH, &r);
   CHECK(r.controls == 0);
   CHECK(r.changed == 0);
   CHECK(card.writes == 0);
@@ -286,7 +287,7 @@ static void test_routing_spdif_order_and_direct_monitor(void) {
 
   const le_mixer m = rt_mixer(&card);
   le_routing_report r;
-  le_own_scarlett2_routing(&m, &r);
+  le_own_scarlett2_routing(&m, RT_BOTH, &r);
   CHECK(r.controls == 12);
   CHECK(r.changed == 12);
   CHECK(r.failed == 0);
@@ -308,4 +309,59 @@ static void test_routing_spdif_order_and_direct_monitor(void) {
         0);
   CHECK(rt_value(&card, "Direct Monitor Playback Switch") == 0u);
   CHECK(le_scarlett2_loopback_mask(&m, 6) == 0x30u);
+}
+
+/* Each card owns only its role: the card Segno plays to gets its outputs set,
+ * the card it records from its inputs. A playback-only card keeps its capture
+ * sources, so no loopback slot is set where the engine's mask, read from the
+ * capture card, would not exclude it. */
+static void test_routing_roles_per_card(void) {
+  printf("test_routing_roles_per_card\n");
+  static rt_card card;
+  rt_load(&card, RT_4I4);
+  rt_set(&card, "Analogue Output 03 Playback Enum", "Mix C");
+  rt_set(&card, "PCM 05 Capture Enum", "Off");
+  const le_mixer m = rt_mixer(&card);
+  le_routing_report r;
+  le_own_scarlett2_routing(&m, LE_ROUTING_OUTPUTS, &r);
+  CHECK(r.controls == 4);
+  CHECK(r.changed == 1);
+  CHECK(strcmp(rt_selected(&card, "Analogue Output 03 Playback Enum"),
+               "PCM 3") == 0);
+  CHECK(strcmp(rt_selected(&card, "PCM 05 Capture Enum"), "Off") == 0);
+  CHECK(le_scarlett2_loopback_mask(&m, 6) == 0x20u);
+
+  rt_set(&card, "Analogue Output 03 Playback Enum", "Mix C");
+  le_own_scarlett2_routing(&m, LE_ROUTING_INPUTS, &r);
+  CHECK(r.controls == 6);
+  CHECK(r.changed == 1);
+  CHECK(strcmp(rt_selected(&card, "Analogue Output 03 Playback Enum"),
+               "Mix C") == 0);
+  CHECK(strcmp(rt_selected(&card, "PCM 05 Capture Enum"), "PCM 1") == 0);
+  CHECK(le_scarlett2_loopback_mask(&m, 6) == 0x30u);
+}
+
+/* A unit with input processing (Gen 4, Vocaster) may record a hardware input
+ * through its DSP: "DSP n" fed by that same input is kept, a DSP fed by
+ * another input is not. */
+static void test_routing_keeps_inputs_through_their_dsp(void) {
+  printf("test_routing_keeps_inputs_through_their_dsp\n");
+  static rt_card card;
+  memset(&card, 0, sizeof(card));
+  const char* items =
+      "Off|Analogue 1|Analogue 2|Mix A|Mix B|DSP 1|DSP 2|PCM 1|PCM 2";
+  rt_add_enum(&card, "DSP Input 1 Capture Enum", items, 1); /* Analogue 1 */
+  rt_add_enum(&card, "DSP Input 2 Capture Enum", items, 1); /* Analogue 1 */
+  rt_add_enum(&card, "PCM 01 Capture Enum", items, 5);      /* DSP 1 */
+  rt_add_enum(&card, "PCM 02 Capture Enum", items, 6);      /* DSP 2 */
+  const le_mixer m = rt_mixer(&card);
+  le_routing_report r;
+  le_own_scarlett2_routing(&m, LE_ROUTING_INPUTS, &r);
+  CHECK(r.controls == 2);
+  CHECK(r.changed == 1);
+  CHECK(r.failed == 0);
+  CHECK(strcmp(rt_selected(&card, "PCM 01 Capture Enum"), "DSP 1") == 0);
+  CHECK(strcmp(rt_selected(&card, "PCM 02 Capture Enum"), "Analogue 2") == 0);
+  CHECK(strcmp(rt_selected(&card, "DSP Input 2 Capture Enum"), "Analogue 1") ==
+        0);
 }
