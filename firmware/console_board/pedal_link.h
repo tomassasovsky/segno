@@ -62,6 +62,22 @@ extern "C" {
  * source max mA LE16]. profile is a PEDAL_PD_PROFILE_* value; the contract
  * fields are zero when the trigger did not answer or holds no PD contract. */
 #define PEDAL_LINK_TYPE_PD_STATUS 0x06u
+/* Once a second, after HELLO (firmware 2.7, #1564): [sensor, level], the
+ * light at the plate from the phototransistor on J22 (GP28). sensor is a
+ * PEDAL_AMBIENT_* value. level is the smoothed ADC reading on a log scale,
+ * counts = 2^(level / PEDAL_AMBIENT_STEPS_PER_DOUBLING) of 4095: 0 is one
+ * count or less, 160 is 1024 counts, 190 the top of the range (3700 counts).
+ * It is NOT lux: the sensor's gain is the owner's to calibrate (a dark and a
+ * bright reading, kept by the app), and swapping the load resistor rescales
+ * it. With PEDAL_AMBIENT_NONE the level is 0.
+ *
+ * Optional, like CLEAR_HOLD, so PEDAL_LINK_PROTOCOL_VERSION stays 12: an app
+ * that predates it rejects the unknown type at its type byte. The sensor
+ * byte is never the sync byte and the level has only the checksum behind
+ * it, so the frame that follows is always parsed. */
+#define PEDAL_LINK_TYPE_AMBIENT 0x07u
+#define PEDAL_LINK_AMBIENT_LEN 2u
+#define PEDAL_AMBIENT_STEPS_PER_DOUBLING 16u
 /* segno -> board */
 #define PEDAL_LINK_TYPE_STATE 0x10u    /* [PEDAL_LINK_STATE_LEN bytes] */
 /* Pi -> board, from segno-ring-flash before the app starts, never from the
@@ -91,6 +107,22 @@ extern "C" {
 #define PEDAL_LINK_CLEAR_HOLD_LEN 2u
 #define PEDAL_LINK_CLEAR_HOLD_MS 20u
 #define PEDAL_LINK_CLEAR_HOLD_STALE_MS 500u
+
+/* segno -> board (#1564): [level], 1..255, how bright the pills and the
+ * ring are, as a share of full output (255, the brightness every earlier
+ * firmware shows). It scales the pixels after the channel budget and before
+ * the idle dim. The app picks it (a manual level, or one that follows
+ * AMBIENT) and sends it after the STATE that answers each HELLO; the board
+ * fades to a new level instead of jumping, and goes back to 255 when the
+ * app's frames stop. 0 is refused: dark is STATE's goodbye.
+ *
+ * Optional: firmware 2.6 and older drop it at the type byte and stay at full
+ * brightness. With one payload byte a level equal to the sync byte is
+ * followed by a fixed checksum (0x14 ^ 1 ^ 0xA5 = 0xB0), which is no type,
+ * so that rejection is clean too. */
+#define PEDAL_LINK_TYPE_LED_LEVEL 0x14u
+#define PEDAL_LINK_LED_LEVEL_LEN 1u
+#define PEDAL_LINK_LED_LEVEL_FULL 255u
 
 #define PEDAL_LINK_PD_STATUS_LEN 8u
 #define PEDAL_LINK_STATE_LEN 53u
@@ -192,6 +224,14 @@ enum {
   PEDAL_PD_PROFILE_COUNT
 };
 
+/* What AMBIENT says about the light sensor. */
+enum {
+  PEDAL_AMBIENT_NONE = 0, /* nothing on J22: GP28 follows the pad's own pulls, or sits at ground */
+  PEDAL_AMBIENT_READING,  /* level is the reading */
+  PEDAL_AMBIENT_ABOVE,    /* at the top of the range (a smaller load resistor would read it): level is that top */
+  PEDAL_AMBIENT_COUNT
+};
+
 /* The decoded STATE payload. Byte layout (see PedalLinkCodec):
  *   0      flags: bit0 clear_fade, bit1 goodbye, bit2 performance_armed,
  *          bit3 counting_in, bit4 dimmed (bits 5-7 reserved, must be zero)
@@ -260,6 +300,25 @@ typedef struct pedal_clear_hold {
  * button > PEDAL_BTN_COUNT or a progress without a button - the same
  * rejections as the Dart side. */
 int pedal_link_decode_clear_hold(const uint8_t *payload, uint8_t len, pedal_clear_hold *out);
+
+/* Return 0, and write nothing, for a payload the matching decoder refuses. */
+size_t pedal_link_encode_ambient(uint8_t sensor, uint8_t level, uint8_t *out);
+size_t pedal_link_encode_led_level(uint8_t level, uint8_t *out);
+
+/* A decoded AMBIENT payload. */
+typedef struct pedal_ambient {
+  uint8_t sensor;
+  uint8_t level;
+} pedal_ambient;
+
+/* Decode an AMBIENT payload. Returns 1 on success, 0 for a wrong length, a
+ * sensor >= PEDAL_AMBIENT_COUNT or a level without a sensor - the same
+ * rejections as the Dart side. */
+int pedal_link_decode_ambient(const uint8_t *payload, uint8_t len, pedal_ambient *out);
+
+/* Decode a LED_LEVEL payload into *level. Returns 1 on success, 0 for a wrong
+ * length or a level of 0. */
+int pedal_link_decode_led_level(const uint8_t *payload, uint8_t len, uint8_t *level);
 
 /* Decode a STATE payload. Returns 1 on success, 0 for a wrong length, an
  * out-of-range enum, a reserved flag bit, an active_bank > 1, a

@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:pedal_repository/src/pedal_ambient_light.dart';
 import 'package:pedal_repository/src/pedal_button.dart';
 import 'package:pedal_repository/src/pedal_ctrl.dart';
 import 'package:pedal_repository/src/pedal_power.dart';
@@ -126,6 +127,36 @@ final class PdStatusMessage extends PedalLinkMessage {
 
   @override
   List<Object?> get props => [supply];
+}
+
+/// The light at the plate (board → segno, #1564), once a second after the
+/// hello from a board that knows the message (firmware 2.7 and later).
+final class AmbientLightMessage extends PedalLinkMessage {
+  /// Creates an [AmbientLightMessage].
+  const AmbientLightMessage(this.light);
+
+  /// What the board read.
+  final PedalAmbientLight light;
+
+  @override
+  List<Object?> get props => [light];
+}
+
+/// How bright the console's LEDs are (segno → board, #1564): the pills and
+/// the ring at [level] of 255, the full brightness every earlier build shows.
+///
+/// Optional on the wire: a board that does not know the type drops it and
+/// stays at full brightness.
+final class LedLevelMessage extends PedalLinkMessage {
+  /// Creates a [LedLevelMessage].
+  const LedLevelMessage(this.level)
+    : assert(level >= 1 && level <= 255, 'level must be 1..255');
+
+  /// `1`..`255` of full output. Dark is the state frame's goodbye.
+  final int level;
+
+  @override
+  List<Object?> get props => [level];
 }
 
 /// Everything the board renders (segno → board).

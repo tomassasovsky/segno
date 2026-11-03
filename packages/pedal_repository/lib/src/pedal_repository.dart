@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:pedal_repository/src/pedal_ambient_light.dart';
 import 'package:pedal_repository/src/pedal_button.dart';
 import 'package:pedal_repository/src/pedal_ctrl.dart';
 import 'package:pedal_repository/src/pedal_event.dart';
@@ -93,6 +94,19 @@ class PedalRepository {
   Stream<PedalPowerSupply?> get powerSupplyChanges =>
       _powerSupplyChanges.stream;
 
+  PedalAmbientLight? _ambientLight;
+  final StreamController<PedalAmbientLight?> _ambientLightChanges =
+      StreamController<PedalAmbientLight?>.broadcast();
+
+  /// The light sensor's last report while a board that sends one is
+  /// connected (firmware 2.7 and later, #1564); `null` otherwise, including
+  /// from an older board, which says nothing about a sensor.
+  PedalAmbientLight? get ambientLight => _ambientLight;
+
+  /// Changes to [ambientLight], including back to `null` when the board goes.
+  Stream<PedalAmbientLight?> get ambientLightChanges =>
+      _ambientLightChanges.stream;
+
   PedalStateFrame? _lastFrame;
   final StreamController<PedalStateFrame> _frames =
       StreamController<PedalStateFrame>.broadcast();
@@ -161,6 +175,32 @@ class PedalRepository {
     _link.send(ClearHoldMessage(button: button, progress: progress));
   }
 
+  int _ledLevel = PedalLinkCodec.ledLevelFull;
+  bool _ledLevelSet = false;
+
+  /// How bright the console's pills and ring are, `1`..`255` of full
+  /// (#1564). Sent at once to a connected board when it changes. Once it has
+  /// been set, it is sent again after the state frame that answers every
+  /// hello, so a board that restarted, or missed one, is back on it within a
+  /// second; until then a board shows full brightness by itself and hears
+  /// nothing of it. A board that predates the message stays at full.
+  int get ledLevel => _ledLevel;
+
+  /// Sets [ledLevel].
+  void setLedLevel(int level) {
+    RangeError.checkValueInInterval(
+      level,
+      1,
+      PedalLinkCodec.ledLevelFull,
+      'level',
+    );
+    if (level == _ledLevel) return;
+    _ledLevel = level;
+    _ledLevelSet = true;
+    if (_disposed || _goodbye || !_connected) return;
+    _link.send(LedLevelMessage(level));
+  }
+
   bool _dimmed = false;
 
   /// Whether the console sat idle and the app dimmed the screens. The board
@@ -217,9 +257,12 @@ class PedalRepository {
       case PdStatusMessage(:final supply):
         if (!_connected) return;
         _setPowerSupply(supply);
+      case AmbientLightMessage(:final light):
+        if (!_connected) return;
+        _setAmbientLight(light);
       case HelloMessage():
         _onHello(message);
-      case StateMessage() || ClearHoldMessage():
+      case StateMessage() || ClearHoldMessage() || LedLevelMessage():
         break; // outbound; a board never sends one
     }
   }
@@ -240,6 +283,7 @@ class PedalRepository {
     final frame = _lastFrame;
     if (status == PedalLinkStatus.connected && frame != null) {
       _link.send(StateMessage(frame));
+      if (_ledLevelSet && !_goodbye) _link.send(LedLevelMessage(_ledLevel));
     }
   }
 
@@ -267,7 +311,21 @@ class PedalRepository {
     _hello = hello;
     _log?.call('pedal link: ${status.name} (${why()})');
     if (!_statusChanges.isClosed) _statusChanges.add(status);
-    if (status != PedalLinkStatus.connected) _setPowerSupply(null);
+    if (status != PedalLinkStatus.connected) {
+      _setPowerSupply(null);
+      _setAmbientLight(null);
+    }
+  }
+
+  void _setAmbientLight(PedalAmbientLight? light) {
+    if (light == _ambientLight) return;
+    final was = _ambientLight;
+    _ambientLight = light;
+    // A line when the sensor comes or goes, not every reading.
+    if (light != null && was?.sensor != light.sensor) {
+      _log?.call('pedal link: light sensor ${light.sensor.name}');
+    }
+    if (!_ambientLightChanges.isClosed) _ambientLightChanges.add(light);
   }
 
   void _setPowerSupply(PedalPowerSupply? supply) {
@@ -294,5 +352,6 @@ class PedalRepository {
     await _statusChanges.close();
     await _frames.close();
     await _powerSupplyChanges.close();
+    await _ambientLightChanges.close();
   }
 }

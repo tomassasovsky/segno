@@ -27,6 +27,11 @@ framing, CRC-16/CCITT-FALSE, version 3, PIO UART at 115200 8N1.
   colour (RGB, black when none), the master level, and four flags — LIVE (the
   app is connected), ACTIVE (the transport is doing something), LOADED (a
   loop exists) and DIMMED (the console idled and the screens dimmed, #1349). The ring goes dark if no valid STATE arrives for 500 ms.
+- **LEVEL**, console to ring, after every STATE (#1564): the console's LED
+  brightness, one byte, 1..255 of full. It is its own type so the version stays
+  3: firmware 1.1 and older drop it as an unknown type and stay at full
+  brightness. The ring takes it only while it has a live STATE, and goes back
+  to full when the state goes stale.
 - **INPUT_STATE**, ring to console, every 20 ms: a boot nonce, the cumulative
   detent count and the cumulative button edge count (odd means pressed).
   Snapshots recover dropped short presses as well as missing clicks; the
@@ -48,6 +53,9 @@ The approved console ring behaviour, now on this board:
   level changes between two live states.
 - Every push shares one channel budget, 35 × 3 × 96 = 10,080; a larger frame is
   scaled uniformly.
+- **LED level** (firmware 1.2, #1564): every push is scaled by LEVEL after the
+  budget and before the idle dim, at once on a still frame. At 255 nothing
+  changes. A lit channel stays at least 1.
 - **Dimmed**: while DIMMED is set, every push drops to about 20 % (51/255) after
   the budget, whatever the view, and at once on a still frame. A lit channel
   stays at least 1, so the dimmed breathe never reaches black. LED output is PIO/DMA (NeoPixelBus), so the link and

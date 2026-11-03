@@ -23,6 +23,11 @@
 // the console profile (pd_trigger.h) and from then on reports the contract in
 // a PD_STATUS after every HELLO (#1352).
 //
+// Light sensor: an optional TEPT5600 on J22 (GP28, ADC2), read through
+// ambient_light.h and reported in an AMBIENT after every HELLO (#1564). With
+// nothing on J22 the board says so, and nothing else changes. The app answers
+// with LED_LEVEL, which scales the pills and the ring.
+//
 // Half of several circuits on this board is firmware (#752): the footswitches
 // have no external pull-ups on the Pico side (INPUT_PULLUP is mandatory), a
 // release edge is an RC of ~5-8 ms through the 100 nF debounce caps, and GP23
@@ -37,10 +42,12 @@
 #include <NeoPixelBus.h>
 #include <SerialPIO.h>
 #include <Wire.h>
+#include <hardware/gpio.h>
 
 #include "pedal_link.h"
 #include "console_presence.h"
 #include "pd_trigger.h"
+#include "ambient_light.h"
 #include <SegnoRing.h>
 
 // A colour before gamma; the .ino auto-prototypes need the type declared first.
@@ -54,9 +61,11 @@ struct Rgb { uint8_t r, g, b; };
 // the diffused curve when it starts (#1323). 2.6: a clear-track hold fills
 // its pill red from both ends toward the centre and, when it fires, flashes
 // the full pill three times (CLEAR_HOLD, #1534; still protocol 12, see
-// pedal_link.h).
+// pedal_link.h). 2.7: reads the light sensor on J22 and reports it
+// (AMBIENT), and shows the pills and the ring at the app's LED_LEVEL (#1564;
+// still protocol 12).
 static const uint8_t FW_MAJOR = 2;
-static const uint8_t FW_MINOR = 6;
+static const uint8_t FW_MINOR = 7;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
@@ -87,6 +96,8 @@ static const uint8_t CTRL_RING_PIN[PEDAL_CTRL_COUNT] = {20, 21};
 // (RP2350-E9).
 static const uint8_t CTRL_PRESENT_PIN[PEDAL_CTRL_COUNT] = {19, 22};
 static const uint8_t PIN_SMPS_PWM = 23;
+// J22 pin 5: the light sensor's emitter, with its load to ground (#1564).
+static const uint8_t PIN_AMBIENT = 28;
 
 // ---- LEDs --------------------------------------------------------------------
 // Ten eight-pixel pills on J24, in the owner-verified data-chain order.
@@ -163,6 +174,18 @@ static unsigned long g_clearHoldAtMs = 0;
 // pill do not touch it.
 static bool g_clearFlashing[PEDAL_BTN_COUNT];
 static unsigned long g_clearFlashAtMs[PEDAL_BTN_COUNT];
+
+// The app's LED_LEVEL and the level shown, which fades toward it by
+// LED_FADE_STEP every render so a new level is never a jump. Full until the
+// app says otherwise, and again when its frames stop.
+static uint8_t g_ledTarget = PEDAL_LINK_LED_LEVEL_FULL;
+static uint8_t g_ledLevel = PEDAL_LINK_LED_LEVEL_FULL;
+static const uint8_t LED_FADE_STEP = 3;  // the whole range in about 1.7 s
+
+static void resetLedLevel() {
+  g_ledTarget = PEDAL_LINK_LED_LEVEL_FULL;
+  g_ledLevel = PEDAL_LINK_LED_LEVEL_FULL;
+}
 
 static void endClearFlashes() {
   for (bool &flashing : g_clearFlashing) flashing = false;
@@ -271,6 +294,11 @@ static void handleMessage(uint8_t type, const uint8_t *payload, uint8_t len) {
       }
       break;
     }
+    case PEDAL_LINK_TYPE_LED_LEVEL: {
+      uint8_t level;
+      if (pedal_link_decode_led_level(payload, len, &level)) g_ledTarget = level;
+      break;
+    }
     case PEDAL_LINK_TYPE_RING_BRIDGE:
       if (len == 2 && payload[0] == PEDAL_LINK_RING_BRIDGE_MAGIC0 && payload[1] == PEDAL_LINK_RING_BRIDGE_MAGIC1)
         startBridge();
@@ -341,10 +369,14 @@ static ring_link::RingState ringStateFromFrame() {
   return state;
 }
 
+// The LED level follows every state: ring firmware 1.1 and older drop it
+// and stay at full brightness.
 static void sendRingState() {
   uint8_t payload[ring_link::STATE_LEN], packet[ring_link::MAX_FRAME];
   ring_link::encodeState(ringStateFromFrame(), payload);
   ringLink.write(packet, ring_link::encode(ring_link::STATE, payload, packet));
+  const uint8_t level[ring_link::LEVEL_LEN] = {g_ledLevel};
+  ringLink.write(packet, ring_link::encode(ring_link::LEVEL, level, packet));
   g_lastRingStateMs = millis();
 }
 
@@ -402,6 +434,7 @@ static void endBridge() {
   pedal_link_parser_init(&g_parser);
   g_ringParser = ring_link::Parser();
   g_haveFrame = false;
+  resetLedLevel();
   sendRingState();
   sendHello();
   g_lastHelloMs = millis();
@@ -718,6 +751,72 @@ static void pollCtrl() {
   }
 }
 
+// ---- light sensor (J22) ---------------------------------------------------------
+// A reading every AMBIENT_SAMPLE_MS, with the pad's pulls off; ambient_light.h
+// smooths them. Every AMBIENT_PROBE_MS the pad's pull-up, then its pull-down,
+// is switched on for one sample slot each, and the readings say whether
+// anything is on the pin (ambient_light_probe). Each step waits one slot,
+// 10 ms, for the node to settle: the load and its 100 nF settle in about
+// 1 ms. The probe's slots are not samples, so the pulls never shift a reading.
+//
+// The LEDs stay lit while it reads. The sensor is flush in the plate, looking
+// straight up; every pill, the ring and both screens are flush with or below
+// the plate surface, 76 mm or more away, so they sit about 90 degrees off its
+// axis and the console's own light reaches it only by reflection off hands,
+// the player and the knob. The median, the slow average and the hysteresis
+// take that up, and the auto curve has a ceiling. If a bench shows the
+// console's light moving the reading past the hysteresis, blank the pills for
+// a sample slot here.
+enum { AMBIENT_SAMPLING = 0, AMBIENT_PROBE_UP, AMBIENT_PROBE_DOWN, AMBIENT_SETTLE };
+static ambient_light g_ambient;
+static uint8_t g_ambientPhase = AMBIENT_SAMPLING;
+static uint16_t g_ambientWithPullUp = 0;
+static unsigned long g_ambientLastMs = 0;
+static unsigned long g_ambientProbedMs = 0;
+
+static uint16_t ambientRead() {
+  uint32_t total = 0;
+  for (uint8_t i = 0; i < 8; i++) total += analogRead(PIN_AMBIENT);
+  return (uint16_t)(total / 8);
+}
+
+static void pollAmbient() {
+  const unsigned long now = millis();
+  if (now - g_ambientLastMs < AMBIENT_SAMPLE_MS) return;
+  g_ambientLastMs = now;
+  switch (g_ambientPhase) {
+    case AMBIENT_SAMPLING:
+      if (!g_ambient.probed || now - g_ambientProbedMs >= AMBIENT_PROBE_MS) {
+        gpio_pull_up(PIN_AMBIENT);
+        g_ambientPhase = AMBIENT_PROBE_UP;
+        return;
+      }
+      ambient_light_sample(&g_ambient, ambientRead());
+      return;
+    case AMBIENT_PROBE_UP:
+      g_ambientWithPullUp = ambientRead();
+      gpio_pull_down(PIN_AMBIENT);
+      g_ambientPhase = AMBIENT_PROBE_DOWN;
+      return;
+    case AMBIENT_PROBE_DOWN:
+      ambient_light_probe(&g_ambient, g_ambientWithPullUp, ambientRead());
+      gpio_disable_pulls(PIN_AMBIENT);
+      g_ambientProbedMs = now;
+      g_ambientPhase = AMBIENT_SETTLE;
+      return;
+    default:
+      g_ambientPhase = AMBIENT_SAMPLING;
+      return;
+  }
+}
+
+static void sendAmbient() {
+  if (!ambient_light_ready(&g_ambient)) return;
+  uint8_t buf[PEDAL_LINK_MAX_FRAME];
+  sendFrame(buf, pedal_link_encode_ambient(ambient_light_sensor(&g_ambient),
+                                           ambient_light_level(&g_ambient), buf));
+}
+
 // ---- rendering -----------------------------------------------------------------------
 // Perceptual gamma is applied HERE, once, as a colour is set: a WS2812's duty
 // cycle is linear but the eye's response is not, so without it the sweep's dim
@@ -860,8 +959,12 @@ static bool renderIndicators() {
       value.G = (uint32_t)value.G * PILL_CHANNEL_BUDGET / channelTotal;
       value.B = (uint32_t)value.B * PILL_CHANNEL_BUDGET / channelTotal;
     }
-    // Idle: the pills dim with the screens (#1349), after the budget so a
-    // crowded frame dims by the same share as a sparse one.
+    // The app's LED level (#1564), and then the idle dim with the screens
+    // (#1349), both after the budget so a crowded frame dims by the same
+    // share as a sparse one.
+    value.R = ring_link::scaleChannel(value.R, g_ledLevel);
+    value.G = ring_link::scaleChannel(value.G, g_ledLevel);
+    value.B = ring_link::scaleChannel(value.B, g_ledLevel);
     if (g_haveFrame && g_frame.dimmed) {
       value.R = ring_link::dimChannel(value.R);
       value.G = ring_link::dimChannel(value.G);
@@ -916,6 +1019,11 @@ void setup() {
     }
   }
   analogReadResolution(12);
+  // The first read hands the pad to the ADC (input buffer off, pulls off);
+  // the probe's pulls go on after it.
+  ambient_light_init(&g_ambient);
+  g_ambientPhase = AMBIENT_SAMPLING;
+  (void)analogRead(PIN_AMBIENT);
 
   // Before the link: an NVM write takes about a second, once per trigger.
   Wire.setSDA(PIN_PD_SDA);
@@ -950,23 +1058,33 @@ void loop() {
   pollButtons();
   pollRing();
   pollCtrl();
+  pollAmbient();
 
   const unsigned long now = millis();
   if (now - g_lastHelloMs >= HELLO_MS) {
     g_lastHelloMs = now;
     sendHello();
     sendPdStatus();
+    sendAmbient();
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));  // 0.5 Hz heartbeat
   }
   if (g_haveFrame && now - g_lastFrameMs > FRAME_TIMEOUT_MS) {
     g_haveFrame = false;
     g_clearHold = {0, 0};
     endClearFlashes();
+    resetLedLevel();
     sendRingState();
   }
   if (now - g_lastRingStateMs >= ring_link::STATE_MS) sendRingState();
   if (now - g_lastRenderMs >= RENDER_MS) {
     g_lastRenderMs = now;
+    if (g_ledLevel != g_ledTarget) {
+      const int step = (int)g_ledTarget - (int)g_ledLevel;
+      g_ledLevel = (uint8_t)(g_ledLevel + (step > LED_FADE_STEP    ? LED_FADE_STEP
+                                           : step < -LED_FADE_STEP ? -LED_FADE_STEP
+                                                                   : step));
+      sendRingState();  // the ring fades with the pills
+    }
     const bool refresh = now - g_lastRefreshMs >= REFRESH_MS;
     if (refresh) g_lastRefreshMs = now;
     if (renderIndicators() || refresh) {

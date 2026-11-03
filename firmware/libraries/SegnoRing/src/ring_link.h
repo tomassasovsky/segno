@@ -18,11 +18,18 @@
 // Framing is ring_frame.h's. Firmware updates share the wire on their own
 // channel (ring_update.h); the parser here skips those frames without
 // counting them as noise.
+//
+// LEVEL (#1564) is the console's LED brightness, one byte, 1..255 with 255
+// full: the console sends it with every STATE. It is a type of its own, not a
+// STATE byte, so the version stays 3 and a ring firmware that predates it
+// (1.1 and older) drops it as an unknown type and keeps rendering at full
+// brightness.
 namespace ring_link {
-constexpr uint8_t VERSION = 3, STATE = 1, INPUT_STATE = 2;
+constexpr uint8_t VERSION = 3, STATE = 1, INPUT_STATE = 2, LEVEL = 3;
 constexpr uint8_t END = RING_FRAME_END, ESC = RING_FRAME_ESC;
 constexpr uint8_t ESC_END = RING_FRAME_ESC_END, ESC_ESC = RING_FRAME_ESC_ESC;
-constexpr size_t STATE_LEN = 5, INPUT_LEN = 12;
+constexpr size_t STATE_LEN = 5, INPUT_LEN = 12, LEVEL_LEN = 1;
+constexpr uint8_t LEVEL_FULL = 255;
 constexpr size_t MAX_PAYLOAD = INPUT_LEN, MAX_BODY = MAX_PAYLOAD + 4;
 constexpr size_t MAX_FRAME = RING_FRAME_ENCODED_MAX(MAX_BODY - 2);
 constexpr uint32_t SNAPSHOT_MS = 20, STATE_MS = 100, TIMEOUT_MS = 500;
@@ -37,11 +44,14 @@ constexpr uint8_t FLAG_LIVE = 1, FLAG_ACTIVE = 2, FLAG_LOADED = 4, FLAG_DIMMED =
 // lit channel stays at least 1, so a dimmed breathe never reaches black and a
 // faint hue component does not vanish.
 constexpr uint8_t DIM_LEVEL = 51;
-inline uint8_t dimChannel(uint8_t value) {
+// One channel at `level` of 255. A lit channel stays at least 1, as above;
+// at LEVEL_FULL it is unchanged.
+inline uint8_t scaleChannel(uint8_t value, uint8_t level) {
   if (!value) return 0;
-  const uint8_t dimmed = (uint8_t)((value * DIM_LEVEL + 127) / 255);
-  return dimmed ? dimmed : 1;
+  const uint8_t scaled = (uint8_t)((value * level + 127) / 255);
+  return scaled ? scaled : 1;
 }
+inline uint8_t dimChannel(uint8_t value) { return scaleChannel(value, DIM_LEVEL); }
 
 struct RingState {
   uint8_t r = 0, g = 0, b = 0;  // the activity colour, black when none
@@ -60,7 +70,7 @@ inline RingState decodeState(const uint8_t *p) {
 
 inline uint16_t crc16(const uint8_t *p, size_t length) { return ring_frame_crc16(p, length); }
 inline size_t payloadLength(uint8_t type) {
-  return type == STATE ? STATE_LEN : type == INPUT_STATE ? INPUT_LEN : 0;
+  return type == STATE ? STATE_LEN : type == INPUT_STATE ? INPUT_LEN : type == LEVEL ? LEVEL_LEN : 0;
 }
 inline void put32(uint8_t *p, uint32_t value) {
   for (uint8_t i = 0; i < 4; ++i) p[i] = (uint8_t)(value >> (8 * i));

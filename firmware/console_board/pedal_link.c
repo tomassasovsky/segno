@@ -151,6 +151,32 @@ int pedal_link_decode_clear_hold(const uint8_t *p, uint8_t len, pedal_clear_hold
   return 1;
 }
 
+size_t pedal_link_encode_ambient(uint8_t sensor, uint8_t level, uint8_t *out) {
+  if (sensor >= PEDAL_AMBIENT_COUNT || (sensor == PEDAL_AMBIENT_NONE && level)) return 0;
+  const uint8_t p[PEDAL_LINK_AMBIENT_LEN] = {sensor, level};
+  return pedal_link_encode(PEDAL_LINK_TYPE_AMBIENT, p, PEDAL_LINK_AMBIENT_LEN, out);
+}
+
+int pedal_link_decode_ambient(const uint8_t *p, uint8_t len, pedal_ambient *out) {
+  if (len != PEDAL_LINK_AMBIENT_LEN) return 0;
+  if (p[0] >= PEDAL_AMBIENT_COUNT || (p[0] == PEDAL_AMBIENT_NONE && p[1])) return 0;
+  out->sensor = p[0];
+  out->level = p[1];
+  return 1;
+}
+
+size_t pedal_link_encode_led_level(uint8_t level, uint8_t *out) {
+  if (!level) return 0;
+  const uint8_t p[PEDAL_LINK_LED_LEVEL_LEN] = {level};
+  return pedal_link_encode(PEDAL_LINK_TYPE_LED_LEVEL, p, PEDAL_LINK_LED_LEVEL_LEN, out);
+}
+
+int pedal_link_decode_led_level(const uint8_t *p, uint8_t len, uint8_t *level) {
+  if (len != PEDAL_LINK_LED_LEVEL_LEN || !p[0]) return 0;
+  *level = p[0];
+  return 1;
+}
+
 int pedal_link_payload_len(uint8_t type) {
   switch (type) {
     case PEDAL_LINK_TYPE_BUTTON: return 2;
@@ -162,6 +188,8 @@ int pedal_link_payload_len(uint8_t type) {
     case PEDAL_LINK_TYPE_STATE: return (int)PEDAL_LINK_STATE_LEN;
     case PEDAL_LINK_TYPE_RING_BRIDGE: return 2;
     case PEDAL_LINK_TYPE_CLEAR_HOLD: return (int)PEDAL_LINK_CLEAR_HOLD_LEN;
+    case PEDAL_LINK_TYPE_AMBIENT: return (int)PEDAL_LINK_AMBIENT_LEN;
+    case PEDAL_LINK_TYPE_LED_LEVEL: return (int)PEDAL_LINK_LED_LEVEL_LEN;
     default: return -1;
   }
 }
