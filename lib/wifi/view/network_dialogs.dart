@@ -412,11 +412,13 @@ class _DetailsDialog extends StatelessWidget {
           Row(
             children: [
               if (saved)
-                _ForgetNetworkButton(
-                  key: const Key('network_forget'),
-                  onTap: state.busy
-                      ? null
-                      : () => choose(NetworkDetailsAction.forget),
+                Flexible(
+                  child: _ForgetNetworkButton(
+                    key: const Key('network_forget'),
+                    onTap: state.busy
+                        ? null
+                        : () => choose(NetworkDetailsAction.forget),
+                  ),
                 ),
               const Spacer(),
               if (connected)
@@ -522,13 +524,16 @@ class _ForgetNetworkButton extends StatelessWidget {
     final surface = context.surface;
     final label = context.l10n.wifiForgetConfirmAction;
     final onTap = this.onTap;
+    final inset = context.spacing.md;
+    // The label sits at the content edge; the focus ring and the ink reach
+    // [inset] past it on either side, so neither is drawn on the glyphs.
     return Semantics(
       button: true,
       enabled: onTap != null,
       label: label,
       excludeSemantics: true,
-      child: Opacity(
-        opacity: onTap == null ? surface.disabledOpacity : 1,
+      child: Transform.translate(
+        offset: Offset(-inset, 0),
         child: LoopFocusable(
           enabled: onTap != null,
           onActivate: onTap ?? () {},
@@ -536,16 +541,24 @@ class _ForgetNetworkButton extends StatelessWidget {
             canRequestFocus: false,
             borderRadius: BorderRadius.circular(8),
             onTap: onTap,
-            child: SizedBox(
-              height: 64,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: AppText(
-                  label,
-                  style: TextStyle(
-                    color: surface.textPrimary,
-                    fontSize: 24,
-                    height: 1,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: inset),
+              child: SizedBox(
+                height: 64,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  // A longer translation shrinks rather than overflowing
+                  // the row, as the button it replaced did.
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: AppText(
+                      label,
+                      style: TextStyle(
+                        color: surface.textPrimary,
+                        fontSize: 24,
+                        height: 1,
+                      ),
+                    ),
                   ),
                 ),
               ),
