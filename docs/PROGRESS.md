@@ -76,6 +76,30 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Prints swap in after a complete lap, LFOs on the clock (#1620)
+
+- The owner's decision on #1620: (1) time-based modulation takes its phase
+  from the engine clock, (2) a print swaps in only over a live chain that has
+  played at least one complete lap since its last key change. The run rule
+  (`le_run_matches_print`) is now: begun on a loop top, the next top; begun
+  part way through a lap, the second top after it. Anything else stays live.
+- Clock LFOs (`le_clock_lfo`, engine_fx.c): the tremolo and the echo's wow
+  take frac(rate x frame / sr) from `le_fx_now`. A rate move keeps the
+  phase continuous through an offset that slides back to 0 at 0.25 cycles a
+  second (`LE_LFO_RELOCK_CPS`); while it slides the lane's run waits
+  (`le_fx_lfo_relocking`). A state nobody clocks (the VST3 processors)
+  counts its own frames, as before.
+- Such an LFO prints only on a loop it fits a whole number of times (within
+  `LE_LFO_LAP_TOL`, 1e-6 cycles): otherwise each lap sounds different and it
+  plays live, reported FREE_RUNNING (`le_fx_entry_lfo_drifts`). Its print is
+  keyed on the top's place on the lap grid (`le_fx_lap_position`, folded
+  into the fingerprint, `le_wet_entry::lap_tag` at the lap top), as an
+  octaver's is on the hop position.
+- Remaining step at the swap per kind (`test_cache_midlap_edit_steps`, a sine
+  loop): 0 for the memoryless and short-state kinds; a delay or reverb
+  differs by the part of its tail older than a lap; the octaver and Smart
+  Tune differ even with the chain in on a loop top (#1624).
+
 ## November 2026 Wet cache swaps in only over a matching run (#939)
 
 - The owner's decision on #939 (Q11): the loop-stage wet cache stays off
@@ -84,10 +108,10 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   The audio thread now follows each live chain's run, the stretch it has
   played one unchanged key over (`le_chain_run` on each lane and track bus,
   counted in laps by `le_track::laps`), and swaps a print in only where that
-  run began less than a lap away from the print's
-  (`le_run_matches_print`). An older run keeps playing live: it carries
-  history the print does not (an echo built up over more passes, an LFO
-  further on), which used to step at the loop top.
+  run matches the print (`le_run_matches_print`; tightened by #1620 above).
+  An older run keeps playing live: it carries history the print does not
+  (an echo built up over more passes, an LFO further on), which used to step
+  at the loop top.
 - In practice: a print is ready about 250 ms (`LE_CACHE_SETTLE_MS`) plus a
   few 16 ms scheduler ticks plus its render after the edit, so on a loop
   shorter than that the cache stays off; longer loops print as before. The

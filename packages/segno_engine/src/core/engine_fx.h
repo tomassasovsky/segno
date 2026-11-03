@@ -145,12 +145,23 @@ static inline uint32_t le_fx_hop_position(uint32_t top, int sr) {
   return top % le_fx_hop_period(sr);
 }
 
-/* Whether [ent] may play from a lap that began at engine frame [top] (#941):
- * always for a print without an octaver, and for one with an octaver only on
- * the hop position it was rendered from. */
+/* Engine frame [top]'s place on the grid of [len]-frame laps (#1620): where a
+ * clock LFO's print is keyed, since such an LFO repeats lap after lap only
+ * from tops on the same grid. */
+static inline uint32_t le_fx_lap_position(uint32_t top, int32_t len) {
+  return len > 0 ? top % (uint32_t)len : 0u;
+}
+
+/* Whether [ent] may play from a lap that began at engine frame [top]: always
+ * for a print without a clock-tied kind; for one with an octaver only on the
+ * hop position it was rendered from (#941), and for one with a clock LFO
+ * only on its lap grid (#1620). */
 static inline int le_wet_entry_hop_matches(const le_wet_entry* ent,
                                            uint32_t top, int sr) {
-  return ent->hop_tag == 0 || ent->hop_tag == le_fx_hop_position(top, sr) + 1u;
+  return (ent->hop_tag == 0 ||
+          ent->hop_tag == le_fx_hop_position(top, sr) + 1u) &&
+         (ent->lap_tag == 0 ||
+          ent->lap_tag == le_fx_lap_position(top, ent->len) + 1u);
 }
 
 static inline int32_t le_fx_hop_mask(uint32_t p) {
@@ -391,6 +402,28 @@ int le_fx_type_free_running(int32_t type);
  * doubler always is.
  * Any thread. */
 int le_fx_entry_free_running(int32_t type, const float* p, int sr);
+
+/* Whether [type] runs an LFO on the engine clock (#1620): the tremolo and
+ * the echo's wow (le_clock_lfo, engine_fx.c). Such a print is rendered
+ * against the clock of the loop top it stands in for, so the caches key it
+ * on where that top sits on the loop's lap grid. */
+int le_fx_type_clock_lfo(int32_t type);
+
+/* The most an LFO may miss a whole number of cycles in a lap, in cycles, and
+ * still print: its print loops one lap, so at each loop top the LFO steps
+ * back by the miss. */
+#define LE_LFO_LAP_TOL 1e-6
+
+/* Whether an entry of [type] at settings [p], heard, runs a clock LFO that
+ * does not complete a whole number of cycles (within LE_LFO_LAP_TOL) in a
+ * loop of [len] frames at [sr]: each lap of it sounds different, so it plays
+ * live, like a free-running modulator (#1620). Any thread. */
+int le_fx_entry_lfo_drifts(int32_t type, const float* p, int32_t len, int sr);
+
+/* Whether slot [slot] of [fx], holding [type], has a clock LFO still sliding
+ * back onto the clock after a rate move (#1620). Audio thread (the thread
+ * that runs the chain). */
+int le_fx_lfo_relocking(const le_fx_state* fx, int slot, int32_t type);
 
 /* Seeds chain slot [slot]'s enable-crossfade runtime SETTLED at enabled so a
  * freshly created (zeroed) le_fx_state does not fade in on first use. Call

@@ -7704,6 +7704,28 @@ static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
   }
 }
 
+/* Whether a Pre slot [0, pre) of the chain [fx] runs ([a_type], [a_pre],
+ * [a_count]) holds a clock LFO still sliding back onto the clock after a rate
+ * move (le_fx_lfo_relocking, #1620). Audio thread. */
+static inline int le_pre_lfo_relocking(const le_fx_state* fx,
+                                       _Atomic int32_t* a_type,
+                                       _Atomic int32_t* a_pre,
+                                       _Atomic int32_t* a_count) {
+  int32_t pre = load_i32(a_pre);
+  const int32_t count = load_i32(a_count);
+  if (pre > count) pre = count;
+  if (pre > LE_FX_MAX) pre = LE_FX_MAX;
+  for (int32_t s = 0; s < pre; ++s) {
+    if (le_fx_lfo_relocking(fx, s, load_i32(&a_type[s]))) return 1;
+  }
+  return 0;
+}
+
+static inline int le_lane_lfo_relocking(le_lane* ln) {
+  return le_pre_lfo_relocking(&ln->fx, ln->a_fx_type, &ln->a_fx_pre_count,
+                              &ln->a_fx_count);
+}
+
 /* Per-buffer wet-cache snapshot (FX v3 part 2): loads each lane's published
  * entry ONCE (acquire) and re-derives the lane's current cache key —
  * {a_audio_rev [R1], chain fingerprint (params + enabled), a_vol_bits (D-VOL),
@@ -7721,8 +7743,8 @@ static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
  * the live chain has played with the material and chain a print reproduces.
  * Cost: a handful of loads per lane, plus the fingerprint refold
  * (le_lane_pre_fx_fingerprint — pure atomic loads + FNV math, RT-safe) only
- * when the lane's chain-edit generation (a_fx_gen) or loop-top hop position
- * moved. */
+ * when the lane's chain-edit generation (a_fx_gen) or loop top moved (once a
+ * lap). */
 static inline void snapshot_lane_cache(
     le_engine* e, int tc, const int32_t* lane_n,
     const le_wet_entry* cache_ent[][LE_MAX_LANES]) {
@@ -7730,9 +7752,10 @@ static inline void snapshot_lane_cache(
     le_track* tr = &e->tracks[t];
     const uint32_t rev =
         atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire);
-    const uint32_t hop = le_fx_hop_position(
-        atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed),
-        e->sample_rate);
+    /* The loop top the key folds (its hop position for an octaver, #941, its
+     * place on the lap grid for a clock LFO, #1620). */
+    const uint32_t top =
+        atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed);
     for (int l = 0; l < lane_n[t]; ++l) {
       le_lane* ln = &tr->lanes[l];
       cache_ent[t][l] = NULL;
@@ -7752,15 +7775,19 @@ static inline void snapshot_lane_cache(
         ln->run_len = len;
         ln->run.restart = 1;
       }
-      if (gen != ln->run_gen || hop != ln->run_hop) {
+      if (gen != ln->run_gen || top != ln->run_top) {
         const uint64_t fp = le_lane_pre_fx_fingerprint(e, t, l);
         ln->run_gen = gen;
-        ln->run_hop = hop;
+        ln->run_top = top;
         if (fp != ln->run_fp) {
           ln->run_fp = fp;
           ln->run.restart = 1;
         }
       }
+      /* A clock LFO sliding back onto the clock after a rate move (#1620)
+       * is not yet the chain a print reproduces: its run begins once it is
+       * back on. */
+      if (le_lane_lfo_relocking(ln)) ln->run.restart = 1;
       /* The full key check via the ONE shared predicate, against the key
        * the run just took. */
       const le_wet_entry* w =
@@ -7821,6 +7848,10 @@ static inline void snapshot_track_cache(le_engine* e, int tc,
       tr->bus_run_rev = rev;
       tr->bus_run_len = len;
       tr->bus_run.restart = 1;
+    }
+    if (le_pre_lfo_relocking(&tr->bus.fx, tr->bus.a_fx_type,
+                             &tr->bus.a_fx_pre_count, &tr->bus.a_fx_count)) {
+      tr->bus_run.restart = 1; /* back on the clock first (#1620) */
     }
     if (w == NULL) {
       if (load_i32(&tr->a_track_cache_active)) {
@@ -8319,36 +8350,44 @@ static inline void sync_division_positions_frame(le_engine* e, int tc,
 }
 
 /* Whether a live chain's [run] lets a print engage at this loop top of its
- * track [tr] (#939).
+ * track [tr] (#939, #1620).
  *
- * A print reproduces a chain that began one lap before the loop top it
- * swaps in at: its render plays the loop twice from a fresh chain and keeps
- * the second pass. The live chain it displaces began wherever its key last
- * changed. The two match when the live chain began less than one lap away
- * from the print's: on the lap before this top (one top crossed, this one),
- * as an edit early in a lap does, or part way through the lap before that
- * (two crossed, not begun on a top), as an edit late in a lap does when its
- * print is only ready after the next top. Anything older has played a whole
- * lap more than the print's chain — an echo built up over more passes, a
- * phase that never decays — and swapping the print in would step at the
- * loop top, so that chain keeps playing live. That is what keeps the cache
- * off on a loop shorter than the settle window plus the render: the print is
- * only ready laps after the edit. A run that began while the track was
- * silent began, in effect, at its launch: a loop top. */
+ * A print reproduces a chain that began, fresh, one lap before the loop top
+ * it swaps in at: its render plays the loop twice and keeps the second pass,
+ * so it carries exactly one lap of history. The live chain it displaces began
+ * wherever its key last changed, and matches the print when it has played at
+ * least one complete lap since then, so whatever it holds that is shorter
+ * than a lap (a delay line, a reverb's early field, a clock LFO's phase) is
+ * what the print holds, and less than two, so it carries no lap the print
+ * does not:
+ *
+ * - begun on a loop top: this is the next one (one top crossed);
+ * - begun part way through a lap: this is the second top after it (two
+ *   crossed), the first being less than a lap on.
+ *
+ * Any other run keeps playing live. A loop shorter than the settle window
+ * plus the render never prints: the print is only ready laps after the edit.
+ * What still differs is state older than a lap, the part of a tail longer
+ * than the loop. */
 static inline int le_run_matches_print(const le_track* tr,
                                        const le_chain_run* run) {
-  if (run->restart) return 0; /* a key change this block: not begun yet */
+  if (run->restart) return 0; /* not begun: a key change, or silent */
   const uint32_t laps = tr->laps - run->lap0; /* wrap-safe, like the count */
-  return laps == 1u || (laps == 2u && !run->at_top);
+  return run->at_top ? laps == 1u : laps == 2u;
 }
 
 /* Begins [run] at this frame of track [tr]: [sounding] and [rp] are the
- * track's state and read index this frame. A run begun while the track is
- * silent begins, in effect, at its launch: a loop top. */
+ * track's state and read index this frame. A run cannot begin while the
+ * track is silent: it stays pending and begins on the first frame the track
+ * sounds, at whatever index the launch put it. */
 static inline void le_chain_run_begin(le_chain_run* run, const le_track* tr,
                                       int sounding, int32_t rp) {
+  if (!sounding) {
+    run->restart = 1;
+    return;
+  }
   run->lap0 = tr->laps;
-  run->at_top = !sounding || rp == 0;
+  run->at_top = rp == 0;
   run->restart = 0;
 }
 

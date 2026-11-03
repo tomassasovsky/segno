@@ -782,6 +782,9 @@ typedef struct le_fx_state {
   float svf_ic1[LE_FX_MAX][2];
   float svf_ic2[LE_FX_MAX][2];
   float lfo[LE_FX_MAX][2];
+  /* A clock LFO's own frame count (le_clock_lfo, #1620), for a state nobody
+   * clocks: its phase then counts from its reset, as it always did. */
+  uint32_t lfo_frame[LE_FX_MAX];
   float* delay[LE_FX_MAX][2];
   int32_t delay_pos[LE_FX_MAX][2];
   float fx_lp[LE_FX_MAX][2];
@@ -960,6 +963,10 @@ typedef struct le_wet_entry {
    * octaver in the printed chain (#941). The audio thread drops such a print
    * at a lap top that starts elsewhere on the hop. */
   uint32_t hop_tag;
+  /* 0 for a print whose key does not hold the top's place on the lap grid;
+   * else 1 + that place (le_fx_lap_position) for the top it was rendered
+   * from: a clock LFO in the printed chain (#1620). */
+  uint32_t lap_tag;
 } le_wet_entry;
 
 /* THE wet-cache key predicate: whether [ent] was rendered for exactly the
@@ -1198,15 +1205,16 @@ typedef struct le_lane {
    * the print's key names them. snapshot_lane_cache compares the key with
    * run_* each buffer, restarts the run on a change and checks a published
    * print against it. The fingerprint is refolded only when run_gen or
-   * run_hop (the track's loop-top hop position, which an octaver print's key
-   * folds, #941) moved, so a cached steady state costs a few relaxed loads
-   * instead of a ~40-load FNV refold per buffer. */
+   * run_top (the track's loop top, whose hop position an octaver print's key
+   * folds, #941, and whose lap-grid place a clock LFO's does, #1620) moved,
+   * so a cached steady state costs a few relaxed loads instead of a ~40-load
+   * FNV refold per buffer. */
   le_chain_run run;
   uint64_t run_fp;
   uint32_t run_rev;
   uint32_t run_vol;
   uint32_t run_gen;
-  uint32_t run_hop;
+  uint32_t run_top;
   int32_t run_len;
 } le_lane;
 
