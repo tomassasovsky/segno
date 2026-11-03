@@ -1,4 +1,3 @@
-
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/src/models/fx_rack_level.dart';
 import 'package:looper_repository/src/models/fx_slot_ids.dart';

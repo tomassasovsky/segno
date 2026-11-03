@@ -601,6 +601,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     if (param < 0 || param >= (width ?? 0)) return EngineResult.invalid;
     return EngineResult.ok;
   }
+
   final _fxRecipeRevisions = <(FxOwner, int, int), int>{};
 
   @override
