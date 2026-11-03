@@ -332,10 +332,12 @@ typedef struct le_fx_snapshot {
  * mono input into a wide stereo tail. All the lines are packed into the slot's
  * single `delay` ring at fixed offsets; rev_comb_pos / rev_ap_pos are the
  * per-line write heads (left bank first, then right) and rev_comb_lp the
- * per-comb damping (one-pole low-pass) memory. */
+ * per-comb damping (one-pole low-pass) memory, one per phase: at 96 kHz the
+ * network is the 48 kHz one on alternate samples (rev_ph counts them). */
 #define LE_REV_COMBS 8
 #define LE_REV_APS 4
 #define LE_REV_BANKS 2
+#define LE_REV_PHASES 2
 
 /* ---- Resumable YIN difference-function pass -------------------------------
  *
@@ -779,8 +781,12 @@ typedef struct le_fx_state {
   float fx_lp[LE_FX_MAX][2];
   le_octaver_state oct[LE_FX_MAX][2];
   int32_t rev_comb_pos[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
-  float rev_comb_lp[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
+  float rev_comb_lp[LE_FX_MAX][LE_REV_PHASES][LE_REV_COMBS * LE_REV_BANKS];
   int32_t rev_ap_pos[LE_FX_MAX][LE_REV_APS * LE_REV_BANKS];
+  int32_t rev_ph[LE_FX_MAX];
+  /* At rates other than 48 and 96 kHz each line's fraction of a sample: a
+   * first-order all-pass's last input and output, combs then allpasses. */
+  float rev_frac[LE_FX_MAX][(LE_REV_COMBS + LE_REV_APS) * LE_REV_BANKS][2];
   /* The Slicer's runtime (fx_slicer_process). */
   le_fx_slice_state slice[LE_FX_MAX];
   /* The Mode delay's line (fx_mode_delay_process): its own seconds-long
