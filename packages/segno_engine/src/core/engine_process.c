@@ -2779,9 +2779,10 @@ static void handle_stop(le_engine* e, int32_t ch, uint64_t frame) {
 static void le_fx_state_clear_tails(le_fx_state* fx, _Atomic int32_t* types,
                                     int fx_cap) {
   for (int s = 0; s < LE_FX_MAX; ++s) {
-    if (load_i32(&types[s]) == LE_FX_NONE) continue;
-    le_fx_entry_reset(fx, s);
-    le_fx_entry_clear_rings(fx, s, fx_cap);
+    const int32_t type = load_i32(&types[s]);
+    if (type == LE_FX_NONE) continue;
+    le_fx_entry_reset(fx, s, type);
+    le_fx_entry_clear_rings(fx, s, fx_cap, type);
   }
 }
 
@@ -2803,9 +2804,10 @@ static void le_fx_state_clear_tails_range(le_fx_state* fx,
   if (first < 0) first = 0;
   if (last > LE_FX_MAX) last = LE_FX_MAX;
   for (int s = first; s < last; ++s) {
-    if (load_i32(&types[s]) == LE_FX_NONE) continue;
-    le_fx_entry_reset(fx, s);
-    le_fx_entry_clear_rings(fx, s, fx_cap);
+    const int32_t type = load_i32(&types[s]);
+    if (type == LE_FX_NONE) continue;
+    le_fx_entry_reset(fx, s, type);
+    le_fx_entry_clear_rings(fx, s, fx_cap, type);
   }
 }
 
@@ -5760,7 +5762,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       store_i32(&ln->a_fx_type[index], cmd->fx.type);
       le_fx_slot_forget(ln->fx_meta, index);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
-      le_fx_entry_reset(&ln->fx, index);
+      le_fx_entry_reset(&ln->fx, index, cmd->fx.type);
       /* Wet-cache fast path: the published type just moved, so the chain
        * identity did too. The control setter already bumped, but a raw
        * le_engine_post_command bypasses it — this bump covers that hatch. */
@@ -5896,7 +5898,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       store_i32(&m->a_fx_type[index], cmd->fx.type);
       le_fx_slot_forget(m->fx_meta, index);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
-      le_fx_entry_reset(&m->fx, index);
+      le_fx_entry_reset(&m->fx, index, cmd->fx.type);
       break;
     }
     case LE_CMD_SET_MONITOR_INPUT_FX_COUNT: {
@@ -5949,7 +5951,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       store_i32(&b->a_fx_type[index], cmd->fx.type);
       le_fx_slot_forget(b->fx_meta, index);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
-      le_fx_entry_reset(&b->fx, index);
+      le_fx_entry_reset(&b->fx, index, cmd->fx.type);
       break;
     }
     case LE_CMD_SET_TRACK_FX_COUNT: {
@@ -5975,7 +5977,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       /* One config, one instance per bus: every instance's DSP state resets,
        * or a destination would keep the previous effect's filter memory. */
       for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
-        le_fx_entry_reset(&e->all_tracks_fx[k], index);
+        le_fx_entry_reset(&e->all_tracks_fx[k], index, cmd->fx.type);
       }
       break;
     }
@@ -7752,7 +7754,7 @@ static inline void snapshot_lane_cache(
             atomic_load_explicit(&ln->a_fx_gen, memory_order_relaxed);
         const uint32_t hop = le_fx_hop_position(
             atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed),
-            e->sample_rate);
+            e->fx_hop_period);
         if (w == ln->cache_fp_entry && gen == ln->cache_fp_gen &&
             hop == ln->cache_fp_hop) {
           ok = le_wet_entry_key_matches(w, rev, w->chain_fp, vol, len);
@@ -8884,7 +8886,7 @@ static inline void mix_tracks_frame(
      * a launch in this block moved the lap. Drop it at the lap top, as that
      * check will from the next block. */
     if (trk_rp == 0 && tce != NULL &&
-        !le_wet_entry_hop_matches(tce, e->fx_clock_base + f, e->sample_rate)) {
+        !le_wet_entry_hop_matches(tce, e->fx_clock_base + f, e->fx_hop_period)) {
       tce = NULL;
       track_cache_ent[t] = NULL;
       if (load_i32(&tr->a_track_cache_active)) {
@@ -9108,7 +9110,7 @@ static inline void mix_tracks_frame(
       const int32_t rp = seg_base[t] + trk_pos[t];
       /* The lane twin of the track's lap-top hop check above (#941). */
       if (rp == 0 && wce != NULL &&
-          !le_wet_entry_hop_matches(wce, e->fx_clock_base + f, e->sample_rate)) {
+          !le_wet_entry_hop_matches(wce, e->fx_clock_base + f, e->fx_hop_period)) {
         wce = NULL;
         cache_ent[t][l] = NULL;
         if (load_i32(&ln->a_cache_active)) store_i32(&ln->a_cache_active, 0);

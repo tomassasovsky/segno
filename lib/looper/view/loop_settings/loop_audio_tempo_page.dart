@@ -63,6 +63,9 @@ class _LoopAudioTempoPageState extends State<LoopAudioTempoPage> {
         PitchMode.unchanged;
     const top = 364.0;
     const pitchTop = top + 270;
+    // Each choice row's height; its label is centred on it, as Playback and
+    // Length centre theirs (#1590 LOOP-1).
+    const rowHeight = 120.0;
     return Positioned.fill(
       child: Stack(
         children: [
@@ -78,13 +81,17 @@ class _LoopAudioTempoPageState extends State<LoopAudioTempoPage> {
           // ---- follow tempo
           Positioned(
             left: 100,
-            top: top + (scope == null ? 34 : 17),
-            child: LoopFieldLabel(
-              title: l10n.loopAudioFollowLabel,
-              fontSize: 32,
-              origin: scopedOrigin(
-                scoped: scope != null,
-                custom: followCustom,
+            top: top,
+            height: rowHeight,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: LoopFieldLabel(
+                title: l10n.loopAudioFollowLabel,
+                fontSize: 32,
+                origin: scopedOrigin(
+                  scoped: scope != null,
+                  custom: followCustom,
+                ),
               ),
             ),
           ),
@@ -102,7 +109,7 @@ class _LoopAudioTempoPageState extends State<LoopAudioTempoPage> {
               enabled: follow != null,
               onSelected: _setFollow,
               width: 744,
-              height: 120,
+              height: rowHeight,
               fontSize: 28,
             ),
           ),
@@ -127,13 +134,17 @@ class _LoopAudioTempoPageState extends State<LoopAudioTempoPage> {
           if (follows) ...[
             Positioned(
               left: 100,
-              top: pitchTop + (scope == null ? 34 : 17),
-              child: LoopFieldLabel(
-                title: l10n.loopAudioPitchLabel,
-                fontSize: 32,
-                origin: scopedOrigin(
-                  scoped: scope != null,
-                  custom: pitchCustom,
+              top: pitchTop,
+              height: rowHeight,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: LoopFieldLabel(
+                  title: l10n.loopAudioPitchLabel,
+                  fontSize: 32,
+                  origin: scopedOrigin(
+                    scoped: scope != null,
+                    custom: pitchCustom,
+                  ),
                 ),
               ),
             ),
@@ -157,7 +168,7 @@ class _LoopAudioTempoPageState extends State<LoopAudioTempoPage> {
                 enabled: pitch != null,
                 onSelected: _setPitch,
                 width: 744,
-                height: 120,
+                height: rowHeight,
                 fontSize: 28,
               ),
             ),

@@ -475,9 +475,9 @@ static void test_eq_retype_is_clean(void) {
   struct le_fx_kind_block* const block = atomic_load(&k->slot[0].head);
   CHECK(block != NULL);
   /* The ring handler resets the slot on each type change. */
-  le_fx_entry_reset(fx, 0);
+  le_fx_entry_reset(fx, 0, LE_FX_DELAY);
   eq_run(fx, LE_FX_DELAY, dl, sr, in, b, NULL, n);
-  le_fx_entry_reset(fx, 0);
+  le_fx_entry_reset(fx, 0, LE_FX_EQ);
   CHECK(le_fx_prepare(fx, 0, LE_FX_EQ, sr) == LE_OK); /* already there */
   eq_run(fx, LE_FX_EQ, eq, sr, in, b, NULL, n);
   CHECK(atomic_load(&k->slot[0].head) == block);

@@ -24,7 +24,7 @@ static float* do_render(const float* p, double hz) {
   CHECK(fx != NULL);
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
   CHECK(le_fx_prepare(fx, 0, LE_FX_DUAL_OCTAVER, do_sr) == LE_OK);
-  le_fx_entry_reset(fx, 0);
+  le_fx_entry_reset(fx, 0, LE_FX_DUAL_OCTAVER);
   fx->clocked = 1;
   static int32_t types[LE_FX_MAX];
   static float params[LE_FX_MAX][LE_FX_PARAMS];
@@ -100,7 +100,7 @@ static void do_switch(float octave2) {
   CHECK(fx != NULL);
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
   CHECK(le_fx_prepare(fx, 0, LE_FX_DUAL_OCTAVER, DO_SR) == LE_OK);
-  le_fx_entry_reset(fx, 0);
+  le_fx_entry_reset(fx, 0, LE_FX_DUAL_OCTAVER);
   fx->clocked = 1;
   static int32_t types[LE_FX_MAX];
   static float params[LE_FX_MAX][LE_FX_PARAMS];
@@ -269,7 +269,8 @@ static double do_render_low(const float* p, int harm, double hz, double am,
   CHECK(le_fx_prepare(fx, 0, vocoder_only ? LE_FX_OCTAVER : LE_FX_DUAL_OCTAVER,
                       do_sr) == LE_OK);
   CHECK(vocoder_only ? fx->oct[0][0].low == NULL : fx->oct[0][0].low != NULL);
-  le_fx_entry_reset(fx, 0);
+  le_fx_entry_reset(fx, 0,
+                    vocoder_only ? LE_FX_OCTAVER : LE_FX_DUAL_OCTAVER);
   fx->clocked = 1;
   static int32_t types[LE_FX_MAX];
   static float params[LE_FX_MAX][LE_FX_PARAMS];
