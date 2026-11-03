@@ -25,8 +25,8 @@ void main() {
       );
 
   group('ConsoleRow layout', () {
-    testWidgets('a short value leaves the title the rest of the row, and a '
-        'long subtitle wraps instead of being cut (#1590 DEV-1)', (
+    testWidgets('the title takes twice the share of the value, and a long '
+        'subtitle keeps all its words (#1590 DEV-1)', (
       tester,
     ) async {
       // The console's own width: the test font's square glyphs make the
@@ -49,19 +49,18 @@ void main() {
         ),
       ]);
       final row = tester.getRect(find.byKey(const Key('row')));
-      final value = tester.getRect(find.text('5 min'));
       final sub = tester.renderObject<RenderParagraph>(
         find.descendant(
           of: find.text(subtitle),
           matching: find.byType(RichText),
         ),
       );
-      // The value is as wide as its text, not half the row.
-      expect(value.width, lessThan(row.width / 4));
-      // The subtitle runs past the row's middle and keeps all its words.
+      // The title column takes more than half the row, and the value stays
+      // at the row's right edge.
+      expect(sub.size.width, greaterThan(row.width / 2));
       expect(
-        tester.getRect(find.text(subtitle)).right,
-        greaterThan(row.center.dx),
+        tester.getTopRight(find.text('5 min')).dx,
+        greaterThan(row.right - row.width / 4),
       );
       expect(sub.didExceedMaxLines, isFalse);
     });
