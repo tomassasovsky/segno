@@ -4600,12 +4600,19 @@ void main() {
       final power = tester.element(find.byType(LooperPage)).read<PowerCubit>()
         ..press(_named);
       await tester.pump(const Duration(milliseconds: 40));
-      expect(windowService.readouts.last.goodbye, ReadoutGoodbye.options);
+      // Power options keep the track display (#1553).
+      expect(power.state.phase, PowerPhase.options);
+      expect(windowService.readouts.last.goodbye, ReadoutGoodbye.none);
 
       final written = Completer<void>();
       power.shutDown(_named, save: () => written.future);
       await tester.pump(const Duration(milliseconds: 40));
       expect(power.state.step, PowerStep.writeSession);
+      // A save that is not slow yet keeps it too.
+      expect(windowService.readouts.last.goodbye, ReadoutGoodbye.none);
+
+      await tester.pump(PowerCubit.slowSave);
+      expect(power.state.slow, isTrue);
       expect(windowService.readouts.last.goodbye, ReadoutGoodbye.saving);
       expect(windowService.readouts.last.savingStep, PowerStep.writeSession);
       expect(windowService.readouts.last.savingProgress, 0.5);

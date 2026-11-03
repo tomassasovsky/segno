@@ -181,7 +181,8 @@ class SystemApplianceEnv implements ApplianceEnv {
   @override
   Future<void> powerOff() => _runPowerVerb('poweroff');
 
-  /// Runs `reboot` or `poweroff`. They return only on a refusal or a
+  /// Runs `reboot` or `poweroff`. They return once systemd has queued the
+  /// reset (neither verb waits for it, #1553), and throw on a refusal or a
   /// failure: an [UpdateInstallingException] when RAUC is installing, a
   /// [ProcessException] otherwise.
   Future<void> _runPowerVerb(String verb) async {

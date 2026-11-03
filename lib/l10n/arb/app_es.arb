@@ -1699,7 +1699,6 @@
     "powerRestarting": "Reiniciando",
     "powerSavedAt": "{session} guardada a las {time}",
     "powerInstallingUpdate": "Instalando Segno {version}",
-    "powerOnMainScreen": "Opciones de encendido en la pantalla principal",
     "stageLibrary": "Biblioteca",
     "libraryListen": "Escuchar",
     "libraryListenStop": "Detener",

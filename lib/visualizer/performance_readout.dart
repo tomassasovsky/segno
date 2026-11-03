@@ -77,17 +77,18 @@ enum ReadoutGoodbye {
   /// The live readout, no face.
   none,
 
-  /// The power panel or Save As is up: "Power options on the main screen".
-  options,
-
-  /// The save before a restart or shutdown, with its current step.
+  /// A slow save before a restart or shutdown, with its current step.
   saving,
 
   /// The console is off: the check ring and "Safe to switch off".
   safeToSwitchOff,
 
-  /// The console is restarting: the restart icon and "Restarting".
+  /// The console is restarting into an update: the restart icon and
+  /// "Restarting".
   restarting,
+
+  /// A plain restart: the bare Plymouth field, on its way to the boot splash.
+  blank,
 }
 
 /// Everything the 7" screen shows besides the waveform.

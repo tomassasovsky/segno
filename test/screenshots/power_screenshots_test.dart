@@ -108,6 +108,7 @@ void main() {
         action: PowerAction.shutDown,
         step: PowerStep.writeSession,
         session: 'friday-set',
+        slow: true,
       ),
     ),
     (
@@ -142,10 +143,6 @@ void main() {
   }
 
   for (final (name, readout) in [
-    (
-      'power_readout_options',
-      const PerformanceReadout(goodbye: ReadoutGoodbye.options),
-    ),
     (
       'power_readout_saving',
       const PerformanceReadout(

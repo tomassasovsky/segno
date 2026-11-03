@@ -1069,7 +1069,11 @@ class _AppViewState extends State<_AppView> {
       bank: control.activeBank,
       lossLine:
           audioLossLine(_l10n, context.read<AudioSetupCubit>().state) ?? '',
-      goodbye: readoutGoodbyeOf(power),
+      goodbye: readoutGoodbyeOf(
+        power,
+        installsUpdate:
+            stagedUpdateVersion(context.read<UpdateCubit>().state) != null,
+      ),
       savingStep: power.step,
       savingProgress: power.progress,
       brightness: context.read<DisplayBrightnessCubit>().state.softwareOf(
@@ -1570,6 +1574,12 @@ class _AppViewState extends State<_AppView> {
               previous.shouldNotify != current.shouldNotify ||
               previous.available?.version != current.available?.version,
           listener: _showUpdateBanner,
+        ),
+        // The readout's Restarting face follows whether an update installs.
+        BlocListener<UpdateCubit, UpdateState>(
+          listenWhen: (previous, current) =>
+              stagedUpdateVersion(previous) != stagedUpdateVersion(current),
+          listener: (_, _) => _updateDisplayContext(),
         ),
       ],
       child: ToastificationWrapper(

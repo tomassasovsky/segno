@@ -2950,10 +2950,6 @@
             }
         }
     },
-    "powerOnMainScreen": "Power options on the main screen",
-    "@powerOnMainScreen": {
-        "description": "Track display face while the power panel or Save As is up on the main screen."
-    },
     "stageLibrary": "Library",
     "@stageLibrary": {
         "description": "Accessible name of the top-bar Library icon."

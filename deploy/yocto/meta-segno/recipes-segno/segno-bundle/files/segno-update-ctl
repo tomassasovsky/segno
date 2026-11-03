@@ -56,8 +56,13 @@
 #             the RAUC backend comments describe. The failed build 106 used
 #             systemd 259 and dropped that positional string. The named option
 #             also works on the retained walnascar target. See #974 and tests.
-#   poweroff  Clean halt (`systemctl start poweroff.target`). Does not go through
-#             logind — this image has none — so `systemctl poweroff` would fail.
+#   poweroff  Clean halt (`systemctl start --no-block poweroff.target`). Does not
+#             go through logind — this image has none — so `systemctl poweroff`
+#             would fail. --no-block exits 0 once systemd has queued the halt,
+#             as `systemctl reboot` does by default: a blocking start is killed
+#             by the halt it started, and the app logged that as a failure on
+#             every shutdown (#1553). A halt systemd refuses still exits
+#             non-zero.
 #             Both `reboot` and `poweroff` exit 5 without doing anything while
 #             RAUC reports an install in progress (#1498): a reset then leaves
 #             the inactive slot half written, and `reboot` would try it. This
@@ -532,7 +537,7 @@ case "${1:-}" in
     poweroff)
         refuse_while_installing "power off"
         log "powering off"
-        exec systemctl start poweroff.target
+        exec systemctl start --no-block poweroff.target
         ;;
     *)                log "usage: segno-update-ctl {install|install-file <path>|attempt|clear-attempt|reconcile-staged|install-state|reboot|poweroff}"; exit 2 ;;
 esac

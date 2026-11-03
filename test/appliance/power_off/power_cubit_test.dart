@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:clock/clock.dart';
@@ -7,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/appliance/power_off/power_gate.dart';
+import 'package:segno/logging/app_log.dart';
 import 'package:update_repository/update_repository.dart';
 
 void main() {
@@ -416,6 +418,101 @@ void main() {
         await pumpEventQueue();
         cubit.dismiss();
         expect(cubit.state, const PowerState());
+        await cubit.close();
+      });
+    });
+
+    group('slow save (#1553)', () {
+      test('a save under the threshold never shows its face', () {
+        fakeAsync((async) {
+          final states = <PowerState>[];
+          final cubit = build();
+          final sub = cubit.stream.listen(states.add);
+          cubit
+            ..press(named)
+            ..shutDown(named, save: save);
+          async.flushMicrotasks();
+          expect(cubit.state.phase, PowerPhase.goodbye);
+          expect(states.where((s) => s.slow), isEmpty);
+          // The timer is gone: nothing marks the finished save slow later.
+          async.elapse(PowerCubit.slowSave * 2);
+          expect(states.where((s) => s.slow), isEmpty);
+          unawaited(sub.cancel());
+          unawaited(cubit.close());
+          async.flushMicrotasks();
+        });
+      });
+
+      test('a save past the threshold turns slow and stays slow', () {
+        fakeAsync((async) {
+          final written = Completer<void>();
+          final cubit = build()
+            ..press(named)
+            ..shutDown(named, save: () => written.future);
+          async.elapse(PowerCubit.slowSave - const Duration(milliseconds: 1));
+          expect(cubit.state.step, PowerStep.writeSession);
+          expect(cubit.state.slow, isFalse);
+          async.elapse(const Duration(milliseconds: 1));
+          expect(cubit.state.slow, isTrue);
+          expect(cubit.state.step, PowerStep.writeSession);
+          written.complete();
+          async.flushMicrotasks();
+          expect(cubit.state.phase, PowerPhase.goodbye);
+          expect(cubit.state.slow, isFalse);
+          unawaited(cubit.close());
+          async.flushMicrotasks();
+        });
+      });
+
+      test('a slow installer check after the save shows the Saving face', () {
+        fakeAsync((async) {
+          final asked = Completer<bool>();
+          final cubit = build(updateInstalling: () => asked.future)
+            ..press(named)
+            ..shutDown(named, save: save);
+          async.flushMicrotasks();
+          expect(cubit.state.step, PowerStep.finishOnDisk);
+          expect(cubit.state.slow, isFalse);
+          async.elapse(PowerCubit.slowSave);
+          expect(cubit.state.slow, isTrue);
+          asked.complete(false);
+          async.flushMicrotasks();
+          expect(cubit.state.phase, PowerPhase.goodbye);
+          unawaited(cubit.close());
+          async.flushMicrotasks();
+        });
+      });
+
+      test('a failed save leaves no timer to mark it slow', () {
+        fakeAsync((async) {
+          final cubit = build()
+            ..press(named)
+            ..shutDown(named, save: failingSave);
+          async.flushMicrotasks();
+          expect(cubit.state.phase, PowerPhase.saveFailed);
+          async.elapse(PowerCubit.slowSave * 2);
+          expect(cubit.state.phase, PowerPhase.saveFailed);
+          expect(cubit.state.slow, isFalse);
+          unawaited(cubit.close());
+          async.flushMicrotasks();
+        });
+      });
+
+      test('logs how long the save took', () async {
+        final dir = await Directory.systemTemp.createTemp('segno-power-log-');
+        AppLog.close();
+        await AppLog.init(directory: dir);
+        addTearDown(() async {
+          AppLog.close();
+          await dir.delete(recursive: true);
+        });
+        final cubit = build()
+          ..press(named)
+          ..shutDown(named, save: save);
+        await pumpEventQueue();
+        expect(cubit.state.phase, PowerPhase.goodbye);
+        final text = File('${dir.path}/${AppLog.fileName}').readAsStringSync();
+        expect(text, matches(RegExp(r' I power: saved in \d+ ms')));
         await cubit.close();
       });
     });

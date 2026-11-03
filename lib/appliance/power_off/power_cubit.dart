@@ -80,8 +80,16 @@ class PowerCubit extends Cubit<PowerState> {
   bool _repairOnSaveAs = false;
   OperationGuard? _guard;
 
+  /// Marks the save in progress as slow once [slowSave] has passed.
+  Timer? _slowTimer;
+
   /// How long a halt waits for storage writes and ejects to finish.
   static const Duration storageSettleLimit = Duration(seconds: 30);
+
+  /// How long the save runs before the Saving face shows (owner, #1553). A
+  /// faster save goes straight to the goodbye; the largest session measured
+  /// on the console writes in about 250 ms.
+  static const Duration slowSave = Duration(milliseconds: 500);
 
   /// A short press of `KEY_POWER`, or Settings' Power row. Opens Power
   /// options, or the refusal while a take, an update install or a transfer
@@ -203,6 +211,8 @@ class PowerCubit extends Cubit<PowerState> {
 
   Future<void> _run(PowerAction action, {required bool retry}) async {
     final session = _session;
+    final watch = clock.stopwatch()..start();
+    var slow = false;
     void reach(PowerStep step) {
       if (isClosed) return;
       emit(
@@ -211,10 +221,17 @@ class PowerCubit extends Cubit<PowerState> {
           action: action,
           step: step,
           session: session,
+          slow: slow,
         ),
       );
     }
 
+    _slowTimer?.cancel();
+    _slowTimer = Timer(slowSave, () {
+      if (isClosed || state.phase != PowerPhase.saving) return;
+      slow = true;
+      reach(state.step!);
+    });
     reach(PowerStep.stopPlayback);
     try {
       _stopTransport();
@@ -257,12 +274,17 @@ class PowerCubit extends Cubit<PowerState> {
       return;
     }
     if (isClosed) return;
+    // What the slow-save threshold is tuned from. The timer runs on through
+    // the installer check: a slow check shows the Saving face rather than
+    // a screen that takes no touch and shows nothing.
+    AppLog.info('power: saved in ${watch.elapsedMilliseconds} ms');
     if (await _installerBusy()) {
       AppLog.warn('power: the installer reports an update in progress');
       _refuseForUpdate();
       return;
     }
     if (isClosed) return;
+    _slowTimer?.cancel();
     _pedalGoodbye();
     emit(
       PowerState(
@@ -285,7 +307,8 @@ class PowerCubit extends Cubit<PowerState> {
       AppLog.warn('power: $error');
       _refuseForUpdate();
     } on Object catch (error, stack) {
-      // Freeze on the face. Do not retry.
+      // The reset did not happen: freeze on the face, do not retry. A reset
+      // the system accepted returns, or never returns at all.
       AppLog.error('power: helper failed', error: error, stack: stack);
     }
   }
@@ -305,6 +328,7 @@ class PowerCubit extends Cubit<PowerState> {
   /// Leaves a committed restart or shutdown for the update refusal: the
   /// session is saved, the restart guard goes, and Segno stays on.
   void _refuseForUpdate() {
+    _slowTimer?.cancel();
     _guard?.release();
     _guard = null;
     _save = null;
@@ -318,6 +342,7 @@ class PowerCubit extends Cubit<PowerState> {
   /// Moves to [phase] outside the save, keeping the commit's action and
   /// session once there is a commit.
   void _set(PowerPhase phase) {
+    _slowTimer?.cancel();
     final committed = phase != PowerPhase.idle && phase != PowerPhase.options;
     emit(
       PowerState(
@@ -330,6 +355,7 @@ class PowerCubit extends Cubit<PowerState> {
 
   @override
   Future<void> close() {
+    _slowTimer?.cancel();
     _guard?.release();
     return super.close();
   }

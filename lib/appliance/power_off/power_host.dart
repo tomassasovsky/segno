@@ -93,6 +93,10 @@ class _PowerHostState extends State<PowerHost> {
   bool _dialogOpen = false;
   bool _saveAsOpen = false;
 
+  /// Counts the dialogs opened and the host's own pops of them, so a dialog
+  /// the host closed does not read its closing as Cancel.
+  int _dialogTicket = 0;
+
   @override
   void initState() {
     super.initState();
@@ -144,6 +148,7 @@ class _PowerHostState extends State<PowerHost> {
   /// Pops the Save As sheet and the dialog (by route name) so two maybePops
   /// in one frame cannot both hit the sheet and leave the dialog up.
   void _dismissPowerRoutes() {
+    _dialogTicket++;
     _dialogOpen = false;
     _saveAsOpen = false;
     if (!mounted) return;
@@ -159,10 +164,12 @@ class _PowerHostState extends State<PowerHost> {
       case PowerPhase.options:
       case PowerPhase.saveFailed:
         unawaited(_openDialog());
-      case PowerPhase.saving:
-        break;
       case PowerPhase.saveAs:
         unawaited(_openSaveAs());
+      // The panel goes as the save starts: a fast save shows no face at all
+      // (#1553), and the panel must not linger over it as if nothing had
+      // been chosen.
+      case PowerPhase.saving:
       case PowerPhase.idle:
       case PowerPhase.goodbye:
         _dismissPowerRoutes();
@@ -172,6 +179,7 @@ class _PowerHostState extends State<PowerHost> {
   Future<void> _openDialog() async {
     if (_dialogOpen || !mounted) return;
     _dialogOpen = true;
+    final ticket = ++_dialogTicket;
     final cubit = context.read<PowerCubit>();
     await showPowerDialog(
       context,
@@ -183,10 +191,12 @@ class _PowerHostState extends State<PowerHost> {
         ?_maybeRead<BackingCubit>(context)?.stream,
       ],
     );
-    if (!mounted) return;
+    // The host popped it (the save started, idle, goodbye), or opened
+    // another since: that is not Cancel. A save that failed fast is already
+    // on its own dialog, and this must not dismiss it.
+    if (!mounted || ticket != _dialogTicket) return;
     _dialogOpen = false;
-    // Scrim / system back. idle / goodbye already popped this route; the
-    // committed phases are not dismissible, so dismiss is a no-op there.
+    // Scrim / system back.
     cubit.dismiss();
   }
 

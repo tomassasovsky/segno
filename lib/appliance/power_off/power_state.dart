@@ -45,6 +45,7 @@ class PowerState extends Equatable {
     this.step,
     this.session,
     this.savedAt,
+    this.slow = false,
   }) : assert(
          (phase == PowerPhase.refuse) == (refusal != null),
          'a refusal names its reason, and only a refusal has one',
@@ -52,7 +53,8 @@ class PowerState extends Equatable {
        assert(
          (phase == PowerPhase.saving) == (step != null),
          'the save names its current step, and only the save has one',
-       );
+       ),
+       assert(!slow || phase == PowerPhase.saving, 'only a save is slow');
 
   /// Current phase.
   final PowerPhase phase;
@@ -77,6 +79,10 @@ class PowerState extends Equatable {
   /// When the session write landed, from then on; null until it has, and
   /// when nothing was written.
   final DateTime? savedAt;
+
+  /// The save has run longer than `PowerCubit.slowSave`, so its face shows.
+  /// A faster save shows no face before the goodbye.
+  final bool slow;
 
   /// Any power UI is up — extra `KEY_POWER` is ignored.
   bool get isUiUp => phase != PowerPhase.idle;
@@ -106,5 +112,13 @@ class PowerState extends Equatable {
   }
 
   @override
-  List<Object?> get props => [phase, action, refusal, step, session, savedAt];
+  List<Object?> get props => [
+    phase,
+    action,
+    refusal,
+    step,
+    session,
+    savedAt,
+    slow,
+  ];
 }
