@@ -145,8 +145,22 @@ extension MidiControlEditing on ControlCubit {
       return MidiSaveResult.refused('$error');
     }
     if (_closing || isClosed) return const MidiSaveResult.refused('closed');
+    // Queued input was read against the old mappings; only the devices whose
+    // mappings changed restart their decoders.
     ++_midiIngressRevision;
-    _resetMidiDecoders();
+    final before = state.midiMappings.mappings.toSet();
+    final after = mappings.mappings.toSet();
+    _resetMidiDecoders(
+      only: {
+        for (final mapping
+            in before
+                .difference(after)
+                .union(
+                  after.difference(before),
+                ))
+          mapping.source.device,
+      },
+    );
     await _queueMidi(() async {
       await _applyMidiProposals(_midiEngine.setMappings(mappings));
     });
@@ -281,10 +295,11 @@ extension MidiControlEditing on ControlCubit {
 
   /// An old page cannot resume or cancel a newer editor.
   void endMidiEdit(Object owner) {
-    if (!identical(state.midiEdit?.owner, owner)) return;
+    final edit = state.midiEdit;
+    if (edit == null || !identical(edit.owner, owner)) return;
     _midiLearnTimer?.cancel();
-    ++_midiIngressRevision;
-    _resetMidiDecoders();
+    // Only the edited device paused; the others keep their decoders.
+    _resetMidiDecoders(only: {edit.device});
     _publishMidi(state.copyWith(clearMidiEdit: true));
   }
 

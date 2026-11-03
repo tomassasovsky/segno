@@ -67,8 +67,6 @@ class MidiDeviceRepository {
   /// Devices present at the previous poll, or `null` before the first.
   Set<String>? _lastPresent;
 
-  /// Devices that went absent this run, so their return is a restore.
-  final _lost = <String>{};
   final _names = <String, String>{};
   Timer? _pollTimer;
   int _selectionGeneration = 0;
@@ -171,17 +169,21 @@ class MidiDeviceRepository {
   /// Re-enumerates the host's MIDI inputs and reconciles the captures: opens
   /// each device that appeared (or whose port would not open last time),
   /// closes each that vanished, and raises a transient lost/restored
-  /// transition. Invoked by the hotplug poll timer; also callable directly.
+  /// transition for each device that changed. Invoked by the hotplug poll
+  /// timer; also callable directly.
   void refresh() {
     final scanner = _scanner;
     if (scanner == null || _disposed) return;
     final devices = scanner.enumerate();
-    for (final device in devices) {
-      _names[device.id] = device.name;
-    }
     // A device with several ports lists one entry per port under one id;
-    // its capture opens the first.
-    final present = {for (final device in devices) device.id};
+    // its capture opens the first, and the first port names it.
+    final names = <String, String>{};
+    for (final device in devices) {
+      names.putIfAbsent(device.id, () => device.name);
+    }
+    _names.addAll(names);
+    final present = names.keys.toSet();
+    final wasOpen = sessions.keys.toSet();
     for (final entry in _sources.entries) {
       if (!present.contains(entry.key) && entry.value.session != null) {
         // Invalidates already queued callbacks from this lifetime.
@@ -190,9 +192,9 @@ class MidiDeviceRepository {
     }
     _openErrors.removeWhere((id, _) => !present.contains(id));
     for (final id in present) {
-      final source = _sources[id] ?? _capture(id);
-      if (source.session != null) continue;
       try {
+        final source = _sources[id] ?? _capture(id);
+        if (source.session != null) continue;
         final code = source.open(id);
         if (code == 0) {
           _openErrors.remove(id);
@@ -205,7 +207,7 @@ class MidiDeviceRepository {
       }
     }
 
-    var next = _connection.copyWith(
+    final next = _connection.copyWith(
       devices: devices,
       open: sessions.keys.toSet(),
       openErrors: Map.unmodifiable(_openErrors),
@@ -213,24 +215,31 @@ class MidiDeviceRepository {
     // A change with no prior sample is the initial reading, not a transition.
     final previous = _lastPresent;
     _lastPresent = present;
-    if (previous != null) {
-      final gone = previous.difference(present);
-      final back = present.intersection(_lost).difference(previous);
-      _lost
-        ..addAll(gone)
-        ..removeAll(back);
-      final changed = gone.isNotEmpty ? gone.first : back.firstOrNull;
-      if (changed != null) {
-        next = next.copyWith(
-          connectivity: gone.isNotEmpty
-              ? MidiConnectivity.lost
-              : MidiConnectivity.restored,
-          connectivityDeviceId: changed,
-          connectivityDeviceName: _names[changed] ?? changed,
-        );
-      }
+    if (previous == null) {
+      _emit(next);
+      return;
     }
-    _emit(next);
+    // A device that was captured and went is lost; one that appeared after
+    // launch is restored. Each is published on its own, so every change
+    // reaches the listener.
+    final transitions = [
+      for (final id in wasOpen.difference(present)) (MidiConnectivity.lost, id),
+      for (final id in present.difference(previous))
+        (MidiConnectivity.restored, id),
+    ];
+    if (transitions.isEmpty) {
+      _emit(next);
+      return;
+    }
+    for (final (connectivity, id) in transitions) {
+      _emit(
+        next.copyWith(
+          connectivity: connectivity,
+          connectivityDeviceId: id,
+          connectivityDeviceName: _names[id] ?? id,
+        ),
+      );
+    }
   }
 
   MidiControllerSource _capture(String id) {

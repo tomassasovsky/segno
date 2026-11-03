@@ -303,5 +303,10 @@ void main() {
       {'pedal'},
     );
     r.cubit.endMidiEdit(owner);
+    r.pump();
+    expect(
+      r.cubit.state.midiLevels.keys.map((source) => source.device).toSet(),
+      {'pedal'},
+    );
   });
 }

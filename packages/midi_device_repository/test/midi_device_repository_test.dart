@@ -164,6 +164,8 @@ void main() {
       ];
       final repository = await hydrated();
       addTearDown(repository.dispose);
+      await repository.select('id-1');
+      expect(repository.connection.selectedName, 'FCB1010 Port 1');
 
       expect(created, hasLength(2)); // the scanner and one capture
       expect(captureOf('id-1').opened, ['id-1']);
@@ -252,21 +254,62 @@ void main() {
       },
     );
 
-    test(
-      'no transition on the first observation or for a new device',
-      () async {
-        enumerated = const [dev1];
-        final repository = await hydrated();
-        addTearDown(repository.dispose);
-        expect(repository.connection.connectivity, MidiConnectivity.none);
+    test('no transition on the first observation', () async {
+      enumerated = const [dev1];
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+      repository.refresh();
 
-        enumerated = const [dev1, dev2];
-        repository.refresh();
+      expect(repository.connection.connectivity, MidiConnectivity.none);
+    });
 
-        expect(repository.connection.open, {'id-1', 'id-2'});
-        expect(repository.connection.connectivity, MidiConnectivity.none);
-      },
-    );
+    test('a device plugged in after launch is restored', () async {
+      enumerated = const [dev1];
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+
+      enumerated = const [dev1, dev2];
+      repository.refresh();
+
+      expect(repository.connection.open, {'id-1', 'id-2'});
+      expect(repository.connection.connectivity, MidiConnectivity.restored);
+      expect(repository.connection.connectivityDeviceId, 'id-2');
+    });
+
+    test('every device that changes in one poll is published', () async {
+      enumerated = const [dev1, dev2];
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+      final said = <(MidiConnectivity, String)>[];
+      final sub = repository.connections
+          .skip(1)
+          .listen(
+            (c) => said.add((c.connectivity, c.connectivityDeviceId)),
+          );
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
+
+      enumerated = const [];
+      repository.refresh();
+      await pumpEventQueue();
+
+      expect(said, [
+        (MidiConnectivity.lost, 'id-1'),
+        (MidiConnectivity.lost, 'id-2'),
+      ]);
+    });
+
+    test('a port that never opened is not reported lost', () async {
+      enumerated = const [dev1];
+      openResult = (_) => 5;
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+
+      enumerated = const [];
+      repository.refresh();
+
+      expect(repository.connection.connectivity, MidiConnectivity.none);
+    });
 
     test('the poll timer drives periodic refresh', () {
       fakeAsync((async) {
@@ -478,7 +521,6 @@ void main() {
       expect(connection.statusOf('id-9'), isGone);
       expect(connection.statusOf(''), MidiConnectionStatus.none);
       expect(connection.status, isGone);
-      expect(connection.isSelectedPresent, isFalse);
     });
 
     test('copyWith replaces fields; clearError resets the detail', () {

@@ -4406,6 +4406,64 @@ void main() {
     );
 
     testWidgets(
+      'a device not in use comes and goes unsaid, and leaves the loss '
+      'warning of the device in use up',
+      (tester) async {
+        const pedal = MidiDevice(id: 'fcb1010', name: 'FCB1010');
+        const keys = MidiDevice(id: 'keys', name: 'Keyboard');
+        var enumerated = const <MidiDevice>[pedal, keys];
+        final midi = MidiDeviceRepository(
+          captures: () => FakeMidiCapture(devices: () => enumerated),
+          settings: settings,
+          pollInterval: Duration.zero,
+        );
+        await midi.select('fcb1010');
+
+        await tester.pumpWidget(
+          App(
+            guards: GuardRegistry(),
+            mixSettings: testMixSettings(repository, settings: settings),
+            repository: repository,
+            controllerRepository: controllerRepository,
+            midiDeviceRepository: midi,
+            settings: settings,
+            waveformWindow: _RecordingWindowService(),
+            sessionRepository: sessionRepository,
+            performanceRepository: performanceRepository,
+            backingRepository: testBackingRepository(),
+          ),
+        );
+        watchNotices(tester);
+        await tester.pumpAndSettle();
+
+        // The keyboard has no mapping and is not shown: nothing is said.
+        enumerated = const [pedal];
+        midi.refresh();
+        await tester.pump();
+        await tester.pump();
+        expect(noticeSaid(AppNoticeId.midiLost), isFalse);
+
+        // The pedal goes; the keyboard's return does not take its warning.
+        enumerated = const [];
+        midi.refresh();
+        await tester.pump();
+        await tester.pump();
+        expect(noticeUp(tester, AppNoticeId.midiLost), isTrue);
+        enumerated = const [keys];
+        midi.refresh();
+        await tester.pump();
+        await tester.pump();
+        expect(noticeUp(tester, AppNoticeId.midiLost), isTrue);
+        expect(noticeSaid(AppNoticeId.midiRestored), isFalse);
+
+        await tester.pump(const Duration(seconds: 10));
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        await midi.dispose();
+      },
+    );
+
+    testWidgets(
       'a lost MIDI controller flashes a transient toast and raises no '
       'standing bar; its return is a snack',
       (tester) async {

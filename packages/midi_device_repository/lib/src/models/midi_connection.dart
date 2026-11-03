@@ -27,7 +27,7 @@ enum MidiConnectivity {
   /// A captured device just went absent.
   lost,
 
-  /// A device that went absent this run just came back.
+  /// A device appeared after launch: plugged back in, or plugged in late.
   restored,
 }
 
@@ -92,10 +92,6 @@ class MidiConnection extends Equatable {
 
   /// Whether a device is selected.
   bool get hasSelection => selectedId.isNotEmpty;
-
-  /// Whether the selected device is present in the current [devices].
-  bool get isSelectedPresent =>
-      hasSelection && devices.any((d) => d.id == selectedId);
 
   /// Where the device [id] stands.
   MidiConnectionStatus statusOf(String id) {
