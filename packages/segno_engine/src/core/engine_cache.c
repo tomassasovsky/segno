@@ -1696,9 +1696,10 @@ int32_t le_fx_frozen_state_init(le_fx_state* fx, const le_fx_frozen_chain* c,
    * realization than the live chain it replaces, swapped in at a loop top.
    *
    * What the seed cannot fix (#939): RENDER-TWICE-KEEP-SECOND reproduces a
-   * chain that engaged exactly one lap earlier. A live lane that has run k
-   * laps sits (k - 1) * len samples further on, and unlike a tail a hop
-   * phase never decays. */
+   * chain that engaged exactly one lap earlier. A live chain that has run
+   * more laps carries history the print does not (an echo built up over
+   * more passes, an LFO further on), so the audio thread swaps a print in
+   * only where the live chain's run matches it (le_run_matches_print). */
   fx->hop_seed = c->hop_seed;
   fx->clock = c->clock0;
   fx->clocked = 1;
@@ -1745,7 +1746,8 @@ int32_t le_fx_print(const le_fx_frozen_chain* c, int32_t count,
   le_fx_frozen_bits(c, 0, count, bits);
   /* RENDER-TWICE-KEEP-SECOND: pass 1 is exactly the chain's first live lap,
    * so the kept pass matches a live chain that engaged at the previous loop
-   * top, with tails that wrap the loop boundary baked in. */
+   * top, with tails that wrap the loop boundary baked in. The audio thread
+   * engages it only over a live chain whose run matches that (#939). */
   for (int pass = 0; pass < 2 && rc == LE_OK; ++pass) {
     for (int32_t f = 0; f < len; ++f) {
       if ((f % LE_CACHE_ABORT_CHECK_FRAMES) == 0 && abort_fn != NULL &&

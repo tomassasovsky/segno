@@ -34834,14 +34834,37 @@ static void test_fx_entry_channel_setter_guards(void) {
 
 /* ---- the whole-track Pre print (slice 3e) ---- */
 
-/* A short loop: these tests measure a steady value, not a decay, so the
- * render settles quickly and the two-in input block fits one call. */
-#define WT_LOOP 64
+/* A loop long enough for a print to be ready on the lap after an edit made
+ * at its top: the settle window plus a render, with room to spare (#939). A
+ * print swaps in only where the live chains it displaces began less than a
+ * lap away from the print's own (le_run_matches_print), so a loop shorter
+ * than the settle window never prints. These tests measure a steady value,
+ * not a decay. */
+#define WT_LOOP 16384
+
+/* Pumps [frames] of [value] on both inputs of a two-in engine, keeping the
+ * last block in [last]. */
+static void wt_pump_value(le_engine* e, float value, int frames, float* last) {
+  static float in[2 * 64];
+  for (int i = 0; i < 2 * 64; ++i) in[i] = value;
+  while (frames > 0) {
+    const int n = frames > 64 ? 64 : frames;
+    le_engine_process(e, last, in, (uint32_t)n);
+    frames -= n;
+  }
+}
+
+/* Pumps [frames] of silence through a two-in engine, keeping the last block. */
+static void wt_pump(le_engine* e, int frames, float* last) {
+  wt_pump_value(e, 0.0f, frames, last);
+}
 
 /* A two-in, two-out engine with a two-part track 0 holding [value] on both
  * parts, PLAYING, routed to the one stereo pair. [cap] picks the cache: 0
- * pins the live path, the default lets a render publish. */
-static le_engine* wt_engine_two_parts(float value, int64_t cap) {
+ * pins the live path, the default lets a render publish. The take's seam
+ * continuation records the same value, so the loop is constant throughout. */
+static le_engine* wt_engine_two_parts_loop(float value, int64_t cap,
+                                          int32_t loop) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 2, 2, 20000);
   le_engine_set_fx_cache_cap(e, cap);
@@ -34851,24 +34874,52 @@ static le_engine* wt_engine_two_parts(float value, int64_t cap) {
   CHECK(le_engine_set_lane_output(e, 0, 0, 0x3) == LE_OK);
   CHECK(le_engine_set_lane_output(e, 0, 1, 0x3) == LE_OK);
   drain(e);
-  static float in[2 * 64];
   static float out[2 * 64];
-  for (int i = 0; i < 2 * 64; ++i) in[i] = value;
   le_engine_record(e, 0);
-  le_engine_process(e, out, in, (uint32_t)WT_LOOP);
+  wt_pump_value(e, value, loop, out);
   le_engine_record(e, 0);
   drain(e);
+  wt_pump_value(e, value, 1024, out); /* the seam continuation, then PLAYING */
   return e;
 }
 
-/* Pumps [frames] of silence through a two-in engine, keeping the last block. */
-static void wt_pump(le_engine* e, int frames, float* last) {
-  static float zin[2 * 64];
-  while (frames > 0) {
-    const int n = frames > 64 ? 64 : frames;
-    le_engine_process(e, last, zin, (uint32_t)n);
-    frames -= n;
+static le_engine* wt_engine_two_parts(float value, int64_t cap) {
+  return wt_engine_two_parts_loop(value, cap, WT_LOOP);
+}
+
+/* Ticks the cache, and while track 0 or one of its parts is rendering, spins
+ * (no frames) until that render lands, so a print publishes at a fixed point
+ * of the loop. Returns the track's telemetry. */
+static le_lane_cache_info wt_tick(le_engine* e) {
+  le_lane_cache_info info;
+  for (int k = 0; k < 3000; ++k) {
+    le_lane_cache_info part0;
+    le_lane_cache_info part1;
+    le_engine_get_track_cache(e, 0, &info);
+    le_engine_get_lane_cache(e, 0, 0, &part0);
+    le_engine_get_lane_cache(e, 0, 1, &part1);
+    if (info.state != LE_CACHE_RENDERING &&
+        part0.state != LE_CACHE_RENDERING &&
+        part1.state != LE_CACHE_RENDERING) {
+      break;
+    }
+    test_sleep_ms(1);
   }
+  return info;
+}
+
+/* Drives the cache, a block of frames per tick, until track 0's print
+ * engages, or gives up after three laps. On success [out] holds a block
+ * played from the print. */
+static int wt_wait_engaged(le_engine* e, float* out) {
+  for (int n = 0; n < 3 * WT_LOOP; n += 256) {
+    if (wt_tick(e).engaged) {
+      wt_pump(e, 64, out);
+      return 1;
+    }
+    wt_pump(e, 256, out);
+  }
+  return 0;
 }
 
 /* Whole-track Pre processes the COMBINATION of the track's parts as one
@@ -34899,20 +34950,9 @@ static void test_whole_track_pre_processes_the_combination(void) {
     drain(e);
     le_lane_cache_info info;
     if (pass == 1) {
-      le_engine_get_track_cache(e, 0, &info); /* polling drives the cache */
-      wt_pump(e, 40000, out);
-      /* Past the settle window and several loop tops, so the render has
-       * published and engaged. */
-      int engaged = 0;
-      for (int k = 0; k < 500 && !engaged; ++k) {
-        le_engine_get_track_cache(e, 0, &info);
-        test_sleep_ms(1);
-        wt_pump(e, 256, out);
-        le_engine_get_track_cache(e, 0, &info);
-        engaged = info.engaged;
-      }
       /* Without this the comparison would be two live passes. */
-      CHECK(engaged);
+      CHECK(wt_wait_engaged(e, out));
+      le_engine_get_track_cache(e, 0, &info);
       CHECK(info.state == LE_CACHE_CACHED);
       CHECK(info.renders == 1);
       CHECK(info.entry_frames == WT_LOOP);
@@ -34930,20 +34970,6 @@ static void test_whole_track_pre_processes_the_combination(void) {
     CHECK(fabsf(out[2 * 31 + 1] - one_signal * (1 - 31.0f / 24000)) < 1e-3f);
     le_engine_destroy(e);
   }
-}
-
-/* Spins the scheduler until the track's print engages, or gives up. */
-static int wt_wait_engaged(le_engine* e, float* out) {
-  le_lane_cache_info info;
-  wt_pump(e, 40000, out);
-  for (int k = 0; k < 500; ++k) {
-    le_engine_get_track_cache(e, 0, &info);
-    test_sleep_ms(1);
-    wt_pump(e, 256, out);
-    le_engine_get_track_cache(e, 0, &info);
-    if (info.engaged) return 1;
-  }
-  return 0;
 }
 
 /* Part levels precede the combined nonlinear Pre; the track fader follows
@@ -35010,21 +35036,25 @@ static void test_fx_recipe_atomic_admission_and_frozen_arm(void) {
 /* A deferred recipe must sound the same whether a host splits its callback
  * at the trigger or processes across it. The quantized case keeps existing PCM;
  * the sound case starts and fills a short fresh take inside one callback. */
+/* Long enough for the cached modes' prints to be ready on the lap after
+ * their recipes (#939). */
+#define RB_LOOP 16384
+
 static le_engine* recipe_boundary_engine(int mode) {
   const int sound = mode == 1;
   const int cached = mode >= 2;
   le_engine* e = le_engine_create();
-  CHECK(le_engine_configure(e, 48000, 1, 2, sound ? 32 : 8192) == LE_OK);
+  CHECK(le_engine_configure(e, 48000, 1, 2, sound ? 32 : 2 * RB_LOOP) == LE_OK);
   CHECK(le_engine_set_rec_dub(e, 0) == LE_OK);
   CHECK(le_engine_set_limiter(e, 0, 1) == LE_OK);
   CHECK(le_engine_set_fx_cache_cap(e, cached ? LE_CACHE_DEFAULT_CAP_BYTES : 0) == LE_OK);
   CHECK(timing_gate(e, 0) == LE_OK);
   drain(e);
   if (!sound) {
-    float samples[4096];
-    for (int i = 0; i < 4096; ++i) samples[i] = .2f;
-    CHECK(le_engine_import_track_lane(e, 0, 0, samples, 4096) == LE_OK);
-    CHECK(le_engine_commit_session(e, 4096, 0) == LE_OK);
+    static float samples[RB_LOOP];
+    for (int i = 0; i < RB_LOOP; ++i) samples[i] = .2f;
+    CHECK(le_engine_import_track_lane(e, 0, 0, samples, RB_LOOP) == LE_OK);
+    CHECK(le_engine_commit_session(e, RB_LOOP, 0) == LE_OK);
     CHECK(le_engine_play(e, 0) == LE_OK);
     drain(e);
   }
@@ -35046,7 +35076,7 @@ static le_engine* recipe_boundary_engine(int mode) {
     drain(e);
     /* Cache settlement can finish at any loop phase. Land 16 frames before
      * its next top without changing the already-engaged print. */
-    int remaining = (4080 - e->clock.position + 4096) % 4096;
+    int remaining = (RB_LOOP - 16 - e->clock.position + RB_LOOP) % RB_LOOP;
     while (remaining > 0) {
       const int n = remaining > 64 ? 64 : remaining;
       le_engine_process(e, out, NULL, (uint32_t)n); remaining -= n;
@@ -35411,7 +35441,6 @@ static void test_whole_track_pre_edits_from_the_originals(void) {
 static void test_whole_track_pre_leaves_the_recording_alone(void) {
   printf("test_whole_track_pre_leaves_the_recording_alone\n");
   static float out[2 * 64];
-  static float in[2 * 64];
   le_engine* e = wt_engine_two_parts(0.5f, LE_CACHE_DEFAULT_CAP_BYTES);
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
   CHECK(le_engine_set_track_fx_count(e, 0, 1, 1) == LE_OK);
@@ -35423,18 +35452,21 @@ static void test_whole_track_pre_leaves_the_recording_alone(void) {
   CHECK(fabsf(printed - tanhf(1.0f)) < 1e-3f);
 
   /* An overdub pass moves the content, so the render stops describing the
-   * track and it plays live from the new material. */
-  for (int i = 0; i < 2 * 64; ++i) in[i] = 0.25f;
+   * track and it plays live from the new material. One pass inside one lap,
+   * so one Undo takes it back. */
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  wt_pump(e, (WT_LOOP - snap.master_position_frames) % WT_LOOP, out);
   CHECK(le_engine_record(e, 0) == LE_OK); /* start the overdub */
   drain(e);
-  le_engine_process(e, out, in, (uint32_t)WT_LOOP);
+  wt_pump_value(e, 0.25f, WT_LOOP - 4096, out);
   CHECK(le_engine_record(e, 0) == LE_OK); /* stop it */
   drain(e);
   wt_pump(e, 2000, out); /* let the pass retire */
   le_lane_cache_info info;
   le_engine_get_track_cache(e, 0, &info);
   CHECK(info.engaged == 0);
-  wt_pump(e, 2000, out);
+  wt_pump(e, 4096 + 2000, out); /* back inside the overdubbed stretch */
   const float overdubbed = out[2 * 31];
   CHECK(fabsf(overdubbed - printed) > 1e-3f); /* the pass really landed */
 
@@ -36407,14 +36439,14 @@ static float cache_max_diff(const float* x, const float* y, int n, int skip) {
 }
 
 /* Builds the twin harness through the published render: A cached, B live
- * (cap 0), identical timelines — defining loop of 1.0f, a [count]-slot chain
- * of [types] engaged at a loop top, one tick to register the key, the settle
- * window pumped, then A's render spun to CACHED. On return both engines sit
- * at position CACHE_SETTLE of a loop (A not yet engaged: engagement waits
- * for the next loop top). */
-static void cache_pair_prepare_chain_lane(le_engine** pa, le_engine** pb,
+ * (cap 0), identical timelines — a defining loop of [loop] frames of 1.0f, a
+ * [count]-slot chain of [types] on [lane] engaged at a loop top, one tick to
+ * register the key, the settle window pumped, then A's render spun to
+ * CACHED. On return both engines sit CACHE_SETTLE frames past that loop top
+ * (A not yet engaged: engagement waits for a loop top). */
+static void cache_pair_prepare_chain_loop(le_engine** pa, le_engine** pb,
                                           const int32_t* types, int32_t count,
-                                          int32_t lane) {
+                                          int32_t lane, int32_t loop) {
   le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
   le_engine* b = cache_engine(0);
   /* A non-zero lane has to exist and carry the SAME content as lane 0 before
@@ -36430,9 +36462,9 @@ static void cache_pair_prepare_chain_lane(le_engine** pa, le_engine** pb,
     drain(a);
     drain(b);
   }
-  cache_record_loop(a, CACHE_LOOP, 1.0f);
-  cache_record_loop(b, CACHE_LOOP, 1.0f);
-  const int32_t need = (CACHE_LOOP - cache_master_pos(a)) % CACHE_LOOP;
+  cache_record_loop(a, loop, 1.0f);
+  cache_record_loop(b, loop, 1.0f);
+  const int32_t need = (loop - cache_master_pos(a)) % loop;
   if (need > 0) {
     pump_frames(a, 0.0f, need);
     pump_frames(b, 0.0f, need);
@@ -36454,6 +36486,12 @@ static void cache_pair_prepare_chain_lane(le_engine** pa, le_engine** pb,
   CHECK(cache_renders(a, 0, lane) == 1);
   *pa = a;
   *pb = b;
+}
+
+static void cache_pair_prepare_chain_lane(le_engine** pa, le_engine** pb,
+                                          const int32_t* types, int32_t count,
+                                          int32_t lane) {
+  cache_pair_prepare_chain_loop(pa, pb, types, count, lane, CACHE_LOOP);
 }
 
 static void cache_pair_prepare_chain(le_engine** pa, le_engine** pb,
@@ -36683,6 +36721,45 @@ static void test_cache_octaver_relaunch_rerenders(void) {
   le_engine_destroy(a);
 }
 
+/* A loop shorter than the settle window (#939): ten octaver hops, about
+ * 53 ms, so the print is ready only five laps after the chain went in at a
+ * loop top. It reproduces a chain one lap into its run; the live chain it
+ * would displace is five laps in — an echo built up over more passes, an
+ * LFO further on — and swapping it in would step at the loop top. So the
+ * print never engages, and the cached twin plays exactly what the live one
+ * does, across the loop tops where it used to swap in. */
+#define CACHE_SHORT_LOOP 2560
+
+static void cache_check_short_loop_stays_live(int32_t type) {
+  le_engine* a;
+  le_engine* b;
+  cache_pair_prepare_chain_loop(&a, &b, &type, 1, 0, CACHE_SHORT_LOOP);
+  const int32_t pre = 64;
+  const int32_t to_top =
+      (CACHE_SHORT_LOOP - cache_master_pos(a)) % CACHE_SHORT_LOOP;
+  pump_frames(a, 0.0f, to_top + CACHE_SHORT_LOOP - pre);
+  pump_frames(b, 0.0f, to_top + CACHE_SHORT_LOOP - pre);
+  const int32_t n = pre + 2 * CACHE_SHORT_LOOP;
+  float* oa = (float*)malloc((size_t)n * sizeof(float));
+  float* ob = (float*)malloc((size_t)n * sizeof(float));
+  pump_capture(a, 0.0f, n, oa);
+  pump_capture(b, 0.0f, n, ob);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  CHECK(info.state == LE_CACHE_CACHED); /* the print is there... */
+  const float d = cache_max_diff(oa, ob, n, 0);
+  if (info.engaged != 0 || d > CACHE_TOL) { /* ...and stays out */
+    printf("  FAIL: type %d on a short loop: engaged %d, cached-vs-live max "
+           "diff %g (line %d)\n",
+           type, info.engaged, (double)d, __LINE__);
+    g_failures++;
+  }
+  free(oa);
+  free(ob);
+  le_engine_destroy(a);
+  le_engine_destroy(b);
+}
+
 static void test_cache_cached_matches_live_every_builtin(void) {
   printf("test_cache_cached_matches_live_every_builtin\n");
   const int32_t types[] = {LE_FX_DRIVE,      LE_FX_FILTER,    LE_FX_DELAY,
@@ -36702,7 +36779,55 @@ static void test_cache_cached_matches_live_every_builtin(void) {
      * carry over: seeded wrong, the octaver's print is a different
      * phase-vocoder realization, swapped in at the loop top as a step. */
     cache_check_chain_parity_lane(&types[i], 1, 1);
+    /* ...and where the print would swap in laps after the chain went in,
+     * on a loop shorter than the settle window (#939). */
+    cache_check_short_loop_stays_live(types[i]);
   }
+}
+
+/* The whole-track print on a loop shorter than the settle window (#939): it
+ * is ready only laps after the echo went on the track, whose live chain has
+ * built its repeats up over those laps while the print carries one lap's. So
+ * it never engages, and the cached twin plays what the live one does. */
+static void test_whole_track_print_stays_live_on_a_short_loop(void) {
+  printf("test_whole_track_print_stays_live_on_a_short_loop\n");
+  le_engine* a = wt_engine_two_parts_loop(0.5f, LE_CACHE_DEFAULT_CAP_BYTES,
+                                          CACHE_SHORT_LOOP);
+  le_engine* b = wt_engine_two_parts_loop(0.5f, 0, CACHE_SHORT_LOOP);
+  le_engine* both[2] = {a, b};
+  for (int k = 0; k < 2; ++k) {
+    CHECK(le_engine_set_track_fx(both[k], 0, 0, LE_FX_ECHO) == LE_OK);
+    CHECK(le_engine_set_track_fx_count(both[k], 0, 1, 1) == LE_OK);
+    CHECK(le_engine_set_track_fx_param(both[k], 0, 0, 0, 0.01f) == LE_OK);
+    CHECK(le_engine_set_track_fx_param(both[k], 0, 0, 1, 0.6f) == LE_OK);
+    drain(both[k]);
+  }
+  static float oa[2 * 64];
+  static float ob[2 * 64];
+  le_lane_cache_info info;
+  le_engine_get_track_cache(a, 0, &info); /* registers the key */
+  wt_pump(a, CACHE_SETTLE, oa);
+  wt_pump(b, CACHE_SETTLE, ob);
+  /* The print publishes without frames moving (the scheduler's copy,
+   * render and collect ticks run on the polls). */
+  int cached = 0;
+  for (int k = 0; k < 3000 && !cached; ++k) {
+    cached = wt_tick(a).state == LE_CACHE_CACHED;
+    if (!cached) test_sleep_ms(1);
+  }
+  CHECK(cached);
+  float d = 0.0f;
+  for (int n = 0; n < 2 * CACHE_SHORT_LOOP; n += 64) {
+    wt_pump(a, 64, oa);
+    wt_pump(b, 64, ob);
+    d = fmaxf(d, cache_max_diff(oa, ob, 2 * 64, 0));
+  }
+  le_engine_get_track_cache(a, 0, &info);
+  CHECK(info.state == LE_CACHE_CACHED);
+  CHECK(info.engaged == 0);
+  CHECK(d <= CACHE_TOL);
+  le_engine_destroy(a);
+  le_engine_destroy(b);
 }
 
 /* Cached ~= live for a MULTI-slot chain (order-sensitive state across slots),
@@ -41091,6 +41216,7 @@ int main(void) {
   test_a_post_edit_leaves_the_print_standing();
   test_a_pre_channel_edit_drops_the_print();
   test_cache_cached_matches_live_every_builtin();
+  test_whole_track_print_stays_live_on_a_short_loop();
   test_cache_octaver_on_a_partial_hop_loop_stays_live();
   test_cache_bypassed_octaver_prints_on_a_partial_hop_loop();
   test_cache_octaver_relaunch_rerenders();

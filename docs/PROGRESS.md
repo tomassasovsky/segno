@@ -77,6 +77,28 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Wet cache swaps in only over a matching run (#939)
+
+- The owner's decision on #939 (Q11): the loop-stage wet cache stays off
+  where it cannot swap in exactly. A print reproduces a chain that began one
+  lap before the loop top it swaps in at (render twice, keep the second).
+  The audio thread now follows each live chain's run, the stretch it has
+  played one unchanged key over (`le_chain_run` on each lane and track bus,
+  counted in laps by `le_track::laps`), and swaps a print in only where that
+  run began less than a lap away from the print's
+  (`le_run_matches_print`). An older run keeps playing live: it carries
+  history the print does not (an echo built up over more passes, an LFO
+  further on), which used to step at the loop top.
+- In practice: a print is ready about 250 ms (`LE_CACHE_SETTLE_MS`) plus a
+  few 16 ms scheduler ticks plus its render after the edit, so on a loop
+  shorter than that the cache stays off; longer loops print as before. The
+  same rule holds the whole-track print, and a lane back at forward 1x after
+  laps reversed or at another speed plays live until its next edit.
+- Tests: the every-kind parity sweep adds a 2560-frame loop per kind (the
+  print is ready five laps after the chain went in) and
+  `test_whole_track_print_stays_live_on_a_short_loop` covers the track
+  print; the whole-track tests run on a 16384-frame loop.
+
 ## November 2026 Segno owns the interface's routing (#1046)
 
 - At every device open, before the loopback mask is read and the callback
