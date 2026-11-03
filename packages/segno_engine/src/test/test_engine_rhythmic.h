@@ -150,6 +150,38 @@ static void test_pumper_rates_and_depths(void) {
   free(g);
 }
 
+/* An anchor that moves the phase at the fastest rate (1/32T at 200 BPM, a
+ * 1200-frame period) glides the duck over at least 0.25 ms rather than
+ * stepping (#813). */
+static void test_pumper_anchor_jump_glides(void) {
+  printf("test_pumper_anchor_jump_glides\n");
+  le_fx_tempo t = rh_tempo(200.0);
+  const float p[LE_FX_PARAMS] = {rh_rate(10), 1.0f};
+  le_fx_state* fx = rh_pumper(&t, p);
+  static int32_t types[LE_FX_MAX];
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  for (int s = 0; s < LE_FX_MAX; ++s) types[s] = LE_FX_NONE;
+  types[0] = LE_FX_PUMPER;
+  for (int q = 0; q < LE_FX_PARAMS; ++q) params[0][q] = p[q];
+  float worst = 0.0f, prev = 1.0f;
+  const int jump = 600 + 1200 * 3; /* half way through a period */
+  for (int i = 0; i < 6000; ++i) {
+    if (i == jump) { /* back onto a beat: full duck from none */
+      t.anchor_clock = (uint32_t)i;
+      t.anchor_beat = 0.0;
+    }
+    fx->clock = (uint32_t)i;
+    float l = 1.0f, r = 1.0f;
+    fx_apply_chain(fx, RH_SR, RH_SR, &l, &r, 1, types, params, NULL);
+    if (i > jump - 5 && i < jump + 40) worst = fmaxf(worst, fabsf(l - prev));
+    prev = l;
+  }
+  printf("  largest step across the jump %.4f\n", (double)worst);
+  CHECK(worst <= 1.0f / (0.00025f * (float)RH_SR) + 1e-4f);
+  le_fx_state_free_buffers(fx);
+  free(fx);
+}
+
 /* A live input's Pumper ducks once a beat at the song tempo, and at 120 BPM
  * while no tempo is set. */
 static void rh_live_period(float bpm, int expect_frames) {
@@ -885,9 +917,10 @@ static void test_slicer_change_waits_for_a_replay(void) {
   free(o);
 }
 
-/* A beat that jumps back near a slice's end (its gain already fading)
- * still never goes above the input; nor do two cuts 2 ms apart, whose
- * fading voices both carry on. */
+/* A beat that jumps back during a boundary's crossfade (A fading out past
+ * its end, its replay fading in) still never goes above the input, and
+ * nothing steps; nor do two cuts 2 ms apart, whose fading voices both carry
+ * on. */
 static void test_slicer_cuts_stay_under_the_input(void) {
   printf("test_slicer_cuts_stay_under_the_input\n");
   const int step = RH_SR / 8;
@@ -895,14 +928,22 @@ static void test_slicer_cuts_stay_under_the_input(void) {
   float* in = (float*)malloc(sizeof(float) * (size_t)n);
   float* o = (float*)malloc(sizeof(float) * (size_t)n);
   for (int i = 0; i < n; ++i) in[i] = 0.5f;
-  const float abc[LE_FX_PARAMS] = {rh_patt(3), rh_step(4), 1.0f};
-  rh_slice_sched(abc, abc, n, step - 50, in, o, n); /* back in A's fade */
+  const float aabb0[LE_FX_PARAMS] = {rh_patt(0), rh_step(4), 1.0f};
+  /* back to A, 2 ms into the A-to-replay crossfade */
+  rh_slice_sched(aabb0, aabb0, n, step + RH_SR / 500, in, o, n);
   float peak = 0.0f;
   for (int i = step - 200; i < step + 500; ++i) peak = fmaxf(peak, fabsf(o[i]));
-  printf("  a cut in the end fade: peak %.4f (input 0.5)\n", (double)peak);
+  printf("  a cut in a crossfade: peak %.4f (input 0.5)\n", (double)peak);
   CHECK(peak <= 0.5f + 1e-4f);
-  /* Two cuts: from live B back into A's replay, then on into B again. */
   for (int i = 0; i < n; ++i) in[i] = (float)i / (float)RH_SR;
+  rh_slice_sched(aabb0, aabb0, n, step + RH_SR / 500, in, o, n);
+  float bend = 0.0f;
+  for (int i = step + 1; i < step + 600; ++i) {
+    bend = fmaxf(bend, fabsf(o[i] - o[i - 1]));
+  }
+  printf("  a cut in a crossfade: largest step %.5f\n", (double)bend);
+  CHECK(bend < 0.005f);
+  /* Two cuts: from live B back into A's replay, then on into B again. */
   le_fx_tempo t = rh_tempo(120.0);
   le_fx_state* fx = rh_slicer_at(&t, RH_SR);
   static int32_t types[LE_FX_MAX];
@@ -978,6 +1019,18 @@ static void test_slicer_reverse_ends_with_its_source(void) {
     free(in2);
     free(o2);
   }
+}
+
+/* A reversed step whose own reads just fit the ring still plays, its fade
+ * past the end cut to what the ring has left: AB<< at 1/4 and 120.5 BPM
+ * (each step 23900 frames, read back up to 47800 of the 1 s ring). */
+static void test_slicer_reverse_at_the_ring_edge(void) {
+  printf("test_slicer_reverse_at_the_ring_edge\n");
+  float* o = rh_slice_bpm(15, 0, 1.0f, 4 * RH_SR, 120.5);
+  const int st = (int)lround(RH_SR * 60.0 / 120.5);
+  const int mid = 2 * st + st / 2; /* the first <, reading B backwards */
+  CHECK(rh_is_frame(o[mid], 2 * st - st / 2, 2.0));
+  free(o);
 }
 
 /* ---- The Rhythmic LPF's LFO ---- */
@@ -1281,6 +1334,7 @@ static void test_lpf_lfo_lane_stays_live(void) {
 static void run_rhythmic_tests(void) {
   test_pumper_matches_the_capture();
   test_pumper_rates_and_depths();
+  test_pumper_anchor_jump_glides();
   test_pumper_follows_the_song_tempo();
   test_fx_tempo_log_reproduces_the_beat();
   test_pumper_lane_is_not_printed();
@@ -1304,6 +1358,7 @@ static void run_rhythmic_tests(void) {
   test_slicer_change_waits_for_a_replay();
   test_slicer_cuts_stay_under_the_input();
   test_slicer_reverse_ends_with_its_source();
+  test_slicer_reverse_at_the_ring_edge();
   test_lpf_lfo_matches_the_capture();
   test_lpf_lfo_rate();
   test_lpf_lfo_is_not_printed();

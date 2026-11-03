@@ -351,9 +351,10 @@ s4 Pumper passes (s4/25-27) agree among themselves the same way.
   3 kHz, +0.03 at 5 kHz and -2.58 at 8 kHz, and the plain RESO HI echo
   reads the same within 0.5 dB. The "+2.2 at 2 kHz, -1.6 at 8 kHz" reading
   above does not repeat in a fresh capture of the same setting.
-- The early tap is 251/300 of the time, to the sample: 15060 frames of
-  18000 at 1/8D, 20080 of 24000 at 1/4, 10040 of 12000 at 1/8 and 30121 of
-  36000 at 1/4D. It is a ratio, not a fixed offset. The old 0.8368 put it
+- The early tap is 251/300 of the time: to the sample at 1/8D (15060
+  frames of 18000), 1/4 (20080 of 24000) and 1/8 (10040 of 12000), and one
+  frame later at 1/4D (30121, where the ratio gives 30120). It is a ratio,
+  not a fixed offset. The old 0.8368 put it
   2 frames late at 1/8D. That moved the right side's steady 1 kHz level
   by 0.7 to 1.4 dB, which is the GRV discrepancy the s7dly ladder showed.
 - Each side carries -16.90 dB (0.143) of the other side's echo, at Feedback

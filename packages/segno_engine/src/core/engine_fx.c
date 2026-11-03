@@ -2546,12 +2546,14 @@ static const float LE_PUMP_SHAPE[32] = {
     0.7819f, 0.7425f, 0.6985f, 0.6497f, 0.5963f, 0.5385f, 0.4769f, 0.4121f,
     0.3450f, 0.2772f, 0.2103f, 0.1464f, 0.0890f, 0.0403f, 0.0074f, 0.0f};
 
-/* The shape's steepest, at the attack's start: ln(100) / (0.99 x 0.022) a
- * period. The duck moves no faster than 1.5 times that, so the shape
- * itself plays as measured, while a gain step, a click (#813), where an
- * anchor moves the phase (a loop top that is not a whole number of
- * periods) glides as fast as the attack falls. */
-#define LE_PUMP_MAX_SLOPE (1.5 * 4.605170186 / (0.99 * LE_PUMP_ATTACK))
+/* The duck's steepest, at full depth at the attack's start: ln(100) /
+ * 0.022 a period. The duck moves no faster than 1.5 times that, so the
+ * shape itself plays as measured, while a gain step, a click (#813), where
+ * an anchor moves the phase (a loop top that is not a whole number of
+ * periods) glides as fast as the attack falls; and never faster than
+ * across LE_PUMP_MIN_GLIDE_S, which only the fastest rates reach. */
+#define LE_PUMP_MAX_SLOPE (1.5 * 4.605170186 / LE_PUMP_ATTACK)
+#define LE_PUMP_MIN_GLIDE_S 0.00025
 
 static float le_pump_shape(double phase) {
   const double x = phase * 40.0;
@@ -2566,9 +2568,9 @@ static float le_pump_shape(double phase) {
   return (att < 1.0f ? att : 1.0f) * rec;
 }
 
-/* The depth at full duck (#891 s17rhy): a = 0.99 d (2 - d), dips of 6.0,
- * 11.9, 20.1, 29.8 and 40.0 dB at 30, 50, 70, 85 and 100 %, each within
- * 0.2 dB of the captures. */
+/* The depth at full duck (#891 s17rhy): a = 0.99 d (2 - d), dips of 6.1,
+ * 11.8, 20.1, 29.8 and 40.0 dB at 30, 50, 70, 85 and 100 %, each within
+ * 0.15 dB of the captures (6.20, 11.89, 20.09, 29.93 and 40.09). */
 static float le_pump_depth(float d) {
   if (!(d > 0.0f)) return 0.0f;
   if (d >= 1.0f) d = 1.0f;
@@ -2626,8 +2628,10 @@ static void fx_pumper_process(le_fx_state* fx, int slot, int sr, int cap,
    * LE_PUMP_MAX_SLOPE. */
   float* duck = &fx->fx_lp[slot][1];
   const float d = *a * e - *duck;
-  const float most =
-      period > 0.0 ? (float)(0.99 * LE_PUMP_MAX_SLOPE / period) : 1.0f;
+  const double floor_f = 1.0 / (LE_PUMP_MIN_GLIDE_S * (double)rate);
+  const float most = (float)(period > 0.0
+                                 ? fmin(LE_PUMP_MAX_SLOPE / period, floor_f)
+                                 : floor_f);
   *duck += d > most ? most : d < -most ? -most : d;
   const float g = 1.0f - *duck;
   *l *= g;
@@ -2867,10 +2871,10 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
       le_fx_slice_voice v = {LE_SLICE_SILENT, 0, 0, 0.0f, 0.0f};
       if (sp.tok == '<') {
         /* The step before, backwards: at n frames into the slice, 2n
-         * back, so the slice and its fade need twice their length of
-         * ring. */
-        const double run = sp.len_f + sp.fade_f;
-        if (2.0 * run < (double)(cap - 1)) {
+         * back, so the slice needs twice its length of ring, and its fade
+         * past the end as much as the ring has left. */
+        if (2.0 * sp.len_f < (double)(cap - 1)) {
+          const double run = fmin(sp.len_f + sp.fade_f, 0.5 * (cap - 2));
           const long n0 = lround(sp.into_f);
           long e = (long)pos - n0;
           while (e < 0) e += cap;
@@ -2921,18 +2925,16 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
                                   st->cur.gain + d),
                             1.0f - le_slice_fading(st, 1));
       st->cur.gain = g > 0.0f ? g : 0.0f;
-      st->wet_g = st->cur.gain;
       if (src_out && st->cur.gain <= 0.0f) st->cur.mode = LE_SLICE_SILENT;
     } else {
       st->cur.gain = 0.0f;
-      st->wet_g = 0.0f;
     }
   }
 
   float wet[2] = {0.0f, 0.0f};
   if (st->cur.mode != LE_SLICE_SILENT && !passes) {
-    wet[0] = st->wet_g * le_slice_read(ring[0], cap, pos, &st->cur);
-    wet[1] = st->wet_g * le_slice_read(ring[1], cap, pos, &st->cur);
+    wet[0] = st->cur.gain * le_slice_read(ring[0], cap, pos, &st->cur);
+    wet[1] = st->cur.gain * le_slice_read(ring[1], cap, pos, &st->cur);
   }
   for (int k = 0; k < 2; ++k) {
     le_fx_slice_voice* v = &st->out[k];
@@ -3389,7 +3391,7 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
     line->mix = mix_to;
     line->tap = want > 0 ? want : 1;
   }
-  /* The early tap: L/R half the time, GRV 0.837 of it, the Dub's
+  /* The early tap: L/R half the time, GRV 251/300 of it, the Dub's
    * 1 - Ratio / 2. */
   const double early = timing == 1   ? 0.5
                        : timing == 2 ? LE_MDLY_GRV

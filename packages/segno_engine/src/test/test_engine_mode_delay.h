@@ -117,8 +117,8 @@ static void test_mode_delay_voicings(void) {
 /* The timings (s4/10, s4/11, gC 36/38, s3/8), on 250 Hz bursts against
  * the plain echo's level: L/R puts the right side half the time early
  * (-1.1 dB) and the left on time at 0.219 + 0.666 Feedback (-13.2 dB at
- * 0 %, -5.2 at 50 %); GRV the right at 0.837 of the time (-1.2) and the
- * left on time (-2.5 at 0 %, -1.9 at 50 %). */
+ * 0 %, -5.2 at 50 %); GRV the right at 251/300 of the time (s17grv,
+ * -1.2) and the left on time (-2.5 at 0 %, -1.9 at 50 %). */
 static void test_mode_delay_timings(void) {
   printf("test_mode_delay_timings\n");
   const le_fx_tempo t = rh_tempo(120.0);
@@ -134,8 +134,8 @@ static void test_mode_delay_timings(void) {
   } want[4] = {
       {1, 0.0f, 0.5, -1.1, -13.2},
       {1, 0.5f, 0.5, -1.1, -5.2},
-      {2, 0.0f, 0.8368, -1.2, -2.5},
-      {2, 0.5f, 0.8368, -1.2, -1.9},
+      {2, 0.0f, 251.0 / 300.0, -1.2, -2.5},
+      {2, 0.5f, 251.0 / 300.0, -1.2, -1.9},
   };
   for (int w = 0; w < 4; ++w) {
     const float p[LE_FX_PARAMS] = {md_choice(8, 20), want[w].fb, 0.3f,
