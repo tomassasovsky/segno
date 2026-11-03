@@ -23,7 +23,7 @@ import 'package:segno/looper/view/rename_track_dialog.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
 import 'package:segno/looper/view/slot_row.dart';
 import 'package:segno/looper/view/track_column.dart'
-    show PrimaryCrown, SlotFigure;
+    show PrimaryCrown, SlotFigure, TrackColumn;
 import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/looper/view/tracks_commands.dart';
 import 'package:segno/notices/notices.dart';
@@ -77,13 +77,17 @@ class MixerColumn extends StatelessWidget {
   /// of a sole loop, #1168), else null.
   final int? beats;
 
-  /// The pen's strip padding, and the height of every fixed part between the
+  /// The strip padding, and the height of every fixed part between the
   /// meter and the edges. A COLUMN, not absolute offsets: the pen's strip is
   /// 858 tall and a desktop window is not, and a strip laid out by `top:`
   /// would push its meter off the bottom rather than shrink it.
-  static const double padding = 20;
-  static const double borderWidth = 2;
-  static const double _infoHeight = 119;
+  ///
+  /// The ring, padding and info block are the Track view's, so the track
+  /// number and the bars/layers row stay put when the stage switches between
+  /// Track and Mixer (#1590 STG-2).
+  static const double padding = TrackColumn.padding;
+  static const double borderWidth = TrackColumn.border;
+  static const double _infoHeight = TrackColumn.infoHeight;
   static const double _buttonsHeight = 54;
   static const double _panHeight = 89;
   static const double _captionHeight = 24;
