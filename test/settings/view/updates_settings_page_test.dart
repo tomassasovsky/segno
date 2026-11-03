@@ -483,6 +483,31 @@ void main() {
     });
   });
 
+  group('layout', () {
+    testWidgets('the installed version has a line of its own above the '
+        'buttons (#1590 UPD-3)', (tester) async {
+      await pump(tester, _running);
+      final installed = tester.getRect(
+        find.byKey(const Key('updates_installed')),
+      );
+      final usb = tester.getRect(find.byKey(const Key('updates_load_usb')));
+      final check = tester.getRect(find.byKey(const Key('updates_check')));
+
+      // One line of the 28 px section label, not two at line height 1.
+      expect(installed.height, 28);
+      expect(usb.top - installed.bottom, SpacingTheme.standard.lg);
+      expect(check.top, usb.top);
+      expect(check.left - usb.right, SpacingTheme.standard.lg);
+      // The version, the buttons and the panel under them share one left
+      // edge.
+      expect(usb.left, installed.left);
+      expect(
+        tester.getRect(find.byKey(const Key('updates_status'))).left,
+        installed.left,
+      );
+    });
+  });
+
   group('settings and links', () {
     testWidgets('Check automatically is a pick of Off and On', (tester) async {
       await pump(tester, _running);

@@ -112,46 +112,46 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
           ),
           const SizedBox(height: 24),
         ],
-        SizedBox(
-          width: AboutSettingsPage.columnWidth,
-          height: 64,
-          child: Row(
+        // The version has a line of its own: beside the two buttons it
+        // wrapped mid-version and ran into Load from USB.
+        if (version != null) ...[
+          LoopSectionLabel(
+            l10n.updatesPageInstalled('$version'),
+            key: const Key('updates_installed'),
+          ),
+          SizedBox(
+            height: state.supported ? context.spacing.lg : context.spacing.xl,
+          ),
+        ],
+        if (state.supported) ...[
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: context.spacing.lg,
             children: [
-              Expanded(
-                child: version == null
-                    ? const SizedBox.shrink()
-                    : LoopSectionLabel(
-                        l10n.updatesPageInstalled('$version'),
-                        key: const Key('updates_installed'),
-                      ),
+              Builder(
+                builder: (context) => LoopOutlinedButton(
+                  key: const Key('updates_load_usb'),
+                  width: 215,
+                  label: l10n.updatesLoadFromUsb,
+                  onTap: busy
+                      ? null
+                      : () {
+                          setState(() => _usbOpen = true);
+                          context.read<UsbUpdateCubit>().open();
+                        },
+                ),
               ),
-              if (state.supported) ...[
-                Builder(
-                  builder: (context) => LoopOutlinedButton(
-                    key: const Key('updates_load_usb'),
-                    width: 215,
-                    label: l10n.updatesLoadFromUsb,
-                    onTap: busy
-                        ? null
-                        : () {
-                            setState(() => _usbOpen = true);
-                            context.read<UsbUpdateCubit>().open();
-                          },
-                  ),
-                ),
-                const SizedBox(width: 19),
-                LoopOutlinedButton(
-                  key: const Key('updates_check'),
-                  focusNode: checkIsNext ? _next : null,
-                  width: UpdatesSettingsPage.controlWidth,
-                  label: l10n.updatesPageCheck,
-                  onTap: busy ? null : () => unawaited(cubit.check()),
-                ),
-              ],
+              LoopOutlinedButton(
+                key: const Key('updates_check'),
+                focusNode: checkIsNext ? _next : null,
+                width: UpdatesSettingsPage.controlWidth,
+                label: l10n.updatesPageCheck,
+                onTap: busy ? null : () => unawaited(cubit.check()),
+              ),
             ],
           ),
-        ),
-        const SizedBox(height: 24),
+          SizedBox(height: context.spacing.xl),
+        ],
         if (_usbOpen) ...[
           SizedBox(
             width: AboutSettingsPage.columnWidth,

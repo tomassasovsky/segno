@@ -58,9 +58,10 @@ class SettingsFactPanel extends StatelessWidget {
   }
 }
 
-/// One fact on a [SettingsFactPanel]: its name at the left, the value at the
-/// right with an optional caption under it, and, when the row leads
-/// somewhere, a chevron and the whole row as one focus stop.
+/// One fact on a [SettingsFactPanel]: its name at the left on one line, the
+/// value right-aligned at the row's end with an optional caption under it,
+/// and, when the row leads somewhere, a chevron and the whole row as one
+/// focus stop.
 class SettingsFactRow extends StatelessWidget {
   /// Creates a [SettingsFactRow].
   const SettingsFactRow({
@@ -96,60 +97,20 @@ class SettingsFactRow extends StatelessWidget {
     final value = this.value;
     final caption = this.caption;
     final onTap = this.onTap;
+    final spacing = context.spacing;
     final row = ConstrainedBox(
       constraints: const BoxConstraints(minHeight: minHeight),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: Row(
           children: [
-            Expanded(
-              child: AppText(
-                label,
-                style: TextStyle(
-                  color: surface.textSecondary,
-                  fontSize: 24,
-                  height: 1.2,
-                ),
-              ),
-            ),
-            const SizedBox(width: 24),
-            Flexible(
-              flex: 2,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (value != null)
-                    AppText(
-                      value,
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        color: surface.textPrimary,
-                        fontSize: 24,
-                        height: 1.2,
-                      ),
-                    ),
-                  if (caption != null) ...[
-                    const SizedBox(height: 6),
-                    AppText(
-                      caption,
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        color: surface.textTertiary,
-                        fontSize: 20,
-                        height: 1.2,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+            Expanded(child: _LabelAndValue(label, value, caption)),
             if (trailing case final trailing?) ...[
-              const SizedBox(width: 24),
+              SizedBox(width: spacing.xl),
               trailing,
             ],
             if (onTap != null) ...[
-              const SizedBox(width: 16),
+              SizedBox(width: spacing.lg),
               Icon(
                 LucideIcons.chevronRight,
                 size: 28,
@@ -178,6 +139,75 @@ class SettingsFactRow extends StatelessWidget {
           onTap: onTap,
           child: row,
         ),
+      ),
+    );
+  }
+}
+
+/// A [SettingsFactRow]'s label and its value: the label on one line at the
+/// left, the value and its caption right-aligned at the end.
+///
+/// The label takes its own width and the value the rest, so values end at
+/// the row's edge. Only when the two cannot share the row does the label
+/// wrap, at two thirds of it, so the value keeps at least a third.
+class _LabelAndValue extends StatelessWidget {
+  const _LabelAndValue(this.label, this.value, this.caption);
+
+  final String label;
+  final String? value;
+  final String? caption;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final value = this.value;
+    final caption = this.caption;
+    return LayoutBuilder(
+      builder: (context, constraints) => Row(
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: constraints.maxWidth * 2 / 3),
+            child: AppText(
+              label,
+              style: TextStyle(
+                color: surface.textSecondary,
+                fontSize: 24,
+                height: 1.2,
+              ),
+            ),
+          ),
+          SizedBox(width: context.spacing.xl),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (value != null)
+                  AppText(
+                    value,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      color: surface.textPrimary,
+                      fontSize: 24,
+                      height: 1.2,
+                    ),
+                  ),
+                if (caption != null) ...[
+                  const SizedBox(height: 6),
+                  AppText(
+                    caption,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      color: surface.textTertiary,
+                      fontSize: 20,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
