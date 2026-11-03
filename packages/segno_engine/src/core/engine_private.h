@@ -765,6 +765,15 @@ typedef struct le_fx_state {
   float svf_ic2[LE_FX_MAX][2];
   float lfo[LE_FX_MAX][2];
   float* delay[LE_FX_MAX][2];
+  /* The delay rings of each slot (bit c for delay[slot][c]) the thread that
+   * runs the chain knows to be allocated: marked when a kind that runs on the
+   * ring lands on the slot (le_fx_entry_reset), cleared when the ring is
+   * freed. A ring the control thread is still allocating for a coming retype
+   * is not among them, so a slot running another kind reads only these
+   * (#1522), and a ring an earlier kind left keeps being cleared with the
+   * slot. Written by that thread, and by the control thread only while no
+   * thread runs the chain (le_fx_free_delay). */
+  uint8_t ring_known[LE_FX_MAX];
   int32_t delay_pos[LE_FX_MAX][2];
   float fx_lp[LE_FX_MAX][2];
   le_octaver_state oct[LE_FX_MAX][2];
@@ -3119,6 +3128,9 @@ struct le_engine {
    * portable core can compute the loopback-excluded input mask from that device
    * UID after open. */
   int capture_id_set;
+  /* 1 when playback_id holds a resolved (pinned) playback device, so the core
+   * can set that interface's routing after open (#1046). */
+  int playback_id_set;
 
   /* ---- #900: the audio-memory bookkeeping. At the END of the struct on
    * purpose: le_engine, le_track and le_lane hold the callback's hot data,

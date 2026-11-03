@@ -1773,9 +1773,21 @@ static void le_fx_clear_reverb(le_fx_state* fx, int s) {
   fx->rev_sr[s] = 0; /* the lines are worked out again (le_rev_geometry) */
 }
 
+/* The delay rings [type] runs on (defined with the vtable). */
+static int le_fx_ring_count(int32_t type);
+
+/* Whether delay[slot][c] is one this thread may read for a slot running a
+ * kind with [rings] rings: one of the kind's, or one the slot's earlier
+ * kinds left (ring_known). */
+static int le_fx_ring_readable(const le_fx_state* fx, int slot, int c,
+                               int rings) {
+  return c < rings || ((fx->ring_known[slot] >> c) & 1u) != 0;
+}
+
 /* Clears chain slot [slot]'s audio-thread DSP state (filter integrators, LFO
- * phase, delay read head, one-pole memory, octaver phase-vocoder runtime, reverb
- * lines) so a freshly engaged effect starts clean — no filter blow-up from stale
+ * phase, delay read head, one-pole memory, the octaver phase-vocoder runtime
+ * when [type] is of its family, reverb lines) so a freshly engaged effect
+ * starts clean — no filter blow-up from stale
  * integrators, no delay-read of old content. Does NOT free or allocate the delay
  * ring or octaver buffers; the control thread owns their lifetime. Shared by
  * le_lane_reset, le_monitor_input_reset, and the SET_*_FX ring handlers (which
@@ -1793,7 +1805,21 @@ static int32_t le_mdly_frames(const struct le_fx_line* line);
 /* The Amp+Cab's instance (defined with its kernel). */
 static void le_amp_reset(struct le_fx_amp* a);
 
-void le_fx_entry_reset(le_fx_state* fx, int slot) {
+void le_fx_entry_reset(le_fx_state* fx, int slot, int32_t type) {
+  /* The octaver family's runtime lives in its heap buffers, which the
+   * control thread may be preparing for a coming retype of this slot while
+   * the slot runs another kind (prepare_recipe writes them into the live
+   * state). Only a slot that runs one of those kinds has them published to
+   * this thread, so only such a slot touches them (#1522). Any other slot's
+   * octaver runtime is unread until a type of the family lands here, and
+   * that landing resets it. */
+  const int hops = le_fx_type_hops(type);
+  /* The kind's rings were published with it: from here on they are known
+   * to this thread whatever runs on the slot. */
+  const int rings = le_fx_ring_count(type);
+  for (int c = 0; c < rings; ++c) {
+    if (fx->delay[slot][c] != NULL) fx->ring_known[slot] |= (uint8_t)(1u << c);
+  }
   struct le_fx_line* line =
       atomic_load_explicit(&fx->line[slot], memory_order_acquire);
   if (line != NULL) le_mdly_reset(line);
@@ -1815,6 +1841,7 @@ void le_fx_entry_reset(le_fx_state* fx, int slot) {
     o->cur_mode = 0;  /* phase vocoder, until the settings say otherwise */
     o->fresh = LE_PV_LATENCY;
     o->xfade = 1.0f;  /* steady (no gain dip) */
+    if (!hops) continue;
     le_pv_reset_runtime(fx, slot, chan, le_oct_seeded_ticks(fx, slot));
     /* A retyped slot's band starts with nothing heard: it heard nothing
      * while the slot ran as another kind. */
@@ -1850,18 +1877,24 @@ void le_fx_octaver_seed_settled(le_fx_state* fx, int slot,
   }
 }
 
-/* Zeroes chain slot [slot]'s delay rings (both channels, [cap] floats each)
- * when allocated: the audio-thread half of "start clean" that
- * le_fx_entry_reset leaves out. Shared by the settled-bypass re-enable edge
- * and Cut all sound; one ring is cap floats, so callers decide the spacing. */
-void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap) {
+/* Zeroes slot [slot]'s delay rings ([cap] floats each) when allocated: the
+ * audio-thread half of "start clean" that le_fx_entry_reset leaves out.
+ * Shared by the settled-bypass re-enable edge and Cut all sound; one ring is
+ * cap floats, so callers decide the spacing. Of the rings, only those [type]
+ * runs on or an earlier kind left (ring_known): the control thread may be
+ * allocating another for a coming retype while the slot runs [type]
+ * (#1522). */
+void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap,
+                             int32_t type) {
   /* The Mode delay's line reads nothing older than its clear: no zeroing
    * of its seconds of ring on the audio thread. */
   struct le_fx_line* line =
       atomic_load_explicit(&fx->line[slot], memory_order_acquire);
   if (line != NULL) le_mdly_clear(line);
+  const int rings = le_fx_ring_count(type);
   for (int chan = 0; chan < 2; ++chan) {
-    if (fx->delay[slot][chan] != NULL) {
+    if (le_fx_ring_readable(fx, slot, chan, rings) &&
+        fx->delay[slot][chan] != NULL) {
       memset(fx->delay[slot][chan], 0, (size_t)cap * sizeof(float));
     }
     /* The Dual Octaver's low band reads its own ring (#1467). */
@@ -1962,6 +1995,7 @@ void le_fx_free_delay(le_fx_state* fx, int slot) {
   fx->delay[slot][0] = NULL;
   le_rt_free(fx->delay[slot][1]);
   fx->delay[slot][1] = NULL;
+  fx->ring_known[slot] = 0;
   le_rt_free(atomic_load_explicit(&fx->line[slot], memory_order_relaxed));
   atomic_store_explicit(&fx->line[slot], NULL, memory_order_relaxed);
   le_rt_free(atomic_load_explicit(&fx->amp[slot], memory_order_relaxed));
@@ -3589,7 +3623,10 @@ static int32_t fx_octaver_prepare(le_fx_state* fx, int slot, int cap) {
       owned[n++] = &o->rs_out;
     }
   }
-  fx->oct_tab[slot] = tab;
+  /* Written only when it changes: a slot already running a kind of the
+   * family reads it every sample (fx_octaver_run), and a recipe prepares
+   * every slot it names again, a kept octaver too (#1522). */
+  if (fx->oct_tab[slot] != tab) fx->oct_tab[slot] = tab;
   return LE_OK;
 oom:
   for (int i = n - 1; i >= 0; --i) {
@@ -9472,12 +9509,32 @@ static int le_fx_holds_tail(const le_fx_state* fx, int s, int32_t type) {
   if (type == LE_FX_MODE_DELAY) {
     return atomic_load_explicit(&fx->line[s], memory_order_acquire) != NULL;
   }
-  return LE_FX[type].prepare != NULL &&
-         (fx->delay[s][0] != NULL || fx->delay[s][1] != NULL);
+  if (LE_FX[type].prepare == NULL) return 0;
+  const int rings = le_fx_ring_count(type);
+  for (int c = 0; c < 2; ++c) {
+    if (le_fx_ring_readable(fx, s, c, rings) && fx->delay[s][c] != NULL) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/* Both rings for the ring kinds and the octaver family, the first alone for
+ * the Reverb, none for any other kind. Only these are published to the thread
+ * running a slot as [type]; the others may be in the making on the control
+ * thread for a coming retype (#1522). */
+static int le_fx_ring_count(int32_t type) {
+  if (type <= LE_FX_NONE || type >= LE_FX_TYPE_COUNT) return 0;
+  int32_t (*const prepare)(le_fx_state*, int, int) = LE_FX[type].prepare;
+  if (prepare == fx_reverb_prepare) return 1;
+  return prepare == fx_stereo_ring_prepare || prepare == fx_octaver_prepare ||
+                 prepare == fx_dual_octaver_prepare
+             ? 2
+             : 0;
 }
 
 void le_fx_entry_renew(le_fx_state* fx, int slot, int32_t type, int sounding) {
-  le_fx_entry_reset(fx, slot);
+  le_fx_entry_reset(fx, slot, type);
   /* An entry replacing one the chain was running enters through the enable
    * edge: handed the old entry's settled ramp, it would switch in at full in
    * one sample (#1452). */
@@ -9862,10 +9919,10 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
           const int needs_clear =
               ty != LE_FX_MODE_DELAY && le_fx_holds_tail(fx, s, ty);
           if (needs_clear && fx->enable_clear_cooldown > 0) goto slot_done;
-          le_fx_entry_reset(fx, s);
+          le_fx_entry_reset(fx, s, ty);
           if (needs_clear) {
             if (LE_FX[ty].prepare != NULL && LE_FX[ty].rkprocess == NULL)
-              le_fx_entry_clear_rings(fx, s, cap);
+              le_fx_entry_clear_rings(fx, s, cap, ty);
             fx->enable_clear_cooldown = LE_FX_ENABLE_CLEAR_SPACING;
           }
           fx->enable_warmup[s] = le_fx_added_latency(fx, s, ty, sr);
