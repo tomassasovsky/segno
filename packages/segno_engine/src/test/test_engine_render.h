@@ -904,7 +904,9 @@ static void test_render_keeps_published_prints(void) {
   le_engine_get_lane_cache(e, 0, 0, &info); /* registers the key */
   pump_frames(e, 0.0f, CACHE_SETTLE);
   CHECK(cache_wait_state(e, 0, 0, LE_CACHE_CACHED, 3000));
-  pump_frames(e, 0.0f, CACHE_LOOP); /* engages at the next loop top */
+  /* Engages at the second loop top: the chain went in part way through a
+   * lap, and the print waits for it to play a complete one (#1620). */
+  pump_frames(e, 0.0f, 2 * CACHE_LOOP);
   CHECK(cache_engaged(e, 0, 0) == 1);
   /* The cache holds exactly what it uses: no room left. */
   CHECK(le_engine_set_fx_cache_cap(e, le_engine_fx_cache_used_bytes(e)) ==

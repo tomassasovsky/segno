@@ -528,15 +528,15 @@ static void test_transpose_no_print_while_transposed(void) {
   CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 1) == LE_OK);
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
   le_lane_cache_info print;
-  /* The print lands within the lap the chain went in on, so it engages at
-   * the next lap start (#939): the chain lands, the key is registered, the
-   * settle window plays, the render is awaited without frames, then on to
-   * that start. */
+  /* The chain lands 64 frames into a lap, so its print engages at the
+   * second lap start, once the chain has played a complete lap (#939,
+   * #1620): the chain lands, the key is registered, the settle window plays,
+   * the render is awaited without frames, then on past that start. */
   rev_process(e, out, 64, 64); /* the chain lands */
   le_engine_get_lane_cache(e, 0, 0, &print);
   rev_process(e, out, CACHE_SETTLE, 64);
   CHECK(cache_wait_state(e, 0, 0, LE_CACHE_CACHED, 3000));
-  rev_process(e, out, TP_LEN, 64);
+  rev_process(e, out, 2 * TP_LEN - CACHE_SETTLE, 64);
   CHECK(cache_engaged(e, 0, 0) == 1);
   uint64_t id = tp_install(e, 0, 5);
   CHECK(tp_until(e, 0, 5, out, 4 * TP_LEN) >= 0);

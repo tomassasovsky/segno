@@ -721,23 +721,24 @@ static void test_reverse_cache_disengages(void) {
   le_engine_get_lane_cache(cached, 0, 0, &info);
   CHECK(!info.engaged);
   CHECK(cache_max_diff(oa, ob, 2 * CACHE_LOOP, CACHE_RAMP_SKIP) < CACHE_TOL);
-  /* Forward again. The live chain has played two laps backward that the
-   * print does not have, so the print stays out and the chain plays on live
-   * (#939), in parity. */
+  /* Forward again. What the chain played backward is not a lap of the
+   * loop, so its run begins where the head is back at forward 1x, and the
+   * print engages once it has played a complete lap from there (#1620): by
+   * the second top, in parity. */
   CHECK(le_engine_toggle_reverse(cached, 0, &a) == LE_OK);
   CHECK(le_engine_toggle_reverse(live, 0, &b) == LE_OK);
   pump_capture(cached, 0.0f, 2 * CACHE_LOOP, oa);
   pump_capture(live, 0.0f, 2 * CACHE_LOOP, ob);
   le_engine_get_lane_cache(cached, 0, 0, &info);
-  CHECK(!info.engaged);
+  CHECK(info.engaged);
   CHECK(cache_max_diff(oa, ob, 2 * CACHE_LOOP, CACHE_RAMP_SKIP) < CACHE_TOL);
   le_engine_destroy(cached);
   le_engine_destroy(live);
 }
 
-/* A reverse turn shorter than a lap: back forward, the live chain began at
- * the turn, less than a lap before the next lap start, so the print engages
- * there again (#939), in parity. */
+/* A reverse turn shorter than a lap: back forward, the run begins where the
+ * head is at forward 1x again, part way through a lap, so the print engages
+ * at the second lap start after it (#1620), in parity. */
 static void test_reverse_short_turn_reengages(void) {
   printf("test_reverse_short_turn_reengages\n");
   le_engine *cached, *live;
@@ -755,13 +756,13 @@ static void test_reverse_short_turn_reengages(void) {
   CHECK(cache_engaged(cached, 0, 0) == 0);
   CHECK(le_engine_toggle_reverse(cached, 0, &a) == LE_OK);
   CHECK(le_engine_toggle_reverse(live, 0, &b) == LE_OK);
-  static float oa[CACHE_LOOP], ob[CACHE_LOOP];
-  pump_capture(cached, 0.0f, CACHE_LOOP, oa);
-  pump_capture(live, 0.0f, CACHE_LOOP, ob);
+  static float oa[2 * CACHE_LOOP], ob[2 * CACHE_LOOP];
+  pump_capture(cached, 0.0f, 2 * CACHE_LOOP, oa);
+  pump_capture(live, 0.0f, 2 * CACHE_LOOP, ob);
   fade_result(cached, a, LE_OK);
   fade_result(live, b, LE_OK);
   CHECK(cache_engaged(cached, 0, 0) == 1);
-  CHECK(cache_max_diff(oa, ob, CACHE_LOOP, CACHE_RAMP_SKIP) < CACHE_TOL);
+  CHECK(cache_max_diff(oa, ob, 2 * CACHE_LOOP, CACHE_RAMP_SKIP) < CACHE_TOL);
   le_engine_destroy(cached);
   le_engine_destroy(live);
 }

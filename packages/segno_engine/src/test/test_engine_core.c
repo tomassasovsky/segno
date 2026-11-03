@@ -36588,8 +36588,9 @@ static void test_a_post_edit_leaves_the_print_standing(void) {
   pump_frames(a, 0.0f, CACHE_SETTLE);
   CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
   const int32_t renders = cache_renders(a, 0, 0);
-  /* On to the next loop top, where the print engages. */
-  pump_frames(a, 0.0f, CACHE_LOOP - CACHE_SETTLE + 64);
+  /* On to the second loop top: the chain went in part way through a lap,
+   * so the print engages once it has played a complete one (#1620). */
+  pump_frames(a, 0.0f, 2 * CACHE_LOOP - CACHE_SETTLE + 64);
   CHECK(cache_engaged(a, 0, 0) == 1);
 
   CHECK(le_engine_set_lane_fx_param(a, 0, 0, 1, 0, 0.9f) == LE_OK); /* Post */
@@ -36622,7 +36623,8 @@ static void test_a_pre_channel_edit_drops_the_print(void) {
   le_engine_get_lane_cache(a, 0, 0, &info);
   pump_frames(a, 0.0f, CACHE_SETTLE);
   CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
-  pump_frames(a, 0.0f, CACHE_LOOP - CACHE_SETTLE + 64);
+  /* The second top: the chain went in part way through a lap (#1620). */
+  pump_frames(a, 0.0f, 2 * CACHE_LOOP - CACHE_SETTLE + 64);
   CHECK(cache_engaged(a, 0, 0) == 1);
 
   CHECK(le_engine_set_lane_fx_channels(a, 0, 0, 0, 0, 0, 0.0f, 0.5f) == LE_OK);
@@ -36716,8 +36718,13 @@ static void test_cache_octaver_relaunch_rerenders(void) {
   CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
   CHECK(cache_renders(a, 0, 0) == 2);
   CHECK(cache_engaged(a, 0, 0) == 0);
+  /* The relaunch moved the key, which the next buffer's check sees: the run
+   * begins part way into the relaunched lap, so the print engages at the
+   * second top (#1620). */
   pump_frames(a, 0.0f, CACHE_LOOP - 128 - CACHE_SETTLE + 64);
-  CHECK(cache_engaged(a, 0, 0) == 1); /* at the relaunched loop's next top */
+  CHECK(cache_engaged(a, 0, 0) == 0);
+  pump_frames(a, 0.0f, CACHE_LOOP);
+  CHECK(cache_engaged(a, 0, 0) == 1);
   le_engine_destroy(a);
 }
 
@@ -36763,14 +36770,15 @@ static void cache_check_short_loop_stays_live(int32_t type) {
 static void test_cache_cached_matches_live_every_builtin(void) {
   printf("test_cache_cached_matches_live_every_builtin\n");
   const int32_t types[] = {LE_FX_DRIVE,      LE_FX_FILTER,    LE_FX_DELAY,
-                           LE_FX_TREMOLO,    LE_FX_OCTAVER,   LE_FX_ECHO,
-                           LE_FX_REVERB,     LE_FX_EQ,        LE_FX_COMPRESSOR,
-                           LE_FX_TRANSIENT,  LE_FX_HP_GATE,   LE_FX_WAH,
-                           LE_FX_OVERDRIVE, LE_FX_DISTORTION, LE_FX_LPF,
-                           LE_FX_SPRING,    LE_FX_DUB_VERB,   LE_FX_AMB_VERB,
-                           LE_FX_WHAMMY,    LE_FX_SMART_TUNE};
+                           LE_FX_OCTAVER,    LE_FX_REVERB,    LE_FX_EQ,
+                           LE_FX_COMPRESSOR, LE_FX_TRANSIENT, LE_FX_HP_GATE,
+                           LE_FX_WAH,        LE_FX_OVERDRIVE, LE_FX_DISTORTION,
+                           LE_FX_LPF,        LE_FX_SPRING,    LE_FX_DUB_VERB,
+                           LE_FX_AMB_VERB,   LE_FX_WHAMMY,    LE_FX_SMART_TUNE};
   /* The doubler and the chorus are free-running and never print
-   * (test_cache_free_running_stays_live). */
+   * (test_cache_free_running_stays_live). The tremolo and the echo run clock
+   * LFOs that print only on a loop of whole cycles, which this one is not
+   * (test_cache_clock_lfo_prints_only_lap_locked). */
   for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); ++i) {
     cache_check_chain_parity(&types[i], 1);
     /* ...and on a NON-ZERO lane. Track 0, lane 0 has hop-stagger seed 0,
@@ -36786,7 +36794,7 @@ static void test_cache_cached_matches_live_every_builtin(void) {
 }
 
 /* The whole-track print on a loop shorter than the settle window (#939): it
- * is ready only laps after the echo went on the track, whose live chain has
+ * is ready only laps after the delay went on the track, whose live chain has
  * built its repeats up over those laps while the print carries one lap's. So
  * it never engages, and the cached twin plays what the live one does. */
 static void test_whole_track_print_stays_live_on_a_short_loop(void) {
@@ -36796,7 +36804,7 @@ static void test_whole_track_print_stays_live_on_a_short_loop(void) {
   le_engine* b = wt_engine_two_parts_loop(0.5f, 0, CACHE_SHORT_LOOP);
   le_engine* both[2] = {a, b};
   for (int k = 0; k < 2; ++k) {
-    CHECK(le_engine_set_track_fx(both[k], 0, 0, LE_FX_ECHO) == LE_OK);
+    CHECK(le_engine_set_track_fx(both[k], 0, 0, LE_FX_DELAY) == LE_OK);
     CHECK(le_engine_set_track_fx_count(both[k], 0, 1, 1) == LE_OK);
     CHECK(le_engine_set_track_fx_param(both[k], 0, 0, 0, 0.01f) == LE_OK);
     CHECK(le_engine_set_track_fx_param(both[k], 0, 0, 1, 0.6f) == LE_OK);
@@ -36830,11 +36838,205 @@ static void test_whole_track_print_stays_live_on_a_short_loop(void) {
   le_engine_destroy(b);
 }
 
+/* The loop-top step a print makes when its chain went in part way through
+ * a lap (#1620). Twins as in the parity sweep, but the loop is a 220 Hz sine
+ * (a constant hides a modulated read), the chain (one slot of [type], at
+ * [params] when not NULL) goes in [offset] frames after a loop top, and the
+ * scheduler runs on every block, renders awaited without frames, so a print
+ * lands at a fixed point. Returns the largest cached-vs-live difference over
+ * the two laps from the block the print engages in, or -1 when it does not
+ * engage within [laps_max] laps; [laps] receives the loop tops from the edit
+ * to the engage. [retune] (when not NULL) is a second setting moved in once
+ * the print has engaged, after which the same is measured again into
+ * [retuned] (-1: never re-engaged). */
+static float cache_midlap_step(int32_t type, const float* params, int32_t loop,
+                               int32_t offset, int laps_max, int* laps,
+                               const float* retune, float* retuned) {
+  le_engine* e[2];
+  for (int k = 0; k < 2; ++k) {
+    e[k] = le_engine_create();
+    le_engine_configure(e[k], 48000, 1, 1, loop > 16000 ? loop + 4096 : 20000);
+    le_engine_set_fx_cache_cap(e[k], k == 0 ? LE_CACHE_DEFAULT_CAP_BYTES : 0);
+  }
+  float in[64];
+  float out[2][64];
+  int32_t at = 0; /* frames into the loop's sine, shared by both twins */
+  for (int k = 0; k < 2; ++k) le_engine_record(e[k], 0);
+  int32_t done = 0;
+  while (done < loop + 600) {
+    if (done == loop) {
+      for (int k = 0; k < 2; ++k) {
+        le_engine_record(e[k], 0);
+        drain(e[k]);
+      }
+    }
+    int32_t n = 64;
+    if (done < loop && loop - done < n) n = loop - done;
+    for (int i = 0; i < n; ++i) {
+      in[i] = 0.5f * sinf(2.0f * (float)M_PI * 220.0f * (float)(at + i) /
+                          48000.0f);
+    }
+    at += n;
+    for (int k = 0; k < 2; ++k) le_engine_process(e[k], out[k], in, (uint32_t)n);
+    done += n;
+  }
+  const int32_t need = (loop - cache_master_pos(e[0]) + offset) % loop;
+  for (int k = 0; k < 2; ++k) {
+    pump_frames(e[k], 0.0f, need);
+    CHECK(le_engine_set_lane_fx_count(e[k], 0, 0, 1, 1) == LE_OK);
+    CHECK(le_engine_set_lane_fx(e[k], 0, 0, 0, type) == LE_OK);
+    /* Every cell the kind has; the rest are refused. */
+    for (int p = 0; params != NULL && p < LE_FX_PARAMS; ++p) {
+      (void)le_engine_set_lane_fx_param(e[k], 0, 0, 0, p, params[p]);
+    }
+    drain(e[k]);
+  }
+  float worst = -1.0f;
+  int32_t engaged_at = -1;
+  int32_t tops = 0;
+  int32_t prev_pos = cache_master_pos(e[0]);
+  int phase = 0; /* 0: to the engage, 1: measuring, 2: retuned, 3: measuring */
+  if (retuned != NULL) *retuned = -1.0f;
+  for (int32_t f = 0; f < laps_max * loop; f += 64) {
+    le_lane_cache_info info;
+    for (int k = 0; k < 3000; ++k) {
+      le_engine_get_lane_cache(e[0], 0, 0, &info);
+      if (info.state != LE_CACHE_RENDERING) break;
+      test_sleep_ms(1);
+    }
+    for (int k = 0; k < 2; ++k) process_const(e[k], 0.0f, 64, out[k]);
+    const int32_t pos = cache_master_pos(e[0]);
+    if (pos < prev_pos) ++tops;
+    prev_pos = pos;
+    const int on = cache_engaged(e[0], 0, 0);
+    if ((phase == 0 || phase == 2) && on) {
+      engaged_at = f;
+      if (phase == 0) {
+        *laps = tops;
+        worst = 0.0f;
+      } else {
+        *retuned = 0.0f;
+      }
+      ++phase;
+    }
+    if (phase == 1 || phase == 3) {
+      float* into = phase == 1 ? &worst : retuned;
+      *into = fmaxf(*into, cache_max_diff(out[0], out[1], 64, 0));
+      if (f - engaged_at >= 2 * loop) {
+        if (phase == 3 || retune == NULL) break;
+        for (int k = 0; k < 2; ++k) {
+          for (int p = 0; p < LE_FX_PARAMS; ++p) {
+            (void)le_engine_set_lane_fx_param(e[k], 0, 0, 0, p, retune[p]);
+          }
+          drain(e[k]);
+        }
+        phase = 2;
+      }
+    }
+  }
+  for (int k = 0; k < 2; ++k) le_engine_destroy(e[k]);
+  return worst;
+}
+
+/* The step a print makes at its loop top when the chain went in part way
+ * through a lap, per kind (#1620): early in a lap (the print is ready before
+ * the next top) and late in one (ready only after it). Each engages at the
+ * second top after the edit, once the live chain has played a complete lap,
+ * and kinds with no state longer than a lap swap in exactly. A delay or a
+ * reverb still differs by the part of its tail older than a lap (the print
+ * carries one lap of history, the live chain one to two), so those are
+ * printed, not held to the tolerance. The pitch kinds are left out: their
+ * print differs from live on a sine even with the chain in on a loop top
+ * (#1624). */
+static void test_cache_midlap_edit_steps(void) {
+  printf("test_cache_midlap_edit_steps\n");
+  const int32_t exact[] = {LE_FX_DRIVE,      LE_FX_FILTER,    LE_FX_EQ,
+                           LE_FX_COMPRESSOR, LE_FX_TRANSIENT, LE_FX_HP_GATE,
+                           LE_FX_WAH,        LE_FX_OVERDRIVE, LE_FX_DISTORTION,
+                           LE_FX_LPF};
+  const int32_t tails[] = {LE_FX_DELAY,    LE_FX_REVERB,  LE_FX_SPRING,
+                           LE_FX_DUB_VERB, LE_FX_AMB_VERB};
+  const int32_t offsets[] = {1600, CACHE_LOOP - 1600};
+  for (size_t i = 0; i < sizeof(exact) / sizeof(exact[0]); ++i) {
+    for (int o = 0; o < 2; ++o) {
+      int laps = -1;
+      const float d = cache_midlap_step(exact[i], NULL, CACHE_LOOP, offsets[o],
+                                        6, &laps, NULL, NULL);
+      if (laps != 2 || d < 0.0f || d > CACHE_TOL) {
+        printf("  FAIL: type %d edited at %d: engaged at top %d, step %g\n",
+               exact[i], offsets[o], laps, (double)d);
+        g_failures++;
+      }
+    }
+  }
+  for (size_t i = 0; i < sizeof(tails) / sizeof(tails[0]); ++i) {
+    for (int o = 0; o < 2; ++o) {
+      int laps = -1;
+      const float d = cache_midlap_step(tails[i], NULL, CACHE_LOOP, offsets[o],
+                                        6, &laps, NULL, NULL);
+      CHECK(laps == 2);
+      printf("  type %d edited at %d: tail older than a lap %.5f\n", tails[i],
+             offsets[o], (double)d);
+    }
+  }
+}
+
+/* A clock LFO (the tremolo, the echo's wow) prints only on a loop it fits a
+ * whole number of times (#1620): its phase comes from the engine clock, so
+ * the print agrees with the live chain however the chain went in, and on
+ * such a loop each lap sounds the same. On any other loop it plays live,
+ * said as free-running. A rate move slides the LFO back onto the clock, and
+ * the print waits for that and a complete lap after it. */
+static void test_cache_clock_lfo_prints_only_lap_locked(void) {
+  printf("test_cache_clock_lfo_prints_only_lap_locked\n");
+  /* One cycle a lap, then two: rate = 0.1 + p0 * 11.9 Hz. */
+  const float one[LE_FX_PARAMS] = {
+      (float)((48000.0 / CACHE_LOOP - 0.1) / 11.9), 1.0f};
+  const float two[LE_FX_PARAMS] = {
+      (float)((2.0 * 48000.0 / CACHE_LOOP - 0.1) / 11.9), 1.0f};
+  int laps = -1;
+  float retuned = -1.0f;
+  const float d = cache_midlap_step(LE_FX_TREMOLO, one, CACHE_LOOP, 1600, 16,
+                                    &laps, two, &retuned);
+  CHECK(laps == 2);
+  CHECK(d >= 0.0f && d <= CACHE_TOL);
+  CHECK(retuned >= 0.0f && retuned <= CACHE_TOL);
+  /* Off the lap grid: live, and said why. */
+  const float off[LE_FX_PARAMS] = {0.35f, 1.0f};
+  CHECK(cache_midlap_step(LE_FX_TREMOLO, off, CACHE_LOOP, 1600, 4, &laps, NULL,
+                          NULL) < 0.0f);
+  le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  cache_record_loop(a, CACHE_LOOP, 1.0f);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_TREMOLO) == LE_OK);
+  for (int p = 0; p < 2; ++p) {
+    CHECK(le_engine_set_lane_fx_param(a, 0, 0, 0, p, off[p]) == LE_OK);
+  }
+  drain(a);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  pump_frames(a, 0.0f, CACHE_SETTLE + CACHE_LOOP);
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  CHECK(info.state == LE_CACHE_GAVE_UP);
+  CHECK(info.reason == LE_CACHE_REASON_FREE_RUNNING);
+  le_engine_destroy(a);
+  /* The echo's wow is 0.7 Hz: a 10 s loop is seven of them. Its time short
+   * (inside a lap) and its mix at 0.5, so the repeats are heard. */
+  const float echo[LE_FX_PARAMS] = {0.05f, 0.3f, 0.5f};
+  const int32_t wow_loop = 480000;
+  const float de = cache_midlap_step(LE_FX_ECHO, echo, wow_loop, 1600, 4,
+                                     &laps, NULL, NULL);
+  CHECK(laps == 2);
+  CHECK(de >= 0.0f && de <= CACHE_TOL);
+  CHECK(cache_midlap_step(LE_FX_ECHO, echo, CACHE_LOOP, 1600, 4, &laps, NULL,
+                          NULL) < 0.0f);
+}
+
 /* Cached ~= live for a MULTI-slot chain (order-sensitive state across slots),
  * through the same twin harness as the per-built-in runs. */
 static void test_cache_cached_matches_live_multi_slot_chain(void) {
   printf("test_cache_cached_matches_live_multi_slot_chain\n");
-  const int32_t chain[] = {LE_FX_DRIVE, LE_FX_DELAY, LE_FX_TREMOLO};
+  const int32_t chain[] = {LE_FX_DRIVE, LE_FX_DELAY, LE_FX_FILTER};
   cache_check_chain_parity(chain, 3);
 }
 
@@ -37279,7 +37481,7 @@ static void test_cache_midrender_rev_bump_aborts(void) {
   CHECK(le_engine_set_lane_fx_count(a, 0, 0, 3, 3) == LE_OK);
   CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_REVERB) == LE_OK);
   CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_OCTAVER) == LE_OK);
-  CHECK(le_engine_set_lane_fx(a, 0, 0, 2, LE_FX_ECHO) == LE_OK);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 2, LE_FX_DELAY) == LE_OK);
   drain(a);
   le_lane_cache_info info;
   le_engine_get_lane_cache(a, 0, 0, &info); /* register the key */
@@ -37353,7 +37555,7 @@ static void test_cache_destroy_during_active_render(void) {
     CHECK(le_engine_set_lane_fx_count(a, 0, 0, 3, 3) == LE_OK);
     CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_REVERB) == LE_OK);
     CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_OCTAVER) == LE_OK);
-    CHECK(le_engine_set_lane_fx(a, 0, 0, 2, LE_FX_ECHO) == LE_OK);
+    CHECK(le_engine_set_lane_fx(a, 0, 0, 2, LE_FX_DELAY) == LE_OK);
     drain(a);
     le_lane_cache_info info;
     le_engine_get_lane_cache(a, 0, 0, &info);
@@ -41217,6 +41419,8 @@ int main(void) {
   test_a_pre_channel_edit_drops_the_print();
   test_cache_cached_matches_live_every_builtin();
   test_whole_track_print_stays_live_on_a_short_loop();
+  test_cache_midlap_edit_steps();
+  test_cache_clock_lfo_prints_only_lap_locked();
   test_cache_octaver_on_a_partial_hop_loop_stays_live();
   test_cache_bypassed_octaver_prints_on_a_partial_hop_loop();
   test_cache_octaver_relaunch_rerenders();
