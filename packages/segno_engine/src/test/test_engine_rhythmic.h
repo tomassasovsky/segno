@@ -152,7 +152,8 @@ static void test_pumper_rates_and_depths(void) {
 
 /* An anchor that moves the phase at the fastest rate (1/32T at 200 BPM, a
  * 1200-frame period) glides the duck over at least 0.25 ms rather than
- * stepping (#813). */
+ * stepping (#813): a jump from the end of the attack (full duck) to 0.8 of
+ * the period (none) moves no frame more than 1/12. */
 static void test_pumper_anchor_jump_glides(void) {
   printf("test_pumper_anchor_jump_glides\n");
   le_fx_tempo t = rh_tempo(200.0);
@@ -163,21 +164,28 @@ static void test_pumper_anchor_jump_glides(void) {
   for (int s = 0; s < LE_FX_MAX; ++s) types[s] = LE_FX_NONE;
   types[0] = LE_FX_PUMPER;
   for (int q = 0; q < LE_FX_PARAMS; ++q) params[0][q] = p[q];
-  float worst = 0.0f, prev = 1.0f;
-  const int jump = 600 + 1200 * 3; /* half way through a period */
+  /* 1/32T is 1/12 of a quarter: 1200 frames. The attack ends at 0.022 of
+   * it (27 frames); jump there from a beat 4 periods in. */
+  const int jump = 4 * 1200 + 40;
+  float worst = 0.0f, prev = 1.0f, before = 1.0f, after = 0.0f;
   for (int i = 0; i < 6000; ++i) {
-    if (i == jump) { /* back onto a beat: full duck from none */
+    if (i == jump) {
+      before = prev;
       t.anchor_clock = (uint32_t)i;
-      t.anchor_beat = 0.0;
+      t.anchor_beat = 0.8 / 12.0; /* past the recovery: no duck */
     }
     fx->clock = (uint32_t)i;
     float l = 1.0f, r = 1.0f;
     fx_apply_chain(fx, RH_SR, RH_SR, &l, &r, 1, types, params, NULL);
-    if (i > jump - 5 && i < jump + 40) worst = fmaxf(worst, fabsf(l - prev));
+    if (i >= jump && i < jump + 40) worst = fmaxf(worst, fabsf(l - prev));
+    if (i == jump + 40) after = l;
     prev = l;
   }
-  printf("  largest step across the jump %.4f\n", (double)worst);
+  printf("  from %.3f: largest step across the jump %.4f\n", (double)before,
+         (double)worst);
+  CHECK(before < 0.05f); /* it jumped from a full duck */
   CHECK(worst <= 1.0f / (0.00025f * (float)RH_SR) + 1e-4f);
+  CHECK(after > 0.99f); /* and got there */
   le_fx_state_free_buffers(fx);
   free(fx);
 }
@@ -1021,15 +1029,37 @@ static void test_slicer_reverse_ends_with_its_source(void) {
   }
 }
 
-/* A reversed step whose own reads just fit the ring still plays, its fade
- * past the end cut to what the ring has left: AB<< at 1/4 and 120.5 BPM
- * (each step 23900 frames, read back up to 47800 of the 1 s ring). */
+/* A reversed step whose own reads just fit the ring still plays: AB<< at
+ * 1/4 and 120.5 BPM, each step 23900 frames, read back up to 47800 of the
+ * 1 s ring. Its fade past the end is cut to what the ring has left: it
+ * reaches nothing by the end of the source it latched (23999 frames, about
+ * 99 past the step), reading on backwards and never turning round. The input
+ * stops after B, so the second < (reading the first's frames) is silent
+ * and the first's tail is heard alone. */
 static void test_slicer_reverse_at_the_ring_edge(void) {
   printf("test_slicer_reverse_at_the_ring_edge\n");
-  float* o = rh_slice_bpm(15, 0, 1.0f, 4 * RH_SR, 120.5);
-  const int st = (int)lround(RH_SR * 60.0 / 120.5);
-  const int mid = 2 * st + st / 2; /* the first <, reading B backwards */
-  CHECK(rh_is_frame(o[mid], 2 * st - st / 2, 2.0));
+  const int n = 4 * RH_SR;
+  const double st = RH_SR * 60.0 / 120.5;
+  const int b_end = (int)ceil(2.0 * st); /* the first < starts here */
+  le_fx_tempo t = rh_tempo(120.5);
+  const float p[LE_FX_PARAMS] = {rh_patt(15), rh_step(0), 1.0f};
+  le_fx_state* fx = rh_slicer_at(&t, RH_SR);
+  float* in = (float*)malloc(sizeof(float) * (size_t)n);
+  float* o = (float*)malloc(sizeof(float) * (size_t)n);
+  for (int i = 0; i < n; ++i) in[i] = i < b_end ? (float)i / RH_SR : 0.0f;
+  rh_slice_run_at(fx, RH_SR, p, in, o, n, NULL, -1, 0.0, 0.0f);
+  const int mid = b_end + (int)(st / 2);
+  CHECK(rh_is_frame(o[mid], b_end - (mid - b_end), 2.0)); /* B backwards */
+  const int end = (int)ceil(3.0 * st);
+  for (int k = 0; k < 90; ++k) { /* fading, still reading backwards */
+    const double g = (98.0 - k) / 192.0;
+    const double want = g * (double)(b_end - (end + k - b_end)) / RH_SR;
+    CHECK(fabs(o[end + k] - want) < 130.0 / RH_SR);
+  }
+  for (int k = 99; k < 400; ++k) CHECK(o[end + k] == 0.0f); /* then done */
+  le_fx_state_free_buffers(fx);
+  free(fx);
+  free(in);
   free(o);
 }
 

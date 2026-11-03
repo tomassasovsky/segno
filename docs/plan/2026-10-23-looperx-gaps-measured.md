@@ -195,7 +195,9 @@ measurement (Depth 100 %) is a decaying chop, so the shape differs.
 
 - RES HI GRV = the RESO HI voicing with the GRV timing: the right side's
   first echo at 0.837 of the period (313.8 ms), the left at the period, and
-  about -17 dB of each side leaking into the other.
+  about -17 dB of each side leaking into the other. (Superseded by the
+  s17grv re-capture at the end of this doc: the tap is 251/300, and the
+  spectrum in the table above did not repeat.)
 - With Feedback 50 % the repeats keep the offset: left 750 ms, right
   688.8 ms (313.8 + 375), each about 0.24 of the one before.
 - Dry stays at unity; Mix 30 % gives a first echo of about 0.22-0.27.
@@ -206,7 +208,8 @@ measurement (Depth 100 %) is a decaying chop, so the shape differs.
   62.5 ms, 1/64 31.25 ms (each measured as the replay offset in AABB, where
   the second step replays the first). The slicer replays buffered audio
   (letters are slices, not gates); a slice ends with a ~4 ms fade and starts
-  without one.
+  without one. (Superseded at the end of this doc: slices crossfade over
+  ~4 ms from the boundary.)
 - Pumper period = the note value: Bar 2000 ms, 1/2 1000, 1/4 500, 1/8 250,
   1/16 125. The shape is the same at every rate and depth:
   gain = 1 - a(Depth) x e(phase), with a = 0.50 (30 %), 0.901 (70 %),
@@ -214,6 +217,9 @@ measurement (Depth 100 %) is a decaying chop, so the shape differs.
   beat, every 1/20 of the period:
   1.000 0.994 0.984 0.970 0.948 0.918 0.876 0.820 0.746 0.654 0.544 0.418
   0.284 0.153 0.045 0, then 0 for the last quarter (phase >= 0.75).
+  (Superseded at the end of this doc: this table starts where the duck
+  reaches full depth, 0.022 of the period after the beat, and the depth
+  law is a = 0.99 d (2 - d).)
 
 segno has no Slicer or Pumper kind (`unavailable`, waiting on part 10).
 
@@ -361,8 +367,10 @@ s4 Pumper passes (s4/25-27) agree among themselves the same way.
   0, 29 and 50 %. On the left that is 0.143 of the left's own echo, so it
   scales with Feedback the way L/R's does.
 - Against the plain RESO HI echo, the right side reads -1.15 dB (0.876) and
-  the left reads -2.53, -2.11 and -1.81 dB at Feedback 0, 29 and 50 %
-  (0.753 + 0.129 Feedback).
+  the left reads -2.53, -2.11 and -1.81 dB at Feedback 0, 29 and 50 %. The
+  kernel uses 0.881 on the right (L/R's right side, 0.05 dB above) and
+  0.753 + 0.129 Feedback on the left, which match the 1 kHz band levels of
+  the same impulse responses within 0.01 dB.
 
 **Pumper.**
 
@@ -376,7 +384,8 @@ s4 Pumper passes (s4/25-27) agree among themselves the same way.
   beat: 1.0, 0.9998, 0.9969, 0.9934, 0.9890, 0.9835, 0.9769, 0.9688, 0.9590,
   0.9472, 0.9331, 0.9165, 0.8968, 0.8739, 0.8473, 0.8167, 0.7819, 0.7425,
   0.6985, 0.6497, 0.5963, 0.5385, 0.4769, 0.4121, 0.3450, 0.2772, 0.2103,
-  0.1464, 0.0890, 0.0403, 0.0074. It is 0 from about 0.756 of the period.
+  0.1464, 0.0890, 0.0403, 0.0074. It is 0 from about 0.756 of the period
+  (the kernel reaches 0 at the next point, 0.775, within 0.005).
 - The e(phase) table above put phase 0 where the duck first reaches full
   depth, 0.022 of the period after the beat.
 - The depth is a = 0.99 d (2 - d). The dips are 6.20, 11.89, 20.09, 29.93

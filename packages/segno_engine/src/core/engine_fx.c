@@ -2563,8 +2563,9 @@ static float le_pump_shape(double phase) {
   const float rec =
       LE_PUMP_SHAPE[i] + (LE_PUMP_SHAPE[i + 1] - LE_PUMP_SHAPE[i]) * f;
   if (phase >= LE_PUMP_ATTACK) return rec;
-  const float att =
-      (float)((1.0 - pow(100.0, -phase / LE_PUMP_ATTACK)) / 0.99);
+  /* 100^(-phase / attack) */
+  const float att = (float)(
+      (1.0 - exp(-phase * (4.605170185988091 / LE_PUMP_ATTACK))) / 0.99);
   return (att < 1.0f ? att : 1.0f) * rec;
 }
 
@@ -2760,16 +2761,29 @@ static float le_slice_read(const float* ring, int cap, int pos,
   return ring[at];
 }
 
-/* Ends slot [st]'s slice early: it carries on as a voice fading out at
- * the 4 ms rate ([fade] frames from full), in whichever of the two fading
- * voices is free or quieter (a third voice, quieter than both, is
- * dropped: with the gains summing to at most 1, it is at most a third). */
-static void le_slice_cut(le_fx_slice_state* st, double fade) {
+/* Ends slot [st]'s slice (the ring's newest frame at [pos] of [cap]): it
+ * carries on as a voice fading out over [fade] frames from full, or at its
+ * own crossfade's rate if that is faster (a slice shorter than 8 ms), so
+ * the two fading voices free up in time; a reversed slice fades out by the
+ * end of the source it latched, never turning round. It takes whichever of
+ * the two fading voices is free or quieter (a third voice, quieter than
+ * both, is dropped: with the gains summing to at most 1, it is at most a
+ * third). */
+static void le_slice_cut(le_fx_slice_state* st, double fade, int pos,
+                         int cap) {
   if (st->cur.mode != LE_SLICE_SILENT && st->cur.gain > 0.0f) {
     const int k = st->out[0].gain <= st->out[1].gain ? 0 : 1;
     if (st->cur.gain > st->out[k].gain) {
+      float step = fmaxf(st->cur.step, (float)(1.0 / fade));
+      if (st->cur.mode == LE_SLICE_MIRROR) {
+        int n = pos - st->cur.arg;
+        if (n < 0) n += cap;
+        const int left = st->cur.len - n;
+        step = left > 0 ? fmaxf(step, st->cur.gain / (float)left)
+                        : st->cur.gain;
+      }
       st->out[k] = st->cur;
-      st->out[k].step = (float)(1.0 / fade);
+      st->out[k].step = step;
     }
   }
   st->cur.mode = LE_SLICE_SILENT;
@@ -2848,9 +2862,9 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
   /* No usable tempo: the input passes, crossfaded to over the 4 ms. */
   const int passes = !(qpf > 0.0f) || !isfinite(beat);
   if (passes) {
-    le_slice_cut(st, fade4);
+    le_slice_cut(st, fade4, pos, cap);
   } else if (beat < st->last_beat) {
-    le_slice_cut(st, fade4); /* the beat went back: a new slice */
+    le_slice_cut(st, fade4, pos, cap); /* the beat went back: a new slice */
   }
   st->last_beat = passes ? 0.0 : beat;
   if (fresh) st->pass = passes ? 1.0f : 0.0f;
@@ -2898,8 +2912,9 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
         /* The slice before plays on past its end, fading out, while this
          * one fades in from nothing (#891 s4/21-23: a linear crossfade of
          * about 4 ms from the boundary). */
-        le_slice_cut(st, sp.fade_f);
+        le_slice_cut(st, sp.fade_f, pos, cap);
       }
+      v.step = (float)(1.0 / sp.fade_f); /* its crossfade's rate */
       st->cur = v;
       st->id = sp.id;
     }
