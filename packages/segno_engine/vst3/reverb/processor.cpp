@@ -48,11 +48,10 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& newSetup) {
 }
 
 tresult PLUGIN_API Processor::terminate() {
-  // Reverb packs both stereo banks into delay[0][0] only (delay[0][1] is
-  // never allocated for LE_FX_REVERB — engine_fx.c's fx_reverb comment; no
-  // octaver buffers for this type either), so only delay[0][0] needs
-  // freeing here.
-  le_fx_free_delay(&fx_, 0);
+  // Reverb packs both stereo banks into delay[0][0] (engine_fx.c's
+  // fx_reverb_rkprocess comment) and keeps the rest in its kind block: the
+  // ring, the block and the kind table that holds it.
+  le_fx_state_free_buffers(&fx_);
   return AudioEffect::terminate();
 }
 
@@ -105,7 +104,7 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
   // setBusArrangements — the AudioEffect base accepts whatever arrangement a
   // host renegotiates for an existing bus (public.sdk/source/vst/
   // vstaudioeffect.cpp), so a host can still hand us a mono bus at process
-  // time. fx_reverb reads/writes l and r together (not per-channel like
+  // time. fx_reverb_rkprocess reads/writes l and r together (not per-channel like
   // delay/echo) and its own doc comment guarantees a mono source (l == r)
   // still yields a decorrelated stereo tail from the bank spread alone — so
   // aliasing channel 1 onto channel 0 here preserves that exactly, the same

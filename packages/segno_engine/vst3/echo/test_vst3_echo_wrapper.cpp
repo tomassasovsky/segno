@@ -84,7 +84,7 @@ void processSilentBlock(IAudioProcessor* proc, IParameterChanges* changes) {
 // Echo's ring is now sized in setupProcessing() (not initialize()), from
 // the real negotiated sample rate — any test that actually exercises the
 // DSP (not just param/state storage) must call this first, or the ring
-// stays NULL and fx_echo's own guard makes process() a pure dry
+// stays NULL and fx_run's ring guard makes process() a pure dry
 // passthrough. Mirrors delay/reverb's wrapper test helper of the same name.
 tresult setupProcessing48k(IAudioProcessor* proc) {
   ProcessSetup setup;
@@ -113,7 +113,7 @@ static void test_processor_defaults_match_engine() {
   // 16 bytes whatever width the engine array has (plugin_state.h).
   CHECK(stream.getSize() == static_cast<TSize>(16));
   const float* saved = reinterpret_cast<const float*>(stream.getData());
-  // Independently-known engine default (engine_fx.c's fx_echo_defaults),
+  // Independently-known engine default (engine_fx.c's LE_FX_ECHO_PARAMS),
   // not re-derived from le_fx_defaults here — a real assertion, not a tautology.
   CHECK(std::fabs(saved[0] - 0.45) < kEps);
   CHECK(std::fabs(saved[1] - 0.5) < kEps);
@@ -213,7 +213,7 @@ static void test_controller_syncs_from_component_state() {
 
 // Unlike fx_delay (a pure linear feedback delay, which Delay's own
 // equivalent regression test exploits to expect an exact unit-amplitude
-// sample at a precomputed index), fx_echo (engine_fx.c) also runs the
+// sample at a precomputed index), fx_echo_rkprocess (engine_fx.c) also runs the
 // tapped signal through a one-pole lowpass ("darken the loop") and a tanh
 // soft-saturator before mixing it back in, and wobbles the read position
 // with a slow wow/flutter LFO (+/- ~0.004*sampleRate samples) — so an
@@ -285,7 +285,7 @@ EchoImpulseResult runEchoImpulse(IAudioProcessor* proc, int32 n, int32 windowSta
 // Regression test for the fixed-cap bug this wrapper used to have: a fixed
 // 48000-sample ring meant the "Time" parameter's max delay (normalized 1.0)
 // was only actually 1 s at exactly 48 kHz — at 96 kHz it was capped to 0.5 s
-// of real audio time instead, since fx_echo's d = p[0] * (cap - 1) maps
+// of real audio time instead, since fx_echo_rkprocess's d = p[0] * (cap - 1) maps
 // directly onto whatever cap this wrapper hands it (engine_fx.c).
 // setupProcessing() now sizes the ring to the real negotiated rate instead
 // (mirrors reverb/processor.cpp's fix), so at 96 kHz the echoed impulse

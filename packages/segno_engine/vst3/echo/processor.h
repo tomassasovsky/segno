@@ -4,7 +4,7 @@
  * Wraps LE_FX_ECHO through the engine's existing public engine_fx.h seam
  * (umbrella D-SEAM): one le_fx_state, chain slot 0, driven by
  * le_fx_prepare (initialize) -> le_fx_entry_reset (setActive) ->
- * fx_apply_chain (process, per block). No reimplementation of fx_echo —
+ * fx_apply_chain (process, per block). No reimplementation of fx_echo_rkprocess —
  * this class only adapts VST3's ProcessData shape to that call.
  */
 #pragma once
@@ -40,7 +40,7 @@ class Processor : public Steinberg::Vst::AudioEffect {
   Steinberg::tresult PLUGIN_API getState(Steinberg::IBStream* state) SMTG_OVERRIDE;
 
   // cap_'s default/initial value before setupProcessing() first runs
-  // (process() is a no-op with a NULL ring either way, per fx_echo's own
+  // (process() is a no-op with a NULL ring either way, per fx_echo_rkprocess's own
   // guard in engine_fx.c) — matching the live engine's own default when no
   // per-track override is set (le_fx_prepare_entry, engine_commands.c).
   // Public so the golden-parity harness (vst3/test/) can reference this
@@ -75,7 +75,7 @@ class Processor : public Steinberg::Vst::AudioEffect {
   // sample_rate, "1 s of delay line per slot"). Defaults to kEchoCapFrames
   // before setupProcessing first runs. That default was this wrapper's
   // original bug when it was also the fixed cap process() actually used
-  // regardless of sample rate — fx_echo's normalized "Time" parameter maps
+  // regardless of sample rate — fx_echo_rkprocess's normalized "Time" parameter maps
   // directly onto this cap in samples (engine_fx.c), so a cap fixed at
   // 48000 meant the same normalized value produced a different delay time
   // at every rate other than 48 kHz.

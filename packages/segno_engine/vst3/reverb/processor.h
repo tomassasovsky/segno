@@ -4,7 +4,7 @@
  * Wraps LE_FX_REVERB through the engine's existing public engine_fx.h seam
  * (umbrella D-SEAM): one le_fx_state, chain slot 0, driven by
  * le_fx_prepare (initialize) -> le_fx_entry_reset (setActive) ->
- * fx_apply_chain (process, per block). No reimplementation of fx_reverb —
+ * fx_apply_chain (process, per block). No reimplementation of fx_reverb_rkprocess —
  * this class only adapts VST3's ProcessData shape to that call. Structurally
  * identical to part 2's Delay processor (packages/segno_engine/vst3/delay/) —
  * see that part for the proven wrapper/CMake/packaging pattern this repeats.
@@ -65,14 +65,14 @@ class Processor : public Steinberg::Vst::AudioEffect {
   // engine.c's real engine (fx_delay_frames = sample_rate, "1 s of delay
   // line per slot"). A fixed constant was tried first and rejected: the
   // combined comb+allpass+spread offsets across both banks total ~25450
-  // samples at 44.1 kHz but scale linearly with sample rate (fx_reverb's own
+  // samples at 44.1 kHz but scale linearly with sample rate (fx_reverb_rkprocess's own
   // `scale = sr / 44100`), so a fixed 48000 cap is already exceeded above
   // ~83 kHz — a common production rate (88.2/96 kHz) — at which point
   // engine_fx.c's `if (off + len > cap) break` guard (safe, never a buffer
   // overflow) silently drops comb/allpass lines from the network, not just
   // shortening the tail. Sizing to the real sample rate avoids that
   // entirely. Defaults to 48000 before setupProcessing first runs (process()
-  // is a no-op with a NULL ring either way, per fx_reverb's own guard).
+  // is a no-op with a NULL ring either way, per fx_run's ring guard).
   int cap_ = 48000;
 
   le_fx_state fx_{};

@@ -53,10 +53,9 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& newSetup) {
 }
 
 tresult PLUGIN_API Processor::terminate() {
-  // Slot 0 is fixed to LE_FX_ECHO for this processor's whole lifetime — only
-  // fx_stereo_ring_prepare's delay[0][0]/[1] rings are ever allocated (no
-  // octaver buffers for this type), so only those two need freeing here.
-  le_fx_free_delay(&fx_, 0);
+  // Slot 0 is fixed to LE_FX_ECHO for this processor's whole lifetime: its
+  // two rings and its kind block (and the kind table that holds it).
+  le_fx_state_free_buffers(&fx_);
   return AudioEffect::terminate();
 }
 

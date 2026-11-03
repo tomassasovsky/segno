@@ -218,7 +218,7 @@ bool runDirect(int32_t fxType, const ParamCombo& combo, int cap, double sr,
       outR[i] = r;
     }
   }
-  le_fx_free_delay(&fx, 0);
+  le_fx_state_free_buffers(&fx);
   return prepared;
 }
 

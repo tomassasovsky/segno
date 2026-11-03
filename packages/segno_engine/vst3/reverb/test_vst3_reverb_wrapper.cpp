@@ -84,7 +84,7 @@ void processSilentBlock(IAudioProcessor* proc, IParameterChanges* changes) {
 // Reverb's ring is now sized in setupProcessing() (not initialize()), from
 // the real negotiated sample rate — any test that actually exercises the
 // DSP (not just param/state storage) must call this first, or the ring
-// stays NULL and fx_reverb's own guard makes process() a pure dry
+// stays NULL and fx_run's ring guard makes process() a pure dry
 // passthrough.
 tresult setupProcessing48k(IAudioProcessor* proc) {
   ProcessSetup setup;
@@ -113,7 +113,7 @@ static void test_processor_defaults_match_engine() {
   // 16 bytes whatever width the engine array has (plugin_state.h).
   CHECK(stream.getSize() == static_cast<TSize>(16));
   const float* saved = reinterpret_cast<const float*>(stream.getData());
-  // Independently-known engine default (engine_fx.c's fx_reverb_defaults),
+  // Independently-known engine default (engine_fx.c's LE_FX_REVERB_PARAMS),
   // not re-derived from le_fx_defaults here — a real assertion, not a tautology.
   CHECK(std::fabs(saved[0] - 0.5) < kEps);
   CHECK(std::fabs(saved[1] - 0.5) < kEps);
@@ -213,7 +213,7 @@ static void test_controller_syncs_from_component_state() {
 
 static void test_mono_input_yields_stereo_tail() {
   // Umbrella + plan-called-out risk: a mono source seeds l == r
-  // (engine_private.h's documented convention), and fx_reverb's bank spread
+  // (engine_private.h's documented convention), and fx_reverb_rkprocess's bank spread
   // must still decorrelate it into a genuine stereo tail, not a collapsed
   // mono sum or silence. Exercises the aliased-mono-bus path in process()
   // exactly as a host renegotiating a mono bus would.

@@ -552,12 +552,12 @@ typedef struct le_octaver_state {
 
 /* Per-kind DSP state for the kinds that keep it on the heap (#887 part 4).
  *
- * Each slot owns one fork-shielded arena (le_rt_arena, rt_alloc.h), made on
- * the control thread the first time the slot is prepared for such a kind and
- * sized for one block of every kind, and a list of the blocks it has
- * allocated: one per kind the slot has held. A block is never freed while
- * the owner lives, so a retype never frees memory the audio thread may still
- * read; the arena goes at owner reset or destroy, with the delay rings.
+ * Each slot owns a list of blocks, one per kind the slot has held, each its
+ * own fork-shielded, prefaulted allocation (le_rt_alloc_prefaulted,
+ * rt_alloc.h) sized for that kind and made on the control thread the first
+ * time the slot is prepared for it. A block is never freed while the owner
+ * lives, so a retype never frees memory the audio thread may still read;
+ * the blocks go at owner reset or destroy, with the delay rings.
  *
  * `head` is the control thread's list (pushed with release); `cur` is the
  * audio thread's: the block of the type it last ran. When the type it runs
@@ -566,7 +566,6 @@ typedef struct le_octaver_state {
  * ever reads another's state or a stale one of its own. */
 struct le_fx_kind_block;
 typedef struct le_fx_kind_slot {
-  le_rt_arena arena;                        /* control thread */
   struct le_fx_kind_block *_Atomic head;    /* control pushes, audio walks */
   struct le_fx_kind_block* cur;             /* audio thread */
 } le_fx_kind_slot;

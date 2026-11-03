@@ -4790,8 +4790,8 @@ static inline float le_unit(uint32_t* s) {
  *   50.5 ms at 50 % and 100 ms at 100 % (measured 1.0, 51.2 and 100.8 ms),
  *   the shortest 0.2 ms. The ring holds 100 ms up to 162 kHz, so the
  *   appliance's 96 kHz gets the whole range; that makes the block 128 KB,
- *   which every slot's arena holds once and the audio thread clears when a
- *   slot turns into a doubler.
+ *   which a slot allocates the first time it holds a doubler and the audio
+ *   thread clears when a slot turns into one.
  * - The mix does not fade the copy: from 50 % up it changes nothing
  *   (Studio, Vocal and Dub alike), and towards 0 % it shrinks the delays
  *   until, at 0 %, the copy sits within 1 ms of the dry signal (the range
@@ -7641,9 +7641,8 @@ static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
       want = q->nph * trip48;
     }
     double trip = want;
-    /* Past 107 kHz the trip outgrows the ring (a larger one would sit in
-     * every slot's arena): hold it there and scale the loss per trip, so the
-     * decay stays right though the echo shortens. */
+    /* Past 107 kHz the trip outgrows the ring: hold it there and scale the
+     * loss per trip, so the decay stays right though the echo shortens. */
     if (trip > (double)(LE_SPR_RING - 1u)) trip = (double)(LE_SPR_RING - 1u);
     if (trip < 1.0) trip = 1.0;
     q->trip = (uint32_t)trip;
@@ -8972,6 +8971,10 @@ static void fx_echo_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
                               float* r) {
   le_fx_echo* q = (le_fx_echo*)ks;
   if (cap <= 1 || r1 == NULL) return;
+  if (q->pos >= cap) { /* the rings were remade shorter: start them again */
+    q->pos = 0;
+    q->full = 0;
+  }
   /* Wow/flutter: a slow LFO wobbles the read time a few ms for tape wobble. */
   const float wow = sinf(2.0f * LE_PI * q->ph);
   q->ph += q->wow_inc;
@@ -9418,16 +9421,6 @@ static size_t le_fx_kind_block_bytes(int32_t type) {
   return LE_FX_KIND_ALIGN + ((n + LE_FX_KIND_ALIGN - 1) & ~(size_t)(LE_FX_KIND_ALIGN - 1));
 }
 
-/* One slot's arena: room for one block of every heap-state kind, so a slot
- * that holds each kind in turn never runs out. */
-static size_t le_fx_kind_arena_bytes(void) {
-  size_t bytes = 0;
-  for (int32_t t = LE_FX_NONE + 1; t < LE_FX_TYPE_COUNT; ++t) {
-    if (LE_FX[t].state_size) bytes += le_fx_kind_block_bytes(t);
-  }
-  return bytes;
-}
-
 /* Control thread: makes sure slot [slot] has a block for [type]. */
 static int32_t le_fx_kind_prepare(le_fx_state* fx, int slot, int32_t type) {
   le_fx_kinds* k = atomic_load_explicit(&fx->kinds, memory_order_relaxed);
@@ -9441,13 +9434,10 @@ static int32_t le_fx_kind_prepare(le_fx_state* fx, int slot, int32_t type) {
   for (le_fx_kind_block* b = head; b != NULL; b = b->next) {
     if (b->type == type) return LE_OK;
   }
-  if (ks->arena.base == NULL &&
-      !le_rt_arena_init(&ks->arena, le_fx_kind_arena_bytes())) {
-    return LE_ERR_INVALID;
-  }
-  le_fx_kind_block* b = (le_fx_kind_block*)le_rt_arena_alloc(
-      &ks->arena, le_fx_kind_block_bytes(type));
-  if (b == NULL) return LE_ERR_INVALID; /* sized for every kind: unreachable */
+  /* Sized for this kind only, so a slot pays for the kinds it has held. */
+  le_fx_kind_block* b =
+      (le_fx_kind_block*)le_rt_alloc_prefaulted(le_fx_kind_block_bytes(type));
+  if (b == NULL) return LE_ERR_INVALID;
   b->type = type;
   b->settle = 1;
   b->next = head;
@@ -9459,15 +9449,20 @@ void le_fx_free_kinds(le_fx_state* fx, int slot) {
   le_fx_kinds* k = atomic_load_explicit(&fx->kinds, memory_order_relaxed);
   if (k == NULL) return;
   le_fx_kind_slot* ks = &k->slot[slot];
+  le_fx_kind_block* b = atomic_load_explicit(&ks->head, memory_order_relaxed);
   atomic_store_explicit(&ks->head, NULL, memory_order_relaxed);
   ks->cur = NULL;
-  le_rt_arena_release(&ks->arena);
+  while (b != NULL) {
+    le_fx_kind_block* next = b->next;
+    le_rt_free(b);
+    b = next;
+  }
 }
 
 void le_fx_free_kind_table(le_fx_state* fx) {
   le_fx_kinds* k = atomic_load_explicit(&fx->kinds, memory_order_relaxed);
   if (k == NULL) return;
-  for (int s = 0; s < LE_FX_MAX; ++s) le_rt_arena_release(&k->slot[s].arena);
+  for (int s = 0; s < LE_FX_MAX; ++s) le_fx_free_kinds(fx, s);
   atomic_store_explicit(&fx->kinds, NULL, memory_order_relaxed);
   le_rt_free(k);
 }
@@ -9539,8 +9534,9 @@ static inline void fx_run(le_fx_state* fx, int s, int32_t ty, int sr, int cap,
 }
 
 /* Whether slot [s] as [type] holds a tail that re-enabling must clear: the
- * rings `prepare` allocated (delay, echo, reverb, the octaver), or a
- * draining kind's block (the spring's ring). */
+ * rings `prepare` allocated (the delay, the octaver), or a draining
+ * heap-state kind's block (the spring's ring; the echo's and the reverbs'
+ * record of what their rings hold). */
 static int le_fx_holds_tail(const le_fx_state* fx, int s, int32_t type) {
   if (type <= LE_FX_NONE || type >= LE_FX_TYPE_COUNT) return 0;
   if (LE_FX[type].state_size != 0) return (LE_FX[type].flags & LE_FX_F_DRAINS) != 0;
@@ -9928,9 +9924,9 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
            * simply stays bypassed and retries next sample. A draining
            * heap-state kind is spaced the same way: the reset clears its
            * block (the spring's ring lives there). A ring kernel
-           * (`rkprocess`, the reverbs) skips the ring clear: its cleared
-           * block marks every structure unwrapped, so it reads silence
-           * until it has written there again. */
+           * (`rkprocess`: the echo and the reverbs) skips the ring clear:
+           * its cleared block marks every structure unwrapped, so it reads
+           * silence until it has written there again. */
           /* The Mode delay reads only its own line, which the reset
            * empties at once: no ring to clear, no spacing to wait on, and
            * any 1 s rings an earlier kind left stay as they are, unread. */
