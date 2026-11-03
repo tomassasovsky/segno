@@ -577,4 +577,33 @@ void main() {
       ..note(127);
     expect(r.live, 1.5);
   });
+  // A refused Held voids its whole gesture, so its Released does nothing
+  // (#1153), whether or not an ordinary edit came first.
+  for (final external in [false, true]) {
+    for (final edited in [false, true]) {
+      check(
+        '${external ? 'External' : 'MIDI'} refused Held voids its Released'
+        '${edited ? ' after an ordinary edit' : ''}',
+        (r) {
+          if (edited) r.ordinary(1);
+          r.bind();
+          final before = (r.live, r.durable);
+          engine.refuseClick = true;
+          if (external) {
+            r.external(high: true);
+          } else {
+            r.note(127);
+          }
+          expect((r.live, r.durable), before);
+          engine.refuseClick = false;
+          if (external) {
+            r.external(high: false);
+          } else {
+            r.note(0);
+          }
+          expect((r.live, r.durable), before);
+        },
+      );
+    }
+  }
 }
