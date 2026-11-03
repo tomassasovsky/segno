@@ -393,7 +393,11 @@ class SettingsOwner<V extends Object, C> {
 
   Future<void> _close() async {
     _closing = true;
-    await _loadFuture;
+    try {
+      await _loadFuture;
+    } on Object {
+      // A load that threw was answered to the writes waiting on it.
+    }
     await _tail;
     await _stateSubscription.cancel();
     await _failureSubscription.cancel();
@@ -435,16 +439,35 @@ class SettingsOwner<V extends Object, C> {
     }
     // Another address or edit queues behind the waiting one, in order.
     final slot = _waiting = _Slot(write);
-    unawaited(
-      load().then(
-        (_) => _queue(() async {
-          if (identical(_waiting, slot)) _waiting = null;
-          final next = slot.write;
-          next.done.complete(await _write(next));
-        }),
-      ),
-    );
+    unawaited(_run(slot));
     return write.done.future;
+  }
+
+  /// Runs [slot]'s write once the load and the writes before it are done.
+  /// Its caller always gets an outcome: a load or a write that throws
+  /// answers with a reported refusal carrying the error (#1614), and the
+  /// queue goes on to the writes after it.
+  Future<void> _run(_Slot<V> slot) async {
+    try {
+      await load();
+      await _queue(() async {
+        if (identical(_waiting, slot)) _waiting = null;
+        final next = slot.write;
+        next.done.complete(await _write(next));
+      });
+    } on Object catch (error, stack) {
+      if (identical(_waiting, slot)) _waiting = null;
+      final done = slot.write.done;
+      if (done.isCompleted) return;
+      AppLog.error(
+        '${_family.key.name}: write failed',
+        error: error,
+        stack: stack,
+      );
+      done.complete(
+        _report(SettingOutcome(SettingStatus.rejected, error: error)),
+      );
+    }
   }
 
   Future<SettingOutcome> _write(_Write<V> write) async {
@@ -550,8 +573,28 @@ class SettingsOwner<V extends Object, C> {
         );
       }
       final deferred = !_running;
-      final admission = _family.request(value, durable, write.edit);
-      final result = admission.isOk ? await _family.settle() : admission;
+      final EngineResult result;
+      try {
+        final admission = _family.request(value, durable, write.edit);
+        result = admission.isOk ? await _family.settle() : admission;
+      } on Object catch (error) {
+        // A request or receipt that throws is a refusal with the error as
+        // its cause: storage goes back, unless the receipt now owes the
+        // value storage already holds.
+        if (_family.recoveryRequired && _family.durable == durable) {
+          return _report(
+            SettingOutcome(SettingStatus.recoveryRequired, error: error),
+          );
+        }
+        return await _rollback(
+          write.address,
+          checkpoint,
+          _family.recoveryRequired
+              ? SettingStatus.recoveryRequired
+              : SettingStatus.rejected,
+          error: error,
+        );
+      }
       if (result.isOk) {
         // Committed: the engine holds this value now, so storage keeps it
         // even when the lifetime moved on before this resumed.
