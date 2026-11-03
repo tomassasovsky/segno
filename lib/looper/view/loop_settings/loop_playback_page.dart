@@ -109,6 +109,9 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
     const top = 342.0;
     const playbackHeight = 120.0;
     const sliderTop = top + 246 + 84;
+    // The band the decay label is centred in: tall enough for the heading
+    // and its origin tag.
+    const decayLabelBand = 80.0;
     return Positioned.fill(
       child: BlocListener<LooperBloc, LooperState>(
         listenWhen: (before, after) =>
@@ -190,12 +193,11 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
                 key: const Key('loop_playback_note'),
               ),
             ),
-            // ---- overdub decay: the label is centred on the slider, in a
-            // band as tall as the playback row so a two-line label fits.
+            // ---- overdub decay: the label is centred on the slider.
             Positioned(
               left: 100,
-              top: sliderTop + LoopSlider.height / 2 - playbackHeight / 2,
-              height: playbackHeight,
+              top: sliderTop + LoopSlider.height / 2 - decayLabelBand / 2,
+              height: decayLabelBand,
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: LoopFieldLabel(

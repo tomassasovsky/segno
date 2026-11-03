@@ -2038,22 +2038,22 @@ void main() {
     });
   });
 
-  group('Playback & overdub', () {
-    // The centre of the drawn heading and, when shown, its origin tag.
-    double labelCentre(WidgetTester tester, String title) {
-      final label = find.ancestor(
-        of: find.text(title),
-        matching: find.byType(LoopFieldLabel),
-      );
-      final texts = find
-          .descendant(of: label, matching: find.byType(AppText))
-          .evaluate()
-          .map((e) => tester.getRect(find.byWidget(e.widget)));
-      final top = texts.map((r) => r.top).reduce(math.min);
-      final bottom = texts.map((r) => r.bottom).reduce(math.max);
-      return (top + bottom) / 2;
-    }
+  // The centre of the drawn heading and, when shown, its origin tag.
+  double labelCentre(WidgetTester tester, String title) {
+    final label = find.ancestor(
+      of: find.text(title),
+      matching: find.byType(LoopFieldLabel),
+    );
+    final texts = find
+        .descendant(of: label, matching: find.byType(AppText))
+        .evaluate()
+        .map((e) => tester.getRect(find.byWidget(e.widget)));
+    final top = texts.map((r) => r.top).reduce(math.min);
+    final bottom = texts.map((r) => r.bottom).reduce(math.max);
+    return (top + bottom) / 2;
+  }
 
+  group('Playback & overdub', () {
     testWidgets('each label is centred on its control (#1590 LOOP-1)', (
       tester,
     ) async {
@@ -2235,6 +2235,28 @@ void main() {
   });
 
   group('Audio & tempo (#1179)', () {
+    testWidgets('each label is centred on its choice row (#1590 LOOP-1)', (
+      tester,
+    ) async {
+      await pump(tester, initial: LoopSettingsPageId.audioTempo);
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+      expect(
+        labelCentre(tester, l10n.loopAudioFollowLabel),
+        moreOrLessEquals(
+          tester.getCenter(find.byKey(const Key('loop_audio_follow_on'))).dy,
+        ),
+      );
+      expect(
+        labelCentre(tester, l10n.loopAudioPitchLabel),
+        moreOrLessEquals(
+          tester
+              .getCenter(find.byKey(const Key('loop_audio_pitch_unchanged')))
+              .dy,
+        ),
+      );
+    });
+
     testWidgets('nothing stored restores Follow on and Pitch unchanged '
         '(07/04): no tags on Defaults, the On and Unchanged notes', (
       tester,
