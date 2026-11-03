@@ -56,7 +56,9 @@ class NoticesCubit extends Cubit<NoticesState> {
   /// is said once in the console's life, so none is ever lost. One that
   /// arrives while another is up, or while the Power screen holds the
   /// notices, waits its turn; one that another message replaces is said
-  /// again, whole, after it.
+  /// again, whole, after it. A detailed message ([Notice.detailed]) goes up
+  /// at once like any other, and is kept the same way: cut short, it is
+  /// said again after.
   void show(Notice notice) {
     assert(
       notice.tone != NoticeTone.critical,
@@ -66,12 +68,12 @@ class NoticesCubit extends Cubit<NoticesState> {
     // The newest word on a cause replaces any copy still waiting.
     _waiting.removeWhere((waiting) => waiting.id == notice.id);
     if (state.held) {
-      if (notice.explains) _wait(notice);
+      if (_kept(notice)) _wait(notice);
       return;
     }
     final current = state.message?.notice;
-    if (current != null && current.explains && current.id != notice.id) {
-      if (notice.explains) {
+    if (current != null && _kept(current) && current.id != notice.id) {
+      if (notice.explains && current.explains) {
         _wait(notice);
         return;
       }
@@ -79,6 +81,9 @@ class NoticesCubit extends Cubit<NoticesState> {
     }
     _present(notice);
   }
+
+  /// A message never lost to another: an explanation, or detail to read.
+  static bool _kept(Notice notice) => notice.explains || notice.detailed;
 
   void _wait(Notice notice, {bool first = false}) {
     _waiting.removeWhere((waiting) => waiting.id == notice.id);
@@ -176,7 +181,7 @@ class NoticesCubit extends Cubit<NoticesState> {
     if (held) {
       // An explanation cut short is said again, whole, after the hold.
       final current = state.message?.notice;
-      if (current != null && current.explains) _wait(current, first: true);
+      if (current != null && _kept(current)) _wait(current, first: true);
       _messageTimer?.cancel();
       for (final timer in _trackTimers.values) {
         timer.cancel();

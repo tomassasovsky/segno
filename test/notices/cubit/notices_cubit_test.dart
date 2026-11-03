@@ -38,7 +38,8 @@ void main() {
         );
       });
 
-      test('six for a warning, eight with an action, ten to explain', () {
+      test('six for a warning, eight with an action, ten to explain or for '
+          'detail', () {
         expect(
           _notice('a', tone: NoticeTone.warning).duration,
           const Duration(seconds: 6),
@@ -55,6 +56,35 @@ void main() {
           _notice('a', explains: true).duration,
           const Duration(seconds: 10),
         );
+        expect(
+          Notice(id: 'a', title: (_) => 'a', detailed: true).duration,
+          const Duration(seconds: 10),
+        );
+      });
+
+      test(
+        'a detailed message cut short by a press is said again after it',
+        () {
+          fakeAsync((async) {
+            final cubit = NoticesCubit()
+              ..show(Notice(id: 'session', title: (_) => 'a', detailed: true))
+              ..show(_notice('refused', tone: NoticeTone.warning));
+            expect(cubit.state.message?.notice.id, 'refused');
+            async.elapse(const Duration(seconds: 6));
+            expect(cubit.state.message?.notice.id, 'session');
+            unawaited(cubit.close());
+          });
+        },
+      );
+
+      test('a detailed message does not wait in the explanations queue', () {
+        fakeAsync((async) {
+          final cubit = NoticesCubit()
+            ..show(_notice('bluetooth', explains: true))
+            ..show(Notice(id: 'session', title: (_) => 'a', detailed: true));
+          expect(cubit.state.message?.notice.id, 'session');
+          unawaited(cubit.close());
+        });
       });
     });
 

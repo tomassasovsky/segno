@@ -7,6 +7,8 @@ import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 
+import '../helpers/text_fit.dart';
+
 void main() {
   group('readoutTempo', () {
     test('drops the decimal on a whole tempo, keeps one otherwise', () {
@@ -216,6 +218,9 @@ void main() {
     });
 
     group('notice band (#1562)', () {
+      // The console's faces: a band's height is the drawn type's.
+      setUpAll(loadBundledFonts);
+
       const lost = ReadoutNotice(
         title: 'Scarlett 4i4 USB disconnected. Nothing is heard.',
         tone: NoticeTone.critical,
@@ -258,6 +263,78 @@ void main() {
         );
         expect(
           find.text(lost.title, findRichText: true),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('a sentence too long for one line is said whole, the band '
+          'growing over the readout', (tester) async {
+        const detail =
+            'The original was kept beside it. Its Master effects, and pedals '
+            'bound to them, now run on All tracks. A live input above 100% '
+            'was lowered to 100%. It saved no tempo, so its tempo was set '
+            'from the loop length.';
+        await pump(
+          tester,
+          readout: const PerformanceReadout(
+            selected: selected,
+            notice: ReadoutNotice(
+              title: 'Session converted from an older Segno',
+              body: detail,
+              tone: NoticeTone.success,
+            ),
+          ),
+        );
+        expect(tester.takeException(), isNull);
+        final wrapped = find.byKey(const Key('notice_sentence_wrapped'));
+        expect(wrapped, findsOneWidget);
+        expect(
+          find.textContaining('set from the loop length', findRichText: true),
+          findsOneWidget,
+        );
+        final band = tester.getRect(
+          find.byKey(const Key('console_readout_notice')),
+        );
+        expect(
+          band.height,
+          greaterThan(NoticeTheme.standard.readoutBandHeight),
+        );
+        final text = tester.renderObject<RenderParagraph>(
+          find.descendant(of: wrapped, matching: find.byType(RichText)),
+        );
+        expect(text.didExceedMaxLines, isFalse);
+        expect(text.textSize.height, lessThanOrEqualTo(text.size.height));
+      });
+
+      testWidgets('the longest message, on the 7" panel, stays well inside '
+          'the readout', (tester) async {
+        // Every change a conversion can report, and eight held chains: the
+        // most any message says.
+        const detail =
+            'The original was kept beside it. Its Master effects, and pedals '
+            'bound to them, now run on All tracks. A live input above 100% '
+            'was lowered to 100%. It saved no tempo, so its tempo was set '
+            'from the loop length. GUITAR, BOOM, RC-20, VOX, TRACK 5, '
+            'TRACK 6, TRACK 7 and the Guitar input chain are off.';
+        await pump(
+          tester,
+          size: const Size(1024, 600),
+          readout: const PerformanceReadout(
+            selected: selected,
+            notice: ReadoutNotice(
+              title: 'Session converted from an older Segno',
+              body: detail,
+              tone: NoticeTone.success,
+            ),
+          ),
+        );
+        expect(tester.takeException(), isNull);
+        final band = tester.getRect(
+          find.byKey(const Key('console_readout_notice')),
+        );
+        expect(band.height, lessThan(600 / 3));
+        expect(
+          find.textContaining('input chain are off', findRichText: true),
           findsOneWidget,
         );
       });

@@ -1781,6 +1781,86 @@ void main() {
       },
     );
 
+    test('a lost interface is named as the host lists it, not by the '
+        "engine's generic ALSA name (#1562)", () async {
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(playbackDeviceId: 'out-1'),
+      );
+      when(repository.devices).thenReturn(const [
+        AudioDevice(
+          id: 'out-1',
+          name: 'Scarlett 4i4 USB',
+          isDefault: false,
+          isInput: false,
+        ),
+      ]);
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      stateController.add(
+        present(devicePresent: true, name: 'Playback Device'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      stateController.add(present(devicePresent: false, name: ''));
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.lost);
+      expect(cubit.state.connectivityDeviceName, 'Scarlett 4i4 USB');
+    });
+
+    test('a switch to another interface is named after the new one '
+        '(#1562)', () async {
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(playbackDeviceId: 'out-1'),
+      );
+      when(repository.devices).thenReturn(const [
+        AudioDevice(id: 'out-1', name: 'A', isDefault: false, isInput: false),
+        AudioDevice(id: 'out-2', name: 'B', isDefault: false, isInput: false),
+      ]);
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          status: EngineStatus(
+            deviceName: 'Playback Device',
+            isConnected: true,
+            devicePresent: true,
+            reopen: partial,
+          ),
+        ),
+      );
+      when(() => repository.applyAudioConfig(any())).thenReturn(_applied);
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      cubit
+        ..editDevice(playbackDeviceId: 'out-2', captureDeviceId: '')
+        ..applyDraft();
+      expect(cubit.state.connectivityDeviceName, 'B');
+    });
+
+    test('an interface plugged in after boot is named from a fresh catalog '
+        '(#1562)', () async {
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(playbackDeviceId: 'out-1'),
+      );
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      // Booted without it: the catalog the cubit holds has no entry.
+      stateController.add(present(devicePresent: false, name: ''));
+      await Future<void>.delayed(Duration.zero);
+      when(repository.devices).thenReturn(const [
+        AudioDevice(
+          id: 'out-1',
+          name: 'Scarlett 4i4 USB',
+          isDefault: false,
+          isInput: false,
+        ),
+      ]);
+      stateController.add(
+        present(devicePresent: true, name: 'Playback Device'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      stateController.add(present(devicePresent: false, name: ''));
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.connectivityDeviceName, 'Scarlett 4i4 USB');
+    });
+
     test(
       'a return that dropped some tracks is the partial variant — one notice, '
       'not restored plus another (#1140)',

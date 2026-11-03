@@ -33,11 +33,7 @@
     "@updateBannerNotNow": {
         "description": "Puts the update offer off for this version: it is not said again until a newer one."
     },
-    "audioDeviceFallbackName": "Audio device",
-    "deviceLostBanner": "No audio device. Nothing is heard.",
-    "@deviceLostBanner": {
-        "description": "Standing red banner on the stage while the pinned audio interface is absent — the engine is stopped (pen: STAGE / device-lost)."
-    },
+    "audioDeviceFallbackName": "Audio interface",
     "deviceLostNamedBanner": "{device} disconnected. Nothing is heard.",
     "@deviceLostNamedBanner": {
         "description": "Standing red banner on the stage, and its echo on the 7\" readout, while the pinned audio interface is absent and its name is known; audio restarts on its own when it returns (#1270 Part 5).",

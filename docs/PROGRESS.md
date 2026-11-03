@@ -125,6 +125,14 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   red (the device running at other settings, a storage action that did
   nothing, the Library's refused open and listen). The Storage and MIDI
   pages' one-line amber notes stay the pen's.
+- Polish (`claude/notices-polish-1562`): the audio interface's own MIDI
+  ports are said once, with it (`midiIsInterfacesOwn`: the same name, or
+  within 5 s of the interface going or coming back); the lost interface is
+  named from the host's catalog ("Scarlett 4i4 USB"), never the engine's
+  generic ALSA "Playback Device", else "Audio interface"; a sentence the
+  top bar has no room for is said whole on the readout, whose band grows
+  over the readout for it, and a `detailed` message (a converted session's
+  changes) stays 10 s.
 
 ## November 2026 Automatic LED brightness from a light sensor (#1564)
 

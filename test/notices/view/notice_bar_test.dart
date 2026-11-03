@@ -253,6 +253,39 @@ void main() {
       await tester.pumpAndSettle(const Duration(seconds: 3));
     });
 
+    testWidgets("with an action, the line starts exactly the group's width, "
+        'and the console capture is its shrink', (tester) async {
+      await pumpBar(tester);
+      notices.show(
+        Notice(
+          id: 'cleared',
+          title: (_) => 'Cleared all tracks',
+          action: NoticeAction(
+            key: const Key('undo'),
+            icon: Icons.undo,
+            label: (_) => 'Undo',
+            onPressed: () {},
+          ),
+        ),
+      );
+      await tester.pump();
+      final row = tester.getRect(find.byKey(const Key('notice_bar_cleared')));
+      var line = tester.getRect(find.byKey(const Key('notice_bar_time_left')));
+      // The first frame: edge to edge with the icon, words and button.
+      expect(line.left, moreOrLessEquals(row.left, epsilon: 0.5));
+      expect(line.right, moreOrLessEquals(row.right, epsilon: 0.5));
+      // 0.7 s into its 8 s, as the console capture was taken: 8.75% gone,
+      // half of it off each end, the line still centred on the group.
+      await tester.pump(const Duration(milliseconds: 700));
+      line = tester.getRect(find.byKey(const Key('notice_bar_time_left')));
+      expect(
+        line.width,
+        moreOrLessEquals(row.width * (1 - 0.7 / 8), epsilon: 0.5),
+      );
+      expect(line.center.dx, moreOrLessEquals(row.center.dx, epsilon: 0.5));
+      await tester.pumpAndSettle(const Duration(seconds: 8));
+    });
+
     testWidgets('a bar built while a message goes by picks its line up '
         'where it is', (tester) async {
       await pumpBar(tester);
