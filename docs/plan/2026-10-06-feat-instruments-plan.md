@@ -1406,6 +1406,15 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart 
 
 ### Part 4. One capture per device (about 350 production lines)
 
+**Update (#1040, 2026-11-03).** The registry below now exists:
+`MidiDeviceRepository` captures every plugged-in device, one
+`MidiControllerSource` each, and `ControlCubit` accepts every device's
+current session, because the owner decided that every connected device feeds
+the controls learned from it. What remains for this part is exposing each
+capture's handle and attaching it to the instrument port slots, with detach
+on loss, close and engine lifetime change. The "B's messages never reach the
+decoders" case no longer applies: B reaches only the mappings learned from B.
+
 D8. `MidiDeviceRepository` keeps a map of device id → `MidiControllerSource`
 (one `MidiClient` each) for the selected control device plus every device an
 enabled instrument names (`InstrumentRepository` supplies that set). The

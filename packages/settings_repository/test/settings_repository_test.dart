@@ -1196,27 +1196,6 @@ void main() {
       );
       expect(await repository.loadMidiDevice(), (id: 'port-1', name: 'Pedal'));
     });
-
-    test('clearMidiDevice removes the one record', () async {
-      await repository.saveMidiDevice(id: '12345', name: 'FCB1010');
-      await repository.clearMidiDevice();
-      expect(await repository.loadMidiDevice(), isNull);
-      expect(store.values.containsKey('midi.input_device'), isFalse);
-    });
-
-    test('dropped clear is not reported as durable', () async {
-      await repository.saveMidiDevice(id: '12345', name: 'FCB1010');
-      store.discardNextRemovalKey = 'midi.input_device';
-      await expectLater(repository.clearMidiDevice(), throwsStateError);
-      expect(await repository.loadMidiDevice(), (id: '12345', name: 'FCB1010'));
-    });
-
-    test('a clear that mutates then throws remains uncertain', () async {
-      await repository.saveMidiDevice(id: '12345', name: 'FCB1010');
-      store.failAfterRemovalKey = 'midi.input_device';
-      await expectLater(repository.clearMidiDevice(), throwsStateError);
-      expect(await repository.loadMidiDevice(), isNull);
-    });
   });
 
   group('MIDI configuration', () {

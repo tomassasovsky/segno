@@ -129,7 +129,7 @@ void main() {
         final controllers = ControllerRepository(
           sources: [ConsoleCtrlSource(pedal)],
         );
-        final midi = MidiDeviceRepository(source: null, settings: settings);
+        final midi = MidiDeviceRepository(captures: null, settings: settings);
         sessions = SessionRepository(
           guards: GuardRegistry(),
           engine: engine,

@@ -1,11 +1,10 @@
-/// Repository layer for Segno's MIDI input (foot-controller) device.
+/// Repository layer for Segno's MIDI inputs.
 ///
-/// Owns the device lifecycle (enumerate / open / close), hotplug supervision,
-/// and selection persistence, and projects a `MidiConnection` stream for the
-/// presentation layer — mirroring the `LooperRepository` seam for audio. It
-/// **borrows** the long-lived `MidiControllerSource` (owned and disposed by the
-/// `ControllerRepository`) and never disposes it. Deliberately holds no audio
-/// dependency, so switching or losing a MIDI device can never restart audio.
+/// Captures every plugged-in MIDI input at once (one `MidiControllerSource`
+/// per device), supervises hotplug, persists which controller the MIDI page
+/// shows, and projects a `MidiConnection` stream for the presentation layer —
+/// mirroring the `LooperRepository` seam for audio. Deliberately holds no
+/// audio dependency, so losing a MIDI device can never restart audio.
 library;
 
 export 'package:midi_client/midi_client.dart' show MidiDevice;

@@ -1,13 +1,15 @@
 # midi_device_repository
 
-Repository for the MIDI input device Segno listens to. `MidiDeviceRepository`
-lists the host's MIDI inputs, opens and closes the selected one through
-`midi_client`'s `MidiControllerSource`, saves the selection through
-`settings_repository`, and checks for unplug and replug. It publishes the
-result as a `MidiConnection` stream, and passes the device's raw messages on
-`messages`. It has no audio dependency, so changing or losing a MIDI device
-never restarts audio. The app creates it in `lib/app/run_segno.dart`; the
-MIDI setup cubit, the control cubit and the idle dimming host read it.
+Repository for the MIDI inputs Segno listens to. `MidiDeviceRepository` lists
+the host's MIDI inputs and captures every plugged-in one at once, one
+`midi_client` `MidiControllerSource` per device, so any connected controller
+can feed the mappings learned from it. Each message on `messages` carries its
+device's capture lifetime (`MidiInputSession`). The repository checks for
+unplug and replug, saves which controller the MIDI page shows through
+`settings_repository`, and publishes the result as a `MidiConnection` stream.
+It has no audio dependency, so losing a MIDI device never restarts audio. The
+app creates it in `lib/app/run_segno.dart`; the MIDI setup cubit, the control
+cubit and the idle dimming host read it.
 
 ## Usage
 
@@ -15,14 +17,14 @@ MIDI setup cubit, the control cubit and the idle dimming host read it.
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
-Future<void> pickFirstDevice(SettingsRepository settings) async {
+Future<void> showFirstDevice(SettingsRepository settings) async {
   final midi = MidiDeviceRepository(
-    source: createNativeMidiSource(),
+    captures: nativeMidiCaptures(),
     settings: settings,
   );
 
   midi.connections.listen((connection) {
-    print('${connection.status}: ${connection.selectedName}');
+    print('captured: ${connection.open}');
   });
 
   final devices = midi.connection.devices;
@@ -32,23 +34,21 @@ Future<void> pickFirstDevice(SettingsRepository settings) async {
 
 ## Notes
 
-- The source is borrowed. `ControllerRepository` owns the
-  `MidiControllerSource` and disposes it; `MidiDeviceRepository.dispose` only
-  stops its own timer and stream.
-- `createNativeMidiSource` returns null instead of throwing when the platform
-  has no MIDI backend. The repository then lists no devices and `select` does
+- The repository owns its captures and disposes them in `dispose`.
+- `nativeMidiCaptures` returns null instead of throwing when the platform has
+  no MIDI backend. The repository then lists no devices and `select` does
   nothing.
-- On creation it reopens the saved device. A saved device that is not
-  present gives `MidiConnectionStatus.deviceGone`; the selection is kept, and
-  the device opens again when it comes back.
-- The device list is checked every 2 seconds (`pollInterval`).
-  `MidiConnection.connectivity` reports the most recent lost or restored
-  change. Pass `Duration.zero` to turn the timer off and call `refresh`
-  yourself.
-- Selections run one at a time, and `select` saves the choice before it
-  opens the port. A failed save leaves input stopped, sets
-  `MidiConnection.pinUncertain`, and completes the returned future with the
-  error, so the caller can retry.
+- A device is identified by the id the native layer reports: the CoreMIDI
+  unique id on macOS and the ALSA client name on Linux. Both survive a
+  replug, so a device's mappings work again when it comes back.
+- The device list is checked every 2 seconds (`pollInterval`). A device that
+  appears is captured; one that goes is closed; a port that would not open is
+  retried. `MidiConnection.connectivity` reports the most recent lost or
+  restored device. Pass `Duration.zero` to turn the timer off and call
+  `refresh` yourself.
+- The selection only says which controller the MIDI page shows. A failed
+  save sets `MidiConnection.pinUncertain` and completes the returned future
+  with the error, so the caller can retry.
 
 ## Testing
 

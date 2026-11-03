@@ -1218,7 +1218,7 @@ class _AppViewState extends State<_AppView> {
             _within(_midiSaid) &&
             midiIsInterfacesOwn(said, state, audioJustChanged: true)) {
           if (said.connectivity == MidiConnectivity.lost) {
-            _foldedMidiId = said.selectedId;
+            _foldedMidiId = said.connectivityDeviceId;
           }
           // Folded once: a second change of the interface finds it gone.
           _midiSaidFor = null;
@@ -1273,10 +1273,10 @@ class _AppViewState extends State<_AppView> {
     final connection = state.connection;
     switch (connection.connectivity) {
       case MidiConnectivity.lost when _interfacesOwn(connection):
-        _foldedMidiId = connection.selectedId;
+        _foldedMidiId = connection.connectivityDeviceId;
         return;
       case MidiConnectivity.restored
-          when _foldedMidiId == connection.selectedId ||
+          when _foldedMidiId == connection.connectivityDeviceId ||
               _interfacesOwn(connection):
         _foldedMidiId = null;
         _notices.clear(AppNoticeId.midiLost);
@@ -1297,7 +1297,7 @@ class _AppViewState extends State<_AppView> {
         );
       case MidiConnectivity.restored:
         final name = connection.connectivityDeviceName.isEmpty
-            ? connection.selectedName
+            ? connection.connectivityDeviceId
             : connection.connectivityDeviceName;
         _midiSaid
           ..reset()
@@ -1653,7 +1653,9 @@ class _AppViewState extends State<_AppView> {
         BlocListener<MidiSetupCubit, MidiSetupState>(
           listenWhen: (previous, current) =>
               previous.connection.connectivity !=
-              current.connection.connectivity,
+                  current.connection.connectivity ||
+              previous.connection.connectivityDeviceId !=
+                  current.connection.connectivityDeviceId,
           listener: (_, state) => _showMidiConnectivity(state),
         ),
         BlocListener<AudioRecoveryCubit, AudioRecoveryState>(
