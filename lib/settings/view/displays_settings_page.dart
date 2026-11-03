@@ -430,9 +430,9 @@ class _DimWhileIdle extends StatelessWidget {
     unawaited(() async {
       try {
         await cubit.setSeconds(seconds);
-        notices.clear(AppNoticeId.displaySave);
+        notices.clear(AppNoticeId.idleDimSave);
       } on Object {
-        notices.show(displaySaveFailedNotice());
+        notices.show(displaySaveFailedNotice(AppNoticeId.idleDimSave));
       }
     }());
   }

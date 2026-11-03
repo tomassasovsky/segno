@@ -8,6 +8,7 @@
     "updatesRestartBusySubtitle": "La reproducción se detendrá y tu sesión se guardará antes de reiniciar.",
     "updateBannerTitle": "Actualización disponible: v{version}",
     "updateBannerUpdateAction": "Actualizar…",
+    "updateBannerNotNow": "Ahora no",
     "audioDeviceFallbackName": "Dispositivo de audio",
     "deviceLostBanner": "Sin dispositivo de audio. No se oye nada.",
     "deviceLostNamedBanner": "{device} desconectado. No se oye nada.",

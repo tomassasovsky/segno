@@ -7,10 +7,10 @@ import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/display_role.dart';
 import 'package:segno/notices/notices.dart';
 
-/// The message that says a display setting was not saved; a later change
-/// that does save takes it down.
-Notice displaySaveFailedNotice() => Notice(
-  id: AppNoticeId.displaySave,
+/// The message that says the display setting [id] was not saved; a later
+/// change of the same setting that does save takes it down.
+Notice displaySaveFailedNotice(String id) => Notice(
+  id: id,
   tone: NoticeTone.warning,
   title: (l10n) => l10n.displayBrightnessSaveFailed,
 );
@@ -30,9 +30,9 @@ void editDisplayBrightness(
   unawaited(() async {
     try {
       await cubit.setBrightness(role, value);
-      notices.clear(AppNoticeId.displaySave);
+      notices.clear(AppNoticeId.brightnessSave);
     } on Object {
-      notices.show(displaySaveFailedNotice());
+      notices.show(displaySaveFailedNotice(AppNoticeId.brightnessSave));
     }
   }());
 }

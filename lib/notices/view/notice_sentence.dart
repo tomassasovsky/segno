@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -50,22 +52,13 @@ class NoticeSentence extends StatelessWidget {
     final body = this.body;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final ambient = DefaultTextStyle.of(context).style;
-        final direction = Directionality.of(context);
-        final scaler = MediaQuery.textScalerOf(context);
-        double width(String text, TextStyle? style) {
-          final painter = TextPainter(
-            text: TextSpan(text: text, style: ambient.merge(style)),
-            textDirection: direction,
-            textScaler: scaler,
-            maxLines: 1,
-          )..layout();
-          final width = painter.width;
-          painter.dispose();
-          return width;
-        }
+        double width(String text, TextStyle? style) =>
+            noticeTextWidth(context, text, style);
 
-        final lead = source == null ? 0.0 : width(source, sourceStyle) + gap;
+        final lead = source == null
+            ? 0.0
+            : math.min(width(source, sourceStyle), constraints.maxWidth / 3) +
+                  gap;
         final showsBody =
             body != null &&
             lead + width(title, titleStyle) + gap + width(body, bodyStyle) <=
@@ -75,13 +68,21 @@ class NoticeSentence extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
+            // A long track name is cut short at a third of the line, so
+            // the message itself keeps the room.
             if (source != null) ...[
-              AppText(
-                source,
-                key: const Key('notice_sentence_source'),
-                maxLines: 1,
-                softWrap: false,
-                style: sourceStyle,
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: constraints.maxWidth / 3,
+                ),
+                child: AppText(
+                  source,
+                  key: const Key('notice_sentence_source'),
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: sourceStyle,
+                ),
               ),
               SizedBox(width: gap),
             ],
@@ -110,4 +111,22 @@ class NoticeSentence extends StatelessWidget {
       },
     );
   }
+}
+
+/// How wide [text] is drawn on one line in [style] under [context]'s ambient
+/// style, direction and text scale: what the notice surfaces measure to
+/// decide what fits.
+double noticeTextWidth(BuildContext context, String text, TextStyle? style) {
+  final painter = TextPainter(
+    text: TextSpan(
+      text: text,
+      style: DefaultTextStyle.of(context).style.merge(style),
+    ),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: 1,
+  )..layout();
+  final width = painter.width;
+  painter.dispose();
+  return width;
 }

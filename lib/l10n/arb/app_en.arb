@@ -29,6 +29,10 @@
         }
     },
     "updateBannerUpdateAction": "Update…",
+    "updateBannerNotNow": "Not now",
+    "@updateBannerNotNow": {
+        "description": "Puts the update offer off for this version: it is not said again until a newer one."
+    },
     "audioDeviceFallbackName": "Audio device",
     "deviceLostBanner": "No audio device. Nothing is heard.",
     "@deviceLostBanner": {

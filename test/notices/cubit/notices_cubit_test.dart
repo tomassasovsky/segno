@@ -119,8 +119,8 @@ void main() {
         });
       });
 
-      test('a press replaces an explanation, and the waiting ones still '
-          'come after it', () {
+      test('a press replaces an explanation, which is said again after '
+          'it, before the waiting ones', () {
         fakeAsync((async) {
           final cubit = NoticesCubit()
             ..show(_notice('bluetooth', explains: true))
@@ -128,7 +128,31 @@ void main() {
             ..show(_notice('refused', tone: NoticeTone.warning));
           expect(cubit.state.message?.notice.id, 'refused');
           async.elapse(const Duration(seconds: 6));
+          expect(cubit.state.message?.notice.id, 'bluetooth');
+          async.elapse(const Duration(seconds: 10));
           expect(cubit.state.message?.notice.id, 'tuner');
+          unawaited(cubit.close());
+        });
+      });
+
+      test('clearing the explanation on screen brings up the next', () {
+        fakeAsync((async) {
+          final cubit = NoticesCubit()
+            ..show(_notice('update', explains: true))
+            ..show(_notice('bluetooth', explains: true))
+            ..clear('update');
+          expect(cubit.state.message?.notice.id, 'bluetooth');
+          unawaited(cubit.close());
+        });
+      });
+
+      test('raising its id ends the explanation and brings up the next', () {
+        fakeAsync((async) {
+          final cubit = NoticesCubit()
+            ..show(_notice('update', explains: true))
+            ..show(_notice('bluetooth', explains: true))
+            ..raise(_notice('update', tone: NoticeTone.warning));
+          expect(cubit.state.message?.notice.id, 'bluetooth');
           unawaited(cubit.close());
         });
       });
@@ -326,6 +350,21 @@ void main() {
         expect(cubit.state.banner?.notice.id, 'lost');
         expect(cubit.state.message, isNull);
         addTearDown(cubit.close);
+      });
+
+      test('keeps the explanations for after it, the one cut short first', () {
+        fakeAsync((async) {
+          final cubit = NoticesCubit()
+            ..show(_notice('update', explains: true))
+            ..setHeld(held: true)
+            ..show(_notice('bluetooth', explains: true));
+          expect(cubit.state.message, isNull);
+          cubit.setHeld(held: false);
+          expect(cubit.state.message?.notice.id, 'update');
+          async.elapse(const Duration(seconds: 10));
+          expect(cubit.state.message?.notice.id, 'bluetooth');
+          unawaited(cubit.close());
+        });
       });
     });
   });

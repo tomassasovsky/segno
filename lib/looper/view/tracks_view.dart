@@ -59,6 +59,8 @@ class _TracksViewState extends State<TracksView> {
   void _showUndoClearAll() {
     if (!mounted) return;
     final notices = context.read<NoticesCubit>();
+    final bloc = context.read<LooperBloc>();
+    final control = context.read<ControlCubit>();
     notices.show(
       Notice(
         id: AppNoticeId.undoClearAll,
@@ -68,8 +70,13 @@ class _TracksViewState extends State<TracksView> {
           icon: LucideIcons.undo2,
           label: (l10n) => l10n.undoClearAllAction,
           onPressed: () {
-            if (!mounted) return;
-            TracksCommands(context).undoClearAll();
+            // The message is in every screen's top bar, so Undo works with
+            // the stage gone too: straight to the rig, unannounced.
+            if (mounted) {
+              TracksCommands(context).undoClearAll();
+            } else if (bloc.state.tracks.any((track) => track.clearRestore)) {
+              control.undoClearAll();
+            }
             notices.clear(AppNoticeId.undoClearAll);
           },
         ),

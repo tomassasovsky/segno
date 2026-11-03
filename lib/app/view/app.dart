@@ -1125,8 +1125,8 @@ class _AppViewState extends State<_AppView> {
     super.dispose();
   }
 
-  /// An Undo or Redo the recovery path refused: said for a while, since it
-  /// tells the player what to change first.
+  /// An Undo or Redo the recovery path refused: a warning when it happens,
+  /// telling the player what to change first.
   void _showRecoveryRefusal(RecoveryRefusal refusal) {
     if (!mounted) return;
     final pending = refusal.result == EngineResult.notReady;
@@ -1134,7 +1134,6 @@ class _AppViewState extends State<_AppView> {
       Notice(
         id: AppNoticeId.recoveryRefused,
         tone: NoticeTone.warning,
-        explains: true,
         title: (l10n) =>
             pending ? l10n.recoveryWaitTitle : l10n.recoveryModeTitle,
         body: (l10n) => pending
@@ -1174,7 +1173,6 @@ class _AppViewState extends State<_AppView> {
           Notice(
             id: AppNoticeId.deviceRestoredPartial,
             tone: NoticeTone.warning,
-            explains: true,
             title: (l10n) => l10n.deviceReconnectedSnackbar(name(l10n)),
             body: (l10n) => l10n.deviceRestoredPartialToastBody(
               dropped.length,
@@ -1279,8 +1277,9 @@ class _AppViewState extends State<_AppView> {
   }
 
   /// A newer build is available: said for a while at startup with Update…,
-  /// which opens the Updates page. The page keeps the offer; nothing here
-  /// needs a touch. Not said while Updates is already open.
+  /// which opens the Updates page, and Not now, which puts this version off
+  /// until a newer one. The page keeps the offer; nothing here needs a
+  /// touch. Not said while Updates is already open.
   void _showUpdate(BuildContext context, UpdateState state) {
     final manifest = state.available;
     if (!state.shouldNotify || manifest == null || isSegnoUpdatesSettingsOpen) {
@@ -1301,6 +1300,13 @@ class _AppViewState extends State<_AppView> {
             _notices.clear(AppNoticeId.update);
             unawaited(openUpdateSettings());
           },
+        ),
+        secondary: NoticeAction(
+          key: const Key(AppNoticeId.updateNotNow),
+          label: (l10n) => l10n.updateBannerNotNow,
+          onPressed: () => unawaited(
+            context.read<UpdateCubit>().dismiss(manifest.version),
+          ),
         ),
       ),
     );

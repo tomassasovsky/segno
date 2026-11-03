@@ -349,17 +349,11 @@ class _ActionButton extends StatelessWidget {
   static double widthOf(BuildContext context, NoticeAction action) {
     final spacing = context.spacing;
     final theme = context.noticeTheme;
-    final painter = TextPainter(
-      text: TextSpan(
-        text: action.label(context.l10n),
-        style: DefaultTextStyle.of(context).style.merge(theme.barAction),
-      ),
-      textDirection: Directionality.of(context),
-      textScaler: MediaQuery.textScalerOf(context),
-      maxLines: 1,
-    )..layout();
-    final label = painter.width;
-    painter.dispose();
+    final label = noticeTextWidth(
+      context,
+      action.label(context.l10n),
+      theme.barAction,
+    );
     final icon = action.icon == null
         ? 0.0
         : theme.barAction.fontSize! + spacing.sm;

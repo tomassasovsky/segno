@@ -204,7 +204,7 @@ void main() {
       expect(harness.brightness.state.levelOf(DisplayRole.track), 0.2);
       expect(
         harness.notices.state.message?.notice.id,
-        AppNoticeId.displaySave,
+        AppNoticeId.brightnessSave,
       );
 
       store.refuse = false;
