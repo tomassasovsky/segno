@@ -69,7 +69,7 @@ typedef _ControlOrigins = ({
 /// Whether [target] is a shared value: a Mixer value or one an owner outside
 /// Control holds (Click, Decay, One-shot, Record length and timing, Click
 /// mode, Count-in).
-bool _isSharedValue(Object target) =>
+bool _isSharedValue(ControlValueTarget target) =>
     target is MixValueTarget || target is OwnedValueTarget;
 
 /// The press/long-press state machine every gestural footswitch shares.
@@ -730,6 +730,14 @@ class ControlCubit extends Cubit<ControlState> {
           }
           var applied = actionAccepted;
           if (held == false) {
+            // A gesture's Released writes a shared value only when its Held
+            // applied it. Retirement's own cleanup of what this trigger
+            // holds is added below and is never filtered.
+            parameters.removeWhere(
+              (target, _) =>
+                  _isSharedValue(target) &&
+                  !(_externalHeldTargets[input]?.contains(target) ?? false),
+            );
             for (final entry
                 in (_externalNumericReleases[input] ?? {}).entries) {
               parameters.putIfAbsent(entry.key, () => entry.value);
@@ -762,11 +770,6 @@ class ControlCubit extends Cubit<ControlState> {
             }
           }
           if (held == false) {
-            parameters.removeWhere(
-              (target, _) =>
-                  _isSharedValue(target) &&
-                  !(_externalHeldTargets[input]?.contains(target) ?? false),
-            );
             (_externalNumericReleases[input] ??= {}).addAll(parameters);
             (_externalPowerReleases[input] ??= {}).addAll(activations);
           }
@@ -811,6 +814,13 @@ class ControlCubit extends Cubit<ControlState> {
             for (final target in activations.keys)
               target: _looper.bindingEnabled(target),
           };
+          // A Held that landed owes its Released even when the gesture was
+          // cancelled (retired) while the write was in flight.
+          void heldApplied(ControlValueTarget target) {
+            if (held != true || !_originCurrent(target, origins)) return;
+            (_externalHeldTargets[input] ??= {}).add(target);
+          }
+
           void recordParameter(ControlValueTarget target) {
             if (!_originCurrent(target, origins)) return;
             if (held == false) {
@@ -820,9 +830,7 @@ class ControlCubit extends Cubit<ControlState> {
               _externalHeldTargets[input]?.remove(target);
             } else {
               if (_isSharedValue(target)) {
-                if (held ?? false) {
-                  (_externalHeldTargets[input] ??= {}).add(target);
-                }
+                heldApplied(target);
                 _retireMixBaseline(target);
                 _externalMixReleased[input]?.remove(target);
                 if (requestedReleased[target] case final low?) {
@@ -958,6 +966,7 @@ class ControlCubit extends Cubit<ControlState> {
                 releasedValues: released(),
               );
             }
+            if (outcome.isOk) mixValues.keys.forEach(heldApplied);
             if (outcome.isOk && !cancelled()) {
               applied = true;
               mixValues.keys.forEach(recordParameter);
@@ -979,6 +988,7 @@ class ControlCubit extends Cubit<ControlState> {
                 origin: origin,
                 released: released,
               );
+              if (accepted) heldApplied(target);
               if (cancelled()) return;
               if (accepted) {
                 applied = true;
