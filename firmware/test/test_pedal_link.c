@@ -306,9 +306,9 @@ static void check_fixture(const char *dir, const char *name) {
   } else if (strcmp(name, "ambient_reading_165.bin") == 0) {
     CHECK(payload[0] == PEDAL_AMBIENT_READING && payload[1] == PEDAL_LINK_SYNC,
           "ambient_reading_165: fields differ");
-  } else if (strcmp(name, "ambient_above_190.bin") == 0) {
-    CHECK(payload[0] == PEDAL_AMBIENT_ABOVE && payload[1] == 190,
-          "ambient_above_190: fields differ");
+  } else if (strcmp(name, "ambient_above_188.bin") == 0) {
+    CHECK(payload[0] == PEDAL_AMBIENT_ABOVE && payload[1] == 188,
+          "ambient_above_188: fields differ");
   } else if (strcmp(name, "led_level_128.bin") == 0) {
     CHECK(payload[0] == 128, "led_level_128: fields differ");
   } else if (strcmp(name, "led_level_165.bin") == 0) {

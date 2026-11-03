@@ -29,6 +29,15 @@ int ambient_light_probe_fitted(uint16_t with_pull_up, uint16_t with_pull_down) {
   return 1;
 }
 
+uint32_t ambient_light_next_interval(uint32_t *seed) {
+  uint32_t x = *seed ? *seed : 0x9E3779B9u;
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+  *seed = x;
+  return AMBIENT_SAMPLE_MIN_MS + x % AMBIENT_SAMPLE_JITTER_MS;
+}
+
 static void restart(ambient_light *a) {
   a->sum = 0;
   a->samples = 0;

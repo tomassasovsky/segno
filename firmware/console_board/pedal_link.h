@@ -66,7 +66,7 @@ extern "C" {
  * light at the plate from the phototransistor on J22 (GP28). sensor is a
  * PEDAL_AMBIENT_* value. level is the smoothed ADC reading on a log scale,
  * counts = 2^(level / PEDAL_AMBIENT_STEPS_PER_DOUBLING) of 4095: 0 is one
- * count or less, 160 is 1024 counts, 190 the top of the range (3700 counts).
+ * count or less, 160 is 1024 counts, 188 the top of the range (3500 counts).
  * It is NOT lux: the sensor's gain is the owner's to calibrate (a dark and a
  * bright reading, kept by the app), and swapping the load resistor rescales
  * it. With PEDAL_AMBIENT_NONE the level is 0.
