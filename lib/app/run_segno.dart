@@ -306,6 +306,7 @@ Future<void> runSegno(
           config: looper.lastEngineConfig ?? audioRecoveryConfig,
           devices: looper.devices,
         ),
+        audioFrames: looper.readFramesProcessed,
         readoutConnected: () async =>
             readoutConnector != null &&
             (await displayOutputs.isConnected(readoutConnector) ?? false),

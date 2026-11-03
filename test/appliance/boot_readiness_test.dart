@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/appliance/boot_readiness.dart';
+import 'package:segno/logging/app_log.dart';
 
 const _scarlett = [
   AudioDevice(
@@ -92,6 +94,8 @@ void main() {
     late List<String> sent;
     late Completer<void> firstFrame;
     late BootAudio audio;
+    late int frames;
+    late bool callbackRuns;
     late bool readoutConnected;
     late bool readoutAnswers;
     late int pings;
@@ -106,6 +110,7 @@ void main() {
       },
       firstFrame: (firstFrame = Completer<void>()).future,
       audio: () => audio,
+      audioFrames: () => callbackRuns ? frames += 240000 : frames,
       readoutConnected: () async => readoutConnected,
       pingReadout: () async {
         pings++;
@@ -116,6 +121,8 @@ void main() {
     setUp(() {
       sent = [];
       audio = BootAudio.ok;
+      frames = 0;
+      callbackRuns = true;
       readoutConnected = true;
       readoutAnswers = true;
       pings = 0;
@@ -205,6 +212,7 @@ void main() {
           },
           firstFrame: (firstFrame = Completer<void>()).future,
           audio: () => audio,
+          audioFrames: () => frames++,
           readoutConnected: () async => throw StateError('sysfs'),
           pingReadout: () async => true,
         );
@@ -225,6 +233,105 @@ void main() {
         audio = BootAudio.absent;
         async.elapse(const Duration(seconds: 5));
         expect(sent.last, 'READY=1\nSTATUS=alive 2 readout 2 audio absent');
+      });
+    });
+
+    test('a callback that stops reads stalled within one beat', () {
+      fakeAsync((async) {
+        unawaited(readiness().start());
+        firstFrame.complete();
+        async.elapse(const Duration(seconds: 5));
+        callbackRuns = false;
+        async.elapse(const Duration(seconds: 5));
+        expect(sent.skip(1), [
+          'READY=1\nSTATUS=alive 1 readout 1 audio ok',
+          'READY=1\nSTATUS=alive 2 readout 2 audio stalled',
+        ]);
+        // It stays stalled while the count stands, and is ok once it moves.
+        async.elapse(const Duration(seconds: 5));
+        expect(sent.last, 'READY=1\nSTATUS=alive 3 readout 3 audio stalled');
+        callbackRuns = true;
+        async.elapse(const Duration(seconds: 5));
+        expect(sent.last, 'READY=1\nSTATUS=alive 4 readout 4 audio ok');
+      });
+    });
+
+    test('a change of the audio state reaches the log', () async {
+      final dir = await Directory.systemTemp.createTemp('segno-boot-log-');
+      AppLog.close();
+      await AppLog.init(directory: dir);
+      addTearDown(() async {
+        AppLog.close();
+        await dir.delete(recursive: true);
+      });
+      fakeAsync((async) {
+        unawaited(readiness().start());
+        firstFrame.complete();
+        async.elapse(const Duration(seconds: 5));
+        callbackRuns = false;
+        async.elapse(const Duration(seconds: 10));
+        callbackRuns = true;
+        async.elapse(const Duration(seconds: 5));
+      });
+      final lines = File(
+        '${dir.path}/${AppLog.fileName}',
+      ).readAsLinesSync().where((l) => l.contains('boot health: audio'));
+      // Once per change, not once per beat.
+      expect(lines, hasLength(2));
+      expect(lines.first, endsWith(' W boot health: audio ok -> stalled'));
+      expect(lines.last, endsWith(' I boot health: audio stalled -> ok'));
+    });
+
+    test('a count that starts again after a restart is not a stall', () {
+      fakeAsync((async) {
+        unawaited(readiness().start());
+        firstFrame.complete();
+        async.elapse(const Duration(seconds: 5));
+        // Stopped and started again between two beats: the count is lower.
+        frames = 1000;
+        async.elapse(const Duration(seconds: 5));
+        expect(sent.last, 'READY=1\nSTATUS=alive 2 readout 2 audio ok');
+      });
+    });
+
+    test('a stopped engine resets the count the next start compares to', () {
+      fakeAsync((async) {
+        callbackRuns = false;
+        unawaited(readiness().start());
+        firstFrame.complete();
+        audio = BootAudio.refused;
+        async.elapse(const Duration(seconds: 5));
+        audio = BootAudio.ok;
+        async.elapse(const Duration(seconds: 10));
+        expect(sent.skip(1), [
+          'READY=1\nSTATUS=alive 1 readout 1 audio refused',
+          // The first running status after a stop has nothing to compare to.
+          'READY=1\nSTATUS=alive 2 readout 2 audio ok',
+          'READY=1\nSTATUS=alive 3 readout 3 audio stalled',
+        ]);
+      });
+    });
+
+    test('a frame count that cannot be read reads refused', () {
+      fakeAsync((async) {
+        final r = BootReadiness(
+          notify: (state) {
+            sent.add(state);
+            return true;
+          },
+          firstFrame: (firstFrame = Completer<void>()).future,
+          audio: () => audio,
+          audioFrames: () => throw StateError('ffi'),
+          readoutConnected: () async => true,
+          pingReadout: () async => true,
+        );
+        unawaited(r.start());
+        firstFrame.complete();
+        async.elapse(const Duration(seconds: 5));
+        expect(sent, [
+          'READY=1\nSTATUS=alive 0 readout 0 audio refused',
+          'READY=1\nSTATUS=alive 1 readout 1 audio refused',
+        ]);
       });
     });
 
@@ -250,6 +357,7 @@ void main() {
           },
           firstFrame: (firstFrame = Completer<void>()).future,
           audio: () => audio,
+          audioFrames: () => frames++,
           readoutConnected: () async => true,
           pingReadout: () async {
             pings++;
@@ -278,6 +386,7 @@ void main() {
             },
             firstFrame: (firstFrame = Completer<void>()).future,
             audio: () => throw StateError('ffi'),
+            audioFrames: () => fail('read frames of an unreadable engine'),
             readoutConnected: () async => true,
             pingReadout: () async => throw StateError('link'),
           );
