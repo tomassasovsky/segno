@@ -22,7 +22,7 @@ enum PerformanceCaptureStatus {
   /// Armed: the engine's capture taps are running.
   armed,
 
-  /// Disarmed; converting raw PCM to WAV and assembling the bundle.
+  /// Disarmed; assembling the bundle.
   finalizing,
 
   /// The most recent capture's bundle is complete on disk.

@@ -3,12 +3,9 @@ import 'dart:async';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:midi_client/midi_client.dart';
+import 'package:midi_client/testing.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
-import 'package:mocktail/mocktail.dart';
 import 'package:settings_repository/settings_repository.dart';
-
-class _MockMidiSource extends Mock implements MidiControllerSource {}
 
 class _InMemoryStore implements KeyValueStore {
   final Map<String, Object> values = {};
@@ -74,31 +71,41 @@ class _InMemoryStore implements KeyValueStore {
 void main() {
   const dev1 = MidiDevice(id: 'id-1', name: 'FCB1010');
   const dev2 = MidiDevice(id: 'id-2', name: 'SoftStep');
+  const cc = RawControllerInput(
+    kind: ControllerSourceKind.midiCc,
+    id: 64,
+    value: 127,
+  );
 
-  late _MockMidiSource source;
   late _InMemoryStore store;
   late SettingsRepository settings;
-  late StreamController<RawControllerInput> activity;
   late List<MidiDevice> enumerated;
+  late List<FakeMidiCapture> created;
+  late int Function(String id) openResult;
 
   setUp(() {
-    source = _MockMidiSource();
     store = _InMemoryStore();
     settings = SettingsRepository(store: store);
-    activity = StreamController<RawControllerInput>.broadcast();
     enumerated = const [];
-    when(() => source.enumerate()).thenAnswer((_) => enumerated);
-    when(() => source.activity).thenAnswer((_) => activity.stream);
-    when(() => source.open(any())).thenReturn(0);
-    when(source.close).thenReturn(0);
+    created = [];
+    openResult = (_) => 0;
   });
 
-  tearDown(() => activity.close());
+  FakeMidiCapture capture() {
+    final source = FakeMidiCapture(devices: () => enumerated)
+      ..openResult = (id) => openResult(id);
+    created.add(source);
+    return source;
+  }
+
+  /// The capture that opened [id] (the first one created is the scanner).
+  FakeMidiCapture captureOf(String id) =>
+      created.skip(1).firstWhere((source) => source.opened.contains(id));
 
   // Builds a repository with the hotplug timer disabled (tests drive
   // [refresh]).
   MidiDeviceRepository build() => MidiDeviceRepository(
-    source: source,
+    captures: capture,
     settings: settings,
     pollInterval: Duration.zero,
   );
@@ -110,20 +117,110 @@ void main() {
     return repository;
   }
 
-  group('enumeration + initial state', () {
-    test('starts with no selection and the enumerated devices', () async {
+  group('captures', () {
+    test('captures every plugged-in device at once', () async {
       enumerated = const [dev1, dev2];
       final repository = await hydrated();
       addTearDown(repository.dispose);
 
-      expect(repository.connection.status, MidiConnectionStatus.none);
       expect(repository.connection.devices, const [dev1, dev2]);
-      expect(repository.connection.selectedId, '');
+      expect(repository.connection.open, {'id-1', 'id-2'});
+      expect(repository.sessions, {
+        'id-1': const MidiInputSession('id-1', 1),
+        'id-2': const MidiInputSession('id-2', 1),
+      });
+      expect(repository.connection.statusOf('id-2'), isConnected);
+      // Nothing is selected: capture does not depend on the selection.
+      expect(repository.connection.status, MidiConnectionStatus.none);
     });
 
-    test('a null source degrades gracefully (no devices, no crash)', () async {
+    test(
+      'each message carries the session of the device it came from',
+      () async {
+        enumerated = const [dev1, dev2];
+        final repository = build();
+        addTearDown(repository.dispose);
+        final messages = <MidiInputMessage>[];
+        final ticks = <void>[];
+        repository.messages.listen(messages.add);
+        repository.activity.listen(ticks.add);
+
+        captureOf('id-1').send(cc);
+        captureOf('id-2').send(cc);
+        await pumpEventQueue();
+
+        expect(messages.map((m) => m.session), [
+          const MidiInputSession('id-1', 1),
+          const MidiInputSession('id-2', 1),
+        ]);
+        expect(ticks, hasLength(2));
+      },
+    );
+
+    test('a device listed once per port is captured once', () async {
+      enumerated = const [
+        MidiDevice(id: 'id-1', name: 'FCB1010 Port 1'),
+        MidiDevice(id: 'id-1', name: 'FCB1010 Port 2'),
+      ];
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+      await repository.select('id-1');
+      expect(repository.connection.selectedName, 'FCB1010 Port 1');
+
+      expect(created, hasLength(2)); // the scanner and one capture
+      expect(captureOf('id-1').opened, ['id-1']);
+    });
+
+    test('a port that would not open is reported and retried', () async {
+      enumerated = const [dev1, dev2];
+      openResult = (id) => id == 'id-1' ? 5 : 0;
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+
+      expect(repository.connection.openErrors, {'id-1': '5'});
+      expect(repository.connection.statusOf('id-1'), isError);
+      expect(repository.connection.statusOf('id-2'), isConnected);
+
+      openResult = (_) => 0;
+      repository.refresh();
+
+      expect(repository.connection.openErrors, isEmpty);
+      expect(repository.connection.open, {'id-1', 'id-2'});
+      // The port that opened on a retry now feeds its mappings.
+      expect(repository.connection.connectivity, MidiConnectivity.restored);
+      expect(repository.connection.connectivityDeviceId, 'id-1');
+    });
+
+    test('a device that appears but will not open is not restored', () async {
+      enumerated = const [dev1];
+      openResult = (id) => id == 'id-2' ? 5 : 0;
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+
+      enumerated = const [dev1, dev2];
+      repository.refresh();
+
+      expect(repository.connection.connectivity, MidiConnectivity.none);
+      expect(repository.connection.names, {
+        'id-1': 'FCB1010',
+        'id-2': 'SoftStep',
+      });
+    });
+
+    test('a port that throws on open does not stop the others', () async {
+      enumerated = const [dev1, dev2];
+      openResult = (id) =>
+          id == 'id-1' ? throw StateError('native open failed') : 0;
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+
+      expect(repository.connection.openErrors['id-1'], contains('native'));
+      expect(repository.connection.open, {'id-2'});
+    });
+
+    test('a null factory degrades gracefully (no devices, no crash)', () async {
       final repository = MidiDeviceRepository(
-        source: null,
+        captures: null,
         settings: settings,
         pollInterval: Duration.zero,
       );
@@ -132,398 +229,232 @@ void main() {
 
       expect(repository.connection.status, MidiConnectionStatus.none);
       expect(repository.connection.devices, isEmpty);
-      expect(repository.activity, emitsDone); // empty stream
+      expect(repository.sessions, isEmpty);
       await repository.select('id-1'); // no-op, must not throw
       expect(repository.connection.selectedId, '');
     });
-
-    test(
-      'failed initial read reports uncertainty without an uncaught error',
-      () async {
-        store.refusedRead = 'midi.input_device';
-        final repository = await hydrated();
-        addTearDown(repository.dispose);
-
-        expect(repository.connection.pinUncertain, isTrue);
-        expect(repository.connection.selectedId, isEmpty);
-        store.refusedRead = null;
-        await repository.select('');
-        expect(repository.connection.pinUncertain, isFalse);
-        expect(repository.connection.status, MidiConnectionStatus.none);
-      },
-    );
-
-    test(
-      'malformed saved pair fails closed until explicitly cleared',
-      () async {
-        enumerated = const [dev1];
-        store.values['midi.input_device'] = '{"id":"id-1"}';
-        final repository = await hydrated();
-        addTearDown(repository.dispose);
-
-        expect(repository.connection.pinUncertain, isTrue);
-        expect(repository.connection.selectedId, isEmpty);
-        verifyNever(() => source.open(any()));
-        await repository.selectNone();
-        expect(repository.connection.pinUncertain, isFalse);
-        expect(await settings.loadMidiDevice(), isNull);
-      },
-    );
-
-    test('republishes raw source activity for the indicator', () async {
-      final repository = await hydrated();
-      addTearDown(repository.dispose);
-      final ticks = <void>[];
-      final sub = repository.activity.listen(ticks.add);
-      addTearDown(sub.cancel);
-
-      activity.add(
-        const RawControllerInput(
-          kind: ControllerSourceKind.midiCc,
-          id: 80,
-          value: 127,
-        ),
-      );
-      await pumpEventQueue();
-
-      expect(ticks, hasLength(1));
-    });
   });
 
-  group('select', () {
-    test('opens the device, persists it, and connects', () async {
+  group('hotplug', () {
+    test('unplugging closes only that device and raises lost', () async {
       enumerated = const [dev1, dev2];
       final repository = await hydrated();
       addTearDown(repository.dispose);
 
-      await repository.select('id-1');
+      enumerated = const [dev2];
+      repository.refresh();
 
-      expect(repository.connection.status, MidiConnectionStatus.connected);
-      expect(repository.connection.selectedId, 'id-1');
-      expect(repository.connection.selectedName, 'FCB1010');
-      verify(() => source.open('id-1')).called(1);
-      final saved = await settings.loadMidiDevice();
-      expect(saved?.id, 'id-1');
-      expect(saved?.name, 'FCB1010');
+      expect(repository.connection.open, {'id-2'});
+      expect(repository.connection.statusOf('id-1'), isGone);
+      expect(captureOf('id-1').closes, 1);
+      expect(captureOf('id-2').closes, 0);
+      expect(repository.connection.connectivity, MidiConnectivity.lost);
+      expect(repository.connection.connectivityDeviceId, 'id-1');
+      expect(repository.connection.connectivityDeviceName, 'FCB1010');
     });
 
     test(
-      'switching A→B opens B and persists B (native open closes A)',
-      () async {
-        enumerated = const [dev1, dev2];
-        final repository = await hydrated();
-        addTearDown(repository.dispose);
-
-        await repository.select('id-1');
-        await repository.select('id-2');
-
-        expect(repository.connection.selectedId, 'id-2');
-        expect(repository.connection.status, MidiConnectionStatus.connected);
-        verify(() => source.open('id-2')).called(1);
-        expect((await settings.loadMidiDevice())?.id, 'id-2');
-      },
-    );
-
-    test(
-      'a failed open surfaces a recoverable error, retaining the pin',
+      'replugging reopens with a new lifetime and raises restored',
       () async {
         enumerated = const [dev1];
-        when(() => source.open('id-1')).thenReturn(5);
         final repository = await hydrated();
         addTearDown(repository.dispose);
 
-        await repository.select('id-1');
+        enumerated = const [];
+        repository.refresh();
+        enumerated = const [dev1];
+        repository.refresh();
 
-        expect(repository.connection.status, MidiConnectionStatus.error);
-        expect(repository.connection.errorDetail, '5');
-        expect(repository.connection.selectedId, 'id-1');
-        // The selection is still persisted so a later retry / replug recovers.
-        expect((await settings.loadMidiDevice())?.id, 'id-1');
+        expect(repository.sessions, {
+          'id-1': const MidiInputSession('id-1', 2),
+        });
+        expect(repository.connection.connectivity, MidiConnectivity.restored);
+        expect(repository.connection.connectivityDeviceId, 'id-1');
       },
     );
 
-    test('re-selecting the already-connected device is a no-op', () async {
+    test('no transition on the first observation', () async {
       enumerated = const [dev1];
       final repository = await hydrated();
       addTearDown(repository.dispose);
-      await repository.select('id-1');
-      clearInteractions(source);
+      repository.refresh();
 
-      await repository.select('id-1'); // already connected → no reopen
-
-      verifyNever(() => source.open(any()));
-      expect(repository.connection.status, MidiConnectionStatus.connected);
+      expect(repository.connection.connectivity, MidiConnectivity.none);
     });
 
-    for (final priorUncertainty in [false, true]) {
-      test(
-        'confirmed pin stays retryable after thrown open '
-        '(prior uncertainty: $priorUncertainty)',
-        () async {
-          enumerated = const [dev1];
-          final repository = await hydrated();
-          addTearDown(repository.dispose);
-          if (priorUncertainty) {
-            store.refusedWrite = 'midi.input_device';
-            await expectLater(repository.select('id-1'), throwsStateError);
-            expect(repository.connection.pinUncertain, isTrue);
-            verifyNever(() => source.open('id-1'));
-            store.refusedWrite = null;
-          }
-          var opens = 0;
-          when(() => source.open('id-1')).thenAnswer((_) {
-            opens++;
-            if (opens == 1) throw StateError('native open failed');
-            return 0;
-          });
+    test('a device plugged in after launch is restored', () async {
+      enumerated = const [dev1];
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
 
-          await expectLater(repository.select('id-1'), throwsStateError);
-          expect(await settings.loadMidiDevice(), (
-            id: 'id-1',
-            name: 'FCB1010',
-          ));
-          expect(repository.connection.status, MidiConnectionStatus.error);
-          expect(repository.connection.errorDetail, contains('native open'));
-          expect(repository.connection.pinUncertain, isFalse);
-          expect(repository.connection.selectedId, 'id-1');
-          repository.refresh();
-          expect(opens, 2);
-          expect(repository.connection.status, MidiConnectionStatus.connected);
-          expect(repository.connection.errorDetail, isNull);
-        },
-      );
-    }
+      enumerated = const [dev1, dev2];
+      repository.refresh();
 
-    test(
-      'failed device write stays uncertain across refresh and retries',
-      () async {
-        enumerated = const [dev1, dev2];
-        final repository = await hydrated();
-        addTearDown(repository.dispose);
-        await repository.select('id-1');
-        clearInteractions(source);
-        store.refusedWrite = 'midi.input_device';
+      expect(repository.connection.open, {'id-1', 'id-2'});
+      expect(repository.connection.connectivity, MidiConnectivity.restored);
+      expect(repository.connection.connectivityDeviceId, 'id-2');
+    });
 
-        await expectLater(repository.select('id-2'), throwsStateError);
-        expect(repository.connection.selectedId, 'id-2');
-        expect(repository.connection.pinUncertain, isTrue);
-        expect(repository.connection.status, MidiConnectionStatus.error);
-        expect((await settings.loadMidiDevice())?.id, 'id-1');
-        repository.refresh();
-        expect(repository.connection.pinUncertain, isTrue);
-        verifyNever(() => source.open('id-2'));
-        enumerated = const [];
-        repository.refresh();
-        enumerated = const [dev1, dev2];
-        repository.refresh();
-        expect(repository.connection.connectivity, MidiConnectivity.none);
+    test('every device that changes in one poll is published', () async {
+      enumerated = const [dev1, dev2];
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+      final said = <(MidiConnectivity, String)>[];
+      final sub = repository.connections
+          .skip(1)
+          .listen(
+            (c) => said.add((c.connectivity, c.connectivityDeviceId)),
+          );
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
 
-        final relaunched = await hydrated();
-        addTearDown(relaunched.dispose);
-        expect(relaunched.connection.selectedId, 'id-1');
-        store.refusedWrite = null;
-        await repository.select('id-2');
-        expect(repository.connection.pinUncertain, isFalse);
-        expect(repository.connection.status, MidiConnectionStatus.connected);
-        expect((await settings.loadMidiDevice())?.id, 'id-2');
-        verify(() => source.open('id-2')).called(1);
-      },
-    );
+      enumerated = const [];
+      repository.refresh();
+      await pumpEventQueue();
 
-    test(
-      'write-then-throw retains uncertainty and a coherent pair on relaunch',
-      () async {
-        enumerated = const [dev1, dev2];
-        final repository = await hydrated();
-        addTearDown(repository.dispose);
-        await repository.select('id-1');
-        clearInteractions(source);
-        store.failAfterWrite = 'midi.input_device';
+      expect(said, [
+        (MidiConnectivity.lost, 'id-1'),
+        (MidiConnectivity.lost, 'id-2'),
+      ]);
+    });
 
-        await expectLater(repository.select('id-2'), throwsStateError);
-        expect(repository.connection.pinUncertain, isTrue);
-        expect(await settings.loadMidiDevice(), (id: 'id-2', name: 'SoftStep'));
-        repository.refresh();
-        verifyNever(() => source.open('id-2'));
+    test('a port that never opened is not reported lost', () async {
+      enumerated = const [dev1];
+      openResult = (_) => 5;
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
 
-        final relaunched = await hydrated();
-        addTearDown(relaunched.dispose);
-        expect(relaunched.connection.selectedId, 'id-2');
-        expect(relaunched.connection.selectedName, 'SoftStep');
+      enumerated = const [];
+      repository.refresh();
 
-        await repository.select('id-2');
-        expect(repository.connection.pinUncertain, isFalse);
-        expect(await settings.loadMidiDevice(), (
-          id: 'id-2',
-          name: 'SoftStep',
-        ));
-      },
-    );
+      expect(repository.connection.connectivity, MidiConnectivity.none);
+    });
 
-    test('dropped write is not reported as a saved new selection', () async {
+    test('the poll timer drives periodic refresh', () {
+      fakeAsync((async) {
+        final repository = MidiDeviceRepository(
+          captures: capture,
+          settings: settings,
+          pollInterval: const Duration(milliseconds: 500),
+        );
+        async.flushMicrotasks(); // launch hydrate
+        enumerated = const [dev1];
+
+        async.elapse(const Duration(milliseconds: 500)); // one poll tick
+
+        expect(repository.connection.devices, const [dev1]);
+        expect(repository.connection.open, {'id-1'});
+        unawaited(repository.dispose());
+        async.flushMicrotasks();
+      });
+    });
+  });
+
+  group('selection', () {
+    test('persists the shown device and opens nothing', () async {
+      enumerated = const [dev1, dev2];
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+
+      await repository.select('id-2');
+
+      expect(repository.connection.selectedId, 'id-2');
+      expect(repository.connection.selectedName, 'SoftStep');
+      expect(repository.connection.status, MidiConnectionStatus.connected);
+      expect(await settings.loadMidiDevice(), (id: 'id-2', name: 'SoftStep'));
+      expect(captureOf('id-2').opened, ['id-2']);
+      expect(repository.connection.open, {'id-1', 'id-2'});
+    });
+
+    test('a failed write stays uncertain until a retry saves it', () async {
       enumerated = const [dev1, dev2];
       final repository = await hydrated();
       addTearDown(repository.dispose);
       await repository.select('id-1');
-      clearInteractions(source);
+      store.refusedWrite = 'midi.input_device';
+
+      await expectLater(repository.select('id-2'), throwsStateError);
+
+      expect(repository.connection.selectedId, 'id-2');
+      expect(repository.connection.pinUncertain, isTrue);
+      expect(repository.connection.errorDetail, contains('refused'));
+      expect((await settings.loadMidiDevice())?.id, 'id-1');
+      // Capture is unaffected.
+      expect(repository.connection.open, {'id-1', 'id-2'});
+
+      store.refusedWrite = null;
+      await repository.select('id-2');
+      expect(repository.connection.pinUncertain, isFalse);
+      expect(repository.connection.errorDetail, isNull);
+      expect((await settings.loadMidiDevice())?.id, 'id-2');
+    });
+
+    test('write-then-throw keeps a coherent pair on relaunch', () async {
+      enumerated = const [dev1, dev2];
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+      store.failAfterWrite = 'midi.input_device';
+
+      await expectLater(repository.select('id-2'), throwsStateError);
+      expect(repository.connection.pinUncertain, isTrue);
+
+      final relaunched = await hydrated();
+      addTearDown(relaunched.dispose);
+      expect(relaunched.connection.selectedId, 'id-2');
+      expect(relaunched.connection.selectedName, 'SoftStep');
+    });
+
+    test('a dropped write is not reported as saved', () async {
+      enumerated = const [dev1, dev2];
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+      await repository.select('id-1');
       store.dropWrite = 'midi.input_device';
 
       await expectLater(repository.select('id-2'), throwsStateError);
       expect(repository.connection.pinUncertain, isTrue);
       expect(await settings.loadMidiDevice(), (id: 'id-1', name: 'FCB1010'));
-      repository.refresh();
-      verifyNever(() => source.open('id-2'));
-
-      store.dropWrite = null;
-      await repository.select('id-2');
-      expect(repository.connection.pinUncertain, isFalse);
-      expect(await settings.loadMidiDevice(), (id: 'id-2', name: 'SoftStep'));
     });
-  });
 
-  group('None', () {
-    test('closes the device, clears the keys, and stops events', () async {
+    test('rapid A then B saves only the latest request', () async {
+      enumerated = const [dev1, dev2];
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+
+      await Future.wait([repository.select('id-1'), repository.select('id-2')]);
+
+      expect(repository.connection.selectedId, 'id-2');
+      expect((await settings.loadMidiDevice())?.id, 'id-2');
+    });
+
+    test('re-selecting the shown device writes nothing', () async {
       enumerated = const [dev1];
       final repository = await hydrated();
       addTearDown(repository.dispose);
       await repository.select('id-1');
+      store.refusedWrite = 'midi.input_device';
 
-      await repository.selectNone();
-
-      expect(repository.connection.status, MidiConnectionStatus.none);
-      expect(repository.connection.selectedId, '');
-      expect(repository.connection.pinUncertain, isFalse);
-      verify(source.close).called(2);
-      expect(await settings.loadMidiDevice(), isNull);
-    });
-
-    test('failed first removal stops ingress and stays retryable', () async {
-      enumerated = const [dev1];
-      final repository = await hydrated();
-      addTearDown(repository.dispose);
       await repository.select('id-1');
-      clearInteractions(source);
-      store.refusedRemoval = 'midi.input_device';
 
-      final clearing = repository.selectNone();
-      expect(repository.connection.selectedId, '');
-      expect(repository.connection.status, MidiConnectionStatus.connecting);
-      verify(source.close).called(1);
-      await expectLater(clearing, throwsStateError);
-
-      expect(repository.connection.status, MidiConnectionStatus.error);
-      expect(repository.connection.selectedId, '');
-      expect(repository.connection.pinUncertain, isTrue);
-      expect(repository.connection.errorDetail, contains('storage refused'));
-      expect((await settings.loadMidiDevice())?.id, 'id-1');
-      repository.refresh();
-      verifyNever(() => source.open(any()));
-
-      // A restart still observes the old durable pin. Retry confirms None.
-      final relaunched = await hydrated();
-      addTearDown(relaunched.dispose);
-      expect(relaunched.connection.selectedId, 'id-1');
-      expect(relaunched.connection.status, MidiConnectionStatus.connected);
-      store.refusedRemoval = null;
-      await repository.selectNone();
-      expect(repository.connection.status, MidiConnectionStatus.none);
       expect(repository.connection.pinUncertain, isFalse);
-      expect(await settings.loadMidiDevice(), isNull);
-    });
-
-    test(
-      'remove-then-throw remains uncertain and relaunch sees None',
-      () async {
-        enumerated = const [dev1];
-        final repository = await hydrated();
-        addTearDown(repository.dispose);
-        await repository.select('id-1');
-        store.failAfterRemoval = 'midi.input_device';
-
-        await expectLater(repository.selectNone(), throwsStateError);
-
-        expect(repository.connection.status, MidiConnectionStatus.error);
-        expect(repository.connection.selectedId, '');
-        expect(repository.connection.pinUncertain, isTrue);
-        expect(await settings.loadMidiDevice(), isNull);
-        expect(store.values.containsKey('midi.input_device'), isFalse);
-        clearInteractions(source);
-        final relaunched = await hydrated();
-        addTearDown(relaunched.dispose);
-        expect(relaunched.connection.status, MidiConnectionStatus.none);
-        verifyNever(() => source.open(any()));
-        await repository.selectNone();
-        expect(repository.connection.status, MidiConnectionStatus.none);
-        expect(store.values.containsKey('midi.input_device'), isFalse);
-      },
-    );
-
-    test('a newer selection outranks an old failed clear', () async {
-      enumerated = const [dev1, dev2];
-      final repository = await hydrated();
-      addTearDown(repository.dispose);
-      await repository.select('id-1');
-      store.refusedRemoval = 'midi.input_device';
-      final gate = Completer<void>();
-      store.removalGate = gate;
-
-      final clearing = repository.selectNone();
-      await pumpEventQueue(); // the old clear is inside the store
-      final selecting = repository.select('id-2');
-      gate.complete();
-      await expectLater(clearing, throwsStateError);
-      await selecting;
-
-      expect(repository.connection.selectedId, 'id-2');
-      expect(repository.connection.status, MidiConnectionStatus.connected);
-      expect((await settings.loadMidiDevice())?.id, 'id-2');
     });
   });
 
-  test(
-    'rapid A then B selection opens only the latest captured request',
-    () async {
-      enumerated = const [dev1, dev2];
-      final repository = await hydrated();
-      addTearDown(repository.dispose);
-      final a = repository.select('id-1');
-      final b = repository.select('id-2');
-      await Future.wait([a, b]);
-      verifyNever(() => source.open('id-1'));
-      verify(() => source.open('id-2')).called(1);
-      expect(repository.connection.selectedId, 'id-2');
-      expect((await settings.loadMidiDevice())?.id, 'id-2');
-    },
-  );
-
-  test('None invalidates an unfinished selection before it opens', () async {
-    enumerated = const [dev1];
-    final repository = await hydrated();
-    addTearDown(repository.dispose);
-    final selection = repository.select('id-1');
-    final none = repository.selectNone();
-    await Future.wait([selection, none]);
-    verifyNever(() => source.open(any()));
-    expect(repository.connection.status, MidiConnectionStatus.none);
-    expect(await settings.loadMidiDevice(), isNull);
-  });
-
-  group('launch auto-reconnect', () {
-    test('re-opens a saved device that is present', () async {
+  group('launch', () {
+    test('restores a saved device that is present', () async {
       await settings.saveMidiDevice(id: 'id-1', name: 'FCB1010');
       enumerated = const [dev1];
 
       final repository = await hydrated();
       addTearDown(repository.dispose);
 
-      expect(repository.connection.status, MidiConnectionStatus.connected);
       expect(repository.connection.selectedId, 'id-1');
-      verify(() => source.open('id-1')).called(1);
+      expect(repository.connection.status, MidiConnectionStatus.connected);
     });
 
-    test('retains a saved device that is absent as deviceGone', () async {
+    test('keeps a saved device that is absent as deviceGone', () async {
       await settings.saveMidiDevice(id: 'id-9', name: 'Ghost');
-      enumerated = const [dev1]; // id-9 not present
+      enumerated = const [dev1];
 
       final repository = await hydrated();
       addTearDown(repository.dispose);
@@ -531,93 +462,32 @@ void main() {
       expect(repository.connection.status, MidiConnectionStatus.deviceGone);
       expect(repository.connection.selectedId, 'id-9');
       expect(repository.connection.selectedName, 'Ghost');
-      verifyNever(() => source.open(any()));
+      expect(repository.connection.open, {'id-1'});
     });
-  });
 
-  group('hotplug', () {
-    test('losing the connected device marks it gone and raises lost', () async {
+    test('a failed read reports uncertainty and still captures', () async {
+      store.refusedRead = 'midi.input_device';
       enumerated = const [dev1];
       final repository = await hydrated();
       addTearDown(repository.dispose);
-      await repository.select('id-1');
 
-      enumerated = const []; // unplugged
-      repository.refresh();
-
-      expect(repository.connection.status, MidiConnectionStatus.deviceGone);
-      expect(repository.connection.connectivity, MidiConnectivity.lost);
-      expect(repository.connection.connectivityDeviceName, 'FCB1010');
+      expect(repository.connection.pinUncertain, isTrue);
+      expect(repository.connection.selectedId, isEmpty);
+      expect(repository.connection.open, {'id-1'});
     });
 
-    test('replugging reconnects the device and raises restored', () async {
+    test('a malformed saved pair selects nothing', () async {
       enumerated = const [dev1];
+      store.values['midi.input_device'] = '{"id":"id-1"}';
       final repository = await hydrated();
       addTearDown(repository.dispose);
+
+      expect(repository.connection.pinUncertain, isTrue);
+      expect(repository.connection.selectedId, isEmpty);
+      store.refusedRead = null;
       await repository.select('id-1');
-      clearInteractions(source);
-
-      enumerated = const [];
-      repository.refresh(); // lost
-      enumerated = const [dev1];
-      repository.refresh(); // restored
-
-      expect(repository.connection.status, MidiConnectionStatus.connected);
-      expect(repository.connection.connectivity, MidiConnectivity.restored);
-      verify(() => source.open('id-1')).called(1);
-    });
-
-    test('does not flag a transition on the first observation', () async {
-      enumerated = const [dev1];
-      final repository = await hydrated();
-      addTearDown(repository.dispose);
-      await repository.select('id-1');
-
-      repository.refresh(); // still present, no transition
-
-      expect(repository.connection.connectivity, MidiConnectivity.none);
-      expect(repository.connection.status, MidiConnectionStatus.connected);
-    });
-
-    test(
-      'a failed reopen on replug surfaces the error after restored',
-      () async {
-        enumerated = const [dev1];
-        final repository = await hydrated();
-        addTearDown(repository.dispose);
-        await repository.select('id-1');
-
-        enumerated = const [];
-        repository.refresh(); // lost
-        when(() => source.open('id-1')).thenReturn(7);
-        enumerated = const [dev1];
-        repository.refresh(); // present again, but the reopen fails
-
-        expect(repository.connection.status, MidiConnectionStatus.error);
-        expect(repository.connection.errorDetail, '7');
-        expect(repository.connection.connectivity, MidiConnectivity.restored);
-      },
-    );
-
-    test('the poll timer drives periodic refresh', () {
-      enumerated = const [dev1];
-      fakeAsync((async) {
-        final repository = MidiDeviceRepository(
-          source: source,
-          settings: settings,
-          pollInterval: const Duration(milliseconds: 500),
-        );
-        async.flushMicrotasks(); // launch hydrate
-        clearInteractions(source);
-
-        async.elapse(const Duration(milliseconds: 500)); // one poll tick
-
-        verify(() => source.enumerate()).called(greaterThanOrEqualTo(1));
-        // The poll reconciled the live enumeration into the connection.
-        expect(repository.connection.devices, const [dev1]);
-        unawaited(repository.dispose());
-        async.flushMicrotasks();
-      });
+      expect(repository.connection.pinUncertain, isFalse);
+      expect(await settings.loadMidiDevice(), (id: 'id-1', name: 'FCB1010'));
     });
   });
 
@@ -627,100 +497,60 @@ void main() {
       final repository = await hydrated();
       addTearDown(repository.dispose);
 
-      // Subscribe after the launch enumerate/hydrate already ran.
       final first = await repository.connections.first;
 
       expect(first.devices, const [dev1, dev2]);
-      expect(first.status, MidiConnectionStatus.none);
-    });
-
-    test('emits as the lifecycle advances', () async {
-      enumerated = const [dev1];
-      final repository = await hydrated();
-      addTearDown(repository.dispose);
-
-      final statuses = <MidiConnectionStatus>[];
-      final sub = repository.connections.listen((c) => statuses.add(c.status));
-      addTearDown(sub.cancel);
-
-      await repository.select('id-1');
-      await pumpEventQueue();
-
-      expect(
-        statuses,
-        containsAllInOrder([
-          MidiConnectionStatus.connecting,
-          MidiConnectionStatus.connected,
-        ]),
-      );
-      expect(statuses.last, MidiConnectionStatus.connected);
-    });
-  });
-
-  group('audio independence', () {
-    test('selecting / switching / clearing touches only the MIDI source and '
-        'settings — never an audio engine', () async {
-      enumerated = const [dev1, dev2];
-      final repository = await hydrated();
-      addTearDown(repository.dispose);
-
-      await repository.select('id-1');
-      await repository.select('id-2');
-      await repository.selectNone();
-
-      // The repository has no LooperRepository collaborator at all; its only
-      // interactions are open/close/enumerate on the MIDI source.
-      verify(() => source.open(any())).called(2);
-      verify(source.close).called(3);
-      verify(() => source.enumerate()).called(greaterThanOrEqualTo(1));
-      verifyNoMoreInteractions(source);
+      expect(first.open, {'id-1', 'id-2'});
     });
   });
 
   group('disposal', () {
-    test('does not dispose the borrowed source', () async {
+    test('disposes every capture and the scanner', () async {
+      enumerated = const [dev1, dev2];
       final repository = await hydrated();
 
       await repository.dispose();
 
-      // The source is owned by the ControllerRepository; the repository only
-      // borrows it and must never tear it down.
-      verifyNever(() => source.dispose());
+      expect(created, hasLength(3));
+      expect(created.every((source) => source.isDisposed), isTrue);
     });
 
-    test('a late None request does not start a write after disposal', () async {
+    test('a late selection does not write after disposal', () async {
+      enumerated = const [dev1];
       final repository = await hydrated();
       await repository.dispose();
-      clearInteractions(source);
 
-      await repository.select('');
+      await repository.select('id-1');
 
-      verifyNever(source.close);
       expect(store.values, isEmpty);
     });
   });
 
   group('MidiConnection', () {
-    test('isSelectedPresent reflects the current enumeration', () {
-      const absent = MidiConnection(devices: [dev1], selectedId: 'id-9');
-      const present = MidiConnection(devices: [dev1], selectedId: 'id-1');
+    test('statusOf reads each device on its own', () {
+      const connection = MidiConnection(
+        devices: [dev1, dev2],
+        open: {'id-1'},
+        openErrors: {'id-2': '5'},
+        selectedId: 'id-9',
+      );
 
-      expect(absent.isSelectedPresent, isFalse);
-      expect(present.isSelectedPresent, isTrue);
+      expect(connection.statusOf('id-1'), isConnected);
+      expect(connection.statusOf('id-2'), isError);
+      expect(connection.statusOf('id-9'), isGone);
+      expect(connection.statusOf(''), MidiConnectionStatus.none);
+      expect(connection.status, isGone);
     });
 
     test('copyWith replaces fields; clearError resets the detail', () {
-      const base = MidiConnection(
-        status: MidiConnectionStatus.error,
-        errorDetail: '5',
-      );
+      const base = MidiConnection(errorDetail: '5', pinUncertain: true);
 
-      final updated = base.copyWith(status: MidiConnectionStatus.connecting);
-      expect(updated.status, MidiConnectionStatus.connecting);
+      final updated = base.copyWith(open: {'id-1'});
+      expect(updated.open, {'id-1'});
       expect(updated.errorDetail, '5'); // retained without clearError
 
       expect(base.copyWith(clearError: true).errorDetail, isNull);
-      expect(base.copyWith(pinUncertain: true).pinUncertain, isTrue);
+      expect(base.copyWith(pinUncertain: false).pinUncertain, isFalse);
     });
 
     test('value equality is by props', () {
@@ -729,9 +559,13 @@ void main() {
         const MidiConnection(selectedId: 'a'),
       );
       expect(
-        const MidiConnection(selectedId: 'a'),
-        isNot(const MidiConnection(selectedId: 'b')),
+        const MidiConnection(open: {'a'}),
+        isNot(const MidiConnection(open: {'b'})),
       );
     });
   });
 }
+
+const MidiConnectionStatus isConnected = MidiConnectionStatus.connected;
+const MidiConnectionStatus isError = MidiConnectionStatus.error;
+const MidiConnectionStatus isGone = MidiConnectionStatus.deviceGone;

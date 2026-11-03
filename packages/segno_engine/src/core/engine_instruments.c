@@ -115,7 +115,7 @@ int le_instruments_create(le_engine* e) {
    * are fork-shielded and prefaulted here, on the control thread (rt_alloc.h). */
   e->synth = (struct le_synth*)le_rt_alloc_prefaulted(sizeof(le_synth));
   e->inst_bus = (float*)le_rt_alloc_prefaulted(
-      (size_t)LE_MAX_INSTRUMENTS * (size_t)LE_COND_SCRATCH_FRAMES * sizeof(float));
+      (size_t)LE_MAX_INSTRUMENTS * (size_t)LE_INST_BUS_FRAMES * sizeof(float));
   if (e->synth == NULL || e->inst_bus == NULL) {
     le_instruments_destroy(e);
     return 0;
@@ -723,7 +723,7 @@ void le_instruments_render(le_engine* e, uint32_t frames) {
   le_synth* s = (le_synth*)e->synth;
   /* The buses hold this block's audio (silence included) unless the block
    * is larger than the scratch; instrument sources read silence then. */
-  e->inst_bus_live = s != NULL && frames <= LE_COND_SCRATCH_FRAMES;
+  e->inst_bus_live = s != NULL && frames <= LE_INST_BUS_FRAMES;
   if (s == NULL) return;
   if (frames == 0) return;
   int any = le_synth_fading(s) > 0;
@@ -736,21 +736,21 @@ void le_instruments_render(le_engine* e, uint32_t frames) {
     for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
       store_i32(&e->a_inst_voices[k], 0);
       if (load_f32(&e->a_inst_peak_bits[k]) != 0.0f) {
-        memset(e->inst_bus + (int64_t)k * LE_COND_SCRATCH_FRAMES, 0,
-               sizeof(float) * (size_t)LE_COND_SCRATCH_FRAMES);
+        memset(e->inst_bus + (int64_t)k * LE_INST_BUS_FRAMES, 0,
+               sizeof(float) * (size_t)LE_INST_BUS_FRAMES);
         store_f32(&e->a_inst_peak_bits[k], 0.0f);
       }
     }
     return;
   }
-  if (frames > LE_COND_SCRATCH_FRAMES) {
+  if (frames > LE_INST_BUS_FRAMES) {
     /* Larger than the bus scratch (only synthetic test blocks): counted, no
      * instrument audio and silent buses, never an allocation on this
      * thread. */
     atomic_fetch_add_explicit(&e->a_inst_fallback_blocks, 1u,
                               memory_order_relaxed);
     memset(e->inst_bus, 0,
-           sizeof(float) * (size_t)LE_MAX_INSTRUMENTS * LE_COND_SCRATCH_FRAMES);
+           sizeof(float) * (size_t)LE_MAX_INSTRUMENTS * LE_INST_BUS_FRAMES);
     for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
       store_f32(&e->a_inst_peak_bits[k], 0.0f);
     }
@@ -758,7 +758,7 @@ void le_instruments_render(le_engine* e, uint32_t frames) {
   }
   float* bus[LE_MAX_INSTRUMENTS];
   for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
-    bus[k] = e->inst_bus + (int64_t)k * LE_COND_SCRATCH_FRAMES;
+    bus[k] = e->inst_bus + (int64_t)k * LE_INST_BUS_FRAMES;
   }
   le_synth_render(s, bus, LE_MAX_INSTRUMENTS, (int32_t)frames);
   for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {

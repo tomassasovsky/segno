@@ -149,6 +149,24 @@ void main() {
           closeTo(want.dy, 0.01),
           reason: '${type.name} switch $index y',
         );
+        // The switch's name sits under its bezel, clear of it (#1590
+        // PED-2).
+        final caption = tester.getRect(
+          find.descendant(
+            of: find.byKey(Key('external_switch_$index')),
+            matching: find.text('Button ${index + 1}'),
+          ),
+        );
+        expect(
+          caption.top,
+          closeTo(
+            target.center.dy +
+                art.bezelRadius * scale +
+                SpacingTheme.standard.sm,
+            0.01,
+          ),
+          reason: '${type.name} switch $index caption',
+        );
       }
     }
   });

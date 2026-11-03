@@ -239,13 +239,11 @@ typedef struct {
 /* What fails today, each with why it is allowed. The full run's table
  * names the worst setting of each. */
 static const mx_known k_known[] = {
-    /* The Dual Octaver is sensitive to tiny input changes: adding -120 dB
-     * of noise at 48 kHz moves its envelope as far as running at 44.1 or
-     * 96 kHz does, most likely through the low band's pitch detection
-     * (#1580). Its kernel runs at 48 kHz at every rate (#1547), so the
-     * residue is that sensitivity, not a rate dependence. */
-    {"dualoct", MX_ENVELOPE, 44100, 5.0},
-    {"dualoct", MX_ENVELOPE, 96000, 5.0},
+    /* The Dual Octaver's Octave 2 at 96 kHz (Bass Octave Layer, at 60 %):
+     * its vocoder voice, two octaves down, strays at the notes' onsets. Not
+     * the low band: with the band off it strays further (6.2 dB). #1616;
+     * the hand-over's part went with #1580. */
+    {"dualoct", MX_ENVELOPE, 96000, 4.0},
     {NULL, 0, 0, 0.0},
 };
 

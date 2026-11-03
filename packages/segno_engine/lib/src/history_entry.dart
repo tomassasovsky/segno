@@ -14,10 +14,6 @@ enum HistoryKind {
   /// Redo side it is a marker without an image that re-peels.
   peel(2),
 
-  /// A loop-close restoration: the raw take beneath a conditioned image.
-  /// Undo and Redo swap it like a layer; Peel never consumes it.
-  processed(3),
-
   /// A length edit (#1168): the image to put back at its own length, with
   /// the playhead map ([HistoryEntry.start]) applied when it swaps in.
   length(4),
@@ -29,8 +25,9 @@ enum HistoryKind {
 
   const HistoryKind(this.code);
 
-  /// The engine's `le_hist_kind` value. Matches the enum index today; kept
-  /// explicit so the engine's numbering, not declaration order, is the wire.
+  /// The engine's `le_hist_kind` value. Explicit so the engine's numbering,
+  /// not declaration order, is the wire: 3 was the loop-close restoration
+  /// (#697) and stays unallocated.
   final int code;
 
   /// The kind for an engine `le_hist_kind`, or `null` when unknown.

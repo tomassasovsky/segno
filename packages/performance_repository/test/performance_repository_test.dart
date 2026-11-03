@@ -6,10 +6,12 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:performance_repository/src/legacy_capture.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:wav_codec/wav_codec.dart';
 
 import 'helpers/fake_performance_engine.dart';
+import 'helpers/fake_storage_io.dart';
 import 'helpers/native_capture_fixture.dart';
 
 /// A [File] whose [readAsString] parks on [_gate] before delegating — an
@@ -107,7 +109,7 @@ class _ThrowAfterArmEngine extends FakePerformanceEngine {
   }
 }
 
-/// A `performance.json` that reads normally and refuses to be rewritten —
+/// The finalized `performance.json` on its way in, refusing to be written —
 /// the finalize of a take whose disk filled at the end.
 class _ManifestWriteFails implements File {
   _ManifestWriteFails(this._inner);
@@ -149,6 +151,7 @@ void main() {
     engine = FakePerformanceEngine();
     clock = DateTime(2026, 7, 6, 14, 30, 15);
     repo = PerformanceRepository(
+      storageIo: fakeStorageIo,
       guards: GuardRegistry(),
       engine: engine,
       exportsRoot: () async => '${tempDir.path}/exports',
@@ -197,6 +200,7 @@ void main() {
       await repo.disarm();
 
       final reserved = PerformanceRepository(
+        storageIo: fakeStorageIo,
         engine: engine,
         exportsRoot: () async => '${tempDir.path}/exports',
         now: () => clock.add(const Duration(minutes: 1)),
@@ -209,6 +213,7 @@ void main() {
 
     test('a take on a USB drive keeps no reserve there (#1177)', () async {
       final reserved = PerformanceRepository(
+        storageIo: fakeStorageIo,
         engine: engine,
         exportsRoot: () async => '${tempDir.path}/exports',
         now: () => clock,
@@ -313,6 +318,7 @@ void main() {
         'directory', () async {
       final broken = _ThrowAfterArmEngine()..throwSnapshot = true;
       final localRepo = PerformanceRepository(
+        storageIo: fakeStorageIo,
         guards: GuardRegistry(),
         engine: broken,
         exportsRoot: () async => '${tempDir.path}/exports',
@@ -333,6 +339,7 @@ void main() {
         ..throwOutputFx = true
         ..perfDisarmResult = EngineResult.device;
       final localRepo = PerformanceRepository(
+        storageIo: fakeStorageIo,
         guards: GuardRegistry(),
         engine: broken,
         exportsRoot: () async => '${tempDir.path}/exports',
@@ -361,6 +368,7 @@ void main() {
         ..throwOutputFx = true
         ..throwDisarmOnce = true;
       final localRepo = PerformanceRepository(
+        storageIo: fakeStorageIo,
         guards: GuardRegistry(),
         engine: broken,
         exportsRoot: () async => '${tempDir.path}/exports',
@@ -1053,6 +1061,7 @@ void main() {
         // salvage provably enters the window AFTER arm's entry gate passed.
         final rootGate = Completer<String>();
         final gatedRepo = PerformanceRepository(
+          storageIo: fakeStorageIo,
           guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () => rootGate.future,
@@ -1095,6 +1104,7 @@ void main() {
         // engine's drain thread.
         final rootGate = Completer<String>();
         final gatedRepo = PerformanceRepository(
+          storageIo: fakeStorageIo,
           guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () => rootGate.future,
@@ -1203,32 +1213,6 @@ void main() {
         stream: 1,
       );
     }
-
-    test('a capture from before #1198 (raw PCM, no parts) still converts '
-        'to WAV, as it always did', () async {
-      await repo.arm();
-      clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
-      final dir = repo.armedDirectory!;
-      writeNativeSidecar(dir, capturedInputs: const [0]);
-      writeRawPcm(
-        '$dir/master.pcm',
-        Float32List.fromList([0.1, 0.2, 0.3, 0.4]),
-      );
-      writeRawPcm('$dir/input-0.pcm', Float32List.fromList([0.5, 0.6]));
-
-      await repo.disarm();
-
-      final master = WavCodec.decodeFloat32(
-        File('$dir/master.wav').readAsBytesSync(),
-      );
-      expect(master.channels, 2);
-      expect(master.samples, Float32List.fromList([0.1, 0.2, 0.3, 0.4]));
-      final input = WavCodec.decodeFloat32(
-        File('$dir/live-input-0.wav').readAsBytesSync(),
-      );
-      expect(input.samples, Float32List.fromList([0.5, 0.6]));
-      expect(File('$dir/master.pcm').existsSync(), isTrue);
-    });
 
     test('seals the open parts a crash left, dropping a torn frame, and '
         'converts nothing (#1198)', () async {
@@ -1844,96 +1828,483 @@ void main() {
     );
   });
 
-  group('runBootRecovery (silent boot salvage, #679)', () {
-    test('a crashed capture from before #1198 recovers with its WAV and is '
-        'never deleted afterwards', () async {
-      final dir = '${tempDir.path}/exports/perf-legacy';
+  group('a capture from before #1198 (#1078)', () {
+    /// Floats that are exact in float32, so a read-back compares equal.
+    Float32List ramp(int count, {double scale = 1 / 64}) =>
+        Float32List.fromList([for (var i = 0; i < count; i++) i * scale]);
+
+    Map<String, dynamic> readSidecar(String dir) =>
+        jsonDecode(File('$dir/performance.json').readAsStringSync())
+            as Map<String, dynamic>;
+
+    Float32List payload(String path) {
+      final bytes = File(path).readAsBytesSync();
+      return Float32List.fromList(
+        Float32List.view(
+          Uint8List.fromList(bytes.sublist(84)).buffer,
+        ),
+      );
+    }
+
+    String seedLegacy(
+      String slug, {
+      int masterChannels = 2,
+      List<int> inputs = const [],
+      Float32List? master,
+      Map<int, Float32List> inputSamples = const {},
+    }) {
+      final dir = '${tempDir.path}/exports/$slug';
       Directory(dir).createSync(recursive: true);
-      writeNativeSidecar(dir);
-      writeRawPcm('$dir/master.pcm', Float32List.fromList([0.25, 0.5]));
-
-      await repo.runBootRecovery();
-      final recovered = '${tempDir.path}/exports/recovered/perf-legacy';
-      expect(File('$recovered/master.wav').existsSync(), isTrue);
-      expect(File('$recovered/master.pcm').existsSync(), isTrue);
-
-      clock = clock.add(const Duration(days: 400));
-      await repo.runBootRecovery();
-      expect(File('$recovered/master.wav').existsSync(), isTrue);
-    });
-
-    test('pre-#1198 captures too large to read whole (6 GB and 36 GB raw, as '
-        'found on an appliance) stay unfinalized in place, every file kept, '
-        'and are reported as not recovered', () async {
-      // Sparse files: the lengths are real, the disk holds almost nothing.
-      void sparse(String path, int length) {
-        File(path).openSync(mode: FileMode.write)
-          ..setPositionSync(length - 4)
-          ..writeFromSync([0, 0, 0, 0])
-          ..closeSync();
+      writeNativeSidecar(
+        dir,
+        masterChannels: masterChannels,
+        capturedInputs: inputs,
+      );
+      writeRawPcm('$dir/master.pcm', master ?? ramp(8));
+      for (final MapEntry(key: input, value: samples) in inputSamples.entries) {
+        writeRawPcm('$dir/input-$input.pcm', samples);
       }
+      return dir;
+    }
 
-      final sizes = {'perf-big': 6 << 30, 'perf-huge': 36 << 30};
-      for (final MapEntry(key: slug, value: length) in sizes.entries) {
-        final dir = '${tempDir.path}/exports/$slug';
-        Directory(dir).createSync(recursive: true);
-        writeNativeSidecar(dir, capturedInputs: const [0, 1]);
-        File('$dir/arm-snapshot.json').writeAsStringSync('{}');
-        for (final name in ['master', 'input-0', 'input-1']) {
-          sparse('$dir/$name.pcm', length);
-        }
+    PerformanceRepository smallParts({
+      StorageIo Function() storageIo = fakeStorageIo,
+    }) => PerformanceRepository(
+      storageIo: storageIo,
+      guards: GuardRegistry(),
+      engine: engine,
+      exportsRoot: () async => '${tempDir.path}/exports',
+      now: () => clock,
+      // 84-byte header plus three stereo frames per part.
+      partBytes: 84 + 3 * 8,
+    );
+
+    test('is converted into float parts, samples unchanged, and its raw '
+        'files are removed', () async {
+      final master = ramp(14)..[3] = 1.5;
+      final input = ramp(6, scale: -1 / 32);
+      final dir = seedLegacy(
+        'perf-legacy',
+        inputs: const [0],
+        master: master,
+        inputSamples: {0: input},
+      );
+      final local = smallParts();
+      addTearDown(local.dispose);
+
+      await local.recoverCapture(dir);
+
+      // Seven stereo frames: parts of 3, 3 and 1; the input's three frames
+      // fill one part.
+      expect(
+        [
+          for (final i in [1, 2, 3]) payload('$dir/master-00$i.wav'),
+        ],
+        [
+          Float32List.sublistView(master, 0, 6),
+          Float32List.sublistView(master, 6, 12),
+          Float32List.sublistView(master, 12, 14),
+        ],
+      );
+      expect(payload('$dir/input-0-001.wav'), input);
+      expect(File('$dir/master-004.wav').existsSync(), isFalse);
+      expect(File('$dir/master.pcm').existsSync(), isFalse);
+      expect(File('$dir/input-0.pcm').existsSync(), isFalse);
+      expect(File('$dir/master.wav').existsSync(), isFalse);
+
+      final sidecar = readSidecar(dir);
+      expect(sidecar['finalized'], isTrue);
+      expect(sidecar['encoding'], 'f32');
+      expect(sidecar['overs'], 1);
+      final parts = [
+        for (final p in sidecar['parts'] as List<dynamic>)
+          TakePart.fromJson(p as Map<String, dynamic>),
+      ];
+      expect(
+        [for (final p in parts) (p.stream, p.index, p.file, p.frames)],
+        [
+          (0, 1, 'master-001.wav', 3),
+          (0, 2, 'master-002.wav', 3),
+          (0, 3, 'master-003.wav', 1),
+          (1, 1, 'input-0-001.wav', 3),
+        ],
+      );
+      for (final p in parts) {
+        final bytes = File('$dir/${p.file}').readAsBytesSync();
+        expect(p.bytes, bytes.length);
+        expect(p.sha256, fakeDigest(Uint8List.sublistView(bytes, 84)));
       }
-
-      await repo.runBootRecovery();
-
-      for (final MapEntry(key: slug, value: length) in sizes.entries) {
-        final dir = '${tempDir.path}/exports/$slug';
-        for (final name in ['master', 'input-0', 'input-1']) {
-          expect(File('$dir/$name.pcm').lengthSync(), length);
-        }
-        expect(File('$dir/master.wav').existsSync(), isFalse);
-        expect(File('$dir/arm-snapshot.json').existsSync(), isTrue);
-        expect(
-          Directory('${tempDir.path}/exports/recovered/$slug').existsSync(),
-          isFalse,
+      expect([for (final p in parts) p.overs], [1, 0, 0, 0]);
+      // Every part names the same take, by stream and index.
+      final takeId = sidecar['take_id'] as String;
+      for (final p in parts) {
+        final header = RecordedPartHeader.decode(
+          File('$dir/${p.file}').readAsBytesSync(),
         );
+        expect(
+          header.takeId.map((b) => b.toRadixString(16).padLeft(2, '0')).join(),
+          takeId,
+        );
+        expect((header.stream, header.partIndex), (p.stream, p.index));
       }
-      expect(
-        (await repo.findUnfinalized()).map((c) => c.slug).toSet(),
-        sizes.keys.toSet(),
+      expect(FakeStorageIo.synced, contains(dir));
+      expect(engine.lastRenderCaptureDir, dir);
+    });
+
+    test('a mono master becomes mono parts, a torn trailing frame dropped, '
+        'and an empty stream one empty part', () async {
+      final dir = seedLegacy(
+        'perf-mono',
+        masterChannels: 1,
+        inputs: const [2],
+        master: ramp(5),
+        inputSamples: {2: Float32List(0)},
       );
+      File('$dir/master.pcm').writeAsBytesSync([1, 2], mode: FileMode.append);
+      final local = smallParts();
+      addTearDown(local.dispose);
+
+      await local.recoverCapture(dir);
+
+      // Mono: 6 frames fit a 24-byte payload, so five frames are one part.
+      expect(payload('$dir/master-001.wav'), ramp(5));
+      expect(File('$dir/master-001.wav').lengthSync(), 84 + 20);
+      expect(File('$dir/input-2-001.wav').lengthSync(), 84);
+      final parts = readSidecar(dir)['parts'] as List<dynamic>;
+      expect(parts.map((p) => (p as Map)['frames']), [5, 0]);
+    });
+
+    test('reads it a bounded chunk at a time, whatever its length', () {
+      final dir = '${tempDir.path}/bounded';
+      Directory(dir).createSync(recursive: true);
+      final samples = ramp(3 * (1 << 18) + 6, scale: 1 / 1024);
+      writeRawPcm('$dir/master.pcm', samples);
+      var largest = 0;
+      var reads = 0;
+
+      final parts = convertRawStream(
+        pcmPath: '$dir/master.pcm',
+        dir: dir,
+        stream: 0,
+        channels: 2,
+        sampleRate: 48000,
+        takeId: Uint8List(16),
+        partBytes: 84 + 8 * (1 << 18),
+        onRead: (bytes) {
+          reads++;
+          if (bytes > largest) largest = bytes;
+        },
+      );
+
+      expect(largest, legacyChunkBytes);
+      expect(reads, greaterThan(3));
+      expect(parts.map((p) => p.frames), [1 << 18, (1 << 17) + 3]);
       expect(
-        repo.unrecoveredTakes.toSet(),
-        {for (final slug in sizes.keys) '${tempDir.path}/exports/$slug'},
+        [...payload('$dir/master-001.wav'), ...payload('$dir/master-002.wav')],
+        samples,
       );
     });
 
-    test('a raw file just past the bound is left for Part 8, just under it '
-        'converts', () async {
-      final under = '${tempDir.path}/exports/perf-under';
-      final over = '${tempDir.path}/exports/perf-over';
-      for (final dir in [under, over]) {
-        Directory(dir).createSync(recursive: true);
-        writeNativeSidecar(dir);
-      }
-      writeRawPcm('$under/master.pcm', Float32List.fromList([0.25, 0.5]));
-      File('$over/master.pcm').openSync(mode: FileMode.write)
-        ..setPositionSync(PerformanceRepository.legacyConvertMaxBytes)
-        ..writeFromSync([0, 0, 0, 0])
-        ..closeSync();
+    test('a failed part write deletes the parts it made and leaves the raw '
+        'file', () {
+      final dir = '${tempDir.path}/failing';
+      Directory(dir).createSync(recursive: true);
+      writeRawPcm('$dir/master.pcm', ramp(10));
+      // The second part's name is taken by a directory: its create fails.
+      Directory('$dir/master-002.wav').createSync();
 
-      await repo.runBootRecovery();
+      expect(
+        () => convertRawStream(
+          pcmPath: '$dir/master.pcm',
+          dir: dir,
+          stream: 0,
+          channels: 2,
+          sampleRate: 48000,
+          takeId: Uint8List(16),
+          partBytes: 84 + 2 * 8,
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(File('$dir/master-001.wav').existsSync(), isFalse);
+      expect(File('$dir/master.pcm').lengthSync(), 40);
+    });
 
+    test('with less free space than its largest stream needs, nothing is '
+        'touched and it is reported as not recovered', () async {
+      final dir = seedLegacy(
+        'perf-tight',
+        inputs: const [0],
+        master: ramp(8),
+        inputSamples: {0: ramp(4)},
+      );
+      Map<String, Uint8List> files() => {
+        for (final f in Directory(dir).listSync())
+          if (!_name(f.path).startsWith('.'))
+            _name(f.path): File(f.path).readAsBytesSync(),
+      };
+      final before = files();
+      // Four stereo frames in two parts need 32 bytes and two headers.
+      engine.freeBytes = 32 + 2 * 84 - 1;
+      final local = smallParts();
+      addTearDown(local.dispose);
+
+      await local.runBootRecovery();
+
+      expect(files(), before);
+      expect(local.unrecoveredTakes, [dir]);
+
+      // One byte more and the next start converts it.
+      engine.freeBytes = 32 + 2 * 84;
+      await local.runBootRecovery();
+      expect(local.unrecoveredTakes, isEmpty);
       expect(
         File(
-          '${tempDir.path}/exports/recovered/perf-under/master.wav',
+          '${tempDir.path}/exports/recovered/perf-tight/master-001.wav',
         ).existsSync(),
         isTrue,
       );
-      expect(Directory(over).existsSync(), isTrue);
-      expect(repo.unrecoveredTakes, [over]);
     });
 
+    test(
+      'the room for a conversion includes the reserve a take keeps',
+      () async {
+        final dir = seedLegacy('perf-reserve', master: ramp(8));
+        final reserved = PerformanceRepository(
+          storageIo: fakeStorageIo,
+          guards: GuardRegistry(),
+          engine: engine,
+          exportsRoot: () async => '${tempDir.path}/exports',
+          partBytes: 84 + 3 * 8,
+          reserveBytes: 1000,
+        );
+        addTearDown(reserved.dispose);
+        engine.freeBytes = 32 + 2 * 84 + 999;
+
+        await reserved.runBootRecovery();
+        expect(reserved.unrecoveredTakes, [dir]);
+        expect(File('$dir/master.pcm').lengthSync(), 32);
+
+        engine.freeBytes = 32 + 2 * 84 + 1000;
+        await reserved.runBootRecovery();
+        expect(reserved.unrecoveredTakes, isEmpty);
+      },
+    );
+
+    test('a stream that fails keeps its raw file; the streams before it stay '
+        'converted and listed, and the next start finishes', () async {
+      final dir = seedLegacy(
+        'perf-cut',
+        inputs: const [0],
+        master: ramp(4),
+        inputSamples: {0: ramp(4)},
+      );
+      final failing = smallParts(storageIo: _inputsUnreadable);
+      addTearDown(failing.dispose);
+
+      await failing.runBootRecovery();
+
+      expect(failing.unrecoveredTakes, [dir]);
+      expect(File('$dir/master.pcm').existsSync(), isFalse);
+      expect(File('$dir/input-0.pcm').lengthSync(), 16);
+      expect(File('$dir/input-0-001.wav').existsSync(), isFalse);
+      final interim = readSidecar(dir);
+      expect(interim['finalized'], isFalse);
+      expect(
+        (interim['parts'] as List<dynamic>).map((p) => (p as Map)['file']),
+        ['master-001.wav'],
+      );
+      final masterBytes = File('$dir/master-001.wav').readAsBytesSync();
+
+      final next = smallParts();
+      addTearDown(next.dispose);
+      await next.runBootRecovery();
+
+      final recovered = '${tempDir.path}/exports/recovered/perf-cut';
+      expect(next.unrecoveredTakes, isEmpty);
+      expect(File('$recovered/master-001.wav').readAsBytesSync(), masterBytes);
+      expect(payload('$recovered/input-0-001.wav'), ramp(4));
+      final parts = readSidecar(recovered)['parts'] as List<dynamic>;
+      expect(
+        parts.map((p) => (p as Map)['file']),
+        ['master-001.wav', 'input-0-001.wav'],
+      );
+      // The input's parts name the take the master's do.
+      expect(
+        RecordedPartHeader.decode(
+          File('$recovered/input-0-001.wav').readAsBytesSync(),
+        ).takeId,
+        RecordedPartHeader.decode(masterBytes).takeId,
+      );
+    });
+
+    test(
+      'a cut after a stream was listed but before its raw file went only '
+      'removes that file; parts a cut left unlisted are made again',
+      () async {
+        final dir = seedLegacy(
+          'perf-resume',
+          inputs: const [0],
+          master: ramp(4),
+          inputSamples: {0: ramp(4)},
+        );
+        final first = smallParts(storageIo: _inputsUnreadable);
+        addTearDown(first.dispose);
+        await first.recoverCapture(dir);
+        // As if the cut came before the removal: the raw file is back, and a
+        // half-written part of the next stream sits unlisted beside it.
+        writeRawPcm('$dir/master.pcm', ramp(4, scale: 1 / 8));
+        File('$dir/input-0-001.wav').writeAsBytesSync([1, 2, 3]);
+        final listed = File('$dir/master-001.wav').readAsBytesSync();
+
+        final next = smallParts();
+        addTearDown(next.dispose);
+        await next.recoverCapture(dir);
+
+        expect(File('$dir/master.pcm').existsSync(), isFalse);
+        expect(File('$dir/master-001.wav').readAsBytesSync(), listed);
+        expect(payload('$dir/input-0-001.wav'), ramp(4));
+        expect(readSidecar(dir)['finalized'], isTrue);
+      },
+    );
+
+    test('a listed part that is gone, with its raw file gone too, leaves the '
+        'take as it is', () async {
+      final dir = seedLegacy(
+        'perf-lost',
+        inputs: const [0],
+        master: ramp(4),
+        inputSamples: {0: ramp(4)},
+      );
+      final first = smallParts(storageIo: _inputsUnreadable);
+      addTearDown(first.dispose);
+      await first.recoverCapture(dir);
+      File('$dir/master-001.wav').deleteSync();
+
+      final next = smallParts();
+      addTearDown(next.dispose);
+      await next.runBootRecovery();
+
+      expect(next.unrecoveredTakes, [dir]);
+      expect(File('$dir/input-0.pcm').lengthSync(), 16);
+      expect(File('$dir/input-0-001.wav').existsSync(), isFalse);
+    });
+
+    test('the parts a cut conversion left unlisted are removed before the '
+        'room for the conversion is measured', () async {
+      final dir = seedLegacy('perf-strays', master: ramp(8));
+      // A cut 1 part into the conversion: an unlisted part of 108 bytes.
+      writeRawPcm('$dir/master-001.wav', ramp(27));
+      final measuring = _StrayAwareEngine(dir, free: 200);
+      final local = PerformanceRepository(
+        storageIo: fakeStorageIo,
+        guards: GuardRegistry(),
+        engine: measuring,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        partBytes: 84 + 3 * 8,
+      );
+      addTearDown(local.dispose);
+
+      await local.recoverCapture(dir);
+
+      expect(readSidecar(dir)['finalized'], isTrue);
+      expect(
+        payload('$dir/master-001.wav'),
+        Float32List.sublistView(ramp(8), 0, 6),
+      );
+    });
+
+    test('a directory sync that fails after the interim sidecar is in place '
+        'keeps both its parts and the raw file', () async {
+      final dir = seedLegacy('perf-sync', master: ramp(4));
+      _FailSecondSync.calls = 0;
+      final local = smallParts(storageIo: _failSecondSync);
+      addTearDown(local.dispose);
+
+      await local.recoverCapture(dir);
+
+      final interim = readSidecar(dir);
+      expect(interim['finalized'], isFalse);
+      expect(
+        (interim['parts'] as List<dynamic>).map((p) => (p as Map)['file']),
+        ['master-001.wav'],
+      );
+      expect(File('$dir/master-001.wav').existsSync(), isTrue);
+      expect(File('$dir/master.pcm').lengthSync(), 16);
+
+      final next = smallParts();
+      addTearDown(next.dispose);
+      await next.recoverCapture(dir);
+      expect(readSidecar(dir)['finalized'], isTrue);
+      expect(File('$dir/master.pcm').existsSync(), isFalse);
+    });
+
+    test('a finalize whose directory sync fails still finishes: the take is '
+        'finalized, its render starts and the repository is idle', () async {
+      final local = PerformanceRepository(
+        storageIo: _syncAlwaysFails,
+        guards: GuardRegistry(),
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+      );
+      addTearDown(local.dispose);
+      await local.arm();
+      clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+      final dir = local.armedDirectory!;
+      writeNativeSidecar(dir);
+
+      expect(await local.disarm(), EngineResult.ok);
+
+      expect(readSidecar(dir)['finalized'], isTrue);
+      expect(local.armedDirectory, isNull);
+      expect(engine.lastRenderCaptureDir, dir);
+    });
+
+    test('a take the drain wrote as parts is never converted, even beside a '
+        'stray raw file', () async {
+      final dir = '${tempDir.path}/exports/perf-parts';
+      Directory(dir).createSync(recursive: true);
+      writeNativeSidecar(dir);
+      final sidecar = readSidecar(dir)..['take_id'] = '0' * 32;
+      File('$dir/performance.json').writeAsStringSync(jsonEncode(sidecar));
+      writeOpenPart('$dir/master-001.wav', Float32List.fromList([0.1, 0.2]));
+      writeRawPcm('$dir/master.pcm', ramp(8));
+
+      await repo.recoverCapture(dir);
+
+      expect(readSidecar(dir)['finalized'], isTrue);
+      expect(partSizes('$dir/master-001.wav'), (84 - 8 + 8, 8));
+      expect(File('$dir/master.pcm').lengthSync(), 32);
+    });
+
+    test('a sidecar whose parts do not read is left as it is', () async {
+      final dir = seedLegacy('perf-odd');
+      final sidecar = readSidecar(dir)..['parts'] = 'not a list';
+      File('$dir/performance.json').writeAsStringSync(jsonEncode(sidecar));
+      final local = smallParts();
+      addTearDown(local.dispose);
+
+      await local.runBootRecovery();
+
+      expect(local.unrecoveredTakes, [dir]);
+      expect(File('$dir/master.pcm').lengthSync(), 32);
+      expect(File('$dir/master-001.wav').existsSync(), isFalse);
+    });
+
+    test('a layout no conversion can trust is left as it is', () async {
+      final dir = seedLegacy('perf-layout');
+      final sidecar = readSidecar(dir)
+        ..['channel_layout'] = {'master_channels': 3};
+      File('$dir/performance.json').writeAsStringSync(jsonEncode(sidecar));
+
+      await repo.runBootRecovery();
+
+      expect(repo.unrecoveredTakes, [dir]);
+      expect(File('$dir/master.pcm').lengthSync(), 32);
+    });
+  });
+
+  group('runBootRecovery (silent boot salvage, #679)', () {
     /// A crashed capture: unfinalized sidecar plus an open master part, the
     /// same fixture shape the recoverCapture tests use.
     String seedCrashed(String slug) {
@@ -2078,6 +2449,7 @@ void main() {
           progressPercent: 10,
         );
         final pollingRepo = PerformanceRepository(
+          storageIo: fakeStorageIo,
           guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => '${tempDir.path}/exports',
@@ -2163,6 +2535,7 @@ void main() {
         final rootGate = Completer<String>();
         var rootCalls = 0;
         final gatedRepo = PerformanceRepository(
+          storageIo: fakeStorageIo,
           guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () {
@@ -2241,6 +2614,7 @@ void main() {
           progressPercent: 10,
         );
         final timingRepo = PerformanceRepository(
+          storageIo: fakeStorageIo,
           guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => '${tempDir.path}/exports',
@@ -2304,6 +2678,7 @@ void main() {
           progressPercent: 10,
         );
         final timingRepo = PerformanceRepository(
+          storageIo: fakeStorageIo,
           guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => '${tempDir.path}/exports',
@@ -2412,6 +2787,7 @@ void main() {
       'to recover, and no unhandled error out of the unawaited call',
       () async {
         final brokenRepo = PerformanceRepository(
+          storageIo: fakeStorageIo,
           guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => throw const FileSystemException('gone'),
@@ -2429,6 +2805,7 @@ void main() {
       () async {
         var rootCalls = 0;
         final flakyRepo = PerformanceRepository(
+          storageIo: fakeStorageIo,
           guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async {
@@ -2508,6 +2885,7 @@ void main() {
       "resolved, mirroring runBootRecovery's own no-op on that boot",
       () async {
         final brokenRepo = PerformanceRepository(
+          storageIo: fakeStorageIo,
           guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => throw const FileSystemException('gone'),
@@ -2530,6 +2908,7 @@ void main() {
         // restarts, since arm() latches _armedDir for the process lifetime.
         engine.seedLane(0, 0, Float32List.fromList([1, 1]));
         final sessionRepo = PerformanceRepository(
+          storageIo: fakeStorageIo,
           guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => '${tempDir.path}/exports',
@@ -2548,6 +2927,7 @@ void main() {
           progressPercent: 10,
         );
         final boot1 = PerformanceRepository(
+          storageIo: fakeStorageIo,
           guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => '${tempDir.path}/exports',
@@ -2817,6 +3197,7 @@ void main() {
     setUp(() {
       guards = GuardRegistry();
       guarded = PerformanceRepository(
+        storageIo: fakeStorageIo,
         engine: engine,
         exportsRoot: () async => '${tempDir.path}/exports',
         now: () => clock,
@@ -2942,7 +3323,7 @@ void main() {
           guarded.disarmAndFinalize,
           createFile: (path) {
             final real = testZone.run(() => File(path));
-            return path.endsWith('/performance.json')
+            return path.endsWith('/performance.json.publishing')
                 ? _ManifestWriteFails(real)
                 : real;
           },
@@ -2967,4 +3348,57 @@ void main() {
       expect(guards.active, isEmpty);
     });
   });
+}
+
+String _name(String path) => path.split(RegExp(r'[/\\]')).last;
+
+/// A [StorageIo] that cannot read a captured input's part: the master
+/// converts, the input fails.
+StorageIo _inputsUnreadable() => _InputsUnreadable();
+
+class _InputsUnreadable extends FakeStorageIo {
+  @override
+  FileDigest digestFile(String path, {int offset = 0, int? length}) =>
+      _name(path).startsWith('input-')
+      ? const FileUnreadable()
+      : super.digestFile(path, offset: offset, length: length);
+}
+
+/// An engine whose volume frees the room of every unlisted part a cut
+/// conversion left in [dir] once it is deleted.
+class _StrayAwareEngine extends FakePerformanceEngine {
+  _StrayAwareEngine(this.dir, {required this.free});
+
+  final String dir;
+  final int free;
+
+  @override
+  VolumeSpace? volumeSpace(String path) {
+    final stray = File('$dir/master-001.wav');
+    final used = stray.existsSync() ? stray.lengthSync() : 0;
+    return VolumeSpace(totalBytes: 1 << 40, freeBytes: free - used);
+  }
+}
+
+/// A [StorageIo] whose second directory sync fails: the parts' sync works,
+/// the interim sidecar's does not.
+StorageIo _failSecondSync() => _FailSecondSync();
+
+class _FailSecondSync extends FakeStorageIo {
+  static int calls = 0;
+
+  @override
+  void syncDirectory(String path) {
+    calls++;
+    if (calls == 2) throw FileSystemException('sync failed', path);
+    super.syncDirectory(path);
+  }
+}
+
+StorageIo _syncAlwaysFails() => _SyncAlwaysFails();
+
+class _SyncAlwaysFails extends FakeStorageIo {
+  @override
+  void syncDirectory(String path) =>
+      throw FileSystemException('sync failed', path);
 }

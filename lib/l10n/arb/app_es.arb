@@ -1258,10 +1258,6 @@
     "@midiDeviceRow": {
         "description": "Row that opens the MIDI input picker."
     },
-    "midiDeviceNone": "Ninguno",
-    "@midiDeviceNone": {
-        "description": "Value of the MIDI device row when nothing is selected."
-    },
     "midiStatusWaiting": "Esperando entrada MIDI",
     "@midiStatusWaiting": {
         "description": "Traffic line on a live link that has not delivered a message yet."
@@ -2352,9 +2348,7 @@
     "midiControlsPaused": "Controles MIDI en pausa",
     "midiControlsTitle": "Controles MIDI",
     "midiDelete": "Eliminar",
-    "midiDeviceAvailable": "Disponible",
     "midiDeviceConnected": "Conectado",
-    "midiDeviceConnecting": "Conectando…",
     "midiDeviceDisconnected": "Desconectado",
     "midiDeviceOpenFailed": "No se pudo abrir",
     "midiEditExisting": "Editar la asignación existente",
@@ -2538,8 +2532,16 @@
     "footPeelRefusedBusy": "Peel no está disponible mientras la pista graba. Inténtalo de nuevo.",
     "footPeelFailure": "No se pudo quitar la capa. Inténtalo de nuevo.",
     "footCustomHold": "Mantener · {action}",
-    "footCustomStopRecording": "Detener grabación",
-    "footCustomUnavailableAction": "Acción no disponible",
+    "footCustomStopCapture": "Parar captura",
+    "footCustomUnavailableAction": "No disponible",
+    "footCustomCapture": "Capturar",
+    "footCustomClearAll": "Borrar todo",
+    "footCustomCutSound": "Cortar sonido",
+    "footCustomRecordPlay": "Rec / Play",
+    "footCustomNextBank": "Cambiar banco",
+    "footCustomTrackFxOn": "Encender FX",
+    "footCustomTrackFxOff": "Apagar FX",
+    "footCustomMixer": "Mezclador",
     "assignedActionUnknownRefused": "La acción de este control no está disponible en esta versión. Reasígnala.",
     "assignedActionRefused": "{action} no está disponible ahora.",
     "mixerFading": "En Fade",

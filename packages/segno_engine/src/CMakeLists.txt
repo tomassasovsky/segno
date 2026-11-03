@@ -28,21 +28,17 @@ add_library(segno_engine SHARED
   core/engine_cache.c        # Loop-stage wet cache (scheduler + render worker)
   core/engine_render.c       # shared render recipe: Bounce + Save selected audio
   core/engine_wav.c          # the one native streaming float WAV writer
-  core/engine_restore.c      # Offline loop-close restoration worker (#697 S9)
-  core/engine_cond.c         # per-input conditioning stage (input conditioning)
   core/engine_backing.c      # backing player buffers + control API (#1200)
   core/engine_workers.c      # effects on more than one core (#1515)
   core/engine_decode.c       # the audio-file decoder + offline resampler (#1200)
   core/engine_audition.c     # Library audition voice control API (#1178)
   core/engine_instruments.c  # instrument slots, note rings, synth in the callback (#1197)
   core/engine_prefault.c    # background prefaulter ahead of the write head (#900)
-  # Offline loop-close restoration DSP (#697 S8) — pure TUs, no engine state;
-  # consumed by the restore worker (engine_restore.c, S9). NOT matched by
-  # run_native_tests.sh's engine*.c glob — they are listed explicitly there;
-  # keep the two lists in sync.
-  core/restore_declip.c      # de-clip: flat-run detect + spline/Burg-AR repair
-  core/restore_halfband.c    # 2:1 half-band resample (RNNoise's 48 k leg)
-  # Instrument synthesis (#1197) — pure TUs like the restore DSP: the voice
+  # The decoder's 2:1 half-band resampler (#697 S8) — a pure TU, no engine
+  # state. NOT matched by run_native_tests.sh's engine*.c glob — it is listed
+  # explicitly there; keep the two lists in sync.
+  core/halfband.c            # 2:1 half-band decimator (engine_decode.c)
+  # Instrument synthesis (#1197) — pure TUs like the resampler: the voice
   # pool and the patch table (whose catalogue reads are exported). Listed
   # explicitly in run_native_tests.sh and tool/build_test_lib.sh too.
   core/synth_voice.c         # instrument voice pool (synth_voice.h)
@@ -148,80 +144,12 @@ if(APPLE)
     "-framework CoreFoundation")
 endif()
 
-# --- RNNoise (vendored, BSD-3-Clause) ---------------------------------------
-#
-# Xiph RNNoise v0.2, vendored under third_party/rnnoise (see
-# third_party/README.md for version/license/patch provenance). It backs the
-# offline loop-close restoration pass (issue #697): the restore worker (S9)
-# denoises finalized takes through rnnoise_process_frame. Compiled
-# unconditionally — it is small, portable C with no OS dependency, and unlike
-# the plugin SDK it has no per-platform reason to be optional.
-#
-# Source list = upstream Makefile.am's RNNOISE_SOURCES *without* the
-# RNN_ENABLE_X86_RTCD block (src/x86/*.c): the run-time SSE4.1/AVX2 dispatch
-# needs configure-style compiler probing this build does not do, and the
-# consumer is an offline (non-RT) pass, so the portable C paths are fast
-# enough. NEON on ARM comes for free via vec_neon.h (compile-time detected).
-# Keep run_native_tests.sh's rnnoise list, the macOS SPM forwarders
-# (CocoaPods compiles those same files via the podspec glob), and the
-# Apple include-path wiring in sync with this one.
-get_filename_component(SEGNO_RNNOISE_DIR
-  "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/rnnoise" ABSOLUTE)
-if(NOT EXISTS "${SEGNO_RNNOISE_DIR}")
-  message(FATAL_ERROR
-    "The vendored RNNoise sources are missing at ${SEGNO_RNNOISE_DIR} "
-    "(a broken or partial checkout?). Restore them. See third_party/README.md.")
-endif()
-target_sources(segno_engine PRIVATE
-  "${SEGNO_RNNOISE_DIR}/src/denoise.c"
-  "${SEGNO_RNNOISE_DIR}/src/rnn.c"
-  "${SEGNO_RNNOISE_DIR}/src/pitch.c"
-  "${SEGNO_RNNOISE_DIR}/src/kiss_fft.c"
-  "${SEGNO_RNNOISE_DIR}/src/celt_lpc.c"
-  "${SEGNO_RNNOISE_DIR}/src/nnet.c"
-  "${SEGNO_RNNOISE_DIR}/src/nnet_default.c"
-  "${SEGNO_RNNOISE_DIR}/src/parse_lpcnet_weights.c"
-  "${SEGNO_RNNOISE_DIR}/src/rnnoise_data.c"
-  "${SEGNO_RNNOISE_DIR}/src/rnnoise_tables.c"
-)
-# The public header dir plus the vendored src dir: on x86 hosts vec.h pulls
-# vec_avx.h, which includes src/x86/x86cpu.h, whose `#include "common.h"`
-# resolves against src/x86/ and misses the header one level up (upstream
-# builds with src/ on the path for the same reason). Listed after the
-# engine's own dirs so engine headers win any future clash.
-# Otherwise the rnnoise TUs resolve their internal headers relative to their
-# own directory (quote-includes).
-target_include_directories(segno_engine PRIVATE
-  "${SEGNO_RNNOISE_DIR}/include"
-  "${SEGNO_RNNOISE_DIR}/src"
-)
-# Compile the vendored TUs with hidden visibility (upstream builds with
-# -fvisibility=hidden too): with default visibility the shared segno_engine
-# would export rnnoise's generic unprefixed internals (parse_weights,
-# linear_init, compute_glu, ...), and a dlopen'd VST3/CLAP plugin dynamically
-# linked against its own librnnoise (Debian ships one) could have them
-# interposed — mismatched weight structs, wrong audio, or a crash inside the
-# plugin. Scoped to these sources only, so the FFI-visible le_* API keeps its
-# LE_EXPORT default visibility.
-set_source_files_properties(
-  "${SEGNO_RNNOISE_DIR}/src/denoise.c"
-  "${SEGNO_RNNOISE_DIR}/src/rnn.c"
-  "${SEGNO_RNNOISE_DIR}/src/pitch.c"
-  "${SEGNO_RNNOISE_DIR}/src/kiss_fft.c"
-  "${SEGNO_RNNOISE_DIR}/src/celt_lpc.c"
-  "${SEGNO_RNNOISE_DIR}/src/nnet.c"
-  "${SEGNO_RNNOISE_DIR}/src/nnet_default.c"
-  "${SEGNO_RNNOISE_DIR}/src/parse_lpcnet_weights.c"
-  "${SEGNO_RNNOISE_DIR}/src/rnnoise_data.c"
-  "${SEGNO_RNNOISE_DIR}/src/rnnoise_tables.c"
-  PROPERTIES COMPILE_OPTIONS "-fvisibility=hidden")
-
-# The stretch shim TU for the same reason (#1179): on Linux its out-of-line
-# Signalsmith Stretch and std::vector instantiations would otherwise be
-# default-visibility weak exports of libsegno_engine.so, and Signalsmith is a
-# common plugin dependency, so a dlopen'd plugin could interpose them (or have
-# its own copy interposed). Nothing outside the engine calls le_stretch_*; the
-# FFI surface is untouched.
+# Compile the stretch shim TU with hidden visibility (#1179): on Linux its
+# out-of-line Signalsmith Stretch and std::vector instantiations would
+# otherwise be default-visibility weak exports of libsegno_engine.so, and
+# Signalsmith is a common plugin dependency, so a dlopen'd plugin could
+# interpose them (or have its own copy interposed). Nothing outside the
+# engine calls le_stretch_*; the FFI surface is untouched.
 if(UNIX AND NOT APPLE)
   set_source_files_properties(stretch/le_stretch.cpp
     PROPERTIES COMPILE_OPTIONS "-fvisibility=hidden;-fvisibility-inlines-hidden")

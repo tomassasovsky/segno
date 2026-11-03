@@ -1196,27 +1196,6 @@ void main() {
       );
       expect(await repository.loadMidiDevice(), (id: 'port-1', name: 'Pedal'));
     });
-
-    test('clearMidiDevice removes the one record', () async {
-      await repository.saveMidiDevice(id: '12345', name: 'FCB1010');
-      await repository.clearMidiDevice();
-      expect(await repository.loadMidiDevice(), isNull);
-      expect(store.values.containsKey('midi.input_device'), isFalse);
-    });
-
-    test('dropped clear is not reported as durable', () async {
-      await repository.saveMidiDevice(id: '12345', name: 'FCB1010');
-      store.discardNextRemovalKey = 'midi.input_device';
-      await expectLater(repository.clearMidiDevice(), throwsStateError);
-      expect(await repository.loadMidiDevice(), (id: '12345', name: 'FCB1010'));
-    });
-
-    test('a clear that mutates then throws remains uncertain', () async {
-      await repository.saveMidiDevice(id: '12345', name: 'FCB1010');
-      store.failAfterRemovalKey = 'midi.input_device';
-      await expectLater(repository.clearMidiDevice(), throwsStateError);
-      expect(await repository.loadMidiDevice(), isNull);
-    });
   });
 
   group('MIDI configuration', () {
@@ -2214,82 +2193,6 @@ void main() {
         Version.parse('0.1.0'),
         Version.parse('0.4.0'),
       });
-    });
-  });
-
-  group('input conditioning (#697)', () {
-    test('every field is null when nothing is stored', () async {
-      expect(await repository.loadInputConditioningEnabled(1), isNull);
-      expect(await repository.loadInputConditioningHpfHz(1), isNull);
-      expect(await repository.loadInputConditioningHumHz(1), isNull);
-      expect(await repository.loadInputConditioningHumHarmonics(1), isNull);
-      expect(await repository.loadInputConditioningExpThresholdDb(1), isNull);
-      expect(await repository.loadInputConditioningExpRatio(1), isNull);
-      expect(await repository.loadInputConditioningExpReleaseMs(1), isNull);
-    });
-
-    test('round-trips every conditioning field for an input', () async {
-      await repository.saveInputConditioningEnabled(2, enabled: true);
-      await repository.saveInputConditioningHpfHz(2, 80);
-      await repository.saveInputConditioningHumHz(2, 60);
-      await repository.saveInputConditioningHumHarmonics(2, 6);
-      await repository.saveInputConditioningExpThresholdDb(2, -48);
-      await repository.saveInputConditioningExpRatio(2, 3);
-      await repository.saveInputConditioningExpReleaseMs(2, 220);
-
-      expect(await repository.loadInputConditioningEnabled(2), isTrue);
-      expect(await repository.loadInputConditioningHpfHz(2), 80);
-      expect(await repository.loadInputConditioningHumHz(2), 60);
-      expect(await repository.loadInputConditioningHumHarmonics(2), 6);
-      expect(await repository.loadInputConditioningExpThresholdDb(2), -48);
-      expect(await repository.loadInputConditioningExpRatio(2), 3);
-      expect(await repository.loadInputConditioningExpReleaseMs(2), 220);
-    });
-
-    test('keys are isolated per input', () async {
-      await repository.saveInputConditioningEnabled(0, enabled: true);
-      await repository.saveInputConditioningHpfHz(0, 100);
-
-      expect(await repository.loadInputConditioningEnabled(0), isTrue);
-      expect(await repository.loadInputConditioningEnabled(1), isNull);
-      expect(await repository.loadInputConditioningHpfHz(0), 100);
-      expect(await repository.loadInputConditioningHpfHz(1), isNull);
-    });
-
-    test('uses the documented key names', () async {
-      await repository.saveInputConditioningEnabled(3, enabled: true);
-      await repository.saveInputConditioningHpfHz(3, 40);
-      await repository.saveInputConditioningHumHz(3, 50);
-      await repository.saveInputConditioningHumHarmonics(3, 4);
-      await repository.saveInputConditioningExpThresholdDb(3, -55);
-      await repository.saveInputConditioningExpRatio(3, 2);
-      await repository.saveInputConditioningExpReleaseMs(3, 150);
-
-      expect(store.values['input_cond.3'], true);
-      expect(store.values['input_cond_hpf.3'], 40);
-      expect(store.values['input_cond_hum.3'], 50);
-      expect(store.values['input_cond_hum_harmonics.3'], 4);
-      expect(store.values['input_cond_exp_thresh.3'], -55);
-      expect(store.values['input_cond_exp_ratio.3'], 2);
-      expect(store.values['input_cond_exp_release.3'], 150);
-    });
-  });
-
-  group('input restoration opt-in (#697)', () {
-    test('is null when nothing is stored', () async {
-      expect(await repository.loadInputRestore(1), isNull);
-    });
-
-    test('round-trips a flag bitmask under input_restore.N', () async {
-      await repository.saveInputRestore(2, 3);
-      expect(await repository.loadInputRestore(2), 3);
-      expect(store.values['input_restore.2'], 3);
-    });
-
-    test('is isolated per input', () async {
-      await repository.saveInputRestore(0, 2);
-      expect(await repository.loadInputRestore(0), 2);
-      expect(await repository.loadInputRestore(1), isNull);
     });
   });
 }

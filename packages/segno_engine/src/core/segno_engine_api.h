@@ -468,33 +468,9 @@ typedef enum le_command_code {
    * unallocated so an old event log can never be misread.) */
   LE_CMD_SET_TUNER_INPUT = 53,
 
-  /* ---- per-input conditioning stage (input conditioning, S1) ----
-   * A fixed utility stage per hardware input — HPF + mains-hum notches +
-   * downward expander — applied ONCE per block into a conditioned copy of the
-   * input buffer, upstream of BOTH the lane fan-out and the monitor split
-   * (WYSIWYG: what you monitor is what records). Deliberately NOT an
-   * le_fx_type chain entry: it cannot be reordered or removed per-chain, it
-   * does not enter chain fingerprints, and its params are real units (Hz, dB,
-   * ms), not normalized 0..1. Metering, the clip detector, and the latency
-   * harness keep reading the RAW device buffer; the sound-activated record
-   * trigger deliberately reads the CONDITIONED magnitude so mains hum cannot
-   * false-arm a threshold recording. Zero added buffering latency by design
-   * (IIR biquads + a no-lookahead envelope follower — no FIR, no lookahead),
-   * so record_offset semantics are untouched. Loopback-excluded inputs are
-   * never conditioned. Both commands ride the ring (like the monitor-input
-   * commands, `channel` = input index, bounds vs LE_MAX_MONITORED_INPUTS) so
-   * the audio thread resets/recomputes its thread-local DSP state in lockstep
-   * with the config change. Neither is perf-logged: conditioning is upstream
-   * of capture, so recorded PCM already embodies it (nothing replays it). */
-  LE_CMD_SET_INPUT_COND = 54,       /* enable/disable input conditioning.
-                                     * arg_i = input, arg_f = enabled (0/1).
-                                     * An enable EDGE resets the stage's DSP
-                                     * state (no stale filter ring). */
-  LE_CMD_SET_INPUT_COND_PARAM = 55, /* set one conditioning parameter.
-                                     * lanef arm: channel = input,
-                                     * lane = le_cond_param, value = real-unit
-                                     * value (clamped by the audio thread on
-                                     * apply). */
+  /* 54 and 55 were the per-input conditioning stage (#697), removed when the
+   * racks' HP/Gate effect took its place; the codes stay unallocated so an
+   * old event log can never be misread. */
 
   /* Immediate finalize (#405): ends track arg_i's live RECORDING take NOW —
    * or does nothing. Unlike LE_CMD_RECORD, whose meaning depends on the state
@@ -777,10 +753,12 @@ typedef enum le_fx_type {
    * is a step and a lower-case one half a step; a letter's first slice is
    * the live input and each repeat replays it from its start; _ silences a
    * step, or half a step in a pattern with a lower-case letter; < plays the
-   * step before backwards. A slice ends with a 4 ms fade
-   * (#891). The Looper X's three Fd patterns after <<<< are not modelled
-   * (no capture and no factory preset uses them), so the list stops before
-   * them. Locked to the beat, so a lane holding one is never printed. */
+   * step before backwards. From one slice to the next the output crossfades
+   * over 4 ms from the boundary, and the mix is the slices at m (2 - m) and
+   * the dry at 1 - m^2 (#891, #1447). The Looper X's three Fd patterns
+   * after <<<< are not modelled (no capture and no factory preset uses
+   * them), so the list stops before them. Locked to the beat, so a lane
+   * holding one is never printed. */
   LE_FX_SLICER = 26,
   /* MODE_DELAY: p0 time (a choice of 20 note values: 1/32, 1/16T, 1/32D,
    * 1/16, 1/8T, 1/16D, 1/8, 1/4T, 1/8D, 1/4, 2/4T, 1/4D, 2/4, 5/8, 3/4, 7/8,
@@ -963,7 +941,7 @@ typedef struct le_config {
  * (#1197): sources [0, LE_MAX_CHANNELS) are device input channels, and
  * LE_INSTRUMENT_SOURCE_BASE + k is instrument slot k. The index never depends
  * on the interface's channel count. Physical-only stages (loopback exclusion,
- * clip detection, conditioning, capture trim, the tuner) cover device
+ * clip detection, capture trim, the tuner) cover device
  * channels only. */
 #define LE_INSTRUMENT_SOURCE_BASE LE_MAX_CHANNELS
 #define LE_MAX_SOURCES (LE_MAX_CHANNELS + LE_MAX_INSTRUMENTS)
@@ -1020,8 +998,8 @@ typedef struct le_output_fx_snapshot {
  * run (a persisting rail keeps refreshing the hold). The run requirement is
  * the point: a one-or-two-sample full-scale transient is music, while a flat
  * run at the rail is the clamp signature of an overdriven ADC. Detection reads
- * the RAW device buffer — upstream of the conditioning stage — so a clipped
- * input flags HOT even when the expander/HPF has reshaped what records. */
+ * the RAW device buffer, so a clipped input flags HOT whatever the input's
+ * effects then do to it. */
 #define LE_CLIP_LEVEL 0.999f
 #define LE_CLIP_RUN 4
 #define LE_CLIP_HOLD_MS 1500
@@ -1264,13 +1242,6 @@ typedef struct le_track_snapshot {
    * it against the RECORD_END payloads to anchor the settled image by identity
    * rather than by "first RECORD_END on the channel". */
   int32_t settled_take_id;
-  /* Trailing (#697 S9, offline loop-close restoration): 0 idle, 1 queued (the
-   * enqueue copy is in flight or the job is waiting for the worker), 2 running
-   * (the worker's de-clip/denoise DSP is in flight). A completed pass publishes
-   * its result as an ordinary undo layer, so undo_depth/clear_restore carry the
-   * revert affordance — this field is only the in-progress indicator. See
-   * le_engine_restore_track. */
-  int32_t restore_state;
   /* Trailing (accepted design, slice 1): this track's OWN playhead in frames
    * within its own length — a multiple's segment offset, a Sync division's
    * folded phase and a Free/Song track's private clock are all already
@@ -1757,21 +1728,14 @@ typedef struct le_snapshot {
    * untouched engine emits no clock bytes. See le_engine_set_clock_send. */
   int32_t clock_send;
 
-  /* ---- input clip detector + conditioning activity (input clip, S2;
-   * trailing for the same offset-stability reason as the blocks above).
-   * Both default to 0 — an untouched engine reports no HOT input and no
-   * active conditioning. */
+  /* ---- input clip detector (input clip, S2; trailing for the same
+   * offset-stability reason as the blocks above). Defaults to 0 — an
+   * untouched engine reports no HOT input. */
   /* Bit c: HOT — a rail-run (LE_CLIP_RUN consecutive raw samples at
    * |s| >= LE_CLIP_LEVEL) was seen on input c within the last
    * LE_CLIP_HOLD_MS of processed audio. Detected on the RAW device buffer,
-   * so the flag reflects the ADC even when the conditioning stage has ducked
-   * or notched what records. Loopback-excluded inputs never flag. */
+   * so the flag reflects the ADC. Loopback-excluded inputs never flag. */
   uint32_t input_clip_mask;
-  /* Bit c: input c's conditioning stage is currently ACTIVE — enabled AND
-   * not loopback-excluded, i.e. the stage actually runs on the audio path
-   * (the UI truth for a "conditioning on" badge; a stage enabled on an
-   * excluded channel reads 0 here because it never runs). */
-  uint32_t input_cond_mask;
   /* Trailing (accepted design, slice 1): the master bus's absolute peak over
    * the most recent block, 0..1 (1.0 = full scale), read AFTER the master
    * gain and limiter — what actually reaches the outputs. Sums can clip when
@@ -1787,8 +1751,8 @@ typedef struct le_snapshot {
   float overdub_feedback; /* the global coefficient, 0..1 (default 1) */
   /* ---- per-channel meters and capture trim (accepted design, slice 3;
    * trailing). Absolute block peaks may exceed unity; they are not clamped.
-   * input_peaks[c] is input c's RAW device level (before conditioning and
-   * trim, like input_clip_mask, so a hot ADC reads hot however the trim is
+   * input_peaks[c] is input c's RAW device level (before the trim, like
+   * input_clip_mask, so a hot ADC reads hot however the trim is
    * set); monitor_peaks[c] is its post-chain/gain/pan stereo peak BEFORE
    * output folding (0 while off, muted or without an enabled route).
    * output_peaks[c] follows master gain/limiter but EXCLUDES click.
@@ -2255,7 +2219,7 @@ typedef enum le_reopen_outcome {
  * does, with *outcome LE_REOPEN_CLEARED_RATE / _CAP and a zero mask. A
  * running performance capture ends with DEVICE_CHANGED either way. Every
  * setting the host replays after a start (routing, mix, FX, monitors,
- * conditioning, output gates) is reset here too; routes to inputs or outputs
+ * output gates) is reset here too; routes to inputs or outputs
  * the new device lacks stay silent.
  *
  * With config->keep_material set, a reopen that would clear the whole engine
@@ -2533,7 +2497,7 @@ LE_EXPORT int32_t le_engine_redo(le_engine* engine, int32_t channel);
  * Redo branch is dropped. Never touches the original take: Peel consumes the
  * topmost overdub layer reachable through earlier peels only, so the deepest
  * layer (the pre-first-overdub image) is swapped in but never consumed, and
- * any non-overdub history above the layers (a clear, a loop-close restoration)
+ * any non-overdub history above the layers (a clear, a length edit)
  * blocks it. Undo of a Peel restores the layer; Redo re-peels. A synchronous
  * control-thread swap like the in-track undo: no command, no receipt.
  * LE_ERR_INVALID when no overdub layer can be peeled (none remain, the track
@@ -2629,10 +2593,9 @@ LE_EXPORT int32_t le_engine_set_track_solo(le_engine* engine, int32_t channel,
  * a linear gain, default 1, applied to the sample a lane RECORDS from that
  * input and to nothing else — the monitor path, the input meters, the clip
  * detector, the sound-activated trigger and the tuner all read the
- * untrimmed input: raw for meters/clipping, conditioned for trigger/tuner.
- * Clamped to 0..LE_MAX_INPUT_TRIM. Takes
- * effect on the next block (a direct store, so it works while stopped);
- * reset to 1 by (re)configure. */
+ * untrimmed raw device input. Clamped to 0..LE_MAX_INPUT_TRIM. Takes effect
+ * on the next block (a direct store, so it works while stopped); reset to 1
+ * by (re)configure. */
 LE_EXPORT int32_t le_engine_set_input_trim(le_engine* engine, int32_t input,
                                            float gain);
 
@@ -3536,100 +3499,6 @@ LE_EXPORT int32_t le_engine_set_monitor_input_fx_chain_enabled(le_engine* engine
                                                                int32_t input,
                                                                int32_t enabled);
 
-/* ---- Per-input conditioning stage (input conditioning, S1) ---- *
- * One fixed, non-reorderable utility stage per hardware input, upstream of
- * BOTH the lane fan-out and the monitor split — see LE_CMD_SET_INPUT_COND's
- * doc for the full placement contract. Three sections, in processing order:
- *
- *   1. High-pass filter — 2nd-order Butterworth biquad. Kills DC / sub-sonic
- *      rumble before it stacks across overdub layers.
- *   2. Mains-hum notch bank — up to 8 fixed-Q (~30) notch biquads at integer
- *      multiples of the mains base frequency (50/100/150/200 Hz by default).
- *   3. Downward expander — abs -> one-pole envelope (fixed ~5 ms attack, no
- *      lookahead) -> polynomial under-threshold gain law: for ratio 1:R the
- *      settled output level below threshold is thr * (env/thr)^R (quadratic
- *      under threshold at the default 2.0), evaluated with integer powers +
- *      a linear blend for fractional ratios — no log/exp per sample. Stops
- *      idle noise floor accumulating in the recording across stacked lanes.
- *
- * Parameters are REAL UNITS (Hz / dB / ms), deliberately unlike the
- * normalized 0..1 le_fx_type params. Values are clamped by the audio thread
- * on apply (mirrors LE_CMD_SET_LENGTH_PRESET). */
-typedef enum le_cond_param {
-  LE_COND_HPF_HZ = 0,           /* high-pass cutoff Hz; 0 = section off.
-                                 * Default 40. Clamped to 0..2000. */
-  LE_COND_HUM_HZ = 1,           /* mains base Hz (50/60); 0 = section off.
-                                 * Default 50. Clamped to 0..500. */
-  LE_COND_HUM_HARMONICS = 2,    /* notches incl. base, 1..8. Default 4
-                                 * (50/100/150/200 at the 50 Hz base). */
-  LE_COND_EXP_THRESHOLD_DB = 3, /* downward expander threshold. Default -55.
-                                 * Clamped to -120..0. */
-  LE_COND_EXP_RATIO = 4,        /* 1:N downward. Default 2.0. Clamped to
-                                 * 1..10; 1.0 = section off (unity). */
-  LE_COND_EXP_RELEASE_MS = 5,   /* Default 150. Clamped to 1..5000. Attack
-                                 * fixed ~5 ms; no lookahead. */
-} le_cond_param;
-
-/* Enables or disables the conditioning stage on hardware input [input]
- * (0..LE_MAX_MONITORED_INPUTS-1). Disabled by default — the untouched engine
- * is bit-identical to the conditioning-free build. An enable EDGE resets the
- * stage's filter/envelope state so a re-engaged stage never rings with stale
- * history. A loopback-excluded input's stage never runs regardless of this
- * flag (the latency harness owns those channels). */
-LE_EXPORT int32_t le_engine_set_input_conditioning(le_engine* engine,
-                                                   int32_t input,
-                                                   int32_t enabled);
-
-/* Sets conditioning parameter [param] (le_cond_param) of hardware input
- * [input] to [value] in that parameter's REAL unit (Hz / dB / ms / ratio —
- * see le_cond_param). The audio thread clamps on apply and recomputes the
- * affected section's coefficients in lockstep (resetting only that section's
- * filter state, so a live tweak never rings with coefficients it was not
- * filtered by). */
-LE_EXPORT int32_t le_engine_set_input_conditioning_param(le_engine* engine,
-                                                         int32_t input,
-                                                         int32_t param,
-                                                         float value);
-
-/* ---- Offline loop-close restoration (input conditioning, S9) ---- *
- * The restoration counterpart to the live conditioning stage above: after a
- * loop closes, a background worker repairs the CAPTURED lanes — de-clip
- * (reconstruct the peaks a converter flattened) then optional RNNoise denoise
- * — and publishes the result as one lockstep undo layer, so a plain
- * le_engine_undo reverts to the raw take. It runs entirely off the RT audio
- * thread (a copy-at-enqueue worker mirroring the wet cache), so it never adds
- * playback latency, and it is opt-in per input via the flags below. Policy
- * lives in the app: the engine only restores what it is asked to, when it is
- * asked. Progress surfaces through le_track_snapshot.restore_state. */
-typedef enum le_restore_flags {
-  LE_RESTORE_DECLIP = 1,  /* de-clip pass (restore_declip.c), at the full rate */
-  LE_RESTORE_DENOISE = 2, /* RNNoise denoise — passthrough at 48 kHz, a 2:1
-                           * half-band resample at 96 kHz, skipped at other
-                           * rates (de-clip still runs). */
-} le_restore_flags;
-
-/* Queues an offline restoration pass over track [channel]'s captured lanes
- * (control thread). [lane_mask] selects which lanes to repair (bit l = lane l,
- * restricted to the track's active lanes); [flags] is a bitwise-OR of
- * le_restore_flags. The pass runs on a background worker and publishes its
- * result as one undo layer once complete — never touching the RT audio
- * thread's latency. Returns LE_OK once the job is queued, or LE_ERR_INVALID
- * for a null/out-of-range handle, empty flags or lane mask, a track that is
- * RECORDING/OVERDUBBING or has an overdub layer in flight, a track with no
- * captured content, or a restoration already in flight (one job engine-wide).
- * A queued pass whose take moves before it commits (a new overdub, an undo)
- * is discarded, never published. */
-LE_EXPORT int32_t le_engine_restore_track(le_engine* engine, int32_t channel,
-                                          uint32_t lane_mask, uint32_t flags);
-
-/* Cancels an in-flight restoration on track [channel] (control thread): a job
- * still copying is dropped immediately; one already on the worker aborts at
- * its next lane boundary and its result is discarded rather than published.
- * Returns LE_OK when a matching job was found and signalled, or LE_ERR_INVALID
- * for a null/out-of-range handle or when no restoration for [channel] is in
- * flight. */
-LE_EXPORT int32_t le_engine_cancel_restore(le_engine* engine, int32_t channel);
-
 /* ---- Track-stage (per-track stereo bus) chain (FX v3 part 1b) ---- *
  * Each track owns ONE Track-stage chain, downstream of its per-lane chains.
  * While the chain is EMPTY (count 0 — the default and the state every
@@ -4422,8 +4291,8 @@ LE_EXPORT int32_t le_engine_finalize_history(
 
 /* Lists track `channel`'s history entries in image-ordinal order (#1164):
  * the undo stack oldest first, then the redo stack top-down. `kinds[i]` is the
- * entry's kind (0 overdub layer, 1 clear restore point, 2 peel, 3 loop-close
- * restoration, 4 length edit), `skipped[i]` its peel payload and `starts[i]`
+ * entry's kind (0 overdub layer, 1 clear restore point, 2 peel, 4 length
+ * edit; 3 is unallocated), `skipped[i]` its peel payload and `starts[i]`
  * a length edit's playhead map (0 for every other kind). A redo-side peel
  * entry is a marker without an image: le_engine_export_layer's ordinals count
  * image-bearing entries only, so a track's image count is

@@ -59,9 +59,8 @@ void main() {
       expect(snapshot.perfFrames, 0);
       expect(snapshot.perfOverruns, 0);
       expect(snapshot.perfZeroFilledFrames, 0);
-      // Input clip + conditioning (S2) defaults: nothing HOT, nothing active.
+      // Input clip (S2) default: nothing HOT.
       expect(snapshot.inputClipMask, 0);
-      expect(snapshot.inputCondMask, 0);
       // Tempo grid + click/count-in (A1/A2) grid-off defaults.
       expect(snapshot.tempoBpm, 0);
       expect(snapshot.tempoSource, TempoSource.none);
@@ -561,7 +560,6 @@ void main() {
           ..output_mask = 0x5
           ..length_preset_bars = 8
           ..settled_take_id = 4
-          ..restore_state = 2
           ..position_frames = 24000
           ..pending = 1
           ..pending_trigger = 2
@@ -586,7 +584,6 @@ void main() {
         expect(track.outputMask, 0x5);
         expect(track.lengthPresetBars, 8);
         expect(track.settledTakeId, 4);
-        expect(track.restoreState, TrackRestoreState.running);
         expect(track.positionFrames, 24000);
         expect(track.pending, isTrue);
         expect(track.pendingTrigger, 2);
@@ -659,26 +656,6 @@ void main() {
       expect(TrackState.fromCode(3), TrackState.playing);
       expect(TrackState.fromCode(4), TrackState.stopped);
       expect(TrackState.fromCode(99), TrackState.empty);
-    });
-
-    test('maps every TrackRestoreState code', () {
-      expect(TrackRestoreState.fromCode(0), TrackRestoreState.idle);
-      expect(TrackRestoreState.fromCode(1), TrackRestoreState.queued);
-      expect(TrackRestoreState.fromCode(2), TrackRestoreState.running);
-      expect(TrackRestoreState.fromCode(99), TrackRestoreState.idle);
-    });
-
-    test('defaults restoreState to idle when the native field is zero', () {
-      final ptr = calloc<le_track_snapshot>();
-      try {
-        ptr.ref.state = 3; // calloc zeroes restore_state
-        expect(
-          TrackSnapshot.fromNative(ptr.ref).restoreState,
-          TrackRestoreState.idle,
-        );
-      } finally {
-        calloc.free(ptr);
-      }
     });
   });
 
@@ -787,23 +764,6 @@ void main() {
         settledTakeId: 2,
       );
       expect(a.settledTakeId, 0);
-      expect(a, isNot(equals(b)));
-      expect(a.hashCode, isNot(b.hashCode));
-    });
-
-    test('a differing restore state breaks equality', () {
-      final a = build();
-      const b = TrackSnapshot(
-        state: TrackState.playing,
-        volume: 0.5,
-        muted: false,
-        lengthFrames: 100,
-        undoDepth: 0,
-        rms: 0.1,
-        peak: 0.2,
-        restoreState: TrackRestoreState.running,
-      );
-      expect(a.restoreState, TrackRestoreState.idle);
       expect(a, isNot(equals(b)));
       expect(a.hashCode, isNot(b.hashCode));
     });
@@ -928,7 +888,6 @@ void main() {
           ..output_channels = 4
           ..excluded_input_mask = 0x4
           ..input_clip_mask = 0x3
-          ..input_cond_mask = 0x5
           ..frames_processed = 123456
           ..xrun_count = 3
           ..input_rms = 0.25
@@ -1007,7 +966,6 @@ void main() {
         expect(snapshot.outputChannels, 4);
         expect(snapshot.excludedInputMask, 0x4);
         expect(snapshot.inputClipMask, 0x3);
-        expect(snapshot.inputCondMask, 0x5);
         expect(snapshot.framesProcessed, 123456);
         expect(snapshot.outputPeak, closeTo(0.75, 1e-6));
         expect(snapshot.latencyState, LatencyState.done);
@@ -1203,7 +1161,6 @@ void main() {
       int countInBeatsLeft = 0,
       LooperMode looperMode = LooperMode.multi,
       int inputClipMask = 0,
-      int inputCondMask = 0,
       List<double>? inputPeaks,
       List<double>? monitorPeaks,
       List<double>? outputPeaks,
@@ -1254,7 +1211,6 @@ void main() {
       countInBeatsLeft: countInBeatsLeft,
       looperMode: looperMode,
       inputClipMask: inputClipMask,
-      inputCondMask: inputCondMask,
       // Fresh (non-const) lists so equality has to compare contents, not
       // identity.
       inputPeaks: inputPeaks ?? List<double>.filled(channels, 0),
@@ -1542,10 +1498,6 @@ void main() {
       );
     });
 
-    test('inputCondMask participates in equality', () {
-      expect(build(), isNot(equals(build(inputCondMask: 0x2))));
-    });
-
     test('fxAddedLatencyMs is 0 when the sample rate is unknown', () {
       // The initial snapshot has sampleRate 0; the ms getter must not divide by
       // zero (and is informational only, so 0 is the right "unknown" value).
@@ -1791,7 +1743,6 @@ void main() {
         'outputChannels',
         'excludedInputMask',
         'inputClipMask',
-        'inputCondMask',
         'framesProcessed',
         'xrunCount',
         'tunerHz',

@@ -16,22 +16,25 @@ OUT="${TMPDIR:-/tmp}"
 STD="-std=gnu11 -O2 -DNDEBUG -I src/core -I src/midi -I src/miniaudio"
 
 case "$(uname -s)" in
-  MINGW*|MSYS*|CYGWIN*) LIBS="-lole32 -lwinmm -lm" ;;
-  Darwin) LIBS="-framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework CoreFoundation -lpthread -lm" ;;
-  *) LIBS="-lpthread -lm -ldl" ;;   # Linux: miniaudio dlopen()s its backends
+  MINGW*|MSYS*|CYGWIN*) LIBS="-lole32 -lwinmm -lstdc++ -lm" ;;
+  Darwin) LIBS="-framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework CoreFoundation -lpthread -lc++ -lm" ;;
+  *) LIBS="-lpthread -lstdc++ -lm -ldl" ;;   # Linux: miniaudio dlopen()s its backends
 esac
 
 ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
-  src/core/tempo_grid.c \
+  src/core/tempo_grid.c src/core/halfband.c \
   src/core/synth_voice.c src/core/synth_patch.c \
   src/core/audio_ring.c src/core/rt_alloc.c src/core/perf_drain.c src/core/perf_checkpoint.c src/core/perf_log_ring.c \
   src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c \
   src/core/plugin_disabled.c \
   src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c src/midi/le_clock_follow.c"
 
+CXX="${CXX:-c++}"
 echo "== building device bench =="
+# The engine's one C++ unit, the stretch shim (#1179).
+$CXX -std=c++17 -O2 -DNDEBUG -c src/stretch/le_stretch.cpp -o "$OUT/le_stretch_dev.o"
 # shellcheck disable=SC2086
-$CC $STD src/test/bench/bench_devices.c $ENGINE_SRC $LIBS \
-  -o "$OUT/segno_device_bench.exe"
+$CC $STD src/test/bench/bench_devices.c $ENGINE_SRC "$OUT/le_stretch_dev.o" \
+  $LIBS -o "$OUT/segno_device_bench.exe"
 
 "$OUT/segno_device_bench.exe" "$@"
