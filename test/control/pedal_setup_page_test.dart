@@ -238,6 +238,17 @@ void main() {
       );
     });
 
+    testWidgets('the bank letter sits beside the BANK pedal, clear of its '
+        'art (#1590 PED-1)', (tester) async {
+      await pump(tester);
+      final cap = find.byKey(const Key('pedal_setup_cap_bank'));
+      final letter = tester.getRect(
+        find.descendant(of: cap, matching: find.text('A')),
+      );
+      final slot = tester.getRect(cap);
+      expect(letter.left, slot.right + SpacingTheme.standard.sm);
+    });
+
     testWidgets('the fixed switches are dimmed and refuse the tap', (
       tester,
     ) async {

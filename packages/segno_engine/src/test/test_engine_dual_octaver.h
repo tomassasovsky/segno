@@ -24,7 +24,7 @@ static float* do_render(const float* p, double hz) {
   CHECK(fx != NULL);
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
   CHECK(le_fx_prepare(fx, 0, LE_FX_DUAL_OCTAVER, do_sr) == LE_OK);
-  le_fx_entry_reset(fx, 0);
+  le_fx_entry_reset(fx, 0, LE_FX_DUAL_OCTAVER);
   fx->clocked = 1;
   static int32_t types[LE_FX_MAX];
   static float params[LE_FX_MAX][LE_FX_PARAMS];
@@ -100,7 +100,7 @@ static void do_switch(float octave2) {
   CHECK(fx != NULL);
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
   CHECK(le_fx_prepare(fx, 0, LE_FX_DUAL_OCTAVER, DO_SR) == LE_OK);
-  le_fx_entry_reset(fx, 0);
+  le_fx_entry_reset(fx, 0, LE_FX_DUAL_OCTAVER);
   fx->clocked = 1;
   static int32_t types[LE_FX_MAX];
   static float params[LE_FX_MAX][LE_FX_PARAMS];
@@ -269,7 +269,8 @@ static double do_render_low(const float* p, int harm, double hz, double am,
   CHECK(le_fx_prepare(fx, 0, vocoder_only ? LE_FX_OCTAVER : LE_FX_DUAL_OCTAVER,
                       do_sr) == LE_OK);
   CHECK(vocoder_only ? fx->oct[0][0].low == NULL : fx->oct[0][0].low != NULL);
-  le_fx_entry_reset(fx, 0);
+  le_fx_entry_reset(fx, 0,
+                    vocoder_only ? LE_FX_OCTAVER : LE_FX_DUAL_OCTAVER);
   fx->clocked = 1;
   static int32_t types[LE_FX_MAX];
   static float params[LE_FX_MAX][LE_FX_PARAMS];
@@ -454,7 +455,99 @@ static void test_dual_octaver_low_band_keeps_the_latency(void) {
   do_sr = DO_SR;
 }
 
+/* The hand-over between the low band and the vocoder is steady (#1580):
+ * four harmonic notes from 110 to 247 Hz, where the band takes the down
+ * voice over from the vocoder, with -120 dB of noise added while they
+ * sound move the output's level (20 ms windows every 5 ms, those within
+ * 40 dB of the loudest) by under 0.3 dB on all but 2 % of the windows.
+ * When the vocoder took its share of each region before deciding which
+ * region set a bin's phase, the noise moved it 2.3 dB. */
+static void do_render_notes(const float* p, int noisy, float* y, int n) {
+  le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+  CHECK(fx != NULL);
+  for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
+  CHECK(le_fx_prepare(fx, 0, LE_FX_DUAL_OCTAVER, do_sr) == LE_OK);
+  le_fx_entry_reset(fx, 0);
+  fx->clocked = 1;
+  static int32_t types[LE_FX_MAX];
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  for (int s = 0; s < LE_FX_MAX; ++s) types[s] = LE_FX_NONE;
+  types[0] = LE_FX_DUAL_OCTAVER;
+  for (int q = 0; q < LE_FX_PARAMS; ++q) params[0][q] = p[q];
+  static const double hz[4] = {110.0, 146.83, 196.0, 246.94};
+  uint32_t seed = 1580u;
+  for (int i = 0; i < n; ++i) {
+    double x = 0.0;
+    for (int k = 0; k < 4; ++k) {
+      const double t = (double)i / do_sr - 0.1 - 0.4 * k;
+      if (t < 0.0 || t >= 0.6) continue;
+      double v = 0.0;
+      for (int h = 1; h <= 10; ++h) {
+        v += sin(2.0 * 3.14159265358979 * hz[k] * h * t) / h;
+      }
+      x += 0.1 * (t < 0.002 ? t / 0.002 : 1.0) * exp(-t / 0.25) * v;
+    }
+    seed = seed * 1664525u + 1013904223u;
+    if (noisy && x != 0.0) {
+      x += 1e-6 * ((double)(seed >> 8) / 8388608.0 - 1.0);
+    }
+    fx->clock = (uint32_t)i;
+    float l = (float)x;
+    float r = l;
+    fx_apply_chain(fx, do_sr, do_sr, &l, &r, 1, types, params, NULL);
+    y[i] = l;
+  }
+  le_fx_state_free_buffers(fx);
+  free(fx);
+}
+
+static void test_dual_octaver_hand_over_is_steady(void) {
+  printf("test_dual_octaver_hand_over_is_steady\n");
+  const float p[LE_FX_PARAMS] = {0.0f, 1.0f, 1.0f, 0.0f};
+  const int n = 2 * do_sr;
+  const int win = do_sr / 50;
+  const int hop = do_sr / 200;
+  const int nf = (n - win) / hop;
+  float* a = (float*)malloc(sizeof(float) * (size_t)n);
+  float* b = (float*)malloc(sizeof(float) * (size_t)n);
+  float* la = (float*)malloc(sizeof(float) * (size_t)nf);
+  float* lb = (float*)malloc(sizeof(float) * (size_t)nf);
+  float* d = (float*)malloc(sizeof(float) * (size_t)nf);
+  CHECK(a != NULL && b != NULL && la != NULL && lb != NULL && d != NULL);
+  do_render_notes(p, 0, a, n);
+  do_render_notes(p, 1, b, n);
+  float top = -400.0f;
+  for (int f = 0; f < nf; ++f) {
+    double ea = 0.0;
+    double eb = 0.0;
+    for (int i = 0; i < win; ++i) {
+      const double w = 0.5 - 0.5 * cos(2.0 * 3.14159265358979 * i / win);
+      ea += w * a[f * hop + i] * a[f * hop + i];
+      eb += w * b[f * hop + i] * b[f * hop + i];
+    }
+    la[f] = (float)(10.0 * log10(ea + 1e-30));
+    lb[f] = (float)(10.0 * log10(eb + 1e-30));
+    if (la[f] > top) top = la[f];
+  }
+  int m = 0;
+  for (int f = 0; f < nf; ++f) {
+    if (la[f] > top - 40.0f) d[m++] = fabsf(lb[f] - la[f]);
+  }
+  qsort(d, (size_t)m, sizeof(float), cmp_float);
+  const float p98 = d[(int)ceil(0.98 * m) - 1];
+  printf("  the noise moves the level %.2f dB (98th percentile), at most "
+         "%.2f\n",
+         p98, d[m - 1]);
+  CHECK(p98 < 0.3f);
+  free(a);
+  free(b);
+  free(la);
+  free(lb);
+  free(d);
+}
+
 static void run_dual_octaver_tests(void) {
+  test_dual_octaver_hand_over_is_steady();
   test_dual_octaver_low_band_matches_the_capture();
   test_dual_octaver_low_band_hands_back();
   test_dual_octaver_low_band_keeps_the_latency();

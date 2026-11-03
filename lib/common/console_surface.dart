@@ -3517,7 +3517,10 @@ class ConsoleDialogButton extends StatelessWidget {
 /// and Material's `TextButton`s onto a face where nothing else looks like that.
 ///
 /// The scrim is the CALLER's: `showDialog` owns it, and a shell that tried to
-/// draw one would put a second scrim over the first.
+/// draw one would put a second scrim over the first. So is the centring: a
+/// dialog route offers the whole screen as tight constraints, so a caller
+/// wraps the shell in a [Center], or the panel ignores [width] and fills the
+/// screen.
 class ConsoleDialogShell extends StatelessWidget {
   /// Creates a [ConsoleDialogShell].
   const ConsoleDialogShell({

@@ -394,6 +394,13 @@ class _FormatRow extends StatelessWidget {
   final InputsState names;
   final bool locked;
 
+  /// Where the choice starts, after its label.
+  static const double _choiceLeft = 328;
+
+  /// Wide enough for "Separate mono" at the row's 22 px, so neither label is
+  /// scaled down to fit its button.
+  static const double _choiceWidth = 400;
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -408,7 +415,7 @@ class _FormatRow extends StatelessWidget {
             child: LoopSectionLabel(l10n.routingRecordAs),
           ),
           Positioned(
-            left: 328,
+            left: _choiceLeft,
             top: 0,
             child: LoopChoiceRow<bool>(
               values: const [false, true],
@@ -420,14 +427,14 @@ class _FormatRow extends StatelessWidget {
               onSelected: (v) => context.read<LooperBloc>().add(
                 LooperInputPairChanged(lower, paired: v),
               ),
-              width: 345,
+              width: _choiceWidth,
               height: 74,
-              gap: 5,
+              gap: context.spacing.sm,
               fontSize: 22,
             ),
           ),
           Positioned(
-            left: 713,
+            left: _choiceLeft + _choiceWidth + 40,
             top: 22,
             child: paired
                 ? RoutingPairMembers(
@@ -443,7 +450,7 @@ class _FormatRow extends StatelessWidget {
           // that says what the choice currently means.
           if (locked)
             Positioned(
-              left: 328,
+              left: _choiceLeft,
               top: 116,
               child: LoopNote(l10n.routingLockedFormat),
             ),

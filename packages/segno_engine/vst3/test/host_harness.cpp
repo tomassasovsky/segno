@@ -191,7 +191,7 @@ bool runDirect(int32_t fxType, const ParamCombo& combo, int cap, double sr,
   le_fx_state fx;
   memset(&fx, 0, sizeof(fx));
   const bool prepared = le_fx_prepare(&fx, 0, fxType, cap) == LE_OK;
-  le_fx_entry_reset(&fx, 0);
+  le_fx_entry_reset(&fx, 0, fxType);
   // A zeroed state would read as a mid-ramp bypass and fade the direct path
   // in, breaking parity with the hosted path (which seeds at setActive).
   le_fx_enable_seed_settled(&fx, 0);

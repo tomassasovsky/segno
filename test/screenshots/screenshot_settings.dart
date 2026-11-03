@@ -70,6 +70,7 @@ void stubScreenshotSettings(LooperRepository repository) {
       countInBars: any(named: 'countInBars'),
       soundStart: any(named: 'soundStart'),
       editKind: any(named: 'editKind'),
+      releasedSettings: any(named: 'releasedSettings'),
     ),
   ).thenAnswer((call) {
     countIn = call.namedArguments[#countInBars] as int;

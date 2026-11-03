@@ -125,7 +125,7 @@ static le_fx_state* kind_state(const alias_case* c, int sr) {
   le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
   if (fx == NULL) return NULL;
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
-  le_fx_entry_reset(fx, 0);
+  le_fx_entry_reset(fx, 0, c->type);
   if (le_fx_prepare(fx, 0, c->type, sr) != LE_OK) {
     le_fx_state_free_buffers(fx);
     free(fx);

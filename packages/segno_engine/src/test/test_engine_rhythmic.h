@@ -18,7 +18,7 @@ static le_fx_state* rh_pumper(const le_fx_tempo* tempo, const float* p) {
   le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
   CHECK(fx != NULL);
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
-  le_fx_entry_reset(fx, 0);
+  le_fx_entry_reset(fx, 0, LE_FX_PUMPER);
   fx->tempo = tempo;
   fx->clocked = 1;
   le_fx_pumper_seed_settled(fx, 0, p, RH_SR);
@@ -466,7 +466,7 @@ static le_fx_state* rh_slicer_at(const le_fx_tempo* tempo, int sr) {
   CHECK(fx != NULL);
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
   CHECK(le_fx_prepare(fx, 0, LE_FX_SLICER, sr) == LE_OK);
-  le_fx_entry_reset(fx, 0);
+  le_fx_entry_reset(fx, 0, LE_FX_SLICER);
   fx->tempo = tempo;
   fx->clocked = 1;
   return fx;
