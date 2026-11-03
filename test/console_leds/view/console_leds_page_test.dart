@@ -212,7 +212,7 @@ void main() {
       tester,
       light: const PedalAmbientLight(
         sensor: PedalLightSensor.aboveRange,
-        level: 190,
+        level: 188,
       ),
     );
     final strings = l10n(tester);
@@ -228,7 +228,7 @@ void main() {
       rowValue(tester, 'console_leds_sensor_state'),
       strings.consoleLedsSensorAboveRange,
     );
-    expect(ConsoleLedSettings.defaultBrightReading, lessThan(190));
+    expect(ConsoleLedSettings.defaultBrightReading, lessThan(188));
     await silence(tester);
   });
 }
