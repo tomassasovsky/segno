@@ -25,6 +25,10 @@
     "**/third_party/vst3sdk/**"
   ],
   "words": [
+    "oversample",
+    "oversampled",
+    "waveshaper",
+    "waveshapers",
     "bassstim",
     "Linkwitz",
     "smoothstep",
