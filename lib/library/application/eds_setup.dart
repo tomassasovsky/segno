@@ -20,19 +20,18 @@ const List<NewLoopTemplateTrack> edsSetup = [
   (channel: 3, name: 'Vox', preset: 'Vocal Close'),
 ];
 
-/// Reads Ed's setup's presets from [bundle] (the app's assets when omitted)
-/// and builds its template, or returns null when one of them is missing or
-/// unreadable.
+/// Reads Ed's setup's presets from [bundle] and builds its template, or
+/// returns null when one of them is missing or unreadable. A widget passes
+/// `DefaultAssetBundle.of(context)`.
 ///
 /// Reads the four preset files directly rather than the whole catalogue.
 /// Each track gets the rack the Effects library adds for its preset, with
 /// only the pedals the preset turns on (#1513 Q1), Post, the chain on.
-Future<NewLoopTemplate?> loadEdsSetup({AssetBundle? bundle}) async {
-  final assets = bundle ?? rootBundle;
+Future<NewLoopTemplate?> loadEdsSetup(AssetBundle bundle) async {
   final Set<String> present;
   try {
     present = (await AssetManifest.loadFromAssetBundle(
-      assets,
+      bundle,
     )).listAssets().toSet();
   } on Exception {
     return null;
@@ -46,7 +45,7 @@ Future<NewLoopTemplate?> loadEdsSetup({AssetBundle? bundle}) async {
     if (!present.contains(key)) return null;
     final preset = FxPreset.tryParse(
       edsSetupFamily,
-      await assets.loadString(key),
+      await bundle.loadString(key),
     );
     if (preset == null) return null;
     final rack = withFreshSlotIds(

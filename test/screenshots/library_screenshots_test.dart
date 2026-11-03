@@ -224,7 +224,10 @@ void main() {
             BlocProvider<LooperBloc>.value(value: looper),
             BlocProvider<TracksCubit>.value(value: tracks),
           ],
-          child: const LibraryPage(),
+          child: DefaultAssetBundle(
+            bundle: TestAssetBundle(),
+            child: const LibraryPage(),
+          ),
         ),
       ),
     );
@@ -293,11 +296,7 @@ void main() {
   Future<void> chooseEds(WidgetTester tester) async {
     await tester.tap(find.byKey(const Key('library_new_loop')));
     await tester.pumpAndSettle();
-    // The presets are read from the asset bundle, off the fake clock.
-    await tester.runAsync(() async {
-      await tester.tap(find.byKey(const Key('new_loop_template_eds')));
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-    });
+    await tester.tap(find.byKey(const Key('new_loop_template_eds')));
     await tester.pumpAndSettle();
   }
 

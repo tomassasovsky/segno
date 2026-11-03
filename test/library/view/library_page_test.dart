@@ -102,6 +102,15 @@ SessionPreview _previewOf(String id) => switch (id) {
   ),
 };
 
+/// The app's assets with Ed's setup's presets never arriving, so the sheet
+/// stays on reading them.
+class _PresetsNeverRead extends TestAssetBundle {
+  @override
+  Future<ByteData> load(String key) => key.endsWith('.fxpreset')
+      ? Completer<ByteData>().future
+      : super.load(key);
+}
+
 void main() {
   late SessionCubit session;
   late SessionRepository repository;
@@ -170,6 +179,7 @@ void main() {
     LooperState looperState = const LooperState(),
     Stream<LooperState> looperStates = const Stream.empty(),
     List<String>? trackNames,
+    AssetBundle? assets,
   }) async {
     final looper = _MockLooperBloc();
     whenListen(looper, looperStates, initialState: looperState);
@@ -213,17 +223,20 @@ void main() {
             BlocProvider<LooperBloc>.value(value: looper),
             BlocProvider<TracksCubit>.value(value: tracks),
           ],
-          child: Navigator(
-            onGenerateRoute: (_) => MaterialPageRoute<void>(
-              builder: (context) => Scaffold(
-                body: TextButton(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => const LibraryPage(),
+          child: DefaultAssetBundle(
+            bundle: assets ?? TestAssetBundle(),
+            child: Navigator(
+              onGenerateRoute: (_) => MaterialPageRoute<void>(
+                builder: (context) => Scaffold(
+                  body: TextButton(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => const LibraryPage(),
+                      ),
                     ),
+                    child: const Text('stage'),
                   ),
-                  child: const Text('stage'),
                 ),
               ),
             ),
@@ -1569,6 +1582,7 @@ void main() {
       Stream<SessionState> states = const Stream.empty(),
       LooperState looperState = const LooperState(),
       List<String>? trackNames,
+      AssetBundle? assets,
     }) async {
       when(
         () => session.newLoop(template: any(named: 'template')),
@@ -1579,6 +1593,7 @@ void main() {
         states: states,
         looperState: looperState,
         trackNames: trackNames,
+        assets: assets,
       );
       await tester.tap(find.byKey(const Key('library_new_loop')));
       await tester.pumpAndSettle();
@@ -1666,11 +1681,7 @@ void main() {
           tester.widget<LoopChoiceButton>(find.byKey(Key(key))).selected;
 
       Future<void> chooseEds(WidgetTester tester) async {
-        // The presets are read from the asset bundle, off the fake clock.
-        await tester.runAsync(() async {
-          await tester.tap(find.byKey(const Key('new_loop_template_eds')));
-          await Future<void>.delayed(const Duration(milliseconds: 200));
-        });
+        await tester.tap(find.byKey(const Key('new_loop_template_eds')));
         await tester.pumpAndSettle();
       }
 
@@ -1757,7 +1768,7 @@ void main() {
       });
 
       testWidgets('waits for its sounds before it can start', (tester) async {
-        await tapNewLoop(tester);
+        await tapNewLoop(tester, assets: _PresetsNeverRead());
 
         await tester.tap(find.byKey(const Key('new_loop_template_eds')));
         await tester.pump();
