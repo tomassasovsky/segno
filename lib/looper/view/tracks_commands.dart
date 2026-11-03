@@ -404,7 +404,7 @@ Notice? sessionOutcomeNotice(SessionState state) {
     tone: NoticeTone.success,
     title: title,
     body: body,
-    explains: body != null,
+    detailed: body != null,
   );
   Notice refuse(NoticeText title, {NoticeText? body, NoticeAction? action}) =>
       Notice(

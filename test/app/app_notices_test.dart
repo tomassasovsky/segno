@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:segno/app/app_notices.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/notices/notices.dart';
 
 Notice _recovery() => Notice(
@@ -63,6 +65,61 @@ void main() {
       second.complete(true);
       await pumpEventQueue();
       expect(notices.state.banners, isEmpty);
+    });
+  });
+
+  group('midiIsInterfacesOwn (#860)', () {
+    const scarlettMidi = MidiConnection(
+      selectedId: 'Scarlett 4i4 USB',
+      selectedName: 'Scarlett 4i4 USB MIDI 1',
+      connectivity: MidiConnectivity.lost,
+      connectivityDeviceName: 'Scarlett 4i4 USB MIDI 1',
+    );
+    const pedal = MidiConnection(
+      selectedId: 'fcb1010',
+      selectedName: 'FCB1010',
+      connectivity: MidiConnectivity.lost,
+      connectivityDeviceName: 'FCB1010',
+    );
+    const lost = AudioSetupState(
+      deviceConnectivity: DeviceConnectivity.lost,
+      connectivityDeviceName: 'Scarlett 4i4 USB',
+    );
+
+    test("the gone interface's own ports are its", () {
+      expect(
+        midiIsInterfacesOwn(scarlettMidi, lost, audioJustChanged: false),
+        isTrue,
+      );
+    });
+
+    test('another controller, long after, is its own cause', () {
+      expect(
+        midiIsInterfacesOwn(pedal, lost, audioJustChanged: false),
+        isFalse,
+      );
+    });
+
+    test('anything within moments of the interface is its', () {
+      expect(
+        midiIsInterfacesOwn(
+          pedal,
+          const AudioSetupState(),
+          audioJustChanged: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('with the interface present, its ports are their own cause', () {
+      expect(
+        midiIsInterfacesOwn(
+          scarlettMidi,
+          const AudioSetupState(connectivityDeviceName: 'Scarlett 4i4 USB'),
+          audioJustChanged: false,
+        ),
+        isFalse,
+      );
     });
   });
 }

@@ -169,7 +169,10 @@ void main() {
           deviceConnectivity: DeviceConnectivity.lost,
         ),
       );
-      expect(find.text('No audio device. Nothing is heard.'), findsOneWidget);
+      expect(
+        find.text('Audio interface disconnected. Nothing is heard.'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('a boot that waits for it says so, and when it comes back', (

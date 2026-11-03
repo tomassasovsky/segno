@@ -651,6 +651,21 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     return outcome;
   }
 
+  /// The pinned interface's name as the player knows it: the host's
+  /// catalog entry for the pin ("Scarlett 4i4 USB"), not the engine's
+  /// `engineName`, which on ALSA is the generic "Playback Device". The
+  /// engine's name when the catalog has no entry, the last one known when
+  /// neither has one.
+  String _interfaceName(String engineName) {
+    final ids = {state.playbackDeviceId, state.captureDeviceId}..remove('');
+    for (final device in state.devices) {
+      if (ids.contains(device.id) && device.name.isNotEmpty) {
+        return device.name;
+      }
+    }
+    return engineName.isNotEmpty ? engineName : _lastPresentDeviceName;
+  }
+
   /// The name the host gives the interface [config] pins, or its id.
   String _deviceName(AudioSetupState config) {
     final id = config.playbackDeviceId.isNotEmpty
@@ -710,9 +725,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       deviceConnectivity: carried == DeviceConnectivity.restored
           ? DeviceConnectivity.none
           : carried,
-      connectivityDeviceName: live.deviceName.isNotEmpty
-          ? live.deviceName
-          : _lastPresentDeviceName,
+      connectivityDeviceName: _interfaceName(live.deviceName),
     );
     emit(settled);
     unawaited(_settings.saveAudioConfig(_storedConfig(settled)));
@@ -863,7 +876,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       emit(
         state.copyWith(
           deviceConnectivity: lost,
-          connectivityDeviceName: status.deviceName,
+          connectivityDeviceName: _interfaceName(status.deviceName),
         ),
       );
     }
@@ -936,9 +949,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     final present = status.devicePresent;
     final previous = _lastDevicePresent;
     _lastDevicePresent = present;
-    if (present && status.deviceName.isNotEmpty) {
-      _lastPresentDeviceName = status.deviceName;
-    }
+    if (present) _lastPresentDeviceName = _interfaceName(status.deviceName);
     if (present && state.deviceConnectivity == DeviceConnectivity.waiting) {
       // The awaited interface is here and running: the strip has nothing
       // left to say, and a "reconnected" toast for a first start would be a

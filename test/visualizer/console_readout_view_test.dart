@@ -262,6 +262,45 @@ void main() {
         );
       });
 
+      testWidgets('a sentence too long for one line is said whole, the band '
+          'growing over the readout', (tester) async {
+        const detail =
+            'The original was kept beside it. Its Master effects, and pedals '
+            'bound to them, now run on All tracks. A live input above 100% '
+            'was lowered to 100%. It saved no tempo, so its tempo was set '
+            'from the loop length.';
+        await pump(
+          tester,
+          readout: const PerformanceReadout(
+            selected: selected,
+            notice: ReadoutNotice(
+              title: 'Session converted from an older Segno',
+              body: detail,
+              tone: NoticeTone.success,
+            ),
+          ),
+        );
+        expect(tester.takeException(), isNull);
+        final wrapped = find.byKey(const Key('notice_sentence_wrapped'));
+        expect(wrapped, findsOneWidget);
+        expect(
+          find.textContaining('set from the loop length', findRichText: true),
+          findsOneWidget,
+        );
+        final band = tester.getRect(
+          find.byKey(const Key('console_readout_notice')),
+        );
+        expect(
+          band.height,
+          greaterThan(NoticeTheme.standard.readoutBandHeight),
+        );
+        final text = tester.renderObject<RenderParagraph>(
+          find.descendant(of: wrapped, matching: find.byType(RichText)),
+        );
+        expect(text.didExceedMaxLines, isFalse);
+        expect(text.textSize.height, lessThanOrEqualTo(text.size.height));
+      });
+
       testWidgets("carries the main bar's marks: the dot only for a critical "
           'message', (tester) async {
         await pump(

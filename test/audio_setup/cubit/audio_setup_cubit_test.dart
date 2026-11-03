@@ -1781,6 +1781,31 @@ void main() {
       },
     );
 
+    test('a lost interface is named as the host lists it, not by the '
+        "engine's generic ALSA name (#1562)", () async {
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(playbackDeviceId: 'out-1'),
+      );
+      when(repository.devices).thenReturn(const [
+        AudioDevice(
+          id: 'out-1',
+          name: 'Scarlett 4i4 USB',
+          isDefault: false,
+          isInput: false,
+        ),
+      ]);
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      stateController.add(
+        present(devicePresent: true, name: 'Playback Device'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      stateController.add(present(devicePresent: false, name: ''));
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.lost);
+      expect(cubit.state.connectivityDeviceName, 'Scarlett 4i4 USB');
+    });
+
     test(
       'a return that dropped some tracks is the partial variant — one notice, '
       'not restored plus another (#1140)',

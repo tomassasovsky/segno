@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:backing_repository/backing_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
+import 'package:clock/clock.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:cpu_load_repository/cpu_load_repository.dart';
@@ -937,6 +938,23 @@ class _AppViewState extends State<_AppView> {
   /// The weak-charger message is said once per boot.
   bool _weakChargerShown = false;
 
+  /// An audio interface takes its own MIDI ports with it, and the two
+  /// hotplug paths report it seconds apart. Within this window of each
+  /// other, a MIDI loss or return is the interface's, said once (#860).
+  static const Duration _sameCauseWindow = Duration(seconds: 5);
+
+  /// Running since the audio interface last went or came back. On the zone's
+  /// clock, which tests fake; a clock step inside the window misjudges one
+  /// message at worst.
+  final Stopwatch _audioChanged = clock.stopwatch();
+  DeviceConnectivity _audioConnectivity = DeviceConnectivity.none;
+
+  /// Running since a MIDI loss or return was last said.
+  final Stopwatch _midiSaid = clock.stopwatch();
+
+  static bool _within(Stopwatch since) =>
+      since.isRunning && since.elapsed <= _sameCauseWindow;
+
   NoticesCubit get _notices => context.read<NoticesCubit>();
 
   /// Resolves localized strings from inside [MaterialApp] when this state
@@ -1182,6 +1200,21 @@ class _AppViewState extends State<_AppView> {
   /// cleared every loop stands as must-act, never here (#860: one notice per
   /// cause).
   void _showDeviceRestored(AudioSetupState state) {
+    if (state.deviceConnectivity != _audioConnectivity) {
+      _audioConnectivity = state.deviceConnectivity;
+      if (state.deviceConnectivity != DeviceConnectivity.none) {
+        _audioChanged
+          ..reset()
+          ..start();
+        // A MIDI message just said was this interface's own ports: the
+        // interface's message takes its place rather than following it.
+        if (_within(_midiSaid)) {
+          _notices
+            ..clear(AppNoticeId.midiLost)
+            ..clear(AppNoticeId.midiRestored);
+        }
+      }
+    }
     final device = state.connectivityDeviceName;
     String name(AppLocalizations l10n) =>
         device.isEmpty ? l10n.audioDeviceFallbackName : device;
@@ -1219,10 +1252,24 @@ class _AppViewState extends State<_AppView> {
   /// leaves the loops playing and only the mappings idle, so it is a
   /// warning that goes by itself (#453); its return is a confirmation that
   /// takes the warning's place.
+  ///
+  /// The audio interface's own MIDI ports go and come back with it: their
+  /// loss or return is not said beside the interface's (#860), whether it is
+  /// the same device by name or arrives within [_sameCauseWindow] of it.
   void _showMidiConnectivity(MidiSetupState state) {
     final connection = state.connection;
+    if (connection.connectivity != MidiConnectivity.none &&
+        _interfacesOwn(connection)) {
+      if (connection.connectivity == MidiConnectivity.restored) {
+        _notices.clear(AppNoticeId.midiLost);
+      }
+      return;
+    }
     switch (connection.connectivity) {
       case MidiConnectivity.lost:
+        _midiSaid
+          ..reset()
+          ..start();
         _notices.show(
           Notice(
             id: AppNoticeId.midiLost,
@@ -1235,6 +1282,9 @@ class _AppViewState extends State<_AppView> {
         final name = connection.connectivityDeviceName.isEmpty
             ? connection.selectedName
             : connection.connectivityDeviceName;
+        _midiSaid
+          ..reset()
+          ..start();
         _notices
           ..clear(AppNoticeId.midiLost)
           ..show(
@@ -1248,6 +1298,12 @@ class _AppViewState extends State<_AppView> {
         _notices.clear(AppNoticeId.midiLost);
     }
   }
+
+  bool _interfacesOwn(MidiConnection connection) => midiIsInterfacesOwn(
+    connection,
+    context.read<AudioSetupCubit>().state,
+    audioJustChanged: _within(_audioChanged),
+  );
 
   /// The USB-C contract predates the console profile, so the console runs on
   /// less than the charger offers until it is unplugged and plugged back in

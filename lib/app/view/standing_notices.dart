@@ -273,10 +273,11 @@ class _FxHeld extends Equatable {
 /// interface.
 String? audioLossLine(AppLocalizations l10n, AudioSetupState state) =>
     switch (state.deviceConnectivity) {
-      DeviceConnectivity.lost =>
+      DeviceConnectivity.lost => l10n.deviceLostNamedBanner(
         state.connectivityDeviceName.isEmpty
-            ? l10n.deviceLostBanner
-            : l10n.deviceLostNamedBanner(state.connectivityDeviceName),
+            ? l10n.audioDeviceFallbackName
+            : state.connectivityDeviceName,
+      ),
       DeviceConnectivity.waiting => l10n.audioRecoveryWaitingBanner,
       DeviceConnectivity.none ||
       DeviceConnectivity.restored ||
