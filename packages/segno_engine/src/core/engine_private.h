@@ -1179,7 +1179,7 @@ typedef struct le_lane {
   /* Chain-edit generation: bumped (relaxed fetch_add) by EVERY path that can
    * change this lane's chain fingerprint, so the audio thread's per-buffer
    * cache check can skip the full fingerprint refold while nothing changed
-   * (snapshot_lane_cache caches its last verdict keyed on {entry, gen}).
+   * (snapshot_lane_cache refolds run_fp below only when it moved).
    * BUMP SITES — a missed one lets a stale verdict play stale audio, so this
    * list is audited like the a_audio_rev table above: the five lane FX
    * setters in engine_commands.c (type, count, param, enabled,
@@ -1187,26 +1187,20 @@ typedef struct le_lane {
    * le_lane_reset (engine.c), and the audio thread's LE_CMD_SET_LANE_FX /
    * _FX_COUNT handlers (engine_process.c — covers the raw
    * le_engine_post_command escape hatch that bypasses the setters). Every
-   * chain mutation flows through one of those. Safety direction: a spurious
-   * bump merely re-verifies the fingerprint once; only a MISSING bump is a
-   * bug. */
+   * chain mutation flows through one of those, AFTER its stores: the bump
+   * releases them and the audio thread's load acquires, so a refold for a
+   * generation it has seen reads that edit's values (#939 review). Safety
+   * direction: a spurious bump merely re-verifies the fingerprint once; only
+   * a MISSING bump is a bug. */
   _Atomic uint32_t a_fx_gen;
-  /* Audio-thread-LOCAL fingerprint-verdict cache (plain fields, never read
-   * by control): the entry pointer and a_fx_gen value at which the full
-   * fingerprint comparison last PASSED. While both still match (and the
-   * cheap rev/vol/len fields do too), the per-buffer check skips the ~40
-   * atomic loads + FNV refold — the standing cost of a cached steady state
-   * drops to one relaxed load. The track's loop-top hop position is part
-   * of an octaver print's key (#941) and moves on a relaunch without a chain
-   * edit, so the verdict also records it and a change forces the refold. */
-  const le_wet_entry* cache_fp_entry;
-  uint32_t cache_fp_gen;
-  uint32_t cache_fp_hop;
   /* Audio-thread-LOCAL: the live Pre chain's run (#939, le_chain_run) and
    * the key it is playing: content, volume, length and Pre fingerprint, as
    * the print's key names them. snapshot_lane_cache compares the key with
-   * run_* each buffer and restarts the run on a change; the fingerprint is
-   * refolded only when run_gen or run_hop (its cheap proxies) moved. */
+   * run_* each buffer, restarts the run on a change and checks a published
+   * print against it. The fingerprint is refolded only when run_gen or
+   * run_hop (the track's loop-top hop position, which an octaver print's key
+   * folds, #941) moved, so a cached steady state costs a few relaxed loads
+   * instead of a ~40-load FNV refold per buffer. */
   le_chain_run run;
   uint64_t run_fp;
   uint32_t run_rev;
@@ -1219,7 +1213,7 @@ typedef struct le_lane {
 /* Bumps a lane's chain-edit generation (see a_fx_gen above). Both threads
  * bump: control setters and the audio-thread ring handlers. */
 static inline void le_lane_fx_gen_bump(le_lane* ln) {
-  atomic_fetch_add_explicit(&ln->a_fx_gen, 1u, memory_order_relaxed);
+  atomic_fetch_add_explicit(&ln->a_fx_gen, 1u, memory_order_release);
 }
 
 /* One hardware input's live monitor (engine-level, one slot per input).

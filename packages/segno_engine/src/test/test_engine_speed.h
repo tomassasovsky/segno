@@ -443,6 +443,31 @@ static void test_speed_print_disengages_and_parity(void) {
   le_engine_destroy(live);
 }
 
+/* At 2x on a loop of odd length the read index steps past 0 on every other
+ * lap; the lap count still counts each one (#939). A lane's print drops at
+ * the step and its chain plays two laps at 2x, so back at Normal it has
+ * played more laps than the print at every top that follows, and its delay
+ * line repeats from them: it stays live. Counting only landings on 0 saw one
+ * lap at 2x and swapped the print in. */
+static void test_speed_odd_loop_counts_every_lap(void) {
+  printf("test_speed_odd_loop_counts_every_lap\n");
+  const int32_t type = LE_FX_DELAY;
+  const int32_t len = CACHE_LOOP + 1;
+  le_engine *cached, *live;
+  cache_pair_prepare_chain_loop(&cached, &live, &type, 1, 0, len);
+  le_engine_destroy(live);
+  pump_frames(cached, 0, len);
+  CHECK(cache_engaged(cached, 0, 0) == 1);
+  uint64_t a = speed_set(cached, 2, 1);
+  pump_frames(cached, 0, len);
+  fade_result(cached, a, LE_OK);
+  a = speed_set(cached, 1, 1);
+  pump_frames(cached, 0, 2 * len);
+  fade_result(cached, a, LE_OK);
+  CHECK(cache_engaged(cached, 0, 0) == 0);
+  le_engine_destroy(cached);
+}
+
 /* A Clear at 1/2x resets direction and origin with the material and the
  * global rate survives while another track holds material: an undo brings the
  * take back at 1/2x, reading where the song position is. Two lanes read the
@@ -876,6 +901,7 @@ static void run_speed_tests(void) {
   test_speed_no_spurious_transport_facts();
   test_speed_render_parity();
   test_speed_print_disengages_and_parity();
+  test_speed_odd_loop_counts_every_lap();
   test_speed_material_reset_and_lanes();
   test_speed_normal_lands_on_whole_sample();
   test_speed_clear_undo_stem_exact();

@@ -36678,7 +36678,14 @@ static void test_whole_track_print_stays_live_on_a_short_loop(void) {
   le_engine_get_track_cache(a, 0, &info); /* registers the key */
   wt_pump(a, CACHE_SETTLE, oa);
   wt_pump(b, CACHE_SETTLE, ob);
-  CHECK(wt_tick(a).state == LE_CACHE_CACHED);
+  /* The print publishes without frames moving (the scheduler's copy,
+   * render and collect ticks run on the polls). */
+  int cached = 0;
+  for (int k = 0; k < 3000 && !cached; ++k) {
+    cached = wt_tick(a).state == LE_CACHE_CACHED;
+    if (!cached) test_sleep_ms(1);
+  }
+  CHECK(cached);
   float d = 0.0f;
   for (int n = 0; n < 2 * CACHE_SHORT_LOOP; n += 64) {
     wt_pump(a, 64, oa);
