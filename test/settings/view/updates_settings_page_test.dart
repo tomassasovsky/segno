@@ -509,6 +509,28 @@ void main() {
     });
   });
 
+  testWidgets('without the update helper the version sits an xl gap over '
+      'the panel, and with no version the panel starts the column', (
+    tester,
+  ) async {
+    await pump(tester, UpdateState(currentVersion: Version.parse('1.0.0')));
+    final installed = tester.getRect(
+      find.byKey(const Key('updates_installed')),
+    );
+    expect(
+      tester.getRect(find.byKey(const Key('updates_status'))).top -
+          installed.bottom,
+      SpacingTheme.standard.xl,
+    );
+
+    await pump(tester, const UpdateState());
+    expect(find.byKey(const Key('updates_installed')), findsNothing);
+    expect(
+      tester.getRect(find.byKey(const Key('updates_status'))).top,
+      installed.top,
+    );
+  });
+
   group('settings and links', () {
     testWidgets('Check automatically is a pick of Off and On', (tester) async {
       await pump(tester, _running);

@@ -69,6 +69,46 @@ void main() {
     }
   });
 
+  testWidgets('a label beside a control and no value takes the free width; '
+      'beside a caption it leaves the caption a third', (tester) async {
+    // The row's content is 782 wide (848 less border and inset); a 320
+    // control and the xl gap leave 438 for the label and its value.
+    await pump(tester, [
+      const SettingsFactRow(
+        label: 'Update channel',
+        trailing: SizedBox(width: 320, height: 56),
+      ),
+      const SettingsFactRow(
+        label: 'Check automatically',
+        caption: 'Never downloads or installs on its own.',
+        trailing: SizedBox(width: 320, height: 56),
+      ),
+    ]);
+    // 336 wide in the test font: past the two-thirds cap, but with no
+    // value there is nothing to leave room for.
+    final channel = tester.renderObject<RenderParagraph>(
+      find.descendant(
+        of: find.text('Update channel'),
+        matching: find.byType(RichText),
+      ),
+    );
+    expect(
+      channel
+          .getBoxesForSelection(
+            const TextSelection(baseOffset: 0, extentOffset: 14),
+          )
+          .map((box) => box.top)
+          .toSet(),
+      hasLength(1),
+    );
+    // 456 wide: capped, so the caption keeps a third of what the gap leaves.
+    final gap = SpacingTheme.standard.xl;
+    expect(
+      tester.getSize(find.text('Check automatically')).width,
+      lessThanOrEqualTo((438 - gap) * 2 / 3),
+    );
+  });
+
   testWidgets('values share the right content edge, with or without a '
       'caption', (tester) async {
     await pump(tester, [

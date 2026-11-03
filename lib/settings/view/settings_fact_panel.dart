@@ -149,7 +149,8 @@ class SettingsFactRow extends StatelessWidget {
 ///
 /// The label takes its own width and the value the rest, so values end at
 /// the row's edge. Only when the two cannot share the row does the label
-/// wrap, at two thirds of it, so the value keeps at least a third.
+/// wrap, at two thirds of what the gap leaves, so the value keeps at least a
+/// third. A row with no value lets the label take the whole width.
 class _LabelAndValue extends StatelessWidget {
   const _LabelAndValue(this.label, this.value, this.caption);
 
@@ -162,21 +163,28 @@ class _LabelAndValue extends StatelessWidget {
     final surface = context.surface;
     final value = this.value;
     final caption = this.caption;
+    final gap = context.spacing.xl;
+    final text = AppText(
+      label,
+      style: TextStyle(
+        color: surface.textSecondary,
+        fontSize: 24,
+        height: 1.2,
+      ),
+    );
+    if (value == null && caption == null) {
+      return Align(alignment: Alignment.centerLeft, child: text);
+    }
     return LayoutBuilder(
       builder: (context, constraints) => Row(
         children: [
           ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: constraints.maxWidth * 2 / 3),
-            child: AppText(
-              label,
-              style: TextStyle(
-                color: surface.textSecondary,
-                fontSize: 24,
-                height: 1.2,
-              ),
+            constraints: BoxConstraints(
+              maxWidth: (constraints.maxWidth - gap) * 2 / 3,
             ),
+            child: text,
           ),
-          SizedBox(width: context.spacing.xl),
+          SizedBox(width: gap),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,

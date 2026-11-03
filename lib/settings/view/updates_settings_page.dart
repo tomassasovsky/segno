@@ -115,9 +115,14 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
         // The version has a line of its own: beside the two buttons it
         // wrapped mid-version and ran into Load from USB.
         if (version != null) ...[
-          LoopSectionLabel(
-            l10n.updatesPageInstalled('$version'),
-            key: const Key('updates_installed'),
+          // Bounded by the column: a long build string wraps here rather
+          // than running under the right-hand column.
+          SizedBox(
+            width: AboutSettingsPage.columnWidth,
+            child: LoopSectionLabel(
+              l10n.updatesPageInstalled('$version'),
+              key: const Key('updates_installed'),
+            ),
           ),
           SizedBox(
             height: state.supported ? context.spacing.lg : context.spacing.xl,
