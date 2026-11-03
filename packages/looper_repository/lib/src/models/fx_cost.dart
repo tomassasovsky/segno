@@ -76,8 +76,10 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
 ///
 /// Measured on the console (Pi 5, build .212, SCHED_FIFO 70, `bench_fx_cpu
 /// --paced --cpu 3 --table --blocks 2000 --period 32`) at 48 kHz for `low`
-/// and 96 kHz for `high`. The Amp+Cab charges more at 96 kHz, where its
-/// cabinet runs twice the taps.
+/// and 96 kHz for `high`. These are 32-frame periods, where the other
+/// kinds' figures are 64-frame ones: per-block work spread over fewer frames,
+/// so at 64 frames they charge a little more than they cost. The Amp+Cab
+/// charges more at 96 kHz, where its cabinet runs twice the taps.
 const Map<TrackEffectType, ({int low, int high})> kFxOversampledCostNs = {
   TrackEffectType.overdrive: (low: 786, high: 442),
   TrackEffectType.distortion: (low: 395, high: 243),

@@ -686,9 +686,9 @@ static void test_lofi_offline_equals_live(void) {
    * 48 (#1547). */
   CHECK(!le_fx_entry_free_running(LE_FX_DEGRADE, v, 48000));
   CHECK(!le_fx_entry_free_running(LE_FX_DEGRADE, v, 96000));
+  /* 46 kHz: holding at 96 kHz (its kernel at 48), not at 44.1. */
   v[0] = dyn_setting(LE_FX_DEGRADE, 0, 46000.0);
   CHECK(le_fx_entry_free_running(LE_FX_DEGRADE, v, 96000));
-  v[0] = dyn_setting(LE_FX_DEGRADE, 0, 46000.0);
   CHECK(!le_fx_entry_free_running(LE_FX_DEGRADE, v, 44100));
   v[0] = 0.4f;
   CHECK(le_fx_entry_free_running(LE_FX_DEGRADE, v, 48000));
