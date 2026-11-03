@@ -296,7 +296,8 @@ class LibraryPreviewTracks extends StatelessWidget {
           ConsoleBanner(
             key: const Key('library_open_refused'),
             message: refusal,
-            tone: ConsoleBannerTone.failure,
+            // A press that did nothing: a warning, not red (#1562).
+            tone: ConsoleBannerTone.pending,
           ),
           const SizedBox(height: 12),
         ],
@@ -304,7 +305,7 @@ class LibraryPreviewTracks extends StatelessWidget {
           ConsoleBanner(
             key: const Key('library_listen_refused'),
             message: listenRefusal,
-            tone: ConsoleBannerTone.failure,
+            tone: ConsoleBannerTone.pending,
           ),
           const SizedBox(height: 12),
         ],

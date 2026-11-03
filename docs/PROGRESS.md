@@ -73,7 +73,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1547 | Every effect the same at any sample rate and block size: parts 1, 2 and 3a (filter responses) merged; part 3b (the tails: echo, reverbs, spring) in review; 3c pitch (#1467), 3d the Transient next | in-review | auto | `claude/fx-invariance-1547-p3b` |
-| #1562 | One notice system: messages in the top bar's centre, on the track that caused them and on the readout's band, must-act messages as the whole bar; p1 the notice centre and its surfaces, p2 every call site moved onto it (toastification and SnackBars gone), p3 the inline notices | build | merge-gate | `claude/notices-1562-p*` |
+| #1562 | One notice system: messages in the top bar's centre, on the track that caused them and on the readout's band, must-act messages as the whole bar; p1 the notice centre and its surfaces, p2 every call site moved onto it (toastification and SnackBars gone), p3 the inline notices | in-review | merge-gate | `claude/notices-1562-p*` |
 
 ---
 
@@ -118,6 +118,13 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   in the stage bar and fails on any cut title or dropped body or button.
 - Tests: a press that settles runs a passing message's time out, so tests
   ask `NoticeLog` (`test/helpers/notice_log.dart`) what was said.
+- Part 3: the page bands (the Effects pages' "effects are off", Loop
+  settings' lock, the Updates page's rollback) are one `InlineNotice` on the
+  notice tones and type, with no inline alpha wash (the token test now
+  covers `warning` too); a ConsoleBanner that needs no action is amber, not
+  red (the device running at other settings, a storage action that did
+  nothing, the Library's refused open and listen). The Storage and MIDI
+  pages' one-line amber notes stay the pen's.
 
 ## November 2026 The UI thread's CPU (#1563)
 

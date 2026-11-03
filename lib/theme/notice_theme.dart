@@ -27,6 +27,8 @@ class NoticeTheme extends ThemeExtension<NoticeTheme> {
     required this.dotSize,
     required this.timeLineThickness,
     required this.ruleThickness,
+    required this.edgeThickness,
+    required this.inlineText,
     required this.trackOverline,
     required this.trackTitle,
     required this.trackBody,
@@ -62,6 +64,12 @@ class NoticeTheme extends ThemeExtension<NoticeTheme> {
 
   /// The rule under a bar that holds a must-act message.
   final double ruleThickness;
+
+  /// The tone edge down the left of a notice that stands on a page.
+  final double edgeThickness;
+
+  /// A notice on a page: the sentence.
+  final TextStyle inlineText;
 
   /// A track's message: the short cause over it, in the tone colour.
   final TextStyle trackOverline;
@@ -107,6 +115,12 @@ class NoticeTheme extends ThemeExtension<NoticeTheme> {
     dotSize: 10,
     timeLineThickness: 3,
     ruleThickness: 2,
+    edgeThickness: 3,
+    inlineText: TextStyle(
+      fontFamily: SurfaceTheme.displayFont,
+      fontSize: 24,
+      height: 1.1,
+    ),
     trackOverline: TextStyle(
       fontFamily: SurfaceTheme.monoFont,
       fontSize: 22,
@@ -146,6 +160,8 @@ class NoticeTheme extends ThemeExtension<NoticeTheme> {
     double? dotSize,
     double? timeLineThickness,
     double? ruleThickness,
+    double? edgeThickness,
+    TextStyle? inlineText,
     TextStyle? trackOverline,
     TextStyle? trackTitle,
     TextStyle? trackBody,
@@ -162,6 +178,8 @@ class NoticeTheme extends ThemeExtension<NoticeTheme> {
     dotSize: dotSize ?? this.dotSize,
     timeLineThickness: timeLineThickness ?? this.timeLineThickness,
     ruleThickness: ruleThickness ?? this.ruleThickness,
+    edgeThickness: edgeThickness ?? this.edgeThickness,
+    inlineText: inlineText ?? this.inlineText,
     trackOverline: trackOverline ?? this.trackOverline,
     trackTitle: trackTitle ?? this.trackTitle,
     trackBody: trackBody ?? this.trackBody,
@@ -185,6 +203,8 @@ class NoticeTheme extends ThemeExtension<NoticeTheme> {
       dotSize: l(dotSize, other.dotSize),
       timeLineThickness: l(timeLineThickness, other.timeLineThickness),
       ruleThickness: l(ruleThickness, other.ruleThickness),
+      edgeThickness: l(edgeThickness, other.edgeThickness),
+      inlineText: s(inlineText, other.inlineText),
       trackOverline: s(trackOverline, other.trackOverline),
       trackTitle: s(trackTitle, other.trackTitle),
       trackBody: s(trackBody, other.trackBody),

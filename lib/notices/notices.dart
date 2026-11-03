@@ -4,6 +4,7 @@ library;
 
 export 'cubit/notices_cubit.dart';
 export 'model/notice.dart';
+export 'view/inline_notice.dart';
 export 'view/notice_bar.dart';
 export 'view/notice_palette.dart';
 export 'view/notice_sentence.dart';

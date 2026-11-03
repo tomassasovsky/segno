@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/common/encoder_intents.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_edit_scope.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 
 /// A single stop for keyboard and physical encoder focus. Enter, Space and the
@@ -770,28 +771,12 @@ class LoopLockBanner extends StatelessWidget {
   final double width;
 
   @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return Container(
-      key: const Key('loop_lock_banner'),
-      width: width,
-      height: 68,
-      padding: const EdgeInsets.only(left: 27),
-      decoration: BoxDecoration(
-        color: surface.warning.withValues(alpha: 0.14),
-        border: Border(left: BorderSide(color: surface.warning, width: 3)),
-      ),
-      alignment: Alignment.centerLeft,
-      child: AppText(
-        text,
-        style: TextStyle(
-          color: surface.textPrimary,
-          fontSize: 24,
-          height: 1,
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => SizedBox(
+    key: const Key('loop_lock_banner'),
+    width: width,
+    height: 68,
+    child: InlineNotice(message: text, tone: NoticeTone.neutral),
+  );
 }
 
 /// The scoped editors' Tracks / Defaults / 1-8 selector, 1720 wide: the

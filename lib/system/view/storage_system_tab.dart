@@ -137,7 +137,8 @@ class _StorageSystemTabState extends State<StorageSystemTab> {
                     ConsoleBanner(
                       key: const Key('system_storage_action_failed'),
                       message: l10n.storageActionFailed,
-                      tone: ConsoleBannerTone.failure,
+                      // Nothing on the disk changed: a warning (#1562).
+                      tone: ConsoleBannerTone.pending,
                     ),
                   ConsoleRow(
                     key: const Key('system_storage_delete_captures'),

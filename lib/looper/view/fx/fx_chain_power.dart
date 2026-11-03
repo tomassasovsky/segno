@@ -6,6 +6,7 @@ import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 
 /// Whether the chain at [address] is switched in (its effects power), watched
@@ -138,42 +139,21 @@ class FxChainOffNotice extends StatelessWidget {
   final VoidCallback onTurnOn;
 
   @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return Container(
-      key: const Key('fx_chain_off_notice'),
-      height: height,
-      padding: const EdgeInsets.only(left: 27, right: 8),
-      decoration: BoxDecoration(
-        color: surface.warning.withValues(alpha: 0.14),
-        border: Border(left: BorderSide(color: surface.warning, width: 3)),
+  Widget build(BuildContext context) => SizedBox(
+    key: const Key('fx_chain_off_notice'),
+    height: height,
+    child: InlineNotice(
+      message: message,
+      action: LoopOutlinedButton(
+        key: const Key('fx_chain_turn_on'),
+        width: 260,
+        height: 52,
+        radius: 8,
+        tone: LoopButtonTone.accent,
+        leadingIcon: LucideIcons.power,
+        label: context.l10n.fxChainTurnOn,
+        onTap: onTurnOn,
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: AppText(
-              message,
-              maxLines: 2,
-              style: TextStyle(
-                color: surface.textPrimary,
-                fontSize: 22,
-                height: 1.1,
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          LoopOutlinedButton(
-            key: const Key('fx_chain_turn_on'),
-            width: 260,
-            height: 52,
-            radius: 8,
-            tone: LoopButtonTone.accent,
-            leadingIcon: LucideIcons.power,
-            label: context.l10n.fxChainTurnOn,
-            onTap: onTurnOn,
-          ),
-        ],
-      ),
-    );
-  }
+    ),
+  );
 }
