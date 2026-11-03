@@ -467,7 +467,7 @@ static void do_render_notes(const float* p, int noisy, float* y, int n) {
   CHECK(fx != NULL);
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
   CHECK(le_fx_prepare(fx, 0, LE_FX_DUAL_OCTAVER, do_sr) == LE_OK);
-  le_fx_entry_reset(fx, 0);
+  le_fx_entry_reset(fx, 0, LE_FX_DUAL_OCTAVER);
   fx->clocked = 1;
   static int32_t types[LE_FX_MAX];
   static float params[LE_FX_MAX][LE_FX_PARAMS];
