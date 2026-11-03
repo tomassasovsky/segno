@@ -247,8 +247,10 @@ class GuardRegistry {
     [_r, _r, _a, _a, _a, _r, _r, _a, _r],
     // touchCalibration: one at a time, and not during shutdown.
     [_a, _a, _a, _a, _a, _a, _a, _r, _r],
-    // restart: the take is finished first; either calibration is cancelled
-    // (it keeps its previous result), everything else must end first.
+    // restart: the take is finished first; a latency measurement is
+    // cancelled (it keeps its previous result); a touch calibration is let
+    // be, and the reboot discards what was only tried; everything else must
+    // end first.
     [_r, _r, _r, _r, _r, _r, _a, _a, _r],
   ];
 

@@ -153,6 +153,10 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
   /// The calibration guard this session holds, from [start] until it ends.
   OperationGuard? _guard;
 
+  /// Set when [close] starts, so an apply that lands while it waits starts
+  /// no test countdown.
+  var _closing = false;
+
   /// Runs [op] after every helper call made before it.
   Future<void> _serial(Future<void> Function() op) {
     final next = _helper.then((_) => op());
@@ -283,7 +287,7 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
       return;
     }
     // Left, or cancelled, while it was applied: the revert is already queued.
-    if (isClosed || state.phase != .applying) return;
+    if (isClosed || _closing || state.phase != .applying) return;
     emit(
       TouchCalibrationState(
         phase: .test,
@@ -380,17 +384,21 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
   Future<void> _revert() async {
     if (!_applied) return;
     _applied = false;
-    try {
-      await _serial(() => _client.restore(_screen));
-    } on Object {
-      // Still possibly in force: leaving the page tries again.
-      _applied = true;
-      rethrow;
-    }
+    await _serial(() async {
+      try {
+        await _client.restore(_screen);
+      } on Object {
+        // Still possibly in force: leaving the page tries again. Set inside
+        // the helper call, so whatever waits on the queue sees it.
+        _applied = true;
+        rethrow;
+      }
+    });
   }
 
   @override
   Future<void> close() async {
+    _closing = true;
     _countdown?.cancel();
     // A revert or an apply already running finishes first: a Cancel's revert
     // has cleared [_applied] before it lands, and puts it back if it fails.
@@ -403,9 +411,6 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
       // Nothing left to tell: the page is gone. The previous calibration is
       // still on /data for the next boot.
     }
-    // An apply that landed while this waited may have started the test's
-    // countdown.
-    _countdown?.cancel();
     // Only now is nothing untried in force.
     _releaseGuard();
     return super.close();

@@ -617,7 +617,7 @@ eject. Save recovered audio takes its own `transfer` lease while it writes.
 | **deviceChange** (audio apply, rate change) | refuse | refuse | allow | allow | allow | refuse | refuse | allow | refuse |
 | **calibration** (latency measurement) | refuse | refuse | allow | allow | allow | refuse | refuse | allow | refuse |
 | **touchCalibration** (touch calibration, #1375) | allow | allow | allow | allow | allow | allow | allow | refuse | refuse |
-| **restart** (power off, restart, update install) | refuse (a running take is finished first) | refuse | refuse | refuse | refuse | refuse | allow (it is cancelled and keeps the old profile, AB §7.6) | allow (it is cancelled; a calibration only tried is gone after the reboot, #1375) | – |
+| **restart** (power off, restart, update install) | refuse (a running take is finished first) | refuse | refuse | refuse | refuse | refuse | allow (it is cancelled and keeps the old profile, AB §7.6) | allow (nothing cancels it; the reboot discards a calibration only tried, #1375) | – |
 
 Touch calibration is its own kind (#1375): it touches no audio, so it
 holds up nothing audio does (a take, a device change, the warm-up's switch

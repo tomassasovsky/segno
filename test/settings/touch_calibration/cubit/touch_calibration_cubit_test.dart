@@ -190,6 +190,27 @@ void main() {
       });
     });
 
+    test('leaving during a Cancel whose revert fails retries it before '
+        'releasing', () {
+      fakeAsync((async) {
+        final c = cubit();
+        capture(async, c);
+        final gate = client.restoreGate = Completer<void>();
+        c.cancel();
+        async.flushMicrotasks();
+        _close(async, c);
+        client.restoreGate = null;
+        gate.completeError(StateError('udev is wedged'));
+        async.flushMicrotasks();
+        expect(
+          client.calls.where((call) => call == 'restore readout'),
+          hasLength(2),
+        );
+        expect(client.inForce, isNull);
+        expect(calibrating(), isEmpty);
+      });
+    });
+
     test('refuses to start under another touch calibration, and says why', () {
       fakeAsync((async) {
         final other = guards.enter(
