@@ -98,11 +98,14 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   while its route is covered (`TickerMode`), so the Effects page no longer
   keeps the stage under it drawing frames. The waveform's playhead paints
   over the wave in a layer of its own.
-- Console, build 213 against this branch, 30 s windows, % of one core:
-  main-screen UI thread 9.5 -> 4.1 playing, 7.1 -> 2.1 on the Effects page;
-  readout UI thread 2.1 -> 1.2 playing; Effects page render jobs 89 -> 38
-  a second. GPU busy while the stage plays went 11% -> 15%: the stage's
-  page is now a stable layer the raster cache keeps and draws as an image.
+- Console, build 213 against this branch, 30 s windows, % of one core,
+  Skia / Impeller: the main screen's UI thread playing 9.5 -> 4.1 /
+  10.1 -> 4.6, on the Effects page 7.1 -> 2.1 / 7.7 -> 2.3; the readout's
+  UI thread playing 2.1 -> 1.2 on both. On the Effects page the main
+  screen's raster thread fell 7.3 -> 1.0 / 13.0 -> 2.1. Under Skia the GPU
+  is busier while the stage plays (11% -> 15%): the stage's page is now a
+  stable layer, which Skia's raster cache keeps and draws as an image every
+  frame; Impeller has no raster cache and stays at 10%.
 
 ## November 2026 Screen capture on the console (#1555)
 
