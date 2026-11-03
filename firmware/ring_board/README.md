@@ -54,11 +54,12 @@ The approved console ring behaviour, now on this board:
 - Every push shares one channel budget, 35 × 3 × 96 = 10,080; a larger frame is
   scaled uniformly.
 - **LED level** (firmware 1.2, #1564): every push is scaled by LEVEL after the
-  budget and before the idle dim, at once on a still frame. At 255 nothing
-  changes. A lit channel stays at least 1.
+  budget, at once on a still frame. At 255 nothing changes.
 - **Dimmed**: while DIMMED is set, every push drops to about 20 % (51/255) after
-  the budget, whatever the view, and at once on a still frame. A lit channel
-  stays at least 1, so the dimmed breathe never reaches black. LED output is PIO/DMA (NeoPixelBus), so the link and
+  the budget, whatever the view, and at once on a still frame. The level and
+  the dim are one factor (`ring_link::outputLevel`), and each pixel is rounded
+  once (`scalePixel`) so its hue holds; a lit pixel keeps its strongest channel
+  at 1 at least, so the dimmed breathe never reaches black. LED output is PIO/DMA (NeoPixelBus), so the link and
   encoder interrupts keep running during a push.
 
 ## Encoder

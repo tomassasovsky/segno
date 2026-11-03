@@ -40,6 +40,14 @@ static ring_link::RingState live(Rgb c = {0, 0, 0}, uint8_t gain = 0, uint8_t fl
   return s;
 }
 
+// One channel of a single-channel pixel at `level` of 255, as scalePixel
+// renders it.
+static uint32_t onePixel(uint8_t value, uint8_t level) {
+  uint8_t r = value, g = 0, b = 0;
+  ring_link::scalePixel(r, g, b, level);
+  return r;
+}
+
 static uint32_t shown(unsigned i) { return ring.getPixelColor(i); }
 
 static uint32_t channelTotal() {
@@ -165,23 +173,39 @@ static void lifecycle() {
   // Idle: the still arc drops to ~20 % on the next render, and comes back.
   const auto dimmedArc = live({0, 0, 0}, 128, ring_link::FLAG_LOADED | ring_link::FLAG_DIMMED);
   send(dimmedArc, now += 20);
-  const uint32_t dimGreen = ring_link::dimChannel(96);
+  const uint32_t dimGreen = onePixel(96, ring_link::DIM_LEVEL);
   assert(dimGreen == 19);
   for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? (dimGreen << 8) : 0));
   send(live({0, 0, 0}, 128, ring_link::FLAG_LOADED), now += 20);
   for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? (96U << 8) : 0));
   // A lit channel never dims to black.
-  assert(ring_link::dimChannel(0) == 0 && ring_link::dimChannel(1) == 1 && ring_link::dimChannel(2) == 1);
+  // A lit pixel never dims to black, and keeps its hue: a weak component
+  // drops out rather than rising to match the strong one.
+  {
+    uint8_t r = 0, g = 0, b = 0;
+    ring_link::scalePixel(r, g, b, ring_link::DIM_LEVEL);
+    assert(!r && !g && !b);
+    r = 0; g = 2; b = 0;
+    ring_link::scalePixel(r, g, b, ring_link::DIM_LEVEL);
+    assert(!r && g == 1 && !b);
+    r = 191; g = 2; b = 0;
+    ring_link::scalePixel(r, g, b, ring_link::DIM_LEVEL);
+    assert(r == 38 && !g && !b);
+    r = 191; g = 40; b = 0;
+    ring_link::scalePixel(r, g, b, 8);
+    assert(r == 6 && g == 1 && !b);
+    assert(ring_link::outputLevel(1, true) == 1 && ring_link::outputLevel(255, false) == 255);
+  }
 
   // The console's LED level (#1564) scales the still arc at once, under the
   // idle dim, and a level of 0 is ignored.
   sendLevel(128, now += 1);
   at(now += 20);
-  const uint32_t halfGreen = ring_link::scaleChannel(96, 128);
+  const uint32_t halfGreen = onePixel(96, 128);
   for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? (halfGreen << 8) : 0));
   send(dimmedArc, now += 20);
   for (unsigned i = 0; i < RING_N; ++i)
-    assert(shown(i) == (i < lit ? ((uint32_t)ring_link::dimChannel(halfGreen) << 8) : 0));
+    assert(shown(i) == (i < lit ? (onePixel(96, ring_link::outputLevel(128, true)) << 8) : 0));
   send(live({0, 0, 0}, 128, ring_link::FLAG_LOADED), now += 20);
   sendLevel(0, now += 1);
   at(now += 20);

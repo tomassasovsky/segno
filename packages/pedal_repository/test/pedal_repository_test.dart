@@ -213,9 +213,17 @@ void main() {
             lines.where((line) => line.contains('light sensor')),
             ['pedal link: light sensor reading'],
           );
-          async.elapse(repo.helloTimeout);
+          // A board reflashed under the app to firmware without the sensor
+          // says nothing more of it: the reading goes with the old hello.
+          link.hello(firmwareMinor: 6);
+          async.flushMicrotasks();
           expect(repo.ambientLight, isNull);
           expect(changes, [room, darker, null]);
+          link.emit(const AmbientLightMessage(room));
+          async.flushMicrotasks();
+          async.elapse(repo.helloTimeout);
+          expect(repo.ambientLight, isNull);
+          expect(changes, [room, darker, null, room, null]);
           unawaited(repo.dispose());
           async.flushMicrotasks();
         });
@@ -252,8 +260,8 @@ void main() {
         ..hello();
       await pumpEventQueue();
       expect(link.sent, [
-        StateMessage(PedalStateFrame.blank()),
         const LedLevelMessage(90),
+        StateMessage(PedalStateFrame.blank()),
       ]);
       // Back to full is replayed too, so a board that missed it catches up.
       repo.setLedLevel(PedalLinkCodec.ledLevelFull);
@@ -262,8 +270,8 @@ void main() {
         ..hello();
       await pumpEventQueue();
       expect(link.sent, [
-        StateMessage(PedalStateFrame.blank()),
         const LedLevelMessage(PedalLinkCodec.ledLevelFull),
+        StateMessage(PedalStateFrame.blank()),
       ]);
     });
 

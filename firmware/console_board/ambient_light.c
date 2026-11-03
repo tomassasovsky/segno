@@ -36,6 +36,7 @@ static void restart(ambient_light *a) {
   a->history_pos = 0;
   a->have_level = 0;
   a->level = 0;
+  a->above = 0;
 }
 
 void ambient_light_probe(ambient_light *a, uint16_t with_pull_up, uint16_t with_pull_down) {
@@ -86,10 +87,10 @@ static void close_second(ambient_light *a) {
   } else {
     a->smoothed += AMBIENT_SMOOTHING * (middle - a->smoothed);
   }
+  a->above = middle >= ambient_light_level_of((float)AMBIENT_TOP_COUNTS);
   const uint8_t target = round_level(a->smoothed);
   const int moved = (int)target - (int)a->level;
-  if (!a->have_level || target == 0 || target >= ambient_light_top_level() ||
-      moved >= AMBIENT_HYSTERESIS || moved <= -AMBIENT_HYSTERESIS) {
+  if (!a->have_level || moved >= AMBIENT_HYSTERESIS || moved <= -AMBIENT_HYSTERESIS) {
     a->level = target;
   }
   a->have_level = 1;
@@ -107,7 +108,7 @@ int ambient_light_ready(const ambient_light *a) {
 
 uint8_t ambient_light_sensor(const ambient_light *a) {
   if (!a->fitted) return PEDAL_AMBIENT_NONE;
-  return a->level >= ambient_light_top_level() ? PEDAL_AMBIENT_ABOVE : PEDAL_AMBIENT_READING;
+  return a->above ? PEDAL_AMBIENT_ABOVE : PEDAL_AMBIENT_READING;
 }
 
 uint8_t ambient_light_level(const ambient_light *a) { return a->fitted ? a->level : 0; }

@@ -296,7 +296,14 @@ static void handleMessage(uint8_t type, const uint8_t *payload, uint8_t len) {
     }
     case PEDAL_LINK_TYPE_LED_LEVEL: {
       uint8_t level;
-      if (pedal_link_decode_led_level(payload, len, &level)) g_ledTarget = level;
+      if (pedal_link_decode_led_level(payload, len, &level)) {
+        g_ledTarget = level;
+        // With nothing lit there is nothing to fade: a board that restarted,
+        // or that the app just reconnected to, starts at the app's level
+        // instead of flashing full and fading down. The app sends the level
+        // before the STATE that answers a hello for this.
+        if (!g_haveFrame) g_ledLevel = level;
+      }
       break;
     }
     case PEDAL_LINK_TYPE_RING_BRIDGE:
@@ -775,6 +782,9 @@ static unsigned long g_ambientLastMs = 0;
 static unsigned long g_ambientProbedMs = 0;
 
 static uint16_t ambientRead() {
+  // The first conversion after the CTRL jacks' shares its sample capacitor's
+  // charge with GP28: drop it.
+  (void)analogRead(PIN_AMBIENT);
   uint32_t total = 0;
   for (uint8_t i = 0; i < 8; i++) total += analogRead(PIN_AMBIENT);
   return (uint16_t)(total / 8);
@@ -951,6 +961,7 @@ static bool renderIndicators() {
       channelTotal += value.R + value.G + value.B;
     }
   }
+  const uint8_t output = ring_link::outputLevel(g_ledLevel, g_haveFrame && g_frame.dimmed);
   bool changed = false;
   for (uint8_t pixel = 0; pixel < IND_N; ++pixel) {
     RgbColor value = desired[pixel];
@@ -962,14 +973,7 @@ static bool renderIndicators() {
     // The app's LED level (#1564), and then the idle dim with the screens
     // (#1349), both after the budget so a crowded frame dims by the same
     // share as a sparse one.
-    value.R = ring_link::scaleChannel(value.R, g_ledLevel);
-    value.G = ring_link::scaleChannel(value.G, g_ledLevel);
-    value.B = ring_link::scaleChannel(value.B, g_ledLevel);
-    if (g_haveFrame && g_frame.dimmed) {
-      value.R = ring_link::dimChannel(value.R);
-      value.G = ring_link::dimChannel(value.G);
-      value.B = ring_link::dimChannel(value.B);
-    }
+    ring_link::scalePixel(value.R, value.G, value.B, output);
     if (ind.GetPixelColor(pixel) != value) {
       ind.SetPixelColor(pixel, value);
       changed = true;

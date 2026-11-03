@@ -190,6 +190,7 @@ static void showRing() {
   const bool dim = dimmedNow();
   g_shownDim = dim;
   g_shownLevel = g_level;
+  const uint8_t output = ring_link::outputLevel(g_level, dim);
   uint32_t total = 0;
   for (uint16_t i = 0; i < RING_N; ++i) {
     const uint32_t c = g_pixels[i];
@@ -202,13 +203,9 @@ static void showRing() {
                                    ((c >> 8) & 255) * RING_CHANNEL_BUDGET / total,
                                    (c & 255) * RING_CHANNEL_BUDGET / total);
     }
-    c = Adafruit_NeoPixel::Color(ring_link::scaleChannel((c >> 16) & 255, g_level),
-                                 ring_link::scaleChannel((c >> 8) & 255, g_level),
-                                 ring_link::scaleChannel(c & 255, g_level));
-    if (dim)
-      c = Adafruit_NeoPixel::Color(ring_link::dimChannel((c >> 16) & 255),
-                                   ring_link::dimChannel((c >> 8) & 255),
-                                   ring_link::dimChannel(c & 255));
+    uint8_t r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
+    ring_link::scalePixel(r, g, b, output);
+    c = Adafruit_NeoPixel::Color(r, g, b);
     ring.setPixelColor(i, c);
   }
   ring.show();

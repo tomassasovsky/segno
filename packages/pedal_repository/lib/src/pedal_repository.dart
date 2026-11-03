@@ -180,13 +180,14 @@ class PedalRepository {
 
   /// How bright the console's pills and ring are, `1`..`255` of full
   /// (#1564). Sent at once to a connected board when it changes. Once it has
-  /// been set, it is sent again after the state frame that answers every
+  /// been set, it is sent again with the state frame that answers every
   /// hello, so a board that restarted, or missed one, is back on it within a
   /// second; until then a board shows full brightness by itself and hears
   /// nothing of it. A board that predates the message stays at full.
   int get ledLevel => _ledLevel;
 
-  /// Sets [ledLevel].
+  /// Sets [ledLevel]. Once a level has been set it is sent before the state
+  /// frame that answers every hello.
   void setLedLevel(int level) {
     RangeError.checkValueInInterval(
       level,
@@ -280,10 +281,12 @@ class PedalRepository {
     );
     // Answer every hello with the current frame: the reconnect re-push and
     // the keep-alive in one place, paced by the board.
+    // The level goes first: a board with no frame showing applies it at once,
+    // so a reconnect never lights full and fades down.
     final frame = _lastFrame;
     if (status == PedalLinkStatus.connected && frame != null) {
-      _link.send(StateMessage(frame));
       if (_ledLevelSet && !_goodbye) _link.send(LedLevelMessage(_ledLevel));
+      _link.send(StateMessage(frame));
     }
   }
 
@@ -311,10 +314,11 @@ class PedalRepository {
     _hello = hello;
     _log?.call('pedal link: ${status.name} (${why()})');
     if (!_statusChanges.isClosed) _statusChanges.add(status);
-    if (status != PedalLinkStatus.connected) {
-      _setPowerSupply(null);
-      _setAmbientLight(null);
-    }
+    // What the board reported belongs to that board and firmware: a new
+    // hello (another status, or a reflash under the running app) starts
+    // over, and a board that still reports it says so within a second.
+    _setPowerSupply(null);
+    _setAmbientLight(null);
   }
 
   void _setAmbientLight(PedalAmbientLight? light) {

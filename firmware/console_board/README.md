@@ -113,8 +113,9 @@ room (#1564). The wiring is in segno-hardware's `hardware/segno_wiring.md`.
   touching this firmware.
 - **No sensor.** Every 2 s the board switches the pad's pull-up on for one
   10 ms slot, then its pull-down for the next, and reads the pin in each. A
-  pin that follows both pulls to the rails has nothing on it; a fitted load
-  holds it near its own reading. A pin that stays at ground with the pull-up
+  pin that follows the pull-up into the top quarter of the scale and the
+  pull-down into the bottom quarter has nothing on it; a fitted load holds it
+  near its own reading. A pin that stays at ground with the pull-up
   on is shorted there and counts as no sensor too. The first verdict holds at
   once, and a change needs two probes in a row. With no sensor the board sends
   `AMBIENT` with sensor 0, and the app offers no automatic brightness.
@@ -128,9 +129,14 @@ room (#1564). The wiring is in segno-hardware's `hardware/segno_wiring.md`.
 
 `LED_LEVEL` (`0x14`) is the app's answer: how bright the pills and the ring
 are, 1..255 of full. The board scales every pill pixel by it after the channel
-budget and before the idle dim, fades to a new level at 3 steps per 20 ms
-render (the whole range in about 1.7 s), and sends the level to the ring
-carrier as the ring link's `LEVEL` after every ring state. Without a
+budget, together with the idle dim as one factor (`ring_link::outputLevel`),
+rounding each pixel once so its hue holds: a lit pixel keeps its strongest
+channel at 1 at least, and weak channels drop out rather than rising to match
+it. It fades to a new level at 3 steps per 20 ms render (the whole range in
+about 1.7 s), except while no frame is showing, when it takes the level at
+once: the app sends the level before the `STATE` that answers a hello, so a
+reconnect never lights full and fades down. The board sends the level to the
+ring carrier as the ring link's `LEVEL` after every ring state. Without a
 `LED_LEVEL`, and again when the app's frames stop, it is 255: exactly what
 firmware 2.6 showed. Both messages are optional (still protocol 12):
 firmware 2.6 drops `LED_LEVEL` and an older app drops `AMBIENT`, each at the
