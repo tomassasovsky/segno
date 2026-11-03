@@ -14104,9 +14104,9 @@ static void test_perf_events_log_command_storm_no_loss(void) {
 }
 
 /* Acceptance criterion: FX param sweeps are logged with monotonic frames.
- * A lane or monitor parameter is logged by the callback at the frame it
- * first applies it (#887 part 4, #1421): a value set before a block is that
- * block's first frame, exactly. */
+ * A lane parameter is logged by the callback at the frame it first applies
+ * it (#887 part 4): a value set before a block is that block's first frame,
+ * exactly. Monitor parameters are still logged by their setter. */
 static void test_perf_events_log_fx_param_sweep_monotonic_frames(void) {
   printf("test_perf_events_log_fx_param_sweep_monotonic_frames\n");
   le_engine* e = make_configured_engine();
@@ -14117,7 +14117,6 @@ static void test_perf_events_log_fx_param_sweep_monotonic_frames(void) {
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
   CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
   CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
-  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 1) == LE_OK);
   drain(e);
 
   const int sweeps = 10;
@@ -14173,7 +14172,6 @@ static void test_perf_events_log_fx_param_sweep_monotonic_frames(void) {
     decode_log_entry_at(buf, i, &entry);
     if (entry.cmd.code != LE_PLOG_SET_MONITOR_FX_PARAM) continue;
     if (seen_mon > 0) CHECK(entry.frame >= last_mon_frame);
-    CHECK(entry.frame == (uint64_t)seen_mon * LOOP_N);
     last_mon_frame = entry.frame;
     CHECK(entry.cmd.fx.channel == 0 && entry.cmd.fx.lane == -1);
     CHECK(LE_PLOG_FX_PARAM_INDEX(entry.cmd.fx.index) == 0);

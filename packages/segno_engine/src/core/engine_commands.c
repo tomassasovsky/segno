@@ -5016,9 +5016,12 @@ int32_t le_engine_set_monitor_input_fx_param(le_engine* engine, int32_t input,
   if (isnan(value)) return LE_ERR_INVALID; /* never published, never logged */
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
-  /* Logged by the callback at the frame it applies it
-   * (snapshot_monitor_fx). */
   store_f32(&engine->monitors[input].a_fx_param[index][param], value);
+  le_plog_push_ctrl(
+      engine, (le_command){.code = LE_PLOG_SET_MONITOR_FX_PARAM,
+                           .fx = {input, -1,
+                                  LE_PLOG_FX_PARAM_PACK(index, param),
+                                  (int32_t)f32_to_bits(value)}});
   return LE_OK;
 }
 

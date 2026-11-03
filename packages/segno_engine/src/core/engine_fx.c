@@ -9484,12 +9484,21 @@ static inline void fx_run(le_fx_state* fx, int s, int32_t ty, int sr, int cap,
   LE_FX[ty].process(fx, s, sr, cap, l, r, p);
 }
 
-/* Whether slot [s] as [type] holds a tail that re-enabling must clear: the
- * rings `prepare` allocated (delay, echo, reverb, the octaver), or a
- * draining kind's block (the spring's ring). */
+/* Whether slot [s] as [type] holds state that re-enabling must clear, spaced
+ * (enable_clear_cooldown): the rings `prepare` allocated (delay, echo,
+ * reverb, the octaver), a draining kind's block (the spring's ring), or a
+ * block of LE_FX_SPACED_CLEAR_BYTES or more (the doubler's, the chorus's and
+ * the mod's lines). A renewed entry enters through the enable edge for the
+ * same reason (le_fx_entry_renew). */
 static int le_fx_holds_tail(const le_fx_state* fx, int s, int32_t type) {
   if (type <= LE_FX_NONE || type >= LE_FX_TYPE_COUNT) return 0;
-  if (LE_FX[type].state_size != 0) return (LE_FX[type].flags & LE_FX_F_DRAINS) != 0;
+  /* A heap-state kind: a draining one's block holds its tail, and a large
+   * block costs enough to clear that its reset is spaced like a ring's
+   * (LE_FX_SPACED_CLEAR_BYTES). */
+  if (LE_FX[type].state_size != 0) {
+    return (LE_FX[type].flags & LE_FX_F_DRAINS) != 0 ||
+           LE_FX[type].state_size >= LE_FX_SPACED_CLEAR_BYTES;
+  }
   if (type == LE_FX_MODE_DELAY) {
     return atomic_load_explicit(&fx->line[s], memory_order_acquire) != NULL;
   }
@@ -9903,9 +9912,7 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
            * empties at once: no ring to clear, no spacing to wait on, and
            * any 1 s rings an earlier kind left stay as they are, unread. */
           const int needs_clear =
-              ty != LE_FX_MODE_DELAY &&
-              (le_fx_holds_tail(fx, s, ty) ||
-               LE_FX[ty].state_size >= LE_FX_SPACED_CLEAR_BYTES);
+              ty != LE_FX_MODE_DELAY && le_fx_holds_tail(fx, s, ty);
           if (needs_clear && fx->enable_clear_cooldown > 0) goto slot_done;
           le_fx_entry_reset(fx, s, ty);
           if (needs_clear) {

@@ -366,18 +366,6 @@ void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* p, uint64_t frame) 
       le_plog_push(e, frame, (le_command){.code = LE_PLOG_SET_OUTPUT_FX_CHAIN_ENABLED,
           .arg_i = p->channel, .arg_f = (float)r->enabled});
     }
-    if (p->owner == LE_FX_OWNER_MONITOR) {
-      /* Nor is a monitor recipe: the snapshot logs only later granular
-       * edits (snapshot_monitor_fx). */
-      le_fx_snapshot* snap = &e->fx_snap;
-      for (int s = 0; s < r->count; ++s) {
-        snap->mon_type[p->channel][s] = r->type[s];
-        const int32_t w = le_fx_param_width(r->type[s]);
-        for (int k = 0; k < w; ++k) {
-          snap->mon_params[p->channel][s][k] = r->params[s][k];
-        }
-      }
-    }
     if (p->owner == LE_FX_OWNER_LANE) {
       /* A lane recipe is not in the perf log (perf_render keeps the
        * arm-time lane chain), so its settings must not be logged either:

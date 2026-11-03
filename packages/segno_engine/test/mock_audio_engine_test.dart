@@ -604,6 +604,14 @@ void main() {
           engine.setAllTracksFxParam(index: 0, param: 0, value: 0.5),
           EngineResult.ok,
         );
+        // A restart empties every slot, as configure does natively.
+        engine
+          ..stop()
+          ..start(engine.defaultConfig);
+        expect(
+          engine.setTrackFxParam(channel: 0, index: 0, param: 0, value: 0.5),
+          EngineResult.invalid,
+        );
       });
 
       test('records enable calls, working while stopped', () {

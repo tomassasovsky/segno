@@ -43,9 +43,9 @@ static double eqr_db(const double c[5], double f, int sr) {
 static void eqr_plain(int b, int shelves, double hz, double db, double q,
                       int sr, double c[5]) {
   if (b == 0) {
-    le_eq_design(0, hz, 0.0, q, sr, c);
+    le_eq_design(LE_EQ_LOWCUT, hz, 0.0, q, sr, c);
   } else if (b == 5) {
-    le_eq_design(5, hz, 0.0, q, sr, c);
+    le_eq_design(LE_EQ_HIGHCUT, hz, 0.0, q, sr, c);
   } else if (shelves && (b == 1 || b == 4)) {
     le_eq_design(b, hz, db, q, sr, c);
   } else {

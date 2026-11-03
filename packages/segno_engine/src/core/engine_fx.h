@@ -504,8 +504,8 @@ size_t le_fx_octaver_bytes(int sr);
  * slot. */
 void le_fx_free_slot(le_fx_state* fx, int slot);
 
-/* Frees chain slot [slot]'s per-kind state (its arena and every block in it)
- * and forgets it. Control-thread only, where the audio thread no longer reads
+/* Frees chain slot [slot]'s per-kind state (every block it holds) and
+ * forgets it. Control-thread only, where the audio thread no longer reads
  * the slot, like le_fx_free_delay. */
 void le_fx_free_kinds(le_fx_state* fx, int slot);
 

@@ -7451,17 +7451,14 @@ static inline void snapshot_lane_fx(
 /* Snapshots each hardware input's single live-monitor chain: the input-level
  * enable (gated by loopback exclusion) plus the chain's output mask / volume /
  * mute / effects — the monitor mirror of snapshot_lane_fx, one chain per input,
- * including the per-slot effective enable bits (D-EFFBITS), and, while a
- * performance is armed, the parameters that moved, logged at [log_frame],
- * the frame they land (as snapshot_lane_fx logs a lane's). */
+ * including the per-slot effective enable bits (D-EFFBITS). */
 static inline void snapshot_monitor_fx(
     le_engine* e, int ch_in, uint32_t excluded, int* mon_on, uint32_t* mon_out,
     float* mon_vol, int* mon_mut, int32_t* mon_fx_count,
     int32_t mon_fx_type[][LE_FX_MAX],
     float mon_fx_params[][LE_FX_MAX][LE_FX_PARAMS],
     int32_t mon_fx_enabled[][LE_FX_MAX], int* mon_has_fx, float* mon_gl,
-    float* mon_gr, uint64_t log_frame) {
-  const int log = e->perf.armed;
+    float* mon_gr) {
   /* The tuner's temporary mute ORs into the player's persistent one, so the
    * whole monitor path below treats it as a mute without either flag
    * changing the other (#1229). */
@@ -7487,25 +7484,12 @@ static inline void snapshot_monitor_fx(
     const int32_t chain_on = load_i32(&m->a_fx_chain_enabled);
     for (int s = 0; s < n; ++s) {
       const int32_t ty = load_i32(&m->a_fx_type[s]);
-      const int same_type = mon_fx_type[c][s] == ty;
       mon_fx_type[c][s] = ty;
       if (ty != LE_FX_NONE) mon_has_fx[c] = 1;
       mon_fx_enabled[c][s] = chain_on && load_i32(&m->a_fx_enabled[s]);
       const int32_t w = le_fx_param_width(ty); /* see snapshot_lane_fx */
-      /* A granular retype logs its type (apply_command); what differs from
-       * the type's defaults is what moved. A monitor recipe writes its own
-       * values into this view first (le_fx_recipe_apply). */
-      float base[LE_FX_PARAMS];
-      if (log && !same_type) le_fx_defaults(ty, base);
       for (int p = 0; p < w; ++p) {
-        const float v = load_f32(&m->a_fx_param[s][p]);
-        if (log && (same_type ? mon_fx_params[c][s][p] : base[p]) != v) {
-          le_plog_push(e, log_frame,
-                       (le_command){.code = LE_PLOG_SET_MONITOR_FX_PARAM,
-                                    .fx = {c, -1, LE_PLOG_FX_PARAM_PACK(s, p),
-                                           (int32_t)f32_to_bits(v)}});
-        }
-        mon_fx_params[c][s][p] = v;
+        mon_fx_params[c][s][p] = load_f32(&m->a_fx_param[s][p]);
       }
     }
     /* A rack runs even when every entry is LE_FX_NONE (snapshot_lane_fx). */
@@ -10018,7 +10002,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   int* const mon_has_fx = snap->mon_has;
   snapshot_monitor_fx(e, ch_in, excluded, mon_on, mon_out, mon_vol, mon_mut,
                       mon_fx_count, mon_fx_type, mon_fx_params, mon_fx_enabled,
-                      mon_has_fx, mon_gl, mon_gr, perf_frame_base);
+                      mon_has_fx, mon_gl, mon_gr);
 
   /* Structural output gate, read once per block (a mid-block toggle applies from
    * the next block — RT-safe, no mid-buffer artifact). Intersected into every

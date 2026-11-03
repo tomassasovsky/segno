@@ -266,6 +266,8 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     _measuredLatencyMs = -1;
     _masterGain = 1; // unity on every fresh start, mirroring the native engine
     _perfArmed = false; // disarmed on every fresh start/reconfigure
+    // Every chain slot empty again, as configure resets them natively.
+    _fxSlotTypes.clear();
     // The Transpose bypass, Follow tempo and Pitch reset with the material
     // at configure, as natively; receipts die with them.
     _transposeBypass = false;

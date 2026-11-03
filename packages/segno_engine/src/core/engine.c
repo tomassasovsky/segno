@@ -1571,7 +1571,7 @@ void le_engine_destroy(le_engine* engine) {
           &engine->outputs[k].fx.fx.plugin[s], memory_order_relaxed));
     }
   }
-  /* The per-kind tables, after every slot's arena went above. */
+  /* The per-kind tables, after every slot's blocks went above. */
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     for (int l = 0; l < LE_MAX_LANES; ++l) {
       le_fx_free_kind_table(&engine->tracks[t].lanes[l].fx);

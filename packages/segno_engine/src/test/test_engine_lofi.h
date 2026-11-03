@@ -200,10 +200,10 @@ static int lofi_cmp_double(const void* a, const void* b) {
 static double lofi_band(const float* y, int n, double f, int sr) {
   double hp[5];
   double lp[5];
-  le_eq_design(0 /* low cut */, f / sqrt(2.0), 0.0, 0.70710678, sr, hp);
+  le_eq_design(LE_EQ_LOWCUT, f / sqrt(2.0), 0.0, 0.70710678, sr, hp);
   double top = f * sqrt(2.0);
   if (top > 0.45 * sr) top = 0.45 * sr;
-  le_eq_design(5 /* high cut */, top, 0.0, 0.70710678, sr, lp);
+  le_eq_design(LE_EQ_HIGHCUT, top, 0.0, 0.70710678, sr, lp);
   double z1[2] = {0}, z2[2] = {0};
   const int frame = sr / 50;
   const int frames = (n - sr / 10) / frame;

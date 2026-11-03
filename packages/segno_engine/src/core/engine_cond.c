@@ -25,10 +25,6 @@
 #include "engine_fx.h" /* le_eq_design */
 #include "engine_private.h"
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
 /* Notch selectivity: fixed Q ~30 => ~1.7 Hz bandwidth at a 50 Hz base — deep
  * on the hum, inaudible one semitone away. */
 #define LE_COND_NOTCH_Q 30.0f
