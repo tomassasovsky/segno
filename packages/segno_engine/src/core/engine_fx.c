@@ -1847,10 +1847,10 @@ void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap) {
  * freshly created (zeroed) le_fx_state does not read as a mid-ramp bypass and
  * fade in on first use. Every standalone le_fx_state owner calls this after
  * creating/zeroing its state: le_lane_reset / le_monitor_input_reset, the
- * offline renders (through le_fx_enable_seed_at), the VST3 plugin
- * processors, and the test harnesses. Deliberately NOT part of le_fx_entry_reset, which touches only
- * the DRAIN half of the runtime (a retyped slot has no tail to drain) and
- * leaves an in-flight enable ramp alone. */
+ * offline renders (through le_fx_enable_seed_at), and the test harnesses.
+ * Deliberately NOT part of le_fx_entry_reset, which touches only the DRAIN
+ * half of the runtime (a retyped slot has no tail to drain) and leaves an
+ * in-flight enable ramp alone. */
 void le_fx_enable_seed_settled(le_fx_state* fx, int slot) {
   fx->enable_mix[slot] = 1.0f;
   fx->enable_target[slot] = 1;

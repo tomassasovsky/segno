@@ -395,7 +395,7 @@ int le_fx_entry_free_running(int32_t type, const float* p, int sr);
 /* Seeds chain slot [slot]'s enable-crossfade runtime SETTLED at enabled so a
  * freshly created (zeroed) le_fx_state does not fade in on first use. Call
  * once after creating/zeroing a standalone le_fx_state (lane/monitor reset,
- * offline render, VST3 plugin processors, test harnesses). */
+ * offline render, test harnesses). */
 void le_fx_enable_seed_settled(le_fx_state* fx, int slot);
 
 /* Settles slot [slot]'s enable crossfade at [effective]: settled wet when 1,

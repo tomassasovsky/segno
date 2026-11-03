@@ -1491,47 +1491,6 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   compile. Assertions that can only hold with the instrument compiled in are
   wrapped in `CHECK_TIMING` in `test_engine_core.c`; everything else is asserted
   in both builds.
-- **Adding a header to `src/core/` — the C++ blast radius nothing on macOS
-  catches.** Any new core header reaches **every C++ translation unit in the
-  VST3 builds**, via `engine_private.h` → `engine_fx.h` →
-  `vst3/test/host_harness.{h,cpp}` (which includes `engine_fx.h` *inside* an
-  `extern "C" { }` block). So a header that is perfectly good C can still break
-  the plugin builds on two of three platforms:
-  - `engine_private.h` carries a **C++ atomics shim** (`#undef _Atomic` plus
-    macro/`template` stand-ins for `atomic_load_explicit` and friends) because
-    MSVC and GCC reject `_Atomic` in C++ and offer no keyword-compatible
-    `<stdatomic.h>` there. It is guarded to `#if defined(__cplusplus) &&
-    !defined(__clang__)` — **so macOS CI never compiles it at all**. A header
-    that uses an atomic op the shim does not cover passes every macOS job and
-    fails Windows *and* Linux. (This bit twice on #722: first a missing
-    `atomic_exchange_explicit`, then a `template` that cannot be declared with C
-    linkage — the shim's `extern "C++" { }` wrapper is what fixes the latter and
-    is load-bearing, not decoration.)
-  - **The only local repro on this Mac** (there is no non-Clang compiler here) —
-    note the `-U__clang__`, the `extern "C"` wrapper, and `std::min` in scope;
-    a plain top-level `#include` does **not** reproduce it:
-    ```sh
-    cd packages/segno_engine
-    cat > /tmp/shim_repro.cpp <<'EOF'
-    #include <algorithm>
-    extern "C" {
-    #include "engine_fx.h"
-    }
-    int main() { return (int)std::min(1, 2); }
-    EOF
-    clang++ -std=c++17 -U__clang__ -I src/core -I src/midi -I src/miniaudio \
-      -c /tmp/shim_repro.cpp -o /tmp/shim_repro.o
-    ```
-  - A core header that pulls in **`<windows.h>`** must `#define NOMINMAX` first,
-    guarded with `#ifndef`, because stock `<windows.h>` defines `min`/`max` as
-    macros and turns any later `std::min(` into MSVC C2589 — which is exactly
-    the `std::min` in the repro above. Define it **in the header that drags
-    `<windows.h>` in**, not in the build files: a `-DNOMINMAX` would have to be
-    repeated in CMake, the podspec, the SPM target and the native test runner,
-    and would drift the first time one was missed. Do **not** reach for
-    `WIN32_LEAN_AND_MEAN` instead — it applies to the whole TU, including
-    miniaudio's own later `<windows.h>`, and miniaudio documents it as excluding
-    symbols it then redefines by hand.
 - **Effects matrix (#1547):** every effect kind at 44.1, 48 and 96 kHz and at
   blocks of 32 to 512 frames, at every factory preset's settings: block
   invariance (bit-exact), response and envelope against 48 kHz, aliasing and
@@ -2153,16 +2112,15 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   whole; the chrome button and `G` open the tray at Signal. Built in 3 stacked phases (scaffold →
   rich node + dock → deletions); ~1.3k lines of old-surface tests removed with
   their load-bearing coverage migrated onto the `signal_*` tests.
-- **Segno FX plugins** — Segno's own built-in effects, shipped *as* real,
-  installable VST3 plugins for third-party DAWs (distinct from the plugin
-  *host* above — this ships Segno's own DSP as third-party VST3 plugins).
-  Seven native plugins share one `packages/segno_engine/vst3/` build —
-  **Delay, Reverb, Echo, Drive, Filter, Tremolo, Octaver** — each wrapping
-  the same engine DSP core the looper uses, so behavior can't drift from the
-  in-app effect, checked by a **golden-parity audio-diff harness**. **macOS,
-  Windows, and Linux all build and test all 7 plugins**, each via its own CI
-  job (`vst3-plugins-macos`/`-windows`/`-linux`) running the shared CTest
-  gate. Parts 15-17 (further effects/polish) are not yet started.
+- **Segno FX plugins (removed, #940).** Segno's own effects were also built
+  as desktop VST3 plugins (`packages/segno_engine/vst3/`, seven plugins, a
+  golden-parity CTest suite and per-OS CI jobs). They went with the desktop
+  targets (#920): the owner's call on 2026-11-03 deleted the build, its tests,
+  the `vst3-plugins-linux` job, the `segno_dsp_core` library that existed only
+  to share `engine_fx.c` with it, and the C++ atomics shim in
+  `engine_private.h` that only the plugins needed. Hosting third-party
+  VST3/CLAP plugins (`src/host/`) is unaffected. The `.als` export still
+  writes Segno VST3 devices for a shared chain; removing that is #1587.
 - **Performance recording** (12-part plan). Captures a full live performance
   to disk, sample-accurately: RT-safe audio-thread taps write into lock-free
   rings, a control-thread drain thread streams them to a per-run event log
@@ -2254,12 +2212,6 @@ remains open — see "On-hardware validations" below.
   all k-loop tracks to the same base-loop downbeat. _(Not started.)_
 - **Accessibility pass** — no `Semantics` coverage yet (theming + golden tests
   are done). Screen-reader labels, focus order, keyboard-nav a11y tests.
-- **VST3 FX plugins — parts 15-17** — further built-in effects/polish beyond
-  the 7 already shipped (Delay/Reverb/Echo/Drive/Filter/Tremolo/Octaver) and
-  their Windows/Linux builds; brainstormed
-  (`docs/brainstorm/2026-07-13-vst3-plugins-parts-15-17-brainstorm-doc.md`)
-  but never planned or built. Epic #194 is closed, and the desktop targets
-  went with #920.
 
 ### Deferred (need hardware / 2nd display)
 - `midi_client` — real USB-MIDI binding **SHIPPED** (PRs #39/#40/#42): native
@@ -2292,8 +2244,7 @@ remains open — see "On-hardware validations" below.
 native (all C tests: incl. mid-loop record, transport reset single- &
 multi-track, loop multiples, loop-viz, per-track effects DSP, session
 export/import roundtrip, **single-chain monitor + record-FX snapshot +
-RT-safety + structural output gate**) · VST3 CTest gate (16 wired: 7
-plugin-id + 7 parity + 2 wrapper, plus a per-plugin load-smoke check) ·
+RT-safety + structural output gate**) ·
 segno_engine (dart, the FFI/plugin layer — was labeled "plugin") 138 (~7
 skipped) · controller_repository 18 · looper_repository 184 (~6 skipped) ·
 settings_repository 65 · session_repository 57 · local_storage_client 1 ·
