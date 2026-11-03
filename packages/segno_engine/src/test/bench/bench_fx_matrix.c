@@ -236,20 +236,14 @@ typedef struct {
   double ceiling;
 } mx_known;
 
-/* What fails today, emptied by the parts of #1547 that fix it. The full
- * run's table names the worst setting of each. */
+/* What fails today, each with why it is allowed. The full run's table
+ * names the worst setting of each. */
 static const mx_known k_known[] = {
-    /* The transient shaper's peak envelope, which rises at once to the
-     * largest sample of each cycle, ripples off the harmonics: the
-     * envelope, not a curve, so oversampling is not its fix (part 3). */
-    {"transient", MX_ALIAS, 44100, -46.5},
-    {"transient", MX_ALIAS, 48000, -46.0},
-    {"transient", MX_ALIAS, 96000, -57.0},
     /* The Dual Octaver is sensitive to tiny input changes: adding -120 dB
      * of noise at 48 kHz moves its envelope as far as running at 44.1 or
-     * 96 kHz does, most likely through the low band's pitch detection. Its
-     * kernel runs at 48 kHz at every rate (part 3c), so the residue is
-     * that sensitivity, not a rate dependence. */
+     * 96 kHz does, most likely through the low band's pitch detection
+     * (#1580). Its kernel runs at 48 kHz at every rate (#1547), so the
+     * residue is that sensitivity, not a rate dependence. */
     {"dualoct", MX_ENVELOPE, 44100, 5.0},
     {"dualoct", MX_ENVELOPE, 96000, 5.0},
     {NULL, 0, 0, 0.0},

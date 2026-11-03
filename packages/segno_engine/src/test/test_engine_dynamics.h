@@ -485,7 +485,7 @@ static void test_transient_shapes(void) {
 /* The Drum Rack's measured transient shaper (#891): crest gains after a
  * 30 dB step (-40 to -10 dBFS) or a 60 dB one (-80 to -20 dBFS), up or back
  * down, at Attack / Attack Length / Sustain in percent. The kernel lands on
- * every capture point within 2 dB (its worst are about 1.5 dB on the onsets
+ * every capture point within 2 dB (its worst are about 1.3 dB on the onsets
  * and 1.7 dB on the decays; over the whole captured traces its RMS error is
  * 0.4 dB or less on the onsets and under 1 dB on the decays). */
 static void test_transient_matches_measured(void) {
@@ -554,6 +554,128 @@ static void test_transient_matches_measured(void) {
     free(y);
   }
   printf("  worst error: onsets %.2f dB, decays %.2f dB\n", worst[0], worst[1]);
+}
+
+/* The Transient on a held note (#1547). Its peak envelope ripples once a
+ * cycle; read on samples alone, the ripple beat with the rate and folded
+ * at -47 dB on E6 at the Drum Rack's Solid setting (attack 93 %, length
+ * 48 %, sustain 55 %). With the true peak between samples and the gain
+ * smoothed, the folds stay under -66 dB at 44.1, 48 and 96 kHz (about
+ * -70, -71 and -82 today; either fix alone leaves them near -61 or -48).
+ * And at attack 100 % the held note's gain moves within each cycle by no
+ * more than the figures engine_fx.c gives for 40, 80 and 160 Hz (1.6, 0.9
+ * and 0.5 dB), within 0.1 dB. */
+static void test_transient_does_not_alias(void) {
+  printf("test_transient_does_not_alias\n");
+  const int rates[3] = {44100, 48000, 96000};
+  const float solid[3] = {0.93f, 0.48f, 0.55f};
+  for (int ri = 0; ri < 3; ++ri) {
+    const int sr = rates[ri];
+    const int win = sr > 48000 ? 131072 : 65536;
+    int bin = (int)lround(1318.51 * win / sr);
+    if (bin % 2 == 0) ++bin;
+    const double hz = (double)bin * sr / win;
+    const int settle = sr;
+    const int n = settle + win;
+    float* in = (float*)malloc(sizeof(float) * (size_t)n);
+    float* out = (float*)malloc(sizeof(float) * (size_t)n);
+    for (int i = 0; i < n; ++i) {
+      const double t = (double)i / sr;
+      const double fade = t < 0.01 ? 0.5 - 0.5 * cos(M_PI * t / 0.01) : 1.0;
+      in[i] = (float)(0.25 * fade * sin(2.0 * M_PI * hz * t));
+    }
+    float p[LE_FX_PARAMS] = {0};
+    memcpy(p, solid, sizeof(solid));
+    le_fx_state* fx = dyn_state(LE_FX_TRANSIENT, sr);
+    uint32_t clock = 0;
+    dyn_run(fx, LE_FX_TRANSIENT, p, sr, in, out, NULL, n, &clock);
+    dyn_free(fx);
+    const alias_spectrum a = alias_analyze(out + settle, win, sr, bin, NULL);
+    printf("  %d Hz: folds %.1f dB\n", sr, a.alias_db);
+    CHECK(a.alias_db < -66.0);
+    free(in);
+    free(out);
+  }
+  /* The held-note ripple at attack 100 %, 48 kHz: the gain's swing over
+   * a second, read where the input is above a tenth of its peak. */
+  const float notes[3] = {40.0f, 80.0f, 160.0f};
+  const float most[3] = {1.7f, 1.0f, 0.6f};
+  const int sr = DYN_SR;
+  const int n = 2 * sr;
+  float* in = (float*)malloc(sizeof(float) * (size_t)n);
+  float* out = (float*)malloc(sizeof(float) * (size_t)n);
+  for (int k = 0; k < 3; ++k) {
+    for (int i = 0; i < n; ++i) {
+      in[i] = 0.25f * sinf(2.0f * (float)M_PI * notes[k] * (float)i / (float)sr);
+    }
+    float p[LE_FX_PARAMS] = {0};
+    le_fx_defaults(LE_FX_TRANSIENT, p);
+    p[0] = 1.0f;
+    le_fx_state* fx = dyn_state(LE_FX_TRANSIENT, sr);
+    uint32_t clock = 0;
+    dyn_run(fx, LE_FX_TRANSIENT, p, sr, in, out, NULL, n, &clock);
+    dyn_free(fx);
+    float lo = 1e9f;
+    float hi = -1e9f;
+    for (int i = sr; i < n; ++i) {
+      if (fabsf(in[i]) < 0.025f) continue;
+      const float g = dyn_db(out[i] / in[i]);
+      lo = fminf(lo, g);
+      hi = fmaxf(hi, g);
+    }
+    printf("  attack 100 %%, %.0f Hz held: gain swings %.2f dB\n",
+           (double)notes[k], (double)(hi - lo));
+    CHECK(hi - lo <= most[k]);
+  }
+  /* A hard-clipped 110 Hz note: its flat tops are no peak between samples,
+   * so the held gain barely swings (0.06 dB; a vertex read on each flat
+   * top's first sample made it 0.25). */
+  {
+    for (int i = 0; i < n; ++i) {
+      const float v = 10.0f * sinf(2.0f * (float)M_PI * 110.0f * (float)i / (float)sr);
+      in[i] = 0.25f * fmaxf(-1.0f, fminf(1.0f, v));
+    }
+    float p[LE_FX_PARAMS] = {0};
+    le_fx_defaults(LE_FX_TRANSIENT, p);
+    p[0] = 1.0f;
+    le_fx_state* fx = dyn_state(LE_FX_TRANSIENT, sr);
+    uint32_t clock = 0;
+    dyn_run(fx, LE_FX_TRANSIENT, p, sr, in, out, NULL, n, &clock);
+    dyn_free(fx);
+    float lo = 1e9f;
+    float hi = -1e9f;
+    for (int i = sr; i < n; ++i) {
+      if (fabsf(in[i]) < 0.025f) continue;
+      const float g = dyn_db(out[i] / in[i]);
+      lo = fminf(lo, g);
+      hi = fmaxf(hi, g);
+    }
+    printf("  attack 100 %%, 110 Hz clipped: gain swings %.2f dB\n",
+           (double)(hi - lo));
+    CHECK(hi - lo <= 0.12f);
+  }
+  /* Huge finite samples (an unstable plugin upstream) leave the state
+   * finite: the note after them plays. */
+  {
+    for (int i = 0; i < n; ++i) {
+      in[i] = 0.25f * sinf(2.0f * (float)M_PI * 440.0f * (float)i / (float)sr);
+    }
+    in[100] = 0.5e20f;
+    in[101] = 1e20f;
+    in[102] = 0.8e20f;
+    float p[LE_FX_PARAMS] = {0};
+    memcpy(p, (const float[3]){0.93f, 0.48f, 0.55f}, 3 * sizeof(float));
+    le_fx_state* fx = dyn_state(LE_FX_TRANSIENT, sr);
+    uint32_t clock = 0;
+    dyn_run(fx, LE_FX_TRANSIENT, p, sr, in, out, NULL, n, &clock);
+    dyn_free(fx);
+    int finite = 1;
+    for (int i = 0; i < n; ++i) finite &= isfinite(out[i]) ? 1 : 0;
+    CHECK(finite);
+    CHECK(fabsf(out[n - sr / 4]) <= 1.0f);
+  }
+  free(in);
+  free(out);
 }
 
 /* ---- HP/Gate ---- */
@@ -892,6 +1014,7 @@ static void run_dynamics_tests(void) {
   test_comp_glides_and_links();
   test_transient_shapes();
   test_transient_matches_measured();
+  test_transient_does_not_alias();
   test_hp_gate_highpass_matches_measured();
   test_hp_gate_matches_measured();
   test_hp_gate_gates();

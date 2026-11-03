@@ -4649,14 +4649,25 @@ float le_comp_static_gr_for_test(const float* p, float in_db) {
  *   once, and is applied as 1 + s * gain, or its reciprocal for a cut.
  * A held tone leads neither follower and keeps its level, up to the peak
  * envelope's ripple on a low note: at 100 % the attack gain moves by up to
- * 1.7 dB within each cycle at 40 Hz, 0.9 dB at 80 Hz and 0.5 dB at 160 Hz
+ * 1.6 dB within each cycle at 40 Hz, 0.9 dB at 80 Hz and 0.5 dB at 160 Hz
  * (the captures held only a 1 kHz tone). Gains in the
  * linear domain saturate, as the Looper X's do: at 100 % an onset rises by
  * at most 1 + LE_TR_ATK_K (+15.2 dB) whatever its size, and after a 30 dB
  * drop the sustain lift peaks near +19 dB about 290 ms in (measured:
  * +18.3 dB at 286 ms). LE_TR_FLOOR keeps a decay into silence from reading
  * as an endless drop. Against the 16 measured passes the crest gains match
- * to 0.4 dB RMS or better on the onsets and under 1 dB on the decays. */
+ * to 0.4 dB RMS or better on the onsets and under 1 dB on the decays.
+ *
+ * The peak envelope ripples once a cycle, and on samples alone (#1547)
+ * both the height of each rise and the gain's step at it depend on where
+ * the samples fall on the cycle: a pattern that beats with the rate,
+ * which is aliasing (-47 dB on a 1319 Hz note at 48 kHz). So the level
+ * feeding the envelope is the true peak between samples, the vertex of
+ * the parabola through the three around a strict local maximum, held to
+ * a sine's (le_tr_true_peak), and the gain is smoothed over LE_TR_GAIN_S,
+ * too short to move a measured crest gain.
+ * Folds then stay under -69 dB at every factory setting up to E6, at 44.1,
+ * 48 and 96 kHz. */
 #define LE_TR_PEAK_REL_S 0.090
 #define LE_TR_ATK_MIN_S 0.00312 /* the attack follower at 0 % length */
 #define LE_TR_ATK_SPAN 7.12     /* ... and this many times that at 100 % */
@@ -4666,6 +4677,11 @@ float le_comp_static_gr_for_test(const float* p, float in_db) {
 #define LE_TR_SUS_LIFT_S 0.038
 #define LE_TR_SUS_K 13.4f
 #define LE_TR_FLOOR 1e-5f
+#define LE_TR_GAIN_S 0.0001 /* the gain's smoothing */
+/* The most the true peak may read above its sample: a sine's, up to
+ * 2.1 kHz at 48 kHz. A sharp click's parabola would read up to 12.5 %
+ * high, which is no sine's peak. */
+#define LE_TR_PEAK_LIFT 0.01f
 
 typedef struct le_fx_transient {
   le_fx_dyn_head h;
@@ -4681,6 +4697,10 @@ typedef struct le_fx_transient {
   float riser; /* the attack follower */
   float faller; /* the sustain follower */
   float sus_gain; /* the sustain lift before its amount, linear */
+  float gain_c;   /* the gain's smoothing coefficient */
+  float dg;       /* the smoothed gain less 1 (0 when zeroed: unity) */
+  float a1;       /* the last two levels, for the true peak */
+  float a2;
 } le_fx_transient;
 
 static void fx_transient_update(void* ks, const float* p, int sr, int settle) {
@@ -4690,11 +4710,14 @@ static void fx_transient_update(void* ks, const float* p, int sr, int settle) {
   const int changed = (f & LE_FX_DYN_CHANGED) != 0;
   if (changed) {
     const float len = p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1];
-    t->peak_rel = le_one_pole(LE_TR_PEAK_REL_S, sr);
     t->rise = le_one_pole(LE_TR_ATK_MIN_S * pow(LE_TR_ATK_SPAN, len), sr);
+  }
+  if (f & LE_FX_DYN_NEW_RATE) {
+    t->peak_rel = le_one_pole(LE_TR_PEAK_REL_S, sr);
     t->sus_rise = le_one_pole(LE_TR_SUS_RISE_S, sr);
     t->sus_fall = le_one_pole(LE_TR_SUS_FALL_S, sr);
     t->lift = le_one_pole(LE_TR_SUS_LIFT_S, sr);
+    t->gain_c = le_one_pole(LE_TR_GAIN_S, sr);
   }
   const float k = settle ? 1.0f : t->h.k;
   const float a = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
@@ -4704,13 +4727,31 @@ static void fx_transient_update(void* ks, const float* p, int sr, int settle) {
   t->h.moving = moving;
 }
 
+/* The level's peak between the samples, read on the sample after a strict
+ * local maximum [a1] (between [a2] before it and [a0] after): the vertex of
+ * the parabola through the three, at most LE_TR_PEAK_LIFT above [a1].
+ * Anything else, a flat top or a step included, is its own sample [a0]. */
+static inline float le_tr_true_peak(float a2, float a1, float a0) {
+  if (!(a1 > a0 && a1 > a2)) return a0;
+  const float d0 = a1 - a0; /* both > 0 */
+  const float d2 = a1 - a2;
+  const float sum = d0 + d2;
+  /* (d2 - d0)^2 / (8 (d0 + d2)), in terms that cannot overflow */
+  const float q = sum < INFINITY ? (d2 - d0) / sum : 0.0f;
+  const float v = fminf(a1 + 0.125f * (d2 - d0) * q, a1 * (1.0f + LE_TR_PEAK_LIFT));
+  return v > a0 ? v : a0;
+}
+
 static void fx_transient_kprocess(void* ks, float* l, float* r) {
   le_fx_transient* t = (le_fx_transient*)ks;
   const float x0 = fx_sanitize(*l);
   const float x1 = fx_sanitize(*r);
   const float atk = le_fx_glide_next(&t->atk);
   const float sus = le_fx_glide_next(&t->sus);
-  const float x = fmaxf(fabsf(x0), fabsf(x1));
+  const float level = fmaxf(fabsf(x0), fabsf(x1));
+  const float x = le_tr_true_peak(t->a2, t->a1, level);
+  t->a2 = t->a1;
+  t->a1 = level;
   const float pk = x > t->peak ? x : x + t->peak_rel * (t->peak - x);
   t->peak = pk;
   t->riser = pk < t->riser ? pk : pk + t->rise * (t->riser - pk);
@@ -4723,6 +4764,7 @@ static void fx_transient_kprocess(void* ks, float* l, float* r) {
                                    : want + t->lift * (t->sus_gain - want);
   if (t->sus_gain < 1e-9f) t->sus_gain = 0.0f; /* no denormal tail */
   if (atk == 0.0f && sus == 0.0f) {
+    t->dg = 0.0f;
     *l = x0;
     *r = x1;
     return; /* neutral: the identity */
@@ -4731,8 +4773,11 @@ static void fx_transient_kprocess(void* ks, float* l, float* r) {
   const float ga = 1.0f + fabsf(atk) * LE_TR_ATK_K * ra;
   const float gs = 1.0f + fabsf(sus) * t->sus_gain;
   const float g = (atk >= 0.0f ? ga : 1.0f / ga) * (sus >= 0.0f ? gs : 1.0f / gs);
-  *l = x0 * g;
-  *r = x1 * g;
+  const float dg = g - 1.0f;
+  t->dg = dg + t->gain_c * (t->dg - dg);
+  const float gain = 1.0f + t->dg;
+  *l = x0 * gain;
+  *r = x1 * gain;
 }
 
 /* ---- HP/Gate (LE_FX_HP_GATE) ----
