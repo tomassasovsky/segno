@@ -443,6 +443,31 @@ void main() {
     },
   );
 
+  testWidgets('the strip header stays put between Track and Mixer (#1590 '
+      'STG-2)', (tester) async {
+    seed(
+      const LooperState(
+        tracks: [
+          Track(state: TrackState.playing, lengthFrames: 48000),
+          Track(channel: 1),
+        ],
+      ),
+    );
+    await pump(tester);
+    // The meta row's first slot is the track number.
+    Rect number(String meta) => tester.getRect(
+      find
+          .descendant(of: find.byKey(Key(meta)), matching: find.text('1'))
+          .first,
+    );
+    final track = number('tracks_meta_0');
+    tracks.showView(StageView.mixer);
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('tracks_meta_0')), findsNothing);
+    expect(number('mixer_meta_0'), track);
+  });
+
   group("a track's message (#1562)", () {
     Notice refused() => Notice(
       id: 'rec',
@@ -2750,7 +2775,7 @@ void main() {
       await tester.pump();
       await tester.tap(find.byKey(const Key('stage_reset_mixer')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('mixer_reset_confirm')), findsOneWidget);
+      expect(find.byKey(const Key('console_confirm_confirm')), findsOneWidget);
       await oldTouch.up();
       await tester.pump();
       verifyNever(() => bloc.add(any(that: isA<LooperTrackPanChanged>())));
@@ -2939,13 +2964,18 @@ void main() {
       expect(find.byKey(const Key('stage_reset_mixer')), findsOneWidget);
       await tester.tap(find.byKey(const Key('stage_reset_mixer')));
       await tester.pump();
-      expect(find.byKey(const Key('mixer_reset_confirm')), findsOneWidget);
-      await tester.tap(find.byKey(const Key('mixer_reset_cancel')));
+      // The console's own confirmation, as Library delete and FX remove ask
+      // (#1590 STG-3).
+      expect(find.byKey(const Key('console_confirm_confirm')), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.text(l10n.mixerResetConfirmBody), findsOneWidget);
+      await tester.tap(find.byKey(const Key('console_confirm_cancel')));
       await tester.pumpAndSettle();
       verifyNever(() => bloc.add(const LooperMixerReset()));
       await tester.tap(find.byKey(const Key('stage_reset_mixer')));
       await tester.pump();
-      await tester.tap(find.byKey(const Key('mixer_reset_apply')));
+      await tester.tap(find.byKey(const Key('console_confirm_confirm')));
       await tester.pumpAndSettle();
       verify(() => bloc.add(const LooperMixerReset())).called(1);
     });
@@ -2959,7 +2989,7 @@ void main() {
       await tester.tap(find.byKey(const Key('stage_reset_mixer')));
       await tester.pump();
       when(() => repository.mixGeneration).thenReturn(1);
-      await tester.tap(find.byKey(const Key('mixer_reset_apply')));
+      await tester.tap(find.byKey(const Key('console_confirm_confirm')));
       await tester.pumpAndSettle();
       verifyNever(() => bloc.add(const LooperMixerReset()));
     });
