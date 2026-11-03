@@ -6,73 +6,96 @@ import 'package:midi_client/midi_client.dart';
 import 'package:midi_device_repository/src/models/midi_connection.dart';
 import 'package:settings_repository/settings_repository.dart';
 
-/// Owns the MIDI input (foot-controller) device lifecycle and is the single
-/// source of MIDI-device truth in the data layer.
+/// Owns the MIDI input devices and is the single source of MIDI-device truth
+/// in the data layer.
 ///
-/// Mirrors `LooperRepository` for the MIDI seam, but is deliberately **fully
-/// independent of the audio engine**: it never touches `LooperRepository`, so
-/// switching or losing a MIDI device can never restart audio. It enumerates the
-/// host's MIDI inputs, opens/closes the pinned device through the long-lived
-/// [MidiControllerSource], persists the selection, and supervises hotplug
-/// lost/restored transitions (diffed per poll tick). The projected
-/// [MidiConnection] domain model is published on [connections]; the raw
-/// (pre-mapping) input is republished on [activity]. Commands ([select],
-/// [selectNone], [refresh]) drive the lifecycle.
+/// Every plugged-in input is captured at once, one [MidiControllerSource]
+/// (one native port) per device, so any connected controller can feed the
+/// mappings learned from it; each message carries its device's capture
+/// lifetime ([MidiInputSession]). Mappings name their device, so a keyboard's
+/// messages never trigger a mapping learned from a foot controller.
 ///
-/// The `source` is nullable so a build with no MIDI backend (or a test/mock
-/// where the native library is absent) degrades gracefully: the picker shows an
-/// empty state and selection is a no-op, rather than crashing the app.
+/// The hotplug poll opens a device's capture when it appears, closes it when
+/// it goes, and retries a port that would not open. The selection persists
+/// only which controller the MIDI page shows. The projected [MidiConnection]
+/// is published on [connections]; the raw input of every capture is
+/// republished on [activity] and [messages].
 ///
-/// **Disposal contract:** the source is *borrowed*. `ControllerRepository` owns
-/// it and disposes it; this repository must never dispose it — [dispose] only
-/// releases its own timer and stream.
+/// Deliberately **independent of the audio engine**: it never touches
+/// `LooperRepository`, so losing a MIDI device can never restart audio.
+///
+/// The `captures` factory creates one capture. It is `null` on a build with
+/// no MIDI backend (or a test where the native library is absent), so the
+/// page shows an empty state rather than crashing the app.
 class MidiDeviceRepository {
-  /// Creates a [MidiDeviceRepository] over [source], persisting the selection
-  /// through [settings].
+  /// Creates a [MidiDeviceRepository] capturing through [captures], persisting
+  /// the selection through [settings].
   ///
   /// [pollInterval] is the hotplug re-enumeration cadence; pass [Duration.zero]
   /// to disable the timer (tests drive [refresh] directly).
   MidiDeviceRepository({
-    required MidiControllerSource? source,
+    required MidiControllerSource Function()? captures,
     required SettingsRepository settings,
     Duration pollInterval = const Duration(seconds: 2),
-  }) : _source = source,
-       _settings = settings {
-    // Populate the picker immediately so it never flashes empty while the saved
+  }) : _newCapture = captures,
+       _settings = settings,
+       // One never-opened source lists the host's inputs.
+       _scanner = _scannerOf(captures) {
+    // Capture what is plugged in now, so input works before the saved
     // selection loads (enumerate is a cheap synchronous native call).
-    _emit(MidiConnection(devices: source?.enumerate() ?? const []));
-    // Auto-reconnect the saved device on launch. The repository is created
-    // eagerly at the shell, so this is the launch reconnect — independent of
-    // the audio engine's own bootstrap.
+    refresh();
     unawaited(_hydrate());
-    if (source != null && pollInterval > Duration.zero) {
+    if (_scanner != null && pollInterval > Duration.zero) {
       _pollTimer = Timer.periodic(pollInterval, (_) => refresh());
     }
   }
 
-  final MidiControllerSource? _source;
+  /// A native handle that cannot be allocated leaves the app without MIDI
+  /// rather than stopping launch.
+  static MidiControllerSource? _scannerOf(
+    MidiControllerSource Function()? captures,
+  ) {
+    try {
+      return captures?.call();
+    } on Object {
+      return null;
+    }
+  }
+
+  final MidiControllerSource Function()? _newCapture;
+  final MidiControllerSource? _scanner;
   final SettingsRepository _settings;
   final StreamController<MidiConnection> _controller =
       StreamController<MidiConnection>.broadcast();
+  final _messages = StreamController<MidiInputMessage>.broadcast();
+  final _activity = StreamController<void>.broadcast();
+
+  /// One capture per device seen this run, kept across replugs so each open
+  /// gets a new [MidiInputSession] epoch.
+  final _sources = <String, MidiControllerSource>{};
+  final _subscriptions = <StreamSubscription<Object?>>[];
+  final _openErrors = <String, String>{};
+
+  /// Devices present at the previous poll, or `null` before the first.
+  Set<String>? _lastPresent;
+
+  final _names = <String, String>{};
   Timer? _pollTimer;
   int _selectionGeneration = 0;
-  bool _selectionPending = false;
   bool _disposed = false;
   Future<void> _selectionTail = Future<void>.value();
 
-  /// Exact active capture identity; remote consumers reject stale queued data.
-  MidiInputSession? get session => _source?.session;
-
-  /// Unmodified musical traffic; remote enable and Learn never gate this
-  /// stream.
-  Stream<MidiInputMessage> get messages =>
-      _source?.messages ?? const Stream<MidiInputMessage>.empty();
-
   MidiConnection _connection = const MidiConnection();
 
-  /// Previous pinned-device presence, to detect lost/restored transitions.
-  /// `null` until the first observation, or while nothing is pinned.
-  bool? _lastSelectedPresent;
+  /// The open capture lifetime of each captured device. Consumers reject a
+  /// message whose session is not the current one for its device.
+  Map<String, MidiInputSession> get sessions => {
+    for (final entry in _sources.entries) entry.key: ?entry.value.session,
+  };
+
+  /// Unmodified musical traffic from every capture; remote enable and Learn
+  /// never gate this stream.
+  Stream<MidiInputMessage> get messages => _messages.stream;
 
   /// The current connection, read synchronously.
   MidiConnection get connection => _connection;
@@ -80,18 +103,16 @@ class MidiDeviceRepository {
   /// Stream of MIDI-input connection states.
   ///
   /// A new subscriber immediately receives the most recent connection before
-  /// live updates, so a late listener — e.g. a cubit created after the launch
-  /// reconnect already ran — shows the current selection instead of waiting for
-  /// the next change.
+  /// live updates, so a late listener — e.g. a cubit created after launch —
+  /// shows the current devices instead of waiting for the next change.
   Stream<MidiConnection> get connections async* {
     yield _connection;
     yield* _controller.stream;
   }
 
-  /// The raw (pre-mapping) MIDI activity, republished from the borrowed source
-  /// for a UI input indicator. Empty when no MIDI backend is present.
-  Stream<void> get activity =>
-      _source?.activity.map((_) {}) ?? const Stream<void>.empty();
+  /// The raw (pre-mapping) MIDI activity of every capture, for a UI input
+  /// indicator. Silent when no MIDI backend is present.
+  Stream<void> get activity => _activity.stream;
 
   void _emit(MidiConnection next) {
     if (_disposed) return;
@@ -99,187 +120,55 @@ class MidiDeviceRepository {
     if (!_controller.isClosed) _controller.add(next);
   }
 
-  /// Loads the saved selection and reconnects it when present, tolerating a
-  /// "saved device absent" launch (the selection is retained, status gone).
+  /// Loads the saved selection, tolerating a saved device that is absent (the
+  /// page keeps showing it and its mappings).
   Future<void> _hydrate() async {
     final generation = _selectionGeneration;
-    final source = _source;
     final ({String id, String name})? saved;
     try {
       saved = await _settings.loadMidiDevice();
     } on Object catch (error) {
       if (!_disposed && generation == _selectionGeneration) {
-        _emit(
-          _connection.copyWith(
-            status: MidiConnectionStatus.error,
-            errorDetail: '$error',
-            pinUncertain: true,
-          ),
-        );
+        _emit(_connection.copyWith(errorDetail: '$error', pinUncertain: true));
       }
       return;
     }
-    if (_disposed || generation != _selectionGeneration) return;
-    final devices = source?.enumerate() ?? const <MidiDevice>[];
-    final selected = saved;
-    if (selected == null || source == null) {
-      _emit(_connection.copyWith(devices: devices));
-      _lastSelectedPresent = null;
+    if (_disposed || generation != _selectionGeneration || saved == null) {
       return;
     }
-
-    final present = devices.any((d) => d.id == selected.id);
-    _lastSelectedPresent = present;
-    // A saved selection outranks auto-detect even when it is absent: the user
-    // named a device, so keep waiting for it rather than adopting another.
-    if (!present) {
-      _emit(
-        _connection.copyWith(
-          devices: devices,
-          selectedId: selected.id,
-          selectedName: selected.name,
-          status: MidiConnectionStatus.deviceGone,
-        ),
-      );
-      return;
-    }
-
-    final code = source.open(selected.id);
+    if (_scanner == null) return;
     _emit(
-      _connection.copyWith(
-        devices: devices,
-        selectedId: selected.id,
-        selectedName: selected.name,
-        status: code == 0
-            ? MidiConnectionStatus.connected
-            : MidiConnectionStatus.error,
-        errorDetail: code == 0 ? null : '$code',
-        clearError: code == 0,
-      ),
+      _connection.copyWith(selectedId: saved.id, selectedName: saved.name),
     );
   }
 
-  /// Selects the device [id] to open (empty id selects "None"). Persists the
-  /// choice and opens the native port now. On a failed open, sets a recoverable
-  /// error status; the selection is retained so a retry / replug can recover.
+  /// Shows the device [id] on the MIDI page and persists the choice. Capture
+  /// does not depend on it. A failed write reports an uncertain selection so
+  /// the page can retry.
   Future<void> select(String id) {
-    if (id.isEmpty) return selectNone();
-    final source = _source;
-    if (source == null || _disposed) return Future<void>.value();
-    if (id == _connection.selectedId &&
-        _connection.status == MidiConnectionStatus.connected &&
-        !_connection.pinUncertain) {
+    if (id.isEmpty || _scanner == null || _disposed) {
+      return Future<void>.value();
+    }
+    if (id == _connection.selectedId && !_connection.pinUncertain) {
       return Future<void>.value();
     }
     final generation = ++_selectionGeneration;
-    _selectionPending = true;
-    source.close();
-    _lastSelectedPresent = null;
     final name = _nameFor(id);
-    _emit(
-      _connection.copyWith(
-        selectedId: id,
-        selectedName: name,
-        status: MidiConnectionStatus.connecting,
-        connectivity: MidiConnectivity.none,
-        clearError: true,
-      ),
-    );
+    _emit(_connection.copyWith(selectedId: id, selectedName: name));
     return _queueSelection(() async {
       if (_disposed || generation != _selectionGeneration) return;
       try {
-        try {
-          await _settings.saveMidiDevice(id: id, name: name);
-        } on Object catch (error) {
-          if (!_disposed && generation == _selectionGeneration) {
-            _emit(
-              _connection.copyWith(
-                status: MidiConnectionStatus.error,
-                errorDetail: '$error',
-                pinUncertain: true,
-              ),
-            );
-          }
-          rethrow;
-        }
-        if (_disposed || generation != _selectionGeneration) return;
-        // The durable pin is confirmed now. A native connection failure must
-        // remain retryable without pretending that storage became uncertain.
-        try {
-          final code = source.open(id);
-          _lastSelectedPresent = true;
-          _emit(
-            _connection.copyWith(
-              status: code == 0
-                  ? MidiConnectionStatus.connected
-                  : MidiConnectionStatus.error,
-              errorDetail: code == 0 ? null : '$code',
-              clearError: code == 0,
-              pinUncertain: false,
-            ),
-          );
-        } on Object catch (error) {
-          if (!_disposed && generation == _selectionGeneration) {
-            _emit(
-              _connection.copyWith(
-                status: MidiConnectionStatus.error,
-                errorDetail: '$error',
-                pinUncertain: false,
-              ),
-            );
-          }
-          rethrow;
-        }
-      } finally {
-        if (generation == _selectionGeneration) _selectionPending = false;
-      }
-    });
-  }
-
-  /// Stops input immediately, then confirms the durable "None" selection.
-  /// A failed clear leaves input stopped and reports an uncertain selection so
-  /// the caller can retry; it never presents the pending clear as saved.
-  Future<void> selectNone() {
-    if (_disposed) return Future<void>.value();
-    final generation = ++_selectionGeneration;
-    _selectionPending = true;
-    _source?.close();
-    _lastSelectedPresent = null;
-    _emit(
-      _connection.copyWith(
-        selectedId: '',
-        selectedName: '',
-        status: MidiConnectionStatus.connecting,
-        connectivity: MidiConnectivity.none,
-        clearError: true,
-      ),
-    );
-    return _queueSelection(() async {
-      if (_disposed || generation != _selectionGeneration) return;
-      try {
-        await _settings.clearMidiDevice();
-        if (_disposed || generation != _selectionGeneration) return;
-        _emit(
-          _connection.copyWith(
-            status: MidiConnectionStatus.none,
-            clearError: true,
-            pinUncertain: false,
-          ),
-        );
+        await _settings.saveMidiDevice(id: id, name: name);
       } on Object catch (error) {
         if (!_disposed && generation == _selectionGeneration) {
           _emit(
-            _connection.copyWith(
-              status: MidiConnectionStatus.error,
-              errorDetail: '$error',
-              pinUncertain: true,
-            ),
+            _connection.copyWith(errorDetail: '$error', pinUncertain: true),
           );
         }
         rethrow;
-      } finally {
-        if (generation == _selectionGeneration) _selectionPending = false;
       }
+      if (_disposed || generation != _selectionGeneration) return;
+      _emit(_connection.copyWith(clearError: true, pinUncertain: false));
     });
   }
 
@@ -289,82 +178,114 @@ class MidiDeviceRepository {
     return next;
   }
 
-  /// Re-enumerates the host's MIDI inputs and reconciles the pinned device's
-  /// connection: opens it when it (re)appears, marks it gone when it
-  /// vanishes, and raises a transient lost/restored transition on the change.
-  /// Invoked by the hotplug poll timer; also callable directly (tests).
+  /// Re-enumerates the host's MIDI inputs and reconciles the captures: opens
+  /// each device that appeared (or whose port would not open last time),
+  /// closes each that vanished, and raises a transient lost/restored
+  /// transition for each device that changed. Invoked by the hotplug poll
+  /// timer; also callable directly.
   void refresh() {
-    final source = _source;
-    if (source == null || _disposed || _selectionPending) return;
-    final devices = source.enumerate();
-    final pinned = _connection.hasSelection;
-    final present =
-        pinned && devices.any((d) => d.id == _connection.selectedId);
-    final previous = _lastSelectedPresent;
-    _lastSelectedPresent = pinned ? present : null;
+    final scanner = _scanner;
+    if (scanner == null || _disposed) return;
+    final devices = scanner.enumerate();
+    // A device with several ports lists one entry per port under one id;
+    // its capture opens the first, and the first port names it.
+    final names = <String, String>{};
+    for (final device in devices) {
+      names.putIfAbsent(device.id, () => device.name);
+    }
+    _names.addAll(names);
+    final present = names.keys.toSet();
+    final wasOpen = sessions.keys.toSet();
+    for (final entry in _sources.entries) {
+      if (!present.contains(entry.key) && entry.value.session != null) {
+        // Invalidates already queued callbacks from this lifetime.
+        entry.value.close();
+      }
+    }
+    _openErrors.removeWhere((id, _) => !present.contains(id));
+    for (final id in present) {
+      try {
+        final source = _sources[id] ?? _capture(id);
+        if (source.session != null) continue;
+        final code = source.open(id);
+        if (code == 0) {
+          _openErrors.remove(id);
+        } else {
+          _openErrors[id] = '$code';
+        }
+      } on Object catch (error) {
+        // One device that cannot open never stops the others.
+        _openErrors[id] = '$error';
+      }
+    }
 
-    var next = _connection.copyWith(devices: devices);
-
-    // Raise the transition for the pinned device only (a change with no prior
-    // sample is the initial reading, not a transition).
-    if (pinned &&
-        !_connection.pinUncertain &&
-        previous != null &&
-        previous != present) {
-      next = next.copyWith(
-        connectivity: present
-            ? MidiConnectivity.restored
-            : MidiConnectivity.lost,
-        connectivityDeviceName: _connection.selectedName,
+    final next = _connection.copyWith(
+      devices: devices,
+      names: Map.unmodifiable(_names),
+      open: sessions.keys.toSet(),
+      openErrors: Map.unmodifiable(_openErrors),
+    );
+    // A change with no prior sample is the initial reading, not a transition.
+    final previous = _lastPresent;
+    _lastPresent = present;
+    if (previous == null) {
+      _emit(next);
+      return;
+    }
+    // A device that was captured and went is lost; one whose capture opened
+    // after launch (plugged back in, plugged in late, or a port that opened
+    // on a retry) is restored. Each is published on its own, so every change
+    // reaches the listener.
+    final transitions = [
+      for (final id in wasOpen.difference(present)) (MidiConnectivity.lost, id),
+      for (final id in next.open.difference(wasOpen))
+        (MidiConnectivity.restored, id),
+    ];
+    if (transitions.isEmpty) {
+      _emit(next);
+      return;
+    }
+    for (final (connectivity, id) in transitions) {
+      _emit(
+        next.copyWith(
+          connectivity: connectivity,
+          connectivityDeviceId: id,
+          connectivityDeviceName: _names[id] ?? id,
+        ),
       );
     }
+  }
 
-    if (pinned &&
-        present &&
-        !_connection.pinUncertain &&
-        _connection.status != MidiConnectionStatus.connected) {
-      // (Re)attach: launch-present, replug, or retry after an error.
-      final code = source.open(_connection.selectedId);
-      next = code == 0
-          ? next.copyWith(
-              status: MidiConnectionStatus.connected,
-              clearError: true,
-            )
-          : next.copyWith(
-              status: MidiConnectionStatus.error,
-              errorDetail: '$code',
-            );
-    } else if (pinned &&
-        !present &&
-        _connection.status == MidiConnectionStatus.connected) {
-      source.close();
-      // Invalidate already queued callbacks from this disappeared lifetime.
-      next = next.copyWith(status: MidiConnectionStatus.deviceGone);
-    }
-
-    _emit(next);
+  MidiControllerSource _capture(String id) {
+    final source = _newCapture!();
+    _sources[id] = source;
+    _subscriptions
+      ..add(source.messages.listen(_messages.add))
+      ..add(source.activity.listen((_) => _activity.add(null)));
+    return source;
   }
 
   /// The human-readable name for [id] from the current enumeration, falling
   /// back to the id itself when the device is not (yet) listed.
-  String _nameFor(String id) {
-    for (final device in _connection.devices) {
-      if (device.id == id) return device.name;
-    }
-    return id;
-  }
+  String _nameFor(String id) => _names[id] ?? id;
 
-  /// Releases the timer and the connection stream.
-  ///
-  /// The [MidiControllerSource] is **borrowed**, not owned:
-  /// `ControllerRepository` disposes it. This must never dispose it (or it
-  /// would tear down the shared input capture out from under the controller
-  /// pipeline).
+  /// Releases the timer, every capture and the streams.
   Future<void> dispose() async {
     _disposed = true;
     ++_selectionGeneration;
     _pollTimer?.cancel();
     await _selectionTail;
+    // Not awaited: a broadcast cancel completes at once, and awaiting it
+    // inside a widget test's fake clock never returns (flutter/flutter#139870).
+    for (final subscription in _subscriptions) {
+      unawaited(subscription.cancel());
+    }
+    for (final source in _sources.values) {
+      await source.dispose();
+    }
+    await _scanner?.dispose();
+    await _messages.close();
+    await _activity.close();
     await _controller.close();
   }
 }

@@ -764,6 +764,11 @@ typedef struct le_fx_state {
   float svf_ic1[LE_FX_MAX][2];
   float svf_ic2[LE_FX_MAX][2];
   float lfo[LE_FX_MAX][2];
+  /* A clock LFO's last frame, or its own frame count for a state nobody
+   * clocks (its phase then counts from its reset, as it always did), and the
+   * rate it last ran at (le_clock_lfo, #1620). */
+  uint32_t lfo_frame[LE_FX_MAX];
+  double lfo_rate[LE_FX_MAX];
   float* delay[LE_FX_MAX][2];
   /* The delay rings of each slot (bit c for delay[slot][c]) the thread that
    * runs the chain knows to be allocated: marked when a kind that runs on the
@@ -951,6 +956,10 @@ typedef struct le_wet_entry {
    * octaver in the printed chain (#941). The audio thread drops such a print
    * at a lap top that starts elsewhere on the hop. */
   uint32_t hop_tag;
+  /* 0 for a print whose key does not hold the top's place on the lap grid;
+   * else 1 + that place (le_fx_lap_position) for the top it was rendered
+   * from: a clock LFO in the printed chain (#1620). */
+  uint32_t lap_tag;
 } le_wet_entry;
 
 /* THE wet-cache key predicate: whether [ent] was rendered for exactly the
@@ -1035,6 +1044,20 @@ typedef struct le_fx_slot_meta {
  * cache's retained pair, so the callback finds the render for the content a
  * swap brings back (Undo, Redo, Peel) in the same block (review M1). */
 #define LE_SRC_CANDIDATES 2
+
+/* A live chain's RUN (#939): the stretch it has played one unchanged key
+ * over, counted in its track's laps (le_track::laps). Audio-thread-local.
+ * The block-start key check sets [restart]; the mix step then begins the run
+ * (le_chain_run_begin), as it does when the chain returns to live play from
+ * a print ([live] going 1). [lap0] is the lap count it began at and [at_top]
+ * whether it began on a loop top, which is what le_run_matches_print weighs
+ * a print against. */
+typedef struct le_chain_run {
+  uint32_t lap0;
+  int32_t at_top;
+  int32_t restart;
+  int32_t live;
+} le_chain_run;
 
 typedef struct le_lane {
   _Atomic int32_t a_input_channel; /* hardware input recorded (-1 = none) */
@@ -1156,7 +1179,7 @@ typedef struct le_lane {
   /* Chain-edit generation: bumped (relaxed fetch_add) by EVERY path that can
    * change this lane's chain fingerprint, so the audio thread's per-buffer
    * cache check can skip the full fingerprint refold while nothing changed
-   * (snapshot_lane_cache caches its last verdict keyed on {entry, gen}).
+   * (snapshot_lane_cache refolds run_fp below only when it moved).
    * BUMP SITES — a missed one lets a stale verdict play stale audio, so this
    * list is audited like the a_audio_rev table above: the five lane FX
    * setters in engine_commands.c (type, count, param, enabled,
@@ -1164,27 +1187,34 @@ typedef struct le_lane {
    * le_lane_reset (engine.c), and the audio thread's LE_CMD_SET_LANE_FX /
    * _FX_COUNT handlers (engine_process.c — covers the raw
    * le_engine_post_command escape hatch that bypasses the setters). Every
-   * chain mutation flows through one of those. Safety direction: a spurious
-   * bump merely re-verifies the fingerprint once; only a MISSING bump is a
-   * bug. */
+   * chain mutation flows through one of those, AFTER its stores: the bump
+   * releases them and the audio thread's load acquires, so a refold for a
+   * generation it has seen reads that edit's values (#939 review). Safety
+   * direction: a spurious bump merely re-verifies the fingerprint once; only
+   * a MISSING bump is a bug. */
   _Atomic uint32_t a_fx_gen;
-  /* Audio-thread-LOCAL fingerprint-verdict cache (plain fields, never read
-   * by control): the entry pointer and a_fx_gen value at which the full
-   * fingerprint comparison last PASSED. While both still match (and the
-   * cheap rev/vol/len fields do too), the per-buffer check skips the ~40
-   * atomic loads + FNV refold — the standing cost of a cached steady state
-   * drops to one relaxed load. The track's loop-top hop position is part
-   * of an octaver print's key (#941) and moves on a relaunch without a chain
-   * edit, so the verdict also records it and a change forces the refold. */
-  const le_wet_entry* cache_fp_entry;
-  uint32_t cache_fp_gen;
-  uint32_t cache_fp_hop;
+  /* Audio-thread-LOCAL: the live Pre chain's run (#939, le_chain_run) and
+   * the key it is playing: content, volume, length and Pre fingerprint, as
+   * the print's key names them. snapshot_lane_cache compares the key with
+   * run_* each buffer, restarts the run on a change and checks a published
+   * print against it. The fingerprint is refolded only when run_gen or
+   * run_top (the track's loop top, whose hop position an octaver print's key
+   * folds, #941, and whose lap-grid place a clock LFO's does, #1620) moved,
+   * so a cached steady state costs a few relaxed loads instead of a ~40-load
+   * FNV refold per buffer. */
+  le_chain_run run;
+  uint64_t run_fp;
+  uint32_t run_rev;
+  uint32_t run_vol;
+  uint32_t run_gen;
+  uint32_t run_top;
+  int32_t run_len;
 } le_lane;
 
 /* Bumps a lane's chain-edit generation (see a_fx_gen above). Both threads
  * bump: control setters and the audio-thread ring handlers. */
 static inline void le_lane_fx_gen_bump(le_lane* ln) {
-  atomic_fetch_add_explicit(&ln->a_fx_gen, 1u, memory_order_relaxed);
+  atomic_fetch_add_explicit(&ln->a_fx_gen, 1u, memory_order_release);
 }
 
 /* One hardware input's live monitor (engine-level, one slot per input).
@@ -1463,6 +1493,18 @@ typedef struct le_track {
    * thread's own copy, so it stores only on a change. */
   _Atomic uint32_t a_top_clock;
   uint32_t top_clock;
+  /* Audio-thread-LOCAL lap count (#939): one per wrap while the track
+   * sounds; [lap_rp] is the previous frame's index, -1 while silent.
+   * bus_run is the track chain's run (le_chain_run), keyed by the
+   * whole-track print's key (bus_run_fp, _rev, _len). */
+  uint32_t laps;
+  int32_t lap_rp;
+  int32_t lap_identity; /* the head could play a print on [lap_rp]'s frame:
+                         * forward, at 1x, from a whole-sample origin */
+  le_chain_run bus_run;
+  uint64_t bus_run_fp;
+  uint32_t bus_run_rev;
+  int32_t bus_run_len;
   _Atomic int32_t lane_count; /* Active lanes, release-published after prepared
                                * buffers and routing become callback-owned. */
 

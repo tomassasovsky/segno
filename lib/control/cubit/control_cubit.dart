@@ -203,10 +203,11 @@ class ControlCubit extends Cubit<ControlState> {
   /// (what this call site passed before it was wired).
   /// [controller] is the external-MIDI seam (part 7): its resolved binding
   /// events land at the same dispatch point the pedal's do, so a discrete CC
-  /// stomps exactly like a footswitch. [midiDevices] supplies the connectivity
-  /// this cubit needs to honour the release-all rule when the MIDI source
-  /// itself disappears (B1). Both are optional — a build or test with no MIDI
-  /// seam simply never receives external control.
+  /// stomps exactly like a footswitch. [midiDevices] supplies every captured
+  /// MIDI device's messages, and the connectivity this cubit needs to honour
+  /// the release-all rule when a device disappears (B1). Both are optional —
+  /// a build or test with no MIDI seam simply never receives external
+  /// control.
   ///
   /// [takeLocked] suppresses Rec / overdub / perf-arm while the power-off
   /// route is up, so a take cannot start behind the dialog. [inputLocked]
@@ -270,7 +271,7 @@ class ControlCubit extends Cubit<ControlState> {
       }
     });
     _midiSession = _looper.sessionRevision;
-    _midiCapture = midiDevices?.session;
+    _midiCaptures = midiDevices?.sessions ?? const {};
     _looperSub = _looper.looperState.listen(_onLooperState);
     _eventsSub = _pedal.events.listen(_handleEvent);
     _statusSub = _pedal.statusChanges.listen(_onLinkStatus);
@@ -310,7 +311,9 @@ class ControlCubit extends Cubit<ControlState> {
     step: _midiStep,
   );
   StreamSubscription<MidiInputMessage>? _midiMessageSub;
-  MidiInputSession? _midiCapture;
+
+  /// The capture lifetime of every device feeding controls, by device.
+  Map<String, MidiInputSession> _midiCaptures = const {};
   int _midiIngressRevision = 0;
   int _midiSession = -1;
   int _nextMidiId = 1;

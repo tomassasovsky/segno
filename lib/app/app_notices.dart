@@ -132,8 +132,7 @@ bool midiIsInterfacesOwn(
   final interface = audio.connectivityDeviceName.split(',').first.trim();
   final names = [
     connection.connectivityDeviceName,
-    connection.selectedName,
-    connection.selectedId,
+    connection.connectivityDeviceId,
   ].where((name) => name.isNotEmpty);
   if (names.isEmpty) return audioJustChanged;
   if (interface.isEmpty) return false;

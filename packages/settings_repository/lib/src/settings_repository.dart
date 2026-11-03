@@ -469,11 +469,10 @@ class SettingsRepository {
 
   static const String _midiInputDeviceKey = 'midi.input_device';
 
-  /// Loads the pinned MIDI input device as `(id, name)`, or `null` when none
-  /// has been selected (a fresh install, or after picking "None"). The `id` is
-  /// the per-OS stable token used to re-open the device on launch; `name` is
-  /// the human-readable label kept so a "last device not found" status can name
-  /// it even while the device is absent. The pair is one durable record.
+  /// Loads the MIDI controller the MIDI page shows as `(id, name)`, or `null`
+  /// when none has been chosen. The `id` is the per-OS stable device token;
+  /// `name` is the human-readable label kept so the page can name the device
+  /// even while it is absent. The pair is one durable record.
   Future<({String id, String name})?> loadMidiDevice() async {
     final raw = await _store.getString(_midiInputDeviceKey);
     if (raw == null) return null;
@@ -493,7 +492,7 @@ class SettingsRepository {
     return (id: decoded['id'] as String, name: decoded['name'] as String);
   }
 
-  /// Pins the MIDI input device [id]/[name] so it auto-reconnects next launch.
+  /// Saves [id]/[name] as the MIDI controller the MIDI page shows.
   Future<void> saveMidiDevice({
     required String id,
     required String name,
@@ -503,15 +502,6 @@ class SettingsRepository {
     await _store.setString(_midiInputDeviceKey, raw);
     if (await _store.getString(_midiInputDeviceKey) != raw) {
       throw StateError('Saved MIDI input device was not confirmed');
-    }
-  }
-
-  /// Clears the pinned MIDI input device (the "None" selection), so the looper
-  /// relaunches with no MIDI device attached.
-  Future<void> clearMidiDevice() async {
-    await _store.remove(_midiInputDeviceKey);
-    if (await _store.getString(_midiInputDeviceKey) != null) {
-      throw StateError('Cleared MIDI input device was not confirmed');
     }
   }
 
