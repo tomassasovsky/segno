@@ -257,8 +257,9 @@ jobs:
       # runner VM with it. Recovery needed physical console access (#817).
       #
       # Two guards, both cheap: prune what accumulates (old images, and the
-      # tree of a machine this workflow no longer builds), and refuse to start a build that
-      # cannot fit rather than discovering the limit by hitting it.
+      # tree of a machine this workflow no longer builds), and refuse to start
+      # a build that cannot fit rather than discovering the limit by hitting
+      # it.
       # Self-hosted only. A GitHub-hosted runner is ephemeral and nowhere near
       # 80 GB free, so this would fail every push- and tag-triggered release
       # with advice ("free space on the runner") that is unactionable there.
@@ -279,30 +280,7 @@ jobs:
           set -eu
           mkdir -p "$YOCTO_WORK_DIR"
 
-          # Each build leaves a timestamped ~8.3 GB .wic behind forever; the
-          # rootfs.wic symlink points at the newest and the rest are dead
-          # weight. Keep the two newest per machine.
-          #
-          # Collect into an array and bail when it is empty. With nullglob a
-          # non-matching "$d"*.wic vanishes ENTIRELY, so `ls -t` would run with
-          # no arguments, list $PWD — the repo checkout — and feed its 3rd-newest
-          # entries onward to rm. A deploy dir left behind by a build that died
-          # after do_deploy but before do_image_wic reaches exactly that state.
-          # `--` stops a leading-dash filename being read as an option.
           shopt -s nullglob
-          for d in "$YOCTO_WORK_DIR"/*/tmp/deploy/images/*/; do
-            # Real images only: the rootfs.wic SYMLINK also matches the glob and
-            # is always newest by mtime, so counting it would silently turn
-            # "keep the two newest" into "keep one" (the link's target).
-            wics=()
-            for w in "$d"*.wic; do [ -h "$w" ] || wics+=( "$w" ); done
-            [ ${#wics[@]} -gt 2 ] || continue
-            while IFS= read -r f; do
-              [ -n "$f" ] || continue
-              echo "pruning $(basename "$f") ($(du -h "$f" | cut -f1))"
-              rm -f -- "$f" "$f.bmap"
-            done < <(ls -t -- "${wics[@]}" | tail -n +3)
-          done
 
           # determine-meta builds exactly one MACHINE, so a deploy directory
           # for any other machine belongs to a retired one, and its tree (the
@@ -315,6 +293,16 @@ jobs:
           # sstate-cache and downloads sit beside tmp/, not in it, so they
           # stay, and this run restores its own machine's tree from sstate
           # (the older images of this machine go with it, once).
+          #
+          # The tree is renamed before it is deleted, so a delete cut short
+          # (a cancelled job, the 22:00 power-off) never leaves a TMPDIR whose
+          # deploy dir is gone but whose stamps remain; a leftover renamed
+          # tree is finished off here on the next run.
+          : "${MACHINE:?determine-meta gave no machine}"
+          for stale in "$YOCTO_WORK_DIR"/*/tmp.prune-*; do
+            echo "finishing an interrupted prune of $stale"
+            rm -rf -- "$stale"
+          done
           for tmpdir in "$YOCTO_WORK_DIR"/*/tmp; do
             retired=()
             for d in "$tmpdir"/deploy/images/*/; do
@@ -324,9 +312,34 @@ jobs:
             [ ${#retired[@]} -gt 0 ] || continue
             before=$(df -BG --output=avail "$YOCTO_WORK_DIR" | tail -1 | tr -dc '0-9')
             echo "pruning $tmpdir: it holds ${retired[*]}, and this workflow builds only $MACHINE"
-            rm -rf -- "$tmpdir"
+            mv -- "$tmpdir" "$tmpdir.prune-$$"
+            rm -rf -- "$tmpdir.prune-$$"
             after=$(df -BG --output=avail "$YOCTO_WORK_DIR" | tail -1 | tr -dc '0-9')
             echo "freed $((after - before)) GB"
+          done
+
+          # Each build leaves a timestamped ~8.3 GB .wic behind forever; the
+          # rootfs.wic symlink points at the newest and the rest are dead
+          # weight. Keep the two newest per machine.
+          #
+          # Collect into an array and bail when it is empty. With nullglob a
+          # non-matching "$d"*.wic vanishes ENTIRELY, so `ls -t` would run with
+          # no arguments, list $PWD — the repo checkout — and feed its 3rd-newest
+          # entries onward to rm. A deploy dir left behind by a build that died
+          # after do_deploy but before do_image_wic reaches exactly that state.
+          # `--` stops a leading-dash filename being read as an option.
+          for d in "$YOCTO_WORK_DIR"/*/tmp/deploy/images/*/; do
+            # Real images only: the rootfs.wic SYMLINK also matches the glob and
+            # is always newest by mtime, so counting it would silently turn
+            # "keep the two newest" into "keep one" (the link's target).
+            wics=()
+            for w in "$d"*.wic; do [ -h "$w" ] || wics+=( "$w" ); done
+            [ ${#wics[@]} -gt 2 ] || continue
+            while IFS= read -r f; do
+              [ -n "$f" ] || continue
+              echo "pruning $(basename "$f") ($(du -h "$f" | cut -f1))"
+              rm -f -- "$f" "$f.bmap"
+            done < <(ls -t -- "${wics[@]}" | tail -n +3)
           done
 
           avail=$(df -BG --output=avail "$YOCTO_WORK_DIR" | tail -1 | tr -dc '0-9')
