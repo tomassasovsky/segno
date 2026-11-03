@@ -227,6 +227,17 @@ void main() {
       expect(find.text(l10n.actionModeCustom), findsOneWidget);
     });
 
+    testWidgets('Press and Hold sit a spacing token apart (#1590 PED-3)', (
+      tester,
+    ) async {
+      await pump(tester);
+      expect(
+        tester.getTopLeft(find.byKey(hold)).dx -
+            tester.getTopRight(find.byKey(press)).dx,
+        SpacingTheme.standard.xl,
+      );
+    });
+
     testWidgets('the fixed switches are dimmed and refuse the tap', (
       tester,
     ) async {

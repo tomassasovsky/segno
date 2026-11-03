@@ -135,12 +135,13 @@ class _ConsoleLicencesSheetState extends State<_ConsoleLicencesSheet> {
                 children: [
                   AppText(
                     l10n.aboutNoticesRow,
+                    // The device dialogs' title, at the scale of the rows
+                    // under it (#1590 DLG-4).
                     style: TextStyle(
                       color: surface.textPrimary,
-                      fontSize: 19,
-                      height: 1.16,
+                      fontSize: 32,
+                      height: 1.15,
                       leadingDistribution: TextLeadingDistribution.even,
-                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(height: kConsoleLabelGap),
@@ -152,8 +153,8 @@ class _ConsoleLicencesSheetState extends State<_ConsoleLicencesSheet> {
                         : l10n.aboutNoticesCount(packages.length),
                     style: TextStyle(
                       color: surface.textSecondary,
-                      fontSize: 16,
-                      height: 1.55,
+                      fontSize: kConsoleRowDetailSize,
+                      height: 1.4,
                       leadingDistribution: TextLeadingDistribution.even,
                     ),
                   ),
@@ -274,7 +275,7 @@ class _ConsoleLicencesSheetState extends State<_ConsoleLicencesSheet> {
                               : TextAlign.left,
                           style: TextStyle(
                             color: surface.textSecondary,
-                            fontSize: 14,
+                            fontSize: 18,
                             height: 1.5,
                             leadingDistribution: TextLeadingDistribution.even,
                           ),

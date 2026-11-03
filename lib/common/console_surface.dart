@@ -24,27 +24,36 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/common/pill_tabs.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 
-/// Height of one list row.
+/// Height of one list row: the settings fact rows' 84, since every row is
+/// drawn on a full-size page or dialog (#1590 DEV-2).
 ///
 /// Fixed rather than intrinsic: a row is a touch target on a console operated
 /// while standing over it, and a row that shrinks when its subtitle is absent
 /// makes the target depend on the data.
-const double kConsoleRowHeight = 70;
+const double kConsoleRowHeight = 84;
 
 /// Horizontal inset of a row's content — also the left edge every title,
 /// banner and switch in a card lines up on.
 const double kConsoleRowInset = 20;
 
-/// Width reserved for a row's disclosure marker.
-const double kConsoleDisclosureWidth = 11;
+/// Width reserved for a row's disclosure marker: the full-size pages' 28 px
+/// chevron.
+const double kConsoleDisclosureWidth = 28;
 
 /// The gap between a row's content and its trailing marks.
-const double kConsoleRowGap = 14;
+const double kConsoleRowGap = 16;
+
+/// A row's title, value and pick-row name size: the settings fact rows'.
+const double kConsoleRowTextSize = 24;
+
+/// A row's subtitle and mono readout size.
+const double kConsoleRowDetailSize = 20;
 
 /// The gap above a group caption — the space that separates one group from
 /// the last thing of the group before it.
@@ -266,16 +275,10 @@ class ConsoleDisclosure extends StatelessWidget {
       width: kConsoleDisclosureWidth,
       child: open == null
           ? const SizedBox.shrink()
-          : AppText(
-              open ? '▾' : '▸',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: surface.textMuted,
-                fontFamily: SurfaceTheme.monoFont,
-                fontSize: 13,
-                height: 1.15,
-                leadingDistribution: TextLeadingDistribution.even,
-              ),
+          : Icon(
+              open ? LucideIcons.chevronDown : LucideIcons.chevronRight,
+              size: kConsoleDisclosureWidth,
+              color: surface.textSecondary,
             ),
     );
   }
@@ -444,8 +447,8 @@ class ConsoleRow extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: titleColor ?? surface.textPrimary,
-                          fontSize: 17,
-                          height: 1.18,
+                          fontSize: kConsoleRowTextSize,
+                          height: 1.2,
                           leadingDistribution: TextLeadingDistribution.even,
                         ),
                       ),
@@ -460,8 +463,8 @@ class ConsoleRow extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: surface.textMuted,
-                            fontSize: 14,
-                            height: 1.21,
+                            fontSize: kConsoleRowDetailSize,
+                            height: 1.2,
                             leadingDistribution: TextLeadingDistribution.even,
                           ),
                         ),
@@ -483,8 +486,8 @@ class ConsoleRow extends StatelessWidget {
                       style: TextStyle(
                         color: readout,
                         fontFamily: SurfaceTheme.monoFont,
-                        fontSize: 14,
-                        height: 1.14,
+                        fontSize: kConsoleRowDetailSize,
+                        height: 1.2,
                         leadingDistribution: TextLeadingDistribution.even,
                       ),
                     ),
@@ -505,8 +508,8 @@ class ConsoleRow extends StatelessWidget {
                         textAlign: TextAlign.right,
                         style: TextStyle(
                           color: readout,
-                          fontSize: 14,
-                          height: 1.21,
+                          fontSize: kConsoleRowTextSize,
+                          height: 1.2,
                           leadingDistribution: TextLeadingDistribution.even,
                         ),
                       ),
@@ -565,6 +568,9 @@ class ConsoleGroupLabel extends StatelessWidget {
   /// The caption.
   final String label;
 
+  /// The caption's size, at the scale of the full-size rows under it.
+  static const double fontSize = 20;
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
@@ -572,8 +578,8 @@ class ConsoleGroupLabel extends StatelessWidget {
       label,
       style: TextStyle(
         color: surface.textMuted,
-        fontSize: 13,
-        height: 1.23,
+        fontSize: fontSize,
+        height: 1.2,
         // One value, since a caption is one thing: 0.91 is what the DS
         // `SectionCaption` component and the large majority of the pen's
         // screens carry (81 of 102 group captions at last count). The pen's
@@ -2060,7 +2066,7 @@ class ConsoleValueBar extends StatefulWidget {
 
   /// Width of the caption column. Fixed so the bars of a stacked pair start
   /// on the same line whatever their captions are.
-  static const double labelWidth = 106;
+  static const double labelWidth = 170;
 
   /// Width of the readout column, on the same reasoning.
   static const double readoutWidth = 94;
@@ -2158,9 +2164,8 @@ class _ConsoleValueBarState extends State<ConsoleValueBar>
             textAlign: TextAlign.right,
             style: TextStyle(
               color: surface.textMuted,
-              fontSize: 13,
-              height: 1.23,
-              letterSpacing: 0.78,
+              fontSize: kConsoleRowDetailSize,
+              height: 1.2,
               leadingDistribution: TextLeadingDistribution.even,
             ),
           ),
@@ -2249,8 +2254,8 @@ class _ConsoleValueBarState extends State<ConsoleValueBar>
             style: TextStyle(
               color: surface.textSecondary,
               fontFamily: SurfaceTheme.monoFont,
-              fontSize: 14,
-              height: 1.14,
+              fontSize: kConsoleRowDetailSize,
+              height: 1.2,
               leadingDistribution: TextLeadingDistribution.even,
             ),
           ),
@@ -2560,8 +2565,8 @@ class ConsolePickRow extends StatelessWidget {
   /// Whether to paint the hairline below. False on the last row.
   final bool showDivider;
 
-  /// Width of the check column.
-  static const double checkWidth = 13;
+  /// Width of the check column: the full-size check icon.
+  static const double checkWidth = 28;
 
   @override
   Widget build(BuildContext context) {
@@ -2584,19 +2589,10 @@ class ConsolePickRow extends StatelessWidget {
           SizedBox(
             width: checkWidth,
             child: selected
-                ? AppText(
-                    '✓',
-                    // Set in the bundled mono face, like the disclosure
-                    // markers: the check is a glyph the text face is not
-                    // guaranteed to carry, and a tofu box is a worse mark than
-                    // none.
-                    style: TextStyle(
-                      color: surface.accent,
-                      fontFamily: SurfaceTheme.monoFont,
-                      fontSize: 14,
-                      height: 1.2,
-                      leadingDistribution: TextLeadingDistribution.even,
-                    ),
+                ? Icon(
+                    LucideIcons.check,
+                    size: checkWidth,
+                    color: surface.accent,
                   )
                 : const SizedBox.shrink(),
           ),
@@ -2608,8 +2604,8 @@ class ConsolePickRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: dimmed ? surface.textMuted : surface.textPrimary,
-                fontSize: 17,
-                height: 1.18,
+                fontSize: kConsoleRowTextSize,
+                height: 1.2,
                 leadingDistribution: TextLeadingDistribution.even,
               ),
             ),
@@ -2622,8 +2618,8 @@ class ConsolePickRow extends StatelessWidget {
               style: TextStyle(
                 color: surface.textMuted,
                 fontFamily: SurfaceTheme.monoFont,
-                fontSize: 14,
-                height: 1.14,
+                fontSize: kConsoleRowDetailSize,
+                height: 1.2,
                 leadingDistribution: TextLeadingDistribution.even,
               ),
             ),
@@ -3121,8 +3117,8 @@ class ConsolePinnedGroupLabel extends StatelessWidget {
   /// passes [SurfaceTheme.background].
   final Color? fill;
 
-  /// The caption's own line, at [ConsoleGroupLabel]'s 13px × 1.23.
-  static const double lineHeight = 16;
+  /// The caption's own line, at [ConsoleGroupLabel]'s size × 1.2.
+  static const double lineHeight = ConsoleGroupLabel.fontSize * 1.2;
 
   /// What one caption occupies: its line, plus the gap it carries with it.
   static const double extent = lineHeight + kConsoleLabelGap;
