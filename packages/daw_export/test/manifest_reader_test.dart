@@ -286,8 +286,8 @@ void main() {
       'builds a volume automation lane from events.log for a track that '
       'also has an arrangement clip',
       () {
-        Directory('${dir.path}/stems/wet').createSync(recursive: true);
-        File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
+        Directory('${dir.path}/stems/dry').createSync(recursive: true);
+        File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
         File('${dir.path}/performance.json').writeAsStringSync(
           jsonEncode({
             'sample_rate': 48000,
@@ -300,7 +300,7 @@ void main() {
                     {
                       'lane': 0,
                       'deferred': false,
-                      'pcmRef': 'stems/wet/track0.wav',
+                      'pcmRef': 'stems/dry/track0.wav',
                     },
                   ],
                 },
@@ -330,8 +330,8 @@ void main() {
       'builds an activator (mute) automation lane from events.log, '
       'independent of whether a volume lane exists',
       () {
-        Directory('${dir.path}/stems/wet').createSync(recursive: true);
-        File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
+        Directory('${dir.path}/stems/dry').createSync(recursive: true);
+        File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
         File('${dir.path}/performance.json').writeAsStringSync(
           jsonEncode({
             'sample_rate': 48000,
@@ -344,7 +344,7 @@ void main() {
                     {
                       'lane': 0,
                       'deferred': false,
-                      'pcmRef': 'stems/wet/track0.wav',
+                      'pcmRef': 'stems/dry/track0.wav',
                     },
                   ],
                 },
@@ -375,9 +375,9 @@ void main() {
       "a track muted at arm stays off through another track's solo, and a "
       'track soloed at arm silences the rest until that solo clears',
       () {
-        Directory('${dir.path}/stems/wet').createSync(recursive: true);
+        Directory('${dir.path}/stems/dry').createSync(recursive: true);
         for (final channel in [0, 1, 2]) {
-          File('${dir.path}/stems/wet/track$channel.wav').writeAsBytesSync([0]);
+          File('${dir.path}/stems/dry/track$channel.wav').writeAsBytesSync([0]);
         }
         Map<String, dynamic> track(
           int channel, {
@@ -391,7 +391,7 @@ void main() {
             {
               'lane': 0,
               'deferred': false,
-              'pcmRef': 'stems/wet/track$channel.wav',
+              'pcmRef': 'stems/dry/track$channel.wav',
             },
           ],
         };
@@ -435,6 +435,46 @@ void main() {
         expect(lane1.breakpoints.single.value, 0);
         // Track 2: the soloed track itself was audible throughout.
         expect(tracks[2].automationLanes, isEmpty);
+      },
+    );
+
+    test(
+      'a wet arrangement clip gets no volume or activator automation: the '
+      'wet render already applies those gestures',
+      () {
+        Directory('${dir.path}/stems/wet').createSync(recursive: true);
+        File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            'armSnapshot': {
+              'tracks': [
+                {
+                  'channel': 0,
+                  'lanes': [
+                    {
+                      'lane': 0,
+                      'deferred': false,
+                      'pcmRef': 'stems/wet/track0.wav',
+                    },
+                  ],
+                },
+              ],
+            },
+            'disarmSnapshot': {'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+        const codeSetVolume = 7;
+        _writeLog('${dir.path}/events.log', 48000, [
+          (0, codeSetVolume, _generic(0, 0.5)),
+          (48000, codeSetVolume, _generic(0, 0.9)),
+        ]);
+
+        final track = DawManifestReader.read(dir.path)!.tracks.single;
+        expect(track.arrangementClip!.fileRef, 'stems/wet/track0.wav');
+        expect(track.automationLanes, isEmpty);
       },
     );
 
@@ -485,8 +525,8 @@ void main() {
       'threads a real, explicit tempoBpm through to the returned DawProject '
       '(and into beat-unit automation conversion)',
       () {
-        Directory('${dir.path}/stems/wet').createSync(recursive: true);
-        File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
+        Directory('${dir.path}/stems/dry').createSync(recursive: true);
+        File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
         File('${dir.path}/performance.json').writeAsStringSync(
           jsonEncode({
             'sample_rate': 48000,
@@ -499,7 +539,7 @@ void main() {
                     {
                       'lane': 0,
                       'deferred': false,
-                      'pcmRef': 'stems/wet/track0.wav',
+                      'pcmRef': 'stems/dry/track0.wav',
                     },
                   ],
                 },

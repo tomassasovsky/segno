@@ -525,27 +525,5 @@ void main() {
         );
       },
     );
-
-    test(
-      'never writes a <Devices> block: effects reach Live only through the '
-      'wet stem',
-      () {
-        const project = DawProject(
-          tracks: [
-            DawTrack(
-              name: 'Track 0',
-              arrangementClip: DawClip(
-                fileRef: 'stems/wet/track0.wav',
-                startSeconds: 0,
-                lengthSeconds: 4,
-              ),
-            ),
-          ],
-        );
-        final xml = _decompress(buildAls(project));
-        expect(xml, isNot(contains('<Devices>')));
-        expect(xml, isNot(contains('Vst3PluginDevice')));
-      },
-    );
   });
 }

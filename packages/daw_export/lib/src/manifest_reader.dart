@@ -14,8 +14,9 @@ import 'package:daw_export/src/manifest_json.dart';
 /// reference the capture's already-rendered stems (`stems/wet/`, falling
 /// back to `stems/dry/` for a channel whose wet render failed or hasn't run)
 /// and per-lane loop exports (`loops/`), and whose tracks carry automation
-/// lanes reconstructed from the raw logged volume/mute gestures (part 10).
-
+/// lanes reconstructed from the raw logged volume/mute gestures (part 10)
+/// only where the clip is the unity-gain dry stem: the wet render already
+/// applies those gestures, so automating them again would apply them twice.
 abstract final class DawManifestReader {
   /// Reads `<captureDir>/performance.json` and returns the [DawProject] it
   /// describes, or `null` if the manifest is missing/unreadable/corrupt (a
@@ -138,8 +139,12 @@ abstract final class DawManifestReader {
 
       if (arrangementFile == null && sessionClips.isEmpty) continue;
 
+      // The wet render bakes lane-0 volume, mute and solo into the stem
+      // (perf_render.c's wet pass), so only a dry clip gets them as Live
+      // automation.
+      final gainsBaked = arrangementFile?.startsWith('stems/wet/') ?? false;
       final automationLanes = <AutomationLane>[];
-      if (logEntries != null) {
+      if (logEntries != null && !gainsBaked) {
         final raw = EventLogReader.readChannelAutomation(
           logEntries,
           channel,
