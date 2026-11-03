@@ -44,11 +44,13 @@ import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/visualizer/cubit/waveform_window_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:storage_repository/storage_repository.dart';
+import 'package:touch_calibration_client/touch_calibration_client.dart';
 import 'package:update_repository/update_repository.dart';
 import 'package:usb_storage_client/usb_storage_client.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 import '../helpers/helpers.dart';
+import '../settings/touch_calibration/fake_touch_calibration_client.dart';
 import 'screenshot_settings.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
@@ -670,6 +672,11 @@ void main() {
             RepositoryProvider<DisplayOutputs>.value(
               value: const UnknownDisplayOutputs(),
             ),
+            // The console's panels take a calibration, so the Displays cards
+            // offer Calibrate touch as they do on the console.
+            RepositoryProvider<TouchCalibrationClient>.value(
+              value: FakeTouchCalibrationClient(),
+            ),
           ],
           child: MultiBlocProvider(
             providers: [
@@ -1032,7 +1039,7 @@ void main() {
       find.byType(Scaffold),
       matchesGoldenFile('goldens/settings_displays_waveform_failed.png'),
     );
-  }, skip: true); // Fails to render: #1500.
+  }, skip: !rendersScreenshots);
 
   testWidgets('Updates page, software updates', (tester) async {
     await pumpSystem(
@@ -1170,7 +1177,7 @@ void main() {
   testWidgets('About page, the open-source notices panel', (tester) async {
     seedLicences();
     await pumpSystem(tester, const AboutSettingsPage());
-    await tester.tap(find.byKey(const Key('system_about_notices')));
+    await tester.tap(find.byKey(const Key('about_notices')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('console_licence_segno')));
     await tester.pumpAndSettle();
@@ -1181,7 +1188,7 @@ void main() {
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/settings_about_licences.png'),
     );
-  }, skip: true); // Fails to render: #1500.
+  }, skip: !rendersScreenshots);
 
   testWidgets('About page', (tester) async {
     seedLicences();

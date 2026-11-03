@@ -1847,6 +1847,14 @@ void main() {
       expect(telemetry.session.hasTrouble, isFalse);
       expect(buildRepo().readCallbackTelemetry(), CallbackTelemetry.empty);
     });
+
+    test('reads the frames processed fresh from the engine', () {
+      final repo = buildRepo();
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(framesProcessed: 480);
+      expect(repo.readFramesProcessed(), 480);
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(framesProcessed: 960);
+      expect(repo.readFramesProcessed(), 960);
+    });
   });
 
   group('looperState stream', () {

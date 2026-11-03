@@ -845,6 +845,7 @@ void main() {
             countInBars: any(named: 'countInBars'),
             soundStart: any(named: 'soundStart'),
             editKind: any(named: 'editKind'),
+            releasedSettings: any(named: 'releasedSettings'),
           ),
         );
       },
