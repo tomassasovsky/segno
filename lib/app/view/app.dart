@@ -998,6 +998,19 @@ class _AppViewState extends State<_AppView> {
         body: (l10n) => l10n.bluetoothRetiredNotice(count),
       ),
     );
+    // Recorded once it is on screen, not when it is queued: a console
+    // switched off while it waits says it at the next start.
+    bool said(NoticesState state) =>
+        state.message?.notice.id == AppNoticeId.bluetoothRetired;
+    if (!said(_notices.state) &&
+        !said(
+          await _notices.stream.firstWhere(
+            said,
+            orElse: () => const NoticesState(),
+          ),
+        )) {
+      return;
+    }
     await settings.saveBluetoothRetiredNoticeShown();
   }
 
