@@ -202,6 +202,7 @@ typedef struct le_cache_job {
   float vol;
   int32_t len;
   int32_t sample_rate;
+  uint32_t hop_period; /* le_engine::fx_hop_period at enqueue */
   int32_t fx_cap;
   /* The chain, frozen at enqueue — entries, effective bits (D-EFFBITS) and
    * the entries' channel handling and level (slice 3e): a printed Pre entry
@@ -307,7 +308,7 @@ static uint64_t le_ca_snapshot_fp(int32_t count, int32_t chain_on,
                                   const int32_t* types, const int32_t* enabled,
                                   const float params[LE_FX_MAX][LE_FX_PARAMS],
                                   const le_fx_chan* chan, uint32_t top,
-                                  int32_t len, int sr) {
+                                  int32_t len, uint32_t period) {
   uint64_t h = 0xcbf29ce484222325ULL;
   if (count > 0) h = le_fx_fp_u32(h, chain_on ? 1u : 0u);
   for (int32_t i = 0; i < count; ++i) {
@@ -327,7 +328,7 @@ static uint64_t le_ca_snapshot_fp(int32_t count, int32_t chain_on,
    * folds it. */
   for (int32_t i = 0; i < count && chain_on; ++i) {
     if (le_fx_type_hops(types[i]) && enabled[i]) {
-      h = le_fx_fp_u32(h, le_fx_hop_position(top, sr));
+      h = le_fx_fp_u32(h, le_fx_hop_position(top, period));
       break;
     }
   }
@@ -685,7 +686,7 @@ static int le_ca_job_has(le_engine* e, const le_cache_job* job,
  * which is when a clock LFO is. */
 static uint32_t le_ca_hop_tag(le_engine* e, const le_cache_job* job) {
   return le_ca_job_has(e, job, le_fx_type_hops)
-             ? le_fx_hop_position(job->chain.clock0, job->sample_rate) + 1u
+             ? le_fx_hop_position(job->chain.clock0, job->hop_period) + 1u
              : 0u;
 }
 
@@ -873,8 +874,9 @@ static int le_cache_copy_key_matches(le_engine* e, const le_cache_job* job) {
  * switched-off Pitch Shift); turning it on changes the key and re-checks. */
 static int le_cache_hop_unprintable(const int32_t* types,
                                     const int32_t* enabled, int32_t chain_on,
-                                    int32_t count, int32_t len, int sr) {
-  if (!chain_on || len <= 0 || len % (int32_t)le_fx_hop_period(sr) == 0) {
+                                    int32_t count, int32_t len,
+                                    uint32_t period) {
+  if (!chain_on || len <= 0 || le_fx_hop_position((uint32_t)len, period) == 0) {
     return 0;
   }
   for (int32_t s = 0; s < count; ++s) {
@@ -962,7 +964,7 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   const int free_running = le_cache_free_running(types, raw_en, params, chain_on, count,
                                                  len, e->sample_rate);
   if (free_running || le_cache_hop_unprintable(types, raw_en, chain_on, count, len,
-                                               e->sample_rate)) {
+                                               e->fx_hop_period)) {
     lc->state = LE_CACHE_GAVE_UP;
     lc->reason =
         free_running ? LE_CACHE_REASON_FREE_RUNNING : LE_CACHE_REASON_HOP;
@@ -1006,7 +1008,7 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
       atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed);
   const uint64_t fp =
       le_ca_snapshot_fp(count, chain_on, types, raw_en, params, chan, top,
-                        load_i32(&tr->lanes[0].a_len), e->sample_rate);
+                        load_i32(&tr->lanes[0].a_len), e->fx_hop_period);
   /* Cross-check against the canonical atomic fold: a mismatch means the audio
    * thread published a type/count change mid-snapshot — skip this tick rather
    * than schedule a torn chain (the next tick reads it settled). */
@@ -1124,6 +1126,7 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   job->vol = bits_to_f32(vol_bits);
   job->len = len;
   job->sample_rate = sr;
+  job->hop_period = e->fx_hop_period;
   job->fx_cap = e->fx_delay_frames;
   /* The channel handling the fingerprint above was taken over, not a fresh
    * read: the job must render exactly the chain its key names. */
@@ -1197,7 +1200,7 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   const int free_running = le_cache_free_running(types, raw_en, params, chain_on, count,
                                                  len, e->sample_rate);
   if (free_running || le_cache_hop_unprintable(types, raw_en, chain_on, count, len,
-                                               e->sample_rate)) {
+                                               e->fx_hop_period)) {
     lc->state = LE_CACHE_GAVE_UP;
     lc->reason =
         free_running ? LE_CACHE_REASON_FREE_RUNNING : LE_CACHE_REASON_HOP;
@@ -1358,6 +1361,7 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   job->vol = 1.0f;
   job->len = len;
   job->sample_rate = sr;
+  job->hop_period = e->fx_hop_period;
   job->fx_cap = e->fx_delay_frames;
   le_fx_frozen_fill(&job->chain, count, count, chain_on, types, raw_en, params,
                     chan, chan_any, b->fx.hop_seed);
@@ -1484,6 +1488,7 @@ static void le_cache_schedule_source(le_engine* e, struct le_fx_cache* c,
   job->vol_bits = 0;
   job->len = len;
   job->sample_rate = sr;
+  job->hop_period = e->fx_hop_period;
   job->copy_pos = 0;
   job->dry = dry;
   job->wet = NULL;
@@ -1744,7 +1749,7 @@ int32_t le_fx_frozen_state_init(le_fx_state* fx, const le_fx_frozen_chain* c,
      * fresh state starts from that same reset (a raw calloc zero differs —
      * e.g. the octaver's shift smoother seeds at unison 0.5, not 0.0). A
      * hosted plugin's offline slot stays NULL and renders dry. */
-    le_fx_entry_reset(fx, s);
+    le_fx_entry_reset(fx, s, c->type[s]);
     /* Only the entries this state processes own buffers (review L5). */
     if (s >= from && s < to && c->type[s] != LE_FX_NONE &&
         c->type[s] != LE_FX_PLUGIN &&

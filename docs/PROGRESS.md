@@ -68,6 +68,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1270 | Device and appliance pages (Parts 6, 7, 9, 11, 12 shipped; plan approved 2026-10-26 and refreshed; Q5 answered: refuse an Apply over the effects budget; P1, P2, P3a, P3b, P4 and P5 merged; P8 update from USB in review; all parts built; on-device checks listed on the issue) | build | merge-gate | `claude/device-pages-*1270*` |
 | #1342 | Ring carrier firmware updates from the console | in-review | blocked-verify | `claude/ring-update-1342` |
 | #1437 | Recover from and record a freeze (watchdog, pstore, journal sync, lockup policy) | in-review | auto | `claude/appliance-freeze-recovery-1437` |
+| #1590 | Screen audit fixes: class (a) batches 1 to 7 and the owner's class (b) answers, one PR per batch | build | auto | `claude/audit-*-1590-p*` |
 | #1540 | Drive pedals' aliasing at 48 kHz: bench and blind A/B built, the owner's listening decides on oversampling | in-review | auto | `claude/alias-ab-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
