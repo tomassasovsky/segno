@@ -30,6 +30,7 @@ import 'package:segno/looper/view/fx/fx_page.dart';
 import 'package:segno/looper/view/fx/fx_pedal_assignments_page.dart';
 import 'package:segno/looper/view/fx/fx_rack_editor.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:toastification/toastification.dart';
@@ -634,6 +635,10 @@ void main() {
               BlocProvider<ControlCubit>.value(value: control),
             ],
             child: MaterialApp(
+              builder: (context, child) => BlocProvider(
+                create: (_) => NoticesCubit(),
+                child: child,
+              ),
               navigatorKey: segnoNavigatorKey,
               localizationsDelegates: AppLocalizations.localizationsDelegates,
               supportedLocales: AppLocalizations.supportedLocales,
@@ -642,6 +647,8 @@ void main() {
                 extensions: [
                   SurfaceTheme.dark,
                   routingGraphThemeFromSurface(SurfaceTheme.dark),
+                  SpacingTheme.standard,
+                  NoticeTheme.standard,
                 ],
               ),
               home: FxPage(

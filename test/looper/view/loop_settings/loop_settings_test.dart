@@ -17,6 +17,7 @@ import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -699,10 +700,20 @@ void main() {
             BlocProvider.value(value: tracks),
           ],
           child: MaterialApp(
+            builder: (context, child) => BlocProvider(
+              create: (_) => NoticesCubit(),
+              child: child,
+            ),
             navigatorKey: segnoNavigatorKey,
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
-            theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+            theme: ThemeData(
+              extensions: const [
+                SurfaceTheme.dark,
+                SpacingTheme.standard,
+                NoticeTheme.standard,
+              ],
+            ),
             home: pageIdentity == null
                 ? LoopSettingsPage(initial: initial)
                 : ValueListenableBuilder<Key>(
@@ -866,7 +877,17 @@ void main() {
     var resets = 0;
     await tester.pumpWidget(
       MaterialApp(
-        theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+        builder: (context, child) => BlocProvider(
+          create: (_) => NoticesCubit(),
+          child: child,
+        ),
+        theme: ThemeData(
+          extensions: const [
+            SurfaceTheme.dark,
+            SpacingTheme.standard,
+            NoticeTheme.standard,
+          ],
+        ),
         home: Scaffold(
           body: Center(
             child: LoopSlider(
@@ -910,7 +931,17 @@ void main() {
     final previews = <double>[];
     await tester.pumpWidget(
       MaterialApp(
-        theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+        builder: (context, child) => BlocProvider(
+          create: (_) => NoticesCubit(),
+          child: child,
+        ),
+        theme: ThemeData(
+          extensions: const [
+            SurfaceTheme.dark,
+            SpacingTheme.standard,
+            NoticeTheme.standard,
+          ],
+        ),
         home: Scaffold(
           body: Center(
             child: LoopSlider(

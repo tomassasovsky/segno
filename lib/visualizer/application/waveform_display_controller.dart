@@ -19,6 +19,7 @@ class WaveformDisplayContext extends Equatable {
     required this.bank,
     required this.lossLine,
     required this.goodbye,
+    this.notice,
     this.savingStep,
     this.savingProgress = 0,
     this.brightness = 1,
@@ -43,6 +44,9 @@ class WaveformDisplayContext extends Equatable {
   /// readout; empty when there is none.
   final String lossLine;
 
+  /// The main screen's message for the readout's band, or null.
+  final ReadoutNotice? notice;
+
   /// Current power face.
   final ReadoutGoodbye goodbye;
 
@@ -63,6 +67,7 @@ class WaveformDisplayContext extends Equatable {
     mode,
     bank,
     lossLine,
+    notice,
     goodbye,
     savingStep,
     savingProgress,
@@ -358,6 +363,7 @@ class WaveformDisplayController {
       mode: _context.mode,
       activeBank: _context.bank,
       lossLine: _context.lossLine,
+      notice: _context.notice,
       goodbye: _context.goodbye,
       savingStep: _context.savingStep,
       savingProgress: _context.savingProgress,

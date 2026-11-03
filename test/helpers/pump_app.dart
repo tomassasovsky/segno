@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 
 extension PumpApp on WidgetTester {
@@ -20,7 +22,14 @@ extension PumpApp on WidgetTester {
   ///
   /// Re-pumping the SAME flavor does not unmount, so tests that re-pump to
   /// push new state keep their element tree.
-  Future<void> pumpApp(Widget widget, {ThemeData? theme}) async {
+  ///
+  /// Every route gets a [NoticesCubit], as under the real app: pass
+  /// [notices] to drive or read it, or a fresh one is made per pump.
+  Future<void> pumpApp(
+    Widget widget, {
+    ThemeData? theme,
+    NoticesCubit? notices,
+  }) async {
     final next = theme ?? AppTheme.neon;
     final mounted = _mountedTheme();
     if (mounted != null && !_sameFlavor(mounted, next)) {
@@ -33,8 +42,12 @@ extension PumpApp on WidgetTester {
         theme: next,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        builder: (context, child) =>
-            AppTextDefaults(child: child ?? const SizedBox.shrink()),
+        builder: (context, child) {
+          final app = AppTextDefaults(child: child ?? const SizedBox.shrink());
+          return notices == null
+              ? BlocProvider(create: (_) => NoticesCubit(), child: app)
+              : BlocProvider.value(value: notices, child: app);
+        },
         home: widget,
       ),
     );

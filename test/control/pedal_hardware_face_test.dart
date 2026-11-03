@@ -15,7 +15,13 @@ Future<Uint8List> _renderFace(
 }) async {
   await tester.pumpWidget(
     MaterialApp(
-      theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+      theme: ThemeData(
+        extensions: const [
+          SurfaceTheme.dark,
+          SpacingTheme.standard,
+          NoticeTheme.standard,
+        ],
+      ),
       home: Center(
         child: RepaintBoundary(
           key: const Key('face-image'),

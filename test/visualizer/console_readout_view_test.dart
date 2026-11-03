@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
 import 'package:segno/visualizer/performance_readout.dart';
@@ -259,6 +260,84 @@ void main() {
         );
         // At the readout's full size, wrapped onto at most two lines and
         // never ellipsized.
+        expect(text.didExceedMaxLines, isFalse);
+        expect(tester.takeException(), isNull);
+      });
+    });
+
+    group('notice band (#1562)', () {
+      const lost = ReadoutNotice(
+        title: 'Scarlett 4i4 USB disconnected. Nothing is heard.',
+        tone: NoticeTone.critical,
+      );
+
+      testWidgets('nothing over the top margin while the main screen says '
+          'nothing', (tester) async {
+        await pump(tester);
+        expect(find.byKey(const Key('console_readout_notice')), findsNothing);
+      });
+
+      testWidgets('fills the top margin and moves nothing on the readout', (
+        tester,
+      ) async {
+        await pump(tester);
+        final header = tester.getRect(
+          find.byKey(const Key('console_readout_number')),
+        );
+        final footer = tester.getRect(
+          find.byKey(const Key('console_readout_function')),
+        );
+        await pump(
+          tester,
+          readout: const PerformanceReadout(selected: selected, notice: lost),
+        );
+        final band = tester.getRect(
+          find.byKey(const Key('console_readout_notice')),
+        );
+        expect(band.top, 0);
+        expect(band.width, 1280);
+        expect(band.height, NoticeTheme.standard.readoutBandHeight);
+        expect(band.bottom, lessThanOrEqualTo(header.top));
+        expect(
+          tester.getRect(find.byKey(const Key('console_readout_number'))),
+          header,
+        );
+        expect(
+          tester.getRect(find.byKey(const Key('console_readout_function'))),
+          footer,
+        );
+        expect(
+          find.text(lost.title, findRichText: true),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets("a track's message says the track first, on one line", (
+        tester,
+      ) async {
+        await pump(
+          tester,
+          size: const Size(1024, 600),
+          readout: const PerformanceReadout(
+            selected: selected,
+            notice: ReadoutNotice(
+              title: 'Recording did not start',
+              body: 'Press Record again',
+              tone: NoticeTone.warning,
+              track: 'GUITAR',
+            ),
+          ),
+        );
+        expect(
+          find.textContaining('GUITAR', findRichText: true),
+          findsOneWidget,
+        );
+        final text = tester.renderObject<RenderParagraph>(
+          find.descendant(
+            of: find.byKey(const Key('console_readout_notice_text')),
+            matching: find.byType(RichText),
+          ),
+        );
         expect(text.didExceedMaxLines, isFalse);
         expect(tester.takeException(), isNull);
       });

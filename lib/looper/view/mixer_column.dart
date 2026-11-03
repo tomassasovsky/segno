@@ -26,6 +26,7 @@ import 'package:segno/looper/view/track_column.dart'
     show PrimaryCrown, SlotFigure;
 import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/looper/view/tracks_commands.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 
 /// One track's Mixer strip (accepted design, the Mixer view): its name and
@@ -146,7 +147,9 @@ class MixerColumn extends StatelessWidget {
         color: looper.tileBackground,
         borderRadius: BorderRadius.circular(17),
         border: Border.all(
-          color: selected ? surface.onAccent : surface.card,
+          color:
+              trackNoticeRing(context, track.channel) ??
+              (selected ? surface.onAccent : surface.card),
           width: borderWidth,
         ),
       ),
@@ -180,12 +183,17 @@ class MixerColumn extends StatelessWidget {
           ),
           const SizedBox(height: _gap),
           Expanded(
-            child: _StripMeter(
-              track: track,
-              cursor: cursor,
-              routeCurrent: routeCurrent,
-              color: barColor,
-              clipColor: looper.recordColor,
+            // A message this track caused takes the fader's place for as
+            // long as it is up (#1562).
+            child: TrackNotice(
+              channel: track.channel,
+              child: _StripMeter(
+                track: track,
+                cursor: cursor,
+                routeCurrent: routeCurrent,
+                color: barColor,
+                clipColor: looper.recordColor,
+              ),
             ),
           ),
           const SizedBox(height: _gap),

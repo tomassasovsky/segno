@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/settings/view/network_settings_page.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:wifi_repository/wifi_repository.dart';
@@ -127,6 +129,8 @@ ThemeData _theme() => ThemeData(
   extensions: [
     SurfaceTheme.dark,
     routingGraphThemeFromSurface(SurfaceTheme.dark),
+    SpacingTheme.standard,
+    NoticeTheme.standard,
   ],
 );
 
@@ -148,9 +152,12 @@ void main() {
         supportedLocales: AppLocalizations.supportedLocales,
         // The progress bar sweeps while a join runs; held still, a settled
         // pump means the page is idle rather than mid-animation.
-        builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(disableAnimations: true),
-          child: child!,
+        builder: (context, child) => BlocProvider(
+          create: (_) => NoticesCubit(),
+          child: MediaQuery(
+            data: MediaQuery.of(context).copyWith(disableAnimations: true),
+            child: child!,
+          ),
         ),
         home: NetworkSettingsPage(repository: WifiRepository(client: wifi)),
       ),

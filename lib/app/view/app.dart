@@ -43,6 +43,7 @@ import 'package:segno/looper/application/settings_owner.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
@@ -220,6 +221,9 @@ class _AppState extends State<App> {
   StreamSubscription<MixSettingsOutcome>? _mixFailureSubscription;
   PowerKeySource? _powerKeySource;
   final _controlNotices = ControlSettingsNotices();
+
+  /// The app's one notice centre (#1562), held while the Power screen is up.
+  final _notices = NoticesCubit();
   late final TempoCubit _tempoView;
   final _ownerSubscriptions = <StreamSubscription<void>>[];
   StreamSubscription<int>? _recordingInputRequiredSubscription;
@@ -328,6 +332,7 @@ class _AppState extends State<App> {
     unawaited(_overdubRefusedSubscription?.cancel());
     unawaited(_lengthHistoryRefusedSubscription?.cancel());
     _controlNotices.dispose();
+    unawaited(_notices.close());
     unawaited(
       _closeControlOwners().catchError((Object error, StackTrace stack) {
         AppLog.error('application teardown failed', error: error, stack: stack);
@@ -561,6 +566,7 @@ class _AppState extends State<App> {
 
   void _syncControlNoticesWithPower(PowerState state) {
     if (!mounted) return;
+    _notices.setHeld(held: state.isUiUp);
     _controlNotices.setPowerVisible(visible: state.isUiUp);
     if (state.isUiUp) dismissAppToast(AppToastId.recordingInputRequired);
   }
@@ -657,6 +663,7 @@ class _AppState extends State<App> {
           // drive routing edits through the bloc, mirroring the in-view routing
           // controls. The TracksCubit below is hoisted for the same reason.
           // Remote and console controls are interpreted by ControlCubit.
+          BlocProvider<NoticesCubit>.value(value: _notices),
           BlocProvider<LooperBloc>.value(value: _runtime.looper),
           BlocProvider<SessionCubit>.value(value: _runtime.session),
           BlocProvider<BackingCubit>.value(value: _runtime.backingView),
@@ -1069,6 +1076,7 @@ class _AppViewState extends State<_AppView> {
       bank: control.activeBank,
       lossLine:
           audioLossLine(_l10n, context.read<AudioSetupCubit>().state) ?? '',
+      notice: _readoutNotice(),
       goodbye: readoutGoodbyeOf(
         power,
         installsUpdate:
@@ -1079,6 +1087,36 @@ class _AppViewState extends State<_AppView> {
       brightness: context.read<DisplayBrightnessCubit>().state.softwareOf(
         DisplayRole.track,
       ),
+    );
+  }
+
+  /// What the readout's band says (#1562): the top bar's must-act message,
+  /// unless a passing message is newer, in the same order the main screen
+  /// shows them; a track's message says the track's name first.
+  ReadoutNotice? _readoutNotice() {
+    final notices = context.read<NoticesCubit>().state;
+    final l10n = _l10n;
+    final message = notices.held ? null : notices.message;
+    final track = notices.latestTrackMessage;
+    final ShownNotice? passing;
+    int? channel;
+    if (track != null &&
+        (message == null || track.shown.serial > message.serial)) {
+      passing = track.shown;
+      channel = track.channel;
+    } else {
+      passing = message;
+    }
+    final shown = passing ?? notices.banner;
+    if (shown == null) return null;
+    final notice = shown.notice;
+    return ReadoutNotice(
+      title: notice.title(l10n),
+      body: notice.body?.call(l10n),
+      tone: notice.tone,
+      track: channel == null
+          ? null
+          : l10n.trackName(context.read<TracksCubit>().state.names, channel),
     );
   }
 
@@ -1485,6 +1523,9 @@ class _AppViewState extends State<_AppView> {
           listener: (_, _) => _reconcileRestoreNotices(),
         ),
         BlocListener<ControlCubit, ControlState>(
+          listener: (_, _) => _updateDisplayContext(),
+        ),
+        BlocListener<NoticesCubit, NoticesState>(
           listener: (_, _) => _updateDisplayContext(),
         ),
         BlocListener<ControlCubit, ControlState>(

@@ -38,6 +38,7 @@ import 'package:segno/looper/view/stage_top_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
 import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/looper/view/tracks_chrome.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/settings/settings.dart';
@@ -275,6 +276,10 @@ void main() {
   }) => tester.pumpWidget(
     ToastificationWrapper(
       child: MaterialApp(
+        builder: (context, child) => BlocProvider(
+          create: (_) => NoticesCubit(),
+          child: child,
+        ),
         // The root key, so Settings and its destinations push over the stage.
         navigatorKey: segnoNavigatorKey,
         navigatorObservers: navigatorObservers,
@@ -1401,6 +1406,10 @@ void main() {
       seed(LooperState(tracks: [liveTrack ?? track]));
       return tester.pumpWidget(
         MaterialApp(
+          builder: (context, child) => BlocProvider(
+            create: (_) => NoticesCubit(),
+            child: child,
+          ),
           theme: AppTheme.neon,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,

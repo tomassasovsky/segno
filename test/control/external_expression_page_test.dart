@@ -32,6 +32,7 @@ import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
@@ -325,12 +326,18 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        builder: (context, child) => BlocProvider(
+          create: (_) => NoticesCubit(),
+          child: child,
+        ),
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
           extensions: [
             SurfaceTheme.dark,
             routingGraphThemeFromSurface(SurfaceTheme.dark),
+            SpacingTheme.standard,
+            NoticeTheme.standard,
           ],
         ),
         home: MultiRepositoryProvider(

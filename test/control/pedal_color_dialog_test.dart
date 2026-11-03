@@ -67,7 +67,13 @@ void main() {
         MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
-          theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+          theme: ThemeData(
+            extensions: const [
+              SurfaceTheme.dark,
+              SpacingTheme.standard,
+              NoticeTheme.standard,
+            ],
+          ),
           home: Builder(
             builder: (context) => TextButton(
               onPressed: () => unawaited(

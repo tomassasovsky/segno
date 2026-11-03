@@ -17,6 +17,7 @@ import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -322,12 +323,18 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        builder: (context, child) => BlocProvider(
+          create: (_) => NoticesCubit(),
+          child: child,
+        ),
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
           extensions: [
             SurfaceTheme.dark,
             routingGraphThemeFromSurface(SurfaceTheme.dark),
+            SpacingTheme.standard,
+            NoticeTheme.standard,
           ],
         ),
         home: RepositoryProvider<LooperRepository>.value(

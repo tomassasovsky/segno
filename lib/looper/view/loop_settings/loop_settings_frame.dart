@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:segno/common/top_bar_layout.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The pen's canvas for every Loop settings page: 1920 x 1080.
@@ -95,6 +97,10 @@ class LoopSettingsFrame extends StatelessWidget {
   /// Save) is 64 high at 30, the height of its buttons, and its title has no
   /// tracking; a title alone is 72 high at 28 and tracked -1.1. The title is
   /// centred in either.
+  /// The top bar's inset from the canvas edges: Back at 36, Stage ending
+  /// 36 before the right edge.
+  static const double _barInset = 36;
+
   static ({double top, double height, double tracking}) _titleRow({
     required bool actions,
   }) => actions
@@ -110,49 +116,47 @@ class LoopSettingsFrame extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
+          SizedBox(
             height: kLoopTopBarHeight,
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: surface.frameRule)),
-            ),
-            child: Stack(
-              children: [
-                Positioned(
-                  left: 36,
-                  top: 16,
-                  child: LoopOutlinedButton(
-                    key: const Key('loop_settings_back'),
-                    width: 64,
-                    radius: 8,
-                    tone: LoopButtonTone.frame,
-                    icon: LucideIcons.chevronLeft,
-                    semanticLabel: l10n.loopSettingsBack,
-                    onTap: onBack,
-                  ),
-                ),
-                if (tabs case final tabs?)
-                  Positioned(left: 124, top: 16, child: tabs),
-                if (crumb case final crumb?)
-                  Positioned(
-                    left: 124,
-                    top: 36,
-                    child: AppText(
-                      crumb,
-                      style: TextStyle(
-                        color: surface.frameCrumb,
-                        fontFamily: SurfaceTheme.frameFont,
-                        fontSize: 20,
-                        letterSpacing: 0,
-                        height: 1,
+            child: NoticeBar(
+              restingRule: surface.frameRule,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: _barInset),
+                child: TopBarLayout(
+                  leading: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      LoopOutlinedButton(
+                        key: const Key('loop_settings_back'),
+                        width: 64,
+                        radius: 8,
+                        tone: LoopButtonTone.frame,
+                        icon: LucideIcons.chevronLeft,
+                        semanticLabel: l10n.loopSettingsBack,
+                        onTap: onBack,
                       ),
-                    ),
+                      if (tabs != null || crumb != null)
+                        SizedBox(width: context.spacing.xl),
+                      ?tabs,
+                      if (crumb case final crumb?)
+                        AppText(
+                          crumb,
+                          style: TextStyle(
+                            color: surface.frameCrumb,
+                            fontFamily: SurfaceTheme.frameFont,
+                            fontSize: 20,
+                            letterSpacing: 0,
+                            height: 1,
+                          ),
+                        ),
+                    ],
                   ),
-                Positioned(
-                  left: 1771,
-                  top: 16,
+                  // The app's messages (#1562). A settings page draws no
+                  // track cards, so a track's message is said here too.
+                  centre: const NoticeBarMessage(showsTrackMessages: true),
                   // Arimo's line metrics put a label centred in a 64 high
                   // box 2 px under where the pen's text box sets it.
-                  child: AppTextOptics(
+                  trailing: AppTextOptics(
                     opticalOffset: const Offset(0, -2),
                     child: LoopOutlinedButton(
                       key: const Key('loop_settings_stage'),
@@ -164,7 +168,7 @@ class LoopSettingsFrame extends StatelessWidget {
                     ),
                   ),
                 ),
-              ],
+              ),
             ),
           ),
           Expanded(

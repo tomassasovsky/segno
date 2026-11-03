@@ -13,6 +13,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/foot_fade_view.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -155,6 +156,10 @@ void main() {
             BlocProvider<TracksCubit>.value(value: tracks),
           ],
           child: MaterialApp(
+            builder: (context, child) => BlocProvider(
+              create: (_) => NoticesCubit(),
+              child: child,
+            ),
             navigatorKey: segnoNavigatorKey,
             theme: AppTheme.neon,
             localizationsDelegates: AppLocalizations.localizationsDelegates,
