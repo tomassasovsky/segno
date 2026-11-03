@@ -372,9 +372,11 @@ typedef enum le_command_code {
                            * control thread before the push. */
   LE_CMD_UNDO_TO_EMPTY = 39,   /* undo past the base layer: track to EMPTY,
                                 * len 0, master grid kept. arg_i = track. */
-  LE_CMD_REDO_FROM_EMPTY = 40, /* reinstate an undone-to-empty track. lanei
-                                * arm: channel, value = restored length. The
-                                * control thread already swapped a_live. */
+  LE_CMD_REDO_FROM_EMPTY = 40, /* reinstate an undone-to-empty track.
+                                * `restore` arm: channel, len = restored
+                                * length, anchor = the lap the take was
+                                * played on (#854). The control thread
+                                * already swapped a_live. */
   LE_CMD_RESTORE_CLEAR = 43,   /* undo of an undoable clear: reinstate a cleared
                                 * track. `restore` arm. Distinct from REDO_FROM_
                                 * EMPTY because it restores the pre-clear STATE
@@ -563,10 +565,11 @@ typedef enum le_command_code {
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
   LE_EVT_LAYER_RETIRED = 100, /* a completed overdub-pass snapshot. evt arm:
                                * channel, slot, generation. */
-  LE_EVT_TAKE_CANCELLED = 101, /* LE_CMD_CANCEL_TAKE landed: lanei arm —
-                                * channel, value = the finalized length the
-                                * emptied track holds for redo (0: nothing
-                                * was captured, nothing to redo). */
+  LE_EVT_TAKE_CANCELLED = 101, /* LE_CMD_CANCEL_TAKE landed: `restore`
+                                * arm — channel, len = the finalized length
+                                * the emptied track holds for redo (0:
+                                * nothing was captured, nothing to redo),
+                                * anchor = the take's lap (#854). */
   LE_CMD_SET_FX_RECIPE = 77,
   LE_CMD_SET_RECORD_TIMING = 78, /* one complete timing vector and receipt */
   LE_CMD_STOP_RECORD_CONTROL = 79, /* cohort cancel or non-acquiring capture finish */

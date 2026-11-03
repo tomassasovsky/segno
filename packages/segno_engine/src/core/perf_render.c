@@ -1143,6 +1143,10 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
       arm_track != NULL
           ? (int64_t)le_json_number(le_json_get(arm_track, "anchorLap"), 0)
           : 0;
+  const int64_t arm_multiple =
+      arm_track != NULL
+          ? (int64_t)le_json_number(le_json_get(arm_track, "multiple"), 1)
+          : 1;
   const le_json_value* arm_lane = le_pr_find_lane0(m->arm_tracks, channel);
   if (arm_lane != NULL &&
       le_json_bool(le_json_get(arm_lane, "deferred"), 0) == 0) {
@@ -1155,12 +1159,14 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
         int32_t frames = 0;
         float* image = le_pr_read_wav_mono(path, &frames);
         if (image != NULL) {
-          /* The anchor's laps, taken off modulo the image so the phase
-           * stays non-negative (le_pr_append_segment reduces it). */
+          /* The anchor's laps in the image's own segments (a take laid
+           * down at another tempo is not multiple * master frames long),
+           * taken off modulo the image so the phase stays non-negative
+           * (le_pr_append_segment reduces it). */
           const uint64_t anchor_frames =
-              frames > 0 && arm_anchor > 0
-                  ? (uint64_t)(arm_anchor * m->perf_arm_master_len) %
-                        (uint64_t)frames
+              frames > 0 && arm_anchor > 0 && arm_multiple > 1
+                  ? (uint64_t)(arm_anchor % arm_multiple) *
+                        (uint64_t)(frames / arm_multiple)
                   : 0;
           const uint64_t arm_phase =
               m->perf_arm_present

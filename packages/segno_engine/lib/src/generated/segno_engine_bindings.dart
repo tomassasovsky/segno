@@ -8485,9 +8485,11 @@ enum le_command_code {
   /// len 0, master grid kept. arg_i = track.
   LE_CMD_UNDO_TO_EMPTY(39),
 
-  /// reinstate an undone-to-empty track. lanei
-  /// arm: channel, value = restored length. The
-  /// control thread already swapped a_live.
+  /// reinstate an undone-to-empty track.
+  /// `restore` arm: channel, len = restored
+  /// length, anchor = the lap the take was
+  /// played on (#854). The control thread
+  /// already swapped a_live.
   LE_CMD_REDO_FROM_EMPTY(40),
 
   /// undo of an undoable clear: reinstate a cleared
@@ -8637,10 +8639,11 @@ enum le_command_code {
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100),
 
-  /// LE_CMD_CANCEL_TAKE landed: lanei arm —
-  /// channel, value = the finalized length the
-  /// emptied track holds for redo (0: nothing
-  /// was captured, nothing to redo).
+  /// LE_CMD_CANCEL_TAKE landed: `restore`
+  /// arm — channel, len = the finalized length
+  /// the emptied track holds for redo (0:
+  /// nothing was captured, nothing to redo),
+  /// anchor = the take's lap (#854).
   LE_EVT_TAKE_CANCELLED(101),
   LE_CMD_SET_FX_RECIPE(77),
 

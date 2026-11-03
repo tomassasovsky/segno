@@ -72,20 +72,26 @@ static void anchor_play_all(le_engine* e, int32_t tracks) {
   drain(e);
 }
 
+/* The owner's two takes on a silent 1-bar master on track 0. */
+static le_engine* anchor_rig(void) {
+  le_engine* e = make_configured_engine();
+  record_base_loop(e, 0.0f);
+  anchor_to_bar(e, 0);
+  anchor_record_4(e, 1, anchor_chords);
+  anchor_to_bar(e, 2);
+  anchor_record_4(e, 2, anchor_melody);
+  return e;
+}
+
 /* The owner's example through every reset: Stop-all then Play, a Session
  * saved and recalled into a fresh engine, a retained reopen, the undo of a
  * Clear and the redo of an undone take. After each restart the chords start
  * on bar 1 and the melody keeps its two-bar offset. */
 static void test_anchor_offset_survives_resets(void) {
   printf("test_anchor_offset_survives_resets\n");
-  le_engine* e = make_configured_engine();
+  le_engine* e = anchor_rig();
   le_snapshot s;
 
-  record_base_loop(e, 0.0f); /* a silent 1-bar master on track 0 */
-  anchor_to_bar(e, 0);
-  anchor_record_4(e, 1, anchor_chords);
-  anchor_to_bar(e, 2);
-  anchor_record_4(e, 2, anchor_melody);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[1].multiple == 4);
   CHECK(s.tracks[2].multiple == 4);
@@ -172,6 +178,81 @@ static void test_anchor_offset_survives_resets(void) {
   anchor_play_all(e, 3);
   CHECK(anchor_play_laps(e) == 0);
 
+  le_engine_destroy(e);
+}
+
+/* At another Speed a restart still keeps the offset (#854): the lap count
+ * carries the anchor in song frames and the Speed would scale it, so the
+ * melody would come back one bar after the chords at 1/2x instead of two. */
+static void test_anchor_offset_survives_stop_all_at_half_speed(void) {
+  printf("test_anchor_offset_survives_stop_all_at_half_speed\n");
+  le_engine* e = anchor_rig();
+  uint64_t id = 0;
+  CHECK(le_engine_set_speed(e, 1, 2, &id) == LE_OK && id != 0);
+  drain(e);
+  anchor_stop_all(e, 3);
+  anchor_play_all(e, 3);
+  /* Half a take frame a song frame: an even frame reads a whole index, so
+   * frame f plays chords bar (f / 2) / 4 and the melody two bars on. */
+  float out[8 * LOOP_N];
+  process_const(e, 0.0f, 8 * LOOP_N, out);
+  for (int f = 0; f < 8 * LOOP_N; f += 2) {
+    const int bar = (f / 2) / LOOP_N;
+    CHECK(fabsf(out[f] - (anchor_chords[bar] + anchor_melody[(bar + 2) % 4])) <
+          1e-5f);
+  }
+  le_engine_destroy(e);
+}
+
+/* A mode switch that changes the base counts the anchor again in the new
+ * base's laps (#854): the melody's two 1-bar laps are one 2-bar lap once a
+ * 2-bar primary sets the base. */
+static void test_anchor_mode_switch_recounts_laps(void) {
+  printf("test_anchor_mode_switch_recounts_laps\n");
+  le_engine* e = anchor_rig();
+  float out[2 * LOOP_N];
+  le_snapshot s;
+  /* A silent 2-bar take on track 3, crowned: SYNC's base. */
+  anchor_to_bar(e, 0);
+  CHECK(le_engine_record(e, 3) == LE_OK);
+  process_const(e, 0.0f, 2 * LOOP_N, out);
+  CHECK(le_engine_record(e, 3) == LE_OK);
+  drain(e);
+  CHECK(le_engine_crown_primary(e, 3) == LE_OK);
+  drain(e);
+  anchor_stop_all(e, 4);
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 2 * LOOP_N);
+  CHECK(s.tracks[1].multiple == 2);
+  CHECK(s.tracks[2].multiple == 2);
+  CHECK(s.tracks[1].anchor_lap == 0);
+  CHECK(s.tracks[2].anchor_lap == 1);
+  anchor_play_all(e, 4);
+  CHECK(anchor_play_laps(e) == 0);
+  le_engine_destroy(e);
+}
+
+/* An undo that empties a take whose Redo is still in the ring files the lap
+ * that Redo carries, not the 0 the empty track still publishes (#854). */
+static void test_anchor_undo_behind_a_queued_redo(void) {
+  printf("test_anchor_undo_behind_a_queued_redo\n");
+  le_engine* e = anchor_rig();
+  le_snapshot s;
+  CHECK(le_engine_undo(e, 2) == LE_OK);
+  drain(e);
+  CHECK(le_engine_redo(e, 2) == LE_OK);
+  CHECK(le_engine_undo(e, 2) == LE_OK); /* before the callback applies it */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].state == LE_TRACK_EMPTY);
+  CHECK(le_engine_redo(e, 2) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].anchor_lap == 2);
+  anchor_to_bar(e, 0);
+  CHECK(anchor_play_laps(e) == 0);
   le_engine_destroy(e);
 }
 
@@ -271,7 +352,7 @@ static void test_anchor_perf_render_arm_image(void) {
            "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
            "\"track0-lane0.wav\", \"effects\": []}]}, "
            "{\"channel\": 1, \"volume\": 1.0, \"muted\": false, "
-           "\"anchorLap\": 1, \"lanes\": "
+           "\"multiple\": 2, \"anchorLap\": 1, \"lanes\": "
            "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
            "\"track1-lane0.wav\", \"effects\": []}]}]}, "
            "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}",
@@ -291,6 +372,9 @@ static void test_anchor_perf_render_arm_image(void) {
 
 static void run_anchor_tests(void) {
   test_anchor_offset_survives_resets();
+  test_anchor_offset_survives_stop_all_at_half_speed();
+  test_anchor_mode_switch_recounts_laps();
+  test_anchor_undo_behind_a_queued_redo();
   test_anchor_import_contract();
   test_anchor_perf_render_arm_image();
 }

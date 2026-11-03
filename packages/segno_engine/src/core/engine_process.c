@@ -392,6 +392,24 @@ static void le_head_follow(le_engine* e, le_track* t, uint64_t frame,
   le_span_log(e, t, frame, logged, le_head_index(&t->head, pos, len), turn);
 }
 
+/* Parks a take's head for a restart at its anchor (#854). Its lap count
+ * carries the anchor in song frames, which the head's rate would scale by
+ * the Speed too; the origin takes the Speed back out, so at any Speed the
+ * take restarts on the image frame it reads at 1x, where it sits against
+ * the other takes. A span's ratio stays in: it converts song frames to the
+ * take's own. Origin 0 at 1x, as every restart parked it before. */
+static void le_track_park_head(le_engine* e, le_track* t) {
+  t->head.origin = 0.0;
+  if (e->speed_numer == e->speed_denom) return;
+  int32_t len;
+  const int64_t pos = le_track_song_position(e, t, &len);
+  if (len <= 0 || pos == 0) return;
+  const double speed = (double)e->speed_numer / (double)e->speed_denom;
+  const le_read_head unit = {t->head.reversed, 0.0, t->head.rate / speed};
+  t->head.origin =
+      le_head_origin(&t->head, le_head_index(&unit, pos, len), pos, len);
+}
+
 /* Latches the tempo the shared clock's length measures as the recorded one
  * (a defined, committed or regridded master), or none without a grid. */
 static void le_tempo_latch(le_engine* e) {
@@ -744,6 +762,7 @@ static void le_apply_mode_switch(le_engine* e, int32_t m, uint64_t frame) {
   const int32_t prev = load_i32(&e->a_looper_mode);
   if (prev == m) return;
   store_i32(&e->a_looper_mode, m);
+  const int32_t old_base = e->clock.length; /* the laps anchors count (#854) */
   const int to_free = m == LE_LOOPER_MODE_FREE || m == LE_LOOPER_MODE_SONG;
   /* Free/Song put the shared master DORMANT, and that must happen whether or
    * not anything is recorded — before the "nothing to re-clock" return below.
@@ -793,8 +812,9 @@ static void le_apply_mode_switch(le_engine* e, int32_t m, uint64_t frame) {
     le_track* tr = &e->tracks[t];
     const int32_t len = load_i32(&tr->lanes[0].a_len);
     /* A take keeps the lap it was played on (#854) on a shared clock; Free
-     * and Song have none, so a take returning from them starts on lap 0. */
-    const int32_t anchor = le_track_anchor(tr);
+     * and Song have none, so a take returning from them starts on lap 0.
+     * Counted in frames, so a new base re-counts it in its own laps. */
+    const int64_t anchor_frames = (int64_t)le_track_anchor(tr) * old_base;
     tr->start_iter = 0;
     tr->free_iteration = 0;
     tr->head.origin = 0.0;
@@ -814,8 +834,12 @@ static void le_apply_mode_switch(le_engine* e, int32_t m, uint64_t frame) {
       le_restore_multiple_or_divisor(
           tr, load_i32(&e->tracks[primary].lanes[0].a_len), len);
     }
-    le_track_anchor_set(tr, anchor);
+    const int32_t new_base = e->clock.length;
+    le_track_anchor_set(tr, new_base > 0 && anchor_frames % new_base == 0
+                                ? (int32_t)(anchor_frames / new_base)
+                                : 0);
     le_head_follow(e, tr, frame, 0);
+    le_track_park_head(e, tr);
   }
   le_primary_reconcile(e);
 }
@@ -1938,6 +1962,9 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
     store_i32(&t->a_multiple, k);
     le_track_set_len(t, k * base);
   }
+  /* The take's anchor, at once (#854): control may file it for an undo to
+   * empty before the block's end publishes it. */
+  store_i32(&t->a_anchor, le_track_anchor(t));
   /* #728: the seam. A non-defining take gets NO crossfade from this function —
    * its head holds the moment the take started and its tail the moment it
    * ended, a whole lap apart, so every playback wrap splices. Arm the trailing
@@ -2435,7 +2462,7 @@ void le_engine_reopen_settle(le_engine* e, uint32_t drop_mask) {
      * through the ordinary handle_play / unpark path, the same transport
      * fact LE_CMD_COMMIT_SESSION establishes for a recalled Session. */
     le_reset_track_playback(t);
-    le_track_anchor_set(t, le_track_anchor(t)); /* #854: from lap 0 */
+    le_track_anchor_rebase(t); /* #854: from lap 0 */
     t->record_pos = 0;
     t->record_start = 0;
     t->od_gain = 0.0f;
@@ -2452,6 +2479,7 @@ void le_engine_reopen_settle(le_engine* e, uint32_t drop_mask) {
   for (int32_t ch = 0; ch < e->track_count; ++ch) {
     e->tracks[ch].free_clock.position = 0;
     e->tracks[ch].free_iteration = 0;
+    le_track_park_head(e, &e->tracks[ch]); /* on its anchor at any Speed */
   }
   /* A drop that leaves every track EMPTY resets the master so a new loop can
    * be defined — exactly handle_clear's rule (a rig that was already all
@@ -4124,6 +4152,7 @@ static void le_length_apply(le_engine* e, le_track* t, const le_command* cmd,
     if (seg < 0) seg += cmd->length.multiple;
     t->start_iter = e->loop_iteration - (uint64_t)seg;
   }
+  store_i32(&t->a_anchor, le_track_anchor(t)); /* at once (#854) */
   t->turn_left = 0;
   /* A Transpose render (#1179) is of the old image and length: the track
    * plays its dry take at once, with no window over the old render (its
@@ -4570,7 +4599,7 @@ static int32_t le_bounce_install(le_engine* e, le_bounce_bundle* b,
     t->start_iter = master > 0 ? e->loop_iteration : g->start_iter;
     /* On the same clock the side keeps its anchor, from lap 0 (#854): a
      * Stop-all since it was filed restarted the lap count below it. */
-    if (master == 0) le_track_anchor_set(t, le_track_anchor(t));
+    if (master == 0) le_track_anchor_rebase(t);
   }
   if (g->reversed) {
     /* Origin 0 (le_reset_track_playback above): a reversed lap starts at
@@ -6332,6 +6361,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
          * the lap start of an installed direction (#1162). */
         le_reset_track_playback(tr);
         le_head_follow(e, tr, frame, 0); /* its span's rate (#1179 4b) */
+        le_track_park_head(e, tr); /* on its anchor at any Speed (#854) */
         store_i32(&tr->a_state, LE_TRACK_STOPPED);
       }
       /* A session that saved no crown still gets one: its lowest recorded
@@ -7340,14 +7370,12 @@ static inline void advance_transport_frame(le_engine* e, int tc,
         /* Once, at the edge: every later write while held (a record start,
          * a restore, a length edit) already leaves start_iter at or below
          * the held lap 0. */
-        for (int t = 0; t < tc; ++t) {
-          le_track_anchor_set(&e->tracks[t], le_track_anchor(&e->tracks[t]));
-        }
+        for (int t = 0; t < tc; ++t) le_track_anchor_rebase(&e->tracks[t]);
       }
       e->clock.position = 0;
       e->loop_iteration = 0;
       for (int t = 0; t < tc; ++t) {
-        e->tracks[t].head.origin = 0.0;
+        le_track_park_head(e, &e->tracks[t]); /* on its anchor at any Speed */
         e->tracks[t].turn_left = 0; /* a parked origin has no old head */
         e->tracks[t].sounding_frames = 0; /* the next launch is a fresh lap */
       }

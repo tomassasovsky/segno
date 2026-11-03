@@ -726,6 +726,23 @@ void main() {
     expect([for (final t in bundle.session.tracks) t.anchorLap], [0, 1]);
   });
 
+  test('save keeps a lap within the multiple it pairs with (#854)', () async {
+    // A snapshot inside a length edit's block: the lap of the 4-loop take,
+    // the multiple of the 2-loop one it became.
+    final source = FakeSessionEngine()
+      ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+      ..seedTrack(
+        1,
+        Float32List.fromList([2, 2, 2, 2, 3, 3, 3, 3]),
+        multiple: 2,
+      )
+      ..seedAnchor(1, 3);
+    final dir = '${tempDir.path}/s';
+    await repoFor(source).save(dir, settings: const SessionSettings());
+    final bundle = await repoFor(FakeSessionEngine()).read(dir);
+    expect(bundle.session.tracks[1].anchorLap, 1);
+  });
+
   group('Audio & tempo capture (#1179)', () {
     test("a retimed rig saves its recorded pair and every take's span: "
         "the engine's span, the clock in force for a take laid down "

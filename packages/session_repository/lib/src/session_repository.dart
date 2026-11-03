@@ -1732,7 +1732,7 @@ class SessionRepository {
           lengthFrames: track.lengthFrames,
           fadeAmount: track.fade.amount,
           reversed: track.reversed,
-          anchorLap: track.anchorLap,
+          anchorLap: _anchorOf(track),
           lanes: [
             for (var l = 0; l < track.lanes.length; l++)
               SessionLane(
@@ -2135,7 +2135,7 @@ class SessionRepository {
           multiple: track.multiple,
           lengthFrames: track.lengthFrames,
           spanFrames: _spanOf(snapshot, track),
-          anchorLap: track.anchorLap,
+          anchorLap: _anchorOf(track),
           fadeAmount: track.fade.amount,
           reversed: track.reversed,
           lanes: lanes,
@@ -2149,6 +2149,13 @@ class SessionRepository {
       trackLevels: trackLevels,
     );
   }
+
+  /// The lap [track] was played on (#854), within its multiple: the engine
+  /// publishes the lap once a block and the multiple as it changes, so a
+  /// snapshot inside a length edit's block can pair a lap with the next
+  /// multiple, and a saved lap past it would refuse the whole session.
+  static int _anchorOf(TrackSnapshot track) =>
+      track.multiple > 1 ? track.anchorLap % track.multiple : 0;
 
   /// The master length a take was laid down against when that is not the
   /// recorded one (#1179): the engine's span, or the clock in force for a

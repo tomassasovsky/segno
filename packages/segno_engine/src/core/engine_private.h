@@ -1689,6 +1689,8 @@ typedef struct le_track {
                             * (0 for a command that empties the track) */
   int32_t pending_master_len; /* control: the master grid that command
                                * re-establishes (0: leaves it as published) */
+  int32_t pending_anchor; /* control: the lap that command places the take
+                           * on (#854); -1: the published a_anchor */
   /* Control-only ticket (commands_posted) of the last command whose
    * application empties this track. a_commands_published at or past it proves
    * the callback block that applied it has completed — so no pointer that
@@ -3439,11 +3441,20 @@ static inline int32_t le_track_anchor(le_track* t) {
 /* Places a take at `anchor` (#854): start_iter becomes the anchor's residue
  * at or below lap 0, so loop_iteration - start_iter is a lap count that is
  * never negative, from the 0 a reset restarts at as much as from a running
- * lap. Reads the multiple, so call after it is set. */
+ * lap. Reads the multiple, so call after it is set. Publishes the anchor at
+ * once: control files it on an undo to empty, which may land before the
+ * block's end publishes it. */
 static inline void le_track_anchor_set(le_track* t, int32_t anchor) {
   const int32_t k = load_i32(&t->a_multiple);
   const int32_t a = k > 1 && anchor > 0 ? anchor % k : 0;
   t->start_iter = a > 0 ? (uint64_t)0 - (uint64_t)(k - a) : 0;
+  store_i32(&t->a_anchor, a);
+}
+
+/* A restart keeps every take on its anchor (#854): start_iter moves to the
+ * same residue at or below lap 0. */
+static inline void le_track_anchor_rebase(le_track* t) {
+  le_track_anchor_set(t, le_track_anchor(t));
 }
 
 /* Bumps a track's content revision (FX v3 part 2, [R1]) — call at every row of
