@@ -63,30 +63,48 @@ check "one video= for HDMI-A-2" 1 \
     "$(cmdline | grep -oE 'video=HDMI-A-2:[^ "]*' | wc -l | tr -d ' ')"
 
 # The `mode` of the [[view]] whose drm_connector is $1 (empty when unpinned).
+# A view's own tables ([view.*]) belong to it; any other table header ends it.
+# Values lose their quotes, an inline comment and surrounding blanks.
 view_mode() {
     awk -v want="$1" '
-        function flush() { if (conn == want) print mode; conn = ""; mode = "" }
-        /^\[\[view\]\]/ { flush() }
-        /^[[:space:]]*drm_connector[[:space:]]*=/ {
-            v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); gsub(/["\047]/, "", v)
-            conn = v
+        function value(line) {
+            sub(/^[^=]*=[[:space:]]*/, "", line)
+            sub(/[[:space:]]*#.*$/, "", line)
+            gsub(/["\047]/, "", line)
+            sub(/[[:space:]]+$/, "", line)
+            return line
         }
-        /^[[:space:]]*mode[[:space:]]*=/ {
-            v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); gsub(/["\047]/, "", v)
-            mode = v
-        }
-        END { flush() }
+        /^[[:space:]]*\[\[view\]\]/ { n++; inview = 1; next }
+        /^[[:space:]]*\[view\./ { inview = n > 0; next }
+        /^[[:space:]]*\[/ { inview = 0; next }
+        inview && /^[[:space:]]*drm_connector[[:space:]]*=/ { conn[n] = value($0) }
+        inview && /^[[:space:]]*mode[[:space:]]*=/ { mode[n] = value($0) }
+        END { for (i = 1; i <= n; i++) if (conn[i] == want) print mode[i] }
     ' "$TOML"
+}
+
+# The pixel area of a `WxH` mode.
+area() {
+    echo $(( ${1%x*} * ${1#*x} ))
 }
 
 echo
 echo "homescreen.toml pins the readout to the mode the kernel forces"
 check "homescreen.toml is where the test expects" yes \
     "$([ -f "$TOML" ] && echo yes || echo no)"
-check "the HDMI-A-1 view pins 1024x600@60" 1024x600@60 "$(view_mode HDMI-A-1)"
+readout_pin=$(view_mode HDMI-A-1)
+check "the HDMI-A-1 view pins a mode" yes \
+    "$([ -n "$readout_pin" ] && echo yes || echo no)"
 check "the HDMI-A-1 pin is the mode the kernel forces" yes \
-    "$(cmdline | grep -qF "video=HDMI-A-1:$(view_mode HDMI-A-1)D" && echo yes || echo no)"
+    "$([ -n "$readout_pin" ] && cmdline | grep -qF "video=HDMI-A-1:${readout_pin}D" && echo yes || echo no)"
 check "the HDMI-A-2 view takes the first listed mode" "" "$(view_mode HDMI-A-2)"
+# Unpinned, the main view runs the first mode its connector lists. With no
+# EDID the kernel sorts the list by size, so the forced mode must be larger
+# than its 1024x768 fallback, or the main screen runs at that.
+main_mode=$(cmdline | grep -oE 'video=HDMI-A-2:[0-9]+x[0-9]+' | head -1)
+main_mode=${main_mode#video=HDMI-A-2:}
+check "HDMI-A-2's forced mode is larger than the 1024x768 fallback" yes \
+    "$([ -n "$main_mode" ] && [ "$(area "$main_mode")" -gt $((1024 * 768)) ] && echo yes || echo no)"
 
 echo
 echo "kernel-cmdline: $pass passed, $fail failed"

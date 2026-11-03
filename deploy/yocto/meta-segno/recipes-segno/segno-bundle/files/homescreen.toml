@@ -38,9 +38,12 @@ fullscreen = true
     # The service runs as root on a kiosk with no logind session: take the DRM
     # master and the input devices directly instead of through a seat.
     no_seat = true
-    # No `mode`: the panel's own EDID-preferred mode, its native 1080p. A pinned
-    # mode the connector does not list stops the whole process at start, so
-    # pin one only for a panel whose preferred mode is wrong.
+    # No `mode`: the first mode the connector lists, its native 1080p. The
+    # connector reads an empty EDID on the console, so no mode is preferred
+    # and 1920x1080 comes first only because the kernel command line forces it
+    # (video=HDMI-A-2:1920x1080@60D, kas-segno-common.yml) and it is larger
+    # than the kernel's 1024x768 fallback. A pinned mode the connector does
+    # not list stops the whole process at start.
 
   [view.output]
   drm_connector = 'HDMI-A-2'
