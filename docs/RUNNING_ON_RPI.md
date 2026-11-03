@@ -81,6 +81,32 @@ CSV columns are explained at the top of `/usr/bin/segno-profile-recorder`.
 Experimental builds keep the Dart symbol table in `libapp.so`, so stack frames
 inside Dart code carry their function names; production builds are stripped.
 
+## Screen capture
+
+`segno-capture` saves a PNG of what each screen draws, without touching the
+console:
+
+```bash
+ssh root@<console> segno-capture
+# /data/capture/main-20261103T142233.123Z.png
+# /data/capture/readout-20261103T142233.125Z.png
+scp 'root@<console>:/data/capture/*.png' .
+```
+
+It sends SIGUSR1 to the app; each of the two Flutter engines renders its root
+widget at the screen's pixel ratio and writes `<screen>-<UTC time>.png`. The
+helper waits up to 5 s for one new PNG per screen, prints their paths and exits
+1 if a screen wrote none (the app's `capture:` lines in
+`journalctl -u segno.service` say why). It exits 2 without sending anything
+when the app is not running or does not catch SIGUSR1 yet, because the signal's
+default action would end the app. The app keeps the newest five captures of
+each screen.
+
+The PNG is the frame Flutter rendered through the active renderer (Impeller or
+Skia), so renderer faults such as tofu glyphs show up. It is not the HDMI
+scanout: the compositor, the panel's own scaling and anything drawn outside
+Flutter are not in it.
+
 ## Persistent `/data` size
 
 The flashable WIC image seeds the `data` partition at **2 GiB** so the image

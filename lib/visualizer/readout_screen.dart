@@ -3,6 +3,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:segno/appliance/screen_capture.dart';
 import 'package:segno/settings/touch_calibration/view/calibration_target.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/performance_readout.dart';
@@ -20,7 +21,14 @@ Future<void> runReadoutScreen({
 }) async {
   WidgetsFlutterBinding.ensureInitialized();
   final link = ReadoutScreenLink(directory: directory)..start();
-  runApp(ReadoutScreen(link: link));
+  runApp(
+    ScreenCapture(
+      // segno-capture's SIGUSR1 on the console; nothing elsewhere (#1555).
+      screen: SegnoScreen.readout,
+      requests: screenCaptureRequests(),
+      child: ReadoutScreen(link: link),
+    ),
+  );
   // Pings are answered from the first raster on: an answer then says the 7"
   // draws, which is what the boot health gate needs to know (#976).
   unawaited(

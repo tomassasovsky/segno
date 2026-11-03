@@ -5,23 +5,20 @@ import 'package:segno/library/application/eds_setup.dart';
 import 'package:segno/session/new_loop_template.dart';
 import 'package:segno_engine/segno_engine.dart' show MockAudioEngine;
 
+import '../../helpers/helpers.dart';
+
 /// The app's bundle with one of Ed's setup's presets missing from it.
-class _WithoutBoomDry extends CachingAssetBundle {
+class _WithoutBoomDry extends TestAssetBundle {
   @override
-  Future<ByteData> load(String key) {
-    if (key == 'AssetManifest.bin') {
-      return rootBundle.load(key).then((data) async {
-        final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-        final kept = [
-          for (final asset in manifest.listAssets())
-            if (!asset.contains('Boom Dry')) asset,
-        ];
-        return const StandardMessageCodec().encodeMessage({
-          for (final asset in kept) asset: <Object>[],
-        })!;
-      });
-    }
-    return rootBundle.load(key);
+  Future<ByteData> load(String key) async {
+    if (key != 'AssetManifest.bin') return super.load(key);
+    final manifest = await AssetManifest.loadFromAssetBundle(
+      TestAssetBundle(),
+    );
+    return const StandardMessageCodec().encodeMessage({
+      for (final asset in manifest.listAssets())
+        if (!asset.contains('Boom Dry')) asset: <Object>[],
+    })!;
   }
 }
 
@@ -41,7 +38,7 @@ void main() {
 
     test('builds one rack per track from the shipped presets, with only '
         'the pedals each turns on, Post and the chain on', () async {
-      final template = await loadEdsSetup();
+      final template = await loadEdsSetup(TestAssetBundle());
 
       expect(template, isNotNull);
       expect(template!.names, {0: 'Guitar', 1: 'Boom', 2: 'RC20', 3: 'Vox'});
@@ -76,7 +73,7 @@ void main() {
     });
 
     test('the four racks fit the 96 kHz effects budget together', () async {
-      final template = (await loadEdsSetup())!;
+      final template = (await loadEdsSetup(TestAssetBundle()))!;
 
       final cost = template.trackChains.values.fold(
         0,
@@ -88,7 +85,7 @@ void main() {
 
     test('fits a 96 kHz rig through the admission every edit uses, and a '
         'template four times as heavy does not', () async {
-      final template = (await loadEdsSetup())!;
+      final template = (await loadEdsSetup(TestAssetBundle()))!;
       final engine = MockAudioEngine();
       final looper = LooperRepository(engine: engine)
         ..startEngine(const EngineConfig(sampleRate: 96000));
@@ -116,7 +113,7 @@ void main() {
     });
 
     test('a missing preset gives no template', () async {
-      expect(await loadEdsSetup(bundle: _WithoutBoomDry()), isNull);
+      expect(await loadEdsSetup(_WithoutBoomDry()), isNull);
     });
   });
 }
