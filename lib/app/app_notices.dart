@@ -36,6 +36,7 @@ abstract final class AppNoticeId {
   static const weakCharger = 'weakCharger';
   static const update = 'update';
   static const updateAction = 'update_update';
+  static const updateNotNow = 'update_notNow';
   static const waveformFailed = 'waveformWindowFailed';
   static const bootModeRetired = 'bootModeRetired';
   static const fxStopChanged = 'fxStopChanged';
@@ -75,11 +76,14 @@ abstract final class AppNoticeId {
   static const loopSettings = 'loopSettings';
   static const fx = 'fx';
   static const fxPreset = 'fxPreset';
-  static const displaySave = 'displaySave';
+  static const brightnessSave = 'brightnessSave';
+  static const idleDimSave = 'idleDimSave';
+  static const consoleLedsSave = 'consoleLedsSave';
 }
 
 /// Retry on a must-act recovery: runs [recover] and, when it worked, ends
-/// the message [id] in [notices].
+/// the message [id] in [notices], unless a newer failure raised it again
+/// while the retry ran.
 NoticeAction retryNoticeAction(
   NoticesCubit notices,
   String id,
@@ -87,11 +91,18 @@ NoticeAction retryNoticeAction(
 ) => NoticeAction(
   key: Key('${id}_${AppNoticeId.retry}'),
   label: (l10n) => l10n.powerRetry,
-  onPressed: () => unawaited(
-    recover().then((recovered) {
-      if (recovered && !notices.isClosed) notices.clear(id);
-    }),
-  ),
+  onPressed: () {
+    ShownNotice? standing() => notices.state.banners
+        .where((shown) => shown.notice.id == id)
+        .firstOrNull;
+    final retried = standing();
+    unawaited(
+      recover().then((recovered) {
+        if (!recovered || notices.isClosed) return;
+        if (standing() == retried) notices.clear(id);
+      }),
+    );
+  },
 );
 
 /// A write that threw: nothing on the disk changed, so it is a warning

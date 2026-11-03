@@ -266,6 +266,21 @@ final goldenMessages = <String, PedalLinkMessage>{
     progress: 255,
   ),
   'clear_hold_none': const ClearHoldMessage(),
+  // The light sensor (#1564): none on J22, a room reading 1024 counts, the
+  // top of the range, and a reading whose level is the sync byte.
+  'ambient_none': const AmbientLightMessage(PedalAmbientLight.none),
+  'ambient_reading_160': const AmbientLightMessage(
+    PedalAmbientLight(sensor: PedalLightSensor.reading, level: 160),
+  ),
+  'ambient_above_188': const AmbientLightMessage(
+    PedalAmbientLight(sensor: PedalLightSensor.aboveRange, level: 188),
+  ),
+  'ambient_reading_165': const AmbientLightMessage(
+    PedalAmbientLight(sensor: PedalLightSensor.reading, level: 0xA5),
+  ),
+  // The LED level, half way and at the sync byte.
+  'led_level_128': const LedLevelMessage(128),
+  'led_level_165': const LedLevelMessage(0xA5),
   'hello': const HelloMessage(
     protocolVersion: PedalLinkCodec.protocolVersion,
     firmwareMajor: 1,

@@ -43,6 +43,7 @@ import 'package:segno/performance/cubit/recording_destination_cubit.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/visualizer/visualizer.dart';
 import 'package:segno_engine/segno_engine.dart'
     as le
@@ -3801,6 +3802,20 @@ void main() {
       // this file that also open Settings.
       await tester.tap(find.byKey(const Key('loop_settings_back')));
       await tester.pumpAndSettle();
+    });
+
+    testWidgets('Not now puts this version off', (tester) async {
+      await pumpAppWithUpdates(
+        tester,
+        UpdateRepository(backend: _FakeUpdateBackend()),
+      );
+      await pressNoticeAction(tester, AppNoticeId.update, secondary: true);
+      await tester.pump();
+      expect(noticeUp(tester, AppNoticeId.update), isFalse);
+      final context = tester.element(find.byType(TracksView));
+      final updates = context.read<UpdateCubit>().state;
+      expect(updates.dismissed, contains(updates.available!.version));
+      expect(updates.shouldNotify, isFalse);
     });
 
     testWidgets('no update message while Settings Updates is already open', (

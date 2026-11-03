@@ -36,6 +36,7 @@ import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/backing/cubit/backing_cubit.dart';
 import 'package:segno/backing/cubit/backing_mix_cubit.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
+import 'package:segno/console_leds/cubit/console_leds_cubit.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/application/removable_volumes.dart';
@@ -835,6 +836,19 @@ class _AppState extends State<App> {
               pedal: context.read<PedalRepository>(),
             ),
           ),
+          // The console LEDs' brightness (#1564), Manual or following the
+          // light sensor. Eager: it sends the board its level from launch.
+          BlocProvider(
+            lazy: false,
+            create: (context) {
+              final cubit = ConsoleLedsCubit(
+                settings: context.read<SettingsRepository>(),
+                pedal: context.read<PedalRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
           // Eager (not lazy): the recovery cubit must be watching at boot for a
           // pinned interface that was unplugged when auto-start ran, so it can
           // start audio the moment it reappears. Inert when there is nothing to
@@ -1125,8 +1139,8 @@ class _AppViewState extends State<_AppView> {
     super.dispose();
   }
 
-  /// An Undo or Redo the recovery path refused: said for a while, since it
-  /// tells the player what to change first.
+  /// An Undo or Redo the recovery path refused: a warning when it happens,
+  /// telling the player what to change first.
   void _showRecoveryRefusal(RecoveryRefusal refusal) {
     if (!mounted) return;
     final pending = refusal.result == EngineResult.notReady;
@@ -1134,7 +1148,6 @@ class _AppViewState extends State<_AppView> {
       Notice(
         id: AppNoticeId.recoveryRefused,
         tone: NoticeTone.warning,
-        explains: true,
         title: (l10n) =>
             pending ? l10n.recoveryWaitTitle : l10n.recoveryModeTitle,
         body: (l10n) => pending
@@ -1174,7 +1187,6 @@ class _AppViewState extends State<_AppView> {
           Notice(
             id: AppNoticeId.deviceRestoredPartial,
             tone: NoticeTone.warning,
-            explains: true,
             title: (l10n) => l10n.deviceReconnectedSnackbar(name(l10n)),
             body: (l10n) => l10n.deviceRestoredPartialToastBody(
               dropped.length,
@@ -1279,8 +1291,9 @@ class _AppViewState extends State<_AppView> {
   }
 
   /// A newer build is available: said for a while at startup with Update…,
-  /// which opens the Updates page. The page keeps the offer; nothing here
-  /// needs a touch. Not said while Updates is already open.
+  /// which opens the Updates page, and Not now, which puts this version off
+  /// until a newer one. The page keeps the offer; nothing here needs a
+  /// touch. Not said while Updates is already open.
   void _showUpdate(BuildContext context, UpdateState state) {
     final manifest = state.available;
     if (!state.shouldNotify || manifest == null || isSegnoUpdatesSettingsOpen) {
@@ -1301,6 +1314,13 @@ class _AppViewState extends State<_AppView> {
             _notices.clear(AppNoticeId.update);
             unawaited(openUpdateSettings());
           },
+        ),
+        secondary: NoticeAction(
+          key: const Key(AppNoticeId.updateNotNow),
+          label: (l10n) => l10n.updateBannerNotNow,
+          onPressed: () => unawaited(
+            context.read<UpdateCubit>().dismiss(manifest.version),
+          ),
         ),
       ),
     );

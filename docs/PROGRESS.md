@@ -72,6 +72,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
+| #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1547 | Every effect the same at any sample rate and block size: parts 1, 2 and 3a (filter responses) merged; part 3b (the tails: echo, reverbs, spring) in review; 3c pitch (#1467), 3d the Transient next | in-review | auto | `claude/fx-invariance-1547-p3b` |
 
 ---
@@ -92,9 +93,9 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - Surfaces: `NoticeBar` + `NoticeBarMessage` in every top bar (the stage's,
   the performance views' `FootTopBar`, the settings frame), laid out by the
   shared `TopBarLayout`, so the side controls never move and the message sits
-  on the session name's baseline at its size; `TrackNotice` in the Track,
-  Wave and Mixer cards; the readout's band (`ReadoutNotice` over the screen
-  link).
+  on the session name's baseline at its size; `TrackNotice` in the Track and
+  Wave cards (a Mixer strip is all controls: it rings and the bar says it);
+  the readout's band (`ReadoutNotice` over the screen link).
 - Sizes and type ramp in the `NoticeTheme` extension, gaps from the new
   `SpacingTheme` scale, colours from `SurfaceTheme` (new `warningTint`,
   `warningLine`). Screenshots: `notice_*` in the tracks and notices suites.
@@ -124,6 +125,31 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   red (the device running at other settings, a storage action that did
   nothing, the Library's refused open and listen). The Storage and MIDI
   pages' one-line amber notes stay the pen's.
+
+## November 2026 Automatic LED brightness from a light sensor (#1564)
+
+- An optional Vishay TEPT5600 on J22 (GP28), with 100 Ω in its collector
+  lead, its load resistor (2.2 kΩ) and 100 nF in the lead's J22 end; wiring, resistor choice and saturation in
+  segno-hardware's `hardware/segno_wiring.md`. The enclosure part (hole,
+  holder, lead route) is a separate thread.
+- Console firmware 2.7 smooths the reading (readings at random 7-13 ms so
+  mains flicker averages out, one-second means, a five-second median, a 3 s
+  average, a quarter-doubling hysteresis), tells a fitted sensor
+  from an open pin with the pad's pulls every 2 s, and reports it after every
+  hello as `AMBIENT` (`0x07`): the raw ADC reading on a log scale, not lux.
+  The app answers with `LED_LEVEL` (`0x14`), which scales the pills and, via
+  the ring link's new `LEVEL`, the ring (ring firmware 1.2), with a fade.
+  Both optional, so still protocol 12; with no `LED_LEVEL` the board shows
+  what 2.6 did.
+- The app: Settings > Displays > Console LEDs (`ConsoleLedsCubit`,
+  `ConsoleLedSettings` in settings_repository). Manual brightness (default
+  100 %, today's) or Automatic, which maps the reading between two points the
+  owner captures (Dark room, Bright room) on a log-linear curve from about a
+  third to full, plus a brighter/darker offset; the board's level is that
+  brightness to the power 2.2. Automatic is unavailable without a reported
+  sensor and says why. `AmbientBrightnessCurve` is the seam for the screens.
+- Not done: the screens' own automatic brightness; a bench of the console's
+  reflected light against the hysteresis once a sensor is fitted.
 
 ## November 2026 The UI thread's CPU (#1563)
 

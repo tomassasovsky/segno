@@ -20,6 +20,14 @@ static void send(ring_link::RingState state, uint32_t now, bool corrupt = false)
   at(now);
 }
 
+static void sendLevel(uint8_t level, uint32_t now) {
+  const uint8_t payload[ring_link::LEVEL_LEN] = {level};
+  uint8_t packet[ring_link::MAX_FRAME];
+  const size_t size = ring_link::encode(ring_link::LEVEL, payload, packet);
+  for (size_t i = 0; i < size; ++i) ringLink.received.push_back(packet[i]);
+  at(now);
+}
+
 // The console resends the state every 100 ms; hold it there while time passes.
 static void hold(ring_link::RingState state, uint32_t &now, uint32_t duration) {
   for (uint32_t step = 0; step < duration; step += 50) send(state, now += 50);
@@ -30,6 +38,14 @@ static ring_link::RingState live(Rgb c = {0, 0, 0}, uint8_t gain = 0, uint8_t fl
   s.r = c.r; s.g = c.g; s.b = c.b; s.gain = gain;
   s.flags = ring_link::FLAG_LIVE | flags;
   return s;
+}
+
+// One channel of a single-channel pixel at `level` of 255, as scalePixel
+// renders it.
+static uint32_t onePixel(uint8_t value, uint8_t level) {
+  uint8_t r = value, g = 0, b = 0;
+  ring_link::scalePixel(r, g, b, level);
+  return r;
 }
 
 static uint32_t shown(unsigned i) { return ring.getPixelColor(i); }
@@ -157,13 +173,47 @@ static void lifecycle() {
   // Idle: the still arc drops to ~20 % on the next render, and comes back.
   const auto dimmedArc = live({0, 0, 0}, 128, ring_link::FLAG_LOADED | ring_link::FLAG_DIMMED);
   send(dimmedArc, now += 20);
-  const uint32_t dimGreen = ring_link::dimChannel(96);
+  const uint32_t dimGreen = onePixel(96, ring_link::DIM_LEVEL);
   assert(dimGreen == 19);
   for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? (dimGreen << 8) : 0));
   send(live({0, 0, 0}, 128, ring_link::FLAG_LOADED), now += 20);
   for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? (96U << 8) : 0));
   // A lit channel never dims to black.
-  assert(ring_link::dimChannel(0) == 0 && ring_link::dimChannel(1) == 1 && ring_link::dimChannel(2) == 1);
+  // A lit pixel never dims to black, and keeps its hue: a weak component
+  // drops out rather than rising to match the strong one.
+  {
+    uint8_t r = 0, g = 0, b = 0;
+    ring_link::scalePixel(r, g, b, ring_link::DIM_LEVEL);
+    assert(!r && !g && !b);
+    r = 0; g = 2; b = 0;
+    ring_link::scalePixel(r, g, b, ring_link::DIM_LEVEL);
+    assert(!r && g == 1 && !b);
+    r = 191; g = 2; b = 0;
+    ring_link::scalePixel(r, g, b, ring_link::DIM_LEVEL);
+    assert(r == 38 && !g && !b);
+    r = 191; g = 40; b = 0;
+    ring_link::scalePixel(r, g, b, 8);
+    assert(r == 6 && g == 1 && !b);
+    assert(ring_link::outputLevel(1, true) == 1 && ring_link::outputLevel(255, false) == 255);
+  }
+
+  // The console's LED level (#1564) scales the still arc at once, under the
+  // idle dim, and a level of 0 is ignored.
+  sendLevel(128, now += 1);
+  at(now += 20);
+  const uint32_t halfGreen = onePixel(96, 128);
+  for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? (halfGreen << 8) : 0));
+  send(dimmedArc, now += 20);
+  for (unsigned i = 0; i < RING_N; ++i)
+    assert(shown(i) == (i < lit ? (onePixel(96, ring_link::outputLevel(128, true)) << 8) : 0));
+  send(live({0, 0, 0}, 128, ring_link::FLAG_LOADED), now += 20);
+  sendLevel(0, now += 1);
+  at(now += 20);
+  for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? (halfGreen << 8) : 0));
+  sendLevel(255, now += 1);
+  at(now += 20);
+  for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? (96U << 8) : 0));
+  assert(g_parser.dropped == 0);
 
   // Not live, a corrupt frame, or silence for 500 ms: dark.
   ring_link::RingState goodbye;
@@ -175,6 +225,14 @@ static void lifecycle() {
   assert(channelTotal() > 0 && g_parser.dropped == 1);
   at(now += 600);
   expectDark();
+  // A stale console takes the level back to full; a LEVEL just before the
+  // next state sets it, so the ring comes back at that level.
+  assert(g_level == ring_link::LEVEL_FULL);
+  sendLevel(64, now += 1);
+  send(live(), now += 20);
+  assert(g_level == 64 && channelTotal() > 0);
+  at(now += 600);
+  assert(g_level == ring_link::LEVEL_FULL);
 }
 
 static uint32_t lastSnapshot(int index) {
@@ -245,5 +303,5 @@ int main() {
   cometOutput();
   lifecycle();
   inputSnapshots();
-  std::puts("Ring carrier: 35-pixel comet, breathe, gain arc, limit, dimming, lifecycle and input snapshots: ALL PASSED");
+  std::puts("Ring carrier: 35-pixel comet, breathe, gain arc, limit, dimming, LED level, lifecycle and input snapshots: ALL PASSED");
 }

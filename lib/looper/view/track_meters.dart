@@ -180,8 +180,11 @@ class TrackProgressBar extends StatelessWidget {
               width: double.infinity,
               child: Align(
                 alignment: Alignment.centerLeft,
+                // heightFactor: the Align hands down a loose height, and a
+                // childless ColoredBox sizes to its minimum, 0 (#1570).
                 child: FractionallySizedBox(
                   widthFactor: progress,
+                  heightFactor: 1,
                   child: ColoredBox(color: color),
                 ),
               ),

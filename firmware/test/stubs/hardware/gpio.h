@@ -28,8 +28,21 @@ inline void gpio_set_input_enabled(unsigned pin, bool enabled) {
   // settling time, which remains a test of the assembled jack and cable.
   if (!enabled) fake_gpio::latched[pin] = false;
 }
-inline void gpio_pull_down(unsigned pin) { fake_gpio::pulldown[pin] = true; }
-inline void gpio_disable_pulls(unsigned pin) { fake_gpio::pulldown[pin] = false; }
+inline void gpio_pull_down(unsigned pin) {
+  fake_gpio::pulldown[pin] = true;
+  fake_arduino::pullDown[pin] = true;
+  fake_arduino::pullUp[pin] = false;
+}
+inline void gpio_pull_up(unsigned pin) {
+  fake_gpio::pulldown[pin] = false;
+  fake_arduino::pullDown[pin] = false;
+  fake_arduino::pullUp[pin] = true;
+}
+inline void gpio_disable_pulls(unsigned pin) {
+  fake_gpio::pulldown[pin] = false;
+  fake_arduino::pullDown[pin] = false;
+  fake_arduino::pullUp[pin] = false;
+}
 inline bool gpio_get(unsigned pin) {
   ++fake_gpio::reads;
   if (!fake_gpio::enabled[pin]) return false;
