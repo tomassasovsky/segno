@@ -52,10 +52,11 @@ class _Engine extends FakeAudioEngine {
 
 class _Midi extends MidiDeviceRepository {
   _Midi(SettingsRepository settings)
-    : super(source: null, settings: settings, pollInterval: Duration.zero);
+    : super(captures: null, settings: settings, pollInterval: Duration.zero);
   final inputs = StreamController<MidiInputMessage>.broadcast();
-  @override
   MidiInputSession get session => const MidiInputSession('test-midi', 1);
+  @override
+  Map<String, MidiInputSession> get sessions => {session.device: session};
   @override
   Stream<MidiInputMessage> get messages => inputs.stream;
   void push(int id, int value) => inputs.add(

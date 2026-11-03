@@ -253,19 +253,6 @@ static float fx_delay(le_fx_state* fx, int slot, int chan, int cap, float x,
   return x * (1.0f - mix) + delayed * mix;
 }
 
-/* Tremolo: sine LFO amplitude modulation. p0 = rate (0.1..12 Hz), p1 = depth. */
-static float fx_tremolo(le_fx_state* fx, int slot, int chan, int sr, float x,
-                        const float* p) {
-  const float rate = 0.1f + p[0] * 11.9f;
-  const float depth = p[1];
-  float ph = fx->lfo[slot][chan];
-  const float lfo = 0.5f * (1.0f + sinf(2.0f * LE_PI * ph)); /* 0..1 */
-  ph += rate / (float)sr;
-  if (ph >= 1.0f) ph -= 1.0f;
-  fx->lfo[slot][chan] = ph;
-  return x * (1.0f - depth * (1.0f - lfo));
-}
-
 /* Linearly interpolated read from a ring of [cap] samples, [d] samples behind
  * the head [head] (the index of the most recently written sample). [d] may be
  * fractional and is assumed in [0, cap). */
@@ -346,6 +333,119 @@ static inline uint32_t le_fx_now(const le_fx_state* fx) {
 static int le_pv_hop_phase(const le_fx_state* fx, int slot) {
   return le_fx_hop_mask((uint32_t)fx->hop_seed +
                         (uint32_t)slot * (uint32_t)LE_PV_STAGGER_QUARTER);
+}
+
+/* ---- LFOs on the engine clock (#1620) ----
+ *
+ * A time-based modulator takes its phase from the engine frame it is
+ * processing (le_fx_now), not from its own reset: frac(rate * frame / sr).
+ * So two instances of the same settings agree whenever they process the same
+ * frame, whenever each was reset, which is what lets a print (rendered from a
+ * fresh chain at the clock it stands in for) agree with the live chain it
+ * swaps in over, and what makes an offline render reproduce what was heard.
+ *
+ * A rate move would make a pure clock phase jump (rate times a frame count
+ * in the millions), so the move keeps the phase continuous through an offset
+ * and the offset then slides back to 0 at LE_LFO_RELOCK_CPS cycles a second,
+ * or half the LFO's rate when that is less (the LFO runs that much fast or
+ * slow for at most 2 s, 10 s at the slowest tremolo). While it slides the
+ * slot is relocking (le_fx_lfo_relocking) and the wet cache counts the live
+ * chain's run from when it is back on the clock. A slot's lfo[slot][0] is the
+ * offset in cycles and lfo_rate[slot] the rate it was set for (0: none yet,
+ * a fresh slot, which starts on the clock); lfo_frame[slot] is the last frame
+ * (to catch the 32-bit clock wrapping) or, for a state nobody clocks, its
+ * own count. */
+#define LE_LFO_RELOCK_CPS 0.25
+
+/* The tremolo's rate at settings [p], Hz. */
+static double le_tremolo_rate(const float* p) {
+  return 0.1 + (double)p[0] * 11.9;
+}
+
+/* The echo's wow rate, Hz: fixed. */
+#define LE_ECHO_WOW_HZ 0.7
+
+/* The most a clock LFO may miss a whole number of cycles in a lap and still
+ * print (le_fx_entry_lfo_drifts): its print loops one lap, so at each loop
+ * top the LFO steps back by the miss. The tremolo's gain moves pi x depth
+ * per cycle at most, so 3e-5 cycles is under 1e-4 of gain; the echo's wow
+ * moves its read by 2 pi x 4 ms a cycle, so 5e-7 cycles keeps the read
+ * within 8e-4 frames, under 1e-4 on a full-scale 1 kHz tone. */
+#define LE_TREMOLO_LAP_TOL 3e-5
+#define LE_ECHO_LAP_TOL 5e-7
+
+/* frac(x), in [0, 1). */
+static inline double le_frac(double x) { return x - floor(x); }
+
+/* Slot [slot]'s LFO phase, in cycles, at [rate] Hz on the frame [fx] is
+ * processing: the clock phase plus the slot's relock offset, which this
+ * advances (once per frame: call it once per slot per sample). */
+static double le_clock_lfo(le_fx_state* fx, int slot, double rate, int sr) {
+  const double hz = (double)(sr > 0 ? sr : 48000);
+  const int clocked = fx->clock_src != NULL || fx->clocked;
+  const uint32_t now = clocked ? le_fx_now(fx) : fx->lfo_frame[slot]++;
+  const double t = (double)now / hz;
+  float* offset = &fx->lfo[slot][0];
+  double* set = &fx->lfo_rate[slot];
+  if (*set != rate) {
+    if (*set > 0.0) {
+      /* Continuous through the move: the old phase, from the new rate. */
+      const double was = le_frac(*set * t + (double)*offset);
+      double o = was - le_frac(rate * t);
+      o -= floor(o + 0.5); /* the shorter way round, in [-0.5, 0.5) */
+      *offset = (float)o;
+    }
+    *set = rate;
+  } else if (clocked && now < fx->lfo_frame[slot] &&
+             fx->lfo_frame[slot] - now > 0x80000000u) {
+    /* The 32-bit clock wrapped (a day at 48 kHz): the clock phase jumps by
+     * frac(rate * 2^32 / sr), so carry the old phase across and relock. */
+    double o = (double)*offset + le_frac(rate * 4294967296.0 / hz);
+    o -= floor(o + 0.5);
+    *offset = (float)o;
+  }
+  if (clocked) fx->lfo_frame[slot] = now;
+  if (*offset != 0.0f) {
+    /* Never faster than half the LFO itself, so a slow one slows down
+     * rather than running backwards while it relocks. */
+    const double cps =
+        rate * 0.5 < LE_LFO_RELOCK_CPS ? rate * 0.5 : LE_LFO_RELOCK_CPS;
+    const float step = (float)(cps / hz);
+    *offset = fabsf(*offset) <= step ? 0.0f
+              : *offset > 0.0f       ? *offset - step
+                                     : *offset + step;
+  }
+  return le_frac(rate * t + (double)*offset);
+}
+
+int le_fx_type_clock_lfo(int32_t type) {
+  return type == LE_FX_TREMOLO || type == LE_FX_ECHO;
+}
+
+int le_fx_lfo_relocking(const le_fx_state* fx, int slot, int32_t type) {
+  return slot >= 0 && slot < LE_FX_MAX && le_fx_type_clock_lfo(type) &&
+         fx->lfo[slot][0] != 0.0f;
+}
+
+int le_fx_entry_lfo_drifts(int32_t type, const float* p, int32_t len, int sr) {
+  double rate = 0.0;
+  if (type == LE_FX_TREMOLO && p[1] > 0.0f) rate = le_tremolo_rate(p);
+  if (type == LE_FX_ECHO && p[2] > 0.0f) rate = LE_ECHO_WOW_HZ;
+  if (rate <= 0.0 || len <= 0) return 0;
+  const double cycles = rate * (double)len / (double)(sr > 0 ? sr : 48000);
+  /* The miss each lap is the step at each loop top: held to LE_LFO_LAP_STEP
+   * of output, through each kind's sensitivity to its phase. */
+  const double tol = type == LE_FX_TREMOLO ? LE_TREMOLO_LAP_TOL
+                                           : LE_ECHO_LAP_TOL;
+  return fabs(cycles - floor(cycles + 0.5)) > tol;
+}
+
+/* Tremolo: sine LFO amplitude modulation, on the engine clock. p0 = rate
+ * (0.1..12 Hz), p1 = depth. */
+static float fx_tremolo(float x, double ph, const float* p) {
+  const float depth = p[1];
+  const float lfo = 0.5f * (1.0f + sinf(2.0f * LE_PI * (float)ph)); /* 0..1 */
+  return x * (1.0f - depth * (1.0f - lfo));
 }
 
 /* The two modes run one counter in opposite directions: PV counts up and runs
@@ -1737,19 +1837,15 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
  * fed-back signal is softly saturated (tape compression, which also self-limits
  * the feedback). The wet tap is that processed signal, so even the first repeat
  * is coloured rather than a clean copy. p0 = time (0..1 s), p1 = feedback,
- * p2 = wet mix. Shares the fx_delay ring; lfo is the wow phase, fx_lp the loop
- * low-pass. */
+ * p2 = wet mix. Shares the fx_delay ring; fx_lp is the loop low-pass, and the
+ * wow LFO runs on the engine clock (le_clock_lfo). */
 static float fx_echo(le_fx_state* fx, int slot, int chan, int sr, int cap,
-                     float x, const float* p) {
+                     float x, const float* p, float wow) {
   float* buf = fx->delay[slot][chan];
   if (buf == NULL || cap <= 1) return x;
 
-  /* Wow/flutter: a slow LFO wobbles the read time a few ms for tape wobble. */
-  float ph = fx->lfo[slot][chan];
-  const float wow = sinf(2.0f * LE_PI * ph);
-  ph += 0.7f / (float)sr; /* ~0.7 Hz wow */
-  if (ph >= 1.0f) ph -= 1.0f;
-  fx->lfo[slot][chan] = ph;
+  /* Wow/flutter: a slow LFO ([wow], -1..1, on the engine clock) wobbles the
+   * read time a few ms for tape wobble. */
   const float wob = 0.004f * (float)sr; /* ~4 ms wobble depth */
   float d = p[0] * (float)(cap - 1) + wow * wob;
   if (d < 1.0f) d = 1.0f;
@@ -1857,6 +1953,8 @@ void le_fx_entry_reset(le_fx_state* fx, int slot, int32_t type) {
   struct le_fx_amp* amp =
       atomic_load_explicit(&fx->amp[slot], memory_order_acquire);
   if (amp != NULL) le_amp_reset(amp);
+  fx->lfo_frame[slot] = 0;
+  fx->lfo_rate[slot] = 0.0;
   for (int chan = 0; chan < 2; ++chan) {
     fx->svf_ic1[slot][chan] = 0.0f;
     fx->svf_ic2[slot][chan] = 0.0f;
@@ -2214,8 +2312,9 @@ static void fx_delay_process(le_fx_state* fx, int slot, int sr, int cap,
 static void fx_tremolo_process(le_fx_state* fx, int slot, int sr, int cap,
                                float* l, float* r, const float* p) {
   (void)cap;
-  *l = fx_tremolo(fx, slot, 0, sr, *l, p);
-  *r = fx_tremolo(fx, slot, 1, sr, *r, p);
+  const double ph = le_clock_lfo(fx, slot, le_tremolo_rate(p), sr);
+  *l = fx_tremolo(*l, ph, p);
+  *r = fx_tremolo(*r, ph, p);
 }
 /* ---- The pitch kinds at rates other than 48 kHz (#1547) ----
  *
@@ -3528,8 +3627,10 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
 
 static void fx_echo_process(le_fx_state* fx, int slot, int sr, int cap, float* l,
                             float* r, const float* p) {
-  *l = fx_echo(fx, slot, 0, sr, cap, *l, p);
-  *r = fx_echo(fx, slot, 1, sr, cap, *r, p);
+  const float wow = sinf(
+      2.0f * LE_PI * (float)le_clock_lfo(fx, slot, LE_ECHO_WOW_HZ, sr));
+  *l = fx_echo(fx, slot, 0, sr, cap, *l, p, wow);
+  *r = fx_echo(fx, slot, 1, sr, cap, *r, p, wow);
 }
 /* Reverb is natively stereo (it cross-feeds its two banks), so its wrapper makes
  * the one stereo call. fx_reverb computes both wet values before writing either
@@ -4494,8 +4595,7 @@ static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
 
 static void fx_eq_kprocess(void* ks, float* l, float* r) {
   le_fx_eq* q = (le_fx_eq*)ks;
-  /* A non-finite sample would latch into the band memory for good (the
-   * conditioning stage's biquads guard the same way). */
+  /* A non-finite sample would latch into the band memory for good. */
   double x[2] = {isfinite(*l) ? *l : 0.0, isfinite(*r) ? *r : 0.0};
   for (int b = 0; b < LE_EQ_BANDS; ++b) {
     if (!(q->active & (1u << b))) continue;

@@ -77,6 +77,58 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Prints swap in after a complete lap, LFOs on the clock (#1620)
+
+- The owner's decision on #1620: (1) time-based modulation takes its phase
+  from the engine clock, (2) a print swaps in only over a live chain that has
+  played at least one complete lap since its last key change. The run rule
+  (`le_run_matches_print`) is now: begun on a loop top, the next top; begun
+  part way through a lap, the second top after it. Anything else stays live.
+- Clock LFOs (`le_clock_lfo`, engine_fx.c): the tremolo and the echo's wow
+  take frac(rate x frame / sr) from `le_fx_now`. A rate move keeps the
+  phase continuous through an offset that slides back to 0 at 0.25 cycles a
+  second, or half the LFO rate when slower (`LE_LFO_RELOCK_CPS`); while it
+  slides, the lane's run waits (`le_fx_lfo_relocking`). A state nobody
+  clocks (the VST3 processors) counts its own frames, as before.
+- Such an LFO prints only on a loop it fits a whole number of times (within
+  3e-5 cycles for the tremolo, 5e-7 for the echo's wow, what keeps the step
+  at each loop top under 1e-4): otherwise each lap sounds different and it
+  plays live, reported FREE_RUNNING (`le_fx_entry_lfo_drifts`). Its print is
+  keyed on the top's place on the lap grid (`le_fx_lap_position`, folded
+  into the fingerprint, `le_wet_entry::lap_tag` at the lap top), as an
+  octaver's is on the hop position.
+- What a chain plays reversed or at another rate is not a lap of the loop,
+  so every run on the track begins again where the head is back at forward
+  1x (and at any jump of the read index there, which Play on a playing track
+  does not make today). A lane back at Normal after a reverse or speed turn
+  therefore prints again after a complete lap, where #939 left it live
+  until its next edit.
+- Remaining step at the swap per kind (`test_cache_midlap_edit_steps`, a sine
+  loop): 0 for the memoryless and short-state kinds; a delay or reverb
+  differs by the part of its tail older than a lap; the octaver and Smart
+  Tune differ even with the chain in on a loop top (#1624).
+
+## November 2026 Wet cache swaps in only over a matching run (#939)
+
+- The owner's decision on #939 (Q11): the loop-stage wet cache stays off
+  where it cannot swap in exactly. A print reproduces a chain that began one
+  lap before the loop top it swaps in at (render twice, keep the second).
+  The audio thread now follows each live chain's run, the stretch it has
+  played one unchanged key over (`le_chain_run` on each lane and track bus,
+  counted in laps by `le_track::laps`), and swaps a print in only where that
+  run matches the print (`le_run_matches_print`; tightened by #1620 above).
+  An older run keeps playing live: it carries history the print does not
+  (an echo built up over more passes, an LFO further on), which used to step
+  at the loop top.
+- In practice: a print is ready about 250 ms (`LE_CACHE_SETTLE_MS`) plus a
+  few 16 ms scheduler ticks plus its render after the edit, so on a loop
+  shorter than that the cache stays off; longer loops print as before. The
+  same rule holds the whole-track print.
+- Tests: the every-kind parity sweep adds a 2560-frame loop per kind (the
+  print is ready five laps after the chain went in) and
+  `test_whole_track_print_stays_live_on_a_short_loop` covers the track
+  print; the whole-track tests run on a 16384-frame loop.
+
 ## November 2026 Segno owns the interface's routing (#1046)
 
 - At every device open, before the loopback mask is read and the callback
@@ -2300,8 +2352,10 @@ remains open — see "On-hardware validations" below.
 
 ### Deferred (need hardware / 2nd display)
 - `midi_client` — real USB-MIDI binding **SHIPPED** (PRs #39/#40/#42): native
-  `le_midi_*` capture seam → `MidiControllerSource` → `ControllerRepository`,
-  with a device-selection UI. Hardware-gated only for a live DIN-MIDI smoke test.
+  `le_midi_*` capture seam → one `MidiControllerSource` per plugged-in device,
+  owned by `MidiDeviceRepository`, so every connected controller feeds the
+  mappings learned from it (#1040). Hardware-gated only for a live DIN-MIDI
+  smoke test and a two-controller check.
 - **VST3/CLAP plugin hosting on Linux.** Hosting is on by default only on
   macOS; the Linux CMake build leaves `SEGNO_ENABLE_PLUGINS` off unless the
   environment overrides it, since third-party plugins rarely ship for aarch64

@@ -14,6 +14,7 @@ import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/view/console_pedal_layout.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_map.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_page.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -236,6 +237,23 @@ void main() {
             tester.getTopRight(find.byKey(press)).dx,
         SpacingTheme.standard.xl,
       );
+    });
+
+    testWidgets('each cap is centred where the foot views draw its pedal '
+        '(#1590 FT-4)', (tester) async {
+      await pump(tester);
+      for (final button in [
+        ...ConsolePedalLayout.rearRow,
+        ...ConsolePedalLayout.frontRow,
+      ]) {
+        expect(
+          tester
+              .getCenter(find.byKey(Key('pedal_setup_cap_${button.name}')))
+              .dx,
+          closeTo(960 + ConsolePedalLayout.centreOffset(button), 0.5),
+          reason: button.name,
+        );
+      }
     });
 
     testWidgets('the bank letter sits beside the BANK pedal, clear of its '
