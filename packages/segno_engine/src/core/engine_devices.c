@@ -115,10 +115,12 @@ int le_alsa_ctl_name_from_uid(const char* uid, char* out, size_t cap) {
  *    "S/PDIF n", "ADAT n"). A unit with input processing (Gen 4, Vocaster)
  *    may feed one through its DSP instead: "DSP n" whose "DSP Input n Capture
  *    Enum" selects that same hardware input is that input, processed, and is
- *    kept. An input past the hardware inputs is the interface's loopback slot
- *    and returns Segno's output k - (hardware inputs), "PCM 1" first: the
- *    engine excludes those channels from recording, monitoring and routing,
- *    and the record offset is timed on them (#1541).
+ *    kept. An input past the hardware inputs is the interface's loopback slot.
+ *    When Segno also plays to this card, it returns Segno's output
+ *    k - (hardware inputs), "PCM 1" first: the engine excludes those channels
+ *    from recording, monitoring and routing, and the record offset is timed
+ *    on them (#1541). When Segno plays to another card, nothing of Segno's
+ *    would come back there, so it is "Off".
  *
  * The mixer ("Mixer Input NN Capture Enum" and its gains) is left as it is:
  * once no output and no input selects a "Mix" item, it reaches nothing.
@@ -237,7 +239,8 @@ static void le_own_scarlett2_outputs(const le_mixer* m, le_routing_report* r) {
   }
 }
 
-static void le_own_scarlett2_inputs(const le_mixer* m, le_routing_report* r) {
+static void le_own_scarlett2_inputs(const le_mixer* m, int loopback,
+                                    le_routing_report* r) {
   char control[48];
   char item[48];
   char hardware_name[48];
@@ -266,7 +269,7 @@ static void le_own_scarlett2_inputs(const le_mixer* m, le_routing_report* r) {
       }
     } else {
       snprintf(item, sizeof(item), "PCM %d", k - hardware);
-      le_routing_select(m, control, items, item, r);
+      le_routing_select(m, control, items, loopback ? item : "Off", r);
     }
   }
 }
@@ -275,7 +278,9 @@ void le_own_scarlett2_routing(const le_mixer* m, int roles,
                               le_routing_report* out) {
   memset(out, 0, sizeof(*out));
   if (roles & LE_ROUTING_OUTPUTS) le_own_scarlett2_outputs(m, out);
-  if (roles & LE_ROUTING_INPUTS) le_own_scarlett2_inputs(m, out);
+  if (roles & LE_ROUTING_INPUTS) {
+    le_own_scarlett2_inputs(m, (roles & LE_ROUTING_OUTPUTS) != 0, out);
+  }
 }
 
 uint32_t le_scarlett2_loopback_mask(const le_mixer* m, int channel_count) {

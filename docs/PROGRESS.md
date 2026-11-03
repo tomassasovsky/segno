@@ -94,7 +94,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   `Playback Enum`) play `PCM 1`, `PCM 2`, ... in order. `PCM NN Capture
   Enum` records the hardware inputs in order, and the slots past them
   return `PCM 1`, `PCM 2`, ... (the loopback #1541 times on, excluded from
-  recording). A hardware input recorded through the unit's input DSP
+  recording; `Off` on a card Segno only records from). A hardware input recorded through the unit's input DSP
   (`DSP n` fed by that input, Gen 4 and Vocaster) is kept. Direct
   monitoring goes off. The mixer is left alone, since
   nothing selects a `Mix` afterwards. Only controls that differ are

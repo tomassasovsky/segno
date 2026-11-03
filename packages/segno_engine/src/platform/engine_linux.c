@@ -1157,7 +1157,7 @@ typedef struct le_alsa_ctl_syms {
   int (*elem_write)(void*, void*);
   unsigned int (*value_get_enumerated)(const void*, unsigned int);
   void (*value_set_enumerated)(void*, unsigned int, unsigned int);
-  int (*value_get_boolean)(const void*, unsigned int);
+  long (*value_get_boolean)(const void*, unsigned int);
   void (*value_set_boolean)(void*, unsigned int, long);
 } le_alsa_ctl_syms;
 

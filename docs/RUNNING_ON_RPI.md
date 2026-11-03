@@ -263,7 +263,8 @@ driver and are left alone.
   then `S/PDIF n`, then `ADAT n`). The capture channels past them are the
   loopback and return Segno's outputs, `PCM 1` first: on the 4i4,
   `PCM 05` ← `PCM 1` and `PCM 06` ← `PCM 2`. Segno times its latency
-  measurement there and never records, monitors or routes them. An input
+  measurement there and never records, monitors or routes them. On an
+  interface Segno only records from (it plays to another), they are `Off`. An input
   recorded through the unit's DSP (`DSP n` fed by that input) is kept.
 - **Direct monitoring** (`Direct Monitor Playback Switch` on the Solo,
   `Direct Monitor Playback Enum` on the 2i2) is switched off.

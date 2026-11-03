@@ -314,7 +314,8 @@ static void test_routing_spdif_order_and_direct_monitor(void) {
 /* Each card owns only its role: the card Segno plays to gets its outputs set,
  * the card it records from its inputs. A playback-only card keeps its capture
  * sources, so no loopback slot is set where the engine's mask, read from the
- * capture card, would not exclude it. */
+ * capture card, would not exclude it; a capture-only card's loopback slots
+ * go Off. */
 static void test_routing_roles_per_card(void) {
   printf("test_routing_roles_per_card\n");
   static rt_card card;
@@ -331,14 +332,17 @@ static void test_routing_roles_per_card(void) {
   CHECK(strcmp(rt_selected(&card, "PCM 05 Capture Enum"), "Off") == 0);
   CHECK(le_scarlett2_loopback_mask(&m, 6) == 0x20u);
 
+  /* A capture-only card: Segno plays elsewhere, so nothing of its own would
+   * return on the loopback slots; they go Off and nothing is excluded. */
   rt_set(&card, "Analogue Output 03 Playback Enum", "Mix C");
   le_own_scarlett2_routing(&m, LE_ROUTING_INPUTS, &r);
   CHECK(r.controls == 6);
   CHECK(r.changed == 1);
   CHECK(strcmp(rt_selected(&card, "Analogue Output 03 Playback Enum"),
                "Mix C") == 0);
-  CHECK(strcmp(rt_selected(&card, "PCM 05 Capture Enum"), "PCM 1") == 0);
-  CHECK(le_scarlett2_loopback_mask(&m, 6) == 0x30u);
+  CHECK(strcmp(rt_selected(&card, "PCM 05 Capture Enum"), "Off") == 0);
+  CHECK(strcmp(rt_selected(&card, "PCM 06 Capture Enum"), "Off") == 0);
+  CHECK(le_scarlett2_loopback_mask(&m, 6) == 0u);
 }
 
 /* A unit with input processing (Gen 4, Vocaster) may record a hardware input

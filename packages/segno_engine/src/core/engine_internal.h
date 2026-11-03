@@ -191,7 +191,7 @@ typedef struct le_routing_report {
  * and direct monitoring is off. LE_ROUTING_INPUTS: capture channel k records
  * hardware input k (directly, or through the unit's input DSP), and capture
  * channels past the hardware inputs return playback streams 1, 2, ... (the
- * loopback, #1541). Writes only what differs and reads it back. A card
+ * loopback, #1541) when the outputs are set too, and are Off otherwise. Writes only what differs and reads it back. A card
  * without these controls reports 0 controls and is left alone. The rules and
  * the reasons are in engine_devices.c. */
 void le_own_scarlett2_routing(const le_mixer* m, int roles,
