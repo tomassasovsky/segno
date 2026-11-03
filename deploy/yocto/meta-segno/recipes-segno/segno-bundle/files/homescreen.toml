@@ -71,11 +71,16 @@ pixel_ratio = 1.6
 
     [view.backend.drm]
     no_seat = true
-    # No `mode`: the panel's EDID-preferred 1024x600, which pixel_ratio is set
-    # for. This connector has been seen reading an empty EDID; then the mode
-    # is whatever the connector lists first and the readout,
-    # being proportional, still fills it. A pinned mode would instead stop the
-    # whole process when it is missing.
+    # The panel's native 1024x600, which pixel_ratio is set for (#1591). The
+    # connector reads an empty EDID on the console, so it marks no mode
+    # preferred and lists the kernel's fallback 1024x768 first: unpinned, the
+    # readout ran at 1024x768 and the panel squeezed it to 1024x600. The pin
+    # is safe because the kernel command line forces this connector on at
+    # 1024x600@60 (video=HDMI-A-1:1024x600@60D, kas-segno-common.yml), which
+    # puts the mode in its list with or without a panel or an EDID. A pinned
+    # mode the connector does not list stops the whole process at start, so
+    # the two must change together.
+    mode = '1024x600@60'
 
   [view.output]
   drm_connector = 'HDMI-A-1'
