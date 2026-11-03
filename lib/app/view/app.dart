@@ -35,6 +35,7 @@ import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/backing/cubit/backing_cubit.dart';
 import 'package:segno/backing/cubit/backing_mix_cubit.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
+import 'package:segno/console_leds/cubit/console_leds_cubit.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/application/removable_volumes.dart';
@@ -849,6 +850,19 @@ class _AppState extends State<App> {
             create: (context) => PedalCubit(
               pedal: context.read<PedalRepository>(),
             ),
+          ),
+          // The console LEDs' brightness (#1564), Manual or following the
+          // light sensor. Eager: it sends the board its level from launch.
+          BlocProvider(
+            lazy: false,
+            create: (context) {
+              final cubit = ConsoleLedsCubit(
+                settings: context.read<SettingsRepository>(),
+                pedal: context.read<PedalRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
           ),
           // Eager (not lazy): the recovery cubit must be watching at boot for a
           // pinned interface that was unplugged when auto-start ran, so it can
