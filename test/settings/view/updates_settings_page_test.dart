@@ -493,8 +493,9 @@ void main() {
       final usb = tester.getRect(find.byKey(const Key('updates_load_usb')));
       final check = tester.getRect(find.byKey(const Key('updates_check')));
 
-      // One line of the 28 px section label, not two at line height 1.
-      expect(installed.height, 28);
+      // One line of the 28 px section label, not two at line height 1 (the
+      // line box differs a little between the test hosts' font setups).
+      expect(installed.height, lessThan(2 * 28));
       expect(usb.top - installed.bottom, SpacingTheme.standard.lg);
       expect(check.top, usb.top);
       expect(check.left - usb.right, SpacingTheme.standard.lg);
