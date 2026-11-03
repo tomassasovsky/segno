@@ -2069,6 +2069,31 @@ void main() {
       );
     });
 
+    test(
+      'the room for a conversion includes the reserve a take keeps',
+      () async {
+        final dir = seedLegacy('perf-reserve', master: ramp(8));
+        final reserved = PerformanceRepository(
+          storageIo: fakeStorageIo,
+          guards: GuardRegistry(),
+          engine: engine,
+          exportsRoot: () async => '${tempDir.path}/exports',
+          partBytes: 84 + 3 * 8,
+          reserveBytes: 1000,
+        );
+        addTearDown(reserved.dispose);
+        engine.freeBytes = 32 + 2 * 84 + 999;
+
+        await reserved.runBootRecovery();
+        expect(reserved.unrecoveredTakes, [dir]);
+        expect(File('$dir/master.pcm').lengthSync(), 32);
+
+        engine.freeBytes = 32 + 2 * 84 + 1000;
+        await reserved.runBootRecovery();
+        expect(reserved.unrecoveredTakes, isEmpty);
+      },
+    );
+
     test('a stream that fails keeps its raw file; the streams before it stay '
         'converted and listed, and the next start finishes', () async {
       final dir = seedLegacy(

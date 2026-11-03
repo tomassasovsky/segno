@@ -1755,8 +1755,12 @@ class PerformanceRepository {
           (frames == 0 ? RecordingFormat.headerBytes : 0);
       if (need > largest) largest = need;
     }
+    // The conversion keeps the reserve a take keeps, so it never fills the
+    // volume the console runs from.
     final space = _engine.volumeSpace(dir);
-    if (space != null && space.freeBytes < largest) return null;
+    if (space != null && space.freeBytes < largest + (_reserveBytes ?? 0)) {
+      return null;
+    }
 
     var out = native;
     for (final s in pending) {
@@ -1894,7 +1898,8 @@ class PerformanceRepository {
     try {
       _io.syncDirectory(dir);
       return true;
-    } on FileSystemException {
+    } on Object {
+      // Whatever failed, the new sidecar is already in place.
       return false;
     }
   }
