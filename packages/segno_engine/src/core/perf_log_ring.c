@@ -39,3 +39,13 @@ int le_perf_log_ring_pop(le_perf_log_ring* ring, le_perf_log_entry* out) {
   atomic_store_explicit(&ring->head, head + 1, memory_order_release);
   return 1;
 }
+
+int le_perf_log_ring_peek(le_perf_log_ring* ring, le_perf_log_entry* out) {
+  const size_t head = atomic_load_explicit(&ring->head, memory_order_relaxed);
+  const size_t tail = atomic_load_explicit(&ring->tail, memory_order_acquire);
+  if (head == tail) {
+    return 0; /* empty */
+  }
+  *out = ring->buffer[head & ring->mask];
+  return 1;
+}
