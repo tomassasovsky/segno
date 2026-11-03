@@ -272,8 +272,8 @@ final goldenMessages = <String, PedalLinkMessage>{
   'ambient_reading_160': const AmbientLightMessage(
     PedalAmbientLight(sensor: PedalLightSensor.reading, level: 160),
   ),
-  'ambient_above_190': const AmbientLightMessage(
-    PedalAmbientLight(sensor: PedalLightSensor.aboveRange, level: 190),
+  'ambient_above_188': const AmbientLightMessage(
+    PedalAmbientLight(sensor: PedalLightSensor.aboveRange, level: 188),
   ),
   'ambient_reading_165': const AmbientLightMessage(
     PedalAmbientLight(sensor: PedalLightSensor.reading, level: 0xA5),

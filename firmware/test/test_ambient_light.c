@@ -41,12 +41,12 @@ static float counts_of(uint8_t level) {
 
 static void test_scale(void) {
   /* 16 steps per doubling of the reading; one count or less is 0; the top
-   * of the range is 3700 counts. */
+   * of the range is 3500 counts. */
   CHECK(fabsf(ambient_light_level_of(1024.0f) - 160.0f) < 0.01f, "1024 counts is not level 160");
   CHECK(ambient_light_level_of(1.0f) == 0.0f, "one count is not level 0");
   const uint8_t top = ambient_light_top_level();
-  CHECK(top == 190, "the top of the range moved");
-  CHECK(fabsf(counts_of(top) - 3700.0f) < 100.0f, "the top is not about 3700 counts");
+  CHECK(top == 188, "the top of the range moved");
+  CHECK(fabsf(counts_of(top) - 3500.0f) < 100.0f, "the top is not about 3500 counts");
   CHECK(ambient_light_level_of(4095.0f) == ambient_light_level_of(AMBIENT_TOP_COUNTS),
         "a saturated reading is not capped at the top");
 }
@@ -177,6 +177,49 @@ static void test_verdict_needs_two_probes(void) {
         "the old reading leaked into a fresh start");
 }
 
+/* The reading interval is random, 7..13 ms, so a flicker locked to the
+ * 10 ms mean (100 Hz, lamps on 50 Hz mains) is seen at every phase and
+ * averages out instead of reading one point of its cycle. */
+static void test_flicker_averages_out(void) {
+  uint32_t seed = 0x5E6A0C17u;
+  unsigned seen[AMBIENT_SAMPLE_MIN_MS + AMBIENT_SAMPLE_JITTER_MS] = {0};
+  for (int i = 0; i < 1000; ++i) {
+    const uint32_t interval = ambient_light_next_interval(&seed);
+    CHECK(interval >= AMBIENT_SAMPLE_MIN_MS &&
+              interval < AMBIENT_SAMPLE_MIN_MS + AMBIENT_SAMPLE_JITTER_MS,
+          "an interval out of range");
+    seen[interval]++;
+  }
+  for (unsigned i = AMBIENT_SAMPLE_MIN_MS; i < AMBIENT_SAMPLE_MIN_MS + AMBIENT_SAMPLE_JITTER_MS; ++i)
+    CHECK(seen[i] > 50, "an interval never drawn");
+  /* A lamp at 1000 counts with 100 % flicker at 100 Hz, its peak at t = 0:
+   * a fixed 10 ms reads 2000 every time. The random intervals read the mean:
+   * each second within 35 % (one second's spread is about 10 %), and the
+   * level the board reports, after its median and average, within its
+   * hysteresis of the mean's. */
+  const double pi = 3.14159265358979;
+  for (int phase = 0; phase < 4; ++phase) {
+    ambient_light a;
+    ambient_light_init(&a);
+    ambient_light_probe(&a, 1200, 900);
+    double t = phase * 2.5;
+    for (int second_n = 0; second_n < 20; ++second_n) {
+      double sum = 0;
+      for (unsigned i = 0; i < AMBIENT_WINDOW; ++i) {
+        const double counts = 1000.0 * (1.0 + cos(2.0 * pi * 100.0 * t / 1000.0));
+        sum += counts;
+        ambient_light_sample(&a, (uint16_t)(counts + 0.5));
+        t += ambient_light_next_interval(&seed);
+      }
+      const double mean = sum / AMBIENT_WINDOW;
+      CHECK(mean > 650.0 && mean < 1350.0, "100 Hz flicker did not average out");
+    }
+    const int want = (int)(16.0 * log2(1000.0) + 0.5);
+    CHECK(abs((int)ambient_light_level(&a) - want) < AMBIENT_HYSTERESIS,
+          "the level under flicker is not the mean's");
+  }
+}
+
 int main(void) {
   test_scale();
   test_probe();
@@ -186,6 +229,7 @@ int main(void) {
   test_hysteresis();
   test_a_real_change_follows();
   test_verdict_needs_two_probes();
+  test_flicker_averages_out();
   printf("ambient light: ALL PASSED\n");
   return 0;
 }

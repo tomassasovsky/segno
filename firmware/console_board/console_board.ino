@@ -763,12 +763,14 @@ static void pollCtrl() {
 }
 
 // ---- light sensor (J22) ---------------------------------------------------------
-// A reading every AMBIENT_SAMPLE_MS, with the pad's pulls off; ambient_light.h
+// A reading about every 10 ms, at random intervals so mains flicker is seen at
+// every phase (ambient_light.h), with the pad's pulls off; ambient_light.h
 // smooths them. Every AMBIENT_PROBE_MS the pad's pull-up, then its pull-down,
 // is switched on for one sample slot each, and the readings say whether
 // anything is on the pin (ambient_light_probe). Each step waits one slot,
-// 10 ms, for the node to settle: the load and its 100 nF settle in about
-// 1 ms. The probe's slots are not samples, so the pulls never shift a reading.
+// 7 ms or more, for the node to settle: the load and its 100 nF settle in
+// about 1 ms with 2.2 k and 1.5 ms with 22 k. The probe's slots are not
+// samples, so the pulls never shift a reading.
 //
 // The LEDs stay lit while it reads. The sensor is flush in the plate, looking
 // straight up; every pill, the ring and both screens are flush with or below
@@ -783,6 +785,8 @@ static ambient_light g_ambient;
 static uint8_t g_ambientPhase = AMBIENT_SAMPLING;
 static uint16_t g_ambientWithPullUp = 0;
 static unsigned long g_ambientLastMs = 0;
+static unsigned long g_ambientIntervalMs = 10;
+static uint32_t g_ambientSeed = 0x5E6A0C17u;
 static unsigned long g_ambientProbedMs = 0;
 
 static uint16_t ambientRead() {
@@ -796,8 +800,9 @@ static uint16_t ambientRead() {
 
 static void pollAmbient() {
   const unsigned long now = millis();
-  if (now - g_ambientLastMs < AMBIENT_SAMPLE_MS) return;
+  if (now - g_ambientLastMs < g_ambientIntervalMs) return;
   g_ambientLastMs = now;
+  g_ambientIntervalMs = ambient_light_next_interval(&g_ambientSeed);
   switch (g_ambientPhase) {
     case AMBIENT_SAMPLING:
       if (!g_ambient.probed || now - g_ambientProbedMs >= AMBIENT_PROBE_MS) {

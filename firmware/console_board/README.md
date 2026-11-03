@@ -96,25 +96,29 @@ An optional light sensor on J22 lets the app set the LED brightness from the
 room (#1564). The wiring is in segno-hardware's `hardware/segno_wiring.md`.
 `ambient_light.c` is the board's half:
 
-- **Reading.** GP28 is read every 10 ms (eight ADC conversions averaged) with
-  the pad's pulls off. One second of readings is averaged, which takes out
-  mains flicker and dimmer PWM. The board keeps the median of the last five
+- **Reading.** GP28 is read about every 10 ms (eight ADC conversions averaged)
+  with the pad's pulls off, at random intervals of 7 to 13 ms: a fixed 10 ms
+  is 100 Hz, the flicker of lamps on 50 Hz mains, and would catch every one
+  at the same phase. One second of readings at random phases is averaged,
+  which takes out mains flicker and dimmer PWM. The board keeps the median of the last five
   seconds, so a hand, a shadow or a strobe hit shorter than about two seconds
   never reaches the level, then averages that with a time constant of about
   3 s. The reported level moves only when the average has moved a quarter of
   a doubling (about 19 %) from it, so light that hovers does not make the LEDs
   step back and forth. A real change lands in about 5 to 10 s.
 - **Units.** `AMBIENT` carries the reading, not lux: `2^(level / 16)` ADC
-  counts of 4095, 0 for one count or less, 190 at the top of the range
-  (3700 counts, where the transistor runs out of headroom). Darkness is
-  reported as 0 exactly, and while the sensor is at the top of its range the
-  level is 190 exactly. The sensor's gain
+  counts of 4095, 0 for one count or less, 188 at the top of the range
+  (3500 counts, 2.82 V). The collector runs from J22's +3V3, the Pi's rail,
+  through 100 Ω, and the ADC reads against the Pico's own 3V3, so the top
+  sits below where a saturated sensor reads even with the Pi's rail 0.1 V
+  low. Darkness is reported as 0 exactly, and while the sensor is at the top
+  of its range the level is 188 exactly. The sensor's gain
   varies 9x between Vishay's bins and its lens is sanded flat, so the board
   does not guess it. The app calibrates against a dark and a bright reading the
   owner captures in Settings, and the load resistor can be swapped without
   touching this firmware.
 - **No sensor.** Every 2 s the board switches the pad's pull-up on for one
-  10 ms slot, then its pull-down for the next, and reads the pin in each. A
+  sample slot, then its pull-down for the next, and reads the pin in each. A
   pin that follows the pull-up into the top quarter of the scale and the
   pull-down into the bottom quarter has nothing on it; a fitted load holds it
   near its own reading. A pin that stays at ground with the pull-up

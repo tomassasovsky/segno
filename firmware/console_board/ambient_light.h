@@ -31,15 +31,21 @@
 extern "C" {
 #endif
 
-/* Above this the sensor's collector-emitter voltage is under about 0.3 V and
- * its response compresses: the top of the range. A bright room that reads
- * here needs a smaller load resistor. */
-#define AMBIENT_TOP_COUNTS 3700u
+/* The top of the range, 2.82 V. The collector is on J22's +3V3, the Pi's
+ * rail, while the ADC reads against the Pico's own 3V3, and the 100 ohm in
+ * the collector lead and the transistor's saturation take another 0.3 V or
+ * so: a saturated sensor reads somewhere from about 2.9 V up, and this sits
+ * under that with room for the Pi's rail to run 0.1 V low. A bright room
+ * that reads here needs a smaller load resistor. */
+#define AMBIENT_TOP_COUNTS 3500u
 
-/* One reading every AMBIENT_SAMPLE_MS; AMBIENT_WINDOW of them make one
- * second's mean, which takes out mains-driven flicker (100/120 Hz) and LED
- * dimmer PWM. */
-#define AMBIENT_SAMPLE_MS 10u
+/* One reading every AMBIENT_SAMPLE_MIN_MS plus 0..AMBIENT_SAMPLE_JITTER_MS-1
+ * (10 ms on average), drawn at random; AMBIENT_WINDOW of them make one
+ * second's mean. A fixed 10 ms would be 100 Hz, exactly the flicker of lamps
+ * on 50 Hz mains, and would see every one at the same phase; at random
+ * phases the mean takes out mains flicker and LED dimmer PWM alike. */
+#define AMBIENT_SAMPLE_MIN_MS 7u
+#define AMBIENT_SAMPLE_JITTER_MS 7u
 #define AMBIENT_WINDOW 100u
 
 /* The median of the last AMBIENT_MEDIAN seconds, so anything shorter than
@@ -91,12 +97,17 @@ void ambient_light_init(ambient_light *a);
  * or below one count, capped at AMBIENT_TOP_COUNTS. */
 float ambient_light_level_of(float counts);
 
-/* The level at the top of the range (190). */
+/* The level at the top of the range (188). */
 uint8_t ambient_light_top_level(void);
 
 /* Whether one probe found a sensor: the readings with the pad's pull-up and
  * with its pull-down on. */
 int ambient_light_probe_fitted(uint16_t with_pull_up, uint16_t with_pull_down);
+
+/* The wait before the next reading, AMBIENT_SAMPLE_MIN_MS plus a random
+ * share of AMBIENT_SAMPLE_JITTER_MS, from the xorshift state *seed (never 0;
+ * any non-zero start). */
+uint32_t ambient_light_next_interval(uint32_t *seed);
 
 /* Records a probe. The first verdict holds at once; after that a change
  * needs two probes in a row, and starts the smoothing over. */
