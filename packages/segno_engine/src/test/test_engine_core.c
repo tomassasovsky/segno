@@ -40175,6 +40175,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_clock.h"
 #include "test_engine_rt_memory.h"
 #include "test_engine_fx_workers.h"
+#include "test_engine_interface_routing.h"
 
 /* le_platform_name_thread names the thread that calls it (#1563): per-thread
  * tools on the console read these names, and an unnamed engine thread reads
@@ -40735,6 +40736,13 @@ int main(void) {
   test_label_is_loopback();
   test_capture_source_is_loopback();
   test_alsa_ctl_name_from_uid();
+  test_routing_4i4_pass_through_writes_nothing();
+  test_routing_4i4_from_stored_mixes();
+  test_routing_reports_what_it_could_not_set();
+  test_routing_leaves_other_cards_alone();
+  test_routing_spdif_order_and_direct_monitor();
+  test_routing_roles_per_card();
+  test_routing_keeps_inputs_through_their_dsp();
   test_excluded_mask_from_names();
   test_loopback_exclusion();
   test_loopback_latency_uses_loopback_channel();
