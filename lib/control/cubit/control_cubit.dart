@@ -819,6 +819,8 @@ class ControlCubit extends Cubit<ControlState> {
           void heldApplied(ControlValueTarget target) {
             if (held != true || !_originCurrent(target, origins)) return;
             (_externalHeldTargets[input] ??= {}).add(target);
+            // The authored Released outranks an older ordinary value.
+            _retireMixBaseline(target);
           }
 
           void recordParameter(ControlValueTarget target) {
@@ -830,7 +832,6 @@ class ControlCubit extends Cubit<ControlState> {
               _externalHeldTargets[input]?.remove(target);
             } else {
               if (_isSharedValue(target)) {
-                heldApplied(target);
                 _retireMixBaseline(target);
                 _externalMixReleased[input]?.remove(target);
                 if (requestedReleased[target] case final low?) {

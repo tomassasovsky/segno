@@ -768,6 +768,9 @@ void main() {
       ],
     ),
     (r) {
+      // An older ordinary pan never outranks the authored Released.
+      unawaited(r.mix.setTrackPan(.25));
+      r.settle();
       final gate = r.store.mixGate = Completer<void>();
       r.sample(255);
       // The jack goes away while the Held's Mixer write is in flight.
