@@ -216,6 +216,11 @@ abstract final class AppTheme {
   static ThemeData _base(ColorScheme scheme) => ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
+    // One density on every platform. Material picks compact on desktop
+    // targets, so on the appliance (Linux) every Material button lost 8 px
+    // of height against the pen and against the tests, which run as a phone
+    // (#1590 FT-1).
+    visualDensity: VisualDensity.standard,
     fontFamily: SurfaceTheme.displayFont,
     appBarTheme: AppBarTheme(backgroundColor: scheme.surfaceContainerHighest),
     pageTransitionsTheme: const PageTransitionsTheme(

@@ -1116,22 +1116,22 @@ static void le_prepare_thread_stack(pthread_t thread, size_t bytes) {
   pthread_attr_destroy(&attr);
 }
 
-/* ---- loopback channels from the interface's routing (#1541) ----
+/* ---- the interface's routing: loopback channels (#1541) and pass-through
+ * (#1046) ----
  *
  * ALSA gives capture channels no labels, but a Focusrite interface's
- * `scarlett2` mixer names the source of every capture channel: control
- * "PCM NN Capture Enum" (NN = the 1-based channel) reads "Analogue 1",
- * "Mix A", ... or "PCM <n>", the host's own playback stream n. A channel fed
- * from a playback stream is a loopback (on the console's 4i4, capture 5 =
- * "PCM 1", le_capture_source_is_loopback). A card without these
- * controls (anything but scarlett2) names no channel and excludes nothing.
+ * `scarlett2` mixer names the source of every capture channel and every
+ * hardware output: control "PCM NN Capture Enum" (NN = the 1-based channel)
+ * reads "Analogue 1", "Mix A", ... or "PCM <n>", the host's own playback
+ * stream n. The rules that read and set them are portable and tested
+ * (le_own_scarlett2_routing, le_scarlett2_loopback_mask in engine_devices.c);
+ * this file gives them one card's controls. A card without these controls
+ * (anything but scarlett2) is left alone and excludes nothing.
  *
  * Through libasound's control API, dlopen'd like the channel probe above: the
  * engine's link line, and the native tests', do not carry libasound. */
 
-/* snd_ctl_elem_iface_t / snd_ctl_elem_type_t values (alsa/control.h). */
 #define LE_SND_CTL_ELEM_IFACE_MIXER 2
-#define LE_SND_CTL_ELEM_TYPE_ENUMERATED 3
 #define LE_SND_CTL_NONBLOCK 0x0001
 
 typedef struct le_alsa_ctl_syms {
@@ -1151,9 +1151,14 @@ typedef struct le_alsa_ctl_syms {
   const char* (*info_get_item_name)(const void*);
   int (*value_malloc)(void**);
   void (*value_free)(void*);
+  void (*value_clear)(void*);
   void (*value_set_id)(void*, const void*);
   int (*elem_read)(void*, void*);
+  int (*elem_write)(void*, void*);
   unsigned int (*value_get_enumerated)(const void*, unsigned int);
+  void (*value_set_enumerated)(void*, unsigned int, unsigned int);
+  long (*value_get_boolean)(const void*, unsigned int);
+  void (*value_set_boolean)(void*, unsigned int, long);
 } le_alsa_ctl_syms;
 
 /* Resolved once from the process-lifetime libasound handle; NULL when ALSA or
@@ -1184,78 +1189,182 @@ static const le_alsa_ctl_syms* le_alsa_ctl_syms_get(void) {
     LE_CTL_SYM(info_get_item_name, "snd_ctl_elem_info_get_item_name");
     LE_CTL_SYM(value_malloc, "snd_ctl_elem_value_malloc");
     LE_CTL_SYM(value_free, "snd_ctl_elem_value_free");
+    LE_CTL_SYM(value_clear, "snd_ctl_elem_value_clear");
     LE_CTL_SYM(value_set_id, "snd_ctl_elem_value_set_id");
     LE_CTL_SYM(elem_read, "snd_ctl_elem_read");
+    LE_CTL_SYM(elem_write, "snd_ctl_elem_write");
     LE_CTL_SYM(value_get_enumerated, "snd_ctl_elem_value_get_enumerated");
+    LE_CTL_SYM(value_set_enumerated, "snd_ctl_elem_value_set_enumerated");
+    LE_CTL_SYM(value_get_boolean, "snd_ctl_elem_value_get_boolean");
+    LE_CTL_SYM(value_set_boolean, "snd_ctl_elem_value_set_boolean");
 #undef LE_CTL_SYM
     usable = syms.ctl_open && syms.ctl_close && syms.id_malloc && syms.id_free &&
              syms.id_set_interface && syms.id_set_name && syms.info_malloc &&
              syms.info_free && syms.info_set_id && syms.info &&
              syms.info_get_type && syms.info_get_items && syms.info_set_item &&
              syms.info_get_item_name && syms.value_malloc && syms.value_free &&
-             syms.value_set_id && syms.elem_read && syms.value_get_enumerated;
+             syms.value_clear && syms.value_set_id && syms.elem_read &&
+             syms.elem_write && syms.value_get_enumerated &&
+             syms.value_set_enumerated && syms.value_get_boolean &&
+             syms.value_set_boolean;
   }
   return usable ? &syms : NULL;
 }
 
-/* One card's open control handle and scratch objects, for the name provider. */
-typedef struct le_capture_sources {
+/* One card's open control handle and scratch objects: the le_mixer the
+ * routing rules read and write. */
+typedef struct le_alsa_mixer {
   const le_alsa_ctl_syms* s;
   void* ctl;
   void* id;
   void* info;
   void* value;
-  char name[64];
-} le_capture_sources;
+  char item[64];
+} le_alsa_mixer;
 
-/* Capture channel `channel`'s source in the scarlett2 routing ("PCM 1",
- * "Analogue 2", ...), or NULL when the card has no such control for it. */
-static const char* le_capture_source_name(le_capture_sources* c, int channel) {
+/* Points the scratch id and info at mixer control `name`; 1 when the card has
+ * it. */
+static int le_alsa_mixer_lookup(le_alsa_mixer* c, const char* name) {
   const le_alsa_ctl_syms* s = c->s;
-  char control[48];
-  snprintf(control, sizeof(control), "PCM %02d Capture Enum", channel + 1);
   s->id_set_interface(c->id, LE_SND_CTL_ELEM_IFACE_MIXER);
-  s->id_set_name(c->id, control);
+  s->id_set_name(c->id, name);
   s->info_set_id(c->info, c->id);
-  if (s->info(c->ctl, c->info) < 0 ||
-      s->info_get_type(c->info) != LE_SND_CTL_ELEM_TYPE_ENUMERATED) {
-    return NULL;
-  }
-  s->value_set_id(c->value, c->id);
-  if (s->elem_read(c->ctl, c->value) < 0) return NULL;
-  const unsigned int item = s->value_get_enumerated(c->value, 0);
-  if (item >= s->info_get_items(c->info)) return NULL;
+  return s->info(c->ctl, c->info) >= 0;
+}
+
+static int le_alsa_mixer_find(void* ctx, const char* name, int* type,
+                              unsigned* items) {
+  le_alsa_mixer* c = (le_alsa_mixer*)ctx;
+  if (!le_alsa_mixer_lookup(c, name)) return 0;
+  *type = c->s->info_get_type(c->info);
+  *items = *type == LE_MIXER_ENUMERATED ? c->s->info_get_items(c->info) : 0;
+  return 1;
+}
+
+static const char* le_alsa_mixer_item_name(void* ctx, const char* name,
+                                           unsigned item) {
+  le_alsa_mixer* c = (le_alsa_mixer*)ctx;
+  const le_alsa_ctl_syms* s = c->s;
+  if (!le_alsa_mixer_lookup(c, name)) return NULL;
   s->info_set_item(c->info, item);
   if (s->info(c->ctl, c->info) < 0) return NULL;
   const char* source = s->info_get_item_name(c->info);
   if (source == NULL) return NULL;
-  strncpy(c->name, source, sizeof(c->name) - 1);
-  c->name[sizeof(c->name) - 1] = '\0';
-  return c->name;
+  strncpy(c->item, source, sizeof(c->item) - 1);
+  c->item[sizeof(c->item) - 1] = '\0';
+  return c->item;
+}
+
+static int le_alsa_mixer_read(void* ctx, const char* name, unsigned* value) {
+  le_alsa_mixer* c = (le_alsa_mixer*)ctx;
+  const le_alsa_ctl_syms* s = c->s;
+  if (!le_alsa_mixer_lookup(c, name)) return -1;
+  const int type = s->info_get_type(c->info);
+  s->value_clear(c->value);
+  s->value_set_id(c->value, c->id);
+  if (s->elem_read(c->ctl, c->value) < 0) return -1;
+  *value = type == LE_MIXER_BOOLEAN
+               ? (unsigned)(s->value_get_boolean(c->value, 0) != 0)
+               : s->value_get_enumerated(c->value, 0);
+  return 0;
+}
+
+static int le_alsa_mixer_write(void* ctx, const char* name, unsigned value) {
+  le_alsa_mixer* c = (le_alsa_mixer*)ctx;
+  const le_alsa_ctl_syms* s = c->s;
+  if (!le_alsa_mixer_lookup(c, name)) return -1;
+  const int type = s->info_get_type(c->info);
+  s->value_clear(c->value);
+  s->value_set_id(c->value, c->id);
+  if (type == LE_MIXER_BOOLEAN) {
+    s->value_set_boolean(c->value, 0, (long)value);
+  } else {
+    s->value_set_enumerated(c->value, 0, value);
+  }
+  return s->elem_write(c->ctl, c->value) < 0 ? -1 : 0;
+}
+
+/* Opens control device `card` ("hw:2") as an le_mixer; 0 (nothing to close)
+ * when it cannot, or there is no libasound. */
+static int le_alsa_mixer_open(const char* card, le_alsa_mixer* c,
+                              le_mixer* m) {
+  memset(c, 0, sizeof(*c));
+  c->s = le_alsa_ctl_syms_get();
+  if (c->s == NULL) return 0;
+  if (c->s->ctl_open(&c->ctl, card, LE_SND_CTL_NONBLOCK) < 0) return 0;
+  if (c->s->id_malloc(&c->id) < 0 || c->s->info_malloc(&c->info) < 0 ||
+      c->s->value_malloc(&c->value) < 0) {
+    if (c->value != NULL) c->s->value_free(c->value);
+    if (c->info != NULL) c->s->info_free(c->info);
+    if (c->id != NULL) c->s->id_free(c->id);
+    c->s->ctl_close(c->ctl);
+    return 0;
+  }
+  m->ctx = c;
+  m->find = le_alsa_mixer_find;
+  m->item_name = le_alsa_mixer_item_name;
+  m->read = le_alsa_mixer_read;
+  m->write = le_alsa_mixer_write;
+  return 1;
+}
+
+static void le_alsa_mixer_close(le_alsa_mixer* c) {
+  c->s->value_free(c->value);
+  c->s->info_free(c->info);
+  c->s->id_free(c->id);
+  c->s->ctl_close(c->ctl);
+}
+
+/* Sets `roles` of one card's routing to pass-through and logs what that
+ * took. */
+static void le_own_card_routing(const char* card, int roles) {
+  le_alsa_mixer c;
+  le_mixer m;
+  if (!le_alsa_mixer_open(card, &c, &m)) return;
+  le_routing_report r;
+  le_own_scarlett2_routing(&m, roles, &r);
+  le_alsa_mixer_close(&c);
+  if (r.failed > 0) {
+    fprintf(stderr,
+            "segno/audio: %s routing not pass-through: %d of %d controls not "
+            "set, first '%s'\n",
+            card, r.failed, r.controls, r.first_failed);
+  } else if (r.changed > 0) {
+    fprintf(stderr,
+            "segno/audio: %s routing set to pass-through (%d of %d controls "
+            "changed)\n",
+            card, r.changed, r.controls);
+  }
+}
+
+void le_platform_own_interface_routing(const char* capture_uid,
+                                       const char* playback_uid) {
+  /* The capture card's inputs, so the loopback slots set here are the ones
+   * le_platform_excluded_input_mask reads; the playback card's outputs. */
+  char capture[64];
+  char playback[64];
+  const int has_capture =
+      le_alsa_ctl_name_from_uid(capture_uid, capture, sizeof(capture));
+  const int has_playback =
+      le_alsa_ctl_name_from_uid(playback_uid, playback, sizeof(playback));
+  if (has_capture && has_playback && strcmp(capture, playback) == 0) {
+    le_own_card_routing(capture, LE_ROUTING_OUTPUTS | LE_ROUTING_INPUTS);
+    return;
+  }
+  if (has_capture) le_own_card_routing(capture, LE_ROUTING_INPUTS);
+  if (has_playback) le_own_card_routing(playback, LE_ROUTING_OUTPUTS);
 }
 
 uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count) {
   char card[64];
-  if (!le_alsa_ctl_name_from_uid(uid, card, sizeof(card))) return 0;
-  const le_alsa_ctl_syms* s = le_alsa_ctl_syms_get();
-  if (s == NULL) return 0;
-  le_capture_sources c = {.s = s};
-  uint32_t mask = 0;
-  if (s->ctl_open(&c.ctl, card, LE_SND_CTL_NONBLOCK) < 0) return 0;
-  if (s->id_malloc(&c.id) >= 0 && s->info_malloc(&c.info) >= 0 &&
-      s->value_malloc(&c.value) >= 0) {
-    const int n =
-        channel_count < LE_MAX_CHANNELS ? channel_count : LE_MAX_CHANNELS;
-    for (int ch = 0; ch < n; ++ch) {
-      if (le_capture_source_is_loopback(le_capture_source_name(&c, ch))) {
-        mask |= 1u << ch;
-      }
-    }
+  le_alsa_mixer c;
+  le_mixer m;
+  if (!le_alsa_ctl_name_from_uid(uid, card, sizeof(card)) ||
+      !le_alsa_mixer_open(card, &c, &m)) {
+    return 0;
   }
-  if (c.value != NULL) s->value_free(c.value);
-  if (c.info != NULL) s->info_free(c.info);
-  if (c.id != NULL) s->id_free(c.id);
-  s->ctl_close(c.ctl);
+  const uint32_t mask = le_scarlett2_loopback_mask(&m, channel_count);
+  le_alsa_mixer_close(&c);
   return mask;
 }
 
