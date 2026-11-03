@@ -54,6 +54,7 @@ SRC_URI = "file://segno.service \
            file://dropbear-segno.conf \
            file://segno-brightness-ctl \
            file://segno-touch-ctl \
+           file://segno-capture \
            file://segno-touch-persist \
            file://segno-touch-persist.service \
            file://99-segno-wifi.conf \
@@ -164,6 +165,7 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${bindir}/segno-log-check \
                 ${bindir}/segno-brightness-ctl \
                 ${bindir}/segno-touch-ctl \
+                ${bindir}/segno-capture \
                 ${bindir}/segno-touch-persist \
                 ${sysconfdir}/udev/rules.d/98-segno-usb-storage.rules \
                 ${bindir}/segno-usb-ctl \
@@ -306,6 +308,10 @@ do_install() {
     install -m 0755 ${UNPACKDIR}/segno-touch-ctl ${D}${bindir}/segno-touch-ctl
     install -m 0755 ${UNPACKDIR}/segno-touch-persist ${D}${bindir}/segno-touch-persist
     install -m 0644 ${UNPACKDIR}/segno-touch-persist.service ${D}${systemd_system_unitdir}/segno-touch-persist.service
+
+    # Screen capture for remote checks (#1555): asks the app for a PNG of what
+    # each screen draws and prints the paths under /data/capture.
+    install -m 0755 ${UNPACKDIR}/segno-capture ${D}${bindir}/segno-capture
 
     # Removable USB storage (#1177). udev hands each USB filesystem to the
     # segno-usb-mount@ template, which mounts it and writes the JSON the app
