@@ -40,11 +40,12 @@ void main() {
       'fit, at the edge, instead of overflowing', (tester) async {
     await tester.pumpWidget(_bar(width: 800, trailing: 1000));
     expect(tester.takeException(), isNull);
-    // 500 of room for 1000: half size, centred on the bar's height.
+    // 800 less the leading 300 and the 24 gap leaves 476 for 1000: scaled
+    // to 0.476, at the edge, centred on the bar's height.
     final trailing = tester.getRect(find.byKey(const Key('trailing')));
-    expect(trailing.left, closeTo(300, 1e-9));
+    expect(trailing.left, closeTo(324, 1e-9));
     expect(trailing.right, closeTo(800, 1e-9));
-    expect(trailing.height, closeTo(30, 1e-9));
+    expect(trailing.height, closeTo(60 * 0.476, 1e-9));
     expect(trailing.center.dy, closeTo(48, 1e-9));
     expect(
       tester.getRect(find.byKey(const Key('leading'))),
