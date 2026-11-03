@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/console_leds/view/console_leds_page.dart';
 import 'package:segno/settings/settings.dart';
 
 import '../helpers/screenshot_fonts.dart';
@@ -32,6 +33,9 @@ void main() {
     'device': openDeviceSettings,
     'network': openNetworkSettings,
     'displays': openDisplaySettings,
+    // Displays > Console LEDs (#1564), on a board that reports no sensor.
+    'console_leds': () =>
+        segnoNavigatorKey.currentState!.push(ConsoleLedsPage.route()),
     'storage': openStorageSettings,
     'updates': openUpdateSettings,
   };

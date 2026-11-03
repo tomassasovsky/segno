@@ -1593,6 +1593,45 @@ void main() {
     });
   });
 
+  group('console LEDs', () {
+    test('default to full brightness, manual, uncalibrated', () async {
+      expect(await repository.loadConsoleLeds(), const ConsoleLedSettings());
+      expect(const ConsoleLedSettings().brightness, 1);
+      expect(const ConsoleLedSettings().automatic, isFalse);
+    });
+
+    test('round-trip', () async {
+      const settings = ConsoleLedSettings(
+        brightness: 0.6,
+        automatic: true,
+        offset: -0.25,
+        darkReading: 30,
+        brightReading: 120,
+      );
+      await repository.saveConsoleLeds(settings);
+      expect(await repository.loadConsoleLeds(), settings);
+    });
+
+    test('clamp stored values into range', () async {
+      await store.setDouble('console_leds.brightness', 0.05);
+      await store.setDouble('console_leds.offset', 3);
+      final settings = await repository.loadConsoleLeds();
+      expect(settings.brightness, ConsoleLedSettings.minBrightness);
+      expect(settings.offset, 1);
+    });
+
+    test(
+      'a calibration with its points too close reads as the default',
+      () async {
+        await store.setInt('console_leds.dark_reading', 100);
+        await store.setInt('console_leds.bright_reading', 110);
+        final settings = await repository.loadConsoleLeds();
+        expect(settings.darkReading, ConsoleLedSettings.defaultDarkReading);
+        expect(settings.brightReading, ConsoleLedSettings.defaultBrightReading);
+      },
+    );
+  });
+
   group('saved FX presets', () {
     test('reads null when nothing has been saved', () async {
       expect(await repository.loadFxUserPresets(), isNull);

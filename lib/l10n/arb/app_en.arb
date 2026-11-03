@@ -8268,5 +8268,107 @@
                 "type": "String"
             }
         }
+    },
+    "consoleLedsTitle": "Console LEDs",
+    "@consoleLedsTitle": {
+        "description": "Title of the Console LEDs page, and the button on the Displays page that opens it: the brightness of the pedal pills and the ring."
+    },
+    "consoleLedsManual": "Manual",
+    "@consoleLedsManual": {
+        "description": "Choice: the console LEDs keep the brightness the slider sets."
+    },
+    "consoleLedsAutomatic": "Automatic",
+    "@consoleLedsAutomatic": {
+        "description": "Choice: the console LEDs follow the light sensor."
+    },
+    "consoleLedsOffset": "Brighter or darker",
+    "@consoleLedsOffset": {
+        "description": "Label of the slider that shifts the automatic LED brightness brighter or darker."
+    },
+    "consoleLedsOffsetPercent": "{offset}%",
+    "@consoleLedsOffsetPercent": {
+        "description": "Readout of the automatic brightness shift, signed, for example +20% or -10%.",
+        "placeholders": {
+            "offset": {
+                "type": "String"
+            }
+        }
+    },
+    "consoleLedsNoteAutomatic": "The LEDs follow the light at the console. The slider makes them brighter or darker than that.",
+    "@consoleLedsNoteAutomatic": {
+        "description": "Note while the console LEDs follow the light sensor."
+    },
+    "consoleLedsNoteManual": "Automatic sets the LEDs from the light sensor on the console.",
+    "@consoleLedsNoteManual": {
+        "description": "Note while the console LEDs are on a manual brightness and a light sensor is fitted."
+    },
+    "consoleLedsNoteNoSensor": "Automatic needs a light sensor on J22 of the console board. None is fitted.",
+    "@consoleLedsNoteNoSensor": {
+        "description": "Note when the console board reports no light sensor."
+    },
+    "consoleLedsNoteNotReported": "The console board has not reported a light sensor. Automatic needs controller firmware 2.7 or later and a sensor on J22.",
+    "@consoleLedsNoteNotReported": {
+        "description": "Note when the console board says nothing about a light sensor: it is disconnected or its firmware predates the sensor."
+    },
+    "consoleLedsNoteAboveRange": "The light sensor is at the top of its range. Fit a smaller load resistor, then calibrate again.",
+    "@consoleLedsNoteAboveRange": {
+        "description": "Note when the light sensor reads at the top of its range."
+    },
+    "consoleLedsSensorPanel": "Light sensor",
+    "@consoleLedsSensorPanel": {
+        "description": "Heading of the panel of light sensor facts."
+    },
+    "consoleLedsSensorRow": "Sensor",
+    "@consoleLedsSensorRow": {
+        "description": "Row: whether a light sensor is fitted."
+    },
+    "consoleLedsSensorFitted": "Fitted",
+    "@consoleLedsSensorFitted": {
+        "description": "The light sensor is fitted."
+    },
+    "consoleLedsSensorNone": "Not fitted",
+    "@consoleLedsSensorNone": {
+        "description": "No light sensor is fitted."
+    },
+    "consoleLedsSensorAboveRange": "At the top of its range",
+    "@consoleLedsSensorAboveRange": {
+        "description": "The light sensor reads at the top of its range."
+    },
+    "consoleLedsReadingRow": "Reading",
+    "@consoleLedsReadingRow": {
+        "description": "Row: the light sensor's raw reading."
+    },
+    "consoleLedsReadingValue": "{counts} of 4095",
+    "@consoleLedsReadingValue": {
+        "description": "The light sensor's raw ADC reading out of its full scale.",
+        "placeholders": {
+            "counts": {
+                "type": "int"
+            }
+        }
+    },
+    "consoleLedsDarkRow": "Dark room",
+    "@consoleLedsDarkRow": {
+        "description": "Row and button: the light sensor reading captured in a dark room."
+    },
+    "consoleLedsBrightRow": "Bright room",
+    "@consoleLedsBrightRow": {
+        "description": "Row and button: the light sensor reading captured in a bright room."
+    },
+    "consoleLedsNowRow": "LEDs now",
+    "@consoleLedsNowRow": {
+        "description": "Row: the brightness the console LEDs show now."
+    },
+    "consoleLedsCalibrate": "Calibrate",
+    "@consoleLedsCalibrate": {
+        "description": "Heading of the light sensor calibration section."
+    },
+    "consoleLedsCalibrateNote": "In a dark room, with the lights as they are on stage, wait 10 seconds and tap Dark room. Then do the same in a bright room. Each takes the reading above.",
+    "@consoleLedsCalibrateNote": {
+        "description": "How to calibrate the light sensor."
+    },
+    "consoleLedsCalibrateTooClose": "A bright room must read at least twice the dark room. Set the dark room first.",
+    "@consoleLedsCalibrateTooClose": {
+        "description": "Note when a calibration button is unavailable because the two readings would be too close."
     }
 }
