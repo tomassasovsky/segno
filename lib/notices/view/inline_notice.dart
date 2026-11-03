@@ -17,6 +17,7 @@ class InlineNotice extends StatelessWidget {
     required this.message,
     this.tone = NoticeTone.warning,
     this.action,
+    this.maxLines,
     super.key,
   });
 
@@ -28,6 +29,10 @@ class InlineNotice extends StatelessWidget {
 
   /// The page's button that resolves it.
   final Widget? action;
+
+  /// The most lines the sentence takes, for a band of a fixed height; null
+  /// wraps it whole.
+  final int? maxLines;
 
   @override
   Widget build(BuildContext context) {
@@ -42,7 +47,7 @@ class InlineNotice extends StatelessWidget {
       child: Container(
         padding: EdgeInsets.symmetric(
           horizontal: spacing.xl,
-          vertical: spacing.sm,
+          vertical: spacing.xs,
         ),
         decoration: BoxDecoration(
           color: colors.tint,
@@ -56,8 +61,8 @@ class InlineNotice extends StatelessWidget {
             Expanded(
               child: AppText(
                 message,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+                maxLines: maxLines,
+                overflow: maxLines == null ? null : TextOverflow.ellipsis,
                 style: theme.inlineText.copyWith(color: surface.textPrimary),
               ),
             ),

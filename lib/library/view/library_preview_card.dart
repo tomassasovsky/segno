@@ -289,6 +289,13 @@ class LibraryPreviewTracks extends StatelessWidget {
       LibraryListenRefusal.busy => l10n.libraryListenBusy,
       null => null,
     };
+    // Nothing to play it with, or nothing to play, is red; a press that
+    // waits on something else is a warning (#1562).
+    final listenRefusalTone = switch (listenRefusalKind) {
+      LibraryListenRefusal.unplayable ||
+      LibraryListenRefusal.noDevice => ConsoleBannerTone.failure,
+      _ => ConsoleBannerTone.warning,
+    };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -297,7 +304,7 @@ class LibraryPreviewTracks extends StatelessWidget {
             key: const Key('library_open_refused'),
             message: refusal,
             // A press that did nothing: a warning, not red (#1562).
-            tone: ConsoleBannerTone.pending,
+            tone: ConsoleBannerTone.warning,
           ),
           const SizedBox(height: 12),
         ],
@@ -305,7 +312,7 @@ class LibraryPreviewTracks extends StatelessWidget {
           ConsoleBanner(
             key: const Key('library_listen_refused'),
             message: listenRefusal,
-            tone: ConsoleBannerTone.pending,
+            tone: listenRefusalTone,
           ),
           const SizedBox(height: 12),
         ],

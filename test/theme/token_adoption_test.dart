@@ -120,7 +120,8 @@ void main() {
       isEmpty,
       reason:
           'Inline alpha on a state colour. Use the matching surface token '
-          '(accentSurface / recSurface / successSurface), or add the file '
+          '(accentSurface / recSurface / successSurface / fxSurface / '
+          'warningTint), or add the file '
           'to _allowedWash with the reason no token fits.\n'
           '${offenders.join('\n')}',
     );

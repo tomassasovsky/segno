@@ -1666,6 +1666,10 @@ enum ConsoleBannerTone {
   /// Something is in flight — amber.
   pending,
 
+  /// A settled warning: it works, but not as asked, or a press did nothing
+  /// (#1562) — amber, the notice warning tone.
+  warning,
+
   /// Something just failed, or nothing is there to do it with — red.
   failure,
 
@@ -1730,7 +1734,7 @@ class ConsoleBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final dot = switch (tone) {
-      ConsoleBannerTone.pending => surface.warning,
+      ConsoleBannerTone.pending || ConsoleBannerTone.warning => surface.warning,
       ConsoleBannerTone.failure => surface.rec,
       ConsoleBannerTone.steady => surface.success,
     };

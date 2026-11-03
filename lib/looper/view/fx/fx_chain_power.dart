@@ -144,6 +144,7 @@ class FxChainOffNotice extends StatelessWidget {
     height: height,
     child: InlineNotice(
       message: message,
+      maxLines: 2,
       action: LoopOutlinedButton(
         key: const Key('fx_chain_turn_on'),
         width: 260,

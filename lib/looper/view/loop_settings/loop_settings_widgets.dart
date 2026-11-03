@@ -759,7 +759,7 @@ enum LoopNoteTone {
 }
 
 /// The lock banner a capture puts over a page whose settings it freezes:
-/// 68 high, a warning edge on the left, one sentence.
+/// 68 high, a neutral inline notice (#1562), at most two lines.
 class LoopLockBanner extends StatelessWidget {
   /// Creates a [LoopLockBanner].
   const LoopLockBanner({required this.text, required this.width, super.key});
@@ -775,7 +775,7 @@ class LoopLockBanner extends StatelessWidget {
     key: const Key('loop_lock_banner'),
     width: width,
     height: 68,
-    child: InlineNotice(message: text, tone: NoticeTone.neutral),
+    child: InlineNotice(message: text, tone: NoticeTone.neutral, maxLines: 2),
   );
 }
 

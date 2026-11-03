@@ -227,7 +227,7 @@ class _Workspace extends StatelessWidget {
       ),
       // The device runs, at other settings: a warning, not a failure
       // (#1562). Red is for silence and loss.
-      tone: ConsoleBannerTone.pending,
+      tone: ConsoleBannerTone.warning,
     );
   }
 
