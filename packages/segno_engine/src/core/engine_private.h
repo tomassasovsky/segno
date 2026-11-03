@@ -711,13 +711,13 @@ typedef struct le_fx_slice_voice {
   int32_t arg;  /* BACK: the frames back; MIRROR: the ring index it mirrors */
   int32_t len;  /* MIRROR: the frames it was latched for */
   float gain;   /* the gain it last played at */
-  float step;   /* fading out: the gain it loses each frame */
+  float step;   /* the gain it loses each frame fading out (its crossfade's) */
 } le_fx_slice_voice;
 
 /* A slot's Slicer runtime: the slice playing (id 0: none) and up to two
- * fading out after being cut short, the pattern and step in force (a new
- * one waits for the slice playing to end), the gliding mix, how far the
- * output has crossfaded to the input (with no tempo) and the
+ * fading out (the slice before, or one cut short), the pattern and step in
+ * force (a new one waits for the slice playing to end), the gliding mix,
+ * how far the output has crossfaded to the input (with no tempo) and the
  * beat last seen. */
 typedef struct le_fx_slice_state {
   double id;
@@ -729,7 +729,6 @@ typedef struct le_fx_slice_state {
   int32_t step;
   float mix;
   float pass;
-  float wet_g; /* the playing slice's gain this frame */
 } le_fx_slice_state;
 
 typedef struct le_fx_state {
