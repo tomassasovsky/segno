@@ -152,25 +152,44 @@ class _PreviewNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    return Center(
-      child: AppText(
-        switch (kind) {
-          _PreviewNoticeKind.nothingSelected => l10n.libraryNoSelection,
-          _PreviewNoticeKind.unsupportedVersion =>
-            l10n.sessionErrorUnsupportedVersion,
-          _PreviewNoticeKind.unconvertible => l10n.sessionErrorUnconvertible,
-          _PreviewNoticeKind.unreadable => l10n.libraryPreviewUnreadable,
-        },
-        key: Key('library_preview_${kind.name}'),
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          color: context.surface.textSecondary,
-          fontSize: 23,
-          height: 1.4,
-        ),
-      ),
+    return LibraryPreviewNotice(
+      switch (kind) {
+        _PreviewNoticeKind.nothingSelected => l10n.libraryNoSelection,
+        _PreviewNoticeKind.unsupportedVersion =>
+          l10n.sessionErrorUnsupportedVersion,
+        _PreviewNoticeKind.unconvertible => l10n.sessionErrorUnconvertible,
+        _PreviewNoticeKind.unreadable => l10n.libraryPreviewUnreadable,
+      },
+      textKey: Key('library_preview_${kind.name}'),
     );
   }
+}
+
+/// A Library preview card's one line when there is nothing to preview,
+/// centred in the card. The Sessions and Audio cards both use it.
+class LibraryPreviewNotice extends StatelessWidget {
+  /// Creates the notice saying [text].
+  const LibraryPreviewNotice(this.text, {this.textKey, super.key});
+
+  /// What the card says.
+  final String text;
+
+  /// The key of the line itself, for finding it.
+  final Key? textKey;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: AppText(
+      text,
+      key: textKey,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        color: context.surface.textSecondary,
+        fontSize: 23,
+        height: 1.4,
+      ),
+    ),
+  );
 }
 
 /// A read preview under the heading: musical facts, track lanes and footer.
@@ -350,7 +369,6 @@ class LibraryPreviewTracks extends StatelessWidget {
                   ),
                 )
               : ListView(
-                  padding: const EdgeInsets.only(right: 10),
                   children: [
                     for (final (i, track) in tracks.indexed)
                       LibraryPreviewTrackRow(
