@@ -73,9 +73,37 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1555 | Retest Impeller on the console: on-device screen capture (`segno-capture`) in review; the owner's look at both renderers next | in-review | merge-gate | `claude/screen-capture-1555` |
+| #1563 | The UI thread's idle and playing CPU: engine threads named (the audio thread read as io.flutter.ui), playhead out of the looper state, live values in their own layers and paused under a covering page | build | auto | `claude/ui-thread-cpu-1563` |
 | #1547 | Every effect the same at any sample rate and block size: parts 1 (the matrix test) and 2 (oversampling) merged; part 3a (filter responses at 44.1 and 96 kHz, the console's oversampling costs) in review; 3b tails, 3c pitch (#1467), 3d the Transient next | in-review | auto | `claude/fx-invariance-1547-p3a` |
 
 ---
+
+## November 2026 The UI thread's CPU (#1563)
+
+- The 15% "UI thread at idle" was the audio thread. The engine's threads
+  kept the name of the thread that started them, a Dart UI isolate, so a
+  per-thread sum by name counted the audio thread (14% idle, 16% playing)
+  as `io.flutter.ui`. Each engine thread now names itself
+  (`le_platform_name_thread`: segno-audio, segno-midi, segno-cache,
+  segno-restore, segno-prefault, segno-render, segno-drain, segno-checkpt,
+  segno-fx-N), so `top -H`, `segno-prof` and `/data/bench/load.sh` read
+  true. The main screen's Dart UI thread is 1.4% of a core at idle, most of
+  it the 16 ms snapshot poll.
+- While a loop played, every poll republished `LooperState` because the
+  playhead was in it, and every listener of the state ran again. The
+  playhead is now `LooperRepository.playheads` (`Playhead`), apart from the
+  state as the levels are (#1301); `TransportState.masterPositionFrames`
+  and `Track.positionFrames` are gone.
+- Meters and playheads follow their stream through `LiveValue`
+  (`LiveCubit`): each paints in its own layer, and each stops following
+  while its route is covered (`TickerMode`), so the Effects page no longer
+  keeps the stage under it drawing frames. The waveform's playhead paints
+  over the wave in a layer of its own.
+- Console, build 213 against this branch, 30 s windows, % of one core:
+  main-screen UI thread 9.5 -> 4.1 playing, 7.1 -> 2.1 on the Effects page;
+  readout UI thread 2.1 -> 1.2 playing; Effects page render jobs 89 -> 38
+  a second. GPU busy while the stage plays went 11% -> 15%: the stage's
+  page is now a stable layer the raster cache keeps and draws as an image.
 
 ## November 2026 Screen capture on the console (#1555)
 
