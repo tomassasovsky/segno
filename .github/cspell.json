@@ -24,6 +24,7 @@
     "**/third_party/vst3sdk/**"
   ],
   "words": [
+    "EDID",
     "prefault",
     "checkpt",
     "oversample",

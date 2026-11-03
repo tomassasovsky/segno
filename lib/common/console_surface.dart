@@ -429,7 +429,10 @@ class ConsoleRow extends StatelessWidget {
             glyph,
             const SizedBox(width: kConsoleRowGap),
           ],
+          // Twice the value's share, so the title and its subtitle are not
+          // cut at half the row beside a short value (#1590 DEV-1).
           Expanded(
+            flex: 2,
             child: quiet(
               Column(
                 mainAxisSize: MainAxisSize.min,
@@ -448,9 +451,11 @@ class ConsoleRow extends StatelessWidget {
                   ),
                   if (subtitle case final sub?) ...[
                     const SizedBox(height: 2),
+                    // Two lines fit the row's height, so a sentence of
+                    // subtitle wraps rather than losing its end.
                     AppText(
                       sub,
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: surface.textMuted,
@@ -486,6 +491,7 @@ class ConsoleRow extends StatelessWidget {
             ],
             if (value case final name?) ...[
               const SizedBox(width: kConsoleRowGap),
+              // A third of what the row has left, right-aligned.
               Expanded(
                 child: quiet(
                   AppText(
@@ -3522,7 +3528,10 @@ class ConsoleDialogButton extends StatelessWidget {
 /// and Material's `TextButton`s onto a face where nothing else looks like that.
 ///
 /// The scrim is the CALLER's: `showDialog` owns it, and a shell that tried to
-/// draw one would put a second scrim over the first.
+/// draw one would put a second scrim over the first. So is the centring: a
+/// dialog route offers the whole screen as tight constraints, so a caller
+/// wraps the shell in a [Center], or the panel ignores [width] and fills the
+/// screen.
 class ConsoleDialogShell extends StatelessWidget {
   /// Creates a [ConsoleDialogShell].
   const ConsoleDialogShell({
