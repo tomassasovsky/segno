@@ -7364,25 +7364,30 @@ static void fx_lpf_kprocess(void* ks, float* l, float* r) {
 
 /* ---- Spring (LE_FX_SPRING, #887 part 8) ----
  *
- * Fit to the Phase 0 captures of the Guitar Rack's Spring (#891, s3/6 at
- * Time 2.00 s and s3/7 at Time 7.9 s, both at Mix 28.9 %):
+ * Fit to the captures of the Guitar Rack's Spring at Mix 28.9 % (#891: s3/6
+ * and s3/7 at Time 2 and 8 s, and s16spring at every whole second from 1 to
+ * 10 s, the steps the Looper X's Time takes; #1547):
  * - the tank is one recirculating spring: its echo returns every 38.0 ms
  *   (the envelope's autocorrelation peak in both), dispersed on each trip by
  *   a chain of twelve first-order all-passes;
- * - the decay: each trip loses 2.14 / Time + 0.17 dB, and above 1.2 kHz
- *   another 0.32 dB (a first-order shelf in the loop). Measured on the
- *   impulse responses in four bands from 200 Hz to 4 kHz, that decays in
- *   1.95, 1.85, 1.74, 1.63 s against the capture's 1.96, 1.86, 1.76, 1.54
- *   at Time 2.00 s, and 6.2, 5.3, 4.4, 3.8 s against 6.5, 5.3, 4.5, 3.4 at
- *   7.9 s (so Time is the decay at the bottom of the band at short settings
- *   and longer than it at long ones);
+ * - the decay: each trip loses LE_SPR_TIME's loss at the Time, 0.45 dB more
+ *   above 1.2 kHz and its low gain less below 400 Hz (first-order shelves
+ *   in the loop), between the whole seconds log-linear. Read on the impulse
+ *   responses in windows a trip long (20 ms ones alternate between echoes
+ *   and the silence between them, and read this tank's decay as 23 % longer
+ *   than it is at 8 s), from 0.3 to 1.0 s, broadband and in four bands from
+ *   200 Hz to 4 kHz, it is within 3 % of the captures broadband at every
+ *   Time and within 10 % in each band (the 1-2 kHz band the furthest, 9 %
+ *   short at 10 s);
  * - the wet sound is band-limited, 200 Hz to a steep edge near 4 kHz
  *   (-46 dB at 4.7 kHz, -96 dB at 7.2 kHz): nine sections fitted to the
  *   impulse response's spectrum within 1.7 dB rms from 100 Hz to 7.3 kHz;
  * - the mix law is the chorus's (dry 1 - 0.29 mix; the capture's dry gain
- *   was 0.9165 at 28.9 %), and the wet level follows
- *   0.85 mix (Time / 2)^0.45, fitted to the wet energy against the dry at
- *   both Times.
+ *   was 0.9165 at 28.9 %), and the wet level is mix times LE_SPR_TIME's wet,
+ *   which puts the impulse response's first second at the captures' energy
+ *   against the dry at every Time (-18.1 dB at 1 s to -17.1 at 10 s). The
+ *   earlier law, 0.85 mix (Time / 2)^0.45, was 8.6 dB louder at 2 s and
+ *   17 dB at 8 s.
  * A known difference: successive echoes repeat more closely (envelope
  * autocorrelation 0.87 at 38 ms against the capture's 0.4). Both channels
  * take the tank's mono output (the capture's correlated at 0.996). */
@@ -7397,13 +7402,22 @@ static const le_fx_param_desc LE_FX_SPRING_PARAMS[] = {
 #define LE_SPR_STAGES 12
 #define LE_SPR_DISPERSION_HZ 1500.0
 #define LE_SPR_LOSS_HZ 1200.0
-#define LE_SPR_LOSS_SHELF 0.963829f /* -0.32 dB per trip above it */
+#define LE_SPR_LOSS_SHELF 0.949511f /* -0.45 dB per trip above it */
+#define LE_SPR_LOW_HZ 400.0
 #define LE_SPR_DRY_DROP 0.29f
-#define LE_SPR_WET 0.85
-#define LE_SPR_WET_EXP 0.45
-#define LE_SPR_LOSS_TIME_DB 2.14 /* dB a trip, over Time */
-#define LE_SPR_LOSS_DB 0.17
 #define LE_SPR_SECTIONS 9
+
+/* At each whole second of Time from 1 to 10 s: the dB a trip loses, the dB
+ * it keeps more below LE_SPR_LOW_HZ, and the wet level at 100 % mix. */
+static const struct {
+  double loss_db, low_db, wet;
+} LE_SPR_TIME[10] = {
+    {1.5925, 0.0000, 0.3498}, {1.0904, 0.0000, 0.3071},
+    {0.8372, 0.0000, 0.2820}, {0.6768, 0.0231, 0.2637},
+    {0.5571, 0.0330, 0.2491}, {0.4629, 0.0409, 0.2371},
+    {0.3854, 0.0470, 0.2271}, {0.3199, 0.0522, 0.2184},
+    {0.2631, 0.0563, 0.2097}, {0.2129, 0.0595, 0.2026},
+};
 
 static const struct {
   int kind;
@@ -7420,13 +7434,16 @@ typedef struct le_fx_spring {
   le_fx_dyn_head h;
   float last[LE_SPR_PARAMS_N];
   le_fx_glide gain; /* the loop's gain per trip */
+  le_fx_glide low;  /* its gain below LE_SPR_LOW_HZ, over it */
   le_fx_glide dry;
   le_fx_glide wet;
   float gain_tgt;   /* the targets, recomputed when the settings change */
+  float low_tgt;
   float wet_tgt;
   double trip_scale; /* the trip held, over the 38 ms one (1 below 107 kHz) */
   float ap;         /* the all-passes' coefficient */
   float loss_g1;
+  float low_g1;
   uint32_t trip;    /* the delay line's samples */
   float shape[LE_SPR_SECTIONS][5];
   /* the filters' states per phase: at 96 kHz the tank is the 48 kHz one on
@@ -7434,6 +7451,7 @@ typedef struct le_fx_spring {
   float z[LE_SPR_SECTIONS][LE_RS_PH][2];
   float ap_z[LE_RS_PH][LE_SPR_STAGES];
   float loss_s[LE_RS_PH];
+  float low_s[LE_RS_PH];
   int32_t ph, nph;
   /* At rates other than 48 and 96 kHz, the trip's fraction of a sample: a
    * first-order all-pass delaying low frequencies by it (frac_on). */
@@ -7457,6 +7475,7 @@ static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
       memset(q->z, 0, sizeof(q->z));
       memset(q->ap_z, 0, sizeof(q->ap_z));
       memset(q->loss_s, 0, sizeof(q->loss_s));
+      memset(q->low_s, 0, sizeof(q->low_s));
       memset(q->frac_z, 0, sizeof(q->frac_z));
     }
     le_hb_design(&q->hb, rate);
@@ -7473,6 +7492,7 @@ static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
     const double a = (1.0 - t) / (1.0 + t);
     q->ap = (float)a;
     q->loss_g1 = le_onepole_g1(LE_SPR_LOSS_HZ, drate);
+    q->low_g1 = le_onepole_g1(LE_SPR_LOW_HZ, drate);
     /* The loop's delay at low frequencies is the 48 kHz tank's: its whole
      * trip (38 ms less the all-passes' delay, rounded) and its all-passes.
      * At 96 kHz the trip is twice that, so each phase runs the 48 kHz tank;
@@ -7506,13 +7526,22 @@ static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
   }
   const float m = p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1];
   if (f & LE_FX_DYN_CHANGED) {
-    const double time = le_fx_desc_value(&LE_FX_SPRING_PARAMS[0], p[0]);
-    q->gain_tgt = (float)pow(10.0, -(LE_SPR_LOSS_TIME_DB / time + LE_SPR_LOSS_DB) *
-                                       q->trip_scale / 20.0);
-    q->wet_tgt = (float)(LE_SPR_WET * pow(time / 2.0, LE_SPR_WET_EXP));
+    double time = le_fx_desc_value(&LE_FX_SPRING_PARAMS[0], p[0]);
+    time = time < 1.0 ? 1.0 : time > 10.0 ? 10.0 : time;
+    const int i = time >= 10.0 ? 8 : (int)time - 1;
+    const double f = time - (double)(i + 1);
+    const double loss =
+        LE_SPR_TIME[i].loss_db * pow(LE_SPR_TIME[i + 1].loss_db / LE_SPR_TIME[i].loss_db, f);
+    const double low = LE_SPR_TIME[i].low_db +
+                       f * (LE_SPR_TIME[i + 1].low_db - LE_SPR_TIME[i].low_db);
+    q->gain_tgt = (float)pow(10.0, -loss * q->trip_scale / 20.0);
+    q->low_tgt = (float)pow(10.0, low * q->trip_scale / 20.0);
+    q->wet_tgt =
+        (float)(LE_SPR_TIME[i].wet * pow(LE_SPR_TIME[i + 1].wet / LE_SPR_TIME[i].wet, f));
   }
   const float k = settle ? 1.0f : q->h.k;
   int moving = le_fx_glide_step(&q->gain, q->gain_tgt, k);
+  moving |= le_fx_glide_step(&q->low, q->low_tgt, k);
   moving |= le_fx_glide_step(&q->dry, 1.0f - LE_SPR_DRY_DROP * m, k);
   moving |= le_fx_glide_step(&q->wet, q->wet_tgt * m, k);
   q->h.moving = moving;
@@ -7521,6 +7550,7 @@ static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
 static void fx_spring_kprocess(void* ks, float* l, float* r) {
   le_fx_spring* q = (le_fx_spring*)ks;
   const float g = le_fx_glide_next(&q->gain);
+  const float lowk = le_fx_glide_next(&q->low);
   const float dry = le_fx_glide_next(&q->dry);
   const float wet = le_fx_glide_next(&q->wet);
   const float x0 = fx_sanitize(*l);
@@ -7541,6 +7571,7 @@ static void fx_spring_kprocess(void* ks, float* l, float* r) {
     u = y;
   }
   if (q->frac_on) u = le_frac_tick(q->frac_ap, q->frac_z, u);
+  u += (lowk - 1.0f) * le_onepole_lp(&q->low_s[ph], q->low_g1, u);
   u += (LE_SPR_LOSS_SHELF - 1.0f) *
        (u - le_onepole_lp(&q->loss_s[ph], q->loss_g1, u));
   u = fx_sanitize(u); /* a decayed tail flushes to 0 */
