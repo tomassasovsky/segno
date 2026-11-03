@@ -37,6 +37,7 @@ void main() {
       expect(
         bootAudioOf(
           running: true,
+          devicePresent: true,
           config: _pinned,
           devices: () => fail('enumerated a running engine'),
         ),
@@ -44,16 +45,52 @@ void main() {
       );
     });
 
+    test('a running engine whose interface was unplugged is absent', () {
+      expect(
+        bootAudioOf(
+          running: true,
+          devicePresent: false,
+          config: _pinned,
+          devices: () => _hdmiOnly,
+        ),
+        BootAudio.absent,
+      );
+    });
+
+    test('a running engine whose device stopped on its own is refused', () {
+      // miniaudio's stopped notification clears presence and leaves the
+      // running flag on, while the interface is still plugged in.
+      expect(
+        bootAudioOf(
+          running: true,
+          devicePresent: false,
+          config: _pinned,
+          devices: () => _scarlett,
+        ),
+        BootAudio.refused,
+      );
+    });
+
     test('the pinned interface unplugged is absent', () {
       expect(
-        bootAudioOf(running: false, config: _pinned, devices: () => _hdmiOnly),
+        bootAudioOf(
+          running: false,
+          devicePresent: false,
+          config: _pinned,
+          devices: () => _hdmiOnly,
+        ),
         BootAudio.absent,
       );
     });
 
     test('the pinned interface present and not running is refused', () {
       expect(
-        bootAudioOf(running: false, config: _pinned, devices: () => _scarlett),
+        bootAudioOf(
+          running: false,
+          devicePresent: false,
+          config: _pinned,
+          devices: () => _scarlett,
+        ),
         BootAudio.refused,
       );
     });
@@ -63,6 +100,7 @@ void main() {
         expect(
           bootAudioOf(
             running: false,
+            devicePresent: false,
             config: config,
             devices: () => _hdmiOnly,
           ),
@@ -73,7 +111,12 @@ void main() {
 
     test('nothing pinned and an interface there is refused', () {
       expect(
-        bootAudioOf(running: false, config: null, devices: () => _scarlett),
+        bootAudioOf(
+          running: false,
+          devicePresent: false,
+          config: null,
+          devices: () => _scarlett,
+        ),
         BootAudio.refused,
       );
     });
@@ -82,6 +125,7 @@ void main() {
       expect(
         bootAudioOf(
           running: false,
+          devicePresent: false,
           config: _pinned,
           devices: () => throw StateError('ffi'),
         ),
@@ -282,12 +326,12 @@ void main() {
       expect(lines.last, endsWith(' I boot health: audio stalled -> ok'));
     });
 
-    test('a count that starts again after a restart is not a stall', () {
+    test('a count that went down is not a stall', () {
       fakeAsync((async) {
         unawaited(readiness().start());
         firstFrame.complete();
         async.elapse(const Duration(seconds: 5));
-        // Stopped and started again between two beats: the count is lower.
+        // The mock engine's count starts again at each start.
         frames = 1000;
         async.elapse(const Duration(seconds: 5));
         expect(sent.last, 'READY=1\nSTATUS=alive 2 readout 2 audio ok');

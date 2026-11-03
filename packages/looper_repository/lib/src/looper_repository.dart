@@ -2084,10 +2084,10 @@ class LooperRepository {
   /// [CallbackTelemetry].
   CallbackTelemetry readCallbackTelemetry() => _engine.callbackTelemetry();
 
-  /// Frames the audio callback has processed since the device started,
-  /// counting again from 0 at each start. A running engine whose count stops
-  /// moving has a callback that no longer runs, which the running flag alone
-  /// does not show (#1519).
+  /// Frames the audio callback has processed. A running engine whose count
+  /// stops moving has a callback that no longer runs, which the running flag
+  /// alone does not show (#1519). The native count runs on across stops and
+  /// starts; the mock engine's starts again at each start.
   ///
   /// A method for the reason [readCallbackTelemetry] is: it changes on every
   /// callback, so it stays off [state].

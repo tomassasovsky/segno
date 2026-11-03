@@ -25,15 +25,20 @@ enum BootAudio {
   refused,
 }
 
-/// The [BootAudio] for an engine that is [running] or not, with [config] the
-/// config it last started with (or tried to, at boot) and [devices] the
-/// enumeration, read only when the engine is not running.
+/// The [BootAudio] for an engine that is [running] or not, on a device that
+/// is [devicePresent] or not, with [config] the config it last started with
+/// (or tried to, at boot) and [devices] the enumeration.
+///
+/// A running engine whose device left, or whose device stopped on its own,
+/// keeps its running flag; it is judged like a stopped one, by whether the
+/// interface is there. The enumeration is read only then.
 BootAudio bootAudioOf({
   required bool running,
+  required bool devicePresent,
   required EngineConfig? config,
   required List<AudioDevice> Function() devices,
 }) {
-  if (running) return BootAudio.ok;
+  if (running && devicePresent) return BootAudio.ok;
   final bool present;
   try {
     final list = devices();
@@ -163,8 +168,7 @@ class BootReadiness {
       final state = _audio();
       if (state == BootAudio.ok) {
         frames = _audioFrames();
-        // The count starts again at each start, so only an unchanged count
-        // is a stall; a lower one is a restart between two statuses.
+        // Any change means the callback ran since the previous status.
         audio = frames == _lastFrames ? BootAudio.stalled : BootAudio.ok;
       } else {
         audio = state;
@@ -176,11 +180,13 @@ class BootReadiness {
     _lastAudio = audio;
     _lastFrames = frames;
     if (previous != null && previous != audio) {
+      // An Apply or a reconnect passes through refused; only a stall is a
+      // fault on its own.
       final line = 'boot health: audio ${previous.name} -> ${audio.name}';
-      if (audio == BootAudio.ok) {
-        AppLog.info(line);
-      } else {
+      if (audio == BootAudio.stalled) {
         AppLog.warn(line);
+      } else {
+        AppLog.info(line);
       }
     }
     return audio;
