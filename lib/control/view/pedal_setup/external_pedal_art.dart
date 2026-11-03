@@ -69,6 +69,10 @@ class ExternalPedalArt extends StatelessWidget {
     // different aspects, so a marker positioned against the BOX would sit off
     // the switch on one of them.
     final fitted = _fit(art.size, penSize);
+    // Raster pixels to drawn pixels; the fit keeps the aspect, so one scale
+    // serves both axes.
+    final scale = fitted.width / art.size.width;
+    Offset drawn(Offset raster) => fitted.topLeft + raster * scale;
     return SizedBox.fromSize(
       size: penSize,
       child: Stack(
@@ -79,34 +83,22 @@ class ExternalPedalArt extends StatelessWidget {
           ),
           for (final (index, centre) in art.switches.indexed)
             Positioned(
-              left:
-                  fitted.left +
-                  centre.dx / art.size.width * fitted.width -
-                  _targetSize / 2,
-              top:
-                  fitted.top +
-                  centre.dy / art.size.height * fitted.height -
-                  _targetSize / 2,
+              left: drawn(centre).dx - _targetSize / 2,
+              top: drawn(centre).dy - _targetSize / 2,
               width: _targetSize,
               height: _targetSize,
               child: _Target(
                 key: Key('external_switch_$index'),
                 index: index,
                 selected: index == selected,
-                bezelRadius: art.bezelRadius * fitted.width / art.size.width,
+                bezelRadius: art.bezelRadius * scale,
                 onTap: () => onSelect(index),
               ),
             ),
           for (final (index, centre) in art.indicators.indexed)
             Positioned(
-              left:
-                  fitted.left +
-                  centre.dx / art.size.width * fitted.width -
-                  _markerSize / 2,
-              top:
-                  fitted.top +
-                  centre.dy / art.size.height * fitted.height -
-                  _markerSize / 2,
+              left: drawn(centre).dx - _markerSize / 2,
+              top: drawn(centre).dy - _markerSize / 2,
               width: _markerSize,
               height: _markerSize,
               child: _Contact(
